@@ -103,6 +103,19 @@ pub struct Channel {
     /// from today (SPEC §15.2): empty for every channel with no drops.
     pub gaps: Vec<GapSpan>,
 }
+
+/// Which importer produced a [`Session`]. Serializes to the `source_format` file-metadata string
+/// (§4.3) lowercase, verbatim (`Idl0` → `"idl0"`, etc.).
+pub enum SourceFormat {
+    /// `.idl0` binary log from an IDL0 device.
+    Idl0,
+    /// Garmin/Wahoo/etc. `.fit` activity file.
+    Fit,
+    /// Garmin Connect/Strava-style `.gpx` track.
+    Gpx,
+    /// Generic `.csv` import (low priority — design doc D4).
+    Csv,
+}
 ```
 
 **`RawColumn` variants and Parquet round-trip survival.** Unchanged variant set from today
@@ -293,25 +306,79 @@ changes that existing tested function's *inputs* (not its logic) — it now rece
 period, not the nominal one.
 
 **Why not the other order (reconcile first, then correct)?** Reconciling on the *nominal* grid
-first would misread a true ODR offset as a stream of phantom drops. Concretely: if the true period
-is 1200 µs against a nominal 1250 µs (the §3.3 worked example's numbers), the *recorded* stamps
-drift away from the nominal grid by 50 µs every burst — after `1250/50 = 25` bursts (`100 samples`
-at `N=4`/burst) the accumulated drift exceeds one full nominal period. At that point
-`ImuGridPlan::build`, walking absolute grid slots as `round((ts − t0)/nominal_period_us)` (SPEC
-§15.2), sees a sample land on a grid slot it doesn't expect from simple advancement — it either
-injects a phantom interpolated fill (reading the drift as a dropped sample that never happened) or
-collapses a real sample into an existing slot as a duplicate (reading the drift as two samples
-that arrived too close together) — roughly once per `nominal_period_us / |true_period_us −
-nominal_period_us|` samples, i.e. every ~25 samples for this example's 50 µs/burst drift, not just
-at rare true drop events. Those synthetic (phantom-filled or collapsed) samples would then be fed
-into burst-seam correction as if they were real device reads, corrupting the very `T_k`/`N_k`
-values §3.3's estimate depends on. Correcting first removes the drift (the corrected axis matches
-the true, uniform sample cadence, §3.3's worked example), so reconciliation afterward only ever
-sees genuine FIFO drops — its existing "gap = delta > 1/ODR between consecutive same-`imu_index`
-timestamps" detection rule (SPEC §5.5) becomes accurate again once it is run against the corrected
-period instead of the nominal one. A `GapSpan`'s `{start, len}` continues to mean "these
-consecutive samples, in this channel's own compact index space, are synthesized (interpolated
-fill or held-edge pad), not recorded" — unchanged semantics, just computed on the corrected grid.
+first would misread a true ODR offset as a stream of phantom drops. Direct simulation against
+the §3.3 worked example's own recorded stamps (nominal 1250 µs, true 1200 µs, `N=4`/burst,
+`t0 = 96250`, `ImuGridPlan::build`'s absolute rule `slot = round((ts − t0)/nominal_period_us)`,
+SPEC §15.2) — the first 20 samples:
+
+| idx | recorded `ts` (µs) | `Δ = ts − t0` (µs) | `Δ/1250` | `slot` | kept? |
+|---|---|---|---|---|---|
+| 0 | 96250 | 0 | 0.00 | 0 | kept |
+| 1 | 97500 | 1250 | 1.00 | 1 | kept |
+| 2 | 98750 | 2500 | 2.00 | 2 | kept |
+| 3 | 100000 | 3750 | 3.00 | 3 | kept |
+| 4 | 101050 | 4800 | 3.84 | 4 | kept |
+| 5 | 102300 | 6050 | 4.84 | 5 | kept |
+| 6 | 103550 | 7300 | 5.84 | 6 | kept |
+| 7 | 104800 | 8550 | 6.84 | 7 | kept |
+| 8 | 105850 | 9600 | 7.68 | 8 | kept |
+| 9 | 107100 | 10850 | 8.68 | 9 | kept |
+| 10 | 108350 | 12100 | 9.68 | 10 | kept |
+| 11 | 109600 | 13350 | 10.68 | 11 | kept |
+| 12 | 110650 | 14400 | 11.52 | 12 | kept |
+| 13 | 111900 | 15650 | 12.52 | 13 | kept |
+| 14 | 113150 | 16900 | 13.52 | 14 | kept |
+| 15 | 114400 | 18150 | 14.52 | 15 | kept |
+| 16 | 115450 | 19200 | 15.36 | **15** | **DROPPED — same slot as sample 15** |
+| 17 | 116700 | 20450 | 16.36 | 16 | kept (resumes) |
+| 18 | 117950 | 21700 | 17.36 | 17 | kept |
+| 19 | 119200 | 22950 | 18.36 | 18 | kept |
+
+Sample 16 — the first sample of the 5th burst — lands on the same slot (15) as sample 15 and,
+per SPEC §15.2's own rule ("an out-of-order sample whose slot does not advance past the previous
+kept one … is dropped"), is discarded: a genuine device sample misread as a duplicate.
+
+**Deriving why sample 16, not some other index.** Within one burst, consecutive recorded deltas
+increase by exactly `nominal_period_us` (the firmware always walks back at the *nominal* cadence
+inside a burst, regardless of true ODR — SPEC §5.5), so the assigned slot advances by exactly 1
+per sample and no drift accumulates *within* a burst (rows 0–3, 4–7, 8–11, 12–15 above each step
+slot by exactly 1). Drift appears only at burst *seams*: crossing from burst `k−1` to `k`, real
+elapsed time is `T_k − T_{k−1} = N × true_period_us`, while nominal-slot-counting "expects"
+`N × nominal_period_us` to have elapsed — so every seam adds
+`burst_drift_us = N × (nominal_period_us − true_period_us)` of cumulative drift against a
+purely-nominal clock. After crossing `m` seams, cumulative drift is `m × burst_drift_us`; `round`
+keeps assigning the expected slot only while this stays inside `± nominal_period_us / 2` of zero,
+so the first collision occurs at the smallest `m` with
+`m × burst_drift_us >= nominal_period_us / 2`, i.e.
+`m = ceil(nominal_period_us / (2 × burst_drift_us))`, at overall sample index `m × N` (the first
+sample of burst `m`, 0-based). Here: `burst_drift_us = 4 × (1250 − 1200) = 200 µs`;
+`m = ceil(1250 / (2×200)) = ceil(3.125) = 4`; first collision at sample `4 × 4 = 16` — matches the
+table exactly.
+
+Because `ImuGridPlan::build`'s slot is always the *absolute* `round(Δ/nominal_period_us)` from
+`t0` (SPEC §15.2: "never by accumulating per-step advances"), drift keeps accumulating linearly
+from `t0` rather than resetting after a drop, so further collisions recur — re-simulating the same
+example to sample 44 confirms a second dropped sample at index 40 (24 samples after the first),
+consistent with the derivation: over a long window this converges to the aliasing rate between
+two clocks — total drift after `s` samples is `s × per_sample_drift_us`
+(`per_sample_drift_us = nominal_period_us − true_period_us = 50 µs`, the *average* rate, delivered
+in 200 µs jumps every 4 samples rather than smoothly), so collisions recur roughly every
+`nominal_period_us / per_sample_drift_us = 1250/50 = 25` samples in steady state (24 measured here
+— the discreteness of burst-level drift accumulation, not a formula error, accounts for the
+1-sample difference from the continuous estimate). The *first* collision lands later than this
+steady-state estimate (16, not ~12–13) for the same reason: drift accumulates in discrete
+`burst_drift_us` jumps, not continuously per sample, so the earlier, coarser part of the session
+"absorbs" more slack before the first collision than the steady-state rate alone would predict.
+
+Every one of these dropped/duplicated samples would then be fed into burst-seam correction as if
+it were a real device read, corrupting the very `T_k`/`N_k` values §3.3's estimate depends on.
+Correcting first removes the drift (the corrected axis matches the true, uniform sample cadence,
+§3.3's worked example), so reconciliation afterward only ever sees genuine FIFO drops — its
+existing "gap = delta > 1/ODR between consecutive same-`imu_index` timestamps" detection rule
+(SPEC §5.5) becomes accurate again once it is run against the corrected period instead of the
+nominal one. A `GapSpan`'s `{start, len}` continues to mean "these consecutive samples, in this
+channel's own compact index space, are synthesized (interpolated fill or held-edge pad), not
+recorded" — unchanged semantics, just computed on the corrected grid.
 See §8 item 1 (ruled, not open).
 
 ### 3.4 Non-device sources (FIT, GPX)
