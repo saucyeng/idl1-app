@@ -177,39 +177,106 @@ Implemented: M0 Task 5 (already shipped; unchanged by this contract).
 
 **`list_sessions()`**
 Args: none.
-Return: `SessionSummary[]`
+Return: `SessionSummary[]` — mirrors the catalog `sessions` table (C4 §5)
+column for column; nullable columns are `T | null`. Two fields the previous
+draft carried (`duration_s`, `channel_count`) had no catalog column to
+source them from and are dropped here — see §6 item 3's resolution note.
 ```ts
 interface SessionSummary {
   session_id: string;
-  device_id: string | null;       // null for FIT/GPX/CSV sources (no device)
-  timestamp_utc_ms: number;       // i64, session start, Unix epoch milliseconds
-  duration_s: number;             // f64, session length in seconds
-  channel_count: number;          // u32
-  source_kind: "idl0" | "fit" | "gpx" | "csv";
-  blob_sha256: string;            // hex-encoded, lowercase
+  blob_sha256: string;             // hex-encoded, lowercase, 64 chars (C4 §5 sessions.blob_sha256)
+  source_kind: "idl0" | "fit" | "gpx" | "csv";   // catalog column name — C1's in-memory `Session`
+                                                   // struct calls the same value `source_format`
+                                                   // (see `SessionDetail` below); the two contracts
+                                                   // name it differently for the same enum
+  device_id: string | null;        // null for FIT/GPX/CSV sources (no device) — C1 §2
+  config_checksum: string | null;  // null for FIT/GPX/CSV sources — C1 §2
+  importer_version: string;        // SemVer 2.0.0, e.g. "0.1.0" (C1 §4.3)
+  engine_version: string;          // SemVer 2.0.0, `idl-rs` core `CARGO_PKG_VERSION` (C1 §4.3)
+  timestamp_utc_ms: number;        // i64, session start, Unix epoch milliseconds; 0 = unknown (C1 §3.1)
+  created_at_ms: number;           // i64, catalog row insert time (import time)
+  rider: string;                   // "" = not set (C4 §5 sessions.rider default)
+  bike: string;
+  venue_name: string;
+  event_name: string;
+  event_session: string;
+  short_comment: string;
+  tag: string;
+  lap_count: number | null;        // u32 | null — null until laps are indexed for this session
+  duration_ms: number | null;      // i64 milliseconds | null — RENAMED from `duration_s` (was f64
+                                    // seconds); the catalog column is nullable integer milliseconds
 }
 ```
 Errors: `io`, `internal`.
 
 **`get_session(session_id: string)`**
-Return: `SessionDetail`
+Return: `SessionDetail` — C1 `Session` metadata (§2) plus `session.json`
+content (§6). This does **not** extend `SessionSummary`: the catalog row is
+a fast, possibly-stale cache of a subset of these same values (C4 §5,
+"nothing reads the catalog for truth" — `get_session` reads the canonical
+files directly, not the catalog).
 ```ts
-interface SessionDetail extends SessionSummary {
-  config_checksum: string | null; // null for non-device sources
+interface SessionDetail {
+  // --- C1 §2 `Session` ---
+  session_id: string;
+  device_id: string | null;        // null for FIT/GPX/CSV sources — C1 §2
+  timestamp_utc_ms: number;        // i64, session start, Unix epoch ms; 0 = unknown — C1 §3.1
+  config_checksum: string | null;  // null for FIT/GPX/CSV sources — C1 §2
+  source_format: "idl0" | "fit" | "gpx" | "csv";   // C1 `SourceFormat`, lowercase — C1 §2/§4.3
+  blob_sha256: string;             // hex-encoded, lowercase, 64 chars — C1 §2
   channels: ChannelSummary[];
+
+  // --- session.json (C1 §6) — SessionMetadata carry-forward ---
+  rider: string;                   // "" = not set, no null representation (C1 §6)
+  bike: string;
+  bike_comment: string;
+  venue_name: string;
+  event_name: string;
+  event_session: string;
+  short_comment: string;
+  long_comment: string;
+  tag: string;
+  bike_profile_snapshot: Record<string, unknown> | null;   // verbatim BikeProfile.config at
+                                                              // recording time (C1 §6)
+
+  // --- session.json (C1 §6) — laps, track visits, lap flags ---
   laps: LapSummary[];
+  track_visits: TrackVisitSummary[];
+  reference_lap_number: number | null;   // null/omitted = "use fastest lap" (C1 §6)
+  ignored_lap_numbers: number[];         // sorted ascending (C1 §6)
+  main_lap_number: number | null;
+  overlay_lap_key: { session_id: string; lap_number: number } | null;
+  starred_lap_number: number | null;
+}
+interface TrackVisitSummary {
+  visit_id: string;                // UUID (C1 §6 track_visits[].visit_id)
+  track_id: string;                // UUID
+  start_timestamp_ms: number;      // i64, UTC ms
+  end_timestamp_ms: number;        // i64, UTC ms, always >= start_timestamp_ms
 }
 interface ChannelSummary {
   channel_id: string;
-  nominal_rate_hz: number;        // f64, metadata only — never used to synthesize time (design §5)
-  unit: string;
-  sample_count: number;           // u64
+  nominal_rate_hz: number;         // f64, metadata only — never used to synthesize time (C1 §3.5)
+  unit: string;                    // C1 §4.1's per-channel unit
+  source_kind: string;             // C1 §4.2 token, e.g. "imu0", "gps", "fit", "gpx" — NEW
+  channel_kind: "fixed-rate" | "event";   // C1 §4.2; "event" iff nominal_rate_hz == 0.0 — NEW
+  sample_count: number;            // u64
 }
 interface LapSummary {
-  lap_index: number;              // u32, 0-based
-  start_t_us: number;             // i64, µs on the session's t axis (C1 §3.1)
-  end_t_us: number;                // i64, µs on the session's t axis
-  distance_m: number | null;      // f64, null when no track/GPS to normalise against
+  lap_number: number;              // i32, 1-based — RENAMED from `lap_index` (was u32, 0-based);
+                                    // matches C1 §6 session.json laps[].lap_number and C4 §5 laps.lap_number
+  lap_time_ms: number;             // i64 ms (C4 §5 laps.lap_time_ms)
+  track_id: string | null;         // C4 §5 laps.track_id — null if this lap isn't attributed to a track
+  channel_stats: LapChannelStat[]; // C4 §5 lap_summary rows for this (session, lap) — NEW; replaces
+                                    // the previous draft's `start_t_us`/`end_t_us`/`distance_m`, none
+                                    // of which the catalog stores (see §6 item 3's resolution note)
+}
+interface LapChannelStat {
+  channel_id: string;              // materialised channel name (C4 §5 lap_summary.channel_id)
+  derived_hash: string;            // 64-hex — which derived/<hash>.parquet this was computed from
+  min_value: number;
+  max_value: number;
+  mean_value: number;
 }
 ```
 Errors: `not_found`, `io`, `internal`.
@@ -229,25 +296,39 @@ Errors: `io`, `internal`.
 
 **`list_workbooks()`**
 Args: none.
-Return: `WorkbookSummary[]`
+Return: `WorkbookSummary[]` — mirrors the catalog `workbooks` table (C4 §5)
+column for column.
 ```ts
 interface WorkbookSummary {
-  id: string;                 // front-matter `id` (C2)
-  name: string;
-  path: string;                // relative to <data>/workbooks/
-  updated_utc_ms: number;      // i64, file mtime
+  workbook_id: string;    // stable id from front matter (C2) — RENAMED from `id`
+  file_name: string;       // RENAMED from `path`. C4 §5 workbooks.file_name: the bare,
+                            // filesystem-sanitised display name used as `workbooks/<file_name>.idl1wb`
+                            // (C4 §2) — not a path relative to `workbooks/` as the previous draft said
+  name: string;             // display name from front matter (C2)
+  updated_at_ms: number;    // i64, file mtime — RENAMED from `updated_utc_ms`
+  size_bytes: number;       // u64 — NEW (C4 §5 workbooks.size_bytes)
 }
 ```
 Errors: `io`, `internal`.
 
 **`list_tracks()`**
 Args: none.
-Return: `TrackSummary[]`
+Return: `TrackSummary[]` — mirrors the catalog `tracks` table (C4 §5)
+column for column. `length_m` (the previous draft's only field beyond
+`track_id`/`name`) is **dropped**: no Track field (C1 IDL0_SPEC §16.2) or
+catalog column stores a track length, so it had no source to reconcile
+against — see §6 item 3's resolution note.
 ```ts
 interface TrackSummary {
   track_id: string;
   name: string;
-  length_m: number;   // f64
+  venue_name: string;    // NEW (C4 §5 tracks.venue_name)
+  created_at_ms: number; // i64 — NEW
+  updated_at_ms: number; // i64 — NEW
+  full_json: string;     // NEW — verbatim Track JSON (C4 §5 tracks.full_json, IDL0_SPEC §16.3);
+                          // shipping the full per-track JSON on every row of a list command is a
+                          // real weight concern for a large track library — flagged, not resolved,
+                          // by this reconciliation; see §6 item 7
 }
 ```
 Errors: `io`, `internal`.
@@ -626,14 +707,29 @@ engine.
    ever actually surfaces it as a command-level rejection (vs. a warning on
    a successful `SessionSummary`) is L2's call to make and document in its
    SPEC section. Assigned: L2.
-3. **`SessionDetail`/`ChannelSummary`/`LapSummary`/`WorkbookSummary`/
-   `TrackSummary` field sets are provisional**, built from design §5's data
-   model and inventory rows, not yet reconciled against C1 (session schema)
-   or C4 (data directory), which land after this contract. Assigned: lead —
-   revise §3.2/§3.4 field lists to match C1/C4 once both are signed; this
-   is expected to be additive (new fields), not a rename, so it should not
-   need a full C3 revision cycle, but if a field's type turns out wrong
-   here it does.
+3. **Resolved 2026-09-02 — §3.2/§3.4 reconciled against C1 (signed draft
+   ddf9bd5+) and C4 (afde4e5).** `SessionSummary`, `SessionDetail`,
+   `ChannelSummary`, `LapSummary`, `WorkbookSummary`, `TrackSummary` (§3.2)
+   now match their C1/C4 sources field-for-field. This turned out **not**
+   to be purely additive as originally hoped: `WorkbookSummary` renames
+   `id`→`workbook_id`, `path`→`file_name` (and narrows its meaning to the
+   bare file name, not a relative path), `updated_utc_ms`→`updated_at_ms`;
+   `LapSummary` renames `lap_index`→`lap_number` (and 0-based becomes
+   1-based) and replaces `start_t_us`/`end_t_us`/`distance_m` with
+   `channel_stats` (none of the three had a catalog source); `SessionSummary`
+   renames/retypes `duration_s` (f64 seconds) to `duration_ms` (i64 ms,
+   nullable) and drops `channel_count` (no catalog column); `TrackSummary`
+   drops `length_m` (no Track field or catalog column stores one).
+   `SessionDetail` no longer `extends SessionSummary` — it now reads C1's
+   `Session` plus `session.json` directly, decoupled from the catalog's
+   cached, possibly-stale copy of the same values. Per this item's own
+   stated rule ("if a field's type turns out wrong here it [needs] a full
+   C3 revision cycle"), these renames arguably warrant one; no commands
+   have shipped or been implemented against the prior draft field lists,
+   so this reconciliation edits them in place rather than opening a
+   deprecation window per §5 — **flagged for lead confirmation that
+   editing in place (vs. a formal §5 revision line) is the right call for
+   a pre-implementation draft.**
 4. **`fetch_raster`'s `params` bag is generic (`Record<string, number>`)
    because the raster kinds' actual parameters aren't fixed anywhere yet**
    (design §4 says only "core computes STFT or 2-D histogram"). A
@@ -651,3 +747,24 @@ engine.
    settled by the design doc. Assigned: L4 — the transport crate's actual
    `btleplug` usage will make the natural shape obvious; revise §3.8 to
    match once L4 has working code, rather than guessing here.
+7. **`TrackSummary.full_json` (§3.2), added by item 3's reconciliation,
+   ships the complete per-track JSON (reference polyline, gates, neutral
+   zones) on every row of `list_tracks()`.** This is what C4 §5's `tracks`
+   table literally holds, but it is a heavier payload than a "summary" list
+   command elsewhere in this contract carries — worth reconsidering (e.g. a
+   lighter `list_tracks` plus a `get_track` for the full JSON) in a future
+   revision. Assigned: lead.
+8. **`source_kind` (C4 catalog column, `SessionSummary`) vs. `source_format`
+   (C1 `Session` field, `SessionDetail`) name the same four-value enum
+   differently** across the two signed contracts. Item 3's reconciliation
+   kept each field named per its own source rather than picking one name
+   and silently diverging from the contract it mirrors — flagged in case
+   the lead wants one contract to rename its field instead. Assigned: lead.
+9. **`lap_gates`/`sector_gates` (C1 §6, C1's own open item 2) and
+   `WorkbookHandle` (§3.4, not in item 3's assigned type list) were left
+   untouched by this reconciliation.** The former because C1 §8 item 2 is
+   itself still open — adding them here would guess at an unresolved
+   upstream question; the latter because `open_workbook`'s `id`/`path`
+   fields were not named in the reconciliation assignment, though they may
+   deserve the same `workbook_id`/`file_name` treatment `WorkbookSummary`
+   just got, for naming consistency. Assigned: lead.
