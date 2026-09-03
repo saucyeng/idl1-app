@@ -1,0 +1,14 @@
+# Rust
+target/
+# Node
+node_modules/
+dist/
+# Tauri
+app/src-tauri/gen/schemas/
+# OS / editors
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+# Local agent state
+.superpowers/
