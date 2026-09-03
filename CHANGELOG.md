@@ -18,6 +18,12 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
   resumable download, config-push fallback — all behind `BleTransport`/`WifiTransport` traits
   L9's mobile plugins implement later. SPEC gains §14a (trait shapes, chunk/timeout defaults).
 
+### Changed
+
+- **Doc carry-over fixes (2026-09-03, L10).** `tools/README.md` no longer documents the
+  uncarried `idl0_dump.dart`; points at `idl-rs info`/`idl-rs channels` for the overlapping
+  functionality. `app/README.md` replaced (was still the Tauri scaffolder's generic template).
+
 ### Verified
 
 - Binary IPC path (Rust 2/2, vitest 3/3, cargo build, tsc clean) on Windows desktop, 2026-09-02 — automated; visual check via `npm run tauri dev` confirmed by Isaac 2026-09-03 (Engine 0.1.0, smoke tile 0–7 rendered).

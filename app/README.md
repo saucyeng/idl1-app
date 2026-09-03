@@ -1,7 +1,20 @@
-# Tauri + React + Typescript
+# idl1 app
 
-This template should help get you started developing with Tauri, React and Typescript in Vite.
+The Tauri v2 + React/TypeScript frontend for idl1. Talks only to `idl-rs-tauri` commands
+(`rust/tauri/`) — never to `idl-rs` or `idl-transport` directly (CLAUDE.md §2).
 
-## Recommended IDE Setup
+**Status:** M0 scaffold. See the repository root `README.md` for project status and
+`../CLAUDE.md` for the layer rules this crate lives under.
 
-- [VS Code](https://code.visualstudio.com/) + [Tauri](https://marketplace.visualstudio.com/items?itemName=tauri-apps.tauri-vscode) + [rust-analyzer](https://marketplace.visualstudio.com/items?itemName=rust-lang.rust-analyzer)
+## Develop
+
+    npm install
+    npm run tauri dev
+
+## Test
+
+    npm test
+
+## Recommended IDE setup
+
+[VS Code](https://code.visualstudio.com/) + [Tauri](https://marketplace.visualstudio.com/items?itemName=tauri-apps.tauri-vscode) + [rust-analyzer](https://marketplace.visualstudio.com/items?itemName=rust-lang.rust-analyzer)
