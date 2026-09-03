@@ -2,8 +2,8 @@
 
 **Index of rulings:** R1 (scope=all 6 lanes), R2 (ODR fixture), R3 (sequencing),
 R4 (overnight→runs rename), R5 (C1 `Channel` gains `t_recorded_us`/`unit`),
-R6 (C4 gains `profiles/`), R7 (cross-lane adjudication pass, below), R8 (this
-session's summary — see end of file).
+R6 (C4 gains `profiles/`), R7 (cross-lane adjudication pass), R8 (profiles
+sync confirmed; gate lat/lon units — decimal degrees confirmed, below).
 
 
 Human rulings and lead adjudications for the idl1 wave-1 plan (L1–L5, L10).
@@ -257,3 +257,57 @@ item above); in aggregate, medium — a lead adjudication pass concentrates
 judgment calls that could each be second-guessed, but every one states its
 reasoning and a cheap reversal path, and none blocks tonight's plan from
 being executable.
+
+---
+
+## 2026-09-03 — R8: profiles sync confirmed; gate lat/lon units — decimal degrees, confirmed
+
+**Profiles sync.** Isaac confirmed R7's default: `profiles/<id>.idl0p` syncs
+(last-write-wins by `updated_at_ms`, alongside `session.json`/tracks) —
+bike-profile data is meant to travel between a rider's own devices. No
+contract change (C4 already amended under R7); closed.
+
+**Gate lat/lon units (C1 §8 item 4).** Isaac's first reaction was that the
+`× 1e7` doc comment on Dart's `LapGate` was probably just an artifact of
+figuring out units — the opposite of what this contract's own draft text
+had guessed (it called the comment "almost certainly a copy-paste artifact"
+and assumed decimal degrees was the real runtime unit). Neither guess was
+checked against the actual code, so before ruling, verified directly:
+
+- `lap_detector.dart`'s `LapGate` class doc comment states the `×1e7`
+  rationale explicitly (matches raw `GPS_Latitude`/`GPS_Longitude` wire
+  scale, "keeps gate/track comparison scale-agnostic") — not a stray
+  per-field comment, a deliberate class-level design note.
+- `track_editor_modal.dart` multiplies a map tap's decimal-degree `LatLng`
+  by `_coordScale = 1e7` at every `LapGate` construction site, and divides
+  by the same constant at every render site (three independent call sites
+  checked). Fully consistent with the doc comment, not contradicted
+  anywhere.
+- Isaac raised, correctly, that lap detection might have already moved to
+  Rust — confirmed: `rust/core/src/laps/geometry.rs` (`find_crossings`) and
+  `rust/core/src/gps.rs` (`GpsFix`) are the real, already-tested
+  crossing-detection pipeline, and `GpsFix` is documented as native `×1e7`
+  scale ("no conversion" from raw channel samples).
+- Decisive fact for the ruling: `find_crossings`'s geometry (flat-earth line
+  intersection) is **scale-invariant by its own doc comment** — it produces
+  identical crossings fed decimal degrees or `×1e7`. So `×1e7` was never a
+  correctness requirement, only a convenience that avoided a conversion step
+  when idl0 built `GpsFix` from raw channel samples.
+
+**Decision (Isaac's, after seeing the sharpened tradeoff):** `session.json`
+keeps C1 §6's original decimal-degrees choice — it's a new, human-legible
+file, not an internal struct feeding real-time comparison against raw
+bytes, and the scale-invariance means there's no correctness cost either
+way. C1 §6 and §8 item 4 rewritten to state the real reasoning (the
+original "copy-paste artifact" claim was removed — it was wrong, not just
+imprecise) and to require the conversion explicitly: L1 converts once at
+the `session.json` ⇄ `Gate`/`GpsFix` boundary, verified by a round-trip
+test that exploits the algorithm's own scale-invariance. L1's plan (Task
+14) had already independently arrived at exactly this design, flagged as
+contingent on this confirmation — no plan rework needed, only its own open
+question 14 marked ruled.
+
+**Cost if wrong:** Low — the conversion is one multiply/divide at one
+boundary, already written into L1's plan with a test that would fail loudly
+(wrong-shaped gates that produce visibly wrong lap crossings, not a silent
+corruption) if the scale were ever mismatched.

@@ -686,11 +686,23 @@ in `Workspace` — it was always UI-state-only per the inventory, so there is no
 
 Units: all `*_timestamp_ms`/`*_time_ms` fields are `i64` UTC milliseconds since the Unix epoch;
 `*_time_secs` fields are `f64` seconds, recording-time (`t=0`-anchored, matching `t_us / 1e6` for
-the corresponding instant); `lat*_deg`/`lon*_deg` are `f64` **decimal degrees** (not the
-×1e7-scaled wire encoding used by raw `GPS_Latitude`/`GPS_Longitude` — see §8 item 4, the source
-Dart doc comment for `LapGate` says "× 1e7" for a `double` field, which is almost certainly a
-copy-paste artifact from the raw-wire GPS documentation, not the actual runtime unit for a
-UI-drawn gate).
+the corresponding instant); `lat*_deg`/`lon*_deg` are `f64` **decimal degrees** — a deliberate
+choice, confirmed and ruled 2026-09-03 (lead ruling R8, see §8 item 4): idl0's `LapGate` really
+does store `×1e7` on purpose (`lap_detector.dart`'s class doc comment, and
+`track_editor_modal.dart`'s explicit `* _coordScale`/`/ _coordScale` at every UI boundary, are
+both correct — not a copy-paste artifact, contrary to this contract's original draft text). It
+matches `crate::gps::GpsFix`'s native scale (`rust/core/src/gps.rs`: "coordinates are copied at
+the raw channel-sample scale; no conversion") and `crate::laps::geometry::find_crossings`'s
+crossing-detection math, already ported to Rust and already tested. That geometry is a flat-earth
+line-intersection test, **scale-invariant by construction** (its own doc comment says so) — it
+produces identical crossings fed decimal degrees or `×1e7`, so `×1e7` was never a math
+requirement, only a zero-conversion convenience when building `GpsFix` from raw channel samples.
+`session.json` is a new, human-legible file (not an internal Dart struct feeding real-time
+comparison against raw bytes), so decimal degrees wins on readability with no correctness cost:
+**L1 converts once at the `session.json` ⇄ `Gate`/`GpsFix` boundary** (`× 1e7` on read, `÷ 1e7` on
+write), verified by a round-trip test exploiting the algorithm's own scale-invariance
+(`find_crossings` on a decimal-degree gate/track must equal `find_crossings` on the same
+gate/track scaled `×1e7`).
 
 ---
 
@@ -742,11 +754,14 @@ item 1, which is now ruled.
 3. **Top-level `laps[]` in `session.json` is a cache**, mirroring the existing `TrackVisit.laps`
    caching pattern (workspace_version 7) rather than always being live-recomputed from
    `lap_gates` on load. **Assigned: L1.**
-4. **`lap_gates`/`sector_gates` lat/lon units.** I specified plain decimal degrees (§6); the
-   source Dart doc comment on `LapGate` says "× 1e7" for a `double`-typed field, which reads like
-   a copy-paste bug from the raw-wire GPS docs rather than the actual runtime convention.
-   **Assigned: Isaac (lead)** — verify against the actual values `lap_detector.dart` produces
-   before L1 ports the type.
+4. **RULED (2026-09-03, lead ruling R8) — decimal degrees, confirmed with Isaac.** Verified
+   directly against `lap_detector.dart`, `track_editor_modal.dart`, `rust/core/src/gps.rs`, and
+   `rust/core/src/laps/geometry.rs`: idl0's `×1e7` convention is real and deliberate, not a
+   copy-paste bug — this contract's original suspicion was wrong. `session.json` keeps §6's
+   decimal degrees anyway, since `find_crossings`'s geometry is scale-invariant (no correctness
+   cost) and decimal degrees is more legible in a human-inspectable file; L1 converts at the
+   `session.json` ⇄ `Gate`/`GpsFix` boundary. Full reasoning: §6's units paragraph, and
+   `runs/2026-09-03/decisions.md` ruling R8.
 5. **Naming collision risk: `t` (this contract, µs `Int64`, the Parquet storage axis) vs. the math
    language's `t` variable** (seconds, `f64`, the synthesized `Time` channel used in the design
    doc's own worked example, `deriv(fork_travel, t)`). These are two representations of the same
