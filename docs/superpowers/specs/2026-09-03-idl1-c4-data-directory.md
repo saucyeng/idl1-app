@@ -1,6 +1,6 @@
 # C4 — Data directory
 
-**Status:** draft · **Date:** 2026-09-03 · **Owner:** lead
+**Status:** signed (lead) 2026-09-02 · **Date:** 2026-09-03 · **Owner:** lead
 
 Sources: `2026-09-02-idl1-rewrite-design.md` §3, §5, §7, D6, D7, D10, §9 row C4, §16;
 `2026-09-02-idl1-inventory.md` (`session_index.dart`, `track_index.dart`,
