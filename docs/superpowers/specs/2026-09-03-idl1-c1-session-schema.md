@@ -32,8 +32,26 @@ paths (C4's); the catalog SQLite schema (C4's); CLI subcommand shapes (L1/L4's).
 ## 2. Canonical in-memory model
 
 `Session` and `Channel` as they exist today (`rust/core/src/session/mod.rs` at the `idl0-final`
-tag) plus the one change this contract mandates: **per-sample time becomes mandatory on every
-channel**, replacing the current `sample_rate_hz`-implies-time-for-fixed-rate-channels rule.
+tag), with every field-level divergence this contract mandates enumerated below — not just the
+per-sample-time change the outline calls out by name, which is the largest but not the only one.
+L1 should read this list as the full set of call sites the struct change touches:
+
+- **The headline change:** per-sample time becomes mandatory on every channel. `Channel`'s
+  `sample_times_secs: Option<Vec<f64>>` (event-driven channels only, today) is replaced by
+  `t_us: Vec<i64>` on *every* channel, and `sample_rate_hz: f64` is renamed `nominal_rate_hz: f64`
+  and demoted to metadata-only — fixed-rate channels no longer imply time from `i /
+  sample_rate_hz`.
+- **`Session.device_id: String`** (today: empty-string sentinel for v1/no-device) **becomes
+  `Option<String>`** — `None` for FIT/GPX/CSV sources, which have no device at all; the
+  empty-string convention is retired in favour of an explicit optional.
+- **`Session.config_checksum: String`** (today: same empty-string sentinel) **becomes
+  `Option<String>`**, same reasoning — `None` for FIT/GPX/CSV.
+- **`Session` gains two fields that do not exist today:** `source_format: SourceFormat` and
+  `blob_sha256: String` — non-device provenance the design doc (§5) assigns this contract to add
+  ("formalise the metadata the model needs for non-device sources").
+- **`Channel` gains one field that does not exist today:** `source_kind: String` — which
+  `<source>_t_recorded_us` column (§3.2) a channel's `t_us` was derived from, and whether §3.3's
+  burst-seam correction applied to it.
 
 ```rust
 /// One imported session — the parsed/converted view of one immutable source blob.
@@ -212,9 +230,16 @@ its own **local** period instead of the session-wide one:
 `local_period_us = round((T_k − T_{k−1}) / N_k)` (same rounding rule; if this is `<= 0`, which
 cannot happen for two real, time-ordered device reads, fall back to `nominal_period_us` and
 surface an `ImportWarning`). Re-space burst `k` with `local_period_us` in place of
-`effective_period_us`. This always succeeds because `corrected[k][0] = T_{k-1} +
-local_period_us > T_{k-1}` exactly, by construction. The first burst (`k=0`) has no predecessor,
-so no such check applies to it; it always uses the session-wide `effective_period_us`.
+`effective_period_us`. Writing `true_local_period_us = (T_k − T_{k−1}) / N_k` (the unrounded
+value) and `e = local_period_us − true_local_period_us` (the rounding error, `|e| <= 0.5`),
+`corrected[k][0] = T_{k−1} + true_local_period_us − (N_k − 1) × e`, so this holds strictly
+(`corrected[k][0] > T_{k−1}`) whenever `true_local_period_us > (N_k − 1) / 2`. For any burst size
+and period an IMU FIFO can physically produce — periods of hundreds of µs (a few kHz ODR at most)
+against burst sizes of at most a few dozen samples per FIFO watermark — this margin is enormous
+(hundreds of µs of headroom against a bound in the tens); it only fails for a burst whose true
+period is sub-microsecond or whose sample count is in the thousands, neither physically
+realizable for this hardware. The first burst (`k=0`) has no predecessor, so no such check
+applies to it; it always uses the session-wide `effective_period_us`.
 
 **Version.** The whole of §3.3 is `seam_correction_version`. Current value: `"v1"`. Stored in
 `data.parquet` file metadata (§4.3). A version bump means the algorithm's *output* can differ for
@@ -258,15 +283,36 @@ this is also the session's `t0_us`) gives this channel's final `t_us`:
 `0, 1200, 2400, 3600, 4800, 6000, 7200, 8400, 9600, 10800, 12000, 13200, 14400, 15600, 16800,
 18000`.
 
-**Gaps (`GapSpan`).** Drop reconciliation (rebuilding a channel onto an equal-length,
-time-aligned grid across an IMU's drops — SPEC §15.2, `rust/core/src/parse/records.rs`
-`ReconciliationPlan`) runs **after** burst-seam correction, on the corrected time axis, using
-`effective_period_us` (or a burst's `local_period_us` fallback) as the reconciliation grid step in
-place of `nominal_period_us`. This is a change from today's engine, which reconciles on the
-nominal grid — flagged explicitly in §8 item 1, since it touches an existing tested function
-(CLAUDE.md §2). A `GapSpan`'s `{start, len}` continues to mean "these consecutive samples, in this
-channel's own compact index space, are synthesized (interpolated fill or held-edge pad), not
-recorded" — unchanged semantics, just computed on the corrected grid.
+**Gaps (`GapSpan`) — ordering, ruled.** Drop reconciliation (rebuilding a channel onto an
+equal-length, time-aligned grid across an IMU's drops — SPEC §15.2,
+`rust/core/src/parse/records.rs` `ImuGridPlan::build`/`reconcile`) runs **after** burst-seam
+correction, on the corrected time axis, using `effective_period_us` (or a burst's
+`local_period_us` fallback) as the
+reconciliation grid step passed to `ImuGridPlan::build` in place of `nominal_period_us`. This
+changes that existing tested function's *inputs* (not its logic) — it now receives the corrected
+period, not the nominal one.
+
+**Why not the other order (reconcile first, then correct)?** Reconciling on the *nominal* grid
+first would misread a true ODR offset as a stream of phantom drops. Concretely: if the true period
+is 1200 µs against a nominal 1250 µs (the §3.3 worked example's numbers), the *recorded* stamps
+drift away from the nominal grid by 50 µs every burst — after `1250/50 = 25` bursts (`100 samples`
+at `N=4`/burst) the accumulated drift exceeds one full nominal period. At that point
+`ImuGridPlan::build`, walking absolute grid slots as `round((ts − t0)/nominal_period_us)` (SPEC
+§15.2), sees a sample land on a grid slot it doesn't expect from simple advancement — it either
+injects a phantom interpolated fill (reading the drift as a dropped sample that never happened) or
+collapses a real sample into an existing slot as a duplicate (reading the drift as two samples
+that arrived too close together) — roughly once per `nominal_period_us / |true_period_us −
+nominal_period_us|` samples, i.e. every ~25 samples for this example's 50 µs/burst drift, not just
+at rare true drop events. Those synthetic (phantom-filled or collapsed) samples would then be fed
+into burst-seam correction as if they were real device reads, corrupting the very `T_k`/`N_k`
+values §3.3's estimate depends on. Correcting first removes the drift (the corrected axis matches
+the true, uniform sample cadence, §3.3's worked example), so reconciliation afterward only ever
+sees genuine FIFO drops — its existing "gap = delta > 1/ODR between consecutive same-`imu_index`
+timestamps" detection rule (SPEC §5.5) becomes accurate again once it is run against the corrected
+period instead of the nominal one. A `GapSpan`'s `{start, len}` continues to mean "these
+consecutive samples, in this channel's own compact index space, are synthesized (interpolated
+fill or held-edge pad), not recorded" — unchanged semantics, just computed on the corrected grid.
+See §8 item 1 (ruled, not open).
 
 ### 3.4 Non-device sources (FIT, GPX)
 
@@ -591,12 +637,16 @@ L1's tests must prove, on real `.idl0` sessions (parse → write `data.parquet` 
 ## 8. Open questions
 
 Every item below has a stated default already adopted in the body text above (nothing here blocks
-implementation) — each still needs the assigned party's confirmation before or during L1.
+implementation) — each still needs the assigned party's confirmation before or during L1, except
+item 1, which is now ruled.
 
-1. **Gap reconciliation now runs on the burst-corrected grid, not the nominal grid (§3.3's "Gaps"
-   paragraph).** This changes the *inputs* to an existing, tested Rust function
-   (`ReconciliationPlan::build`/`reconcile`, `rust/core/src/parse/records.rs`) — per CLAUDE.md §2
-   this always needs explicit sign-off before implementation. **Assigned: Isaac (lead).**
+1. **Ruled — see §3.3.** Gap reconciliation runs on the burst-corrected grid, not the nominal
+   grid (§3.3's "Gaps — ordering, ruled" paragraph): burst-seam correction first, then
+   `ImuGridPlan::build`/`reconcile` (`rust/core/src/parse/records.rs`) with the corrected period
+   in place of the nominal one. This changes that existing tested function's *inputs* — per
+   CLAUDE.md §2 that needed explicit sign-off before implementation, and it has been given: §3.3
+   now carries the phantom-drop argument for why the alternative ordering (reconcile on the
+   nominal grid, then correct) is wrong, not just asserted. No longer open.
 2. **`lap_gates`/`sector_gates` inclusion in `session.json`.** The design doc's field list for
    this contract names only "laps, track visits, lap flags, rider, bike profile snapshot" — I
    included gate geometry anyway (§6) because dropping user-placed gates would lose data no other
@@ -628,3 +678,10 @@ implementation) — each still needs the assigned party's confirmation before or
    version could have the firmware mark each burst's boundary explicitly, eliminating the need
    for the ±1 µs delta-detection heuristic entirely. Out of scope for this contract (no format
    change is being proposed here) but worth tracking. **Assigned: Isaac (lead) / firmware lane.**
+8. **§3.3 validation against a real session with a known ODR offset.** Design doc §16 assigns C1
+   this explicitly: "the burst-seam correction algorithm (validated against a session with a
+   known ODR offset)." §3.3's worked example (this document) is synthetic — arithmetically
+   verified but not evidence the algorithm recovers a *real* IMU's true ODR. Before L1 ships this
+   correction: validate §3.3 on a real `.idl0` session whose true ODR is measured independently
+   (GPS-anchored recording duration ÷ IMU sample count gives an independent true-rate estimate to
+   compare `effective_period_us` against). **Assigned: L1** — Isaac supplies the session.
