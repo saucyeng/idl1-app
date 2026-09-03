@@ -488,3 +488,54 @@ to state explicitly.
 **Cost if wrong:** Both trivial — (1) is a documentation note about an
 already-harmless message; (2) already fully resolved with independently
 verified zero data loss, this is a forward-looking process note only.
+
+---
+
+## 2026-09-03 — R12: L1 Task 6 blocker — three pre-existing gap-detection fixtures are too small for burst correction's median robustness
+
+**What happened.** L1 Task 6 (integrating burst-seam correction into gap
+reconciliation, C1 §3.3's "ruled" ordering) implemented Steps 1-3/5 cleanly
+(587 tests pass, including the new worked-example test and the
+`ImportWarning` threading Task 5's review flagged), but three *pre-existing*
+tests fail: `single_imu_drop_is_linearly_filled_and_recorded`,
+`two_imus_with_different_drops_align_a_shared_spike_to_the_same_slot`,
+`all_imu_channels_report_the_single_nominal_rate_despite_different_drops`.
+The implementer correctly stopped rather than guess — hand-verified this is
+not an implementation bug (the code matches C1 §3.3's formulas exactly) and
+not a spec bug either.
+
+**Root cause.** These fixtures are tiny — 2-3 bursts, 4-11 samples, with one
+genuine drop. C1 §3.3 justifies its median-not-mean effective-period
+estimate as robust to exactly this case ("a burst that straddles a genuine
+drop would skew a mean but not a median") — but that robustness requires
+enough *other* burst estimates for the skewed one to be an outlier the
+median ignores. With one or two total estimates, "median of one value" *is*
+the skewed value, so the single genuine drop gets statistically
+reinterpreted as an off-nominal true ODR and re-spaced away — a gap that
+should exist gets silently absorbed instead of detected. The algorithm is
+behaving exactly as C1 §3.3 specifies; the fixtures are too small to
+actually exercise the robustness guarantee the spec claims for them.
+
+**Ruling.** Extend all three fixtures with realistic surrounding burst
+context (enough consecutive normal bursts before/after the one genuine drop
+that the drop's skewed estimate is a clear, ignorable median outlier — as a
+concrete floor, at least ~8-10 total burst-to-burst estimates, so one
+skewed value can't be the median or adjacent to it) — **preserving each
+test's original name and intent** (the drop must still be detected as a gap
+and linearly filled; that is what `single_imu_drop_is_linearly_filled_and_
+recorded`'s own name asserts, and rewriting it to accept "drop silently
+absorbed, no gap" would make the test's name false). This is a fixture-data
+change, not an algorithm or spec change — Task 5/6's implementation is
+correct as landed and needs no rework.
+
+**Why not the alternative** (accept new expected values for the small
+fixtures as-is): that would make these three tests start asserting the
+*opposite* of what their names claim, silently narrowing coverage to
+exactly the small-session case burst correction is *least* accurate for,
+with no test left covering the actually-common real-session case the
+current fixtures were meant to represent.
+
+**Cost if wrong:** Low — if 8-10 estimates turns out not to be enough
+margin in practice, the fix is widening the fixtures further, not
+redesigning anything; the underlying algorithm and its tests-must-detect-
+the-drop intent are unaffected either way.
