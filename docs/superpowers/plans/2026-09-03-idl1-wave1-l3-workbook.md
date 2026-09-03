@@ -58,6 +58,10 @@ grammar this lane migrates from), `CLAUDE.md`.
   git worktree add -b wave1-l3-workbook "C:/Users/isaac/Documents/Saucy/saucyeng/idl1-app-worktrees/wave1-l3-workbook" main
   cd "C:/Users/isaac/Documents/Saucy/saucyeng/idl1-app-worktrees/wave1-l3-workbook"
   git submodule update --init -- rust
+  # ^ may print "fatal: remote error: upload-pack: not our ref …" — expected and harmless
+  # (origin/GitHub doesn't have this run's unpushed local commits); the next three lines
+  # redirect to the actual local worktree and complete the setup correctly regardless
+  # (ruling R11, runs/2026-09-03/decisions.md). Do not treat this message as a blocker.
   git -C rust remote add local-wave1 "C:/Users/isaac/Documents/Saucy/saucyeng/idl-rs-worktrees/wave1-l3-workbook"
   git -C rust fetch local-wave1 wave1-l3-workbook
   git -C rust checkout -B wave1-l3-workbook FETCH_HEAD

@@ -445,3 +445,46 @@ and fixed before Task 9 was ever implemented, so no code rework was needed.
 **Cost if wrong:** Trivial — caught pre-implementation; if `source_kind`
 turned out not to be the right filter either, it's the same one-line-per-
 call-site fix again, still before any code exists to rework.
+
+---
+
+## 2026-09-03 — R11: two execution-time process notes (both benign, tracked)
+
+**1. `git submodule update --init -- rust` can print a scary-but-harmless
+"remote error" during worktree setup.** L5's Task 1 implementer (and,
+per its own report, L1/L4 before it) saw `fatal: remote error:
+upload-pack: not our ref …` when running the R10-fixed submodule-init
+command — because the submodule's configured remote is GitHub (`origin`),
+which does not have the unpushed local commits the new worktree needs
+(everything in this run stays local until Isaac pushes). The command still
+leaves a usable partial clone, and the plan's own next steps
+(`remote add local-wave1` pointing at the actual local worktree, `fetch`,
+`checkout -B ... FETCH_HEAD`) correctly redirect to local objects and
+complete the setup correctly regardless. Confirmed end-to-end by L5's
+reviewer: the new worktree's submodule checkout matches the standalone
+`rust` worktree's tip exactly. **Not a bug** — expected output given local,
+unpushed branches; implementers should not stop or report it as a blocker.
+Noted in L2/L3's plans (not yet executed) so their implementers aren't
+alarmed by the same message.
+
+**2. A reviewer's "verify by reverting" left stale git state in a shared
+worktree.** L1's GPS-fix reviewer (`review-gps-fix.md`) verified its test
+by "reverting in a scratch copy" — but reviewers have `Bash`, not a
+separate isolated checkout by default, so this most likely ran directly in
+the shared `wave1-l1-store` worktree and didn't fully clean up (`git
+revert --abort`/`--quit`), leaving `REVERT_HEAD`/index metadata in a
+partially-resolved state. L1's next implementer (Task 5) found this on
+starting, verified `git diff HEAD` was empty (no content was ever at risk
+— the working tree already matched HEAD), and cleared it cleanly. No data
+was lost at any point. **Process fix, going forward:** a reviewer verifying
+"does the test fail without the fix" must do so in a disposable copy (e.g.
+`git worktree add` to a throwaway path, or `git stash`/`git diff | patch
+-R` against an in-memory buffer) — never a live `git revert`/`git reset
+--hard` in the worktree another task will resume from — and must always
+leave the worktree exactly as it found it. Not re-dispatching a fix for
+this now (already resolved); flagging for future review-dispatch prompts
+to state explicitly.
+
+**Cost if wrong:** Both trivial — (1) is a documentation note about an
+already-harmless message; (2) already fully resolved with independently
+verified zero data loss, this is a forward-looking process note only.
