@@ -612,3 +612,32 @@ collision surface).
 were a real collision to occur, the cost is bounded and recoverable (git
 history + the worktree's own uncommitted diff), but avoidable entirely by
 just not doing it, which is now the standing rule.
+
+---
+
+## 2026-09-03 — Tracked, non-blocking: second flaky Windows timing test
+
+`core/src/store/atomic.rs`'s
+`write_atomic_exhausts_rename_retries_and_surfaces_io_error_when_the_
+sharing_violation_outlasts_the_retry_window` (Task 7's work, reviewed CLEAN
+with explicit 10x-rerun flakiness testing at the time) fails intermittently
+under the crate's default *parallel* `cargo test` but passes standalone and
+under `--test-threads=1` — a real, pre-existing Windows file-lock timing
+race, not touched or introduced by Task 10's fix (which only edited
+`derived.rs`). Same class of issue as the watcher flake logged earlier
+this session: a test whose correctness depends on real OS-level timing
+becomes more collision-prone as more tests run concurrently and compete
+for CPU/IO scheduling.
+
+**Owner: whoever next touches `store/atomic.rs`** — likely fix is a unique
+temp-file path per test invocation (reducing cross-test file contention)
+or a longer safety margin in the retry-window timing, mirroring whatever
+fix the watcher flake eventually gets. Not blocking L1's current task
+chain; `cargo test -p idl-rs` at Task 10's own single-threaded check
+(626 passed, 0 failed, 1 ignored) is the authoritative green signal for
+that task's own gate.
+
+**Cost if wrong:** Low — same shape as the watcher flake: known,
+characterized, low-frequency, isolated to test infrastructure rather than
+the primitive's actual correctness (already independently verified
+correct in Task 7's own review).
