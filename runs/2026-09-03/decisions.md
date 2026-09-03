@@ -311,3 +311,61 @@ question 14 marked ruled.
 boundary, already written into L1's plan with a test that would fail loudly
 (wrong-shaped gates that produce visibly wrong lap crossings, not a silent
 corruption) if the scale were ever mismatched.
+
+---
+
+## 2026-09-03 — R9: execution-time fix — every lane needs its own real worktree, not the shared checkout
+
+**What happened.** Execution started: L1 Task 1 and L4 Task 1 dispatched in
+parallel. L1's plan had explicit `git worktree add` commands (its own
+Global Constraints, Steps 1-2) and correctly created an isolated worktree at
+`idl-rs-worktrees/wave1-l1-store`. L4's plan said "own worktree" in prose
+but never gave the actual command, and its "Working directory for every
+Rust step" line pointed straight at the **shared** `idl1-app/rust`
+checkout — so its implementer ran `git checkout -b wave1-l4-transport`
+directly there, committing Task 1 with the shared checkout left on that
+branch instead of `main`.
+
+**Why this matters.** The shared submodule checkout is meant to always sit
+on `main` so any lane can cleanly `git worktree add ... main` from it at
+any time. A lane that checks out its own branch there instead doesn't just
+risk a merge conflict — it makes the checkout unusable as a branch-off
+point for whichever lane runs next, and (worse) if two lanes ran this way
+concurrently, the second would silently switch the first's checkout out
+from under it mid-task.
+
+**Fix, immediate:** converted L4's Task 1 work into a real worktree at
+`idl-rs-worktrees/wave1-l4-transport` (`git checkout main` in the shared
+checkout to restore it, then `git worktree add` attaching the *existing*
+`wave1-l4-transport` branch to the new directory) — no commits lost, no
+code changed, purely a checkout-structure fix. Verified `git -C rust
+worktree list` afterward: shared checkout on `main`, `wave1-l1-store` and
+`wave1-l4-transport` each in their own directory.
+
+**Fix, systemic:** audited every wave-1 plan (`grep` for direct `cd`s into
+the shared `idl1-app`/`idl1-app/rust`/`idl1-app/app` paths, excluding
+legitimate `git worktree add` setup lines and read-only `git status`
+checks). Found the same gap in **L2, L3, L5, and L10** — all four pointed
+at least one working-directory line or commit step at a shared checkout
+instead of an isolated worktree; L10's was the most dangerous of the four,
+since its own text proposed *reusing* the shared `rust` checkout by
+switching its branch, exactly the mechanism that just caused L4's mistake,
+with only a defensive-but-fragile "if another lane's branch is checked out
+here, stop" check rather than real isolation. Every plan now has explicit
+`git worktree add` commands in its Global Constraints (rust submodule
+worktree, plus an idl1-app-repo worktree wired to it the same way M0 Task 3
+Step 6 and L1's own plan already did), and every task-level `cd`/working-
+directory reference was corrected to point at the lane's own worktree, not
+the shared checkout. L4's plan additionally had a real bug beyond the path
+issue — Task 8's commit step tried to `git add docs/IDL0_SPEC.md` from
+inside the `rust/` working directory, where that file doesn't exist at all
+(it lives in the idl1-app repo) — split into the two separate per-repo
+commits the plan's own text already said should exist but the literal bash
+block didn't do.
+
+**Cost if wrong:** Low — this is a mechanical correction to *where* each
+task runs, not to *what* any task does; no plan's actual file contents,
+commands, or acceptance criteria changed, only the working-directory paths
+around them. The real cost was already paid (one lane's Task 1 had to be
+manually repaired) — this ruling exists to make sure it doesn't recur
+across the other five lanes as they start.

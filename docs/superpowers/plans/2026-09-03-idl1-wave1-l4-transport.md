@@ -64,10 +64,35 @@ commands), open question 6 (this lane resolves `ble_scan`'s shape).
 
 ## Global Constraints
 
+**Corrected post-Task-1 (2026-09-03) — this plan's original text gave the shared submodule
+checkout as "the working directory for every step" while separately calling for "own worktree,"
+a direct contradiction. Task 1 as actually executed checked out `wave1-l4-transport` directly in
+the shared `C:\...\idl1-app\rust` checkout (no separate worktree directory), which the lead
+converted post-hoc into a real worktree at the path below without losing any commits — see
+`runs/2026-09-03/decisions.md`. Every task from here on uses the corrected path.**
+
 - Worktree: branch `wave1-l4-transport`, own worktree, independent of L1/L2/L3 — no shared
-  files, starts immediately.
-- Working directory for every Rust step: `C:\Users\isaac\Documents\Saucy\saucyeng\idl1-app\rust`
-  (the crate is `transport/`), unless a step says otherwise.
+  files, starts immediately. Setup (idempotent — skip if `git -C rust worktree list` already
+  shows this path, as it does after Task 1's post-hoc correction):
+  ```bash
+  cd "C:/Users/isaac/Documents/Saucy/saucyeng/idl1-app/rust"
+  git worktree add -b wave1-l4-transport "C:/Users/isaac/Documents/Saucy/saucyeng/idl-rs-worktrees/wave1-l4-transport" main
+  ```
+  A task that needs to touch the idl1-app top-level repo (CHANGELOG.md, TASKS.md, docs/IDL0_SPEC.md
+  §14a) also needs a matching top-level worktree, wired to this one exactly like C1's own M0
+  precedent (`idl1-app` Task 3 Step 6) and like L1's plan (Task 1 Steps 2):
+  ```bash
+  cd "C:/Users/isaac/Documents/Saucy/saucyeng/idl1-app"
+  git worktree add -b wave1-l4-transport "C:/Users/isaac/Documents/Saucy/saucyeng/idl1-app-worktrees/wave1-l4-transport" main
+  cd "C:/Users/isaac/Documents/Saucy/saucyeng/idl1-app-worktrees/wave1-l4-transport"
+  git -C rust remote add local-wave1 "C:/Users/isaac/Documents/Saucy/saucyeng/idl-rs-worktrees/wave1-l4-transport"
+  git -C rust fetch local-wave1 wave1-l4-transport
+  git -C rust checkout -B wave1-l4-transport FETCH_HEAD
+  ```
+- Working directory for every Rust step:
+  `C:\Users\isaac\Documents\Saucy\saucyeng\idl-rs-worktrees\wave1-l4-transport` (the crate is
+  `transport/`), unless a step says otherwise. **Never** the shared
+  `C:\Users\isaac\Documents\Saucy\saucyeng\idl1-app\rust` checkout — that stays on `main`.
 - **idl-rs is not rustfmt-formatted; never run `cargo fmt`.** Match the existing `error.rs`
   style by hand (4-space indent, doc comments on every public item, no trailing blank lines).
 - **No AI attribution trailers in commits. Never `git push`; Isaac pushes.**
@@ -1244,6 +1269,11 @@ Expected: every test `ok`, `0 failed`.
 
 - [ ] **Step 1: Write `docs/IDL0_SPEC.md` §14a**
 
+Working directory for this step only: `C:\Users\isaac\Documents\Saucy\saucyeng\idl1-app-worktrees\wave1-l4-transport`
+(`docs/IDL0_SPEC.md` lives in the idl1-app top-level repo, not the `rust` submodule — every
+other step in this task works in `idl-rs-worktrees\wave1-l4-transport` as usual). Do not commit
+yet — Task 9 Step 4 commits this alongside CHANGELOG/TASKS.
+
 ```markdown
 ### 14a. Transport Trait Architecture (idl1)
 
@@ -1311,18 +1341,17 @@ Expected: every `test result:` line `0 failed`; no `error` lines.
 - [ ] **Step 4: Commit**
 
 ```bash
-cd "C:/Users/isaac/Documents/Saucy/saucyeng/idl1-app/rust"
-git add transport docs/IDL0_SPEC.md
+cd "C:/Users/isaac/Documents/Saucy/saucyeng/idl-rs-worktrees/wave1-l4-transport"
+git add transport
 git commit -m "transport: BLE/WiFi device client for desktop (SPEC §6-8), traits for L9 mobile
 
 idl-transport gains BleTransport (btleplug) and WifiTransport (reqwest):
 status parsing, control commands + ACK protocol, config push/read-back
-framing, file listing and resumable download. SPEC gains §14a documenting
-the trait shapes and this lane's chunk/timeout defaults."
+framing, file listing and resumable download."
 ```
-(Note: `docs/IDL0_SPEC.md` lives in `idl1-app`, not the `rust` submodule — this step actually
-splits into two commits, one per repo; see Task 9 Step 3 for the idl1-app-side commit, which
-is where §14a actually lands. The commit above covers only `rust/transport`'s own files.)
+`docs/IDL0_SPEC.md` lives in `idl1-app`, not the `rust` submodule — its §14a addition is a
+separate commit in the `idl1-app-worktrees/wave1-l4-transport` worktree, done in Task 9 Step 3
+alongside CHANGELOG/TASKS. The commit above covers only `rust/transport`'s own files.
 
 ---
 
@@ -1334,7 +1363,7 @@ is where §14a actually lands. The commit above covers only `rust/transport`'s o
 
 - [ ] **Step 1: Automatable pre-check**
 
-Run: `cd "C:/Users/isaac/Documents/Saucy/saucyeng/idl1-app/rust" && cargo test -p idl-transport 2>&1 | grep -E "^test result"`
+Run: `cd "C:/Users/isaac/Documents/Saucy/saucyeng/idl-rs-worktrees/wave1-l4-transport" && cargo test -p idl-transport 2>&1 | grep -E "^test result"`
 Expected: every line `0 failed` (re-confirms Task 8 Step 3 after any Task 7/8 fixes).
 
 Run: `cargo build -p idl-transport --release 2>&1 | tail -5`
@@ -1402,7 +1431,7 @@ fail of each of the four numbered checks in `CHANGELOG.md` (Step 3).
 - [ ] **Step 4: Commit (idl1-app)**
 
 ```bash
-cd "C:/Users/isaac/Documents/Saucy/saucyeng/idl1-app"
+cd "C:/Users/isaac/Documents/Saucy/saucyeng/idl1-app-worktrees/wave1-l4-transport"
 git add docs/IDL0_SPEC.md CHANGELOG.md TASKS.md
 git commit -m "docs: L4 transport — SPEC §14a, CHANGELOG/TASKS, real-device verification"
 ```

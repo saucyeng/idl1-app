@@ -48,8 +48,27 @@ which already are the spec for this lane.
 
 ## Global Constraints
 
-- **Two repos, two working directories**, exactly like M0 Task 5: `C:\Users\isaac\Documents\Saucy\saucyeng\idl1-app\rust` (the `idl-rs` submodule, for every `rust/tauri` change) and `C:\Users\isaac\Documents\Saucy\saucyeng\idl1-app` (for every `app/` change). A task that touches both repos ends with **two separate commits**, one per repo, in that order (rust submodule first, then the app repo, matching M0 Task 5 Step 7) — never one commit spanning both.
-- **Branch:** `wave1-l5-tauri`, created in both repos (the submodule checkout and the app repo) before Task 1's first step. This is a planning document; no branch is created by writing this plan — the first *implementer* task creates it.
+- **Two repos, two worktrees**, exactly like M0 Task 5 but in **isolated worktrees, never the
+  shared checkouts** (L4's Task 1 checked out its branch directly in the shared `rust/` checkout
+  instead of a separate worktree, corrected post-hoc — see `runs/2026-09-03/decisions.md`; do not
+  repeat that here). Setup, before Task 1's first step:
+  ```bash
+  cd "C:/Users/isaac/Documents/Saucy/saucyeng/idl1-app/rust"
+  git worktree add -b wave1-l5-tauri "C:/Users/isaac/Documents/Saucy/saucyeng/idl-rs-worktrees/wave1-l5-tauri" main
+  cd "C:/Users/isaac/Documents/Saucy/saucyeng/idl1-app"
+  git worktree add -b wave1-l5-tauri "C:/Users/isaac/Documents/Saucy/saucyeng/idl1-app-worktrees/wave1-l5-tauri" main
+  cd "C:/Users/isaac/Documents/Saucy/saucyeng/idl1-app-worktrees/wave1-l5-tauri"
+  git -C rust remote add local-wave1 "C:/Users/isaac/Documents/Saucy/saucyeng/idl-rs-worktrees/wave1-l5-tauri"
+  git -C rust fetch local-wave1 wave1-l5-tauri
+  git -C rust checkout -B wave1-l5-tauri FETCH_HEAD
+  ```
+  Working directories for every task below: `C:\Users\isaac\Documents\Saucy\saucyeng\idl-rs-worktrees\wave1-l5-tauri`
+  (every `rust/tauri` change) and `C:\Users\isaac\Documents\Saucy\saucyeng\idl1-app-worktrees\wave1-l5-tauri`
+  (every `app/` change). A task that touches both repos ends with **two separate commits**, one
+  per repo, in that order (rust worktree first, then the app worktree, matching M0 Task 5 Step 7)
+  — never one commit spanning both.
+- **Branch:** `wave1-l5-tauri`, created in both worktrees by the setup above, before Task 1's
+  first step.
 - **idl-rs is not rustfmt-formatted.** Never run `cargo fmt` on anything under `rust/`. Match surrounding style by hand. This does **not** apply to `app/`'s TypeScript — Prettier/ESLint use there is the implementer's call; this plan does not mandate either (no formatter is configured in `app/package.json` today, and adding one is out of this plan's scope — an implementer may add Prettier with default config if it speeds review, but is not required to).
 - **No AI attribution trailers** in any commit. **Never `git push`** — Isaac pushes.
 - Every `#[tauri::command]` returns `Result<T, IpcError>` (or `Result<tauri::ipc::Response, IpcError>` for binary commands) per C3 §2 — never `Err(String)`, never a bare panic on bad *input* data. (Setup-time failures before any window exists are a narrower case — see Task 2's own note; not every panic in the whole crate is retroactively forbidden, only the command-boundary contract C3 fixes.)
@@ -215,7 +234,7 @@ Append under `[Unreleased] / ### Added` in `CHANGELOG.md` (app repo): `- **idl-r
 - [ ] **Step 5: Commit (rust submodule)**
 
 ```bash
-cd "C:/Users/isaac/Documents/Saucy/saucyeng/idl1-app/rust" && git add -A && git commit -m "tauri: IpcError/IpcErrorKind (C3 §2), transport conversion"
+cd "C:/Users/isaac/Documents/Saucy/saucyeng/idl-rs-worktrees/wave1-l5-tauri" && git add -A && git commit -m "tauri: IpcError/IpcErrorKind (C3 §2), transport conversion"
 ```
 
 ---
@@ -395,8 +414,8 @@ Expected: `Finished`.
 - [ ] **Step 6: Commit (both repos)**
 
 ```bash
-cd "C:/Users/isaac/Documents/Saucy/saucyeng/idl1-app/rust" && git add -A && git commit -m "tauri: resolve <data> from app_data_dir + settings.json override (C4 §1)"
-cd "C:/Users/isaac/Documents/Saucy/saucyeng/idl1-app" && git add -A && git commit -m "app: wire <data> resolution into Tauri setup, managed as DataDir state"
+cd "C:/Users/isaac/Documents/Saucy/saucyeng/idl-rs-worktrees/wave1-l5-tauri" && git add -A && git commit -m "tauri: resolve <data> from app_data_dir + settings.json override (C4 §1)"
+cd "C:/Users/isaac/Documents/Saucy/saucyeng/idl1-app-worktrees/wave1-l5-tauri" && git add -A && git commit -m "app: wire <data> resolution into Tauri setup, managed as DataDir state"
 ```
 
 ---
@@ -588,7 +607,7 @@ Expected: both new tests `ok`, `0 failed`.
 - [ ] **Step 4: Commit (rust submodule)**
 
 ```bash
-cd "C:/Users/isaac/Documents/Saucy/saucyeng/idl1-app/rust" && git add -A && git commit -m "tauri: workbook watcher with expected-hash self-write suppression (C4 §4)"
+cd "C:/Users/isaac/Documents/Saucy/saucyeng/idl-rs-worktrees/wave1-l5-tauri" && git add -A && git commit -m "tauri: workbook watcher with expected-hash self-write suppression (C4 §4)"
 ```
 
 ---
@@ -724,7 +743,7 @@ describe("decodeRaster", () => {
 });
 ```
 
-Run: `cd "C:/Users/isaac/Documents/Saucy/saucyeng/idl1-app/app" && npm test`
+Run: `cd "C:/Users/isaac/Documents/Saucy/saucyeng/idl1-app-worktrees/wave1-l5-tauri/app" && npm test`
 Expected: FAIL — `Cannot find module './tiles'` / `./rasters` (the old smoke-layout `tiles.ts` is about to be replaced).
 
 - [ ] **Step 2: Retire the M0 smoke module**
@@ -1355,10 +1374,10 @@ Expected: zero matches inside the new §11 (matches elsewhere in the document, i
 
 - [ ] **Step 3: Group A checkpoint — both repos green**
 
-Run: `cd "C:/Users/isaac/Documents/Saucy/saucyeng/idl1-app/rust" && cargo test -p idl-rs-tauri 2>&1 | grep -E "^test result"`
+Run: `cd "C:/Users/isaac/Documents/Saucy/saucyeng/idl-rs-worktrees/wave1-l5-tauri" && cargo test -p idl-rs-tauri 2>&1 | grep -E "^test result"`
 Expected: every line `0 failed`.
 
-Run: `cd "C:/Users/isaac/Documents/Saucy/saucyeng/idl1-app/app" && npm test && npx tsc --noEmit`
+Run: `cd "C:/Users/isaac/Documents/Saucy/saucyeng/idl1-app-worktrees/wave1-l5-tauri/app" && npm test && npx tsc --noEmit`
 Expected: all green, `tsc` clean. This is the point at which Group A is
 complete and Group B's gated tasks may start (per-task, as each gate
 becomes true — not all at once).
@@ -1459,8 +1478,8 @@ adjust either side.
 `- **Catalog commands (C3 §3.2) wired to L1's store.** list_sessions, get_session, list_laps, rebuild_catalog, list_workbooks, list_tracks, get_track.`
 
 ```bash
-cd "C:/Users/isaac/Documents/Saucy/saucyeng/idl1-app/rust" && git add -A && git commit -m "tauri: catalog commands (C3 §3.2) over L1's store"
-cd "C:/Users/isaac/Documents/Saucy/saucyeng/idl1-app" && git add -A && git commit -m "docs: changelog for catalog commands"
+cd "C:/Users/isaac/Documents/Saucy/saucyeng/idl-rs-worktrees/wave1-l5-tauri" && git add -A && git commit -m "tauri: catalog commands (C3 §3.2) over L1's store"
+cd "C:/Users/isaac/Documents/Saucy/saucyeng/idl1-app-worktrees/wave1-l5-tauri" && git add -A && git commit -m "docs: changelog for catalog commands"
 ```
 
 ---
@@ -1763,10 +1782,10 @@ do not quietly downgrade the proof).
 
 - [ ] **Step 7: Full test suite, both repos**
 
-Run: `cd "C:/Users/isaac/Documents/Saucy/saucyeng/idl1-app/rust" && cargo test --workspace 2>&1 | grep -E "^test result"`
+Run: `cd "C:/Users/isaac/Documents/Saucy/saucyeng/idl-rs-worktrees/wave1-l5-tauri" && cargo test --workspace 2>&1 | grep -E "^test result"`
 Expected: every line `0 failed`.
 
-Run: `cd "C:/Users/isaac/Documents/Saucy/saucyeng/idl1-app/app" && npm test && npx tsc --noEmit`
+Run: `cd "C:/Users/isaac/Documents/Saucy/saucyeng/idl1-app-worktrees/wave1-l5-tauri/app" && npm test && npx tsc --noEmit`
 Expected: all green, `tsc` clean.
 
 - [ ] **Step 8: TASKS.md and CHANGELOG — lane complete**
@@ -1785,8 +1804,8 @@ Append to `CHANGELOG.md` under `[Unreleased] / ### Added`:
 - [ ] **Step 9: Commit (both repos)**
 
 ```bash
-cd "C:/Users/isaac/Documents/Saucy/saucyeng/idl1-app/rust" && git add -A && git commit -m "tauri: fetch_tile (C3 §3.5) wired to L3; retire M0 smoke_tile"
-cd "C:/Users/isaac/Documents/Saucy/saucyeng/idl1-app" && git add -A && git commit -m "app: end-to-end tile render on NotebookPage; L5 wave-1 done"
+cd "C:/Users/isaac/Documents/Saucy/saucyeng/idl-rs-worktrees/wave1-l5-tauri" && git add -A && git commit -m "tauri: fetch_tile (C3 §3.5) wired to L3; retire M0 smoke_tile"
+cd "C:/Users/isaac/Documents/Saucy/saucyeng/idl1-app-worktrees/wave1-l5-tauri" && git add -A && git commit -m "app: end-to-end tile render on NotebookPage; L5 wave-1 done"
 ```
 
 ---

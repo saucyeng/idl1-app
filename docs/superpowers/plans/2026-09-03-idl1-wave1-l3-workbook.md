@@ -40,9 +40,31 @@ grammar this lane migrates from), `CLAUDE.md`.
 
 ## Global Constraints
 
-- **Branch:** `wave1-l3-workbook`, on the `rust` submodule repo (idl-rs).
-  Working directory for all Rust work: `C:\Users\isaac\Documents\Saucy\saucyeng\idl1-app\rust`.
-  Working directory for the SPEC task: `C:\Users\isaac\Documents\Saucy\saucyeng\idl1-app`.
+- **Branch:** `wave1-l3-workbook`, in its own worktree (never the shared
+  `C:\Users\isaac\Documents\Saucy\saucyeng\idl1-app\rust` checkout — see L4's Task 1 correction
+  in `runs/2026-09-03/decisions.md` for why). Setup, before any Rust-touching task:
+  ```bash
+  cd "C:/Users/isaac/Documents/Saucy/saucyeng/idl1-app/rust"
+  git worktree add -b wave1-l3-workbook "C:/Users/isaac/Documents/Saucy/saucyeng/idl-rs-worktrees/wave1-l3-workbook" main
+  ```
+  If executing as an L1↔L3 agent team sharing L1's worktree (below), skip this and use L1's
+  worktree/branch (`wave1-l1-store`) directly instead — do not create a second worktree in that
+  case; the two lanes' work lands in one combined branch. If running L3 standalone after L1 has
+  already merged to `main`, use the command above instead, branching from the post-merge `main`.
+  The SPEC task also needs the idl1-app top-level repo, wired the same way as L1's plan (Task 1
+  Steps 2):
+  ```bash
+  cd "C:/Users/isaac/Documents/Saucy/saucyeng/idl1-app"
+  git worktree add -b wave1-l3-workbook "C:/Users/isaac/Documents/Saucy/saucyeng/idl1-app-worktrees/wave1-l3-workbook" main
+  cd "C:/Users/isaac/Documents/Saucy/saucyeng/idl1-app-worktrees/wave1-l3-workbook"
+  git -C rust remote add local-wave1 "C:/Users/isaac/Documents/Saucy/saucyeng/idl-rs-worktrees/wave1-l3-workbook"
+  git -C rust fetch local-wave1 wave1-l3-workbook
+  git -C rust checkout -B wave1-l3-workbook FETCH_HEAD
+  ```
+  Working directory for all Rust work:
+  `C:\Users\isaac\Documents\Saucy\saucyeng\idl-rs-worktrees\wave1-l3-workbook` (or L1's worktree
+  path if team-sharing). Working directory for the SPEC task:
+  `C:\Users\isaac\Documents\Saucy\saucyeng\idl1-app-worktrees\wave1-l3-workbook`.
 - **Dependency gate (L1 → L3).** Task 5 (time model / `ChannelLookup`) needs
   L1's landed `Channel` type (C1 §2: `t_us: Vec<i64>`, `nominal_rate_hz: f64`,
   `source_kind: String`, on `rust/core/src/session/mod.rs`). **Intended
@@ -195,10 +217,10 @@ C2 §1–§2 is already signed).
 
 - [ ] **Step 5: Test and commit**
 
-  Run: `cd rust && cargo test -p idl-rs workbook::v3 2>&1 | grep -E "^test |^test result"`. Expected: every test `ok`, `0 failed`.
+  Run: `cd "C:/Users/isaac/Documents/Saucy/saucyeng/idl-rs-worktrees/wave1-l3-workbook" && cargo test -p idl-rs workbook::v3 2>&1 | grep -E "^test |^test result"`. Expected: every test `ok`, `0 failed`.
 
   ```bash
-  cd "C:/Users/isaac/Documents/Saucy/saucyeng/idl1-app/rust" && git add -A && git commit -m "workbook: v3 front matter, fence scanning, cell-id assignment (C2 §1-2)"
+  cd "C:/Users/isaac/Documents/Saucy/saucyeng/idl-rs-worktrees/wave1-l3-workbook" && git add -A && git commit -m "workbook: v3 front matter, fence scanning, cell-id assignment (C2 §1-2)"
   ```
 
 ---
