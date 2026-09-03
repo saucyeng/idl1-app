@@ -97,7 +97,7 @@ Path patterns, fixed:
 - **Blob:** `blobs/sha256/<first 2 hex of the digest>/<remaining 62 hex>` — the
   full 64-hex-char SHA-256 digest of the raw source file's bytes, split 2+62.
   No file extension; the source format is recorded in the session that
-  references the blob (`source_kind`, C1), never inferred from the blob path.
+  references the blob (`source_format`, C1), never inferred from the blob path.
 - **Session directory:** `sessions/<session_id>/`, `session_id` per §3.
   - `session.json` — always present once a session exists.
   - `data.parquet` — present once import has run; a session directory with
@@ -303,7 +303,7 @@ CREATE INDEX idx_tracks_venue ON tracks(venue_name);
 CREATE TABLE sessions (
   session_id        TEXT PRIMARY KEY,       -- lowercase hex, 16-64 chars; see §3
   blob_sha256       TEXT NOT NULL REFERENCES blobs(sha256) ON DELETE RESTRICT,
-  source_kind       TEXT NOT NULL CHECK (source_kind IN ('idl0','fit','gpx','csv')),
+  source_format     TEXT NOT NULL CHECK (source_format IN ('idl0','fit','gpx','csv')),
   device_id         TEXT,                   -- NULL for fit/gpx/csv (C1)
   config_checksum   TEXT,                   -- NULL for fit/gpx/csv (C1)
   importer_version  TEXT NOT NULL,
