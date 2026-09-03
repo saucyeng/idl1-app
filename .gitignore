@@ -12,3 +12,6 @@ Thumbs.db
 .idea/
 # Local agent state
 .superpowers/
+# Real session fixtures (data, not source — never committed; C1 §8 item 8 validation input)
+/d365a19ae7ef2dc2d087a5887371281f.idl0
+/d365a19ae7ef2dc2d087a5887371281f.idl0w
