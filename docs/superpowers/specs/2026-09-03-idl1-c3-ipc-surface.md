@@ -1,6 +1,6 @@
 # C3 — IPC surface
 
-**Status:** draft · **Date:** 2026-09-03 · **Owner:** lead
+**Status:** signed (lead) 2026-09-02 · **Date:** 2026-09-03 · **Owner:** lead
 
 Consumes: design doc §4 (IPC, data path for a chart, the reactive DAG), §6
 (interaction rules), §9 row C3, §10 (lanes); Task 5's M0 smoke commands
