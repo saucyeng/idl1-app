@@ -57,6 +57,7 @@ grammar this lane migrates from), `CLAUDE.md`.
   cd "C:/Users/isaac/Documents/Saucy/saucyeng/idl1-app"
   git worktree add -b wave1-l3-workbook "C:/Users/isaac/Documents/Saucy/saucyeng/idl1-app-worktrees/wave1-l3-workbook" main
   cd "C:/Users/isaac/Documents/Saucy/saucyeng/idl1-app-worktrees/wave1-l3-workbook"
+  git submodule update --init -- rust
   git -C rust remote add local-wave1 "C:/Users/isaac/Documents/Saucy/saucyeng/idl-rs-worktrees/wave1-l3-workbook"
   git -C rust fetch local-wave1 wave1-l3-workbook
   git -C rust checkout -B wave1-l3-workbook FETCH_HEAD

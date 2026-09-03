@@ -58,6 +58,7 @@ which already are the spec for this lane.
   cd "C:/Users/isaac/Documents/Saucy/saucyeng/idl1-app"
   git worktree add -b wave1-l5-tauri "C:/Users/isaac/Documents/Saucy/saucyeng/idl1-app-worktrees/wave1-l5-tauri" main
   cd "C:/Users/isaac/Documents/Saucy/saucyeng/idl1-app-worktrees/wave1-l5-tauri"
+  git submodule update --init -- rust
   git -C rust remote add local-wave1 "C:/Users/isaac/Documents/Saucy/saucyeng/idl-rs-worktrees/wave1-l5-tauri"
   git -C rust fetch local-wave1 wave1-l5-tauri
   git -C rust checkout -B wave1-l5-tauri FETCH_HEAD

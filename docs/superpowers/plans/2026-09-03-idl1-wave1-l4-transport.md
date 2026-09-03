@@ -85,6 +85,7 @@ converted post-hoc into a real worktree at the path below without losing any com
   cd "C:/Users/isaac/Documents/Saucy/saucyeng/idl1-app"
   git worktree add -b wave1-l4-transport "C:/Users/isaac/Documents/Saucy/saucyeng/idl1-app-worktrees/wave1-l4-transport" main
   cd "C:/Users/isaac/Documents/Saucy/saucyeng/idl1-app-worktrees/wave1-l4-transport"
+  git submodule update --init -- rust
   git -C rust remote add local-wave1 "C:/Users/isaac/Documents/Saucy/saucyeng/idl-rs-worktrees/wave1-l4-transport"
   git -C rust fetch local-wave1 wave1-l4-transport
   git -C rust checkout -B wave1-l4-transport FETCH_HEAD

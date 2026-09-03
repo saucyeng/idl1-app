@@ -369,3 +369,46 @@ commands, or acceptance criteria changed, only the working-directory paths
 around them. The real cost was already paid (one lane's Task 1 had to be
 manually repaired) — this ruling exists to make sure it doesn't recur
 across the other five lanes as they start.
+
+---
+
+## 2026-09-03 — R10: execution-time fix — `git worktree add` doesn't init submodules
+
+**What happened.** L1's Task 1 implementer hit a second, worse bug in the
+same worktree-setup step this one just reviewed as "correct" (R9): its
+Step 2 does `git worktree add` on the idl1-app superproject, then
+immediately runs `git -C rust remote add/fetch/checkout` against the new
+worktree's `rust/` path. `git worktree add` does **not** initialize
+submodules — the new worktree's `rust/` starts as an empty placeholder
+directory with no `.git`. Because a bare `rust/` directory with no `.git`
+still resolves via git's normal upward repo-discovery, every `git -C rust
+...` command silently ran against the **idl1-app superproject's own git
+directory** instead of failing loudly — resetting the shared
+`wave1-l1-store` branch ref, adding a stray `local-wave1` remote to the
+wrong repo, and checking idl-rs's tree into the app worktree.
+
+**Why it wasn't caught by R9's audit.** R9 checked *which directory* every
+task's commands ran in; this bug is about a missing prerequisite command
+*within* an already-correct worktree-setup sequence — a different class of
+mistake, invisible to a path-based grep. L1's implementer caught it only
+by noticing the actual `git -C rust` output didn't match what the
+placeholder directory should have produced, diagnosed the repo-discovery
+mechanism, and repaired it (`git reset --hard` the app worktree back to
+`main`, removed the stray remote, added `git submodule update --init --
+rust` before the remote/fetch/checkout sequence, re-ran clean) — with no
+data loss and the lead's own main checkouts confirmed untouched throughout
+(verified independently after the fact: `git status`/`git remote -v` on
+both `idl1-app` and `idl1-app/rust` clean, correct origin, no stray refs).
+
+**Fix.** Added `git submodule update --init -- rust` as the required first
+line after `cd` into the new idl1-app worktree, in L1's own Step 2 and in
+the equivalent worktree-setup block R9 had just added to L2, L3, L4, and
+L5 (all five copy the same sequence; all five needed the same one-line
+fix). L10 doesn't wire a submodule this way (its rust-side task is a
+standalone worktree with no cross-repo pointer to set) — not affected.
+
+**Cost if wrong:** Low — same class as R9: a missing prerequisite command,
+not a change to what any task produces. The actual damage this run (one
+branch ref reset, one stray remote) was real but fully diagnosed, fully
+reversible, and reversed before it reached anything the lead or any other
+lane depends on.

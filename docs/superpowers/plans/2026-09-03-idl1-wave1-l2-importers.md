@@ -45,6 +45,7 @@ Reasoning: importers are conceptually adjacent to "Session & File Model" (§15) 
   cd "C:/Users/isaac/Documents/Saucy/saucyeng/idl1-app"
   git worktree add -b wave1-l2-importers "C:/Users/isaac/Documents/Saucy/saucyeng/idl1-app-worktrees/wave1-l2-importers" main
   cd "C:/Users/isaac/Documents/Saucy/saucyeng/idl1-app-worktrees/wave1-l2-importers"
+  git submodule update --init -- rust
   git -C rust remote add local-wave1 "C:/Users/isaac/Documents/Saucy/saucyeng/idl-rs-worktrees/wave1-l2-importers"
   git -C rust fetch local-wave1 wave1-l2-importers
   git -C rust checkout -B wave1-l2-importers FETCH_HEAD
