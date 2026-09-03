@@ -24,6 +24,7 @@
 | 12 | State Management | Any Dart implementation |
 | 13 | Selection Model | Any Dart implementation |
 | 14 | Error Handling | Any Dart implementation |
+| 14a | Transport Trait Architecture (idl1) | Transport layer |
 | **PART 4 — APP DATA MODEL** | | |
 | 15 | Session & File Model | Data layer |
 | 16 | Track Entity | Track-related work |
@@ -1077,6 +1078,68 @@ IdlException
 | CalibrationException | Abort, keep previous | "Calibration failed — was bike stationary?" |
 
 Hard crashes in response to bad data are never acceptable. Debug log ring buffer (last 500 entries) accessible via Settings → tap version 5×.
+
+---
+
+### 14a. Transport Trait Architecture (idl1)
+
+Added by idl1 lane L4 (`rust/transport`, crate `idl-transport`). Fixes the app-side facts §6–8
+leave to the implementation: the Rust trait shapes every platform's device connection code
+implements, and the timeout/retry/chunking defaults this lane chose where §6–8 leave them to
+the client.
+
+**Traits.** `BleTransport` and `WifiTransport` (`rust/transport/src/ble_transport.rs`,
+`wifi_transport.rs`) — one method per §6.1/§7 operation the app needs. Desktop implements both
+with `btleplug`/`reqwest` in this crate; a Tauri mobile plugin (L9) implements the same two
+traits against the platform BLE stack and WiFi-network-binding proxy (§6.2). Because desktop
+and mobile are separate compiled targets, neither trait needs to be object-safe (`dyn`-callable)
+— each platform's Tauri app crate picks its concrete type at compile time.
+
+**Known platform limitation — the ACK byte is unreachable on Windows.** §7.2 defines a one-byte
+ACK code returned by every Control (FF03) write (`0x00` success; `0x03` mutex/precondition
+refusal; `0x80`/`0x81`/`0x82` reserved), decoded here by `ble_control::AckCode::from_byte`
+(pure, unit-tested). On Windows, `btleplug` 0.13.0's `winrtble` backend cannot surface that
+byte: `Peripheral::write` returns only `Result<()>`, and internally `write_value` calls WinRT's
+`WriteValueWithOptionAsync`, inspecting only the resulting `GattCommunicationStatus`
+(`Success`/`Unreachable`/`ProtocolError`/`AccessDenied`) — the device's actual application error
+code is never read off the WinRT `GattWriteResult` and so never reaches this crate (verified
+against `btleplug` 0.13.0's own pinned source, `winrtble/ble/characteristic.rs::write_value`).
+Consequently `BtleplugBle::send_command` (`rust/transport/src/ble_transport.rs`) can only
+observe `Ok(())` for `AckCode::Success`, or a `TransportErrorKind::Ble` carrying `btleplug`'s own
+coarse error text for every other case — including §7.2's mutex refusals. The specific ACK code
+(`0x03` vs `0x80` vs `0x81` vs `0x82`) is not recoverable from a real write on this platform.
+This is a genuine platform-API limitation confirmed against the pinned `btleplug` source, not a
+gap in this crate's own logic; `AckCode::from_byte` stays exported and unit-tested because a
+future `btleplug` version, a different backend, or L9's mobile plugins on iOS/Android may expose
+the real byte. Found and documented during Task 7 — `ble_transport.rs`'s `send_command` doc
+comment carries the same finding in-line, at the point of use.
+
+**Config is opaque to this layer.** Both traits' config methods take/return `&[u8]`/`Vec<u8>`
+never a parsed struct — §8's schema is validated by `idl-rs` core's `parse_config` before a
+byte reaches either trait (contract C3 §3.8). The one config-shaped check this layer owns is
+§7.2's push-verification byte comparison (read the pushed config back, compare bytes) — not
+JSON parsing.
+
+**BLE scan is a live channel, not a batch return** (resolves contract C3 §2 open question 6):
+`BleTransport::scan` returns a `tokio::sync::mpsc::Receiver<DiscoveredDevice>` fed as
+`btleplug` reports each discovery, for the duration of the timeout — matching `btleplug`'s own
+event-based scan API and C3's `ble_scan(timeout_ms, progress: Channel<DeviceDiscovered>)`
+shape, which the Tauri command layer (L5) fulfils by draining this channel into the IPC
+`Channel`.
+
+**Chunk size for config push (§7.2 "MTU-sized chunks").** Defaults to 20 bytes (the default
+BLE ATT MTU of 23 bytes minus 3 bytes of write-request overhead) when the negotiated MTU can't
+be read back from `btleplug` on the connecting platform; uses the negotiated MTU minus 3 when
+it can. See Open question 7 in the L4 plan for why this isn't uniform across platforms.
+
+**Download resume.** `WifiTransport::download`'s `resume_from_bytes` parameter is the caller's job to
+determine (typically: bytes already on disk for a partially-downloaded blob) — this trait
+issues the `Range` request and trusts the server's `206`/`Content-Range` echo, erroring
+(`TransportErrorKind::Wifi`) rather than silently resuming from the wrong offset if the two
+disagree.
+
+**Timeouts.** BLE scan: caller-supplied (`Duration` argument). BLE connect, GATT read/write,
+and WiFi requests: no default fixed by this lane — see Open question 10.
 
 ---
 
