@@ -57,7 +57,7 @@ readable before `<data>` is known. It is stored in the bootstrap file
 described above, at:
 
 ```
-<app_config_dir>/settings.json
+app_config_dir()/settings.json
 ```
 
 Read with plain `std::fs`, no crate beyond Tauri's bundled path resolver.
@@ -307,6 +307,7 @@ CREATE TABLE sessions (
   device_id         TEXT,                   -- NULL for fit/gpx/csv (C1)
   config_checksum   TEXT,                   -- NULL for fit/gpx/csv (C1)
   importer_version  TEXT NOT NULL,
+  seam_correction_version TEXT NOT NULL,  -- C1 §4.3
   engine_version    TEXT NOT NULL,
   timestamp_utc_ms  INTEGER NOT NULL,        -- recording start
   created_at_ms     INTEGER NOT NULL,        -- catalog row insert time (import time)
@@ -425,7 +426,7 @@ nested by session where the file lives under a session directory:
   "sessions": [
     {
       "session_id": "…",
-      "data_parquet":  { "sha256": "…", "size_bytes": 98765, "importer_version": "0.3.0", "engine_version": "0.7.2" },
+      "data_parquet":  { "sha256": "…", "size_bytes": 98765, "importer_version": "0.3.0", "seam_correction_version": "v1", "engine_version": "0.7.2" },
       "derived":       [ { "sha256": "…", "size_bytes": 4321 } ],
       "session_json":  { "sha256": "…", "size_bytes": 512, "updated_at_ms": 1756857600000 }
     }
@@ -441,11 +442,17 @@ conflict rule):
 | Class | Path | Identity key | Manifest fields | Conflict rule |
 |---|---|---|---|---|
 | Blob | `blobs/sha256/<2>/<62>` | `sha256` (= the path itself) | `sha256`, `size_bytes` | None possible — content-addressed and immutable; set difference by hash, missing ones are pulled. |
-| `data.parquet` | `sessions/<id>/data.parquet` | `session_id` (path is not content-addressed, unlike derived) | `sha256`, `size_bytes`, `importer_version`, `engine_version` | If `(importer_version, engine_version)` match on both sides but `sha256` differs, both are correct (last-ulp cross-CPU difference, design §5) — no transfer, keep local. If versions differ, the side with the newer version pair is authoritative; the other side pulls it (transferred as bytes, not regenerated locally). |
+| `data.parquet` | `sessions/<id>/data.parquet` | `session_id` (path is not content-addressed, unlike derived) | `sha256`, `size_bytes`, `importer_version`, `seam_correction_version`, `engine_version` | If `(importer_version, seam_correction_version)` match on both sides but `sha256` differs, both are correct (last-ulp cross-CPU difference, design §5) — no transfer, keep local. If that version pair differs, the side with the newer pair is authoritative; the other side pulls it (transferred as bytes, not regenerated locally). `engine_version` is informational only (provenance, C1 §4.3) — not part of the conflict key. |
 | Derived channel | `sessions/<id>/derived/<64hex>.parquet` | `sha256` (= filename) | `sha256`, `size_bytes` | None possible — content-addressed; set difference by hash per session. Never overwritten (name is content). |
 | `session.json` | `sessions/<id>/session.json` | `session_id` | `sha256`, `size_bytes`, `updated_at_ms` | **Last-write-wins by `updated_at_ms`**, extending the existing Track precedent (SPEC §16.5). Flagged in §8 — D6 only mandates cell-granular merge for workbooks; this extension needs lead confirmation. |
 | Workbook | `workbooks/<name>.idl1wb` | `workbook_id` (front matter, C2 — **not** `file_name`; a rename is not a new workbook) | `workbook_id`, `file_name`, `sha256`, `size_bytes`, `updated_at_ms` | Per-cell merge against the last-synced base (design §7, D6) — computed after both full files are fetched, not from the manifest alone. A `file_name` mismatch for a known `workbook_id` is a rename to reconcile locally, id wins. |
 | Track | `tracks/<id>.idl0t` | `track_id` | `track_id`, `sha256`, `size_bytes`, `updated_at_ms` | **Last-write-wins by `updated_at_ms`** (SPEC §16.5, unchanged). |
+
+`data.parquet` is path-identified by `session_id` (not content-addressed) and
+regenerated as a pure function of `(blob, importer_version,
+seam_correction_version)` (C1 §4.3, design D6) — the concrete form of D6 for
+this file class, so sync compares that version pair rather than a content
+hash.
 
 **Transfer.** `GET /blob/<hash>` with range requests (resumable), per
 design §7. The same pattern generalises to the other classes —
@@ -501,9 +508,9 @@ is never scanned, checked, or reported on by `verify`:
 3. **warning** — a session's `blob_sha256` has no file under `blobs/`
    (missing blob, above).
 4. **error** — a `sessions/<id>/data.parquet`'s file-level metadata
-   (`session_id`, `blob_sha256`, `importer_version`, `engine_version` — C1
-   keys) disagrees with the directory/`session.json` identity (mis-copied
-   or corrupted file, e.g. an interrupted sync).
+   (`session_id`, `blob_sha256`, `importer_version`, `seam_correction_version`,
+   `engine_version` — C1 keys) disagrees with the directory/`session.json`
+   identity (mis-copied or corrupted file, e.g. an interrupted sync).
 5. **error** — a `derived/<hash>.parquet` filename does not equal the
    SHA-256 of its own bytes (content-addressing violated — partial write
    or bit rot; distinct from #1 only in which directory).

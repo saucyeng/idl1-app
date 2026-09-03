@@ -14,22 +14,31 @@ Read `docs/IDL0_SPEC.md`. It is the source of truth for all architecture decisio
 ## Code Standards
 
 ### Test-Driven Development
-Write the test file before the implementation. Tests must pass before a PR is mergeable. Coverage targets:
-- `lib/processing/`: > 90% line coverage
-- `lib/data/`: > 80% line coverage
+Write the test file before the implementation. Tests must pass before a PR is mergeable.
+Run `cargo test --workspace` in `rust/` for Rust changes and `npm test` in `app/` for
+TypeScript changes. Coverage targets: Rust > 90% (`cargo tarpaulin`); pure TS modules
+> 80%; UI rendering is not unit-tested.
 
 ### Documentation
 Every public class, method, and field requires a `///` doc comment. Comments must state units explicitly — never leave a numeric value's units ambiguous between raw LSB, g, m/s², etc.
 
 ### Layer Separation
 ```
-lib/processing/   Pure Dart. Zero Flutter imports. No I/O.
-lib/data/         Parsing, models, SQLite. No DSP.
-lib/transport/    BLE, WiFi. No processing.
-lib/ui/           Widgets, Riverpod providers. No direct math.
+rust/core/       idl-rs        PURE. Signal processing, parsing, importers, store
+                                (Parquet/CAS/catalog), workbook evaluation. No Tauri,
+                                no async runtime, no network. std::fs only.
+rust/transport/  idl-transport I/O: BLE, WiFi transfer, config push, LAN sync.
+                                Never depends on Tauri. Never does DSP.
+rust/tauri/      idl-rs-tauri  #[tauri::command] glue over core + transport. The only
+                                crate the frontend sees. Thin.
+rust/cli/        idl-rs-cli    The idl-rs binary. Depends on core (and transport when needed).
+app/src-tauri/                 Tauri app crate: builder, plugin registration, mobile plugins.
+app/src/                       TypeScript UI. Talks only to idl-rs-tauri commands.
 ```
 
-Processing layer functions must be importable as plain Dart and testable without a device or emulator.
+**Rust = numbers, JS = pictures.** No number the sync model depends on is
+computed in JavaScript; no chart is drawn in Rust. `core` functions must be
+testable without Tauri or a device.
 
 ### State Management
 Riverpod only. No Provider, no Bloc, no raw setState except for local widget state.
@@ -50,7 +59,7 @@ Never use bare `// TODO`.
 
 ## Pull Request Checklist
 
-- [ ] `flutter test` passes with zero failures
+- [ ] `cargo test --workspace` (in `rust/`) and `npm test` (in `app/`) pass with zero failures
 - [ ] Coverage targets met for affected layers
 - [ ] All public symbols have `///` doc comments with units
 - [ ] Complex algorithms have mathematical basis comments

@@ -151,9 +151,9 @@ is applied uniformly, not case-by-case:
 | `config_unsupported_version` | `ConfigErrorKind::UnsupportedVersion` | Device: `push_config` |
 | `export_unknown_channel` | `ExportError::UnknownChannel` | none in C3 v1 — see open question 6.1 |
 | `export_no_gps_data` | `FitExportError::NoGpsData` | none in C3 v1 — see open question 6.1 |
-| `not_found` | cross-cutting | Catalog: `get_session`; Workbook: `open_workbook`, `eval_workbook`, `save_workbook`, `watch_workbook`; Tiles: `fetch_tile`; Rasters: `fetch_raster`; Cursor: `cursor_readout`; Device: `download_file`; Sync: `sync_now`, `pair_peer`; Import: `import_file` (source path missing) |
+| `not_found` | cross-cutting | Catalog: `get_session`, `list_laps`; Workbook: `open_workbook`, `eval_workbook`, `save_workbook`, `watch_workbook`; Tiles: `fetch_tile`; Rasters: `fetch_raster`; Cursor: `cursor_readout`; Device: `download_file`; Sync: `sync_now`, `pair_peer`; Import: `import_file` (source path missing) |
 | `invalid_argument` | cross-cutting | Import: `import_file` (unknown `importer_id`); Workbook: `save_workbook` (malformed markdown/front matter); Tiles: `fetch_tile` (`tier` outside the engine's configured tier set); Rasters: `fetch_raster` (bad `width`/`height`/`kind`); Cursor: `cursor_readout` (unknown channel in the list); Sync: `pair_peer` (malformed code) |
-| `io` | cross-cutting (also folds `ParseError::Io`, `ConfigErrorKind::Io`, `ExportError::Io`, `FitExportError::Io`) | any command that touches the filesystem: Catalog (all five), Import: `import_file`, Workbook (`open_workbook`, `save_workbook`, `watch_workbook`), Tiles: `fetch_tile`, Rasters: `fetch_raster`, Device: `download_file`, Sync: `sync_status` |
+| `io` | cross-cutting (also folds `ParseError::Io`, `ConfigErrorKind::Io`, `ExportError::Io`, `FitExportError::Io`) | any command that touches the filesystem: Catalog (all seven — `list_sessions`, `get_session`, `list_laps`, `rebuild_catalog`, `list_workbooks`, `list_tracks`, `get_track`), Import: `import_file`, Workbook (`open_workbook`, `save_workbook`, `watch_workbook`), Tiles: `fetch_tile`, Rasters: `fetch_raster`, Device: `download_file`, Sync: `sync_status` |
 | `internal` | cross-cutting (also folds `ExportError::Json`) | any command — unexpected/programmer-error conditions that are not the caller's fault |
 
 `VideoErrorKind` (`rust/core/src/video/mod.rs`) is **excluded** from this
@@ -193,6 +193,7 @@ interface SessionSummary {
   device_id: string | null;        // null for FIT/GPX/CSV sources (no device) — C1 §2
   config_checksum: string | null;  // null for FIT/GPX/CSV sources — C1 §2
   importer_version: string;        // SemVer 2.0.0, e.g. "0.1.0" (C1 §4.3)
+  seam_correction_version: string; // e.g. "v1", §3.3's algorithm version (C1 §4.3)
   engine_version: string;          // SemVer 2.0.0, `idl-rs` core `CARGO_PKG_VERSION` (C1 §4.3)
   timestamp_utc_ms: number;        // i64, session start, Unix epoch milliseconds; 0 = unknown (C1 §3.1)
   created_at_ms: number;           // i64, catalog row insert time (import time)

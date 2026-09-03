@@ -1,6 +1,7 @@
 //! Tauri app crate. Thin by design: registers the engine's commands and, in
 //! later lanes, the mobile plugins. Nothing else lives here.
 
+/// Builds the Tauri app with the engine's commands and runs it.
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()

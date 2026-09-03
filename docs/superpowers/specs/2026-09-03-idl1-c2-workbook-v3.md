@@ -221,8 +221,9 @@ gives the exact migration rule for idl0 names that don't already qualify
 
 **Display-name annotation.** A `def_line`'s `trailing_comment` is an
 ordinary `#` comment *except* one specific form: `# label: <text>` (the
-literal word `label` immediately after `#`, a colon, then free text to end
-of line) is recognised as the definition's **display name** — the string
+literal word `label` following `#` and optional whitespace, a colon, then
+free text to end of line) is recognised as the definition's **display
+name** — the string
 the UI shows in the channel list, chart legends, and any Properties-form
 control that names this definition, distinct from the JS-identifier-
 constrained `name` on the left of `=`. This is how a migrated idl0 name
@@ -814,7 +815,7 @@ definition by its identifier, not its display name.
 
 | v2 name | Step 2 (runs → `_`) | Step 3 (trim) | Step 4 (digit prefix) | Result | `# label:` comment |
 |---|---|---|---|---|---|
-| `Roll (deg)` | `roll_ deg_` (lowercased: `roll (deg)` → non-alnum runs ` (`, `)` each collapse to one `_`) | `roll_deg` | n/a (doesn't start with a digit) | `roll_deg` | `# label: Roll (deg)` |
+| `Roll (deg)` | `roll_deg_` (lowercased: `roll (deg)` → non-alnum runs ` (`, `)` each collapse to one `_`) | `roll_deg` | n/a (doesn't start with a digit) | `roll_deg` | `# label: Roll (deg)` |
 | `Fork travel [mm]` | `fork_travel_mm_` (lowercased: `fork travel [mm]` → runs ` `, ` [`, `]` each collapse to one `_`) | `fork_travel_mm` | n/a | `fork_travel_mm` | `# label: Fork travel [mm]` |
 
 Rendered as migrated `def_line`s:
