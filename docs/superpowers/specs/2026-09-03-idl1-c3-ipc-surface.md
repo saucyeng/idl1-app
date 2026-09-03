@@ -203,7 +203,8 @@ interface SessionSummary {
   event_session: string;
   short_comment: string;
   tag: string;
-  lap_count: number | null;        // u32 | null — null until laps are indexed for this session
+  lap_count: number | null;        // u32 | null — null until laps are indexed for this session;
+                                    // counts the same rows `list_laps` returns (round 2)
   duration_ms: number | null;      // i64 milliseconds | null — RENAMED from `duration_s` (was f64
                                     // seconds); the catalog column is nullable integer milliseconds
 }
@@ -242,19 +243,40 @@ interface SessionDetail {
                                                               // recording time (C1 §6)
 
   // --- session.json (C1 §6) — laps, track visits, lap flags ---
-  laps: LapSummary[];
+  laps: LapDetail[];                     // session.json's own laps[] — see `LapDetail` below;
+                                          // NOT `LapSummary` (that is the catalog's cached shape,
+                                          // returned only by `list_laps` — round 2 correction)
   track_visits: TrackVisitSummary[];
   reference_lap_number: number | null;   // null/omitted = "use fastest lap" (C1 §6)
   ignored_lap_numbers: number[];         // sorted ascending (C1 §6)
   main_lap_number: number | null;
   overlay_lap_key: { session_id: string; lap_number: number } | null;
   starred_lap_number: number | null;
+  track_visits_library_hash: string | null;   // opaque, do not parse (C1 §6) — NEW (round 2)
+}
+/** Mirrors C1 §6 `session.json`'s `laps[]` object field for field — the
+ *  file-native lap shape, distinct from `LapSummary`'s catalog shape. */
+interface LapDetail {
+  lap_number: number;              // int, 1-based (C1 §6 laps[].lap_number)
+  start_timestamp_ms: number;      // i64, UTC ms
+  end_timestamp_ms: number;        // i64, UTC ms
+  raw_elapsed_ms: number;          // i64, ms — end_timestamp_ms - start_timestamp_ms
+  lap_time_ms: number;             // i64, ms — raw_elapsed_ms minus neutral-zone time
+  start_time_secs: number;         // f64, seconds, recording-time (t=0-anchored)
+  end_time_secs: number;           // f64, seconds
+  sectors: unknown[];               // present when sector_gates is non-empty; C1 §6 does not fix
+                                     // the element shape beyond "array" — see open question 11
+  neutral_zone_visits: unknown[];   // C1 §6 does not fix the element shape beyond "array" —
+                                     // see open question 11
 }
 interface TrackVisitSummary {
   visit_id: string;                // UUID (C1 §6 track_visits[].visit_id)
   track_id: string;                // UUID
   start_timestamp_ms: number;      // i64, UTC ms
   end_timestamp_ms: number;        // i64, UTC ms, always >= start_timestamp_ms
+  laps: LapDetail[];                // C1 §6 track_visits[].laps, "same shape as top-level laps,
+                                     // omitted when empty" — NEW (round 2); `[]` when C1's
+                                     // session.json omits the key
 }
 interface ChannelSummary {
   channel_id: string;
@@ -266,6 +288,16 @@ interface ChannelSummary {
   channel_kind: "fixed-rate" | "event";   // C1 §4.2; "event" iff nominal_rate_hz == 0.0 — NEW
   sample_count: number;            // u64
 }
+```
+Errors: `not_found`, `io`, `internal`.
+
+**`list_laps(session_id: string)`** — NEW (round 2). Catalog-backed (lane
+L1): mirrors C4 §5's `laps` + `lap_summary` tables, column for column, per
+`SessionDetail.laps`/`LapDetail` above being sourced from `session.json`
+instead. `SessionSummary.lap_count` counts the same rows this command
+returns.
+Return: `LapSummary[]`
+```ts
 interface LapSummary {
   lap_number: number;              // i32, 1-based — RENAMED from `lap_index` (was u32, 0-based);
                                     // matches C1 §6 session.json laps[].lap_number and C4 §5 laps.lap_number
@@ -664,7 +696,8 @@ event): `fetch_tile`, `fetch_raster`, `cursor_readout`, `eval_workbook`.
 
 **Fine to call any time, not gesture-bound** (cheap, or explicit user
 action rather than a continuous gesture): `engine_version`, `list_sessions`,
-`get_session`, `rebuild_catalog`, `list_workbooks`, `list_tracks`,
+`get_session`, `list_laps` (settle-bound alongside `get_session`, never a
+hot path — round 2), `rebuild_catalog`, `list_workbooks`, `list_tracks`,
 `get_track` (explicit track-detail open, settle-bound like `get_session`;
 never on a hot path), `list_importers`, `import_file` (explicit user action on the Data tab —
 picking a file to import is never a chart gesture), `open_workbook`,
@@ -747,10 +780,28 @@ engine.
    `SessionDetail` no longer `extends SessionSummary` — it now reads C1's
    `Session` plus `session.json` directly, decoupled from the catalog's
    cached, possibly-stale copy of the same values. **Controller ruling
-   (2026-09-02): the reconciliation was not purely additive (6 renames, 4
-   field drops), and no §5 deprecation window applies — this is C3's first
-   signed version, no command had been implemented against the prior draft
-   field lists, so there is nothing for a deprecation window to protect.**
+   (2026-09-02): the reconciliation was not purely additive (6 renames, 2
+   fields dropped outright with no C1/C4 source at all — `SessionSummary
+   .channel_count`, `TrackSummary.length_m` — plus `LapSummary`'s
+   `start_t_us`/`end_t_us`/`distance_m` consolidated into one new
+   `channel_stats` field), and no §5 deprecation window applies — this is
+   C3's first signed version, no command had been implemented against the
+   prior draft field lists, so there is nothing for a deprecation window to
+   protect.** **Round 2 (2026-09-02, controller ruling R27):** a scoped
+   re-review found `get_session`'s `SessionDetail.laps` was still wrongly
+   typed `LapSummary[]` (the catalog shape, sourced from `lap_summary` —
+   `get_session` reads files, not the catalog) instead of C1 §6's own
+   file-native `laps[]` shape; `TrackVisitSummary.laps` (C1 §6) had been
+   silently dropped with no open question; and `session.json`'s top-level
+   `track_visits_library_hash` (C1 §6) was omitted, undocumented. Fixed:
+   `LapDetail` now mirrors C1 §6's `laps[]` object field for field and is
+   what `SessionDetail.laps`/`TrackVisitSummary.laps` actually return;
+   `LapSummary` (the catalog shape) is unchanged but is now returned only
+   by the new `list_laps(session_id) -> LapSummary[]` command, not by
+   `get_session`; `track_visits_library_hash: string | null` was added to
+   `SessionDetail`. None of round 2's three fixes are new drops — they
+   restore/correct fields round 1 mis-typed or missed; the drop count above
+   (2 outright, 1 consolidation) is unchanged by round 2.
 4. **`fetch_raster`'s `params` bag is generic (`Record<string, number>`)
    because the raster kinds' actual parameters aren't fixed anywhere yet**
    (design §4 says only "core computes STFT or 2-D histogram"). A
@@ -806,3 +857,13 @@ engine.
     `unknown`/`unknown[]` here rather than guessed. Assigned: L1 — pin the
     real shape when `track_artifact` lands and revise §3.2 in the same
     change.
+11. **`LapDetail.sectors`/`.neutral_zone_visits` (§3.2, round 2) element
+    shape is unfixed.** C1 §6 types both only as `"array"` — "present when
+    sector_gates non-empty" for `sectors`, no further shape given for
+    either. IDL0_SPEC §15.2's illustrative session tree names
+    `sectors[] → sector_name, sector_time_ms` and §16.2b defines
+    `NeutralZoneVisit { neutralZoneName, enterMs, exitMs }` for the legacy
+    Dart model, which plausibly carries forward, but C1 itself does not
+    commit to this, so `LapDetail` types both `unknown[]` rather than
+    guessing. Assigned: lead/C1 — pin the element shape in C1 §6 (or here,
+    if C1 declines to) before `list_laps`/`get_session` ship.
