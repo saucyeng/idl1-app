@@ -185,10 +185,11 @@ source them from and are dropped here — see §6 item 3's resolution note.
 interface SessionSummary {
   session_id: string;
   blob_sha256: string;             // hex-encoded, lowercase, 64 chars (C4 §5 sessions.blob_sha256)
-  source_kind: "idl0" | "fit" | "gpx" | "csv";   // catalog column name — C1's in-memory `Session`
-                                                   // struct calls the same value `source_format`
-                                                   // (see `SessionDetail` below); the two contracts
-                                                   // name it differently for the same enum
+  source_format: "idl0" | "fit" | "gpx" | "csv";   // file-level: which importer produced this
+                                                     // session — C1 §2 `Session.source_format`,
+                                                     // C4 §5 sessions.source_format (post-sign
+                                                     // rename from `source_kind`, which C1 reserves
+                                                     // for the channel-level field — see `ChannelSummary`)
   device_id: string | null;        // null for FIT/GPX/CSV sources (no device) — C1 §2
   config_checksum: string | null;  // null for FIT/GPX/CSV sources — C1 §2
   importer_version: string;        // SemVer 2.0.0, e.g. "0.1.0" (C1 §4.3)
@@ -222,7 +223,8 @@ interface SessionDetail {
   device_id: string | null;        // null for FIT/GPX/CSV sources — C1 §2
   timestamp_utc_ms: number;        // i64, session start, Unix epoch ms; 0 = unknown — C1 §3.1
   config_checksum: string | null;  // null for FIT/GPX/CSV sources — C1 §2
-  source_format: "idl0" | "fit" | "gpx" | "csv";   // C1 `SourceFormat`, lowercase — C1 §2/§4.3
+  source_format: "idl0" | "fit" | "gpx" | "csv";   // C1 `SourceFormat`, lowercase — C1 §2/§4.3;
+                                                     // file-level, same field as `SessionSummary.source_format`
   blob_sha256: string;             // hex-encoded, lowercase, 64 chars — C1 §2
   channels: ChannelSummary[];
 
@@ -258,7 +260,9 @@ interface ChannelSummary {
   channel_id: string;
   nominal_rate_hz: number;         // f64, metadata only — never used to synthesize time (C1 §3.5)
   unit: string;                    // C1 §4.1's per-channel unit
-  source_kind: string;             // C1 §4.2 token, e.g. "imu0", "gps", "fit", "gpx" — NEW
+  source_kind: string;             // channel-level: which sensor this channel came from — C1 §4.2
+                                    // token, e.g. "imu0", "gps", "fit", "gpx" — NEW. Distinct from
+                                    // the file-level `source_format` (`SessionSummary`/`SessionDetail`)
   channel_kind: "fixed-rate" | "event";   // C1 §4.2; "event" iff nominal_rate_hz == 0.0 — NEW
   sample_count: number;            // u64
 }
@@ -313,11 +317,13 @@ Errors: `io`, `internal`.
 
 **`list_tracks()`**
 Args: none.
-Return: `TrackSummary[]` — mirrors the catalog `tracks` table (C4 §5)
-column for column. `length_m` (the previous draft's only field beyond
-`track_id`/`name`) is **dropped**: no Track field (C1 IDL0_SPEC §16.2) or
-catalog column stores a track length, so it had no source to reconcile
-against — see §6 item 3's resolution note.
+Return: `TrackSummary[]` — the catalog `tracks` table's (C4 §5) scalar
+columns only, excluding `full_json` (§6 item 7: a list command does not
+ship the full per-track artifact on every row; `get_track` below returns
+it). `length_m` (the previous draft's only field beyond `track_id`/`name`)
+is **dropped**: no Track field (IDL0_SPEC §16.2) or catalog column stores a
+track length, so it had no source to reconcile against — see §6 item 3's
+resolution note.
 ```ts
 interface TrackSummary {
   track_id: string;
@@ -325,13 +331,30 @@ interface TrackSummary {
   venue_name: string;    // NEW (C4 §5 tracks.venue_name)
   created_at_ms: number; // i64 — NEW
   updated_at_ms: number; // i64 — NEW
-  full_json: string;     // NEW — verbatim Track JSON (C4 §5 tracks.full_json, IDL0_SPEC §16.3);
-                          // shipping the full per-track JSON on every row of a list command is a
-                          // real weight concern for a large track library — flagged, not resolved,
-                          // by this reconciliation; see §6 item 7
 }
 ```
 Errors: `io`, `internal`.
+
+**`get_track(track_id: string)`**
+Return: `TrackDetail` — the full `.idl0t` artifact content, the engine's
+`track_artifact::model::Track` (`idl-rs` core) serialised. Never on a hot
+path (§4) — called on explicit track-detail open, settle-bound like
+`get_session`.
+```ts
+interface TrackDetail {
+  track_id: string;
+  name: string;
+  venue_name: string;
+  created_at_ms: number;        // i64
+  updated_at_ms: number;        // i64
+  lap_timing: unknown | null;   // sealed union (`Circuit` | `PointToPoint`, IDL0_SPEC §16.2a) —
+                                 // exact serde tagging not yet fixed by any contract; see open question 10
+  neutral_zones: unknown[];     // `NeutralZone[]`, IDL0_SPEC §16.2b — field shape not yet fixed; see open question 10
+  sector_gates: unknown[];      // `SectorGate[]` — field shape not yet fixed; see open question 10
+  reference_polyline: unknown[]; // `GpsFix[]` — field shape not yet fixed; see open question 10
+}
+```
+Errors: `not_found`, `io`, `internal`.
 
 ### 3.3 Import (L2)
 
@@ -642,7 +665,8 @@ event): `fetch_tile`, `fetch_raster`, `cursor_readout`, `eval_workbook`.
 **Fine to call any time, not gesture-bound** (cheap, or explicit user
 action rather than a continuous gesture): `engine_version`, `list_sessions`,
 `get_session`, `rebuild_catalog`, `list_workbooks`, `list_tracks`,
-`list_importers`, `import_file` (explicit user action on the Data tab —
+`get_track` (explicit track-detail open, settle-bound like `get_session`;
+never on a hot path), `list_importers`, `import_file` (explicit user action on the Data tab —
 picking a file to import is never a chart gesture), `open_workbook`,
 `save_workbook` (explicit save action), `watch_workbook` (one-time
 subscribe), `ble_scan`/`ble_connect`/`list_device_files`/`download_file`/
@@ -722,14 +746,11 @@ engine.
    drops `length_m` (no Track field or catalog column stores one).
    `SessionDetail` no longer `extends SessionSummary` — it now reads C1's
    `Session` plus `session.json` directly, decoupled from the catalog's
-   cached, possibly-stale copy of the same values. Per this item's own
-   stated rule ("if a field's type turns out wrong here it [needs] a full
-   C3 revision cycle"), these renames arguably warrant one; no commands
-   have shipped or been implemented against the prior draft field lists,
-   so this reconciliation edits them in place rather than opening a
-   deprecation window per §5 — **flagged for lead confirmation that
-   editing in place (vs. a formal §5 revision line) is the right call for
-   a pre-implementation draft.**
+   cached, possibly-stale copy of the same values. **Controller ruling
+   (2026-09-02): the reconciliation was not purely additive (6 renames, 4
+   field drops), and no §5 deprecation window applies — this is C3's first
+   signed version, no command had been implemented against the prior draft
+   field lists, so there is nothing for a deprecation window to protect.**
 4. **`fetch_raster`'s `params` bag is generic (`Record<string, number>`)
    because the raster kinds' actual parameters aren't fixed anywhere yet**
    (design §4 says only "core computes STFT or 2-D histogram"). A
@@ -747,19 +768,25 @@ engine.
    settled by the design doc. Assigned: L4 — the transport crate's actual
    `btleplug` usage will make the natural shape obvious; revise §3.8 to
    match once L4 has working code, rather than guessing here.
-7. **`TrackSummary.full_json` (§3.2), added by item 3's reconciliation,
-   ships the complete per-track JSON (reference polyline, gates, neutral
-   zones) on every row of `list_tracks()`.** This is what C4 §5's `tracks`
-   table literally holds, but it is a heavier payload than a "summary" list
-   command elsewhere in this contract carries — worth reconsidering (e.g. a
-   lighter `list_tracks` plus a `get_track` for the full JSON) in a future
-   revision. Assigned: lead.
-8. **`source_kind` (C4 catalog column, `SessionSummary`) vs. `source_format`
-   (C1 `Session` field, `SessionDetail`) name the same four-value enum
-   differently** across the two signed contracts. Item 3's reconciliation
-   kept each field named per its own source rather than picking one name
-   and silently diverging from the contract it mirrors — flagged in case
-   the lead wants one contract to rename its field instead. Assigned: lead.
+7. **Resolved 2026-09-02 (controller ruling).** `TrackSummary.full_json` is
+   dropped; `list_tracks` returns only `tracks`' scalar columns (C4 §5:
+   `track_id`, `name`, `venue_name`, `created_at_ms`, `updated_at_ms` — the
+   DDL has no gate/sector-count columns, so none are added here). A new
+   command, `get_track(track_id) -> TrackDetail` (§3.2, lane L1), returns
+   the full `.idl0t` artifact content instead. `TrackDetail`'s nested
+   `lap_timing`/`neutral_zones`/`sector_gates`/`reference_polyline` fields
+   are typed `unknown`/`unknown[]` pending L1's actual
+   `track_artifact::model::Track` serde shape — see open question 10.
+8. **Resolved 2026-09-02 (controller ruling).** `source_kind` and
+   `source_format` are **not** the same enum: C1 owns the vocabulary —
+   `source_format` is file-level (which importer produced the session);
+   `source_kind` is channel-level (which sensor a channel came from). C4's
+   `sessions.source_kind` column had the wrong name (it holds the file
+   format) and has been renamed to `source_format` in C4 (post-sign
+   revision, `docs/superpowers/specs/2026-09-03-idl1-c4-data-directory.md`,
+   branch `c4`). C3 now uses `source_format` for the session-level field
+   (`SessionSummary`, `SessionDetail`) and reserves `source_kind` for
+   `ChannelSummary` (channel-level, unchanged meaning).
 9. **`lap_gates`/`sector_gates` (C1 §6, C1's own open item 2) and
    `WorkbookHandle` (§3.4, not in item 3's assigned type list) were left
    untouched by this reconciliation.** The former because C1 §8 item 2 is
@@ -768,3 +795,14 @@ engine.
    fields were not named in the reconciliation assignment, though they may
    deserve the same `workbook_id`/`file_name` treatment `WorkbookSummary`
    just got, for naming consistency. Assigned: lead.
+10. **`TrackDetail`'s (§3.2, `get_track`) nested field shape is
+    provisional.** `track_id`/`name`/`venue_name`/`created_at_ms`/
+    `updated_at_ms` are typed directly from the catalog + IDL0_SPEC §16.2's
+    unchanged `Track` fields, but `lap_timing` (a sealed union,
+    `Circuit`/`PointToPoint`, §16.2a), `neutral_zones` (§16.2b),
+    `sector_gates`, and `reference_polyline` (`GpsFix[]`) have no fixed
+    serde/JSON shape in any contract yet — no `track_artifact::model::Track`
+    Rust struct exists to read the field names/enum tagging from. Typed
+    `unknown`/`unknown[]` here rather than guessed. Assigned: L1 — pin the
+    real shape when `track_artifact` lands and revise §3.2 in the same
+    change.
