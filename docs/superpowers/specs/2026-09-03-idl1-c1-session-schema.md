@@ -1,6 +1,6 @@
 # C1 — Session schema
 
-**Status:** draft · **Date:** 2026-09-03 · **Owner:** lead
+**Status:** signed (lead) 2026-09-02 · **Date:** 2026-09-03 · **Owner:** lead
 
 ---
 
