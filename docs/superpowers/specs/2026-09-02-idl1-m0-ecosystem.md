@@ -25,6 +25,7 @@ the npm registry API (`https://registry.npmjs.org/<name>`) — the same source `
 | fitparser | crates.io | 0.11.0 | 2026-05-01 | MIT | `0.11.0` | https://crates.io/crates/fitparser/0.11.0 |
 | pulldown-cmark | crates.io | 0.13.4 | 2026-05-20 | MIT | `0.13.4` | https://crates.io/crates/pulldown-cmark/0.13.4 |
 | notify | crates.io | 8.2.0 | 2025-08-03 | CC0-1.0 | `8.2.0` | https://crates.io/crates/notify/8.2.0 |
+| reqwest | crates.io | 0.13.4 | 2026-05-25 | MIT OR Apache-2.0 | `0.13.4` | https://crates.io/crates/reqwest/0.13.4 |
 | serde | crates.io | 1.0.229 | 2026-07-18 | MIT OR Apache-2.0 | `1.0.229` | https://crates.io/crates/serde/1.0.229 |
 | serde_json | crates.io | 1.0.151 | 2026-07-20 | MIT OR Apache-2.0 | `1.0.151` | https://crates.io/crates/serde_json/1.0.151 |
 | thiserror | crates.io | 2.0.20 | 2026-08-08 | MIT OR Apache-2.0 | `2.0.20` | https://crates.io/crates/thiserror/2.0.20 |
@@ -46,6 +47,10 @@ Note: `typescript` 7.0.x is the native (Go-ported "tsgo") rewrite line, now `dis
 on the npm registry as of this check — a major-version jump from the 5.x line current at the
 controller's January-2026 knowledge cutoff. Verified directly against the registry, not
 assumed; flagged here since it is the row most likely to surprise a reader.
+
+Note: `reqwest` added post-M0 (2026-09-03, lead ruling R7, wave-1 L4) — outside the original
+32-row research task's scope, needed once L4's plan required it for the device's HTTP WiFi
+transfer protocol (design §7). Verified the same way: crates.io's own API, not guessed.
 
 ## 2. Findings
 

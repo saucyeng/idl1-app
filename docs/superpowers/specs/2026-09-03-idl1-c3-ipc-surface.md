@@ -138,6 +138,13 @@ is applied uniformly, not case-by-case:
 | `parse_invalid_magic_bytes` | `ParseError::InvalidMagicBytes` | Import: `import_file` (`.idl0` source) |
 | `parse_unsupported_schema_version` | `ParseError::UnsupportedSchemaVersion` | Import: `import_file` (`.idl0` source) |
 | `parse_truncated_record` | `ParseError::TruncatedRecord` | Import: `import_file` (`.idl0` source, corrupt/incomplete file — recover what's readable per CLAUDE.md §5, surface as a warning in the returned `SessionSummary` rather than always rejecting; see open question 6.2) |
+| `import_fit_malformed` | `ImporterError::FitMalformed` | Import: `import_file` (`.fit` source — CRC failure, no usable `record` messages, or `fitparser` rejected the stream) |
+| `import_gpx_malformed_xml` | `ImporterError::GpxMalformedXml` | Import: `import_file` (`.gpx` source, not well-formed XML) |
+| `import_gpx_no_trackpoints` | `ImporterError::GpxNoTrackpoints` | Import: `import_file` (`.gpx` source, no `<trkpt>` elements) |
+| `import_gpx_missing_lat_lon` | `ImporterError::GpxMissingLatLon` | Import: `import_file` (`.gpx` source, a `<trkpt>` missing `lat`/`lon`) |
+| `import_gpx_unparseable_lat_lon` | `ImporterError::GpxUnparseableLatLon` | Import: `import_file` (`.gpx` source, a `<trkpt>`'s `lat`/`lon` isn't a parseable number) |
+| `import_csv_malformed` | `ImporterError::CsvMalformed` | Import: `import_file` (`.csv` source, missing/malformed header or no data rows) |
+| `import_not_utf8` | `ImporterError::NotUtf8` | Import: `import_file` (`.gpx`/`.csv` source, bytes aren't valid UTF-8 — never raised for `.fit`, which is binary) |
 | `math_parse` | `MathEvalErrorKind::Parse` | Workbook: `eval_workbook` — surfaced **per cell** in `CellOutput.error`, not as the command's own rejection (CLAUDE.md §5: "missing math channel reference → inline validation error, don't block other channels") |
 | `math_unknown_function` | `MathEvalErrorKind::UnknownFunction` | Workbook: `eval_workbook` (per cell) |
 | `math_unknown_channel` | `MathEvalErrorKind::UnknownChannel` | Workbook: `eval_workbook` (per cell) |
@@ -155,6 +162,14 @@ is applied uniformly, not case-by-case:
 | `invalid_argument` | cross-cutting | Import: `import_file` (unknown `importer_id`); Workbook: `save_workbook` (malformed markdown/front matter); Tiles: `fetch_tile` (`tier` outside the engine's configured tier set); Rasters: `fetch_raster` (bad `width`/`height`/`kind`); Cursor: `cursor_readout` (unknown channel in the list); Sync: `pair_peer` (malformed code) |
 | `io` | cross-cutting (also folds `ParseError::Io`, `ConfigErrorKind::Io`, `ExportError::Io`, `FitExportError::Io`) | any command that touches the filesystem: Catalog (all seven — `list_sessions`, `get_session`, `list_laps`, `rebuild_catalog`, `list_workbooks`, `list_tracks`, `get_track`), Import: `import_file`, Workbook (`open_workbook`, `save_workbook`, `watch_workbook`), Tiles: `fetch_tile`, Rasters: `fetch_raster`, Device: `download_file`, Sync: `sync_status` |
 | `internal` | cross-cutting (also folds `ExportError::Json`) | any command — unexpected/programmer-error conditions that are not the caller's fault |
+
+**Added post-sign (2026-09-03, lead ruling R7, wave-1 L2).** The seven
+`import_*` rows above are new: `ImporterError` (`rust/core/src/import/error.rs`,
+L2) is a new core error enum for the FIT/GPX/CSV importers, prefixed
+`import_*` per this section's own naming rule — matching the `import_file`
+command group's name (§3.3), distinct from `parse_*` (`ParseError`,
+`.idl0`-only, unchanged). §2's original table had no rows for these variants
+because L2 hadn't been drafted when C3 was signed.
 
 `VideoErrorKind` (`rust/core/src/video/mod.rs`) is **excluded** from this
 vocabulary: `core/src/video/` and `core/src/overlay/` are deleted on the

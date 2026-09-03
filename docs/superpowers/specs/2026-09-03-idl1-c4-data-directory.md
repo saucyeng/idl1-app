@@ -88,9 +88,21 @@ of this tree, on any platform.
     derived/<64 hex>.parquet                        materialised channels, f(inputs, config, engine version)
   workbooks/<file_name>.idl1wb
   tracks/<track_id>.idl0t
+  profiles/<profile_id>.idl0p                       rider/bike profile snapshots (port of profile_store.dart)
   catalog.sqlite                                    + catalog.sqlite-wal, catalog.sqlite-shm (WAL sidecars)
   tmp/                                               atomic-write staging (§4); tmp/quarantine/ for repair (§7)
 ```
+
+**Added post-sign (2026-09-03, lead ruling R6, wave-1 L1):** `profiles/` was
+missing from this layout even though design §10's L1 row names "profile/
+settings persistence" in scope with no other location given. Rooted inside
+`<data>` (not beside the `app_config_dir()/settings.json` bootstrap file)
+deliberately — a rider's bike-profile data is exactly the kind of
+cross-device state LAN sync (§6) exists for, unlike the bootstrap file's
+single `data_dir` override, which is inherently per-machine. `profile_id` is
+an opaque string (UUID or the profile's stable slug — L1's own call, not
+fixed here); the file is written via the §4 atomic-write primitive like every
+other `<data>`-rooted file.
 
 Path patterns, fixed:
 
@@ -407,7 +419,10 @@ the file.
 
 **Moves** (LAN sync, design §7): blobs, `sessions/<id>/data.parquet`,
 `sessions/<id>/derived/*.parquet`, `sessions/<id>/session.json`,
-`workbooks/*.idl1wb`, `tracks/*.idl0t`. **Never moves:** `catalog.sqlite`
+`workbooks/*.idl1wb`, `tracks/*.idl0t`, `profiles/<id>.idl0p` (added
+post-sign, ruling R6 — same class as `session.json`/`tracks`: last-write-wins
+by `updated_at_ms`, L11 wires the endpoint alongside the others). **Never
+moves:** `catalog.sqlite`
 (+ its `-wal`/`-shm` sidecars — it is an index, D10, rebuilt locally per §5)
 and `tmp/` (write-staging, never a stable artifact). The sync server walks
 `<data>` (`app_data_dir()/data`, §1) to build the manifest below; it has no

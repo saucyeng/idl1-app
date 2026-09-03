@@ -102,6 +102,25 @@ pub struct Channel {
     /// sample-index coordinates (post-null-drop — see §4.5's read rule). Unchanged semantics
     /// from today (SPEC §15.2): empty for every channel with no drops.
     pub gaps: Vec<GapSpan>,
+    /// Verbatim recorded time — the same values §3.2's `<source>_t_recorded_us` column stores,
+    /// kept in-memory so a burst-corrected channel's verbatim stamps survive to the Parquet
+    /// writer. `None` when `t_recorded_us` would be identical to `t_us` (every non-burst source,
+    /// §3.3 — no correction ever applies), so the common case costs nothing; `Some` only for a
+    /// burst source whose correction actually diverged the two. **Added post-sign (2026-09-03,
+    /// lead ruling R5, wave-1 L1):** §2's original listing omitted this field; §4.1 already
+    /// required both `t` and `<source>_t_recorded_us` as independently-readable Parquet columns,
+    /// which is unrecoverable at write time without an in-memory home for the verbatim value once
+    /// burst correction (§3.3) diverges it from `t_us`. Dense (same length as `t_us`) when
+    /// present; meaningful only at slots outside `gaps` — a reader consults `gaps` to decide a
+    /// row's Parquet nullness, never infers it from this field's content (L1's own module-layout
+    /// discretion, C1 §1).
+    pub t_recorded_us: Option<Vec<i64>>,
+    /// This channel's physical unit, e.g. `"g"`, `"km/h"`, `"deg"` — written verbatim into the
+    /// Parquet column's `unit` metadata (§4.2, always required). **Added post-sign (2026-09-03,
+    /// lead ruling R5, wave-1 L1):** §2's original listing omitted this field even though §4.2
+    /// mandates the column value unconditionally; the channel registry's existing `units` field
+    /// is the only source for it and was previously discarded after parse.
+    pub unit: String,
 }
 
 /// Which importer produced a [`Session`]. Serializes to the `source_format` file-metadata string
@@ -448,7 +467,7 @@ One wide file per session, `<data>/sessions/<session_id>/data.parquet` (path roo
 | `PressureFront`, `PressureRear` | `Float64` | Yes | Already-physical, same baked-in convention. `unit`: `bar`. |
 | `HR_BPM` | `Float64` | Yes | Already-physical. `unit`: `bpm`. |
 | `HR_RR` | `Float64` | Yes | Already-physical (scale `1000/1024` baked in, converting 1/1024 s ticks to ms). `unit`: `ms`. |
-| *(FIT/GPX-derived channels)* | `Float64` | Yes | `GPS_Latitude`/`GPS_Longitude`/`GPS_Altitude`/`GPS_EpochMs`/`HR_BPM`/`Cadence_RPM`/`Power_W` as applicable — always-physical values (no raw/scale distinction; these formats deliver physical units natively), `unit` set accordingly (`deg`, `m`, `ms_raw`, `bpm`, `rpm`, `W`). |
+| *(FIT/GPX-derived channels)* | `Float64` | Yes | `GPS_Latitude`/`GPS_Longitude`/`GPS_Altitude`/`GPS_EpochMs`/`GPS_SpeedKmh`/`GPS_Heading`/`HR_BPM`/`Cadence_RPM`/`Power_W` as applicable — always-physical values (no raw/scale distinction; these formats deliver physical units natively), `unit` set accordingly (`deg`, `m`, `ms_raw`, `km/h`, `deg`, `bpm`, `rpm`, `W`). **`GPS_SpeedKmh`/`GPS_Heading` added post-sign (2026-09-03, lead ruling R7, wave-1 L2):** the original list omitted them, but lap timing and lap-distance normalisation (L1's own scope, design §10) depend on `GPS_SpeedKmh` the same way they do for `.idl0` sessions — FIT's `speed`/`enhanced_speed` fields (m/s, ×3.6 for km/h) and GPX's `<speed>`/`<course>` elements (or the ported `gpx_parser.dart` derive-when-absent fallback) are the source values. |
 
 `Time` and `Distance` (`RawColumn::Ramp`/`Interp`) are **not** columns here (§2) — regenerated on
 read.
