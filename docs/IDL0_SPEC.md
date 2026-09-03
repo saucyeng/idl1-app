@@ -24,6 +24,7 @@
 | 12 | State Management | Any Dart implementation |
 | 13 | Selection Model | Any Dart implementation |
 | 14 | Error Handling | Any Dart implementation |
+| 14a | Transport Trait Architecture (idl1) | Transport layer |
 | **PART 4 — APP DATA MODEL** | | |
 | 15 | Session & File Model | Data layer |
 | 16 | Track Entity | Track-related work |
@@ -1131,7 +1132,7 @@ BLE ATT MTU of 23 bytes minus 3 bytes of write-request overhead) when the negoti
 be read back from `btleplug` on the connecting platform; uses the negotiated MTU minus 3 when
 it can. See Open question 7 in the L4 plan for why this isn't uniform across platforms.
 
-**Download resume.** `WifiTransport::download`'s `resume_from` parameter is the caller's job to
+**Download resume.** `WifiTransport::download`'s `resume_from_bytes` parameter is the caller's job to
 determine (typically: bytes already on disk for a partially-downloaded blob) — this trait
 issues the `Range` request and trusts the server's `206`/`Content-Range` echo, erroring
 (`TransportErrorKind::Wifi`) rather than silently resuming from the wrong offset if the two
