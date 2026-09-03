@@ -210,7 +210,7 @@ Addresses the two 2026-09-02 pain points (human as message bus; failed cheap-mod
 
 - **Persistent lead** — one session, the model that wrote this doc. It writes contracts and lane briefs, adjudicates, and merges. It never implements.
 - **Roles by `subagent_type`, model baked in**, enforced by the dispatch gate: `implementer` (Sonnet; one task, own worktree, TDD) → `reviewer` (Sonnet; findings file, verdict line) → `adjudicator` (Fable; cross-lane conflicts only) → `transcriber` (Haiku; mechanical: Dart tests → Rust tests, SPEC section moves). Bulk reading is `Explore` with an explicit model.
-- **The repo is the bus.** Contracts and specs in `docs/superpowers/specs/`; lane briefs in `overnight/lanes/<lane>/BRIEF.md`; human rulings in `overnight/decisions.md`. No hand-written NEXT-PROMPTS.
+- **The repo is the bus.** Contracts and specs in `docs/superpowers/specs/`; lane briefs in `runs/<date>/lanes/<lane>/BRIEF.md`; human rulings in `runs/<date>/decisions.md` (dated per execution pass, so one run's ledger never goes stale or gets overwritten by the next — renamed from the original `overnight/` naming 2026-09-03, which didn't generalise past a single night). No hand-written NEXT-PROMPTS.
 - **Gates**: a lane task is done when its reviewer's verdict is clean and tests are green; a wave is done when every lane in it merges; contracts change only through the lead.
 - **Commit hygiene**: no AI attribution trailers in these repos.
 
