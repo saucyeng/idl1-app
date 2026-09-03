@@ -2,3 +2,7 @@
   font-family: system-ui, sans-serif;
   padding: 1.5rem;
 }
+
+.idl1-error {
+  color: #b00020;
+}
