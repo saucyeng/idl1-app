@@ -423,3 +423,25 @@ untouched by Task 2 (correctly out of its declared scope, §15/§16.3/§18
 only), and now contradicts the rewritten §16.3's "no cloud store" language.
 No wave-1 lane owns §16.1/§16.2/§16.4 (design §10 doesn't assign them to
 L1-L5/L10). **Owner: lead, tracked for a future pass** — not blocking wave 1.
+
+---
+
+## 2026-09-03 — Execution fix: L1 plan's Task 9 parquet writer used the wrong filter
+
+L1 Task 4's review (`runs/2026-09-03/lanes/l1-store/review-task4.md`) caught
+a real forward-compatibility break in the *plan text*, not the landed code:
+Task 4 correctly changes `Time`'s in-memory representation from
+`RawColumn::Ramp` to `RawColumn::F64` (required by C1 §3.5 invariant 4).
+The already-drafted Task 9 parquet-writer section of the same plan excluded
+synthesized channels (`Time`, `Distance`) from `data.parquet` by matching
+`RawColumn::Ramp | RawColumn::Interp` — a filter that would silently stop
+catching `Time` once it's `F64`, so Task 9 as drafted would have written
+`Time` into `data.parquet`, violating C1 §4.1 ("never a column, regenerated
+on read"). Fixed in the plan (three call sites) to filter on
+`c.source_kind == "synthesized"` instead — set on both `Time` and `Distance`
+by Task 4, stable regardless of either's `RawColumn` representation. Caught
+and fixed before Task 9 was ever implemented, so no code rework was needed.
+
+**Cost if wrong:** Trivial — caught pre-implementation; if `source_kind`
+turned out not to be the right filter either, it's the same one-line-per-
+call-site fix again, still before any code exists to rework.

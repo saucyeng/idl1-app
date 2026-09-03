@@ -2575,8 +2575,19 @@ fn file_metadata(session: &Session, importer_version: &str) -> Vec<(String, Stri
 ```rust
 /// Writes `session` to `<data_root>/sessions/<session_id>/data.parquet`
 /// (path per contract C4 §2) via the atomic-write primitive. Excludes
-/// engine-synthesized channels (`Time`, `Distance` — `RawColumn::Ramp`/
-/// `Interp`, never columns per C1 §2's table).
+/// engine-synthesized channels (`Time`, `Distance` — never columns per C1
+/// §2's table), identified by `source_kind == "synthesized"`, **not** by
+/// `RawColumn` variant. **Corrected post-Task-4 (2026-09-03, review
+/// finding, `runs/2026-09-03/decisions.md`):** this section originally
+/// filtered on `matches!(c.column, RawColumn::Ramp{..} | RawColumn::Interp{..})`,
+/// which was true for both synthesized channels only *before* Task 4 —
+/// Task 4 correctly changes `Time`'s in-memory representation to
+/// `RawColumn::F64` (C1 §3.5 invariant 4 requires it once `t_us` isn't
+/// perfectly uniform), so a `RawColumn`-variant filter would silently stop
+/// excluding `Time` and this writer would put it in `data.parquet`,
+/// violating C1 §4.1. `source_kind: "synthesized"` is set on both `Time`
+/// and `Distance` by Task 4 (`session/synthesis.rs`) and is stable
+/// regardless of either channel's underlying `RawColumn` representation.
 pub fn write_session_parquet(
     data_root: &Path,
     session: &Session,
@@ -2592,8 +2603,8 @@ pub fn write_session_parquet(
     // real (non-synthesized) channels.
     let mut seen_sources: Vec<&str> = Vec::new();
     for c in &session.channels {
-        if matches!(c.column, RawColumn::Ramp { .. } | RawColumn::Interp { .. }) {
-            continue; // synthesized — excluded (C1 §2)
+        if c.source_kind == "synthesized" {
+            continue; // Time/Distance — excluded (C1 §2), by source_kind not RawColumn variant
         }
         if seen_sources.contains(&c.source_kind.as_str()) {
             continue;
@@ -2609,7 +2620,7 @@ pub fn write_session_parquet(
 
     // Channel value columns.
     for c in &session.channels {
-        if matches!(c.column, RawColumn::Ramp { .. } | RawColumn::Interp { .. }) {
+        if c.source_kind == "synthesized" {
             continue;
         }
         let rows = row_indices_for(c, &t)?;
