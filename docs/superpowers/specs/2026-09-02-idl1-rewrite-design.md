@@ -234,8 +234,15 @@ Character-level CRDT co-editing and live cursors (`yrs` on cell text — replace
 
 ## 16. Open items (assigned)
 
-- C1: metadata for non-device sources; the burst-seam correction algorithm (validated against a session with a known ODR offset) and whether the firmware should stamp burst boundaries explicitly in a future `.idl0` schema so the correction becomes exact.
-- C2: exact encoding of the cell id in the fence info string; math-mode syntax for CodeMirror.
-- C4: exact `session_id` derivation for non-device sources.
-- L4: crate name (`idl-transport` proposed) and whether the LAN sync server lives in it or beside it.
-- D12: React stays unless L5 finds a reason at scaffold time.
+- C1: metadata for non-device sources — resolved in C1 §2 (`Session.source_format`/`blob_sha256`
+  fields); the burst-seam correction algorithm — specified in C1 §3.3, validation against a session
+  with a known ODR offset remains open (C1 §8 item 8, assigned L1); whether the firmware should
+  stamp burst boundaries explicitly in a future `.idl0` schema so the correction becomes exact
+  remains open (C1 §8 item 7, assigned Isaac/firmware).
+- C2: exact encoding of the cell id in the fence info string — resolved in C2 §2.2; math-mode
+  syntax for CodeMirror — the grammar to tokenize is fixed (C2 §3.1/§3.2), but the CodeMirror
+  mode's own implementation remains open — L6 (C2 §8 item 4).
+- C4: exact `session_id` derivation for non-device sources — resolved in C4 §3.
+- L4: crate name (`idl-transport` proposed) — resolved, `idl-transport` exists in `rust/transport`;
+  whether the LAN sync server lives in it or beside it remains open (L11).
+- D12: React stays unless L5 finds a reason at scaffold time — resolved, React retained (Task 4).

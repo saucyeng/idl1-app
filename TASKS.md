@@ -8,13 +8,13 @@ are defined in `docs/superpowers/specs/2026-09-02-idl1-rewrite-design.md` §10.
 - [x] Task 1 ecosystem report
 - [x] Task 2 idl-rs pin/tag/delete + idl-transport stub
 - [x] Task 3 repository created
-- [ ] Task 4 Tauri scaffold
-- [ ] Task 5 idl-rs-tauri + binary IPC smoke
-- [ ] Task 6 contract C1 session schema
-- [ ] Task 7 contract C2 workbook v3
-- [ ] Task 8 contract C3 IPC surface
-- [ ] Task 9 contract C4 data directory
-- [ ] Task 10 M0 exit
+- [x] Task 4 Tauri scaffold
+- [x] Task 5 idl-rs-tauri + binary IPC smoke
+- [x] Task 6 contract C1 session schema
+- [x] Task 7 contract C2 workbook v3
+- [x] Task 8 contract C3 IPC surface
+- [x] Task 9 contract C4 data directory
+- [x] Task 10 M0 exit
 
 ## Wave 1 (after M0)
 
