@@ -128,6 +128,11 @@ three-way text merge, since there is no cell to attach it to.
 
 ### 2.5 The design §5 worked example, restated literally
 
+*This subsection is not part of the brief's Step-1 outline. It restates
+design §5's worked example so checklist item (a) is checkable, and is
+added here, beyond the outline, with lead approval (review round 1,
+Important finding 3).*
+
 Design §5's worked example is illustrative shorthand — its own `id: 9f3c…`
 is visibly elided — not literal v3 syntax. Restated here so it
 demonstrably parses under §§2–5 exactly as written (checklist item (a)),
@@ -213,6 +218,19 @@ definition, by name** — `Roll rate (deg/s)` cannot be a JS binding. This is
 a deliberate new constraint of the v3 grammar, not a carry-forward; §6
 gives the exact migration rule for idl0 names that don't already qualify
 (all nine AHRS built-ins do not).
+
+**Display-name annotation.** A `def_line`'s `trailing_comment` is an
+ordinary `#` comment *except* one specific form: `# label: <text>` (the
+literal word `label` immediately after `#`, a colon, then free text to end
+of line) is recognised as the definition's **display name** — the string
+the UI shows in the channel list, chart legends, and any Properties-form
+control that names this definition, distinct from the JS-identifier-
+constrained `name` on the left of `=`. This is how a migrated idl0 name
+like `"Roll (deg)"` (not a legal `identifier`) survives as what a human
+reads, while the identifier itself (`roll_deg`) is what code references —
+see §6 for the exact migration rule that produces both. A definition with
+no `# label:` comment has no display name; the UI falls back to the
+identifier itself.
 
 `[ChannelName]` **references** (inside an `expression`) are unaffected by
 this constraint and keep the existing tokenizer's rule verbatim — the
@@ -382,9 +400,11 @@ carried forward here as ordinary catalog entries, not new.
 | `rotate_axis` | `rotate_axis(v, ax, ay, az, angle)` (scalars; `angle` radians) | Rotation | same units as `v` | Implemented | **no** |
 | `rotate_euler` | `rotate_euler(v, roll, pitch, yaw)` (radians; args may be channels — per-sample rotation) | Rotation | same units as `v` | Implemented | **no** |
 
-70 named functions total (54 `Implemented`, 6 `NotImplemented`/deferred as
-listed, plus `if` and the 4 filter/lap/estimator families already counted
-above — see the transcript check in §3.5's cross-check note). One function,
+69 named functions total (63 `Implemented`, 6 `NotImplemented`/deferred:
+`sosfilt`, `spectrogram`, `hilbert`, `correlate`, `convolve`, `resample` —
+recounted directly from the table above by expanding every multi-name row,
+e.g. `floor`/`ceil`/`round` as 3, `vx`/`vy`/`vz` as 3, `vadd`/`vsub` as 2,
+rather than restated from memory). One function,
 `main(col[])`, exists in `call_function` but is **table-cell only**
 (reads `MathLapContext::baseline_row`, which is never populated outside a
 table evaluation) — it is documented in §4, not here, and is a `Runtime`
@@ -643,10 +663,13 @@ There is no partial match: a cell either parses fully into `props` or is
 entirely custom. This mirrors design §6's stated rule — "Code outside it
 … greys the pane to custom code" — literally: greying is binary per cell.
 
-**Three worked examples** (props shown as the Properties-pane's internal
+**Four worked examples** (props shown as the Properties-pane's internal
 state; `generate(props)` produces the code; `parse(code)` on that code
 returns props deep-equal to the original — "round-trips conceptually" per
-checklist item (b)):
+checklist item (b)). Between them these exercise three of the five
+`mark_name` alternatives (`lineY`, `dot`, `areaY`) and every `x_scale`/
+`y_scale` field (`label`, `domain`, `type` — `y.type` in Example 2,
+`x.label`+`x.domain` in Example 4):
 
 *Example 1 — single channel, axis labels only.*
 ```
@@ -705,6 +728,31 @@ Plot.plot({
 })
 ```
 
+*Example 4 — `areaY` mark, explicit `x` window (`label` + `domain`).*
+```
+props = {
+  marks: [ { channel: "fork_travel", mark: "areaY", stroke: "#9C27B0" } ],
+  x: { label: "Session time (s)", domain: [120, 180] },
+  y: { label: "Travel (mm)" }
+}
+```
+```js
+Plot.plot({
+  x: { label: "Session time (s)", domain: [120, 180] },
+  y: { label: "Travel (mm)" },
+  marks: [
+    Plot.areaY(channel("fork_travel"), { x: "t", y: "v", stroke: "#9C27B0" })
+  ]
+})
+```
+`rectY`/`ruleY` are not given a separate worked example: both share
+`areaY`'s exact `mark(channel_call, mark_options)` shape in the grammar
+(§5.3's EBNF has one `mark` production for all five `mark_name`
+alternatives) — swapping the literal token `"areaY"` for `"rectY"` or
+`"ruleY"` in this same example produces the identical parse tree modulo
+that one token, so a fifth/sixth render would demonstrate the same
+production, not a new one.
+
 ---
 
 ## 6. Migration from `.idl0wb` v2
@@ -721,7 +769,7 @@ transforms):**
 | `name` | front matter `name` | Verbatim. |
 | `workbook_version` (1 or 2) | front matter `version: 3` | A value the CLI does not recognise (> 2) refuses migration with an error, not a guess. |
 | `created_at_ms`, `updated_at_ms` | *dropped* | No v3 front-matter equivalent; the filesystem mtime and (if the repo is versioned) commit history supersede an in-file timestamp. |
-| `math_channels[]` | **one** `math` cell containing every definition as a `name = expression` line | All v2 channels collapse into a single cell (per design §5's stated migration rule), positioned as the first cell in the body. A name not matching v3's `identifier` grammar (§3.1) is sanitised: run-length-replace every maximal run of characters outside `[A-Za-z0-9_]` with a single `_`, then prefix `_` if the result starts with a digit; a collision after sanitising (two source names mapping to the same identifier) appends `_2`, `_3`, … in source order. Every `[OldName]` reference elsewhere in the migrated expression set is rewritten to the new identifier at the same time (a single rename pass over the flat name→expression map, done before emitting cell text). The CLI prints one warning line per renamed definition (`"<old>" → "<new>"`) to its migration report. |
+| `math_channels[]` | **one** `math` cell containing every definition as a `name = expression` line | All v2 channels collapse into a single cell (per design §5's stated migration rule), positioned as the first cell in the body. A name not matching v3's `identifier` grammar (§3.1) is sanitised per the exact algorithm in §6.1, which also preserves the original name as a `# label:` comment (§3.1) and rewrites every `[OldName]` reference in the migrated expression set to the new identifier. The CLI prints one warning line per renamed definition (`"<old>" → "<new>"`) to its migration report. |
 | `math_channels[].quantity`, `.units`, `.decimal_places`, `.sample_rate_hz` | *dropped* | No v3 per-definition equivalent (§3.1 carries no display metadata — a raw/session channel's `unit` now lives in C1's Parquet column metadata instead; a math-derived channel has no engine-tracked unit, matching how the engine already ignored these fields, `channel_def.rs`). |
 | `math_channels[].color` | *dropped at this stage* | Not lost — carried forward as a **fallback** stroke source for Stage 2 (below) when a chart references the channel and has no `channelColors` override of its own. |
 | `constants[]` | front matter `constants` map | `{name: value}`; `id` (defaulting to `name`) is dropped — v3 constants have no separate id, only a name (§1). A name colliding with a universal constant (`pi`/`tau`/`e`/`g`) is refused (`ReservedName`, §3.5) rather than silently shadowed. |
@@ -729,6 +777,56 @@ transforms):**
 | `worksheets[].charts[]` / `.blocks[].content.kind == "chart"` (`ChartSlot[]`) | staged for Stage 2 | Written into a **transient** front-matter key `_migrate_charts: [ <ChartSlot JSON>, … ]` (flattened across every worksheet, worksheet name/order dropped — see below) for the app to consume on first open. The CLI does not attempt Plot-code generation itself: `plotForm.generate` is TypeScript, and the CLI is Rust-only (this is the literal "CLI vs. app split" the outline asks for). |
 | `worksheets[].name`, `.xAxisMode`, `.kind` (`sessionSheet`'s pinned `gpsMap`/`lapTable`/`lapProgression`) | *dropped* | No v3 worksheet concept at all (a `.idl1wb` is one flat cell sequence); no v3 chart type covers `gpsMap`/`lapTable`/`lapProgression` (out of the `plotForm` grammar, §5.3) — those three chart slots are simply not carried into `_migrate_charts`. `xAxisMode` (`wheelDistance`/`gpsDistance`) has no v3 analogue either — `plotForm`'s `x` is always `"t"` (§5.1); an author wanting a distance-indexed x-axis writes custom `js` code by hand post-migration. |
 | `overlay_layouts[]` | *dropped* | D9 — no CLI or app handling, not even transiently. |
+
+### 6.1 Identifier derivation for migrated definition names
+
+*Added in review round 1 (controller ruling R22) — a load-bearing detail
+of the `math_channels[]` row above, broken out because §3.1's
+JS-identifier constraint means it applies to essentially every idl0
+built-in and to any author-given name with a space or punctuation, and
+the migration must be exact and reproducible, not "sanitised" left
+undefined.*
+
+**Algorithm**, applied to a v2 `MathChannel.name` that does not already
+match v3's `identifier` grammar (§3.1):
+
+1. Lowercase the whole name.
+2. Replace every maximal run of characters outside `[a-z0-9]` with a
+   single `_`.
+3. Trim leading and trailing `_`.
+4. If the result starts with a digit, prefix `_`.
+5. If the result collides with another already-derived identifier in the
+   same document, append `_2`, `_3`, … (first collision gets `_2`) in
+   source order.
+
+The **original name is never discarded**: it is written back as a
+`# label: <original name>` trailing comment on the `def_line` (§3.1's
+display-name annotation), so the UI shows `Roll (deg)` even though the
+code and every reference to it now read `roll_deg`. Every `[OldName]`
+reference elsewhere in the migrated expression set is rewritten to the
+new identifier in the same rename pass (unchanged from the row above);
+this includes references inside a **migrated `js` chart cell** (Stage 2,
+below) — a `channel("Roll (deg)")` call from a v2-derived chart becomes
+`channel("roll_deg")`, since `channel()`'s string argument names a v3
+definition by its identifier, not its display name.
+
+**Worked conversions:**
+
+| v2 name | Step 2 (runs → `_`) | Step 3 (trim) | Step 4 (digit prefix) | Result | `# label:` comment |
+|---|---|---|---|---|---|
+| `Roll (deg)` | `roll_ deg_` (lowercased: `roll (deg)` → non-alnum runs ` (`, `)` each collapse to one `_`) | `roll_deg` | n/a (doesn't start with a digit) | `roll_deg` | `# label: Roll (deg)` |
+| `Fork travel [mm]` | `fork_travel_mm_` (lowercased: `fork travel [mm]` → runs ` `, ` [`, `]` each collapse to one `_`) | `fork_travel_mm` | n/a | `fork_travel_mm` | `# label: Fork travel [mm]` |
+
+Rendered as migrated `def_line`s:
+```
+roll_deg = ...                              # label: Roll (deg)
+fork_travel_mm = ...                        # label: Fork travel [mm]
+```
+
+If both `"Roll (deg)"` and `"Roll [deg]"` existed in the same v2 workbook
+(both derive to `roll_deg` at step 3), the second processed (source order)
+becomes `roll_deg_2`, per step 5, with its own correct `# label:` comment
+distinguishing it from the first.
 
 **Stage 2 — app, on first open of a migrated file (TypeScript
 `plotForm.generate`):**
@@ -839,8 +937,13 @@ the start, if it precedes every base cell in `local`); (3) a cell `Added`
 only by `peer` is positioned the same way against `peer`'s document; (4)
 when both sides insert a new cell at the same anchor point (immediately
 after the same base-derived neighbour), local's insertion(s) sort before
-peer's — a deterministic, arbitrary-but-stable tiebreak (matches "local
-wins ties" used throughout §7.2). Conflict-copy cells (§7.2) are always
+peer's. This is its own independent, arbitrary-but-stable tiebreak for
+*ordering* two unrelated new cells — it is not derived from §7.2's
+local-wins rule, which resolves *content* for a single same-id conflict
+and has no bearing on where two different, non-conflicting ids land
+relative to each other; any deterministic choice would do, and
+local-before-peer is picked only for consistency with §7.2's local-first
+convention elsewhere in this contract. Conflict-copy cells (§7.2) are always
 positioned immediately after the local cell they were appended below,
 never reordered by this algorithm.
 
