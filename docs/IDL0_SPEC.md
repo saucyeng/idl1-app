@@ -1084,100 +1084,153 @@ Hard crashes in response to bad data are never acceptable. Debug log ring buffer
 
 ## 15. Session & File Model
 
-The `.idl0` binary parser and the parser-output data model live in the pure-Rust
-**`idl-rs`** engine (`/rust/core`). The app consumes them through the
-`idl-rs-bridge` flutter_rust_bridge shim: parsing returns a
-`RustOpaque<SessionHandle>` that owns the parsed session in Rust, and the app
-pulls output-shaped views on demand — a compact `session_metadata` summary, the
-`session_channels` list, and per-channel `channel_samples` /
-`channel_sample_times`. The handle is **retained** for the session lifetime by
-`sessionHandleProvider`; chart/lap/UI consumers pull bounded views from it by
-channel id (Y-bounds, tiles, spectra, slices, fix lists — see §15.3) rather than
-draining whole channels into Dart. The handle also
-carries an interior-mutable, **typed derived-channel store** keyed by kind:
-math-channel outputs by name, and lap-windowed slices by their
-`(source, role, lap)` identity, so a lap slice can never collide with a base or
-math channel. The math evaluator (§19) reads base, synthesized, and resolved
-math channels from it via a channel lookup; resolved math outputs are written by
-name (`store_math`) so they never re-cross the FFI boundary as samples. Lap
-slices are written by `slice_lap_into_store`, which returns the opaque storage
-token the chart decimates by; the store is reclaimed declaratively by
-`retain_derived` on the eval path (a deleted/renamed channel's entries drop,
-while base-channel and live-math slices survive). The engine also synthesizes the derived `Time` and `Distance` base channels (the
-highest fixed-rate time base; cumulative distance from `GPS_SpeedKmh`). GPX import
-is the exception: parsed in Dart (`GpxParser`, §15.1) and wrapped into a handle via
-`session_from_channels`. Because the engine is native code, the Rust path is
-unavailable on the web build target until WASM bindings land (roadmap Phase 6).
+The `.idl0` binary parser and the parser-output data model live in the
+pure-Rust **`idl-rs`** engine (`rust/core`). The app consumes them through
+`idl-rs-tauri` `#[tauri::command]` handlers (contract C3) rather than
+FlutterRustBridge: a session opens into an in-process `SessionHandle` the
+Rust side owns, and the frontend pulls output-shaped views on demand — a
+compact metadata summary, the channel list, per-channel samples over IPC as
+raw bytes (`tauri::ipc::Response`), never JSON for sample data. The handle
+carries an interior-mutable, typed derived-channel store keyed by kind
+(math-channel outputs by name; lap-windowed slices by `(source, role, lap)`)
+exactly as before — this part of the architecture is unchanged by the idl1
+rewrite. What changes is the on-disk and canonical-model layer beneath it,
+fixed by contract **C1** (`docs/superpowers/specs/2026-09-03-idl1-c1-session-schema.md`):
+
+- **Canonicalise on ingest** (design doc D3). Every source format (`.idl0`,
+  `.fit`, `.gpx`, `.csv` — the last three are L2's importers) converts once,
+  at import, into the one `Session`/`Channel` model below, and is written to
+  `<data>/sessions/<session_id>/data.parquet` (contract C4 fixes the path).
+  The raw source bytes are kept immutable and content-addressed in the CAS
+  blob store (`<data>/blobs/sha256/…`); `data.parquet` is a pure function of
+  `(blob, importer_version, seam_correction_version)` and is regenerated from
+  the blob whenever either version changes — it is never hand-edited and
+  never modified in place.
+- **Time is recorded, not assumed.** Every channel carries a mandatory
+  per-sample time column, `t_us: Vec<i64>` — microseconds since the
+  session's first sample, one entry per sample, strictly increasing. This
+  replaces the old convention where a fixed-rate channel's sample `i` was
+  implicitly at `i / sample_rate_hz`; `nominal_rate_hz` is metadata only and
+  **never** derives a sample's time on any code path (C1 §3.5). A burst-drained
+  IMU's raw per-record timestamps are preserved verbatim in a
+  `<source>_t_recorded_us` column and separately corrected into the
+  monotonic `t_us`/`t` axis by the burst-seam correction algorithm (C1
+  §3.3) — see §15.2 below.
 
 ### 15.1 Session Metadata
 
-Source: `app/lib/data/session_model.dart`. Every field is `final` (immutable instance — copy via `copyWith` to mutate).
+Source: C1 §2 (canonical model) and C1 §6 (`session.json`, which replaces
+`.idl0w` — see §16.3/§17 for how track visits and lap flags fit in).
 
-```dart
-enum SessionSourceType { idl0, gpx }
-
-class SessionMetadata {
-  final String sessionId;             // UUID (stable identity), from the header
-  final String filePath;              // absolute path to .idl0 (or .gpx)
-  final String workspacePath;         // absolute path to .idl0w
-  final int createdTimestampMs;       // recording start, UTC ms since epoch
-  final int fileSizeBytes;
-  final String rider;                 // default from bike profile
-  final String bike;
-  final String bikeComment;           // e.g. "Fresh tires"
-  final String venueName;
-  final String eventName;
-  final String eventSession;          // "Practice 2", "Race run", etc.
-  final String shortComment;          // shown in session list
-  final String longComment;
-  final String deviceId;              // last 4 hex of MAC, or "gpx-import"
-  final int? lapCount;                // null if no gate set
-  final int? durationMs;              // null if not yet computed
-  final SessionSourceType sourceType; // default: SessionSourceType.idl0
-  final String tag;                   // free-text label, default ""
+```rust
+/// One imported session — the parsed/converted view of one immutable source blob.
+pub struct Session {
+    pub session_id: String,             // device UUID (.idl0) or blob-hash prefix (else), C4 §3
+    pub device_id: Option<String>,      // None for fit/gpx/csv
+    pub timestamp_utc_ms: i64,          // 0 = unknown
+    pub config_checksum: Option<String>,// None for fit/gpx/csv
+    pub source_format: SourceFormat,    // Idl0 | Fit | Gpx | Csv
+    pub blob_sha256: String,            // 64-char lowercase hex
+    pub channels: Vec<Channel>,
 }
 ```
 
-**String field convention:** All `String` metadata fields are non-nullable and default to `""` when not yet entered. `""` means "not set" — there is no null representation. The UI must treat an empty string as "not entered yet."
+`SessionMetadata`'s Dart-era shape (`sessionId`, `filePath`, `workspacePath`,
+`rider`, `bike`, `venueName`, …) is superseded by two files: `Session`
+above (parser output, one per blob) and `session.json` (C1 §6 — rider,
+bike, venue, event, comments, tag, lap gates, cached laps, track visits,
+lap flags; replaces every field `Workspace`/`SessionMetadata` used to
+split between `.idl0w` and the SQLite index). The SQLite `sessions` table
+(C4 §5) caches a denormalised projection of both files for fast list/filter
+queries — it is never authoritative (design doc: "the catalog is an
+index").
 
-**`createdTimestampMs` is the recording start time** — the engine's back-filled session start (`Session.timestampUtcMs`, §5.6), captured at import/parse. The Data tab date filter, grouping, and sort all operate on it.
+**On-disk file naming.** A session's files live under
+`<data>/sessions/<session_id>/` (C4 §2) — `session_id` is now a directory,
+not a filename stem, and needs no collision-suffix scheme at that level
+(C4 §3 fixes a separate collision rule for non-device `session_id`
+derivation itself). The **workbook filename** (`workbooks/<file_name>.idl1wb`)
+is still human-named and still uses the append `-2`, `-3`, … collision rule
+(C4 §2), continuing the convention `session_filename.dart` established for
+the old `.idl0`/`.idl0w` pair.
 
-**On-disk file naming.** A session's `.idl0`/`.gpx` log and its `.idl0w` workspace are named by the recording start in **local** time — `YYYY-MM-DD_HH-MM-SS` (`app/lib/data/session_filename.dart`) — so the raw files are human-browsable and sort chronologically. A same-second collision appends `-2`, `-3`, …; when the recording time is unknown (a log with no GPS fix to back-fill from, §5.6) the base falls back to the `sessionId`. `sessionId` stays the session's stable identity (SQLite index key, Drive naming §13, workspace ownership) — only the filename is timestamp-derived. The on-device SD card uses the same `YYYY-MM-DD_HH-MM-SS.idl0` scheme in UTC (§10).
+**Session source type** is now `Session.source_format: SourceFormat`
+(`Idl0 | Fit | Gpx | Csv`), replacing the two-value `SessionSourceType`
+enum. `device_id`/`config_checksum` are `Option<String>` (`None` for
+non-`.idl0` sources) rather than the old empty-string sentinel.
 
-**`tag`** is a free-text user-set label (e.g. `Practice`, `Heat 1`, `Race`, `Warmup`) that drives the tag chip filter in the Data tab. Default `""` (no tag).
+### 15.2 Canonical Model and the Time Axis
 
-**Track binding is not stored on `SessionMetadata`.** Cross-session anchoring (Track entities) is described in §16. Multi-track sessions and visit detection are described in §17.
-
-No minimum session length. A few bunny hops is valid.
-
-**Session source type:** `SessionMetadata.sourceType` distinguishes device-recorded `.idl0` sessions from imports. Two values today:
-- `idl0` — recorded by an IDL0 device, parsed by the `idl-rs` engine. `filePath` points to a `.idl0` binary log.
-- `gpx` — imported from a Garmin/Strava `.gpx` track via `GpxParser`. `filePath` points to the original `.gpx` file (kept verbatim — never converted to `.idl0`). `deviceId` is the literal string `gpx-import`. GPX-derived channels: `GPS_Latitude`, `GPS_Longitude`, `GPS_Altitude`, `GPS_EpochMs`, plus `HR_BPM` / `Cadence_RPM` / `Power_W` when the corresponding `<extensions>` are present. The Data tab shows a small `GPX` badge next to imported runs; the Drive sync row substitutes `.gpx` for the `.idl0` slot. Lap gates, sectors, and analyze-tab features apply uniformly across both source types.
-
-### 15.2 Session Data Tree
+```rust
+/// Time-series data for a single channel. Every channel carries mandatory
+/// per-sample time — see C1 §3.
+pub struct Channel {
+    pub channel_id: String,        // e.g. IMU0_AccelZ, GPS_Latitude, WheelFront
+    pub t_us: Vec<i64>,            // µs since the session's first sample; strictly increasing
+    pub nominal_rate_hz: f64,      // metadata only — never derives a sample's time
+    pub column: RawColumn,
+    pub source_kind: String,       // imu0 | imu1 | imu2 | gps | wheel_front | … | fit | gpx
+    pub gaps: Vec<GapSpan>,        // synthesized-sample runs, unchanged semantics
+    pub t_recorded_us: Option<Vec<i64>>, // verbatim recorded stamp; None when identical to t_us
+    pub unit: String,              // e.g. "g", "km/h", "deg" — Parquet column `unit` metadata
+}
 ```
-Session
-├── session_id, device_id, timestamp_utc
-├── bike_profile snapshot, config_checksum
-├── laps[]
-│   ├── lap_number, lap_time_ms
-│   └── sectors[] → sector_name, sector_time_ms
-└── channels[] → channel_id, sample_rate_hz, samples[], sample_times_secs?, gaps[]?
-```
 
-`sample_times_secs` is present only for event-driven channels (`sample_rate_hz == 0`: HR_RR, wheel pulses, digital markers). It holds one timestamp per sample, in seconds relative to session t=0 — defined as the earliest record `timestamp_us` in the file (the first IMU/sensor sample). Fixed-rate channels leave it null; their sample `i` is implicitly at `i / sample_rate_hz`. The parser fills it from each `CHANNEL_SAMPLE`'s `timestamp_us` (§5.7); the Analyze chart plots event-driven channels against these times instead of the nominal rate (§21.2).
+`t_us[i]` traces back to a recorded device/GPS/FIT/GPX timestamp, verbatim
+or burst-corrected — never `i / nominal_rate_hz` (C1 §3.5 invariant 4). The
+one documented, scoped exception: `Session.channels`'s *synthesized*
+`Time`/`Distance` presentation channels (unchanged in role from the pre-idl1
+engine — a zero/low-storage convenience for chart/math consumers, never
+written to `data.parquet`) derive their `t_us` from the real, already-corrected
+`t_us` of the fixed-rate channel they present, not from their own rate — see
+`rust/core/src/session/synthesis.rs`'s doc comment for the exact rule.
 
-**IMU channels share one nominal rate on a reconciled grid.** Every IMU axis (`IMU{0,1,2}_*`) is assigned a single nominal `sample_rate_hz = 1e6 / period_us`, where `period_us = 1_000_000 / ODR` (integer division; `10_000` µs / 100 Hz when ODR is 0) — the same integer period the firmware back-counts each FIFO drain at (§5.5). A per-IMU received-rate (`(n − 1) / span`) is **not** used: the firmware stamps every sample on that integer grid and the only deviation is a dropped-sample event, so a per-IMU average just encodes each sensor's drop rate and would make co-located IMUs report different rates — blocking cross-IMU element-wise math. At parse finalization the engine reconciles each IMU channel onto one grid anchored at the earliest IMU first-sample (`t0`, step `period_us`). Each sample is placed at its **absolute** grid slot `round((ts − t0) / period_us)` — never by accumulating per-step advances — so the time→slot mapping is identical for every IMU and a sensor's own drops never drift its later samples. A forward jump leaves `advance − 1 = round(Δt / period_us) − 1` empty slots, linearly interpolated (in raw `i16` space) between the bracketing real samples; leading/trailing offsets are padded with held edge values; an out-of-order sample whose slot does not advance past the previous kept one (a sub-period backward step or duplicate at a FIFO drain boundary) is **dropped**. The result: all IMU channels are **equal-length and time-aligned**, so two co-temporal events land on the same sample index across IMUs to within ½ period — regardless of how differently the sensors dropped. Reconciliation is drop-proportional — a clean (no-drop) log is a no-op.
+`Channel.t_recorded_us`/`Channel.unit` are the in-memory homes for two values
+C1 §4.1/§4.2 mandate on the Parquet side (added to C1 §2 post-sign, lead
+ruling R5): `t_recorded_us` is `None` unless burst-seam correction actually
+diverged this channel's corrected `t_us` from its verbatim recorded stamp, so
+the writer has something to serialize into `<source>_t_recorded_us` beyond
+the common (non-burst) case; `unit` carries the channel registry's existing
+`units` value through to the `unit` column-metadata key, which §4.2 requires
+unconditionally and which parsing used to discard after use.
 
-`gaps` records every synthesized run as `{start, len}` in sample-index (grid-slot) coordinates — interior interpolated fills and held edge pads alike — shared across an IMU's six axes. It is the honest record of where data was reconstructed: empty for every non-IMU channel and for any IMU channel with no drops. No consumer reads it yet (no FFT gap-exclusion, no UI shading); it exists so future quality features can threshold on it.
+**IMU burst-seam correction.** Every IMU FIFO read stamps its samples by
+walking back from the read instant at the *nominal* ODR (SPEC §5.5); when
+the true ODR differs from nominal this makes the recorded stamps overlap or
+gap at burst seams — locally non-monotonic time. C1 §3.3 fixes a documented,
+versioned correction: detect bursts from the recorded-stamp deltas, estimate
+each burst's true period from consecutive read-instant spacing (median
+across the session, a per-burst local fallback when the session-wide
+estimate would violate monotonicity), and re-space each burst backward from
+its own read instant at the corrected period. The corrected stamps feed
+drop reconciliation (`ImuGridPlan::build`/`reconcile`,
+`rust/core/src/parse/records.rs`) in place of the nominal period, so
+reconciliation only ever sees genuine FIFO drops, not the phantom ones a
+true-ODR offset would otherwise manufacture against a nominal grid (C1 §3.3
+carries the full worked derivation of why). The algorithm version
+(`seam_correction_version`, currently `"v1"`) is `data.parquet` file
+metadata and triggers regeneration from the blob on a version bump, exactly
+like `importer_version`.
 
-**TODO:** Workspace file forward-migration details (which fields are migrated, which are dropped, and what the user-facing message looks like when a newer-version `.idl0w` is opened by an older app) are not yet fully specified beyond the high-level policy in §11.4.
+**`<source>_t_recorded_us`.** One per source present in a session (not per
+channel — all six axes of one IMU share one `imu0_t_recorded_us`), holding
+the verbatim recorded stamp with no correction applied; not guaranteed
+sorted (C1 §3.2).
+
+**The union axis `t`.** `data.parquet`'s own `t` column is the sorted,
+deduplicated union of every channel's `t_us` values in the session (C1
+§3.5 invariant 2) — the file's row axis; a channel's column is null on
+every row where it did not sample.
+
+FIT/GPX sources have no burst structure: their recorded timestamp maps to
+`t` directly, and `_t_recorded_us` is bit-identical to `t` by definition
+(C1 §3.4) — kept anyway for schema uniformity across every source.
 
 ### 15.3 Sample lifecycle for chart rendering
 
-The retained `SessionHandle` (§15 intro) owns every channel's samples — base, synthesized, and resolved math channels (the math store written via `add_channel`). Samples are stored **compactly**: each channel is a typed raw column (`RawColumn`) — IMU axes and i16/i32/f32 registry channels keep their raw wire values plus a `scale`/`offset` pair (2–4 bytes/sample); GPS and math channels are verbatim f64; synthesized `Time` is a zero-storage ramp (`value(i) = i / rate`) and `Distance` stores only GPS-rate metres, lazily interpolated onto the Time grid. Physical f64 is **materialized lazily** as `physical = (raw as f64) × scale + offset`, only for the consumer that asks, and is never resident. The Analyze chart decimates min/max tiles directly from it: `decimate_tile(handle, channel_id, tier, tile_index)` folds min/max per bucket over the raw column — no f64 window is materialized at any tier (an all-NaN tile for an absent channel). A session's samples therefore exist in exactly one place — the engine, in compact form — and never round-trip Dart→Rust for charting.
+The retained `SessionHandle` (§15 intro) owns every channel's samples — base, synthesized, and resolved math channels (the math store written via `add_channel`). Samples are stored **compactly**: each channel is a typed raw column (`RawColumn`) — IMU axes and i16/i32/f32 registry channels keep their raw wire values plus a `scale`/`offset` pair (2–4 bytes/sample); GPS and math channels are verbatim f64; synthesized `Time` is a zero-storage ramp (`value(i) = i / rate`) and `Distance` stores only GPS-rate metres, lazily interpolated onto the Time grid. Physical f64 is **materialized lazily** as `physical = (raw as f64) × scale + offset`, only for the consumer that asks, and is never resident. The Analyze chart decimates min/max tiles directly from it: `decimate_tile(handle, channel_id, tier, tile_index)` folds min/max per bucket over the raw column — no f64 window is materialized at any tier (an all-NaN tile for an absent channel). A session's samples therefore exist in exactly one place — the engine, in compact form — and never round-trip over IPC for charting.
 
-**The charts self-source every view by channel id.** Dart holds no copy of a channel's samples. Each Analyze chart is handed only channel *metadata* (`SessionChannelData`: `sessionId`, `channelId`, `sampleRateHz`, `length`, `isEventDriven`, built from `sessionChannelMetaProvider`) and pulls the bounded view it needs from the handle: the time-series line decimates tiles (`decimate_tile`) and reads Y-bounds from `channel_min_max` (engine-folded, no materialization) plus event-driven sample times from `channel_sample_times`; the FFT reads its spectrum from `welch_channel` (computed in the engine — only the `WelchResult` crosses FFI, never the samples); the histogram reads its value distribution from `channel_histogram` (binned in the engine — only the `HistogramResult` crosses FFI); the GPS map reads the fix list from `gps_track`, and for a channel-coloured trace one value per fix from `gps_channel_values` (the channel resampled nearest-sample onto the GPS fixes — only the small per-fix vector crosses FFI, never the column). Everything the chart renders is therefore a channel resident in the handle, addressed by id — including derived traces: a displayed **math channel** is evaluated-and-stored entirely engine-side (`eval_math_into_store(handle, expression, store_as, lap_ctx)` upserts the result under the channel name and returns only `(length, sample_rate_hz)` — the sample vector never crosses FFI), and a **lap-window slice** for the lap-compare overlay is sliced-and-stored engine-side via `slice_by_time_into_store` under a `'<id> (main)'` / `'<id> (overlay)'` name (only the length crosses FFI), then decimated like any channel. The Maths-tab expression preview likewise reads one decimated tile of the stored result, never the samples.
+**The charts self-source every view by channel id.** The frontend holds no copy of a channel's samples. Each Analyze chart is handed only channel *metadata* (`SessionChannelData`: `sessionId`, `channelId`, `sampleRateHz`, `length`, `isEventDriven`, built from `sessionChannelMetaProvider`) and pulls the bounded view it needs from the handle: the time-series line decimates tiles (`decimate_tile`) and reads Y-bounds from `channel_min_max` (engine-folded, no materialization) plus event-driven sample times from `channel_sample_times`; the FFT reads its spectrum from `welch_channel` (computed in the engine — only the `WelchResult` crosses IPC, never the samples); the histogram reads its value distribution from `channel_histogram` (binned in the engine — only the `HistogramResult` crosses IPC); the GPS map reads the fix list from `gps_track`, and for a channel-coloured trace one value per fix from `gps_channel_values` (the channel resampled nearest-sample onto the GPS fixes — only the small per-fix vector crosses IPC, never the column). Everything the chart renders is therefore a channel resident in the handle, addressed by id — including derived traces: a displayed **math channel** is evaluated-and-stored entirely engine-side (`eval_math_into_store(handle, expression, store_as, lap_ctx)` upserts the result under the channel name and returns only `(length, sample_rate_hz)` — the sample vector never crosses IPC), and a **lap-window slice** for the lap-compare overlay is sliced-and-stored engine-side via `slice_by_time_into_store` under a `'<id> (main)'` / `'<id> (overlay)'` name (only the length crosses IPC), then decimated like any channel. The Maths-tab expression preview likewise reads one decimated tile of the stored result, never the samples.
 
 Decimated tiles are cached in the app (`ChartTileCache`, §26.8) and invalidated when:
 - The session is removed from the active selection (which fires on session deletion from the library) — `SelectionNotifier` clears the cache slice.
@@ -1292,9 +1345,25 @@ Tracks no longer carry a derived "canonical" polyline. The 2026-05-08 polyline-a
 
 ### 16.3 Storage Model
 
-Drive is the source of truth; SQLite is a cache.
-- Drive: `IDL0/tracks/<trackId>.idl0t` — JSON file, one per Track.
-- Local cache: SQLite table `tracks` mirroring SessionIndex pattern. Columns: `track_id PRIMARY KEY`, `name`, `venue_name`, `created_at_ms`, `updated_at_ms`, `full_json TEXT`. The full JSON column lets us read the complete Track without joining other tables.
+Contract C4 fixes the layout; this section is the summary. The filesystem
+tree under `<data>` is the source of truth — there is no cloud store in
+idl1 (design doc D7: LAN sync only, no SaaS/Drive).
+
+- **File:** `<data>/tracks/<track_id>.idl0t` — JSON, one per Track, format
+  unchanged from idl0 (SPEC §16.2/§16.3 pre-idl1; C4 §2 fixes only the path
+  root). Written via the atomic-write primitive (C4 §4): `tmp/<uuid>` →
+  fsync → rename.
+- **Local cache:** SQLite table `tracks` in `<data>/catalog.sqlite` (C4
+  §5), columns `track_id PRIMARY KEY`, `name`, `venue_name`, `created_at_ms`,
+  `updated_at_ms`, `full_json TEXT` — the same shape the old `SessionIndex`
+  pattern used, now under one catalog database shared with `sessions`,
+  `blobs`, `workbooks`, `laps`, `lap_summary`. The catalog is rebuildable by
+  a full tree scan and is never itself synced (design principle: "the
+  catalog is an index").
+- **Sync (design doc §7, D7):** `tracks/*.idl0t` moves over the pit-lane LAN
+  sync protocol, last-write-wins by `updated_at_ms` (C4 §6) — the same
+  conflict rule the pre-idl1 `TrackProvider` used against Drive, now against
+  a peer app instance instead of a cloud folder.
 
 ### 16.4 Drive Folder Layout
 
@@ -1542,10 +1611,20 @@ file picker (export from the track editor; import from the Tracks panel).
 `default_rider` pre-populates rider field on every downloaded session. Overridable per session in Data tab.
 
 ### 18.2 Profile Management
-- Created/managed in Device tab
-- Stored in SQLite
-- **Config never auto-pushed** — user reviews and pushes manually
-- Post-session: profile editable in Data tab metadata editor (updates `.idl0w` only, not log file)
+
+- Created/managed in the Device tab.
+- **Stored as one JSON file per profile**, `<data>/profiles/<profile_id>.idl0p`
+  (path convention carried from `profile_store.dart`; fixed by C4 §2, added
+  post-sign as lead ruling R6). Written via the C4 §4 atomic-write
+  primitive (`tmp/<uuid>` → fsync → rename). A malformed profile file is
+  skipped on load with a warning, never fails the whole load (CLAUDE.md §5).
+- App-wide settings (rider name, unit system, firmware channel, …) persist
+  in `app_config_dir()/settings.json` (C4 §1's existing bootstrap file,
+  which already holds `data_dir`) rather than `shared_preferences` — see
+  this plan's Open questions for why that file rather than a new one.
+- **Config never auto-pushed** — user reviews and pushes manually (unchanged).
+- Post-session: profile editable in the Data tab metadata editor (updates
+  `session.json` only, C1 §6, not the immutable log file).
 
 ### 18.3 Multi-Device
 - App manages multiple IDL0 devices simultaneously
