@@ -75,10 +75,3 @@ export async function fetchTile(
   const buf = await invoke<ArrayBuffer>("fetch_tile", { sessionId, channel, tier, tileIndex });
   return decodeTile(buf);
 }
-
-/** The engine crate version, from `idl_rs::VERSION`. Never fails (C3 §3.1).
- *  TODO(idl0): move to `./ipc/engine.ts` in Task 5, per C3 §1's module list
- *  (engine.ts has no backing-lane dependency); App.tsx's import moves with it. */
-export async function fetchEngineVersion(): Promise<string> {
-  return invoke<string>("engine_version");
-}

@@ -1,0 +1,263 @@
+import { invoke } from "@tauri-apps/api/core";
+
+/** Catalog `sessions` table row (C3 §3.2, C4 §5), column for column. */
+export interface SessionSummary {
+  session_id: string;
+  /** hex-encoded, lowercase, 64 chars (C4 §5 sessions.blob_sha256) */
+  blob_sha256: string;
+  /** file-level: which importer produced this session — C1 §2 `Session.source_format`,
+   *  C4 §5 sessions.source_format. Distinct from `ChannelSummary.source_kind`. */
+  source_format: "idl0" | "fit" | "gpx" | "csv";
+  /** null for FIT/GPX/CSV sources (no device) — C1 §2 */
+  device_id: string | null;
+  /** null for FIT/GPX/CSV sources — C1 §2 */
+  config_checksum: string | null;
+  /** SemVer 2.0.0, e.g. "0.1.0" (C1 §4.3) */
+  importer_version: string;
+  /** e.g. "v1", §3.3's algorithm version (C1 §4.3) */
+  seam_correction_version: string;
+  /** SemVer 2.0.0, `idl-rs` core `CARGO_PKG_VERSION` (C1 §4.3) */
+  engine_version: string;
+  /** i64, session start, Unix epoch milliseconds; 0 = unknown (C1 §3.1) */
+  timestamp_utc_ms: number;
+  /** i64, catalog row insert time (import time) */
+  created_at_ms: number;
+  /** "" = not set (C4 §5 sessions.rider default) */
+  rider: string;
+  bike: string;
+  venue_name: string;
+  event_name: string;
+  event_session: string;
+  short_comment: string;
+  tag: string;
+  /** u32 | null — null until laps are indexed for this session; counts the
+   *  same rows `listLaps` returns. */
+  lap_count: number | null;
+  /** i64 milliseconds | null */
+  duration_ms: number | null;
+}
+
+/** `session.json`'s file-native `laps[]` shape (C1 §6) — distinct from the
+ *  catalog-cached `LapSummary` (returned only by `listLaps`). */
+export interface LapDetail {
+  /** int, 1-based (C1 §6 laps[].lap_number) */
+  lap_number: number;
+  /** i64, UTC ms */
+  start_timestamp_ms: number;
+  /** i64, UTC ms */
+  end_timestamp_ms: number;
+  /** i64, ms — end_timestamp_ms - start_timestamp_ms */
+  raw_elapsed_ms: number;
+  /** i64, ms — raw_elapsed_ms minus neutral-zone time */
+  lap_time_ms: number;
+  /** f64, seconds, recording-time (t=0-anchored) */
+  start_time_secs: number;
+  /** f64, seconds */
+  end_time_secs: number;
+  /** present when sector_gates is non-empty; element shape not yet fixed (C3 §6 item 11) */
+  sectors: unknown[];
+  /** element shape not yet fixed (C3 §6 item 11) */
+  neutral_zone_visits: unknown[];
+}
+
+/** `session.json`'s `track_visits[]` entry (C1 §6). */
+export interface TrackVisitSummary {
+  /** UUID (C1 §6 track_visits[].visit_id) */
+  visit_id: string;
+  /** UUID */
+  track_id: string;
+  /** i64, UTC ms */
+  start_timestamp_ms: number;
+  /** i64, UTC ms, always >= start_timestamp_ms */
+  end_timestamp_ms: number;
+  /** same shape as top-level laps; `[]` when session.json omits the key */
+  laps: LapDetail[];
+}
+
+/** One channel on a session (C1 §4). */
+export interface ChannelSummary {
+  channel_id: string;
+  /** f64, metadata only — never used to synthesize time (C1 §3.5) */
+  nominal_rate_hz: number;
+  /** C1 §4.1's per-channel unit */
+  unit: string;
+  /** channel-level: which sensor this channel came from — C1 §4.2 token,
+   *  e.g. "imu0", "gps", "fit", "gpx". Distinct from the file-level
+   *  `SessionSummary.source_format`. */
+  source_kind: string;
+  /** C1 §4.2; "event" iff nominal_rate_hz == 0.0 */
+  channel_kind: "fixed-rate" | "event";
+  /** u64 */
+  sample_count: number;
+}
+
+/** `get_session`'s return: C1 `Session` metadata plus `session.json` content
+ *  (C3 §3.2). Reads canonical files directly — does not extend
+ *  `SessionSummary` (the catalog's cached, possibly-stale copy). */
+export interface SessionDetail {
+  // --- C1 §2 `Session` ---
+  session_id: string;
+  /** null for FIT/GPX/CSV sources — C1 §2 */
+  device_id: string | null;
+  /** i64, session start, Unix epoch ms; 0 = unknown — C1 §3.1 */
+  timestamp_utc_ms: number;
+  /** null for FIT/GPX/CSV sources — C1 §2 */
+  config_checksum: string | null;
+  /** file-level, same field as `SessionSummary.source_format` — C1 §2/§4.3 */
+  source_format: "idl0" | "fit" | "gpx" | "csv";
+  /** hex-encoded, lowercase, 64 chars — C1 §2 */
+  blob_sha256: string;
+  channels: ChannelSummary[];
+
+  // --- session.json (C1 §6) — SessionMetadata carry-forward ---
+  /** "" = not set, no null representation (C1 §6) */
+  rider: string;
+  bike: string;
+  bike_comment: string;
+  venue_name: string;
+  event_name: string;
+  event_session: string;
+  short_comment: string;
+  long_comment: string;
+  tag: string;
+  /** verbatim BikeProfile.config at recording time (C1 §6) */
+  bike_profile_snapshot: Record<string, unknown> | null;
+
+  // --- session.json (C1 §6) — laps, track visits, lap flags ---
+  /** session.json's own laps[] — file-native shape, not the catalog's `LapSummary` */
+  laps: LapDetail[];
+  track_visits: TrackVisitSummary[];
+  /** null/omitted = "use fastest lap" (C1 §6) */
+  reference_lap_number: number | null;
+  /** sorted ascending (C1 §6) */
+  ignored_lap_numbers: number[];
+  main_lap_number: number | null;
+  overlay_lap_key: { session_id: string; lap_number: number } | null;
+  starred_lap_number: number | null;
+  /** opaque, do not parse (C1 §6) */
+  track_visits_library_hash: string | null;
+}
+
+/** One `lap_summary` row for a (session, lap, channel) — C4 §5. */
+export interface LapChannelStat {
+  /** materialised channel name (C4 §5 lap_summary.channel_id) */
+  channel_id: string;
+  /** 64-hex — which derived/<hash>.parquet this was computed from */
+  derived_hash: string;
+  min_value: number;
+  max_value: number;
+  mean_value: number;
+}
+
+/** Catalog-backed lap shape, returned only by `listLaps` (C3 §3.2, C4 §5
+ *  `laps` + `lap_summary` tables). Distinct from `SessionDetail.laps`'s
+ *  file-native `LapDetail`. */
+export interface LapSummary {
+  /** i32, 1-based — matches C1 §6 session.json laps[].lap_number and C4 §5 laps.lap_number */
+  lap_number: number;
+  /** i64 ms (C4 §5 laps.lap_time_ms) */
+  lap_time_ms: number;
+  /** C4 §5 laps.track_id — null if this lap isn't attributed to a track */
+  track_id: string | null;
+  /** C4 §5 lap_summary rows for this (session, lap) */
+  channel_stats: LapChannelStat[];
+}
+
+/** `rebuild_catalog`'s return (C3 §3.2). */
+export interface RebuildReport {
+  /** u32 */
+  sessions_indexed: number;
+  /** u32 */
+  workbooks_indexed: number;
+  /** u32 */
+  tracks_indexed: number;
+  /** u64, wall-clock time the rebuild took */
+  duration_ms: number;
+}
+
+/** Catalog `workbooks` table row (C4 §5), column for column. */
+export interface WorkbookSummary {
+  /** stable id from front matter (C2) */
+  workbook_id: string;
+  /** the bare, filesystem-sanitised display name used as
+   *  `workbooks/<file_name>.idl1wb` (C4 §2) — not a path relative to `workbooks/` */
+  file_name: string;
+  /** display name from front matter (C2) */
+  name: string;
+  /** i64, file mtime */
+  updated_at_ms: number;
+  /** u64 */
+  size_bytes: number;
+}
+
+/** Catalog `tracks` table row's scalar columns only (C4 §5), excluding
+ *  `full_json` — `getTrack` returns that. */
+export interface TrackSummary {
+  track_id: string;
+  name: string;
+  venue_name: string;
+  /** i64 */
+  created_at_ms: number;
+  /** i64 */
+  updated_at_ms: number;
+}
+
+/** The full `.idl0t` artifact content — the engine's
+ *  `track_artifact::model::Track` (`idl-rs` core) serialised (C3 §3.2). */
+export interface TrackDetail {
+  track_id: string;
+  name: string;
+  venue_name: string;
+  /** i64 */
+  created_at_ms: number;
+  /** i64 */
+  updated_at_ms: number;
+  /** sealed union (`Circuit` | `PointToPoint`, IDL0_SPEC §16.2a) — serde
+   *  tagging not yet fixed by any contract (C3 §6 item 10) */
+  lap_timing: unknown | null;
+  /** `NeutralZone[]`, IDL0_SPEC §16.2b — field shape not yet fixed (C3 §6 item 10) */
+  neutral_zones: unknown[];
+  /** `SectorGate[]` — field shape not yet fixed (C3 §6 item 10) */
+  sector_gates: unknown[];
+  /** `GpsFix[]` — field shape not yet fixed (C3 §6 item 10) */
+  reference_polyline: unknown[];
+}
+
+/** Lists every indexed session (C3 §3.2). Never on a hot path. */
+export async function listSessions(): Promise<SessionSummary[]> {
+  return invoke<SessionSummary[]>("list_sessions");
+}
+
+/** Reads one session's canonical files directly, not the catalog cache
+ *  (C3 §3.2). Settle-bound, e.g. explicit session-detail open. */
+export async function getSession(sessionId: string): Promise<SessionDetail> {
+  return invoke<SessionDetail>("get_session", { sessionId });
+}
+
+/** Catalog-backed lap list for one session (C3 §3.2). Settle-bound
+ *  alongside `getSession`, never a hot path. */
+export async function listLaps(sessionId: string): Promise<LapSummary[]> {
+  return invoke<LapSummary[]>("list_laps", { sessionId });
+}
+
+/** Rebuilds the catalog index from canonical files (C3 §3.2). Explicit
+ *  user action, never a hot path. */
+export async function rebuildCatalog(): Promise<RebuildReport> {
+  return invoke<RebuildReport>("rebuild_catalog");
+}
+
+/** Lists every indexed workbook (C3 §3.2). */
+export async function listWorkbooks(): Promise<WorkbookSummary[]> {
+  return invoke<WorkbookSummary[]>("list_workbooks");
+}
+
+/** Lists every indexed track's scalar catalog columns (C3 §3.2). */
+export async function listTracks(): Promise<TrackSummary[]> {
+  return invoke<TrackSummary[]>("list_tracks");
+}
+
+/** Reads the full `.idl0t` artifact for one track (C3 §3.2). Never on a hot
+ *  path — settle-bound like `getSession`. */
+export async function getTrack(trackId: string): Promise<TrackDetail> {
+  return invoke<TrackDetail>("get_track", { trackId });
+}
