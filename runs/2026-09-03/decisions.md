@@ -412,3 +412,14 @@ not a change to what any task produces. The actual damage this run (one
 branch ref reset, one stray remote) was real but fully diagnosed, fully
 reversible, and reversed before it reached anything the lead or any other
 lane depends on.
+
+---
+
+## 2026-09-03 — Tracked, non-blocking: SPEC §16.1 Drive contradiction
+
+L1 Task 2's review (`runs/2026-09-03/lanes/l1-store/review-task2.md`) found
+`docs/IDL0_SPEC.md` §16.1 still says Tracks live in Google Drive — pre-existing,
+untouched by Task 2 (correctly out of its declared scope, §15/§16.3/§18
+only), and now contradicts the rewritten §16.3's "no cloud store" language.
+No wave-1 lane owns §16.1/§16.2/§16.4 (design §10 doesn't assign them to
+L1-L5/L10). **Owner: lead, tracked for a future pass** — not blocking wave 1.
