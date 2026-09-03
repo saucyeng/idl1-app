@@ -1,6 +1,6 @@
 # C2 — Workbook v3 (`.idl1wb`)
 
-**Status:** draft · **Date:** 2026-09-03 · **Owner:** lead
+**Status:** signed (lead) 2026-09-02 · **Date:** 2026-09-03 · **Owner:** lead
 
 Consumed by: L3 (`idl-rs` core `workbook` module — parser, math-cell evaluator
 extension, `migrate-workbook`), L6 (notebook editor — CodeMirror, Properties ↔
