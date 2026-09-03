@@ -17,6 +17,8 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
   BLE (`btleplug`) scan/connect/status/control/config-push, WiFi (`reqwest`) file listing,
   resumable download, config-push fallback — all behind `BleTransport`/`WifiTransport` traits
   L9's mobile plugins implement later. SPEC gains §14a (trait shapes, chunk/timeout defaults).
+- **idl-rs-tauri: typed IpcError (C3 §2).** Cross-cutting and transport-sourced kinds seeded; each lane adds its own prefixed kinds when its command lands.
+- **<data> resolution and settings.json bootstrap (C4 §1).** Resolved once at startup, directory tree created idempotently; overridable via app_config_dir()/settings.json.**
 
 ### Verified
 
