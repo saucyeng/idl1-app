@@ -12,38 +12,56 @@ Sources: `2026-09-02-idl1-rewrite-design.md` §3, §5, §7, D6, D7, D10, §9 row
 
 ## 1. Root
 
-`<data>` is resolved once at startup via Tauri v2's `app_data_dir` path
-resolver (the built-in path API — no extra crate) and cached for the process
-lifetime. One root per OS user account; the app does not support multiple
-concurrent data roots.
+**`<data>` is a subdirectory, not the platform identifier directory itself:**
 
-Per-platform default, from Tauri v2's `app_data_dir` resolver (per-user
-application-data convention for the app's bundle identifier — the literal
-bundle id string is an L5 scaffold decision, not fixed by this contract):
+```
+<data> = app_data_dir()/data
+```
 
-| Platform | Default `<data>` |
-|---|---|
-| Windows | `%APPDATA%\<bundle-id>` (`FOLDERID_RoamingAppData`, e.g. `C:\Users\<user>\AppData\Roaming\<bundle-id>`) |
-| macOS | `~/Library/Application Support/<bundle-id>` |
-| Linux | `$XDG_DATA_HOME/<bundle-id>`, falling back to `~/.local/share/<bundle-id>` |
-| Android | app-private internal storage (`Context.getFilesDir()` equivalent), exposed to Rust as a real path by the Tauri mobile runtime — not user-browsable outside the app |
-| iOS | `Library/Application Support` inside the app's sandboxed container — already app-scoped, no extra bundle-id subdirectory |
+resolved once at startup via Tauri v2's `app_data_dir` path resolver (the
+built-in path API — no extra crate) and cached for the process lifetime.
+One root per OS user account; the app does not support multiple concurrent
+data roots.
+
+The settings bootstrap file (below) lives at `app_config_dir()/settings.json`
+— Tauri's separate per-user *config* path resolver. On **Windows and
+macOS, Tauri v2 resolves `app_config_dir()` and `app_data_dir()` to the
+same parent directory** (Roaming AppData; `~/Library/Application
+Support/<bundle-id>` — not `Preferences`, corrected from an earlier draft
+of this contract); only **Linux** genuinely separates them
+(`$XDG_CONFIG_HOME` vs `$XDG_DATA_HOME`). This coincidence is harmless
+precisely because `<data>` is defined as the `data/` subdirectory beside
+`settings.json`, never the identifier directory itself: `settings.json`
+sits one level up from everything in §2's tree, on every platform,
+regardless of whether its parent directory happens to equal
+`app_data_dir()`'s. Consequently `settings.json` is outside `<data>` on
+every platform — sync (§6) and `verify`/rebuild (§5, §7) only ever walk
+`<data>` (`app_data_dir()/data`), so `settings.json` is structurally
+excluded from both, not excluded by convention alone.
+
+Per-platform concrete paths (bundle id is an L5 scaffold decision, not
+fixed by this contract — shown as `<bundle-id>`):
+
+| Platform | `app_data_dir()` | `<data>` (`app_data_dir()/data`) | `app_config_dir()` → `settings.json`'s parent |
+|---|---|---|---|
+| Windows | `%APPDATA%\<bundle-id>` (`FOLDERID_RoamingAppData`, e.g. `C:\Users\<user>\AppData\Roaming\<bundle-id>`) | `%APPDATA%\<bundle-id>\data` | **same directory as `app_data_dir()`** — `%APPDATA%\<bundle-id>` |
+| macOS | `~/Library/Application Support/<bundle-id>` | `~/Library/Application Support/<bundle-id>/data` | **same directory as `app_data_dir()`** — `~/Library/Application Support/<bundle-id>` |
+| Linux | `$XDG_DATA_HOME/<bundle-id>`, falling back to `~/.local/share/<bundle-id>` | `.../<bundle-id>/data` | **genuinely separate** — `$XDG_CONFIG_HOME/<bundle-id>`, falling back to `~/.config/<bundle-id>` |
+| Android | app-private internal storage (`Context.getFilesDir()` equivalent), exposed to Rust as a real path by the Tauri mobile runtime — not user-browsable outside the app | `.../data` | Android has no OS-level data/config split; expected to land in the same app-private storage area as `app_data_dir()` — not independently verified, no coincidence claim relied on here since `<data>` is a subdirectory either way |
+| iOS | `Library/Application Support` inside the app's sandboxed container — already app-scoped, no extra bundle-id subdirectory | `.../Application Support/data` | expected `Library/Preferences` (or the same container area) inside the same sandboxed container — exact Tauri v2 mapping unconfirmed, same open item as the bundle id (§8) |
 
 **Override in Settings.** The Settings tab may point `<data>` at any writable
 directory. Because `catalog.sqlite` (and everything else) lives *inside*
 `<data>`, the override itself cannot live inside `<data>` — it has to be
-readable before `<data>` is known. It is stored in a small bootstrap file,
-independent of `<data>`, at:
+readable before `<data>` is known. It is stored in the bootstrap file
+described above, at:
 
 ```
 <app_config_dir>/settings.json
 ```
 
-(`app_config_dir` is Tauri's separate per-user *config* path resolver —
-`~/Library/Preferences/<bundle-id>` on macOS, `%APPDATA%\<bundle-id>\config`
-convention on Windows via the same resolver family, `$XDG_CONFIG_HOME` on
-Linux — distinct from `app_data_dir`.) Read with plain `std::fs`, no crate
-beyond Tauri's bundled path resolver. Shape:
+Read with plain `std::fs`, no crate beyond Tauri's bundled path resolver.
+Shape:
 
 ```json
 { "data_dir": "D:\\race-data" }
@@ -55,6 +73,11 @@ app opens (or creates) the tree at the new path and the old tree is left
 untouched (surfaced to the user as "old data left at `<old path>`").
 
 ## 2. Layout
+
+Everything below is rooted at `<data>` as defined in §1
+(`app_data_dir()/data`) — a subdirectory, not `app_data_dir()` itself. The
+settings bootstrap file (`app_config_dir()/settings.json`, §1) is never part
+of this tree, on any platform.
 
 ```
 <data>/
@@ -226,7 +249,12 @@ path:
 
 `session.json`, `tracks/*.idl0t`, and `catalog.sqlite` are not watched in
 v1 — an external edit to `session.json` requires an explicit reload, matching
-design §7's explicit scope (workbooks only).
+design §7's explicit scope (workbooks only). The watched tree is
+`<data>/workbooks` where `<data>` is §1's `app_data_dir()/data` — the
+settings bootstrap file at `app_config_dir()/settings.json` is outside
+`<data>` on every platform (§1) and is therefore never reachable by this
+watcher, regardless of whether `app_config_dir()` and `app_data_dir()`
+happen to share a parent on the current platform.
 
 ## 5. Catalog
 
@@ -380,7 +408,11 @@ the file.
 `sessions/<id>/derived/*.parquet`, `sessions/<id>/session.json`,
 `workbooks/*.idl1wb`, `tracks/*.idl0t`. **Never moves:** `catalog.sqlite`
 (+ its `-wal`/`-shm` sidecars — it is an index, D10, rebuilt locally per §5)
-and `tmp/` (write-staging, never a stable artifact).
+and `tmp/` (write-staging, never a stable artifact). The sync server walks
+`<data>` (`app_data_dir()/data`, §1) to build the manifest below; it has no
+reason to and never does read `app_config_dir()/settings.json` — that file
+is outside `<data>` on every platform, so it is not a "never moves"
+exception to state, it is simply never in scope to begin with.
 
 `GET /manifest` returns one JSON document listing every syncable file,
 nested by session where the file lives under a session directory:
@@ -458,7 +490,9 @@ warning").
 
 **`verify` procedure** — every check, in order, each producing a
 `Finding { severity, path, message }` (severity: `error` | `warning` |
-`info`):
+`info`). Scope is `<data>` (`app_data_dir()/data`, §1) only —
+`app_config_dir()/settings.json` is outside `<data>` on every platform and
+is never scanned, checked, or reported on by `verify`:
 
 1. **error** — every `blobs/sha256/<a>/<b>` file's own SHA-256 does not
    match its `<a><b>` path (corruption or tampering).
@@ -501,9 +535,15 @@ warning").
 Each below is a decision this draft made without a fully explicit source;
 flagged for lead confirmation before signing, per the doc's own review gate.
 
-1. **Bootstrap-settings file** (§1): `<app_config_dir>/settings.json` holding
+1. **Bootstrap-settings file** (§1): `app_config_dir()/settings.json` holding
    `{ "data_dir": "..." }`, read via plain `std::fs` before `<data>` is
-   known. Design does not specify this mechanism; needs confirmation. —
+   known. Design does not specify this mechanism; needs confirmation.
+   *Resolved this round (review round 1):* `<data>` is now defined as
+   `app_data_dir()/data`, a subdirectory — this keeps `settings.json`
+   outside `<data>` on every platform even where `app_config_dir()` and
+   `app_data_dir()` share a parent (Windows, macOS). What remains open is
+   only whether a bootstrap file is the *right* mechanism at all (vs., say,
+   a platform keychain/registry entry) — not its location. —
    *Owner: lead.*
 2. **`session_id` collision-extension rule** (§3): git-style adaptive-length
    hex prefix for the blob-hash-derived case. Design says "you define the
