@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import "./App.css";
-import { fetchEngineVersion, fetchSmokeTile } from "./ipc/tiles";
+import { fetchEngineVersion } from "./ipc/tiles";
+import { fetchSmokeTile } from "./ipc/_m0_smoke";
 
 /** Root of the idl1 UI. M0: proves JSON and binary IPC against the engine. */
 export default function App() {
