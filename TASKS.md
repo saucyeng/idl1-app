@@ -14,7 +14,7 @@ are defined in `docs/superpowers/specs/2026-09-02-idl1-rewrite-design.md` §10.
 - [x] Task 7 contract C2 workbook v3
 - [x] Task 8 contract C3 IPC surface
 - [x] Task 9 contract C4 data directory
-- [x] Task 10 M0 exit — complete pending Isaac's `npm run tauri dev` visual check
+- [x] Task 10 M0 exit — complete; desktop visual check confirmed 2026-09-03
 
 ## Wave 1 (after M0)
 
