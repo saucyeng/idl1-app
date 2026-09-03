@@ -580,3 +580,35 @@ L5 on L1's landing.
 by contract (first 2 hex chars / remaining 62), independently verifiable
 against C4 §2's text; the TODO ensures the duplication doesn't linger
 past L1's merge.
+
+---
+
+## 2026-09-03 — Process near-miss: dispatched a task before its worktree's prior fix had landed
+
+**What happened.** The lead dispatched L1 Task 10's fix (a real bug fix to
+`core/src/store/derived.rs`) and, before that fix's completion notification
+arrived, dispatched L1 Task 11 into the *same* worktree
+(`idl-rs-worktrees\wave1-l1-store`). Both agents ran concurrently against
+the same physical directory. No damage resulted — Task 11 worked in a
+different, unrelated file (`session_json.rs`, committed cleanly at
+`e001565`) and its own implementer explicitly noticed the unexpected dirty
+`derived.rs` state, correctly left it untouched, and flagged it for the
+lead rather than assuming or clobbering. But this was the implementer's
+good judgment saving an orchestration mistake, not a guarantee — two agents
+building/testing concurrently in one worktree can genuinely race (stale
+`target/` artifacts, one agent's `cargo test` run picking up the other's
+half-written file, a commit landing mid-edit).
+
+**Rule going forward:** never dispatch a new task (implementer, fixer, or
+otherwise) into a worktree that has another dispatch still outstanding in
+it — wait for the completion notification (or the review/fix cycle it
+spawns) before starting the next one in that same worktree. This applies
+per-worktree, not per-lane: a fix-up dispatch counts as "still outstanding"
+in that worktree exactly like the task it followed. Different lanes'
+worktrees remain safe to run in parallel (different directories, no
+collision surface).
+
+**Cost if wrong:** this instance — zero, no actual damage. In general,
+were a real collision to occur, the cost is bounded and recoverable (git
+history + the worktree's own uncommitted diff), but avoidable entirely by
+just not doing it, which is now the standing rule.
