@@ -539,3 +539,44 @@ current fixtures were meant to represent.
 margin in practice, the fix is widening the fixtures further, not
 redesigning anything; the underlying algorithm and its tests-must-detect-
 the-drop intent are unaffected either way.
+
+---
+
+## 2026-09-03 — Tracked, non-blocking: pre-existing flaky watcher test
+
+L5 Task 10's review found `watcher::tests::self_write_with_pre_registered_
+hash_never_fires_callback` (Task 3's work, already reviewed CLEAN twice)
+fails intermittently — confirmed real, ~1.6% failure rate over ~61 runs —
+but is a pre-existing timing-sensitive issue (the TTL/debounce design ruled
+safe in Task 3's review) merely exposed by more parallel test execution in
+Task 10, not a Task 10 regression. **Owner: whoever next touches
+`tauri/src/watcher.rs`** — fix the race (likely needs a slightly longer
+debounce margin in the test, or a deterministic clock injection instead of
+real sleeps) before this lane's own final done-criteria check, since a
+~1.6% flake rate will eventually surface as a false CI failure. Not
+blocking L5's current task chain.
+
+**Cost if wrong:** Low — a known, characterized, low-frequency flake in one
+test; the underlying watcher logic itself was independently judged safe.
+
+---
+
+## 2026-09-03 — L5 Task 10 blob path fixed: sharded, not flat
+
+L5 Task 10's `download_file` command wrote downloaded blobs to a flat
+`blobs/sha256/<hash>` path instead of C4 §2's fixed sharded
+`blobs/sha256/<2 hex>/<62 hex>` convention — a real contract violation that
+would have broken catalog/verify/sync's blob-path assumptions once those
+lanes land (L1's own Task 8, already correct on the not-yet-merged
+`wave1-l1-store` branch, uses the right sharding). L5 couldn't literally
+import L1's `store::blob` writer yet (L1 hasn't merged to `main`), so a
+duplicate ad hoc implementation was the only option available at the time
+— fixed to use the *correct* sharded path formula directly, with a
+`// TODO(idl0):` to replace the duplicated sharding logic with a real call
+into `idl_rs::store::blob` once L1 merges to `main`, rather than blocking
+L5 on L1's landing.
+
+**Cost if wrong:** Low — the sharding formula itself is simple and fixed
+by contract (first 2 hex chars / remaining 62), independently verifiable
+against C4 §2's text; the TODO ensures the duplication doesn't linger
+past L1's merge.
