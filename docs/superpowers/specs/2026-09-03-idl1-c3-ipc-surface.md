@@ -108,13 +108,26 @@ condition) is folded into `internal` for the same reason. This is stated
 once here rather than repeated per row.
 
 **Kind vocabulary** — the union of every core error enum's non-folded
-variants (`snake_case`), the four `TransportErrorKind` values (unprefixed,
-since they are already domain-named and a fixed, tested contract from Task
-2), plus the four cross-cutting kinds `not_found` / `invalid_argument` /
-`io` / `internal`. Enum-sourced kinds that could collide across enums if
-flattened naively (`MathEvalErrorKind::Parse` vs `ConfigErrorKind::Parse`)
-are prefixed by source domain (`math_parse` vs `config_parse`) — this is the
-only naming transform applied; nothing is renamed for style.
+variants (`snake_case`) plus two fixed, unprefixed groups. The naming rule
+is applied uniformly, not case-by-case:
+- Every variant sourced from a **core error enum** is prefixed with that
+  enum's domain (`parse_*` from `ParseError`, `math_*` from
+  `MathEvalErrorKind`, `config_*` from `ConfigErrorKind`, `export_*` from
+  `ExportError`/`FitExportError`) — always, including variants that do not
+  currently collide with anything (`math_unknown_function`,
+  `parse_invalid_magic_bytes`, …). A stable, predictable prefix per source
+  means a *new* enum, or a new variant on an existing one, can never force
+  a rename of an existing kind to avoid a collision — the alternative
+  (prefix only where a collision exists today) would make the vocabulary's
+  spelling depend on which enums happen to coexist at a given moment.
+- The four **`TransportErrorKind`** values (`ble`, `wifi`, `config`,
+  `sync`) are unprefixed by design: they are already domain-named nouns,
+  and Task 2 shipped and tested their exact JSON spelling
+  (`{"kind":"wifi",...}`) before this contract existed — prefixing them
+  would break a committed contract for no benefit.
+- The four **cross-cutting kinds** (`not_found`, `invalid_argument`, `io`,
+  `internal`) are unprefixed by design: they are not sourced from any one
+  enum, so there is no domain to prefix with.
 
 | `kind` | Source | Raised by (command group) |
 |---|---|---|
@@ -215,6 +228,7 @@ interface RebuildReport {
 Errors: `io`, `internal`.
 
 **`list_workbooks()`**
+Args: none.
 Return: `WorkbookSummary[]`
 ```ts
 interface WorkbookSummary {
@@ -227,6 +241,7 @@ interface WorkbookSummary {
 Errors: `io`, `internal`.
 
 **`list_tracks()`**
+Args: none.
 Return: `TrackSummary[]`
 ```ts
 interface TrackSummary {
@@ -307,6 +322,8 @@ Subscribes to the file watcher (design §7) for one workbook; the command's
 own `Promise` resolves once subscription is established, then the channel
 carries events for the life of the subscription (unsubscribe is closing the
 channel from the frontend side).
+Return: `void` (the subscription's events are carried on `channel`, not on
+the resolved value).
 ```ts
 interface WorkbookEvent {
   kind: "changed" | "conflict";
@@ -342,7 +359,7 @@ with each tile").
 | `tile_index` | `u32` | 8 | Echoes the request |
 | `sample_count` | `u32` | 12 | Number of `(min, max)` bucket pairs that follow. Today `decimate_channel` always fills `TILE_SIZE_BUCKETS = 1024` (right-edge-padded with NaN); `sample_count` makes the tile self-describing so a shorter final tile or a future tile-size change never requires a layout bump. |
 | `column_count` | `u32` | 16 | Number of pixel columns in the stats table that follows. Independent of `sample_count` — chosen by the caller/L3 to match the rendered chart width (design §6 point budget), not tied to the bucket grid. |
-| `flags` | `u32` | 20 | Reserved, `0` in this contract — see open question 6.4 |
+| `flags` | `u32` | 20 | Reserved, `0` in this contract — see open question 6.5 |
 | `reserved` | `[u8; 8]` | 24 | Zero-filled, reserved |
 
 Header ends at byte offset **32**.
@@ -377,7 +394,7 @@ Check: `4128 = 32 + 4096` ✓. `7200 = 4128 + 3072` ✓. `7200 = 32 + 4096 + 307
 numeric parameters (e.g. `window_size`/`hop_size` for `"spectrogram"`,
 `x_channel`/`y_channel` are not numeric so those stay as separate string
 args if `kind` needs a second channel — flagged provisional, open question
-6.3; the shape here is the interim, typed-but-generic contract).
+6.4; the shape here is the interim, typed-but-generic contract).
 Return: raw bytes via `tauri::ipc::Response`.
 Errors: `not_found`, `invalid_argument` (bad `width`/`height`/`kind`/`params`), `io`, `internal`.
 
@@ -544,11 +561,13 @@ event): `fetch_tile`, `fetch_raster`, `cursor_readout`, `eval_workbook`.
 **Fine to call any time, not gesture-bound** (cheap, or explicit user
 action rather than a continuous gesture): `engine_version`, `list_sessions`,
 `get_session`, `rebuild_catalog`, `list_workbooks`, `list_tracks`,
-`list_importers`, `open_workbook`, `save_workbook` (explicit save action),
-`watch_workbook` (one-time subscribe), `ble_scan`/`ble_connect`/
-`list_device_files`/`download_file`/`push_config` (explicit user action on
-the Device tab, never triggered by chart interaction), `sync_status`
-(periodic poll on a timer, not per-frame), `sync_now`, `pair_peer`.
+`list_importers`, `import_file` (explicit user action on the Data tab —
+picking a file to import is never a chart gesture), `open_workbook`,
+`save_workbook` (explicit save action), `watch_workbook` (one-time
+subscribe), `ble_scan`/`ble_connect`/`list_device_files`/`download_file`/
+`push_config` (explicit user action on the Device tab, never triggered by
+chart interaction), `sync_status` (periodic poll on a timer, not
+per-frame), `sync_now`, `pair_peer`.
 
 ---
 
