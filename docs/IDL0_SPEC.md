@@ -2190,7 +2190,7 @@ download behaviour below are unchanged regardless of where it is launched from.
 - not in the library → **NEW**,
 - `session_id` empty (older firmware) → **NEW?** identity-unknown (shown as downloadable).
 
-Entries are sorted newest-first (filename descending, per the `YYYY-MM-DD_HH-MM-SS.idl0` convention in §15.1) and rendered as a tightly-packed list.
+Entries are sorted newest-first (filename descending, per the `YYYY-MM-DD_HH-MM-SS.idl0` convention in §10) and rendered as a tightly-packed list.
 
 **Two behaviours, switched by one setting.** The screen serves two distinct cases cleanly:
 - **Pick a few (default).** The list is a file picker: every NEW row is a checkbox **unchecked by default**, so connecting to an unfamiliar device never pulls everything at once. The user checks the files they want and taps **Download (N)** (disabled until something is selected). This runs `SyncController.sync()`, which downloads only the checked files.
