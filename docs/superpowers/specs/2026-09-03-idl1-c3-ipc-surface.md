@@ -217,7 +217,10 @@ Return: `SessionDetail` — C1 `Session` metadata (§2) plus `session.json`
 content (§6). This does **not** extend `SessionSummary`: the catalog row is
 a fast, possibly-stale cache of a subset of these same values (C4 §5,
 "nothing reads the catalog for truth" — `get_session` reads the canonical
-files directly, not the catalog).
+files directly, not the catalog). `importer_version`/`seam_correction_version`/
+`engine_version` are catalog facts about `data.parquet` (C1 §4.3), not part of
+`Session` or `session.json` — they live on `SessionSummary` only; `get_session`
+reads canonical files, not file metadata, so `SessionDetail` does not carry them.
 ```ts
 interface SessionDetail {
   // --- C1 §2 `Session` ---

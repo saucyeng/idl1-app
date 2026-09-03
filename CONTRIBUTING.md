@@ -41,7 +41,9 @@ computed in JavaScript; no chart is drawn in Rust. `core` functions must be
 testable without Tauri or a device.
 
 ### State Management
-Riverpod only. No Provider, no Bloc, no raw setState except for local widget state.
+The UI is React (design D12); the frontend state approach is decided in
+lanes L5/L6 and recorded in the SPEC when chosen. Riverpod, Provider and
+Bloc belong to idl0 and do not apply.
 
 ### Naming
 ```
