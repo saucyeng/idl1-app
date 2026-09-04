@@ -1475,3 +1475,46 @@ a trap. Unless C2 §3.1's grammar literally forbids a sign (reviewer
 checks), the rejection is an Important finding → Task 4's Step 0.
 
 **Cost if wrong:** negligible — one token-pattern match and a test.
+
+---
+
+## 2026-09-04 — R23: L2 Tasks 1–6 pre-read adjudicated; GPS scale, Time synthesis, entry point
+
+Pre-read: `lanes/l2-importers/pre-read-tasks1-6.md` (36 gaps, rulings
+L2-R1…L2-R13, 4 questions). Not restated. Lead decisions:
+
+- **L2-R1 … L2-R13: approved as drafted.** L2-R10 (`parquet.rs`
+  `<source>_t_recorded_us` from the union of a source's channels' `t_us`)
+  and L2-R13 (`store::import::import_file` generalising `import_idl0`,
+  incl. fixing G0.6's discarded `import_warnings`) are landed-L1 files —
+  **L2 edits them with this ruling as the cross-lane authorisation**
+  (CLAUDE.md §7: through the lead). L2-R9: `fitparser` stays 0.9.
+- **Q1 — GPS coordinate scale: ×1e7 everywhere, `unit: deg_e7`.** C1 §4.1's
+  FIT/GPX row said decimal `deg` under the same column name `.idl0` fills
+  at ×1e7, and every landed consumer (`gps.rs`, `laps::distance`,
+  `laps::gate_synthesis`, `tracks::detect`; R17) assumes ×1e7. One scale
+  for every GPS consumer beats threading unit metadata through four
+  modules. C1 §4.1 amended (lead): `GPS_Latitude`/`GPS_Longitude` are
+  `deg_e7` for every source; the "always physical" wording gains that one
+  named exception. Not Isaac's physics call — a contract-consistency call;
+  flagged to him.
+- **Q2 — `Time`/`Distance` for FIT/GPX/CSV: fix the synthesizer, not the
+  metadata.** `synthesize_base_channels` picks the channel with
+  `nominal_rate_hz > 0` today; ruling: when none has a rate, use the
+  channel with the most samples (its real `t_us`). Declaring a fake 1 Hz
+  would make `channel_kind` lie about an irregular source. Landed L1 file
+  (`synthesis.rs`), edited by L2 under this ruling, with a test.
+  `Distance` still requires `GPS_SpeedKmh`.
+- **Q3 — FIT populates `GPS_EpochMs`** from `record.timestamp` (a UTC
+  instant); §15a.2's "no equivalent field" sentence is struck.
+- **Q4 — archive:** Tasks 1–6 land on synthetic fixtures (the FIT fixture
+  is verified decodable against fitparser 0.9's profile decoder). Task 8
+  (speed/heading direct path) and any `fitparser` bump wait for Isaac's
+  real FIT/GPX archive. Still wanted.
+- L2 runs after L3 (R13: one lane at a time). Briefs written now by a
+  Sonnet agent so L2 starts the moment L3 lands.
+
+**Cost if wrong:** Q1 is the one with teeth — it is a contract amendment
+narrowing "always physical"; reversible before any FIT/GPX file is
+imported for real, and the `unit` metadata records the truth either way.
+Q2/Q3 are strictly more information than the drafts.
