@@ -1,3 +1,13 @@
+# L3 Task 13 — CUT FROM WAVE 1 (ruling R30, 2026-09-04)
+
+> **DO NOT IMPLEMENT.** Isaac has no `.idl0wb` files worth migrating — v3
+> workbooks start from scratch — so this task is cut and Task 14 keeps only
+> its non-migration half. C2 §6 (`_migrate_math`, chart reference
+> resolution) stays specified but unimplemented. The brief below is kept
+> verbatim for whenever migration is actually wanted.
+
+---
+
 # L3 Task 13 — implementer brief (`migrate-workbook` CLI subcommand; C2 §6, Stage 1)
 
 You are the implementer for L3 Task 13 of the idl1 rewrite — the thirteenth
