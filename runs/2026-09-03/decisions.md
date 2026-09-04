@@ -641,3 +641,123 @@ that task's own gate.
 characterized, low-frequency, isolated to test infrastructure rather than
 the primitive's actual correctness (already independently verified
 correct in Task 7's own review).
+
+---
+
+## 2026-09-03 — R13: compute-load ruling — the run made Isaac's machine unusable
+
+**Symptom (Isaac, verbatim):** "my computer's been unusable all day" /
+"go easier on my poor old computer".
+
+**Root cause (verified, not inferred).** Three compounding factors:
+
+1. Every lane worktree compiled the full arrow/parquet/tokio/btleplug/
+   reqwest dependency graph into its *own* `target/` — the same
+   `Cargo.lock`, built four times over. At the worst point `tasklist`
+   showed 7 `cargo.exe` + 1 `rustc.exe` + 4 `node.exe` concurrently.
+2. The machine is 12 logical cores / 15.7 GB RAM with ~1.8 GB free *at
+   idle* (nothing building). Cargo's default of one `rustc` per core on
+   this dependency graph pushes it straight into swap — memory, not CPU,
+   is what made the desktop unresponsive.
+3. Every implementer and reviewer ran the full 630-test suite (≈280 s
+   per run) per task, and reviewers were defaulting to multi-rerun
+   flakiness hunts on top of that.
+
+**Fixes applied:**
+
+- `rust/.cargo/config.toml` (idl-rs `main`, commit `78e4fa1`): shared
+  `target-dir` at `saucyeng/.cargo-shared-target`. Applies to every worktree
+  created from `main` from here on (L2, L3, and anything after). The
+  existing warm worktree (`wave1-l1-store`) is deliberately **not**
+  switched: the shared dir is still empty (0 GB), so switching would force
+  exactly the cold compile the config exists to avoid. The `wave1-l5-tauri`
+  worktree has an untracked copy of the same config; its next build (gated
+  on L1/L2/L3 anyway) seeds the shared dir.
+- `%USERPROFILE%\.cargo\config.toml` (machine-wide, outside every repo):
+  `[build] jobs = 4`. Reversible by deleting the file; overridable per
+  invocation with `-j`. This is the lever that reaches the L1 worktree
+  without touching it.
+- **Standing rules while the machine is the bottleneck** (tightens the
+  per-worktree rule above): (a) one build-running dispatch at a time,
+  across *all* worktrees, implementer or reviewer — not one per worktree;
+  (b) task-cycle test gate is the task's own module (`cargo test -p idl-rs
+  store::catalog`, etc.), never the full suite; (c) the full suite runs
+  once per lane at its merge gate, with `-- --test-threads=4`; (d) no
+  multi-rerun flakiness hunts unless the lead asks for one.
+
+**Cost if wrong:** Low — every change is reversible and the only cost is
+slower wall-clock per task, which is the intended trade. If the shared
+target-dir ever misbehaves (path-dependent fingerprints, a worktree on a
+different `Cargo.lock`), delete the config file in that worktree and it
+falls back to a local `target/`.
+
+---
+
+## 2026-09-03 — R14: L1 Task 12 rework — four rulings the fix-up needs
+
+Review `lanes/l1-store/review-task12.md` returned NEEDS-REWORK on two
+Important, spec-explicit bugs plus three Minor items. Neither Important
+bug has a fully specified fix in C4 §5 — both need a lead ruling rather
+than an implementer's guess.
+
+1. **`sessions.duration_ms` definition.** C3 says "RENAMED from
+   `duration_s`" — it is the session's length, not anything lap-derived
+   (most sessions have no laps). Ruling: the span of `data.parquet`'s
+   `t_us` column, `round((max − min) / 1000)`, mirroring
+   `Session::duration_ms()` exactly (`core/src/session/mod.rs:327`);
+   `NULL` when the file has fewer than two rows. Read only the `t_us`
+   column (a projection, or the row-group statistics if present in every
+   row group) — never the whole file.
+2. **`laps.track_id` join.** C4 §5 step 4 names the source ("from the
+   session's track visits") but not the join. Ruling: containment by
+   timestamp — lap `L` takes visit `V`'s `track_id` iff
+   `V.start_timestamp_ms <= L.start_timestamp_ms && L.end_timestamp_ms <=
+   V.end_timestamp_ms`; first matching visit in `track_visits` order;
+   `NULL` when no visit contains the lap. **Not** by
+   `visit.laps[*].lap_number`: C1 §6 documents those as cached copies from
+   idl0's `workspace.dart`, and whether their numbering is per-session or
+   per-visit is unspecified — timestamps are the visit's own explicit,
+   documented fields. If the matched `track_id` is absent from `tracks`
+   (the FK would reject it under `foreign_keys = ON`), insert `NULL` and
+   push a `report.skipped` entry naming the dangling track — the lap row
+   itself is still valid and still indexed.
+3. **`sessions.created_at_ms`** (Minor, but the reviewer is right that a
+   silent `0` reads as done). Interim: `session.json`'s filesystem mtime
+   in UTC ms, with a `// TODO(idl0):` pointing here. **Open question
+   (lead, non-blocking):** C1 §6 has no `imported_at_ms` field, so nothing
+   under `<data>` durably records import time; `created_at_ms` cannot mean
+   "import time" across rebuilds until C1 grows one. Needs a C1
+   amendment; not in this fix.
+4. **Remaining Minors.** Add the missing-blob → `report.skipped` test
+   (the mechanism is verified sound but unexercised). Accept
+   `read_derived_channels`' whole-file `concat_batches` with a doc comment
+   stating it as a known simplification — no restructure in this cycle.
+
+**Cost if wrong:** Low — "the catalog is an index: deletable, rebuildable,
+never synced." Every rule above is one line to change and no synced
+artifact depends on it. The one that could bite later is (2) if a real
+session ever has overlapping visits; first-match is deterministic, and
+the ledger records the choice.
+
+---
+
+## 2026-09-03 — Tracked direction: React Flow as the workbook control UI (wave 2 / L6)
+
+Isaac's stated direction, recorded so it isn't lost between sessions:
+React Flow becomes the UI for data filtering, maths-engine control, and
+the control layer over D3/Plot. The `.idl1wb` file stays the source of
+truth — React Flow is a *visual representation* of the workbook's data
+flow, edited through C2's parse/generate boundary, not a second document
+model. The device pane stays roughly as it is today. Expected effect:
+less total UI work, since most of the control surface becomes an
+off-the-shelf node editor over the design doc's existing reactive-DAG
+model (`math::resolve` + Observable Runtime scheduling, design §4).
+
+**Scope:** L6 / wave 2. Nothing in wave 1 depends on it — the four
+contracts and every Rust lane are UI-agnostic by construction. Lead
+recommendation: a §4 / D13 amendment to the design doc when L6 planning
+starts, not now. Isaac has not yet ruled on the design-doc timing.
+
+**Cost if lost:** Medium — it reshapes L6's plan and supersedes D13's
+"Properties + Code" editor and the `plotForm` generate/parse module. Hence
+this entry.
