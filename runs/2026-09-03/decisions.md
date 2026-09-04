@@ -1603,3 +1603,35 @@ per column (8 KB per 1024-column tile) and a layout bump before any
 consumer exists; the alternative ships a format that can only be placed
 on a time axis by assuming one. Everything else is additive contract
 text or lane-internal.
+
+---
+
+## 2026-09-04 — PAUSED (session limits). Resume point.
+
+**State at pause:**
+- **L3** branch `wave1-l3-workbook`, HEAD `d0fc17b` (Task 5's Step 0: the
+  `DuplicateConstant` cell_id fix). **Task 5 proper is mid-flight and
+  uncommitted** in the worktree: 10 files modified (`math/eval.rs`,
+  `value.rs`, `resolve.rs`, `vector.rs`, `variance_geom.rs`,
+  `tests_ahrs.rs`, `tests_parity.rs`, `session/handle.rs`, `table/eval.rs`,
+  `estimate/run.rs`). Do NOT discard. Resume = dispatch an implementer with
+  `brief-task5.md` and the instruction: "HEAD `d0fc17b`; the worktree is
+  dirty with a partial Task 5 — read the diff, continue from it, finish
+  the brief, commit once."
+- Tasks 1–4 landed and reviewed CLEAN (Task 4's one Important fixed in
+  `d0fc17b`). Briefs on disk: Tasks 1–14 (`brief-task15.md`/`16.md` not
+  yet written — the writer was stopped; re-dispatch it for those two only,
+  same prompt scope as `R25`'s batch).
+- Contracts current through batch 3 (`5431724`): C1 R23, C2 R20/R24/R25,
+  C3 R22/R25. L2 briefs 1–6 + standing reviewer brief on disk; L2 starts
+  after L3 lands.
+- Open for Isaac (all parked on defaults, none blocking): Q1 DSP nominal
+  rate (R20), Q2 session name (R21), GPS `deg_e7` (R23), migration report
+  policy + cursor clamp (R25), the real FIT/GPX archive (R23 Q4).
+- Machine: cargo `jobs = 2` machine-wide; shared target dir warm for
+  idl-rs `main` `76b640a`; all subagents stopped.
+
+**Resume order:** finish Task 5 → review → Tasks 6–9 (briefs ready) →
+dispatch the writer for briefs 15/16 → Task 14 (spec-first) before 13 →
+Tasks 10–16 → L3 lands (pre-merge `main` into the idl1-app L3 branch
+first, as R19 did for L1) → L2.
