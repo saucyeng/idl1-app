@@ -705,9 +705,12 @@ than an implementer's guess.
    (most sessions have no laps). Ruling: the span of `data.parquet`'s
    `t_us` column, `round((max − min) / 1000)`, mirroring
    `Session::duration_ms()` exactly (`core/src/session/mod.rs:327`);
-   `NULL` when the file has fewer than two rows. Read only the `t_us`
+   `NULL` when the file has fewer than two rows. Read only the time
    column (a projection, or the row-group statistics if present in every
-   row group) — never the whole file.
+   row group) — never the whole file. *Correction (fix-up, `6ad093f`):
+   the ruling as first written named the column `t_us`; C1 §4.1 names it
+   `t` (Int64, session-relative µs). The implementer read `t` via
+   `ProjectionMask::columns(schema, ["t"])` — the intent, not the typo.*
 2. **`laps.track_id` join.** C4 §5 step 4 names the source ("from the
    session's track visits") but not the join. Ruling: containment by
    timestamp — lap `L` takes visit `V`'s `track_id` iff
