@@ -1418,3 +1418,36 @@ callers in `mod.rs`/`cell.rs` rewired to constructors. 23/23 on
 reviewer judges against L3-R1; a Step-0 item for Task 3 if flagged.
 Contract-delta proposal (R21 batch) being drafted by a Sonnet agent for
 the lead to apply.
+
+---
+
+## 2026-09-04 — R22: C2/C3 amendment batch applied; two IPC-shape rulings
+
+Proposal: `lanes/l3-workbook/contract-deltas-proposal.md` (4 amendments,
+2 open questions). Applied by a transcriber on the lead's instruction with
+these two rulings folded in:
+
+1. **`CellOutput.error` → `errors: IpcError[]`** (empty on success). A
+   math cell with two independent structural problems must report both;
+   L3-R25's core shape is already plural. All ten `WorkbookErrorKind`s
+   gain `IpcErrorKind` variants (`workbook_*`); the five document-fatal /
+   new ones are command-level rows in C3 §2, the five wave-1-signed
+   per-cell ones (`duplicate_cell_id`, `duplicate_definition`,
+   `duplicate_constant`, `invalid_identifier`, `reserved_name`) are listed
+   in one row as "per cell only, never a command rejection".
+   `CellDefResult.error` stays singular (one definition → at most one
+   evaluation error).
+2. **Wire `CellDefResult.value` is `HostChannelRef { length: u32, has_t:
+   bool }`**, not the full `HostChannel`; sample bytes cross via the binary
+   command L5 designs under Amendment D (`tauri::ipc::Response`, CLAUDE.md
+   §2). Core's `eval_cells`/`CellDefResult` keep the full `HostChannel`;
+   narrowing is `idl-rs-tauri`'s job.
+
+Consequence for L3: `InvalidFrontMatter` and `InvalidCellId` are now real
+C2 kinds — Task 7's dispatch adds a Step 0 implementing them in
+`front_matter.rs`/`cell.rs` (withdrawing Task 1's interim behaviour) and
+Task 2's constructor set grows to nine.
+
+**Cost if wrong:** Low — additive contract text, no shipped consumer;
+(1) and (2) are each one field's shape and reversible before L5 writes
+against them.

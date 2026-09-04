@@ -145,6 +145,12 @@ is applied uniformly, not case-by-case:
 | `import_gpx_unparseable_lat_lon` | `ImporterError::GpxUnparseableLatLon` | Import: `import_file` (`.gpx` source, a `<trkpt>`'s `lat`/`lon` isn't a parseable number) |
 | `import_csv_malformed` | `ImporterError::CsvMalformed` | Import: `import_file` (`.csv` source, missing/malformed header or no data rows) |
 | `import_not_utf8` | `ImporterError::NotUtf8` | Import: `import_file` (`.gpx`/`.csv` source, bytes aren't valid UTF-8 — never raised for `.fit`, which is binary) |
+| `workbook_missing_front_matter_id` | `WorkbookErrorKind::MissingFrontMatterId` | Workbook: `open_workbook`, `eval_workbook` (fatal — no `WorkbookDoc` is constructable without a valid `id`, C2 §3.5.A) |
+| `workbook_unsupported_version` | `WorkbookErrorKind::UnsupportedWorkbookVersion` | Workbook: `open_workbook`, `eval_workbook` (fatal — explicit `version` ≠ `3`, C2 §1) |
+| `workbook_invalid_front_matter` | `WorkbookErrorKind::InvalidFrontMatter` | Workbook: `open_workbook`, `eval_workbook` (fatal — the front-matter block is not valid YAML, C2 §3.5.A) |
+| `workbook_invalid_cell_id` | `WorkbookErrorKind::InvalidCellId` | Workbook: `open_workbook`, `eval_workbook` (fatal — a fence's `id=` value doesn't match `hex8`, C2 §2.2/§3.5.A) |
+| `workbook_invalid_table_json` | `WorkbookErrorKind::InvalidTableJson` | Workbook: `eval_workbook` — surfaced **per cell** in `CellOutput.error`, not as the command's own rejection (same per-cell rule as `math_*` above, C2 §3.5.A) |
+| `workbook_duplicate_cell_id`, `workbook_duplicate_definition`, `workbook_duplicate_constant`, `workbook_invalid_identifier`, `workbook_reserved_name` | `WorkbookErrorKind::{DuplicateCellId, DuplicateDefinition, DuplicateConstant, InvalidIdentifier, ReservedName}` | Workbook: `eval_workbook` — **per cell only**, in `CellOutput.errors`; never a command rejection (C2 §3.5.A, R7/R22) |
 | `math_parse` | `MathEvalErrorKind::Parse` | Workbook: `eval_workbook` — surfaced **per cell** in `CellOutput.error`, not as the command's own rejection (CLAUDE.md §5: "missing math channel reference → inline validation error, don't block other channels") |
 | `math_unknown_function` | `MathEvalErrorKind::UnknownFunction` | Workbook: `eval_workbook` (per cell) |
 | `math_unknown_channel` | `MathEvalErrorKind::UnknownChannel` | Workbook: `eval_workbook` (per cell) |
@@ -170,6 +176,22 @@ L2) is a new core error enum for the FIT/GPX/CSV importers, prefixed
 command group's name (§3.3), distinct from `parse_*` (`ParseError`,
 `.idl0`-only, unchanged). §2's original table had no rows for these variants
 because L2 hadn't been drafted when C3 was signed.
+
+**Added post-sign (2026-09-04, lead ruling R21, wave-1 L3).** The five
+`workbook_*` rows above are new: `WorkbookErrorKind`
+(`rust/core/src/workbook/v3/error.rs`, C2 §3.5.A) is workbook v3's
+parse-time/structural error enum, prefixed `workbook_*` per this section's
+own naming rule — matching the `open_workbook`/`eval_workbook` command
+names, distinct from `math_*` (`MathEvalErrorKind`, evaluation-time,
+unchanged). Only these five of C2 §3.5.A's ten structural kinds get a row
+here: `MissingFrontMatterId`, `UnsupportedWorkbookVersion`,
+`InvalidFrontMatter` and `InvalidCellId` are document-fatal (no
+`WorkbookDoc` at all); `InvalidTableJson` is per-cell but new this batch.
+The other five (`DuplicateCellId`, `DuplicateDefinition`,
+`DuplicateConstant`, `InvalidIdentifier`, `ReservedName`) have
+`IpcErrorKind` variants too (one row above) so a per-cell
+`CellOutput.errors` entry is always a real serializable kind; they are
+never a command-level rejection (R22).
 
 `VideoErrorKind` (`rust/core/src/video/mod.rs`) is **excluded** from this
 vocabulary: `core/src/video/` and `core/src/overlay/` are deleted on the
@@ -443,23 +465,54 @@ interface WorkbookHandle {
   cell_count: number;   // u32
 }
 ```
-Errors: `not_found`, `io`, `internal`.
+Errors: `not_found`, `io`, `internal`, `workbook_missing_front_matter_id`,
+`workbook_unsupported_version`, `workbook_invalid_front_matter`,
+`workbook_invalid_cell_id` — *added post-sign (2026-09-04, lead ruling
+R21)*: opening a document whose front matter or cell ids are malformed
+enough that no `WorkbookDoc` can be built now rejects with the specific
+`workbook_*` kind (§2) instead of failing some other, less informative way.
 
 **`eval_workbook(id: string)`**
 Return: `CellOutput[]`, one entry per cell, in document order.
 ```ts
 interface CellOutput {
   cell_id: string;                          // C2 fence-string id
-  kind: "math" | "table" | "js" | "prose";
-  value: unknown | null;                    // present when evaluation succeeded; shape depends on `kind`
-  error: IpcError | null;                    // present when this cell failed; other cells still evaluate
+  kind: "math" | "table" | "js";             // "prose" removed — added post-sign (2026-09-04, lead ruling R21): prose has no fence id (C2 §2.1) and never gets its own CellOutput entry; it travels as prose_before/prose_after (C2 §2.4) on the fenced cell it's attached to
+  value: unknown | null;                     // present when evaluation succeeded; shape depends on `kind` — see the `table` note below
+  defs: CellDefResult[];                     // added post-sign (2026-09-04, lead ruling R21) — math cells only: one entry per definition (C2 §5.1's "one JS host variable per math definition"), in def_line source order; empty for table/js cells
+  errors: IpcError[];                        // added post-sign (2026-09-04, lead ruling R22): plural — a cell may carry several structural problems (e.g. two duplicate definitions); empty on success; each kind is a structural (workbook_*) or evaluation (math_*) kind — see §2
 }
+
+// Added post-sign (2026-09-04, lead ruling R21).
+interface CellDefResult {
+  name: string;
+  label: string | null;
+  value: HostChannelRef | null;   // added post-sign (2026-09-04, lead ruling R22): the light wire marker { length: number /* u32 */, has_t: boolean } — the full {length, t, v} HostChannel stays in-process (core); sample bytes cross via the binary command assigned to L5 in the host-channel byte-path note below §3.4
+  error: IpcError | null;      // math_* kind only — a structural problem on this definition (e.g. ReservedName) keeps it out of `defs` entirely and is reported, if anywhere, on the cell's own `error` above (R22)
+}
+interface HostChannelRef { length: number; has_t: boolean; }
 ```
-A per-cell failure (`math_*` kinds) never rejects the command — it appears
-in that cell's `error` field. The command itself only rejects for a
-condition that makes *no* cell evaluable: an unknown workbook id, or an I/O
-failure reading the file.
-Errors (command-level): `not_found`, `io`, `internal`.
+A `table` cell's `value` on success is
+`{ model: TableModel, results: CellResult[][] }` (added post-sign,
+2026-09-04, lead ruling R21) — `model` is the parsed `TableModel` (§4) and
+`results` is `idl_rs::table::eval::evaluate_table`'s `Vec<Vec<CellResult>>`
+grid verbatim (`CellResult = { value: number | null, error: string | null
+}`), indexed `results[r][c]` exactly as C2 §4's `cells[r][c]`. This closes
+the gap where a successful table cell and a silently-skipped one
+serialized identically (`value: null` either way).
+
+A per-cell failure (`math_*` or `workbook_*` kind) never rejects the
+command — it appears in that cell's `errors` list, or in a specific
+definition's own `defs[i].error` for a per-definition evaluation problem.
+The command itself only rejects for a condition that makes *no* cell
+evaluable: an unknown workbook id, an I/O failure reading the file, or —
+added post-sign — a document-fatal structural problem (`workbook_missing_
+front_matter_id`, `workbook_unsupported_version`, `workbook_invalid_front_
+matter`, `workbook_invalid_cell_id`, §2) that means no `WorkbookDoc` exists
+to produce any `CellOutput` at all.
+Errors (command-level): `not_found`, `io`, `internal`,
+`workbook_missing_front_matter_id`, `workbook_unsupported_version`,
+`workbook_invalid_front_matter`, `workbook_invalid_cell_id`.
 
 **`save_workbook(id: string, markdown: string)`**
 Return:
@@ -486,6 +539,28 @@ interface WorkbookEvent {
 }
 ```
 Errors (on the initial `Promise` only): `not_found`, `io`, `internal`.
+
+**Host-channel byte path — open item, owner L5 (added post-sign,
+2026-09-04, lead ruling R21).** `CellDefResult.value` above and C2 §5.1's
+per-definition JS host variables both carry a `HostChannel`
+(`{length, t, v}`, `idl_rs::workbook::v3::to_host_channel`, L3): **full,
+undecimated** arrays — `t` is `t_us[i] as f64 / 1e6` over the source's
+recorded axis, and is **empty** when the source has no recorded axis (a
+scalar or table-column result, C1's "time is recorded, not assumed").
+Decimating a `HostChannel` to the current tile budget before it reaches
+the sandboxed iframe is the **host's** job (L5/L6, design §6) — it is not
+something `to_host_channel` does, and it is **not** represented in
+`CellOutput`'s JSON: `HostChannel`'s `t`/`v` arrays are exactly the heavy,
+per-sample data CLAUDE.md §2 requires to cross IPC as raw bytes, never
+JSON, so `CellDefResult.value`'s actual wire representation is the
+`HostChannelRef` marker (§3.4, R22), never the full `{length, t, v}`
+object serialized as JSON numbers. **This contract does not specify that
+byte layout.** It is
+assigned to L5's workbook-command task to design, following the
+`tauri::ipc::Response` pattern §3.5/§3.6 already establish for
+tiles/rasters (magic/version header, little-endian, self-describing
+lengths) — a new contract revision (§5) when L5 writes it, not invented
+here.
 
 ### 3.5 Tiles (L3)
 
