@@ -1338,3 +1338,11 @@ entry does not restate it. Lead decisions:
 **Cost if wrong:** Low on every ruling except the `Time`/`Distance`
 reservation (a contract amendment, additive, two names) and Q1, which is
 why Q1 is a question.
+
+*Addendum:* briefs `brief-task2.md`/`brief-task3.md`/`brief-task4.md` and
+`review-STANDING.md` written by a Sonnet agent; two calls it made itself,
+both **approved**: (G3.5) `and`/`or`/`not` stay legal identifiers — no
+ruling, no change; (G3.6) Task 3 collects `ConstLine`s and raises only
+`DuplicateDefinition`; Task 4's `merge_constants` is the single
+`DuplicateConstant`/`ReservedName` enforcement point; `ConstLine` lives in
+`workbook/v3/mod.rs`.
