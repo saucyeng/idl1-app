@@ -1873,3 +1873,41 @@ proceeds.
 **Cost if wrong:** a wave-2 caller mis-pairs a session id and plots the
 wrong session's data. Mitigated by the TODO sitting on the exact function
 that would be misused, and by L6 being the only place it can happen.
+
+## 2026-09-04 — R36: Done-when (1) becomes a v3-vs-evaluator parity gate (answers Q5)
+
+Briefs 15 and 16 are written. The writer raised Q5: with Task 13 cut
+(R30), the lane's Done-when (1) — "a migrated idl0 workbook evaluates
+byte-for-byte against the existing v2 evaluator" — is unprovable, since
+`migrate_workbook_text`/`MigrationReport` will never exist in wave 1.
+
+Ruling: **accepted as recommended.** Done-when (1) becomes *"every v3
+math-cell value equals a direct `math::evaluate` on the same expression
+against the same session, bit-for-bit"*.
+
+The reason this is not a weakening: the original criterion bundled two
+different guarantees, and only one was ever Task 15's.
+(i) *The evaluator produces idl0's numbers.* Already landed and already
+proven, independently of migration, by `core/src/math/tests_parity.rs` —
+cases ported from the Dart suite (`app/test/data/
+math_channel_evaluator_test.dart`) pinning exact output vectors, plus
+delegation parity for the DSP-backed cases.
+(ii) *The v3 cell pipeline routes to that evaluator without altering
+values.* Untested until now, and exactly what the new Task 15 Step 1
+proves.
+Migration was only ever the transport that carried v2 expressions into
+(ii); with no v2 workbooks worth migrating (R30), hand-written v3 cells
+carry them just as well.
+
+Task 16 records the restatement in its appended "Delivered" section
+rather than editing the BRIEF header (L3-R42's append-only rule). Both
+PROVISIONAL markers in briefs 15/16 are cleared by this ruling; the
+dispatch will say so rather than editing the briefs.
+
+Contained decision accepted from the writer: Task 15's tests live in one
+new `core/src/workbook/v3/tests_pipeline.rs` (filter
+`workbook::v3::tests_pipeline`), since the plan's `workbook/migrate.rs`
+target no longer exists and Task 10 owns `tile.rs`.
+
+**Cost if wrong:** a v2-semantics regression that `tests_parity` doesn't
+already cover ships unnoticed. Bounded — that suite is the idl0 corpus.
