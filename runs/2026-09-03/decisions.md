@@ -1366,3 +1366,8 @@ lead**, with L3-R4.
 **Cost if wrong:** Low — both interim behaviours are documented in doc
 comments and lose no content; (b) can lose a *typo'd* id on save, which
 is why it gets a real kind later.
+
+*Review:* CLEAN, 3 Minor (generated-id `seen_ids` check, variant doc
+comments, a range-equality comment) → Task 2's Step 0. The reviewer
+self-reported running an unauthorised `cargo doc` and killing it at once;
+no effect, logged because the standing brief calls the rule absolute.
