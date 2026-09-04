@@ -1805,3 +1805,36 @@ a fifth copy appears.
 
 **Cost if wrong:** small — a wrongly-rejected `if()` over two channels
 that happen to differ in axis, which is the case we want rejected anyway.
+
+## 2026-09-04 — R34: cross-session lookup is exclusive; lap error names the lap count
+
+L3 Task 8 reviewed CLEAN (`f7c757b`, 0/0/0). Two judgment calls the
+implementer flagged rather than buried, both ruled here.
+
+**(a) `other_session` is exclusive — affirmed, with the validation it
+implies.** `channel(name, …, other_session: Some((id, lookup)))` resolves
+in `lookup` only, never falling back to the primary session. That is
+right: a fallback is exactly how a chart ends up silently plotting the
+current session's data under another session's label, and a missing
+cross-session channel must fail loudly. But the reviewer found the
+consequence: `channel()` never reads the `id` string, so it cannot detect
+a caller that wires `(id_A, lookup_B)` — the pairing is trusted. Ruling:
+**Task 9's caller owns that validation.** The caller must confirm the
+resolved lookup belongs to the requested session id and return
+`UnknownChannel` naming the id when it does not. Folded into Task 9 as a
+Step 0 with a test.
+
+**(b) `NoLapContext` covers out-of-range too — affirmed, message
+improved.** L3-R22's text named only the empty-`main_lap_bounds` case; the
+implementer extended the same kind to "lap 7 of a 3-lap session" and
+documented it. Correct — inventing a `LapOutOfRange` kind would amend C2
+§3.5.B's enum for a case the existing kind describes. The message today
+(`channel("X", lap: 7): no lap 7 in this session's lap table`) is honest,
+not a "no laps" lie, but it is byte-identical between the two situations
+and does not tell the user how many laps exist. Ruling: append the
+recorded lap count (`… lap table (3 laps recorded)`; `(no laps recorded)`
+when empty). Message-only, no contract change. Also Task 9 Step 0.
+
+**Cost if wrong:** (a) is the expensive one and it is ruled in the safe
+direction — a wrongly-rejected cross-session reference is visible, a
+wrongly-accepted one is not. (b) is a format string.
