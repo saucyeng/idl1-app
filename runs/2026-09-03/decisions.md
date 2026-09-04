@@ -1751,3 +1751,24 @@ if live for the next half hour. `null` when `t_us < first || t_us >
 last`; nearest-sample unchanged inside. C3 §3.7 amended.
 
 **Cost if wrong:** one comparison; trivially reversible.
+
+## 2026-09-04 — R32: POV video sync is timecode-derived (tracked, not wave 1)
+
+Isaac: *"i found the timecode to be trustworthy in my test runs, but we
+may want to tweak it in the future."* So the HUD/video amendment, when it
+is written, specs: one clip per session, a single constant `offset_us`
+derived at import from the camera's wall-clock start vs. the session GPS
+epoch, stored in `session.json` (recorded, not re-derived), with a manual
+nudge in the UI as the correction path. No rate correction — a constant
+offset holds. **Out of scope for wave 1**; recorded so the eventual C1/C4
+amendment does not have to re-ask.
+
+Also tracked from the same discussion (design §6, drafting queued behind
+L3, not blocking): three views over one file — notebook (document order),
+graph (React Flow, node positions), HUD (anchored fractional rects over
+video) — so front-matter `layout:` is namespaced per view
+(`layout: { graph: {...}, hud: {...} }`) from the start. React Flow is
+for the graph view only; its canvas-space viewport is wrong for a
+frame-anchored HUD. HUD playback scrubs local tiles, never IPC per frame.
+
+**Cost if wrong:** none yet — nothing is implemented against it.
