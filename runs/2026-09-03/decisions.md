@@ -2164,3 +2164,58 @@ cleared by these answers; dispatches say so rather than editing briefs.
 signed vocabulary, and it is additive — an unrecognised kind degrades to
 a generic error in any consumer that hasn't been updated. The rest are
 signature changes on commands with no callers yet.
+
+## 2026-09-04 — R27 landed; L5 branches rebased onto it
+
+**idl-rs** `main` = `7e10797` (merge of `fix-gps-decimal`); **idl1-app**
+`main` = `80102fa`. Gate at the merge: 845 passed / 0 failed (idl-rs, one
+fewer than 846 — the deleted `to_deg` test), 51 (idl-rs-cli).
+
+R27 reviewed in two rounds. Round 1: everything substantive clean —
+epsilon rescaling complete, `to_deg` auto-scale-detect deleted safely,
+parse-side bake matching C1 §4.2 — with one Important on the `.idl0t`
+round-trip test, which exercised a single coordinate and so would have
+passed even if `/1e7` were later "simplified" to `*1e-7`, the exact
+regression that would corrupt track libraries shared with idl0.
+
+Round 2 corrected **me**. I specified the replacement assertion as
+write→read→write comparing `i32`; the implementer verified empirically
+that this does not discriminate at all — the write side's `.round()`
+re-quantises any FP error from a wrong read operator back onto the same
+integer, so every value passes either way. It moved the assertion to the
+decoded domain value against independently computed ground truth, proved
+the table by injecting the `*1e-7` regression and watching it fail
+(`50.116299999999995` vs `50.1163`), reverted, and named the four values
+that catch it. Reviewer confirmed both halves independently. That is two
+bad lead instructions caught inside one task, both by agents reasoning
+from the code.
+
+Also from R27, worth keeping: `estimate/run.rs` was dividing GPS_Heading
+by 100 on top of the raw centidegree scale. The implementer first called
+it a pre-existing bug, the reviewer corrected the framing to "a necessary
+consequence of this commit's parse-time bake", and the implementer
+accepted the correction rather than defending the stronger claim.
+
+**Boundary added outside R27's stated blast radius, deliberately:** SPEC
+§17b.1 fixes the `.idl0t` on-disk format at `deg × 1e7` regardless of the
+engine's internal scale. Those DTOs used to be copied verbatim because
+both sides were e7; they now convert explicitly (`/1e7` read,
+`(x*1e7).round()` write). The SPEC settled it, so no ruling was needed,
+but it is the one place R27 touched a format shared with idl0.
+
+**L5 branches brought up to date** (both repos): idl-rs `wave1-l5-tauri`
+= `0f79ee6`, idl1-app = `755cc58`. Two merge frictions worth recording:
+`Cargo.lock` conflicted between L5's tauri deps and main's L3 deps and
+was regenerated from both manifests (verified: both `tauri` and
+`pulldown-cmark` present); and a duplicate untracked `.cargo/config.toml`
+in the L5 worktree blocked the merge because `main` now **tracks** that
+file.
+
+**Tracked, for Isaac, low priority:** `rust/.cargo/config.toml` is
+committed and contains a machine-specific absolute `target-dir`
+(`C:/Users/isaac/...`). Its own comment acknowledges this and says to
+delete it elsewhere, so it is a known trade rather than an oversight —
+but it will need handling before CI or a second machine.
+
+**Next:** L5 Task 8 dispatched (catalog read API per R40), then 11 → 12 →
+13 → 14.
