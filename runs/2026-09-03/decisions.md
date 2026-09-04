@@ -1192,3 +1192,46 @@ exit 0.
 **Plan Open-questions item 17** updated on `main` with these numbers
 (lead, per R19 addendum). Lane is fit to merge pending the Task 16
 review's verdict.
+
+---
+
+## 2026-09-03 — L1 LANDED: idl-rs `76b640a`, idl1-app `f6f84f6` + `662d48e`
+
+Task 16 review: CLEAN (1 Minor, tracked below). Landing per R19 item 7:
+
+- **idl-rs** `main ← wave1-l1-store` as merge commit `76b640a` (24 lane
+  commits). Only conflict: `Cargo.lock`. Resolved by taking `main`'s lock
+  and running `cargo metadata` (re-resolves and rewrites the lock, no
+  compilation). Union check (`lock_union_check.sh`): merged = union of both
+  sides minus exactly seven older duplicates cargo unified — `futures-*`
+  0.3.32→0.3.34 and `log` 0.4.33→0.4.34, both semver-compatible bumps L4
+  had already taken — and **no** package version present on neither side.
+  Reviewed pins unchanged: parquet/arrow 59.3.0, rusqlite 0.40.2, reqwest
+  0.13.4, btleplug 0.13.0, tokio 1.53.1. (Refinement of R19's rule: "equals
+  the union" must tolerate semver-compatible unification of a crate both
+  sides carry at different patch versions; the invariant that matters is
+  no `+` lines.)
+- **idl1-app** `main ← wave1-l1-store` as merge commit `f6f84f6`
+  (SPEC §15/§16.3/§18 rewrite, CHANGELOG, TASKS; fast-forwardable since
+  `main` had been merged in first), then `662d48e` bumps the submodule
+  pointer to `76b640a`.
+- **Post-merge gate on `main`** (shared checkout, alone, jobs=4): `cargo test
+  -p idl-rs -p idl-rs-cli --no-run` then the run with `--test-threads=4` —
+  doubles as the shared target-dir seed for L3/L2. Result recorded below
+  when it finishes.
+- **Tracked Minor (Task 16 review):** `core/tests/real_session_odr_validation.rs`
+  gates on *any* IMU (`imu_index_of`) but then `.expect()`s `imu0` — a
+  session with only IMU1/IMU2 enabled would panic instead of skipping.
+  Owner: whoever next touches that test (L10's SPEC verification pass is
+  the natural point); fix is to pick the first present IMU by index.
+- **Worktrees:** L3 created from the merged `main` in both repos
+  (`idl-rs-worktrees/wave1-l3-workbook`, `idl1-app-worktrees/wave1-l3-workbook`,
+  submodule wired via `local-wave1`). L1's two worktrees retired after the
+  post-merge gate finishes (the idl-rs one carries a multi-GB local
+  `target/`; deleting it during the build is needless disk contention).
+- **Sequencing:** L3 before L2 (lead call, Isaac may override): they cannot
+  run concurrently under R13; L3 has no external inputs while L2's real FIT
+  archive is outstanding; L3 unblocks L5's workbook commands and L6.
+
+**Cost if wrong:** Low — the merge is a merge commit (revertable as a
+unit); the lock check is recorded; both lane branches are kept.
