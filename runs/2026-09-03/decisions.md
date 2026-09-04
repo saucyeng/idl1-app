@@ -1838,3 +1838,38 @@ when empty). Message-only, no contract change. Also Task 9 Step 0.
 **Cost if wrong:** (a) is the expensive one and it is ruled in the safe
 direction — a wrongly-rejected cross-session reference is visible, a
 wrongly-accepted one is not. (b) is a format string.
+
+## 2026-09-04 — R35: R34(a)'s validation is deferred to wave 2 (doc-only in Task 9)
+
+R34(a) assigned the `other_session` id/lookup pairing check to "Task 9's
+caller". The Task 9 implementer stopped and reported that no such caller
+exists: `host::channel()` has zero call sites in the tree, Task 9's own
+`eval_cells(doc, structural, lookup, lap_ctx)` never touches
+cross-session channels, and threading a real `Session` in is L6's job in
+wave 2 — as `host.rs`'s own doc comment already says. Worse, the check
+isn't implementable where I put it: `ChannelLookup` cannot report its own
+session id (only `SessionHandle` knows it), so satisfying R34(a) would
+mean either adding a trait method or having the caller pass an id it
+already holds — the first is core trait surface invented for a caller
+that doesn't exist, the second tests nothing.
+
+Ruling: **the validation is deferred to the wave-2 caller (L6).** Task 9
+carries the obligation as documentation only — a paragraph on
+`channel()` stating that `other_session`'s `id` is not read and the
+pairing is trusted, plus a `// TODO(idl0):` naming L6 as the owner and
+recording why the trait can't answer it today. No trait change, no
+wrapper, no mock-only test.
+
+**Lead error, worth naming:** R34(a) was written from the review's
+description of the code rather than from the code, and asserted a caller
+that isn't there — the same failure mode the last three briefs had. The
+implementer catching it cost one message; me not catching it would have
+cost invented trait surface in `core`. The standing "verify premises,
+stop if ambiguous" instruction is doing its job.
+
+R34(b) (lap count in the `NoLapContext` message) is unaffected and
+proceeds.
+
+**Cost if wrong:** a wave-2 caller mis-pairs a session id and plots the
+wrong session's data. Mitigated by the TODO sitting on the exact function
+that would be misused, and by L6 being the only place it can happen.
