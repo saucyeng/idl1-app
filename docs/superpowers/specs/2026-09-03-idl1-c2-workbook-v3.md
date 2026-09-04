@@ -476,7 +476,7 @@ expression):
 | `DuplicateDefinition` | Same identifier defined twice (any `math` cell, any line) | `"'<name>' is defined more than once"` |
 | `DuplicateConstant` | Same constant name in front matter and/or two `const` lines | `"Constant '<name>' is declared more than once"` |
 | `InvalidIdentifier` | A `def_line`/`const_line` name doesn't match `identifier` (§3.1) | `"'<name>' is not a valid definition name — use letters, digits, underscore, and don't start with a digit"` |
-| `ReservedName` | A definition or constant is named `const`, one of the four universal constants (`pi`/`tau`/`e`/`g`), or a host-var name (`Plot`/`d3`/`Inputs`/`html`/`laps`/`session`/`constants`/`channel`) | `"'<name>' is reserved and can't be used as a definition or constant name"` |
+| `ReservedName` | A definition or constant is named `const`, one of the four universal constants (`pi`/`tau`/`e`/`g`), a host-var name (`Plot`/`d3`/`Inputs`/`html`/`laps`/`session`/`constants`/`channel`), or — *added post-sign 2026-09-04, lead ruling R20 (`runs/2026-09-03/decisions.md`)* — one of the two engine-synthesized channel names (`Time`/`Distance`): a definition named `Time` would otherwise shadow the session's time axis document-wide, silently, which C1's "time is recorded, not assumed" exists to prevent | `"'<name>' is reserved and can't be used as a definition or constant name"` |
 | `MissingFrontMatterId` | Front matter lacks a well-formed UUIDv4 `id` | `"Workbook front matter is missing a valid 'id'"` |
 | `UnsupportedWorkbookVersion` | `version` ≠ `3` | `"Workbook version <n> is not supported (expected 3)"` |
 

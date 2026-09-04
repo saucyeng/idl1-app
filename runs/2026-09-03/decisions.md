@@ -1299,3 +1299,42 @@ after checking crates.io and records the versions in its commit message
 
 **Cost if wrong:** negligible — fewer dependencies, same entropy source
 the codebase already trusts for ids.
+
+---
+
+## 2026-09-04 — R20: L3 Tasks 2–5 pre-read adjudicated (delegated pre-read, lead rulings)
+
+Pre-read by an Opus adjudicator: `lanes/l3-workbook/pre-read-tasks2-5.md`
+(27 gaps, 15 proposed rulings L3-R1…L3-R15, 1 Isaac question). This
+entry does not restate it. Lead decisions:
+
+- **L3-R1 … L3-R15: approved as drafted**, with these notes:
+  - L3-R4 (C3 §2 `workbook_*` kinds) is lead-owned; applied when L5's
+    workbook-command task is briefed, not now.
+  - L3-R7 **widened into a ruling**: a definition or constant named
+    `Time` or `Distance` (the two engine-synthesized channels) is
+    `ReservedName`. Silent document-wide shadowing of the time axis is
+    the exact failure C1's "time is recorded, not assumed" exists to
+    prevent. C2 §3.5.A amended post-sign by the lead (this entry is the
+    citation). `RESERVED_NAMES` therefore has 15 entries.
+  - L3-R8's "a targeted filter that matches nothing is a failed gate"
+    is a **standing rule for every lane** from here on.
+  - L3-R13 stands **provisionally** pending Isaac's answer to Q1 below;
+    Task 5 lands the axis either way.
+- **Q1 → Isaac (physics/product, not derivable):** the DSP functions
+  (`integrate`, `differentiate`, `butter`, `fft`, `declip`) and the lap /
+  sector window arithmetic still step by `1/nominal_rate_hz`. On his
+  validated session that is 800 Hz against a true 812.348 Hz — ~1.5 %,
+  ≈1.8 s of lap-boundary drift over 120 s. Correcting it changes every
+  number the math engine has produced (idl0 parity breaks); deferring
+  keeps the error. Lead recommendation: correct it in wave 1 as its own
+  L3 task after Task 5 — parity with idl0's *bug* is not a rewrite goal,
+  and the time model is the rewrite's stated reason to exist.
+- **Process:** briefs for Tasks 2–4 are written as files by a Sonnet
+  agent from the plan + this ruling set + `brief-task1.md`'s structure;
+  a standing reviewer brief (`review-STANDING.md`) likewise. The lead
+  reviews the files, not the plan.
+
+**Cost if wrong:** Low on every ruling except the `Time`/`Distance`
+reservation (a contract amendment, additive, two names) and Q1, which is
+why Q1 is a question.
