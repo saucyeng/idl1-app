@@ -72,6 +72,24 @@ table above. Changing it in Settings does **not** move existing files; the
 app opens (or creates) the tree at the new path and the old tree is left
 untouched (surfaced to the user as "old data left at `<old path>`").
 
+**Added post-sign (2026-09-03, lead ruling R15, wave-1 L1):** the same file
+also carries the app-wide UI settings that core's `store::settings`
+persists (port of `app_settings.dart`) — `rider_name` (string, `""` = not
+set) and `unit_system` (`"imperial"` | `"metric"`, default `"imperial"`) —
+as optional sibling keys of `data_dir`:
+
+```json
+{ "data_dir": "D:\\race-data", "rider_name": "", "unit_system": "imperial" }
+```
+
+Every reader of this file must ignore unknown keys and treat any missing key
+as its default (L5's `paths.rs` already does: it reads `data_dir` only and
+never writes the file). Only `store::settings::save` writes it, as a
+whole-document replace through the §4 primitive, staged in the file's own
+directory rather than `<data>/tmp` — there is no `tmp/` beside it, and on
+Linux `app_config_dir()` may be a different filesystem from `<data>`, where
+a cross-device rename would fail.
+
 ## 2. Layout
 
 Everything below is rooted at `<data>` as defined in §1

@@ -30,8 +30,33 @@ Reasoning: importers are conceptually adjacent to "Session & File Model" (§15) 
   grep -c "pub source_format: SourceFormat" rust/core/src/session/mod.rs
   ```
   **each return at least `1`** — verify before opening a worktree. Task 1 (the SPEC section, prose only, no compilation) has no such dependency and may proceed immediately.
-- **Branch:** `wave1-l2-importers`.
-- Working directory for every Rust task: `rust/core` unless a step states otherwise (paths below are relative to it unless prefixed).
+- **Branch:** `wave1-l2-importers`, in its own worktree (never the shared
+  `C:\Users\isaac\Documents\Saucy\saucyeng\idl1-app\rust` checkout — that must stay on `main` so
+  other lanes' worktrees can branch cleanly off it; L4's Task 1 hit exactly this by checking out
+  directly in the shared checkout, corrected post-hoc, see `runs/2026-09-03/decisions.md`). Setup,
+  before Task 2 (Task 1 is prose-only, no worktree needed):
+  ```bash
+  cd "C:/Users/isaac/Documents/Saucy/saucyeng/idl1-app/rust"
+  git worktree add -b wave1-l2-importers "C:/Users/isaac/Documents/Saucy/saucyeng/idl-rs-worktrees/wave1-l2-importers" main
+  ```
+  Task 1's SPEC/CHANGELOG/TASKS steps need the idl1-app top-level repo too — a matching worktree,
+  wired to this one exactly like L1's plan (Task 1 Steps 2) and the M0 precedent:
+  ```bash
+  cd "C:/Users/isaac/Documents/Saucy/saucyeng/idl1-app"
+  git worktree add -b wave1-l2-importers "C:/Users/isaac/Documents/Saucy/saucyeng/idl1-app-worktrees/wave1-l2-importers" main
+  cd "C:/Users/isaac/Documents/Saucy/saucyeng/idl1-app-worktrees/wave1-l2-importers"
+  git submodule update --init -- rust
+  # ^ may print "fatal: remote error: upload-pack: not our ref …" — expected and harmless
+  # (origin/GitHub doesn't have this run's unpushed local commits); the next three lines
+  # redirect to the actual local worktree and complete the setup correctly regardless
+  # (ruling R11, runs/2026-09-03/decisions.md). Do not treat this message as a blocker.
+  git -C rust remote add local-wave1 "C:/Users/isaac/Documents/Saucy/saucyeng/idl-rs-worktrees/wave1-l2-importers"
+  git -C rust fetch local-wave1 wave1-l2-importers
+  git -C rust checkout -B wave1-l2-importers FETCH_HEAD
+  ```
+- Working directory for every Rust task:
+  `C:\Users\isaac\Documents\Saucy\saucyeng\idl-rs-worktrees\wave1-l2-importers\core` unless a
+  step states otherwise (paths below are relative to `core/` unless prefixed).
 - **idl-rs is not rustfmt-formatted** — never run `cargo fmt`. Match surrounding style by hand.
 - **No AI attribution trailers** in any commit. **Never `git push`.**
 - Doc comment on every public symbol; units on every numeric value; typed errors only (`ImporterError`, never `Err(String)`).

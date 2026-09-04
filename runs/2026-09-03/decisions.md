@@ -311,3 +311,779 @@ question 14 marked ruled.
 boundary, already written into L1's plan with a test that would fail loudly
 (wrong-shaped gates that produce visibly wrong lap crossings, not a silent
 corruption) if the scale were ever mismatched.
+
+---
+
+## 2026-09-03 — R9: execution-time fix — every lane needs its own real worktree, not the shared checkout
+
+**What happened.** Execution started: L1 Task 1 and L4 Task 1 dispatched in
+parallel. L1's plan had explicit `git worktree add` commands (its own
+Global Constraints, Steps 1-2) and correctly created an isolated worktree at
+`idl-rs-worktrees/wave1-l1-store`. L4's plan said "own worktree" in prose
+but never gave the actual command, and its "Working directory for every
+Rust step" line pointed straight at the **shared** `idl1-app/rust`
+checkout — so its implementer ran `git checkout -b wave1-l4-transport`
+directly there, committing Task 1 with the shared checkout left on that
+branch instead of `main`.
+
+**Why this matters.** The shared submodule checkout is meant to always sit
+on `main` so any lane can cleanly `git worktree add ... main` from it at
+any time. A lane that checks out its own branch there instead doesn't just
+risk a merge conflict — it makes the checkout unusable as a branch-off
+point for whichever lane runs next, and (worse) if two lanes ran this way
+concurrently, the second would silently switch the first's checkout out
+from under it mid-task.
+
+**Fix, immediate:** converted L4's Task 1 work into a real worktree at
+`idl-rs-worktrees/wave1-l4-transport` (`git checkout main` in the shared
+checkout to restore it, then `git worktree add` attaching the *existing*
+`wave1-l4-transport` branch to the new directory) — no commits lost, no
+code changed, purely a checkout-structure fix. Verified `git -C rust
+worktree list` afterward: shared checkout on `main`, `wave1-l1-store` and
+`wave1-l4-transport` each in their own directory.
+
+**Fix, systemic:** audited every wave-1 plan (`grep` for direct `cd`s into
+the shared `idl1-app`/`idl1-app/rust`/`idl1-app/app` paths, excluding
+legitimate `git worktree add` setup lines and read-only `git status`
+checks). Found the same gap in **L2, L3, L5, and L10** — all four pointed
+at least one working-directory line or commit step at a shared checkout
+instead of an isolated worktree; L10's was the most dangerous of the four,
+since its own text proposed *reusing* the shared `rust` checkout by
+switching its branch, exactly the mechanism that just caused L4's mistake,
+with only a defensive-but-fragile "if another lane's branch is checked out
+here, stop" check rather than real isolation. Every plan now has explicit
+`git worktree add` commands in its Global Constraints (rust submodule
+worktree, plus an idl1-app-repo worktree wired to it the same way M0 Task 3
+Step 6 and L1's own plan already did), and every task-level `cd`/working-
+directory reference was corrected to point at the lane's own worktree, not
+the shared checkout. L4's plan additionally had a real bug beyond the path
+issue — Task 8's commit step tried to `git add docs/IDL0_SPEC.md` from
+inside the `rust/` working directory, where that file doesn't exist at all
+(it lives in the idl1-app repo) — split into the two separate per-repo
+commits the plan's own text already said should exist but the literal bash
+block didn't do.
+
+**Cost if wrong:** Low — this is a mechanical correction to *where* each
+task runs, not to *what* any task does; no plan's actual file contents,
+commands, or acceptance criteria changed, only the working-directory paths
+around them. The real cost was already paid (one lane's Task 1 had to be
+manually repaired) — this ruling exists to make sure it doesn't recur
+across the other five lanes as they start.
+
+---
+
+## 2026-09-03 — R10: execution-time fix — `git worktree add` doesn't init submodules
+
+**What happened.** L1's Task 1 implementer hit a second, worse bug in the
+same worktree-setup step this one just reviewed as "correct" (R9): its
+Step 2 does `git worktree add` on the idl1-app superproject, then
+immediately runs `git -C rust remote add/fetch/checkout` against the new
+worktree's `rust/` path. `git worktree add` does **not** initialize
+submodules — the new worktree's `rust/` starts as an empty placeholder
+directory with no `.git`. Because a bare `rust/` directory with no `.git`
+still resolves via git's normal upward repo-discovery, every `git -C rust
+...` command silently ran against the **idl1-app superproject's own git
+directory** instead of failing loudly — resetting the shared
+`wave1-l1-store` branch ref, adding a stray `local-wave1` remote to the
+wrong repo, and checking idl-rs's tree into the app worktree.
+
+**Why it wasn't caught by R9's audit.** R9 checked *which directory* every
+task's commands ran in; this bug is about a missing prerequisite command
+*within* an already-correct worktree-setup sequence — a different class of
+mistake, invisible to a path-based grep. L1's implementer caught it only
+by noticing the actual `git -C rust` output didn't match what the
+placeholder directory should have produced, diagnosed the repo-discovery
+mechanism, and repaired it (`git reset --hard` the app worktree back to
+`main`, removed the stray remote, added `git submodule update --init --
+rust` before the remote/fetch/checkout sequence, re-ran clean) — with no
+data loss and the lead's own main checkouts confirmed untouched throughout
+(verified independently after the fact: `git status`/`git remote -v` on
+both `idl1-app` and `idl1-app/rust` clean, correct origin, no stray refs).
+
+**Fix.** Added `git submodule update --init -- rust` as the required first
+line after `cd` into the new idl1-app worktree, in L1's own Step 2 and in
+the equivalent worktree-setup block R9 had just added to L2, L3, L4, and
+L5 (all five copy the same sequence; all five needed the same one-line
+fix). L10 doesn't wire a submodule this way (its rust-side task is a
+standalone worktree with no cross-repo pointer to set) — not affected.
+
+**Cost if wrong:** Low — same class as R9: a missing prerequisite command,
+not a change to what any task produces. The actual damage this run (one
+branch ref reset, one stray remote) was real but fully diagnosed, fully
+reversible, and reversed before it reached anything the lead or any other
+lane depends on.
+
+---
+
+## 2026-09-03 — Tracked, non-blocking: SPEC §16.1 Drive contradiction
+
+L1 Task 2's review (`runs/2026-09-03/lanes/l1-store/review-task2.md`) found
+`docs/IDL0_SPEC.md` §16.1 still says Tracks live in Google Drive — pre-existing,
+untouched by Task 2 (correctly out of its declared scope, §15/§16.3/§18
+only), and now contradicts the rewritten §16.3's "no cloud store" language.
+No wave-1 lane owns §16.1/§16.2/§16.4 (design §10 doesn't assign them to
+L1-L5/L10). **Owner: lead, tracked for a future pass** — not blocking wave 1.
+
+---
+
+## 2026-09-03 — Execution fix: L1 plan's Task 9 parquet writer used the wrong filter
+
+L1 Task 4's review (`runs/2026-09-03/lanes/l1-store/review-task4.md`) caught
+a real forward-compatibility break in the *plan text*, not the landed code:
+Task 4 correctly changes `Time`'s in-memory representation from
+`RawColumn::Ramp` to `RawColumn::F64` (required by C1 §3.5 invariant 4).
+The already-drafted Task 9 parquet-writer section of the same plan excluded
+synthesized channels (`Time`, `Distance`) from `data.parquet` by matching
+`RawColumn::Ramp | RawColumn::Interp` — a filter that would silently stop
+catching `Time` once it's `F64`, so Task 9 as drafted would have written
+`Time` into `data.parquet`, violating C1 §4.1 ("never a column, regenerated
+on read"). Fixed in the plan (three call sites) to filter on
+`c.source_kind == "synthesized"` instead — set on both `Time` and `Distance`
+by Task 4, stable regardless of either's `RawColumn` representation. Caught
+and fixed before Task 9 was ever implemented, so no code rework was needed.
+
+**Cost if wrong:** Trivial — caught pre-implementation; if `source_kind`
+turned out not to be the right filter either, it's the same one-line-per-
+call-site fix again, still before any code exists to rework.
+
+---
+
+## 2026-09-03 — R11: two execution-time process notes (both benign, tracked)
+
+**1. `git submodule update --init -- rust` can print a scary-but-harmless
+"remote error" during worktree setup.** L5's Task 1 implementer (and,
+per its own report, L1/L4 before it) saw `fatal: remote error:
+upload-pack: not our ref …` when running the R10-fixed submodule-init
+command — because the submodule's configured remote is GitHub (`origin`),
+which does not have the unpushed local commits the new worktree needs
+(everything in this run stays local until Isaac pushes). The command still
+leaves a usable partial clone, and the plan's own next steps
+(`remote add local-wave1` pointing at the actual local worktree, `fetch`,
+`checkout -B ... FETCH_HEAD`) correctly redirect to local objects and
+complete the setup correctly regardless. Confirmed end-to-end by L5's
+reviewer: the new worktree's submodule checkout matches the standalone
+`rust` worktree's tip exactly. **Not a bug** — expected output given local,
+unpushed branches; implementers should not stop or report it as a blocker.
+Noted in L2/L3's plans (not yet executed) so their implementers aren't
+alarmed by the same message.
+
+**2. A reviewer's "verify by reverting" left stale git state in a shared
+worktree.** L1's GPS-fix reviewer (`review-gps-fix.md`) verified its test
+by "reverting in a scratch copy" — but reviewers have `Bash`, not a
+separate isolated checkout by default, so this most likely ran directly in
+the shared `wave1-l1-store` worktree and didn't fully clean up (`git
+revert --abort`/`--quit`), leaving `REVERT_HEAD`/index metadata in a
+partially-resolved state. L1's next implementer (Task 5) found this on
+starting, verified `git diff HEAD` was empty (no content was ever at risk
+— the working tree already matched HEAD), and cleared it cleanly. No data
+was lost at any point. **Process fix, going forward:** a reviewer verifying
+"does the test fail without the fix" must do so in a disposable copy (e.g.
+`git worktree add` to a throwaway path, or `git stash`/`git diff | patch
+-R` against an in-memory buffer) — never a live `git revert`/`git reset
+--hard` in the worktree another task will resume from — and must always
+leave the worktree exactly as it found it. Not re-dispatching a fix for
+this now (already resolved); flagging for future review-dispatch prompts
+to state explicitly.
+
+**Cost if wrong:** Both trivial — (1) is a documentation note about an
+already-harmless message; (2) already fully resolved with independently
+verified zero data loss, this is a forward-looking process note only.
+
+---
+
+## 2026-09-03 — R12: L1 Task 6 blocker — three pre-existing gap-detection fixtures are too small for burst correction's median robustness
+
+**What happened.** L1 Task 6 (integrating burst-seam correction into gap
+reconciliation, C1 §3.3's "ruled" ordering) implemented Steps 1-3/5 cleanly
+(587 tests pass, including the new worked-example test and the
+`ImportWarning` threading Task 5's review flagged), but three *pre-existing*
+tests fail: `single_imu_drop_is_linearly_filled_and_recorded`,
+`two_imus_with_different_drops_align_a_shared_spike_to_the_same_slot`,
+`all_imu_channels_report_the_single_nominal_rate_despite_different_drops`.
+The implementer correctly stopped rather than guess — hand-verified this is
+not an implementation bug (the code matches C1 §3.3's formulas exactly) and
+not a spec bug either.
+
+**Root cause.** These fixtures are tiny — 2-3 bursts, 4-11 samples, with one
+genuine drop. C1 §3.3 justifies its median-not-mean effective-period
+estimate as robust to exactly this case ("a burst that straddles a genuine
+drop would skew a mean but not a median") — but that robustness requires
+enough *other* burst estimates for the skewed one to be an outlier the
+median ignores. With one or two total estimates, "median of one value" *is*
+the skewed value, so the single genuine drop gets statistically
+reinterpreted as an off-nominal true ODR and re-spaced away — a gap that
+should exist gets silently absorbed instead of detected. The algorithm is
+behaving exactly as C1 §3.3 specifies; the fixtures are too small to
+actually exercise the robustness guarantee the spec claims for them.
+
+**Ruling.** Extend all three fixtures with realistic surrounding burst
+context (enough consecutive normal bursts before/after the one genuine drop
+that the drop's skewed estimate is a clear, ignorable median outlier — as a
+concrete floor, at least ~8-10 total burst-to-burst estimates, so one
+skewed value can't be the median or adjacent to it) — **preserving each
+test's original name and intent** (the drop must still be detected as a gap
+and linearly filled; that is what `single_imu_drop_is_linearly_filled_and_
+recorded`'s own name asserts, and rewriting it to accept "drop silently
+absorbed, no gap" would make the test's name false). This is a fixture-data
+change, not an algorithm or spec change — Task 5/6's implementation is
+correct as landed and needs no rework.
+
+**Why not the alternative** (accept new expected values for the small
+fixtures as-is): that would make these three tests start asserting the
+*opposite* of what their names claim, silently narrowing coverage to
+exactly the small-session case burst correction is *least* accurate for,
+with no test left covering the actually-common real-session case the
+current fixtures were meant to represent.
+
+**Cost if wrong:** Low — if 8-10 estimates turns out not to be enough
+margin in practice, the fix is widening the fixtures further, not
+redesigning anything; the underlying algorithm and its tests-must-detect-
+the-drop intent are unaffected either way.
+
+---
+
+## 2026-09-03 — Tracked, non-blocking: pre-existing flaky watcher test
+
+L5 Task 10's review found `watcher::tests::self_write_with_pre_registered_
+hash_never_fires_callback` (Task 3's work, already reviewed CLEAN twice)
+fails intermittently — confirmed real, ~1.6% failure rate over ~61 runs —
+but is a pre-existing timing-sensitive issue (the TTL/debounce design ruled
+safe in Task 3's review) merely exposed by more parallel test execution in
+Task 10, not a Task 10 regression. **Owner: whoever next touches
+`tauri/src/watcher.rs`** — fix the race (likely needs a slightly longer
+debounce margin in the test, or a deterministic clock injection instead of
+real sleeps) before this lane's own final done-criteria check, since a
+~1.6% flake rate will eventually surface as a false CI failure. Not
+blocking L5's current task chain.
+
+**Cost if wrong:** Low — a known, characterized, low-frequency flake in one
+test; the underlying watcher logic itself was independently judged safe.
+
+---
+
+## 2026-09-03 — L5 Task 10 blob path fixed: sharded, not flat
+
+L5 Task 10's `download_file` command wrote downloaded blobs to a flat
+`blobs/sha256/<hash>` path instead of C4 §2's fixed sharded
+`blobs/sha256/<2 hex>/<62 hex>` convention — a real contract violation that
+would have broken catalog/verify/sync's blob-path assumptions once those
+lanes land (L1's own Task 8, already correct on the not-yet-merged
+`wave1-l1-store` branch, uses the right sharding). L5 couldn't literally
+import L1's `store::blob` writer yet (L1 hasn't merged to `main`), so a
+duplicate ad hoc implementation was the only option available at the time
+— fixed to use the *correct* sharded path formula directly, with a
+`// TODO(idl0):` to replace the duplicated sharding logic with a real call
+into `idl_rs::store::blob` once L1 merges to `main`, rather than blocking
+L5 on L1's landing.
+
+**Cost if wrong:** Low — the sharding formula itself is simple and fixed
+by contract (first 2 hex chars / remaining 62), independently verifiable
+against C4 §2's text; the TODO ensures the duplication doesn't linger
+past L1's merge.
+
+---
+
+## 2026-09-03 — Process near-miss: dispatched a task before its worktree's prior fix had landed
+
+**What happened.** The lead dispatched L1 Task 10's fix (a real bug fix to
+`core/src/store/derived.rs`) and, before that fix's completion notification
+arrived, dispatched L1 Task 11 into the *same* worktree
+(`idl-rs-worktrees\wave1-l1-store`). Both agents ran concurrently against
+the same physical directory. No damage resulted — Task 11 worked in a
+different, unrelated file (`session_json.rs`, committed cleanly at
+`e001565`) and its own implementer explicitly noticed the unexpected dirty
+`derived.rs` state, correctly left it untouched, and flagged it for the
+lead rather than assuming or clobbering. But this was the implementer's
+good judgment saving an orchestration mistake, not a guarantee — two agents
+building/testing concurrently in one worktree can genuinely race (stale
+`target/` artifacts, one agent's `cargo test` run picking up the other's
+half-written file, a commit landing mid-edit).
+
+**Rule going forward:** never dispatch a new task (implementer, fixer, or
+otherwise) into a worktree that has another dispatch still outstanding in
+it — wait for the completion notification (or the review/fix cycle it
+spawns) before starting the next one in that same worktree. This applies
+per-worktree, not per-lane: a fix-up dispatch counts as "still outstanding"
+in that worktree exactly like the task it followed. Different lanes'
+worktrees remain safe to run in parallel (different directories, no
+collision surface).
+
+**Cost if wrong:** this instance — zero, no actual damage. In general,
+were a real collision to occur, the cost is bounded and recoverable (git
+history + the worktree's own uncommitted diff), but avoidable entirely by
+just not doing it, which is now the standing rule.
+
+---
+
+## 2026-09-03 — Tracked, non-blocking: second flaky Windows timing test
+
+`core/src/store/atomic.rs`'s
+`write_atomic_exhausts_rename_retries_and_surfaces_io_error_when_the_
+sharing_violation_outlasts_the_retry_window` (Task 7's work, reviewed CLEAN
+with explicit 10x-rerun flakiness testing at the time) fails intermittently
+under the crate's default *parallel* `cargo test` but passes standalone and
+under `--test-threads=1` — a real, pre-existing Windows file-lock timing
+race, not touched or introduced by Task 10's fix (which only edited
+`derived.rs`). Same class of issue as the watcher flake logged earlier
+this session: a test whose correctness depends on real OS-level timing
+becomes more collision-prone as more tests run concurrently and compete
+for CPU/IO scheduling.
+
+**Owner: whoever next touches `store/atomic.rs`** — likely fix is a unique
+temp-file path per test invocation (reducing cross-test file contention)
+or a longer safety margin in the retry-window timing, mirroring whatever
+fix the watcher flake eventually gets. Not blocking L1's current task
+chain; `cargo test -p idl-rs` at Task 10's own single-threaded check
+(626 passed, 0 failed, 1 ignored) is the authoritative green signal for
+that task's own gate.
+
+**Cost if wrong:** Low — same shape as the watcher flake: known,
+characterized, low-frequency, isolated to test infrastructure rather than
+the primitive's actual correctness (already independently verified
+correct in Task 7's own review).
+
+---
+
+## 2026-09-03 — R13: compute-load ruling — the run made Isaac's machine unusable
+
+**Symptom (Isaac, verbatim):** "my computer's been unusable all day" /
+"go easier on my poor old computer".
+
+**Root cause (verified, not inferred).** Three compounding factors:
+
+1. Every lane worktree compiled the full arrow/parquet/tokio/btleplug/
+   reqwest dependency graph into its *own* `target/` — the same
+   `Cargo.lock`, built four times over. At the worst point `tasklist`
+   showed 7 `cargo.exe` + 1 `rustc.exe` + 4 `node.exe` concurrently.
+2. The machine is 12 logical cores / 15.7 GB RAM with ~1.8 GB free *at
+   idle* (nothing building). Cargo's default of one `rustc` per core on
+   this dependency graph pushes it straight into swap — memory, not CPU,
+   is what made the desktop unresponsive.
+3. Every implementer and reviewer ran the full 630-test suite (≈280 s
+   per run) per task, and reviewers were defaulting to multi-rerun
+   flakiness hunts on top of that.
+
+**Fixes applied:**
+
+- `rust/.cargo/config.toml` (idl-rs `main`, commit `78e4fa1`): shared
+  `target-dir` at `saucyeng/.cargo-shared-target`. Applies to every worktree
+  created from `main` from here on (L2, L3, and anything after). The
+  existing warm worktree (`wave1-l1-store`) is deliberately **not**
+  switched: the shared dir is still empty (0 GB), so switching would force
+  exactly the cold compile the config exists to avoid. The `wave1-l5-tauri`
+  worktree has an untracked copy of the same config; its next build (gated
+  on L1/L2/L3 anyway) seeds the shared dir.
+- `%USERPROFILE%\.cargo\config.toml` (machine-wide, outside every repo):
+  `[build] jobs = 4`. Reversible by deleting the file; overridable per
+  invocation with `-j`. This is the lever that reaches the L1 worktree
+  without touching it.
+- **Standing rules while the machine is the bottleneck** (tightens the
+  per-worktree rule above): (a) one build-running dispatch at a time,
+  across *all* worktrees, implementer or reviewer — not one per worktree;
+  (b) task-cycle test gate is the task's own module (`cargo test -p idl-rs
+  store::catalog`, etc.), never the full suite; (c) the full suite runs
+  once per lane at its merge gate, with `-- --test-threads=4`; (d) no
+  multi-rerun flakiness hunts unless the lead asks for one.
+
+**Cost if wrong:** Low — every change is reversible and the only cost is
+slower wall-clock per task, which is the intended trade. If the shared
+target-dir ever misbehaves (path-dependent fingerprints, a worktree on a
+different `Cargo.lock`), delete the config file in that worktree and it
+falls back to a local `target/`.
+
+---
+
+## 2026-09-03 — R14: L1 Task 12 rework — four rulings the fix-up needs
+
+Review `lanes/l1-store/review-task12.md` returned NEEDS-REWORK on two
+Important, spec-explicit bugs plus three Minor items. Neither Important
+bug has a fully specified fix in C4 §5 — both need a lead ruling rather
+than an implementer's guess.
+
+1. **`sessions.duration_ms` definition.** C3 says "RENAMED from
+   `duration_s`" — it is the session's length, not anything lap-derived
+   (most sessions have no laps). Ruling: the span of `data.parquet`'s
+   `t_us` column, `round((max − min) / 1000)`, mirroring
+   `Session::duration_ms()` exactly (`core/src/session/mod.rs:327`);
+   `NULL` when the file has fewer than two rows. Read only the time
+   column (a projection, or the row-group statistics if present in every
+   row group) — never the whole file. *Correction (fix-up, `6ad093f`):
+   the ruling as first written named the column `t_us`; C1 §4.1 names it
+   `t` (Int64, session-relative µs). The implementer read `t` via
+   `ProjectionMask::columns(schema, ["t"])` — the intent, not the typo.*
+2. **`laps.track_id` join.** C4 §5 step 4 names the source ("from the
+   session's track visits") but not the join. Ruling: containment by
+   timestamp — lap `L` takes visit `V`'s `track_id` iff
+   `V.start_timestamp_ms <= L.start_timestamp_ms && L.end_timestamp_ms <=
+   V.end_timestamp_ms`; first matching visit in `track_visits` order;
+   `NULL` when no visit contains the lap. **Not** by
+   `visit.laps[*].lap_number`: C1 §6 documents those as cached copies from
+   idl0's `workspace.dart`, and whether their numbering is per-session or
+   per-visit is unspecified — timestamps are the visit's own explicit,
+   documented fields. If the matched `track_id` is absent from `tracks`
+   (the FK would reject it under `foreign_keys = ON`), insert `NULL` and
+   push a `report.skipped` entry naming the dangling track — the lap row
+   itself is still valid and still indexed.
+3. **`sessions.created_at_ms`** (Minor, but the reviewer is right that a
+   silent `0` reads as done). Interim: `session.json`'s filesystem mtime
+   in UTC ms, with a `// TODO(idl0):` pointing here. **Open question
+   (lead, non-blocking):** C1 §6 has no `imported_at_ms` field, so nothing
+   under `<data>` durably records import time; `created_at_ms` cannot mean
+   "import time" across rebuilds until C1 grows one. Needs a C1
+   amendment; not in this fix.
+4. **Remaining Minors.** Add the missing-blob → `report.skipped` test
+   (the mechanism is verified sound but unexercised). Accept
+   `read_derived_channels`' whole-file `concat_batches` with a doc comment
+   stating it as a known simplification — no restructure in this cycle.
+
+**Cost if wrong:** Low — "the catalog is an index: deletable, rebuildable,
+never synced." Every rule above is one line to change and no synced
+artifact depends on it. The one that could bite later is (2) if a real
+session ever has overlapping visits; first-match is deterministic, and
+the ledger records the choice.
+
+---
+
+## 2026-09-03 — Tracked direction: React Flow as the workbook control UI (wave 2 / L6)
+
+Isaac's stated direction, recorded so it isn't lost between sessions:
+React Flow becomes the UI for data filtering, maths-engine control, and
+the control layer over D3/Plot. The `.idl1wb` file stays the source of
+truth — React Flow is a *visual representation* of the workbook's data
+flow, edited through C2's parse/generate boundary, not a second document
+model. The device pane stays roughly as it is today. Expected effect:
+less total UI work, since most of the control surface becomes an
+off-the-shelf node editor over the design doc's existing reactive-DAG
+model (`math::resolve` + Observable Runtime scheduling, design §4).
+
+**Scope:** L6 / wave 2. Nothing in wave 1 depends on it — the four
+contracts and every Rust lane are UI-agnostic by construction. Lead
+recommendation: a §4 / D13 amendment to the design doc when L6 planning
+starts, not now. Isaac has not yet ruled on the design-doc timing.
+
+**Cost if lost:** Medium — it reshapes L6's plan and supersedes D13's
+"Properties + Code" editor and the `plotForm` generate/parse module. Hence
+this entry.
+
+---
+
+## 2026-09-03 — R15: L1 Task 13 pre-dispatch — plan-vs-reality corrections and rulings
+
+Pre-reading Task 13's plan text against what Tasks 12 / R6 landed and
+against `store::atomic`'s actual API surfaced the following *before*
+dispatch — cheaper than a fix cycle on a constrained machine (R13).
+
+1. **`write_atomic(…, None)` is not "overwrite".** The fourth argument is
+   `based_on_hash: Option<&str>` — optimistic concurrency. `None` means
+   "caller believes `target` does not exist"; if it does exist at rename
+   time the call returns `RenameConflict`. The plan's `write_track` and
+   `profile::save` pass `None` unconditionally, so every re-save of an
+   existing track or profile would fail — and the plan's tests (each saves
+   once) would not catch it. Same class as Task 12's literal-draft FK bug.
+   **Ruling:** all three whole-document writers (`write_track`,
+   `profile::save`, `settings::save`) go through
+   `write_atomic_with_retry` with `based_on_hash` = sha256 of the file's
+   current content if present, else `None`, and a `rederive` that returns
+   the caller's bytes unchanged — a full replace, last-write-wins,
+   consistent with C4 §6's LWW-by-`updated_at_ms` for tracks and profiles.
+   Each writer gets an overwrite test.
+2. **`Track` already carries `created_at_ms` / `updated_at_ms`** (Task 12,
+   `track_artifact/model.rs:29,32`). The plan's Step 3 premise ("does not
+   currently carry") is stale. **Ruling:** `write_track(data_root, &Track)`
+   — the two-argument shape from the plan's own Interfaces line, timestamps
+   read from the struct. Mechanism: serialise through the existing private
+   `TrackDto` (adding `Serialize` derives), not a parallel
+   `serde_json::json!` literal — the reader stays the single authority on
+   the `.idl0t` wire shape. Round-trip test asserts every field, both
+   timestamps included.
+3. **`profiles/` is in C4 §2** (R6). The plan's "not fixed by C4 — this
+   plan's own extension" module doc and open-question pointer are stale;
+   the module doc cites C4 §2. **Ruling:** `load_all` returns
+   `ProfileLoad { profiles, skipped: Vec<(PathBuf, String)> }` — no
+   `eprintln!` in core (CLAUDE.md §2 "PURE", §5 typed failures); malformed
+   files are reported to the caller, never printed.
+4. **`verify` check #3 (session's blob missing) is now implementable in
+   core:** Task 12 landed `read_data_parquet_session_fields` (private, in
+   `catalog.rs`). **Ruling:** make it `pub(crate)` and implement #3 in
+   `check_sessions`; the plan's "deferred to Task 15" note is withdrawn.
+   #6 (workbook parse — needs L3's parser) and #9 (catalog cross-reference)
+   stay deferred exactly as the plan states.
+5. **`settings.json` gains keys → C4 §1 amendment (spec-during, lead).**
+   `store::settings` writes `rider_name` and `unit_system` into the C4 §1
+   bootstrap file beside `data_dir`. L5's `paths.rs` deserialises that file
+   leniently (serde ignores unknown keys) and never writes it, so nothing
+   breaks — but the contract's shape block must say so. Amended in C4 §1
+   with a post-sign note citing this ruling. Lanes do not edit contracts;
+   the lead does.
+6. **Step 0:** the CLEAN fix-up review's one Minor (`catalog.rs:479-484`
+   doc comment says "row group" where the code streams reader batches)
+   rides along as a one-line preliminary commit rather than its own agent.
+
+**Cost if wrong:** Low — (1) is the only item with a real failure mode,
+and it is the one that would have shipped a broken re-save; the rest are
+documentation truth and one visibility change. Lane-internal except (5),
+which the lead owns.
+
+---
+
+## 2026-09-03 — R16: `write_atomic(…, None)` audit of landed L1 code — one latent bug (catalog swap)
+
+R15 item 1 identified a bug *class* (passing `based_on_hash = None` to a
+writer that legitimately overwrites). The lead audited every
+`write_atomic` call site already on `wave1-l1-store` (`6ad093f`):
+
+| Call site | 4th arg | Overwrites? | Verdict |
+|---|---|---|---|
+| `store/blob.rs:71` | `None` | never — `is_file()` early-return above it | correct (content-addressed) |
+| `store/derived.rs:228` | `None` | never — `is_file()` early-return at `:151` | correct (content-addressed, C1 §5) |
+| `store/session_json.rs:275` | caller's `based_on_hash` | yes (metadata edits) | correct — caller supplies the hash it read |
+| `store/parquet.rs:324` | `None` | never *by design* — `data.parquet` is write-once; C1 §4.3 regeneration "deletes and rewrites" | correct as a guard; **Task 15's regeneration path must delete before rewriting** (brief item for Task 15) |
+| `store/catalog.rs:376` | `None` | **yes — every rebuild after the first** | **bug** |
+
+**The bug.** C4 §5: the rebuild "atomically renames [the staging file]
+over `catalog.sqlite`". `rebuild_catalog` checkpoints the staging DB,
+reads its bytes, then `write_atomic(data_root, catalog.sqlite, bytes,
+None)`. With an existing `catalog.sqlite` that is `RenameConflict` on
+every rebuild but the first. Latent because each Task 12 test rebuilds
+once on a fresh temp root; the Task 12 review's stated priorities (FK
+semantics, DDL, scan order) did not include the swap.
+
+**Ruling (fix-up, queued behind Task 13 — same worktree, one dispatch at
+a time per R13):**
+1. Swap via `write_atomic_with_retry` with `based_on_hash` = sha256 of the
+   current `catalog.sqlite` if present else `None`, `rederive` returning
+   the same bytes (the rebuild supersedes whatever is there — C4 §5's
+   stated semantics).
+2. After a successful swap, remove stale `catalog.sqlite-wal` /
+   `catalog.sqlite-shm` if present — they belong to the *previous*
+   database and must not be applied to the new one. Prudence, not a
+   contract line; say so in the comment.
+3. Doc-comment precondition: no connection to the live catalog may be
+   open during a rebuild (C4 §5's rebuild is an offline swap).
+4. Test: rebuild twice on the same populated root → second call `Ok`,
+   report counts identical, no `RenameConflict`.
+
+**Standing reviewer checklist addition:** every `write_atomic` call site
+— "can this target legitimately already exist when we write? If yes,
+`None` is wrong." Two rulings (R15, R16) in one day from the same
+primitive's most natural-looking misuse.
+
+**Cost if wrong:** Low on (1)/(3)/(4) — they implement the contract's
+stated semantics. (2) is the judgment call: deleting sidecars while a
+connection were open would be harmful, which is exactly why (3) states
+the precondition; the catalog is an index and rebuildable regardless.
+
+---
+
+## 2026-09-03 — R17: L1 Task 14 pre-dispatch — GPS unit scale, an inherited idl0 bug, two crash paths
+
+Pre-read of Task 14's plan text (ports of `gate_geometry.dart`,
+`cached_session_laps.dart`, `lap_distance_accumulator.dart`,
+`session_filename.dart`) against the Rust types it consumes and the Dart
+originals at `idl0-app/app/lib/data/`.
+
+**The unit landscape, verified in code (not the plan's prose):**
+
+| Thing | Scale | Evidence |
+|---|---|---|
+| `crate::gps::GpsFix.lat/lon` | degrees × 1e7 | `gps.rs:3-8` doc |
+| `crate::laps::model::Gate` | degrees × 1e7 | `laps/model.rs:9` doc |
+| `.idl0t` wire `latitude_deg` / `lat1_deg` … | **degrees × 1e7 despite the `_deg` name** | `track_artifact/read.rs:30-33` fixtures (`501163000`), DTO conversions copy without rescaling; SPEC §16.3 "unchanged" from idl0 |
+| `store::session_json::LapGateJson.*_deg` | **decimal degrees** | C1 §6, ruling R8 |
+
+So the one conversion point is `Gate`/`GpsFix` (×1e7) → `LapGateJson`
+(degrees) = `/ 1e7`, which the plan's Step 1 does exactly once. Correct.
+
+**Step 3 inherits a real idl0 bug.** The plan's `distance.rs` (and the
+Dart it ports, `lap_distance_accumulator.dart:79-80, 88-89`) feeds ×1e7
+latitude straight into `cos(mean_lat · π/180)` and multiplies ×1e7
+coordinate deltas by `111_320` m/deg. The Dart is fed ×1e7 data at its
+only call site (`lap_provider.dart:268`: raw session GPS + Track
+polyline, no rescaling anywhere in `lib/` — grep for `/ 1e7` hits only
+`gate_geometry.dart`). Consequences in idl0: `residual` is 1e7× too large
+so the documented 5 m confidence-anchor threshold can never fire;
+`lonScale` is the cosine of a meaningless angle (sign included), so the
+projection geometry is distorted; only the scale-invariant pieces
+(`tangentAgreement`, arc-fraction interpolation between the two endpoint
+anchors) behave. The plan's own Step 3 test fixtures use decimal degrees
+(`0.0001`), so the draft would pass its tests and fail on real data —
+same shape as Task 12's literal draft.
+
+**Rulings:**
+1. `laps::gate_synthesis` and `laps::distance` operate on `GpsFix`'s ×1e7
+   scale throughout, converting to metres via `111_320 / 1e7` per unit
+   (the way `gate_geometry.dart:122-124` already does) and to decimal
+   degrees only at the `LapGateJson` boundary. **The Rust `distance` port
+   is corrected, not bug-faithful**; its doc comment cites the Dart lines.
+   Required test: a sample displaced ≈3 m east of a due-north polyline at
+   ~50° N yields `residual ≈ 3 m` (±0.1) — a metres-level assertion the
+   buggy math cannot pass — plus an on-line fast sample qualifying as an
+   anchor. Fixtures in ×1e7.
+2. The plan's "C1 §8 item 4 … pending Isaac's confirmation" note is stale
+   — resolved by R8 (decimal degrees). Module docs state the settled
+   convention; the single `/ 1e7` stays.
+3. Two crash paths on bad input become typed errors (CLAUDE.md §5):
+   `speed_kmh.len() != samples.len()` → `LapDistanceErrorKind::LengthMismatch`;
+   any `GateCrossing.sample_index >= samples.len()` →
+   `LapDistanceErrorKind::IndexOutOfBounds`. `compute` returns `Result`.
+4. `snap_to_nearest_fix`'s parameters are named for their actual scale
+   (`lat_e7`/`lon_e7`), not `_deg`.
+5. Doc-only, in `track_artifact/model.rs`: the wire DTOs' `*_deg` fields
+   carry ×1e7 values (SPEC §16.3, unchanged from idl0) — say so, since the
+   name actively misleads (it misled this plan's author in Step 3).
+6. `renumber.rs` documents that the detector emits **per-visit** lap
+   numbering and this module assigns session-wide numbers — which
+   independently confirms R14 item 2's choice to join `laps.track_id` by
+   timestamp containment rather than `visit.laps[*].lap_number`.
+
+**For Isaac (non-blocking):** idl0's lap-distance normalisation was
+running with this bug; if lap-distance overlays ever looked wrong in
+idl0-app, this is a candidate cause. The Rust port will not reproduce it.
+
+**Cost if wrong:** Low. (1) is the only substantive call and the Dart
+code's own doc comments ("in metres", "km/h") state the intent the
+arithmetic violates; every constant and threshold in the file only makes
+sense in real metres. (3)–(5) are hardening and documentation.
+
+---
+
+## 2026-09-03 — R18: L1 Task 15 pre-dispatch — import pipeline belongs in core; re-import semantics
+
+The plan puts the whole import pipeline (blob write → parse → synthesis →
+`data.parquet` → `session.json` → catalog rebuild) inside the CLI's
+`cmd_import`, with a comment that L5 "reuses this code as a library" —
+but `cli/src/main.rs` is a binary, not a library, and C3 §2 already
+carries seven `import_*` error kinds for L5's `import` command. The plan
+also calls the write-once `write_session_parquet` unconditionally, so
+**re-importing the same file fails** with `RenameConflict` (R16's table:
+`parquet.rs:324` passes `None` by design; the *caller* must decide).
+
+**Rulings:**
+1. **Core owns the pipeline.** New module `store::import` with
+   `pub fn import_idl0(data_root, bytes) -> Result<ImportReport, ImportError>`
+   (typed error, kinds mirroring C3 §2's `import_*` set where they apply)
+   doing: blob write → parse → `synthesize_base_channels` → import plan
+   (below) → `data.parquet` → `session.json` if absent. It does **not**
+   touch the catalog — the caller decides how to refresh it (the CLI
+   rebuilds; L5 will do the same until incremental indexing exists).
+   `cmd_import` becomes a thin printer over it.
+2. **Import plan** — `pub fn plan_import(existing: Option<&SessionParquetMetadata>,
+   new_blob_sha256, importer_version, seam_correction_version) -> ImportPlan`,
+   pure, unit-tested for all four arms:
+   - no `data.parquet` → `Write`;
+   - same blob, same `importer_version` **and** `seam_correction_version`
+     → `Skip` (idempotent re-import — C4 §3's stated intent);
+   - same blob, either version differs → `Regenerate` (delete
+     `data.parquet`, rewrite — C1 §4.3's regeneration rule; the guard in
+     `parquet.rs:324` is exactly why the delete is explicit);
+   - **different blob, same `session_id`** → `Collision { existing_blob }`
+     → `ImportError`, refusing to overwrite. Real for `.idl0`: a truncated
+     download and the full file share the device UUID (C4 §3: `.idl0`
+     ids never extend). The message names both hashes and says to remove
+     `sessions/<id>/` to re-import. L5 may later offer "replace"; the
+     CLI does not.
+3. **Metadata reader made public.** `store::parquet` gains
+   `pub fn read_session_metadata(path) -> Result<SessionParquetMetadata, ParquetStoreError>`
+   (a `pub` struct with C1 §4.3's nine keys), factored from the key parsing
+   `read_session_parquet` already does at `parquet.rs:~360-380`.
+   `catalog.rs`'s `pub(crate)` reader stays as is with a `// TODO(idl0):`
+   to delegate — no churn in a file the R16 fix-up just touched.
+4. **`importer_version` is a core constant**, `parse::IDL0_IMPORTER_VERSION
+   = "0.1.0"`, documented per C1 §4.3 (bump when parsing/timing output
+   changes). Not a CLI literal — L2's importers and L5 must use the same
+   value the parquet writer stamps.
+5. `cmd_sessions`: no `expect()` on SQL — map to stderr + `FAILURE`
+   (CLAUDE.md §5; a corrupt catalog is data, not a bug). `cmd_prune`
+   stays age-only as the plan documents.
+6. Tests: `plan_import` × 4 in core; one end-to-end `import_idl0` test
+   (import twice → second `Skip`) **if** a synthetic `.idl0`-bytes helper
+   already exists in `core/src/parse/` tests; otherwise that path is
+   exercised in Task 16 with the real file. CLI crate: existing tests only,
+   as the plan says.
+
+**Cost if wrong:** Low–Medium. (1) is a layering call the design doc
+already makes ("Rust = numbers"; L5's commands are thin) — the cost of
+*not* doing it is L5 re-implementing import. (2)'s `Collision` arm is the
+one judgment call: refusing is the conservative choice and the message
+tells the operator the one-step remedy.
+
+---
+
+## 2026-09-03 — R19: L1 Task 16 pre-dispatch — the real file's location, the ODR estimate, the merge gate
+
+1. **The real `.idl0` was never copied into the idl-rs worktree.** It exists
+   only at the idl1-app repo root (`idl1-app/d365a19ae7ef2dc2d087a5887371281f.idl0`
+   + `.idl0w`, gitignored per Task 1). The plan's `CARGO_MANIFEST_DIR/..`
+   path would resolve to nothing and the test would print "skipping" —
+   silently defeating C1 §8 item 8. **Ruling:** the integration test reads
+   the path from env var `IDL_RS_REAL_SESSION_IDL0` (absolute), skipping
+   with a notice that names the variable when unset; no second copy of
+   real session data is made anywhere. Task 16 runs it with the variable
+   pointing at the idl1-app root file.
+2. **"Corrected ODR" is measured from what §3.3 actually produces** — the
+   corrected `t_us`: `(n − 1) / ((t_us.last − t_us.first) / 1e6)` over
+   imu0 — with `nominal_rate_hz` printed alongside for reference, rather
+   than trusting that Task 6 rewrote `nominal_rate_hz` (the plan asserts
+   it; the test should not depend on it).
+3. **The independent estimate counts only IMU samples inside the GPS
+   window**: IMU samples whose `t_us` lies within the first–last GPS fix's
+   `t_us`, divided by the GPS wall-clock span (`GPS_EpochMs` last − first).
+   IMU typically records before the first fix and after the last; the
+   plan's whole-file count would bias the estimate low by exactly that
+   margin. 5 % tolerance stays.
+4. **Merge-gate test run per R13:** `cargo test -p idl-rs -p idl-rs-cli --
+   --test-threads=4` — **not** `--workspace` (that would build
+   `idl-rs-tauri` and its Tauri dependency graph in this worktree for no
+   reason). If either known flaky test (`watcher::…never_fires_callback`,
+   `store::atomic::…outlasts_the_retry_window`) fails, rerun **that test
+   alone by name once**; never the suite.
+5. **CLI smoke with the real file**, recorded in the report: `import` to a
+   temp `--data-dir` twice (second run must report the idempotent skip),
+   then `sessions`, then `verify` (expect zero `Error` findings), then
+   `prune` dry-run. Output pasted into the plan's Open-questions item 17
+   alongside the ODR numbers.
+6. **CHANGELOG text is written to what landed**, not the plan's draft:
+   include the unit-corrected lap-distance port (R17), the catalog swap
+   fix (R16), the `verify` checks actually implemented (#1–5, #8, #10;
+   #6/#7/#9 deferred), import idempotency/collision semantics (R18), and
+   the two contract amendments (C4 §1 settings keys, C4 §2 `profiles/`).
+7. **Landing plan (lead, after Task 16 is CLEAN):** idl-rs `wave1-l1-store`
+   → `main` as a merge commit (main carries L4's 12 commits; `Cargo.lock`
+   will conflict — resolve by taking both sides' additions and letting
+   one `cargo build -p idl-rs` regenerate, single build, jobs capped);
+   idl1-app `wave1-l1-store` → `main` (two SPEC commits + Task 16's
+   CHANGELOG/TASKS), then bump the submodule pointer. The stray untracked
+   `nul` in the idl1-app L1 worktree is a Windows shell artifact — removed
+   at merge, never committed. Both L1 worktrees are then retired.
+   L2/L3 worktrees are created from the merged `main` and inherit the
+   shared target-dir; **their first build seeds it — run one, not both**.
+
+**Cost if wrong:** Low. (1)–(3) make the validation actually run and
+measure the right quantity; (4) is R13; (7) is mechanical and reversible.
+
+---
+
+## 2026-09-03 — Tracked: Task 14 landed (`8d6cb00`); three implementer flags, ruled
+
+Task 14 (R17) landed at `8d6cb00`, 19/19 on the targeted run, metres-level
+test confirmed to fail under the Dart-faithful math during development.
+The implementer raised three things outside its declared files:
+
+1. **Plan error:** Task 14's Interfaces line names
+   `filename::session_file_base` but no step defines it, and it would
+   need UTC→local calendar decomposition — a date/time dependency this
+   crate deliberately does not have. **Ruling:** not added; the caller
+   (CLI or L5, which have a time library) decomposes and calls
+   `format_session_file_base`. The Interfaces line was wrong, not the
+   implementation.
+2. `store/session_json.rs:103-106` — `LapGateJson`'s doc still says the
+   gate unit convention is "pending Isaac's confirmation" (settled by
+   R8). **Ruling:** fixed as Task 15's Step 0 (same worktree, serial).
+3. `laps::renumber::RenumberedLap.track_id: Option<String>` is always
+   `Some` (`TrackVisitJson.track_id` is non-optional). The plan drafted
+   the `Option`; nothing consumes it yet. **Ruling:** becomes `String` in
+   Task 15's Step 0 — the type should not promise an absence that cannot
+   occur.
+
+**Cost if wrong:** negligible — (1) is a documentation correction, (2)
+and (3) are one-line changes with no consumers.

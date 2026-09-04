@@ -69,12 +69,24 @@ Expected: `Preparing worktree ... HEAD is now at ...` on `main`'s current tip.
 cd "C:/Users/isaac/Documents/Saucy/saucyeng/idl1-app"
 git worktree add -b wave1-l1-store "C:/Users/isaac/Documents/Saucy/saucyeng/idl1-app-worktrees/wave1-l1-store" main
 cd "C:/Users/isaac/Documents/Saucy/saucyeng/idl1-app-worktrees/wave1-l1-store"
+git submodule update --init -- rust
 git -C rust remote add local-wave1 "C:/Users/isaac/Documents/Saucy/saucyeng/idl-rs-worktrees/wave1-l1-store"
 git -C rust fetch local-wave1 wave1-l1-store
 git -C rust checkout -B wave1-l1-store FETCH_HEAD
 git -C rust log --oneline -1
 ```
-Expected: the submodule checkout is now on `wave1-l1-store`, same commit as the idl-rs worktree's `main` tip.
+**Corrected 2026-09-03 (ruling R10):** the `git submodule update --init -- rust` line is
+required — `git worktree add` on a superproject does **not** initialize submodules, so without
+it `rust/` inside the new worktree starts as an empty placeholder with no `.git` of its own.
+`git -C rust ...` against that placeholder doesn't fail: git's repo-discovery walks up to the
+*parent* worktree's `.git` instead, so every subsequent `git -C rust` command in this step
+silently runs against the **idl1-app superproject itself** — resetting whatever branch it's on,
+adding the `local-wave1` remote to the wrong repo, and checking idl-rs's tree into the app
+worktree. This corrupted the shared `wave1-l1-store` branch ref on Task 1's first real run;
+fully diagnosed and repaired with no data loss (`git reset --hard` the app worktree, remove the
+stray remote, re-run with the fix above) — see `runs/2026-09-03/decisions.md` ruling R10. Expected
+(with the fix): the submodule checkout is now on `wave1-l1-store`, same commit as the idl-rs
+worktree's `main` tip.
 
 - [ ] **Step 3: `.gitignore` the two real validation files**
 
@@ -2563,8 +2575,19 @@ fn file_metadata(session: &Session, importer_version: &str) -> Vec<(String, Stri
 ```rust
 /// Writes `session` to `<data_root>/sessions/<session_id>/data.parquet`
 /// (path per contract C4 §2) via the atomic-write primitive. Excludes
-/// engine-synthesized channels (`Time`, `Distance` — `RawColumn::Ramp`/
-/// `Interp`, never columns per C1 §2's table).
+/// engine-synthesized channels (`Time`, `Distance` — never columns per C1
+/// §2's table), identified by `source_kind == "synthesized"`, **not** by
+/// `RawColumn` variant. **Corrected post-Task-4 (2026-09-03, review
+/// finding, `runs/2026-09-03/decisions.md`):** this section originally
+/// filtered on `matches!(c.column, RawColumn::Ramp{..} | RawColumn::Interp{..})`,
+/// which was true for both synthesized channels only *before* Task 4 —
+/// Task 4 correctly changes `Time`'s in-memory representation to
+/// `RawColumn::F64` (C1 §3.5 invariant 4 requires it once `t_us` isn't
+/// perfectly uniform), so a `RawColumn`-variant filter would silently stop
+/// excluding `Time` and this writer would put it in `data.parquet`,
+/// violating C1 §4.1. `source_kind: "synthesized"` is set on both `Time`
+/// and `Distance` by Task 4 (`session/synthesis.rs`) and is stable
+/// regardless of either channel's underlying `RawColumn` representation.
 pub fn write_session_parquet(
     data_root: &Path,
     session: &Session,
@@ -2580,8 +2603,8 @@ pub fn write_session_parquet(
     // real (non-synthesized) channels.
     let mut seen_sources: Vec<&str> = Vec::new();
     for c in &session.channels {
-        if matches!(c.column, RawColumn::Ramp { .. } | RawColumn::Interp { .. }) {
-            continue; // synthesized — excluded (C1 §2)
+        if c.source_kind == "synthesized" {
+            continue; // Time/Distance — excluded (C1 §2), by source_kind not RawColumn variant
         }
         if seen_sources.contains(&c.source_kind.as_str()) {
             continue;
@@ -2597,7 +2620,7 @@ pub fn write_session_parquet(
 
     // Channel value columns.
     for c in &session.channels {
-        if matches!(c.column, RawColumn::Ramp { .. } | RawColumn::Interp { .. }) {
+        if c.source_kind == "synthesized" {
             continue;
         }
         let rows = row_indices_for(c, &t)?;
