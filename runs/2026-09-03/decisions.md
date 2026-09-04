@@ -1155,3 +1155,40 @@ separate fix-up; Task 16's own review and merge-gate run cover them.
 
 **Cost if wrong:** Low — all three are local; Task 16's reviewer re-checks
 the ordering with the new test.
+
+---
+
+## 2026-09-03 — Tracked: Task 16 landed — C1 §8 item 8 real-session ODR validation PASSES
+
+idl-rs `2bf7a9f` (Task 15 review fixes) + `57e4d6e` (validation test);
+idl1-app `ccd4127` (CHANGELOG/TASKS). Merge gate (R13/R19 scope,
+`-p idl-rs -p idl-rs-cli -- --test-threads=4`): **743 passed, 0 failed**
+(691 lib + 1 integration + 51 CLI), 1 pre-existing `#[ignore]`. Neither
+known flaky test appeared.
+
+**The validation (C1 §8 item 8), on Isaac's real session
+`d365a19ae7ef2dc2d087a5887371281f.idl0`, GPS + IMU both enabled:**
+
+```
+corrected=812.348 Hz  nominal=812.348 Hz  independent=814.017 Hz
+relative_error=0.2051 %   imu0 n=97927   count_in_window=96054   gps_span_s=118.000
+```
+
+- *corrected* = `(n−1) / (t_us span)` over imu0's §3.3-corrected timestamps.
+- *independent* = imu0 samples inside the GPS window ÷ GPS wall-clock span
+  (`GPS_EpochMs`, a clock the seam correction never sees).
+- 0.21 % against a 5 % tolerance; the implied IMU span (≈120.5 s) exceeds
+  the 118 s GPS window by the expected before-first-fix/after-last-fix
+  margin (R19 item 3's reason for windowing the count).
+- The device's true ODR on this file is ≈812 Hz against a configured
+  nominal of 800 Hz — the ~1.5 % fast-clock case §3.3's worked example is
+  built around, seen on hardware.
+
+**CLI smoke on the same file** (temp data root, deleted after): `import`
+→ 1 session/1 blob; `import` again → "already imported (skip)"; `sessions`
+→ one row; `verify` → 0 findings; `prune` → 0 candidates, dry run. All
+exit 0.
+
+**Plan Open-questions item 17** updated on `main` with these numbers
+(lead, per R19 addendum). Lane is fit to merge pending the Task 16
+review's verdict.
