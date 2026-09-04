@@ -1235,3 +1235,33 @@ Task 16 review: CLEAN (1 Minor, tracked below). Landing per R19 item 7:
 
 **Cost if wrong:** Low — the merge is a merge commit (revertable as a
 unit); the lock check is recorded; both lane branches are kept.
+
+---
+
+## 2026-09-03 — R13 addendum: post-merge seed compile OOM-killed at 4 jobs; two more rules
+
+The first post-merge `cargo test -p idl-rs -p idl-rs-cli --no-run` on
+`main` (shared checkout, the shared target-dir seed) was killed by the
+harness for low system memory while compiling the arrow graph at
+`jobs = 4`. Nothing else was building. Two contributors, both now fixed:
+
+1. **`jobs = 4` is still too many for this machine** when arrow/parquet
+   crates compile concurrently. `%USERPROFILE%\.cargo\config.toml` is now
+   `jobs = 2`. Slower, but a build that finishes beats one that is killed
+   two-thirds through.
+2. **Idle subagents — stopped, but not the memory lever I first thought.**
+   Eleven finished L1 implementers/reviewers were still registered as
+   idle teammates; all stopped (`TaskStop`). *Correction on measurement:*
+   they ran **in-process** (`in_process_teammate`), so stopping them freed
+   negligible RAM — the eight `claude` processes (~1.6 GB) seen in the
+   process list are Isaac's other Claude Code sessions plus this one, not
+   the teammates. Stopping finished teammates stays the rule (hygiene,
+   no stale agents to mis-address), but the machine's memory pressure is
+   the OEM `ServiceShell` (1.7 GB), VS Code, browsers, and the other
+   sessions — none of which this run controls. Hence rule 1 is the real
+   fix.
+
+The compile resumes incrementally (it had reached `arrow-cast`/`arrow-ord`);
+retried at 2 jobs.
+
+**Cost if wrong:** none — both are strictly less load.
