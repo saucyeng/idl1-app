@@ -823,3 +823,52 @@ dispatch — cheaper than a fix cycle on a constrained machine (R13).
 and it is the one that would have shipped a broken re-save; the rest are
 documentation truth and one visibility change. Lane-internal except (5),
 which the lead owns.
+
+---
+
+## 2026-09-03 — R16: `write_atomic(…, None)` audit of landed L1 code — one latent bug (catalog swap)
+
+R15 item 1 identified a bug *class* (passing `based_on_hash = None` to a
+writer that legitimately overwrites). The lead audited every
+`write_atomic` call site already on `wave1-l1-store` (`6ad093f`):
+
+| Call site | 4th arg | Overwrites? | Verdict |
+|---|---|---|---|
+| `store/blob.rs:71` | `None` | never — `is_file()` early-return above it | correct (content-addressed) |
+| `store/derived.rs:228` | `None` | never — `is_file()` early-return at `:151` | correct (content-addressed, C1 §5) |
+| `store/session_json.rs:275` | caller's `based_on_hash` | yes (metadata edits) | correct — caller supplies the hash it read |
+| `store/parquet.rs:324` | `None` | never *by design* — `data.parquet` is write-once; C1 §4.3 regeneration "deletes and rewrites" | correct as a guard; **Task 15's regeneration path must delete before rewriting** (brief item for Task 15) |
+| `store/catalog.rs:376` | `None` | **yes — every rebuild after the first** | **bug** |
+
+**The bug.** C4 §5: the rebuild "atomically renames [the staging file]
+over `catalog.sqlite`". `rebuild_catalog` checkpoints the staging DB,
+reads its bytes, then `write_atomic(data_root, catalog.sqlite, bytes,
+None)`. With an existing `catalog.sqlite` that is `RenameConflict` on
+every rebuild but the first. Latent because each Task 12 test rebuilds
+once on a fresh temp root; the Task 12 review's stated priorities (FK
+semantics, DDL, scan order) did not include the swap.
+
+**Ruling (fix-up, queued behind Task 13 — same worktree, one dispatch at
+a time per R13):**
+1. Swap via `write_atomic_with_retry` with `based_on_hash` = sha256 of the
+   current `catalog.sqlite` if present else `None`, `rederive` returning
+   the same bytes (the rebuild supersedes whatever is there — C4 §5's
+   stated semantics).
+2. After a successful swap, remove stale `catalog.sqlite-wal` /
+   `catalog.sqlite-shm` if present — they belong to the *previous*
+   database and must not be applied to the new one. Prudence, not a
+   contract line; say so in the comment.
+3. Doc-comment precondition: no connection to the live catalog may be
+   open during a rebuild (C4 §5's rebuild is an offline swap).
+4. Test: rebuild twice on the same populated root → second call `Ok`,
+   report counts identical, no `RenameConflict`.
+
+**Standing reviewer checklist addition:** every `write_atomic` call site
+— "can this target legitimately already exist when we write? If yes,
+`None` is wrong." Two rulings (R15, R16) in one day from the same
+primitive's most natural-looking misuse.
+
+**Cost if wrong:** Low on (1)/(3)/(4) — they implement the contract's
+stated semantics. (2) is the judgment call: deleting sidecars while a
+connection were open would be harmful, which is exactly why (3) states
+the precondition; the catalog is an index and rebuildable regardless.
