@@ -1772,3 +1772,14 @@ for the graph view only; its canvas-space viewport is wrong for a
 frame-anchored HUD. HUD playback scrubs local tiles, never IPC per frame.
 
 **Cost if wrong:** none yet — nothing is implemented against it.
+
+**Tracked (2026-09-04, L3 Task 5, `fd9b30d`):** the implementer briefly ran
+`cargo check -p idl-rs-cli --tests` concurrently with the full test run —
+two cargo processes at once, against R13. Both finished clean; no harm on
+this occasion. It self-reported rather than omitting it, which is the
+behaviour we want. Cause: "start it in the background" reads as free when
+the other job is also backgrounded. Fix folded into future dispatches:
+*wait on the running cargo job before starting any other cargo command,
+background or not.* Second occurrence of this class (see the earlier
+worktree-concurrency near-miss); if it recurs, the hook grows a lockfile
+check.
