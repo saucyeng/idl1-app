@@ -1984,3 +1984,38 @@ implementer's reasoning that a review then overturned (the first being
 R34(a), caught by the implementer instead). Both were cases of reasoning
 from a report rather than from the code. The review-every-task rule is
 carrying more weight than the ledger implies, and stays.
+
+## 2026-09-04 — R38: raster colour bounds are resolution-independent
+
+Task 11 review found the divergence I asked it to check for:
+`spectrogram_raster_meta` scans `vmin`/`vmax` over the raw `power`
+matrix, while `build_spectrogram_raster_bytes` colours pixels from a
+nearest-cell-rebinned subset and derives its bounds from that subset.
+Under downsampling the two disagree — the lane's own orientation-test
+parameters drop the Nyquist row entirely — so the legend a user reads
+would not describe the image they see.
+
+Two ways out. **Rejected:** give the meta function `width`/`height` and
+rebin (C3 §3.6 already passes both to `fetch_raster_meta`, so this is
+available). It would make legend and pixels agree exactly, but it makes
+the colour mapping a function of window size: resizing a chart would
+visibly re-normalise it, and two charts of the same channel at different
+sizes would not be comparable. Colour is data, not layout.
+
+**Ruled:** colour bounds are **resolution-independent** — both the meta
+function and the byte builder derive `vmin`/`vmax` from the full raw
+matrix, before any rebinning. The builder changes, not the meta. A
+consequence to state plainly in the doc comment rather than hide: at low
+resolution some extreme cells may not survive rebinning, so the rendered
+image can fail to contain a pixel at `vmin` or `vmax`. That is correct
+behaviour for a colour scale — the legend describes the mapping, not a
+census of what is on screen — and it is the same convention a fixed
+axis range gives a line chart. The doc's current claim that the two
+"don't differ materially" is false and is replaced by this statement.
+
+Applies to the `histogram2d` pair on the same terms.
+
+**Cost if wrong:** if the resize-stability argument turns out not to
+matter and exact legend/pixel identity does, the reversal is to thread
+`width`/`height` into the meta functions — the arguments already exist at
+the IPC boundary, so it is a core-only change of one signature each.
