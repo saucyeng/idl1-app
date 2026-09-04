@@ -1952,3 +1952,15 @@ sixteen. First one already effectively run here.
 need (local gravity), the fix is to unreserve `g` alone and let a
 declaration shadow it — a one-line change to `RESERVED_NAMES` plus a
 §3.5.A note. Nothing built since depends on `g` being unshadowable.
+
+**Tracked (2026-09-04, L3 Task 10, `b1a33d4`):** the `MAX_TIER` guard is
+`checked_pow` only — it prevents a panic, it does not make an
+out-of-range tier return an empty tile. At `tile_index: 0` the saturating
+start offset is 0, so bucket 0 still folds real data at tier >
+`MAX_TIER`; the brief's "all-NaN tile" assertion only holds at
+`tile_index != 0`, and the implementer corrected the test accordingly
+(and said so). C3 §3.5 already requires L5 to reject `tier > MAX_TIER`
+with `invalid_argument` before calling in, so there is no contract gap —
+but that check is **load-bearing, not defensive**: without it a bad tier
+yields a plausible-looking tile rather than an error. L5's brief must
+quote this line.
