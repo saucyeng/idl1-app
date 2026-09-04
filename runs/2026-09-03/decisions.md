@@ -1533,3 +1533,23 @@ with no expression-level escape hatch. C2 §3.1 amended (lead): `number
 Task 3 landed at `38fce89` + `58c3ef9`.
 
 **Cost if wrong:** negligible — one grammar token, additive.
+
+---
+
+## 2026-09-04 — Tracked: L3 Task 4 landed (`668a483` Step 0, `2d8e4b6`); one ruling
+
+Constants merge per L3-R8/R9/R10 (single enforcement point, 15 reserved
+names over both sources), `parse_with_constants`, R24 leading minus.
+48/48 on `workbook::v3`, `cargo check -p idl-rs-cli --tests` clean.
+Review pending.
+
+**Ruling:** `DuplicateConstant` is reported at the **second occurrence's**
+cell. When the first claimant is a front-matter constant, the colliding
+`const` line reports at its own `cell_id` — never at `"front-matter"`,
+because L3-R25's `eval_cells` drops front-matter-scoped errors (already
+fatal or returned separately), which would make this one vanish from the
+notebook. The implementer followed `error::duplicate_constant`'s doc
+comment literally; the doc comment is wrong and is fixed with it. Task 5's
+Step 0 if the reviewer confirms.
+
+**Cost if wrong:** negligible — one `cell_id` choice and a doc comment.
