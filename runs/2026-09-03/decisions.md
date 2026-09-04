@@ -1192,3 +1192,864 @@ exit 0.
 **Plan Open-questions item 17** updated on `main` with these numbers
 (lead, per R19 addendum). Lane is fit to merge pending the Task 16
 review's verdict.
+
+---
+
+## 2026-09-03 — L1 LANDED: idl-rs `76b640a`, idl1-app `f6f84f6` + `662d48e`
+
+Task 16 review: CLEAN (1 Minor, tracked below). Landing per R19 item 7:
+
+- **idl-rs** `main ← wave1-l1-store` as merge commit `76b640a` (24 lane
+  commits). Only conflict: `Cargo.lock`. Resolved by taking `main`'s lock
+  and running `cargo metadata` (re-resolves and rewrites the lock, no
+  compilation). Union check (`lock_union_check.sh`): merged = union of both
+  sides minus exactly seven older duplicates cargo unified — `futures-*`
+  0.3.32→0.3.34 and `log` 0.4.33→0.4.34, both semver-compatible bumps L4
+  had already taken — and **no** package version present on neither side.
+  Reviewed pins unchanged: parquet/arrow 59.3.0, rusqlite 0.40.2, reqwest
+  0.13.4, btleplug 0.13.0, tokio 1.53.1. (Refinement of R19's rule: "equals
+  the union" must tolerate semver-compatible unification of a crate both
+  sides carry at different patch versions; the invariant that matters is
+  no `+` lines.)
+- **idl1-app** `main ← wave1-l1-store` as merge commit `f6f84f6`
+  (SPEC §15/§16.3/§18 rewrite, CHANGELOG, TASKS; fast-forwardable since
+  `main` had been merged in first), then `662d48e` bumps the submodule
+  pointer to `76b640a`.
+- **Post-merge gate on `main`** (shared checkout, alone, jobs=4): `cargo test
+  -p idl-rs -p idl-rs-cli --no-run` then the run with `--test-threads=4` —
+  doubles as the shared target-dir seed for L3/L2. Result recorded below
+  when it finishes.
+- **Tracked Minor (Task 16 review):** `core/tests/real_session_odr_validation.rs`
+  gates on *any* IMU (`imu_index_of`) but then `.expect()`s `imu0` — a
+  session with only IMU1/IMU2 enabled would panic instead of skipping.
+  Owner: whoever next touches that test (L10's SPEC verification pass is
+  the natural point); fix is to pick the first present IMU by index.
+- **Worktrees:** L3 created from the merged `main` in both repos
+  (`idl-rs-worktrees/wave1-l3-workbook`, `idl1-app-worktrees/wave1-l3-workbook`,
+  submodule wired via `local-wave1`). L1's two worktrees retired after the
+  post-merge gate finishes (the idl-rs one carries a multi-GB local
+  `target/`; deleting it during the build is needless disk contention).
+- **Sequencing:** L3 before L2 (lead call, Isaac may override): they cannot
+  run concurrently under R13; L3 has no external inputs while L2's real FIT
+  archive is outstanding; L3 unblocks L5's workbook commands and L6.
+
+**Cost if wrong:** Low — the merge is a merge commit (revertable as a
+unit); the lock check is recorded; both lane branches are kept.
+
+---
+
+## 2026-09-03 — R13 addendum: post-merge seed compile OOM-killed at 4 jobs; two more rules
+
+The first post-merge `cargo test -p idl-rs -p idl-rs-cli --no-run` on
+`main` (shared checkout, the shared target-dir seed) was killed by the
+harness for low system memory while compiling the arrow graph at
+`jobs = 4`. Nothing else was building. Two contributors, both now fixed:
+
+1. **`jobs = 4` is still too many for this machine** when arrow/parquet
+   crates compile concurrently. `%USERPROFILE%\.cargo\config.toml` is now
+   `jobs = 2`. Slower, but a build that finishes beats one that is killed
+   two-thirds through.
+2. **Idle subagents — stopped, but not the memory lever I first thought.**
+   Eleven finished L1 implementers/reviewers were still registered as
+   idle teammates; all stopped (`TaskStop`). *Correction on measurement:*
+   they ran **in-process** (`in_process_teammate`), so stopping them freed
+   negligible RAM — the eight `claude` processes (~1.6 GB) seen in the
+   process list are Isaac's other Claude Code sessions plus this one, not
+   the teammates. Stopping finished teammates stays the rule (hygiene,
+   no stale agents to mis-address), but the machine's memory pressure is
+   the OEM `ServiceShell` (1.7 GB), VS Code, browsers, and the other
+   sessions — none of which this run controls. Hence rule 1 is the real
+   fix.
+
+The compile resumes incrementally (it had reached `arrow-cast`/`arrow-ord`);
+retried at 2 jobs.
+
+**Cost if wrong:** none — both are strictly less load.
+
+*Outcome:* **post-merge gate on `main` GREEN — 691 lib + 1 integration +
+51 CLI passed, 0 failed, 1 pre-existing ignore** (`--test-threads=4`,
+shared checkout, shared target-dir). The test run recompiled the crates
+downstream of the kill point (`arrow-ord` → … → `idl-rs` → `idl-rs-cli`,
+11 min at 2 jobs) — the OOM kill had left those artifacts without
+fingerprints; upstream crates stayed fresh, and a background-vs-foreground
+env comparison showed no cargo-relevant differences, so this was one-time
+recovery, not fingerprint drift. A repeat `--no-run` then finished in
+0.41 s: **the shared target-dir is warm** for L3/L2 (they recompile only
+their own workspace crate plus any new deps).
+
+*Cleanup:* L1's two worktrees removed (`git worktree remove --force`;
+branches kept, merged). Superseded local `target/` dirs deleted: the shared
+checkout's (3.0 GB, now redirected to the shared dir) and the L5
+worktree's (2.3 GB, same). ~8.8 GB reclaimed with the L1 worktree's own
+3.5 GB.
+
+---
+
+## 2026-09-03 — L3 Task 1 dispatched; one ruling
+
+L3 (`wave1-l3-workbook`) starts from the merged `main` (`76b640a`). Task 1
+(front matter, fence scanning, cell-id assignment — C2 §1–2, spec-during)
+dispatched per the plan with one ruling: the plan says "use the workspace's
+existing RNG dependency if one exists … if none does, add `rand`" for the
+4 random cell-id bytes. **Ruling:** use the existing `uuid` dependency
+(`Uuid::new_v4()` yields 16 random bytes; take 4) — no third new crate
+alongside `pulldown-cmark` and the YAML parser. Task 1 pins those two
+after checking crates.io and records the versions in its commit message
+(M0's ecosystem report did not cover Markdown/YAML crates).
+
+**Cost if wrong:** negligible — fewer dependencies, same entropy source
+the codebase already trusts for ids.
+
+---
+
+## 2026-09-04 — R20: L3 Tasks 2–5 pre-read adjudicated (delegated pre-read, lead rulings)
+
+Pre-read by an Opus adjudicator: `lanes/l3-workbook/pre-read-tasks2-5.md`
+(27 gaps, 15 proposed rulings L3-R1…L3-R15, 1 Isaac question). This
+entry does not restate it. Lead decisions:
+
+- **L3-R1 … L3-R15: approved as drafted**, with these notes:
+  - L3-R4 (C3 §2 `workbook_*` kinds) is lead-owned; applied when L5's
+    workbook-command task is briefed, not now.
+  - L3-R7 **widened into a ruling**: a definition or constant named
+    `Time` or `Distance` (the two engine-synthesized channels) is
+    `ReservedName`. Silent document-wide shadowing of the time axis is
+    the exact failure C1's "time is recorded, not assumed" exists to
+    prevent. C2 §3.5.A amended post-sign by the lead (this entry is the
+    citation). `RESERVED_NAMES` therefore has 15 entries.
+  - L3-R8's "a targeted filter that matches nothing is a failed gate"
+    is a **standing rule for every lane** from here on.
+  - L3-R13 stands **provisionally** pending Isaac's answer to Q1 below;
+    Task 5 lands the axis either way.
+- **Q1 → Isaac (physics/product, not derivable):** the DSP functions
+  (`integrate`, `differentiate`, `butter`, `fft`, `declip`) and the lap /
+  sector window arithmetic still step by `1/nominal_rate_hz`. On his
+  validated session that is 800 Hz against a true 812.348 Hz — ~1.5 %,
+  ≈1.8 s of lap-boundary drift over 120 s. Correcting it changes every
+  number the math engine has produced (idl0 parity breaks); deferring
+  keeps the error. Lead recommendation: correct it in wave 1 as its own
+  L3 task after Task 5 — parity with idl0's *bug* is not a rewrite goal,
+  and the time model is the rewrite's stated reason to exist.
+- **Process:** briefs for Tasks 2–4 are written as files by a Sonnet
+  agent from the plan + this ruling set + `brief-task1.md`'s structure;
+  a standing reviewer brief (`review-STANDING.md`) likewise. The lead
+  reviews the files, not the plan.
+
+**Cost if wrong:** Low on every ruling except the `Time`/`Distance`
+reservation (a contract amendment, additive, two names) and Q1, which is
+why Q1 is a question.
+
+*Addendum:* briefs `brief-task2.md`/`brief-task3.md`/`brief-task4.md` and
+`review-STANDING.md` written by a Sonnet agent; two calls it made itself,
+both **approved**: (G3.5) `and`/`or`/`not` stay legal identifiers — no
+ruling, no change; (G3.6) Task 3 collects `ConstLine`s and raises only
+`DuplicateDefinition`; Task 4's `merge_constants` is the single
+`DuplicateConstant`/`ReservedName` enforcement point; `ConstLine` lives in
+`workbook/v3/mod.rs`.
+
+---
+
+## 2026-09-04 — Tracked: L3 Task 1 landed (`e018db9`); two C2 gaps for the amendment batch
+
+`pulldown-cmark 0.13.4`, `serde_yaml_ng 0.10.0` (upstream `serde_yaml` is
+versioned `0.9.34+deprecated`), `uuid` for cell-id bytes (R20). 14/14 on
+`workbook::v3`. Review pending.
+
+Two contract gaps the implementer resolved provisionally, both tracked
+for the same C2/C3 amendment batch as L3-R4 (before L5's workbook-command
+task): C2 §3.5.A has **no kind** for (a) front-matter YAML that does not
+deserialize at all — collapsed into `MissingFrontMatterId` for now; (b) a
+malformed `id=` value on a fence — treated as absent (fresh id generated)
+for now. Candidate kinds: `InvalidFrontMatter`, `InvalidCellId`. **Owner:
+lead**, with L3-R4.
+
+**Cost if wrong:** Low — both interim behaviours are documented in doc
+comments and lose no content; (b) can lose a *typo'd* id on save, which
+is why it gets a real kind later.
+
+*Review:* CLEAN, 3 Minor (generated-id `seen_ids` check, variant doc
+comments, a range-equality comment) → Task 2's Step 0. The reviewer
+self-reported running an unauthorised `cargo doc` and killing it at once;
+no effect, logged because the standing brief calls the rule absolute.
+
+---
+
+## 2026-09-04 — R21: L3 Tasks 6–9 pre-read adjudicated
+
+Pre-read: `lanes/l3-workbook/pre-read-tasks6-9.md` (26 gaps, rulings
+L3-R16…L3-R27, 1 Isaac question). Not restated here. Lead decisions:
+
+- **L3-R16 … L3-R27: approved as drafted**, with:
+  - **L3-R18 addition:** because definitions win over session channels, a
+    definition named after a base channel that references itself
+    (`IMU0_AccelZ = [IMU0_AccelZ] * 9.81`) is a cycle and must surface as
+    the leftover `UnknownChannel` error naming the unresolved dependency
+    — never an infinite loop or a silent read of the base channel. One
+    test required.
+  - L3-R25 is provisional against L3-R26 exactly as the pre-read says.
+  - **Lead-owned contract batch, to land before L5's workbook-command
+    task** (one amendment pass, drafted by a delegated agent): C2 §3.5.A
+    kinds `InvalidFrontMatter`, `InvalidCellId` (Task 1), `InvalidTableJson`
+    (L3-R19); C3 §2 `workbook_*` kinds (L3-R4, + `workbook_invalid_table_json`);
+    C3 §3.4 corrections (L3-R26 a–c); C3 byte path for host channels
+    (L3-R23 flag). Owner: lead.
+- **Q2 → Isaac (product):** C2 §5.1 gives JS cells `session.name?` but no
+  layer records a session *name* — only `rider`, `bike`, `venue_name`,
+  `event_name`, `event_session`, `short_comment`, `tag`, and the start
+  time. Default taken now, per the pre-read: `name: None` with a
+  `// TODO(idl0):` — no display string synthesised in Rust. Isaac can
+  name the rule whenever; nothing blocks on it.
+- Briefs for Tasks 6–9 written as files by a Sonnet agent, same pattern
+  as Tasks 2–4.
+
+**Cost if wrong:** Low — every ruling is inside the lane or an additive
+contract amendment; the two product questions (Q1 DSP rate, Q2 session
+name) are parked on documented defaults.
+
+---
+
+## 2026-09-04 — Tracked: L3 Task 2 landed (`0215d59` Step 0, `abe6a75`); review pending
+
+Seven `WorkbookErrorKind`s with one constructor each (C2 §3.5.A templates
+verbatim), `RESERVED_NAMES: [&str; 15]` (compile-time-enforced count),
+callers in `mod.rs`/`cell.rs` rewired to constructors. 23/23 on
+`workbook::v3`. Implementer left `front_matter.rs`'s hand-built
+`MissingFrontMatterId` message alone (not in the brief's file list) —
+reviewer judges against L3-R1; a Step-0 item for Task 3 if flagged.
+Contract-delta proposal (R21 batch) being drafted by a Sonnet agent for
+the lead to apply.
+
+---
+
+## 2026-09-04 — R22: C2/C3 amendment batch applied; two IPC-shape rulings
+
+Proposal: `lanes/l3-workbook/contract-deltas-proposal.md` (4 amendments,
+2 open questions). Applied by a transcriber on the lead's instruction with
+these two rulings folded in:
+
+1. **`CellOutput.error` → `errors: IpcError[]`** (empty on success). A
+   math cell with two independent structural problems must report both;
+   L3-R25's core shape is already plural. All ten `WorkbookErrorKind`s
+   gain `IpcErrorKind` variants (`workbook_*`); the five document-fatal /
+   new ones are command-level rows in C3 §2, the five wave-1-signed
+   per-cell ones (`duplicate_cell_id`, `duplicate_definition`,
+   `duplicate_constant`, `invalid_identifier`, `reserved_name`) are listed
+   in one row as "per cell only, never a command rejection".
+   `CellDefResult.error` stays singular (one definition → at most one
+   evaluation error).
+2. **Wire `CellDefResult.value` is `HostChannelRef { length: u32, has_t:
+   bool }`**, not the full `HostChannel`; sample bytes cross via the binary
+   command L5 designs under Amendment D (`tauri::ipc::Response`, CLAUDE.md
+   §2). Core's `eval_cells`/`CellDefResult` keep the full `HostChannel`;
+   narrowing is `idl-rs-tauri`'s job.
+
+Consequence for L3: `InvalidFrontMatter` and `InvalidCellId` are now real
+C2 kinds — Task 7's dispatch adds a Step 0 implementing them in
+`front_matter.rs`/`cell.rs` (withdrawing Task 1's interim behaviour) and
+Task 2's constructor set grows to nine.
+
+**Cost if wrong:** Low — additive contract text, no shipped consumer;
+(1) and (2) are each one field's shape and reversible before L5 writes
+against them.
+
+*Task 5 brief addendum (approved):* `store_math_with_times` (L3-R11) must
+pass `source_kind = "synthesized"` — `Channel::from_f64_with_times`
+(`session/mod.rs:233`) takes it explicitly, and `store::parquet` excludes
+channels from `data.parquet` by that exact value (`parquet.rs:253,271`).
+Omitting it would leak derived math channels into `data.parquet` (C1
+§4.1). Caught by the brief-writer while verifying citations.
+
+---
+
+## 2026-09-04 — Tracked: L3 Task 3 landed (`38fce89` Step 0, `58c3ef9`); one ruling
+
+Math-cell grammar per L3-R5/R6 (hand-written scanners, no `regex`),
+`parse_math_cell_body(cell_id, body)`, `ConstLine` in `mod.rs`,
+`DuplicateDefinition` only. 38/38 on `workbook::v3`. Review pending.
+
+**Ruling:** `const` lines accept an optional leading `-` on the number
+(the implementer had excluded it because the tokenizer emits unary minus
+separately). Front matter's unit-suffix regex allows `-?`; a document
+where `constants:` accepts `-1.5` but `const offset = -1.5` is an error is
+a trap. Unless C2 §3.1's grammar literally forbids a sign (reviewer
+checks), the rejection is an Important finding → Task 4's Step 0.
+
+**Cost if wrong:** negligible — one token-pattern match and a test.
+
+---
+
+## 2026-09-04 — R23: L2 Tasks 1–6 pre-read adjudicated; GPS scale, Time synthesis, entry point
+
+Pre-read: `lanes/l2-importers/pre-read-tasks1-6.md` (36 gaps, rulings
+L2-R1…L2-R13, 4 questions). Not restated. Lead decisions:
+
+- **L2-R1 … L2-R13: approved as drafted.** L2-R10 (`parquet.rs`
+  `<source>_t_recorded_us` from the union of a source's channels' `t_us`)
+  and L2-R13 (`store::import::import_file` generalising `import_idl0`,
+  incl. fixing G0.6's discarded `import_warnings`) are landed-L1 files —
+  **L2 edits them with this ruling as the cross-lane authorisation**
+  (CLAUDE.md §7: through the lead). L2-R9: `fitparser` stays 0.9.
+- **Q1 — GPS coordinate scale: ×1e7 everywhere, `unit: deg_e7`.** C1 §4.1's
+  FIT/GPX row said decimal `deg` under the same column name `.idl0` fills
+  at ×1e7, and every landed consumer (`gps.rs`, `laps::distance`,
+  `laps::gate_synthesis`, `tracks::detect`; R17) assumes ×1e7. One scale
+  for every GPS consumer beats threading unit metadata through four
+  modules. C1 §4.1 amended (lead): `GPS_Latitude`/`GPS_Longitude` are
+  `deg_e7` for every source; the "always physical" wording gains that one
+  named exception. Not Isaac's physics call — a contract-consistency call;
+  flagged to him.
+- **Q2 — `Time`/`Distance` for FIT/GPX/CSV: fix the synthesizer, not the
+  metadata.** `synthesize_base_channels` picks the channel with
+  `nominal_rate_hz > 0` today; ruling: when none has a rate, use the
+  channel with the most samples (its real `t_us`). Declaring a fake 1 Hz
+  would make `channel_kind` lie about an irregular source. Landed L1 file
+  (`synthesis.rs`), edited by L2 under this ruling, with a test.
+  `Distance` still requires `GPS_SpeedKmh`.
+- **Q3 — FIT populates `GPS_EpochMs`** from `record.timestamp` (a UTC
+  instant); §15a.2's "no equivalent field" sentence is struck.
+- **Q4 — archive:** Tasks 1–6 land on synthetic fixtures (the FIT fixture
+  is verified decodable against fitparser 0.9's profile decoder). Task 8
+  (speed/heading direct path) and any `fitparser` bump wait for Isaac's
+  real FIT/GPX archive. Still wanted.
+- L2 runs after L3 (R13: one lane at a time). Briefs written now by a
+  Sonnet agent so L2 starts the moment L3 lands.
+
+**Cost if wrong:** Q1 is the one with teeth — it is a contract amendment
+narrowing "always physical"; reversible before any FIT/GPX file is
+imported for real, and the `unit` metadata records the truth either way.
+Q2/Q3 are strictly more information than the drafts.
+
+---
+
+## 2026-09-04 — R24: C2 §3.1 `const_line` number accepts a leading minus
+
+Task 3's review (CLEAN, 2 Minor) confirmed the reviewer's reading: C2
+§3.1 tied `number` to the tokenizer's unsigned `Number` literal, so
+rejecting `const offset = -1.5` was contract-conformant — and the
+contract was wrong: front matter's `"<number> <unit>"` form accepts `-?`,
+so the same constant was legal in one place and an error in the other,
+with no expression-level escape hatch. C2 §3.1 amended (lead): `number
+::= "-"? …`. Implemented as Task 4's Step 0 with the two Minors.
+Task 3 landed at `38fce89` + `58c3ef9`.
+
+**Cost if wrong:** negligible — one grammar token, additive.
+
+---
+
+## 2026-09-04 — Tracked: L3 Task 4 landed (`668a483` Step 0, `2d8e4b6`); one ruling
+
+Constants merge per L3-R8/R9/R10 (single enforcement point, 15 reserved
+names over both sources), `parse_with_constants`, R24 leading minus.
+48/48 on `workbook::v3`, `cargo check -p idl-rs-cli --tests` clean.
+Review pending.
+
+**Ruling:** `DuplicateConstant` is reported at the **second occurrence's**
+cell. When the first claimant is a front-matter constant, the colliding
+`const` line reports at its own `cell_id` — never at `"front-matter"`,
+because L3-R25's `eval_cells` drops front-matter-scoped errors (already
+fatal or returned separately), which would make this one vanish from the
+notebook. The implementer followed `error::duplicate_constant`'s doc
+comment literally; the doc comment is wrong and is fixed with it. Task 5's
+Step 0 if the reviewer confirms.
+
+**Cost if wrong:** negligible — one `cell_id` choice and a doc comment.
+
+---
+
+## 2026-09-04 — R25: L3 Tasks 10–16 pre-read adjudicated; tile layout v2; contract batch 3
+
+Pre-read: `lanes/l3-workbook/pre-read-tasks10-16.md` (40 gaps, rulings
+L3-R28…L3-R42, 2 questions). Not restated. Lead decisions:
+
+- **L3-R28 … L3-R42: approved as drafted.** L3-R28 (`MAX_TIER`,
+  `checked_pow` in `chart_decimation.rs` + `session/handle.rs`) and L3-R35
+  (`nearest_at_t_us` in `session/handle.rs`) edit landed L1 files —
+  **authorised for L3 under this ruling** (CLAUDE.md §7, through the lead).
+- **Tile time axis (G10.5) — decided now, not deferred:** C3 §3.5 tile
+  layout becomes **version 2**: after the per-column stats section, a
+  per-column `t_us: i64 LE` section (`column_count × 8` bytes) carrying
+  the recorded time of the first sample in each column's bucket range.
+  Exact (no interpolation, no rate assumption), self-describing via
+  `column_count`. Task 10 codes v2 directly; L3-R29's "index-space v1,
+  doc the precondition" is superseded. `tier` narrowing: request `u32`,
+  validated against `MAX_TIER` by L5 before any bytes; header stays `u16`
+  and the contract says so.
+- **Contract batch 3 (lead-owned, drafted + applied by a Sonnet agent,
+  lead commits):** C3 §3.5 (v2 layout, `MAX_TIER` as "the engine's
+  configured range", tier narrowing); C3 §3.6 (`SpectrogramParams
+  { window_size, hop_size, window, detrend, scaling }`,
+  `Histogram2dParams { y_channel, x_bins, y_bins }` replacing
+  `Record<string, number>`; a `raster_meta` JSON side-channel with axis
+  extents and colour-scale range — L3-R33; C3 open item 6.4 closed); C3
+  §3.7 (nearest recorded sample, clamped; `null` only for a channel with
+  no samples — Q4); C2 §6 (`_migrate_math` identity map with `identifier`
+  and `color` per v2 id, deleted with `_migrate_charts` — L3-R36; the
+  phantom `worksheets[].tables[]` struck; `workbook_id` copied only when a
+  UUID; version range `1..=SUPPORTED_WORKBOOK_VERSION`). Tasks 10/11 are
+  therefore **spec-first**: the batch lands before they are dispatched.
+- **Q3 (product, defaulted):** migrate, emit `_migrate_math`, and list
+  every unresolved `mathChannelIds` reference and every
+  `rowSource: "lapSelection"` table in the report — refusing would be
+  worse than telling the truth. Isaac may override; and whether his real
+  `.idl0wb` files have app-assigned UUID ids on math channels is worth
+  knowing before Task 13 runs on them.
+- **Q4 (defaulted):** cursor readouts clamp (the engine's existing rule);
+  C3 §3.7's "no sample near" prose amended accordingly.
+- Deferrals recorded, not delivered: tier cache (design §4 L3 row);
+  Stage 2 chart conversion (L6). CHANGELOG/TASKS wording per L3-R42.
+
+**Cost if wrong:** the v2 tile section is the one with teeth — 8 bytes
+per column (8 KB per 1024-column tile) and a layout bump before any
+consumer exists; the alternative ships a format that can only be placed
+on a time axis by assuming one. Everything else is additive contract
+text or lane-internal.
+
+---
+
+## 2026-09-04 — PAUSED (session limits). Resume point.
+
+**State at pause:**
+- **L3** branch `wave1-l3-workbook`, HEAD `d0fc17b` (Task 5's Step 0: the
+  `DuplicateConstant` cell_id fix). **Task 5 proper is mid-flight and
+  uncommitted** in the worktree: 10 files modified (`math/eval.rs`,
+  `value.rs`, `resolve.rs`, `vector.rs`, `variance_geom.rs`,
+  `tests_ahrs.rs`, `tests_parity.rs`, `session/handle.rs`, `table/eval.rs`,
+  `estimate/run.rs`). Do NOT discard. Resume = dispatch an implementer with
+  `brief-task5.md` and the instruction: "HEAD `d0fc17b`; the worktree is
+  dirty with a partial Task 5 — read the diff, continue from it, finish
+  the brief, commit once."
+- Tasks 1–4 landed and reviewed CLEAN (Task 4's one Important fixed in
+  `d0fc17b`). Briefs on disk: Tasks 1–14 (`brief-task15.md`/`16.md` not
+  yet written — the writer was stopped; re-dispatch it for those two only,
+  same prompt scope as `R25`'s batch).
+- Contracts current through batch 3 (`5431724`): C1 R23, C2 R20/R24/R25,
+  C3 R22/R25. L2 briefs 1–6 + standing reviewer brief on disk; L2 starts
+  after L3 lands.
+- Open for Isaac (all parked on defaults, none blocking): Q1 DSP nominal
+  rate (R20), Q2 session name (R21), GPS `deg_e7` (R23), migration report
+  policy + cursor clamp (R25), the real FIT/GPX archive (R23 Q4).
+- Machine: cargo `jobs = 2` machine-wide; shared target dir warm for
+  idl-rs `main` `76b640a`; all subagents stopped.
+
+**Resume order:** finish Task 5 → review → Tasks 6–9 (briefs ready) →
+dispatch the writer for briefs 15/16 → Task 14 (spec-first) before 13 →
+Tasks 10–16 → L3 lands (pre-merge `main` into the idl1-app L3 branch
+first, as R19 did for L1) → L2.
+
+---
+
+## 2026-09-04 — R26: harness tuned for token efficiency
+
+- Agent defs (`~/.claude/agents/`): `adjudicator` fable/xhigh → **opus/high**
+  (its pre-reads were only cheap because every dispatch overrode the model);
+  `implementer`/`reviewer` high → **medium**; both prompts rewritten to
+  carry the standing rules (worktree/HEAD check, targeted tests, no shared
+  checkout, no `docs/`, no push, single-line commits) so briefs drop their
+  preamble; stale "everything else is Dart" and "run the full test command"
+  lines removed; all four return the report lines only — **no separate
+  message to the lead** (halves the duplicate notifications).
+- `CLAUDE.md` gains §8 Compute rules (R13 in six lines).
+- `.claude/settings.json` + `.claude/hooks/deny-heavy-cargo.sh`: PreToolUse
+  hook on Bash|PowerShell denying workspace-wide cargo test, `cargo fmt`,
+  `tarpaulin`, `doc`, `-j`/`--jobs`, and git push. Matches are anchored to
+  the start of a command segment so prose mentions (commit messages,
+  heredocs) pass. 13 cases tested from a file; proven live (it denied the
+  lead's own probe and, once, this very ledger commit before anchoring).
+- Lead runs at medium effort with thinking on; analysis lives in the Opus
+  pre-reads.
+
+**Cost if wrong:** none — every change is reversible config; the hook
+denies only commands the rules already forbade.
+
+---
+
+## 2026-09-04 — R27: GPS coordinates are decimal degrees (supersedes R23's `deg_e7`)
+
+**Isaac's call**, asked as a pros/cons question and answered on the
+principle: *"less messy to just pick the one we want and stick with it,
+and the human readable decimal makes the most sense... otherwise we build
+a whole UI around a data type that we know needs to change."*
+
+`GPS_Latitude`/`GPS_Longitude` are **physical decimal degrees**,
+`unit: deg`, for every source. `.idl0` parse bakes `raw_i32 * 1e-7` (the
+baked-in convention already used by `WheelFront`, `HR_RR`); FIT/GPX
+importers store their native decimal values unchanged. C1 §4.2's R23
+paragraph is marked SUPERSEDED, not deleted.
+
+**Extended by the lead to the two neighbouring columns**, because the
+same argument applies verbatim and splitting them would leave `deg_e7`'s
+mess in place under different names: `GPS_Altitude` → physical metres
+(`raw_i16 * 0.1`, `unit: m`), `GPS_Heading` → physical degrees
+(`raw_u16 * 0.01`, `unit: deg`). Untouched: `GPS_SpeedKmh` (already
+physical via `scale=0.01` metadata), `GPS_EpochMs`, `GPS_FixQuality`,
+`GPS_Satellites` (enum/count, no scale to remove).
+
+Blast radius, all landed L1 code, one task: `parse/` (bake the scales),
+`gps.rs`, `laps/distance.rs` (`M_PER_UNIT` reverts to plain `111_320.0`,
+the `/1e7` in the mean-latitude `cos` goes), `tracks/`, `laps/gate_*`
+(gates in `session.json` are already decimal — R8 — so the conversion at
+that boundary disappears entirely, which is the point), `export/fit`
+(`to_semicircles`/`haversine_m` drop their `/1e7`). Mostly deletion.
+Sequenced **after L3 lands, before L2 Task 4/8** so the importers are
+written once against the final unit.
+
+**Cost if wrong:** one task's rework, and it is strictly cheaper now than
+after any map/plot UI exists — which is exactly Isaac's reasoning.
+
+## 2026-09-04 — R28: burst/gap integrity runs on every import (TODO, non-blocking)
+
+Isaac: *"we should eventually run that data integrity script during every
+import/parse. if it's non blocking and we can just choose our time basis
+accordingly, then let's make it a todo and move on."*
+
+The §3.3 seam corrector already computes what a diagnostic would report.
+Ruling: it emits counts — frames expected vs seen, gap count, largest
+gap, burst-size histogram, effective rate vs header nominal — as
+`ImporterWarning`s on `ImportedSession`, never an error, never a refusal
+to import. Wave-1 scope is the emission plus a `TODO(idl0):` where a UI
+would surface it. The open Q1 (833 Hz configured, 800 Hz in the header,
+812.35 Hz measured) is answered by the same numbers when Isaac runs an
+import on a real file; no decision waits on it.
+
+**Cost if wrong:** none — warnings only; nothing branches on them.
+
+## 2026-09-04 — R29: `session.json` supersedes `.idl0w`; one file per recording
+
+Isaac: *"so basically the .idl0w is being replaced by session.json? i
+actually found it tedious having multiple files for one recording."*
+Yes, and the ruling makes it explicit: `.idl0w` is an **import source**
+only. At import its metadata (`event_name`, `event_session`, `tag`,
+`short_comment`, `rider`, `bike`, `venue_name`, gates) is folded into
+`session.json`; the app never writes an `.idl0w` and never requires one
+(an `.idl0` imported alone is valid, those fields null). C4's session
+directory stays the single unit: blob + `session.json` + `data.parquet`.
+
+Display name (closes R21's Q2): `name = event_session ?? event_name ??
+null`. All the raw fields stay individually exposed on the JS `session`
+object so a notebook can compose its own.
+
+**Cost if wrong:** naming only; the fields are all still there.
+
+## 2026-09-04 — R30: workbook migration dropped from wave 1
+
+Isaac: *"i don't have many super well developed .idl0wb files. we can
+basically start from scratch... you can actually drop a lot of large
+tedious migration."* L3 **Task 13 (`migrate_workbook`) is cut**, and Task
+14 keeps only its non-migration half. C2 §6 (`_migrate_math`, chart
+reference resolution) stays written but unimplemented — the two tasks
+carrying the most contract complexity for the fewest real files.
+
+**Cost if wrong:** an old `.idl0wb` has to be re-authored by hand. Isaac
+has said there are none worth keeping.
+
+## 2026-09-04 — R31: cursor readout is `null` outside a channel's recorded span
+
+Reverses R25's clamp. Isaac: *"past what ends? if the data stops, it
+stops, right?"* Correct — the failure case is a channel that ends early
+(HR strap drops at minute 40), where clamping paints a frozen 150 bpm as
+if live for the next half hour. `null` when `t_us < first || t_us >
+last`; nearest-sample unchanged inside. C3 §3.7 amended.
+
+**Cost if wrong:** one comparison; trivially reversible.
+
+## 2026-09-04 — R32: POV video sync is timecode-derived (tracked, not wave 1)
+
+Isaac: *"i found the timecode to be trustworthy in my test runs, but we
+may want to tweak it in the future."* So the HUD/video amendment, when it
+is written, specs: one clip per session, a single constant `offset_us`
+derived at import from the camera's wall-clock start vs. the session GPS
+epoch, stored in `session.json` (recorded, not re-derived), with a manual
+nudge in the UI as the correction path. No rate correction — a constant
+offset holds. **Out of scope for wave 1**; recorded so the eventual C1/C4
+amendment does not have to re-ask.
+
+Also tracked from the same discussion (design §6, drafting queued behind
+L3, not blocking): three views over one file — notebook (document order),
+graph (React Flow, node positions), HUD (anchored fractional rects over
+video) — so front-matter `layout:` is namespaced per view
+(`layout: { graph: {...}, hud: {...} }`) from the start. React Flow is
+for the graph view only; its canvas-space viewport is wrong for a
+frame-anchored HUD. HUD playback scrubs local tiles, never IPC per frame.
+
+**Cost if wrong:** none yet — nothing is implemented against it.
+
+**Tracked (2026-09-04, L3 Task 5, `fd9b30d`):** the implementer briefly ran
+`cargo check -p idl-rs-cli --tests` concurrently with the full test run —
+two cargo processes at once, against R13. Both finished clean; no harm on
+this occasion. It self-reported rather than omitting it, which is the
+behaviour we want. Cause: "start it in the background" reads as free when
+the other job is also backgrounded. Fix folded into future dispatches:
+*wait on the running cargo job before starting any other cargo command,
+background or not.* Second occurrence of this class (see the earlier
+worktree-concurrency near-miss); if it recurs, the hook grows a lockfile
+check.
+
+## 2026-09-04 — R33: `if()` must apply L3-R12 across all three operands
+
+L3 Task 5 reviewed CLEAN (`fd9b30d`, critical=0 important=0 minor=2). One
+Minor is a real latent gap, not a style note: `if(cond, t, f)`
+(`math/eval.rs:1005-1015`) adopts `cond`'s `t_us` as the output axis
+without checking the `t`/`f` operands' own axes. That is exactly the
+silent-axis adoption L3-R12 exists to forbid — it just wasn't in Task 5's
+named function list, so the reviewer correctly did not fail the task on
+it.
+
+Ruling: `if()` runs the same `combine_t_us` fold across all three
+operands — equal or empty passes through, a genuine mismatch is the same
+typed Runtime error naming both spans. Dispatched as **Step 0 of Task
+6**, the pattern Task 5 itself used, with a test for the mismatch case.
+
+The other Minor (four copies of a test-only `synthetic_t_us` helper) is
+accepted as-is: private test fns, no silent-drift risk. Hoist it only if
+a fifth copy appears.
+
+**Cost if wrong:** small — a wrongly-rejected `if()` over two channels
+that happen to differ in axis, which is the case we want rejected anyway.
+
+## 2026-09-04 — R34: cross-session lookup is exclusive; lap error names the lap count
+
+L3 Task 8 reviewed CLEAN (`f7c757b`, 0/0/0). Two judgment calls the
+implementer flagged rather than buried, both ruled here.
+
+**(a) `other_session` is exclusive — affirmed, with the validation it
+implies.** `channel(name, …, other_session: Some((id, lookup)))` resolves
+in `lookup` only, never falling back to the primary session. That is
+right: a fallback is exactly how a chart ends up silently plotting the
+current session's data under another session's label, and a missing
+cross-session channel must fail loudly. But the reviewer found the
+consequence: `channel()` never reads the `id` string, so it cannot detect
+a caller that wires `(id_A, lookup_B)` — the pairing is trusted. Ruling:
+**Task 9's caller owns that validation.** The caller must confirm the
+resolved lookup belongs to the requested session id and return
+`UnknownChannel` naming the id when it does not. Folded into Task 9 as a
+Step 0 with a test.
+
+**(b) `NoLapContext` covers out-of-range too — affirmed, message
+improved.** L3-R22's text named only the empty-`main_lap_bounds` case; the
+implementer extended the same kind to "lap 7 of a 3-lap session" and
+documented it. Correct — inventing a `LapOutOfRange` kind would amend C2
+§3.5.B's enum for a case the existing kind describes. The message today
+(`channel("X", lap: 7): no lap 7 in this session's lap table`) is honest,
+not a "no laps" lie, but it is byte-identical between the two situations
+and does not tell the user how many laps exist. Ruling: append the
+recorded lap count (`… lap table (3 laps recorded)`; `(no laps recorded)`
+when empty). Message-only, no contract change. Also Task 9 Step 0.
+
+**Cost if wrong:** (a) is the expensive one and it is ruled in the safe
+direction — a wrongly-rejected cross-session reference is visible, a
+wrongly-accepted one is not. (b) is a format string.
+
+## 2026-09-04 — R35: R34(a)'s validation is deferred to wave 2 (doc-only in Task 9)
+
+R34(a) assigned the `other_session` id/lookup pairing check to "Task 9's
+caller". The Task 9 implementer stopped and reported that no such caller
+exists: `host::channel()` has zero call sites in the tree, Task 9's own
+`eval_cells(doc, structural, lookup, lap_ctx)` never touches
+cross-session channels, and threading a real `Session` in is L6's job in
+wave 2 — as `host.rs`'s own doc comment already says. Worse, the check
+isn't implementable where I put it: `ChannelLookup` cannot report its own
+session id (only `SessionHandle` knows it), so satisfying R34(a) would
+mean either adding a trait method or having the caller pass an id it
+already holds — the first is core trait surface invented for a caller
+that doesn't exist, the second tests nothing.
+
+Ruling: **the validation is deferred to the wave-2 caller (L6).** Task 9
+carries the obligation as documentation only — a paragraph on
+`channel()` stating that `other_session`'s `id` is not read and the
+pairing is trusted, plus a `// TODO(idl0):` naming L6 as the owner and
+recording why the trait can't answer it today. No trait change, no
+wrapper, no mock-only test.
+
+**Lead error, worth naming:** R34(a) was written from the review's
+description of the code rather than from the code, and asserted a caller
+that isn't there — the same failure mode the last three briefs had. The
+implementer catching it cost one message; me not catching it would have
+cost invented trait surface in `core`. The standing "verify premises,
+stop if ambiguous" instruction is doing its job.
+
+R34(b) (lap count in the `NoLapContext` message) is unaffected and
+proceeds.
+
+**Cost if wrong:** a wave-2 caller mis-pairs a session id and plots the
+wrong session's data. Mitigated by the TODO sitting on the exact function
+that would be misused, and by L6 being the only place it can happen.
+
+## 2026-09-04 — R36: Done-when (1) becomes a v3-vs-evaluator parity gate (answers Q5)
+
+Briefs 15 and 16 are written. The writer raised Q5: with Task 13 cut
+(R30), the lane's Done-when (1) — "a migrated idl0 workbook evaluates
+byte-for-byte against the existing v2 evaluator" — is unprovable, since
+`migrate_workbook_text`/`MigrationReport` will never exist in wave 1.
+
+Ruling: **accepted as recommended.** Done-when (1) becomes *"every v3
+math-cell value equals a direct `math::evaluate` on the same expression
+against the same session, bit-for-bit"*.
+
+The reason this is not a weakening: the original criterion bundled two
+different guarantees, and only one was ever Task 15's.
+(i) *The evaluator produces idl0's numbers.* Already landed and already
+proven, independently of migration, by `core/src/math/tests_parity.rs` —
+cases ported from the Dart suite (`app/test/data/
+math_channel_evaluator_test.dart`) pinning exact output vectors, plus
+delegation parity for the DSP-backed cases.
+(ii) *The v3 cell pipeline routes to that evaluator without altering
+values.* Untested until now, and exactly what the new Task 15 Step 1
+proves.
+Migration was only ever the transport that carried v2 expressions into
+(ii); with no v2 workbooks worth migrating (R30), hand-written v3 cells
+carry them just as well.
+
+Task 16 records the restatement in its appended "Delivered" section
+rather than editing the BRIEF header (L3-R42's append-only rule). Both
+PROVISIONAL markers in briefs 15/16 are cleared by this ruling; the
+dispatch will say so rather than editing the briefs.
+
+Contained decision accepted from the writer: Task 15's tests live in one
+new `core/src/workbook/v3/tests_pipeline.rs` (filter
+`workbook::v3::tests_pipeline`), since the plan's `workbook/migrate.rs`
+target no longer exists and Task 10 owns `tile.rs`.
+
+**Cost if wrong:** a v2-semantics regression that `tests_parity` doesn't
+already cover ships unnoticed. Bounded — that suite is the idl0 corpus.
+
+## 2026-09-04 — R37: C2 §2.5's worked example drops `g`; the reserved-name check stands
+
+Task 9's end-of-batch gate surfaced a failing test that predates it:
+`workbook::v3::tests::parse_workbook_c2_5_worked_example_parses_id_
+version_and_both_cells` fails at `f7c757b` too. The implementer proved it
+by stashing its own diff and rerunning the test by name, then committed
+its own (clean) work rather than withholding it — correct on both counts.
+
+Cause: a spec-vs-spec conflict, not a code bug. C2 §2.5's worked example
+declares `g: 9.80665` in front matter, and §3.5.A's `RESERVED_NAMES`
+(extended by R20) reserves `g` as one of the four universal math
+constants, so `merge_constants` refuses it as `ReservedName`. §2.5 claims
+the example "demonstrably parses under §§2-5 exactly as written". It does
+not, and has not since Task 4 landed the check.
+
+Ruling: **the reserved-name check is the correct half and stands** — `[g]`
+must always mean standard gravity, and a workbook silently redefining it
+is precisely the shadowing R20 widened the list to prevent. The example
+is wrong, so the example changes: `g` is dropped from `constants` in C2
+§2.5, in design §5's prose form, and from §3.1's bare-number illustration
+(now `sag_target: 0.3`). The declaration bought nothing — `g` resolves in
+any expression undeclared.
+
+Fix-up task dispatched against the worktree for the test fixture; the
+three doc edits are the lead's own (lanes never touch `docs/`).
+
+**Process finding, the more important half.** This test failed for five
+consecutive tasks without being caught, because §8's compute rules run
+only targeted filters per task and the full suite once per lane at the
+merge gate. That trade is still right on a 16 GB machine — but it means a
+break outside the current task's filter stays invisible for the whole
+lane. Mitigation, not a rule change: the end-of-batch gate moves from
+"once at the merge gate" to **once every four tasks**, cheap enough at
+~3 min warm and it bounds the blast radius to four tasks instead of
+sixteen. First one already effectively run here.
+
+**Cost if wrong:** if `g`-in-front-matter turns out to be a real user
+need (local gravity), the fix is to unreserve `g` alone and let a
+declaration shadow it — a one-line change to `RESERVED_NAMES` plus a
+§3.5.A note. Nothing built since depends on `g` being unshadowable.
+
+**Tracked (2026-09-04, L3 Task 10, `b1a33d4`):** the `MAX_TIER` guard is
+`checked_pow` only — it prevents a panic, it does not make an
+out-of-range tier return an empty tile. At `tile_index: 0` the saturating
+start offset is 0, so bucket 0 still folds real data at tier >
+`MAX_TIER`; the brief's "all-NaN tile" assertion only holds at
+`tile_index != 0`, and the implementer corrected the test accordingly
+(and said so). C3 §3.5 already requires L5 to reject `tier > MAX_TIER`
+with `invalid_argument` before calling in, so there is no contract gap —
+but that check is **load-bearing, not defensive**: without it a bad tier
+yields a plausible-looking tile rather than an error. L5's brief must
+quote this line.
+
+**Correction to the tracked note above (same day, after the Task 10
+review).** I accepted the implementer's framing that the "all-NaN tile"
+guarantee was simply untrue and the test should move to `tile_index: 1`.
+The reviewer disagreed and was right: the correct conclusion was that the
+*code* was wrong, not the guarantee. `decimate_channel` and
+`decimate_tile` now early-return the empty tile for `tier > MAX_TIER`
+before any bucket arithmetic, so the guarantee holds at every
+`tile_index` including 0 (`1f04286`). Core does not lean on L5's
+`invalid_argument` check for this; that check stays, now as defence in
+depth rather than the only thing standing between a bad tier and a
+plausible-looking tile. The same commit fixes an unguarded `u64` overflow
+in `column_sample_range` (saturating products, boundary test past
+~4.19M) that neither the implementer nor I spotted.
+
+**Lead note:** this is the second time in one session I ratified an
+implementer's reasoning that a review then overturned (the first being
+R34(a), caught by the implementer instead). Both were cases of reasoning
+from a report rather than from the code. The review-every-task rule is
+carrying more weight than the ledger implies, and stays.
+
+## 2026-09-04 — R38: raster colour bounds are resolution-independent
+
+Task 11 review found the divergence I asked it to check for:
+`spectrogram_raster_meta` scans `vmin`/`vmax` over the raw `power`
+matrix, while `build_spectrogram_raster_bytes` colours pixels from a
+nearest-cell-rebinned subset and derives its bounds from that subset.
+Under downsampling the two disagree — the lane's own orientation-test
+parameters drop the Nyquist row entirely — so the legend a user reads
+would not describe the image they see.
+
+Two ways out. **Rejected:** give the meta function `width`/`height` and
+rebin (C3 §3.6 already passes both to `fetch_raster_meta`, so this is
+available). It would make legend and pixels agree exactly, but it makes
+the colour mapping a function of window size: resizing a chart would
+visibly re-normalise it, and two charts of the same channel at different
+sizes would not be comparable. Colour is data, not layout.
+
+**Ruled:** colour bounds are **resolution-independent** — both the meta
+function and the byte builder derive `vmin`/`vmax` from the full raw
+matrix, before any rebinning. The builder changes, not the meta. A
+consequence to state plainly in the doc comment rather than hide: at low
+resolution some extreme cells may not survive rebinning, so the rendered
+image can fail to contain a pixel at `vmin` or `vmax`. That is correct
+behaviour for a colour scale — the legend describes the mapping, not a
+census of what is on screen — and it is the same convention a fixed
+axis range gives a line chart. The doc's current claim that the two
+"don't differ materially" is false and is replaced by this statement.
+
+Applies to the `histogram2d` pair on the same terms.
+
+**Cost if wrong:** if the resize-stability argument turns out not to
+matter and exact legend/pixel identity does, the reversal is to thread
+`width`/`height` into the meta functions — the arguments already exist at
+the IPC boundary, so it is a core-only change of one signature each.
+
+## 2026-09-04 — R39: `gps_channel_values` stops at a channel's span too
+
+Task 12 reviewed CLEAN. Its one raised item is a real latent hazard in
+landed code, correctly left alone as out of scope: `gps_channel_values`
+(`handle.rs:500-523`) reaches `nearest_at_t_us` through the still-clamping
+`nearest_by_t_us`, and its own pre-existing test
+(`gps_channel_values_clamps_to_nearest_past_channel_span`) *asserts* that
+a fix time past a channel's recorded span clamps to that channel's last
+sample.
+
+That is the same failure R31 was written to prevent, one layer down. The
+visible symptom: a GPS trace coloured by a channel that stopped early —
+an HR strap that drops at minute 40 — keeps painting the frozen last
+value along every remaining metre of track, indistinguishable from real
+data. The honest rendering is for the trace to go neutral past that
+point.
+
+Ruling: **extend R31's rule to `gps_channel_values`** — a fix time
+outside the target channel's recorded `[first, last]` yields no value
+(the polyline segment is uncoloured), nearest-sample unchanged inside.
+`nearest_at_t_us` itself keeps clamping and stays the shared primitive;
+the span check lives at the call site, as it already does in
+`cursor_readout`. The existing test is inverted to assert absence and
+renamed, deliberately — this is a behaviour change to landed code, made
+with eyes open, not a bug fix.
+
+Dispatched as its own small task before the L3 merge gate, not folded
+into Task 12 (whose scope L3-R35 fixed at "no v2 behaviour moves or
+changes").
+
+**Cost if wrong:** a map trace that used to be fully coloured now has an
+uncoloured tail. Visible and instantly reversible — unlike the current
+behaviour, whose wrongness is invisible.

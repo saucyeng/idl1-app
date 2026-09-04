@@ -120,7 +120,7 @@ under the chart's axes. Plot draws ≤ ~2 points per pixel column per series; de
 ---
 id: 9f3c…            # stable; conflict copies keep it
 name: Fork tuning
-constants: { g: 9.80665, rider_mass_kg: 82 }
+constants: { rider_mass_kg: 82 }
 ---
 # Fork tuning — Whistler, 2026-08-30
 
