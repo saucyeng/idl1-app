@@ -18,7 +18,7 @@ are defined in `docs/superpowers/specs/2026-09-02-idl1-rewrite-design.md` §10.
 
 ## Wave 1 (after M0)
 
-- [ ] L1 core `store/`
+- [x] L1 core `store/`
 - [ ] L2 importers
 - [ ] L3 core workbook v3
 - [x] L4 `idl-transport` desktop — complete pending Isaac's real-device BLE/WiFi check
