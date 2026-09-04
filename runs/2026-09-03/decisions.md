@@ -764,3 +764,62 @@ starts, not now. Isaac has not yet ruled on the design-doc timing.
 **Cost if lost:** Medium — it reshapes L6's plan and supersedes D13's
 "Properties + Code" editor and the `plotForm` generate/parse module. Hence
 this entry.
+
+---
+
+## 2026-09-03 — R15: L1 Task 13 pre-dispatch — plan-vs-reality corrections and rulings
+
+Pre-reading Task 13's plan text against what Tasks 12 / R6 landed and
+against `store::atomic`'s actual API surfaced the following *before*
+dispatch — cheaper than a fix cycle on a constrained machine (R13).
+
+1. **`write_atomic(…, None)` is not "overwrite".** The fourth argument is
+   `based_on_hash: Option<&str>` — optimistic concurrency. `None` means
+   "caller believes `target` does not exist"; if it does exist at rename
+   time the call returns `RenameConflict`. The plan's `write_track` and
+   `profile::save` pass `None` unconditionally, so every re-save of an
+   existing track or profile would fail — and the plan's tests (each saves
+   once) would not catch it. Same class as Task 12's literal-draft FK bug.
+   **Ruling:** all three whole-document writers (`write_track`,
+   `profile::save`, `settings::save`) go through
+   `write_atomic_with_retry` with `based_on_hash` = sha256 of the file's
+   current content if present, else `None`, and a `rederive` that returns
+   the caller's bytes unchanged — a full replace, last-write-wins,
+   consistent with C4 §6's LWW-by-`updated_at_ms` for tracks and profiles.
+   Each writer gets an overwrite test.
+2. **`Track` already carries `created_at_ms` / `updated_at_ms`** (Task 12,
+   `track_artifact/model.rs:29,32`). The plan's Step 3 premise ("does not
+   currently carry") is stale. **Ruling:** `write_track(data_root, &Track)`
+   — the two-argument shape from the plan's own Interfaces line, timestamps
+   read from the struct. Mechanism: serialise through the existing private
+   `TrackDto` (adding `Serialize` derives), not a parallel
+   `serde_json::json!` literal — the reader stays the single authority on
+   the `.idl0t` wire shape. Round-trip test asserts every field, both
+   timestamps included.
+3. **`profiles/` is in C4 §2** (R6). The plan's "not fixed by C4 — this
+   plan's own extension" module doc and open-question pointer are stale;
+   the module doc cites C4 §2. **Ruling:** `load_all` returns
+   `ProfileLoad { profiles, skipped: Vec<(PathBuf, String)> }` — no
+   `eprintln!` in core (CLAUDE.md §2 "PURE", §5 typed failures); malformed
+   files are reported to the caller, never printed.
+4. **`verify` check #3 (session's blob missing) is now implementable in
+   core:** Task 12 landed `read_data_parquet_session_fields` (private, in
+   `catalog.rs`). **Ruling:** make it `pub(crate)` and implement #3 in
+   `check_sessions`; the plan's "deferred to Task 15" note is withdrawn.
+   #6 (workbook parse — needs L3's parser) and #9 (catalog cross-reference)
+   stay deferred exactly as the plan states.
+5. **`settings.json` gains keys → C4 §1 amendment (spec-during, lead).**
+   `store::settings` writes `rider_name` and `unit_system` into the C4 §1
+   bootstrap file beside `data_dir`. L5's `paths.rs` deserialises that file
+   leniently (serde ignores unknown keys) and never writes it, so nothing
+   breaks — but the contract's shape block must say so. Amended in C4 §1
+   with a post-sign note citing this ruling. Lanes do not edit contracts;
+   the lead does.
+6. **Step 0:** the CLEAN fix-up review's one Minor (`catalog.rs:479-484`
+   doc comment says "row group" where the code streams reader batches)
+   rides along as a one-line preliminary commit rather than its own agent.
+
+**Cost if wrong:** Low — (1) is the only item with a real failure mode,
+and it is the one that would have shipped a broken re-save; the rest are
+documentation truth and one visibility change. Lane-internal except (5),
+which the lead owns.
