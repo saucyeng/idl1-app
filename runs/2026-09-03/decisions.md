@@ -1518,3 +1518,18 @@ L2-R1…L2-R13, 4 questions). Not restated. Lead decisions:
 narrowing "always physical"; reversible before any FIT/GPX file is
 imported for real, and the `unit` metadata records the truth either way.
 Q2/Q3 are strictly more information than the drafts.
+
+---
+
+## 2026-09-04 — R24: C2 §3.1 `const_line` number accepts a leading minus
+
+Task 3's review (CLEAN, 2 Minor) confirmed the reviewer's reading: C2
+§3.1 tied `number` to the tokenizer's unsigned `Number` literal, so
+rejecting `const offset = -1.5` was contract-conformant — and the
+contract was wrong: front matter's `"<number> <unit>"` form accepts `-?`,
+so the same constant was legal in one place and an error in the other,
+with no expression-level escape hatch. C2 §3.1 amended (lead): `number
+::= "-"? …`. Implemented as Task 4's Step 0 with the two Minors.
+Task 3 landed at `38fce89` + `58c3ef9`.
+
+**Cost if wrong:** negligible — one grammar token, additive.

@@ -207,7 +207,7 @@ def_line      ::= /[ \t]*/ identifier /[ \t]*/ "=" /[ \t]*/ expression trailing_
 identifier    ::= /[A-Za-z_][A-Za-z0-9_]*/
 trailing_comment ::= /[ \t]+#[^\n]*/
 expression    ::= (* crate::math::parse::parse — see §3.2 *)
-number        ::= (* crate::math::token's Number literal — int/float, optional exponent *)
+number        ::= "-"? (* crate::math::token's Number literal — int/float, optional exponent; the optional leading minus was added post-sign (2026-09-04, lead ruling R24): front matter's `"<number> <unit>"` form already accepted `-?`, and a `const offset = -1.5` line being an error while `constants: {offset: -1.5}` is not was an asymmetry with no expression-level escape hatch. Tokenizer shape `[Minus, Number, Eof]`, value negated. *)
 ```
 
 **`identifier` is new and load-bearing.** idl0's `MathChannel.name` was free
