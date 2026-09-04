@@ -1265,3 +1265,37 @@ The compile resumes incrementally (it had reached `arrow-cast`/`arrow-ord`);
 retried at 2 jobs.
 
 **Cost if wrong:** none — both are strictly less load.
+
+*Outcome:* **post-merge gate on `main` GREEN — 691 lib + 1 integration +
+51 CLI passed, 0 failed, 1 pre-existing ignore** (`--test-threads=4`,
+shared checkout, shared target-dir). The test run recompiled the crates
+downstream of the kill point (`arrow-ord` → … → `idl-rs` → `idl-rs-cli`,
+11 min at 2 jobs) — the OOM kill had left those artifacts without
+fingerprints; upstream crates stayed fresh, and a background-vs-foreground
+env comparison showed no cargo-relevant differences, so this was one-time
+recovery, not fingerprint drift. A repeat `--no-run` then finished in
+0.41 s: **the shared target-dir is warm** for L3/L2 (they recompile only
+their own workspace crate plus any new deps).
+
+*Cleanup:* L1's two worktrees removed (`git worktree remove --force`;
+branches kept, merged). Superseded local `target/` dirs deleted: the shared
+checkout's (3.0 GB, now redirected to the shared dir) and the L5
+worktree's (2.3 GB, same). ~8.8 GB reclaimed with the L1 worktree's own
+3.5 GB.
+
+---
+
+## 2026-09-03 — L3 Task 1 dispatched; one ruling
+
+L3 (`wave1-l3-workbook`) starts from the merged `main` (`76b640a`). Task 1
+(front matter, fence scanning, cell-id assignment — C2 §1–2, spec-during)
+dispatched per the plan with one ruling: the plan says "use the workspace's
+existing RNG dependency if one exists … if none does, add `rand`" for the
+4 random cell-id bytes. **Ruling:** use the existing `uuid` dependency
+(`Uuid::new_v4()` yields 16 random bytes; take 4) — no third new crate
+alongside `pulldown-cmark` and the YAML parser. Task 1 pins those two
+after checking crates.io and records the versions in its commit message
+(M0's ecosystem report did not cover Markdown/YAML crates).
+
+**Cost if wrong:** negligible — fewer dependencies, same entropy source
+the codebase already trusts for ids.
