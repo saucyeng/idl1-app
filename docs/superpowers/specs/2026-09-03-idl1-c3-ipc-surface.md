@@ -571,24 +571,34 @@ Return: raw bytes via `tauri::ipc::Response` (`Result<Response, IpcError>`),
 decoded frontend-side into the layout below.
 Errors: `not_found` (unknown `session_id` or `channel`), `invalid_argument`
 (`tier` outside the engine's configured range), `io`, `internal`.
+`MAX_TIER = 10` (`idl_rs::chart_decimation::MAX_TIER`, the largest tier
+`k` for which `TIER_BASE.pow(k)` fits `u32` — *added post-sign, 2026-09-04,
+lead ruling R25, wave-1 L3*) **is** "the engine's configured range" above:
+L5 rejects `tier > MAX_TIER` with `invalid_argument` before producing any
+bytes. The request stays `u32`; the header's `tier` field below stays
+`u16` — narrowing is safe under that bound (`MAX_TIER = 10` fits a `u16`
+with room to spare).
 
-**Binary layout.** Little-endian throughout. Two regions after a fixed
+**Binary layout.** Little-endian throughout. Three regions after a fixed
 32-byte header: a **sample region** (the existing bucket min/max pairs —
-`decimate_channel`'s output, made self-describing) and a **column region**
+`decimate_channel`'s output, made self-describing), a **column region**
 (coarser per-pixel-column `min, max, mean` stats, shipped so hover reads
 never need IPC — design §6, "Hover reads the per-pixel-column stats shipped
-with each tile").
+with each tile"), and a **column time region** (*added post-sign,
+2026-09-04, lead ruling R25, wave-1 L3* — see below; places each column on
+the session's real time axis, C1 §2/§3.1: "time is recorded, not
+assumed").
 
 *Header (32 bytes, fixed):*
 
 | Field | Type | Byte offset | Notes |
 |---|---|---|---|
 | `magic` | `[u8; 4]` | 0 | ASCII `"IDLT"` |
-| `version` | `u16` | 4 | Layout version, `1` for this contract |
+| `version` | `u16` | 4 | Layout version, `2` for this contract — *bumped post-sign, 2026-09-04, lead ruling R25, wave-1 L3, for the new column time region below.* Version 1 (index-space only, no column time region) was never shipped. |
 | `tier` | `u16` | 6 | Echoes the request |
 | `tile_index` | `u32` | 8 | Echoes the request |
 | `sample_count` | `u32` | 12 | Number of `(min, max)` bucket pairs that follow. Today `decimate_channel` always fills `TILE_SIZE_BUCKETS = 1024` (right-edge-padded with NaN); `sample_count` makes the tile self-describing so a shorter final tile or a future tile-size change never requires a layout bump. |
-| `column_count` | `u32` | 16 | Number of pixel columns in the stats table that follows. Independent of `sample_count` — chosen by the caller/L3 to match the rendered chart width (design §6 point budget), not tied to the bucket grid. |
+| `column_count` | `u32` | 16 | Number of pixel columns in the stats table that follows, and in the column time region below (same count for both). Independent of `sample_count` — chosen by the caller/L3 to match the rendered chart width (design §6 point budget), not tied to the bucket grid. |
 | `flags` | `u32` | 20 | Reserved, `0` in this contract — see open question 6.5 |
 | `reserved` | `[u8; 8]` | 24 | Zero-filled, reserved |
 
@@ -606,30 +616,88 @@ Header ends at byte offset **32**.
 - Column `j` (0-indexed, `0 <= j < column_count`): `min` at byte
   `(32 + sample_count*8) + j*12`, `max` at `+4`, `mean` at `+8`.
 
-*Total tile length:* `32 + sample_count*8 + column_count*12` bytes.
+*Column time region — offset formula (added post-sign, 2026-09-04, lead
+ruling R25, wave-1 L3):*
+- Start: `column_time_region_offset = 32 + sample_count*8 + column_count*12` (immediately after the column region).
+- Length: `column_time_region_len = column_count * 8` bytes (`i64` × 8 bytes per column).
+- Column `j` (0-indexed, `0 <= j < column_count`): `t_us` at byte
+  `(32 + sample_count*8 + column_count*12) + j*8`.
+- Value: the recorded `t_us` of the **first sample** in column `j`'s
+  bucket range — exact, no interpolation, no `nominal_rate_hz` (C1
+  §2/§3.1: "time is recorded, not assumed"). When that bucket range
+  contains a sample but every stat in the column region is `NaN` (the
+  sample's own value is `NaN`), the column still carries that sample's
+  real `t_us`. When the bucket range contains **no** sample at all (past
+  the end of the source data, or `column_count` overruns `sample_count`'s
+  coverage), the sentinel `i64::MIN` is written instead.
+
+*Total tile length:* `32 + sample_count*8 + column_count*12 + column_count*8`
+bytes (added post-sign, 2026-09-04, lead ruling R25, wave-1 L3 — was
+`32 + sample_count*8 + column_count*12`).
 
 **Worked example — tier 3, 512 samples, 256 columns:**
 ```
-header:              offset    0, length 32   → header occupies [0, 32)
-sample region:        offset   32, length 512*8    = 4096   → [32, 4128)
-column region:         offset 4128, length 256*12   = 3072   → [4128, 7200)
-total tile length:     32 + 4096 + 3072 = 7200 bytes
+header:                 offset    0, length 32     → header occupies [0, 32)
+sample region:          offset   32, length 512*8  = 4096   → [32, 4128)
+column region:          offset 4128, length 256*12 = 3072   → [4128, 7200)
+column time region:     offset 7200, length 256*8  = 2048   → [7200, 9248)
+total tile length:      32 + 4096 + 3072 + 2048 = 9248 bytes
 ```
-Check: `4128 = 32 + 4096` ✓. `7200 = 4128 + 3072` ✓. `7200 = 32 + 4096 + 3072` ✓.
+Check: `4128 = 32 + 4096` ✓. `7200 = 4128 + 3072` ✓. `9248 = 7200 + 2048` ✓.
+`9248 = 32 + 4096 + 3072 + 2048` ✓.
+
+*Deferred, not part of this contract (added post-sign, 2026-09-04, lead
+ruling R25, wave-1 L3):* design §4's L3 row lists a **tier cache**
+alongside these tile endpoints. No such cache exists yet — recorded here
+so this section is not read as claiming one.
 
 ### 3.6 Rasters (L3)
 
-**`fetch_raster(session_id: string, channel: string, kind: "spectrogram" | "histogram2d", width: number, height: number, params: Record<string, number>)`**
-`width`/`height`: `u16`, output pixel dimensions. `params`: kind-specific
-numeric parameters (e.g. `window_size`/`hop_size` for `"spectrogram"`,
-`x_channel`/`y_channel` are not numeric so those stay as separate string
-args if `kind` needs a second channel — flagged provisional, open question
-6.4; the shape here is the interim, typed-but-generic contract).
+**`fetch_raster(session_id: string, channel: string, kind: "spectrogram" | "histogram2d", width: number, height: number, params: SpectrogramParams | Histogram2dParams)`**
+`width`/`height`: `u16`, output pixel dimensions. `params` is one of the
+two typed shapes below, matching `kind` — *replaces the interim
+`Record<string, number>` bag, added post-sign 2026-09-04, lead ruling R25,
+wave-1 L3, closes open question 6.4*:
+```ts
+interface SpectrogramParams {
+  window_size: number;   // nperseg, samples
+  hop_size: number;      // samples; hop = nperseg − noverlap (idl_rs::fft's own noverlap parameter)
+  window: "rectangular" | "hann" | "hamming";   // idl_rs::fft::FftWindow, snake_case
+  detrend: "none" | "mean" | "linear";          // idl_rs::fft::Detrend, snake_case
+  scaling: "magnitude" | "density";             // idl_rs::fft::Scaling, snake_case
+}
+interface Histogram2dParams {
+  y_channel: string;   // the second channel; `channel` above is the x channel
+  x_bins: number;       // u32
+  y_bins: number;       // u32
+}
+```
 Return: raw bytes via `tauri::ipc::Response`.
 Errors: `not_found`, `invalid_argument` (bad `width`/`height`/`kind`/`params`), `io`, `internal`.
 
+**`fetch_raster_meta(session_id: string, channel: string, kind: "spectrogram" | "histogram2d", width: number, height: number, params: SpectrogramParams | Histogram2dParams)`**
+*Added post-sign (2026-09-04, lead ruling R25, wave-1 L3).* Same arguments
+as `fetch_raster` above — a sibling JSON command, not a variant of the
+binary path — so the chart can draw axes and a legend without decoding
+pixel bytes to find their extents.
+Return:
+```ts
+interface RasterMeta {
+  x_domain: [number, number];
+  y_domain: [number, number];
+  x_label: string;
+  y_label: string;
+  scale: { vmin: number; vmax: number; kind: "linear" };
+  transparent_zero: boolean;
+}
+```
+Errors: `not_found`, `invalid_argument`, `io`, `internal` (same conditions
+as `fetch_raster` above).
+
 **Binary layout.** Little-endian throughout, header then row-major top-down
-pixel data.
+pixel data. Unchanged by this batch — pixel layout stays at header
+`version = 1`; axis extents and the colour scale travel via
+`fetch_raster_meta` above, not a header revision.
 
 | Field | Type | Byte offset | Notes |
 |---|---|---|---|
@@ -656,9 +724,20 @@ Return:
 ```ts
 interface CursorReadout {
   t_us: number;                          // echoes the request
-  values: Record<string, number | null>; // channel_id → interpolated/nearest value, null if the channel has no sample near t_us
+  values: Record<string, number | null>; // channel_id → nearest recorded sample by t_us, clamped at both ends — see below
 }
 ```
+*Amended post-sign (2026-09-04, lead ruling R25, wave-1 L3, closes open
+question Q4).* Each channel's value is the sample **nearest** `t_us` on
+that channel's own recorded `t_us` axis, **clamped** at both ends — the
+engine's existing nearest-sample rule (`idl_rs::session::handle`). A
+cursor past a channel's last sample still reports that last sample, not
+`null`. A tie (the cursor sits exactly between two samples) resolves to
+the **earlier** sample. `null` only when the channel has no samples at
+all, or has no recorded time axis (an empty `t_us` — a scalar or
+table-column result, L3-R12/L3-R21). This replaces the original "no
+sample **near** `t_us`" wording, which implied an unspecified proximity
+bound; there is none.
 Errors: `not_found` (unknown `session_id`), `invalid_argument` (a channel in
 `channels` doesn't exist on this session — reported via `detail.channel`,
 the rest of the readout is not partially returned; CLAUDE.md's
@@ -896,14 +975,13 @@ engine.
    `SessionDetail`. None of round 2's three fixes are new drops — they
    restore/correct fields round 1 mis-typed or missed; the drop count above
    (2 outright, 1 consolidation) is unchanged by round 2.
-4. **`fetch_raster`'s `params` bag is generic (`Record<string, number>`)
-   because the raster kinds' actual parameters aren't fixed anywhere yet**
-   (design §4 says only "core computes STFT or 2-D histogram"). A
-   `"histogram2d"` raster also plausibly needs a second channel id, which
-   isn't a number and doesn't fit `params` as typed here. Assigned: L3 —
-   pin `SpectrogramParams { window_size: number; hop_size: number }` and
-   `Histogram2dParams { y_channel: string; x_bins: number; y_bins: number }`
-   (or similar) before implementation, and revise §3.6 in the same change.
+4. **Resolved 2026-09-04 (lead ruling R25, wave-1 L3, contract batch 3).**
+   `fetch_raster`'s `params` is now the two typed shapes `SpectrogramParams`
+   and `Histogram2dParams` (§3.6), replacing `Record<string, number>` and
+   the ad hoc separate-string-arg workaround this item flagged for a second
+   channel id. §3.6 also gains a `fetch_raster_meta` sibling command
+   carrying axis extents and the colour-scale range, so the raster's pixel
+   bytes don't need decoding just to draw axes or a legend.
 5. **Tile `flags: u32` (§3.5 header) has no defined bits.** Reserved and
    zero in this contract. Assigned: lead/L3 — define bit 0 onward if/when a
    need appears (e.g. "this tile is provisional, a materialised channel is

@@ -36,7 +36,7 @@ segment       ::= prose_span | cell
 | `units` | `"si"` \| `"imperial"` | no (default `"si"`) | Workbook-level unit-system *preference*. Consumed only by the editor UI (L6) when it suggests an axis label / number format from a channel's C1 column `unit` metadata (e.g. defaulting a new mark's `y.label`). It has **no effect on parsing, evaluation, or the `plotForm` grammar** — no v3 construct performs unit conversion. This is a deliberate narrowing from idl0, where `MathQuantity.defaultUnit` picked a per-channel display unit (§3.4 records the same table for L6 to reuse); v3 has no per-math-definition unit field to apply it to (§3.1). |
 | `version` | integer | no (default `3`) | Fixed at `3` for this contract; **omitting the key defaults to `3`**, mirroring idl0's own rule ("Omitting `workbook_version` defaults to 1, the current max" — `docs/legacy/idl0-workbook_format.md` §3). A parser encountering an explicit `version` ≠ `3` refuses the file (`UnsupportedWorkbookVersionException`) rather than guessing at compatibility; only *absence* defaults, a wrong value never does. |
 
-No other top-level front-matter keys are defined by this contract. §6 defines one **transient, migration-only** key (`_migrate_charts`) that a v3 parser must tolerate (round-trip it unmodified) but never itself produces except via `migrate-workbook`.
+No other top-level front-matter keys are defined by this contract. §6 defines two **transient, migration-only** keys (`_migrate_charts`, `_migrate_math` — *the latter added post-sign, 2026-09-04, lead ruling R25, wave-1 L3*) that a v3 parser must tolerate (round-trip them unmodified) but never itself produces except via `migrate-workbook`.
 
 ---
 
@@ -767,20 +767,43 @@ TypeScript):
 **Stage 1 — CLI `idl-rs migrate-workbook` (Rust, pure JSON/text
 transforms):**
 
+*Invocation (added post-sign, 2026-09-04, lead ruling R25, wave-1 L3):*
+`idl-rs migrate-workbook <INPUT> --output <OUTPUT>` — a positional input
+path (the pattern every other subcommand uses) and a **required**
+`-o`/`--output` (unlike `export`/`math`, where stdout is a legal sink; a
+`.idl1wb` document on stdout would interleave with the migration report
+below). The report is written to stdout; a failure uses the CLI's
+existing error envelope on stderr.
+
 | v2 field | v3 destination | Rule |
 |---|---|---|
-| `workbook_id` | front matter `id` | Verbatim. |
+| `workbook_id` | front matter `id` | *Amended post-sign (2026-09-04, lead ruling R25, wave-1 L3).* Copied verbatim only when it parses as a UUID; otherwise a fresh `Uuid::new_v4()` is minted and the substitution is recorded in the migration report — a hand-authored v2 file's `workbook_id` is free text (`docs/legacy/idl0-workbook_format.md`), while C2 §1 requires a UUIDv4 `id`. |
 | `name` | front matter `name` | Verbatim. |
-| `workbook_version` (1 or 2) | front matter `version: 3` | A value the CLI does not recognise (> 2) refuses migration with an error, not a guess. |
+| `workbook_version` (absent, 1, or 2) | front matter `version: 3` | *Amended post-sign (2026-09-04, lead ruling R25, wave-1 L3).* Accepted range is `1..=workbook::SUPPORTED_WORKBOOK_VERSION` (the constant, `rust/core/src/workbook/model.rs`, currently `2`) — an absent `workbook_version` defaults to `1`, matching the landed v2 reader's own default, not the legacy doc's stale "current max is 1, a value > 1 throws." A value outside that range refuses migration with an error, not a guess. |
 | `created_at_ms`, `updated_at_ms` | *dropped* | No v3 front-matter equivalent; the filesystem mtime and (if the repo is versioned) commit history supersede an in-file timestamp. |
 | `math_channels[]` | **one** `math` cell containing every definition as a `name = expression` line | All v2 channels collapse into a single cell (per design §5's stated migration rule), positioned as the first cell in the body. A name not matching v3's `identifier` grammar (§3.1) is sanitised per the exact algorithm in §6.1, which also preserves the original name as a `# label:` comment (§3.1) and rewrites every `[OldName]` reference in the migrated expression set to the new identifier. The CLI prints one warning line per renamed definition (`"<old>" → "<new>"`) to its migration report. |
 | `math_channels[].quantity`, `.units`, `.decimal_places`, `.sample_rate_hz` | *dropped* | No v3 per-definition equivalent (§3.1 carries no display metadata — a raw/session channel's `unit` now lives in C1's Parquet column metadata instead; a math-derived channel has no engine-tracked unit, matching how the engine already ignored these fields, `channel_def.rs`). |
-| `math_channels[].color` | *dropped at this stage* | Not lost — carried forward as a **fallback** stroke source for Stage 2 (below) when a chart references the channel and has no `channelColors` override of its own. |
+| `math_channels[].id`, `.color` | front matter transient key `_migrate_math` | *Added post-sign (2026-09-04, lead ruling R25, wave-1 L3).* Written as `_migrate_math: { "<v2 math_channel id>": { "identifier": "<v3 name>", "color": "<v2 color, or null>" } }`, one entry per v2 `math_channels[]` definition, keyed by its v2 `id` (defaulting to `name` when absent — the legacy format's own convention, `docs/legacy/idl0-workbook_format.md`). `identifier` is the migrated v3 identifier a `ChartSlot.mathChannelIds` entry in `_migrate_charts` (below) resolves against in Stage 2; `color` is the same **fallback** stroke source Stage 2's `channelColors` table (below) already describes — neither previously had a defined destination. Deleted by the app in the same Stage-2 pass that deletes `_migrate_charts` (idempotence rule unchanged, below). |
 | `constants[]` | front matter `constants` map | `{name: value}`; `id` (defaulting to `name`) is dropped — v3 constants have no separate id, only a name (§1). A name colliding with a universal constant (`pi`/`tau`/`e`/`g`) is refused (`ReservedName`, §3.5) rather than silently shadowed. |
-| `worksheets[].blocks[].content.kind == "table"` (and legacy `worksheets[].tables[]` if present) | one `table` cell per `TableModel` | The JSON is already the v3 shape (§4) — copied verbatim into a fence. |
+| `worksheets[].blocks[].content.kind == "table"` | one `table` cell per `TableModel` | The JSON is already the v3 shape (§4) — copied verbatim into a fence. *Corrected post-sign (2026-09-04, lead ruling R25, wave-1 L3): struck "and legacy `worksheets[].tables[]` if present" — no such array exists; the only legacy flat array is `charts` (migrated by the row below), and a table's content lives only at `blocks[].content.table` (`docs/legacy/idl0-workbook_format.md`).* |
 | `worksheets[].charts[]` / `.blocks[].content.kind == "chart"` (`ChartSlot[]`) | staged for Stage 2 | Written into a **transient** front-matter key `_migrate_charts: [ <ChartSlot JSON>, … ]` (flattened across every worksheet, worksheet name/order dropped — see below) for the app to consume on first open. The CLI does not attempt Plot-code generation itself: `plotForm.generate` is TypeScript, and the CLI is Rust-only (this is the literal "CLI vs. app split" the outline asks for). |
 | `worksheets[].name`, `.xAxisMode`, `.kind` (`sessionSheet`'s pinned `gpsMap`/`lapTable`/`lapProgression`) | *dropped* | No v3 worksheet concept at all (a `.idl1wb` is one flat cell sequence); no v3 chart type covers `gpsMap`/`lapTable`/`lapProgression` (out of the `plotForm` grammar, §5.3) — those three chart slots are simply not carried into `_migrate_charts`. `xAxisMode` (`wheelDistance`/`gpsDistance`) has no v3 analogue either — `plotForm`'s `x` is always `"t"` (§5.1); an author wanting a distance-indexed x-axis writes custom `js` code by hand post-migration. |
 | `overlay_layouts[]` | *dropped* | D9 — no CLI or app handling, not even transiently. |
+
+**Migration report and refusal policy** *(added post-sign, 2026-09-04,
+lead ruling R25, wave-1 L3).* Beyond the one-line-per-rename warning
+already named above, the CLI's migration report additionally lists: every
+`mathChannelIds` entry across `_migrate_charts` that has no matching key
+in `_migrate_math` (an unresolved chart reference — the migration does not
+refuse for this, it tells the truth about what it could not carry); every
+dropped `WorksheetBlock` field (`id`, `placement`, `overlayTargetId`,
+`overlayOpacity`); and every table block whose `rowSource ==
+"lapSelection"`, migrated as an ordinary authored table with an explicit
+warning that its live N-lap comparison behaviour is not carried into v3.
+None of these three report categories ever refuses the migration —
+refusal is reserved for the rules already stated above (an unrecognised
+`workbook_version`, a migrated constant colliding with `pi`/`tau`/`e`/`g`);
+every other irregularity is reported and migrated through.
 
 ### 6.1 Identifier derivation for migrated definition names
 
