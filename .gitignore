@@ -15,3 +15,8 @@ Thumbs.db
 # Real session fixtures (data, not source — never committed; C1 §8 item 8 validation input)
 /d365a19ae7ef2dc2d087a5887371281f.idl0
 /d365a19ae7ef2dc2d087a5887371281f.idl0w
+
+# Real ride data supplied for L2 validation (never a checked-in fixture)
+Morning_Ride 2026_08_22.fit
+*.fit
+*.gpx
