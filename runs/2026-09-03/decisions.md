@@ -1553,3 +1553,53 @@ comment literally; the doc comment is wrong and is fixed with it. Task 5's
 Step 0 if the reviewer confirms.
 
 **Cost if wrong:** negligible — one `cell_id` choice and a doc comment.
+
+---
+
+## 2026-09-04 — R25: L3 Tasks 10–16 pre-read adjudicated; tile layout v2; contract batch 3
+
+Pre-read: `lanes/l3-workbook/pre-read-tasks10-16.md` (40 gaps, rulings
+L3-R28…L3-R42, 2 questions). Not restated. Lead decisions:
+
+- **L3-R28 … L3-R42: approved as drafted.** L3-R28 (`MAX_TIER`,
+  `checked_pow` in `chart_decimation.rs` + `session/handle.rs`) and L3-R35
+  (`nearest_at_t_us` in `session/handle.rs`) edit landed L1 files —
+  **authorised for L3 under this ruling** (CLAUDE.md §7, through the lead).
+- **Tile time axis (G10.5) — decided now, not deferred:** C3 §3.5 tile
+  layout becomes **version 2**: after the per-column stats section, a
+  per-column `t_us: i64 LE` section (`column_count × 8` bytes) carrying
+  the recorded time of the first sample in each column's bucket range.
+  Exact (no interpolation, no rate assumption), self-describing via
+  `column_count`. Task 10 codes v2 directly; L3-R29's "index-space v1,
+  doc the precondition" is superseded. `tier` narrowing: request `u32`,
+  validated against `MAX_TIER` by L5 before any bytes; header stays `u16`
+  and the contract says so.
+- **Contract batch 3 (lead-owned, drafted + applied by a Sonnet agent,
+  lead commits):** C3 §3.5 (v2 layout, `MAX_TIER` as "the engine's
+  configured range", tier narrowing); C3 §3.6 (`SpectrogramParams
+  { window_size, hop_size, window, detrend, scaling }`,
+  `Histogram2dParams { y_channel, x_bins, y_bins }` replacing
+  `Record<string, number>`; a `raster_meta` JSON side-channel with axis
+  extents and colour-scale range — L3-R33; C3 open item 6.4 closed); C3
+  §3.7 (nearest recorded sample, clamped; `null` only for a channel with
+  no samples — Q4); C2 §6 (`_migrate_math` identity map with `identifier`
+  and `color` per v2 id, deleted with `_migrate_charts` — L3-R36; the
+  phantom `worksheets[].tables[]` struck; `workbook_id` copied only when a
+  UUID; version range `1..=SUPPORTED_WORKBOOK_VERSION`). Tasks 10/11 are
+  therefore **spec-first**: the batch lands before they are dispatched.
+- **Q3 (product, defaulted):** migrate, emit `_migrate_math`, and list
+  every unresolved `mathChannelIds` reference and every
+  `rowSource: "lapSelection"` table in the report — refusing would be
+  worse than telling the truth. Isaac may override; and whether his real
+  `.idl0wb` files have app-assigned UUID ids on math channels is worth
+  knowing before Task 13 runs on them.
+- **Q4 (defaulted):** cursor readouts clamp (the engine's existing rule);
+  C3 §3.7's "no sample near" prose amended accordingly.
+- Deferrals recorded, not delivered: tier cache (design §4 L3 row);
+  Stage 2 chart conversion (L6). CHANGELOG/TASKS wording per L3-R42.
+
+**Cost if wrong:** the v2 tile section is the one with teeth — 8 bytes
+per column (8 KB per 1024-column tile) and a layout bump before any
+consumer exists; the alternative ships a format that can only be placed
+on a time axis by assuming one. Everything else is additive contract
+text or lane-internal.
