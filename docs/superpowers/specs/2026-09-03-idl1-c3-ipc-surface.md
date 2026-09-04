@@ -724,17 +724,22 @@ Return:
 ```ts
 interface CursorReadout {
   t_us: number;                          // echoes the request
-  values: Record<string, number | null>; // channel_id → nearest recorded sample by t_us, clamped at both ends — see below
+  values: Record<string, number | null>; // channel_id → nearest recorded sample by t_us, null outside its recorded span — see below
 }
 ```
 *Amended post-sign (2026-09-04, lead ruling R25, wave-1 L3, closes open
 question Q4).* Each channel's value is the sample **nearest** `t_us` on
-that channel's own recorded `t_us` axis, **clamped** at both ends — the
-engine's existing nearest-sample rule (`idl_rs::session::handle`). A
-cursor past a channel's last sample still reports that last sample, not
-`null`. A tie (the cursor sits exactly between two samples) resolves to
-the **earlier** sample. `null` only when the channel has no samples at
-all, or has no recorded time axis (an empty `t_us` — a scalar or
+that channel's own recorded `t_us` axis — the engine's existing
+nearest-sample rule (`idl_rs::session::handle`) — **but only while `t_us`
+lies inside that channel's recorded span.** *Amended again post-sign
+(2026-09-04, ruling R31, Isaac): the clamp is removed.* When `t_us <
+first` or `t_us > last` for a channel, its value is `null`: a channel
+that stops (an HR strap that drops out at minute 40) must not read as a
+live value for the rest of the session — "if the data stops, it stops".
+Inside the span the nearest rule is unchanged. A tie (the cursor sits exactly between two samples) resolves to
+the **earlier** sample. `null` therefore in exactly three cases: `t_us`
+outside the recorded span (above), the channel has no samples at all, or
+the channel has no recorded time axis (an empty `t_us` — a scalar or
 table-column result, L3-R12/L3-R21). This replaces the original "no
 sample **near** `t_us`" wording, which implied an unspecified proximity
 bound; there is none.

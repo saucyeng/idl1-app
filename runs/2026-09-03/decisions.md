@@ -1660,3 +1660,94 @@ first, as R19 did for L1) → L2.
 
 **Cost if wrong:** none — every change is reversible config; the hook
 denies only commands the rules already forbade.
+
+---
+
+## 2026-09-04 — R27: GPS coordinates are decimal degrees (supersedes R23's `deg_e7`)
+
+**Isaac's call**, asked as a pros/cons question and answered on the
+principle: *"less messy to just pick the one we want and stick with it,
+and the human readable decimal makes the most sense... otherwise we build
+a whole UI around a data type that we know needs to change."*
+
+`GPS_Latitude`/`GPS_Longitude` are **physical decimal degrees**,
+`unit: deg`, for every source. `.idl0` parse bakes `raw_i32 * 1e-7` (the
+baked-in convention already used by `WheelFront`, `HR_RR`); FIT/GPX
+importers store their native decimal values unchanged. C1 §4.2's R23
+paragraph is marked SUPERSEDED, not deleted.
+
+**Extended by the lead to the two neighbouring columns**, because the
+same argument applies verbatim and splitting them would leave `deg_e7`'s
+mess in place under different names: `GPS_Altitude` → physical metres
+(`raw_i16 * 0.1`, `unit: m`), `GPS_Heading` → physical degrees
+(`raw_u16 * 0.01`, `unit: deg`). Untouched: `GPS_SpeedKmh` (already
+physical via `scale=0.01` metadata), `GPS_EpochMs`, `GPS_FixQuality`,
+`GPS_Satellites` (enum/count, no scale to remove).
+
+Blast radius, all landed L1 code, one task: `parse/` (bake the scales),
+`gps.rs`, `laps/distance.rs` (`M_PER_UNIT` reverts to plain `111_320.0`,
+the `/1e7` in the mean-latitude `cos` goes), `tracks/`, `laps/gate_*`
+(gates in `session.json` are already decimal — R8 — so the conversion at
+that boundary disappears entirely, which is the point), `export/fit`
+(`to_semicircles`/`haversine_m` drop their `/1e7`). Mostly deletion.
+Sequenced **after L3 lands, before L2 Task 4/8** so the importers are
+written once against the final unit.
+
+**Cost if wrong:** one task's rework, and it is strictly cheaper now than
+after any map/plot UI exists — which is exactly Isaac's reasoning.
+
+## 2026-09-04 — R28: burst/gap integrity runs on every import (TODO, non-blocking)
+
+Isaac: *"we should eventually run that data integrity script during every
+import/parse. if it's non blocking and we can just choose our time basis
+accordingly, then let's make it a todo and move on."*
+
+The §3.3 seam corrector already computes what a diagnostic would report.
+Ruling: it emits counts — frames expected vs seen, gap count, largest
+gap, burst-size histogram, effective rate vs header nominal — as
+`ImporterWarning`s on `ImportedSession`, never an error, never a refusal
+to import. Wave-1 scope is the emission plus a `TODO(idl0):` where a UI
+would surface it. The open Q1 (833 Hz configured, 800 Hz in the header,
+812.35 Hz measured) is answered by the same numbers when Isaac runs an
+import on a real file; no decision waits on it.
+
+**Cost if wrong:** none — warnings only; nothing branches on them.
+
+## 2026-09-04 — R29: `session.json` supersedes `.idl0w`; one file per recording
+
+Isaac: *"so basically the .idl0w is being replaced by session.json? i
+actually found it tedious having multiple files for one recording."*
+Yes, and the ruling makes it explicit: `.idl0w` is an **import source**
+only. At import its metadata (`event_name`, `event_session`, `tag`,
+`short_comment`, `rider`, `bike`, `venue_name`, gates) is folded into
+`session.json`; the app never writes an `.idl0w` and never requires one
+(an `.idl0` imported alone is valid, those fields null). C4's session
+directory stays the single unit: blob + `session.json` + `data.parquet`.
+
+Display name (closes R21's Q2): `name = event_session ?? event_name ??
+null`. All the raw fields stay individually exposed on the JS `session`
+object so a notebook can compose its own.
+
+**Cost if wrong:** naming only; the fields are all still there.
+
+## 2026-09-04 — R30: workbook migration dropped from wave 1
+
+Isaac: *"i don't have many super well developed .idl0wb files. we can
+basically start from scratch... you can actually drop a lot of large
+tedious migration."* L3 **Task 13 (`migrate_workbook`) is cut**, and Task
+14 keeps only its non-migration half. C2 §6 (`_migrate_math`, chart
+reference resolution) stays written but unimplemented — the two tasks
+carrying the most contract complexity for the fewest real files.
+
+**Cost if wrong:** an old `.idl0wb` has to be re-authored by hand. Isaac
+has said there are none worth keeping.
+
+## 2026-09-04 — R31: cursor readout is `null` outside a channel's recorded span
+
+Reverses R25's clamp. Isaac: *"past what ends? if the data stops, it
+stops, right?"* Correct — the failure case is a channel that ends early
+(HR strap drops at minute 40), where clamping paints a frozen 150 bpm as
+if live for the next half hour. `null` when `t_us < first || t_us >
+last`; nearest-sample unchanged inside. C3 §3.7 amended.
+
+**Cost if wrong:** one comparison; trivially reversible.
