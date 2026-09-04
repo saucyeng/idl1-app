@@ -17,6 +17,19 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
   BLE (`btleplug`) scan/connect/status/control/config-push, WiFi (`reqwest`) file listing,
   resumable download, config-push fallback — all behind `BleTransport`/`WifiTransport` traits
   L9's mobile plugins implement later. SPEC gains §14a (trait shapes, chunk/timeout defaults).
+- **L1 core `store/` landed (wave 1, 2026-09-03).** Mandatory per-sample-time `Session`/`Channel`
+  model (C1 §2); burst-seam correction (C1 §3.3) with a real-session ODR cross-check (pass —
+  corrected 812.348 Hz vs. GPS-independent estimate 814.017 Hz, relative error 0.21 %, well
+  within the 5 % tolerance); `data.parquet` Arrow/Parquet read/write with the C1 §7 round-trip
+  suite; `derived/<hash>.parquet` writer + hash recipe (C1 §5); CAS blob store + atomic-write
+  primitive (C4 §3–4); SQLite catalog + rebuild (C4 §5 — overwrite swap, `laps.track_id` by
+  visit containment, `duration_ms` from the time span); `verify` checks #1–5, #8, #10 (#6/#7/#9
+  deferred); `session.json` (C1 §6, replaces `.idl0w`); `.idl0t` writer; bike-profile
+  (`<data>/profiles/`, C4 §2 amendment) and app-settings (`settings.json` keys, C4 §1 amendment)
+  persistence; gate synthesis, session-wide lap renumbering, lap-distance normalisation
+  (unit-corrected vs idl0 — the Dart fed ×1e7 coordinates into degree math), session filenames;
+  core import pipeline (idempotent re-import, version-triggered regeneration, same-UUID/
+  different-bytes collision refused); CLI `idl-rs import`/`sessions`/`verify`/`prune`.
 
 ### Verified
 
