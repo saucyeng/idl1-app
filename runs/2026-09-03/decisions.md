@@ -1911,3 +1911,44 @@ target no longer exists and Task 10 owns `tile.rs`.
 
 **Cost if wrong:** a v2-semantics regression that `tests_parity` doesn't
 already cover ships unnoticed. Bounded — that suite is the idl0 corpus.
+
+## 2026-09-04 — R37: C2 §2.5's worked example drops `g`; the reserved-name check stands
+
+Task 9's end-of-batch gate surfaced a failing test that predates it:
+`workbook::v3::tests::parse_workbook_c2_5_worked_example_parses_id_
+version_and_both_cells` fails at `f7c757b` too. The implementer proved it
+by stashing its own diff and rerunning the test by name, then committed
+its own (clean) work rather than withholding it — correct on both counts.
+
+Cause: a spec-vs-spec conflict, not a code bug. C2 §2.5's worked example
+declares `g: 9.80665` in front matter, and §3.5.A's `RESERVED_NAMES`
+(extended by R20) reserves `g` as one of the four universal math
+constants, so `merge_constants` refuses it as `ReservedName`. §2.5 claims
+the example "demonstrably parses under §§2-5 exactly as written". It does
+not, and has not since Task 4 landed the check.
+
+Ruling: **the reserved-name check is the correct half and stands** — `[g]`
+must always mean standard gravity, and a workbook silently redefining it
+is precisely the shadowing R20 widened the list to prevent. The example
+is wrong, so the example changes: `g` is dropped from `constants` in C2
+§2.5, in design §5's prose form, and from §3.1's bare-number illustration
+(now `sag_target: 0.3`). The declaration bought nothing — `g` resolves in
+any expression undeclared.
+
+Fix-up task dispatched against the worktree for the test fixture; the
+three doc edits are the lead's own (lanes never touch `docs/`).
+
+**Process finding, the more important half.** This test failed for five
+consecutive tasks without being caught, because §8's compute rules run
+only targeted filters per task and the full suite once per lane at the
+merge gate. That trade is still right on a 16 GB machine — but it means a
+break outside the current task's filter stays invisible for the whole
+lane. Mitigation, not a rule change: the end-of-batch gate moves from
+"once at the merge gate" to **once every four tasks**, cheap enough at
+~3 min warm and it bounds the blast radius to four tasks instead of
+sixteen. First one already effectively run here.
+
+**Cost if wrong:** if `g`-in-front-matter turns out to be a real user
+need (local gravity), the fix is to unreserve `g` alone and let a
+declaration shadow it — a one-line change to `RESERVED_NAMES` plus a
+§3.5.A note. Nothing built since depends on `g` being unshadowable.

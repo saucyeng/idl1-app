@@ -136,13 +136,27 @@ Important finding 3).*
 Design §5's worked example is illustrative shorthand — its own `id: 9f3c…`
 is visibly elided — not literal v3 syntax. Restated here so it
 demonstrably parses under §§2–5 exactly as written (checklist item (a)),
-with every departure from the design doc's prose form named and justified:
+with every departure from the design doc's prose form named and justified.
+
+**`g` removed from the example's `constants`, amended post-sign
+(2026-09-04, lead ruling R37).** The design doc's prose form declared
+`g: 9.80665` in front matter. That cannot parse: `g` is one of the four
+universal math constants in `RESERVED_NAMES` (§3.5.A, extended by R20),
+so `merge_constants` refuses it as a `ReservedName` — which made this
+subsection's own claim ("demonstrably parses under §§2-5 exactly as
+written") false, and left `workbook::v3::tests::
+parse_workbook_c2_5_worked_example_parses_id_version_and_both_cells`
+failing from the moment Task 4 landed the check. The reserved-name rule
+is the correct half and stands: `[g]` must always mean standard gravity.
+The declaration was redundant anyway: `g` resolves in any expression
+without being declared, so dropping it from `constants` costs the
+example nothing.
 
 ```
 ---
 id: 9f3c1e2d-4b6a-4f1c-9c3d-2a7e8f9b0c1d
 name: Fork tuning
-constants: { g: 9.80665, rider_mass_kg: 82 }
+constants: { rider_mass_kg: 82 }
 ---
 # Fork tuning — Whistler, 2026-08-30
 
@@ -279,7 +293,7 @@ spaced/free-text name is therefore only expressible in YAML, not via a
 lines are meant for quick scratch values an agent types inline.
 
 **Unit-suffix syntax for front-matter constants** (referenced from the
-outline, §1): a YAML value is either a bare number (`g: 9.80665`, unitless)
+outline, §1): a YAML value is either a bare number (`sag_target: 0.3`, unitless)
 or a string `"<number> <unit>"` matched by
 `/^\s*(-?\d+(\.\d+)?([eE][+-]?\d+)?)\s+(\S.*)\s*$/`; the numeric group is
 the usable scalar, the unit-string group is **display metadata only** — it
