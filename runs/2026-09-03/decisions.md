@@ -1061,6 +1061,20 @@ tells the operator the one-step remedy.
 **Cost if wrong:** Low. (1)–(3) make the validation actually run and
 measure the right quantity; (4) is R13; (7) is mechanical and reversible.
 
+*Addendum (merge preview, `git merge-tree`, read-only):* idl-rs `main ←
+wave1-l1-store` conflicts **only** in `Cargo.lock` (main +319/−32 from L4;
+L1 +613/−1 — both sides essentially add packages). Resolution at landing:
+take one side, one `cargo build -p idl-rs` re-adds the other's packages,
+then assert the merged lock's `(name, version)` set **equals the union**
+of both sides' sets — no pinned version may move (reviews cross-checked
+behaviour against parquet 59.3.0). idl1-app merges clean, but `main` had
+moved `CHANGELOG.md`/`TASKS.md`/the L1 plan doc since L1 branched, so
+`main` was merged **into** the idl1-app L1 branch first (`4e2643e`, clean)
+— Task 16's CHANGELOG/TASKS edits now land on current files and the
+final landing fast-forwards. Task 16 does **not** edit the plan doc (it
+diverged on `main`); it reports the ODR numbers and the lead records them
+in this ledger and the plan on `main`.
+
 ---
 
 ## 2026-09-03 — Tracked: Task 14 landed (`8d6cb00`); three implementer flags, ruled
