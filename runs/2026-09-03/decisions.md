@@ -1101,3 +1101,36 @@ The implementer raised three things outside its declared files:
 
 **Cost if wrong:** negligible — (1) is a documentation correction, (2)
 and (3) are one-line changes with no consumers.
+
+---
+
+## 2026-09-03 — Tracked: Task 15 landed (`13363d6`); dependent-crate blind spot; R18 addendum
+
+Task 15 landed at `9bb291e` (Step 0) + `13363d6` (task): `store::import`
+with `plan_import`/`import_idl0` per R18, `parse::IDL0_IMPORTER_VERSION`,
+`store::parquet::read_session_metadata`, and the four CLI subcommands.
+27 core / 51 CLI tests green. `Collision` covered end-to-end (two
+`test_buffers` fixtures share `Header::default()`'s UUID with different
+IMU payloads → different blob, same `session_id`).
+
+**Process finding — targeted tests have a dependent-crate blind spot.**
+`cargo test -p idl-rs-cli` had not compiled since core's `Session`/
+`Channel` API changed in Tasks 3–4 (`SessionMetaInput`/`ChannelInput`
+shapes, `Channel::from_f64` arity). Eleven tasks of `-p idl-rs`-only
+targeted runs (R13) never built the CLI crate's test module, so the
+breakage sat unnoticed until Task 15 touched `cli/`. The implementer's
+fix was mechanical (match landed signatures; reviewer to confirm no
+assertion was weakened). **Standing rule:** any task that changes a `pub`
+signature in `core` adds `cargo check -p idl-rs-cli --tests` (cheap — no
+link, no test run) to its gate; the lane merge-gate run (`-p idl-rs -p
+idl-rs-cli`) remains the authoritative catch. This is what R13's
+"targeted only" trades away; the check restores it at near-zero cost.
+
+**R18 addendum (ordering, ruled at review dispatch):** in `import_idl0`,
+`parse::parse` runs **before** `blob::write_blob` — an unparseable file
+must leave nothing in the CAS. The plan's `cmd_import` draft wrote the
+blob first; R18's text listed the steps in that order too. Corrected here;
+the Task 15 reviewer checks it as an Important finding if violated.
+
+**Cost if wrong:** Low — the rule costs seconds per task; the ordering
+ruling only affects what is left behind on a *failed* import.
