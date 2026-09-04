@@ -20,7 +20,8 @@ are defined in `docs/superpowers/specs/2026-09-02-idl1-rewrite-design.md` §10.
 
 - [x] L1 core `store/`
 - [ ] L2 importers
-- [ ] L3 core workbook v3
+- [x] L3 core workbook v3 — complete; v2 workbook migration (C2 §6) dropped per R30; tier
+  cache (design §4 L3 row) and Stage 2 chart conversion (L6) deferred
 - [x] L4 `idl-transport` desktop — complete pending Isaac's real-device BLE/WiFi check
 - [ ] L5 Tauri scaffold hardening
 - [ ] L10 docs (runs alongside)
