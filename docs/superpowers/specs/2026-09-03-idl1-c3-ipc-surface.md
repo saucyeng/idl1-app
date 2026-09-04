@@ -128,6 +128,15 @@ is applied uniformly, not case-by-case:
 - The four **cross-cutting kinds** (`not_found`, `invalid_argument`, `io`,
   `internal`) are unprefixed by design: they are not sourced from any one
   enum, so there is no domain to prefix with.
+- **`conflict`** — *added post-sign (2026-09-04, lead ruling R44).* A fifth
+  cross-cutting kind, raised when an optimistic concurrency check fails:
+  `store::atomic`'s `RenameConflict`, i.e. the file on disk is no longer the
+  version the caller based its edit on. It is deliberately not folded into
+  `invalid_argument`, which means "the caller made a programming error": a
+  conflict is neither the caller's fault nor a bug, it is a recoverable
+  condition the UI must present differently ("this file changed elsewhere —
+  reload?" rather than an error toast). `detail` carries `{ expected, found }`.
+  Raised by: Workbook (`save_workbook`).
 
 | `kind` | Source | Raised by (command group) |
 |---|---|---|
@@ -472,7 +481,16 @@ R21)*: opening a document whose front matter or cell ids are malformed
 enough that no `WorkbookDoc` can be built now rejects with the specific
 `workbook_*` kind (§2) instead of failing some other, less informative way.
 
-**`eval_workbook(id: string)`**
+**`eval_workbook(id: string, session_id: string | null)`**
+*`session_id` added post-sign (2026-09-04, lead ruling R41).* `eval_cells`
+requires a channel lookup and a lap context; the original signature supplied
+neither, and C2 deliberately has no front-matter session binding — the active
+session is a UI selection, not a property of the file ("the workbook is a file;
+the app is a live viewer of it"). `null` means no session is bound: the command
+evaluates against an empty `SessionHandle` and `MathLapContext::empty()`, so
+`[Channel]` references surface as per-cell `math_unknown_channel` rather than
+the whole command failing. When a session IS bound, wave-1 lap context comes
+from that session's `session.json` `laps[]`.
 Return: `CellOutput[]`, one entry per cell, in document order.
 ```ts
 interface CellOutput {
@@ -514,7 +532,16 @@ Errors (command-level): `not_found`, `io`, `internal`,
 `workbook_missing_front_matter_id`, `workbook_unsupported_version`,
 `workbook_invalid_front_matter`, `workbook_invalid_cell_id`.
 
-**`save_workbook(id: string, markdown: string)`**
+**`save_workbook(id: string, markdown: string, based_on_hash: string | null)`**
+*`based_on_hash` added post-sign (2026-09-04, lead ruling R44).* C4 §4 steps
+3-4 mandate an optimistic concurrency check on `workbooks/*.idl1wb`, and
+`store::atomic::write_atomic(data_root, target, bytes, based_on_hash)` already
+implements exactly it — the original signature gave the backend no `H0` to pass.
+`null` means "creating a new workbook" (the target must not exist, `write_atomic`'s
+own `None` semantics); a non-null value is the hash the editor last read. Note
+`None` against an existing file *errors* rather than clobbering, so omitting the
+argument was never a silent-overwrite option — it would have made every save of
+an existing workbook fail. A `RenameConflict` maps to the `conflict` kind (§2).
 Return:
 ```ts
 interface SaveResult {
@@ -564,7 +591,14 @@ here.
 
 ### 3.5 Tiles (L3)
 
-**`fetch_tile(session_id: string, channel: string, tier: number, tile_index: number)`**
+**`fetch_tile(session_id: string, channel: string, tier: number, tile_index: number, column_count: number)`**
+*`column_count` added post-sign (2026-09-04, lead ruling R43).* The per-column
+region exists so hover never needs IPC at the chart's own pixel width, and only
+the frontend knows that width; the original signature had no argument to carry
+it, which would have pinned the column region to a constant that can never match
+the chart. `column_count: u32`, validated `1..=4096` (`invalid_argument`
+outside). Request-only change — the binary layout is unchanged, its header
+already carries `column_count`.
 `tier`: `u32`, `0` = raw (bucket size 1), `k` = bucket size `TIER_BASE.pow(k)`
 (`TIER_BASE = 8`, `rust/core/src/chart_decimation.rs`). `tile_index`: `u32`.
 Return: raw bytes via `tauri::ipc::Response` (`Result<Response, IpcError>`),
@@ -668,10 +702,19 @@ interface SpectrogramParams {
 }
 interface Histogram2dParams {
   y_channel: string;   // the second channel; `channel` above is the x channel
-  x_bins: number;       // u32
-  y_bins: number;       // u32
+  x_bins: number;       // u32 — must equal `width` in wave 1, see below
+  y_bins: number;       // u32 — must equal `height` in wave 1, see below
 }
 ```
+*`x_bins`/`y_bins` constrained post-sign (2026-09-04, lead ruling R42).* The
+landed encoder (`core/src/raster.rs`, `build_histogram2d_raster_bytes`) builds
+exactly one bin per pixel — unlike the spectrogram path, it does not rebin,
+because rebinning counts would misrepresent them. So the two argument pairs
+describe one grid: `fetch_raster`/`fetch_raster_meta` reject `x_bins != width ||
+y_bins != height` with `invalid_argument` and `detail { x_bins, y_bins, width,
+height }`, rather than silently preferring one. The fields are kept rather than
+removed because bins < pixels (an upsampled display of a coarse histogram) is
+the intended future extension, and this reserves the space for it.
 Return: raw bytes via `tauri::ipc::Response`.
 Errors: `not_found`, `invalid_argument` (bad `width`/`height`/`kind`/`params`), `io`, `internal`.
 

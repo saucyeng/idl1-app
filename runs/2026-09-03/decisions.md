@@ -2092,3 +2092,75 @@ lead reads the code before ruling on it.
 **Next:** L2 (importers) — briefs 1–6 on disk, FIT sample available.
 R27's GPS decimal-degrees conversion sequences before L2 Tasks 4/8 so the
 importers are written once against the final unit.
+
+---
+
+## 2026-09-04 — R40–R45: L5's remaining commands (answers Q1–Q6)
+
+The L5 pre-read wrote briefs for Tasks 8, 11–14 and raised six structural
+questions. All six were real gaps between C3 and the code that landed
+under it — the contract was written before the engine existed, and this
+is where they disagree. Rulings, with the C3 amendments already applied.
+
+**R40 (Q1) — L5 may add the catalog read API to `core`.** L1 landed
+`catalog.rs` write/rebuild only; there is no `list_sessions`,
+`get_session`, `list_laps`, `list_workbooks`, `list_tracks`, `get_track`
+or `SessionSummary` anywhere at `e0440bb`. C3 §3.2's seven commands
+cannot wrap nothing, and these queries are bytes-on-disk, so CLAUDE.md §2
+puts them in `core`, not in the Tauri crate. New file
+`store/catalog_read.rs` so no L1 file is rewritten. Also approved:
+`SessionHandle::from_session(Session)`. That one is not a convenience —
+the only existing constructor, `from_channels`, **hard-codes
+`source_format = Gpx` and blanks `blob_sha256`/`unit`**, which is a
+latent bug for every non-GPX session; the new constructor carries the
+real values and Task 11's brief must say so. Both are `pub` additions:
+`cargo check -p idl-rs-cli --tests` applies.
+
+**R41 (Q2) — `eval_workbook(id, session_id: string | null)`.** C3's
+signature supplied neither the channel lookup nor the lap context
+`eval_cells` requires, and C2 has no front-matter session binding by
+design. The active session is a UI selection, not a property of the file.
+`null` evaluates against an empty handle so unbound `[Channel]` refs
+surface as per-cell `math_unknown_channel` — one bad reference must not
+blank a whole notebook.
+
+**R42 (Q4) — `x_bins`/`y_bins` must equal `width`/`height`.** The landed
+histogram encoder builds one bin per pixel and does not rebin, because
+rebinning counts misrepresents them. Mismatch is `invalid_argument` with
+both pairs in `detail`, not a silent preference. I kept the redundant
+fields rather than deleting them: bins < pixels (upsampling a coarse
+histogram) is a legitimate future, and keeping them reserves the space
+without a later contract change.
+
+**R43 (Q5) — `fetch_tile` gains `column_count`,** validated `1..=4096`.
+The per-column region exists so hover costs no IPC at the chart's own
+width, and only the frontend knows that width. Request-only; the binary
+header already carries the value.
+
+**R44 (Q6) — `save_workbook` gains `based_on_hash`, and C3 §2 gains a
+`conflict` kind.** C4 §4's optimistic check is mandatory and
+`write_atomic` already implements it; the command had no `H0` to pass.
+(Passing `None` was never a silent-clobber option — it errors against an
+existing file, so every save of an existing workbook would have failed.)
+The pre-read proposed mapping `RenameConflict` to `invalid_argument` and
+recording the vocabulary gap; I closed the gap instead. A save conflict
+is not a caller error, it is a recoverable condition the UI must present
+differently — "this file changed elsewhere, reload?" is not an error
+toast. Fifth cross-cutting kind, `detail { expected, found }`. Adding it
+before L6 types against the surface is the same argument that moved R27.
+
+**R45 (Q3) — the host-channel byte path defers to wave 2 with L6.** C3
+assigns the `HostChannel` binary layout to this task, but its only
+consumer is L6's sandboxed iframe, which does not exist. Fixing a wire
+format with nothing to validate it against is how you ship a format
+nobody can use. `HostChannelRef { length, has_t }` — already C3 §3.4's
+JSON representation — is enough for wave 1, plus a `TODO(idl0)`.
+
+C3 amended in five places: §3.4 twice (R41, R44), §3.5 (R43), §3.6 (R42),
+§2 (R44's `conflict`). All PROVISIONAL markers in the five L5 briefs are
+cleared by these answers; dispatches say so rather than editing briefs.
+
+**Cost if wrong:** R44's new error kind is the only one that widens a
+signed vocabulary, and it is additive — an unrecognised kind degrades to
+a generic error in any consumer that hasn't been updated. The rest are
+signature changes on commands with no callers yet.
