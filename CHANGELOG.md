@@ -46,7 +46,7 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
   2-D-histogram RGBA rasters with a `raster_meta` axis/colour-scale side-channel, colour
   bounds scanned over the full pre-rebin matrix so they are resolution-independent (C3 §3.6,
   R38); cursor readout, `null` outside a channel's recorded span (C3 §3.7, R31);
-  `gps_channel_values` (landed by L1) amended to match — `null` past a channel's recorded
+  pre-existing `gps_channel_values` amended to match — `null` past a channel's recorded
   span rather than a frozen last value (R39). Resolves the C1 §8 item 5 `t` naming collision
   (µs storage axis vs. seconds host-variable field). SPEC §17a rewritten for v3. Workbook
   migration from v2 (`migrate-workbook`, C2 §6) is deliberately **not** implemented — dropped
