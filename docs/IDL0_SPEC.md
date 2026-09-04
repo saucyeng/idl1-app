@@ -29,7 +29,7 @@
 | 15 | Session & File Model | Data layer |
 | 16 | Track Entity | Track-related work |
 | 17 | Multi-Track & TrackVisits | Track-related work |
-| 17a | Workbook Entity | Analyze tab, Drive sync |
+| 17a | Workbook Entity | Analyze tab, LAN sync |
 | 18 | Bike Profiles & Riders | Profile, metadata tasks |
 | **PART 5 — APP PROCESSING** | | |
 | 19 | Signal Processing Pipeline | Rust layer tasks |
@@ -1541,72 +1541,123 @@ carry their own analysis-frame coordinates.
 
 ---
 
-## 17a. Workbook Entity
+## 17a. Workbook Entity (`.idl1wb`)
 
-A Workbook is a portable analysis template — worksheets, charts, math
-channels, axes, layout — independent of any specific session.
+A Workbook is a portable, session-agnostic analysis document: prose, math
+cells, table cells and JS chart cells, as Observable Framework-compatible
+Markdown. Charts reference channels and math definitions by name, never by
+session id, and render against whatever session the app binds at runtime.
+Full grammar, cell-id scheme, math-cell language, table-cell schema, JS
+host variables and migration rules: **`docs/superpowers/specs/2026-09-03-idl1-c2-workbook-v3.md`
+(contract C2)** — that document is authoritative; this section is a
+summary for readers navigating the SPEC, not a second source of truth.
 
 ### 17a.1 Storage
 
-- File: `<workbookId>.idl0wb` (JSON, pretty-printed).
-- Drive: `IDL0/workbooks/<workbookId>.idl0wb` — the canonical store.
-- Local mirror: `<sessions-base>/workbooks/<workbookId>.idl0wb`.
-- Cache: SQLite table `workbooks` mirroring the JSON in a `full_json` blob
-  column, ordered by `updated_at_ms` descending.
-- Conflict policy: last-write-wins by `updated_at_ms`.
+- File: `<workbookId>.idl1wb`, UTF-8, LF line endings, at
+  `<data>/workbooks/<name>.idl1wb` (path root: contract C4).
+- The workbook **is** the file — no database mirror, no Drive sync layer
+  (D7's LAN sync replaces the old Drive-based sync entirely; see §17a.4).
+- Conflict policy: per-cell merge (C2 §7), not last-write-wins on the
+  whole file.
 
-### 17a.2 Schema (workbook_version = 2)
+### 17a.2 Schema (`version: 3`)
 
-| Field             | Type     | Notes                                         |
-|-------------------|----------|-----------------------------------------------|
-| `workbook_id`     | string   | UUIDv4, stable across rename and sync.        |
-| `name`            | string   | Display name; renameable.                     |
-| `worksheets`      | list     | Ordered list of worksheets (see §26).         |
-| `math_channels`   | list     | Derived channels (see §25).                   |
-| `constants`       | list     | Named numeric constants for expressions.      |
-| `overlay_layouts` | list     | Overlay layouts (§33.1). Added in v2; omitted when empty. |
-| `created_at_ms`   | int      | UTC ms since epoch.                           |
-| `updated_at_ms`   | int      | UTC ms since epoch; LWW key.                  |
-| `workbook_version`| int      | Schema version. Currently 2.                  |
+YAML front matter (`id` UUIDv4, `name`, `constants`, `units`, `version`)
+followed by CommonMark prose interleaved with fenced ` ```math `,
+` ```table ` and ` ```js ` cells (C2 §1–§2). Every fenced cell carries a
+stable `id=<8 hex>` in its fence info string, assigned on first save and
+never changed — the unit of diff and sync merge (C2 §2.2, §7).
 
-Each `math_channels` entry: `id` (string, stable; **optional** — defaults to
-`name` when omitted so hand-authored files stay name-only), `name`, `expression`,
-`quantity`, `units`, `sample_rate_hz` (number; `0` = inherit), `decimal_places`
-(int), `color` (hex string `#AARRGGBB`). Each `constants` entry: `id` (optional,
-defaults to `name`), `name`, `value` (number).
+**Math cells** (C2 §3) hold one or more `name = expression` lines in a
+flat, whole-document namespace; `name` is a JS-identifier (unlike v2's
+free-text `MathChannel.name` — see §17a.5); a `# label: <text>` trailing
+comment carries a free-text display name. The expression grammar is the
+engine's existing evaluator (`idl-rs::math::{token,parse,eval}`), unchanged,
+with a 69-function builtin catalog (C2 §3.3) and a unit table (C2 §3.4)
+consulted only by the editor UI, never by evaluation. `const NAME = value`
+lines and front-matter `constants` share one flat, workbook-scoped
+namespace; the four universal constants (`pi`/`tau`/`e`/`g`) are reserved
+and cannot be redeclared (C2 §3.5.A).
 
-Each `overlay_layouts` entry follows the engine-defined shape in §33.1 exactly
-(the engine consumes this JSON directly via `idl-rs overlay --workbook`):
-`id`, `name`, `canvas` (`"WxH"`), `elements[]` with a `type` discriminator
-(`gauge` | `attitude` | `trace_strip` | `track_map` | `lap_panel`) and `rect`
-as a normalized `[x, y, w, h]` array. Added in workbook_version 2 (additive) —
-v1 files load with an empty layout list.
+**Table cells** (C2 §4) carry the existing `TableModel` JSON verbatim,
+unchanged from v2.
 
-Newer-than-supported version throws `UnsupportedWorkbookVersionException`.
-Missing optional fields default; older versions load cleanly (a `.idl0wb` with no
-`constants` array loads with an empty constant set).
+**JS cells** (C2 §5) are standard Observable Runtime cells, executed in an
+origin-isolated sandboxed iframe (design doc §6), never crossing Tauri IPC
+directly. The host binds one JS variable per math definition (a
+`{length, t, v}` column-oriented table — `t` in **seconds**, distinct from
+the Parquet storage axis `t` in the session schema, which is microseconds;
+see contract C1 §3.1 and C2 §5.1) plus `channel()`, `laps`, `session`,
+`constants`, `Plot`, `d3`, `Inputs`, `html`. `channel()`'s optional
+cross-session lookup is exclusive (it resolves only against the named
+session, never falling back to the primary one) and an out-of-range lap
+reference names the recorded lap count in its error message. A Properties
+form generates and parses back a fixed subset of `Plot.plot(...)` code
+(C2 §5.3, `plotForm`); code outside that subset is "custom" and edited as
+text only.
+
+Newer-than-supported `version` refuses the file
+(`UnsupportedWorkbookVersion`, C2 §3.5.A); an absent `version` key defaults
+to `3`.
 
 ### 17a.3 Session binding (view context)
 
-Workbooks are session-agnostic. At view time a `WorkbookViewContext` binds a
-**primary** session and an optional **overlay** session. Charts render their
-channels from the bound sessions. The view context lives in memory only —
-not part of the `.idl0wb` payload.
+Unchanged from v2: workbooks are session-agnostic; a view context binds a
+primary session and an optional overlay session at render time, never
+serialized into the file.
 
 ### 17a.4 Sync
 
-Drive upload is debounced per workbook (default 30 s, configurable per
-workbook). Mutations within the debounce window coalesce into one upload.
-"Force sync now" flushes pending uploads immediately. Per-workbook sync can
-be disabled — then mutations stay local until the user toggles it back on.
+LAN sync (design doc §7, contract to follow in L11's wave-2 work) replaces
+Drive sync entirely: pull-based manifest/blob sync between paired peers on
+the local network, with workbook merge **per cell** (C2 §7) rather than
+whole-file last-write-wins — a cell changed on only one side takes that
+side; a same-cell conflict appends the peer's version as a marked conflict
+cell (`<!-- conflict from <peer> -->`) directly below, so the file always
+stays valid Markdown. No cloud relay in v1 (design doc §15).
 
 ### 17a.5 Import policy
 
-When importing a `.idl0wb` file:
+When importing a `.idl1wb` file:
 
-- No local match (UUID not in the local index) → import as-is, preserve UUID.
-- Local UUID match → user picks **Replace** (overwrite local) or **Import
-  as copy** (fresh UUID, "(Copy)" suffix).
+- No local match (`id` not in the local index) → import as-is, preserving `id`.
+- Local `id` match → user picks **Replace** (overwrite local) or **Import
+  as copy** (fresh `id` — `Uuid::new_v4()`, `"(Copy)"` suffix on `name`).
+  Import-as-copy is the one sanctioned way a workbook's `id` ever changes:
+  C2 §1 makes `id` immutable everywhere else, including sync (§17a.4) and
+  migration (§17a.6).
+
+### 17a.6 Migration from v2 (`workbook_version` 1 or 2)
+
+**Specified but not implemented in wave 1** (ruling R30 cut the
+`migrate-workbook` task from wave 1's scope — Isaac has no `.idl0wb` files
+worth migrating today, so v3 workbooks start from scratch). C2 §6/§6.1
+carries the full algorithm as a specification for whenever migration is
+wanted; no `migrate_workbook_text` function, `MigrationReport` type, or
+`_migrate_charts`/`_migrate_math` front-matter key exists in `idl-rs` yet.
+
+As specified: `idl-rs migrate-workbook <input.idl0wb> --output <output.idl1wb>`
+would convert a v2 file's `math_channels[]` into one `math` cell
+(identifier-sanitising any name that isn't already a valid JS identifier —
+every idl0 AHRS built-in needs this — while preserving the original as a
+`# label:` comment; C2 §6.1's exact algorithm), `constants[]` into
+front-matter `constants`, table blocks into `table` cells verbatim, and
+stage chart slots in a transient `_migrate_charts` front-matter key the app
+would convert to `js` cells on first open (Properties-form code generation;
+not a CLI concern — C2 §6). A second transient key, `_migrate_math`, would
+carry each migrated definition's original v2 `id` and colour forward as a
+Stage-2 fallback (C2 §6); both transient keys would be deleted by the app
+once Stage 2 runs. `overlay_layouts[]` would be dropped (D9).
+`worksheets[].xAxisMode` and the three non-timeSeries chart types with no
+v3 analogue (`gpsMap`/`lapTable`/`lapProgression`) would have no migration
+path and would be dropped with a logged warning, not silently discarded
+without a trace. The migration would never refuse except for an
+unrecognised `workbook_version` or a migrated constant colliding with a
+universal constant (`pi`/`tau`/`e`/`g`) — every other irregularity (an
+unresolved chart reference, dropped block metadata, a live-lap
+`rowSource`) would be reported and migrated through, never silently
+dropped and never a refusal.
 
 ---
 
@@ -1790,7 +1841,7 @@ A scalar-valued top-level expression returns a single-sample, rate-0 channel.
 
 **Vector & rotation primitives.** `vec(x, y, z)` assembles a 3-vector from scalars or channels (scalars broadcast across every sample). A 3-vector is an **intermediate** value: charts plot scalars, so the top-level result of an expression must reduce back to a scalar channel via `vx`/`vy`/`vz` (component) or `norm` (magnitude) — a bare top-level vector is a typed error advising which extractor to use. All operations work element-wise over the component buffers, following the same broadcasting rules as scalar/channel arithmetic (channel operands must share sample rate and length). `cross`/`dot`/`norm`/`normalize`/`angle` are the usual `nalgebra` operations; `angle(a, b)` returns radians in `[0, π]`. Rotations apply inline (no matrix/quaternion data type): `rotate_mat` takes a 3×3 **row-major** matrix (same layout as `rotation_from_gravity` output), `rotate_axis` is axis-angle (axis normalised internally; a zero axis is an error), and `rotate_euler` takes intrinsic roll/pitch/yaw — its angle args may be channels, giving a per-sample (time-varying) rotation. The frame-at-axle rigid-body acceleration transfer (lever-arm `a_O + α×r + ω×(ω×r)`) is the motivating consumer. Implemented in `idl-rs` `math::vector`.
 
-**User-defined constants:** Constants created in the Maths tab Constants panel are inserted as inline numeric literals (e.g., selecting `g = 9.81` inserts `9.81`). There is no symbolic constant reference syntax for user constants — changing a stored value does not update existing expressions that used it. User constants travel with the workbook (`.idl0wb` `constants`, §17a).
+**User-defined constants (legacy idl0 app, v2 workbooks):** Constants created in the Maths tab Constants panel are inserted as inline numeric literals (e.g., selecting `g = 9.81` inserts `9.81`). There is no symbolic constant reference syntax for user constants in this legacy engine/UI — changing a stored value does not update existing expressions that used it. User constants travel with the workbook (`.idl0wb` `constants`, §17a). This is specific to the legacy Maths tab; v3 workbooks (§17a.2, C2 §3.1/§3.2) have a real symbolic constant syntax — `const NAME = value` and front-matter `constants` are referenced by name in expressions and update every reference when the value changes.
 
 **Universal constants:** Four scalar constants are recognised as **bare identifiers** in any expression and resolve to a literal at parse time — no store, always available, portable: `pi` (π), `tau` (2π), `e` (Euler's number), and `g` (standard gravity, `9.80665` m/s²). They are lowercase and case-sensitive. Because channel references are always bracketed (`[g]`), a bare `g` is unambiguously the constant — e.g. `[IMU1_AccelZ] * g` converts an acceleration in g-units to m/s². Defined in `idl-rs` `math::parse`. (The chip editor renders expressions that use a bare constant in Text mode rather than as chips.)
 
@@ -2267,7 +2318,7 @@ Entries are sorted newest-first (filename descending, per the `YYYY-MM-DD_HH-MM-
 
 ## 25. Tab — Maths
 
-Math channels and named constants are per-workbook — stored in the `.idl0wb` file (§17a), not per-session and not in any global store. The Maths tab edits the **active workbook's** channels and constants in place; switching the active workbook switches the channel set. A channel's identity is its stable `id` (charts reference channels by `id`, so an in-app rename does not drop them); expressions reference channels by `name`, and `idl-rs` resolves cross-channel dependencies by name.
+Math channels and named constants are per-workbook — stored in the `.idl0wb` file (§17a), not per-session and not in any global store. The Maths tab edits the **active workbook's** channels and constants in place; switching the active workbook switches the channel set. A channel's identity is its stable `id` (charts reference channels by `id`, so an in-app rename does not drop them); expressions reference channels by `name`, and `idl-rs` resolves cross-channel dependencies by name. (This dual `id`/`name` addressing is v2-specific; v3 workbooks — §17a.2, C2 §2.4 — replace it with one flat identifier namespace, no separate `id` for expression or chart reference.)
 
 Math channel expression editor modeled on i2pro:
 - Channel metadata bar: name, quantity, units, rate, decimal places, color
@@ -2880,13 +2931,13 @@ IDL0/
 ├── tracks/
 │   └── <trackId>.idl0t   (one Track per file, see §16)
 ├── workbooks/
-│   └── <workbookId>.idl0wb  (one Workbook per file, see §17a)
+│   └── <workbookId>.idl1wb  (one Workbook per file, see §17a)
 └── exports/
     ├── uuid.csv
     └── uuid.fit
 ```
 
-Workbooks (`.idl0wb`) are synced under `IDL0/workbooks/<workbookId>.idl0wb` with last-write-wins by `updated_at_ms`. See §17a.
+Workbook sync: see §17a.4 (LAN sync, per-cell merge — not last-write-wins).
 
 **Per-session sync status in Data tab:** source file (`.idl0` or `.gpx`) / `.idl0w` / `.csv` / `.fit` — states: not uploaded / queued / uploading / synced / error. The indicator always renders all four file types regardless of whether the file exists on disk; `.csv` and `.fit` show `notUploaded` until export generates them. File-type keys in the sync status map are lowercase strings without dots. For GPX-sourced sessions, the `idl0` slot is replaced by a `gpx` key.
 
