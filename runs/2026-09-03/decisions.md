@@ -1964,3 +1964,23 @@ with `invalid_argument` before calling in, so there is no contract gap —
 but that check is **load-bearing, not defensive**: without it a bad tier
 yields a plausible-looking tile rather than an error. L5's brief must
 quote this line.
+
+**Correction to the tracked note above (same day, after the Task 10
+review).** I accepted the implementer's framing that the "all-NaN tile"
+guarantee was simply untrue and the test should move to `tile_index: 1`.
+The reviewer disagreed and was right: the correct conclusion was that the
+*code* was wrong, not the guarantee. `decimate_channel` and
+`decimate_tile` now early-return the empty tile for `tier > MAX_TIER`
+before any bucket arithmetic, so the guarantee holds at every
+`tile_index` including 0 (`1f04286`). Core does not lean on L5's
+`invalid_argument` check for this; that check stays, now as defence in
+depth rather than the only thing standing between a bad tier and a
+plausible-looking tile. The same commit fixes an unguarded `u64` overflow
+in `column_sample_range` (saturating products, boundary test past
+~4.19M) that neither the implementer nor I spotted.
+
+**Lead note:** this is the second time in one session I ratified an
+implementer's reasoning that a review then overturned (the first being
+R34(a), caught by the implementer instead). Both were cases of reasoning
+from a report rather than from the code. The review-every-task rule is
+carrying more weight than the ledger implies, and stays.
