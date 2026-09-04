@@ -1371,3 +1371,37 @@ is why it gets a real kind later.
 comments, a range-equality comment) → Task 2's Step 0. The reviewer
 self-reported running an unauthorised `cargo doc` and killing it at once;
 no effect, logged because the standing brief calls the rule absolute.
+
+---
+
+## 2026-09-04 — R21: L3 Tasks 6–9 pre-read adjudicated
+
+Pre-read: `lanes/l3-workbook/pre-read-tasks6-9.md` (26 gaps, rulings
+L3-R16…L3-R27, 1 Isaac question). Not restated here. Lead decisions:
+
+- **L3-R16 … L3-R27: approved as drafted**, with:
+  - **L3-R18 addition:** because definitions win over session channels, a
+    definition named after a base channel that references itself
+    (`IMU0_AccelZ = [IMU0_AccelZ] * 9.81`) is a cycle and must surface as
+    the leftover `UnknownChannel` error naming the unresolved dependency
+    — never an infinite loop or a silent read of the base channel. One
+    test required.
+  - L3-R25 is provisional against L3-R26 exactly as the pre-read says.
+  - **Lead-owned contract batch, to land before L5's workbook-command
+    task** (one amendment pass, drafted by a delegated agent): C2 §3.5.A
+    kinds `InvalidFrontMatter`, `InvalidCellId` (Task 1), `InvalidTableJson`
+    (L3-R19); C3 §2 `workbook_*` kinds (L3-R4, + `workbook_invalid_table_json`);
+    C3 §3.4 corrections (L3-R26 a–c); C3 byte path for host channels
+    (L3-R23 flag). Owner: lead.
+- **Q2 → Isaac (product):** C2 §5.1 gives JS cells `session.name?` but no
+  layer records a session *name* — only `rider`, `bike`, `venue_name`,
+  `event_name`, `event_session`, `short_comment`, `tag`, and the start
+  time. Default taken now, per the pre-read: `name: None` with a
+  `// TODO(idl0):` — no display string synthesised in Rust. Isaac can
+  name the rule whenever; nothing blocks on it.
+- Briefs for Tasks 6–9 written as files by a Sonnet agent, same pattern
+  as Tasks 2–4.
+
+**Cost if wrong:** Low — every ruling is inside the lane or an additive
+contract amendment; the two product questions (Q1 DSP rate, Q2 session
+name) are parked on documented defaults.
