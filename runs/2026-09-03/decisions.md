@@ -872,3 +872,75 @@ primitive's most natural-looking misuse.
 stated semantics. (2) is the judgment call: deleting sidecars while a
 connection were open would be harmful, which is exactly why (3) states
 the precondition; the catalog is an index and rebuildable regardless.
+
+---
+
+## 2026-09-03 — R17: L1 Task 14 pre-dispatch — GPS unit scale, an inherited idl0 bug, two crash paths
+
+Pre-read of Task 14's plan text (ports of `gate_geometry.dart`,
+`cached_session_laps.dart`, `lap_distance_accumulator.dart`,
+`session_filename.dart`) against the Rust types it consumes and the Dart
+originals at `idl0-app/app/lib/data/`.
+
+**The unit landscape, verified in code (not the plan's prose):**
+
+| Thing | Scale | Evidence |
+|---|---|---|
+| `crate::gps::GpsFix.lat/lon` | degrees × 1e7 | `gps.rs:3-8` doc |
+| `crate::laps::model::Gate` | degrees × 1e7 | `laps/model.rs:9` doc |
+| `.idl0t` wire `latitude_deg` / `lat1_deg` … | **degrees × 1e7 despite the `_deg` name** | `track_artifact/read.rs:30-33` fixtures (`501163000`), DTO conversions copy without rescaling; SPEC §16.3 "unchanged" from idl0 |
+| `store::session_json::LapGateJson.*_deg` | **decimal degrees** | C1 §6, ruling R8 |
+
+So the one conversion point is `Gate`/`GpsFix` (×1e7) → `LapGateJson`
+(degrees) = `/ 1e7`, which the plan's Step 1 does exactly once. Correct.
+
+**Step 3 inherits a real idl0 bug.** The plan's `distance.rs` (and the
+Dart it ports, `lap_distance_accumulator.dart:79-80, 88-89`) feeds ×1e7
+latitude straight into `cos(mean_lat · π/180)` and multiplies ×1e7
+coordinate deltas by `111_320` m/deg. The Dart is fed ×1e7 data at its
+only call site (`lap_provider.dart:268`: raw session GPS + Track
+polyline, no rescaling anywhere in `lib/` — grep for `/ 1e7` hits only
+`gate_geometry.dart`). Consequences in idl0: `residual` is 1e7× too large
+so the documented 5 m confidence-anchor threshold can never fire;
+`lonScale` is the cosine of a meaningless angle (sign included), so the
+projection geometry is distorted; only the scale-invariant pieces
+(`tangentAgreement`, arc-fraction interpolation between the two endpoint
+anchors) behave. The plan's own Step 3 test fixtures use decimal degrees
+(`0.0001`), so the draft would pass its tests and fail on real data —
+same shape as Task 12's literal draft.
+
+**Rulings:**
+1. `laps::gate_synthesis` and `laps::distance` operate on `GpsFix`'s ×1e7
+   scale throughout, converting to metres via `111_320 / 1e7` per unit
+   (the way `gate_geometry.dart:122-124` already does) and to decimal
+   degrees only at the `LapGateJson` boundary. **The Rust `distance` port
+   is corrected, not bug-faithful**; its doc comment cites the Dart lines.
+   Required test: a sample displaced ≈3 m east of a due-north polyline at
+   ~50° N yields `residual ≈ 3 m` (±0.1) — a metres-level assertion the
+   buggy math cannot pass — plus an on-line fast sample qualifying as an
+   anchor. Fixtures in ×1e7.
+2. The plan's "C1 §8 item 4 … pending Isaac's confirmation" note is stale
+   — resolved by R8 (decimal degrees). Module docs state the settled
+   convention; the single `/ 1e7` stays.
+3. Two crash paths on bad input become typed errors (CLAUDE.md §5):
+   `speed_kmh.len() != samples.len()` → `LapDistanceErrorKind::LengthMismatch`;
+   any `GateCrossing.sample_index >= samples.len()` →
+   `LapDistanceErrorKind::IndexOutOfBounds`. `compute` returns `Result`.
+4. `snap_to_nearest_fix`'s parameters are named for their actual scale
+   (`lat_e7`/`lon_e7`), not `_deg`.
+5. Doc-only, in `track_artifact/model.rs`: the wire DTOs' `*_deg` fields
+   carry ×1e7 values (SPEC §16.3, unchanged from idl0) — say so, since the
+   name actively misleads (it misled this plan's author in Step 3).
+6. `renumber.rs` documents that the detector emits **per-visit** lap
+   numbering and this module assigns session-wide numbers — which
+   independently confirms R14 item 2's choice to join `laps.track_id` by
+   timestamp containment rather than `visit.laps[*].lap_number`.
+
+**For Isaac (non-blocking):** idl0's lap-distance normalisation was
+running with this bug; if lap-distance overlays ever looked wrong in
+idl0-app, this is a candidate cause. The Rust port will not reproduce it.
+
+**Cost if wrong:** Low. (1) is the only substantive call and the Dart
+code's own doc comments ("in metres", "km/h") state the intent the
+arithmetic violates; every constant and threshold in the file only makes
+sense in real metres. (3)–(5) are hardening and documentation.
