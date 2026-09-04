@@ -1635,3 +1635,28 @@ text or lane-internal.
 dispatch the writer for briefs 15/16 → Task 14 (spec-first) before 13 →
 Tasks 10–16 → L3 lands (pre-merge `main` into the idl1-app L3 branch
 first, as R19 did for L1) → L2.
+
+---
+
+## 2026-09-04 — R26: harness tuned for token efficiency
+
+- Agent defs (`~/.claude/agents/`): `adjudicator` fable/xhigh → **opus/high**
+  (its pre-reads were only cheap because every dispatch overrode the model);
+  `implementer`/`reviewer` high → **medium**; both prompts rewritten to
+  carry the standing rules (worktree/HEAD check, targeted tests, no shared
+  checkout, no `docs/`, no push, single-line commits) so briefs drop their
+  preamble; stale "everything else is Dart" and "run the full test command"
+  lines removed; all four return the report lines only — **no separate
+  message to the lead** (halves the duplicate notifications).
+- `CLAUDE.md` gains §8 Compute rules (R13 in six lines).
+- `.claude/settings.json` + `.claude/hooks/deny-heavy-cargo.sh`: PreToolUse
+  hook on Bash|PowerShell denying workspace-wide cargo test, `cargo fmt`,
+  `tarpaulin`, `doc`, `-j`/`--jobs`, and git push. Matches are anchored to
+  the start of a command segment so prose mentions (commit messages,
+  heredocs) pass. 13 cases tested from a file; proven live (it denied the
+  lead's own probe and, once, this very ledger commit before anchoring).
+- Lead runs at medium effort with thinking on; analysis lives in the Opus
+  pre-reads.
+
+**Cost if wrong:** none — every change is reversible config; the hook
+denies only commands the rules already forbade.
