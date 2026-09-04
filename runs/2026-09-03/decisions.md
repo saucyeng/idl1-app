@@ -1458,3 +1458,20 @@ pass `source_kind = "synthesized"` — `Channel::from_f64_with_times`
 channels from `data.parquet` by that exact value (`parquet.rs:253,271`).
 Omitting it would leak derived math channels into `data.parquet` (C1
 §4.1). Caught by the brief-writer while verifying citations.
+
+---
+
+## 2026-09-04 — Tracked: L3 Task 3 landed (`38fce89` Step 0, `58c3ef9`); one ruling
+
+Math-cell grammar per L3-R5/R6 (hand-written scanners, no `regex`),
+`parse_math_cell_body(cell_id, body)`, `ConstLine` in `mod.rs`,
+`DuplicateDefinition` only. 38/38 on `workbook::v3`. Review pending.
+
+**Ruling:** `const` lines accept an optional leading `-` on the number
+(the implementer had excluded it because the tokenizer emits unary minus
+separately). Front matter's unit-suffix regex allows `-?`; a document
+where `constants:` accepts `-1.5` but `const offset = -1.5` is an error is
+a trap. Unless C2 §3.1's grammar literally forbids a sign (reviewer
+checks), the rejection is an Important finding → Task 4's Step 0.
+
+**Cost if wrong:** negligible — one token-pattern match and a test.
