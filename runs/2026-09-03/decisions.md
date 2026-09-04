@@ -2019,3 +2019,37 @@ Applies to the `histogram2d` pair on the same terms.
 matter and exact legend/pixel identity does, the reversal is to thread
 `width`/`height` into the meta functions — the arguments already exist at
 the IPC boundary, so it is a core-only change of one signature each.
+
+## 2026-09-04 — R39: `gps_channel_values` stops at a channel's span too
+
+Task 12 reviewed CLEAN. Its one raised item is a real latent hazard in
+landed code, correctly left alone as out of scope: `gps_channel_values`
+(`handle.rs:500-523`) reaches `nearest_at_t_us` through the still-clamping
+`nearest_by_t_us`, and its own pre-existing test
+(`gps_channel_values_clamps_to_nearest_past_channel_span`) *asserts* that
+a fix time past a channel's recorded span clamps to that channel's last
+sample.
+
+That is the same failure R31 was written to prevent, one layer down. The
+visible symptom: a GPS trace coloured by a channel that stopped early —
+an HR strap that drops at minute 40 — keeps painting the frozen last
+value along every remaining metre of track, indistinguishable from real
+data. The honest rendering is for the trace to go neutral past that
+point.
+
+Ruling: **extend R31's rule to `gps_channel_values`** — a fix time
+outside the target channel's recorded `[first, last]` yields no value
+(the polyline segment is uncoloured), nearest-sample unchanged inside.
+`nearest_at_t_us` itself keeps clamping and stays the shared primitive;
+the span check lives at the call site, as it already does in
+`cursor_readout`. The existing test is inverted to assert absence and
+renamed, deliberately — this is a behaviour change to landed code, made
+with eyes open, not a bug fix.
+
+Dispatched as its own small task before the L3 merge gate, not folded
+into Task 12 (whose scope L3-R35 fixed at "no v2 behaviour moves or
+changes").
+
+**Cost if wrong:** a map trace that used to be fully coloured now has an
+uncoloured tail. Visible and instantly reversible — unlike the current
+behaviour, whose wrongness is invisible.
