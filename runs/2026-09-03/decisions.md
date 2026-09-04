@@ -944,3 +944,119 @@ idl0-app, this is a candidate cause. The Rust port will not reproduce it.
 code's own doc comments ("in metres", "km/h") state the intent the
 arithmetic violates; every constant and threshold in the file only makes
 sense in real metres. (3)–(5) are hardening and documentation.
+
+---
+
+## 2026-09-03 — R18: L1 Task 15 pre-dispatch — import pipeline belongs in core; re-import semantics
+
+The plan puts the whole import pipeline (blob write → parse → synthesis →
+`data.parquet` → `session.json` → catalog rebuild) inside the CLI's
+`cmd_import`, with a comment that L5 "reuses this code as a library" —
+but `cli/src/main.rs` is a binary, not a library, and C3 §2 already
+carries seven `import_*` error kinds for L5's `import` command. The plan
+also calls the write-once `write_session_parquet` unconditionally, so
+**re-importing the same file fails** with `RenameConflict` (R16's table:
+`parquet.rs:324` passes `None` by design; the *caller* must decide).
+
+**Rulings:**
+1. **Core owns the pipeline.** New module `store::import` with
+   `pub fn import_idl0(data_root, bytes) -> Result<ImportReport, ImportError>`
+   (typed error, kinds mirroring C3 §2's `import_*` set where they apply)
+   doing: blob write → parse → `synthesize_base_channels` → import plan
+   (below) → `data.parquet` → `session.json` if absent. It does **not**
+   touch the catalog — the caller decides how to refresh it (the CLI
+   rebuilds; L5 will do the same until incremental indexing exists).
+   `cmd_import` becomes a thin printer over it.
+2. **Import plan** — `pub fn plan_import(existing: Option<&SessionParquetMetadata>,
+   new_blob_sha256, importer_version, seam_correction_version) -> ImportPlan`,
+   pure, unit-tested for all four arms:
+   - no `data.parquet` → `Write`;
+   - same blob, same `importer_version` **and** `seam_correction_version`
+     → `Skip` (idempotent re-import — C4 §3's stated intent);
+   - same blob, either version differs → `Regenerate` (delete
+     `data.parquet`, rewrite — C1 §4.3's regeneration rule; the guard in
+     `parquet.rs:324` is exactly why the delete is explicit);
+   - **different blob, same `session_id`** → `Collision { existing_blob }`
+     → `ImportError`, refusing to overwrite. Real for `.idl0`: a truncated
+     download and the full file share the device UUID (C4 §3: `.idl0`
+     ids never extend). The message names both hashes and says to remove
+     `sessions/<id>/` to re-import. L5 may later offer "replace"; the
+     CLI does not.
+3. **Metadata reader made public.** `store::parquet` gains
+   `pub fn read_session_metadata(path) -> Result<SessionParquetMetadata, ParquetStoreError>`
+   (a `pub` struct with C1 §4.3's nine keys), factored from the key parsing
+   `read_session_parquet` already does at `parquet.rs:~360-380`.
+   `catalog.rs`'s `pub(crate)` reader stays as is with a `// TODO(idl0):`
+   to delegate — no churn in a file the R16 fix-up just touched.
+4. **`importer_version` is a core constant**, `parse::IDL0_IMPORTER_VERSION
+   = "0.1.0"`, documented per C1 §4.3 (bump when parsing/timing output
+   changes). Not a CLI literal — L2's importers and L5 must use the same
+   value the parquet writer stamps.
+5. `cmd_sessions`: no `expect()` on SQL — map to stderr + `FAILURE`
+   (CLAUDE.md §5; a corrupt catalog is data, not a bug). `cmd_prune`
+   stays age-only as the plan documents.
+6. Tests: `plan_import` × 4 in core; one end-to-end `import_idl0` test
+   (import twice → second `Skip`) **if** a synthetic `.idl0`-bytes helper
+   already exists in `core/src/parse/` tests; otherwise that path is
+   exercised in Task 16 with the real file. CLI crate: existing tests only,
+   as the plan says.
+
+**Cost if wrong:** Low–Medium. (1) is a layering call the design doc
+already makes ("Rust = numbers"; L5's commands are thin) — the cost of
+*not* doing it is L5 re-implementing import. (2)'s `Collision` arm is the
+one judgment call: refusing is the conservative choice and the message
+tells the operator the one-step remedy.
+
+---
+
+## 2026-09-03 — R19: L1 Task 16 pre-dispatch — the real file's location, the ODR estimate, the merge gate
+
+1. **The real `.idl0` was never copied into the idl-rs worktree.** It exists
+   only at the idl1-app repo root (`idl1-app/d365a19ae7ef2dc2d087a5887371281f.idl0`
+   + `.idl0w`, gitignored per Task 1). The plan's `CARGO_MANIFEST_DIR/..`
+   path would resolve to nothing and the test would print "skipping" —
+   silently defeating C1 §8 item 8. **Ruling:** the integration test reads
+   the path from env var `IDL_RS_REAL_SESSION_IDL0` (absolute), skipping
+   with a notice that names the variable when unset; no second copy of
+   real session data is made anywhere. Task 16 runs it with the variable
+   pointing at the idl1-app root file.
+2. **"Corrected ODR" is measured from what §3.3 actually produces** — the
+   corrected `t_us`: `(n − 1) / ((t_us.last − t_us.first) / 1e6)` over
+   imu0 — with `nominal_rate_hz` printed alongside for reference, rather
+   than trusting that Task 6 rewrote `nominal_rate_hz` (the plan asserts
+   it; the test should not depend on it).
+3. **The independent estimate counts only IMU samples inside the GPS
+   window**: IMU samples whose `t_us` lies within the first–last GPS fix's
+   `t_us`, divided by the GPS wall-clock span (`GPS_EpochMs` last − first).
+   IMU typically records before the first fix and after the last; the
+   plan's whole-file count would bias the estimate low by exactly that
+   margin. 5 % tolerance stays.
+4. **Merge-gate test run per R13:** `cargo test -p idl-rs -p idl-rs-cli --
+   --test-threads=4` — **not** `--workspace` (that would build
+   `idl-rs-tauri` and its Tauri dependency graph in this worktree for no
+   reason). If either known flaky test (`watcher::…never_fires_callback`,
+   `store::atomic::…outlasts_the_retry_window`) fails, rerun **that test
+   alone by name once**; never the suite.
+5. **CLI smoke with the real file**, recorded in the report: `import` to a
+   temp `--data-dir` twice (second run must report the idempotent skip),
+   then `sessions`, then `verify` (expect zero `Error` findings), then
+   `prune` dry-run. Output pasted into the plan's Open-questions item 17
+   alongside the ODR numbers.
+6. **CHANGELOG text is written to what landed**, not the plan's draft:
+   include the unit-corrected lap-distance port (R17), the catalog swap
+   fix (R16), the `verify` checks actually implemented (#1–5, #8, #10;
+   #6/#7/#9 deferred), import idempotency/collision semantics (R18), and
+   the two contract amendments (C4 §1 settings keys, C4 §2 `profiles/`).
+7. **Landing plan (lead, after Task 16 is CLEAN):** idl-rs `wave1-l1-store`
+   → `main` as a merge commit (main carries L4's 12 commits; `Cargo.lock`
+   will conflict — resolve by taking both sides' additions and letting
+   one `cargo build -p idl-rs` regenerate, single build, jobs capped);
+   idl1-app `wave1-l1-store` → `main` (two SPEC commits + Task 16's
+   CHANGELOG/TASKS), then bump the submodule pointer. The stray untracked
+   `nul` in the idl1-app L1 worktree is a Windows shell artifact — removed
+   at merge, never committed. Both L1 worktrees are then retired.
+   L2/L3 worktrees are created from the merged `main` and inherit the
+   shared target-dir; **their first build seeds it — run one, not both**.
+
+**Cost if wrong:** Low. (1)–(3) make the validation actually run and
+measure the right quantity; (4) is R13; (7) is mechanical and reversible.
