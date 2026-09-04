@@ -1346,3 +1346,23 @@ ruling, no change; (G3.6) Task 3 collects `ConstLine`s and raises only
 `DuplicateDefinition`; Task 4's `merge_constants` is the single
 `DuplicateConstant`/`ReservedName` enforcement point; `ConstLine` lives in
 `workbook/v3/mod.rs`.
+
+---
+
+## 2026-09-04 — Tracked: L3 Task 1 landed (`e018db9`); two C2 gaps for the amendment batch
+
+`pulldown-cmark 0.13.4`, `serde_yaml_ng 0.10.0` (upstream `serde_yaml` is
+versioned `0.9.34+deprecated`), `uuid` for cell-id bytes (R20). 14/14 on
+`workbook::v3`. Review pending.
+
+Two contract gaps the implementer resolved provisionally, both tracked
+for the same C2/C3 amendment batch as L3-R4 (before L5's workbook-command
+task): C2 §3.5.A has **no kind** for (a) front-matter YAML that does not
+deserialize at all — collapsed into `MissingFrontMatterId` for now; (b) a
+malformed `id=` value on a fence — treated as absent (fresh id generated)
+for now. Candidate kinds: `InvalidFrontMatter`, `InvalidCellId`. **Owner:
+lead**, with L3-R4.
+
+**Cost if wrong:** Low — both interim behaviours are documented in doc
+comments and lose no content; (b) can lose a *typo'd* id on save, which
+is why it gets a real kind later.
