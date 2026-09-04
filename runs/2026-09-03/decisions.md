@@ -1405,3 +1405,16 @@ L3-R16…L3-R27, 1 Isaac question). Not restated here. Lead decisions:
 **Cost if wrong:** Low — every ruling is inside the lane or an additive
 contract amendment; the two product questions (Q1 DSP rate, Q2 session
 name) are parked on documented defaults.
+
+---
+
+## 2026-09-04 — Tracked: L3 Task 2 landed (`0215d59` Step 0, `abe6a75`); review pending
+
+Seven `WorkbookErrorKind`s with one constructor each (C2 §3.5.A templates
+verbatim), `RESERVED_NAMES: [&str; 15]` (compile-time-enforced count),
+callers in `mod.rs`/`cell.rs` rewired to constructors. 23/23 on
+`workbook::v3`. Implementer left `front_matter.rs`'s hand-built
+`MissingFrontMatterId` message alone (not in the brief's file list) —
+reviewer judges against L3-R1; a Step-0 item for Task 3 if flagged.
+Contract-delta proposal (R21 batch) being drafted by a Sonnet agent for
+the lead to apply.
