@@ -1451,3 +1451,10 @@ Task 2's constructor set grows to nine.
 **Cost if wrong:** Low — additive contract text, no shipped consumer;
 (1) and (2) are each one field's shape and reversible before L5 writes
 against them.
+
+*Task 5 brief addendum (approved):* `store_math_with_times` (L3-R11) must
+pass `source_kind = "synthesized"` — `Channel::from_f64_with_times`
+(`session/mod.rs:233`) takes it explicitly, and `store::parquet` excludes
+channels from `data.parquet` by that exact value (`parquet.rs:253,271`).
+Omitting it would leak derived math channels into `data.parquet` (C1
+§4.1). Caught by the brief-writer while verifying citations.
