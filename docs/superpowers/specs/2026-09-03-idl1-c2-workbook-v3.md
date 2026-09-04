@@ -36,7 +36,7 @@ segment       ::= prose_span | cell
 | `units` | `"si"` \| `"imperial"` | no (default `"si"`) | Workbook-level unit-system *preference*. Consumed only by the editor UI (L6) when it suggests an axis label / number format from a channel's C1 column `unit` metadata (e.g. defaulting a new mark's `y.label`). It has **no effect on parsing, evaluation, or the `plotForm` grammar** — no v3 construct performs unit conversion. This is a deliberate narrowing from idl0, where `MathQuantity.defaultUnit` picked a per-channel display unit (§3.4 records the same table for L6 to reuse); v3 has no per-math-definition unit field to apply it to (§3.1). |
 | `version` | integer | no (default `3`) | Fixed at `3` for this contract; **omitting the key defaults to `3`**, mirroring idl0's own rule ("Omitting `workbook_version` defaults to 1, the current max" — `docs/legacy/idl0-workbook_format.md` §3). A parser encountering an explicit `version` ≠ `3` refuses the file (`UnsupportedWorkbookVersionException`) rather than guessing at compatibility; only *absence* defaults, a wrong value never does. |
 
-No other top-level front-matter keys are defined by this contract. §6 defines one **transient, migration-only** key (`_migrate_charts`) that a v3 parser must tolerate (round-trip it unmodified) but never itself produces except via `migrate-workbook`.
+No other top-level front-matter keys are defined by this contract. §6 defines two **transient, migration-only** keys (`_migrate_charts`, `_migrate_math` — *the latter added post-sign, 2026-09-04, lead ruling R25, wave-1 L3*) that a v3 parser must tolerate (round-trip them unmodified) but never itself produces except via `migrate-workbook`.
 
 ---
 
@@ -136,13 +136,27 @@ Important finding 3).*
 Design §5's worked example is illustrative shorthand — its own `id: 9f3c…`
 is visibly elided — not literal v3 syntax. Restated here so it
 demonstrably parses under §§2–5 exactly as written (checklist item (a)),
-with every departure from the design doc's prose form named and justified:
+with every departure from the design doc's prose form named and justified.
+
+**`g` removed from the example's `constants`, amended post-sign
+(2026-09-04, lead ruling R37).** The design doc's prose form declared
+`g: 9.80665` in front matter. That cannot parse: `g` is one of the four
+universal math constants in `RESERVED_NAMES` (§3.5.A, extended by R20),
+so `merge_constants` refuses it as a `ReservedName` — which made this
+subsection's own claim ("demonstrably parses under §§2-5 exactly as
+written") false, and left `workbook::v3::tests::
+parse_workbook_c2_5_worked_example_parses_id_version_and_both_cells`
+failing from the moment Task 4 landed the check. The reserved-name rule
+is the correct half and stands: `[g]` must always mean standard gravity.
+The declaration was redundant anyway: `g` resolves in any expression
+without being declared, so dropping it from `constants` costs the
+example nothing.
 
 ```
 ---
 id: 9f3c1e2d-4b6a-4f1c-9c3d-2a7e8f9b0c1d
 name: Fork tuning
-constants: { g: 9.80665, rider_mass_kg: 82 }
+constants: { rider_mass_kg: 82 }
 ---
 # Fork tuning — Whistler, 2026-08-30
 
@@ -207,7 +221,7 @@ def_line      ::= /[ \t]*/ identifier /[ \t]*/ "=" /[ \t]*/ expression trailing_
 identifier    ::= /[A-Za-z_][A-Za-z0-9_]*/
 trailing_comment ::= /[ \t]+#[^\n]*/
 expression    ::= (* crate::math::parse::parse — see §3.2 *)
-number        ::= (* crate::math::token's Number literal — int/float, optional exponent *)
+number        ::= "-"? (* crate::math::token's Number literal — int/float, optional exponent; the optional leading minus was added post-sign (2026-09-04, lead ruling R24): front matter's `"<number> <unit>"` form already accepted `-?`, and a `const offset = -1.5` line being an error while `constants: {offset: -1.5}` is not was an asymmetry with no expression-level escape hatch. Tokenizer shape `[Minus, Number, Eof]`, value negated. *)
 ```
 
 **`identifier` is new and load-bearing.** idl0's `MathChannel.name` was free
@@ -279,7 +293,7 @@ spaced/free-text name is therefore only expressible in YAML, not via a
 lines are meant for quick scratch values an agent types inline.
 
 **Unit-suffix syntax for front-matter constants** (referenced from the
-outline, §1): a YAML value is either a bare number (`g: 9.80665`, unitless)
+outline, §1): a YAML value is either a bare number (`sag_target: 0.3`, unitless)
 or a string `"<number> <unit>"` matched by
 `/^\s*(-?\d+(\.\d+)?([eE][+-]?\d+)?)\s+(\S.*)\s*$/`; the numeric group is
 the usable scalar, the unit-string group is **display metadata only** — it
@@ -476,9 +490,12 @@ expression):
 | `DuplicateDefinition` | Same identifier defined twice (any `math` cell, any line) | `"'<name>' is defined more than once"` |
 | `DuplicateConstant` | Same constant name in front matter and/or two `const` lines | `"Constant '<name>' is declared more than once"` |
 | `InvalidIdentifier` | A `def_line`/`const_line` name doesn't match `identifier` (§3.1) | `"'<name>' is not a valid definition name — use letters, digits, underscore, and don't start with a digit"` |
-| `ReservedName` | A definition or constant is named `const`, one of the four universal constants (`pi`/`tau`/`e`/`g`), or a host-var name (`Plot`/`d3`/`Inputs`/`html`/`laps`/`session`/`constants`/`channel`) | `"'<name>' is reserved and can't be used as a definition or constant name"` |
-| `MissingFrontMatterId` | Front matter lacks a well-formed UUIDv4 `id` | `"Workbook front matter is missing a valid 'id'"` |
+| `ReservedName` | A definition or constant is named `const`, one of the four universal constants (`pi`/`tau`/`e`/`g`), a host-var name (`Plot`/`d3`/`Inputs`/`html`/`laps`/`session`/`constants`/`channel`), or — *added post-sign 2026-09-04, lead ruling R20 (`runs/2026-09-03/decisions.md`)* — one of the two engine-synthesized channel names (`Time`/`Distance`): a definition named `Time` would otherwise shadow the session's time axis document-wide, silently, which C1's "time is recorded, not assumed" exists to prevent | `"'<name>' is reserved and can't be used as a definition or constant name"` |
+| `InvalidFrontMatter` | *Added post-sign (2026-09-04, lead ruling R21)* — the front-matter YAML block itself fails to parse (a scanning/mapping error before any key, including `id`, can be read) | `"Workbook front matter is not valid YAML: <parser error>"` |
+| `MissingFrontMatterId` | Front matter **parses as valid YAML** but lacks a well-formed UUIDv4 `id` (key absent, empty, or not a UUIDv4) — *narrowed post-sign (2026-09-04, lead ruling R21): a front-matter block that isn't valid YAML at all is `InvalidFrontMatter` above, not this kind. Withdraws Task 1's interim collapse of both failure modes into this one kind (`runs/2026-09-03/decisions.md`, "Tracked: L3 Task 1 landed")* | `"Workbook front matter is missing a valid 'id'"` |
 | `UnsupportedWorkbookVersion` | `version` ≠ `3` | `"Workbook version <n> is not supported (expected 3)"` |
+| `InvalidCellId` | *Added post-sign (2026-09-04, lead ruling R21)* — a fence's `id=` attribute is present but its value does not match `hex8` (§2.2, `/[0-9a-f]{8}/`: exactly 8 lowercase hex characters). Withdraws Task 1's interim behaviour of silently treating a malformed `id=` as absent and generating a fresh replacement id (`runs/2026-09-03/decisions.md`, "Tracked: L3 Task 1 landed") — a typo'd id can no longer be lost silently on save | `"Cell id '<id>' is not a valid identifier — must be 8 lowercase hex characters"` (`<id>` is the fence's literal, malformed `id=` value) |
+| `InvalidTableJson` | *Added post-sign (2026-09-04, lead ruling R21)* — a `table` cell's fence body does not deserialize as `TableModel` (§4) | `"Table cell JSON is malformed: <serde_json error text>"` |
 
 **B. Evaluation-time** (per definition, lazy — reuses
 `MathEvalErrorKind` verbatim from `rust/core/src/math/error.rs`: `Parse`,
@@ -764,20 +781,43 @@ TypeScript):
 **Stage 1 — CLI `idl-rs migrate-workbook` (Rust, pure JSON/text
 transforms):**
 
+*Invocation (added post-sign, 2026-09-04, lead ruling R25, wave-1 L3):*
+`idl-rs migrate-workbook <INPUT> --output <OUTPUT>` — a positional input
+path (the pattern every other subcommand uses) and a **required**
+`-o`/`--output` (unlike `export`/`math`, where stdout is a legal sink; a
+`.idl1wb` document on stdout would interleave with the migration report
+below). The report is written to stdout; a failure uses the CLI's
+existing error envelope on stderr.
+
 | v2 field | v3 destination | Rule |
 |---|---|---|
-| `workbook_id` | front matter `id` | Verbatim. |
+| `workbook_id` | front matter `id` | *Amended post-sign (2026-09-04, lead ruling R25, wave-1 L3).* Copied verbatim only when it parses as a UUID; otherwise a fresh `Uuid::new_v4()` is minted and the substitution is recorded in the migration report — a hand-authored v2 file's `workbook_id` is free text (`docs/legacy/idl0-workbook_format.md`), while C2 §1 requires a UUIDv4 `id`. |
 | `name` | front matter `name` | Verbatim. |
-| `workbook_version` (1 or 2) | front matter `version: 3` | A value the CLI does not recognise (> 2) refuses migration with an error, not a guess. |
+| `workbook_version` (absent, 1, or 2) | front matter `version: 3` | *Amended post-sign (2026-09-04, lead ruling R25, wave-1 L3).* Accepted range is `1..=workbook::SUPPORTED_WORKBOOK_VERSION` (the constant, `rust/core/src/workbook/model.rs`, currently `2`) — an absent `workbook_version` defaults to `1`, matching the landed v2 reader's own default, not the legacy doc's stale "current max is 1, a value > 1 throws." A value outside that range refuses migration with an error, not a guess. |
 | `created_at_ms`, `updated_at_ms` | *dropped* | No v3 front-matter equivalent; the filesystem mtime and (if the repo is versioned) commit history supersede an in-file timestamp. |
 | `math_channels[]` | **one** `math` cell containing every definition as a `name = expression` line | All v2 channels collapse into a single cell (per design §5's stated migration rule), positioned as the first cell in the body. A name not matching v3's `identifier` grammar (§3.1) is sanitised per the exact algorithm in §6.1, which also preserves the original name as a `# label:` comment (§3.1) and rewrites every `[OldName]` reference in the migrated expression set to the new identifier. The CLI prints one warning line per renamed definition (`"<old>" → "<new>"`) to its migration report. |
 | `math_channels[].quantity`, `.units`, `.decimal_places`, `.sample_rate_hz` | *dropped* | No v3 per-definition equivalent (§3.1 carries no display metadata — a raw/session channel's `unit` now lives in C1's Parquet column metadata instead; a math-derived channel has no engine-tracked unit, matching how the engine already ignored these fields, `channel_def.rs`). |
-| `math_channels[].color` | *dropped at this stage* | Not lost — carried forward as a **fallback** stroke source for Stage 2 (below) when a chart references the channel and has no `channelColors` override of its own. |
+| `math_channels[].id`, `.color` | front matter transient key `_migrate_math` | *Added post-sign (2026-09-04, lead ruling R25, wave-1 L3).* Written as `_migrate_math: { "<v2 math_channel id>": { "identifier": "<v3 name>", "color": "<v2 color, or null>" } }`, one entry per v2 `math_channels[]` definition, keyed by its v2 `id` (defaulting to `name` when absent — the legacy format's own convention, `docs/legacy/idl0-workbook_format.md`). `identifier` is the migrated v3 identifier a `ChartSlot.mathChannelIds` entry in `_migrate_charts` (below) resolves against in Stage 2; `color` is the same **fallback** stroke source Stage 2's `channelColors` table (below) already describes — neither previously had a defined destination. Deleted by the app in the same Stage-2 pass that deletes `_migrate_charts` (idempotence rule unchanged, below). |
 | `constants[]` | front matter `constants` map | `{name: value}`; `id` (defaulting to `name`) is dropped — v3 constants have no separate id, only a name (§1). A name colliding with a universal constant (`pi`/`tau`/`e`/`g`) is refused (`ReservedName`, §3.5) rather than silently shadowed. |
-| `worksheets[].blocks[].content.kind == "table"` (and legacy `worksheets[].tables[]` if present) | one `table` cell per `TableModel` | The JSON is already the v3 shape (§4) — copied verbatim into a fence. |
+| `worksheets[].blocks[].content.kind == "table"` | one `table` cell per `TableModel` | The JSON is already the v3 shape (§4) — copied verbatim into a fence. *Corrected post-sign (2026-09-04, lead ruling R25, wave-1 L3): struck "and legacy `worksheets[].tables[]` if present" — no such array exists; the only legacy flat array is `charts` (migrated by the row below), and a table's content lives only at `blocks[].content.table` (`docs/legacy/idl0-workbook_format.md`).* |
 | `worksheets[].charts[]` / `.blocks[].content.kind == "chart"` (`ChartSlot[]`) | staged for Stage 2 | Written into a **transient** front-matter key `_migrate_charts: [ <ChartSlot JSON>, … ]` (flattened across every worksheet, worksheet name/order dropped — see below) for the app to consume on first open. The CLI does not attempt Plot-code generation itself: `plotForm.generate` is TypeScript, and the CLI is Rust-only (this is the literal "CLI vs. app split" the outline asks for). |
 | `worksheets[].name`, `.xAxisMode`, `.kind` (`sessionSheet`'s pinned `gpsMap`/`lapTable`/`lapProgression`) | *dropped* | No v3 worksheet concept at all (a `.idl1wb` is one flat cell sequence); no v3 chart type covers `gpsMap`/`lapTable`/`lapProgression` (out of the `plotForm` grammar, §5.3) — those three chart slots are simply not carried into `_migrate_charts`. `xAxisMode` (`wheelDistance`/`gpsDistance`) has no v3 analogue either — `plotForm`'s `x` is always `"t"` (§5.1); an author wanting a distance-indexed x-axis writes custom `js` code by hand post-migration. |
 | `overlay_layouts[]` | *dropped* | D9 — no CLI or app handling, not even transiently. |
+
+**Migration report and refusal policy** *(added post-sign, 2026-09-04,
+lead ruling R25, wave-1 L3).* Beyond the one-line-per-rename warning
+already named above, the CLI's migration report additionally lists: every
+`mathChannelIds` entry across `_migrate_charts` that has no matching key
+in `_migrate_math` (an unresolved chart reference — the migration does not
+refuse for this, it tells the truth about what it could not carry); every
+dropped `WorksheetBlock` field (`id`, `placement`, `overlayTargetId`,
+`overlayOpacity`); and every table block whose `rowSource ==
+"lapSelection"`, migrated as an ordinary authored table with an explicit
+warning that its live N-lap comparison behaviour is not carried into v3.
+None of these three report categories ever refuses the migration —
+refusal is reserved for the rules already stated above (an unrecognised
+`workbook_version`, a migrated constant colliding with `pi`/`tau`/`e`/`g`);
+every other irregularity is reported and migrated through.
 
 ### 6.1 Identifier derivation for migrated definition names
 

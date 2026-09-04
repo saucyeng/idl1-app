@@ -69,3 +69,12 @@ loud. Every task touching shipped behaviour updates `CHANGELOG.md` and/or `TASKS
 - No AI attribution trailers in commits. Never push; Isaac pushes.
 - Lanes touch only their own crate/directory. Cross-lane needs are contract changes, through the lead.
 - After changing an `idl-rs-tauri` command signature, update `app/src/ipc/` and the C3 contract together.
+
+## 8. Compute rules (the dev machine is memory-bound — ruling R13)
+
+- One cargo process on the machine at a time; jobs are capped machine-wide (`~/.cargo/config.toml`), never override with `-j`.
+- Task cycles run only the targeted test filter the dispatch names; each run must report a non-zero `passed` count (a filter matching nothing is a failed gate, not a pass).
+- The full suite runs once per lane at its merge gate: `cargo test -p idl-rs -p idl-rs-cli -- --test-threads=4`. Never `--workspace`.
+- No reruns to hunt flakiness unless the lead asks; a known-flaky test is rerun alone by name, once.
+- A task that changes a `pub` signature in `core` adds `cargo check -p idl-rs-cli --tests`.
+- Never `cargo fmt`, `cargo tarpaulin`, or `cargo doc` inside a task. Readers (reviewers, adjudicators) never build.

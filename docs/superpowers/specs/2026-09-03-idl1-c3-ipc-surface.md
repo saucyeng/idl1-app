@@ -128,6 +128,15 @@ is applied uniformly, not case-by-case:
 - The four **cross-cutting kinds** (`not_found`, `invalid_argument`, `io`,
   `internal`) are unprefixed by design: they are not sourced from any one
   enum, so there is no domain to prefix with.
+- **`conflict`** — *added post-sign (2026-09-04, lead ruling R44).* A fifth
+  cross-cutting kind, raised when an optimistic concurrency check fails:
+  `store::atomic`'s `RenameConflict`, i.e. the file on disk is no longer the
+  version the caller based its edit on. It is deliberately not folded into
+  `invalid_argument`, which means "the caller made a programming error": a
+  conflict is neither the caller's fault nor a bug, it is a recoverable
+  condition the UI must present differently ("this file changed elsewhere —
+  reload?" rather than an error toast). `detail` carries `{ expected, found }`.
+  Raised by: Workbook (`save_workbook`).
 
 | `kind` | Source | Raised by (command group) |
 |---|---|---|
@@ -145,6 +154,12 @@ is applied uniformly, not case-by-case:
 | `import_gpx_unparseable_lat_lon` | `ImporterError::GpxUnparseableLatLon` | Import: `import_file` (`.gpx` source, a `<trkpt>`'s `lat`/`lon` isn't a parseable number) |
 | `import_csv_malformed` | `ImporterError::CsvMalformed` | Import: `import_file` (`.csv` source, missing/malformed header or no data rows) |
 | `import_not_utf8` | `ImporterError::NotUtf8` | Import: `import_file` (`.gpx`/`.csv` source, bytes aren't valid UTF-8 — never raised for `.fit`, which is binary) |
+| `workbook_missing_front_matter_id` | `WorkbookErrorKind::MissingFrontMatterId` | Workbook: `open_workbook`, `eval_workbook` (fatal — no `WorkbookDoc` is constructable without a valid `id`, C2 §3.5.A) |
+| `workbook_unsupported_version` | `WorkbookErrorKind::UnsupportedWorkbookVersion` | Workbook: `open_workbook`, `eval_workbook` (fatal — explicit `version` ≠ `3`, C2 §1) |
+| `workbook_invalid_front_matter` | `WorkbookErrorKind::InvalidFrontMatter` | Workbook: `open_workbook`, `eval_workbook` (fatal — the front-matter block is not valid YAML, C2 §3.5.A) |
+| `workbook_invalid_cell_id` | `WorkbookErrorKind::InvalidCellId` | Workbook: `open_workbook`, `eval_workbook` (fatal — a fence's `id=` value doesn't match `hex8`, C2 §2.2/§3.5.A) |
+| `workbook_invalid_table_json` | `WorkbookErrorKind::InvalidTableJson` | Workbook: `eval_workbook` — surfaced **per cell** in `CellOutput.error`, not as the command's own rejection (same per-cell rule as `math_*` above, C2 §3.5.A) |
+| `workbook_duplicate_cell_id`, `workbook_duplicate_definition`, `workbook_duplicate_constant`, `workbook_invalid_identifier`, `workbook_reserved_name` | `WorkbookErrorKind::{DuplicateCellId, DuplicateDefinition, DuplicateConstant, InvalidIdentifier, ReservedName}` | Workbook: `eval_workbook` — **per cell only**, in `CellOutput.errors`; never a command rejection (C2 §3.5.A, R7/R22) |
 | `math_parse` | `MathEvalErrorKind::Parse` | Workbook: `eval_workbook` — surfaced **per cell** in `CellOutput.error`, not as the command's own rejection (CLAUDE.md §5: "missing math channel reference → inline validation error, don't block other channels") |
 | `math_unknown_function` | `MathEvalErrorKind::UnknownFunction` | Workbook: `eval_workbook` (per cell) |
 | `math_unknown_channel` | `MathEvalErrorKind::UnknownChannel` | Workbook: `eval_workbook` (per cell) |
@@ -170,6 +185,22 @@ L2) is a new core error enum for the FIT/GPX/CSV importers, prefixed
 command group's name (§3.3), distinct from `parse_*` (`ParseError`,
 `.idl0`-only, unchanged). §2's original table had no rows for these variants
 because L2 hadn't been drafted when C3 was signed.
+
+**Added post-sign (2026-09-04, lead ruling R21, wave-1 L3).** The five
+`workbook_*` rows above are new: `WorkbookErrorKind`
+(`rust/core/src/workbook/v3/error.rs`, C2 §3.5.A) is workbook v3's
+parse-time/structural error enum, prefixed `workbook_*` per this section's
+own naming rule — matching the `open_workbook`/`eval_workbook` command
+names, distinct from `math_*` (`MathEvalErrorKind`, evaluation-time,
+unchanged). Only these five of C2 §3.5.A's ten structural kinds get a row
+here: `MissingFrontMatterId`, `UnsupportedWorkbookVersion`,
+`InvalidFrontMatter` and `InvalidCellId` are document-fatal (no
+`WorkbookDoc` at all); `InvalidTableJson` is per-cell but new this batch.
+The other five (`DuplicateCellId`, `DuplicateDefinition`,
+`DuplicateConstant`, `InvalidIdentifier`, `ReservedName`) have
+`IpcErrorKind` variants too (one row above) so a per-cell
+`CellOutput.errors` entry is always a real serializable kind; they are
+never a command-level rejection (R22).
 
 `VideoErrorKind` (`rust/core/src/video/mod.rs`) is **excluded** from this
 vocabulary: `core/src/video/` and `core/src/overlay/` are deleted on the
@@ -443,25 +474,74 @@ interface WorkbookHandle {
   cell_count: number;   // u32
 }
 ```
-Errors: `not_found`, `io`, `internal`.
+Errors: `not_found`, `io`, `internal`, `workbook_missing_front_matter_id`,
+`workbook_unsupported_version`, `workbook_invalid_front_matter`,
+`workbook_invalid_cell_id` — *added post-sign (2026-09-04, lead ruling
+R21)*: opening a document whose front matter or cell ids are malformed
+enough that no `WorkbookDoc` can be built now rejects with the specific
+`workbook_*` kind (§2) instead of failing some other, less informative way.
 
-**`eval_workbook(id: string)`**
+**`eval_workbook(id: string, session_id: string | null)`**
+*`session_id` added post-sign (2026-09-04, lead ruling R41).* `eval_cells`
+requires a channel lookup and a lap context; the original signature supplied
+neither, and C2 deliberately has no front-matter session binding — the active
+session is a UI selection, not a property of the file ("the workbook is a file;
+the app is a live viewer of it"). `null` means no session is bound: the command
+evaluates against an empty `SessionHandle` and `MathLapContext::empty()`, so
+`[Channel]` references surface as per-cell `math_unknown_channel` rather than
+the whole command failing. When a session IS bound, wave-1 lap context comes
+from that session's `session.json` `laps[]`.
 Return: `CellOutput[]`, one entry per cell, in document order.
 ```ts
 interface CellOutput {
   cell_id: string;                          // C2 fence-string id
-  kind: "math" | "table" | "js" | "prose";
-  value: unknown | null;                    // present when evaluation succeeded; shape depends on `kind`
-  error: IpcError | null;                    // present when this cell failed; other cells still evaluate
+  kind: "math" | "table" | "js";             // "prose" removed — added post-sign (2026-09-04, lead ruling R21): prose has no fence id (C2 §2.1) and never gets its own CellOutput entry; it travels as prose_before/prose_after (C2 §2.4) on the fenced cell it's attached to
+  value: unknown | null;                     // present when evaluation succeeded; shape depends on `kind` — see the `table` note below
+  defs: CellDefResult[];                     // added post-sign (2026-09-04, lead ruling R21) — math cells only: one entry per definition (C2 §5.1's "one JS host variable per math definition"), in def_line source order; empty for table/js cells
+  errors: IpcError[];                        // added post-sign (2026-09-04, lead ruling R22): plural — a cell may carry several structural problems (e.g. two duplicate definitions); empty on success; each kind is a structural (workbook_*) or evaluation (math_*) kind — see §2
 }
-```
-A per-cell failure (`math_*` kinds) never rejects the command — it appears
-in that cell's `error` field. The command itself only rejects for a
-condition that makes *no* cell evaluable: an unknown workbook id, or an I/O
-failure reading the file.
-Errors (command-level): `not_found`, `io`, `internal`.
 
-**`save_workbook(id: string, markdown: string)`**
+// Added post-sign (2026-09-04, lead ruling R21).
+interface CellDefResult {
+  name: string;
+  label: string | null;
+  value: HostChannelRef | null;   // added post-sign (2026-09-04, lead ruling R22): the light wire marker { length: number /* u32 */, has_t: boolean } — the full {length, t, v} HostChannel stays in-process (core); sample bytes cross via the binary command assigned to L5 in the host-channel byte-path note below §3.4
+  error: IpcError | null;      // math_* kind only — a structural problem on this definition (e.g. ReservedName) keeps it out of `defs` entirely and is reported, if anywhere, on the cell's own `error` above (R22)
+}
+interface HostChannelRef { length: number; has_t: boolean; }
+```
+A `table` cell's `value` on success is
+`{ model: TableModel, results: CellResult[][] }` (added post-sign,
+2026-09-04, lead ruling R21) — `model` is the parsed `TableModel` (§4) and
+`results` is `idl_rs::table::eval::evaluate_table`'s `Vec<Vec<CellResult>>`
+grid verbatim (`CellResult = { value: number | null, error: string | null
+}`), indexed `results[r][c]` exactly as C2 §4's `cells[r][c]`. This closes
+the gap where a successful table cell and a silently-skipped one
+serialized identically (`value: null` either way).
+
+A per-cell failure (`math_*` or `workbook_*` kind) never rejects the
+command — it appears in that cell's `errors` list, or in a specific
+definition's own `defs[i].error` for a per-definition evaluation problem.
+The command itself only rejects for a condition that makes *no* cell
+evaluable: an unknown workbook id, an I/O failure reading the file, or —
+added post-sign — a document-fatal structural problem (`workbook_missing_
+front_matter_id`, `workbook_unsupported_version`, `workbook_invalid_front_
+matter`, `workbook_invalid_cell_id`, §2) that means no `WorkbookDoc` exists
+to produce any `CellOutput` at all.
+Errors (command-level): `not_found`, `io`, `internal`,
+`workbook_missing_front_matter_id`, `workbook_unsupported_version`,
+`workbook_invalid_front_matter`, `workbook_invalid_cell_id`.
+
+**`save_workbook(id: string, markdown: string, based_on_hash: string | null)`**
+*`based_on_hash` added post-sign (2026-09-04, lead ruling R44).* C4 §4 steps
+3-4 mandate an optimistic concurrency check on `workbooks/*.idl1wb`, and
+`store::atomic::write_atomic(data_root, target, bytes, based_on_hash)` already
+implements exactly it — the original signature gave the backend no `H0` to pass.
+`null` means "creating a new workbook" (the target must not exist, `write_atomic`'s
+own `None` semantics); a non-null value is the hash the editor last read. Note
+`None` against an existing file *errors* rather than clobbering, so omitting the
+argument was never a silent-overwrite option — it would have made every save of
+an existing workbook fail. A `RenameConflict` maps to the `conflict` kind (§2).
 Return:
 ```ts
 interface SaveResult {
@@ -487,33 +567,72 @@ interface WorkbookEvent {
 ```
 Errors (on the initial `Promise` only): `not_found`, `io`, `internal`.
 
+**Host-channel byte path — open item, owner L5 (added post-sign,
+2026-09-04, lead ruling R21).** `CellDefResult.value` above and C2 §5.1's
+per-definition JS host variables both carry a `HostChannel`
+(`{length, t, v}`, `idl_rs::workbook::v3::to_host_channel`, L3): **full,
+undecimated** arrays — `t` is `t_us[i] as f64 / 1e6` over the source's
+recorded axis, and is **empty** when the source has no recorded axis (a
+scalar or table-column result, C1's "time is recorded, not assumed").
+Decimating a `HostChannel` to the current tile budget before it reaches
+the sandboxed iframe is the **host's** job (L5/L6, design §6) — it is not
+something `to_host_channel` does, and it is **not** represented in
+`CellOutput`'s JSON: `HostChannel`'s `t`/`v` arrays are exactly the heavy,
+per-sample data CLAUDE.md §2 requires to cross IPC as raw bytes, never
+JSON, so `CellDefResult.value`'s actual wire representation is the
+`HostChannelRef` marker (§3.4, R22), never the full `{length, t, v}`
+object serialized as JSON numbers. **This contract does not specify that
+byte layout.** It is
+assigned to L5's workbook-command task to design, following the
+`tauri::ipc::Response` pattern §3.5/§3.6 already establish for
+tiles/rasters (magic/version header, little-endian, self-describing
+lengths) — a new contract revision (§5) when L5 writes it, not invented
+here.
+
 ### 3.5 Tiles (L3)
 
-**`fetch_tile(session_id: string, channel: string, tier: number, tile_index: number)`**
+**`fetch_tile(session_id: string, channel: string, tier: number, tile_index: number, column_count: number)`**
+*`column_count` added post-sign (2026-09-04, lead ruling R43).* The per-column
+region exists so hover never needs IPC at the chart's own pixel width, and only
+the frontend knows that width; the original signature had no argument to carry
+it, which would have pinned the column region to a constant that can never match
+the chart. `column_count: u32`, validated `1..=4096` (`invalid_argument`
+outside). Request-only change — the binary layout is unchanged, its header
+already carries `column_count`.
 `tier`: `u32`, `0` = raw (bucket size 1), `k` = bucket size `TIER_BASE.pow(k)`
 (`TIER_BASE = 8`, `rust/core/src/chart_decimation.rs`). `tile_index`: `u32`.
 Return: raw bytes via `tauri::ipc::Response` (`Result<Response, IpcError>`),
 decoded frontend-side into the layout below.
 Errors: `not_found` (unknown `session_id` or `channel`), `invalid_argument`
 (`tier` outside the engine's configured range), `io`, `internal`.
+`MAX_TIER = 10` (`idl_rs::chart_decimation::MAX_TIER`, the largest tier
+`k` for which `TIER_BASE.pow(k)` fits `u32` — *added post-sign, 2026-09-04,
+lead ruling R25, wave-1 L3*) **is** "the engine's configured range" above:
+L5 rejects `tier > MAX_TIER` with `invalid_argument` before producing any
+bytes. The request stays `u32`; the header's `tier` field below stays
+`u16` — narrowing is safe under that bound (`MAX_TIER = 10` fits a `u16`
+with room to spare).
 
-**Binary layout.** Little-endian throughout. Two regions after a fixed
+**Binary layout.** Little-endian throughout. Three regions after a fixed
 32-byte header: a **sample region** (the existing bucket min/max pairs —
-`decimate_channel`'s output, made self-describing) and a **column region**
+`decimate_channel`'s output, made self-describing), a **column region**
 (coarser per-pixel-column `min, max, mean` stats, shipped so hover reads
 never need IPC — design §6, "Hover reads the per-pixel-column stats shipped
-with each tile").
+with each tile"), and a **column time region** (*added post-sign,
+2026-09-04, lead ruling R25, wave-1 L3* — see below; places each column on
+the session's real time axis, C1 §2/§3.1: "time is recorded, not
+assumed").
 
 *Header (32 bytes, fixed):*
 
 | Field | Type | Byte offset | Notes |
 |---|---|---|---|
 | `magic` | `[u8; 4]` | 0 | ASCII `"IDLT"` |
-| `version` | `u16` | 4 | Layout version, `1` for this contract |
+| `version` | `u16` | 4 | Layout version, `2` for this contract — *bumped post-sign, 2026-09-04, lead ruling R25, wave-1 L3, for the new column time region below.* Version 1 (index-space only, no column time region) was never shipped. |
 | `tier` | `u16` | 6 | Echoes the request |
 | `tile_index` | `u32` | 8 | Echoes the request |
 | `sample_count` | `u32` | 12 | Number of `(min, max)` bucket pairs that follow. Today `decimate_channel` always fills `TILE_SIZE_BUCKETS = 1024` (right-edge-padded with NaN); `sample_count` makes the tile self-describing so a shorter final tile or a future tile-size change never requires a layout bump. |
-| `column_count` | `u32` | 16 | Number of pixel columns in the stats table that follows. Independent of `sample_count` — chosen by the caller/L3 to match the rendered chart width (design §6 point budget), not tied to the bucket grid. |
+| `column_count` | `u32` | 16 | Number of pixel columns in the stats table that follows, and in the column time region below (same count for both). Independent of `sample_count` — chosen by the caller/L3 to match the rendered chart width (design §6 point budget), not tied to the bucket grid. |
 | `flags` | `u32` | 20 | Reserved, `0` in this contract — see open question 6.5 |
 | `reserved` | `[u8; 8]` | 24 | Zero-filled, reserved |
 
@@ -531,30 +650,97 @@ Header ends at byte offset **32**.
 - Column `j` (0-indexed, `0 <= j < column_count`): `min` at byte
   `(32 + sample_count*8) + j*12`, `max` at `+4`, `mean` at `+8`.
 
-*Total tile length:* `32 + sample_count*8 + column_count*12` bytes.
+*Column time region — offset formula (added post-sign, 2026-09-04, lead
+ruling R25, wave-1 L3):*
+- Start: `column_time_region_offset = 32 + sample_count*8 + column_count*12` (immediately after the column region).
+- Length: `column_time_region_len = column_count * 8` bytes (`i64` × 8 bytes per column).
+- Column `j` (0-indexed, `0 <= j < column_count`): `t_us` at byte
+  `(32 + sample_count*8 + column_count*12) + j*8`.
+- Value: the recorded `t_us` of the **first sample** in column `j`'s
+  bucket range — exact, no interpolation, no `nominal_rate_hz` (C1
+  §2/§3.1: "time is recorded, not assumed"). When that bucket range
+  contains a sample but every stat in the column region is `NaN` (the
+  sample's own value is `NaN`), the column still carries that sample's
+  real `t_us`. When the bucket range contains **no** sample at all (past
+  the end of the source data, or `column_count` overruns `sample_count`'s
+  coverage), the sentinel `i64::MIN` is written instead.
+
+*Total tile length:* `32 + sample_count*8 + column_count*12 + column_count*8`
+bytes (added post-sign, 2026-09-04, lead ruling R25, wave-1 L3 — was
+`32 + sample_count*8 + column_count*12`).
 
 **Worked example — tier 3, 512 samples, 256 columns:**
 ```
-header:              offset    0, length 32   → header occupies [0, 32)
-sample region:        offset   32, length 512*8    = 4096   → [32, 4128)
-column region:         offset 4128, length 256*12   = 3072   → [4128, 7200)
-total tile length:     32 + 4096 + 3072 = 7200 bytes
+header:                 offset    0, length 32     → header occupies [0, 32)
+sample region:          offset   32, length 512*8  = 4096   → [32, 4128)
+column region:          offset 4128, length 256*12 = 3072   → [4128, 7200)
+column time region:     offset 7200, length 256*8  = 2048   → [7200, 9248)
+total tile length:      32 + 4096 + 3072 + 2048 = 9248 bytes
 ```
-Check: `4128 = 32 + 4096` ✓. `7200 = 4128 + 3072` ✓. `7200 = 32 + 4096 + 3072` ✓.
+Check: `4128 = 32 + 4096` ✓. `7200 = 4128 + 3072` ✓. `9248 = 7200 + 2048` ✓.
+`9248 = 32 + 4096 + 3072 + 2048` ✓.
+
+*Deferred, not part of this contract (added post-sign, 2026-09-04, lead
+ruling R25, wave-1 L3):* design §4's L3 row lists a **tier cache**
+alongside these tile endpoints. No such cache exists yet — recorded here
+so this section is not read as claiming one.
 
 ### 3.6 Rasters (L3)
 
-**`fetch_raster(session_id: string, channel: string, kind: "spectrogram" | "histogram2d", width: number, height: number, params: Record<string, number>)`**
-`width`/`height`: `u16`, output pixel dimensions. `params`: kind-specific
-numeric parameters (e.g. `window_size`/`hop_size` for `"spectrogram"`,
-`x_channel`/`y_channel` are not numeric so those stay as separate string
-args if `kind` needs a second channel — flagged provisional, open question
-6.4; the shape here is the interim, typed-but-generic contract).
+**`fetch_raster(session_id: string, channel: string, kind: "spectrogram" | "histogram2d", width: number, height: number, params: SpectrogramParams | Histogram2dParams)`**
+`width`/`height`: `u16`, output pixel dimensions. `params` is one of the
+two typed shapes below, matching `kind` — *replaces the interim
+`Record<string, number>` bag, added post-sign 2026-09-04, lead ruling R25,
+wave-1 L3, closes open question 6.4*:
+```ts
+interface SpectrogramParams {
+  window_size: number;   // nperseg, samples
+  hop_size: number;      // samples; hop = nperseg − noverlap (idl_rs::fft's own noverlap parameter)
+  window: "rectangular" | "hann" | "hamming";   // idl_rs::fft::FftWindow, snake_case
+  detrend: "none" | "mean" | "linear";          // idl_rs::fft::Detrend, snake_case
+  scaling: "magnitude" | "density";             // idl_rs::fft::Scaling, snake_case
+}
+interface Histogram2dParams {
+  y_channel: string;   // the second channel; `channel` above is the x channel
+  x_bins: number;       // u32 — must equal `width` in wave 1, see below
+  y_bins: number;       // u32 — must equal `height` in wave 1, see below
+}
+```
+*`x_bins`/`y_bins` constrained post-sign (2026-09-04, lead ruling R42).* The
+landed encoder (`core/src/raster.rs`, `build_histogram2d_raster_bytes`) builds
+exactly one bin per pixel — unlike the spectrogram path, it does not rebin,
+because rebinning counts would misrepresent them. So the two argument pairs
+describe one grid: `fetch_raster`/`fetch_raster_meta` reject `x_bins != width ||
+y_bins != height` with `invalid_argument` and `detail { x_bins, y_bins, width,
+height }`, rather than silently preferring one. The fields are kept rather than
+removed because bins < pixels (an upsampled display of a coarse histogram) is
+the intended future extension, and this reserves the space for it.
 Return: raw bytes via `tauri::ipc::Response`.
 Errors: `not_found`, `invalid_argument` (bad `width`/`height`/`kind`/`params`), `io`, `internal`.
 
+**`fetch_raster_meta(session_id: string, channel: string, kind: "spectrogram" | "histogram2d", width: number, height: number, params: SpectrogramParams | Histogram2dParams)`**
+*Added post-sign (2026-09-04, lead ruling R25, wave-1 L3).* Same arguments
+as `fetch_raster` above — a sibling JSON command, not a variant of the
+binary path — so the chart can draw axes and a legend without decoding
+pixel bytes to find their extents.
+Return:
+```ts
+interface RasterMeta {
+  x_domain: [number, number];
+  y_domain: [number, number];
+  x_label: string;
+  y_label: string;
+  scale: { vmin: number; vmax: number; kind: "linear" };
+  transparent_zero: boolean;
+}
+```
+Errors: `not_found`, `invalid_argument`, `io`, `internal` (same conditions
+as `fetch_raster` above).
+
 **Binary layout.** Little-endian throughout, header then row-major top-down
-pixel data.
+pixel data. Unchanged by this batch — pixel layout stays at header
+`version = 1`; axis extents and the colour scale travel via
+`fetch_raster_meta` above, not a header revision.
 
 | Field | Type | Byte offset | Notes |
 |---|---|---|---|
@@ -581,9 +767,25 @@ Return:
 ```ts
 interface CursorReadout {
   t_us: number;                          // echoes the request
-  values: Record<string, number | null>; // channel_id → interpolated/nearest value, null if the channel has no sample near t_us
+  values: Record<string, number | null>; // channel_id → nearest recorded sample by t_us, null outside its recorded span — see below
 }
 ```
+*Amended post-sign (2026-09-04, lead ruling R25, wave-1 L3, closes open
+question Q4).* Each channel's value is the sample **nearest** `t_us` on
+that channel's own recorded `t_us` axis — the engine's existing
+nearest-sample rule (`idl_rs::session::handle`) — **but only while `t_us`
+lies inside that channel's recorded span.** *Amended again post-sign
+(2026-09-04, ruling R31, Isaac): the clamp is removed.* When `t_us <
+first` or `t_us > last` for a channel, its value is `null`: a channel
+that stops (an HR strap that drops out at minute 40) must not read as a
+live value for the rest of the session — "if the data stops, it stops".
+Inside the span the nearest rule is unchanged. A tie (the cursor sits exactly between two samples) resolves to
+the **earlier** sample. `null` therefore in exactly three cases: `t_us`
+outside the recorded span (above), the channel has no samples at all, or
+the channel has no recorded time axis (an empty `t_us` — a scalar or
+table-column result, L3-R12/L3-R21). This replaces the original "no
+sample **near** `t_us`" wording, which implied an unspecified proximity
+bound; there is none.
 Errors: `not_found` (unknown `session_id`), `invalid_argument` (a channel in
 `channels` doesn't exist on this session — reported via `detail.channel`,
 the rest of the readout is not partially returned; CLAUDE.md's
@@ -821,14 +1023,13 @@ engine.
    `SessionDetail`. None of round 2's three fixes are new drops — they
    restore/correct fields round 1 mis-typed or missed; the drop count above
    (2 outright, 1 consolidation) is unchanged by round 2.
-4. **`fetch_raster`'s `params` bag is generic (`Record<string, number>`)
-   because the raster kinds' actual parameters aren't fixed anywhere yet**
-   (design §4 says only "core computes STFT or 2-D histogram"). A
-   `"histogram2d"` raster also plausibly needs a second channel id, which
-   isn't a number and doesn't fit `params` as typed here. Assigned: L3 —
-   pin `SpectrogramParams { window_size: number; hop_size: number }` and
-   `Histogram2dParams { y_channel: string; x_bins: number; y_bins: number }`
-   (or similar) before implementation, and revise §3.6 in the same change.
+4. **Resolved 2026-09-04 (lead ruling R25, wave-1 L3, contract batch 3).**
+   `fetch_raster`'s `params` is now the two typed shapes `SpectrogramParams`
+   and `Histogram2dParams` (§3.6), replacing `Record<string, number>` and
+   the ad hoc separate-string-arg workaround this item flagged for a second
+   channel id. §3.6 also gains a `fetch_raster_meta` sibling command
+   carrying axis extents and the colour-scale range, so the raster's pixel
+   bytes don't need decoding just to draw axes or a legend.
 5. **Tile `flags: u32` (§3.5 header) has no defined bits.** Reserved and
    zero in this contract. Assigned: lead/L3 — define bit 0 onward if/when a
    need appears (e.g. "this tile is provisional, a materialised channel is
