@@ -1134,3 +1134,24 @@ the Task 15 reviewer checks it as an Important finding if violated.
 
 **Cost if wrong:** Low — the rule costs seconds per task; the ordering
 ruling only affects what is left behind on a *failed* import.
+
+---
+
+## 2026-09-03 — Tracked: Task 15 review NEEDS_FIXES (1 Important, 2 Minor) → folded into Task 16 Step 0
+
+The Important is exactly the R18-addendum ordering: `import_idl0` wrote the
+blob before parsing, so an unparseable file would leave an orphan blob
+that nothing in the lane detects or prunes (`verify` has no orphan-blob
+check). Fix: parse first; test that a bad-magic buffer leaves the CAS
+empty. Minors, both ruled **fix**: (a) `read_session_parquet` parsed the
+footer twice after delegating to `read_session_metadata` — factor one
+`metadata_from_builder`; (b) `ImportReport.plan: ImportPlan` admitted
+`Collision`, forcing an `unreachable!()` in the CLI — a panic path in
+principle (CLAUDE.md §5); replaced by a 3-variant `ImportOutcome` so the
+impossible state is unrepresentable rather than documented-unreachable.
+
+All three ride as Task 16's Step 0 (one agent, one build) instead of a
+separate fix-up; Task 16's own review and merge-gate run cover them.
+
+**Cost if wrong:** Low — all three are local; Task 16's reviewer re-checks
+the ordering with the new test.
