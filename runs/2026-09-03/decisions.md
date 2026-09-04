@@ -1060,3 +1060,30 @@ tells the operator the one-step remedy.
 
 **Cost if wrong:** Low. (1)–(3) make the validation actually run and
 measure the right quantity; (4) is R13; (7) is mechanical and reversible.
+
+---
+
+## 2026-09-03 — Tracked: Task 14 landed (`8d6cb00`); three implementer flags, ruled
+
+Task 14 (R17) landed at `8d6cb00`, 19/19 on the targeted run, metres-level
+test confirmed to fail under the Dart-faithful math during development.
+The implementer raised three things outside its declared files:
+
+1. **Plan error:** Task 14's Interfaces line names
+   `filename::session_file_base` but no step defines it, and it would
+   need UTC→local calendar decomposition — a date/time dependency this
+   crate deliberately does not have. **Ruling:** not added; the caller
+   (CLI or L5, which have a time library) decomposes and calls
+   `format_session_file_base`. The Interfaces line was wrong, not the
+   implementation.
+2. `store/session_json.rs:103-106` — `LapGateJson`'s doc still says the
+   gate unit convention is "pending Isaac's confirmation" (settled by
+   R8). **Ruling:** fixed as Task 15's Step 0 (same worktree, serial).
+3. `laps::renumber::RenumberedLap.track_id: Option<String>` is always
+   `Some` (`TrackVisitJson.track_id` is non-optional). The plan drafted
+   the `Option`; nothing consumes it yet. **Ruling:** becomes `String` in
+   Task 15's Step 0 — the type should not promise an absence that cannot
+   occur.
+
+**Cost if wrong:** negligible — (1) is a documentation correction, (2)
+and (3) are one-line changes with no consumers.
