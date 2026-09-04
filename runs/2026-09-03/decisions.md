@@ -1783,3 +1783,25 @@ the other job is also backgrounded. Fix folded into future dispatches:
 background or not.* Second occurrence of this class (see the earlier
 worktree-concurrency near-miss); if it recurs, the hook grows a lockfile
 check.
+
+## 2026-09-04 — R33: `if()` must apply L3-R12 across all three operands
+
+L3 Task 5 reviewed CLEAN (`fd9b30d`, critical=0 important=0 minor=2). One
+Minor is a real latent gap, not a style note: `if(cond, t, f)`
+(`math/eval.rs:1005-1015`) adopts `cond`'s `t_us` as the output axis
+without checking the `t`/`f` operands' own axes. That is exactly the
+silent-axis adoption L3-R12 exists to forbid — it just wasn't in Task 5's
+named function list, so the reviewer correctly did not fail the task on
+it.
+
+Ruling: `if()` runs the same `combine_t_us` fold across all three
+operands — equal or empty passes through, a genuine mismatch is the same
+typed Runtime error naming both spans. Dispatched as **Step 0 of Task
+6**, the pattern Task 5 itself used, with a test for the mismatch case.
+
+The other Minor (four copies of a test-only `synthetic_t_us` helper) is
+accepted as-is: private test fns, no silent-drift risk. Hoist it only if
+a fifth copy appears.
+
+**Cost if wrong:** small — a wrongly-rejected `if()` over two channels
+that happen to differ in axis, which is the case we want rejected anyway.
