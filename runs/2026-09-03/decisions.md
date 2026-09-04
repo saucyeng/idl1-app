@@ -2053,3 +2053,42 @@ changes").
 **Cost if wrong:** a map trace that used to be fully coloured now has an
 uncoloured tail. Visible and instantly reversible — unlike the current
 behaviour, whose wrongness is invisible.
+
+---
+
+## 2026-09-04 — L3 LANDED
+
+**idl-rs** `main` = `e0440bb` (merge of `wave1-l3-workbook`, 23 commits,
++5920/-91 across 33 files). **idl1-app** `main` = `04a7f63` (docs merge
+`3c93406` + submodule pointer + review records).
+
+Merge gate: **898 passed, 0 failed, 1 ignored** — idl-rs 846, real-session
+ODR validation 1, idl-rs-cli 51.
+
+Delivered: workbook v3 parser (front matter, math/table/js cells, cell
+ids, constants), cross-cell resolver with fixed-point evaluation, the JS
+host surface, per-cell evaluation orchestrator, the `t_us` time axis
+threaded through math/table/estimate, tile v2 encoder, spectrogram and
+histogram2d rasters with the Turbo colormap, cursor readout, and the
+pipeline parity gate. **Not delivered, deliberately:** workbook migration
+(Task 13, ruling R30).
+
+Rulings this lane produced: R30–R39, plus L3-R11..R42 in-lane.
+
+**Every task reviewed; three came back NEEDS_FIXES** (Task 10 twice-over:
+`MAX_TIER` emptiness + a `u64` overflow; Task 11 across three rounds:
+raster legend/pixel divergence, then a regression test that would have
+passed against the bug it was written for; Task 16: a mis-attributed
+provenance clause). None would have been caught by test counts alone.
+
+**What the lane cost in rework, and why:** six briefs asserted landed
+code that did not exist, and two lead rulings (R34(a), the first
+`MAX_TIER` note) were written from reports rather than from the code and
+had to be corrected. The standing "verify premises, stop if ambiguous"
+instruction caught all of them at one message each. Both patterns carry
+into L2: briefs cite file:line for claims about existing code, and the
+lead reads the code before ruling on it.
+
+**Next:** L2 (importers) — briefs 1–6 on disk, FIT sample available.
+R27's GPS decimal-degrees conversion sequences before L2 Tasks 4/8 so the
+importers are written once against the final unit.
