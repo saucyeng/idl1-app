@@ -142,6 +142,7 @@ export default function Data() {
    *  alongside the real wiring (this task's brief). */
   const handleDeleteSession = () => {
     if (selectedSessionId === null) return;
+    // TODO(idl0): replace window.confirm() with the shell's in-app modal once one exists
     if (!window.confirm("Delete this session and its source file? This cannot be undone.")) return;
     startMaintenanceAction(maintenanceState, "delete_session", runDeleteSession(deleteSession, selectedSessionId, true), maintenanceDispatch);
   };
@@ -151,6 +152,7 @@ export default function Data() {
    *  with `deleteBlob: false` rather than a fourth stub function. */
   const handleForgetSession = () => {
     if (selectedSessionId === null) return;
+    // TODO(idl0): replace window.confirm() with the shell's in-app modal once one exists
     if (!window.confirm("Remove this session from the catalog? Its source file is kept.")) return;
     startMaintenanceAction(maintenanceState, "forget_session", runForgetSession(deleteSession, selectedSessionId), maintenanceDispatch);
   };
@@ -158,6 +160,7 @@ export default function Data() {
   /** Toolbar's "Review quarantine" (IPC need 4, stubbed). Confirmed first,
    *  same reasoning as [[handleDeleteSession]]. */
   const handleReviewQuarantine = () => {
+    // TODO(idl0): replace window.confirm() with the shell's in-app modal once one exists
     if (!window.confirm("Review quarantined files?")) return;
     startMaintenanceAction(maintenanceState, "list_quarantine", runListQuarantine(listQuarantine), maintenanceDispatch);
   };

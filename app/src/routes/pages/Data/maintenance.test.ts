@@ -152,7 +152,7 @@ describe("runListQuarantine / runResolveQuarantine — the real commands' succes
     expect(result).toBe("2 items awaiting review.");
   });
 
-  it("runListQuarantine with zero entries — singular noun, not \"0 items\"-only wording surprise", async () => {
+  it("runListQuarantine with one entry — singular noun, not \"1 items\"", async () => {
     const run = runListQuarantine(() => Promise.resolve([{}]));
 
     const result = await run();
