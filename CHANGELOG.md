@@ -6,6 +6,14 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 
 ### Added
 
+- **L7c Settings tab, Task 1 (2026-09-05).** `SettingsPage.tsx` moved to a
+  `Settings/` directory owned by this lane; section list plus detail-pane
+  shell over idl1's seven Settings sections (profile, units, data
+  directory, sync, chart controls, how-tos, about) — idl0's Google Drive
+  section is dropped and Firmware/OTA is deferred to wave 3, so neither
+  appears. `ipcStubs.ts` stubs IPC needs 6 and 7 (`get_settings`,
+  `set_settings`, `get_data_dir`, `set_data_dir`), each rejecting with a
+  local `NotImplementedError`, never a fabricated `IpcError` kind.
 - **L5 complete (2026-09-04).** idl-rs-tauri wired to every landed wave-1 lane's C3 command
   group (catalog, workbook, cursor, raster, tile) plus device (L4); <data> resolution,
   workbook watcher, app/src/ipc/ module layer, routing and state skeleton. Tile fetched
