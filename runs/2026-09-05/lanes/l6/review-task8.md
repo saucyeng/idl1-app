@@ -43,3 +43,46 @@ No other Critical or Important findings.
 The debounce mechanism (`settle.ts`), the clamp/pan/zoom state math (`clampTo`/`panBy`/`zoomAt`), the P3/P4 wiring (no IPC reachable from any gesture-frame handler, `ensureTiles` reachable only from the settle callback), the honest `hover.ts` TODO closure, and all hygiene/ownership/testing-format checks are correct and well-documented. However, `transformFor` — the function that renders the *visible, in-progress* picture during every zoom gesture — has a confirmed, reproducible arithmetic bug: it divides the translate term by the wrong viewport's pixels-per-µs, so any zoom not anchored at the chart's own left edge (the ordinary case) visually mispositions the picture during the gesture, contradicting the stated "keeps that instant fixed under the pointer" contract. All three of this commit's own `transformFor` tests happen to fall into the two degenerate cases where the bug is invisible, so the gate passing does not indicate correctness here. This is a real, shipped-behaviour bug (Critical) with a small, one-line, mechanical fix plus one missing test case, alongside a second, lower-severity but real correctness gap (no stale-settle guard, Important) that the review brief specifically asked about and that the code does not address. Approach and structure are otherwise sound — this is a fix-up, not a rework.
 
 VERDICT: NEEDS_FIXES
+
+---
+
+# Follow-up commit 95d291d — sandbox rebuild ordering fix (review-task5c.md Critical closure)
+
+- Commit under review: `95d291d36dc2669dc8b01aa392f88cddbde47270` ("app: fix sandbox rebuild ordering -- channels after init, before setCells"), landed on top of `f143545` by the same implementer. Files touched: `CHANGELOG.md`, `app/src/routes/pages/Notebook/host/SandboxHost.ts`, `app/src/routes/pages/Notebook/host/rebuildReplay.ts`, `app/src/routes/pages/Notebook/host/rebuildReplay.test.ts`.
+- Out of scope, present in the worktree but untouched by and not touching this commit: two new untracked files, `model/rasterLayer.ts`/`.test.ts`, from a concurrent Task 9 implementer — not reviewed.
+
+## Gate command and result
+
+```
+npx tsc --noEmit && npx vitest run src/routes/pages/Notebook/host
+```
+`tsc` silent. `Test Files 4 passed (4)`, `Tests 19 passed (19)`, `0 failed`.
+
+## What this commit fixes
+
+`review-task5c.md`'s Critical finding: `SandboxHost.rebuild()` called `onChannelsInvalidated()` (which will, once Task 8's wiring lands, post channel `setHostVar` messages) *before* `init` was queued. Since `sandbox/main.ts`'s `setHostVar` handler is a no-op until `init` has created a `SandboxRuntime`, and `OutboundQueue`'s race-safety only guarantees FIFO delivery, not that any particular message arrives after `init` unless it's queued after `init`, those channel messages would have been silently dropped on every rebuild.
+
+## Findings
+
+No Critical or Important findings.
+
+| Severity | file:line | Finding | Fix |
+|---|---|---|---|
+| Minor | `host/rebuildReplay.ts` (module) | `replayAfterRebuild` is retained (as `replayInitAndHostVars` + `replaySetCells` composed) purely for its own pre-existing tests, which no longer describe any real call path — `SandboxHost.rebuild()` is `replayAfterRebuild`'s only production caller and no longer calls it. The doc comment says so explicitly ("kept as a single call for callers ... that have no reason to insert anything between the two steps"), so this is disclosed dead-in-practice code, not a silent gap. | None required; optional follow-up would be deleting `replayAfterRebuild` and updating its three pre-existing tests to call the split functions directly, but that's a larger diff than this fix-up's scope justifies. |
+
+## Checks performed (all pass)
+
+- **New call order in `rebuild()`.** Read `SandboxHost.ts:213-229` directly: `teardown` → `createIframe()` → `replayInitAndHostVars(...)` (posts `init` then each cached JSON host var) → `this.callbacks.onChannelsInvalidated()` → `replaySetCells(...)`. This matches the dispatch's required order exactly: init → JSON host vars → channels (via `onChannelsInvalidated`) → `setCells`.
+- **All three messages route through the same generation-tagged `OutboundQueue`, so relative order is preserved end to end.** `postToSandbox` (used by every call in the sequence, including inside `replayInitAndHostVars`/`replaySetCells`'s injected `post`) calls `this.outboundQueue.send(...)`, which the queue's own FIFO-per-generation semantics (already verified in `review-task5c.md`'s re-review and unchanged by this commit — confirmed no diff to `outboundQueue.ts`) flush in call order once `ready` arrives. Since `onChannelsInvalidated()`'s eventual `setChannelHostVar` calls (Task 8's wiring, not yet present) will themselves call `postToSandbox`/`send`, they queue strictly between the JSON host vars and `setCells` regardless of when the iframe actually becomes `ready`.
+- **No direct `postMessage` bypasses the queue.** Grepped `contentWindow.postMessage`/`contentWindow?.postMessage` across the whole file: exactly two occurrences, one inside `outboundQueue.markReady`'s flush callback (`case "ready":`), one inside `postToSandbox`'s `send` callback — both are the queue's own dispatch mechanism, not an alternate path. No other `postMessage` call exists in `SandboxHost.ts`.
+- **The split of `replayAfterRebuild` into `replayInitAndHostVars` + `replaySetCells` keeps the earlier tests meaningful.** `rebuildReplay.test.ts`'s three original tests (`"neither init nor setCells was ever sent — posts nothing"`, and the two others in that `describe("replayAfterRebuild", ...)` block) are untouched by this diff and still exercise the combined function, which is now a two-line pass-through (`replayInitAndHostVars(post, state); replaySetCells(post, state);`) — they still assert genuinely correct behavior of that composed function, not stale behavior; they're just no longer testing `SandboxHost.rebuild()`'s actual production call path (that's what the new fourth test, `"posts init, then the JSON host var, then the channel, then setCells, in that order"`, is for).
+- **New test recorded-order assertion.** The new `rebuildReplay.test.ts` test builds one shared `posted` array, calls `replayInitAndHostVars(post, state)`, then a stand-in `onChannelsInvalidated` closure that posts one channel `setHostVar`, then `replaySetCells(post, state)` — asserting `posted` deep-equals `[init, json setHostVar, channel setHostVar, setCells]` in that exact order via one `toEqual` on the whole array (order-sensitive, not just membership). This is a faithful, minimal stand-in for `SandboxHost.rebuild()`'s real three-call sequence, Arrange/Act/Assert with blank lines between sections, matching CLAUDE.md §4.
+- **Doc comments updated to match the new reasoning, not just the new code.** `SandboxHostCallbacks.onChannelsInvalidated`'s and `rebuild()`'s doc comments both now state the ordering requirement and *why* (`sandbox/main.ts`'s no-op-before-`init` handler) rather than only the previously-incomplete race-safety justification — this specifically corrects the Minor finding `review-task5c.md` raised about the stale comment.
+- **Ownership and hygiene.** `git show --stat 95d291d` touches only `CHANGELOG.md` and two files under `host/**` plus their test file — nothing outside `Notebook/**`. No `package.json`/lockfile change. Single-line commit message, no AI attribution trailer. CHANGELOG bullet accurately names the bug, its cause, and the fix, and correctly cross-references `review-task5c.md`.
+- **No regression to already-verified `review-task5c.md` checks.** `outboundQueue.ts` has no diff in this commit (confirmed via `git show --stat`); the sandbox-boundary, `ready`-unconditional, and stale-generation properties that review already verified are unaffected by this ordering-only change.
+
+## Verdict rationale
+
+This is a small, correctly targeted fix: it moves one call (`onChannelsInvalidated()`) to the correct position in `rebuild()`'s sequence, splits the replay helper cleanly so the ordering can be expressed as three separate calls sharing one `OutboundQueue`, and adds a test that pins down the exact resulting order the way the original bug's absence-of-interleaving-test allowed it to slip through. The reasoning in the updated doc comments is accurate and specific (race-safety vs. processing-order, correctly distinguished). No new Critical or Important issue found; the one Minor note is disclosed by the implementer's own doc comment and not a functional gap.
+
+VERDICT: CLEAN
