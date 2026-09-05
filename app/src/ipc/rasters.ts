@@ -35,9 +35,31 @@ export function decodeRaster(buf: ArrayBuffer): DecodedRaster {
   return { width, height, pixels: new Uint8ClampedArray(buf, 16, pixelLen) };
 }
 
-/** Raster kind and its numeric parameter bag (C3 §3.6 — `params`' generic
- *  shape is provisional per C3 open question 6.4; kept as-is here). */
+/** Raster kind (C3 §3.6). */
 export type RasterKind = "spectrogram" | "histogram2d";
+
+/** `fetch_raster`/`fetch_raster_meta`'s `params` when `kind === "spectrogram"`
+ *  (C3 §3.6, closes open question 6.4 per ledger R25). */
+export interface SpectrogramParams {
+  /** `nperseg`, samples per FFT segment. */
+  window_size: number;
+  /** Samples between segment starts; `hop = nperseg − noverlap` (`idl_rs::fft`'s own `noverlap`). */
+  hop_size: number;
+  window: "rectangular" | "hann" | "hamming";
+  detrend: "none" | "mean" | "linear";
+  scaling: "magnitude" | "density";
+}
+
+/** `fetch_raster`/`fetch_raster_meta`'s `params` when `kind === "histogram2d"`
+ *  (C3 §3.6, amended by ruling R42). `x_bins`/`y_bins` must equal the
+ *  command's own `width`/`height` in wave 1 — the fields are kept rather
+ *  than removed because bins < pixels is the intended future extension. */
+export interface Histogram2dParams {
+  /** The second channel; the command's own `channel` argument is the X channel. */
+  y_channel: string;
+  x_bins: number;
+  y_bins: number;
+}
 
 /** Fetches and decodes one raster. Settle-bound only, same rule as `fetchTile` (C3 §4). */
 export async function fetchRaster(
@@ -46,8 +68,34 @@ export async function fetchRaster(
   kind: RasterKind,
   width: number,
   height: number,
-  params: Record<string, number>
+  params: SpectrogramParams | Histogram2dParams
 ): Promise<DecodedRaster> {
   const buf = await invoke<ArrayBuffer>("fetch_raster", { sessionId, channel, kind, width, height, params });
   return decodeRaster(buf);
+}
+
+/** C3 §3.6's `fetch_raster_meta` return: axis domains and colour-scale
+ *  bounds without decoding pixel bytes. `scale.vmin`/`scale.vmax` are
+ *  resolution-independent (ruling R38) — the same channel at two chart
+ *  sizes reports the same legend. */
+export interface RasterMeta {
+  x_domain: [number, number];
+  y_domain: [number, number];
+  x_label: string;
+  y_label: string;
+  scale: { vmin: number; vmax: number; kind: "linear" };
+  transparent_zero: boolean;
+}
+
+/** Fetches one raster's axis domains and colour scale, without its pixel
+ *  bytes. Same arguments as `fetchRaster`; settle-bound only (C3 §4). */
+export async function fetchRasterMeta(
+  sessionId: string,
+  channel: string,
+  kind: RasterKind,
+  width: number,
+  height: number,
+  params: SpectrogramParams | Histogram2dParams
+): Promise<RasterMeta> {
+  return invoke<RasterMeta>("fetch_raster_meta", { sessionId, channel, kind, width, height, params });
 }
