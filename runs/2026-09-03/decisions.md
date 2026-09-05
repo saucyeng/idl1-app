@@ -2219,3 +2219,29 @@ but it will need handling before CI or a second machine.
 
 **Next:** L5 Task 8 dispatched (catalog read API per R40), then 11 → 12 →
 13 → 14.
+
+## 2026-09-05 — R46: `CatalogError` gains a `NotFound` variant
+
+L5 Task 8 landed the catalog read API (idl-rs `9b68c38`, idl1-app
+`2b7003a`) and flagged a real ambiguity rather than guessing at it:
+`CatalogErrorKind` has only `Io` and `Sql`, so "no such session" was
+encoded as `Sql` and mapped to `IpcErrorKind::NotFound`. The consequence
+runs the wrong way: a genuine `rusqlite` error from a **corrupt
+`catalog.sqlite`** also surfaces as `not_found` on `list_sessions`,
+`list_workbooks`, `list_tracks` and `rebuild_catalog`.
+
+That is a lie to the user in the most misleading direction available. "No
+sessions found" invites them to re-import or conclude their data is gone;
+"internal error" would send them to `rebuild_catalog`, which is exactly
+the fix for a corrupt index — and the catalog is *designed* to be
+rebuildable ("the catalog is an index — deletable, rebuildable, never
+synced"). Encoding corruption as absence hides the one failure the
+architecture already has an answer for.
+
+Ruling: add a **`NotFound`** variant to `CatalogErrorKind`. Not-found maps
+to `IpcErrorKind::NotFound`; `Sql` maps to `internal`. Additive to a core
+error enum, no caller outside this task's own commands, and the cost of
+doing it later is a UI built on a misleading error.
+
+**Cost if wrong:** none identified — the variant is additive and the two
+conditions are genuinely distinct.
