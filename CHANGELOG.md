@@ -6,6 +6,26 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 
 ### Added
 
+- **L7c Settings tab, Task 6 — lane complete for wave 2 (2026-09-05).**
+  Chart controls reference (`Settings/controls.ts`, `ControlsSection.tsx`)
+  carries idl0's mouse-wheel/mouse/keyboard shortcut table verbatim, with a
+  visible "provisional — bindings land with the Notebook lane" label in the
+  section itself (R53 Q2) since L6 owns the actual bindings and is building
+  concurrently. Four how-to articles (`Settings/howtos/*.tsx`) carried from
+  idl0's Markdown assets as bundled TSX (no CDN, ever — CLAUDE.md §3),
+  rewritten for idl1's tab names and, for Math Channels, idl1's math-cell
+  notebook model (C2 §2) replacing idl0's separate "Maths" tab; idl0's
+  `example.com` "Full reference"/"Report issue" links are not carried
+  across. About section (`Settings/about.ts`'s `aboutRows`,
+  `AboutSection.tsx`) shows app version/schema/build (hardcoded, as idl0
+  did) and a real engine version read from `AppState.engineVersion` — the
+  same `engine_version` call the app shell already makes once, never a
+  second IPC round trip — reading "…" while that fetch is in flight and
+  never "unknown". Licenses is omitted (no license-page generator wired
+  into idl1's build). `docs/IDL0_SPEC.md` §27 gains §27.10-§27.13 (chart
+  controls, how-tos, about, and a section inventory replacing §27.4 for the
+  idl1 line). This is L7c's last task; `TASKS.md` records what's still
+  outstanding.
 - **L7c Settings tab, Task 5 (2026-09-05).** Sync section
   (`Settings/SyncSection.tsx`) over the real, landed
   `sync_status`/`sync_now`/`pair_peer` commands (C3 §3.9, `app/src/ipc/sync.ts`)

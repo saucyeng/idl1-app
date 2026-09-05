@@ -1,12 +1,16 @@
 import { useState } from "react";
 
 import "./settings.css";
+import AboutSection from "./AboutSection";
+import ControlsSection from "./ControlsSection";
 import DataSection from "./DataSection";
+import HowTosSection from "./HowTosSection";
 import ProfileSection from "./ProfileSection";
 import { localStorageBackend, createPrefsStore } from "./prefsStore";
 import { SECTIONS, defaultSectionId, sectionById } from "./sections";
 import SyncSection from "./SyncSection";
 import UnitsSection from "./UnitsSection";
+import { useAppState } from "../../../state/AppState";
 
 /** The single {@link PrefsStore} instance every Settings section reads from
  *  and writes to, over the real `localStorage` (R53 Q1) — one store per
@@ -24,6 +28,7 @@ const prefsStore = createPrefsStore(localStorageBackend());
  * JavaScript. */
 export default function Settings() {
   const [selectedId, setSelectedId] = useState<string>(defaultSectionId);
+  const [appState] = useAppState();
 
   const selected = sectionById(selectedId) ?? SECTIONS[0];
 
@@ -56,6 +61,12 @@ export default function Settings() {
           <DataSection store={prefsStore} />
         ) : selected.id === "sync" ? (
           <SyncSection store={prefsStore} />
+        ) : selected.id === "controls" ? (
+          <ControlsSection />
+        ) : selected.id === "howTos" ? (
+          <HowTosSection />
+        ) : selected.id === "about" ? (
+          <AboutSection engineVersion={appState.engineVersion} />
         ) : (
           <p>Built in a later task.</p>
         )}

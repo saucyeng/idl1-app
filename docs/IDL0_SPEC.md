@@ -3026,6 +3026,86 @@ yet" message otherwise, rather than a raw error. The automatic
 once the backend exists; this section provides the manual button and status
 display only.
 
+### 27.10 Chart controls reference (idl1)
+
+**Superseded (2026-09-05, L7c Task 6).** idl0's Controls section (§27.4 row
+5) carried `kDefaultChartBindings`/`wheelModeFor` verbatim. idl1's
+equivalent (`app/src/routes/pages/Settings/controls.ts`,
+`ControlsSection.tsx`) carries the same three groups (mouse wheel, mouse,
+keyboard) and the same rows, since idl0's content is all this lane has to
+go on.
+
+**Provisional (R53 Q2).** L6 (the Notebook lane) owns the chart's actual
+interaction bindings and is being built concurrently with this lane, so
+this table may not match the shipped chart. Per R53 Q2(a), the table is
+carried now and the section renders a visible "provisional — bindings land
+with the Notebook lane" label in the UI itself, not only in a code comment.
+R53 Q2(b) — L6 exporting its real binding table for Settings to import —
+is a follow-up the lead does after L6 merges; this lane does not attempt
+that cross-lane import.
+
+### 27.11 How-to articles (idl1)
+
+**Superseded (2026-09-05, L7c Task 6).** idl0's four Markdown articles
+(§27.5, rendered via `flutter_markdown`) are carried as bundled TSX
+components (`app/src/routes/pages/Settings/howtos/*.tsx`) — no CDN, ever
+(CLAUDE.md §3), and four short documents do not justify adding a markdown
+renderer dependency to the bundle.
+
+| Component | Title | Rewritten for idl1 |
+|---|---|---|
+| `FirstSetup.tsx` | First Setup | idl0's Device/Runs tabs become idl1's Device tab (pairing, config push, calibration, recording) and Data tab (download, session library) |
+| `WifiDownload.tsx` | WiFi Download | idl0's "Runs" tab becomes idl1's Data tab |
+| `GpsLapGate.tsx` | GPS Lap Gate | idl0's Runs/Analyze tabs become idl1's Data tab (session selection) and Notebook tab (chart viewing, lap-gate editing) |
+| `MathChannels.tsx` | Math Channels | idl0's separate "Maths" tab is gone — math channels are now `math` cells written directly in the notebook document (C2 §2), not a dedicated editor screen |
+
+idl0's "Full reference" and "Report issue" buttons, both pointing at
+`example.com` placeholders (idl0's own `TODO(idl0)` comments), are not
+carried across.
+
+### 27.12 About (idl1)
+
+**Superseded (2026-09-05, L7c Task 6).** idl0's `_AboutSection` (§27.4 row
+7) is carried as `app/src/routes/pages/Settings/about.ts`'s `aboutRows` +
+`AboutSection.tsx`.
+
+| Row | idl0 | idl1 |
+|---|---|---|
+| App version | hardcoded `0.1.0` | hardcoded `0.1.0` (mirrors `app/package.json`; no build-time version injection is wired into the Vite build yet) |
+| Engine version | n/a (idl0 has no engine crate) | real value, read from `AppState.engineVersion` — the same `engine_version` (C3 §3.1) call the app shell already makes once on mount, not a second IPC round trip. Reads `"…"` while that fetch is in flight, never `"unknown"` (`"unknown"` would imply the call failed) |
+| Schema | hardcoded `"IDL0 v1"` | hardcoded `"session schema v1"`, mirroring C1's `session.json` `schema_version` field |
+| Build | hardcoded `"dev"` | hardcoded `"dev"`, same treatment |
+
+**Licenses.** idl0 generated a license page from Flutter's package graph
+(`showLicensePage`). idl1 has no equivalent generator wired into its build
+— assembling one from the npm/cargo dependency graph is a build-tooling
+task, not a Settings task — so the control is omitted in wave 2 rather than
+shown disabled or linking out. idl0's "Report issue" button, pointing at an
+`example.com` placeholder, is not carried across either.
+
+### 27.13 Section inventory (idl1)
+
+**Superseded (2026-09-05, L7c Task 6).** idl0's seven-section table (§27.4)
+becomes idl1's seven sections, replacing §27.4 for the idl1 line:
+
+| # | Section | idl1 disposition |
+|---|---|---|
+| 1 | Profile | Carried (§27.1) |
+| 2 | Units | Carried (§27.1, §27.2) |
+| 3 | Data directory | New, no idl0 counterpart (§27.8) |
+| 4 | Sync | Replaces Drive sync, permanently — LAN sync, not deferred (§27.9) |
+| 5 | Chart controls | Carried, marked provisional (§27.10) |
+| 6 | How-tos | Carried as bundled TSX (§27.11) |
+| 7 | About | Carried, with a real engine-version value (§27.12) |
+
+**Firmware/OTA (idl0 §27.4 row 4, §27.7) is deferred to wave 3**, per the
+wave 2 operating brief §3: `push_ota` exists on the transport trait but no
+C3 command exposes it, and the two `AppSettings` fields that would
+configure it are not carried into idl1's prefs model (§27.1) — a
+preference for a feature that does not exist is a field nobody can act on.
+**Google Drive (idl0 §27.4 row 3, §28) is gone, permanently** — replaced by
+LAN sync (row 4 above), not deferred; §28 carries its own superseded banner.
+
 ---
 
 # PART 7 — CROSS-CUTTING
