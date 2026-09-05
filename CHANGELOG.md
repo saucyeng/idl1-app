@@ -7,7 +7,7 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 ### Added
 
 - **Sandboxed iframe host, partial (L6 Task 5).** postMessage cell API (host- and sandbox-side message unions, validated on receipt) and a watchdog (1000 ms ping / 3000 ms stall); the sandbox's own Runtime+Plot+d3+Inputs+htl bundle entry is blocked on a `vite.config.ts` shell task (Vite does not bundle a TS entry's resolved imports via `?url`/bare `new URL(..., import.meta.url)`, only via a real `build.rollupOptions.input` multi-page entry), see the lane's questions. `allow-same-origin` never granted.
-- **Notebook cell scan (L6 Task 4).** Pure TS fence scan over C2 §2.2/§2.4 giving the editors byte ranges per cell; Rust's parser stays authoritative for evaluation.
+- **Notebook cell scan (L6 Task 4).** Pure TS fence scan over C2 §2.2/§2.4 giving the editors byte ranges per cell; Rust's parser stays authoritative for evaluation. Follow-up: two review-named tests added (unterminated fence at EOF, invalid `id=` value) and two doc-completeness nits closed in the module doc comment, no production-code change.
 - **TS coverage reporting added (2026-09-05).** `@vitest/coverage-v8` pinned to vitest's
   version in `app/package.json`; `app/vitest.config.ts` gains a `coverage` block (v8
   provider, `src/**/*.ts`, text reporter, no thresholds set) so `vitest run --coverage`

@@ -31,7 +31,13 @@
  *   and nothing else on the line" rule by hand — it does not otherwise
  *   implement CommonMark (no indented fences, no tilde fences, no fence
  *   language beyond exact `math`/`table`/`js`). That subset is what C2 §2.2
- *   defines and all this app authors or generates.
+ *   defines and all this app authors or generates; note this is a genuine
+ *   behavioural divergence, not just an unimplemented corner — Rust's
+ *   `scan_cells` (via `pulldown-cmark`'s generic `CodeBlockKind::Fenced`)
+ *   *does* recognise a tilde-delimited or up-to-3-space-indented fence
+ *   identically to a backtick fence, so a hand-edited `.idl1wb` using either
+ *   form would be scanned differently here than by Rust, even though
+ *   nothing this app itself writes ever produces one.
  * - Rust generates a fresh id for a fence with no `id=` attribute (C2
  *   §2.2's "Assignment", a write-path concern for whichever writer saves
  *   next). This scan never mutates the source and never mints an id; a
@@ -155,7 +161,16 @@ function parseCellOpen(info: string): ParsedCellOpen | null {
   return { kind, id, idRaw };
 }
 
-/** Finds the leading `---`-delimited front-matter block, if any. Returns its byte range and the index of the first line after it (0 when there is no front matter). */
+/**
+ * Finds the leading `---`-delimited front-matter block, if any. Returns its
+ * byte range and the index of the first line after it (0 when there is no
+ * front matter). An opening `---` with no matching closing `---` anywhere in
+ * the document falls back to `{ range: null, bodyStart: 0 }` — the whole
+ * document is then scanned as ordinary body text, since front-matter
+ * *content* is Rust's to parse (and, in the unterminated case, Rust's to
+ * report as malformed) — this scan only ever needs a byte span, not a
+ * verdict on well-formedness.
+ */
 function scanFrontMatter(lines: ByteLine[]): { range: [number, number] | null; bodyStart: number } {
   if (lines.length === 0 || stripNewline(lines[0].text) !== "---") {
     return { range: null, bodyStart: 0 };

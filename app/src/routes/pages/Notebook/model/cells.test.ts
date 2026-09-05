@@ -129,6 +129,31 @@ describe("scanCells", () => {
     expect(doc.cells[0].infoLine).toBe("js id=cafebabe foo=bar");
     expect(doc.cells[0].id).toBe("cafebabe");
   });
+
+  it("scanCells — an unterminated fence at end of file — closes at document end", () => {
+    // Arrange
+    const markdown = "```js id=aaaaaaaa\nx\n";
+
+    // Act
+    const doc = scanCells(markdown);
+
+    // Assert
+    expect(doc.cells).toHaveLength(1);
+    expect(doc.cells[0].bodyRange[1]).toBe(new TextEncoder().encode(markdown).length);
+  });
+
+  it("scanCells — an invalid id= value — reports idRaw set and id null", () => {
+    // Arrange
+    const markdown = "```js id=nothex\ncode\n```\n";
+
+    // Act
+    const doc = scanCells(markdown);
+
+    // Assert
+    expect(doc.cells).toHaveLength(1);
+    expect(doc.cells[0].id).toBeNull();
+    expect(doc.cells[0].idRaw).toBe("nothex");
+  });
 });
 
 describe("replaceCellBody", () => {
