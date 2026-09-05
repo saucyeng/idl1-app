@@ -2245,3 +2245,80 @@ doing it later is a UI built on a misleading error.
 
 **Cost if wrong:** none identified — the variant is additive and the two
 conditions are genuinely distinct.
+
+## 2026-09-05 — R47: `eval.rs`'s duplicate-definition panic is a core bug; fix it, don't contain it
+
+L5 Task 11 (idl-rs `8d737fe`, idl1-app `9a154a3`) found that
+`core/src/workbook/v3/eval.rs`'s `math_cell_defs` **panics** whenever a
+definition name repeats anywhere in a document. `resolve_workbook_defs`
+returns a `HashMap` keyed by name alone, so a duplicate collapses to one
+entry and whichever cell runs second calls `.expect(...)` on a
+already-removed key. It was found empirically — the brief's own required
+test panicked — not by reading.
+
+This is a straight violation of CLAUDE.md §5 ("never a crash on bad
+data") and it contradicts C2/C3's per-cell `DuplicateDefinition`
+semantics, which say a duplicate surfaces on the offending cell and never
+rejects the document. A user typing the same name in two cells — an
+ordinary editing mistake — currently takes down the process.
+
+The implementer correctly did not touch `workbook/v3/` (out of lane,
+CLAUDE.md §7) and instead wrapped the call in `catch_unwind`, degrading
+to `internal`. Right call under the constraint it had; wrong thing to
+ship.
+
+Ruling, in three parts:
+1. **Fix the root cause in `core`.** `resolve_workbook_defs`' output must
+   not lose duplicates — key it so each cell's definitions are
+   recoverable, and `math_cell_defs` must never `expect` on a key it did
+   not put there. The user-visible outcome is C3's stated one: every cell
+   returns, the offending cell carries `workbook_duplicate_definition`.
+2. **L5 is authorised to make that fix in its own branch.** L3 is closed
+   and merged and L5 is the only active lane, so routing this through a
+   reopened lane costs more than it protects. This is the lead granting a
+   cross-lane exception under §7, recorded here.
+3. **Remove the `catch_unwind` once the root cause is fixed.** A
+   defensive net around a call that should not panic hides the next bug
+   exactly as this one hid — it surfaced only because a test crashed
+   loudly. Restore the brief's original assertion (both cells returned,
+   offending cell carries the duplicate error) rather than the
+   degraded-but-safe one.
+
+**Cost if wrong:** removing the net means a future panic in `eval_cells`
+reaches the command boundary. That is the intent — a panic there is a bug
+we must see, and the alternative is a silent `internal` that looks like
+an I/O failure.
+
+## 2026-09-05 — R48: a new workbook's filename comes from its front-matter `name`, not its id
+
+Task 11's second flag: C3 §3.4's `save_workbook(id, …)` says nothing
+about where a *new* file goes, and the implementer synthesised
+`<data>/workbooks/<id>.idl1wb`. Reversible and sensible-looking, but it
+contradicts C4 §2, which the implementer had not been pointed at:
+`workbooks/<file_name>.idl1wb`, where `file_name` is "the user-facing
+name, filesystem-sanitised … a display convenience, not identity", with
+`-2`, `-3` … appended on collision (SPEC §15.1).
+
+Ruling: on create (`based_on_hash: null`), derive `file_name` from the
+markdown's front-matter `name` (C2 §1 requires it), sanitise it per SPEC
+§15.1, and apply the collision suffix. The `id` argument identifies the
+workbook — it is the front-matter id — and never names the file. A
+`workbooks/` directory full of UUIDs is precisely what C4 §2's
+display-name rule exists to prevent.
+
+**Cost if wrong:** files land under a name the user didn't choose;
+renaming is a supported operation (C4 §6 — id wins over `file_name`), so
+recovery is trivial either way.
+
+**Also accepted from Task 11, no ruling needed:** running
+`cargo test -p idl-rs-tauri session_source` beyond the brief's named
+filter. The brief's Step 1 tests live in a file whose test names don't
+contain "workbook", so the named filter compiled them without executing
+them — the alternative was shipping Step 1 with zero test executions.
+That is the §8 rule working as intended (a filter matching nothing is a
+failed gate), and reporting it beat silently obeying the letter.
+
+**Gap to close:** `app/src-tauri/src/lib.rs` gained two `.setup()` lines
+that no authorised command in that brief compiles. Task 12's dispatch
+adds one `cargo check -p app`, accepted as expensive (it builds the Tauri
+graph) and worth it once, overnight, before Task 14 depends on it.
