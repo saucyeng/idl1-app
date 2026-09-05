@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { SessionSummary } from "../../../ipc/catalog";
-import type { Progress } from "../../../ipc/import";
+import type { ImportOutcome, Progress } from "../../../ipc/import";
 import { importQueueReducer, initialImportQueueState, overallPercent, type ImportQueueState } from "./importQueue";
 
 function withOneQueued(path = "C:/rides/one.idl0"): ImportQueueState {
@@ -30,6 +30,8 @@ const sampleSession: SessionSummary = {
   duration_ms: null,
 };
 
+const sampleOutcome: ImportOutcome = { session: sampleSession, warnings: [] };
+
 describe("importQueueReducer", () => {
   it("importQueue — PROGRESS with total null — item shows a phase and a count, overallPercent is null", () => {
     let state = withOneQueued();
@@ -51,7 +53,7 @@ describe("importQueueReducer", () => {
       id: 0,
       progress: { done: 5, total: 10, phase: "decoding" },
     });
-    state = importQueueReducer(state, { type: "SUCCEEDED", id: 0, session: sampleSession });
+    state = importQueueReducer(state, { type: "SUCCEEDED", id: 0, outcome: sampleOutcome });
 
     expect(state.items[0].status).toBe("done");
     expect(state.items[0].sessionId).toBe("s1");
@@ -64,6 +66,15 @@ describe("importQueueReducer", () => {
 
     expect(afterFinish.items[0].done).toBe(state.items[0].done);
     expect(afterFinish.items[0].phase).toBe(state.items[0].phase);
+  });
+
+  it("importQueue — SUCCEEDED with two warnings — item keeps both warnings", () => {
+    let state = withOneQueued();
+    state = importQueueReducer(state, { type: "START", id: 0 });
+    const outcomeWithWarnings = { session: sampleSession, warnings: ["truncated at record 400", "unknown record type 12"] };
+    state = importQueueReducer(state, { type: "SUCCEEDED", id: 0, outcome: outcomeWithWarnings });
+
+    expect(state.items[0].warnings).toEqual(["truncated at record 400", "unknown record type 12"]);
   });
 
   it("importQueue — FAILED with kind import_gpx_no_trackpoints — status failed, the kind's text is kept for display", () => {
@@ -91,7 +102,7 @@ describe("importQueueReducer", () => {
     });
 
     state = importQueueReducer(state, { type: "START", id: 1 });
-    state = importQueueReducer(state, { type: "SUCCEEDED", id: 1, session: sampleSession });
+    state = importQueueReducer(state, { type: "SUCCEEDED", id: 1, outcome: sampleOutcome });
 
     expect(state.items[0].status).toBe("failed");
     expect(state.items[1].status).toBe("done");
@@ -100,7 +111,7 @@ describe("importQueueReducer", () => {
   it("importQueue — PROGRESS for an item already done — ignored, no state change", () => {
     let state = withOneQueued();
     state = importQueueReducer(state, { type: "START", id: 0 });
-    state = importQueueReducer(state, { type: "SUCCEEDED", id: 0, session: sampleSession });
+    state = importQueueReducer(state, { type: "SUCCEEDED", id: 0, outcome: sampleOutcome });
     const before = state.items[0];
 
     const after = importQueueReducer(state, {
@@ -164,9 +175,9 @@ describe("overallPercent", () => {
     state = importQueueReducer(state, { type: "ENQUEUE", path: "c", importerId: null });
 
     state = importQueueReducer(state, { type: "START", id: 0 });
-    state = importQueueReducer(state, { type: "SUCCEEDED", id: 0, session: sampleSession });
+    state = importQueueReducer(state, { type: "SUCCEEDED", id: 0, outcome: sampleOutcome });
     state = importQueueReducer(state, { type: "START", id: 1 });
-    state = importQueueReducer(state, { type: "SUCCEEDED", id: 1, session: sampleSession });
+    state = importQueueReducer(state, { type: "SUCCEEDED", id: 1, outcome: sampleOutcome });
 
     const percent = overallPercent(state);
 

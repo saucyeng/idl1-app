@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { SessionSummary } from "../../../ipc/catalog";
-import type { Progress } from "../../../ipc/import";
+import type { ImportOutcome, Progress } from "../../../ipc/import";
 import { isDrained, nextItemToStart, runImport, type ImportFileFn } from "./importDriver";
 import { importQueueReducer, initialImportQueueState, type ImportItem, type ImportQueueAction } from "./importQueue";
 
@@ -26,6 +26,8 @@ const sampleSession: SessionSummary = {
   lap_count: null,
   duration_ms: null,
 };
+
+const sampleOutcome: ImportOutcome = { session: sampleSession, warnings: [] };
 
 /** A promise this test controls the settlement of, plus the resolve/reject
  *  functions — lets a test observe dispatches that happen strictly between
@@ -77,7 +79,7 @@ describe("isDrained", () => {
       error: { kind: "io", message: "x" },
     });
     state = importQueueReducer(state, { type: "START", id: state.items[1].id });
-    state = importQueueReducer(state, { type: "SUCCEEDED", id: state.items[1].id, session: sampleSession });
+    state = importQueueReducer(state, { type: "SUCCEEDED", id: state.items[1].id, outcome: sampleOutcome });
 
     expect(isDrained(state)).toBe(true);
   });
@@ -90,7 +92,7 @@ describe("isDrained", () => {
     let state = importQueueReducer(initialImportQueueState, { type: "ENQUEUE", path: "a.gpx", importerId: null });
     state = importQueueReducer(state, { type: "ENQUEUE", path: "b.idl0", importerId: null });
     state = importQueueReducer(state, { type: "START", id: state.items[0].id });
-    state = importQueueReducer(state, { type: "SUCCEEDED", id: state.items[0].id, session: sampleSession });
+    state = importQueueReducer(state, { type: "SUCCEEDED", id: state.items[0].id, outcome: sampleOutcome });
 
     expect(isDrained(state)).toBe(false);
   });
@@ -101,7 +103,7 @@ describe("runImport", () => {
     let state = importQueueReducer(initialImportQueueState, { type: "ENQUEUE", path: "a.gpx", importerId: null });
     const item = state.items[0];
     const actions: ImportQueueAction[] = [];
-    const fakeImportFile: ImportFileFn = () => Promise.resolve(sampleSession);
+    const fakeImportFile: ImportFileFn = () => Promise.resolve(sampleOutcome);
 
     runImport(item, fakeImportFile, (a) => actions.push(a));
     await Promise.resolve();
@@ -109,7 +111,7 @@ describe("runImport", () => {
 
     expect(actions).toEqual([
       { type: "START", id: item.id },
-      { type: "SUCCEEDED", id: item.id, session: sampleSession },
+      { type: "SUCCEEDED", id: item.id, outcome: sampleOutcome },
     ]);
   });
 
@@ -118,7 +120,7 @@ describe("runImport", () => {
     const item = state.items[0];
     const actions: ImportQueueAction[] = [];
     const captured: { onProgress: ((p: Progress) => void) | null } = { onProgress: null };
-    const { promise, reject } = deferred<SessionSummary>();
+    const { promise, reject } = deferred<ImportOutcome>();
     const fakeImportFile: ImportFileFn = (_path, _importerId, onProgress) => {
       captured.onProgress = onProgress;
       return promise;
@@ -151,7 +153,7 @@ describe("runImport", () => {
     };
 
     const captured: { onProgress: ((p: Progress) => void) | null } = { onProgress: null };
-    const { promise, resolve } = deferred<SessionSummary>();
+    const { promise, resolve } = deferred<ImportOutcome>();
     const fakeImportFile: ImportFileFn = (_path, _importerId, onProgress) => {
       captured.onProgress = onProgress;
       return promise;
@@ -162,7 +164,7 @@ describe("runImport", () => {
     // the array itemB's captured id must survive.
     dispatch({ type: "DISMISS", id: itemA.id });
     captured.onProgress?.({ done: 5, total: 10, phase: "decoding" });
-    resolve(sampleSession);
+    resolve(sampleOutcome);
     await promise;
     await Promise.resolve();
 
@@ -170,5 +172,22 @@ describe("runImport", () => {
     expect(state.items[0].id).toBe(itemB.id);
     expect(state.items[0].status).toBe("done");
     expect(state.items[0].done).toBe(10);
+  });
+
+  it("runImport — importFile resolves with warnings — SUCCEEDED carries them", async () => {
+    let state = importQueueReducer(initialImportQueueState, { type: "ENQUEUE", path: "a.idl0", importerId: null });
+    const item = state.items[0];
+    const actions: ImportQueueAction[] = [];
+    const outcomeWithWarnings: ImportOutcome = { session: sampleSession, warnings: ["truncated at record 400"] };
+    const fakeImportFile: ImportFileFn = () => Promise.resolve(outcomeWithWarnings);
+
+    runImport(item, fakeImportFile, (a) => actions.push(a));
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(actions).toEqual([
+      { type: "START", id: item.id },
+      { type: "SUCCEEDED", id: item.id, outcome: outcomeWithWarnings },
+    ]);
   });
 });

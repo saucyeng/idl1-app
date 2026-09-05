@@ -6,6 +6,15 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 
 ### Added
 
+- **Wave 2 shell task 3 — `import_file` resolves with `ImportOutcome` (2026-09-05, R60).**
+  `ipc/import.ts`'s `importFile` now resolves `ImportOutcome { session:
+  SessionSummary; warnings: string[] }` instead of a bare `SessionSummary`
+  (C3 §3.3 as amended by R60: a catalog row must not carry per-import state,
+  and dropping recovered-data warnings violates CLAUDE.md §5). The Data
+  tab's import queue (`importQueue.ts`, `importDriver.ts`) carries the
+  warnings through to each item's terminal state and `ImportPanel.tsx`
+  renders them under a succeeded item, honestly labelled ("imported with N
+  warning(s)"), never hidden.
 - **L7c how-to copy accuracy fixes (2026-09-05, Task 6 review fix).**
   `Settings/howtos/FirstSetup.tsx`, `WifiDownload.tsx` and `GpsLapGate.tsx`
   no longer describe unbuilt or wrong-transport affordances as working:
