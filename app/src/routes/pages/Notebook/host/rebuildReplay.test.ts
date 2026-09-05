@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { HostToSandboxMessage } from "./protocol";
-import { replayAfterRebuild } from "./rebuildReplay";
+import { replayAfterRebuild, replayInitAndHostVars, replaySetCells } from "./rebuildReplay";
 
 describe("replayAfterRebuild", () => {
   it("replayAfterRebuild — neither init nor setCells was ever sent — posts nothing", () => {
@@ -77,5 +77,42 @@ describe("replayAfterRebuild", () => {
     });
 
     expect(posted).toEqual([{ type: "setHostVar", name: "constants", value: { kind: "json", value: { wheelCircumferenceM: 2.1 } } }]);
+  });
+});
+
+describe("replayInitAndHostVars + onChannelsInvalidated + replaySetCells (SandboxHost.rebuild()'s actual call sequence)", () => {
+  it("a rebuild with a cached init, JSON host var, channel, and cell set — posts init, then the JSON host var, then the channel, then setCells, in that order", () => {
+    // Arrange: mirrors SandboxHost.rebuild()'s three calls (review-task5c.md
+    // Critical finding) against one shared recorder, standing in for
+    // onChannelsInvalidated with a single setHostVar post the way Task 8's
+    // rebindChannelsAfterRebuild-driven `send` callback would.
+    const posted: HostToSandboxMessage[] = [];
+    const cells = [{ id: "cell-1", code: "1 + 1" }];
+    const state = {
+      lastInitRuntimeVersion: "1.0.0",
+      lastCells: cells,
+      lastJsonHostVars: new Map<string, unknown>([["laps", [1, 2, 3]]]),
+    };
+    const post = (message: HostToSandboxMessage) => posted.push(message);
+    const onChannelsInvalidated = () => {
+      post({
+        type: "setHostVar",
+        name: "front-fork",
+        value: { kind: "channel", length: 0, t: new ArrayBuffer(0), v: new ArrayBuffer(0) },
+      });
+    };
+
+    // Act
+    replayInitAndHostVars(post, state);
+    onChannelsInvalidated();
+    replaySetCells(post, state);
+
+    // Assert
+    expect(posted).toEqual([
+      { type: "init", runtimeVersion: "1.0.0" },
+      { type: "setHostVar", name: "laps", value: { kind: "json", value: [1, 2, 3] } },
+      { type: "setHostVar", name: "front-fork", value: { kind: "channel", length: 0, t: new ArrayBuffer(0), v: new ArrayBuffer(0) } },
+      { type: "setCells", cells },
+    ]);
   });
 });

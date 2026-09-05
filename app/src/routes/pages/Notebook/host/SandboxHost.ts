@@ -6,7 +6,7 @@
  */
 import { channelPayload, isHostMessage, type HostToSandboxMessage, type HostVarPayload, type SandboxCell } from "./protocol";
 import { OutboundQueue } from "./outboundQueue";
-import { replayAfterRebuild } from "./rebuildReplay";
+import { replayInitAndHostVars, replaySetCells } from "./rebuildReplay";
 import { createWatchdog, type Watchdog } from "./watchdog";
 
 /** One queued outbound message plus the transfer list it must be posted with. */
@@ -39,15 +39,19 @@ export interface SandboxHostCallbacks {
   /** An inline `${…}` span resolved. */
   onInlineResult: (spanId: string, text: string) => void;
   /**
-   * Called once per rebuild, right after the new iframe is created, before
-   * any replay. A rebuilt sandbox's channel host variables cannot be
-   * restored from a cached copy the way JSON host variables can — the two
-   * `ArrayBuffer`s a prior `setChannelHostVar` call transferred are
-   * detached once `postMessage` moves them (review-task5b.md Major
-   * finding). The caller (the chart layer, `model/channelRebind.ts`)
-   * already holds the decoded tiles backing every bound channel in its
-   * `TileCache`, so re-deriving and calling `setChannelHostVar` again for
-   * each one costs no IPC (P2, P7).
+   * Called once per rebuild, after the new iframe's `init`/JSON-host-var
+   * replay has been queued but before `setCells` (see `rebuild()`'s doc
+   * comment — review-task5c.md Critical finding: calling this *before*
+   * `init` would queue its `setHostVar` messages ahead of the message that
+   * creates the sandbox's `SandboxRuntime`, and they would be silently
+   * dropped by `sandbox/main.ts`'s no-op-before-`init` handler). A rebuilt
+   * sandbox's channel host variables cannot be restored from a cached copy
+   * the way JSON host variables can — the two `ArrayBuffer`s a prior
+   * `setChannelHostVar` call transferred are detached once `postMessage`
+   * moves them (review-task5b.md Major finding). The caller (the chart
+   * layer, `model/channelRebind.ts`) already holds the decoded tiles
+   * backing every bound channel in its `TileCache`, so re-deriving and
+   * calling `setChannelHostVar` again for each one costs no IPC (P2, P7).
    */
   onChannelsInvalidated: () => void;
 }
@@ -184,29 +188,44 @@ export class SandboxHost {
 
   /**
    * Tears down the current iframe and builds a fresh one, then replays the
-   * last `init`/JSON-host-var/`setCells` payloads into it
-   * (`replayAfterRebuild`) so the notebook's cells and their JSON host
-   * variables survive a watchdog-triggered rebuild — only channel host
-   * variables and truly reactive/derived state are lost, per design §6.
-   * Every message posted here (via `postToSandbox`) is queued by
-   * `outboundQueue` until the new iframe's own `ready` arrives
-   * (review-task5b.md Critical finding) — it does not need to wait for
-   * that itself.
+   * last `init`/JSON-host-var/channel/`setCells` payloads into it so the
+   * notebook's cells, their JSON host variables, and their bound channels
+   * survive a watchdog-triggered rebuild — only truly reactive/derived
+   * state is lost, per design §6. Every message posted here (via
+   * `postToSandbox`) is queued by `outboundQueue` until the new iframe's own
+   * `ready` arrives (review-task5b.md Critical finding) — it does not need
+   * to wait for that itself.
    *
-   * `onChannelsInvalidated` fires before the replay, since it is itself
-   * `setChannelHostVar` calls that go through the same queued
-   * `postToSandbox` path and so are safe to issue immediately.
+   * Order is `init` → JSON host vars (`replayInitAndHostVars`) →
+   * `onChannelsInvalidated()` → `setCells` (`replaySetCells`) —
+   * **not** `onChannelsInvalidated()` first (review-task5c.md Critical
+   * finding). Queuing through `outboundQueue` makes every message here
+   * race-safe against the not-yet-`ready` iframe, but race-safety alone
+   * does not make *processing order* safe: `sandbox/main.ts`'s
+   * `setHostVar` handler (which both a JSON host var and a channel host
+   * var — `onChannelsInvalidated`'s `setChannelHostVar` calls — go
+   * through) is a documented no-op until `init` has run and created the
+   * `SandboxRuntime`. Calling `onChannelsInvalidated()` before `init` is
+   * queued would silently drop every channel-restoration message to that
+   * no-op, exactly the failure this ordering avoids. `setCells` is placed
+   * last (not between JSON vars and channels) so a cell's first
+   * post-rebuild run sees its bound channels' real values already applied,
+   * not the runtime's hard-coded channel default — the same reasoning
+   * `replayInitAndHostVars`/`replaySetCells`'s doc comments give for JSON
+   * host vars preceding `setCells`.
    */
   private rebuild(): void {
     this.postToSandbox({ type: "teardown" });
     this.iframe.remove();
     this.iframe = this.createIframe();
-    this.callbacks.onChannelsInvalidated();
-    replayAfterRebuild((message) => this.postToSandbox(message), {
+    const state = {
       lastInitRuntimeVersion: this.lastInitRuntimeVersion,
       lastCells: this.lastCells,
       lastJsonHostVars: this.lastJsonHostVars,
-    });
+    };
+    replayInitAndHostVars((message) => this.postToSandbox(message), state);
+    this.callbacks.onChannelsInvalidated();
+    replaySetCells((message) => this.postToSandbox(message), state);
   }
 
   /** Advances the watchdog's clock; call this from a real `setInterval` in the caller. */
