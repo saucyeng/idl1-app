@@ -44,11 +44,13 @@ export interface CursorReadoutDriver {
    *  already left the chart, which clears the panel rather than issuing a
    *  request for a stale position). */
   dispatchNow(viewport: Viewport, pixelX: number | null): void;
-  /** The pointer left the chart: clears the panel immediately and
-   *  invalidates any fetch already in flight from either trigger path
-   *  above, so a late-resolving result can never land afterwards
-   *  ("stale-by-sequence" — nothing in flight is cancelled, its result is
-   *  just dropped on arrival). */
+  /** The pointer left the chart: clears the panel immediately, cancels
+   *  {@link notify}'s pending debounce timer if one hasn't fired yet (so a
+   *  notify from just before the leave can never dispatch a fresh request
+   *  afterwards), and bumps the sequence counter so a fetch already
+   *  dispatched and in flight is dropped on arrival rather than
+   *  repopulating the panel — nothing already sent to `fetchCursorReadout`
+   *  is itself cancelled, only its eventual result is discarded. */
   leave(): void;
   /** Cancels a pending debounce timer from {@link notify}. Call on
    *  unmount, mirroring `model/settle.ts`'s own `cancel()`. */
@@ -68,6 +70,13 @@ export interface CursorReadoutDriver {
  * left the chart) and a `cursorRequestFor` `null` (pixel outside the
  * plotted area) both clear the panel (`onState(null)`) rather than issuing
  * a request — mirrored from `ChartCell.tsx`'s pre-R62 inline logic.
+ *
+ * {@link CursorReadoutDriver.leave} cancels {@link notify}'s pending
+ * debounce timer (nothing has been dispatched yet, so there is nothing "in
+ * flight" to drop by sequence alone) **and** bumps the sequence counter
+ * (so a fetch already dispatched before the leave — genuinely in flight —
+ * is dropped on arrival instead of repopulating the panel after the
+ * pointer is gone).
  *
  * @param deps Injected fetch/session/channel/sink — see {@link CursorReadoutDriverDeps}.
  * @param delayMs Debounce delay for {@link CursorReadoutDriver.notify}, in ms ({@link CURSOR_SETTLE_MS} in production).
@@ -117,6 +126,7 @@ export function makeCursorReadoutDriver(deps: CursorReadoutDriverDeps, delayMs: 
       dispatch(viewport, pixelX);
     },
     leave(): void {
+      settle.cancel();
       seq += 1;
       deps.onState(null);
     },

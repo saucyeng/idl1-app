@@ -101,6 +101,30 @@ describe("makeCursorReadoutDriver", () => {
     expect(onState).toHaveBeenCalledWith(null);
   });
 
+  it("makeCursorReadoutDriver — notify then leave before the window elapses — no request is issued", () => {
+    // Arrange
+    const { timer, advance } = makeFakeTimer();
+    const onState = vi.fn();
+    const fetchCursorReadout = vi.fn();
+    const driver = makeCursorReadoutDriver(
+      { fetchCursorReadout, onState, sessionId: "s1", channelId: "front-fork" },
+      100,
+      timer
+    );
+
+    // Act: the pointer stops moving, but leaves before the debounce window
+    // elapses — the pending timer must be cancelled outright, not merely
+    // superseded by sequence, since nothing has been dispatched yet.
+    driver.notify(VIEWPORT, 400);
+    driver.leave();
+    advance(1000);
+
+    // Assert
+    expect(fetchCursorReadout).not.toHaveBeenCalled();
+    expect(onState).toHaveBeenCalledTimes(1);
+    expect(onState).toHaveBeenCalledWith(null);
+  });
+
   it("makeCursorReadoutDriver — move then leave — clears the panel and drops a late-resolving result", async () => {
     // Arrange
     const { timer, advance } = makeFakeTimer();

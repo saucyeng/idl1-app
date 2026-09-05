@@ -176,8 +176,9 @@ export interface ChartCellProps {
  * calls the driver's `dispatchNow` with no extra debounce, so a pan/zoom
  * settle refreshes the readout too ("the viewport settle also refreshes
  * it," R62). `handlePointerLeave` calls the driver's `leave`, which clears
- * the panel and invalidates (by sequence, not by cancellation) any fetch
- * already in flight.
+ * the panel, cancels a not-yet-fired `notify` debounce timer outright, and
+ * bumps the driver's sequence counter so a fetch already dispatched and in
+ * flight is dropped on arrival instead of repopulating the panel.
  */
 export default function ChartCell({
   tiles,
@@ -355,9 +356,11 @@ export default function ChartCell({
     // must skip the cursor-readout request entirely rather than reading a
     // stale position, and the readout panel itself must clear immediately
     // rather than showing a reading for a cursor that no longer exists
-    // (review-task10.md Important). `driver.leave()` also invalidates
-    // (by sequence) any readout fetch already in flight from either
-    // trigger path, without cancelling it (R62).
+    // (review-task10.md Important). `driver.leave()` also cancels a
+    // not-yet-fired `notify` debounce timer outright and bumps the
+    // driver's sequence counter so a readout fetch already dispatched and
+    // in flight from either trigger path is dropped on arrival, never
+    // repopulating the panel after the pointer is gone (R62).
     lastPointerXRef.current = null;
     cursorDriverRef.current.leave();
   }, []);
