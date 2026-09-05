@@ -2,6 +2,22 @@
 
 **Status:** signed (lead) 2026-09-02 · **Date:** 2026-09-03 · **Owner:** lead
 
+**Revisions:**
+- 2026-09-05: wave-2 write amendment (lead ruling R59) — 17 commands added
+  (Catalog: `save_session_metadata`, `delete_session`; Workbook: `read_workbook`,
+  `create_workbook`, `fetch_host_channel`; Rasters and DSP: `fetch_fft`;
+  Device: `connect_device`, `disconnect_device`, `device_status`,
+  `device_control`, `pull_config`, `preview_channel_registry`; new §3.10 App
+  group: `get_settings`, `set_settings`, `get_data_dir`, `set_data_dir`,
+  `list_profiles`, `save_profile`, `delete_profile`); `eval_workbook` (§3.4)
+  amended with a `lap_context` argument; new §2 cross-cutting kind
+  `device_rejected`; one clarifying sentence added to §3.5's tile entry.
+  Quarantine commands, `save_track`/`delete_track`, `rescan_track_visits`,
+  `fetch_histogram` and `fetch_scatter_points` considered and deferred to
+  wave 3 — see §6. Also (lead ruling R60): `import_file` (§3.3) now
+  resolves with `ImportOutcome { session, warnings }` instead of a bare
+  `SessionSummary`; new §2 kind `import_collision`.
+
 Consumes: design doc §4 (IPC, data path for a chart, the reactive DAG), §6
 (interaction rules), §9 row C3, §10 (lanes); Task 5's M0 smoke commands
 (`engine_version`, `smoke_tile` — both superseded here); `TransportError` /
@@ -137,6 +153,17 @@ is applied uniformly, not case-by-case:
   condition the UI must present differently ("this file changed elsewhere —
   reload?" rather than an error toast). `detail` carries `{ expected, found }`.
   Raised by: Workbook (`save_workbook`).
+- **`device_rejected`** — *added post-sign (2026-09-05, lead ruling R59,
+  wave-2 write lane).* A sixth cross-cutting kind, raised when a device
+  refuses a control transition (SPEC §7.2 `AckCode` non-success value)
+  rather than the transport itself failing. Deliberately not folded into
+  `config` (which means a config document was rejected or malformed on the
+  wire) or `invalid_argument` (a caller programming error): a
+  busy/precondition/write-not-permitted/not-implemented refusal is a
+  recoverable condition the UI must present differently ("stop the
+  recording first"). `detail` carries `{ ack: "busy" | "precondition" |
+  "write_not_permitted" | "not_implemented" }`. Raised by: Device
+  (`device_control`).
 
 | `kind` | Source | Raised by (command group) |
 |---|---|---|
@@ -154,6 +181,7 @@ is applied uniformly, not case-by-case:
 | `import_gpx_unparseable_lat_lon` | `ImporterError::GpxUnparseableLatLon` | Import: `import_file` (`.gpx` source, a `<trkpt>`'s `lat`/`lon` isn't a parseable number) |
 | `import_csv_malformed` | `ImporterError::CsvMalformed` | Import: `import_file` (`.csv` source, missing/malformed header or no data rows) |
 | `import_not_utf8` | `ImporterError::NotUtf8` | Import: `import_file` (`.gpx`/`.csv` source, bytes aren't valid UTF-8 — never raised for `.fit`, which is binary) |
+| `import_collision` | `ImporterError::Collision` | Import: `import_file` (re-import of a different blob under an existing session id — see the R60 note below) |
 | `workbook_missing_front_matter_id` | `WorkbookErrorKind::MissingFrontMatterId` | Workbook: `open_workbook`, `eval_workbook` (fatal — no `WorkbookDoc` is constructable without a valid `id`, C2 §3.5.A) |
 | `workbook_unsupported_version` | `WorkbookErrorKind::UnsupportedWorkbookVersion` | Workbook: `open_workbook`, `eval_workbook` (fatal — explicit `version` ≠ `3`, C2 §1) |
 | `workbook_invalid_front_matter` | `WorkbookErrorKind::InvalidFrontMatter` | Workbook: `open_workbook`, `eval_workbook` (fatal — the front-matter block is not valid YAML, C2 §3.5.A) |
@@ -177,6 +205,7 @@ is applied uniformly, not case-by-case:
 | `invalid_argument` | cross-cutting | Import: `import_file` (unknown `importer_id`); Workbook: `save_workbook` (malformed markdown/front matter); Tiles: `fetch_tile` (`tier` outside the engine's configured tier set); Rasters: `fetch_raster` (bad `width`/`height`/`kind`); Cursor: `cursor_readout` (unknown channel in the list); Sync: `pair_peer` (malformed code) |
 | `io` | cross-cutting (also folds `ParseError::Io`, `ConfigErrorKind::Io`, `ExportError::Io`, `FitExportError::Io`) | any command that touches the filesystem: Catalog (all seven — `list_sessions`, `get_session`, `list_laps`, `rebuild_catalog`, `list_workbooks`, `list_tracks`, `get_track`), Import: `import_file`, Workbook (`open_workbook`, `save_workbook`, `watch_workbook`), Tiles: `fetch_tile`, Rasters: `fetch_raster`, Device: `download_file`, Sync: `sync_status` |
 | `internal` | cross-cutting (also folds `ExportError::Json`) | any command — unexpected/programmer-error conditions that are not the caller's fault |
+| `device_rejected` | cross-cutting | Device: `device_control` (a refused control transition — see the R59 note above) |
 
 **Added post-sign (2026-09-03, lead ruling R7, wave-1 L2).** The seven
 `import_*` rows above are new: `ImporterError` (`rust/core/src/import/error.rs`,
@@ -185,6 +214,16 @@ L2) is a new core error enum for the FIT/GPX/CSV importers, prefixed
 command group's name (§3.3), distinct from `parse_*` (`ParseError`,
 `.idl0`-only, unchanged). §2's original table had no rows for these variants
 because L2 hadn't been drafted when C3 was signed.
+
+**Added post-sign (2026-09-05, lead ruling R60).** `import_collision`
+(`ImporterError::Collision`) is a new `import_*` row: a re-import of a
+different blob under a session id the catalog already holds. It is kept
+distinct from the cross-cutting `conflict` kind rather than folded into it —
+the same precedent ruling R44 set for `conflict` itself — because a blob
+collision on import is a different recoverable condition than an
+optimistic-concurrency failure on a file write, and folding the two would
+make `conflict` mean two unrelated things the UI cannot tell apart without
+reading `message` (§2 forbids that).
 
 **Added post-sign (2026-09-04, lead ruling R21, wave-1 L3).** The five
 `workbook_*` rows above are new: `WorkbookErrorKind`
@@ -438,6 +477,55 @@ interface TrackDetail {
 ```
 Errors: `not_found`, `io`, `internal`.
 
+**`save_session_metadata(session_id: string, metadata: SessionMetadataPatch)`**
+*Added post-sign (2026-09-05, lead ruling R59, wave-2 write lane).* Satisfies
+wave-2 need L7-1.
+
+```ts
+/** The nine editable `session.json` fields (C1 §6). "" is the only
+ *  not-set representation — C1 §6 defines no null for these. Whole-block
+ *  replace, not a sparse patch: every field is required, so a concurrent
+ *  editor cannot half-apply one. */
+interface SessionMetadataPatch {
+  rider: string; bike: string; bike_comment: string;
+  venue_name: string; event_name: string; event_session: string;
+  short_comment: string; long_comment: string; tag: string;
+}
+```
+Return: `SessionDetail` (above).
+
+Reads `session.json`, replaces exactly those nine fields, leaves every other
+key (`laps`, `track_visits`, the lap-flag fields, `bike_profile_snapshot`,
+`schema_version`) untouched, writes through
+`store::session_json::write_session_json` (C4 §4 atomic write), then re-reads
+and returns `catalog_read::get_session`'s `SessionDetail` so the pane redraws
+from canonical truth rather than from what it hoped it wrote. Unknown keys in
+`metadata` are ignored, not rejected. The catalog row is **not** re-indexed
+by this command; `rebuild_catalog` reconciles it (C4 §5).
+
+The command computes the optimistic-concurrency check internally (read,
+hash, write) rather than taking a `based_on_hash` argument — last-write-wins
+inside the command, no `conflict` kind raised (ruling R59 Q1(a); revisit
+when L11 LAN sync makes concurrent edits real).
+
+Errors: `not_found` (unknown `session_id`), `invalid_argument` (a field that
+is not a string), `io`, `internal`.
+
+**`delete_session(session_id: string, delete_blob: boolean)`**
+*Added post-sign (2026-09-05, lead ruling R59, wave-2 write lane).* Satisfies
+wave-2 need L7-3.
+
+Return: `void`.
+
+Removes `<data>/sessions/<session_id>/` recursively and the catalog rows for
+that session. `delete_blob: true` additionally removes the blob at
+`blobs/sha256/<2>/<62>` named by the session's `blob_sha256`; `false` keeps
+it (idl0's "Forget session"). A blob still referenced by another session is
+never removed even when `delete_blob: true` — blobs are content-addressed
+and shared by construction (C4 §3).
+
+Errors: `not_found` (unknown `session_id`), `io`, `internal`.
+
 ### 3.3 Import (L2)
 
 **`import_file(path: string, importer_id: string | null, progress: Channel<Progress>)`**
@@ -445,10 +533,26 @@ Errors: `not_found`, `io`, `internal`.
 ids `list_importers` returns to force a specific importer.
 Streams `Progress` (`phase` values e.g. `"reading"`, `"decoding"`,
 `"materializing"`) then resolves with:
-Return: `SessionSummary` (§3.2).
+Return: `ImportOutcome` — *changed post-sign (2026-09-05, lead ruling R60)*
+from a bare `SessionSummary`:
+```ts
+interface ImportOutcome {
+  session: SessionSummary;   // §3.2, unchanged shape
+  warnings: string[];        // the importer's recovered warnings, e.g. a
+                              // truncated-record recovery; empty on a clean import
+}
+```
+A catalog row (`SessionSummary`) must not carry per-import state, and
+dropping the importer's recovered warnings — including truncation — would
+violate CLAUDE.md §5's "recover what's readable, surface a warning." This
+resolves open question 6.2 below: `parse_truncated_record` recovery
+surfaces here, on `warnings`, rather than as a command rejection.
 Errors: `not_found` (path missing), `invalid_argument` (unrecognised
 `importer_id`), `parse_invalid_magic_bytes`, `parse_unsupported_schema_version`,
-`parse_truncated_record` (`.idl0` sources only), `io`, `internal`.
+`parse_truncated_record` (`.idl0` sources only), `import_collision`
+(*added post-sign, 2026-09-05, lead ruling R60* — `ImporterError::Collision`,
+re-import of a different blob under an existing session id, §2), `io`,
+`internal`.
 
 **`list_importers()`**
 Args: none.
@@ -481,7 +585,45 @@ R21)*: opening a document whose front matter or cell ids are malformed
 enough that no `WorkbookDoc` can be built now rejects with the specific
 `workbook_*` kind (§2) instead of failing some other, less informative way.
 
-**`eval_workbook(id: string, session_id: string | null)`**
+**`read_workbook(id_or_path: string)`**
+*Added post-sign (2026-09-05, lead ruling R59, wave-2 write lane).* Satisfies
+wave-2 need L6-N1 — closes the gap that made `save_workbook` unusable as
+specified: no command let the editor read the file it was about to save
+`based_on_hash` against.
+
+```ts
+interface WorkbookSource {
+  markdown: string;   // the file's UTF-8 text, verbatim
+  hash: string;       // sha256 of those bytes, hex — the `based_on_hash` a later save passes
+  path: string;       // absolute, under <data>/workbooks/
+}
+```
+Return: `WorkbookSource`.
+
+Returns bytes and **does not parse**. Deliberately does not raise the four
+document-fatal `workbook_*` kinds: a document whose front matter is
+malformed must still be readable in order to be repaired in the editor.
+That separation from `open_workbook` is the entire point of the command.
+
+Errors: `not_found`, `io`, `internal`.
+
+**`create_workbook(name: string)`**
+*Added post-sign (2026-09-05, lead ruling R59, wave-2 write lane).* Satisfies
+wave-2 need L6-N8.
+
+Return: `WorkbookHandle` (above).
+
+Mints a UUIDv4 id, writes a minimal valid v3 document (front matter with
+`id`, `name` and `version: 3`; no cells), and returns the existing
+`WorkbookHandle`. The file name derives from `name`, filesystem-sanitised —
+not from the id. A `file_name` collision on create follows the
+`session_filename.dart` convention (SPEC §15.1) and appends `-2`, `-3`, …
+(C4 §2) — not an error.
+
+Errors: `invalid_argument` (empty `name`, or a name that sanitises to an
+empty filename), `io`, `internal`.
+
+**`eval_workbook(id: string, session_id: string | null, lap_context: LapContext | null)`**
 *`session_id` added post-sign (2026-09-04, lead ruling R41).* `eval_cells`
 requires a channel lookup and a lap context; the original signature supplied
 neither, and C2 deliberately has no front-matter session binding — the active
@@ -491,6 +633,35 @@ evaluates against an empty `SessionHandle` and `MathLapContext::empty()`, so
 `[Channel]` references surface as per-cell `math_unknown_channel` rather than
 the whole command failing. When a session IS bound, wave-1 lap context comes
 from that session's `session.json` `laps[]`.
+
+**`lap_context` added post-sign (2026-09-05, lead ruling R59, wave-2 write
+lane, ruling R52 Q5).**
+```ts
+interface LapContext {
+  main_lap: number | null;    // 1-based, matching §3.2 LapSummary.lap_number
+  overlay_laps: number[];     // 1-based, may be empty
+}
+```
+`null` keeps today's behaviour exactly (`MathLapContext::empty()`), so the
+argument is additive and no existing caller changes. Six `Implemented`
+functions in C2 §3.3 read `MathLapContext` and are unreachable without it:
+`current_lap()`, `sector_number()`, `lap_start_time(n)`,
+`lap_start_distance(n)`, `variance_time(ch)` and `variance_dist(ch)`. The
+Main/Overlay designation is a UI selection, not a property of the file (R41)
+and is written by `state/AppState.tsx`'s `selection.lapContext = { mainLap,
+overlayLaps }` (R53 Data Q3), passed through unchanged.
+
+An `Option`-typed trailing argument that Tauri deserialises to `None` when
+absent, and whose `None` reproduces today's behaviour bit for bit, is not a
+breaking change under §5 — R41 (`session_id`) and R43 (`column_count`) set
+that precedent post-sign on this same contract.
+
+**Note.** Until lap indexing at import lands (Rust backlog, R53 Data Q4), no
+session has laps, so every non-null `lap_context` rejects with
+`invalid_argument`. The argument is still correct to add now — there is
+nowhere else to put the designation — but the feature it unlocks arrives
+with that backlog item.
+
 Return: `CellOutput[]`, one entry per cell, in document order.
 ```ts
 interface CellOutput {
@@ -530,7 +701,9 @@ matter`, `workbook_invalid_cell_id`, §2) that means no `WorkbookDoc` exists
 to produce any `CellOutput` at all.
 Errors (command-level): `not_found`, `io`, `internal`,
 `workbook_missing_front_matter_id`, `workbook_unsupported_version`,
-`workbook_invalid_front_matter`, `workbook_invalid_cell_id`.
+`workbook_invalid_front_matter`, `workbook_invalid_cell_id`, and — *added
+post-sign (2026-09-05, lead ruling R59)* — `invalid_argument` when a named
+lap in `lap_context` does not exist on `session_id`, with `detail { lap }`.
 
 **`save_workbook(id: string, markdown: string, based_on_hash: string | null)`**
 *`based_on_hash` added post-sign (2026-09-04, lead ruling R44).* C4 §4 steps
@@ -566,6 +739,41 @@ interface WorkbookEvent {
 }
 ```
 Errors (on the initial `Promise` only): `not_found`, `io`, `internal`.
+
+**`fetch_host_channel(workbook_id: string, session_id: string | null, def_name: string, budget: number)`**
+*Added post-sign (2026-09-05, lead ruling R59, wave-2 write lane, ruling
+R52 Q6).* Satisfies wave-2 need L6-N3; closes the "host-channel byte path"
+open item below, which R45 deferred to wave 2.
+
+`budget`: `u32`, max points, validated `1..=65536`. Returns raw bytes via
+`tauri::ipc::Response` (`Result<Response, IpcError>`), so arguments and
+existence are validated before any byte is produced (§1).
+
+**Binary layout `IDLH`, version 1.** Little-endian throughout.
+
+| Field | Type | Byte offset | Notes |
+|---|---|---|---|
+| `magic` | `[u8; 4]` | 0 | ASCII `"IDLH"` |
+| `version` | `u16` | 4 | `1` |
+| `flags` | `u16` | 6 | bit 0 = `has_t`; all other bits reserved, zero |
+| `length` | `u32` | 8 | number of `f64` values in `v` |
+| `t_length` | `u32` | 12 | number of `f64` values in `t`; `0` when the source has no recorded axis |
+| `reserved` | `[u8; 8]` | 16 | zero-filled |
+
+Header ends at byte offset **24**, padded so both payload arrays start on an
+8-byte boundary (ruling R59 Q3(a)). Then `t` as `t_length` × `f64` at offset
+24 (seconds, matching `to_host_channel`'s µs→s conversion), then `v` as
+`length` × `f64` at offset `24 + t_length*8`. Total length
+`24 + t_length*8 + length*8`.
+
+`t` is empty (`t_length == 0`, `has_t` clear) when the source has no recorded
+axis — a scalar or table-column result (C1's "time is recorded, not
+assumed"). Decimation to `budget` happens before these bytes are produced,
+so `length` is always ≤ `budget`.
+
+Errors: `not_found` (unknown workbook or definition), `invalid_argument`
+(`budget` outside range), the `math_*` kinds when the definition itself
+fails to evaluate, `io`, `internal`.
 
 **Host-channel byte path — open item, owner L5 (added post-sign,
 2026-09-04, lead ruling R21).** `CellDefResult.value` above and C2 §5.1's
@@ -669,6 +877,11 @@ ruling R25, wave-1 L3):*
 bytes (added post-sign, 2026-09-04, lead ruling R25, wave-1 L3 — was
 `32 + sample_count*8 + column_count*12`).
 
+*Added post-sign (2026-09-05, lead ruling R59, wave-2 write amendment,
+Q3).* Regions are not alignment-padded; decoders copy through a DataView,
+they do not view the buffer in place. A zero-copy decoder is a
+layout-version bump.
+
 **Worked example — tier 3, 512 samples, 256 columns:**
 ```
 header:                 offset    0, length 32     → header occupies [0, 32)
@@ -757,6 +970,42 @@ rows), row 0 first (top), each row left-to-right.
 
 *Worked example — 64×32, format 0:* pixel data length `64*32*4 = 8192`
 bytes → pixel region `[16, 8208)`, total raster length `16 + 8192 = 8208` bytes.
+
+**`fetch_fft(session_id: string, channel: string, lap: number | null, params: SpectrogramParams, averaging: "none" | "mean" | "max" | "median")`**
+*Added post-sign (2026-09-05, lead ruling R59, wave-2 write lane, ruling
+R52 Q7).* Satisfies wave-2 need L6-N5.
+
+`params` reuses `SpectrogramParams` (above) verbatim — the same window, hop,
+detrend and scaling vocabulary over the same `idl_rs::fft` types.
+`averaging` is idl0's cross-segment `Averaging`. Returns raw bytes via
+`tauri::ipc::Response`.
+
+**Binary layout `IDLF`, version 1.** Little-endian throughout.
+
+| Field | Type | Byte offset | Notes |
+|---|---|---|---|
+| `magic` | `[u8; 4]` | 0 | ASCII `"IDLF"` |
+| `version` | `u16` | 4 | `1` |
+| `reserved` | `[u8; 2]` | 6 | zero-filled |
+| `bin_count` | `u32` | 8 | number of `f32` magnitudes that follow |
+| `sample_rate_hz` | `f32` | 12 | the channel's real rate, derived from its recorded `t_us` axis |
+
+Header ends at byte offset **16**, padded so the magnitude array starts on
+a 4-byte boundary (ruling R59 Q3(a)); magnitudes are `bin_count` × `f32`
+from offset 16. Total `16 + bin_count*4`. Bin `k`'s frequency is
+`k * sample_rate_hz / (2 * bin_count)`, derived frontend-side from the two
+header fields, so no second array crosses.
+
+This is a wrapper over the `idl_rs::fft` the spectrogram raster already
+uses, not new DSP. The math catalog's `fft(ch, window)` is not a
+substitute: its result is a bin-indexed channel with no frequency axis
+attached, so a chart built on it would synthesise the axis in JavaScript,
+which CLAUDE.md §2 forbids.
+
+Errors: `not_found`, `invalid_argument` (bad `params`, or a `lap` not
+present on the session), `io`, `internal`. As with `eval_workbook`'s
+`lap_context`, `lap` must be `null` in practice until lap indexing at
+import lands (§6).
 
 ### 3.7 Cursor (L3)
 
@@ -849,6 +1098,124 @@ Errors: `config_parse`, `config_unsupported_version` (local validation
 failures, raised before anything is sent), `ble`, `wifi`, `config` (device
 rejected the pushed config, or transport failed mid-push).
 
+**`connect_device(device_id: string)` / `disconnect_device(device_id: string)`**
+*Added post-sign (2026-09-05, lead ruling R59, wave-2 write lane, ruling
+R53 Device Q4).* Satisfies wave-2 need L7-13.
+
+`connect_device` returns `ConnectionInfo` (above) and leaves the BLE link
+**open**, held in a new `state::Connections` map
+(`Mutex<HashMap<String, ConnectedDevice>>`, registered in `app/src-tauri`'s
+`.setup()` beside `DataDir`/`Hashes`/`Watchers`). `disconnect_device` tears
+it down and returns `void`; disconnecting an unconnected device is a no-op,
+not an error.
+
+`ble_connect` above is **unchanged and stays registered**: it connects,
+reads firmware, and disconnects inside its own call — this is an added
+command, not a changed signature (§5). `device_status`, `device_control`
+and `pull_config` below use the managed link when one exists for
+`device_id` and otherwise connect-act-disconnect, so the Device tab works
+either way and a dropped link degrades rather than fails.
+
+Errors: `ble`, `not_found` (device not discoverable), `internal`.
+
+**`device_status(device_id: string)`**
+*Added post-sign (2026-09-05, lead ruling R59, wave-2 write lane, ruling
+R59 Q6).* Satisfies wave-2 need L7-8.
+
+One read of SPEC §7.3's status characteristic, mirroring
+`idl_transport::ble_status::DeviceStatus` field for field with
+`#[serde(rename_all = "snake_case")]` on its three enums:
+
+```ts
+interface DeviceStatus {
+  wifi_on: boolean | null;
+  logging: boolean | null;                                 // true while recording
+  battery_pct: number | null;                              // u8, percent
+  sd: "ok" | "full" | "error" | "absent" | null;
+  gps: "fix" | "no_fix" | "absent" | null;
+  imu: "ok" | "partial" | "error" | "absent" | null;
+  firmware: string | null;
+  ota_pending_verify: boolean;                             // never null
+  hr: string | null;                                       // raw §7.3 line value
+  hr_battery_pct: number | null;                           // u8, percent
+}
+```
+Every field except `ota_pending_verify` is nullable, and `null` means "the
+device did not report this line" — never zero. `parse_status` already
+guarantees that: unknown lines are ignored so the set may grow, and a
+malformed value for a known key leaves that field `None` rather than
+failing the parse. This shape mirrors the landed transport rather than the
+ten fields the lane's IPC needs list proposed — four of those
+(`sd_free_bytes`, `gps_fix_quality`, `gps_satellites`,
+`battery_millivolts`) have no source in SPEC §7.3 or the landed parser; see
+§6's wave-2 amendment note for the follow-up question to Isaac.
+
+Errors: `ble`, `not_found`, `internal`.
+
+**`device_control(device_id: string, command: "start_recording" | "stop_recording" | "wifi_on" | "wifi_off")`**
+*Added post-sign (2026-09-05, lead ruling R59, wave-2 write lane).*
+Satisfies wave-2 need L7-9.
+
+Return: `DeviceStatus` (above) — the post-transition status, so the UI
+never has to guess whether the device took the instruction.
+
+`command` maps onto `idl_transport::ble_control::ControlCommand`:
+`start_recording` → `StartLogging` (0x03), `stop_recording` → `StopLogging`
+(0x04), `wifi_on` → `WifiOn` (0x01), `wifi_off` → `WifiOff` (0x02). The
+other five `ControlCommand` variants are **not** exposed: `CalibrateImu` is
+wave 3 (SPEC §7.6), `OtaConfirm` belongs to the deferred firmware path, and
+`ConfigBegin`/`ConfigCommit`/`ConfigReadBegin` are internal to
+`push_config`/`pull_config`.
+
+SPEC §7.2's ACK `0x00` means "accepted and dispatched", not "completed" —
+completion is the FF04 status notify. The command therefore writes, then
+polls status until the transition is observed or a bounded timeout
+expires, the same pattern `list_device_files` already uses for `WifiOn` in
+`commands/device.rs`. A timeout returns the last status read rather than
+failing, so the UI shows what the device actually reports.
+
+Errors: `ble`, `not_found`, `invalid_argument` (unknown `command` string),
+`device_rejected` (the device returned a non-success `AckCode` — SPEC
+§10.4 suspends BLE control in WiFi mode, and a reboot would abort a
+recording; §2's new cross-cutting kind, ruling R59 Q4), and `internal`.
+
+**`pull_config(device_id: string)`**
+*Added post-sign (2026-09-05, lead ruling R59, wave-2 write lane).*
+Satisfies wave-2 need L7-10.
+
+Return: `string` — the device's live `idl0_config.json` as a JSON string,
+symmetric with `push_config`'s `config_json` argument. Drives
+`ControlCommand::ConfigReadBegin` (0x09) and reassembles the chunks
+through the landed `ble_config::reassemble_config_reads`;
+`ble_config::configs_match` is what a caller uses for the verify half of a
+push.
+
+Errors: `ble`, `not_found`, `config` (the device returned something
+unparseable — this is the §2 `config` kind's own meaning, a config
+document malformed on the wire), `internal`.
+
+**`preview_channel_registry(config_json: string)`**
+*Added post-sign (2026-09-05, lead ruling R59, wave-2 write lane, ruling
+R53 Device Q1).* Satisfies wave-2 need L7-12.
+
+```ts
+interface RegistryRow {
+  channel_id: number;                          // u16, SPEC §5.2
+  data_type: "i16" | "i32" | "u8" | "u16" | "u32";
+  sample_rate_hz: number;                      // 0 = event-driven (SPEC §5.7)
+  scale: number; offset: number;
+  name: string; units: string;
+}
+```
+Return: `RegistryRow[]` — a pure function of the config document, no
+device I/O. It lives in the Device group because that is the only surface
+that calls it; the implementation is in `core` (`scale = range / 32768` is
+SPEC §3's own formula, already owned by `core::parse`, not restated in
+TypeScript).
+
+Errors: `config_parse`, `config_unsupported_version` (both already in §2's
+table), `invalid_argument`, `internal`.
+
 ### 3.9 Sync (L11)
 
 **`sync_status()`**
@@ -885,6 +1252,96 @@ Errors: `sync`, `not_found` (unknown/unpaired `peer_id`).
 Return: `PeerStatus` (§3.9 above).
 Errors: `sync`, `invalid_argument` (malformed code — wrong length/non-digit),
 `not_found` (code not recognised or expired).
+
+### 3.10 App
+
+**Added post-sign (2026-09-05, lead ruling R59, wave-2 write lane).** New
+group: `get_settings`/`set_settings`, `get_data_dir`/`set_data_dir` and the
+three profile commands are app and profile state — not catalog rows, not
+import, not workbook, not tiles/rasters/cursor, not device I/O, not sync.
+`app/src/ipc/app.ts` is the wrapper module (§1's one-module-per-group
+rule); the group's commands live in `rust/tauri/src/commands/app.rs`.
+
+**`get_settings()` / `set_settings(settings: AppSettings)`**
+Satisfies wave-2 need L7-6 (ruling R53 Settings Q1).
+
+```ts
+/** Exactly `idl_rs::store::settings::AppSettings` and C4 §1's settings.json
+ *  keys — no translation layer. */
+interface AppSettings {
+  data_dir: string | null;
+  rider_name: string;                  // "" = not set (C4 §1)
+  unit_system: "imperial" | "metric";  // engine default "imperial"
+}
+```
+Both return `AppSettings` (the state after the call).
+
+`get_settings` calls `store::settings::load(app_config_dir()/settings.json)`,
+which never fails — a missing or malformed file yields defaults (C4 §1).
+`set_settings` calls `store::settings::save`, a whole-document replace
+through C4 §4's primitive, staged in the file's own directory.
+
+`set_settings` ignores the `data_dir` field of its argument and echoes the
+current value in its response — `set_data_dir` below is the sole writer of
+that key (ruling R59 Q5).
+
+Errors: `io`, `internal` (`SettingsErrorKind::Encode` folds to `internal`
+per §2's folding rule; `load` never fails).
+
+**`get_data_dir()` / `set_data_dir(path: string | null)`**
+Satisfies wave-2 need L7-7 (ruling R53 Settings Q4).
+
+```ts
+interface DataDirInfo {
+  /** The <data> root in use for this process (C4 §1). */
+  resolved_path: string;
+  /** The override from settings.json, or null when the platform default is in use. */
+  override_path: string | null;
+  /** True when `resolved_path` differs from what `override_path` would give —
+   *  the override changed and the app has not restarted. */
+  restart_required: boolean;
+}
+```
+Both return `DataDirInfo`.
+
+`resolved_path` is the managed `state::DataDir`, resolved once at startup
+and cached for the process lifetime (C4 §1) — which is precisely why
+`restart_required` is a real condition and not defensive coding.
+`set_data_dir` writes only the `data_dir` key, read-modify-write,
+preserving `rider_name` and `unit_system` (ruling R59 Q5); it does **not**
+move existing files, and C4 §1 requires the UI to state that before
+committing a change ("old data left at `<old path>`").
+
+Errors: `invalid_argument` (a relative path, or one the app cannot
+create), `io`, `internal`.
+
+**`list_profiles()` / `save_profile(profile: BikeProfile)` / `delete_profile(profile_id: string)`**
+Satisfies wave-2 need L7-11.
+
+```ts
+interface BikeProfile {
+  profile_id: string; profile_name: string;
+  created_at_ms: number; updated_at_ms: number;   // i64
+  /** The SPEC §8 device-config document, stored and pushed verbatim. */
+  config: Record<string, unknown>;
+}
+interface ProfileLoadReport {
+  profiles: BikeProfile[];                        // sorted by profile_name ascending
+  /** Files that failed to parse — never a failure of the whole load. */
+  skipped: { path: string; reason: string }[];
+}
+```
+`list_profiles` returns `ProfileLoadReport`; `save_profile` returns the
+`BikeProfile` as written; `delete_profile` returns `void`. Thin over
+`store::profile::{load_all, save, delete}` against `<data>/profiles/*.idl0p`
+(C4 §2).
+
+Core's `profile::delete` is idempotent — it no-ops on a missing file — but
+the command layer raises `not_found` when the file is absent, so a delete
+of a stale id doesn't silently succeed.
+
+Errors: `not_found` (delete of an unknown id), `invalid_argument` (a
+`config` that is not a JSON object), `io`, `internal`.
 
 ---
 
@@ -1087,3 +1544,38 @@ engine.
     commit to this, so `LapDetail` types both `unknown[]` rather than
     guessing. Assigned: lead/C1 — pin the element shape in C1 §6 (or here,
     if C1 declines to) before `list_laps`/`get_session` ship.
+
+### Wave-2 amendment (R59)
+
+*Added post-sign (2026-09-05, lead ruling R59, wave-2 write lane.)* Five
+needs from the batched wave-2 IPC-needs lists, considered in
+`runs/2026-09-05/C3-WAVE2-AMENDMENT-DRAFT.md` and deferred to wave 3 rather
+than added to §3:
+
+- **`list_quarantine` / `resolve_quarantine`** — ruling R59 Q2(a). Nothing
+  in landed core writes a quarantine file today (`store::verify::verify`
+  returns `Finding`s and performs no move); shipping the pair now would put
+  a permanently-empty command and a permanently-empty `reason` field into a
+  signed contract. Deferred alongside the repair action that would populate
+  `tmp/quarantine/`.
+- **`save_track` / `delete_track`** — blocked by open question 10 above
+  (`TrackDetail`'s nested fields are typed `unknown` pending
+  `track_artifact::model::Track`); ruling R54 already dropped the Track
+  facet from the Data tab for wave 2.
+- **`rescan_track_visits`** — not a command gap but an engine gap:
+  track-visit detection over a session does not exist in core and no lane
+  owns it yet.
+- **`fetch_histogram`** — ruling R52 Q7. The 1-D histogram is genuinely new
+  binning code, not a wrapper like `fetch_fft` (§3.6) is over the existing
+  `idl_rs::fft`.
+- **`fetch_scatter_points`** — filed by its own lane as wave 3; the density
+  mode the G-G diagram needs is already served by
+  `fetch_raster(kind: "histogram2d")`.
+
+**For Isaac (carried from ruling R59 Q6):** could the firmware report SD
+free bytes, GPS fix quality, satellite count and battery millivolts in the
+SPEC §7.3 status block? `device_status` (§3.8) mirrors the landed
+`idl_transport::ble_status::DeviceStatus` exactly, which has no field to
+source those four values from. If the firmware can add them, a SPEC §7.3
+amendment lets `device_status` grow additively (§5); if not, they stay
+absent from the contract.
