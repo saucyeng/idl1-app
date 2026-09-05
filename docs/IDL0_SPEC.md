@@ -2148,19 +2148,74 @@ The Data tab is a McMaster-Carr-style faceted search interface that operates ove
 
 View toggle: `SegmentedButton<DataView> { sessions, tracks }`. The active filter set persists when switching views; facets not applicable to the current view (e.g., lap-time range when viewing tracks) are hidden or greyed.
 
-### 24.4 Filter Rail
+### 24.4 Filter Rail (idl1, wave 2 — `app/src/routes/pages/Data/`)
 
-Sections, top to bottom:
-- **Date** — chips (Today / Week / Month / Custom). Single-select; presets clear the custom range.
-- **Track** — multi-select with inline search + per-option count badge.
-- **Venue** — multi-select. "(none)" pseudo-entry covers tracks/sessions with an empty `venueName`.
-- **Bike** — multi-select. "(none)" pseudo-entry covers sessions with an empty `bike` field.
-- **Rider** — multi-select. "(none)" pseudo-entry.
-- **Tag** — multi-select. "(none)" pseudo-entry.
-- **Lap time** — `RangeSlider` with mm:ss text inputs. Domain linear `[0, ceilTo5Min(maxKnownLapTime)]` clamped `[60 s, 10800 s]`. Recomputed when the library changes. Two `TextField` mm:ss inputs below the slider are two-way bound; typing updates the slider, dragging updates the text. Empty Max = no upper bound.
-- **Source** — checkboxes for `.idl0` and `.gpx`.
+Rewritten for idl1 (was idl0's `_FacetGroup`/`FilterRail`/`filter_rail.dart`,
+Flutter). The facet model is `Data/filters.ts`'s `DataFilters` (state) and
+`Data/facets.ts`'s `matchesFilters`/`facetCounts` (matching); the rail itself
+is `Data/FilterRail.tsx`, the dismissible-chip row above the results is
+`Data/ActiveChips.tsx`.
 
-Each multi-select facet uses a `_FacetGroup` widget: section heading, inline `TextField` search when ≥ 8 options, list of `CheckboxListTile`s with label + count "(N)", virtualised when > 200 options.
+**Combining rule.** Filters compose with **AND across facet categories** — a
+row must pass every active facet to appear in the results. Within one
+multi-select facet, matching is **OR** — any one of the selected values is
+enough (e.g. selecting two bikes shows sessions ridden on either). An empty
+selection (a Set with no members, or `null` for a range) means that facet is
+inactive and passes every row through unfiltered.
+
+**The `""`-is-"(none)" convention.** For Bike, Rider, Tag and Venue, the
+empty string `""` is a synthetic pseudo-entry selectable like any other
+option; it matches a row whose corresponding `SessionSummary` field is the
+empty string (idl0's "(none)" entries, ported as-is).
+
+Facets, top to bottom (`FilterRail.tsx`'s section order), and what each
+reads:
+- **Date** — inclusive range over `SessionSummary.timestamp_utc_ms`, compared
+  by local (viewer time zone) calendar day so a row on the range's own last
+  day matches regardless of time-of-day. Today / Week / Month presets plus a
+  custom start/end pair.
+- **Bike** — multi-select over `SessionSummary.bike`. `""` is "(none)".
+- **Rider** — multi-select over `SessionSummary.rider`. `""` is "(none)".
+- **Tag** — multi-select over `SessionSummary.tag`. `""` is "(none)".
+- **Venue** — multi-select over `SessionSummary.venue_name`. `""` is "(none)".
+- **Lap time** — inclusive millisecond range. At wave 2 this keys off
+  `SessionSummary.duration_ms` (a session's total ride time), the closest
+  field a `SessionSummary` actually carries — there is no per-lap time on a
+  `SessionSummary`. A row with a `null` `duration_ms` is excluded from a
+  bound range, not included by default.
+- **Source** — multi-select over `SessionSummary.source_format`, **C3's own
+  vocabulary** (`idl0 | fit | gpx | csv`) — not idl0's `SessionSourceType`
+  enum, which named formats idl1 doesn't import from this path (e.g. no bare
+  `.gpx`-as-track distinction) and lacks `fit`/`csv`.
+
+**Track, has-gates and has-GPS are absent for wave 2** (R53 Data Q2, R54) —
+dropped outright, not stubbed, not shown disabled. None of the three is
+derivable from a `SessionSummary`: Track needs lap-level attribution
+(`LapSummary.track_id` or `SessionDetail.track_visits`), "has gates" needs a
+matched Track's gate list, "has GPS" needs a GPS channel presence check, and
+all three currently require a per-session `getSession` or lap-indexed data
+this tab's local filtering does not have. **R54 ruling:** a facet a viewer
+can select but that structurally can never match a row (as a wave-2 Track
+facet fed only by `list_tracks`, with no session→track linkage, would be) is
+a trap, not honesty — worse than simply not offering it. This differs from
+the lap-time and lap-count gaps, which keep the control and render "—"/empty
+per row (R53 Data Q4): those controls still act, they just have nothing to
+show; a wave-2 Track facet's control would not act at all. Filed as a wave-3
+C4 §5 + C3 §3.2 amendment (same item for all three) — likely catalog columns
+added at index time, not a runtime join.
+
+**Search** — free-text, case-insensitive substring match across venue name,
+short comment and tag (`Data/facets.ts`'s `matchesFilters`) — idl0 also
+matched Track name and the long comment; both are dropped for wave 2 for the
+same reason as the Track facet (no session→track join) and because
+`SessionSummary` has no long-comment field (only `SessionDetail` does).
+
+**Active chips** (`ActiveChips.tsx`) — one dismissible chip per active facet
+value plus "Clear all", idl0's `_ActiveChipRow` semantics: the date chip
+reads `Date: <day>` for a single day or `Date: <start> → <end>` for a range;
+the lap-time chip reads as a clock (`mm:ss` or `h:mm:ss` past an hour), not
+raw milliseconds. "Clear all" resets every facet to its wave-2 default but
+leaves the active `view` and sort untouched.
 
 ### 24.5 Search Bar
 
@@ -2225,13 +2280,38 @@ heading). The editable **Venue** field is *pre-filled* with this same resolved
 venue when `venueName` is empty, so saving the card persists the venue into the
 session's own metadata rather than leaving it blank.
 
-Hosts `MetadataForm` (extracted from `MetadataEditor`) with the following fields:
-- Rider — `Autocomplete<String>` sourced from distinct known rider names.
-- Bike — `Autocomplete<String>` sourced from distinct known bike names.
-- Venue — `Autocomplete<String>` sourced from distinct `Track.venueName ∪ SessionMetadata.venueName`.
-- Event — free-text `TextField`.
-- Tag — free-text `TextField`.
-- Comments — multi-line `TextField`.
+**Metadata form (idl1, wave 2 — `Data/metadataDraft.ts`, `Data/MetadataForm.tsx`).**
+Rewritten over C1 §6's `session.json` fields — the nine editable fields are
+now exactly `rider`, `bike`, `bike_comment`, `venue_name`, `event_name`,
+`event_session`, `tag`, `short_comment`, `long_comment`; `""` is the only
+"not set" representation for any of them (C1 §6 has no null). idl0's
+distinct-Track/`Autocomplete` sourcing for Rider and Bike is dropped for
+wave 2 — `venueOptions` (`metadataDraft.ts`) still derives the Venue
+suggestion list from `list_tracks`' distinct `venue_name` values, deduped
+and sorted, matching this section's venue-autocomplete rule above; Rider and
+Bike render as plain text fields.
+
+The **venue pre-fill rule carries over unchanged**: `initialDraft` fills
+`venue_name` from the session's own `venue_name` when non-empty, otherwise
+from the first resolvable visited track's `venue_name`
+(`trackRow.ts`'s `resolveDisplayVenue`, Task 6) — walked in visit order,
+skipping a visit whose `track_id` no longer resolves — so saving persists
+the venue the card already shows rather than the session's own possibly-
+empty field.
+
+**Save path — `save_session_metadata` (IPC need 1,
+`runs/2026-09-05/lanes/l7/IPC-NEEDS.md`), no command behind it in wave 2.**
+The command does not exist on `main` yet; `Data/ipcStubs.ts`'s
+`saveSessionMetadata` stands in for it and always rejects with a local
+`NotImplementedError`, never a fabricated `IpcError` kind (C3 §2's kind
+vocabulary is additive-only). The form surfaces this honestly — "Saving
+session metadata isn't wired up yet — your changes aren't saved" — rather
+than pretending the save succeeded; typed changes stay live in the form
+after a failed save so nothing already typed is lost, but nothing reaches
+disk until the real command lands. **Once it does, the write is a
+whole-block replace of all nine fields, never a sparse patch** — every
+field is required on `SessionMetadataPatch` specifically so a concurrent
+editor cannot half-apply a save.
 
 Below `MetadataForm`:
 - **Tracks visited row** — inline list of `TrackVisit` names with tap-to-open.
@@ -2290,7 +2370,27 @@ the top-ranked session leads).
 - **Search** — toggles the search bar.
 - **Sessions / Tracks toggle** — `SegmentedButton<DataView>`.
 - **Sort** — a compact field chooser + ascending/descending toggle for the active view's fields (§24.13).
-- **Import** — imports `.idl0` or `.gpx` files (sessions) or `.gpx` tracks depending on active view.
+- **Import** (idl1, wave 2 — `Data/ImportPanel.tsx`, `Data/importQueue.ts`,
+  `Data/FilePicker.ts`) — rewritten over C3 §3.3's `import_file`/
+  `list_importers`; idl0's Dart runs-provider import flow (`RunsNotifier`
+  registering `.idl0`/`.gpx` files picked by the OS's native file picker) is
+  gone. The picker itself is a pasted absolute path in wave 2, not a native
+  dialog — no file-picker mechanism exists yet anywhere in this codebase, and
+  adding one (`@tauri-apps/plugin-dialog`) needs a new dependency and an
+  `app/src-tauri` capability entry outside this lane's scope; see
+  `runs/2026-09-05/lanes/l7a-data/brief-task5.md` (lead ruling R55) for the
+  seam this sits behind (`FilePicker.ts`'s `pickImportFile`), swapped for a
+  real dialog by a later shell task with no call-site change. Enqueued files
+  run through the queue **serialised, one at a time** (R13: this machine is
+  memory-bound, import is CPU/I/O-heavy) — never more than one `import_file`
+  call in flight. Progress streams via a `Channel<Progress>` carrying a
+  `phase` string and an optional `total` (C3 §1); the overall queue bar is
+  `null`, not a fake number, while the running file's `total` is unknown. A
+  forced-importer override is available via `listImporters()`; `null` means
+  extension-based auto-detection. On the queue draining (every item `"done"`
+  or `"failed"`), the tab re-runs `list_sessions` once so newly imported
+  sessions appear without a manual refresh. A per-file failure marks that
+  item `"failed"` and never cancels the others still queued or running.
 - **Create from session…** — builds the session's GPS polyline and opens the Track Editor modal in **create mode** (§24.12): Name/Venue are entered in the editor with the map visible, and the Track is created on Save.
 - **Rescan visits** — calls `RunsNotifier.rescanAllTrackVisits` over all sessions; re-runs TrackVisit detection without re-downloading source files, showing a per-row spinner and surfacing the first error on failure.
 

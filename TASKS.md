@@ -28,18 +28,46 @@ are defined in `docs/superpowers/specs/2026-09-02-idl1-rewrite-design.md` §10.
 
 ## Wave 2
 
-- [ ] L6 notebook UI · L7 device/data/settings UI · L9 mobile scaffold · L11 LAN sync
-  - [x] L7c settings tab — all 6 tasks landed for wave 2. Outstanding:
-    `get_settings`/`set_settings` (IPC need 6) and
-    `get_data_dir`/`set_data_dir` (IPC need 7a/7b) are still stubbed
-    pending the Rust write-amendment lane; prefs live in `localStorage`
-    meanwhile and the one-time migration into `settings.json` (R53 Q1's
-    stated risk) is not yet scheduled. Parity gaps: Google Drive dropped
-    permanently (replaced by Sync, not deferred); Firmware/OTA deferred to
-    wave 3 (operating brief §3); "Full reference"/"Report issue" links
-    dropped (idl0 `example.com` placeholders); Licenses omitted (no
-    license-page generator wired into idl1's build); chart controls
-    reference carried but provisional pending L6's actual bindings.
+- [ ] L6 notebook UI
+- [x] L7a Data tab — Tasks 1-8 landed on `wave2-l7a-data`. Write-command IPC
+  needs 1-4 (`save_session_metadata`, `save_track`/`delete_track`,
+  `delete_session`, `list_quarantine`/`resolve_quarantine`) are built
+  against `NotImplementedError` stubs, no Rust command behind any of them
+  yet; need 5 (`rescan_track_visits`) is dropped outright for wave 2, not
+  stubbed. Parity gaps, unabridged (plan's own table): track create/edit/
+  delete, lap-timing editor, sector list, neutral-zone list and the track
+  sidebar deferred to wave 3 (blocked on both the write command and C3 §6
+  item 10's unfixed `TrackDetail` nested shapes); the track import conflict
+  dialog deferred with it; rescan-disk/repair-filenames replaced outright
+  by `rebuild_catalog`; Google Drive sign-in/status/auto-sync dropped
+  permanently (idl1 uses LAN sync instead, L7c/L11); has-gates/has-GPS
+  facets dropped for wave 2 (neither derivable from a `SessionSummary`);
+  the session GPS map preview deferred to wave 3 (needs bundled map tiles);
+  FIT export controls deferred (C3 has no export command, design §10: "L8
+  (export) does not exist in v1"); the compare-with picker and lap ignore/
+  restore/session-selection-to-Analyze deferred to L6 (the selection model
+  lives in the lead-owned `AppState.selection`); the device file sync
+  screen moved to L7b; the venue detail card dropped for wave 2 (a venue is
+  a string field, not an entity, in idl1); narrow-layout bottom sheets and
+  the mobile filter bar kept as responsive CSS, not a separate
+  implementation (mobile is L9's lane). Lap counts and lap tables
+  legitimately read "—"/empty for most sessions at wave 2 (R53 Q4) — no
+  wave-1 import path indexes `laps`/`lap_summary` yet; not a bug in this
+  lane.
+- [ ] L7b Device UI
+- [x] L7c settings tab — all 6 tasks landed for wave 2. Outstanding:
+  `get_settings`/`set_settings` (IPC need 6) and
+  `get_data_dir`/`set_data_dir` (IPC need 7a/7b) are still stubbed
+  pending the Rust write-amendment lane; prefs live in `localStorage`
+  meanwhile and the one-time migration into `settings.json` (R53 Q1's
+  stated risk) is not yet scheduled. Parity gaps: Google Drive dropped
+  permanently (replaced by Sync, not deferred); Firmware/OTA deferred to
+  wave 3 (operating brief §3); "Full reference"/"Report issue" links
+  dropped (idl0 `example.com` placeholders); Licenses omitted (no
+  license-page generator wired into idl1's build); chart controls
+  reference carried but provisional pending L6's actual bindings.
+- [ ] L9 mobile scaffold
+- [ ] L11 LAN sync
 
 ## Wave 3
 
