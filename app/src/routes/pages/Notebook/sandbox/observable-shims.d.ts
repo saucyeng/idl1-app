@@ -9,8 +9,18 @@
 declare module "@observablehq/runtime" {
   /** A single cell's live binding inside a {@link Module}. */
   export interface Variable {
-    /** Redefines this variable's inputs and definition function. Returns itself. */
+    /** Redefines this variable's inputs and definition function (anonymous — no name in module scope). Returns itself. */
     define(inputs: string[], definition: (...args: unknown[]) => unknown): Variable;
+    /**
+     * Redefines this variable under `name` in the module's scope, so other
+     * variables can reference it by that name. Calling `define(name, ...)`
+     * again on the *same* `Variable` (same `name`) redefines it in place and
+     * marks every dependent variable dirty for recomputation — this is how a
+     * host variable stays reactive after its first definition, unlike
+     * `Module.builtin()` (module-README.md's "must not be redefined after
+     * [dependents are resolved]" caution).
+     */
+    define(name: string, inputs: string[], definition: (...args: unknown[]) => unknown): Variable;
     /** Deletes this variable's current definition and name, if any. */
     delete(): void;
   }

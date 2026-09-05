@@ -23,6 +23,7 @@ import type {
   SandboxCell,
   SandboxToHostMessage,
 } from "../host/protocol";
+import { bindHostVariables, type HostVariableSink } from "./hostVariables";
 
 /**
  * Sends a message to the host realm. `targetOrigin: "*"` is the standard,
@@ -121,37 +122,51 @@ class SandboxRuntime {
   private readonly runtime = new Runtime();
   private readonly module = this.runtime.module();
   private readonly hostVars = new Map<string, unknown>();
-  private readonly boundBuiltinNames = new Set<string>();
+  private readonly hostVariables = new Map<string, HostVariableSink>();
+  private readonly boundNames = new Set<string>();
   private readonly cellVariables = new Map<string, { delete(): void }>();
 
   constructor() {
+    // Library bindings never change after construction, so a plain
+    // `module.builtin()` (whose value a dependent cell reads verbatim, per
+    // `bindHostVariables`'s doc comment) is correct and simpler here — no
+    // update path is needed for these.
     this.module.builtin("Plot", Plot);
     this.module.builtin("d3", d3);
     this.module.builtin("Inputs", Inputs);
     this.module.builtin("html", html);
-    // `channel`/`laps`/`session`/`constants` are bound once, up front, as
-    // lazily-invoked getters (Runtime: "if a builtin is defined as a
-    // function, it will be invoked lazily") so later `setHostVar` updates
-    // are visible without ever redefining the builtin itself — the
-    // "must not be redefined after [variables are defined]" caution in
-    // runtime-README.md is honoured by mutating `this.hostVars`, not the
-    // builtin binding.
-    this.module.builtin("laps", () => this.hostVars.get("laps") ?? []);
-    this.module.builtin("session", () => this.hostVars.get("session") ?? null);
-    this.module.builtin("constants", () => this.hostVars.get("constants") ?? {});
-    this.module.builtin("channel", () => this.channelLookup.bind(this));
-    for (const name of ["Plot", "d3", "Inputs", "html", "laps", "session", "constants", "channel"]) {
-      this.boundBuiltinNames.add(name);
+    for (const name of ["Plot", "d3", "Inputs", "html"]) {
+      this.boundNames.add(name);
     }
+    // C2 §5.1's three ambient host variables, plus `channel`, start with
+    // their documented defaults and are bound through `bindHostVariables`
+    // (never `module.builtin()`) so a later `setHostVar` reaches every cell
+    // that already resolved them — see that function's doc comment for why.
+    this.bindHostVar("laps", []);
+    this.bindHostVar("session", null);
+    this.bindHostVar("constants", {});
+    this.bindHostVar("channel", (name: string, opts?: { lap?: number; session?: string }) =>
+      this.channelLookup(name, opts)
+    );
+  }
+
+  /** Updates `hostVars` (used by `channelLookup`'s by-name search), the
+   *  reactive Runtime binding (via `bindHostVariables`), and the set of
+   *  names every cell is given as an input (`setCells`). */
+  private bindHostVar(name: string, value: unknown): void {
+    this.hostVars.set(name, value);
+    bindHostVariables(this.module, this.hostVariables, { [name]: value });
+    this.boundNames.add(name);
   }
 
   /**
    * `channel(name, {lap?, session?})` (C2 §5.1): general lookup by name.
-   * `lap`/`session` scoping is not implemented here — the host is
-   * responsible for deciding which pre-resolved buffer to push for a given
-   * `(name, lap, session)` combination (that resolution is Task 7's
-   * `tileToChannelData`, per this task's brief); this is a bare-name lookup
-   * over whatever the host has already sent.
+   *
+   * // TODO(idl0): `lap`/`session` scoping is not implemented here — the
+   * // host is responsible for deciding which pre-resolved buffer to push
+   * // for a given `(name, lap, session)` combination (that resolution is
+   * // Task 7's `tileToChannelData`, per this task's brief); this is a
+   * // bare-name lookup over whatever the host has already sent.
    */
   private channelLookup(name: string, _opts?: { lap?: number; session?: string }): { t: number; v: number }[] {
     const value = this.hostVars.get(name);
@@ -160,19 +175,21 @@ class SandboxRuntime {
 
   /** Binds or updates one host variable (`setHostVar`). */
   setHostVar(name: string, payload: HostVarPayload): void {
-    this.hostVars.set(name, materializeHostVar(payload));
-    if (!this.boundBuiltinNames.has(name)) {
-      this.boundBuiltinNames.add(name);
-      this.module.builtin(name, () => this.hostVars.get(name));
-    }
+    this.bindHostVar(name, materializeHostVar(payload));
   }
 
   /**
    * Replaces the whole cell set. Every previously defined cell `Variable` is
    * deleted first — simpler and safer than trying to diff and redefine
    * anonymous variables, at the cost of re-running every cell (not just
-   * changed ones) on every edit. A finer-grained diff can replace this
-   * later without changing the message protocol.
+   * changed ones) on every edit.
+   *
+   * // TODO(idl0): this redefine-all approach, and giving every cell every
+   * // currently bound name as an input (see `compileCell`'s own TODO)
+   * // rather than just the names its code actually uses, are both
+   * // judgment calls for this task, not settled design — a finer-grained
+   * // diff and free-identifier analysis can replace both later without
+   * // changing the message protocol.
    */
   setCells(cells: SandboxCell[]): void {
     for (const variable of this.cellVariables.values()) {
@@ -180,7 +197,7 @@ class SandboxRuntime {
     }
     this.cellVariables.clear();
 
-    const inputNames = [...this.boundBuiltinNames];
+    const inputNames = [...this.boundNames];
     for (const cell of cells) {
       const fn = compileCell(inputNames, cell.code);
       const variable = this.module.variable(makeObserver(cell.id)).define(inputNames, fn);
@@ -199,6 +216,11 @@ class SandboxRuntime {
 
 let sandboxRuntime: SandboxRuntime | null = null;
 
+// TODO(idl0): inline `${…}` span evaluation (design §6's inline-math
+// spans) is not wired here — the host side (`SandboxHost.onInlineResult`,
+// `inlineResult` in `protocol.ts`) is ready to receive it, but nothing in
+// this file ever evaluates a span or posts `inlineResult` back. Out of this
+// task's scope (brief Steps 1-5); a later task owns the sandbox-side half.
 function handleMessage(message: HostToSandboxMessage): void {
   switch (message.type) {
     case "init":

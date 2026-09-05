@@ -5,6 +5,7 @@
  * delegates to are tested in `protocol.test.ts`/`watchdog.test.ts`.
  */
 import { channelPayload, isHostMessage, type HostToSandboxMessage, type HostVarPayload, type SandboxCell } from "./protocol";
+import { replayAfterRebuild } from "./rebuildReplay";
 import { createWatchdog, type Watchdog } from "./watchdog";
 
 /**
@@ -42,6 +43,12 @@ export class SandboxHost {
   private iframe: HTMLIFrameElement;
   private readonly watchdog: Watchdog;
   private nextPingNonce = 0;
+  /** The last `init`/`setCells` payloads sent, replayed into a rebuilt
+   *  iframe by `rebuild()` (`replayAfterRebuild`, review-task5.md Important
+   *  finding: design §6's "state loss is the cost" means reactive state,
+   *  not the notebook's own cells). */
+  private lastInitRuntimeVersion: string | null = null;
+  private lastCells: SandboxCell[] | null = null;
   private readonly onMessage = (event: MessageEvent): void => {
     // The sandbox iframe is untrusted input (design §6, the brief's own
     // words: "the host treats every postMessage it receives as untrusted
@@ -103,11 +110,13 @@ export class SandboxHost {
 
   /** Sends `init`; the sandbox replies `ready` once its own `Runtime` exists. */
   init(runtimeVersion: string): void {
+    this.lastInitRuntimeVersion = runtimeVersion;
     this.postToSandbox({ type: "init", runtimeVersion });
   }
 
   /** Replaces the sandbox's whole cell set. */
   setCells(cells: SandboxCell[]): void {
+    this.lastCells = cells;
     this.postToSandbox({ type: "setCells", cells });
   }
 
@@ -126,11 +135,20 @@ export class SandboxHost {
     this.postToSandbox(message, transfer);
   }
 
-  /** Tears down the current iframe and builds a fresh one (state lost, per design §6). */
+  /**
+   * Tears down the current iframe and builds a fresh one, then replays the
+   * last `init`/`setCells` payloads into it (`replayAfterRebuild`) so the
+   * notebook's cells survive a watchdog-triggered rebuild — only reactive
+   * variable state is lost, per design §6.
+   */
   private rebuild(): void {
     this.postToSandbox({ type: "teardown" });
     this.iframe.remove();
     this.iframe = this.createIframe();
+    replayAfterRebuild((message) => this.postToSandbox(message), {
+      lastInitRuntimeVersion: this.lastInitRuntimeVersion,
+      lastCells: this.lastCells,
+    });
   }
 
   /** Advances the watchdog's clock; call this from a real `setInterval` in the caller. */
