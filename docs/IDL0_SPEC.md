@@ -2086,9 +2086,14 @@ configurable source — `imu0`/`imu1`/`imu2`, `gps`, `wheel_front`/`wheel_rear`,
 one per `analog.channels[]` entry, one per `digital.channels[]` entry, and
 the heart rate monitor — in that stable order, hardware-pinned sources
 first. `ChannelsTable.tsx` renders it: **Source · Rate Hz · Channels
-(`enabled/total`) · Enabled · ⚙** (opens that source's form, Tasks 6–7).
-Enable state and rate are joined from `previewSources` (§23.2's sibling
-Task 4 module) by `sourceKey`, never recomputed here.
+(`enabled/total`) · Enabled · ⚙**. Enable state and rate are joined from
+`previewSources` (§23.2's sibling Task 4 module) by `sourceKey`, never
+recomputed here.
+
+The ⚙ control opens that source's form: the three `imu0`/`imu1`/`imu2` rows
+and the two `wheel_front`/`wheel_rear` rows each share one form per group
+(§23.3.1, §23.3.3), `gps` opens its own (§23.3.2). An analog, digital or
+heart-rate-monitor row's ⚙ stays disabled until Task 7's forms land.
 
 Expanding a row lists its channels: **Name · Units · Enabled · Scale ·
 Offset**, where Scale/Offset show only for an `analog.channels[]` entry's
@@ -2107,6 +2112,36 @@ per-channel rate to edit independently of the source-level rate.
 Hardware-pinned sources (IMU, GPS, Wheel Speed) are always present in a
 profile, shown even when disabled. User-added sources (Analog, Digital
 marker, HRM) appear once added via **+ Add channel…**.
+
+### 23.3.1 IMU form
+
+`Device/forms/ImuForm.tsx` edits `config.imu` as a whole: the SPI-bus-shared
+`sample_rate_hz`, the `low_power_mode`/`high_performance_mode` flags, the
+top-level default `accel_range_g`/`gyro_range_dps`, and the three
+`imu0`/`imu1`/`imu2` sub-blocks (each its own enable flag, range overrides,
+and six axis checkboxes). The sample-rate control's option list switches
+between the high-performance and low-power ODR tables based on
+`low_power_mode`; both range controls are limited to the LSM6DSO32's four
+accel and five gyro full-scale options. Every field commits immediately
+through `Device/config/edit.ts` (`setImuRate`/`setImuSlot`/`setImuAxis`) and
+re-runs `validateConfig`, showing that field's own issues inline — never
+snapping or blocking the edit itself, only the eventual push (§23.6).
+
+### 23.3.2 GPS form
+
+`Device/forms/GpsForm.tsx` edits `config.gps`: fix rate (an integer 1–10 Hz
+picker), dynamic model (the five SPEC-stated values), the six-sentence NMEA
+checklist, and SBAS. Commits through `setGps`, one field at a time — toggling
+`dynamic_model` never touches `nmea_sentences` or `sbas_enabled`.
+
+### 23.3.3 Wheel form
+
+`Device/forms/WheelForm.tsx` edits both `wheel_speed.front` and `.rear`
+slots in one form: each slot's enable flag, Hall-sensor points-per-
+revolution count, and wheel circumference (mm). Commits through
+`setWheelSlot`, one slot at a time — editing front never touches rear.
+Matching `validateConfig`'s own rule (§23.3), a slot's geometry issues show
+only once that slot is enabled.
 
 ### 23.4 `+ Add channel…` picker
 

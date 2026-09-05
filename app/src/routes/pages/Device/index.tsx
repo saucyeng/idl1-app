@@ -21,9 +21,11 @@ const SCAN_TIMEOUT_MS = 10_000;
 export default function Device() {
   const [state, dispatch] = useReducer(connectionReducer, initialConnectionState);
   // No `pull_config` yet (IPC need 10 is stubbed) — the config card starts
-  // from a fresh default config until Task 6/7 wires a real pull. Local to
-  // this component; the lane has no shared-state slice (lane brief).
-  const [config] = useState(() => defaultConfig(""));
+  // from a fresh default config until a real pull is wired. Local to this
+  // component; the lane has no shared-state slice (lane brief). The forms
+  // opened from `ChannelsTable`'s gear control (Task 6) edit this state
+  // directly through `Device/config/edit.ts`.
+  const [config, setConfig] = useState(() => defaultConfig(""));
 
   const onScan = useCallback(() => {
     dispatch({ type: "SCAN_START" });
@@ -67,7 +69,7 @@ export default function Device() {
         {state.phase === "failed" && state.error && <p role="alert">{state.error}</p>}
       </section>
       <section className="device-tab__config">
-        <ChannelsTable sources={listSources(config)} />
+        <ChannelsTable sources={listSources(config)} config={config} onConfigChange={setConfig} />
       </section>
     </div>
   );

@@ -81,6 +81,22 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
   registry-derived number (R53 Device Q1) — matching Task 4's narrowed
   scope; no `channel_id`/data-type column. `docs/IDL0_SPEC.md` §23.3
   rewritten to describe the columns as built.
+- **Device tab, Task 6 (2026-09-05, L7b).** `Device/config/edit.ts` — pure,
+  immutable edit operations over `DeviceConfig` (`setImuRate`, `setImuSlot`,
+  `setImuAxis`, `setGps`, `setWheelSlot`, `setHrm`, `clearHrm`); none mutates
+  its input, checked by deep-equality against a pre-call clone. `ImuForm`,
+  `GpsForm` and `WheelForm` edit their slice of the config through those
+  operations and show `validateConfig`'s issues for their own paths inline —
+  never snapping a value, only reporting it. Every control (ODR list,
+  accel/gyro ranges, GPS rate/model/NMEA set) is constrained to Task 3's
+  named valid-value sets, so an invalid value can only arrive from a file or
+  device, not from pointing at a control. `ChannelsTable.tsx`'s gear control
+  now opens the IMU/GPS/Wheel forms; Analog/Digital/HRM stay disabled
+  pending Task 7. The four analog/digital channel edit operations
+  (`upsertAnalogChannel`, `removeAnalogChannel`, `upsertDigitalChannel`,
+  `removeDigitalChannel`) are left entirely to Task 7 — nothing in this
+  task's forms calls them, so no signature was guessed here.
+  `docs/IDL0_SPEC.md` gains §23.3.1–§23.3.3 describing the three forms.
 - **L5 complete (2026-09-04).** idl-rs-tauri wired to every landed wave-1 lane's C3 command
   group (catalog, workbook, cursor, raster, tile) plus device (L4); <data> resolution,
   workbook watcher, app/src/ipc/ module layer, routing and state skeleton. Tile fetched
