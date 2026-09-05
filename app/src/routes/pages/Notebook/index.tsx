@@ -1,9 +1,10 @@
 import { useEffect, useReducer, useRef, useState } from "react";
 
 import { listWorkbooks } from "../../../ipc/catalog";
-import { evalWorkbook, openWorkbook, watchWorkbook, type WorkbookEvent } from "../../../ipc/workbook";
+import { evalWorkbook, openWorkbook, saveWorkbook, watchWorkbook } from "../../../ipc/workbook";
 import { useAppState } from "../../../state/AppState";
 import CellList from "./components/CellList";
+import ConflictBanner from "./components/ConflictBanner";
 import { readWorkbook, NotImplementedError } from "./ipcStubs/readWorkbook";
 import { extractInlineSpans } from "./components/ProseSpan";
 import type { SandboxCell } from "./host/protocol";
@@ -11,7 +12,11 @@ import { SandboxHost } from "./host/SandboxHost";
 import { NotebookSession } from "./host/NotebookSession";
 import { TileCache } from "./model/tileCache";
 import { runEval, runOpenAndEval, type OpenEvalDeps } from "./model/openEvalDriver";
+import { isSelfWrite, saveFlow, type SaveFlowState, type WorkbookEventWithHash } from "./model/saveFlow";
 import { initialWorkbookState, workbookReducer } from "./model/workbookState";
+
+/** C4 §4's stated expected-hash-set TTL (5 s), matched here for the frontend's own independent self-write belt (`saveFlow.ts`'s `isSelfWrite`). */
+const SELF_WRITE_TTL_MS = 5000;
 
 /** `init`'s `runtimeVersion` argument (`host/protocol.ts`) -- an
  *  informational string the sandbox does not currently branch on
@@ -71,6 +76,16 @@ export default function NotebookPage() {
   const sessionRef = useRef<NotebookSession>(new NotebookSession(new TileCache()));
   const openSeqRef = useRef(0);
   const evalSeqRef = useRef(0);
+
+  // One `saveFlow` instance for this page's lifetime (Task 14) -- holds
+  // its own `SaveFlowState` behind a closure; `saveFlowState` mirrors it
+  // into component state after every `save()` resolution so the Save
+  // button/`ConflictBanner` re-render. `lastSavedHash`/`lastSavedAtMs` feed
+  // the watch effect's `isSelfWrite` check below (C4 §4's second belt).
+  const saveFlowRef = useRef(saveFlow({ save: saveWorkbook, now: () => Date.now() }));
+  const [saveFlowState, setSaveFlowState] = useState<SaveFlowState>({ status: "idle" });
+  const lastSavedHashRef = useRef<string | null>(null);
+  const lastSavedAtMsRef = useRef<number | null>(null);
 
   // `AppState.selection.lapContext` (R53 Data Q3) is read here but cannot
   // yet be passed to `evalWorkbook` -- the command's signature has no slot
@@ -142,8 +157,15 @@ export default function NotebookPage() {
     if (workbookId === undefined) return;
 
     let disposed = false;
-    void watchWorkbook(workbookId, (event: WorkbookEvent) => {
+    void watchWorkbook(workbookId, (event: WorkbookEventWithHash) => {
       if (disposed) return;
+      // C4 §4's second, independent self-write belt: the Rust
+      // `ExpectedHashSet` is primary and already suppresses the app's own
+      // writes server-side; this catches the residual race where a
+      // save's own rename echoes back to this subscription regardless.
+      if (isSelfWrite(event, lastSavedHashRef.current, lastSavedAtMsRef.current, Date.now(), SELF_WRITE_TTL_MS)) {
+        return;
+      }
       dispatch({ type: "watchEvent", event });
       const mySeq = ++evalSeqRef.current;
       void runEval({ evalWorkbook }, workbookId, sessionIdRef.current, dispatch, () => evalSeqRef.current !== mySeq);
@@ -153,6 +175,70 @@ export default function NotebookPage() {
       disposed = true;
     };
   }, [state.handle?.id]);
+
+  /**
+   * Explicit save action (Task 14) -- never called from an effect or on a
+   * per-keystroke basis. Disabled by the render below whenever
+   * `state.hash` is `null`: while `read_workbook` (N1) reports
+   * `not_implemented`, there is no legally correct `based_on_hash` to
+   * pass -- `null` means "creating a new workbook" (`ipc/workbook.ts`'s
+   * `saveWorkbook` doc comment), which would be wrong for an existing
+   * target and would error per `write_atomic`'s own semantics. Save is
+   * reported as unavailable in that state rather than guessing a hash.
+   */
+  async function handleSave() {
+    if (state.handle === null || state.markdown === null || state.hash === null) return;
+    const result = await saveFlowRef.current.save(state.handle.id, state.markdown, state.hash);
+    setSaveFlowState(result);
+    if (result.status === "saved") {
+      lastSavedHashRef.current = result.hash;
+      lastSavedAtMsRef.current = result.savedAtMs;
+      dispatch({ type: "saveResult", hash: result.hash });
+    } else if (result.status === "conflict") {
+      dispatch({ type: "saveConflict" });
+    }
+  }
+
+  /** `ConflictBanner`'s "Reload from disk": discard local edits, replace `workbookState`'s markdown/cells/hash with disk's current content. */
+  async function handleReloadFromDisk() {
+    if (state.handle === null) return;
+    try {
+      const source = await readWorkbook(state.handle.id);
+      dispatch({ type: "markdownReady", markdown: source.markdown, hash: source.hash });
+    } catch (error) {
+      if (error instanceof NotImplementedError) {
+        dispatch({ type: "markdownNotImplemented" });
+      } else {
+        dispatch({ type: "markdownError", message: error instanceof Error ? error.message : String(error) });
+      }
+    }
+    setSaveFlowState({ status: "idle" });
+  }
+
+  /**
+   * `ConflictBanner`'s "Overwrite": re-reads disk's current content for a
+   * fresh `based_on_hash`, then saves this document's in-memory markdown
+   * on top of it -- the coarse stand-in this lane implements (per
+   * `ConflictBanner.tsx`'s `TODO(idl0)`); L11's per-cell merge (C4 §4,
+   * design §7) is the eventual replacement, not built here.
+   */
+  async function handleOverwrite() {
+    if (state.handle === null || state.markdown === null) return;
+    try {
+      const source = await readWorkbook(state.handle.id);
+      const result = await saveFlowRef.current.save(state.handle.id, state.markdown, source.hash);
+      setSaveFlowState(result);
+      if (result.status === "saved") {
+        lastSavedHashRef.current = result.hash;
+        lastSavedAtMsRef.current = result.savedAtMs;
+        dispatch({ type: "saveResult", hash: result.hash });
+      } else if (result.status === "conflict") {
+        dispatch({ type: "saveConflict" });
+      }
+    } catch (error) {
+      dispatch({ type: "markdownError", message: error instanceof Error ? error.message : String(error) });
+    }
+  }
 
   // Pushes this document's `js` cells into the sandbox, and (best-effort --
   // see `ProseSpan.tsx`'s doc comment) re-issues every inline `${...}`
@@ -189,6 +275,11 @@ export default function NotebookPage() {
     }
   }, [state.cells, state.markdown]);
 
+  // Save is unavailable while there is no readable `hash` to base it on
+  // (N1 `not_implemented`, still loading, or a read error) -- see
+  // `handleSave`'s doc comment on why `null` cannot stand in for it.
+  const saveUnavailable = state.hash === null || state.markdown === null;
+
   return (
     <div>
       {state.markdownStatus === "not_implemented" && (
@@ -200,6 +291,16 @@ export default function NotebookPage() {
         <p className="workbook-markdown-error">Notebook error: {state.markdownError}</p>
       )}
       {state.handle === null && state.markdownStatus === "loading" && <p>Opening notebook...</p>}
+      {state.handle !== null && (
+        <div className="workbook-save-bar">
+          <button type="button" onClick={() => void handleSave()} disabled={saveUnavailable || saveFlowState.status === "saving"}>
+            {saveFlowState.status === "saving" ? "Saving…" : "Save"}
+          </button>
+          {saveUnavailable && <span className="workbook-save-unavailable">save not available yet (read_workbook is not implemented)</span>}
+          {saveFlowState.status === "error" && <span className="workbook-save-error">save failed: {saveFlowState.error.message}</span>}
+        </div>
+      )}
+      {state.conflict && <ConflictBanner onReloadFromDisk={() => void handleReloadFromDisk()} onOverwrite={() => void handleOverwrite()} />}
       {state.handle !== null && (
         <CellList
           doc={{ frontMatterRange: null, cells: state.cells }}

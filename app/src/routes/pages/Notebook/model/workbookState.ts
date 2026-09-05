@@ -36,6 +36,8 @@ export interface WorkbookState {
   outputs: Map<string, CellOutput>;
   /** Cell ids that need re-evaluation: either edited locally (`editCell`) or named by a `watchWorkbook` event (`watchEvent`). Cleared wholesale on a successful save. */
   dirtyCellIds: Set<string>;
+  /** True while `saveFlow.ts`'s state is `"conflict"` (Task 14, R44) -- `Notebook/index.tsx` renders `ConflictBanner` while this is true. Cleared by a fresh read (`markdownReady`, i.e. "Reload from disk") or a subsequent successful save (`saveResult`, i.e. "Overwrite" landing). */
+  conflict: boolean;
 }
 
 /** `WorkbookState`'s value before `open_workbook` resolves. */
@@ -48,6 +50,7 @@ export const initialWorkbookState: WorkbookState = {
   cells: [],
   outputs: new Map(),
   dirtyCellIds: new Set(),
+  conflict: false,
 };
 
 /** Every action `workbookReducer` accepts. */
@@ -60,6 +63,8 @@ export type WorkbookAction =
   | { type: "evalResult"; outputs: CellOutput[] }
   | { type: "editCell"; cellId: string }
   | { type: "saveResult"; hash: string }
+  /** `saveFlow.ts`'s state reached `"conflict"` (Task 14, R44) -- `Notebook/index.tsx` should now render `ConflictBanner`. */
+  | { type: "saveConflict" }
   | { type: "watchEvent"; event: WorkbookEvent };
 
 /**
@@ -86,6 +91,9 @@ export function workbookReducer(state: WorkbookState, action: WorkbookAction): W
         hash: action.hash,
         markdownError: null,
         cells: scanCells(action.markdown).cells,
+        // A fresh read is "Reload from disk" landing (or the first open) --
+        // either way any prior conflict is now addressed.
+        conflict: false,
       };
 
     case "markdownNotImplemented":
@@ -109,7 +117,10 @@ export function workbookReducer(state: WorkbookState, action: WorkbookAction): W
     }
 
     case "saveResult":
-      return { ...state, hash: action.hash, dirtyCellIds: new Set() };
+      return { ...state, hash: action.hash, dirtyCellIds: new Set(), conflict: false };
+
+    case "saveConflict":
+      return { ...state, conflict: true };
 
     case "watchEvent": {
       const dirtyCellIds = new Set(state.dirtyCellIds);
