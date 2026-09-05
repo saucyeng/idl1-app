@@ -3011,10 +3011,10 @@ interval) and stops when the section is not the selected one, since the
 poll lives in the mounted component's own effect.
 
 **Result summary.** `syncState.ts`'s `describeSyncResult` turns a
-`SyncResult` into one line, e.g. "12 blobs, 3 workbooks merged" when
-`conflicts` is zero, or "...12 blobs, 3 workbooks merged, 1 conflict cell to
-resolve" otherwise — a non-zero conflict count reads as something to go
-resolve in the merged workbook (design §7's per-cell merge produces
+`SyncResult` into one line, e.g. "12 blobs, 3 workbooks merged cleanly."
+when `conflicts` is zero, or "12 blobs, 3 workbooks merged, 2 conflict
+cells to resolve." otherwise — a non-zero conflict count reads as something
+to go resolve in the merged workbook (design §7's per-cell merge produces
 conflict cells as a normal outcome), never as a sync failure.
 
 **L11 has not landed.** The Rust LAN-sync implementation (L11) has not

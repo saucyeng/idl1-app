@@ -78,7 +78,7 @@ describe("syncStateReducer", () => {
     });
   });
 
-  it("syncStateReducer — a SyncResult with conflicts 0 — the summary says merged cleanly", () => {
+  it("describeSyncResult — conflicts 0 — the summary says merged cleanly", () => {
     const summary = describeSyncResult({
       blobs_transferred: 12,
       workbooks_merged: 3,
@@ -88,7 +88,7 @@ describe("syncStateReducer", () => {
     expect(summary).toMatch(/merged cleanly|no conflicts/i);
   });
 
-  it("syncStateReducer — a SyncResult with conflicts 2 — the summary names the conflict cells as something to resolve, not as an error", () => {
+  it("describeSyncResult — conflicts 2 — the summary names the conflict cells as something to resolve, not as an error", () => {
     const summary = describeSyncResult({
       blobs_transferred: 12,
       workbooks_merged: 3,
