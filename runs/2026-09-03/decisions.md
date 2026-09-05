@@ -2367,3 +2367,41 @@ is an opaque `io` error from `write_atomic` rather than a clear message,
 and this string becomes a real filesystem path. Add the guard: a
 sanitised stem case-insensitively matching a reserved name falls back the
 same way the empty-after-trim case already does.
+
+## 2026-09-05 — R50: L5's TASKS.md line is not ticked; two items are genuinely outstanding
+
+Task 14's review raised a Critical against the documentation, not the
+code: `TASKS.md` reads `- [x] L5 Tauri scaffold hardening` with no
+qualifier, while the same commit's CHANGELOG admits the on-screen render
+was never confirmed. Two things are in fact outstanding:
+
+1. **Task 9 (import commands)** — deferred with L2 by Isaac's own
+   prioritisation ("the .fit/.gpx can hold off"), never implemented.
+2. **Step 6's visual confirmation** — I overrode the app launch tonight
+   because nobody was awake to look at the window. That was the right
+   call for the hour, but it does not convert into a completed step.
+
+Ruling: **the line is unticked** and carries what remains, e.g.
+`- [ ] L5 Tauri scaffold hardening — Tasks 1-8, 10-14 landed; Task 9
+(import commands) deferred with L2; Step 6's on-screen render unconfirmed
+(headless byte-level proof only, 2026-09-05).`
+
+The reviewer graded this Critical and I agree with the grade. TASKS.md is
+the project's own answer to "what is done", and it is the file a future
+reader trusts *instead of* re-deriving state from the code. A tick that
+overstates by two items is worse than no tick: it is a wrong answer
+delivered confidently, and it would have been discovered by someone
+opening the app expecting a chart.
+
+Worth naming that the implementer flagged the tick as a judgment call
+rather than making it silently, and separately amended the CHANGELOG to
+distinguish "bytes verified" from "screen unconfirmed" when asked. The
+honesty was there — it just stopped one file short.
+
+**Also fixing (Minor):** `fetch_tile_column_count_zero_invalid_argument`
+asserts only `err.kind`, while the tier test pins `detail`. The command
+does build `detail { column_count }`, so a refactor could rename or drop
+that field with nothing failing. One assertion.
+
+**Cost if wrong:** none — the line can be ticked the moment Task 9 lands
+and a human confirms the render.
