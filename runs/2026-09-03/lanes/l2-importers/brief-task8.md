@@ -307,3 +307,7 @@ PASS/FAIL/KILLED status line; every Step 3 finding (confirmed-correct items
 named as such, not just omitted); anything else ambiguous you resolved
 (say how) or that needs a lead ruling (stop and report instead of guessing
 — CLAUDE.md §1).
+
+## Lead ruling 2026-09-05 (R60) -- scope widened to SPEC 15a edits
+
+This task MAY and MUST edit `docs/IDL0_SPEC.md` section 15a in the idl1-app L2 worktree (`C:/Users/isaac/Documents/Saucy/saucyeng/idl1-app-worktrees/wave1-l2-importers`): (a) rename the deferred speed/heading follow-on from "Task 8" to "L2 follow-on S/H (post-archive)" everywhere it appears in 15a (leave the plan file alone unless you touch it anyway); (b) remove the `import_with_hook` residue in 15a.5 (killed by L2-R12; describe `import_file` per L2-R13 as landed in Task 6); (c) fix the "need new `parse_*`-prefixed rows" sentence -- the seven C3 section 2 rows exist and are `import_*`-prefixed. Docs commits go in the idl1-app worktree; idl-rs CHANGELOG/code in the idl-rs worktree, as the brief already says. Report each 15a passage before/after.

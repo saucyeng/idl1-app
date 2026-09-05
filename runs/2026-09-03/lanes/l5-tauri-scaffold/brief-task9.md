@@ -481,3 +481,9 @@ and a one-line restatement of what the lead still needs to decide for each;
 the worktree-choice confirmation; anything else ambiguous you resolved (say
 how) or that needs a lead ruling (stop and report instead of guessing —
 CLAUDE.md §1).
+
+## Lead ruling 2026-09-05 (R60) -- return shape, error row, worktree
+
+1. `import_file` resolves with `ImportOutcome { session: SessionSummary, warnings: string[] }` (C3 section 3.3 amended under R60) -- never drop `ImportReport`'s warnings/truncation message. `app/src/ipc/import.ts` is adapted by a lead shell task; do NOT edit it here (STOP and report if the command cannot be built without it).
+2. `ImportErrorKind::Collision` maps to the new C3 section 2 kind `import_collision` (not `conflict`).
+3. Worktree: the idl-rs L2 worktree/branch `wave1-l2-importers`, as recommended. Gate on L2 Tasks 6 and 7 being committed (`git log`), else STOP.

@@ -328,3 +328,7 @@ triggered in your implementation, stated precisely (not "reactively" —
 name the actual trigger); per-step done/deviated; anything ambiguous you
 resolved (say how) or that needs a lead ruling (stop and report instead of
 guessing — CLAUDE.md §1).
+
+## Lead ruling 2026-09-05 (R60) -- this task owns the notebook orchestrator
+
+Task 8 left one wiring obligation unplaced: nothing owns a `SandboxHost` together with the cells' viewport/`TileCache`/bound-channel state. That orchestrator is this task's: add `host/NotebookSession.ts` (pure where possible, tested with an injected `post`/fetch) holding the `SandboxHost`, the `TileCache`, and a per-cell registry of `BoundChannel[]` + viewport; wire `SandboxHostCallbacks.onChannelsInvalidated` -> `rebindChannelsAfterRebuild(bound, cache, send)` -> `sandboxHost.setChannelHostVar` (`model/channelRebind.ts`). Test: after a rebuild every bound channel is re-sent exactly once and nothing is fetched. Message order on rebuild is init -> JSON host vars -> channels -> setCells (review-task5c).
