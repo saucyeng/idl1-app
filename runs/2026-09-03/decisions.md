@@ -2806,3 +2806,25 @@ pin range for a picker to enumerate (§3.7 names nets, not numbers).
 **Cost if wrong:** a user can type a pin the hardware lacks and learn at push
 time from the device's rejection (C3 `config` kind) — visible, not silent.
 The alternative, a guessed range, could exclude a real pin with no recourse.
+
+## 2026-09-05 — Process rule: IPC-driving React effects delegate to a pure, tested driver
+
+Two Criticals reached review within an hour, both in the one place the UI
+gate cannot see (rendering is not unit-tested, CLAUDE.md §4): L7a Task 5's
+import-queue effect depended on the state it dispatched into, so its own
+cleanup cancelled every in-flight import; L6 Task 5 registered host
+variables as getters the Observable runtime never unwraps and never
+re-primed a rebuilt iframe. Both were caught by reviewers reading the code,
+not by any test.
+
+**Rule (operating brief §4, all four UI standing reviewer briefs):** the
+decision logic of any effect that starts IPC or `postMessage` work lives in
+a pure module with an injected async function and is unit-tested for the
+interleavings that matter (dismiss-while-running, stale response, rebuild);
+the effect only calls it and never cancels in-flight work because unrelated
+state changed. Reviewers trace dependency arrays against dispatches; a
+self-cancelling effect is Critical. Fixes for both incidents are follow-up
+commits in their lanes, with driver tests.
+
+**Cost if wrong:** more ceremony per effect. Against it: an import feature
+that can never complete, shipped green.
