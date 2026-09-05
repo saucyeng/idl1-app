@@ -86,6 +86,23 @@ export function resetToFormCode(lastKnownProps: PlotProps | null, channels: read
   return generate(lastKnownProps ?? defaultPlotProps(channels));
 }
 
+/** Suggests a y-axis label for a newly picked channel: `"<label> (<unit>)"`
+ *  when `channel.unit` is present and non-empty, or `undefined` otherwise
+ *  (ruling R65: no quantity→unit table exists in TypeScript, so this reads
+ *  straight off the channel's own recorded unit — C1 §4.1's
+ *  `ChannelSummary.unit` — rather than a per-quantity si/imperial choice;
+ *  `unitsPreference` has no effect in wave 2). The result is a plain,
+ *  editable starting value for the label field, never a locked or
+ *  recomputed display (C2 §1: "no v3 construct converts units") — the
+ *  caller writes it into `y.label` exactly once, when the channel is
+ *  picked, the same way any other field value is set. */
+export function suggestAxisLabel(channel: { label: string; unit?: string } | undefined): string | undefined {
+  if (channel === undefined || channel.unit === undefined || channel.unit === "") {
+    return undefined;
+  }
+  return `${channel.label} (${channel.unit})`;
+}
+
 /** Appends a new mark bound to `channel`, defaulting to the `lineY` mark
  *  type and session scope (`lap` omitted, per {@link MarkProps}'s own
  *  "omitted means session scope" convention — `updateMark` is how a

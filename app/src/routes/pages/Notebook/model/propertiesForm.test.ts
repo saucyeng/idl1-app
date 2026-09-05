@@ -11,6 +11,7 @@ import {
   removeMark,
   resetToFormCode,
   setColorLegend,
+  suggestAxisLabel,
   updateMark,
   updateXAxis,
   updateYAxis,
@@ -179,6 +180,32 @@ describe("updateXAxis / updateYAxis", () => {
     const props = updateYAxis(withY, { label: undefined, domain: undefined });
 
     expect("y" in props).toBe(false);
+  });
+});
+
+describe("suggestAxisLabel", () => {
+  it("suggestAxisLabel — channel with a unit — suggests \"label (unit)\"", () => {
+    const suggestion = suggestAxisLabel({ label: "Fork travel", unit: "mm" });
+
+    expect(suggestion).toBe("Fork travel (mm)");
+  });
+
+  it("suggestAxisLabel — channel with no unit — suggests nothing", () => {
+    const suggestion = suggestAxisLabel({ label: "Fork travel" });
+
+    expect(suggestion).toBeUndefined();
+  });
+
+  it("suggestAxisLabel — channel with an empty-string unit — suggests nothing", () => {
+    const suggestion = suggestAxisLabel({ label: "Fork travel", unit: "" });
+
+    expect(suggestion).toBeUndefined();
+  });
+
+  it("suggestAxisLabel — no channel selected — suggests nothing", () => {
+    const suggestion = suggestAxisLabel(undefined);
+
+    expect(suggestion).toBeUndefined();
   });
 });
 

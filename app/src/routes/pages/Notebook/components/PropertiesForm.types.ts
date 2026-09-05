@@ -9,10 +9,17 @@
 /** One selectable channel/definition for a mark's channel picker (design
  *  §6; C2 §5.1's `channel()` name). `id` is the string passed to
  *  `plotForm`'s `channel(id)`; `label` is the human-facing name shown in
- *  the picker. */
+ *  the picker. `unit`, when present and non-empty, is C1's per-channel unit
+ *  (`SessionDetail.channels[].unit`, `app/src/ipc/catalog.ts`'s
+ *  `ChannelSummary.unit`) — ruling R65 (`runs/2026-09-03/decisions.md`): no
+ *  quantity→unit table exists in TypeScript, so this component seeds an
+ *  axis-label suggestion straight from the channel's own recorded unit
+ *  string rather than looking one up by physical quantity. Absent or `""`
+ *  means no suggestion is offered for that channel. */
 export interface PropertiesFormChannelOption {
   id: string;
   label: string;
+  unit?: string;
 }
 
 /** One lap available for a mark's lap-scope picker (C3 §3.2's
@@ -32,11 +39,14 @@ export interface PropertiesFormProps {
   channels: PropertiesFormChannelOption[];
   /** Laps available for a mark's lap-scope picker. */
   laps: PropertiesFormLapOption[];
-  /** C2 §1's workbook-level unit-system preference. Steers only which
-   *  unit *string* an axis-label suggestion would offer, never a value
-   *  conversion (C2 §1: "no v3 construct converts units") — see this
-   *  component's file-level doc comment for why no automatic suggestion
-   *  is wired from this prop yet. */
+  /** C2 §1's workbook-level unit-system preference. **Has no effect in
+   *  wave 2** (ruling R65): with no quantity→unit table in TypeScript, the
+   *  axis-label suggestion this component offers comes straight from
+   *  `channels[].unit` (a channel's single recorded unit, C1 §4.1) rather
+   *  than a per-quantity si/imperial choice — there is nothing here for
+   *  `unitsPreference` to steer yet. Kept in the prop surface for forward
+   *  compatibility with a future quantity table, not read by this
+   *  component's current logic. */
   unitsPreference: "si" | "imperial";
   /** Called with `generate`'s output every time a control changes the
    *  form's `PlotProps`, and by "Reset to form" once the discard warning

@@ -9,12 +9,13 @@ import {
   removeMark,
   resetToFormCode,
   setColorLegend,
+  suggestAxisLabel,
   updateMark,
   updateXAxis,
   updateYAxis,
   type PropertiesFormState,
 } from "../model/propertiesForm";
-import type { PropertiesFormProps } from "./PropertiesForm.types";
+import type { PropertiesFormChannelOption, PropertiesFormProps } from "./PropertiesForm.types";
 
 /**
  * The Properties pane (design §6, D13): a form over `plotForm`'s `PlotProps`
@@ -32,14 +33,16 @@ import type { PropertiesFormProps } from "./PropertiesForm.types";
  * for this cell, or the form's default single-mark seed if parse has never
  * once succeeded here (design §6; this task's brief).
  *
- * Axis-label auto-suggestion from C2 §3.4's unit table is intentionally
- * **not** wired here: that table keys on a channel's physical *quantity*
- * (Acceleration, Speed, ...), and `PropertiesFormProps.channels` carries
- * only `{id, label}` — no quantity metadata reaches this component. The
- * label fields below are plain editable text inputs with no suggested
- * default. See this task's report for the question this raises for the
- * lead (what identifies a channel's quantity, and where that data should
- * come from).
+ * Axis-label suggestion (ruling R65): picking the **first** mark's channel
+ * seeds `y.label` with `suggestAxisLabel` (`"<label> (<unit>)"` from
+ * `channels[].unit`, C1 §4.1) whenever `y.label` is not already set — a
+ * one-time seed into an ordinary editable field, never a locked or
+ * recomputed display (C2 §1: "no v3 construct converts units"). Only the
+ * first mark drives this, not every mark's channel, since `PlotProps` has
+ * one `y.label` for the whole plot regardless of mark count — a documented
+ * simplification, not every mark getting its own suggestion. There is no
+ * quantity→unit table in TypeScript (R65), so `unitsPreference` has no
+ * effect here; see `PropertiesFormProps.unitsPreference`'s own doc comment.
  *
  * No prop beyond `PropertiesFormProps`' five fields is read: no context, no
  * IPC, no DOM global beyond the JSX this component itself renders.
@@ -67,6 +70,23 @@ export default function PropertiesForm({ code, channels, laps, onChange }: Prope
   function handleResetConfirmed(): void {
     setConfirmingReset(false);
     onChange(resetToFormCode(lastKnownProps, channels));
+  }
+
+  /** Handles a channel pick for the mark at `index`. For the first mark
+   *  only (see the file-level doc comment on why just the first), also
+   *  seeds `y.label` from {@link suggestAxisLabel} when the plot doesn't
+   *  already have one set — never overwriting a label the author already
+   *  typed or a suggestion from an earlier channel pick. */
+  function handleMarkChannelChange(props: PlotProps, index: number, channelId: string): void {
+    let next = updateMark(props, index, { channel: channelId });
+    if (index === 0 && next.y?.label === undefined) {
+      const channel = channels.find((c) => c.id === channelId);
+      const suggestion = suggestAxisLabel(channel);
+      if (suggestion !== undefined) {
+        next = updateYAxis(next, { label: suggestion });
+      }
+    }
+    commit(next);
   }
 
   if (view.isCustom || view.props === null) {
@@ -112,6 +132,7 @@ export default function PropertiesForm({ code, channels, laps, onChange }: Prope
             canMoveUp={index > 0}
             canMoveDown={index < props.marks.length - 1}
             onPatch={(patch) => commit(updateMark(props, index, patch))}
+            onChannelChange={(channelId) => handleMarkChannelChange(props, index, channelId)}
             onRemove={() => commit(removeMark(props, index))}
             onMoveUp={() => commit(moveMark(props, index, index - 1))}
             onMoveDown={() => commit(moveMark(props, index, index + 1))}
@@ -253,18 +274,22 @@ function MarkRow({
   canMoveUp,
   canMoveDown,
   onPatch,
+  onChannelChange,
   onRemove,
   onMoveUp,
   onMoveDown,
 }: {
   mark: MarkProps;
   index: number;
-  channels: { id: string; label: string }[];
+  channels: PropertiesFormChannelOption[];
   laps: { number: number }[];
   canRemove: boolean;
   canMoveUp: boolean;
   canMoveDown: boolean;
   onPatch: (patch: Partial<MarkProps>) => void;
+  /** Channel picks go through this, not `onPatch`, so the first mark's pick
+   *  can also seed `y.label` (see {@link PropertiesForm}'s doc comment). */
+  onChannelChange: (channelId: string) => void;
   onRemove: () => void;
   onMoveUp: () => void;
   onMoveDown: () => void;
@@ -273,7 +298,7 @@ function MarkRow({
     <div className="properties-form-mark-row">
       <label>
         Channel
-        <select value={mark.channel} onChange={(e) => onPatch({ channel: e.target.value })}>
+        <select value={mark.channel} onChange={(e) => onChannelChange(e.target.value)}>
           {channels.map((c) => (
             <option key={c.id} value={c.id}>
               {c.label}
