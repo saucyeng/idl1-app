@@ -2841,3 +2841,30 @@ Total 932, no OOM. The gate agent stalled twice waiting on background
 command notifications that had already fired; the lead nudged it each time
 — gate steps should run in the foreground (told the agent; carried into the
 next gate brief). Task 5 (CSV) dispatched on the PASS.
+
+## 2026-09-05 — L7c LANDED (Settings tab, wave 2)
+
+Merged `wave2-l7c-settings` into idl1-app `main` (`--no-ff`). Lane: Tasks
+1–6 plus four follow-ups (Task 5 minors, `errors.ts` coverage to 100 %,
+how-to copy accuracy, async `PrefsBackend`). Reviews: six, all CLEAN after
+follow-ups; the last review held the merge for three factual errors in
+how-to copy (push described as WiFi, calibration and a lap-gate editor
+described as working) — fixed, and the implementer found two more of the
+same class itself (battery level, remote record start/stop). Merge gate on
+`main`: `tsc` clean, whole TS suite **98 passed / 0 failed**.
+
+**Shipped:** Profile, Units, Data directory (restart-required, stubbed
+get/set), Sync (real `sync_status`/`sync_now`/`pair_peer`, 5 s poll while
+visible), Controls (provisional banner), How-tos (every affordance claim
+true today or marked not yet available), About (engine version from
+AppState). Prefs in `localStorage` behind an async `PrefsBackend`.
+**Outstanding for the Rust write lane:** `get_settings`/`set_settings`,
+`get_data_dir`/`set_data_dir`, the one-time `localStorage`→`settings.json`
+import (R53 Q1), the BOM strip in `resolve_data_dir`. **Parity gaps:** Drive
+sync replaced by LAN sync (permanent), firmware/OTA wave 3, licence page
+omitted, chart-controls reference provisional until L6 lands. SPEC §27
+rewritten (§27.1, §27.8–§27.13), §28 superseded banner. R57 came out of this
+lane's review.
+
+**Cost if wrong:** the tab is additive and behind its own directory; a
+regression is a revert of one merge commit.
