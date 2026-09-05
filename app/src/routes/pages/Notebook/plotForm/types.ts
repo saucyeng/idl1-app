@@ -9,6 +9,13 @@ export interface MarkProps {
   strokeWidth?: number; // px
 }
 
+/** The five mark names `MarkProps.mark`'s union type admits, as a runtime
+ *  array — a TS union isn't reflectable, so this is the single source both
+ *  `parse.ts`'s grammar reader and any UI control (L6 Task 12's Properties
+ *  form) enumerate against, rather than each hardcoding its own copy that
+ *  could drift from `MarkProps.mark` or from each other. */
+export const MARK_NAMES: readonly MarkProps["mark"][] = ["lineY", "dot", "areaY", "rectY", "ruleY"];
+
 /** C2 §5.3's `x_scale` production. `type` is intentionally absent — see
  *  the note below. */
 export interface XAxisProps {
@@ -26,6 +33,11 @@ export interface YAxisProps {
   domain?: [number, number];
   type?: "linear" | "log" | "sqrt";
 }
+
+/** The three y-axis scale types `YAxisProps.type`'s union type admits, as a
+ *  runtime array — same rationale as {@link MARK_NAMES}: a UI control
+ *  enumerates this rather than hardcoding a second copy. */
+export const Y_AXIS_TYPES: readonly NonNullable<YAxisProps["type"]>[] = ["linear", "log", "sqrt"];
 
 /** C2 §5.3's `plot_options` production — the Properties pane's whole
  *  internal state for one `js` cell in the `plotForm` subset.

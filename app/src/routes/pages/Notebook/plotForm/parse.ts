@@ -1,4 +1,4 @@
-import type { MarkProps, PlotProps, XAxisProps, YAxisProps } from "./types";
+import { MARK_NAMES, type MarkProps, type PlotProps, type XAxisProps, type YAxisProps } from "./types";
 
 /** A lexical token produced by {@link tokenize}: an identifier (bare word),
  *  a decoded string literal, a decoded numeric literal, or one of the
@@ -411,8 +411,6 @@ function readColorOpt(c: Cursor): { legend: true } | null {
   if (fields === null || fields.legend !== true) return null;
   return { legend: true };
 }
-
-const MARK_NAMES = ["lineY", "dot", "areaY", "rectY", "ruleY"] as const;
 
 /** Reads a mark's `channel_call`: `channel("name")` or
  *  `channel("name", { lap: n })`. Session scope (no `{lap: ...}` object)
