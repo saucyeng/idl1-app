@@ -36,6 +36,7 @@ the npm registry API (`https://registry.npmjs.org/<name>`) — the same source `
 | codemirror | npm | 6.0.2 | 2025-06-19 | MIT | `^6.0.2` | https://www.npmjs.com/package/codemirror/v/6.0.2 |
 | @codemirror/lang-javascript | npm | 6.2.5 | 2026-03-02 | MIT | `^6.2.5` | https://www.npmjs.com/package/@codemirror/lang-javascript/v/6.2.5 |
 | @codemirror/lang-markdown | npm | 6.5.2 | 2026-08-04 | MIT | `^6.5.2` | https://www.npmjs.com/package/@codemirror/lang-markdown/v/6.5.2 |
+| htl | npm | 1.0.0 | 2026-05-20 | ISC | `^1.0.0` | https://www.npmjs.com/package/htl/v/1.0.0 |
 | react | npm | 19.2.8 | 2026-07-21 | MIT | `^19.2.8` | https://www.npmjs.com/package/react/v/19.2.8 |
 | react-dom | npm | 19.2.8 | 2026-07-21 | MIT | `^19.2.8` | https://www.npmjs.com/package/react-dom/v/19.2.8 |
 | vite | npm | 8.2.2 | 2026-08-20 | MIT | `^8.2.2` | https://www.npmjs.com/package/vite/v/8.2.2 |
@@ -51,6 +52,9 @@ assumed; flagged here since it is the row most likely to surprise a reader.
 Note: `reqwest` added post-M0 (2026-09-03, lead ruling R7, wave-1 L4) — outside the original
 32-row research task's scope, needed once L4's plan required it for the device's HTTP WiFi
 transfer protocol (design §7). Verified the same way: crates.io's own API, not guessed.
+
+Note: `htl` added post-M0 (2026-09-05, lead ruling R52 Q1, wave-2 L6) for tagged-template HTML
+construction in notebook cells alongside Observable Plot/Inputs.
 
 ## 2. Findings
 
