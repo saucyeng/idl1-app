@@ -3057,3 +3057,35 @@ the implementer. Fixed in the Task 11 follow-up.
 
 **Cost if wrong:** a second debouncer of the same tested shape; one more
 IPC per hover-stop, which is design §6's stated budget.
+
+## 2026-09-05 — R63: L8w write-amendment lane plan adjudicated (3 questions)
+
+Plan: `docs/superpowers/plans/2026-09-05-idl1-wave2-l8w-write-amendment.md`
+(14 tasks; App group first; opens only after L2 + L5 Task 9 merge — gated by
+grep). Rulings:
+
+1. **`device_rejected` may be unreachable on the desktop transport.**
+   `BtleplugBle::send_command`'s own doc says Windows's `winrtble` backend
+   never surfaces SPEC §7.2's ACK byte, only `Ok(())` or a generic `Ble`
+   error (L4's known Windows ACK-byte gap, SPEC §14a). Ruling: ship the kind
+   as specified and map it wherever the transport *does* surface an
+   `AckCode` (mobile plugins, a future desktop backend); never parse error
+   text to fake it; `TODO(idl0)` at the transport boundary. The Device tab
+   already handles the generic `ble` kind honestly.
+2. **`preview_channel_registry` covers the SPEC-fixed subset only** (IMU,
+   wheel, pressure, HR channel ids per §5.2); configured analog/digital
+   channels have no fixed wire id. **For Isaac:** are generic channel ids
+   deterministic from config order (then the preview can compute them), or
+   assigned by the firmware at boot (then only the parser knows)?
+3. **`fetch_fft` averaging.** C3 names `"none" | "max"`; landed
+   `idl_rs::fft::Averaging` has `Mean | Median`. Ruling: extend the core enum
+   with `None` and `Max` (physics stays in core, additive), and amend C3's
+   union to `"none" | "mean" | "median" | "max"` so nothing landed is hidden
+   from the wire. Applied to C3 by the lane's Task 12 as spec-during.
+
+Task 6's managed connection must verify `BtleplugBle` is `Send` behind
+`Arc<Mutex<_>>` in `tauri::State` and STOP if not — as the plan says.
+
+**Cost if wrong:** (1) a kind nobody raises on desktop yet — harmless; (2)
+a narrower preview than idl0's; (3) two enum variants and a widened union,
+both additive.
