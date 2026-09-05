@@ -1,8 +1,11 @@
-import { useCallback, useReducer } from "react";
+import { useCallback, useReducer, useState } from "react";
 
 import { bleConnect, bleScan } from "../../../ipc/device";
+import ChannelsTable from "./ChannelsTable";
 import { connectionReducer, initialConnectionState } from "./connection";
+import { defaultConfig } from "./config/defaults";
 import { describeIpcError } from "./errors";
+import { listSources } from "./sources";
 
 /** Scan window length passed to `bleScan` (C3 §3.8), in milliseconds. Not
  *  user-configurable in wave 2. */
@@ -17,6 +20,10 @@ const SCAN_TIMEOUT_MS = 10_000;
  *  see `connection.ts`'s `ConnectionState` doc). */
 export default function Device() {
   const [state, dispatch] = useReducer(connectionReducer, initialConnectionState);
+  // No `pull_config` yet (IPC need 10 is stubbed) — the config card starts
+  // from a fresh default config until Task 6/7 wires a real pull. Local to
+  // this component; the lane has no shared-state slice (lane brief).
+  const [config] = useState(() => defaultConfig(""));
 
   const onScan = useCallback(() => {
     dispatch({ type: "SCAN_START" });
@@ -59,7 +66,9 @@ export default function Device() {
         )}
         {state.phase === "failed" && state.error && <p role="alert">{state.error}</p>}
       </section>
-      <section className="device-tab__config">{/* config model: Tasks 2–7 */}</section>
+      <section className="device-tab__config">
+        <ChannelsTable sources={listSources(config)} />
+      </section>
     </div>
   );
 }

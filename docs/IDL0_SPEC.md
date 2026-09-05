@@ -2080,13 +2080,32 @@ The active profile id is persisted to `SharedPreferences` key `idl0.profiles.act
 
 ### 23.3 Channel table
 
-One expandable parent row per `ChannelSource` (IMU0/1/2, GPS, Wheel Speed, Analog, Digital, and Spec 2's HRM). Columns: **Source · Rate Hz · Channels (`enabled/total`) · Enabled · ⚙** (source-level dialog).
+`Device/sources.ts`'s `listSources(config)` builds one `SourceView` row per
+configurable source — `imu0`/`imu1`/`imu2`, `gps`, `wheel_front`/`wheel_rear`,
+one per `analog.channels[]` entry, one per `digital.channels[]` entry, and
+the heart rate monitor — in that stable order, hardware-pinned sources
+first. `ChannelsTable.tsx` renders it: **Source · Rate Hz · Channels
+(`enabled/total`) · Enabled · ⚙** (opens that source's form, Tasks 6–7).
+Enable state and rate are joined from `previewSources` (§23.2's sibling
+Task 4 module) by `sourceKey`, never recomputed here.
 
-Expanded child rows show each individual channel: **Name · Rate Hz · units · scale · offset · Enabled**. Tapping a child opens its per-channel dialog.
+Expanding a row lists its channels: **Name · Units · Enabled · Scale ·
+Offset**, where Scale/Offset show only for an `analog.channels[]` entry's
+own config-typed `scale`/`offset` (the value the user typed) — every other
+source's channel rows show `—` in those two columns. Wave 2 has **no
+predicted `channel_id` or data-type column**: that number is `core::parse`'s
+own arithmetic (SPEC §3's `scale = range / 32768`), and showing it here
+before `preview_channel_registry` (IPC need 12) lands would be a second,
+driftable copy of wire-format logic in TypeScript (R53 Device Q1).
 
-For sources whose sample rate is hardware-shared across instances (IMUs all on one SPI bus, analog channels round-robined by the ADC scheduler), the child rate cells display the effective rate but are read-only — editing the rate goes through the source-level dialog so the shared nature stays explicit.
+For sources whose sample rate is hardware-shared across instances (IMUs all
+on one SPI bus, analog channels round-robined by the ADC scheduler), the
+rate is shown once at the source row, not per channel — there is no
+per-channel rate to edit independently of the source-level rate.
 
-Hardware-pinned sources (IMU, GPS, Wheel Speed) are always present in a profile. User-added sources (Analog, Digital marker, HRM) appear once added via **+ Add channel…**.
+Hardware-pinned sources (IMU, GPS, Wheel Speed) are always present in a
+profile, shown even when disabled. User-added sources (Analog, Digital
+marker, HRM) appear once added via **+ Add channel…**.
 
 ### 23.4 `+ Add channel…` picker
 

@@ -62,6 +62,16 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
   owned by `core::parse`. The full per-channel registry preview is deferred
   to `preview_channel_registry(config_json) -> RegistryRow[]` (IPC need 12),
   computed engine-side in the Rust write-amendment lane.
+- **Device tab, Task 5 (2026-09-05, L7b).** `Device/sources.ts` —
+  `listSources`, the channels table's `SourceView[]` — one row per
+  configurable source in a stable order (hardware-pinned sources first),
+  each with an expandable per-channel breakdown (`ChannelsTable.tsx`).
+  Enable state and sample rate are joined from Task 4's `previewSources` by
+  `sourceKey`, never re-derived. Scale/offset show only for an
+  `analog.channels[]` entry's own config-typed values — never a
+  registry-derived number (R53 Device Q1) — matching Task 4's narrowed
+  scope; no `channel_id`/data-type column. `docs/IDL0_SPEC.md` §23.3
+  rewritten to describe the columns as built.
 - **L5 complete (2026-09-04).** idl-rs-tauri wired to every landed wave-1 lane's C3 command
   group (catalog, workbook, cursor, raster, tile) plus device (L4); <data> resolution,
   workbook watcher, app/src/ipc/ module layer, routing and state skeleton. Tile fetched
