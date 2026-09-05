@@ -2946,3 +2946,38 @@ rename (`metadataDraft.ts`).
 
 **Cost if wrong:** additive tab behind its own directory; a regression is a
 revert of one merge commit.
+
+## 2026-09-05 — R60: L2 Task 7/8 + L5 Task 9 briefs; import warnings on the wire; L6 rebind orchestrator placement
+
+Brief writer's four questions:
+1. **Import warnings cross the IPC boundary.** C3 §3.3 `import_file` now
+   resolves with `ImportOutcome { session: SessionSummary, warnings:
+   string[] }` (the importer's recovered warnings, incl. truncation), not a
+   bare `SessionSummary` — a catalog row must not carry per-import state,
+   and dropping the warnings violates CLAUDE.md §5. `app/src/ipc/import.ts`
+   and the Data tab's `importDriver` adapt in a lead shell task on `main`
+   (both lanes are merged); Task 9 implements the new shape. C3 §3.3 amended
+   by the same transcriber pass as R59.
+2. **`import_collision` is a new C3 §2 row** (`ImportErrorKind::Collision`:
+   re-import of a different blob under an existing session id), R44
+   precedent — never fold into `conflict`.
+3. **Task-numbering collision.** The deferred FIT/GPX speed/heading follow-on
+   that SPEC §15a and the plan call "Task 8" is renamed **"L2 follow-on S/H
+   (post-archive)"**. L2 Task 8's scope is widened to include editing
+   `docs/IDL0_SPEC.md` §15a in the idl1-app L2 worktree (it is the lane's
+   docs task): the rename, the `import_with_hook` residue (killed by L2-R12),
+   and the `parse_*`→`import_*` kind-prefix error.
+4. **L5 Task 9 runs in the idl-rs L2 worktree/branch** (one repo; needs
+   Tasks 6/7's exact signatures). Merges with L2.
+
+**L6 Task 8's obligation 1 (BoundChannel registry → rebind on rebuild):**
+nothing yet owns a `SandboxHost` and the cells' viewport/cache state
+together. Ruling: that orchestrator is **Task 13's** (open/evaluate/render
+owns the notebook lifecycle) — a `host/NotebookSession.ts` holding the
+`SandboxHost`, the `TileCache`, and a per-cell registry of bound channels +
+viewport, wiring `onChannelsInvalidated` → `rebindChannelsAfterRebuild` →
+`setChannelHostVar`. Task 8 is complete as committed (`f143545`).
+
+**Cost if wrong:** (1) changes a wire shape two landed TS files depend on —
+one shell task, both call sites known. (3) is prose. The orchestrator
+placement is reversible until Task 13 lands.
