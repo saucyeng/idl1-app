@@ -2828,3 +2828,16 @@ commits in their lanes, with driver tests.
 
 **Cost if wrong:** more ceremony per effect. Against it: an import feature
 that can never complete, shipped green.
+
+## 2026-09-05 — L2 four-task gate: PASS (932)
+
+Per CLAUDE.md §8 the full suite ran after L2 Tasks 1–4 (worktree
+`275267e`, clean): `cargo check -p idl-rs-cli --tests` Finished (21 s);
+`cargo check -p idl-rs-tauri` Finished (16 m 07 s — cold Tauri graph, only
+pre-existing warnings); `cargo test -p idl-rs -p idl-rs-cli --
+--test-threads=4` → idl-rs 880 passed / 0 failed / 1 ignored, integration
+`real_session_odr_validation` 1 passed, idl-rs-cli 51 passed, doc-tests 0.
+Total 932, no OOM. The gate agent stalled twice waiting on background
+command notifications that had already fired; the lead nudged it each time
+— gate steps should run in the foreground (told the agent; carried into the
+next gate brief). Task 5 (CSV) dispatched on the PASS.
