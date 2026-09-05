@@ -3041,3 +3041,19 @@ exclusivity, valid pin sets, the four firmware status fields.
 
 **Cost if wrong:** additive tab behind its own directory; a regression is a
 revert of one merge commit.
+
+## 2026-09-05 — R62: cursor readout debounces on pointer stop, not on the gesture settle
+
+L6 Task 10 hung the cursor readout off Task 8's viewport-settle callback,
+as its brief said; the reviewer noted that callback fires only after a
+pan/zoom, so a plain hover-and-stop never produces a readout. Design §6 says
+"cursor readouts fire once on cursor settle (debounced), never per move" —
+cursor settle is its own trigger. **Ruling:** the readout gets its own
+`makeSettle` instance keyed to pointer position (default 150 ms, a named
+constant with units), with its own sequence for the stale guard; the
+viewport settle also refreshes it (the picture moved under a still pointer);
+still exactly one IPC per settle, none per move. The brief was wrong, not
+the implementer. Fixed in the Task 11 follow-up.
+
+**Cost if wrong:** a second debouncer of the same tested shape; one more
+IPC per hover-stop, which is design §6's stated budget.
