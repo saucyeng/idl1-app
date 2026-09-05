@@ -1481,7 +1481,7 @@ channels)*" row):** `GPS_Latitude`/`GPS_Longitude` → `deg`, `GPS_Altitude`
 → `m`, `GPS_EpochMs` → `ms_raw`, `HR_BPM` → `bpm`, `Cadence_RPM` → `rpm`,
 `Power_W` → `W`. (`GPS_SpeedKmh` → `km/h` and `GPS_Heading` → `deg` belong
 in this same units list for completeness even though neither channel is
-populated by this importer — §15a.3's Task 8 note applies here too.)
+populated by this importer — §15a.3's L2 follow-on S/H (post-archive) note applies here too.)
 
 **GPS coordinate scale — physical decimal degrees (R27).** `GPS_Latitude`/
 `GPS_Longitude` are physical decimal degrees, `unit: deg`, for **every**
@@ -1543,12 +1543,13 @@ finds `<ele>`, `<time>`, and (regardless of nesting depth under
 | `<cad>` | `Cadence_RPM` | only when at least one point has it. `unit: rpm` |
 | `<power>` | `Power_W` | only when at least one point has it. `unit: W` |
 
-**`GPS_SpeedKmh`/`GPS_Heading` — deferred to Task 8, not a contract gap.**
+**`GPS_SpeedKmh`/`GPS_Heading` — deferred to L2 follow-on S/H (post-archive), not a contract gap.**
 C1 §4.1 **does** name both `GPS_SpeedKmh` (`unit: km/h`) and `GPS_Heading`
 (`unit: deg`) in its FIT/GPX-derived column list (added post-sign,
 2026-09-03, ruling R7 — a separate, earlier ruling than R23 the same day).
 This importer and FIT's (§15a.2) deliberately do not populate either
-channel in this wave: that is a dedicated follow-on **Task 8** (FIT
+channel in this wave: that is a dedicated follow-on, **L2 follow-on S/H
+(post-archive)** (FIT
 `speed`/`enhanced_speed` ×3.6; GPX `<speed>`/`<course>` or the ported Dart
 derive-when-absent fallback), held per ledger ruling R23 Q4 pending Isaac's
 real FIT/GPX archive, not executed in this wave — not a contract gap
@@ -1614,10 +1615,11 @@ not as an independent choice.
 
 - **Error kinds.** `ImporterError`'s variants (`FitMalformed`,
   `GpxMalformedXml`, `GpxNoTrackpoints`, `GpxMissingLatLon`,
-  `GpxUnparseableLatLon`, `CsvMalformed`, `NotUtf8`) need new `parse_*`-
-  prefixed rows in C3 §2's kind vocabulary table before L5 wires
-  `import_file` to IPC — not needed for this plan's own Rust-only tests.
-  See Open Questions.
+  `GpxUnparseableLatLon`, `CsvMalformed`, `NotUtf8`) each have a row in C3
+  §2's kind vocabulary table, `import_*`-prefixed (`import_fit_malformed`
+  through `import_not_utf8`, added under lead ruling R7) — distinct from
+  `parse_*` (`ParseError`, `.idl0`-only, unchanged). Landed ahead of L5
+  Task 9's `import_file`/`list_importers` wiring, which reads this table.
 - **`Time`/`Distance` synthesis.** Every L2 channel (FIT, GPX, CSV) has
   `nominal_rate_hz = 0.0` (§15a.2–15a.4), and `synthesize_base_channels`
   (`session/synthesis.rs`) originally synthesized `Time` only from a
@@ -1633,15 +1635,20 @@ not as an independent choice.
   session gets a `Time` channel, derived from its longest channel's real
   recorded time, event-driven. `Distance` still requires `GPS_SpeedKmh` at
   a positive rate, which none of this section's importers produce
-  (§15a.3's Task 8 deferral) — `Distance` stays absent for FIT/GPX/CSV
-  sessions until Task 8 lands.
+  (§15a.3's L2 follow-on S/H (post-archive) deferral) — `Distance` stays
+  absent for FIT/GPX/CSV sessions until that follow-on lands.
 - **Post-import materialisation hook.** `rust/core/src/import/hook.rs`
-  defines `PostImportHook` (`on_imported(&self, session: &Session)`), a
-  no-op default (`NoopPostImportHook`), and `import_with_hook` (runs an
-  `Importer` then the hook, on success only) — the extension point design
-  doc §5's materialised-derived-channel chain (the iEKF estimator) attaches
-  to once L1/L3 build the materialised-channel store. This section ships
-  only the shape; wiring a real hook is out of scope here.
+  defines `PostImportHook` (`on_imported(&self, session: &Session)`) and a
+  no-op default (`NoopPostImportHook`) — the extension point design doc
+  §5's materialised-derived-channel chain (the iEKF estimator) attaches to
+  once L1/L3 build the materialised-channel store. Per ledger ruling
+  L2-R12, there is no `import_with_hook` wrapper: the plan's original
+  signature could not accept `importer_for_extension`'s `Box<dyn Importer>`
+  without an awkward deref, so the hook is invoked directly inside
+  `store::import::import_file`'s own pipeline (L2-R13, Task 6, landed) —
+  a `NoopPostImportHook.on_imported` call after a successful import,
+  before the CAS blob write. This section ships only the hook's shape;
+  wiring a real hook is out of scope here.
 - **What is not covered here.** Writing `data.parquet` (C1 §4), catalog
   insertion (C4 §5), CLI subcommand wiring (`idl-rs import`), and the
   `.idl0` importer are L1's.
