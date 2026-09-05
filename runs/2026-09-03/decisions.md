@@ -2717,3 +2717,40 @@ it as IPC need 12 landing early (R53 Device Q1).
 would cost a Tauri build inside a UI lane, which §4 forbids. The pin ruling
 costs one extra click per new channel versus a guessed numbering the
 firmware might reject.
+
+## 2026-09-05 — R56: L6 may edit `vite.config.ts` for the sandbox entry (lead-authorised)
+
+L6 Task 5 proved empirically (out-of-tree probe configs, real `vite build`
+output inspected) that no avoidance path works for the sandboxed iframe
+bundle: `?url` / `new URL(..., import.meta.url)` on a `.ts` module emits the
+raw untransformed source as a data URL; the `new Worker(new URL(...))`
+special case bundles correctly but cannot yield a script URL without
+spawning a worker; a second `build.rollupOptions.input` entry works. So R52
+Q9(ii) resolves to: the entry is required.
+
+**Ruling:** because the entry's HTML lives in L6's own directory, the config
+change and the file must land together. The lead authorises L6 Task 5 — this
+task only — to edit the lead-owned `app/vite.config.ts` with exactly:
+`build.rollupOptions.input = { main: "index.html", notebookSandbox:
+"src/routes/pages/Notebook/sandbox/index.html" }`, as its own commit citing
+R56. Ownership rule (operating brief §2) otherwise unchanged. Proof at the
+task gate: one `vite build` showing the sandbox chunk with `d3` and
+`@observablehq/*` resolved.
+
+**Cost if wrong:** a second build entry that later moves is a one-line
+config edit; the alternative (a shell task on `main` pointing at a file that
+does not exist on `main` yet) would break `vite build` on `main` until L6
+merges.
+
+## 2026-09-05 — Tracked note: IMU `low_power_mode` vs `high_performance_mode` — SPEC §8 gap
+
+L7b Task 3's validator selects the IMU ODR table from `imu.low_power_mode`
+alone; SPEC §8 frames the two flags as one physical toggle but never says
+what the firmware does when both are set. **Ruling:** the validator emits a
+*warning* (not an error — inventing a winner would be a guess) when both are
+true; `isPushable` unaffected. **For Isaac:** state in SPEC §8 whether the
+flags are mutually exclusive (then the validator upgrades to an error) or
+which wins (then the table selection follows it). Non-blocking.
+
+**Cost if wrong:** a config the firmware silently reinterprets; the warning
+makes it visible at push time, which is the most the app can honestly do.
