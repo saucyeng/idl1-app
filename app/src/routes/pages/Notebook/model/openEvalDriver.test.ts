@@ -99,6 +99,19 @@ describe("runOpenAndEval", () => {
     expect(actions.map((a) => a.type)).toEqual(["handleOpened"]);
   });
 
+  it("runOpenAndEval — stale exactly after evalWorkbook resolves — dispatches open and markdown but skips the eval result (review-task13.md Minor)", async () => {
+    const deps = baseDeps();
+    const actions: WorkbookAction[] = [];
+    let calls = 0;
+
+    await runOpenAndEval(deps, null, (a) => actions.push(a), () => {
+      calls++;
+      return calls > 3;
+    });
+
+    expect(actions.map((a) => a.type)).toEqual(["handleOpened", "markdownReady"]);
+  });
+
   it("runOpenAndEval — a run superseded before openWorkbook resolves — dispatches nothing further", async () => {
     const deps = baseDeps();
     const actions: WorkbookAction[] = [];

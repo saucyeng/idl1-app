@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { ChannelSummary, SessionDetail } from "../../../../ipc/catalog";
-import { bindingFor, unresolvedChannelId } from "./jsCellBinding";
+import { bindingFor, bindingIdentity, unresolvedChannelId } from "./jsCellBinding";
 
 function channel(overrides: Partial<ChannelSummary> = {}): ChannelSummary {
   return {
@@ -134,6 +134,24 @@ describe("bindingFor", () => {
     const binding = bindingFor({ id: "cell-a", code: oneMarkCode }, detail, null);
 
     expect(binding).toBeNull();
+  });
+});
+
+describe("bindingIdentity", () => {
+  it("bindingIdentity — two calls with the same channel/lap/span — produce the same identity", () => {
+    const detail = sessionDetail([channel()]);
+    const a = bindingFor({ id: "cell-a", code: oneMarkCode }, detail, 60_000_000);
+    const b = bindingFor({ id: "cell-b", code: oneMarkCode }, detail, 60_000_000);
+
+    expect(bindingIdentity(a!)).toBe(bindingIdentity(b!));
+  });
+
+  it("bindingIdentity — a different resolved session span — produces a different identity", () => {
+    const detail = sessionDetail([channel()]);
+    const a = bindingFor({ id: "cell-a", code: oneMarkCode }, detail, 60_000_000);
+    const b = bindingFor({ id: "cell-a", code: oneMarkCode }, detail, 90_000_000);
+
+    expect(bindingIdentity(a!)).not.toBe(bindingIdentity(b!));
   });
 });
 

@@ -113,6 +113,21 @@ export function bindingFor(
 }
 
 /**
+ * A stable string identity for the one channel `Notebook/index.tsx`
+ * actually binds into `ChartCell` (`binding.channels[0]`, lead pre-ruling
+ * #3) plus the initial span -- used to detect "this cell's binding
+ * changed" (a different channel, a different lap, or a re-resolved
+ * session span) without a deep-equal over the whole `JsCellBinding`.
+ * Two bindings with the same identity are treated as the same binding: no
+ * re-fetch, no `setBoundChannel` call. Pure string formatting, no IPC.
+ */
+export function bindingIdentity(binding: JsCellBinding): string {
+  const first = binding.channels[0];
+  if (first === undefined) return "no-channel";
+  return `${first.channelId}|${first.lap ?? "session"}|${binding.initialSpan.startUs}|${binding.initialSpan.endUs}`;
+}
+
+/**
  * Names the first `marks[*].channel` in `code` that is not present in
  * `sessionDetail.channels`, or `null` when `code` is custom (`parse`
  * returns `null`) or every referenced channel resolves. Split out from

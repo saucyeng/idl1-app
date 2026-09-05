@@ -156,12 +156,22 @@ export class SandboxHost {
    * never be added here — without it, the iframe's realm has no access to
    * `window.__TAURI_INTERNALS__` even if cell code somehow reached for it;
    * this is the actual security boundary (design §6), not a convention.
+   *
+   * Sized to fill `container` exactly (R69 item (a)/(c)): `container`'s own
+   * styling (`Notebook/index.tsx`) covers the viewport with
+   * `pointer-events: none`, and every cell's rendered container inside this
+   * iframe is positioned in that same coordinate space by `sendLayout` --
+   * an iframe with no explicit size defaults to 300x150 CSS px, which would
+   * make every `layoutMessage` rect land outside its own bounds.
    */
   private createIframe(): HTMLIFrameElement {
     this.generation = this.outboundQueue.startGeneration();
     const iframe = document.createElement("iframe");
     iframe.sandbox.add("allow-scripts");
     iframe.src = `${import.meta.env.BASE_URL}${SANDBOX_PATH}`;
+    iframe.style.width = "100%";
+    iframe.style.height = "100%";
+    iframe.style.border = "none";
     this.container.appendChild(iframe);
     return iframe;
   }
