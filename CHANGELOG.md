@@ -6,6 +6,7 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 
 ### Added
 
+- **Workbook commands (C3 §3.4) over L3's v3 parser/evaluator.** open_workbook, eval_workbook (per-cell CellOutput, host channels as HostChannelRef markers only — the byte path is deferred to wave 2 with L6), save_workbook (C4 §4 expected-hash ordering + optimistic based_on_hash), watch_workbook (Task 3's watcher + a cell-body diff). No unsubscribe in wave 1.
 - **Repository created (2026-09-02).** From the idl1 rewrite design
   (`docs/superpowers/specs/2026-09-02-idl1-rewrite-design.md`). Docs carried
   over from idl0-app: SPEC, design rationale, signal pipeline, datasheet,

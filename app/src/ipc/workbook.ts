@@ -2,10 +2,11 @@ import { Channel, invoke } from "@tauri-apps/api/core";
 
 /** One JSON error crossing every fallible command (C3 §2). `detail`'s shape
  *  depends on `kind`; absent when there is nothing structured to add. Kept
- *  local here (rather than a shared module) because `CellOutput.error` is
- *  the only place in `app/src/ipc/` a command's success payload nests an
- *  `IpcError` — everywhere else it only ever surfaces as a rejected
- *  `Promise`, which callers catch without needing the type by name. */
+ *  local here (rather than a shared module) because `CellOutput.errors` and
+ *  `CellDefResult.error` are the only places in `app/src/ipc/` a command's
+ *  success payload nests an `IpcError` — everywhere else it only ever
+ *  surfaces as a rejected `Promise`, which callers catch without needing the
+ *  type by name. */
 export interface IpcError {
   /** Machine-readable failure class. Frontend code routes on this string,
    *  never on `message` (C3 §2). */
@@ -26,17 +27,47 @@ export interface WorkbookHandle {
   cell_count: number;
 }
 
+/** The light wire marker for a `HostChannel` (C3 §3.4, ledger R22/R45): the
+ *  full `{length, t, v}` shape stays in-process (core) — the sample bytes
+ *  cross via a binary command deferred to wave 2 (L5/L6, ledger R45). */
+export interface HostChannelRef {
+  /** u32 */
+  length: number;
+  has_t: boolean;
+}
+
+/** One `math`-cell definition's evaluated result (C3 §3.4, ledger R21) — one
+ *  entry per definition, in `def_line` source order; empty for `table`/`js`
+ *  cells. */
+export interface CellDefResult {
+  name: string;
+  label: string | null;
+  /** `null` on failure — see `error` (ledger R22). */
+  value: HostChannelRef | null;
+  /** `math_*` kind only — a structural problem on this definition keeps it
+   *  out of `defs` entirely and is reported, if anywhere, on the cell's own
+   *  `errors` instead (ledger R22). */
+  error: IpcError | null;
+}
+
 /** One cell's evaluation result (C3 §3.4). A per-cell failure never rejects
- *  `evalWorkbook` — it appears here, in that cell's `error`; other cells
- *  still evaluate. */
+ *  `evalWorkbook` — it appears in `errors` (or a specific `defs[i].error`);
+ *  other cells still evaluate. */
 export interface CellOutput {
   /** C2 fence-string id */
   cell_id: string;
-  kind: "math" | "table" | "js" | "prose";
-  /** present when evaluation succeeded; shape depends on `kind` */
+  /** "prose" removed (ledger R21) — prose has no fence id and never gets its
+   *  own `CellOutput` entry. */
+  kind: "math" | "table" | "js";
+  /** present when evaluation succeeded; `null` for `math`/`js` (their
+   *  results live in `defs`); `{ model, results }` for a successfully
+   *  evaluated `table` cell (ledger R21). */
   value: unknown | null;
-  /** present when this cell failed; other cells still evaluate */
-  error: IpcError | null;
+  /** math cells only: one entry per definition; empty for `table`/`js`
+   *  cells (ledger R21). */
+  defs: CellDefResult[];
+  /** plural, always present, `[]` on success (ledger R22) */
+  errors: IpcError[];
 }
 
 /** `save_workbook`'s return (C3 §3.4). */
@@ -61,15 +92,23 @@ export async function openWorkbook(idOrPath: string): Promise<WorkbookHandle> {
 
 /** Evaluates every cell in document order (C3 §3.4). Runs on cell content
  *  change (debounced by the editor), on a `watchWorkbook` file-change event,
- *  and once on workbook open — never per animation frame (C3 §4). */
-export async function evalWorkbook(id: string): Promise<CellOutput[]> {
-  return invoke<CellOutput[]>("eval_workbook", { id });
+ *  and once on workbook open — never per animation frame (C3 §4).
+ *  `sessionId` added post-sign (ledger R41): `null` means no session is
+ *  bound — every `[Channel]` reference then surfaces as a per-cell
+ *  `math_unknown_channel` rather than rejecting the whole command. */
+export async function evalWorkbook(id: string, sessionId: string | null): Promise<CellOutput[]> {
+  return invoke<CellOutput[]>("eval_workbook", { id, sessionId });
 }
 
 /** Saves `markdown` as the workbook's new content (C3 §3.4). Explicit save
- *  action. */
-export async function saveWorkbook(id: string, markdown: string): Promise<SaveResult> {
-  return invoke<SaveResult>("save_workbook", { id, markdown });
+ *  action. `basedOnHash` added post-sign (ledger R44): `null` means
+ *  "creating a new workbook" (the target must not already exist); a
+ *  non-null value is the hash the editor last read. A stale hash rejects
+ *  with the `conflict` kind (C3 §2), not `invalid_argument` — the caller
+ *  must present that differently ("this file changed elsewhere — reload?"),
+ *  not as a plain error toast. */
+export async function saveWorkbook(id: string, markdown: string, basedOnHash: string | null): Promise<SaveResult> {
+  return invoke<SaveResult>("save_workbook", { id, markdown, basedOnHash });
 }
 
 /** Subscribes to the file watcher (design §7) for one workbook (C3 §3.4).

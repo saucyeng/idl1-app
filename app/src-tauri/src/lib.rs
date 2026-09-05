@@ -20,6 +20,8 @@ pub fn run() {
             let data_dir = idl_rs_tauri::paths::resolve_data_dir(&app_data_dir, &app_config_dir)
                 .unwrap_or_else(|e| panic!("resolving <data>: {e:?}"));
             app.manage(idl_rs_tauri::state::DataDir(data_dir));
+            app.manage(idl_rs_tauri::state::Hashes(std::sync::Arc::new(idl_rs_tauri::watcher::ExpectedHashSet::new())));
+            app.manage(idl_rs_tauri::state::Watchers(std::sync::Mutex::new(std::collections::HashMap::new())));
             Ok(())
         })
         .invoke_handler(idl_rs_tauri::handler())
