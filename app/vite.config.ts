@@ -8,6 +8,21 @@ const host = process.env.TAURI_DEV_HOST;
 export default defineConfig(async () => ({
   plugins: [react()],
 
+  // A second Vite entry for the Notebook's sandboxed iframe (design §6):
+  // its own HTML page so Vite bundles `sandbox/main.ts`'s full module graph
+  // (Runtime, Plot, d3, Inputs, htl all resolved) into a real, separately
+  // loadable script — `?url`/bare `new URL(..., import.meta.url)` on a
+  // TS entry do not resolve bare imports, only this multi-page form does
+  // (R56).
+  build: {
+    rollupOptions: {
+      input: {
+        main: "index.html",
+        notebookSandbox: "src/routes/pages/Notebook/sandbox/index.html",
+      },
+    },
+  },
+
   // Vite options tailored for Tauri development and only applied in `tauri dev` or `tauri build`
   //
   // 1. prevent Vite from obscuring rust errors
