@@ -6,6 +6,10 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 
 ### Added
 
+- **TS coverage reporting added (2026-09-05).** `@vitest/coverage-v8` pinned to vitest's
+  version in `app/package.json`; `app/vitest.config.ts` gains a `coverage` block (v8
+  provider, `src/**/*.ts`, text reporter, no thresholds set) so `vitest run --coverage`
+  reports the per-module numbers CLAUDE.md §4 asks reviewers to check.
 - **Device tab, Task 1 (2026-09-05, L7b).** `DevicePage.tsx` moved to
   `app/src/routes/pages/Device/` (a directory this lane owns), over a pure
   `connectionReducer` driven by the landed `ble_scan`/`ble_connect` (C3
