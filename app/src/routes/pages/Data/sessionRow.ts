@@ -9,6 +9,15 @@ const NONE_VENUE = "(none)";
  *  "unknown", never rendered as the 1970 epoch). */
 const UNKNOWN_DATE = "unknown";
 
+/** `venue_name`, or the synthetic "(none)" label when it is empty — shared
+ *  by the session list, its facet, and the detail pane (Task 4) so the same
+ *  session always reads the same venue text everywhere. Wave 2 has no
+ *  Track-venue fallback (R54 drops track linkage from `SessionSummary`
+ *  entirely) — this is the "(none)" convention alone, not a track lookup. */
+export function venueLabel(venueName: string): string {
+  return venueName === "" ? NONE_VENUE : venueName;
+}
+
 /** One row in the sessions result list — a pure display derivation of one
  *  `SessionSummary` (C3 §3.2). Holds no engine truth: every number here came
  *  from the catalog, formatted for the screen only. */
@@ -38,7 +47,7 @@ export function toSessionRow(s: SessionSummary): SessionRow {
   const hasTimestamp = s.timestamp_utc_ms !== 0;
   const dateText = hasTimestamp ? formatDateMs(s.timestamp_utc_ms) : UNKNOWN_DATE;
   const timeText = hasTimestamp ? formatTimeMs(s.timestamp_utc_ms) : UNKNOWN_DATE;
-  const venueText = s.venue_name === "" ? NONE_VENUE : s.venue_name;
+  const venueText = venueLabel(s.venue_name);
   const groupKey = `${hasTimestamp ? localIsoDate(s.timestamp_utc_ms) : UNKNOWN_DATE} ${venueText}`;
 
   return {

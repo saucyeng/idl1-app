@@ -1,13 +1,44 @@
 import { useEffect, useMemo, useReducer } from "react";
 
-import { listSessions, type SessionSummary } from "../../../ipc/catalog";
+import { getSession, listLaps, listSessions, type LapSummary, type SessionDetail, type SessionSummary } from "../../../ipc/catalog";
+import { useAppState } from "../../../state/AppState";
 import { ActiveChips } from "./ActiveChips";
+import { DetailPane } from "./DetailPane";
 import { describeIpcError } from "./errors";
 import { facetCounts, matchesFilters } from "./facets";
 import { FilterRail } from "./FilterRail";
 import { filtersReducer, initialFilters } from "./filters";
+import { toDetailView } from "./sessionDetail";
 import { toSessionRow } from "./sessionRow";
 import { compareSessions, sortFieldsForView, type SortField } from "./sort";
+
+/** The session detail pane's own fetch state — separate from the sessions
+ *  list's `State` above, and from `AppState.selection` (which only tracks
+ *  *which* session id is selected, not the fetch in flight for it). */
+type DetailState =
+  | { status: "idle" }
+  | { status: "loading" }
+  | { status: "ready"; detail: SessionDetail; laps: LapSummary[]; lapsErrorText: string | null }
+  | { status: "error"; text: string };
+
+type DetailAction =
+  | { type: "detail-loading" }
+  | { type: "detail-ready"; detail: SessionDetail; laps: LapSummary[]; lapsErrorText: string | null }
+  | { type: "detail-failed"; text: string }
+  | { type: "detail-closed" };
+
+function detailReducer(_state: DetailState, action: DetailAction): DetailState {
+  switch (action.type) {
+    case "detail-loading":
+      return { status: "loading" };
+    case "detail-ready":
+      return { status: "ready", detail: action.detail, laps: action.laps, lapsErrorText: action.lapsErrorText };
+    case "detail-failed":
+      return { status: "error", text: action.text };
+    case "detail-closed":
+      return { status: "idle" };
+  }
+}
 
 type State =
   | { status: "loading" }
@@ -49,6 +80,9 @@ const FIELD_LABELS: Record<SortField, string> = {
 export default function Data() {
   const [state, dispatch] = useReducer(reducer, { status: "loading" });
   const [filters, filterDispatch] = useReducer(filtersReducer, initialFilters);
+  const [detailState, detailDispatch] = useReducer(detailReducer, { status: "idle" });
+  const [appState, appDispatch] = useAppState();
+  const selectedSessionId = appState.selection.sessionId;
 
   useEffect(() => {
     let cancelled = false;
@@ -68,6 +102,42 @@ export default function Data() {
     };
   }, []);
 
+  /** Fetches `get_session` + `list_laps` in parallel on selection settle
+   *  (R53 Data Q3; C3 §4: both are settle-bound, never a hover/pan/zoom
+   *  handler). A `list_laps` rejection with kind `not_found` is not an
+   *  error for this pane (R53 Q4: laps aren't indexed for most sessions at
+   *  wave 2) — it renders as an empty lap table, not a banner. */
+  useEffect(() => {
+    if (selectedSessionId === null) {
+      detailDispatch({ type: "detail-closed" });
+      return;
+    }
+
+    let cancelled = false;
+    detailDispatch({ type: "detail-loading" });
+
+    const lapsAttempt: Promise<{ laps: LapSummary[]; errorText: string | null }> = listLaps(selectedSessionId)
+      .then((laps) => ({ laps, errorText: null }))
+      .catch((e: unknown) => {
+        const described = describeIpcError(e);
+        return { laps: [], errorText: described.kind === "not_found" ? null : described.text };
+      });
+
+    Promise.all([getSession(selectedSessionId), lapsAttempt])
+      .then(([detail, lapsResult]) => {
+        if (cancelled) return;
+        detailDispatch({ type: "detail-ready", detail, laps: lapsResult.laps, lapsErrorText: lapsResult.errorText });
+      })
+      .catch((e: unknown) => {
+        if (cancelled) return;
+        detailDispatch({ type: "detail-failed", text: describeIpcError(e).text });
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedSessionId]);
+
   const sessions = state.status === "ready" ? state.sessions : [];
 
   const matching = useMemo(() => sessions.filter((s) => matchesFilters(s, filters)), [sessions, filters]);
@@ -79,6 +149,23 @@ export default function Data() {
       [...matching].sort((a, b) => compareSessions(a, b, filters.sortField, filters.sortAscending)).map(toSessionRow),
     [matching, filters.sortField, filters.sortAscending],
   );
+
+  const detailView = useMemo(
+    () => (detailState.status === "ready" ? toDetailView(detailState.detail, detailState.laps) : null),
+    [detailState],
+  );
+
+  /** Row selection (R53 Data Q3): dispatches into `AppState.selection` so
+   *  the notebook can read the chosen session later. Never dispatches
+   *  `SET_LAP_CONTEXT` — no lap UI in this task picks a main/overlay lap
+   *  (deferred to L6, per the Data lane brief's Parity gaps). */
+  const selectSession = (sessionId: string) => {
+    appDispatch({ type: "SET_SELECTED_SESSION", sessionId });
+  };
+
+  const closeDetail = () => {
+    appDispatch({ type: "SET_SELECTED_SESSION", sessionId: null });
+  };
 
   if (state.status === "loading") {
     return <p>Loading sessions…</p>;
@@ -128,7 +215,17 @@ export default function Data() {
             </thead>
             <tbody>
               {rows.map((row) => (
-                <tr key={row.sessionId}>
+                <tr
+                  key={row.sessionId}
+                  tabIndex={0}
+                  aria-selected={row.sessionId === selectedSessionId}
+                  onClick={() => selectSession(row.sessionId)}
+                  onKeyDown={(e) => {
+                    if (e.key !== "Enter" && e.key !== " ") return;
+                    e.preventDefault();
+                    selectSession(row.sessionId);
+                  }}
+                >
                   <td>{row.dateText}</td>
                   <td>{row.timeText}</td>
                   <td>{row.venueText}</td>
@@ -140,6 +237,15 @@ export default function Data() {
               ))}
             </tbody>
           </table>
+        )}
+        {selectedSessionId !== null && (
+          <div className="data-detail">
+            {detailState.status === "loading" && <p>Loading session…</p>}
+            {detailState.status === "error" && <p role="alert">{detailState.text}</p>}
+            {detailState.status === "ready" && detailView !== null && (
+              <DetailPane view={detailView} lapsErrorText={detailState.lapsErrorText} onClose={closeDetail} />
+            )}
+          </div>
         )}
       </div>
     </div>
