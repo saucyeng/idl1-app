@@ -37,6 +37,12 @@ describe("sortFieldsForView", () => {
     expect(fields[0]).toBe("date");
   });
 
+  it("sortFieldsForView — sessions view — offers date, duration and lapCount, never bestLap (no SessionSummary field backs it)", () => {
+    const fields = sortFieldsForView("sessions");
+
+    expect(fields).toEqual(["date", "duration", "lapCount"]);
+  });
+
   it("sortFieldsForView — tracks view — lastRidden leads the list", () => {
     const fields = sortFieldsForView("tracks");
 

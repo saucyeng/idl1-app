@@ -11,9 +11,16 @@ export type DataView = "sessions" | "tracks";
  *  `DataSortField`) but never chosen by a viewer on that view. */
 export type SortField = "date" | "bestLap" | "duration" | "lapCount" | "lastRidden" | "name";
 
-/** Sessions-view field order, ported field-for-field from idl0's
- *  `sortFieldsForView`. First entry is the view's default field. */
-const SESSION_FIELDS: SortField[] = ["date", "bestLap", "duration", "lapCount"];
+/** Sessions-view field order. First entry is the view's default field.
+ *  idl0's `sortFieldsForView` also offers `bestLap` here, but a
+ *  `SessionSummary` (C3 §3.2) has no best-lap field at all — not even
+ *  nullable, unlike `lapCount`/`duration` which are real nullable columns
+ *  pending lap indexing (R53 Data Q4). Offering a sort option that always
+ *  ties and whose direction toggle is a silent no-op is worse than not
+ *  offering it, so `bestLap` is left out of this list (review-task2 Minor)
+ *  until the catalog carries a best-lap field; `compareSessions` keeps its
+ *  `bestLap` arm so sorting resumes correctly the moment it does. */
+const SESSION_FIELDS: SortField[] = ["date", "duration", "lapCount"];
 
 /** Tracks-view field order, ported field-for-field from idl0's
  *  `sortFieldsForView`. First entry is the view's default field. */
