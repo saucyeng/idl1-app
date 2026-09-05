@@ -110,3 +110,7 @@ stub's own design); L7a's `pickImportFile()` seam → the real dialog plugin
 call; L7c's one-time `localStorage` → `settings.json` import; L7b Task 4's
 channel-preview widening onto `preview_channel_registry`. See the plan's
 "After this lane" section for the full list.
+
+## Lead addition 2026-09-05 -- four-task gates
+
+CLAUDE.md section 8's every-four-tasks rule applies inside this lane: after Tasks 4, 8 and 12 (and at Task 14), the implementer of that task also runs, foreground, once: `cargo test -p idl-rs-tauri` (the whole Tauri crate -- every command in this lane lives there) and `cargo test -p idl-rs -p idl-rs-cli -- --test-threads=4`, reporting each `test result:` line verbatim; a failure is STOP and report, never a fix in place. The lead names this in each such task's dispatch.
