@@ -20,9 +20,12 @@ below is not the plan's.
   (`docs/superpowers/plans/2026-09-03-idl1-wave1-l2-importers.md`, lines
   519–1000 — your starting point for the XML-parsing plumbing only, **not**
   the timestamp/channel-building logic, which this brief supersedes);
-  contract C1 §3.1, §3.4, §4.1 (already amended — `deg_e7`, units), §4.2;
-  the pre-read `pre-read-tasks1-6.md`'s Task 3 section (G3.1–G3.7); ledger
-  `R23`; Task 2's landed `src/import/mod.rs`/`error.rs` (`Importer`,
+  contract C1 §3.1, §3.4, §4.1 (already amended — decimal-degree GPS units
+  per R27, per-channel units), §4.2; the pre-read
+  `pre-read-tasks1-6.md`'s Task 3 section (G3.1–G3.7); ledger
+  `R23` **and `R27`** (R27 supersedes R23's Q1; the pre-read's own Q1
+  discussion at its lines 44–46/328–331 predates R27 and is history, not
+  instruction); Task 2's landed `src/import/mod.rs`/`error.rs` (`Importer`,
   `ImportedSession`, `ImporterWarning`, `ImporterError`,
   `session_id_from_blob_hash` — this task implements the trait, does not
   redefine any of these) — read them before writing anything.
@@ -42,18 +45,22 @@ task.
 `Channel::from_f64_with_times(channel_id, 0.0, values, t_us, "gpx")
 .with_unit(unit)` (`session/mod.rs:233,278`), never a bare struct literal
 (plan:655–662 is missing `t_recorded_us`/`unit` and won't compile against
-landed `Channel` — G3.1). Units, verbatim from C1 §4.1 (amended): `deg_e7`
+landed `Channel` — G3.1). Units, verbatim from C1 §4.1 (amended): `deg`
 for `GPS_Latitude`/`GPS_Longitude` (see next ruling), `m` for `GPS_Altitude`,
 `ms_raw` for `GPS_EpochMs`, `bpm`/`rpm`/`W` for `HR_BPM`/`Cadence_RPM`/
 `Power_W`.
 
-**Q1 — lat/lon are `deg_e7`, ×1e7, not plain decimal degrees.** Reverses
-plan:180's "not scaled ×1e7... C1's non-device row stores physical degrees
-directly" — that text predates the R23 contract amendment. Parse
-`lat`/`lon` attributes as decimal degrees (unchanged parsing), then multiply
-by `1e7` before pushing into the channel. `GPS_Latitude`/`GPS_Longitude`
-have no `Option` semantics (below) — every kept trackpoint has both, or the
-import already failed with `GpxMissingLatLon`.
+**R27 — lat/lon are physical decimal degrees, stored unchanged.** R23's Q1
+answer (`deg_e7`, ×1e7) was superseded by ruling R27, and R27 has landed
+(idl-rs `7e10797`): every consumer — `core/src/gps.rs`, `laps::distance`
+(`M_PER_UNIT` back to plain `111_320.0`), `laps::gate_*`, `tracks::*` —
+reads decimal degrees now. So plan:180's "not scaled ×1e7... C1's
+non-device row stores physical degrees directly" is **correct as drafted**:
+parse the `lat`/`lon` attributes as decimal degrees and push them into the
+channel unchanged, `unit: deg`. No ×1e7 anywhere in this file.
+`GPS_Latitude`/`GPS_Longitude` have no `Option` semantics (below) — every
+kept trackpoint has both, or the import already failed with
+`GpxMissingLatLon`.
 
 **L2-R6 — no zero-filling; genuine per-field `Option` semantics.** Delete
 plan:618's `Some(p.ele_m.unwrap_or(0.0))` and plan:654's `.unwrap_or(0.0)` in
@@ -161,9 +168,12 @@ its assertions must change:
   the last kept point (no `<ele>`, no `<hr>`) contributes to neither channel
   (L2-R6), so `alt.t_us == [0, 1_000_000]`, `alt.materialize() == [1500.0,
   1501.0]`; same shape for `HR_BPM`.
-- `GPS_Latitude`/`GPS_Longitude` values are ×1e7 (Q1):
-  `lat.materialize() == [450_000_000.0, 450_010_000.0, 450_030_000.0]` (and
-  the corresponding longitudes), not the plan's plain-decimal assertions.
+- `GPS_Latitude`/`GPS_Longitude` values are plain decimal degrees (R27):
+  `lat.materialize() == [45.0, 45.001, 45.003]` and
+  `lon.materialize() == [-90.0, -90.001, -90.003]` — the plan's own
+  plain-decimal assertions, kept as drafted. `assert_eq!` on `f64` is safe
+  here: parsing `"45.001"` yields the same nearest-`f64` as the literal
+  `45.001`, and nothing rescales it.
 - Add a test for case (b): a GPX file where **no** point has `<time>` — one
   warning (not N), `Session.timestamp_utc_ms == 0`, and
   `channels.iter().all(|c| c.channel_id != "GPS_EpochMs")` (currently the
@@ -188,7 +198,8 @@ its assertions must change:
 
 - Do not zero-fill any optional field (L2-R6) — an absent `<ele>`/`<hr>`/
   `<cad>`/`<power>` means no sample, never `0.0`.
-- Do not store lat/lon as plain decimal degrees (Q1) — ×1e7, `unit: deg_e7`.
+- Do not scale lat/lon by 1e7, and do not write `unit: deg_e7` anywhere
+  (R27) — plain decimal degrees, `unit: deg`.
 - Do not anchor `t0`/`timestamp_utc_ms` on the first trackpoint (L2-R7(a)) —
   the minimum, always.
 - Do not synthesize `GPS_EpochMs` from index-ms in case (b), and do not mix
@@ -199,15 +210,15 @@ its assertions must change:
 ## Style / hygiene
 
 Doc comment on every public symbol; units on every numeric value (`t_us` µs,
-lat/lon `deg_e7`, altitude `m`, epoch `ms_raw`); typed errors only; A/A/A
+lat/lon `deg`, altitude `m`, epoch `ms_raw`); typed errors only; A/A/A
 tests named `thing — condition — result`; match surrounding hand-formatted
 style.
 
 ## Spec discipline (say it out loud in your report)
 
 "no spec change needed" — Task 1's §15a.3 (as corrected by its own brief)
-already states the ×1e7 conversion, the per-field `Option` semantics, and
-the case-(b)/(c) timestamp split this task implements.
+already states the decimal-degree storage (R27), the per-field `Option`
+semantics, and the case-(b)/(c) timestamp split this task implements.
 
 ## Report back (concise)
 

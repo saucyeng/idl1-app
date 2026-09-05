@@ -39,7 +39,8 @@ reproduce the implementer's reported result. The run must report a non-zero
 `passed` count — a targeted filter matching nothing is a failed gate, not a
 pass (standing rule, L3-R8), and if the implementer's own reported run shows
 `0 passed`, that alone is grounds for NEEDS_FIXES regardless of what else you
-find. No full suite, no `cargo tarpaulin`, no `-j`, no rerunning the same
+find. No full suite (neither `cargo test --workspace` nor a bare `cargo test` —
+both are §8 hook-denied), no `cargo tarpaulin`, no `-j`, no rerunning the same
 command twice "to be sure," no extra `cargo build`/`cargo check` beyond what
 the task's brief itself mandates (Task 4 and Task 6 mandate one regression
 filter each, on top of the task's own — copy exactly what the brief says, not
@@ -59,10 +60,12 @@ all (prose only) — confirm no `.rs`/`Cargo.toml` file appears in its diff.
 - **Spec conformance.** Cross-check against the cited C1 §4.1/§4.2 rows and
   `docs/IDL0_SPEC.md` §15a byte-for-byte where the brief says byte-for-byte
   (channel units, `source_kind` tokens, error variant names against C3 §2's
-  `import_*` rows). `deg_e7` scaling (×1e7) on `GPS_Latitude`/`GPS_Longitude`
-  for every source (FIT, GPX) is a specific, easy-to-miss failure mode —
-  check the actual multiplied value in a test assertion, not just that a
-  `with_unit("deg_e7")` call exists.
+  `import_*` rows). GPS coordinates are **physical decimal degrees**,
+  `unit: deg`, for every source (ruling R27, which superseded R23's
+  `deg_e7` and landed at idl-rs `7e10797`); `GPS_Altitude` is metres,
+  `GPS_Heading` degrees. A leftover ×1e7 multiply, or a
+  `with_unit("deg_e7")` call anywhere, is a Critical finding — check the
+  actual value in a test assertion, not just the unit string.
 - **CLAUDE.md §4 (testing).** Arrange/Act/Assert with a blank line between
   each; test names `thing — condition — result` (realized as
   underscore-joined identifiers in Rust — literal em dashes aren't valid in

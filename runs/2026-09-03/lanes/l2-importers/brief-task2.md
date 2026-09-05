@@ -12,8 +12,8 @@ later task in this lane builds on. TDD, ONE commit, then report.
   cd "C:/Users/isaac/Documents/Saucy/saucyeng/idl1-app/rust"
   git worktree add -b wave1-l2-importers "C:/Users/isaac/Documents/Saucy/saucyeng/idl-rs-worktrees/wave1-l2-importers" main
   ```
-  HEAD on `main` (post L1 merge `76b640a`), status clean. Verify first; if
-  not, stop and report. The worktree inherits `.cargo/config.toml` (shared
+  HEAD on `main` (post-L5 merge `75589bc`, 2026-09-05), status clean.
+  Verify first; if not, stop and report. The worktree inherits `.cargo/config.toml` (shared
   target-dir) — leave it alone.
 - Work ONLY there. Do NOT touch `C:\Users\isaac\Documents\Saucy\saucyeng\idl1-app\rust`
   (shared checkout — must stay on `main`), `C:\Users\isaac\Documents\Saucy\saucyeng\idl1-app`

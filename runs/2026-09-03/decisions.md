@@ -2497,3 +2497,52 @@ first task that touches `rust/tauri/src/paths.rs`.
 **Cost if wrong:** none on the render claim — it is now observed, not
 inferred. The BOM item, if left, costs a confused user with an empty app and
 no error, exactly the failure the lenient parse was meant to avoid.
+
+## 2026-09-05 — R51: L2 briefs refreshed against landed main; five questions ruled
+
+Refresh report: `lanes/l2-importers/brief-refresh-2026-09-05.md` (Opus,
+read/write only, no build). 30-odd edits across BRIEF.md, briefs 1–4 and 6,
+and the standing reviewer brief; brief 5 needed nothing. The substantive
+class of edit was R27: every brief still instructed the ×1e7 / `deg_e7`
+storage R23 chose and R27 reversed, including a reviewer bullet that would
+have failed correct code. Also fixed: stale hashes/line refs, `fitparser`
+0.11→0.9 (L2-R9), the forbidden `--workspace` gate wording, and the
+dependency gate (both greps now return 1 — open). Lead read the edit table
+and spot-checked the justifications against the cited code; accepted.
+
+Rulings (Q1–Q5 in the report):
+
+- **Q1 → (A).** Core `import_file(data_root, extension, bytes)` stays as
+  L2-R13 ruled and keeps refusing `"idl0"`. L5 Task 9's Tauri command does
+  the `importer_id` → extension mapping and the `.idl0` → `import_idl0`
+  branch. Routing on a file extension is a UI-adjacent decision (CLAUDE.md
+  §2); the `.idl0` path has its own landed invariants and tests.
+- **Q2 → (A), as a new L2 Task 7.** `core::import::importers() ->
+  &'static [ImporterInfo { id, label, extensions }]` is the single table;
+  `importer_for_extension` derives from it. Brief to be written after
+  Task 3 lands (it needs the real importer set). The existing plan Task 7
+  (CHANGELOG/TASKS wrap-up) becomes Task 8.
+- **Q3 → (A).** No `idl-rs-tauri` run in Task 6. The implementer reports
+  the reach of the `synthesize_base_channels` fallback; the lead decides at
+  the merge gate whether to add `cargo test -p idl-rs-tauri session_source`
+  once. Rationale: L5's fixtures are fixed-rate, so the new branch should
+  not fire in them; building the Tauri graph to prove a no-op is the wrong
+  trade on this machine.
+- **Q4 → (A) for wave 1; (B) recorded as a deferral.** Task 9's command
+  calls `rebuild_catalog` after a successful import and reads the row back
+  via `catalog_read::get_session`. Incremental `catalog::insert_session` is
+  the eventual answer; `TODO(idl0)` at the call site, tracked in TASKS.md
+  when Task 9 lands. "The catalog is an index — rebuildable" is preserved
+  by construction.
+- **Q5 → (B).** One-line SUPERSEDED banner added to the top of
+  `pre-read-tasks1-6.md` (this commit). Two briefs were carrying an
+  "ignore that part of the pre-read" instruction; the correction now lives
+  in the file that was wrong.
+
+**Cost if wrong:** Q1/Q2 shape `pub` surface in `core` that Task 9 and every
+later importer caller build on — but both are additive and both halves are
+tested independently, so a later "single entry point" router is a thin
+addition, not a rewrite. Q3 risks a behavioural change in `idl-rs-tauri`
+reaching the gate untested; bounded by the reporting obligation and a
+one-run gate option. Q4(A) costs a full catalog rebuild per import at
+wave-1 data sizes — seconds, not minutes.

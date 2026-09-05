@@ -30,8 +30,9 @@ later task in this lane cites it by number. ONE commit, then report.
   `HR_BPM`/`Cadence_RPM`/`Power_W`, and the "*(FIT/GPX-derived channels)*" row
   — **already amended and signed**, this is your primary source, more
   authoritative than the plan's own prose), §4.2 (the `source_kind`
-  enumeration — **already includes `csv`**); the ledger `R23` entry in
-  `runs/2026-09-03/decisions.md` (Q1–Q4); the pre-read
+  enumeration — **already includes `csv`**); the ledger `R23` (Q1–Q4) and
+  `R27` (which supersedes R23's Q1 — read both, in that order) entries in
+  `runs/2026-09-03/decisions.md`; the pre-read
   `runs/2026-09-03/lanes/l2-importers/pre-read-tasks1-6.md`'s Task 1 section
   (G1.1–G1.5).
 
@@ -50,21 +51,29 @@ Use the plan's drafted text (plan:99–261) as your starting point, but it
 predates several lead rulings and one already-amended contract — apply every
 correction below; do not transcribe the plan's block verbatim.
 
-**1. GPS coordinate scale — Q1, `deg_e7` everywhere (not `deg`).** C1 §4.1
-was amended (R23) the same day this plan was drafted: `GPS_Latitude`/
-`GPS_Longitude` are `deg_e7` (decimal degrees × 1e7, matching `.idl0`'s own
-convention and every landed consumer — `gps.rs`, `laps::*`, `tracks::*`) for
-**every** source, FIT and GPX alike. This flips §15a.3's GPX table row,
-which currently reads "decimal degrees, direct... **not** scaled ×1e7... C1's
-non-device row stores physical degrees directly" — that sentence is now
-false; replace it with: GPX's `<trkpt lat lon>` values are parsed as decimal
-degrees, then multiplied ×1e7 before being stored, `unit: deg_e7`, matching
-FIT's same conversion. State this once, clearly, in a way Tasks 3/4 can cite.
+**1. GPS coordinate scale — physical decimal degrees everywhere (R27).**
+R23's Q1 answer (`deg_e7`, ×1e7) was **superseded** by ruling R27 (Isaac's
+call), and R27 has already landed in code (idl-rs `7e10797`):
+`GPS_Latitude`/`GPS_Longitude` are physical decimal degrees, `unit: deg`,
+for **every** source. `.idl0` bakes `raw_i32 * 1e-7` at parse time; FIT and
+GPX store their native decimal values unchanged. Every landed consumer now
+reads decimal degrees (`core/src/gps.rs`, `laps::distance` — whose
+`M_PER_UNIT` is plain `111_320.0` again — `laps::gate_*`, `tracks::*`).
+R27 extended the same treatment to the neighbouring columns:
+`GPS_Altitude` is physical metres (`unit: m`), `GPS_Heading` physical
+degrees (`unit: deg`). §15a.3's GPX table row already reads "decimal
+degrees, direct... **not** scaled ×1e7... C1's non-device row stores
+physical degrees directly" — under R27 that sentence is **correct**; keep
+it, and add one sentence saying the same holds for FIT (whose
+`semicircles_to_deg` output is stored unchanged), so Tasks 3/4 have a
+single statement to cite. Do not write `deg_e7` anywhere in §15a — no
+channel carries that unit. (C1 §4.1's own R23 paragraph is retained and
+explicitly marked SUPERSEDED; read it as history, not as instruction.)
 
 **2. Units table (L2-R1).** Add an explicit `unit` column (or a clearly
 labelled units line per row) to both the FIT table (§15a.2) and the GPX
 table (§15a.3), copied verbatim from C1 §4.1's now-amended
-"*(FIT/GPX-derived channels)*" row: `GPS_Latitude`/`GPS_Longitude` → `deg_e7`,
+"*(FIT/GPX-derived channels)*" row: `GPS_Latitude`/`GPS_Longitude` → `deg`,
 `GPS_Altitude` → `m`, `GPS_EpochMs` → `ms_raw`, `HR_BPM` → `bpm`,
 `Cadence_RPM` → `rpm`, `Power_W` → `W`. (`GPS_SpeedKmh` → `km/h`,
 `GPS_Heading` → `deg` belong in this same units list for completeness even

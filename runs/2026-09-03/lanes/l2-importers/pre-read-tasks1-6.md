@@ -1,3 +1,5 @@
+> **SUPERSEDED IN PART (2026-09-05, ruling R51):** this pre-read's Q1 discussion (lines ~44–46, ~328–331) argues for `deg_e7`; ruling **R27** reversed that — GPS coordinates are physical decimal degrees, `unit: deg`, for every source. Read the refreshed briefs, not this file, for GPS units. Everything else here stands as adjudicated in R23.
+
 # L2 pre-read — Tasks 1–6 vs. signed contracts and landed `main`
 
 Read-only pass. Line refs: plan = `docs/superpowers/plans/2026-09-03-idl1-wave1-l2-importers.md`;

@@ -22,11 +22,13 @@ before writing that one line; it's the easiest mistake in this task.
   (`docs/superpowers/plans/2026-09-03-idl1-wave1-l2-importers.md`, lines
   1003–1394 — your starting point for the FIT decode plumbing, **not** the
   dependency version or the GPS_EpochMs formula, both corrected below);
-  contract C1 §3.1, §3.4, §4.1 (amended — `deg_e7`, the `GPS_EpochMs`
-  formula, the `fit_t_recorded_us` union-of-channels note); the pre-read
-  `pre-read-tasks1-6.md`'s Task 4 section (G4.1–G4.7); ledger `R23`; the
-  landed `src/store/parquet.rs` lines 236–267 (`write_session_parquet`'s
-  `<source>_t_recorded_us` loop — this is what L2-R10 changes) and
+  contract C1 §3.1, §3.4, §4.1 (amended — decimal-degree GPS units per
+  R27, the `GPS_EpochMs` formula, the `fit_t_recorded_us`
+  union-of-channels note); the pre-read
+  `pre-read-tasks1-6.md`'s Task 4 section (G4.1–G4.7); ledger `R23` **and
+  `R27`** (R27 supersedes R23's Q1 — the pre-read's Q1 discussion predates
+  it); the landed `src/store/parquet.rs` lines 238–267
+  (`write_session_parquet`'s `<source>_t_recorded_us` loop — this is what L2-R10 changes) and
   `row_indices_for`/`recorded_us_array` (lines 67–83, 133–140 — the helpers
   you reuse, unchanged); Task 3's landed `src/import/gpx.rs` `push_channel`
   (your FIT one already matches its shape — no change needed there, just
@@ -50,7 +52,7 @@ its body).
 
 **L2-R9 — `fitparser` stays `0.9`, promoted verbatim, no bump to `0.11.0`.**
 The plan's Step 1/Step 5 both assume a bump to `0.11.0` — do not do that.
-Only `0.9.0` is actually resolvable/vendored here (`Cargo.lock:1297`,
+Only `0.9.0` is actually resolvable/vendored here (`Cargo.lock:1307`,
 `~/.cargo/registry`), and it's the only version whose `record`-message
 decoding has actually been read against this plan's field assumptions
 (G4.1 — confirmed correct field-by-field against `0.9.0`'s own
@@ -69,19 +71,20 @@ here first).
 every channel via `Channel::from_f64_with_times(channel_id, 0.0, values,
 t_us, "fit").with_unit(unit)`, never plan:1198–1205's bare struct literal
 (missing `t_recorded_us`/`unit` — G4.5-adjacent, same class as G3.1). Units:
-`deg_e7` for lat/lon (below), `m` for `GPS_Altitude`, `ms_raw` for
+`deg` for lat/lon (below), `m` for `GPS_Altitude`, `ms_raw` for
 `GPS_EpochMs`, `bpm`/`rpm`/`W` for `HR_BPM`/`Cadence_RPM`/`Power_W`.
 
-**Q1 — lat/lon are `deg_e7`.** `semicircles_to_deg` (plan:1069–1071) stays
-exactly as drafted — it returns **plain decimal degrees**, and Task 4's own
-test `semicircles_to_deg_quarter_circle_is_45_degrees` (asserting `45.0`,
-not `450_000_000.0`) must keep passing unchanged, so do not fold the ×1e7
-scaling into that function. Instead, apply the ×1e7 scaling at the
-`push_channel` call sites for `GPS_Latitude`/`GPS_Longitude` only: the
-accessor closures become `|r| r.lat_deg.map(|d| d * 1e7)` and
-`|r| r.lon_deg.map(|d| d * 1e7)` (currently `|r| r.lat_deg` / `|r| r.lon_deg`
-at plan:1154–1155). Update the golden fixture test's expected values
-accordingly (see Tests below).
+**R27 — lat/lon are physical decimal degrees, stored unchanged.** R23's Q1
+answer (`deg_e7`, ×1e7) was superseded by ruling R27, and R27 has landed
+(idl-rs `7e10797`) — every consumer (`core/src/gps.rs`, `laps::distance`,
+`laps::gate_*`, `tracks::*`) reads decimal degrees now.
+`semicircles_to_deg` (plan:1069–1071) stays exactly as drafted, returning
+plain decimal degrees, and its test
+`semicircles_to_deg_quarter_circle_is_45_degrees` (asserting `45.0`) keeps
+passing unchanged. The `push_channel` accessors also stay as the plan
+drafts them at plan:1154–1155 — `|r| r.lat_deg` and `|r| r.lon_deg`, no
+scaling — with `unit: deg`. There is **no** ×1e7 anywhere in this file, and
+the plan's own plain-decimal golden values stand (see Tests below).
 
 **Q3 — `GPS_EpochMs` from `record.timestamp`, on rows carrying a position.
 Do NOT re-add the FIT-epoch offset — it is already folded in.** This is the
@@ -200,10 +203,10 @@ channel happened to cover).
 
 ## Tests (update the plan's golden fixture assertions)
 
-- `GPS_Latitude`/`GPS_Longitude` values are ×1e7 (Q1):
-  `lat.materialize() == vec![450_000_000.0, 225_000_000.0, 112_500_000.0]`,
-  `lon.materialize() == vec![-900_000_000.0, -450_000_000.0, 0.0]` (not the
-  plan's plain-decimal values).
+- `GPS_Latitude`/`GPS_Longitude` values are plain decimal degrees (R27):
+  `lat.materialize() == vec![45.0, 22.5, 11.25]`,
+  `lon.materialize() == vec![-90.0, -45.0, 0.0]` — the plan's own values,
+  unchanged — and each channel's `unit` is `deg`.
 - Add a `GPS_EpochMs` assertion on the golden fixture's 3 kept records:
   `epoch.materialize() == vec![(T0 as f64) * 1000.0, (T0+1) as f64 * 1000.0,
   (T0+3) as f64 * 1000.0]` — i.e. `timestamp_utc_s * 1000` exactly, **no**
@@ -221,16 +224,15 @@ channel happened to cover).
   acceptable — say which you did in your report.
 - Keep (unaffected):
   `fit_importer_malformed_bytes_returns_typed_error`,
-  `semicircles_to_deg_quarter_circle_is_45_degrees` (still asserts `45.0`,
-  not ×1e7 — Q1's scaling is applied at the call site, not in this
-  function).
+  `semicircles_to_deg_quarter_circle_is_45_degrees` (still asserts `45.0`
+  — under R27 there is no scaling to apply anywhere, in this function or
+  at its call sites).
 
 ## Do not
 
 - Do not bump `fitparser` to `0.11.0` (L2-R9).
-- Do not fold the ×1e7 scaling into `semicircles_to_deg` (Q1) — apply it at
-  the `push_channel` call site only, or you'll break the existing 45°-degree
-  unit test's meaning.
+- Do not scale lat/lon by 1e7 anywhere, and do not write `unit: deg_e7`
+  (R27) — `semicircles_to_deg`'s decimal output is stored as is.
 - Do not add `+ 631_065_600` to `r.timestamp_utc_s` anywhere (Q3) — it is
   already Unix-epoch seconds.
 - Do not leave `records.retain(..)` silently dropping timestamp-less records
@@ -244,14 +246,14 @@ channel happened to cover).
 ## Style / hygiene
 
 Doc comment on every public symbol; units on every numeric value (`t_us` µs,
-lat/lon `deg_e7`, epoch `ms_raw`); typed errors only; A/A/A tests named
+lat/lon `deg`, epoch `ms_raw`); typed errors only; A/A/A tests named
 `thing — condition — result`; match surrounding hand-formatted style.
 
 ## Spec discipline (say it out loud in your report)
 
 "no spec change needed" — Task 1's §15a.2 (as corrected by its own brief)
-already states the ×1e7 conversion and the `GPS_EpochMs` formula this task
-implements; C1 §4.1's `fit_t_recorded_us` union-of-channels note (already
+already states the decimal-degree storage (R27) and the `GPS_EpochMs`
+formula this task implements; C1 §4.1's `fit_t_recorded_us` union-of-channels note (already
 amended, same ledger entry) is what L2-R10 implements.
 
 ## Report back (concise)
@@ -260,6 +262,7 @@ Commit hash + `git show --stat`; all four test commands and result lines
 (each `passed` count); per-step done/deviated; confirmation the
 `GPS_EpochMs` value uses no double offset (quote the actual formula you
 wrote); confirmation `semicircles_to_deg`'s own unit test still asserts
-`45.0`; confirmation of the `parquet.rs` union fix and its symptom test;
+`45.0`, and that no ×1e7 scaling or `deg_e7` unit string appears anywhere;
+confirmation of the `parquet.rs` union fix and its symptom test;
 anything ambiguous you resolved (say how) or that needs a lead ruling (stop
 and report instead of guessing — CLAUDE.md §1).

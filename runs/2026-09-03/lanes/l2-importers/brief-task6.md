@@ -29,10 +29,16 @@ run the full end-of-lane checks at the end, once.
   (`docs/superpowers/plans/2026-09-03-idl1-wave1-l2-importers.md`, lines
   1609–1757 — the hook's *shape* only, plan:1620–1729's code, minus
   `import_with_hook`, see L2-R12 below); contract C3 §2's seven `import_*`
-  rows (`docs/superpowers/specs/2026-09-03-idl1-c3-ipc-surface.md`); the
+  rows and **§3.3** (`import_file`/`list_importers` — the Tauri commands L5
+  Task 9 will build on top of this task's core `import_file`; read it for
+  the downstream shape only, do not build to it: C3's command takes a path
+  plus an `importer_id`, this task's core function takes an extension plus
+  bytes, and Task 9 is not this lane's)
+  (`docs/superpowers/specs/2026-09-03-idl1-c3-ipc-surface.md`); the
   pre-read `pre-read-tasks1-6.md`'s Task 6 section (G6.1–G6.3) and "The
   structural one — L2-R13" section (the recommended `import_file` shape);
-  ledger `R23`; the landed `src/store/import.rs` in full (`plan_import`,
+  ledger `R23` (and `R27` for context — it changed no signature this task
+  touches); the landed `src/store/import.rs` in full (`plan_import`,
   `ImportErrorKind`, `ImportError`, `ImportOutcome`, `ImportReport`,
   `import_idl0` — you extend this file, you don't replace it; note its own
   R18-addendum ordering rule: parse before writing the blob, so a failed
@@ -58,7 +64,9 @@ then `cargo test -p idl-rs session::synthesis::` — each non-zero `passed`
 correct, not a bug to "fix"). Then, **once, at the end**: the lane's own
 merge gate,
 `cargo test -p idl-rs -p idl-rs-cli -- --test-threads=4` — **never**
-`cargo test --workspace`, which the plan's own Step 4 wrongly specifies
+`cargo test --workspace`, which the plan's own Step 4 wrongly specifies,
+and never a bare `cargo test` either (workspace-wide in this virtual
+manifest; both forms are denied by the §8 hook since `de3cf95`)
 (G6.1 — R13/R19's standing rule: the merge gate is `-p idl-rs -p idl-rs-cli`
 only; `--workspace` drags in `idl-rs-tauri`'s full Tauri dependency graph,
 which OOM-killed this machine once already, ledger R13 addendum). Then
@@ -204,6 +212,16 @@ gets **no** `Time` channel at all (G1.3). Fix, in `synthesize_base_channels`:
   stays absent for every FIT/GPX/CSV session landed by this lane. Do not
   add any fallback to `synthesize_distance_base`.
 
+**Downstream, landed since this brief was written.** L5's
+`rust/tauri/src/session_source.rs:38` (`load_session`) calls
+`synthesize_base_channels` on **every** session it reads back from
+`data.parquet`, so this fallback fires there too: a FIT/GPX/CSV session
+loaded by `eval_workbook`/`cursor_readout`/`fetch_tile` gains the same
+`Time` channel. That is the intended outcome, not a surprise — but it is a
+behavioural (not signature) change reaching `idl-rs-tauri`, whose tests
+this lane's gate does not run and `cargo check` cannot catch. Say so in
+your report; do not add an `idl-rs-tauri` test run without a lead ruling.
+
 **Test.** A session built from two event-driven channels
 (`nominal_rate_hz: 0.0`, via `Channel::from_f64_with_times`) of different
 lengths and different `t_us` gets a `Time` channel whose `t_us` equals the
@@ -296,9 +314,11 @@ hook", "What is not covered here") already states this task's scope; C1
 L2-R13's warning-plumbing implement; C3 §2's seven `import_*` rows (already
 signed) are what the new `ImportErrorKind` variants mirror. `UnknownExtension`
 is a core-internal kind with no C3 §2 row of its own — flag this explicitly
-in your report so the lead can decide at L5's `import_file` Tauri-command
-task whether it needs one (likely mapping to C3's cross-cutting
-`invalid_argument`), rather than silently assuming.
+in your report so the lead can decide at L5 Task 9 (the `import_file`
+Tauri command, deferred to ride with this lane — R50 and the "L5 LANDED"
+ledger entry) whether it needs one. C3 §3.3 already lists cross-cutting
+`invalid_argument` for an unrecognised `importer_id`, which is the likely
+mapping; do not assume it silently.
 
 ## Report back (concise)
 
