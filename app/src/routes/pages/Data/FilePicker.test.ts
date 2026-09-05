@@ -10,7 +10,10 @@ describe("pickImportFile", () => {
   });
 
   it("pickImportFile — an empty or whitespace-only string — resolves to null", async () => {
-    expect(await pickImportFile("")).toBeNull();
-    expect(await pickImportFile("   ")).toBeNull();
+    const empty = await pickImportFile("");
+    const whitespaceOnly = await pickImportFile("   ");
+
+    expect(empty).toBeNull();
+    expect(whitespaceOnly).toBeNull();
   });
 });

@@ -6,6 +6,13 @@ import { describeIpcError } from "./errors";
  *  `sessionId` are only ever set once the item reaches a terminal status
  *  (`"failed"` / `"done"` respectively). */
 export interface ImportItem {
+  /** Stable identity assigned at `ENQUEUE` time (`ImportQueueState.nextId`,
+   *  a monotonic counter) — every action addresses an item by this `id`,
+   *  never by its position in `items` (review-task5 Important: `DISMISS`
+   *  shrinks the array, which would silently misroute or drop an
+   *  index-addressed update for whatever item shifted into the dismissed
+   *  slot). */
+  id: number;
   /** Absolute path as given by the picker seam (`FilePicker.ts`'s
    *  `pickImportFile` in wave 2). */
   path: string;
@@ -35,34 +42,39 @@ export interface ImportItem {
 
 /** The import panel's whole queue. A flat array in enqueue order; the
  *  panel drives at most one `"running"` item at a time (R13: this machine
- *  is memory-bound, import is CPU/I/O-heavy). */
+ *  is memory-bound, import is CPU/I/O-heavy). `nextId` is the counter that
+ *  assigns each new item's stable `id` — carried in state, not a module-
+ *  level variable, so the reducer stays pure and two independent panels
+ *  (e.g. in tests) never share a counter. */
 export interface ImportQueueState {
   items: ImportItem[];
+  nextId: number;
 }
 
 /** An empty queue — the import panel's state at first render. */
-export const initialImportQueueState: ImportQueueState = { items: [] };
+export const initialImportQueueState: ImportQueueState = { items: [], nextId: 0 };
 
 /** State-changing gestures the import panel and its driving effect
- *  dispatch. Items are addressed by array index rather than path: the
- *  driving effect always knows the exact index of the item it is acting on
- *  (it started that item itself), and index addressing stays correct even
- *  if the same path is enqueued twice. */
+ *  (`importDriver.ts`) dispatch. Every action past `ENQUEUE` addresses its
+ *  item by the stable `id` `ENQUEUE` assigned, never by array position
+ *  (see [[ImportItem.id]]'s doc comment). */
 export type ImportQueueAction =
   | { type: "ENQUEUE"; path: string; importerId: string | null }
-  | { type: "START"; index: number }
-  | { type: "PROGRESS"; index: number; progress: Progress }
-  | { type: "SUCCEEDED"; index: number; session: SessionSummary }
-  | { type: "FAILED"; index: number; error: unknown }
-  | { type: "DISMISS"; index: number };
+  | { type: "START"; id: number }
+  | { type: "PROGRESS"; id: number; progress: Progress }
+  | { type: "SUCCEEDED"; id: number; session: SessionSummary }
+  | { type: "FAILED"; id: number; error: unknown }
+  | { type: "DISMISS"; id: number };
 
 /** Pure reducer over [[ImportQueueState]]. Never calls `importFile` itself —
- *  that side effect lives in `ImportPanel.tsx`'s driving effect, which
- *  dispatches `START`/`PROGRESS`/`SUCCEEDED`/`FAILED` around each call. */
+ *  that side effect lives in `importDriver.ts`'s `runImport`, called from
+ *  `ImportPanel.tsx`'s driving effect, which dispatches
+ *  `START`/`PROGRESS`/`SUCCEEDED`/`FAILED` around each call. */
 export function importQueueReducer(state: ImportQueueState, action: ImportQueueAction): ImportQueueState {
   switch (action.type) {
     case "ENQUEUE": {
       const item: ImportItem = {
+        id: state.nextId,
         path: action.path,
         importerId: action.importerId,
         phase: "queued",
@@ -70,13 +82,14 @@ export function importQueueReducer(state: ImportQueueState, action: ImportQueueA
         total: null,
         status: "queued",
       };
-      return { items: [...state.items, item] };
+      return { items: [...state.items, item], nextId: state.nextId + 1 };
     }
     case "START":
-      return { items: mapAt(state.items, action.index, (item) => ({ ...item, status: "running", phase: "starting" })) };
+      return { ...state, items: mapById(state.items, action.id, (item) => ({ ...item, status: "running", phase: "starting" })) };
     case "PROGRESS":
       return {
-        items: mapAt(state.items, action.index, (item) => {
+        ...state,
+        items: mapById(state.items, action.id, (item) => {
           // A late message for an item that already reached a terminal
           // status is a race (the `importFile` promise settled before this
           // message's microtask ran) — ignored, not applied.
@@ -86,7 +99,8 @@ export function importQueueReducer(state: ImportQueueState, action: ImportQueueA
       };
     case "SUCCEEDED":
       return {
-        items: mapAt(state.items, action.index, (item) => ({
+        ...state,
+        items: mapById(state.items, action.id, (item) => ({
           ...item,
           status: "done",
           phase: "done",
@@ -97,7 +111,8 @@ export function importQueueReducer(state: ImportQueueState, action: ImportQueueA
     case "FAILED": {
       const described = describeIpcError(action.error);
       return {
-        items: mapAt(state.items, action.index, (item) => ({
+        ...state,
+        items: mapById(state.items, action.id, (item) => ({
           ...item,
           status: "failed",
           phase: "failed",
@@ -107,8 +122,9 @@ export function importQueueReducer(state: ImportQueueState, action: ImportQueueA
     }
     case "DISMISS":
       return {
-        items: state.items.filter((item, i) => {
-          if (i !== action.index) return true;
+        ...state,
+        items: state.items.filter((item) => {
+          if (item.id !== action.id) return true;
           // Refused for "queued"/"running" — nothing to dismiss until the
           // item reaches a terminal status.
           return item.status !== "done" && item.status !== "failed";
@@ -117,10 +133,12 @@ export function importQueueReducer(state: ImportQueueState, action: ImportQueueA
   }
 }
 
-/** Applies `fn` to the item at `index`, leaving every other item untouched
- *  by reference (so unrelated rows never re-render). */
-function mapAt(items: ImportItem[], index: number, fn: (item: ImportItem) => ImportItem): ImportItem[] {
-  return items.map((item, i) => (i === index ? fn(item) : item));
+/** Applies `fn` to the item whose `id` matches, leaving every other item
+ *  untouched by reference (so unrelated rows never re-render). A no-op
+ *  (returns `items` structurally unchanged, though as a new array) if `id`
+ *  no longer names any item — e.g. a stale dispatch racing a dismiss. */
+function mapById(items: ImportItem[], id: number, fn: (item: ImportItem) => ImportItem): ImportItem[] {
+  return items.map((item) => (item.id === id ? fn(item) : item));
 }
 
 /** This item's share of overall queue progress, `0`–`1`, or `null` when a

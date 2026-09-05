@@ -3,6 +3,7 @@ import { useEffect, useReducer, useRef, useState } from "react";
 import { importFile, listImporters, type ImporterInfo } from "../../../ipc/import";
 import { describeIpcError } from "./errors";
 import { pickImportFile } from "./FilePicker";
+import { isDrained, nextItemToStart, runImport } from "./importDriver";
 import { importQueueReducer, initialImportQueueState, overallPercent, type ImportItem } from "./importQueue";
 
 /** @param onImported Called once every time the queue drains (every item
@@ -78,41 +79,25 @@ export function ImportPanel({ onImported }: ImportPanelProps) {
   // Drives the queue: starts the next "queued" item whenever nothing is
   // "running", and fires `onImported` once when every item has reached a
   // terminal status (guarded by `drainedAtLengthRef` so it fires once per
-  // drain, not once per item).
+  // drain, not once per item). Deliberately has no cleanup that cancels an
+  // in-flight `runImport` call: this effect's own `START`/`PROGRESS`/
+  // `SUCCEEDED`/`FAILED` dispatches all change `state`, which re-runs this
+  // very effect, and an effect that tears down "the import I'm babysitting"
+  // on every dependency change can never let one complete (review-task5
+  // Critical) — `nextItemToStart` already refuses to start a second item
+  // while one is `"running"`, which is all the guarding this needs.
   useEffect(() => {
-    const runningIndex = state.items.findIndex((item) => item.status === "running");
-    if (runningIndex !== -1) return;
-
-    const nextIndex = state.items.findIndex((item) => item.status === "queued");
-    if (nextIndex === -1) {
-      if (state.items.length > 0 && state.items.length !== drainedAtLengthRef.current) {
+    const item = nextItemToStart(state);
+    if (item === null) {
+      if (isDrained(state) && state.items.length !== drainedAtLengthRef.current) {
         drainedAtLengthRef.current = state.items.length;
         onImported();
       }
       return;
     }
 
-    let cancelled = false;
-    const item = state.items[nextIndex];
-    dispatch({ type: "START", index: nextIndex });
-
-    importFile(item.path, item.importerId, (progress) => {
-      if (cancelled) return;
-      dispatch({ type: "PROGRESS", index: nextIndex, progress });
-    })
-      .then((session) => {
-        if (cancelled) return;
-        dispatch({ type: "SUCCEEDED", index: nextIndex, session });
-      })
-      .catch((e: unknown) => {
-        if (cancelled) return;
-        dispatch({ type: "FAILED", index: nextIndex, error: e });
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [state.items, onImported]);
+    runImport(item, importFile, dispatch);
+  }, [state, onImported]);
 
   const handleImportClick = () => {
     pickImportFile(pastedPath)
@@ -159,8 +144,8 @@ export function ImportPanel({ onImported }: ImportPanelProps) {
       {percent !== null && <progress value={percent} max={100} />}
       {state.items.length > 0 && (
         <ul>
-          {state.items.map((item, i) => (
-            <ImportRow key={`${item.path}-${i}`} item={item} onDismiss={() => dispatch({ type: "DISMISS", index: i })} />
+          {state.items.map((item) => (
+            <ImportRow key={item.id} item={item} onDismiss={() => dispatch({ type: "DISMISS", id: item.id })} />
           ))}
         </ul>
       )}
