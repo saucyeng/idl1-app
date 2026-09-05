@@ -2981,3 +2981,19 @@ viewport, wiring `onChannelsInvalidated` → `rebindChannelsAfterRebuild` →
 **Cost if wrong:** (1) changes a wire shape two landed TS files depend on —
 one shell task, both call sites known. (3) is prose. The orchestrator
 placement is reversible until Task 13 lands.
+
+## 2026-09-05 — Checkpoint: second session-limit cutoff, three tasks resumed
+
+At 13:31 local the account's session limit cut off three implementers
+mid-task (L2 Task 6 in the idl-rs worktree; L6 Task 9 and L7b Task 9 in
+their idl1-app worktrees). All committed work was intact; each worktree held
+coherent uncommitted WIP (L6/L7b believed complete, mid-gate; L2 mid-build).
+Resumed at 17:19 with fresh implementers told to inherit, verify and own the
+WIP rather than redo it, and to commit the inherited work before merging
+`main` so the two stay separate commits. State at the cutoff: idl1-app
+`main` `928ef7f` (L7a, L7c and shell tasks 1–3 landed; TS suite 207
+passed); idl-rs L2 branch at `227d3f1` (Tasks 2–5 reviewed CLEAN); L6 at
+`95d291d` (Tasks 1–8 + fixes); L7b at `7fd009e` (Tasks 1–8 + fixes). No
+cargo process was left running. Lesson carried: a cutoff costs nothing when
+every task commits per step and the lead snapshots worktree state
+immediately; the first resume of the day used the same pattern.
