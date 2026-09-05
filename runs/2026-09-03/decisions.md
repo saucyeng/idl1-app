@@ -2779,3 +2779,52 @@ can fail in the sync layer itself — unreadable pairing store). L7c's
 the amended text.
 
 **Cost if wrong:** an extra kind the UI already handles; zero.
+
+## 2026-09-05 — R58: unassigned pins are representable; no pin range is invented
+
+L7b Task 7 stopped (CLAUDE.md §1): `AnalogChannel.adc_pin` and
+`DigitalChannel.gpio_pin` are non-optional `number` with no way to say
+"unassigned", and neither `DeviceConfig` nor SPEC §8/§3.7 declares a valid
+pin range for a picker to enumerate (§3.7 names nets, not numbers).
+
+**Ruling:**
+1. Task 7 is authorised to change `config/model.ts` (Task 2's file, same
+   lane): `adc_pin: number | null` and `gpio_pin: number | null`, `null` =
+   unassigned. Parse: a missing pin key reads as `null` with no `Repair`
+   (it is a legal draft state); a present non-integer is a `Repair` as
+   today. Serialise: omit the key when `null`. Validator (Task 3's file,
+   same authorisation): an unassigned pin is an **error** ("pin unassigned"),
+   so `isPushable` is false — a draft channel can never reach the device
+   half-configured. Collision check ignores `null`.
+2. **No pin range in wave 2.** The picker is a non-negative-integer input,
+   collision-checked, starting empty (unassigned). Inventing a range would
+   put a hardware guess in the UI. **For Isaac:** SPEC §8 should state the
+   valid `adc_pin` and `gpio_pin` value sets (or map them to §3.7's named
+   nets); when it does, the input becomes a select and the validator gains
+   a range rule — one task, no model change.
+
+**Cost if wrong:** a user can type a pin the hardware lacks and learn at push
+time from the device's rejection (C3 `config` kind) — visible, not silent.
+The alternative, a guessed range, could exclude a real pin with no recourse.
+
+## 2026-09-05 — Process rule: IPC-driving React effects delegate to a pure, tested driver
+
+Two Criticals reached review within an hour, both in the one place the UI
+gate cannot see (rendering is not unit-tested, CLAUDE.md §4): L7a Task 5's
+import-queue effect depended on the state it dispatched into, so its own
+cleanup cancelled every in-flight import; L6 Task 5 registered host
+variables as getters the Observable runtime never unwraps and never
+re-primed a rebuilt iframe. Both were caught by reviewers reading the code,
+not by any test.
+
+**Rule (operating brief §4, all four UI standing reviewer briefs):** the
+decision logic of any effect that starts IPC or `postMessage` work lives in
+a pure module with an injected async function and is unit-tested for the
+interleavings that matter (dismiss-while-running, stale response, rebuild);
+the effect only calls it and never cancels in-flight work because unrelated
+state changed. Reviewers trace dependency arrays against dispatches; a
+self-cancelling effect is Critical. Fixes for both incidents are follow-up
+commits in their lanes, with driver tests.
+
+**Cost if wrong:** more ceremony per effect. Against it: an import feature
+that can never complete, shipped green.

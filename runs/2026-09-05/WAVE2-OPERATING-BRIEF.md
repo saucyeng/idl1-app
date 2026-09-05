@@ -124,6 +124,20 @@ worktree is shared sequentially. (Two amend incidents 2026-09-05, both after
 the lead's own "fold it into your commit" wording; the lead now says
 "as a follow-up commit".)
 
+**Effects that drive IPC delegate to a pure driver (added 2026-09-05 after
+two Criticals).** Rendering is not unit-tested, so a React `useEffect` that
+starts IPC work and dispatches results is the one place a wiring bug cannot
+be caught by the gate. Two such bugs reached review the same afternoon (L7a
+import queue: the effect's own cleanup cancelled every in-flight import; L6
+sandbox: host variables registered in a form the runtime never unwraps).
+Rule: the decision logic (which item to start, what to dispatch on each
+outcome, how a rebuilt iframe is re-primed) lives in a pure module with an
+injected async function and is unit-tested for the interleavings that
+matter (dismiss-while-running, rebuild, stale response); the effect only
+calls it and never cancels an in-flight promise because unrelated state
+changed. Reviewers trace every effect's dependency array against what it
+dispatches and grade a self-cancelling effect Critical.
+
 ## 5. Sequencing
 
 ```
