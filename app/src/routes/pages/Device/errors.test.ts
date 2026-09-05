@@ -30,6 +30,30 @@ describe("describeIpcError", () => {
     expect(configText).not.toBe(configParseText);
   });
 
+  it("describeIpcError — kind config with a device-given reason — the reason is appended verbatim", () => {
+    // Arrange
+    const error = { kind: "config", message: "unsupported config_version" };
+
+    // Act
+    const text = describeIpcError(error);
+
+    // Assert
+    expect(text).toContain("unsupported config_version");
+    expect(text.startsWith("The device rejected the config it was sent")).toBe(true);
+  });
+
+  it("describeIpcError — kind config with an empty message — falls back to the generic sentence, no bare trailing colon", () => {
+    // Arrange
+    const error = { kind: "config", message: "" };
+
+    // Act
+    const text = describeIpcError(error);
+
+    // Assert
+    expect(text).toBe("The device rejected the config it was sent. Nothing was changed on the device.");
+    expect(text).not.toContain(":");
+  });
+
   it("describeIpcError — an unknown kind — generic text, never throws (C3 §5: kinds are additive)", () => {
     // Arrange
     const error = { kind: "some_future_kind", message: "whatever the future adds" };

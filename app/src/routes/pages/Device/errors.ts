@@ -16,7 +16,10 @@ const GENERIC_TEXT = "Something went wrong talking to the device. Try again.";
 /** User-facing text per `IpcErrorKind` (C3 §2) this tab can see, from
  *  `ble_scan`, `ble_connect`, `list_device_files`, `download_file` and
  *  `push_config` (C3 §3.8). Each string tells the rider what to do next,
- *  never a stack trace (CLAUDE.md §5). */
+ *  never a stack trace (CLAUDE.md §5). `config`'s entry here is the
+ *  fallback used only when the device sent no reason text — see
+ *  {@link describeIpcError}, which normally appends `error.message` to a
+ *  `config`-kind rejection instead of using this fixed sentence alone. */
 const KIND_TEXT: Record<string, string> = {
   ble: "Couldn't reach the device over Bluetooth. Check the adapter is on and the device is awake.",
   wifi: "Couldn't reach the device over WiFi. Check the device's WiFi mode and try again.",
@@ -31,7 +34,18 @@ const KIND_TEXT: Record<string, string> = {
 /** Turns an `IpcError`-shaped rejection into text a rider can act on.
  *  Never throws, including for a kind not in the table above (C3 §5: kinds
  *  are additive, so an unrecognised one falls back to generic text rather
- *  than crashing the tab). */
+ *  than crashing the tab).
+ *
+ *  `kind: "config"` is a special case: C3 §2 defines that kind's `message`
+ *  as the device's own rejection reason (e.g. "unsupported config_version"),
+ *  not Rust-side debug text, so it is safe and useful to show — this
+ *  function appends it to the fixed lead-in sentence. An empty `message`
+ *  (a device that rejected without giving a reason) falls back to
+ *  `KIND_TEXT.config` alone, never a bare trailing colon. */
 export function describeIpcError(error: DeviceIpcError): string {
+  if (error.kind === "config") {
+    const reason = error.message.trim();
+    return reason === "" ? KIND_TEXT.config : `The device rejected the config it was sent: ${reason}`;
+  }
   return KIND_TEXT[error.kind] ?? GENERIC_TEXT;
 }

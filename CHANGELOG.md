@@ -189,6 +189,13 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
   parse leniency (a loaded file's non-integer pin) is unchanged, still a
   `Repair`. `ChannelsTable.tsx`'s carried indentation nit (flagged in Task 6
   and Task 7's reviews, "fix on next touch") is fixed this time.
+- **Device tab, errors.ts review-fix (2026-09-05, L7b).** `Device/errors.ts`'s
+  `describeIpcError` now appends the device's own rejection reason to a
+  `kind: "config"` error's text (C3 §2: that kind's `message` *is* the
+  device's stated reason, not Rust-side debug text, so it is safe and
+  useful to show) — `"The device rejected the config it was sent: <reason>"`.
+  An empty `message` still falls back to the fixed generic sentence, never a
+  bare trailing colon.
 - **L5 complete (2026-09-04).** idl-rs-tauri wired to every landed wave-1 lane's C3 command
   group (catalog, workbook, cursor, raster, tile) plus device (L4); <data> resolution,
   workbook watcher, app/src/ipc/ module layer, routing and state skeleton. Tile fetched
