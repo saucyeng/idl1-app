@@ -871,53 +871,68 @@ heartbeat keeps an active link alive indefinitely.
 
 ## 11. App Architecture
 
+> **Status note (2026-09-03):** this section is L5's first draft, written
+> alongside `docs/superpowers/plans/2026-09-03-idl1-wave1-l5-tauri-scaffold.md`.
+> L10's plan does a cross-lane consistency pass once L1–L4, L6 and L7 have
+> also landed and named their own module paths — treat any Rust module path
+> below as illustrative until then.
+
 ### 11.1 Layers
 
-```
-UI (Dart/Flutter)
-  └─ flutter_adaptive_scaffold, Riverpod providers, charts
-Data (Dart)
-  └─ Binary parser, session model, workspace, SQLite index
-Transport (Dart)
-  └─ BLE (flutter_blue_plus), WiFi HTTP, Google Drive, config push
-Processing (Rust)
-  └─ sci-rs: filters, FFT, integration, statistics
-  └─ nalgebra: rotation matrices, vectors
-  └─ Called via flutter_rust_bridge — compiles native on all platforms
-```
+The authoritative layer table and decision rule live in `CLAUDE.md` §2 —
+this section does not repeat them. In one line: `rust/core` is the pure
+engine (no Tauri, no async runtime, no network); `rust/transport` is device
+and LAN I/O; `rust/tauri` (`idl-rs-tauri`) is thin `#[tauri::command]` glue
+over both and the only crate the frontend sees; `app/src-tauri` is the Tauri
+app crate (builder, plugin registration, mobile plugins); `app/src` is the
+TypeScript UI, which talks only to `idl-rs-tauri` commands.
 
-**Decision rule:** Physics of the bike → Rust. App data structures, files, UI → Dart.
+This replaces idl0's Dart/Rust split (`flutter_rust_bridge`, Riverpod
+providers, `sqflite`) in full — Flutter is not part of idl1 (design doc D1).
 
-### 11.2 Platform Targets
-- Android: primary (BLE + WiFi + analysis)
-- Desktop (Windows/macOS): analysis, BLE optional
-- iOS/web: PWA via Flutter web — analysis only, no BLE
-- Responsive breakpoint: <600px = bottom nav, ≥600px = side rail (`flutter_adaptive_scaffold`)
+### 11.2 IPC
 
-### 11.3 State Management
-Riverpod only. No Provider, no Bloc, no setState except local widget state.
+Every command, its argument/return shapes, the binary tile/raster layouts,
+the typed error shape, and the interaction budget (which commands may never
+run on a hot path) are fixed by contract C3
+(`docs/superpowers/specs/2026-09-03-idl1-c3-ipc-surface.md`) — not restated
+here. `app/src/ipc/*.ts` (one module per C3 §3 command group) is the only
+place `app/src` is allowed to import `@tauri-apps/api/core` (C3 §1).
 
-### 11.4 File Model
-| File | Ext | Mutable |
-|------|-----|---------|
-| Raw log | `.idl0` | Never — immutable after download |
-| Workspace | `.idl0w` | Yes — all derived work |
+### 11.3 Platform targets
 
-`.idl0w` is versioned JSON (current schema: v8). Contains: lap/sector gates, annotations, channel colors, track visits with their cached detected laps (§17.4), and video links (`videos[]`, v8 — §15.4). Math channels and workbook layout live on the owning Workbook (`.idl0wb`, §17a) — they are not stored in `.idl0w`.
+Desktop (Windows/macOS/Linux) and mobile (Android/iOS) both run the same
+Tauri v2 shell and the same `idl-rs-tauri` command set — there is no separate
+web/PWA target (unlike idl0's Flutter web lane, which idl1 does not carry
+forward). Mobile BLE and WiFi-network binding are Tauri mobile plugins over
+the same Rust transport traits desktop uses (design §7; lane L9, wave 2–3).
 
-**Workspace lap gate list:** `lap_gates` is an ordered list. Only `lap_gates[0]` is used for timing; additional entries represent candidate positions the user has experimented with. An empty list means no gate has been placed yet.
+### 11.4 State management
 
-**Workspace version handling:**
-- `.idl0w` includes a `workspace_version` field
-- If app opens a workspace with a higher version than it supports: surface a clean error — "This workspace was created with a newer version of IDL0. Update the app." Do not silently load partial data.
-- If app opens a workspace with a lower version: migrate silently — forward migrations only, never destructive
+React (design D12). The app-shell state (current tab, resolved `<data>` path,
+engine version) is a `Context` + `useReducer` store with no external
+dependency (`app/src/state/AppState.tsx`, lane L5). Riverpod, Provider and
+Bloc are idl0-only and do not apply (`CONTRIBUTING.md`). Whether the notebook
+view's reactive cross-runtime DAG (design §4, "one graph, two schedulers")
+needs a heavier state library is L6's decision, recorded here when made — see
+this plan's Open Questions.
 
-### 11.5 Local Database
-SQLite (sqflite) — session index cache only. Source of truth is always the files. Rebuild by rescanning session folder.
+### 11.5 File model and local database
 
-**Index API contract:** The index has no knowledge of the filesystem. To rebuild, the caller scans the session folder, parses each `.idl0` header into a `SessionMetadata` object (via the binary parser), and passes the full list to `SessionIndex.rebuildFromSessions()`. The index atomically replaces its contents with the provided list. The caller is responsible for reading the files; the index is responsible only for storing and querying the derived metadata.
+Superseded by contracts C1 (session schema) and C4 (data directory) in full
+— `docs/superpowers/specs/2026-09-03-idl1-c1-session-schema.md` and
+`…-c4-data-directory.md`. In one line: raw sources are immutable,
+content-addressed blobs; `data.parquet`/`derived/*.parquet` are functions of
+those blobs; `session.json` replaces `.idl0w`; `.idl1wb` (C2) replaces
+`.idl0wb`; `catalog.sqlite` is a rebuildable index that is never synced (C4
+§5) — nothing reads it for truth.
 
-**Session list population:** `sessionProvider` is populated once per app lifecycle by `sessionIndexLoaderProvider`, which fires when the Data tab is first built. After that point, `sessionProvider` is updated only by direct `SessionNotifier.addSession()` calls (e.g., after a file import or WiFi download completes). `sessionIndexLoaderProvider` does not poll or re-run unless explicitly invalidated.
+### 11.6 File watcher
+
+`notify` on `<data>/workbooks` only, self-write suppression via an
+expected-hash set, ~100 ms debounce (C4 §4, design §7). Built in
+`rust/tauri/src/watcher.rs` (lane L5); wired to per-cell diffing once L3's
+workbook parser lands (C3 §3.4 `watch_workbook`).
 
 ---
 

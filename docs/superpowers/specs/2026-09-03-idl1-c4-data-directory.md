@@ -604,3 +604,22 @@ flagged for lead confirmation before signing, per the doc's own review gate.
 6. **Tauri bundle identifier** (§1): the literal string in
    `app_data_dir()`'s path is an L5 scaffold decision; this contract only
    fixes the resolution mechanism, not the id. — *Owner: L5.*
+7. **Expected-hash entry lifetime on match** (§4): the text above says a
+   matched entry is "consume(d) (remove)" on the first matching event. L5's
+   implementation (`ExpectedHashSet::check_and_consume`, `tauri/src/watcher.rs`)
+   deliberately does not remove the entry on match — it keeps it live until
+   the 5-second TTL expires, and only removes it via lazy TTL-expiry cleanup.
+   Default adopted: keep the entry live until TTL rather than consuming on
+   first match, because `std::fs::write` on Windows fires `Create` then
+   `Modify` for one logical write, both carrying identical final-content
+   bytes — consuming on first match left the second duplicate event
+   unmatched and misclassified as external. Safety argument: the match still
+   requires exact hash equality, so a later write with genuinely different
+   content (a real external edit) always produces a different hash and is
+   still correctly classified as external regardless of how long the
+   matched entry lingers; the only entries that widen exposure are
+   byte-identical rewrites of the app's own last write, which carry no
+   information to lose. Needs confirmation this is the intended reading of
+   "consume (remove)" for this contract, or whether a tighter fix (e.g.
+   debouncing the duplicate Windows events before the hash check) is
+   preferred instead. — *Owner: lead.*

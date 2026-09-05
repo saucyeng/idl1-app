@@ -6,6 +6,16 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 
 ### Added
 
+- **L5 complete (2026-09-04).** idl-rs-tauri wired to every landed wave-1 lane's C3 command
+  group (catalog, workbook, cursor, raster, tile) plus device (L4); <data> resolution,
+  workbook watcher, app/src/ipc/ module layer, routing and state skeleton. Tile fetched
+  end-to-end from a real .idl0 — parse → store → `fetch_tile` → decoded bytes verified in a
+  headless test (header v2, 20224 bytes, real sample values); the NotebookPage canvas render
+  compiles and type-checks with unit tests passing but has not been visually confirmed. M0
+  smoke path retired. Import commands (C3 §3.3) ship with L2, not this lane.
+- **Raster commands (C3 §3.6) over L3's core::raster.** fetch_raster (binary) and fetch_raster_meta (axis domains + colour scale, resolution-independent per ruling R38); typed SpectrogramParams/Histogram2dParams replace the provisional Record<string, number> (C3 open question 6.4 closed).
+- **Cursor command (C3 §3.7) over L3's core::cursor.** cursor_readout — nearest recorded sample, null outside a channel's recorded span (ruling R31); an unknown channel rejects the whole call with invalid_argument. Settle-bound only, never a hot path (C3 §4).
+- **Workbook commands (C3 §3.4) over L3's v3 parser/evaluator.** open_workbook, eval_workbook (per-cell CellOutput, host channels as HostChannelRef markers only — the byte path is deferred to wave 2 with L6), save_workbook (C4 §4 expected-hash ordering + optimistic based_on_hash), watch_workbook (Task 3's watcher + a cell-body diff). No unsubscribe in wave 1.
 - **Repository created (2026-09-02).** From the idl1 rewrite design
   (`docs/superpowers/specs/2026-09-02-idl1-rewrite-design.md`). Docs carried
   over from idl0-app: SPEC, design rationale, signal pipeline, datasheet,
@@ -51,6 +61,15 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
   (µs storage axis vs. seconds host-variable field). SPEC §17a rewritten for v3. Workbook
   migration from v2 (`migrate-workbook`, C2 §6) is deliberately **not** implemented — dropped
   from wave 1 by ruling R30; C2 §6 stays written and unimplemented.
+- **idl-rs-tauri: typed IpcError (C3 §2).** Cross-cutting and transport-sourced kinds seeded; each lane adds its own prefixed kinds when its command lands.
+- **<data> resolution and settings.json bootstrap (C4 §1).** Resolved once at startup, directory tree created idempotently; overridable via app_config_dir()/settings.json.**
+- **Workbook file-watcher plumbing (C4 §4).** notify on <data>/workbooks, ~100ms debounce, expected-hash-set self-write suppression. Not yet wired to watch_workbook — gated on L3 (Task 11).
+- **app/src/ipc/tiles.ts, rasters.ts: real C3 §3.5/§3.6 binary decoders.** Pure, tested against C3's own worked examples; fetchTile/fetchRaster reject until Task 14/12 land the Rust commands.
+- **app/src/ipc/: full C3 §1 module scaffolding.** engine, catalog, import, workbook, cursor, device, sync — typed per C3 §3, invoke()-wrapped; commands not yet backed reject until their owning lane's Group B task lands.
+- **React routing skeleton + app-level state (no new dependency).** Four-tab shell (Notebook/Device/Data/Settings) over a Context+useReducer AppState; placeholder pages for L6/L7.
+- **docs/IDL0_SPEC.md §11 rewritten for the Tauri/Rust-core/TS architecture (spec-during).** First draft by L5; L10 does the cross-lane consistency pass.
+- **Catalog commands (C3 §3.2).** list_sessions, get_session, list_laps, rebuild_catalog, list_workbooks, list_tracks, get_track, over a new core read layer (idl_rs::store::catalog_read) — L1 landed the writer only.
+- **Device commands (C3 §3.8) wired to L4's idl-transport.** ble_scan, ble_connect, list_device_files, download_file (streams Progress), push_config. Each command connects/acts/disconnects per call (no managed BLE session yet). `push_config` validates `config_json` is well-formed JSON only — full schema validation via `idl_rs::config::parse_config` is blocked on core defining a `VersionedConfig` type for SPEC §8's device-config schema, not yet landed.
 
 ### Verified
 
