@@ -79,6 +79,18 @@ export function isHostMessage(msg: unknown): msg is SandboxToHostMessage {
  * (P7). `t`/`v` must not be read again by the caller after this call — they
  * are neutered once transferred.
  *
+ * `t` and `v` are the raw bytes backing a **`Float64Array`** on each end —
+ * `t` in seconds since session start, `v` the channel's value (C1 channels
+ * are natively `f64`) — matching, byte for byte, `sandbox/main.ts`'s
+ * `materializeHostVar`, which unconditionally does `new
+ * Float64Array(payload.t)`/`new Float64Array(payload.v)` on receipt. The
+ * caller (`model/channelData.ts`'s `ChannelData`) must build both typed
+ * arrays as `Float64Array` and pass their `.buffer`s here — a narrower
+ * element type on this end would silently corrupt every value once
+ * received, since the sandbox's reinterpretation is fixed and unconditional
+ * (review-task7.md Important finding; see `protocol.test.ts`'s round-trip
+ * test for the byte-for-bit proof).
+ *
  * `name` is added as the first argument (deviating from the brief's sketch,
  * which omitted it) because `setHostVar` requires a variable name to bind
  * under; the point under test is that both buffers land in `transfer`

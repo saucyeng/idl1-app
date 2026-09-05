@@ -16,15 +16,30 @@ import { COLUMN_T_US_EMPTY, type DecodedTile } from "../../../../ipc/tiles";
  * budget P5); this is the **host-side transfer buffer** shape, a different
  * thing from the array of `{t, v}` records the sandbox materialises from it
  * for `channel()` to return to cell code (see `sandbox/main.ts`).
+ *
+ * Both `t` and `v` are `Float64Array` (8 bytes/element) — matching, byte
+ * for byte, what Task 5's already-landed `sandbox/main.ts`'s
+ * `materializeHostVar` does on receipt (`new Float64Array(payload.t)`,
+ * `new Float64Array(payload.v)`). A `Float32Array` `v` was tried first but
+ * reviewed as an Important finding (review-task7.md): the sandbox side
+ * reinterprets whatever bytes arrive as `Float64Array` unconditionally, so
+ * a narrower host-side type would silently corrupt every value (half as
+ * many records, each one's bits reinterpreted as an unrelated double) once
+ * wired — not a type this task is free to choose independently of the
+ * already-committed sandbox side. C1 channels are natively `f64`, and at
+ * the point budget's ~2 points/pixel-column the extra bytes over
+ * `Float32Array` are negligible.
  */
 export interface ChannelData {
   /** Number of records actually populated (`t.length === v.length === length`). */
   length: number;
   /** Time of each record, in seconds since session start. */
   t: Float64Array;
-  /** Value of each record (`columnMean`); `NaN` where the source column
-   *  carried no real stat. */
-  v: Float32Array;
+  /** Value of each record (`columnMean`, widened from the tile's `f32` to
+   *  match the sandbox's `Float64Array` reinterpretation of the
+   *  transferred buffer); `NaN` where the source column carried no real
+   *  stat. */
+  v: Float64Array;
 }
 
 /**
@@ -84,7 +99,7 @@ export function tileToChannelData(
   const total = times.length;
   const length = budget > 0 ? Math.min(total, budget) : 0;
   const t = new Float64Array(length);
-  const v = new Float32Array(length);
+  const v = new Float64Array(length);
 
   if (length === total) {
     for (let i = 0; i < length; i++) {

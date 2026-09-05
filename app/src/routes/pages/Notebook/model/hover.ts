@@ -9,6 +9,16 @@ import { COLUMN_T_US_EMPTY, type DecodedTile } from "../../../../ipc/tiles";
  * pixel's column index is chosen by linear interpolation across the total
  * column count spanned by `tiles`, not from `startUs`/`endUs` directly, so
  * this stays correct however many tiles cover the window.
+ *
+ * // TODO(idl0): `hoverAt` does not defend against a hole in the middle of
+ * // `tiles` (e.g. one tile of a multi-tile window still mid-fetch) — it
+ * // silently returns a wrong-but-plausible column rather than `null` in
+ * // that case, since the linear interpolation above has no way to detect
+ * // a gap it isn't told about (review-task7.md Minor finding). Not
+ * // reachable from this task's own brief (already-fetched, in-order
+ * // tiles only); Task 8's fetch/settle orchestration should confirm the
+ * // tiles it hands to `ChartCell` are always fully contiguous before
+ * // this assumption is load-bearing in practice.
  */
 export interface HoverGeometry {
   /** CSS px offset from the left edge of `ChartCell`'s bounding box to the first plotted column. */
