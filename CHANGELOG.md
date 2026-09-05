@@ -6,6 +6,10 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 
 ### Added
 
+- **TS coverage reporting added (2026-09-05).** `@vitest/coverage-v8` pinned to vitest's
+  version in `app/package.json`; `app/vitest.config.ts` gains a `coverage` block (v8
+  provider, `src/**/*.ts`, text reporter, no thresholds set) so `vitest run --coverage`
+  reports the per-module numbers CLAUDE.md §4 asks reviewers to check.
 - **L5 complete (2026-09-04).** idl-rs-tauri wired to every landed wave-1 lane's C3 command
   group (catalog, workbook, cursor, raster, tile) plus device (L4); <data> resolution,
   workbook watcher, app/src/ipc/ module layer, routing and state skeleton. Tile fetched
