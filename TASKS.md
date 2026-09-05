@@ -29,6 +29,17 @@ are defined in `docs/superpowers/specs/2026-09-02-idl1-rewrite-design.md` §10.
 ## Wave 2
 
 - [ ] L6 notebook UI · L7 device/data/settings UI · L9 mobile scaffold · L11 LAN sync
+  - [x] L7c settings tab — all 6 tasks landed for wave 2. Outstanding:
+    `get_settings`/`set_settings` (IPC need 6) and
+    `get_data_dir`/`set_data_dir` (IPC need 7a/7b) are still stubbed
+    pending the Rust write-amendment lane; prefs live in `localStorage`
+    meanwhile and the one-time migration into `settings.json` (R53 Q1's
+    stated risk) is not yet scheduled. Parity gaps: Google Drive dropped
+    permanently (replaced by Sync, not deferred); Firmware/OTA deferred to
+    wave 3 (operating brief §3); "Full reference"/"Report issue" links
+    dropped (idl0 `example.com` placeholders); Licenses omitted (no
+    license-page generator wired into idl1's build); chart controls
+    reference carried but provisional pending L6's actual bindings.
 
 ## Wave 3
 

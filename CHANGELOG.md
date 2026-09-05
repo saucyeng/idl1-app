@@ -6,10 +6,112 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 
 ### Added
 
+- **L7c how-to copy accuracy fixes (2026-09-05, Task 6 review fix).**
+  `Settings/howtos/FirstSetup.tsx`, `WifiDownload.tsx` and `GpsLapGate.tsx`
+  no longer describe unbuilt or wrong-transport affordances as working:
+  config push is now correctly described as Bluetooth Low Energy (SPEC
+  §7.2), not WiFi; IMU calibration and remote recording start/stop are
+  stated as not yet available (both need a BLE command the Rust side
+  doesn't expose yet, per L7b's wave-2 plan); the download flow now points
+  at the Device tab's file list (not the Data tab) and states that
+  importing a download into the session library is a separate manual step;
+  the "enable WiFi" toggle is dropped since `listDeviceFiles` already
+  drives the device into WiFi mode itself; the GPS Lap Gate article states
+  up front that gate placement, lap detection and the lap table are not
+  built in wave 2 (R53 Data Q4) and describes the design rather than a
+  shipped flow. `about.ts`'s `SCHEMA_VERSION` doc comment now states
+  plainly that it is an invented display string to keep in sync by hand,
+  matching `APP_VERSION`'s treatment (review-task6.md Minor).
+- **L7c Settings tab, Task 6 — lane complete for wave 2 (2026-09-05).**
+  Chart controls reference (`Settings/controls.ts`, `ControlsSection.tsx`)
+  carries idl0's mouse-wheel/mouse/keyboard shortcut table verbatim, with a
+  visible "provisional — bindings land with the Notebook lane" label in the
+  section itself (R53 Q2) since L6 owns the actual bindings and is building
+  concurrently. Four how-to articles (`Settings/howtos/*.tsx`) carried from
+  idl0's Markdown assets as bundled TSX (no CDN, ever — CLAUDE.md §3),
+  rewritten for idl1's tab names and, for Math Channels, idl1's math-cell
+  notebook model (C2 §2) replacing idl0's separate "Maths" tab; idl0's
+  `example.com` "Full reference"/"Report issue" links are not carried
+  across. About section (`Settings/about.ts`'s `aboutRows`,
+  `AboutSection.tsx`) shows app version/schema/build (hardcoded, as idl0
+  did) and a real engine version read from `AppState.engineVersion` — the
+  same `engine_version` call the app shell already makes once, never a
+  second IPC round trip — reading "…" while that fetch is in flight and
+  never "unknown". Licenses is omitted (no license-page generator wired
+  into idl1's build). `docs/IDL0_SPEC.md` §27 gains §27.10-§27.13 (chart
+  controls, how-tos, about, and a section inventory replacing §27.4 for the
+  idl1 line). This is L7c's last task; `TASKS.md` records what's still
+  outstanding.
+- **L7c Settings tab, Task 5 (2026-09-05).** Sync section
+  (`Settings/SyncSection.tsx`) over the real, landed
+  `sync_status`/`sync_now`/`pair_peer` commands (C3 §3.9, `app/src/ipc/sync.ts`)
+  — never stubbed. Polls `sync_status` on a 5 s timer while mounted, lists
+  paired peers with online flags, validates a 6-digit pairing code locally
+  (`pairCode.ts`'s `normalizePairCode`/`validatePairCode`) before calling
+  `pair_peer`, and runs `sync_now` manually per peer with progress shown by
+  phase (`syncState.ts`'s reducer keeps a poll from clobbering an in-flight
+  transfer). `describeSyncResult` reads a non-zero conflict count as
+  something to resolve, not a failure (design §7's per-cell merge).
+  L11 has not landed, so every call rejects today; that's rendered through
+  `errors.ts`'s `describeIpcError` or a "not running yet" fallback, never a
+  raw error. `docs/IDL0_SPEC.md` §27 gains §27.9 (replacing the Drive Sync
+  row in §27.4's table) and §28 (Google Drive Sync) carries a superseded
+  banner pointing at §27.9 and design §7.
+- **L7c Settings tab, Task 4 (2026-09-05).** Data-directory section
+  (`Settings/DataSection.tsx`) over the `get_data_dir`/`set_data_dir` stubs
+  (IPC need 7a/7b): shows the resolved `<data>` path, an override field
+  validated by `dataDir.ts`'s `validateDataDir` (non-empty, absolute-looking,
+  no trailing whitespace), and an explicit confirmation step —
+  `describeOverrideChange`'s sentence, per C4 §1 — before any change is
+  submitted; a change is never a field that saves on blur. States that a
+  change takes effect on restart (R53 Q4), since `<data>` is resolved once
+  at startup and cached for the process lifetime. `docs/IDL0_SPEC.md` §27
+  gains new §27.8 (spec-during, no idl0 counterpart).
+- **L7c `PrefsBackend`/`PrefsStore` go async (2026-09-05, lead ruling,
+  review-task2 note 1).** `PrefsBackend.read()`/`write()` and
+  `PrefsStore.get()`/`set()` are now `Promise`-returning, matching the
+  eventual `invoke`-based `get_settings`/`set_settings` command;
+  `localStorageBackend()`/`memoryBackend()` wrap their still-synchronous
+  internals in resolved/rejected promises. Behaviour unchanged: a rejecting
+  `write()` still reports `{ ok: false, error }` while the in-memory value
+  updates first, so the user's typing is never discarded. `ProfileSection.tsx`
+  and `UnitsSection.tsx` (Task 3) now seed their initial value from
+  `store.get()` in an effect instead of synchronously at render.
+- **L7c Settings tab, Task 3 (2026-09-05).** Profile and Units sections,
+  built over Task 2's `PrefsStore`. `ProfileSection.tsx`'s rider-name field
+  writes through `store.set` debounced at 500 ms (idl0's own behaviour) so
+  typing does not thrash storage; its copy states the name is pre-filled
+  into new sessions. `UnitsSection.tsx`'s imperial/metric toggle writes
+  immediately and renders `units.ts`'s `unitSummary` — all seven of idl0's
+  unit-math fields (speed, distance, pressure, temperature, force, power,
+  spring rate), including the two idl0's own UI never rendered even though
+  its `app_settings.dart` doc comment named them; its copy states the
+  toggle does not retroactively convert existing channel values. No spec
+  change — Task 2 already rewrote §27's persisted set.
 - **TS coverage reporting added (2026-09-05).** `@vitest/coverage-v8` pinned to vitest's
   version in `app/package.json`; `app/vitest.config.ts` gains a `coverage` block (v8
   provider, `src/**/*.ts`, text reporter, no thresholds set) so `vitest run --coverage`
   reports the per-module numbers CLAUDE.md §4 asks reviewers to check.
+- **L7c Settings tab, Task 2 (2026-09-05).** Typed `Prefs` model
+  (`EnginePrefs` + `UiPrefs`, `Settings/prefs.ts`) and its pluggable-backend
+  store (`Settings/prefsStore.ts`): `EnginePrefs` matches
+  `idl_rs::store::settings::AppSettings` field for field so a future
+  `set_settings` call needs no translation layer; `parsePrefs`/`serializePrefs`
+  are lenient (defaults for missing/invalid fields, unknown keys preserved,
+  never throw); `createPrefsStore` persists through `localStorageBackend()`
+  (every access wrapped in try/catch, R53 Q1) with `memoryBackend()` for
+  tests, and reports a failed write through `set()`'s result rather than
+  swallowing it or losing the in-memory value. `docs/IDL0_SPEC.md` §27.1
+  rewritten to describe the idl1 prefs model, its `localStorage` interim,
+  and the `get_settings`/`set_settings` gap it will close.
+- **L7c Settings tab, Task 1 (2026-09-05).** `SettingsPage.tsx` moved to a
+  `Settings/` directory owned by this lane; section list plus detail-pane
+  shell over idl1's seven Settings sections (profile, units, data
+  directory, sync, chart controls, how-tos, about) — idl0's Google Drive
+  section is dropped and Firmware/OTA is deferred to wave 3, so neither
+  appears. `ipcStubs.ts` stubs IPC needs 6 and 7 (`get_settings`,
+  `set_settings`, `get_data_dir`, `set_data_dir`), each rejecting with a
+  local `NotImplementedError`, never a fabricated `IpcError` kind.
 - **L5 complete (2026-09-04).** idl-rs-tauri wired to every landed wave-1 lane's C3 command
   group (catalog, workbook, cursor, raster, tile) plus device (L4); <data> resolution,
   workbook watcher, app/src/ipc/ module layer, routing and state skeleton. Tile fetched

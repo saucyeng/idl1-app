@@ -1,5 +1,3 @@
-/** Placeholder — L7 (device/data/settings UI) replaces this with the
- *  settings tab. */
-export default function SettingsPage() {
-  return <p>Settings — built by L7.</p>;
-}
+/** Kept so the app shell's import path is unchanged while L7c owns
+ *  `routes/pages/Settings/`. Retiring this shim is a lead shell task. */
+export { default } from "./Settings";

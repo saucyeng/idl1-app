@@ -2809,25 +2809,52 @@ Tab 5 of the [AdaptiveScaffold](../app/lib/ui/shell/adaptive_shell.dart) shell. 
 
 **Layout.** Narrow (< 720 dp): a single vertical scroll of the §27.4 sections, each a `MinimalSectionHead` + content (Firmware is a collapsed-by-default `CollapsibleSection`). Wide (≥ 720 dp): a two-pane layout — a left list of the sections + a right detail pane showing the selected section (default Profile), matching the Data tab's wide idiom (§24.2). Every control is reachable in both layouts.
 
-### 27.1 AppSettings model
+### 27.1 Prefs model (idl1)
 
-`app/lib/data/app_settings.dart`
+**Superseded (2026-09-05, L7c Task 2).** idl0's `AppSettings`
+(`app/lib/data/app_settings.dart`, `shared_preferences`-backed, 7 fields) is
+replaced by idl1's `Prefs` (`app/src/routes/pages/Settings/prefs.ts`), split
+into an engine half and a UI-only half:
 
-| Field | Type | Default | Persistence key |
-|-------|------|---------|-----------------|
-| `riderName` | `String` | `''` | `rider_name` |
-| `unitSystem` | `UnitSystem` | `imperial` | `unit_system` (int index) |
-| `autoSyncOnDownload` | `bool` | `true` | `auto_sync_on_download` |
-| `syncOnWifiOnly` | `bool` | `true` | `sync_on_wifi_only` |
-| `autoSyncOnOpen` | `bool` | `false` | `auto_sync_on_open` |
-| `firmwareChannel` | `FirmwareChannel` | `stable` | `firmware_channel` (int index) |
-| `autoCheckFirmware` | `bool` | `true` | `auto_check_firmware` |
+| Field | Type | Default | Notes |
+|-------|------|---------|-------|
+| `engine.data_dir` | `string \| null` | `null` | C4 §1's `<data>` override. `null` = platform default. Mirrors `settings.json`'s `data_dir`. |
+| `engine.rider_name` | `string` | `""` | `""` = not set (C4 §1 — there is no `null` representation for this field). |
+| `engine.unit_system` | `"imperial" \| "metric"` | `"imperial"` | An unrecognised value (e.g. from a corrupt document) falls back to `"imperial"`, never throws. |
+| `ui.last_section` | `string` | `"profile"` | Which Settings section the tab reopens on. Never reaches the engine. |
+| `ui.section_list_width_px` | `number` | `220` | Wide-layout section-list width, in pixels. Never reaches the engine. |
 
-`autoSyncOnOpen` is the "connect and forget" switch for the Data tab's Sync screen (§24.17). Default **OFF**: the screen opens as an unchecked file picker. When ON, opening the screen downloads all NEW device files automatically.
+`engine` is field-for-field `idl_rs::store::settings::AppSettings`
+(`rust/core/src/store/settings.rs`) and C4 §1's `settings.json` keys, so a
+future `set_settings` call can take the `engine` object unchanged, with no
+translation layer. `ui` is UI-only and never leaves the machine.
 
-`UnitSystem` enum: `imperial`, `metric`.
+idl0's Drive-sync (`autoSyncOnDownload`, `syncOnWifiOnly`, `autoSyncOnOpen`)
+and firmware (`firmwareChannel`, `autoCheckFirmware`) fields have no idl1
+counterpart here: Drive sync is dropped permanently (replaced by LAN sync,
+§27.4) and firmware/OTA is deferred to wave 3 (not persisted yet).
 
-Backed by `shared_preferences`. `SettingsNotifier` starts at `AppSettings.defaults()` and updates once the async load completes.
+**Where it lives in wave 2 — `localStorage`, not `settings.json`.**
+`rust/core/src/store/settings.rs` already loads and saves
+`app_config_dir()/settings.json` with exactly `engine`'s three keys (C4 §1),
+but no C3 command exposes it yet (C3 is frozen for UI lanes during wave 2).
+So for now the whole `Prefs` document — both halves — is kept in the
+WebView's own `localStorage` on the machine, behind the `PrefsBackend`
+interface (`prefsStore.ts`): it does not sync across devices and does not
+reach `settings.json`. `get_settings`/`set_settings` (IPC need 6, filed in
+`runs/2026-09-05/lanes/l7/IPC-NEEDS.md`) is the command that closes this
+gap; when it lands, the swap is a one-time import of the `localStorage`
+keys into `settings.json` (so nothing already saved is silently lost),
+after which only the `engine` half round-trips through the command and
+`ui` stays local.
+
+`parsePrefs`/`serializePrefs` are lenient: an unreadable or partial
+document yields defaults for the keys it cannot supply, and unknown keys
+(from a newer app version) are preserved through a round trip rather than
+dropped. Every `localStorage` access is wrapped in try/catch — a WebView
+can refuse storage (private mode, cleared site data, a policy) — so a read
+failure yields defaults and a write failure is reported as a failed result,
+never a crash and never a silently discarded change.
 
 ### 27.2 Unit system — defaultUnit()
 
@@ -2847,7 +2874,7 @@ Called by `ChannelMetadataBar._onQuantityChanged` to set the default unit when t
 |---|-------|---------|
 | 1 | Profile | Rider name — debounced 500 ms text field |
 | 2 | Units | `SegmentedButton<UnitSystem>` + summary line |
-| 3 | Drive Sync | Sign in/out, auto-sync toggle, WiFi-only toggle, auto-sync-on-open toggle |
+| 3 | Sync (idl1: LAN sync, replaces Drive Sync — see §27.9) | Paired-peer list with online status, pairing-code entry, manual "Sync now" per peer |
 | 4 | Firmware | OTA update. Auto-checks the selected channel (stable/beta) against the running version (§7.3 `Firmware:`) and shows an "update available vX → vY" card that downloads from GitHub Releases (§27.7) and runs the OTA push. Channel picker, auto-check toggle, "Check now", plus the manual `.bin` picker as fallback. Progress / reboot states, pending-verify commit/rollback card. See §4.6 / §6.1 / §27.7. Collapsed by default in the narrow layout. |
 | 5 | Controls | Read-only reference of the chart keyboard / mouse / wheel shortcuts (mirrors `kDefaultChartBindings` + `wheelModeFor`, §26.7), grouped Mouse wheel / Mouse / Keyboard as leader-dot `SpecRow`s. Editable rebinding is a v2 follow-up. |
 | 6 | How-Tos | 4 markdown articles + Full Reference link |
@@ -2921,11 +2948,174 @@ still available. An update is offered only when hosted is strictly newer; a
 channel switch that leaves the device ahead of the channel shows an
 informational note, not a downgrade prompt.
 
+### 27.8 Data directory override (idl1, no idl0 counterpart)
+
+**New section (2026-09-05, L7c Task 4).** idl0 has no equivalent screen —
+this is C4 §1's "Override in Settings", built here against the
+`get_data_dir`/`set_data_dir` stubs (IPC need 7a/7b,
+`runs/2026-09-05/lanes/l7/IPC-NEEDS.md`) until the write-amendment Rust lane
+lands the real commands.
+
+**What the section shows.** The `<data>` root actually in use for this
+process (`DataDirInfo.resolved_path`), an override text field seeded from
+`DataDirInfo.override_path` (empty when the platform default is in use),
+and, once a candidate path passes `dataDir.ts`'s `validateDataDir` (non-empty,
+"absolute-looking" — a drive letter or a leading `/`/`\`, no trailing
+whitespace), an explicit confirmation step before `set_data_dir` is called.
+Changing where a user's whole data store lives is not a field that saves on
+blur.
+
+**What the confirmation states (C4 §1).** `dataDir.ts`'s
+`describeOverrideChange` names both the previous location (or "the platform
+default location" if there was no override) and the new one, and states
+plainly that existing files are **not moved** — the app opens or creates a
+tree at the new path and the old tree is left exactly where it was.
+
+**Takes effect on restart, not immediately (R53 Q4).** `<data>` is resolved
+once at startup and cached for the process lifetime (C4 §1), so a change
+saved here has no visible effect until the app restarts;
+`DataDirInfo.restart_required` reports when a saved override has not yet
+taken effect, and the section's copy states the restart requirement rather
+than implying the change is live.
+
+**Known trap, not this lane's work.** A `settings.json` written with a
+UTF-8 BOM parses as absent and silently falls back to the platform default,
+which can make a data-directory override set from this section appear to do
+nothing (`runs/2026-09-03/decisions.md`, 2026-09-05 ledger entry;
+`runs/2026-09-05/lanes/l7/IPC-NEEDS.md` need 7). The fix
+(`rust/tauri/src/paths.rs`) rides with the Rust write-amendment lane, not
+this one.
+
+### 27.9 Sync (idl1, replaces Drive Sync — §27.4 row 3)
+
+**Superseded (2026-09-05, L7c Task 5).** idl0's Drive-sync section (Sign
+in/out, auto-sync toggle, WiFi-only toggle, auto-sync-on-open toggle — see
+§28, itself superseded) is replaced by idl1's LAN sync, built here against
+the real, landed `sync_status`/`sync_now`/`pair_peer` commands
+(`app/src/ipc/sync.ts`, C3 §3.9) — not stubs. Google Drive is dropped
+permanently; idl1 syncs peer-to-peer over the LAN (design §7).
+
+**What the section shows.** A list of paired peers (`sync_status`'s
+`paired_peers`) with each peer's online flag; a pairing-code field that
+normalizes the input (`pairCode.ts`'s `normalizePairCode` strips spaces and
+`-`/`_` separators) and validates it locally (`validatePairCode`: exactly
+six digits) before calling `pair_peer` — C3 §3.9 backs a malformed code with
+`invalid_argument`, but local validation means a typo never becomes a round
+trip; and a manual "Sync now" button per peer that calls `sync_now`,
+streaming `Progress` messages (a mixed blobs+cells count disambiguated by
+`phase` — "manifest", "blobs", "workbooks") into a running-transfer line.
+
+**Polling.** The section polls `sync_status` on a 5-second timer while
+mounted (C3 §4: a periodic poll, never per-frame; no contract fixes the
+interval) and stops when the section is not the selected one, since the
+poll lives in the mounted component's own effect.
+
+**Result summary.** `syncState.ts`'s `describeSyncResult` turns a
+`SyncResult` into one line, e.g. "12 blobs, 3 workbooks merged cleanly."
+when `conflicts` is zero, or "12 blobs, 3 workbooks merged, 2 conflict
+cells to resolve." otherwise — a non-zero conflict count reads as something
+to go resolve in the merged workbook (design §7's per-cell merge produces
+conflict cells as a normal outcome), never as a sync failure.
+
+**L11 has not landed.** The Rust LAN-sync implementation (L11) has not
+merged, so all three commands reject today; the section renders that
+through `errors.ts`'s `describeIpcError` (kind `sync` and others) when the
+rejection is a typed `IpcError`, or a "LAN sync isn't running on this build
+yet" message otherwise, rather than a raw error. The automatic
+"sync when a paired peer appears" trigger (design §7) is L11's job to wire
+once the backend exists; this section provides the manual button and status
+display only.
+
+### 27.10 Chart controls reference (idl1)
+
+**Superseded (2026-09-05, L7c Task 6).** idl0's Controls section (§27.4 row
+5) carried `kDefaultChartBindings`/`wheelModeFor` verbatim. idl1's
+equivalent (`app/src/routes/pages/Settings/controls.ts`,
+`ControlsSection.tsx`) carries the same three groups (mouse wheel, mouse,
+keyboard) and the same rows, since idl0's content is all this lane has to
+go on.
+
+**Provisional (R53 Q2).** L6 (the Notebook lane) owns the chart's actual
+interaction bindings and is being built concurrently with this lane, so
+this table may not match the shipped chart. Per R53 Q2(a), the table is
+carried now and the section renders a visible "provisional — bindings land
+with the Notebook lane" label in the UI itself, not only in a code comment.
+R53 Q2(b) — L6 exporting its real binding table for Settings to import —
+is a follow-up the lead does after L6 merges; this lane does not attempt
+that cross-lane import.
+
+### 27.11 How-to articles (idl1)
+
+**Superseded (2026-09-05, L7c Task 6).** idl0's four Markdown articles
+(§27.5, rendered via `flutter_markdown`) are carried as bundled TSX
+components (`app/src/routes/pages/Settings/howtos/*.tsx`) — no CDN, ever
+(CLAUDE.md §3), and four short documents do not justify adding a markdown
+renderer dependency to the bundle.
+
+| Component | Title | Rewritten for idl1 |
+|---|---|---|
+| `FirstSetup.tsx` | First Setup | idl0's Device/Runs tabs become idl1's Device tab (pairing, config push, calibration, recording) and Data tab (download, session library) |
+| `WifiDownload.tsx` | WiFi Download | idl0's "Runs" tab becomes idl1's Data tab |
+| `GpsLapGate.tsx` | GPS Lap Gate | idl0's Runs/Analyze tabs become idl1's Data tab (session selection) and Notebook tab (chart viewing, lap-gate editing) |
+| `MathChannels.tsx` | Math Channels | idl0's separate "Maths" tab is gone — math channels are now `math` cells written directly in the notebook document (C2 §2), not a dedicated editor screen |
+
+idl0's "Full reference" and "Report issue" buttons, both pointing at
+`example.com` placeholders (idl0's own `TODO(idl0)` comments), are not
+carried across.
+
+### 27.12 About (idl1)
+
+**Superseded (2026-09-05, L7c Task 6).** idl0's `_AboutSection` (§27.4 row
+7) is carried as `app/src/routes/pages/Settings/about.ts`'s `aboutRows` +
+`AboutSection.tsx`.
+
+| Row | idl0 | idl1 |
+|---|---|---|
+| App version | hardcoded `0.1.0` | hardcoded `0.1.0` (mirrors `app/package.json`; no build-time version injection is wired into the Vite build yet) |
+| Engine version | n/a (idl0 has no engine crate) | real value, read from `AppState.engineVersion` — the same `engine_version` (C3 §3.1) call the app shell already makes once on mount, not a second IPC round trip. Reads `"…"` while that fetch is in flight, never `"unknown"` (`"unknown"` would imply the call failed) |
+| Schema | hardcoded `"IDL0 v1"` | hardcoded `"session schema v1"`, mirroring C1's `session.json` `schema_version` field |
+| Build | hardcoded `"dev"` | hardcoded `"dev"`, same treatment |
+
+**Licenses.** idl0 generated a license page from Flutter's package graph
+(`showLicensePage`). idl1 has no equivalent generator wired into its build
+— assembling one from the npm/cargo dependency graph is a build-tooling
+task, not a Settings task — so the control is omitted in wave 2 rather than
+shown disabled or linking out. idl0's "Report issue" button, pointing at an
+`example.com` placeholder, is not carried across either.
+
+### 27.13 Section inventory (idl1)
+
+**Superseded (2026-09-05, L7c Task 6).** idl0's seven-section table (§27.4)
+becomes idl1's seven sections, replacing §27.4 for the idl1 line:
+
+| # | Section | idl1 disposition |
+|---|---|---|
+| 1 | Profile | Carried (§27.1) |
+| 2 | Units | Carried (§27.1, §27.2) |
+| 3 | Data directory | New, no idl0 counterpart (§27.8) |
+| 4 | Sync | Replaces Drive sync, permanently — LAN sync, not deferred (§27.9) |
+| 5 | Chart controls | Carried, marked provisional (§27.10) |
+| 6 | How-tos | Carried as bundled TSX (§27.11) |
+| 7 | About | Carried, with a real engine-version value (§27.12) |
+
+**Firmware/OTA (idl0 §27.4 row 4, §27.7) is deferred to wave 3**, per the
+wave 2 operating brief §3: `push_ota` exists on the transport trait but no
+C3 command exposes it, and the two `AppSettings` fields that would
+configure it are not carried into idl1's prefs model (§27.1) — a
+preference for a feature that does not exist is a field nobody can act on.
+**Google Drive (idl0 §27.4 row 3, §28) is gone, permanently** — replaced by
+LAN sync (row 4 above), not deferred; §28 carries its own superseded banner.
+
 ---
 
 # PART 7 — CROSS-CUTTING
 
 ## 28. Google Drive Sync
+
+**Superseded (2026-09-05, L7c Task 5).** This section describes idl0's
+Google Drive sync, which idl1 does not have — the idl1 line syncs
+peer-to-peer over the LAN instead (design §7; app-side section: §27.9). Kept
+below for idl0 reference only.
 
 **Goal:** Automatic, invisible — experience like Google Docs. Session appears on all devices without user action.
 
