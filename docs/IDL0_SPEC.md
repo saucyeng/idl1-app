@@ -2346,6 +2346,25 @@ nearby IDL0 in the dropdown (system-Bluetooth style), true multi-unit
 switching, a persisted paired-device list (§23.8), the phone-GPS recording
 mode, and the on-device download/transfer card are still deferred.
 
+**Wave 2 (`Device/HeroCard.tsx`).** idl0's dense state machine above — the
+colour-coded peripheral readout, RX/TX activity, auto-connect, and the
+Start/Stop CTA — is not built. `device_status` (IPC need 8) and
+`device_control` (IPC need 9) have no C3 command, so the app cannot read a
+single one of the fields the hero describes: mode, recording state, SD
+card, GPS fix, IMU health, HR strap, HRM battery, or the device's own
+battery. `HeroCard` renders each of these as the literal string
+**"unavailable"** rather than a plausible-looking zero or a colour-coded
+"healthy" state it cannot back up — a fabricated battery reading on a race
+day is worse than a blank one (lane brief, "Do not"). The only fields it
+can show are what `ble_connect` (C3 §3.8, real and landed) already
+returned this session: whether the last connect attempt succeeded
+(`ConnectionState.connected`, read per R53 Device Q4 as "the last attempt
+succeeded," never a live link) and the firmware version it reported. There
+is no Start/Stop CTA, no dropdown picker, and no auto-connect loop — the
+tab's plain **Scan for devices** / **Connect** buttons (`Device/connection.ts`,
+Task 1; §23.1's connection panel, not rebuilt as a dropdown) are the only way
+to reach a device.
+
 ---
 
 ## 24. Tab — Data
@@ -2548,6 +2567,41 @@ Entries are sorted newest-first (filename descending, per the `YYYY-MM-DD_HH-MM-
 **Download queue.** In both cases files download **strictly one at a time** — the device serves a single HTTP request at a time, so the queue is sequential by design, not as a limitation. Each file streams via `WifiService.downloadFile`; the progress fraction is derived from the known file size from `/files` (the firmware streams chunked with no `Content-Length`), shown per-file as `MB / MB · %` with a bar, plus an overall "N of M done · K queued" banner. On completion each file is registered via `RunsNotifier.registerDownloadedByName` (parse → index → track-visit detection → Drive upload queue) and flips to IN LIBRARY. A per-file failure marks that entry as errored and the queue continues; a Stop control cancels the active download and halts the queue.
 
 **WiFi-mode gate.** The file APIs require WiFi mode. When the device is not in `Mode.wifi`, the screen shows a "Switch to WiFi mode" prompt; bringing the AP up and binding to it is the `ModeController`'s responsibility (gated by the WiFi/logging mutex), not the screen's.
+
+**Wave 2 (`Device/files.ts`, `Device/DeviceFiles.tsx`, plan Task 9).** The
+full-screen `SyncScreen` above is not built; the Device tab has a plain
+**List files** button and an inline list instead. Listing calls
+`listDeviceFiles(deviceId)` (C3 §3.8, real and landed) only on that click
+— never on connect or on a timer — and `rust/tauri/src/commands/device.rs`
+drives the device's own `ControlCommand::WifiOn` transition internally, so
+this list has no separate "switch to WiFi mode" prompt to show.
+**Classification** matches idl0's rule exactly: `toFileViews` marks a file
+`isNew` when its `session_id` is absent from the catalog's known session
+ids (`listSessions`, `app/src/ipc/catalog.ts`, C3 §3.2 — fetched on the
+last successful connect) **or** when `session_id` is `null` (idl0's
+"NEW?" case, folded into plain "new" — wave 2 has no separate
+identity-unknown state).
+
+**No checkbox picker, no "connect and forget."** Every row has its own
+**Download** button; there is no multi-select and no `autoSyncOnOpen`
+equivalent (that setting lives in L7c/Settings and is not wired to this
+tab in wave 2 — Open question 3). Downloads still run **strictly one at a
+time**: `isDownloadActive(queue)` disables every row's Download button
+while any queue entry is `"queued"` or `"downloading"`, over
+`downloadFile(deviceId, name, onProgress)` (C3 §3.8). Progress renders as
+a byte count and a `formatTransferRate`-derived KB/s figure — never a
+percentage when `Progress.total` is `null` (the firmware's chunked
+transfer reports no `Content-Length`, same constraint idl0 had). A
+per-file failure (`downloadReducer`'s `FAILED`) leaves every other queued
+entry untouched, matching idl0's "queue continues" behaviour; there is no
+Stop control for wave 2.
+
+**No import handoff (R53 Device Q3).** A finished download lands a blob
+under `<data>/blobs/sha256/` (`DownloadResult`) — idl0's
+`registerDownloadedByName` (parse → index → track-visit detection) has no
+wave-2 equivalent here. The completed row's text says the file is
+downloaded and to import it from the Data tab; the two tabs do not call
+each other. A shared "blobs awaiting import" slice is a wave-3 shell task.
 
 ---
 

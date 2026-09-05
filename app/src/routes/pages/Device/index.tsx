@@ -1,11 +1,14 @@
 import { useCallback, useReducer, useState } from "react";
 
+import { listSessions } from "../../../ipc/catalog";
 import { bleConnect, bleScan } from "../../../ipc/device";
 import ChannelsTable from "./ChannelsTable";
 import { connectionReducer, initialConnectionState } from "./connection";
 import { defaultConfig } from "./config/defaults";
 import type { DeviceConfig } from "./config/model";
+import DeviceFiles from "./DeviceFiles";
 import { describeIpcError } from "./errors";
+import HeroCard from "./HeroCard";
 import ProfileBar from "./ProfileBar";
 import { initialProfilesState, profilesReducer } from "./profiles";
 import PushConfigBar from "./PushConfigBar";
@@ -31,6 +34,11 @@ export default function Device() {
   // same state, not a sixth untested reducer action.
   const [profilesState, setProfilesState] = useState(initialProfilesState);
   const deviceId = state.connected?.device_id ?? "";
+  // Session ids the catalog already knows about (`listSessions`, C3 §3.2),
+  // used only to compute `DeviceFiles`' `isNew` flags. Refreshed on every
+  // successful connect (a user action), never by an effect — the standing
+  // reviewer brief's IPC-effects rule.
+  const [knownSessionIds, setKnownSessionIds] = useState<Set<string>>(new Set());
 
   function dispatchProfiles(action: Parameters<typeof profilesReducer>[1]): void {
     setProfilesState((prev) => profilesReducer(prev, action));
@@ -63,7 +71,15 @@ export default function Device() {
   const onConnect = useCallback((deviceId: string) => {
     dispatch({ type: "CONNECT_START" });
     bleConnect(deviceId)
-      .then((info) => dispatch({ type: "CONNECTED", info }))
+      .then((info) => {
+        dispatch({ type: "CONNECTED", info });
+        // Best-effort refresh of known session ids for the files view's
+        // `isNew` computation; a failure here leaves the previous set in
+        // place rather than blocking the connect result.
+        listSessions()
+          .then((sessions) => setKnownSessionIds(new Set(sessions.map((s) => s.session_id))))
+          .catch(() => {});
+      })
       .catch((err: { kind: string; message: string }) =>
         dispatch({ type: "FAILED", error: describeIpcError(err) })
       );
@@ -87,11 +103,14 @@ export default function Device() {
         </ul>
       </section>
       <section className="device-tab__status">
-        {state.phase === "connected" && state.connected && (
-          <p>Last connect succeeded — firmware {state.connected.firmware_version}</p>
-        )}
+        <HeroCard connectionState={state} />
         {state.phase === "failed" && state.error && <p role="alert">{state.error}</p>}
       </section>
+      {state.connected && (
+        <section className="device-tab__files">
+          <DeviceFiles deviceId={deviceId} knownSessionIds={knownSessionIds} />
+        </section>
+      )}
       <section className="device-tab__config">
         <ProfileBar state={profilesState} dispatch={dispatchProfiles} deviceId={deviceId} />
         {activeProfile === null && (

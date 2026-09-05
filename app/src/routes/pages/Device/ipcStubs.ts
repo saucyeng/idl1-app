@@ -17,12 +17,20 @@ export class NotImplementedError extends Error {
   }
 }
 
-/** Stands in for `device_status` (IPC need 8) until the Rust track lands it. */
+/** Stands in for `device_status` (IPC need 8) until the Rust track lands
+ *  it. `HeroCard.tsx` (Task 9) does not call this — it renders every
+ *  status field as "unavailable" directly, rather than triggering a call
+ *  guaranteed to reject on every render for no behavioural benefit. Kept
+ *  here so a future caller (a "Refresh status" action, once the command is
+ *  real) has a stable import path to switch to. */
 export async function deviceStatus(_deviceId: string): Promise<never> {
   throw new NotImplementedError("device_status");
 }
 
-/** Stands in for `device_control` (IPC need 9) until the Rust track lands it. */
+/** Stands in for `device_control` (IPC need 9) until the Rust track lands
+ *  it. See `deviceStatus`'s note — `HeroCard.tsx` shows recording/mode
+ *  controls as unavailable rather than wiring a button to a guaranteed
+ *  rejection. */
 export async function deviceControl(_deviceId: string, _command: string): Promise<never> {
   throw new NotImplementedError("device_control");
 }

@@ -196,6 +196,42 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
   useful to show) — `"The device rejected the config it was sent: <reason>"`.
   An empty `message` still falls back to the fixed generic sentence, never a
   bare trailing colon.
+- **Device tab, Task 9 — device files and the status hero; L7b lane complete
+  pending write commands (2026-09-05, L7b).** `Device/files.ts`'s pure
+  `downloadReducer` and `toFileViews` drive the real, landed
+  `listDeviceFiles`/`downloadFile` (C3 §3.8) from `Device/DeviceFiles.tsx`:
+  a file's `isNew` flag is computed against the catalog's known session ids
+  (`listSessions`, `app/src/ipc/catalog.ts`, C3 §3.2, fetched by `index.tsx`
+  on every successful connect — never a cross-lane import from the Data
+  tab), and downloads run **strictly one at a time**
+  (`isDownloadActive(queue)` gates the row buttons), never as a
+  self-triggering effect. A completed download lands a blob under
+  `<data>/blobs/sha256/`; per R53 Device Q3, there is no handoff to the
+  Data tab's import in wave 2 — the row tells the rider to import it from
+  there. `Device/HeroCard.tsx` renders the status hero honestly: the last
+  `ble_connect` result and firmware version are real, and every field
+  `device_status`/`device_control` (IPC needs 8, 9) would report — mode,
+  recording, SD, GPS, IMU, HR, battery — reads as **"unavailable"**, never
+  a fabricated zero. `docs/IDL0_SPEC.md` §23.10 and §24.17 gain wave-2
+  notes describing exactly this.
+
+  **L7b (Device tab) is now complete for wave 2**, all 9 tasks landed.
+  Outstanding, all tracked in `runs/2026-09-05/lanes/l7/IPC-NEEDS.md`: live
+  device status (need 8) and recording/mode control (need 9) have no C3
+  command, so they render as "unavailable" rather than being built;
+  `pull_config` (need 10) is a stub, so a push cannot be round-trip
+  verified; profile persistence (need 11) is in-memory for the session
+  only; the channel-registry preview was narrowed to enable/rate/units per
+  R53 Q1 (option c for wave 2, with need 12 filed for option b later); a
+  managed BLE connection (need 13) does not exist, so `connected` reads as
+  "the last attempt succeeded," never a live link. IMU calibration and
+  OTA/firmware update are deferred to wave 3 outright (no IPC need filed).
+  The full parity-gaps table (plan Task 9 section, `docs/superpowers/plans/
+  2026-09-05-idl1-wave2-l7b-device-tab.md`) also drops the Android WiFi
+  bind-follows-mode controller, the RX/TX link-activity blink, and
+  reserved digital `level`/`pwm` channel kinds and per-channel analog rate
+  overrides (parsed and preserved, not exposed in the UI) — none of these
+  block wave 2.
 - **L5 complete (2026-09-04).** idl-rs-tauri wired to every landed wave-1 lane's C3 command
   group (catalog, workbook, cursor, raster, tile) plus device (L4); <data> resolution,
   workbook watcher, app/src/ipc/ module layer, routing and state skeleton. Tile fetched
