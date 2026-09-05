@@ -48,12 +48,30 @@ const WHEEL_ZOOM_SENSITIVITY = 0.001;
  * a new `viewport`/`tiles` pair back down via `onViewportSettled`.
  */
 export interface ChartCellProps {
+  /**
+   * This cell's C2 fence-string id, for routing the `transform`/`layout`
+   * `postMessage`s (R69 items (b)/(a)) to the matching sandbox-rendered
+   * container (`host/protocol.ts`'s `transformMessage`/`layoutMessage`).
+   */
+  cellId: string;
   /** Decoded tiles currently covering `viewport`, in ascending time order. */
   tiles: DecodedTile[];
   /** CSS px width of the plotted area; also the `columnCount` tiles are fetched at (R43). */
   width: number;
-  /** CSS px height of the plotted area. */
+  /**
+   * CSS px height of the plotted area, used until the sandbox's own
+   * `cellRendered` reports this cell's actual rendered height
+   * ({@link heightPx}) -- the fallback for the brief window between mount
+   * and that message's arrival, never overridden once `heightPx` is set.
+   */
   height: number;
+  /**
+   * This cell's last `cellRendered.heightPx` (R69 item (a)), or `null`
+   * before the sandbox has rendered it once. Drives this frame's actual
+   * CSS height once known, so the frame always matches the sandbox's real
+   * rendered output instead of a caller-guessed constant.
+   */
+  heightPx: number | null;
   /** The time window `tiles` was fetched/rendered for. */
   viewport: Viewport;
   /** Total session duration, in µs, for clamping pan/zoom at the session's edges. */
@@ -135,15 +153,45 @@ export interface ChartCellProps {
    * missing-label fallback, documented in `model/cursor.ts`).
    */
   channelLabel?: string;
+  /**
+   * Sends one gesture frame's CSS transform to the sandbox for this cell
+   * (R69 item (b)) -- a thin closure over `host/SandboxHost.ts`'s
+   * `sendTransform`, bound to `cellId`, injected the same way
+   * `fetchTile`/`fetchCursorReadout` are so this component never imports
+   * `host/SandboxHost.ts` itself. Called on every live drag/wheel frame
+   * (mirroring this component's own local `transformFor` application to
+   * its host-rendered raster underlay), never gated on settle.
+   */
+  sendTransform: (cellId: string, translateXPx: number, scaleX: number) => void;
+  /**
+   * Sends this cell's current on-screen rectangle to the sandbox (a
+   * plumbing addition beyond R69's two named messages -- see
+   * `host/protocol.ts`'s `layoutMessage` doc comment for why a single
+   * shared iframe needs it) so the sandbox can position that cell's own
+   * rendered container to appear under this frame. Called on mount and
+   * whenever this frame's on-screen rectangle changes (resize, scroll) --
+   * never on a live gesture frame, which uses {@link sendTransform}
+   * instead of a full re-layout.
+   */
+  sendLayout: (cellId: string, rect: { top: number; left: number; width: number }) => void;
 }
 
 /**
- * The chart frame for one notebook cell (design §6): a positioning
- * container holding the sandbox iframe's rendered Plot output (mounted by
- * `host/SandboxHost.ts`, not this component) plus a raster underlay — either
- * a plain empty `<canvas className="chart-cell-underlay">` placeholder for a
- * line-only cell, or {@link RasterUnderlay} (Task 9) for a raster-kind cell
- * (the `raster` prop) — and an absolutely positioned hover tooltip.
+ * The host-side gesture/orchestration frame for one notebook `js` cell
+ * (design §6; R69 item (c)). This component renders **no** sandbox output
+ * itself — the shared sandbox `<iframe>` (`host/SandboxHost.ts`, one per
+ * notebook) renders every cell's own picture inside its own DOM and is
+ * positioned by this frame's `sendLayout` calls to appear, pixel for
+ * pixel, underneath this frame's own on-screen rect (`frameRef`); this
+ * frame's own DOM only ever holds a raster underlay — either a plain empty
+ * `<canvas className="chart-cell-underlay">` placeholder for a line-only
+ * cell, or {@link RasterUnderlay} (Task 9) for a raster-kind cell (the
+ * `raster` prop) — and an absolutely positioned hover tooltip. Its own
+ * background is transparent and it sits above the iframe in z-order but
+ * paints nothing over the sandbox's picture, so the sandbox's rendered
+ * pixels show through while this frame alone captures pointer/wheel input
+ * (the iframe itself is `pointer-events: none`, per `Notebook/index.tsx`'s
+ * container styling).
  *
  * Pan (drag) and zoom (wheel) update local viewport state and the CSS
  * transform (`transformFor`) only, every frame — neither `onPointerMove` nor
@@ -181,9 +229,11 @@ export interface ChartCellProps {
  * flight is dropped on arrival instead of repopulating the panel.
  */
 export default function ChartCell({
+  cellId,
   tiles,
   width,
   height,
+  heightPx,
   viewport,
   sessionSpanUs,
   sessionId,
@@ -195,6 +245,8 @@ export default function ChartCell({
   raster,
   fetchCursorReadout,
   channelLabel,
+  sendTransform,
+  sendLayout,
 }: ChartCellProps) {
   const [hover, setHover] = useState<HoverReading | null>(null);
   const [liveViewport, setLiveViewport] = useState<Viewport>(viewport);
@@ -208,12 +260,72 @@ export default function ChartCell({
   // 0" and skip the request entirely rather than reading a stale value.
   const lastPointerXRef = useRef<number | null>(null);
 
+  // This frame's own on-screen rectangle, so `sendLayout` can tell the
+  // sandbox where to position this cell's rendered container (R69 item
+  // (a); `host/protocol.ts`'s `layoutMessage` doc comment). `cellId`/
+  // `sendLayout` are read through a ref so this effect's dependency array
+  // stays data-only per the tightened IPC/postMessage-effect rule
+  // (`runs/2026-09-05/lanes/l6/review-STANDING.md`) — a `ResizeObserver`
+  // callback and a `window` `resize`/`scroll` listener are the only
+  // triggers, not a prop identity change.
+  const frameRef = useRef<HTMLDivElement>(null);
+  const layoutDepsRef = useRef({ cellId, sendLayout });
+  layoutDepsRef.current = { cellId, sendLayout };
+
+  // `sendTransform`'s own fresh-values-through-a-ref indirection (same
+  // shape as `layoutDepsRef` above): `handlePointerMove`/`handleWheel`
+  // (below) are `useCallback`s whose dependency arrays do not include
+  // `viewport` (they never needed it before this task — panning/zooming
+  // only ever reads the gesture-local `current` viewport their own
+  // `setLiveViewport` updater receives), so this cell's *settled*
+  // `viewport` prop is read through this ref rather than added to those
+  // callbacks' deps, which would recreate them (and their pointer-capture
+  // closures) on every settle.
+  const transformDepsRef = useRef({ cellId, sendTransform, viewport });
+  transformDepsRef.current = { cellId, sendTransform, viewport };
+
   // A newly committed `viewport` from the parent (post-settle, or any other
   // cause) always replaces whatever gesture-local state was live — a stale
   // in-gesture viewport must never persist across an externally driven change.
+  // The sandbox's own transform resets to identity in lockstep: the parent
+  // only commits a new `viewport` once it has re-derived and re-sent this
+  // channel's data for that exact window (`onViewportSettled` ->
+  // `setBoundChannel`/`setChannelHostVar`), so a leftover non-identity
+  // transform from the gesture that triggered this commit would otherwise
+  // double-apply on top of the freshly re-rendered picture.
   useEffect(() => {
     setLiveViewport(viewport);
+    transformDepsRef.current.sendTransform(transformDepsRef.current.cellId, 0, 1);
   }, [viewport]);
+
+  useEffect(() => {
+    const frame = frameRef.current;
+    if (frame === null) return;
+
+    let pending = false;
+    const sendNow = () => {
+      pending = false;
+      const rect = frame.getBoundingClientRect();
+      layoutDepsRef.current.sendLayout(layoutDepsRef.current.cellId, { top: rect.top, left: rect.left, width: rect.width });
+    };
+    const scheduleSend = () => {
+      if (pending) return;
+      pending = true;
+      requestAnimationFrame(sendNow);
+    };
+
+    scheduleSend();
+    const resizeObserver = new ResizeObserver(scheduleSend);
+    resizeObserver.observe(frame);
+    window.addEventListener("resize", scheduleSend);
+    window.addEventListener("scroll", scheduleSend, true);
+
+    return () => {
+      resizeObserver.disconnect();
+      window.removeEventListener("resize", scheduleSend);
+      window.removeEventListener("scroll", scheduleSend, true);
+    };
+  }, []);
 
   // The cursor-readout driver's deps object is mutated in place on every
   // render (never replaced) so the driver instance below — created once via
@@ -333,6 +445,9 @@ export default function ChartCell({
         setLiveViewport((current) => {
           const next = clampTo(panBy(current, pixelDx), sessionSpanUs);
           settleRef.current.notify(next);
+          const { cellId: id, sendTransform: send, viewport: settled } = transformDepsRef.current;
+          const frameTransform = transformFor(settled, next);
+          send(id, frameTransform.translateXPx, frameTransform.scaleX);
           return next;
         });
         setHover(null);
@@ -381,6 +496,9 @@ export default function ChartCell({
       setLiveViewport((current) => {
         const next = clampTo(zoomAt(current, pixelX, factor), sessionSpanUs);
         settleRef.current.notify(next);
+        const { cellId: id, sendTransform: send, viewport: settled } = transformDepsRef.current;
+        const frameTransform = transformFor(settled, next);
+        send(id, frameTransform.translateXPx, frameTransform.scaleX);
         return next;
       });
     },
@@ -388,11 +506,16 @@ export default function ChartCell({
   );
 
   const transform = transformFor(viewport, liveViewport);
+  // R69 item (a): once the sandbox has rendered this cell at least once,
+  // its own reported height is authoritative — `height` is only the
+  // pre-first-render fallback (see `ChartCellProps.heightPx`'s doc comment).
+  const frameHeight = heightPx ?? height;
 
   return (
     <div
+      ref={frameRef}
       className="chart-cell"
-      style={{ position: "relative", width, height, overflow: "hidden" }}
+      style={{ position: "relative", width, height: frameHeight, overflow: "hidden" }}
       onPointerDown={handlePointerDown}
       onPointerMove={handlePointerMove}
       onPointerUp={handlePointerUp}
@@ -429,7 +552,10 @@ export default function ChartCell({
             fetchRasterMeta={raster.fetchRasterMeta}
           />
         )}
-        <div className="chart-cell-sandbox-mount" style={{ position: "absolute", inset: 0 }} />
+        {/* No mount div here (R69): the sandbox renders this cell's own
+            picture in its own DOM, in the single shared iframe positioned
+            by `sendLayout` to appear at this frame's own rect; this
+            component never receives or injects that output's markup. */}
       </div>
       {hover !== null && (
         <div

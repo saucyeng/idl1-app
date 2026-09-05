@@ -52,6 +52,18 @@ export interface ProseSpanProps {
   spanIdPrefix: string;
   /** Every span's last-received `inlineResult.text`, by `spanId`. A span with no entry yet renders its pending placeholder. */
   results: ReadonlyMap<string, string>;
+  /**
+   * Every span's last-received `spanError.message`, by `spanId` (R66 item
+   * 2, `host/protocol.ts`'s distinct `spanError` message). `Notebook/
+   * index.tsx`'s `onInlineResult`/`onSpanError` handlers keep this map and
+   * `results` mutually exclusive per `spanId` (a new result clears that
+   * span's prior error and vice versa), so this component checks
+   * `spanErrors` first with no recency ordering to guess at — at most one
+   * of the two maps holds an entry for any given `spanId` at a time.
+   * Optional so existing call sites (none yet outside this lane) are not
+   * forced to plumb an empty map; `undefined` behaves like an empty map.
+   */
+  spanErrors?: ReadonlyMap<string, string>;
 }
 
 /**
@@ -69,7 +81,7 @@ export interface ProseSpanProps {
  * job is the splice; a full Markdown renderer for prose blocks generally is
  * out of this task's scope (not named in the brief's Interfaces section).
  */
-export default function ProseSpan({ text, spanIdPrefix, results }: ProseSpanProps) {
+export default function ProseSpan({ text, spanIdPrefix, results, spanErrors }: ProseSpanProps) {
   const spans = extractInlineSpans(text, spanIdPrefix);
 
   if (spans.length === 0) {
@@ -82,12 +94,21 @@ export default function ProseSpan({ text, spanIdPrefix, results }: ProseSpanProp
     if (span.range[0] > cursor) {
       parts.push(<span key={`text-${i}`}>{text.slice(cursor, span.range[0])}</span>);
     }
-    const resolved = results.get(span.spanId);
-    parts.push(
-      <span key={`splice-${i}`} className="prose-span-inline">
-        {resolved ?? `\${${span.expr}}`}
-      </span>
-    );
+    const error = spanErrors?.get(span.spanId);
+    if (error !== undefined) {
+      parts.push(
+        <span key={`splice-${i}`} className="prose-span-inline prose-span-inline-error">
+          {`\${${span.expr}} failed: ${error}`}
+        </span>
+      );
+    } else {
+      const resolved = results.get(span.spanId);
+      parts.push(
+        <span key={`splice-${i}`} className="prose-span-inline">
+          {resolved ?? `\${${span.expr}}`}
+        </span>
+      );
+    }
     cursor = span.range[1];
   });
   if (cursor < text.length) {

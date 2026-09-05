@@ -23,6 +23,8 @@ export interface CellListProps {
   outputs: ReadonlyMap<string, CellOutput>;
   /** Every inline `${…}` span's last-received result, by `spanId` (`ProseSpan`'s `extractInlineSpans`). */
   inlineResults: ReadonlyMap<string, string>;
+  /** Every inline `${…}` span's last-received error message, by `spanId` (R66 item 2, `ProseSpan`'s `spanErrors` prop). */
+  spanErrors: ReadonlyMap<string, string>;
   /**
    * Renders a `js`-kind cell's sandbox-mounted output. Injected rather than
    * built here: a `js` cell's rendering is a `ChartCell` (or similar)
@@ -50,7 +52,7 @@ export interface CellListProps {
  * document is corrected, is what resolves it, not anything in this
  * component.
  */
-export default function CellList({ doc, markdown, outputs, inlineResults, renderJsCell }: CellListProps) {
+export default function CellList({ doc, markdown, outputs, inlineResults, spanErrors, renderJsCell }: CellListProps) {
   return (
     <div className="cell-list">
       {doc.cells.map((cell, index) => {
@@ -61,7 +63,9 @@ export default function CellList({ doc, markdown, outputs, inlineResults, render
 
         return (
           <div className="cell-list-item" key={key}>
-            {before !== null && <ProseSpan text={before} spanIdPrefix={`${key}-before`} results={inlineResults} />}
+            {before !== null && (
+              <ProseSpan text={before} spanIdPrefix={`${key}-before`} results={inlineResults} spanErrors={spanErrors} />
+            )}
             {output === undefined ? (
               <div className="cell-list-pending">…</div>
             ) : output.kind === "math" ? (
@@ -71,7 +75,9 @@ export default function CellList({ doc, markdown, outputs, inlineResults, render
             ) : (
               renderJsCell(cell.id as string)
             )}
-            {after !== null && <ProseSpan text={after} spanIdPrefix={`${key}-after`} results={inlineResults} />}
+            {after !== null && (
+              <ProseSpan text={after} spanIdPrefix={`${key}-after`} results={inlineResults} spanErrors={spanErrors} />
+            )}
           </div>
         );
       })}
