@@ -736,6 +736,10 @@ the resolved value).
 interface WorkbookEvent {
   kind: "changed" | "conflict";
   cell_ids: string[];   // cells affected by this event
+  hash: string;         // sha256 of the file's bytes after this change, hex --
+                         // equals SaveResult.hash when this event reflects
+                         // the app's own successful save (added post-sign,
+                         // 2026-09-05, lead ruling R67)
 }
 ```
 Errors (on the initial `Promise` only): `not_found`, `io`, `internal`.
