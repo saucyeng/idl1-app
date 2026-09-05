@@ -13,13 +13,15 @@ export interface TileCacheKey {
   columnCount: number;
 }
 
-/** Default byte cap for the in-memory tile cache. No documented cap was
- *  found carried over from idl0 to mirror, so this is an implementation-time
- *  default: generous enough to hold several tiers' worth of tiles for a
- *  handful of channels at once on a desktop-class machine, without letting
- *  an idle Notebook tab grow unbounded. Callers needing a different budget
- *  (e.g. mobile) pass their own cap to the `TileCache` constructor. */
-export const DEFAULT_CACHE_BYTES = 64 * 1024 * 1024; // 64 MiB
+/** Default byte cap for the in-memory tile cache. Mirrors idl0's
+ *  `ChartTileCache.defaultMaxBytes`
+ *  (`idl0-app/app/lib/ui/tabs/analyze/chart_tile_cache.dart:24-25`:
+ *  `static const int defaultMaxBytes = 30 * 1024 * 1024; // Default cache
+ *  size cap — 30 MB allows ~1900 tiles cached.`) rather than picking a new
+ *  number, per the brief's own preference for a documented idl0 figure over
+ *  an implementation-time guess. Callers needing a different budget (e.g.
+ *  mobile) pass their own cap to the `TileCache` constructor. */
+export const DEFAULT_CACHE_BYTES = 30 * 1024 * 1024; // 30 MiB
 
 /** Builds the deterministic string key `TileCache` and `ensureTiles` use
  *  internally — structural equality over the five `TileCacheKey` fields,
@@ -52,6 +54,12 @@ function tileByteSize(tile: DecodedTile): number {
 export class TileCache {
   private readonly entries = new Map<string, DecodedTile>();
   private totalBytes = 0;
+  /** In-flight fetches for *this* cache instance only (review-task6.md
+   *  Important finding: a module-level map let two independent `TileCache`s
+   *  requesting the same five-tuple resolve into each other's cache
+   *  instead of their own). Used by {@link TileCache.getOrStartFetch},
+   *  `ensureTiles`'s only entry point into this bookkeeping. */
+  private readonly inFlight = new Map<string, Promise<void>>();
 
   /** @param capBytes Maximum total tile bytes retained before the
    *   least-recently-used entries are evicted. Defaults to
@@ -103,22 +111,36 @@ export class TileCache {
   bytesUsed(): number {
     return this.totalBytes;
   }
-}
 
-/** In-flight fetches shared across all `ensureTiles` calls, keyed the same
- *  way as `TileCache`'s own entries, so two concurrent callers requesting
- *  the same missing index await one fetch instead of issuing two. Cleared
- *  per key once its fetch settles (success or failure), so a later miss
- *  can retry. */
-const inFlightFetches = new Map<string, Promise<void>>();
+  /**
+   * Returns the in-flight fetch promise already registered for `key` on
+   * *this* cache, or starts one via `start()` and registers it. Scoped to
+   * this cache instance so two independent `TileCache`s requesting the same
+   * five-tuple never resolve into each other's promise (review-task6.md
+   * Important finding — the previous module-level map did exactly that).
+   * The in-flight entry is cleared once `start()`'s promise settles
+   * (success or failure), so a later miss can retry.
+   */
+  getOrStartFetch(key: TileCacheKey, start: () => Promise<void>): Promise<void> {
+    const k = cacheKeyString(key);
+    let promise = this.inFlight.get(k);
+    if (promise === undefined) {
+      promise = start().finally(() => this.inFlight.delete(k));
+      this.inFlight.set(k, promise);
+    }
+    return promise;
+  }
+}
 
 /** Requests only the tile indices in `[range.first, range.last]` missing
  *  from `cache`, coalescing concurrent requests for the same missing index
- *  into one in-flight `fetcher` call — a second caller awaiting the same
- *  index gets the first caller's promise, not a duplicate fetch. `fetcher`
- *  is injected; this function never imports `ipc/tiles.ts`. Resolves once
- *  every requested tile is either already cached or has been fetched and
- *  put into `cache`.
+ *  into one in-flight `fetcher` call scoped to `cache`
+ *  ({@link TileCache.getOrStartFetch}) — a second caller awaiting the same
+ *  index on the *same* cache gets the first caller's promise, not a
+ *  duplicate fetch; a different `TileCache` instance always starts its own.
+ *  `fetcher` is injected; this function never imports `ipc/tiles.ts`.
+ *  Resolves once every requested tile is either already cached or has been
+ *  fetched and put into `cache`.
  *
  *  @param cache The tile cache to check and fill.
  *  @param key The cache key fields shared by every tile in `range`
@@ -139,18 +161,11 @@ export function ensureTiles(
     if (cache.has(fullKey)) {
       continue;
     }
-    const flightKey = cacheKeyString(fullKey);
-    let promise = inFlightFetches.get(flightKey);
-    if (promise === undefined) {
-      promise = fetcher(tileIndex)
-        .then((tile) => {
-          cache.put(fullKey, tile);
-        })
-        .finally(() => {
-          inFlightFetches.delete(flightKey);
-        });
-      inFlightFetches.set(flightKey, promise);
-    }
+    const promise = cache.getOrStartFetch(fullKey, () =>
+      fetcher(tileIndex).then((tile) => {
+        cache.put(fullKey, tile);
+      })
+    );
     puts.push(promise);
   }
 

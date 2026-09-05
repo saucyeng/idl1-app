@@ -115,6 +115,24 @@ describe("ensureTiles", () => {
     expect(fetcher).not.toHaveBeenCalledWith(1);
   });
 
+  it("TileCache — two instances fetching the same key — do not share in-flight state", async () => {
+    const cacheA = new TileCache(1_000_000);
+    const cacheB = new TileCache(1_000_000);
+    const k = key();
+    const fetcherA = vi.fn(async () => fakeTile(1024, 256));
+    const fetcherB = vi.fn(async () => fakeTile(1024, 256));
+
+    await Promise.all([
+      ensureTiles(cacheA, k, { first: 0, last: 0 }, fetcherA),
+      ensureTiles(cacheB, k, { first: 0, last: 0 }, fetcherB),
+    ]);
+
+    expect(fetcherA).toHaveBeenCalledTimes(1);
+    expect(fetcherB).toHaveBeenCalledTimes(1);
+    expect(cacheA.has(k)).toBe(true);
+    expect(cacheB.has(k)).toBe(true);
+  });
+
   it("ensureTiles — the same missing index requested twice concurrently — issues one fetch", async () => {
     const cache = new TileCache(1_000_000);
     let resolveFetch: (tile: DecodedTile) => void = () => {};
