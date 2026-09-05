@@ -39,3 +39,5 @@ answer in whatever order suits, and the lead turns each into a one-task change.
 9. **Sample rates** — `IMU2_AccelX` measured 791.77 Hz on your real session
    against 833 configured / 800 in the header / 812.3 from seam validation.
    Not blocking; worth knowing which the firmware intends. *(L5 landing)*
+
+5b. **Pressure channels 20/21** — SPEC section 8's config example gives no scale/offset source for them, so the registry preview emits no row for pressure until it does. *(R64.5)*

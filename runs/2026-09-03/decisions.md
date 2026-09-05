@@ -3105,3 +3105,34 @@ L8w plan's open items by the lead.
 
 **Cost if wrong:** a builtin highlighted wrong or missing from completion
 until the command lands; evaluation is unaffected.
+
+## 2026-09-05 — R64: L8w Task 6–14 briefs; overlay laps are same-session; `list_math_builtins` drops `unit_rule`
+
+1. **`eval_workbook`'s `lap_context.overlay_laps` are laps of the same
+   session in wave 2.** The brief writer found `MathLapContext.overlay` needs
+   a second session's lookup, which C3's `LapContext { main_lap,
+   overlay_laps[] }` (R52 Q5) cannot name. Ruling: wave 2 supports overlay
+   within the selected session only (idl0's cross-session "compare with" is
+   already a deferred parity gap, R53 Data Q4/L7a). `variance_time`/
+   `variance_dist` work within-session; a wave-3 amendment adds
+   `overlay: { session_id, lap }[]`. C3 §3.4 gains one sentence saying so
+   (L8w Task 9, spec-during).
+2. **`list_math_builtins` ships `{ name, arity: number[], status }`** —
+   `unit_rule` is dropped: no source defines its vocabulary, and shipping a
+   free-form placeholder in a signed contract would make the placeholder
+   policy. `status` is `"implemented" | "not_implemented"` (C2 §3.3's 63/6
+   split, matching L6's catalog). A unit-rule field is a future additive
+   amendment once C2 states unit propagation rules per builtin.
+3. **`pull_config`: a device-reported config error (0x81 on read) maps to
+   the `config` kind** (C3 §2: the device rejected/has no valid config);
+   transport failures stay `ble`.
+4. **`IDLH` is 24 bytes** (R59 Q3). L6 has not shipped a decoder for
+   `fetch_host_channel` (Task 13 stubs it), so nothing conflicts; L6's
+   Task 13/16 decoder is written against C3, not the 20-byte filing.
+5. Task 8's pressure channels (20/21) emit no preview row until SPEC §8's
+   config example states their scale/offset source — added to the Isaac
+   list as a sub-item of question 5.
+
+**Cost if wrong:** (1) cross-session variance waits a wave — visible as a
+listed gap. (2) one field fewer on an additive command. (3)/(4) contract
+readings, reversible in a line.
