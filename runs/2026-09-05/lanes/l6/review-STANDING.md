@@ -220,3 +220,7 @@ dispatches into) is **Critical**. The decision logic must live in a pure,
 unit-tested driver module with an injected async function; the effect only
 calls it. Check the driver's tests cover dismiss-while-running, stale
 response, and (for the sandbox) rebuild re-priming.
+
+### Tightened 2026-09-05 (third self-cancel Critical, Task 9)
+
+The escape hatch is withdrawn. An effect that starts IPC/postMessage with a function prop in its dependency array and a cancelling cleanup is **Critical on sight**. Required shape: data-only dependencies, callbacks in refs, staleness by sequence not cleanup, a pure tested driver covering unrelated-prop-change / data-change / stale-result. Check every new or modified effect in `components/**` against this.

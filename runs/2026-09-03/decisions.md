@@ -3041,3 +3041,224 @@ exclusivity, valid pin sets, the four firmware status fields.
 
 **Cost if wrong:** additive tab behind its own directory; a regression is a
 revert of one merge commit.
+
+## 2026-09-05 — R62: cursor readout debounces on pointer stop, not on the gesture settle
+
+L6 Task 10 hung the cursor readout off Task 8's viewport-settle callback,
+as its brief said; the reviewer noted that callback fires only after a
+pan/zoom, so a plain hover-and-stop never produces a readout. Design §6 says
+"cursor readouts fire once on cursor settle (debounced), never per move" —
+cursor settle is its own trigger. **Ruling:** the readout gets its own
+`makeSettle` instance keyed to pointer position (default 150 ms, a named
+constant with units), with its own sequence for the stale guard; the
+viewport settle also refreshes it (the picture moved under a still pointer);
+still exactly one IPC per settle, none per move. The brief was wrong, not
+the implementer. Fixed in the Task 11 follow-up.
+
+**Cost if wrong:** a second debouncer of the same tested shape; one more
+IPC per hover-stop, which is design §6's stated budget.
+
+## 2026-09-05 — R63: L8w write-amendment lane plan adjudicated (3 questions)
+
+Plan: `docs/superpowers/plans/2026-09-05-idl1-wave2-l8w-write-amendment.md`
+(14 tasks; App group first; opens only after L2 + L5 Task 9 merge — gated by
+grep). Rulings:
+
+1. **`device_rejected` may be unreachable on the desktop transport.**
+   `BtleplugBle::send_command`'s own doc says Windows's `winrtble` backend
+   never surfaces SPEC §7.2's ACK byte, only `Ok(())` or a generic `Ble`
+   error (L4's known Windows ACK-byte gap, SPEC §14a). Ruling: ship the kind
+   as specified and map it wherever the transport *does* surface an
+   `AckCode` (mobile plugins, a future desktop backend); never parse error
+   text to fake it; `TODO(idl0)` at the transport boundary. The Device tab
+   already handles the generic `ble` kind honestly.
+2. **`preview_channel_registry` covers the SPEC-fixed subset only** (IMU,
+   wheel, pressure, HR channel ids per §5.2); configured analog/digital
+   channels have no fixed wire id. **For Isaac:** are generic channel ids
+   deterministic from config order (then the preview can compute them), or
+   assigned by the firmware at boot (then only the parser knows)?
+3. **`fetch_fft` averaging.** C3 names `"none" | "max"`; landed
+   `idl_rs::fft::Averaging` has `Mean | Median`. Ruling: extend the core enum
+   with `None` and `Max` (physics stays in core, additive), and amend C3's
+   union to `"none" | "mean" | "median" | "max"` so nothing landed is hidden
+   from the wire. Applied to C3 by the lane's Task 12 as spec-during.
+
+Task 6's managed connection must verify `BtleplugBle` is `Send` behind
+`Arc<Mutex<_>>` in `tauri::State` and STOP if not — as the plan says.
+
+**Cost if wrong:** (1) a kind nobody raises on desktop yet — harmless; (2)
+a narrower preview than idl0's; (3) two enum variants and a widened union,
+both additive.
+
+## 2026-09-05 — Tracked note: math builtin catalog is a hand copy in TS
+
+L6 Task 11's `model/functionCatalog.ts` (69 builtins for the code pane's
+highlighting/completion) is a hand-transcribed copy of the catalog Rust owns
+in `rust/core/src/math/eval.rs`; the brief forbade reading `rust/` for that
+task, so no cross-check exists. **Ruling:** not a wave-2 blocker (it only
+affects highlighting and completion, never evaluation), but drift is the
+same class of bug R53 Device Q1 was about. Filed for the L8w write lane as
+an additive command `list_math_builtins() → { name, arity, unit_rule }[]`
+(C3 §3.4); the UI then verifies its local catalog against it once at
+startup and logs a mismatch, and later drops the local copy. Added to the
+L8w plan's open items by the lead.
+
+**Cost if wrong:** a builtin highlighted wrong or missing from completion
+until the command lands; evaluation is unaffected.
+
+## 2026-09-05 — R64: L8w Task 6–14 briefs; overlay laps are same-session; `list_math_builtins` drops `unit_rule`
+
+1. **`eval_workbook`'s `lap_context.overlay_laps` are laps of the same
+   session in wave 2.** The brief writer found `MathLapContext.overlay` needs
+   a second session's lookup, which C3's `LapContext { main_lap,
+   overlay_laps[] }` (R52 Q5) cannot name. Ruling: wave 2 supports overlay
+   within the selected session only (idl0's cross-session "compare with" is
+   already a deferred parity gap, R53 Data Q4/L7a). `variance_time`/
+   `variance_dist` work within-session; a wave-3 amendment adds
+   `overlay: { session_id, lap }[]`. C3 §3.4 gains one sentence saying so
+   (L8w Task 9, spec-during).
+2. **`list_math_builtins` ships `{ name, arity: number[], status }`** —
+   `unit_rule` is dropped: no source defines its vocabulary, and shipping a
+   free-form placeholder in a signed contract would make the placeholder
+   policy. `status` is `"implemented" | "not_implemented"` (C2 §3.3's 63/6
+   split, matching L6's catalog). A unit-rule field is a future additive
+   amendment once C2 states unit propagation rules per builtin.
+3. **`pull_config`: a device-reported config error (0x81 on read) maps to
+   the `config` kind** (C3 §2: the device rejected/has no valid config);
+   transport failures stay `ble`.
+4. **`IDLH` is 24 bytes** (R59 Q3). L6 has not shipped a decoder for
+   `fetch_host_channel` (Task 13 stubs it), so nothing conflicts; L6's
+   Task 13/16 decoder is written against C3, not the 20-byte filing.
+5. Task 8's pressure channels (20/21) emit no preview row until SPEC §8's
+   config example states their scale/offset source — added to the Isaac
+   list as a sub-item of question 5.
+
+**Cost if wrong:** (1) cross-session variance waits a wave — visible as a
+listed gap. (2) one field fewer on an additive command. (3)/(4) contract
+readings, reversible in a line.
+
+## 2026-09-05 — L2 LANDED (importers, wave 1) + L5 Task 9 (import commands)
+
+Merged `wave1-l2-importers` into idl-rs `main` (`--no-ff`, `7317992`) and
+its docs branch into idl1-app `main`; submodule pointer bumped (`f30df83`).
+Lane gate (Task 8, foreground): `cargo check -p idl-rs-cli --tests`
+Finished; `cargo check -p idl-rs-tauri` Finished; `cargo test -p idl-rs
+-p idl-rs-cli -- --test-threads=4` → idl-rs **899 passed / 0 failed / 1
+ignored**, integration 1, idl-rs-cli 51 — **951 total**. Reviews: Tasks 1–7
+and L5 Task 9 all CLEAN after follow-ups.
+
+**Shipped:** SPEC §15a; `Importer` trait + typed `ImporterError`; GPX, FIT
+(`fitparser` 0.9, epoch offset not double-applied), CSV importers — all
+storing GPS as decimal degrees (R27); `store::import::import_file` over the
+shared blob/parquet/`session.json` pipeline with warnings preserved (R60),
+the post-import hook, the R23 Q2 synthesizer fallback (reach recorded, R61);
+the importer registry (R51 Q2); the Tauri `list_importers`/`import_file`
+commands returning `ImportOutcome { session, warnings }` with every error
+kind mapped (incl. `import_collision`). **Deferred:** the FIT/GPX
+speed/heading direct path ("L2 follow-on S/H (post-archive)") until Isaac's
+archive; incremental catalog insert (R51 Q4, `TODO(idl0)`).
+
+**Process notes:** Task 8's implementer re-ran the full suite three times
+(an output-capture mistake, self-reported; byte-identical results) — the
+brief for L8w's gate says `tee`, not rerun. The lane survived two
+session-limit cutoffs with no lost work.
+
+**Cost if wrong:** import is now a real end-to-end path from the Data tab;
+a regression is a revert of two merge commits and a submodule pointer.
+
+## 2026-09-05 — R65: Properties pane axis-label suggestion uses C1's `unit`, not a quantity table
+
+L6 Task 12 stopped (CLAUDE.md §1): the brief asked for axis labels suggested
+from C2 §3.4's unit table keyed by physical quantity, but the form's
+`channels` prop is `{ id, label }` and no TS port of a quantity→unit table
+exists. **Ruling:** no quantity table in TS — unit *conversion* is a number
+the engine owns (CLAUDE.md §2) and is a wave-3 item. `channels` gains
+`unit?: string`, C1's per-channel `unit` string as `get_session`'s
+`SessionDetail.channels[].unit` reports it; the form suggests the axis label
+as `"<label> (<unit>)"` when present and leaves the field editable;
+`unitsPreference` is honoured only where the unit string itself differs by
+preference (none in wave 2 — documented). Task 13 (which owns the notebook
+orchestrator and calls `get_session`) threads the unit through.
+
+**Cost if wrong:** a label suggestion, editable by the user; no number
+changes.
+
+## 2026-09-05 — L8w four-task gate (after Task 4): PASS
+
+Foreground, once, from `874fbec`: `cargo test -p idl-rs-tauri` → **130
+passed / 0 failed** (1 doc-test ignored, pre-existing); `cargo test -p idl-rs
+-p idl-rs-cli -- --test-threads=4` → idl-rs 899 passed / 1 ignored, doctests
+1, idl-rs-cli 51. Tasks 1–4 (BOM strip, settings/data-dir, profiles,
+`read_workbook`) all on the branch; Tasks 1 and 3 reviewed CLEAN, Task 2's
+two test-coverage Importants queued as Task 4's follow-up. Note for brief
+writers: `cargo test` filters are substrings of the full test path; this
+crate nests tests under `commands::<module>::tests::`, so a filter like
+`commands::workbook::read_workbook` matches nothing — name the test-fn
+prefix (`read_workbook_via`) or the module (`commands::workbook::`) instead.
+
+## 2026-09-05 — R66: L6 Task 13 landed; js cells must bind to ChartCell (new Task 13b)
+
+Task 13 (three commits: reducer/driver/orchestrator `a61ab5c`, render +
+inline spans `8fb068e`, coverage `ae04242`) shipped open/eval/render, the
+R60 `NotebookSession` orchestrator (built, tested, but with nothing yet
+populating its `BoundChannel` registry), math/table/prose cells and inline
+`${…}` spans routed through a new `evalInline` sandbox message. Four
+resolved-or-flagged ambiguities, ruled:
+
+1. **js cells render as a plain mount of the sandbox's HTML, not through
+   `ChartCell`.** The implementer cut scope rather than guess the binding.
+   Ruling: this is M1's core ("Plot charts with real pan/zoom/hover"), so it
+   lands in wave 2 as **Task 13b**, before Task 15: for a js cell whose code
+   `plotForm.parse`s (form-generated), bind `marks[*].channel` (+ lap scope)
+   into `NotebookSession.setBoundChannel`, mount `ChartCell` with the
+   per-cell viewport/tile pipeline (Tasks 6–10), and keep the plain mount
+   for custom-code cells (`parse === null`). Brief to be written from the
+   Task 13 report.
+2. **Inline-span errors reuse `cellError` with the span id in the `cellId`
+   slot.** Ruling: add a distinct `spanError { spanId, message }` message
+   (Task 13b) — one type per meaning, no overloads on an id field.
+3. **No workbook picker; the first `listWorkbooks()` result opens.** Ruling:
+   acceptable for wave 2 until Task 15 (editor shell) adds a picker over
+   `listWorkbooks` as local state; no shared-state slice.
+4. **Inline spans re-evaluate on every cell-set/markdown change**, not on
+   the Runtime's reactive re-run. Acceptable for wave 2; stated in the code.
+   True reactivity is a Task 16 note for the SPEC.
+
+**Cost if wrong:** 13b is one more task in the lane's critical path; without
+it wave 2 has no interactive chart, which is the milestone.
+
+## 2026-09-05 — R67: `WorkbookEvent` gains `hash` so the notebook can suppress its own writes
+
+C4 §4 requires self-write suppression on the workbook watcher; C3 §3.4's
+landed `WorkbookEvent` carries only `kind` and `cell_ids`, so the UI cannot
+tell its own save's event from an external edit (L6 Task 14's brief flagged
+it; a heuristic on timing would be a guess). **Ruling:** additive C3 §3.4
+amendment — `WorkbookEvent` gains `hash: string`, the `sha256_hex` of the
+file's bytes after the change, computed by the Rust watcher with the same
+helper `read_workbook`/`save_workbook` use. The UI suppresses an event whose
+`hash` equals the hash returned by its own last successful `save_workbook`
+(which returns the new hash — confirm; if not, that return is part of the
+same amendment). Implemented by L8w as **Task 4b** (watcher, `commands/
+workbook.rs`, C3 text spec-during); L6 Task 14 codes the suppression against
+the amended shape behind a typed seam that treats a missing `hash` as
+"unknown ⇒ reload" until the Rust lands.
+
+**Cost if wrong:** one extra field on an event; without it every own save
+triggers a reload and a flash, which is the bug C4 §4 exists to prevent.
+
+## 2026-09-05 — R68: catalog SQL stays in core; the Tauri crate does not depend on rusqlite
+
+L8w Task 5's brief said "do not add a new core pub fn for a single DELETE",
+so the implementer put `DELETE FROM sessions` in `tauri/src/commands/
+catalog.rs` and added `rusqlite` as a direct dependency of `idl-rs-tauri`.
+That contradicts CLAUDE.md §2 (bytes on disk → core; the Tauri crate is thin
+glue) — the brief was wrong. **Ruling:** add `pub fn delete_session(conn,
+session_id) -> Result<bool, CatalogError>` to `core::store::catalog` (one
+statement, cascades documented, tested there), call it from the command, and
+drop `rusqlite` from `tauri/Cargo.toml` (`Cargo.lock` follows). Because this
+is a `pub` addition in `core`, `cargo check -p idl-rs-cli --tests` runs.
+The `map_session_json_error(e, path)` signature change is confirmed (the
+path in the message was the lead's own requirement).
+
+**Cost if wrong:** a second SQL surface outside the store would let the
+schema drift from its owner; the fix is mechanical.

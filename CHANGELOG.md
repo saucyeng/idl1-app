@@ -16,6 +16,22 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 - **CodeMirror Code pane; C2 §8-4 math tokenizer (L6 Task 11).** Markdown/JS/math language modes by cell kind; the 69-function catalog transcribed from C2 §3.3 for highlighting and completion.
 - **Cross-channel cursor readout on settle (L6 Task 10).** `cursor_readout` called once per settle (P2, C3 §4); a channel outside its recorded span reads null, never a frozen value (R31).
 - **`transformFor` zoom-anchor bug and settle stale-response guard fixed (L6 Task 8, review-task8.md Critical/Important follow-up).** `transformFor` divided its translate term by the *rendered* viewport's µs-per-pixel instead of the *current* one, visibly mispositioning the live picture for any zoom not anchored at the chart's own left edge; fixed, with a derivation in the doc comment and right-edge/mid-anchor tests. `makeSettle` now exposes a monotonic `latestSeq()`, and `isStaleSettleResult` lets `ChartCell`'s settle callback drop an older settle's tile fetch if a newer settle has already fired, so a slow fetch for a superseded gesture can no longer snap the picture backward.
+- **L2 importers (wave 1, 2026-09-05).** `GpxImporter` (port of
+  `gpx_parser.dart`), `FitImporter` (`fitparser` 0.9 — L2-R9), `CsvImporter`
+  (trivial, D4) behind a shared `Importer` trait producing C1 §2's
+  `Session`/`Channel` model, with a `core::import::importers()` registry
+  (R51 Q2) enumerating all three for C3 §3.3's `list_importers`. GPS
+  coordinates are physical decimal degrees for every source (ruling R27,
+  superseding an earlier `deg_e7` draft). `store::import::import_file`
+  (L2-R13) generalises `import_idl0`'s pipeline to the three new formats;
+  `synthesize_base_channels` gained a fallback (ledger R23 Q2) so every
+  event-driven FIT/GPX/CSV session still gets a `Time` channel, derived
+  from its longest channel's real recorded time rather than a fabricated
+  rate. `docs/IDL0_SPEC.md` §15a. Golden tests against hand-built FIT/GPX/CSV
+  fixtures — no real device archive used yet; FIT/GPX `GPS_SpeedKmh`/
+  `GPS_Heading` direct-path population is a deferred follow-on pending
+  Isaac's real archive (ledger R23 Q4), tracked as "L2 follow-on S/H
+  (post-archive)".
 - **Wave 2 shell task 3 — `import_file` resolves with `ImportOutcome` (2026-09-05, R60).**
   `ipc/import.ts`'s `importFile` now resolves `ImportOutcome { session:
   SessionSummary; warnings: string[] }` instead of a bare `SessionSummary`
@@ -437,6 +453,12 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 - **Catalog commands (C3 §3.2).** list_sessions, get_session, list_laps, rebuild_catalog, list_workbooks, list_tracks, get_track, over a new core read layer (idl_rs::store::catalog_read) — L1 landed the writer only.
 - **Device commands (C3 §3.8) wired to L4's idl-transport.** ble_scan, ble_connect, list_device_files, download_file (streams Progress), push_config. Each command connects/acts/disconnects per call (no managed BLE session yet). `push_config` validates `config_json` is well-formed JSON only — full schema validation via `idl_rs::config::parse_config` is blocked on core defining a `VersionedConfig` type for SPEC §8's device-config schema, not yet landed.
 - **Data tab: session list over C3 §3.2 list_sessions.** DataPage becomes routes/pages/Data/; pure SessionRow view-model and typed IpcError mapper, both tested.
+
+### Changed
+
+- **Doc carry-over fixes (2026-09-03, L10).** `tools/README.md` no longer documents the
+  uncarried `idl0_dump.dart`; points at `idl-rs info`/`idl-rs channels` for the overlapping
+  functionality. `app/README.md` replaced (was still the Tauri scaffolder's generic template).
 
 ### Verified
 

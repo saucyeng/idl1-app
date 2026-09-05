@@ -19,11 +19,16 @@ are defined in `docs/superpowers/specs/2026-09-02-idl1-rewrite-design.md` §10.
 ## Wave 1 (after M0)
 
 - [x] L1 core `store/`
-- [ ] L2 importers
+- [x] L2 importers — GPX/FIT/CSV via a shared Importer trait, golden-tested
+      against hand-built fixtures; core registry (R51 Q2); import_file/
+      list_importers Tauri wiring (L5 Task 9) has landed (`c3464f4`);
+      FIT/GPX GPS_SpeedKmh/GPS_Heading direct-path population deferred
+      pending Isaac's real archive (ledger R23 Q4), tracked as "L2
+      follow-on S/H (post-archive)"
 - [x] L3 core workbook v3 — complete; v2 workbook migration (C2 §6) dropped per R30; tier
   cache (design §4 L3 row) and Stage 2 chart conversion (L6) deferred
 - [x] L4 `idl-transport` desktop — complete pending Isaac's real-device BLE/WiFi check
-- [ ] L5 Tauri scaffold hardening — Tasks 1-8, 10-14 landed; Task 9 (import commands) deferred with L2; Step 6's on-screen render confirmed in the dev app 2026-09-05 (IMU2_AccelX, real session).
+- [x] L5 Tauri scaffold hardening — Tasks 1-14 landed (Task 9, the import commands, landed with L2 on 2026-09-05, idl-rs `c3464f4`); Step 6's on-screen render confirmed in the dev app 2026-09-05 (IMU2_AccelX, real session).
 - [ ] L10 docs (runs alongside)
 
 ## Wave 2
