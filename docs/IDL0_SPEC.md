@@ -1477,7 +1477,7 @@ finds `<ele>`, `<time>`, and (regardless of nesting depth under
 | GPX element | idl1 channel | Notes |
 |---|---|---|
 | `<trkpt lat lon>` | `GPS_Latitude`, `GPS_Longitude` | decimal degrees, direct (C1 §4.1: `unit: deg`) — **not** scaled ×1e7 as `gpx_parser.dart` did for the old Dart engine's raw-wire convention; under R27, C1's non-device row stores physical degrees directly, for every source |
-| `<ele>` | `GPS_Altitude` | metres; `0.0` when absent (matches Dart). `unit: m` |
+| `<ele>` | `GPS_Altitude` | metres; per-field `Option` semantics (L2-R6) — a trackpoint with no `<ele>` contributes no sample, never a `0.0` fill; `GPS_Altitude` may therefore be shorter than `GPS_Latitude`/`GPS_Longitude` and carries its own `t_us`. `unit: m` |
 | `<time>` | `GPS_EpochMs` | ISO-8601 UTC ms, parsed by a hand-rolled parser (no chrono dependency — GPX's `<time>` shape is fixed and simple); sub-millisecond fractions round to the nearest ms, ties away from zero (C1 §3.4). `unit: ms_raw` |
 | `<hr>` (namespace-agnostic) | `HR_BPM` | only when at least one point has it. `unit: bpm` |
 | `<cad>` | `Cadence_RPM` | only when at least one point has it. `unit: rpm` |
@@ -1501,14 +1501,19 @@ dedup coincide.
 
 **Missing timestamps.** C1 §3.4 assumes every source sample carries a
 parseable recorded timestamp; it does not define behaviour for a GPX file
-with none. This importer ports `gpx_parser.dart`'s fallback verbatim:
-when **no** trackpoint has a parseable `<time>`, synthesize `i × 1000` ms
-from an arbitrary origin (`t0_us = 0` by construction) and surface an
-`ImporterWarning`; when **some but not all** trackpoints have one, missing
-individual points get the same per-index synthesis with their own warning
-(a case `gpx_parser.dart` does not encounter — its Dart code pushes a `0`
-sentinel per malformed/absent `<time>` without flagging it, which this
-importer treats as worth a warning instead, per CLAUDE.md §5). See Open
+with none. Per L2-R7, trackpoints are partitioned once, before any `t_us`
+math, into those with a parseable `<time>` and those without:
+— **case (b), no trackpoint anywhere has one:** the ported 1 Hz index
+synthesis is kept (`t_us[i] = i × 1_000_000`), but `Session.timestamp_utc_ms
+= 0` ("unknown") and no `GPS_EpochMs` channel is created at all — a
+synthesized index is not a receiver epoch. Exactly **one** `ImporterWarning`
+is raised for the whole file, not one per point;
+— **case (c), some trackpoints have one and some don't:** the timestamped
+points alone define the axis; every untimestamped point is **dropped**,
+each with its own `ImporterWarning` naming the point's index. `GPS_EpochMs`
+**is** created, from the real, kept timestamps, and `t0` is anchored at the
+**minimum** timestamp among the kept points (C1 §3.1), not the first one
+encountered. Synthesized index-ms and epoch-ms never share an axis. See Open
 Questions.
 
 ### 15a.4 CSV import (trivial — D4)
