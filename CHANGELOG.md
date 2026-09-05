@@ -36,6 +36,22 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
   `analog.sample_rate_hz`'s valid set is still undefined and the app
   accepts any positive integer there (R53 Device Q2). Does not build the
   validator — that is Task 3.
+- **Device tab, Task 3 (2026-09-05, L7b).** `Device/config/validate.ts` —
+  `validateConfig`/`isPushable`, the single gate `pushConfig` sits behind
+  (a config is never pushed unvalidated). Checks every SPEC §8 valid-value
+  set (IMU ODR by power mode, accel/gyro range, GPS rate range and
+  integrality, dynamic model, digital channel kind) plus cross-cutting
+  rules the schema doesn't state as a table but SPEC §8's prose implies:
+  duplicate/empty analog channel keys, zero analog scale, negative digital
+  debounce, a disabled wheel slot skipped entirely, an HRM address format
+  checked only while enabled, and a pin-collision check that walks
+  `analog.channels` and `digital.channels` together so an analog/digital
+  cross-kind collision on one physical pin is caught, not just same-kind
+  duplicates. Only `error`-severity issues block `isPushable`; `warning`
+  flags a config that is valid but likely a mistake (an enabled IMU with
+  every channel off, a reserved `level`/`pwm` digital kind). SPEC §8 gains
+  a validation table (one row per rule, path/severity/condition/citation)
+  as a machine-checkable counterpart to its prose tables.
 - **L5 complete (2026-09-04).** idl-rs-tauri wired to every landed wave-1 lane's C3 command
   group (catalog, workbook, cursor, raster, tile) plus device (L4); <data> resolution,
   workbook watcher, app/src/ipc/ module layer, routing and state skeleton. Tile fetched

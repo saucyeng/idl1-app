@@ -787,6 +787,38 @@ round trip unchanged. `analog.sample_rate_hz` has no SPEC-defined valid set
 integer there and flags nothing, pending a spec answer (ruling R53 Device
 Q2).
 
+**`validateConfig` validation table (idl1, `app/src/routes/pages/Device/config/validate.ts`).**
+The single gate `pushConfig` sits behind — a config is never pushed with an
+unresolved `error`-severity issue (`warning` issues never block a push).
+One row per rule below; each names the exact `ValidationIssue.path` the app
+emits, so a reviewer can check the code against this table line by line.
+
+| Path | Severity | Condition | Citation |
+|------|----------|-----------|----------|
+| `imu.sample_rate_hz` | error | not in the high-perf or low-power ODR list for the current `imu.low_power_mode` | §8 "Valid `sample_rate_hz` values" |
+| `imu.accel_range_g` | error | not one of ±4/8/16/32 g | §8 "Configurable chip options" |
+| `imu.gyro_range_dps` | error | not one of ±125/250/500/1000/2000 dps | §8 "Configurable chip options" |
+| `imuN.accel_range_g` (N=0,1,2) | error | not one of ±4/8/16/32 g | §8 "Per-IMU range resolution" |
+| `imuN.gyro_range_dps` (N=0,1,2) | error | not one of ±125/250/500/1000/2000 dps | §8 "Per-IMU range resolution" |
+| `imuN.channels` (N=0,1,2) | warning | `imuN.enabled` true and every axis channel false | load-bearing invariant: an enabled IMU logging nothing is a mistake |
+| `gps.sample_rate_hz` | error | not an integer | §8 "Integer 1-10 Hz" |
+| `gps.sample_rate_hz` | error | integer but outside 1..10 | §8 "Integer 1-10 Hz" |
+| `gps.dynamic_model` | error | not one of portable/pedestrian/automotive/sea/airborne | §8 "Configurable chip options" |
+| `gps.nmea_sentences` | warning | empty array | §8 "NMEA sentences (GGA+RMC default)" |
+| `analog.channels[i].key` | error | empty string | §8 "Analog channels" (the key addresses the entry) |
+| `analog.channels[i].key` | error | shares its value with an earlier channel's key | §8 "Analog channels" (one physical sensor per key) |
+| `analog.channels[i].scale` | error | `scale` is 0 | §8 "Analog channels" (every sample would read as the fixed offset) |
+| `analog.channels[i].adc_pin` / `digital.channels[j].gpio_pin` | error | two channels (any kind combination) share a pin number | one physical pin cannot serve two claims |
+| `digital.channels[i].kind` | warning | `kind` is not `"marker"` | §8 "`level`... `pwm`... reserved in the schema but not yet exposed" |
+| `digital.channels[i].debounce_ms` | error | negative | §8 "Digital channels" (a negative debounce window is meaningless) |
+| `wheel_speed.front/rear.points_per_revolution` | error | slot `enabled` true and value ≤ 0 | divide-by-zero in every speed derivation |
+| `wheel_speed.front/rear.wheel_circumference_mm` | error | slot `enabled` true and value ≤ 0 | not a usable geometry |
+| `heart_rate_monitor.device_address` | error | block `enabled` true and address does not match `^([0-9A-F]{2}:){5}[0-9A-F]{2}$` | §8 "Heart rate monitor" (colon-separated uppercase hex) |
+
+A disabled `wheel_speed` slot, and an absent or `enabled: false`
+`heart_rate_monitor` block, are not validated at all — neither is pushed to
+hardware in that state (§8 "Wheel speed defaults"; §8 "Heart rate monitor").
+
 ---
 
 ## 9. Coordinate System
