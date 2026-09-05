@@ -2868,3 +2868,53 @@ lane's review.
 
 **Cost if wrong:** the tab is additive and behind its own directory; a
 regression is a revert of one merge commit.
+
+## 2026-09-05 — R59: C3 wave-2 write amendment adjudicated (Q1–Q6, F1–F3)
+
+Draft: `runs/2026-09-05/C3-WAVE2-AMENDMENT-DRAFT.md` (Opus; 17 new commands
++ `eval_workbook` amended; all 21 IPC needs dispositioned; a new §3.10 App
+group). Rulings:
+
+- **Q1 → (a).** `save_session_metadata(session_id, fields)` reads
+  `session.json`, hashes it, writes via `write_session_json` — last-write-wins
+  inside the command, no `conflict` kind, no signature change. Revisit when
+  L11 (LAN sync) makes concurrent edits real.
+- **Q2 → (a).** Quarantine commands deferred to wave 3 with the repair action
+  that would populate `tmp/quarantine/`; nothing implements it today and a
+  permanently-empty command does not belong in a signed contract. The Data
+  tab's stubs stay.
+- **Q3 → (a).** New binary headers pad to natural alignment: `IDLH` 24 bytes,
+  `IDLF` 16 bytes, so `Float64Array` views start on 8-byte boundaries. On the
+  landed `IDLT` (C3 §3.5): the drafted "latent throw on odd `column_count`"
+  does **not** occur — `app/src/ipc/tiles.ts` copies every region through a
+  `DataView` into freshly allocated arrays, never views the buffer in place.
+  Ruling: `IDLT` unchanged; C3 §3.5 gains one sentence: "regions are not
+  alignment-padded; decoders copy, they do not view in place." Any future
+  zero-copy tile decoder is a layout-version bump.
+- **Q4 → (b).** New cross-cutting kind `device_rejected` with
+  `detail { ack: "busy" | "precondition" | "write_not_permitted" |
+  "not_implemented" }` for a refused device control transition (SPEC §7.2
+  `AckCode`). `config` keeps its one meaning. Additive to §2, C3 §5 respected.
+- **Q5 → (a).** `set_data_dir` is the sole writer of the `data_dir` key
+  (validates, creates the tree, computes `restart_required`); `set_settings`
+  ignores `data_dir` in its argument and echoes the current value. One
+  sentence goes on `AppSettings`'s doc comment in the UI when the stub is
+  swapped.
+- **Q6 → (a).** `device_status` mirrors `idl_transport::ble_status::
+  DeviceStatus` field for field (incl. `ota_pending_verify`, `hr`,
+  `hr_battery_pct`); IPC need 8's four sourceless fields are dropped.
+  **For Isaac:** could the firmware report SD free bytes, GPS fix quality,
+  satellite count and battery millivolts in the §7.3 status block? If yes,
+  a SPEC §7.3 amendment adds them and the command grows additively.
+- **F1–F3 accepted** (`create_workbook` suffixes per C4 §2, `delete_profile`
+  → `not_found`, `ProfileLoadReport.skipped` as objects).
+
+**Applied to C3** by a transcriber under this ruling; the write lane (after
+L2 Task 8 and L5 Task 9) implements against the amended text, App group
+first (core logic already landed).
+
+**Cost if wrong:** Q1 risks a lost edit only under concurrent writers that
+do not exist yet. Q3's padding is four bytes per response. Q4 adds a kind
+that can never be removed — justified by a UI that must present "device
+busy" differently from "bad config". Q6 drops fields no source can fill;
+adding them later is additive.
