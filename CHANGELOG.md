@@ -6,6 +6,16 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 
 ### Added
 
+- **L7c `PrefsBackend`/`PrefsStore` go async (2026-09-05, lead ruling,
+  review-task2 note 1).** `PrefsBackend.read()`/`write()` and
+  `PrefsStore.get()`/`set()` are now `Promise`-returning, matching the
+  eventual `invoke`-based `get_settings`/`set_settings` command;
+  `localStorageBackend()`/`memoryBackend()` wrap their still-synchronous
+  internals in resolved/rejected promises. Behaviour unchanged: a rejecting
+  `write()` still reports `{ ok: false, error }` while the in-memory value
+  updates first, so the user's typing is never discarded. `ProfileSection.tsx`
+  and `UnitsSection.tsx` (Task 3) now seed their initial value from
+  `store.get()` in an effect instead of synchronously at render.
 - **L7c Settings tab, Task 3 (2026-09-05).** Profile and Units sections,
   built over Task 2's `PrefsStore`. `ProfileSection.tsx`'s rider-name field
   writes through `store.set` debounced at 500 ms (idl0's own behaviour) so
