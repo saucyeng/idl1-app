@@ -3262,3 +3262,65 @@ path in the message was the lead's own requirement).
 
 **Cost if wrong:** a second SQL surface outside the store would let the
 schema drift from its owner; the fix is mechanical.
+
+## 2026-09-05 — R69: cell outputs render inside the sandbox iframe; the host never injects sandbox HTML
+
+L6 Task 13's review found `index.tsx` rendering a js cell's result with
+`dangerouslySetInnerHTML` from the sandbox's serialised `cellResult.html`.
+That crosses the security boundary design §6 draws: the sandbox iframe has
+no `allow-same-origin` precisely so cell code cannot reach the host origin
+(which holds Tauri IPC); HTML the sandbox produced, injected into the host
+DOM, can carry event-handler attributes that run in the host. Sanitising is
+the wrong fix — the design already says where outputs render: "The Runtime,
+Inspector, Plot, D3 and Inputs are bundled into the iframe."
+
+**Ruling:**
+1. Cell outputs (js results, Plot SVG, Inspector values, inline-span
+   values) render **inside the sandbox iframe**, one iframe per notebook,
+   in a cell-output list the sandbox owns, keyed by cell id. The host never
+   receives output HTML; it receives `cellRendered { cellId, heightPx }`
+   (and errors as text) to lay out its frame around each output. `cellResult
+   .html` is removed from the protocol.
+2. The host keeps what is host-side by design: gestures, the tile cache,
+   settle-bound fetch, cursor readout, the Properties/Code panes. During a
+   gesture the host posts a `transform { cellId, translateXPx, scaleX }`
+   message per frame (same-machine `postMessage`, not Tauri IPC — P3/P4
+   hold) and the sandbox applies it as a CSS transform on that cell's Plot;
+   on settle the host sends fresh channel data as today.
+3. `ChartCell` becomes the host-side frame (gesture layer + orchestration)
+   around the iframe-rendered output; its own canvas polyline is retired
+   once the sandbox path works.
+4. Prose cells: Markdown → HTML is text processing core already owns
+   (`pulldown-cmark`); `eval_workbook`'s prose `CellOutput` gains `html`
+   with `${…}` spans left as placeholder elements by id (additive C3 §3.4,
+   **L8w Task 4c**); the sandbox fills the placeholders. Until it lands,
+   prose renders as plain text with the spans filled — stated, not hidden.
+
+Implemented by L6 **Task 13b** (which already owns the js-cell binding) with
+the multi-channel case now natural (the cell's own Plot code sees every
+bound channel). Task 13's plain-text prose and `dangerouslySetInnerHTML`
+are removed there.
+
+**Cost if wrong:** a heavier 13b; the alternative is a hole in the one
+security boundary the app has.
+
+**R67 addendum (2026-09-05):** the brief writer found `ExpectedHashSet` already suppresses the app's own saves in Rust before an event is built (existing test). `WorkbookEvent.hash` is therefore defence in depth for the UI (and lets the UI reason about external edits), not a fix to a live Rust gap; the joint self-write test is dropped as unwritable through the real path (ruled in `brief-task4b.md`).
+
+## 2026-09-05 — R70: prose HTML crosses the wire as two fields with a span list; one span scanner
+
+L8w Task 4c's brief writer found (a) C2 §2.4 / the landed `CellDoc` carry
+prose as `prose_before`/`prose_after`, so a single `html` field would have
+to pick one; (b) core already has a correct, tested `${…}` scanner
+(`workbook/v3/js_cell.rs::find_inline_exprs`) with no callers, while the
+frontend's `ProseSpan` uses a plain regex that numbers spans differently
+inside inline code. **Ruling:** `CellOutput` gains `prose_before_html:
+string | null`, `prose_after_html: string | null` (mirroring `CellDoc`) and
+`prose_spans: { id, expr }[]` in document order from `find_inline_exprs`,
+each rendered span a `<span data-span-id="…">` placeholder. Core's scanner is
+the only scanner: L6 Task 13b/15 drop the TS regex once this lands (interim
+seam until then). Raw HTML in prose is escaped (pulldown-cmark passes it
+through by default — intercepted, hand-escaped, no new dependency). R21's
+`CellOutput` doc comment finally matches its struct.
+
+**Cost if wrong:** two fields and a list instead of one string, all
+additive; the alternative keeps two scanners that disagree.

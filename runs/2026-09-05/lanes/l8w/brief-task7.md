@@ -253,3 +253,7 @@ guessing — CLAUDE.md §1).
 ## Lead ruling 2026-09-05 (R64.3)
 
 `pull_config`: a device-reported config error on read (0x81) maps to the `config` kind with the device's reason in `message`; transport failures stay `ble`. `device_rejected` is mapped only where an `AckCode` is actually surfaced (R63.1).
+
+## Lead ruling 2026-09-05 (review-task6 Note) -- explicit disconnect before replacement
+
+First step of this task, in `commands/device.rs`: when `connect_device` replaces an existing entry for the same `device_id`, call `.disconnect()` on the superseded transport before dropping it (best effort: a disconnect error is logged and does not fail the new connect), because whether btleplug's `Drop` tears down the GATT link is unverified. One `StubBle` test: the superseded stub records a disconnect call. Then Task 7 proper.
