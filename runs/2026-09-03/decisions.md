@@ -2658,3 +2658,21 @@ cheap — versus a wire-format formula living in two languages, which is the
 kind of divergence that misleads at the track. L7a Q3's slice shape is
 additive; if L6 needs more it is one shell task. L7a Q4 is visible to Isaac
 and stated in the CHANGELOG so it is not read as a bug.
+
+## 2026-09-05 — R54: Data tab Track facet dropped for wave 2
+
+L7a Task 3 stopped (CLAUDE.md §1) on a real gap: the brief's Track facet
+needs a per-session track linkage, but `SessionSummary` (C3 §3.2) carries
+none — it lives only in `SessionDetail.track_visits`, a settle-bound
+per-session call that local filtering over the fetched list cannot use.
+
+**Ruling:** drop the Track facet entirely for wave 2 (no options, no counts,
+no `trackIds` predicate, no disabled placeholder) — the same treatment as
+has-GPS/has-gates under R53 Data Q2. A facet that structurally excludes
+every row is a trap, not honesty. Returns with the wave-3 catalog amendment
+(C4 §5 + C3 §3.2: a per-session track linkage column on `SessionSummary`),
+recorded in the plan's parity gaps and the CHANGELOG. The lap-time facet
+keyed off `duration_ms` is confirmed correct.
+
+**Cost if wrong:** one facet missing for one wave; the amendment is the same
+one already filed for two other facets, so no extra Rust work is created.
