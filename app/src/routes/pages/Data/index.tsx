@@ -12,6 +12,7 @@ import { ImportPanel } from "./ImportPanel";
 import { toDetailView } from "./sessionDetail";
 import { toSessionRow } from "./sessionRow";
 import { compareSessions, sortFieldsForView, type SortField } from "./sort";
+import { TrackResults } from "./TrackResults";
 
 /** The session detail pane's own fetch state — separate from the sessions
  *  list's `State` above, and from `AppState.selection` (which only tracks
@@ -69,15 +70,15 @@ const FIELD_LABELS: Record<SortField, string> = {
   name: "Name",
 };
 
-/** Data tab: the sessions result list, filter rail and active-filter chips.
- *  Loads once on mount from the catalog's `list_sessions` (C3 §3.2). Only
- *  the Sessions view exists so far — the Tracks table (and its view toggle,
- *  and `list_tracks`) lands in Task 6, so the sort control here is fixed to
- *  `sortFieldsForView("sessions")`. No Track facet at wave 2 (R54) — a
- *  `SessionSummary` carries no track linkage. No detail pane yet — Task 4
- *  adds it. Filtering, sorting and facet counts are all local recomputation
- *  over the already-fetched list — no IPC on the interaction path
- *  (CLAUDE.md §2). */
+/** Data tab: the sessions result list, filter rail and active-filter chips,
+ *  plus the Tracks table (Task 6) behind a view toggle. Sessions loads once
+ *  on mount from the catalog's `list_sessions` (C3 §3.2); Tracks
+ *  (`TrackResults`) owns its own `list_tracks` fetch. Facets, filtering and
+ *  the filter rail apply to the Sessions view only — no Track facet at
+ *  wave 2 (R53 Data Q2/R54): a `SessionSummary` carries no track linkage,
+ *  so a Tracks-view facet over sessions data would be a trap, not a filter.
+ *  Filtering, sorting and facet counts are all local recomputation over the
+ *  already-fetched list — no IPC on the interaction path (CLAUDE.md §2). */
 export default function Data() {
   const [state, dispatch] = useReducer(reducer, { status: "loading" });
   const [filters, filterDispatch] = useReducer(filtersReducer, initialFilters);
@@ -188,12 +189,28 @@ export default function Data() {
 
   return (
     <div className="data-tab">
-      <FilterRail filters={filters} counts={counts} dispatch={filterDispatch} />
+      {filters.view === "sessions" && <FilterRail filters={filters} counts={counts} dispatch={filterDispatch} />}
       <div className="data-results">
         <div role="toolbar" aria-label="Import">
           <ImportPanel onImported={handleImported} />
         </div>
-        <ActiveChips filters={filters} dispatch={filterDispatch} />
+        <div role="toolbar" aria-label="View">
+          <button
+            type="button"
+            aria-pressed={filters.view === "sessions"}
+            onClick={() => filterDispatch({ type: "SET_VIEW", view: "sessions" })}
+          >
+            Sessions
+          </button>
+          <button
+            type="button"
+            aria-pressed={filters.view === "tracks"}
+            onClick={() => filterDispatch({ type: "SET_VIEW", view: "tracks" })}
+          >
+            Tracks
+          </button>
+        </div>
+        {filters.view === "sessions" && <ActiveChips filters={filters} dispatch={filterDispatch} />}
         <div role="toolbar" aria-label="Sort">
           <label>
             Sort by{" "}
@@ -201,7 +218,7 @@ export default function Data() {
               value={filters.sortField}
               onChange={(e) => filterDispatch({ type: "SET_SORT_FIELD", field: e.target.value as SortField })}
             >
-              {sortFieldsForView("sessions").map((field) => (
+              {sortFieldsForView(filters.view).map((field) => (
                 <option key={field} value={field}>
                   {FIELD_LABELS[field]}
                 </option>
@@ -212,7 +229,9 @@ export default function Data() {
             {filters.sortAscending ? "↑" : "↓"}
           </button>
         </div>
-        {rows.length === 0 ? (
+        {filters.view === "tracks" ? (
+          <TrackResults sortField={filters.sortField} sortAscending={filters.sortAscending} />
+        ) : rows.length === 0 ? (
           <p>{sessions.length === 0 ? "No sessions yet — import a file." : "No matches. Try clearing filters."}</p>
         ) : (
           <table>
@@ -252,7 +271,7 @@ export default function Data() {
             </tbody>
           </table>
         )}
-        {selectedSessionId !== null && (
+        {filters.view === "sessions" && selectedSessionId !== null && (
           <div className="data-detail">
             {detailState.status === "loading" && <p>Loading session…</p>}
             {detailState.status === "error" && <p role="alert">{detailState.text}</p>}

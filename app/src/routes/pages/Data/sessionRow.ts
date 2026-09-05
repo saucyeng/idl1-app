@@ -11,9 +11,14 @@ const UNKNOWN_DATE = "unknown";
 
 /** `venue_name`, or the synthetic "(none)" label when it is empty — shared
  *  by the session list, its facet, and the detail pane (Task 4) so the same
- *  session always reads the same venue text everywhere. Wave 2 has no
- *  Track-venue fallback (R54 drops track linkage from `SessionSummary`
- *  entirely) — this is the "(none)" convention alone, not a track lookup. */
+ *  session always reads the same venue text everywhere. `toSessionRow`
+ *  below has no Track-venue fallback (R54 drops track linkage from
+ *  `SessionSummary` entirely, and the session list only ever sees a
+ *  `SessionSummary`) — this is the "(none)" convention alone, not a track
+ *  lookup. A context that does have `TrackVisitSummary[]`/`tracksById`
+ *  (e.g. a future session-detail venue line) uses [[resolveDisplayVenue]]
+ *  (`trackRow.ts`, Task 6) instead, then still passes the result through
+ *  this same `venueLabel` for the shared "(none)" text. */
 export function venueLabel(venueName: string): string {
   return venueName === "" ? NONE_VENUE : venueName;
 }
