@@ -1,4 +1,5 @@
 import type { SessionSummary } from "../../../ipc/catalog";
+import { formatDateMs, formatDurationMs, formatTimeMs, localIsoDate } from "./format";
 
 /** Synthetic label for an empty `venue_name`, shared with the venue facet
  *  (Task 3) so a filtered row and its chip always agree. */
@@ -31,46 +32,12 @@ export interface SessionRow {
   groupKey: string;
 }
 
-const dateFormatter = new Intl.DateTimeFormat(undefined, {
-  year: "numeric",
-  month: "short",
-  day: "numeric",
-});
-
-const timeFormatter = new Intl.DateTimeFormat(undefined, {
-  hour: "numeric",
-  minute: "2-digit",
-});
-
-/** Local `YYYY-MM-DD` for a UTC-ms timestamp, used only for `groupKey` —
- *  not for display (display uses the locale-formatted `dateText`). */
-function localIsoDate(timestampUtcMs: number): string {
-  const d = new Date(timestampUtcMs);
-  const year = d.getFullYear().toString().padStart(4, "0");
-  const month = (d.getMonth() + 1).toString().padStart(2, "0");
-  const day = d.getDate().toString().padStart(2, "0");
-  return `${year}-${month}-${day}`;
-}
-
-/** Formats a millisecond duration as `h:mm:ss`. `ms` must be >= 0. */
-function formatDuration(ms: number): string {
-  const totalSeconds = Math.floor(ms / 1000);
-  const hours = Math.floor(totalSeconds / 3600);
-  const minutes = Math.floor((totalSeconds % 3600) / 60);
-  const seconds = totalSeconds % 60;
-  return `${hours}:${minutes.toString().padStart(2, "0")}:${seconds.toString().padStart(2, "0")}`;
-}
-
 /** Derives a display row from one catalog `SessionSummary` (C3 §3.2). Pure
  *  formatting only — no IPC, no engine computation. */
 export function toSessionRow(s: SessionSummary): SessionRow {
   const hasTimestamp = s.timestamp_utc_ms !== 0;
-  const dateText = hasTimestamp
-    ? dateFormatter.format(new Date(s.timestamp_utc_ms))
-    : UNKNOWN_DATE;
-  const timeText = hasTimestamp
-    ? timeFormatter.format(new Date(s.timestamp_utc_ms))
-    : UNKNOWN_DATE;
+  const dateText = hasTimestamp ? formatDateMs(s.timestamp_utc_ms) : UNKNOWN_DATE;
+  const timeText = hasTimestamp ? formatTimeMs(s.timestamp_utc_ms) : UNKNOWN_DATE;
   const venueText = s.venue_name === "" ? NONE_VENUE : s.venue_name;
   const groupKey = `${hasTimestamp ? localIsoDate(s.timestamp_utc_ms) : UNKNOWN_DATE} ${venueText}`;
 
@@ -81,7 +48,7 @@ export function toSessionRow(s: SessionSummary): SessionRow {
     venueText,
     riderText: s.rider,
     bikeText: s.bike,
-    durationText: s.duration_ms === null ? "—" : formatDuration(s.duration_ms),
+    durationText: s.duration_ms === null ? "—" : formatDurationMs(s.duration_ms),
     lapCountText: s.lap_count === null ? "—" : s.lap_count.toString(),
     sourceFormat: s.source_format,
     groupKey,

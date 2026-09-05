@@ -6,6 +6,7 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 
 ### Added
 
+- **Data tab: formatting and sort model.** Lap/duration/byte/date formatters and the per-view sort field sets with their default directions, ported from idl0's data_filters_provider.
 - **TS coverage reporting added (2026-09-05).** `@vitest/coverage-v8` pinned to vitest's
   version in `app/package.json`; `app/vitest.config.ts` gains a `coverage` block (v8
   provider, `src/**/*.ts`, text reporter, no thresholds set) so `vitest run --coverage`
