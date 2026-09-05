@@ -2692,3 +2692,28 @@ if they differ. Non-blocking.
 
 **Cost if wrong:** a new-device config form pre-filled with a value the
 firmware would reject — caught at push time by the device, not silently.
+
+## 2026-09-05 — R55: L7 Task 4+ briefs; file picker seam; no free-pin algorithm
+
+Briefs for L7a Tasks 4–8, L7b Tasks 4–9, L7c Tasks 4–6 written against the
+committed code (not the plans). Two questions ruled:
+
+- **L7a Task 5 file picker → seam now, dialog plugin later.** No dialog
+  plugin exists in the repo; adding `@tauri-apps/plugin-dialog` needs an
+  `app/src-tauri` crate + capability change, i.e. a Tauri build. The Data tab
+  builds `pickImportFile()` as a seam whose wave-2 implementation is a
+  pasted-path input; the plugin (npm + crate + capability) is queued for the
+  Rust write-amendment lane and the seam is swapped by a shell task then.
+- **L7b Task 7 "free pin" → none.** SPEC §8 fixes no pin numbering scheme,
+  so the UI never auto-selects a pin: new channels start unassigned (the
+  validator already reports that), and the user picks from the pins the
+  declared range allows, unassigned first.
+
+Also from the brief writer: L7b Task 4 is rewritten (not narrowed) as
+`previewSources()` — enable/rate/unit only, distinct names so nobody reads
+it as IPC need 12 landing early (R53 Device Q1).
+
+**Cost if wrong:** the picker seam costs one swap later; a plugin added now
+would cost a Tauri build inside a UI lane, which §4 forbids. The pin ruling
+costs one extra click per new channel versus a guessed numbering the
+firmware might reject.
