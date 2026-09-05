@@ -773,6 +773,66 @@ u-blox MAX-M10S: sample rate (1–10 Hz), dynamic model (portable/pedestrian/aut
 
 **Push transport:** "Push Config" sends `idl0_config.json` over BLE (FF05 + `CMD_CONFIG_BEGIN`/`CMD_CONFIG_COMMIT`, §7.2); the device reboots to apply. Requires idle mode (BLE control is suspended in WiFi mode, §10.4). The WiFi `POST /config` path (§6.1) remains as a fallback.
 
+**App-side config model (idl1, `app/src/routes/pages/Device/config/model.ts`).**
+The app parses `idl0_config.json` leniently: a malformed field falls back to
+its default and is recorded as a `Repair` rather than throwing, so a config
+the app cannot fully make sense of never blocks the tab. A value that is the
+right type but off a SPEC-stated valid set (the `imu.sample_rate_hz` ODR
+table above) is kept exactly as read and reported as a `Repair` — the app
+never silently snaps a stored value to the nearest valid one, unlike idl0's
+`ImuSettingsDialog`. Unknown top-level JSON keys and the two read-only
+fields (`device_id`, `config_version`) survive a parse → edit → serialise
+round trip unchanged. `analog.sample_rate_hz` has no SPEC-defined valid set
+(the row above is still "Not yet defined"); the app accepts any positive
+integer there and flags nothing, pending a spec answer (ruling R53 Device
+Q2).
+
+**`validateConfig` validation table (idl1, `app/src/routes/pages/Device/config/validate.ts`).**
+The single gate `pushConfig` sits behind — a config is never pushed with an
+unresolved `error`-severity issue (`warning` issues never block a push).
+One row per rule below; each names the exact `ValidationIssue.path` the app
+emits, so a reviewer can check the code against this table line by line.
+
+| Path | Severity | Condition | Citation |
+|------|----------|-----------|----------|
+| `imu.sample_rate_hz` | error | not in the high-perf or low-power ODR list for the current `imu.low_power_mode` | §8 "Valid `sample_rate_hz` values" |
+| `imu.low_power_mode` | warning | `imu.high_performance_mode` also true | SPEC §8 gap — the two flags are framed as one physical toggle but §8 never states which wins when both are set; tracked note 2026-09-05 |
+| `imu.accel_range_g` | error | not one of ±4/8/16/32 g | §8 "Configurable chip options" |
+| `imu.gyro_range_dps` | error | not one of ±125/250/500/1000/2000 dps | §8 "Configurable chip options" |
+| `imuN.accel_range_g` (N=0,1,2) | error | not one of ±4/8/16/32 g | §8 "Per-IMU range resolution" |
+| `imuN.gyro_range_dps` (N=0,1,2) | error | not one of ±125/250/500/1000/2000 dps | §8 "Per-IMU range resolution" |
+| `imuN.channels` (N=0,1,2) | warning | `imuN.enabled` true and every axis channel false | load-bearing invariant: an enabled IMU logging nothing is a mistake |
+| `gps.sample_rate_hz` | error | not an integer | §8 "Integer 1-10 Hz" |
+| `gps.sample_rate_hz` | error | integer but outside 1..10 | §8 "Integer 1-10 Hz" |
+| `gps.dynamic_model` | error | not one of portable/pedestrian/automotive/sea/airborne | §8 "Configurable chip options" |
+| `gps.nmea_sentences` | warning | empty array | §8 "NMEA sentences (GGA+RMC default)" |
+| `analog.channels[i].key` | error | empty string | §8 "Analog channels" (the key addresses the entry) |
+| `analog.channels[i].key` | error | shares its value with an earlier channel's key | §8 "Analog channels" (one physical sensor per key) |
+| `analog.channels[i].scale` | error | `scale` is 0 | §8 "Analog channels" (every sample would read as the fixed offset) |
+| `analog.channels[i].adc_pin` / `digital.channels[j].gpio_pin` | error | two channels (any kind combination) share a pin number | one physical pin cannot serve two claims |
+| `digital.channels[i].kind` | warning | `kind` is not `"marker"` | §8 "`level`... `pwm`... reserved in the schema but not yet exposed" |
+| `digital.channels[i].debounce_ms` | error | negative | §8 "Digital channels" (a negative debounce window is meaningless) |
+| `wheel_speed.front/rear.points_per_revolution` | error | slot `enabled` true and value ≤ 0 | divide-by-zero in every speed derivation |
+| `wheel_speed.front/rear.wheel_circumference_mm` | error | slot `enabled` true and value ≤ 0 | not a usable geometry |
+| `heart_rate_monitor.device_address` | error | block `enabled` true and address does not match `^([0-9A-F]{2}:){5}[0-9A-F]{2}$` | §8 "Heart rate monitor" (colon-separated uppercase hex) |
+
+A disabled `wheel_speed` slot, and an absent or `enabled: false`
+`heart_rate_monitor` block, are not validated at all — neither is pushed to
+hardware in that state (§8 "Wheel speed defaults"; §8 "Heart rate monitor").
+
+**Channel-enable preview (idl1, `app/src/routes/pages/Device/config/sourcesPreview.ts`).**
+Wave 2's Device tab channels table shows enable state, sample rate, and
+units only, per source — never a predicted `channel_id`, `data_type`, or
+`scale`/`offset`. Those four values are §5.2's own registry-entry fields,
+resolved from the config by `core::parse` in Rust (the `scale = range /
+32768` derivation is the wire contract's formula, not the app's); a second
+copy of that arithmetic in TypeScript is exactly the drift a standing
+reviewer brief flags as a finding (ruling R53 Device Q1). The full
+per-channel registry preview — one row per resolved axis/pin/counter,
+carrying `channel_id`, `data_type`, `scale`, and `offset` — is deferred to
+`preview_channel_registry(config_json) -> RegistryRow[]` (IPC need 12),
+computed engine-side once the Rust write-amendment lane lands it.
+
 ---
 
 ## 9. Coordinate System
@@ -2011,27 +2071,181 @@ BLE scan / connect / disconnect, with the §7.3 status characteristic rendered a
 
 ### 23.2 Profile bar
 
-A profile is one complete bike-specific configuration; the app stores a library of N profiles as JSON files at `<docs>/profiles/<uuid>.idl0p`. One profile is active at a time; **Push Config** pushes only that profile's `config` sub-object.
+A profile is one complete bike-specific configuration: `runs/2026-09-05/lanes/l7/IPC-NEEDS.md` need 11's `BikeProfile` shape (`profile_id`, `profile_name`, `created_at_ms`, `updated_at_ms`, and a `config` sub-object — the SPEC §8 device-config document, pushed verbatim). idl0 stored the library as JSON files at `<docs>/profiles/<uuid>.idl0p`, one profile active at a time; **Push Config** (§23.6) pushes only the active profile's `config`.
 
-- **Dropdown** — lists profiles by `profile_name`, single-select. Selection updates the active pointer.
-- **`+`** — opens "New profile" dialog (name + "Duplicate active" toggle, defaulting on).
-- **Kebab** — Rename · Duplicate · Delete · Import from file · Export to file. Delete is refused for the last remaining profile (a profile library cannot be empty).
+**Wave 2 (`Device/profiles.ts`, `Device/ProfileBar.tsx`) is in-memory for the session — not the file-backed library above.** `list_profiles`/`save_profile`/`delete_profile` (IPC need 11) are stubs until the Rust write lane lands `rust/core/src/store/profile.rs`'s already-implemented `load_all`/`save`/`delete`; until then, `ProfileBar` renders a visible, unconditional notice that the library is not saved. The bar itself is close to idl0's shape:
 
-The active profile id is persisted to `SharedPreferences` key `idl0.profiles.active_id`.
+- **Dropdown** — lists profiles by `profile_name`, single-select. Selection updates the active pointer (`profilesReducer`'s `SELECT`).
+- **`+ New profile`** — creates a profile seeded from `Device/config/defaults.ts`'s `defaultConfig(deviceId)` and makes it active (`CREATE`). Wave 2 has no "Duplicate active" toggle on creation — duplicating an existing profile is its own action, below.
+- **Duplicate / Rename / Delete active** — `DUPLICATE` deep-copies the active profile's `config` (`structuredClone`) under a new `profile_id`, so editing the copy never touches the original; `RENAME` does not enforce unique names, only unique ids; `DELETE` reassigns `activeId` to another remaining profile, or `null` when the library becomes empty — wave 2 does **not** refuse deleting the last profile (idl0's "a profile library cannot be empty" rule), since an empty library is exactly the honest state of a fresh session with nothing created yet. Import/export from file are not built in wave 2 (no file dialog is wired to this bar).
+
+The active profile id is **not** persisted anywhere — no `SharedPreferences` equivalent — consistent with the whole library being in-memory only.
 
 ### 23.3 Channel table
 
-One expandable parent row per `ChannelSource` (IMU0/1/2, GPS, Wheel Speed, Analog, Digital, and Spec 2's HRM). Columns: **Source · Rate Hz · Channels (`enabled/total`) · Enabled · ⚙** (source-level dialog).
+`Device/sources.ts`'s `listSources(config)` builds one `SourceView` row per
+configurable source — `imu0`/`imu1`/`imu2`, `gps`, `wheel_front`/`wheel_rear`,
+one per `analog.channels[]` entry, one per `digital.channels[]` entry, and
+the heart rate monitor — in that stable order, hardware-pinned sources
+first. `ChannelsTable.tsx` renders it: **Source · Rate Hz · Channels
+(`enabled/total`) · Enabled · ⚙**. Enable state and rate are joined from
+`previewSources` (§23.2's sibling Task 4 module) by `sourceKey`, never
+recomputed here.
 
-Expanded child rows show each individual channel: **Name · Rate Hz · units · scale · offset · Enabled**. Tapping a child opens its per-channel dialog.
+The ⚙ control opens that source's form: the three `imu0`/`imu1`/`imu2` rows
+and the two `wheel_front`/`wheel_rear` rows each share one form per group
+(§23.3.1, §23.3.3), `gps` opens its own (§23.3.2), and an analog, digital or
+heart-rate-monitor row opens its own entry's form keyed by that row's
+`sourceKey` (§23.3.4–.6).
 
-For sources whose sample rate is hardware-shared across instances (IMUs all on one SPI bus, analog channels round-robined by the ADC scheduler), the child rate cells display the effective rate but are read-only — editing the rate goes through the source-level dialog so the shared nature stays explicit.
+Expanding a row lists its channels: **Name · Units · Enabled · Scale ·
+Offset**, where Scale/Offset show only for an `analog.channels[]` entry's
+own config-typed `scale`/`offset` (the value the user typed) — every other
+source's channel rows show `—` in those two columns. Wave 2 has **no
+predicted `channel_id` or data-type column**: that number is `core::parse`'s
+own arithmetic (SPEC §3's `scale = range / 32768`), and showing it here
+before `preview_channel_registry` (IPC need 12) lands would be a second,
+driftable copy of wire-format logic in TypeScript (R53 Device Q1).
 
-Hardware-pinned sources (IMU, GPS, Wheel Speed) are always present in a profile. User-added sources (Analog, Digital marker, HRM) appear once added via **+ Add channel…**.
+For sources whose sample rate is hardware-shared across instances (IMUs all
+on one SPI bus, analog channels round-robined by the ADC scheduler), the
+rate is shown once at the source row, not per channel — there is no
+per-channel rate to edit independently of the source-level rate.
+
+Hardware-pinned sources (IMU, GPS, Wheel Speed) and the heart rate monitor
+are always present in a profile, shown even when disabled — HRM has no
+picker entry of its own (§23.4) precisely because it is never added or
+removed, only configured. User-added sources (Analog, Digital marker) each
+appear once created via **+ Add channel…**.
+
+**Breakdown row names are the SPEC §5.4 registry channel names, verbatim** —
+`WheelFront`/`WheelRear`, `HR_BPM`, and the GPS row's six children
+(`GPS_Latitude`, `GPS_Longitude`, `GPS_Altitude`, `GPS_SpeedKmh`,
+`GPS_Heading`, `GPS_EpochMs`) — never an invented word (`"pulse"`,
+`"heart_rate"`, `"fix"`). A user sees the same name here as the Data tab and
+notebook will use for the same data once those read the registry.
+
+**While `pull_config` (IPC need 10) is not yet wired**, the config card
+renders against `defaultConfig("")` — a fabricated placeholder, not a
+connected device's actual settings — and shows a visible banner above the
+table saying so, so a default Rate/Enabled value is never mistaken for a
+real one.
+
+### 23.3.1 IMU form
+
+`Device/forms/ImuForm.tsx` edits `config.imu` as a whole: the SPI-bus-shared
+`sample_rate_hz`, the `low_power_mode`/`high_performance_mode` flags, the
+top-level default `accel_range_g`/`gyro_range_dps`, and the three
+`imu0`/`imu1`/`imu2` sub-blocks (each its own enable flag, range overrides,
+and six axis checkboxes). The sample-rate control's option list switches
+between the high-performance and low-power ODR tables based on
+`low_power_mode`; both range controls are limited to the LSM6DSO32's four
+accel and five gyro full-scale options. Every field commits immediately
+through `Device/config/edit.ts` (`setImuRate`/`setImuSlot`/`setImuAxis`/
+`setImuModeFlags`/`setImuRanges`) and re-runs `validateConfig`, showing that
+field's own issues inline — never snapping or blocking the edit itself, only
+the eventual push (§23.6).
+
+### 23.3.2 GPS form
+
+`Device/forms/GpsForm.tsx` edits `config.gps`: fix rate (an integer 1–10 Hz
+picker), dynamic model (the five SPEC-stated values), the six-sentence NMEA
+checklist, and SBAS. Commits through `setGps`, one field at a time — toggling
+`dynamic_model` never touches `nmea_sentences` or `sbas_enabled`.
+
+### 23.3.3 Wheel form
+
+`Device/forms/WheelForm.tsx` edits both `wheel_speed.front` and `.rear`
+slots in one form: each slot's enable flag, Hall-sensor points-per-
+revolution count, and wheel circumference (mm). Commits through
+`setWheelSlot`, one slot at a time — editing front never touches rear.
+Matching `validateConfig`'s own rule (§23.3), a slot's geometry issues show
+only once that slot is enabled.
+
+### 23.3.4 Analog form
+
+`Device/forms/AnalogForm.tsx` edits one `analog.channels[]` entry: label,
+units, ADC pin, scale, offset and enable flag, plus Delete. Commits through
+`Device/config/edit.ts`'s `upsertAnalogChannel` (both a new draft entry from
+the picker and every field edit here go through the same function — a new
+channel's `key` is already unique by construction, so "insert" and "replace
+in place" are the same operation from `upsertAnalogChannel`'s point of
+view) and `removeAnalogChannel`.
+
+The ADC pin control is a plain non-negative-integer input, starting empty
+when the pin is unassigned (`adc_pin: null`), never a `<select>` — SPEC §8
+states no valid `adc_pin` range or numbering scheme for a picker to
+enumerate (ruling R58, `runs/2026-09-03/decisions.md`), so the app never
+invents one or auto-selects a pin on the user's behalf. `validateConfig`
+reports an unassigned pin as a push-blocking error and a pin shared with
+another analog or digital entry as a collision error; this form shows both
+inline, never snapping or rejecting the keystroke itself. **The pin input
+is unconstrained until SPEC §8 states the device's valid `adc_pin` value
+set** (or maps it to §3.7's named connector nets) — when it does, the
+input becomes a select and the validator gains a range rule, in one task,
+with no model change.
+
+### 23.3.5 Digital form
+
+`Device/forms/DigitalForm.tsx` edits one `digital.channels[]` entry: label,
+GPIO pin, active-low polarity, debounce window (ms) and enable flag, plus
+Delete. `kind` is shown as read-only text, never a picker — Spec 1 only
+ever creates `"marker"` entries (§23.4's picker); `"level"`/`"pwm"` are
+reserved in the schema (§8) but not exposed for editing even on an entry a
+loaded config file already carries with one of those kinds. Commits through
+`upsertDigitalChannel`/`removeDigitalChannel`, same pattern as the Analog
+form. The GPIO pin control is the same unconstrained non-negative-integer
+input as the Analog form's, for the same reason (§23.3.4); the same
+"unconstrained until SPEC §8 states a value set" note applies.
+
+### 23.3.6 HRM form
+
+`Device/forms/HrmForm.tsx` edits `heart_rate_monitor`: an enable flag, a
+**Search nearby** action, manual address entry, and an informational
+device-name field, plus Forget.
+
+Search nearby runs `bleScan` (C3 §3.8) for a fixed window and lists every
+BLE device found, each with a Select action. `bleScan`'s `DeviceDiscovered`
+shape carries no service-UUID filter, so the app cannot narrow this list to
+heart-rate straps specifically (Parity gap noted in
+`runs/2026-09-05/lanes/l7/IPC-NEEDS.md`) — the form lists everything and
+the user picks by name. Selecting a result writes its identifier into
+`device_address` and its name into `device_name` verbatim and sets
+`enabled: true`, through `setHrm`. On a platform where the discovered
+identifier is not the colon-separated uppercase-hex MAC SPEC §8 states,
+`validateConfig`'s `BLE_ADDRESS_RE` check reports it as an invalid address
+rather than the form silently reformatting or discarding it — visible, not
+silent, the same stance ruling R58 takes on an unassigned pin.
+
+The address field also accepts manual uppercase-hex entry, validated the
+same way. Forget calls `clearHrm`, removing the block entirely (SPEC §8:
+an absent block is equivalent to `enabled: false`) rather than leaving a
+`{ enabled: false, ... }` shape behind. The form states plainly that the
+device logs HR_BPM (channel 22) and HR_RR (channel 23) while enabled
+(SPEC §5.2).
 
 ### 23.4 `+ Add channel…` picker
 
-A modal listing sources the user can add — driven by `kChannelSourceFactories` in code. Selecting an entry creates a new `ChannelSource` instance with default values, opens its dialog, and commits to the active profile on save. Spec 1 ships **Analog channel** and **Marker button**. Spec 2 adds **Heart Rate Monitor**.
+`Device/forms/AddChannelPicker.tsx` lists `Device/config/newChannel.ts`'s
+`addChannelOptions(config)`: **Wheel front**, **Wheel rear** (each toggles
+that slot's existing `enabled` flag via `setWheelSlot` rather than creating
+a new entry — a config has exactly one front and one rear slot — and is
+disabled once that slot is already enabled), **Analog channel** (creates a
+new draft `AnalogChannel` via `newAnalogChannel`) and **Marker button**
+(creates a new draft `DigitalChannel` via `newDigitalMarker`). Spec 1 does
+not expose **Heart Rate Monitor** as a picker choice — the HRM source
+always exists as one fixed row in the channels table (§23.3), configured
+through §23.3.6's form directly, never added or removed.
+
+Both `newAnalogChannel` and `newDigitalMarker` generate a key of the form
+`"analog_N"`/`"marker_N"` that never collides with an existing key in the
+config (never idl0's literal `"__new__"`, which collided on a second add)
+and seed SPEC §8's example-shape defaults (`enabled: true, scale: 1,
+offset: 0` for analog; `kind: "marker", active_low: true, debounce_ms: 20`
+for digital) with an unassigned pin (§23.3.4/.5). Choosing an option
+commits immediately and closes the picker; the new row then appears in the
+channels table like any other source, and the user opens its own gear
+control to fill in the label, pin and other fields.
 
 ### 23.5 Calibration
 
@@ -2039,9 +2253,15 @@ The Calibration panel runs `CMD_CALIBRATE_IMU` per §7.6 and writes the resultin
 
 ### 23.6 Push Config
 
-Sends `activeProfile.config` (the inner config sub-object, with app-side metadata stripped) to the device over BLE (FF05 + `CMD_CONFIG_BEGIN`/`CMD_CONFIG_COMMIT`, §7.2); the device then reboots to apply and the app reconnects. Requires idle mode (BLE control is suspended in WiFi mode, §10.4); the button is disabled when disconnected.
+Sends the active profile's `config` sub-object (app-side metadata such as `profile_id`/`profile_name` stripped) to the device over BLE (FF05 + `CMD_CONFIG_BEGIN`/`CMD_CONFIG_COMMIT`, §7.2); the device then reboots to apply and the app reconnects. Requires idle mode (BLE control is suspended in WiFi mode, §10.4).
 
-Config pushes are never automatic — per §8, the user must review changes and explicitly press Push Config. The `BleService` interface exposes `pushConfigBle` (the chunked BLE path) and `pushConfig` (the WiFi `POST /config` fallback, §6.1).
+**Wave 2 (`Device/push.ts`, `Device/PushConfigBar.tsx`)** calls the real, landed `push_config` (C3 §3.8) over `pushConfig(deviceId, configJson)`, never a hand-built JSON string. `preparePush(config)` is the one gate a config passes through: it runs `validateConfig`/`isPushable` and only serialises with `serializeConfig` when there is zero error-severity `ValidationIssue` — **validate, then serialise, never the reverse**, the lane's load-bearing invariant, since `push_config`'s Rust side checks JSON syntax only. Warning-severity issues (an enabled-but-empty IMU slot, a reserved digital-channel kind) never block a push. `PushConfigBar`'s **Push config** button is enabled only when a device connected in this session (`ConnectionState.connected !== null`, read as "the last attempt succeeded" per R53 Device Q4, never a live link), a profile is active, and `isPushable` holds; the push itself runs through a small pure `pushReducer` (idle → pushing → succeeded/failed) so a double click or an unrelated re-render can never stack a second `pushConfig` call on top of one already in flight.
+
+Idle mode is **stated in copy, not enforced** — `device_status` (IPC need 8) is a stub, so the app cannot read the device's current mode before pushing; a push attempted while the device is in WiFi mode surfaces as a rejection (`kind: "config"` or `kind: "ble"`, `Device/errors.ts`'s `describeIpcError`) rather than being blocked in advance.
+
+**What verification currently does and does not prove.** idl0's push flow reconnects and (once landed) confirms the device is running what was sent. `pull_config` (IPC need 10) is a stub in wave 2, so there is no reconnect-and-verify leg yet: `describePushResult(reconnected, verified)` names all four states SPEC intends (verified match, verified mismatch, reconnect failed, verification unavailable), but every real push in wave 2 lands on the last one — **"Config applied, not verified."** A push that resolves without throwing means only that the device accepted and is applying the bytes sent; nothing in wave 2 confirms the device is actually running them afterward. **Pull from device** is wired to the `pull_config` stub as a visible placeholder — pressing it reports "not available yet" rather than silently doing nothing or claiming success.
+
+Config pushes are never automatic — per §8, the user must review changes and explicitly press Push Config.
 
 ### 23.7 Recording controls
 
@@ -2125,6 +2345,25 @@ Auto-connecting only a *known* (previously-paired) device, listing every
 nearby IDL0 in the dropdown (system-Bluetooth style), true multi-unit
 switching, a persisted paired-device list (§23.8), the phone-GPS recording
 mode, and the on-device download/transfer card are still deferred.
+
+**Wave 2 (`Device/HeroCard.tsx`).** idl0's dense state machine above — the
+colour-coded peripheral readout, RX/TX activity, auto-connect, and the
+Start/Stop CTA — is not built. `device_status` (IPC need 8) and
+`device_control` (IPC need 9) have no C3 command, so the app cannot read a
+single one of the fields the hero describes: mode, recording state, SD
+card, GPS fix, IMU health, HR strap, HRM battery, or the device's own
+battery. `HeroCard` renders each of these as the literal string
+**"unavailable"** rather than a plausible-looking zero or a colour-coded
+"healthy" state it cannot back up — a fabricated battery reading on a race
+day is worse than a blank one (lane brief, "Do not"). The only fields it
+can show are what `ble_connect` (C3 §3.8, real and landed) already
+returned this session: whether the last connect attempt succeeded
+(`ConnectionState.connected`, read per R53 Device Q4 as "the last attempt
+succeeded," never a live link) and the firmware version it reported. There
+is no Start/Stop CTA, no dropdown picker, and no auto-connect loop — the
+tab's plain **Scan for devices** / **Connect** buttons (`Device/connection.ts`,
+Task 1; §23.1's connection panel, not rebuilt as a dropdown) are the only way
+to reach a device.
 
 ---
 
@@ -2428,6 +2667,41 @@ Entries are sorted newest-first (filename descending, per the `YYYY-MM-DD_HH-MM-
 **Download queue.** In both cases files download **strictly one at a time** — the device serves a single HTTP request at a time, so the queue is sequential by design, not as a limitation. Each file streams via `WifiService.downloadFile`; the progress fraction is derived from the known file size from `/files` (the firmware streams chunked with no `Content-Length`), shown per-file as `MB / MB · %` with a bar, plus an overall "N of M done · K queued" banner. On completion each file is registered via `RunsNotifier.registerDownloadedByName` (parse → index → track-visit detection → Drive upload queue) and flips to IN LIBRARY. A per-file failure marks that entry as errored and the queue continues; a Stop control cancels the active download and halts the queue.
 
 **WiFi-mode gate.** The file APIs require WiFi mode. When the device is not in `Mode.wifi`, the screen shows a "Switch to WiFi mode" prompt; bringing the AP up and binding to it is the `ModeController`'s responsibility (gated by the WiFi/logging mutex), not the screen's.
+
+**Wave 2 (`Device/files.ts`, `Device/DeviceFiles.tsx`, plan Task 9).** The
+full-screen `SyncScreen` above is not built; the Device tab has a plain
+**List files** button and an inline list instead. Listing calls
+`listDeviceFiles(deviceId)` (C3 §3.8, real and landed) only on that click
+— never on connect or on a timer — and `rust/tauri/src/commands/device.rs`
+drives the device's own `ControlCommand::WifiOn` transition internally, so
+this list has no separate "switch to WiFi mode" prompt to show.
+**Classification** matches idl0's rule exactly: `toFileViews` marks a file
+`isNew` when its `session_id` is absent from the catalog's known session
+ids (`listSessions`, `app/src/ipc/catalog.ts`, C3 §3.2 — fetched on the
+last successful connect) **or** when `session_id` is `null` (idl0's
+"NEW?" case, folded into plain "new" — wave 2 has no separate
+identity-unknown state).
+
+**No checkbox picker, no "connect and forget."** Every row has its own
+**Download** button; there is no multi-select and no `autoSyncOnOpen`
+equivalent (that setting lives in L7c/Settings and is not wired to this
+tab in wave 2 — Open question 3). Downloads still run **strictly one at a
+time**: `isDownloadActive(queue)` disables every row's Download button
+while any queue entry is `"queued"` or `"downloading"`, over
+`downloadFile(deviceId, name, onProgress)` (C3 §3.8). Progress renders as
+a byte count and a `formatTransferRate`-derived KB/s figure — never a
+percentage when `Progress.total` is `null` (the firmware's chunked
+transfer reports no `Content-Length`, same constraint idl0 had). A
+per-file failure (`downloadReducer`'s `FAILED`) leaves every other queued
+entry untouched, matching idl0's "queue continues" behaviour; there is no
+Stop control for wave 2.
+
+**No import handoff (R53 Device Q3).** A finished download lands a blob
+under `<data>/blobs/sha256/` (`DownloadResult`) — idl0's
+`registerDownloadedByName` (parse → index → track-visit detection) has no
+wave-2 equivalent here. The completed row's text says the file is
+downloaded and to import it from the Data tab; the two tabs do not call
+each other. A shared "blobs awaiting import" slice is a wave-3 shell task.
 
 ---
 

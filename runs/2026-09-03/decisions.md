@@ -2997,3 +2997,47 @@ passed); idl-rs L2 branch at `227d3f1` (Tasks 2–5 reviewed CLEAN); L6 at
 cargo process was left running. Lesson carried: a cutoff costs nothing when
 every task commits per step and the lead snapshots worktree state
 immediately; the first resume of the day used the same pattern.
+
+## 2026-09-05 — R61: R23 Q2's synthesizer fallback reaches `SessionHandle::from_channels`
+
+L2 Task 6 landed the Q2 fallback (no channel with a positive rate ⇒ `Time`
+from the longest channel's real `t_us`) and the lane gate exposed one
+consequence outside the task's file list: `session::handle::tests::
+resident_bytes_counts_columns_times_and_math_store` encoded the pre-Q2
+exception ("event-only session → no Time", 240 bytes) and now sees the
+synthesized `Time` (400 bytes). `SessionHandle::from_channels` calls
+`synthesize_base_channels` directly, so — with `session_source::load_session`
+— every event-only session loaded through the Tauri path now carries `Time`.
+That is the intended Q2 outcome. **Ruling:** the implementer edits that one
+test in `handle.rs` in the same commit (assertion and comment restated as
+the rule), the gate re-runs, and the reach is recorded here. Not a new
+design call.
+
+**Cost if wrong:** none beyond Q2's own; the test now documents the rule.
+
+## 2026-09-05 — L7b LANDED (Device tab, wave 2)
+
+Merged `wave2-l7b-device` into idl1-app `main` (`--no-ff`, `a10b3ea`); no
+conflicts (the lane had merged `main` last). Lane: Tasks 1–9 plus seven
+follow-ups. Reviews: nine, all CLEAN after follow-ups. Merge gate on `main`:
+`tsc` clean, whole TS suite **330 passed / 0 failed** (46 files).
+
+**Shipped:** connection reducer over the real `ble_scan`/`ble_connect`
+("last attempt succeeded", R53 Q4); the config model with lenient parse and
+Repairs, never silent snapping; the validator (rate tables, pin rules,
+R58 nullable pins with "pin unassigned" and non-negative checks, IMU
+mode-flag warning); enable/rate/unit sources preview only (R53 Q1 — no wire
+arithmetic in TS, swept lane-wide at the gate); channels table with SPEC §3
+registry names and a visible "no config loaded" banner; six forms + the
+add-channel picker, every control through pure `edit.ts`; in-memory profiles;
+validate-then-serialise push over the real `push_config` with the device's
+own rejection reason; device files list/download with no import handoff
+(R53 Q3); hero card showing "unavailable" for fields the firmware does not
+report (R59 Q6). **Outstanding for the Rust write lane:** `device_status`,
+`device_control` (+ the new `device_rejected` kind), `pull_config`, profile
+persistence, `preview_channel_registry`, a managed connection. **Parity
+gaps** per TASKS.md. **For Isaac (SPEC §8):** IMU defaults, mode-flag
+exclusivity, valid pin sets, the four firmware status fields.
+
+**Cost if wrong:** additive tab behind its own directory; a regression is a
+revert of one merge commit.
