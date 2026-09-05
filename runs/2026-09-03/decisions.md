@@ -3014,3 +3014,30 @@ the rule), the gate re-runs, and the reach is recorded here. Not a new
 design call.
 
 **Cost if wrong:** none beyond Q2's own; the test now documents the rule.
+
+## 2026-09-05 — L7b LANDED (Device tab, wave 2)
+
+Merged `wave2-l7b-device` into idl1-app `main` (`--no-ff`, `a10b3ea`); no
+conflicts (the lane had merged `main` last). Lane: Tasks 1–9 plus seven
+follow-ups. Reviews: nine, all CLEAN after follow-ups. Merge gate on `main`:
+`tsc` clean, whole TS suite green (count below).
+
+**Shipped:** connection reducer over the real `ble_scan`/`ble_connect`
+("last attempt succeeded", R53 Q4); the config model with lenient parse and
+Repairs, never silent snapping; the validator (rate tables, pin rules,
+R58 nullable pins with "pin unassigned" and non-negative checks, IMU
+mode-flag warning); enable/rate/unit sources preview only (R53 Q1 — no wire
+arithmetic in TS, swept lane-wide at the gate); channels table with SPEC §3
+registry names and a visible "no config loaded" banner; six forms + the
+add-channel picker, every control through pure `edit.ts`; in-memory profiles;
+validate-then-serialise push over the real `push_config` with the device's
+own rejection reason; device files list/download with no import handoff
+(R53 Q3); hero card showing "unavailable" for fields the firmware does not
+report (R59 Q6). **Outstanding for the Rust write lane:** `device_status`,
+`device_control` (+ the new `device_rejected` kind), `pull_config`, profile
+persistence, `preview_channel_registry`, a managed connection. **Parity
+gaps** per TASKS.md. **For Isaac (SPEC §8):** IMU defaults, mode-flag
+exclusivity, valid pin sets, the four firmware status fields.
+
+**Cost if wrong:** additive tab behind its own directory; a regression is a
+revert of one merge commit.
