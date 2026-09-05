@@ -2592,3 +2592,69 @@ SoA after all — cheap to check at Task 7's first test. Q3 costs deleting Task
 4 for a stub over an IPC call. Q4/Q5/Q6 are additive `pub` surface in the
 Rust write lane; their blast radius is that lane. Q1's `htl` pin is a new
 dependency with no prior pin — reversible before any cell uses `html`.
+
+## 2026-09-05 — R53: L7 tab plans adjudicated (Data 5, Device 5, Settings 4 questions)
+
+Plans: `docs/superpowers/plans/2026-09-05-idl1-wave2-l7{a-data,b-device,c-settings}-tab.md`
+(Opus; 8 + 9 + 6 tasks; 13 IPC needs in `runs/2026-09-05/lanes/l7/IPC-NEEDS.md`,
+8 beyond the operating brief's five). The planner confirmed settings, profile
+and data-dir override all have landed core logic and need only commands.
+
+**Data (L7a)**
+- Q1 → (b): the three `<Tab>Page.tsx` re-export shims stay until all three
+  lanes merge; one lead shell task then deletes them and edits `App.tsx`.
+- Q2 → (a) wave 2; has-GPS / has-gates catalog columns filed as a wave-3
+  C4 §5 + C3 §3.2 amendment.
+- Q3 → (a) **now**, shape fixed here: the shell task adds a `selection`
+  slice to `state/AppState.tsx` — `{ sessionId: string | null, lapContext:
+  { mainLap: number, overlayLaps: number[] } | null }` — mirroring R52 Q5's
+  `lap_context` so L6 passes it through to `eval_workbook` unchanged. L7a
+  writes it; L6 reads it. Supersedes R52 Q9(iii)'s bare `activeSessionId`.
+- Q4 → (a): lap counts and lap tables render "—"/empty honestly; CHANGELOG
+  states that no wave-1 import path populates the catalog's lap tables.
+  **Escalated to Isaac** as the one item visible on screen. Lap indexing at
+  import (L1's gate synthesis/renumbering already in core) is added to the
+  Rust track backlog after the write-amendment lane.
+- Q5 → sector count only in wave 2; `LapDetail.sectors` element shape is
+  pinned in C1 §6 when lap indexing lands, not before.
+
+**Device (L7b)**
+- Q1 → **(c) now, (b) later — not (a).** The channel-registry preview's
+  `scale = range / 32768` is the wire contract's own formula (SPEC §3), which
+  `core::parse` already owns; a second copy in TypeScript is exactly the drift
+  the standing reviewer brief calls a finding. Wave 2 shows enable state,
+  rate and unit only; `preview_channel_registry(config_json) -> RegistryRow[]`
+  (IPC need 12) joins the Rust write-amendment lane and Task 4 widens then.
+  Lead's layer call under CLAUDE.md §1/§2: it is physics of the bike.
+- Q2 → (a): any positive integer for `analog.sample_rate_hz`; the SPEC §8
+  gap is restated, not filled with a guess.
+- Q3 → (a) wave 2; "blobs awaiting import" shared slice is a wave-3 shell task.
+- Q4 → (a) now; a managed connection + status/control commands (IPC need 13)
+  are one piece of work in the Rust lane.
+- Q5 → six forms + the add-channel picker is the correct count; the
+  operating brief's "seven" counted `factories.dart`. Not a gap.
+
+**Settings (L7c)**
+- Q1 → (a) with (c): `localStorage` behind `PrefsBackend` now;
+  `get_settings`/`set_settings` in the Rust lane; the swap task does a
+  one-time import of the `localStorage` keys into `settings.json` and then
+  deletes them, so no preference is silently lost.
+- Q2 → (a) now with the provisional status visible in the section itself;
+  (b) — L6 exporting its binding table — via a lead shell task after L6 merges.
+- Q3 → (a): sync status and pairing live in Settings; L11 may add a sync
+  action to the Data tab.
+- Q4 → BOM strip in `paths::resolve_data_dir` goes in the Rust write lane
+  (already tracked 2026-09-05); "takes effect on restart" stated in the UI.
+
+**Shell task (one, on `main`, before any UI dispatch):** `package.json` gains
+`@observablehq/runtime ^6.0.0`, `@observablehq/plot ^0.6.17`,
+`@observablehq/inputs ^0.12.0`, `d3 ^7.9.0`, `codemirror ^6.0.2`,
+`@codemirror/lang-javascript ^6.2.5`, `@codemirror/lang-markdown ^6.5.2`,
+`htl ^1.0.0` (M0 pins table gains the `htl` row); `AppState` gains the
+`selection` slice above with a reducer test. `App.tsx` untouched (shims).
+
+**Cost if wrong:** L7b Q1 costs the Device tab a column for one wave —
+cheap — versus a wire-format formula living in two languages, which is the
+kind of divergence that misleads at the track. L7a Q3's slice shape is
+additive; if L6 needs more it is one shell task. L7a Q4 is visible to Isaac
+and stated in the CHANGELOG so it is not read as a bug.
