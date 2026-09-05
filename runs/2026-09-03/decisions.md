@@ -3245,3 +3245,20 @@ the amended shape behind a typed seam that treats a missing `hash` as
 
 **Cost if wrong:** one extra field on an event; without it every own save
 triggers a reload and a flash, which is the bug C4 §4 exists to prevent.
+
+## 2026-09-05 — R68: catalog SQL stays in core; the Tauri crate does not depend on rusqlite
+
+L8w Task 5's brief said "do not add a new core pub fn for a single DELETE",
+so the implementer put `DELETE FROM sessions` in `tauri/src/commands/
+catalog.rs` and added `rusqlite` as a direct dependency of `idl-rs-tauri`.
+That contradicts CLAUDE.md §2 (bytes on disk → core; the Tauri crate is thin
+glue) — the brief was wrong. **Ruling:** add `pub fn delete_session(conn,
+session_id) -> Result<bool, CatalogError>` to `core::store::catalog` (one
+statement, cascades documented, tested there), call it from the command, and
+drop `rusqlite` from `tauri/Cargo.toml` (`Cargo.lock` follows). Because this
+is a `pub` addition in `core`, `cargo check -p idl-rs-cli --tests` runs.
+The `map_session_json_error(e, path)` signature change is confirmed (the
+path in the message was the lead's own requirement).
+
+**Cost if wrong:** a second SQL surface outside the store would let the
+schema drift from its owner; the fix is mechanical.
