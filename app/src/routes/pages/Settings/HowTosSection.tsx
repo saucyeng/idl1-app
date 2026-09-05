@@ -38,7 +38,7 @@ const ARTICLES: readonly HowToArticle[] = [
   {
     id: "gps-lap-gate",
     title: "GPS Lap Gate",
-    subtitle: "Set a GPS gate. Auto-detect lap times.",
+    subtitle: "How gate-based lap detection is designed to work. Not yet available.",
     Content: GpsLapGate,
   },
   {

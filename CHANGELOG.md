@@ -6,6 +6,22 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 
 ### Added
 
+- **L7c how-to copy accuracy fixes (2026-09-05, Task 6 review fix).**
+  `Settings/howtos/FirstSetup.tsx`, `WifiDownload.tsx` and `GpsLapGate.tsx`
+  no longer describe unbuilt or wrong-transport affordances as working:
+  config push is now correctly described as Bluetooth Low Energy (SPEC
+  §7.2), not WiFi; IMU calibration and remote recording start/stop are
+  stated as not yet available (both need a BLE command the Rust side
+  doesn't expose yet, per L7b's wave-2 plan); the download flow now points
+  at the Device tab's file list (not the Data tab) and states that
+  importing a download into the session library is a separate manual step;
+  the "enable WiFi" toggle is dropped since `listDeviceFiles` already
+  drives the device into WiFi mode itself; the GPS Lap Gate article states
+  up front that gate placement, lap detection and the lap table are not
+  built in wave 2 (R53 Data Q4) and describes the design rather than a
+  shipped flow. `about.ts`'s `SCHEMA_VERSION` doc comment now states
+  plainly that it is an invented display string to keep in sync by hand,
+  matching `APP_VERSION`'s treatment (review-task6.md Minor).
 - **L7c Settings tab, Task 6 — lane complete for wave 2 (2026-09-05).**
   Chart controls reference (`Settings/controls.ts`, `ControlsSection.tsx`)
   carries idl0's mouse-wheel/mouse/keyboard shortcut table verbatim, with a

@@ -16,8 +16,12 @@ const APP_VERSION = "0.1.0";
 /** The session/workbook schema version this build understands, per C1's
  *  `session.json` `schema_version` field
  *  (`docs/superpowers/specs/2026-09-03-idl1-c1-session-schema.md`).
- *  Hardcoded for the same reason as {@link APP_VERSION} — no command
- *  surfaces this from the engine yet. */
+ *  Hardcoded for the same reason as {@link APP_VERSION} — no command or
+ *  `SessionSummary` field surfaces this value today, so it is an invented
+ *  display string that mirrors C1's numeric `schema_version: 1` by hand.
+ *  Keep it in sync with that field by hand, and supersede this constant
+ *  with a real read the day a command exposes the schema version
+ *  (review-task6.md Minor, 2026-09-05). */
 const SCHEMA_VERSION = "session schema v1";
 
 /** The build identifier. `"dev"` outside of a tagged release build, matching
