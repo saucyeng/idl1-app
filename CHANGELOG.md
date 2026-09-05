@@ -6,6 +6,13 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 
 ### Added
 
+- **L5 complete (2026-09-04).** idl-rs-tauri wired to every landed wave-1 lane's C3 command
+  group (catalog, workbook, cursor, raster, tile) plus device (L4); <data> resolution,
+  workbook watcher, app/src/ipc/ module layer, routing and state skeleton. Tile fetched
+  end-to-end from a real .idl0 — parse → store → `fetch_tile` → decoded bytes verified in a
+  headless test (header v2, 20224 bytes, real sample values); the NotebookPage canvas render
+  compiles and type-checks with unit tests passing but has not been visually confirmed. M0
+  smoke path retired. Import commands (C3 §3.3) ship with L2, not this lane.
 - **Raster commands (C3 §3.6) over L3's core::raster.** fetch_raster (binary) and fetch_raster_meta (axis domains + colour scale, resolution-independent per ruling R38); typed SpectrogramParams/Histogram2dParams replace the provisional Record<string, number> (C3 open question 6.4 closed).
 - **Cursor command (C3 §3.7) over L3's core::cursor.** cursor_readout — nearest recorded sample, null outside a channel's recorded span (ruling R31); an unknown channel rejects the whole call with invalid_argument. Settle-bound only, never a hot path (C3 §4).
 - **Workbook commands (C3 §3.4) over L3's v3 parser/evaluator.** open_workbook, eval_workbook (per-cell CellOutput, host channels as HostChannelRef markers only — the byte path is deferred to wave 2 with L6), save_workbook (C4 §4 expected-hash ordering + optimistic based_on_hash), watch_workbook (Task 3's watcher + a cell-body diff). No unsubscribe in wave 1.
