@@ -163,4 +163,48 @@ describe("generate", () => {
       expect(codes[i]).toContain(`Plot.${mark}(channel("c"), { x: "t", y: "v" })`);
     });
   });
+
+  it("generate — x axis object with no populated fields — omits the x key", () => {
+    // Arrange
+    const props: PlotProps = {
+      marks: [{ channel: "fork_velocity", mark: "lineY" }],
+      x: {},
+    };
+
+    // Act
+    const code = generate(props);
+
+    // Assert
+    expect(code).toBe(
+      [
+        "Plot.plot({",
+        "  marks: [",
+        '    Plot.lineY(channel("fork_velocity"), { x: "t", y: "v" })',
+        "  ]",
+        "})",
+      ].join("\n"),
+    );
+  });
+
+  it("generate — y axis object with no populated fields — omits the y key", () => {
+    // Arrange
+    const props: PlotProps = {
+      marks: [{ channel: "fork_velocity", mark: "lineY" }],
+      y: {},
+    };
+
+    // Act
+    const code = generate(props);
+
+    // Assert
+    expect(code).toBe(
+      [
+        "Plot.plot({",
+        "  marks: [",
+        '    Plot.lineY(channel("fork_velocity"), { x: "t", y: "v" })',
+        "  ]",
+        "})",
+      ].join("\n"),
+    );
+  });
 });

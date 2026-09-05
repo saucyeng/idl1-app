@@ -277,4 +277,28 @@ describe("parse", () => {
     // Assert
     expect(parsed).toEqual(expected);
   });
+
+  it("parse — an axis object with no populated fields — normalizes to the axis key being absent", () => {
+    // Arrange
+    const code = [
+      "Plot.plot({",
+      "  x: {},",
+      "  y: {},",
+      "  marks: [",
+      '    Plot.lineY(channel("fork_velocity"), { x: "t", y: "v" })',
+      "  ]",
+      "})",
+    ].join("\n");
+    const expected: PlotProps = {
+      marks: [{ channel: "fork_velocity", lap: null, mark: "lineY" }],
+    };
+
+    // Act
+    const parsed = parse(code);
+
+    // Assert
+    expect(parsed).toEqual(expected);
+    expect(parsed).not.toHaveProperty("x");
+    expect(parsed).not.toHaveProperty("y");
+  });
 });

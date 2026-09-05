@@ -9,22 +9,28 @@ function jsString(s: string): string {
 
 /** Renders an `x_scale` object inline (C2 §5.3), e.g.
  *  `{ label: "Time (s)" }`. Field order is `label`, `domain` — the
- *  grammar's `x_field` order. `type` is never emitted (see `types.ts`). */
-function renderXAxis(x: XAxisProps): string {
+ *  grammar's `x_field` order. `type` is never emitted (see `types.ts`).
+ *  Returns `null` (never `"{}"`) when every field is undefined — C2
+ *  §5.3's `x_scale` never produces an empty object, so the caller omits
+ *  the `x` key entirely, the same "omit when undefined" pattern the
+ *  individual fields already follow. */
+function renderXAxis(x: XAxisProps): string | null {
   const fields: string[] = [];
   if (x.label !== undefined) fields.push(`label: ${jsString(x.label)}`);
   if (x.domain !== undefined) fields.push(`domain: [${String(x.domain[0])}, ${String(x.domain[1])}]`);
-  return fields.length === 0 ? "{}" : `{ ${fields.join(", ")} }`;
+  return fields.length === 0 ? null : `{ ${fields.join(", ")} }`;
 }
 
 /** Renders a `y_scale` object inline (C2 §5.3). Field order is `label`,
- *  `domain`, `type` — the grammar's `y_field` order. */
-function renderYAxis(y: YAxisProps): string {
+ *  `domain`, `type` — the grammar's `y_field` order. Returns `null` (never
+ *  `"{}"`) when every field is undefined, for the same reason as
+ *  `renderXAxis`. */
+function renderYAxis(y: YAxisProps): string | null {
   const fields: string[] = [];
   if (y.label !== undefined) fields.push(`label: ${jsString(y.label)}`);
   if (y.domain !== undefined) fields.push(`domain: [${String(y.domain[0])}, ${String(y.domain[1])}]`);
   if (y.type !== undefined) fields.push(`type: ${jsString(y.type)}`);
-  return fields.length === 0 ? "{}" : `{ ${fields.join(", ")} }`;
+  return fields.length === 0 ? null : `{ ${fields.join(", ")} }`;
 }
 
 /** Renders a mark's `channel_call` (C2 §5.3): `channel("name")`, or
@@ -71,8 +77,14 @@ function renderMark(m: MarkProps): string {
  *  and generates `marks: []` rather than a multi-line empty block. */
 export function generate(props: PlotProps): string {
   const topLines: string[] = [];
-  if (props.x !== undefined) topLines.push(`x: ${renderXAxis(props.x)}`);
-  if (props.y !== undefined) topLines.push(`y: ${renderYAxis(props.y)}`);
+  if (props.x !== undefined) {
+    const renderedX = renderXAxis(props.x);
+    if (renderedX !== null) topLines.push(`x: ${renderedX}`);
+  }
+  if (props.y !== undefined) {
+    const renderedY = renderYAxis(props.y);
+    if (renderedY !== null) topLines.push(`y: ${renderedY}`);
+  }
   if (props.color !== undefined) topLines.push(`color: { legend: true }`);
 
   const marksLine =

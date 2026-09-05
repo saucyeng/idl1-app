@@ -585,7 +585,14 @@ function parsePlotOptionField(key: string, c: Cursor): FieldResult {
 
 /** Reads `plot_options`: `{ ... }`, requiring `marks` to be present (the
  *  form always seeds one mark; C2 §5.3 leaves `marks` as the one
- *  non-optional top-level key). */
+ *  non-optional top-level key).
+ *
+ *  A hand-typed `x: {}` or `y: {}` (every field undefined) normalises to
+ *  the key being absent from the returned props, never `{}` — matching
+ *  `generate`, which never emits an empty axis object (review finding,
+ *  L6 Task 2). This keeps `parse(generate(p))` deep-equal to `p` for any
+ *  `p` `generate` can actually produce, since `generate` can never
+ *  produce `x: {}`/`y: {}` in the first place. */
 function readPlotOptions(c: Cursor): PlotProps | null {
   const start = c.pos;
   const fields = readBracedFields(c, parsePlotOptionField);
@@ -595,8 +602,12 @@ function readPlotOptions(c: Cursor): PlotProps | null {
   }
 
   const props: PlotProps = { marks: fields.marks as MarkProps[] };
-  if (fields.x !== undefined) props.x = fields.x as XAxisProps;
-  if (fields.y !== undefined) props.y = fields.y as YAxisProps;
+  if (fields.x !== undefined && Object.keys(fields.x as XAxisProps).length > 0) {
+    props.x = fields.x as XAxisProps;
+  }
+  if (fields.y !== undefined && Object.keys(fields.y as YAxisProps).length > 0) {
+    props.y = fields.y as YAxisProps;
+  }
   if (fields.color !== undefined) props.color = fields.color as { legend: true };
   return props;
 }

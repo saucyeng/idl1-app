@@ -21,6 +21,8 @@ export interface XAxisProps {
 /** C2 §5.3's `y_scale` production. */
 export interface YAxisProps {
   label?: string;
+  /** [min, max] in the plotted channel's native unit — channel-dependent,
+   *  unlike x's fixed seconds-since-session-start. */
   domain?: [number, number];
   type?: "linear" | "log" | "sqrt";
 }
