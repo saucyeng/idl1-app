@@ -1,9 +1,107 @@
-# L7c Task 4 — implementer brief (the data-directory section)
+# L7c Task 4 — implementer brief (PrefsBackend goes async, then the data-directory section)
 
-You are the implementer for L7c Task 4 — the `<data>` directory override
-section, built against the `get_data_dir`/`set_data_dir` stubs (IPC need
-7a/7b). This task adds a new section to `docs/IDL0_SPEC.md` §27
-(spec-during, no idl0 counterpart). TDD, ONE commit, then report.
+You are the implementer for L7c Task 4. **Before this task's own scope**,
+Step 0 below makes `PrefsBackend` async — a lead ruling from the Task 2
+review, not part of the original plan text. Only after that lands do you
+build the `<data>` directory override section, against the
+`get_data_dir`/`set_data_dir` stubs (IPC need 7a/7b) and adding a new
+section to `docs/IDL0_SPEC.md` §27 (spec-during, no idl0 counterpart). TDD
+throughout, **two commits** (Step 0's refactor, then the feature — see
+below), then report.
+
+## Step 0 (do this first): make `PrefsBackend` async — lead ruling 2026-09-05 (L7c review-task2 note 1)
+
+`runs/2026-09-05/lanes/l7c-settings/review-task2.md`'s note 2 flagged that
+`Settings/prefsStore.ts`'s doc comment claims the future
+`get_settings`/`set_settings` swap means "nothing in the store or its
+callers changes" — but a real Tauri command is `invoke`-based and async,
+and the current `PrefsBackend.read(): string | null` /
+`write(text: string): void` is synchronous. The lead's ruling: fix this now,
+before it's a bigger rewrite later.
+
+**What changes, all in `Settings/prefsStore.ts` and its test file, plus the
+two Task 3 components that read the store synchronously:**
+- `PrefsBackend`'s `read()` and `write(text)` become `Promise`-returning:
+  `read(): Promise<string | null>`, `write(text: string): Promise<void>`.
+- `localStorageBackend()` keeps its actual `localStorage` calls
+  synchronous internally (there's no async `localStorage` API to call) but
+  wraps each return value / thrown error in a resolved/rejected `Promise`
+  so it satisfies the new interface. `memoryBackend(seed?)` likewise wraps
+  its synchronous reads/writes in resolved promises.
+- `createPrefsStore(backend).get()` and `.set(patch)` become `async`,
+  returning `Promise<Prefs>` and `Promise<SetResult>` respectively. Keep
+  every existing behavioural guarantee: a failed `write()` still reports
+  `{ ok: false, error }` **and** the in-memory value still updates first,
+  so the user's typing is never discarded (this is the exact thing
+  Task 2's review proved with an assertion on both halves — do not lose
+  that coverage). `subscribe(listener)` stays synchronous — it's a plain
+  callback registration, not an IO call.
+- Update `Settings/prefsStore.test.ts`'s existing tests to `await` the new
+  async calls; the assertions themselves (what `get()`/`set()` return, what
+  a listener receives) do not change in substance.
+- Update `Settings/prefsStore.ts`'s doc comment: replace the "nothing in
+  the store or its callers changes" claim with an accurate one — the
+  *shape* of the swap becomes a one-line factory change (a new
+  `tauriSettingsBackend()` alongside `localStorageBackend()`), which is
+  true now that both sides are async; callers already await `get()`/`set()`
+  so they don't change a second time when the backend does.
+- **Adapt `Settings/ProfileSection.tsx` and `Settings/UnitsSection.tsx`**
+  (Task 3, already committed) to the now-async store: `store.get()` calls
+  used to seed initial state need to run in an effect (or however the
+  existing component structure best accommodates an async read — read both
+  files first, they currently call `store.get()` synchronously at least
+  once each) and `store.set(...)` calls in event handlers can stay
+  fire-and-forget (`void store.set(...)`) as long as a failed write's
+  `{ ok: false }` result is still surfaced to the user the same way it is
+  today — do not silently drop that error path while making this change.
+  Read their existing tests (if any exist beside them) and update what the
+  now-async store requires.
+
+- [ ] **Step 0a: Update `prefsStore.ts` and `prefsStore.test.ts`**
+
+  Change the interface and both backends as above; update every existing
+  test to `await`; add (if not already covered) one test confirming a
+  `set()` still reports `{ ok: false, error }` on a rejecting `write()`
+  while `get()` afterward still shows the in-memory value — the exact
+  guarantee Task 2's review checked, now under the async signature.
+
+- [ ] **Step 0b: Adapt `ProfileSection.tsx` and `UnitsSection.tsx`**
+
+  Make both components correct against the async `PrefsStore`. If either
+  file has no test today, you do not need to add component-rendering tests
+  (CLAUDE.md §4: no rendering tests) — the pure logic they call
+  (`prefsStore.ts`) is already covered by Step 0a.
+
+- [ ] **Step 0c: Gate**
+
+  ```
+  cd app && npx tsc --noEmit && npx vitest run src/routes/pages/Settings
+  ```
+  `tsc` must be silent (this catches every caller of the now-async
+  `get()`/`set()` that wasn't updated); `vitest` must show the full
+  Settings suite passing, not just `prefsStore.test.ts`.
+
+- [ ] **Step 0d: NUL-byte check**
+
+  ```
+  grep -c -P '[\x00-\x08\x0B\x0C\x0E-\x1F]' app/src/routes/pages/Settings/prefsStore.ts app/src/routes/pages/Settings/prefsStore.test.ts app/src/routes/pages/Settings/ProfileSection.tsx app/src/routes/pages/Settings/UnitsSection.tsx
+  ```
+  Every count must print `0`.
+
+- [ ] **Step 0e: CHANGELOG + commit (separate from Task 4's own commit)**
+
+  CHANGELOG bullet citing this as "lead ruling 2026-09-05 (L7c
+  review-task2 note 1)" — a async-ification of `PrefsBackend`/`PrefsStore`
+  ahead of the real `get_settings`/`set_settings` swap, not a Task 4
+  feature.
+
+  ```bash
+  git add app/src/routes/pages/Settings/prefsStore.ts app/src/routes/pages/Settings/prefsStore.test.ts app/src/routes/pages/Settings/ProfileSection.tsx app/src/routes/pages/Settings/UnitsSection.tsx CHANGELOG.md
+  git commit -m "app: Settings PrefsBackend/PrefsStore go async (lead ruling, review-task2 note 1)"
+  ```
+  Single line, no AI attribution trailer. This is a real commit on its own
+  — do not fold it into Task 4's feature commit; a reviewer checking this
+  ruling landed correctly should be able to look at one commit for it.
 
 ## Where
 
@@ -17,21 +115,29 @@ section, built against the `get_data_dir`/`set_data_dir` stubs (IPC need
   `package.json`, `vite.config.ts`.
 - **No cargo, ever.**
 - Read first: `CLAUDE.md`; `runs/2026-09-05/lanes/l7c-settings/BRIEF.md`
-  (R53 Q4's exact ruling); `runs/2026-09-05/lanes/l7/IPC-NEEDS.md` need 7
-  (`get_data_dir`/`set_data_dir`, `DataDirInfo`'s three fields — copy field
-  names verbatim: `resolved_path`, `override_path`, `restart_required`);
+  (R53 Q4's exact ruling); `runs/2026-09-05/lanes/l7c-settings/review-task2.md`
+  **in full** — its "Notes for the lead" note 2 is the exact finding Step 0
+  below fixes, cite it that way in your commit rather than re-explaining
+  the reasoning from scratch; `Settings/prefsStore.ts` and
+  `Settings/prefsStore.test.ts` as they exist today (synchronous — this is
+  what Step 0 changes); `Settings/ProfileSection.tsx` and
+  `Settings/UnitsSection.tsx` (Task 3, already committed — read both before
+  Step 0b, they currently call `store.get()`/`store.set()` synchronously);
+  `runs/2026-09-05/lanes/l7/IPC-NEEDS.md` need 7 (`get_data_dir`/
+  `set_data_dir`, `DataDirInfo`'s three fields — copy field names verbatim:
+  `resolved_path`, `override_path`, `restart_required`);
   `docs/superpowers/specs/2026-09-03-idl1-c4-data-directory.md` §1 (the
   override's actual semantics: changing it does **not** move existing
   files, the old tree is left in place, and `<data>` is resolved once at
   startup and cached for the process lifetime — so a change needs a
   restart); `Settings/ipcStubs.ts` (already has `getDataDir`/`setDataDir`
   and `DataDirInfo` from Task 1 — read the actual file, this task calls
-  those, does not redefine them); `Settings/ProfileSection.tsx` (the
-  `{ store: PrefsStore }` prop pattern this task's `DataSection.tsx`
-  follows for consistency, even though this section reads from the
-  `getDataDir` stub rather than `PrefsStore` for its main content).
+  those, does not redefine them). This task's `DataSection.tsx` follows
+  `ProfileSection.tsx`'s `{ store: PrefsStore }` prop pattern for
+  consistency, even though it reads from the `getDataDir` stub rather than
+  `PrefsStore` for its main content.
 
-## The task (plan Task 4, Steps 1–4, unchanged)
+## The task's own scope (plan Task 4, Steps 1–4, unchanged) — after Step 0 lands
 
 **Files:**
 - Create: `Settings/dataDir.ts`, `Settings/dataDir.test.ts`,
@@ -111,6 +217,13 @@ already exist there from Task 1.)
 
 ## Do not
 
+- Do not fold Step 0's refactor commit and Task 4's feature commit into
+  one — they are reviewed separately.
+- Do not lose the "failed write still updates the in-memory value" guarantee
+  while making `PrefsStore` async — carry Task 2's exact test intent
+  forward under `await`.
+- Do not leave `ProfileSection.tsx`/`UnitsSection.tsx` silently swallowing a
+  failed `set()` while adapting them to the async store.
 - Do not let a change commit without the confirmation step and its
   `describeOverrideChange` sentence.
 - Do not claim a change takes effect immediately — it needs a restart.
@@ -127,13 +240,21 @@ tests named `thing — condition — result`. No AI attribution trailer. Never
 
 ## Spec discipline (say it out loud in your report)
 
-**Spec-during** — `docs/IDL0_SPEC.md` §27 gains the new data-directory
+Step 0 (the async refactor) needs no spec change — it's an internal
+interface shape, not user-visible behaviour. Task 4's own scope is
+**spec-during** — `docs/IDL0_SPEC.md` §27 gains the new data-directory
 section per Step 3.
 
 ## Report back (concise)
 
-Commit hash + `git show --stat`; the exact test command and result line;
-per-step done/deviated; confirmation the section states "takes effect on
-restart"; confirmation the confirmation step (not a blur-save) gates any
-change; confirmation the NUL-byte check printed `0` for every file;
-anything ambiguous you resolved (say how) or that needs a lead ruling.
+**Two commit hashes** — Step 0's refactor and Task 4's own feature commit —
+each with `git show --stat`; the exact test command and result line for
+each gate (Step 0c and Step 4); per-step done/deviated for both parts;
+confirmation `PrefsBackend`/`PrefsStore` are now fully async and
+`prefsStore.ts`'s doc comment no longer claims a callerless swap;
+confirmation `ProfileSection.tsx`/`UnitsSection.tsx` still surface a failed
+write to the user after the change; confirmation the section states "takes
+effect on restart"; confirmation the confirmation step (not a blur-save)
+gates any data-dir change; confirmation the NUL-byte check printed `0` for
+every file in both steps; anything ambiguous you resolved (say how) or that
+needs a lead ruling.
