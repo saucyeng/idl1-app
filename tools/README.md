@@ -4,14 +4,13 @@ Developer utilities for inspecting IDL0 logs and prototyping the processing
 pipeline. None of these ship in the app — they're for development and
 investigation only.
 
-## `idl0_dump.dart`
+## Log inspection
 
-Dump and inspect a `.idl0` binary log (and legacy `.espl` files): header fields,
-record boundaries, and per-channel sample counts.
-
-```bash
-dart run tools/idl0_dump.dart path/to/session.idl0
-```
+`idl0_dump.dart` (header fields, record boundaries, `.espl` legacy support) is a Dart tool and
+was not carried into idl1-app (idl1 has no Dart layer — CLAUDE.md §2); it remains available in
+`idl0-app/tools/idl0_dump.dart` for anyone still working against that repo. The overlapping,
+Rust-side subset — session metadata and per-channel sample counts — is available here via the
+CLI: `idl-rs info <file.idl0>` and `idl-rs channels <file.idl0>` (see `rust/cli/src/main.rs`).
 
 ## `imu_drop_analysis.py` / `imu_budget_model.py`
 

@@ -432,6 +432,12 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 - **Device commands (C3 §3.8) wired to L4's idl-transport.** ble_scan, ble_connect, list_device_files, download_file (streams Progress), push_config. Each command connects/acts/disconnects per call (no managed BLE session yet). `push_config` validates `config_json` is well-formed JSON only — full schema validation via `idl_rs::config::parse_config` is blocked on core defining a `VersionedConfig` type for SPEC §8's device-config schema, not yet landed.
 - **Data tab: session list over C3 §3.2 list_sessions.** DataPage becomes routes/pages/Data/; pure SessionRow view-model and typed IpcError mapper, both tested.
 
+### Changed
+
+- **Doc carry-over fixes (2026-09-03, L10).** `tools/README.md` no longer documents the
+  uncarried `idl0_dump.dart`; points at `idl-rs info`/`idl-rs channels` for the overlapping
+  functionality. `app/README.md` replaced (was still the Tauri scaffolder's generic template).
+
 ### Verified
 
 - Binary IPC path (Rust 2/2, vitest 3/3, cargo build, tsc clean) on Windows desktop, 2026-09-02 — automated; visual check via `npm run tauri dev` confirmed by Isaac 2026-09-03 (Engine 0.1.0, smoke tile 0–7 rendered).
