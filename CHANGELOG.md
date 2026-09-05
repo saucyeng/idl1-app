@@ -6,6 +6,18 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 
 ### Added
 
+- **L7c Settings tab, Task 2 (2026-09-05).** Typed `Prefs` model
+  (`EnginePrefs` + `UiPrefs`, `Settings/prefs.ts`) and its pluggable-backend
+  store (`Settings/prefsStore.ts`): `EnginePrefs` matches
+  `idl_rs::store::settings::AppSettings` field for field so a future
+  `set_settings` call needs no translation layer; `parsePrefs`/`serializePrefs`
+  are lenient (defaults for missing/invalid fields, unknown keys preserved,
+  never throw); `createPrefsStore` persists through `localStorageBackend()`
+  (every access wrapped in try/catch, R53 Q1) with `memoryBackend()` for
+  tests, and reports a failed write through `set()`'s result rather than
+  swallowing it or losing the in-memory value. `docs/IDL0_SPEC.md` §27.1
+  rewritten to describe the idl1 prefs model, its `localStorage` interim,
+  and the `get_settings`/`set_settings` gap it will close.
 - **L7c Settings tab, Task 1 (2026-09-05).** `SettingsPage.tsx` moved to a
   `Settings/` directory owned by this lane; section list plus detail-pane
   shell over idl1's seven Settings sections (profile, units, data

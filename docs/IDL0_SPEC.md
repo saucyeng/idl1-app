@@ -2809,25 +2809,52 @@ Tab 5 of the [AdaptiveScaffold](../app/lib/ui/shell/adaptive_shell.dart) shell. 
 
 **Layout.** Narrow (< 720 dp): a single vertical scroll of the §27.4 sections, each a `MinimalSectionHead` + content (Firmware is a collapsed-by-default `CollapsibleSection`). Wide (≥ 720 dp): a two-pane layout — a left list of the sections + a right detail pane showing the selected section (default Profile), matching the Data tab's wide idiom (§24.2). Every control is reachable in both layouts.
 
-### 27.1 AppSettings model
+### 27.1 Prefs model (idl1)
 
-`app/lib/data/app_settings.dart`
+**Superseded (2026-09-05, L7c Task 2).** idl0's `AppSettings`
+(`app/lib/data/app_settings.dart`, `shared_preferences`-backed, 7 fields) is
+replaced by idl1's `Prefs` (`app/src/routes/pages/Settings/prefs.ts`), split
+into an engine half and a UI-only half:
 
-| Field | Type | Default | Persistence key |
-|-------|------|---------|-----------------|
-| `riderName` | `String` | `''` | `rider_name` |
-| `unitSystem` | `UnitSystem` | `imperial` | `unit_system` (int index) |
-| `autoSyncOnDownload` | `bool` | `true` | `auto_sync_on_download` |
-| `syncOnWifiOnly` | `bool` | `true` | `sync_on_wifi_only` |
-| `autoSyncOnOpen` | `bool` | `false` | `auto_sync_on_open` |
-| `firmwareChannel` | `FirmwareChannel` | `stable` | `firmware_channel` (int index) |
-| `autoCheckFirmware` | `bool` | `true` | `auto_check_firmware` |
+| Field | Type | Default | Notes |
+|-------|------|---------|-------|
+| `engine.data_dir` | `string \| null` | `null` | C4 §1's `<data>` override. `null` = platform default. Mirrors `settings.json`'s `data_dir`. |
+| `engine.rider_name` | `string` | `""` | `""` = not set (C4 §1 — there is no `null` representation for this field). |
+| `engine.unit_system` | `"imperial" \| "metric"` | `"imperial"` | An unrecognised value (e.g. from a corrupt document) falls back to `"imperial"`, never throws. |
+| `ui.last_section` | `string` | `"profile"` | Which Settings section the tab reopens on. Never reaches the engine. |
+| `ui.section_list_width_px` | `number` | `220` | Wide-layout section-list width, in pixels. Never reaches the engine. |
 
-`autoSyncOnOpen` is the "connect and forget" switch for the Data tab's Sync screen (§24.17). Default **OFF**: the screen opens as an unchecked file picker. When ON, opening the screen downloads all NEW device files automatically.
+`engine` is field-for-field `idl_rs::store::settings::AppSettings`
+(`rust/core/src/store/settings.rs`) and C4 §1's `settings.json` keys, so a
+future `set_settings` call can take the `engine` object unchanged, with no
+translation layer. `ui` is UI-only and never leaves the machine.
 
-`UnitSystem` enum: `imperial`, `metric`.
+idl0's Drive-sync (`autoSyncOnDownload`, `syncOnWifiOnly`, `autoSyncOnOpen`)
+and firmware (`firmwareChannel`, `autoCheckFirmware`) fields have no idl1
+counterpart here: Drive sync is dropped permanently (replaced by LAN sync,
+§27.4) and firmware/OTA is deferred to wave 3 (not persisted yet).
 
-Backed by `shared_preferences`. `SettingsNotifier` starts at `AppSettings.defaults()` and updates once the async load completes.
+**Where it lives in wave 2 — `localStorage`, not `settings.json`.**
+`rust/core/src/store/settings.rs` already loads and saves
+`app_config_dir()/settings.json` with exactly `engine`'s three keys (C4 §1),
+but no C3 command exposes it yet (C3 is frozen for UI lanes during wave 2).
+So for now the whole `Prefs` document — both halves — is kept in the
+WebView's own `localStorage` on the machine, behind the `PrefsBackend`
+interface (`prefsStore.ts`): it does not sync across devices and does not
+reach `settings.json`. `get_settings`/`set_settings` (IPC need 6, filed in
+`runs/2026-09-05/lanes/l7/IPC-NEEDS.md`) is the command that closes this
+gap; when it lands, the swap is a one-time import of the `localStorage`
+keys into `settings.json` (so nothing already saved is silently lost),
+after which only the `engine` half round-trips through the command and
+`ui` stays local.
+
+`parsePrefs`/`serializePrefs` are lenient: an unreadable or partial
+document yields defaults for the keys it cannot supply, and unknown keys
+(from a newer app version) are preserved through a round trip rather than
+dropped. Every `localStorage` access is wrapped in try/catch — a WebView
+can refuse storage (private mode, cleared site data, a policy) — so a read
+failure yields defaults and a write failure is reported as a failed result,
+never a crash and never a silently discarded change.
 
 ### 27.2 Unit system — defaultUnit()
 
