@@ -865,7 +865,7 @@ interface PeerStatus {
   online: boolean;   // currently visible on the LAN via mDNS
 }
 ```
-Errors: `io`, `internal`.
+Errors: `io`, `internal`, `sync` (a sync-layer failure while reading peer/pairing state — added post-sign 2026-09-05, lead ruling R57, to match the §2 kind table's row for `sync`).
 
 **`sync_now(peer_id: string, progress: Channel<Progress>)`**
 `Progress.done`/`.total` are blobs+cells transferred/expected (a mixed unit;

@@ -2767,3 +2767,15 @@ analysis) and cells cannot yet reference each other by name — both marked
 
 **Cost if wrong:** prose spans render as literal text until Task 13 — visible,
 not silent.
+
+## 2026-09-05 — R57: C3 §3.9 `sync_status` error kinds — the §2 table wins
+
+L7c Task 5's reviewer found C3 internally inconsistent: §3.9's `sync_status`
+entry listed `io`, `internal` only, while the §2 kind table lists `sync` as
+raised by `sync_status`, `sync_now`, `pair_peer`. **Ruling:** the §2 table is
+authoritative; §3.9's entry now reads `io`, `internal`, `sync` (a status query
+can fail in the sync layer itself — unreadable pairing store). L7c's
+`errors.ts` already maps `sync`, so no code change. L11 implements against
+the amended text.
+
+**Cost if wrong:** an extra kind the UI already handles; zero.
