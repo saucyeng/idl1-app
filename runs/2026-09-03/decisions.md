@@ -3165,3 +3165,20 @@ session-limit cutoffs with no lost work.
 
 **Cost if wrong:** import is now a real end-to-end path from the Data tab;
 a regression is a revert of two merge commits and a submodule pointer.
+
+## 2026-09-05 — R65: Properties pane axis-label suggestion uses C1's `unit`, not a quantity table
+
+L6 Task 12 stopped (CLAUDE.md §1): the brief asked for axis labels suggested
+from C2 §3.4's unit table keyed by physical quantity, but the form's
+`channels` prop is `{ id, label }` and no TS port of a quantity→unit table
+exists. **Ruling:** no quantity table in TS — unit *conversion* is a number
+the engine owns (CLAUDE.md §2) and is a wave-3 item. `channels` gains
+`unit?: string`, C1's per-channel `unit` string as `get_session`'s
+`SessionDetail.channels[].unit` reports it; the form suggests the axis label
+as `"<label> (<unit>)"` when present and leaves the field editable;
+`unitsPreference` is honoured only where the unit string itself differs by
+preference (none in wave 2 — documented). Task 13 (which owns the notebook
+orchestrator and calls `get_session`) threads the unit through.
+
+**Cost if wrong:** a label suggestion, editable by the user; no number
+changes.
