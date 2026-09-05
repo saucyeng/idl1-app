@@ -1,12 +1,15 @@
 import { useCallback, useEffect, useRef, useState, type PointerEvent, type WheelEvent } from "react";
 
+import type { CursorReadout } from "../../../../ipc/cursor";
 import type { DecodedRaster, Histogram2dParams, RasterKind, RasterMeta, SpectrogramParams } from "../../../../ipc/rasters";
 import type { DecodedTile } from "../../../../ipc/tiles";
+import { cursorRequestFor, formatReadout, type ReadoutRow } from "../model/cursor";
 import { hoverAt, type HoverGeometry } from "../model/hover";
 import { isStaleSettleResult, makeSettle } from "../model/settle";
 import { chooseTier, tileRange } from "../model/tiers";
 import { ensureTiles, type TileCache, type TileCacheKey } from "../model/tileCache";
 import { clampTo, panBy, transformFor, zoomAt, type Viewport } from "../model/viewport";
+import CursorReadoutPanel from "./CursorReadout";
 import RasterUnderlay from "./RasterUnderlay";
 
 /** The value a successful {@link hoverAt} lookup adds to on-screen hover state. */
@@ -114,6 +117,23 @@ export interface ChartCellProps {
       params: SpectrogramParams | Histogram2dParams
     ) => Promise<RasterMeta>;
   };
+  /**
+   * Reads the nearest recorded sample for `channels` at `tUs` (`ipc/cursor.ts`'s
+   * `cursorReadout`). Injected, mirroring `fetchTile`/`raster.fetchRaster` —
+   * this component imports `ipc/cursor.ts` only as a type, never calls
+   * `invoke` itself. Called at most once per settle (Task 10; C3 §4), never
+   * from a pointer-move/wheel/`requestAnimationFrame` handler (P1, P2).
+   */
+  fetchCursorReadout: (sessionId: string, channels: string[], tUs: number) => Promise<CursorReadout>;
+  /**
+   * Display label for this cell's own `channelId`, for the cursor readout
+   * panel's row (Task 10). This cell plots exactly one channel, so the
+   * readout requests/renders only that one channel; a future multi-channel
+   * overlay cell would need its own label map, out of this task's scope.
+   * `undefined` falls back to the raw `channelId` (`formatReadout`'s own
+   * missing-label fallback, documented in `model/cursor.ts`).
+   */
+  channelLabel?: string;
 }
 
 /**
@@ -142,6 +162,14 @@ export interface ChartCellProps {
  * pure read of the tiles already in memory — and only ever calls `setHover`
  * (React state); it never calls `invoke` or any `ipc/*` function (P1), and
  * hover never reaches `cursor_readout` (P2).
+ *
+ * The cross-channel cursor readout (Task 10, `components/CursorReadout.tsx`)
+ * is a third thing hanging off the same settle callback described above:
+ * `handlePointerMove`/`handlePointerLeave` only ever update a local ref
+ * (`lastPointerXRef`, no React state, no IPC) with the pointer's last-known
+ * CSS-px position; the settle callback alone reads that ref, converts it to
+ * a `t_us` instant via `cursorRequestFor`, and — only then — calls
+ * `fetchCursorReadout` (`ipc/cursor.ts`'s `cursorReadout`) once per settle.
  */
 export default function ChartCell({
   tiles,
@@ -156,10 +184,20 @@ export default function ChartCell({
   fetchTile,
   onViewportSettled,
   raster,
+  fetchCursorReadout,
+  channelLabel,
 }: ChartCellProps) {
   const [hover, setHover] = useState<HoverReading | null>(null);
   const [liveViewport, setLiveViewport] = useState<Viewport>(viewport);
+  const [readoutRows, setReadoutRows] = useState<ReadoutRow[] | null>(null);
   const draggingRef = useRef<{ pointerId: number; lastClientX: number } | null>(null);
+  // The pointer's last-known CSS-px position within this cell, updated on
+  // every pointer move (drag or hover alike) with no IPC — only the settle
+  // callback below reads this to decide whether/what to request from
+  // `cursorReadout` (P2). `null` once the pointer has left the chart, so the
+  // settle callback can tell "no last-known position" apart from "position
+  // 0" and skip the request entirely rather than reading a stale value.
+  const lastPointerXRef = useRef<number | null>(null);
 
   // A newly committed `viewport` from the parent (post-settle, or any other
   // cause) always replaces whatever gesture-local state was live — a stale
@@ -212,6 +250,39 @@ export default function ChartCell({
         // an error. Typed fetch-error surfacing (e.g. into the tooltip or a
         // cell-level error state) is not in this task's scope.
       });
+
+    // The cursor readout (Task 10) is a second, independent fetch hanging
+    // off this same settle firing — not gated on the tile fetch above
+    // succeeding, since a stale/missing tile picture and a fresh numeric
+    // readout are unrelated failures. `cursorRequestFor` already encodes
+    // the one piece of non-trivial decision logic ("is this pixel inside
+    // the plotted area?"); "is there a last-known pointer position at all"
+    // is a plain existence check on local component state, not a decision
+    // worth its own pure/tested function (CLAUDE.md §4's "wiring" vs
+    // "physics" line falls on the trivial side here).
+    const pixelX = lastPointerXRef.current;
+    if (pixelX === null) {
+      setReadoutRows(null);
+      return;
+    }
+    const request = cursorRequestFor(next, pixelX, [channelId]);
+    if (request === null) {
+      setReadoutRows(null);
+      return;
+    }
+    const labels = channelLabel === undefined ? {} : { [channelId]: channelLabel };
+    fetchCursorReadout(sessionId, request.channels, request.tUs)
+      .then((readout) => {
+        if (isStaleSettleResult(seqAtDispatch, settleRef.current.latestSeq())) {
+          return;
+        }
+        setReadoutRows(formatReadout(readout, labels));
+      })
+      .catch(() => {
+        // TODO(idl0): a cursor-readout fetch failure is swallowed — the
+        // panel keeps its last successfully rendered rows rather than
+        // surfacing an error, mirroring the tile-fetch TODO above.
+      });
   };
 
   const settleRef = useRef(makeSettle<Viewport>(SETTLE_DELAY_MS, (next) => onSettleRef.current(next)));
@@ -231,6 +302,7 @@ export default function ChartCell({
       const bounds = event.currentTarget.getBoundingClientRect();
       const pixelX = event.clientX - bounds.left;
       const dragging = draggingRef.current;
+      lastPointerXRef.current = pixelX;
 
       if (dragging !== null && dragging.pointerId === event.pointerId) {
         const pixelDx = event.clientX - dragging.lastClientX;
@@ -265,6 +337,9 @@ export default function ChartCell({
       draggingRef.current = null;
     }
     setHover(null);
+    // The pointer has left the chart — the next settle must skip the
+    // cursor-readout request entirely rather than reading a stale position.
+    lastPointerXRef.current = null;
   }, []);
 
   const handleWheel = useCallback(
@@ -333,6 +408,7 @@ export default function ChartCell({
           {`t=${Number(hover.tUs) / 1_000_000}s min=${hover.min} max=${hover.max} mean=${hover.mean}`}
         </div>
       )}
+      <CursorReadoutPanel rows={readoutRows} />
     </div>
   );
 }
