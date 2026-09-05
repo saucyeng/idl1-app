@@ -119,19 +119,38 @@ export function clampTo(viewport: Viewport, sessionSpanUs: number): Viewport {
  * computed relative to `rendered`'s own left edge, so translate-then-scale
  * about that same edge composes without a second correction term.
  *
+ * **Derivation (review-task8.md's Critical fix).** The CSS transform list
+ * `translateX(translateXPx) scaleX(scaleX)` composes, for a point at local
+ * coordinate `x` (CSS px within `rendered`'s own already-drawn picture), as
+ * `newPos = scaleX * x + translateXPx` (matrix-multiplication order — scale
+ * applies to the picture's own local coordinates first, then the translate
+ * shifts the whole scaled result). Requiring `current.startUs` to land at
+ * pixel `0` of the chart (`x = 0` in `rendered`'s own coordinates is not
+ * `current.startUs`'s position — only `rendered.startUs`'s is) gives
+ * `newPos(rendered.startUs) = scaleX * 0 + translateXPx`, which must equal
+ * `rendered.startUs`'s position in `current`'s own pixel space:
+ * `(rendered.startUs - current.startUs) / (currentSpanUs / current.pixelWidth)`.
+ * So `translateXPx` must be computed with **`current`'s own µs-per-pixel**
+ * (`currentSpanUs / current.pixelWidth`), never `rendered`'s — dividing by
+ * `rendered`'s µs-per-pixel (the pre-fix bug) only coincidentally matches
+ * when `renderedSpanUs === currentSpanUs` (pure pan) or when
+ * `current.startUs === rendered.startUs` (a zoom anchored at `pixelX = 0`);
+ * any zoom anchored elsewhere (the ordinary case — a wheel zoom anchors at
+ * the pointer) then visibly mispositions the live picture.
+ *
  * @param rendered The viewport the currently-drawn picture was fetched/rendered for.
  * @param current The viewport the gesture has moved to so far.
  */
 export function transformFor(rendered: Viewport, current: Viewport): { scaleX: number; translateXPx: number } {
   const renderedSpanUs = rendered.endUs - rendered.startUs;
   const currentSpanUs = current.endUs - current.startUs;
-  const usPerPixel = renderedSpanUs / rendered.pixelWidth;
+  const currentUsPerPixel = currentSpanUs / current.pixelWidth;
 
   const scaleX = renderedSpanUs / currentSpanUs;
   // `+ 0` normalises a `-0` result (e.g. when rendered and current are equal)
   // to `+0`, so callers doing exact equality checks never see the distinct
   // `-0` value arithmetic on a zero difference can otherwise produce.
-  const translateXPx = (-(current.startUs - rendered.startUs) / usPerPixel) + 0;
+  const translateXPx = (-(current.startUs - rendered.startUs) / currentUsPerPixel) + 0;
 
   return { scaleX, translateXPx };
 }

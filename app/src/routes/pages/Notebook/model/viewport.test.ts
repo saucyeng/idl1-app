@@ -98,4 +98,42 @@ describe("transformFor", () => {
     expect(result.scaleX).toBe(2);
     expect(result.translateXPx).toBe(0);
   });
+
+  it("transformFor — a viewport zoomed 2x anchored at the right edge — keeps the right edge fixed under the pointer", () => {
+    // review-task8.md's Critical: transformFor previously divided by the
+    // rendered viewport's µs-per-pixel instead of the current one, which is
+    // only invisible for a zoom anchored at pixelX = 0 (the case every
+    // pre-existing test covers). This anchors at pixelX = pixelWidth (the
+    // right edge) instead, where the bug is visible.
+    const rendered: Viewport = { startUs: 0, endUs: 1_000_000, pixelWidth: 100 };
+    const current = zoomAt(rendered, 100, 2);
+
+    const result = transformFor(rendered, current);
+
+    // `x(t)` is a time instant's CSS-px position within `rendered`'s own
+    // already-drawn picture; `current.startUs`/`current.endUs` must land at
+    // pixel 0/pixelWidth respectively once `scaleX`/`translateXPx` are applied.
+    const usPerPixelRendered = (rendered.endUs - rendered.startUs) / rendered.pixelWidth;
+    const xOf = (tUs: number) => (tUs - rendered.startUs) / usPerPixelRendered;
+    const pixelAtCurrentStart = result.scaleX * xOf(current.startUs) + result.translateXPx;
+    const pixelAtCurrentEnd = result.scaleX * xOf(current.endUs) + result.translateXPx;
+    expect(pixelAtCurrentStart).toBeCloseTo(0);
+    expect(pixelAtCurrentEnd).toBeCloseTo(rendered.pixelWidth);
+  });
+
+  it("transformFor — a viewport zoomed 2x anchored at a mid-point — keeps that instant fixed under the pointer", () => {
+    const rendered: Viewport = { startUs: 0, endUs: 1_000_000, pixelWidth: 100 };
+    const current = zoomAt(rendered, 25, 2);
+
+    const result = transformFor(rendered, current);
+
+    // The anchor instant (250_000 µs, at pixel 25 under `rendered`) must
+    // still land at pixel 25 in the transformed picture: the anchor's own
+    // position within `rendered`'s own CSS px is `x = anchorFraction *
+    // rendered.pixelWidth`, and `scaleX * x + translateXPx` must reproduce
+    // that same pixel 25 for the pointer-fixed contract to hold.
+    const anchorXInRendered = 25;
+    const pixelAtAnchor = result.scaleX * anchorXInRendered + result.translateXPx;
+    expect(pixelAtAnchor).toBeCloseTo(25);
+  });
 });

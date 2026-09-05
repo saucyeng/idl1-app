@@ -3,7 +3,7 @@ import { useCallback, useEffect, useRef, useState, type PointerEvent, type Wheel
 import type { DecodedRaster, Histogram2dParams, RasterKind, RasterMeta, SpectrogramParams } from "../../../../ipc/rasters";
 import type { DecodedTile } from "../../../../ipc/tiles";
 import { hoverAt, type HoverGeometry } from "../model/hover";
-import { makeSettle } from "../model/settle";
+import { isStaleSettleResult, makeSettle } from "../model/settle";
 import { chooseTier, tileRange } from "../model/tiers";
 import { ensureTiles, type TileCache, type TileCacheKey } from "../model/tileCache";
 import { clampTo, panBy, transformFor, zoomAt, type Viewport } from "../model/viewport";
@@ -174,12 +174,22 @@ export default function ChartCell({
   // closure identity.
   const onSettleRef = useRef<(next: Viewport) => void>(() => {});
   onSettleRef.current = (next: Viewport) => {
+    // Captured synchronously, inside this settle's own firing (see
+    // `makeSettle`'s `latestSeq()` doc comment) — compared again once the
+    // fetch below resolves so an older settle's result, resolving after a
+    // newer settle has already fired, is dropped rather than committed over
+    // the newer settle's own (possibly still-pending) result
+    // (review-task8.md: "no stale-settle guard").
+    const seqAtDispatch = settleRef.current.latestSeq();
     const tier = chooseTier(next.endUs - next.startUs, next.pixelWidth, sampleRateHz);
     const range = tileRange(next.startUs, next.endUs, tier, sampleRateHz);
     const key: Omit<TileCacheKey, "tileIndex"> = { sessionId, channelId, tier, columnCount: width };
 
     ensureTiles(cache, key, range, (tileIndex) => fetchTile(tier, tileIndex, width))
       .then(() => {
+        if (isStaleSettleResult(seqAtDispatch, settleRef.current.latestSeq())) {
+          return;
+        }
         const covered: DecodedTile[] = [];
         for (let tileIndex = range.first; tileIndex <= range.last; tileIndex++) {
           const tile = cache.get({ ...key, tileIndex });

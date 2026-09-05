@@ -6,6 +6,7 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 
 ### Added
 
+- **`transformFor` zoom-anchor bug and settle stale-response guard fixed (L6 Task 8, review-task8.md Critical/Important follow-up).** `transformFor` divided its translate term by the *rendered* viewport's µs-per-pixel instead of the *current* one, visibly mispositioning the live picture for any zoom not anchored at the chart's own left edge; fixed, with a derivation in the doc comment and right-edge/mid-anchor tests. `makeSettle` now exposes a monotonic `latestSeq()`, and `isStaleSettleResult` lets `ChartCell`'s settle callback drop an older settle's tile fetch if a newer settle has already fired, so a slow fetch for a superseded gesture can no longer snap the picture backward.
 - **Wave 2 shell task 3 — `import_file` resolves with `ImportOutcome` (2026-09-05, R60).**
   `ipc/import.ts`'s `importFile` now resolves `ImportOutcome { session:
   SessionSummary; warnings: string[] }` instead of a bare `SessionSummary`
