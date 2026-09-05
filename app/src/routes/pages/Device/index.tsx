@@ -26,6 +26,12 @@ export default function Device() {
   // opened from `ChannelsTable`'s gear control (Task 6) edit this state
   // directly through `Device/config/edit.ts`.
   const [config, setConfig] = useState(() => defaultConfig(""));
+  // `pull_config` (IPC need 10) is not wired yet — every value the config
+  // card shows is `defaultConfig`'s fabricated placeholder, never a device's
+  // actual settings. `hasPulledConfig` will flip true once a real pull
+  // lands; until then the banner below is unconditional so a placeholder
+  // Rate/Enabled value is never mistaken for a connected device's own.
+  const hasPulledConfig = false;
 
   const onScan = useCallback(() => {
     dispatch({ type: "SCAN_START" });
@@ -69,6 +75,11 @@ export default function Device() {
         {state.phase === "failed" && state.error && <p role="alert">{state.error}</p>}
       </section>
       <section className="device-tab__config">
+        {!hasPulledConfig && (
+          <p role="status" className="device-tab__config-placeholder-notice">
+            No device configuration loaded — showing defaults. Pull from device is not available yet.
+          </p>
+        )}
         <ChannelsTable sources={listSources(config)} config={config} onConfigChange={setConfig} />
       </section>
     </div>

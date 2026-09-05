@@ -97,6 +97,16 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
   `removeDigitalChannel`) are left entirely to Task 7 — nothing in this
   task's forms calls them, so no signature was guessed here.
   `docs/IDL0_SPEC.md` gains §23.3.1–§23.3.3 describing the three forms.
+- **Device tab, Task 5 review follow-up (2026-09-05, L7b).** `sources.ts`'s
+  breakdown rows now name the SPEC §5.4 registry channel a user will see
+  again in the Data tab and notebook (`WheelFront`/`WheelRear`, `HR_BPM`,
+  and the GPS row's six `GPS_Latitude`/`GPS_Longitude`/`GPS_Altitude`/
+  `GPS_SpeedKmh`/`GPS_Heading`/`GPS_EpochMs` children) instead of the
+  invented `"pulse"`/`"heart_rate"`/`"fix"` strings. `index.tsx` shows a
+  visible banner above the config card while `pull_config` is not wired,
+  so `defaultConfig("")`'s placeholder values are never mistaken for a
+  connected device's real settings. `docs/IDL0_SPEC.md` §23.3 updated with
+  both.
 - **L5 complete (2026-09-04).** idl-rs-tauri wired to every landed wave-1 lane's C3 command
   group (catalog, workbook, cursor, raster, tile) plus device (L4); <data> resolution,
   workbook watcher, app/src/ipc/ module layer, routing and state skeleton. Tile fetched

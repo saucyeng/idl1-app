@@ -49,6 +49,23 @@ const IMU_ACCEL_UNITS = "g";
 /** dps. Unit shown on an IMU slot's three gyroscope axis rows. */
 const IMU_GYRO_UNITS = "dps";
 
+/** The GPS-derived channels SPEC §5.4's registry names name verbatim
+ *  (`GPS_Latitude`, `GPS_Longitude`, `GPS_Altitude`, `GPS_SpeedKmh`,
+ *  `GPS_Heading`, `GPS_EpochMs`) — never an invented word like `"fix"`, so
+ *  the breakdown row a user sees here matches the channel name the Data tab
+ *  and notebook will use for the same data. `GPS_FixQuality`/`GPS_Satellites`
+ *  are omitted: SPEC §5.4 lists them as carrying no registry entry of their
+ *  own scale/offset kind and this collapsed GPS row's scope (R53 Device Q1)
+ *  stops at the six channels the app's own GPS parser materialises today. */
+const GPS_REGISTRY_CHANNELS: readonly { name: string; units: string }[] = [
+  { name: "GPS_Latitude", units: "deg" },
+  { name: "GPS_Longitude", units: "deg" },
+  { name: "GPS_Altitude", units: "m" },
+  { name: "GPS_SpeedKmh", units: "km/h" },
+  { name: "GPS_Heading", units: "deg" },
+  { name: "GPS_EpochMs", units: "ms" },
+];
+
 /** idl0's per-IMU-slot labels (SPEC §23.3's mounting-location naming). */
 const IMU_LABELS: Record<"imu0" | "imu1" | "imu2", string> = {
   imu0: "IMU0 (sprung)",
@@ -136,23 +153,23 @@ export function listSources(config: DeviceConfig): SourceView[] {
       label: "GPS",
       enabled,
       sampleRateHz,
-      channels: [{ name: "fix", units: "deg / m/s", enabled }],
+      channels: GPS_REGISTRY_CHANNELS.map(({ name, units }) => ({ name, units, enabled })),
     });
   }
 
   (
     [
-      ["wheel_front", "Wheel Front"],
-      ["wheel_rear", "Wheel Rear"],
+      ["wheel_front", "Wheel Front", "WheelFront"],
+      ["wheel_rear", "Wheel Rear", "WheelRear"],
     ] as const
-  ).forEach(([sourceKey, label]) => {
+  ).forEach(([sourceKey, label, registryName]) => {
     const { enabled, sampleRateHz } = lookupPreview(previewRows, sourceKey);
     views.push({
       sourceKey,
       label,
       enabled,
       sampleRateHz,
-      channels: [{ name: "pulse", units: "count", enabled }],
+      channels: [{ name: registryName, units: "pulse", enabled }],
     });
   });
 
@@ -187,7 +204,7 @@ export function listSources(config: DeviceConfig): SourceView[] {
       label,
       enabled,
       sampleRateHz,
-      channels: [{ name: "heart_rate", units: "bpm / ms", enabled }],
+      channels: [{ name: "HR_BPM", units: "bpm", enabled }],
     });
   }
 

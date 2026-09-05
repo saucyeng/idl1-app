@@ -125,4 +125,33 @@ describe("listSources", () => {
     expect(analog?.channels[0].scale).toBe(0.0123);
     expect(analog?.channels[0].offset).toBe(-1.5);
   });
+
+  it("listSources — wheel and HRM breakdown rows — named with the exact SPEC §5.4 registry channel name, never an invented word", () => {
+    const config = configWithOneOfEach();
+    config.heart_rate_monitor = { enabled: true, device_address: "AA:BB:CC:DD:EE:FF", device_name: "Polar H10" };
+
+    const views = listSources(config);
+    const wheelFront = views.find((v) => v.sourceKey === "wheel_front");
+    const wheelRear = views.find((v) => v.sourceKey === "wheel_rear");
+    const hrm = views.find((v) => v.sourceKey === "heart_rate_monitor");
+
+    expect(wheelFront?.channels.map((c) => c.name)).toEqual(["WheelFront"]);
+    expect(wheelRear?.channels.map((c) => c.name)).toEqual(["WheelRear"]);
+    expect(hrm?.channels.map((c) => c.name)).toEqual(["HR_BPM"]);
+  });
+
+  it("listSources — GPS breakdown — the six GPS_* registry channels SPEC §5.4 names, never a collapsed synthetic row", () => {
+    const config = configWithOneOfEach();
+
+    const gps = listSources(config).find((v) => v.sourceKey === "gps");
+
+    expect(gps?.channels.map((c) => c.name)).toEqual([
+      "GPS_Latitude",
+      "GPS_Longitude",
+      "GPS_Altitude",
+      "GPS_SpeedKmh",
+      "GPS_Heading",
+      "GPS_EpochMs",
+    ]);
+  });
 });

@@ -2113,6 +2113,19 @@ Hardware-pinned sources (IMU, GPS, Wheel Speed) are always present in a
 profile, shown even when disabled. User-added sources (Analog, Digital
 marker, HRM) appear once added via **+ Add channel…**.
 
+**Breakdown row names are the SPEC §5.4 registry channel names, verbatim** —
+`WheelFront`/`WheelRear`, `HR_BPM`, and the GPS row's six children
+(`GPS_Latitude`, `GPS_Longitude`, `GPS_Altitude`, `GPS_SpeedKmh`,
+`GPS_Heading`, `GPS_EpochMs`) — never an invented word (`"pulse"`,
+`"heart_rate"`, `"fix"`). A user sees the same name here as the Data tab and
+notebook will use for the same data once those read the registry.
+
+**While `pull_config` (IPC need 10) is not yet wired**, the config card
+renders against `defaultConfig("")` — a fabricated placeholder, not a
+connected device's actual settings — and shows a visible banner above the
+table saying so, so a default Rate/Enabled value is never mistaken for a
+real one.
+
 ### 23.3.1 IMU form
 
 `Device/forms/ImuForm.tsx` edits `config.imu` as a whole: the SPI-bus-shared
