@@ -6,6 +6,17 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 
 ### Added
 
+- **Device tab, Task 1 (2026-09-05, L7b).** `DevicePage.tsx` moved to
+  `app/src/routes/pages/Device/` (a directory this lane owns), over a pure
+  `connectionReducer` driven by the landed `ble_scan`/`ble_connect` (C3
+  §3.8). `ConnectionInfo.connected` is treated as "the last connect attempt
+  succeeded," never a live link — `rust/tauri/src/commands/device.rs`
+  connects and disconnects inside each command, so nothing stays connected
+  between calls (R53 Device Q4). `ipcStubs.ts` stands in for the five
+  not-yet-landed Device/App commands (`device_status`, `device_control`,
+  `pull_config`, `list_profiles`/`save_profile`/`delete_profile`,
+  `connect_device`/`disconnect_device`) with a local `NotImplementedError`,
+  never an `IpcError` kind.
 - **L5 complete (2026-09-04).** idl-rs-tauri wired to every landed wave-1 lane's C3 command
   group (catalog, workbook, cursor, raster, tile) plus device (L4); <data> resolution,
   workbook watcher, app/src/ipc/ module layer, routing and state skeleton. Tile fetched
