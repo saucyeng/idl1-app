@@ -2997,3 +2997,20 @@ passed); idl-rs L2 branch at `227d3f1` (Tasks 2–5 reviewed CLEAN); L6 at
 cargo process was left running. Lesson carried: a cutoff costs nothing when
 every task commits per step and the lead snapshots worktree state
 immediately; the first resume of the day used the same pattern.
+
+## 2026-09-05 — R61: R23 Q2's synthesizer fallback reaches `SessionHandle::from_channels`
+
+L2 Task 6 landed the Q2 fallback (no channel with a positive rate ⇒ `Time`
+from the longest channel's real `t_us`) and the lane gate exposed one
+consequence outside the task's file list: `session::handle::tests::
+resident_bytes_counts_columns_times_and_math_store` encoded the pre-Q2
+exception ("event-only session → no Time", 240 bytes) and now sees the
+synthesized `Time` (400 bytes). `SessionHandle::from_channels` calls
+`synthesize_base_channels` directly, so — with `session_source::load_session`
+— every event-only session loaded through the Tauri path now carries `Time`.
+That is the intended Q2 outcome. **Ruling:** the implementer edits that one
+test in `handle.rs` in the same commit (assertion and comment restated as
+the rule), the gate re-runs, and the reach is recorded here. Not a new
+design call.
+
+**Cost if wrong:** none beyond Q2's own; the test now documents the rule.
