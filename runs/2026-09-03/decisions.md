@@ -3195,3 +3195,34 @@ writers: `cargo test` filters are substrings of the full test path; this
 crate nests tests under `commands::<module>::tests::`, so a filter like
 `commands::workbook::read_workbook` matches nothing — name the test-fn
 prefix (`read_workbook_via`) or the module (`commands::workbook::`) instead.
+
+## 2026-09-05 — R66: L6 Task 13 landed; js cells must bind to ChartCell (new Task 13b)
+
+Task 13 (three commits: reducer/driver/orchestrator `a61ab5c`, render +
+inline spans `8fb068e`, coverage `ae04242`) shipped open/eval/render, the
+R60 `NotebookSession` orchestrator (built, tested, but with nothing yet
+populating its `BoundChannel` registry), math/table/prose cells and inline
+`${…}` spans routed through a new `evalInline` sandbox message. Four
+resolved-or-flagged ambiguities, ruled:
+
+1. **js cells render as a plain mount of the sandbox's HTML, not through
+   `ChartCell`.** The implementer cut scope rather than guess the binding.
+   Ruling: this is M1's core ("Plot charts with real pan/zoom/hover"), so it
+   lands in wave 2 as **Task 13b**, before Task 15: for a js cell whose code
+   `plotForm.parse`s (form-generated), bind `marks[*].channel` (+ lap scope)
+   into `NotebookSession.setBoundChannel`, mount `ChartCell` with the
+   per-cell viewport/tile pipeline (Tasks 6–10), and keep the plain mount
+   for custom-code cells (`parse === null`). Brief to be written from the
+   Task 13 report.
+2. **Inline-span errors reuse `cellError` with the span id in the `cellId`
+   slot.** Ruling: add a distinct `spanError { spanId, message }` message
+   (Task 13b) — one type per meaning, no overloads on an id field.
+3. **No workbook picker; the first `listWorkbooks()` result opens.** Ruling:
+   acceptable for wave 2 until Task 15 (editor shell) adds a picker over
+   `listWorkbooks` as local state; no shared-state slice.
+4. **Inline spans re-evaluate on every cell-set/markdown change**, not on
+   the Runtime's reactive re-run. Acceptable for wave 2; stated in the code.
+   True reactivity is a Task 16 note for the SPEC.
+
+**Cost if wrong:** 13b is one more task in the lane's critical path; without
+it wave 2 has no interactive chart, which is the milestone.
