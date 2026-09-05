@@ -1,4 +1,4 @@
-import { useReducer } from "react";
+import { useEffect, useMemo, useReducer, useRef } from "react";
 
 import { pushConfig } from "../../../ipc/device";
 import type { DeviceConfig } from "./config/model";
@@ -57,26 +57,44 @@ function IssueList({ issues }: { issues: ValidationIssue[] }) {
  * **Pull from device** exists as a visible stub: pressing it surfaces
  * `NotImplementedError`'s own message rather than pretending to succeed
  * or silently doing nothing.
+ *
+ * `issues`/`prepared` are memoised on `config`'s identity (review-task8
+ * Minor: `validateConfig`/`preparePush` were each being called fresh on
+ * every render, including renders `config` had no part in) — `onPush`
+ * reuses the same `prepared` value rather than calling `preparePush` a
+ * third time. A mounted-ref guards the push promise's `.then`/`.catch`
+ * (review-task8 Minor: a push that resolves after this bar unmounts — the
+ * rider navigated away mid-push — used to dispatch into a discarded
+ * reducer instance with no visible outcome); a ref, not a lifted
+ * in-flight flag, since the in-flight state (`pushState`) is already
+ * local to this component and nothing above it needs to know about a
+ * push in progress.
  */
 export default function PushConfigBar({ deviceId, config, connected }: PushConfigBarProps) {
   const [pushState, dispatch] = useReducer(pushReducer, initialPushState);
+  const mountedRef = useRef(true);
+  useEffect(() => {
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
 
-  const issues = config === null ? [] : validateConfig(config);
-  const prepared = config === null ? null : preparePush(config);
+  const issues = useMemo(() => (config === null ? [] : validateConfig(config)), [config]);
+  const prepared = useMemo(() => (config === null ? null : preparePush(config)), [config]);
   const canPush = connected && config !== null && prepared !== null && prepared.ok && pushState.phase !== "pushing";
 
   function onPush(): void {
-    if (config === null || pushState.phase === "pushing") return;
-    const result = preparePush(config);
-    if (!result.ok) return; // button is disabled in this state; defensive no-op
+    if (config === null || pushState.phase === "pushing" || prepared === null || !prepared.ok) return; // button is disabled in this state; defensive no-op
     dispatch({ type: "PUSH_START" });
-    pushConfig(deviceId, result.json)
+    pushConfig(deviceId, prepared.json)
       .then(() => {
+        if (!mountedRef.current) return; // bar unmounted mid-push; nothing left to update
         // `pull_config` is a stub in wave 2 — every successful push reports
         // the honest "reconnected, not verified" arm, never a claimed match.
         dispatch({ type: "PUSH_SUCCEEDED", message: describePushResult(true, null) });
       })
       .catch((err: DeviceIpcError) => {
+        if (!mountedRef.current) return; // bar unmounted mid-push; nothing left to update
         dispatch({ type: "PUSH_FAILED", message: describeIpcError(err) });
       });
   }
