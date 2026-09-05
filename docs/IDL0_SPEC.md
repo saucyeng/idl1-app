@@ -2148,19 +2148,76 @@ The Data tab is a McMaster-Carr-style faceted search interface that operates ove
 
 View toggle: `SegmentedButton<DataView> { sessions, tracks }`. The active filter set persists when switching views; facets not applicable to the current view (e.g., lap-time range when viewing tracks) are hidden or greyed.
 
-### 24.4 Filter Rail
+### 24.4 Filter Rail (idl1, wave 2 — `app/src/routes/pages/Data/`)
 
-Sections, top to bottom:
-- **Date** — chips (Today / Week / Month / Custom). Single-select; presets clear the custom range.
-- **Track** — multi-select with inline search + per-option count badge.
-- **Venue** — multi-select. "(none)" pseudo-entry covers tracks/sessions with an empty `venueName`.
-- **Bike** — multi-select. "(none)" pseudo-entry covers sessions with an empty `bike` field.
-- **Rider** — multi-select. "(none)" pseudo-entry.
-- **Tag** — multi-select. "(none)" pseudo-entry.
-- **Lap time** — `RangeSlider` with mm:ss text inputs. Domain linear `[0, ceilTo5Min(maxKnownLapTime)]` clamped `[60 s, 10800 s]`. Recomputed when the library changes. Two `TextField` mm:ss inputs below the slider are two-way bound; typing updates the slider, dragging updates the text. Empty Max = no upper bound.
-- **Source** — checkboxes for `.idl0` and `.gpx`.
+Rewritten for idl1 (was idl0's `_FacetGroup`/`FilterRail`/`filter_rail.dart`,
+Flutter). The facet model is `Data/filters.ts`'s `DataFilters` (state) and
+`Data/facets.ts`'s `matchesFilters`/`facetCounts` (matching); the rail itself
+is `Data/FilterRail.tsx`, the dismissible-chip row above the results is
+`Data/ActiveChips.tsx`.
 
-Each multi-select facet uses a `_FacetGroup` widget: section heading, inline `TextField` search when ≥ 8 options, list of `CheckboxListTile`s with label + count "(N)", virtualised when > 200 options.
+**Combining rule.** Filters compose with **AND across facet categories** — a
+row must pass every active facet to appear in the results. Within one
+multi-select facet, matching is **OR** — any one of the selected values is
+enough (e.g. selecting two bikes shows sessions ridden on either). An empty
+selection (a Set with no members, or `null` for a range) means that facet is
+inactive and passes every row through unfiltered.
+
+**The `""`-is-"(none)" convention.** For Bike, Rider, Tag and Venue, the
+empty string `""` is a synthetic pseudo-entry selectable like any other
+option; it matches a row whose corresponding `SessionSummary` field is the
+empty string (idl0's "(none)" entries, ported as-is).
+
+Facets, top to bottom (`FilterRail.tsx`'s section order), and what each
+reads:
+- **Date** — inclusive range over `SessionSummary.timestamp_utc_ms`, compared
+  by local (viewer time zone) calendar day so a row on the range's own last
+  day matches regardless of time-of-day. Today / Week / Month presets plus a
+  custom start/end pair.
+- **Track** — multi-select; **options come from `list_tracks` (C3 §3.2)**,
+  never derived from `SessionSummary` — a `SessionSummary` has no track field
+  at all. **Not yet filterable at wave 2**: matching a session to a track
+  needs lap-level attribution (`LapSummary.track_id` or
+  `SessionDetail.track_visits`), and no wave-1 import path populates the
+  catalog's lap tables (R53 Data Q4, same root cause as the lap-count/lap-table
+  gap). The rail still lists Track options (so the facet group isn't simply
+  absent) but every option's count is 0 and selecting one excludes every
+  session, honestly, rather than fabricating a match. Real track filtering is
+  a wave-3 follow-up once lap indexing lands.
+- **Bike** — multi-select over `SessionSummary.bike`. `""` is "(none)".
+- **Rider** — multi-select over `SessionSummary.rider`. `""` is "(none)".
+- **Tag** — multi-select over `SessionSummary.tag`. `""` is "(none)".
+- **Venue** — multi-select over `SessionSummary.venue_name`. `""` is "(none)".
+- **Lap time** — inclusive millisecond range. At wave 2 this keys off
+  `SessionSummary.duration_ms` (a session's total ride time), the closest
+  field a `SessionSummary` actually carries — there is no per-lap time on a
+  `SessionSummary` (same R53 Data Q4 gap as Track). A row with a `null`
+  `duration_ms` is excluded from a bound range, not included by default.
+- **Source** — multi-select over `SessionSummary.source_format`, **C3's own
+  vocabulary** (`idl0 | fit | gpx | csv`) — not idl0's `SessionSourceType`
+  enum, which named formats idl1 doesn't import from this path (e.g. no bare
+  `.gpx`-as-track distinction) and lacks `fit`/`csv`.
+
+**Has-gates and has-GPS are absent for wave 2** (idl0's `_BoolFacets`,
+`requireGates`/`requireGps`) — dropped outright, not stubbed. Neither is
+derivable from a `SessionSummary`: "has gates" needs a matched Track's gate
+list, "has GPS" needs a GPS channel presence check, and both currently
+require a per-session `getSession` call this tab's local filtering does not
+make. Filed as a wave-3 C4 §5 + C3 §3.2 amendment (R53 Data Q2) — likely a
+catalog column added at index time, not a runtime join.
+
+**Search** — free-text, case-insensitive substring match across venue name,
+short comment and tag (`Data/facets.ts`'s `matchesFilters`) — idl0 also
+matched Track name and the long comment; both are dropped for wave 2 for the
+same reason as the Track facet (no session→track join) and because
+`SessionSummary` has no long-comment field (only `SessionDetail` does).
+
+**Active chips** (`ActiveChips.tsx`) — one dismissible chip per active facet
+value plus "Clear all", idl0's `_ActiveChipRow` semantics: the date chip
+reads `Date: <day>` for a single day or `Date: <start> → <end>` for a range;
+the lap-time chip reads as a clock (`mm:ss` or `h:mm:ss` past an hour), not
+raw milliseconds. "Clear all" resets every facet to its wave-2 default but
+leaves the active `view` and sort untouched.
 
 ### 24.5 Search Bar
 
