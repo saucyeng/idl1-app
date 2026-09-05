@@ -3305,3 +3305,22 @@ are removed there.
 security boundary the app has.
 
 **R67 addendum (2026-09-05):** the brief writer found `ExpectedHashSet` already suppresses the app's own saves in Rust before an event is built (existing test). `WorkbookEvent.hash` is therefore defence in depth for the UI (and lets the UI reason about external edits), not a fix to a live Rust gap; the joint self-write test is dropped as unwritable through the real path (ruled in `brief-task4b.md`).
+
+## 2026-09-05 — R70: prose HTML crosses the wire as two fields with a span list; one span scanner
+
+L8w Task 4c's brief writer found (a) C2 §2.4 / the landed `CellDoc` carry
+prose as `prose_before`/`prose_after`, so a single `html` field would have
+to pick one; (b) core already has a correct, tested `${…}` scanner
+(`workbook/v3/js_cell.rs::find_inline_exprs`) with no callers, while the
+frontend's `ProseSpan` uses a plain regex that numbers spans differently
+inside inline code. **Ruling:** `CellOutput` gains `prose_before_html:
+string | null`, `prose_after_html: string | null` (mirroring `CellDoc`) and
+`prose_spans: { id, expr }[]` in document order from `find_inline_exprs`,
+each rendered span a `<span data-span-id="…">` placeholder. Core's scanner is
+the only scanner: L6 Task 13b/15 drop the TS regex once this lands (interim
+seam until then). Raw HTML in prose is escaped (pulldown-cmark passes it
+through by default — intercepted, hand-escaped, no new dependency). R21's
+`CellOutput` doc comment finally matches its struct.
+
+**Cost if wrong:** two fields and a list instead of one string, all
+additive; the alternative keeps two scanners that disagree.
