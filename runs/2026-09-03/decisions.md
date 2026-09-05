@@ -2676,3 +2676,19 @@ keyed off `duration_ms` is confirmed correct.
 
 **Cost if wrong:** one facet missing for one wave; the amendment is the same
 one already filed for two other facets, so no extra Rust work is created.
+
+## 2026-09-05 — Tracked note: Device tab IMU defaults come from SPEC §8's worked example
+
+L7b Task 2's `defaultConfig` uses 833 Hz / 32 g / 2000 dps for the IMU
+blocks because SPEC §8's prose states no IMU default and only its worked
+example carries values. The reviewer flagged it as an arguable CLAUDE.md §1
+stop. **Lead ruling:** accepted as the *form's initial state* (disclosed in
+the code comment), not as a claim about firmware defaults. 833 Hz matches the
+configured rate observed on Isaac's real session; the range values are the
+hardware's to confirm. **For Isaac:** confirm the firmware's actual IMU
+defaults (rate, accel range, gyro range) so SPEC §8 can state them as
+defaults rather than as an example; L7b adjusts `defaults.ts` in one line
+if they differ. Non-blocking.
+
+**Cost if wrong:** a new-device config form pre-filled with a value the
+firmware would reject — caught at push time by the device, not silently.
