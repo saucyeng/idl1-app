@@ -59,7 +59,7 @@ something already landed, unlike most of this lane's other tasks.
 
 Machine is memory-bound (cargo capped at 2 jobs machine-wide; never override
 with `-j`). While working: `cargo test -p idl-rs preview_channel_registry`
-(core) and `cargo test -p idl-rs-tauri commands::device::preview_channel_registry`
+(core) and `cargo test -p idl-rs-tauri preview_channel_registry_via`
 (tauri), foreground, each non-zero `passed`. No `cargo fmt`, no `cargo
 tarpaulin`, no `cargo doc`. One cargo process at a time.
 
@@ -290,3 +290,7 @@ naming channels 20/21's scale/offset explicitly (expected: no — confirm
 what you found); the module path you chose for the new core code and why;
 anything ambiguous you resolved (say how) or that needs a lead ruling (stop
 and report instead of guessing — CLAUDE.md §1).
+
+## Lead correction 2026-09-05 -- test filter
+
+`cargo test` filters are substrings of the full test path and this crate nests tests under `commands::<module>::tests::`, so `commands::<module>::<fn>` matches nothing. The filter above was corrected to the test-fn prefix (`<fn>_via`); name your tests `<fn>_via_...` so it matches, and report the count (a filter matching nothing is a failed gate).

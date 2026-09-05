@@ -64,7 +64,7 @@ Both must return `>= 1`. If either fails, STOP and report.
 
 Machine is memory-bound (cargo capped at 2 jobs machine-wide; never override
 with `-j`). While working: `cargo test -p idl-rs encode_fft_idlf` (core) and
-`cargo test -p idl-rs-tauri commands::rasters::fetch_fft` (tauri),
+`cargo test -p idl-rs-tauri fetch_fft_via` (tauri),
 foreground, each non-zero `passed`. No `cargo fmt`, no `cargo tarpaulin`, no
 `cargo doc`. One cargo process at a time.
 
@@ -261,3 +261,7 @@ you did find one after all); whether Task 9's `session_source` lap-gate
 helper was available/reused or duplicated; the exact C3 diff you made
 (paste it); anything else ambiguous you resolved (say how) or that needs a
 lead ruling (stop and report instead of guessing — CLAUDE.md §1).
+
+## Lead correction 2026-09-05 -- test filter
+
+`cargo test` filters are substrings of the full test path and this crate nests tests under `commands::<module>::tests::`, so `commands::<module>::<fn>` matches nothing. The filter above was corrected to the test-fn prefix (`<fn>_via`); name your tests `<fn>_via_...` so it matches, and report the count (a filter matching nothing is a failed gate).
