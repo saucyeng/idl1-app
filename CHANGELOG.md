@@ -107,6 +107,15 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
   so `defaultConfig("")`'s placeholder values are never mistaken for a
   connected device's real settings. `docs/IDL0_SPEC.md` §23.3 updated with
   both.
+- **Device tab, Task 6 review fix (2026-09-05, L7b).** `ImuForm`'s four
+  mode-flag/top-level-range controls (`low_power_mode`,
+  `high_performance_mode`, `accel_range_g`, `gyro_range_dps`) now commit
+  through two new pure `edit.ts` operations, `setImuModeFlags` and
+  `setImuRanges`, instead of an inline object-literal spread in the JSX
+  handler — closing the review's Important finding and making
+  `docs/IDL0_SPEC.md` §23.3.1's "every field commits through `edit.ts`"
+  claim true. `ChannelsTable.tsx`'s wrapping `<table>` re-indented one level
+  under the sibling `<OpenForm>` fragment (Minor, cosmetic).
 - **L5 complete (2026-09-04).** idl-rs-tauri wired to every landed wave-1 lane's C3 command
   group (catalog, workbook, cursor, raster, tile) plus device (L4); <data> resolution,
   workbook watcher, app/src/ipc/ module layer, routing and state skeleton. Tile fetched

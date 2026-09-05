@@ -1,4 +1,4 @@
-import type { DeviceConfig, GpsBlock, HrmBlock, ImuSlot, WheelSlot } from "./model";
+import type { DeviceConfig, GpsBlock, HrmBlock, ImuBlock, ImuSlot, WheelSlot } from "./model";
 
 /** The three `ImuBlock` sub-block keys (SPEC §8's per-IMU sub-blocks),
  *  shared by every IMU edit operation's `slot` parameter. */
@@ -40,6 +40,29 @@ export function setImuSlot(config: DeviceConfig, slot: ImuSlotKey, patch: Partia
 export function setImuAxis(config: DeviceConfig, slot: ImuSlotKey, axis: keyof ImuSlot["channels"], enabled: boolean): DeviceConfig {
   const currentChannels = config.imu[slot].channels;
   return setImuSlot(config, slot, { channels: { ...currentChannels, [axis]: enabled } });
+}
+
+/**
+ * Merges `patch` into `config.imu`'s two chip mode flags
+ * (`low_power_mode`/`high_performance_mode`), leaving `sample_rate_hz`, both
+ * top-level ranges, and all three IMU slots untouched. Never validates the
+ * combination — `validateConfig` (Task 3) reports both-true as a warning,
+ * this function only commits the toggle.
+ */
+export function setImuModeFlags(config: DeviceConfig, patch: Partial<Pick<ImuBlock, "low_power_mode" | "high_performance_mode">>): DeviceConfig {
+  return { ...config, imu: { ...config.imu, ...patch } };
+}
+
+/**
+ * Merges `patch` into `config.imu`'s top-level default ranges
+ * (`accel_range_g` in g, `gyro_range_dps` in dps), leaving the mode flags,
+ * `sample_rate_hz`, and every per-IMU slot's own range override untouched —
+ * a slot's own `accel_range_g`/`gyro_range_dps` only take effect when set,
+ * and this function never writes into `imu0`/`imu1`/`imu2` (SPEC §8's
+ * "Per-IMU range resolution").
+ */
+export function setImuRanges(config: DeviceConfig, patch: Partial<Pick<ImuBlock, "accel_range_g" | "gyro_range_dps">>): DeviceConfig {
+  return { ...config, imu: { ...config.imu, ...patch } };
 }
 
 /**

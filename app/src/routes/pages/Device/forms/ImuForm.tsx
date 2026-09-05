@@ -1,4 +1,4 @@
-import { setImuAxis, setImuRate, setImuSlot } from "../config/edit";
+import { setImuAxis, setImuModeFlags, setImuRanges, setImuRate, setImuSlot } from "../config/edit";
 import type { DeviceConfig, ImuSlot } from "../config/model";
 import { ACCEL_RANGES_G, GYRO_RANGES_DPS, IMU_ODR_HIGH_PERF_HZ, IMU_ODR_LOW_POWER_HZ, validateConfig } from "../config/validate";
 import type { ValidationIssue } from "../config/validate";
@@ -84,7 +84,7 @@ export default function ImuForm({ config, onConfigChange, onClose }: ImuFormProp
         <input
           type="checkbox"
           checked={config.imu.low_power_mode}
-          onChange={(e) => onConfigChange({ ...config, imu: { ...config.imu, low_power_mode: e.target.checked } })}
+          onChange={(e) => onConfigChange(setImuModeFlags(config, { low_power_mode: e.target.checked }))}
         />
         Low power mode
       </label>
@@ -92,7 +92,7 @@ export default function ImuForm({ config, onConfigChange, onClose }: ImuFormProp
         <input
           type="checkbox"
           checked={config.imu.high_performance_mode}
-          onChange={(e) => onConfigChange({ ...config, imu: { ...config.imu, high_performance_mode: e.target.checked } })}
+          onChange={(e) => onConfigChange(setImuModeFlags(config, { high_performance_mode: e.target.checked }))}
         />
         High performance mode
       </label>
@@ -102,7 +102,7 @@ export default function ImuForm({ config, onConfigChange, onClose }: ImuFormProp
         Default accel range (g)
         <select
           value={config.imu.accel_range_g}
-          onChange={(e) => onConfigChange({ ...config, imu: { ...config.imu, accel_range_g: Number(e.target.value) } })}
+          onChange={(e) => onConfigChange(setImuRanges(config, { accel_range_g: Number(e.target.value) }))}
         >
           {ACCEL_RANGES_G.map((g) => (
             <option key={g} value={g}>
@@ -117,7 +117,7 @@ export default function ImuForm({ config, onConfigChange, onClose }: ImuFormProp
         Default gyro range (dps)
         <select
           value={config.imu.gyro_range_dps}
-          onChange={(e) => onConfigChange({ ...config, imu: { ...config.imu, gyro_range_dps: Number(e.target.value) } })}
+          onChange={(e) => onConfigChange(setImuRanges(config, { gyro_range_dps: Number(e.target.value) }))}
         >
           {GYRO_RANGES_DPS.map((dps) => (
             <option key={dps} value={dps}>

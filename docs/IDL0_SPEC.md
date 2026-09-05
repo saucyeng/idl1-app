@@ -2136,9 +2136,10 @@ and six axis checkboxes). The sample-rate control's option list switches
 between the high-performance and low-power ODR tables based on
 `low_power_mode`; both range controls are limited to the LSM6DSO32's four
 accel and five gyro full-scale options. Every field commits immediately
-through `Device/config/edit.ts` (`setImuRate`/`setImuSlot`/`setImuAxis`) and
-re-runs `validateConfig`, showing that field's own issues inline — never
-snapping or blocking the edit itself, only the eventual push (§23.6).
+through `Device/config/edit.ts` (`setImuRate`/`setImuSlot`/`setImuAxis`/
+`setImuModeFlags`/`setImuRanges`) and re-runs `validateConfig`, showing that
+field's own issues inline — never snapping or blocking the edit itself, only
+the eventual push (§23.6).
 
 ### 23.3.2 GPS form
 

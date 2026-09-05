@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { clearHrm, setGps, setHrm, setImuAxis, setImuRate, setImuSlot, setWheelSlot } from "./edit";
+import { clearHrm, setGps, setHrm, setImuAxis, setImuModeFlags, setImuRanges, setImuRate, setImuSlot, setWheelSlot } from "./edit";
 import { defaultConfig } from "./defaults";
 import type { DeviceConfig } from "./model";
 
@@ -73,6 +73,39 @@ describe("setImuAxis", () => {
   });
 });
 
+describe("setImuModeFlags", () => {
+  it("setImuModeFlags — toggling low_power_mode alone — high_performance_mode and the three IMU slots are untouched", () => {
+    // Arrange
+    const config = workedExampleConfig();
+
+    // Act
+    const result = setImuModeFlags(config, { low_power_mode: true });
+
+    // Assert
+    expect(result.imu.low_power_mode).toBe(true);
+    expect(result.imu.high_performance_mode).toBe(config.imu.high_performance_mode);
+    expect(result.imu.imu0).toEqual(config.imu.imu0);
+    expect(result.imu.imu1).toEqual(config.imu.imu1);
+    expect(result.imu.imu2).toEqual(config.imu.imu2);
+  });
+});
+
+describe("setImuRanges", () => {
+  it("setImuRanges — a new top-level accel range — gyro range and every IMU slot's own range overrides are untouched", () => {
+    // Arrange
+    const config = workedExampleConfig();
+
+    // Act
+    const result = setImuRanges(config, { accel_range_g: 8 });
+
+    // Assert
+    expect(result.imu.accel_range_g).toBe(8);
+    expect(result.imu.gyro_range_dps).toBe(config.imu.gyro_range_dps);
+    expect(result.imu.imu0.accel_range_g).toBe(config.imu.imu0.accel_range_g);
+    expect(result.imu.imu1.gyro_range_dps).toBe(config.imu.imu1.gyro_range_dps);
+  });
+});
+
 describe("setGps", () => {
   it("setGps — a new dynamic model — nmea_sentences and sbas_enabled unchanged", () => {
     // Arrange
@@ -134,6 +167,8 @@ describe("every edit function — immutability", () => {
     setImuRate(config, 104);
     setImuSlot(config, "imu0", { enabled: false });
     setImuAxis(config, "imu0", "accel_x", false);
+    setImuModeFlags(config, { low_power_mode: true });
+    setImuRanges(config, { accel_range_g: 8 });
     setGps(config, { dynamic_model: "sea" });
     setWheelSlot(config, "rear", { enabled: false });
     setHrm(config, { device_name: "Different Strap" });

@@ -63,85 +63,85 @@ export default function ChannelsTable({ sources, config, onConfigChange }: Chann
   return (
     <>
       <table className="device-channels-table">
-      <thead>
-        <tr>
-          <th>Source</th>
-          <th>Rate</th>
-          <th>Channels</th>
-          <th>Enabled</th>
-          <th aria-label="Configure" />
-        </tr>
-      </thead>
-      <tbody>
-        {sources.map((source) => {
-          const isExpanded = expandedKey === source.sourceKey;
-          const enabledCount = source.channels.filter((c) => c.enabled).length;
-          return (
-            <Fragment key={source.sourceKey}>
-              <tr>
-                <td>
-                  <button
-                    type="button"
-                    onClick={() => setExpandedKey(isExpanded ? null : source.sourceKey)}
-                    aria-expanded={isExpanded}
-                  >
-                    {isExpanded ? "▾" : "▸"} {source.label}
-                  </button>
-                </td>
-                <td>{formatRateHz(source.sampleRateHz)}</td>
-                <td>
-                  {enabledCount}/{source.channels.length}
-                </td>
-                <td>{source.enabled ? "On" : "Off"}</td>
-                <td>
-                  {(() => {
-                    const kind = formKindForSourceKey(source.sourceKey);
-                    return (
-                      <button
-                        type="button"
-                        aria-label={`Configure ${source.label}`}
-                        disabled={kind === null}
-                        onClick={() => setOpenForm(kind)}
-                      >
-                        ⚙
-                      </button>
-                    );
-                  })()}
-                </td>
-              </tr>
-              {isExpanded && (
+        <thead>
+          <tr>
+            <th>Source</th>
+            <th>Rate</th>
+            <th>Channels</th>
+            <th>Enabled</th>
+            <th aria-label="Configure" />
+          </tr>
+        </thead>
+        <tbody>
+          {sources.map((source) => {
+            const isExpanded = expandedKey === source.sourceKey;
+            const enabledCount = source.channels.filter((c) => c.enabled).length;
+            return (
+              <Fragment key={source.sourceKey}>
                 <tr>
-                  <td colSpan={5}>
-                    <table className="device-channels-table__detail">
-                      <thead>
-                        <tr>
-                          <th>Name</th>
-                          <th>Units</th>
-                          <th>Enabled</th>
-                          <th>Scale</th>
-                          <th>Offset</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {source.channels.map((channel) => (
-                          <tr key={channel.name}>
-                            <td>{channel.name}</td>
-                            <td>{channel.units}</td>
-                            <td>{channel.enabled ? "On" : "Off"}</td>
-                            <td>{formatConfigValue(channel.scale)}</td>
-                            <td>{formatConfigValue(channel.offset)}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
+                  <td>
+                    <button
+                      type="button"
+                      onClick={() => setExpandedKey(isExpanded ? null : source.sourceKey)}
+                      aria-expanded={isExpanded}
+                    >
+                      {isExpanded ? "▾" : "▸"} {source.label}
+                    </button>
+                  </td>
+                  <td>{formatRateHz(source.sampleRateHz)}</td>
+                  <td>
+                    {enabledCount}/{source.channels.length}
+                  </td>
+                  <td>{source.enabled ? "On" : "Off"}</td>
+                  <td>
+                    {(() => {
+                      const kind = formKindForSourceKey(source.sourceKey);
+                      return (
+                        <button
+                          type="button"
+                          aria-label={`Configure ${source.label}`}
+                          disabled={kind === null}
+                          onClick={() => setOpenForm(kind)}
+                        >
+                          ⚙
+                        </button>
+                      );
+                    })()}
                   </td>
                 </tr>
-              )}
-            </Fragment>
-          );
-        })}
-      </tbody>
-    </table>
+                {isExpanded && (
+                  <tr>
+                    <td colSpan={5}>
+                      <table className="device-channels-table__detail">
+                        <thead>
+                          <tr>
+                            <th>Name</th>
+                            <th>Units</th>
+                            <th>Enabled</th>
+                            <th>Scale</th>
+                            <th>Offset</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {source.channels.map((channel) => (
+                            <tr key={channel.name}>
+                              <td>{channel.name}</td>
+                              <td>{channel.units}</td>
+                              <td>{channel.enabled ? "On" : "Off"}</td>
+                              <td>{formatConfigValue(channel.scale)}</td>
+                              <td>{formatConfigValue(channel.offset)}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </td>
+                  </tr>
+                )}
+              </Fragment>
+            );
+          })}
+        </tbody>
+      </table>
     <OpenForm openForm={openForm} config={config} onConfigChange={onConfigChange} onClose={() => setOpenForm(null)} />
     </>
   );
