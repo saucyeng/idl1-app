@@ -21,6 +21,21 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
   `pull_config`, `list_profiles`/`save_profile`/`delete_profile`,
   `connect_device`/`disconnect_device`) with a local `NotImplementedError`,
   never an `IpcError` kind.
+- **Device tab, Task 2 (2026-09-05, L7b).** `Device/config/{model,defaults}.ts`
+  — a typed TypeScript mirror of SPEC §8's `idl0_config.json`, field for
+  field. `parseConfig` is lenient: a malformed field falls back to its
+  default and is recorded as a `Repair` rather than throwing; a value that
+  is the right type but off a SPEC-stated valid set (`imu.sample_rate_hz`'s
+  ODR table) is kept exactly as read and reported as a `Repair` instead of
+  being silently snapped, unlike idl0's `ImuSettingsDialog`. Unknown
+  top-level keys and the two read-only fields (`device_id`,
+  `config_version`) survive a parse → serialise round trip unchanged.
+  `serializeConfig` omits an absent `heart_rate_monitor` block rather than
+  writing back `enabled: false` (SPEC §8's stated equivalence, kept
+  minimal). SPEC §8 gains an app-side config-model note, restating that
+  `analog.sample_rate_hz`'s valid set is still undefined and the app
+  accepts any positive integer there (R53 Device Q2). Does not build the
+  validator — that is Task 3.
 - **L5 complete (2026-09-04).** idl-rs-tauri wired to every landed wave-1 lane's C3 command
   group (catalog, workbook, cursor, raster, tile) plus device (L4); <data> resolution,
   workbook watcher, app/src/ipc/ module layer, routing and state skeleton. Tile fetched

@@ -773,6 +773,20 @@ u-blox MAX-M10S: sample rate (1–10 Hz), dynamic model (portable/pedestrian/aut
 
 **Push transport:** "Push Config" sends `idl0_config.json` over BLE (FF05 + `CMD_CONFIG_BEGIN`/`CMD_CONFIG_COMMIT`, §7.2); the device reboots to apply. Requires idle mode (BLE control is suspended in WiFi mode, §10.4). The WiFi `POST /config` path (§6.1) remains as a fallback.
 
+**App-side config model (idl1, `app/src/routes/pages/Device/config/model.ts`).**
+The app parses `idl0_config.json` leniently: a malformed field falls back to
+its default and is recorded as a `Repair` rather than throwing, so a config
+the app cannot fully make sense of never blocks the tab. A value that is the
+right type but off a SPEC-stated valid set (the `imu.sample_rate_hz` ODR
+table above) is kept exactly as read and reported as a `Repair` — the app
+never silently snaps a stored value to the nearest valid one, unlike idl0's
+`ImuSettingsDialog`. Unknown top-level JSON keys and the two read-only
+fields (`device_id`, `config_version`) survive a parse → edit → serialise
+round trip unchanged. `analog.sample_rate_hz` has no SPEC-defined valid set
+(the row above is still "Not yet defined"); the app accepts any positive
+integer there and flags nothing, pending a spec answer (ruling R53 Device
+Q2).
+
 ---
 
 ## 9. Coordinate System

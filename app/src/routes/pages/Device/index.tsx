@@ -4,8 +4,8 @@ import { bleConnect, bleScan } from "../../../ipc/device";
 import { connectionReducer, initialConnectionState } from "./connection";
 import { describeIpcError } from "./errors";
 
-/** Scan window length passed to `bleScan` (C3 §3.8). Not user-configurable
- *  in wave 2. */
+/** Scan window length passed to `bleScan` (C3 §3.8), in milliseconds. Not
+ *  user-configurable in wave 2. */
 const SCAN_TIMEOUT_MS = 10_000;
 
 /** The Device tab (plan Task 1). Renders the tab's three regions: a hero
