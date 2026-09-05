@@ -8,7 +8,11 @@ import type { Viewport } from "./viewport";
  * Nothing here calls `fetchRaster`/`fetchRasterMeta` or touches the DOM —
  * `RasterUnderlay.tsx` calls these functions from its settle-bound effect,
  * then hands the result to `drawRaster` (also in this module, but
- * DOM-touching and therefore not unit-tested, CLAUDE.md §4).
+ * DOM-touching and therefore not unit-tested, CLAUDE.md §4). This module
+ * also owns {@link rasterFetchKeyEquals}, the pure "did the fetch-relevant
+ * props actually change" decision `RasterUnderlay.tsx`'s effect uses
+ * instead of putting `fetchRaster`/`fetchRasterMeta` in a dependency array
+ * (review-task9.md Critical).
  */
 
 /** Largest value `fetch_raster`/`fetch_raster_meta`'s `width`/`height`
@@ -82,6 +86,52 @@ export function rasterRequestFor(
     kind === "histogram2d" ? { ...(params as Histogram2dParams), x_bins: width, y_bins: height } : params;
 
   return { width, height, params: outParams, clamped };
+}
+
+/** The content-determining subset of {@link RasterUnderlayProps} (see
+ *  `components/RasterUnderlay.tsx`) that legitimately invalidates an
+ *  in-flight raster fetch — deliberately excludes `fetchRaster`/
+ *  `fetchRasterMeta`, whose closure identity carries no fetch-relevant
+ *  information and must never by itself trigger a refetch
+ *  (review-task9.md Critical). */
+export interface RasterFetchKey {
+  kind: RasterKind;
+  params: SpectrogramParams | Histogram2dParams;
+  viewport: Viewport;
+  /** CSS px. */
+  width: number;
+  /** CSS px. */
+  height: number;
+  devicePixelRatio: number;
+  sessionId: string;
+  channelId: string;
+}
+
+/**
+ * `true` when every fetch-relevant field of `a` and `b` is equal — the
+ * pure decision `RasterUnderlay.tsx`'s effect uses to tell "the settled
+ * viewport (or another fetch-relevant prop) actually changed" apart from
+ * "an unrelated re-render passed a structurally-identical key" (the
+ * latter must never trigger a refetch, review-task9.md Critical).
+ * `params` is compared by `JSON.stringify` (a small, JSON-safe,
+ * kind-specific object — `SpectrogramParams`/`Histogram2dParams` carry no
+ * function or `undefined` field that would make this unsound);
+ * `viewport`'s three numeric fields are compared individually rather than
+ * relying on the caller passing the same object reference.
+ */
+export function rasterFetchKeyEquals(a: RasterFetchKey, b: RasterFetchKey): boolean {
+  return (
+    a.kind === b.kind &&
+    a.width === b.width &&
+    a.height === b.height &&
+    a.devicePixelRatio === b.devicePixelRatio &&
+    a.sessionId === b.sessionId &&
+    a.channelId === b.channelId &&
+    a.viewport.startUs === b.viewport.startUs &&
+    a.viewport.endUs === b.viewport.endUs &&
+    a.viewport.pixelWidth === b.viewport.pixelWidth &&
+    JSON.stringify(a.params) === JSON.stringify(b.params)
+  );
 }
 
 /** Where to blit a fetched raster given the current viewport, in both the

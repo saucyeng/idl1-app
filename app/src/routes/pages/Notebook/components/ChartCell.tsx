@@ -3,7 +3,8 @@ import { useCallback, useEffect, useRef, useState, type PointerEvent, type Wheel
 import type { CursorReadout } from "../../../../ipc/cursor";
 import type { DecodedRaster, Histogram2dParams, RasterKind, RasterMeta, SpectrogramParams } from "../../../../ipc/rasters";
 import type { DecodedTile } from "../../../../ipc/tiles";
-import { cursorRequestFor, formatReadout, type ReadoutRow } from "../model/cursor";
+import type { ReadoutPanelState } from "../model/cursor";
+import { CURSOR_SETTLE_MS, makeCursorReadoutDriver, type CursorReadoutDriverDeps } from "../model/cursorReadoutDriver";
 import { hoverAt, type HoverGeometry } from "../model/hover";
 import { isStaleSettleResult, makeSettle } from "../model/settle";
 import { chooseTier, tileRange } from "../model/tiers";
@@ -163,13 +164,20 @@ export interface ChartCellProps {
  * (React state); it never calls `invoke` or any `ipc/*` function (P1), and
  * hover never reaches `cursor_readout` (P2).
  *
- * The cross-channel cursor readout (Task 10, `components/CursorReadout.tsx`)
- * is a third thing hanging off the same settle callback described above:
- * `handlePointerMove`/`handlePointerLeave` only ever update a local ref
- * (`lastPointerXRef`, no React state, no IPC) with the pointer's last-known
- * CSS-px position; the settle callback alone reads that ref, converts it to
- * a `t_us` instant via `cursorRequestFor`, and — only then — calls
- * `fetchCursorReadout` (`ipc/cursor.ts`'s `cursorReadout`) once per settle.
+ * The cross-channel cursor readout (Task 10, `components/CursorReadout.tsx`;
+ * ruling R62) is driven by `model/cursorReadoutDriver.ts`'s
+ * `makeCursorReadoutDriver`, held in `cursorDriverRef` — a pure, unit-tested
+ * settle-and-fetch driver with two independent trigger paths sharing one
+ * sequence counter: `handlePointerMove` calls the driver's `notify` on
+ * every move (drag or hover alike, still no IPC — the driver debounces
+ * internally by `CURSOR_SETTLE_MS`, its own settle distinct from this
+ * component's tile-fetch settle), so a plain hover-and-stop refreshes the
+ * readout even with no pan/zoom gesture; the tile-fetch settle above also
+ * calls the driver's `dispatchNow` with no extra debounce, so a pan/zoom
+ * settle refreshes the readout too ("the viewport settle also refreshes
+ * it," R62). `handlePointerLeave` calls the driver's `leave`, which clears
+ * the panel and invalidates (by sequence, not by cancellation) any fetch
+ * already in flight.
  */
 export default function ChartCell({
   tiles,
@@ -189,7 +197,7 @@ export default function ChartCell({
 }: ChartCellProps) {
   const [hover, setHover] = useState<HoverReading | null>(null);
   const [liveViewport, setLiveViewport] = useState<Viewport>(viewport);
-  const [readoutRows, setReadoutRows] = useState<ReadoutRow[] | null>(null);
+  const [readoutState, setReadoutState] = useState<ReadoutPanelState>(null);
   const draggingRef = useRef<{ pointerId: number; lastClientX: number } | null>(null);
   // The pointer's last-known CSS-px position within this cell, updated on
   // every pointer move (drag or hover alike) with no IPC — only the settle
@@ -205,6 +213,31 @@ export default function ChartCell({
   useEffect(() => {
     setLiveViewport(viewport);
   }, [viewport]);
+
+  // The cursor-readout driver's deps object is mutated in place on every
+  // render (never replaced) so the driver instance below — created once via
+  // `useRef` — always reads fresh `fetchCursorReadout`/`sessionId`/
+  // `channelId`/`channelLabel` values through the same object reference,
+  // the same "stable instance, fresh values read through a ref" shape as
+  // `onSettleRef` below.
+  const cursorDriverDepsRef = useRef<CursorReadoutDriverDeps>({
+    fetchCursorReadout,
+    sessionId,
+    channelId,
+    channelLabel,
+    onState: (state) => setReadoutState(state),
+  });
+  cursorDriverDepsRef.current.fetchCursorReadout = fetchCursorReadout;
+  cursorDriverDepsRef.current.sessionId = sessionId;
+  cursorDriverDepsRef.current.channelId = channelId;
+  cursorDriverDepsRef.current.channelLabel = channelLabel;
+
+  const cursorDriverRef = useRef(makeCursorReadoutDriver(cursorDriverDepsRef.current, CURSOR_SETTLE_MS));
+
+  useEffect(() => {
+    const driver = cursorDriverRef.current;
+    return () => driver.cancel();
+  }, []);
 
   // Indirected through a ref so the debouncer instance below (and its
   // pending timer) stays stable across renders instead of being torn down
@@ -251,38 +284,15 @@ export default function ChartCell({
         // cell-level error state) is not in this task's scope.
       });
 
-    // The cursor readout (Task 10) is a second, independent fetch hanging
-    // off this same settle firing — not gated on the tile fetch above
-    // succeeding, since a stale/missing tile picture and a fresh numeric
-    // readout are unrelated failures. `cursorRequestFor` already encodes
-    // the one piece of non-trivial decision logic ("is this pixel inside
-    // the plotted area?"); "is there a last-known pointer position at all"
-    // is a plain existence check on local component state, not a decision
-    // worth its own pure/tested function (CLAUDE.md §4's "wiring" vs
-    // "physics" line falls on the trivial side here).
-    const pixelX = lastPointerXRef.current;
-    if (pixelX === null) {
-      setReadoutRows(null);
-      return;
-    }
-    const request = cursorRequestFor(next, pixelX, [channelId]);
-    if (request === null) {
-      setReadoutRows(null);
-      return;
-    }
-    const labels = channelLabel === undefined ? {} : { [channelId]: channelLabel };
-    fetchCursorReadout(sessionId, request.channels, request.tUs)
-      .then((readout) => {
-        if (isStaleSettleResult(seqAtDispatch, settleRef.current.latestSeq())) {
-          return;
-        }
-        setReadoutRows(formatReadout(readout, labels));
-      })
-      .catch(() => {
-        // TODO(idl0): a cursor-readout fetch failure is swallowed — the
-        // panel keeps its last successfully rendered rows rather than
-        // surfacing an error, mirroring the tile-fetch TODO above.
-      });
+    // The cursor readout (Task 10; ruling R62) also refreshes on this same
+    // settle firing — not gated on the tile fetch above succeeding, since a
+    // stale/missing tile picture and a fresh numeric readout are unrelated
+    // failures. The driver shares one sequence counter across this
+    // "viewport settled" trigger and its own independent pointer-stop
+    // trigger (`handlePointerMove`'s `notify`), so whichever fires last
+    // wins consistently regardless of path — see
+    // `model/cursorReadoutDriver.ts`.
+    cursorDriverRef.current.dispatchNow(next, lastPointerXRef.current);
   };
 
   const settleRef = useRef(makeSettle<Viewport>(SETTLE_DELAY_MS, (next) => onSettleRef.current(next)));
@@ -303,6 +313,10 @@ export default function ChartCell({
       const pixelX = event.clientX - bounds.left;
       const dragging = draggingRef.current;
       lastPointerXRef.current = pixelX;
+      // R62: every move — drag or hover alike — notifies the cursor
+      // readout's own pointer-stop settle (no IPC here; `notify` only
+      // (re)starts an internal debounce timer).
+      cursorDriverRef.current.notify(viewport, pixelX);
 
       if (dragging !== null && dragging.pointerId === event.pointerId) {
         const pixelDx = event.clientX - dragging.lastClientX;
@@ -320,7 +334,7 @@ export default function ChartCell({
       const reading = hoverAt(tiles, pixelX, geometry);
       setHover(reading === null ? null : { pixelX, ...reading });
     },
-    [tiles, width, sessionSpanUs]
+    [tiles, width, sessionSpanUs, viewport]
   );
 
   const handlePointerUp = useCallback((event: PointerEvent<HTMLDivElement>) => {
@@ -337,9 +351,15 @@ export default function ChartCell({
       draggingRef.current = null;
     }
     setHover(null);
-    // The pointer has left the chart — the next settle must skip the
-    // cursor-readout request entirely rather than reading a stale position.
+    // The pointer has left the chart — the next viewport-settle dispatch
+    // must skip the cursor-readout request entirely rather than reading a
+    // stale position, and the readout panel itself must clear immediately
+    // rather than showing a reading for a cursor that no longer exists
+    // (review-task10.md Important). `driver.leave()` also invalidates
+    // (by sequence) any readout fetch already in flight from either
+    // trigger path, without cancelling it (R62).
     lastPointerXRef.current = null;
+    cursorDriverRef.current.leave();
   }, []);
 
   const handleWheel = useCallback(
@@ -408,7 +428,7 @@ export default function ChartCell({
           {`t=${Number(hover.tUs) / 1_000_000}s min=${hover.min} max=${hover.max} mean=${hover.mean}`}
         </div>
       )}
-      <CursorReadoutPanel rows={readoutRows} />
+      <CursorReadoutPanel state={readoutState} />
     </div>
   );
 }

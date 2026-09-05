@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { CursorReadout } from "../../../../ipc/cursor";
-import { cursorRequestFor, formatReadout } from "./cursor";
+import { cursorRequestFor, describeCursorReadoutError, formatReadout } from "./cursor";
 import type { Viewport } from "./viewport";
 
 describe("cursorRequestFor", () => {
@@ -71,5 +71,41 @@ describe("formatReadout", () => {
 
     // Assert
     expect(rows).toEqual([{ channel: "front-fork", label: "Front fork", value: 1 }]);
+  });
+
+  it("formatReadout — channel with no label — falls back to the channel id", () => {
+    // Arrange
+    const readout: CursorReadout = { t_us: 2_000_000, values: { "front-fork": 1 } };
+    const labels = {};
+
+    // Act
+    const rows = formatReadout(readout, labels);
+
+    // Assert
+    expect(rows).toEqual([{ channel: "front-fork", label: "front-fork", value: 1 }]);
+  });
+});
+
+describe("describeCursorReadoutError", () => {
+  it("describeCursorReadoutError — a typed IpcError-shaped rejection — surfaces its kind", () => {
+    // Arrange
+    const error = { kind: "invalid_argument", message: "unknown channel: rear-shock" };
+
+    // Act
+    const text = describeCursorReadoutError(error);
+
+    // Assert
+    expect(text).toBe("readout unavailable: invalid_argument");
+  });
+
+  it("describeCursorReadoutError — an untyped rejection — falls back to the generic message", () => {
+    // Arrange
+    const error = new Error("network down");
+
+    // Act
+    const text = describeCursorReadoutError(error);
+
+    // Assert
+    expect(text).toBe("readout unavailable");
   });
 });

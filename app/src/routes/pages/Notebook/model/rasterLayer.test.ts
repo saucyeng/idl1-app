@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { Histogram2dParams, RasterMeta, SpectrogramParams } from "../../../../ipc/rasters";
-import { alignRasterToAxes, rasterRequestFor } from "./rasterLayer";
+import { alignRasterToAxes, rasterFetchKeyEquals, rasterRequestFor, type RasterFetchKey } from "./rasterLayer";
 import type { Viewport } from "./viewport";
 
 describe("rasterRequestFor", () => {
@@ -115,5 +115,55 @@ describe("alignRasterToAxes", () => {
 
     // Assert
     expect(rect).toBeNull();
+  });
+});
+
+describe("rasterFetchKeyEquals", () => {
+  const baseKey: RasterFetchKey = {
+    kind: "spectrogram",
+    params: { window_size: 256, hop_size: 128, window: "hann", detrend: "linear", scaling: "density" },
+    viewport: { startUs: 0, endUs: 10_000_000, pixelWidth: 800 },
+    width: 800,
+    height: 400,
+    devicePixelRatio: 1,
+    sessionId: "s1",
+    channelId: "front-fork",
+  };
+
+  it("rasterFetchKeyEquals — two keys with identical fetch-relevant fields — are equal (an unrelated re-render must not refetch)", () => {
+    // Arrange: a fresh object with the same field values, as a re-render
+    // building a new key literal from unchanged props would produce —
+    // note RasterFetchKey has no `fetchRaster`/`fetchRasterMeta` field at
+    // all, so a fresh closure identity for those props can never affect
+    // this comparison in the first place.
+    const other: RasterFetchKey = { ...baseKey, params: { ...baseKey.params }, viewport: { ...baseKey.viewport } };
+
+    // Act
+    const equal = rasterFetchKeyEquals(baseKey, other);
+
+    // Assert
+    expect(equal).toBe(true);
+  });
+
+  it("rasterFetchKeyEquals — a changed viewport window — are not equal (a settled viewport change must refetch exactly once)", () => {
+    // Arrange
+    const next: RasterFetchKey = { ...baseKey, viewport: { ...baseKey.viewport, endUs: 20_000_000 } };
+
+    // Act
+    const equal = rasterFetchKeyEquals(baseKey, next);
+
+    // Assert
+    expect(equal).toBe(false);
+  });
+
+  it("rasterFetchKeyEquals — a changed params field — are not equal", () => {
+    // Arrange
+    const next: RasterFetchKey = { ...baseKey, params: { ...baseKey.params, hop_size: 64 } };
+
+    // Act
+    const equal = rasterFetchKeyEquals(baseKey, next);
+
+    // Assert
+    expect(equal).toBe(false);
   });
 });

@@ -88,3 +88,53 @@ export function formatReadout(readout: CursorReadout, labels: Record<string, str
     value: readout.values[channel],
   }));
 }
+
+/** The shape a rejected `cursorReadout` promise carries when it's a typed
+ *  IPC failure (C3 §2) — kept local, like `ipc/workbook.ts`'s `IpcError`
+ *  and `Device/errors.ts`'s `DeviceIpcError`; this module only ever sees it
+ *  as a caught rejection, never nested in a success payload. */
+export interface CursorReadoutErrorLike {
+  /** Machine-readable failure class (e.g. `invalid_argument` for an unknown
+   *  requested channel, C3 §3.7). Never routed on `message` (C3 §2). */
+  kind: string;
+  message: string;
+}
+
+/** `true` when `value` has the shape of a typed IPC rejection (a `kind`
+ *  string property) rather than an untyped/generic thrown value. */
+function isCursorReadoutErrorLike(value: unknown): value is CursorReadoutErrorLike {
+  return typeof value === "object" && value !== null && "kind" in value && typeof (value as { kind: unknown }).kind === "string";
+}
+
+/**
+ * Turns a rejected `cursorReadout` promise into fixed, user-facing text —
+ * never swallowed silently (lead ruling, 2026-09-05, `review-task10.md`):
+ * an `invalid_argument` rejection (an unknown requested channel, C3 §3.7),
+ * any other typed `IpcError`-shaped rejection, and a plain untyped
+ * rejection (e.g. a network-level failure with no `kind`) all set a
+ * visible "readout unavailable" state instead of leaving the panel showing
+ * a stale reading. `kind` is surfaced (never `message`, matching C3 §2's
+ * "never route on message") because it is the one machine-readable,
+ * always-safe-to-show piece of a rejection; there is no `cursor_readout`
+ * analogue of `Device/errors.ts`'s `kind: "config"` carve-out (no
+ * `cursor_readout` error kind's `message` is documented as user-safe
+ * device-stated text), so `message` is never shown here. Never throws.
+ *
+ * @param error The rejection value caught from a `cursorReadout` promise.
+ */
+export function describeCursorReadoutError(error: unknown): string {
+  if (isCursorReadoutErrorLike(error)) {
+    return `readout unavailable: ${error.kind}`;
+  }
+  return "readout unavailable";
+}
+
+/** The cursor readout panel's full display state, produced by a settle
+ *  dispatch (either `ChartCell`'s viewport settle or the independent
+ *  pointer-stop cursor settle, ruling R62 — see
+ *  `model/cursorReadoutDriver.ts`): a set of formatted rows, a fixed error
+ *  message (see {@link describeCursorReadoutError}), or `null` (nothing to
+ *  show — no settle has resolved a readout yet, or the pointer is off the
+ *  chart). `components/CursorReadout.tsx` renders this discriminated union
+ *  directly. */
+export type ReadoutPanelState = { kind: "rows"; rows: ReadoutRow[] } | { kind: "error"; message: string } | null;

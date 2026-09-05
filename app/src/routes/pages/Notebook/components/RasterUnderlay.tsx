@@ -1,7 +1,8 @@
 import { useEffect, useRef } from "react";
 
 import type { DecodedRaster, Histogram2dParams, RasterKind, RasterMeta, SpectrogramParams } from "../../../../ipc/rasters";
-import { alignRasterToAxes, drawRaster, rasterRequestFor } from "../model/rasterLayer";
+import { alignRasterToAxes, drawRaster, rasterFetchKeyEquals, rasterRequestFor, type RasterFetchKey } from "../model/rasterLayer";
+import { isStaleSettleResult } from "../model/settle";
 import type { Viewport } from "../model/viewport";
 
 /** Props for {@link RasterUnderlay}. */
@@ -60,21 +61,38 @@ export interface RasterUnderlayProps {
  * smaller, more localized change than lifting a canvas ref up through props
  * (the other option the plan's Task 9 note allows).
  *
- * The fetch is triggered only by `viewport` changing (see its doc comment
- * above) — never by `width`/`height`/`devicePixelRatio` alone changing on
- * their own without a settled viewport change, and never from a
+ * The fetch is triggered only by `kind`/`params`/`viewport`/`width`/
+ * `height`/`devicePixelRatio`/`sessionId`/`channelId` actually changing
+ * (see {@link rasterFetchKeyEquals}) — never merely by an unrelated
+ * re-render (which can hand this component a fresh `fetchRaster`/
+ * `fetchRasterMeta` closure with no stability contract), and never from a
  * gesture/`requestAnimationFrame` callback (P1, P3, P4): this effect is the
  * same shape as `ChartCell`'s settle-bound `ensureTiles` call, just
  * expressed as "run when the settled prop changes" rather than "run inside
  * the settle debouncer's own callback" — both only fire once per settle.
  *
+ * **review-task9.md Critical fix.** `fetchRaster`/`fetchRasterMeta` are
+ * held in refs (`ChartCell.tsx`'s `onSettleRef` pattern) and never sit in
+ * this effect's own re-run condition; the effect itself has no dependency
+ * array at all (it runs after every render) but is a no-op except when
+ * `rasterFetchKeyEquals` says the fetch-relevant props actually changed
+ * from the last dispatch — so a caller re-render that only recreates the
+ * function props never tears down or duplicates an in-flight fetch. A
+ * resolved fetch is guarded against a *newer* dispatch superseding it by a
+ * monotonic `epochRef` compared via `isStaleSettleResult` (Task 8's
+ * pattern) rather than by a `cancelled`-on-cleanup flag — there is no
+ * cleanup function here at all, since nothing needs cancelling: a stale
+ * result is simply dropped on arrival.
+ *
  * The wiring below (compute request → fetch pixels + meta → align → draw)
- * makes no decision of its own beyond that sequence — no caching, no
- * skip-if-unchanged check beyond React's own effect-dependency comparison —
- * so per the operating brief's IPC-effects rule (§4) this effect calling
- * `rasterRequestFor`/`fetchRaster`/`fetchRasterMeta`/`alignRasterToAxes`/
- * `drawRaster` directly is the rule's own "the effect only calls it" escape
- * hatch, not a missing pure driver module.
+ * makes no decision of its own beyond that sequence — no caching beyond the
+ * `rasterFetchKeyEquals` gate above — so per the operating brief's
+ * IPC-effects rule (§4) this effect calling `rasterRequestFor`/
+ * `fetchRaster`/`fetchRasterMeta`/`alignRasterToAxes`/`drawRaster` directly
+ * is the rule's own "the effect only calls it" escape hatch, not a missing
+ * pure driver module — `rasterFetchKeyEquals` (in `model/rasterLayer.ts`,
+ * unit-tested there) is the one piece of real decision logic, and it is
+ * already extracted and pure.
  */
 export default function RasterUnderlay({
   kind,
@@ -90,7 +108,30 @@ export default function RasterUnderlay({
 }: RasterUnderlayProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
+  // Held in refs so an unrelated re-render's fresh closure identity for
+  // these two props can never by itself invalidate the effect below —
+  // review-task9.md Critical, the same pattern ChartCell.tsx's
+  // `onSettleRef` already uses for `fetchTile`.
+  const fetchRasterRef = useRef(fetchRaster);
+  fetchRasterRef.current = fetchRaster;
+  const fetchRasterMetaRef = useRef(fetchRasterMeta);
+  fetchRasterMetaRef.current = fetchRasterMeta;
+
+  const key: RasterFetchKey = { kind, params, viewport, width, height, devicePixelRatio, sessionId, channelId };
+  const dispatchedKeyRef = useRef<RasterFetchKey | null>(null);
+  const epochRef = useRef(0);
+
+  // No dependency array: this runs after every render, but is a no-op
+  // except when `rasterFetchKeyEquals` says a fetch-relevant prop actually
+  // changed since the last dispatch (review-task9.md Critical) — see the
+  // doc comment above for why this replaces both the old dependency array
+  // and the old `cancelled`-on-cleanup guard.
   useEffect(() => {
+    if (dispatchedKeyRef.current !== null && rasterFetchKeyEquals(dispatchedKeyRef.current, key)) {
+      return;
+    }
+    dispatchedKeyRef.current = key;
+
     const canvas = canvasRef.current;
     if (canvas === null) {
       return;
@@ -100,22 +141,32 @@ export default function RasterUnderlay({
       return;
     }
 
+    epochRef.current += 1;
+    const dispatchEpoch = epochRef.current;
     const request = rasterRequestFor(viewport, kind, params, devicePixelRatio, height);
-    let cancelled = false;
 
     Promise.all([
-      fetchRaster(sessionId, channelId, kind, request.width, request.height, request.params),
-      fetchRasterMeta(sessionId, channelId, kind, request.width, request.height, request.params),
+      fetchRasterRef.current(sessionId, channelId, kind, request.width, request.height, request.params),
+      fetchRasterMetaRef.current(sessionId, channelId, kind, request.width, request.height, request.params),
     ])
       .then(([decoded, meta]) => {
-        if (cancelled) {
+        if (isStaleSettleResult(dispatchEpoch, epochRef.current)) {
           return;
         }
+        // Always clear in the canvas's own (identity) device-px coordinate
+        // space first, regardless of whether a rect is drawn below.
+        ctx.setTransform(1, 0, 0, 1, 0, 0);
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
         const rect = alignRasterToAxes(meta, decoded.width, decoded.height, viewport, height);
         if (rect === null) {
-          ctx.clearRect(0, 0, canvas.width, canvas.height);
           return;
         }
+        // `rect`'s dest coordinates are CSS px (`alignRasterToAxes`'s doc
+        // comment); the canvas's backing store is device px (see the
+        // element below) — this transform maps CSS-px draw calls onto the
+        // device-px buffer, the standard high-DPI-canvas pattern
+        // (review-task9.md Important).
+        ctx.setTransform(devicePixelRatio, 0, 0, devicePixelRatio, 0, 0);
         drawRaster(ctx, decoded, rect);
       })
       .catch(() => {
@@ -123,19 +174,21 @@ export default function RasterUnderlay({
         // keeps whatever it last drew rather than surfacing an error,
         // mirroring ChartCell's own swallowed tile-fetch-failure TODO.
       });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [kind, params, viewport, width, height, devicePixelRatio, sessionId, channelId, fetchRaster, fetchRasterMeta]);
+  });
 
   return (
     <canvas
       ref={canvasRef}
       className="chart-cell-underlay"
-      width={width}
-      height={height}
-      style={{ position: "absolute", inset: 0, pointerEvents: "none" }}
+      // Backing store sized in device px (review-task9.md Important: the
+      // raster itself was fetched at device-px resolution via
+      // `rasterRequestFor`'s own `devicePixelRatio` multiplication — a
+      // canvas whose buffer is only CSS-px resolution would silently
+      // downscale that crisper source). The CSS box below stays at the
+      // CSS-px size so the element still occupies the same on-screen area.
+      width={Math.round(width * devicePixelRatio)}
+      height={Math.round(height * devicePixelRatio)}
+      style={{ position: "absolute", inset: 0, width: `${width}px`, height: `${height}px`, pointerEvents: "none" }}
     />
   );
 }
