@@ -117,6 +117,13 @@ resolved by keeping both (main's first, then the lane's) and noting
 file is STOP and report — the lead resolves it. (Every concurrent lane adds a
 CHANGELOG bullet per task, so this conflict is expected, not a signal.)
 
+**Never amend a reported commit.** Once a task's commit hash has been
+reported to the lead, fixes land as a new commit on top — reviewers and the
+next task in the lane are already working against that hash, and the lane's
+worktree is shared sequentially. (Two amend incidents 2026-09-05, both after
+the lead's own "fold it into your commit" wording; the lead now says
+"as a follow-up commit".)
+
 ## 5. Sequencing
 
 ```

@@ -2658,3 +2658,99 @@ cheap — versus a wire-format formula living in two languages, which is the
 kind of divergence that misleads at the track. L7a Q3's slice shape is
 additive; if L6 needs more it is one shell task. L7a Q4 is visible to Isaac
 and stated in the CHANGELOG so it is not read as a bug.
+
+## 2026-09-05 — R54: Data tab Track facet dropped for wave 2
+
+L7a Task 3 stopped (CLAUDE.md §1) on a real gap: the brief's Track facet
+needs a per-session track linkage, but `SessionSummary` (C3 §3.2) carries
+none — it lives only in `SessionDetail.track_visits`, a settle-bound
+per-session call that local filtering over the fetched list cannot use.
+
+**Ruling:** drop the Track facet entirely for wave 2 (no options, no counts,
+no `trackIds` predicate, no disabled placeholder) — the same treatment as
+has-GPS/has-gates under R53 Data Q2. A facet that structurally excludes
+every row is a trap, not honesty. Returns with the wave-3 catalog amendment
+(C4 §5 + C3 §3.2: a per-session track linkage column on `SessionSummary`),
+recorded in the plan's parity gaps and the CHANGELOG. The lap-time facet
+keyed off `duration_ms` is confirmed correct.
+
+**Cost if wrong:** one facet missing for one wave; the amendment is the same
+one already filed for two other facets, so no extra Rust work is created.
+
+## 2026-09-05 — Tracked note: Device tab IMU defaults come from SPEC §8's worked example
+
+L7b Task 2's `defaultConfig` uses 833 Hz / 32 g / 2000 dps for the IMU
+blocks because SPEC §8's prose states no IMU default and only its worked
+example carries values. The reviewer flagged it as an arguable CLAUDE.md §1
+stop. **Lead ruling:** accepted as the *form's initial state* (disclosed in
+the code comment), not as a claim about firmware defaults. 833 Hz matches the
+configured rate observed on Isaac's real session; the range values are the
+hardware's to confirm. **For Isaac:** confirm the firmware's actual IMU
+defaults (rate, accel range, gyro range) so SPEC §8 can state them as
+defaults rather than as an example; L7b adjusts `defaults.ts` in one line
+if they differ. Non-blocking.
+
+**Cost if wrong:** a new-device config form pre-filled with a value the
+firmware would reject — caught at push time by the device, not silently.
+
+## 2026-09-05 — R55: L7 Task 4+ briefs; file picker seam; no free-pin algorithm
+
+Briefs for L7a Tasks 4–8, L7b Tasks 4–9, L7c Tasks 4–6 written against the
+committed code (not the plans). Two questions ruled:
+
+- **L7a Task 5 file picker → seam now, dialog plugin later.** No dialog
+  plugin exists in the repo; adding `@tauri-apps/plugin-dialog` needs an
+  `app/src-tauri` crate + capability change, i.e. a Tauri build. The Data tab
+  builds `pickImportFile()` as a seam whose wave-2 implementation is a
+  pasted-path input; the plugin (npm + crate + capability) is queued for the
+  Rust write-amendment lane and the seam is swapped by a shell task then.
+- **L7b Task 7 "free pin" → none.** SPEC §8 fixes no pin numbering scheme,
+  so the UI never auto-selects a pin: new channels start unassigned (the
+  validator already reports that), and the user picks from the pins the
+  declared range allows, unassigned first.
+
+Also from the brief writer: L7b Task 4 is rewritten (not narrowed) as
+`previewSources()` — enable/rate/unit only, distinct names so nobody reads
+it as IPC need 12 landing early (R53 Device Q1).
+
+**Cost if wrong:** the picker seam costs one swap later; a plugin added now
+would cost a Tauri build inside a UI lane, which §4 forbids. The pin ruling
+costs one extra click per new channel versus a guessed numbering the
+firmware might reject.
+
+## 2026-09-05 — R56: L6 may edit `vite.config.ts` for the sandbox entry (lead-authorised)
+
+L6 Task 5 proved empirically (out-of-tree probe configs, real `vite build`
+output inspected) that no avoidance path works for the sandboxed iframe
+bundle: `?url` / `new URL(..., import.meta.url)` on a `.ts` module emits the
+raw untransformed source as a data URL; the `new Worker(new URL(...))`
+special case bundles correctly but cannot yield a script URL without
+spawning a worker; a second `build.rollupOptions.input` entry works. So R52
+Q9(ii) resolves to: the entry is required.
+
+**Ruling:** because the entry's HTML lives in L6's own directory, the config
+change and the file must land together. The lead authorises L6 Task 5 — this
+task only — to edit the lead-owned `app/vite.config.ts` with exactly:
+`build.rollupOptions.input = { main: "index.html", notebookSandbox:
+"src/routes/pages/Notebook/sandbox/index.html" }`, as its own commit citing
+R56. Ownership rule (operating brief §2) otherwise unchanged. Proof at the
+task gate: one `vite build` showing the sandbox chunk with `d3` and
+`@observablehq/*` resolved.
+
+**Cost if wrong:** a second build entry that later moves is a one-line
+config edit; the alternative (a shell task on `main` pointing at a file that
+does not exist on `main` yet) would break `vite build` on `main` until L6
+merges.
+
+## 2026-09-05 — Tracked note: IMU `low_power_mode` vs `high_performance_mode` — SPEC §8 gap
+
+L7b Task 3's validator selects the IMU ODR table from `imu.low_power_mode`
+alone; SPEC §8 frames the two flags as one physical toggle but never says
+what the firmware does when both are set. **Ruling:** the validator emits a
+*warning* (not an error — inventing a winner would be a guess) when both are
+true; `isPushable` unaffected. **For Isaac:** state in SPEC §8 whether the
+flags are mutually exclusive (then the validator upgrades to an error) or
+which wins (then the table selection follows it). Non-blocking.
+
+**Cost if wrong:** a config the firmware silently reinterprets; the warning
+makes it visible at push time, which is the most the app can honestly do.
