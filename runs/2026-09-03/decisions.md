@@ -2471,3 +2471,29 @@ than as pass or fail.
 R27's decimal-degree conversion already landed so the importers are
 written once against the final unit. L5 Task 9 (import commands) rides
 with it.
+
+## 2026-09-05 — L5 Step 6 render confirmed; settings.json BOM trap
+
+Isaac asked for a preview. Lead launched `npm run tauri dev` (cold Tauri graph
+build, 8m 01s, 530 crates, free RAM bottomed near 840 MB with nothing else
+running) against the L5 import at `C:\tmp\idl1-data-l5`. Window opened;
+`NotebookPage` drew the `IMU2_AccelX` tier-0 min/max envelope from the real
+session with the footer `IMU2_AccelX — 20224 bytes` (the same byte count the
+headless proof produced). Screenshot sent to Isaac. R50's outstanding item 2
+is closed; CHANGELOG and TASKS.md updated in the same commit (grep confirmed
+no other copy of the "unconfirmed" claim in TASKS/CHANGELOG/docs/app).
+
+**Found on the way:** the `settings.json` the lead wrote on 2026-09-04 at
+`%APPDATA%\com.saucyeng.idl1\` carried a UTF-8 BOM (PowerShell `Out-File`
+default). `paths::resolve_data_dir` deserialises leniently and would have
+silently fallen back to the platform default `<app_data>/data` — an empty
+store — so the app would have opened on nothing and the render would have
+looked broken for a reason unrelated to the code. Rewritten without the BOM.
+**Tracked (not wave 1):** `resolve_data_dir` should strip a leading BOM before
+`serde_json::from_str`; a bootstrap file Windows tooling writes by default
+should not be a silent no-op. Cheap, one line plus a test; goes with the
+first task that touches `rust/tauri/src/paths.rs`.
+
+**Cost if wrong:** none on the render claim — it is now observed, not
+inferred. The BOM item, if left, costs a confused user with an empty app and
+no error, exactly the failure the lenient parse was meant to avoid.
