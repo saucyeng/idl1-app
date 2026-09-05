@@ -25,4 +25,12 @@ m 'cargo[[:space:]]+[^"\\;&|]*([[:space:]]-j[[:space:]]*[0-9]|[[:space:]]--jobs\
   && deny "CLAUDE.md §8: never override cargo jobs (-j/--jobs); machine-wide cap applies"
 m 'git[[:space:]]+([^"\\;&|]*[[:space:]])?push\b' \
   && deny "CLAUDE.md §7: never git push; Isaac pushes"
+
+# A bare `cargo test`/`build`/`check` with no -p/--package is workspace-wide in
+# this virtual manifest -- it builds the Tauri graph, exactly what --workspace
+# was denied for. Caught 2026-09-05 after an implementer ran bare `cargo test`
+# alongside the L5 merge gate: two cargo processes, 1.5 GB free, no denial.
+if printf '%s' "$input" | grep -Eq "$SEG"'cargo[[:space:]]+(test|build|check)([[:space:]]|"|$)'    && ! printf '%s' "$input" | grep -Eq '(^|[[:space:]])(-p|--package)([[:space:]]|=)'; then
+  deny "CLAUDE.md §8: a bare cargo test/build/check is workspace-wide here (builds the Tauri graph). Name the package: -p idl-rs [-p idl-rs-cli]"
+fi
 exit 0
