@@ -24,20 +24,33 @@ export interface ImporterInfo {
   extensions: string[];
 }
 
+/** Resolution of `importFile` (C3 §3.3, amended by R60): the new session's
+ *  catalog row plus the importer's recovered warnings (e.g. truncation) for
+ *  this one import. `warnings` is per-import state and must never be folded
+ *  into `session` — a catalog row (`SessionSummary`) carries no per-import
+ *  state (R60 item 1). */
+export interface ImportOutcome {
+  /** The newly imported session's catalog row (§3.2). */
+  session: SessionSummary;
+  /** Recovered-data warnings for this import, in no particular order. Empty
+   *  when the import had none. Never hidden from the user (CLAUDE.md §5). */
+  warnings: string[];
+}
+
 /** Imports a file at `path` (C3 §3.3). `importerId` is `null` for
  *  extension-based auto-detection, or one of the ids `listImporters`
  *  returns to force a specific importer. Streams `Progress`
  *  (`phase` e.g. "reading", "decoding", "materializing") then resolves with
- *  the new session's summary. Explicit user action on the Data tab, never a
- *  hot path (C3 §4). */
+ *  the new session's summary and any recovered-data warnings (R60). Explicit
+ *  user action on the Data tab, never a hot path (C3 §4). */
 export async function importFile(
   path: string,
   importerId: string | null,
   onProgress: (p: Progress) => void
-): Promise<SessionSummary> {
+): Promise<ImportOutcome> {
   const progress = new Channel<Progress>();
   progress.onmessage = onProgress;
-  return invoke<SessionSummary>("import_file", { path, importerId, progress });
+  return invoke<ImportOutcome>("import_file", { path, importerId, progress });
 }
 
 /** Lists every importer the engine can run (C3 §3.3). */

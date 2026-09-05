@@ -33,13 +33,15 @@ to task.
 ## COMPUTE RULES — non-negotiable
 
 This machine is memory-bound (cargo is capped at 2 jobs machine-wide; do not
-override). Run the task's targeted test filter (from its brief's COMPUTE
-RULES section — copy it, don't invent a different one) **exactly once** to
-reproduce the implementer's reported result. The run must report a non-zero
-`passed` count — a targeted filter matching nothing is a failed gate, not a
-pass (standing rule, L3-R8), and if the implementer's own reported run shows
-`0 passed`, that alone is grounds for NEEDS_FIXES regardless of what else you
-find. No full suite (neither `cargo test --workspace` nor a bare `cargo test` —
+override). **Reviewers do not build or test (CLAUDE.md §8: "Readers
+(reviewers, adjudicators) never build") — and since 2026-09-05 the harness
+denies a reviewer's cargo invocation outright.** Verify the implementer's
+reported run instead: the command must be the brief's own filter, the
+`passed` count must be non-zero and plausible for the tests in the diff (a
+targeted filter matching nothing is a failed gate, not a pass — standing
+rule L3-R8; a reported `0 passed` alone is grounds for NEEDS_FIXES), and every
+new test must be traced statically against landed types so you can say it
+would compile and would fail if its named behaviour broke. No full suite (neither `cargo test --workspace` nor a bare `cargo test` —
 both are §8 hook-denied), no `cargo tarpaulin`, no `-j`, no rerunning the same
 command twice "to be sure," no extra `cargo build`/`cargo check` beyond what
 the task's brief itself mandates (Task 4 and Task 6 mandate one regression

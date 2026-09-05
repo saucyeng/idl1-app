@@ -2546,3 +2546,562 @@ addition, not a rewrite. Q3 risks a behavioural change in `idl-rs-tauri`
 reaching the gate untested; bounded by the reporting obligation and a
 one-run gate option. Q4(A) costs a full catalog rebuild per import at
 wave-1 data sizes — seconds, not minutes.
+
+## 2026-09-05 — R52: L6 notebook plan adjudicated (Q1–Q9)
+
+Plan: `docs/superpowers/plans/2026-09-05-idl1-wave2-l6-notebook.md` (Opus,
+16 tasks, 8 IPC needs in `runs/2026-09-05/lanes/l6/IPC-NEEDS.md`). Isaac's
+2026-09-05 calls in force: Properties + Code editor (D13); React Flow graph
+view is wave 3 and re-homes the same Properties form component.
+
+- **Q1 → (a).** Eight npm packages added to `package.json` by a lead shell
+  task; `htl` pinned at `1.0.0` (npm `latest`, checked 2026-09-05) and added
+  to the M0 ecosystem pins table in the same commit. Dropping `html` would
+  silently narrow C2 §5.1.
+- **Q2 → (a).** `channel()` returns an array of `{ t, v }` records
+  materialised inside the sandbox from the two transferred buffers; C2 §5.3's
+  grammar is untouched, C2 §5.1's stated object is amended (filed by L6 Task
+  16, applied by the lead). Transfer stays zero-copy; only what Plot iterates
+  changes; record count is budget-capped (~2 per pixel column).
+- **Q3 → (a).** Cell segmentation for the editor is a narrow TS fence scan,
+  non-authoritative; Rust remains the only evaluator. It maps cell id → byte
+  range for clicks, which is "pixels or clicks → app/src" (CLAUDE.md §2).
+- **Q4 → (a).** `read_workbook(id) → { markdown, hash, path }` is added to
+  C3 §3.4 in the wave-2 write-amendment lane. Reading the file through a
+  Tauri fs plugin is rejected: it bypasses `<data>` resolution (C4 §1).
+- **Q5 → (a).** `eval_workbook` gains an additive
+  `lap_context: { main_lap, overlay_laps[] } | null` argument (R41's
+  reasoning: the designation is a UI selection, not file content).
+- **Q6 → (a).** L6 designs the host-channel byte layout (it is the only
+  consumer, R45's missing validator) and files it as a C3 §3.4 amendment; the
+  Rust write lane implements it. Fallback if it slips: raw channels via tiles
+  only, math-derived host variables wave 3.
+- **Q7 → N5 (FFT) in, N6 (1-D histogram) deferred to wave 3.** FFT is a thin
+  wrapper over the existing `idl_rs::fft`; the histogram is new binning code.
+- **Q8 → (a) for wave 2, escalated to Isaac.** GPS polyline on plain axes; no
+  basemap. A user-configured tile URL (option c) would be an explicit,
+  off-by-default exception to "no CDN, ever" and is Isaac's product call —
+  asked 2026-09-05, non-blocking (the GPS map chart is deferred either way).
+- **Q9 → batch.** One lead shell task on `main` before L6/L7 dispatch:
+  `App.tsx` Notebook import, `AppState` `activeSessionId` slice (shared with
+  L7a), `package.json` per Q1. `vite.config.ts` held until Task 5 reports
+  whether the sandbox needs a second build entry.
+
+**Cost if wrong:** Q2 costs one task (Task 7) if Plot turns out to iterate
+SoA after all — cheap to check at Task 7's first test. Q3 costs deleting Task
+4 for a stub over an IPC call. Q4/Q5/Q6 are additive `pub` surface in the
+Rust write lane; their blast radius is that lane. Q1's `htl` pin is a new
+dependency with no prior pin — reversible before any cell uses `html`.
+
+## 2026-09-05 — R53: L7 tab plans adjudicated (Data 5, Device 5, Settings 4 questions)
+
+Plans: `docs/superpowers/plans/2026-09-05-idl1-wave2-l7{a-data,b-device,c-settings}-tab.md`
+(Opus; 8 + 9 + 6 tasks; 13 IPC needs in `runs/2026-09-05/lanes/l7/IPC-NEEDS.md`,
+8 beyond the operating brief's five). The planner confirmed settings, profile
+and data-dir override all have landed core logic and need only commands.
+
+**Data (L7a)**
+- Q1 → (b): the three `<Tab>Page.tsx` re-export shims stay until all three
+  lanes merge; one lead shell task then deletes them and edits `App.tsx`.
+- Q2 → (a) wave 2; has-GPS / has-gates catalog columns filed as a wave-3
+  C4 §5 + C3 §3.2 amendment.
+- Q3 → (a) **now**, shape fixed here: the shell task adds a `selection`
+  slice to `state/AppState.tsx` — `{ sessionId: string | null, lapContext:
+  { mainLap: number, overlayLaps: number[] } | null }` — mirroring R52 Q5's
+  `lap_context` so L6 passes it through to `eval_workbook` unchanged. L7a
+  writes it; L6 reads it. Supersedes R52 Q9(iii)'s bare `activeSessionId`.
+- Q4 → (a): lap counts and lap tables render "—"/empty honestly; CHANGELOG
+  states that no wave-1 import path populates the catalog's lap tables.
+  **Escalated to Isaac** as the one item visible on screen. Lap indexing at
+  import (L1's gate synthesis/renumbering already in core) is added to the
+  Rust track backlog after the write-amendment lane.
+- Q5 → sector count only in wave 2; `LapDetail.sectors` element shape is
+  pinned in C1 §6 when lap indexing lands, not before.
+
+**Device (L7b)**
+- Q1 → **(c) now, (b) later — not (a).** The channel-registry preview's
+  `scale = range / 32768` is the wire contract's own formula (SPEC §3), which
+  `core::parse` already owns; a second copy in TypeScript is exactly the drift
+  the standing reviewer brief calls a finding. Wave 2 shows enable state,
+  rate and unit only; `preview_channel_registry(config_json) -> RegistryRow[]`
+  (IPC need 12) joins the Rust write-amendment lane and Task 4 widens then.
+  Lead's layer call under CLAUDE.md §1/§2: it is physics of the bike.
+- Q2 → (a): any positive integer for `analog.sample_rate_hz`; the SPEC §8
+  gap is restated, not filled with a guess.
+- Q3 → (a) wave 2; "blobs awaiting import" shared slice is a wave-3 shell task.
+- Q4 → (a) now; a managed connection + status/control commands (IPC need 13)
+  are one piece of work in the Rust lane.
+- Q5 → six forms + the add-channel picker is the correct count; the
+  operating brief's "seven" counted `factories.dart`. Not a gap.
+
+**Settings (L7c)**
+- Q1 → (a) with (c): `localStorage` behind `PrefsBackend` now;
+  `get_settings`/`set_settings` in the Rust lane; the swap task does a
+  one-time import of the `localStorage` keys into `settings.json` and then
+  deletes them, so no preference is silently lost.
+- Q2 → (a) now with the provisional status visible in the section itself;
+  (b) — L6 exporting its binding table — via a lead shell task after L6 merges.
+- Q3 → (a): sync status and pairing live in Settings; L11 may add a sync
+  action to the Data tab.
+- Q4 → BOM strip in `paths::resolve_data_dir` goes in the Rust write lane
+  (already tracked 2026-09-05); "takes effect on restart" stated in the UI.
+
+**Shell task (one, on `main`, before any UI dispatch):** `package.json` gains
+`@observablehq/runtime ^6.0.0`, `@observablehq/plot ^0.6.17`,
+`@observablehq/inputs ^0.12.0`, `d3 ^7.9.0`, `codemirror ^6.0.2`,
+`@codemirror/lang-javascript ^6.2.5`, `@codemirror/lang-markdown ^6.5.2`,
+`htl ^1.0.0` (M0 pins table gains the `htl` row); `AppState` gains the
+`selection` slice above with a reducer test. `App.tsx` untouched (shims).
+
+**Cost if wrong:** L7b Q1 costs the Device tab a column for one wave —
+cheap — versus a wire-format formula living in two languages, which is the
+kind of divergence that misleads at the track. L7a Q3's slice shape is
+additive; if L6 needs more it is one shell task. L7a Q4 is visible to Isaac
+and stated in the CHANGELOG so it is not read as a bug.
+
+## 2026-09-05 — R54: Data tab Track facet dropped for wave 2
+
+L7a Task 3 stopped (CLAUDE.md §1) on a real gap: the brief's Track facet
+needs a per-session track linkage, but `SessionSummary` (C3 §3.2) carries
+none — it lives only in `SessionDetail.track_visits`, a settle-bound
+per-session call that local filtering over the fetched list cannot use.
+
+**Ruling:** drop the Track facet entirely for wave 2 (no options, no counts,
+no `trackIds` predicate, no disabled placeholder) — the same treatment as
+has-GPS/has-gates under R53 Data Q2. A facet that structurally excludes
+every row is a trap, not honesty. Returns with the wave-3 catalog amendment
+(C4 §5 + C3 §3.2: a per-session track linkage column on `SessionSummary`),
+recorded in the plan's parity gaps and the CHANGELOG. The lap-time facet
+keyed off `duration_ms` is confirmed correct.
+
+**Cost if wrong:** one facet missing for one wave; the amendment is the same
+one already filed for two other facets, so no extra Rust work is created.
+
+## 2026-09-05 — Tracked note: Device tab IMU defaults come from SPEC §8's worked example
+
+L7b Task 2's `defaultConfig` uses 833 Hz / 32 g / 2000 dps for the IMU
+blocks because SPEC §8's prose states no IMU default and only its worked
+example carries values. The reviewer flagged it as an arguable CLAUDE.md §1
+stop. **Lead ruling:** accepted as the *form's initial state* (disclosed in
+the code comment), not as a claim about firmware defaults. 833 Hz matches the
+configured rate observed on Isaac's real session; the range values are the
+hardware's to confirm. **For Isaac:** confirm the firmware's actual IMU
+defaults (rate, accel range, gyro range) so SPEC §8 can state them as
+defaults rather than as an example; L7b adjusts `defaults.ts` in one line
+if they differ. Non-blocking.
+
+**Cost if wrong:** a new-device config form pre-filled with a value the
+firmware would reject — caught at push time by the device, not silently.
+
+## 2026-09-05 — R55: L7 Task 4+ briefs; file picker seam; no free-pin algorithm
+
+Briefs for L7a Tasks 4–8, L7b Tasks 4–9, L7c Tasks 4–6 written against the
+committed code (not the plans). Two questions ruled:
+
+- **L7a Task 5 file picker → seam now, dialog plugin later.** No dialog
+  plugin exists in the repo; adding `@tauri-apps/plugin-dialog` needs an
+  `app/src-tauri` crate + capability change, i.e. a Tauri build. The Data tab
+  builds `pickImportFile()` as a seam whose wave-2 implementation is a
+  pasted-path input; the plugin (npm + crate + capability) is queued for the
+  Rust write-amendment lane and the seam is swapped by a shell task then.
+- **L7b Task 7 "free pin" → none.** SPEC §8 fixes no pin numbering scheme,
+  so the UI never auto-selects a pin: new channels start unassigned (the
+  validator already reports that), and the user picks from the pins the
+  declared range allows, unassigned first.
+
+Also from the brief writer: L7b Task 4 is rewritten (not narrowed) as
+`previewSources()` — enable/rate/unit only, distinct names so nobody reads
+it as IPC need 12 landing early (R53 Device Q1).
+
+**Cost if wrong:** the picker seam costs one swap later; a plugin added now
+would cost a Tauri build inside a UI lane, which §4 forbids. The pin ruling
+costs one extra click per new channel versus a guessed numbering the
+firmware might reject.
+
+## 2026-09-05 — R56: L6 may edit `vite.config.ts` for the sandbox entry (lead-authorised)
+
+L6 Task 5 proved empirically (out-of-tree probe configs, real `vite build`
+output inspected) that no avoidance path works for the sandboxed iframe
+bundle: `?url` / `new URL(..., import.meta.url)` on a `.ts` module emits the
+raw untransformed source as a data URL; the `new Worker(new URL(...))`
+special case bundles correctly but cannot yield a script URL without
+spawning a worker; a second `build.rollupOptions.input` entry works. So R52
+Q9(ii) resolves to: the entry is required.
+
+**Ruling:** because the entry's HTML lives in L6's own directory, the config
+change and the file must land together. The lead authorises L6 Task 5 — this
+task only — to edit the lead-owned `app/vite.config.ts` with exactly:
+`build.rollupOptions.input = { main: "index.html", notebookSandbox:
+"src/routes/pages/Notebook/sandbox/index.html" }`, as its own commit citing
+R56. Ownership rule (operating brief §2) otherwise unchanged. Proof at the
+task gate: one `vite build` showing the sandbox chunk with `d3` and
+`@observablehq/*` resolved.
+
+**Cost if wrong:** a second build entry that later moves is a one-line
+config edit; the alternative (a shell task on `main` pointing at a file that
+does not exist on `main` yet) would break `vite build` on `main` until L6
+merges.
+
+## 2026-09-05 — Tracked note: IMU `low_power_mode` vs `high_performance_mode` — SPEC §8 gap
+
+L7b Task 3's validator selects the IMU ODR table from `imu.low_power_mode`
+alone; SPEC §8 frames the two flags as one physical toggle but never says
+what the firmware does when both are set. **Ruling:** the validator emits a
+*warning* (not an error — inventing a winner would be a guess) when both are
+true; `isPushable` unaffected. **For Isaac:** state in SPEC §8 whether the
+flags are mutually exclusive (then the validator upgrades to an error) or
+which wins (then the table selection follows it). Non-blocking.
+
+**Cost if wrong:** a config the firmware silently reinterprets; the warning
+makes it visible at push time, which is the most the app can honestly do.
+
+## 2026-09-05 — Tracked note: L6 inline `${…}` prose spans have no host→sandbox trigger yet
+
+L6 Task 5 shipped the sandbox host and cell API; the protocol as committed
+has no message type for evaluating C2's inline `${…}` prose spans, so they
+are unwired. Deferred to L6 Task 13 (open/evaluate/render the workbook),
+which owns how spans are routed. Also carried to Task 13: cell compilation
+binds every host variable as an input to every cell (no free-identifier
+analysis) and cells cannot yet reference each other by name — both marked
+`TODO(idl0)` in `sandbox/main.ts`. Not a contract change; C2 §5 is unaffected.
+
+**Cost if wrong:** prose spans render as literal text until Task 13 — visible,
+not silent.
+
+## 2026-09-05 — R57: C3 §3.9 `sync_status` error kinds — the §2 table wins
+
+L7c Task 5's reviewer found C3 internally inconsistent: §3.9's `sync_status`
+entry listed `io`, `internal` only, while the §2 kind table lists `sync` as
+raised by `sync_status`, `sync_now`, `pair_peer`. **Ruling:** the §2 table is
+authoritative; §3.9's entry now reads `io`, `internal`, `sync` (a status query
+can fail in the sync layer itself — unreadable pairing store). L7c's
+`errors.ts` already maps `sync`, so no code change. L11 implements against
+the amended text.
+
+**Cost if wrong:** an extra kind the UI already handles; zero.
+
+## 2026-09-05 — R58: unassigned pins are representable; no pin range is invented
+
+L7b Task 7 stopped (CLAUDE.md §1): `AnalogChannel.adc_pin` and
+`DigitalChannel.gpio_pin` are non-optional `number` with no way to say
+"unassigned", and neither `DeviceConfig` nor SPEC §8/§3.7 declares a valid
+pin range for a picker to enumerate (§3.7 names nets, not numbers).
+
+**Ruling:**
+1. Task 7 is authorised to change `config/model.ts` (Task 2's file, same
+   lane): `adc_pin: number | null` and `gpio_pin: number | null`, `null` =
+   unassigned. Parse: a missing pin key reads as `null` with no `Repair`
+   (it is a legal draft state); a present non-integer is a `Repair` as
+   today. Serialise: omit the key when `null`. Validator (Task 3's file,
+   same authorisation): an unassigned pin is an **error** ("pin unassigned"),
+   so `isPushable` is false — a draft channel can never reach the device
+   half-configured. Collision check ignores `null`.
+2. **No pin range in wave 2.** The picker is a non-negative-integer input,
+   collision-checked, starting empty (unassigned). Inventing a range would
+   put a hardware guess in the UI. **For Isaac:** SPEC §8 should state the
+   valid `adc_pin` and `gpio_pin` value sets (or map them to §3.7's named
+   nets); when it does, the input becomes a select and the validator gains
+   a range rule — one task, no model change.
+
+**Cost if wrong:** a user can type a pin the hardware lacks and learn at push
+time from the device's rejection (C3 `config` kind) — visible, not silent.
+The alternative, a guessed range, could exclude a real pin with no recourse.
+
+## 2026-09-05 — Process rule: IPC-driving React effects delegate to a pure, tested driver
+
+Two Criticals reached review within an hour, both in the one place the UI
+gate cannot see (rendering is not unit-tested, CLAUDE.md §4): L7a Task 5's
+import-queue effect depended on the state it dispatched into, so its own
+cleanup cancelled every in-flight import; L6 Task 5 registered host
+variables as getters the Observable runtime never unwraps and never
+re-primed a rebuilt iframe. Both were caught by reviewers reading the code,
+not by any test.
+
+**Rule (operating brief §4, all four UI standing reviewer briefs):** the
+decision logic of any effect that starts IPC or `postMessage` work lives in
+a pure module with an injected async function and is unit-tested for the
+interleavings that matter (dismiss-while-running, stale response, rebuild);
+the effect only calls it and never cancels in-flight work because unrelated
+state changed. Reviewers trace dependency arrays against dispatches; a
+self-cancelling effect is Critical. Fixes for both incidents are follow-up
+commits in their lanes, with driver tests.
+
+**Cost if wrong:** more ceremony per effect. Against it: an import feature
+that can never complete, shipped green.
+
+## 2026-09-05 — L2 four-task gate: PASS (932)
+
+Per CLAUDE.md §8 the full suite ran after L2 Tasks 1–4 (worktree
+`275267e`, clean): `cargo check -p idl-rs-cli --tests` Finished (21 s);
+`cargo check -p idl-rs-tauri` Finished (16 m 07 s — cold Tauri graph, only
+pre-existing warnings); `cargo test -p idl-rs -p idl-rs-cli --
+--test-threads=4` → idl-rs 880 passed / 0 failed / 1 ignored, integration
+`real_session_odr_validation` 1 passed, idl-rs-cli 51 passed, doc-tests 0.
+Total 932, no OOM. The gate agent stalled twice waiting on background
+command notifications that had already fired; the lead nudged it each time
+— gate steps should run in the foreground (told the agent; carried into the
+next gate brief). Task 5 (CSV) dispatched on the PASS.
+
+## 2026-09-05 — L7c LANDED (Settings tab, wave 2)
+
+Merged `wave2-l7c-settings` into idl1-app `main` (`--no-ff`). Lane: Tasks
+1–6 plus four follow-ups (Task 5 minors, `errors.ts` coverage to 100 %,
+how-to copy accuracy, async `PrefsBackend`). Reviews: six, all CLEAN after
+follow-ups; the last review held the merge for three factual errors in
+how-to copy (push described as WiFi, calibration and a lap-gate editor
+described as working) — fixed, and the implementer found two more of the
+same class itself (battery level, remote record start/stop). Merge gate on
+`main`: `tsc` clean, whole TS suite **98 passed / 0 failed**.
+
+**Shipped:** Profile, Units, Data directory (restart-required, stubbed
+get/set), Sync (real `sync_status`/`sync_now`/`pair_peer`, 5 s poll while
+visible), Controls (provisional banner), How-tos (every affordance claim
+true today or marked not yet available), About (engine version from
+AppState). Prefs in `localStorage` behind an async `PrefsBackend`.
+**Outstanding for the Rust write lane:** `get_settings`/`set_settings`,
+`get_data_dir`/`set_data_dir`, the one-time `localStorage`→`settings.json`
+import (R53 Q1), the BOM strip in `resolve_data_dir`. **Parity gaps:** Drive
+sync replaced by LAN sync (permanent), firmware/OTA wave 3, licence page
+omitted, chart-controls reference provisional until L6 lands. SPEC §27
+rewritten (§27.1, §27.8–§27.13), §28 superseded banner. R57 came out of this
+lane's review.
+
+**Cost if wrong:** the tab is additive and behind its own directory; a
+regression is a revert of one merge commit.
+
+## 2026-09-05 — R59: C3 wave-2 write amendment adjudicated (Q1–Q6, F1–F3)
+
+Draft: `runs/2026-09-05/C3-WAVE2-AMENDMENT-DRAFT.md` (Opus; 17 new commands
++ `eval_workbook` amended; all 21 IPC needs dispositioned; a new §3.10 App
+group). Rulings:
+
+- **Q1 → (a).** `save_session_metadata(session_id, fields)` reads
+  `session.json`, hashes it, writes via `write_session_json` — last-write-wins
+  inside the command, no `conflict` kind, no signature change. Revisit when
+  L11 (LAN sync) makes concurrent edits real.
+- **Q2 → (a).** Quarantine commands deferred to wave 3 with the repair action
+  that would populate `tmp/quarantine/`; nothing implements it today and a
+  permanently-empty command does not belong in a signed contract. The Data
+  tab's stubs stay.
+- **Q3 → (a).** New binary headers pad to natural alignment: `IDLH` 24 bytes,
+  `IDLF` 16 bytes, so `Float64Array` views start on 8-byte boundaries. On the
+  landed `IDLT` (C3 §3.5): the drafted "latent throw on odd `column_count`"
+  does **not** occur — `app/src/ipc/tiles.ts` copies every region through a
+  `DataView` into freshly allocated arrays, never views the buffer in place.
+  Ruling: `IDLT` unchanged; C3 §3.5 gains one sentence: "regions are not
+  alignment-padded; decoders copy, they do not view in place." Any future
+  zero-copy tile decoder is a layout-version bump.
+- **Q4 → (b).** New cross-cutting kind `device_rejected` with
+  `detail { ack: "busy" | "precondition" | "write_not_permitted" |
+  "not_implemented" }` for a refused device control transition (SPEC §7.2
+  `AckCode`). `config` keeps its one meaning. Additive to §2, C3 §5 respected.
+- **Q5 → (a).** `set_data_dir` is the sole writer of the `data_dir` key
+  (validates, creates the tree, computes `restart_required`); `set_settings`
+  ignores `data_dir` in its argument and echoes the current value. One
+  sentence goes on `AppSettings`'s doc comment in the UI when the stub is
+  swapped.
+- **Q6 → (a).** `device_status` mirrors `idl_transport::ble_status::
+  DeviceStatus` field for field (incl. `ota_pending_verify`, `hr`,
+  `hr_battery_pct`); IPC need 8's four sourceless fields are dropped.
+  **For Isaac:** could the firmware report SD free bytes, GPS fix quality,
+  satellite count and battery millivolts in the §7.3 status block? If yes,
+  a SPEC §7.3 amendment adds them and the command grows additively.
+- **F1–F3 accepted** (`create_workbook` suffixes per C4 §2, `delete_profile`
+  → `not_found`, `ProfileLoadReport.skipped` as objects).
+
+**Applied to C3** by a transcriber under this ruling; the write lane (after
+L2 Task 8 and L5 Task 9) implements against the amended text, App group
+first (core logic already landed).
+
+**Cost if wrong:** Q1 risks a lost edit only under concurrent writers that
+do not exist yet. Q3's padding is four bytes per response. Q4 adds a kind
+that can never be removed — justified by a UI that must present "device
+busy" differently from "bad config". Q6 drops fields no source can fill;
+adding them later is additive.
+
+## 2026-09-05 — L7a LANDED (Data tab, wave 2)
+
+Merged `wave2-l7a-data` into idl1-app `main` (`--no-ff`, `4c6f6a1`); the
+only conflicts were CHANGELOG.md and TASKS.md bullets against L7c's landing
+(kept both; TASKS.md's wave-2 block re-nested so L7a/L7b/L7c are separate
+lines). Lane: Tasks 1–8 plus five follow-ups. Reviews: eight, all CLEAN
+after follow-ups; two re-reviews. Merge gate on `main`: `tsc` clean, whole
+TS suite **204 passed / 0 failed**.
+
+**Shipped:** session list with formatters and sort; local facet filtering
+(AND across, OR within, "(none)"); session detail pane joining file-native
+and catalog laps honestly (R53 Q4/Q5); tracks view rendering counts only for
+C3's unfixed nested shapes; import queue over the real `import_file` behind
+the R55 picker seam with a pure, id-addressed driver (the lane's one
+Critical, fixed and re-reviewed); metadata editor over a stubbed save;
+maintenance actions behind confirmation over stubs and the real
+`rebuild_catalog`. Selection writes `AppState.selection` (R53 Q3).
+**Outstanding for the Rust write lane:** `save_session_metadata`,
+`delete_session`, the dialog plugin (R55), `import_file` itself (L5 Task 9);
+quarantine deferred to wave 3 (R59 Q2); track write commands wave 3.
+**Parity gaps** as TASKS.md lists them, unabridged. R54 came out of this
+lane. **Process lessons this lane produced:** the IPC-effects rule (Task 5's
+self-cancelling effect), the never-amend rule, the Windows case-collision
+rename (`metadataDraft.ts`).
+
+**Cost if wrong:** additive tab behind its own directory; a regression is a
+revert of one merge commit.
+
+## 2026-09-05 — R60: L2 Task 7/8 + L5 Task 9 briefs; import warnings on the wire; L6 rebind orchestrator placement
+
+Brief writer's four questions:
+1. **Import warnings cross the IPC boundary.** C3 §3.3 `import_file` now
+   resolves with `ImportOutcome { session: SessionSummary, warnings:
+   string[] }` (the importer's recovered warnings, incl. truncation), not a
+   bare `SessionSummary` — a catalog row must not carry per-import state,
+   and dropping the warnings violates CLAUDE.md §5. `app/src/ipc/import.ts`
+   and the Data tab's `importDriver` adapt in a lead shell task on `main`
+   (both lanes are merged); Task 9 implements the new shape. C3 §3.3 amended
+   by the same transcriber pass as R59.
+2. **`import_collision` is a new C3 §2 row** (`ImportErrorKind::Collision`:
+   re-import of a different blob under an existing session id), R44
+   precedent — never fold into `conflict`.
+3. **Task-numbering collision.** The deferred FIT/GPX speed/heading follow-on
+   that SPEC §15a and the plan call "Task 8" is renamed **"L2 follow-on S/H
+   (post-archive)"**. L2 Task 8's scope is widened to include editing
+   `docs/IDL0_SPEC.md` §15a in the idl1-app L2 worktree (it is the lane's
+   docs task): the rename, the `import_with_hook` residue (killed by L2-R12),
+   and the `parse_*`→`import_*` kind-prefix error.
+4. **L5 Task 9 runs in the idl-rs L2 worktree/branch** (one repo; needs
+   Tasks 6/7's exact signatures). Merges with L2.
+
+**L6 Task 8's obligation 1 (BoundChannel registry → rebind on rebuild):**
+nothing yet owns a `SandboxHost` and the cells' viewport/cache state
+together. Ruling: that orchestrator is **Task 13's** (open/evaluate/render
+owns the notebook lifecycle) — a `host/NotebookSession.ts` holding the
+`SandboxHost`, the `TileCache`, and a per-cell registry of bound channels +
+viewport, wiring `onChannelsInvalidated` → `rebindChannelsAfterRebuild` →
+`setChannelHostVar`. Task 8 is complete as committed (`f143545`).
+
+**Cost if wrong:** (1) changes a wire shape two landed TS files depend on —
+one shell task, both call sites known. (3) is prose. The orchestrator
+placement is reversible until Task 13 lands.
+
+## 2026-09-05 — Checkpoint: second session-limit cutoff, three tasks resumed
+
+At 13:31 local the account's session limit cut off three implementers
+mid-task (L2 Task 6 in the idl-rs worktree; L6 Task 9 and L7b Task 9 in
+their idl1-app worktrees). All committed work was intact; each worktree held
+coherent uncommitted WIP (L6/L7b believed complete, mid-gate; L2 mid-build).
+Resumed at 17:19 with fresh implementers told to inherit, verify and own the
+WIP rather than redo it, and to commit the inherited work before merging
+`main` so the two stay separate commits. State at the cutoff: idl1-app
+`main` `928ef7f` (L7a, L7c and shell tasks 1–3 landed; TS suite 207
+passed); idl-rs L2 branch at `227d3f1` (Tasks 2–5 reviewed CLEAN); L6 at
+`95d291d` (Tasks 1–8 + fixes); L7b at `7fd009e` (Tasks 1–8 + fixes). No
+cargo process was left running. Lesson carried: a cutoff costs nothing when
+every task commits per step and the lead snapshots worktree state
+immediately; the first resume of the day used the same pattern.
+
+## 2026-09-05 — R61: R23 Q2's synthesizer fallback reaches `SessionHandle::from_channels`
+
+L2 Task 6 landed the Q2 fallback (no channel with a positive rate ⇒ `Time`
+from the longest channel's real `t_us`) and the lane gate exposed one
+consequence outside the task's file list: `session::handle::tests::
+resident_bytes_counts_columns_times_and_math_store` encoded the pre-Q2
+exception ("event-only session → no Time", 240 bytes) and now sees the
+synthesized `Time` (400 bytes). `SessionHandle::from_channels` calls
+`synthesize_base_channels` directly, so — with `session_source::load_session`
+— every event-only session loaded through the Tauri path now carries `Time`.
+That is the intended Q2 outcome. **Ruling:** the implementer edits that one
+test in `handle.rs` in the same commit (assertion and comment restated as
+the rule), the gate re-runs, and the reach is recorded here. Not a new
+design call.
+
+**Cost if wrong:** none beyond Q2's own; the test now documents the rule.
+
+## 2026-09-05 — L7b LANDED (Device tab, wave 2)
+
+Merged `wave2-l7b-device` into idl1-app `main` (`--no-ff`, `a10b3ea`); no
+conflicts (the lane had merged `main` last). Lane: Tasks 1–9 plus seven
+follow-ups. Reviews: nine, all CLEAN after follow-ups. Merge gate on `main`:
+`tsc` clean, whole TS suite **330 passed / 0 failed** (46 files).
+
+**Shipped:** connection reducer over the real `ble_scan`/`ble_connect`
+("last attempt succeeded", R53 Q4); the config model with lenient parse and
+Repairs, never silent snapping; the validator (rate tables, pin rules,
+R58 nullable pins with "pin unassigned" and non-negative checks, IMU
+mode-flag warning); enable/rate/unit sources preview only (R53 Q1 — no wire
+arithmetic in TS, swept lane-wide at the gate); channels table with SPEC §3
+registry names and a visible "no config loaded" banner; six forms + the
+add-channel picker, every control through pure `edit.ts`; in-memory profiles;
+validate-then-serialise push over the real `push_config` with the device's
+own rejection reason; device files list/download with no import handoff
+(R53 Q3); hero card showing "unavailable" for fields the firmware does not
+report (R59 Q6). **Outstanding for the Rust write lane:** `device_status`,
+`device_control` (+ the new `device_rejected` kind), `pull_config`, profile
+persistence, `preview_channel_registry`, a managed connection. **Parity
+gaps** per TASKS.md. **For Isaac (SPEC §8):** IMU defaults, mode-flag
+exclusivity, valid pin sets, the four firmware status fields.
+
+**Cost if wrong:** additive tab behind its own directory; a regression is a
+revert of one merge commit.
+
+## 2026-09-05 — R62: cursor readout debounces on pointer stop, not on the gesture settle
+
+L6 Task 10 hung the cursor readout off Task 8's viewport-settle callback,
+as its brief said; the reviewer noted that callback fires only after a
+pan/zoom, so a plain hover-and-stop never produces a readout. Design §6 says
+"cursor readouts fire once on cursor settle (debounced), never per move" —
+cursor settle is its own trigger. **Ruling:** the readout gets its own
+`makeSettle` instance keyed to pointer position (default 150 ms, a named
+constant with units), with its own sequence for the stale guard; the
+viewport settle also refreshes it (the picture moved under a still pointer);
+still exactly one IPC per settle, none per move. The brief was wrong, not
+the implementer. Fixed in the Task 11 follow-up.
+
+**Cost if wrong:** a second debouncer of the same tested shape; one more
+IPC per hover-stop, which is design §6's stated budget.
+
+## 2026-09-05 — R63: L8w write-amendment lane plan adjudicated (3 questions)
+
+Plan: `docs/superpowers/plans/2026-09-05-idl1-wave2-l8w-write-amendment.md`
+(14 tasks; App group first; opens only after L2 + L5 Task 9 merge — gated by
+grep). Rulings:
+
+1. **`device_rejected` may be unreachable on the desktop transport.**
+   `BtleplugBle::send_command`'s own doc says Windows's `winrtble` backend
+   never surfaces SPEC §7.2's ACK byte, only `Ok(())` or a generic `Ble`
+   error (L4's known Windows ACK-byte gap, SPEC §14a). Ruling: ship the kind
+   as specified and map it wherever the transport *does* surface an
+   `AckCode` (mobile plugins, a future desktop backend); never parse error
+   text to fake it; `TODO(idl0)` at the transport boundary. The Device tab
+   already handles the generic `ble` kind honestly.
+2. **`preview_channel_registry` covers the SPEC-fixed subset only** (IMU,
+   wheel, pressure, HR channel ids per §5.2); configured analog/digital
+   channels have no fixed wire id. **For Isaac:** are generic channel ids
+   deterministic from config order (then the preview can compute them), or
+   assigned by the firmware at boot (then only the parser knows)?
+3. **`fetch_fft` averaging.** C3 names `"none" | "max"`; landed
+   `idl_rs::fft::Averaging` has `Mean | Median`. Ruling: extend the core enum
+   with `None` and `Max` (physics stays in core, additive), and amend C3's
+   union to `"none" | "mean" | "median" | "max"` so nothing landed is hidden
+   from the wire. Applied to C3 by the lane's Task 12 as spec-during.
+
+Task 6's managed connection must verify `BtleplugBle` is `Send` behind
+`Arc<Mutex<_>>` in `tauri::State` and STOP if not — as the plan says.
+
+**Cost if wrong:** (1) a kind nobody raises on desktop yet — harmless; (2)
+a narrower preview than idl0's; (3) two enum variants and a widened union,
+both additive.
+
+## 2026-09-05 — Tracked note: math builtin catalog is a hand copy in TS
+
+L6 Task 11's `model/functionCatalog.ts` (69 builtins for the code pane's
+highlighting/completion) is a hand-transcribed copy of the catalog Rust owns
+in `rust/core/src/math/eval.rs`; the brief forbade reading `rust/` for that
+task, so no cross-check exists. **Ruling:** not a wave-2 blocker (it only
+affects highlighting and completion, never evaluation), but drift is the
+same class of bug R53 Device Q1 was about. Filed for the L8w write lane as
+an additive command `list_math_builtins() → { name, arity, unit_rule }[]`
+(C3 §3.4); the UI then verifies its local catalog against it once at
+startup and logs a mismatch, and later drops the local copy. Added to the
+L8w plan's open items by the lead.
+
+**Cost if wrong:** a builtin highlighted wrong or missing from completion
+until the command lands; evaluation is unaffected.

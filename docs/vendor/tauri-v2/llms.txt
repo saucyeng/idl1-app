@@ -1,0 +1,33 @@
+# Tauri
+
+> Tauri is a framework for building tiny, fast binaries for all major desktop and mobile platforms. Developers can integrate any frontend framework that compiles to HTML, JavaScript, and CSS for building their user experience while leveraging languages such as Rust, Swift, and Kotlin for backend logic when needed.
+
+
+The documentation is organized into key sections:
+
+- **start**: Information for getting up and running with Tauri, including prerequisites and installation instructions
+- **concept**: Topics that you should get more intimately familiar with if you want to get the most out of the framework
+- **security**: High-level concepts and security features at the core of Tauri's design and ecosystem that make you, your applications and your users more secure by default
+- **develop**: Topics pertaining to the development of Tauri applications, including how to use the Tauri API, communicating between the frontend and backend, configuration, state management, debugging and more
+- **distribute**: Information on the tooling you need to distribute your application either to the platform app stores or as platform-specific installers
+- **learn**: Tutorials intended to provide end-to-end learning experiences to guide you through specific Tauri topics and help you apply knowledge from the guides and reference documentation
+- **plugin**: Information on the extensibility of Tauri from built-in Tauri features and functionality to provided plugins and recipes built by the Tauri community
+- **about**: Various information about Tauri from governance, philosophy, and trademark guidelines
+- **reference**: Auto-generated reference documentation for the JavaScript API, configuration schema, command line interface, and the permission system (ACL)
+
+## Documentation Sets
+
+- [Abridged documentation](https://v2.tauri.app/llms-small.txt): a compact version of the documentation for Tauri, with non-essential content removed
+- [Complete documentation](https://v2.tauri.app/llms-full.txt): the full documentation for Tauri
+- [Guides](https://v2.tauri.app/_llms-txt/guides.txt): guides, concepts, and tutorials for developing and distributing Tauri applications
+- [Reference](https://v2.tauri.app/_llms-txt/reference.txt): reference documentation for the JavaScript API, configuration schema, command line interface, and the permission system (ACL)
+
+## Notes
+
+- The complete documentation includes all content from the official documentation
+- The content is automatically generated from the same source as the official documentation
+
+## Optional
+
+- [Tauri GitHub repository](https://github.com/tauri-apps/tauri): source code and issue tracker for the Tauri framework
+- [Awesome Tauri](https://github.com/tauri-apps/awesome-tauri): list of community plugins, templates, and resources
