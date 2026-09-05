@@ -36,11 +36,13 @@ function IssueList({ issues }: { issues: ValidationIssue[] }) {
 }
 
 /** Parses a pin `<input type="number">`'s string value: empty means
- *  unassigned (`null`), same rule as `AnalogForm`'s pin input. */
+ *  unassigned (`null`); a negative or non-integer value is also treated
+ *  as unassigned rather than written into the config — same rule (and
+ *  same reasoning) as `AnalogForm`'s pin input. */
 function parsePinInput(value: string): number | null {
   if (value === "") return null;
   const n = Number(value);
-  return Number.isInteger(n) ? n : null;
+  return Number.isInteger(n) && n >= 0 ? n : null;
 }
 
 /**

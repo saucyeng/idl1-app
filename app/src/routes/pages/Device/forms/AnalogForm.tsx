@@ -37,13 +37,18 @@ function IssueList({ issues }: { issues: ValidationIssue[] }) {
 }
 
 /** Parses a pin `<input type="number">`'s string value: empty means
- *  unassigned (`null`); anything else is read as an integer, `NaN` (a
- *  stray non-numeric string the input still let through) also treated as
- *  unassigned rather than written into the config. */
+ *  unassigned (`null`); anything else is read as an integer, and `NaN` (a
+ *  stray non-numeric string the input still let through) or a negative
+ *  value (ruling R58: "a non-negative-integer input" — the `min={0}` HTML
+ *  attribute above is only a soft hint, not an enforced constraint) is
+ *  also treated as unassigned rather than written into the config.
+ *  `validateConfig` independently rejects a negative/fractional assigned
+ *  pin too, since a config can reach it by a path other than this input
+ *  (a duplicated profile, a loaded file predating this check). */
 function parsePinInput(value: string): number | null {
   if (value === "") return null;
   const n = Number(value);
-  return Number.isInteger(n) ? n : null;
+  return Number.isInteger(n) && n >= 0 ? n : null;
 }
 
 /**

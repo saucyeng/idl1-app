@@ -328,6 +328,34 @@ describe("validateConfig", () => {
     expect(issues[0].message).toBe("pin unassigned");
   });
 
+  it("validateConfig — an analog channel with adc_pin -1 — an error naming a non-negative-integer requirement (ruling R58)", () => {
+    // Arrange
+    const config = workedConfig();
+    config.analog.channels = [{ key: "strain_left", label: "A", adc_pin: -1, units: "kN", scale: 1, offset: 0, enabled: true }];
+
+    // Act
+    const issues = validateConfig(config).filter((i) => i.path === "analog.channels[0].adc_pin");
+
+    // Assert
+    expect(issues).toHaveLength(1);
+    expect(issues[0].severity).toBe("error");
+    expect(issues[0].message).toBe("pin must be a non-negative integer");
+  });
+
+  it("validateConfig — an analog channel with adc_pin 1.5 — an error naming a non-negative-integer requirement", () => {
+    // Arrange
+    const config = workedConfig();
+    config.analog.channels = [{ key: "strain_left", label: "A", adc_pin: 1.5, units: "kN", scale: 1, offset: 0, enabled: true }];
+
+    // Act
+    const issues = validateConfig(config).filter((i) => i.path === "analog.channels[0].adc_pin");
+
+    // Assert
+    expect(issues).toHaveLength(1);
+    expect(issues[0].severity).toBe("error");
+    expect(issues[0].message).toBe("pin must be a non-negative integer");
+  });
+
   it("validateConfig — two analog channels both unassigned (adc_pin null) — each gets its own unassigned error, never a collision error between them", () => {
     // Arrange
     const config = workedConfig();
@@ -358,6 +386,34 @@ describe("validateConfig", () => {
     expect(issues).toHaveLength(1);
     expect(issues[0].severity).toBe("error");
     expect(issues[0].message).toBe("pin unassigned");
+  });
+
+  it("validateConfig — a digital channel with gpio_pin -1 — an error naming a non-negative-integer requirement (ruling R58)", () => {
+    // Arrange
+    const config = workedConfig();
+    config.digital.channels = [{ key: "marker_btn", label: "Marker", kind: "marker", gpio_pin: -1, active_low: true, debounce_ms: 20, enabled: true }];
+
+    // Act
+    const issues = validateConfig(config).filter((i) => i.path === "digital.channels[0].gpio_pin");
+
+    // Assert
+    expect(issues).toHaveLength(1);
+    expect(issues[0].severity).toBe("error");
+    expect(issues[0].message).toBe("pin must be a non-negative integer");
+  });
+
+  it("validateConfig — a digital channel with gpio_pin 1.5 — an error naming a non-negative-integer requirement", () => {
+    // Arrange
+    const config = workedConfig();
+    config.digital.channels = [{ key: "marker_btn", label: "Marker", kind: "marker", gpio_pin: 1.5, active_low: true, debounce_ms: 20, enabled: true }];
+
+    // Act
+    const issues = validateConfig(config).filter((i) => i.path === "digital.channels[0].gpio_pin");
+
+    // Assert
+    expect(issues).toHaveLength(1);
+    expect(issues[0].severity).toBe("error");
+    expect(issues[0].message).toBe("pin must be a non-negative integer");
   });
 
   it("validateConfig — a digital channel with kind \"level\" — a warning: the schema reserves it but Spec 1 firmware does not ship it", () => {

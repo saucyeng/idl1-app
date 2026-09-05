@@ -164,10 +164,10 @@ export default function ChannelsTable({ sources, config, onConfigChange }: Chann
           })}
         </tbody>
       </table>
-    <button type="button" onClick={() => setOpenForm({ kind: "addChannel" })}>
-      + Add channel…
-    </button>
-    <OpenForm openForm={openForm} config={config} onConfigChange={onConfigChange} onClose={() => setOpenForm(null)} />
+      <button type="button" onClick={() => setOpenForm({ kind: "addChannel" })}>
+        + Add channel…
+      </button>
+      <OpenForm openForm={openForm} config={config} onConfigChange={onConfigChange} onClose={() => setOpenForm(null)} />
     </>
   );
 }

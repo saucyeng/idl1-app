@@ -171,11 +171,25 @@ function checkPinCollisions(analog: AnalogChannel[], digital: DigitalChannel[], 
   }
 }
 
+/** True iff an assigned pin (`adc_pin`/`gpio_pin`, already known not
+ *  `null`) is a real physical pin number: ruling R58's second sentence,
+ *  "a non-negative-integer input". The pin *range* is still unconstrained
+ *  (SPEC §8 states none), but a negative or fractional value is never a
+ *  real pin regardless of range — this is checked independently of how
+ *  the value reached this `DeviceConfig` (the form's own `parsePinInput`
+ *  already keeps a negative/fractional keystroke from committing, but
+ *  `validateConfig` does not trust that as the only guard — a config could
+ *  arrive here from a duplicated profile or a loaded file predating this
+ *  check). */
+function isValidAssignedPin(pin: number): boolean {
+  return Number.isInteger(pin) && pin >= 0;
+}
+
 /** Checks `analog.channels`: duplicate/empty keys, zero scale, and an
- *  unassigned pin (ruling R58 — a draft channel can never reach the device
- *  half-configured, so this is an error, not a warning). Pin collisions
- *  among assigned pins are checked jointly with `digital.channels` by
- *  `checkPinCollisions`, not here. */
+ *  unassigned or invalid pin (ruling R58 — a draft channel can never reach
+ *  the device half-configured, so this is an error, not a warning). Pin
+ *  collisions among assigned pins are checked jointly with
+ *  `digital.channels` by `checkPinCollisions`, not here. */
 function checkAnalogChannels(channels: AnalogChannel[], issues: ValidationIssue[]): void {
   const seenKeys = new Map<string, number>();
   channels.forEach((channel, i) => {
@@ -194,14 +208,17 @@ function checkAnalogChannels(channels: AnalogChannel[], issues: ValidationIssue[
 
     if (channel.adc_pin === null) {
       pushError(issues, `${path}.adc_pin`, "pin unassigned");
+    } else if (!isValidAssignedPin(channel.adc_pin)) {
+      pushError(issues, `${path}.adc_pin`, "pin must be a non-negative integer");
     }
   });
 }
 
 /** Checks `digital.channels`: kind support, debounce sign, and an
- *  unassigned pin (ruling R58, same rule as {@link checkAnalogChannels}).
- *  Pin collisions among assigned pins are checked jointly with
- *  `analog.channels` by `checkPinCollisions`, not here. */
+ *  unassigned or invalid pin (ruling R58, same rule as
+ *  {@link checkAnalogChannels}). Pin collisions among assigned pins are
+ *  checked jointly with `analog.channels` by `checkPinCollisions`, not
+ *  here. */
 function checkDigitalChannels(channels: DigitalChannel[], issues: ValidationIssue[]): void {
   channels.forEach((channel, i) => {
     const path = `digital.channels[${i}]`;
@@ -213,6 +230,8 @@ function checkDigitalChannels(channels: DigitalChannel[], issues: ValidationIssu
     }
     if (channel.gpio_pin === null) {
       pushError(issues, `${path}.gpio_pin`, "pin unassigned");
+    } else if (!isValidAssignedPin(channel.gpio_pin)) {
+      pushError(issues, `${path}.gpio_pin`, "pin must be a non-negative integer");
     }
   });
 }

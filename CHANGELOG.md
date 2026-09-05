@@ -178,6 +178,17 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
   `describeIpcError` (`kind: "config"`/`"ble"`) rather than being blocked
   in advance. `docs/IDL0_SPEC.md` §23.2 and §23.6 are rewritten for wave 2
   in place of idl0's file-backed-library and `BleService` descriptions.
+- **Device tab, Task 7 review-fix (2026-09-05, L7b).** Ruling R58's second
+  sentence — "a non-negative-integer input" — is now enforced, not just
+  stated: `config/validate.ts`'s `checkAnalogChannels`/`checkDigitalChannels`
+  reject a negative or non-integer assigned `adc_pin`/`gpio_pin` with a new
+  `"pin must be a non-negative integer"` error (`isPushable` false);
+  `AnalogForm`/`DigitalForm`'s `parsePinInput` mirrors the same check
+  locally, so typing a negative pin is treated as unassigned rather than
+  committed —
+  parse leniency (a loaded file's non-integer pin) is unchanged, still a
+  `Repair`. `ChannelsTable.tsx`'s carried indentation nit (flagged in Task 6
+  and Task 7's reviews, "fix on next touch") is fixed this time.
 - **L5 complete (2026-09-04).** idl-rs-tauri wired to every landed wave-1 lane's C3 command
   group (catalog, workbook, cursor, raster, tile) plus device (L4); <data> resolution,
   workbook watcher, app/src/ipc/ module layer, routing and state skeleton. Tile fetched
