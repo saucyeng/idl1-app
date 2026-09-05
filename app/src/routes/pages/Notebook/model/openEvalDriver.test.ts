@@ -47,6 +47,58 @@ describe("runOpenAndEval", () => {
     expect(actions).toEqual([{ type: "markdownError", message: "No workbooks found." }]);
   });
 
+  it("runOpenAndEval — readWorkbook throws a real error — reports it but still evaluates", async () => {
+    const deps = baseDeps({
+      readWorkbook: async () => {
+        throw new Error("disk read failed");
+      },
+    });
+    const actions: WorkbookAction[] = [];
+
+    await runOpenAndEval(deps, null, (a) => actions.push(a), () => false);
+
+    expect(actions.map((a) => a.type)).toEqual(["handleOpened", "markdownError", "evalResult"]);
+  });
+
+  it("runOpenAndEval — listWorkbooks itself rejects — reports the error and never opens", async () => {
+    const deps = baseDeps({
+      listWorkbooks: async () => {
+        throw new Error("catalog unavailable");
+      },
+    });
+    const actions: WorkbookAction[] = [];
+
+    await runOpenAndEval(deps, null, (a) => actions.push(a), () => false);
+
+    expect(actions).toEqual([{ type: "markdownError", message: "catalog unavailable" }]);
+  });
+
+  it("runOpenAndEval — evalWorkbook rejects — the earlier open/markdown dispatches still stand, nothing further is dispatched", async () => {
+    const deps = baseDeps({
+      evalWorkbook: async () => {
+        throw new Error("unknown workbook");
+      },
+    });
+    const actions: WorkbookAction[] = [];
+
+    await runOpenAndEval(deps, null, (a) => actions.push(a), () => false);
+
+    expect(actions.map((a) => a.type)).toEqual(["handleOpened", "markdownReady"]);
+  });
+
+  it("runOpenAndEval — stale after readWorkbook resolves — skips the markdownReady dispatch and the eval step", async () => {
+    const deps = baseDeps();
+    const actions: WorkbookAction[] = [];
+    let calls = 0;
+
+    await runOpenAndEval(deps, null, (a) => actions.push(a), () => {
+      calls++;
+      return calls > 2;
+    });
+
+    expect(actions.map((a) => a.type)).toEqual(["handleOpened"]);
+  });
+
   it("runOpenAndEval — a run superseded before openWorkbook resolves — dispatches nothing further", async () => {
     const deps = baseDeps();
     const actions: WorkbookAction[] = [];

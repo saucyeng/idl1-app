@@ -69,4 +69,42 @@ describe("workbookReducer", () => {
 
     expect(Array.from(next.dirtyCellIds).sort()).toEqual(["cell-a", "cell-b"]);
   });
+
+  it("workbookReducer — an opened handle — is stored", () => {
+    const handle = { id: "wb-1", name: "Notebook", path: "/p", cell_count: 1 };
+
+    const next = workbookReducer(initialWorkbookState, { type: "handleOpened", handle });
+
+    expect(next.handle).toEqual(handle);
+  });
+
+  it("workbookReducer — markdown loads successfully — becomes ready and scans its cells", () => {
+    const markdown = "prose\n```js id=aaaaaaaa\n1\n```\n";
+
+    const next = workbookReducer(initialWorkbookState, { type: "markdownReady", markdown, hash: "h1" });
+
+    expect(next.markdownStatus).toBe("ready");
+    expect(next.markdown).toBe(markdown);
+    expect(next.hash).toBe("h1");
+    expect(next.cells).toHaveLength(1);
+  });
+
+  it("workbookReducer — read_workbook reports not implemented — clears markdown and cells without touching outputs", () => {
+    const ready = workbookReducer(initialWorkbookState, { type: "markdownReady", markdown: "x", hash: "h1" });
+    const withOutput = workbookReducer(ready, { type: "evalResult", outputs: [output("cell-a")] });
+
+    const next = workbookReducer(withOutput, { type: "markdownNotImplemented" });
+
+    expect(next.markdownStatus).toBe("not_implemented");
+    expect(next.markdown).toBeNull();
+    expect(next.cells).toEqual([]);
+    expect(next.outputs.has("cell-a")).toBe(true);
+  });
+
+  it("workbookReducer — a markdown read error — stores the error status and message", () => {
+    const next = workbookReducer(initialWorkbookState, { type: "markdownError", message: "boom" });
+
+    expect(next.markdownStatus).toBe("error");
+    expect(next.markdownError).toBe("boom");
+  });
 });
