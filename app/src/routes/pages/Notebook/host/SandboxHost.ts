@@ -5,8 +5,15 @@
  * delegates to are tested in `protocol.test.ts`/`watchdog.test.ts`.
  */
 import { channelPayload, isHostMessage, type HostToSandboxMessage, type HostVarPayload, type SandboxCell } from "./protocol";
+import { OutboundQueue } from "./outboundQueue";
 import { replayAfterRebuild } from "./rebuildReplay";
 import { createWatchdog, type Watchdog } from "./watchdog";
+
+/** One queued outbound message plus the transfer list it must be posted with. */
+interface OutboundEnvelope {
+  message: HostToSandboxMessage;
+  transfer: Transferable[];
+}
 
 /**
  * The sandbox document's path, relative to the app's configured base URL
@@ -31,6 +38,18 @@ export interface SandboxHostCallbacks {
   onCellError: (cellId: string, message: string) => void;
   /** An inline `${…}` span resolved. */
   onInlineResult: (spanId: string, text: string) => void;
+  /**
+   * Called once per rebuild, right after the new iframe is created, before
+   * any replay. A rebuilt sandbox's channel host variables cannot be
+   * restored from a cached copy the way JSON host variables can — the two
+   * `ArrayBuffer`s a prior `setChannelHostVar` call transferred are
+   * detached once `postMessage` moves them (review-task5b.md Major
+   * finding). The caller (the chart layer, `model/channelRebind.ts`)
+   * already holds the decoded tiles backing every bound channel in its
+   * `TileCache`, so re-deriving and calling `setChannelHostVar` again for
+   * each one costs no IPC (P2, P7).
+   */
+  onChannelsInvalidated: () => void;
 }
 
 /**
@@ -43,12 +62,23 @@ export class SandboxHost {
   private iframe: HTMLIFrameElement;
   private readonly watchdog: Watchdog;
   private nextPingNonce = 0;
+  /** Holds every outbound message for the current iframe generation until
+   *  that generation's own `ready` arrives (review-task5b.md Critical
+   *  finding — see `outboundQueue.ts`'s doc comment for the race this
+   *  closes). */
+  private readonly outboundQueue = new OutboundQueue<OutboundEnvelope>();
+  /** The generation id `startGeneration()` returned for the current `iframe`. */
+  private generation = 0;
   /** The last `init`/`setCells` payloads sent, replayed into a rebuilt
    *  iframe by `rebuild()` (`replayAfterRebuild`, review-task5.md Important
    *  finding: design §6's "state loss is the cost" means reactive state,
    *  not the notebook's own cells). */
   private lastInitRuntimeVersion: string | null = null;
   private lastCells: SandboxCell[] | null = null;
+  /** Last-sent value of every JSON-kind host variable, replayed after a
+   *  rebuild (`replayAfterRebuild`, review-task5b.md Major finding). Never
+   *  holds a `{kind:"channel"}` payload — see {@link SandboxHostCallbacks.onChannelsInvalidated}. */
+  private readonly lastJsonHostVars = new Map<string, unknown>();
   private readonly onMessage = (event: MessageEvent): void => {
     // The sandbox iframe is untrusted input (design §6, the brief's own
     // words: "the host treats every postMessage it receives as untrusted
@@ -61,6 +91,13 @@ export class SandboxHost {
     const message = event.data;
     switch (message.type) {
       case "ready":
+        // Sent unconditionally once the sandbox document has loaded and
+        // attached its own message listener (`sandbox/main.ts`) — not
+        // gated on `init` (review-task5b.md Critical finding). Flushes
+        // this generation's queued outbound messages, `init` included.
+        this.outboundQueue.markReady(this.generation, (envelope) =>
+          this.iframe.contentWindow?.postMessage(envelope.message, "*", envelope.transfer)
+        );
         break;
       case "pong":
         this.watchdog.onPong();
@@ -97,6 +134,7 @@ export class SandboxHost {
    * this is the actual security boundary (design §6), not a convention.
    */
   private createIframe(): HTMLIFrameElement {
+    this.generation = this.outboundQueue.startGeneration();
     const iframe = document.createElement("iframe");
     iframe.sandbox.add("allow-scripts");
     iframe.src = `${import.meta.env.BASE_URL}${SANDBOX_PATH}`;
@@ -104,11 +142,16 @@ export class SandboxHost {
     return iframe;
   }
 
+  /** Queues `message` (with `transfer`) until this iframe generation's
+   *  `ready` arrives, per {@link outboundQueue}; sent immediately once it
+   *  has. */
   private postToSandbox(message: HostToSandboxMessage, transfer: Transferable[] = []): void {
-    this.iframe.contentWindow?.postMessage(message, "*", transfer);
+    this.outboundQueue.send({ message, transfer }, (envelope) =>
+      this.iframe.contentWindow?.postMessage(envelope.message, "*", envelope.transfer)
+    );
   }
 
-  /** Sends `init`; the sandbox replies `ready` once its own `Runtime` exists. */
+  /** Sends `init`, queued until the sandbox's load-time `ready` (see `sandbox/main.ts`). */
   init(runtimeVersion: string): void {
     this.lastInitRuntimeVersion = runtimeVersion;
     this.postToSandbox({ type: "init", runtimeVersion });
@@ -120,8 +163,12 @@ export class SandboxHost {
     this.postToSandbox({ type: "setCells", cells });
   }
 
-  /** Binds a plain JSON host variable (`laps`, `session`, `constants`, …). */
+  /** Binds a plain JSON host variable (`laps`, `session`, `constants`, …);
+   *  cached (when `value.kind === "json"`) so a rebuild can replay it. */
   setHostVar(name: string, value: HostVarPayload): void {
+    if (value.kind === "json") {
+      this.lastJsonHostVars.set(name, value.value);
+    }
     this.postToSandbox({ type: "setHostVar", name, value });
   }
 
@@ -137,17 +184,28 @@ export class SandboxHost {
 
   /**
    * Tears down the current iframe and builds a fresh one, then replays the
-   * last `init`/`setCells` payloads into it (`replayAfterRebuild`) so the
-   * notebook's cells survive a watchdog-triggered rebuild — only reactive
-   * variable state is lost, per design §6.
+   * last `init`/JSON-host-var/`setCells` payloads into it
+   * (`replayAfterRebuild`) so the notebook's cells and their JSON host
+   * variables survive a watchdog-triggered rebuild — only channel host
+   * variables and truly reactive/derived state are lost, per design §6.
+   * Every message posted here (via `postToSandbox`) is queued by
+   * `outboundQueue` until the new iframe's own `ready` arrives
+   * (review-task5b.md Critical finding) — it does not need to wait for
+   * that itself.
+   *
+   * `onChannelsInvalidated` fires before the replay, since it is itself
+   * `setChannelHostVar` calls that go through the same queued
+   * `postToSandbox` path and so are safe to issue immediately.
    */
   private rebuild(): void {
     this.postToSandbox({ type: "teardown" });
     this.iframe.remove();
     this.iframe = this.createIframe();
+    this.callbacks.onChannelsInvalidated();
     replayAfterRebuild((message) => this.postToSandbox(message), {
       lastInitRuntimeVersion: this.lastInitRuntimeVersion,
       lastCells: this.lastCells,
+      lastJsonHostVars: this.lastJsonHostVars,
     });
   }
 

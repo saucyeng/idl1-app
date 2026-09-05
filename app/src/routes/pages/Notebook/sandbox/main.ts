@@ -225,7 +225,6 @@ function handleMessage(message: HostToSandboxMessage): void {
   switch (message.type) {
     case "init":
       sandboxRuntime = new SandboxRuntime();
-      postToHost({ type: "ready" });
       break;
     case "setHostVar":
       sandboxRuntime?.setHostVar(message.name, message.value);
@@ -252,3 +251,12 @@ window.addEventListener("message", (event: MessageEvent) => {
   }
   handleMessage(event.data as HostToSandboxMessage);
 });
+
+// `ready` now means "this document has loaded and attached its message
+// listener" — sent unconditionally, once, right after the listener above is
+// registered, rather than only as `init`'s reply (review-task5b.md Critical
+// finding: gating `ready` on `init` made it impossible for the host to know
+// *when* it's safe to send `init` itself in the first place). The host's
+// `OutboundQueue` (`host/outboundQueue.ts`) holds every outbound message
+// (including `init`) until this arrives, then flushes in order.
+postToHost({ type: "ready" });
