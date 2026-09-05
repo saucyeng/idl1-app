@@ -670,6 +670,15 @@ interface CellOutput {
   value: unknown | null;                     // present when evaluation succeeded; shape depends on `kind` — see the `table` note below
   defs: CellDefResult[];                     // added post-sign (2026-09-04, lead ruling R21) — math cells only: one entry per definition (C2 §5.1's "one JS host variable per math definition"), in def_line source order; empty for table/js cells
   errors: IpcError[];                        // added post-sign (2026-09-04, lead ruling R22): plural — a cell may carry several structural problems (e.g. two duplicate definitions); empty on success; each kind is a structural (workbook_*) or evaluation (math_*) kind — see §2
+  prose_before_html: string | null;          // added post-sign (2026-09-05, lead ruling R70, R69 item 4) — rendered HTML of this cell's CellDoc.prose_before (C2 §2.4); null when there is none. This is the first time CellOutput has actually carried a prose field — closing a gap R21's own comment above claimed was already true but wasn't implemented: prose reached the frontend by a separate client-side re-scan of read_workbook's raw markdown until this task. ${...} spans (C2 §5.2) appear as <span data-span-id="{id}"></span> placeholders (see prose_spans below) for the sandbox (L6 Task 13b) to fill; raw HTML the author typed is escaped, never passed through (R69's sandbox security boundary)
+  prose_after_html: string | null;           // same, CellDoc.prose_after — non-null only on the last cell in the document (C2 §2.4)
+  prose_spans: ProseSpan[];                  // added post-sign (2026-09-05, lead ruling R70) — every ${...} span across prose_before_html then prose_after_html, in document order, found by core's find_inline_exprs (the only ${...} scanner) — lets the sandbox consumer fill each placeholder without its own re-scan of the raw prose text
+}
+
+// Added post-sign (2026-09-05, lead ruling R70).
+interface ProseSpan {
+  id: string;    // matches a prose_before_html/prose_after_html placeholder's data-span-id attribute exactly, e.g. "{cell_id}-before:0"
+  expr: string;  // the JavaScript expression text between ${ and }, verbatim (C2 §5.2)
 }
 
 // Added post-sign (2026-09-04, lead ruling R21).
