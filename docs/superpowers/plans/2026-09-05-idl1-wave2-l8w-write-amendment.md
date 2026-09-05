@@ -1002,3 +1002,7 @@ Additive task for this lane (after Task 12, before wrap-up): `list_math_builtins
 ## Added by the lead 2026-09-05 (R67) -- Task 4b: `WorkbookEvent.hash`
 
 Additive: the workbook watcher (`rust/tauri/src/watcher.rs` + `commands/workbook.rs`) computes `sha256_hex` of the file after each change and emits it as `WorkbookEvent.hash`; `save_workbook` returns the new hash if it does not already. C3 section 3.4 amended spec-during in the same task. Test: an external edit's event carries the file's hash; a save's own event carries the hash `save_workbook` returned. Runs after Task 5.
+
+## Added by the lead 2026-09-05 (R69) -- Task 4c: prose `CellOutput.html`
+
+`eval_workbook`'s prose cells gain `html: string` rendered by core's `pulldown-cmark` (already a dependency), with each `${...}` span emitted as `<span data-span-id="..."></span>` for the sandbox to fill; C3 section 3.4 amended spec-during. Test: a prose cell with a heading, bold and two spans yields the expected HTML with placeholders in document order. Runs after Task 4b.
