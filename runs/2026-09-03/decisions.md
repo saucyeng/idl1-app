@@ -2546,3 +2546,49 @@ addition, not a rewrite. Q3 risks a behavioural change in `idl-rs-tauri`
 reaching the gate untested; bounded by the reporting obligation and a
 one-run gate option. Q4(A) costs a full catalog rebuild per import at
 wave-1 data sizes — seconds, not minutes.
+
+## 2026-09-05 — R52: L6 notebook plan adjudicated (Q1–Q9)
+
+Plan: `docs/superpowers/plans/2026-09-05-idl1-wave2-l6-notebook.md` (Opus,
+16 tasks, 8 IPC needs in `runs/2026-09-05/lanes/l6/IPC-NEEDS.md`). Isaac's
+2026-09-05 calls in force: Properties + Code editor (D13); React Flow graph
+view is wave 3 and re-homes the same Properties form component.
+
+- **Q1 → (a).** Eight npm packages added to `package.json` by a lead shell
+  task; `htl` pinned at `1.0.0` (npm `latest`, checked 2026-09-05) and added
+  to the M0 ecosystem pins table in the same commit. Dropping `html` would
+  silently narrow C2 §5.1.
+- **Q2 → (a).** `channel()` returns an array of `{ t, v }` records
+  materialised inside the sandbox from the two transferred buffers; C2 §5.3's
+  grammar is untouched, C2 §5.1's stated object is amended (filed by L6 Task
+  16, applied by the lead). Transfer stays zero-copy; only what Plot iterates
+  changes; record count is budget-capped (~2 per pixel column).
+- **Q3 → (a).** Cell segmentation for the editor is a narrow TS fence scan,
+  non-authoritative; Rust remains the only evaluator. It maps cell id → byte
+  range for clicks, which is "pixels or clicks → app/src" (CLAUDE.md §2).
+- **Q4 → (a).** `read_workbook(id) → { markdown, hash, path }` is added to
+  C3 §3.4 in the wave-2 write-amendment lane. Reading the file through a
+  Tauri fs plugin is rejected: it bypasses `<data>` resolution (C4 §1).
+- **Q5 → (a).** `eval_workbook` gains an additive
+  `lap_context: { main_lap, overlay_laps[] } | null` argument (R41's
+  reasoning: the designation is a UI selection, not file content).
+- **Q6 → (a).** L6 designs the host-channel byte layout (it is the only
+  consumer, R45's missing validator) and files it as a C3 §3.4 amendment; the
+  Rust write lane implements it. Fallback if it slips: raw channels via tiles
+  only, math-derived host variables wave 3.
+- **Q7 → N5 (FFT) in, N6 (1-D histogram) deferred to wave 3.** FFT is a thin
+  wrapper over the existing `idl_rs::fft`; the histogram is new binning code.
+- **Q8 → (a) for wave 2, escalated to Isaac.** GPS polyline on plain axes; no
+  basemap. A user-configured tile URL (option c) would be an explicit,
+  off-by-default exception to "no CDN, ever" and is Isaac's product call —
+  asked 2026-09-05, non-blocking (the GPS map chart is deferred either way).
+- **Q9 → batch.** One lead shell task on `main` before L6/L7 dispatch:
+  `App.tsx` Notebook import, `AppState` `activeSessionId` slice (shared with
+  L7a), `package.json` per Q1. `vite.config.ts` held until Task 5 reports
+  whether the sandbox needs a second build entry.
+
+**Cost if wrong:** Q2 costs one task (Task 7) if Plot turns out to iterate
+SoA after all — cheap to check at Task 7's first test. Q3 costs deleting Task
+4 for a stub over an IPC call. Q4/Q5/Q6 are additive `pub` surface in the
+Rust write lane; their blast radius is that lane. Q1's `htl` pin is a new
+dependency with no prior pin — reversible before any cell uses `html`.
