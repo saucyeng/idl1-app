@@ -15,7 +15,7 @@ import {
   updateYAxis,
   type PropertiesFormState,
 } from "../model/propertiesForm";
-import type { PropertiesFormChannelOption, PropertiesFormProps } from "./PropertiesForm.types";
+import type { PropertiesFormChannelOption, PropertiesFormLapOption, PropertiesFormProps } from "./PropertiesForm.types";
 
 /**
  * The Properties pane (design §6, D13): a form over `plotForm`'s `PlotProps`
@@ -282,7 +282,7 @@ function MarkRow({
   mark: MarkProps;
   index: number;
   channels: PropertiesFormChannelOption[];
-  laps: { number: number }[];
+  laps: PropertiesFormLapOption[];
   canRemove: boolean;
   canMoveUp: boolean;
   canMoveDown: boolean;
