@@ -2405,3 +2405,69 @@ that field with nothing failing. One assertion.
 
 **Cost if wrong:** none — the line can be ticked the moment Task 9 lands
 and a human confirms the render.
+
+---
+
+## 2026-09-05 — L5 LANDED (Tasks 1-8, 10-14; Task 9 deferred)
+
+**idl-rs** `main` = `75589bc`; **idl1-app** `main` = `bfaa888`.
+Gate at the merge: idl-rs **860** passed / 0 failed / 1 ignored,
+idl-rs-cli **51**, idl-rs-tauri **86**, TS **32**, `tsc` clean,
+`cargo check -p app` clean.
+
+Delivered: the `core` catalog read layer L1 never wrote
+(`store/catalog_read.rs`) plus C3 §3.2's seven catalog commands; workbook
+commands with `watch_workbook` wiring, `SessionHandle::from_session`, and
+session loading; cursor readout; spectrogram/histogram2d rasters;
+`fetch_tile` with both load-bearing validations; the v2 tile decoder and
+typed IPC modules on the TS side; `NotebookPage` minimal render. M0's
+`smoke_tile` scaffolding retired.
+
+**Not delivered, deliberately:** Task 9 (import commands), deferred with
+L2 on Isaac's prioritisation. **Not verified:** the on-screen render —
+byte-level headless proof only (R50).
+
+**The end-to-end proof, on real data:** the CLI imported
+`d365a19ae7ef2dc2d087a5887371281f.idl0` into `C:\tmp\idl1-data-l5\data`
+(1 session, 1 blob, exit 0), and a temporary ignored test drove the
+production `fetch_tile_via` path against that on-disk session:
+`IMU2_AccelX`, tier 0, `column_count` 600 → magic `IDLT`, version 2,
+sample_count 1024, **20224 bytes** matching `32 + 1024*8 + 600*12 +
+600*8` exactly, `sample[0] = (-0.018554688, -0.018554688)` — a real
+accelerometer value, not a fixture. The test was deleted before commit
+(it hardcoded a gitignored machine-specific path).
+
+**Rulings this lane produced:** R46–R50.
+
+**Two bugs found in already-landed L3 code**, neither by review of L3
+itself: `math_cell_defs` panicked whenever a definition name repeated
+anywhere in a document (an ordinary editing mistake killed the process),
+and the `deps` map had the same bare-name collapse. Both fixed at the
+root under a lead-granted cross-lane exception (R47), with the
+implementer's `catch_unwind` containment removed rather than shipped.
+
+**The night's recurring failure mode was overstatement, not code.** The
+same false claim — that the render was verified — had to be corrected in
+three separate places on three successive passes: the CHANGELOG, then
+`TASKS.md`'s tick (graded Critical), then the commit subject, which the
+lead fixed directly. Each pass found exactly one more. Worth carrying
+into L2: when a claim is corrected in one file, grep for it everywhere
+before calling it fixed.
+
+**Harness gap closed mid-lane:** the §8 hook denied `cargo test
+--workspace` but not a bare `cargo test`, which is workspace-wide in this
+virtual manifest. Fixed (`de3cf95`) and regression-tested against the
+eight existing rules. The bare run that prompted it turned out to belong
+to another session entirely — the implementer produced its command list
+and was right; the lead's inference was wrong and is corrected here.
+
+**Machine note:** another of Isaac's sessions ran an
+`aarch64-unknown-linux-gnu` cross-compile concurrently for part of the
+night; free memory reached ~1.5 GB. No OOM occurred and no gate was
+killed, but tasks were told to report a killed gate as *killed* rather
+than as pass or fail.
+
+**Next:** L2 (importers) — briefs 1-6 on disk, FIT sample available,
+R27's decimal-degree conversion already landed so the importers are
+written once against the final unit. L5 Task 9 (import commands) rides
+with it.
