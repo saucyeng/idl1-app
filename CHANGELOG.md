@@ -6,6 +6,7 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 
 ### Added
 
+- **Notebook cell scan (L6 Task 4).** Pure TS fence scan over C2 §2.2/§2.4 giving the editors byte ranges per cell; Rust's parser stays authoritative for evaluation.
 - **TS coverage reporting added (2026-09-05).** `@vitest/coverage-v8` pinned to vitest's
   version in `app/package.json`; `app/vitest.config.ts` gains a `coverage` block (v8
   provider, `src/**/*.ts`, text reporter, no thresholds set) so `vitest run --coverage`
