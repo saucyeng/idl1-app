@@ -3020,7 +3020,7 @@ design call.
 Merged `wave2-l7b-device` into idl1-app `main` (`--no-ff`, `a10b3ea`); no
 conflicts (the lane had merged `main` last). Lane: Tasks 1–9 plus seven
 follow-ups. Reviews: nine, all CLEAN after follow-ups. Merge gate on `main`:
-`tsc` clean, whole TS suite green (count below).
+`tsc` clean, whole TS suite **330 passed / 0 failed** (46 files).
 
 **Shipped:** connection reducer over the real `ble_scan`/`ble_connect`
 ("last attempt succeeded", R53 Q4); the config model with lenient parse and
