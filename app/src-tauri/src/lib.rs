@@ -22,6 +22,7 @@ pub fn run() {
             app.manage(idl_rs_tauri::state::DataDir(data_dir));
             app.manage(idl_rs_tauri::state::Hashes(std::sync::Arc::new(idl_rs_tauri::watcher::ExpectedHashSet::new())));
             app.manage(idl_rs_tauri::state::Watchers(std::sync::Mutex::new(std::collections::HashMap::new())));
+            app.manage(idl_rs_tauri::state::Connections(std::sync::Mutex::new(std::collections::HashMap::new())));
             Ok(())
         })
         .invoke_handler(idl_rs_tauri::handler())
