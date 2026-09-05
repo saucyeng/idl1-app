@@ -27,9 +27,11 @@
 | 14a | Transport Trait Architecture (idl1) | Transport layer |
 | **PART 4 — APP DATA MODEL** | | |
 | 15 | Session & File Model | Data layer |
+| 15a | Non-device Importers (FIT, GPX, CSV) | Import tasks |
 | 16 | Track Entity | Track-related work |
 | 17 | Multi-Track & TrackVisits | Track-related work |
 | 17a | Workbook Entity | Analyze tab, LAN sync |
+| 17b | Track Artifact (`.idl0t`) | Track-related work |
 | 18 | Bike Profiles & Riders | Profile, metadata tasks |
 | **PART 5 — APP PROCESSING** | | |
 | 19 | Signal Processing Pipeline | Rust layer tasks |
@@ -1394,9 +1396,9 @@ warnings). `ImporterError` is a typed enum (CLAUDE.md §5 — never
 kind-vocabulary prefix contract C3 §2 assigns to importer/parser errors
 (mirroring `crate::session::ParseError`'s existing `parse_*` kinds for
 `.idl0`), but **C3 §2's kind table does not yet list rows for these new
-variants** — see Open Questions. (A future `core::import::importers()`
-registry table making importers enumerable by id/label/extensions is a
-separate, later concern — not part of this trait's shape.)
+variants** — see Open Questions. (A future importer registry making importers
+enumerable is Task 7's scope, ledger ruling R51 Q2 — not specified here and
+not part of this trait's shape.)
 
 ### 15a.2 FIT import
 
