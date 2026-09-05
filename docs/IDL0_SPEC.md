@@ -2071,13 +2071,15 @@ BLE scan / connect / disconnect, with the §7.3 status characteristic rendered a
 
 ### 23.2 Profile bar
 
-A profile is one complete bike-specific configuration; the app stores a library of N profiles as JSON files at `<docs>/profiles/<uuid>.idl0p`. One profile is active at a time; **Push Config** pushes only that profile's `config` sub-object.
+A profile is one complete bike-specific configuration: `runs/2026-09-05/lanes/l7/IPC-NEEDS.md` need 11's `BikeProfile` shape (`profile_id`, `profile_name`, `created_at_ms`, `updated_at_ms`, and a `config` sub-object — the SPEC §8 device-config document, pushed verbatim). idl0 stored the library as JSON files at `<docs>/profiles/<uuid>.idl0p`, one profile active at a time; **Push Config** (§23.6) pushes only the active profile's `config`.
 
-- **Dropdown** — lists profiles by `profile_name`, single-select. Selection updates the active pointer.
-- **`+`** — opens "New profile" dialog (name + "Duplicate active" toggle, defaulting on).
-- **Kebab** — Rename · Duplicate · Delete · Import from file · Export to file. Delete is refused for the last remaining profile (a profile library cannot be empty).
+**Wave 2 (`Device/profiles.ts`, `Device/ProfileBar.tsx`) is in-memory for the session — not the file-backed library above.** `list_profiles`/`save_profile`/`delete_profile` (IPC need 11) are stubs until the Rust write lane lands `rust/core/src/store/profile.rs`'s already-implemented `load_all`/`save`/`delete`; until then, `ProfileBar` renders a visible, unconditional notice that the library is not saved. The bar itself is close to idl0's shape:
 
-The active profile id is persisted to `SharedPreferences` key `idl0.profiles.active_id`.
+- **Dropdown** — lists profiles by `profile_name`, single-select. Selection updates the active pointer (`profilesReducer`'s `SELECT`).
+- **`+ New profile`** — creates a profile seeded from `Device/config/defaults.ts`'s `defaultConfig(deviceId)` and makes it active (`CREATE`). Wave 2 has no "Duplicate active" toggle on creation — duplicating an existing profile is its own action, below.
+- **Duplicate / Rename / Delete active** — `DUPLICATE` deep-copies the active profile's `config` (`structuredClone`) under a new `profile_id`, so editing the copy never touches the original; `RENAME` does not enforce unique names, only unique ids; `DELETE` reassigns `activeId` to another remaining profile, or `null` when the library becomes empty — wave 2 does **not** refuse deleting the last profile (idl0's "a profile library cannot be empty" rule), since an empty library is exactly the honest state of a fresh session with nothing created yet. Import/export from file are not built in wave 2 (no file dialog is wired to this bar).
+
+The active profile id is **not** persisted anywhere — no `SharedPreferences` equivalent — consistent with the whole library being in-memory only.
 
 ### 23.3 Channel table
 
@@ -2251,9 +2253,15 @@ The Calibration panel runs `CMD_CALIBRATE_IMU` per §7.6 and writes the resultin
 
 ### 23.6 Push Config
 
-Sends `activeProfile.config` (the inner config sub-object, with app-side metadata stripped) to the device over BLE (FF05 + `CMD_CONFIG_BEGIN`/`CMD_CONFIG_COMMIT`, §7.2); the device then reboots to apply and the app reconnects. Requires idle mode (BLE control is suspended in WiFi mode, §10.4); the button is disabled when disconnected.
+Sends the active profile's `config` sub-object (app-side metadata such as `profile_id`/`profile_name` stripped) to the device over BLE (FF05 + `CMD_CONFIG_BEGIN`/`CMD_CONFIG_COMMIT`, §7.2); the device then reboots to apply and the app reconnects. Requires idle mode (BLE control is suspended in WiFi mode, §10.4).
 
-Config pushes are never automatic — per §8, the user must review changes and explicitly press Push Config. The `BleService` interface exposes `pushConfigBle` (the chunked BLE path) and `pushConfig` (the WiFi `POST /config` fallback, §6.1).
+**Wave 2 (`Device/push.ts`, `Device/PushConfigBar.tsx`)** calls the real, landed `push_config` (C3 §3.8) over `pushConfig(deviceId, configJson)`, never a hand-built JSON string. `preparePush(config)` is the one gate a config passes through: it runs `validateConfig`/`isPushable` and only serialises with `serializeConfig` when there is zero error-severity `ValidationIssue` — **validate, then serialise, never the reverse**, the lane's load-bearing invariant, since `push_config`'s Rust side checks JSON syntax only. Warning-severity issues (an enabled-but-empty IMU slot, a reserved digital-channel kind) never block a push. `PushConfigBar`'s **Push config** button is enabled only when a device connected in this session (`ConnectionState.connected !== null`, read as "the last attempt succeeded" per R53 Device Q4, never a live link), a profile is active, and `isPushable` holds; the push itself runs through a small pure `pushReducer` (idle → pushing → succeeded/failed) so a double click or an unrelated re-render can never stack a second `pushConfig` call on top of one already in flight.
+
+Idle mode is **stated in copy, not enforced** — `device_status` (IPC need 8) is a stub, so the app cannot read the device's current mode before pushing; a push attempted while the device is in WiFi mode surfaces as a rejection (`kind: "config"` or `kind: "ble"`, `Device/errors.ts`'s `describeIpcError`) rather than being blocked in advance.
+
+**What verification currently does and does not prove.** idl0's push flow reconnects and (once landed) confirms the device is running what was sent. `pull_config` (IPC need 10) is a stub in wave 2, so there is no reconnect-and-verify leg yet: `describePushResult(reconnected, verified)` names all four states SPEC intends (verified match, verified mismatch, reconnect failed, verification unavailable), but every real push in wave 2 lands on the last one — **"Config applied, not verified."** A push that resolves without throwing means only that the device accepted and is applying the bytes sent; nothing in wave 2 confirms the device is actually running them afterward. **Pull from device** is wired to the `pull_config` stub as a visible placeholder — pressing it reports "not available yet" rather than silently doing nothing or claiming success.
+
+Config pushes are never automatic — per §8, the user must review changes and explicitly press Push Config.
 
 ### 23.7 Recording controls
 

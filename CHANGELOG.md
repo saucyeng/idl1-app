@@ -157,6 +157,27 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
   place of idl0's `kChannelSourceFactories` description), plus a one-line
   "pin input is unconstrained until SPEC §8 states a valid pin range" note
   in both §23.3.4 and §23.3.5 for Isaac.
+- **Device tab, Task 8 (2026-09-05, L7b).** `Device/profiles.ts`'s pure
+  `profilesReducer` (select/create/rename/duplicate/delete) is an
+  **in-memory-for-the-session** profile library — `list_profiles`/
+  `save_profile`/`delete_profile` (IPC need 11) are stubs, so `ProfileBar.tsx`
+  states plainly, unconditionally, that nothing here survives an app
+  restart; `DUPLICATE` deep-copies the source config (`structuredClone`) so
+  editing a copy never touches the original. `Device/push.ts`'s
+  `preparePush(config)` is the one gate a config passes before
+  `PushConfigBar.tsx` calls the real, landed `pushConfig` (C3 §3.8):
+  `validateConfig`/`isPushable` first, `serializeConfig` only if pushable —
+  never the reverse, the lane's load-bearing invariant. A small pure
+  `pushReducer` (idle → pushing → succeeded/failed) keeps one push in
+  flight at a time. `pull_config` (IPC need 10) is still a stub, so
+  `describePushResult` reports all four idl0 outcomes but every real wave-2
+  push lands on "applied, not verified" — no reconnect-and-verify leg
+  exists yet. Idle-mode gating (SPEC §10.4) is stated in copy, not
+  enforced — `device_status` (IPC need 8) is a stub too, so a device that
+  refuses a push in the wrong mode surfaces through `Device/errors.ts`'s
+  `describeIpcError` (`kind: "config"`/`"ble"`) rather than being blocked
+  in advance. `docs/IDL0_SPEC.md` §23.2 and §23.6 are rewritten for wave 2
+  in place of idl0's file-backed-library and `BleService` descriptions.
 - **L5 complete (2026-09-04).** idl-rs-tauri wired to every landed wave-1 lane's C3 command
   group (catalog, workbook, cursor, raster, tile) plus device (L4); <data> resolution,
   workbook watcher, app/src/ipc/ module layer, routing and state skeleton. Tile fetched
