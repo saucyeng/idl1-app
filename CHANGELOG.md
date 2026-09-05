@@ -6,6 +6,21 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 
 ### Added
 
+- **L7c Settings tab, Task 5 (2026-09-05).** Sync section
+  (`Settings/SyncSection.tsx`) over the real, landed
+  `sync_status`/`sync_now`/`pair_peer` commands (C3 §3.9, `app/src/ipc/sync.ts`)
+  — never stubbed. Polls `sync_status` on a 5 s timer while mounted, lists
+  paired peers with online flags, validates a 6-digit pairing code locally
+  (`pairCode.ts`'s `normalizePairCode`/`validatePairCode`) before calling
+  `pair_peer`, and runs `sync_now` manually per peer with progress shown by
+  phase (`syncState.ts`'s reducer keeps a poll from clobbering an in-flight
+  transfer). `describeSyncResult` reads a non-zero conflict count as
+  something to resolve, not a failure (design §7's per-cell merge).
+  L11 has not landed, so every call rejects today; that's rendered through
+  `errors.ts`'s `describeIpcError` or a "not running yet" fallback, never a
+  raw error. `docs/IDL0_SPEC.md` §27 gains §27.9 (replacing the Drive Sync
+  row in §27.4's table) and §28 (Google Drive Sync) carries a superseded
+  banner pointing at §27.9 and design §7.
 - **L7c Settings tab, Task 4 (2026-09-05).** Data-directory section
   (`Settings/DataSection.tsx`) over the `get_data_dir`/`set_data_dir` stubs
   (IPC need 7a/7b): shows the resolved `<data>` path, an override field

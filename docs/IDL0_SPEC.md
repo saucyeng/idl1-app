@@ -2874,7 +2874,7 @@ Called by `ChannelMetadataBar._onQuantityChanged` to set the default unit when t
 |---|-------|---------|
 | 1 | Profile | Rider name — debounced 500 ms text field |
 | 2 | Units | `SegmentedButton<UnitSystem>` + summary line |
-| 3 | Drive Sync | Sign in/out, auto-sync toggle, WiFi-only toggle, auto-sync-on-open toggle |
+| 3 | Sync (idl1: LAN sync, replaces Drive Sync — see §27.9) | Paired-peer list with online status, pairing-code entry, manual "Sync now" per peer |
 | 4 | Firmware | OTA update. Auto-checks the selected channel (stable/beta) against the running version (§7.3 `Firmware:`) and shows an "update available vX → vY" card that downloads from GitHub Releases (§27.7) and runs the OTA push. Channel picker, auto-check toggle, "Check now", plus the manual `.bin` picker as fallback. Progress / reboot states, pending-verify commit/rollback card. See §4.6 / §6.1 / §27.7. Collapsed by default in the narrow layout. |
 | 5 | Controls | Read-only reference of the chart keyboard / mouse / wheel shortcuts (mirrors `kDefaultChartBindings` + `wheelModeFor`, §26.7), grouped Mouse wheel / Mouse / Keyboard as leader-dot `SpecRow`s. Editable rebinding is a v2 follow-up. |
 | 6 | How-Tos | 4 markdown articles + Full Reference link |
@@ -2986,11 +2986,56 @@ nothing (`runs/2026-09-03/decisions.md`, 2026-09-05 ledger entry;
 (`rust/tauri/src/paths.rs`) rides with the Rust write-amendment lane, not
 this one.
 
+### 27.9 Sync (idl1, replaces Drive Sync — §27.4 row 3)
+
+**Superseded (2026-09-05, L7c Task 5).** idl0's Drive-sync section (Sign
+in/out, auto-sync toggle, WiFi-only toggle, auto-sync-on-open toggle — see
+§28, itself superseded) is replaced by idl1's LAN sync, built here against
+the real, landed `sync_status`/`sync_now`/`pair_peer` commands
+(`app/src/ipc/sync.ts`, C3 §3.9) — not stubs. Google Drive is dropped
+permanently; idl1 syncs peer-to-peer over the LAN (design §7).
+
+**What the section shows.** A list of paired peers (`sync_status`'s
+`paired_peers`) with each peer's online flag; a pairing-code field that
+normalizes the input (`pairCode.ts`'s `normalizePairCode` strips spaces and
+`-`/`_` separators) and validates it locally (`validatePairCode`: exactly
+six digits) before calling `pair_peer` — C3 §3.9 backs a malformed code with
+`invalid_argument`, but local validation means a typo never becomes a round
+trip; and a manual "Sync now" button per peer that calls `sync_now`,
+streaming `Progress` messages (a mixed blobs+cells count disambiguated by
+`phase` — "manifest", "blobs", "workbooks") into a running-transfer line.
+
+**Polling.** The section polls `sync_status` on a 5-second timer while
+mounted (C3 §4: a periodic poll, never per-frame; no contract fixes the
+interval) and stops when the section is not the selected one, since the
+poll lives in the mounted component's own effect.
+
+**Result summary.** `syncState.ts`'s `describeSyncResult` turns a
+`SyncResult` into one line, e.g. "12 blobs, 3 workbooks merged" when
+`conflicts` is zero, or "...12 blobs, 3 workbooks merged, 1 conflict cell to
+resolve" otherwise — a non-zero conflict count reads as something to go
+resolve in the merged workbook (design §7's per-cell merge produces
+conflict cells as a normal outcome), never as a sync failure.
+
+**L11 has not landed.** The Rust LAN-sync implementation (L11) has not
+merged, so all three commands reject today; the section renders that
+through `errors.ts`'s `describeIpcError` (kind `sync` and others) when the
+rejection is a typed `IpcError`, or a "LAN sync isn't running on this build
+yet" message otherwise, rather than a raw error. The automatic
+"sync when a paired peer appears" trigger (design §7) is L11's job to wire
+once the backend exists; this section provides the manual button and status
+display only.
+
 ---
 
 # PART 7 — CROSS-CUTTING
 
 ## 28. Google Drive Sync
+
+**Superseded (2026-09-05, L7c Task 5).** This section describes idl0's
+Google Drive sync, which idl1 does not have — the idl1 line syncs
+peer-to-peer over the LAN instead (design §7; app-side section: §27.9). Kept
+below for idl0 reference only.
 
 **Goal:** Automatic, invisible — experience like Google Docs. Session appears on all devices without user action.
 

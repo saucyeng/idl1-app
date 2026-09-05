@@ -5,6 +5,7 @@ import DataSection from "./DataSection";
 import ProfileSection from "./ProfileSection";
 import { localStorageBackend, createPrefsStore } from "./prefsStore";
 import { SECTIONS, defaultSectionId, sectionById } from "./sections";
+import SyncSection from "./SyncSection";
 import UnitsSection from "./UnitsSection";
 
 /** The single {@link PrefsStore} instance every Settings section reads from
@@ -16,10 +17,11 @@ const prefsStore = createPrefsStore(localStorageBackend());
 /** The Settings tab: a section list plus a detail pane.
  *
  * Task 1 built the shell with every section as a placeholder. Task 3 fills
- * in Profile and Units; Tasks 4–6 fill in Data directory, Sync, Chart
- * controls, How-tos and About. Layout switches from a two-pane
- * list-plus-detail view to one stacked scroll view via a CSS media query
- * (`settings.css`), not by measuring the viewport in JavaScript. */
+ * in Profile and Units; Task 4 fills in Data directory; Task 5 fills in
+ * Sync; Task 6 fills in Chart controls, How-tos and About. Layout switches
+ * from a two-pane list-plus-detail view to one stacked scroll view via a CSS
+ * media query (`settings.css`), not by measuring the viewport in
+ * JavaScript. */
 export default function Settings() {
   const [selectedId, setSelectedId] = useState<string>(defaultSectionId);
 
@@ -52,6 +54,8 @@ export default function Settings() {
           <UnitsSection store={prefsStore} />
         ) : selected.id === "data" ? (
           <DataSection store={prefsStore} />
+        ) : selected.id === "sync" ? (
+          <SyncSection store={prefsStore} />
         ) : (
           <p>Built in a later task.</p>
         )}
