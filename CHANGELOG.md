@@ -116,6 +116,47 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
   `docs/IDL0_SPEC.md` §23.3.1's "every field commits through `edit.ts`"
   claim true. `ChannelsTable.tsx`'s wrapping `<table>` re-indented one level
   under the sibling `<OpenForm>` fragment (Minor, cosmetic).
+- **Ruling R58 (2026-09-05): unassigned pins are representable, no pin
+  range is invented (`runs/2026-09-03/decisions.md`).** `AnalogChannel.adc_pin`
+  and `DigitalChannel.gpio_pin` are now `number | null`; `null` means
+  unassigned. `parseConfig` reads a missing pin key as `null` with no
+  `Repair` (a legal draft state); a present non-integer is a `Repair`,
+  treated as unassigned rather than a guessed pin number.
+  `serializeConfig` omits the key entirely when `null` — the schema has no
+  null-pin shape. `validateConfig` reports an unassigned pin as a
+  push-blocking error (`isPushable` false); the pin-collision check ignores
+  `null` claims entirely (two unassigned channels never "collide"). No pin
+  range exists anywhere in `DeviceConfig` or SPEC §8/§3.7, so the app never
+  invents one.
+- **Device tab, Task 7 (2026-09-05, L7b).** `Device/forms/{AnalogForm,
+  DigitalForm,HrmForm,AddChannelPicker}.tsx` and `Device/config/newChannel.ts`
+  complete the Device tab's source forms. Analog and Digital each edit one
+  channel through new `edit.ts` operations `upsertAnalogChannel`/
+  `removeAnalogChannel`/`upsertDigitalChannel`/`removeDigitalChannel` (both
+  "add" and "in-place edit" are the same upsert, keyed on the channel's own
+  `key`). The ADC/GPIO pin control in both forms is a plain
+  non-negative-integer input starting empty when unassigned — never a
+  `<select>` — per ruling R58: SPEC §8 states no valid pin range, so the
+  app never auto-selects one. HRM's "Search nearby" runs the landed
+  `bleScan` (C3 §3.8) and lists every discovered BLE device (no
+  service-UUID filter exists in `DeviceDiscovered`, so heart-rate straps
+  cannot be singled out — Parity gap, `runs/2026-09-05/lanes/l7/IPC-NEEDS.md`);
+  selecting one prefills `device_address`/`device_name` and enables the
+  monitor; manual address entry and Forget (`clearHrm`) round out the form.
+  `newChannel.ts`'s `newAnalogChannel`/`newDigitalMarker` generate a unique
+  `key` (`analog_N`/`marker_N`, never idl0's colliding `"__new__"`) and
+  seed SPEC §8's example-shape defaults with an unassigned pin;
+  `addChannelOptions` drives `AddChannelPicker`'s four choices (Wheel
+  front/rear toggle an existing slot rather than creating an entry; Analog
+  channel and Marker button create a new draft). `level`/`pwm` digital
+  kinds are never offered (SPEC §8: reserved, not shipped in Spec 1's
+  picker). `ChannelsTable.tsx`'s gear control now opens every source's form,
+  including analog/digital rows keyed by that row's own channel `key`; a
+  "+ Add channel…" button opens the picker. `docs/IDL0_SPEC.md` gains
+  §23.3.4–§23.3.6 and a rewritten §23.4 describing the real picker (in
+  place of idl0's `kChannelSourceFactories` description), plus a one-line
+  "pin input is unconstrained until SPEC §8 states a valid pin range" note
+  in both §23.3.4 and §23.3.5 for Isaac.
 - **L5 complete (2026-09-04).** idl-rs-tauri wired to every landed wave-1 lane's C3 command
   group (catalog, workbook, cursor, raster, tile) plus device (L4); <data> resolution,
   workbook watcher, app/src/ipc/ module layer, routing and state skeleton. Tile fetched

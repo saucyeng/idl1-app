@@ -141,7 +141,9 @@ function checkGps(gps: GpsBlock, issues: ValidationIssue[]): void {
 
 /** One channel's claim on a physical pin, gathered from either
  *  `analog.channels[].adc_pin` or `digital.channels[].gpio_pin` so the two
- *  arrays can be checked for collisions together. */
+ *  arrays can be checked for collisions together. `pin` is never `null`
+ *  here — {@link checkPinCollisions} filters unassigned claims out before
+ *  building this list; an unassigned pin can never collide with anything. */
 interface PinClaim {
   path: string;
   pin: number;
@@ -150,11 +152,15 @@ interface PinClaim {
 /** Checks every pair of pin claims across both `analog.channels` and
  *  `digital.channels` for a shared physical pin number — same-kind (two
  *  analog channels) and cross-kind (one analog, one digital) collisions
- *  alike, since both claim the same physical GPIO/ADC pin on the MCU. */
+ *  alike, since both claim the same physical GPIO/ADC pin on the MCU. An
+ *  unassigned (`null`) pin is excluded from this check entirely (ruling
+ *  R58) — it is reported once, as its own "pin unassigned" error, by
+ *  {@link checkAnalogChannels}/{@link checkDigitalChannels}, not here. */
 function checkPinCollisions(analog: AnalogChannel[], digital: DigitalChannel[], issues: ValidationIssue[]): void {
+  const isClaim = (claim: PinClaim | null): claim is PinClaim => claim !== null;
   const claims: PinClaim[] = [
-    ...analog.map((c, i): PinClaim => ({ path: `analog.channels[${i}].adc_pin`, pin: c.adc_pin })),
-    ...digital.map((c, i): PinClaim => ({ path: `digital.channels[${i}].gpio_pin`, pin: c.gpio_pin })),
+    ...analog.map((c, i): PinClaim | null => (c.adc_pin === null ? null : { path: `analog.channels[${i}].adc_pin`, pin: c.adc_pin })).filter(isClaim),
+    ...digital.map((c, i): PinClaim | null => (c.gpio_pin === null ? null : { path: `digital.channels[${i}].gpio_pin`, pin: c.gpio_pin })).filter(isClaim),
   ];
   for (let i = 0; i < claims.length; i++) {
     for (let j = i + 1; j < claims.length; j++) {
@@ -165,8 +171,10 @@ function checkPinCollisions(analog: AnalogChannel[], digital: DigitalChannel[], 
   }
 }
 
-/** Checks `analog.channels`: duplicate/empty keys and zero scale. Pin
- *  collisions are checked jointly with `digital.channels` by
+/** Checks `analog.channels`: duplicate/empty keys, zero scale, and an
+ *  unassigned pin (ruling R58 — a draft channel can never reach the device
+ *  half-configured, so this is an error, not a warning). Pin collisions
+ *  among assigned pins are checked jointly with `digital.channels` by
  *  `checkPinCollisions`, not here. */
 function checkAnalogChannels(channels: AnalogChannel[], issues: ValidationIssue[]): void {
   const seenKeys = new Map<string, number>();
@@ -183,12 +191,17 @@ function checkAnalogChannels(channels: AnalogChannel[], issues: ValidationIssue[
     if (channel.scale === 0) {
       pushError(issues, `${path}.scale`, `scale 0 means every sample reads back as the fixed offset ${channel.offset}`);
     }
+
+    if (channel.adc_pin === null) {
+      pushError(issues, `${path}.adc_pin`, "pin unassigned");
+    }
   });
 }
 
-/** Checks `digital.channels`: kind support and debounce sign. Pin
- *  collisions are checked jointly with `analog.channels` by
- *  `checkPinCollisions`, not here. */
+/** Checks `digital.channels`: kind support, debounce sign, and an
+ *  unassigned pin (ruling R58, same rule as {@link checkAnalogChannels}).
+ *  Pin collisions among assigned pins are checked jointly with
+ *  `analog.channels` by `checkPinCollisions`, not here. */
 function checkDigitalChannels(channels: DigitalChannel[], issues: ValidationIssue[]): void {
   channels.forEach((channel, i) => {
     const path = `digital.channels[${i}]`;
@@ -197,6 +210,9 @@ function checkDigitalChannels(channels: DigitalChannel[], issues: ValidationIssu
     }
     if (channel.debounce_ms < 0) {
       pushError(issues, `${path}.debounce_ms`, `debounce_ms ${channel.debounce_ms} ms is negative`);
+    }
+    if (channel.gpio_pin === null) {
+      pushError(issues, `${path}.gpio_pin`, "pin unassigned");
     }
   });
 }

@@ -1,7 +1,11 @@
 import { Fragment, useState } from "react";
 
 import type { DeviceConfig } from "./config/model";
+import AddChannelPicker from "./forms/AddChannelPicker";
+import AnalogForm from "./forms/AnalogForm";
+import DigitalForm from "./forms/DigitalForm";
 import GpsForm from "./forms/GpsForm";
+import HrmForm from "./forms/HrmForm";
 import ImuForm from "./forms/ImuForm";
 import WheelForm from "./forms/WheelForm";
 import type { SourceView } from "./sources";
@@ -19,19 +23,36 @@ export interface ChannelsTableProps {
   onConfigChange: (next: DeviceConfig) => void;
 }
 
-/** The form kind a source's gear control opens, or `null` for a source
- *  kind Task 7 still owns (analog, digital, HRM) — those gear controls
- *  stay disabled until Task 7 wires `AnalogForm`/`DigitalForm`/`HrmForm`. */
-type FormKind = "imu" | "gps" | "wheel" | null;
+/** Which form (or the "+ Add channel…" picker) is currently open below the
+ *  table. `analog`/`digital` carry the specific `channelKey` they edit,
+ *  since either kind can have any number of entries sharing one form
+ *  component; every other kind has at most one instance in a config. */
+type OpenFormState =
+  | { kind: "imu" }
+  | { kind: "gps" }
+  | { kind: "wheel" }
+  | { kind: "hrm" }
+  | { kind: "analog"; channelKey: string }
+  | { kind: "digital"; channelKey: string }
+  | { kind: "addChannel" }
+  | null;
 
-/** Maps a `SourceView.sourceKey` to the form kind its gear control opens.
- *  The three IMU slots and both wheel slots share one form each (the IMU
+/** Maps a `SourceView.sourceKey` to the form its gear control opens. The
+ *  three IMU slots and both wheel slots share one form each (the IMU
  *  block's shared bus rate and the wheel form's two slots are edited
- *  together), so every key in a group opens the same form kind. */
-function formKindForSourceKey(sourceKey: string): FormKind {
-  if (sourceKey === "imu0" || sourceKey === "imu1" || sourceKey === "imu2") return "imu";
-  if (sourceKey === "gps") return "gps";
-  if (sourceKey === "wheel_front" || sourceKey === "wheel_rear") return "wheel";
+ *  together), so every key in a group opens the same form. An analog or
+ *  digital entry's `sourceKey` is that entry's own config `key` (`sources.ts`),
+ *  so it is looked up in `config` rather than matched against a fixed
+ *  string. `null` only for a `sourceKey` that matches nothing in `config` —
+ *  should not happen once `listSources` and this function agree, but never
+ *  crashes if they briefly don't. */
+function openFormForSourceKey(sourceKey: string, config: DeviceConfig): OpenFormState {
+  if (sourceKey === "imu0" || sourceKey === "imu1" || sourceKey === "imu2") return { kind: "imu" };
+  if (sourceKey === "gps") return { kind: "gps" };
+  if (sourceKey === "wheel_front" || sourceKey === "wheel_rear") return { kind: "wheel" };
+  if (sourceKey === "heart_rate_monitor") return { kind: "hrm" };
+  if (config.analog.channels.some((c) => c.key === sourceKey)) return { kind: "analog", channelKey: sourceKey };
+  if (config.digital.channels.some((c) => c.key === sourceKey)) return { kind: "digital", channelKey: sourceKey };
   return null;
 }
 
@@ -53,12 +74,13 @@ function formatConfigValue(value: number | undefined): string {
  * `SourceView`, showing its enable state, rate and channel count; expanding
  * a row lists its channels with name, units, enable state, and — only for
  * an analog entry — its own config-typed scale/offset. The gear control
- * opens that source's form (SPEC §23.3.1–.3): IMU, GPS and Wheel (Task 6)
- * are wired; Analog, Digital and HRM stay disabled pending Task 7's forms.
+ * opens that source's form (SPEC §23.3.1–.6): IMU, GPS, Wheel, Analog,
+ * Digital and HRM are all wired. A "+ Add channel…" button below the table
+ * opens `AddChannelPicker` (SPEC §8 Q5).
  */
 export default function ChannelsTable({ sources, config, onConfigChange }: ChannelsTableProps) {
   const [expandedKey, setExpandedKey] = useState<string | null>(null);
-  const [openForm, setOpenForm] = useState<FormKind>(null);
+  const [openForm, setOpenForm] = useState<OpenFormState>(null);
 
   return (
     <>
@@ -95,13 +117,13 @@ export default function ChannelsTable({ sources, config, onConfigChange }: Chann
                   <td>{source.enabled ? "On" : "Off"}</td>
                   <td>
                     {(() => {
-                      const kind = formKindForSourceKey(source.sourceKey);
+                      const next = openFormForSourceKey(source.sourceKey, config);
                       return (
                         <button
                           type="button"
                           aria-label={`Configure ${source.label}`}
-                          disabled={kind === null}
-                          onClick={() => setOpenForm(kind)}
+                          disabled={next === null}
+                          onClick={() => setOpenForm(next)}
                         >
                           ⚙
                         </button>
@@ -142,23 +164,30 @@ export default function ChannelsTable({ sources, config, onConfigChange }: Chann
           })}
         </tbody>
       </table>
+    <button type="button" onClick={() => setOpenForm({ kind: "addChannel" })}>
+      + Add channel…
+    </button>
     <OpenForm openForm={openForm} config={config} onConfigChange={onConfigChange} onClose={() => setOpenForm(null)} />
     </>
   );
 }
 
-/** Renders the currently-open source form, if any, below the table itself
- *  rather than nested in a row — the IMU/wheel forms cover three/two rows'
- *  worth of source keys at once, so a per-row popover would have no single
- *  anchor row. */
+/** Renders the currently-open form (or the add-channel picker), if any,
+ *  below the table itself rather than nested in a row — the IMU/wheel forms
+ *  cover three/two rows' worth of source keys at once, so a per-row popover
+ *  would have no single anchor row. */
 function OpenForm({ openForm, config, onConfigChange, onClose }: {
-  openForm: FormKind;
+  openForm: OpenFormState;
   config: DeviceConfig;
   onConfigChange: (next: DeviceConfig) => void;
   onClose: () => void;
 }) {
-  if (openForm === "imu") return <ImuForm config={config} onConfigChange={onConfigChange} onClose={onClose} />;
-  if (openForm === "gps") return <GpsForm config={config} onConfigChange={onConfigChange} onClose={onClose} />;
-  if (openForm === "wheel") return <WheelForm config={config} onConfigChange={onConfigChange} onClose={onClose} />;
-  return null;
+  if (openForm === null) return null;
+  if (openForm.kind === "imu") return <ImuForm config={config} onConfigChange={onConfigChange} onClose={onClose} />;
+  if (openForm.kind === "gps") return <GpsForm config={config} onConfigChange={onConfigChange} onClose={onClose} />;
+  if (openForm.kind === "wheel") return <WheelForm config={config} onConfigChange={onConfigChange} onClose={onClose} />;
+  if (openForm.kind === "hrm") return <HrmForm config={config} onConfigChange={onConfigChange} onClose={onClose} />;
+  if (openForm.kind === "analog") return <AnalogForm config={config} channelKey={openForm.channelKey} onConfigChange={onConfigChange} onClose={onClose} />;
+  if (openForm.kind === "digital") return <DigitalForm config={config} channelKey={openForm.channelKey} onConfigChange={onConfigChange} onClose={onClose} />;
+  return <AddChannelPicker config={config} onConfigChange={onConfigChange} onClose={onClose} />;
 }

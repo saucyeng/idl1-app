@@ -314,6 +314,52 @@ describe("validateConfig", () => {
     expect(issues[0].message).toContain("analog.channels[1].adc_pin");
   });
 
+  it("validateConfig — an analog channel with adc_pin null (unassigned) — an error, so a draft channel can never be pushed (ruling R58)", () => {
+    // Arrange
+    const config = workedConfig();
+    config.analog.channels = [{ key: "strain_left", label: "A", adc_pin: null, units: "kN", scale: 1, offset: 0, enabled: true }];
+
+    // Act
+    const issues = validateConfig(config).filter((i) => i.path === "analog.channels[0].adc_pin");
+
+    // Assert
+    expect(issues).toHaveLength(1);
+    expect(issues[0].severity).toBe("error");
+    expect(issues[0].message).toBe("pin unassigned");
+  });
+
+  it("validateConfig — two analog channels both unassigned (adc_pin null) — each gets its own unassigned error, never a collision error between them", () => {
+    // Arrange
+    const config = workedConfig();
+    config.analog.channels = [
+      { key: "strain_left", label: "A", adc_pin: null, units: "kN", scale: 1, offset: 0, enabled: true },
+      { key: "strain_right", label: "B", adc_pin: null, units: "kN", scale: 1, offset: 0, enabled: true },
+    ];
+
+    // Act
+    const issues = validateConfig(config);
+    const unassigned = issues.filter((i) => i.message === "pin unassigned");
+    const collisions = issues.filter((i) => i.message.includes("both claim pin"));
+
+    // Assert
+    expect(unassigned).toHaveLength(2);
+    expect(collisions).toHaveLength(0);
+  });
+
+  it("validateConfig — a digital channel with gpio_pin null (unassigned) — an error (ruling R58)", () => {
+    // Arrange
+    const config = workedConfig();
+    config.digital.channels = [{ key: "marker_btn", label: "Marker", kind: "marker", gpio_pin: null, active_low: true, debounce_ms: 20, enabled: true }];
+
+    // Act
+    const issues = validateConfig(config).filter((i) => i.path === "digital.channels[0].gpio_pin");
+
+    // Assert
+    expect(issues).toHaveLength(1);
+    expect(issues[0].severity).toBe("error");
+    expect(issues[0].message).toBe("pin unassigned");
+  });
+
   it("validateConfig — a digital channel with kind \"level\" — a warning: the schema reserves it but Spec 1 firmware does not ship it", () => {
     // Arrange
     const config = workedConfig();

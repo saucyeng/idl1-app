@@ -191,6 +191,32 @@ describe("parseConfig", () => {
     ]);
   });
 
+  it("parseConfig — an analog channel with no adc_pin key — adc_pin is null, no Repair (unassigned is a legal draft state, ruling R58)", () => {
+    // Arrange
+    const draftChannel = { key: "strain_left", label: "Strain Left", units: "kN", scale: 1, offset: 0, enabled: true };
+    const json = { ...SPEC_WORKED_EXAMPLE, analog: { sample_rate_hz: 100, channels: [draftChannel] } };
+
+    // Act
+    const result = parseConfig(json);
+
+    // Assert
+    expect(result.config.analog.channels[0].adc_pin).toBeNull();
+    expect(result.repairs).toEqual([]);
+  });
+
+  it("parseConfig — an analog channel's adc_pin is a non-integer — Repair recorded, treated as unassigned (null), never a guessed pin", () => {
+    // Arrange
+    const badChannel = { key: "strain_left", label: "Strain Left", adc_pin: "four", units: "kN", scale: 1, offset: 0, enabled: true };
+    const json = { ...SPEC_WORKED_EXAMPLE, analog: { sample_rate_hz: 100, channels: [badChannel] } };
+
+    // Act
+    const result = parseConfig(json);
+
+    // Assert
+    expect(result.config.analog.channels[0].adc_pin).toBeNull();
+    expect(result.repairs).toEqual([{ path: "analog.channels[0].adc_pin", reason: expect.stringContaining("treated as unassigned") }]);
+  });
+
   it("parseConfig — device_id missing — empty string plus a Repair; the field is read-only, never invented", () => {
     // Arrange
     const { device_id: _omit, ...json } = SPEC_WORKED_EXAMPLE;
@@ -240,7 +266,7 @@ describe("parseConfig", () => {
     expect(result.config.gps.dynamic_model).toBe("automotive");
     expect(result.config.gps.nmea_sentences).toEqual(["GGA"]);
     expect(result.config.digital.channels[0].kind).toBe("marker");
-    expect(result.config.digital.channels[0].gpio_pin).toBe(0);
+    expect(result.config.digital.channels[0].gpio_pin).toBeNull();
     expect(result.config.digital.channels[0].active_low).toBe(false);
     expect(result.config.wheel_speed.front.enabled).toBe(false);
     expect(result.repairs.length).toBeGreaterThan(10);
@@ -299,6 +325,31 @@ describe("serializeConfig", () => {
 
     // Assert
     expect(Object.prototype.hasOwnProperty.call(parsed, "heart_rate_monitor")).toBe(false);
+  });
+
+  it("serializeConfig — an analog channel with adc_pin null — the key is omitted entirely, not written as null (ruling R58: no null-pin shape in the schema)", () => {
+    // Arrange
+    const config: DeviceConfig = defaultConfig("aabbccddeeff");
+    config.analog.channels = [{ key: "strain_left", label: "Strain Left", adc_pin: null, units: "kN", scale: 1, offset: 0, enabled: true }];
+
+    // Act
+    const text = serializeConfig(config);
+    const parsed = JSON.parse(text);
+
+    // Assert
+    expect(Object.prototype.hasOwnProperty.call(parsed.analog.channels[0], "adc_pin")).toBe(false);
+  });
+
+  it("serializeConfig — an analog channel with a real adc_pin — the key is written through unchanged", () => {
+    // Arrange
+    const config: DeviceConfig = defaultConfig("aabbccddeeff");
+    config.analog.channels = [{ key: "strain_left", label: "Strain Left", adc_pin: 4, units: "kN", scale: 1, offset: 0, enabled: true }];
+
+    // Act
+    const parsed = JSON.parse(serializeConfig(config));
+
+    // Assert
+    expect(parsed.analog.channels[0].adc_pin).toBe(4);
   });
 });
 

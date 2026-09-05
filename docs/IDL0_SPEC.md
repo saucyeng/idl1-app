@@ -2092,8 +2092,9 @@ recomputed here.
 
 The ⚙ control opens that source's form: the three `imu0`/`imu1`/`imu2` rows
 and the two `wheel_front`/`wheel_rear` rows each share one form per group
-(§23.3.1, §23.3.3), `gps` opens its own (§23.3.2). An analog, digital or
-heart-rate-monitor row's ⚙ stays disabled until Task 7's forms land.
+(§23.3.1, §23.3.3), `gps` opens its own (§23.3.2), and an analog, digital or
+heart-rate-monitor row opens its own entry's form keyed by that row's
+`sourceKey` (§23.3.4–.6).
 
 Expanding a row lists its channels: **Name · Units · Enabled · Scale ·
 Offset**, where Scale/Offset show only for an `analog.channels[]` entry's
@@ -2109,9 +2110,11 @@ on one SPI bus, analog channels round-robined by the ADC scheduler), the
 rate is shown once at the source row, not per channel — there is no
 per-channel rate to edit independently of the source-level rate.
 
-Hardware-pinned sources (IMU, GPS, Wheel Speed) are always present in a
-profile, shown even when disabled. User-added sources (Analog, Digital
-marker, HRM) appear once added via **+ Add channel…**.
+Hardware-pinned sources (IMU, GPS, Wheel Speed) and the heart rate monitor
+are always present in a profile, shown even when disabled — HRM has no
+picker entry of its own (§23.4) precisely because it is never added or
+removed, only configured. User-added sources (Analog, Digital marker) each
+appear once created via **+ Add channel…**.
 
 **Breakdown row names are the SPEC §5.4 registry channel names, verbatim** —
 `WheelFront`/`WheelRear`, `HR_BPM`, and the GPS row's six children
@@ -2157,9 +2160,90 @@ revolution count, and wheel circumference (mm). Commits through
 Matching `validateConfig`'s own rule (§23.3), a slot's geometry issues show
 only once that slot is enabled.
 
+### 23.3.4 Analog form
+
+`Device/forms/AnalogForm.tsx` edits one `analog.channels[]` entry: label,
+units, ADC pin, scale, offset and enable flag, plus Delete. Commits through
+`Device/config/edit.ts`'s `upsertAnalogChannel` (both a new draft entry from
+the picker and every field edit here go through the same function — a new
+channel's `key` is already unique by construction, so "insert" and "replace
+in place" are the same operation from `upsertAnalogChannel`'s point of
+view) and `removeAnalogChannel`.
+
+The ADC pin control is a plain non-negative-integer input, starting empty
+when the pin is unassigned (`adc_pin: null`), never a `<select>` — SPEC §8
+states no valid `adc_pin` range or numbering scheme for a picker to
+enumerate (ruling R58, `runs/2026-09-03/decisions.md`), so the app never
+invents one or auto-selects a pin on the user's behalf. `validateConfig`
+reports an unassigned pin as a push-blocking error and a pin shared with
+another analog or digital entry as a collision error; this form shows both
+inline, never snapping or rejecting the keystroke itself. **The pin input
+is unconstrained until SPEC §8 states the device's valid `adc_pin` value
+set** (or maps it to §3.7's named connector nets) — when it does, the
+input becomes a select and the validator gains a range rule, in one task,
+with no model change.
+
+### 23.3.5 Digital form
+
+`Device/forms/DigitalForm.tsx` edits one `digital.channels[]` entry: label,
+GPIO pin, active-low polarity, debounce window (ms) and enable flag, plus
+Delete. `kind` is shown as read-only text, never a picker — Spec 1 only
+ever creates `"marker"` entries (§23.4's picker); `"level"`/`"pwm"` are
+reserved in the schema (§8) but not exposed for editing even on an entry a
+loaded config file already carries with one of those kinds. Commits through
+`upsertDigitalChannel`/`removeDigitalChannel`, same pattern as the Analog
+form. The GPIO pin control is the same unconstrained non-negative-integer
+input as the Analog form's, for the same reason (§23.3.4); the same
+"unconstrained until SPEC §8 states a value set" note applies.
+
+### 23.3.6 HRM form
+
+`Device/forms/HrmForm.tsx` edits `heart_rate_monitor`: an enable flag, a
+**Search nearby** action, manual address entry, and an informational
+device-name field, plus Forget.
+
+Search nearby runs `bleScan` (C3 §3.8) for a fixed window and lists every
+BLE device found, each with a Select action. `bleScan`'s `DeviceDiscovered`
+shape carries no service-UUID filter, so the app cannot narrow this list to
+heart-rate straps specifically (Parity gap noted in
+`runs/2026-09-05/lanes/l7/IPC-NEEDS.md`) — the form lists everything and
+the user picks by name. Selecting a result writes its identifier into
+`device_address` and its name into `device_name` verbatim and sets
+`enabled: true`, through `setHrm`. On a platform where the discovered
+identifier is not the colon-separated uppercase-hex MAC SPEC §8 states,
+`validateConfig`'s `BLE_ADDRESS_RE` check reports it as an invalid address
+rather than the form silently reformatting or discarding it — visible, not
+silent, the same stance ruling R58 takes on an unassigned pin.
+
+The address field also accepts manual uppercase-hex entry, validated the
+same way. Forget calls `clearHrm`, removing the block entirely (SPEC §8:
+an absent block is equivalent to `enabled: false`) rather than leaving a
+`{ enabled: false, ... }` shape behind. The form states plainly that the
+device logs HR_BPM (channel 22) and HR_RR (channel 23) while enabled
+(SPEC §5.2).
+
 ### 23.4 `+ Add channel…` picker
 
-A modal listing sources the user can add — driven by `kChannelSourceFactories` in code. Selecting an entry creates a new `ChannelSource` instance with default values, opens its dialog, and commits to the active profile on save. Spec 1 ships **Analog channel** and **Marker button**. Spec 2 adds **Heart Rate Monitor**.
+`Device/forms/AddChannelPicker.tsx` lists `Device/config/newChannel.ts`'s
+`addChannelOptions(config)`: **Wheel front**, **Wheel rear** (each toggles
+that slot's existing `enabled` flag via `setWheelSlot` rather than creating
+a new entry — a config has exactly one front and one rear slot — and is
+disabled once that slot is already enabled), **Analog channel** (creates a
+new draft `AnalogChannel` via `newAnalogChannel`) and **Marker button**
+(creates a new draft `DigitalChannel` via `newDigitalMarker`). Spec 1 does
+not expose **Heart Rate Monitor** as a picker choice — the HRM source
+always exists as one fixed row in the channels table (§23.3), configured
+through §23.3.6's form directly, never added or removed.
+
+Both `newAnalogChannel` and `newDigitalMarker` generate a key of the form
+`"analog_N"`/`"marker_N"` that never collides with an existing key in the
+config (never idl0's literal `"__new__"`, which collided on a second add)
+and seed SPEC §8's example-shape defaults (`enabled: true, scale: 1,
+offset: 0` for analog; `kind: "marker", active_low: true, debounce_ms: 20`
+for digital) with an unassigned pin (§23.3.4/.5). Choosing an option
+commits immediately and closes the picker; the new row then appears in the
+channels table like any other source, and the user opens its own gear
+control to fill in the label, pin and other fields.
 
 ### 23.5 Calibration
 

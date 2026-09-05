@@ -1,6 +1,20 @@
 import { describe, expect, it } from "vitest";
 
-import { clearHrm, setGps, setHrm, setImuAxis, setImuModeFlags, setImuRanges, setImuRate, setImuSlot, setWheelSlot } from "./edit";
+import {
+  clearHrm,
+  removeAnalogChannel,
+  removeDigitalChannel,
+  setGps,
+  setHrm,
+  setImuAxis,
+  setImuModeFlags,
+  setImuRanges,
+  setImuRate,
+  setImuSlot,
+  setWheelSlot,
+  upsertAnalogChannel,
+  upsertDigitalChannel,
+} from "./edit";
 import { defaultConfig } from "./defaults";
 import type { DeviceConfig } from "./model";
 
@@ -137,6 +151,97 @@ describe("setWheelSlot", () => {
   });
 });
 
+describe("upsertAnalogChannel", () => {
+  it("upsertAnalogChannel — a key not yet in analog.channels — appended, digital.channels untouched", () => {
+    // Arrange
+    const config = workedExampleConfig();
+    const channel = { key: "strain_left", label: "Strain Left", adc_pin: 4, units: "kN", scale: 0.0123, offset: -1.5, enabled: true };
+
+    // Act
+    const result = upsertAnalogChannel(config, channel);
+
+    // Assert
+    expect(result.analog.channels).toEqual([channel]);
+    expect(result.digital.channels).toEqual(config.digital.channels);
+  });
+
+  it("upsertAnalogChannel — a key already in analog.channels — that entry is replaced in place, other entries untouched", () => {
+    // Arrange
+    const config = workedExampleConfig();
+    const first = { key: "strain_left", label: "Strain Left", adc_pin: 4, units: "kN", scale: 1, offset: 0, enabled: true };
+    const second = { key: "strain_right", label: "Strain Right", adc_pin: 5, units: "kN", scale: 1, offset: 0, enabled: true };
+    config.analog.channels = [first, second];
+    const updatedFirst = { ...first, label: "Strain Left (renamed)", scale: 0.05 };
+
+    // Act
+    const result = upsertAnalogChannel(config, updatedFirst);
+
+    // Assert
+    expect(result.analog.channels).toEqual([updatedFirst, second]);
+  });
+});
+
+describe("removeAnalogChannel", () => {
+  it("removeAnalogChannel — a key present in analog.channels — that entry is gone, others untouched", () => {
+    // Arrange
+    const config = workedExampleConfig();
+    const first = { key: "strain_left", label: "A", adc_pin: 4, units: "kN", scale: 1, offset: 0, enabled: true };
+    const second = { key: "strain_right", label: "B", adc_pin: 5, units: "kN", scale: 1, offset: 0, enabled: true };
+    config.analog.channels = [first, second];
+
+    // Act
+    const result = removeAnalogChannel(config, "strain_left");
+
+    // Assert
+    expect(result.analog.channels).toEqual([second]);
+  });
+});
+
+describe("upsertDigitalChannel", () => {
+  it("upsertDigitalChannel — a key not yet in digital.channels — appended, analog.channels untouched", () => {
+    // Arrange
+    const config = workedExampleConfig();
+    const channel = { key: "marker_1", label: "Marker", kind: "marker" as const, gpio_pin: 21, active_low: true, debounce_ms: 20, enabled: true };
+
+    // Act
+    const result = upsertDigitalChannel(config, channel);
+
+    // Assert
+    expect(result.digital.channels).toEqual([channel]);
+    expect(result.analog.channels).toEqual(config.analog.channels);
+  });
+
+  it("upsertDigitalChannel — a key already in digital.channels — that entry is replaced in place", () => {
+    // Arrange
+    const config = workedExampleConfig();
+    const channel = { key: "marker_1", label: "Marker", kind: "marker" as const, gpio_pin: 21, active_low: true, debounce_ms: 20, enabled: true };
+    config.digital.channels = [channel];
+    const updated = { ...channel, debounce_ms: 50 };
+
+    // Act
+    const result = upsertDigitalChannel(config, updated);
+
+    // Assert
+    expect(result.digital.channels).toEqual([updated]);
+  });
+});
+
+describe("removeDigitalChannel", () => {
+  it("removeDigitalChannel — a key present in digital.channels — that entry is gone, others untouched", () => {
+    // Arrange
+    const config = workedExampleConfig();
+    const first = { key: "marker_1", label: "A", kind: "marker" as const, gpio_pin: 21, active_low: true, debounce_ms: 20, enabled: true };
+    const second = { key: "marker_2", label: "B", kind: "marker" as const, gpio_pin: 22, active_low: true, debounce_ms: 20, enabled: true };
+    config.digital.channels = [first, second];
+
+    // Act
+    const result = removeDigitalChannel(config, "marker_1");
+
+    // Assert
+    expect(result.digital.channels).toEqual([second]);
+  });
+});
+
 describe("setHrm then clearHrm", () => {
   it("setHrm then clearHrm — the block is removed entirely (config.heart_rate_monitor is undefined), matching idl0's Forget (SPEC §8: omitting the block equals disabled)", () => {
     // Arrange
@@ -162,6 +267,8 @@ describe("every edit function — immutability", () => {
     const beforeGps = JSON.parse(JSON.stringify(config.gps));
     const beforeWheel = JSON.parse(JSON.stringify(config.wheel_speed));
     const beforeHrm = JSON.parse(JSON.stringify(config.heart_rate_monitor));
+    const beforeAnalog = JSON.parse(JSON.stringify(config.analog));
+    const beforeDigital = JSON.parse(JSON.stringify(config.digital));
 
     // Act
     setImuRate(config, 104);
@@ -173,11 +280,17 @@ describe("every edit function — immutability", () => {
     setWheelSlot(config, "rear", { enabled: false });
     setHrm(config, { device_name: "Different Strap" });
     clearHrm(config);
+    upsertAnalogChannel(config, { key: "new_analog", label: "New", adc_pin: null, units: "", scale: 1, offset: 0, enabled: true });
+    removeAnalogChannel(config, "nonexistent");
+    upsertDigitalChannel(config, { key: "new_marker", label: "New", kind: "marker", gpio_pin: null, active_low: true, debounce_ms: 20, enabled: true });
+    removeDigitalChannel(config, "nonexistent");
 
     // Assert
     expect(config.imu).toEqual(beforeImu);
     expect(config.gps).toEqual(beforeGps);
     expect(config.wheel_speed).toEqual(beforeWheel);
     expect(config.heart_rate_monitor).toEqual(beforeHrm);
+    expect(config.analog).toEqual(beforeAnalog);
+    expect(config.digital).toEqual(beforeDigital);
   });
 });

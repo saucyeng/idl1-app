@@ -1,4 +1,4 @@
-import type { DeviceConfig, GpsBlock, HrmBlock, ImuBlock, ImuSlot, WheelSlot } from "./model";
+import type { AnalogChannel, DeviceConfig, DigitalChannel, GpsBlock, HrmBlock, ImuBlock, ImuSlot, WheelSlot } from "./model";
 
 /** The three `ImuBlock` sub-block keys (SPEC §8's per-IMU sub-blocks),
  *  shared by every IMU edit operation's `slot` parameter. */
@@ -80,6 +80,55 @@ export function setGps(config: DeviceConfig, patch: Partial<GpsBlock>): DeviceCo
  */
 export function setWheelSlot(config: DeviceConfig, side: WheelSide, patch: Partial<WheelSlot>): DeviceConfig {
   return { ...config, wheel_speed: { ...config.wheel_speed, [side]: { ...config.wheel_speed[side], ...patch } } };
+}
+
+/**
+ * Inserts `channel` into `config.analog.channels` if no entry there shares
+ * its `key`, or replaces the matching entry in place (same array position)
+ * otherwise. `newChannel.ts`'s `newAnalogChannel` and `AnalogForm`'s own
+ * field edits both go through this single function, so "add" and "edit"
+ * are the same operation — only whether `channel.key` is already present
+ * differs.
+ */
+export function upsertAnalogChannel(config: DeviceConfig, channel: AnalogChannel): DeviceConfig {
+  const index = config.analog.channels.findIndex((c) => c.key === channel.key);
+  const channels =
+    index === -1
+      ? [...config.analog.channels, channel]
+      : config.analog.channels.map((c, i) => (i === index ? channel : c));
+  return { ...config, analog: { ...config.analog, channels } };
+}
+
+/**
+ * Removes the `analog.channels` entry whose `key` is `key`, leaving every
+ * other entry (and its position) untouched. A `key` not present is a no-op
+ * — the caller (a Delete button on an already-removed row) gets back an
+ * equivalent config rather than an error.
+ */
+export function removeAnalogChannel(config: DeviceConfig, key: string): DeviceConfig {
+  return { ...config, analog: { ...config.analog, channels: config.analog.channels.filter((c) => c.key !== key) } };
+}
+
+/**
+ * Inserts `channel` into `config.digital.channels` if no entry there shares
+ * its `key`, or replaces the matching entry in place otherwise — same rule
+ * as {@link upsertAnalogChannel}.
+ */
+export function upsertDigitalChannel(config: DeviceConfig, channel: DigitalChannel): DeviceConfig {
+  const index = config.digital.channels.findIndex((c) => c.key === channel.key);
+  const channels =
+    index === -1
+      ? [...config.digital.channels, channel]
+      : config.digital.channels.map((c, i) => (i === index ? channel : c));
+  return { ...config, digital: { ...config.digital, channels } };
+}
+
+/**
+ * Removes the `digital.channels` entry whose `key` is `key` — same rule as
+ * {@link removeAnalogChannel}.
+ */
+export function removeDigitalChannel(config: DeviceConfig, key: string): DeviceConfig {
+  return { ...config, digital: { ...config.digital, channels: config.digital.channels.filter((c) => c.key !== key) } };
 }
 
 /**

@@ -76,7 +76,12 @@ export interface GpsBlock {
 export interface AnalogChannel {
   key: string;
   label: string;
-  adc_pin: number;
+  /** `null` means unassigned — a draft channel the user has not wired to a
+   *  physical pin yet (ruling R58). SPEC §8 states no valid `adc_pin` range,
+   *  so the app never invents one or auto-selects a pin; `validateConfig`
+   *  treats an unassigned pin as a push-blocking error. Omitted entirely on
+   *  serialise when `null` — the schema itself has no null-pin shape. */
+  adc_pin: number | null;
   units: string;
   scale: number;
   offset: number;
@@ -88,7 +93,9 @@ export interface DigitalChannel {
   key: string;
   label: string;
   kind: "marker" | "level" | "pwm";
-  gpio_pin: number;
+  /** `null` means unassigned, same rule and rationale as
+   *  {@link AnalogChannel.adc_pin} (ruling R58). */
+  gpio_pin: number | null;
   active_low: boolean;
   /** ms. Software debounce window for `marker`/`level` kinds. */
   debounce_ms: number;
@@ -421,12 +428,26 @@ function readGps(value: unknown, path: string, repairs: Repair[]): GpsBlock {
   };
 }
 
+/** Reads `obj[key]` as a physical pin number (`adc_pin`/`gpio_pin`): absence
+ *  is a legal draft state — unassigned, `null`, no `Repair` (ruling R58) —
+ *  since SPEC §8 states no default pin and the app never invents one; a
+ *  present value that is not an integer is malformed and is repaired to
+ *  `null` (unassigned) rather than to a guessed pin number, so a malformed
+ *  pin never silently becomes a real-looking one. */
+function readPin(obj: Record<string, unknown>, key: string, path: string, repairs: Repair[]): number | null {
+  const value = obj[key];
+  if (value === undefined) return null;
+  if (typeof value === "number" && Number.isInteger(value)) return value;
+  repairs.push({ path, reason: `expected an integer pin number, got ${describeType(value)}; treated as unassigned` });
+  return null;
+}
+
 /** Reads one `analog.channels[]` entry. */
 function readAnalogChannel(item: Record<string, unknown>, path: string, repairs: Repair[]): AnalogChannel {
   return {
     key: readString(item, "key", "", `${path}.key`, repairs),
     label: readString(item, "label", "", `${path}.label`, repairs),
-    adc_pin: readNumber(item, "adc_pin", 0, `${path}.adc_pin`, repairs),
+    adc_pin: readPin(item, "adc_pin", `${path}.adc_pin`, repairs),
     units: readString(item, "units", "", `${path}.units`, repairs),
     scale: readNumber(item, "scale", 1, `${path}.scale`, repairs),
     offset: readNumber(item, "offset", 0, `${path}.offset`, repairs),
@@ -461,7 +482,7 @@ function readDigitalChannel(item: Record<string, unknown>, path: string, repairs
     key: readString(item, "key", "", `${path}.key`, repairs),
     label: readString(item, "label", "", `${path}.label`, repairs),
     kind: readDigitalKind(item, `${path}.kind`, repairs),
-    gpio_pin: readNumber(item, "gpio_pin", 0, `${path}.gpio_pin`, repairs),
+    gpio_pin: readPin(item, "gpio_pin", `${path}.gpio_pin`, repairs),
     active_low: readBoolean(item, "active_low", false, `${path}.active_low`, repairs),
     debounce_ms: readNumber(item, "debounce_ms", 20, `${path}.debounce_ms`, repairs),
     enabled: readBoolean(item, "enabled", true, `${path}.enabled`, repairs),
@@ -581,6 +602,32 @@ export function parseConfig(json: unknown): ParseResult {
   return { config, repairs };
 }
 
+/** Serialises one `AnalogChannel`, omitting `adc_pin` entirely when
+ *  unassigned (`null`) — SPEC §8's schema has no null-pin shape, so an
+ *  unassigned channel is written the same way idl0 wrote a channel that
+ *  had never had the field set at all (ruling R58). Field order matches
+ *  SPEC §8's worked example. */
+function serializeAnalogChannel(channel: AnalogChannel): Record<string, unknown> {
+  const out: Record<string, unknown> = { key: channel.key, label: channel.label };
+  if (channel.adc_pin !== null) out.adc_pin = channel.adc_pin;
+  out.units = channel.units;
+  out.scale = channel.scale;
+  out.offset = channel.offset;
+  out.enabled = channel.enabled;
+  return out;
+}
+
+/** Serialises one `DigitalChannel`, omitting `gpio_pin` when unassigned
+ *  (`null`), same rule as {@link serializeAnalogChannel}. */
+function serializeDigitalChannel(channel: DigitalChannel): Record<string, unknown> {
+  const out: Record<string, unknown> = { key: channel.key, label: channel.label, kind: channel.kind };
+  if (channel.gpio_pin !== null) out.gpio_pin = channel.gpio_pin;
+  out.active_low = channel.active_low;
+  out.debounce_ms = channel.debounce_ms;
+  out.enabled = channel.enabled;
+  return out;
+}
+
 /**
  * Serialises `config` back to the `idl0_config.json` text `push_config`
  * accepts. `unknown` keys are re-emitted verbatim at the top level, and a
@@ -596,8 +643,8 @@ export function serializeConfig(config: DeviceConfig): string {
     bike_profile: config.bike_profile,
     imu: config.imu,
     gps: config.gps,
-    analog: config.analog,
-    digital: config.digital,
+    analog: { sample_rate_hz: config.analog.sample_rate_hz, channels: config.analog.channels.map(serializeAnalogChannel) },
+    digital: { channels: config.digital.channels.map(serializeDigitalChannel) },
     wheel_speed: config.wheel_speed,
   };
   if (config.heart_rate_monitor !== undefined) {
