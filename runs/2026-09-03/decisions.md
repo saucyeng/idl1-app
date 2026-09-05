@@ -2322,3 +2322,48 @@ failed gate), and reporting it beat silently obeying the letter.
 that no authorised command in that brief compiles. Task 12's dispatch
 adds one `cargo check -p app`, accepted as expensive (it builds the Tauri
 graph) and worth it once, overnight, before Task 14 depends on it.
+
+## 2026-09-05 — R49: a duplicated `[Name]` resolves to the first definition in document order
+
+Task 11's review (CLEAN on everything else, including an independently
+re-derived R47 fix and a clean one-off `cargo check -p app`) found the
+sub-question R47 didn't reach: with a name defined in two cells, a third
+cell's `[Name]` reference resolves **order-dependently** — by fixed-point
+pass, then document position — with no test pinning it. Narrow, because
+it requires an already-invalid document, but genuinely order-dependent
+rather than theoretical, so an unrelated edit could silently swing a
+reference from one definition to the other.
+
+Two candidate rules. **Rejected:** make a reference to a duplicated name
+an error on the referencing cell. It is the more "correct" answer, but it
+buries the one signal the user needs — the `DuplicateDefinition` error
+naming the actual mistake — under cascading errors in every cell that
+merely mentions the name.
+
+**Ruled: first definition in document order wins**, deterministically and
+by explicit construction rather than as a side effect of iteration order,
+documented on the function and pinned by a test. The decisive argument is
+precedent: `merge_constants` already resolves exactly this collision the
+same way — "the first declaration of a name wins its table entry, and
+every later colliding declaration is reported" (L3-R16/R17). Two
+different rules for the same shape of collision in one document format
+would be worse than either rule alone.
+
+The user is not left guessing: the duplicate is still reported on the
+offending cell, so the document says plainly what is wrong while
+references behave predictably.
+
+**Cost if wrong:** a user with a duplicate sees results computed from the
+first definition rather than the second, while looking at an error that
+names the duplication. Recoverable by reading the error; the alternative
+was a value that changes under unrelated edits.
+
+**Minor accepted, with a guard:** the new `sanitize_file_name_stem` does
+not special-case Windows reserved device names (`CON`, `PRN`, `NUL`,
+`COM1`-`9`, `LPT1`-`9`). The reviewer verified empirically on this
+machine (Win 11 22621) that `CON.idl1wb` and even bare `CON` create as
+ordinary files, so it is not live here — but the failure mode elsewhere
+is an opaque `io` error from `write_atomic` rather than a clear message,
+and this string becomes a real filesystem path. Add the guard: a
+sanitised stem case-insensitively matching a reserved name falls back the
+same way the empty-after-trim case already does.
