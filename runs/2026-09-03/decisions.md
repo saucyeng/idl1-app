@@ -3226,3 +3226,22 @@ resolved-or-flagged ambiguities, ruled:
 
 **Cost if wrong:** 13b is one more task in the lane's critical path; without
 it wave 2 has no interactive chart, which is the milestone.
+
+## 2026-09-05 — R67: `WorkbookEvent` gains `hash` so the notebook can suppress its own writes
+
+C4 §4 requires self-write suppression on the workbook watcher; C3 §3.4's
+landed `WorkbookEvent` carries only `kind` and `cell_ids`, so the UI cannot
+tell its own save's event from an external edit (L6 Task 14's brief flagged
+it; a heuristic on timing would be a guess). **Ruling:** additive C3 §3.4
+amendment — `WorkbookEvent` gains `hash: string`, the `sha256_hex` of the
+file's bytes after the change, computed by the Rust watcher with the same
+helper `read_workbook`/`save_workbook` use. The UI suppresses an event whose
+`hash` equals the hash returned by its own last successful `save_workbook`
+(which returns the new hash — confirm; if not, that return is part of the
+same amendment). Implemented by L8w as **Task 4b** (watcher, `commands/
+workbook.rs`, C3 text spec-during); L6 Task 14 codes the suppression against
+the amended shape behind a typed seam that treats a missing `hash` as
+"unknown ⇒ reload" until the Rust lands.
+
+**Cost if wrong:** one extra field on an event; without it every own save
+triggers a reload and a flash, which is the bug C4 §4 exists to prevent.

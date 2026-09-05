@@ -998,3 +998,7 @@ Open questions 1-3 are ruled in `runs/2026-09-03/decisions.md` R63: (1) `device_
 ## Added by the lead 2026-09-05 (tracked note: math builtin catalog)
 
 Additive task for this lane (after Task 12, before wrap-up): `list_math_builtins() -> { name, arity, unit_rule }[]` in the C3 §3.4 workbook group, a thin wrapper over the catalog `rust/core/src/math/eval.rs` already owns; C3 amended spec-during. The UI swap (a lead shell task) makes `Notebook/model/functionCatalog.ts` verify itself against the command once at startup and log a mismatch.
+
+## Added by the lead 2026-09-05 (R67) -- Task 4b: `WorkbookEvent.hash`
+
+Additive: the workbook watcher (`rust/tauri/src/watcher.rs` + `commands/workbook.rs`) computes `sha256_hex` of the file after each change and emits it as `WorkbookEvent.hash`; `save_workbook` returns the new hash if it does not already. C3 section 3.4 amended spec-during in the same task. Test: an external edit's event carries the file's hash; a save's own event carries the hash `save_workbook` returned. Runs after Task 5.
