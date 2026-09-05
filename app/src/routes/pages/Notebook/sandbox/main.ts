@@ -37,14 +37,24 @@ function postToHost(message: SandboxToHostMessage): void {
   window.parent.postMessage(message, "*");
 }
 
-/** Turns a DOM node into its outer HTML; any other value into its string form. */
-function serializeCellValue(value: unknown): string {
+/**
+ * Renders `value` into `container`'s own DOM (R69 item (a) -- the sandbox
+ * renders each cell's output itself; nothing crosses `postMessage` as an
+ * HTML string for the host to inject). A DOM node (`Plot.plot(...)`'s
+ * usual return, or any `html`-tagged fragment) is appended directly, never
+ * cloned into an HTML string first -- there is no host-side
+ * `dangerouslySetInnerHTML` left to feed. Any other value (a bare number,
+ * string, or object a custom-code cell returns) becomes `textContent`,
+ * never `innerHTML`, so a string value can never be interpreted as markup
+ * even inside this already-isolated realm.
+ */
+function renderCellValue(container: HTMLElement, value: unknown): void {
+  container.replaceChildren();
   if (value instanceof Node) {
-    const container = document.createElement("div");
-    container.appendChild(value.cloneNode(true));
-    return container.innerHTML;
+    container.appendChild(value);
+  } else {
+    container.textContent = String(value);
   }
-  return String(value);
 }
 
 /**
@@ -71,13 +81,69 @@ function materializeHostVar(payload: HostVarPayload): unknown {
 }
 
 /**
+ * Owns every `js` cell's own rendering container inside this document (R69
+ * item (a)): a `position: fixed` `<div>` per cell id, appended to
+ * `document.body`, positioned/sized by the host's `layout` message and
+ * transformed live by the host's `transform` message (item (b)) -- the
+ * host's own `ChartCell` frame is a same-rect, pointer-events-only overlay
+ * (`components/ChartCell.tsx`'s doc comment) that this container's pixels
+ * show through underneath. `position: fixed` matches viewport px 1:1 with
+ * `getBoundingClientRect()`, the coordinate space the host's `layout`
+ * message is computed in.
+ */
+class CellContainers {
+  private readonly byId = new Map<string, HTMLDivElement>();
+
+  /** Returns cell `cellId`'s container, creating and appending it on first use. */
+  get(cellId: string): HTMLDivElement {
+    let container = this.byId.get(cellId);
+    if (container === undefined) {
+      container = document.createElement("div");
+      container.dataset.cellId = cellId;
+      container.style.position = "fixed";
+      container.style.transformOrigin = "left";
+      document.body.appendChild(container);
+      this.byId.set(cellId, container);
+    }
+    return container;
+  }
+
+  /** Applies a host `layout` message's rect to cell `cellId`'s container. */
+  layout(cellId: string, top: number, left: number, width: number): void {
+    const container = this.get(cellId);
+    container.style.top = `${top}px`;
+    container.style.left = `${left}px`;
+    container.style.width = `${width}px`;
+  }
+
+  /** Applies a host `transform` message to cell `cellId`'s container (R69 item (b)). */
+  transform(cellId: string, translateXPx: number, scaleX: number): void {
+    const container = this.byId.get(cellId);
+    if (container === undefined) return;
+    container.style.transform = `translateX(${translateXPx}px) scaleX(${scaleX})`;
+  }
+
+  /** Removes every container -- called on `teardown`, ahead of the whole iframe being discarded. */
+  clear(): void {
+    for (const container of this.byId.values()) {
+      container.remove();
+    }
+    this.byId.clear();
+  }
+}
+
+const cellContainers = new CellContainers();
+
+/**
  * A small custom `Observer` (Runtime's own interface: `pending`/`fulfilled`/
  * `rejected`) rather than `@observablehq/inspector` — that package is not
  * among the eight approved dependencies and is not installed; the brief
- * explicitly allows either. Values render to nothing visible inside this
- * iframe; instead `fulfilled`/`rejected` post the cell's result back to the
- * host as `cellResult`/`cellError`, which is what actually reaches the
- * screen (in the host document).
+ * explicitly allows either. `fulfilled` renders the value into this cell's
+ * own container ({@link CellContainers}) and reports the container's
+ * rendered height back to the host as `cellRendered` (R69 item (a)) --
+ * nothing crosses `postMessage` as a serialized HTML string. `rejected`
+ * still posts `cellError` as plain text (never HTML), and clears the
+ * container so a stale successful render never lingers under a new error.
  */
 function makeObserver(cellId: string) {
   return {
@@ -86,9 +152,13 @@ function makeObserver(cellId: string) {
       // the host's own UI decides how to show "running" (or doesn't).
     },
     fulfilled(value: unknown): void {
-      postToHost({ type: "cellResult", cellId, html: serializeCellValue(value) });
+      const container = cellContainers.get(cellId);
+      renderCellValue(container, value);
+      const heightPx = container.getBoundingClientRect().height;
+      postToHost({ type: "cellRendered", cellId, heightPx });
     },
     rejected(error: unknown): void {
+      cellContainers.get(cellId).replaceChildren();
       const message = error instanceof Error ? error.message : String(error);
       postToHost({ type: "cellError", cellId, message });
     },
@@ -195,14 +265,16 @@ class SandboxRuntime {
    * fallback) so `${…}`'s scope is identical to a `js` cell's, per C2
    * §5.2's "same host-mediated scope" requirement — the difference is only
    * that the result is `String(value)`-coerced and posted as
-   * `inlineResult`/`cellError` instead of becoming a Runtime observer's
+   * `inlineResult`/`spanError` instead of becoming a Runtime observer's
    * `fulfilled`/`rejected` callback.
    *
-   * On success, posts `{ type: "inlineResult", spanId, text }`; on a throw,
-   * posts `{ type: "cellError", cellId: spanId, message }` — reusing the
-   * existing per-cell error channel (`cellId` here is actually a span id,
-   * not a fence-string cell id; see `handleMessage`'s `evalInline` case for
-   * why this reuse was chosen over a third, span-specific error message).
+   * On success, posts `{ type: "inlineResult", spanId, text }`; on a
+   * throw, posts `{ type: "spanError", spanId, message }` (R66 item 2,
+   * L6 Task 13b) — a distinct message from `cellError`, since a span id
+   * and a fence-string cell id are conceptually different and, before
+   * this task, both travelled in `cellError`'s `cellId` slot, which made
+   * a span failure indistinguishable from an actual cell's failure on the
+   * host side.
    */
   evalInline(spanId: string, expr: string): void {
     const inputNames = [...this.boundNames];
@@ -213,7 +285,7 @@ class SandboxRuntime {
       postToHost({ type: "inlineResult", spanId, text: String(value) });
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      postToHost({ type: "cellError", cellId: spanId, message });
+      postToHost({ type: "spanError", spanId, message });
     }
   }
 
@@ -269,12 +341,19 @@ function handleMessage(message: HostToSandboxMessage): void {
     case "evalInline":
       sandboxRuntime?.evalInline(message.spanId, message.expr);
       break;
+    case "transform":
+      cellContainers.transform(message.cellId, message.translateXPx, message.scaleX);
+      break;
+    case "layout":
+      cellContainers.layout(message.cellId, message.top, message.left, message.width);
+      break;
     case "ping":
       postToHost({ type: "pong", nonce: message.nonce });
       break;
     case "teardown":
       sandboxRuntime?.teardown();
       sandboxRuntime = null;
+      cellContainers.clear();
       break;
   }
 }

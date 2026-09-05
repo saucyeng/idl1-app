@@ -1,14 +1,15 @@
 import { describe, expect, test } from "vitest";
 
-import { channelPayload, evalInlineMessage, isHostMessage, type HostVarPayload } from "./protocol";
+import { channelPayload, evalInlineMessage, isHostMessage, layoutMessage, transformMessage, type HostVarPayload } from "./protocol";
 
 describe("isHostMessage", () => {
   test("isHostMessage — every message the sandbox may send — is accepted", () => {
     expect(isHostMessage({ type: "ready" })).toBe(true);
     expect(isHostMessage({ type: "pong", nonce: 7 })).toBe(true);
-    expect(isHostMessage({ type: "cellResult", cellId: "c1", html: "<div></div>" })).toBe(true);
+    expect(isHostMessage({ type: "cellRendered", cellId: "c1", heightPx: 240 })).toBe(true);
     expect(isHostMessage({ type: "cellError", cellId: "c1", message: "boom" })).toBe(true);
     expect(isHostMessage({ type: "inlineResult", spanId: "s1", text: "42" })).toBe(true);
+    expect(isHostMessage({ type: "spanError", spanId: "cell-a:0", message: "boom" })).toBe(true);
   });
 
   test("isHostMessage — an object with an unknown type — is rejected", () => {
@@ -16,7 +17,15 @@ describe("isHostMessage", () => {
   });
 
   test("isHostMessage — a message whose payload fields are the wrong type — is rejected", () => {
-    expect(isHostMessage({ type: "cellResult", cellId: "c1", html: 42 })).toBe(false);
+    expect(isHostMessage({ type: "cellRendered", cellId: "c1", heightPx: "240" })).toBe(false);
+  });
+
+  test("isHostMessage — a spanError missing spanId — is rejected", () => {
+    expect(isHostMessage({ type: "spanError", message: "boom" })).toBe(false);
+  });
+
+  test("isHostMessage — a spanError missing message — is rejected", () => {
+    expect(isHostMessage({ type: "spanError", spanId: "cell-a:0" })).toBe(false);
   });
 });
 
@@ -68,5 +77,21 @@ describe("evalInlineMessage", () => {
     const message = evalInlineMessage("cell-a:0", "count(fork_bottom_out)");
 
     expect(message).toEqual({ type: "evalInline", spanId: "cell-a:0", expr: "count(fork_bottom_out)" });
+  });
+});
+
+describe("transformMessage", () => {
+  test("transformMessage — a cell id and a gesture-frame transform — builds the exact transform wire shape", () => {
+    const message = transformMessage("cell-a", -12.5, 1.2);
+
+    expect(message).toEqual({ type: "transform", cellId: "cell-a", translateXPx: -12.5, scaleX: 1.2 });
+  });
+});
+
+describe("layoutMessage", () => {
+  test("layoutMessage — a cell id and a client rect — builds the exact layout wire shape", () => {
+    const message = layoutMessage("cell-a", { top: 100, left: 8, width: 640 });
+
+    expect(message).toEqual({ type: "layout", cellId: "cell-a", top: 100, left: 8, width: 640 });
   });
 });

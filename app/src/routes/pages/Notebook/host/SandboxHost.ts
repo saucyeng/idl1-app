@@ -4,7 +4,16 @@
  * `<iframe>`); the pure protocol validation and watchdog scheduling it
  * delegates to are tested in `protocol.test.ts`/`watchdog.test.ts`.
  */
-import { channelPayload, evalInlineMessage, isHostMessage, type HostToSandboxMessage, type HostVarPayload, type SandboxCell } from "./protocol";
+import {
+  channelPayload,
+  evalInlineMessage,
+  isHostMessage,
+  layoutMessage,
+  transformMessage,
+  type HostToSandboxMessage,
+  type HostVarPayload,
+  type SandboxCell,
+} from "./protocol";
 import { OutboundQueue } from "./outboundQueue";
 import { replayInitAndHostVars, replaySetCells } from "./rebuildReplay";
 import { createWatchdog, type Watchdog } from "./watchdog";
@@ -32,12 +41,20 @@ const SANDBOX_PATH = "src/routes/pages/Notebook/sandbox/index.html";
 
 /** Called once per completed `postMessage` round trip the host cares about. */
 export interface SandboxHostCallbacks {
-  /** A cell finished and rendered; `html` is the serialized result. */
-  onCellResult: (cellId: string, html: string) => void;
+  /**
+   * A cell finished and rendered inside the sandbox's own DOM (R69 item
+   * (a)); `heightPx` is that cell's rendered container height, in CSS px,
+   * for the host to size its own gesture-capturing frame
+   * (`components/ChartCell.tsx`) to match. No HTML crosses this boundary —
+   * the sandbox never hands the host a string to inject.
+   */
+  onCellRendered: (cellId: string, heightPx: number) => void;
   /** A cell threw; `message` is the error text. */
   onCellError: (cellId: string, message: string) => void;
   /** An inline `${…}` span resolved. */
   onInlineResult: (spanId: string, text: string) => void;
+  /** An inline `${…}` span's evaluation threw (R66 item 2, distinct from `onCellError`). */
+  onSpanError: (spanId: string, message: string) => void;
   /**
    * Called once per rebuild, after the new iframe's `init`/JSON-host-var
    * replay has been queued but before `setCells` (see `rebuild()`'s doc
@@ -106,14 +123,17 @@ export class SandboxHost {
       case "pong":
         this.watchdog.onPong();
         break;
-      case "cellResult":
-        this.callbacks.onCellResult(message.cellId, message.html);
+      case "cellRendered":
+        this.callbacks.onCellRendered(message.cellId, message.heightPx);
         break;
       case "cellError":
         this.callbacks.onCellError(message.cellId, message.message);
         break;
       case "inlineResult":
         this.callbacks.onInlineResult(message.spanId, message.text);
+        break;
+      case "spanError":
+        this.callbacks.onSpanError(message.spanId, message.message);
         break;
     }
   };
@@ -196,6 +216,31 @@ export class SandboxHost {
    */
   evalInline(spanId: string, expr: string): void {
     this.postToSandbox(evalInlineMessage(spanId, expr));
+  }
+
+  /**
+   * Sends one gesture frame's CSS transform for cell `cellId` (R69 item
+   * (b)) — `postMessage`, not IPC, and not replayed after a rebuild
+   * (`rebuild()`'s doc comment): a live gesture's transform is derived,
+   * disposable state, and a rebuilt sandbox starts every bound channel's
+   * picture untransformed at its last-settled viewport, same as before a
+   * gesture began.
+   */
+  sendTransform(cellId: string, translateXPx: number, scaleX: number): void {
+    this.postToSandbox(transformMessage(cellId, translateXPx, scaleX));
+  }
+
+  /**
+   * Sends cell `cellId`'s current on-screen rectangle (`getBoundingClientRect()`,
+   * viewport px) so the sandbox can position that cell's own rendered
+   * container to appear under the host's same-rect gesture frame
+   * (`components/ChartCell.tsx`). Not replayed after a rebuild — the
+   * caller re-sends layout once the rebuilt iframe's `ready` (and this
+   * cell's next `cellRendered`) round-trips, the same way it did on first
+   * mount.
+   */
+  sendLayout(cellId: string, rect: { top: number; left: number; width: number }): void {
+    this.postToSandbox(layoutMessage(cellId, rect));
   }
 
   /**

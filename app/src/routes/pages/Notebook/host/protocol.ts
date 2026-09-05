@@ -31,6 +31,8 @@ export type HostToSandboxMessage =
   | { type: "setCells"; cells: SandboxCell[] }
   | { type: "setHostVar"; name: string; value: HostVarPayload }
   | { type: "evalInline"; spanId: string; expr: string }
+  | { type: "transform"; cellId: string; translateXPx: number; scaleX: number }
+  | { type: "layout"; cellId: string; top: number; left: number; width: number }
   | { type: "ping"; nonce: number }
   | { type: "teardown" };
 
@@ -50,13 +52,48 @@ export function evalInlineMessage(spanId: string, expr: string): Extract<HostToS
   return { type: "evalInline", spanId, expr };
 }
 
+/**
+ * Builds a `transform` message (R69 item (b)): one gesture frame's CSS
+ * transform, sent host->sandbox via `postMessage` (never IPC) so the
+ * sandbox can apply it to that cell's own rendered Plot with no re-fetch,
+ * mirroring `ChartCell`'s existing local `transformFor` application to its
+ * host-rendered raster underlay. `translateXPx` in CSS px, `scaleX`
+ * dimensionless (`model/viewport.ts`'s `transformFor` return shape).
+ */
+export function transformMessage(
+  cellId: string,
+  translateXPx: number,
+  scaleX: number
+): Extract<HostToSandboxMessage, { type: "transform" }> {
+  return { type: "transform", cellId, translateXPx, scaleX };
+}
+
+/**
+ * Builds a `layout` message: this cell's on-screen rectangle, in viewport
+ * px (`getBoundingClientRect()`), so the sandbox can absolutely position
+ * that cell's own rendered container to appear under the host's
+ * gesture-capturing frame at the right document position -- a plumbing
+ * addition beyond R69's two named messages (`cellRendered`/`transform`),
+ * needed because a single shared iframe (design section 6) cannot
+ * otherwise place a cell's picture at the same on-screen spot as its host
+ * placeholder when other cell kinds (prose/math/table) are interleaved
+ * between chart cells in document order. `top`/`left`/`width` in CSS px.
+ */
+export function layoutMessage(
+  cellId: string,
+  rect: { top: number; left: number; width: number }
+): Extract<HostToSandboxMessage, { type: "layout" }> {
+  return { type: "layout", cellId, top: rect.top, left: rect.left, width: rect.width };
+}
+
 /** A message the sandbox iframe sends back to this realm (the host). */
 export type SandboxToHostMessage =
   | { type: "ready" }
   | { type: "pong"; nonce: number }
-  | { type: "cellResult"; cellId: string; html: string }
+  | { type: "cellRendered"; cellId: string; heightPx: number }
   | { type: "cellError"; cellId: string; message: string }
-  | { type: "inlineResult"; spanId: string; text: string };
+  | { type: "inlineResult"; spanId: string; text: string }
+  | { type: "spanError"; spanId: string; message: string };
 
 /** Narrows `unknown` to a non-null object so its fields may be probed. */
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -79,12 +116,14 @@ export function isHostMessage(msg: unknown): msg is SandboxToHostMessage {
       return true;
     case "pong":
       return typeof msg.nonce === "number";
-    case "cellResult":
-      return typeof msg.cellId === "string" && typeof msg.html === "string";
+    case "cellRendered":
+      return typeof msg.cellId === "string" && typeof msg.heightPx === "number";
     case "cellError":
       return typeof msg.cellId === "string" && typeof msg.message === "string";
     case "inlineResult":
       return typeof msg.spanId === "string" && typeof msg.text === "string";
+    case "spanError":
+      return typeof msg.spanId === "string" && typeof msg.message === "string";
     default:
       return false;
   }
