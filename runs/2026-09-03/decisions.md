@@ -3089,3 +3089,19 @@ Task 6's managed connection must verify `BtleplugBle` is `Send` behind
 **Cost if wrong:** (1) a kind nobody raises on desktop yet — harmless; (2)
 a narrower preview than idl0's; (3) two enum variants and a widened union,
 both additive.
+
+## 2026-09-05 — Tracked note: math builtin catalog is a hand copy in TS
+
+L6 Task 11's `model/functionCatalog.ts` (69 builtins for the code pane's
+highlighting/completion) is a hand-transcribed copy of the catalog Rust owns
+in `rust/core/src/math/eval.rs`; the brief forbade reading `rust/` for that
+task, so no cross-check exists. **Ruling:** not a wave-2 blocker (it only
+affects highlighting and completion, never evaluation), but drift is the
+same class of bug R53 Device Q1 was about. Filed for the L8w write lane as
+an additive command `list_math_builtins() → { name, arity, unit_rule }[]`
+(C3 §3.4); the UI then verifies its local catalog against it once at
+startup and logs a mismatch, and later drops the local copy. Added to the
+L8w plan's open items by the lead.
+
+**Cost if wrong:** a builtin highlighted wrong or missing from completion
+until the command lands; evaluation is unaffected.

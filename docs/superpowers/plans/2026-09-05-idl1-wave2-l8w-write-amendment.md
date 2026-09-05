@@ -994,3 +994,7 @@ filter).
 ## Lead rulings 2026-09-05 (R63)
 
 Open questions 1-3 are ruled in `runs/2026-09-03/decisions.md` R63: (1) `device_rejected` ships as specified, mapped only where the transport surfaces an `AckCode`, never faked from error text, `TODO(idl0)` at the transport boundary; (2) `preview_channel_registry` covers the SPEC 5.2 fixed subset only (generic channel-id determinism is a question for Isaac); (3) extend `idl_rs::fft::Averaging` with `None` and `Max` and amend C3's `fetch_fft` averaging union to `"none" | "mean" | "median" | "max"` (Task 12, spec-during). Task briefs cite R63, not this paragraph.
+
+## Added by the lead 2026-09-05 (tracked note: math builtin catalog)
+
+Additive task for this lane (after Task 12, before wrap-up): `list_math_builtins() -> { name, arity, unit_rule }[]` in the C3 §3.4 workbook group, a thin wrapper over the catalog `rust/core/src/math/eval.rs` already owns; C3 amended spec-during. The UI swap (a lead shell task) makes `Notebook/model/functionCatalog.ts` verify itself against the command once at startup and log a mismatch.
