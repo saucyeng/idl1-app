@@ -19,7 +19,12 @@ are defined in `docs/superpowers/specs/2026-09-02-idl1-rewrite-design.md` §10.
 ## Wave 1 (after M0)
 
 - [x] L1 core `store/`
-- [ ] L2 importers
+- [x] L2 importers — GPX/FIT/CSV via a shared Importer trait, golden-tested
+      against hand-built fixtures; core registry (R51 Q2); import_file/
+      list_importers Tauri wiring (L5 Task 9) has landed (`c3464f4`);
+      FIT/GPX GPS_SpeedKmh/GPS_Heading direct-path population deferred
+      pending Isaac's real archive (ledger R23 Q4), tracked as "L2
+      follow-on S/H (post-archive)"
 - [x] L3 core workbook v3 — complete; v2 workbook migration (C2 §6) dropped per R30; tier
   cache (design §4 L3 row) and Stage 2 chart conversion (L6) deferred
 - [x] L4 `idl-transport` desktop — complete pending Isaac's real-device BLE/WiFi check

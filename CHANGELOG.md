@@ -6,6 +6,22 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 
 ### Added
 
+- **L2 importers (wave 1, 2026-09-05).** `GpxImporter` (port of
+  `gpx_parser.dart`), `FitImporter` (`fitparser` 0.9 — L2-R9), `CsvImporter`
+  (trivial, D4) behind a shared `Importer` trait producing C1 §2's
+  `Session`/`Channel` model, with a `core::import::importers()` registry
+  (R51 Q2) enumerating all three for C3 §3.3's `list_importers`. GPS
+  coordinates are physical decimal degrees for every source (ruling R27,
+  superseding an earlier `deg_e7` draft). `store::import::import_file`
+  (L2-R13) generalises `import_idl0`'s pipeline to the three new formats;
+  `synthesize_base_channels` gained a fallback (ledger R23 Q2) so every
+  event-driven FIT/GPX/CSV session still gets a `Time` channel, derived
+  from its longest channel's real recorded time rather than a fabricated
+  rate. `docs/IDL0_SPEC.md` §15a. Golden tests against hand-built FIT/GPX/CSV
+  fixtures — no real device archive used yet; FIT/GPX `GPS_SpeedKmh`/
+  `GPS_Heading` direct-path population is a deferred follow-on pending
+  Isaac's real archive (ledger R23 Q4), tracked as "L2 follow-on S/H
+  (post-archive)".
 - **Wave 2 shell task 3 — `import_file` resolves with `ImportOutcome` (2026-09-05, R60).**
   `ipc/import.ts`'s `importFile` now resolves `ImportOutcome { session:
   SessionSummary; warnings: string[] }` instead of a bare `SessionSummary`
