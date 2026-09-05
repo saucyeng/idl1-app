@@ -138,6 +138,19 @@ calls it and never cancels an in-flight promise because unrelated state
 changed. Reviewers trace every effect's dependency array against what it
 dispatches and grade a self-cancelling effect Critical.
 
+**Tightening (2026-09-05, after a third self-cancel Critical in L6 Task 9):**
+the "no independent decision logic" escape hatch is withdrawn. Every effect
+that starts IPC or `postMessage` work (a) keys its dependency array on data
+only — never on an injected callback or prop function; callbacks live in
+refs; (b) never uses its cleanup to cancel in-flight work; staleness is
+decided by a monotonic sequence (`latestSeq`/`isStaleSettleResult` or an
+equivalent pure guard) when the result arrives; (c) has its "should this
+change trigger work, and is this result still current" decision in a pure
+module with tests for: unrelated prop change ⇒ no cancel/no refetch; data
+change ⇒ exactly one request; stale result ⇒ dropped. Reviewers grade any
+effect that lists a function prop in its dependencies alongside a cancelling
+cleanup as Critical on sight.
+
 ## 5. Sequencing
 
 ```
