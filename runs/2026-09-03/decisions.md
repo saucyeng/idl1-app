@@ -2741,3 +2741,16 @@ task gate: one `vite build` showing the sandbox chunk with `d3` and
 config edit; the alternative (a shell task on `main` pointing at a file that
 does not exist on `main` yet) would break `vite build` on `main` until L6
 merges.
+
+## 2026-09-05 — Tracked note: IMU `low_power_mode` vs `high_performance_mode` — SPEC §8 gap
+
+L7b Task 3's validator selects the IMU ODR table from `imu.low_power_mode`
+alone; SPEC §8 frames the two flags as one physical toggle but never says
+what the firmware does when both are set. **Ruling:** the validator emits a
+*warning* (not an error — inventing a winner would be a guess) when both are
+true; `isPushable` unaffected. **For Isaac:** state in SPEC §8 whether the
+flags are mutually exclusive (then the validator upgrades to an error) or
+which wins (then the table selection follows it). Non-blocking.
+
+**Cost if wrong:** a config the firmware silently reinterprets; the warning
+makes it visible at push time, which is the most the app can honestly do.
