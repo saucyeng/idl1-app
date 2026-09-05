@@ -19,6 +19,25 @@ describe("describeIpcError", () => {
     expect(text).toMatch(/pairing code/i);
   });
 
+  it("describeIpcError — kind not_found — text says the item couldn't be found", () => {
+    const text = describeIpcError({ kind: "not_found", message: "no such peer" });
+
+    expect(text).toMatch(/couldn't be found/i);
+  });
+
+  it("describeIpcError — kind io — text says a file on disk couldn't be read or written", () => {
+    const text = describeIpcError({ kind: "io", message: "EACCES" });
+
+    expect(text).toMatch(/file on disk/i);
+  });
+
+  it("describeIpcError — kind internal — text says something went wrong, not the raw message", () => {
+    const text = describeIpcError({ kind: "internal", message: "panic at line 42" });
+
+    expect(text).toMatch(/went wrong/i);
+    expect(text).not.toMatch(/panic at line 42/i);
+  });
+
   it("describeIpcError — an unknown kind — generic text, never throws", () => {
     const text = describeIpcError({ kind: "some_future_kind", message: "" });
 
