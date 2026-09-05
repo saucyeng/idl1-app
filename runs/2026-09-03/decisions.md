@@ -2676,3 +2676,44 @@ keyed off `duration_ms` is confirmed correct.
 
 **Cost if wrong:** one facet missing for one wave; the amendment is the same
 one already filed for two other facets, so no extra Rust work is created.
+
+## 2026-09-05 — Tracked note: Device tab IMU defaults come from SPEC §8's worked example
+
+L7b Task 2's `defaultConfig` uses 833 Hz / 32 g / 2000 dps for the IMU
+blocks because SPEC §8's prose states no IMU default and only its worked
+example carries values. The reviewer flagged it as an arguable CLAUDE.md §1
+stop. **Lead ruling:** accepted as the *form's initial state* (disclosed in
+the code comment), not as a claim about firmware defaults. 833 Hz matches the
+configured rate observed on Isaac's real session; the range values are the
+hardware's to confirm. **For Isaac:** confirm the firmware's actual IMU
+defaults (rate, accel range, gyro range) so SPEC §8 can state them as
+defaults rather than as an example; L7b adjusts `defaults.ts` in one line
+if they differ. Non-blocking.
+
+**Cost if wrong:** a new-device config form pre-filled with a value the
+firmware would reject — caught at push time by the device, not silently.
+
+## 2026-09-05 — R55: L7 Task 4+ briefs; file picker seam; no free-pin algorithm
+
+Briefs for L7a Tasks 4–8, L7b Tasks 4–9, L7c Tasks 4–6 written against the
+committed code (not the plans). Two questions ruled:
+
+- **L7a Task 5 file picker → seam now, dialog plugin later.** No dialog
+  plugin exists in the repo; adding `@tauri-apps/plugin-dialog` needs an
+  `app/src-tauri` crate + capability change, i.e. a Tauri build. The Data tab
+  builds `pickImportFile()` as a seam whose wave-2 implementation is a
+  pasted-path input; the plugin (npm + crate + capability) is queued for the
+  Rust write-amendment lane and the seam is swapped by a shell task then.
+- **L7b Task 7 "free pin" → none.** SPEC §8 fixes no pin numbering scheme,
+  so the UI never auto-selects a pin: new channels start unassigned (the
+  validator already reports that), and the user picks from the pins the
+  declared range allows, unassigned first.
+
+Also from the brief writer: L7b Task 4 is rewritten (not narrowed) as
+`previewSources()` — enable/rate/unit only, distinct names so nobody reads
+it as IPC need 12 landing early (R53 Device Q1).
+
+**Cost if wrong:** the picker seam costs one swap later; a plugin added now
+would cost a Tauri build inside a UI lane, which §4 forbids. The pin ruling
+costs one extra click per new channel versus a guessed numbering the
+firmware might reject.
