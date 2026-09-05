@@ -1,11 +1,13 @@
 import { useCallback, useEffect, useRef, useState, type PointerEvent, type WheelEvent } from "react";
 
+import type { DecodedRaster, Histogram2dParams, RasterKind, RasterMeta, SpectrogramParams } from "../../../../ipc/rasters";
 import type { DecodedTile } from "../../../../ipc/tiles";
 import { hoverAt, type HoverGeometry } from "../model/hover";
 import { makeSettle } from "../model/settle";
 import { chooseTier, tileRange } from "../model/tiers";
 import { ensureTiles, type TileCache, type TileCacheKey } from "../model/tileCache";
 import { clampTo, panBy, transformFor, zoomAt, type Viewport } from "../model/viewport";
+import RasterUnderlay from "./RasterUnderlay";
 
 /** The value a successful {@link hoverAt} lookup adds to on-screen hover state. */
 interface HoverReading {
@@ -81,14 +83,46 @@ export interface ChartCellProps {
    * are guaranteed contiguous by construction, not by hover's own checking.
    */
   onViewportSettled: (viewport: Viewport, tier: number, tiles: DecodedTile[]) => void;
+  /**
+   * Present only for a raster-kind cell (Task 9: spectrogram or 2-D
+   * histogram density under this cell's Plot axes). When set,
+   * {@link RasterUnderlay} replaces the plain `<canvas
+   * className="chart-cell-underlay">` placeholder and fetches/draws a
+   * raster whenever this cell's settled `viewport` prop changes (never on a
+   * live gesture frame, never on every render — see
+   * `RasterUnderlay`'s own doc comment). `undefined` for a line-only cell,
+   * which renders the placeholder canvas unused/empty as before.
+   */
+  raster?: {
+    kind: RasterKind;
+    params: SpectrogramParams | Histogram2dParams;
+    devicePixelRatio: number;
+    fetchRaster: (
+      sessionId: string,
+      channel: string,
+      kind: RasterKind,
+      width: number,
+      height: number,
+      params: SpectrogramParams | Histogram2dParams
+    ) => Promise<DecodedRaster>;
+    fetchRasterMeta: (
+      sessionId: string,
+      channel: string,
+      kind: RasterKind,
+      width: number,
+      height: number,
+      params: SpectrogramParams | Histogram2dParams
+    ) => Promise<RasterMeta>;
+  };
 }
 
 /**
  * The chart frame for one notebook cell (design §6): a positioning
  * container holding the sandbox iframe's rendered Plot output (mounted by
- * `host/SandboxHost.ts`, not this component) plus a `<canvas>` raster
- * underlay (its content wired by Task 9) and an absolutely positioned hover
- * tooltip.
+ * `host/SandboxHost.ts`, not this component) plus a raster underlay — either
+ * a plain empty `<canvas className="chart-cell-underlay">` placeholder for a
+ * line-only cell, or {@link RasterUnderlay} (Task 9) for a raster-kind cell
+ * (the `raster` prop) — and an absolutely positioned hover tooltip.
  *
  * Pan (drag) and zoom (wheel) update local viewport state and the CSS
  * transform (`transformFor`) only, every frame — neither `onPointerMove` nor
@@ -121,6 +155,7 @@ export default function ChartCell({
   cache,
   fetchTile,
   onViewportSettled,
+  raster,
 }: ChartCellProps) {
   const [hover, setHover] = useState<HoverReading | null>(null);
   const [liveViewport, setLiveViewport] = useState<Viewport>(viewport);
@@ -257,12 +292,27 @@ export default function ChartCell({
           transformOrigin: "left",
         }}
       >
-        <canvas
-          className="chart-cell-underlay"
-          width={width}
-          height={height}
-          style={{ position: "absolute", inset: 0, pointerEvents: "none" }}
-        />
+        {raster === undefined ? (
+          <canvas
+            className="chart-cell-underlay"
+            width={width}
+            height={height}
+            style={{ position: "absolute", inset: 0, pointerEvents: "none" }}
+          />
+        ) : (
+          <RasterUnderlay
+            kind={raster.kind}
+            params={raster.params}
+            viewport={viewport}
+            width={width}
+            height={height}
+            devicePixelRatio={raster.devicePixelRatio}
+            sessionId={sessionId}
+            channelId={channelId}
+            fetchRaster={raster.fetchRaster}
+            fetchRasterMeta={raster.fetchRasterMeta}
+          />
+        )}
         <div className="chart-cell-sandbox-mount" style={{ position: "absolute", inset: 0 }} />
       </div>
       {hover !== null && (
