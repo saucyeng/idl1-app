@@ -3136,3 +3136,32 @@ until the command lands; evaluation is unaffected.
 **Cost if wrong:** (1) cross-session variance waits a wave — visible as a
 listed gap. (2) one field fewer on an additive command. (3)/(4) contract
 readings, reversible in a line.
+
+## 2026-09-05 — L2 LANDED (importers, wave 1) + L5 Task 9 (import commands)
+
+Merged `wave1-l2-importers` into idl-rs `main` (`--no-ff`, `7317992`) and
+its docs branch into idl1-app `main`; submodule pointer bumped (`f30df83`).
+Lane gate (Task 8, foreground): `cargo check -p idl-rs-cli --tests`
+Finished; `cargo check -p idl-rs-tauri` Finished; `cargo test -p idl-rs
+-p idl-rs-cli -- --test-threads=4` → idl-rs **899 passed / 0 failed / 1
+ignored**, integration 1, idl-rs-cli 51 — **951 total**. Reviews: Tasks 1–7
+and L5 Task 9 all CLEAN after follow-ups.
+
+**Shipped:** SPEC §15a; `Importer` trait + typed `ImporterError`; GPX, FIT
+(`fitparser` 0.9, epoch offset not double-applied), CSV importers — all
+storing GPS as decimal degrees (R27); `store::import::import_file` over the
+shared blob/parquet/`session.json` pipeline with warnings preserved (R60),
+the post-import hook, the R23 Q2 synthesizer fallback (reach recorded, R61);
+the importer registry (R51 Q2); the Tauri `list_importers`/`import_file`
+commands returning `ImportOutcome { session, warnings }` with every error
+kind mapped (incl. `import_collision`). **Deferred:** the FIT/GPX
+speed/heading direct path ("L2 follow-on S/H (post-archive)") until Isaac's
+archive; incremental catalog insert (R51 Q4, `TODO(idl0)`).
+
+**Process notes:** Task 8's implementer re-ran the full suite three times
+(an output-capture mistake, self-reported; byte-identical results) — the
+brief for L8w's gate says `tee`, not rerun. The lane survived two
+session-limit cutoffs with no lost work.
+
+**Cost if wrong:** import is now a real end-to-end path from the Data tab;
+a regression is a revert of two merge commits and a submodule pointer.
