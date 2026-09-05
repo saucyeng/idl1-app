@@ -110,6 +110,13 @@ reasons in the ledger): the wave-1 five-task blind spot was a test failing
 unnoticed. Cost per run is what we cut — UI gates are seconds, Tauri builds
 are rare, reviewers never build.
 
+**Merging `main` into a lane (R19 pattern, before each task):** a
+`CHANGELOG.md` conflict made of independent bullets under the same heading is
+resolved by keeping both (main's first, then the lane's) and noting
+"CHANGELOG: kept both bullets" in the merge commit. Any conflict in any other
+file is STOP and report — the lead resolves it. (Every concurrent lane adds a
+CHANGELOG bullet per task, so this conflict is expected, not a signal.)
+
 ## 5. Sequencing
 
 ```

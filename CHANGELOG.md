@@ -6,6 +6,10 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 
 ### Added
 
+- **TS coverage reporting added (2026-09-05).** `@vitest/coverage-v8` pinned to vitest's
+  version in `app/package.json`; `app/vitest.config.ts` gains a `coverage` block (v8
+  provider, `src/**/*.ts`, text reporter, no thresholds set) so `vitest run --coverage`
+  reports the per-module numbers CLAUDE.md §4 asks reviewers to check.
 - **plotForm.parse and the round trip (L6 Task 3).** Bidirectional over the C2 §5.3 subset; every custom-code rule in the contract has its own test. Design §10's "plotForm round-trips its subset" holds.
 - **plotForm.generate (L6 Task 2).** Emits the C2 §5.3 Plot subset byte-identically for all four of the contract's worked examples.
 - **Notebook tab: page becomes a directory (L6 Task 1).** routes/pages/NotebookPage.tsx → routes/pages/Notebook/index.tsx with a re-export shim; no behaviour change.
