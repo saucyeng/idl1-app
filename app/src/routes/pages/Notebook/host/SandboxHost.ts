@@ -4,7 +4,7 @@
  * `<iframe>`); the pure protocol validation and watchdog scheduling it
  * delegates to are tested in `protocol.test.ts`/`watchdog.test.ts`.
  */
-import { channelPayload, isHostMessage, type HostToSandboxMessage, type HostVarPayload, type SandboxCell } from "./protocol";
+import { channelPayload, evalInlineMessage, isHostMessage, type HostToSandboxMessage, type HostVarPayload, type SandboxCell } from "./protocol";
 import { OutboundQueue } from "./outboundQueue";
 import { replayInitAndHostVars, replaySetCells } from "./rebuildReplay";
 import { createWatchdog, type Watchdog } from "./watchdog";
@@ -184,6 +184,18 @@ export class SandboxHost {
   setChannelHostVar(name: string, length: number, t: ArrayBuffer, v: ArrayBuffer): void {
     const { message, transfer } = channelPayload(name, length, t, v);
     this.postToSandbox(message, transfer);
+  }
+
+  /**
+   * Asks the sandbox to (re-)evaluate one inline `${…}` prose span (C2
+   * §5.2, added Task 13). Not replayed after a rebuild the way
+   * `init`/`setCells`/JSON host vars are (`rebuild()`'s doc comment) — an
+   * inline result is derived, disposable state, not a thing the notebook
+   * would visibly regress without; the caller (`Notebook/index.tsx`) simply
+   * re-sends it on the next trigger, same as any other cell.
+   */
+  evalInline(spanId: string, expr: string): void {
+    this.postToSandbox(evalInlineMessage(spanId, expr));
   }
 
   /**

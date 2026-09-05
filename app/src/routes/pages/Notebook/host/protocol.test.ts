@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
 
-import { channelPayload, isHostMessage, type HostVarPayload } from "./protocol";
+import { channelPayload, evalInlineMessage, isHostMessage, type HostVarPayload } from "./protocol";
 
 describe("isHostMessage", () => {
   test("isHostMessage — every message the sandbox may send — is accepted", () => {
@@ -60,5 +60,13 @@ describe("channelPayload", () => {
     expect(vRoundTripped[0]).toBe(10.1);
     expect(vRoundTripped[1]).toBe(-2.5);
     expect(Number.isNaN(vRoundTripped[2])).toBe(true);
+  });
+});
+
+describe("evalInlineMessage", () => {
+  test("evalInlineMessage — a span id and expression — builds the exact evalInline wire shape", () => {
+    const message = evalInlineMessage("cell-a:0", "count(fork_bottom_out)");
+
+    expect(message).toEqual({ type: "evalInline", spanId: "cell-a:0", expr: "count(fork_bottom_out)" });
   });
 });

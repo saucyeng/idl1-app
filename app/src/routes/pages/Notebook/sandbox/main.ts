@@ -135,6 +135,14 @@ class SandboxRuntime {
     this.module.builtin("d3", d3);
     this.module.builtin("Inputs", Inputs);
     this.module.builtin("html", html);
+    // Also mirrored into `hostVars` (never used for `channelLookup`, which
+    // only ever finds arrays) so `evalInline` can build the exact same
+    // `inputNames`/argument-value pairing `compileCell` gives a persistent
+    // cell, without a second bookkeeping structure.
+    this.hostVars.set("Plot", Plot);
+    this.hostVars.set("d3", d3);
+    this.hostVars.set("Inputs", Inputs);
+    this.hostVars.set("html", html);
     for (const name of ["Plot", "d3", "Inputs", "html"]) {
       this.boundNames.add(name);
     }
@@ -179,6 +187,37 @@ class SandboxRuntime {
   }
 
   /**
+   * Evaluates one inline `${…}` prose span (C2 §5.2) as a one-shot
+   * expression — not a persistent Runtime `Variable` the way `setCells`'
+   * cells are, since a span has no lifetime beyond "get this one string
+   * now". Reuses `compileCell`'s exact construction (same `inputNames`,
+   * same `new Function` wrapping, including its implicit-return-expression
+   * fallback) so `${…}`'s scope is identical to a `js` cell's, per C2
+   * §5.2's "same host-mediated scope" requirement — the difference is only
+   * that the result is `String(value)`-coerced and posted as
+   * `inlineResult`/`cellError` instead of becoming a Runtime observer's
+   * `fulfilled`/`rejected` callback.
+   *
+   * On success, posts `{ type: "inlineResult", spanId, text }`; on a throw,
+   * posts `{ type: "cellError", cellId: spanId, message }` — reusing the
+   * existing per-cell error channel (`cellId` here is actually a span id,
+   * not a fence-string cell id; see `handleMessage`'s `evalInline` case for
+   * why this reuse was chosen over a third, span-specific error message).
+   */
+  evalInline(spanId: string, expr: string): void {
+    const inputNames = [...this.boundNames];
+    const args = inputNames.map((name) => this.hostVars.get(name));
+    try {
+      const fn = compileCell(inputNames, expr);
+      const value = fn(...args);
+      postToHost({ type: "inlineResult", spanId, text: String(value) });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      postToHost({ type: "cellError", cellId: spanId, message });
+    }
+  }
+
+  /**
    * Replaces the whole cell set. Every previously defined cell `Variable` is
    * deleted first — simpler and safer than trying to diff and redefine
    * anonymous variables, at the cost of re-running every cell (not just
@@ -216,11 +255,6 @@ class SandboxRuntime {
 
 let sandboxRuntime: SandboxRuntime | null = null;
 
-// TODO(idl0): inline `${…}` span evaluation (design §6's inline-math
-// spans) is not wired here — the host side (`SandboxHost.onInlineResult`,
-// `inlineResult` in `protocol.ts`) is ready to receive it, but nothing in
-// this file ever evaluates a span or posts `inlineResult` back. Out of this
-// task's scope (brief Steps 1-5); a later task owns the sandbox-side half.
 function handleMessage(message: HostToSandboxMessage): void {
   switch (message.type) {
     case "init":
@@ -231,6 +265,9 @@ function handleMessage(message: HostToSandboxMessage): void {
       break;
     case "setCells":
       sandboxRuntime?.setCells(message.cells);
+      break;
+    case "evalInline":
+      sandboxRuntime?.evalInline(message.spanId, message.expr);
       break;
     case "ping":
       postToHost({ type: "pong", nonce: message.nonce });
