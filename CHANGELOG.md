@@ -6,6 +6,17 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 
 ### Added
 
+- **L7c Settings tab, Task 3 (2026-09-05).** Profile and Units sections,
+  built over Task 2's `PrefsStore`. `ProfileSection.tsx`'s rider-name field
+  writes through `store.set` debounced at 500 ms (idl0's own behaviour) so
+  typing does not thrash storage; its copy states the name is pre-filled
+  into new sessions. `UnitsSection.tsx`'s imperial/metric toggle writes
+  immediately and renders `units.ts`'s `unitSummary` — all seven of idl0's
+  unit-math fields (speed, distance, pressure, temperature, force, power,
+  spring rate), including the two idl0's own UI never rendered even though
+  its `app_settings.dart` doc comment named them; its copy states the
+  toggle does not retroactively convert existing channel values. No spec
+  change — Task 2 already rewrote §27's persisted set.
 - **TS coverage reporting added (2026-09-05).** `@vitest/coverage-v8` pinned to vitest's
   version in `app/package.json`; `app/vitest.config.ts` gains a `coverage` block (v8
   provider, `src/**/*.ts`, text reporter, no thresholds set) so `vitest run --coverage`
