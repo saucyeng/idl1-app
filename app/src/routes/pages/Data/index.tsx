@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useReducer } from "react";
+import { useCallback, useEffect, useMemo, useReducer } from "react";
 
 import { getSession, listLaps, listSessions, type LapSummary, type SessionDetail, type SessionSummary } from "../../../ipc/catalog";
 import { useAppState } from "../../../state/AppState";
@@ -8,6 +8,7 @@ import { describeIpcError } from "./errors";
 import { facetCounts, matchesFilters } from "./facets";
 import { FilterRail } from "./FilterRail";
 import { filtersReducer, initialFilters } from "./filters";
+import { ImportPanel } from "./ImportPanel";
 import { toDetailView } from "./sessionDetail";
 import { toSessionRow } from "./sessionRow";
 import { compareSessions, sortFieldsForView, type SortField } from "./sort";
@@ -84,23 +85,33 @@ export default function Data() {
   const [appState, appDispatch] = useAppState();
   const selectedSessionId = appState.selection.sessionId;
 
-  useEffect(() => {
-    let cancelled = false;
-
+  /** Fetches `list_sessions` and applies the result, ignoring a stale
+   *  response if the caller has already unmounted/moved on. Used on mount
+   *  and as `ImportPanel`'s `onImported` refresh (settle-bound: once per
+   *  queue drain, never per file — CLAUDE.md §2). */
+  const loadSessions = useCallback((isCancelled: () => boolean) => {
     listSessions()
       .then((sessions) => {
-        if (cancelled) return;
+        if (isCancelled()) return;
         dispatch({ type: "loaded", sessions });
       })
       .catch((e: unknown) => {
-        if (cancelled) return;
+        if (isCancelled()) return;
         dispatch({ type: "failed", text: describeIpcError(e).text });
       });
+  }, []);
 
+  useEffect(() => {
+    let cancelled = false;
+    loadSessions(() => cancelled);
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [loadSessions]);
+
+  const handleImported = useCallback(() => {
+    loadSessions(() => false);
+  }, [loadSessions]);
 
   /** Fetches `get_session` + `list_laps` in parallel on selection settle
    *  (R53 Data Q3; C3 §4: both are settle-bound, never a hover/pan/zoom
@@ -179,6 +190,9 @@ export default function Data() {
     <div className="data-tab">
       <FilterRail filters={filters} counts={counts} dispatch={filterDispatch} />
       <div className="data-results">
+        <div role="toolbar" aria-label="Import">
+          <ImportPanel onImported={handleImported} />
+        </div>
         <ActiveChips filters={filters} dispatch={filterDispatch} />
         <div role="toolbar" aria-label="Sort">
           <label>

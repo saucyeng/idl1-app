@@ -2345,7 +2345,27 @@ the top-ranked session leads).
 - **Search** — toggles the search bar.
 - **Sessions / Tracks toggle** — `SegmentedButton<DataView>`.
 - **Sort** — a compact field chooser + ascending/descending toggle for the active view's fields (§24.13).
-- **Import** — imports `.idl0` or `.gpx` files (sessions) or `.gpx` tracks depending on active view.
+- **Import** (idl1, wave 2 — `Data/ImportPanel.tsx`, `Data/importQueue.ts`,
+  `Data/FilePicker.ts`) — rewritten over C3 §3.3's `import_file`/
+  `list_importers`; idl0's Dart runs-provider import flow (`RunsNotifier`
+  registering `.idl0`/`.gpx` files picked by the OS's native file picker) is
+  gone. The picker itself is a pasted absolute path in wave 2, not a native
+  dialog — no file-picker mechanism exists yet anywhere in this codebase, and
+  adding one (`@tauri-apps/plugin-dialog`) needs a new dependency and an
+  `app/src-tauri` capability entry outside this lane's scope; see
+  `runs/2026-09-05/lanes/l7a-data/brief-task5.md` (lead ruling R55) for the
+  seam this sits behind (`FilePicker.ts`'s `pickImportFile`), swapped for a
+  real dialog by a later shell task with no call-site change. Enqueued files
+  run through the queue **serialised, one at a time** (R13: this machine is
+  memory-bound, import is CPU/I/O-heavy) — never more than one `import_file`
+  call in flight. Progress streams via a `Channel<Progress>` carrying a
+  `phase` string and an optional `total` (C3 §1); the overall queue bar is
+  `null`, not a fake number, while the running file's `total` is unknown. A
+  forced-importer override is available via `listImporters()`; `null` means
+  extension-based auto-detection. On the queue draining (every item `"done"`
+  or `"failed"`), the tab re-runs `list_sessions` once so newly imported
+  sessions appear without a manual refresh. A per-file failure marks that
+  item `"failed"` and never cancels the others still queued or running.
 - **Create from session…** — builds the session's GPS polyline and opens the Track Editor modal in **create mode** (§24.12): Name/Venue are entered in the editor with the map visible, and the Track is created on Save.
 - **Rescan visits** — calls `RunsNotifier.rescanAllTrackVisits` over all sessions; re-runs TrackVisit detection without re-downloading source files, showing a per-row spinner and surfacing the first error on failure.
 
