@@ -2280,13 +2280,38 @@ heading). The editable **Venue** field is *pre-filled* with this same resolved
 venue when `venueName` is empty, so saving the card persists the venue into the
 session's own metadata rather than leaving it blank.
 
-Hosts `MetadataForm` (extracted from `MetadataEditor`) with the following fields:
-- Rider — `Autocomplete<String>` sourced from distinct known rider names.
-- Bike — `Autocomplete<String>` sourced from distinct known bike names.
-- Venue — `Autocomplete<String>` sourced from distinct `Track.venueName ∪ SessionMetadata.venueName`.
-- Event — free-text `TextField`.
-- Tag — free-text `TextField`.
-- Comments — multi-line `TextField`.
+**Metadata form (idl1, wave 2 — `Data/metadataDraft.ts`, `Data/MetadataForm.tsx`).**
+Rewritten over C1 §6's `session.json` fields — the nine editable fields are
+now exactly `rider`, `bike`, `bike_comment`, `venue_name`, `event_name`,
+`event_session`, `tag`, `short_comment`, `long_comment`; `""` is the only
+"not set" representation for any of them (C1 §6 has no null). idl0's
+distinct-Track/`Autocomplete` sourcing for Rider and Bike is dropped for
+wave 2 — `venueOptions` (`metadataDraft.ts`) still derives the Venue
+suggestion list from `list_tracks`' distinct `venue_name` values, deduped
+and sorted, matching this section's venue-autocomplete rule above; Rider and
+Bike render as plain text fields.
+
+The **venue pre-fill rule carries over unchanged**: `initialDraft` fills
+`venue_name` from the session's own `venue_name` when non-empty, otherwise
+from the first resolvable visited track's `venue_name`
+(`trackRow.ts`'s `resolveDisplayVenue`, Task 6) — walked in visit order,
+skipping a visit whose `track_id` no longer resolves — so saving persists
+the venue the card already shows rather than the session's own possibly-
+empty field.
+
+**Save path — `save_session_metadata` (IPC need 1,
+`runs/2026-09-05/lanes/l7/IPC-NEEDS.md`), no command behind it in wave 2.**
+The command does not exist on `main` yet; `Data/ipcStubs.ts`'s
+`saveSessionMetadata` stands in for it and always rejects with a local
+`NotImplementedError`, never a fabricated `IpcError` kind (C3 §2's kind
+vocabulary is additive-only). The form surfaces this honestly — "Saving
+session metadata isn't wired up yet — your changes aren't saved" — rather
+than pretending the save succeeded; typed changes stay live in the form
+after a failed save so nothing already typed is lost, but nothing reaches
+disk until the real command lands. **Once it does, the write is a
+whole-block replace of all nine fields, never a sparse patch** — every
+field is required on `SessionMetadataPatch` specifically so a concurrent
+editor cannot half-apply a save.
 
 Below `MetadataForm`:
 - **Tracks visited row** — inline list of `TrackVisit` names with tap-to-open.

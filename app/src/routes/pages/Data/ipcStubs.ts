@@ -29,3 +29,17 @@ export async function saveTrack(_track: Record<string, unknown>): Promise<never>
 export async function deleteTrack(_trackId: string): Promise<never> {
   throw new NotImplementedError("delete_track");
 }
+
+/** Stands in for `save_session_metadata` (IPC need 1,
+ *  `runs/2026-09-05/lanes/l7/IPC-NEEDS.md`) until the Rust track lands it.
+ *  `metadata` carries C1 §6's nine `session.json` fields
+ *  ([[../../../ipc/catalog.ts]]'s `SessionDetail` documents each one) plus
+ *  nothing else — `Data/metadataDraft.ts`'s `toSavePayload` builds it. See
+ *  [[saveTrack]]'s note on why this rejects rather than returning a
+ *  fabricated `SessionDetail`. */
+export async function saveSessionMetadata(
+  _sessionId: string,
+  _metadata: Record<string, string>,
+): Promise<never> {
+  throw new NotImplementedError("save_session_metadata");
+}

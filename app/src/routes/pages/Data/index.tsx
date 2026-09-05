@@ -276,7 +276,12 @@ export default function Data() {
             {detailState.status === "loading" && <p>Loading session…</p>}
             {detailState.status === "error" && <p role="alert">{detailState.text}</p>}
             {detailState.status === "ready" && detailView !== null && (
-              <DetailPane view={detailView} lapsErrorText={detailState.lapsErrorText} onClose={closeDetail} />
+              <DetailPane
+                view={detailView}
+                detail={detailState.detail}
+                lapsErrorText={detailState.lapsErrorText}
+                onClose={closeDetail}
+              />
             )}
           </div>
         )}
