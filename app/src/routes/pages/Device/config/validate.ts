@@ -99,12 +99,23 @@ function checkImuSlot(slot: ImuSlot, slotPath: string, issues: ValidationIssue[]
   }
 }
 
+/** Checks `imu.low_power_mode`/`imu.high_performance_mode` for both being
+ *  set at once. SPEC §8 does not state which flag wins when both are true,
+ *  so this is a `warning` — it does not affect `isPushable` — flagging an
+ *  unspecified firmware state rather than guessing a precedence rule. */
+function checkImuModeFlags(imu: DeviceConfig["imu"], issues: ValidationIssue[]): void {
+  if (imu.low_power_mode && imu.high_performance_mode) {
+    pushWarning(issues, "imu.low_power_mode", "low_power_mode and high_performance_mode both set; firmware behaviour unspecified (SPEC §8)");
+  }
+}
+
 /** Checks the `imu` block: the shared sample rate, the top-level default
- *  ranges, and each of the three per-IMU sub-blocks. */
+ *  ranges, the mode flags, and each of the three per-IMU sub-blocks. */
 function checkImu(imu: DeviceConfig["imu"], issues: ValidationIssue[]): void {
   checkImuSampleRate(imu, issues);
   checkRange(imu.accel_range_g, ACCEL_RANGES_G, "imu.accel_range_g", "accel range", "g", issues);
   checkRange(imu.gyro_range_dps, GYRO_RANGES_DPS, "imu.gyro_range_dps", "gyro range", "dps", issues);
+  checkImuModeFlags(imu, issues);
   checkImuSlot(imu.imu0, "imu0", issues);
   checkImuSlot(imu.imu1, "imu1", issues);
   checkImuSlot(imu.imu2, "imu2", issues);

@@ -134,6 +134,22 @@ describe("validateConfig", () => {
     expect(rateIssues[0].severity).toBe("error");
   });
 
+  it("validateConfig — imu.low_power_mode and imu.high_performance_mode both true — a warning, not an error: SPEC §8 does not say which flag wins", () => {
+    // Arrange
+    const config = workedConfig();
+    config.imu.low_power_mode = true;
+    config.imu.high_performance_mode = true;
+
+    // Act
+    const issues = validateConfig(config);
+
+    // Assert
+    const modeIssues = issues.filter((i) => i.path === "imu.low_power_mode");
+    expect(modeIssues).toHaveLength(1);
+    expect(modeIssues[0].severity).toBe("warning");
+    expect(modeIssues[0].message).toBe("low_power_mode and high_performance_mode both set; firmware behaviour unspecified (SPEC §8)");
+  });
+
   it("validateConfig — imu0.accel_range_g 20 — an error listing ±4/8/16/32 g", () => {
     // Arrange
     const config = workedConfig();
