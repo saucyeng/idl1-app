@@ -33,4 +33,11 @@ m 'git[[:space:]]+([^"\\;&|]*[[:space:]])?push\b' \
 if printf '%s' "$input" | grep -Eq "$SEG"'cargo[[:space:]]+(test|build|check)([[:space:]]|"|$)'    && ! printf '%s' "$input" | grep -Eq '(^|[[:space:]])(-p|--package)([[:space:]]|=)'; then
   deny "CLAUDE.md §8: a bare cargo test/build/check is workspace-wide here (builds the Tauri graph). Name the package: -p idl-rs [-p idl-rs-cli]"
 fi
+
+# Wave 2 UI lanes (worktrees named wave2-l6*/wave2-l7*) are TypeScript-only:
+# no cargo invocation of any kind from them (WAVE2-OPERATING-BRIEF.md §4).
+# Matches either the hook's cwd or a path in the command text.
+if printf '%s' "$input" | grep -Eq "$SEG"'cargo([[:space:]]|"|$)'    && printf '%s' "$input" | grep -Eq 'idl1-app-worktrees[/\]+wave2-l[67]'; then
+  deny "Wave 2 UI lanes are TypeScript-only: no cargo from a wave2-l6/l7 worktree (WAVE2-OPERATING-BRIEF.md §4). Gate is: npx tsc --noEmit && npx vitest run <filter>"
+fi
 exit 0
