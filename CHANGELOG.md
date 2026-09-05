@@ -52,6 +52,16 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
   every channel off, a reserved `level`/`pwm` digital kind). SPEC §8 gains
   a validation table (one row per rule, path/severity/condition/citation)
   as a machine-checkable counterpart to its prose tables.
+- **Device tab, Task 4 (2026-09-05, L7b) — R53 Q1 narrowed scope.**
+  `Device/config/sourcesPreview.ts` — `previewSources`, one row per source
+  (IMU0/1/2, GPS, wheel front/rear, each analog/digital channel, HRM)
+  carrying enable state, sample rate, and units **only**. This is
+  deliberately narrower than the plan's original Task 4: it does not derive
+  `scale`, `channel_id`, or `data_type` in TypeScript, since that arithmetic
+  (`scale = range / 32768`) is the wire contract's own formula (SPEC §3),
+  owned by `core::parse`. The full per-channel registry preview is deferred
+  to `preview_channel_registry(config_json) -> RegistryRow[]` (IPC need 12),
+  computed engine-side in the Rust write-amendment lane.
 - **L5 complete (2026-09-04).** idl-rs-tauri wired to every landed wave-1 lane's C3 command
   group (catalog, workbook, cursor, raster, tile) plus device (L4); <data> resolution,
   workbook watcher, app/src/ipc/ module layer, routing and state skeleton. Tile fetched

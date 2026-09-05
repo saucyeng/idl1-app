@@ -819,6 +819,19 @@ A disabled `wheel_speed` slot, and an absent or `enabled: false`
 `heart_rate_monitor` block, are not validated at all — neither is pushed to
 hardware in that state (§8 "Wheel speed defaults"; §8 "Heart rate monitor").
 
+**Channel-enable preview (idl1, `app/src/routes/pages/Device/config/sourcesPreview.ts`).**
+Wave 2's Device tab channels table shows enable state, sample rate, and
+units only, per source — never a predicted `channel_id`, `data_type`, or
+`scale`/`offset`. Those four values are §5.2's own registry-entry fields,
+resolved from the config by `core::parse` in Rust (the `scale = range /
+32768` derivation is the wire contract's formula, not the app's); a second
+copy of that arithmetic in TypeScript is exactly the drift a standing
+reviewer brief flags as a finding (ruling R53 Device Q1). The full
+per-channel registry preview — one row per resolved axis/pin/counter,
+carrying `channel_id`, `data_type`, `scale`, and `offset` — is deferred to
+`preview_channel_registry(config_json) -> RegistryRow[]` (IPC need 12),
+computed engine-side once the Rust write-amendment lane lands it.
+
 ---
 
 ## 9. Coordinate System
