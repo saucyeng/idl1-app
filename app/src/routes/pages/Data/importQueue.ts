@@ -1,10 +1,11 @@
-import type { SessionSummary } from "../../../ipc/catalog";
-import type { Progress } from "../../../ipc/import";
+import type { ImportOutcome, Progress } from "../../../ipc/import";
 import { describeIpcError } from "./errors";
 
 /** One file queued or in flight through `import_file` (C3 §3.3). `error` and
  *  `sessionId` are only ever set once the item reaches a terminal status
- *  (`"failed"` / `"done"` respectively). */
+ *  (`"failed"` / `"done"` respectively). `warnings` is only ever set once
+ *  the item reaches `"done"` (R60: the importer's recovered-data warnings
+ *  for this one import, never hidden from the user). */
 export interface ImportItem {
   /** Stable identity assigned at `ENQUEUE` time (`ImportQueueState.nextId`,
    *  a monotonic counter) — every action addresses an item by this `id`,
@@ -38,6 +39,10 @@ export interface ImportItem {
   error?: string;
   /** The new session's id, set only when `status` is `"done"`. */
   sessionId?: string;
+  /** Recovered-data warnings from the import (R60), set only when `status`
+   *  is `"done"`. Empty when the import had none — the panel still shows
+   *  the count honestly rather than omitting the field. */
+  warnings?: string[];
 }
 
 /** The import panel's whole queue. A flat array in enqueue order; the
@@ -62,7 +67,7 @@ export type ImportQueueAction =
   | { type: "ENQUEUE"; path: string; importerId: string | null }
   | { type: "START"; id: number }
   | { type: "PROGRESS"; id: number; progress: Progress }
-  | { type: "SUCCEEDED"; id: number; session: SessionSummary }
+  | { type: "SUCCEEDED"; id: number; outcome: ImportOutcome }
   | { type: "FAILED"; id: number; error: unknown }
   | { type: "DISMISS"; id: number };
 
@@ -105,7 +110,8 @@ export function importQueueReducer(state: ImportQueueState, action: ImportQueueA
           status: "done",
           phase: "done",
           done: item.total ?? item.done,
-          sessionId: action.session.session_id,
+          sessionId: action.outcome.session.session_id,
+          warnings: action.outcome.warnings,
         })),
       };
     case "FAILED": {

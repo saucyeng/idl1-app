@@ -29,6 +29,19 @@ function ImportRow({ item, onDismiss }: { item: ImportItem; onDismiss: () => voi
         {item.status === "running" ? ` — ${item.phase} (${countText})` : ""}
       </span>
       {item.status === "failed" && item.error !== undefined && <span role="alert"> {item.error}</span>}
+      {item.status === "done" && item.warnings !== undefined && item.warnings.length > 0 && (
+        <ul>
+          <li>
+            imported with {item.warnings.length} warning{item.warnings.length === 1 ? "" : "s"}
+          </li>
+          {item.warnings.map((warning, index) => (
+            // Warning text has no stable id of its own — index is safe here
+            // because this list is only ever rendered once, on a terminal,
+            // no-longer-mutating item.
+            <li key={index}>{warning}</li>
+          ))}
+        </ul>
+      )}
       {(item.status === "done" || item.status === "failed") && (
         <button type="button" onClick={onDismiss}>
           Dismiss

@@ -1,5 +1,4 @@
-import type { SessionSummary } from "../../../ipc/catalog";
-import type { Progress } from "../../../ipc/import";
+import type { ImportOutcome, Progress } from "../../../ipc/import";
 import type { ImportItem, ImportQueueAction, ImportQueueState } from "./importQueue";
 
 /** Structurally matches `ipc/import.ts`'s `importFile` — injected so
@@ -8,7 +7,7 @@ export type ImportFileFn = (
   path: string,
   importerId: string | null,
   onProgress: (p: Progress) => void,
-) => Promise<SessionSummary>;
+) => Promise<ImportOutcome>;
 
 /** The next item the driving effect should start, or `null` when either an
  *  item is already `"running"` (R13: never more than one at a time) or
@@ -47,8 +46,8 @@ export function runImport(item: ImportItem, importFile: ImportFileFn, dispatch: 
   importFile(item.path, item.importerId, (progress) => {
     dispatch({ type: "PROGRESS", id: item.id, progress });
   })
-    .then((session) => {
-      dispatch({ type: "SUCCEEDED", id: item.id, session });
+    .then((outcome) => {
+      dispatch({ type: "SUCCEEDED", id: item.id, outcome });
     })
     .catch((error: unknown) => {
       dispatch({ type: "FAILED", id: item.id, error });
