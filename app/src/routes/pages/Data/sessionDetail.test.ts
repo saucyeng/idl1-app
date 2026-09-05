@@ -157,6 +157,16 @@ describe("toDetailView", () => {
     expect(bestLapMs(view.laps)).toBeNull();
   });
 
+  it("bestLapMs — two valid laps — returns the smaller", () => {
+    const detail = baseDetail({
+      laps: [lapDetail({ lap_number: 1, lap_time_ms: 55_000 }), lapDetail({ lap_number: 2, lap_time_ms: 40_000 })],
+    });
+
+    const view = toDetailView(detail, []);
+
+    expect(bestLapMs(view.laps)).toBe(40_000);
+  });
+
   it("toDetailView — a channel with nominal_rate_hz 0 — renders as an event channel (C1 §4.2), matching ChannelSummary.channel_kind", () => {
     const detail = baseDetail({
       channels: [channelSummary({ nominal_rate_hz: 0, channel_kind: "event", channel_id: "gps.fix" })],

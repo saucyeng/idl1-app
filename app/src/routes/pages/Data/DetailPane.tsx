@@ -22,7 +22,7 @@ export function DetailPane({ view, lapsErrorText, onClose }: DetailPaneProps) {
     <div className="data-detail-pane" role="region" aria-label="Session detail">
       <div className="data-detail-header">
         <h2>
-          {view.venue} · {view.eventName === "" ? "(no event)" : view.eventName}
+          {view.venue} · {view.eventName === "" ? "—" : view.eventName}
         </h2>
         <button type="button" onClick={onClose} aria-label="Close">
           ×
