@@ -69,6 +69,42 @@ describe("makeCursorReadoutDriver", () => {
     expect(onState).toHaveBeenCalledWith({ kind: "rows", rows: [{ channel: "front-fork", label: "front-fork", value: 1 }] });
   });
 
+  it("makeCursorReadoutDriver — notify during a gesture — maps pixelX against the live (panned) viewport passed in, not a stale one", async () => {
+    // Arrange
+    const { timer, advance } = makeFakeTimer();
+    const onState = vi.fn();
+    const fetchCursorReadout = vi.fn(
+      (_sessionId: string, _channels: string[], tUs: number): Promise<CursorReadout> =>
+        Promise.resolve({ t_us: tUs, values: { "front-fork": 3 } })
+    );
+    const driver = makeCursorReadoutDriver(
+      { fetchCursorReadout, onState, sessionId: "s1", channelId: "front-fork" },
+      100,
+      timer
+    );
+    // The stale, pre-drag viewport a caller must NOT use once a gesture has
+    // panned the picture (review-fixes-9-10.md Important: `ChartCell.tsx`
+    // previously passed this instead of the live one).
+    const stalePreDragViewport: Viewport = { startUs: 0, endUs: 1_000_000, pixelWidth: 800 };
+    const liveDraggedViewport: Viewport = { startUs: 500_000, endUs: 1_500_000, pixelWidth: 800 };
+
+    // Act: the same on-screen pixel, mid-drag, against the panned window.
+    driver.notify(liveDraggedViewport, 400);
+    advance(100);
+    await Promise.resolve();
+    await Promise.resolve();
+
+    // Assert: pixelX 400 of 800 -> 0.5 of the live window's 1_000_000us
+    // span, offset by its startUs: 500_000 + 500_000 = 1_000_000us. Against
+    // `stalePreDragViewport` the same pixel would map to 500_000us instead —
+    // the driver must have used whichever viewport `notify` was actually
+    // given, not some other captured value.
+    expect(fetchCursorReadout).toHaveBeenCalledTimes(1);
+    const [, , tUsRequested] = fetchCursorReadout.mock.calls[0];
+    expect(tUsRequested).toBe(1_000_000);
+    expect(tUsRequested).not.toBe(stalePreDragViewport.startUs + 500_000);
+  });
+
   it("makeCursorReadoutDriver — dispatchNow — dispatches immediately with no debounce wait", async () => {
     // Arrange
     const onState = vi.fn();

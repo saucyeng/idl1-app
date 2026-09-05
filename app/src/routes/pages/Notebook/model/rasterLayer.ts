@@ -43,6 +43,16 @@ function clampDevicePx(raw: number): number {
   return Math.min(Math.max(Math.round(raw), 1), U16_MAX);
 }
 
+/** Converts a CSS-px size to device px: `Math.round(cssPx * devicePixelRatio)`.
+ *  Used for `RasterUnderlay.tsx`'s `<canvas>` backing-store sizing
+ *  (review-fixes-9-10.md Minor) — deliberately **not** {@link clampDevicePx}:
+ *  that function's `[1, U16_MAX]` bound is C3 §3.6's wire `u16` limit on a
+ *  `fetch_raster` *request*, which has nothing to do with how large a
+ *  `<canvas>` element's own backing store is allowed to be. */
+export function devicePxSize(cssPx: number, devicePixelRatio: number): number {
+  return Math.round(cssPx * devicePixelRatio);
+}
+
 /**
  * Builds one `fetch_raster`/`fetch_raster_meta` request from `viewport`'s
  * plotting-area width, the cell's own CSS height, and `devicePixelRatio`.

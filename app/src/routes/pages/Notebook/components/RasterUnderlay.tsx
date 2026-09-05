@@ -1,7 +1,14 @@
 import { useEffect, useRef } from "react";
 
 import type { DecodedRaster, Histogram2dParams, RasterKind, RasterMeta, SpectrogramParams } from "../../../../ipc/rasters";
-import { alignRasterToAxes, drawRaster, rasterFetchKeyEquals, rasterRequestFor, type RasterFetchKey } from "../model/rasterLayer";
+import {
+  alignRasterToAxes,
+  devicePxSize,
+  drawRaster,
+  rasterFetchKeyEquals,
+  rasterRequestFor,
+  type RasterFetchKey,
+} from "../model/rasterLayer";
 import { isStaleSettleResult } from "../model/settle";
 import type { Viewport } from "../model/viewport";
 
@@ -186,8 +193,8 @@ export default function RasterUnderlay({
       // canvas whose buffer is only CSS-px resolution would silently
       // downscale that crisper source). The CSS box below stays at the
       // CSS-px size so the element still occupies the same on-screen area.
-      width={Math.round(width * devicePixelRatio)}
-      height={Math.round(height * devicePixelRatio)}
+      width={devicePxSize(width, devicePixelRatio)}
+      height={devicePxSize(height, devicePixelRatio)}
       style={{ position: "absolute", inset: 0, width: `${width}px`, height: `${height}px`, pointerEvents: "none" }}
     />
   );

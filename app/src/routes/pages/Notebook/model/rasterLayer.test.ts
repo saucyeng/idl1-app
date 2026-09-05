@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { Histogram2dParams, RasterMeta, SpectrogramParams } from "../../../../ipc/rasters";
-import { alignRasterToAxes, rasterFetchKeyEquals, rasterRequestFor, type RasterFetchKey } from "./rasterLayer";
+import { alignRasterToAxes, devicePxSize, rasterFetchKeyEquals, rasterRequestFor, type RasterFetchKey } from "./rasterLayer";
 import type { Viewport } from "./viewport";
 
 describe("rasterRequestFor", () => {
@@ -165,5 +165,56 @@ describe("rasterFetchKeyEquals", () => {
 
     // Assert
     expect(equal).toBe(false);
+  });
+
+  it("rasterFetchKeyEquals — a changed width — are not equal (a cell resize must refetch)", () => {
+    // Arrange
+    const next: RasterFetchKey = { ...baseKey, width: 900 };
+
+    // Act
+    const equal = rasterFetchKeyEquals(baseKey, next);
+
+    // Assert
+    expect(equal).toBe(false);
+  });
+
+  it("rasterFetchKeyEquals — a changed height — are not equal (a cell resize must refetch)", () => {
+    // Arrange
+    const next: RasterFetchKey = { ...baseKey, height: 500 };
+
+    // Act
+    const equal = rasterFetchKeyEquals(baseKey, next);
+
+    // Assert
+    expect(equal).toBe(false);
+  });
+
+  it("rasterFetchKeyEquals — a changed devicePixelRatio — are not equal (a display change must refetch at the new resolution)", () => {
+    // Arrange
+    const next: RasterFetchKey = { ...baseKey, devicePixelRatio: 2 };
+
+    // Act
+    const equal = rasterFetchKeyEquals(baseKey, next);
+
+    // Assert
+    expect(equal).toBe(false);
+  });
+});
+
+describe("devicePxSize", () => {
+  it("devicePxSize — devicePixelRatio of 1 — returns the CSS px size unchanged", () => {
+    // Arrange / Act
+    const size = devicePxSize(400, 1);
+
+    // Assert
+    expect(size).toBe(400);
+  });
+
+  it("devicePxSize — devicePixelRatio of 2 — doubles and rounds the CSS px size", () => {
+    // Arrange / Act
+    const size = devicePxSize(400.4, 2);
+
+    // Assert
+    expect(size).toBe(801); // 400.4 * 2 = 800.8, rounded to 801
   });
 });

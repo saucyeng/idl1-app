@@ -316,8 +316,16 @@ export default function ChartCell({
       lastPointerXRef.current = pixelX;
       // R62: every move — drag or hover alike — notifies the cursor
       // readout's own pointer-stop settle (no IPC here; `notify` only
-      // (re)starts an internal debounce timer).
-      cursorDriverRef.current.notify(viewport, pixelX);
+      // (re)starts an internal debounce timer). Passed `liveViewport`, not
+      // the settled `viewport` prop: during an active drag/zoom the picture
+      // on screen is rendered from `liveViewport` (`transformFor(viewport,
+      // liveViewport)` below), and `pixelX` is measured against that live,
+      // panned picture — pairing it with the stale, pre-drag `viewport`
+      // would compute `t_us` for a window the picture is no longer showing
+      // at that pixel (review-fixes-9-10.md Important). Previously this was
+      // masked only by `CURSOR_SETTLE_MS` and `SETTLE_DELAY_MS` happening to
+      // both be 150ms, not by design.
+      cursorDriverRef.current.notify(liveViewport, pixelX);
 
       if (dragging !== null && dragging.pointerId === event.pointerId) {
         const pixelDx = event.clientX - dragging.lastClientX;
@@ -335,7 +343,7 @@ export default function ChartCell({
       const reading = hoverAt(tiles, pixelX, geometry);
       setHover(reading === null ? null : { pixelX, ...reading });
     },
-    [tiles, width, sessionSpanUs, viewport]
+    [tiles, width, sessionSpanUs, liveViewport]
   );
 
   const handlePointerUp = useCallback((event: PointerEvent<HTMLDivElement>) => {
