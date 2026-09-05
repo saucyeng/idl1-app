@@ -3324,3 +3324,12 @@ through by default — intercepted, hand-escaped, no new dependency). R21's
 
 **Cost if wrong:** two fields and a list instead of one string, all
 additive; the alternative keeps two scanners that disagree.
+
+## 2026-09-05 — L8w second four-task gate (after Task 4c): PASS
+
+Foreground, once, tee'd, from `c383d4c`: `cargo test -p idl-rs-tauri` →
+**149 passed / 0 failed**; `cargo test -p idl-rs -p idl-rs-cli --
+--test-threads=4` → idl-rs 905 passed / 1 ignored, integration 1, cli 51.
+Covers Tasks 5, 4b, 6, 4c. Task 4c also corrected its own brief's escaping
+pseudocode (pulldown-cmark already escapes `Event::Text`; the hand-rolled
+escape double-escaped) — caught by the required test on first run.
