@@ -2164,3 +2164,244 @@ cleared by these answers; dispatches say so rather than editing briefs.
 signed vocabulary, and it is additive — an unrecognised kind degrades to
 a generic error in any consumer that hasn't been updated. The rest are
 signature changes on commands with no callers yet.
+
+## 2026-09-04 — R27 landed; L5 branches rebased onto it
+
+**idl-rs** `main` = `7e10797` (merge of `fix-gps-decimal`); **idl1-app**
+`main` = `80102fa`. Gate at the merge: 845 passed / 0 failed (idl-rs, one
+fewer than 846 — the deleted `to_deg` test), 51 (idl-rs-cli).
+
+R27 reviewed in two rounds. Round 1: everything substantive clean —
+epsilon rescaling complete, `to_deg` auto-scale-detect deleted safely,
+parse-side bake matching C1 §4.2 — with one Important on the `.idl0t`
+round-trip test, which exercised a single coordinate and so would have
+passed even if `/1e7` were later "simplified" to `*1e-7`, the exact
+regression that would corrupt track libraries shared with idl0.
+
+Round 2 corrected **me**. I specified the replacement assertion as
+write→read→write comparing `i32`; the implementer verified empirically
+that this does not discriminate at all — the write side's `.round()`
+re-quantises any FP error from a wrong read operator back onto the same
+integer, so every value passes either way. It moved the assertion to the
+decoded domain value against independently computed ground truth, proved
+the table by injecting the `*1e-7` regression and watching it fail
+(`50.116299999999995` vs `50.1163`), reverted, and named the four values
+that catch it. Reviewer confirmed both halves independently. That is two
+bad lead instructions caught inside one task, both by agents reasoning
+from the code.
+
+Also from R27, worth keeping: `estimate/run.rs` was dividing GPS_Heading
+by 100 on top of the raw centidegree scale. The implementer first called
+it a pre-existing bug, the reviewer corrected the framing to "a necessary
+consequence of this commit's parse-time bake", and the implementer
+accepted the correction rather than defending the stronger claim.
+
+**Boundary added outside R27's stated blast radius, deliberately:** SPEC
+§17b.1 fixes the `.idl0t` on-disk format at `deg × 1e7` regardless of the
+engine's internal scale. Those DTOs used to be copied verbatim because
+both sides were e7; they now convert explicitly (`/1e7` read,
+`(x*1e7).round()` write). The SPEC settled it, so no ruling was needed,
+but it is the one place R27 touched a format shared with idl0.
+
+**L5 branches brought up to date** (both repos): idl-rs `wave1-l5-tauri`
+= `0f79ee6`, idl1-app = `755cc58`. Two merge frictions worth recording:
+`Cargo.lock` conflicted between L5's tauri deps and main's L3 deps and
+was regenerated from both manifests (verified: both `tauri` and
+`pulldown-cmark` present); and a duplicate untracked `.cargo/config.toml`
+in the L5 worktree blocked the merge because `main` now **tracks** that
+file.
+
+**Tracked, for Isaac, low priority:** `rust/.cargo/config.toml` is
+committed and contains a machine-specific absolute `target-dir`
+(`C:/Users/isaac/...`). Its own comment acknowledges this and says to
+delete it elsewhere, so it is a known trade rather than an oversight —
+but it will need handling before CI or a second machine.
+
+**Next:** L5 Task 8 dispatched (catalog read API per R40), then 11 → 12 →
+13 → 14.
+
+## 2026-09-05 — R46: `CatalogError` gains a `NotFound` variant
+
+L5 Task 8 landed the catalog read API (idl-rs `9b68c38`, idl1-app
+`2b7003a`) and flagged a real ambiguity rather than guessing at it:
+`CatalogErrorKind` has only `Io` and `Sql`, so "no such session" was
+encoded as `Sql` and mapped to `IpcErrorKind::NotFound`. The consequence
+runs the wrong way: a genuine `rusqlite` error from a **corrupt
+`catalog.sqlite`** also surfaces as `not_found` on `list_sessions`,
+`list_workbooks`, `list_tracks` and `rebuild_catalog`.
+
+That is a lie to the user in the most misleading direction available. "No
+sessions found" invites them to re-import or conclude their data is gone;
+"internal error" would send them to `rebuild_catalog`, which is exactly
+the fix for a corrupt index — and the catalog is *designed* to be
+rebuildable ("the catalog is an index — deletable, rebuildable, never
+synced"). Encoding corruption as absence hides the one failure the
+architecture already has an answer for.
+
+Ruling: add a **`NotFound`** variant to `CatalogErrorKind`. Not-found maps
+to `IpcErrorKind::NotFound`; `Sql` maps to `internal`. Additive to a core
+error enum, no caller outside this task's own commands, and the cost of
+doing it later is a UI built on a misleading error.
+
+**Cost if wrong:** none identified — the variant is additive and the two
+conditions are genuinely distinct.
+
+## 2026-09-05 — R47: `eval.rs`'s duplicate-definition panic is a core bug; fix it, don't contain it
+
+L5 Task 11 (idl-rs `8d737fe`, idl1-app `9a154a3`) found that
+`core/src/workbook/v3/eval.rs`'s `math_cell_defs` **panics** whenever a
+definition name repeats anywhere in a document. `resolve_workbook_defs`
+returns a `HashMap` keyed by name alone, so a duplicate collapses to one
+entry and whichever cell runs second calls `.expect(...)` on a
+already-removed key. It was found empirically — the brief's own required
+test panicked — not by reading.
+
+This is a straight violation of CLAUDE.md §5 ("never a crash on bad
+data") and it contradicts C2/C3's per-cell `DuplicateDefinition`
+semantics, which say a duplicate surfaces on the offending cell and never
+rejects the document. A user typing the same name in two cells — an
+ordinary editing mistake — currently takes down the process.
+
+The implementer correctly did not touch `workbook/v3/` (out of lane,
+CLAUDE.md §7) and instead wrapped the call in `catch_unwind`, degrading
+to `internal`. Right call under the constraint it had; wrong thing to
+ship.
+
+Ruling, in three parts:
+1. **Fix the root cause in `core`.** `resolve_workbook_defs`' output must
+   not lose duplicates — key it so each cell's definitions are
+   recoverable, and `math_cell_defs` must never `expect` on a key it did
+   not put there. The user-visible outcome is C3's stated one: every cell
+   returns, the offending cell carries `workbook_duplicate_definition`.
+2. **L5 is authorised to make that fix in its own branch.** L3 is closed
+   and merged and L5 is the only active lane, so routing this through a
+   reopened lane costs more than it protects. This is the lead granting a
+   cross-lane exception under §7, recorded here.
+3. **Remove the `catch_unwind` once the root cause is fixed.** A
+   defensive net around a call that should not panic hides the next bug
+   exactly as this one hid — it surfaced only because a test crashed
+   loudly. Restore the brief's original assertion (both cells returned,
+   offending cell carries the duplicate error) rather than the
+   degraded-but-safe one.
+
+**Cost if wrong:** removing the net means a future panic in `eval_cells`
+reaches the command boundary. That is the intent — a panic there is a bug
+we must see, and the alternative is a silent `internal` that looks like
+an I/O failure.
+
+## 2026-09-05 — R48: a new workbook's filename comes from its front-matter `name`, not its id
+
+Task 11's second flag: C3 §3.4's `save_workbook(id, …)` says nothing
+about where a *new* file goes, and the implementer synthesised
+`<data>/workbooks/<id>.idl1wb`. Reversible and sensible-looking, but it
+contradicts C4 §2, which the implementer had not been pointed at:
+`workbooks/<file_name>.idl1wb`, where `file_name` is "the user-facing
+name, filesystem-sanitised … a display convenience, not identity", with
+`-2`, `-3` … appended on collision (SPEC §15.1).
+
+Ruling: on create (`based_on_hash: null`), derive `file_name` from the
+markdown's front-matter `name` (C2 §1 requires it), sanitise it per SPEC
+§15.1, and apply the collision suffix. The `id` argument identifies the
+workbook — it is the front-matter id — and never names the file. A
+`workbooks/` directory full of UUIDs is precisely what C4 §2's
+display-name rule exists to prevent.
+
+**Cost if wrong:** files land under a name the user didn't choose;
+renaming is a supported operation (C4 §6 — id wins over `file_name`), so
+recovery is trivial either way.
+
+**Also accepted from Task 11, no ruling needed:** running
+`cargo test -p idl-rs-tauri session_source` beyond the brief's named
+filter. The brief's Step 1 tests live in a file whose test names don't
+contain "workbook", so the named filter compiled them without executing
+them — the alternative was shipping Step 1 with zero test executions.
+That is the §8 rule working as intended (a filter matching nothing is a
+failed gate), and reporting it beat silently obeying the letter.
+
+**Gap to close:** `app/src-tauri/src/lib.rs` gained two `.setup()` lines
+that no authorised command in that brief compiles. Task 12's dispatch
+adds one `cargo check -p app`, accepted as expensive (it builds the Tauri
+graph) and worth it once, overnight, before Task 14 depends on it.
+
+## 2026-09-05 — R49: a duplicated `[Name]` resolves to the first definition in document order
+
+Task 11's review (CLEAN on everything else, including an independently
+re-derived R47 fix and a clean one-off `cargo check -p app`) found the
+sub-question R47 didn't reach: with a name defined in two cells, a third
+cell's `[Name]` reference resolves **order-dependently** — by fixed-point
+pass, then document position — with no test pinning it. Narrow, because
+it requires an already-invalid document, but genuinely order-dependent
+rather than theoretical, so an unrelated edit could silently swing a
+reference from one definition to the other.
+
+Two candidate rules. **Rejected:** make a reference to a duplicated name
+an error on the referencing cell. It is the more "correct" answer, but it
+buries the one signal the user needs — the `DuplicateDefinition` error
+naming the actual mistake — under cascading errors in every cell that
+merely mentions the name.
+
+**Ruled: first definition in document order wins**, deterministically and
+by explicit construction rather than as a side effect of iteration order,
+documented on the function and pinned by a test. The decisive argument is
+precedent: `merge_constants` already resolves exactly this collision the
+same way — "the first declaration of a name wins its table entry, and
+every later colliding declaration is reported" (L3-R16/R17). Two
+different rules for the same shape of collision in one document format
+would be worse than either rule alone.
+
+The user is not left guessing: the duplicate is still reported on the
+offending cell, so the document says plainly what is wrong while
+references behave predictably.
+
+**Cost if wrong:** a user with a duplicate sees results computed from the
+first definition rather than the second, while looking at an error that
+names the duplication. Recoverable by reading the error; the alternative
+was a value that changes under unrelated edits.
+
+**Minor accepted, with a guard:** the new `sanitize_file_name_stem` does
+not special-case Windows reserved device names (`CON`, `PRN`, `NUL`,
+`COM1`-`9`, `LPT1`-`9`). The reviewer verified empirically on this
+machine (Win 11 22621) that `CON.idl1wb` and even bare `CON` create as
+ordinary files, so it is not live here — but the failure mode elsewhere
+is an opaque `io` error from `write_atomic` rather than a clear message,
+and this string becomes a real filesystem path. Add the guard: a
+sanitised stem case-insensitively matching a reserved name falls back the
+same way the empty-after-trim case already does.
+
+## 2026-09-05 — R50: L5's TASKS.md line is not ticked; two items are genuinely outstanding
+
+Task 14's review raised a Critical against the documentation, not the
+code: `TASKS.md` reads `- [x] L5 Tauri scaffold hardening` with no
+qualifier, while the same commit's CHANGELOG admits the on-screen render
+was never confirmed. Two things are in fact outstanding:
+
+1. **Task 9 (import commands)** — deferred with L2 by Isaac's own
+   prioritisation ("the .fit/.gpx can hold off"), never implemented.
+2. **Step 6's visual confirmation** — I overrode the app launch tonight
+   because nobody was awake to look at the window. That was the right
+   call for the hour, but it does not convert into a completed step.
+
+Ruling: **the line is unticked** and carries what remains, e.g.
+`- [ ] L5 Tauri scaffold hardening — Tasks 1-8, 10-14 landed; Task 9
+(import commands) deferred with L2; Step 6's on-screen render unconfirmed
+(headless byte-level proof only, 2026-09-05).`
+
+The reviewer graded this Critical and I agree with the grade. TASKS.md is
+the project's own answer to "what is done", and it is the file a future
+reader trusts *instead of* re-deriving state from the code. A tick that
+overstates by two items is worse than no tick: it is a wrong answer
+delivered confidently, and it would have been discovered by someone
+opening the app expecting a chart.
+
+Worth naming that the implementer flagged the tick as a judgment call
+rather than making it silently, and separately amended the CHANGELOG to
+distinguish "bytes verified" from "screen unconfirmed" when asked. The
+honesty was there — it just stopped one file short.
+
+**Also fixing (Minor):** `fetch_tile_column_count_zero_invalid_argument`
+asserts only `err.kind`, while the tier test pins `detail`. The command
+does build `detail { column_count }`, so a refactor could rename or drop
+that field with nothing failing. One assertion.
+
+**Cost if wrong:** none — the line can be ticked the moment Task 9 lands
+and a human confirms the render.
