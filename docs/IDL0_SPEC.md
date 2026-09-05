@@ -2387,19 +2387,74 @@ The Data tab is a McMaster-Carr-style faceted search interface that operates ove
 
 View toggle: `SegmentedButton<DataView> { sessions, tracks }`. The active filter set persists when switching views; facets not applicable to the current view (e.g., lap-time range when viewing tracks) are hidden or greyed.
 
-### 24.4 Filter Rail
+### 24.4 Filter Rail (idl1, wave 2 — `app/src/routes/pages/Data/`)
 
-Sections, top to bottom:
-- **Date** — chips (Today / Week / Month / Custom). Single-select; presets clear the custom range.
-- **Track** — multi-select with inline search + per-option count badge.
-- **Venue** — multi-select. "(none)" pseudo-entry covers tracks/sessions with an empty `venueName`.
-- **Bike** — multi-select. "(none)" pseudo-entry covers sessions with an empty `bike` field.
-- **Rider** — multi-select. "(none)" pseudo-entry.
-- **Tag** — multi-select. "(none)" pseudo-entry.
-- **Lap time** — `RangeSlider` with mm:ss text inputs. Domain linear `[0, ceilTo5Min(maxKnownLapTime)]` clamped `[60 s, 10800 s]`. Recomputed when the library changes. Two `TextField` mm:ss inputs below the slider are two-way bound; typing updates the slider, dragging updates the text. Empty Max = no upper bound.
-- **Source** — checkboxes for `.idl0` and `.gpx`.
+Rewritten for idl1 (was idl0's `_FacetGroup`/`FilterRail`/`filter_rail.dart`,
+Flutter). The facet model is `Data/filters.ts`'s `DataFilters` (state) and
+`Data/facets.ts`'s `matchesFilters`/`facetCounts` (matching); the rail itself
+is `Data/FilterRail.tsx`, the dismissible-chip row above the results is
+`Data/ActiveChips.tsx`.
 
-Each multi-select facet uses a `_FacetGroup` widget: section heading, inline `TextField` search when ≥ 8 options, list of `CheckboxListTile`s with label + count "(N)", virtualised when > 200 options.
+**Combining rule.** Filters compose with **AND across facet categories** — a
+row must pass every active facet to appear in the results. Within one
+multi-select facet, matching is **OR** — any one of the selected values is
+enough (e.g. selecting two bikes shows sessions ridden on either). An empty
+selection (a Set with no members, or `null` for a range) means that facet is
+inactive and passes every row through unfiltered.
+
+**The `""`-is-"(none)" convention.** For Bike, Rider, Tag and Venue, the
+empty string `""` is a synthetic pseudo-entry selectable like any other
+option; it matches a row whose corresponding `SessionSummary` field is the
+empty string (idl0's "(none)" entries, ported as-is).
+
+Facets, top to bottom (`FilterRail.tsx`'s section order), and what each
+reads:
+- **Date** — inclusive range over `SessionSummary.timestamp_utc_ms`, compared
+  by local (viewer time zone) calendar day so a row on the range's own last
+  day matches regardless of time-of-day. Today / Week / Month presets plus a
+  custom start/end pair.
+- **Bike** — multi-select over `SessionSummary.bike`. `""` is "(none)".
+- **Rider** — multi-select over `SessionSummary.rider`. `""` is "(none)".
+- **Tag** — multi-select over `SessionSummary.tag`. `""` is "(none)".
+- **Venue** — multi-select over `SessionSummary.venue_name`. `""` is "(none)".
+- **Lap time** — inclusive millisecond range. At wave 2 this keys off
+  `SessionSummary.duration_ms` (a session's total ride time), the closest
+  field a `SessionSummary` actually carries — there is no per-lap time on a
+  `SessionSummary`. A row with a `null` `duration_ms` is excluded from a
+  bound range, not included by default.
+- **Source** — multi-select over `SessionSummary.source_format`, **C3's own
+  vocabulary** (`idl0 | fit | gpx | csv`) — not idl0's `SessionSourceType`
+  enum, which named formats idl1 doesn't import from this path (e.g. no bare
+  `.gpx`-as-track distinction) and lacks `fit`/`csv`.
+
+**Track, has-gates and has-GPS are absent for wave 2** (R53 Data Q2, R54) —
+dropped outright, not stubbed, not shown disabled. None of the three is
+derivable from a `SessionSummary`: Track needs lap-level attribution
+(`LapSummary.track_id` or `SessionDetail.track_visits`), "has gates" needs a
+matched Track's gate list, "has GPS" needs a GPS channel presence check, and
+all three currently require a per-session `getSession` or lap-indexed data
+this tab's local filtering does not have. **R54 ruling:** a facet a viewer
+can select but that structurally can never match a row (as a wave-2 Track
+facet fed only by `list_tracks`, with no session→track linkage, would be) is
+a trap, not honesty — worse than simply not offering it. This differs from
+the lap-time and lap-count gaps, which keep the control and render "—"/empty
+per row (R53 Data Q4): those controls still act, they just have nothing to
+show; a wave-2 Track facet's control would not act at all. Filed as a wave-3
+C4 §5 + C3 §3.2 amendment (same item for all three) — likely catalog columns
+added at index time, not a runtime join.
+
+**Search** — free-text, case-insensitive substring match across venue name,
+short comment and tag (`Data/facets.ts`'s `matchesFilters`) — idl0 also
+matched Track name and the long comment; both are dropped for wave 2 for the
+same reason as the Track facet (no session→track join) and because
+`SessionSummary` has no long-comment field (only `SessionDetail` does).
+
+**Active chips** (`ActiveChips.tsx`) — one dismissible chip per active facet
+value plus "Clear all", idl0's `_ActiveChipRow` semantics: the date chip
+reads `Date: <day>` for a single day or `Date: <start> → <end>` for a range;
+the lap-time chip reads as a clock (`mm:ss` or `h:mm:ss` past an hour), not
+raw milliseconds. "Clear all" resets every facet to its wave-2 default but
+leaves the active `view` and sort untouched.
 
 ### 24.5 Search Bar
 
@@ -2464,13 +2519,38 @@ heading). The editable **Venue** field is *pre-filled* with this same resolved
 venue when `venueName` is empty, so saving the card persists the venue into the
 session's own metadata rather than leaving it blank.
 
-Hosts `MetadataForm` (extracted from `MetadataEditor`) with the following fields:
-- Rider — `Autocomplete<String>` sourced from distinct known rider names.
-- Bike — `Autocomplete<String>` sourced from distinct known bike names.
-- Venue — `Autocomplete<String>` sourced from distinct `Track.venueName ∪ SessionMetadata.venueName`.
-- Event — free-text `TextField`.
-- Tag — free-text `TextField`.
-- Comments — multi-line `TextField`.
+**Metadata form (idl1, wave 2 — `Data/metadataDraft.ts`, `Data/MetadataForm.tsx`).**
+Rewritten over C1 §6's `session.json` fields — the nine editable fields are
+now exactly `rider`, `bike`, `bike_comment`, `venue_name`, `event_name`,
+`event_session`, `tag`, `short_comment`, `long_comment`; `""` is the only
+"not set" representation for any of them (C1 §6 has no null). idl0's
+distinct-Track/`Autocomplete` sourcing for Rider and Bike is dropped for
+wave 2 — `venueOptions` (`metadataDraft.ts`) still derives the Venue
+suggestion list from `list_tracks`' distinct `venue_name` values, deduped
+and sorted, matching this section's venue-autocomplete rule above; Rider and
+Bike render as plain text fields.
+
+The **venue pre-fill rule carries over unchanged**: `initialDraft` fills
+`venue_name` from the session's own `venue_name` when non-empty, otherwise
+from the first resolvable visited track's `venue_name`
+(`trackRow.ts`'s `resolveDisplayVenue`, Task 6) — walked in visit order,
+skipping a visit whose `track_id` no longer resolves — so saving persists
+the venue the card already shows rather than the session's own possibly-
+empty field.
+
+**Save path — `save_session_metadata` (IPC need 1,
+`runs/2026-09-05/lanes/l7/IPC-NEEDS.md`), no command behind it in wave 2.**
+The command does not exist on `main` yet; `Data/ipcStubs.ts`'s
+`saveSessionMetadata` stands in for it and always rejects with a local
+`NotImplementedError`, never a fabricated `IpcError` kind (C3 §2's kind
+vocabulary is additive-only). The form surfaces this honestly — "Saving
+session metadata isn't wired up yet — your changes aren't saved" — rather
+than pretending the save succeeded; typed changes stay live in the form
+after a failed save so nothing already typed is lost, but nothing reaches
+disk until the real command lands. **Once it does, the write is a
+whole-block replace of all nine fields, never a sparse patch** — every
+field is required on `SessionMetadataPatch` specifically so a concurrent
+editor cannot half-apply a save.
 
 Below `MetadataForm`:
 - **Tracks visited row** — inline list of `TrackVisit` names with tap-to-open.
@@ -2529,7 +2609,27 @@ the top-ranked session leads).
 - **Search** — toggles the search bar.
 - **Sessions / Tracks toggle** — `SegmentedButton<DataView>`.
 - **Sort** — a compact field chooser + ascending/descending toggle for the active view's fields (§24.13).
-- **Import** — imports `.idl0` or `.gpx` files (sessions) or `.gpx` tracks depending on active view.
+- **Import** (idl1, wave 2 — `Data/ImportPanel.tsx`, `Data/importQueue.ts`,
+  `Data/FilePicker.ts`) — rewritten over C3 §3.3's `import_file`/
+  `list_importers`; idl0's Dart runs-provider import flow (`RunsNotifier`
+  registering `.idl0`/`.gpx` files picked by the OS's native file picker) is
+  gone. The picker itself is a pasted absolute path in wave 2, not a native
+  dialog — no file-picker mechanism exists yet anywhere in this codebase, and
+  adding one (`@tauri-apps/plugin-dialog`) needs a new dependency and an
+  `app/src-tauri` capability entry outside this lane's scope; see
+  `runs/2026-09-05/lanes/l7a-data/brief-task5.md` (lead ruling R55) for the
+  seam this sits behind (`FilePicker.ts`'s `pickImportFile`), swapped for a
+  real dialog by a later shell task with no call-site change. Enqueued files
+  run through the queue **serialised, one at a time** (R13: this machine is
+  memory-bound, import is CPU/I/O-heavy) — never more than one `import_file`
+  call in flight. Progress streams via a `Channel<Progress>` carrying a
+  `phase` string and an optional `total` (C3 §1); the overall queue bar is
+  `null`, not a fake number, while the running file's `total` is unknown. A
+  forced-importer override is available via `listImporters()`; `null` means
+  extension-based auto-detection. On the queue draining (every item `"done"`
+  or `"failed"`), the tab re-runs `list_sessions` once so newly imported
+  sessions appear without a manual refresh. A per-file failure marks that
+  item `"failed"` and never cancels the others still queued or running.
 - **Create from session…** — builds the session's GPS polyline and opens the Track Editor modal in **create mode** (§24.12): Name/Venue are entered in the editor with the map visible, and the Track is created on Save.
 - **Rescan visits** — calls `RunsNotifier.rescanAllTrackVisits` over all sessions; re-runs TrackVisit detection without re-downloading source files, showing a per-row spinner and surfacing the first error on failure.
 
@@ -3083,25 +3183,52 @@ Tab 5 of the [AdaptiveScaffold](../app/lib/ui/shell/adaptive_shell.dart) shell. 
 
 **Layout.** Narrow (< 720 dp): a single vertical scroll of the §27.4 sections, each a `MinimalSectionHead` + content (Firmware is a collapsed-by-default `CollapsibleSection`). Wide (≥ 720 dp): a two-pane layout — a left list of the sections + a right detail pane showing the selected section (default Profile), matching the Data tab's wide idiom (§24.2). Every control is reachable in both layouts.
 
-### 27.1 AppSettings model
+### 27.1 Prefs model (idl1)
 
-`app/lib/data/app_settings.dart`
+**Superseded (2026-09-05, L7c Task 2).** idl0's `AppSettings`
+(`app/lib/data/app_settings.dart`, `shared_preferences`-backed, 7 fields) is
+replaced by idl1's `Prefs` (`app/src/routes/pages/Settings/prefs.ts`), split
+into an engine half and a UI-only half:
 
-| Field | Type | Default | Persistence key |
-|-------|------|---------|-----------------|
-| `riderName` | `String` | `''` | `rider_name` |
-| `unitSystem` | `UnitSystem` | `imperial` | `unit_system` (int index) |
-| `autoSyncOnDownload` | `bool` | `true` | `auto_sync_on_download` |
-| `syncOnWifiOnly` | `bool` | `true` | `sync_on_wifi_only` |
-| `autoSyncOnOpen` | `bool` | `false` | `auto_sync_on_open` |
-| `firmwareChannel` | `FirmwareChannel` | `stable` | `firmware_channel` (int index) |
-| `autoCheckFirmware` | `bool` | `true` | `auto_check_firmware` |
+| Field | Type | Default | Notes |
+|-------|------|---------|-------|
+| `engine.data_dir` | `string \| null` | `null` | C4 §1's `<data>` override. `null` = platform default. Mirrors `settings.json`'s `data_dir`. |
+| `engine.rider_name` | `string` | `""` | `""` = not set (C4 §1 — there is no `null` representation for this field). |
+| `engine.unit_system` | `"imperial" \| "metric"` | `"imperial"` | An unrecognised value (e.g. from a corrupt document) falls back to `"imperial"`, never throws. |
+| `ui.last_section` | `string` | `"profile"` | Which Settings section the tab reopens on. Never reaches the engine. |
+| `ui.section_list_width_px` | `number` | `220` | Wide-layout section-list width, in pixels. Never reaches the engine. |
 
-`autoSyncOnOpen` is the "connect and forget" switch for the Data tab's Sync screen (§24.17). Default **OFF**: the screen opens as an unchecked file picker. When ON, opening the screen downloads all NEW device files automatically.
+`engine` is field-for-field `idl_rs::store::settings::AppSettings`
+(`rust/core/src/store/settings.rs`) and C4 §1's `settings.json` keys, so a
+future `set_settings` call can take the `engine` object unchanged, with no
+translation layer. `ui` is UI-only and never leaves the machine.
 
-`UnitSystem` enum: `imperial`, `metric`.
+idl0's Drive-sync (`autoSyncOnDownload`, `syncOnWifiOnly`, `autoSyncOnOpen`)
+and firmware (`firmwareChannel`, `autoCheckFirmware`) fields have no idl1
+counterpart here: Drive sync is dropped permanently (replaced by LAN sync,
+§27.4) and firmware/OTA is deferred to wave 3 (not persisted yet).
 
-Backed by `shared_preferences`. `SettingsNotifier` starts at `AppSettings.defaults()` and updates once the async load completes.
+**Where it lives in wave 2 — `localStorage`, not `settings.json`.**
+`rust/core/src/store/settings.rs` already loads and saves
+`app_config_dir()/settings.json` with exactly `engine`'s three keys (C4 §1),
+but no C3 command exposes it yet (C3 is frozen for UI lanes during wave 2).
+So for now the whole `Prefs` document — both halves — is kept in the
+WebView's own `localStorage` on the machine, behind the `PrefsBackend`
+interface (`prefsStore.ts`): it does not sync across devices and does not
+reach `settings.json`. `get_settings`/`set_settings` (IPC need 6, filed in
+`runs/2026-09-05/lanes/l7/IPC-NEEDS.md`) is the command that closes this
+gap; when it lands, the swap is a one-time import of the `localStorage`
+keys into `settings.json` (so nothing already saved is silently lost),
+after which only the `engine` half round-trips through the command and
+`ui` stays local.
+
+`parsePrefs`/`serializePrefs` are lenient: an unreadable or partial
+document yields defaults for the keys it cannot supply, and unknown keys
+(from a newer app version) are preserved through a round trip rather than
+dropped. Every `localStorage` access is wrapped in try/catch — a WebView
+can refuse storage (private mode, cleared site data, a policy) — so a read
+failure yields defaults and a write failure is reported as a failed result,
+never a crash and never a silently discarded change.
 
 ### 27.2 Unit system — defaultUnit()
 
@@ -3121,7 +3248,7 @@ Called by `ChannelMetadataBar._onQuantityChanged` to set the default unit when t
 |---|-------|---------|
 | 1 | Profile | Rider name — debounced 500 ms text field |
 | 2 | Units | `SegmentedButton<UnitSystem>` + summary line |
-| 3 | Drive Sync | Sign in/out, auto-sync toggle, WiFi-only toggle, auto-sync-on-open toggle |
+| 3 | Sync (idl1: LAN sync, replaces Drive Sync — see §27.9) | Paired-peer list with online status, pairing-code entry, manual "Sync now" per peer |
 | 4 | Firmware | OTA update. Auto-checks the selected channel (stable/beta) against the running version (§7.3 `Firmware:`) and shows an "update available vX → vY" card that downloads from GitHub Releases (§27.7) and runs the OTA push. Channel picker, auto-check toggle, "Check now", plus the manual `.bin` picker as fallback. Progress / reboot states, pending-verify commit/rollback card. See §4.6 / §6.1 / §27.7. Collapsed by default in the narrow layout. |
 | 5 | Controls | Read-only reference of the chart keyboard / mouse / wheel shortcuts (mirrors `kDefaultChartBindings` + `wheelModeFor`, §26.7), grouped Mouse wheel / Mouse / Keyboard as leader-dot `SpecRow`s. Editable rebinding is a v2 follow-up. |
 | 6 | How-Tos | 4 markdown articles + Full Reference link |
@@ -3195,11 +3322,174 @@ still available. An update is offered only when hosted is strictly newer; a
 channel switch that leaves the device ahead of the channel shows an
 informational note, not a downgrade prompt.
 
+### 27.8 Data directory override (idl1, no idl0 counterpart)
+
+**New section (2026-09-05, L7c Task 4).** idl0 has no equivalent screen —
+this is C4 §1's "Override in Settings", built here against the
+`get_data_dir`/`set_data_dir` stubs (IPC need 7a/7b,
+`runs/2026-09-05/lanes/l7/IPC-NEEDS.md`) until the write-amendment Rust lane
+lands the real commands.
+
+**What the section shows.** The `<data>` root actually in use for this
+process (`DataDirInfo.resolved_path`), an override text field seeded from
+`DataDirInfo.override_path` (empty when the platform default is in use),
+and, once a candidate path passes `dataDir.ts`'s `validateDataDir` (non-empty,
+"absolute-looking" — a drive letter or a leading `/`/`\`, no trailing
+whitespace), an explicit confirmation step before `set_data_dir` is called.
+Changing where a user's whole data store lives is not a field that saves on
+blur.
+
+**What the confirmation states (C4 §1).** `dataDir.ts`'s
+`describeOverrideChange` names both the previous location (or "the platform
+default location" if there was no override) and the new one, and states
+plainly that existing files are **not moved** — the app opens or creates a
+tree at the new path and the old tree is left exactly where it was.
+
+**Takes effect on restart, not immediately (R53 Q4).** `<data>` is resolved
+once at startup and cached for the process lifetime (C4 §1), so a change
+saved here has no visible effect until the app restarts;
+`DataDirInfo.restart_required` reports when a saved override has not yet
+taken effect, and the section's copy states the restart requirement rather
+than implying the change is live.
+
+**Known trap, not this lane's work.** A `settings.json` written with a
+UTF-8 BOM parses as absent and silently falls back to the platform default,
+which can make a data-directory override set from this section appear to do
+nothing (`runs/2026-09-03/decisions.md`, 2026-09-05 ledger entry;
+`runs/2026-09-05/lanes/l7/IPC-NEEDS.md` need 7). The fix
+(`rust/tauri/src/paths.rs`) rides with the Rust write-amendment lane, not
+this one.
+
+### 27.9 Sync (idl1, replaces Drive Sync — §27.4 row 3)
+
+**Superseded (2026-09-05, L7c Task 5).** idl0's Drive-sync section (Sign
+in/out, auto-sync toggle, WiFi-only toggle, auto-sync-on-open toggle — see
+§28, itself superseded) is replaced by idl1's LAN sync, built here against
+the real, landed `sync_status`/`sync_now`/`pair_peer` commands
+(`app/src/ipc/sync.ts`, C3 §3.9) — not stubs. Google Drive is dropped
+permanently; idl1 syncs peer-to-peer over the LAN (design §7).
+
+**What the section shows.** A list of paired peers (`sync_status`'s
+`paired_peers`) with each peer's online flag; a pairing-code field that
+normalizes the input (`pairCode.ts`'s `normalizePairCode` strips spaces and
+`-`/`_` separators) and validates it locally (`validatePairCode`: exactly
+six digits) before calling `pair_peer` — C3 §3.9 backs a malformed code with
+`invalid_argument`, but local validation means a typo never becomes a round
+trip; and a manual "Sync now" button per peer that calls `sync_now`,
+streaming `Progress` messages (a mixed blobs+cells count disambiguated by
+`phase` — "manifest", "blobs", "workbooks") into a running-transfer line.
+
+**Polling.** The section polls `sync_status` on a 5-second timer while
+mounted (C3 §4: a periodic poll, never per-frame; no contract fixes the
+interval) and stops when the section is not the selected one, since the
+poll lives in the mounted component's own effect.
+
+**Result summary.** `syncState.ts`'s `describeSyncResult` turns a
+`SyncResult` into one line, e.g. "12 blobs, 3 workbooks merged cleanly."
+when `conflicts` is zero, or "12 blobs, 3 workbooks merged, 2 conflict
+cells to resolve." otherwise — a non-zero conflict count reads as something
+to go resolve in the merged workbook (design §7's per-cell merge produces
+conflict cells as a normal outcome), never as a sync failure.
+
+**L11 has not landed.** The Rust LAN-sync implementation (L11) has not
+merged, so all three commands reject today; the section renders that
+through `errors.ts`'s `describeIpcError` (kind `sync` and others) when the
+rejection is a typed `IpcError`, or a "LAN sync isn't running on this build
+yet" message otherwise, rather than a raw error. The automatic
+"sync when a paired peer appears" trigger (design §7) is L11's job to wire
+once the backend exists; this section provides the manual button and status
+display only.
+
+### 27.10 Chart controls reference (idl1)
+
+**Superseded (2026-09-05, L7c Task 6).** idl0's Controls section (§27.4 row
+5) carried `kDefaultChartBindings`/`wheelModeFor` verbatim. idl1's
+equivalent (`app/src/routes/pages/Settings/controls.ts`,
+`ControlsSection.tsx`) carries the same three groups (mouse wheel, mouse,
+keyboard) and the same rows, since idl0's content is all this lane has to
+go on.
+
+**Provisional (R53 Q2).** L6 (the Notebook lane) owns the chart's actual
+interaction bindings and is being built concurrently with this lane, so
+this table may not match the shipped chart. Per R53 Q2(a), the table is
+carried now and the section renders a visible "provisional — bindings land
+with the Notebook lane" label in the UI itself, not only in a code comment.
+R53 Q2(b) — L6 exporting its real binding table for Settings to import —
+is a follow-up the lead does after L6 merges; this lane does not attempt
+that cross-lane import.
+
+### 27.11 How-to articles (idl1)
+
+**Superseded (2026-09-05, L7c Task 6).** idl0's four Markdown articles
+(§27.5, rendered via `flutter_markdown`) are carried as bundled TSX
+components (`app/src/routes/pages/Settings/howtos/*.tsx`) — no CDN, ever
+(CLAUDE.md §3), and four short documents do not justify adding a markdown
+renderer dependency to the bundle.
+
+| Component | Title | Rewritten for idl1 |
+|---|---|---|
+| `FirstSetup.tsx` | First Setup | idl0's Device/Runs tabs become idl1's Device tab (pairing, config push, calibration, recording) and Data tab (download, session library) |
+| `WifiDownload.tsx` | WiFi Download | idl0's "Runs" tab becomes idl1's Data tab |
+| `GpsLapGate.tsx` | GPS Lap Gate | idl0's Runs/Analyze tabs become idl1's Data tab (session selection) and Notebook tab (chart viewing, lap-gate editing) |
+| `MathChannels.tsx` | Math Channels | idl0's separate "Maths" tab is gone — math channels are now `math` cells written directly in the notebook document (C2 §2), not a dedicated editor screen |
+
+idl0's "Full reference" and "Report issue" buttons, both pointing at
+`example.com` placeholders (idl0's own `TODO(idl0)` comments), are not
+carried across.
+
+### 27.12 About (idl1)
+
+**Superseded (2026-09-05, L7c Task 6).** idl0's `_AboutSection` (§27.4 row
+7) is carried as `app/src/routes/pages/Settings/about.ts`'s `aboutRows` +
+`AboutSection.tsx`.
+
+| Row | idl0 | idl1 |
+|---|---|---|
+| App version | hardcoded `0.1.0` | hardcoded `0.1.0` (mirrors `app/package.json`; no build-time version injection is wired into the Vite build yet) |
+| Engine version | n/a (idl0 has no engine crate) | real value, read from `AppState.engineVersion` — the same `engine_version` (C3 §3.1) call the app shell already makes once on mount, not a second IPC round trip. Reads `"…"` while that fetch is in flight, never `"unknown"` (`"unknown"` would imply the call failed) |
+| Schema | hardcoded `"IDL0 v1"` | hardcoded `"session schema v1"`, mirroring C1's `session.json` `schema_version` field |
+| Build | hardcoded `"dev"` | hardcoded `"dev"`, same treatment |
+
+**Licenses.** idl0 generated a license page from Flutter's package graph
+(`showLicensePage`). idl1 has no equivalent generator wired into its build
+— assembling one from the npm/cargo dependency graph is a build-tooling
+task, not a Settings task — so the control is omitted in wave 2 rather than
+shown disabled or linking out. idl0's "Report issue" button, pointing at an
+`example.com` placeholder, is not carried across either.
+
+### 27.13 Section inventory (idl1)
+
+**Superseded (2026-09-05, L7c Task 6).** idl0's seven-section table (§27.4)
+becomes idl1's seven sections, replacing §27.4 for the idl1 line:
+
+| # | Section | idl1 disposition |
+|---|---|---|
+| 1 | Profile | Carried (§27.1) |
+| 2 | Units | Carried (§27.1, §27.2) |
+| 3 | Data directory | New, no idl0 counterpart (§27.8) |
+| 4 | Sync | Replaces Drive sync, permanently — LAN sync, not deferred (§27.9) |
+| 5 | Chart controls | Carried, marked provisional (§27.10) |
+| 6 | How-tos | Carried as bundled TSX (§27.11) |
+| 7 | About | Carried, with a real engine-version value (§27.12) |
+
+**Firmware/OTA (idl0 §27.4 row 4, §27.7) is deferred to wave 3**, per the
+wave 2 operating brief §3: `push_ota` exists on the transport trait but no
+C3 command exposes it, and the two `AppSettings` fields that would
+configure it are not carried into idl1's prefs model (§27.1) — a
+preference for a feature that does not exist is a field nobody can act on.
+**Google Drive (idl0 §27.4 row 3, §28) is gone, permanently** — replaced by
+LAN sync (row 4 above), not deferred; §28 carries its own superseded banner.
+
 ---
 
 # PART 7 — CROSS-CUTTING
 
 ## 28. Google Drive Sync
+
+**Superseded (2026-09-05, L7c Task 5).** This section describes idl0's
+Google Drive sync, which idl1 does not have — the idl1 line syncs
+peer-to-peer over the LAN instead (design §7; app-side section: §27.9). Kept
+below for idl0 reference only.
 
 **Goal:** Automatic, invisible — experience like Google Docs. Session appears on all devices without user action.
 

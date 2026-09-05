@@ -120,3 +120,13 @@ Write to `runs/2026-09-05/lanes/l7b-device/review-task<N>.md` (or
 In your final message: the findings-file path, the verdict line, and a
 one-sentence summary. If you found something implying a lead ruling is
 needed, say that explicitly and separately.
+
+## Added 2026-09-05 — IPC-driving effects (operating brief §4, after two Criticals)
+
+Trace every React `useEffect` that starts IPC or `postMessage` work: compare
+its dependency array against what it dispatches. An effect whose own
+cleanup can cancel the work it started (because it depends on the state it
+dispatches into) is **Critical**. The decision logic must live in a pure,
+unit-tested driver module with an injected async function; the effect only
+calls it. Check the driver's tests cover dismiss-while-running, stale
+response, and (for the sandbox) rebuild re-priming.

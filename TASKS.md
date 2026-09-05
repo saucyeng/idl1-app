@@ -28,28 +28,63 @@ are defined in `docs/superpowers/specs/2026-09-02-idl1-rewrite-design.md` §10.
 
 ## Wave 2
 
-- [ ] L6 notebook UI · L9 mobile scaffold · L11 LAN sync
-- [ ] L7 device/data/settings UI
-  - [ ] L7a Data tab
-  - [x] L7b Device tab — all 9 tasks landed on `wave2-l7b-device`. Outstanding
-    (`runs/2026-09-05/lanes/l7/IPC-NEEDS.md`): live device status (need 8)
-    and recording/mode control (need 9) have no C3 command, shown as
-    "unavailable" rather than built; `pull_config` (need 10) is a stub, so
-    a push cannot be round-trip verified; profile persistence (need 11) is
-    in-memory for the session only; the channel-registry preview is
-    narrowed to enable state/rate/units per R53 Q1 option (c) for wave 2,
-    with need 12 (the fuller preview) filed for a later (b); a managed BLE
-    connection (need 13) does not exist, so `connected` reads as "the last
-    attempt succeeded," never a live link. Parity gaps dropped or deferred
-    per the plan's table (`docs/superpowers/plans/
-    2026-09-05-idl1-wave2-l7b-device-tab.md`): IMU calibration and
-    firmware OTA (wave 3), the Android WiFi bind-follows-mode controller
-    and the RX/TX link-activity blink (dropped), reserved digital
-    `level`/`pwm` channel kinds and per-channel analog rate overrides
-    (parsed/preserved, not exposed), HRM scan filtering to heart-rate
-    straps (partial — no service-UUID filter), and "connect and forget"
-    auto-download on connect (dropped, needs cross-tab state).
-  - [ ] L7c Settings tab
+- [ ] L6 notebook UI
+- [x] L7a Data tab — Tasks 1-8 landed on `wave2-l7a-data`. Write-command IPC
+  needs 1-4 (`save_session_metadata`, `save_track`/`delete_track`,
+  `delete_session`, `list_quarantine`/`resolve_quarantine`) are built
+  against `NotImplementedError` stubs, no Rust command behind any of them
+  yet; need 5 (`rescan_track_visits`) is dropped outright for wave 2, not
+  stubbed. Parity gaps, unabridged (plan's own table): track create/edit/
+  delete, lap-timing editor, sector list, neutral-zone list and the track
+  sidebar deferred to wave 3 (blocked on both the write command and C3 §6
+  item 10's unfixed `TrackDetail` nested shapes); the track import conflict
+  dialog deferred with it; rescan-disk/repair-filenames replaced outright
+  by `rebuild_catalog`; Google Drive sign-in/status/auto-sync dropped
+  permanently (idl1 uses LAN sync instead, L7c/L11); has-gates/has-GPS
+  facets dropped for wave 2 (neither derivable from a `SessionSummary`);
+  the session GPS map preview deferred to wave 3 (needs bundled map tiles);
+  FIT export controls deferred (C3 has no export command, design §10: "L8
+  (export) does not exist in v1"); the compare-with picker and lap ignore/
+  restore/session-selection-to-Analyze deferred to L6 (the selection model
+  lives in the lead-owned `AppState.selection`); the device file sync
+  screen moved to L7b; the venue detail card dropped for wave 2 (a venue is
+  a string field, not an entity, in idl1); narrow-layout bottom sheets and
+  the mobile filter bar kept as responsive CSS, not a separate
+  implementation (mobile is L9's lane). Lap counts and lap tables
+  legitimately read "—"/empty for most sessions at wave 2 (R53 Q4) — no
+  wave-1 import path indexes `laps`/`lap_summary` yet; not a bug in this
+  lane.
+- [x] L7b Device tab — all 9 tasks landed on `wave2-l7b-device`. Outstanding
+  (`runs/2026-09-05/lanes/l7/IPC-NEEDS.md`): live device status (need 8)
+  and recording/mode control (need 9) have no C3 command, shown as
+  "unavailable" rather than built; `pull_config` (need 10) is a stub, so
+  a push cannot be round-trip verified; profile persistence (need 11) is
+  in-memory for the session only; the channel-registry preview is
+  narrowed to enable state/rate/units per R53 Q1 option (c) for wave 2,
+  with need 12 (the fuller preview) filed for a later (b); a managed BLE
+  connection (need 13) does not exist, so `connected` reads as "the last
+  attempt succeeded," never a live link. Parity gaps dropped or deferred
+  per the plan's table (`docs/superpowers/plans/
+  2026-09-05-idl1-wave2-l7b-device-tab.md`): IMU calibration and
+  firmware OTA (wave 3), the Android WiFi bind-follows-mode controller
+  and the RX/TX link-activity blink (dropped), reserved digital
+  `level`/`pwm` channel kinds and per-channel analog rate overrides
+  (parsed/preserved, not exposed), HRM scan filtering to heart-rate
+  straps (partial — no service-UUID filter), and "connect and forget"
+  auto-download on connect (dropped, needs cross-tab state).
+- [x] L7c settings tab — all 6 tasks landed for wave 2. Outstanding:
+  `get_settings`/`set_settings` (IPC need 6) and
+  `get_data_dir`/`set_data_dir` (IPC need 7a/7b) are still stubbed
+  pending the Rust write-amendment lane; prefs live in `localStorage`
+  meanwhile and the one-time migration into `settings.json` (R53 Q1's
+  stated risk) is not yet scheduled. Parity gaps: Google Drive dropped
+  permanently (replaced by Sync, not deferred); Firmware/OTA deferred to
+  wave 3 (operating brief §3); "Full reference"/"Report issue" links
+  dropped (idl0 `example.com` placeholders); Licenses omitted (no
+  license-page generator wired into idl1's build); chart controls
+  reference carried but provisional pending L6's actual bindings.
+- [ ] L9 mobile scaffold
+- [ ] L11 LAN sync
 
 ## Wave 3
 

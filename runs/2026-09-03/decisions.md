@@ -2754,3 +2754,246 @@ which wins (then the table selection follows it). Non-blocking.
 
 **Cost if wrong:** a config the firmware silently reinterprets; the warning
 makes it visible at push time, which is the most the app can honestly do.
+
+## 2026-09-05 — Tracked note: L6 inline `${…}` prose spans have no host→sandbox trigger yet
+
+L6 Task 5 shipped the sandbox host and cell API; the protocol as committed
+has no message type for evaluating C2's inline `${…}` prose spans, so they
+are unwired. Deferred to L6 Task 13 (open/evaluate/render the workbook),
+which owns how spans are routed. Also carried to Task 13: cell compilation
+binds every host variable as an input to every cell (no free-identifier
+analysis) and cells cannot yet reference each other by name — both marked
+`TODO(idl0)` in `sandbox/main.ts`. Not a contract change; C2 §5 is unaffected.
+
+**Cost if wrong:** prose spans render as literal text until Task 13 — visible,
+not silent.
+
+## 2026-09-05 — R57: C3 §3.9 `sync_status` error kinds — the §2 table wins
+
+L7c Task 5's reviewer found C3 internally inconsistent: §3.9's `sync_status`
+entry listed `io`, `internal` only, while the §2 kind table lists `sync` as
+raised by `sync_status`, `sync_now`, `pair_peer`. **Ruling:** the §2 table is
+authoritative; §3.9's entry now reads `io`, `internal`, `sync` (a status query
+can fail in the sync layer itself — unreadable pairing store). L7c's
+`errors.ts` already maps `sync`, so no code change. L11 implements against
+the amended text.
+
+**Cost if wrong:** an extra kind the UI already handles; zero.
+
+## 2026-09-05 — R58: unassigned pins are representable; no pin range is invented
+
+L7b Task 7 stopped (CLAUDE.md §1): `AnalogChannel.adc_pin` and
+`DigitalChannel.gpio_pin` are non-optional `number` with no way to say
+"unassigned", and neither `DeviceConfig` nor SPEC §8/§3.7 declares a valid
+pin range for a picker to enumerate (§3.7 names nets, not numbers).
+
+**Ruling:**
+1. Task 7 is authorised to change `config/model.ts` (Task 2's file, same
+   lane): `adc_pin: number | null` and `gpio_pin: number | null`, `null` =
+   unassigned. Parse: a missing pin key reads as `null` with no `Repair`
+   (it is a legal draft state); a present non-integer is a `Repair` as
+   today. Serialise: omit the key when `null`. Validator (Task 3's file,
+   same authorisation): an unassigned pin is an **error** ("pin unassigned"),
+   so `isPushable` is false — a draft channel can never reach the device
+   half-configured. Collision check ignores `null`.
+2. **No pin range in wave 2.** The picker is a non-negative-integer input,
+   collision-checked, starting empty (unassigned). Inventing a range would
+   put a hardware guess in the UI. **For Isaac:** SPEC §8 should state the
+   valid `adc_pin` and `gpio_pin` value sets (or map them to §3.7's named
+   nets); when it does, the input becomes a select and the validator gains
+   a range rule — one task, no model change.
+
+**Cost if wrong:** a user can type a pin the hardware lacks and learn at push
+time from the device's rejection (C3 `config` kind) — visible, not silent.
+The alternative, a guessed range, could exclude a real pin with no recourse.
+
+## 2026-09-05 — Process rule: IPC-driving React effects delegate to a pure, tested driver
+
+Two Criticals reached review within an hour, both in the one place the UI
+gate cannot see (rendering is not unit-tested, CLAUDE.md §4): L7a Task 5's
+import-queue effect depended on the state it dispatched into, so its own
+cleanup cancelled every in-flight import; L6 Task 5 registered host
+variables as getters the Observable runtime never unwraps and never
+re-primed a rebuilt iframe. Both were caught by reviewers reading the code,
+not by any test.
+
+**Rule (operating brief §4, all four UI standing reviewer briefs):** the
+decision logic of any effect that starts IPC or `postMessage` work lives in
+a pure module with an injected async function and is unit-tested for the
+interleavings that matter (dismiss-while-running, stale response, rebuild);
+the effect only calls it and never cancels in-flight work because unrelated
+state changed. Reviewers trace dependency arrays against dispatches; a
+self-cancelling effect is Critical. Fixes for both incidents are follow-up
+commits in their lanes, with driver tests.
+
+**Cost if wrong:** more ceremony per effect. Against it: an import feature
+that can never complete, shipped green.
+
+## 2026-09-05 — L2 four-task gate: PASS (932)
+
+Per CLAUDE.md §8 the full suite ran after L2 Tasks 1–4 (worktree
+`275267e`, clean): `cargo check -p idl-rs-cli --tests` Finished (21 s);
+`cargo check -p idl-rs-tauri` Finished (16 m 07 s — cold Tauri graph, only
+pre-existing warnings); `cargo test -p idl-rs -p idl-rs-cli --
+--test-threads=4` → idl-rs 880 passed / 0 failed / 1 ignored, integration
+`real_session_odr_validation` 1 passed, idl-rs-cli 51 passed, doc-tests 0.
+Total 932, no OOM. The gate agent stalled twice waiting on background
+command notifications that had already fired; the lead nudged it each time
+— gate steps should run in the foreground (told the agent; carried into the
+next gate brief). Task 5 (CSV) dispatched on the PASS.
+
+## 2026-09-05 — L7c LANDED (Settings tab, wave 2)
+
+Merged `wave2-l7c-settings` into idl1-app `main` (`--no-ff`). Lane: Tasks
+1–6 plus four follow-ups (Task 5 minors, `errors.ts` coverage to 100 %,
+how-to copy accuracy, async `PrefsBackend`). Reviews: six, all CLEAN after
+follow-ups; the last review held the merge for three factual errors in
+how-to copy (push described as WiFi, calibration and a lap-gate editor
+described as working) — fixed, and the implementer found two more of the
+same class itself (battery level, remote record start/stop). Merge gate on
+`main`: `tsc` clean, whole TS suite **98 passed / 0 failed**.
+
+**Shipped:** Profile, Units, Data directory (restart-required, stubbed
+get/set), Sync (real `sync_status`/`sync_now`/`pair_peer`, 5 s poll while
+visible), Controls (provisional banner), How-tos (every affordance claim
+true today or marked not yet available), About (engine version from
+AppState). Prefs in `localStorage` behind an async `PrefsBackend`.
+**Outstanding for the Rust write lane:** `get_settings`/`set_settings`,
+`get_data_dir`/`set_data_dir`, the one-time `localStorage`→`settings.json`
+import (R53 Q1), the BOM strip in `resolve_data_dir`. **Parity gaps:** Drive
+sync replaced by LAN sync (permanent), firmware/OTA wave 3, licence page
+omitted, chart-controls reference provisional until L6 lands. SPEC §27
+rewritten (§27.1, §27.8–§27.13), §28 superseded banner. R57 came out of this
+lane's review.
+
+**Cost if wrong:** the tab is additive and behind its own directory; a
+regression is a revert of one merge commit.
+
+## 2026-09-05 — R59: C3 wave-2 write amendment adjudicated (Q1–Q6, F1–F3)
+
+Draft: `runs/2026-09-05/C3-WAVE2-AMENDMENT-DRAFT.md` (Opus; 17 new commands
++ `eval_workbook` amended; all 21 IPC needs dispositioned; a new §3.10 App
+group). Rulings:
+
+- **Q1 → (a).** `save_session_metadata(session_id, fields)` reads
+  `session.json`, hashes it, writes via `write_session_json` — last-write-wins
+  inside the command, no `conflict` kind, no signature change. Revisit when
+  L11 (LAN sync) makes concurrent edits real.
+- **Q2 → (a).** Quarantine commands deferred to wave 3 with the repair action
+  that would populate `tmp/quarantine/`; nothing implements it today and a
+  permanently-empty command does not belong in a signed contract. The Data
+  tab's stubs stay.
+- **Q3 → (a).** New binary headers pad to natural alignment: `IDLH` 24 bytes,
+  `IDLF` 16 bytes, so `Float64Array` views start on 8-byte boundaries. On the
+  landed `IDLT` (C3 §3.5): the drafted "latent throw on odd `column_count`"
+  does **not** occur — `app/src/ipc/tiles.ts` copies every region through a
+  `DataView` into freshly allocated arrays, never views the buffer in place.
+  Ruling: `IDLT` unchanged; C3 §3.5 gains one sentence: "regions are not
+  alignment-padded; decoders copy, they do not view in place." Any future
+  zero-copy tile decoder is a layout-version bump.
+- **Q4 → (b).** New cross-cutting kind `device_rejected` with
+  `detail { ack: "busy" | "precondition" | "write_not_permitted" |
+  "not_implemented" }` for a refused device control transition (SPEC §7.2
+  `AckCode`). `config` keeps its one meaning. Additive to §2, C3 §5 respected.
+- **Q5 → (a).** `set_data_dir` is the sole writer of the `data_dir` key
+  (validates, creates the tree, computes `restart_required`); `set_settings`
+  ignores `data_dir` in its argument and echoes the current value. One
+  sentence goes on `AppSettings`'s doc comment in the UI when the stub is
+  swapped.
+- **Q6 → (a).** `device_status` mirrors `idl_transport::ble_status::
+  DeviceStatus` field for field (incl. `ota_pending_verify`, `hr`,
+  `hr_battery_pct`); IPC need 8's four sourceless fields are dropped.
+  **For Isaac:** could the firmware report SD free bytes, GPS fix quality,
+  satellite count and battery millivolts in the §7.3 status block? If yes,
+  a SPEC §7.3 amendment adds them and the command grows additively.
+- **F1–F3 accepted** (`create_workbook` suffixes per C4 §2, `delete_profile`
+  → `not_found`, `ProfileLoadReport.skipped` as objects).
+
+**Applied to C3** by a transcriber under this ruling; the write lane (after
+L2 Task 8 and L5 Task 9) implements against the amended text, App group
+first (core logic already landed).
+
+**Cost if wrong:** Q1 risks a lost edit only under concurrent writers that
+do not exist yet. Q3's padding is four bytes per response. Q4 adds a kind
+that can never be removed — justified by a UI that must present "device
+busy" differently from "bad config". Q6 drops fields no source can fill;
+adding them later is additive.
+
+## 2026-09-05 — L7a LANDED (Data tab, wave 2)
+
+Merged `wave2-l7a-data` into idl1-app `main` (`--no-ff`, `4c6f6a1`); the
+only conflicts were CHANGELOG.md and TASKS.md bullets against L7c's landing
+(kept both; TASKS.md's wave-2 block re-nested so L7a/L7b/L7c are separate
+lines). Lane: Tasks 1–8 plus five follow-ups. Reviews: eight, all CLEAN
+after follow-ups; two re-reviews. Merge gate on `main`: `tsc` clean, whole
+TS suite **204 passed / 0 failed**.
+
+**Shipped:** session list with formatters and sort; local facet filtering
+(AND across, OR within, "(none)"); session detail pane joining file-native
+and catalog laps honestly (R53 Q4/Q5); tracks view rendering counts only for
+C3's unfixed nested shapes; import queue over the real `import_file` behind
+the R55 picker seam with a pure, id-addressed driver (the lane's one
+Critical, fixed and re-reviewed); metadata editor over a stubbed save;
+maintenance actions behind confirmation over stubs and the real
+`rebuild_catalog`. Selection writes `AppState.selection` (R53 Q3).
+**Outstanding for the Rust write lane:** `save_session_metadata`,
+`delete_session`, the dialog plugin (R55), `import_file` itself (L5 Task 9);
+quarantine deferred to wave 3 (R59 Q2); track write commands wave 3.
+**Parity gaps** as TASKS.md lists them, unabridged. R54 came out of this
+lane. **Process lessons this lane produced:** the IPC-effects rule (Task 5's
+self-cancelling effect), the never-amend rule, the Windows case-collision
+rename (`metadataDraft.ts`).
+
+**Cost if wrong:** additive tab behind its own directory; a regression is a
+revert of one merge commit.
+
+## 2026-09-05 — R60: L2 Task 7/8 + L5 Task 9 briefs; import warnings on the wire; L6 rebind orchestrator placement
+
+Brief writer's four questions:
+1. **Import warnings cross the IPC boundary.** C3 §3.3 `import_file` now
+   resolves with `ImportOutcome { session: SessionSummary, warnings:
+   string[] }` (the importer's recovered warnings, incl. truncation), not a
+   bare `SessionSummary` — a catalog row must not carry per-import state,
+   and dropping the warnings violates CLAUDE.md §5. `app/src/ipc/import.ts`
+   and the Data tab's `importDriver` adapt in a lead shell task on `main`
+   (both lanes are merged); Task 9 implements the new shape. C3 §3.3 amended
+   by the same transcriber pass as R59.
+2. **`import_collision` is a new C3 §2 row** (`ImportErrorKind::Collision`:
+   re-import of a different blob under an existing session id), R44
+   precedent — never fold into `conflict`.
+3. **Task-numbering collision.** The deferred FIT/GPX speed/heading follow-on
+   that SPEC §15a and the plan call "Task 8" is renamed **"L2 follow-on S/H
+   (post-archive)"**. L2 Task 8's scope is widened to include editing
+   `docs/IDL0_SPEC.md` §15a in the idl1-app L2 worktree (it is the lane's
+   docs task): the rename, the `import_with_hook` residue (killed by L2-R12),
+   and the `parse_*`→`import_*` kind-prefix error.
+4. **L5 Task 9 runs in the idl-rs L2 worktree/branch** (one repo; needs
+   Tasks 6/7's exact signatures). Merges with L2.
+
+**L6 Task 8's obligation 1 (BoundChannel registry → rebind on rebuild):**
+nothing yet owns a `SandboxHost` and the cells' viewport/cache state
+together. Ruling: that orchestrator is **Task 13's** (open/evaluate/render
+owns the notebook lifecycle) — a `host/NotebookSession.ts` holding the
+`SandboxHost`, the `TileCache`, and a per-cell registry of bound channels +
+viewport, wiring `onChannelsInvalidated` → `rebindChannelsAfterRebuild` →
+`setChannelHostVar`. Task 8 is complete as committed (`f143545`).
+
+**Cost if wrong:** (1) changes a wire shape two landed TS files depend on —
+one shell task, both call sites known. (3) is prose. The orchestrator
+placement is reversible until Task 13 lands.
+
+## 2026-09-05 — Checkpoint: second session-limit cutoff, three tasks resumed
+
+At 13:31 local the account's session limit cut off three implementers
+mid-task (L2 Task 6 in the idl-rs worktree; L6 Task 9 and L7b Task 9 in
+their idl1-app worktrees). All committed work was intact; each worktree held
+coherent uncommitted WIP (L6/L7b believed complete, mid-gate; L2 mid-build).
+Resumed at 17:19 with fresh implementers told to inherit, verify and own the
+WIP rather than redo it, and to commit the inherited work before merging
+`main` so the two stay separate commits. State at the cutoff: idl1-app
+`main` `928ef7f` (L7a, L7c and shell tasks 1–3 landed; TS suite 207
+passed); idl-rs L2 branch at `227d3f1` (Tasks 2–5 reviewed CLEAN); L6 at
+`95d291d` (Tasks 1–8 + fixes); L7b at `7fd009e` (Tasks 1–8 + fixes). No
+cargo process was left running. Lesson carried: a cutoff costs nothing when
+every task commits per step and the lead snapshots worktree state
+immediately; the first resume of the day used the same pattern.
