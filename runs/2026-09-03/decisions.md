@@ -3182,3 +3182,16 @@ orchestrator and calls `get_session`) threads the unit through.
 
 **Cost if wrong:** a label suggestion, editable by the user; no number
 changes.
+
+## 2026-09-05 — L8w four-task gate (after Task 4): PASS
+
+Foreground, once, from `874fbec`: `cargo test -p idl-rs-tauri` → **130
+passed / 0 failed** (1 doc-test ignored, pre-existing); `cargo test -p idl-rs
+-p idl-rs-cli -- --test-threads=4` → idl-rs 899 passed / 1 ignored, doctests
+1, idl-rs-cli 51. Tasks 1–4 (BOM strip, settings/data-dir, profiles,
+`read_workbook`) all on the branch; Tasks 1 and 3 reviewed CLEAN, Task 2's
+two test-coverage Importants queued as Task 4's follow-up. Note for brief
+writers: `cargo test` filters are substrings of the full test path; this
+crate nests tests under `commands::<module>::tests::`, so a filter like
+`commands::workbook::read_workbook` matches nothing — name the test-fn
+prefix (`read_workbook_via`) or the module (`commands::workbook::`) instead.
