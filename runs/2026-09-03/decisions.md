@@ -3303,3 +3303,5 @@ are removed there.
 
 **Cost if wrong:** a heavier 13b; the alternative is a hole in the one
 security boundary the app has.
+
+**R67 addendum (2026-09-05):** the brief writer found `ExpectedHashSet` already suppresses the app's own saves in Rust before an event is built (existing test). `WorkbookEvent.hash` is therefore defence in depth for the UI (and lets the UI reason about external edits), not a fix to a live Rust gap; the joint self-write test is dropped as unwritable through the real path (ruled in `brief-task4b.md`).
