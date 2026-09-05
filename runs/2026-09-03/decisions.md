@@ -2754,3 +2754,16 @@ which wins (then the table selection follows it). Non-blocking.
 
 **Cost if wrong:** a config the firmware silently reinterprets; the warning
 makes it visible at push time, which is the most the app can honestly do.
+
+## 2026-09-05 — Tracked note: L6 inline `${…}` prose spans have no host→sandbox trigger yet
+
+L6 Task 5 shipped the sandbox host and cell API; the protocol as committed
+has no message type for evaluating C2's inline `${…}` prose spans, so they
+are unwired. Deferred to L6 Task 13 (open/evaluate/render the workbook),
+which owns how spans are routed. Also carried to Task 13: cell compilation
+binds every host variable as an input to every cell (no free-identifier
+analysis) and cells cannot yet reference each other by name — both marked
+`TODO(idl0)` in `sandbox/main.ts`. Not a contract change; C2 §5 is unaffected.
+
+**Cost if wrong:** prose spans render as literal text until Task 13 — visible,
+not silent.
