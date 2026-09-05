@@ -1,6 +1,7 @@
 import { useState } from "react";
 
 import "./settings.css";
+import DataSection from "./DataSection";
 import ProfileSection from "./ProfileSection";
 import { localStorageBackend, createPrefsStore } from "./prefsStore";
 import { SECTIONS, defaultSectionId, sectionById } from "./sections";
@@ -49,6 +50,8 @@ export default function Settings() {
           <ProfileSection store={prefsStore} />
         ) : selected.id === "units" ? (
           <UnitsSection store={prefsStore} />
+        ) : selected.id === "data" ? (
+          <DataSection store={prefsStore} />
         ) : (
           <p>Built in a later task.</p>
         )}

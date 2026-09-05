@@ -2948,6 +2948,44 @@ still available. An update is offered only when hosted is strictly newer; a
 channel switch that leaves the device ahead of the channel shows an
 informational note, not a downgrade prompt.
 
+### 27.8 Data directory override (idl1, no idl0 counterpart)
+
+**New section (2026-09-05, L7c Task 4).** idl0 has no equivalent screen —
+this is C4 §1's "Override in Settings", built here against the
+`get_data_dir`/`set_data_dir` stubs (IPC need 7a/7b,
+`runs/2026-09-05/lanes/l7/IPC-NEEDS.md`) until the write-amendment Rust lane
+lands the real commands.
+
+**What the section shows.** The `<data>` root actually in use for this
+process (`DataDirInfo.resolved_path`), an override text field seeded from
+`DataDirInfo.override_path` (empty when the platform default is in use),
+and, once a candidate path passes `dataDir.ts`'s `validateDataDir` (non-empty,
+"absolute-looking" — a drive letter or a leading `/`/`\`, no trailing
+whitespace), an explicit confirmation step before `set_data_dir` is called.
+Changing where a user's whole data store lives is not a field that saves on
+blur.
+
+**What the confirmation states (C4 §1).** `dataDir.ts`'s
+`describeOverrideChange` names both the previous location (or "the platform
+default location" if there was no override) and the new one, and states
+plainly that existing files are **not moved** — the app opens or creates a
+tree at the new path and the old tree is left exactly where it was.
+
+**Takes effect on restart, not immediately (R53 Q4).** `<data>` is resolved
+once at startup and cached for the process lifetime (C4 §1), so a change
+saved here has no visible effect until the app restarts;
+`DataDirInfo.restart_required` reports when a saved override has not yet
+taken effect, and the section's copy states the restart requirement rather
+than implying the change is live.
+
+**Known trap, not this lane's work.** A `settings.json` written with a
+UTF-8 BOM parses as absent and silently falls back to the platform default,
+which can make a data-directory override set from this section appear to do
+nothing (`runs/2026-09-03/decisions.md`, 2026-09-05 ledger entry;
+`runs/2026-09-05/lanes/l7/IPC-NEEDS.md` need 7). The fix
+(`rust/tauri/src/paths.rs`) rides with the Rust write-amendment lane, not
+this one.
+
 ---
 
 # PART 7 — CROSS-CUTTING

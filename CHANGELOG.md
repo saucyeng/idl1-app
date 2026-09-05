@@ -6,6 +6,16 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 
 ### Added
 
+- **L7c Settings tab, Task 4 (2026-09-05).** Data-directory section
+  (`Settings/DataSection.tsx`) over the `get_data_dir`/`set_data_dir` stubs
+  (IPC need 7a/7b): shows the resolved `<data>` path, an override field
+  validated by `dataDir.ts`'s `validateDataDir` (non-empty, absolute-looking,
+  no trailing whitespace), and an explicit confirmation step —
+  `describeOverrideChange`'s sentence, per C4 §1 — before any change is
+  submitted; a change is never a field that saves on blur. States that a
+  change takes effect on restart (R53 Q4), since `<data>` is resolved once
+  at startup and cached for the process lifetime. `docs/IDL0_SPEC.md` §27
+  gains new §27.8 (spec-during, no idl0 counterpart).
 - **L7c `PrefsBackend`/`PrefsStore` go async (2026-09-05, lead ruling,
   review-task2 note 1).** `PrefsBackend.read()`/`write()` and
   `PrefsStore.get()`/`set()` are now `Promise`-returning, matching the
