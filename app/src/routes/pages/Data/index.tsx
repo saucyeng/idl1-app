@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useReducer } from "react";
 
-import { getSession, listLaps, listSessions, type LapSummary, type SessionDetail, type SessionSummary } from "../../../ipc/catalog";
+import { getSession, listLaps, listSessions, rebuildCatalog, type LapSummary, type SessionDetail, type SessionSummary } from "../../../ipc/catalog";
 import { useAppState } from "../../../state/AppState";
 import { ActiveChips } from "./ActiveChips";
 import { DetailPane } from "./DetailPane";
@@ -9,6 +9,16 @@ import { facetCounts, matchesFilters } from "./facets";
 import { FilterRail } from "./FilterRail";
 import { filtersReducer, initialFilters } from "./filters";
 import { ImportPanel } from "./ImportPanel";
+import { deleteSession, listQuarantine } from "./ipcStubs";
+import {
+  initialMaintenanceState,
+  maintenanceReducer,
+  runDeleteSession,
+  runForgetSession,
+  runListQuarantine,
+  runRebuildCatalog,
+  startMaintenanceAction,
+} from "./maintenance";
 import { toDetailView } from "./sessionDetail";
 import { toSessionRow } from "./sessionRow";
 import { compareSessions, sortFieldsForView, type SortField } from "./sort";
@@ -83,6 +93,7 @@ export default function Data() {
   const [state, dispatch] = useReducer(reducer, { status: "loading" });
   const [filters, filterDispatch] = useReducer(filtersReducer, initialFilters);
   const [detailState, detailDispatch] = useReducer(detailReducer, { status: "idle" });
+  const [maintenanceState, maintenanceDispatch] = useReducer(maintenanceReducer, initialMaintenanceState);
   const [appState, appDispatch] = useAppState();
   const selectedSessionId = appState.selection.sessionId;
 
@@ -113,6 +124,43 @@ export default function Data() {
   const handleImported = useCallback(() => {
     loadSessions(() => false);
   }, [loadSessions]);
+
+  /** Toolbar's "Rebuild catalog" — the one real maintenance action
+   *  (IPC-driving click delegates to [[startMaintenanceAction]], the pure
+   *  driver — operating brief §4's rule). Refreshes the sessions list on
+   *  success, since a rebuild can surface sessions this render never saw. */
+  const handleRebuildCatalog = () => {
+    startMaintenanceAction(maintenanceState, "rebuild_catalog", runRebuildCatalog(rebuildCatalog), (a) => {
+      maintenanceDispatch(a);
+      if (a.type === "SUCCEEDED") loadSessions(() => false);
+    });
+  };
+
+  /** Toolbar's "Delete session" (IPC need 3, stubbed) — idl0's blob-deleting
+   *  variant. Confirmed first: it is destructive the moment `delete_session`
+   *  lands, so the confirmation is built now rather than added later
+   *  alongside the real wiring (this task's brief). */
+  const handleDeleteSession = () => {
+    if (selectedSessionId === null) return;
+    if (!window.confirm("Delete this session and its source file? This cannot be undone.")) return;
+    startMaintenanceAction(maintenanceState, "delete_session", runDeleteSession(deleteSession, selectedSessionId, true), maintenanceDispatch);
+  };
+
+  /** Toolbar's "Forget session" (IPC need 3, stubbed) — idl0's
+   *  non-blob-deleting variant, mapped onto the same `deleteSession` stub
+   *  with `deleteBlob: false` rather than a fourth stub function. */
+  const handleForgetSession = () => {
+    if (selectedSessionId === null) return;
+    if (!window.confirm("Remove this session from the catalog? Its source file is kept.")) return;
+    startMaintenanceAction(maintenanceState, "forget_session", runForgetSession(deleteSession, selectedSessionId), maintenanceDispatch);
+  };
+
+  /** Toolbar's "Review quarantine" (IPC need 4, stubbed). Confirmed first,
+   *  same reasoning as [[handleDeleteSession]]. */
+  const handleReviewQuarantine = () => {
+    if (!window.confirm("Review quarantined files?")) return;
+    startMaintenanceAction(maintenanceState, "list_quarantine", runListQuarantine(listQuarantine), maintenanceDispatch);
+  };
 
   /** Fetches `get_session` + `list_laps` in parallel on selection settle
    *  (R53 Data Q3; C3 §4: both are settle-bound, never a hover/pan/zoom
@@ -193,6 +241,31 @@ export default function Data() {
       <div className="data-results">
         <div role="toolbar" aria-label="Import">
           <ImportPanel onImported={handleImported} />
+        </div>
+        <div role="toolbar" aria-label="Maintenance">
+          <button type="button" onClick={handleRebuildCatalog} disabled={maintenanceState.status === "running"}>
+            Rebuild catalog
+          </button>
+          <button
+            type="button"
+            onClick={handleDeleteSession}
+            disabled={selectedSessionId === null || maintenanceState.status === "running"}
+          >
+            Delete session
+          </button>
+          <button
+            type="button"
+            onClick={handleForgetSession}
+            disabled={selectedSessionId === null || maintenanceState.status === "running"}
+          >
+            Forget session
+          </button>
+          <button type="button" onClick={handleReviewQuarantine} disabled={maintenanceState.status === "running"}>
+            Review quarantine
+          </button>
+          {maintenanceState.status === "running" && <p>Running {maintenanceState.action}…</p>}
+          {maintenanceState.status === "done" && <p>{maintenanceState.result}</p>}
+          {maintenanceState.status === "failed" && <p role="alert">{maintenanceState.error}</p>}
         </div>
         <div role="toolbar" aria-label="View">
           <button

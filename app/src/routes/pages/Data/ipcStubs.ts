@@ -43,3 +43,27 @@ export async function saveSessionMetadata(
 ): Promise<never> {
   throw new NotImplementedError("save_session_metadata");
 }
+
+/** Stands in for `delete_session` (IPC need 3,
+ *  `runs/2026-09-05/lanes/l7/IPC-NEEDS.md`) until the Rust track lands it.
+ *  `deleteBlob: false` is idl0's "Forget session" — `Data/maintenance.ts`'s
+ *  `runForgetSession` calls this with `false` rather than through a fourth
+ *  stub function, since the two idl0 actions differ only in this one
+ *  argument. */
+export async function deleteSession(_sessionId: string, _deleteBlob: boolean): Promise<never> {
+  throw new NotImplementedError("delete_session");
+}
+
+/** Stands in for `list_quarantine` (IPC need 4,
+ *  `runs/2026-09-05/lanes/l7/IPC-NEEDS.md`) until the Rust track lands it.
+ *  The real return shape is IPC need 4's proposed `QuarantineEntry[]`, not
+ *  yet a landed contract type. */
+export async function listQuarantine(): Promise<never> {
+  throw new NotImplementedError("list_quarantine");
+}
+
+/** Stands in for `resolve_quarantine` (IPC need 4) until the Rust track
+ *  lands it. */
+export async function resolveQuarantine(_entryId: string, _action: "retry" | "discard"): Promise<never> {
+  throw new NotImplementedError("resolve_quarantine");
+}
