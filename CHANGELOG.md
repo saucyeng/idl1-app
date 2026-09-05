@@ -62,6 +62,15 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
   owned by `core::parse`. The full per-channel registry preview is deferred
   to `preview_channel_registry(config_json) -> RegistryRow[]` (IPC need 12),
   computed engine-side in the Rust write-amendment lane.
+- **Device tab, IMU mode-flag warning follow-up (2026-09-05, L7b).**
+  `validateConfig` now warns (never blocks `isPushable`) when
+  `imu.low_power_mode` and `imu.high_performance_mode` are both set: SPEC §8
+  frames the two as one physical toggle but does not state which one the
+  firmware honours when both are true, so the validator surfaces the
+  ambiguity rather than guessing a precedence rule. Tracked for Isaac in
+  `runs/2026-09-03/decisions.md`'s 2026-09-05 "IMU `low_power_mode` vs
+  `high_performance_mode`" note — the SPEC §8 gap this warning exists for
+  is still open.
 - **Device tab, Task 5 (2026-09-05, L7b).** `Device/sources.ts` —
   `listSources`, the channels table's `SourceView[]` — one row per
   configurable source in a stable order (hardware-pinned sources first),

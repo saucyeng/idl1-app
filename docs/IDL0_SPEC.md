@@ -796,6 +796,7 @@ emits, so a reviewer can check the code against this table line by line.
 | Path | Severity | Condition | Citation |
 |------|----------|-----------|----------|
 | `imu.sample_rate_hz` | error | not in the high-perf or low-power ODR list for the current `imu.low_power_mode` | §8 "Valid `sample_rate_hz` values" |
+| `imu.low_power_mode` | warning | `imu.high_performance_mode` also true | SPEC §8 gap — the two flags are framed as one physical toggle but §8 never states which wins when both are set; tracked note 2026-09-05 |
 | `imu.accel_range_g` | error | not one of ±4/8/16/32 g | §8 "Configurable chip options" |
 | `imu.gyro_range_dps` | error | not one of ±125/250/500/1000/2000 dps | §8 "Configurable chip options" |
 | `imuN.accel_range_g` (N=0,1,2) | error | not one of ±4/8/16/32 g | §8 "Per-IMU range resolution" |
