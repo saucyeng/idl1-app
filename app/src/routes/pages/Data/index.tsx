@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useReducer } from "react";
 
-import { listSessions, listTracks, type SessionSummary, type TrackSummary } from "../../../ipc/catalog";
+import { listSessions, type SessionSummary } from "../../../ipc/catalog";
 import { ActiveChips } from "./ActiveChips";
 import { describeIpcError } from "./errors";
 import { facetCounts, matchesFilters } from "./facets";
@@ -11,17 +11,17 @@ import { compareSessions, sortFieldsForView, type SortField } from "./sort";
 
 type State =
   | { status: "loading" }
-  | { status: "ready"; sessions: SessionSummary[]; tracks: TrackSummary[] }
+  | { status: "ready"; sessions: SessionSummary[] }
   | { status: "error"; text: string };
 
 type Action =
-  | { type: "loaded"; sessions: SessionSummary[]; tracks: TrackSummary[] }
+  | { type: "loaded"; sessions: SessionSummary[] }
   | { type: "failed"; text: string };
 
 function reducer(_state: State, action: Action): State {
   switch (action.type) {
     case "loaded":
-      return { status: "ready", sessions: action.sessions, tracks: action.tracks };
+      return { status: "ready", sessions: action.sessions };
     case "failed":
       return { status: "error", text: action.text };
   }
@@ -38,14 +38,14 @@ const FIELD_LABELS: Record<SortField, string> = {
 };
 
 /** Data tab: the sessions result list, filter rail and active-filter chips.
- *  Loads once on mount from the catalog's `list_sessions` and `list_tracks`
- *  (C3 §3.2, in parallel — the Track facet's options come from `list_tracks`,
- *  never derived from session summaries, per the brief). Only the Sessions
- *  view exists so far — the Tracks table (and its view toggle) lands in
- *  Task 6, so the sort control here is fixed to `sortFieldsForView("sessions")`.
- *  No detail pane yet — Task 4 adds it. Filtering, sorting and facet counts
- *  are all local recomputation over the already-fetched lists — no IPC on
- *  the interaction path (CLAUDE.md §2). */
+ *  Loads once on mount from the catalog's `list_sessions` (C3 §3.2). Only
+ *  the Sessions view exists so far — the Tracks table (and its view toggle,
+ *  and `list_tracks`) lands in Task 6, so the sort control here is fixed to
+ *  `sortFieldsForView("sessions")`. No Track facet at wave 2 (R54) — a
+ *  `SessionSummary` carries no track linkage. No detail pane yet — Task 4
+ *  adds it. Filtering, sorting and facet counts are all local recomputation
+ *  over the already-fetched list — no IPC on the interaction path
+ *  (CLAUDE.md §2). */
 export default function Data() {
   const [state, dispatch] = useReducer(reducer, { status: "loading" });
   const [filters, filterDispatch] = useReducer(filtersReducer, initialFilters);
@@ -53,10 +53,10 @@ export default function Data() {
   useEffect(() => {
     let cancelled = false;
 
-    Promise.all([listSessions(), listTracks()])
-      .then(([sessions, tracks]) => {
+    listSessions()
+      .then((sessions) => {
         if (cancelled) return;
-        dispatch({ type: "loaded", sessions, tracks });
+        dispatch({ type: "loaded", sessions });
       })
       .catch((e: unknown) => {
         if (cancelled) return;
@@ -69,7 +69,6 @@ export default function Data() {
   }, []);
 
   const sessions = state.status === "ready" ? state.sessions : [];
-  const tracks = state.status === "ready" ? state.tracks : [];
 
   const matching = useMemo(() => sessions.filter((s) => matchesFilters(s, filters)), [sessions, filters]);
 
@@ -91,9 +90,9 @@ export default function Data() {
 
   return (
     <div className="data-tab">
-      <FilterRail filters={filters} counts={counts} tracks={tracks} dispatch={filterDispatch} />
+      <FilterRail filters={filters} counts={counts} dispatch={filterDispatch} />
       <div className="data-results">
-        <ActiveChips filters={filters} tracks={tracks} dispatch={filterDispatch} />
+        <ActiveChips filters={filters} dispatch={filterDispatch} />
         <div role="toolbar" aria-label="Sort">
           <label>
             Sort by{" "}

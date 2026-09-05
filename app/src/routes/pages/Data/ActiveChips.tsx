@@ -1,6 +1,5 @@
 import type { Dispatch } from "react";
 
-import type { TrackSummary } from "../../../ipc/catalog";
 import { formatDateMs, formatDurationMs } from "./format";
 import type { DataFilters, FilterAction } from "./filters";
 
@@ -29,8 +28,9 @@ function lapTimeChipLabel(range: { startMs: number; endMs: number }): string {
 
 /** Builds the ordered chip list for the currently active facets — one chip
  *  per active facet value, in the same section order `FilterRail` renders
- *  (idl0's `_ActiveChipRow`). */
-function buildChips(filters: DataFilters, tracks: readonly TrackSummary[], dispatch: Dispatch<FilterAction>): Chip[] {
+ *  (idl0's `_ActiveChipRow`). No Track chips — there is no Track facet at
+ *  wave 2 (R54). */
+function buildChips(filters: DataFilters, dispatch: Dispatch<FilterAction>): Chip[] {
   const chips: Chip[] = [];
 
   if (filters.dateRange !== null) {
@@ -39,15 +39,6 @@ function buildChips(filters: DataFilters, tracks: readonly TrackSummary[], dispa
       key: "date",
       label: dateChipLabel(range),
       onDismiss: () => dispatch({ type: "SET_DATE_RANGE", range: null }),
-    });
-  }
-
-  for (const trackId of filters.trackIds) {
-    const track = tracks.find((t) => t.track_id === trackId);
-    chips.push({
-      key: `track:${trackId}`,
-      label: `Track: ${track === undefined || track.name === "" ? "(unnamed track)" : track.name}`,
-      onDismiss: () => dispatch({ type: "TOGGLE_TRACK", trackId }),
     });
   }
 
@@ -114,8 +105,6 @@ function buildChips(filters: DataFilters, tracks: readonly TrackSummary[], dispa
 /** Props for [[ActiveChips]]. */
 export interface ActiveChipsProps {
   filters: DataFilters;
-  /** Resolves a Track chip's label to a name; `list_tracks`'s result. */
-  tracks: TrackSummary[];
   dispatch: Dispatch<FilterAction>;
 }
 
@@ -125,8 +114,8 @@ export interface ActiveChipsProps {
  *  active (the caller only mounts this row when `hasAnyActiveFilter`, same
  *  as idl0). "Clear all" resets every facet but leaves `view` and sort
  *  untouched (`CLEAR_ALL`). */
-export function ActiveChips({ filters, tracks, dispatch }: ActiveChipsProps) {
-  const chips = buildChips(filters, tracks, dispatch);
+export function ActiveChips({ filters, dispatch }: ActiveChipsProps) {
+  const chips = buildChips(filters, dispatch);
   if (chips.length === 0) return null;
 
   return (

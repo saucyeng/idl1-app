@@ -2174,16 +2174,6 @@ reads:
   by local (viewer time zone) calendar day so a row on the range's own last
   day matches regardless of time-of-day. Today / Week / Month presets plus a
   custom start/end pair.
-- **Track** — multi-select; **options come from `list_tracks` (C3 §3.2)**,
-  never derived from `SessionSummary` — a `SessionSummary` has no track field
-  at all. **Not yet filterable at wave 2**: matching a session to a track
-  needs lap-level attribution (`LapSummary.track_id` or
-  `SessionDetail.track_visits`), and no wave-1 import path populates the
-  catalog's lap tables (R53 Data Q4, same root cause as the lap-count/lap-table
-  gap). The rail still lists Track options (so the facet group isn't simply
-  absent) but every option's count is 0 and selecting one excludes every
-  session, honestly, rather than fabricating a match. Real track filtering is
-  a wave-3 follow-up once lap indexing lands.
 - **Bike** — multi-select over `SessionSummary.bike`. `""` is "(none)".
 - **Rider** — multi-select over `SessionSummary.rider`. `""` is "(none)".
 - **Tag** — multi-select over `SessionSummary.tag`. `""` is "(none)".
@@ -2191,20 +2181,28 @@ reads:
 - **Lap time** — inclusive millisecond range. At wave 2 this keys off
   `SessionSummary.duration_ms` (a session's total ride time), the closest
   field a `SessionSummary` actually carries — there is no per-lap time on a
-  `SessionSummary` (same R53 Data Q4 gap as Track). A row with a `null`
-  `duration_ms` is excluded from a bound range, not included by default.
+  `SessionSummary`. A row with a `null` `duration_ms` is excluded from a
+  bound range, not included by default.
 - **Source** — multi-select over `SessionSummary.source_format`, **C3's own
   vocabulary** (`idl0 | fit | gpx | csv`) — not idl0's `SessionSourceType`
   enum, which named formats idl1 doesn't import from this path (e.g. no bare
   `.gpx`-as-track distinction) and lacks `fit`/`csv`.
 
-**Has-gates and has-GPS are absent for wave 2** (idl0's `_BoolFacets`,
-`requireGates`/`requireGps`) — dropped outright, not stubbed. Neither is
-derivable from a `SessionSummary`: "has gates" needs a matched Track's gate
-list, "has GPS" needs a GPS channel presence check, and both currently
-require a per-session `getSession` call this tab's local filtering does not
-make. Filed as a wave-3 C4 §5 + C3 §3.2 amendment (R53 Data Q2) — likely a
-catalog column added at index time, not a runtime join.
+**Track, has-gates and has-GPS are absent for wave 2** (R53 Data Q2, R54) —
+dropped outright, not stubbed, not shown disabled. None of the three is
+derivable from a `SessionSummary`: Track needs lap-level attribution
+(`LapSummary.track_id` or `SessionDetail.track_visits`), "has gates" needs a
+matched Track's gate list, "has GPS" needs a GPS channel presence check, and
+all three currently require a per-session `getSession` or lap-indexed data
+this tab's local filtering does not have. **R54 ruling:** a facet a viewer
+can select but that structurally can never match a row (as a wave-2 Track
+facet fed only by `list_tracks`, with no session→track linkage, would be) is
+a trap, not honesty — worse than simply not offering it. This differs from
+the lap-time and lap-count gaps, which keep the control and render "—"/empty
+per row (R53 Data Q4): those controls still act, they just have nothing to
+show; a wave-2 Track facet's control would not act at all. Filed as a wave-3
+C4 §5 + C3 §3.2 amendment (same item for all three) — likely catalog columns
+added at index time, not a runtime join.
 
 **Search** — free-text, case-insensitive substring match across venue name,
 short comment and tag (`Data/facets.ts`'s `matchesFilters`) — idl0 also

@@ -1,6 +1,6 @@
 import type { Dispatch } from "react";
 
-import type { SessionSummary, TrackSummary } from "../../../ipc/catalog";
+import type { SessionSummary } from "../../../ipc/catalog";
 import type { FacetCounts } from "./facets";
 import type { DataFilters, FilterAction } from "./filters";
 import { activeCount } from "./filters";
@@ -30,19 +30,15 @@ function FacetGroup({
   options,
   selected,
   onToggle,
-  note,
 }: {
   title: string;
   options: FacetOption[];
   selected: ReadonlySet<string>;
   onToggle: (value: string) => void;
-  /** Optional caveat shown under the heading (e.g. the wave-2 Track-facet note). */
-  note?: string;
 }) {
   return (
     <fieldset className="data-facet-group">
       <legend>{title}</legend>
-      {note !== undefined ? <p className="data-facet-note">{note}</p> : null}
       {options.length === 0 ? (
         <p className="data-facet-empty">No options yet.</p>
       ) : (
@@ -241,36 +237,25 @@ export interface FilterRailProps {
   /** Per-option match counts, computed by `facetCounts` over the currently
    *  loaded rows. */
   counts: FacetCounts;
-  /** Track facet options (C3 §3.2 `list_tracks`) — never derived from
-   *  session summaries alone. */
-  tracks: TrackSummary[];
   dispatch: Dispatch<FilterAction>;
 }
 
 /** The Data tab's filter rail: one facet group per row-affecting `DataFilters`
- *  field, in the order the brief names (date, track, bike, rider, tag,
- *  venue, lap time, source), plus a "Clear all" when any facet is active.
- *  Ported from idl0's `FilterRail` (semantics, not the widget tree) — see
- *  `docs/IDL0_SPEC.md` §24.4. Has-gates and has-GPS are absent (R53 Data
- *  Q2) — there is no group for either, stubbed or otherwise. Narrow-width
- *  presentation (bottom sheet, "FILTERS (n)" bar) is this component's own
- *  CSS/media-query concern; the markup here renders identically at every
- *  width and a stylesheet elsewhere narrows the chrome around it. */
-export function FilterRail({ filters, counts, tracks, dispatch }: FilterRailProps) {
-  const trackOptions: FacetOption[] = [...tracks]
-    .map((t) => ({ value: t.track_id, label: t.name === "" ? "(unnamed track)" : t.name, count: 0 }))
-    .sort((a, b) => a.label.toLowerCase().localeCompare(b.label.toLowerCase()));
-
+ *  field, in the order the brief names (date, bike, rider, tag, venue, lap
+ *  time, source), plus a "Clear all" when any facet is active. Ported from
+ *  idl0's `FilterRail` (semantics, not the widget tree) — see
+ *  `docs/IDL0_SPEC.md` §24.4. Has-gates, has-GPS and Track are absent (R53
+ *  Data Q2, R54) — there is no group for any of the three, stubbed or
+ *  otherwise: a `SessionSummary` carries no track linkage, so a Track group
+ *  could only ever exclude every row, which R54 rules is a trap rather than
+ *  honest disclosure. Narrow-width presentation (bottom sheet, "FILTERS (n)"
+ *  bar) is this component's own CSS/media-query concern; the markup here
+ *  renders identically at every width and a stylesheet elsewhere narrows the
+ *  chrome around it. */
+export function FilterRail({ filters, counts, dispatch }: FilterRailProps) {
   return (
     <nav aria-label="Filters" className="data-filter-rail">
       <DateSection filters={filters} dispatch={dispatch} />
-      <FacetGroup
-        title="Track"
-        options={trackOptions}
-        selected={filters.trackIds}
-        onToggle={(trackId) => dispatch({ type: "TOGGLE_TRACK", trackId })}
-        note="Not yet filterable — sessions aren't attributed to a track until lap indexing lands (R53 Data Q4)."
-      />
       <FacetGroup
         title="Bike"
         options={optionsFromCounts(counts.bikes)}

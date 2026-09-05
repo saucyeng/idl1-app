@@ -65,7 +65,6 @@ describe("filtersReducer", () => {
   it("filtersReducer — every remaining toggle/set action — applies its own field only", () => {
     let state = initialFilters;
     state = filtersReducer(state, { type: "SET_DATE_RANGE", range: { startMs: 0, endMs: 1000 } });
-    state = filtersReducer(state, { type: "TOGGLE_TRACK", trackId: "t1" });
     state = filtersReducer(state, { type: "TOGGLE_RIDER", rider: "Isaac" });
     state = filtersReducer(state, { type: "TOGGLE_TAG", tag: "Practice" });
     state = filtersReducer(state, { type: "TOGGLE_VENUE", venue: "Portland" });
@@ -76,7 +75,6 @@ describe("filtersReducer", () => {
     state = filtersReducer(state, { type: "TOGGLE_SORT_DIRECTION" });
 
     expect(state.dateRange).toEqual({ startMs: 0, endMs: 1000 });
-    expect(state.trackIds.has("t1")).toBe(true);
     expect(state.riders.has("Isaac")).toBe(true);
     expect(state.tags.has("Practice")).toBe(true);
     expect(state.venues.has("Portland")).toBe(true);

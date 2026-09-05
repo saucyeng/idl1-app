@@ -17,16 +17,19 @@ export interface MsRange {
  *  matching is "any of the selected values" (logical OR). `null` / empty
  *  values mean the facet is inactive (passes through all rows). The empty
  *  string in `bikes`, `riders`, `tags` and `venues` is the synthetic
- *  "(none)" pseudo-entry, matching a row whose field is empty. Has-gates and
- *  has-GPS facets from idl0 are dropped for wave 2 (R53 Data Q2) — there is
- *  no `requireGates`/`requireGps` field here. */
+ *  "(none)" pseudo-entry, matching a row whose field is empty. Has-gates,
+ *  has-GPS and Track facets from idl0 are dropped for wave 2 (R53 Data Q2,
+ *  R54) — there is no `requireGates`/`requireGps`/`trackIds` field here. A
+ *  `SessionSummary` carries no track linkage at all, so a Track facet could
+ *  only ever exclude every row rather than actually filter — R54 rules that
+ *  a facet a viewer can select but that can never match is a trap, not
+ *  honesty, so it does not exist here even as a disabled placeholder. It
+ *  returns once a catalog amendment gives `SessionSummary` track linkage
+ *  (wave 3, same item as has-GPS/has-gates). */
 export interface DataFilters {
   /** Inclusive session-timestamp range (`SessionSummary.timestamp_utc_ms`),
    *  or `null` for no date filter. */
   dateRange: MsRange | null;
-  /** Active Track-id whitelist (options from `listTracks()`, C3 §3.2);
-   *  empty = pass-through. */
-  trackIds: Set<string>;
   /** Active bike-name whitelist; empty = pass-through. `""` is "(none)". */
   bikes: Set<string>;
   /** Active rider-name whitelist; empty = pass-through. `""` is "(none)". */
@@ -59,7 +62,6 @@ export interface DataFilters {
  *  default direction. */
 export const initialFilters: DataFilters = {
   dateRange: null,
-  trackIds: new Set(),
   bikes: new Set(),
   riders: new Set(),
   tags: new Set(),
@@ -77,7 +79,6 @@ export const initialFilters: DataFilters = {
  *  `DataFiltersNotifier` methods. */
 export type FilterAction =
   | { type: "SET_DATE_RANGE"; range: MsRange | null }
-  | { type: "TOGGLE_TRACK"; trackId: string }
   | { type: "TOGGLE_BIKE"; bike: string }
   | { type: "TOGGLE_RIDER"; rider: string }
   | { type: "TOGGLE_TAG"; tag: string }
@@ -91,7 +92,7 @@ export type FilterAction =
   | { type: "CLEAR_ALL" };
 
 /** Adds `value` to `set` if absent, removes it if present — the multi-select
- *  facet toggle idl0 shares across Bike/Rider/Tag/Venue/Track. Returns a new
+ *  facet toggle idl0 shares across Bike/Rider/Tag/Venue. Returns a new
  *  `Set`; never mutates `set`. */
 function toggled<T>(set: Set<T>, value: T): Set<T> {
   const next = new Set(set);
@@ -118,8 +119,6 @@ export function filtersReducer(state: DataFilters, action: FilterAction): DataFi
   switch (action.type) {
     case "SET_DATE_RANGE":
       return { ...state, dateRange: action.range };
-    case "TOGGLE_TRACK":
-      return { ...state, trackIds: toggled(state.trackIds, action.trackId) };
     case "TOGGLE_BIKE":
       return { ...state, bikes: toggled(state.bikes, action.bike) };
     case "TOGGLE_RIDER":
@@ -160,7 +159,6 @@ export function hasAnyActiveFilter(filters: DataFilters): boolean {
 export function activeCount(filters: DataFilters): number {
   let n = 0;
   if (filters.dateRange !== null) n++;
-  if (filters.trackIds.size > 0) n++;
   if (filters.bikes.size > 0) n++;
   if (filters.riders.size > 0) n++;
   if (filters.tags.size > 0) n++;
