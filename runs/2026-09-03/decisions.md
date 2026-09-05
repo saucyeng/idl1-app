@@ -2918,3 +2918,31 @@ do not exist yet. Q3's padding is four bytes per response. Q4 adds a kind
 that can never be removed — justified by a UI that must present "device
 busy" differently from "bad config". Q6 drops fields no source can fill;
 adding them later is additive.
+
+## 2026-09-05 — L7a LANDED (Data tab, wave 2)
+
+Merged `wave2-l7a-data` into idl1-app `main` (`--no-ff`, `4c6f6a1`); the
+only conflicts were CHANGELOG.md and TASKS.md bullets against L7c's landing
+(kept both; TASKS.md's wave-2 block re-nested so L7a/L7b/L7c are separate
+lines). Lane: Tasks 1–8 plus five follow-ups. Reviews: eight, all CLEAN
+after follow-ups; two re-reviews. Merge gate on `main`: `tsc` clean, whole
+TS suite **204 passed / 0 failed**.
+
+**Shipped:** session list with formatters and sort; local facet filtering
+(AND across, OR within, "(none)"); session detail pane joining file-native
+and catalog laps honestly (R53 Q4/Q5); tracks view rendering counts only for
+C3's unfixed nested shapes; import queue over the real `import_file` behind
+the R55 picker seam with a pure, id-addressed driver (the lane's one
+Critical, fixed and re-reviewed); metadata editor over a stubbed save;
+maintenance actions behind confirmation over stubs and the real
+`rebuild_catalog`. Selection writes `AppState.selection` (R53 Q3).
+**Outstanding for the Rust write lane:** `save_session_metadata`,
+`delete_session`, the dialog plugin (R55), `import_file` itself (L5 Task 9);
+quarantine deferred to wave 3 (R59 Q2); track write commands wave 3.
+**Parity gaps** as TASKS.md lists them, unabridged. R54 came out of this
+lane. **Process lessons this lane produced:** the IPC-effects rule (Task 5's
+self-cancelling effect), the never-amend rule, the Windows case-collision
+rename (`metadataDraft.ts`).
+
+**Cost if wrong:** additive tab behind its own directory; a regression is a
+revert of one merge commit.
