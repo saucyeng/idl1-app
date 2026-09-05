@@ -1358,6 +1358,235 @@ Semantics:
 
 ---
 
+## 15a. Non-device Importers (FIT, GPX, CSV)
+
+Companion to §15 (`.idl0` binary parsing) for the three source formats a
+device never wrote. Design doc D3 ("canonicalise on ingest") and D4
+("hardware-agnostic... a decade of FIT/GPX is a first-class target; CSV is
+low priority") — `docs/superpowers/specs/2026-09-02-idl1-rewrite-design.md`.
+Contract C1 (`docs/superpowers/specs/2026-09-03-idl1-c1-session-schema.md`)
+fixes the output shape (`Session`/`Channel`, §2) and the time-model rules
+(§3.4) every importer in this section obeys; this section is the importer
+*behaviour* spec C1 §1 explicitly leaves to the lane.
+
+### 15a.1 The `Importer` trait
+
+`rust/core/src/import/mod.rs` defines one trait, implemented once per
+non-device `SourceFormat` (C1 §2): `source_format() -> SourceFormat` and
+`import(bytes: &[u8], blob_sha256: &str) -> Result<ImportedSession,
+ImporterError>`. Pure: `bytes` is the caller-already-read, immutable source
+blob; `blob_sha256` is the caller-computed SHA-256 hex digest (CAS hashing
+is C4's/L1's job, not repeated here). `session_id` (C4 §3: first 16 lowercase
+hex characters of `blob_sha256` for non-device sources) is derived by
+`session_id_from_blob_hash`, a free function every importer calls —
+collision extension (18, 20, ... hex characters, on a real catalog
+collision) needs catalog state this pure function does not have, and is
+L1's job at catalog-insert time. `.idl0` import (`crate::parse` plus L1's
+burst-seam correction, C1 §3.3) does not implement this trait in this
+section's scope; whether/how L1 wires it in is L1's call.
+
+`ImportedSession { session: Session, warnings: Vec<ImporterWarning> }`
+(renamed from the plan's original `ImportOutcome`/`ImportWarning` to avoid
+a type-name collision with landed `store::import`/`session` types of those
+same names — the *shape* is unchanged: one `Session` plus zero or more
+warnings). `ImporterError` is a typed enum (CLAUDE.md §5 — never
+`Err(String)`); variant names are written to fit the `parse_*`
+kind-vocabulary prefix contract C3 §2 assigns to importer/parser errors
+(mirroring `crate::session::ParseError`'s existing `parse_*` kinds for
+`.idl0`), but **C3 §2's kind table does not yet list rows for these new
+variants** — see Open Questions. (A future `core::import::importers()`
+registry table making importers enumerable by id/label/extensions is a
+separate, later concern — not part of this trait's shape.)
+
+### 15a.2 FIT import
+
+`FitImporter`, via the `fitparser` crate (pin `0.9`). Reads every `record`
+(global message 20) message; ignores every other message kind (`lap`,
+`session`, `file_id`, ...) — lap/session metadata is L1's `session.json`
+concern (C1 §6), not this importer's.
+
+| FIT field (name, as decoded by `fitparser`) | idl1 channel | Conversion |
+|---|---|---|
+| `timestamp` (`Value::Timestamp`) | (time axis only) | `fitparser` already applies the FIT-epoch offset (1989-12-31 UTC); `.timestamp()` on the decoded value is UTC epoch **seconds**, matching C1 §3.1's `(fit_timestamp_s + 631065600)` formula with the offset already folded in. |
+| `position_lat` / `position_long` (`Value::SInt32`, semicircles) | `GPS_Latitude` / `GPS_Longitude` | `degrees = semicircles × 180 / 2^31` (FIT SDK's documented conversion) |
+| `enhanced_altitude` (`Value::Float64`, metres — `fitparser` applies `raw/5 − 500` itself since field 2's scale/offset are non-trivial; the plain `altitude` field is not emitted unless `DecodeOption::KeepCompositeFields` is requested, which this importer does not do) | `GPS_Altitude` | direct (already physical) |
+| `heart_rate` (`Value::UInt8`, bpm) | `HR_BPM` | direct |
+| `cadence` (`Value::UInt8`, rpm) | `Cadence_RPM` | direct |
+| `power` (`Value::UInt16`, watts) | `Power_W` | direct |
+
+**Units (L2-R1, copied verbatim from C1 §4.1's "*(FIT/GPX-derived
+channels)*" row):** `GPS_Latitude`/`GPS_Longitude` → `deg`, `GPS_Altitude`
+→ `m`, `GPS_EpochMs` → `ms_raw`, `HR_BPM` → `bpm`, `Cadence_RPM` → `rpm`,
+`Power_W` → `W`. (`GPS_SpeedKmh` → `km/h` and `GPS_Heading` → `deg` belong
+in this same units list for completeness even though neither channel is
+populated by this importer — §15a.3's Task 8 note applies here too.)
+
+**GPS coordinate scale — physical decimal degrees (R27).** `GPS_Latitude`/
+`GPS_Longitude` are physical decimal degrees, `unit: deg`, for **every**
+source (R27, superseding an earlier, since-reversed ruling R23 that briefly
+set this to `deg_e7`; R27 has already landed in code — idl-rs `7e10797` —
+and every landed consumer now reads decimal degrees:
+`core/src/gps.rs`, `laps::distance` — whose `M_PER_UNIT` is plain
+`111_320.0` again — `laps::gate_*`, `tracks::*`). This importer's
+`semicircles_to_deg` output (the conversion above) is stored **unchanged**,
+with no further scaling — the same holds for GPX (§15a.3): no channel in
+this section carries `deg_e7`.
+
+Matches C1 §4.1's FIT/GPX-derived column list exactly (`GPS_Latitude`,
+`GPS_Longitude`, `GPS_Altitude`, `HR_BPM`, `Cadence_RPM`, `Power_W` —
+C1's list also names `GPS_EpochMs`; see the paragraph below). A channel is
+present in the output `Session` only when at least one `record` message
+carries that field (C1 §4.1 "as applicable") — genuinely per-record: a
+record missing `power`, say, contributes no sample to `Power_W` rather
+than a zero-filled one, since different `record` messages in one FIT file
+commonly carry different subsets of fields.
+
+**`GPS_EpochMs`.** FIT **does** populate `GPS_EpochMs`, from
+`record.timestamp` (a UTC instant), on every `record` message carrying a
+position (both `position_lat` and `position_long` present) — matching
+C1 §4.1's now-explicit text. Wire-level formula:
+`GPS_EpochMs = (fit_timestamp_s + 631_065_600) * 1000`, where
+`fit_timestamp_s` is the **raw FIT-epoch-relative** wire value (seconds
+since 1989-12-31). This is the wire-level formula for reference only:
+Task 4's own code decodes the FIT `timestamp` field via `fitparser`, whose
+`Value::Timestamp(..).timestamp()` already returns Unix-epoch seconds with
+this same `+631_065_600` folded in by the crate itself — Task 4's importer
+must not add the offset a second time to that already-converted value.
+Unit `ms_raw`.
+
+**Timestamp dedup is record-level, not per-channel.** C1 §3.4 states the
+duplicate/non-monotonic drop rule per *channel*; every FIT `record` message
+carries exactly one `timestamp` shared by every field on that message (a
+FIT protocol invariant), so dropping the whole record when its timestamp
+collides with the previous *kept* record is equivalent to the per-channel
+rule applied to every one of that record's fields at once — this importer
+does it once, at the record level, rather than redundantly per output
+channel.
+
+### 15a.3 GPX import
+
+`GpxImporter` — a port of `gpx_parser.dart`
+(`app/lib/data/gpx_parser.dart` in idl0-app), via `quick-xml` (pin `0.41.0`
+— see Open Questions on provenance). Iterates `<trkpt>` elements; local-name
+matching (namespace-prefix-agnostic, matching the Dart parser's approach)
+finds `<ele>`, `<time>`, and (regardless of nesting depth under
+`<extensions>`) `<hr>`, `<cad>`, `<power>`.
+
+| GPX element | idl1 channel | Notes |
+|---|---|---|
+| `<trkpt lat lon>` | `GPS_Latitude`, `GPS_Longitude` | decimal degrees, direct (C1 §4.1: `unit: deg`) — **not** scaled ×1e7 as `gpx_parser.dart` did for the old Dart engine's raw-wire convention; under R27, C1's non-device row stores physical degrees directly, for every source |
+| `<ele>` | `GPS_Altitude` | metres; `0.0` when absent (matches Dart). `unit: m` |
+| `<time>` | `GPS_EpochMs` | ISO-8601 UTC ms, parsed by a hand-rolled parser (no chrono dependency — GPX's `<time>` shape is fixed and simple); sub-millisecond fractions round to the nearest ms, ties away from zero (C1 §3.4). `unit: ms_raw` |
+| `<hr>` (namespace-agnostic) | `HR_BPM` | only when at least one point has it. `unit: bpm` |
+| `<cad>` | `Cadence_RPM` | only when at least one point has it. `unit: rpm` |
+| `<power>` | `Power_W` | only when at least one point has it. `unit: W` |
+
+**`GPS_SpeedKmh`/`GPS_Heading` — deferred to Task 8, not a contract gap.**
+C1 §4.1 **does** name both `GPS_SpeedKmh` (`unit: km/h`) and `GPS_Heading`
+(`unit: deg`) in its FIT/GPX-derived column list (added post-sign,
+2026-09-03, ruling R7 — a separate, earlier ruling than R23 the same day).
+This importer and FIT's (§15a.2) deliberately do not populate either
+channel in this wave: that is a dedicated follow-on **Task 8** (FIT
+`speed`/`enhanced_speed` ×3.6; GPX `<speed>`/`<course>` or the ported Dart
+derive-when-absent fallback), held per ledger ruling R23 Q4 pending Isaac's
+real FIT/GPX archive, not executed in this wave — not a contract gap
+needing escalation.
+
+**Timestamp dedup is trackpoint-level**, for the same reason as FIT's
+record-level rule (§15a.2): every idl1 channel a GPX file populates is
+sampled at the same `<trkpt>` cadence, so per-channel and per-trackpoint
+dedup coincide.
+
+**Missing timestamps.** C1 §3.4 assumes every source sample carries a
+parseable recorded timestamp; it does not define behaviour for a GPX file
+with none. This importer ports `gpx_parser.dart`'s fallback verbatim:
+when **no** trackpoint has a parseable `<time>`, synthesize `i × 1000` ms
+from an arbitrary origin (`t0_us = 0` by construction) and surface an
+`ImporterWarning`; when **some but not all** trackpoints have one, missing
+individual points get the same per-index synthesis with their own warning
+(a case `gpx_parser.dart` does not encounter — its Dart code pushes a `0`
+sentinel per malformed/absent `<time>` without flagging it, which this
+importer treats as worth a warning instead, per CLAUDE.md §5). See Open
+Questions.
+
+### 15a.4 CSV import (trivial — D4)
+
+`CsvImporter`. **No SPEC, contract, or design-doc text defines a CSV input
+shape** — design doc §15 explicitly defers "CSV beyond a trivial
+importer." This plan invents the minimal shape design doc's low-priority
+framing anticipates, pending lead confirmation (see Open Questions):
+
+```
+t_seconds,<channel_1>,<channel_2>,...
+0.0,10.0,1.0
+1.0,11.0,
+2.5,,3.0
+```
+
+Comma-separated, **no quoting/escaping** (a real CSV importer, if this
+grows beyond hand-built test fixtures, needs a proper crate — out of scope
+here). Header row's first column must be literally `t_seconds` (elapsed
+seconds, monotonic non-decreasing is not required — each channel column is
+deduplicated independently against C1 §3.4's rule); every other header
+column names one channel. An empty cell means "no sample for this channel
+at this row" (not zero). `t_us[row] = round((t_seconds[row] −
+t_seconds[first_row]) × 1e6)`. `Session.timestamp_utc_ms = 0` ("unknown" —
+a generic CSV has no wall-clock anchor).
+
+**`source_kind = "csv"`** is a new token under C1 §4.2's `source_kind`
+enumeration's forward-compatibility clause ("new sensors get a new
+lower-`snake_case` token without a schema change") — C1 §4.2 was amended
+(ruling R23) to name `csv` directly in that enumeration and to state CSV
+is event-driven (`channel_kind: event`, `nominal_rate_hz: 0.0` for every
+channel — no fixed-rate guarantee is made by this trivial format) with
+`unit` the empty string when the header supplies none. This importer's
+`nominal_rate_hz = 0.0` for every channel follows that amendment directly,
+not as an independent choice.
+
+### 15a.5 Common rules
+
+- **Error kinds.** `ImporterError`'s variants (`FitMalformed`,
+  `GpxMalformedXml`, `GpxNoTrackpoints`, `GpxMissingLatLon`,
+  `GpxUnparseableLatLon`, `CsvMalformed`, `NotUtf8`) need new `parse_*`-
+  prefixed rows in C3 §2's kind vocabulary table before L5 wires
+  `import_file` to IPC — not needed for this plan's own Rust-only tests.
+  See Open Questions.
+- **`Time`/`Distance` synthesis.** Every L2 channel (FIT, GPX, CSV) has
+  `nominal_rate_hz = 0.0` (§15a.2–15a.4), and `synthesize_base_channels`
+  (`session/synthesis.rs`) originally synthesized `Time` only from a
+  channel with `nominal_rate_hz > 0`. Ledger ruling R23 (Q2) fixes the
+  synthesizer, not the metadata: when no channel in a session has a
+  positive rate, `synthesize_base_channels` falls back to the channel with
+  the most samples, using **that channel's own real `t_us`** for `Time` —
+  never a fabricated rate (the synthesized `Time` channel's
+  `nominal_rate_hz` stays `0.0` in this fallback, so `channel_kind`
+  honestly reads `event`, not `fixed-rate`, for an irregular source). This
+  is a landed L1 file, edited under this ruling by L2 Task 6 (CLAUDE.md
+  §7 — through the lead). Consequence for this section: every FIT/GPX/CSV
+  session gets a `Time` channel, derived from its longest channel's real
+  recorded time, event-driven. `Distance` still requires `GPS_SpeedKmh` at
+  a positive rate, which none of this section's importers produce
+  (§15a.3's Task 8 deferral) — `Distance` stays absent for FIT/GPX/CSV
+  sessions until Task 8 lands.
+- **Post-import materialisation hook.** `rust/core/src/import/hook.rs`
+  defines `PostImportHook` (`on_imported(&self, session: &Session)`), a
+  no-op default (`NoopPostImportHook`), and `import_with_hook` (runs an
+  `Importer` then the hook, on success only) — the extension point design
+  doc §5's materialised-derived-channel chain (the iEKF estimator) attaches
+  to once L1/L3 build the materialised-channel store. This section ships
+  only the shape; wiring a real hook is out of scope here.
+- **What is not covered here.** Writing `data.parquet` (C1 §4), catalog
+  insertion (C4 §5), CLI subcommand wiring (`idl-rs import`), and the
+  `.idl0` importer are L1's.
+
+### 15a.6 Open questions
+
+See `docs/superpowers/plans/2026-09-03-idl1-wave1-l2-importers.md`'s Open
+Questions section — assigned per item, none unassigned, none blocking this
+section's own golden tests.
+
+---
+
 ## 16. Track Entity
 
 ### 16.1 Purpose
