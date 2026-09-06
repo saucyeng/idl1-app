@@ -3850,3 +3850,11 @@ Typed lap details on the wire, Data lap tables render sectors/neutral
 zones, "Rescan tracks" button + report, FFT `lap` from the selected main
 lap, stale "until lap indexing lands" comments removed. Laps are live
 end-to-end: import → session.json → catalog → Data tab / Notebook.
+
+## 2026-09-06 — L8x first four-task gate (after Task 4): PASS
+
+From idl-rs `01b0f3f`: tauri **221**, idl-rs **1004** / 1 ignored, cli 53.
+`upsert_track` is an `ON CONFLICT DO UPDATE` (a delete+insert would null
+`laps.track_id` on every edit — regression test added). A session with no
+library-hash stamp is not counted in `stale_session_ids` (never indexed;
+import/rescan cover it) — accepted.
