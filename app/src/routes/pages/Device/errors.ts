@@ -14,8 +14,10 @@ export interface DeviceIpcError {
 const GENERIC_TEXT = "Something went wrong talking to the device. Try again.";
 
 /** User-facing text per `IpcErrorKind` (C3 §2) this tab can see, from
- *  `ble_scan`, `ble_connect`, `list_device_files`, `download_file` and
- *  `push_config` (C3 §3.8). Each string tells the rider what to do next,
+ *  `ble_scan`, `ble_connect`/`connect_device`/`disconnect_device`,
+ *  `list_device_files`, `download_file`, `push_config`, `device_status`,
+ *  `device_control` (C3 §3.8) and `list_profiles`/`save_profile`/
+ *  `delete_profile` (C3 §3.10). Each string tells the rider what to do next,
  *  never a stack trace (CLAUDE.md §5). `config`'s entry here is the
  *  fallback used only when the device sent no reason text — see
  *  {@link describeIpcError}, which normally appends `error.message` to a
@@ -27,6 +29,7 @@ const KIND_TEXT: Record<string, string> = {
   config_parse: "This config isn't valid JSON — fix it before pushing.",
   config_unsupported_version: "This config's version isn't one this device supports.",
   not_found: "The device or file couldn't be found. It may have moved or been removed.",
+  invalid_argument: "That value can't be saved as sent — check it's valid before trying again.",
   io: "A local file operation failed. Check disk space and try again.",
   internal: GENERIC_TEXT,
 };

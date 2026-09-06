@@ -75,6 +75,20 @@ describe("connectionReducer", () => {
     expect(failed.error).toBe("no adapter");
   });
 
+  it("connectionReducer — DISCONNECTED after CONNECTED — phase idle, connected cleared", () => {
+    // Arrange
+    const connecting = connectionReducer(initialConnectionState, { type: "CONNECT_START" });
+    const info = { device_id: "d1", firmware_version: "1.4.0", connected: true };
+    const connected = connectionReducer(connecting, { type: "CONNECTED", info });
+
+    // Act
+    const disconnected = connectionReducer(connected, { type: "DISCONNECTED" });
+
+    // Assert
+    expect(disconnected.phase).toBe("idle");
+    expect(disconnected.connected).toBeNull();
+  });
+
   it("connectionReducer — DEVICE_DISCOVERED after SCAN_END — ignored, no state change", () => {
     // Arrange
     const scanning = connectionReducer(initialConnectionState, { type: "SCAN_START" });

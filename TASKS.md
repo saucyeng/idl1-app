@@ -73,21 +73,28 @@ are defined in `docs/superpowers/specs/2026-09-02-idl1-rewrite-design.md` §10.
   legitimately read "—"/empty for most sessions at wave 2 (R53 Q4) — no
   wave-1 import path indexes `laps`/`lap_summary` yet; not a bug in this
   lane.
-- [x] L7b Device tab — all 9 tasks landed on `wave2-l7b-device`. Outstanding
-  (`runs/2026-09-05/lanes/l7/IPC-NEEDS.md`): needs 8 (`device_status`),
+- [x] L7b Device tab — all 9 tasks landed on `wave2-l7b-device`; **Task 10
+  (2026-09-06, R77.4/R78) wires the tab live.** Needs 8 (`device_status`),
   9 (`device_control`), 11 (`list_profiles`/`save_profile`/`delete_profile`)
-  and 13 (`connect_device`/`disconnect_device`) are all real C3 commands as
-  of L8w, but still have no UI call site after the 2026-09-06 shell task —
-  `HeroCard.tsx` still shows status/control as "unavailable" text and
-  `ProfileBar.tsx`'s profiles stay in-memory only; wiring any of them is new
-  UX/persistence design (polling cadence, a profile-file merge story), not
-  a stub swap, so it was left rather than guessed at. `pull_config` (need
+  and 13 (`connect_device`/`disconnect_device`) are now real C3 commands
+  **and wired**: `HeroCard.tsx` shows real status via a 1 Hz `statusPoll.ts`
+  driver (visibility-paused, "link lost?" after 3 consecutive failures,
+  connection state unchanged either way); `DeviceControls.tsx` sends
+  start/stop recording and WiFi on/off through `control.ts`'s availability
+  gating, reporting only what the returned status shows (never a resolved
+  promise alone — the SPEC §7.2 ack byte gap, R63.1/R71); `ProfileBar.tsx`
+  persists profiles over `profilesSync.ts`, last-write-wins, explicit Save
+  button with a dirty marker, no autosave; the connect path moved to the
+  managed `connect_device`/`disconnect_device` pair. `pull_config` (need
   10) is real and wired (`PushConfigBar.tsx`'s "Pull from device" button),
   but a push still cannot be round-trip verified — comparing the pulled
   config against what was pushed is a separate feature, not built here. The
   channel-registry preview is narrowed to enable state/rate/units per R53
   Q1 option (c) for wave 2, with need 12 (the fuller preview) filed for a
-  later (b). Parity gaps dropped or deferred
+  later (b). Still not built: the device dropdown/picker sheet, RX/TX
+  link-activity, the `mm:ss` recording timer, IMU calibration, HRM pairing,
+  and auto-connect ("headphones" model) — see `docs/IDL0_SPEC.md` §23.10's
+  wave-2 paragraph. Parity gaps dropped or deferred
   per the plan's table (`docs/superpowers/plans/
   2026-09-05-idl1-wave2-l7b-device-tab.md`): IMU calibration and
   firmware OTA (wave 3), the Android WiFi bind-follows-mode controller
