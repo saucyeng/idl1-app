@@ -9,14 +9,13 @@ import { facetCounts, matchesFilters } from "./facets";
 import { FilterRail } from "./FilterRail";
 import { filtersReducer, initialFilters } from "./filters";
 import { ImportPanel } from "./ImportPanel";
-import { listQuarantine } from "./ipcStubs";
 import {
   initialMaintenanceState,
   maintenanceReducer,
   runDeleteSession,
   runForgetSession,
-  runListQuarantine,
   runRebuildCatalog,
+  runRescanSessions,
   runRescanTracks,
   startMaintenanceAction,
 } from "./maintenance";
@@ -201,12 +200,16 @@ export default function Data() {
     });
   };
 
-  /** Toolbar's "Review quarantine" (IPC need 4, stubbed). Confirmed first,
-   *  same reasoning as [[handleDeleteSession]]. */
-  const handleReviewQuarantine = () => {
-    // TODO(idl0): replace window.confirm() with the shell's in-app modal once one exists
-    if (!window.confirm("Review quarantined files?")) return;
-    startMaintenanceAction(maintenanceState, "list_quarantine", runListQuarantine(listQuarantine), maintenanceDispatch);
+  /** `TrackDetailPane`'s "Rescan N sessions" action, offered after a
+   *  `save_track`/`delete_track` names `stale_session_ids` (C3 §3.2,
+   *  ruling R86). Goes through the same [[startMaintenanceAction]] driver
+   *  as every other toolbar action; a no-op when `sessionIds` is empty
+   *  (nothing to rescan). Does not redraw the session detail pane — the
+   *  Tracks view has no session selected — so only the toolbar's own
+   *  result line reflects the outcome. */
+  const handleRescanSessions = (sessionIds: string[]) => {
+    if (sessionIds.length === 0) return;
+    startMaintenanceAction(maintenanceState, "rescan_sessions", runRescanSessions(rescanTracks, sessionIds), maintenanceDispatch);
   };
 
   /** Fetches `get_session` + `list_laps` in parallel for `sessionId` (R53
@@ -321,9 +324,6 @@ export default function Data() {
           >
             Rescan tracks
           </button>
-          <button type="button" onClick={handleReviewQuarantine} disabled={maintenanceState.status === "running"}>
-            Review quarantine
-          </button>
           {maintenanceState.status === "running" && <p>Running {maintenanceState.action}…</p>}
           {maintenanceState.status === "done" && <p>{maintenanceState.result}</p>}
           {maintenanceState.status === "failed" && <p role="alert">{maintenanceState.error}</p>}
@@ -364,7 +364,11 @@ export default function Data() {
           </button>
         </div>
         {filters.view === "tracks" ? (
-          <TrackResults sortField={filters.sortField} sortAscending={filters.sortAscending} />
+          <TrackResults
+            sortField={filters.sortField}
+            sortAscending={filters.sortAscending}
+            onRescanSessions={handleRescanSessions}
+          />
         ) : rows.length === 0 ? (
           <p>{sessions.length === 0 ? "No sessions yet — import a file." : "No matches. Try clearing filters."}</p>
         ) : (

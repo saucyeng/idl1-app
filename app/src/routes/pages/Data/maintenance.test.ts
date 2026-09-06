@@ -1,19 +1,18 @@
 import { describe, expect, it } from "vitest";
 
 import type { RebuildReport, RescanReport } from "../../../ipc/catalog";
-import { NotImplementedError } from "./ipcStubs";
 import {
   initialMaintenanceState,
   maintenanceReducer,
   runDeleteSession,
   runForgetSession,
-  runListQuarantine,
   runRebuildCatalog,
+  runRescanSessions,
   runRescanTracks,
-  runResolveQuarantine,
   startMaintenanceAction,
   summarizeRebuildReport,
   summarizeRescanReport,
+  summarizeRescanSessionsReport,
   type MaintenanceAction,
   type MaintenanceState,
 } from "./maintenance";
@@ -98,21 +97,20 @@ describe("maintenance — a second START while one is running — refused, the r
   });
 });
 
-describe('maintenance — a stubbed action — status failed with the "not wired up yet" text, never a crash', () => {
-  it("startMaintenanceAction with a run rejecting NotImplementedError — status failed naming the command, no unhandled rejection", async () => {
+describe("maintenance — an action rejects with a shape describeIpcError has never seen — status failed, never a crash", () => {
+  it("startMaintenanceAction with a run rejecting a plain Error — status failed with the generic fallback text, no unhandled rejection", async () => {
     let state: MaintenanceState = initialMaintenanceState;
     const dispatch = (a: MaintenanceAction) => {
       state = maintenanceReducer(state, a);
     };
-    const run = () => Promise.reject(new NotImplementedError("delete_session"));
+    const run = () => Promise.reject(new Error("boom"));
 
     startMaintenanceAction(state, "delete_session", run, dispatch);
     await Promise.resolve();
     await Promise.resolve();
 
     expect(state.status).toBe("failed");
-    expect(state.error).toContain("delete_session");
-    expect(state.error).toContain("isn't wired up yet");
+    expect(state.error).toBe("Something went wrong.");
   });
 });
 
@@ -198,36 +196,73 @@ describe("runRescanTracks — the real command's success path", () => {
   });
 });
 
-describe("runListQuarantine / runResolveQuarantine — the real commands' success path, once they land", () => {
-  it("runListQuarantine with two entries — counts them", async () => {
-    const run = runListQuarantine(() => Promise.resolve([{}, {}]));
+describe("summarizeRescanSessionsReport", () => {
+  it("summarizeRescanSessionsReport — three reports, no flags or warnings — names the session count and the summed totals", () => {
+    const reports: RescanReport[] = [
+      { session_id: "s1", visits_indexed: 1, laps_indexed: 3, flags_cleared: [], warnings: [], elapsed_ms: 5 },
+      { session_id: "s2", visits_indexed: 2, laps_indexed: 4, flags_cleared: [], warnings: [], elapsed_ms: 5 },
+      { session_id: "s3", visits_indexed: 1, laps_indexed: 2, flags_cleared: [], warnings: [], elapsed_ms: 5 },
+    ];
 
-    const result = await run();
+    const summary = summarizeRescanSessionsReport(reports);
 
-    expect(result).toBe("2 items awaiting review.");
+    expect(summary).toBe("Rescanned 3 sessions: indexed 4 track visits, 9 laps total.");
   });
 
-  it("runListQuarantine with one entry — singular noun, not \"1 items\"", async () => {
-    const run = runListQuarantine(() => Promise.resolve([{}]));
+  it("summarizeRescanSessionsReport — one report, singular session/visit nouns", () => {
+    const reports: RescanReport[] = [
+      { session_id: "s1", visits_indexed: 1, laps_indexed: 1, flags_cleared: [], warnings: [], elapsed_ms: 5 },
+    ];
 
-    const result = await run();
+    const summary = summarizeRescanSessionsReport(reports);
 
-    expect(result).toBe("1 item awaiting review.");
+    expect(summary).toBe("Rescanned 1 session: indexed 1 track visit, 1 lap total.");
   });
 
-  it("runResolveQuarantine with action retry — resolves naming the retry", async () => {
-    const run = runResolveQuarantine(() => Promise.resolve(undefined), "q1", "retry");
+  it("summarizeRescanSessionsReport — overlapping cleared flags across sessions — each flag named once", () => {
+    const reports: RescanReport[] = [
+      { session_id: "s1", visits_indexed: 1, laps_indexed: 1, flags_cleared: ["main_lap_number"], warnings: [], elapsed_ms: 5 },
+      { session_id: "s2", visits_indexed: 1, laps_indexed: 1, flags_cleared: ["main_lap_number", "starred_lap_number"], warnings: [], elapsed_ms: 5 },
+    ];
 
-    const result = await run();
+    const summary = summarizeRescanSessionsReport(reports);
 
-    expect(result).toContain("retried");
+    expect(summary).toContain("Cleared main_lap_number, starred_lap_number.");
   });
 
-  it("runResolveQuarantine with action discard — resolves naming the discard", async () => {
-    const run = runResolveQuarantine(() => Promise.resolve(undefined), "q1", "discard");
+  it("summarizeRescanSessionsReport — warnings from more than one session — all named, counted together", () => {
+    const reports: RescanReport[] = [
+      { session_id: "s1", visits_indexed: 0, laps_indexed: 0, flags_cleared: [], warnings: ["disk full"], elapsed_ms: 5 },
+      { session_id: "s2", visits_indexed: 0, laps_indexed: 0, flags_cleared: [], warnings: ["stale index"], elapsed_ms: 5 },
+    ];
+
+    const summary = summarizeRescanSessionsReport(reports);
+
+    expect(summary).toContain("2 warnings");
+    expect(summary).toContain("disk full");
+    expect(summary).toContain("stale index");
+  });
+});
+
+describe("runRescanSessions — the real command's success path, run per session id", () => {
+  it("runRescanSessions with two ids — calls rescanTracks for each and aggregates the summary", async () => {
+    const calls: string[] = [];
+    const rescanTracks = (sessionId: string) => {
+      calls.push(sessionId);
+      return Promise.resolve<RescanReport>({
+        session_id: sessionId,
+        visits_indexed: 1,
+        laps_indexed: 1,
+        flags_cleared: [],
+        warnings: [],
+        elapsed_ms: 1,
+      });
+    };
+    const run = runRescanSessions(rescanTracks, ["s1", "s2"]);
 
     const result = await run();
 
-    expect(result).toContain("discarded");
+    expect(calls.sort()).toEqual(["s1", "s2"]);
+    expect(result).toBe("Rescanned 2 sessions: indexed 2 track visits, 2 laps total.");
   });
 });
