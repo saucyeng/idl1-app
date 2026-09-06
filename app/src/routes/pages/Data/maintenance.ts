@@ -186,12 +186,64 @@ export function summarizeRescanSessionsReport(reports: RescanReport[]): string {
   return parts.join(" ");
 }
 
+/** One session id's outcome from a `runRescanSessions` batch: either the
+ *  real `RescanReport` it produced, or the [[describeIpcError]] text its
+ *  rejection described. */
+export interface RescanSessionOutcome {
+  sessionId: string;
+  result: { status: "succeeded"; report: RescanReport } | { status: "failed"; error: string };
+}
+
+/** Turns a `runRescanSessions` batch's per-session outcomes into one
+ *  toolbar summary line — never discards a successful session's report
+ *  just because a sibling session in the same batch failed (review
+ *  `review-shell-data-writes.md` Important). Every succeeded report is
+ *  folded through [[summarizeRescanSessionsReport]] as before; a leading
+ *  "N of M rescanned" clause is added only when at least one session
+ *  failed, followed by each failed session's id and error text, so a
+ *  partial batch reads as partial rather than as an unqualified success. */
+export function summarizeRescanSessionsOutcomes(outcomes: RescanSessionOutcome[]): string {
+  const succeeded = outcomes.filter((o): o is RescanSessionOutcome & { result: { status: "succeeded"; report: RescanReport } } => o.result.status === "succeeded");
+  const failed = outcomes.filter((o): o is RescanSessionOutcome & { result: { status: "failed"; error: string } } => o.result.status === "failed");
+
+  if (failed.length === 0) {
+    return summarizeRescanSessionsReport(succeeded.map((o) => o.result.report));
+  }
+
+  const parts = [`${succeeded.length} of ${outcomes.length} sessions rescanned.`];
+  if (succeeded.length > 0) {
+    parts.push(summarizeRescanSessionsReport(succeeded.map((o) => o.result.report)));
+  }
+  parts.push(
+    `${plural(failed.length, "session")} failed: ${failed.map((o) => `${o.sessionId} (${o.result.error})`).join("; ")}.`,
+  );
+  return parts.join(" ");
+}
+
 /** Wraps `rescanTracks` (C3 §3.2, ruling R83) as a `run` function that
  *  rescans every id in `sessionIds` — the "Rescan N sessions" action
  *  `save_track`/`delete_track`'s `stale_session_ids` offers (C3 §3.2,
  *  ruling R86). Runs every rescan concurrently (each is independent, keyed
- *  by its own session id) and turns the combined reports into one summary
- *  line via [[summarizeRescanSessionsReport]]. */
+ *  by its own session id) via `Promise.allSettled` rather than
+ *  `Promise.all`, so one session's failure (e.g. its directory vanished
+ *  meanwhile) never discards the other sessions' already-succeeded
+ *  `RescanReport`s (review `review-shell-data-writes.md` Important) — the
+ *  batch resolves honestly through [[summarizeRescanSessionsOutcomes]] even
+ *  when some, or all, sessions failed; [[startMaintenanceAction]]'s
+ *  one-in-flight rule (a second `START` while this batch's promise is
+ *  still settling is refused, its own settle silently dropped rather than
+ *  overwriting the newer run) is untouched by this change. */
 export function runRescanSessions(rescanTracks: RescanTracksFn, sessionIds: string[]): () => Promise<string> {
-  return () => Promise.all(sessionIds.map((id) => rescanTracks(id))).then(summarizeRescanSessionsReport);
+  return () =>
+    Promise.allSettled(sessionIds.map((id) => rescanTracks(id))).then((settled) =>
+      summarizeRescanSessionsOutcomes(
+        settled.map((outcome, i) => ({
+          sessionId: sessionIds[i],
+          result:
+            outcome.status === "fulfilled"
+              ? { status: "succeeded" as const, report: outcome.value }
+              : { status: "failed" as const, error: describeMaintenanceError(outcome.reason) },
+        })),
+      ),
+    );
 }

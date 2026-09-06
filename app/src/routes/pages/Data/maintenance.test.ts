@@ -12,9 +12,11 @@ import {
   startMaintenanceAction,
   summarizeRebuildReport,
   summarizeRescanReport,
+  summarizeRescanSessionsOutcomes,
   summarizeRescanSessionsReport,
   type MaintenanceAction,
   type MaintenanceState,
+  type RescanSessionOutcome,
 } from "./maintenance";
 
 describe("summarizeRebuildReport", () => {
@@ -264,5 +266,102 @@ describe("runRescanSessions — the real command's success path, run per session
 
     expect(calls.sort()).toEqual(["s1", "s2"]);
     expect(result).toBe("Rescanned 2 sessions: indexed 2 track visits, 2 laps total.");
+  });
+
+  it("runRescanSessions with three ids and one rejecting — the two successes are still reported, not discarded", async () => {
+    const rescanTracks = (sessionId: string): Promise<RescanReport> => {
+      if (sessionId === "s2") return Promise.reject({ kind: "io", message: "disk full" });
+      return Promise.resolve({
+        session_id: sessionId,
+        visits_indexed: 1,
+        laps_indexed: 1,
+        flags_cleared: [],
+        warnings: [],
+        elapsed_ms: 1,
+      });
+    };
+    const run = runRescanSessions(rescanTracks, ["s1", "s2", "s3"]);
+
+    const result = await run();
+
+    expect(result).toContain("2 of 3 sessions rescanned.");
+    expect(result).toContain("Rescanned 2 sessions: indexed 2 track visits, 2 laps total.");
+    expect(result).toContain("1 session failed: s2 (A file could not be read. Try rebuilding the catalog.).");
+  });
+
+  it("runRescanSessions with every id rejecting — resolves (never rejects) naming every failed session", async () => {
+    const rescanTracks = (): Promise<RescanReport> => Promise.reject({ kind: "internal", message: "boom" });
+    const run = runRescanSessions(rescanTracks, ["s1", "s2"]);
+
+    const result = await run();
+
+    expect(result).toBe("0 of 2 sessions rescanned. 2 sessions failed: s1 (Something went wrong internally.); s2 (Something went wrong internally.).");
+  });
+
+  it("startMaintenanceAction driving runRescanSessions with a partial failure — dispatches SUCCEEDED, not FAILED, carrying the honest partial summary", async () => {
+    const actions: MaintenanceAction[] = [];
+    const rescanTracks = (sessionId: string): Promise<RescanReport> => {
+      if (sessionId === "s2") return Promise.reject({ kind: "io", message: "disk full" });
+      return Promise.resolve({ session_id: sessionId, visits_indexed: 1, laps_indexed: 1, flags_cleared: [], warnings: [], elapsed_ms: 1 });
+    };
+
+    startMaintenanceAction(initialMaintenanceState, "rescan_sessions", runRescanSessions(rescanTracks, ["s1", "s2"]), (a) => actions.push(a));
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(actions.map((a) => a.type)).toEqual(["START", "SUCCEEDED"]);
+    const succeeded = actions[1] as { type: "SUCCEEDED"; result: string };
+    expect(succeeded.result).toContain("1 of 2 sessions rescanned.");
+  });
+
+  it("startMaintenanceAction — a second START while a rescan_sessions batch is still settling is refused, its eventual settle never overwrites the newer run's state", async () => {
+    let resolveFirst: (reports: RescanReport[]) => void = () => {};
+    const firstRun = () => new Promise<string>((resolve) => { resolveFirst = (reports) => resolve(summarizeRescanSessionsReport(reports)); });
+    const actions: MaintenanceAction[] = [];
+
+    startMaintenanceAction(initialMaintenanceState, "rescan_sessions", firstRun, (a) => actions.push(a));
+    const runningState = maintenanceReducer(initialMaintenanceState, actions[0]);
+    expect(runningState.status).toBe("running");
+
+    const secondRun = () => Promise.resolve("second run's summary");
+    startMaintenanceAction(runningState, "rebuild_catalog", secondRun, (a) => actions.push(a));
+    await Promise.resolve();
+
+    expect(actions).toHaveLength(1);
+
+    resolveFirst([{ session_id: "s1", visits_indexed: 1, laps_indexed: 1, flags_cleared: [], warnings: [], elapsed_ms: 1 }]);
+    await Promise.resolve();
+
+    expect(actions).toHaveLength(2);
+    expect(actions[1].type).toBe("SUCCEEDED");
+    const finished = actions[1] as { type: "SUCCEEDED"; action: string; result: string };
+    expect(finished.action).toBe("rescan_sessions");
+    expect(finished.result).toBe("Rescanned 1 session: indexed 1 track visit, 1 lap total.");
+  });
+});
+
+describe("summarizeRescanSessionsOutcomes", () => {
+  it("summarizeRescanSessionsOutcomes with every session succeeding — same text as summarizeRescanSessionsReport, no partial-batch clause", () => {
+    const outcomes: RescanSessionOutcome[] = [
+      { sessionId: "s1", result: { status: "succeeded", report: { session_id: "s1", visits_indexed: 1, laps_indexed: 1, flags_cleared: [], warnings: [], elapsed_ms: 1 } } },
+    ];
+
+    const summary = summarizeRescanSessionsOutcomes(outcomes);
+
+    expect(summary).toBe("Rescanned 1 session: indexed 1 track visit, 1 lap total.");
+  });
+
+  it("summarizeRescanSessionsOutcomes with a mix of succeeded and failed — names the failed session id and its error text", () => {
+    const outcomes: RescanSessionOutcome[] = [
+      { sessionId: "s1", result: { status: "succeeded", report: { session_id: "s1", visits_indexed: 1, laps_indexed: 1, flags_cleared: [], warnings: [], elapsed_ms: 1 } } },
+      { sessionId: "s2", result: { status: "failed", error: "A file could not be read. Try rebuilding the catalog." } },
+    ];
+
+    const summary = summarizeRescanSessionsOutcomes(outcomes);
+
+    expect(summary).toBe(
+      "1 of 2 sessions rescanned. Rescanned 1 session: indexed 1 track visit, 1 lap total. 1 session failed: s2 (A file could not be read. Try rebuilding the catalog.).",
+    );
   });
 });
