@@ -6,6 +6,19 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 
 ### Added
 
+- **L11 Task 1: sync contract amendments (2026-09-06, docs only, spec-first,
+  ruling R88).** C3 §3.9 gains `start_pairing()`, `unpair_peer(peer_id)`, a
+  `peer_appeared` event, `PeerStatus.protocol_version`/`.paired_at_ms`, and
+  an explicit `sync_now` `phase` union; §2's `sync`/`not_found` kind rows
+  updated to match. C4 §6 gains `profiles` in the manifest document and
+  entry table, the versioned `/idl1/v1/...` endpoint set (closing §8 item
+  4), `workbooks/.sync-base/` as a named never-synced/never-flagged
+  exception, and `session.json`'s per-field merge rule (closing §8 item 3).
+  New `docs/IDL0_SPEC.md` §28a carries the full sync model (moves/never-
+  moves, the conflict table, the plain-HTTP-no-TLS LAN-only posture,
+  resumability); §17a.4 now points at it instead of "contract to follow."
+  No Rust yet — this is the contract the lane's remaining eleven tasks are
+  held to.
 - **L8x lane complete: Data-tab write commands (2026-09-06, idl-rs core +
   idl-rs-tauri, ruling R86).** Five new commands close the last C3 §6
   deferrals the Data tab still stubbed: `save_track`, `delete_track`,

@@ -493,9 +493,15 @@ nested by session where the file lives under a session directory:
     }
   ],
   "workbooks": [ { "workbook_id": "…", "file_name": "fork-tuning", "sha256": "…", "size_bytes": 2048, "updated_at_ms": 1756857600000 } ],
-  "tracks":    [ { "track_id": "…", "sha256": "…", "size_bytes": 900, "updated_at_ms": 1756857600000 } ]
+  "tracks":    [ { "track_id": "…", "sha256": "…", "size_bytes": 900, "updated_at_ms": 1756857600000 } ],
+  "profiles":  [ { "profile_id": "…", "sha256": "…", "size_bytes": 640, "updated_at_ms": 1756857600000 } ]
 }
 ```
+
+**Added post-sign (2026-09-06, lead ruling R88, L11 Task 1).** `profiles` is
+new in the manifest document above — the class was already named in the
+"Moves" list (ruling R6, same file) but omitted from the JSON shape and the
+entry table below; this closes that gap, not a new sync decision.
 
 **Manifest entry per file class** (path pattern | identity key | fields |
 conflict rule):
@@ -505,9 +511,10 @@ conflict rule):
 | Blob | `blobs/sha256/<2>/<62>` | `sha256` (= the path itself) | `sha256`, `size_bytes` | None possible — content-addressed and immutable; set difference by hash, missing ones are pulled. |
 | `data.parquet` | `sessions/<id>/data.parquet` | `session_id` (path is not content-addressed, unlike derived) | `sha256`, `size_bytes`, `importer_version`, `seam_correction_version`, `engine_version` | If `(importer_version, seam_correction_version)` match on both sides but `sha256` differs, both are correct (last-ulp cross-CPU difference, design §5) — no transfer, keep local. If that version pair differs, the side with the newer pair is authoritative; the other side pulls it (transferred as bytes, not regenerated locally). `engine_version` is informational only (provenance, C1 §4.3) — not part of the conflict key. |
 | Derived channel | `sessions/<id>/derived/<64hex>.parquet` | `sha256` (= filename) | `sha256`, `size_bytes` | None possible — content-addressed; set difference by hash per session. Never overwritten (name is content). |
-| `session.json` | `sessions/<id>/session.json` | `session_id` | `sha256`, `size_bytes`, `updated_at_ms` | **Last-write-wins by `updated_at_ms`**, extending the existing Track precedent (SPEC §16.5). Flagged in §8 — D6 only mandates cell-granular merge for workbooks; this extension needs lead confirmation. |
+| `session.json` | `sessions/<id>/session.json` | `session_id` | `sha256`, `size_bytes`, `updated_at_ms` | **Per-field merge** — closed post-sign, 2026-09-06, lead ruling R88, L11 Task 1, per §8 item 3 (superseding the whole-file last-write-wins text this row previously carried). See below. |
 | Workbook | `workbooks/<name>.idl1wb` | `workbook_id` (front matter, C2 — **not** `file_name`; a rename is not a new workbook) | `workbook_id`, `file_name`, `sha256`, `size_bytes`, `updated_at_ms` | Per-cell merge against the last-synced base (design §7, D6) — computed after both full files are fetched, not from the manifest alone. A `file_name` mismatch for a known `workbook_id` is a rename to reconcile locally, id wins. |
 | Track | `tracks/<id>.idl0t` | `track_id` | `track_id`, `sha256`, `size_bytes`, `updated_at_ms` | **Last-write-wins by `updated_at_ms`** (SPEC §16.5, unchanged). |
+| Profile | `profiles/<id>.idl0p` | `profile_id` | `profile_id`, `sha256`, `size_bytes`, `updated_at_ms` | **Last-write-wins by `updated_at_ms`**, same class as Track (ruling R6). *Added post-sign, 2026-09-06, lead ruling R88, L11 Task 1.* |
 
 `data.parquet` is path-identified by `session_id` (not content-addressed) and
 regenerated as a pure function of `(blob, importer_version,
@@ -515,14 +522,60 @@ seam_correction_version)` (C1 §4.3, design D6) — the concrete form of D6 for
 this file class, so sync compares that version pair rather than a content
 hash.
 
-**Transfer.** `GET /blob/<hash>` with range requests (resumable), per
-design §7. The same pattern generalises to the other classes —
-`GET /session/<id>/data.parquet`, `GET /session/<id>/derived/<hash>.parquet`,
-`GET /session/<id>/session.json`, `GET /workbook/<id>`, `GET /track/<id>` —
-all range-request-capable for resumability; push is the symmetric `PUT`.
-These five endpoint names are this contract's proposal, generalised from
-the one endpoint design §7 specifies explicitly; L11 confirms naming at
-implementation (§8).
+**`session.json` per-field merge.** *Closed post-sign, 2026-09-06, lead
+ruling R88, L11 Task 1, per §8 item 3.* User-owned fields (C1 §6: rider,
+bike, venue, comments, tag, lap gates, lap flags) merge **per field**,
+independently of one another — a field changed on only one side takes
+that side, a field changed on both sides keeps the side with the newer
+`updated_at_ms` (last-write-wins **as a tiebreak per field**, not per
+document). The L2b lap-index cache — `laps`, `track_visits`,
+`track_visits_library_hash` and `lap_detector_version` (C1 §6, ruling
+R83) — **never merges**: the receiving side always keeps its own copy of
+these four fields, re-derived locally from its own `data.parquet` rather
+than reconciled from a peer's. Whole-file last-write-wins was rejected
+(the alternative this row previously carried) because it would silently
+discard a rider's note in favour of a peer's unrelated lap re-index.
+
+**Transfer.** *Endpoint names below replace this section's original
+five-path proposal — closed post-sign, 2026-09-06, lead ruling R88, L11
+Task 1, per §8 item 4.* Versioned base path `/idl1/v1` (a peer advertising
+an mDNS `v=` this build does not speak is listed incompatible, C3 §3.9's
+`PeerStatus.protocol_version`):
+
+```
+POST /idl1/v1/pair                                     { code, peer_id, name } -> { peer_id, name, token }
+GET  /idl1/v1/manifest                                 -> this section's document
+GET  /idl1/v1/blob/<sha256>
+GET  /idl1/v1/session/<id>/data.parquet
+GET  /idl1/v1/session/<id>/session.json
+GET  /idl1/v1/session/<id>/derived/<sha256>.parquet
+GET  /idl1/v1/workbook/<workbook_id>
+GET  /idl1/v1/track/<track_id>
+GET  /idl1/v1/profile/<profile_id>
+```
+
+Every `GET` above (except `/manifest` and `/pair`) has a symmetric `PUT` at
+the same path — push is the same verb pair, same path, request body in
+place of response body. Every request but `POST /pair` carries
+`Authorization: Bearer <token>` (a per-peer token minted at pairing, PLAN
+§1); `/pair` itself is the one unauthenticated path, gated instead by the
+short-lived, single-use, rate-limited code (PLAN §8 Q3). Every `GET`
+answers `Accept-Ranges: bytes` and honours a single byte range, resumable
+per design §7. `PUT` is idempotent: identical content already held is a
+`200` with no write. The workbook merge (C2 §7) is computed by the
+**receiving** side from both full documents plus its own `.sync-base`
+cache below, never from the manifest alone.
+
+**`workbooks/.sync-base/`** (C2 §7's last-synced-base cache, one hidden
+file per workbook at `workbooks/.sync-base/<id>.idl1wb`) is **never
+synced** — added post-sign, 2026-09-06, lead ruling R88, L11 Task 1, per
+L11 PLAN §8 Q8: C2 §7 puts the cache inside `<data>/workbooks/`, which
+this section's "Moves" list otherwise sweeps wholesale
+(`workbooks/*.idl1wb`), so this path is named as an explicit exception
+rather than moved. It is also **exempt from §7's unmatched-path finding**
+(item 10, "any path under `<data>` that matches none of the §2
+patterns") — without this exception every merge would surface a spurious
+`info` finding on its own cache file.
 
 A blob enters the local catalog only after its hash verifies against the
 downloaded bytes (design §7) — the same rule extends to every
@@ -626,9 +679,14 @@ flagged for lead confirmation before signing, per the doc's own review gate.
    `session.json` (which holds lap flags and track visits a rider might
    edit concurrently on two devices) deserves the same treatment or a
    coarser one is genuinely open. — *Owner: lead, L11.*
+   **Closed (2026-09-06, lead ruling R88, L11 Task 1):** per-field merge,
+   not whole-file last-write-wins — see §6's `session.json` row and its
+   detail paragraph.
 4. **Generalised sync endpoint names** (§6): `GET /session/<id>/data.parquet`
    etc., extrapolated from design §7's one explicit example
    (`GET /blob/<hash>`). — *Owner: L11, at implementation.*
+   **Closed (2026-09-06, lead ruling R88, L11 Task 1):** the versioned
+   `/idl1/v1/...` set in §6's "Transfer" paragraph.
 5. **Orphan retention window and `prune` CLI shape** (§7): 30-day default,
    `idl-rs prune --older-than <days>`. Not sourced; a proposal. —
    *Owner: lead, L1.*

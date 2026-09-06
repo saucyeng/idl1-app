@@ -1946,13 +1946,15 @@ serialized into the file.
 
 ### 17a.4 Sync
 
-LAN sync (design doc §7, contract to follow in L11's wave-2 work) replaces
-Drive sync entirely: pull-based manifest/blob sync between paired peers on
-the local network, with workbook merge **per cell** (C2 §7) rather than
-whole-file last-write-wins — a cell changed on only one side takes that
-side; a same-cell conflict appends the peer's version as a marked conflict
-cell (`<!-- conflict from <peer> -->`) directly below, so the file always
-stays valid Markdown. No cloud relay in v1 (design doc §15).
+LAN sync (design doc §7; full model in **§28a**, added 2026-09-06, lead
+ruling R88, L11 Task 1 — supersedes this section's earlier "contract to
+follow in L11's wave-2 work" pointer) replaces Drive sync entirely:
+pull-based manifest/blob sync between paired peers on the local network,
+with workbook merge **per cell** (C2 §7) rather than whole-file
+last-write-wins — a cell changed on only one side takes that side; a
+same-cell conflict appends the peer's version as a marked conflict cell
+(`<!-- conflict from <peer> -->`) directly below, so the file always stays
+valid Markdown. No cloud relay in v1 (design doc §15; §28a.4).
 
 ### 17a.5 Import policy
 
@@ -3762,7 +3764,8 @@ LAN sync (row 4 above), not deferred; §28 carries its own superseded banner.
 
 **Superseded (2026-09-05, L7c Task 5).** This section describes idl0's
 Google Drive sync, which idl1 does not have — the idl1 line syncs
-peer-to-peer over the LAN instead (design §7; app-side section: §27.9). Kept
+peer-to-peer over the LAN instead (design §7; model: §28a; app-side
+section: §27.9). Kept
 below for idl0 reference only.
 
 **Goal:** Automatic, invisible — experience like Google Docs. Session appears on all devices without user action.
@@ -3801,6 +3804,79 @@ Workbook sync: see §17a.4 (LAN sync, per-cell merge — not last-write-wins).
 - `deleteRemote(sessionId)` — removes all Drive files for the given session (`uuid.idl0`/`.gpx` + `uuid.idl0w`). Called by `RunsNotifier.deleteSession` when the user selects "Delete everywhere". Errors propagate to the caller so that the local delete is aborted if the remote delete fails; the user sees an error and the session remains intact locally.
 
 **Future (v2):** Download sessions from Drive — coach reviews rider data from home without physical device access.
+
+---
+
+## 28a. Sync (LAN, idl1)
+
+**Added (2026-09-06, lead ruling R88, L11 Task 1, spec-first).** idl1's real
+LAN-sync model, replacing §28's Drive sync per §27.9/§17a.4. Placed
+immediately after §28 (a lettered insertion, matching the §17a/§17b
+convention) rather than reusing the number 28 itself, so §28's own
+cross-references elsewhere in this document (§6, §24, §27.13) keep
+pointing at the (superseded) Drive section they already name. Source:
+`runs/2026-09-06/lanes/l11-sync/PLAN.md` §1 and §3; contracts C3 §3.9, C4
+§6.
+
+### 28a.1 The model
+
+Two app instances on a pit-lane LAN. Each runs a small HTTP server
+advertised over mDNS as `_idl1._tcp`, TXT record carrying `pid`, `name`,
+`v=1` and the port. **Pair once**: either side calls `start_pairing()`
+(C3 §3.9) to mint a single-use, 120-second, 6-digit code and shows it; the
+other side types it into `pair_peer(code)`. A successful pairing exchanges
+a per-peer bearer token (C4 §6's `/idl1/v1/pair`), stored outside `<data>`
+(`app_config_dir()/peers.json`, atomic write) — tokens never sync. Once
+paired, **sync** is pull-then-push, per-peer, idempotent and resumable,
+triggered manually (`sync_now`) or automatically whenever a paired,
+protocol-compatible peer becomes visible (`peer_appeared`, C3 §3.9), at
+most once per peer per 60 seconds, and never while a manual sync for that
+peer is already running.
+
+### 28a.2 What moves, what never moves
+
+Per C4 §6: blobs (by hash), `sessions/<id>/data.parquet`,
+`sessions/<id>/derived/*.parquet`, `sessions/<id>/session.json`,
+`workbooks/*.idl1wb`, `tracks/*.idl0t`, `profiles/<id>.idl0p`.
+
+**Never moves:** `catalog.sqlite` and its `-wal`/`-shm` sidecars (an
+index, D10, rebuilt locally), `tmp/` (write-staging),
+`app_config_dir()/settings.json` and `app_config_dir()/peers.json` (both
+outside `<data>` by construction), and `workbooks/.sync-base/` (C2 §7's
+last-synced-base cache — C4 §6 names it a never-synced exception even
+though it lives inside `workbooks/`).
+
+### 28a.3 Conflict table
+
+| Class | Rule |
+|---|---|
+| Blob, derived channel | Content-addressed — no conflict is possible; set difference by hash, pull what is missing. |
+| `data.parquet` | Compare `(importer_version, seam_correction_version)`. Equal on both sides with a differing hash is a last-ulp cross-CPU difference — keep local, no transfer. A newer pair wins and moves as bytes, never regenerated locally. |
+| `session.json` | Per-field merge of user-owned fields (rider, bike, venue, comments, tag, lap gates, lap flags — C1 §6), last-write-wins by `updated_at_ms` as the **per-field** tiebreak. The L2b lap cache (`laps`, `track_visits`, `track_visits_library_hash`, `lap_detector_version`) never merges — the receiver always keeps its own. |
+| Workbook | Per-cell merge against the last-synced `.sync-base` (C2 §7): a cell changed on only one side takes that side; a same-cell conflict appends the peer's version as a marked conflict cell (`<!-- conflict from <peer> -->`) directly below, so the file always stays valid Markdown. Whole-file conflict copies never happen. |
+| Track, profile | Last-write-wins by `updated_at_ms`. |
+
+### 28a.4 Security posture
+
+A pit-lane LAN, not the internet. **Plain HTTP, no TLS in v1** — stated
+plainly here rather than implied: every byte of a sync transfer, including
+the bearer token on every request but `/pair`, crosses the wire
+unencrypted. This is judged acceptable because the threat model is a
+shared pit-lane network among consenting riders, not a hostile network; a
+cloud relay (out of scope for v1, design doc §15) would be the point to
+add TLS. The pairing code is short-lived (120 s), single-use, and burnt
+after five failed `pair_peer` attempts. Nothing outside `<data>`'s
+syncable classes (28a.2) is ever served.
+
+### 28a.5 Resumability
+
+A content-addressed file (blob, derived channel) is written to the path
+derived from the hash of the bytes **actually received**, so a bad or
+partial transfer cannot overwrite a good entry. Every `GET` accepts a
+`Range` header; a partial body lands in `tmp/<uuid>.part` and resumes at
+its existing length on retry. An interrupted sync is recovered simply by
+re-running it — the manifest diff (C4 §6) never double-applies an already-
+installed file.
 
 ---
 
