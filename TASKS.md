@@ -73,7 +73,8 @@ are defined in `docs/superpowers/specs/2026-09-02-idl1-rewrite-design.md` §10.
   originally "—"/empty for most sessions (R53 Q4, no wave-1 import path
   indexed `laps`/`lap_summary` yet) — **closed by L2b** (below): import now
   indexes laps, and this tab's own consumption of typed sectors/
-  neutral-zone-visits and a rescan action is a post-lane TS shell task.
+  neutral-zone-visits and a rescan action landed in the post-lane TS shell
+  task (2026-09-06, see the L2b entry below).
 - [x] L7b Device tab — all 9 tasks landed on `wave2-l7b-device`; **Task 10
   (2026-09-06, R77.4/R78) wires the tab live.** Needs 8 (`device_status`),
   9 (`device_control`), 11 (`list_profiles`/`save_profile`/`delete_profile`)
@@ -164,7 +165,13 @@ are defined in `docs/superpowers/specs/2026-09-02-idl1-rewrite-design.md` §10.
       multi-lap shape (R73) is constructible; a "Rescan tracks" button on
       the Data tab's maintenance panel needs `rescan_tracks`/`RescanReport`
       added to `app/src/ipc/catalog.ts` (exact declaration in the Task 8
-      implementer's report).
+      implementer's report). **Post-lane TS shell task landed (2026-09-06):**
+      `app/src/ipc/catalog.ts`'s `LapDetail.sectors`/`.neutral_zone_visits`
+      are typed and `rescanTracks`/`RescanReport` are wired; the Data tab's
+      lap tables render real sector/neutral-zone data (`Data/
+      lapDetailFormat.ts`) and a "Rescan tracks" button reindexes one
+      session and refreshes the detail pane; the Notebook's FFT cell passes
+      the selected main lap to `fetch_fft` as `lap`.
 - [ ] L9 mobile scaffold
 - [ ] L11 LAN sync
 
