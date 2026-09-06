@@ -3982,3 +3982,7 @@ covered by the round-trip test.
 **review-task7 (L11) overruled:** its one "Important" — an "unauthorised"
 `cargo check -p idl-rs-tauri` — was requested by the lead's dispatch
 (transport is tauri's dependency). Task 7 is CLEAN.
+
+**Tracked (L11 Task 6 fix re-review, Minor):** the `session.json` rederive's
+parse-failure fallback reports `Installed` instead of `KeptLocal`; fold
+into Task 12's sweep (one enum arm + test).
