@@ -41,3 +41,12 @@ answer in whatever order suits, and the lead turns each into a one-task change.
    Not blocking; worth knowing which the firmware intends. *(L5 landing)*
 
 5b. **Pressure channels 20/21** — SPEC section 8's config example gives no scale/offset source for them, so the registry preview emits no row for pressure until it does. *(R64.5)*
+
+## 11. Disk headroom (2026-09-06, blocking Tauri builds)
+
+C: reached 0 bytes free during L8w Task 13's app-crate check. The lead
+freed ≈2.5 GB of stale Claude scratch only. Tauri builds need ~20 GB of
+headroom. Candidates (your call): `Downloads` 37.5 GB,
+`AppData\Local\Packages` 27.8 GB, `AppData\Roaming\Claude` 10.2 GB,
+`idl0-app\rust\target` 3.9 GB (rebuildable), `pagefile.sys` 36.5 GB
+(system-managed). May the lead delete the idl0-app target directory?
