@@ -3730,3 +3730,17 @@ sandbox's `cellRendered`, so a frame whose empty Plot reports a tiny
 height may clip its own note. Fix: a `minHeight` when a note/error is
 present (one style line + test on the pure height decision). Goes with
 Task 20's two Minors into the L10 cosmetic pass.
+
+## 2026-09-06 — R82: digest contradictions resolved
+
+`runs/2026-09-06/RULINGS-DIGEST.md` (120 lines) is the file agents read
+from now on (operating brief §7.1). Two contradictions it surfaced:
+1. **R53 Settings Q1 vs R78 L7c Q1.** R78 stands (`settings.json` wins;
+   only engine-default fields import) — the engine file is the durable
+   store. R53's "no preference silently lost" is kept by making the loss
+   *not silent*: the migration's `role="status"` line must name any field
+   skipped because `settings.json` already held a different value.
+   → L7c Task 9 (small; with the next Settings change).
+2. **R51 Q3** (whether to run `session_source` tests at the L2 gate) is
+   moot: every L8w gate ran the whole `idl-rs-tauri` suite (149 → 189
+   passed), which includes `session_source::tests`.
