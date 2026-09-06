@@ -3,10 +3,10 @@ import "./App.css";
 import { fetchEngineVersion } from "./ipc/engine";
 import { AppStateProvider, useAppState } from "./state/AppState";
 import { ROUTES } from "./routes/types";
-import NotebookPage from "./routes/pages/NotebookPage";
-import DevicePage from "./routes/pages/DevicePage";
-import DataPage from "./routes/pages/DataPage";
-import SettingsPage from "./routes/pages/SettingsPage";
+import NotebookPage from "./routes/pages/Notebook";
+import DevicePage from "./routes/pages/Device";
+import DataPage from "./routes/pages/Data";
+import SettingsPage from "./routes/pages/Settings";
 
 /** The four-tab shell: nav + the active tab's page, sourced from
  *  `useAppState()`. Fetches the engine version once on mount (C3 §3.1). */
