@@ -105,6 +105,42 @@ describe("migrationPlan", () => {
     // Assert
     expect(plan.settings?.data_dir).toBe("D:\\on-disk");
   });
+
+  it("migrationPlan — skipped because settings.json already held a different value — listed with both values", () => {
+    // Arrange
+    const engineOnDisk: EngineSettings = { data_dir: null, rider_name: "Already Set", unit_system: "imperial" };
+
+    // Act
+    const plan = migrationPlan(NON_DEFAULT_LOCAL_DOC, engineOnDisk, false);
+
+    // Assert: rider_name is kept (already non-default), so it is listed with
+    // both the kept and discarded values; unit_system is imported instead.
+    expect(plan.skipped).toEqual([{ field: "rider_name", onDisk: "Already Set", local: "Isaac" }]);
+  });
+
+  it("migrationPlan — a field that was imported — not listed as skipped", () => {
+    // Arrange
+    const engineOnDisk: EngineSettings = { data_dir: null, rider_name: "Already Set", unit_system: "imperial" };
+
+    // Act
+    const plan = migrationPlan(NON_DEFAULT_LOCAL_DOC, engineOnDisk, false);
+
+    // Assert: unit_system was imported (was at its default), so it is not
+    // also reported as skipped.
+    expect(plan.skipped.some((field) => field.field === "unit_system")).toBe(false);
+  });
+
+  it("migrationPlan — on-disk value already equals the local value — not listed as skipped", () => {
+    // Arrange: rider_name is non-default on disk but matches local exactly,
+    // so nothing was actually discarded.
+    const engineOnDisk: EngineSettings = { data_dir: null, rider_name: "Isaac", unit_system: "imperial" };
+
+    // Act
+    const plan = migrationPlan(NON_DEFAULT_LOCAL_DOC, engineOnDisk, false);
+
+    // Assert
+    expect(plan.skipped.some((field) => field.field === "rider_name")).toBe(false);
+  });
 });
 
 /** Builds a {@link PrefsMigrationDeps} with fake defaults; `isMigrated`
@@ -149,7 +185,7 @@ describe("runPrefsMigration", () => {
     const outcome = await runPrefsMigration(deps);
 
     // Assert
-    expect(outcome).toEqual({ kind: "nothing-to-migrate" });
+    expect(outcome).toEqual({ kind: "nothing-to-migrate", skipped: [] });
     expect(setSettings).not.toHaveBeenCalled();
   });
 
@@ -169,7 +205,7 @@ describe("runPrefsMigration", () => {
     const rewritten = JSON.parse(storedLocal);
 
     // Assert
-    expect(outcome).toEqual({ kind: "migrated", imported: { rider_name: "Isaac", unit_system: "metric" } });
+    expect(outcome).toEqual({ kind: "migrated", imported: { rider_name: "Isaac", unit_system: "metric" }, skipped: [] });
     expect(deps.isMigrated()).toBe(true);
     expect(rewritten.engine).toBeUndefined();
     expect(rewritten.ui).toEqual({ last_section: "sync", section_list_width_px: 260 });
@@ -249,7 +285,10 @@ describe("runPrefsMigration", () => {
     const outcome = await runPrefsMigration(deps);
 
     // Assert
-    expect(outcome).toEqual({ kind: "nothing-to-migrate" });
+    expect(outcome).toEqual({
+      kind: "nothing-to-migrate",
+      skipped: [{ field: "rider_name", onDisk: "Already Set", local: "Isaac" }],
+    });
     expect(writeLocal).not.toHaveBeenCalled();
   });
 });

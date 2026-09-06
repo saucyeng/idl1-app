@@ -5,7 +5,7 @@ import AboutSection from "./AboutSection";
 import ControlsSection from "./ControlsSection";
 import DataSection from "./DataSection";
 import HowTosSection from "./HowTosSection";
-import { MIGRATION_FLAG_KEY, runPrefsMigration, type MigrationOutcome } from "./prefsMigration";
+import { MIGRATION_FLAG_KEY, runPrefsMigration, type MigrationOutcome, type SkippedField } from "./prefsMigration";
 import ProfileSection from "./ProfileSection";
 import { createPrefsStore, localStorageBackend } from "./prefsStore";
 import { SECTIONS, defaultSectionId, sectionById } from "./sections";
@@ -55,10 +55,30 @@ function writeMigrationFlag(): void {
  *  in-flight work from the effect's cleanup (wave-2 operating brief §4). */
 let migrationGeneration = 0;
 
+/** Names of the two engine fields the migration touches, matched to
+ *  {@link SkippedField.field} for {@link describeMigrationNotices}. */
+const FIELD_LABELS: Record<SkippedField["field"], string> = {
+  rider_name: "rider name",
+  unit_system: "unit system",
+};
+
+/** Finds `field` in `skipped` and phrases the "kept, not overwritten" notice
+ *  for it (R82, L7c Task 9), or `null` if that field was not skipped. */
+function skippedFieldNotice(skipped: SkippedField[], field: SkippedField["field"]): string | null {
+  const entry = skipped.find((candidate) => candidate.field === field);
+  if (entry === undefined) {
+    return null;
+  }
+  const label = FIELD_LABELS[field];
+  return `Kept ${label} '${entry.onDisk}' from settings.json; your browser had '${entry.local}'.`;
+}
+
 /** Turns a {@link MigrationOutcome} into the two field-specific notices shown
  *  in {@link ProfileSection} and {@link UnitsSection} (R78 L7c Task 8, Q3): a
  *  failure is shown in both (either field could have been the one that
- *  needed importing), a success names only the field it actually imported. */
+ *  needed importing); a success names the field it actually imported, or —
+ *  when `settings.json` already held a different value for that field
+ *  (R82, L7c Task 9) — names which value was kept and which was discarded. */
 function describeMigrationNotices(outcome: MigrationOutcome | null): { profile: string | null; units: string | null } {
   if (outcome === null) {
     return { profile: null, units: null };
@@ -69,8 +89,18 @@ function describeMigrationNotices(outcome: MigrationOutcome | null): { profile: 
   }
   if (outcome.kind === "migrated") {
     return {
-      profile: outcome.imported.rider_name !== undefined ? "Your rider name was carried over from this browser's saved settings." : null,
-      units: outcome.imported.unit_system !== undefined ? "Your unit system was carried over from this browser's saved settings." : null,
+      profile: outcome.imported.rider_name !== undefined
+        ? "Your rider name was carried over from this browser's saved settings."
+        : skippedFieldNotice(outcome.skipped, "rider_name"),
+      units: outcome.imported.unit_system !== undefined
+        ? "Your unit system was carried over from this browser's saved settings."
+        : skippedFieldNotice(outcome.skipped, "unit_system"),
+    };
+  }
+  if (outcome.kind === "nothing-to-migrate") {
+    return {
+      profile: skippedFieldNotice(outcome.skipped, "rider_name"),
+      units: skippedFieldNotice(outcome.skipped, "unit_system"),
     };
   }
   return { profile: null, units: null };
