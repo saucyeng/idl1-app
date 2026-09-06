@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { DecodedTile } from "../../../../ipc/tiles";
-import { runChannelBind, type ChannelBindAction, type ChannelBindDeps } from "./channelBindDriver";
+import { runChannelBind, runChannelSettle, type ChannelBindAction, type ChannelBindDeps } from "./channelBindDriver";
 import type { JsCellBinding } from "./jsCellBinding";
 import { TileCache } from "./tileCache";
 
@@ -35,7 +35,7 @@ function neverStale(): boolean {
 }
 
 describe("runChannelBind", () => {
-  it("runChannelBind — two-channel binding — dispatches channelData for both, in order, and binds only the first", async () => {
+  it("runChannelBind — two-channel binding — dispatches channelData for both, in order, mounts only the first, and registers both bound channels in order", async () => {
     const cache = new TileCache();
     const fetched: string[] = [];
     const deps: ChannelBindDeps = {
@@ -51,14 +51,14 @@ describe("runChannelBind", () => {
     expect(fetched).toEqual(["fork_velocity", "rear_wheel_speed"]);
     const channelDataActions = actions.filter((a): a is Extract<ChannelBindAction, { type: "channelData" }> => a.type === "channelData");
     expect(channelDataActions.map((a) => a.channelId)).toEqual(["fork_velocity", "rear_wheel_speed"]);
-    const boundActions = actions.filter((a) => a.type === "boundChannel");
+    const boundActions = actions.filter((a): a is Extract<ChannelBindAction, { type: "boundChannels" }> => a.type === "boundChannels");
     expect(boundActions).toHaveLength(1);
-    expect((boundActions[0] as Extract<ChannelBindAction, { type: "boundChannel" }>).bound.name).toBe("fork_velocity");
+    expect(boundActions[0].bound.map((b) => b.name)).toEqual(["fork_velocity", "rear_wheel_speed"]);
     const windowActions = actions.filter((a) => a.type === "chartWindow");
     expect(windowActions).toHaveLength(1);
   });
 
-  it("runChannelBind — a binding with one channels entry (dedupe already done by bindingFor) — sends exactly one channelData and one boundChannel", async () => {
+  it("runChannelBind — a binding with one channels entry (dedupe already done by bindingFor) — sends exactly one channelData and one boundChannels", async () => {
     const cache = new TileCache();
     const deps: ChannelBindDeps = { fetchTile: () => Promise.resolve(fakeTile([0n], [1])) };
     const actions: ChannelBindAction[] = [];
@@ -66,7 +66,7 @@ describe("runChannelBind", () => {
     await runChannelBind(deps, cache, "session-a", "cell-a", binding(["fork_velocity"]), 64, (a) => actions.push(a), neverStale);
 
     expect(actions.filter((a) => a.type === "channelData")).toHaveLength(1);
-    expect(actions.filter((a) => a.type === "boundChannel")).toHaveLength(1);
+    expect(actions.filter((a) => a.type === "boundChannels")).toHaveLength(1);
   });
 
   it("runChannelBind — isStale becomes true after the first channel's fetch resolves — drops every dispatch, including for channels not yet fetched", async () => {
@@ -98,6 +98,45 @@ describe("runChannelBind", () => {
     await runChannelBind(deps, cache, "session-a", "cell-a", binding(["fork_velocity"]), 64, (a) => actions.push(a), neverStale);
 
     expect(fetchCalls).toBe(1);
-    expect(actions).toHaveLength(3); // channelData + boundChannel + chartWindow
+    expect(actions).toHaveLength(3); // channelData + boundChannels + chartWindow
+  });
+});
+
+describe("runChannelSettle", () => {
+  it("runChannelSettle — two-channel cell settles — exactly one fetch per channel and both registered together", async () => {
+    const cache = new TileCache();
+    const fetched: string[] = [];
+    const deps: ChannelBindDeps = {
+      fetchTile: (_sid, channelId) => {
+        fetched.push(channelId);
+        return Promise.resolve(fakeTile([0n], [1]));
+      },
+    };
+    const channels = binding(["fork_velocity", "rear_wheel_speed"]).channels;
+    const actions: ChannelBindAction[] = [];
+
+    await runChannelSettle(deps, cache, "session-a", "cell-a", channels, "fork_velocity", 0, 1_000_000, 64, (a) => actions.push(a), neverStale);
+
+    expect(fetched).toEqual(["fork_velocity", "rear_wheel_speed"]);
+    const boundActions = actions.filter((a): a is Extract<ChannelBindAction, { type: "boundChannels" }> => a.type === "boundChannels");
+    expect(boundActions).toHaveLength(1);
+    expect(boundActions[0].bound.map((b) => b.name)).toEqual(["fork_velocity", "rear_wheel_speed"]);
+    expect(actions.filter((a) => a.type === "chartWindow")).toHaveLength(1);
+  });
+
+  it("runChannelSettle — a settle superseded by a later one before the fetch resolves — drops the stale result entirely", async () => {
+    const cache = new TileCache();
+    const deps: ChannelBindDeps = { fetchTile: () => Promise.resolve(fakeTile([0n], [1])) };
+    const channels = binding(["fork_velocity", "rear_wheel_speed"]).channels;
+    const actions: ChannelBindAction[] = [];
+    let calls = 0;
+    const isStale = () => {
+      calls += 1;
+      return calls >= 1;
+    };
+
+    await runChannelSettle(deps, cache, "session-a", "cell-a", channels, "fork_velocity", 0, 1_000_000, 64, (a) => actions.push(a), isStale);
+
+    expect(actions).toEqual([]);
   });
 });

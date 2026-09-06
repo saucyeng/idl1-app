@@ -14,14 +14,12 @@ import { extractInlineSpans } from "./components/ProseSpan";
 import type { SandboxCell } from "./host/protocol";
 import { SandboxHost } from "./host/SandboxHost";
 import { NotebookSession } from "./host/NotebookSession";
-import { tileToChannelData } from "./model/channelData";
 import { dropCellHeight, initialCellHeights, recordCellHeight, type CellHeights } from "./model/cellLayout";
-import { runChannelBind, type ChannelBindAction, type ChannelBindDeps, type ChartWindow } from "./model/channelBindDriver";
+import { runChannelBind, runChannelSettle, type ChannelBindAction, type ChannelBindDeps, type ChartWindow } from "./model/channelBindDriver";
 import { bindingFor, bindingIdentity, unresolvedChannelId } from "./model/jsCellBinding";
 import { runEval, runOpenAndEval, type OpenEvalDeps } from "./model/openEvalDriver";
 import { isSelfWrite, saveFlow, type SaveFlowState, type WorkbookEventWithHash } from "./model/saveFlow";
 import { runSessionSpan, type SessionSpanAction, type SessionSpanDeps } from "./model/sessionSpanDriver";
-import { pointBudget, tileRange } from "./model/tiers";
 import { TileCache } from "./model/tileCache";
 import { initialWorkbookState, workbookReducer } from "./model/workbookState";
 
@@ -92,14 +90,17 @@ function decodeByteRange(markdown: string, range: [number, number]): string {
  * this beyond R69's two named messages).
  *
  * The initial channel-bind effect below (its own `useEffect`) fetches each
- * newly bound cell's first window of tiles once (mirroring `ChartCell`'s
- * own settle-triggered fetch, reusing the same `chooseTier`/`tileRange`/
- * `ensureTiles`/`tileToChannelData` pieces) and registers it with
- * `sessionRef.current.setBoundChannel` -- `ChartCell`'s own
+ * newly bound cell's first window of tiles once for *every* distinct
+ * channel the binding references (mirroring `ChartCell`'s own
+ * settle-triggered fetch, reusing the same `chooseTier`/`tileRange`/
+ * `ensureTiles`/`tileToChannelData` pieces via `model/channelBindDriver.ts`)
+ * and registers the whole channel list with
+ * `sessionRef.current.setBoundChannels` (R72) -- `ChartCell`'s own
  * `onViewportSettled` callback (built per bound cell in `renderJsCell`
- * below) does the same on every later gesture settle, updating the
- * registered `BoundChannel`'s `range`/`startUs`/`endUs` each time so a
- * rebuild replays the *current* window (per this task's dispatch).
+ * below) does the same on every later gesture settle via
+ * `runChannelSettle`, re-fetching and re-registering every one of the
+ * cell's bound channels for the newly settled window so a rebuild replays
+ * the *current* window for all of them, not only the one `ChartCell` mounts.
  */
 export default function NotebookPage() {
   const [appState] = useAppState();
@@ -123,6 +124,8 @@ export default function NotebookPage() {
   const sessionSpanSeqRef = useRef(0);
   /** Every js cell's currently bound identity (`bindingIdentity`), so the channel-bind effect below only re-fetches/re-registers a cell whose binding actually changed. */
   const boundIdentityRef = useRef<Map<string, string>>(new Map());
+  /** Per-cell monotonic counter bumped on every gesture settle (R72's settle refetch, `renderJsCell`'s `onViewportSettled`) -- lets that settle's own async multi-channel refetch drop its result if a later settle for the same cell fires before it resolves, the same "stale result -> dropped" contract `runChannelBind`'s `isStale` gives the initial-bind effect. */
+  const settleSeqRef = useRef<Map<string, number>>(new Map());
 
   // One `saveFlow` instance for this page's lifetime (Task 14) -- holds
   // its own `SaveFlowState` behind a closure; `saveFlowState` mirrors it
@@ -386,6 +389,7 @@ export default function NotebookPage() {
     for (const cellId of boundIdentityRef.current.keys()) {
       if (!liveIds.has(cellId)) {
         boundIdentityRef.current.delete(cellId);
+        settleSeqRef.current.delete(cellId);
         sessionRef.current.removeBoundChannel(cellId);
       }
     }
@@ -397,8 +401,10 @@ export default function NotebookPage() {
   // *every* distinct bound channel's initial window of tiles (lead
   // pre-ruling 2026-09-05 #3, review-task13b.md Critical fix: a
   // multi-channel binding must not silently drop its later channels) and
-  // registers the one channel `ChartCell` mounts
-  // (`binding.channels[0]`) with `sessionRef.current.setBoundChannel`.
+  // registers *all* of them, in order, with
+  // `sessionRef.current.setBoundChannels` (R72, Task 13c) -- not only the
+  // one channel `ChartCell` mounts, so a sandbox rebuild restores every
+  // bound channel this cell's Plot code reads via `channel()`.
   // All of that sequencing -- and the "is this fetch's result still
   // current" decision -- lives in the pure, unit-tested
   // `model/channelBindDriver.ts`'s `runChannelBind`, mirroring
@@ -437,8 +443,8 @@ export default function NotebookPage() {
       const onAction = (action: ChannelBindAction) => {
         if (action.type === "channelData") {
           sandboxHostRef.current?.setChannelHostVar(action.channelId, action.length, action.t, action.v);
-        } else if (action.type === "boundChannel") {
-          sessionRef.current.setBoundChannel(action.cellId, action.bound);
+        } else if (action.type === "boundChannels") {
+          sessionRef.current.setBoundChannels(action.cellId, action.bound);
         } else {
           setChartWindows((prev) => new Map(prev).set(action.cellId, action.chartWindow));
         }
@@ -536,25 +542,49 @@ export default function NotebookPage() {
                   sampleRateHz={channel.sampleRateHz}
                   cache={sessionRef.current.cache}
                   fetchTile={(tier, tileIndex, columnCount) => fetchTile(sid, channel.channelId, tier, tileIndex, columnCount)}
-                  onViewportSettled={(viewport, tier, tiles) => {
+                  onViewportSettled={(viewport, _tier, tiles) => {
+                    // ChartCell has already committed its own (mounted-channel)
+                    // settle-fetch by the time this fires -- paint it
+                    // immediately rather than waiting on the multi-channel
+                    // driver below, whose re-fetch of this same channel is a
+                    // cache hit but still a microtask away.
                     setChartWindows((prev) => new Map(prev).set(cellId, { viewport, tiles }));
-                    const budget = pointBudget(viewport.pixelWidth, false);
-                    const data = tileToChannelData(tiles, viewport.startUs, viewport.endUs, budget);
-                    sandboxHostRef.current?.setChannelHostVar(
+
+                    // Every one of this cell's bound channels -- not only the
+                    // mounted one -- must re-fetch for the newly settled
+                    // window and re-register as one list (R72, Task 13c): a
+                    // multi-mark cell's other channels would otherwise desync
+                    // from the mounted channel's viewport after a pan/zoom.
+                    // `settleSeqRef` guards a settle superseded by a later one
+                    // for the same cell before this async work resolves.
+                    const seq = (settleSeqRef.current.get(cellId) ?? 0) + 1;
+                    settleSeqRef.current.set(cellId, seq);
+                    const isStale = () => settleSeqRef.current.get(cellId) !== seq;
+                    const deps: ChannelBindDeps = {
+                      fetchTile: (sessId, chId, chTier, tileIndex, columnCount) => fetchTile(sessId, chId, chTier, tileIndex, columnCount),
+                    };
+                    const onAction = (action: ChannelBindAction) => {
+                      if (action.type === "channelData") {
+                        sandboxHostRef.current?.setChannelHostVar(action.channelId, action.length, action.t, action.v);
+                      } else if (action.type === "boundChannels") {
+                        sessionRef.current.setBoundChannels(action.cellId, action.bound);
+                      } else {
+                        setChartWindows((prev) => new Map(prev).set(action.cellId, action.chartWindow));
+                      }
+                    };
+                    void runChannelSettle(
+                      deps,
+                      sessionRef.current.cache,
+                      sid,
+                      cellId,
+                      binding.channels,
                       channel.channelId,
-                      data.length,
-                      data.t.buffer as ArrayBuffer,
-                      data.v.buffer as ArrayBuffer
+                      viewport.startUs,
+                      viewport.endUs,
+                      viewport.pixelWidth,
+                      onAction,
+                      isStale
                     );
-                    const range = tileRange(viewport.startUs, viewport.endUs, tier, channel.sampleRateHz);
-                    sessionRef.current.setBoundChannel(cellId, {
-                      name: channel.channelId,
-                      key: { sessionId: sid, channelId: channel.channelId, tier, columnCount: viewport.pixelWidth },
-                      range,
-                      startUs: viewport.startUs,
-                      endUs: viewport.endUs,
-                      budget,
-                    });
                   }}
                   fetchCursorReadout={(sessId, channels, tUs) => cursorReadout(sessId, channels, tUs)}
                   sendTransform={(id, translateXPx, scaleX) => sandboxHostRef.current?.sendTransform(id, translateXPx, scaleX)}

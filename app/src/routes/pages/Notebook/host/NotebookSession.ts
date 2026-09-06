@@ -10,6 +10,11 @@
  * constructs the actual `SandboxHost` (it owns the DOM container the host's
  * constructor needs) and passes `session.onChannelsInvalidated(sandboxHost)`
  * as that constructor's `SandboxHostCallbacks.onChannelsInvalidated`.
+ *
+ * Ruling R72 (2026-09-03 decisions log, Task 13c): the registry holds every
+ * channel a `js` cell binds, not only the one `ChartCell` renders — a
+ * multi-mark cell on distinct channels must have all of them restored after
+ * a sandbox rebuild, not just the first.
  */
 import type { ChannelData } from "../model/channelData";
 import { rebindChannelsAfterRebuild, type BoundChannel } from "../model/channelRebind";
@@ -58,18 +63,25 @@ export function makeChannelsInvalidatedHandler(
  * cell's settle-triggered fetch reads/fills (design §6 — "shared with
  * anything else in the notebook rendering the same channel, so two cells
  * never re-fetch what the other already cached"), and a per-cell registry
- * of which channel that cell currently has bound into the sandbox, with
- * enough viewport state to re-derive it after a rebuild
- * (`model/channelRebind.ts`'s `BoundChannel`).
+ * of which channel(s) that cell currently has bound into the sandbox, with
+ * enough viewport state to re-derive each after a rebuild
+ * (`model/channelRebind.ts`'s `BoundChannel`, R72).
  */
 export class NotebookSession {
-  private readonly boundByCellId = new Map<string, BoundChannel>();
+  private readonly boundByCellId = new Map<string, BoundChannel[]>();
 
   /** @param cache The tile cache this session's cells fetch through and `onChannelsInvalidated` reads from. */
   constructor(readonly cache: TileCache) {}
 
-  /** Registers (or replaces) cell `cellId`'s currently bound channel — call whenever that cell's viewport settle re-fetches and re-binds (Task 6/8's settle path). */
-  setBoundChannel(cellId: string, bound: BoundChannel): void {
+  /**
+   * Registers (or wholesale replaces) cell `cellId`'s currently bound
+   * channels, in order — call whenever that cell's binding is (re)resolved
+   * or its viewport settle re-fetches and re-binds (Task 6/8/13c's settle
+   * path). A cell with two distinct bound channels (a multi-mark `js` cell,
+   * R52 Q2) passes both here in one call so a rebuild restores every one of
+   * them, not only the channel `ChartCell` renders (R72).
+   */
+  setBoundChannels(cellId: string, bound: BoundChannel[]): void {
     this.boundByCellId.set(cellId, bound);
   }
 
@@ -78,9 +90,9 @@ export class NotebookSession {
     this.boundByCellId.delete(cellId);
   }
 
-  /** Every currently bound channel across every cell — what a rebuild re-sends. */
+  /** Every currently bound channel across every cell, in per-cell registration order — what a rebuild re-sends. */
   allBoundChannels(): BoundChannel[] {
-    return [...this.boundByCellId.values()];
+    return [...this.boundByCellId.values()].flat();
   }
 
   /**

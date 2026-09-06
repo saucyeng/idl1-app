@@ -46,8 +46,8 @@ describe("NotebookSession", () => {
     const session = new NotebookSession(cache);
     const forkBound: BoundChannel = { name: "fork", key: forkKey, range: { first: 0, last: 0 }, startUs: 0, endUs: 2_000_000, budget: 100 };
     const wheelBound: BoundChannel = { name: "wheel", key: wheelKey, range: { first: 0, last: 0 }, startUs: 0, endUs: 1_000_000, budget: 100 };
-    session.setBoundChannel("cell-a", forkBound);
-    session.setBoundChannel("cell-b", wheelBound);
+    session.setBoundChannels("cell-a", [forkBound]);
+    session.setBoundChannels("cell-b", [wheelBound]);
     const sandbox = fakeSandbox();
     const bytesBefore = cache.bytesUsed();
 
@@ -66,10 +66,28 @@ describe("NotebookSession", () => {
     const forkKey = key();
     cache.put({ ...forkKey, tileIndex: 0 }, fakeTile([0n], [1], 0));
     const session = new NotebookSession(cache);
-    session.setBoundChannel("cell-a", { name: "fork", key: forkKey, range: { first: 0, last: 0 }, startUs: 0, endUs: 1_000_000, budget: 100 });
+    session.setBoundChannels("cell-a", [{ name: "fork", key: forkKey, range: { first: 0, last: 0 }, startUs: 0, endUs: 1_000_000, budget: 100 }]);
 
     session.removeBoundChannel("cell-a");
 
     expect(session.allBoundChannels()).toEqual([]);
+  });
+
+  it("NotebookSession — setBoundChannels with two channels for one cell — both returned in order, a re-register replaces the whole list", () => {
+    const cache = new TileCache(1_000_000);
+    const forkKey = key({ channelId: "front-fork" });
+    const wheelKey = key({ channelId: "rear-wheel-speed" });
+    const session = new NotebookSession(cache);
+    const forkBound: BoundChannel = { name: "fork", key: forkKey, range: { first: 0, last: 0 }, startUs: 0, endUs: 1_000_000, budget: 100 };
+    const wheelBound: BoundChannel = { name: "wheel", key: wheelKey, range: { first: 0, last: 0 }, startUs: 0, endUs: 1_000_000, budget: 100 };
+
+    session.setBoundChannels("cell-a", [forkBound, wheelBound]);
+
+    expect(session.allBoundChannels()).toEqual([forkBound, wheelBound]);
+
+    const rewheelBound: BoundChannel = { ...wheelBound, startUs: 500_000 };
+    session.setBoundChannels("cell-a", [rewheelBound]);
+
+    expect(session.allBoundChannels()).toEqual([rewheelBound]);
   });
 });
