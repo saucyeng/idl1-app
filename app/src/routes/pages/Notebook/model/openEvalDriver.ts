@@ -16,15 +16,40 @@
  * throws — every rejection dispatches a typed action instead, so a caller
  * never needs its own top-level `.catch`.
  */
-import type { CellOutput, LapContext as EvalLapContext, WorkbookHandle } from "../../../../ipc/workbook";
+import type { CellOutput, IpcError, LapContext as EvalLapContext, WorkbookHandle } from "../../../../ipc/workbook";
 import type { WorkbookAction } from "./workbookState";
+
+/** `true` when `value` has the shape of a typed `IpcError` (C3 §2: a `kind`
+ *  and a `message`) rather than an untyped/generic thrown value. Mirrors
+ *  `fftDriver.ts`'s helper of the same shape. */
+function isIpcErrorLike(value: unknown): value is IpcError {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    typeof (value as Record<string, unknown>).kind === "string" &&
+    typeof (value as Record<string, unknown>).message === "string"
+  );
+}
+
+/** Turns a rejected `evalWorkbook` promise into a typed `IpcError`
+ *  (CLAUDE.md §5: never `Err(String)`, never a bare thrown string). A
+ *  typed rejection passes through with its `kind`/`message`/`detail`
+ *  intact; anything else becomes `kind: "internal"` with the error's own
+ *  message text — the same fallback shape `fftDriver.ts`'s `toIpcError`
+ *  uses. */
+function toIpcError(error: unknown): IpcError {
+  if (isIpcErrorLike(error)) {
+    return error.detail === undefined
+      ? { kind: error.kind, message: error.message }
+      : { kind: error.kind, message: error.message, detail: error.detail };
+  }
+  return { kind: "internal", message: error instanceof Error ? error.message : String(error) };
+}
 
 /** The IPC calls one open→read→eval run needs, injected so this module
  *  never imports `ipc/workbook.ts` directly — a caller supplies the real
  *  wrappers (or a test's fakes). */
 export interface OpenEvalDeps {
-  /** Lists indexed workbooks (`ipc/catalog.ts`'s `listWorkbooks`); this driver opens the first one — see `runOpenAndEval`'s doc comment on why. */
-  listWorkbooks: () => Promise<{ workbook_id: string }[]>;
   openWorkbook: (idOrPath: string) => Promise<WorkbookHandle>;
   /** `ipc/workbook.ts`'s `readWorkbook`. */
   readWorkbook: (idOrPath: string) => Promise<{ markdown: string; hash: string; path: string }>;
@@ -35,17 +60,15 @@ export interface OpenEvalDeps {
 export type OpenEvalDispatch = (action: WorkbookAction) => void;
 
 /**
- * Runs the whole open → read → eval sequence once. `sessionId` is
- * `AppState.selection.sessionId` at the moment this run started — passed
- * straight to `evalWorkbook`; `null` is a legal value (C3 §3.4: every
- * `[Channel]` reference then surfaces as a per-cell error rather than
- * rejecting).
- *
- * There is no "active workbook" selection anywhere in shared state yet
- * (`AppState.tsx` has no such slice, and inventing one is not this lane's
- * call to make unilaterally, CLAUDE.md §7) — this driver opens the first
- * workbook `listWorkbooks` returns, or reports "no workbooks" when there
- * are none. A workbook picker is out of this task's scope.
+ * Runs the whole open → read → eval sequence once, for the given
+ * `workbookId` — decided by the caller (`model/workbookEntry.ts`'s
+ * `chooseWorkbookEntry`, L6 Task 21), never by this driver: which workbook
+ * to open is a page-level decision shared by the empty state, the picker
+ * and Rescan, not something an open→eval run should re-derive on its own.
+ * `sessionId` is `AppState.selection.sessionId` at the moment this run
+ * started — passed straight to `evalWorkbook`; `null` is a legal value
+ * (C3 §3.4: every `[Channel]` reference then surfaces as a per-cell error
+ * rather than rejecting).
  *
  * @param isStale Checked after every `await`; once it returns `true` this
  *   run stops dispatching immediately, even if further steps would
@@ -57,6 +80,7 @@ export type OpenEvalDispatch = (action: WorkbookAction) => void;
  */
 export async function runOpenAndEval(
   deps: OpenEvalDeps,
+  workbookId: string,
   sessionId: string | null,
   dispatch: OpenEvalDispatch,
   isStale: () => boolean,
@@ -64,14 +88,7 @@ export async function runOpenAndEval(
 ): Promise<void> {
   let handle: WorkbookHandle;
   try {
-    const workbooks = await deps.listWorkbooks();
-    if (isStale()) return;
-    if (workbooks.length === 0) {
-      dispatch({ type: "markdownError", message: "No workbooks found." });
-      return;
-    }
-
-    handle = await deps.openWorkbook(workbooks[0].workbook_id);
+    handle = await deps.openWorkbook(workbookId);
     if (isStale()) return;
     dispatch({ type: "handleOpened", handle });
   } catch (error) {
@@ -112,11 +129,16 @@ export async function runEval(
     const outputs = await deps.evalWorkbook(id, sessionId, lapContext);
     if (isStale()) return;
     dispatch({ type: "evalResult", outputs });
-  } catch {
+  } catch (error) {
     // A whole-command rejection from `evalWorkbook` (not a per-cell error,
     // which arrives inside a successful `CellOutput[]` instead) means no
-    // cell evaluated at all — e.g. an unknown workbook id. Nothing to
-    // dispatch: `outputs` stays whatever it was (empty, on a fresh open),
-    // and the markdown slice above is unaffected either way.
+    // cell evaluated at all — e.g. an unknown workbook id, or (C3 §3.4) any
+    // non-null `lapContext` until lap indexing at import lands. Typed and
+    // dispatched (L6 Task 21, Step 1b) rather than silently swallowed —
+    // `outputs` itself is left unchanged (empty, on a fresh open) either
+    // way, but the failure is no longer invisible everywhere in the app.
+    if (!isStale()) {
+      dispatch({ type: "evalError", error: toIpcError(error) });
+    }
   }
 }
