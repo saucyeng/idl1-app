@@ -9,7 +9,7 @@ window resolver and delete the rejection. TDD, ONE commit, then report.
 ## GATE
 
 ```bash
-cd "C:/Users/isaac/Documents/Saucy/saucyeng/idl-rs-worktrees/wave3-l2b-laps"
+cd "C:/Users/isaac/Documents/Saucy/saucyeng/idl-rs-worktrees/l2b-laps"
 git merge-base --is-ancestor c893ba7 HEAD && echo GATE-OK
 grep -c "reject_non_null_lap" tauri/src/commands/rasters.rs
 ```

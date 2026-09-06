@@ -9,7 +9,7 @@ TDD, ONE commit, then the gate, then report.
 ## GATE (entry)
 
 ```bash
-cd "C:/Users/isaac/Documents/Saucy/saucyeng/idl-rs-worktrees/wave3-l2b-laps"
+cd "C:/Users/isaac/Documents/Saucy/saucyeng/idl-rs-worktrees/l2b-laps"
 git merge-base --is-ancestor c893ba7 HEAD && echo GATE-OK
 grep -c "pub fn reindex_laps" src/store/lap_index.rs
 grep -c "overlay" src/math/eval.rs

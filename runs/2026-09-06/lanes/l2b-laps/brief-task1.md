@@ -7,7 +7,7 @@ task** — `session.json` is Task 2. TDD, ONE commit, then report.
 ## GATE — verify before opening the worktree
 
 ```bash
-cd "C:/Users/isaac/Documents/Saucy/saucyeng/idl-rs-worktrees/wave3-l2b-laps"
+cd "C:/Users/isaac/Documents/Saucy/saucyeng/idl-rs-worktrees/l2b-laps"
 git merge-base --is-ancestor c893ba7 HEAD && echo GATE-OK
 grep -c "pub fn detect_visits" src/tracks/detect.rs
 grep -c "pub fn renumber_session_laps" src/laps/renumber.rs
