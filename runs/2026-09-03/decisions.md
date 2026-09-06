@@ -3962,3 +3962,19 @@ there — two writers, the fix agent overwrote Task 3's in-progress edit.
 Nothing committed was lost. Rule restated: **a message to a reported
 agent is a new dispatch**; never send one into a worktree another agent
 owns. Task 3 stood down; the fix agent owns R90 in both files.
+
+## 2026-09-06 — R91: `session.json` per-field merge tie rule; `render_workbook`; `InstallContext` (L11 Task 6)
+
+Accepted as ruled: a user-owned field is "changed" when it differs from
+its type's zero value (C1 §6's not-set convention); one side changed ⇒
+that side; both changed to the same value ⇒ no conflict; both changed
+differently ⇒ the side with the newer `session.json` `updated_at_ms` wins,
+tie keeps local. `workbook::v3::render_workbook` (WorkbookDoc → text, the
+inverse of the parser, round-trips C2 §2.5's worked example) is core's
+and the only renderer. `install` takes an `InstallContext` (peer mtime,
+claimed versions, peer file name) populated from the manifest the caller
+holds. L11 mid gate: idl-rs **1110** / 1 ignored, cli 53. C4 §6 gets the
+tie rule in Task 12's sweep.
+
+**Cost if wrong:** the tie rule is one comparison; the renderer is
+covered by the round-trip test.
