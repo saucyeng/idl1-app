@@ -3463,3 +3463,12 @@ go to the L10 cross-lane pass. Open from the lane: FFT chart (R52 Q7 ruled
 `fetch_fft`); the seams listed in `lanes/l6/CONTRACT-AMENDMENTS.md`
 swap to real commands in the post-L8w shell tasks. Still not observed:
 60 fps pan/zoom on a real session (needs the dev app; Isaac's preview).
+
+**R71 correction (2026-09-06, lead):** Task 7b is withdrawn. Reading
+`transport/src/ble_transport.rs` (`send_command` doc, L4): on Windows
+btleplug 0.13's `Peripheral::write` returns only `Result<()>`; the SPEC §7.2
+ack byte (`0x81` included) never reaches the crate, so no transport code
+can tag it `Config` without message-text matching. `config` from
+`pull_config` stays unreachable on this platform — same class as
+`device_rejected` (R63) — until a BLE stack with ack readback (L9 mobile
+plugins). Documented, not built. **Cost if wrong:** unchanged from R71.
