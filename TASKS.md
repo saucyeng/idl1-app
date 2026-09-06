@@ -88,6 +88,27 @@ are defined in `docs/superpowers/specs/2026-09-02-idl1-rewrite-design.md` §10.
   dropped (idl0 `example.com` placeholders); Licenses omitted (no
   license-page generator wired into idl1's build); chart controls
   reference carried but provisional pending L6's actual bindings.
+- [x] L8w Rust write-amendment lane — all 14 tasks (incl. lead-added Task
+  12b) landed on `wave2-l8w-write-amendment`, 20 commands registered;
+  lane gate green (`cargo test -p idl-rs-tauri` 188 passed, `cargo test
+  -p idl-rs -p idl-rs-cli -- --test-threads=4` idl-rs 944 passed/1
+  ignored, idl-rs-cli 51 passed). Scope limits, stated not silently
+  absorbed: `preview_channel_registry` covers SPEC §5.2's fixed channel
+  ids only, no generic analog/digital channel-id guess (R63 2);
+  `device_rejected` (Task 7) and `pull_config`'s `config` kind (R71,
+  R71 correction) are both defined but practically unreachable on the
+  desktop `btleplug` backend, which never surfaces the SPEC §7.2 ack
+  byte; `list_math_builtins` ships without a `unit_rule` field, dropped
+  by ruling R64.2 pending a future unit-propagation-rules amendment;
+  `eval_workbook`'s `lap_context.overlay_laps` supports same-session
+  overlay only in wave 2 (R64.1), and `MathOverlay` cannot yet be
+  constructed from a multi-lap `overlay_laps` list at all until the
+  lap-indexing amendment settles that shape (R73) — unreachable today
+  since wave-1 import never populates `laps[]`. C3 §6's wave-2 deferred
+  list (`list_quarantine`/`resolve_quarantine`, `save_track`/
+  `delete_track`, `rescan_track_visits`, `fetch_histogram`,
+  `fetch_scatter_points`) is unchanged — none of this lane's tasks
+  implement any of them, confirmed by grep.
 - [ ] L9 mobile scaffold
 - [ ] L11 LAN sync
 

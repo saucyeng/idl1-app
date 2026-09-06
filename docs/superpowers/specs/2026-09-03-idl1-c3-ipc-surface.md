@@ -627,6 +627,10 @@ not from the id. A `file_name` collision on create follows the
 
 Errors: `invalid_argument` (empty `name`, or a name that sanitises to an
 empty filename), `io`, `internal`.
+*Note (L8w Task 14 wrap-up, 2026-09-06):* the sanitises-to-empty branch is
+unreachable with the landed shared sanitiser, which falls back to
+`"workbook"` rather than returning empty; the check and its error stay as
+defence against a future sanitiser change, per Task 10's implementer note.
 
 **`eval_workbook(id: string, session_id: string | null, lap_context: LapContext | null)`**
 *`session_id` added post-sign (2026-09-04, lead ruling R41).* `eval_cells`
