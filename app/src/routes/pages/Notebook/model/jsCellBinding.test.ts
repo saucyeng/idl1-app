@@ -45,6 +45,9 @@ function sessionDetail(channels: ChannelSummary[]): SessionDetail {
   };
 }
 
+/** Empty by default -- most cases here don't involve a workbook definition. */
+const noDefinitions: ReadonlySet<string> = new Set();
+
 const oneMarkCode = [
   "Plot.plot({",
   "  marks: [",
@@ -71,58 +74,85 @@ const twoMarksSameChannelCode = [
   "})",
 ].join("\n");
 
+const definitionMarkCode = [
+  "Plot.plot({",
+  "  marks: [",
+  '    Plot.lineY(channel("avg_speed"), { x: "t", y: "v" })',
+  "  ]",
+  "})",
+].join("\n");
+
+const mixedMarkCode = [
+  "Plot.plot({",
+  "  marks: [",
+  '    Plot.lineY(channel("fork_velocity"), { x: "t", y: "v" }),',
+  '    Plot.lineY(channel("avg_speed"), { x: "t", y: "v" })',
+  "  ]",
+  "})",
+].join("\n");
+
+const twoDefinitionsCode = [
+  "Plot.plot({",
+  "  marks: [",
+  '    Plot.lineY(channel("avg_speed"), { x: "t", y: "v" }),',
+  '    Plot.lineY(channel("max_speed"), { x: "t", y: "v" })',
+  "  ]",
+  "})",
+].join("\n");
+
 const customCode = "const x = 1;\nreturn x + 1;";
 
 describe("bindingFor", () => {
   it("bindingFor — form-generated code, one mark, known channel — a non-null binding with one channels entry", () => {
     const detail = sessionDetail([channel()]);
 
-    const binding = bindingFor({ id: "cell-a", code: oneMarkCode }, detail, 60_000_000);
+    const binding = bindingFor({ id: "cell-a", code: oneMarkCode }, detail, 60_000_000, noDefinitions);
 
     expect(binding).not.toBeNull();
-    expect(binding?.channels).toEqual([{ channelId: "fork_velocity", sampleRateHz: 200, lap: null }]);
+    expect(binding?.channels).toEqual([{ channelId: "fork_velocity", source: "session", sampleRateHz: 200, lap: null }]);
     expect(binding?.initialSpan).toEqual({ startUs: 0, endUs: 60_000_000 });
+    expect(binding?.mountedChannelId).toBe("fork_velocity");
   });
 
   it("bindingFor — form-generated code, multiple marks on distinct channels — one channels entry per distinct channel", () => {
     const detail = sessionDetail([channel(), channel({ channel_id: "rear_wheel_speed", nominal_rate_hz: 50 })]);
 
-    const binding = bindingFor({ id: "cell-a", code: twoDistinctChannelsCode }, detail, 60_000_000);
+    const binding = bindingFor({ id: "cell-a", code: twoDistinctChannelsCode }, detail, 60_000_000, noDefinitions);
 
     expect(binding?.channels).toEqual([
-      { channelId: "fork_velocity", sampleRateHz: 200, lap: null },
-      { channelId: "rear_wheel_speed", sampleRateHz: 50, lap: null },
+      { channelId: "fork_velocity", source: "session", sampleRateHz: 200, lap: null },
+      { channelId: "rear_wheel_speed", source: "session", sampleRateHz: 50, lap: null },
     ]);
   });
 
   it("bindingFor — two marks on the same channel — exactly one channels entry for it, not two", () => {
     const detail = sessionDetail([channel()]);
 
-    const binding = bindingFor({ id: "cell-a", code: twoMarksSameChannelCode }, detail, 60_000_000);
+    const binding = bindingFor({ id: "cell-a", code: twoMarksSameChannelCode }, detail, 60_000_000, noDefinitions);
 
     expect(binding?.channels).toHaveLength(1);
-    expect(binding?.channels).toEqual([{ channelId: "fork_velocity", sampleRateHz: 200, lap: null }]);
+    expect(binding?.channels).toEqual([{ channelId: "fork_velocity", source: "session", sampleRateHz: 200, lap: null }]);
   });
 
   it("bindingFor — custom code — returns null", () => {
     const detail = sessionDetail([channel()]);
 
-    const binding = bindingFor({ id: "cell-a", code: customCode }, detail, 60_000_000);
+    const binding = bindingFor({ id: "cell-a", code: customCode }, detail, 60_000_000, noDefinitions);
 
     expect(binding).toBeNull();
   });
 
-  it("bindingFor — a mark's channel not present in sessionDetail.channels — returns null", () => {
+  it("bindingFor — a mark's channel not present in sessionDetail.channels or definitionNames — returns null", () => {
     const detail = sessionDetail([channel({ channel_id: "unrelated_channel" })]);
 
-    const binding = bindingFor({ id: "cell-a", code: oneMarkCode }, detail, 60_000_000);
+    const binding = bindingFor({ id: "cell-a", code: oneMarkCode }, detail, 60_000_000, noDefinitions);
 
     expect(binding).toBeNull();
   });
 
   it("bindingFor — sessionDetail is null — returns null for every cell, form-generated or not", () => {
-    const boundFormGenerated = bindingFor({ id: "cell-a", code: oneMarkCode }, null, 60_000_000);
-    const boundCustom = bindingFor({ id: "cell-b", code: customCode }, null, 60_000_000);
+    const boundFormGenerated = bindingFor({ id: "cell-a", code: oneMarkCode }, null, 60_000_000, noDefinitions);
+    const boundCustom = bindingFor({ id: "cell-b", code: customCode }, null, 60_000_000, noDefinitions);
 
     expect(boundFormGenerated).toBeNull();
     expect(boundCustom).toBeNull();
@@ -131,27 +161,81 @@ describe("bindingFor", () => {
   it("bindingFor — sessionSpanUs not yet resolved — returns null even for an otherwise-bindable cell", () => {
     const detail = sessionDetail([channel()]);
 
-    const binding = bindingFor({ id: "cell-a", code: oneMarkCode }, detail, null);
+    const binding = bindingFor({ id: "cell-a", code: oneMarkCode }, detail, null, noDefinitions);
 
     expect(binding).toBeNull();
+  });
+
+  it("bindingFor — a mark naming a workbook definition — one channels entry with source \"definition\" and no mounted channel", () => {
+    const detail = sessionDetail([channel()]);
+    const definitionNames = new Set(["avg_speed"]);
+
+    const binding = bindingFor({ id: "cell-a", code: definitionMarkCode }, detail, 60_000_000, definitionNames);
+
+    expect(binding?.channels).toEqual([{ channelId: "avg_speed", source: "definition", sampleRateHz: 0, lap: null }]);
+    expect(binding?.mountedChannelId).toBeNull();
+  });
+
+  it("bindingFor — a cell mixing a session channel and a definition — both resolve, the session channel is mounted", () => {
+    const detail = sessionDetail([channel()]);
+    const definitionNames = new Set(["avg_speed"]);
+
+    const binding = bindingFor({ id: "cell-a", code: mixedMarkCode }, detail, 60_000_000, definitionNames);
+
+    expect(binding?.channels).toEqual([
+      { channelId: "fork_velocity", source: "session", sampleRateHz: 200, lap: null },
+      { channelId: "avg_speed", source: "definition", sampleRateHz: 0, lap: null },
+    ]);
+    expect(binding?.mountedChannelId).toBe("fork_velocity");
+  });
+
+  it("bindingFor — a cell whose marks are all definitions — resolves with no mounted channel", () => {
+    const detail = sessionDetail([channel()]);
+    const definitionNames = new Set(["avg_speed", "max_speed"]);
+
+    const binding = bindingFor({ id: "cell-a", code: twoDefinitionsCode }, detail, 60_000_000, definitionNames);
+
+    expect(binding).not.toBeNull();
+    expect(binding?.channels.map((c) => c.source)).toEqual(["definition", "definition"]);
+    expect(binding?.mountedChannelId).toBeNull();
+  });
+
+  it("bindingFor — session channel resolution is tried before a same-named definition — resolves as \"session\"", () => {
+    const detail = sessionDetail([channel({ channel_id: "avg_speed" })]);
+    const definitionNames = new Set(["avg_speed"]);
+
+    const binding = bindingFor({ id: "cell-a", code: definitionMarkCode }, detail, 60_000_000, definitionNames);
+
+    expect(binding?.channels).toEqual([{ channelId: "avg_speed", source: "session", sampleRateHz: 200, lap: null }]);
   });
 });
 
 describe("bindingIdentity", () => {
   it("bindingIdentity — two calls with the same channel/lap/span — produce the same identity", () => {
     const detail = sessionDetail([channel()]);
-    const a = bindingFor({ id: "cell-a", code: oneMarkCode }, detail, 60_000_000);
-    const b = bindingFor({ id: "cell-b", code: oneMarkCode }, detail, 60_000_000);
+    const a = bindingFor({ id: "cell-a", code: oneMarkCode }, detail, 60_000_000, noDefinitions);
+    const b = bindingFor({ id: "cell-b", code: oneMarkCode }, detail, 60_000_000, noDefinitions);
 
     expect(bindingIdentity(a!)).toBe(bindingIdentity(b!));
   });
 
   it("bindingIdentity — a different resolved session span — produces a different identity", () => {
     const detail = sessionDetail([channel()]);
-    const a = bindingFor({ id: "cell-a", code: oneMarkCode }, detail, 60_000_000);
-    const b = bindingFor({ id: "cell-a", code: oneMarkCode }, detail, 90_000_000);
+    const a = bindingFor({ id: "cell-a", code: oneMarkCode }, detail, 60_000_000, noDefinitions);
+    const b = bindingFor({ id: "cell-a", code: oneMarkCode }, detail, 90_000_000, noDefinitions);
 
     expect(bindingIdentity(a!)).not.toBe(bindingIdentity(b!));
+  });
+
+  it("bindingIdentity — the same name resolving as a definition, then as a session channel — produces a different identity", () => {
+    const detailWithoutChannel = sessionDetail([channel({ channel_id: "unrelated_channel" })]);
+    const detailWithChannel = sessionDetail([channel({ channel_id: "avg_speed" })]);
+    const definitionNames = new Set(["avg_speed"]);
+
+    const asDefinition = bindingFor({ id: "cell-a", code: definitionMarkCode }, detailWithoutChannel, 60_000_000, definitionNames);
+    const asSession = bindingFor({ id: "cell-a", code: definitionMarkCode }, detailWithChannel, 60_000_000, definitionNames);
+
+    expect(bindingIdentity(asDefinition!)).not.toBe(bindingIdentity(asSession!));
   });
 });
 
@@ -159,18 +243,25 @@ describe("unresolvedChannelId", () => {
   it("unresolvedChannelId — custom code — returns null", () => {
     const detail = sessionDetail([channel()]);
 
-    expect(unresolvedChannelId(customCode, detail)).toBeNull();
+    expect(unresolvedChannelId(customCode, detail, noDefinitions)).toBeNull();
   });
 
   it("unresolvedChannelId — form-generated code naming an unresolvable channel — names it", () => {
     const detail = sessionDetail([channel({ channel_id: "unrelated_channel" })]);
 
-    expect(unresolvedChannelId(oneMarkCode, detail)).toBe("fork_velocity");
+    expect(unresolvedChannelId(oneMarkCode, detail, noDefinitions)).toBe("fork_velocity");
   });
 
   it("unresolvedChannelId — every referenced channel resolves — returns null", () => {
     const detail = sessionDetail([channel()]);
 
-    expect(unresolvedChannelId(oneMarkCode, detail)).toBeNull();
+    expect(unresolvedChannelId(oneMarkCode, detail, noDefinitions)).toBeNull();
+  });
+
+  it("unresolvedChannelId — a mark naming a workbook definition — is not reported as unresolved", () => {
+    const detail = sessionDetail([channel()]);
+    const definitionNames = new Set(["avg_speed"]);
+
+    expect(unresolvedChannelId(definitionMarkCode, detail, definitionNames)).toBeNull();
   });
 });

@@ -17,7 +17,7 @@
  * a sandbox rebuild, not just the first.
  */
 import type { ChannelData } from "../model/channelData";
-import { rebindChannelsAfterRebuild, type BoundChannel } from "../model/channelRebind";
+import { rebindChannelsAfterRebuild, type BoundChannel, type HostChannelRebindDeps } from "../model/channelRebind";
 import type { TileCache } from "../model/tileCache";
 
 /**
@@ -39,15 +39,19 @@ export interface ChannelRebindSandbox {
  * `sandboxHost.setChannelHostVar`. `getBound` is called fresh every time
  * the returned function runs (not captured once at construction) so a
  * rebuild reads the registry's state *at rebuild time*, not a stale
- * snapshot from whenever this handler was built.
+ * snapshot from whenever this handler was built. `hostChannelDeps`
+ * re-fetches a `"definition"` bound channel (L6 Task 18, Q1(a), R78) — a
+ * definition has no tile-cache entry to re-derive from, unlike a
+ * `"session"` channel.
  */
 export function makeChannelsInvalidatedHandler(
   getBound: () => BoundChannel[],
   cache: TileCache,
+  hostChannelDeps: HostChannelRebindDeps,
   sandboxHost: ChannelRebindSandbox
 ): () => void {
   return () => {
-    rebindChannelsAfterRebuild(getBound(), cache, (name, data: ChannelData) => {
+    rebindChannelsAfterRebuild(getBound(), cache, hostChannelDeps, (name, data: ChannelData) => {
       // `Float64Array.buffer` types as `ArrayBufferLike` (covering
       // `SharedArrayBuffer`) unless the array's own construction site lets
       // TS narrow it; `ChannelData.t`/`v` are plain `Float64Array` fields,
@@ -95,11 +99,21 @@ export class NotebookSession {
     return [...this.boundByCellId.values()].flat();
   }
 
+  /** Cell `cellId`'s currently registered bound channels, or `[]` if it has
+   *  none — read before a gesture settle's re-fetch so a `"definition"`
+   *  channel whose `fetch_host_channel` budget hasn't changed can be
+   *  skipped rather than re-fetched (L6 Task 18, `shouldRefetchHostChannel`). */
+  boundChannelsFor(cellId: string): BoundChannel[] {
+    return this.boundByCellId.get(cellId) ?? [];
+  }
+
   /**
    * Builds the `onChannelsInvalidated` callback for `sandboxHost`, reading
    * this session's registry fresh on every rebuild ({@link makeChannelsInvalidatedHandler}).
+   *
+   * @param hostChannelDeps Re-fetches a `"definition"` bound channel on rebuild (Q1(a), R78).
    */
-  onChannelsInvalidated(sandboxHost: ChannelRebindSandbox): () => void {
-    return makeChannelsInvalidatedHandler(() => this.allBoundChannels(), this.cache, sandboxHost);
+  onChannelsInvalidated(sandboxHost: ChannelRebindSandbox, hostChannelDeps: HostChannelRebindDeps): () => void {
+    return makeChannelsInvalidatedHandler(() => this.allBoundChannels(), this.cache, hostChannelDeps, sandboxHost);
   }
 }

@@ -3003,17 +3003,33 @@ expression, a table body, or JS.
   grid (`Notebook/components/TableCell.tsx`); the hybrid-grid cell-reference
   grammar and its evaluation are unchanged from idl0's design (§26.11 in the
   legacy Analyze section) and are entirely Rust-side.
-- **`js`** cells run inside the sandbox (§26.4) and render one of two ways.
-  A cell whose code round-trips through `plotForm.parse` (§26.2) has its
-  `marks[*].channel` (and lap scope) bound into `NotebookSession`
+- **`js`** cells run inside the sandbox (§26.4) and render one of three ways.
+  A cell whose code round-trips through `plotForm.parse` (§26.2) and
+  references at least one real session channel has its `marks[*].channel`
+  (and lap scope) bound into `NotebookSession`
   (`Notebook/host/NotebookSession.ts`, R66/R72) and mounts through
   `Notebook/components/ChartCell.tsx` — the host-side gesture frame
-  (pan/zoom/hover, §26.3) around the sandbox's own rendered Plot output. A
-  cell whose code does not round-trip (custom code, or form-generated code
-  naming a channel the active session does not have) mounts as a plain
-  frame with no gesture handling
-  (`Notebook/components/JsCellFrame.tsx`) — reserving its last-reported
-  `cellRendered.heightPx` and otherwise inert.
+  (pan/zoom/hover, §26.3) around the sandbox's own rendered Plot output,
+  for the one session channel it mounts. A `marks[*].channel` may instead
+  (or additionally) name a workbook `math` definition with a recorded time
+  axis (`eval_workbook`'s `CellOutput.defs[].name`, R77.3, L6 Task 18): its
+  samples are fetched whole and decimated to the chart's point budget via
+  `fetch_host_channel` (§26.4) rather than tile-by-tile, and reach the
+  sandbox as a host variable exactly like a session channel; because
+  `fetch_host_channel` takes no time window, panning or zooming such a
+  cell re-decimates the whole definition on settle rather than resolving a
+  sub-range. A cell whose marks are *all* definitions has no session
+  channel to gesture over and mounts as a plain frame with no gesture
+  handling instead (`Notebook/components/JsCellFrame.tsx`, Q2(a) R78) — the
+  sandbox's own rendered Plot output still updates on a definition
+  re-fetch, only pan/zoom/hover are absent. A cell whose code does not
+  round-trip (custom code), or that names a channel or definition the
+  active session/workbook does not have, or a definition with no recorded
+  time axis (Q3(a) R78 — treated like an unresolvable name, since there is
+  nothing to chart against, C1 "time is recorded, not assumed"), also
+  mounts as that same plain frame (`Notebook/components/JsCellFrame.tsx`)
+  — reserving its last-reported `cellRendered.heightPx` and otherwise
+  inert.
 
 `Notebook/components/CellList.tsx` iterates the document's cells in order
 and wraps each kind's own rendered output — never the prose spans on either
@@ -3153,13 +3169,17 @@ gets the iframe torn down and rebuilt (`Notebook/host/SandboxHost.ts`).
 Every outbound message for the current iframe generation queues until that
 generation's own `ready` arrives (a generation-tagged outbound queue,
 `Notebook/host/outboundQueue.ts`), and a rebuild replays, in order, `init`
-→ every cached JSON host variable → every currently bound channel
-(re-derived from the shared `TileCache`, never re-fetched) → `setCells` —
-an order fixed by which of `sandbox/main.ts`'s handlers are no-ops before
-`init` has run. State loss on rebuild is the cost, and it is per-notebook,
-not per-app: the notebook's cells, their JSON host variables, and their
-bound channels survive; only derived, reactive state (an in-flight
-gesture's transform, a pending inline-span result) is lost.
+→ every cached JSON host variable → every currently bound channel →
+`setCells` — an order fixed by which of `sandbox/main.ts`'s handlers are
+no-ops before `init` has run. A tile-backed (session-channel) bound
+channel is re-derived from the shared `TileCache`, never re-fetched; a
+definition-bound channel (L6 Task 18, R77.3) has no tile-cache entry to
+re-derive from, so it is re-fetched via `fetch_host_channel` instead
+(Q1(a), R78 — accepted because a rebuild is already the rare,
+watchdog-triggered path). State loss on rebuild is the cost, and it is
+per-notebook, not per-app: the notebook's cells, their JSON host
+variables, and their bound channels survive; only derived, reactive state
+(an in-flight gesture's transform, a pending inline-span result) is lost.
 
 **Per-cell bound-channel registry.** `Notebook/host/NotebookSession.ts`
 holds every channel a `js` cell currently has bound, as a list per cell id
@@ -3249,8 +3269,12 @@ Filed in full, with proposed contract text and landed-vs-stubbed status, in
 `read_workbook` (still a stub in this tab as of this writing —
 `Notebook/ipcStubs/readWorkbook.ts` — the hard blocker that made Tasks 13–14
 possible only against a stub); **N3** the host-channel byte path
-(`fetch_host_channel`, magic `IDLH`) — this tab's own math→JS binding has no
-call site at all yet, stub or otherwise; **N4** `eval_workbook`'s additive
+(`fetch_host_channel`, magic `IDLH`) — landed (L6 Task 18, R77.3): a `js`
+cell naming a workbook `math` definition binds and fetches through it via
+`ipc/workbook.ts`'s `fetchHostChannel`/`ipc/hostChannel.ts`'s `IDLH`
+decoder (§26.1, §26.4); open, named in §26.1, is that the command's lack of
+a time window means a definition-bound cell cannot resolve a sub-range on
+zoom; **N4** `eval_workbook`'s additive
 `lap_context` argument (§26.6); **N5**/**N6** FFT and 1-D histogram
 (§26.6); **N8** `create_workbook`. Design §10's L6 done-criterion
 "`plotForm` round-trips its subset" is checked by Task 3's exhaustive test,

@@ -3,7 +3,16 @@ import { useEffect, useMemo, useReducer, useRef, useState } from "react";
 import { getSession, listSessions, listWorkbooks, type SessionDetail } from "../../../ipc/catalog";
 import { cursorReadout } from "../../../ipc/cursor";
 import { fetchTile } from "../../../ipc/tiles";
-import { evalWorkbook, listMathBuiltins, openWorkbook, readWorkbook, saveWorkbook, watchWorkbook, type LapContext as EvalLapContext } from "../../../ipc/workbook";
+import {
+  evalWorkbook,
+  fetchHostChannel,
+  listMathBuiltins,
+  openWorkbook,
+  readWorkbook,
+  saveWorkbook,
+  watchWorkbook,
+  type LapContext as EvalLapContext,
+} from "../../../ipc/workbook";
 import { useAppState } from "../../../state/AppState";
 import CellFrame from "./components/CellFrame";
 import CellList from "./components/CellList";
@@ -210,7 +219,7 @@ export default function NotebookPage() {
       onCellError: (cellId, message) => onCellErrorRef.current(cellId, message),
       onInlineResult: (spanId, text) => onInlineResultRef.current(spanId, text),
       onSpanError: (spanId, message) => onSpanErrorRef.current(spanId, message),
-      onChannelsInvalidated: () => sessionRef.current.onChannelsInvalidated(host)(),
+      onChannelsInvalidated: () => sessionRef.current.onChannelsInvalidated(host, { fetchHostChannel: fetchHostChannelDep })(),
     });
     sandboxHostRef.current = host;
     host.init(SANDBOX_RUNTIME_VERSION);
@@ -280,6 +289,20 @@ export default function NotebookPage() {
   // not to the session selection.
   const sessionIdRef = useRef(sessionId);
   sessionIdRef.current = sessionId;
+
+  // Read fresh at call time by the mount-once sandbox-construction effect
+  // and the channel-bind driver's injected `fetchHostChannel` (L6 Task 18)
+  // -- same pattern as `sessionIdRef` above, so neither needs `state.handle`
+  // in a dependency array.
+  const workbookIdRef = useRef<string | null>(state.handle?.id ?? null);
+  workbookIdRef.current = state.handle?.id ?? null;
+
+  /** Binds `ipc/workbook.ts`'s `fetchHostChannel` to whatever workbook/session are current at call time (L6 Task 18, R77.3) -- the one place `ChannelBindDeps`'s injected `fetchHostChannel` is actually constructed, so `channelBindDriver.ts` and `channelRebind.ts` never import `ipc/workbook.ts` themselves. Rejects if no workbook is open yet, matching every other `workbookId`-dependent call site in this file. */
+  const fetchHostChannelDep = (defName: string, budget: number) => {
+    const workbookId = workbookIdRef.current;
+    if (workbookId === null) return Promise.reject(new Error("fetchHostChannel: no workbook open"));
+    return fetchHostChannel(workbookId, sessionIdRef.current, defName, budget);
+  };
 
   useEffect(() => {
     const workbookId = state.handle?.id;
@@ -483,7 +506,26 @@ export default function NotebookPage() {
   // faster settle and overwrite its fresher `chartWindows`/registry state
   // with the stale initial-span one). Depends only on data
   // (`state.cells`/`state.markdown`/`sessionDetail`/`sessionSpanUs`/
-  // `sessionId`) -- the tightened IPC-effects rule.
+  // `sessionId`/`state.outputs`) -- the tightened IPC-effects rule.
+  // `state.outputs` was added for L6 Task 18 (definition-channel binding,
+  // R77.3): `definitionsWithAxis` below is derived from it, so a cell
+  // naming a `math` definition rebinds once that definition's first
+  // `eval_workbook` result exists, or once its `has_t` becomes known.
+  //
+  // `definitionsWithAxis` (this task): every workbook `math` definition
+  // name with a recorded time axis (`CellDefResult.value.has_t`) --
+  // `eval_workbook`'s own output, the same source `definitionNames` below
+  // (CodePane completions) reads, just restricted to the subset a chart can
+  // bind to (Q3(a), R78: an axis-less definition is not bindable, and is
+  // treated exactly like an unresolvable channel by `bindingFor`).
+  const definitionsWithAxis: ReadonlySet<string> = new Set(
+    Array.from(state.outputs.values())
+      .filter((o) => o.kind === "math")
+      .flatMap((o) => o.defs)
+      .filter((d) => d.value !== null && d.value.has_t)
+      .map((d) => d.name)
+  );
+
   useEffect(() => {
     if (state.markdown === null || sessionId === null) return;
     const markdown = state.markdown;
@@ -493,7 +535,7 @@ export default function NotebookPage() {
       if (cell.id === null || cell.kind !== "js") continue;
       const cellId = cell.id;
       const code = decodeByteRange(markdown, cell.bodyRange);
-      const binding = bindingFor({ id: cellId, code }, sessionDetail, sessionSpanUs);
+      const binding = bindingFor({ id: cellId, code }, sessionDetail, sessionSpanUs, definitionsWithAxis);
       if (binding === null) {
         boundIdentityRef.current.delete(cellId);
         continue;
@@ -505,6 +547,7 @@ export default function NotebookPage() {
 
       const deps: ChannelBindDeps = {
         fetchTile: (sessId, channelId, tier, tileIndex, columnCount) => fetchTile(sessId, channelId, tier, tileIndex, columnCount),
+        fetchHostChannel: (defName, budget) => fetchHostChannelDep(defName, budget),
       };
       const onAction = (action: ChannelBindAction) => {
         if (action.type === "channelData") {
@@ -520,7 +563,7 @@ export default function NotebookPage() {
 
       void runChannelBind(deps, sessionRef.current.cache, sid, cellId, binding, DEFAULT_CHART_WIDTH_PX, onAction, isStale);
     }
-  }, [state.cells, state.markdown, sessionDetail, sessionSpanUs, sessionId]);
+  }, [state.cells, state.markdown, state.outputs, sessionDetail, sessionSpanUs, sessionId]);
 
   // Save is unavailable while there is no readable `hash` to base it on
   // (still loading, or a read error) -- see `handleSave`'s doc comment on
@@ -541,7 +584,10 @@ export default function NotebookPage() {
 
   // `CodePane` completions (every kind); `plotForm`'s custom-code detection
   // means these are just candidates, never validated against what a cell
-  // actually references.
+  // actually references. Unfiltered by `has_t` -- unlike `definitionsWithAxis`
+  // above (which only feeds `bindingFor`/`unresolvedChannelId`), a definition
+  // with no recorded axis is still a valid completion for a `math` cell to
+  // reference in non-chart code.
   const channelIds = sessionDetail?.channels.map((c) => c.channel_id) ?? [];
   const definitionNames = Array.from(state.outputs.values())
     .filter((o) => o.kind === "math")
@@ -597,31 +643,47 @@ export default function NotebookPage() {
           renderJsCell={(cellId) => {
             const cell = state.cells.find((c) => c.id === cellId);
             const code = cell !== undefined && state.markdown !== null ? decodeByteRange(state.markdown, cell.bodyRange) : "";
-            const binding = bindingFor({ id: cellId, code }, sessionDetail, sessionSpanUs);
+            const binding = bindingFor({ id: cellId, code }, sessionDetail, sessionSpanUs, definitionsWithAxis);
             const heightPx = cellHeights.get(cellId) ?? null;
             const sendLayout = (id: string, rect: { top: number; left: number; width: number }) =>
               sandboxHostRef.current?.sendLayout(id, rect);
 
             if (binding === null || sessionId === null) {
-              const unresolved = sessionDetail !== null ? unresolvedChannelId(code, sessionDetail) : null;
-              return (
-                <JsCellFrame
-                  cellId={cellId}
-                  heightPx={heightPx}
-                  error={cellErrors.get(cellId)}
-                  note={unresolved !== null ? `Channel "${unresolved}" is not part of this session.` : undefined}
-                  sendLayout={sendLayout}
-                />
-              );
+              const unresolved = sessionDetail !== null ? unresolvedChannelId(code, sessionDetail, definitionsWithAxis) : null;
+              // A name that resolves as a plain (unfiltered) definition but
+              // was excluded from `definitionsWithAxis` is a definition with
+              // no recorded axis (Q3(a), R78) -- a distinct note from "not
+              // part of this session", since the name itself is perfectly
+              // valid, it just has nothing to chart against (C1: "time is
+              // recorded, not assumed").
+              const isAxisLessDefinition = unresolved !== null && definitionNames.includes(unresolved) && !definitionsWithAxis.has(unresolved);
+              const note = isAxisLessDefinition
+                ? `Definition "${unresolved}" has no recorded axis.`
+                : unresolved !== null
+                  ? `Channel "${unresolved}" is not part of this session.`
+                  : undefined;
+              return <JsCellFrame cellId={cellId} heightPx={heightPx} error={cellErrors.get(cellId)} note={note} sendLayout={sendLayout} />;
             }
 
-            // TODO(idl0): `ChartCell` mounts `binding.channels[0]` only --
-            // no per-channel `ChartCell` instances (lead pre-ruling
+            if (binding.mountedChannelId === null) {
+              // Q2(a), R78: every one of this cell's bound channels is a
+              // workbook definition -- there is no session channel, no time
+              // window and so no gesture surface to mount `ChartCell` for.
+              // The sandbox's own Plot still renders (the channel-bind
+              // effect above feeds it every definition's data as a host
+              // variable, same as a session channel); this frame just has
+              // no pan/zoom/hover.
+              return <JsCellFrame cellId={cellId} heightPx={heightPx} error={cellErrors.get(cellId)} sendLayout={sendLayout} />;
+            }
+
+            // TODO(idl0): `ChartCell` mounts `binding.mountedChannelId` only
+            // -- no per-channel `ChartCell` instances (lead pre-ruling
             // 2026-09-05 #3, R69(d)); the cell's own Plot code reaches the
             // other bound channels via `channel()` against host variables
             // the channel-bind effect above (`model/channelBindDriver.ts`)
             // sends for every distinct channel, not just this one.
-            const channel = binding.channels[0];
+            const mountedChannelId = binding.mountedChannelId;
+            const channel = binding.channels.find((c) => c.channelId === mountedChannelId)!;
             const window = chartWindows.get(cellId);
             const sid = sessionId;
 
@@ -667,6 +729,7 @@ export default function NotebookPage() {
                   const isStale = () => !cellRunSequencerRef.current.isCurrent(cellId, seq);
                   const deps: ChannelBindDeps = {
                     fetchTile: (sessId, chId, chTier, tileIndex, columnCount) => fetchTile(sessId, chId, chTier, tileIndex, columnCount),
+                    fetchHostChannel: (defName, budget) => fetchHostChannelDep(defName, budget),
                   };
                   const onAction = (action: ChannelBindAction) => {
                     if (action.type === "channelData") {
@@ -688,7 +751,8 @@ export default function NotebookPage() {
                     viewport.endUs,
                     viewport.pixelWidth,
                     onAction,
-                    isStale
+                    isStale,
+                    sessionRef.current.boundChannelsFor(cellId)
                   );
                 }}
                 fetchCursorReadout={(sessId, channels, tUs) => cursorReadout(sessId, channels, tUs)}
