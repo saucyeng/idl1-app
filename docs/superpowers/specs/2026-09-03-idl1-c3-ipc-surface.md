@@ -23,6 +23,10 @@
   the read-only "re-run visit/lap detection" half of that deferred item;
   `save_track`/`delete_track` (track *writes*) remain deferred to wave 3.
   New `not_found`/`io` rows in §2.
+- 2026-09-06: L8x — `save_track`, `delete_track`, `list_quarantine`,
+  `resolve_quarantine`, `verify_data_dir` added; §6's `TrackDetail` open
+  question 10 closed and the four `unknown` fields typed; §6's quarantine
+  and track-write deferrals struck.
 - 2026-09-06: `list_math_builtins` added to §3.4 (lead-added L8w Task 12b,
   spec-during, lead ruling R64.2) — a thin catalog dump for the notebook
   editor's function reference to verify itself against at startup. No
@@ -212,9 +216,9 @@ is applied uniformly, not case-by-case:
 | `config_unsupported_version` | `ConfigErrorKind::UnsupportedVersion` | Device: `push_config` |
 | `export_unknown_channel` | `ExportError::UnknownChannel` | none in C3 v1 — see open question 6.1 |
 | `export_no_gps_data` | `FitExportError::NoGpsData` | none in C3 v1 — see open question 6.1 |
-| `not_found` | cross-cutting | Catalog: `get_session`, `list_laps`, `rescan_tracks`; Workbook: `open_workbook`, `eval_workbook`, `save_workbook`, `watch_workbook`; Tiles: `fetch_tile`; Rasters: `fetch_raster`; Cursor: `cursor_readout`; Device: `download_file`; Sync: `sync_now`, `pair_peer`; Import: `import_file` (source path missing) |
-| `invalid_argument` | cross-cutting | Import: `import_file` (unknown `importer_id`); Workbook: `save_workbook` (malformed markdown/front matter); Tiles: `fetch_tile` (`tier` outside the engine's configured tier set); Rasters: `fetch_raster` (bad `width`/`height`/`kind`); Cursor: `cursor_readout` (unknown channel in the list); Sync: `pair_peer` (malformed code) |
-| `io` | cross-cutting (also folds `ParseError::Io`, `ConfigErrorKind::Io`, `ExportError::Io`, `FitExportError::Io`, `LapIndexErrorKind::Io`) | any command that touches the filesystem: Catalog (all eight — `list_sessions`, `get_session`, `list_laps`, `rebuild_catalog`, `list_workbooks`, `list_tracks`, `get_track`, `rescan_tracks`), Import: `import_file`, Workbook (`open_workbook`, `save_workbook`, `watch_workbook`), Tiles: `fetch_tile`, Rasters: `fetch_raster`, Device: `download_file`, Sync: `sync_status` |
+| `not_found` | cross-cutting | Catalog: `get_session`, `list_laps`, `rescan_tracks`, `save_track` (a string `track_id` naming no existing track), `delete_track`, `resolve_quarantine` (unknown `entry_id`); Workbook: `open_workbook`, `eval_workbook`, `save_workbook`, `watch_workbook`; Tiles: `fetch_tile`; Rasters: `fetch_raster`; Cursor: `cursor_readout`; Device: `download_file`; Sync: `sync_now`, `pair_peer`; Import: `import_file` (source path missing) |
+| `invalid_argument` | cross-cutting | Import: `import_file` (unknown `importer_id`); Workbook: `save_workbook` (malformed markdown/front matter); Tiles: `fetch_tile` (`tier` outside the engine's configured tier set); Rasters: `fetch_raster` (bad `width`/`height`/`kind`); Cursor: `cursor_readout` (unknown channel in the list); Sync: `pair_peer` (malformed code); Catalog: `save_track` (failed draft validation — empty name, non-finite/out-of-range gate coordinate, empty sector/neutral-zone name, or a zero-length gate), `resolve_quarantine` (`"restore"` whose `original_path` is occupied, or an `action` that is neither `"restore"` nor `"discard"`) |
+| `io` | cross-cutting (also folds `ParseError::Io`, `ConfigErrorKind::Io`, `ExportError::Io`, `FitExportError::Io`, `LapIndexErrorKind::Io`) | any command that touches the filesystem: Catalog (`list_sessions`, `get_session`, `list_laps`, `rebuild_catalog`, `list_workbooks`, `list_tracks`, `get_track`, `rescan_tracks`, `save_track`, `delete_track`, `list_quarantine`, `resolve_quarantine`), Import: `import_file`, Workbook (`open_workbook`, `save_workbook`, `watch_workbook`), Tiles: `fetch_tile`, Rasters: `fetch_raster`, Device: `download_file`, Sync: `sync_status`, App: `verify_data_dir` |
 | `internal` | cross-cutting (also folds `ExportError::Json`, `LapIndexErrorKind::Track` — currently unreached, see the variant's own doc comment) | any command — unexpected/programmer-error conditions that are not the caller's fault |
 | `device_rejected` | cross-cutting | Device: `device_control` (a refused control transition — see the R59 note above) |
 
@@ -486,21 +490,9 @@ Errors: `io`, `internal`.
 Return: `TrackDetail` — the full `.idl0t` artifact content, the engine's
 `track_artifact::model::Track` (`idl-rs` core) serialised. Never on a hot
 path (§4) — called on explicit track-detail open, settle-bound like
-`get_session`.
-```ts
-interface TrackDetail {
-  track_id: string;
-  name: string;
-  venue_name: string;
-  created_at_ms: number;        // i64
-  updated_at_ms: number;        // i64
-  lap_timing: unknown | null;   // sealed union (`Circuit` | `PointToPoint`, IDL0_SPEC §16.2a) —
-                                 // exact serde tagging not yet fixed by any contract; see open question 10
-  neutral_zones: unknown[];     // `NeutralZone[]`, IDL0_SPEC §16.2b — field shape not yet fixed; see open question 10
-  sector_gates: unknown[];      // `SectorGate[]` — field shape not yet fixed; see open question 10
-  reference_polyline: unknown[]; // `GpsFix[]` — field shape not yet fixed; see open question 10
-}
-```
+`get_session`. **REVISED (2026-09-06, L8x, ruling R86)** — §6 open question
+10's four `unknown`/`unknown[]` fields are now typed; see `TrackDetail`
+below `rescan_tracks`, shared with `save_track`/`delete_track`.
 Errors: `not_found`, `io`, `internal`.
 
 **`save_session_metadata(session_id: string, metadata: SessionMetadataPatch)`**
@@ -597,6 +589,126 @@ with wave 3's track-write deferral above.
 
 Errors: `not_found` (unknown `session_id`), `io`, `internal` (see §2's
 `LapIndexErrorKind::Track` note — currently unreached).
+
+**`save_track(track: TrackDraft) -> SaveTrackResult`** /
+**`delete_track(track_id: string) -> DeleteTrackReport`**
+*Added post-sign (2026-09-06, L8x, ruling R86).* Close the track-write half
+of the wave-2 amendment's deferral (§6's "Wave-2 amendment (R59)" block):
+`open_workbook`/§6 item 10's blocker — `track_artifact::model::Track` had
+no fixed serde shape — is closed by the types below, which pin
+`TrackDetail`'s four previously-`unknown` fields.
+
+```ts
+/** Decimal degrees. The `.idl0t` file stores degrees x1e7 (SPEC §17b.1);
+ *  that scaling is a wire detail of the file, never of the IPC surface —
+ *  core's `laps::model::Gate` is already decimal degrees (R27). */
+interface Gate { lat1: number; lon1: number; lat2: number; lon2: number; }
+interface SectorGate { name: string; gate: Gate; }
+interface NeutralZone { name: string; enter: Gate; exit: Gate; }
+interface GpsFix { timestamp_ms: number; lat: number; lon: number; }
+type LapTiming =
+  | { kind: "circuit"; start_finish: Gate }
+  | { kind: "point_to_point"; start: Gate; finish: Gate };
+
+/** REVISED — the four fields §6 item 10 left `unknown` are now typed. */
+interface TrackDetail {
+  track_id: string; name: string; venue_name: string;
+  created_at_ms: number; updated_at_ms: number;
+  lap_timing: LapTiming | null;
+  neutral_zones: NeutralZone[]; sector_gates: SectorGate[];
+  reference_polyline: GpsFix[];
+}
+
+/** `save_track(track)` is one command for create and edit. `track_id: null`
+ *  creates (the command mints a UUID v4 and both timestamps); a string
+ *  edits, preserving `created_at_ms` and bumping `updated_at_ms` to now. */
+interface TrackDraft {
+  track_id: string | null; name: string; venue_name: string;
+  lap_timing: LapTiming | null;
+  neutral_zones: NeutralZone[]; sector_gates: SectorGate[];
+  reference_polyline: GpsFix[];
+}
+interface SaveTrackResult {
+  track: TrackDetail;
+  /** Sessions whose `track_visits_library_hash` no longer matches the
+   *  library. The UI offers "Rescan N sessions" over `rescan_tracks`. */
+  stale_session_ids: string[];
+  warnings: string[];
+}
+interface DeleteTrackReport {
+  track_id: string; stale_session_ids: string[]; warnings: string[];
+}
+```
+
+`save_track` validates the draft (non-empty trimmed `name`; every gate
+coordinate finite and within ±90/±180 decimal degrees; no empty sector or
+neutral-zone name; a `Circuit`/`PointToPoint` gate whose two endpoints are
+identical, since a zero-length gate can never be crossed) before writing —
+a failure is `invalid_argument`, never a partial write. A valid draft
+writes through the already-landed `write_track` (`tmp/<uuid>` → fsync →
+rename, C4 §4's atomic-write primitive); no new atomicity primitive is
+added. After the file lands, the command upserts the one `tracks` catalog
+row **only when `catalog.sqlite` already exists** — the same
+`import_file`/`rescan_tracks` rule (a data root that has never had
+`rebuild_catalog` run stays catalog-less). A catalog-upsert failure is
+folded into `warnings`, never fails the write. Neither `save_track` nor
+`delete_track` calls `rescan_tracks`: a track edit stales every visiting
+session's `track_visits_library_hash` stamp, and both commands instead
+return `stale_session_ids` — the sessions whose stamp no longer matches —
+for the UI to offer "Rescan N sessions" over the existing `rescan_tracks`
+per id, keeping a name/venue edit bounded regardless of library size.
+`delete_track` removes the `tracks` catalog row; `laps.track_id` is already
+`REFERENCES tracks(track_id) ON DELETE SET NULL` (C4 §5), so lap rows
+survive unattributed and `session.json` is not rewritten. Duplicate sector
+or neutral-zone names are allowed (display labels, not keys, matching
+idl0's own behaviour); only an empty name is an error. There is no
+`conflict` kind on `save_track`: like `save_session_metadata` above, this
+is last-write-wins.
+
+Errors (`save_track`): `invalid_argument` (failed validation, above),
+`not_found` (a string `track_id` naming no existing track), `io`,
+`internal`.
+Errors (`delete_track`): `not_found` (unknown `track_id`), `io`, `internal`.
+
+**`list_quarantine() -> QuarantineEntry[]`** /
+**`resolve_quarantine(entry_id: string, action: "restore" | "discard") -> void`**
+*Added post-sign (2026-09-06, L8x, ruling R86 Q1/Q2).* Close the
+quarantine deferral (§6's "Wave-2 amendment (R59)" block, ruling R59 Q2(a)):
+the empty-command objection that deferral raised is resolved by
+`verify_data_dir` (§3.10) landing in the same lane as the C4 §7 repair
+producer that files entries here, so the pair is never permanently empty in
+a signed contract.
+
+```ts
+interface QuarantineEntry {
+  entry_id: string;            // the uuid in the filename
+  path: string;                // absolute, under <data>/tmp/quarantine/
+  original_path: string;       // where it was pulled from, "" if unknown
+  reason: string;              // C4 §7 finding text
+  quarantined_at_ms: number;   // i64
+}
+```
+
+A quarantined entry is a file already inside `<data>` whose bytes failed
+their own content-address check (C4 §7 findings #1/#5) and was moved,
+never deleted, to `tmp/quarantine/<uuid>-<original-name>` by
+`verify_data_dir(repair: true)` — the sole caller (C4 §7). `list_quarantine`
+reads the C4 §2 sidecar (`tmp/quarantine/<uuid>.json`) next to each payload
+for `original_path`/`reason`/`quarantined_at_ms`; a payload with no sidecar
+is still listed with `reason: "unknown (no sidecar)"`, and an orphaned
+sidecar with no payload is skipped. `resolve_quarantine` renamed the
+stub's `"retry"` action to **`"restore"`** (ruling R86 Q2): these are
+corrupt bytes already inside the store, not a rejected import, so there is
+nothing to re-run. `"restore"` moves the payload back to `original_path`
+when that path is free — occupied is `invalid_argument` — and `"discard"`
+deletes the payload outright; both then delete the sidecar. Nothing under
+`tmp/` is ever read as truth (C4 §2), so a resolve never touches the
+catalog.
+
+Errors (`list_quarantine`): `io`, `internal`.
+Errors (`resolve_quarantine`): `not_found` (unknown `entry_id`),
+`invalid_argument` (`"restore"` whose `original_path` is occupied, or an
+`action` that is neither `"restore"` nor `"discard"`), `io`, `internal`.
 
 ### 3.3 Import (L2)
 
@@ -1505,6 +1617,36 @@ of a stale id doesn't silently succeed.
 Errors: `not_found` (delete of an unknown id), `invalid_argument` (a
 `config` that is not a JSON object), `io`, `internal`.
 
+**`verify_data_dir(repair: boolean) -> VerifyReport`**
+*Added post-sign (2026-09-06, L8x, ruling R86 Q8).* Runs whole-`<data>`-tree
+maintenance (C4 §7's numbered check list), not a catalog read — it scans
+every session, blob, workbook and track under `<data>`, none of which is a
+single catalog row, which is why it sits here beside
+`get_data_dir`/`set_data_dir` rather than in §3.2 Catalog.
+
+```ts
+interface VerifyReport {
+  findings: { severity: "info"|"warning"|"error"; path: string; message: string }[];
+  quarantined: QuarantineEntry[];   // empty unless repair === true
+  elapsed_ms: number;
+}
+```
+
+`repair: false` is `store::verify::verify` unchanged — read-only, returns
+`findings` with an empty `quarantined`. `repair: true` additionally runs
+the C4 §7 repair pass: findings #1 and #5 (a `blobs/` or `derived/`
+file whose own SHA-256 disagrees with its path) are moved into
+`tmp/quarantine/<uuid>-<original-name>` with a sidecar
+`tmp/quarantine/<uuid>.json` (C4 §2 amendment) and appear in the returned
+`quarantined` array; finding #9 (a stale catalog foreign key) still
+auto-triggers the §5 rebuild as C4 §7 already specifies. `verify_data_dir`
+is the **only** caller of the quarantine-producing repair path — the sole
+route bytes take from "corrupt inside `<data>`" to `tmp/quarantine/`
+(`list_quarantine`/`resolve_quarantine`, §3.2, only ever read or resolve
+what this command filed).
+
+Errors: `io`, `internal`.
+
 ---
 
 ## 4. Interaction budget
@@ -1685,17 +1827,13 @@ engine.
    fields were not named in the reconciliation assignment, though they may
    deserve the same `workbook_id`/`file_name` treatment `WorkbookSummary`
    just got, for naming consistency. Assigned: lead.
-10. **`TrackDetail`'s (§3.2, `get_track`) nested field shape is
-    provisional.** `track_id`/`name`/`venue_name`/`created_at_ms`/
-    `updated_at_ms` are typed directly from the catalog + IDL0_SPEC §16.2's
-    unchanged `Track` fields, but `lap_timing` (a sealed union,
-    `Circuit`/`PointToPoint`, §16.2a), `neutral_zones` (§16.2b),
-    `sector_gates`, and `reference_polyline` (`GpsFix[]`) have no fixed
-    serde/JSON shape in any contract yet — no `track_artifact::model::Track`
-    Rust struct exists to read the field names/enum tagging from. Typed
-    `unknown`/`unknown[]` here rather than guessed. Assigned: L1 — pin the
-    real shape when `track_artifact` lands and revise §3.2 in the same
-    change.
+10. **`TrackDetail`'s (§3.2, `get_track`) nested field shape — CLOSED
+    2026-09-06 (L8x Task 1).** `track_artifact::model::Track` (`idl-rs`
+    core) landed with a fixed serde shape; `lap_timing`, `neutral_zones`,
+    `sector_gates` and `reference_polyline` are now typed `LapTiming |
+    null`, `NeutralZone[]`, `SectorGate[]` and `GpsFix[]` respectively (§3.2,
+    the `TrackDetail` block shared by `get_track`/`save_track`/
+    `delete_track`) — no field is `unknown` any longer.
 11. **`LapDetail.sectors`/`.neutral_zone_visits` (§3.2, round 2) element
     shape — CLOSED 2026-09-06 (L2b Task 5, R53 Q5).** Lap indexing landed
     (L2b Tasks 1–4) and with it `store::session_json`'s `SectorJson {
@@ -1718,22 +1856,20 @@ needs from the batched wave-2 IPC-needs lists, considered in
 `runs/2026-09-05/C3-WAVE2-AMENDMENT-DRAFT.md` and deferred to wave 3 rather
 than added to §3:
 
-- **`list_quarantine` / `resolve_quarantine`** — ruling R59 Q2(a). Nothing
-  in landed core writes a quarantine file today (`store::verify::verify`
-  returns `Finding`s and performs no move); shipping the pair now would put
-  a permanently-empty command and a permanently-empty `reason` field into a
-  signed contract. Deferred alongside the repair action that would populate
-  `tmp/quarantine/`.
-- **`save_track` / `delete_track`** — blocked by open question 10 above
-  (`TrackDetail`'s nested fields are typed `unknown` pending
-  `track_artifact::model::Track`); ruling R54 already dropped the Track
-  facet from the Data tab for wave 2.
+- **`list_quarantine` / `resolve_quarantine`** — landed 2026-09-06 (L8x),
+  alongside `verify_data_dir` (§3.10) as the repair pass that files entries
+  here (ruling R86 Q1).
+- **`save_track` / `delete_track`** — landed 2026-09-06 (L8x), once
+  open question 10's `TrackDetail` blocker closed; ruling R54's drop of the
+  Track *editor UI* from the Data tab for wave 2 is unaffected — these
+  commands back only the name/venue/delete edits IDL0_SPEC §24.12 already
+  described (R86 Q7).
 - **`rescan_track_visits`** — not a command gap but an engine gap:
   track-visit detection over a session does not exist in core and no lane
   owns it yet. *Landed 2026-09-06:* the engine gap is closed
   (`store::lap_index`, L2b Tasks 1–2) and its read-only command shipped as
   `rescan_tracks` (§3.2, L2b Task 8, PLAN Q8); `save_track`/`delete_track`
-  (track writes) remain deferred to wave 3.
+  (track writes) also landed 2026-09-06 (L8x), above.
 - **`fetch_histogram`** — ruling R52 Q7. The 1-D histogram is genuinely new
   binning code, not a wrapper like `fetch_fft` (§3.6) is over the existing
   `idl_rs::fft`.

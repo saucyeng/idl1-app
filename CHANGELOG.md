@@ -6,6 +6,17 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 
 ### Added
 
+- **C3/C4 amendment for L8x Data-tab write commands (2026-09-06,
+  docs only, spec-first, ruling R86).** `save_track`, `delete_track`,
+  `list_quarantine`, `resolve_quarantine` (C3 §3.2) and `verify_data_dir`
+  (C3 §3.10) added to the IPC contract; §6 open question 10 closed
+  (`TrackDetail`'s `lap_timing`/`neutral_zones`/`sector_gates`/
+  `reference_polyline` are typed, no field left `unknown`); the
+  quarantine and track-write entries in §6's "Wave-2 amendment (R59)"
+  block are struck as landed. C4 gains an additive `tmp/quarantine/
+  <uuid>.json` sidecar (§2) and names `verify_data_dir(repair: true)` as
+  the sole caller of the hash-mismatch repair path (§7). No new
+  `IpcErrorKind`; no code in this task.
 - **L2b lap indexing lane complete (2026-09-06).** `store::lap_index`
   (IDL0_SPEC §17.4 rewrite) detects a session's track visits and the laps
   within each against the track library, caching the result in

@@ -165,6 +165,19 @@ are defined in `docs/superpowers/specs/2026-09-02-idl1-rewrite-design.md` §10.
       the Data tab's maintenance panel needs `rescan_tracks`/`RescanReport`
       added to `app/src/ipc/catalog.ts` (exact declaration in the Task 8
       implementer's report).
+- [ ] L8x Data-tab write commands — `runs/2026-09-06/lanes/l8x-data-writes/`,
+      ruling R86. Closes the last four C3 §6 deferrals the Data tab still
+      stubs (`save_track`, `delete_track`, `list_quarantine`,
+      `resolve_quarantine`); `verify_data_dir(repair)` (C3 §3.10) is the
+      quarantine producer, since nothing else moves a corrupt file into
+      `tmp/quarantine/`. Task 1 (this task, docs-only, spec-first) lands
+      the C3 §3.2/§3.10 and C4 §2/§7 amendment: §6 open question 10 closed
+      (`TrackDetail`'s four `unknown` fields now typed from the landed
+      `track_artifact::model::Track`), the quarantine and track-write
+      deferrals in §6's "Wave-2 amendment (R59)" block struck. Tasks 2–7
+      (typed `TrackDetail` read path, core validation/`delete_track`, the
+      two write commands, the core quarantine module, and the three
+      quarantine/verify commands) are Rust, not started by this task.
 - [ ] L9 mobile scaffold
 - [ ] L11 LAN sync
 
