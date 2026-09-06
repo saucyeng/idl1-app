@@ -17,6 +17,11 @@
   wave 3 — see §6. Also (lead ruling R60): `import_file` (§3.3) now
   resolves with `ImportOutcome { session, warnings }` instead of a bare
   `SessionSummary`; new §2 kind `import_collision`.
+- 2026-09-06: `list_math_builtins` added to §3.4 (lead-added L8w Task 12b,
+  spec-during, lead ruling R64.2) — a thin catalog dump for the notebook
+  editor's function reference to verify itself against at startup. No
+  `unit_rule` field: R64.2 drops it (no source defines its vocabulary);
+  `status` is `"implemented" | "not_implemented"` instead.
 
 Consumes: design doc §4 (IPC, data path for a chart, the reactive DAG), §6
 (interaction rules), §9 row C3, §10 (lanes); Task 5's M0 smoke commands
@@ -815,6 +820,41 @@ assigned to L5's workbook-command task to design, following the
 tiles/rasters (magic/version header, little-endian, self-describing
 lengths) — a new contract revision (§5) when L5 writes it, not invented
 here.
+
+**`list_math_builtins()`**
+*Added post-sign (2026-09-06, lead-added L8w Task 12b, spec-during, lead
+ruling R64.2).* A thin catalog dump over `idl_rs::math::math_builtin_catalog()`
+(`rust/core/src/math/catalog.rs`, hand transcribed from C2 §3.3's Builtin
+catalog table) so the notebook editor's `functionCatalog.ts` function
+reference can verify itself against the engine once at startup and log a
+mismatch (a lead shell task, not this command). Never fails — no
+device/session/file dependency, matching `engine_version`'s "no `Result`"
+pattern (§3.1).
+
+Return:
+```ts
+interface MathBuiltinDto {
+  name: string;
+  arity: number[];   // valid argument counts for this name — more than
+                      // one entry when C2 §3.3's signature documents more
+                      // than one call form, e.g. rms(ch) | rms(ch, w) -> [1, 2]
+  status: "implemented" | "not_implemented";
+}
+type MathBuiltins = MathBuiltinDto[];  // 69 entries (63 implemented, 6 not)
+```
+No `unit_rule` field — an earlier draft of this task proposed one, but C2
+§3.3 has no "units" column and no other Rust or TS artifact names a
+per-builtin unit-propagation vocabulary; R64.2 drops it rather than ship a
+placeholder taxonomy in a signed contract. A `unit_rule`-equivalent field
+is a future additive amendment once C2 states real unit-propagation rules
+per builtin.
+
+Excludes `main(col[])` (table-cell only, C2 §4) and the grammar keywords
+`and`/`or`/`not` (parsed as operators, never reach the function-call
+dispatch) — the same three exclusions L6's `functionCatalog.ts`
+transcription already made.
+
+Errors: none (see above).
 
 ### 3.5 Tiles (L3)
 
