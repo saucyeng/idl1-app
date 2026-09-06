@@ -104,6 +104,10 @@ superseding form.
 - **Settings** — sync status and pairing live in Settings; L11 may add a sync action to Data. (R53 Settings Q3)
 - **Settings** — `settings.json` wins over `localStorage`; only fields still at engine default are imported; `ui` keys stay in `localStorage`; migration and `set()` failures surface in a `role="status"` line. (R78 L7c Task 8)
 - **Settings** — data-directory changes take effect on restart; the BOM strip lives in `paths::resolve_data_dir`. (R53 Settings Q4)
+- Settings migration: `settings.json` wins; a field skipped because the file already held a different value is NAMED in the migration `role="status"` line (never silent) — L7c Task 9. R82
+
+## Rust / L2b (in flight)
+- L2b lap indexing: laps are a stamped cache in `session.json` (`lap_detector_version` added to C1 §6, additive); unresolvable lap flags cleared on renumber; deterministic `visit_id`; re-index only on a stale stamp; R73 shape `overlay: Vec<MathOverlay>`; `fetch_fft` lap via `resolve_lap_window`; `rescan_tracks` in-lane. Plan `runs/2026-09-06/lanes/l2b-laps/`. R83
 
 ## Open items
 
