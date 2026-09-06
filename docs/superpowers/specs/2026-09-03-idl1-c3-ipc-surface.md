@@ -996,7 +996,9 @@ R52 Q7).* Satisfies wave-2 need L6-N5.
 
 `params` reuses `SpectrogramParams` (above) verbatim — the same window, hop,
 detrend and scaling vocabulary over the same `idl_rs::fft` types.
-`averaging` is idl0's cross-segment `Averaging`. Returns raw bytes via
+`averaging` is `idl_rs::fft::Averaging`, extended to all four wire tokens
+(ruling R63 (3), L8w Task 12) — `"none"`/`"mean"`/`"median"`/`"max"` each
+map directly to an `Averaging` variant, none rejected. Returns raw bytes via
 `tauri::ipc::Response`.
 
 **Binary layout `IDLF`, version 1.** Little-endian throughout.
@@ -1025,6 +1027,10 @@ Errors: `not_found`, `invalid_argument` (bad `params`, or a `lap` not
 present on the session), `io`, `internal`. As with `eval_workbook`'s
 `lap_context`, `lap` must be `null` in practice until lap indexing at
 import lands (§6).
+
+- 2026-09-05: fetch_fft's averaging union closed against
+  idl_rs::fft::Averaging (ruling R63 (3), L8w Task 12) — "none" and "max"
+  now implemented, not rejected.
 
 ### 3.7 Cursor (L3)
 
