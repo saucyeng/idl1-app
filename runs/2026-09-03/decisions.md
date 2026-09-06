@@ -3858,3 +3858,11 @@ From idl-rs `01b0f3f`: tauri **221**, idl-rs **1004** / 1 ignored, cli 53.
 `laps.track_id` on every edit — regression test added). A session with no
 library-hash stamp is not counted in `stale_session_ids` (never indexed;
 import/rescan cover it) — accepted.
+
+**Checkpoint (2026-09-06 ~2:40pm ET):** dev-app relaunch against the L2b
+engine built clean but `app.exe` exits at start with `0xc0000142`
+(STATUS_DLL_INIT_FAILED) twice — once during a low-memory kill, once with
+3.3 GB free while the console session is locked (`LockApp.exe` running).
+Not a code failure; the lead stops retrying and hands the preview launch
+to Isaac (`npm run tauri dev` from `app/` in his own terminal). Cargo slot
+returned to L8x.
