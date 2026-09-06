@@ -62,6 +62,23 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
   sides' pairs. `actions` sort by `(class, key, session_id)` for
   determinism; `plan_sync(a, b)`/`plan_sync(b, a)` are proven to mirror
   `Pull`/`Push`.
+- **L11 Task 4: workbook merge — front matter and cell states (2026-09-06,
+  idl-rs core, `workbook::merge`).** Pure functions over three parsed
+  `.idl1wb` documents, deciding *content* only (ordering, conflict-cell id
+  minting and marker-text rendering are Task 5's job). `merge_front_matter`
+  implements C2 §7.1's per-key three-way rule for `name`/`units`/each
+  `constants` entry (unchanged-on-one-side takes the other, changed-on-both
+  keeps local's and warns with the peer's discarded value, same-value-on-
+  both is never a conflict); a mismatched `id` is `MergeError`, refusing to
+  merge rather than overwriting. `decide_cells` implements C2 §7.2's
+  sixteen-cell table: byte-identical content on both sides is never a
+  conflict even when both sides are independently `Changed`; a prose-only
+  edit still makes its cell `Changed` (prose travels with the cell); the six
+  `Added`-crossed grid cells are structurally impossible from a single
+  shared `base` document (proven, not just asserted — this module's own
+  derivation can never produce them) and are implemented only as C2 §7.2's
+  documented defensive fallback, unit-tested directly against the internal
+  decision function rather than through `decide_cells` itself.
 - **L8x lane complete: Data-tab write commands (2026-09-06, idl-rs core +
   idl-rs-tauri, ruling R86).** Five new commands close the last C3 §6
   deferrals the Data tab still stubbed: `save_track`, `delete_track`,
