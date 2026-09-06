@@ -3752,3 +3752,24 @@ no spec number) via pure `resolveJsCellFrameHeightPx` + 4 tests, SPEC
 `§26.x` cross-references repointed (the Controls table's reference now
 points at §27.10, where that content actually lives). Whole TS suite on
 main: 94 files / 860 passed.
+
+## 2026-09-06 — R83: L2b lap-indexing lane (plan `runs/2026-09-06/lanes/l2b-laps/PLAN.md`) — open questions ruled
+
+The lap algorithm, `LapJson`/`SectorJson`/`TrackVisitJson` and the
+catalog's `laps`/`lap_summary` indexing already exist in core; the gap is
+that `finish_import` writes an empty `laps[]`. Rulings on the plan's
+questions: laps live in `session.json` as a stamped cache (C1 §6 already
+says so; content-addressing governs derived sample arrays, not this);
+`lap_detector_version` is added to C1 §6, additive, no schema bump; on a
+re-index that renumbers laps, lap flags that no longer resolve are cleared
+(logged in the report, never guessed); `visit_id` is deterministic so a
+rescan does not churn a synced file; import re-indexes on the skip plan
+only when a stamp is stale; R73's shape becomes `overlay: Vec<MathOverlay>`;
+`fetch_fft`'s lap window comes from a `resolve_lap_window` sibling;
+`rescan_tracks` belongs in this lane. Eight serial tasks, gates after T4
+and T8, worktrees `idl-rs-worktrees/l2b-laps` (submodule repo) and
+`idl1-app-worktrees/l2b-laps` (C1/C3 text). Isaac's question 7 stands as
+asked; this lane is the answer to "keep going".
+
+**Cost if wrong:** one extra field in C1 and a cleared flag — both
+visible, both cheap to revisit.
