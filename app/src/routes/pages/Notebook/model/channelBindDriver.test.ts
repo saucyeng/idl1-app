@@ -12,7 +12,7 @@ import {
   type ChannelBindDeps,
 } from "./channelBindDriver";
 import type { BoundChannel } from "./channelRebind";
-import type { JsCellBinding, JsCellBindingChannel } from "./jsCellBinding";
+import type { JsCellBindingChannel, TimeCellBinding } from "./jsCellBinding";
 import { TileCache } from "./tileCache";
 
 /** Builds a small fake `DecodedTile` from parallel arrays, matching the fixture style used by `channelRebind.test.ts`. */
@@ -37,7 +37,7 @@ function neverFetchesHostChannel(): ChannelBindDeps["fetchHostChannel"] {
 }
 
 /** A binding covering `channelIds` as `"session"` channels, each with a distinct sample rate small enough that a 2 s window resolves to exactly one tile (`tileIndex` 0) at whatever tier `chooseTier` picks -- keeps every test's fixture to one `fetchTile` call per channel. */
-function binding(channelIds: string[]): JsCellBinding {
+function binding(channelIds: string[]): TimeCellBinding {
   const channels: JsCellBindingChannel[] = channelIds.map((channelId, i) => ({
     channelId,
     source: "session",
@@ -45,7 +45,8 @@ function binding(channelIds: string[]): JsCellBinding {
     lap: null,
   }));
   return {
-    props: { marks: [] } as unknown as JsCellBinding["props"],
+    kind: "time",
+    props: { chart: "time", marks: [] },
     channels,
     initialSpan: { startUs: 0, endUs: 2_000_000 },
     mountedChannelId: channels[0]?.channelId ?? null,
@@ -53,7 +54,7 @@ function binding(channelIds: string[]): JsCellBinding {
 }
 
 /** A `JsCellBinding` whose channels are a mix of `"session"` and `"definition"` sources, in the given order. `mountedChannelId` is the first `"session"` entry, matching `bindingFor`'s own rule. */
-function mixedBinding(entries: Array<{ channelId: string; source: "session" | "definition" }>): JsCellBinding {
+function mixedBinding(entries: Array<{ channelId: string; source: "session" | "definition" }>): TimeCellBinding {
   const channels: JsCellBindingChannel[] = entries.map((entry, i) => ({
     channelId: entry.channelId,
     source: entry.source,
@@ -61,7 +62,8 @@ function mixedBinding(entries: Array<{ channelId: string; source: "session" | "d
     lap: null,
   }));
   return {
-    props: { marks: [] } as unknown as JsCellBinding["props"],
+    kind: "time",
+    props: { chart: "time", marks: [] },
     channels,
     initialSpan: { startUs: 0, endUs: 2_000_000 },
     mountedChannelId: channels.find((c) => c.source === "session")?.channelId ?? null,

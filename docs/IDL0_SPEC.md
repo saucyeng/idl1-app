@@ -3290,14 +3290,15 @@ reason. Silence is not deferral (wave-2 operating brief §2). Source:
 `idl0-app/app/lib/ui/tabs/analyze/` and `.../maths/`.
 
 **Delivered in wave 2:** time-series line charts (multi-channel, colours,
-manual/auto y domain, log/sqrt y scale, lap scope), spectrogram, 2-D
+manual/auto y domain, log/sqrt y scale, lap scope), the FFT chart (single
+whole-record spectrum), spectrogram, 2-D
 density heatmap (the scatter chart's density mode), hover readout, cursor
 readout, pan/zoom, table cells, math cells with the full 69-function
 catalog, per-cell errors, live file reload, save with conflict detection.
 
 | idl0 feature | Status | Reason |
 |---|---|---|
-| **FFT chart** | Contracted (C2 §5.3, R79); shipping in L6 Tasks 19–20 | `fetch_fft` landed (C3 §3.6, N5 below) and L6 Task 19 built the pure request/driver plumbing and the `{kind:"spectrum"}` sandbox host-variable payload over it (this commit). The grammar production and Properties panel that let a document actually author an FFT cell are ruling R78's separate **L6 Task 20** — until that lands, no cell in the document can request a spectrum. |
+| **FFT chart** | Delivered (C2 §5.3, R79/R80; L6 Tasks 19–20) — single spectrum, whole record | `fetch_fft` (C3 §3.6, `IDLF`) computes the spectrum; C2 §5.3's `spectrum(...)` production carries window size, hop, window function, detrend, scaling and averaging in the document, and the Properties pane's FFT parameter panel edits all six. Gaps from idl0's `analyze/fft_chart.dart`: (1) idl0's overlay of up to `kMaxFftSpectra` = 10 spectra, one line per channel × selected lap (`fft_window_resolver.dart`), is **not** carried — one spectrum per cell (R79 Q7), and lap-scoped spectra wait on lap indexing at import (`lap` is `null`, C3 §3.6). (2) idl0's `Overlap %` control is replaced by hop size in samples, C3's own unit (R79 Q3). (3) idl0's session-mode window **tracks the worksheet's live zoom** (or the whole session when unzoomed) and lap-mode windows each selected lap separately; `fetch_fft` takes no time window at all (C3 §3.6), so a wave-2 FFT cell always covers the whole channel — panning/zooming a time-series cell elsewhere in the notebook has no effect on it, and the only way to see a sub-range spectrum is lap indexing landing (same blocker as (1)). (4) idl0 auto-derives a default segment length from the *windowed* sample count (`ChartSlot.autoFftSegmentLength`) so a short zoom auto-reduces `nperseg`; the Properties pane instead seeds a fixed `2048` and leaves adjusting it (or switching to `Whole record`, forced automatically under `averaging: "none"`) to the author, since there is no window to auto-derive from. An FFT cell has no pan, zoom, hover or cursor readout (matches idl0's own "no cursor rendered — read-only frequency-domain view" for this chart specifically). |
 | **1-D histogram chart** | Deferred, blocked on IPC | Same rule: binning is numbers. C3 §3.6 has only the 2-D `histogram2d` raster. Filed as IPC need N6, deferred to a later wave — genuinely new engine code, unlike N5's thin wrapper. |
 | **Scatter — point-cloud mode** | Deferred | Density mode is delivered via `fetch_raster`'s `histogram2d`. Point-cloud mode needs a time-aligned paired-sample endpoint C3 does not have (IPC need N7, marked for a later wave). |
 | **GPS map chart with basemap tiles** | Deferred, needs a product ruling | "Offline-first means bundled. No CDN, ever" (design §3) forbids a tile server outright. A plain GPS polyline with no basemap is expressible today as a custom `js` cell. Escalated to Isaac as a product call (ruling R52 Q8), non-blocking. |
@@ -3330,13 +3331,13 @@ cell naming a workbook `math` definition binds and fetches through it via
 decoder (§26.1, §26.4); open, named in §26.1, is that the command's lack of
 a time window means a definition-bound cell cannot resolve a sub-range on
 zoom; **N4** `eval_workbook`'s additive
-`lap_context` argument (§26.6); **N5** FFT — landed at the wire (`fetch_fft`,
-C3 §3.6, ruling R63 (3)); `app/src/ipc/rasters.ts` wraps and decodes it
-(`fetchFft`/`decodeFft`, `IDLF`), and L6 Task 19 built the pure request/
-driver layer and the spectrum host-variable payload over that wrapper (this
-commit) — the grammar and Properties panel that let a document author an
-FFT cell are L6 Task 20 (§26.6); **N6** 1-D histogram, still unlanded,
-deferred to a later wave (§26.6); **N8** `create_workbook`. Design §10's L6 done-criterion
+`lap_context` argument (§26.6); **N5** FFT — delivered end to end (L6 Tasks
+19–20): `fetch_fft` (C3 §3.6, ruling R63 (3)) is wrapped and decoded by
+`app/src/ipc/rasters.ts` (`fetchFft`/`decodeFft`, `IDLF`), and C2 §5.3's
+`spectrum(...)` grammar production plus the Properties pane's FFT parameter
+panel let a document author an FFT cell that requests it (§26.6); **N6**
+1-D histogram, still unlanded, deferred to a later wave (§26.6); **N8**
+`create_workbook`. Design §10's L6 done-criterion
 "`plotForm` round-trips its subset" is checked by Task 3's exhaustive test,
 part of this lane's gate; the companion criterion, "pan/zoom/hover on a
 real session at 60 fps desktop," is observed in the running dev app at the

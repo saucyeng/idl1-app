@@ -1,4 +1,20 @@
-import { MARK_NAMES, type MarkProps, type PlotProps, type XAxisProps, type YAxisProps } from "./types";
+import {
+  FFT_DETRENDS,
+  FFT_SCALINGS,
+  FFT_WINDOW_FUNCTIONS,
+  FFT_AVERAGINGS,
+  MARK_NAMES,
+  SPECTRUM_MARK_NAMES,
+  type FftParams,
+  type FftPlotProps,
+  type FftXAxisProps,
+  type MarkProps,
+  type PlotProps,
+  type SpectrumMarkProps,
+  type TimePlotProps,
+  type XAxisProps,
+  type YAxisProps,
+} from "./types";
 
 /** A lexical token produced by {@link tokenize}: an identifier (bare word),
  *  a decoded string literal, a decoded numeric literal, or one of the
@@ -268,7 +284,8 @@ function consumeNumber(c: Cursor): number | null {
 // ---------------------------------------------------------------------------
 // Recursive-descent reader: readPlotCall -> readPlotOptions -> readMarksArray
 // -> readMark -> readChannelCall -> readMarkOptions, plus the x/y/color
-// option readers.
+// option readers. The FFT branch mirrors this shape one level down:
+// readFftMarksArray -> readSpectrumMark -> readSpectrumCall -> readSpectrumOptions.
 // ---------------------------------------------------------------------------
 
 type FieldParser = (key: string, c: Cursor) => FieldResult;
@@ -337,12 +354,14 @@ function readDomain(c: Cursor): [number, number] | null {
   return [a, b];
 }
 
-/** Fields of an `x_scale` object. `type` is syntactically part of C2
- *  §5.3's grammar, but `XAxisProps` has no field for it (reserved for a
- *  future non-time x-axis, C2 §8-2, and never emitted by `generate`), so
- *  admitting it here would silently drop it on the next `generate()` call.
- *  Its mere presence therefore makes the whole cell custom, regardless of
- *  its value. */
+/** Fields of a time cell's `x_scale` object. `type` is syntactically part
+ *  of C2 §5.3's grammar for a time cell, but `XAxisProps` has no field for
+ *  it (§8-2, never emitted by `generate` for a time cell — an FFT cell's
+ *  x axis is the distinct {@link FftXAxisProps} instead), so admitting it
+ *  here would silently drop it on the next `generate()` call. Its mere
+ *  presence therefore makes the whole cell custom, regardless of its
+ *  value — this is also how a time cell's `x.type: "log"` (legal only on
+ *  an FFT cell, C2 §5.3) is rejected. */
 function parseXField(key: string, c: Cursor): FieldResult {
   switch (key) {
     case "label": {
@@ -362,6 +381,43 @@ function readXScale(c: Cursor): XAxisProps | null {
   const fields = readBracedFields(c, parseXField);
   if (fields === null) return null;
   const x: XAxisProps = {};
+  if (fields.label !== undefined) x.label = fields.label as string;
+  if (fields.domain !== undefined) x.domain = fields.domain as [number, number];
+  return x;
+}
+
+/** Fields of an FFT cell's `x_scale` object (C2 §5.3): `label`, `domain`,
+ *  and `type` (required, closed to `"linear"`/`"log"` — `FFT_X_AXIS_TYPES`). */
+function parseFftXField(key: string, c: Cursor): FieldResult {
+  switch (key) {
+    case "label": {
+      const v = consumeString(c);
+      return v === null ? { ok: false } : { ok: true, value: v };
+    }
+    case "domain": {
+      const v = readDomain(c);
+      return v === null ? { ok: false } : { ok: true, value: v };
+    }
+    case "type": {
+      const v = consumeString(c);
+      return v === "linear" || v === "log" ? { ok: true, value: v } : { ok: false };
+    }
+    default:
+      return { ok: false };
+  }
+}
+
+/** Reads an FFT cell's `x_scale`, requiring `type` to be present (R80 Q1:
+ *  an FFT cell's `x` is required and always carries `type` — an FFT `x`
+ *  object without `type` is not a shorter valid form, it is custom code). */
+function readFftXScale(c: Cursor): FftXAxisProps | null {
+  const start = c.pos;
+  const fields = readBracedFields(c, parseFftXField);
+  if (fields === null || fields.type === undefined) {
+    c.pos = start;
+    return null;
+  }
+  const x: FftXAxisProps = { type: fields.type as "linear" | "log" };
   if (fields.label !== undefined) x.label = fields.label as string;
   if (fields.domain !== undefined) x.domain = fields.domain as [number, number];
   return x;
@@ -558,6 +614,254 @@ function readMarksArray(c: Cursor): MarkProps[] | null {
   return marks;
 }
 
+// ---------------------------------------------------------------------------
+// FFT branch: window_size/hop_size, fft_params, spectrum_call, spectrum_mark,
+// fft_marks (C2 §5.3, added 2026-09-06).
+// ---------------------------------------------------------------------------
+
+/** Reads a `window_size`/`hop_size` value (C2 §5.3): a `js_int`, or the
+ *  literal string `"all"`. Any other string, or a non-integer number,
+ *  fails. */
+function readWindowOrHop(c: Cursor): number | "all" | null {
+  const start = c.pos;
+  const asString = consumeString(c);
+  if (asString !== null) {
+    if (asString === "all") return "all";
+    c.pos = start;
+    return null;
+  }
+  const asNumber = consumeNumber(c);
+  if (asNumber !== null && Number.isInteger(asNumber)) return asNumber;
+  c.pos = start;
+  return null;
+}
+
+function parseFftParamsField(key: string, c: Cursor): FieldResult {
+  switch (key) {
+    case "windowSize":
+    case "hopSize": {
+      const v = readWindowOrHop(c);
+      return v === null ? { ok: false } : { ok: true, value: v };
+    }
+    case "window": {
+      const v = consumeString(c);
+      return v !== null && (FFT_WINDOW_FUNCTIONS as readonly string[]).includes(v) ? { ok: true, value: v } : { ok: false };
+    }
+    case "detrend": {
+      const v = consumeString(c);
+      return v !== null && (FFT_DETRENDS as readonly string[]).includes(v) ? { ok: true, value: v } : { ok: false };
+    }
+    case "scaling": {
+      const v = consumeString(c);
+      return v !== null && (FFT_SCALINGS as readonly string[]).includes(v) ? { ok: true, value: v } : { ok: false };
+    }
+    case "averaging": {
+      const v = consumeString(c);
+      return v !== null && (FFT_AVERAGINGS as readonly string[]).includes(v) ? { ok: true, value: v } : { ok: false };
+    }
+    default:
+      return { ok: false };
+  }
+}
+
+/** The six keys `fft_params` requires, all of them, per C2 §5.3 ("a missing
+ *  key is custom code, not a default"). */
+const FFT_PARAMS_KEYS = ["windowSize", "hopSize", "window", "detrend", "scaling", "averaging"] as const;
+
+/** Reads a `spectrum_call`'s `fft_params` object, requiring every key in
+ *  {@link FFT_PARAMS_KEYS} to be present (an extra key is already rejected
+ *  by `readBracedFields`'s "unrecognised key" path; a missing one is
+ *  rejected here). */
+function readFftParams(c: Cursor): FftParams | null {
+  const start = c.pos;
+  const fields = readBracedFields(c, parseFftParamsField);
+  if (fields === null || !FFT_PARAMS_KEYS.every((k) => fields[k] !== undefined)) {
+    c.pos = start;
+    return null;
+  }
+  return {
+    windowSize: fields.windowSize as number | "all",
+    hopSize: fields.hopSize as number | "all",
+    window: fields.window as FftParams["window"],
+    detrend: fields.detrend as FftParams["detrend"],
+    scaling: fields.scaling as FftParams["scaling"],
+    averaging: fields.averaging as FftParams["averaging"],
+  };
+}
+
+/** Reads a `spectrum_call`: `spectrum("name", {fft_params})`. `lap` is
+ *  never expressible here (C2 §5.3: "`lap` is not expressible on
+ *  `spectrum_call`") — there is no third argument in this production at
+ *  all, so a hand-written third argument (of any shape, including
+ *  `{ lap: n }`) simply fails to match `)` immediately after `fft_params`
+ *  and makes the whole cell custom. */
+function readSpectrumCall(c: Cursor): { channel: string; fft: FftParams } | null {
+  const start = c.pos;
+  if (!consumeIdent(c, "spectrum") || !consumePunct(c, "(")) {
+    c.pos = start;
+    return null;
+  }
+  const name = consumeString(c);
+  if (name === null || !consumePunct(c, ",")) {
+    c.pos = start;
+    return null;
+  }
+  const fft = readFftParams(c);
+  if (fft === null || !consumePunct(c, ")")) {
+    c.pos = start;
+    return null;
+  }
+  return { channel: name, fft };
+}
+
+function parseSpectrumOptionField(key: string, c: Cursor): FieldResult {
+  switch (key) {
+    case "x": {
+      const v = consumeString(c);
+      return v === "f" ? { ok: true, value: v } : { ok: false };
+    }
+    case "y": {
+      const v = consumeString(c);
+      return v === "m" ? { ok: true, value: v } : { ok: false };
+    }
+    case "stroke": {
+      const v = consumeString(c);
+      return v === null ? { ok: false } : { ok: true, value: v };
+    }
+    case "strokeWidth": {
+      const v = consumeNumber(c);
+      return v === null ? { ok: false } : { ok: true, value: v };
+    }
+    default:
+      return { ok: false };
+  }
+}
+
+/** Reads a `spectrum_mark`'s `spectrum_options`: the fixed literal pair
+ *  `x: "f"`, `y: "m"` (C2 §5.3: "Mark options bind `"f"`/`"m"`, never
+ *  `"t"`/`"v"`"), plus optional `stroke`/`strokeWidth`. */
+function readSpectrumOptions(c: Cursor): { stroke?: string; strokeWidth?: number } | null {
+  const fields = readBracedFields(c, parseSpectrumOptionField);
+  if (fields === null || fields.x !== "f" || fields.y !== "m") return null;
+
+  const options: { stroke?: string; strokeWidth?: number } = {};
+  if (fields.stroke !== undefined) options.stroke = fields.stroke as string;
+  if (fields.strokeWidth !== undefined) options.strokeWidth = fields.strokeWidth as number;
+  return options;
+}
+
+/** Reads one `spectrum_mark` production:
+ *  `Plot.<spectrum_mark_name>(spectrum_call, spectrum_options)`. */
+function readSpectrumMark(c: Cursor): SpectrumMarkProps | null {
+  const start = c.pos;
+  if (!consumeIdent(c, "Plot") || !consumePunct(c, ".")) {
+    c.pos = start;
+    return null;
+  }
+
+  const markName = consumeAnyIdent(c);
+  if (markName === null || !(SPECTRUM_MARK_NAMES as readonly string[]).includes(markName)) {
+    c.pos = start;
+    return null;
+  }
+
+  if (!consumePunct(c, "(")) {
+    c.pos = start;
+    return null;
+  }
+  const call = readSpectrumCall(c);
+  if (call === null || !consumePunct(c, ",")) {
+    c.pos = start;
+    return null;
+  }
+  const options = readSpectrumOptions(c);
+  if (options === null || !consumePunct(c, ")")) {
+    c.pos = start;
+    return null;
+  }
+
+  const mark: SpectrumMarkProps = {
+    channel: call.channel,
+    mark: markName as SpectrumMarkProps["mark"],
+    fft: call.fft,
+  };
+  if (options.stroke !== undefined) mark.stroke = options.stroke;
+  if (options.strokeWidth !== undefined) mark.strokeWidth = options.strokeWidth;
+  return mark;
+}
+
+/** Reads an `fft_marks` array: `[` one `spectrum_mark` `]`, exactly one —
+ *  no comma, no second element (C2 §5.3: "An FFT cell has exactly one
+ *  mark"). A second mark of either kind after a comma fails this reader,
+ *  which is the correct "two spectrum marks ⇒ null" / "mixing ⇒ null"
+ *  behaviour: this reader is only ever tried once {@link detectChartKind}
+ *  has seen the array's first element call `spectrum(`. */
+function readFftMarksArray(c: Cursor): SpectrumMarkProps | null {
+  const start = c.pos;
+  if (!consumePunct(c, "[")) {
+    c.pos = start;
+    return null;
+  }
+  const mark = readSpectrumMark(c);
+  if (mark === null || !consumePunct(c, "]")) {
+    c.pos = start;
+    return null;
+  }
+  return mark;
+}
+
+/**
+ * Looks ahead in `tokens` (from `from`, without moving any cursor) for the
+ * `marks` key's value and decides whether this cell's `plot_options` is a
+ * time cell or an FFT cell, so the caller can pick the matching set of
+ * field parsers for `x` before parsing it (an FFT `x` requires `type`; a
+ * time `x` forbids it — the two cannot share one reader, C2 §5.3: "A cell
+ * is a time cell or an FFT cell, never both").
+ *
+ * This is deliberately a heuristic, not a validating parse: `marks` is the
+ * one identifier this closed grammar never uses as anything but the
+ * top-level key (never a value, never nested), so a plain token scan for
+ * the `ident "marks"` token, followed by the fixed `":" "[" …` shape every
+ * non-empty `marks_array` alternative shares up to its first mark's callee
+ * name (`Plot.<name>(<channel|spectrum>`), is enough to route correctly.
+ * If the surrounding structure is not actually well-formed, the reader this
+ * function's answer selects will simply fail on it and `parse` returns
+ * `null` regardless of which one was tried — the same end result either
+ * reader would reach, so a wrong guess here costs nothing.
+ *
+ * An empty `marks: []` and a missing `marks` key both resolve to `"time"`:
+ * an empty marks array "keeps parsing as a time cell with no marks, as
+ * today" (C2 §5.3), and a missing key fails `readPlotOptions` for both
+ * chart kinds identically (`marks`/`mark` is the one required key), so
+ * routing it to either produces the same `null`.
+ */
+function detectChartKind(tokens: Token[], from: number): "time" | "fft" {
+  let marksIdx = -1;
+  for (let i = from; i < tokens.length; i++) {
+    const t = tokens[i];
+    if (t.kind === "ident" && t.value === "marks") {
+      marksIdx = i;
+      break;
+    }
+  }
+  if (marksIdx === -1) return "time";
+
+  const colon = tokens[marksIdx + 1];
+  const openBracket = tokens[marksIdx + 2];
+  if (colon?.kind !== "punct" || colon.value !== ":" || openBracket?.kind !== "punct" || openBracket.value !== "[") {
+    return "time";
+  }
+
+  const firstInArray = tokens[marksIdx + 3];
+  if (firstInArray?.kind === "punct" && firstInArray.value === "]") {
+    return "time"; // empty marks array
+  }
+
+  // Plot . <markName> ( <calleeIdent>
+  const calleeIdent = tokens[marksIdx + 7];
+  return calleeIdent?.kind === "ident" && calleeIdent.value === "spectrum" ? "fft" : "time";
+}
+
 function parsePlotOptionField(key: string, c: Cursor): FieldResult {
   switch (key) {
     case "x": {
@@ -581,9 +885,32 @@ function parsePlotOptionField(key: string, c: Cursor): FieldResult {
   }
 }
 
-/** Reads `plot_options`: `{ ... }`, requiring `marks` to be present (the
- *  form always seeds one mark; C2 §5.3 leaves `marks` as the one
- *  non-optional top-level key).
+function parseFftPlotOptionField(key: string, c: Cursor): FieldResult {
+  switch (key) {
+    case "x": {
+      const v = readFftXScale(c);
+      return v === null ? { ok: false } : { ok: true, value: v };
+    }
+    case "y": {
+      const v = readYScale(c);
+      return v === null ? { ok: false } : { ok: true, value: v };
+    }
+    case "color": {
+      const v = readColorOpt(c);
+      return v === null ? { ok: false } : { ok: true, value: v };
+    }
+    case "marks": {
+      const v = readFftMarksArray(c);
+      return v === null ? { ok: false } : { ok: true, value: v };
+    }
+    default:
+      return { ok: false }; // any key outside x/y/color/marks -> custom
+  }
+}
+
+/** Reads a time cell's `plot_options`: `{ ... }`, requiring `marks` to be
+ *  present (the form always seeds one mark; C2 §5.3 leaves `marks` as the
+ *  one non-optional top-level key for a time cell).
  *
  *  A hand-typed `x: {}` or `y: {}` (every field undefined) normalises to
  *  the key being absent from the returned props, never `{}` — matching
@@ -591,7 +918,7 @@ function parsePlotOptionField(key: string, c: Cursor): FieldResult {
  *  L6 Task 2). This keeps `parse(generate(p))` deep-equal to `p` for any
  *  `p` `generate` can actually produce, since `generate` can never
  *  produce `x: {}`/`y: {}` in the first place. */
-function readPlotOptions(c: Cursor): PlotProps | null {
+function readTimePlotOptions(c: Cursor): TimePlotProps | null {
   const start = c.pos;
   const fields = readBracedFields(c, parsePlotOptionField);
   if (fields === null || fields.marks === undefined) {
@@ -599,7 +926,7 @@ function readPlotOptions(c: Cursor): PlotProps | null {
     return null;
   }
 
-  const props: PlotProps = { marks: fields.marks as MarkProps[] };
+  const props: TimePlotProps = { chart: "time", marks: fields.marks as MarkProps[] };
   if (fields.x !== undefined && Object.keys(fields.x as XAxisProps).length > 0) {
     props.x = fields.x as XAxisProps;
   }
@@ -608,6 +935,37 @@ function readPlotOptions(c: Cursor): PlotProps | null {
   }
   if (fields.color !== undefined) props.color = fields.color as { legend: true };
   return props;
+}
+
+/** Reads an FFT cell's `plot_options`: `{ ... }`, requiring both `marks`
+ *  (the one spectrum mark) and `x` (with its required `type`) to be
+ *  present (R80 Q1). */
+function readFftPlotOptions(c: Cursor): FftPlotProps | null {
+  const start = c.pos;
+  const fields = readBracedFields(c, parseFftPlotOptionField);
+  if (fields === null || fields.marks === undefined || fields.x === undefined) {
+    c.pos = start;
+    return null;
+  }
+
+  const props: FftPlotProps = {
+    chart: "fft",
+    mark: fields.marks as SpectrumMarkProps,
+    x: fields.x as FftXAxisProps,
+  };
+  if (fields.y !== undefined && Object.keys(fields.y as YAxisProps).length > 0) {
+    props.y = fields.y as YAxisProps;
+  }
+  if (fields.color !== undefined) props.color = fields.color as { legend: true };
+  return props;
+}
+
+/** Reads `plot_options`, dispatching to the time or FFT reader per
+ *  {@link detectChartKind}'s lookahead over the `marks` key's value (C2
+ *  §5.3: "A cell is a time cell or an FFT cell, never both"). */
+function readPlotOptions(c: Cursor): PlotProps | null {
+  const kind = detectChartKind(c.tokens, c.pos);
+  return kind === "fft" ? readFftPlotOptions(c) : readTimePlotOptions(c);
 }
 
 /** Reads a `plot_call`: `Plot.plot(plot_options)`. This must match the

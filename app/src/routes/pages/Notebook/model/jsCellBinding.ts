@@ -1,14 +1,16 @@
 /**
  * Pure decision logic for whether a `js` cell's code binds through
- * `ChartCell`'s real viewport/tile-fetch pipeline (Tasks 6-10) instead of
- * a plain sandbox-output mount (L6 Task 13b, R66 item 1). No React, no
- * DOM, no IPC import — `bindingFor` never calls `fetchTile`/`getSession`
- * itself; its caller (`Notebook/index.tsx`) resolves `SessionDetail` and
- * the session's recorded span (lead pre-ruling 2026-09-05 #1) and passes
- * both in.
+ * `ChartCell`'s real viewport/tile-fetch pipeline (Tasks 6-10), an FFT
+ * cell's spectrum pipeline (L6 Task 20, C2 §5.3), or a plain sandbox-output
+ * mount (L6 Task 13b, R66 item 1). No React, no DOM, no IPC import --
+ * `bindingFor` never calls `fetchTile`/`getSession`/`fetchFft` itself; its
+ * caller (`Notebook/index.tsx`) resolves `SessionDetail` and the session's
+ * recorded span (lead pre-ruling 2026-09-05 #1) and passes both in.
  */
 import { parse } from "../plotForm/parse";
-import type { MarkProps, PlotProps } from "../plotForm/types";
+import { spectrumKey } from "../plotForm/spectrumKey";
+import type { FftPlotProps, MarkProps, PlotProps, TimePlotProps } from "../plotForm/types";
+import { exceedsBinCap, fftRequestFor, type FftRequest } from "./fftRequest";
 import type { ChannelSummary, SessionDetail } from "../../../../ipc/catalog";
 
 /** Where one bound channel's samples come from (L6 Task 18, R77.3):
@@ -18,7 +20,7 @@ import type { ChannelSummary, SessionDetail } from "../../../../ipc/catalog";
  *  decimated to a budget, via `fetch_host_channel` (C3 §3.4). */
 export type BindingChannelSource = "session" | "definition";
 
-/** One distinct channel a form-generated cell's marks reference. */
+/** One distinct channel a form-generated time cell's marks reference. */
 export interface JsCellBindingChannel {
   channelId: string;
   /** `"definition"` ⇒ this names a workbook `math` definition rather than a
@@ -59,18 +61,17 @@ export interface InitialSpan {
 }
 
 /**
- * What a form-generated `js` cell needs to render through `ChartCell`
- * instead of a plain mount (R66 item 1). One entry per distinct channel
- * the cell's marks reference -- a multi-mark cell binds every distinct
- * channel (R52 Q2: `channel()` materialises per-channel arrays; nothing
- * in the grammar or `ChartCell`'s one-channel-per-instance design lets two
- * marks on different channels share one binding). Mounting more than one
- * `ChartCell` per cell is a design question this task does not answer
- * (lead pre-ruling #3) -- see this task's report.
+ * What a form-generated **time** `js` cell needs to render through
+ * `ChartCell` instead of a plain mount (R66 item 1). One entry per distinct
+ * channel the cell's marks reference -- a multi-mark cell binds every
+ * distinct channel (R52 Q2: `channel()` materialises per-channel arrays;
+ * nothing in the grammar or `ChartCell`'s one-channel-per-instance design
+ * lets two marks on different channels share one binding).
  */
-export interface JsCellBinding {
+export interface TimeCellBinding {
+  kind: "time";
   /** The cell's parsed form state, for anything a caller needs beyond the channel list (e.g. a future multi-channel overlay). */
-  props: PlotProps;
+  props: TimePlotProps;
   /** One binding per distinct `marks[*].channel` referenced by `props`, in the order each channel first appears across `marks`. */
   channels: JsCellBindingChannel[];
   /** The initial window every bound channel starts at, before any gesture -- see {@link InitialSpan}'s own doc comment on why it is not a full `Viewport`. */
@@ -86,45 +87,55 @@ export interface JsCellBinding {
   mountedChannelId: string | null;
 }
 
+/**
+ * What a form-generated **FFT** `js` cell needs to render its spectrum (L6
+ * Task 20, C2 §5.3). Exactly one channel, one request, one host-variable
+ * name -- an FFT cell has exactly one spectrum mark by type
+ * (`FftPlotProps.mark`), so there is nothing to enumerate the way
+ * {@link TimeCellBinding.channels} does.
+ */
+export interface FftCellBinding {
+  kind: "fft";
+  props: FftPlotProps;
+  channelId: string;
+  /** `ChannelSummary.sample_count`, samples — what `"all"` resolves to. */
+  sampleCount: number;
+  /** Built by `fftRequestFor`; `lap` is always `null` (C3 §3.6). */
+  request: FftRequest;
+  /** `spectrumKey(channelId, props.mark.fft)` — the host variable name this
+   *  spectrum is published under, computed by the one shared function both
+   *  the host and the sandbox call (C2 §5.3). */
+  hostVarName: string;
+  /** Non-null when this cell must not fetch: too few samples (fewer than
+   *  two, R76), or the resolved window exceeds `MAX_FFT_BINS` (R79 Q4). The
+   *  string is the note the cell shows (R78 Task 19 Q3: the `JsCellFrame`
+   *  note slot). */
+  unrequestable: string | null;
+}
+
+/**
+ * What a form-generated `js` cell needs to render -- a time cell through
+ * `ChartCell`'s real viewport pipeline, or an FFT cell through its spectrum
+ * pipeline. A discriminated union on `kind`, mirroring `plotForm.PlotProps`'
+ * own `chart` discriminant one level up (L6 Task 20).
+ */
+export type JsCellBinding = TimeCellBinding | FftCellBinding;
+
 /** Looks up one mark's channel in `sessionDetail.channels` by id, or `null` if it isn't a real channel on this session. */
 function findChannel(channels: ChannelSummary[], channelId: string): ChannelSummary | null {
   return channels.find((c) => c.channel_id === channelId) ?? null;
 }
 
-/**
- * `plotForm.parse`s `code`; returns `null` when it doesn't (custom code --
- * plain mount) or when any referenced channel is not in
- * `sessionDetail.channels` and not a name in `definitionNames` either (an
- * unresolvable channel is never fetched -- a plain mount with a visible
- * note instead, per this task's dispatch) or when `sessionDetail`/
- * `sessionSpanUs` is not yet available (nothing to bind against). Pure: no
- * IPC, no DOM, no React.
- *
- * @param sessionSpanUs The session's recorded span in µs (lead pre-ruling
- *   #1: `SessionSummary.duration_ms`, or the coarsest-tile fallback),
- *   already resolved by the caller. `null` while still resolving --
- *   treated the same as no session selected.
- * @param definitionNames Every workbook `math` definition name a mark may
- *   bind to instead of a session channel (L6 Task 18, R77.3) --
- *   `eval_workbook`'s own `CellOutput.defs[].name`, restricted by the
- *   caller (`index.tsx`) to definitions with a recorded time axis
- *   (`CellDefResult.value.has_t`, C3 §3.4): a `has_t: false` definition has
- *   no axis to chart against and is treated exactly like an unresolvable
- *   channel here (Q3(a), R78) -- the caller distinguishes the two notes
- *   ("not part of this session" vs "has no recorded axis") itself, since
- *   this module never sees `has_t` for a name it excludes.
- */
-export function bindingFor(
-  cell: { id: string; code: string },
-  sessionDetail: SessionDetail | null,
-  sessionSpanUs: number | null,
+/** Builds the `TimeCellBinding` for a parsed `TimePlotProps`, or `null` if
+ *  any referenced channel is unresolvable (see {@link bindingFor}'s own
+ *  doc comment for the exact rule). Split out so {@link bindingFor} reads
+ *  as one dispatch over `props.chart`. */
+function bindingForTime(
+  props: TimePlotProps,
+  sessionDetail: SessionDetail,
+  sessionSpanUs: number,
   definitionNames: ReadonlySet<string>
-): JsCellBinding | null {
-  if (sessionDetail === null || sessionSpanUs === null) return null;
-
-  const props = parse(cell.code);
-  if (props === null) return null;
-
+): TimeCellBinding | null {
   const channels: JsCellBindingChannel[] = [];
   const seen = new Set<string>();
   for (const mark of props.marks as MarkProps[]) {
@@ -158,6 +169,7 @@ export function bindingFor(
   const mountedChannelId = channels.find((c) => c.source === "session")?.channelId ?? null;
 
   return {
+    kind: "time",
     props,
     channels,
     initialSpan: { startUs: 0, endUs: sessionSpanUs },
@@ -166,42 +178,150 @@ export function bindingFor(
 }
 
 /**
- * A stable string identity for everything `Notebook/index.tsx`'s channel-
- * bind effect fetches for this cell -- every distinct bound channel (id,
- * `source` and lap) plus the initial span -- used to detect "this cell's
- * binding changed" without a deep-equal over the whole `JsCellBinding`.
- * Two bindings with the same identity are treated as the same binding: no
- * re-fetch, no `setBoundChannels` call. Includes each channel's `source`
- * (L6 Task 18) so a name moving from unresolvable to `"definition"`, or
- * from `"definition"` to `"session"` (e.g. a newly selected session now has
- * a channel of that name), always produces a different identity -- not
- * only `channels[0]`/the mounted channel, since the effect re-fetches every
- * distinct channel, not only the mounted one (R72). Pure string
- * formatting, no IPC.
+ * Builds the `FftCellBinding` for a parsed `FftPlotProps`, or `null` if the
+ * spectrum's channel is not a real session channel (an FFT cell's one
+ * channel is never a workbook definition -- `fetch_fft` takes a session
+ * channel id, C3 §3.6). `"all"` resolves to `channel.sample_count` here,
+ * exactly once, at binding time (C2 §5.3: "the host resolves it to the
+ * channel's `ChannelSummary.sample_count` at fetch time") -- never written
+ * back into `props`, which keeps saying `"all"` on disk.
+ *
+ * `unrequestable` is set, and the request built from a mechanically
+ * consistent but practically unusable window, for two cases: fewer than
+ * two samples (R76 -- `fetch_fft` would reject any window over such a
+ * channel) and a resolved window over `MAX_FFT_BINS` (R79 Q4) -- checked
+ * against the *resolved* window (post-`"all"`), never the raw grammar
+ * value, since `"all"` only becomes a concrete number here.
+ */
+function bindingForFft(props: FftPlotProps, sessionDetail: SessionDetail): FftCellBinding | null {
+  const channel = findChannel(sessionDetail.channels, props.mark.channel);
+  if (channel === null) return null;
+
+  const sampleCount = channel.sample_count;
+  const { fft } = props.mark;
+  const request = fftRequestFor(
+    channel.channel_id,
+    sampleCount,
+    {
+      windowSize: fft.windowSize === "all" ? sampleCount : fft.windowSize,
+      hopSize: fft.hopSize === "all" ? sampleCount : fft.hopSize,
+      window: fft.window,
+      detrend: fft.detrend,
+      scaling: fft.scaling,
+    },
+    fft.averaging
+  );
+  const hostVarName = spectrumKey(channel.channel_id, fft);
+
+  let unrequestable: string | null = null;
+  if (sampleCount < 2) {
+    unrequestable = "This channel has too few samples for an FFT.";
+  } else if (exceedsBinCap(request.params.window_size)) {
+    unrequestable = "This spectrum has more bins than the chart can draw — reduce the window size.";
+  }
+
+  return { kind: "fft", props, channelId: channel.channel_id, sampleCount, request, hostVarName, unrequestable };
+}
+
+/**
+ * `plotForm.parse`s `code`; returns `null` when it doesn't (custom code --
+ * plain mount), when a time cell references a channel that is not in
+ * `sessionDetail.channels` and not a name in `definitionNames` either (an
+ * unresolvable channel is never fetched -- a plain mount with a visible
+ * note instead, per this task's dispatch), when an FFT cell's one channel
+ * is not a real session channel (never a `"definition"` -- `fetch_fft`
+ * takes a session channel id, C3 §3.6), or when `sessionDetail`/
+ * `sessionSpanUs` is not yet available (nothing to bind against). Pure: no
+ * IPC, no DOM, no React.
+ *
+ * @param sessionSpanUs The session's recorded span in µs (lead pre-ruling
+ *   #1: `SessionSummary.duration_ms`, or the coarsest-tile fallback),
+ *   already resolved by the caller. `null` while still resolving --
+ *   treated the same as no session selected. Unused for the FFT arm (an
+ *   FFT cell has no time viewport), but still required so a caller does
+ *   not need to know which arm a cell will resolve to before calling.
+ * @param definitionNames Every workbook `math` definition name a **time**
+ *   mark may bind to instead of a session channel (L6 Task 18, R77.3) --
+ *   `eval_workbook`'s own `CellOutput.defs[].name`, restricted by the
+ *   caller (`index.tsx`) to definitions with a recorded time axis
+ *   (`CellDefResult.value.has_t`, C3 §3.4): a `has_t: false` definition has
+ *   no axis to chart against and is treated exactly like an unresolvable
+ *   channel here (Q3(a), R78) -- the caller distinguishes the two notes
+ *   ("not part of this session" vs "has no recorded axis") itself, since
+ *   this module never sees `has_t` for a name it excludes. Not consulted
+ *   for the FFT arm.
+ */
+export function bindingFor(
+  cell: { id: string; code: string },
+  sessionDetail: SessionDetail | null,
+  sessionSpanUs: number | null,
+  definitionNames: ReadonlySet<string>
+): JsCellBinding | null {
+  if (sessionDetail === null || sessionSpanUs === null) return null;
+
+  const props: PlotProps | null = parse(cell.code);
+  if (props === null) return null;
+
+  return props.chart === "fft"
+    ? bindingForFft(props, sessionDetail)
+    : bindingForTime(props, sessionDetail, sessionSpanUs, definitionNames);
+}
+
+/**
+ * A stable string identity for everything `Notebook/index.tsx`'s bind
+ * effects fetch for this cell, used to detect "this cell's binding
+ * changed" without a deep-equal over the whole `JsCellBinding`. Two
+ * bindings with the same identity are treated as the same binding: no
+ * re-fetch. Covers both arms of the union:
+ *
+ * - Time: every distinct bound channel (id, `source` and lap) plus the
+ *   initial span -- includes each channel's `source` (L6 Task 18) so a
+ *   name moving from unresolvable to `"definition"`, or from
+ *   `"definition"` to `"session"`, always produces a different identity --
+ *   not only `channels[0]`/the mounted channel, since the effect re-fetches
+ *   every distinct channel, not only the mounted one (R72).
+ * - FFT: `hostVarName` (which already encodes the channel and all six
+ *   `fft_params`) plus the resolved sample count and the `unrequestable`
+ *   state -- two consecutive renders producing the same identity must not
+ *   start a second fetch, the existing `boundIdentityRef` contract L6 Task
+ *   20 extends rather than replaces.
+ *
+ * Pure string formatting, no IPC.
  */
 export function bindingIdentity(binding: JsCellBinding): string {
+  if (binding.kind === "fft") {
+    return `fft|${binding.hostVarName}|${binding.sampleCount}|${binding.unrequestable ?? ""}`;
+  }
   if (binding.channels.length === 0) return "no-channel";
   const parts = binding.channels.map((c) => `${c.channelId}|${c.source}|${c.lap ?? "session"}`);
   return `${parts.join(",")}|${binding.initialSpan.startUs}|${binding.initialSpan.endUs}`;
 }
 
 /**
- * Names the first `marks[*].channel` in `code` that is not present in
+ * Names the first channel `code` references that is not present in
  * `sessionDetail.channels`, or `null` when `code` is custom (`parse`
  * returns `null`) or every referenced channel resolves. Split out from
  * {@link bindingFor} so a caller whose binding came back `null` can tell
  * "custom code, plain mount as always" apart from "form-generated, but
  * naming a channel this session doesn't have" -- the two plain-mount cases
- * this task's dispatch requires a visibly different note for. A name in
- * `definitionNames` is never reported unresolved (L6 Task 18) -- it
- * resolves through `bindingFor`'s `"definition"` path instead; the caller
- * is responsible for the further distinction of a definition with no
- * recorded axis (see `bindingFor`'s own doc comment on `definitionNames`).
- * Pure, same guarantees as `bindingFor`.
+ * this task's dispatch requires a visibly different note for.
+ *
+ * Covers both chart types: a time cell's marks (a name in `definitionNames`
+ * is never reported unresolved, L6 Task 18 -- it resolves through
+ * `bindingFor`'s `"definition"` path instead; the caller is responsible for
+ * the further distinction of a definition with no recorded axis, see
+ * `bindingFor`'s own doc comment on `definitionNames`) and an FFT cell's
+ * one spectrum channel (never resolved against `definitionNames` -- an FFT
+ * cell's channel is always a session channel, C3 §3.6). Pure, same
+ * guarantees as `bindingFor`.
  */
 export function unresolvedChannelId(code: string, sessionDetail: SessionDetail, definitionNames: ReadonlySet<string>): string | null {
   const props = parse(code);
   if (props === null) return null;
+
+  if (props.chart === "fft") {
+    return findChannel(sessionDetail.channels, props.mark.channel) === null ? props.mark.channel : null;
+  }
 
   for (const mark of props.marks as MarkProps[]) {
     if (findChannel(sessionDetail.channels, mark.channel) === null && !definitionNames.has(mark.channel)) {

@@ -150,3 +150,33 @@ export function fftRequestEquals(a: FftRequest | null, b: FftRequest | null): bo
     a.params.scaling === b.params.scaling
   );
 }
+
+/**
+ * Host-side cap on a spectrum's bin count (R79 Q4, R80 Q2: 16384 -- roughly
+ * a 32k-sample window, comfortably above every entry in the Properties
+ * panel's window-size `<select>`). No source fixes this number: it is a
+ * judgment call, checked conservatively before the fetch (against the
+ * resolved window size in samples, a conservative upper bound on the bin
+ * count under any real-FFT convention C3 §3.6 does not state) and again
+ * after decode (against the decoded spectrum's actual `magnitudes.length`,
+ * `model/jsCellBinding.ts`'s `bindingFor`/binding-consumer). Above it an FFT
+ * cell shows a note and does not fetch -- a cap is not a parameter of the
+ * picture, so it is a host constant and not a grammar token (R79 Q4).
+ * Decimating in TypeScript is forbidden (CLAUDE.md §3), and `fetch_fft` has
+ * no bin-budget argument, so refusing is the only honest option.
+ */
+export const MAX_FFT_BINS = 16384;
+
+/**
+ * True when a request whose resolved window is `resolvedWindowSizeSamples`
+ * samples wide would exceed {@link MAX_FFT_BINS}. Checked before the fetch
+ * against the resolved window size (after `"all"` has been resolved to the
+ * channel's `sample_count`) -- this function never assumes a
+ * bins-per-window relation C3 §3.6 does not state; it treats the window
+ * size itself as the conservative upper bound on the eventual bin count, so
+ * a request this function passes may still (rarely) be refused by a second,
+ * exact check on `magnitudes.length` after decode.
+ */
+export function exceedsBinCap(resolvedWindowSizeSamples: number): boolean {
+  return resolvedWindowSizeSamples > MAX_FFT_BINS;
+}

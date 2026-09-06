@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { generate } from "./generate";
 import { parse } from "./parse";
-import type { MarkProps, PlotProps, XAxisProps, YAxisProps } from "./types";
+import type { FftParams, FftPlotProps, FftXAxisProps, MarkProps, PlotProps, SpectrumMarkProps, XAxisProps, YAxisProps } from "./types";
 
 const MARK_NAMES: MarkProps["mark"][] = ["lineY", "dot", "areaY", "rectY", "ruleY"];
 const LAPS: (number | null)[] = [null, 3];
@@ -49,7 +49,7 @@ function buildProps(
   y: YAxisProps | undefined,
   color: { legend: true } | undefined,
 ): PlotProps {
-  const p: PlotProps = { marks: [mark] };
+  const p: PlotProps = { chart: "time", marks: [mark] };
   if (x !== undefined) p.x = x;
   if (y !== undefined) p.y = y;
   if (color !== undefined) p.color = color;
@@ -80,8 +80,97 @@ function enumerateCases(): PlotProps[] {
   return cases;
 }
 
+// ---------------------------------------------------------------------------
+// FFT enumeration (C2 §5.3, added 2026-09-06). Every value of every FFT
+// parameter, crossed with the two windowSize/hopSize forms a sample count
+// takes ("all" is always available; a bare sample count is only ever
+// produced by the form alongside a non-"none" averaging — `updateFftParams`
+// forces window/hop to "all" whenever averaging is "none", R76 — so the
+// enumeration below only pairs "none" with the "all" form, the pairing the
+// form can actually produce), the three spectrum mark names, both x.type
+// values, and stroke/strokeWidth present/absent.
+// ---------------------------------------------------------------------------
+
+const FFT_WINDOW_FUNCTIONS: FftParams["window"][] = ["rectangular", "hann", "hamming"];
+const FFT_DETRENDS: FftParams["detrend"][] = ["none", "mean", "linear"];
+const FFT_SCALINGS: FftParams["scaling"][] = ["magnitude", "density"];
+const FFT_AVERAGINGS: FftParams["averaging"][] = ["none", "mean", "median", "max"];
+const FFT_MARK_NAMES: SpectrumMarkProps["mark"][] = ["lineY", "dot", "areaY"];
+const FFT_X_TYPES: FftXAxisProps["type"][] = ["linear", "log"];
+
+/** The two `windowSize`/`hopSize` forms the form can produce for a given
+ *  `averaging`: `"all"` always; a representative sample count too, except
+ *  under `averaging: "none"`, which the form always forces to `"all"`. */
+function windowOrHopFormsFor(averaging: FftParams["averaging"]): ("sampleCount" | "all")[] {
+  return averaging === "none" ? ["all"] : ["sampleCount", "all"];
+}
+
+function fftParamsFor(
+  window: FftParams["window"],
+  detrend: FftParams["detrend"],
+  scaling: FftParams["scaling"],
+  averaging: FftParams["averaging"],
+  form: "sampleCount" | "all",
+): FftParams {
+  return {
+    windowSize: form === "all" ? "all" : 2048,
+    hopSize: form === "all" ? "all" : 1024,
+    window,
+    detrend,
+    scaling,
+    averaging,
+  };
+}
+
+function buildSpectrumMark(
+  fft: FftParams,
+  mark: SpectrumMarkProps["mark"],
+  stroke: string | undefined,
+  strokeWidth: number | undefined,
+): SpectrumMarkProps {
+  const m: SpectrumMarkProps = { channel: "fork_velocity", mark, fft };
+  if (stroke !== undefined) m.stroke = stroke;
+  if (strokeWidth !== undefined) m.strokeWidth = strokeWidth;
+  return m;
+}
+
+function buildFftProps(mark: SpectrumMarkProps, xType: FftXAxisProps["type"]): FftPlotProps {
+  return { chart: "fft", mark, x: { type: xType } };
+}
+
+/** 3 window functions × 3 detrends × 2 scalings = 18 parameter base
+ *  combinations; each crossed with its available windowSize/hopSize forms
+ *  (1 for `"none"`, 2 otherwise — 4 averaging modes give 1+2+2+2 = 7 per
+ *  base combination, so 18 × 7 = 126 parameter+form combinations), crossed
+ *  with 3 spectrum mark names × 2 `x.type` values × 2 stroke states × 2
+ *  strokeWidth states = 24, for 126 × 24 = 3024 total cases. */
+function enumerateFftCases(): FftPlotProps[] {
+  const cases: FftPlotProps[] = [];
+  for (const window of FFT_WINDOW_FUNCTIONS) {
+    for (const detrend of FFT_DETRENDS) {
+      for (const scaling of FFT_SCALINGS) {
+        for (const averaging of FFT_AVERAGINGS) {
+          for (const form of windowOrHopFormsFor(averaging)) {
+            const fft = fftParamsFor(window, detrend, scaling, averaging, form);
+            for (const markName of FFT_MARK_NAMES) {
+              for (const xType of FFT_X_TYPES) {
+                for (const stroke of STROKES) {
+                  for (const strokeWidth of STROKE_WIDTHS) {
+                    cases.push(buildFftProps(buildSpectrumMark(fft, markName, stroke, strokeWidth), xType));
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+  return cases;
+}
+
 describe("plotForm round trip", () => {
-  it("generate then parse — every combination of the props grammar — returns props deep-equal to the input", () => {
+  it("generate then parse — every combination of the time-cell props grammar — returns props deep-equal to the input", () => {
     // Arrange
     const cases = enumerateCases();
     expect(cases.length).toBe(1440);
@@ -94,11 +183,30 @@ describe("plotForm round trip", () => {
     }
   });
 
+  it("generate then parse — every combination of the FFT-cell props grammar — returns props deep-equal to the input", () => {
+    // Arrange
+    const cases = enumerateFftCases();
+    expect(cases.length).toBe(3024);
+
+    // Act & Assert
+    for (const props of cases) {
+      const code = generate(props);
+      const parsed = parse(code);
+      expect(parsed).toEqual(props);
+    }
+  });
+
   it("parse then generate — code the form itself produced — returns byte-identical code", () => {
     // Arrange
     const samples: PlotProps[] = [
-      { marks: [{ channel: "fork_velocity", lap: null, mark: "lineY" }], x: { label: "Time (s)" }, y: { label: "Velocity (m/s)" } },
       {
+        chart: "time",
+        marks: [{ channel: "fork_velocity", lap: null, mark: "lineY" }],
+        x: { label: "Time (s)" },
+        y: { label: "Velocity (m/s)" },
+      },
+      {
+        chart: "time",
         marks: [
           { channel: "IMU1_AccelX", mark: "lineY", stroke: "#2196F3", lap: null },
           { channel: "IMU2_AccelY", mark: "lineY", stroke: "#4CAF50", lap: null },
@@ -106,8 +214,29 @@ describe("plotForm round trip", () => {
         y: { domain: [-2, 2], type: "log" },
         color: { legend: true },
       },
-      { marks: [{ channel: "fork_bottom_out", lap: 3, mark: "dot", strokeWidth: 2 }], y: { label: "Bottom-out event" } },
-      { marks: [], x: { label: "Session time (s)", domain: [120, 180] } },
+      { chart: "time", marks: [{ channel: "fork_bottom_out", lap: 3, mark: "dot", strokeWidth: 2 }], y: { label: "Bottom-out event" } },
+      { chart: "time", marks: [], x: { label: "Session time (s)", domain: [120, 180] } },
+      {
+        chart: "fft",
+        mark: {
+          channel: "fork_velocity",
+          mark: "lineY",
+          fft: { windowSize: 2048, hopSize: 1024, window: "hann", detrend: "mean", scaling: "magnitude", averaging: "mean" },
+        },
+        x: { label: "Frequency (Hz)", type: "log" },
+        y: { label: "Magnitude (m/s)" },
+      },
+      {
+        chart: "fft",
+        mark: {
+          channel: "fork_velocity",
+          mark: "lineY",
+          fft: { windowSize: "all", hopSize: "all", window: "hann", detrend: "mean", scaling: "magnitude", averaging: "none" },
+          stroke: "#2196F3",
+        },
+        x: { label: "Frequency (Hz)", type: "log" },
+        y: { label: "Magnitude (m/s)", type: "log" },
+      },
     ];
 
     for (const props of samples) {

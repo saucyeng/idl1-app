@@ -1,6 +1,15 @@
 import { describe, expect, it } from "vitest";
 
-import { binFrequencyHz, fftRequestEquals, fftRequestFor, frequencyAxisHz, segmentCount, type FftSegmentation } from "./fftRequest";
+import {
+  binFrequencyHz,
+  exceedsBinCap,
+  fftRequestEquals,
+  fftRequestFor,
+  frequencyAxisHz,
+  MAX_FFT_BINS,
+  segmentCount,
+  type FftSegmentation,
+} from "./fftRequest";
 
 const segmentation: FftSegmentation = {
   windowSize: 1024,
@@ -204,5 +213,23 @@ describe("fftRequestEquals", () => {
 
     expect(fftRequestEquals(a, null)).toBe(false);
     expect(fftRequestEquals(null, a)).toBe(false);
+  });
+});
+
+describe("exceedsBinCap", () => {
+  it("exceedsBinCap — exactly at MAX_FFT_BINS — does not exceed", () => {
+    expect(exceedsBinCap(MAX_FFT_BINS)).toBe(false);
+  });
+
+  it("exceedsBinCap — one under MAX_FFT_BINS — does not exceed", () => {
+    expect(exceedsBinCap(MAX_FFT_BINS - 1)).toBe(false);
+  });
+
+  it("exceedsBinCap — one over MAX_FFT_BINS — exceeds", () => {
+    expect(exceedsBinCap(MAX_FFT_BINS + 1)).toBe(true);
+  });
+
+  it("exceedsBinCap — a small window far under the cap — does not exceed", () => {
+    expect(exceedsBinCap(1024)).toBe(false);
   });
 });

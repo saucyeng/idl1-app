@@ -23,6 +23,8 @@ import type {
   SandboxCell,
   SandboxToHostMessage,
 } from "../host/protocol";
+import { spectrumKey } from "../plotForm/spectrumKey";
+import type { FftParams } from "../plotForm/types";
 import { bindHostVariables, type HostVariableSink } from "./hostVariables";
 
 /**
@@ -239,6 +241,14 @@ class SandboxRuntime {
     this.bindHostVar("channel", (name: string, opts?: { lap?: number; session?: string }) =>
       this.channelLookup(name, opts)
     );
+    // C2 §5.3's `spectrum(channel, fft_params)` (L6 Task 20): the same
+    // ambient-host-variable shape as `channel(...)` -- bound through
+    // `bindHostVar`, never `module.builtin` (see that method's own doc
+    // comment on why: a later `setHostVar` must reach every cell that
+    // already resolved this name). `params` is ignored here except for the
+    // key derivation (C2 §5.3): the host has already resolved every
+    // parameter before the fetch, so this call is a lookup, never DSP.
+    this.bindHostVar("spectrum", (name: string, params: FftParams) => this.spectrumLookup(name, params));
   }
 
   /** Updates `hostVars` (used by `channelLookup`'s by-name search), the
@@ -262,6 +272,23 @@ class SandboxRuntime {
   private channelLookup(name: string, _opts?: { lap?: number; session?: string }): { t: number; v: number }[] {
     const value = this.hostVars.get(name);
     return Array.isArray(value) ? (value as { t: number; v: number }[]) : [];
+  }
+
+  /**
+   * `spectrum(channel, fft_params)` (C2 §5.3, L6 Task 20): looks up the
+   * spectrum the host published for this exact `(channel, fft_params)`
+   * combination, by recomputing {@link spectrumKey} from this call's own
+   * arguments -- the same shared pure function `model/jsCellBinding.ts`'s
+   * `bindingFor` uses on the host side to name the host variable it
+   * pushes, so the two sides cannot drift. Returns the `{f, m}[]` records
+   * `materializeHostVar` built for that key, or `[]` before the host has
+   * pushed anything (or if this cell's `fft_params` do not match what was
+   * actually requested) -- the exact shape and failure mode
+   * {@link channelLookup} already has. Never fetches, never does DSP.
+   */
+  private spectrumLookup(name: string, params: FftParams): { f: number; m: number }[] {
+    const value = this.hostVars.get(spectrumKey(name, params));
+    return Array.isArray(value) ? (value as { f: number; m: number }[]) : [];
   }
 
   /** Binds or updates one host variable (`setHostVar`). */

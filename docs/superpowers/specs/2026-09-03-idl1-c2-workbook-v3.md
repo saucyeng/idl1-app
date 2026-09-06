@@ -919,7 +919,7 @@ props = {
     windowSize: 2048, hopSize: 1024, window: "hann",
     detrend: "mean", scaling: "magnitude", averaging: "mean"
   } },
-  x: { label: "Frequency (Hz)" },
+  x: { label: "Frequency (Hz)", type: "log" },
   y: { label: "Magnitude (m/s)" }
 }
 ```

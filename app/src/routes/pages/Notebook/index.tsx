@@ -2,6 +2,7 @@ import { useEffect, useMemo, useReducer, useRef, useState } from "react";
 
 import { getSession, listSessions, listWorkbooks, type SessionDetail } from "../../../ipc/catalog";
 import { cursorReadout } from "../../../ipc/cursor";
+import { fetchFft, type DecodedFft } from "../../../ipc/rasters";
 import { fetchTile } from "../../../ipc/tiles";
 import {
   evalWorkbook,
@@ -11,6 +12,7 @@ import {
   readWorkbook,
   saveWorkbook,
   watchWorkbook,
+  type IpcError,
   type LapContext as EvalLapContext,
 } from "../../../ipc/workbook";
 import { useAppState } from "../../../state/AppState";
@@ -28,8 +30,10 @@ import { dropCellHeight, initialCellHeights, recordCellHeight, type CellHeights 
 import { replaceCellBody } from "./model/cells";
 import { runChannelBind, runChannelSettle, type ChannelBindAction, type ChannelBindDeps, type ChartWindow } from "./model/channelBindDriver";
 import { CellRunSequencer } from "./model/cellRunSequencer";
+import { runFft, type FftAction, type FftDeps } from "./model/fftDriver";
+import { exceedsBinCap, frequencyAxisHz } from "./model/fftRequest";
 import { diffFunctionCatalog, type FunctionCatalogMismatch } from "./model/functionCatalog";
-import { bindingFor, bindingIdentity, unresolvedChannelId } from "./model/jsCellBinding";
+import { bindingFor, bindingIdentity, unresolvedChannelId, type FftCellBinding } from "./model/jsCellBinding";
 import { runEval, runOpenAndEval, type OpenEvalDeps } from "./model/openEvalDriver";
 import { proseBlocksFor, spansToEvaluate } from "./model/proseBlocks";
 import { isSelfWrite, saveFlow, type SaveFlowState, type WorkbookEventWithHash } from "./model/saveFlow";
@@ -140,6 +144,8 @@ export default function NotebookPage() {
   const [sessionSpanUs, setSessionSpanUs] = useState<number | null>(null);
   const [chartWindows, setChartWindows] = useState<Map<string, ChartWindow>>(new Map());
   const [functionCatalogMismatches, setFunctionCatalogMismatches] = useState<FunctionCatalogMismatch[]>([]);
+  /** An FFT cell's last `fetch_fft` failure (L6 Task 20), typed -- never a bare string (CLAUDE.md §5). Shown in the cell's `JsCellFrame` note slot. */
+  const [fftErrors, setFftErrors] = useState<Map<string, IpcError>>(new Map());
 
   const containerRef = useRef<HTMLDivElement>(null);
   const sandboxHostRef = useRef<SandboxHost | null>(null);
@@ -149,8 +155,16 @@ export default function NotebookPage() {
   const sessionSpanSeqRef = useRef(0);
   /** Every js cell's currently bound identity (`bindingIdentity`), so the channel-bind effect below only *starts a new run* for a cell whose binding actually changed -- this is purely the "should a new initial bind start" decision; it is never consulted as a staleness guard (that is `cellRunSequencerRef`'s job, below, review-task13c.md's Major fix). */
   const boundIdentityRef = useRef<Map<string, string>>(new Map());
-  /** One shared run-sequence counter per `js` cell (`model/cellRunSequencer.ts`), used by *every* channel-window run for that cell -- the initial-bind effect below and each `ChartCell`'s gesture-settle refetch (`renderJsCell`'s `onViewportSettled`) alike -- so whichever kind of run started last always wins, regardless of which one resolves first (fix for review-task13c.md's Major: an initial bind and a settle previously carried independent guards that never invalidated each other). */
+  /** One shared run-sequence counter per `js` cell (`model/cellRunSequencer.ts`), used by *every* channel-window run for that cell -- the initial-bind effect below and each `ChartCell`'s gesture-settle refetch (`renderJsCell`'s `onViewportSettled`) alike -- so whichever kind of run started last always wins, regardless of which one resolves first (fix for review-task13c.md's Major: an initial bind and a settle previously carried independent guards that never invalidated each other). Shared with the FFT bind effect below (L6 Task 20) -- one counter per cell id regardless of which arm the cell resolves to, never a second counter. */
   const cellRunSequencerRef = useRef<CellRunSequencer>(new CellRunSequencer());
+  /** The last decoded spectrum this page fetched for each FFT cell (L6 Task
+   *  20, Open Question 5), keyed by `cellId`, alongside the `hostVarName`
+   *  it was published under -- so a sandbox rebuild can re-push it (fresh
+   *  `Float64Array`s built from this retained `DecodedFft`, never the
+   *  transferred buffers themselves, which are detached on transfer) rather
+   *  than re-fetching or leaving the cell blank. Cleared when the cell is
+   *  removed from the document or its binding stops being an FFT cell. */
+  const retainedSpectraRef = useRef<Map<string, { hostVarName: string; fft: DecodedFft }>>(new Map());
 
   // One `saveFlow` instance for this page's lifetime (Task 14) -- holds
   // its own `SaveFlowState` behind a closure; `saveFlowState` mirrors it
@@ -219,7 +233,19 @@ export default function NotebookPage() {
       onCellError: (cellId, message) => onCellErrorRef.current(cellId, message),
       onInlineResult: (spanId, text) => onInlineResultRef.current(spanId, text),
       onSpanError: (spanId, message) => onSpanErrorRef.current(spanId, message),
-      onChannelsInvalidated: () => sessionRef.current.onChannelsInvalidated(host, { fetchHostChannel: fetchHostChannelDep })(),
+      onChannelsInvalidated: () => {
+        sessionRef.current.onChannelsInvalidated(host, { fetchHostChannel: fetchHostChannelDep })();
+        // L6 Task 20, Open Question 5: a spectrum has no `TileCache` entry
+        // to re-derive from, so it is re-pushed from this page's own
+        // retained copy -- fresh `Float64Array`s built here, never the
+        // transferred buffers themselves (detached on transfer). No IPC,
+        // no refetch.
+        for (const { hostVarName, fft } of retainedSpectraRef.current.values()) {
+          const f = frequencyAxisHz(fft);
+          const m = Float64Array.from(fft.magnitudes);
+          host.setSpectrumHostVar(hostVarName, f.length, f.buffer as ArrayBuffer, m.buffer as ArrayBuffer);
+        }
+      },
     });
     sandboxHostRef.current = host;
     host.init(SANDBOX_RUNTIME_VERSION);
@@ -477,8 +503,19 @@ export default function NotebookPage() {
         boundIdentityRef.current.delete(cellId);
         cellRunSequencerRef.current.delete(cellId);
         sessionRef.current.removeBoundChannel(cellId);
+        retainedSpectraRef.current.delete(cellId);
       }
     }
+    setFftErrors((prev) => {
+      let next = prev;
+      for (const cellId of prev.keys()) {
+        if (!liveIds.has(cellId)) {
+          if (next === prev) next = new Map(prev);
+          next.delete(cellId);
+        }
+      }
+      return next;
+    });
   }, [state.cells, state.markdown, state.outputs]);
 
   // For each `js` cell newly bound to a real channel (`bindingFor`, R66
@@ -536,8 +573,11 @@ export default function NotebookPage() {
       const cellId = cell.id;
       const code = decodeByteRange(markdown, cell.bodyRange);
       const binding = bindingFor({ id: cellId, code }, sessionDetail, sessionSpanUs, definitionsWithAxis);
-      if (binding === null) {
-        boundIdentityRef.current.delete(cellId);
+      if (binding === null || binding.kind !== "time") {
+        // An FFT binding is handled by the dedicated effect below; either
+        // way, this cell has no time-viewport identity to compare against
+        // here.
+        if (binding === null) boundIdentityRef.current.delete(cellId);
         continue;
       }
 
@@ -562,6 +602,98 @@ export default function NotebookPage() {
       const isStale = () => !cellRunSequencerRef.current.isCurrent(cellId, seq);
 
       void runChannelBind(deps, sessionRef.current.cache, sid, cellId, binding, DEFAULT_CHART_WIDTH_PX, onAction, isStale);
+    }
+  }, [state.cells, state.markdown, state.outputs, sessionDetail, sessionSpanUs, sessionId]);
+
+  // For each `js` cell whose binding is the FFT arm and whose
+  // `bindingIdentity` changed (L6 Task 20, C2 §5.3), fetches its spectrum
+  // through the shared `CellRunSequencer`, exactly the same start/isStale
+  // shape `runChannelBind` above uses -- never a second counter. Depends
+  // only on data (`state.cells`/`state.markdown`/`state.outputs`/
+  // `sessionDetail`/`sessionSpanUs`/`sessionId`), the tightened IPC-effects
+  // rule (wave-2 operating brief §4); its cleanup cancels nothing.
+  //
+  // A cell whose `unrequestable` is non-null never reaches `runFft` at all
+  // -- the note it carries is shown by `renderJsCell` below straight from
+  // `binding.unrequestable`, with no fetch and no host-variable push. A
+  // cell whose identity changes away from its last-requested spectrum
+  // drops any retained copy for it, so a stale spectrum is never re-pushed
+  // under a hostVarName that no longer describes this cell's current
+  // parameters.
+  useEffect(() => {
+    if (state.markdown === null || sessionId === null) return;
+    const markdown = state.markdown;
+    const sid = sessionId;
+
+    for (const cell of state.cells) {
+      if (cell.id === null || cell.kind !== "js") continue;
+      const cellId = cell.id;
+      const code = decodeByteRange(markdown, cell.bodyRange);
+      const binding = bindingFor({ id: cellId, code }, sessionDetail, sessionSpanUs, definitionsWithAxis);
+      if (binding === null || binding.kind !== "fft") {
+        // A cell that used to be an FFT cell (chart-type switch, or an
+        // edit that now names a different channel) keeps no stale
+        // retained spectrum around for a hostVarName nothing binds to
+        // anymore.
+        retainedSpectraRef.current.delete(cellId);
+        continue;
+      }
+
+      const identity = bindingIdentity(binding);
+      if (boundIdentityRef.current.get(cellId) === identity) continue;
+      boundIdentityRef.current.set(cellId, identity);
+
+      if (binding.unrequestable !== null) {
+        retainedSpectraRef.current.delete(cellId);
+        setFftErrors((prev) => {
+          if (!prev.has(cellId)) return prev;
+          const next = new Map(prev);
+          next.delete(cellId);
+          return next;
+        });
+        continue;
+      }
+
+      const fftBinding: FftCellBinding = binding;
+      const deps: FftDeps = {
+        fetchFft: (sessId, channelId, lap, params, averaging) => fetchFft(sessId, channelId, lap, params, averaging),
+      };
+      const dispatchFft = (action: FftAction) => {
+        if (action.type === "spectrum") {
+          // MAX_FFT_BINS is checked again here, after decode, against the
+          // decoded spectrum's actual bin count -- the pre-fetch check in
+          // `jsCellBinding.ts`'s `bindingForFft` is a conservative estimate
+          // off the resolved window size, not a promise about the real FFT
+          // convention `fetch_fft` used (R79 Q4, R80 Q2). Over the cap: show
+          // the note, push no host variable, and never retain the spectrum.
+          if (exceedsBinCap(action.fft.magnitudes.length)) {
+            retainedSpectraRef.current.delete(action.cellId);
+            setFftErrors((prev) =>
+              new Map(prev).set(action.cellId, {
+                kind: "internal",
+                message: "This spectrum has more bins than the chart can draw — reduce the window size.",
+              })
+            );
+            return;
+          }
+          retainedSpectraRef.current.set(action.cellId, { hostVarName: fftBinding.hostVarName, fft: action.fft });
+          setFftErrors((prev) => {
+            if (!prev.has(action.cellId)) return prev;
+            const next = new Map(prev);
+            next.delete(action.cellId);
+            return next;
+          });
+          const f = frequencyAxisHz(action.fft);
+          const m = Float64Array.from(action.fft.magnitudes);
+          sandboxHostRef.current?.setSpectrumHostVar(fftBinding.hostVarName, f.length, f.buffer as ArrayBuffer, m.buffer as ArrayBuffer);
+        } else {
+          setFftErrors((prev) => new Map(prev).set(action.cellId, action.error));
+        }
+      };
+      const seq = cellRunSequencerRef.current.start(cellId);
+      const isStale = () => !cellRunSequencerRef.current.isCurrent(cellId, seq);
+
+      void runFft(deps, sid, cellId, fftBinding.request, dispatchFft, isStale);
     }
   }, [state.cells, state.markdown, state.outputs, sessionDetail, sessionSpanUs, sessionId]);
 
@@ -663,6 +795,20 @@ export default function NotebookPage() {
                   ? `Channel "${unresolved}" is not part of this session.`
                   : undefined;
               return <JsCellFrame cellId={cellId} heightPx={heightPx} error={cellErrors.get(cellId)} note={note} sendLayout={sendLayout} />;
+            }
+
+            if (binding.kind === "fft") {
+              // L6 Task 20 (R78 Task 19's Q2 precedent, R78 Task 18's Q2):
+              // an FFT cell has no time viewport, so it mounts the plain
+              // `JsCellFrame` -- no pan, no zoom, no hover readout, no
+              // cursor readout, and no `sendTransform`. `unrequestable`
+              // (too few samples, or over the bin cap) shows its reason in
+              // the note slot and never reaches `runFft` at all (the FFT
+              // bind effect above); a real fetch failure shows the typed
+              // error's message instead.
+              const fftError = fftErrors.get(cellId);
+              const note = binding.unrequestable ?? (fftError !== undefined ? fftError.message : undefined);
+              return <JsCellFrame cellId={cellId} heightPx={heightPx} note={note} sendLayout={sendLayout} />;
             }
 
             if (binding.mountedChannelId === null) {

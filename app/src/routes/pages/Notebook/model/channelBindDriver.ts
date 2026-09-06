@@ -27,7 +27,7 @@ import type { DecodedHostChannel } from "../../../../ipc/hostChannel";
 import type { DecodedTile } from "../../../../ipc/tiles";
 import { tileToChannelData } from "./channelData";
 import type { BoundChannel } from "./channelRebind";
-import type { JsCellBinding, JsCellBindingChannel } from "./jsCellBinding";
+import type { JsCellBindingChannel, TimeCellBinding } from "./jsCellBinding";
 import { chooseTier, pointBudget, tileRange } from "./tiers";
 import { ensureTiles, type TileCache, type TileCacheKey } from "./tileCache";
 import type { Viewport } from "./viewport";
@@ -279,13 +279,18 @@ async function runChannelBindWindow(
  * {@link runChannelBindWindow}) -- the budget-unchanged skip only applies
  * to a settle re-fetching an *already bound* cell. See
  * {@link runChannelBindWindow} for the shared loop and staleness contract.
+ *
+ * `binding` is always the **time** arm (`kind: "time"`) -- an FFT cell's
+ * binding (L6 Task 20) has no tile-fetch window at all and never reaches
+ * this driver; `Notebook/index.tsx` dispatches an FFT cell's binding to
+ * `model/fftDriver.ts`'s `runFft` instead.
  */
 export async function runChannelBind(
   deps: ChannelBindDeps,
   cache: TileCache,
   sessionId: string,
   cellId: string,
-  binding: JsCellBinding,
+  binding: TimeCellBinding,
   chartWidthPx: number,
   dispatch: ChannelBindDispatch,
   isStale: () => boolean
