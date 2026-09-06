@@ -97,9 +97,24 @@ const UNKNOWN_KIND_FALLBACK = {
   retryable: false,
 };
 
+/** `invalid_argument`'s `detail.field` (`save_track`'s validation failures
+ *  attach `{ field: string }`, `rust/tauri/src/commands/catalog.rs`) names
+ *  which submitted field was rejected — read structurally, never trusted
+ *  to be present or a string, since `detail`'s shape isn't part of the
+ *  kind contract (review `review-shell-data-writes.md` Minor: previously
+ *  never read at all, so every `save_track` validation failure reached the
+ *  banner as an undifferentiated "That request was invalid."). */
+function invalidArgumentFieldName(detail: Record<string, unknown> | undefined): string | null {
+  const field = detail?.field;
+  return typeof field === "string" && field.length > 0 ? field : null;
+}
+
 /** Maps a rejected `invoke` value to user-facing text. Never throws,
  *  regardless of what `e` is (C3 §5: kinds are additive; a value that isn't
- *  even an `IpcError` still gets a generic message). */
+ *  even an `IpcError` still gets a generic message). Routes on `kind`, never
+ *  `message` (CLAUDE.md §5); `invalid_argument` additionally reads the
+ *  structured `detail.field` (not free-text `message`) to name the
+ *  rejected field, when the caller supplied one. */
 export function describeIpcError(e: unknown): DescribedError {
   if (!isIpcErrorLike(e)) {
     return { kind: "unknown", text: UNKNOWN_KIND_FALLBACK.text, retryable: false };
@@ -108,6 +123,13 @@ export function describeIpcError(e: unknown): DescribedError {
   const known = KNOWN_KINDS[e.kind];
   if (known === undefined) {
     return { kind: e.kind, text: UNKNOWN_KIND_FALLBACK.text, retryable: false };
+  }
+
+  if (e.kind === "invalid_argument") {
+    const field = invalidArgumentFieldName(e.detail);
+    if (field !== null) {
+      return { kind: e.kind, text: `That request was invalid: check "${field}".`, retryable: known.retryable };
+    }
   }
 
   return { kind: e.kind, text: known.text, retryable: known.retryable };

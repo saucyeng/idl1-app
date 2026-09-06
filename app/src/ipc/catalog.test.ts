@@ -187,3 +187,46 @@ describe("rescanTracks", () => {
     expect(invoke).toHaveBeenCalledWith("rescan_tracks", { sessionId: "s1" });
   });
 });
+
+describe("saveTrack", () => {
+  it("save_track resolves — calls invoke with the draft under the 'track' key and returns the result unchanged", async () => {
+    // Arrange
+    const { invoke } = await import("@tauri-apps/api/core");
+    const draft = {
+      track_id: null,
+      name: "Test Track",
+      venue_name: "Test Venue",
+      lap_timing: null,
+      neutral_zones: [],
+      sector_gates: [],
+      reference_polyline: [],
+    };
+    const result = { track: { track_id: "t1" }, stale_session_ids: [], warnings: [] };
+    (invoke as ReturnType<typeof vi.fn>).mockResolvedValue(result);
+    const { saveTrack } = await import("./catalog");
+
+    // Act
+    const returned = await saveTrack(draft);
+
+    // Assert
+    expect(returned).toBe(result);
+    expect(invoke).toHaveBeenCalledWith("save_track", { track: draft });
+  });
+});
+
+describe("deleteTrack", () => {
+  it("delete_track resolves — calls invoke with the track id and returns the report unchanged", async () => {
+    // Arrange
+    const { invoke } = await import("@tauri-apps/api/core");
+    const report = { track_id: "t1", stale_session_ids: ["s1"], warnings: [] };
+    (invoke as ReturnType<typeof vi.fn>).mockResolvedValue(report);
+    const { deleteTrack } = await import("./catalog");
+
+    // Act
+    const result = await deleteTrack("t1");
+
+    // Assert
+    expect(result).toBe(report);
+    expect(invoke).toHaveBeenCalledWith("delete_track", { trackId: "t1" });
+  });
+});

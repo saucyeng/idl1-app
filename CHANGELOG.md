@@ -15,6 +15,33 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
   §2/§7 (the quarantine sidecar shape). Per-task detail in the bullets
   below; ruling R87's incidental catalog-workbook-indexing fix is its own
   bullet.
+- **L8x's post-lane TS shell task: the Data tab wires the five write
+  commands (2026-09-06, no spec change needed — C3 §3.2/§3.10 already
+  cover this).** `app/src/ipc/catalog.ts` types the four `TrackDetail`
+  fields ruling R86 fixed (`Gate`/`SectorGate`/`NeutralZone`/`GpsFix`/
+  `LapTiming`, replacing `unknown`/`unknown[]`) and adds `saveTrack`/
+  `deleteTrack`/`TrackDraft`/`SaveTrackResult`/`DeleteTrackReport`; a new
+  `app/src/ipc/maintenance.ts` adds `listQuarantine`/`resolveQuarantine`/
+  `verifyDataDir`. `Data/ipcStubs.ts`'s four placeholder stubs are deleted
+  along with the toolbar's placeholder "Review quarantine" button.
+  `TrackDetailPane.tsx` renders every `TrackDetail` field as text (a new
+  pure `Data/trackDetailFormat.ts` formats gates as decimal degrees with
+  a `°` unit) and gains Name/Venue edit (`saveTrack`, via a new pure
+  `Data/trackDraft.ts` that carries the untouched lap-timing/sector/
+  neutral-zone/polyline fields through verbatim — **no map-based gate
+  placement editor; that stays wave 3, ruling R54**) and Delete
+  (`deleteTrack`, confirmed first). Both surface `stale_session_ids` as a
+  "Rescan N sessions" button, wired through the existing
+  `startMaintenanceAction` driver via a new `Data/maintenance.ts`
+  `runRescanSessions`/`summarizeRescanSessionsReport` (parallel per-session
+  `rescanTracks` calls, one aggregated summary). A new `MaintenancePanel.tsx`
+  (behind a toolbar toggle, so it fetches only once opened) lists
+  quarantine entries with Restore/Discard per entry (Discard confirmed
+  first) and a Verify action (`repair: false`); a second, separate Repair
+  button runs `repair: true` and refreshes the quarantine list. Parity gap,
+  unchanged from the L8x lane's own note: the track *editor* (create/edit
+  geometry on a map) is still wave 3 — this task only closes the Name/Venue
+  and delete/quarantine/verify half of the Data tab's remaining stubs.
 - **L8x Task 7: quarantine and verify commands (2026-09-06, idl-rs-tauri,
   ruling R86, no spec change needed beyond Task 1's C3 amendment).**
   `tauri/src/commands/maintenance.rs` (new): `list_quarantine` and

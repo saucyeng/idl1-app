@@ -10,6 +10,11 @@ import { TrackDetailPane } from "./TrackDetailPane";
 interface TrackResultsProps {
   sortField: SortField;
   sortAscending: boolean;
+  /** Forwarded to [[TrackDetailPane]]'s "Rescan N sessions" action
+   *  (`stale_session_ids`, C3 §3.2 ruling R86) — the Tracks view has no
+   *  maintenance-action state of its own, so this delegates to the shared
+   *  toolbar driver `index.tsx` owns. */
+  onRescanSessions: (sessionIds: string[]) => void;
 }
 
 type State =
@@ -35,7 +40,7 @@ function reducer(_state: State, action: Action): State {
  *  C3 §4) — never on hover. Sorting is local recomputation over the
  *  already-fetched list, driven by `sortField`/`sortAscending` from the
  *  shared sort control in `index.tsx` (`sortFieldsForView("tracks")`). */
-export function TrackResults({ sortField, sortAscending }: TrackResultsProps) {
+export function TrackResults({ sortField, sortAscending, onRescanSessions }: TrackResultsProps) {
   const [state, dispatch] = useReducer(reducer, { status: "loading" });
   const [selectedTrackId, setSelectedTrackId] = useState<string | null>(null);
 
@@ -112,7 +117,12 @@ export function TrackResults({ sortField, sortAscending }: TrackResultsProps) {
       )}
       {selectedTrackId !== null && (
         <div className="data-detail">
-          <TrackDetailPane trackId={selectedTrackId} onClose={() => setSelectedTrackId(null)} />
+          <TrackDetailPane
+            trackId={selectedTrackId}
+            onClose={() => setSelectedTrackId(null)}
+            onChanged={() => loadTracks(() => false)}
+            onRescanSessions={onRescanSessions}
+          />
         </div>
       )}
     </div>

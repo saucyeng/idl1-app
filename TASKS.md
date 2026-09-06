@@ -196,16 +196,29 @@ are defined in `docs/superpowers/specs/2026-09-02-idl1-rewrite-design.md` §10.
       `list_workbooks` was empty after every restart — step 6 now walks
       `workbooks/*.idl1wb` and upserts rows, and `create_workbook`/
       `save_workbook` upsert their own row. Task 8 is this doc sweep and
-      the lane merge gate. **Unblocks in the UI** (post-lane TS shell
-      tasks, none scheduled by this lane): `app/src/ipc/catalog.ts` gains
-      the typed `Gate`/`LapTiming`/`TrackDraft`/`SaveTrackResult`/
-      `DeleteTrackReport` types plus `saveTrack`/`deleteTrack`; a new
-      `app/src/ipc/maintenance.ts` gains `listQuarantine`/
-      `resolveQuarantine`/`verifyDataDir`; `Data/ipcStubs.ts`'s four stubs
-      are deleted; `TrackDetailPane.tsx` gains real gate/sector lists plus
-      Name/Venue edit and Delete (map gate placement stays wave 3, R54);
-      the Data tab's maintenance panel gains a quarantine review list
-      (Restore/Discard per entry) and a verify action.
+      the lane merge gate. **Unblocks in the UI, landed (2026-09-06,
+      post-lane TS shell task):** `app/src/ipc/catalog.ts` gains the typed
+      `Gate`/`SectorGate`/`NeutralZone`/`GpsFix`/`LapTiming`/`TrackDraft`/
+      `SaveTrackResult`/`DeleteTrackReport` types plus `saveTrack`/
+      `deleteTrack`; a new `app/src/ipc/maintenance.ts` gains
+      `listQuarantine`/`resolveQuarantine`/`verifyDataDir`;
+      `Data/ipcStubs.ts`'s four stubs (and the toolbar's placeholder
+      "Review quarantine" button) are deleted; `TrackDetailPane.tsx`
+      renders real gate/sector/neutral-zone/reference-polyline text (a new
+      pure `Data/trackDetailFormat.ts`, decimal degrees with a `°` unit)
+      and gains Name/Venue edit (`saveTrack`, via a new pure
+      `Data/trackDraft.ts`) and Delete (`deleteTrack`, confirmed first);
+      both surface `stale_session_ids` as a "Rescan N sessions" button over
+      the existing `startMaintenanceAction` driver (new
+      `runRescanSessions`/`summarizeRescanSessionsReport` in
+      `Data/maintenance.ts`). A new `MaintenancePanel.tsx`, behind a
+      toolbar toggle, lists quarantine entries with Restore/Discard
+      (Discard confirmed) and a Verify action, with a separate explicit
+      Repair (`repair: true`) once a Verify report exists. **Parity gap,
+      unaffected by this landing:** the track editor itself — creating or
+      editing lap-timing/sector/neutral-zone geometry on a map — stays wave
+      3 per ruling R54; this task's Name/Venue edit is the only write path
+      into an existing track's non-geometry fields.
 - [ ] L9 mobile scaffold
 - [ ] L11 LAN sync
 

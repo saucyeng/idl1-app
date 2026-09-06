@@ -49,4 +49,35 @@ describe("describeIpcError", () => {
 
     expect(result.text.length).toBeGreaterThan(0);
   });
+
+  it("describeIpcError — kind \"invalid_argument\" with detail.field — names the rejected field", () => {
+    const result = describeIpcError({
+      kind: "invalid_argument",
+      message: "name must not be empty",
+      detail: { field: "name" },
+    });
+
+    expect(result.kind).toBe("invalid_argument");
+    expect(result.text).toBe('That request was invalid: check "name".');
+    expect(result.retryable).toBe(false);
+  });
+
+  it("describeIpcError — kind \"invalid_argument\" with no detail — falls back to the generic text", () => {
+    const result = describeIpcError({
+      kind: "invalid_argument",
+      message: "name must not be empty",
+    });
+
+    expect(result.text).toBe("That request was invalid.");
+  });
+
+  it("describeIpcError — kind \"invalid_argument\" with a non-string detail.field — falls back to the generic text, never throws", () => {
+    expect(() =>
+      describeIpcError({ kind: "invalid_argument", message: "bad", detail: { field: 42 } }),
+    ).not.toThrow();
+
+    const result = describeIpcError({ kind: "invalid_argument", message: "bad", detail: { field: 42 } });
+
+    expect(result.text).toBe("That request was invalid.");
+  });
 });

@@ -1,12 +1,12 @@
 import type { RebuildReport, RescanReport } from "../../../ipc/catalog";
 import { describeIpcError } from "./errors";
-import { NotImplementedError } from "./ipcStubs";
 
 /** The toolbar's overflow menu runs one long-running maintenance action at
- *  a time (`rebuild_catalog`, or a stubbed write command) and shows its
- *  outcome. Unlike `importQueue.ts`, there is no queue: these are one-shot
- *  operator actions, not a batch of files, so a second `START` while one is
- *  `"running"` is refused rather than enqueued (Step 1's test). */
+ *  a time (`rebuild_catalog`, a track write's follow-up rescan, etc.) and
+ *  shows its outcome. Unlike `importQueue.ts`, there is no queue: these are
+ *  one-shot operator actions, not a batch of files, so a second `START`
+ *  while one is `"running"` is refused rather than enqueued (Step 1's
+ *  test). */
 export interface MaintenanceState {
   /** The C3/stub command name of the action last started (e.g.
    *  `"rebuild_catalog"`), or `""` before any action has ever run. */
@@ -68,17 +68,11 @@ export function summarizeRebuildReport(report: RebuildReport): string {
   return `Indexed ${plural(sessions_indexed, "session")}, ${plural(workbooks_indexed, "workbook")}, ${plural(tracks_indexed, "track")} in ${seconds} s.`;
 }
 
-/** Text for a failed maintenance action. A [[NotImplementedError]] (any
- *  `ipcStubs.ts` stub) reads as naming the command and saying it "isn't
- *  wired up yet", rather than `describeIpcError`'s generic fallback for an
- *  error shape C3 §2 never defined (`NotImplementedError` is not an
- *  `IpcError`, by `ipcStubs.ts`'s own design). Every other rejection routes
- *  through `describeIpcError` (CLAUDE.md §5: route on kind, never on
- *  message). */
+/** Text for a failed maintenance action. Every rejection routes through
+ *  `describeIpcError` (CLAUDE.md §5: route on kind, never on message) —
+ *  `describeIpcError` itself never throws, regardless of what shape the
+ *  rejection turns out to be (C3 §5: kinds are additive). */
 function describeMaintenanceError(error: unknown): string {
-  if (error instanceof NotImplementedError) {
-    return `${error.command} isn't wired up yet.`;
-  }
   return describeIpcError(error).text;
 }
 
@@ -87,10 +81,9 @@ function describeMaintenanceError(error: unknown): string {
  *  settles. A no-op, touching nothing, if `state.status` is already
  *  `"running"` (Step 1's test: a second start is refused, not queued).
  *  `run` never throws synchronously by contract (every caller wraps a
- *  Promise-returning IPC/stub call) — a rejection is routed to `FAILED`
- *  regardless of shape, so a stub's [[NotImplementedError]] can never
- *  surface as an unhandled rejection or a crash (Step 1's "never a
- *  crash" test). */
+ *  Promise-returning IPC call) — a rejection is routed to `FAILED`
+ *  regardless of shape, so an unexpected error can never surface as an
+ *  unhandled rejection or a crash (Step 1's "never a crash" test). */
 export function startMaintenanceAction(
   state: MaintenanceState,
   actionName: string,
@@ -169,25 +162,88 @@ export function runRescanTracks(rescanTracks: RescanTracksFn, sessionId: string)
   return () => rescanTracks(sessionId).then(summarizeRescanReport);
 }
 
-/** Structurally matches the proposed `list_quarantine` stub (IPC need 4). */
-export type ListQuarantineFn = () => Promise<unknown[]>;
+/** Aggregates one `runRescanSessions` call's per-session `RescanReport`s
+ *  into a single toolbar summary line, e.g. "Rescanned 3 sessions: indexed
+ *  4 track visits, 9 laps total. Cleared main_lap_number. 1 warning." A
+ *  session-count line always leads, even when every count is zero, so the
+ *  action's scope ("how many sessions did this touch") is never implicit
+ *  in a report that could otherwise be all zeros. */
+export function summarizeRescanSessionsReport(reports: RescanReport[]): string {
+  const visits = reports.reduce((sum, r) => sum + r.visits_indexed, 0);
+  const laps = reports.reduce((sum, r) => sum + r.laps_indexed, 0);
+  const flagsCleared = [...new Set(reports.flatMap((r) => r.flags_cleared))];
+  const warnings = reports.flatMap((r) => r.warnings);
 
-/** Wraps `listQuarantine` as a `run` function. The entry shape is IPC need
- *  4's proposed `QuarantineEntry[]`, not yet a landed contract type, so
- *  this counts entries rather than parsing them. */
-export function runListQuarantine(listQuarantine: ListQuarantineFn): () => Promise<string> {
-  return () => listQuarantine().then((entries) => `${plural(entries.length, "item")} awaiting review.`);
+  const parts = [
+    `Rescanned ${plural(reports.length, "session")}: indexed ${plural(visits, "track visit")}, ${plural(laps, "lap")} total.`,
+  ];
+  if (flagsCleared.length > 0) {
+    parts.push(`Cleared ${flagsCleared.join(", ")}.`);
+  }
+  if (warnings.length > 0) {
+    parts.push(`${plural(warnings.length, "warning")}: ${warnings.join("; ")}`);
+  }
+  return parts.join(" ");
 }
 
-/** Structurally matches the proposed `resolve_quarantine` stub
- *  (IPC need 4). */
-export type ResolveQuarantineFn = (entryId: string, action: "retry" | "discard") => Promise<void>;
+/** One session id's outcome from a `runRescanSessions` batch: either the
+ *  real `RescanReport` it produced, or the [[describeIpcError]] text its
+ *  rejection described. */
+export interface RescanSessionOutcome {
+  sessionId: string;
+  result: { status: "succeeded"; report: RescanReport } | { status: "failed"; error: string };
+}
 
-/** Wraps `resolveQuarantine` as a `run` function. */
-export function runResolveQuarantine(
-  resolveQuarantine: ResolveQuarantineFn,
-  entryId: string,
-  action: "retry" | "discard",
-): () => Promise<string> {
-  return () => resolveQuarantine(entryId, action).then(() => (action === "retry" ? "Quarantine entry was retried." : "Quarantine entry was discarded."));
+/** Turns a `runRescanSessions` batch's per-session outcomes into one
+ *  toolbar summary line — never discards a successful session's report
+ *  just because a sibling session in the same batch failed (review
+ *  `review-shell-data-writes.md` Important). Every succeeded report is
+ *  folded through [[summarizeRescanSessionsReport]] as before; a leading
+ *  "N of M rescanned" clause is added only when at least one session
+ *  failed, followed by each failed session's id and error text, so a
+ *  partial batch reads as partial rather than as an unqualified success. */
+export function summarizeRescanSessionsOutcomes(outcomes: RescanSessionOutcome[]): string {
+  const succeeded = outcomes.filter((o): o is RescanSessionOutcome & { result: { status: "succeeded"; report: RescanReport } } => o.result.status === "succeeded");
+  const failed = outcomes.filter((o): o is RescanSessionOutcome & { result: { status: "failed"; error: string } } => o.result.status === "failed");
+
+  if (failed.length === 0) {
+    return summarizeRescanSessionsReport(succeeded.map((o) => o.result.report));
+  }
+
+  const parts = [`${succeeded.length} of ${outcomes.length} sessions rescanned.`];
+  if (succeeded.length > 0) {
+    parts.push(summarizeRescanSessionsReport(succeeded.map((o) => o.result.report)));
+  }
+  parts.push(
+    `${plural(failed.length, "session")} failed: ${failed.map((o) => `${o.sessionId} (${o.result.error})`).join("; ")}.`,
+  );
+  return parts.join(" ");
+}
+
+/** Wraps `rescanTracks` (C3 §3.2, ruling R83) as a `run` function that
+ *  rescans every id in `sessionIds` — the "Rescan N sessions" action
+ *  `save_track`/`delete_track`'s `stale_session_ids` offers (C3 §3.2,
+ *  ruling R86). Runs every rescan concurrently (each is independent, keyed
+ *  by its own session id) via `Promise.allSettled` rather than
+ *  `Promise.all`, so one session's failure (e.g. its directory vanished
+ *  meanwhile) never discards the other sessions' already-succeeded
+ *  `RescanReport`s (review `review-shell-data-writes.md` Important) — the
+ *  batch resolves honestly through [[summarizeRescanSessionsOutcomes]] even
+ *  when some, or all, sessions failed; [[startMaintenanceAction]]'s
+ *  one-in-flight rule (a second `START` while this batch's promise is
+ *  still settling is refused, its own settle silently dropped rather than
+ *  overwriting the newer run) is untouched by this change. */
+export function runRescanSessions(rescanTracks: RescanTracksFn, sessionIds: string[]): () => Promise<string> {
+  return () =>
+    Promise.allSettled(sessionIds.map((id) => rescanTracks(id))).then((settled) =>
+      summarizeRescanSessionsOutcomes(
+        settled.map((outcome, i) => ({
+          sessionId: sessionIds[i],
+          result:
+            outcome.status === "fulfilled"
+              ? { status: "succeeded" as const, report: outcome.value }
+              : { status: "failed" as const, error: describeMaintenanceError(outcome.reason) },
+        })),
+      ),
+    );
 }
