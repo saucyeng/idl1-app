@@ -2,8 +2,15 @@ import { describe, expect, it } from "vitest";
 
 import type { DecodedTile } from "../../../../ipc/tiles";
 import { TileCache, type TileCacheKey } from "../model/tileCache";
-import type { BoundChannel } from "../model/channelRebind";
+import type { BoundChannel, HostChannelRebindDeps } from "../model/channelRebind";
 import { NotebookSession, type ChannelRebindSandbox } from "./NotebookSession";
+
+/** A `HostChannelRebindDeps` whose `fetchHostChannel` fails every call — every case in this file binds only `"session"` channels, none of which reach it. */
+function neverFetchesHostChannel(): HostChannelRebindDeps {
+  return {
+    fetchHostChannel: () => Promise.reject(new Error("fetchHostChannel not expected in this test")),
+  };
+}
 
 /** Builds a small fake `DecodedTile` from parallel arrays, matching the fixture style in `model/channelRebind.test.ts`. */
 function fakeTile(columnTUs: bigint[], columnMean: number[], tileIndex = 0): DecodedTile {
@@ -44,14 +51,14 @@ describe("NotebookSession", () => {
     cache.put({ ...forkKey, tileIndex: 0 }, fakeTile([0n, 1_000_000n], [1, 2], 0));
     cache.put({ ...wheelKey, tileIndex: 0 }, fakeTile([0n], [5], 0));
     const session = new NotebookSession(cache);
-    const forkBound: BoundChannel = { name: "fork", key: forkKey, range: { first: 0, last: 0 }, startUs: 0, endUs: 2_000_000, budget: 100 };
-    const wheelBound: BoundChannel = { name: "wheel", key: wheelKey, range: { first: 0, last: 0 }, startUs: 0, endUs: 1_000_000, budget: 100 };
+    const forkBound: BoundChannel = { source: "session", name: "fork", key: forkKey, range: { first: 0, last: 0 }, startUs: 0, endUs: 2_000_000, budget: 100 };
+    const wheelBound: BoundChannel = { source: "session", name: "wheel", key: wheelKey, range: { first: 0, last: 0 }, startUs: 0, endUs: 1_000_000, budget: 100 };
     session.setBoundChannels("cell-a", [forkBound]);
     session.setBoundChannels("cell-b", [wheelBound]);
     const sandbox = fakeSandbox();
     const bytesBefore = cache.bytesUsed();
 
-    const onChannelsInvalidated = session.onChannelsInvalidated(sandbox);
+    const onChannelsInvalidated = session.onChannelsInvalidated(sandbox, neverFetchesHostChannel());
     onChannelsInvalidated();
 
     expect(sandbox.calls).toEqual([
@@ -66,7 +73,7 @@ describe("NotebookSession", () => {
     const forkKey = key();
     cache.put({ ...forkKey, tileIndex: 0 }, fakeTile([0n], [1], 0));
     const session = new NotebookSession(cache);
-    session.setBoundChannels("cell-a", [{ name: "fork", key: forkKey, range: { first: 0, last: 0 }, startUs: 0, endUs: 1_000_000, budget: 100 }]);
+    session.setBoundChannels("cell-a", [{ source: "session", name: "fork", key: forkKey, range: { first: 0, last: 0 }, startUs: 0, endUs: 1_000_000, budget: 100 }]);
 
     session.removeBoundChannel("cell-a");
 
@@ -78,8 +85,8 @@ describe("NotebookSession", () => {
     const forkKey = key({ channelId: "front-fork" });
     const wheelKey = key({ channelId: "rear-wheel-speed" });
     const session = new NotebookSession(cache);
-    const forkBound: BoundChannel = { name: "fork", key: forkKey, range: { first: 0, last: 0 }, startUs: 0, endUs: 1_000_000, budget: 100 };
-    const wheelBound: BoundChannel = { name: "wheel", key: wheelKey, range: { first: 0, last: 0 }, startUs: 0, endUs: 1_000_000, budget: 100 };
+    const forkBound: BoundChannel = { source: "session", name: "fork", key: forkKey, range: { first: 0, last: 0 }, startUs: 0, endUs: 1_000_000, budget: 100 };
+    const wheelBound: BoundChannel = { source: "session", name: "wheel", key: wheelKey, range: { first: 0, last: 0 }, startUs: 0, endUs: 1_000_000, budget: 100 };
 
     session.setBoundChannels("cell-a", [forkBound, wheelBound]);
 

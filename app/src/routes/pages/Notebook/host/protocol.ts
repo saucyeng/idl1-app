@@ -11,11 +11,19 @@
  * scalar/object (`laps`, `session`, `constants`, per C2 §5.1) is wrapped as
  * `{ kind: "json" }`; a decoded channel travels as two `ArrayBuffer`s in
  * `postMessage`'s transfer list rather than as a copied JSON array of
- * numbers (performance budget P7).
+ * numbers (performance budget P7). A decoded FFT spectrum (L6 Task 19) is
+ * its own sibling arm rather than reusing `"channel"`'s `{ t, v }` shape:
+ * its axis is frequency, not time, so silently relabelling `t` as Hz would
+ * be the wrong unit under the right name. `f` (Hz) and `m` (magnitude) are
+ * the raw bytes backing a **`Float64Array`** on each end, same convention
+ * as `"channel"`'s `t`/`v` -- `sandbox/main.ts`'s `materializeHostVar` does
+ * `new Float64Array(payload.f)`/`new Float64Array(payload.m)`
+ * unconditionally on receipt.
  */
 export type HostVarPayload =
   | { kind: "json"; value: unknown }
-  | { kind: "channel"; length: number; t: ArrayBuffer; v: ArrayBuffer };
+  | { kind: "channel"; length: number; t: ArrayBuffer; v: ArrayBuffer }
+  | { kind: "spectrum"; length: number; f: ArrayBuffer; m: ArrayBuffer };
 
 /** One cell as the host hands it to the sandbox for (re)definition. */
 export interface SandboxCell {
@@ -40,9 +48,10 @@ export type HostToSandboxMessage =
  * A host→sandbox message that asks the sandbox to evaluate one inline
  * `${…}` prose span (C2 §5.2, the 2026-09-05 tracked note "L6 inline
  * `${…}` prose spans have no host→sandbox trigger yet",
- * `runs/2026-09-03/decisions.md`). `spanId` is a UI-assigned id for this
- * one occurrence (`components/ProseSpan.tsx`'s `extractInlineSpans`), not a
- * C2 fence-string cell id — it never names an actual cell. `expr` is the
+ * `runs/2026-09-03/decisions.md`). `spanId` is Rust's own id for this
+ * occurrence (`CellOutput.prose_spans[i].id`, ledger R70/R78,
+ * `model/proseBlocks.ts`'s `ProseSpanRef.id`), not a C2 fence-string cell
+ * id — it never names an actual cell. `expr` is the
  * raw text between `${` and `}` (C2 §5.2's `js_expression`), evaluated in
  * the sandbox's current host-mediated scope (`sandbox/main.ts`'s
  * `SandboxRuntime.evalInline`, which reuses `compileCell`) — never parsed
@@ -165,5 +174,30 @@ export function channelPayload(
       value: { kind: "channel", length, t, v },
     },
     transfer: [t, v],
+  };
+}
+
+/**
+ * Builds a `setHostVar` message for a decoded FFT spectrum (L6 Task 19; C2
+ * §5.3) plus its transfer list, mirroring {@link channelPayload} exactly
+ * except for the axis: `f` (Hz, built from `model/fftRequest.ts`'s
+ * `frequencyAxisHz`) and `m` (magnitude, `DecodedFft.magnitudes` widened
+ * from `Float32Array` to `Float64Array`) rather than `t`/`v`. `f`/`m` must
+ * not be read again by the caller after this call -- they are neutered once
+ * transferred.
+ */
+export function spectrumPayload(
+  name: string,
+  length: number,
+  f: ArrayBuffer,
+  m: ArrayBuffer
+): { message: { type: "setHostVar"; name: string; value: HostVarPayload }; transfer: Transferable[] } {
+  return {
+    message: {
+      type: "setHostVar",
+      name,
+      value: { kind: "spectrum", length, f, m },
+    },
+    transfer: [f, m],
   };
 }

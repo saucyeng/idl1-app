@@ -1,34 +1,28 @@
 import type { ReactNode } from "react";
 
 import type { CellOutput } from "../../../../ipc/workbook";
+import type { ProseBlock as ProseBlockData } from "../model/proseBlocks";
 import type { ScannedCell, ScannedDoc } from "../model/cells";
 import MathCell from "./MathCell";
 import TableCell from "./TableCell";
-import ProseSpan from "./ProseSpan";
+import ProseBlock from "./ProseBlock";
 
 /** {@link CellListProps.frame}'s default — no wrapper, returns `output` unchanged. */
 function identityFrame(_cell: ScannedCell, output: ReactNode): ReactNode {
   return output;
 }
 
-/** Decodes `[start, end)` UTF-8 byte offsets (`model/cells.ts`'s convention) back into text. `null` in, `null` out. */
-function proseText(markdown: string, range: [number, number] | null): string | null {
-  if (range === null) return null;
-  const bytes = new TextEncoder().encode(markdown);
-  return new TextDecoder().decode(bytes.subarray(range[0], range[1]));
-}
-
 /** Props for {@link CellList}. */
 export interface CellListProps {
   /** This document's non-authoritative fence scan (`model/cells.ts`). */
   doc: ScannedDoc;
-  /** The document's own text, for decoding `doc.cells[i]`'s prose byte ranges. */
-  markdown: string;
+  /** Every prose block this document has right now, keyed by `blockId` (`model/proseBlocks.ts`'s `"{cellId}::before"`/`"{cellId}::after"`) — computed once by `Notebook/index.tsx` from `state.cells`/`state.markdown`/`state.outputs` rather than re-decoded here. */
+  proseBlocks: ReadonlyMap<string, ProseBlockData>;
   /** The last `evalWorkbook` result, by `cell_id` — a cell with no entry has not yet evaluated. */
   outputs: ReadonlyMap<string, CellOutput>;
-  /** Every inline `${…}` span's last-received result, by `spanId` (`ProseSpan`'s `extractInlineSpans`). */
+  /** Every inline `${…}` span's last-received result, by span id (`model/proseBlocks.ts`'s `ProseSpanRef.id`). */
   inlineResults: ReadonlyMap<string, string>;
-  /** Every inline `${…}` span's last-received error message, by `spanId` (R66 item 2, `ProseSpan`'s `spanErrors` prop). */
+  /** Every inline `${…}` span's last-received error message, by span id (R66 item 2, `ProseBlock`'s `spanErrors` prop). */
   spanErrors: ReadonlyMap<string, string>;
   /**
    * Renders a `js`-kind cell's sandbox-mounted output. Injected rather than
@@ -76,13 +70,13 @@ export interface CellListProps {
  * document is corrected, is what resolves it, not anything in this
  * component.
  */
-export default function CellList({ doc, markdown, outputs, inlineResults, spanErrors, renderJsCell, frame = identityFrame }: CellListProps) {
+export default function CellList({ doc, proseBlocks, outputs, inlineResults, spanErrors, renderJsCell, frame = identityFrame }: CellListProps) {
   return (
     <div className="cell-list">
       {doc.cells.map((cell, index) => {
-        const before = proseText(markdown, cell.proseBeforeRange);
-        const after = proseText(markdown, cell.proseAfterRange);
         const key = cell.id ?? `unresolved-${index}`;
+        const before = cell.id !== null ? proseBlocks.get(`${cell.id}::before`) : undefined;
+        const after = cell.id !== null ? proseBlocks.get(`${cell.id}::after`) : undefined;
         const output = cell.id !== null ? outputs.get(cell.id) : undefined;
         const rendered =
           output === undefined ? (
@@ -97,12 +91,12 @@ export default function CellList({ doc, markdown, outputs, inlineResults, spanEr
 
         return (
           <div className="cell-list-item" key={key}>
-            {before !== null && (
-              <ProseSpan text={before} spanIdPrefix={`${key}-before`} results={inlineResults} spanErrors={spanErrors} />
+            {before !== undefined && (
+              <ProseBlock content={before.content} inlineResults={inlineResults} spanErrors={spanErrors} />
             )}
             {frame(cell, rendered)}
-            {after !== null && (
-              <ProseSpan text={after} spanIdPrefix={`${key}-after`} results={inlineResults} spanErrors={spanErrors} />
+            {after !== undefined && (
+              <ProseBlock content={after.content} inlineResults={inlineResults} spanErrors={spanErrors} />
             )}
           </div>
         );

@@ -1,27 +1,49 @@
+import type { DecodedHostChannel } from "../../../../ipc/hostChannel";
 import type { DecodedTile } from "../../../../ipc/tiles";
 import { tileToChannelData, type ChannelData } from "./channelData";
 import type { TileCache, TileCacheKey } from "./tileCache";
 
 /**
- * One channel currently bound as a sandbox host variable, with enough of
- * its viewport parameters to re-derive its transfer buffers from cached
- * tiles alone. This is a snapshot of Task 8's settle-bound fetch state for
- * one channel (session/channel/tier/tile range/window/budget) — this
- * module doesn't own or compute any of it, only reads it.
+ * One channel currently bound as a sandbox host variable, with enough
+ * state to re-derive/re-fetch its transfer buffers after a sandbox
+ * rebuild. A discriminated union on `source` (L6 Task 18, R77.3): a
+ * `"session"` channel carries the viewport parameters needed to re-derive
+ * its buffers from the shared `TileCache` alone (Task 8's settle-bound
+ * fetch state); a `"definition"` channel has no tile-cache entry at all
+ * (`fetch_host_channel` takes no time window, C3 §3.4) and is restored by
+ * calling it again (Q1(a), R78) — see {@link rebindChannelsAfterRebuild}.
  */
-export interface BoundChannel {
-  /** The sandbox host-variable name this channel is bound under (`setHostVar`'s `name`). */
-  name: string;
-  /** The cache key fields shared by every tile in `range` (`tileIndex` excluded — see {@link TileCacheKey}). */
-  key: Omit<TileCacheKey, "tileIndex">;
-  /** Inclusive tile-index range covering this channel's current visible window. */
-  range: { first: number; last: number };
-  /** Start of the visible window, in µs since session start (inclusive). */
-  startUs: number;
-  /** End of the visible window, in µs since session start (exclusive). */
-  endUs: number;
-  /** Point budget for this channel's rendering (Task 6's `pointBudget`). */
-  budget: number;
+export type BoundChannel =
+  | {
+      source: "session";
+      /** The sandbox host-variable name this channel is bound under (`setHostVar`'s `name`). */
+      name: string;
+      /** The cache key fields shared by every tile in `range` (`tileIndex` excluded — see {@link TileCacheKey}). */
+      key: Omit<TileCacheKey, "tileIndex">;
+      /** Inclusive tile-index range covering this channel's current visible window. */
+      range: { first: number; last: number };
+      /** Start of the visible window, in µs since session start (inclusive). */
+      startUs: number;
+      /** End of the visible window, in µs since session start (exclusive). */
+      endUs: number;
+      /** Point budget for this channel's rendering (Task 6's `pointBudget`). */
+      budget: number;
+    }
+  | {
+      source: "definition";
+      /** The sandbox host-variable name this channel is bound under — the workbook `math` definition's name. */
+      name: string;
+      /** The `fetch_host_channel` budget last used for this definition (`clampHostChannelBudget`'s result) — re-sent verbatim on a rebuild's re-fetch. */
+      budget: number;
+    };
+
+/** The IPC this module needs to restore a `"definition"` `BoundChannel`
+ *  after a rebuild (Q1(a), R78) — injected so this module never imports
+ *  `ipc/workbook.ts` directly (mirrors `channelBindDriver.ts`'s own
+ *  `ChannelBindDeps.fetchHostChannel`). */
+export interface HostChannelRebindDeps {
+  /** Re-fetches one definition's decimated data by name and budget (`ipc/workbook.ts`'s `fetchHostChannel`). */
+  fetchHostChannel(defName: string, budget: number): Promise<DecodedHostChannel>;
 }
 
 /**
@@ -34,22 +56,52 @@ export interface BoundChannel {
  * themselves are still sitting in `cache`, so re-deriving costs no IPC
  * (performance budgets P2, P7).
  *
- * A bound channel whose tile range is not *fully* present in `cache`
- * (e.g. one was evicted, or never finished fetching before the stall that
- * triggered the rebuild) is skipped rather than sent with holes — rebuild
- * is not itself a fetch trigger; a subsequent settle re-fetches any
- * missing tile the normal way (Task 8's `ensureTiles`).
+ * A `"session"` bound channel whose tile range is not *fully* present in
+ * `cache` (e.g. one was evicted, or never finished fetching before the
+ * stall that triggered the rebuild) is skipped rather than sent with
+ * holes — rebuild is not itself a fetch trigger for a tile-backed channel;
+ * a subsequent settle re-fetches any missing tile the normal way (Task 8's
+ * `ensureTiles`).
  *
- * @param bound Every channel currently bound in the sandbox, with the viewport parameters needed to re-derive its buffers.
- * @param cache The tile cache to read decoded tiles from (never fetches).
- * @param send Called exactly once per `bound` entry whose full tile range is cached, with that channel's re-derived {@link ChannelData}.
+ * A `"definition"` bound channel has no tile-cache entry to re-derive from
+ * at all, so it is restored by calling `deps.fetchHostChannel` again
+ * (Q1(a), R78) rather than reading `cache` — this costs one IPC call per
+ * definition channel on a rebuild, accepted because a rebuild is already
+ * the rare, watchdog-triggered path (R78's cost-if-wrong note). The
+ * re-fetch is fired without awaiting it here (this function itself stays
+ * synchronous, matching `onChannelsInvalidated`'s `() => void` shape); a
+ * definition whose re-fetch rejects, or whose result has lost its recorded
+ * axis (`hasT` false) since it was last bound, is silently dropped rather
+ * than sent with `t` empty (mirrors `bindingFor`'s own refusal to bind an
+ * axis-less definition, Q3(a)) — the cell's own next settle retries it the
+ * normal way.
+ *
+ * @param bound Every channel currently bound in the sandbox.
+ * @param cache The tile cache to read decoded `"session"` tiles from (never fetches).
+ * @param deps Re-fetches a `"definition"` channel's data (never reads `cache` for one).
+ * @param send Called once per `bound` entry that could be restored, with that channel's {@link ChannelData}. For a `"session"` entry this call is synchronous with the loop; for a `"definition"` entry it fires later, once its re-fetch resolves.
  */
 export function rebindChannelsAfterRebuild(
   bound: BoundChannel[],
   cache: TileCache,
+  deps: HostChannelRebindDeps,
   send: (name: string, data: ChannelData) => void
 ): void {
   for (const channel of bound) {
+    if (channel.source === "definition") {
+      void deps
+        .fetchHostChannel(channel.name, channel.budget)
+        .then((result) => {
+          if (!result.hasT) return;
+          send(channel.name, { length: result.v.length, t: result.t, v: result.v });
+        })
+        .catch(() => {
+          // A rebuild is not itself a fetch trigger even for a definition
+          // channel's re-fetch failure -- the cell's own next settle retries.
+        });
+      continue;
+    }
+
     const tiles: DecodedTile[] = [];
     let fullyCached = true;
 

@@ -9,11 +9,21 @@
  * beyond `plotForm` itself, is).
  *
  * Every function here is synchronous and side-effect free: no React, no
- * DOM, no IPC. `generate`/`parse` (Tasks 2–3) remain the only things that
- * produce or read the code string; this module only ever builds the next
- * `PlotProps` value.
+ * DOM, no IPC. `generate`/`parse` (Tasks 2–3, widened for the FFT chart at
+ * L6 Task 20) remain the only things that produce or read the code string;
+ * this module only ever builds the next `PlotProps` value.
  */
-import { generate, parse, type MarkProps, type PlotProps, type XAxisProps, type YAxisProps } from "../plotForm";
+import {
+  generate,
+  parse,
+  type FftParams,
+  type FftPlotProps,
+  type MarkProps,
+  type PlotProps,
+  type TimePlotProps,
+  type XAxisProps,
+  type YAxisProps,
+} from "../plotForm";
 
 /** The form's derived view of one render's `code` prop (design §6:
  *  "Code outside [the generated subset] ... greys the pane to custom
@@ -66,7 +76,7 @@ export function advanceFormState(prevState: PropertiesFormState, code: string): 
   return { view, lastKnownProps };
 }
 
-/** The default single-mark `PlotProps` the form always seeds (C2 §5.3:
+/** The default single-mark `TimePlotProps` the form always seeds (C2 §5.3:
  *  "the form always seeds one mark") — used both as a brand-new cell's
  *  starting point and as "Reset to form"'s fallback when `parse` has
  *  never once succeeded for this cell (no `lastKnownProps` to regenerate
@@ -75,7 +85,30 @@ export function advanceFormState(prevState: PropertiesFormState, code: string): 
  *  an empty channel name, so this is always immediately generatable
  *  rather than a placeholder the caller must special-case. */
 export function defaultPlotProps(channels: readonly { id: string }[]): PlotProps {
-  return { marks: [{ channel: channels[0]?.id ?? "", mark: "lineY" }] };
+  return { chart: "time", marks: [{ channel: channels[0]?.id ?? "", mark: "lineY" }] };
+}
+
+/** The default single-spectrum-mark `FftPlotProps` a chart-type switch (or
+ *  a brand-new FFT cell) seeds (C2 §5.3's parameter table's defaults):
+ *  `windowSize: 2048`, `hopSize: 1024` (50% overlap), `window: "hann"`,
+ *  `detrend: "mean"`, `scaling: "magnitude"`, `averaging: "mean"`; `x.type`
+ *  seeds `"log"` and `x.label` seeds `"Frequency (Hz)"` (this task's brief,
+ *  matching C2 §5.3's parameter table). `channel` is `channels`' first
+ *  entry when one is available, or the empty string otherwise, mirroring
+ *  {@link defaultPlotProps}. */
+export function defaultFftPlotProps(channels: readonly { id: string; label: string; unit?: string }[]): FftPlotProps {
+  const props: FftPlotProps = {
+    chart: "fft",
+    mark: {
+      channel: channels[0]?.id ?? "",
+      mark: "lineY",
+      fft: { windowSize: 2048, hopSize: 1024, window: "hann", detrend: "mean", scaling: "magnitude", averaging: "mean" },
+    },
+    x: { label: "Frequency (Hz)", type: "log" },
+  };
+  const label = suggestSpectrumAxisLabel(channels[0], "magnitude");
+  if (label !== undefined) props.y = { label };
+  return props;
 }
 
 /** The code "Reset to form" writes back: `generate` of `lastKnownProps`
@@ -103,18 +136,114 @@ export function suggestAxisLabel(channel: { label: string; unit?: string } | und
   return `${channel.label} (${channel.unit})`;
 }
 
+/** Suggests an FFT cell's y-axis label per scaling (R79 Q5): `"Magnitude
+ *  (<unit>)"` for `"magnitude"`, `"PSD (<unit>²/Hz)"` for `"density"`;
+ *  `undefined` when the channel has no recorded unit (same "no v3 construct
+ *  converts units" rule as {@link suggestAxisLabel} — this is a plain
+ *  string concatenation of the unit the engine already supplied, never a
+ *  conversion). An ordinary editable suggestion on R65's existing seed
+ *  path, not a locked display: the caller writes it into `y.label` once,
+ *  on the channel pick or on a scaling change, and never overwrites a
+ *  label the author already typed. */
+export function suggestSpectrumAxisLabel(
+  channel: { label: string; unit?: string } | undefined,
+  scaling: FftParams["scaling"]
+): string | undefined {
+  if (channel === undefined || channel.unit === undefined || channel.unit === "") {
+    return undefined;
+  }
+  return scaling === "density" ? `PSD (${channel.unit}²/Hz)` : `Magnitude (${channel.unit})`;
+}
+
+/** Segment overlap as a percentage, for display only (R79 Q3): the
+ *  document and the grammar keep `hopSize` in samples, C3's own unit — this
+ *  function derives a friendlier read-only figure beside it, never written
+ *  back into `props`. `null` when either value is `"all"` (no segmentation
+ *  to speak an overlap of — a whole-record request is one segment) or when
+ *  `windowSize`/`hopSize` are not both positive (a value the user is
+ *  mid-typing, or a stored value of zero — meaningless to describe as a
+ *  percentage rather than clamped to zero). */
+export function overlapPercent(windowSize: number | "all", hopSize: number | "all"): number | null {
+  if (windowSize === "all" || hopSize === "all") return null;
+  if (!(windowSize > 0) || !(hopSize > 0)) return null;
+  return ((windowSize - hopSize) / windowSize) * 100;
+}
+
+/** Switches chart type, preserving the channel selection and otherwise
+ *  regenerating from that type's defaults (R79 Q6: no confirmation and no
+ *  dialog — a one-click undo by switching back, unlike custom code, which
+ *  is unrecoverable).
+ *
+ *  The channel carried across is the **first** mark's channel (R80 Q6):
+ *  `Time → FFT` seeds the FFT arm's one spectrum mark on `props.marks[0]`'s
+ *  channel (or `channels[0]` if the time cell had no marks); `FFT → Time`
+ *  seeds one time mark on the spectrum's channel. This reuses the same
+ *  "first mark drives it" convention {@link suggestAxisLabel}'s call site
+ *  already documents, rather than inventing a second rule for this
+ *  switch. Switching to the chart type `props` already has is a no-op
+ *  (returns `props` unchanged) — there is nothing to preserve across a
+ *  switch that isn't happening. */
+export function setChartType(
+  props: PlotProps,
+  next: "time" | "fft",
+  channels: readonly { id: string; label: string; unit?: string }[]
+): PlotProps {
+  if (props.chart === "time" && next === "fft") {
+    const channelId = props.marks[0]?.channel ?? channels[0]?.id ?? "";
+    const channel = channels.find((c) => c.id === channelId);
+    const seed = defaultFftPlotProps(channels);
+    const label = suggestSpectrumAxisLabel(channel, seed.mark.fft.scaling);
+    const withChannel: FftPlotProps = { ...seed, mark: { ...seed.mark, channel: channelId } };
+    if (label !== undefined) withChannel.y = { label };
+    else delete withChannel.y;
+    return withChannel;
+  }
+
+  if (props.chart === "fft" && next === "time") {
+    const channelId = props.mark.channel;
+    const seed = defaultPlotProps(channels) as TimePlotProps;
+    return { ...seed, marks: [{ ...seed.marks[0], channel: channelId }] };
+  }
+
+  return props;
+}
+
+/** Patches the six FFT parameters. Setting `averaging: "none"` forces
+ *  `windowSize`/`hopSize` to `"all"` in the same returned value — R76's
+ *  single-segment rule made unreachable-by-construction rather than shown
+ *  later as a server error (C2 §5.3 control 8): the caller never has a
+ *  chance to combine `averaging: "none"` with a sample-count window/hop
+ *  through this form. A patch that both sets `averaging: "none"` and an
+ *  explicit `windowSize`/`hopSize` has the explicit value overridden by
+ *  the forcing rule, since forcing is unconditional whenever the resulting
+ *  `averaging` is `"none"` — including when `averaging` itself is not part
+ *  of this patch but the mark's *current* `averaging` already is `"none"`
+ *  (e.g. a hop-size edit arriving while `"none"` is selected), so the
+ *  invariant holds continuously, not only at the moment `"none"` is
+ *  picked. */
+export function updateFftParams(props: FftPlotProps, patch: Partial<FftParams>): FftPlotProps {
+  const merged: FftParams = { ...props.mark.fft, ...patch };
+  if (merged.averaging === "none") {
+    merged.windowSize = "all";
+    merged.hopSize = "all";
+  }
+  return { ...props, mark: { ...props.mark, fft: merged } };
+}
+
 /** Appends a new mark bound to `channel`, defaulting to the `lineY` mark
  *  type and session scope (`lap` omitted, per {@link MarkProps}'s own
  *  "omitted means session scope" convention — `updateMark` is how a
- *  caller then narrows it to a lap). */
-export function addMark(props: PlotProps, channel: string): PlotProps {
+ *  caller then narrows it to a lap). Time cells only: an FFT cell has
+ *  exactly one mark by type (`FftPlotProps.mark`, singular), so adding a
+ *  second is a type error, not a runtime concern. */
+export function addMark(props: TimePlotProps, channel: string): TimePlotProps {
   return { ...props, marks: [...props.marks, { channel, mark: "lineY" }] };
 }
 
 /** Removes the mark at `index`. A no-op (returns `props` unchanged) for
  *  an out-of-range `index`, so a caller wired to a stale index never
- *  corrupts unrelated marks. */
-export function removeMark(props: PlotProps, index: number): PlotProps {
+ *  corrupts unrelated marks. Time cells only, see {@link addMark}. */
+export function removeMark(props: TimePlotProps, index: number): TimePlotProps {
   if (index < 0 || index >= props.marks.length) return props;
   return { ...props, marks: props.marks.filter((_, i) => i !== index) };
 }
@@ -122,16 +251,16 @@ export function removeMark(props: PlotProps, index: number): PlotProps {
 /** Shallow-merges `patch` into the mark at `index`. A no-op for an
  *  out-of-range `index`. Setting a field to `undefined` in `patch` clears
  *  it (matches `MarkProps`' own "omitted = default" fields, e.g.
- *  `stroke`/`strokeWidth`/`lap`). */
-export function updateMark(props: PlotProps, index: number, patch: Partial<MarkProps>): PlotProps {
+ *  `stroke`/`strokeWidth`/`lap`). Time cells only, see {@link addMark}. */
+export function updateMark(props: TimePlotProps, index: number, patch: Partial<MarkProps>): TimePlotProps {
   if (index < 0 || index >= props.marks.length) return props;
   return { ...props, marks: props.marks.map((m, i) => (i === index ? { ...m, ...patch } : m)) };
 }
 
 /** Moves the mark at `fromIndex` to `toIndex`, shifting the marks between
  *  them (array reorder, not a swap). A no-op for equal or out-of-range
- *  indices. */
-export function moveMark(props: PlotProps, fromIndex: number, toIndex: number): PlotProps {
+ *  indices. Time cells only, see {@link addMark}. */
+export function moveMark(props: TimePlotProps, fromIndex: number, toIndex: number): TimePlotProps {
   const n = props.marks.length;
   if (fromIndex === toIndex || fromIndex < 0 || fromIndex >= n || toIndex < 0 || toIndex >= n) return props;
   const marks = [...props.marks];
@@ -143,7 +272,8 @@ export function moveMark(props: PlotProps, fromIndex: number, toIndex: number): 
 /** True when every field of `x` is `undefined` — the "empty axis object"
  *  case `generate`/`parse` both normalise away (Task 2/3's own
  *  convention: an all-undefined axis is represented by the key being
- *  absent from `PlotProps`, never `x: {}`). */
+ *  absent from `PlotProps`, never `x: {}`). Time cells only: an FFT cell's
+ *  `x` always carries `type` (R80 Q1) and so is never empty. */
 function isEmptyXAxis(x: XAxisProps): boolean {
   return x.label === undefined && x.domain === undefined;
 }
@@ -155,9 +285,16 @@ function isEmptyYAxis(y: YAxisProps): boolean {
 
 /** Shallow-merges `patch` into `props.x` (starting from `{}` if `props.x`
  *  is absent), then drops the `x` key entirely if the result is empty —
- *  matching `generate`, which can never emit `x: {}` (Task 2), so this
- *  function can never hand `generate` a value it would mis-render. */
-export function updateXAxis(props: PlotProps, patch: Partial<XAxisProps>): PlotProps {
+ *  matching `generate`, which can never emit `x: {}` for a **time** cell
+ *  (Task 2), so this function can never hand `generate` a value it would
+ *  mis-render. Generic over the chart-type union: for an FFT cell, `x` is
+ *  `FftXAxisProps` (always carrying `type`, never empty) and this function
+ *  only ever patches `label`/`domain` on it, leaving `type` untouched — a
+ *  caller sets `type` through the dedicated `x.type` control instead. */
+export function updateXAxis(props: PlotProps, patch: Partial<Pick<XAxisProps, "label" | "domain">>): PlotProps {
+  if (props.chart === "fft") {
+    return { ...props, x: { ...props.x, ...patch } };
+  }
   const next: XAxisProps = { ...(props.x ?? {}), ...patch };
   if (isEmptyXAxis(next)) {
     const { x: _drop, ...rest } = props;
@@ -166,8 +303,17 @@ export function updateXAxis(props: PlotProps, patch: Partial<XAxisProps>): PlotP
   return { ...props, x: next };
 }
 
+/** Sets an FFT cell's `x.type` (Lin/Log control, C2 §5.3's twelfth-listed
+ *  control #10) — the one `x` field {@link updateXAxis} does not touch,
+ *  since a time cell's `x` has no `type` field at all. */
+export function updateFftXAxisType(props: FftPlotProps, type: "linear" | "log"): FftPlotProps {
+  return { ...props, x: { ...props.x, type } };
+}
+
 /** Shallow-merges `patch` into `props.y`, dropping the `y` key entirely if
- *  the result is empty (see {@link updateXAxis}). */
+ *  the result is empty (see {@link updateXAxis}). Generic over the
+ *  chart-type union: both `TimePlotProps` and `FftPlotProps` share the
+ *  same optional `YAxisProps` shape. */
 export function updateYAxis(props: PlotProps, patch: Partial<YAxisProps>): PlotProps {
   const next: YAxisProps = { ...(props.y ?? {}), ...patch };
   if (isEmptyYAxis(next)) {
@@ -179,7 +325,9 @@ export function updateYAxis(props: PlotProps, patch: Partial<YAxisProps>): PlotP
 
 /** Sets or clears the plot's colour legend (C2 §5.3's `color_opt`, the
  *  form's one checkbox-shaped control: `{ legend: true }` or entirely
- *  absent — the grammar admits no other value). */
+ *  absent — the grammar admits no other value). Generic over the
+ *  chart-type union: both chart types share the same optional `color`
+ *  field. */
 export function setColorLegend(props: PlotProps, enabled: boolean): PlotProps {
   if (enabled) return { ...props, color: { legend: true } };
   const { color: _drop, ...rest } = props;

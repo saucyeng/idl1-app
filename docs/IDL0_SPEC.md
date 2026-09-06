@@ -3015,12 +3015,18 @@ a byte range in the document for editor addressing only — Rust
 (`idl_rs::workbook`) remains the sole evaluator; the scan never parses an
 expression, a table body, or JS.
 
-- **Prose** renders as Markdown-to-HTML plus its inline `${…}` splices (C2
-  §5.2), through `Notebook/components/ProseSpan.tsx`. Each `${…}` occurrence
-  is filled from the sandbox's own evaluation of that one expression
-  (`evalInline`/`inlineResult`, §26.4) — never evaluated on the host. Prose
-  has no fence id and is never independently selectable in the editor
-  (§26.2).
+- **Prose** renders in the host DOM, from Rust's `CellOutput.prose_before_html`/
+  `prose_after_html` (C3 §3.4, ledger R70/R78), through
+  `Notebook/components/ProseBlock.tsx` — the one place this app calls
+  `dangerouslySetInnerHTML`, on core's own escaped HTML output only (never
+  sandbox output; §26.4's sandbox-output rule is unaffected). `${…}`
+  placeholders (`<span data-span-id="…">`) inside that HTML are filled in
+  place, by `textContent` only, from the sandbox's own evaluation of that
+  one expression (`evalInline`/`inlineResult`, §26.4). Before a cell's
+  first `eval_workbook` result exists, its prose shows the document's raw
+  text verbatim, `${…}` sources intact (`Notebook/model/proseBlocks.ts`'s
+  `proseBlocksFor`, the stated pre-first-eval fallback). Prose has no fence
+  id and is never independently selectable in the editor (§26.2).
 - **`math`** cells hold one or more named definitions over C2 §3's 69-function
   catalog; each definition's evaluated scalar/channel result and any
   per-definition error render inline under the cell
@@ -3031,17 +3037,33 @@ expression, a table body, or JS.
   grid (`Notebook/components/TableCell.tsx`); the hybrid-grid cell-reference
   grammar and its evaluation are unchanged from idl0's design (§26.11 in the
   legacy Analyze section) and are entirely Rust-side.
-- **`js`** cells run inside the sandbox (§26.4) and render one of two ways.
-  A cell whose code round-trips through `plotForm.parse` (§26.2) has its
-  `marks[*].channel` (and lap scope) bound into `NotebookSession`
+- **`js`** cells run inside the sandbox (§26.4) and render one of three ways.
+  A cell whose code round-trips through `plotForm.parse` (§26.2) and
+  references at least one real session channel has its `marks[*].channel`
+  (and lap scope) bound into `NotebookSession`
   (`Notebook/host/NotebookSession.ts`, R66/R72) and mounts through
   `Notebook/components/ChartCell.tsx` — the host-side gesture frame
-  (pan/zoom/hover, §26.3) around the sandbox's own rendered Plot output. A
-  cell whose code does not round-trip (custom code, or form-generated code
-  naming a channel the active session does not have) mounts as a plain
-  frame with no gesture handling
-  (`Notebook/components/JsCellFrame.tsx`) — reserving its last-reported
-  `cellRendered.heightPx` and otherwise inert.
+  (pan/zoom/hover, §26.3) around the sandbox's own rendered Plot output,
+  for the one session channel it mounts. A `marks[*].channel` may instead
+  (or additionally) name a workbook `math` definition with a recorded time
+  axis (`eval_workbook`'s `CellOutput.defs[].name`, R77.3, L6 Task 18): its
+  samples are fetched whole and decimated to the chart's point budget via
+  `fetch_host_channel` (§26.4) rather than tile-by-tile, and reach the
+  sandbox as a host variable exactly like a session channel; because
+  `fetch_host_channel` takes no time window, panning or zooming such a
+  cell re-decimates the whole definition on settle rather than resolving a
+  sub-range. A cell whose marks are *all* definitions has no session
+  channel to gesture over and mounts as a plain frame with no gesture
+  handling instead (`Notebook/components/JsCellFrame.tsx`, Q2(a) R78) — the
+  sandbox's own rendered Plot output still updates on a definition
+  re-fetch, only pan/zoom/hover are absent. A cell whose code does not
+  round-trip (custom code), or that names a channel or definition the
+  active session/workbook does not have, or a definition with no recorded
+  time axis (Q3(a) R78 — treated like an unresolvable name, since there is
+  nothing to chart against, C1 "time is recorded, not assumed"), also
+  mounts as that same plain frame (`Notebook/components/JsCellFrame.tsx`)
+  — reserving its last-reported `cellRendered.heightPx` and otherwise
+  inert.
 
 `Notebook/components/CellList.tsx` iterates the document's cells in order
 and wraps each kind's own rendered output — never the prose spans on either
@@ -3202,13 +3224,17 @@ gets the iframe torn down and rebuilt (`Notebook/host/SandboxHost.ts`).
 Every outbound message for the current iframe generation queues until that
 generation's own `ready` arrives (a generation-tagged outbound queue,
 `Notebook/host/outboundQueue.ts`), and a rebuild replays, in order, `init`
-→ every cached JSON host variable → every currently bound channel
-(re-derived from the shared `TileCache`, never re-fetched) → `setCells` —
-an order fixed by which of `sandbox/main.ts`'s handlers are no-ops before
-`init` has run. State loss on rebuild is the cost, and it is per-notebook,
-not per-app: the notebook's cells, their JSON host variables, and their
-bound channels survive; only derived, reactive state (an in-flight
-gesture's transform, a pending inline-span result) is lost.
+→ every cached JSON host variable → every currently bound channel →
+`setCells` — an order fixed by which of `sandbox/main.ts`'s handlers are
+no-ops before `init` has run. A tile-backed (session-channel) bound
+channel is re-derived from the shared `TileCache`, never re-fetched; a
+definition-bound channel (L6 Task 18, R77.3) has no tile-cache entry to
+re-derive from, so it is re-fetched via `fetch_host_channel` instead
+(Q1(a), R78 — accepted because a rebuild is already the rare,
+watchdog-triggered path). State loss on rebuild is the cost, and it is
+per-notebook, not per-app: the notebook's cells, their JSON host
+variables, and their bound channels survive; only derived, reactive state
+(an in-flight gesture's transform, a pending inline-span result) is lost.
 
 **Per-cell bound-channel registry.** `Notebook/host/NotebookSession.ts`
 holds every channel a `js` cell currently has bound, as a list per cell id
@@ -3226,16 +3252,23 @@ re-evaluate on every cell-set/markdown change, not on the Observable
 Runtime's own reactive re-run graph — acceptable for wave 2, and named here
 per the plan's own Task 16 note; true reactivity is a later-wave item.
 
-**Interim prose-HTML seam.** Ruling R70 gives prose HTML two additive
-fields on `CellOutput` (`prose_before_html`/`prose_after_html`) plus a
-`prose_spans: { id, expr }[]` list from Rust's own `${…}` scanner
-(`workbook/v3/js_cell.rs::find_inline_exprs`). As of this section's
-writing that Rust-side change has not landed on `main`; the notebook tab
-still uses its own interim TypeScript regex scanner
-(`Notebook/components/ProseSpan.tsx`'s `extractInlineSpans`), which is
-known to number spans differently from the Rust scanner inside inline
-code. This is a deliberately temporary duplicate, to be deleted the moment
-`prose_spans` exists on the wire (§26.7).
+**Prose HTML is core output, not sandbox output (ruling R78).** Ruling R70
+gives prose HTML two additive fields on `CellOutput`
+(`prose_before_html`/`prose_after_html`, Rust's `pulldown-cmark` render
+with author HTML escaped) plus a `prose_spans: { id, expr }[]` list from
+Rust's own `${…}` scanner (`workbook/v3/js_cell.rs::find_inline_exprs`).
+The notebook's former interim TypeScript regex scanner
+(`Notebook/components/ProseSpan.tsx`'s `extractInlineSpans`) is deleted:
+`Notebook/model/proseBlocks.ts` decides which prose blocks exist and which
+`prose_spans` entries belong to each from the HTML alone (matching each
+id's literal `data-span-id="…"` occurrence, never by parsing the HTML or
+inventing an id-naming convention), and `Notebook/components/ProseBlock.tsx`
+renders the block. Because this HTML is produced by core and crosses IPC
+like any other trusted value — R69's sandbox-output boundary above governs
+*sandbox*-produced output, and prose is never that — the host renders it
+directly, which is the one place this app calls `dangerouslySetInnerHTML`.
+A `${…}` placeholder inside that HTML is still filled only by the sandbox's
+own `evalInline` result, spliced in by `textContent`, never by HTML.
 
 ### 26.5 Conflicts and save
 
@@ -3257,14 +3290,15 @@ reason. Silence is not deferral (wave-2 operating brief §2). Source:
 `idl0-app/app/lib/ui/tabs/analyze/` and `.../maths/`.
 
 **Delivered in wave 2:** time-series line charts (multi-channel, colours,
-manual/auto y domain, log/sqrt y scale, lap scope), spectrogram, 2-D
+manual/auto y domain, log/sqrt y scale, lap scope), the FFT chart (single
+whole-record spectrum), spectrogram, 2-D
 density heatmap (the scatter chart's density mode), hover readout, cursor
 readout, pan/zoom, table cells, math cells with the full 69-function
 catalog, per-cell errors, live file reload, save with conflict detection.
 
 | idl0 feature | Status | Reason |
 |---|---|---|
-| **FFT chart** | Contracted (C2 §5.3, R79); shipping in L6 Tasks 19–20 — single spectrum | `fetch_fft` (C3 §3.6, `IDLF`) computes the spectrum; C2 §5.3's `spectrum(...)` production carries window size, hop, window function, detrend, scaling and averaging in the document. idl0's overlay of up to ten spectra (`kMaxFftSpectra`: one line per channel × selected lap) is **not** carried — one spectrum per cell, and lap-scoped spectra wait on lap indexing at import (`lap` is `null`, C3 §3.6). idl0's `Overlap %` control is replaced by hop size in samples, C3's own unit. |
+| **FFT chart** | Delivered (C2 §5.3, R79/R80; L6 Tasks 19–20) — single spectrum, whole record | `fetch_fft` (C3 §3.6, `IDLF`) computes the spectrum; C2 §5.3's `spectrum(...)` production carries window size, hop, window function, detrend, scaling and averaging in the document, and the Properties pane's FFT parameter panel edits all six. Gaps from idl0's `analyze/fft_chart.dart`: (1) idl0's overlay of up to `kMaxFftSpectra` = 10 spectra, one line per channel × selected lap (`fft_window_resolver.dart`), is **not** carried — one spectrum per cell (R79 Q7), and lap-scoped spectra wait on lap indexing at import (`lap` is `null`, C3 §3.6). (2) idl0's `Overlap %` control is replaced by hop size in samples, C3's own unit (R79 Q3). (3) idl0's session-mode window **tracks the worksheet's live zoom** (or the whole session when unzoomed) and lap-mode windows each selected lap separately; `fetch_fft` takes no time window at all (C3 §3.6), so a wave-2 FFT cell always covers the whole channel — panning/zooming a time-series cell elsewhere in the notebook has no effect on it, and the only way to see a sub-range spectrum is lap indexing landing (same blocker as (1)). (4) idl0 auto-derives a default segment length from the *windowed* sample count (`ChartSlot.autoFftSegmentLength`) so a short zoom auto-reduces `nperseg`; the Properties pane instead seeds a fixed `2048` and leaves adjusting it (or switching to `Whole record`, forced automatically under `averaging: "none"`) to the author, since there is no window to auto-derive from. An FFT cell has no pan, zoom, hover or cursor readout (matches idl0's own "no cursor rendered — read-only frequency-domain view" for this chart specifically). |
 | **1-D histogram chart** | Deferred, blocked on IPC | Same rule: binning is numbers. C3 §3.6 has only the 2-D `histogram2d` raster. Filed as IPC need N6, deferred to a later wave — genuinely new engine code, unlike N5's thin wrapper. |
 | **Scatter — point-cloud mode** | Deferred | Density mode is delivered via `fetch_raster`'s `histogram2d`. Point-cloud mode needs a time-aligned paired-sample endpoint C3 does not have (IPC need N7, marked for a later wave). |
 | **GPS map chart with basemap tiles** | Deferred, needs a product ruling | "Offline-first means bundled. No CDN, ever" (design §3) forbids a tile server outright. A plain GPS polyline with no basemap is expressible today as a custom `js` cell. Escalated to Isaac as a product call (ruling R52 Q8), non-blocking. |
@@ -3291,10 +3325,19 @@ Filed in full, with proposed contract text and landed-vs-stubbed status, in
 `read_workbook` (still a stub in this tab as of this writing —
 `Notebook/ipcStubs/readWorkbook.ts` — the hard blocker that made Tasks 13–14
 possible only against a stub); **N3** the host-channel byte path
-(`fetch_host_channel`, magic `IDLH`) — this tab's own math→JS binding has no
-call site at all yet, stub or otherwise; **N4** `eval_workbook`'s additive
-`lap_context` argument (§26.6); **N5**/**N6** FFT and 1-D histogram
-(§26.6); **N8** `create_workbook`. Design §10's L6 done-criterion
+(`fetch_host_channel`, magic `IDLH`) — landed (L6 Task 18, R77.3): a `js`
+cell naming a workbook `math` definition binds and fetches through it via
+`ipc/workbook.ts`'s `fetchHostChannel`/`ipc/hostChannel.ts`'s `IDLH`
+decoder (§26.1, §26.4); open, named in §26.1, is that the command's lack of
+a time window means a definition-bound cell cannot resolve a sub-range on
+zoom; **N4** `eval_workbook`'s additive
+`lap_context` argument (§26.6); **N5** FFT — delivered end to end (L6 Tasks
+19–20): `fetch_fft` (C3 §3.6, ruling R63 (3)) is wrapped and decoded by
+`app/src/ipc/rasters.ts` (`fetchFft`/`decodeFft`, `IDLF`), and C2 §5.3's
+`spectrum(...)` grammar production plus the Properties pane's FFT parameter
+panel let a document author an FFT cell that requests it (§26.6); **N6**
+1-D histogram, still unlanded, deferred to a later wave (§26.6); **N8**
+`create_workbook`. Design §10's L6 done-criterion
 "`plotForm` round-trips its subset" is checked by Task 3's exhaustive test,
 part of this lane's gate; the companion criterion, "pan/zoom/hover on a
 real session at 60 fps desktop," is observed in the running dev app at the
