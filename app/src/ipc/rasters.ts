@@ -151,7 +151,9 @@ export function decodeFft(buf: ArrayBuffer): DecodedFft {
 }
 
 /** Fetches and decodes one channel's FFT spectrum (C3 §3.6, ruling R63 (3)).
- *  `lap` must be `null` in practice until lap indexing lands (C3 §3.6 note).
+ *  `lap: null` takes the whole channel; `lap: n` selects that lap's
+ *  recording-time window from `session.json`'s `laps[]` (ruling R83) — an
+ *  unknown lap number is `invalid_argument` with `detail: { lap }`.
  *  Settle-bound only, same rule as `fetchRaster`. */
 export async function fetchFft(
   sessionId: string,

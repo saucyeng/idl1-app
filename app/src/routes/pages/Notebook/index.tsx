@@ -167,6 +167,13 @@ function decodeByteRange(markdown: string, range: [number, number]): string {
 export default function NotebookPage() {
   const [appState] = useAppState();
   const { sessionId, lapContext } = appState.selection;
+  /** The selected main lap (R83/L2b Task 6), or `null` when no lap is
+   *  selected -- passed to `bindingFor`'s FFT arm so an FFT cell's
+   *  `fetch_fft` request targets the same lap window the rest of the app is
+   *  looking at. A time cell's own per-mark `lap` (`MarkProps.lap`) is
+   *  unrelated (`bindingFor`'s `mainLap` parameter is consulted only by its
+   *  FFT arm). */
+  const mainLap = lapContext?.mainLap ?? null;
 
   const [state, dispatch] = useReducer(workbookReducer, initialWorkbookState);
   const [cellErrors, setCellErrors] = useState<Map<string, string>>(new Map());
@@ -781,8 +788,12 @@ export default function NotebookPage() {
   // through the shared `CellRunSequencer`, exactly the same start/isStale
   // shape `runChannelBind` above uses -- never a second counter. Depends
   // only on data (`state.cells`/`state.markdown`/`state.outputs`/
-  // `sessionDetail`/`sessionSpanUs`/`sessionId`), the tightened IPC-effects
-  // rule (wave-2 operating brief §4); its cleanup cancels nothing.
+  // `sessionDetail`/`sessionSpanUs`/`sessionId`/`mainLap`), the tightened
+  // IPC-effects rule (wave-2 operating brief §4); its cleanup cancels
+  // nothing. `mainLap` (R83/L2b Task 6) is in the dependency array because
+  // `bindingIdentity` folds `request.lap` into an FFT cell's identity: a
+  // main-lap selection change must re-run this effect so the identity
+  // comparison below actually sees the new lap and starts a refetch.
   //
   // A cell whose `unrequestable` is non-null never reaches `runFft` at all
   // -- the note it carries is shown by `renderJsCell` below straight from
@@ -800,7 +811,7 @@ export default function NotebookPage() {
       if (cell.id === null || cell.kind !== "js") continue;
       const cellId = cell.id;
       const code = decodeByteRange(markdown, cell.bodyRange);
-      const binding = bindingFor({ id: cellId, code }, sessionDetail, sessionSpanUs, definitionsWithAxis);
+      const binding = bindingFor({ id: cellId, code }, sessionDetail, sessionSpanUs, definitionsWithAxis, mainLap);
       if (binding === null || binding.kind !== "fft") {
         // A cell that used to be an FFT cell (chart-type switch, or an
         // edit that now names a different channel) keeps no stale
@@ -866,7 +877,7 @@ export default function NotebookPage() {
 
       void runFft(deps, sid, cellId, fftBinding.request, dispatchFft, isStale);
     }
-  }, [state.cells, state.markdown, state.outputs, sessionDetail, sessionSpanUs, sessionId]);
+  }, [state.cells, state.markdown, state.outputs, sessionDetail, sessionSpanUs, sessionId, mainLap]);
 
   // Save is unavailable while there is no readable `hash` to base it on
   // (still loading, or a read error) -- see `handleSave`'s doc comment on
@@ -977,7 +988,7 @@ export default function NotebookPage() {
           renderJsCell={(cellId) => {
             const cell = state.cells.find((c) => c.id === cellId);
             const code = cell !== undefined && state.markdown !== null ? decodeByteRange(state.markdown, cell.bodyRange) : "";
-            const binding = bindingFor({ id: cellId, code }, sessionDetail, sessionSpanUs, definitionsWithAxis);
+            const binding = bindingFor({ id: cellId, code }, sessionDetail, sessionSpanUs, definitionsWithAxis, mainLap);
             const heightPx = cellHeights.get(cellId) ?? null;
             const sendLayout = (id: string, rect: { top: number; left: number; width: number }) =>
               sandboxHostRef.current?.sendLayout(id, rect);

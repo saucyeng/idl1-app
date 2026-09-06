@@ -192,8 +192,14 @@ function bindingForTime(
  * channel) and a resolved window over `MAX_FFT_BINS` (R79 Q4) -- checked
  * against the *resolved* window (post-`"all"`), never the raw grammar
  * value, since `"all"` only becomes a concrete number here.
+ *
+ * @param mainLap The selected main lap (`AppState.selection.lapContext.
+ *   mainLap`, R83/L2b Task 6) — passed straight through to `fetch_fft`'s
+ *   `lap` argument as-is, `null` when no lap is selected. C3 §3.6's FFT
+ *   grammar has no per-mark lap token (R79), so this is the cell's only lap
+ *   source.
  */
-function bindingForFft(props: FftPlotProps, sessionDetail: SessionDetail): FftCellBinding | null {
+function bindingForFft(props: FftPlotProps, sessionDetail: SessionDetail, mainLap: number | null): FftCellBinding | null {
   const channel = findChannel(sessionDetail.channels, props.mark.channel);
   if (channel === null) return null;
 
@@ -209,7 +215,8 @@ function bindingForFft(props: FftPlotProps, sessionDetail: SessionDetail): FftCe
       detrend: fft.detrend,
       scaling: fft.scaling,
     },
-    fft.averaging
+    fft.averaging,
+    mainLap
   );
   const hostVarName = spectrumKey(channel.channel_id, fft);
 
@@ -250,12 +257,17 @@ function bindingForFft(props: FftPlotProps, sessionDetail: SessionDetail): FftCe
  *   ("not part of this session" vs "has no recorded axis") itself, since
  *   this module never sees `has_t` for a name it excludes. Not consulted
  *   for the FFT arm.
+ * @param mainLap The selected main lap (`AppState.selection.lapContext.
+ *   mainLap`, R83/L2b Task 6), or `null` when no lap is selected — consulted
+ *   only by the FFT arm ({@link bindingForFft}); a time cell's per-mark
+ *   `lap` (`MarkProps.lap`) is unrelated and unaffected.
  */
 export function bindingFor(
   cell: { id: string; code: string },
   sessionDetail: SessionDetail | null,
   sessionSpanUs: number | null,
-  definitionNames: ReadonlySet<string>
+  definitionNames: ReadonlySet<string>,
+  mainLap: number | null = null
 ): JsCellBinding | null {
   if (sessionDetail === null || sessionSpanUs === null) return null;
 
@@ -263,7 +275,7 @@ export function bindingFor(
   if (props === null) return null;
 
   return props.chart === "fft"
-    ? bindingForFft(props, sessionDetail)
+    ? bindingForFft(props, sessionDetail, mainLap)
     : bindingForTime(props, sessionDetail, sessionSpanUs, definitionNames);
 }
 
@@ -281,16 +293,18 @@ export function bindingFor(
  *   not only `channels[0]`/the mounted channel, since the effect re-fetches
  *   every distinct channel, not only the mounted one (R72).
  * - FFT: `hostVarName` (which already encodes the channel and all six
- *   `fft_params`) plus the resolved sample count and the `unrequestable`
- *   state -- two consecutive renders producing the same identity must not
- *   start a second fetch, the existing `boundIdentityRef` contract L6 Task
- *   20 extends rather than replaces.
+ *   `fft_params`) plus the resolved sample count, the `unrequestable`
+ *   state and `request.lap` (R83/L2b Task 6 -- a main-lap selection change
+ *   must start a new fetch even when nothing else about the cell changed) --
+ *   two consecutive renders producing the same identity must not start a
+ *   second fetch, the existing `boundIdentityRef` contract L6 Task 20
+ *   extends rather than replaces.
  *
  * Pure string formatting, no IPC.
  */
 export function bindingIdentity(binding: JsCellBinding): string {
   if (binding.kind === "fft") {
-    return `fft|${binding.hostVarName}|${binding.sampleCount}|${binding.unrequestable ?? ""}`;
+    return `fft|${binding.hostVarName}|${binding.sampleCount}|${binding.unrequestable ?? ""}|${binding.request.lap ?? "none"}`;
   }
   if (binding.channels.length === 0) return "no-channel";
   const parts = binding.channels.map((c) => `${c.channelId}|${c.source}|${c.lap ?? "session"}`);

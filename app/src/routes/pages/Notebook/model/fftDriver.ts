@@ -19,7 +19,7 @@ export interface FftDeps {
   fetchFft: (
     sessionId: string,
     channelId: string,
-    lap: null,
+    lap: number | null,
     params: SpectrogramParams,
     averaging: FftAveraging
   ) => Promise<DecodedFft>;
@@ -62,8 +62,9 @@ function toIpcError(error: unknown): IpcError {
 
 /**
  * Runs one `fetch_fft` request for `cellId` and dispatches its outcome.
- * `request.lap` is always `null` (C3 §3.6) -- passed straight through, never
- * overridden here. `isStale()` is checked once, after the single `await`:
+ * `request.lap` (`null` for the whole channel, or the selected main lap,
+ * R83/L2b Task 6) is passed straight through, never overridden here.
+ * `isStale()` is checked once, after the single `await`:
  * `true` means a newer run for this cell has started since, and this run
  * dispatches nothing at all, resolved or rejected alike.
  *
