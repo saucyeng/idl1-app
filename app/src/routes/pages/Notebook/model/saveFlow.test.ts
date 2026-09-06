@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { isSelfWrite, saveFlow, type SaveFlowDeps, type WorkbookEventWithHash } from "./saveFlow";
+import { isSelfWrite, saveFlow, toIpcErrorOrUnknown, type SaveFlowDeps, type WorkbookEventWithHash } from "./saveFlow";
 import type { SaveResult } from "../../../../ipc/workbook";
 
 function baseDeps(overrides: Partial<SaveFlowDeps> = {}): SaveFlowDeps {
@@ -104,5 +104,23 @@ describe("isSelfWrite", () => {
     const result = isSelfWrite(event, "h2", 1000, 6001, 5000);
 
     expect(result).toBe(false);
+  });
+});
+
+describe("toIpcErrorOrUnknown", () => {
+  it("toIpcErrorOrUnknown — a real IpcError rejection — passes it through unchanged", () => {
+    const reason = { kind: "io", message: "disk full" };
+
+    const error = toIpcErrorOrUnknown(reason);
+
+    expect(error).toBe(reason);
+  });
+
+  it("toIpcErrorOrUnknown — a non-IpcError rejection (a bare string throw) — synthesizes a message instead of undefined", () => {
+    const reason = "disk full";
+
+    const error = toIpcErrorOrUnknown(reason);
+
+    expect(error).toEqual({ kind: "unknown", message: "disk full" });
   });
 });

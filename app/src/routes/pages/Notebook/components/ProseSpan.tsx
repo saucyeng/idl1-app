@@ -11,6 +11,15 @@ import type { ReactNode } from "react";
  * containing a literal `}` inside a string or object literal inside the
  * expression — out of scope for this task, matching `compileCell`'s own
  * lack of real parsing).
+ *
+ * **Interim seam (R70, `runs/2026-09-03/decisions.md`).** Core already has
+ * a correct, tested `${…}` scanner (`workbook/v3/js_cell.rs::find_inline_exprs`)
+ * that will cross the wire as `CellOutput.prose_spans: { id, expr }[]` once
+ * L8w Task 4c lands — this module's `INLINE_SPAN_RE` regex is a duplicate
+ * scanner kept only until that field exists, and the two are known to
+ * number spans differently inside inline code (R70's own finding). L6 Task
+ * 13b/15 drop this regex and consume `prose_spans` directly once Task 4c
+ * merges; do not extend this regex's grammar coverage in the meantime.
  */
 
 /** One `${…}` occurrence found in a block of prose text. */

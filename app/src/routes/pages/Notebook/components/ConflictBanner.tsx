@@ -13,14 +13,31 @@ export interface ConflictBannerProps {
   onOverwrite: () => void;
 }
 
+/**
+ * review-task14.md's Minor: "Reload from disk" discards every local,
+ * unsaved edit, but the banner's own copy never said so -- a reader could
+ * click it believing it only refreshed the view. `window.confirm` is a
+ * deliberately coarse stand-in (no new dependency, matches this lane's
+ * "coarse stand-in" framing for the whole banner) -- not this task's job to
+ * design a real confirmation dialog component.
+ */
+const RELOAD_DISCARDS_EDITS_MESSAGE =
+  "Reload from disk? This discards your unsaved edits in this document.";
+
 // TODO(idl0): replace this banner's two buttons with L11's per-cell merge
 // UI (C4 §4, design §7) once it lands -- reload-or-overwrite is a coarse
 // stand-in, not the final conflict-resolution surface.
 export default function ConflictBanner({ onReloadFromDisk, onOverwrite }: ConflictBannerProps) {
+  function handleReloadFromDisk() {
+    if (window.confirm(RELOAD_DISCARDS_EDITS_MESSAGE)) {
+      onReloadFromDisk();
+    }
+  }
+
   return (
     <div className="workbook-conflict-banner" role="alert">
       <p>This workbook changed on disk since it was last read here.</p>
-      <button type="button" onClick={onReloadFromDisk}>
+      <button type="button" onClick={handleReloadFromDisk} title="Discards your unsaved edits">
         Reload from disk
       </button>
       <button type="button" onClick={onOverwrite}>

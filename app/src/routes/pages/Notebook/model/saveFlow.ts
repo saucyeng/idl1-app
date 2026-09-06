@@ -36,6 +36,28 @@ export interface WorkbookEventWithHash extends WorkbookEvent {
   hash?: string;
 }
 
+/**
+ * Narrows a `save()` rejection to `IpcError`, or synthesizes one when it
+ * isn't (review-task14.md's Minor: a raw non-`IpcError` throw -- a
+ * transport-level failure, or a non-object throw like `throw "disk full"` --
+ * previously cast straight to `IpcError`, so `error.kind`/`error.message`
+ * could read `undefined`). A rejected `saveWorkbook` is still trusted to
+ * reject with the real C3 §2 shape in the ordinary path (`ipc/workbook.ts`'s
+ * own `IpcError` doc comment); this only guards the boundary so a caller's
+ * `"save failed: <message>"` render never shows `undefined`.
+ */
+export function toIpcErrorOrUnknown(reason: unknown): IpcError {
+  if (
+    typeof reason === "object" &&
+    reason !== null &&
+    typeof (reason as { kind?: unknown }).kind === "string" &&
+    typeof (reason as { message?: unknown }).message === "string"
+  ) {
+    return reason as IpcError;
+  }
+  return { kind: "unknown", message: reason instanceof Error ? reason.message : String(reason) };
+}
+
 /** Injected dependencies so `saveFlow` is testable without mocking Tauri. */
 export interface SaveFlowDeps {
   /** `ipc/workbook.ts`'s `saveWorkbook`, or a test's fake. */
@@ -73,10 +95,10 @@ export function saveFlow(deps: SaveFlowDeps): {
       current = { status: "saved", hash: result.hash, savedAtMs: deps.now() };
     } catch (reason) {
       // A rejected `saveWorkbook` always rejects with the C3 §2 `IpcError`
-      // shape (`ipc/workbook.ts`'s own `IpcError` doc comment) -- trusted
-      // here rather than runtime-type-guarded, matching every other call
-      // site in this codebase, none of which type-guards a rejection either.
-      const error = reason as IpcError;
+      // shape (`ipc/workbook.ts`'s own `IpcError` doc comment) in the
+      // ordinary path; `toIpcErrorOrUnknown` only guards the boundary
+      // against a non-`IpcError` rejection (review-task14.md Minor).
+      const error = toIpcErrorOrUnknown(reason);
       current = error.kind === "conflict" ? { status: "conflict" } : { status: "error", error };
     }
     return current;
