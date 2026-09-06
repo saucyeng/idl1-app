@@ -172,11 +172,28 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
   `parse_workbook` already captures verbatim (`raw_fence_body`,
   `prose_before`/`prose_after`, `trailing_prose`), verified by round-tripping
   the C2 §2.5 worked example back through `parse_workbook`. Filters:
-  `cargo test -p idl-rs store::sync::apply` (10 passed), `cargo test -p
-  idl-rs store::sync::session_merge` (5 passed), `cargo test -p idl-rs
-  render_workbook` (3 passed, ad hoc — outside the brief's named filters,
-  run because `render_workbook` is this task's own scope deviation).
-  `cargo check -p idl-rs-cli --tests` clean.
+  `cargo test -p idl-rs store::sync::apply` (10 passed, since raised to 16
+  by the review fix below), `cargo test -p idl-rs store::sync::session_merge`
+  (5 passed), `cargo test -p idl-rs render_workbook` (3 passed, ad hoc —
+  outside the brief's named filters, run because `render_workbook` is this
+  task's own scope deviation). `cargo check -p idl-rs-cli --tests` clean.
+- **L11 review fix (Task 6): `store::sync::apply` — route the workbook and
+  `session.json` writes through `write_atomic_with_retry`.** Closes the
+  review's one Important finding: `install_workbook`'s two write sites and
+  `install_session_json`'s write used a single-attempt `write_atomic`, not
+  C4 §4 step 4's mandated retry-with-rederive for exactly this class ("a
+  local self-write race and a sync conflict are the same code path"). Both
+  now go through `write_atomic_with_retry`; on a conflict, `rederive_
+  workbook_write`/`rederive_session_json_write` re-read the current on-disk
+  bytes and re-run the same per-cell merge / per-field merge against them as
+  the new local side, retrying up to the primitive's bound of 3 attempts
+  before a typed `SyncError` surfaces. Also closes both Minors: a failed
+  `remove_file` after a workbook rename now surfaces as a typed `SyncError`
+  instead of being swallowed, and one malformed-bytes test each was added
+  for track and profile install. Filters: `cargo test -p idl-rs
+  store::sync::apply` (16 passed, up from 10 — 4 new race/exhaustion tests
+  covering both write sites, plus one malformed-bytes test each for track
+  and profile install), `cargo check -p idl-rs-cli --tests` clean.
 - **L11 Task 7: sync wire DTOs and pairing (2026-09-06, idl-transport,
   `sync::{wire, pairing}`, ruling R88).** New `idl-transport::sync` module:
   `wire.rs` carries `PROTOCOL_VERSION`, `Peer` (the paired-peer record
