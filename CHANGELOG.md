@@ -6,6 +6,18 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 
 ### Added
 
+- **L8x Task 3: core track validation + `delete_track` (2026-09-06,
+  idl-rs, no spec change needed).** New `core::track_artifact::validate`:
+  `validate_track(&Track)` checks a non-empty trimmed `name`; every
+  `lap_timing`/`sector_gates`/`neutral_zones` gate is in range, finite, and
+  non-degenerate; `reference_polyline` fixes are range-checked too (an
+  empty polyline stays legal). First failure wins and names the failing
+  field (`TrackValidationError { kind, field, message }`); duplicate
+  sector/neutral-zone names are allowed (PLAN Q6), not a uniqueness rule.
+  `track_artifact::write` gains `delete_track(data_root, track_id)`
+  (`Ok(false)` when already absent) and a shared `track_id` guard —
+  rejecting a path separator or a `..` segment before joining — used by
+  both `delete_track` and `write_track`. No clock, no UUID, no Tauri.
 - **C3/C4 amendment for L8x Data-tab write commands (2026-09-06,
   docs only, spec-first, ruling R86).** `save_track`, `delete_track`,
   `list_quarantine`, `resolve_quarantine` (C3 §3.2) and `verify_data_dir`
