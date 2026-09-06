@@ -30,6 +30,26 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
   individual file (unparseable `data.parquet` metadata, a front-matter
   parse failure, a filename/content-id mismatch) is omitted rather than
   aborting the walk. No network, no async, no clock of its own.
+- **L11 Task 3: sync diff (2026-09-06, idl-rs core, `store::sync::diff`,
+  ruling R89).** Pure `plan_sync(local, remote) -> SyncPlan` over two
+  `Manifest`s: `SyncAction` (`Pull`/`Push`/`PullForMerge`), `SyncItem`,
+  `SyncClass`, `SyncNote`/`SyncNoteReason`. Every conflict rule is C4 §6's:
+  blob/derived set difference by hash; `data.parquet` compares the
+  `(importer_version, seam_correction_version)` pair — equal pair, differing
+  hash keeps local with an `EquivalentDataParquet` note, a differing pair
+  transfers the newer side's bytes; `session.json` and workbook differ ⇒
+  `PullForMerge`, a workbook rename (same id, same hash) is naturally a
+  no-op since `file_name` is outside the hashed bytes; track/profile are
+  LWW by `updated_at_ms`. Absence on one side is never a deletion — it is
+  always a transfer, for every class. Ruling R89 (this task) closes the
+  `data.parquet` "newer" ordering C4 §6 left open: the pair orders
+  lexicographically, `importer_version` first as SemVer 2.0.0, then
+  `seam_correction_version` as the integer after its leading `v`; either
+  value failing to parse under its own rule makes the pair incomparable —
+  no transfer, a new `IncomparableDataParquetVersion` note naming both
+  sides' pairs. `actions` sort by `(class, key, session_id)` for
+  determinism; `plan_sync(a, b)`/`plan_sync(b, a)` are proven to mirror
+  `Pull`/`Push`.
 - **L8x lane complete: Data-tab write commands (2026-09-06, idl-rs core +
   idl-rs-tauri, ruling R86).** Five new commands close the last C3 §6
   deferrals the Data tab still stubbed: `save_track`, `delete_track`,
