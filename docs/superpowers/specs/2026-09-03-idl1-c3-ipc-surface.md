@@ -662,6 +662,12 @@ session has laps, so every non-null `lap_context` rejects with
 nowhere else to put the designation — but the feature it unlocks arrives
 with that backlog item.
 
+*Added post-sign (2026-09-05, lead ruling R64.1).* `overlay_laps` names laps
+of `session_id`'s own session in wave 2 — `variance_time`/`variance_dist`
+compare the main lap against another lap of the same recorded session, not a
+different one; cross-session overlay is a wave-3 amendment carrying a
+`{ session_id, lap }[]` shape instead.
+
 Return: `CellOutput[]`, one entry per cell, in document order.
 ```ts
 interface CellOutput {
