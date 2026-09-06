@@ -3444,3 +3444,22 @@ or the L6 branch (L6's IPC-NEEDS N3 filing named a stale 20-byte header).
 Lead shell task after L8w merges: add `app/src/ipc/` decoder for the
 24-byte layout (copying via DataView, per C3 §3.5) and wire L6's host
 channel seam to `fetch_host_channel`.
+
+## 2026-09-06 — L6 Notebook LANDED (merge `e182b0a`); shell task retires page shims
+
+L6 gate from `774066e`: `tsc` clean, whole TS suite **78 files / 590
+passed**, `vite build` 843 modules (both entries: main + notebook sandbox;
+chunk-size warning informational). Merged `main` into the lane first (R19,
+no conflicts), then `--no-ff` into main. Shell task on main: `App.tsx`
+imports `routes/pages/{Notebook,Device,Data,Settings}` directly; the four
+`*Page.tsx` re-export shims deleted; gate re-run on main, same counts.
+
+review-task16's "Major" (the `editorEcho.ts` doc-comment fix was outside
+Task 16's file list and unnamed in the commit) is **overruled**: the lead's
+dispatch directed that fix; recorded here instead. Its two Notes (legacy
+sections cite removed `§26.x` numbers, incl. the Controls table's `§26.7`)
+go to the L10 cross-lane pass. Open from the lane: FFT chart (R52 Q7 ruled
+"in", no L6 task built it — wave-2 follow-on L6 Task 17 after L8w lands
+`fetch_fft`); the seams listed in `lanes/l6/CONTRACT-AMENDMENTS.md`
+swap to real commands in the post-L8w shell tasks. Still not observed:
+60 fps pan/zoom on a real session (needs the dev app; Isaac's preview).
