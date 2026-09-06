@@ -3680,3 +3680,21 @@ applied" premise was false in the worktree; the implementer merged main
 in (R19) before starting. Rule going forward: a brief that cites an
 amendment names its commit hash and the implementer's first step is
 `git merge-base --is-ancestor <hash> HEAD` — merge main first if it fails.
+
+## 2026-09-06 — L6 follow-on LANDED (Tasks 17–20); wave 2 UI + Rust work complete
+
+Merged `wave2-l6-followon` (`e63ee2b` prose from core, `4f5099f`
+definition binding, `96cdd6f` FFT request/driver, `e7643cb` FFT grammar +
+Properties panel; every review CLEAN, Task 20's two Minors cosmetic and
+left for L10). Whole TS suite on main: **90 files / 834 passed**, `tsc`
+clean. All wave-2 worktrees retired.
+
+Wave-2 gate (operating brief §5): four tabs merged ✔, write lane landed ✔,
+UI stubs swapped ✔. Open and tracked: L6 Task 21 (notebook empty state /
+New workbook / Rescan / picker); Task 20's Minors and the SPEC `§26.x`
+cross-reference cleanup (L10 pass); Isaac questions 1–10 (question 11
+closed); 60 fps and end-to-end chart rendering on a real session still
+not observed by the lead (preview 2026-09-06: workbook loads, chart cells
+blank in the capture with no session selected — awaiting Isaac's look).
+Rust backlog unchanged: lap indexing at import; incremental catalog
+insert; cross-session overlay amendment; quarantine (wave 3).
