@@ -1,7 +1,8 @@
 /**
  * The Properties↔Code editor shell's (Task 15) loop-suppression decision,
- * pulled into a tiny pure/tested module per lead ruling R74
- * (`runs/2026-09-03/decisions.md`): `EditorPanes` mounts `PropertiesForm`
+ * pulled into a tiny pure/tested module per Task 15's own brief (a
+ * reviewer must be able to reason about this without CLAUDE.md §4's
+ * rendering exemption covering it): `EditorPanes` mounts `PropertiesForm`
  * and `CodePane` side by side over the same cell body, and both write
  * through the same `onChange` handler. When one pane's edit updates the
  * shared `code` prop, the other pane receives that prop as an externally

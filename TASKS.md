@@ -33,7 +33,17 @@ are defined in `docs/superpowers/specs/2026-09-02-idl1-rewrite-design.md` §10.
 
 ## Wave 2
 
-- [ ] L6 notebook UI
+- [ ] L6 notebook UI — Tasks 1-16 landed on `wave2-l6-notebook`. Design §10's
+  two done-criteria: (1) `plotForm` round-trips its subset — Task 3's
+  exhaustive generator-based test passes as part of Task 16's whole-suite
+  gate; (2) pan/zoom/hover on a real session at 60 fps desktop — not
+  observable from this task's position (no cargo, no Tauri build in a UI
+  worktree); left for the lead's merge-gate eyeball pass in the running dev
+  app (R50 precedent). N1 (`read_workbook`) is still a stub
+  (`Notebook/ipcStubs/readWorkbook.ts`); N3 (host-channel byte path) has no
+  call site yet; N4 (`eval_workbook`'s `lap_context`) is read from
+  `AppState.selection` but not yet threaded through, pending the Rust
+  write-amendment lane (`runs/2026-09-05/lanes/l6/CONTRACT-AMENDMENTS.md`).
 - [x] L7a Data tab — Tasks 1-8 landed on `wave2-l7a-data`. Write-command IPC
   needs 1-4 (`save_session_metadata`, `save_track`/`delete_track`,
   `delete_session`, `list_quarantine`/`resolve_quarantine`) are built
