@@ -3698,3 +3698,21 @@ not observed by the lead (preview 2026-09-06: workbook loads, chart cells
 blank in the capture with no session selected — awaiting Isaac's look).
 Rust backlog unchanged: lap indexing at import; incremental catalog
 insert; cross-session overlay amendment; quarantine (wave 3).
+
+## 2026-09-06 — R81: L6 Task 21 brief open questions (notebook empty state / picker)
+
+Q1 (a): rebuild the catalog once per page open only when `list_workbooks`
+is empty, show "Looking for workbooks…", re-list. Q2 (a): a Notebook-local
+`idl1.notebook.ui.v1` localStorage key with a `// TODO(idl0):` naming the
+consolidation into app-wide UI prefs. Q3 (a): the Notebook never writes
+`selection`; the "no session selected — choose one in the Data tab" note
+stays; (c) a shared default-session resolution in `AppState` is a lead
+shell task if Isaac wants a chart without a Data-tab trip. Q4 (a): picker
+only above one workbook. Q5 (a): picker disabled while edits are dirty,
+with a hint. Q6: Rescan reports `workbooks_indexed` and `duration_ms` only.
+Step 1 (the missing "no session" note — the blank cells in the 2026-09-06
+preview) and Step 1b (silent `eval_workbook` rejections → typed
+`evalError` rendered above the cell list) are confirmed as part of the
+task.
+
+**Cost if wrong:** conventions and one conditional each.
