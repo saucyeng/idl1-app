@@ -3884,3 +3884,12 @@ shows it without a rebuild.
 
 **Cost if wrong:** a few rows per rebuild; the alternative is a Notebook
 that forgets its workbooks on restart.
+
+## 2026-09-06 — L8x Data-tab write commands LANDED (idl-rs `52efba8`; idl1-app merge + submodule bump)
+
+Eight tasks + 5b (R87), every review CLEAN after the Task 6 test fix.
+Lane gate from `6ee31b2`: tauri **245**, idl-rs **1020** / 1 ignored,
+cli 53. `save_track`/`delete_track`, `list_quarantine`/
+`resolve_quarantine`, `verify_data_dir(repair)`, typed `TrackDetail`,
+catalog now indexes workbooks. Worktrees retired. Next: the Data-tab
+shell task (five items listed in TASKS.md's L8x entry).
