@@ -1039,7 +1039,9 @@ detrend and scaling vocabulary over the same `idl_rs::fft` types.
 `averaging` is `idl_rs::fft::Averaging`, extended to all four wire tokens
 (ruling R63 (3), L8w Task 12) — `"none"`/`"mean"`/`"median"`/`"max"` each
 map directly to an `Averaging` variant, none rejected. Returns raw bytes via
-`tauri::ipc::Response`.
+`tauri::ipc::Response`. `"none"` requires the request's segmentation to
+produce exactly one segment (ruling R76) — more is `invalid_argument` with
+`detail: { "segments": n }`, not a silent first-segment result.
 
 **Binary layout `IDLF`, version 1.** Little-endian throughout.
 
@@ -1071,6 +1073,9 @@ import lands (§6).
 - 2026-09-05: fetch_fft's averaging union closed against
   idl_rs::fft::Averaging (ruling R63 (3), L8w Task 12) — "none" and "max"
   now implemented, not rejected.
+- 2026-09-06: "none" requires exactly one segment; more is invalid_argument
+  with detail: { "segments": n } instead of silently keeping the first
+  segment's power (ruling R76, L8w Task 12 fix).
 
 ### 3.7 Cursor (L3)
 
