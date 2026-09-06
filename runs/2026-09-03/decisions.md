@@ -3799,3 +3799,8 @@ From idl-rs `3be4eb8`: `cargo test -p idl-rs-tauri` **189 passed**;
 ignored, cli 53. Covers Tasks 1–4 (+ R84). `index_session` treats a
 missing `session.json`/`data.parquet` as `NotFound` (it names one session
 the caller expects to exist) — accepted.
+
+**Tracked (L2b Task 5):** post-lane TS shell task — `app/src/ipc/catalog.ts`
+`LapDetail.sectors: LapSector[]` (`name, start_ms, end_ms, start_time_secs,
+end_time_secs`) and `neutral_zone_visits: LapNeutralZoneVisit[]` (`name,
+enter_ms, exit_ms`) replacing `unknown[]`; Data tab lap tables consume them.
