@@ -3515,3 +3515,17 @@ deleted only stale Claude scratchpad directories from finished sessions
 directory was touched. Task 13 resumed. **For Isaac:** the machine needs
 ~20 GB of headroom for Tauri builds; candidates are Downloads, the idl0-app
 target directory (rebuildable), and `AppData\Local\Packages`.
+
+## 2026-09-06 — L8w write-amendment lane LANDED (idl-rs `c893ba7`, idl1-app `4bb9cfb` + submodule bump `8fcadc5`)
+
+Lane gate from idl-rs `4207fc7`: `cargo test -p idl-rs-tauri` **189 passed**
+(lead ran it at the merge — Task 14 had substituted `cargo check`);
+`cargo test -p idl-rs -p idl-rs-cli -- --test-threads=4` idl-rs 943 / 1
+ignored, cli 51, doctest 1; `cargo check -p idl-rs-cli --tests` clean.
+20 commands added (App 7, catalog writes 2, Device 6, Workbook 4,
+`fetch_fft`). Merged into the submodule's `main` (`--no-ff`), then the app
+side into idl1-app `main` (CHANGELOG: kept both bullets; the lane bullet's
+gate figures corrected to 189/943), submodule pointer bumped. Main TS gate
+after `npm install`: 78 files / 590 passed, `tsc` clean. Both L8w worktrees
+retired. Next: the post-L8w shell task swapping every UI stub for its real
+command, then a Tauri build for Isaac's preview (disk permitting).
