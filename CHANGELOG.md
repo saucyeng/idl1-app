@@ -20,19 +20,31 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
   No Rust yet — this is the contract the lane's remaining eleven tasks are
   held to.
 - **L11 Task 2: sync manifest core (2026-09-06, idl-rs core,
-  `store::sync::manifest`).** The typed C4 §6 manifest (`Manifest`,
-  `BlobEntry`, `DataParquetEntry`, `DerivedEntry`, `SessionJsonEntry`,
-  `SessionEntry`, `WorkbookEntry`, `TrackEntry`, `ProfileEntry`) and
-  `build_manifest(data_root, now_ms)`, a pure `std::fs` walk of `<data>`
-  that fills it, sorted by identity key for byte-identical repeat runs.
-  Excludes `catalog.sqlite`/`-wal`/`-shm`, `tmp/`, and any dotfile or
-  dot-directory under `workbooks/` (`.sync-base/` included). A malformed
-  individual file (unparseable `data.parquet` metadata, a front-matter
-  parse failure, a filename/content-id mismatch) is omitted rather than
-  aborting the walk. No network, no async, no clock of its own.
+  `store::sync::manifest`; fixed 2026-09-06 per review ruling R90).** The
+  typed C4 §6 manifest (`Manifest`, `BlobEntry`, `DataParquetEntry`,
+  `DerivedEntry`, `SessionJsonEntry`, `SessionEntry`, `WorkbookEntry`,
+  `TrackEntry`, `ProfileEntry`, `SkippedEntry`) and
+  `build_manifest(data_root, now_ms) -> (Manifest, Vec<SkippedEntry>)`, a
+  pure `std::fs` walk of `<data>` that fills it, sorted by identity key for
+  byte-identical repeat runs. Excludes `catalog.sqlite`/`-wal`/`-shm`,
+  `tmp/`, and any dotfile or dot-directory under `workbooks/` (`.sync-base/`
+  included). Blobs and derived-channel files are named by the hash their
+  CAS path already carries, never re-hashed from bytes (ruling R90); a
+  corrupted blob is `verify_data_dir`'s finding, not this walk's. A
+  malformed individual file (unparseable `data.parquet` metadata, a
+  `session.json` that doesn't parse, a front-matter parse failure, a
+  filename/content-id mismatch) is omitted from the manifest and named,
+  path and reason, in the returned `SkippedEntry` list — never silently
+  dropped (ruling R90). No network, no async, no clock of its own.
 - **L11 Task 3: sync diff (2026-09-06, idl-rs core, `store::sync::diff`,
-  ruling R89).** Pure `plan_sync(local, remote) -> SyncPlan` over two
-  `Manifest`s: `SyncAction` (`Pull`/`Push`/`PullForMerge`), `SyncItem`,
+  ruling R89; extended 2026-09-06 per ruling R90).**
+  `plan_sync(local, remote, local_skipped) -> SyncPlan` over two
+  `Manifest`s and Task 2's local `SkippedEntry` list: a locally skipped
+  path gets no pull/merge/push item and instead a
+  `SyncNoteReason::LocalFileSkipped { path, reason }` note, so a malformed
+  local `session.json` or workbook is never overwritten by a peer's pull
+  nor offered as if it were a good copy. `SyncAction` (`Pull`/`Push`/
+  `PullForMerge`), `SyncItem`,
   `SyncClass`, `SyncNote`/`SyncNoteReason`. Every conflict rule is C4 §6's:
   blob/derived set difference by hash; `data.parquet` compares the
   `(importer_version, seam_correction_version)` pair — equal pair, differing
