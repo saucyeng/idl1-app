@@ -6,6 +6,24 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 
 ### Added
 
+- **L8x Task 5: `delete_track` command (2026-09-06, idl-rs-tauri, no spec
+  change needed).** `delete_track(track_id: string) -> DeleteTrackReport`
+  (C3 §3.2, ruling R86): an absent `tracks/<id>.idl0t` is `not_found`,
+  checked first, before any catalog work — matching `delete_session_via`.
+  Removes the artifact via the landed `track_artifact::write::delete_track`,
+  then, only when `catalog.sqlite` already exists, deletes the one `tracks`
+  row via a new `core::store::catalog::delete_track` (a single `DELETE`,
+  never a `rebuild_catalog`, matching `delete_session`'s own R68
+  reasoning). `laps.track_id` is already `REFERENCES tracks(track_id) ON
+  DELETE SET NULL`, so lap rows survive unattributed; a catalog failure
+  folds into `warnings`. Recomputes `track_library_hash` over the
+  post-delete library and returns every session whose
+  `track_visits_library_hash` stamp no longer matches as
+  `stale_session_ids`, reusing `save_track`'s helper. Deliberately never
+  rewrites any `session.json` (asserted byte-identical in a test) — idl0
+  left stale `TrackVisit` references behind a delete too
+  (`track_provider.dart`'s note, SPEC §12.3); "Rescan tracks" is the
+  user-driven repair. Registered in `handler()`. No new `IpcErrorKind`.
 - **L8x Task 4: `save_track` command (2026-09-06, idl-rs-tauri, no spec
   change needed).** `save_track(track: TrackDraft) -> SaveTrackResult`
   (C3 §3.2, ruling R86), one command for create and edit: `track_id: None`
