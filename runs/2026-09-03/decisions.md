@@ -3529,3 +3529,34 @@ gate figures corrected to 189/943), submodule pointer bumped. Main TS gate
 after `npm install`: 78 files / 590 passed, `tsc` clean. Both L8w worktrees
 retired. Next: the post-L8w shell task swapping every UI stub for its real
 command, then a Tauri build for Isaac's preview (disk permitting).
+
+## 2026-09-06 — R77: post-L8w shell task rulings (stub swap `d83a14d`…`404d979`)
+
+The shell task (five commits on main, suite 81 files / 625 passed) swapped
+every stub that had a one-to-one command and stopped, correctly, at four
+seams that need design. Rulings:
+1. **Pasted path stays an import path.** The Data import panel keeps its
+   tested "paste a path → import" behaviour; the new Browse button opens
+   the native dialog beside it (R55's seam). Repurposing the field as the
+   dialog's start folder is reverted in the review fix.
+2. **Prose HTML renders in the sandbox, never via `dangerouslySetInnerHTML`
+   in the host** (R69 holds): the host posts `prose_before_html`/
+   `prose_after_html`/`prose_spans` to the sandbox as part of `setCells`;
+   the sandbox sets the HTML inside its own document and fills the
+   `<span data-span-id>` placeholders from the evaluated spans; before the
+   first eval the cell shows its raw prose text (stated fallback). The TS
+   regex scanner is deleted then. → **L6 Task 17**.
+3. **Host-channel binding** (`fetch_host_channel`): a chart cell whose
+   `y` names a workbook definition rather than a session channel fetches
+   it on gesture settle through the same run sequencer, budget = the tile
+   budget for the viewport width. → **L6 Task 18**. FFT chart (R52 Q7) →
+   **L6 Task 19** over `fetch_fft`/`IDLF`.
+4. **Device tab live wiring** (`device_status` polled at 1 Hz only while
+   the tab is visible and a device is connected; `device_control`
+   start/stop logging + WiFi; profiles over `list/save/delete_profile`
+   with last-write-wins) → **L7b Task 10**. **Settings persistence** moves
+   from localStorage to `get_settings`/`set_settings` behind the existing
+   `PrefsBackend` → **L7c Task 8**.
+
+**Cost if wrong:** all four are additive tasks over landed commands; the
+shell task shipped nothing wrong, it shipped less.
