@@ -3673,3 +3673,10 @@ and a workbook file dropped into `workbooks/` is invisible until the
 catalog is rebuilt. → **L6 Task 21**: empty state with "New workbook"
 and "Rescan", plus a workbook picker when more than one is indexed
 (the picker was deferred in R66; both now have their commands).
+
+**Process note (L6 Task 20, 2026-09-06):** the follow-on worktree was cut
+before the C2 §5.3 amendment landed on main, so the brief's "already
+applied" premise was false in the worktree; the implementer merged main
+in (R19) before starting. Rule going forward: a brief that cites an
+amendment names its commit hash and the implementer's first step is
+`git merge-base --is-ancestor <hash> HEAD` — merge main first if it fails.
