@@ -79,6 +79,39 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
   derivation can never produce them) and are implemented only as C2 §7.2's
   documented defensive fallback, unit-tested directly against the internal
   decision function rather than through `decide_cells` itself.
+- **L11 Task 5: workbook merge — ordering, conflict cells, base cache
+  (2026-09-06, idl-rs core, `workbook::merge::{merge, order}`,
+  `store::sync::base_cache`).** `merge(local, peer, base, peer_name)` folds
+  Task 4's decisions into an actual `WorkbookDoc`: C2 §7.3's four ordering
+  rules (base order kept; a one-side addition anchored immediately after
+  its nearest preceding *surviving* base neighbour in that side's own
+  order, or at the document start; same-anchor ties put local's insertions
+  first); a `Conflict` outcome appends the peer's cell immediately below
+  local's under a fresh id minted on C2 §2.2's collision-avoidance path
+  (never local's or peer's, never colliding with another conflict copy
+  minted in the same merge), with `<!-- conflict from <peer> -->` as
+  `prose_before`'s first line; `MarkedDeletion` inserts a `deleted
+  upstream`/`deleted locally` marker into the surviving cell's own
+  `prose_before` instead of inventing a second cell; a front-matter
+  scalar/constant conflict's marker is prepended as the first line of the
+  document's leading prose. A document with zero fenced cells on all three
+  sides takes §7.3's plain three-way text path instead of the cell table.
+  `MergedDoc.doc`'s `const_lines`/`defs`/`constants` are recomputed from the
+  merged cell set (mirrors `parse_workbook`'s own per-cell pass) so the
+  in-memory result is consistent with what a save-then-reparse round trip
+  would produce, even though this module never renders to text or touches
+  a file — Task 6 still owns installing the merged document to
+  `workbooks/`. `store::sync::base_cache` adds `base_cache_path`/
+  `read_base`/`write_base` for `<data>/workbooks/.sync-base/<id>.idl1wb`:
+  bytes in, `WorkbookDoc` out, through the same atomic-write primitive and
+  the same path-separator/`..` guard `write_track` uses for its id; a cache
+  file that won't parse is treated as absent (`Ok(None)`), never a hard
+  failure — a corrupt cache must not block a sync. Note for the lane: C4
+  §6's amendment text already documents `.sync-base/` as exempt from
+  `verify`'s unmatched-path finding (#10), but `store::verify::matches_layout`
+  itself has no `.sync-base` arm yet — writing a base-cache file today will
+  surface a spurious Info finding until that's patched; flagged for the
+  lead, not fixed here (`store/verify.rs` is outside this task's files).
 - **L8x lane complete: Data-tab write commands (2026-09-06, idl-rs core +
   idl-rs-tauri, ruling R86).** Five new commands close the last C3 §6
   deferrals the Data tab still stubbed: `save_track`, `delete_track`,
