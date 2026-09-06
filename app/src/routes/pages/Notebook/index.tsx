@@ -2,7 +2,7 @@ import { useEffect, useReducer, useRef, useState } from "react";
 
 import { getSession, listSessions, listWorkbooks, type SessionDetail } from "../../../ipc/catalog";
 import { cursorReadout } from "../../../ipc/cursor";
-import { fetchTile, type DecodedTile } from "../../../ipc/tiles";
+import { fetchTile } from "../../../ipc/tiles";
 import { evalWorkbook, openWorkbook, saveWorkbook, watchWorkbook } from "../../../ipc/workbook";
 import { useAppState } from "../../../state/AppState";
 import CellList from "./components/CellList";
@@ -16,13 +16,13 @@ import { SandboxHost } from "./host/SandboxHost";
 import { NotebookSession } from "./host/NotebookSession";
 import { tileToChannelData } from "./model/channelData";
 import { dropCellHeight, initialCellHeights, recordCellHeight, type CellHeights } from "./model/cellLayout";
+import { runChannelBind, type ChannelBindAction, type ChannelBindDeps, type ChartWindow } from "./model/channelBindDriver";
 import { bindingFor, bindingIdentity, unresolvedChannelId } from "./model/jsCellBinding";
 import { runEval, runOpenAndEval, type OpenEvalDeps } from "./model/openEvalDriver";
 import { isSelfWrite, saveFlow, type SaveFlowState, type WorkbookEventWithHash } from "./model/saveFlow";
 import { runSessionSpan, type SessionSpanAction, type SessionSpanDeps } from "./model/sessionSpanDriver";
-import { chooseTier, pointBudget, tileRange } from "./model/tiers";
-import { ensureTiles, TileCache, type TileCacheKey } from "./model/tileCache";
-import type { Viewport } from "./model/viewport";
+import { pointBudget, tileRange } from "./model/tiers";
+import { TileCache } from "./model/tileCache";
 import { initialWorkbookState, workbookReducer } from "./model/workbookState";
 
 /** C4 §4's stated expected-hash-set TTL (5 s), matched here for the frontend's own independent self-write belt (`saveFlow.ts`'s `isSelfWrite`). */
@@ -54,12 +54,6 @@ const DEFAULT_CHART_WIDTH_PX = 640;
 function decodeByteRange(markdown: string, range: [number, number]): string {
   const bytes = new TextEncoder().encode(markdown);
   return new TextDecoder().decode(bytes.subarray(range[0], range[1]));
-}
-
-/** One bound `js` cell's currently rendered tile window (`ChartCell`'s `tiles`/`viewport` props), keyed by cell id. */
-interface ChartWindow {
-  viewport: Viewport;
-  tiles: DecodedTile[];
 }
 
 /**
@@ -399,18 +393,25 @@ export default function NotebookPage() {
 
   // For each `js` cell newly bound to a real channel (`bindingFor`, R66
   // item 1) -- a cell whose binding's identity (`bindingIdentity`) has
-  // changed since the last time this effect ran -- fetches that channel's
-  // initial window of tiles once and registers it with
-  // `sessionRef.current.setBoundChannel`, mirroring `ChartCell`'s own
-  // settle-triggered fetch with the same already-tested pieces
-  // (`chooseTier`/`tileRange`/`ensureTiles`/`tileToChannelData`). Later
-  // gesture settles are handled by each `ChartCell`'s own
-  // `onViewportSettled` callback (built in `renderJsCell` below), not
-  // here. Depends only on data (`state.cells`/`state.markdown`/
-  // `sessionDetail`/`sessionSpanUs`/`sessionId`) -- the one piece of
-  // decision logic this effect makes ("has this cell's binding changed")
-  // is the pure `bindingIdentity` string comparison, not an inline fetch
-  // decision the way the tightened IPC-effects rule targets.
+  // changed since the last time this effect ran -- fetches and sends
+  // *every* distinct bound channel's initial window of tiles (lead
+  // pre-ruling 2026-09-05 #3, review-task13b.md Critical fix: a
+  // multi-channel binding must not silently drop its later channels) and
+  // registers the one channel `ChartCell` mounts
+  // (`binding.channels[0]`) with `sessionRef.current.setBoundChannel`.
+  // All of that sequencing -- and the "is this fetch's result still
+  // current" decision -- lives in the pure, unit-tested
+  // `model/channelBindDriver.ts`'s `runChannelBind`, mirroring
+  // `openEvalDriver.ts`'s/`sessionSpanDriver.ts`'s shape: `isStale` is
+  // `binding`'s captured `identity` no longer matching
+  // `boundIdentityRef.current.get(cellId)`, checked after every per-channel
+  // `await` inside the driver, so a superseded fetch (this cell's binding
+  // changed again, or the cell/session/document changed under it) before
+  // this run resolves never overwrites fresher `chartWindows`/registry
+  // state. Later gesture settles are handled by each `ChartCell`'s own
+  // `onViewportSettled` callback (built in `renderJsCell` below), not here.
+  // Depends only on data (`state.cells`/`state.markdown`/`sessionDetail`/
+  // `sessionSpanUs`/`sessionId`) -- the tightened IPC-effects rule.
   useEffect(() => {
     if (state.markdown === null || sessionId === null) return;
     const markdown = state.markdown;
@@ -430,35 +431,21 @@ export default function NotebookPage() {
       if (boundIdentityRef.current.get(cellId) === identity) continue;
       boundIdentityRef.current.set(cellId, identity);
 
-      const channel = binding.channels[0];
-      const { startUs, endUs } = binding.initialSpan;
-      const tier = chooseTier(endUs - startUs, DEFAULT_CHART_WIDTH_PX, channel.sampleRateHz);
-      const range = tileRange(startUs, endUs, tier, channel.sampleRateHz);
-      const key: Omit<TileCacheKey, "tileIndex"> = { sessionId: sid, channelId: channel.channelId, tier, columnCount: DEFAULT_CHART_WIDTH_PX };
-      const budget = pointBudget(DEFAULT_CHART_WIDTH_PX, false);
-
-      void ensureTiles(sessionRef.current.cache, key, range, (tileIndex) =>
-        fetchTile(sid, channel.channelId, tier, tileIndex, DEFAULT_CHART_WIDTH_PX)
-      ).then(() => {
-        const tiles: DecodedTile[] = [];
-        for (let tileIndex = range.first; tileIndex <= range.last; tileIndex++) {
-          const tile = sessionRef.current.cache.get({ ...key, tileIndex });
-          if (tile === undefined) {
-            // TODO(idl0): mirrors ChartCell's own settle-handler TODO -- a
-            // tile evicted between `ensureTiles` resolving and this read
-            // drops this initial bind entirely rather than a partial range.
-            return;
-          }
-          tiles.push(tile);
+      const deps: ChannelBindDeps = {
+        fetchTile: (sessId, channelId, tier, tileIndex, columnCount) => fetchTile(sessId, channelId, tier, tileIndex, columnCount),
+      };
+      const onAction = (action: ChannelBindAction) => {
+        if (action.type === "channelData") {
+          sandboxHostRef.current?.setChannelHostVar(action.channelId, action.length, action.t, action.v);
+        } else if (action.type === "boundChannel") {
+          sessionRef.current.setBoundChannel(action.cellId, action.bound);
+        } else {
+          setChartWindows((prev) => new Map(prev).set(action.cellId, action.chartWindow));
         }
+      };
+      const isStale = () => boundIdentityRef.current.get(cellId) !== identity;
 
-        const data = tileToChannelData(tiles, startUs, endUs, budget);
-        sandboxHostRef.current?.setChannelHostVar(channel.channelId, data.length, data.t.buffer as ArrayBuffer, data.v.buffer as ArrayBuffer);
-        sessionRef.current.setBoundChannel(cellId, { name: channel.channelId, key, range, startUs, endUs, budget });
-        setChartWindows((prev) =>
-          new Map(prev).set(cellId, { viewport: { startUs, endUs, pixelWidth: DEFAULT_CHART_WIDTH_PX }, tiles })
-        );
-      });
+      void runChannelBind(deps, sessionRef.current.cache, sid, cellId, binding, DEFAULT_CHART_WIDTH_PX, onAction, isStale);
     }
   }, [state.cells, state.markdown, sessionDetail, sessionSpanUs, sessionId]);
 
@@ -518,6 +505,12 @@ export default function NotebookPage() {
               );
             }
 
+            // TODO(idl0): `ChartCell` mounts `binding.channels[0]` only --
+            // no per-channel `ChartCell` instances (lead pre-ruling
+            // 2026-09-05 #3, R69(d)); the cell's own Plot code reaches the
+            // other bound channels via `channel()` against host variables
+            // the channel-bind effect above (`model/channelBindDriver.ts`)
+            // sends for every distinct channel, not just this one.
             const channel = binding.channels[0];
             const window = chartWindows.get(cellId);
             const sid = sessionId;

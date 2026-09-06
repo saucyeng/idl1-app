@@ -123,4 +123,18 @@ describe("toIpcErrorOrUnknown", () => {
 
     expect(error).toEqual({ kind: "unknown", message: "disk full" });
   });
+
+  it("toIpcErrorOrUnknown — a plain Error rejection — synthesizes a message from Error.message", () => {
+    const reason = new Error("disk full");
+
+    const error = toIpcErrorOrUnknown(reason);
+
+    expect(error).toEqual({ kind: "unknown", message: "disk full" });
+  });
+
+  it("toIpcErrorOrUnknown — a non-string, non-Error rejection (e.g. undefined) — synthesizes a message via String()", () => {
+    const error = toIpcErrorOrUnknown(undefined);
+
+    expect(error).toEqual({ kind: "unknown", message: "undefined" });
+  });
 });
