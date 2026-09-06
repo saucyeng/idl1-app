@@ -155,6 +155,15 @@ Path patterns, fixed:
   by `verify`/repair (§7). Nothing under `tmp/` is ever referenced by the
   catalog or read as a source of truth.
 
+**Added post-sign (2026-09-06, L8x, ruling R86).** Each quarantine payload
+gains a sidecar, `tmp/quarantine/<uuid>.json`, alongside
+`tmp/quarantine/<uuid>-<original-name>`, additive: `{ entry_id,
+original_path, reason, quarantined_at_ms }`. C4's filename alone carries
+neither a reason nor a time; `entry_id` is the uuid shared with the payload
+filename, so C3 §3.2's `list_quarantine` can pair the two without parsing
+the display-name portion. Same rule as everything else under `tmp/`:
+never referenced by the catalog, never read as a source of truth.
+
 ## 3. Identity
 
 **Blob hash.** SHA-256 over the raw source file's bytes exactly as received
@@ -419,7 +428,10 @@ for foreign-key insert order:
    operation as the existing engine `channel_min_max`, SPEC §15.3 — no
    full materialization) and insert one row per `(lap, channel)`.
 6. **`workbooks`** — walk `workbooks/*.idl1wb`; parse front matter (C2). A
-   parse failure is reported and the file is skipped, not inserted.
+   parse failure is reported and the file is skipped, not inserted. Landed
+   (ruling R87, L8x Task 5b) — `create_workbook`/`save_workbook` also upsert
+   their own row right after the write, so a workbook is queryable via
+   `list_workbooks` without waiting for a rebuild.
 7. Set `PRAGMA user_version` to the current schema version and commit.
 
 **Nothing reads the catalog for truth.** Every column above is either a
@@ -579,7 +591,10 @@ is never scanned, checked, or reported on by `verify`:
 **Repair actions.**
 - Hash mismatch (#1, #5): quarantine — rename into
   `tmp/quarantine/<uuid>-<original-name>` (outside every watched/synced
-  path) and report. Never silently deleted.
+  path) and report. Never silently deleted. Recorded with a sidecar
+  (§2's post-sign amendment) so the UI can list it. **Added post-sign
+  (2026-09-06, L8x, ruling R86 Q1/Q8):** `verify_data_dir(repair: true)`
+  (C3 §3.10) is the only caller of this repair path.
 - Missing blob (#3): no local repair; surfaced for re-sync/re-download.
 - Stale catalog (#9): auto-triggers the §5 rebuild.
 - Unparseable `session.json` / workbook / track (#2, #7, #8): surfaced,

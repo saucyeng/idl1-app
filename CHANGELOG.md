@@ -6,6 +6,130 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 
 ### Added
 
+- **L8x lane complete: Data-tab write commands (2026-09-06, idl-rs core +
+  idl-rs-tauri, ruling R86).** Five new commands close the last C3 §6
+  deferrals the Data tab still stubbed: `save_track`, `delete_track`,
+  `list_quarantine`, `resolve_quarantine`, `verify_data_dir`. Two contract
+  amendments back them: C3 §3.2/§3.10 (the five commands, §6's `TrackDetail`
+  open question 10 closed, quarantine/track-write deferrals struck) and C4
+  §2/§7 (the quarantine sidecar shape). Per-task detail in the bullets
+  below; ruling R87's incidental catalog-workbook-indexing fix is its own
+  bullet.
+- **L8x Task 7: quarantine and verify commands (2026-09-06, idl-rs-tauri,
+  ruling R86, no spec change needed beyond Task 1's C3 amendment).**
+  `tauri/src/commands/maintenance.rs` (new): `list_quarantine` and
+  `resolve_quarantine` (C3 §3.2) are thin over Task 6's
+  `store::quarantine`; `resolve_quarantine`'s `action` maps
+  `"restore"`/`"discard"` to `ResolveAction` and rejects the stub's former
+  `"retry"` as `invalid_argument` rather than aliasing it (ruling R86 Q2).
+  `verify_data_dir(repair)` (C3 §3.10, ruling R86 Q8 — the App group, not
+  Catalog) times `store::verify::verify`/`verify_and_repair` and mints a
+  fresh uuid v4 plus the wall-clock time per repair, matching every other
+  deterministic core call's injected-`ids`/`now_ms` seam; `repair: false`
+  never touches the repair path, so it is provably read-only.
+  `QuarantineError` gets its own `From<_> for IpcError` in `error.rs`
+  (`NotFound`→`not_found`, `Occupied`→`invalid_argument`, `Io`→`io`,
+  `Encode`→`internal`, R46 precedent) — no new `IpcErrorKind` variant.
+  Registered in `handler()`.
+- **L8x Task 6: core quarantine module and `verify`'s repair pass
+  (2026-09-06, idl-rs core, ruling R86, no spec change needed beyond
+  Task 1's C4 amendment).** `core::store::quarantine` (new): `quarantine_file`
+  moves a corrupt file to `tmp/quarantine/<entry_id>-<original name>` and
+  writes its `<entry_id>.json` sidecar through the landed atomic-write
+  primitive *before* the move, so a crash between the two leaves an orphan
+  sidecar and an untouched source — recoverable, never a silent loss —
+  rather than a bare payload that could lose its `original_path`/`reason`
+  forever; `list_quarantine` is payload-driven (a sidecar with no matching
+  payload is a half-finished resolve and is skipped); `resolve_quarantine`
+  restores (refusing to overwrite an occupied destination) or discards,
+  never touching the catalog. `rename` falls back to copy+fsync+remove on
+  a cross-device error. `store::verify` gains `verify_and_repair`, the sole
+  caller of this repair path (C4 §7, R86 Q1/Q8): it runs the existing
+  read-only `verify` unchanged and then quarantines exactly the findings
+  whose path shape is #1 (a corrupt blob) or #5 (a corrupt derived
+  parquet) — decided structurally from each finding's own path, never by
+  matching message text, so #2/#3/#4/#7/#8/#9/#10 are never auto-repaired.
+  `entry_id` minting and the clock stay outside core (`ids`/`now_ms` are
+  injected), matching every other deterministic core function.
+- **L8x Task 5b: the catalog indexes workbooks (2026-09-06, idl-rs core +
+  idl-rs-tauri, ruling R87, spec-during — C4 §5 amended).** Fixes the bug
+  where `list_workbooks` was always empty after a restart: `rebuild_catalog`
+  step 6 was still an L1-era no-op even though L3's `.idl1wb` front-matter
+  parsing had long since landed. Step 6 now walks `workbooks/*.idl1wb`,
+  parses each file's front matter (`workbook_id`/`name`), and upserts its
+  row via a new `core::store::catalog::upsert_workbook`
+  (`ON CONFLICT(workbook_id) DO UPDATE`, so an out-of-band file rename keeps
+  the same id); a file that fails to parse is skipped and counted in
+  `RebuildReport::skipped`, not aborting the scan. `create_workbook`/
+  `save_workbook` (`idl-rs-tauri`) also call `upsert_workbook` right after
+  their own atomic write, so a new or edited workbook is queryable
+  immediately — matching `save_track`'s existing after-write `tracks`
+  upsert. Neither `WorkbookHandle` nor `SaveResult` (C3 §3.4) has a warning
+  field, so a catalog failure here is logged (`eprintln!`) and swallowed,
+  never failing the save. Never creates a `catalog.sqlite` that doesn't
+  already exist (C4 §5's incremental-indexing rule).
+- **L8x Task 5: `delete_track` command (2026-09-06, idl-rs-tauri, no spec
+  change needed).** `delete_track(track_id: string) -> DeleteTrackReport`
+  (C3 §3.2, ruling R86): an absent `tracks/<id>.idl0t` is `not_found`,
+  checked first, before any catalog work — matching `delete_session_via`.
+  Removes the artifact via the landed `track_artifact::write::delete_track`,
+  then, only when `catalog.sqlite` already exists, deletes the one `tracks`
+  row via a new `core::store::catalog::delete_track` (a single `DELETE`,
+  never a `rebuild_catalog`, matching `delete_session`'s own R68
+  reasoning). `laps.track_id` is already `REFERENCES tracks(track_id) ON
+  DELETE SET NULL`, so lap rows survive unattributed; a catalog failure
+  folds into `warnings`. Recomputes `track_library_hash` over the
+  post-delete library and returns every session whose
+  `track_visits_library_hash` stamp no longer matches as
+  `stale_session_ids`, reusing `save_track`'s helper. Deliberately never
+  rewrites any `session.json` (asserted byte-identical in a test) — idl0
+  left stale `TrackVisit` references behind a delete too
+  (`track_provider.dart`'s note, SPEC §12.3); "Rescan tracks" is the
+  user-driven repair. Registered in `handler()`. No new `IpcErrorKind`.
+- **L8x Task 4: `save_track` command (2026-09-06, idl-rs-tauri, no spec
+  change needed).** `save_track(track: TrackDraft) -> SaveTrackResult`
+  (C3 §3.2, ruling R86), one command for create and edit: `track_id: None`
+  mints a UUID v4 (canonical lowercase-with-dashes) and both timestamps;
+  `Some(id)` requires the artifact to already exist (`not_found`
+  otherwise), preserves `created_at_ms` verbatim and bumps only
+  `updated_at_ms`. `validate_track` runs before any filesystem write
+  (`invalid_argument`, `detail: { field }`), then writes through the
+  landed `write_track` (no `conflict` kind, R59 Q1(a)). When
+  `catalog.sqlite` already exists, upserts the one `tracks` row via a new
+  `core::store::catalog::upsert_track` (`INSERT ... ON CONFLICT(track_id)
+  DO UPDATE`, deliberately never delete-then-insert — that would fire
+  `laps.track_id`'s `ON DELETE SET NULL` on every edit of an already-
+  visited track); a catalog failure folds into `warnings`. Recomputes
+  `track_library_hash` over the post-write library and returns every
+  session whose `track_visits_library_hash` stamp no longer matches as
+  `stale_session_ids` — this command never calls `rescan_tracks` itself
+  (PLAN §4). `GateWire`/`SectorGateWire`/`NeutralZoneWire`/`GpsFixWire`/
+  `LapTimingWire` (Task 2) gain `Deserialize` and a wire→domain `From`
+  impl each, doubling as `TrackDraft`'s field types. Registered in
+  `handler()`. No new `IpcErrorKind`.
+- **L8x Task 3: core track validation + `delete_track` (2026-09-06,
+  idl-rs, no spec change needed).** New `core::track_artifact::validate`:
+  `validate_track(&Track)` checks a non-empty trimmed `name`; every
+  `lap_timing`/`sector_gates`/`neutral_zones` gate is in range, finite, and
+  non-degenerate; `reference_polyline` fixes are range-checked too (an
+  empty polyline stays legal). First failure wins and names the failing
+  field (`TrackValidationError { kind, field, message }`); duplicate
+  sector/neutral-zone names are allowed (PLAN Q6), not a uniqueness rule.
+  `track_artifact::write` gains `delete_track(data_root, track_id)`
+  (`Ok(false)` when already absent) and a shared `track_id` guard —
+  rejecting a path separator or a `..` segment before joining — used by
+  both `delete_track` and `write_track`. No clock, no UUID, no Tauri.
+- **C3/C4 amendment for L8x Data-tab write commands (2026-09-06,
+  docs only, spec-first, ruling R86).** `save_track`, `delete_track`,
+  `list_quarantine`, `resolve_quarantine` (C3 §3.2) and `verify_data_dir`
+  (C3 §3.10) added to the IPC contract; §6 open question 10 closed
+  (`TrackDetail`'s `lap_timing`/`neutral_zones`/`sector_gates`/
+  `reference_polyline` are typed, no field left `unknown`); the
+  quarantine and track-write entries in §6's "Wave-2 amendment (R59)"
+  block are struck as landed. C4 gains an additive `tmp/quarantine/
+  <uuid>.json` sidecar (§2) and names `verify_data_dir(repair: true)` as
+  the sole caller of the hash-mismatch repair path (§7). No new
+  `IpcErrorKind`; no code in this task.
 - **L2b lap indexing lane complete (2026-09-06).** `store::lap_index`
   (IDL0_SPEC §17.4 rewrite) detects a session's track visits and the laps
   within each against the track library, caching the result in
@@ -30,8 +154,10 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
   §3.2, PLAN Q8) re-runs visit/lap detection against the *current* track
   library and re-indexes the catalog when one exists — the read-only half
   of the wave-2 amendment's deferred `rescan_track_visits` (§6), landing
-  now because the engine gap it named is closed; track *write* commands
-  (`save_track`/`delete_track`) remain deferred to wave 3. **Unblocks in
+  now because the engine gap it named is closed; at the time this bullet
+  was written, track *write* commands (`save_track`/`delete_track`)
+  remained deferred to wave 3 — **since landed 2026-09-06, L8x, ruling
+  R86**, see that lane's own bullets above. **Unblocks in
   the UI** (post-lane TS shell tasks, not scheduled by this lane): the
   Data tab's lap tables and `sessions.lap_count` can show real data
   instead of R53 Q4's "—" placeholder once `app/src/ipc/catalog.ts` gets
@@ -77,7 +203,7 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 - **Settings persist to `settings.json`, not `localStorage` (L7c Task 8, R77.4, R53 Settings Q1).** New `Settings/settingsBackend.ts` implements the existing `PrefsBackend` seam over `get_settings`/`set_settings`: the engine half (`rider_name`, `unit_system`) round-trips through the command and the UI half (`last_section`, `section_list_width_px`) stays in the WebView's own storage, recombined into the one document shape `parsePrefs` already understands, so no section and no `createPrefsStore` behaviour changed. `engine.data_dir` is read from `get_settings` but written only by `set_data_dir` — `set_settings` ignores that field (R59 Q5) and a write through it would have been a silent no-op. New `Settings/prefsMigration.ts` runs a one-time import of an existing `localStorage` engine half into `settings.json` and then clears just that half, keeping the UI keys and any unknown keys a newer app version wrote; `settings.json` wins on conflict, a failed import is shown to the user and retried next launch rather than marked done.
 - **Device tab goes live: status, controls, persisted profiles (L7b Task 10, R77.4).** `device_status` is polled at 1 Hz through a new pure `Device/statusPoll.ts` driver (one request in flight at a time, the next timer armed only when the previous settles, a rejection logged and the poll continued) while the Device tab is mounted and a device is connected; `HeroCard` now shows real recording state, SD, GPS, IMU, HRM, battery, WiFi and mode, keeping the literal "unavailable" only for a field the device did not report and a distinct "not polled yet" before the first result. Start/stop recording and WiFi on/off go through `device_control`, gated by a pure `Device/control.ts` (WiFi and recording are mutually exclusive, SPEC §23.9) and reported from the status the command returns, not from the promise resolving — on this desktop BLE stack the SPEC §7.2 ack byte never reaches the app (R63.1, R71 correction), so a refusal is indistinguishable from a silent no-op and a provisional-controls banner says so. Bike profiles now persist over `list_profiles`/`save_profile`/`delete_profile`, last-write-wins, through a new `Device/profilesSync.ts`; a stored profile whose config fails validation, and any file `list_profiles` itself skipped, are shown rather than silently defaulted. The connect path moves from `ble_connect` to the managed `connect_device`/`disconnect_device` pair — a 1 Hz poll is not implementable on a command that reconnects each call.
 
-- **UI shell task: every ipcStubs.ts swapped for the real L8w commands (2026-09-06).** `app/src/ipc/` gains wrapper modules for all 20 wave-2 write commands: `catalog.ts` (`saveSessionMetadata`, `deleteSession`), `device.ts` (`connectDevice`, `disconnectDevice`, `deviceStatus`, `deviceControl`, `pullConfig`, `previewChannelRegistry`), `workbook.ts` (`readWorkbook`, `createWorkbook`, `listMathBuiltins`, `fetchHostChannel`, `evalWorkbook`'s new `lapContext` argument, `CellOutput.prose_before_html`/`prose_after_html`/`prose_spans`, `WorkbookEvent.hash`), `rasters.ts` (`fetchFft`, an `IDLF` decoder), and a new `app.ts` group (`getSettings`/`setSettings`/`getDataDir`/`setDataDir`/`listProfiles`/`saveProfile`/`deleteProfile`). New `ipc/hostChannel.ts` decodes `IDLH` v1 host-channel bytes (24-byte header, `DataView` copy, throws a typed `HostChannelDecodeError` on bad magic/version/length). `Settings/ipcStubs.ts` and `Device/ipcStubs.ts` are deleted outright — every command either file stood in for now exists; `Data/ipcStubs.ts` keeps only `saveTrack`/`deleteTrack`/`listQuarantine`/`resolveQuarantine` (C3 still has no command for any of the four, deferred to wave 3). `Settings/DataSection.tsx`, `Device/PushConfigBar.tsx`, `Data/MetadataForm.tsx`/`DetailPane.tsx`/`index.tsx` now call the real commands; `MetadataForm` gains an `onSaved` callback so a successful `save_session_metadata` redraws the detail pane (and refreshes the sessions list) from the command's own re-read `SessionDetail`, per that command's own contract note. `Data/FilePicker.ts`'s `pickImportFile` seam (ruling R55) now opens `@tauri-apps/plugin-dialog`'s native `open()` dialog filtered to the four importer extensions, with the seam's `openDialog` parameter kept injectable for tests. **Correction (2026-09-06, review-shell-stub-swap Major, R77.1):** this bullet originally said the pasted-path field became the dialog's starting folder instead of the literal import target — that repurposing violated R55/R77.1's standing "paste a path → import" contract and has been reverted; the pasted-path field keeps its original direct-import behaviour (an `Import` button that imports the trimmed text verbatim, no dialog), and `pickImportFile`'s native dialog is exposed as a separate `Browse…` button beside it, optionally seeded from the pasted text as its starting folder. `Notebook/index.tsx`'s `readWorkbook`/`NotImplementedError` stub import is replaced by `ipc/workbook.ts`'s real `readWorkbook`; `workbookState.ts` drops the now-unreachable `"not_implemented"` `MarkdownStatus`/`markdownNotImplemented` action; `saveFlow.ts`'s interim `WorkbookEventWithHash` (`hash?: string`) becomes a plain alias for the now-real, always-present `WorkbookEvent.hash` (ledger R67). `evalWorkbook` calls thread `AppState.selection.lapContext` through (mapped to the wire `LapContext` shape) via a ref, matching the existing `sessionIdRef` pattern. New `Notebook/model/functionCatalog.ts`'s `diffFunctionCatalog` compares the hand-transcribed `MATH_FUNCTIONS` against `list_math_builtins` once at notebook open; a mismatch renders as a dismissable warning banner, never thrown. **Left unwired, and why:** `fetch_host_channel`/`ipc/hostChannel.ts` has no UI call site yet — binding a `math`-cell definition to a chart is a new feature (which definition triggers a fetch, what budget, gesture-settle semantics) with no existing seam or spec section to build against, not a stub swap; `CellOutput.prose_before_html`/`prose_spans` are typed and carried through IPC but `ProseSpan.tsx`'s client-side `${…}` regex scanner is not yet retired — rendering server-provided HTML with live-filled placeholder spans needs a DOM-manipulation design this task did not specify (and getting it wrong risks the R69 sandbox-escaping boundary), and the pre-first-eval prose state (no `prose_before_html` exists before a cell's first `eval_workbook` round trip) has no stated fallback. `Device` tab's `device_status`/`device_control`, `list_profiles`/`save_profile`/`delete_profile` persistence, and `connect_device`/`disconnect_device`'s managed link are now real commands but still have no call site — `HeroCard.tsx`/`ProfileBar.tsx` deliberately show static "unavailable" text with no wiring at all (not a stub), and building that wiring is new product/UX design, not a stub swap.
+- **UI shell task: every ipcStubs.ts swapped for the real L8w commands (2026-09-06).** `app/src/ipc/` gains wrapper modules for all 20 wave-2 write commands: `catalog.ts` (`saveSessionMetadata`, `deleteSession`), `device.ts` (`connectDevice`, `disconnectDevice`, `deviceStatus`, `deviceControl`, `pullConfig`, `previewChannelRegistry`), `workbook.ts` (`readWorkbook`, `createWorkbook`, `listMathBuiltins`, `fetchHostChannel`, `evalWorkbook`'s new `lapContext` argument, `CellOutput.prose_before_html`/`prose_after_html`/`prose_spans`, `WorkbookEvent.hash`), `rasters.ts` (`fetchFft`, an `IDLF` decoder), and a new `app.ts` group (`getSettings`/`setSettings`/`getDataDir`/`setDataDir`/`listProfiles`/`saveProfile`/`deleteProfile`). New `ipc/hostChannel.ts` decodes `IDLH` v1 host-channel bytes (24-byte header, `DataView` copy, throws a typed `HostChannelDecodeError` on bad magic/version/length). `Settings/ipcStubs.ts` and `Device/ipcStubs.ts` are deleted outright — every command either file stood in for now exists; `Data/ipcStubs.ts` keeps only `saveTrack`/`deleteTrack`/`listQuarantine`/`resolveQuarantine` (C3 then had no command for any of the four, deferred to wave 3 — **since landed 2026-09-06, L8x, ruling R86**; swapping these four stubs for the real commands is that lane's own post-lane TS shell task). `Settings/DataSection.tsx`, `Device/PushConfigBar.tsx`, `Data/MetadataForm.tsx`/`DetailPane.tsx`/`index.tsx` now call the real commands; `MetadataForm` gains an `onSaved` callback so a successful `save_session_metadata` redraws the detail pane (and refreshes the sessions list) from the command's own re-read `SessionDetail`, per that command's own contract note. `Data/FilePicker.ts`'s `pickImportFile` seam (ruling R55) now opens `@tauri-apps/plugin-dialog`'s native `open()` dialog filtered to the four importer extensions, with the seam's `openDialog` parameter kept injectable for tests. **Correction (2026-09-06, review-shell-stub-swap Major, R77.1):** this bullet originally said the pasted-path field became the dialog's starting folder instead of the literal import target — that repurposing violated R55/R77.1's standing "paste a path → import" contract and has been reverted; the pasted-path field keeps its original direct-import behaviour (an `Import` button that imports the trimmed text verbatim, no dialog), and `pickImportFile`'s native dialog is exposed as a separate `Browse…` button beside it, optionally seeded from the pasted text as its starting folder. `Notebook/index.tsx`'s `readWorkbook`/`NotImplementedError` stub import is replaced by `ipc/workbook.ts`'s real `readWorkbook`; `workbookState.ts` drops the now-unreachable `"not_implemented"` `MarkdownStatus`/`markdownNotImplemented` action; `saveFlow.ts`'s interim `WorkbookEventWithHash` (`hash?: string`) becomes a plain alias for the now-real, always-present `WorkbookEvent.hash` (ledger R67). `evalWorkbook` calls thread `AppState.selection.lapContext` through (mapped to the wire `LapContext` shape) via a ref, matching the existing `sessionIdRef` pattern. New `Notebook/model/functionCatalog.ts`'s `diffFunctionCatalog` compares the hand-transcribed `MATH_FUNCTIONS` against `list_math_builtins` once at notebook open; a mismatch renders as a dismissable warning banner, never thrown. **Left unwired, and why:** `fetch_host_channel`/`ipc/hostChannel.ts` has no UI call site yet — binding a `math`-cell definition to a chart is a new feature (which definition triggers a fetch, what budget, gesture-settle semantics) with no existing seam or spec section to build against, not a stub swap; `CellOutput.prose_before_html`/`prose_spans` are typed and carried through IPC but `ProseSpan.tsx`'s client-side `${…}` regex scanner is not yet retired — rendering server-provided HTML with live-filled placeholder spans needs a DOM-manipulation design this task did not specify (and getting it wrong risks the R69 sandbox-escaping boundary), and the pre-first-eval prose state (no `prose_before_html` exists before a cell's first `eval_workbook` round trip) has no stated fallback. `Device` tab's `device_status`/`device_control`, `list_profiles`/`save_profile`/`delete_profile` persistence, and `connect_device`/`disconnect_device`'s managed link are now real commands but still have no call site — `HeroCard.tsx`/`ProfileBar.tsx` deliberately show static "unavailable" text with no wiring at all (not a stub), and building that wiring is new product/UX design, not a stub swap.
 
 - **L6 Notebook lane wrap-up: `docs/IDL0_SPEC.md` §26 "Tab — Notebook" (L6 Task 16, spec-during).** §25 "Tab — Maths" is now a two-line pointer -- idl1 has no separate maths tab, math cells live in the notebook. §26 covers the four cell kinds and how each renders (prose/`math`/`table` via existing components, `js` via `ChartCell` when its code `plotForm.parse`s or `JsCellFrame`'s plain mount otherwise), the Properties+Code editor (D13) and the custom-code/Reset-to-form rule, the interaction rules and point budget restated as spec prose (P1-P8), the sandbox boundary and the six-variable cell API with `channel()`'s settled `{t, v}[]` return shape (R52 Q2), the per-cell bound-channel registry and shared run-sequence guard (R72), the interim TS `${…}` prose-span scanner pending R70's `prose_spans` wire field, and the reload-or-overwrite conflict banner with the per-cell merge named as L11's, not this tab's. A full parity-gap table (every idl0 Analyze/Maths feature not delivered, with its reason) is ported into the SPEC itself. `TASKS.md`'s `L6 notebook UI` line stays unticked: `plotForm`'s exhaustive round-trip test passes as part of this task's whole-suite gate, but design §10's 60fps-pan/zoom/hover-on-a-real-session criterion can only be observed in the running dev app, which is the lead's merge-gate eyeball pass, not this task's (R50 precedent). `runs/2026-09-05/lanes/l6/CONTRACT-AMENDMENTS.md` files proposed C2 §5.1 and C3 §3.4/§3.6 amendment text (N1/N3/N4/N5, R52 Q2/Q4-Q7) for the lead to apply -- this lane never edits a contract directly. Known cross-reference gap left for L10's pass: other legacy-idl0 sections of the SPEC (e.g. §14/§15/§19/§21's math/table engine descriptions) still point at old `§26.x` subsection numbers this rewrite removed (`§26.8`, `§26.11`-`§26.13`); not fixed here, out of this task's declared scope (§25/§26 only).
 - **Properties + Code editor shell (L6 Task 15, D13).** Selecting a `js` cell opens Properties and Code side by side, writing through the same cell body; every other cell kind shows Code only. `CellList.tsx` gains one optional `frame` wrapper prop (ruling R74, out of this task's original file list — the smallest hook that lets `CellFrame`'s select affordance reach every cell kind, math/table included, without `index.tsx` re-implementing `CellList`'s own cell iteration or restricting selection to `js` cells); `workbookState.ts`'s `editCell` action gains an optional `markdown` field so a local edit actually updates `state.markdown`/`state.cells` (re-scanned), not only `dirtyCellIds` — both existing test suites pass unmodified. A new debounced re-eval effect in `index.tsx` re-runs `evalWorkbook` after a burst of local edits settles. `model/editorEcho.ts`'s `isEditorEcho` (tested) lets `EditorPanes` recognise and drop a pane's `onChange` echo of the exact text this component itself just wrote, so a Properties edit and `CodePane`'s own external-`code`-sync re-application never bounce indefinitely between the two panes. No unit tests for `EditorPanes.tsx`/`CellFrame.tsx` themselves (rendering, CLAUDE.md §4) — the logic under test is Tasks 3, 4, 11, 12's existing coverage plus the new `editorEcho.test.ts`.

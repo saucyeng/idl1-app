@@ -2887,6 +2887,16 @@ gate is being placed the map takes the whole area so the two taps are precise,
 restoring the controls once placement commits or is cancelled. So track
 creation and gate editing work on mobile, not only desktop.
 
+**idl1, wave 2 (`TrackDetailPane.tsx`, C3 §3.2 `save_track`/`delete_track`,
+ruling R86).** The Track Detail Card's Name and Venue fields and its Delete
+action are real for wave 2, over the two commands above; the
+**map-based gate editor stays wave 3** (ruling R54 — the Track *facet* is
+dropped from the Data tab, and gate/sector/neutral-zone placement needs it).
+A `save_track`/`delete_track` call returns `stale_session_ids` rather than
+rescanning anything itself, and the card offers a "Rescan N sessions"
+action over the existing `rescan_tracks` command (C3 §3.2) rather than the
+edit silently re-running lap detection over the whole track library.
+
 ### 24.13 Sort Options
 
 Sort is a **field + direction**: a field chooser plus an ascending/descending
