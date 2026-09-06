@@ -3773,3 +3773,9 @@ asked; this lane is the answer to "keep going".
 
 **Cost if wrong:** one extra field in C1 and a cleared flag — both
 visible, both cheap to revisit.
+
+## 2026-09-06 — L7c Task 9 LANDED (`d8d34a8`, lead spot-check: ~60-line pure change + notice)
+
+Skipped migration fields are named with both values; R53's "no
+preference silently lost" holds again. Whole TS suite on main: 94 files /
+863 passed.
