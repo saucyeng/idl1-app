@@ -119,6 +119,64 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
   itself has no `.sync-base` arm yet — writing a base-cache file today will
   surface a spurious Info finding until that's patched; flagged for the
   lead, not fixed here (`store/verify.rs` is outside this task's files).
+- **L11 review fix (Task 5): `workbook::merge` — test `recompute_derived_fields`
+  against a merged conflict's const line.** Closes the review's one Important
+  finding: a new test merges two docs whose `const k` line changed via a
+  `Conflict` outcome (not just `TakePeer`/`KeepLocal`) and asserts
+  `merged.doc.constants`/`const_lines` reflect the *merged* cell set, not
+  either side's stale pre-merge value.
+- **L11 Task 6: `store::sync::apply` — verified install per class,
+  `session.json` per-field merge (2026-09-06, idl-rs core,
+  `store::sync::{apply, session_merge}`, `workbook::v3::render_workbook`).**
+  `install(data_root, item, bytes, peer_name, now_ms, ctx)` installs one
+  received sync item per C4 §6's per-class rule, trusting nothing about
+  `bytes` until it verifies: a blob/derived-channel is refused unless its
+  own sha256 equals the requested hash; `data.parquet` is refused unless its
+  own embedded `(importer_version, seam_correction_version)` matches what
+  the manifest claimed, otherwise written through the atomic primitive as
+  bytes, never regenerated; `session.json` runs a fresh
+  `session_merge::merge_session_json` per-field merge and writes the result;
+  a workbook with no local copy yet installs the peer's bytes verbatim
+  (nothing to merge against); one with a local copy merges against it and
+  the `.sync-base` cache (`workbook::merge::merge`, L11 Task 4/5), renders
+  the result via the new `workbook::v3::render_workbook` (the first writer
+  `WorkbookDoc` → `.idl1wb` text in this codebase — every prior consumer
+  round-trips the author's own markdown unchanged), renames the local file
+  when the peer's `file_name` differs (id wins, C4 §6), and overwrites the
+  base cache with the merged bytes; Track/Profile re-check LWW by
+  `updated_at_ms` at install time rather than trusting the sync plan (a
+  strictly-older peer copy is `KeptLocal`), defending against a race between
+  the manifest fetch and this file's fetch. `session_merge::merge_session_json`
+  (pure, C4 §6/C1 §6): a user-owned field "changed" means "not equal to this
+  type's zero value" (C1 §6's own `""`/`None`/`[]` "not set" convention,
+  read literally against the brief's "equal to neither side's default"
+  wording — resolves every field without needing the brief's no-base
+  "differs from the receiver's current value" fallback); a field changed on
+  one side only takes that side; changed on both to different values takes
+  the side whose file is newer by `updated_at_ms` (a tie keeps local); the
+  L2b lap cache (`laps`/`track_visits`/`track_visits_library_hash`/
+  `lap_detector_version`, ruling R83) is never merged, always the
+  receiver's own copy. **Two deviations from this task's interface sketch,
+  flagged for review:** (1) `install` gains a sixth parameter,
+  `ctx: &InstallContext`, carrying the peer manifest detail `SyncItem`
+  (landed by Task 3) does not itself carry — `data.parquet`'s claimed
+  version pair, `session.json`'s peer file mtime, a workbook's peer
+  `file_name` — populated by a future caller (Task 10/12) from the same
+  manifest it already fetched; extending `SyncItem`/`diff.rs` was judged
+  out of this task's file list. (2) `workbook::v3::render_workbook` is a new
+  function outside this task's declared files (`apply.rs`/
+  `session_merge.rs`/`sync/mod.rs`/`CHANGELOG.md`) — no prior task built the
+  `WorkbookDoc` → text direction (ordinary editing never needed it), and
+  Task 6 cannot install a merged workbook without it; built as pure
+  reassembly of C2 §1/§2.2–§2.4's already-signed grammar from fields
+  `parse_workbook` already captures verbatim (`raw_fence_body`,
+  `prose_before`/`prose_after`, `trailing_prose`), verified by round-tripping
+  the C2 §2.5 worked example back through `parse_workbook`. Filters:
+  `cargo test -p idl-rs store::sync::apply` (10 passed), `cargo test -p
+  idl-rs store::sync::session_merge` (5 passed), `cargo test -p idl-rs
+  render_workbook` (3 passed, ad hoc — outside the brief's named filters,
+  run because `render_workbook` is this task's own scope deviation).
+  `cargo check -p idl-rs-cli --tests` clean.
 - **L8x lane complete: Data-tab write commands (2026-09-06, idl-rs core +
   idl-rs-tauri, ruling R86).** Five new commands close the last C3 §6
   deferrals the Data tab still stubbed: `save_track`, `delete_track`,
