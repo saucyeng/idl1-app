@@ -50,3 +50,8 @@ headroom. Candidates (your call): `Downloads` 37.5 GB,
 `AppData\Local\Packages` 27.8 GB, `AppData\Roaming\Claude` 10.2 GB,
 `idl0-app\rust\target` 3.9 GB (rebuildable), `pagefile.sys` 36.5 GB
 (system-managed). May the lead delete the idl0-app target directory?
+Addendum: `saucyeng/.cargo-shared-target` (the wave-2 worktree build cache)
+is 12 GB and every wave-2 worktree is now retired; clearing it is safe and
+rebuildable but forces cold compiles for wave 3 worktrees (memory cost).
+`idl1-app/app/src-tauri/target` is 9.2 GB. The lead will not build the
+Tauri preview until ≥10 GB is free — say which of these to clear.
