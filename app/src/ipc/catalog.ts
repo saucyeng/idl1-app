@@ -227,8 +227,48 @@ export interface TrackSummary {
   updated_at_ms: number;
 }
 
+/** A gate: two lat/lon endpoints, decimal degrees (C3 §3.2, ruling R86).
+ *  The `.idl0t` file stores degrees x1e7 (SPEC §17b.1); that scaling is a
+ *  wire detail of the file, never of the IPC surface. */
+export interface Gate {
+  lat1: number;
+  lon1: number;
+  lat2: number;
+  lon2: number;
+}
+
+/** One sector-timing gate (C3 §3.2). */
+export interface SectorGate {
+  name: string;
+  gate: Gate;
+}
+
+/** One neutral-zone's enter/exit gate pair (C3 §3.2). */
+export interface NeutralZone {
+  name: string;
+  enter: Gate;
+  exit: Gate;
+}
+
+/** One point of a track's reference polyline (C3 §3.2). */
+export interface GpsFix {
+  /** i64, UTC ms */
+  timestamp_ms: number;
+  lat: number;
+  lon: number;
+}
+
+/** A track's lap-timing geometry: a single start/finish gate, or a
+ *  separate start and finish gate (C3 §3.2). Sealed union tagged by
+ *  `kind`. */
+export type LapTiming =
+  | { kind: "circuit"; start_finish: Gate }
+  | { kind: "point_to_point"; start: Gate; finish: Gate };
+
 /** The full `.idl0t` artifact content — the engine's
- *  `track_artifact::model::Track` (`idl-rs` core) serialised (C3 §3.2). */
+ *  `track_artifact::model::Track` (`idl-rs` core) serialised (C3 §3.2).
+ *  **REVISED (2026-09-06, L8x, ruling R86)** — the four fields C3 §6 open
+ *  question 10 left `unknown` are now typed, decimal degrees on the wire. */
 export interface TrackDetail {
   track_id: string;
   name: string;
@@ -237,15 +277,41 @@ export interface TrackDetail {
   created_at_ms: number;
   /** i64 */
   updated_at_ms: number;
-  /** sealed union (`Circuit` | `PointToPoint`, IDL0_SPEC §16.2a) — serde
-   *  tagging not yet fixed by any contract (C3 §6 item 10) */
-  lap_timing: unknown | null;
-  /** `NeutralZone[]`, IDL0_SPEC §16.2b — field shape not yet fixed (C3 §6 item 10) */
-  neutral_zones: unknown[];
-  /** `SectorGate[]` — field shape not yet fixed (C3 §6 item 10) */
-  sector_gates: unknown[];
-  /** `GpsFix[]` — field shape not yet fixed (C3 §6 item 10) */
-  reference_polyline: unknown[];
+  lap_timing: LapTiming | null;
+  neutral_zones: NeutralZone[];
+  sector_gates: SectorGate[];
+  reference_polyline: GpsFix[];
+}
+
+/** `save_track`'s argument (C3 §3.2, ruling R86). One command for create
+ *  and edit: `track_id: null` creates (the command mints a UUID v4 and
+ *  both timestamps); a string edits, preserving `created_at_ms` and
+ *  bumping `updated_at_ms` to now. */
+export interface TrackDraft {
+  track_id: string | null;
+  name: string;
+  venue_name: string;
+  lap_timing: LapTiming | null;
+  neutral_zones: NeutralZone[];
+  sector_gates: SectorGate[];
+  reference_polyline: GpsFix[];
+}
+
+/** `save_track`'s return (C3 §3.2, ruling R86). */
+export interface SaveTrackResult {
+  track: TrackDetail;
+  /** Sessions whose `track_visits_library_hash` no longer matches the
+   *  library after this write. The UI offers "Rescan N sessions" over
+   *  `rescanTracks`. */
+  stale_session_ids: string[];
+  warnings: string[];
+}
+
+/** `delete_track`'s return (C3 §3.2, ruling R86). */
+export interface DeleteTrackReport {
+  track_id: string;
+  stale_session_ids: string[];
+  warnings: string[];
 }
 
 /** Lists every indexed session (C3 §3.2). Never on a hot path. */
@@ -349,4 +415,23 @@ export interface RescanReport {
  *  call. Explicit user action ("Rescan tracks"), never a hot path. */
 export async function rescanTracks(sessionId: string): Promise<RescanReport> {
   return invoke<RescanReport>("rescan_tracks", { sessionId });
+}
+
+/** Creates (`track.track_id === null`) or edits (`track.track_id` a string)
+ *  one track (C3 §3.2, ruling R86). Validates before any write —
+ *  `invalid_argument` on a failure, never a partial write. Never calls
+ *  `rescanTracks` itself: `stale_session_ids` on the return names every
+ *  session whose cached track visits may now be wrong, for the caller to
+ *  offer a rescan per id. Explicit save action, never on keystroke. */
+export async function saveTrack(track: TrackDraft): Promise<SaveTrackResult> {
+  return invoke<SaveTrackResult>("save_track", { track });
+}
+
+/** Deletes one track (C3 §3.2, ruling R86). Does not rewrite any
+ *  `session.json`; `laps.track_id` survives unattributed
+ *  (`ON DELETE SET NULL`, C4 §5). `stale_session_ids` on the return names
+ *  every session the caller may want to offer a rescan for. Explicit,
+ *  destructive user action — always confirm first. */
+export async function deleteTrack(trackId: string): Promise<DeleteTrackReport> {
+  return invoke<DeleteTrackReport>("delete_track", { trackId });
 }
