@@ -402,8 +402,8 @@ carried forward here as ordinary catalog entries, not new.
 | `lap_start_time` | `lap_start_time(n)` | Lap | s, `NaN` if `n` out of range | Implemented | yes |
 | `lap_start_distance` | `lap_start_distance(n)` | Lap | m, `NaN` if `n` out of range or no `[Distance]` in session | Implemented | yes |
 | `sector_number` | `sector_number()` | Lap | 0-based sector index, `NaN` outside any sector (dimensionless) | Implemented | yes |
-| `variance_time` | `variance_time(ch)` | Variance | same units as `ch` (main − overlay, time-matched) | Implemented | yes |
-| `variance_dist` | `variance_dist(ch)` | Variance | same units as `ch` (main − overlay, arc-length-matched) | Implemented | yes |
+| `variance_time` | `variance_time(ch)` | Variance | same units as `ch` (main − overlay, time-matched; mean across every `overlay_laps` entry when more than one, R73) | Implemented | yes |
+| `variance_dist` | `variance_dist(ch)` | Variance | same units as `ch` (main − overlay, arc-length-matched; mean across every `overlay_laps` entry when more than one, R73) | Implemented | yes |
 | `attitude` | `attitude("roll"\|"pitch")` | Estimator (diagnostic) | degrees | Implemented | yes |
 | `body_accel` | `body_accel("long"\|"lat")` | Estimator (diagnostic) | g | Implemented | yes |
 | `wheel_travel` | `wheel_travel("front"\|"rear")` | Estimator | mm | Implemented | yes |

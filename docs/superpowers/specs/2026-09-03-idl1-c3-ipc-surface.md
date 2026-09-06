@@ -680,17 +680,21 @@ absent, and whose `None` reproduces today's behaviour bit for bit, is not a
 breaking change under §5 — R41 (`session_id`) and R43 (`column_count`) set
 that precedent post-sign on this same contract.
 
-**Note.** Until lap indexing at import lands (Rust backlog, R53 Data Q4), no
-session has laps, so every non-null `lap_context` rejects with
-`invalid_argument`. The argument is still correct to add now — there is
-nowhere else to put the designation — but the feature it unlocks arrives
-with that backlog item.
-
 *Added post-sign (2026-09-05, lead ruling R64.1).* `overlay_laps` names laps
 of `session_id`'s own session in wave 2 — `variance_time`/`variance_dist`
-compare the main lap against another lap of the same recorded session, not a
+compare the main lap against other laps of the same recorded session, not a
 different one; cross-session overlay is a wave-3 amendment carrying a
 `{ session_id, lap }[]` shape instead.
+
+*Amended post-sign (2026-09-06, R73 closed, L2b Task 7).* `overlay_laps`
+drives every one of its entries, not just the first: each named lap becomes
+one overlay window, and `variance_time(ch)`/`variance_dist(ch)` evaluate
+`ch` against every overlay lap independently, then take the elementwise
+mean of the resulting delta series (a rider comparing against several ghost
+laps at once gets the average deviation across all of them, not just the
+first ghost's). `current_lap()`, `sector_number()`, `lap_start_time(n)`, and
+`lap_start_distance(n)` are unaffected — they read `main_lap`, not
+`overlay_laps`.
 
 Return: `CellOutput[]`, one entry per cell, in document order.
 ```ts
