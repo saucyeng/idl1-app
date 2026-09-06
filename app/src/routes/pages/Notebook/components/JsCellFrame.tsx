@@ -1,5 +1,7 @@
 import { useEffect, useRef } from "react";
 
+import { resolveJsCellFrameHeightPx } from "../model/jsCellFrameHeight";
+
 /**
  * Default height reserved for a plain-mount `js` cell before its first
  * `cellRendered` (`ChartCellProps.heightPx`'s doc comment gives
@@ -67,11 +69,13 @@ export default function JsCellFrame({ cellId, heightPx, error, note, sendLayout 
     };
   }, []);
 
+  const resolvedHeightPx = resolveJsCellFrameHeightPx(heightPx, note !== undefined || error !== undefined);
+
   return (
     <div
       ref={frameRef}
       className="js-cell-frame"
-      style={{ position: "relative", width: "100%", height: heightPx ?? DEFAULT_JS_CELL_HEIGHT_PX }}
+      style={{ position: "relative", width: "100%", height: resolvedHeightPx }}
     >
       {note !== undefined && <div className="js-cell-frame-note">{note}</div>}
       {error !== undefined && <div className="js-cell-frame-error">{error}</div>}

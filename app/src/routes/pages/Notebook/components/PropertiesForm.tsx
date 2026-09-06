@@ -551,6 +551,10 @@ function FftPropertiesForm({
         </label>
         <label>
           Hop size (samples)
+          {/* Window size disables its editable control with `disabled` (it always renders a
+              select). Hop size has no such control once forced to "all" — under
+              averaging: "none" it renders this read-only span instead, since there is no
+              input to disable. Both mechanisms express the same "not editable" semantic. */}
           {fft.hopSize !== "all" ? (
             <input type="number" value={fft.hopSize} disabled={averagingIsNone} onChange={(e) => patchFft({ hopSize: Number(e.target.value) })} />
           ) : (
