@@ -3744,3 +3744,11 @@ from now on (operating brief §7.1). Two contradictions it surfaced:
 2. **R51 Q3** (whether to run `session_source` tests at the L2 gate) is
    moot: every L8w gate ran the whole `idl-rs-tauri` suite (149 → 189
    passed), which includes `session_source::tests`.
+
+## 2026-09-06 — L10 cosmetic pass LANDED (`80e4307`; lead spot-check per §7.4)
+
+Task 20 Minors, `JsCellFrame` min height (96 px, a judgment constant —
+no spec number) via pure `resolveJsCellFrameHeightPx` + 4 tests, SPEC
+`§26.x` cross-references repointed (the Controls table's reference now
+points at §27.10, where that content actually lives). Whole TS suite on
+main: 94 files / 860 passed.
