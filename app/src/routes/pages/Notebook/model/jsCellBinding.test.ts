@@ -364,6 +364,30 @@ describe("bindingFor — FFT arm", () => {
 
     expect(binding.hostVarName).toBe("fork_velocity | 1024 | 512 | hann | mean | magnitude | mean");
   });
+
+  it("bindingFor — no mainLap argument — request.lap defaults to null (R83/L2b Task 6)", () => {
+    const detail = sessionDetail([channel()]);
+
+    const binding = asFft(bindingFor({ id: "cell-a", code: fftCode("fork_velocity") }, detail, 60_000_000, noDefinitions));
+
+    expect(binding.request.lap).toBeNull();
+  });
+
+  it("bindingFor — a mainLap selected — request.lap carries it straight through", () => {
+    const detail = sessionDetail([channel()]);
+
+    const binding = asFft(bindingFor({ id: "cell-a", code: fftCode("fork_velocity") }, detail, 60_000_000, noDefinitions, 3));
+
+    expect(binding.request.lap).toBe(3);
+  });
+
+  it("bindingFor — a mainLap selected on a time cell — unaffected (mainLap is consulted only by the FFT arm)", () => {
+    const detail = sessionDetail([channel()]);
+
+    const binding = bindingFor({ id: "cell-a", code: oneMarkCode }, detail, 60_000_000, noDefinitions, 3);
+
+    expect(binding?.kind).toBe("time");
+  });
 });
 
 describe("bindingIdentity — FFT arm", () => {
@@ -389,5 +413,21 @@ describe("bindingIdentity — FFT arm", () => {
     const time = bindingFor({ id: "cell-b", code: oneMarkCode }, detail, 60_000_000, noDefinitions);
 
     expect(bindingIdentity(fft!)).not.toBe(bindingIdentity(time!));
+  });
+
+  it("bindingIdentity — a different mainLap, everything else unchanged — produces a different identity (R83/L2b Task 6)", () => {
+    const detail = sessionDetail([channel()]);
+    const a = bindingFor({ id: "cell-a", code: fftCode("fork_velocity") }, detail, 60_000_000, noDefinitions, 1);
+    const b = bindingFor({ id: "cell-a", code: fftCode("fork_velocity") }, detail, 60_000_000, noDefinitions, 2);
+
+    expect(bindingIdentity(a!)).not.toBe(bindingIdentity(b!));
+  });
+
+  it("bindingIdentity — same mainLap on both sides, including both null — produces the same identity", () => {
+    const detail = sessionDetail([channel()]);
+    const a = bindingFor({ id: "cell-a", code: fftCode("fork_velocity") }, detail, 60_000_000, noDefinitions, null);
+    const b = bindingFor({ id: "cell-b", code: fftCode("fork_velocity") }, detail, 60_000_000, noDefinitions, null);
+
+    expect(bindingIdentity(a!)).toBe(bindingIdentity(b!));
   });
 });

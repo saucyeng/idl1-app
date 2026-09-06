@@ -180,8 +180,10 @@ export async function createWorkbook(name: string): Promise<WorkbookHandle> {
  *  `lapContext` added post-sign (ledger R59, R64.1): `null` reproduces
  *  today's behaviour exactly (`MathLapContext::empty()`) — pass
  *  `state/AppState.tsx`'s `selection.lapContext`, mapped to this module's
- *  `LapContext` wire shape. Every non-null `lapContext` rejects with
- *  `invalid_argument` until lap indexing at import lands (C3 §3.4 note). */
+ *  `LapContext` wire shape. A `lapContext` naming a lap that does not exist
+ *  in `sessionId`'s `session.json` `laps[]` rejects with `invalid_argument`
+ *  (detail `{ lap }`, C3 §3.4) — lap indexing at import landed (R83), so a
+ *  real lap number now succeeds. */
 export async function evalWorkbook(
   id: string,
   sessionId: string | null,

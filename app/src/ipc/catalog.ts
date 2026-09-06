@@ -37,6 +37,31 @@ export interface SessionSummary {
   duration_ms: number | null;
 }
 
+/** `LapDetail.sectors` element (C1 §6 `laps[].sectors[]`, C3 §6 item 11,
+ *  closed 2026-09-06) — the landed `session_json::SectorJson` shape,
+ *  mirrored field for field. */
+export interface LapSector {
+  name: string;
+  /** i64, UTC ms */
+  start_ms: number;
+  /** i64, UTC ms */
+  end_ms: number;
+  /** f64, seconds, recording-time (t=0-anchored) */
+  start_time_secs: number;
+  /** f64, seconds */
+  end_time_secs: number;
+}
+
+/** `LapDetail.neutral_zone_visits` element (C1 §6
+ *  `laps[].neutral_zone_visits[]`, C3 §6 item 11, closed 2026-09-06). */
+export interface LapNeutralZoneVisit {
+  name: string;
+  /** i64, UTC ms */
+  enter_ms: number;
+  /** i64, UTC ms */
+  exit_ms: number;
+}
+
 /** `session.json`'s file-native `laps[]` shape (C1 §6) — distinct from the
  *  catalog-cached `LapSummary` (returned only by `listLaps`). */
 export interface LapDetail {
@@ -54,10 +79,10 @@ export interface LapDetail {
   start_time_secs: number;
   /** f64, seconds */
   end_time_secs: number;
-  /** present when sector_gates is non-empty; element shape not yet fixed (C3 §6 item 11) */
-  sectors: unknown[];
-  /** element shape not yet fixed (C3 §6 item 11) */
-  neutral_zone_visits: unknown[];
+  /** present when sector_gates is non-empty (C3 §6 item 11, closed) */
+  sectors: LapSector[];
+  /** C3 §6 item 11, closed */
+  neutral_zone_visits: LapNeutralZoneVisit[];
 }
 
 /** `session.json`'s `track_visits[]` entry (C1 §6). */
@@ -296,4 +321,32 @@ export async function saveSessionMetadata(sessionId: string, metadata: SessionMe
  *  action — always confirm first. */
 export async function deleteSession(sessionId: string, deleteBlob: boolean): Promise<void> {
   return invoke<void>("delete_session", { sessionId, deleteBlob });
+}
+
+/** `rescan_tracks`'s return (C3 §3.2, ruling R83/L2b Task 8) — IDL0_SPEC
+ *  §17.4's "Rescan Tracks". */
+export interface RescanReport {
+  session_id: string;
+  /** u32 */
+  visits_indexed: number;
+  /** u32 */
+  laps_indexed: number;
+  /** Lap-flag fields cleared because their lap number no longer exists
+   *  after renumbering: any of "main_lap_number", "reference_lap_number",
+   *  "starred_lap_number", "ignored_lap_numbers". `overlay_lap_key` is
+   *  never in this list — it names a lap in *another* session. */
+  flags_cleared: string[];
+  warnings: string[];
+  /** u32, wall-clock time the rescan took */
+  elapsed_ms: number;
+}
+
+/** Re-runs visit and lap detection for one session against the *current*
+ *  track library and rewrites `session.json`'s `laps`/`track_visits`/stamp
+ *  fields (C3 §3.2, ruling R83/L2b Task 8). Re-indexes that session's
+ *  catalog rows too when `catalog.sqlite` already exists; a catalog-
+ *  indexing failure is folded into `warnings` rather than failing the
+ *  call. Explicit user action ("Rescan tracks"), never a hot path. */
+export async function rescanTracks(sessionId: string): Promise<RescanReport> {
+  return invoke<RescanReport>("rescan_tracks", { sessionId });
 }

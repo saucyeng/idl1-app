@@ -13,9 +13,11 @@ import type { DecodedFft, FftAveraging, SpectrogramParams } from "../../../../ip
  *  channel and the user's segmentation choice (C3 §3.6). */
 export interface FftRequest {
   channelId: string;
-  /** Always `null` in wave 2 -- C3 §3.6: lap indexing at import has not
-   *  landed. Never set to anything else by this module. */
-  lap: null;
+  /** The selected main lap (`AppState.selection.lapContext.mainLap`,
+   *  R83/L2b Task 6), or `null` for the whole channel -- C3 §3.6's FFT
+   *  grammar carries no per-mark lap token (R79), so this is always the
+   *  session-wide main-lap selection, never a per-cell choice. */
+  lap: number | null;
   params: SpectrogramParams;
   averaging: FftAveraging;
 }
@@ -36,8 +38,16 @@ export interface FftSegmentation {
 /**
  * Builds one `fetch_fft` request from a channel and a segmentation choice
  * (R76, "sizing a single-segment request"). `sampleCount` is
- * `ChannelSummary.sample_count` -- `fetch_fft` takes no time window (`lap`
- * stays `null`), so a wave-2 FFT request is always over the whole channel.
+ * `ChannelSummary.sample_count` -- the whole channel's sample count, used to
+ * size the request's `window_size`/`hop_size` under `"none"` averaging and
+ * to resolve `"all"` (`bindingForFft`) -- regardless of `lap`. `lap` (R83/L2b
+ * Task 6) selects which window `fetch_fft` slices server-side: `null` for
+ * the whole channel, or a 1-based lap number for that lap's recording-time
+ * window (C3 §3.6); this function does not know the lap window's own sample
+ * count, so a lap request's `window_size`/`hop_size` are still sized against
+ * the whole channel here -- R76's segment/rate guards re-run server-side
+ * against the sliced window's own `t_us` (ruling R85), which is what
+ * actually governs whether the request succeeds.
  *
  * With `averaging === "none"`, `window_size`/`hop_size` are forced to
  * `sampleCount`, ignoring `segmentation`'s own `windowSize`/`hopSize`, so
@@ -62,7 +72,8 @@ export function fftRequestFor(
   channelId: string,
   sampleCount: number,
   segmentation: FftSegmentation,
-  averaging: FftAveraging
+  averaging: FftAveraging,
+  lap: number | null = null
 ): FftRequest {
   const { windowSize, hopSize } =
     averaging === "none"
@@ -71,7 +82,7 @@ export function fftRequestFor(
 
   return {
     channelId,
-    lap: null,
+    lap,
     params: {
       window_size: windowSize,
       hop_size: hopSize,
@@ -133,8 +144,9 @@ export function frequencyAxisHz(fft: DecodedFft): Float64Array {
 /**
  * Pure "did anything fetch-relevant change" -- the `rasterFetchKeyEquals`
  * pattern (`model/rasterLayer.ts`), so a closure identity can never trigger
- * a refetch. `null` compares equal only to `null`; `lap` is not compared
- * since both sides are always `null` in wave 2.
+ * a refetch. `null` compares equal only to `null`. `lap` is compared (R83/L2b
+ * Task 6): a main-lap selection change must trigger a refetch of the same
+ * channel's spectrum over the newly selected window.
  */
 export function fftRequestEquals(a: FftRequest | null, b: FftRequest | null): boolean {
   if (a === null || b === null) {
@@ -142,6 +154,7 @@ export function fftRequestEquals(a: FftRequest | null, b: FftRequest | null): bo
   }
   return (
     a.channelId === b.channelId &&
+    a.lap === b.lap &&
     a.averaging === b.averaging &&
     a.params.window_size === b.params.window_size &&
     a.params.hop_size === b.params.hop_size &&

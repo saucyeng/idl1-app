@@ -132,9 +132,9 @@ export async function runEval(
   } catch (error) {
     // A whole-command rejection from `evalWorkbook` (not a per-cell error,
     // which arrives inside a successful `CellOutput[]` instead) means no
-    // cell evaluated at all — e.g. an unknown workbook id, or (C3 §3.4) any
-    // non-null `lapContext` until lap indexing at import lands. Typed and
-    // dispatched (L6 Task 21, Step 1b) rather than silently swallowed —
+    // cell evaluated at all — e.g. an unknown workbook id, or (C3 §3.4) a
+    // `lapContext` naming a lap absent from `session.json`'s `laps[]`.
+    // Typed and dispatched (L6 Task 21, Step 1b) rather than silently swallowed —
     // `outputs` itself is left unchanged (empty, on a fresh open) either
     // way, but the failure is no longer invisible everywhere in the app.
     if (!isStale()) {

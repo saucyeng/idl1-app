@@ -41,10 +41,16 @@ describe("fftRequestFor", () => {
     expect(request.params.hop_size).toBe(512);
   });
 
-  it("fftRequestFor — every mode — always sets lap to null", () => {
+  it("fftRequestFor — no lap argument — defaults lap to null", () => {
     const request = fftRequestFor("fork_travel", 4096, segmentation, "median");
 
     expect(request.lap).toBeNull();
+  });
+
+  it("fftRequestFor — a lap number passed — carries it straight through as request.lap", () => {
+    const request = fftRequestFor("fork_travel", 4096, segmentation, "median", 3);
+
+    expect(request.lap).toBe(3);
   });
 
   it("fftRequestFor — every mode — carries window/detrend/scaling and averaging straight through", () => {
@@ -206,6 +212,20 @@ describe("fftRequestEquals", () => {
 
   it("fftRequestEquals — both null — are equal", () => {
     expect(fftRequestEquals(null, null)).toBe(true);
+  });
+
+  it("fftRequestEquals — a different lap — are not equal (a main-lap selection change must refetch)", () => {
+    const a = fftRequestFor("fork_travel", 4096, segmentation, "mean", 1);
+    const b = fftRequestFor("fork_travel", 4096, segmentation, "mean", 2);
+
+    expect(fftRequestEquals(a, b)).toBe(false);
+  });
+
+  it("fftRequestEquals — same lap on both sides, including both null — are equal", () => {
+    const a = fftRequestFor("fork_travel", 4096, segmentation, "mean", null);
+    const b = fftRequestFor("fork_travel", 4096, segmentation, "mean", null);
+
+    expect(fftRequestEquals(a, b)).toBe(true);
   });
 
   it("fftRequestEquals — one null, one not — are not equal", () => {

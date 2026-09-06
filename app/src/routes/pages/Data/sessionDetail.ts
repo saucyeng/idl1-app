@@ -1,4 +1,4 @@
-import type { ChannelSummary, LapChannelStat, LapSummary, SessionDetail } from "../../../ipc/catalog";
+import type { ChannelSummary, LapChannelStat, LapNeutralZoneVisit, LapSector, LapSummary, SessionDetail } from "../../../ipc/catalog";
 import { venueLabel } from "./sessionRow";
 
 /** One row of the session detail pane's channel table — a pure projection
@@ -29,9 +29,13 @@ export interface DetailLapRow {
    *  source omits `lap_time_ms` entirely, which neither current source does
    *  for a lap it reports. */
   lapTimeMs: number | null;
-  /** Sector *count* only (R53 Data Q5; C3 §6 item 11 leaves the element
-   *  shape unfixed) — null when the session-side lap is absent. */
-  sectorCount: number | null;
+  /** `session.json`'s own `sectors[]` for this lap (C3 §6 item 11, closed) —
+   *  null when the session-side lap is absent (never confused with an
+   *  empty array, which means "this lap really has no sectors"). */
+  sectors: LapSector[] | null;
+  /** `session.json`'s own `neutral_zone_visits[]` for this lap (C3 §6 item
+   *  11, closed) — null when the session-side lap is absent. */
+  neutralZoneVisits: LapNeutralZoneVisit[] | null;
   /** Catalog `LapSummary.track_id` — null when the catalog-side lap is
    *  absent, or the catalog attributes no track to this lap. */
   trackId: string | null;
@@ -112,7 +116,8 @@ export function toDetailView(detail: SessionDetail, laps: LapSummary[]): DetailV
       lapNumber,
       presence,
       lapTimeMs: sessionLap?.lap_time_ms ?? catalogLap?.lap_time_ms ?? null,
-      sectorCount: sessionLap === null ? null : sessionLap.sectors.length,
+      sectors: sessionLap === null ? null : sessionLap.sectors,
+      neutralZoneVisits: sessionLap === null ? null : sessionLap.neutral_zone_visits,
       trackId: catalogLap?.track_id ?? null,
       channelStats: catalogLap?.channel_stats ?? [],
       ignored: ignored.has(lapNumber),

@@ -108,7 +108,8 @@ describe("toDetailView", () => {
 
     expect(view.laps).toHaveLength(1);
     expect(view.laps[0].presence).toBe("catalog-only");
-    expect(view.laps[0].sectorCount).toBeNull();
+    expect(view.laps[0].sectors).toBeNull();
+    expect(view.laps[0].neutralZoneVisits).toBeNull();
   });
 
   it("toDetailView — ignored_lap_numbers contains lap 3 — lap 3's row is flagged ignored", () => {
@@ -178,13 +179,30 @@ describe("toDetailView", () => {
     expect(view.channels[0].nominalRateHz).toBe(0);
   });
 
-  it("toDetailView — a lap's sectors array is non-empty — the row carries a sector count only, never parses element shape (R53 Q5; C3 §6 item 11 leaves the element shape unfixed)", () => {
-    const detail = baseDetail({
-      laps: [lapDetail({ lap_number: 1, sectors: [{ weird: "shape" }, "not even an object", 42] as unknown[] })],
-    });
+  it("toDetailView — a lap's sectors array is non-empty — the row carries the typed sectors through unchanged (C3 §6 item 11, closed)", () => {
+    const sectors = [{ name: "S1", start_ms: 0, end_ms: 20_000, start_time_secs: 0, end_time_secs: 20 }];
+    const detail = baseDetail({ laps: [lapDetail({ lap_number: 1, sectors })] });
 
     const view = toDetailView(detail, []);
 
-    expect(view.laps[0].sectorCount).toBe(3);
+    expect(view.laps[0].sectors).toEqual(sectors);
+  });
+
+  it("toDetailView — a lap's neutral_zone_visits array is non-empty — the row carries the typed visits through unchanged", () => {
+    const neutralZoneVisits = [{ name: "Pit", enter_ms: 1000, exit_ms: 6000 }];
+    const detail = baseDetail({ laps: [lapDetail({ lap_number: 1, neutral_zone_visits: neutralZoneVisits })] });
+
+    const view = toDetailView(detail, []);
+
+    expect(view.laps[0].neutralZoneVisits).toEqual(neutralZoneVisits);
+  });
+
+  it("toDetailView — a session-side lap with no sectors and no neutral zone visits — honestly empty arrays, not null (a session-only presence is still real data)", () => {
+    const detail = baseDetail({ laps: [lapDetail({ lap_number: 1, sectors: [], neutral_zone_visits: [] })] });
+
+    const view = toDetailView(detail, []);
+
+    expect(view.laps[0].sectors).toEqual([]);
+    expect(view.laps[0].neutralZoneVisits).toEqual([]);
   });
 });
