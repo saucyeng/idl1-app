@@ -3954,3 +3954,11 @@ commit after Task 3 reports.
 **Cost if wrong:** one tuple return and a rule in the planner; the
 alternative silently repairs-by-overwrite a file the user may want to
 inspect.
+
+**Process incident (2026-09-06 4:20pm, lead's error):** after L11 Task 3
+reported DONE the lead sent it a follow-up ruling (R90) that resumed it
+into the worktree while the Task 2 fix agent had already been dispatched
+there — two writers, the fix agent overwrote Task 3's in-progress edit.
+Nothing committed was lost. Rule restated: **a message to a reported
+agent is a new dispatch**; never send one into a worktree another agent
+owns. Task 3 stood down; the fix agent owns R90 in both files.
