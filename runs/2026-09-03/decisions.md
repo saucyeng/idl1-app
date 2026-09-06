@@ -3791,3 +3791,11 @@ per-file logic as rebuild step 1, scoped to that hash), in the same
 transaction as the `sessions`/`laps`/`lap_summary` rows. "One import
 updates one session" means its blob row too. **Cost if wrong:** one
 insert-if-missing.
+
+## 2026-09-06 — L2b first four-task gate (after Task 4): PASS
+
+From idl-rs `3be4eb8`: `cargo test -p idl-rs-tauri` **189 passed**;
+`cargo test -p idl-rs -p idl-rs-cli -- --test-threads=4` idl-rs 976 / 1
+ignored, cli 53. Covers Tasks 1–4 (+ R84). `index_session` treats a
+missing `session.json`/`data.parquet` as `NotFound` (it names one session
+the caller expects to exist) — accepted.
