@@ -3492,3 +3492,15 @@ Task 13.
 
 **Cost if wrong:** one moved function and two error branches; the
 alternative ships silent data loss and NaN spectra.
+
+## 2026-09-06 — L8w fourth four-task gate (after Task 12b): PASS; R64.2 catalog check accepted one-directional
+
+Foreground, once, tee'd, from `7e189a8`: `cargo test -p idl-rs-tauri` →
+**188 passed / 0 failed**; `cargo test -p idl-rs -p idl-rs-cli --
+--test-threads=4` → idl-rs 936 passed / 1 ignored, integration 1, cli 51.
+Covers Tasks 11, 10-fix, 12, 12b. Task 12b's catalog (69 entries) is
+proven ⊆ the real `call_function` dispatch by probing every name through
+`math::evaluate` and asserting never `UnknownFunction`; the converse would
+need a second name list beside the match — the very copy R64.2 forbids —
+so it is not required. A builtin added to `eval.rs` without a catalog row
+is caught by the UI's `functionCatalog` verification shell task, not here.
