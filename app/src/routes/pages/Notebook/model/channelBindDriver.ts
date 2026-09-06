@@ -135,7 +135,17 @@ async function runChannelBindWindow(
 
   for (const channel of channels) {
     const result = await fetchChannelWindow(deps, cache, sessionId, channel, startUs, endUs, chartWidthPx);
+    // The whole run was superseded (a newer run for this cell started) --
+    // drop everything, including `boundChannels` below and any channel not
+    // yet fetched. Distinct from the `result === null` check just below:
+    // that one drops only *this* channel (its own tile was evicted) while
+    // the run itself is still current and every other channel still lands.
     if (isStale()) return;
+    // Only this channel's own fetch came back empty (a tile evicted
+    // between `ensureTiles` resolving and `fetchChannelWindow`'s read) --
+    // the run is still current, so skip just this channel and keep going;
+    // see `fetchChannelWindow`'s doc comment for why it returns `null`
+    // instead of throwing.
     if (result === null) continue;
 
     const budget = pointBudget(chartWidthPx, false);

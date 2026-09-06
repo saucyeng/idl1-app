@@ -16,6 +16,7 @@ import { SandboxHost } from "./host/SandboxHost";
 import { NotebookSession } from "./host/NotebookSession";
 import { dropCellHeight, initialCellHeights, recordCellHeight, type CellHeights } from "./model/cellLayout";
 import { runChannelBind, runChannelSettle, type ChannelBindAction, type ChannelBindDeps, type ChartWindow } from "./model/channelBindDriver";
+import { CellRunSequencer } from "./model/cellRunSequencer";
 import { bindingFor, bindingIdentity, unresolvedChannelId } from "./model/jsCellBinding";
 import { runEval, runOpenAndEval, type OpenEvalDeps } from "./model/openEvalDriver";
 import { isSelfWrite, saveFlow, type SaveFlowState, type WorkbookEventWithHash } from "./model/saveFlow";
@@ -122,10 +123,10 @@ export default function NotebookPage() {
   const openSeqRef = useRef(0);
   const evalSeqRef = useRef(0);
   const sessionSpanSeqRef = useRef(0);
-  /** Every js cell's currently bound identity (`bindingIdentity`), so the channel-bind effect below only re-fetches/re-registers a cell whose binding actually changed. */
+  /** Every js cell's currently bound identity (`bindingIdentity`), so the channel-bind effect below only *starts a new run* for a cell whose binding actually changed -- this is purely the "should a new initial bind start" decision; it is never consulted as a staleness guard (that is `cellRunSequencerRef`'s job, below, review-task13c.md's Major fix). */
   const boundIdentityRef = useRef<Map<string, string>>(new Map());
-  /** Per-cell monotonic counter bumped on every gesture settle (R72's settle refetch, `renderJsCell`'s `onViewportSettled`) -- lets that settle's own async multi-channel refetch drop its result if a later settle for the same cell fires before it resolves, the same "stale result -> dropped" contract `runChannelBind`'s `isStale` gives the initial-bind effect. */
-  const settleSeqRef = useRef<Map<string, number>>(new Map());
+  /** One shared run-sequence counter per `js` cell (`model/cellRunSequencer.ts`), used by *every* channel-window run for that cell -- the initial-bind effect below and each `ChartCell`'s gesture-settle refetch (`renderJsCell`'s `onViewportSettled`) alike -- so whichever kind of run started last always wins, regardless of which one resolves first (fix for review-task13c.md's Major: an initial bind and a settle previously carried independent guards that never invalidated each other). */
+  const cellRunSequencerRef = useRef<CellRunSequencer>(new CellRunSequencer());
 
   // One `saveFlow` instance for this page's lifetime (Task 14) -- holds
   // its own `SaveFlowState` behind a closure; `saveFlowState` mirrors it
@@ -389,7 +390,7 @@ export default function NotebookPage() {
     for (const cellId of boundIdentityRef.current.keys()) {
       if (!liveIds.has(cellId)) {
         boundIdentityRef.current.delete(cellId);
-        settleSeqRef.current.delete(cellId);
+        cellRunSequencerRef.current.delete(cellId);
         sessionRef.current.removeBoundChannel(cellId);
       }
     }
@@ -405,19 +406,22 @@ export default function NotebookPage() {
   // `sessionRef.current.setBoundChannels` (R72, Task 13c) -- not only the
   // one channel `ChartCell` mounts, so a sandbox rebuild restores every
   // bound channel this cell's Plot code reads via `channel()`.
-  // All of that sequencing -- and the "is this fetch's result still
-  // current" decision -- lives in the pure, unit-tested
+  // All of that sequencing lives in the pure, unit-tested
   // `model/channelBindDriver.ts`'s `runChannelBind`, mirroring
-  // `openEvalDriver.ts`'s/`sessionSpanDriver.ts`'s shape: `isStale` is
-  // `binding`'s captured `identity` no longer matching
-  // `boundIdentityRef.current.get(cellId)`, checked after every per-channel
-  // `await` inside the driver, so a superseded fetch (this cell's binding
-  // changed again, or the cell/session/document changed under it) before
-  // this run resolves never overwrites fresher `chartWindows`/registry
-  // state. Later gesture settles are handled by each `ChartCell`'s own
-  // `onViewportSettled` callback (built in `renderJsCell` below), not here.
-  // Depends only on data (`state.cells`/`state.markdown`/`sessionDetail`/
-  // `sessionSpanUs`/`sessionId`) -- the tightened IPC-effects rule.
+  // `openEvalDriver.ts`'s/`sessionSpanDriver.ts`'s shape. `boundIdentityRef`
+  // decides only whether a *new* run should start (this cell's binding
+  // identity changed); the "is this fetch's result still current" decision
+  // is a separate question, answered by `cellRunSequencerRef` -- one
+  // monotonic run-sequence counter per cell shared with every gesture
+  // settle's own refetch (`renderJsCell`'s `onViewportSettled`, below), so
+  // whichever kind of run started last for a cell always wins regardless of
+  // which one resolves first (fix for review-task13c.md's Major: an
+  // initial bind and a settle used to carry independent guards that never
+  // invalidated each other, so a slow initial fetch could resolve after a
+  // faster settle and overwrite its fresher `chartWindows`/registry state
+  // with the stale initial-span one). Depends only on data
+  // (`state.cells`/`state.markdown`/`sessionDetail`/`sessionSpanUs`/
+  // `sessionId`) -- the tightened IPC-effects rule.
   useEffect(() => {
     if (state.markdown === null || sessionId === null) return;
     const markdown = state.markdown;
@@ -449,7 +453,8 @@ export default function NotebookPage() {
           setChartWindows((prev) => new Map(prev).set(action.cellId, action.chartWindow));
         }
       };
-      const isStale = () => boundIdentityRef.current.get(cellId) !== identity;
+      const seq = cellRunSequencerRef.current.start(cellId);
+      const isStale = () => !cellRunSequencerRef.current.isCurrent(cellId, seq);
 
       void runChannelBind(deps, sessionRef.current.cache, sid, cellId, binding, DEFAULT_CHART_WIDTH_PX, onAction, isStale);
     }
@@ -555,11 +560,13 @@ export default function NotebookPage() {
                     // window and re-register as one list (R72, Task 13c): a
                     // multi-mark cell's other channels would otherwise desync
                     // from the mounted channel's viewport after a pan/zoom.
-                    // `settleSeqRef` guards a settle superseded by a later one
-                    // for the same cell before this async work resolves.
-                    const seq = (settleSeqRef.current.get(cellId) ?? 0) + 1;
-                    settleSeqRef.current.set(cellId, seq);
-                    const isStale = () => settleSeqRef.current.get(cellId) !== seq;
+                    // `cellRunSequencerRef` -- shared with the initial-bind
+                    // effect above -- guards this settle against both a
+                    // later settle for the same cell and a slower initial
+                    // bind that is still in flight, so whichever of the two
+                    // started last always wins (review-task13c.md's Major).
+                    const seq = cellRunSequencerRef.current.start(cellId);
+                    const isStale = () => !cellRunSequencerRef.current.isCurrent(cellId, seq);
                     const deps: ChannelBindDeps = {
                       fetchTile: (sessId, chId, chTier, tileIndex, columnCount) => fetchTile(sessId, chId, chTier, tileIndex, columnCount),
                     };
