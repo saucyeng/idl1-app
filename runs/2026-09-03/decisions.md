@@ -3779,3 +3779,15 @@ visible, both cheap to revisit.
 Skipped migration fields are named with both values; R53's "no
 preference silently lost" holds again. Whole TS suite on main: 94 files /
 863 passed.
+
+## 2026-09-06 — R84: `index_session` inserts its own blob row (L2b Task 4)
+
+`sessions.blob_sha256` references `blobs(sha256)` under
+`foreign_keys = ON`, and `blob::write_blob` never touches the catalog, so
+an incremental `index_session` after import would fail the FK on a
+catalog built before the import. **Ruling:** option 1 — `index_session`
+verifies/inserts the one `blobs` row for the session's own blob (the same
+per-file logic as rebuild step 1, scoped to that hash), in the same
+transaction as the `sessions`/`laps`/`lap_summary` rows. "One import
+updates one session" means its blob row too. **Cost if wrong:** one
+insert-if-missing.
