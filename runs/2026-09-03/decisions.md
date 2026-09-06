@@ -3722,3 +3722,11 @@ task.
 `213b7c3`, review CLEAN, merged `--no-ff`; whole TS suite on main
 **93 files / 856 passed**, `tsc` clean. Worktree retired; no wave-2
 worktrees remain.
+
+**Tracked (preview 2026-09-06, after Task 21):** prose renders from core's
+HTML and the "no session selected" note shows, but only one note is
+visible for a two-cell workbook — `JsCellFrame` takes its height from the
+sandbox's `cellRendered`, so a frame whose empty Plot reports a tiny
+height may clip its own note. Fix: a `minHeight` when a note/error is
+present (one style line + test on the pure height decision). Goes with
+Task 20's two Minors into the L10 cosmetic pass.
