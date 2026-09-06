@@ -3628,3 +3628,20 @@ present — verdict checked by the lead), `l7b-task10` (WIP on disk in
 `DeviceControls.tsx`, `HeroCard`/`ProfileBar`/`connection`/`index`
 edits, SPEC §23 mid-rewrite; uncommitted), `l7c-review8` (no findings).
 Re-dispatched with inherited state at 6:05am. No work lost.
+
+## 2026-09-06 — R80: L6 Task 20 brief open questions (FFT grammar + Properties panel)
+
+Q1: `x` is required in the FFT arm with a required `type`; Example 5's
+omission is an elision (C2 text corrected in Task 20's commit, one line).
+Q2: bin cap = 16384, checked against the resolved window before the
+fetch and the decoded length after. Q3: three plain sentences in the
+note slot, no banner. Q4: `spectrumKey` and the params type live in a
+dependency-free module under `plotForm/` importable by both host and
+sandbox; nothing under `sandbox/` imports from `ipc/`. Q5: the host
+retains the decoded spectrum in a per-cell map and re-pushes it on
+rebuild (no re-fetch, no blank) — consistent with R78 Task 18 Q1's
+"definition channels re-fetch" only in that both restore state; a
+spectrum is small enough to keep. Q6: the first mark's channel survives
+a Time → FFT switch.
+
+**Cost if wrong:** constants and conventions, each one line to change.
