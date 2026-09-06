@@ -3986,3 +3986,37 @@ covered by the round-trip test.
 **Tracked (L11 Task 6 fix re-review, Minor):** the `session.json` rederive's
 parse-failure fallback reports `Installed` instead of `KeptLocal`; fold
 into Task 12's sweep (one enum arm + test).
+
+## 2026-09-06 — R92: UI direction adopted (`runs/2026-09-06/ui/UI-DIRECTION.md`, Isaac's interview, status final)
+
+Adopted as the design input for the styling pass: refinement of idl0's
+"quiet field manual" look; dark authored, light allowed later; high fixed
+density; Device = launch tab + mobile-first, Notebook = layout budget +
+desktop-first; top bar on desktop, bottom bar < 600 px, tab order Device ·
+Data · Notebook · Settings; wide = dockable studio columns (library |
+maths graph (reserved) | properties | output); mount-and-hide persistence;
+command palette scaffold now; **shadcn/ui on Tailwind v4 + Radix**,
+components copied into the repo, theme = `tokens.css` only, Plex Mono/Sans
+bundled woff2, no CDN, no runtime fetch (the operating brief §2's
+"dependencies outside the M0 report are a question" is answered by Isaac
+here — cost accepted: Tailwind at build time, Radix + shadcn copies in
+the bundle); zero elevation; two radii; the 13 tokens ported unchanged;
+charts as chrome with the 8-hue cycle + Turbo; day-one chart
+interactions incl. live-speed playback; two output registers; code
+collapsed at rest; maps keep live OSM/Esri tiles (network data, not
+bundled code). Open questions resolved per the file's recommendations:
+surface ladder unchanged until a monitor says otherwise; launch on
+Device < 1200 px and on the studio layout above, remembering the last
+layout; register default paper on narrow / studio on wide. Device
+refinements collected after UI-5.
+
+Execution: the file's lane split UI-1…UI-11 stands, **UI-1→4 serial**
+(tokens → primitives → overlays → shell), **UI-5/6/7 concurrent** after
+UI-4, then UI-8→11 in the Notebook worktree. Every task's brief maps the
+file's illustrative paths onto the real tree (`app/src/routes/pages/…`,
+`app/src/state/`, lead-owned files named as shell edits inside the task
+with lead review). TypeScript-only lanes; reviews mandatory; the effects
+rule holds; `App.tsx`/`state/` edits are in scope for UI-4 only.
+
+**Cost if wrong:** a library choice is the one hard-to-reverse decision;
+Isaac made it with the studio-scale growth in view.
