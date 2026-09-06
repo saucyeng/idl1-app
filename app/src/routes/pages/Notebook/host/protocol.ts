@@ -40,9 +40,10 @@ export type HostToSandboxMessage =
  * A host→sandbox message that asks the sandbox to evaluate one inline
  * `${…}` prose span (C2 §5.2, the 2026-09-05 tracked note "L6 inline
  * `${…}` prose spans have no host→sandbox trigger yet",
- * `runs/2026-09-03/decisions.md`). `spanId` is a UI-assigned id for this
- * one occurrence (`components/ProseSpan.tsx`'s `extractInlineSpans`), not a
- * C2 fence-string cell id — it never names an actual cell. `expr` is the
+ * `runs/2026-09-03/decisions.md`). `spanId` is Rust's own id for this
+ * occurrence (`CellOutput.prose_spans[i].id`, ledger R70/R78,
+ * `model/proseBlocks.ts`'s `ProseSpanRef.id`), not a C2 fence-string cell
+ * id — it never names an actual cell. `expr` is the
  * raw text between `${` and `}` (C2 §5.2's `js_expression`), evaluated in
  * the sandbox's current host-mediated scope (`sandbox/main.ts`'s
  * `SandboxRuntime.evalInline`, which reuses `compileCell`) — never parsed

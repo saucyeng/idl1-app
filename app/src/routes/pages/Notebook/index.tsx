@@ -1,4 +1,4 @@
-import { useEffect, useReducer, useRef, useState } from "react";
+import { useEffect, useMemo, useReducer, useRef, useState } from "react";
 
 import { getSession, listSessions, listWorkbooks, type SessionDetail } from "../../../ipc/catalog";
 import { cursorReadout } from "../../../ipc/cursor";
@@ -12,7 +12,6 @@ import ConflictBanner from "./components/ConflictBanner";
 import EditorPanes from "./components/EditorPanes";
 import JsCellFrame, { DEFAULT_JS_CELL_HEIGHT_PX } from "./components/JsCellFrame";
 import type { PropertiesFormChannelOption, PropertiesFormLapOption } from "./components/PropertiesForm.types";
-import { extractInlineSpans } from "./components/ProseSpan";
 import type { SandboxCell } from "./host/protocol";
 import { SandboxHost } from "./host/SandboxHost";
 import { NotebookSession } from "./host/NotebookSession";
@@ -23,6 +22,7 @@ import { CellRunSequencer } from "./model/cellRunSequencer";
 import { diffFunctionCatalog, type FunctionCatalogMismatch } from "./model/functionCatalog";
 import { bindingFor, bindingIdentity, unresolvedChannelId } from "./model/jsCellBinding";
 import { runEval, runOpenAndEval, type OpenEvalDeps } from "./model/openEvalDriver";
+import { proseBlocksFor, spansToEvaluate } from "./model/proseBlocks";
 import { isSelfWrite, saveFlow, type SaveFlowState, type WorkbookEventWithHash } from "./model/saveFlow";
 import { runSessionSpan, type SessionSpanAction, type SessionSpanDeps } from "./model/sessionSpanDriver";
 import { TileCache } from "./model/tileCache";
@@ -405,19 +405,23 @@ export default function NotebookPage() {
   }
 
   // Pushes this document's `js` cells into the sandbox, and (best-effort --
-  // see `ProseSpan.tsx`'s doc comment) re-issues every inline `${...}`
-  // span's evaluation, whenever the cell set or the markdown they're read
-  // from changes. True reactive re-evaluation ("whenever the Runtime
-  // re-runs any cell the expression's free variables depend on," C2 par.
-  // 5.2) awaits the free-identifier analysis `sandbox/main.ts`'s own TODO
-  // defers -- this is a coarser trigger: every span is re-sent on every
-  // `setCells`, which is this effect's only firing condition.
+  // ledger R70's known limitation, `model/proseBlocks.ts`'s doc comment)
+  // re-issues every inline `${...}` span's evaluation, whenever the cell
+  // set, the markdown they're read from, or the last evaluation's outputs
+  // change -- `outputs` joined the dependency list here (ledger R78) since
+  // a block's spans now come from `CellOutput.prose_spans`, not a
+  // TypeScript regex scan of the raw text, so a span is only knowable once
+  // that cell has an output entry. True reactive re-evaluation ("whenever
+  // the Runtime re-runs any cell the expression's free variables depend
+  // on," C2 par. 5.2) awaits the free-identifier analysis
+  // `sandbox/main.ts`'s own TODO defers -- this is a coarser trigger:
+  // every span is re-sent on every `setCells`, which is this effect's
+  // only firing condition.
   useEffect(() => {
     const host = sandboxHostRef.current;
     if (host === null || state.markdown === null) return;
 
     const jsCells: SandboxCell[] = [];
-    const spans: { spanId: string; expr: string }[] = [];
     const liveIds = new Set<string>();
     for (const cell of state.cells) {
       if (cell.id === null) continue;
@@ -425,19 +429,12 @@ export default function NotebookPage() {
         jsCells.push({ id: cell.id, code: decodeByteRange(state.markdown, cell.bodyRange) });
         liveIds.add(cell.id);
       }
-      if (cell.proseBeforeRange !== null) {
-        const text = decodeByteRange(state.markdown, cell.proseBeforeRange);
-        spans.push(...extractInlineSpans(text, `${cell.id}-before`));
-      }
-      if (cell.proseAfterRange !== null) {
-        const text = decodeByteRange(state.markdown, cell.proseAfterRange);
-        spans.push(...extractInlineSpans(text, `${cell.id}-after`));
-      }
     }
 
     host.setCells(jsCells);
-    for (const span of spans) {
-      host.evalInline(span.spanId, span.expr);
+    const blocks = proseBlocksFor(state.cells, state.markdown, state.outputs);
+    for (const span of spansToEvaluate(blocks)) {
+      host.evalInline(span.id, span.expr);
     }
 
     // A cell removed from the document (edited away) drops its recorded
@@ -459,7 +456,7 @@ export default function NotebookPage() {
         sessionRef.current.removeBoundChannel(cellId);
       }
     }
-  }, [state.cells, state.markdown]);
+  }, [state.cells, state.markdown, state.outputs]);
 
   // For each `js` cell newly bound to a real channel (`bindingFor`, R66
   // item 1) -- a cell whose binding's identity (`bindingIdentity`) has
@@ -558,6 +555,15 @@ export default function NotebookPage() {
     sessionDetail?.channels.map((c) => ({ id: c.channel_id, label: c.channel_id, unit: c.unit })) ?? [];
   const propertiesLaps: PropertiesFormLapOption[] = sessionDetail?.laps.map((l) => ({ number: l.lap_number })) ?? [];
 
+  // Every prose block this document has right now, keyed by `blockId`
+  // (`model/proseBlocks.ts`) -- computed here rather than in `CellList` so
+  // that component stays a pure "where in document order" layout, not a
+  // second consumer of `state.markdown`'s byte-range decoding.
+  const proseBlocksByBlockId = useMemo(() => {
+    const blocks = proseBlocksFor(state.cells, state.markdown ?? "", state.outputs);
+    return new Map(blocks.map((block) => [block.blockId, block]));
+  }, [state.cells, state.markdown, state.outputs]);
+
   return (
     <div>
       {functionCatalogMismatches.length > 0 && (
@@ -584,7 +590,7 @@ export default function NotebookPage() {
       {state.handle !== null && (
         <CellList
           doc={{ frontMatterRange: null, cells: state.cells }}
-          markdown={state.markdown ?? ""}
+          proseBlocks={proseBlocksByBlockId}
           outputs={state.outputs}
           inlineResults={inlineResults}
           spanErrors={spanErrors}

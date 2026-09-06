@@ -2981,12 +2981,18 @@ a byte range in the document for editor addressing only — Rust
 (`idl_rs::workbook`) remains the sole evaluator; the scan never parses an
 expression, a table body, or JS.
 
-- **Prose** renders as Markdown-to-HTML plus its inline `${…}` splices (C2
-  §5.2), through `Notebook/components/ProseSpan.tsx`. Each `${…}` occurrence
-  is filled from the sandbox's own evaluation of that one expression
-  (`evalInline`/`inlineResult`, §26.4) — never evaluated on the host. Prose
-  has no fence id and is never independently selectable in the editor
-  (§26.2).
+- **Prose** renders in the host DOM, from Rust's `CellOutput.prose_before_html`/
+  `prose_after_html` (C3 §3.4, ledger R70/R78), through
+  `Notebook/components/ProseBlock.tsx` — the one place this app calls
+  `dangerouslySetInnerHTML`, on core's own escaped HTML output only (never
+  sandbox output; §26.4's sandbox-output rule is unaffected). `${…}`
+  placeholders (`<span data-span-id="…">`) inside that HTML are filled in
+  place, by `textContent` only, from the sandbox's own evaluation of that
+  one expression (`evalInline`/`inlineResult`, §26.4). Before a cell's
+  first `eval_workbook` result exists, its prose shows the document's raw
+  text verbatim, `${…}` sources intact (`Notebook/model/proseBlocks.ts`'s
+  `proseBlocksFor`, the stated pre-first-eval fallback). Prose has no fence
+  id and is never independently selectable in the editor (§26.2).
 - **`math`** cells hold one or more named definitions over C2 §3's 69-function
   catalog; each definition's evaluated scalar/channel result and any
   per-definition error render inline under the cell
@@ -3171,16 +3177,23 @@ re-evaluate on every cell-set/markdown change, not on the Observable
 Runtime's own reactive re-run graph — acceptable for wave 2, and named here
 per the plan's own Task 16 note; true reactivity is a later-wave item.
 
-**Interim prose-HTML seam.** Ruling R70 gives prose HTML two additive
-fields on `CellOutput` (`prose_before_html`/`prose_after_html`) plus a
-`prose_spans: { id, expr }[]` list from Rust's own `${…}` scanner
-(`workbook/v3/js_cell.rs::find_inline_exprs`). As of this section's
-writing that Rust-side change has not landed on `main`; the notebook tab
-still uses its own interim TypeScript regex scanner
-(`Notebook/components/ProseSpan.tsx`'s `extractInlineSpans`), which is
-known to number spans differently from the Rust scanner inside inline
-code. This is a deliberately temporary duplicate, to be deleted the moment
-`prose_spans` exists on the wire (§26.7).
+**Prose HTML is core output, not sandbox output (ruling R78).** Ruling R70
+gives prose HTML two additive fields on `CellOutput`
+(`prose_before_html`/`prose_after_html`, Rust's `pulldown-cmark` render
+with author HTML escaped) plus a `prose_spans: { id, expr }[]` list from
+Rust's own `${…}` scanner (`workbook/v3/js_cell.rs::find_inline_exprs`).
+The notebook's former interim TypeScript regex scanner
+(`Notebook/components/ProseSpan.tsx`'s `extractInlineSpans`) is deleted:
+`Notebook/model/proseBlocks.ts` decides which prose blocks exist and which
+`prose_spans` entries belong to each from the HTML alone (matching each
+id's literal `data-span-id="…"` occurrence, never by parsing the HTML or
+inventing an id-naming convention), and `Notebook/components/ProseBlock.tsx`
+renders the block. Because this HTML is produced by core and crosses IPC
+like any other trusted value — R69's sandbox-output boundary above governs
+*sandbox*-produced output, and prose is never that — the host renders it
+directly, which is the one place this app calls `dangerouslySetInnerHTML`.
+A `${…}` placeholder inside that HTML is still filled only by the sandbox's
+own `evalInline` result, spliced in by `textContent`, never by HTML.
 
 ### 26.5 Conflicts and save
 
