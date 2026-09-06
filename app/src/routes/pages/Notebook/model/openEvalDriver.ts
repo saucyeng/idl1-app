@@ -16,21 +16,19 @@
  * throws — every rejection dispatches a typed action instead, so a caller
  * never needs its own top-level `.catch`.
  */
-import type { CellOutput, WorkbookHandle } from "../../../../ipc/workbook";
+import type { CellOutput, LapContext as EvalLapContext, WorkbookHandle } from "../../../../ipc/workbook";
 import type { WorkbookAction } from "./workbookState";
 
 /** The IPC calls one open→read→eval run needs, injected so this module
- *  never imports `ipc/workbook.ts`/`ipcStubs/readWorkbook.ts` directly —
- *  a caller supplies the real wrappers (or a test's fakes). */
+ *  never imports `ipc/workbook.ts` directly — a caller supplies the real
+ *  wrappers (or a test's fakes). */
 export interface OpenEvalDeps {
   /** Lists indexed workbooks (`ipc/catalog.ts`'s `listWorkbooks`); this driver opens the first one — see `runOpenAndEval`'s doc comment on why. */
   listWorkbooks: () => Promise<{ workbook_id: string }[]>;
   openWorkbook: (idOrPath: string) => Promise<WorkbookHandle>;
-  /** `ipcStubs/readWorkbook.ts`'s N1 stub today; swaps to `ipc/workbook.ts`'s real `readWorkbook` once N1 lands. */
+  /** `ipc/workbook.ts`'s `readWorkbook`. */
   readWorkbook: (idOrPath: string) => Promise<{ markdown: string; hash: string; path: string }>;
-  evalWorkbook: (id: string, sessionId: string | null) => Promise<CellOutput[]>;
-  /** True for the N1 stub's own thrown error class — injected rather than an `instanceof` on a concrete import, so this module has no dependency on `ipcStubs/`'s exact class. */
-  isNotImplementedError: (error: unknown) => boolean;
+  evalWorkbook: (id: string, sessionId: string | null, lapContext: EvalLapContext | null) => Promise<CellOutput[]>;
 }
 
 /** Dispatches one `WorkbookAction` — `workbookReducer`'s own dispatch function, or a test's recorder. */
@@ -53,12 +51,16 @@ export type OpenEvalDispatch = (action: WorkbookAction) => void;
  *   run stops dispatching immediately, even if further steps would
  *   otherwise succeed — a caller going away or a newer run superseding
  *   this one both look the same from here.
+ * @param lapContext `AppState.selection.lapContext`, mapped to
+ *   `ipc/workbook.ts`'s wire `LapContext` shape (ledger R59) — passed
+ *   straight to `evalWorkbook`; `null` reproduces today's behaviour exactly.
  */
 export async function runOpenAndEval(
   deps: OpenEvalDeps,
   sessionId: string | null,
   dispatch: OpenEvalDispatch,
-  isStale: () => boolean
+  isStale: () => boolean,
+  lapContext: EvalLapContext | null = null
 ): Promise<void> {
   let handle: WorkbookHandle;
   try {
@@ -84,15 +86,12 @@ export async function runOpenAndEval(
     if (isStale()) return;
     dispatch({ type: "markdownReady", markdown: source.markdown, hash: source.hash });
   } catch (error) {
-    if (isStale()) return;
-    if (deps.isNotImplementedError(error)) {
-      dispatch({ type: "markdownNotImplemented" });
-    } else {
+    if (!isStale()) {
       dispatch({ type: "markdownError", message: error instanceof Error ? error.message : String(error) });
     }
   }
 
-  await runEval(deps, handle.id, sessionId, dispatch, isStale);
+  await runEval(deps, handle.id, sessionId, dispatch, isStale, lapContext);
 }
 
 /**
@@ -106,10 +105,11 @@ export async function runEval(
   id: string,
   sessionId: string | null,
   dispatch: OpenEvalDispatch,
-  isStale: () => boolean
+  isStale: () => boolean,
+  lapContext: EvalLapContext | null = null
 ): Promise<void> {
   try {
-    const outputs = await deps.evalWorkbook(id, sessionId);
+    const outputs = await deps.evalWorkbook(id, sessionId, lapContext);
     if (isStale()) return;
     dispatch({ type: "evalResult", outputs });
   } catch {

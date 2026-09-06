@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { decodeRaster } from "./rasters";
+import { decodeFft, decodeRaster } from "./rasters";
 
 vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
 
@@ -115,6 +115,60 @@ describe("fetchRasterMeta", () => {
       width: 64,
       height: 32,
       params,
+    });
+  });
+});
+
+describe("decodeFft", () => {
+  it("decodes a well-formed IDLF v1 buffer", () => {
+    // Arrange
+    const binCount = 4;
+    const buf = new ArrayBuffer(16 + binCount * 4);
+    const view = new DataView(buf);
+    [0x49, 0x44, 0x4c, 0x46].forEach((b, i) => view.setUint8(i, b)); // "IDLF"
+    view.setUint16(4, 1, true); // version
+    view.setUint32(8, binCount, true);
+    view.setFloat32(12, 100, true); // sample_rate_hz
+    [1, 2, 3, 4].forEach((v, i) => view.setFloat32(16 + i * 4, v, true));
+
+    // Act
+    const result = decodeFft(buf);
+
+    // Assert
+    expect(result.sampleRateHz).toBe(100);
+    expect(Array.from(result.magnitudes)).toEqual([1, 2, 3, 4]);
+  });
+
+  it("throws on bad magic bytes", () => {
+    // Arrange
+    const buf = new ArrayBuffer(16);
+
+    // Act / Assert
+    expect(() => decodeFft(buf)).toThrowError(/magic/i);
+  });
+});
+
+describe("fetchFft", () => {
+  it("resolves — calls invoke with the five named arguments and decodes the IDLF response", async () => {
+    // Arrange
+    const { invoke } = await import("@tauri-apps/api/core");
+    const buf = new ArrayBuffer(16);
+    const view = new DataView(buf);
+    [0x49, 0x44, 0x4c, 0x46].forEach((b, i) => view.setUint8(i, b)); // "IDLF"
+    view.setUint16(4, 1, true);
+    view.setUint32(8, 0, true);
+    view.setFloat32(12, 200, true);
+    (invoke as ReturnType<typeof vi.fn>).mockResolvedValue(buf);
+    const { fetchFft } = await import("./rasters");
+    const params = { window_size: 64, hop_size: 32, window: "hann", detrend: "mean", scaling: "density" } as const;
+
+    // Act
+    const result = await fetchFft("s1", "fork_travel", null, params, "mean");
+
+    // Assert
+    expect(result.sampleRateHz).toBe(200);
+    expect(invoke).toHaveBeenCalledWith("fetch_fft", {
+      sessionId: "s1", channel: "fork_travel", lap: null, params, averaging: "mean",
     });
   });
 });

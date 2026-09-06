@@ -261,3 +261,39 @@ export async function listTracks(): Promise<TrackSummary[]> {
 export async function getTrack(trackId: string): Promise<TrackDetail> {
   return invoke<TrackDetail>("get_track", { trackId });
 }
+
+/** The nine editable `session.json` fields (C3 §3.2, ruling R59). `""` is
+ *  the only "not set" representation — C1 §6 defines no null for these.
+ *  Whole-block replace, not a sparse patch: every field is required, so a
+ *  concurrent editor cannot half-apply one. */
+export interface SessionMetadataPatch {
+  rider: string;
+  bike: string;
+  bike_comment: string;
+  venue_name: string;
+  event_name: string;
+  event_session: string;
+  short_comment: string;
+  long_comment: string;
+  tag: string;
+}
+
+/** Replaces `sessionId`'s nine editable `session.json` fields (C3 §3.2,
+ *  ruling R59). Every other key (`laps`, `track_visits`, the lap-flag
+ *  fields, `bike_profile_snapshot`, `schema_version`) is left untouched.
+ *  Re-reads and returns `getSession`'s own `SessionDetail` so the caller
+ *  redraws from canonical truth rather than from what it hoped it wrote.
+ *  Explicit save action, never on keystroke. */
+export async function saveSessionMetadata(sessionId: string, metadata: SessionMetadataPatch): Promise<SessionDetail> {
+  return invoke<SessionDetail>("save_session_metadata", { sessionId, metadata });
+}
+
+/** Removes `sessionId`'s session directory and catalog rows (C3 §3.2,
+ *  ruling R59). `deleteBlob: true` additionally removes the blob at
+ *  `blobs/sha256/<2>/<62>` when no other session still references it
+ *  (blobs are content-addressed and shared by construction, C4 §3);
+ *  `false` keeps it (idl0's "Forget session"). Explicit, destructive user
+ *  action — always confirm first. */
+export async function deleteSession(sessionId: string, deleteBlob: boolean): Promise<void> {
+  return invoke<void>("delete_session", { sessionId, deleteBlob });
+}

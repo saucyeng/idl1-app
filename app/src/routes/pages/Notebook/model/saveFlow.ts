@@ -20,21 +20,13 @@
 import type { IpcError, SaveResult, WorkbookEvent } from "../../../../ipc/workbook";
 
 /**
- * `WorkbookEvent`'s future wire shape (lead ruling R67, C3 §3.4 amendment,
- * implemented by L8w Task 4b): a `hash` field, the sha256 hex of the
- * file's bytes after the change, computed by the same watcher that emits
- * the event. Declared locally -- extending, not replacing,
- * `ipc/workbook.ts`'s landed `WorkbookEvent` -- because Task 4b has not
- * merged yet (as of this task, `WorkbookEvent` still carries only `kind`
- * and `cell_ids`). `hash` is optional here so this module type-checks
- * against both the pre- and post-amendment wire value; `isSelfWrite`
- * treats a missing `hash` as "unknown ⇒ do not suppress ⇒ reload" (R67),
- * which is the safe default until Task 4b lands.
+ * Deprecated alias for `ipc/workbook.ts`'s `WorkbookEvent`, kept only so
+ * existing imports (`Notebook/index.tsx`, this module's own test) do not
+ * all need a simultaneous rename. `WorkbookEvent.hash` landed for real
+ * (L8w Task 4b, lead ruling R67) — `hash` is no longer optional. New code
+ * should import `WorkbookEvent` directly.
  */
-export interface WorkbookEventWithHash extends WorkbookEvent {
-  /** sha256 hex of the file's bytes after this event's change; absent until L8w Task 4b lands the field. */
-  hash?: string;
-}
+export type WorkbookEventWithHash = WorkbookEvent;
 
 /**
  * Narrows a `save()` rejection to `IpcError`, or synthesizes one when it
@@ -115,19 +107,18 @@ export function saveFlow(deps: SaveFlowDeps): {
  * C4 §4's stated 5000 (5 s), matching the server-side set's own expiry so
  * this belt never outlives the primary one's own suppression window.
  *
- * A `hash`-less `event` (today's landed wire shape, pending L8w Task 4b)
- * always returns `false` -- "unknown ⇒ reload" (R67) -- since there is
- * nothing to compare and guessing from timing alone would risk missing a
- * genuine external edit that happens to land inside the TTL window.
+ * `lastSavedHash === null` (no save has completed yet this session) always
+ * returns `false` -- "unknown ⇒ reload" (R67) -- since there is nothing to
+ * compare and guessing from timing alone would risk missing a genuine
+ * external edit that happens to land inside the TTL window.
  */
 export function isSelfWrite(
-  event: WorkbookEventWithHash,
+  event: WorkbookEvent,
   lastSavedHash: string | null,
   lastSavedAtMs: number | null,
   nowMs: number,
   ttlMs: number
 ): boolean {
-  if (event.hash === undefined) return false;
   if (lastSavedHash === null || lastSavedAtMs === null) return false;
   if (event.hash !== lastSavedHash) return false;
   return nowMs - lastSavedAtMs <= ttlMs;

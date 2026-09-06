@@ -37,7 +37,7 @@ describe("evalWorkbook", () => {
 
     // Assert
     expect(result).toBe(cells);
-    expect(invoke).toHaveBeenCalledWith("eval_workbook", { id: "w1", sessionId: "s1" });
+    expect(invoke).toHaveBeenCalledWith("eval_workbook", { id: "w1", sessionId: "s1", lapContext: null });
   });
 
   it("eval_workbook with no session bound — calls invoke with sessionId null", async () => {
@@ -50,7 +50,21 @@ describe("evalWorkbook", () => {
     await evalWorkbook("w1", null);
 
     // Assert
-    expect(invoke).toHaveBeenCalledWith("eval_workbook", { id: "w1", sessionId: null });
+    expect(invoke).toHaveBeenCalledWith("eval_workbook", { id: "w1", sessionId: null, lapContext: null });
+  });
+
+  it("eval_workbook with a lap context — passes it through unchanged", async () => {
+    // Arrange
+    const { invoke } = await import("@tauri-apps/api/core");
+    (invoke as ReturnType<typeof vi.fn>).mockResolvedValue([]);
+    const { evalWorkbook } = await import("./workbook");
+    const lapContext = { main_lap: 3, overlay_laps: [1, 2] };
+
+    // Act
+    await evalWorkbook("w1", "s1", lapContext);
+
+    // Assert
+    expect(invoke).toHaveBeenCalledWith("eval_workbook", { id: "w1", sessionId: "s1", lapContext });
   });
 });
 
@@ -97,5 +111,82 @@ describe("watchWorkbook", () => {
     // Assert
     expect(Channel).toHaveBeenCalled();
     expect(invoke).toHaveBeenCalledWith("watch_workbook", expect.objectContaining({ id: "w1" }));
+  });
+});
+
+describe("readWorkbook", () => {
+  it("read_workbook resolves — calls invoke with idOrPath and returns the value unchanged", async () => {
+    // Arrange
+    const { invoke } = await import("@tauri-apps/api/core");
+    const source = { markdown: "# hi", hash: "h1", path: "/data/workbooks/w1.idl1wb" };
+    (invoke as ReturnType<typeof vi.fn>).mockResolvedValue(source);
+    const { readWorkbook } = await import("./workbook");
+
+    // Act
+    const result = await readWorkbook("w1");
+
+    // Assert
+    expect(result).toBe(source);
+    expect(invoke).toHaveBeenCalledWith("read_workbook", { idOrPath: "w1" });
+  });
+});
+
+describe("createWorkbook", () => {
+  it("create_workbook resolves — calls invoke with name and returns the value unchanged", async () => {
+    // Arrange
+    const { invoke } = await import("@tauri-apps/api/core");
+    const handle = { id: "w2", name: "New workbook", path: "/data/workbooks/new-workbook.idl1wb", cell_count: 0 };
+    (invoke as ReturnType<typeof vi.fn>).mockResolvedValue(handle);
+    const { createWorkbook } = await import("./workbook");
+
+    // Act
+    const result = await createWorkbook("New workbook");
+
+    // Assert
+    expect(result).toBe(handle);
+    expect(invoke).toHaveBeenCalledWith("create_workbook", { name: "New workbook" });
+  });
+});
+
+describe("listMathBuiltins", () => {
+  it("list_math_builtins resolves — calls invoke with no arguments and returns the value unchanged", async () => {
+    // Arrange
+    const { invoke } = await import("@tauri-apps/api/core");
+    const builtins = [{ name: "rms", arity: [1, 2], status: "implemented" }];
+    (invoke as ReturnType<typeof vi.fn>).mockResolvedValue(builtins);
+    const { listMathBuiltins } = await import("./workbook");
+
+    // Act
+    const result = await listMathBuiltins();
+
+    // Assert
+    expect(result).toBe(builtins);
+    expect(invoke).toHaveBeenCalledWith("list_math_builtins");
+  });
+});
+
+describe("fetchHostChannel", () => {
+  it("fetch_host_channel resolves — calls invoke with the four named arguments and decodes the response", async () => {
+    // Arrange
+    const { invoke } = await import("@tauri-apps/api/core");
+    const buf = new ArrayBuffer(24);
+    const view = new DataView(buf);
+    [0x49, 0x44, 0x4c, 0x48].forEach((b, i) => view.setUint8(i, b)); // "IDLH"
+    view.setUint16(4, 1, true); // version
+    view.setUint16(6, 0, true); // flags: no t
+    view.setUint32(8, 0, true); // length
+    view.setUint32(12, 0, true); // t_length
+    (invoke as ReturnType<typeof vi.fn>).mockResolvedValue(buf);
+    const { fetchHostChannel } = await import("./workbook");
+
+    // Act
+    const result = await fetchHostChannel("w1", "s1", "avg_speed", 1000);
+
+    // Assert
+    expect(result.hasT).toBe(false);
+    expect(result.v.length).toBe(0);
+    expect(invoke).toHaveBeenCalledWith("fetch_host_channel", {
+      workbookId: "w1", sessionId: "s1", defName: "avg_speed", budget: 1000,
+    });
   });
 });

@@ -1,16 +1,17 @@
 /**
  * The pure reducer over a notebook's open/eval/save/watch results (design
  * §6, plan Task 13 Step 1). Owns no I/O — `Notebook/index.tsx` calls
- * `ipc/workbook.ts` and `ipcStubs/readWorkbook.ts` and dispatches their
- * results in here.
+ * `ipc/workbook.ts` and dispatches its results in here.
  *
  * The plan's sketch names one `status` field over the whole state; this
  * refinement narrows it to `markdownStatus`, since evaluation/rendering
  * (via `evalWorkbook`, which needs no source text) proceeds independently
- * of whether the document's own markdown/hash could be read (N1, IPC need
- * `runs/2026-09-05/lanes/l6/IPC-NEEDS.md`) — a single whole-state `status`
- * would force "evaluating fine, but markdown unavailable" into one of four
- * values that doesn't actually describe that combination.
+ * of whether the document's own markdown/hash could be read — a single
+ * whole-state `status` would force "evaluating fine, but markdown
+ * unavailable" into one value that doesn't actually describe that
+ * combination. `read_workbook` (`ipc/workbook.ts`'s `readWorkbook`) landed
+ * for real in L8w — `markdownStatus` no longer has a `"not_implemented"`
+ * value, since a read now either succeeds or fails with a real `IpcError`.
  *
  * `editCell`'s `markdown` field (Task 15 addition, out of this file's
  * original brief scope — flagged in that task's report/commit) completes
@@ -24,7 +25,7 @@ import type { CellOutput, WorkbookEvent, WorkbookHandle } from "../../../../ipc/
 import { scanCells, type ScannedCell } from "./cells";
 
 /** The document-text slice's own status — independent of whether cells have evaluated. */
-export type MarkdownStatus = "loading" | "ready" | "not_implemented" | "error";
+export type MarkdownStatus = "loading" | "ready" | "error";
 
 /** One notebook's full open/eval/save/watch state. */
 export interface WorkbookState {
@@ -32,11 +33,11 @@ export interface WorkbookState {
   handle: WorkbookHandle | null;
   /** The document-text slice's status (see the module doc comment). */
   markdownStatus: MarkdownStatus;
-  /** The file's UTF-8 text, verbatim — `null` until `read_workbook` (N1) succeeds. */
+  /** The file's UTF-8 text, verbatim — `null` until `readWorkbook` succeeds. */
   markdown: string | null;
   /** sha256 of `markdown`'s bytes, hex — the `based_on_hash` a later save passes; `null` until a read or a save. */
   hash: string | null;
-  /** Set only when `markdownStatus === "error"` — a real (non-`NotImplementedError`) failure's message. */
+  /** Set only when `markdownStatus === "error"` — a rejected `readWorkbook`'s message. */
   markdownError: string | null;
   /** This scan's non-authoritative cells (`model/cells.ts`), empty while `markdown` is `null`. */
   cells: ScannedCell[];
@@ -66,7 +67,6 @@ export type WorkbookAction =
   | { type: "handleOpened"; handle: WorkbookHandle }
   | { type: "markdownLoading" }
   | { type: "markdownReady"; markdown: string; hash: string }
-  | { type: "markdownNotImplemented" }
   | { type: "markdownError"; message: string }
   | { type: "evalResult"; outputs: CellOutput[] }
   /** A cell's body changed locally (Task 15's `EditorPanes`, via
@@ -111,9 +111,6 @@ export function workbookReducer(state: WorkbookState, action: WorkbookAction): W
         // either way any prior conflict is now addressed.
         conflict: false,
       };
-
-    case "markdownNotImplemented":
-      return { ...state, markdownStatus: "not_implemented", markdown: null, cells: [] };
 
     case "markdownError":
       return { ...state, markdownStatus: "error", markdownError: action.message };

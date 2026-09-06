@@ -120,3 +120,46 @@ describe("getTrack", () => {
     expect(invoke).toHaveBeenCalledWith("get_track", { trackId: "t1" });
   });
 });
+
+describe("saveSessionMetadata", () => {
+  it("save_session_metadata resolves — calls invoke with the session id and the nine-field patch", async () => {
+    // Arrange
+    const { invoke } = await import("@tauri-apps/api/core");
+    const detail = { session_id: "s1", rider: "Isaac" };
+    (invoke as ReturnType<typeof vi.fn>).mockResolvedValue(detail);
+    const { saveSessionMetadata } = await import("./catalog");
+    const patch = {
+      rider: "Isaac",
+      bike: "",
+      bike_comment: "",
+      venue_name: "",
+      event_name: "",
+      event_session: "",
+      short_comment: "",
+      long_comment: "",
+      tag: "",
+    };
+
+    // Act
+    const result = await saveSessionMetadata("s1", patch);
+
+    // Assert
+    expect(result).toBe(detail);
+    expect(invoke).toHaveBeenCalledWith("save_session_metadata", { sessionId: "s1", metadata: patch });
+  });
+});
+
+describe("deleteSession", () => {
+  it("delete_session resolves — calls invoke with the session id and deleteBlob flag", async () => {
+    // Arrange
+    const { invoke } = await import("@tauri-apps/api/core");
+    (invoke as ReturnType<typeof vi.fn>).mockResolvedValue(undefined);
+    const { deleteSession } = await import("./catalog");
+
+    // Act
+    await deleteSession("s1", true);
+
+    // Assert
+    expect(invoke).toHaveBeenCalledWith("delete_session", { sessionId: "s1", deleteBlob: true });
+  });
+});

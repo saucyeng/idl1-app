@@ -99,3 +99,67 @@ export async function fetchRasterMeta(
 ): Promise<RasterMeta> {
   return invoke<RasterMeta>("fetch_raster_meta", { sessionId, channel, kind, width, height, params });
 }
+
+/** `fetchFft`'s `averaging` argument (C3 §3.6, ruling R63 (3), R76). `"none"`
+ *  requires the request's segmentation to produce exactly one segment —
+ *  more is `invalid_argument` with `detail: { segments: n }`. */
+export type FftAveraging = "none" | "mean" | "median" | "max";
+
+/** Decoded `fetch_fft` response (C3 §3.6): one channel's FFT spectrum. Bin
+ *  `k`'s frequency is `k * sampleRateHz / (2 * magnitudes.length)`, derived
+ *  from `sampleRateHz` rather than crossing as a second array. */
+export interface DecodedFft {
+  /** The channel's real rate, derived from its recorded `t_us` axis. */
+  sampleRateHz: number;
+  magnitudes: Float32Array;
+}
+
+const FFT_MAGIC = "IDLF";
+const FFT_SUPPORTED_VERSION = 1;
+const FFT_HEADER_LEN = 16;
+
+/** Decodes a `fetch_fft` response per C3 §3.6's `IDLF` v1 layout: a fixed
+ *  16-byte little-endian header (`magic`, `version`, `reserved`,
+ *  `bin_count`, `sample_rate_hz`), then `bin_count` `f32` magnitudes.
+ *
+ * @throws Error on bad magic, an unsupported `version`, or a buffer too
+ *  short for the header or its declared `bin_count`. */
+export function decodeFft(buf: ArrayBuffer): DecodedFft {
+  if (buf.byteLength < FFT_HEADER_LEN) {
+    throw new Error(`fft buffer ${buf.byteLength} bytes, header needs ${FFT_HEADER_LEN} bytes`);
+  }
+  const view = new DataView(buf);
+  const magic = String.fromCharCode(view.getUint8(0), view.getUint8(1), view.getUint8(2), view.getUint8(3));
+  if (magic !== FFT_MAGIC) {
+    throw new Error(`fft magic bytes "${magic}" != "${FFT_MAGIC}"`);
+  }
+  const version = view.getUint16(4, true);
+  if (version !== FFT_SUPPORTED_VERSION) {
+    throw new Error(`fft version ${version} != supported version ${FFT_SUPPORTED_VERSION}`);
+  }
+  const binCount = view.getUint32(8, true);
+  const sampleRateHz = view.getFloat32(12, true);
+  const total = FFT_HEADER_LEN + binCount * 4;
+  if (buf.byteLength < total) {
+    throw new Error(`fft buffer ${buf.byteLength} bytes too short for bin_count=${binCount} (need ${total})`);
+  }
+  const magnitudes = new Float32Array(binCount);
+  for (let i = 0; i < binCount; i++) {
+    magnitudes[i] = view.getFloat32(FFT_HEADER_LEN + i * 4, true);
+  }
+  return { sampleRateHz, magnitudes };
+}
+
+/** Fetches and decodes one channel's FFT spectrum (C3 §3.6, ruling R63 (3)).
+ *  `lap` must be `null` in practice until lap indexing lands (C3 §3.6 note).
+ *  Settle-bound only, same rule as `fetchRaster`. */
+export async function fetchFft(
+  sessionId: string,
+  channel: string,
+  lap: number | null,
+  params: SpectrogramParams,
+  averaging: FftAveraging
+): Promise<DecodedFft> {
+  const buf = await invoke<ArrayBuffer>("fetch_fft", { sessionId, channel, lap, params, averaging });
+  return decodeFft(buf);
+}

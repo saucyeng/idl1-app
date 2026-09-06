@@ -5,7 +5,17 @@ import { initialWorkbookState, workbookReducer } from "./workbookState";
 
 /** Builds a minimal, otherwise-empty `CellOutput` for one cell id. */
 function output(cellId: string, overrides: Partial<CellOutput> = {}): CellOutput {
-  return { cell_id: cellId, kind: "math", value: null, defs: [], errors: [], ...overrides };
+  return {
+    cell_id: cellId,
+    kind: "math",
+    value: null,
+    defs: [],
+    errors: [],
+    prose_before_html: null,
+    prose_after_html: null,
+    prose_spans: [],
+    ...overrides,
+  };
 }
 
 describe("workbookReducer", () => {
@@ -64,7 +74,7 @@ describe("workbookReducer", () => {
   it("workbookReducer — a watch event naming two cells — marks exactly those two stale", () => {
     const next = workbookReducer(initialWorkbookState, {
       type: "watchEvent",
-      event: { kind: "changed", cell_ids: ["cell-a", "cell-b"] },
+      event: { kind: "changed", cell_ids: ["cell-a", "cell-b"], hash: "h9" },
     });
 
     expect(Array.from(next.dirtyCellIds).sort()).toEqual(["cell-a", "cell-b"]);
@@ -87,18 +97,6 @@ describe("workbookReducer", () => {
     expect(next.markdown).toBe(markdown);
     expect(next.hash).toBe("h1");
     expect(next.cells).toHaveLength(1);
-  });
-
-  it("workbookReducer — read_workbook reports not implemented — clears markdown and cells without touching outputs", () => {
-    const ready = workbookReducer(initialWorkbookState, { type: "markdownReady", markdown: "x", hash: "h1" });
-    const withOutput = workbookReducer(ready, { type: "evalResult", outputs: [output("cell-a")] });
-
-    const next = workbookReducer(withOutput, { type: "markdownNotImplemented" });
-
-    expect(next.markdownStatus).toBe("not_implemented");
-    expect(next.markdown).toBeNull();
-    expect(next.cells).toEqual([]);
-    expect(next.outputs.has("cell-a")).toBe(true);
   });
 
   it("workbookReducer — a markdown read error — stores the error status and message", () => {

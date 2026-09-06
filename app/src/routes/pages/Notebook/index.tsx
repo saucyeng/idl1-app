@@ -3,7 +3,7 @@ import { useEffect, useReducer, useRef, useState } from "react";
 import { getSession, listSessions, listWorkbooks, type SessionDetail } from "../../../ipc/catalog";
 import { cursorReadout } from "../../../ipc/cursor";
 import { fetchTile } from "../../../ipc/tiles";
-import { evalWorkbook, openWorkbook, saveWorkbook, watchWorkbook } from "../../../ipc/workbook";
+import { evalWorkbook, openWorkbook, readWorkbook, saveWorkbook, watchWorkbook, type LapContext as EvalLapContext } from "../../../ipc/workbook";
 import { useAppState } from "../../../state/AppState";
 import CellFrame from "./components/CellFrame";
 import CellList from "./components/CellList";
@@ -12,7 +12,6 @@ import ConflictBanner from "./components/ConflictBanner";
 import EditorPanes from "./components/EditorPanes";
 import JsCellFrame, { DEFAULT_JS_CELL_HEIGHT_PX } from "./components/JsCellFrame";
 import type { PropertiesFormChannelOption, PropertiesFormLapOption } from "./components/PropertiesForm.types";
-import { readWorkbook, NotImplementedError } from "./ipcStubs/readWorkbook";
 import { extractInlineSpans } from "./components/ProseSpan";
 import type { SandboxCell } from "./host/protocol";
 import { SandboxHost } from "./host/SandboxHost";
@@ -152,19 +151,18 @@ export default function NotebookPage() {
   const lastSavedHashRef = useRef<string | null>(null);
   const lastSavedAtMsRef = useRef<number | null>(null);
 
-  // `AppState.selection.lapContext` (R53 Data Q3) is read here but cannot
-  // yet be passed to `evalWorkbook` -- the command's signature has no slot
-  // for it (IPC need N4, `runs/2026-09-05/lanes/l6/IPC-NEEDS.md`, not
-  // landed). Referencing it (without using it) keeps this read visible to
-  // a later diff rather than silently dropped. `model/jsCellBinding.ts`'s
+  // `AppState.selection.lapContext` (R53 Data Q3), mapped to `ipc/workbook.ts`'s
+  // wire `LapContext` shape and passed to every `evalWorkbook` call below
+  // (C3 §3.4, ledger R59). Read via a ref, not the dependency array, for the
+  // same reason `sessionIdRef` is below: the watch/debounced-edit effects
+  // should read the freshest selection at fire time without re-subscribing
+  // whenever the lap selection alone changes. `model/jsCellBinding.ts`'s
   // `JsCellBindingChannel.lap` (from `MarkProps.lap`, per-mark) is a
-  // separate, narrower lap reference plumbed the same way -- read and
+  // separate, narrower lap reference plumbed independently -- read and
   // stored on each bound channel below, never applied to narrow a fetch
   // (lead pre-ruling 2026-09-05 #2).
-  void lapContext;
-  // TODO(idl0): thread `lapContext` into `evalWorkbook`'s call below once
-  // N4 lands (`eval_workbook(id, sessionId, lapContext)`); today it is read
-  // from `AppState.selection` but not passed anywhere.
+  const evalLapContextRef = useRef<EvalLapContext | null>(null);
+  evalLapContextRef.current = lapContext === null ? null : { main_lap: lapContext.mainLap, overlay_laps: lapContext.overlayLaps };
 
   // Callbacks are routed through refs updated on every render so the mount
   // effect below can keep an empty dependency array -- it only constructs
@@ -229,10 +227,9 @@ export default function NotebookPage() {
       listWorkbooks: () => listWorkbooks(),
       openWorkbook: (idOrPath) => openWorkbook(idOrPath),
       readWorkbook: (idOrPath) => readWorkbook(idOrPath),
-      evalWorkbook: (id, sid) => evalWorkbook(id, sid),
-      isNotImplementedError: (error) => error instanceof NotImplementedError,
+      evalWorkbook: (id, sid, lapContext) => evalWorkbook(id, sid, lapContext),
     };
-    void runOpenAndEval(deps, sessionId, dispatch, () => openSeqRef.current !== mySeq);
+    void runOpenAndEval(deps, sessionId, dispatch, () => openSeqRef.current !== mySeq, evalLapContextRef.current);
   }, [sessionId]);
 
   // Resolves `sessionId`'s `SessionDetail` and recorded span (lead
@@ -281,7 +278,7 @@ export default function NotebookPage() {
       }
       dispatch({ type: "watchEvent", event });
       const mySeq = ++evalSeqRef.current;
-      void runEval({ evalWorkbook }, workbookId, sessionIdRef.current, dispatch, () => evalSeqRef.current !== mySeq);
+      void runEval({ evalWorkbook }, workbookId, sessionIdRef.current, dispatch, () => evalSeqRef.current !== mySeq, evalLapContextRef.current);
     });
 
     return () => {
@@ -304,7 +301,7 @@ export default function NotebookPage() {
 
     const timer = setTimeout(() => {
       const mySeq = ++evalSeqRef.current;
-      void runEval({ evalWorkbook }, workbookId, sessionIdRef.current, dispatch, () => evalSeqRef.current !== mySeq);
+      void runEval({ evalWorkbook }, workbookId, sessionIdRef.current, dispatch, () => evalSeqRef.current !== mySeq, evalLapContextRef.current);
     }, EDIT_EVAL_DEBOUNCE_MS);
 
     return () => clearTimeout(timer);
@@ -313,9 +310,9 @@ export default function NotebookPage() {
   /**
    * Explicit save action (Task 14) -- never called from an effect or on a
    * per-keystroke basis. Disabled by the render below whenever
-   * `state.hash` is `null`: while `read_workbook` (N1) reports
-   * `not_implemented`, there is no legally correct `based_on_hash` to
-   * pass -- `null` means "creating a new workbook" (`ipc/workbook.ts`'s
+   * `state.hash` is `null`: before the first successful `readWorkbook`, or
+   * after one fails, there is no legally correct `based_on_hash` to pass --
+   * `null` means "creating a new workbook" (`ipc/workbook.ts`'s
    * `saveWorkbook` doc comment), which would be wrong for an existing
    * target and would error per `write_atomic`'s own semantics. Save is
    * reported as unavailable in that state rather than guessing a hash.
@@ -340,11 +337,7 @@ export default function NotebookPage() {
       const source = await readWorkbook(state.handle.id);
       dispatch({ type: "markdownReady", markdown: source.markdown, hash: source.hash });
     } catch (error) {
-      if (error instanceof NotImplementedError) {
-        dispatch({ type: "markdownNotImplemented" });
-      } else {
-        dispatch({ type: "markdownError", message: error instanceof Error ? error.message : String(error) });
-      }
+      dispatch({ type: "markdownError", message: error instanceof Error ? error.message : String(error) });
     }
     setSaveFlowState({ status: "idle" });
   }
@@ -514,8 +507,8 @@ export default function NotebookPage() {
   }, [state.cells, state.markdown, sessionDetail, sessionSpanUs, sessionId]);
 
   // Save is unavailable while there is no readable `hash` to base it on
-  // (N1 `not_implemented`, still loading, or a read error) -- see
-  // `handleSave`'s doc comment on why `null` cannot stand in for it.
+  // (still loading, or a read error) -- see `handleSave`'s doc comment on
+  // why `null` cannot stand in for it.
   const saveUnavailable = state.hash === null || state.markdown === null;
 
   // The editor shell's inputs (Task 15) -- derived on every render from
@@ -548,11 +541,6 @@ export default function NotebookPage() {
 
   return (
     <div>
-      {state.markdownStatus === "not_implemented" && (
-        <p className="workbook-markdown-unavailable">
-          Editing this document&apos;s raw text is not available yet (read_workbook is not implemented).
-        </p>
-      )}
       {state.markdownStatus === "error" && state.markdownError !== null && (
         <p className="workbook-markdown-error">Notebook error: {state.markdownError}</p>
       )}
@@ -562,7 +550,7 @@ export default function NotebookPage() {
           <button type="button" onClick={() => void handleSave()} disabled={saveUnavailable || saveFlowState.status === "saving"}>
             {saveFlowState.status === "saving" ? "Saving…" : "Save"}
           </button>
-          {saveUnavailable && <span className="workbook-save-unavailable">save not available yet (read_workbook is not implemented)</span>}
+          {saveUnavailable && <span className="workbook-save-unavailable">save not available yet (the document's text could not be read)</span>}
           {saveFlowState.status === "error" && <span className="workbook-save-error">save failed: {saveFlowState.error.message}</span>}
         </div>
       )}
