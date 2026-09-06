@@ -3651,3 +3651,9 @@ a Time → FFT switch.
 `de6f862` + fix `f9b9189` (unknown engine-nested keys survive write and
 migration). Whole TS suite on main after merge: 83 files / 654 passed,
 `tsc` clean. Worktree retired.
+
+## 2026-09-06 — L7b Task 10 LANDED (device live wiring; merge into main, suite 86 / 697)
+
+`f1930ca`, review CLEAN. Merged `--no-ff` (CHANGELOG: kept both bullets).
+Whole TS suite on main: 86 files / 697 passed, `tsc` clean. Worktree
+retired. Remaining wave-2 UI work is L6 Tasks 18–20 in `wave2-l6-followon`.
