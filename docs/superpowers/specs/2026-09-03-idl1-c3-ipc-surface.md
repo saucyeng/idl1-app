@@ -358,10 +358,25 @@ interface LapDetail {
   lap_time_ms: number;             // i64, ms — raw_elapsed_ms minus neutral-zone time
   start_time_secs: number;         // f64, seconds, recording-time (t=0-anchored)
   end_time_secs: number;           // f64, seconds
-  sectors: unknown[];               // present when sector_gates is non-empty; C1 §6 does not fix
-                                     // the element shape beyond "array" — see open question 11
-  neutral_zone_visits: unknown[];   // C1 §6 does not fix the element shape beyond "array" —
-                                     // see open question 11
+  sectors: LapSector[];              // present when sector_gates is non-empty — pinned (§6 item 11,
+                                      // closed): the landed session_json::SectorJson shape, not
+                                      // IDL0_SPEC §15.2's illustrative sector_name/sector_time_ms
+  neutral_zone_visits: LapNeutralZoneVisit[];   // pinned (§6 item 11, closed)
+}
+/** `LapDetail.sectors` element — C1 §6 `laps[].sectors[]` (§6 item 11). */
+interface LapSector {
+  name: string;
+  start_ms: number;                // i64, UTC ms
+  end_ms: number;                  // i64, UTC ms
+  start_time_secs: number;         // f64, seconds, recording-time (t=0-anchored)
+  end_time_secs: number;           // f64, seconds
+}
+/** `LapDetail.neutral_zone_visits` element — C1 §6 `laps[].neutral_zone_visits[]`
+ *  (§6 item 11). */
+interface LapNeutralZoneVisit {
+  name: string;
+  enter_ms: number;                // i64, UTC ms
+  exit_ms: number;                 // i64, UTC ms
 }
 interface TrackVisitSummary {
   visit_id: string;                // UUID (C1 §6 track_visits[].visit_id)
@@ -1609,15 +1624,19 @@ engine.
     real shape when `track_artifact` lands and revise §3.2 in the same
     change.
 11. **`LapDetail.sectors`/`.neutral_zone_visits` (§3.2, round 2) element
-    shape is unfixed.** C1 §6 types both only as `"array"` — "present when
-    sector_gates non-empty" for `sectors`, no further shape given for
-    either. IDL0_SPEC §15.2's illustrative session tree names
-    `sectors[] → sector_name, sector_time_ms` and §16.2b defines
-    `NeutralZoneVisit { neutralZoneName, enterMs, exitMs }` for the legacy
-    Dart model, which plausibly carries forward, but C1 itself does not
-    commit to this, so `LapDetail` types both `unknown[]` rather than
-    guessing. Assigned: lead/C1 — pin the element shape in C1 §6 (or here,
-    if C1 declines to) before `list_laps`/`get_session` ship.
+    shape — CLOSED 2026-09-06 (L2b Task 5, R53 Q5).** Lap indexing landed
+    (L2b Tasks 1–4) and with it `store::session_json`'s `SectorJson {
+    name, start_ms, end_ms, start_time_secs, end_time_secs }` and
+    `NeutralZoneVisitJson { name, enter_ms, exit_ms }` — the shapes
+    `session.json` actually contains. This closes the guess this item
+    originally recorded (IDL0_SPEC §15.2's illustrative
+    `sector_name`/`sector_time_ms`, which the landed `SectorJson` does
+    **not** match — the landed shape wins, per the ambiguity policy's rule
+    that a signed contract is corrected to match landed truth rather than
+    the reverse). `NeutralZoneVisitJson` does match §16.2b modulo naming.
+    `LapDetail` above now types both as `LapSector[]`/
+    `LapNeutralZoneVisit[]`. See C1 §6's `laps[]` block for the
+    canonical field list.
 
 ### Wave-2 amendment (R59)
 
