@@ -105,4 +105,24 @@ describe("workbookReducer", () => {
     expect(next.markdownStatus).toBe("error");
     expect(next.markdownError).toBe("boom");
   });
+
+  it("workbookReducer — a whole-command eval error — stores it, typed", () => {
+    const next = workbookReducer(initialWorkbookState, {
+      type: "evalError",
+      error: { kind: "invalid_argument", message: "lap context not supported yet" },
+    });
+
+    expect(next.evalError).toEqual({ kind: "invalid_argument", message: "lap context not supported yet" });
+  });
+
+  it("workbookReducer — a successful eval result after an eval error — clears the eval error", () => {
+    const errored = workbookReducer(initialWorkbookState, {
+      type: "evalError",
+      error: { kind: "internal", message: "boom" },
+    });
+
+    const next = workbookReducer(errored, { type: "evalResult", outputs: [] });
+
+    expect(next.evalError).toBeNull();
+  });
 });

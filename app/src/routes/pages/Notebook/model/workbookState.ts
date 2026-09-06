@@ -21,7 +21,7 @@
  * read does, not only a dirty flag, or the editor shell would have nothing
  * to save.
  */
-import type { CellOutput, WorkbookEvent, WorkbookHandle } from "../../../../ipc/workbook";
+import type { CellOutput, IpcError, WorkbookEvent, WorkbookHandle } from "../../../../ipc/workbook";
 import { scanCells, type ScannedCell } from "./cells";
 
 /** The document-text slice's own status — independent of whether cells have evaluated. */
@@ -47,6 +47,12 @@ export interface WorkbookState {
   dirtyCellIds: Set<string>;
   /** True while `saveFlow.ts`'s state is `"conflict"` (Task 14, R44) -- `Notebook/index.tsx` renders `ConflictBanner` while this is true. Cleared by a fresh read (`markdownReady`, i.e. "Reload from disk") or a subsequent successful save (`saveResult`, i.e. "Overwrite" landing). */
   conflict: boolean;
+  /** The last whole-command `evalWorkbook` rejection (L6 Task 21, Step 1b) --
+   *  distinct from a per-cell `CellOutput.errors` entry, which arrives
+   *  inside a *successful* `evalResult` instead. `Notebook/index.tsx`
+   *  renders `evalError.message` in a `role="alert"` line above the cell
+   *  list. Cleared by the next successful `evalResult`. */
+  evalError: IpcError | null;
 }
 
 /** `WorkbookState`'s value before `open_workbook` resolves. */
@@ -60,6 +66,7 @@ export const initialWorkbookState: WorkbookState = {
   outputs: new Map(),
   dirtyCellIds: new Set(),
   conflict: false,
+  evalError: null,
 };
 
 /** Every action `workbookReducer` accepts. */
@@ -69,6 +76,9 @@ export type WorkbookAction =
   | { type: "markdownReady"; markdown: string; hash: string }
   | { type: "markdownError"; message: string }
   | { type: "evalResult"; outputs: CellOutput[] }
+  /** A whole-command `evalWorkbook` rejection (Step 1b) -- no cell in this
+   *  document evaluated at all. */
+  | { type: "evalError"; error: IpcError }
   /** A cell's body changed locally (Task 15's `EditorPanes`, via
    *  `model/cells.ts`'s `replaceCellBody`). `markdown` is the whole
    *  document's new text (the caller already applied the replacement);
@@ -120,8 +130,11 @@ export function workbookReducer(state: WorkbookState, action: WorkbookAction): W
       for (const output of action.outputs) {
         outputs.set(output.cell_id, output);
       }
-      return { ...state, outputs };
+      return { ...state, outputs, evalError: null };
     }
+
+    case "evalError":
+      return { ...state, evalError: action.error };
 
     case "editCell": {
       const dirtyCellIds = new Set(state.dirtyCellIds);

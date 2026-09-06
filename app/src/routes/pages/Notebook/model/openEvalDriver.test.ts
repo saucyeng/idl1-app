@@ -1,11 +1,10 @@
 import { describe, expect, it } from "vitest";
 
 import type { WorkbookAction } from "./workbookState";
-import { runOpenAndEval, type OpenEvalDeps } from "./openEvalDriver";
+import { runEval, runOpenAndEval, type OpenEvalDeps } from "./openEvalDriver";
 
 function baseDeps(overrides: Partial<OpenEvalDeps> = {}): OpenEvalDeps {
   return {
-    listWorkbooks: async () => [{ workbook_id: "wb-1" }],
     openWorkbook: async (idOrPath) => ({ id: idOrPath, name: "n", path: "/p", cell_count: 0 }),
     readWorkbook: async () => ({ markdown: "# hi", hash: "h1", path: "/p" }),
     evalWorkbook: async () => [
@@ -19,18 +18,23 @@ describe("runOpenAndEval", () => {
   it("runOpenAndEval — a fully successful run — dispatches open, markdown, then eval results in order", async () => {
     const actions: WorkbookAction[] = [];
 
-    await runOpenAndEval(baseDeps(), "session-a", (a) => actions.push(a), () => false);
+    await runOpenAndEval(baseDeps(), "wb-1", "session-a", (a) => actions.push(a), () => false);
 
     expect(actions.map((a) => a.type)).toEqual(["handleOpened", "markdownReady", "evalResult"]);
   });
 
-  it("runOpenAndEval — no workbooks are indexed — reports a markdown error and never opens or evaluates", async () => {
-    const deps = baseDeps({ listWorkbooks: async () => [] });
-    const actions: WorkbookAction[] = [];
+  it("runOpenAndEval — opens the workbook id it is given — never invents its own", async () => {
+    const seen: string[] = [];
+    const deps = baseDeps({
+      openWorkbook: async (idOrPath) => {
+        seen.push(idOrPath);
+        return { id: idOrPath, name: "n", path: "/p", cell_count: 0 };
+      },
+    });
 
-    await runOpenAndEval(deps, null, (a) => actions.push(a), () => false);
+    await runOpenAndEval(deps, "wb-42", null, () => {}, () => false);
 
-    expect(actions).toEqual([{ type: "markdownError", message: "No workbooks found." }]);
+    expect(seen).toEqual(["wb-42"]);
   });
 
   it("runOpenAndEval — readWorkbook throws a real error — reports it but still evaluates", async () => {
@@ -41,25 +45,25 @@ describe("runOpenAndEval", () => {
     });
     const actions: WorkbookAction[] = [];
 
-    await runOpenAndEval(deps, null, (a) => actions.push(a), () => false);
+    await runOpenAndEval(deps, "wb-1", null, (a) => actions.push(a), () => false);
 
     expect(actions.map((a) => a.type)).toEqual(["handleOpened", "markdownError", "evalResult"]);
   });
 
-  it("runOpenAndEval — listWorkbooks itself rejects — reports the error and never opens", async () => {
+  it("runOpenAndEval — openWorkbook itself rejects — reports the error and never reads or evaluates", async () => {
     const deps = baseDeps({
-      listWorkbooks: async () => {
-        throw new Error("catalog unavailable");
+      openWorkbook: async () => {
+        throw new Error("workbook not found");
       },
     });
     const actions: WorkbookAction[] = [];
 
-    await runOpenAndEval(deps, null, (a) => actions.push(a), () => false);
+    await runOpenAndEval(deps, "wb-1", null, (a) => actions.push(a), () => false);
 
-    expect(actions).toEqual([{ type: "markdownError", message: "catalog unavailable" }]);
+    expect(actions).toEqual([{ type: "markdownError", message: "workbook not found" }]);
   });
 
-  it("runOpenAndEval — evalWorkbook rejects — the earlier open/markdown dispatches still stand, nothing further is dispatched", async () => {
+  it("runOpenAndEval — evalWorkbook rejects — the earlier open/markdown dispatches still stand, and a typed evalError follows", async () => {
     const deps = baseDeps({
       evalWorkbook: async () => {
         throw new Error("unknown workbook");
@@ -67,9 +71,10 @@ describe("runOpenAndEval", () => {
     });
     const actions: WorkbookAction[] = [];
 
-    await runOpenAndEval(deps, null, (a) => actions.push(a), () => false);
+    await runOpenAndEval(deps, "wb-1", null, (a) => actions.push(a), () => false);
 
-    expect(actions.map((a) => a.type)).toEqual(["handleOpened", "markdownReady"]);
+    expect(actions.map((a) => a.type)).toEqual(["handleOpened", "markdownReady", "evalError"]);
+    expect(actions[2]).toEqual({ type: "evalError", error: { kind: "internal", message: "unknown workbook" } });
   });
 
   it("runOpenAndEval — stale after readWorkbook resolves — skips the markdownReady dispatch and the eval step", async () => {
@@ -77,9 +82,9 @@ describe("runOpenAndEval", () => {
     const actions: WorkbookAction[] = [];
     let calls = 0;
 
-    await runOpenAndEval(deps, null, (a) => actions.push(a), () => {
+    await runOpenAndEval(deps, "wb-1", null, (a) => actions.push(a), () => {
       calls++;
-      return calls > 2;
+      return calls > 1;
     });
 
     expect(actions.map((a) => a.type)).toEqual(["handleOpened"]);
@@ -90,24 +95,19 @@ describe("runOpenAndEval", () => {
     const actions: WorkbookAction[] = [];
     let calls = 0;
 
-    await runOpenAndEval(deps, null, (a) => actions.push(a), () => {
+    await runOpenAndEval(deps, "wb-1", null, (a) => actions.push(a), () => {
       calls++;
-      return calls > 3;
+      return calls > 2;
     });
 
     expect(actions.map((a) => a.type)).toEqual(["handleOpened", "markdownReady"]);
   });
 
-  it("runOpenAndEval — a run superseded before openWorkbook resolves — dispatches nothing further", async () => {
+  it("runOpenAndEval — already stale when openWorkbook resolves — dispatches nothing at all", async () => {
     const deps = baseDeps();
     const actions: WorkbookAction[] = [];
-    let staleAfterList = false;
 
-    await runOpenAndEval(deps, null, (a) => actions.push(a), () => {
-      const wasStale = staleAfterList;
-      staleAfterList = true;
-      return wasStale;
-    });
+    await runOpenAndEval(deps, "wb-1", null, (a) => actions.push(a), () => true);
 
     expect(actions).toEqual([]);
   });
@@ -122,8 +122,45 @@ describe("runOpenAndEval", () => {
     });
     const lapContext = { main_lap: 2, overlay_laps: [1] };
 
-    await runOpenAndEval(deps, "session-a", () => {}, () => false, lapContext);
+    await runOpenAndEval(deps, "wb-1", "session-a", () => {}, () => false, lapContext);
 
     expect(seen).toEqual([lapContext]);
+  });
+});
+
+describe("runEval", () => {
+  it("runEval — a whole-command rejection — dispatches a typed evalError, never a bare string", async () => {
+    const actions: WorkbookAction[] = [];
+    const deps = {
+      evalWorkbook: async () => {
+        throw { kind: "invalid_argument", message: "lap context not supported yet" };
+      },
+    };
+
+    await runEval(deps, "wb-1", null, (a) => actions.push(a), () => false);
+
+    expect(actions).toEqual([{ type: "evalError", error: { kind: "invalid_argument", message: "lap context not supported yet" } }]);
+  });
+
+  it("runEval — stale after evalWorkbook rejects — dispatches nothing", async () => {
+    const actions: WorkbookAction[] = [];
+    const deps = {
+      evalWorkbook: async () => {
+        throw new Error("boom");
+      },
+    };
+
+    await runEval(deps, "wb-1", null, (a) => actions.push(a), () => true);
+
+    expect(actions).toEqual([]);
+  });
+
+  it("runEval — a successful eval — dispatches evalResult, not evalError", async () => {
+    const actions: WorkbookAction[] = [];
+    const deps = { evalWorkbook: async () => [] };
+
+    await runEval(deps, "wb-1", null, (a) => actions.push(a), () => false);
+
+    expect(actions).toEqual([{ type: "evalResult", outputs: [] }]);
   });
 });

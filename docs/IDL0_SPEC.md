@@ -3063,7 +3063,13 @@ expression, a table body, or JS.
   nothing to chart against, C1 "time is recorded, not assumed"), also
   mounts as that same plain frame (`Notebook/components/JsCellFrame.tsx`)
   — reserving its last-reported `cellRendered.heightPx` and otherwise
-  inert.
+  inert. A form-generated cell with no session selected at all
+  (`AppState.selection.sessionId === null`) mounts the same plain frame with
+  a note reading "No session is selected — choose one in the Data tab."
+  (`Notebook/model/jsCellNote.ts`, L6 Task 21) — it is not otherwise
+  distinguished from "code does not round-trip"/"names an unknown
+  channel/definition" above except that a more specific cause, when one
+  also applies, wins.
 
 `Notebook/components/CellList.tsx` iterates the document's cells in order
 and wraps each kind's own rendered output — never the prose spans on either
@@ -3305,7 +3311,12 @@ catalog, per-cell errors, live file reload, save with conflict detection.
 | **Lap table's Main/Overlay designation** | Partly delivered | The table data itself is a `table` cell and renders. The lap-scoping designation that would drive it has no v3 home: `eval_workbook` has no lap-context argument in the landed command (IPC need N4, ruling R52 Q5 — proposed, not yet implemented as of this writing; see `Notebook/index.tsx`'s own `TODO(idl0)` at the read site). |
 | **Lap progression chart, variance trace chart** | Not carried / deferred | `lapProgression` is outside C2 §6's `plotForm` grammar entirely (authorable as a custom `js` cell from `list_laps`). The variance functions exist in the math catalog but read the same missing lap context as the lap table — same N4 blocker. |
 | **X-axis modes (`wheelDistance`, `gpsDistance`)** | Not carried | C2 §6 drops `xAxisMode` explicitly; `plotForm`'s `x` is always `"t"`. Widening the grammar is a contract change, not a UI decision. |
-| **Worksheets, per-sheet x-axis mode, workbook-bar tabs** | Not carried | A `.idl1wb` is one flat cell sequence, read in document order — v3 has no worksheet concept. |
+| **Worksheets, per-sheet x-axis mode, workbook-bar tabs** | Not carried | A `.idl1wb` is one flat cell sequence, read in document order — v3 has no worksheet concept; there is nothing for a worksheet tab bar to switch between. |
+| **Worksheet tab rename/duplicate (double-tap, right-click context menu)** | Not carried | Falls out of the same "no worksheet concept" gap immediately above — there is no worksheet tab to rename or duplicate. |
+| **Workbook rename/duplicate** (`workbook_bar.dart`'s double-tap-to-rename, `workbook_dropdown_menu.dart`'s Duplicate) | Not carried, L6 Task 21 | `WorkbookBar` names the open document (the picker's selected option) but has no rename or duplicate action — `create_workbook` mints a new empty document, it does not clone or retitle one. Filed as a gap, not scheduled; a future task needs a `rename_workbook`/`duplicate_workbook` command C3 does not have today. |
+| **Browse-all-workbooks modal** (search + sort by recent/name/created, `browse_workbooks_modal.dart`) | Not carried, L6 Task 21 | The picker is a plain `<select>` over every indexed workbook in `list_workbooks`' own order (never sorted or filtered by this lane) — no search box, no sort control, no per-row rename/duplicate/export menu. Idl0's per-row popup menu (rename/duplicate/export) has no idl1 equivalent for the same reason as the row above. |
+| **Workbook export/import/"Reload from file", delete** (`workbook_dropdown_menu.dart`'s exportFile/importFile/reloadFromFile/delete) | Not carried, L6 Task 21 | A `.idl1wb` already lives in `workbooks/` as a plain file — there is no separate on-disk vs. in-app copy to export/import/reload the way idl0's SQLite-backed `Workbook` entities needed. Delete has no `delete_workbook` command; removing a file from `workbooks/` and rescanning is today's only path, done outside the app. |
+| **Workbook Drive sync settings dialog** (`workbook_sync_settings_dialog.dart`, per-workbook) | Not carried | Same ruling as the table row above this one ("Workbook Drive sync settings") — superseded by LAN sync (L11); no per-workbook sync configuration surface exists or is planned to replace the per-workbook dialog specifically. |
 | **`heightFactor`, `showZeroLine`, chart `title`, `scope: session`** | Not carried | No `plotForm` grammar slot exists for any of them; a zero line or a title is one line of custom `js`. |
 | **`yScale: sqrtSigned` / `squareSigned`** | Not carried | C2 §6 maps both to plain `linear`; the grammar's `y.type` enum is `linear\|log\|sqrt`. |
 | **Maths chip-expression editor, function insert/help panels** | Superseded / reduced | Superseded by D13's two editing surfaces (Properties, Code); CodeMirror completion over the 69-function catalog (a hand-copied TS table, tracked note 2026-09-05) replaces the browsable panel. |
@@ -3343,6 +3354,53 @@ part of this lane's gate; the companion criterion, "pan/zoom/hover on a
 real session at 60 fps desktop," is observed in the running dev app at the
 lead's merge-gate eyeball pass, not inferred from this tab's unit tests
 alone (the L5 lesson, ruling R50).
+
+### 26.8 Opening a workbook: empty state, rescan, picker
+
+`list_workbooks` (C3 §3.2) is catalog-backed (`catalog_read::list_workbooks`)
+and therefore an index, not truth (CLAUDE.md §3: "the catalog is an index —
+deletable, rebuildable, never synced"). `Notebook/index.tsx` treats an empty
+result as "possibly stale, not necessarily empty": on page open, exactly one
+`rebuild_catalog` runs automatically when and only when `list_workbooks`
+first returns `[]`, then the list is re-fetched before falling through to
+the empty state (`Notebook/model/workbookEntry.ts`'s `chooseWorkbookEntry`
+returning `{ kind: "empty" }`, R81 Q1(a)). This covers a fresh install, a
+restored `<data>` directory, a changed data-dir override, or a deleted
+`catalog.sqlite` — every case where workbooks exist on disk but the index
+does not yet know it — without imposing a rebuild cost on the common,
+already-populated case. The empty state itself offers **New workbook** (an
+inline name field, never a native `window.prompt`, committing through
+`create_workbook`) and **Rescan** (`rebuild_catalog` again, explicit and
+user-triggered, mirroring `Data`'s existing "Rebuild catalog" toolbar
+button).
+
+`create_workbook` (C3 §3.4) writes the file but does not insert a catalog
+row — only `rebuild_catalog` reconciles the catalog (C4 §5) — so a newly
+created workbook is invisible to `list_workbooks` until the next rebuild.
+Every other workbook command (`open_workbook`, `read_workbook`,
+`save_workbook`, `eval_workbook`) resolves by scanning `workbooks/` directly
+(`resolve_workbook_path`), not via the catalog. The Notebook therefore opens
+a just-created workbook immediately from `create_workbook`'s own returned
+`WorkbookHandle` — no rebuild required for that — and runs `rebuild_catalog`
+afterwards purely so the picker's next `list_workbooks` call sees it.
+
+Above one indexed workbook, a `<select>` in the editor's save-bar row
+(`Notebook/components/WorkbookBar.tsx`) lets the author choose which
+document to open (R66 item 3's deferred picker, closed here); at exactly one
+workbook there is no picker (R81 Q4(a)). The choice is remembered per
+machine, in `localStorage` under `idl1.notebook.ui.v1`
+(`Notebook/model/notebookPrefs.ts`) — UI state, never written into the
+workbook file or into any shared app state, and never synced. Switching
+workbooks is disabled while the open document has unsaved edits
+(`dirtyCellIds.size > 0`, R81 Q5(a)), so the picker can never silently
+discard local typing; L11's per-cell merge (§26.5) is the eventual
+replacement for that restriction, not built here.
+
+A workbook file copied directly into `workbooks/` becomes visible the same
+way a newly created one does: after a rescan. This is distinct from C4 §4's
+file watcher, which watches `workbooks/` for *content* changes to a document
+already open in this page, not for catalog membership — a copied-in file
+the Notebook has never opened produces no watcher event at all.
 
 ---
 

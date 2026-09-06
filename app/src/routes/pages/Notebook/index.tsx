@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useReducer, useRef, useState } from "react";
 
-import { getSession, listSessions, listWorkbooks, type SessionDetail } from "../../../ipc/catalog";
+import { listSessions, listWorkbooks, getSession, rebuildCatalog, type RebuildReport, type SessionDetail } from "../../../ipc/catalog";
 import { cursorReadout } from "../../../ipc/cursor";
 import { fetchFft, type DecodedFft } from "../../../ipc/rasters";
 import { fetchTile } from "../../../ipc/tiles";
 import {
+  createWorkbook,
   evalWorkbook,
   fetchHostChannel,
   listMathBuiltins,
@@ -23,6 +24,7 @@ import ConflictBanner from "./components/ConflictBanner";
 import EditorPanes from "./components/EditorPanes";
 import JsCellFrame, { DEFAULT_JS_CELL_HEIGHT_PX } from "./components/JsCellFrame";
 import type { PropertiesFormChannelOption, PropertiesFormLapOption } from "./components/PropertiesForm.types";
+import WorkbookBar from "./components/WorkbookBar";
 import type { SandboxCell } from "./host/protocol";
 import { SandboxHost } from "./host/SandboxHost";
 import { NotebookSession } from "./host/NotebookSession";
@@ -34,12 +36,40 @@ import { runFft, type FftAction, type FftDeps } from "./model/fftDriver";
 import { exceedsBinCap, frequencyAxisHz } from "./model/fftRequest";
 import { diffFunctionCatalog, type FunctionCatalogMismatch } from "./model/functionCatalog";
 import { bindingFor, bindingIdentity, unresolvedChannelId, type FftCellBinding } from "./model/jsCellBinding";
+import { jsCellNote } from "./model/jsCellNote";
+import { readNotebookPrefs, writeNotebookPrefs } from "./model/notebookPrefs";
 import { runEval, runOpenAndEval, type OpenEvalDeps } from "./model/openEvalDriver";
+import { parse as parsePlotForm } from "./plotForm/parse";
 import { proseBlocksFor, spansToEvaluate } from "./model/proseBlocks";
 import { isSelfWrite, saveFlow, type SaveFlowState, type WorkbookEventWithHash } from "./model/saveFlow";
 import { runSessionSpan, type SessionSpanAction, type SessionSpanDeps } from "./model/sessionSpanDriver";
 import { TileCache } from "./model/tileCache";
+import { chooseWorkbookEntry, type WorkbookEntry } from "./model/workbookEntry";
 import { initialWorkbookState, workbookReducer } from "./model/workbookState";
+
+/** `true` when `value` has the shape of a typed `IpcError` (C3 §2). Local
+ *  copy of the same helper `openEvalDriver.ts`/`fftDriver.ts` each keep --
+ *  this page's `create_workbook`/`rebuild_catalog` calls are its own IPC,
+ *  outside any driver module. */
+function isIpcErrorLike(value: unknown): value is IpcError {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    typeof (value as Record<string, unknown>).kind === "string" &&
+    typeof (value as Record<string, unknown>).message === "string"
+  );
+}
+
+/** Turns a rejected `create_workbook`/`rebuild_catalog` promise into a typed
+ *  `IpcError`, never a bare string (CLAUDE.md §5). */
+function toIpcError(error: unknown): IpcError {
+  if (isIpcErrorLike(error)) {
+    return error.detail === undefined
+      ? { kind: error.kind, message: error.message }
+      : { kind: error.kind, message: error.message, detail: error.detail };
+  }
+  return { kind: "internal", message: error instanceof Error ? error.message : String(error) };
+}
 
 /** C4 §4's stated expected-hash-set TTL (5 s), matched here for the frontend's own independent self-write belt (`saveFlow.ts`'s `isSelfWrite`). */
 const SELF_WRITE_TTL_MS = 5000;
@@ -84,9 +114,13 @@ function decodeByteRange(markdown: string, range: [number, number]): string {
 
 /**
  * The Notebook tab's real page (design section 6; supersedes the wave-1
- * canvas proof, L5 Task 14): opens the first indexed workbook, evaluates
- * it, and renders every cell in document order via {@link CellList}. Owns
- * the one {@link SandboxHost}/{@link NotebookSession} pair for this page's
+ * canvas proof, L5 Task 14): opens the workbook `model/workbookEntry.ts`'s
+ * `chooseWorkbookEntry` names (the remembered one, the only one, or the
+ * first when there is a choice and nothing remembered -- L6 Task 21),
+ * evaluates it, and renders every cell in document order via
+ * {@link CellList}. An empty catalog shows {@link WorkbookBar}'s empty
+ * state (New workbook, Rescan) instead. Owns the one
+ * {@link SandboxHost}/{@link NotebookSession} pair for this page's
  * lifetime.
  *
  * IPC-driving effects here follow the tightened rule
@@ -146,6 +180,26 @@ export default function NotebookPage() {
   const [functionCatalogMismatches, setFunctionCatalogMismatches] = useState<FunctionCatalogMismatch[]>([]);
   /** An FFT cell's last `fetch_fft` failure (L6 Task 20), typed -- never a bare string (CLAUDE.md §5). Shown in the cell's `JsCellFrame` note slot. */
   const [fftErrors, setFftErrors] = useState<Map<string, IpcError>>(new Map());
+  /** Which workbook to open and which chrome to show (L6 Task 21) --
+   *  `null` while the first `list_workbooks` call (or the one
+   *  first-open-when-empty rebuild, R81 Q1(a)) is still in flight.
+   *  Computed by `model/workbookEntry.ts`'s `chooseWorkbookEntry`, never
+   *  re-decided here. */
+  const [entry, setEntry] = useState<WorkbookEntry | null>(null);
+  /** Bumped by a successful `handleCreate`/`handleRescan` to re-run the
+   *  workbook-list effect below -- the only other trigger besides mount. */
+  const [reloadSeq, setReloadSeq] = useState(0);
+  /** True while `rebuild_catalog` is running, whether from the one
+   *  first-open-when-empty case or the Rescan button. */
+  const [rescanning, setRescanning] = useState(false);
+  /** True while `create_workbook` is in flight. */
+  const [creating, setCreating] = useState(false);
+  /** The last `create_workbook`/`rebuild_catalog` failure (L6 Task 21),
+   *  typed -- never a bare string. Shown by `WorkbookBar`. */
+  const [workbookBarError, setWorkbookBarError] = useState<IpcError | null>(null);
+  /** The last `rebuild_catalog` report, for `WorkbookBar`'s "Rescan found
+   *  N workbook(s)" line (R81 Q6). */
+  const [lastRebuild, setLastRebuild] = useState<RebuildReport | null>(null);
 
   const containerRef = useRef<HTMLDivElement>(null);
   const sandboxHostRef = useRef<SandboxHost | null>(null);
@@ -153,6 +207,12 @@ export default function NotebookPage() {
   const openSeqRef = useRef(0);
   const evalSeqRef = useRef(0);
   const sessionSpanSeqRef = useRef(0);
+  const listSeqRef = useRef(0);
+  /** `true` once the one first-open-when-empty automatic `rebuild_catalog`
+   *  (R81 Q1(a)) has been attempted for this mount -- a later empty list
+   *  (e.g. after Rescan itself finds nothing) does not trigger a second
+   *  automatic rebuild; the user's own Rescan already covered that case. */
+  const autoRebuiltRef = useRef(false);
   /** Every js cell's currently bound identity (`bindingIdentity`), so the channel-bind effect below only *starts a new run* for a cell whose binding actually changed -- this is purely the "should a new initial bind start" decision; it is never consulted as a staleness guard (that is `cellRunSequencerRef`'s job, below, review-task13c.md's Major fix). */
   const boundIdentityRef = useRef<Map<string, string>>(new Map());
   /** One shared run-sequence counter per `js` cell (`model/cellRunSequencer.ts`), used by *every* channel-window run for that cell -- the initial-bind effect below and each `ChartCell`'s gesture-settle refetch (`renderJsCell`'s `onViewportSettled`) alike -- so whichever kind of run started last always wins, regardless of which one resolves first (fix for review-task13c.md's Major: an initial bind and a settle previously carried independent guards that never invalidated each other). Shared with the FFT bind effect below (L6 Task 20) -- one counter per cell id regardless of which arm the cell resolves to, never a second counter. */
@@ -273,18 +333,64 @@ export default function NotebookPage() {
     };
   }, []);
 
-  // Open -> read -> eval, once on mount and again whenever the selected
-  // session changes (data-only dependency -- `sessionId`, never a callback).
+  // Lists indexed workbooks (L6 Task 21, R81 Q1(a)): once on mount and again
+  // whenever `reloadSeq` changes (bumped by a successful `handleCreate`/
+  // `handleRescan`). An empty result triggers exactly one automatic
+  // `rebuild_catalog` per mount (`autoRebuiltRef`), then re-lists, before
+  // falling through to the empty state -- the catalog is "an index --
+  // deletable, rebuildable, never synced" (CLAUDE.md §3), so an empty index
+  // does not necessarily mean there are no workbooks on disk. Depends only
+  // on data (`reloadSeq`), the tightened IPC-effects rule (wave-2 operating
+  // brief §4); this effect's own cleanup cancels nothing, it only prevents a
+  // superseded run from calling `setEntry`/`setRescanning`.
   useEffect(() => {
+    const mySeq = ++listSeqRef.current;
+    const isStale = () => listSeqRef.current !== mySeq;
+
+    (async () => {
+      let workbooks = await listWorkbooks();
+      if (isStale()) return;
+
+      if (workbooks.length === 0 && !autoRebuiltRef.current) {
+        autoRebuiltRef.current = true;
+        setRescanning(true);
+        try {
+          const report = await rebuildCatalog();
+          if (isStale()) return;
+          setLastRebuild(report);
+          workbooks = await listWorkbooks();
+          if (isStale()) return;
+        } catch (error) {
+          if (isStale()) return;
+          setWorkbookBarError(toIpcError(error));
+        } finally {
+          if (!isStale()) setRescanning(false);
+        }
+      }
+
+      setEntry(chooseWorkbookEntry(workbooks, readNotebookPrefs().last_workbook_id));
+    })();
+  }, [reloadSeq]);
+
+  // Derived from `entry` -- `null` for the empty state, so the open/eval
+  // effect below starts nothing until a workbook exists to open.
+  const selectedWorkbookId = entry !== null && entry.kind !== "empty" ? entry.workbookId : null;
+
+  // Open -> read -> eval, once a workbook is chosen and again whenever the
+  // selected session or the selected workbook changes (data-only
+  // dependencies -- never a callback). `model/openEvalDriver.ts`'s
+  // `runOpenAndEval` no longer decides which workbook to open (L6 Task 21)
+  // -- that is `entry`'s job, shared with the empty state and the picker.
+  useEffect(() => {
+    if (selectedWorkbookId === null) return;
     const mySeq = ++openSeqRef.current;
     const deps: OpenEvalDeps = {
-      listWorkbooks: () => listWorkbooks(),
       openWorkbook: (idOrPath) => openWorkbook(idOrPath),
       readWorkbook: (idOrPath) => readWorkbook(idOrPath),
       evalWorkbook: (id, sid, lapContext) => evalWorkbook(id, sid, lapContext),
     };
-    void runOpenAndEval(deps, sessionId, dispatch, () => openSeqRef.current !== mySeq, evalLapContextRef.current);
-  }, [sessionId]);
+    void runOpenAndEval(deps, selectedWorkbookId, sessionId, dispatch, () => openSeqRef.current !== mySeq, evalLapContextRef.current);
+  }, [sessionId, selectedWorkbookId]);
 
   // Resolves `sessionId`'s `SessionDetail` and recorded span (lead
   // pre-ruling 2026-09-05 #1), once per session change -- `model/
@@ -374,6 +480,71 @@ export default function NotebookPage() {
 
     return () => clearTimeout(timer);
   }, [state.dirtyCellIds, state.handle?.id]);
+
+  /**
+   * `WorkbookBar`'s "Create" (L6 Task 21) -- explicit user action, never
+   * called from an effect. `create_workbook` writes the file but does not
+   * index it (GATE fact 1), so the new workbook opens immediately from its
+   * own returned handle -- no rebuild needed for that -- and the rebuild
+   * that follows serves only the picker's next `list_workbooks` (GATE fact
+   * 2 covers every other command already resolving by scanning
+   * `workbooks/`). A rejection sets the typed error and changes nothing
+   * else: `entry` is left as it was, so an empty state stays the empty
+   * state.
+   */
+  async function handleCreate(name: string) {
+    setCreating(true);
+    setWorkbookBarError(null);
+    try {
+      const handle = await createWorkbook(name);
+      writeNotebookPrefs({ last_workbook_id: handle.id });
+      setEntry({ kind: "single", workbookId: handle.id });
+      try {
+        const report = await rebuildCatalog();
+        setLastRebuild(report);
+      } catch {
+        // The new workbook is already open from its own handle; a failed
+        // rebuild only means the picker won't see it yet -- not fatal here.
+      }
+      setReloadSeq((n) => n + 1);
+    } catch (error) {
+      setWorkbookBarError(toIpcError(error));
+    } finally {
+      setCreating(false);
+    }
+  }
+
+  /**
+   * `WorkbookBar`'s "Rescan" (L6 Task 21) -- explicit user action, mirroring
+   * `Data/index.tsx`'s existing "Rebuild catalog" button's disabled-while-
+   * running and error-reporting shape. Reports `workbooks_indexed` and
+   * `duration_ms` only (R81 Q6) -- `WorkbookBar` itself says the whole
+   * catalog was rebuilt, not only workbooks.
+   */
+  async function handleRescan() {
+    setRescanning(true);
+    setWorkbookBarError(null);
+    try {
+      const report = await rebuildCatalog();
+      setLastRebuild(report);
+      setReloadSeq((n) => n + 1);
+    } catch (error) {
+      setWorkbookBarError(toIpcError(error));
+    } finally {
+      setRescanning(false);
+    }
+  }
+
+  /**
+   * `WorkbookBar`'s picker `onChange` (L6 Task 21) -- re-keys the open/eval
+   * effect above by changing `entry.workbookId`, opening the chosen
+   * document. Never calls `listWorkbooks` again: the picker's own choices
+   * came from the last list already held in `entry`.
+   */
+  function handleSelect(workbookId: string) {
+    writeNotebookPrefs({ last_workbook_id: workbookId });
+    setEntry((prev) => (prev !== null && prev.kind !== "empty" ? { ...prev, workbookId } : prev));
+  }
 
   /**
    * Explicit save action (Task 14) -- never called from an effect or on a
@@ -751,12 +922,43 @@ export default function NotebookPage() {
           those functions.
         </p>
       )}
+      {(entry === null || entry.kind === "empty") && (
+        <WorkbookBar
+          entry={entry}
+          rescanning={rescanning}
+          creating={creating}
+          dirty={false}
+          error={workbookBarError}
+          lastRebuild={lastRebuild}
+          onCreate={(name) => void handleCreate(name)}
+          onRescan={() => void handleRescan()}
+          onSelect={handleSelect}
+        />
+      )}
       {state.markdownStatus === "error" && state.markdownError !== null && (
         <p className="workbook-markdown-error">Notebook error: {state.markdownError}</p>
       )}
-      {state.handle === null && state.markdownStatus === "loading" && <p>Opening notebook...</p>}
+      {state.evalError !== null && (
+        <p role="alert" className="workbook-eval-error">
+          {state.evalError.message}
+        </p>
+      )}
+      {selectedWorkbookId !== null && state.handle === null && state.markdownStatus === "loading" && <p>Opening notebook...</p>}
       {state.handle !== null && (
         <div className="workbook-save-bar">
+          {entry !== null && entry.kind !== "empty" && (
+            <WorkbookBar
+              entry={entry}
+              rescanning={rescanning}
+              creating={creating}
+              dirty={state.dirtyCellIds.size > 0}
+              error={workbookBarError}
+              lastRebuild={lastRebuild}
+              onCreate={(name) => void handleCreate(name)}
+              onRescan={() => void handleRescan()}
+              onSelect={handleSelect}
+            />
+          )}
           <button type="button" onClick={() => void handleSave()} disabled={saveUnavailable || saveFlowState.status === "saving"}>
             {saveFlowState.status === "saving" ? "Saving…" : "Save"}
           </button>
@@ -789,12 +991,20 @@ export default function NotebookPage() {
               // valid, it just has nothing to chart against (C1: "time is
               // recorded, not assumed").
               const isAxisLessDefinition = unresolved !== null && definitionNames.includes(unresolved) && !definitionsWithAxis.has(unresolved);
-              const note = isAxisLessDefinition
-                ? `Definition "${unresolved}" has no recorded axis.`
-                : unresolved !== null
-                  ? `Channel "${unresolved}" is not part of this session.`
-                  : undefined;
-              return <JsCellFrame cellId={cellId} heightPx={heightPx} error={cellErrors.get(cellId)} note={note} sendLayout={sendLayout} />;
+              // `model/jsCellNote.ts` (L6 Task 21): fixes the rendering gap
+              // the 2026-09-06 preview captured -- a cell whose code
+              // round-trips through `plotForm.parse` but has no session
+              // selected previously reserved blank space with no
+              // explanation at all.
+              const note = jsCellNote({
+                isFormGenerated: parsePlotForm(code) !== null,
+                sessionId,
+                unresolvedName: unresolved,
+                isAxisLessDefinition,
+              });
+              return (
+                <JsCellFrame cellId={cellId} heightPx={heightPx} error={cellErrors.get(cellId)} note={note ?? undefined} sendLayout={sendLayout} />
+              );
             }
 
             if (binding.kind === "fft") {
