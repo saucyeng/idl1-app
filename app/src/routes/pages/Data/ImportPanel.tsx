@@ -52,14 +52,14 @@ function ImportRow({ item, onDismiss }: { item: ImportItem; onDismiss: () => voi
 }
 
 /** The Data tab's import entry point over C3 §3.3's `import_file`/
- *  `list_importers`. Wave 2's picker is a pasted absolute path (lead
- *  ruling R55, `FilePicker.ts`'s `pickImportFile` seam) rather than a
- *  native dialog. Files run **one at a time, serialised** (R13: this
- *  machine is memory-bound, import is CPU/I/O-heavy) — the driving effect
- *  below never starts a second `importFile` call while one is
- *  `"running"`. `import_file`/`list_importers` are real C3 §3.3 commands
- *  whose Rust side lands with L5 Task 9; until then both reject and the
- *  panel shows that honestly through `describeIpcError`, not as a stub. */
+ *  `list_importers`. The picker opens the native file dialog
+ *  (`FilePicker.ts`'s `pickImportFile` seam, lead ruling R55, now backed by
+ *  `@tauri-apps/plugin-dialog`'s `open()`) filtered to the four importer
+ *  extensions; the "Start browsing from" field, when filled, only sets the
+ *  dialog's starting folder — it is never parsed as the import path itself.
+ *  Files run **one at a time, serialised** (R13: this machine is
+ *  memory-bound, import is CPU/I/O-heavy) — the driving effect below never
+ *  starts a second `importFile` call while one is `"running"`. */
 export function ImportPanel({ onImported }: ImportPanelProps) {
   const [state, dispatch] = useReducer(importQueueReducer, initialImportQueueState);
   const [importers, setImporters] = useState<ImporterInfo[]>([]);
@@ -115,14 +115,12 @@ export function ImportPanel({ onImported }: ImportPanelProps) {
   const handleImportClick = () => {
     pickImportFile(pastedPath)
       .then((path) => {
-        if (path === null) return;
+        if (path === null) return; // user cancelled the native dialog
         dispatch({ type: "ENQUEUE", path, importerId });
         setPastedPath("");
       })
-      .catch(() => {
-        // pickImportFile never rejects in wave 2 (it only trims text); kept
-        // so a future dialog-backed implementation (user cancels the
-        // native picker) has somewhere safe to resolve/reject into.
+      .catch((e: unknown) => {
+        setImportersErrorText(describeIpcError(e).text);
       });
   };
 
@@ -131,12 +129,12 @@ export function ImportPanel({ onImported }: ImportPanelProps) {
   return (
     <div className="import-panel">
       <label>
-        Paste a file path{" "}
+        Start browsing from (optional){" "}
         <input
           type="text"
           value={pastedPath}
           onChange={(e) => setPastedPath(e.target.value)}
-          placeholder="C:\path\to\file.idl0"
+          placeholder="C:\path\to\folder"
         />
       </label>
       <label>
@@ -150,8 +148,8 @@ export function ImportPanel({ onImported }: ImportPanelProps) {
           ))}
         </select>
       </label>
-      <button type="button" onClick={handleImportClick} disabled={pastedPath.trim().length === 0}>
-        Import
+      <button type="button" onClick={handleImportClick}>
+        Browse and import…
       </button>
       {importersErrorText !== null && <p role="alert">{importersErrorText}</p>}
       {percent !== null && <progress value={percent} max={100} />}
