@@ -20,18 +20,29 @@ export type OpenDialogFn = (options: {
  *  fifth importer needs this list updated too. */
 const IMPORT_EXTENSIONS = ["idl0", "fit", "gpx", "csv"];
 
-/** Seam between "the user chooses a file to import" and however that
+/** The "paste a path → import" contract (lead ruling R55, restated R77.1,
+ *  2026-09-06): trims `pastedPath` and resolves to it directly when
+ *  non-empty, or `null` when blank — the typed text is the import target
+ *  verbatim, with no dialog round trip and no other interpretation. This is
+ *  the pasted-path field's entire behaviour; `pickImportFile` below is the
+ *  separate "Browse…" entry point, not a replacement for this one. */
+export function resolvePastedPath(pastedPath: string): string | null {
+  const trimmed = pastedPath.trim();
+  return trimmed.length > 0 ? trimmed : null;
+}
+
+/** Seam between "the user browses for a file to import" and however that
  *  choice is actually made (lead ruling R55, 2026-09-05). Opens the native
  *  file dialog (`@tauri-apps/plugin-dialog`'s `open()`, wave-2 write lane)
  *  filtered to the importer extensions above, single selection only.
- *  `pastedPath`, when non-empty, is passed as the dialog's starting
- *  directory (`defaultPath`) — it no longer names the imported file
- *  directly, so `ImportPanel.tsx`'s paste-a-path field now reads as "start
- *  the browser here" rather than "import this path verbatim". Resolves
- *  `null` when the user cancels the dialog, matching `open()`'s own
- *  cancel value — never rejects on cancel. */
-export async function pickImportFile(pastedPath: string, openDialog: OpenDialogFn = open): Promise<string | null> {
-  const trimmed = pastedPath.trim();
+ *  `startingFolder`, when non-empty once trimmed, seeds the dialog's
+ *  starting directory (`defaultPath`) — it is never treated as the import
+ *  target itself; that is [[resolvePastedPath]]'s job, used by the
+ *  separate direct-import button. Resolves `null` when the user cancels
+ *  the dialog, matching `open()`'s own cancel value — never rejects on
+ *  cancel. */
+export async function pickImportFile(startingFolder: string, openDialog: OpenDialogFn = open): Promise<string | null> {
+  const trimmed = startingFolder.trim();
   return openDialog({
     defaultPath: trimmed.length > 0 ? trimmed : undefined,
     filters: [{ name: "idl1 import sources", extensions: IMPORT_EXTENSIONS }],

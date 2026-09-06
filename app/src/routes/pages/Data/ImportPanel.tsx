@@ -2,7 +2,7 @@ import { useEffect, useReducer, useRef, useState } from "react";
 
 import { importFile, listImporters, type ImporterInfo } from "../../../ipc/import";
 import { describeIpcError } from "./errors";
-import { pickImportFile } from "./FilePicker";
+import { pickImportFile, resolvePastedPath } from "./FilePicker";
 import { isDrained, nextItemToStart, runImport } from "./importDriver";
 import { importQueueReducer, initialImportQueueState, overallPercent, type ImportItem } from "./importQueue";
 
@@ -52,14 +52,16 @@ function ImportRow({ item, onDismiss }: { item: ImportItem; onDismiss: () => voi
 }
 
 /** The Data tab's import entry point over C3 §3.3's `import_file`/
- *  `list_importers`. The picker opens the native file dialog
- *  (`FilePicker.ts`'s `pickImportFile` seam, lead ruling R55, now backed by
- *  `@tauri-apps/plugin-dialog`'s `open()`) filtered to the four importer
- *  extensions; the "Start browsing from" field, when filled, only sets the
- *  dialog's starting folder — it is never parsed as the import path itself.
- *  Files run **one at a time, serialised** (R13: this machine is
- *  memory-bound, import is CPU/I/O-heavy) — the driving effect below never
- *  starts a second `importFile` call while one is `"running"`. */
+ *  `list_importers`. Two ways in, per lead ruling R55/R77.1
+ *  (2026-09-06): the "Paste a file path" field's `Import` button imports
+ *  that text directly and verbatim, no dialog round trip (the original
+ *  wave-2 contract, restored); the separate `Browse…` button opens the
+ *  native file dialog (`FilePicker.ts`'s `pickImportFile` seam, now backed
+ *  by `@tauri-apps/plugin-dialog`'s `open()`) filtered to the four importer
+ *  extensions, optionally seeded from whatever is currently pasted as its
+ *  starting folder. Files run **one at a time, serialised** (R13: this
+ *  machine is memory-bound, import is CPU/I/O-heavy) — the driving effect
+ *  below never starts a second `importFile` call while one is `"running"`. */
 export function ImportPanel({ onImported }: ImportPanelProps) {
   const [state, dispatch] = useReducer(importQueueReducer, initialImportQueueState);
   const [importers, setImporters] = useState<ImporterInfo[]>([]);
@@ -112,7 +114,20 @@ export function ImportPanel({ onImported }: ImportPanelProps) {
     runImport(item, importFile, dispatch);
   }, [state, onImported]);
 
+  /** "Import" click: the pasted path, trimmed and used verbatim — no
+   *  dialog round trip. Synchronous and infallible ([[resolvePastedPath]]
+   *  only trims text), unlike [[handleBrowseClick]] below. */
   const handleImportClick = () => {
+    const path = resolvePastedPath(pastedPath);
+    if (path === null) return;
+    dispatch({ type: "ENQUEUE", path, importerId });
+    setPastedPath("");
+  };
+
+  /** "Browse…" click: opens the native file dialog, optionally seeded from
+   *  whatever is currently pasted, and enqueues the chosen file. Resolving
+   *  to `null` means the user cancelled — not an error, nothing to enqueue. */
+  const handleBrowseClick = () => {
     pickImportFile(pastedPath)
       .then((path) => {
         if (path === null) return; // user cancelled the native dialog
@@ -129,12 +144,12 @@ export function ImportPanel({ onImported }: ImportPanelProps) {
   return (
     <div className="import-panel">
       <label>
-        Start browsing from (optional){" "}
+        Paste a file path{" "}
         <input
           type="text"
           value={pastedPath}
           onChange={(e) => setPastedPath(e.target.value)}
-          placeholder="C:\path\to\folder"
+          placeholder="C:\path\to\file.idl0"
         />
       </label>
       <label>
@@ -148,8 +163,11 @@ export function ImportPanel({ onImported }: ImportPanelProps) {
           ))}
         </select>
       </label>
-      <button type="button" onClick={handleImportClick}>
-        Browse and import…
+      <button type="button" onClick={handleImportClick} disabled={pastedPath.trim().length === 0}>
+        Import
+      </button>
+      <button type="button" onClick={handleBrowseClick}>
+        Browse…
       </button>
       {importersErrorText !== null && <p role="alert">{importersErrorText}</p>}
       {percent !== null && <progress value={percent} max={100} />}
