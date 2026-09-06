@@ -25,6 +25,7 @@ pub fn run() {
             app.manage(idl_rs_tauri::state::Connections(std::sync::Mutex::new(std::collections::HashMap::new())));
             Ok(())
         })
+        .plugin(tauri_plugin_dialog::init())
         .invoke_handler(idl_rs_tauri::handler())
         .run(tauri::generate_context!())
         .expect("error while running idl1");
