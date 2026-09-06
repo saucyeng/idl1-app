@@ -1807,7 +1807,17 @@ Stored in `Workspace.trackVisits: List<TrackVisit>`. Workspace schema bump requi
 4. **Resolve overlaps.** If a sample is "on" multiple Tracks (rare), attribute to the one with smallest distance.
 5. **Filter short visits.** Discard windows shorter than `min_visit_s` (default 30 s) — typically drive-bys, not real laps.
 
-### 17.4 Caching
+### 17.4 Caching (idl1: import-time indexing into `session.json`)
+
+**idl1 rewrite (L2b, ruling R83) — supersedes this section's idl0/`Workspace` wording below the line.** Detection runs once, at import, over the whole track library — not per session load and not in the UI layer. `idl-rs`'s pure core (`store::lap_index::compute_lap_index`) takes an in-memory `SessionHandle` and the loaded `Track` library (`store::lap_index::load_track_library`), runs `tracks::detect_visits` then, per resolved visit, `laps::detect_laps` restricted to that visit's window, and returns a `LapIndex`: `track_visits[]` (each visit's own laps, per-visit numbered from 1) and a top-level `laps[]` (the same laps renumbered session-wide by `laps::renumber_session_laps` — the identity `ignored_lap_numbers` etc. key against, since per-visit numbers are not that identity). The importer (a following task) writes both into `session.json` (C1 §6) alongside a cache-key stamp: `track_visits_library_hash` (an opaque hash over the track library, `store::lap_index::track_library_hash`) plus `lap_detector_version` (added in a following task). Either differing from the value already on disk marks the cache stale; a "Rescan Tracks" action (also a following task) recomputes both under the current library and detector version. `visit_id` (`store::lap_index::visit_id`) is deterministic — 16 hex characters of a hash over `track_id`/`start_ms`/`end_ms` — so a rescan that finds the same visit again does not churn a synced `session.json` (idl0 minted a random UUID per visit instead).
+
+**Honest empty.** No track library, an empty library, no surviving visit window, or a resolved Track with no lap timing all yield empty `track_visits`/`laps` for that case — and the cache stamp is still written, so "ran and found nothing" is a recorded fact, not a missing feature. A visit whose Track cannot be resolved, or whose Track has no lap timing, is still recorded with `laps: []` and a warning (visits present, laps absent) rather than being dropped; detection failure anywhere in this step is non-fatal to the import.
+
+**Data tab reads the cache.** The Data tab (§24) reads `session.json`'s `laps[]`/`track_visits[]` directly to build its session/track aggregates and lap-time facets — it never parses a session on open.
+
+---
+
+*idl0 wording below, superseded by the above; kept for historical reference until the whole section is rewritten.*
 
 Run on session import; cache results in `Workspace.trackVisits`. Don't re-run on every session load. A "Rescan Tracks" action manually re-runs for a session — useful when new Tracks are added after import.
 
