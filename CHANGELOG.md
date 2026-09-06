@@ -19,6 +19,17 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
   resumability); §17a.4 now points at it instead of "contract to follow."
   No Rust yet — this is the contract the lane's remaining eleven tasks are
   held to.
+- **L11 Task 2: sync manifest core (2026-09-06, idl-rs core,
+  `store::sync::manifest`).** The typed C4 §6 manifest (`Manifest`,
+  `BlobEntry`, `DataParquetEntry`, `DerivedEntry`, `SessionJsonEntry`,
+  `SessionEntry`, `WorkbookEntry`, `TrackEntry`, `ProfileEntry`) and
+  `build_manifest(data_root, now_ms)`, a pure `std::fs` walk of `<data>`
+  that fills it, sorted by identity key for byte-identical repeat runs.
+  Excludes `catalog.sqlite`/`-wal`/`-shm`, `tmp/`, and any dotfile or
+  dot-directory under `workbooks/` (`.sync-base/` included). A malformed
+  individual file (unparseable `data.parquet` metadata, a front-matter
+  parse failure, a filename/content-id mismatch) is omitted rather than
+  aborting the walk. No network, no async, no clock of its own.
 - **L8x lane complete: Data-tab write commands (2026-09-06, idl-rs core +
   idl-rs-tauri, ruling R86).** Five new commands close the last C3 §6
   deferrals the Data tab still stubbed: `save_track`, `delete_track`,
