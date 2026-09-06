@@ -6,6 +6,27 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 
 ### Added
 
+- **L8x Task 4: `save_track` command (2026-09-06, idl-rs-tauri, no spec
+  change needed).** `save_track(track: TrackDraft) -> SaveTrackResult`
+  (C3 §3.2, ruling R86), one command for create and edit: `track_id: None`
+  mints a UUID v4 (canonical lowercase-with-dashes) and both timestamps;
+  `Some(id)` requires the artifact to already exist (`not_found`
+  otherwise), preserves `created_at_ms` verbatim and bumps only
+  `updated_at_ms`. `validate_track` runs before any filesystem write
+  (`invalid_argument`, `detail: { field }`), then writes through the
+  landed `write_track` (no `conflict` kind, R59 Q1(a)). When
+  `catalog.sqlite` already exists, upserts the one `tracks` row via a new
+  `core::store::catalog::upsert_track` (`INSERT ... ON CONFLICT(track_id)
+  DO UPDATE`, deliberately never delete-then-insert — that would fire
+  `laps.track_id`'s `ON DELETE SET NULL` on every edit of an already-
+  visited track); a catalog failure folds into `warnings`. Recomputes
+  `track_library_hash` over the post-write library and returns every
+  session whose `track_visits_library_hash` stamp no longer matches as
+  `stale_session_ids` — this command never calls `rescan_tracks` itself
+  (PLAN §4). `GateWire`/`SectorGateWire`/`NeutralZoneWire`/`GpsFixWire`/
+  `LapTimingWire` (Task 2) gain `Deserialize` and a wire→domain `From`
+  impl each, doubling as `TrackDraft`'s field types. Registered in
+  `handler()`. No new `IpcErrorKind`.
 - **L8x Task 3: core track validation + `delete_track` (2026-09-06,
   idl-rs, no spec change needed).** New `core::track_artifact::validate`:
   `validate_track(&Track)` checks a non-empty trimmed `name`; every
