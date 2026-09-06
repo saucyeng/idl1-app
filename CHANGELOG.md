@@ -22,6 +22,62 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 - **CodeMirror Code pane; C2 §8-4 math tokenizer (L6 Task 11).** Markdown/JS/math language modes by cell kind; the 69-function catalog transcribed from C2 §3.3 for highlighting and completion.
 - **Cross-channel cursor readout on settle (L6 Task 10).** `cursor_readout` called once per settle (P2, C3 §4); a channel outside its recorded span reads null, never a frozen value (R31).
 - **`transformFor` zoom-anchor bug and settle stale-response guard fixed (L6 Task 8, review-task8.md Critical/Important follow-up).** `transformFor` divided its translate term by the *rendered* viewport's µs-per-pixel instead of the *current* one, visibly mispositioning the live picture for any zoom not anchored at the chart's own left edge; fixed, with a derivation in the doc comment and right-edge/mid-anchor tests. `makeSettle` now exposes a monotonic `latestSeq()`, and `isStaleSettleResult` lets `ChartCell`'s settle callback drop an older settle's tile fetch if a newer settle has already fired, so a slow fetch for a superseded gesture can no longer snap the picture backward.
+- **L8w Rust write-amendment lane complete for wave 2 (2026-09-06).** 20
+  commands land in `idl-rs-tauri` against the R59 wave-2 C3 amendment: App
+  group `get_settings`/`set_settings`/`get_data_dir`/`set_data_dir` and
+  `list_profiles`/`save_profile`/`delete_profile` (thin wrappers, C3 §3.10);
+  `read_workbook` (unparsed source + hash, C3 §3.4); catalog writes
+  `save_session_metadata`/`delete_session` (read-hash-write and cascading
+  lap/lap-summary delete, C3 §3.2); Device group managed-connection
+  `connect_device`/`disconnect_device`/`device_status`,
+  `device_control`/`pull_config` and `preview_channel_registry` (C3 §3.8);
+  `create_workbook` (reuses `save_workbook`'s sanitiser/collision suffix, C3
+  §3.4). Two commands are genuinely new core code rather than thin
+  wrappers: `fetch_host_channel` (Task 11, the `IDLH` v1 24-byte-header
+  binary encoder, C3 §3.4) and `fetch_fft` (Task 12, the `IDLF` v1 16-byte
+  encoder over `idl_rs::fft`, extending `Averaging` with `None`/`Max` so
+  the wire union `"none" | "mean" | "median" | "max"` hides nothing landed,
+  C3 §3.6 spec-during, R63 3). `preview_channel_registry`'s registry-preview
+  derivation covers SPEC §5.2's fixed channel ids (IMU, wheel, pressure, HR)
+  only — configured analog/digital channels have no fixed wire id and are
+  out of scope for wave 2 (R63 2). `list_math_builtins` (lead-added Task
+  12b, spec-during, R64.2) is a thin pass-through over
+  `idl_rs::math::math_builtin_catalog` for the notebook editor's function
+  reference to self-verify against; it ships `{ name, arity, status }` —
+  **no `unit_rule` field**, dropped by ruling R64.2 because no source
+  defines its vocabulary and a signed contract should not carry a
+  free-form placeholder (a future amendment adds it once C2 states
+  per-builtin unit-propagation rules).
+  `eval_workbook` gains an additive `lap_context: LapContext | null`
+  argument (Task 9, C3 §3.4, R52 Q5/R64.1): `overlay_laps` names laps of
+  the *same* session only in wave 2 (cross-session overlay stays a
+  documented parity gap until L7a's own); a session that is honestly
+  out of lap context (no session bound, or `laps[]` empty pending wave-1
+  lap indexing) rejects a `[Channel]` reference as a per-cell
+  `math_unknown_channel` rather than failing the whole call — the
+  "honest natural rejection" the ledger calls it, not a special case.
+  Three new cross-cutting `IpcErrorKind` variants: `DeviceRejected`
+  (Task 7, `device_control`, SPEC §7.2 `AckCode`) and `ConfigParse`/
+  `ConfigUnsupportedVersion` (Task 8, `preview_channel_registry`).
+  **Platform limitation, stated not hidden (R63 1, R71, R71 correction
+  2026-09-06):** `device_rejected` and `pull_config`'s `config` kind are
+  both practically unreachable on this desktop build — `btleplug`'s
+  Windows backend surfaces only `Ok(())` or a generic `Ble` error from a
+  Control/Config write or read, never the raw SPEC §7.2 ack byte, so no
+  `idl-rs-tauri` call site can construct either kind without matching on
+  error text (forbidden); both kinds are defined and mapped wherever a
+  future transport (mobile plugins, L9) does surface an `AckCode`. The
+  dialog plugin (Task 13, `tauri-plugin-dialog` 2.7.3 / `@tauri-apps/
+  plugin-dialog` ^2, R55) is wired into `app/src-tauri` and its default
+  capability, unblocking L7a's picker seam. **Open item, not resolved by
+  this lane:** `MathOverlay` cannot be constructed from `eval_workbook`'s
+  `lap_context.overlay_laps` as C3 currently shapes it (one lap window vs.
+  a list) — the first entry drives the overlay until the same amendment
+  that ships lap indexing at import settles the multi-overlay shape (R73),
+  a wave-3-or-later contract question. Lane gate: `cargo test -p
+  idl-rs-tauri` 189 passed / 0 failed (lead, at merge); `cargo test -p idl-rs -p
+  idl-rs-cli -- --test-threads=4` idl-rs 943 passed / 1 ignored,
+  idl-rs-cli 51 passed, doctest 1 passed — all green, once, at this task.
 - **L2 importers (wave 1, 2026-09-05).** `GpxImporter` (port of
   `gpx_parser.dart`), `FitImporter` (`fitparser` 0.9 — L2-R9), `CsvImporter`
   (trivial, D4) behind a shared `Importer` trait producing C1 §2's

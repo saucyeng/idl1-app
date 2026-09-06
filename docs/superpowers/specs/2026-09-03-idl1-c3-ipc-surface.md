@@ -17,6 +17,11 @@
   wave 3 — see §6. Also (lead ruling R60): `import_file` (§3.3) now
   resolves with `ImportOutcome { session, warnings }` instead of a bare
   `SessionSummary`; new §2 kind `import_collision`.
+- 2026-09-06: `list_math_builtins` added to §3.4 (lead-added L8w Task 12b,
+  spec-during, lead ruling R64.2) — a thin catalog dump for the notebook
+  editor's function reference to verify itself against at startup. No
+  `unit_rule` field: R64.2 drops it (no source defines its vocabulary);
+  `status` is `"implemented" | "not_implemented"` instead.
 
 Consumes: design doc §4 (IPC, data path for a chart, the reactive DAG), §6
 (interaction rules), §9 row C3, §10 (lanes); Task 5's M0 smoke commands
@@ -622,6 +627,10 @@ not from the id. A `file_name` collision on create follows the
 
 Errors: `invalid_argument` (empty `name`, or a name that sanitises to an
 empty filename), `io`, `internal`.
+*Note (L8w Task 14 wrap-up, 2026-09-06):* the sanitises-to-empty branch is
+unreachable with the landed shared sanitiser, which falls back to
+`"workbook"` rather than returning empty; the check and its error stay as
+defence against a future sanitiser change, per Task 10's implementer note.
 
 **`eval_workbook(id: string, session_id: string | null, lap_context: LapContext | null)`**
 *`session_id` added post-sign (2026-09-04, lead ruling R41).* `eval_cells`
@@ -662,6 +671,12 @@ session has laps, so every non-null `lap_context` rejects with
 nowhere else to put the designation — but the feature it unlocks arrives
 with that backlog item.
 
+*Added post-sign (2026-09-05, lead ruling R64.1).* `overlay_laps` names laps
+of `session_id`'s own session in wave 2 — `variance_time`/`variance_dist`
+compare the main lap against another lap of the same recorded session, not a
+different one; cross-session overlay is a wave-3 amendment carrying a
+`{ session_id, lap }[]` shape instead.
+
 Return: `CellOutput[]`, one entry per cell, in document order.
 ```ts
 interface CellOutput {
@@ -670,6 +685,15 @@ interface CellOutput {
   value: unknown | null;                     // present when evaluation succeeded; shape depends on `kind` — see the `table` note below
   defs: CellDefResult[];                     // added post-sign (2026-09-04, lead ruling R21) — math cells only: one entry per definition (C2 §5.1's "one JS host variable per math definition"), in def_line source order; empty for table/js cells
   errors: IpcError[];                        // added post-sign (2026-09-04, lead ruling R22): plural — a cell may carry several structural problems (e.g. two duplicate definitions); empty on success; each kind is a structural (workbook_*) or evaluation (math_*) kind — see §2
+  prose_before_html: string | null;          // added post-sign (2026-09-05, lead ruling R70, R69 item 4) — rendered HTML of this cell's CellDoc.prose_before (C2 §2.4); null when there is none. This is the first time CellOutput has actually carried a prose field — closing a gap R21's own comment above claimed was already true but wasn't implemented: prose reached the frontend by a separate client-side re-scan of read_workbook's raw markdown until this task. ${...} spans (C2 §5.2) appear as <span data-span-id="{id}"></span> placeholders (see prose_spans below) for the sandbox (L6 Task 13b) to fill; raw HTML the author typed is escaped, never passed through (R69's sandbox security boundary)
+  prose_after_html: string | null;           // same, CellDoc.prose_after — non-null only on the last cell in the document (C2 §2.4)
+  prose_spans: ProseSpan[];                  // added post-sign (2026-09-05, lead ruling R70) — every ${...} span across prose_before_html then prose_after_html, in document order, found by core's find_inline_exprs (the only ${...} scanner) — lets the sandbox consumer fill each placeholder without its own re-scan of the raw prose text
+}
+
+// Added post-sign (2026-09-05, lead ruling R70).
+interface ProseSpan {
+  id: string;    // matches a prose_before_html/prose_after_html placeholder's data-span-id attribute exactly, e.g. "{cell_id}-before:0"
+  expr: string;  // the JavaScript expression text between ${ and }, verbatim (C2 §5.2)
 }
 
 // Added post-sign (2026-09-04, lead ruling R21).
@@ -736,6 +760,10 @@ the resolved value).
 interface WorkbookEvent {
   kind: "changed" | "conflict";
   cell_ids: string[];   // cells affected by this event
+  hash: string;         // sha256 of the file's bytes after this change, hex --
+                         // equals SaveResult.hash when this event reflects
+                         // the app's own successful save (added post-sign,
+                         // 2026-09-05, lead ruling R67)
 }
 ```
 Errors (on the initial `Promise` only): `not_found`, `io`, `internal`.
@@ -796,6 +824,41 @@ assigned to L5's workbook-command task to design, following the
 tiles/rasters (magic/version header, little-endian, self-describing
 lengths) — a new contract revision (§5) when L5 writes it, not invented
 here.
+
+**`list_math_builtins()`**
+*Added post-sign (2026-09-06, lead-added L8w Task 12b, spec-during, lead
+ruling R64.2).* A thin catalog dump over `idl_rs::math::math_builtin_catalog()`
+(`rust/core/src/math/catalog.rs`, hand transcribed from C2 §3.3's Builtin
+catalog table) so the notebook editor's `functionCatalog.ts` function
+reference can verify itself against the engine once at startup and log a
+mismatch (a lead shell task, not this command). Never fails — no
+device/session/file dependency, matching `engine_version`'s "no `Result`"
+pattern (§3.1).
+
+Return:
+```ts
+interface MathBuiltinDto {
+  name: string;
+  arity: number[];   // valid argument counts for this name — more than
+                      // one entry when C2 §3.3's signature documents more
+                      // than one call form, e.g. rms(ch) | rms(ch, w) -> [1, 2]
+  status: "implemented" | "not_implemented";
+}
+type MathBuiltins = MathBuiltinDto[];  // 69 entries (63 implemented, 6 not)
+```
+No `unit_rule` field — an earlier draft of this task proposed one, but C2
+§3.3 has no "units" column and no other Rust or TS artifact names a
+per-builtin unit-propagation vocabulary; R64.2 drops it rather than ship a
+placeholder taxonomy in a signed contract. A `unit_rule`-equivalent field
+is a future additive amendment once C2 states real unit-propagation rules
+per builtin.
+
+Excludes `main(col[])` (table-cell only, C2 §4) and the grammar keywords
+`and`/`or`/`not` (parsed as operators, never reach the function-call
+dispatch) — the same three exclusions L6's `functionCatalog.ts`
+transcription already made.
+
+Errors: none (see above).
 
 ### 3.5 Tiles (L3)
 
@@ -977,8 +1040,12 @@ R52 Q7).* Satisfies wave-2 need L6-N5.
 
 `params` reuses `SpectrogramParams` (above) verbatim — the same window, hop,
 detrend and scaling vocabulary over the same `idl_rs::fft` types.
-`averaging` is idl0's cross-segment `Averaging`. Returns raw bytes via
-`tauri::ipc::Response`.
+`averaging` is `idl_rs::fft::Averaging`, extended to all four wire tokens
+(ruling R63 (3), L8w Task 12) — `"none"`/`"mean"`/`"median"`/`"max"` each
+map directly to an `Averaging` variant, none rejected. Returns raw bytes via
+`tauri::ipc::Response`. `"none"` requires the request's segmentation to
+produce exactly one segment (ruling R76) — more is `invalid_argument` with
+`detail: { "segments": n }`, not a silent first-segment result.
 
 **Binary layout `IDLF`, version 1.** Little-endian throughout.
 
@@ -1006,6 +1073,13 @@ Errors: `not_found`, `invalid_argument` (bad `params`, or a `lap` not
 present on the session), `io`, `internal`. As with `eval_workbook`'s
 `lap_context`, `lap` must be `null` in practice until lap indexing at
 import lands (§6).
+
+- 2026-09-05: fetch_fft's averaging union closed against
+  idl_rs::fft::Averaging (ruling R63 (3), L8w Task 12) — "none" and "max"
+  now implemented, not rejected.
+- 2026-09-06: "none" requires exactly one segment; more is invalid_argument
+  with detail: { "segments": n } instead of silently keeping the first
+  segment's power (ruling R76, L8w Task 12 fix).
 
 ### 3.7 Cursor (L3)
 
