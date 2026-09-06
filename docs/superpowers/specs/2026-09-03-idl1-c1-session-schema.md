@@ -642,6 +642,11 @@ under one key due to last-ulp CPU differences, and either is valid).
   ],
 
   // --- laps (cached, mirroring TrackVisit.laps's existing caching pattern — §8 item 3) ---
+  // The importer (L2b) writes this array and "track_visits" below together,
+  // keyed by the two cache-key stamps at the bottom of this document:
+  // "track_visits_library_hash" and "lap_detector_version". Either stamp
+  // differing from the value freshly computed at import/rescan time marks
+  // the cache stale and triggers a re-index (IDL0_SPEC §17.4).
   "laps": [
     {
       "lap_number": 1,                   // int, 1-based
@@ -673,7 +678,12 @@ under one key due to last-ulp CPU differences, and either is valid).
       "laps": []                         // Lap[], same shape as top-level "laps", omitted when empty
     }
   ],
-  "track_visits_library_hash": null      // string | omitted — opaque, do not parse
+  "track_visits_library_hash": null,     // string | omitted — opaque, do not parse
+  "lap_detector_version": null           // string | omitted — L2b Task 2, ruling R83 Q2, additive:
+                                          // stamps `store::lap_index::LAP_DETECTOR_VERSION`; a
+                                          // mismatch against the running build's constant (including
+                                          // an omitted value) is stale exactly like a changed
+                                          // "track_visits_library_hash"; does not bump schema_version
 }
 ```
 
