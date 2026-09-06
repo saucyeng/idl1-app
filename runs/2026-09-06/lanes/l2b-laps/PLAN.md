@@ -1,6 +1,6 @@
 # L2b — lap indexing at import (plan, 2026-09-06)
 
-Repo `idl1-app`, submodule `rust/` = idl-rs at `c893ba7`. Worktree `saucyeng/idl-rs-worktrees/l2b-laps`, branch `wave3-l2b-laps`. Eight tasks, serial, one cargo process. Gates after T4 and at the lane merge.
+Repo `idl1-app`, submodule `rust/` = idl-rs at `c893ba7`. Worktree `saucyeng/idl-rs-worktrees/l2b-laps`, branch `l2b-laps`. Eight tasks, serial, one cargo process. Gates after T4 and at the lane merge.
 
 ## 1. What is already landed (do not rebuild it)
 

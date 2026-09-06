@@ -12,24 +12,24 @@ catalog rows. TDD, ONE commit, then the gate, then report.
 ```bash
 cd "C:/Users/isaac/Documents/Saucy/saucyeng/idl-rs-worktrees/l2b-laps"
 git merge-base --is-ancestor c893ba7 HEAD && echo GATE-OK
-grep -c "lap_index" src/store/import.rs
+grep -c "lap_index" core/core/src/store/import.rs
 ```
 Both must succeed / return `>= 1`. If either fails, STOP and report.
 
 ## Where
 
 - Same worktree/branch. Do NOT push.
-- **Files:** `core/src/store/catalog.rs`, `core/src/store/import.rs`,
+- **Files:** `core/core/src/store/catalog.rs`, `core/core/src/store/import.rs`,
   `docs/superpowers/specs/2026-09-03-idl1-c4-data-directory.md`.
 
 ## Files to read first
 
 `CLAUDE.md`; this lane's `PLAN.md` §2 (last paragraph) and §5's C4 bullet;
-`core/src/store/catalog.rs` in full — the schema block, `rebuild_catalog`'s
+`core/core/src/store/catalog.rs` in full — the schema block, `rebuild_catalog`'s
 step 3/4/5 body, `lap_track_id`, `index_lap_summary`, `RebuildReport`,
 `delete_session`; C4 §5's numbered steps 3–5 and its "the catalog is an index —
 deletable, rebuildable, never synced" framing; ruling R14 item 2 (lap→track
-join by timestamp containment); `core/src/laps/renumber.rs`'s doc comment,
+join by timestamp containment); `core/core/src/laps/renumber.rs`'s doc comment,
 which explains why that join is by containment and not by lap number.
 
 ## Interfaces

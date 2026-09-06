@@ -9,28 +9,28 @@ task** — `session.json` is Task 2. TDD, ONE commit, then report.
 ```bash
 cd "C:/Users/isaac/Documents/Saucy/saucyeng/idl-rs-worktrees/l2b-laps"
 git merge-base --is-ancestor c893ba7 HEAD && echo GATE-OK
-grep -c "pub fn detect_visits" src/tracks/detect.rs
-grep -c "pub fn renumber_session_laps" src/laps/renumber.rs
+grep -c "pub fn detect_visits" core/core/src/tracks/detect.rs
+grep -c "pub fn renumber_session_laps" core/core/src/laps/renumber.rs
 ```
 All three must succeed / return `>= 1`. If any fails, STOP and report.
 
 ## Where
 
-- Worktree: `C:\Users\isaac\Documents\Saucy\saucyeng\idl-rs-worktrees\wave3-l2b-laps`,
-  branch `wave3-l2b-laps`. Do NOT push. Do NOT touch `docs/` except the SPEC
+- Worktree: `C:\Users\isaac\Documents\Saucy\saucyeng\idl-rs-worktrees\l2b-laps`,
+  branch `l2b-laps`. Do NOT push. Do NOT touch `docs/` except the SPEC
   section named under "Spec discipline".
-- **Files:** new `core/src/store/lap_index.rs`; register it in
-  `core/src/store/mod.rs`. Nothing else.
+- **Files:** new `core/core/src/store/lap_index.rs`; register it in
+  `core/core/src/store/mod.rs`. Nothing else.
 
 ## Files to read first (do not restate them in your report)
 
 `CLAUDE.md`; this lane's `PLAN.md` §2 (the pipeline and the four decisions);
-`core/src/laps/{mod.rs,model.rs,detect.rs,renumber.rs}`;
-`core/src/tracks/{mod.rs,detect.rs}`; `core/src/track_artifact/{mod.rs,read.rs,model.rs}`
+`core/core/src/laps/{mod.rs,model.rs,detect.rs,renumber.rs}`;
+`core/core/src/tracks/{mod.rs,detect.rs}`; `core/src/track_artifact/{mod.rs,read.rs,model.rs}`
 (the `Track` domain type and `Track::track_ref`);
-`core/src/store/session_json.rs` (`LapJson`, `SectorJson`, `NeutralZoneVisitJson`,
+`core/core/src/store/session_json.rs` (`LapJson`, `SectorJson`, `NeutralZoneVisitJson`,
 `TrackVisitJson` — you construct these, you do not change them);
-`core/src/session/handle.rs` `from_session`/`epoch_ms_to_time_secs`;
+`core/core/src/session/handle.rs` `from_session`/`epoch_ms_to_time_secs`;
 IDL0_SPEC §17.3, §17.4, §17.5, §17.7; C1 §6's `laps[]`/`track_visits[]` block.
 Reference semantics only (read-only, different repo):
 `idl0-app/app/lib/providers/track_provider.dart`'s `trackLibraryHash` and
@@ -101,7 +101,7 @@ pub enum LapIndexErrorKind { Io, Track }
 
 Build handles with `SessionHandle::from_channels` carrying synthetic
 `GPS_Latitude`/`GPS_Longitude`/`GPS_EpochMs` (copy the fixture idiom from
-`core/src/laps/detect.rs`'s and `core/src/tracks/detect.rs`'s own test modules).
+`core/core/src/laps/detect.rs`'s and `core/core/src/tracks/detect.rs`'s own test modules).
 
 - `track_library_hash` is order-independent (two shuffled slices, same hash).
 - `track_library_hash` changes when one track's `updated_at_ms` changes.

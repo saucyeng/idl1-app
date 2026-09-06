@@ -11,24 +11,24 @@ rescan both call. TDD, ONE commit, then report.
 ```bash
 cd "C:/Users/isaac/Documents/Saucy/saucyeng/idl-rs-worktrees/l2b-laps"
 git merge-base --is-ancestor c893ba7 HEAD && echo GATE-OK
-grep -c "pub fn compute_lap_index" src/store/lap_index.rs
+grep -c "pub fn compute_lap_index" core/core/src/store/lap_index.rs
 ```
 Both must succeed / return `>= 1`. If either fails, STOP and report.
 
 ## Where
 
 - Same worktree/branch as Task 1. Do NOT push.
-- **Files:** `core/src/store/lap_index.rs`, `core/src/store/session_json.rs`
+- **Files:** `core/core/src/store/lap_index.rs`, `core/core/src/store/session_json.rs`
   (one additive field only), `docs/superpowers/specs/2026-09-03-idl1-c1-session-schema.md`.
 
 ## Files to read first
 
 `CLAUDE.md`; this lane's `PLAN.md` §2 ("Never clobber", "Honest empty") and
 open questions Q2, Q3, Q5; Task 1's brief and its commit;
-`core/src/store/session_json.rs` in full (`SessionJson`, `read_session_json`,
+`core/core/src/store/session_json.rs` in full (`SessionJson`, `read_session_json`,
 `write_session_json`, `empty_session_json`, the `VersionedConfig` impl);
-`core/src/store/atomic.rs` (`write_atomic`); `core/src/store/parquet.rs`
-`read_session_parquet`; `core/src/session/handle.rs` `from_session`;
+`core/core/src/store/atomic.rs` (`write_atomic`); `core/core/src/store/parquet.rs`
+`read_session_parquet`; `core/core/src/session/handle.rs` `from_session`;
 C1 §6's field list and its "Units" paragraph;
 `rust/tauri/src/session_source.rs`'s `load_lap_context` doc comment — it reads
 `main_lap_number` verbatim without validating it, which is why Q3 matters.

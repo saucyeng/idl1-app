@@ -23,7 +23,7 @@ problem and proposes this exact fix ("likely by widening `load_lap_context`
 (or a new sibling) to also serve a single-lap sample-window lookup"), and it
 records that C3 §3.6's own wording is "always" reject. Also
 `tauri/src/session_source.rs` in full — `load_lap_context`, `unknown_lap`, and
-how it reads `session.json`; `core/src/session/handle.rs`'s `slice_by_time`
+how it reads `session.json`; `core/core/src/session/handle.rs`'s `slice_by_time`
 and `channel_sample_times`; C3 §3.6's `fetch_fft` entry; ruling R76
 (`averaging: "none"` means exactly one segment; rate derivation lives in core);
 `core/src/fft.rs`'s `check_none_averaging_segments`.
