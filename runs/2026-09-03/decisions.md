@@ -3866,3 +3866,21 @@ engine built clean but `app.exe` exits at start with `0xc0000142`
 Not a code failure; the lead stops retrying and hands the preview launch
 to Isaac (`npm run tauri dev` from `app/` in his own terminal). Cargo slot
 returned to L8x.
+
+## 2026-09-06 — R87: the catalog never indexes workbooks — fixed as L8x Task 5b
+
+Preview after Task 21: "Rescan found 0 workbook(s)" with two `.idl1wb`
+files in `workbooks/`. `rebuild_catalog` step 6 is still the L1-era
+no-op ("until `.idl1wb` front-matter parsing exists") though core has had
+`parse_front_matter` since L3, and `create_workbook`/`save_workbook`
+write no catalog row either, so `list_workbooks` is empty after every
+restart. **Ruling:** L8x Task 5b (core + tauri, before Task 6): step 6
+walks `workbooks/*.idl1wb`, parses front matter, upserts `workbooks`
+rows (id, file_name, name, updated_at_ms, size_bytes; a file that fails
+to parse is skipped and reported); `create_workbook` and `save_workbook`
+upsert the row for their file (a rename keeps the id). Tests: rebuild
+indexes two files and skips a malformed one; create then `list_workbooks`
+shows it without a rebuild.
+
+**Cost if wrong:** a few rows per rebuild; the alternative is a Notebook
+that forgets its workbooks on restart.
