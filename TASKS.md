@@ -39,17 +39,21 @@ are defined in `docs/superpowers/specs/2026-09-02-idl1-rewrite-design.md` §10.
   gate; (2) pan/zoom/hover on a real session at 60 fps desktop — not
   observable from this task's position (no cargo, no Tauri build in a UI
   worktree); left for the lead's merge-gate eyeball pass in the running dev
-  app (R50 precedent). N1 (`read_workbook`) is still a stub
-  (`Notebook/ipcStubs/readWorkbook.ts`); N3 (host-channel byte path) has no
-  call site yet; N4 (`eval_workbook`'s `lap_context`) is read from
-  `AppState.selection` but not yet threaded through, pending the Rust
-  write-amendment lane (`runs/2026-09-05/lanes/l6/CONTRACT-AMENDMENTS.md`).
+  app (R50 precedent). N1 (`read_workbook`) and N4 (`eval_workbook`'s
+  `lap_context`, threaded from `AppState.selection`) landed for real in the
+  2026-09-06 UI shell task, once L8w's Rust lane shipped them; N3
+  (host-channel byte path, `fetch_host_channel`/`ipc/hostChannel.ts`) is a
+  real command with a decoder but still has no UI call site — binding a
+  `math`-cell definition to a chart is new feature design (which
+  definition, what budget, gesture-settle semantics), not a stub swap.
 - [x] L7a Data tab — Tasks 1-8 landed on `wave2-l7a-data`. Write-command IPC
-  needs 1-4 (`save_session_metadata`, `save_track`/`delete_track`,
-  `delete_session`, `list_quarantine`/`resolve_quarantine`) are built
-  against `NotImplementedError` stubs, no Rust command behind any of them
-  yet; need 5 (`rescan_track_visits`) is dropped outright for wave 2, not
-  stubbed. Parity gaps, unabridged (plan's own table): track create/edit/
+  needs 1 (`save_session_metadata`) and 3 (`delete_session`) are real and
+  wired as of the 2026-09-06 UI shell task (`MetadataForm.tsx`/`index.tsx`'s
+  delete/forget-session actions); needs 2 (`save_track`/`delete_track`) and
+  4 (`list_quarantine`/`resolve_quarantine`) stay `NotImplementedError`
+  stubs — C3 still has no command for any of the four (deferred to wave 3,
+  operating brief §3). Need 5 (`rescan_track_visits`) is dropped outright
+  for wave 2, not stubbed. Parity gaps, unabridged (plan's own table): track create/edit/
   delete, lap-timing editor, sector list, neutral-zone list and the track
   sidebar deferred to wave 3 (blocked on both the write command and C3 §6
   item 10's unfixed `TrackDetail` nested shapes); the track import conflict
@@ -70,15 +74,20 @@ are defined in `docs/superpowers/specs/2026-09-02-idl1-rewrite-design.md` §10.
   wave-1 import path indexes `laps`/`lap_summary` yet; not a bug in this
   lane.
 - [x] L7b Device tab — all 9 tasks landed on `wave2-l7b-device`. Outstanding
-  (`runs/2026-09-05/lanes/l7/IPC-NEEDS.md`): live device status (need 8)
-  and recording/mode control (need 9) have no C3 command, shown as
-  "unavailable" rather than built; `pull_config` (need 10) is a stub, so
-  a push cannot be round-trip verified; profile persistence (need 11) is
-  in-memory for the session only; the channel-registry preview is
-  narrowed to enable state/rate/units per R53 Q1 option (c) for wave 2,
-  with need 12 (the fuller preview) filed for a later (b); a managed BLE
-  connection (need 13) does not exist, so `connected` reads as "the last
-  attempt succeeded," never a live link. Parity gaps dropped or deferred
+  (`runs/2026-09-05/lanes/l7/IPC-NEEDS.md`): needs 8 (`device_status`),
+  9 (`device_control`), 11 (`list_profiles`/`save_profile`/`delete_profile`)
+  and 13 (`connect_device`/`disconnect_device`) are all real C3 commands as
+  of L8w, but still have no UI call site after the 2026-09-06 shell task —
+  `HeroCard.tsx` still shows status/control as "unavailable" text and
+  `ProfileBar.tsx`'s profiles stay in-memory only; wiring any of them is new
+  UX/persistence design (polling cadence, a profile-file merge story), not
+  a stub swap, so it was left rather than guessed at. `pull_config` (need
+  10) is real and wired (`PushConfigBar.tsx`'s "Pull from device" button),
+  but a push still cannot be round-trip verified — comparing the pulled
+  config against what was pushed is a separate feature, not built here. The
+  channel-registry preview is narrowed to enable state/rate/units per R53
+  Q1 option (c) for wave 2, with need 12 (the fuller preview) filed for a
+  later (b). Parity gaps dropped or deferred
   per the plan's table (`docs/superpowers/plans/
   2026-09-05-idl1-wave2-l7b-device-tab.md`): IMU calibration and
   firmware OTA (wave 3), the Android WiFi bind-follows-mode controller
@@ -88,11 +97,12 @@ are defined in `docs/superpowers/specs/2026-09-02-idl1-rewrite-design.md` §10.
   straps (partial — no service-UUID filter), and "connect and forget"
   auto-download on connect (dropped, needs cross-tab state).
 - [x] L7c settings tab — all 6 tasks landed for wave 2. Outstanding:
-  `get_settings`/`set_settings` (IPC need 6) and
-  `get_data_dir`/`set_data_dir` (IPC need 7a/7b) are still stubbed
-  pending the Rust write-amendment lane; prefs live in `localStorage`
-  meanwhile and the one-time migration into `settings.json` (R53 Q1's
-  stated risk) is not yet scheduled. Parity gaps: Google Drive dropped
+  `get_data_dir`/`set_data_dir` (IPC need 7a/7b) are real and wired as of
+  the 2026-09-06 UI shell task (`DataSection.tsx`). `get_settings`/
+  `set_settings` (IPC need 6) are real C3 commands but still have no UI
+  call site — prefs still live in `localStorage` via `prefsStore.ts`
+  (Task 2's own design), and migrating that to `settings.json` (R53 Q1's
+  stated risk) is a separate task, not scheduled by this one. Parity gaps: Google Drive dropped
   permanently (replaced by Sync, not deferred); Firmware/OTA deferred to
   wave 3 (operating brief §3); "Full reference"/"Report issue" links
   dropped (idl0 `example.com` placeholders); Licenses omitted (no
