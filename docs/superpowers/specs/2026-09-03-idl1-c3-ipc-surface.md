@@ -546,10 +546,13 @@ Errors: `not_found` (unknown `session_id`), `io`, `internal`.
 
 **`rescan_tracks(session_id: string)`**
 *Added post-sign (2026-09-06, L2b Task 8, PLAN Q8).* The read-only half of
-the wave-2 amendment's deferred `rescan_track_visits` (§6) — track *write*
-commands (`save_track`/`delete_track`) remain deferred to wave 3, but
-rescan only reads the existing track library, so it lands with lap indexing
-itself (`store::lap_index`, L2b Tasks 1–2) rather than waiting on that.
+the wave-2 amendment's deferred `rescan_track_visits` (§6) — at the time
+this command landed, track *write* commands (`save_track`/`delete_track`)
+were still deferred to wave 3, but rescan only reads the existing track
+library, so it landed with lap indexing itself (`store::lap_index`, L2b
+Tasks 1–2) rather than waiting on that. **`save_track`/`delete_track` have
+since landed too (2026-09-06, L8x, below)** — this command remains the
+UI's own trigger; neither write command calls it (see below).
 
 ```ts
 interface RescanReport {
@@ -584,8 +587,9 @@ already succeeded, and `rebuild_catalog` remains the recovery path.
 
 This is the only C3 command that writes `session.json` outside the
 workbook/metadata paths (`save_session_metadata`, workbook cell edits); it
-is a *read* of the track library, not a track edit, so it does not conflict
-with wave 3's track-write deferral above.
+is a *read* of the track library, not a track edit, so it never conflicted
+with the (now-landed, see `save_track`/`delete_track` below) track-write
+commands.
 
 Errors: `not_found` (unknown `session_id`), `io`, `internal` (see §2's
 `LapIndexErrorKind::Track` note — currently unreached).

@@ -120,7 +120,7 @@ superseding form.
 - Isaac questions 8–9: a real FIT/GPX archive for the speed/heading direct path; which sample rate the firmware intends for `IMU2_AccelX`. (R23 Q4/R60, L5 landing)
 - Isaac question 10 is disk headroom for Tauri builds; question 11 is closed (build caches removed, 16.9 GB freed). (2026-09-06 disk entries)
 - **L10 cosmetic pass**: L6 Task 20's two Minors; SPEC `§26.x` cross-reference cleanup; `JsCellFrame` `minHeight` when a note or error is present. (L6 follow-on LANDED, L6 Task 21 LANDED)
-- **Rust backlog**: lap indexing at import; incremental `catalog::insert_session` in place of a full rebuild per import; the cross-session overlay amendment (`overlay: { session_id, lap }[]`); quarantine commands. (R51 Q4, R64.1, R59 Q2, R73)
+- **Rust backlog**: lap indexing at import; incremental `catalog::insert_session` in place of a full rebuild per import; the cross-session overlay amendment (`overlay: { session_id, lap }[]`). Quarantine commands landed 2026-09-06 (L8x, R86) and are no longer on this list. (R51 Q4, R64.1, R59 Q2, R73)
 - MathOverlay multi-lap shape is decided in the same amendment that ships lap indexing. (R73)
 - Not yet observed by the lead: 60 fps pan/zoom and end-to-end chart rendering on a real session. (L6 follow-on LANDED)
 

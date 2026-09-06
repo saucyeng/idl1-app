@@ -79,12 +79,15 @@ edits a contract, `rust/`, or `app/src-tauri/`.
 
 Known gaps going in (C3 has **no write commands** outside workbook save):
 - session metadata edits (rider, bike, venue, notes → `session.json`) — Data
-- track create/edit/delete (C3 has `list_tracks`/`get_track` only) — Data
+- track create/edit/delete (C3 has `list_tracks`/`get_track` only) — Data.
+  **Landed 2026-09-06** (L8x, ruling R86): `save_track`/`delete_track`.
 - app settings/profile read+write (L1 shipped persistence in core; no
   command exposes it) — Settings
 - firmware update (`push_ota` exists on the transport trait; no C3 command)
   — Settings; **deferred to wave 3** unless Isaac says otherwise
-- delete/forget session, quarantine review — Data
+- delete/forget session, quarantine review — Data. **Quarantine review
+  landed 2026-09-06** (L8x, ruling R86 Q1): `list_quarantine`/
+  `resolve_quarantine`/`verify_data_dir`.
 
 ## 4. Gates
 

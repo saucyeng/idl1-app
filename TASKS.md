@@ -50,14 +50,21 @@ are defined in `docs/superpowers/specs/2026-09-02-idl1-rewrite-design.md` §10.
   needs 1 (`save_session_metadata`) and 3 (`delete_session`) are real and
   wired as of the 2026-09-06 UI shell task (`MetadataForm.tsx`/`index.tsx`'s
   delete/forget-session actions); needs 2 (`save_track`/`delete_track`) and
-  4 (`list_quarantine`/`resolve_quarantine`) stay `NotImplementedError`
-  stubs — C3 still has no command for any of the four (deferred to wave 3,
-  operating brief §3). Need 5 (`rescan_track_visits`) is dropped outright
-  for wave 2, not stubbed. Parity gaps, unabridged (plan's own table): track create/edit/
+  4 (`list_quarantine`/`resolve_quarantine`) stayed `NotImplementedError`
+  stubs at the time this lane landed — C3 then had no command for any of
+  the four (deferred to wave 3, operating brief §3). **Needs 2 and 4 are no
+  longer deferred**: L8x (ruling R86) landed `save_track`/`delete_track`
+  and `list_quarantine`/`resolve_quarantine`/`verify_data_dir` 2026-09-06;
+  swapping these stubs for the real commands is a post-lane TS shell task
+  (below). Need 5 (`rescan_track_visits`) is dropped outright for wave 2,
+  not stubbed. Parity gaps, unabridged (plan's own table): track create/edit/
   delete, lap-timing editor, sector list, neutral-zone list and the track
-  sidebar deferred to wave 3 (blocked on both the write command and C3 §6
-  item 10's unfixed `TrackDetail` nested shapes); the track import conflict
-  dialog deferred with it; rescan-disk/repair-filenames replaced outright
+  sidebar were deferred to wave 3 (blocked on both the write command and C3
+  §6 item 10's unfixed `TrackDetail` nested shapes) — **the write command
+  and the nested-shape blocker are both closed by L8x** (Tasks 2/4/5
+  above); the lap-timing/sector/neutral-zone-list *editor UI* (map gate
+  placement) stays wave 3 per ruling R54, unaffected by this landing; the
+  track import conflict dialog deferred with it; rescan-disk/repair-filenames replaced outright
   by `rebuild_catalog`; Google Drive sign-in/status/auto-sync dropped
   permanently (idl1 uses LAN sync instead, L7c/L11); has-gates/has-GPS
   facets dropped for wave 2 (neither derivable from a `SessionSummary`);
@@ -165,19 +172,33 @@ are defined in `docs/superpowers/specs/2026-09-02-idl1-rewrite-design.md` §10.
       the Data tab's maintenance panel needs `rescan_tracks`/`RescanReport`
       added to `app/src/ipc/catalog.ts` (exact declaration in the Task 8
       implementer's report).
-- [ ] L8x Data-tab write commands — `runs/2026-09-06/lanes/l8x-data-writes/`,
+- [x] L8x Data-tab write commands — `runs/2026-09-06/lanes/l8x-data-writes/`,
       ruling R86. Closes the last four C3 §6 deferrals the Data tab still
-      stubs (`save_track`, `delete_track`, `list_quarantine`,
-      `resolve_quarantine`); `verify_data_dir(repair)` (C3 §3.10) is the
-      quarantine producer, since nothing else moves a corrupt file into
-      `tmp/quarantine/`. Task 1 (this task, docs-only, spec-first) lands
-      the C3 §3.2/§3.10 and C4 §2/§7 amendment: §6 open question 10 closed
-      (`TrackDetail`'s four `unknown` fields now typed from the landed
-      `track_artifact::model::Track`), the quarantine and track-write
-      deferrals in §6's "Wave-2 amendment (R59)" block struck. Tasks 2–7
-      (typed `TrackDetail` read path, core validation/`delete_track`, the
-      two write commands, the core quarantine module, and the three
-      quarantine/verify commands) are Rust, not started by this task.
+      stubs: `save_track`/`delete_track` (Tasks 2-5, C3 §3.2) and
+      `list_quarantine`/`resolve_quarantine` (Task 7, C3 §3.2) are landed,
+      backed by core validation/`delete_track` (Task 3), the typed
+      `TrackDetail` read path closing §6 open question 10 (Task 2), and the
+      core quarantine module plus `verify`'s repair pass (Task 6, C4 §7).
+      `verify_data_dir(repair)` (Task 7, C3 §3.10) is the quarantine
+      producer, since nothing else moves a corrupt file into
+      `tmp/quarantine/`. Task 1 (docs-only, spec-first) landed the C3
+      §3.2/§3.10 and C4 §2/§7 amendment: §6's quarantine and track-write
+      deferrals in the "Wave-2 amendment (R59)" block are struck. Task 5b
+      (ruling R87, lead-added after preview) closed a separate gap found
+      along the way: `rebuild_catalog` never indexed workbooks, so
+      `list_workbooks` was empty after every restart — step 6 now walks
+      `workbooks/*.idl1wb` and upserts rows, and `create_workbook`/
+      `save_workbook` upsert their own row. Task 8 is this doc sweep and
+      the lane merge gate. **Unblocks in the UI** (post-lane TS shell
+      tasks, none scheduled by this lane): `app/src/ipc/catalog.ts` gains
+      the typed `Gate`/`LapTiming`/`TrackDraft`/`SaveTrackResult`/
+      `DeleteTrackReport` types plus `saveTrack`/`deleteTrack`; a new
+      `app/src/ipc/maintenance.ts` gains `listQuarantine`/
+      `resolveQuarantine`/`verifyDataDir`; `Data/ipcStubs.ts`'s four stubs
+      are deleted; `TrackDetailPane.tsx` gains real gate/sector lists plus
+      Name/Venue edit and Delete (map gate placement stays wave 3, R54);
+      the Data tab's maintenance panel gains a quarantine review list
+      (Restore/Discard per entry) and a verify action.
 - [ ] L9 mobile scaffold
 - [ ] L11 LAN sync
 
