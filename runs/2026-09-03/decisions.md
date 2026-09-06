@@ -3504,3 +3504,14 @@ proven ⊆ the real `call_function` dispatch by probing every name through
 need a second name list beside the match — the very copy R64.2 forbids —
 so it is not required. A builtin added to `eval.rs` without a catalog row
 is caught by the UI's `functionCatalog` verification shell task, not here.
+
+## 2026-09-06 — Checkpoint: C: drive hit 0 bytes free during L8w Task 13's app-crate check
+
+Drive is 459 GB used of ~459 GB (pagefile 36.5 GB, Isaac's Downloads 37.5 GB,
+`AppData\Local\Packages` 27.8 GB, `Roaming\Claude` 10.2 GB, idl1-app
+`app/src-tauri/target` 12 GB, idl0-app `rust/target` 3.9 GB). The lead
+deleted only stale Claude scratchpad directories from finished sessions
+(≈2.5 GB, Aug 31–Sep 3) → 5.2 GB free; nothing of Isaac's and no build
+directory was touched. Task 13 resumed. **For Isaac:** the machine needs
+~20 GB of headroom for Tauri builds; candidates are Downloads, the idl0-app
+target directory (rebuildable), and `AppData\Local\Packages`.
