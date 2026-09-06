@@ -5,16 +5,20 @@ import { cursorReadout } from "../../../ipc/cursor";
 import { fetchTile } from "../../../ipc/tiles";
 import { evalWorkbook, openWorkbook, saveWorkbook, watchWorkbook } from "../../../ipc/workbook";
 import { useAppState } from "../../../state/AppState";
+import CellFrame from "./components/CellFrame";
 import CellList from "./components/CellList";
 import ChartCell from "./components/ChartCell";
 import ConflictBanner from "./components/ConflictBanner";
+import EditorPanes from "./components/EditorPanes";
 import JsCellFrame, { DEFAULT_JS_CELL_HEIGHT_PX } from "./components/JsCellFrame";
+import type { PropertiesFormChannelOption, PropertiesFormLapOption } from "./components/PropertiesForm.types";
 import { readWorkbook, NotImplementedError } from "./ipcStubs/readWorkbook";
 import { extractInlineSpans } from "./components/ProseSpan";
 import type { SandboxCell } from "./host/protocol";
 import { SandboxHost } from "./host/SandboxHost";
 import { NotebookSession } from "./host/NotebookSession";
 import { dropCellHeight, initialCellHeights, recordCellHeight, type CellHeights } from "./model/cellLayout";
+import { replaceCellBody } from "./model/cells";
 import { runChannelBind, runChannelSettle, type ChannelBindAction, type ChannelBindDeps, type ChartWindow } from "./model/channelBindDriver";
 import { CellRunSequencer } from "./model/cellRunSequencer";
 import { bindingFor, bindingIdentity, unresolvedChannelId } from "./model/jsCellBinding";
@@ -26,6 +30,16 @@ import { initialWorkbookState, workbookReducer } from "./model/workbookState";
 
 /** C4 §4's stated expected-hash-set TTL (5 s), matched here for the frontend's own independent self-write belt (`saveFlow.ts`'s `isSelfWrite`). */
 const SELF_WRITE_TTL_MS = 5000;
+
+/** How long a burst of local cell edits (`EditorPanes`, Task 15) settles
+ *  before this page re-runs `evalWorkbook` — separate from `CodePane`'s own
+ *  400ms typing debounce (`components/CodePane.tsx`'s
+ *  `CODE_CHANGE_DEBOUNCE_MS`), since a Properties-form control commits its
+ *  `onChange` immediately on every click/keystroke (no debounce of its
+ *  own) and a burst of those (e.g. dragging a domain field) should not each
+ *  trigger a full re-evaluation. Matches `CodePane`'s value as a documented
+ *  judgment call, not a spec number. */
+const EDIT_EVAL_DEBOUNCE_MS = 400;
 
 /** `init`'s `runtimeVersion` argument (`host/protocol.ts`) -- an
  *  informational string the sandbox does not currently branch on
@@ -275,6 +289,27 @@ export default function NotebookPage() {
     };
   }, [state.handle?.id]);
 
+  // Re-runs `evalWorkbook` some time after a local edit (`handleCellCodeChange`
+  // below, dispatched as `workbookReducer`'s `editCell`), debounced by
+  // `EDIT_EVAL_DEBOUNCE_MS` (Task 15). Depends only on data
+  // (`state.dirtyCellIds`'s identity, which `editCell` refreshes on every
+  // edit, and `state.handle?.id`) -- the tightened IPC-effects rule. The
+  // cleanup here only clears a *pending timer*, never an in-flight
+  // `evalWorkbook` call -- the same distinction `CodePane.tsx`'s own
+  // debounce relies on -- so this is not the cancelling-cleanup pattern
+  // reviewers grade Critical.
+  useEffect(() => {
+    if (state.handle === null || state.dirtyCellIds.size === 0) return;
+    const workbookId = state.handle.id;
+
+    const timer = setTimeout(() => {
+      const mySeq = ++evalSeqRef.current;
+      void runEval({ evalWorkbook }, workbookId, sessionIdRef.current, dispatch, () => evalSeqRef.current !== mySeq);
+    }, EDIT_EVAL_DEBOUNCE_MS);
+
+    return () => clearTimeout(timer);
+  }, [state.dirtyCellIds, state.handle?.id]);
+
   /**
    * Explicit save action (Task 14) -- never called from an effect or on a
    * per-keystroke basis. Disabled by the render below whenever
@@ -337,6 +372,24 @@ export default function NotebookPage() {
     } catch (error) {
       dispatch({ type: "markdownError", message: error instanceof Error ? error.message : String(error) });
     }
+  }
+
+  /**
+   * The one path both `EditorPanes`' `PropertiesForm` and `CodePane` write
+   * a cell edit through (Task 15's brief): `replaceCellBody` produces the
+   * document's new full text, which `workbookReducer`'s `editCell` both
+   * stores as `state.markdown` and re-scans into `state.cells` -- the
+   * debounced re-eval effect above then picks up `state.dirtyCellIds`'s
+   * change and re-runs `evalWorkbook`. Never calls `dispatch` for a no-op
+   * replacement (`replaceCellBody` returns `markdown` unchanged when
+   * `cellId` isn't found -- an unresolved-id race with a concurrent watch
+   * event, say -- which would otherwise mark a cell dirty for no reason).
+   */
+  function handleCellCodeChange(cellId: string, nextCode: string) {
+    if (state.markdown === null) return;
+    const nextMarkdown = replaceCellBody(state.markdown, cellId, nextCode);
+    if (nextMarkdown === state.markdown) return;
+    dispatch({ type: "editCell", cellId, markdown: nextMarkdown });
   }
 
   // Pushes this document's `js` cells into the sandbox, and (best-effort --
@@ -465,6 +518,34 @@ export default function NotebookPage() {
   // `handleSave`'s doc comment on why `null` cannot stand in for it.
   const saveUnavailable = state.hash === null || state.markdown === null;
 
+  // The editor shell's inputs (Task 15) -- derived on every render from
+  // state already held above rather than kept in their own state slice,
+  // matching this component's existing style for `renderJsCell`'s per-cell
+  // derivations. `openCell`/`openCellId`/`openCellCode` are only non-null
+  // together: `selectedCellId` names a cell (`CellFrame`'s `onSelect`
+  // above only ever sets it to a cell with a resolved id), that cell is
+  // still present in `state.cells`, and `state.markdown` is loaded to
+  // decode its body from.
+  const openCell = state.cells.find((cell) => cell.id === selectedCellId) ?? null;
+  const openCellId = openCell?.id ?? null;
+  const openCellCode = openCell !== null && state.markdown !== null ? decodeByteRange(state.markdown, openCell.bodyRange) : null;
+
+  // `CodePane` completions (every kind); `plotForm`'s custom-code detection
+  // means these are just candidates, never validated against what a cell
+  // actually references.
+  const channelIds = sessionDetail?.channels.map((c) => c.channel_id) ?? [];
+  const definitionNames = Array.from(state.outputs.values())
+    .filter((o) => o.kind === "math")
+    .flatMap((o) => o.defs.map((d) => d.name));
+
+  // `PropertiesForm`'s channel/lap pickers (`js` cells only -- `EditorPanes`
+  // ignores these props for every other kind). `label` has no separate
+  // source in `ChannelSummary` (`ipc/catalog.ts`) -- `channel_id` doubles
+  // as the human-facing name, same as `MarkRow`'s picker options today.
+  const propertiesChannels: PropertiesFormChannelOption[] =
+    sessionDetail?.channels.map((c) => ({ id: c.channel_id, label: c.channel_id, unit: c.unit })) ?? [];
+  const propertiesLaps: PropertiesFormLapOption[] = sessionDetail?.laps.map((l) => ({ number: l.lap_number })) ?? [];
+
   return (
     <div>
       {state.markdownStatus === "not_implemented" && (
@@ -504,15 +585,13 @@ export default function NotebookPage() {
             if (binding === null || sessionId === null) {
               const unresolved = sessionDetail !== null ? unresolvedChannelId(code, sessionDetail) : null;
               return (
-                <div data-selected={selectedCellId === cellId} onClick={() => setSelectedCellId(cellId)}>
-                  <JsCellFrame
-                    cellId={cellId}
-                    heightPx={heightPx}
-                    error={cellErrors.get(cellId)}
-                    note={unresolved !== null ? `Channel "${unresolved}" is not part of this session.` : undefined}
-                    sendLayout={sendLayout}
-                  />
-                </div>
+                <JsCellFrame
+                  cellId={cellId}
+                  heightPx={heightPx}
+                  error={cellErrors.get(cellId)}
+                  note={unresolved !== null ? `Channel "${unresolved}" is not part of this session.` : undefined}
+                  sendLayout={sendLayout}
+                />
               );
             }
 
@@ -527,79 +606,100 @@ export default function NotebookPage() {
             const sid = sessionId;
 
             return (
-              <div data-selected={selectedCellId === cellId} onClick={() => setSelectedCellId(cellId)}>
-                <ChartCell
-                  cellId={cellId}
-                  tiles={window?.tiles ?? []}
-                  width={DEFAULT_CHART_WIDTH_PX}
-                  height={DEFAULT_JS_CELL_HEIGHT_PX}
-                  heightPx={heightPx}
-                  viewport={
-                    window?.viewport ?? {
-                      startUs: binding.initialSpan.startUs,
-                      endUs: binding.initialSpan.endUs,
-                      pixelWidth: DEFAULT_CHART_WIDTH_PX,
-                    }
+              <ChartCell
+                cellId={cellId}
+                tiles={window?.tiles ?? []}
+                width={DEFAULT_CHART_WIDTH_PX}
+                height={DEFAULT_JS_CELL_HEIGHT_PX}
+                heightPx={heightPx}
+                viewport={
+                  window?.viewport ?? {
+                    startUs: binding.initialSpan.startUs,
+                    endUs: binding.initialSpan.endUs,
+                    pixelWidth: DEFAULT_CHART_WIDTH_PX,
                   }
-                  sessionSpanUs={sessionSpanUs ?? binding.initialSpan.endUs}
-                  sessionId={sid}
-                  channelId={channel.channelId}
-                  sampleRateHz={channel.sampleRateHz}
-                  cache={sessionRef.current.cache}
-                  fetchTile={(tier, tileIndex, columnCount) => fetchTile(sid, channel.channelId, tier, tileIndex, columnCount)}
-                  onViewportSettled={(viewport, _tier, tiles) => {
-                    // ChartCell has already committed its own (mounted-channel)
-                    // settle-fetch by the time this fires -- paint it
-                    // immediately rather than waiting on the multi-channel
-                    // driver below, whose re-fetch of this same channel is a
-                    // cache hit but still a microtask away.
-                    setChartWindows((prev) => new Map(prev).set(cellId, { viewport, tiles }));
+                }
+                sessionSpanUs={sessionSpanUs ?? binding.initialSpan.endUs}
+                sessionId={sid}
+                channelId={channel.channelId}
+                sampleRateHz={channel.sampleRateHz}
+                cache={sessionRef.current.cache}
+                fetchTile={(tier, tileIndex, columnCount) => fetchTile(sid, channel.channelId, tier, tileIndex, columnCount)}
+                onViewportSettled={(viewport, _tier, tiles) => {
+                  // ChartCell has already committed its own (mounted-channel)
+                  // settle-fetch by the time this fires -- paint it
+                  // immediately rather than waiting on the multi-channel
+                  // driver below, whose re-fetch of this same channel is a
+                  // cache hit but still a microtask away.
+                  setChartWindows((prev) => new Map(prev).set(cellId, { viewport, tiles }));
 
-                    // Every one of this cell's bound channels -- not only the
-                    // mounted one -- must re-fetch for the newly settled
-                    // window and re-register as one list (R72, Task 13c): a
-                    // multi-mark cell's other channels would otherwise desync
-                    // from the mounted channel's viewport after a pan/zoom.
-                    // `cellRunSequencerRef` -- shared with the initial-bind
-                    // effect above -- guards this settle against both a
-                    // later settle for the same cell and a slower initial
-                    // bind that is still in flight, so whichever of the two
-                    // started last always wins (review-task13c.md's Major).
-                    const seq = cellRunSequencerRef.current.start(cellId);
-                    const isStale = () => !cellRunSequencerRef.current.isCurrent(cellId, seq);
-                    const deps: ChannelBindDeps = {
-                      fetchTile: (sessId, chId, chTier, tileIndex, columnCount) => fetchTile(sessId, chId, chTier, tileIndex, columnCount),
-                    };
-                    const onAction = (action: ChannelBindAction) => {
-                      if (action.type === "channelData") {
-                        sandboxHostRef.current?.setChannelHostVar(action.channelId, action.length, action.t, action.v);
-                      } else if (action.type === "boundChannels") {
-                        sessionRef.current.setBoundChannels(action.cellId, action.bound);
-                      } else {
-                        setChartWindows((prev) => new Map(prev).set(action.cellId, action.chartWindow));
-                      }
-                    };
-                    void runChannelSettle(
-                      deps,
-                      sessionRef.current.cache,
-                      sid,
-                      cellId,
-                      binding.channels,
-                      channel.channelId,
-                      viewport.startUs,
-                      viewport.endUs,
-                      viewport.pixelWidth,
-                      onAction,
-                      isStale
-                    );
-                  }}
-                  fetchCursorReadout={(sessId, channels, tUs) => cursorReadout(sessId, channels, tUs)}
-                  sendTransform={(id, translateXPx, scaleX) => sandboxHostRef.current?.sendTransform(id, translateXPx, scaleX)}
-                  sendLayout={sendLayout}
-                />
-              </div>
+                  // Every one of this cell's bound channels -- not only the
+                  // mounted one -- must re-fetch for the newly settled
+                  // window and re-register as one list (R72, Task 13c): a
+                  // multi-mark cell's other channels would otherwise desync
+                  // from the mounted channel's viewport after a pan/zoom.
+                  // `cellRunSequencerRef` -- shared with the initial-bind
+                  // effect above -- guards this settle against both a
+                  // later settle for the same cell and a slower initial
+                  // bind that is still in flight, so whichever of the two
+                  // started last always wins (review-task13c.md's Major).
+                  const seq = cellRunSequencerRef.current.start(cellId);
+                  const isStale = () => !cellRunSequencerRef.current.isCurrent(cellId, seq);
+                  const deps: ChannelBindDeps = {
+                    fetchTile: (sessId, chId, chTier, tileIndex, columnCount) => fetchTile(sessId, chId, chTier, tileIndex, columnCount),
+                  };
+                  const onAction = (action: ChannelBindAction) => {
+                    if (action.type === "channelData") {
+                      sandboxHostRef.current?.setChannelHostVar(action.channelId, action.length, action.t, action.v);
+                    } else if (action.type === "boundChannels") {
+                      sessionRef.current.setBoundChannels(action.cellId, action.bound);
+                    } else {
+                      setChartWindows((prev) => new Map(prev).set(action.cellId, action.chartWindow));
+                    }
+                  };
+                  void runChannelSettle(
+                    deps,
+                    sessionRef.current.cache,
+                    sid,
+                    cellId,
+                    binding.channels,
+                    channel.channelId,
+                    viewport.startUs,
+                    viewport.endUs,
+                    viewport.pixelWidth,
+                    onAction,
+                    isStale
+                  );
+                }}
+                fetchCursorReadout={(sessId, channels, tUs) => cursorReadout(sessId, channels, tUs)}
+                sendTransform={(id, translateXPx, scaleX) => sandboxHostRef.current?.sendTransform(id, translateXPx, scaleX)}
+                sendLayout={sendLayout}
+              />
             );
           }}
+          frame={(cell, output) => (
+            <CellFrame
+              cell={cell}
+              selected={cell.id !== null && selectedCellId === cell.id}
+              onSelect={() => {
+                if (cell.id !== null) setSelectedCellId(cell.id);
+              }}
+            >
+              {output}
+            </CellFrame>
+          )}
+        />
+      )}
+      {openCellId !== null && openCell !== null && openCellCode !== null && (
+        <EditorPanes
+          cellId={openCellId}
+          kind={openCell.kind}
+          code={openCellCode}
+          onChange={(nextCode) => handleCellCodeChange(openCellId, nextCode)}
+          channelIds={channelIds}
+          definitionNames={definitionNames}
+          channels={propertiesChannels}
+          laps={propertiesLaps}
         />
       )}
       <div

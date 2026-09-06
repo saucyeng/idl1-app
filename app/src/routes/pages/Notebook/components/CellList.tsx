@@ -1,10 +1,15 @@
 import type { ReactNode } from "react";
 
 import type { CellOutput } from "../../../../ipc/workbook";
-import type { ScannedDoc } from "../model/cells";
+import type { ScannedCell, ScannedDoc } from "../model/cells";
 import MathCell from "./MathCell";
 import TableCell from "./TableCell";
 import ProseSpan from "./ProseSpan";
+
+/** {@link CellListProps.frame}'s default — no wrapper, returns `output` unchanged. */
+function identityFrame(_cell: ScannedCell, output: ReactNode): ReactNode {
+  return output;
+}
 
 /** Decodes `[start, end)` UTF-8 byte offsets (`model/cells.ts`'s convention) back into text. `null` in, `null` out. */
 function proseText(markdown: string, range: [number, number] | null): string | null {
@@ -35,6 +40,25 @@ export interface CellListProps {
    * `js`-kind `ScannedCell` produced by a well-formed document).
    */
   renderJsCell: (cellId: string) => ReactNode;
+  /**
+   * Wraps each cell's own rendered output (the pending placeholder,
+   * `MathCell`, `TableCell`, or `renderJsCell`'s result) — never the
+   * attached prose spans, which belong to the surrounding document flow
+   * rather than to this cell. Optional; defaults to returning `output`
+   * unwrapped, so every caller from before Task 15 is unaffected.
+   *
+   * Added for Task 15 (ruling R74, `runs/2026-09-03/decisions.md`):
+   * `CellFrame`'s select/click affordance needs a per-cell wrapper for
+   * every kind (math/table/js alike), and `CellList` is the only place
+   * that iterates cells one at a time — `Notebook/index.tsx` re-doing that
+   * iteration itself would duplicate this component's prose/output/pending
+   * logic and orphan it. This is a deviation from Task 15's brief, which
+   * did not list this file for modification; it is the smallest hook that
+   * lets every cell kind gain a selection affordance without either
+   * duplicating this component's iteration in `index.tsx` or restricting
+   * selection to `js` cells only.
+   */
+  frame?: (cell: ScannedCell, output: ReactNode) => ReactNode;
 }
 
 /**
@@ -52,7 +76,7 @@ export interface CellListProps {
  * document is corrected, is what resolves it, not anything in this
  * component.
  */
-export default function CellList({ doc, markdown, outputs, inlineResults, spanErrors, renderJsCell }: CellListProps) {
+export default function CellList({ doc, markdown, outputs, inlineResults, spanErrors, renderJsCell, frame = identityFrame }: CellListProps) {
   return (
     <div className="cell-list">
       {doc.cells.map((cell, index) => {
@@ -60,21 +84,23 @@ export default function CellList({ doc, markdown, outputs, inlineResults, spanEr
         const after = proseText(markdown, cell.proseAfterRange);
         const key = cell.id ?? `unresolved-${index}`;
         const output = cell.id !== null ? outputs.get(cell.id) : undefined;
+        const rendered =
+          output === undefined ? (
+            <div className="cell-list-pending">…</div>
+          ) : output.kind === "math" ? (
+            <MathCell output={output} />
+          ) : output.kind === "table" ? (
+            <TableCell output={output} />
+          ) : (
+            renderJsCell(cell.id as string)
+          );
 
         return (
           <div className="cell-list-item" key={key}>
             {before !== null && (
               <ProseSpan text={before} spanIdPrefix={`${key}-before`} results={inlineResults} spanErrors={spanErrors} />
             )}
-            {output === undefined ? (
-              <div className="cell-list-pending">…</div>
-            ) : output.kind === "math" ? (
-              <MathCell output={output} />
-            ) : output.kind === "table" ? (
-              <TableCell output={output} />
-            ) : (
-              renderJsCell(cell.id as string)
-            )}
+            {frame(cell, rendered)}
             {after !== null && (
               <ProseSpan text={after} spanIdPrefix={`${key}-after`} results={inlineResults} spanErrors={spanErrors} />
             )}

@@ -11,6 +11,14 @@
  * `runs/2026-09-05/lanes/l6/IPC-NEEDS.md`) — a single whole-state `status`
  * would force "evaluating fine, but markdown unavailable" into one of four
  * values that doesn't actually describe that combination.
+ *
+ * `editCell`'s `markdown` field (Task 15 addition, out of this file's
+ * original brief scope — flagged in that task's report/commit) completes
+ * this action's original doc comment, which already anticipated "edited
+ * locally" as a dirty-marking source before anything dispatched it: local
+ * edits need `state.markdown`/`state.cells` updated the same way a fresh
+ * read does, not only a dirty flag, or the editor shell would have nothing
+ * to save.
  */
 import type { CellOutput, WorkbookEvent, WorkbookHandle } from "../../../../ipc/workbook";
 import { scanCells, type ScannedCell } from "./cells";
@@ -61,7 +69,15 @@ export type WorkbookAction =
   | { type: "markdownNotImplemented" }
   | { type: "markdownError"; message: string }
   | { type: "evalResult"; outputs: CellOutput[] }
-  | { type: "editCell"; cellId: string }
+  /** A cell's body changed locally (Task 15's `EditorPanes`, via
+   *  `model/cells.ts`'s `replaceCellBody`). `markdown` is the whole
+   *  document's new text (the caller already applied the replacement);
+   *  omitted when a caller only wants to mark `cellId` dirty without
+   *  changing the document's text (kept backward compatible with Task 13's
+   *  original two-field shape/tests, which never touch `markdown`). When
+   *  present, `cells` is re-derived from it the same way `markdownReady`
+   *  does, so a cell's byte ranges stay correct after the edit. */
+  | { type: "editCell"; cellId: string; markdown?: string }
   | { type: "saveResult"; hash: string }
   /** `saveFlow.ts`'s state reached `"conflict"` (Task 14, R44) -- `Notebook/index.tsx` should now render `ConflictBanner`. */
   | { type: "saveConflict" }
@@ -113,7 +129,10 @@ export function workbookReducer(state: WorkbookState, action: WorkbookAction): W
     case "editCell": {
       const dirtyCellIds = new Set(state.dirtyCellIds);
       dirtyCellIds.add(action.cellId);
-      return { ...state, dirtyCellIds };
+      if (action.markdown === undefined) {
+        return { ...state, dirtyCellIds };
+      }
+      return { ...state, dirtyCellIds, markdown: action.markdown, cells: scanCells(action.markdown).cells };
     }
 
     case "saveResult":
