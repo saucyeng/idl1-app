@@ -1064,7 +1064,7 @@ class Selection {
 }
 ```
 
-`mainLapKey` designates the **Main** lap for N-lap comparison (§26.13) — the reference every selected lap is measured against. It is meaningful only in lap-mode and only when it is a member of `lapKeys`; `null` means "auto" (the fastest selected lap is Main). The overlay laps are derived (selected laps minus Main), never stored.
+`mainLapKey` designates the **Main** lap for N-lap comparison (§26.6) — the reference every selected lap is measured against. It is meaningful only in lap-mode and only when it is a member of `lapKeys`; `null` means "auto" (the fastest selected lap is Main). The overlay laps are derived (selected laps minus Main), never stored.
 
 ### 13.3 Provider
 
@@ -1372,7 +1372,7 @@ The retained `SessionHandle` (§15 intro) owns every channel's samples — base,
 
 **The charts self-source every view by channel id.** The frontend holds no copy of a channel's samples. Each Analyze chart is handed only channel *metadata* (`SessionChannelData`: `sessionId`, `channelId`, `sampleRateHz`, `length`, `isEventDriven`, built from `sessionChannelMetaProvider`) and pulls the bounded view it needs from the handle: the time-series line decimates tiles (`decimate_tile`) and reads Y-bounds from `channel_min_max` (engine-folded, no materialization) plus event-driven sample times from `channel_sample_times`; the FFT reads its spectrum from `welch_channel` (computed in the engine — only the `WelchResult` crosses IPC, never the samples); the histogram reads its value distribution from `channel_histogram` (binned in the engine — only the `HistogramResult` crosses IPC); the GPS map reads the fix list from `gps_track`, and for a channel-coloured trace one value per fix from `gps_channel_values` (the channel resampled nearest-sample onto the GPS fixes — only the small per-fix vector crosses IPC, never the column). Everything the chart renders is therefore a channel resident in the handle, addressed by id — including derived traces: a displayed **math channel** is evaluated-and-stored entirely engine-side (`eval_math_into_store(handle, expression, store_as, lap_ctx)` upserts the result under the channel name and returns only `(length, sample_rate_hz)` — the sample vector never crosses IPC), and a **lap-window slice** for the lap-compare overlay is sliced-and-stored engine-side via `slice_by_time_into_store` under a `'<id> (main)'` / `'<id> (overlay)'` name (only the length crosses IPC), then decimated like any channel. The Maths-tab expression preview likewise reads one decimated tile of the stored result, never the samples.
 
-Decimated tiles are cached in the app (`ChartTileCache`, §26.8) and invalidated when:
+Decimated tiles are cached in the app (`ChartTileCache`, §26.3) and invalidated when:
 - The session is removed from the active selection (which fires on session deletion from the library) — `SelectionNotifier` clears the cache slice.
 - A math channel's expression changes — the tile cache is invalidated across every session for that channel id, and the next render decimates the upserted evaluator output straight from the handle. Hooked from `MathChannelNotifier.updateChannel` / `deleteChannel`.
 
@@ -2108,7 +2108,7 @@ All steps user-overridable via math channel expressions.
   `spectrogram(ch)` function stays deferred (a 2-D result has no 1-D channel form).
 - Rotation matrix: flat 9-element row-major `Vec<f64>` (FRB cannot serialize `[[f64;3];3]`). Format shared by `rotation_from_gravity()` output and `apply_rotation()` input.
 - Declip: `declip(data, sample_rate_hz)` → same-length signal with ±32 g-clipped segments reconstructed via a tuned analytic pulse. Shape constants are tuned offline against real sub-limit events (dev-only Rust harness, `#[cfg(test)]`) and baked into `default_params()` in `rust/core/src/clip_reconstruct.rs`. Non-clipped input returned unchanged.
-- Cross-session analysis: `table::evaluate_table_multi(...)` evaluates a table whose rows bind different sessions (per-row `SessionHandle`, cross-row `{col[]}` preserved in one pass; `main({col[]})` reads the Main row) and `variance::variance_traces(reference, targets, channel_id, mode)` computes N overlay-vs-Main delta series in time or distance — the N-lap comparison substrate. See §26.11, §26.13.
+- Cross-session analysis: `table::evaluate_table_multi(...)` evaluates a table whose rows bind different sessions (per-row `SessionHandle`, cross-row `{col[]}` preserved in one pass; `main({col[]})` reads the Main row) and `variance::variance_traces(reference, targets, channel_id, mode)` computes N overlay-vs-Main delta series in time or distance — the N-lap comparison substrate. See §26.1, §26.6.
 
 **Math channel functions (scipy-equivalent names):**
 
@@ -2144,7 +2144,7 @@ are the intended surface — treat the table as the contract, not as a statement
 of what ships today.
 
 **Aggregates (channel → scalar).** Each reduces a channel (or a `{col[]}` table
-column, §26.11) to one value over its finite samples — non-finite samples are
+column, §26.1) to one value over its finite samples — non-finite samples are
 skipped; an empty/all-non-finite input yields `NaN`. `p(ch, q)` is a
 linear-interpolated percentile (`q` in 0..=100); `std(ch)` is the population
 standard deviation. **Arity selects** for the names that also have a
@@ -2184,7 +2184,7 @@ The named intermediates (`Speed (m/s)`, `Roll rate (deg/s)`, `Roll reference (de
 
 **Time as a base channel.** `Time` is a synthesised built-in channel with `samples[i] = i / sampleRateHz`, where `sampleRateHz` is the highest non-event-driven channel rate in the session. Not stored on disk — re-synthesised on each session load. Appears in the channel picker alongside `GPS_SpeedKmh` etc., and lets math expressions reference session-relative time directly (e.g., the tutorial `LapTime` channel is `Time - lap_start_time(current_lap())`).
 
-**Expression engine.** The math-channel expression engine — tokenizer, recursive-descent parser, evaluator, value types (channel / scalar / string), and the function set above — lives in the `idl-rs` core `math` module and is consumed by the app through the bridge call `eval_math_into_store(handle, expression, store_as, lap_ctx)`, which evaluates, upserts the result into the handle's math store under `store_as`, and returns only `(length, sample_rate_hz)`. The evaluator reads `[ChannelName]` references from the retained `SessionHandle` (§15) via a channel lookup over base, synthesized, and resolved math channels; lap-aware and variance functions consume an injected lap context (lap/sector windows in session-relative seconds, plus the overlay session as a second handle for `variance_*`). A scalar-valued expression returns a single-sample, rate-0 channel. Errors surface as a typed `MathChannelException` (§14). The **cross-channel dependency resolver** — which evaluates referenced math channels first and writes their results back into the handle via `add_channel` — lives in the `idl-rs` core (`math::resolve`); the app invokes it through the bridge call `resolve_math_dependencies(handle, target, defs, lap_ctx)` before evaluating the target expression, while the lap context itself is still assembled in Dart from the session's `.idl0w` annotations. Reading a **portable workbook** (`.idl0wb`) and applying its math channels to a session is likewise an engine capability (`workbook::apply_workbook`), consumed headlessly by the CLI (§29.5). The deferred functions `spectrogram`, `hilbert`, `correlate`, `convolve`, `resample`, and `sosfilt` parse and validate but throw "not yet implemented" at evaluation time; the two-argument rolling `median(ch, w)` is likewise deferred, while the one-argument aggregate `median(ch)` is implemented. The same evaluator backs **table cells** through `evaluate_scalar` (require a single scalar result) with a cell-aware channel lookup; channel math never sees the `{cell}` namespace — `ChannelLookup::lookup_cell` defaults to "none", so the Maths editor is structurally firewalled from cells (§26.11).
+**Expression engine.** The math-channel expression engine — tokenizer, recursive-descent parser, evaluator, value types (channel / scalar / string), and the function set above — lives in the `idl-rs` core `math` module and is consumed by the app through the bridge call `eval_math_into_store(handle, expression, store_as, lap_ctx)`, which evaluates, upserts the result into the handle's math store under `store_as`, and returns only `(length, sample_rate_hz)`. The evaluator reads `[ChannelName]` references from the retained `SessionHandle` (§15) via a channel lookup over base, synthesized, and resolved math channels; lap-aware and variance functions consume an injected lap context (lap/sector windows in session-relative seconds, plus the overlay session as a second handle for `variance_*`). A scalar-valued expression returns a single-sample, rate-0 channel. Errors surface as a typed `MathChannelException` (§14). The **cross-channel dependency resolver** — which evaluates referenced math channels first and writes their results back into the handle via `add_channel` — lives in the `idl-rs` core (`math::resolve`); the app invokes it through the bridge call `resolve_math_dependencies(handle, target, defs, lap_ctx)` before evaluating the target expression, while the lap context itself is still assembled in Dart from the session's `.idl0w` annotations. Reading a **portable workbook** (`.idl0wb`) and applying its math channels to a session is likewise an engine capability (`workbook::apply_workbook`), consumed headlessly by the CLI (§29.5). The deferred functions `spectrogram`, `hilbert`, `correlate`, `convolve`, `resample`, and `sosfilt` parse and validate but throw "not yet implemented" at evaluation time; the two-argument rolling `median(ch, w)` is likewise deferred, while the one-argument aggregate `median(ch)` is implemented. The same evaluator backs **table cells** through `evaluate_scalar` (require a single scalar result) with a cell-aware channel lookup; channel math never sees the `{cell}` namespace — `ChannelLookup::lookup_cell` defaults to "none", so the Maths editor is structurally firewalled from cells (§26.1).
 
 ---
 
@@ -2210,7 +2210,7 @@ The named intermediates (`Speed (m/s)`, `Roll rate (deg/s)`, `Roll reference (de
 
 ### 21.1 Data Views
 - Time-series graph — multi-channel, overlay laps, synchronized cursor
-- FFT — multi-channel, one line per assigned channel sharing the frequency axis; event-driven channels skipped. Computed via Welch's method (`welch()`). Slot properties, configured in the chart properties dialog: window function (Hann/Hamming/rectangular per `FftWindow`), segment length (blank = auto: largest power of two ≤ n/8, clamped 256–8192), overlap %, detrend (None/Mean/Linear), averaging (Mean/Median), scaling (Magnitude/Density), the frequency X scale (linear/log), and the shared magnitude-Y scale (`yScale`, §26.12). Defaults (auto segment, 50 % overlap, Mean detrend, Mean averaging, Magnitude) yield a smoothed, DC-suppressed spectrum out of the box; a single full-record segment with no detrend reproduces the raw periodogram. Log / non-linear transforms applied app-side (fl_chart has no native non-linear axis).
+- FFT — multi-channel, one line per assigned channel sharing the frequency axis; event-driven channels skipped. Computed via Welch's method (`welch()`). Slot properties, configured in the chart properties dialog: window function (Hann/Hamming/rectangular per `FftWindow`), segment length (blank = auto: largest power of two ≤ n/8, clamped 256–8192), overlap %, detrend (None/Mean/Linear), averaging (Mean/Median), scaling (Magnitude/Density), the frequency X scale (linear/log), and the shared magnitude-Y scale (`yScale`, §26.6). Defaults (auto segment, 50 % overlap, Mean detrend, Mean averaging, Magnitude) yield a smoothed, DC-suppressed spectrum out of the box; a single full-record segment with no detrend reproduces the raw periodogram. Log / non-linear transforms applied app-side (fl_chart has no native non-linear axis).
 - Histogram — suspension travel, velocity, brake pressure
 - GPS map — track display, channel-colored overlay, lap/sector gate editor
 - Gauge — single-value at cursor
@@ -3296,8 +3296,8 @@ reason. Silence is not deferral (wave-2 operating brief §2). Source:
 `idl0-app/app/lib/ui/tabs/analyze/` and `.../maths/`.
 
 **Delivered in wave 2:** time-series line charts (multi-channel, colours,
-manual/auto y domain, log/sqrt y scale, lap scope), the FFT chart (single
-whole-record spectrum), spectrogram, 2-D
+manual/auto y domain, log/sqrt y scale, lap scope), the FFT chart (whole-channel
+spectrum, no time-range selection), spectrogram, 2-D
 density heatmap (the scatter chart's density mode), hover readout, cursor
 readout, pan/zoom, table cells, math cells with the full 69-function
 catalog, per-cell errors, live file reload, save with conflict detection.
@@ -3492,7 +3492,7 @@ Called by `ChannelMetadataBar._onQuantityChanged` to set the default unit when t
 | 2 | Units | `SegmentedButton<UnitSystem>` + summary line |
 | 3 | Sync (idl1: LAN sync, replaces Drive Sync — see §27.9) | Paired-peer list with online status, pairing-code entry, manual "Sync now" per peer |
 | 4 | Firmware | OTA update. Auto-checks the selected channel (stable/beta) against the running version (§7.3 `Firmware:`) and shows an "update available vX → vY" card that downloads from GitHub Releases (§27.7) and runs the OTA push. Channel picker, auto-check toggle, "Check now", plus the manual `.bin` picker as fallback. Progress / reboot states, pending-verify commit/rollback card. See §4.6 / §6.1 / §27.7. Collapsed by default in the narrow layout. |
-| 5 | Controls | Read-only reference of the chart keyboard / mouse / wheel shortcuts (mirrors `kDefaultChartBindings` + `wheelModeFor`, §26.7), grouped Mouse wheel / Mouse / Keyboard as leader-dot `SpecRow`s. Editable rebinding is a v2 follow-up. |
+| 5 | Controls | Read-only reference of the chart keyboard / mouse / wheel shortcuts (mirrors `kDefaultChartBindings` + `wheelModeFor`, §27.10), grouped Mouse wheel / Mouse / Keyboard as leader-dot `SpecRow`s. Editable rebinding is a v2 follow-up. |
 | 6 | How-Tos | 4 markdown articles + Full Reference link |
 | 7 | About | App version (hardcoded 0.1.0), Open Source Licenses, Report an Issue |
 
