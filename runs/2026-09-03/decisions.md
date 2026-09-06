@@ -3920,3 +3920,19 @@ Restore/Discard, Verify/Repair, "Rescan N sessions" with per-session
 outcomes (`allSettled`; a total failure still resolves with an honest
 result string — accepted, noted). The last `NotImplementedError` stubs
 in the app are gone.
+
+## 2026-09-06 — R89: `data.parquet` version-pair ordering for sync (L11 Task 3)
+
+C4 §6 says "the side with the newer pair is authoritative" without a
+comparator. **Ruling:** lexicographic on the pair — `importer_version`
+first, compared as SemVer 2.0.0 (C1 §4.3); only if equal,
+`seam_correction_version`, compared by the integer after a leading `v`
+(`v1` < `v2`); a value that fails to parse under its rule makes the pair
+**incomparable**: neither side is authoritative, nothing is transferred
+for that session's `data.parquet`, and the plan carries a warning naming
+the session and both pairs. Equal pairs ⇒ no transfer (content is a
+function of blob + versions). C4 §6 gets this sentence in L11's next docs
+touch (Task 12's sweep) citing R89.
+
+**Cost if wrong:** a stale derived file on one side until the next import
+or rescan; never data loss (blobs are the source of truth).
