@@ -3804,3 +3804,14 @@ the caller expects to exist) — accepted.
 `LapDetail.sectors: LapSector[]` (`name, start_ms, end_ms, start_time_secs,
 end_time_secs`) and `neutral_zone_visits: LapNeutralZoneVisit[]` (`name,
 enter_ms, exit_ms`) replacing `unknown[]`; Data tab lap tables consume them.
+
+## 2026-09-06 — R85: `fetch_fft`'s few-sample guards run on the lap window, not the whole channel
+
+review-task6 (Major): a 1–2-sample lap window bypassed R76's guards
+because the rate/sample-count check ran on the whole channel before the
+slice. **Ruling:** slice first, then run the existing core guards
+(`effective_rate_hz_from_t_us`, `check_none_averaging_segments`) on the
+window's own `t_us`/sample count — no core change, no new error kind;
+`InvalidSampleRate` → `invalid_argument` as today. Tests: 1-sample and
+2-sample lap windows ⇒ `invalid_argument`. Lands as the Task 6 fix
+commit before Task 8. **Cost if wrong:** one call reordered.
