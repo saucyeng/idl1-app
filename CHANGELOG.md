@@ -177,6 +177,36 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
   render_workbook` (3 passed, ad hoc — outside the brief's named filters,
   run because `render_workbook` is this task's own scope deviation).
   `cargo check -p idl-rs-cli --tests` clean.
+- **L11 Task 7: sync wire DTOs and pairing (2026-09-06, idl-transport,
+  `sync::{wire, pairing}`, ruling R88).** New `idl-transport::sync` module:
+  `wire.rs` carries `PROTOCOL_VERSION`, `Peer` (the paired-peer record
+  serialised to the peer file), `PairingOffer`, and `PairRequest`/
+  `PairResponse` (`POST /idl1/v1/pair`'s body/response, C3 §3.9 field
+  names). `pairing.rs`'s `PairingState` mints an offer (`offer(now_ms)`)
+  and redeems a presented code (`redeem(code, now_ms)`): the code is six
+  decimal digits derived from `uuid::Uuid::new_v4()`'s first four bytes
+  modulo 1,000,000, zero-padded so a leading zero survives (never an
+  integer round-trip); a `120_000` ms TTL (`PAIRING_TTL_MS`); five wrong
+  attempts (`MAX_ATTEMPTS`) burns the offer; the code comparison is
+  constant-time over the fixed six bytes. `check_protocol_version` refuses
+  a `PairRequest` speaking a version this build does not, naming both.
+  `load_peers`/`save_peers` read/write the peer file (outside `<data>`,
+  PLAN §8 Q7, path passed in by the caller): an absent file loads as `[]`;
+  a malformed one is a `Sync` error naming the path; the write is atomic
+  (tmp sibling in the same directory -> fsync -> rename -> fsync parent on
+  Unix). **Deviation flagged for review:** `save_peers` does not call
+  `idl-rs`'s `store::atomic::write_atomic` despite that file being listed
+  as this task's reference — that primitive's optimistic-concurrency check
+  requires the caller to track the target's last-read content hash across
+  calls and treats "file exists, no `based_on_hash` supplied" as a
+  conflict, which does not fit a small local last-write-wins peer list
+  with no such caller-tracked state; `pairing.rs` implements the same
+  tmp-fsync-rename recipe directly instead, keeping `idl-transport` free of
+  an `idl-rs` dependency for this task (none of the task's other types need
+  one either). `transport/Cargo.toml`'s existing pinned `uuid = "1"` line
+  gains the `"v4"` feature (`Uuid::new_v4()` needs it; not a new crate).
+  Filter: `cargo test -p idl-transport sync::pairing` (11 passed).
+  `cargo check -p idl-rs-tauri` clean.
 - **L8x lane complete: Data-tab write commands (2026-09-06, idl-rs core +
   idl-rs-tauri, ruling R86).** Five new commands close the last C3 §6
   deferrals the Data tab still stubbed: `save_track`, `delete_track`,
