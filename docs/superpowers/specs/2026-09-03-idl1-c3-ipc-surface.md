@@ -1084,14 +1084,24 @@ substitute: its result is a bin-indexed channel with no frequency axis
 attached, so a chart built on it would synthesise the axis in JavaScript,
 which CLAUDE.md §2 forbids.
 
-Errors: `not_found`, `invalid_argument` (bad `params`, or a `lap` not
-present on the session), `io`, `internal`. As with `eval_workbook`'s
-`lap_context`, `lap` must be `null` in practice until lap indexing at
-import lands (§6).
+`lap: null` takes the whole channel. `lap: n` selects that lap's
+recording-time window from `session.json`'s `laps[]` (ruling R83) and takes
+only the samples inside it — an unknown lap number is `invalid_argument`
+with `detail: { "lap": n }`, and a window too short for the requested FFT
+parameters fails the same `"none"`-averaging segment check above
+(`detail: { "segments": n }`), computed against the window's own sample
+count, not the whole channel's.
+
+Errors: `not_found`, `invalid_argument` (bad `params`, an unknown `lap`, or
+a lap window that fails the `"none"`-averaging segment check), `io`,
+`internal`.
 
 - 2026-09-05: fetch_fft's averaging union closed against
   idl_rs::fft::Averaging (ruling R63 (3), L8w Task 12) — "none" and "max"
   now implemented, not rejected.
+- 2026-09-06: `lap` accepts a real lap number, resolved against
+  `session.json`'s `laps[]` (ruling R83, L2b Task 6) — no longer rejected
+  unconditionally.
 - 2026-09-06: "none" requires exactly one segment; more is invalid_argument
   with detail: { "segments": n } instead of silently keeping the first
   segment's power (ruling R76, L8w Task 12 fix).
