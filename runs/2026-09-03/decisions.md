@@ -3333,3 +3333,114 @@ Foreground, once, tee'd, from `c383d4c`: `cargo test -p idl-rs-tauri` →
 Covers Tasks 5, 4b, 6, 4c. Task 4c also corrected its own brief's escaping
 pseudocode (pulldown-cmark already escapes `Event::Text`; the hand-rolled
 escape double-escaped) — caught by the required test on first run.
+
+## 2026-09-05 — Checkpoint: third session-limit cutoff (10:10pm ET reset)
+
+Cut off mid-flight: `l6-task13b` (its three commits `5706b80`, `ef34b73`,
+`6223a66` are on the L6 branch, final gate run unreported), `l8w-review4c`
+(no findings written), `l8w-task7` (had not started). No work lost. The
+"dev app killed for low memory" notification was the background task
+wrapper, not the app: at 10:40pm the `cargo run` → `app.exe` tree from the
+6:22pm preview was still alive holding the cargo slot; the lead stopped it
+(Isaac's earlier "close the app that's running"). Re-dispatched: 13b
+verify-and-report + Task 14 minors, 4c read-only review, Task 7.
+
+## 2026-09-05 — R71: `pull_config` `config` kind is unreachable until transport tags 0x81; transport fix is a follow-on, not Task 7
+
+L8w Task 7 (`a23553a`) found that `read_config` routes every failure,
+including the device's "no config file" ack 0x81, through
+`idl-transport`'s `ble_error()` helper, so `TransportErrorKind::Config`
+(and hence C3's `config` kind, R64.3) is never produced today. The tauri
+side already maps it through the blanket `From<TransportError>`; no tauri
+code can fix this without matching on message text (forbidden).
+**Ruling:** Task 7 lands as pass-through. The transport change (tag the
+0x81 ack as `TransportErrorKind::Config` at the point the ack code is
+known, one test) is **L8w Task 7b**, in `rust/transport/` only, after
+Task 12b and before the lane gate. Shared 10 × 200 ms poll budget for
+start/stop logging and WiFi-on is accepted (no distinct figure exists).
+The explicit-disconnect ruling from review-task6 landed in the same commit.
+
+**Cost if wrong:** the Device tab shows "BLE error" instead of "no config
+on device" for a fresh SD card until 7b lands; nothing is lost.
+
+## 2026-09-05 — R72: the bound-channel registry holds every channel of a js cell, not the first
+
+The 13b fix (`5956185`) sends every bound channel's data to the sandbox but
+registers only `channels[0]` with `NotebookSession.setBoundChannel`, so on
+gesture settle only the first channel is refetched and a two-channel js
+cell desyncs after a pan/zoom — the same class of bug the review graded
+Critical, one step later. **Ruling:** the registry is per cell a list of
+`BoundChannel`s (`setBoundChannels(cellId, BoundChannel[])`), settle
+refetch and rebuild replay iterate it, and the `TODO(idl0)` placed by the
+fix is removed. Landed as **L6 Task 13c** before Task 15.
+
+**Cost if wrong:** one small module change now; the alternative ships an
+editing surface whose multi-channel cells go silently wrong after the
+first zoom.
+
+## 2026-09-05 — R73: `eval_workbook lap_context.overlay_laps` — first entry drives `MathOverlay` until lap indexing lands
+
+L8w Task 9 (`46d6b63`, C3 note `f72a438`) found `MathOverlay` models one
+lap window while `overlay_laps: u32[]` can name several. **Ruling:** the
+first entry is the overlay window, documented on `load_lap_context`; the
+multi-overlay shape (a `Vec<MathOverlay>` or an amended `MathOverlay`) is
+decided in the same amendment that ships lap indexing at import (Rust
+backlog), because until then `laps[]` is always empty and the path is
+unreachable. `session_id: null` with a `lap_context` present ignores the
+context silently, consistent with every other session-scoped field.
+
+**Cost if wrong:** a math cell over three overlay laps evaluates one of
+them; visible the day lap indexing ships, and fixed in the same amendment.
+
+**R73 note (review-task9, Minor):** the overlay path clones the whole
+`SessionHandle` into a fresh `Arc` instead of sharing one; dead code today,
+to be fixed by the lap-indexing task that makes it reachable.
+
+## 2026-09-05 — L8w third four-task gate (after Task 10): PASS
+
+Foreground, once, tee'd, from `d06067d`: `cargo test -p idl-rs-tauri` →
+**173 passed / 0 failed**; `cargo test -p idl-rs -p idl-rs-cli --
+--test-threads=4` → idl-rs 914 passed / 1 ignored, integration 1, cli 51.
+Covers Tasks 7, 8, 9, 10 (+ review-task8 minor `fde52f4`). Task 10 note:
+C3 §3.4's "name sanitises to empty → invalid_argument" branch is
+unreachable with the shared sanitiser (it falls back to `workbook`); the
+check stays as defence, documented, and the C3 text is corrected in Task 14's
+wrap-up rather than now.
+
+## 2026-09-05 — R74: `CellList` gains a per-cell frame hook so every cell kind is selectable (L6 Task 15)
+
+Task 15's brief lists `index.tsx` as the only existing file to modify, but
+the landed `CellList.tsx` renders math/table/prose inline with no per-cell
+hook, so only js cells (rendered through `renderJsCell`) could open the
+editor. **Ruling:** option (a) — `CellList` gains one optional wrapper prop,
+`frame?: (cell: CellDoc, output: ReactNode) => ReactNode`, identity by
+default (existing tests unchanged), applied to every kind; `index.tsx`
+passes `CellFrame` through it. Not (b) re-implementing the iteration in
+`index.tsx` (orphans Task 13), not (c) js-only selection (contradicts
+D13's Code-only editor for non-js cells). A brief's file list is scope
+guidance inside the lane's own directory, not a wall; the deviation is
+named in the commit message.
+
+**Cost if wrong:** one optional prop on a lane-owned component.
+
+## 2026-09-05 — R75: front matter is serialised by core, never hand-built
+
+review-task10 (Critical): `create_workbook_via` interpolates `name` into a
+`format!`-built YAML block, so "Wheel: front" yields an unreadable file and
+"Test #1" a silently truncated name. **Ruling:** core owns the inverse of
+`parse_front_matter` — `workbook::v3::front_matter::render_front_matter(&FrontMatter) -> String`
+(serde_yaml_ng, already a core dependency; `Serialize` on `FrontMatter`),
+with a round-trip test through `parse_front_matter` for names containing
+`: `, ` #`, quotes, a newline and leading/trailing spaces. `create_workbook`
+calls it; no `format!` of YAML anywhere in tauri. Adds core `pub` surface
+→ `cargo check -p idl-rs-cli --tests`. Lands as the Task 10 fix commit
+before Task 12.
+
+**Cost if wrong:** one serialiser in core; the alternative silently
+corrupts user-named workbooks on creation.
+
+**Tracked (L8w Task 11, `a20b41f`):** no TS `IDLH` decoder exists in main
+or the L6 branch (L6's IPC-NEEDS N3 filing named a stale 20-byte header).
+Lead shell task after L8w merges: add `app/src/ipc/` decoder for the
+24-byte layout (copying via DataView, per C3 §3.5) and wire L6's host
+channel seam to `fetch_host_channel`.
