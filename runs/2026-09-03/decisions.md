@@ -3815,3 +3815,15 @@ window's own `t_us`/sample count — no core change, no new error kind;
 `InvalidSampleRate` → `invalid_argument` as today. Tests: 1-sample and
 2-sample lap windows ⇒ `invalid_argument`. Lands as the Task 6 fix
 commit before Task 8. **Cost if wrong:** one call reordered.
+
+## 2026-09-06 — L2b lap-indexing lane LANDED (idl-rs `81a7db3`; idl1-app merge + submodule bump)
+
+Eight tasks, every review CLEAN after fixes (R84, R85). Lane gate from
+`95e11d0`: tauri **211**, idl-rs **983** / 1 ignored, cli **53**. Import
+now indexes laps (stamped cache in `session.json`, incremental catalog
+`index_session` with its own blob row), `rescan_tracks`/CLI `rescan`,
+typed `LapDetail.sectors`/`neutral_zone_visits`, `fetch_fft lap`, and
+multi-overlay `MathLapContext` (R73 closed). Worktrees retired. Next: the
+TS shell task (`ipc/catalog.ts` types + `rescanTracks`, Data lap tables and
+Rescan button, Notebook lap context now live, Task 6's `fetch_fft lap` from
+the FFT form).
