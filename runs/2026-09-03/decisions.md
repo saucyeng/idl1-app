@@ -3716,3 +3716,9 @@ preview) and Step 1b (silent `eval_workbook` rejections → typed
 task.
 
 **Cost if wrong:** conventions and one conditional each.
+
+## 2026-09-06 — L6 Task 21 LANDED (notebook empty state / picker / no-session note / typed eval errors)
+
+`213b7c3`, review CLEAN, merged `--no-ff`; whole TS suite on main
+**93 files / 856 passed**, `tsc` clean. Worktree retired; no wave-2
+worktrees remain.
