@@ -2950,473 +2950,301 @@ each other. A shared "blobs awaiting import" slice is a wave-3 shell task.
 
 ## 25. Tab — Maths
 
-Math channels and named constants are per-workbook — stored in the `.idl0wb` file (§17a), not per-session and not in any global store. The Maths tab edits the **active workbook's** channels and constants in place; switching the active workbook switches the channel set. A channel's identity is its stable `id` (charts reference channels by `id`, so an in-app rename does not drop them); expressions reference channels by `name`, and `idl-rs` resolves cross-channel dependencies by name. (This dual `id`/`name` addressing is v2-specific; v3 workbooks — §17a.2, C2 §2.4 — replace it with one flat identifier namespace, no separate `id` for expression or chart reference.)
-
-Math channel expression editor modeled on i2pro:
-- Channel metadata bar: name, quantity, units, rate, decimal places, color
-- Expression text area with real-time validation
-- Context-sensitive function help panel
-- Insert panels: Channels / Functions / Constants
-- Operator toolbar: `+ - * / < > <= >= == != and or ( ) [ ]`
-- **Interactive preview plot** (`ExpressionPreview`): the active channel's evaluated result rendered through the *same* Analyze `TimeSeriesChart` (full Ctrl/Shift-wheel zoom/pan, cursors, right-click menu, and per-viewport re-decimation via the shared tile cache), so a filter's effect can be inspected at any zoom while its parameters change. Re-evaluation is debounced behind the 300 ms validation pass. The chart is hosted outside a worksheet via a synthetic `worksheetId` (`__math_preview__`) and a local, ephemeral Y override (never persisted) supplied through the dispatcher's `onApplyYScale` seam (§26.7); Properties and Remove-chart are suppressed since there is no slot.
-- **Responsive breakpoint:** 700 dp (wider than the shell's 600 dp). Below 700 dp, Insert panels collapse to a `BrandSegmented` selector + `IndexedStack` (one panel visible at a time). Above 700 dp, all three panels are shown as columns.
-
-**Expression channel scope:** The Channels insert panel and `validate()` are both passed `mathExpressionChannelNamesProvider` — the sorted, deduplicated union of channel names from the currently selected sessions (`availableChannelNamesProvider`) and the names of every math channel in the library. A `[ChannelName]` reference to another math channel therefore appears in the picker, passes validation, and is resolved at evaluation time by the evaluator's cross-channel dependency pass. A reference whose name matches neither a session channel nor a math channel fails validation.
-- **Channel grouping:** The Channels insert panel groups session channels into collapsible sections by the prefix before the first `_` (`GPS`, `IMU0`, `IMU1`, `IMU2`, `HR`); channels with no prefix render flat beneath the groups. A non-empty search query flattens the panel to a filtered flat list. Grouping is automatic and presentation-only — user-defined groups are a deferred follow-up.
-- **Duplicate:** Each math channel row has a duplicate action that copies the channel (new id, `"<name> copy"` name, all other fields verbatim) and selects the copy. Built-in tutorial channels may be duplicated; the copy is an ordinary editable user channel.
-- **Channel list ordering:** Channels appear in the order they are stored on the workbook (insertion order). They persist on the active workbook's `.idl0wb` — there is no separate math-channel database. There is no user-reorder affordance in v1.
-- Template library (shipped expressions):
-  - `Fork velocity`: `integrate([IMU1_AccelZ])`
-  - `Shock velocity`: `integrate([IMU2_AccelZ])`
-  - `Suspension travel`: `integrate(integrate([IMU1_AccelZ]))` — double integration, requires two high-pass filter passes (pre and post each stage) to control drift
-  - `Wheel distance`: `integrate([WheelFront])`
-  - `GPS distance`: `integrate([GPSSpeed])`
-  - `Lap time delta`: `[LapTime_A] - [LapTime_B]`
-
-**Lap and variance functions in the function help panel.** The Functions insert panel surfaces `current_lap()`, `lap_start_time(n)`, `sector_number()`, `variance_time(ch)`, and `variance_dist(ch)` alongside the scipy-equivalent entries listed in §19. Help text describes the projection model (overlay-lap-verbatim, ±90° heading match) and points users at the lap-table main / overlay columns (§21.3) — variance fails loudly when either designation is unset. The `declip(ch)` reconstruction function appears under a `Reconstruction` category in the same panel.
-
-**Built-in math channels.** `kBuiltinMathChannels` (`app/lib/data/math_channel.dart`, `builtin:`-namespaced stable ids) is seeded wholesale into a fresh install's **default workbook** by `Workbook.createDefault`. It holds three groups: five **tutorial** channels (below), four **suspension** virtual sensors routed to the offline estimator (`wheel_travel`/`wheel_velocity`, §20), and nine **AHRS** channels — attitude, body acceleration and their named intermediates, which are plain expressions (see §19 *Attitude and body acceleration*). The tutorial five are seeded — `Workbook.createDefault` writes them into its `mathChannels`: `LapNumber` (`current_lap()`), `LapTime` (`[Time] - lap_start_time(current_lap())`), `LapDistance` (`[Distance] - lap_start_distance(current_lap())`), `Lap Delta T` (`variance_time([LapTime])`), and `Lap Delta D` (`variance_dist([LapTime])`). They are **ordinary workbook channels — editable, duplicatable, and deletable like any other** (the `builtin:` prefix only namespaces their stable ids; it does not lock them). They teach the expression language by example and give every install a working lap-delta set with no setup. The shipped **template library** (`MathChannelLibrary.shipped`) is a separate set the user copies into the active workbook on demand. `Time` is the synthesised base channel described in §19; user expressions can reference it like any sampled channel.
+idl1 has no separate Maths tab. Math channels are `math` cells inside the
+notebook, authored and evaluated alongside prose, `table` and `js` cells in
+one flat document — see §26.
 
 ---
 
-## 26. Tab — Analyze
-
-- **Workbook/Worksheet** structure (mirrors i2pro project/page model); a 24 dp strip of primary and overlay session-binding chips renders below the workbook bar so sessions can be swapped at view time without altering the workbook definition (see §17a.3).
-- Drag-resize components, synchronized cursor
-- Zoom: pinch/scroll, linked or independent
-- Range selection, cursor annotations
-- Overlay mode: multiple sessions/laps on same axis
-- Channel color, line style, visibility toggle
-- The Add Channel dialog groups session channels into collapsible sections by name prefix (`GPS`, `IMU0`, `IMU1`, `IMU2`, `HR`); the Math Channels section is listed separately.
-
-**`Worksheet` state:** Each worksheet holds `name: String` and `xAxisMode: XAxisMode`. Zoom state, channel assignments per chart, chart count, and cursor history are not yet in `Worksheet` — they will be added when those features are wired up. When workspace persistence is added, all per-worksheet display state must move from local widget state into `Worksheet`.
-
-**X axis mode scope:** `WorkspaceNotifier.setXAxisMode()` applies to the currently active worksheet only (no worksheet-index parameter). `XAxisSelector` reads and writes the active worksheet via the same assumption. Both break if two worksheets are ever displayed simultaneously — when that happens, refactor both to take an explicit worksheet index.
-
-**Chart count:** The number of charts on a worksheet is local widget state (`ConsumerStatefulWidget._chartCount`), not stored in `WorkspaceState`. It resets to 1 when the worksheet changes. Moving it into `Worksheet` is required before persistence is added.
-
-**Per-chart channel assignment:** All charts in a worksheet currently receive an empty channel list. Per-chart channel selection is not yet implemented; when it is, each chart will need its own `List<SessionChannelData>` stored in a `ChartConfig` class within `Worksheet`.
-
-**Synchronized cursor contract:** One cursor per worksheet, shared across every chart in that worksheet. Cursor position is in data-space x-axis units — seconds for time mode, metres for distance modes — not pixel coordinates. The cursor is cleared when the worksheet's x-axis mode changes. Cursor state is not persisted to `.idl0w`.
-
-**Cursor position — current placeholder:** `cursorProvider` is typed `double? (seconds)` but `TimeSeriesChart._moveCursor` currently stores the raw pixel offset from `onTapDown`, not data-space seconds. The pixel-to-data-space conversion is stubbed with a TODO. Do not treat cursor values as seconds until that conversion is implemented.
-
-**Cursor readout.** A pinned cursor A surfaces an fl_chart tooltip on each time-series chart showing every plotted channel's value at A, formatted with the smart sig-fig rules in `formatChannelValue` (3 significant figures, magnitude-aware decimal places, `—` for NaN, `+∞ / −∞` for infinities). The tooltip is brand-styled (IBM Plex Mono, hairline border, `brandSurface` fill) and persists after touch lifts; it is suppressed while more than one pointer is down so pinch-zoom focal-point thrash does not redraw values. When cursor B is also pinned, an `A → B  Δ <t>` chip renders above the chart on a single line. Raw cursor values for both A and B are exported via the chart context menu's `Copy Cursor Values` command.
-
-**Channel colour ownership:** Each channel plotted in a chart has a user-configurable colour stored in the workspace file (`.idl0w`) under the chart component's layout entry. On first addition, colours are assigned by cycling a fixed palette in order of channel addition. Two channels in the same chart will not share a colour provided the palette is larger than the channel count.
-
-### 26.0.a GPS Map & Track Gates
-
-**Toolbar button.** The GPS map chart's toolbar includes a new `Tracks…` button that opens a popup listing all Tracks visited by the active sessions. The popup shows Track name, lap count, and an [Edit] button that opens the Track Editor modal.
-
-**Read-only gate overlays.** Gate placement and deletion UI has been removed from the GPS map. Track gates (lap start/finish and sector gates) render as read-only overlays on the map. Neutral zones are visualized similarly. To edit gates, use the Track Editor modal (opened via the Tracks popup or the Data tab Track detail card).
-
-**Segment-selection mode.** New affordance for Track creation: when `Create from session…` is tapped in the Data tab or invoked from the Analyze map's Tracks popup, the map enters segment-selection mode. A horizontal range slider (with time or GPS distance on X) allows the user to select a start and end point. Preview gates render perpendicular to the polyline at those points. Tapping [Continue] opens a name+venue dialog, creates the Track with those gates as start/finish, and optionally opens the Track Editor for further refinement.
-
-**Multi-session rendering.** The GPS map renders every selected session's track (sourced from the effective selection), not just the bound primary/overlay pair — a map is a spatial overlay, not a Main/Overlay lap comparison. Each session draws in its palette colour; the chart-properties per-session colour rows are labelled by session date.
-
-**Channel-coloured trace.** A GPS chart can colour its trace by one channel value (chart properties → *Colour by*; `None` = solid per-session colours). The engine resamples the channel onto each GPS fix (`gps_channel_values`, nearest-sample); the app maps the values through the Turbo colormap into a per-vertex gradient polyline on a single min/max scale shared across all visible traces (auto, or a manual range). A colorbar legend shows the active scale and channel. The colour-by channel and optional manual range persist on the chart slot (`gpsColorChannelId` / `gpsColorMin` / `gpsColorMax`).
-
-### 26.1 WorksheetKind
-
-Worksheet gains a `kind` field:
-
-```dart
-enum WorksheetKind { standard, sessionSheet }
-```
-
-Stored on Worksheet, defaulting to `standard`. `copyWith / toJson / fromJson` updated. Workspace `_kSupportedWorkspaceVersion` bumps; `fromJson` accepts missing field by defaulting to standard.
-
-### 26.2 Default Workbook Contents
-
-When a workbook is first created, it ships with two worksheets:
-- `Worksheet(kind: sessionSheet, name: "Session", charts: [LapTable, LapProgression])`
-- `Worksheet(kind: standard, name: "Charts", charts: [])`
-
-Existing workbooks loaded from `.idl0w` that have no Session Sheet get one prepended on migration (one-shot at load time, not on save).
-
-### 26.3 Session Sheet Behaviour
-
-A worksheet with `kind == sessionSheet` has two **mandatory, non-deletable** chart slots at the top:
-
-1. **Lap Time Table** — full lap data for every parent session in the current selection scope. Lap rows have checkboxes that mirror `selectionProvider`.
-2. **Lap Time Progression** — `fl_chart` LineChart, x-axis = lap index within session (1..N), y-axis = lap time in seconds. One series per session in scope. Highlights fastest lap per session with a marker. Renders **all laps** in scope regardless of any active Data-tab Track filter — the chart's purpose is "did I get faster", filtering defeats it.
-
-Below the mandatory slots, the user can add any standard chart slots (math channels, time-series, ghost charts, etc.). The slot-removal handler refuses to delete the mandatory slots (no-op + log). The user can delete the entire Session Sheet worksheet itself; that's allowed because the core lap data lives in the Data tab.
-
-### 26.4 Multiple Session Sheets per Workbook
-
-The "New Worksheet" menu offers two options: Standard / Session Sheet. Useful when the user wants different math-channel attachments per Session Sheet.
-
-### 26.5 Lap Table Mode-Aware Checkboxes
-
-The lap table widget gains per-row checkboxes:
-- Session-row checkbox → calls `selectionProvider.notifier.toggleSession`.
-- Lap-row checkbox → calls `selectionProvider.notifier.toggleLap`.
-- In session-mode: lap checkboxes visually muted (still clickable, flips mode).
-- In lap-mode: session checkboxes visually muted.
-
-Bidirectional sync: changes in the Data tab flow to the Session Sheet's lap table; changes here flow back. One source of truth (`selectionProvider`).
-
-### 26.6 Workbook Bar Visual Marker
-
-Session Sheet worksheet tabs show a small icon (`Icons.list_alt`) next to the tab label to distinguish from Standard sheets.
-
-### 26.7 Chart context menu
-
-Each time-axis chart (TimeSeries, Ghost, FFT, LapProgression) wraps in a `ChartContextMenu` that opens on right-click (desktop) or long-press (mobile). The menu is a cascading `MenuAnchor` opened at the pointer: Cursor / Zoom / Pan collapse into hover-out submenus, with Reset View, Copy Cursor Values, and Properties at the top level and the deferred v2 placeholders under a disabled **More** submenu. Implementation in [`app/lib/ui/widgets/chart_context_menu.dart`](../app/lib/ui/widgets/chart_context_menu.dart); dispatcher in [`app/lib/ui/widgets/chart_action.dart`](../app/lib/ui/widgets/chart_action.dart). The dispatcher is slot-agnostic — vertical-zoom Y writes go through an `onApplyYScale` callback (worksheet slot, or local state for the Maths preview, see §25), so the same chart renders inside and outside a worksheet.
-
-**Cursor model.** Each worksheet has an A/B cursor pair stored as `CursorPair(aSecs, bSecs)` keyed by worksheet UUID in `WorkspaceState.worksheetCursors`. Cursor A is the historical "the cursor" (set by 1-finger chart drag, hover preview); cursor B is set explicitly via the menu. Both render as vertical lines spanning every time-axis chart in the worksheet — A solid white, B dashed amber. Channel values at A surface in the per-chart fl_chart tooltip (see **Cursor readout** above); an `A → B  Δ <t>` chip appears above the chart when both cursors are pinned.
-
-**Persistence.** X-axis range (`worksheetRanges`) and cursor pair (`worksheetCursors`) both persist in SharedPreferences alongside the workbook structure, so zoom and cursor restore together on app reopen. Manual Y range persists per slot via the existing `ChartSlot.yScaleMode + yMin + yMax` fields.
-
-**Reset View.** Clears the worksheet's X range, both cursors, and the slot's manual Y mode (back to auto). Triggered by the menu item OR by double-tap on the chart canvas.
-
-**Default keybindings (hardcoded). A read-only reference of these lives in Settings → Controls (§27); an *editable* rebinding table is a v2 follow-up.**
-
-| Action | Keys |
-|---|---|
-| Pan horizontal | Shift + ←/→, Shift + Scroll |
-| Pan vertical | Shift + ↑/↓ |
-| Zoom horizontal | Alt + ←/→, Ctrl + Scroll |
-| Zoom vertical | Alt + ↑/↓ |
-| Zoom Full Out X | F2 |
-| Zoom Full Out Y | Alt+F2 |
-| Zoom to Cursors | Z |
-| Copy Cursor Values | Ctrl+Shift+C |
-| Properties... | F5 |
-
-Direction convention: pan arrow shifts the view toward the arrow; zoom Up/Right is in (more magnification), Down/Left is out.
-
-**Scroll-wheel scheme.** Over a chart, **Ctrl + wheel** zooms the shared X range at the cursor and **Shift + wheel** pans it; a plain wheel passes through to worksheet page-scroll. The decision is the pure `wheelModeFor(ctrl, shift)` in `chart_action.dart` — the single source of truth shared with the Settings reference. **Alt is deliberately not a wheel modifier:** a stuck Alt after an Alt+Tab focus change (a known desktop `HardwareKeyboard` desync) would otherwise turn every plain wheel into a zoom. Wheel handling lives only in the chart (`TimeSeriesChart`), not the wrapper, so one notch = one action.
-
-**Mobile gestures.**
-
-| Gesture | Action |
-|---|---|
-| 1-finger horizontal drag | Move cursor A |
-| 1-finger vertical drag | Scroll the worksheet (not claimed by the chart) |
-| 2-finger pinch | Free-form X+Y zoom from `horizontalScale` × `verticalScale` independently |
-| 2-finger drag | Pan X+Y from `focalPointDelta` |
-| Long-press | Open context menu at touch point |
-| Long-press-drag | Zoom Window — drag-rectangle that applies X+Y range on release |
-| Double-tap | Reset View |
-
-Gestures route through `ChartGestureArea`, whose `ChartZoomScrubGestureRecognizer` claims the gesture arena only for a 2-finger pinch or a *horizontally*-dominant 1-finger drag; a vertically-dominant 1-finger drag is left unclaimed so the enclosing chart-list scrolls. This keeps the chart's scale recognizer from competing with the scroll view's vertical-drag recognizer (combining `onScale*` with `onVerticalDrag*` in one detector is disallowed, and the unclaimed-then-evicted race throws in the framework's scale recognizer).
-
-Vertical pinch only acts when the slot is in `YScaleMode.manual` — auto-fit values aren't accessible from outside fl_chart in v1.
-
-**Zoom Window.** Right-click-drag (desktop, secondary button) or long-press-drag (mobile) paints a translucent rectangle and applies its X range and manual Y range on release. Drags shorter than 8 px in either dimension fall through to a normal click → menu.
-
-**Ghost-chart properties.** Ghost-delta chart slots expose three filter sliders in the Properties dialog (in addition to the Y-axis controls common to all chart slots). Values persist on the slot via `ChartSlot.ghostSmoothingSeconds`, `ChartSlot.ghostMedianWindow`, and `ChartSlot.ghostConfidenceMeters`:
-
-- **Smoothing window** — 0.0 – 10.0 s, default 3.0 s. Width of the Phase 3 confidence-weighted Gaussian, expressed in seconds. 0 disables Phase 3 (Phase 2 output passes through unchanged).
-- **Spike rejection (median window)** — Off / 3 / 5 / 7 / 9, default 3. Width of the Phase 2 centered median pre-pass. Off disables Phase 2.
-- **Drift sensitivity** — 1 – 50 m, default 8 m. Confidence-kernel scale: residuals beyond this distance attenuate sharply in the Phase 3 weighting. Slider response is quadratic so finer control sits at the low end of the range.
-
-**v2 deferral list:** Active Channel concept and per-channel scale modes (i2Pro "Channel/Auto") — the next priority follow-up; editable keybinding settings table; Maximise; Cut/Copy/Paste/Delete chart slot; Print / Print to Clipboard; Export Data; GpsMapChart context menu (different op set — XY pan/zoom); LapTable context menu; Pan to Cursor A/B; Zoom Default; worksheet-level "Reset All Charts."
-
-### 26.8 Chart rendering engine — tile-based decimation
-
-The Analyze tab's time-series charts render via tile-based min/max decimation. Each channel's samples are owned by the retained `SessionHandle` (see §15.3) — there is no separate sample handoff or registry. At render time the chart picks a decimation tier from the viewport's samples-per-pixel ratio and requests the visible tiles via `decimate_tile(handle, channel_id, tier, tile_index)`, caching them in a process-wide LRU cache (`ChartTileCache`, 30 MB cap), and renders two FlSpot per bucket (min, max at the same X) so single-sample spikes remain visible at every zoom level.
-
-Tiers are geometric base-8: tier 0 = raw, tier 1 = 1:8, ..., tier 6 = 1:262144 (the ceiling — one tier-6 tile spans ~268M samples, so a full-session view of a season-scale log stays at pixel-scale spot counts; high tiers are cheap because the engine folds raw columns per bucket without materializing). Tile size is 1024 buckets at every tier. Cache misses dispatch async Rust calls (off-isolate via flutter_rust_bridge); the chart shows a brief gap at the missing span while the tile streams in (typically within one frame given off-isolate FRB).
-
-The in-chart tooltip displays the decimated bucket value because
-`getTooltipItems` is a synchronous callback that cannot await Rust. An exact,
-interpolated cursor readout would be a small additive `decimate_*`-style
-handle method; it is not currently wired in the UI.
-
-Gesture model: multi-finger pinch zooms X+Y, anchored at the gesture focal point in both axes (Y zoom only applies when the slot is in `YScaleMode.manual`). A horizontally-dominant single-finger drag moves cursor A; a vertically-dominant single-finger drag is left unclaimed so the enclosing chart-list scrolls. Double-tap resets the X range, both cursors, and the slot's manual Y. X range is shared across every chart in a worksheet. `setXAxisRange` writes are coalesced to ~60 Hz during a gesture; the final position is flushed on `_onScaleEnd`.
-
-### 26.9 Chart-type picker & properties editor
-
-Each user-addable chart type carries display metadata (glyph, label, one-line
-blurb, signature accent colour) in a single catalog, `chart_type_catalog.dart`
-(`kChartTypeCatalog` + `kAddableChartTypes`). The accent colour-codes the type
-in both the picker and the rail. Adding a chart type is one catalog entry plus
-its render widget and property section. Addable types: `timeSeries`, `fft`,
-`gpsMap`. The pinned Session-Sheet types (`lapTable`, `lapProgression`) are
-catalogued for labelling but never offered in the picker.
-
-The Add-Chart and properties flows are layout-adaptive (breakpoint: viewport
-width `> 700` dp, matching the Maths tab):
-
-- **Narrow (mobile).** Two steps. "Add chart" opens a type picker — one row per
-  addable type showing its glyph, label, and blurb — then the
-  `ChartPropertiesDialog` opens for channel-bearing types. Editing an existing
-  chart opens the properties dialog directly. Chart type is fixed once created.
-- **Wide (desktop).** The type picker and properties editor are one panel. The
-  `ChartPropertiesDialog` renders a left **type rail** (the addable glyphs, each
-  in its accent colour; the current type lit with a tinted fill + matching
-  border) beside the property sections. Selecting a
-  rail entry converts the slot **in place** via
-  `updateChartProperties(copyWith(chartType:))`, preserving assigned channels
-  (a type that ignores them, e.g. `gpsMap`, simply leaves them unused); the
-  property sections re-render for the live type. "Add chart" creates a default
-  `timeSeries` slot and opens this panel with `isNew: true` — **Add** commits,
-  **Cancel**/dismiss discards the placeholder slot.
-
-The rail is shown only for the addable types; pinned lap slots do not open this
-dialog. On narrow layouts the dialog has no rail, so type stays fixed there. The
-desktop rail cards are sized so each type label fits without breaking mid-word.
-
-**GPS Colour-by section.** A `gpsMap` chart's property panel adds a *Colour by*
-group: a single-channel picker (`None` = solid per-session colours) and, when a
-channel is chosen, an optional manual scale range (blank fields = auto, the
-shared min/max across visible traces). See §26.0.a for the rendered heatmap and
-the persisted `gpsColor*` slot fields.
-
-### 26.10 Histogram chart
-
-`ChartType.histogram` — the value distribution of a single channel over the
-whole rendered session, drawn as equal-width bars. The staple suspension tool
-(a velocity histogram reads damper balance; a travel histogram reads sag and
-bottom-out usage).
-
-- **Engine.** Binning lives in `idl-rs` (`channel_histogram` →
-  `histogram::histogram`): the channel's samples materialize transiently from
-  the compact column and are binned in Rust; only the small
-  `HistogramResult { bin_edges, counts, total }` crosses FFI (the §15.3 seam,
-  like `welch_channel`). Non-finite samples are skipped. An optional explicit
-  `[min, max]` range pins the binning extent so an overlay's series share edges;
-  otherwise the range is the data min/max (zero-centred when `symmetric`).
-  Binning has no sci-rs equivalent — it is a tight O(n) count, not a
-  reimplementation of library DSP.
-- **Overlay.** Every assigned **(session × channel)** series is overlaid as a
-  staircase outline with a translucent fill, sharing one value axis: the chart
-  unions each channel's `channel_min_max` into a common range — widened to
-  `[−m, m]` when `histogramSymmetric` — and bins every series onto identical
-  edges via the explicit-range `channel_histogram` param. So front + rear, and
-  the main + N overlay sessions, lie on top of one another; the legend
-  colour-codes them. Each series is normalised to **its own** sample total, so
-  series of different lengths stay comparable.
-- **Axes.** Y is the percentage of each series' samples per bin
-  (`count / total`); the shared `yScale == log` switches Y to a base-10 log axis
-  that exposes the sparse high-velocity tails (§26.12). X is the channel value.
-- **Rendering.** Each series is a stepped staircase tracing the bars' tops by
-  default; `histogramSmooth` swaps it for a fitted polyline through the bin
-  centres (anchored to the baseline at the range ends), which reads more
-  clearly at high bin counts. Both forms carry a translucent fill.
-- **Slot fields.** `histogramBinCount` (default 40, clamped 2–200),
-  `histogramSymmetric` (false — zero-centred range), `histogramSmooth` (false —
-  fitted polyline) — persisted on the slot, emitted to JSON only for histogram
-  slots. The count-axis scale is the shared `yScale` (§26.12).
-- **Window.** Computed over the whole rendered session — the histogram windows
-  by neither zoom nor lap (unlike the FFT and spectrogram charts, which window
-  to the active zoom / lap — §26.10.a).
-
-### 26.10.a FFT windowing & Spectrogram chart
-
-**FFT windowing.** The FFT chart no longer transforms the whole session; it
-auto-windows to what the worksheet is showing. In session-mode the window is
-the current horizontal zoom span (or the full session when unzoomed); in
-lap-mode it draws **one spectrum line per selected lap** (per channel), each
-windowed to that lap's engine-computed `[startTimeSecs, endTimeSecs]` — the
-1-to-N lap comparison. Overlaid lines are capped at `kMaxFftSpectra` (10) with a
-visible "showing first N" note rather than a silent drop. The window is resolved
-in `chart_workspace` (zoom from `worksheetRanges`, laps from `sessionLapsProvider`)
-via the pure `resolveFftWindows`; the engine computes each spectrum with
-`welch_channel_windowed` so samples never cross FFI. Segment length auto-resolves
-from the **windowed** sample count.
-
-**Spectrogram chart** (`ChartType.spectrogram`). A time×frequency heatmap of one
-channel (X = time, Y = frequency, colour = magnitude/PSD), computed in `idl-rs`
-(`spectrogram_channel` → `spectrogram()`, sharing the `stft()` core with
-`welch()`). One channel per slot; auto-windows like the FFT chart but to a single
-window (zoom span in session-mode, the primary lap — `mainLapNumber` else the
-lowest selected lap — in lap-mode). The colour scale is the shared `yScale`
-(default `log`); the frequency axis is linear or log via `SpectralParams.freqScale`.
-
-Because its X axis is time, the spectrogram carries the worksheet's shared A/B
-cursor like the time-series chart (a tap pins A; the A/B/hover lines render at
-the matching time so a spectral peak can be read against track position), plus
-frequency and time gridlines aligned to the axis ticks. The heatmap is rendered
-on its own repaint-isolated layer with frequency bins aggregated to ~one band
-per vertical pixel, so cursor motion and unrelated worksheet repaints never
-re-rasterize it (rendering detail; the visual contract is unchanged).
-
-Segment length sets the frequency resolution as on the FFT chart, but the
-**time-column count is a display concern, not a Welch-averaging one**: the
-spectrogram does not honour the FFT chart's `overlapPercent`. Instead it
-auto-sizes the STFT hop (`ChartSlot.autoSpectrogramOverlap`) to fill its time
-axis with roughly `kSpectrogramTargetColumns` (240) frames — the short-hop,
-high-overlap regime a heatmap needs — bounded so very short windows pack the
-maximum frames the window allows (hop ≥ 1) and very long windows stay
-non-overlapping. This is independent of the segment length's frequency
-resolution.
-
-**Shared spectral params.** Both charts read one `SpectralParams` group on the
-slot — `window`, `segmentLength` (auto when null), `overlapPercent`, `detrend`,
-`scaling`, `freqScale` — migrated from the legacy flat `fft*` keys on load.
-`overlapPercent` drives the FFT chart's Welch hop; the spectrogram derives its
-hop from a target time-column count instead (above). The FFT chart adds
-`fftAveraging` (Welch averaging); the spectrogram omits it (keeping every frame
-is what makes it a spectrogram). The math-channel `spectrogram(ch)` function
-stays deferred (a 2-D result has no 1-D channel form).
-
-### 26.11 Tables
-
-Tables are first-class worksheet content alongside charts. A worksheet holds an
-ordered list of **`WorksheetBlock`s**, each a chart or a table with a
-`placement` (`inFlow` | `sideBySide` | `overlay`). v1 honours only `inFlow`
-(stacked in document order); `placement` is persisted so the flexible-layout
-subsystem can read it later. Charts always precede tables in a worksheet — a new
-table appends below the charts — which keeps the chart-index call sites and the
-Session-Sheet pinned-slot guards unchanged. A legacy worksheet's flat `charts`
-array migrates to chart blocks on load.
-
-**Hybrid grid.** A table is columns × rows of cells. A **column** carries an
-optional `name` (the `{name}` reference target) and a `template` formula applied
-to every cell in the column that has no own formula. A **row** carries an
-optional `RowContext { sessionId, lapIndex }` that binds the row to a lap, so
-the row's `[Channel]` references resolve to that lap's time window. A **cell** is
-a literal value (short-circuits evaluation), an explicit formula, or blank
-(falls back to the column template). The per-lap summary preset (the Add-table
-entry) builds one row per lap of the bound session, a Lap-number label column, a
-`max([Channel])` metric column per default channel, and a delta-to-best column.
-
-**Cell references — the `{ … }` namespace.** Inside a cell formula:
-- `{A1}` / `{$A$1}` — a single cell (column letter + 1-based row) → **scalar**.
-- `{name}` — the named column, **this row** → scalar (same-row reference).
-- `{name[]}` — the whole named column → **array**, for aggregates such as
-  `min({fork_max[]})`.
-
-Channel references stay bracketed (`[Fork]`); the `{cell}` sigil is a disjoint
-namespace. A cell must reduce to a single value — a bare `[Channel]` (multi
--sample) is an error advising an aggregate (e.g. `mean([Fork])`).
-
-**Engine evaluation.** Tables evaluate entirely in `idl-rs` (`table::evaluate_table`):
-cells are topologically ordered by their `{cell}` dependencies (a cycle marks
-the cells on it with a "Circular reference" error rather than looping), then each
-is evaluated with `math::evaluate_scalar` against a `CellLookup` that slices
-`[Channel]` references to the row's lap window and resolves `{cell}` / `{col[]}`
-from already-computed cells. Only the small per-cell `CellResult { value, error }`
-grid crosses FFI (the §15.3 seam); a row's lap window `(t0, t1)` is supplied by
-the app from the lap cache. The **firewall**: `ChannelLookup::lookup_cell`
-defaults to "none", so channel math (the Maths editor) cannot see cells and the
-two namespaces never cross (§19).
-
-**Multi-session evaluation.** `table::evaluate_table_multi(handles, row_handles,
-table, row_windows, baseline_row)` is the substrate for rows that bind **different
-sessions**: each row resolves its `[Channel]` references against
-`handles[row_handles[r]]`, while cross-row `{cell}` / `{col[]}` references resolve
-from the global values map in a single pass exactly as before. `evaluate_table`
-is a single-handle convenience delegate. `baseline_row` (when set) is the row the
-`main({col[]})` aggregate reads from — it returns that column's value in the
-baseline (Main) row, or `NaN` when no baseline row is set, so a delta-vs-Main
-column is `{metric} - main({metric[]})`. This substrate backs both the live N-lap
-comparison table (§26.13) and cross-session table evaluation in the CLI.
-
-**Portability.** The `TableModel` (columns / rows / cells) is a serde-portable
-engine type with camelCase keys matching the Dart `toJson`; it persists inside
-the worksheet block in the `.idl0wb` and is the single artifact a headless caller
-(CLI / Python / WASM) reads to recompute a table — the same status math channels
-have. The widget edits the model; evaluation is always engine-side.
-
-### 26.12 Y-axis scale (shared)
-
-Every chart with a continuous Y axis — time-series, FFT magnitude, histogram
-count, lap progression — shares one `ChartSlot.yScale`: `linear` (default),
-`log`, `sqrtSigned`, or `squareSigned`, chosen from the **Y scale** control in
-the properties dialog. It replaces the former per-chart `fftYScale` and
-`histogramLogCount` (both migrate to `yScale: log` on load). GPS map and the lap
-table have no continuous Y and ignore it.
-
-- **Transforms.** A pure Dart module (`y_scale.dart`) maps real values to
-  display space and back. `log` is **signed log** (symlog): linear in a small
-  auto-sized band around zero, log in both tails — so it works on zero-crossing
-  data (velocity, acceleration) and reduces to plain log₁₀ on always-positive
-  data. `sqrtSigned` = `sign(y)·√|y|` (compresses spikes); `squareSigned` =
-  `sign(y)·y²` (emphasises them). All are monotonic and continuous through zero.
-- **Where it runs.** A display concern, not signal processing — applied in Dart
-  to the already-decimated spots (no engine round-trip; because the transforms
-  are monotonic the decimated min/max envelope is preserved). The symlog band is
-  sized from the chart's Y *range*, so the axis is stable across pan/zoom. Tick
-  labels are inverse-transformed back to real units; cursors and tooltips always
-  read real values.
-- **FFT / histogram `log`.** These keep their existing specialised `log`
-  rendering (decade-minor gridlines, count-axis floor); only `linear` / `sqrt` /
-  `square` route through the shared transform for them.
-- **v1.** Ticks are placed evenly in display space, so labels are correct
-  real-unit values but not necessarily round numbers; "nice" non-linear tick
-  placement is a deferred follow-up.
-
-### 26.13 N-Lap Comparison
-
-Compares the laps in the current lap-mode selection — up to ten, spanning
-multiple sessions — against a **Main** reference lap. Main defaults to the
-**fastest** selected lap (min lap time) and is overridable to any selected lap
-via `selectionProvider.setMainLap` (§13). The other selected laps are
-**overlays**, capped at **`kMaxOverlayLaps = 9`** (10 laps total; the bound keeps
-the chart legible and within the colour palette). `comparisonLapsProvider` derives
-the ordered set — Main first, then overlays by lap time ascending, with a
-"showing N of M" note when the selection exceeds the cap. This generalises the
-legacy two-lap Main/Overlay path (one overlay → up to nine, cross-session); that
-path is unchanged and coexists.
-
-**Comparison table.** A worksheet table block with `rowSource = lapSelection`
-(vs the default `authored`) derives one row per `comparisonLapsProvider` lap —
-Main first — live from the selection; only its columns, not its rows, persist. It
-evaluates through `table::evaluate_table_multi` (§26.11) with each row bound to its
-lap's session handle and `baseline_row = 0`, so a delta-vs-Main column reads
-`{metric} - main({metric[]})`.
-
-**Lap Variance chart** (`ChartType.varianceTrace`). Plots one per-sample delta
-line per overlay lap — `overlay − Main` at the matching position — with Main as
-the zero baseline, up to nine lines per channel. Deltas are computed in `idl-rs`
-by `variance::variance_traces(reference, targets, channel_id, mode)`, which builds
-the reference (Main) geometry once and reuses the `variance_time` / `variance_dist`
-core per target. `ChartSlot.varianceChannelIds` selects the channels;
-`ChartSlot.varianceMode` (`time` | `distance`) the alignment. Both modes match
-laps by **GPS position** — projecting each overlay lap's samples onto the Main
-lap's own GPS path (the same `variance_geom` projection the legacy two-lap variance
-uses), so laps of differing length still line up and **no Track or stored
-centerline is required**. **Time** resolves the matched Main value by the Main
-lap's elapsed time at that position; **Distance** by arc length along the path.
-Both require GPS (`GPS_Latitude` / `GPS_Longitude`) on the Main and overlay laps;
-the chart surfaces a typed inline message when GPS is missing.
-
-### 26.14 Scatter / G-G chart
-
-`ChartType.scatter` — one channel plotted against another, tuned so the **G-G
-diagram** is first-class: lateral acceleration on X, longitudinal on Y, each point
-the bike's combined-acceleration state at one instant, the cloud tracing the
-traction envelope. It serves any channel-vs-channel view (travel-vs-velocity,
-front-vs-rear travel) too.
-
-- **Engine.** Pairing, decimation, binning, and bound computation live in `idl-rs`
-  (`scatter::{scatter_points, scatter_density}`): two channels slice from the
-  retained handle over the resolved `[t0, t1]` window, pair index-aligned over their
-  common length (the same-rate G-G case is exact), and drop non-finite pairs. Only
-  the reduced result crosses FFI — a decimated cloud or a binned grid, never the raw
-  samples (the §15.3 seam). Each render is **one** `handle in → result out` call: the
-  engine returns the data extent it used, so equal-aspect squaring and density binning
-  never round-trip an axis bound back across the boundary.
-- **Modes** (`ScatterMode`). **Points** — a uniform-stride-decimated cloud
-  (`scatter_points`, capped at a few thousand spots), coloured by a solid
-  per-session colour or, when `scatterColorChannelId` is set, by a third channel
-  through the Turbo colormap. **Density** — a `scatterBinCount × scatterBinCount`
-  2D count heatmap (`scatter_density`) showing time-at-state, Turbo on count.
-- **Equal aspect & reference circles.** When `scatterEqualAspect`, the plot is square
-  at 1:1 data-units-per-pixel over a single shared range covering both axes (symmetric
-  about 0 for the straddle-zero G-G case), so a friction circle renders round. When
-  `scatterReferenceCircles`, concentric g-rings at 0.5-unit spacing plus a quadrant
-  cross at the origin are drawn behind the data. Both default on.
-- **Rendering.** A single `CustomPainter` owns the plot-area transform and draws every
-  layer — reference overlay, cloud or heatmap, axes, colour bar — through one
-  coordinate mapping (the spectrogram-chart pattern), so the rings, the points, and the
-  grid always agree. `fl_chart` is not used (its fill-the-box layout fights equal-aspect
-  and has no data-space circle primitive).
-- **Scope.** Reuses `ChartScope`: `auto` → the designated Main lap's window when one
-  resolves on the single rendered session, else the full session; `session` → always
-  full. A per-lap G-G falls out for free.
-- **Slot fields.** `scatterXChannelId` / `scatterYChannelId` (axis channels, base ∪
-  math), `scatterMode` (default `points`), `scatterColorChannelId` +
-  `scatterColorMin` / `scatterColorMax` (points colour-by; null ⇒ auto/solid),
-  `scatterEqualAspect` (default true), `scatterReferenceCircles` (default true),
-  `scatterBinCount` (default 64, clamped 8–256) — persisted on the slot, emitted to
-  JSON only for scatter slots.
+## 26. Tab — Notebook
+
+> **Status note (2026-09-05):** this section is L6's first draft, written
+> against `docs/superpowers/plans/2026-09-05-idl1-wave2-l6-notebook.md` and
+> ruling R52 (`runs/2026-09-03/decisions.md`) plus its follow-on rulings
+> R53 Data Q3, R62, R65, R66, R67, R69, R70, R72, R74. L10's cross-lane
+> consistency pass over the app-side SPEC parts runs after L7 also lands —
+> treat any file path or module name below as illustrative until then.
+
+A notebook is one `.idl1wb` file (C2), a flat sequence of cells in document
+order — idl0's worksheet/workbook-bar hierarchy is not carried forward (§26
+below's parity-gap table). The workbook is a file; the notebook tab is a
+live viewer of it (CLAUDE.md §3): editing a cell writes through to the
+document's markdown, and an external edit (another process, or a sync)
+reloads the same document by the file-watcher path (§26.5).
+
+### 26.1 Cell kinds and rendering
+
+Four kinds (C2 §2.1–§2.4): **prose**, `math`, `table`, `js`. Each is
+recognised by a narrow, non-authoritative TypeScript fence scan
+(`Notebook/model/cells.ts`, R52 Q3) that maps a cell's C2 fence-string id to
+a byte range in the document for editor addressing only — Rust
+(`idl_rs::workbook`) remains the sole evaluator; the scan never parses an
+expression, a table body, or JS.
+
+- **Prose** renders as Markdown-to-HTML plus its inline `${…}` splices (C2
+  §5.2), through `Notebook/components/ProseSpan.tsx`. Each `${…}` occurrence
+  is filled from the sandbox's own evaluation of that one expression
+  (`evalInline`/`inlineResult`, §26.4) — never evaluated on the host. Prose
+  has no fence id and is never independently selectable in the editor
+  (§26.2).
+- **`math`** cells hold one or more named definitions over C2 §3's 69-function
+  catalog; each definition's evaluated scalar/channel result and any
+  per-definition error render inline under the cell
+  (`Notebook/components/MathCell.tsx`) — this is idl0's `ExpressionPreview`
+  pane, reduced to living on the cell itself rather than a separate panel
+  (§26.6).
+- **`table`** cells render the engine's per-cell `CellResult { value, error }`
+  grid (`Notebook/components/TableCell.tsx`); the hybrid-grid cell-reference
+  grammar and its evaluation are unchanged from idl0's design (§26.11 in the
+  legacy Analyze section) and are entirely Rust-side.
+- **`js`** cells run inside the sandbox (§26.4) and render one of two ways.
+  A cell whose code round-trips through `plotForm.parse` (§26.2) has its
+  `marks[*].channel` (and lap scope) bound into `NotebookSession`
+  (`Notebook/host/NotebookSession.ts`, R66/R72) and mounts through
+  `Notebook/components/ChartCell.tsx` — the host-side gesture frame
+  (pan/zoom/hover, §26.3) around the sandbox's own rendered Plot output. A
+  cell whose code does not round-trip (custom code, or form-generated code
+  naming a channel the active session does not have) mounts as a plain
+  frame with no gesture handling
+  (`Notebook/components/JsCellFrame.tsx`) — reserving its last-reported
+  `cellRendered.heightPx` and otherwise inert.
+
+`Notebook/components/CellList.tsx` iterates the document's cells in order
+and wraps each kind's own rendered output — never the prose spans on either
+side of it — through an optional `frame` hook (`frame?: (cell, output) =>
+ReactNode`, ruling R74) so every cell kind, not only `js`, can be made
+selectable for the editor. `Notebook/index.tsx` supplies
+`Notebook/components/CellFrame.tsx` as that hook, uniformly, for every cell
+whose scan found an id.
+
+### 26.2 Editing surfaces — Properties and Code (design D13)
+
+Every chart cell's source of truth is its code (design §6). Two editing
+panes, assembled by `Notebook/components/EditorPanes.tsx` over one open
+cell at a time:
+
+- **Code** — CodeMirror 6, Markdown mode for prose, JS mode for `js` cells,
+  a hand-built math mode for `math`/`table`. Mounted for every kind.
+- **Properties** — a form (channels, lap/session scope, mark type, axes and
+  domains, colours, y-scale, units) mounted **only for `js` cells**. It
+  **generates** idiomatic Plot code (`Notebook/plotForm/generate.ts`,
+  `generate(props) → code`) and **parses back** the subset it generates plus
+  literal edits (`Notebook/plotForm/parse.ts`, `parse(code) → props | null`)
+  — a hand-rolled recursive-descent reader over a hand-rolled tokenizer,
+  never `eval`/`new Function`, never a whole-source regex, and never
+  throwing: a syntax error mid-edit simply parses to `null`.
+  `plotForm.generate`/`.parse` round-trip byte-identically over C2 §5.3's
+  worked examples and, exhaustively, over the whole closed grammar
+  (Task 3's generator-based test, §26.7's done-criterion 2).
+
+Both panes write through the same `replaceCellBody` call
+(`Notebook/model/cells.ts`) into the document's markdown, so an edit in
+either pane is visible in the other: Properties → `generate` → body; Code →
+debounced → `parse` → Properties repopulates from the parsed props, or
+greys.
+
+**The custom-code rule.** When a `js` cell's code does not `plotForm.parse`
+(returns `null`), the Properties pane greys to a *custom code* state with a
+*Reset to form* action that regenerates code from the last known props and
+warns that the custom code will be discarded if accepted. This is design
+§6's stated rule, verbatim, as Task 12 implemented it: code outside the
+closed grammar is a deliberate escape hatch (computed values, custom D3
+marks), not an error state.
+
+**The Properties↔Code loop guard.** Because both panes write the same
+underlying body, a write from one pane can echo back into the other as an
+apparent external change. `Notebook/model/editorEcho.ts`'s `isEditorEcho`
+recognises "this is the exact text I last wrote for this cell" and drops
+it rather than writing it through a second time; `CodePane`'s own
+external-sync check and `replaceCellBody`'s no-op-on-unchanged-text guard
+are both independent backstops against the same failure mode.
+
+Non-`js` cells (prose, `math`, `table`) show the Code pane only — there is
+no Properties surface for them in wave 2.
+
+### 26.3 Interaction rules and the point budget
+
+Restated from the plan's Performance budget as spec text — every rule below
+is grep-checkable in the diff and is a blocking review finding if violated
+(no IPC on the interaction path, CLAUDE.md §2):
+
+- **No IPC from a gesture handler.** No `invoke` call is reachable from a
+  pointer, wheel, touch or animation-frame handler. IPC runs only from a
+  settle callback, an explicit user action, or a mount effect.
+- **Hover reads the tile.** The hover readout reads the already-fetched
+  tile's per-pixel-column stats (`columnMin`/`columnMax`/`columnMean`/
+  `columnTUs`) out of the shared `TileCache`; the cursor readout IPC
+  (`cursor_readout`) fires only from the cursor's own settle debounce
+  (150 ms, ruling R62 — its own trigger, distinct from the viewport-settle
+  callback, which also refreshes it when the picture moves under a still
+  pointer), never per move.
+- **Zoom during a gesture is a transform.** A pinch/wheel frame updates a
+  CSS transform (`host/protocol.ts`'s `transform` message, sent host→sandbox
+  via `postMessage`, never IPC) applied to the sandbox's already-rendered
+  Plot; a tile fetch at the new tier happens once, on settle.
+- **Pan during a gesture is a translation.** Only newly exposed edge tile
+  indices are requested, and only on settle; prefetch runs on a
+  timer/lookahead, never from a gesture frame.
+- **Point budget.** A line mark receives at most 2 points per pixel column
+  per series (a pure, tested budget function); density views (spectrogram,
+  2-D histogram) are Rust rasters, never a JS point cloud.
+- **`eval_workbook` is debounced.** It runs on workbook open, on a
+  `watch_workbook` event, and on a debounced editor change — never per
+  keystroke, never per frame.
+- **Heavy arrays cross as bytes.** Every array reaching the sandbox
+  (a decoded channel's `t`/`v`) is two transferable `ArrayBuffer`s in
+  `postMessage`'s transfer list, never a JSON array of numbers.
+- **Rust = numbers, JS = pictures.** No decimation, filtering, FFT,
+  binning, statistics or unit conversion is implemented in TypeScript
+  anywhere in this tab. The only arithmetic this tab owns is layout:
+  pixel↔time mapping, tier choice, and cache keys.
+
+Every IPC- or `postMessage`-driving `useEffect` in this tab keys its
+dependency array on data only (never a function/callback prop), never
+cancels in-flight work from its cleanup, and decides "is this result still
+current" through a pure, tested driver (a monotonic sequence) rather than
+inline in the effect (wave-2 operating brief §4's process rule, added after
+repeated review Criticals against this exact failure mode).
+
+### 26.4 The sandbox boundary and the cell API
+
+`js` cells execute inside one origin-isolated `<iframe sandbox=
+"allow-scripts">` per open notebook (no `allow-same-origin`, so the
+sandbox's realm has no path to `window.__TAURI_INTERNALS__` even if cell
+code somehow reached for it — this is the actual security boundary, not a
+convention). The Runtime, Inspector, Plot, D3 and Inputs are bundled into
+the iframe's own build (no CDN — design §3). Host and iframe talk only
+`postMessage`, validated on receipt as untrusted input exactly like a
+server treats a request body (`Notebook/host/protocol.ts`'s
+`isHostMessage`).
+
+**Cell outputs render inside the sandbox, never the host DOM** (ruling
+R69). The sandbox owns a cell-output list keyed by cell id; the host never
+receives output HTML and never calls `dangerouslySetInnerHTML`. The
+sandbox reports back only `cellRendered { cellId, heightPx }` (so the host
+can size its own gesture-capturing frame around each output) and errors as
+plain text (`cellError`, or `spanError` for one inline `${…}` prose span —
+a distinct message type, ruling R66, not overloaded onto `cellError`'s
+`cellId` field). During a gesture the host posts `transform { cellId,
+translateXPx, scaleX }` per frame; on settle it sends fresh channel data
+the same way it always has.
+
+**The cell API** (design §6): `channel(name, { lap?, session? })`, `laps`,
+`session`, `constants`, `Plot`, `d3`, `Inputs`, `html` (C2 §5.1's six host
+variables; `html` needs the `htl` package, ruling R52 Q1). `channel()`
+returns **an array of `{ t, v }` records**, materialised inside the sandbox
+from the two transferred `Float64Array` buffers — not the originally
+proposed `{ length, t, v }` structure-of-arrays object (ruling R52 Q2:
+Plot's mark resolvers index a channel string per element, which a
+`{length, t, v}` object cannot support). C2 §5.3's grammar
+(`x: "t", y: "v"` as literal field-name strings) is unchanged; only the
+object `channel()` returns changed. The record count is budget-capped
+(§26.3's point budget), so this is a few thousand objects, not hundreds of
+thousands.
+
+**Rebuilds.** A watchdog pings the sandbox; a stalled cell (a runaway loop)
+gets the iframe torn down and rebuilt (`Notebook/host/SandboxHost.ts`).
+Every outbound message for the current iframe generation queues until that
+generation's own `ready` arrives (a generation-tagged outbound queue,
+`Notebook/host/outboundQueue.ts`), and a rebuild replays, in order, `init`
+→ every cached JSON host variable → every currently bound channel
+(re-derived from the shared `TileCache`, never re-fetched) → `setCells` —
+an order fixed by which of `sandbox/main.ts`'s handlers are no-ops before
+`init` has run. State loss on rebuild is the cost, and it is per-notebook,
+not per-app: the notebook's cells, their JSON host variables, and their
+bound channels survive; only derived, reactive state (an in-flight
+gesture's transform, a pending inline-span result) is lost.
+
+**Per-cell bound-channel registry.** `Notebook/host/NotebookSession.ts`
+holds every channel a `js` cell currently has bound, as a list per cell id
+(ruling R72: a multi-mark cell binds every one of its channels, not only
+the first, so a settle refetch or a rebuild restores all of them). A single
+monotonic run-sequence counter per cell
+(`Notebook/model/cellRunSequencer.ts`) is shared between a cell's initial
+bind and every later settle-triggered refetch, so whichever run started
+most recently always wins when two overlap — resolve order, not start
+order, would otherwise let a slow initial fetch overwrite a faster
+settle's fresher state.
+
+**Inline `${…}` reactivity (known limitation).** Inline prose spans
+re-evaluate on every cell-set/markdown change, not on the Observable
+Runtime's own reactive re-run graph — acceptable for wave 2, and named here
+per the plan's own Task 16 note; true reactivity is a later-wave item.
+
+**Interim prose-HTML seam.** Ruling R70 gives prose HTML two additive
+fields on `CellOutput` (`prose_before_html`/`prose_after_html`) plus a
+`prose_spans: { id, expr }[]` list from Rust's own `${…}` scanner
+(`workbook/v3/js_cell.rs::find_inline_exprs`). As of this section's
+writing that Rust-side change has not landed on `main`; the notebook tab
+still uses its own interim TypeScript regex scanner
+(`Notebook/components/ProseSpan.tsx`'s `extractInlineSpans`), which is
+known to number spans differently from the Rust scanner inside inline
+code. This is a deliberately temporary duplicate, to be deleted the moment
+`prose_spans` exists on the wire (§26.7).
+
+### 26.5 Conflicts and save
+
+`save_workbook(id, markdown, based_on_hash)` fails with the `conflict`
+kind (C3 §2) when the file changed on disk since this document's hash was
+last read. `Notebook/components/ConflictBanner.tsx` offers two coarse
+resolutions — **Reload from disk** (discards local edits, with an explicit
+confirmation since this is destructive) and **Overwrite** (re-reads disk's
+current content, re-applies local edits on top, and saves again with the
+freshly read hash). Both are a deliberately coarse stand-in: the real
+per-cell merge C4 §4 names as the eventual answer is L11's job, not this
+tab's — stated here so a reader is not left thinking wave 2 ships
+conflict-free collaborative editing.
+
+### 26.6 What idl0 had that this tab does not carry (parity gaps)
+
+Every idl0 Analyze/Maths feature this wave does not deliver, with the
+reason. Silence is not deferral (wave-2 operating brief §2). Source:
+`idl0-app/app/lib/ui/tabs/analyze/` and `.../maths/`.
+
+**Delivered in wave 2:** time-series line charts (multi-channel, colours,
+manual/auto y domain, log/sqrt y scale, lap scope), spectrogram, 2-D
+density heatmap (the scatter chart's density mode), hover readout, cursor
+readout, pan/zoom, table cells, math cells with the full 69-function
+catalog, per-cell errors, live file reload, save with conflict detection.
+
+| idl0 feature | Status | Reason |
+|---|---|---|
+| **FFT chart** | Deferred, blocked on IPC | No 1-D FFT endpoint exists (C3 §3.6 has only 2-D rasters); a magnitude spectrum is numbers, so CLAUDE.md §2 forbids computing it in TypeScript. Filed as IPC need N5 (§26.7). |
+| **1-D histogram chart** | Deferred, blocked on IPC | Same rule: binning is numbers. C3 §3.6 has only the 2-D `histogram2d` raster. Filed as IPC need N6, deferred to a later wave — genuinely new engine code, unlike N5's thin wrapper. |
+| **Scatter — point-cloud mode** | Deferred | Density mode is delivered via `fetch_raster`'s `histogram2d`. Point-cloud mode needs a time-aligned paired-sample endpoint C3 does not have (IPC need N7, marked for a later wave). |
+| **GPS map chart with basemap tiles** | Deferred, needs a product ruling | "Offline-first means bundled. No CDN, ever" (design §3) forbids a tile server outright. A plain GPS polyline with no basemap is expressible today as a custom `js` cell. Escalated to Isaac as a product call (ruling R52 Q8), non-blocking. |
+| **Lap table's Main/Overlay designation** | Partly delivered | The table data itself is a `table` cell and renders. The lap-scoping designation that would drive it has no v3 home: `eval_workbook` has no lap-context argument in the landed command (IPC need N4, ruling R52 Q5 — proposed, not yet implemented as of this writing; see `Notebook/index.tsx`'s own `TODO(idl0)` at the read site). |
+| **Lap progression chart, variance trace chart** | Not carried / deferred | `lapProgression` is outside C2 §6's `plotForm` grammar entirely (authorable as a custom `js` cell from `list_laps`). The variance functions exist in the math catalog but read the same missing lap context as the lap table — same N4 blocker. |
+| **X-axis modes (`wheelDistance`, `gpsDistance`)** | Not carried | C2 §6 drops `xAxisMode` explicitly; `plotForm`'s `x` is always `"t"`. Widening the grammar is a contract change, not a UI decision. |
+| **Worksheets, per-sheet x-axis mode, workbook-bar tabs** | Not carried | A `.idl1wb` is one flat cell sequence, read in document order — v3 has no worksheet concept. |
+| **`heightFactor`, `showZeroLine`, chart `title`, `scope: session`** | Not carried | No `plotForm` grammar slot exists for any of them; a zero line or a title is one line of custom `js`. |
+| **`yScale: sqrtSigned` / `squareSigned`** | Not carried | C2 §6 maps both to plain `linear`; the grammar's `y.type` enum is `linear\|log\|sqrt`. |
+| **Maths chip-expression editor, function insert/help panels** | Superseded / reduced | Superseded by D13's two editing surfaces (Properties, Code); CodeMirror completion over the 69-function catalog (a hand-copied TS table, tracked note 2026-09-05) replaces the browsable panel. |
+| **Math channel metadata bar (quantity, units, rate, decimal places, colour)** | Not carried | C2 §6 drops all four; the surviving affordance is C2 §3.1's `# label:` display name. Colour moves to the mark's `stroke`. |
+| **Unit inference / `MathQuantity.defaultUnit`** | Reduced to a label suggestion | The Properties form suggests an axis label as `"<label> (<unit>)"` from C1's per-channel `unit` string (`get_session`'s `SessionDetail.channels[].unit`, ruling R65) — no TS quantity→unit conversion table; unit conversion is a number and stays the engine's. |
+| **Expression live preview** | Reduced | Each math definition's result and per-definition error render inline under the cell (§26.1) rather than in a dedicated preview pane. |
+| **Workbook Drive sync settings** | Not carried | Superseded by LAN sync (L11); Google Drive is not on the idl1 line. |
+| **Per-axis vertical zoom, chart context menu** | Deferred | Zoom is uniform in wave 2; per-axis vertical zoom is an interaction refinement for a later wave. |
+| **Workbook migration Stage 2** (v2 `.idl0wb` → `plotForm.generate`) | Deferred | Ruling R30 dropped workbook migration from wave 1; no migrated file exists to convert yet. |
+| **Mobile paper view** | Not carried by this lane | Design §6 assigns it to a mobile lane; this tab builds the components it will render. |
+
+### 26.7 IPC needs this tab is standing on
+
+Filed in full, with proposed contract text and landed-vs-stubbed status, in
+`runs/2026-09-05/lanes/l6/IPC-NEEDS.md` and
+`runs/2026-09-05/lanes/l6/CONTRACT-AMENDMENTS.md`. In one line each: **N1**
+`read_workbook` (still a stub in this tab as of this writing —
+`Notebook/ipcStubs/readWorkbook.ts` — the hard blocker that made Tasks 13–14
+possible only against a stub); **N3** the host-channel byte path
+(`fetch_host_channel`, magic `IDLH`) — this tab's own math→JS binding has no
+call site at all yet, stub or otherwise; **N4** `eval_workbook`'s additive
+`lap_context` argument (§26.6); **N5**/**N6** FFT and 1-D histogram
+(§26.6); **N8** `create_workbook`. Design §10's L6 done-criterion
+"`plotForm` round-trips its subset" is checked by Task 3's exhaustive test,
+part of this lane's gate; the companion criterion, "pan/zoom/hover on a
+real session at 60 fps desktop," is observed in the running dev app at the
+lead's merge-gate eyeball pass, not inferred from this tab's unit tests
+alone (the L5 lesson, ruling R50).
 
 ---
 

@@ -1,0 +1,18 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <!--
+      The origin-isolated iframe document for the notebook's `js` cells
+      (design §6). Loaded only as the `srcdoc`/`src` of a
+      `<iframe sandbox="allow-scripts">` built by `../host/SandboxHost.ts` —
+      never navigated to directly, never granted `allow-same-origin`. All
+      script here runs in a separate realm from the host app and has no
+      access to `window.__TAURI_INTERNALS__`.
+    -->
+    <title>idl1 notebook sandbox</title>
+  </head>
+  <body>
+    <script type="module" src="./main.ts"></script>
+  </body>
+</html>
