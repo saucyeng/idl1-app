@@ -163,3 +163,27 @@ describe("deleteSession", () => {
     expect(invoke).toHaveBeenCalledWith("delete_session", { sessionId: "s1", deleteBlob: true });
   });
 });
+
+describe("rescanTracks", () => {
+  it("rescan_tracks resolves — calls invoke with the session id and returns the report unchanged", async () => {
+    // Arrange
+    const { invoke } = await import("@tauri-apps/api/core");
+    const report = {
+      session_id: "s1",
+      visits_indexed: 1,
+      laps_indexed: 3,
+      flags_cleared: [],
+      warnings: [],
+      elapsed_ms: 12,
+    };
+    (invoke as ReturnType<typeof vi.fn>).mockResolvedValue(report);
+    const { rescanTracks } = await import("./catalog");
+
+    // Act
+    const result = await rescanTracks("s1");
+
+    // Assert
+    expect(result).toBe(report);
+    expect(invoke).toHaveBeenCalledWith("rescan_tracks", { sessionId: "s1" });
+  });
+});
