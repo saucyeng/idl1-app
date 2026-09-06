@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
 
-import { channelPayload, evalInlineMessage, isHostMessage, layoutMessage, transformMessage, type HostVarPayload } from "./protocol";
+import { channelPayload, evalInlineMessage, isHostMessage, layoutMessage, spectrumPayload, transformMessage, type HostVarPayload } from "./protocol";
 
 describe("isHostMessage", () => {
   test("isHostMessage — every message the sandbox may send — is accepted", () => {
@@ -69,6 +69,45 @@ describe("channelPayload", () => {
     expect(vRoundTripped[0]).toBe(10.1);
     expect(vRoundTripped[1]).toBe(-2.5);
     expect(Number.isNaN(vRoundTripped[2])).toBe(true);
+  });
+});
+
+describe("spectrumPayload", () => {
+  test("spectrumPayload — a decoded spectrum — puts both buffers in the transfer list exactly once", () => {
+    const f = new ArrayBuffer(8);
+    const m = new ArrayBuffer(8);
+
+    const { message, transfer } = spectrumPayload("fork_travel_fft", 1, f, m);
+
+    expect(transfer).toHaveLength(2);
+    expect(transfer.filter((b) => b === f)).toHaveLength(1);
+    expect(transfer.filter((b) => b === m)).toHaveLength(1);
+    expect(message).toEqual({
+      type: "setHostVar",
+      name: "fork_travel_fft",
+      value: { kind: "spectrum", length: 1, f, m },
+    });
+  });
+
+  // Same byte-for-byte proof as `channelPayload`'s own Float64Array
+  // round-trip test, and for the same reason: `sandbox/main.ts`'s
+  // `materializeHostVar` unconditionally does `new
+  // Float64Array(payload.f)`/`new Float64Array(payload.m)` on receipt, so a
+  // narrower host-side element type would silently corrupt every value.
+  test("spectrumPayload — f/m built as Float64Array — survive the sandbox's Float64Array reinterpretation bit-for-bit", () => {
+    const fSource = new Float64Array([0, 1000, 2000]);
+    const mSource = new Float64Array([10.1, -2.5, NaN]);
+
+    const { message } = spectrumPayload("fork_travel_fft", 3, fSource.buffer, mSource.buffer);
+
+    const payload = message.value as Extract<HostVarPayload, { kind: "spectrum" }>;
+    const fRoundTripped = new Float64Array(payload.f);
+    const mRoundTripped = new Float64Array(payload.m);
+
+    expect(Array.from(fRoundTripped)).toEqual([0, 1000, 2000]);
+    expect(mRoundTripped[0]).toBe(10.1);
+    expect(mRoundTripped[1]).toBe(-2.5);
+    expect(Number.isNaN(mRoundTripped[2])).toBe(true);
   });
 });
 

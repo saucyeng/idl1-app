@@ -11,11 +11,19 @@
  * scalar/object (`laps`, `session`, `constants`, per C2 §5.1) is wrapped as
  * `{ kind: "json" }`; a decoded channel travels as two `ArrayBuffer`s in
  * `postMessage`'s transfer list rather than as a copied JSON array of
- * numbers (performance budget P7).
+ * numbers (performance budget P7). A decoded FFT spectrum (L6 Task 19) is
+ * its own sibling arm rather than reusing `"channel"`'s `{ t, v }` shape:
+ * its axis is frequency, not time, so silently relabelling `t` as Hz would
+ * be the wrong unit under the right name. `f` (Hz) and `m` (magnitude) are
+ * the raw bytes backing a **`Float64Array`** on each end, same convention
+ * as `"channel"`'s `t`/`v` -- `sandbox/main.ts`'s `materializeHostVar` does
+ * `new Float64Array(payload.f)`/`new Float64Array(payload.m)`
+ * unconditionally on receipt.
  */
 export type HostVarPayload =
   | { kind: "json"; value: unknown }
-  | { kind: "channel"; length: number; t: ArrayBuffer; v: ArrayBuffer };
+  | { kind: "channel"; length: number; t: ArrayBuffer; v: ArrayBuffer }
+  | { kind: "spectrum"; length: number; f: ArrayBuffer; m: ArrayBuffer };
 
 /** One cell as the host hands it to the sandbox for (re)definition. */
 export interface SandboxCell {
@@ -166,5 +174,30 @@ export function channelPayload(
       value: { kind: "channel", length, t, v },
     },
     transfer: [t, v],
+  };
+}
+
+/**
+ * Builds a `setHostVar` message for a decoded FFT spectrum (L6 Task 19; C2
+ * §5.3) plus its transfer list, mirroring {@link channelPayload} exactly
+ * except for the axis: `f` (Hz, built from `model/fftRequest.ts`'s
+ * `frequencyAxisHz`) and `m` (magnitude, `DecodedFft.magnitudes` widened
+ * from `Float32Array` to `Float64Array`) rather than `t`/`v`. `f`/`m` must
+ * not be read again by the caller after this call -- they are neutered once
+ * transferred.
+ */
+export function spectrumPayload(
+  name: string,
+  length: number,
+  f: ArrayBuffer,
+  m: ArrayBuffer
+): { message: { type: "setHostVar"; name: string; value: HostVarPayload }; transfer: Transferable[] } {
+  return {
+    message: {
+      type: "setHostVar",
+      name,
+      value: { kind: "spectrum", length, f, m },
+    },
+    transfer: [f, m],
   };
 }

@@ -20,6 +20,13 @@
  * two `ArrayBuffer`s are detached once transferred and cannot be replayed
  * verbatim from a cached copy; `SandboxHost.onChannelsInvalidated()` asks
  * the caller to re-derive and re-send those instead (`model/channelRebind.ts`).
+ * A `{kind:"spectrum"}` payload (L6 Task 19) is excluded for the identical
+ * reason and belongs in the same category as channels, not JSON host vars:
+ * `SandboxHost.setSpectrumHostVar()` posts directly and is never routed
+ * through the JSON-caching `setHostVar()` this file replays, so there is
+ * nothing here for this module to special-case — the exclusion is
+ * structural. The caller retains the decoded spectrum itself and re-pushes
+ * it after a rebuild (L6 Task 20).
  */
 import type { HostToSandboxMessage, SandboxCell } from "./protocol";
 

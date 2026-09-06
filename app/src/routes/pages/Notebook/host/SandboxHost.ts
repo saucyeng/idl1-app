@@ -9,6 +9,7 @@ import {
   evalInlineMessage,
   isHostMessage,
   layoutMessage,
+  spectrumPayload,
   transformMessage,
   type HostToSandboxMessage,
   type HostVarPayload,
@@ -213,6 +214,22 @@ export class SandboxHost {
    */
   setChannelHostVar(name: string, length: number, t: ArrayBuffer, v: ArrayBuffer): void {
     const { message, transfer } = channelPayload(name, length, t, v);
+    this.postToSandbox(message, transfer);
+  }
+
+  /**
+   * Binds a decoded FFT spectrum as a host variable (L6 Task 19; C2 §5.3).
+   * Same transfer-list mechanics as {@link setChannelHostVar} -- the two
+   * buffers are moved (not copied) via `postMessage`'s transfer list (P7);
+   * the caller must not read `f`/`m` again after this call. Not cached for
+   * rebuild replay, exactly like {@link setChannelHostVar}: a spectrum's
+   * buffers are detached once transferred and cannot be replayed verbatim
+   * from a stored copy, so it belongs with channels in `rebuildReplay.ts`'s
+   * reasoning (re-derived/re-pushed by the caller), never with the cached
+   * JSON host vars `setHostVar` retains.
+   */
+  setSpectrumHostVar(name: string, length: number, f: ArrayBuffer, m: ArrayBuffer): void {
+    const { message, transfer } = spectrumPayload(name, length, f, m);
     this.postToSandbox(message, transfer);
   }
 

@@ -64,18 +64,31 @@ function renderCellValue(container: HTMLElement, value: unknown): void {
  * records (R52 Q2 — chosen over the SoA `{length, t, v}` shape C2 §5.1
  * originally proposed, pending that spec's own amendment) rather than the
  * raw `Float64Array` views, since record objects are what Observable Plot's
- * tabular-data protocol iterates.
+ * tabular-data protocol iterates. A `spectrum` payload (L6 Task 19) is the
+ * same record-array shape over its own two buffers, `{f, m}` (frequency Hz,
+ * magnitude) rather than `{t, v}` — a spectrum's axis is frequency, never
+ * time.
  */
 function materializeHostVar(payload: HostVarPayload): unknown {
   if (payload.kind === "json") {
     return payload.value;
   }
 
-  const t = new Float64Array(payload.t);
-  const v = new Float64Array(payload.v);
-  const records = new Array<{ t: number; v: number }>(payload.length);
+  if (payload.kind === "channel") {
+    const t = new Float64Array(payload.t);
+    const v = new Float64Array(payload.v);
+    const records = new Array<{ t: number; v: number }>(payload.length);
+    for (let i = 0; i < payload.length; i++) {
+      records[i] = { t: t[i], v: v[i] };
+    }
+    return records;
+  }
+
+  const f = new Float64Array(payload.f);
+  const m = new Float64Array(payload.m);
+  const records = new Array<{ f: number; m: number }>(payload.length);
   for (let i = 0; i < payload.length; i++) {
-    records[i] = { t: t[i], v: v[i] };
+    records[i] = { f: f[i], m: m[i] };
   }
   return records;
 }

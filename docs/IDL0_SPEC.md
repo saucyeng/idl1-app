@@ -3242,7 +3242,7 @@ catalog, per-cell errors, live file reload, save with conflict detection.
 
 | idl0 feature | Status | Reason |
 |---|---|---|
-| **FFT chart** | Deferred, blocked on IPC | No 1-D FFT endpoint exists (C3 §3.6 has only 2-D rasters); a magnitude spectrum is numbers, so CLAUDE.md §2 forbids computing it in TypeScript. Filed as IPC need N5 (§26.7). |
+| **FFT chart** | Contracted (C2 §5.3, R79); shipping in L6 Tasks 19–20 | `fetch_fft` landed (C3 §3.6, N5 below) and L6 Task 19 built the pure request/driver plumbing and the `{kind:"spectrum"}` sandbox host-variable payload over it (this commit). The grammar production and Properties panel that let a document actually author an FFT cell are ruling R78's separate **L6 Task 20** — until that lands, no cell in the document can request a spectrum. |
 | **1-D histogram chart** | Deferred, blocked on IPC | Same rule: binning is numbers. C3 §3.6 has only the 2-D `histogram2d` raster. Filed as IPC need N6, deferred to a later wave — genuinely new engine code, unlike N5's thin wrapper. |
 | **Scatter — point-cloud mode** | Deferred | Density mode is delivered via `fetch_raster`'s `histogram2d`. Point-cloud mode needs a time-aligned paired-sample endpoint C3 does not have (IPC need N7, marked for a later wave). |
 | **GPS map chart with basemap tiles** | Deferred, needs a product ruling | "Offline-first means bundled. No CDN, ever" (design §3) forbids a tile server outright. A plain GPS polyline with no basemap is expressible today as a custom `js` cell. Escalated to Isaac as a product call (ruling R52 Q8), non-blocking. |
@@ -3275,8 +3275,13 @@ cell naming a workbook `math` definition binds and fetches through it via
 decoder (§26.1, §26.4); open, named in §26.1, is that the command's lack of
 a time window means a definition-bound cell cannot resolve a sub-range on
 zoom; **N4** `eval_workbook`'s additive
-`lap_context` argument (§26.6); **N5**/**N6** FFT and 1-D histogram
-(§26.6); **N8** `create_workbook`. Design §10's L6 done-criterion
+`lap_context` argument (§26.6); **N5** FFT — landed at the wire (`fetch_fft`,
+C3 §3.6, ruling R63 (3)); `app/src/ipc/rasters.ts` wraps and decodes it
+(`fetchFft`/`decodeFft`, `IDLF`), and L6 Task 19 built the pure request/
+driver layer and the spectrum host-variable payload over that wrapper (this
+commit) — the grammar and Properties panel that let a document author an
+FFT cell are L6 Task 20 (§26.6); **N6** 1-D histogram, still unlanded,
+deferred to a later wave (§26.6); **N8** `create_workbook`. Design §10's L6 done-criterion
 "`plotForm` round-trips its subset" is checked by Task 3's exhaustive test,
 part of this lane's gate; the companion criterion, "pan/zoom/hover on a
 real session at 60 fps desktop," is observed in the running dev app at the
