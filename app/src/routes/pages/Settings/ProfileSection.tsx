@@ -11,6 +11,12 @@ const RIDER_NAME_DEBOUNCE_MS = 500;
 export interface ProfileSectionProps {
   /** The prefs store this section reads from and writes to. */
   store: PrefsStore;
+  /** A one-line status message about the one-time `localStorage` →
+   *  `settings.json` migration (R78 L7c Task 8, Q3), or `null` when there is
+   *  nothing to say. Owned by `index.tsx`, which runs the migration once for
+   *  the whole tab and knows whether `rider_name` was the field imported (or
+   *  the import failed). */
+  migrationNotice?: string | null;
 }
 
 /** The Profile section: the rider-name field, idl0's "Profile" screen
@@ -23,7 +29,7 @@ export interface ProfileSectionProps {
  * initial value is seeded in an effect rather than read synchronously at
  * render time — the field starts blank for one paint while that read is in
  * flight. */
-export default function ProfileSection({ store }: ProfileSectionProps) {
+export default function ProfileSection({ store, migrationNotice = null }: ProfileSectionProps) {
   const [riderName, setRiderName] = useState<string>("");
   const [writeFailed, setWriteFailed] = useState<boolean>(false);
   const timerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
@@ -74,8 +80,13 @@ export default function ProfileSection({ store }: ProfileSectionProps) {
         Pre-filled into new sessions.
       </p>
       {writeFailed ? (
-        <p className="idl1-settings__hint idl1-settings__hint--error">
+        <p role="status" className="idl1-settings__hint idl1-settings__hint--error">
           Your rider name could not be saved to this device. It will keep showing until you leave this screen.
+        </p>
+      ) : null}
+      {migrationNotice !== null ? (
+        <p role="status" className="idl1-settings__hint">
+          {migrationNotice}
         </p>
       ) : null}
     </div>

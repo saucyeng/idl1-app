@@ -1,36 +1,115 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 import "./settings.css";
 import AboutSection from "./AboutSection";
 import ControlsSection from "./ControlsSection";
 import DataSection from "./DataSection";
 import HowTosSection from "./HowTosSection";
+import { MIGRATION_FLAG_KEY, runPrefsMigration, type MigrationOutcome } from "./prefsMigration";
 import ProfileSection from "./ProfileSection";
-import { localStorageBackend, createPrefsStore } from "./prefsStore";
+import { createPrefsStore, localStorageBackend } from "./prefsStore";
 import { SECTIONS, defaultSectionId, sectionById } from "./sections";
+import { settingsBackend } from "./settingsBackend";
 import SyncSection from "./SyncSection";
 import UnitsSection from "./UnitsSection";
+import { getSettings, setSettings } from "../../../ipc/app";
 import { useAppState } from "../../../state/AppState";
 
+/** The `ui` half's own storage. Shared between {@link prefsStore}'s
+ *  `settingsBackend` and the one-time migration below so both act on the
+ *  same `localStorage` document (R78 L7c Task 8). */
+const localHalf = localStorageBackend();
+
 /** The single {@link PrefsStore} instance every Settings section reads from
- *  and writes to, over the real `localStorage` (R53 Q1) — one store per
- *  page load, shared across sections rather than re-read per section, so a
- *  write from one section is visible to another without a round trip. */
-const prefsStore = createPrefsStore(localStorageBackend());
+ *  and writes to. The `engine` half (`rider_name`, `unit_system`) round-trips
+ *  through `get_settings`/`set_settings` (C3 §3.10); the `ui` half stays in
+ *  `localStorage` (R78 L7c Task 8, R53 Settings Q1/Q2 — SPEC §27.1). */
+const prefsStore = createPrefsStore(settingsBackend({ getSettings, setSettings, local: localHalf }));
+
+/** Reads whether the one-time `localStorage` → `settings.json` import has
+ *  already run on this machine. Wrapped in try/catch — a WebView can refuse
+ *  storage, in which case the migration simply runs again next launch,
+ *  which is harmless (`settings.json` wins on conflict). */
+function readMigrationFlag(): boolean {
+  try {
+    return window.localStorage.getItem(MIGRATION_FLAG_KEY) === "true";
+  } catch {
+    return false;
+  }
+}
+
+/** Marks the migration done. See {@link readMigrationFlag} for the failure
+ *  mode this also tolerates. */
+function writeMigrationFlag(): void {
+  try {
+    window.localStorage.setItem(MIGRATION_FLAG_KEY, "true");
+  } catch {
+    // Best-effort — see readMigrationFlag.
+  }
+}
+
+/** Bumped on every mount of {@link Settings}. A migration result is applied
+ *  only if this still matches the generation captured at the start of the
+ *  effect that requested it — a result arriving after unmount (and a later
+ *  remount) is dropped by comparing generations, never by cancelling
+ *  in-flight work from the effect's cleanup (wave-2 operating brief §4). */
+let migrationGeneration = 0;
+
+/** Turns a {@link MigrationOutcome} into the two field-specific notices shown
+ *  in {@link ProfileSection} and {@link UnitsSection} (R78 L7c Task 8, Q3): a
+ *  failure is shown in both (either field could have been the one that
+ *  needed importing), a success names only the field it actually imported. */
+function describeMigrationNotices(outcome: MigrationOutcome | null): { profile: string | null; units: string | null } {
+  if (outcome === null) {
+    return { profile: null, units: null };
+  }
+  if (outcome.kind === "failed") {
+    const message = "A saved setting from this browser could not be copied to the settings file. It will be retried next time you open the app.";
+    return { profile: message, units: message };
+  }
+  if (outcome.kind === "migrated") {
+    return {
+      profile: outcome.imported.rider_name !== undefined ? "Your rider name was carried over from this browser's saved settings." : null,
+      units: outcome.imported.unit_system !== undefined ? "Your unit system was carried over from this browser's saved settings." : null,
+    };
+  }
+  return { profile: null, units: null };
+}
 
 /** The Settings tab: a section list plus a detail pane.
  *
  * Task 1 built the shell with every section as a placeholder. Task 3 fills
  * in Profile and Units; Task 4 fills in Data directory; Task 5 fills in
- * Sync; Task 6 fills in Chart controls, How-tos and About. Layout switches
- * from a two-pane list-plus-detail view to one stacked scroll view via a CSS
- * media query (`settings.css`), not by measuring the viewport in
+ * Sync; Task 6 fills in Chart controls, How-tos and About. Task 8 swaps the
+ * `engine` half of {@link prefsStore} onto `settings.json` and runs the
+ * one-time `localStorage` import once per mount (R78 L7c Task 8). Layout
+ * switches from a two-pane list-plus-detail view to one stacked scroll view
+ * via a CSS media query (`settings.css`), not by measuring the viewport in
  * JavaScript. */
 export default function Settings() {
   const [selectedId, setSelectedId] = useState<string>(defaultSectionId);
   const [appState] = useAppState();
+  const [migrationOutcome, setMigrationOutcome] = useState<MigrationOutcome | null>(null);
+
+  useEffect(() => {
+    const generation = ++migrationGeneration;
+    void runPrefsMigration({
+      isMigrated: readMigrationFlag,
+      markMigrated: writeMigrationFlag,
+      readLocal: () => localHalf.read(),
+      writeLocal: (text) => localHalf.write(text),
+      getSettings,
+      setSettings,
+    }).then((outcome) => {
+      if (generation !== migrationGeneration) {
+        return; // superseded by a later mount; drop rather than apply
+      }
+      setMigrationOutcome(outcome);
+    });
+  }, []);
 
   const selected = sectionById(selectedId) ?? SECTIONS[0];
+  const migrationNotices = describeMigrationNotices(migrationOutcome);
 
   return (
     <div className="idl1-settings">
@@ -54,9 +133,9 @@ export default function Settings() {
         <h2>{selected.label}</h2>
         <p>{selected.description}</p>
         {selected.id === "profile" ? (
-          <ProfileSection store={prefsStore} />
+          <ProfileSection store={prefsStore} migrationNotice={migrationNotices.profile} />
         ) : selected.id === "units" ? (
-          <UnitsSection store={prefsStore} />
+          <UnitsSection store={prefsStore} migrationNotice={migrationNotices.units} />
         ) : selected.id === "data" ? (
           <DataSection store={prefsStore} />
         ) : selected.id === "sync" ? (

@@ -3263,7 +3263,7 @@ into an engine half and a UI-only half:
 
 | Field | Type | Default | Notes |
 |-------|------|---------|-------|
-| `engine.data_dir` | `string \| null` | `null` | C4 §1's `<data>` override. `null` = platform default. Mirrors `settings.json`'s `data_dir`. |
+| `engine.data_dir` | `string \| null` | `null` | C4 §1's `<data>` override. `null` = platform default. Read from `get_settings`; written only by `setDataDir`/`set_data_dir` — `set_settings` ignores this field on its argument (ruling R59 Q5). |
 | `engine.rider_name` | `string` | `""` | `""` = not set (C4 §1 — there is no `null` representation for this field). |
 | `engine.unit_system` | `"imperial" \| "metric"` | `"imperial"` | An unrecognised value (e.g. from a corrupt document) falls back to `"imperial"`, never throws. |
 | `ui.last_section` | `string` | `"profile"` | Which Settings section the tab reopens on. Never reaches the engine. |
@@ -3279,19 +3279,34 @@ and firmware (`firmwareChannel`, `autoCheckFirmware`) fields have no idl1
 counterpart here: Drive sync is dropped permanently (replaced by LAN sync,
 §27.4) and firmware/OTA is deferred to wave 3 (not persisted yet).
 
-**Where it lives in wave 2 — `localStorage`, not `settings.json`.**
-`rust/core/src/store/settings.rs` already loads and saves
-`app_config_dir()/settings.json` with exactly `engine`'s three keys (C4 §1),
-but no C3 command exposes it yet (C3 is frozen for UI lanes during wave 2).
-So for now the whole `Prefs` document — both halves — is kept in the
-WebView's own `localStorage` on the machine, behind the `PrefsBackend`
-interface (`prefsStore.ts`): it does not sync across devices and does not
-reach `settings.json`. `get_settings`/`set_settings` (IPC need 6, filed in
-`runs/2026-09-05/lanes/l7/IPC-NEEDS.md`) is the command that closes this
-gap; when it lands, the swap is a one-time import of the `localStorage`
-keys into `settings.json` (so nothing already saved is silently lost),
-after which only the `engine` half round-trips through the command and
-`ui` stays local.
+**Where it lives (L7c Task 8, R77.4/R78) — `engine` in `settings.json`, `ui`
+in `localStorage`.** `Settings/settingsBackend.ts` implements `PrefsBackend`
+over `get_settings`/`set_settings` (C3 §3.10): `read()` merges the `engine`
+half from `get_settings` with the `ui` half from `localStorage` into the one
+document shape `parsePrefs` already understands, and `write()` splits it back
+— `rider_name`/`unit_system` go to `set_settings`, the whole document
+(including `ui` and any preserved unknown keys) is also kept in `localStorage`
+so a `get_settings` outage degrades to the last known values rather than to
+defaults. `engine.data_dir` is read from `get_settings` but never written
+through `set_settings`, which ignores that field on its argument (ruling R59
+Q5) — `setDataDir` is that key's sole writer; `settingsBackend.write()` echoes
+back whatever `read()` last saw for it rather than inventing `null`. `ui`
+stays in `localStorage` unchanged (R78 Q2): it never reaches the engine and
+losing it (a cleared WebView) is a non-event.
+
+`Settings/prefsMigration.ts` runs a one-time import, at app start, of
+whatever `engine` fields an existing `localStorage` document holds into
+`settings.json`, then removes just that half from the `localStorage`
+document (`ui` and any unknown keys stay) — guarded by a
+`localStorage`-held flag so it runs at most once per machine. `settings.json`
+wins on conflict (R78 Q1): only fields still at their engine default on disk
+are imported, since a non-default value there was set deliberately (by this
+app or another `set_settings` caller) and a stale browser copy must not
+silently overwrite it. `data_dir` is never touched by the migration. A failed
+`set_settings` call during migration does not set the flag, so the import
+retries on the next launch; a failed migration and a failed engine-field
+write are both shown as a `role="status"` line in the affected section
+(`ProfileSection`/`UnitsSection`, R78 Q3) rather than a console log.
 
 `parsePrefs`/`serializePrefs` are lenient: an unreadable or partial
 document yields defaults for the keys it cannot supply, and unknown keys
