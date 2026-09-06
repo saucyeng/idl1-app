@@ -112,6 +112,11 @@ superseding form.
 - Multi-overlay math: `overlay: Vec<MathOverlay>`, `variance_*` fold = elementwise NaN-aware mean (fresh decision; idl0 had one overlay). R73 closed
 - L2b lap indexing: laps are a stamped cache in `session.json` (`lap_detector_version` added to C1 §6, additive); unresolvable lap flags cleared on renumber; deterministic `visit_id`; re-index only on a stale stamp; R73 shape `overlay: Vec<MathOverlay>`; `fetch_fft` lap via `resolve_lap_window`; `rescan_tracks` in-lane. Plan `runs/2026-09-06/lanes/l2b-laps/`. R83
 
+## Rust / L8x (landed 2026-09-06, idl-rs 52efba8)
+- Track writes: one `save_track` (nullable `track_id`), `delete_track`; both return `stale_session_ids` (user triggers `rescan_tracks`); duplicate sector/NZ names allowed; decimal degrees on the wire; no track-editor map UI (R54). R86
+- Quarantine: producer is `verify_data_dir(repair:true)` (C4 §7), never import; `resolve_quarantine` actions `restore|discard`; `verify_data_dir` lives in the App group. R86
+- Catalog indexes workbooks: rebuild step 6 walks `workbooks/*.idl1wb`; `create_workbook`/`save_workbook` upsert their row. R87
+
 ## Open items
 
 - Isaac questions 1–5: IMU defaults; IMU mode-flag exclusivity; valid pin sets; whether the firmware can report SD free bytes / GPS fix quality / satellite count / battery millivolts; whether generic channel ids are deterministic from config order. (tracked notes, R58, R59 Q6, R63.2; sub-item 5b pressure 20/21 per R64.5)
