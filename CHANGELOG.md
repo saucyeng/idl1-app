@@ -6,6 +6,22 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 
 ### Added
 
+- **L8x Task 7: quarantine and verify commands (2026-09-06, idl-rs-tauri,
+  ruling R86, no spec change needed beyond Task 1's C3 amendment).**
+  `tauri/src/commands/maintenance.rs` (new): `list_quarantine` and
+  `resolve_quarantine` (C3 §3.2) are thin over Task 6's
+  `store::quarantine`; `resolve_quarantine`'s `action` maps
+  `"restore"`/`"discard"` to `ResolveAction` and rejects the stub's former
+  `"retry"` as `invalid_argument` rather than aliasing it (ruling R86 Q2).
+  `verify_data_dir(repair)` (C3 §3.10, ruling R86 Q8 — the App group, not
+  Catalog) times `store::verify::verify`/`verify_and_repair` and mints a
+  fresh uuid v4 plus the wall-clock time per repair, matching every other
+  deterministic core call's injected-`ids`/`now_ms` seam; `repair: false`
+  never touches the repair path, so it is provably read-only.
+  `QuarantineError` gets its own `From<_> for IpcError` in `error.rs`
+  (`NotFound`→`not_found`, `Occupied`→`invalid_argument`, `Io`→`io`,
+  `Encode`→`internal`, R46 precedent) — no new `IpcErrorKind` variant.
+  Registered in `handler()`.
 - **L8x Task 6: core quarantine module and `verify`'s repair pass
   (2026-09-06, idl-rs core, ruling R86, no spec change needed beyond
   Task 1's C4 amendment).** `core::store::quarantine` (new): `quarantine_file`
