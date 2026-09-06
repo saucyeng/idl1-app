@@ -1,9 +1,10 @@
-import { useCallback, useEffect, useMemo, useReducer } from "react";
+import { useCallback, useEffect, useMemo, useReducer, useState } from "react";
 
 import { deleteSession, getSession, listLaps, listSessions, rebuildCatalog, rescanTracks, type LapSummary, type SessionDetail, type SessionSummary } from "../../../ipc/catalog";
 import { useAppState } from "../../../state/AppState";
 import { ActiveChips } from "./ActiveChips";
 import { DetailPane } from "./DetailPane";
+import { MaintenancePanel } from "./MaintenancePanel";
 import { describeIpcError } from "./errors";
 import { facetCounts, matchesFilters } from "./facets";
 import { FilterRail } from "./FilterRail";
@@ -94,6 +95,7 @@ export default function Data() {
   const [filters, filterDispatch] = useReducer(filtersReducer, initialFilters);
   const [detailState, detailDispatch] = useReducer(detailReducer, { status: "idle" });
   const [maintenanceState, maintenanceDispatch] = useReducer(maintenanceReducer, initialMaintenanceState);
+  const [maintenancePanelOpen, setMaintenancePanelOpen] = useState(false);
   const [appState, appDispatch] = useAppState();
   const selectedSessionId = appState.selection.sessionId;
 
@@ -324,10 +326,14 @@ export default function Data() {
           >
             Rescan tracks
           </button>
+          <button type="button" onClick={() => setMaintenancePanelOpen((open) => !open)} aria-pressed={maintenancePanelOpen}>
+            {maintenancePanelOpen ? "Hide maintenance panel" : "Maintenance panel"}
+          </button>
           {maintenanceState.status === "running" && <p>Running {maintenanceState.action}…</p>}
           {maintenanceState.status === "done" && <p>{maintenanceState.result}</p>}
           {maintenanceState.status === "failed" && <p role="alert">{maintenanceState.error}</p>}
         </div>
+        {maintenancePanelOpen && <MaintenancePanel />}
         <div role="toolbar" aria-label="View">
           <button
             type="button"
