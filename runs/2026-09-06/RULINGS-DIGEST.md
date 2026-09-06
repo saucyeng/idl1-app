@@ -106,7 +106,10 @@ superseding form.
 - **Settings** — data-directory changes take effect on restart; the BOM strip lives in `paths::resolve_data_dir`. (R53 Settings Q4)
 - Settings migration: `settings.json` wins; a field skipped because the file already held a different value is NAMED in the migration `role="status"` line (never silent) — L7c Task 9. R82
 
-## Rust / L2b (in flight)
+## Rust / L2b (landed 2026-09-06, idl-rs 81a7db3)
+- `index_session` inserts its own `blobs` row in the same transaction (FK `sessions.blob_sha256`). R84
+- `fetch_fft` with a lap: slice first, then the R76 guards on the window's own samples; no new kind. R85
+- Multi-overlay math: `overlay: Vec<MathOverlay>`, `variance_*` fold = elementwise NaN-aware mean (fresh decision; idl0 had one overlay). R73 closed
 - L2b lap indexing: laps are a stamped cache in `session.json` (`lap_detector_version` added to C1 §6, additive); unresolvable lap flags cleared on renumber; deterministic `visit_id`; re-index only on a stale stamp; R73 shape `overlay: Vec<MathOverlay>`; `fetch_fft` lap via `resolve_lap_window`; `rescan_tracks` in-lane. Plan `runs/2026-09-06/lanes/l2b-laps/`. R83
 
 ## Open items
