@@ -91,7 +91,11 @@ export function settingsBackend(deps: SettingsBackendDeps): PrefsBackend {
       const persisted = await deps.setSettings(toPersist);
       lastKnownEngine = persisted;
 
-      const toStoreLocally: Prefs = { ...prefs, engine: persisted, ui: prefs.ui };
+      // Spread prefs.engine first so any unknown key read() preserved there
+      // (e.g. a newer app version's field) survives; the three
+      // server-confirmed fields overlay it, never the reverse — persisted
+      // must win for rider_name/unit_system/data_dir themselves.
+      const toStoreLocally: Prefs = { ...prefs, engine: { ...prefs.engine, ...persisted }, ui: prefs.ui };
       await deps.local.write(serializePrefs(toStoreLocally));
     },
   };

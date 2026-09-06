@@ -154,6 +154,34 @@ describe("settingsBackend — write()", () => {
     expect(stored.future_top_level).toBe("kept");
   });
 
+  it("write() preserves an unknown key nested inside engine that read() had seen locally", async () => {
+    // Arrange: seed the local document with an engine-nested unknown key,
+    // the same way read() would have left it there (a newer app's field),
+    // with getSettings agreeing on the three known fields so read()'s merge
+    // does not itself change rider_name/unit_system.
+    const local = memoryBackend(
+      JSON.stringify({
+        engine: { rider_name: "Isaac", unit_system: "imperial", future_engine_field: "kept-through-write" },
+        ui: DEFAULT_PREFS.ui,
+      }),
+    );
+    const deps = fakeDeps({
+      getSettings: () => Promise.resolve({ data_dir: null, rider_name: "Isaac", unit_system: "imperial" }),
+      local,
+    });
+    const backend = settingsBackend(deps);
+
+    // Act: write() is handed exactly the document read() just returned.
+    const raw = await backend.read();
+    await backend.write(raw as string);
+    const storedRaw = await local.read();
+    const stored = JSON.parse(storedRaw as string);
+
+    // Assert
+    expect(stored.engine.future_engine_field).toBe("kept-through-write");
+    expect(stored.engine.rider_name).toBe("Isaac");
+  });
+
   it("a setSettings rejection propagates out of write()", async () => {
     // Arrange
     const deps = fakeDeps({ setSettings: () => Promise.reject(new Error("disk full")) });

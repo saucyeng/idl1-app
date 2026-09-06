@@ -175,6 +175,32 @@ describe("runPrefsMigration", () => {
     expect(rewritten.ui).toEqual({ last_section: "sync", section_list_width_px: 260 });
   });
 
+  it("runPrefsMigration — local document has an unknown key nested inside engine — the local rewrite keeps it, dropping only the imported fields", async () => {
+    // Arrange
+    const localWithUnknownEngineKey = serializePrefs({
+      engine: { data_dir: null, rider_name: "Isaac", unit_system: "metric", future_engine_field: "kept-through-migration" },
+      ui: { last_section: "sync", section_list_width_px: 260 },
+    } as Prefs);
+    let storedLocal = localWithUnknownEngineKey;
+    const deps = fakeDeps({
+      readLocal: () => Promise.resolve(storedLocal),
+      writeLocal: (text: string) => {
+        storedLocal = text;
+        return Promise.resolve();
+      },
+    });
+
+    // Act
+    const outcome = await runPrefsMigration(deps);
+    const rewritten = JSON.parse(storedLocal);
+
+    // Assert
+    expect(outcome.kind).toBe("migrated");
+    expect(rewritten.engine.future_engine_field).toBe("kept-through-migration");
+    expect(rewritten.engine.rider_name).toBeUndefined();
+    expect(rewritten.ui).toEqual({ last_section: "sync", section_list_width_px: 260 });
+  });
+
   it("runPrefsMigration — a setSettings rejection — failed, the flag is not set, local document untouched", async () => {
     // Arrange
     const writeLocal = vi.fn(() => Promise.resolve());

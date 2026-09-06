@@ -130,14 +130,21 @@ export async function runPrefsMigration(deps: PrefsMigrationDeps): Promise<Migra
   }
 
   // Strip the imported engine half from the localStorage document, keeping
-  // `ui` and any unknown keys — a best-effort cleanup: `localDocument` is
-  // non-null here (migrationPlan only returns "import" when it parsed), and
-  // a failure to rewrite it does not lose data (the durable copy is already
-  // on disk via setSettings), it only leaves the old engine keys in
-  // localStorage where settingsBackend's getSettings-wins merge ignores them.
+  // `ui`, any top-level unknown keys, and any unknown key nested inside
+  // `engine` (a newer app version's field, which is not this migration's to
+  // delete — only the three known engine fields moved to settings.json) —
+  // a best-effort cleanup: `localDocument` is non-null here (migrationPlan
+  // only returns "import" when it parsed), and a failure to rewrite it does
+  // not lose data (the durable copy is already on disk via setSettings), it
+  // only leaves the old engine keys in localStorage where settingsBackend's
+  // getSettings-wins merge ignores them.
   try {
-    const { engine: _engine, ...rest } = parsePrefs(JSON.parse(localDocument as string));
-    await deps.writeLocal(JSON.stringify(rest));
+    const parsedLocal = parsePrefs(JSON.parse(localDocument as string));
+    const { engine: _engine, ...rest } = parsedLocal;
+    const { data_dir: _dataDir, rider_name: _riderName, unit_system: _unitSystem, ...unknownEngineKeys } =
+      parsedLocal.engine as unknown as Record<string, unknown>;
+    const rewritten = Object.keys(unknownEngineKeys).length > 0 ? { ...rest, engine: unknownEngineKeys } : rest;
+    await deps.writeLocal(JSON.stringify(rewritten));
   } catch {
     // Best-effort only, see above.
   }
