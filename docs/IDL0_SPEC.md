@@ -1649,6 +1649,15 @@ not as an independent choice.
   a `NoopPostImportHook.on_imported` call after a successful import,
   before the CAS blob write. This section ships only the hook's shape;
   wiring a real hook is out of scope here.
+- **Lap indexing runs on every import (L2b Task 3, §17.4).** After
+  `store::import::finish_import` writes/confirms `data.parquet` and
+  `session.json` (whichever of `Write`/`Regenerate`/`Skip` it took — never on
+  a `Collision`, which already refuses the import), it calls
+  `store::lap_index::index_laps` against the session it just parsed, before
+  returning. Failure there is non-fatal to the import itself: the caller sees
+  `ImportReport.lap_index_warning` instead of a hard error, and the session
+  recovers its laps on the next import of the same bytes or an explicit
+  `idl-rs rescan` (§29.6).
 - **What is not covered here.** Writing `data.parquet` (C1 §4), catalog
   insertion (C4 §5), CLI subcommand wiring (`idl-rs import`), and the
   `.idl0` importer are L1's.
@@ -1807,7 +1816,17 @@ Stored in `Workspace.trackVisits: List<TrackVisit>`. Workspace schema bump requi
 4. **Resolve overlaps.** If a sample is "on" multiple Tracks (rare), attribute to the one with smallest distance.
 5. **Filter short visits.** Discard windows shorter than `min_visit_s` (default 30 s) — typically drive-bys, not real laps.
 
-### 17.4 Caching
+### 17.4 Caching (idl1: import-time indexing into `session.json`)
+
+**idl1 rewrite (L2b, ruling R83) — supersedes this section's idl0/`Workspace` wording below the line.** Detection runs once, at import, over the whole track library — not per session load and not in the UI layer. `idl-rs`'s pure core (`store::lap_index::compute_lap_index`) takes an in-memory `SessionHandle` and the loaded `Track` library (`store::lap_index::load_track_library`), runs `tracks::detect_visits` then, per resolved visit, `laps::detect_laps` restricted to that visit's window, and returns a `LapIndex`: `track_visits[]` (each visit's own laps, per-visit numbered from 1) and a top-level `laps[]` (the same laps renumbered session-wide by `laps::renumber_session_laps` — the identity `ignored_lap_numbers` etc. key against, since per-visit numbers are not that identity). `store::lap_index::index_laps(data_root, session_id, handle, force)` (L2b Task 2) is the entry point that turns a `LapIndex` into an on-disk fact: it reads (or, if absent, starts from an empty) `session.json`, recomputes when `force` or when the freshly-loaded library's hash differs from the stamped `track_visits_library_hash` or the stamped `lap_detector_version` differs from the running build's `store::lap_index::LAP_DETECTOR_VERSION` (added this task), and otherwise leaves the file untouched. On recompute it overwrites `track_visits`, `laps`, both stamps, and clears any of `main_lap_number`/`reference_lap_number`/`starred_lap_number`/`ignored_lap_numbers` that name a lap no longer present (ruling R83 Q3) — `overlay_lap_key` is untouched, since it names a lap in a *different* session. Every other `session.json` field carries through unchanged. `store::lap_index::reindex_laps(data_root, session_id)` is the "Rescan Tracks" entry point: it rebuilds the `SessionHandle` from `sessions/<id>/data.parquet` (no source-blob re-parse) and calls `index_laps` with `force = true`, so import and an explicit rescan share one code path and cannot diverge. `visit_id` (`store::lap_index::visit_id`) is deterministic — 16 hex characters of a hash over `track_id`/`start_ms`/`end_ms` — so a rescan that finds the same visit again does not churn a synced `session.json` (idl0 minted a random UUID per visit instead).
+
+**Honest empty.** No track library, an empty library, no surviving visit window, or a resolved Track with no lap timing all yield empty `track_visits`/`laps` for that case — and the cache stamp is still written, so "ran and found nothing" is a recorded fact, not a missing feature. A visit whose Track cannot be resolved, or whose Track has no lap timing, is still recorded with `laps: []` and a warning (visits present, laps absent) rather than being dropped; detection failure anywhere in this step is non-fatal to the import.
+
+**Data tab reads the cache.** The Data tab (§24) reads `session.json`'s `laps[]`/`track_visits[]` directly to build its session/track aggregates and lap-time facets — it never parses a session on open.
+
+---
+
+*idl0 wording below, superseded by the above; kept for historical reference until the whole section is rewritten.*
 
 Run on session import; cache results in `Workspace.trackVisits`. Don't re-run on every session load. A "Rescan Tracks" action manually re-runs for a session — useful when new Tracks are added after import.
 
@@ -3926,6 +3945,22 @@ idl-rs visits <file.idl0> --track <a.idl0t> [--track <b.idl0t> …] [--format js
   form (§29.7). CSV is not offered here — nested lap/sector data maps poorly to
   flat rows; use `export` for tabular channel data.
 
+Distinct from `laps`/`visits` above (which detect live over one `.idl0t` +
+`.idl0` pair, nothing on disk): **`rescan`** is §17.4's "Rescan Tracks" over a
+data directory (contract C4 §1) and an already-imported session id, always
+recomputing (`force = true`) via `store::lap_index::reindex_laps`.
+
+```
+idl-rs rescan <data_root> --session <session_id> [--format json]
+```
+
+Prints a human summary (visit/lap counts, any lap-flag fields cleared by
+ruling R83 Q3, and non-fatal warnings) by default; `--format json` emits the
+enveloped success form (§29.7) with `data: { "rescan": { session_id,
+visits_indexed, laps_indexed, skipped_up_to_date, flags_cleared, warnings } }`.
+A missing `sessions/<id>/data.parquet` is an `io` error (§29.7's error kinds),
+never a panic.
+
 ### 29.7 CLI output envelope
 
 Every `idl-rs` command speaks one versioned JSON **envelope** so a script or
@@ -3976,10 +4011,10 @@ bumps it.
 
 **Structured vs. bulk.** Commands split by output size:
 
-- **Structured** — `info`, `channels`, `laps`, `visits`, `table`: small
-  aggregated/metadata results. Default output is **human text**; `--format json`
-  emits the success envelope on stdout. Failures emit the error envelope on
-  stdout.
+- **Structured** — `info`, `channels`, `laps`, `visits`, `rescan`, `table`:
+  small aggregated/metadata results. Default output is **human text**;
+  `--format json` emits the success envelope on stdout. Failures emit the
+  error envelope on stdout.
 - **Bulk** — `export`, `math`, `fit`, `recover`, `scan`: sample streams /
   binaries. Success writes the raw CSV/FIT/`.idl0` artifact to stdout or `-o`
   unchanged; failure writes the error envelope to **stderr** and exits non-zero.
@@ -4006,6 +4041,7 @@ serde output):
 - `channels` → `{ channels: [ { channel_id, sample_rate_hz, length, synthesized } ] }`.
 - `laps` → `{ laps: [ Lap ] }`, the engine's `Lap` serde shape.
 - `visits` → `{ visits: [ { track_id, name, start_ms, end_ms, duration_ms } ] }`.
+- `rescan` → `{ rescan: { session_id, visits_indexed, laps_indexed, skipped_up_to_date, flags_cleared, warnings } }`.
 - `table` → the self-describing table result (columns + resolved row windows +
   cells); the envelope is its wrapper.
 

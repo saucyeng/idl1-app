@@ -642,6 +642,11 @@ under one key due to last-ulp CPU differences, and either is valid).
   ],
 
   // --- laps (cached, mirroring TrackVisit.laps's existing caching pattern — §8 item 3) ---
+  // The importer (L2b) writes this array and "track_visits" below together,
+  // keyed by the two cache-key stamps at the bottom of this document:
+  // "track_visits_library_hash" and "lap_detector_version". Either stamp
+  // differing from the value freshly computed at import/rescan time marks
+  // the cache stale and triggers a re-index (IDL0_SPEC §17.4).
   "laps": [
     {
       "lap_number": 1,                   // int, 1-based
@@ -651,8 +656,16 @@ under one key due to last-ulp CPU differences, and either is valid).
       "lap_time_ms": 0,                  // i64, ms — raw_elapsed_ms minus neutral-zone time
       "start_time_secs": 0.0,            // f64, seconds, recording-time (t=0 anchored)
       "end_time_secs": 0.0,              // f64, seconds
-      "sectors": [],                     // array, present when sector_gates non-empty
-      "neutral_zone_visits": []          // array
+      "sectors": [],                     // array, present when sector_gates non-empty; element:
+                                          //   { "name": "", "start_ms": 0, "end_ms": 0,
+                                          //     "start_time_secs": 0.0, "end_time_secs": 0.0 }
+                                          //   (name: string; start_ms/end_ms: i64 UTC ms;
+                                          //   start_time_secs/end_time_secs: f64 seconds,
+                                          //   recording-time t=0-anchored) — pinned by L2b Task 5,
+                                          //   closing C3 §6 item 11
+      "neutral_zone_visits": []          // array; element: { "name": "", "enter_ms": 0, "exit_ms": 0 }
+                                          //   (name: string; enter_ms/exit_ms: i64 UTC ms) — pinned
+                                          //   by L2b Task 5, closing C3 §6 item 11
     }
   ],
 
@@ -673,7 +686,12 @@ under one key due to last-ulp CPU differences, and either is valid).
       "laps": []                         // Lap[], same shape as top-level "laps", omitted when empty
     }
   ],
-  "track_visits_library_hash": null      // string | omitted — opaque, do not parse
+  "track_visits_library_hash": null,     // string | omitted — opaque, do not parse
+  "lap_detector_version": null           // string | omitted — L2b Task 2, ruling R83 Q2, additive:
+                                          // stamps `store::lap_index::LAP_DETECTOR_VERSION`; a
+                                          // mismatch against the running build's constant (including
+                                          // an omitted value) is stale exactly like a changed
+                                          // "track_visits_library_hash"; does not bump schema_version
 }
 ```
 

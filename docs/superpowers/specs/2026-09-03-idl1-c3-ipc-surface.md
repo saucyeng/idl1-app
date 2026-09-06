@@ -17,6 +17,12 @@
   wave 3 — see §6. Also (lead ruling R60): `import_file` (§3.3) now
   resolves with `ImportOutcome { session, warnings }` instead of a bare
   `SessionSummary`; new §2 kind `import_collision`.
+- 2026-09-06: `rescan_tracks(session_id)` added to §3.2 (L2b Task 8, PLAN Q8)
+  — the engine gap the wave-2 amendment's deferred `rescan_track_visits`
+  named (§6) is now landed (`store::lap_index`, L2b Tasks 1–2), so this is
+  the read-only "re-run visit/lap detection" half of that deferred item;
+  `save_track`/`delete_track` (track *writes*) remain deferred to wave 3.
+  New `not_found`/`io` rows in §2.
 - 2026-09-06: `list_math_builtins` added to §3.4 (lead-added L8w Task 12b,
   spec-during, lead ruling R64.2) — a thin catalog dump for the notebook
   editor's function reference to verify itself against at startup. No
@@ -206,10 +212,10 @@ is applied uniformly, not case-by-case:
 | `config_unsupported_version` | `ConfigErrorKind::UnsupportedVersion` | Device: `push_config` |
 | `export_unknown_channel` | `ExportError::UnknownChannel` | none in C3 v1 — see open question 6.1 |
 | `export_no_gps_data` | `FitExportError::NoGpsData` | none in C3 v1 — see open question 6.1 |
-| `not_found` | cross-cutting | Catalog: `get_session`, `list_laps`; Workbook: `open_workbook`, `eval_workbook`, `save_workbook`, `watch_workbook`; Tiles: `fetch_tile`; Rasters: `fetch_raster`; Cursor: `cursor_readout`; Device: `download_file`; Sync: `sync_now`, `pair_peer`; Import: `import_file` (source path missing) |
+| `not_found` | cross-cutting | Catalog: `get_session`, `list_laps`, `rescan_tracks`; Workbook: `open_workbook`, `eval_workbook`, `save_workbook`, `watch_workbook`; Tiles: `fetch_tile`; Rasters: `fetch_raster`; Cursor: `cursor_readout`; Device: `download_file`; Sync: `sync_now`, `pair_peer`; Import: `import_file` (source path missing) |
 | `invalid_argument` | cross-cutting | Import: `import_file` (unknown `importer_id`); Workbook: `save_workbook` (malformed markdown/front matter); Tiles: `fetch_tile` (`tier` outside the engine's configured tier set); Rasters: `fetch_raster` (bad `width`/`height`/`kind`); Cursor: `cursor_readout` (unknown channel in the list); Sync: `pair_peer` (malformed code) |
-| `io` | cross-cutting (also folds `ParseError::Io`, `ConfigErrorKind::Io`, `ExportError::Io`, `FitExportError::Io`) | any command that touches the filesystem: Catalog (all seven — `list_sessions`, `get_session`, `list_laps`, `rebuild_catalog`, `list_workbooks`, `list_tracks`, `get_track`), Import: `import_file`, Workbook (`open_workbook`, `save_workbook`, `watch_workbook`), Tiles: `fetch_tile`, Rasters: `fetch_raster`, Device: `download_file`, Sync: `sync_status` |
-| `internal` | cross-cutting (also folds `ExportError::Json`) | any command — unexpected/programmer-error conditions that are not the caller's fault |
+| `io` | cross-cutting (also folds `ParseError::Io`, `ConfigErrorKind::Io`, `ExportError::Io`, `FitExportError::Io`, `LapIndexErrorKind::Io`) | any command that touches the filesystem: Catalog (all eight — `list_sessions`, `get_session`, `list_laps`, `rebuild_catalog`, `list_workbooks`, `list_tracks`, `get_track`, `rescan_tracks`), Import: `import_file`, Workbook (`open_workbook`, `save_workbook`, `watch_workbook`), Tiles: `fetch_tile`, Rasters: `fetch_raster`, Device: `download_file`, Sync: `sync_status` |
+| `internal` | cross-cutting (also folds `ExportError::Json`, `LapIndexErrorKind::Track` — currently unreached, see the variant's own doc comment) | any command — unexpected/programmer-error conditions that are not the caller's fault |
 | `device_rejected` | cross-cutting | Device: `device_control` (a refused control transition — see the R59 note above) |
 
 **Added post-sign (2026-09-03, lead ruling R7, wave-1 L2).** The seven
@@ -358,10 +364,25 @@ interface LapDetail {
   lap_time_ms: number;             // i64, ms — raw_elapsed_ms minus neutral-zone time
   start_time_secs: number;         // f64, seconds, recording-time (t=0-anchored)
   end_time_secs: number;           // f64, seconds
-  sectors: unknown[];               // present when sector_gates is non-empty; C1 §6 does not fix
-                                     // the element shape beyond "array" — see open question 11
-  neutral_zone_visits: unknown[];   // C1 §6 does not fix the element shape beyond "array" —
-                                     // see open question 11
+  sectors: LapSector[];              // present when sector_gates is non-empty — pinned (§6 item 11,
+                                      // closed): the landed session_json::SectorJson shape, not
+                                      // IDL0_SPEC §15.2's illustrative sector_name/sector_time_ms
+  neutral_zone_visits: LapNeutralZoneVisit[];   // pinned (§6 item 11, closed)
+}
+/** `LapDetail.sectors` element — C1 §6 `laps[].sectors[]` (§6 item 11). */
+interface LapSector {
+  name: string;
+  start_ms: number;                // i64, UTC ms
+  end_ms: number;                  // i64, UTC ms
+  start_time_secs: number;         // f64, seconds, recording-time (t=0-anchored)
+  end_time_secs: number;           // f64, seconds
+}
+/** `LapDetail.neutral_zone_visits` element — C1 §6 `laps[].neutral_zone_visits[]`
+ *  (§6 item 11). */
+interface LapNeutralZoneVisit {
+  name: string;
+  enter_ms: number;                // i64, UTC ms
+  exit_ms: number;                 // i64, UTC ms
 }
 interface TrackVisitSummary {
   visit_id: string;                // UUID (C1 §6 track_visits[].visit_id)
@@ -531,6 +552,52 @@ and shared by construction (C4 §3).
 
 Errors: `not_found` (unknown `session_id`), `io`, `internal`.
 
+**`rescan_tracks(session_id: string)`**
+*Added post-sign (2026-09-06, L2b Task 8, PLAN Q8).* The read-only half of
+the wave-2 amendment's deferred `rescan_track_visits` (§6) — track *write*
+commands (`save_track`/`delete_track`) remain deferred to wave 3, but
+rescan only reads the existing track library, so it lands with lap indexing
+itself (`store::lap_index`, L2b Tasks 1–2) rather than waiting on that.
+
+```ts
+interface RescanReport {
+  session_id: string;
+  visits_indexed: number;
+  laps_indexed: number;
+  /** Lap-flag fields cleared because their lap number no longer exists
+   *  after renumbering (PLAN Q3): any of "main_lap_number",
+   *  "reference_lap_number", "starred_lap_number", "ignored_lap_numbers".
+   *  `overlay_lap_key` is never in this list — it names a lap in *another*
+   *  session, which this session's own renumbering cannot invalidate. The
+   *  UI warns the rider a starred/ignored lap was dropped. */
+  flags_cleared: string[];
+  warnings: string[];
+  elapsed_ms: number;
+}
+```
+Return: `RescanReport`.
+
+Is IDL0_SPEC §17.4's "Rescan Tracks": re-runs visit and lap detection for
+one session against the *current* track library
+(`idl_rs::store::lap_index::reindex_laps`, which always recomputes rather
+than trusting the cache stamp — the point of an explicit rescan is
+confirming a newly-added or newly-edited track took effect) and rewrites
+`session.json`'s `laps`/`track_visits`/stamp fields. When `catalog.sqlite`
+already exists, also re-indexes that session's catalog rows
+(`store::catalog::index_session`), matching `import_file`'s own incremental-
+catalog rule (C4 §5); a bare data root that has never had `rebuild_catalog`
+run is left catalog-less, same as import. A catalog-indexing failure is
+folded into `warnings` rather than failing the call — the lap rescan itself
+already succeeded, and `rebuild_catalog` remains the recovery path.
+
+This is the only C3 command that writes `session.json` outside the
+workbook/metadata paths (`save_session_metadata`, workbook cell edits); it
+is a *read* of the track library, not a track edit, so it does not conflict
+with wave 3's track-write deferral above.
+
+Errors: `not_found` (unknown `session_id`), `io`, `internal` (see §2's
+`LapIndexErrorKind::Track` note — currently unreached).
+
 ### 3.3 Import (L2)
 
 **`import_file(path: string, importer_id: string | null, progress: Channel<Progress>)`**
@@ -665,17 +732,21 @@ absent, and whose `None` reproduces today's behaviour bit for bit, is not a
 breaking change under §5 — R41 (`session_id`) and R43 (`column_count`) set
 that precedent post-sign on this same contract.
 
-**Note.** Until lap indexing at import lands (Rust backlog, R53 Data Q4), no
-session has laps, so every non-null `lap_context` rejects with
-`invalid_argument`. The argument is still correct to add now — there is
-nowhere else to put the designation — but the feature it unlocks arrives
-with that backlog item.
-
 *Added post-sign (2026-09-05, lead ruling R64.1).* `overlay_laps` names laps
 of `session_id`'s own session in wave 2 — `variance_time`/`variance_dist`
-compare the main lap against another lap of the same recorded session, not a
+compare the main lap against other laps of the same recorded session, not a
 different one; cross-session overlay is a wave-3 amendment carrying a
 `{ session_id, lap }[]` shape instead.
+
+*Amended post-sign (2026-09-06, R73 closed, L2b Task 7).* `overlay_laps`
+drives every one of its entries, not just the first: each named lap becomes
+one overlay window, and `variance_time(ch)`/`variance_dist(ch)` evaluate
+`ch` against every overlay lap independently, then take the elementwise
+mean of the resulting delta series (a rider comparing against several ghost
+laps at once gets the average deviation across all of them, not just the
+first ghost's). `current_lap()`, `sector_number()`, `lap_start_time(n)`, and
+`lap_start_distance(n)` are unaffected — they read `main_lap`, not
+`overlay_laps`.
 
 Return: `CellOutput[]`, one entry per cell, in document order.
 ```ts
@@ -1055,7 +1126,7 @@ produce exactly one segment (ruling R76) — more is `invalid_argument` with
 | `version` | `u16` | 4 | `1` |
 | `reserved` | `[u8; 2]` | 6 | zero-filled |
 | `bin_count` | `u32` | 8 | number of `f32` magnitudes that follow |
-| `sample_rate_hz` | `f32` | 12 | the channel's real rate, derived from its recorded `t_us` axis |
+| `sample_rate_hz` | `f32` | 12 | the real rate derived from the request's own `t_us` axis: the whole channel's for `lap: null`, that lap's sliced window's for `lap: n` (ruling R85) |
 
 Header ends at byte offset **16**, padded so the magnitude array starts on
 a 4-byte boundary (ruling R59 Q3(a)); magnitudes are `bin_count` × `f32`
@@ -1069,17 +1140,34 @@ substitute: its result is a bin-indexed channel with no frequency axis
 attached, so a chart built on it would synthesise the axis in JavaScript,
 which CLAUDE.md §2 forbids.
 
-Errors: `not_found`, `invalid_argument` (bad `params`, or a `lap` not
-present on the session), `io`, `internal`. As with `eval_workbook`'s
-`lap_context`, `lap` must be `null` in practice until lap indexing at
-import lands (§6).
+`lap: null` takes the whole channel. `lap: n` selects that lap's
+recording-time window from `session.json`'s `laps[]` (ruling R83) and takes
+only the samples inside it — an unknown lap number is `invalid_argument`
+with `detail: { "lap": n }`. Both of R76's core guards then run against
+that lap window, not the whole channel (ruling R85): a window too short
+for the requested FFT parameters fails the same `"none"`-averaging segment
+check above (`detail: { "segments": n }`), and a window with too few
+samples or duplicate timestamps to derive a rate (e.g. a 1–2-sample
+degenerate lap boundary) is `invalid_argument` rather than a spectrum full
+of `NaN`.
+
+Errors: `not_found`, `invalid_argument` (bad `params`, an unknown `lap`, a
+lap window that fails the `"none"`-averaging segment check, or a window too
+short/degenerate to derive a sample rate), `io`, `internal`.
 
 - 2026-09-05: fetch_fft's averaging union closed against
   idl_rs::fft::Averaging (ruling R63 (3), L8w Task 12) — "none" and "max"
   now implemented, not rejected.
+- 2026-09-06: `lap` accepts a real lap number, resolved against
+  `session.json`'s `laps[]` (ruling R83, L2b Task 6) — no longer rejected
+  unconditionally.
 - 2026-09-06: "none" requires exactly one segment; more is invalid_argument
   with detail: { "segments": n } instead of silently keeping the first
   segment's power (ruling R76, L8w Task 12 fix).
+- 2026-09-06: R76's segment/rate guards run against the lap window's own
+  t_us/sample count, not the whole channel's, closing a gap where a
+  1-2-sample degenerate lap window bypassed both guards (ruling R85, L2b
+  Task 6 fix).
 
 ### 3.7 Cursor (L3)
 
@@ -1609,15 +1697,19 @@ engine.
     real shape when `track_artifact` lands and revise §3.2 in the same
     change.
 11. **`LapDetail.sectors`/`.neutral_zone_visits` (§3.2, round 2) element
-    shape is unfixed.** C1 §6 types both only as `"array"` — "present when
-    sector_gates non-empty" for `sectors`, no further shape given for
-    either. IDL0_SPEC §15.2's illustrative session tree names
-    `sectors[] → sector_name, sector_time_ms` and §16.2b defines
-    `NeutralZoneVisit { neutralZoneName, enterMs, exitMs }` for the legacy
-    Dart model, which plausibly carries forward, but C1 itself does not
-    commit to this, so `LapDetail` types both `unknown[]` rather than
-    guessing. Assigned: lead/C1 — pin the element shape in C1 §6 (or here,
-    if C1 declines to) before `list_laps`/`get_session` ship.
+    shape — CLOSED 2026-09-06 (L2b Task 5, R53 Q5).** Lap indexing landed
+    (L2b Tasks 1–4) and with it `store::session_json`'s `SectorJson {
+    name, start_ms, end_ms, start_time_secs, end_time_secs }` and
+    `NeutralZoneVisitJson { name, enter_ms, exit_ms }` — the shapes
+    `session.json` actually contains. This closes the guess this item
+    originally recorded (IDL0_SPEC §15.2's illustrative
+    `sector_name`/`sector_time_ms`, which the landed `SectorJson` does
+    **not** match — the landed shape wins, per the ambiguity policy's rule
+    that a signed contract is corrected to match landed truth rather than
+    the reverse). `NeutralZoneVisitJson` does match §16.2b modulo naming.
+    `LapDetail` above now types both as `LapSector[]`/
+    `LapNeutralZoneVisit[]`. See C1 §6's `laps[]` block for the
+    canonical field list.
 
 ### Wave-2 amendment (R59)
 
@@ -1638,7 +1730,10 @@ than added to §3:
   facet from the Data tab for wave 2.
 - **`rescan_track_visits`** — not a command gap but an engine gap:
   track-visit detection over a session does not exist in core and no lane
-  owns it yet.
+  owns it yet. *Landed 2026-09-06:* the engine gap is closed
+  (`store::lap_index`, L2b Tasks 1–2) and its read-only command shipped as
+  `rescan_tracks` (§3.2, L2b Task 8, PLAN Q8); `save_track`/`delete_track`
+  (track writes) remain deferred to wave 3.
 - **`fetch_histogram`** — ruling R52 Q7. The 1-D histogram is genuinely new
   binning code, not a wrapper like `fetch_fft` (§3.6) is over the existing
   `idl_rs::fft`.

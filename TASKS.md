@@ -69,10 +69,11 @@ are defined in `docs/superpowers/specs/2026-09-02-idl1-rewrite-design.md` §10.
   screen moved to L7b; the venue detail card dropped for wave 2 (a venue is
   a string field, not an entity, in idl1); narrow-layout bottom sheets and
   the mobile filter bar kept as responsive CSS, not a separate
-  implementation (mobile is L9's lane). Lap counts and lap tables
-  legitimately read "—"/empty for most sessions at wave 2 (R53 Q4) — no
-  wave-1 import path indexes `laps`/`lap_summary` yet; not a bug in this
-  lane.
+  implementation (mobile is L9's lane). Lap counts and lap tables were
+  originally "—"/empty for most sessions (R53 Q4, no wave-1 import path
+  indexed `laps`/`lap_summary` yet) — **closed by L2b** (below): import now
+  indexes laps, and this tab's own consumption of typed sectors/
+  neutral-zone-visits and a rescan action is a post-lane TS shell task.
 - [x] L7b Device tab — all 9 tasks landed on `wave2-l7b-device`; **Task 10
   (2026-09-06, R77.4/R78) wires the tab live.** Needs 8 (`device_status`),
   9 (`device_control`), 11 (`list_profiles`/`save_profile`/`delete_profile`)
@@ -127,15 +128,43 @@ are defined in `docs/superpowers/specs/2026-09-02-idl1-rewrite-design.md` §10.
   desktop `btleplug` backend, which never surfaces the SPEC §7.2 ack
   byte; `list_math_builtins` ships without a `unit_rule` field, dropped
   by ruling R64.2 pending a future unit-propagation-rules amendment;
-  `eval_workbook`'s `lap_context.overlay_laps` supports same-session
-  overlay only in wave 2 (R64.1), and `MathOverlay` cannot yet be
-  constructed from a multi-lap `overlay_laps` list at all until the
-  lap-indexing amendment settles that shape (R73) — unreachable today
-  since wave-1 import never populates `laps[]`. C3 §6's wave-2 deferred
-  list (`list_quarantine`/`resolve_quarantine`, `save_track`/
-  `delete_track`, `rescan_track_visits`, `fetch_histogram`,
-  `fetch_scatter_points`) is unchanged — none of this lane's tasks
-  implement any of them, confirmed by grep.
+  `eval_workbook`'s `lap_context.overlay_laps` supported same-session
+  overlay only at the time this lane landed (R64.1); **the multi-lap
+  `overlay_laps` shape is closed by L2b Task 7** (below) — `MathOverlay`
+  is now constructible from a list. C3 §6's wave-2 deferred list
+  (`list_quarantine`/`resolve_quarantine`, `save_track`/`delete_track`,
+  `fetch_histogram`, `fetch_scatter_points`) is unchanged — none of this
+  lane's tasks implement any of them, confirmed by grep.
+  `rescan_track_visits` is no longer on this deferred list: L2b closed the
+  engine gap and shipped it as `rescan_tracks` (C3 §3.2).
+- [x] L2b lap indexing — all 8 tasks landed on `l2b-laps`; lane gate green
+      (both worktrees). `store::lap_index` (Tasks 1-2, IDL0_SPEC §17.4)
+      detects track visits and laps at import time, stamped by
+      `track_visits_library_hash`/`lap_detector_version` so a rescan only
+      recomputes when the library actually changed; wired into
+      `finish_import` and the CLI's `idl-rs rescan` (Task 3); an
+      incremental `store::catalog::index_session` runs after import instead
+      of a full `rebuild_catalog` (Task 4); `LapDetail.sectors`/
+      `.neutral_zone_visits` are typed concretely, closing C3 §6 item 11
+      (Task 5); `fetch_fft`'s `lap` argument is real, scoping the FFT to one
+      lap's recording-time window (Task 6, plus R85's fix for the few-
+      sample guard running on the sliced window); `MathLapContext.overlay`
+      is now `Vec<MathOverlay>` for same-session multi-lap overlays (Task
+      7, R73); `rescan_tracks(session_id)` lets a rider who adds a track
+      after importing backfill laps for older sessions without a re-import
+      (Task 8, PLAN Q8, C3 §3.2). **Unblocks in the UI** (post-lane TS
+      shell tasks, none scheduled by this lane): L7a's Data tab lap tables
+      and `sessions.lap_count` can now read real data instead of "—"
+      (`app/src/ipc/catalog.ts`'s `LapDetail.sectors: LapSector[]` /
+      `.neutral_zone_visits: LapNeutralZoneVisit[]` replacing `unknown[]` —
+      ledger "Tracked (L2b Task 5)", 2026-09-06); L6's notebook
+      `lap_context` can stop rejecting every non-null context now that
+      `AppState.selection` has real laps to select; `fetch_fft`'s `lap`
+      argument is reachable from the FFT cell; L8w's `MathOverlay`
+      multi-lap shape (R73) is constructible; a "Rescan tracks" button on
+      the Data tab's maintenance panel needs `rescan_tracks`/`RescanReport`
+      added to `app/src/ipc/catalog.ts` (exact declaration in the Task 8
+      implementer's report).
 - [ ] L9 mobile scaffold
 - [ ] L11 LAN sync
 

@@ -433,6 +433,22 @@ targeted re-index of that entity or by the next full rebuild. Any code path
 that needs data to be *correct*, not merely *fast to filter/sort*, opens
 the file.
 
+**Incremental per-session indexing (task L2b T4).** Steps 3–5 above are also
+reachable for exactly one session via `store::catalog::index_session(conn,
+data_root, session_id)`, without a full tree walk: it removes any existing
+`sessions`/`laps`/`lap_summary` rows for that `session_id` (idempotent —
+`laps`' and `lap_summary`'s own cascading foreign keys mean deleting the
+`sessions` row is enough) and re-inserts them, plus (ruling R84) a `blobs`
+row for the session's own blob if step 1's scan never ran across it yet.
+`store::import`'s `finish_import` calls it after every successful import,
+when a `catalog.sqlite` already exists, so a session's laps are queryable
+immediately rather than waiting for the next rebuild — a failure there is
+non-fatal to the import (`ImportReport::catalog_index_warning`). It never
+touches `tracks` (step 2, the library's own concern) and never creates a
+catalog that doesn't already exist. `rebuild_catalog` remains the sole
+authority for `tracks`, `workbooks`, and the schema itself, and is the
+recovery path if `index_session` and the tree ever disagree.
+
 ## 6. Sync scope
 
 **Moves** (LAN sync, design §7): blobs, `sessions/<id>/data.parquet`,
