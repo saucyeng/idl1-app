@@ -3645,3 +3645,9 @@ spectrum is small enough to keep. Q6: the first mark's channel survives
 a Time → FFT switch.
 
 **Cost if wrong:** constants and conventions, each one line to change.
+
+## 2026-09-06 — L7c Task 8 LANDED (settings persistence; merge into main, suite 83 / 654)
+
+`de6f862` + fix `f9b9189` (unknown engine-nested keys survive write and
+migration). Whole TS suite on main after merge: 83 files / 654 passed,
+`tsc` clean. Worktree retired.
