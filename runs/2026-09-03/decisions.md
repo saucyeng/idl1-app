@@ -4020,3 +4020,18 @@ rule holds; `App.tsx`/`state/` edits are in scope for UI-4 only.
 
 **Cost if wrong:** a library choice is the one hard-to-reverse decision;
 Isaac made it with the studio-scale growth in view.
+
+## 2026-09-06 — R93: UI lane briefs (`runs/2026-09-06/lanes/ui/`) — open questions ruled
+
+All planner recommendations accepted: an authoring-time `npx shadcn add`
+fetch is fine (CLI version pinned, every generated file committed, the
+shipped bundle fetches nothing); icons = `lucide-react` at a pinned
+version (tree-shaken); skip `tw-animate-css` and strip its classes; copy
+the six Plex woff2 files (latin + latin-ext) and drop the npm packages;
+hidden routes use the `hidden` attribute + CSS; a hidden sandbox iframe
+is accepted for this pass (UI-10 re-measures on show); the remembered
+launch layout lives in localStorage; no empty session/lap chips. UI-4
+owns the mount-and-hide fix for the Device poll (`composeVisibility`);
+UI-5 gates on it. Worktrees `ui-<n>`.
+
+**Cost if wrong:** all reversible in one task each.
