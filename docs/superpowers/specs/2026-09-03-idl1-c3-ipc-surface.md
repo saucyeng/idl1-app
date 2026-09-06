@@ -17,6 +17,12 @@
   wave 3 — see §6. Also (lead ruling R60): `import_file` (§3.3) now
   resolves with `ImportOutcome { session, warnings }` instead of a bare
   `SessionSummary`; new §2 kind `import_collision`.
+- 2026-09-06: `rescan_tracks(session_id)` added to §3.2 (L2b Task 8, PLAN Q8)
+  — the engine gap the wave-2 amendment's deferred `rescan_track_visits`
+  named (§6) is now landed (`store::lap_index`, L2b Tasks 1–2), so this is
+  the read-only "re-run visit/lap detection" half of that deferred item;
+  `save_track`/`delete_track` (track *writes*) remain deferred to wave 3.
+  New `not_found`/`io` rows in §2.
 - 2026-09-06: `list_math_builtins` added to §3.4 (lead-added L8w Task 12b,
   spec-during, lead ruling R64.2) — a thin catalog dump for the notebook
   editor's function reference to verify itself against at startup. No
@@ -206,10 +212,10 @@ is applied uniformly, not case-by-case:
 | `config_unsupported_version` | `ConfigErrorKind::UnsupportedVersion` | Device: `push_config` |
 | `export_unknown_channel` | `ExportError::UnknownChannel` | none in C3 v1 — see open question 6.1 |
 | `export_no_gps_data` | `FitExportError::NoGpsData` | none in C3 v1 — see open question 6.1 |
-| `not_found` | cross-cutting | Catalog: `get_session`, `list_laps`; Workbook: `open_workbook`, `eval_workbook`, `save_workbook`, `watch_workbook`; Tiles: `fetch_tile`; Rasters: `fetch_raster`; Cursor: `cursor_readout`; Device: `download_file`; Sync: `sync_now`, `pair_peer`; Import: `import_file` (source path missing) |
+| `not_found` | cross-cutting | Catalog: `get_session`, `list_laps`, `rescan_tracks`; Workbook: `open_workbook`, `eval_workbook`, `save_workbook`, `watch_workbook`; Tiles: `fetch_tile`; Rasters: `fetch_raster`; Cursor: `cursor_readout`; Device: `download_file`; Sync: `sync_now`, `pair_peer`; Import: `import_file` (source path missing) |
 | `invalid_argument` | cross-cutting | Import: `import_file` (unknown `importer_id`); Workbook: `save_workbook` (malformed markdown/front matter); Tiles: `fetch_tile` (`tier` outside the engine's configured tier set); Rasters: `fetch_raster` (bad `width`/`height`/`kind`); Cursor: `cursor_readout` (unknown channel in the list); Sync: `pair_peer` (malformed code) |
-| `io` | cross-cutting (also folds `ParseError::Io`, `ConfigErrorKind::Io`, `ExportError::Io`, `FitExportError::Io`) | any command that touches the filesystem: Catalog (all seven — `list_sessions`, `get_session`, `list_laps`, `rebuild_catalog`, `list_workbooks`, `list_tracks`, `get_track`), Import: `import_file`, Workbook (`open_workbook`, `save_workbook`, `watch_workbook`), Tiles: `fetch_tile`, Rasters: `fetch_raster`, Device: `download_file`, Sync: `sync_status` |
-| `internal` | cross-cutting (also folds `ExportError::Json`) | any command — unexpected/programmer-error conditions that are not the caller's fault |
+| `io` | cross-cutting (also folds `ParseError::Io`, `ConfigErrorKind::Io`, `ExportError::Io`, `FitExportError::Io`, `LapIndexErrorKind::Io`) | any command that touches the filesystem: Catalog (all eight — `list_sessions`, `get_session`, `list_laps`, `rebuild_catalog`, `list_workbooks`, `list_tracks`, `get_track`, `rescan_tracks`), Import: `import_file`, Workbook (`open_workbook`, `save_workbook`, `watch_workbook`), Tiles: `fetch_tile`, Rasters: `fetch_raster`, Device: `download_file`, Sync: `sync_status` |
+| `internal` | cross-cutting (also folds `ExportError::Json`, `LapIndexErrorKind::Track` — currently unreached, see the variant's own doc comment) | any command — unexpected/programmer-error conditions that are not the caller's fault |
 | `device_rejected` | cross-cutting | Device: `device_control` (a refused control transition — see the R59 note above) |
 
 **Added post-sign (2026-09-03, lead ruling R7, wave-1 L2).** The seven
@@ -545,6 +551,52 @@ never removed even when `delete_blob: true` — blobs are content-addressed
 and shared by construction (C4 §3).
 
 Errors: `not_found` (unknown `session_id`), `io`, `internal`.
+
+**`rescan_tracks(session_id: string)`**
+*Added post-sign (2026-09-06, L2b Task 8, PLAN Q8).* The read-only half of
+the wave-2 amendment's deferred `rescan_track_visits` (§6) — track *write*
+commands (`save_track`/`delete_track`) remain deferred to wave 3, but
+rescan only reads the existing track library, so it lands with lap indexing
+itself (`store::lap_index`, L2b Tasks 1–2) rather than waiting on that.
+
+```ts
+interface RescanReport {
+  session_id: string;
+  visits_indexed: number;
+  laps_indexed: number;
+  /** Lap-flag fields cleared because their lap number no longer exists
+   *  after renumbering (PLAN Q3): any of "main_lap_number",
+   *  "reference_lap_number", "starred_lap_number", "ignored_lap_numbers".
+   *  `overlay_lap_key` is never in this list — it names a lap in *another*
+   *  session, which this session's own renumbering cannot invalidate. The
+   *  UI warns the rider a starred/ignored lap was dropped. */
+  flags_cleared: string[];
+  warnings: string[];
+  elapsed_ms: number;
+}
+```
+Return: `RescanReport`.
+
+Is IDL0_SPEC §17.4's "Rescan Tracks": re-runs visit and lap detection for
+one session against the *current* track library
+(`idl_rs::store::lap_index::reindex_laps`, which always recomputes rather
+than trusting the cache stamp — the point of an explicit rescan is
+confirming a newly-added or newly-edited track took effect) and rewrites
+`session.json`'s `laps`/`track_visits`/stamp fields. When `catalog.sqlite`
+already exists, also re-indexes that session's catalog rows
+(`store::catalog::index_session`), matching `import_file`'s own incremental-
+catalog rule (C4 §5); a bare data root that has never had `rebuild_catalog`
+run is left catalog-less, same as import. A catalog-indexing failure is
+folded into `warnings` rather than failing the call — the lap rescan itself
+already succeeded, and `rebuild_catalog` remains the recovery path.
+
+This is the only C3 command that writes `session.json` outside the
+workbook/metadata paths (`save_session_metadata`, workbook cell edits); it
+is a *read* of the track library, not a track edit, so it does not conflict
+with wave 3's track-write deferral above.
+
+Errors: `not_found` (unknown `session_id`), `io`, `internal` (see §2's
+`LapIndexErrorKind::Track` note — currently unreached).
 
 ### 3.3 Import (L2)
 
@@ -1678,7 +1730,10 @@ than added to §3:
   facet from the Data tab for wave 2.
 - **`rescan_track_visits`** — not a command gap but an engine gap:
   track-visit detection over a session does not exist in core and no lane
-  owns it yet.
+  owns it yet. *Landed 2026-09-06:* the engine gap is closed
+  (`store::lap_index`, L2b Tasks 1–2) and its read-only command shipped as
+  `rescan_tracks` (§3.2, L2b Task 8, PLAN Q8); `save_track`/`delete_track`
+  (track writes) remain deferred to wave 3.
 - **`fetch_histogram`** — ruling R52 Q7. The 1-D histogram is genuinely new
   binning code, not a wrapper like `fetch_fft` (§3.6) is over the existing
   `idl_rs::fft`.

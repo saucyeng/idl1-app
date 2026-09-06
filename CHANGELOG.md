@@ -6,6 +6,46 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 
 ### Added
 
+- **L2b lap indexing lane complete (2026-09-06).** `store::lap_index`
+  (IDL0_SPEC §17.4 rewrite) detects a session's track visits and the laps
+  within each against the track library, caching the result in
+  `session.json` under a `track_visits_library_hash`/`lap_detector_version`
+  stamp pair (C1 §6 amendment) so re-importing an unchanged session costs
+  one hash comparison, not a re-detection; a lap-flag field
+  (`main_lap_number`/`reference_lap_number`/`starred_lap_number`/
+  `ignored_lap_numbers`) that no longer resolves after a renumbering is
+  cleared and named, never left dangling (PLAN Q3) — `overlay_lap_key` is
+  left alone, since it names a lap in another session. Wired into
+  `finish_import` (non-fatal: a lap-index failure never fails the import)
+  and the CLI's `idl-rs rescan`; an incremental
+  `store::catalog::index_session` runs after import in place of a full
+  `rebuild_catalog` (C4 §5 note). `LapDetail.sectors`/
+  `.neutral_zone_visits` are typed concretely in C3 §3.2 (closing §6 item
+  11); `fetch_fft`'s `lap` argument is real, scoping the FFT to one lap's
+  recording-time window via a new `resolve_lap_window` (C3 §3.6 amendment;
+  fixed post-review, R85, so the few-sample/duplicate-timestamp guards run
+  on the sliced window, not the whole channel); `MathLapContext.overlay` is
+  now `Vec<MathOverlay>` for same-session multi-lap overlays (R73, C2 §3.5
+  + C3 §3.4, entry below). New `rescan_tracks(session_id)` command (C3
+  §3.2, PLAN Q8) re-runs visit/lap detection against the *current* track
+  library and re-indexes the catalog when one exists — the read-only half
+  of the wave-2 amendment's deferred `rescan_track_visits` (§6), landing
+  now because the engine gap it named is closed; track *write* commands
+  (`save_track`/`delete_track`) remain deferred to wave 3. **Unblocks in
+  the UI** (post-lane TS shell tasks, not scheduled by this lane): the
+  Data tab's lap tables and `sessions.lap_count` can show real data
+  instead of R53 Q4's "—" placeholder once `app/src/ipc/catalog.ts` gets
+  `LapDetail.sectors: LapSector[]` / `.neutral_zone_visits:
+  LapNeutralZoneVisit[]` in place of `unknown[]` (ledger "Tracked (L2b Task
+  5)", 2026-09-06); the Notebook's `lap_context` can stop rejecting every
+  non-null context now that real laps exist to select; the FFT cell's
+  `lap` argument and L8w's multi-lap `MathOverlay` shape both become
+  reachable; and a "Rescan tracks" action on the Data tab's maintenance
+  panel needs `rescanTracks`/`RescanReport` added to `app/src/ipc/
+  catalog.ts` (`interface RescanReport { session_id: string; visits_indexed:
+  number; laps_indexed: number; flags_cleared: string[]; warnings: string[];
+  elapsed_ms: number }`) and a button wired to it.
+
 - **`overlay_laps` drives every overlay lap, not just the first (L2b Task 7, R73 closed, spec-during).** `core/src/math/eval.rs`'s `MathLapContext.overlay` becomes `Vec<MathOverlay>` (was `Option<MathOverlay>`) — `variance_time(ch)`/`variance_dist(ch)` now evaluate `ch` against every overlay lap independently and combine the results with a new `mean_across_overlays` (elementwise mean, `NaN`-aware — a per-overlay `NaN` is excluded from the mean rather than poisoning it); `current_lap()`, `sector_number()`, `lap_start_time(n)`, `lap_start_distance(n)` are unaffected, since they read `main_lap`/`main_lap_bounds`, never `overlay`. `tauri/src/session_source.rs`'s `load_lap_context` builds one `MathOverlay` per entry of `lc.overlay_laps`, in order, preserving the existing "`main_lap` first, then `overlay_laps` in order" validation and its `unknown_lap` error naming the first offending lap number; it also fixes the R73-note `Arc` clone — one `Arc<dyn ChannelLookup + Send + Sync>` is built once over `handle` and `Arc::clone`d (a refcount bump) for each overlay entry, instead of a fresh `Arc::new(handle.clone())` per entry. The doc comments on `load_lap_context` and `eval_workbook_via` (and their tests) drop the now-false "`laps[]` is always empty today" claim — lap indexing landed in this same lane (Tasks 1–4). `docs/superpowers/specs/2026-09-03-idl1-c2-workbook-v3.md` §3.3's `variance_time`/`variance_dist` catalog rows and `docs/superpowers/specs/2026-09-03-idl1-c3-ipc-surface.md` §3.4 amended to describe the fold and drop the "every non-null `lap_context` rejects" wording.
 
 - **`fetch_fft` accepts a real `lap` window (L2b Task 6, C3 §3.6, R76 preserved, spec-during).** `tauri/src/commands/rasters.rs`'s `fetch_fft_via` no longer rejects every non-null `lap` unconditionally — `lap: n` resolves `n`'s recording-time window from `session.json`'s `laps[]` (new `tauri/src/session_source.rs::resolve_lap_window`, sharing its `session.json` read and `unknown_lap` error shape with `load_lap_context`) and takes only `idl_rs::session::handle::SessionHandle::slice_by_time`'s samples in that window, in place of the whole channel; an unknown lap number is `invalid_argument` with `detail: { "lap": n }`, matching every other lap-naming command. `idl_rs::fft::check_none_averaging_segments` (ruling R76) now runs against the lap-sliced sample count, not the whole channel's, so a lap window that segments into more than one window under `averaging: "none"` still fails with the existing `detail: { "segments": n }` error — slicing happens before the check, never after. `sample_rate_hz` continues to derive from the whole channel's recorded `t_us` axis (a channel property, not a window one). The now-dead `reject_non_null_lap` and its doc comment are deleted; `fetch_raster`/`fetch_raster_meta` take no `lap` argument in C3 §3.6, so they are unaffected and out of this task's scope. `docs/superpowers/specs/2026-09-03-idl1-c3-ipc-surface.md` §3.6 amended to describe the real semantics in place of "`lap` must be `null` in practice until lap indexing lands".
