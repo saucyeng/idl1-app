@@ -3657,3 +3657,26 @@ migration). Whole TS suite on main after merge: 83 files / 654 passed,
 `f1930ca`, review CLEAN. Merged `--no-ff` (CHANGELOG: kept both bullets).
 Whole TS suite on main: 86 files / 697 passed, `tsc` clean. Worktree
 retired. Remaining wave-2 UI work is L6 Tasks 18–20 in `wave2-l6-followon`.
+
+## 2026-09-06 — Disk: Isaac approved removing build caches
+
+Removed `saucyeng/.cargo-shared-target` (12.3 GB), `idl0-app/rust/target`
+(3.9 GB), `idl-rs/target` (1.5 GB) → 16.9 GB free. The app's own
+`app/src-tauri/target` kept for the preview build. Question 11 closed.
+Wave-3 worktrees cold-compile once; `rust/.cargo/config.toml` still
+points them at the shared dir, which cargo recreates.
+
+**Tracked (preview 2026-09-06):** the Notebook opens "the first indexed
+workbook" and shows "No workbooks found" otherwise — no New-workbook
+action (`create_workbook` exists), no rescan (`rebuild_catalog` exists),
+and a workbook file dropped into `workbooks/` is invisible until the
+catalog is rebuilt. → **L6 Task 21**: empty state with "New workbook"
+and "Rescan", plus a workbook picker when more than one is indexed
+(the picker was deferred in R66; both now have their commands).
+
+**Process note (L6 Task 20, 2026-09-06):** the follow-on worktree was cut
+before the C2 §5.3 amendment landed on main, so the brief's "already
+applied" premise was false in the worktree; the implementer merged main
+in (R19) before starting. Rule going forward: a brief that cites an
+amendment names its commit hash and the implementer's first step is
+`git merge-base --is-ancestor <hash> HEAD` — merge main first if it fails.
