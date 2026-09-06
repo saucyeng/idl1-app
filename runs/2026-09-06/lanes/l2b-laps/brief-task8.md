@@ -11,7 +11,7 @@ TDD, ONE commit, then the gate, then report.
 ```bash
 cd "C:/Users/isaac/Documents/Saucy/saucyeng/idl-rs-worktrees/l2b-laps"
 git merge-base --is-ancestor c893ba7 HEAD && echo GATE-OK
-grep -c "pub fn reindex_laps" core/core/src/store/lap_index.rs
+grep -c "pub fn reindex_laps" core/src/store/lap_index.rs
 grep -c "overlay" core/src/math/eval.rs
 ```
 All must succeed / return `>= 1`. If any fails, STOP and report.

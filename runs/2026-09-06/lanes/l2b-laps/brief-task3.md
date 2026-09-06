@@ -11,23 +11,23 @@ TDD, ONE commit, then report.
 ```bash
 cd "C:/Users/isaac/Documents/Saucy/saucyeng/idl-rs-worktrees/l2b-laps"
 git merge-base --is-ancestor c893ba7 HEAD && echo GATE-OK
-grep -c "pub fn index_laps" core/core/src/store/lap_index.rs
-grep -c "pub fn reindex_laps" core/core/src/store/lap_index.rs
+grep -c "pub fn index_laps" core/src/store/lap_index.rs
+grep -c "pub fn reindex_laps" core/src/store/lap_index.rs
 ```
 All must succeed / return `>= 1`. If any fails, STOP and report.
 
 ## Where
 
 - Same worktree/branch. Do NOT push.
-- **Files:** `core/core/src/store/import.rs`, `cli/src/main.rs`, `docs/IDL0_SPEC.md`.
+- **Files:** `core/src/store/import.rs`, `cli/src/main.rs`, `docs/IDL0_SPEC.md`.
 
 ## Files to read first
 
 `CLAUDE.md`; this lane's `PLAN.md` §2 (flow, honest empty, non-fatal) and Q5;
-Tasks 1 and 2 briefs and commits; `core/core/src/store/import.rs` in full —
+Tasks 1 and 2 briefs and commits; `core/src/store/import.rs` in full —
 especially `finish_import`, `ImportPlan`, `ImportReport`, and the module doc
 comment's line "Does **not** touch the catalog", which stays true in this task
-(Task 4 changes it); `core/core/src/session/handle.rs` `from_session` (it consumes
+(Task 4 changes it); `core/src/session/handle.rs` `from_session` (it consumes
 the `Session` by value — see "Key logic"); `cli/src/main.rs`'s `Laps`/`Visits`
 subcommands and `emit_structured` / the §29.7 envelope; IDL0_SPEC §15a, §29.6,
 §29.7; ruling R18 (import belongs in core, shared by CLI and Tauri).
@@ -76,7 +76,7 @@ CLI: `idl-rs rescan <data_root> --session <session_id> [--format json]`.
 
 ## Tests
 
-Extend `core/core/src/store/import.rs`'s existing test module (it already builds
+Extend `core/src/store/import.rs`'s existing test module (it already builds
 tempdir roots and synthetic `.idl0`/GPX/FIT fixtures).
 
 - `import_file` on a root with a matching `.idl0t` in `tracks/` → `session.json`

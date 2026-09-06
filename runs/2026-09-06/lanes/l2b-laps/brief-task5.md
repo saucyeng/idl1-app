@@ -12,14 +12,14 @@ TDD, ONE commit, then report.
 ```bash
 cd "C:/Users/isaac/Documents/Saucy/saucyeng/idl-rs-worktrees/l2b-laps"
 git merge-base --is-ancestor c893ba7 HEAD && echo GATE-OK
-grep -c "pub fn index_session" core/core/src/store/catalog.rs
+grep -c "pub fn index_session" core/src/store/catalog.rs
 ```
 Both must succeed / return `>= 1`. If either fails, STOP and report.
 
 ## Where
 
 - Same worktree/branch. Do NOT push.
-- **Files:** `core/core/src/store/catalog_read.rs`, `tauri/src/commands/catalog.rs`,
+- **Files:** `core/src/store/catalog_read.rs`, `tauri/src/commands/catalog.rs`,
   `docs/superpowers/specs/2026-09-03-idl1-c3-ipc-surface.md`,
   `docs/superpowers/specs/2026-09-03-idl1-c1-session-schema.md`.
 
@@ -30,9 +30,9 @@ Both must succeed / return `>= 1`. If either fails, STOP and report.
 and §16.2b's `NeutralZoneVisit` as the plausible-but-uncommitted shapes — read
 why it declined to guess); ruling R53 Q5 in `runs/2026-09-03/decisions.md`
 ("`LapDetail.sectors` element shape is pinned in C1 §6 when lap indexing
-lands, not before"); `core/core/src/store/session_json.rs`'s `SectorJson` and
+lands, not before"); `core/src/store/session_json.rs`'s `SectorJson` and
 `NeutralZoneVisitJson` — **these are the landed truth and they win**;
-`core/core/src/store/catalog_read.rs`'s `LapDetail`; `tauri/src/commands/catalog.rs`'s
+`core/src/store/catalog_read.rs`'s `LapDetail`; `tauri/src/commands/catalog.rs`'s
 `LapDetail`/`TrackVisitSummary` and their `From` impls; `app/src/ipc/catalog.ts`.
 
 ## The decision this task implements
