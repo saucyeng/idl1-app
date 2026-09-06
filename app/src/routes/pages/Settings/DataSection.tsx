@@ -1,13 +1,13 @@
 import { useEffect, useState } from "react";
 
+import { getDataDir, setDataDir, type DataDirInfo } from "../../../ipc/app";
 import { describeOverrideChange, validateDataDir, type ValidationIssue } from "./dataDir";
 import { describeIpcError, type IpcErrorLike } from "./errors";
-import { getDataDir, NotImplementedError, setDataDir, type DataDirInfo } from "./ipcStubs";
 import type { PrefsStore } from "./prefsStore";
 
 /** Props for {@link DataSection}. Follows {@link ProfileSection}'s
  *  `{ store: PrefsStore }` shape for consistency across sections, even
- *  though this section's main content comes from the `getDataDir` stub
+ *  though this section's main content comes from `getDataDir`/`setDataDir`
  *  rather than `store`. */
 export interface DataSectionProps {
   /** Unused by this section's own content; kept for prop-shape consistency
@@ -27,15 +27,11 @@ function isIpcErrorLike(error: unknown): error is IpcErrorLike {
   );
 }
 
-/** Turns a rejection from `getDataDir`/`setDataDir` into user-facing text.
- *  Distinguishes a {@link NotImplementedError} (this stub always rejects
- *  with one, in wave 2) from a real {@link IpcErrorLike} the eventual
- *  command would raise, so the copy says "not built yet" rather than
- *  inventing a fake IPC error kind. */
+/** Turns a rejection from `getDataDir`/`setDataDir` into user-facing text
+ *  (C3 §2). Falls back to a generic message for anything that isn't even
+ *  an `IpcError`-shaped rejection (C3 §5: kinds are additive; a value that
+ *  isn't an `IpcError` at all still gets a message, not a crash). */
 function describeDataDirError(error: unknown): string {
-  if (error instanceof NotImplementedError) {
-    return `The data directory isn't wired up yet (${error.command} is not implemented).`;
-  }
   if (isIpcErrorLike(error)) {
     return describeIpcError(error);
   }
@@ -45,9 +41,7 @@ function describeDataDirError(error: unknown): string {
 /** The Data directory section: shows the resolved `<data>` path, an override
  *  field, and a confirmation step (C4 §1) before any change is committed —
  *  changing where a user's whole data store lives is not a field that saves
- *  on blur. The "Save" action calls the `set_data_dir` stub, which always
- *  rejects in wave 2; that rejection is shown the same "not wired up yet"
- *  way other stubbed sections report it. */
+ *  on blur. */
 export default function DataSection({ store }: DataSectionProps) {
   void store;
 

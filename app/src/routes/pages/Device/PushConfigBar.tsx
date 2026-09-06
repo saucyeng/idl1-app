@@ -1,12 +1,11 @@
 import { useEffect, useMemo, useReducer, useRef } from "react";
 
-import { pushConfig } from "../../../ipc/device";
+import { pullConfig, pushConfig } from "../../../ipc/device";
 import type { DeviceConfig } from "./config/model";
 import { validateConfig } from "./config/validate";
 import type { ValidationIssue } from "./config/validate";
 import { describeIpcError } from "./errors";
 import type { DeviceIpcError } from "./errors";
-import { NotImplementedError, pullConfig } from "./ipcStubs";
 import { describePushResult, initialPushState, preparePush, pushReducer } from "./push";
 
 /** Props for {@link PushConfigBar}. */
@@ -45,19 +44,19 @@ function IssueList({ issues }: { issues: ValidationIssue[] }) {
  * unvalidated) is enforced here by gating the button, and again inside
  * `preparePush`, which `pushConfig` is never called without first passing.
  *
- * SPEC §10.4/§23 require idle mode for a push, but `device_status` (IPC
- * need 8) is a stub, so this bar cannot read the device's current mode —
- * it **states** the idle-mode requirement in copy instead of enforcing it.
- * A device that refuses the push surfaces through `describeIpcError`
- * (`kind: "config"` or `kind: "ble"`).
+ * SPEC §10.4/§23 require idle mode for a push, but this bar does not call
+ * `device_status` before pushing (that read/gate is a separate feature,
+ * not built here) — it **states** the idle-mode requirement in copy
+ * instead of enforcing it. A device that refuses the push surfaces through
+ * `describeIpcError` (`kind: "config"` or `kind: "ble"`).
  *
- * `pull_config` (IPC need 10) is a stub, so `describePushResult` always
- * reports its "applied, not verified" arm here — the honest state of wave
- * 2's push flow, never a claimed verification the app cannot back up.
- * **Pull from device** exists as a visible stub: pressing it surfaces
- * `NotImplementedError`'s own message rather than pretending to succeed
- * or silently doing nothing.
+ * `describePushResult` still reports its "applied, not verified" arm after
+ * every push: comparing a pulled config against what was pushed (SPEC
+ * §23.6's full reconnect-and-verify leg) is not built here, so a real
+ * `pullConfig` round trip (below, **Pull from device**) is shown as its own
+ * outcome rather than folded into the push flow's verification state.
  *
+
  * `issues`/`prepared` are memoised on `config`'s identity (review-task8
  * Minor: `validateConfig`/`preparePush` were each being called fresh on
  * every render, including renders `config` had no part in) — `onPush`
@@ -89,8 +88,9 @@ export default function PushConfigBar({ deviceId, config, connected }: PushConfi
     pushConfig(deviceId, prepared.json)
       .then(() => {
         if (!mountedRef.current) return; // bar unmounted mid-push; nothing left to update
-        // `pull_config` is a stub in wave 2 — every successful push reports
-        // the honest "reconnected, not verified" arm, never a claimed match.
+        // This flow does not pull the config back to verify it landed
+        // (SPEC §23.6's full reconnect-and-verify leg is not built here) —
+        // every successful push reports the honest "applied, not verified" arm.
         dispatch({ type: "PUSH_SUCCEEDED", message: describePushResult(true, null) });
       })
       .catch((err: DeviceIpcError) => {
@@ -100,10 +100,19 @@ export default function PushConfigBar({ deviceId, config, connected }: PushConfi
   }
 
   function onPull(): void {
-    pullConfig(deviceId).catch((err: unknown) => {
-      const message = err instanceof NotImplementedError ? "Pull from device isn't available yet." : "Pull from device failed.";
-      dispatch({ type: "PUSH_FAILED", message });
-    });
+    pullConfig(deviceId)
+      .then(() => {
+        if (!mountedRef.current) return; // bar unmounted mid-pull; nothing left to update
+        // The pulled config is not compared against anything or applied to
+        // this bar's active profile here — that merge/diff UI is a separate
+        // feature, not built in this task. A successful pull only confirms
+        // the device is reachable and returned a config.
+        dispatch({ type: "PUSH_SUCCEEDED", message: "Config pulled from the device." });
+      })
+      .catch((err: DeviceIpcError) => {
+        if (!mountedRef.current) return; // bar unmounted mid-pull; nothing left to update
+        dispatch({ type: "PUSH_FAILED", message: describeIpcError(err) });
+      });
   }
 
   return (

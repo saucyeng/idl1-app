@@ -18,6 +18,9 @@ interface DetailPaneProps {
    *  Q4 — it renders via `view.laps` being empty instead). Null when
    *  `listLaps` succeeded or wasn't attempted. */
   lapsErrorText: string | null;
+  /** Passed straight through to `MetadataForm`'s `onSaved` — the owning
+   *  page redraws `detail` from `save_session_metadata`'s re-read result. */
+  onMetadataSaved: (detail: SessionDetail) => void;
   onClose: () => void;
 }
 
@@ -47,7 +50,7 @@ function tracksReducer(_state: TracksState, action: TracksAction): TracksState {
  *  `list_tracks` fetch for [[MetadataForm]] (Task 7). Metadata is editable
  *  (Task 7); delete and track-create affordances remain out of scope for
  *  this task (Parity gaps table). */
-export function DetailPane({ view, detail, lapsErrorText, onClose }: DetailPaneProps) {
+export function DetailPane({ view, detail, lapsErrorText, onMetadataSaved, onClose }: DetailPaneProps) {
   const [tracksState, tracksDispatch] = useReducer(tracksReducer, { status: "loading" });
 
   const loadTracks = useCallback((isCancelled: () => boolean) => {
@@ -87,7 +90,7 @@ export function DetailPane({ view, detail, lapsErrorText, onClose }: DetailPaneP
           Couldn't load tracks for the venue autocomplete ({tracksState.text}); metadata is still editable.
         </p>
       )}
-      <MetadataForm detail={detail} tracks={tracksState.status === "ready" ? tracksState.tracks : []} />
+      <MetadataForm detail={detail} tracks={tracksState.status === "ready" ? tracksState.tracks : []} onSaved={onMetadataSaved} />
 
       <h3>Channels</h3>
       {view.channels.length === 0 ? (

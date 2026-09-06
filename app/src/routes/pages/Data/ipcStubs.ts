@@ -30,30 +30,6 @@ export async function deleteTrack(_trackId: string): Promise<never> {
   throw new NotImplementedError("delete_track");
 }
 
-/** Stands in for `save_session_metadata` (IPC need 1,
- *  `runs/2026-09-05/lanes/l7/IPC-NEEDS.md`) until the Rust track lands it.
- *  `metadata` carries C1 §6's nine `session.json` fields
- *  ([[../../../ipc/catalog.ts]]'s `SessionDetail` documents each one) plus
- *  nothing else — `Data/metadataDraft.ts`'s `toSavePayload` builds it. See
- *  [[saveTrack]]'s note on why this rejects rather than returning a
- *  fabricated `SessionDetail`. */
-export async function saveSessionMetadata(
-  _sessionId: string,
-  _metadata: Record<string, string>,
-): Promise<never> {
-  throw new NotImplementedError("save_session_metadata");
-}
-
-/** Stands in for `delete_session` (IPC need 3,
- *  `runs/2026-09-05/lanes/l7/IPC-NEEDS.md`) until the Rust track lands it.
- *  `deleteBlob: false` is idl0's "Forget session" — `Data/maintenance.ts`'s
- *  `runForgetSession` calls this with `false` rather than through a fourth
- *  stub function, since the two idl0 actions differ only in this one
- *  argument. */
-export async function deleteSession(_sessionId: string, _deleteBlob: boolean): Promise<never> {
-  throw new NotImplementedError("delete_session");
-}
-
 /** Stands in for `list_quarantine` (IPC need 4,
  *  `runs/2026-09-05/lanes/l7/IPC-NEEDS.md`) until the Rust track lands it.
  *  The real return shape is IPC need 4's proposed `QuarantineEntry[]`, not

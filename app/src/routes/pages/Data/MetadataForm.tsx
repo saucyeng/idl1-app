@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 
-import type { SessionDetail, TrackSummary } from "../../../ipc/catalog";
-import { NotImplementedError, saveSessionMetadata } from "./ipcStubs";
+import { saveSessionMetadata, type SessionDetail, type TrackSummary } from "../../../ipc/catalog";
+import { describeIpcError } from "./errors";
 import { initialDraft, isDirty, normalizeDraft, toSavePayload, venueOptions, type MetadataDraft } from "./metadataDraft";
 
 /** Props for [[MetadataForm]]. */
@@ -13,12 +13,15 @@ interface MetadataFormProps {
    *  while the caller's own fetch is still in flight is safe — it only
    *  narrows the venue pre-fill/suggestions, never breaks the form. */
   tracks: TrackSummary[];
+  /** Called with `save_session_metadata`'s re-read `SessionDetail` after a
+   *  successful save, so the owning pane can redraw from canonical truth
+   *  (C3 §3.2's own rationale for that command re-reading before it
+   *  returns) rather than from what this form hoped it wrote. */
+  onSaved: (detail: SessionDetail) => void;
 }
 
-/** Save-attempt state. `"not-implemented"` is the only failure this form
- *  can reach in wave 2 — `saveSessionMetadata` never rejects with anything
- *  else (`Data/ipcStubs.ts`). */
-type SaveState = { status: "idle" } | { status: "saving" } | { status: "not-implemented" };
+/** Save-attempt state. */
+type SaveState = { status: "idle" } | { status: "saving" } | { status: "error"; text: string };
 
 /** One coalesced line of the read-only tracks-visited summary: a track
  *  visited one or more times, its display name resolved from `tracksById`
@@ -49,12 +52,12 @@ function coalesceVisitedTracks(detail: SessionDetail, tracksById: Map<string, Tr
 }
 
 /** The Data tab's nine-field session metadata editor (idl0
- *  `metadata_editor.dart`, IDL0_SPEC §24.10), over the `save_session_metadata`
- *  IPC need (`runs/2026-09-05/lanes/l7/IPC-NEEDS.md` need 1) — no real
- *  command behind it in wave 2. Save is settle-bound (explicit button
- *  press, never on keystroke, CLAUDE.md §2) and always fails honestly with
- *  the stub's `NotImplementedError` rather than pretending to persist. */
-export function MetadataForm({ detail, tracks }: MetadataFormProps) {
+ *  `metadata_editor.dart`, IDL0_SPEC §24.10), over `save_session_metadata`
+ *  (C3 §3.2, ruling R59). Save is settle-bound (explicit button press,
+ *  never on keystroke, CLAUDE.md §2). On success, `onSaved` hands the
+ *  re-read `SessionDetail` back up so the owning pane redraws from
+ *  canonical truth. */
+export function MetadataForm({ detail, tracks, onSaved }: MetadataFormProps) {
   const tracksById = useMemo(() => new Map(tracks.map((t) => [t.track_id, t])), [tracks]);
   const [draft, setDraft] = useState<MetadataDraft>(() => initialDraft(detail, tracks));
   const [saveState, setSaveState] = useState<SaveState>({ status: "idle" });
@@ -72,21 +75,21 @@ export function MetadataForm({ detail, tracks }: MetadataFormProps) {
     setDraft(normalized);
     setSaveState({ status: "saving" });
 
-    // `toSavePayload`'s return has only string-valued fields (every C1 §6
-    // metadata field, plus `session_id`), so it is a `Record<string, string>`
-    // in substance; the cast is only for `SessionMetadataSavePayload`'s named
-    // fields versus the stub's untyped `Record` parameter (ipcStubs.ts).
-    const payload = toSavePayload(detail.session_id, normalized) as unknown as Record<string, string>;
+    // `toSavePayload`'s return is `MetadataDraft`'s nine fields plus
+    // `session_id`; `save_session_metadata`'s `metadata` argument is those
+    // same nine fields alone (C3 §3.2's `SessionMetadataPatch`) — dropping
+    // `session_id` here, not in `metadataDraft.ts`, keeps that module's own
+    // shape usable by any future caller that still wants the id alongside it.
+    const { session_id: _sessionId, ...patch } = toSavePayload(detail.session_id, normalized);
 
-    saveSessionMetadata(detail.session_id, payload).catch((e: unknown) => {
-      // The stub only ever rejects with NotImplementedError (ipcStubs.ts) —
-      // this form has no other failure mode to distinguish in wave 2.
-      if (e instanceof NotImplementedError) {
-        setSaveState({ status: "not-implemented" });
-        return;
-      }
-      setSaveState({ status: "not-implemented" });
-    });
+    saveSessionMetadata(detail.session_id, patch)
+      .then((updated) => {
+        setSaveState({ status: "idle" });
+        onSaved(updated);
+      })
+      .catch((e: unknown) => {
+        setSaveState({ status: "error", text: describeIpcError(e).text });
+      });
   };
 
   return (
@@ -162,9 +165,7 @@ export function MetadataForm({ detail, tracks }: MetadataFormProps) {
         Save
       </button>
 
-      {saveState.status === "not-implemented" && (
-        <p role="alert">Saving session metadata isn't wired up yet — your changes aren't saved.</p>
-      )}
+      {saveState.status === "error" && <p role="alert">Couldn't save: {saveState.text}</p>}
 
       <h3>Tracks visited</h3>
       {visited.length === 0 ? (

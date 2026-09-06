@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { deleteSession, deleteTrack, listQuarantine, NotImplementedError, resolveQuarantine, saveTrack } from "./ipcStubs";
+import { deleteTrack, listQuarantine, NotImplementedError, resolveQuarantine, saveTrack } from "./ipcStubs";
 
 describe("ipcStubs", () => {
   it('ipcStubs — saveTrack — rejects with NotImplementedError naming "save_track"', async () => {
@@ -11,11 +11,6 @@ describe("ipcStubs", () => {
   it('ipcStubs — deleteTrack — rejects with NotImplementedError naming "delete_track"', async () => {
     await expect(deleteTrack("t1")).rejects.toThrow(NotImplementedError);
     await expect(deleteTrack("t1")).rejects.toMatchObject({ command: "delete_track" });
-  });
-
-  it('ipcStubs — deleteSession — rejects with NotImplementedError naming "delete_session"', async () => {
-    await expect(deleteSession("s1", true)).rejects.toThrow(NotImplementedError);
-    await expect(deleteSession("s1", false)).rejects.toMatchObject({ command: "delete_session" });
   });
 
   it('ipcStubs — listQuarantine — rejects with NotImplementedError naming "list_quarantine"', async () => {

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useReducer } from "react";
 
-import { getSession, listLaps, listSessions, rebuildCatalog, type LapSummary, type SessionDetail, type SessionSummary } from "../../../ipc/catalog";
+import { deleteSession, getSession, listLaps, listSessions, rebuildCatalog, type LapSummary, type SessionDetail, type SessionSummary } from "../../../ipc/catalog";
 import { useAppState } from "../../../state/AppState";
 import { ActiveChips } from "./ActiveChips";
 import { DetailPane } from "./DetailPane";
@@ -9,7 +9,7 @@ import { facetCounts, matchesFilters } from "./facets";
 import { FilterRail } from "./FilterRail";
 import { filtersReducer, initialFilters } from "./filters";
 import { ImportPanel } from "./ImportPanel";
-import { deleteSession, listQuarantine } from "./ipcStubs";
+import { listQuarantine } from "./ipcStubs";
 import {
   initialMaintenanceState,
   maintenanceReducer,
@@ -144,17 +144,44 @@ export default function Data() {
     if (selectedSessionId === null) return;
     // TODO(idl0): replace window.confirm() with the shell's in-app modal once one exists
     if (!window.confirm("Delete this session and its source file? This cannot be undone.")) return;
-    startMaintenanceAction(maintenanceState, "delete_session", runDeleteSession(deleteSession, selectedSessionId, true), maintenanceDispatch);
+    startMaintenanceAction(maintenanceState, "delete_session", runDeleteSession(deleteSession, selectedSessionId, true), (a) => {
+      maintenanceDispatch(a);
+      if (a.type === "SUCCEEDED") {
+        closeDetail();
+        loadSessions(() => false);
+      }
+    });
   };
 
-  /** Toolbar's "Forget session" (IPC need 3, stubbed) — idl0's
-   *  non-blob-deleting variant, mapped onto the same `deleteSession` stub
-   *  with `deleteBlob: false` rather than a fourth stub function. */
+  /** Toolbar's "Forget session" — idl0's non-blob-deleting variant, mapped
+   *  onto the same `deleteSession` (C3 §3.2) with `deleteBlob: false`
+   *  rather than a fourth call site. */
   const handleForgetSession = () => {
     if (selectedSessionId === null) return;
     // TODO(idl0): replace window.confirm() with the shell's in-app modal once one exists
     if (!window.confirm("Remove this session from the catalog? Its source file is kept.")) return;
-    startMaintenanceAction(maintenanceState, "forget_session", runForgetSession(deleteSession, selectedSessionId), maintenanceDispatch);
+    startMaintenanceAction(maintenanceState, "forget_session", runForgetSession(deleteSession, selectedSessionId), (a) => {
+      maintenanceDispatch(a);
+      if (a.type === "SUCCEEDED") {
+        closeDetail();
+        loadSessions(() => false);
+      }
+    });
+  };
+
+  /** `MetadataForm`'s `onSaved`: `save_session_metadata` (C3 §3.2) already
+   *  re-reads and returns the file's own canonical `SessionDetail`, so this
+   *  redraws the detail pane from that rather than from what the form
+   *  hoped it wrote. Also refreshes the sessions list — the nine saved
+   *  fields (rider, bike, venue, etc.) are also `SessionSummary` columns
+   *  the list/filters/facets read, and `save_session_metadata` does not
+   *  update the catalog row itself (C3 §3.2: "not re-indexed by this
+   *  command; `rebuild_catalog` reconciles it"). */
+  const handleMetadataSaved = (detail: SessionDetail) => {
+    if (detailState.status === "ready") {
+      detailDispatch({ type: "detail-ready", detail, laps: detailState.laps, lapsErrorText: detailState.lapsErrorText });
+    }
+    loadSessions(() => false);
   };
 
   /** Toolbar's "Review quarantine" (IPC need 4, stubbed). Confirmed first,
@@ -356,6 +383,7 @@ export default function Data() {
                 view={detailView}
                 detail={detailState.detail}
                 lapsErrorText={detailState.lapsErrorText}
+                onMetadataSaved={handleMetadataSaved}
                 onClose={closeDetail}
               />
             )}
