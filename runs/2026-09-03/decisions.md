@@ -3827,3 +3827,19 @@ multi-overlay `MathLapContext` (R73 closed). Worktrees retired. Next: the
 TS shell task (`ipc/catalog.ts` types + `rescanTracks`, Data lap tables and
 Rescan button, Notebook lap context now live, Task 6's `fetch_fft lap` from
 the FFT form).
+
+## 2026-09-06 — R86: L8x Data-tab write commands (plan `runs/2026-09-06/lanes/l8x-data-writes/PLAN.md`) — open questions ruled
+
+Q1 yes: the lane builds the quarantine producer (`verify_data_dir(repair)`
+per C4 §7) — no permanently-empty command in a signed contract. Q2 yes:
+`"retry"` → `"restore"`. Q3 yes: `TrackDetail` on the wire in decimal
+degrees (no ÷1e7 in JS). Q4: one `save_track` with nullable `track_id`.
+Q5 yes: write commands return `stale_session_ids`; the user triggers
+`rescan_tracks`. Q6: duplicate sector/neutral-zone names allowed (display
+labels). Q7 no: the track editor UI stays out (R54); shell tasks stop at
+name, venue, delete. Q8: `verify_data_dir` in the App group. Correction
+accepted: import is not a quarantine producer (it reads from outside the
+data dir); C4 §7 verify-repair is. Worktrees `l8x-data-writes` in both
+repos; Task 1 (docs, spec-first) is lead-spot-checked.
+
+**Cost if wrong:** contract text and one enum token; all additive.
