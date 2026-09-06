@@ -2316,7 +2316,7 @@ BLE scan / connect / disconnect, with the §7.3 status characteristic rendered a
 
 A profile is one complete bike-specific configuration: `runs/2026-09-05/lanes/l7/IPC-NEEDS.md` need 11's `BikeProfile` shape (`profile_id`, `profile_name`, `created_at_ms`, `updated_at_ms`, and a `config` sub-object — the SPEC §8 device-config document, pushed verbatim). idl0 stored the library as JSON files at `<docs>/profiles/<uuid>.idl0p`, one profile active at a time; **Push Config** (§23.6) pushes only the active profile's `config`.
 
-**Wave 2 (`Device/profiles.ts`, `Device/ProfileBar.tsx`) is in-memory for the session — not the file-backed library above.** `list_profiles`/`save_profile`/`delete_profile` (IPC need 11) are stubs until the Rust write lane lands `rust/core/src/store/profile.rs`'s already-implemented `load_all`/`save`/`delete`; until then, `ProfileBar` renders a visible, unconditional notice that the library is not saved. The bar itself is close to idl0's shape:
+**Wave 2 (`Device/profiles.ts`, `Device/profilesSync.ts`, `Device/ProfileBar.tsx`, L7b Task 10, R77.4) persists the library** over the landed `list_profiles`/`save_profile`/`delete_profile` (C3 §3.10, `rust/core/src/store/profile.rs`'s `load_all`/`save`/`delete`). `save_profile` is a whole-document replace, **last-write-wins** — the tab never merges; a save's returned `BikeProfile` replaces the local copy, never the optimistic one sent. **Save policy (ruling R78 Q3, 2026-09-06): an explicit "Save profile" button, no autosave** — every edit (rename, duplicate, new profile, or a channel-table change) stays local, with a dirty marker on the profile bar, until the user presses Save; this matches Push Config's "review, then press" rule (§23.6) and avoids a write on every config-editor keystroke. A profile whose `config` fails `Device/config/model.ts`'s `parseConfig` (any repair needed counts as a failure — never a silently defaulted config), and any file `list_profiles` itself could not parse, are both shown together in one skipped-profiles list. The bar itself is close to idl0's shape:
 
 - **Dropdown** — lists profiles by `profile_name`, single-select. Selection updates the active pointer (`profilesReducer`'s `SELECT`).
 - **`+ New profile`** — creates a profile seeded from `Device/config/defaults.ts`'s `defaultConfig(deviceId)` and makes it active (`CREATE`). Wave 2 has no "Duplicate active" toggle on creation — duplicating an existing profile is its own action, below.
@@ -2510,6 +2510,24 @@ Config pushes are never automatic — per §8, the user must review changes and 
 
 Start / Stop session — sends `CMD_START_LOGGING` / `CMD_STOP_LOGGING` per §7.2.
 
+**Wave 2 (`Device/control.ts`, `Device/DeviceControls.tsx`, L7b Task 10, R77.4).**
+Start/Stop recording and WiFi on/off go through the landed `device_control`
+(C3 §3.8), gated by `controlAvailability` (WiFi and recording are mutually
+exclusive per §23.9; a control whose deciding field is `null` — not
+reported — is withheld rather than guessed). `device_control` sends the
+command and polls status internally until the transition is observed or a
+bounded timeout expires, **returning the post-transition status either way —
+never timing out to an error** (R59). On this desktop BLE stack the SPEC
+§7.2 acknowledgement byte never reaches the app (R63 item 1, R71 correction
+2026-09-06), so a device that refuses a command cannot be distinguished from
+one that silently ignored it: a resolved `deviceControl` promise is *never*
+reported as success. The only evidence is `transitionObserved`'s read of the
+returned `DeviceStatus` against what the command asked for — `"observed"`,
+`"not-observed"` (sent, but the status still shows the old state), or
+`"unreported"` (the relevant field came back `null`) — each shown as its own
+distinct sentence, and a provisional-controls banner states this constraint
+plainly beside the buttons.
+
 ### 23.8 Deferred
 
 Recently connected devices list — requires persistent storage of past device names/IDs across sessions; not present in v1.
@@ -2589,24 +2607,40 @@ nearby IDL0 in the dropdown (system-Bluetooth style), true multi-unit
 switching, a persisted paired-device list (§23.8), the phone-GPS recording
 mode, and the on-device download/transfer card are still deferred.
 
-**Wave 2 (`Device/HeroCard.tsx`).** idl0's dense state machine above — the
-colour-coded peripheral readout, RX/TX activity, auto-connect, and the
-Start/Stop CTA — is not built. `device_status` (IPC need 8) and
-`device_control` (IPC need 9) have no C3 command, so the app cannot read a
-single one of the fields the hero describes: mode, recording state, SD
-card, GPS fix, IMU health, HR strap, HRM battery, or the device's own
-battery. `HeroCard` renders each of these as the literal string
-**"unavailable"** rather than a plausible-looking zero or a colour-coded
-"healthy" state it cannot back up — a fabricated battery reading on a race
-day is worse than a blank one (lane brief, "Do not"). The only fields it
-can show are what `ble_connect` (C3 §3.8, real and landed) already
-returned this session: whether the last connect attempt succeeded
-(`ConnectionState.connected`, read per R53 Device Q4 as "the last attempt
-succeeded," never a live link) and the firmware version it reported. There
-is no Start/Stop CTA, no dropdown picker, and no auto-connect loop — the
-tab's plain **Scan for devices** / **Connect** buttons (`Device/connection.ts`,
-Task 1; §23.1's connection panel, not rebuilt as a dropdown) are the only way
-to reach a device.
+**Wave 2 (`Device/HeroCard.tsx`, `Device/statusPoll.ts`, `Device/control.ts`,
+`Device/DeviceControls.tsx`, L7b Task 10, R77.4) goes live.** The connect
+path moved from the connect-act-disconnect `ble_connect` to the managed
+`connect_device`/`disconnect_device` pair (C3 §3.8, R59) — a 1 Hz poll is
+not implementable on a command that reconnects every call. While the tab is
+mounted, a device is connected, and the window is visible
+(`document.visibilityState`, R78 Q1), a pure `startStatusPoll` driver polls
+`device_status` at 1 Hz: one request in flight at a time, the next timer
+armed only once the previous settles, a rejection dispatched and the poll
+continued rather than stopped (a device walking back into range recovers on
+its own). `HeroCard` now shows real `Mode` / `Recording` / `SD card` /
+`GPS fix` / `IMU` / `HRM` / `Battery` / `Firmware` / `WiFi` rows, each in one
+of three distinct states: the real value, the literal **"unavailable"** for
+a field the device did not report (never a plausible-looking zero or a
+colour-coded "healthy" state it cannot back up — a fabricated battery
+reading on a race day is worse than a blank one, lane brief "Do not"), or
+**"not polled yet"** before the first result. After three consecutive
+`device_status` rejections (`LINK_LOST_AFTER_FAILURES` — no source states a
+number) a "link lost?" note appears beside the card; per ruling R78 Q2 this
+does **not** change `ConnectionState.connected` or stop the poll, since a
+transient BLE drop that self-heals is the common case, not the disconnect
+one. Start/Stop recording and WiFi on/off (§23.7) are offered through
+`DeviceControls.tsx`'s provisional-controls banner and buttons.
+
+Still not built from idl0's dense state machine: the colour-coded
+peripheral readout (values are shown, but not colour-coded healthy/degraded/
+fault), RX/TX link-activity indicators, the `mm:ss` recording timer, the
+device dropdown/picker sheet, and the auto-connect ("headphones") loop — the
+tab's plain **Scan for devices** / **Connect** / **Disconnect** buttons
+(`Device/connection.ts`) are still the only way to reach a device. IMU
+calibration (§23.5) and HRM pairing (§23.3.6's Search nearby) are likewise
+not built. `preview_channel_registry`'s enable/rate/unit widening (R53
+Device Q1) is explicitly out of this task's scope, as is the recently-
+connected-devices list (§23.8, already deferred).
 
 ---
 
