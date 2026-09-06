@@ -3912,3 +3912,11 @@ Worktrees `l11-sync` in both repos.
 
 **Cost if wrong:** the security posture is the one to revisit; everything
 else is additive contract text.
+
+## 2026-09-06 — Data-tab writes shell task LANDED (review Major fixed; main suite 98 / 924)
+
+Track name/venue edit + delete, real gate/sector/NZ lists, quarantine
+Restore/Discard, Verify/Repair, "Rescan N sessions" with per-session
+outcomes (`allSettled`; a total failure still resolves with an honest
+result string — accepted, noted). The last `NotImplementedError` stubs
+in the app are gone.
