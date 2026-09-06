@@ -3657,3 +3657,11 @@ migration). Whole TS suite on main after merge: 83 files / 654 passed,
 `f1930ca`, review CLEAN. Merged `--no-ff` (CHANGELOG: kept both bullets).
 Whole TS suite on main: 86 files / 697 passed, `tsc` clean. Worktree
 retired. Remaining wave-2 UI work is L6 Tasks 18–20 in `wave2-l6-followon`.
+
+## 2026-09-06 — Disk: Isaac approved removing build caches
+
+Removed `saucyeng/.cargo-shared-target` (12.3 GB), `idl0-app/rust/target`
+(3.9 GB), `idl-rs/target` (1.5 GB) → 16.9 GB free. The app's own
+`app/src-tauri/target` kept for the preview build. Question 11 closed.
+Wave-3 worktrees cold-compile once; `rust/.cargo/config.toml` still
+points them at the shared dir, which cargo recreates.
