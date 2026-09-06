@@ -3978,3 +3978,7 @@ tie rule in Task 12's sweep.
 
 **Cost if wrong:** the tie rule is one comparison; the renderer is
 covered by the round-trip test.
+
+**review-task7 (L11) overruled:** its one "Important" — an "unauthorised"
+`cargo check -p idl-rs-tauri` — was requested by the lead's dispatch
+(transport is tauri's dependency). Task 7 is CLEAN.
