@@ -2316,7 +2316,7 @@ BLE scan / connect / disconnect, with the §7.3 status characteristic rendered a
 
 A profile is one complete bike-specific configuration: `runs/2026-09-05/lanes/l7/IPC-NEEDS.md` need 11's `BikeProfile` shape (`profile_id`, `profile_name`, `created_at_ms`, `updated_at_ms`, and a `config` sub-object — the SPEC §8 device-config document, pushed verbatim). idl0 stored the library as JSON files at `<docs>/profiles/<uuid>.idl0p`, one profile active at a time; **Push Config** (§23.6) pushes only the active profile's `config`.
 
-**Wave 2 (`Device/profiles.ts`, `Device/ProfileBar.tsx`) is in-memory for the session — not the file-backed library above.** `list_profiles`/`save_profile`/`delete_profile` (IPC need 11) are stubs until the Rust write lane lands `rust/core/src/store/profile.rs`'s already-implemented `load_all`/`save`/`delete`; until then, `ProfileBar` renders a visible, unconditional notice that the library is not saved. The bar itself is close to idl0's shape:
+**Wave 2 (`Device/profiles.ts`, `Device/profilesSync.ts`, `Device/ProfileBar.tsx`, L7b Task 10, R77.4) persists the library** over the landed `list_profiles`/`save_profile`/`delete_profile` (C3 §3.10, `rust/core/src/store/profile.rs`'s `load_all`/`save`/`delete`). `save_profile` is a whole-document replace, **last-write-wins** — the tab never merges; a save's returned `BikeProfile` replaces the local copy, never the optimistic one sent. **Save policy (ruling R78 Q3, 2026-09-06): an explicit "Save profile" button, no autosave** — every edit (rename, duplicate, new profile, or a channel-table change) stays local, with a dirty marker on the profile bar, until the user presses Save; this matches Push Config's "review, then press" rule (§23.6) and avoids a write on every config-editor keystroke. A profile whose `config` fails `Device/config/model.ts`'s `parseConfig` (any repair needed counts as a failure — never a silently defaulted config), and any file `list_profiles` itself could not parse, are both shown together in one skipped-profiles list. The bar itself is close to idl0's shape:
 
 - **Dropdown** — lists profiles by `profile_name`, single-select. Selection updates the active pointer (`profilesReducer`'s `SELECT`).
 - **`+ New profile`** — creates a profile seeded from `Device/config/defaults.ts`'s `defaultConfig(deviceId)` and makes it active (`CREATE`). Wave 2 has no "Duplicate active" toggle on creation — duplicating an existing profile is its own action, below.
@@ -2510,6 +2510,24 @@ Config pushes are never automatic — per §8, the user must review changes and 
 
 Start / Stop session — sends `CMD_START_LOGGING` / `CMD_STOP_LOGGING` per §7.2.
 
+**Wave 2 (`Device/control.ts`, `Device/DeviceControls.tsx`, L7b Task 10, R77.4).**
+Start/Stop recording and WiFi on/off go through the landed `device_control`
+(C3 §3.8), gated by `controlAvailability` (WiFi and recording are mutually
+exclusive per §23.9; a control whose deciding field is `null` — not
+reported — is withheld rather than guessed). `device_control` sends the
+command and polls status internally until the transition is observed or a
+bounded timeout expires, **returning the post-transition status either way —
+never timing out to an error** (R59). On this desktop BLE stack the SPEC
+§7.2 acknowledgement byte never reaches the app (R63 item 1, R71 correction
+2026-09-06), so a device that refuses a command cannot be distinguished from
+one that silently ignored it: a resolved `deviceControl` promise is *never*
+reported as success. The only evidence is `transitionObserved`'s read of the
+returned `DeviceStatus` against what the command asked for — `"observed"`,
+`"not-observed"` (sent, but the status still shows the old state), or
+`"unreported"` (the relevant field came back `null`) — each shown as its own
+distinct sentence, and a provisional-controls banner states this constraint
+plainly beside the buttons.
+
 ### 23.8 Deferred
 
 Recently connected devices list — requires persistent storage of past device names/IDs across sessions; not present in v1.
@@ -2589,24 +2607,40 @@ nearby IDL0 in the dropdown (system-Bluetooth style), true multi-unit
 switching, a persisted paired-device list (§23.8), the phone-GPS recording
 mode, and the on-device download/transfer card are still deferred.
 
-**Wave 2 (`Device/HeroCard.tsx`).** idl0's dense state machine above — the
-colour-coded peripheral readout, RX/TX activity, auto-connect, and the
-Start/Stop CTA — is not built. `device_status` (IPC need 8) and
-`device_control` (IPC need 9) have no C3 command, so the app cannot read a
-single one of the fields the hero describes: mode, recording state, SD
-card, GPS fix, IMU health, HR strap, HRM battery, or the device's own
-battery. `HeroCard` renders each of these as the literal string
-**"unavailable"** rather than a plausible-looking zero or a colour-coded
-"healthy" state it cannot back up — a fabricated battery reading on a race
-day is worse than a blank one (lane brief, "Do not"). The only fields it
-can show are what `ble_connect` (C3 §3.8, real and landed) already
-returned this session: whether the last connect attempt succeeded
-(`ConnectionState.connected`, read per R53 Device Q4 as "the last attempt
-succeeded," never a live link) and the firmware version it reported. There
-is no Start/Stop CTA, no dropdown picker, and no auto-connect loop — the
-tab's plain **Scan for devices** / **Connect** buttons (`Device/connection.ts`,
-Task 1; §23.1's connection panel, not rebuilt as a dropdown) are the only way
-to reach a device.
+**Wave 2 (`Device/HeroCard.tsx`, `Device/statusPoll.ts`, `Device/control.ts`,
+`Device/DeviceControls.tsx`, L7b Task 10, R77.4) goes live.** The connect
+path moved from the connect-act-disconnect `ble_connect` to the managed
+`connect_device`/`disconnect_device` pair (C3 §3.8, R59) — a 1 Hz poll is
+not implementable on a command that reconnects every call. While the tab is
+mounted, a device is connected, and the window is visible
+(`document.visibilityState`, R78 Q1), a pure `startStatusPoll` driver polls
+`device_status` at 1 Hz: one request in flight at a time, the next timer
+armed only once the previous settles, a rejection dispatched and the poll
+continued rather than stopped (a device walking back into range recovers on
+its own). `HeroCard` now shows real `Mode` / `Recording` / `SD card` /
+`GPS fix` / `IMU` / `HRM` / `Battery` / `Firmware` / `WiFi` rows, each in one
+of three distinct states: the real value, the literal **"unavailable"** for
+a field the device did not report (never a plausible-looking zero or a
+colour-coded "healthy" state it cannot back up — a fabricated battery
+reading on a race day is worse than a blank one, lane brief "Do not"), or
+**"not polled yet"** before the first result. After three consecutive
+`device_status` rejections (`LINK_LOST_AFTER_FAILURES` — no source states a
+number) a "link lost?" note appears beside the card; per ruling R78 Q2 this
+does **not** change `ConnectionState.connected` or stop the poll, since a
+transient BLE drop that self-heals is the common case, not the disconnect
+one. Start/Stop recording and WiFi on/off (§23.7) are offered through
+`DeviceControls.tsx`'s provisional-controls banner and buttons.
+
+Still not built from idl0's dense state machine: the colour-coded
+peripheral readout (values are shown, but not colour-coded healthy/degraded/
+fault), RX/TX link-activity indicators, the `mm:ss` recording timer, the
+device dropdown/picker sheet, and the auto-connect ("headphones") loop — the
+tab's plain **Scan for devices** / **Connect** / **Disconnect** buttons
+(`Device/connection.ts`) are still the only way to reach a device. IMU
+calibration (§23.5) and HRM pairing (§23.3.6's Search nearby) are likewise
+not built. `preview_channel_registry`'s enable/rate/unit widening (R53
+Device Q1) is explicitly out of this task's scope, as is the recently-
+connected-devices list (§23.8, already deferred).
 
 ---
 
@@ -3073,6 +3107,27 @@ warns that the custom code will be discarded if accepted. This is design
 closed grammar is a deliberate escape hatch (computed values, custom D3
 marks), not an error state.
 
+**Chart type in the form (FFT)** (added 2026-09-06, rulings R78/R79, L6
+Task 20). The Properties pane's first control is the chart type, `Time` or
+`FFT`, because the type is a property of the document and not of the pane:
+an FFT cell's window size, hop size, window function, detrend, scaling and
+averaging are parameters of the picture and so live in the cell's code, in
+the closed grammar C2 §5.3 defines (CLAUDE.md §3, "no renderer-only
+parameters"; ruling R78, L6 Task 19 Q1). An FFT cell is its own cell and
+carries exactly one spectrum mark — a spectrum's x axis is frequency and a
+time series' is seconds, and one `Plot.plot` has one x axis (R78 Q2). The
+host recognises an FFT cell by parsing it, never by scanning for a call,
+so a cell outside the grammar is custom code that renders an empty plot
+rather than a silently half-wired chart. The spectrum itself is computed
+by `fetch_fft` (C3 §3.6) and reaches the sandbox as a
+`{ kind: "spectrum", f, m }` host-variable payload; the only arithmetic
+this tab performs on it is bin `k`'s frequency,
+`k * sample_rate_hz / (2 * bin_count)`, which C3 §3.6 places frontend-side
+explicitly. With `averaging: "none"` the request covers the whole record
+in one segment (ruling R76), which the document writes as
+`windowSize: "all", hopSize: "all"` rather than a session-specific sample
+count.
+
 **The Properties↔Code loop guard.** Because both panes write the same
 underlying body, a write from one pane can echo back into the other as an
 apparent external change. `Notebook/model/editorEcho.ts`'s `isEditorEcho`
@@ -3305,7 +3360,7 @@ into an engine half and a UI-only half:
 
 | Field | Type | Default | Notes |
 |-------|------|---------|-------|
-| `engine.data_dir` | `string \| null` | `null` | C4 §1's `<data>` override. `null` = platform default. Mirrors `settings.json`'s `data_dir`. |
+| `engine.data_dir` | `string \| null` | `null` | C4 §1's `<data>` override. `null` = platform default. Read from `get_settings`; written only by `setDataDir`/`set_data_dir` — `set_settings` ignores this field on its argument (ruling R59 Q5). |
 | `engine.rider_name` | `string` | `""` | `""` = not set (C4 §1 — there is no `null` representation for this field). |
 | `engine.unit_system` | `"imperial" \| "metric"` | `"imperial"` | An unrecognised value (e.g. from a corrupt document) falls back to `"imperial"`, never throws. |
 | `ui.last_section` | `string` | `"profile"` | Which Settings section the tab reopens on. Never reaches the engine. |
@@ -3321,19 +3376,34 @@ and firmware (`firmwareChannel`, `autoCheckFirmware`) fields have no idl1
 counterpart here: Drive sync is dropped permanently (replaced by LAN sync,
 §27.4) and firmware/OTA is deferred to wave 3 (not persisted yet).
 
-**Where it lives in wave 2 — `localStorage`, not `settings.json`.**
-`rust/core/src/store/settings.rs` already loads and saves
-`app_config_dir()/settings.json` with exactly `engine`'s three keys (C4 §1),
-but no C3 command exposes it yet (C3 is frozen for UI lanes during wave 2).
-So for now the whole `Prefs` document — both halves — is kept in the
-WebView's own `localStorage` on the machine, behind the `PrefsBackend`
-interface (`prefsStore.ts`): it does not sync across devices and does not
-reach `settings.json`. `get_settings`/`set_settings` (IPC need 6, filed in
-`runs/2026-09-05/lanes/l7/IPC-NEEDS.md`) is the command that closes this
-gap; when it lands, the swap is a one-time import of the `localStorage`
-keys into `settings.json` (so nothing already saved is silently lost),
-after which only the `engine` half round-trips through the command and
-`ui` stays local.
+**Where it lives (L7c Task 8, R77.4/R78) — `engine` in `settings.json`, `ui`
+in `localStorage`.** `Settings/settingsBackend.ts` implements `PrefsBackend`
+over `get_settings`/`set_settings` (C3 §3.10): `read()` merges the `engine`
+half from `get_settings` with the `ui` half from `localStorage` into the one
+document shape `parsePrefs` already understands, and `write()` splits it back
+— `rider_name`/`unit_system` go to `set_settings`, the whole document
+(including `ui` and any preserved unknown keys) is also kept in `localStorage`
+so a `get_settings` outage degrades to the last known values rather than to
+defaults. `engine.data_dir` is read from `get_settings` but never written
+through `set_settings`, which ignores that field on its argument (ruling R59
+Q5) — `setDataDir` is that key's sole writer; `settingsBackend.write()` echoes
+back whatever `read()` last saw for it rather than inventing `null`. `ui`
+stays in `localStorage` unchanged (R78 Q2): it never reaches the engine and
+losing it (a cleared WebView) is a non-event.
+
+`Settings/prefsMigration.ts` runs a one-time import, at app start, of
+whatever `engine` fields an existing `localStorage` document holds into
+`settings.json`, then removes just that half from the `localStorage`
+document (`ui` and any unknown keys stay) — guarded by a
+`localStorage`-held flag so it runs at most once per machine. `settings.json`
+wins on conflict (R78 Q1): only fields still at their engine default on disk
+are imported, since a non-default value there was set deliberately (by this
+app or another `set_settings` caller) and a stale browser copy must not
+silently overwrite it. `data_dir` is never touched by the migration. A failed
+`set_settings` call during migration does not set the flag, so the import
+retries on the next launch; a failed migration and a failed engine-field
+write are both shown as a `role="status"` line in the affected section
+(`ProfileSection`/`UnitsSection`, R78 Q3) rather than a console log.
 
 `parsePrefs`/`serializePrefs` are lenient: an unreadable or partial
 document yields defaults for the keys it cannot supply, and unknown keys

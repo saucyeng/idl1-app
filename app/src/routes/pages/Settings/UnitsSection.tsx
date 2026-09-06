@@ -7,6 +7,12 @@ import { UNIT_SYSTEMS, unitSummary, type UnitSystem } from "./units";
 export interface UnitsSectionProps {
   /** The prefs store this section reads from and writes to. */
   store: PrefsStore;
+  /** A one-line status message about the one-time `localStorage` →
+   *  `settings.json` migration (R78 L7c Task 8, Q3), or `null` when there is
+   *  nothing to say. Owned by `index.tsx`, which runs the migration once for
+   *  the whole tab and knows whether `unit_system` was the field imported
+   *  (or the import failed). */
+  migrationNotice?: string | null;
 }
 
 /** The Units section: a two-way imperial/metric toggle plus a read-only
@@ -18,7 +24,7 @@ export interface UnitsSectionProps {
  * async, so the initial value is seeded in an effect rather than read
  * synchronously at render time; the toggle defaults to `"imperial"` for one
  * paint while that read is in flight. */
-export default function UnitsSection({ store }: UnitsSectionProps) {
+export default function UnitsSection({ store, migrationNotice = null }: UnitsSectionProps) {
   const [system, setSystem] = useState<UnitSystem>("imperial");
   const [writeFailed, setWriteFailed] = useState<boolean>(false);
   const summary = unitSummary(system);
@@ -67,8 +73,13 @@ export default function UnitsSection({ store }: UnitsSectionProps) {
         Changing the unit system does not retroactively convert existing channel values.
       </p>
       {writeFailed ? (
-        <p className="idl1-settings__hint idl1-settings__hint--error">
+        <p role="status" className="idl1-settings__hint idl1-settings__hint--error">
           Your unit system could not be saved to this device. It will keep showing until you leave this screen.
+        </p>
+      ) : null}
+      {migrationNotice !== null ? (
+        <p role="status" className="idl1-settings__hint">
+          {migrationNotice}
         </p>
       ) : null}
       <table className="idl1-settings__unit-summary">
