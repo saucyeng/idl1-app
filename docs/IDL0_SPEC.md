@@ -1649,6 +1649,15 @@ not as an independent choice.
   a `NoopPostImportHook.on_imported` call after a successful import,
   before the CAS blob write. This section ships only the hook's shape;
   wiring a real hook is out of scope here.
+- **Lap indexing runs on every import (L2b Task 3, §17.4).** After
+  `store::import::finish_import` writes/confirms `data.parquet` and
+  `session.json` (whichever of `Write`/`Regenerate`/`Skip` it took — never on
+  a `Collision`, which already refuses the import), it calls
+  `store::lap_index::index_laps` against the session it just parsed, before
+  returning. Failure there is non-fatal to the import itself: the caller sees
+  `ImportReport.lap_index_warning` instead of a hard error, and the session
+  recovers its laps on the next import of the same bytes or an explicit
+  `idl-rs rescan` (§29.6).
 - **What is not covered here.** Writing `data.parquet` (C1 §4), catalog
   insertion (C4 §5), CLI subcommand wiring (`idl-rs import`), and the
   `.idl0` importer are L1's.
@@ -3933,6 +3942,22 @@ idl-rs visits <file.idl0> --track <a.idl0t> [--track <b.idl0t> …] [--format js
   form (§29.7). CSV is not offered here — nested lap/sector data maps poorly to
   flat rows; use `export` for tabular channel data.
 
+Distinct from `laps`/`visits` above (which detect live over one `.idl0t` +
+`.idl0` pair, nothing on disk): **`rescan`** is §17.4's "Rescan Tracks" over a
+data directory (contract C4 §1) and an already-imported session id, always
+recomputing (`force = true`) via `store::lap_index::reindex_laps`.
+
+```
+idl-rs rescan <data_root> --session <session_id> [--format json]
+```
+
+Prints a human summary (visit/lap counts, any lap-flag fields cleared by
+ruling R83 Q3, and non-fatal warnings) by default; `--format json` emits the
+enveloped success form (§29.7) with `data: { "rescan": { session_id,
+visits_indexed, laps_indexed, skipped_up_to_date, flags_cleared, warnings } }`.
+A missing `sessions/<id>/data.parquet` is an `io` error (§29.7's error kinds),
+never a panic.
+
 ### 29.7 CLI output envelope
 
 Every `idl-rs` command speaks one versioned JSON **envelope** so a script or
@@ -3983,10 +4008,10 @@ bumps it.
 
 **Structured vs. bulk.** Commands split by output size:
 
-- **Structured** — `info`, `channels`, `laps`, `visits`, `table`: small
-  aggregated/metadata results. Default output is **human text**; `--format json`
-  emits the success envelope on stdout. Failures emit the error envelope on
-  stdout.
+- **Structured** — `info`, `channels`, `laps`, `visits`, `rescan`, `table`:
+  small aggregated/metadata results. Default output is **human text**;
+  `--format json` emits the success envelope on stdout. Failures emit the
+  error envelope on stdout.
 - **Bulk** — `export`, `math`, `fit`, `recover`, `scan`: sample streams /
   binaries. Success writes the raw CSV/FIT/`.idl0` artifact to stdout or `-o`
   unchanged; failure writes the error envelope to **stderr** and exits non-zero.
@@ -4013,6 +4038,7 @@ serde output):
 - `channels` → `{ channels: [ { channel_id, sample_rate_hz, length, synthesized } ] }`.
 - `laps` → `{ laps: [ Lap ] }`, the engine's `Lap` serde shape.
 - `visits` → `{ visits: [ { track_id, name, start_ms, end_ms, duration_ms } ] }`.
+- `rescan` → `{ rescan: { session_id, visits_indexed, laps_indexed, skipped_up_to_date, flags_cleared, warnings } }`.
 - `table` → the self-describing table result (columns + resolved row windows +
   cells); the envelope is its wrapper.
 
