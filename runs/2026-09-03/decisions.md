@@ -3560,3 +3560,44 @@ seams that need design. Rulings:
 
 **Cost if wrong:** all four are additive tasks over landed commands; the
 shell task shipped nothing wrong, it shipped less.
+
+## 2026-09-06 — R78: follow-on briefs' open questions (runs/2026-09-06/followons/)
+
+**L6 Task 17 (prose) — R77.2 revised.** Q1: prose is document text, not
+cell output; R69's boundary exists because *sandbox-produced* HTML is
+untrusted. `prose_before_html`/`prose_after_html` are produced by core
+(Rust-escaped, R70) and are trusted like any other IPC value, so the
+**host renders them** (the one permitted `dangerouslySetInnerHTML`, on
+core output only, with a comment saying so) and prose stays selectable,
+findable and in the accessibility tree. Span values still come from the
+sandbox (`inlineResult`) and are inserted by `textContent` only — never
+HTML. Q2: keep `inlineResult` and `spanError`. Q3: a span error shows in
+place as text in its span; no banner. The brief's `setProse`/
+`layoutProse`/`proseRendered` messages and the five-step replay are
+dropped; the TS regex scanner is still deleted and `prose_spans` from
+core is the only span list. **Cost if wrong:** if core's escaping ever
+regresses, the host renders it — the round-trip escaping test in core
+(review-task4c) is the guard.
+
+**L6 Task 18 (host channel).** Q1 (a): definition channels re-fetch on
+rebuild; SPEC §26.4's "never re-fetches" clause is amended to say
+tile-backed channels are re-derived, definition channels re-fetched.
+Q2 (a): a definition-only cell mounts `JsCellFrame`; a mixed cell keeps
+`ChartCell`. Q3 (a): `has_t: false` is not bound; the note names it.
+
+**L6 Task 19 (FFT).** Q1 (a): widen C2 §5.3 with an FFT chart production
+(chart type + window/hop/window fn/detrend/scaling/averaging in the
+document — CLAUDE.md §3, no renderer-only parameters). Task 19 does Steps
+1–4 now and stops; the lead drafts the C2 §5.3 amendment; the grammar +
+Properties form work is **L6 Task 20**. Q2: its own cell. Q3: the
+`JsCellFrame` note slot.
+
+**L7b Task 10 (device live).** Q1 (b): mount scope plus a
+`visibilitychange` pause. Q2 (c): after 3 consecutive poll failures show
+"link lost?" and keep polling; state unchanged (named constant, comment
+says no source fixes it). Q3 (a): explicit Save profile, dirty marker.
+
+**L7c Task 8 (settings).** Q1 (b): `settings.json` wins; only fields still
+at engine default are imported from localStorage. Q2 (a): `ui` stays in
+localStorage. Q3 (a): a `role="status"` line in the affected section for
+migration and `set()` failures.
