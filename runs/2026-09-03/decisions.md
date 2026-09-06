@@ -3893,3 +3893,22 @@ cli 53. `save_track`/`delete_track`, `list_quarantine`/
 `resolve_quarantine`, `verify_data_dir(repair)`, typed `TrackDetail`,
 catalog now indexes workbooks. Worktrees retired. Next: the Data-tab
 shell task (five items listed in TASKS.md's L8x entry).
+
+## 2026-09-06 — R88: L11 LAN sync (plan `runs/2026-09-06/lanes/l11-sync/PLAN.md`) — open questions ruled
+
+Sync lives in `idl-transport` under `sync/`; transport gains a
+one-directional dependency on core (design §16's open item closed).
+No new crates: `axum`/mDNS/`uuid` as pinned, range header parsed by hand.
+Plain HTTP with per-peer bearer tokens, no TLS — a stated LAN-only
+posture (a cloud relay later brings TLS). Pairing is symmetric
+show-a-code via a new `start_pairing` command; QR is the mobile lane's.
+Workbook per-cell merge (C2 §7) is in lane (Tasks 4–5). `session.json`:
+per-field merge for user-owned fields; the lap cache never merges (C4 §8
+item 3 closed). Peers/tokens stored outside `<data>`. `.sync-base/` stays
+at C2's path, excluded in C4. Auto-trigger at most once per peer per
+60 s, never for an incompatible peer. Twelve serial tasks; Task 1 is
+spec-first docs (lead spot-check); loopback two-peer proof is Task 11.
+Worktrees `l11-sync` in both repos.
+
+**Cost if wrong:** the security posture is the one to revisit; everything
+else is additive contract text.
