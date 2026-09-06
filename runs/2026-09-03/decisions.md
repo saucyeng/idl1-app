@@ -3843,3 +3843,10 @@ data dir); C4 §7 verify-repair is. Worktrees `l8x-data-writes` in both
 repos; Task 1 (docs, spec-first) is lead-spot-checked.
 
 **Cost if wrong:** contract text and one enum token; all additive.
+
+## 2026-09-06 — Lap shell task LANDED (review CLEAN; main suite 95 / 885)
+
+Typed lap details on the wire, Data lap tables render sectors/neutral
+zones, "Rescan tracks" button + report, FFT `lap` from the selected main
+lap, stale "until lap indexing lands" comments removed. Laps are live
+end-to-end: import → session.json → catalog → Data tab / Notebook.
