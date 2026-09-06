@@ -5,11 +5,25 @@ import type { EngineSettings } from "./settingsBackend";
  *  {@link runPrefsMigration} runs at most once per machine (R78 L7c Task 8). */
 export const MIGRATION_FLAG_KEY = "idl1.settings.prefs.migrated.v1";
 
+/** One engine field {@link migrationPlan} left as-is because `settings.json`
+ *  already held a value different from the `localStorage` copy — recorded
+ *  so the caller can name it instead of skipping silently (R82, L7c Task 9).
+ *  Not recorded when the two values are equal, or when the field was
+ *  imported instead. */
+export interface SkippedField {
+  /** Which engine field was skipped. */
+  field: "rider_name" | "unit_system";
+  /** The value already on disk in `settings.json`, kept as-is. */
+  onDisk: string;
+  /** The value from the browser's `localStorage` copy, not imported. */
+  local: string;
+}
+
 /** The result of one {@link runPrefsMigration} call. */
 export type MigrationOutcome =
   | { kind: "already-done" }
-  | { kind: "nothing-to-migrate" }
-  | { kind: "migrated"; imported: Partial<EnginePrefs> }
+  | { kind: "nothing-to-migrate"; skipped: SkippedField[] }
+  | { kind: "migrated"; imported: Partial<EnginePrefs>; skipped: SkippedField[] }
   | { kind: "failed"; error: unknown };
 
 /** Decides whether an import should run, and what to send to `setSettings`
@@ -32,20 +46,20 @@ export function migrationPlan(
   localDocument: string | null,
   engineOnDisk: EngineSettings,
   alreadyMigrated: boolean,
-): { action: "skip" | "import"; settings?: EngineSettings; reason: string } {
+): { action: "skip" | "import"; settings?: EngineSettings; skipped: SkippedField[]; reason: string } {
   if (alreadyMigrated) {
-    return { action: "skip", reason: "migration already ran on this machine" };
+    return { action: "skip", skipped: [], reason: "migration already ran on this machine" };
   }
 
   if (localDocument === null) {
-    return { action: "skip", reason: "no localStorage prefs document to import from" };
+    return { action: "skip", skipped: [], reason: "no localStorage prefs document to import from" };
   }
 
   let parsedJson: unknown;
   try {
     parsedJson = JSON.parse(localDocument);
   } catch {
-    return { action: "skip", reason: "localStorage prefs document is not valid JSON" };
+    return { action: "skip", skipped: [], reason: "localStorage prefs document is not valid JSON" };
   }
 
   const localEngine = parsePrefs(parsedJson).engine;
@@ -56,8 +70,19 @@ export function migrationPlan(
   const importRiderName = riderNameAtDefault && localEngine.rider_name !== DEFAULT_PREFS.engine.rider_name;
   const importUnitSystem = unitSystemAtDefault && localEngine.unit_system !== DEFAULT_PREFS.engine.unit_system;
 
+  // A field is "skipped" (worth naming to the user) only when it was not
+  // imported and the two copies actually disagree — not when both already
+  // hold the same value, and not when the field was imported instead.
+  const skipped: SkippedField[] = [];
+  if (!importRiderName && localEngine.rider_name !== engineOnDisk.rider_name) {
+    skipped.push({ field: "rider_name", onDisk: engineOnDisk.rider_name, local: localEngine.rider_name });
+  }
+  if (!importUnitSystem && localEngine.unit_system !== engineOnDisk.unit_system) {
+    skipped.push({ field: "unit_system", onDisk: engineOnDisk.unit_system, local: localEngine.unit_system });
+  }
+
   if (!importRiderName && !importUnitSystem) {
-    return { action: "skip", reason: "engine fields on disk are already set; nothing still at default to import" };
+    return { action: "skip", skipped, reason: "engine fields on disk are already set; nothing still at default to import" };
   }
 
   return {
@@ -67,6 +92,7 @@ export function migrationPlan(
       rider_name: importRiderName ? localEngine.rider_name : engineOnDisk.rider_name,
       unit_system: importUnitSystem ? localEngine.unit_system : engineOnDisk.unit_system,
     },
+    skipped,
     reason: "importing the engine fields still at their default on disk",
   };
 }
@@ -110,7 +136,7 @@ export async function runPrefsMigration(deps: PrefsMigrationDeps): Promise<Migra
 
   const plan = migrationPlan(localDocument, engineOnDisk, false);
   if (plan.action === "skip" || plan.settings === undefined) {
-    return { kind: "nothing-to-migrate" };
+    return { kind: "nothing-to-migrate", skipped: plan.skipped };
   }
 
   try {
@@ -149,5 +175,5 @@ export async function runPrefsMigration(deps: PrefsMigrationDeps): Promise<Migra
     // Best-effort only, see above.
   }
 
-  return { kind: "migrated", imported };
+  return { kind: "migrated", imported, skipped: plan.skipped };
 }

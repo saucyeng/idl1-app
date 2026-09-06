@@ -3462,7 +3462,10 @@ silently overwrite it. `data_dir` is never touched by the migration. A failed
 `set_settings` call during migration does not set the flag, so the import
 retries on the next launch; a failed migration and a failed engine-field
 write are both shown as a `role="status"` line in the affected section
-(`ProfileSection`/`UnitsSection`, R78 Q3) rather than a console log.
+(`ProfileSection`/`UnitsSection`, R78 Q3) rather than a console log. A field
+skipped because `settings.json` already held a value different from the
+`localStorage` copy is named in that same `role="status"` line, with both
+the kept and discarded values (R82, L7c Task 9) — never a silent skip.
 
 `parsePrefs`/`serializePrefs` are lenient: an unreadable or partial
 document yields defaults for the keys it cannot supply, and unknown keys
