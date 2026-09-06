@@ -3601,3 +3601,47 @@ says no source fixes it). Q3 (a): explicit Save profile, dirty marker.
 at engine default are imported from localStorage. Q2 (a): `ui` stays in
 localStorage. Q3 (a): a `role="status"` line in the affected section for
 migration and `set()` failures.
+
+## 2026-09-06 — R79: C2 §5.3 FFT chart production (draft `runs/2026-09-06/C2-FFT-AMENDMENT-DRAFT.md`) — open questions ruled
+
+Q1 yes: `windowSize`/`hopSize` accept the token `"all"` (whole record;
+the only way `averaging: "none"` is expressible without a session-specific
+sample count in the document). Q2: one shared pure `spectrumKey(channelId,
+fftParams)` for the host variable. Q3: hop in samples (the contract's
+unit; the form may display overlap % derived from it). Q4: no grammar
+token; a host-side `bin_count` cap with a stated note — a cap is not a
+parameter of the picture. Q5: y-label seed "Magnitude (unit)" /
+"PSD (unit²/Hz)" per scaling, editable (R65 pattern). Q6: no confirm on
+chart-type switch. Q7: one spectrum per cell in wave 2; idl0's multi-trace
+overlay is a §26.6 parity gap. The draft is applied to C2 §5.3 as written
+with these answers (lead transcription on main); L6 Task 20 implements
+grammar + Properties panel after Task 19's Steps 1–4.
+
+**Cost if wrong:** a grammar production is additive; `"all"` is the one
+token a later amendment could regret, and it is the honest one.
+
+## 2026-09-06 — Checkpoint: fourth session-limit cutoff (3:03am ET, reset 3:30am)
+
+Cut off: `plan-l6-task20` (not started), `l6-review17` (findings file
+present — verdict checked by the lead), `l7b-task10` (WIP on disk in
+`wave2-l7b-followon`: `statusPoll/control/profilesSync` + tests,
+`DeviceControls.tsx`, `HeroCard`/`ProfileBar`/`connection`/`index`
+edits, SPEC §23 mid-rewrite; uncommitted), `l7c-review8` (no findings).
+Re-dispatched with inherited state at 6:05am. No work lost.
+
+## 2026-09-06 — R80: L6 Task 20 brief open questions (FFT grammar + Properties panel)
+
+Q1: `x` is required in the FFT arm with a required `type`; Example 5's
+omission is an elision (C2 text corrected in Task 20's commit, one line).
+Q2: bin cap = 16384, checked against the resolved window before the
+fetch and the decoded length after. Q3: three plain sentences in the
+note slot, no banner. Q4: `spectrumKey` and the params type live in a
+dependency-free module under `plotForm/` importable by both host and
+sandbox; nothing under `sandbox/` imports from `ipc/`. Q5: the host
+retains the decoded spectrum in a per-cell map and re-pushes it on
+rebuild (no re-fetch, no blank) — consistent with R78 Task 18 Q1's
+"definition channels re-fetch" only in that both restore state; a
+spectrum is small enough to keep. Q6: the first mark's channel survives
+a Time → FFT switch.
+
+**Cost if wrong:** constants and conventions, each one line to change.

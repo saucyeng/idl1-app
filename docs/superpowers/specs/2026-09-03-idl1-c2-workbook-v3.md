@@ -2,6 +2,12 @@
 
 **Status:** signed (lead) 2026-09-02 · **Date:** 2026-09-03 · **Owner:** lead
 
+**Revisions:**
+- 2026-09-06: §5.3 widened with an FFT chart production — `marks_array` splits
+  into `time_marks`/`fft_marks`, a `spectrum_call`/`fft_params` grammar, the
+  FFT Properties panel, and the FFT custom-code cases (rulings R78, L6
+  Task 19 Q1–Q2; R79, L6 Task 20 open questions Q1–Q7).
+
 Consumed by: L3 (`idl-rs` core `workbook` module — parser, math-cell evaluator
 extension, `migrate-workbook`), L6 (notebook editor — CodeMirror, Properties ↔
 Code, `plotForm`), L11 (LAN sync per-cell merge). Grammars are EBNF
@@ -627,36 +633,154 @@ option        ::= "x" ":" x_scale
 x_scale       ::= "{" x_field ("," x_field)* "}"
 x_field       ::= "label" ":" js_string
                 | "domain" ":" "[" js_number "," js_number "]"
-                | "type" ":" "\"linear\""
+                | "type" ":" ("\"linear\"" | "\"log\"")          (* changed 2026-09-06 *)
 y_scale       ::= "{" y_field ("," y_field)* "}"
 y_field       ::= "label" ":" js_string
                 | "domain" ":" "[" js_number "," js_number "]"
                 | "type" ":" ("\"linear\"" | "\"log\"" | "\"sqrt\"")
 color_opt     ::= "{" "legend" ":" "true" "}"
-marks_array   ::= "[" mark ("," mark)* "]"
-mark          ::= "Plot." mark_name "(" channel_call "," mark_options ")"
+marks_array   ::= time_marks | fft_marks                          (* changed 2026-09-06 *)
+time_marks    ::= "[" time_mark ("," time_mark)* "]"              (* new 2026-09-06 *)
+fft_marks     ::= "[" spectrum_mark "]"                           (* new 2026-09-06, exactly one *)
+
+time_mark     ::= "Plot." mark_name "(" channel_call "," mark_options ")"
 mark_name     ::= "lineY" | "dot" | "areaY" | "rectY" | "ruleY"
 channel_call  ::= "channel(" js_string ("," "{" "lap" ":" js_int "}")? ")"
 mark_options  ::= "{" "x" ":" "\"t\"" "," "y" ":" "\"v\""
                        ("," "stroke" ":" css_color)?
                        ("," "strokeWidth" ":" js_number)? "}"
+
+spectrum_mark ::= "Plot." spectrum_mark_name "(" spectrum_call "," spectrum_options ")"   (* new 2026-09-06 *)
+spectrum_mark_name ::= "lineY" | "dot" | "areaY"                  (* new 2026-09-06 *)
+spectrum_call ::= "spectrum(" js_string "," fft_params ")"        (* new 2026-09-06 *)
+fft_params    ::= "{" "windowSize" ":" window_size ","            (* new 2026-09-06; all six required, fixed order *)
+                      "hopSize" ":" hop_size ","
+                      "window" ":" window_fn ","
+                      "detrend" ":" detrend ","
+                      "scaling" ":" scaling ","
+                      "averaging" ":" averaging "}"
+window_size   ::= js_int | "\"all\""                              (* new 2026-09-06 — R79 Q1 *)
+hop_size      ::= js_int | "\"all\""                              (* new 2026-09-06 — R79 Q1 *)
+window_fn     ::= "\"rectangular\"" | "\"hann\"" | "\"hamming\""  (* new 2026-09-06 *)
+detrend       ::= "\"none\"" | "\"mean\"" | "\"linear\""          (* new 2026-09-06 *)
+scaling       ::= "\"magnitude\"" | "\"density\""                 (* new 2026-09-06 *)
+averaging     ::= "\"none\"" | "\"mean\"" | "\"median\"" | "\"max\""   (* new 2026-09-06 *)
+spectrum_options ::= "{" "x" ":" "\"f\"" "," "y" ":" "\"m\""      (* new 2026-09-06 *)
+                       ("," "stroke" ":" css_color)?
+                       ("," "strokeWidth" ":" js_number)? "}"
 css_color     ::= js_string                (* any valid CSS color literal *)
 ```
 
-Every key in every object is **optional** except `marks` (a plot with no
-marks is legal but pointless — the form always seeds one) and each
-`mark`'s `x`/`y` (always the literal pair `"t"`/`"v"`, never anything
-else — §5.1 fixes the channel shape's field names, so there is nothing
-else to bind). `x.type` accepts only the literal `"linear"` (equivalent to
-omitting the key; the generator never emits it) — reserved for a future
-non-time x-axis without widening the grammar now (§8-2 records this as
-provisional). Object keys may appear in any order; the grammar above lists
-them in the order `generate()` emits, which is also the order `parse()`
-requires for a **byte-identical** round-trip (`generate(parse(code)) ===
-code` for code the form itself produced) — a hand-edit that only reorders
-recognised keys still **parses** successfully (the parser is
-order-insensitive) but will not byte-round-trip until the form regenerates
-it, which is expected and harmless.
+**Rules that carry the same weight as the EBNF** (added 2026-09-06, ruling
+R78 L6 Task 19 Q1–Q2 / R79 L6 Task 20 Q1–Q7):
+
+- **A cell is a time cell or an FFT cell, never both** (R78 Q2). `marks_array`
+  is `time_marks` or `fft_marks`; a `marks` array containing both a
+  `channel_call` mark and a `spectrum_call` mark parses to `null` (custom).
+  This makes "its own cell" structural rather than an author convention: two
+  x axes (seconds and Hz) cannot share one `Plot.plot`.
+- **An FFT cell has exactly one mark** in v1 (R79 Q7). `fetch_fft` returns
+  one spectrum and the host's `fftDriver` keys its `spectrum` action by
+  `cellId`, so one cell resolves one spectrum. idl0's overlay of up to ten
+  spectra is a stated parity gap (SPEC §26.6), not silently dropped.
+- **All six `fft_params` keys are required**, in the order given. With every
+  key mandatory there is no parameter of the picture that lives in host
+  state or in a default the document does not state (CLAUDE.md §3). A
+  missing key is custom code, not a default.
+- **`x.type: "log"` is legal only in an FFT cell.** In a time cell `x.type`
+  still admits only `"linear"` and the generator still never emits it (§8-2
+  holds unchanged for time cells). In an FFT cell the generator **does**
+  emit `x.type`, always, for the same reason the `fft_params` keys are
+  required.
+- **Mark options bind `"f"`/`"m"`, never `"t"`/`"v"`.** The spectrum host
+  variable is a frequency shape; reusing `t` for Hz would be the same error
+  the protocol layer forbids, and the grammar refuses it too.
+- **`lap` is not expressible on `spectrum_call`.** C3 §3.6 requires
+  `lap: null` until lap indexing at import lands; a grammar slot for it
+  would be a promise the engine cannot keep.
+- **`"all"` (`window_size`/`hop_size`) means the whole record** (R79 Q1):
+  the host resolves it to the channel's `ChannelSummary.sample_count` at
+  fetch time — exactly the single-segment sizing `averaging: "none"`
+  requires (ruling R76). A literal sample count in the document would be
+  wrong the moment the workbook is opened against another session.
+
+**The spectrum host variable.** `spectrum(name, params)` is the one
+recognisable host form — one call, one shape, mirroring `channel(...)`:
+in the sandbox it is an ambient host variable resolved by lookup, never a
+fetch, never DSP, returning `{ f, m }[]` records (`f` Hz, `m` magnitude) or
+`[]` before the host has pushed anything. The lookup key is derived from
+the request, not the bare channel name — two cells on the same channel
+with different windows are different spectra — via one shared pure
+function, **`spectrumKey(channelId, fftParams)`** (R79 Q2): the channel id
+plus the six `fft_params` values joined in the grammar's fixed order,
+computed identically on both sides so the host and the sandbox cannot
+drift. The host recognises an FFT cell through `parse`, not a scan — an
+`fft` binding arm on the same recogniser that binds `channel(...)` today —
+so custom code cannot fetch a spectrum, exactly as custom code cannot bind
+a tile-backed channel today. `spectrum(...)`'s `params` argument is ignored
+at lookup time by everything except the key derivation: the host resolves
+those parameters before the fetch, and the argument exists so the document,
+not the host, states them (CLAUDE.md §3), and so a hand edit to a parameter
+changes the code the parser reads.
+
+**Parameter table — type, default, C3 field** (added 2026-09-06):
+
+| Grammar slot | Props field | Type | Default | Maps to |
+|---|---|---|---|---|
+| chart type (which `marks_array` alternative) | `PlotProps.chart: "time" \| "fft"` | closed enum | `"time"` | nothing on the wire; selects `fetch_fft` vs the tile path |
+| `spectrum_call`'s `js_string` | `SpectrumMarkProps.channel` | string | first channel in the session picker | `fetch_fft`'s `channel` |
+| `spectrum_mark_name` | `SpectrumMarkProps.mark` | `"lineY" \| "dot" \| "areaY"` | `"lineY"` | none (Plot mark) |
+| `windowSize` | `fft.windowSize` | positive integer, samples, or `"all"` | `2048` samples | `params.window_size` |
+| `hopSize` | `fft.hopSize` | positive integer, samples, or `"all"` | `1024` samples (50 % overlap of 2048) | `params.hop_size` |
+| `window` | `fft.window` | `"rectangular" \| "hann" \| "hamming"` | `"hann"` | `params.window` |
+| `detrend` | `fft.detrend` | `"none" \| "mean" \| "linear"` | `"mean"` | `params.detrend` |
+| `scaling` | `fft.scaling` | `"magnitude" \| "density"` | `"magnitude"` | `params.scaling` |
+| `averaging` | `fft.averaging` | `"none" \| "mean" \| "median" \| "max"` | `"mean"` | `fetch_fft`'s `averaging` |
+| `stroke` | `SpectrumMarkProps.stroke` | CSS colour literal | omitted | none |
+| `strokeWidth` | `SpectrumMarkProps.strokeWidth` | number, CSS px | omitted | none |
+| `x.type` | `XAxisProps.type` | `"linear" \| "log"` | `"log"` | none |
+| `x.label` | `XAxisProps.label` | string | `"Frequency (Hz)"` | none |
+| `y.type` | `YAxisProps.type` | `"linear" \| "log" \| "sqrt"` | `"linear"` | none |
+| `y.label` | `YAxisProps.label` | string | `"Magnitude (<unit>)"` / `"PSD (<unit>²/Hz)"` per scaling | none |
+| — no bin/point budget grammar token (R79 Q4) — | — | — | — | a host-side `bin_count` cap; above it the cell shows a note and does not fetch |
+
+**`PlotProps` shape** (illustrative — L6 Task 20 owns the code):
+
+```ts
+export type PlotProps = TimePlotProps | FftPlotProps;
+export interface TimePlotProps { chart: "time"; marks: MarkProps[]; x?: XAxisProps; y?: YAxisProps; color?: { legend: true } }
+export interface FftPlotProps  { chart: "fft";  mark: SpectrumMarkProps; x?: XAxisProps; y?: YAxisProps; color?: { legend: true } }
+export interface SpectrumMarkProps {
+  channel: string;
+  mark: "lineY" | "dot" | "areaY";
+  fft: FftParams;          // all six fields required
+  stroke?: string;
+  strokeWidth?: number;    // px
+}
+```
+
+A discriminated union rather than an optional field: `FftPlotProps` has one
+`mark`, not a `marks` array, so "exactly one spectrum mark" is a type error
+rather than a runtime check. Existing props gain `chart: "time"`; `parse`
+supplies it, so no landed cell's code changes and every §5.3 worked example
+round-trips byte-identically as before.
+
+Every key in every object is **optional** except `marks`/`mark` (a plot
+with no marks is legal but pointless — the form always seeds one) and each
+`time_mark`'s `x`/`y` (always the literal pair `"t"`/`"v"`) or
+`spectrum_mark`'s `x`/`y` (always the literal pair `"f"`/`"m"`) — §5.1
+fixes the channel shape's field names and the spectrum shape's field
+names, so there is nothing else to bind. In a time cell, `x.type` accepts
+only the literal `"linear"` (equivalent to omitting the key; the generator
+never emits it for a time cell) — §8-2 records this as provisional for a
+future non-time x-axis, now realised in the FFT cell above. Object keys
+may appear in any order; the grammar above lists them in the order
+`generate()` emits, which is also the order `parse()` requires for a
+**byte-identical** round-trip (`generate(parse(code)) === code` for code
+the form itself produced) — a hand-edit that only reorders recognised keys
+still **parses** successfully (the parser is order-insensitive) but will
+not byte-round-trip until the form regenerates it, which is expected and
+harmless.
 
 **"Custom" — the exact rule.** A `js` cell is *custom* (Properties pane
 greys out, "Reset to form" available) when `parse(code)` returns `null`.
@@ -676,6 +800,21 @@ That happens for **any** of:
 - Any non-literal value where the grammar requires a literal (a computed
   `stroke` from a variable, a spread, a template literal used for
   anything other than a plain string content).
+- **(added 2026-09-06)** A `marks` array mixing a `channel_call` mark with a
+  `spectrum_call` mark; a `spectrum_call` missing an `fft_params` key,
+  carrying an extra key, or carrying a computed value in place of a grammar
+  literal; a second mark in an FFT cell; `x`/`y` on a `spectrum_mark` that
+  are not the literal strings `"f"`/`"m"`; or `x.type: "log"` on a time
+  cell. Any `js` cell that parses today keeps parsing and keeps its
+  byte-identical round-trip: `parse` returns `chart: "time"` for it, and
+  `generate` ignores the discriminant for time cells and emits exactly what
+  it emits now — no landed document changes on disk, and no cell silently
+  becomes an FFT cell. A hand-written cell that calls `spectrum(...)`
+  outside this grammar greys the pane exactly as a hand-written
+  `channel(...)` cell outside §5.3's time-cell grammar always has, and,
+  because the host binds through `parse`, it gets **no spectrum host
+  variable**: `spectrum(...)` returns `[]` and the cell renders an empty
+  plot.
 
 There is no partial match: a cell either parses fully into `props` or is
 entirely custom. This mirrors design §6's stated rule — "Code outside it
@@ -770,6 +909,82 @@ alternatives) — swapping the literal token `"areaY"` for `"rectY"` or
 `"ruleY"` in this same example produces the identical parse tree modulo
 that one token, so a fifth/sixth render would demonstrate the same
 production, not a new one.
+
+*Example 5 — FFT chart, defaults, channel `fork_velocity` (unit `m/s`)*
+(added 2026-09-06):
+```
+props = {
+  chart: "fft",
+  mark: { channel: "fork_velocity", mark: "lineY", fft: {
+    windowSize: 2048, hopSize: 1024, window: "hann",
+    detrend: "mean", scaling: "magnitude", averaging: "mean"
+  } },
+  x: { label: "Frequency (Hz)" },
+  y: { label: "Magnitude (m/s)" }
+}
+```
+```js
+Plot.plot({
+  x: { label: "Frequency (Hz)", type: "log" },
+  y: { label: "Magnitude (m/s)" },
+  marks: [
+    Plot.lineY(spectrum("fork_velocity", { windowSize: 2048, hopSize: 1024, window: "hann", detrend: "mean", scaling: "magnitude", averaging: "mean" }), { x: "f", y: "m" })
+  ]
+})
+```
+Whole-record single-segment form (ruling R76), log-magnitude axis, explicit
+colour:
+```js
+Plot.plot({
+  x: { label: "Frequency (Hz)", type: "log" },
+  y: { label: "Magnitude (m/s)", type: "log" },
+  marks: [
+    Plot.lineY(spectrum("fork_velocity", { windowSize: "all", hopSize: "all", window: "hann", detrend: "mean", scaling: "magnitude", averaging: "none" }), { x: "f", y: "m", stroke: "#2196F3" })
+  ]
+})
+```
+Formatting follows the generator's stated policy verbatim (two-space
+indent, `Plot.plot({` at column 0, each option at column 2, the mark at
+column 4, no trailing newline); the `fft_params` object stays on one line,
+like `mark_options` does today.
+
+**FFT chart Properties panel controls** (added 2026-09-06, ruling R79). The
+pane keeps its current structure (chart-type control at the top, then
+type-specific sections); nothing about the custom-code branch changes:
+
+1. **Chart type** — segmented control, `Time` / `FFT`. Switching regenerates
+   from that type's defaults, preserving the channel selection. Switching
+   away from FFT discards the FFT parameters with no confirmation dialog
+   (R79 Q6) — a one-click undo by switching back, unlike custom code, which
+   is unrecoverable.
+2. **Channel** — the existing channel `<select>`, single-select for an FFT
+   cell.
+3. **Mark** — `lineY` / `dot` / `areaY`.
+4. **Window function** — `Rect` / `Hann` / `Hamming`.
+5. **Window size (samples)** — a `<select>` of `1024 / 2048 / 4096 / 8192 /
+   16384` plus `Whole record`, with a free numeric entry for a value already
+   in the document that is not in the list (opening the dialog never
+   silently changes a stored non-standard value). `Whole record` emits
+   `"all"`.
+6. **Hop size (samples)** — numeric entry, samples, C3's own unit (R79 Q3);
+   the form may display a derived overlap percentage, but the document and
+   the grammar keep `hopSize` in samples.
+7. **Detrend** — `None` / `Mean` / `Linear`.
+8. **Averaging** — `None` / `Mean` / `Median` / `Max`. Selecting `None`
+   forces window and hop to `Whole record` and disables both, with the
+   reason shown in words ("a single-segment FFT covers the whole record") —
+   ruling R76's rule made unreachable-by-construction rather than shown as
+   a server error.
+9. **Scaling** — `Magnitude` / `Density`.
+10. **Frequency axis (x)** — `Lin` / `Log`, plus the existing `label` and
+    `domain` fields.
+11. **Magnitude axis (y)** — the existing `label`, `domain`, and
+    `linear/log/sqrt` type controls, unchanged.
+12. **Legend** — the existing `color.legend` checkbox, unchanged.
+
+Every control writes through the existing single path: build the next
+props, `generate`, hand the string to `onChange`. No control holds state
+the document does not carry.
 
 ---
 

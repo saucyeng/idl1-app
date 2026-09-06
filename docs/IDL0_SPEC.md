@@ -3051,6 +3051,27 @@ warns that the custom code will be discarded if accepted. This is design
 closed grammar is a deliberate escape hatch (computed values, custom D3
 marks), not an error state.
 
+**Chart type in the form (FFT)** (added 2026-09-06, rulings R78/R79, L6
+Task 20). The Properties pane's first control is the chart type, `Time` or
+`FFT`, because the type is a property of the document and not of the pane:
+an FFT cell's window size, hop size, window function, detrend, scaling and
+averaging are parameters of the picture and so live in the cell's code, in
+the closed grammar C2 §5.3 defines (CLAUDE.md §3, "no renderer-only
+parameters"; ruling R78, L6 Task 19 Q1). An FFT cell is its own cell and
+carries exactly one spectrum mark — a spectrum's x axis is frequency and a
+time series' is seconds, and one `Plot.plot` has one x axis (R78 Q2). The
+host recognises an FFT cell by parsing it, never by scanning for a call,
+so a cell outside the grammar is custom code that renders an empty plot
+rather than a silently half-wired chart. The spectrum itself is computed
+by `fetch_fft` (C3 §3.6) and reaches the sandbox as a
+`{ kind: "spectrum", f, m }` host-variable payload; the only arithmetic
+this tab performs on it is bin `k`'s frequency,
+`k * sample_rate_hz / (2 * bin_count)`, which C3 §3.6 places frontend-side
+explicitly. With `averaging: "none"` the request covers the whole record
+in one segment (ruling R76), which the document writes as
+`windowSize: "all", hopSize: "all"` rather than a session-specific sample
+count.
+
 **The Properties↔Code loop guard.** Because both panes write the same
 underlying body, a write from one pane can echo back into the other as an
 apparent external change. `Notebook/model/editorEcho.ts`'s `isEditorEcho`
@@ -3209,7 +3230,7 @@ catalog, per-cell errors, live file reload, save with conflict detection.
 
 | idl0 feature | Status | Reason |
 |---|---|---|
-| **FFT chart** | Deferred, blocked on IPC | No 1-D FFT endpoint exists (C3 §3.6 has only 2-D rasters); a magnitude spectrum is numbers, so CLAUDE.md §2 forbids computing it in TypeScript. Filed as IPC need N5 (§26.7). |
+| **FFT chart** | Contracted (C2 §5.3, R79); shipping in L6 Tasks 19–20 — single spectrum | `fetch_fft` (C3 §3.6, `IDLF`) computes the spectrum; C2 §5.3's `spectrum(...)` production carries window size, hop, window function, detrend, scaling and averaging in the document. idl0's overlay of up to ten spectra (`kMaxFftSpectra`: one line per channel × selected lap) is **not** carried — one spectrum per cell, and lap-scoped spectra wait on lap indexing at import (`lap` is `null`, C3 §3.6). idl0's `Overlap %` control is replaced by hop size in samples, C3's own unit. |
 | **1-D histogram chart** | Deferred, blocked on IPC | Same rule: binning is numbers. C3 §3.6 has only the 2-D `histogram2d` raster. Filed as IPC need N6, deferred to a later wave — genuinely new engine code, unlike N5's thin wrapper. |
 | **Scatter — point-cloud mode** | Deferred | Density mode is delivered via `fetch_raster`'s `histogram2d`. Point-cloud mode needs a time-aligned paired-sample endpoint C3 does not have (IPC need N7, marked for a later wave). |
 | **GPS map chart with basemap tiles** | Deferred, needs a product ruling | "Offline-first means bundled. No CDN, ever" (design §3) forbids a tile server outright. A plain GPS polyline with no basemap is expressible today as a custom `js` cell. Escalated to Isaac as a product call (ruling R52 Q8), non-blocking. |
