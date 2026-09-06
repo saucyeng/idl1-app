@@ -428,7 +428,10 @@ for foreign-key insert order:
    operation as the existing engine `channel_min_max`, SPEC §15.3 — no
    full materialization) and insert one row per `(lap, channel)`.
 6. **`workbooks`** — walk `workbooks/*.idl1wb`; parse front matter (C2). A
-   parse failure is reported and the file is skipped, not inserted.
+   parse failure is reported and the file is skipped, not inserted. Landed
+   (ruling R87, L8x Task 5b) — `create_workbook`/`save_workbook` also upsert
+   their own row right after the write, so a workbook is queryable via
+   `list_workbooks` without waiting for a rebuild.
 7. Set `PRAGMA user_version` to the current schema version and commit.
 
 **Nothing reads the catalog for truth.** Every column above is either a

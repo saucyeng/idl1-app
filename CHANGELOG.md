@@ -6,6 +6,23 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 
 ### Added
 
+- **L8x Task 5b: the catalog indexes workbooks (2026-09-06, idl-rs core +
+  idl-rs-tauri, ruling R87, spec-during — C4 §5 amended).** Fixes the bug
+  where `list_workbooks` was always empty after a restart: `rebuild_catalog`
+  step 6 was still an L1-era no-op even though L3's `.idl1wb` front-matter
+  parsing had long since landed. Step 6 now walks `workbooks/*.idl1wb`,
+  parses each file's front matter (`workbook_id`/`name`), and upserts its
+  row via a new `core::store::catalog::upsert_workbook`
+  (`ON CONFLICT(workbook_id) DO UPDATE`, so an out-of-band file rename keeps
+  the same id); a file that fails to parse is skipped and counted in
+  `RebuildReport::skipped`, not aborting the scan. `create_workbook`/
+  `save_workbook` (`idl-rs-tauri`) also call `upsert_workbook` right after
+  their own atomic write, so a new or edited workbook is queryable
+  immediately — matching `save_track`'s existing after-write `tracks`
+  upsert. Neither `WorkbookHandle` nor `SaveResult` (C3 §3.4) has a warning
+  field, so a catalog failure here is logged (`eprintln!`) and swallowed,
+  never failing the save. Never creates a `catalog.sqlite` that doesn't
+  already exist (C4 §5's incremental-indexing rule).
 - **L8x Task 5: `delete_track` command (2026-09-06, idl-rs-tauri, no spec
   change needed).** `delete_track(track_id: string) -> DeleteTrackReport`
   (C3 §3.2, ruling R86): an absent `tracks/<id>.idl0t` is `not_found`,
