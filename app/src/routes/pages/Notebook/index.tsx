@@ -3,7 +3,7 @@ import { useEffect, useReducer, useRef, useState } from "react";
 import { getSession, listSessions, listWorkbooks, type SessionDetail } from "../../../ipc/catalog";
 import { cursorReadout } from "../../../ipc/cursor";
 import { fetchTile } from "../../../ipc/tiles";
-import { evalWorkbook, openWorkbook, readWorkbook, saveWorkbook, watchWorkbook, type LapContext as EvalLapContext } from "../../../ipc/workbook";
+import { evalWorkbook, listMathBuiltins, openWorkbook, readWorkbook, saveWorkbook, watchWorkbook, type LapContext as EvalLapContext } from "../../../ipc/workbook";
 import { useAppState } from "../../../state/AppState";
 import CellFrame from "./components/CellFrame";
 import CellList from "./components/CellList";
@@ -20,6 +20,7 @@ import { dropCellHeight, initialCellHeights, recordCellHeight, type CellHeights 
 import { replaceCellBody } from "./model/cells";
 import { runChannelBind, runChannelSettle, type ChannelBindAction, type ChannelBindDeps, type ChartWindow } from "./model/channelBindDriver";
 import { CellRunSequencer } from "./model/cellRunSequencer";
+import { diffFunctionCatalog, type FunctionCatalogMismatch } from "./model/functionCatalog";
 import { bindingFor, bindingIdentity, unresolvedChannelId } from "./model/jsCellBinding";
 import { runEval, runOpenAndEval, type OpenEvalDeps } from "./model/openEvalDriver";
 import { isSelfWrite, saveFlow, type SaveFlowState, type WorkbookEventWithHash } from "./model/saveFlow";
@@ -129,6 +130,7 @@ export default function NotebookPage() {
   const [sessionDetail, setSessionDetail] = useState<SessionDetail | null>(null);
   const [sessionSpanUs, setSessionSpanUs] = useState<number | null>(null);
   const [chartWindows, setChartWindows] = useState<Map<string, ChartWindow>>(new Map());
+  const [functionCatalogMismatches, setFunctionCatalogMismatches] = useState<FunctionCatalogMismatch[]>([]);
 
   const containerRef = useRef<HTMLDivElement>(null);
   const sandboxHostRef = useRef<SandboxHost | null>(null);
@@ -216,6 +218,23 @@ export default function NotebookPage() {
     return () => {
       host.dispose();
       sandboxHostRef.current = null;
+    };
+  }, []);
+
+  // Verifies `model/functionCatalog.ts`'s hand-transcribed `MATH_FUNCTIONS`
+  // against the engine's own `list_math_builtins` (C3 §3.4, ledger R64.2),
+  // once at notebook open. A mismatch is surfaced below as a dismissable
+  // warning, never thrown -- a stale transcription is a completion/parity
+  // gap, not a reason to block the editor. `list_math_builtins` never
+  // rejects (C3 §3.4), so this has no error path to handle.
+  useEffect(() => {
+    let cancelled = false;
+    listMathBuiltins().then((remote) => {
+      if (cancelled) return;
+      setFunctionCatalogMismatches(diffFunctionCatalog(remote));
+    });
+    return () => {
+      cancelled = true;
     };
   }, []);
 
@@ -541,6 +560,13 @@ export default function NotebookPage() {
 
   return (
     <div>
+      {functionCatalogMismatches.length > 0 && (
+        <p role="status" className="notebook-function-catalog-warning">
+          The function reference is out of date with the engine ({functionCatalogMismatches.length} mismatch
+          {functionCatalogMismatches.length === 1 ? "" : "es"}). Completions and signatures may be inaccurate for
+          those functions.
+        </p>
+      )}
       {state.markdownStatus === "error" && state.markdownError !== null && (
         <p className="workbook-markdown-error">Notebook error: {state.markdownError}</p>
       )}

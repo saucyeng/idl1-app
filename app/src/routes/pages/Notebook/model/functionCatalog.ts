@@ -114,3 +114,76 @@ export const MATH_FUNCTIONS: CatalogEntry[] = [
   { name: "rotate_axis", signature: "rotate_axis(v, ax, ay, az, angle)", category: "Rotation", status: "implemented" },
   { name: "rotate_euler", signature: "rotate_euler(v, roll, pitch, yaw)", category: "Rotation", status: "implemented" },
 ];
+
+/** The subset of `ipc/workbook.ts`'s `MathBuiltinDto` this module's
+ *  self-check needs — `list_math_builtins` (C3 §3.4, ledger R64.2). Kept
+ *  narrow (name + status only) rather than importing the full DTO, since
+ *  this module owns no IPC dependency of its own (the caller fetches and
+ *  passes the list in). */
+export interface RemoteMathBuiltin {
+  name: string;
+  status: "implemented" | "not_implemented";
+}
+
+/** One disagreement between this module's hand-transcribed `MATH_FUNCTIONS`
+ *  and the engine's own `list_math_builtins` catalog. */
+export interface FunctionCatalogMismatch {
+  /** `"missing_locally"`: the engine has this builtin, this transcription
+   *  doesn't (a completion gap, not a correctness bug — the function still
+   *  works, this file's own list is just stale). `"missing_remotely"`: this
+   *  transcription names a builtin the engine does not — a copy/paste or
+   *  spelling error, or a builtin the engine has since removed.
+   *  `"status_mismatch"`: both have `name`, but one says `"implemented"`
+   *  and the other `"notImplemented"`/`"not_implemented"`. */
+  kind: "missing_locally" | "missing_remotely" | "status_mismatch";
+  name: string;
+  /** Present only for `"status_mismatch"`: `"local=<x> remote=<y>"`. */
+  detail?: string;
+}
+
+/**
+ * Compares this module's hand-transcribed `MATH_FUNCTIONS` (C2 §3.3,
+ * transcribed by hand per that section's own assignment rule — see this
+ * module's doc comment) against `list_math_builtins`'s wire catalog (C3
+ * §3.4). Pure and total: never throws, returns `[]` when the two agree on
+ * every name's presence and status. A caller (`Notebook/index.tsx`) runs
+ * this once at notebook open and surfaces any non-empty result as a
+ * warning, never a thrown error (CLAUDE.md §5: a transcription drift is
+ * not a reason to block the editor) and never patches `MATH_FUNCTIONS`
+ * from the remote list at runtime (this file's own transcription is the
+ * one this lane's `CodePane`/`mathMode.ts` completion reads; silently
+ * overwriting it from a live fetch would make completion depend on session
+ * order rather than this committed file).
+ *
+ * @param local Defaults to `MATH_FUNCTIONS`; a parameter only so this
+ *   function's tests can exercise it against small fixtures instead of the
+ *   full 69-entry table.
+ */
+export function diffFunctionCatalog(
+  remote: RemoteMathBuiltin[],
+  local: CatalogEntry[] = MATH_FUNCTIONS
+): FunctionCatalogMismatch[] {
+  const remoteByName = new Map(remote.map((r) => [r.name, r]));
+  const localByName = new Map(local.map((l) => [l.name, l]));
+  const mismatches: FunctionCatalogMismatch[] = [];
+
+  for (const l of local) {
+    const r = remoteByName.get(l.name);
+    if (r === undefined) {
+      mismatches.push({ kind: "missing_remotely", name: l.name });
+      continue;
+    }
+    const localStatus = l.status === "implemented" ? "implemented" : "not_implemented";
+    if (localStatus !== r.status) {
+      mismatches.push({ kind: "status_mismatch", name: l.name, detail: `local=${localStatus} remote=${r.status}` });
+    }
+  }
+
+  for (const r of remote) {
+    if (!localByName.has(r.name)) {
+      mismatches.push({ kind: "missing_locally", name: r.name });
+    }
+  }
+
+  return mismatches;
+}
