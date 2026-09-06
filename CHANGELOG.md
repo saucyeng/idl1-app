@@ -77,8 +77,15 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
   `Added`-crossed grid cells are structurally impossible from a single
   shared `base` document (proven, not just asserted — this module's own
   derivation can never produce them) and are implemented only as C2 §7.2's
-  documented defensive fallback, unit-tested directly against the internal
-  decision function rather than through `decide_cells` itself.
+  documented defensive fallback; one of the six (`Unchanged`×`Added`) is
+  unit-tested directly against the internal decision function, since
+  `decide_cells` itself can never reach any of them — the other five are
+  implemented-but-untested defensive fallback. Fixed 2026-09-06 per
+  `review-task4.md`: four of the nine reachable real (base-has-id) rows
+  gained named `decide_cells` tests, `merge_front_matter` now errors on a
+  `version` mismatch as well as an `id` mismatch (`MergeError` split into
+  `IdMismatch`/`VersionMismatch`), and `CellState`'s variants gained
+  per-variant doc comments.
 - **L11 Task 5: workbook merge — ordering, conflict cells, base cache
   (2026-09-06, idl-rs core, `workbook::merge::{merge, order}`,
   `store::sync::base_cache`).** `merge(local, peer, base, peer_name)` folds
