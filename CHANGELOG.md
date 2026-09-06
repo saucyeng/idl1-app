@@ -6,6 +6,26 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 
 ### Added
 
+- **L8x Task 6: core quarantine module and `verify`'s repair pass
+  (2026-09-06, idl-rs core, ruling R86, no spec change needed beyond
+  Task 1's C4 amendment).** `core::store::quarantine` (new): `quarantine_file`
+  moves a corrupt file to `tmp/quarantine/<entry_id>-<original name>` and
+  writes its `<entry_id>.json` sidecar through the landed atomic-write
+  primitive *before* the move, so a crash between the two leaves an orphan
+  sidecar and an untouched source — recoverable, never a silent loss —
+  rather than a bare payload that could lose its `original_path`/`reason`
+  forever; `list_quarantine` is payload-driven (a sidecar with no matching
+  payload is a half-finished resolve and is skipped); `resolve_quarantine`
+  restores (refusing to overwrite an occupied destination) or discards,
+  never touching the catalog. `rename` falls back to copy+fsync+remove on
+  a cross-device error. `store::verify` gains `verify_and_repair`, the sole
+  caller of this repair path (C4 §7, R86 Q1/Q8): it runs the existing
+  read-only `verify` unchanged and then quarantines exactly the findings
+  whose path shape is #1 (a corrupt blob) or #5 (a corrupt derived
+  parquet) — decided structurally from each finding's own path, never by
+  matching message text, so #2/#3/#4/#7/#8/#9/#10 are never auto-repaired.
+  `entry_id` minting and the clock stay outside core (`ids`/`now_ms` are
+  injected), matching every other deterministic core function.
 - **L8x Task 5b: the catalog indexes workbooks (2026-09-06, idl-rs core +
   idl-rs-tauri, ruling R87, spec-during — C4 §5 amended).** Fixes the bug
   where `list_workbooks` was always empty after a restart: `rebuild_catalog`
