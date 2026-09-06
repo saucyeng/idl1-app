@@ -3936,3 +3936,21 @@ touch (Task 12's sweep) citing R89.
 
 **Cost if wrong:** a stale derived file on one side until the next import
 or rescan; never data loss (blobs are the source of truth).
+
+## 2026-09-06 — R90: manifest blobs are named by their CAS path; malformed local files are reported locally, never on the wire
+
+review-task2 (two Majors): (1) `build_manifest` re-hashed every blob and
+derived file — **ruling:** the manifest lists a blob by the hash its CAS
+path already names (C4 §2; hashes are verified by `verify_data_dir`, not
+by every manifest walk); derived files likewise by their path name.
+(2) A malformed local file was silently omitted — **ruling:**
+`build_manifest` returns `(Manifest, Vec<SkippedEntry { path, reason }>)`;
+the skipped list is local-only (the C4 §6 wire shape is unchanged) and
+feeds `sync_status`'s warnings; `plan_sync` (Task 3) treats a locally
+skipped path as "do not touch": no pull may overwrite it and no push may
+claim it, and the plan carries the warning. Fix lands as the Task 2 fix
+commit after Task 3 reports.
+
+**Cost if wrong:** one tuple return and a rule in the planner; the
+alternative silently repairs-by-overwrite a file the user may want to
+inspect.
