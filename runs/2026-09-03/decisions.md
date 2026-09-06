@@ -3619,3 +3619,12 @@ grammar + Properties panel after Task 19's Steps 1–4.
 
 **Cost if wrong:** a grammar production is additive; `"all"` is the one
 token a later amendment could regret, and it is the honest one.
+
+## 2026-09-06 — Checkpoint: fourth session-limit cutoff (3:03am ET, reset 3:30am)
+
+Cut off: `plan-l6-task20` (not started), `l6-review17` (findings file
+present — verdict checked by the lead), `l7b-task10` (WIP on disk in
+`wave2-l7b-followon`: `statusPoll/control/profilesSync` + tests,
+`DeviceControls.tsx`, `HeroCard`/`ProfileBar`/`connection`/`index`
+edits, SPEC §23 mid-rewrite; uncommitted), `l7c-review8` (no findings).
+Re-dispatched with inherited state at 6:05am. No work lost.
