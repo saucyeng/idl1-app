@@ -1074,7 +1074,7 @@ produce exactly one segment (ruling R76) — more is `invalid_argument` with
 | `version` | `u16` | 4 | `1` |
 | `reserved` | `[u8; 2]` | 6 | zero-filled |
 | `bin_count` | `u32` | 8 | number of `f32` magnitudes that follow |
-| `sample_rate_hz` | `f32` | 12 | the channel's real rate, derived from its recorded `t_us` axis |
+| `sample_rate_hz` | `f32` | 12 | the real rate derived from the request's own `t_us` axis: the whole channel's for `lap: null`, that lap's sliced window's for `lap: n` (ruling R85) |
 
 Header ends at byte offset **16**, padded so the magnitude array starts on
 a 4-byte boundary (ruling R59 Q3(a)); magnitudes are `bin_count` × `f32`
@@ -1091,14 +1091,17 @@ which CLAUDE.md §2 forbids.
 `lap: null` takes the whole channel. `lap: n` selects that lap's
 recording-time window from `session.json`'s `laps[]` (ruling R83) and takes
 only the samples inside it — an unknown lap number is `invalid_argument`
-with `detail: { "lap": n }`, and a window too short for the requested FFT
-parameters fails the same `"none"`-averaging segment check above
-(`detail: { "segments": n }`), computed against the window's own sample
-count, not the whole channel's.
+with `detail: { "lap": n }`. Both of R76's core guards then run against
+that lap window, not the whole channel (ruling R85): a window too short
+for the requested FFT parameters fails the same `"none"`-averaging segment
+check above (`detail: { "segments": n }`), and a window with too few
+samples or duplicate timestamps to derive a rate (e.g. a 1–2-sample
+degenerate lap boundary) is `invalid_argument` rather than a spectrum full
+of `NaN`.
 
-Errors: `not_found`, `invalid_argument` (bad `params`, an unknown `lap`, or
-a lap window that fails the `"none"`-averaging segment check), `io`,
-`internal`.
+Errors: `not_found`, `invalid_argument` (bad `params`, an unknown `lap`, a
+lap window that fails the `"none"`-averaging segment check, or a window too
+short/degenerate to derive a sample rate), `io`, `internal`.
 
 - 2026-09-05: fetch_fft's averaging union closed against
   idl_rs::fft::Averaging (ruling R63 (3), L8w Task 12) — "none" and "max"
@@ -1109,6 +1112,10 @@ a lap window that fails the `"none"`-averaging segment check), `io`,
 - 2026-09-06: "none" requires exactly one segment; more is invalid_argument
   with detail: { "segments": n } instead of silently keeping the first
   segment's power (ruling R76, L8w Task 12 fix).
+- 2026-09-06: R76's segment/rate guards run against the lap window's own
+  t_us/sample count, not the whole channel's, closing a gap where a
+  1-2-sample degenerate lap window bypassed both guards (ruling R85, L2b
+  Task 6 fix).
 
 ### 3.7 Cursor (L3)
 
