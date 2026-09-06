@@ -3665,3 +3665,11 @@ Removed `saucyeng/.cargo-shared-target` (12.3 GB), `idl0-app/rust/target`
 `app/src-tauri/target` kept for the preview build. Question 11 closed.
 Wave-3 worktrees cold-compile once; `rust/.cargo/config.toml` still
 points them at the shared dir, which cargo recreates.
+
+**Tracked (preview 2026-09-06):** the Notebook opens "the first indexed
+workbook" and shows "No workbooks found" otherwise — no New-workbook
+action (`create_workbook` exists), no rescan (`rebuild_catalog` exists),
+and a workbook file dropped into `workbooks/` is invisible until the
+catalog is rebuilt. → **L6 Task 21**: empty state with "New workbook"
+and "Rescan", plus a workbook picker when more than one is indexed
+(the picker was deferred in R66; both now have their commands).
