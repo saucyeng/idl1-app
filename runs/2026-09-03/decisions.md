@@ -3472,3 +3472,23 @@ can tag it `Config` without message-text matching. `config` from
 `pull_config` stays unreachable on this platform — same class as
 `device_rejected` (R63) — until a BLE stack with ack readback (L9 mobile
 plugins). Documented, not built. **Cost if wrong:** unchanged from R71.
+
+## 2026-09-06 — R76: `fetch_fft` `averaging: "none"` means exactly one segment; rate derivation lives in core
+
+review-task12 (two Majors): (1) `Averaging::None` with more than one
+segment silently kept the first; (2) `effective_rate_hz_from_t_us` had no
+guard, so a degenerate channel produced NaN/Inf bytes. **Ruling:** `none`
+requires exactly one segment — more is `invalid_argument` with
+`detail: { segments: n }` (the caller asks for a single-segment FFT by
+sizing the window to the span); a rate that is not finite and positive,
+or a channel with fewer than two samples, is `invalid_argument` before any
+FFT runs. The rate derivation (`1e6 / median(Δt_us)`) moves to core
+(`idl_rs::fft::effective_rate_hz_from_t_us` or beside the session code
+it serves — implementer's call, documented), because it is arithmetic on
+sample timestamps and CLAUDE.md §2 outranks the brief's placement. Tests
+that exist must be run: the fix's filters cover the `Averaging` arms and
+the rate edge cases by name. Lands as the Task 12 fix commit before
+Task 13.
+
+**Cost if wrong:** one moved function and two error branches; the
+alternative ships silent data loss and NaN spectra.
