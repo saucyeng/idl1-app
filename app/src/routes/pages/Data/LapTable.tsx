@@ -1,4 +1,5 @@
 import { formatLapTimeMs } from "./format";
+import { formatNeutralZoneVisits, formatSectors } from "./lapDetailFormat";
 import type { DetailView } from "./sessionDetail";
 
 /** Props for [[LapTable]]. */
@@ -18,8 +19,10 @@ function presenceBadge(presence: DetailView["laps"][number]["presence"]): string
  *  in either `SessionDetail.laps` or `listLaps` (R53 Data Q3/Q4/Q5). Renders
  *  "—"/empty honestly rather than fabricating a value: a `laps` array of
  *  length zero (no wave-1 import path indexes laps yet, R53 Q4) reads as "No
- *  laps recorded for this session." rather than an error. Sector data is a
- *  count only (R53 Q5) — never a per-sector time. */
+ *  laps recorded for this session." rather than an error. Sectors and
+ *  neutral-zone visits render via `lapDetailFormat.ts`'s pure formatters
+ *  (C3 §6 item 11, closed) — "—" only when the session-side lap itself is
+ *  absent, never as a placeholder for a lap that genuinely has none. */
 export function LapTable({ laps }: LapTableProps) {
   if (laps.length === 0) {
     return <p>No laps recorded for this session.</p>;
@@ -32,6 +35,7 @@ export function LapTable({ laps }: LapTableProps) {
           <th>Lap</th>
           <th>Time</th>
           <th>Sectors</th>
+          <th>Neutral zones</th>
           <th>Track</th>
           <th>Flags</th>
         </tr>
@@ -47,7 +51,8 @@ export function LapTable({ laps }: LapTableProps) {
             <tr key={lap.lapNumber}>
               <td>{lap.lapNumber}</td>
               <td>{lap.lapTimeMs === null ? "—" : formatLapTimeMs(lap.lapTimeMs)}</td>
-              <td>{lap.sectorCount === null ? "—" : lap.sectorCount}</td>
+              <td>{formatSectors(lap.sectors)}</td>
+              <td>{formatNeutralZoneVisits(lap.neutralZoneVisits)}</td>
               <td>{lap.trackId ?? "—"}</td>
               <td>{flags === "" ? "—" : flags}</td>
             </tr>

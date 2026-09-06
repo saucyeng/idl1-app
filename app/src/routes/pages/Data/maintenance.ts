@@ -1,4 +1,4 @@
-import type { RebuildReport } from "../../../ipc/catalog";
+import type { RebuildReport, RescanReport } from "../../../ipc/catalog";
 import { describeIpcError } from "./errors";
 import { NotImplementedError } from "./ipcStubs";
 
@@ -140,6 +140,33 @@ export function runDeleteSession(deleteSession: DeleteSessionFn, sessionId: stri
  *  the choice made here (see this task's report). */
 export function runForgetSession(deleteSession: DeleteSessionFn, sessionId: string): () => Promise<string> {
   return runDeleteSession(deleteSession, sessionId, false);
+}
+
+/** Turns `rescan_tracks`'s (C3 §3.2, ruling R83) `RescanReport` into the
+ *  toolbar's summary line, e.g. "Indexed 1 track visit, 3 laps. Cleared
+ *  main_lap_number. 1 warning." A report with no cleared flags and no
+ *  warnings omits both trailing sentences rather than saying "Cleared none;
+ *  0 warnings." */
+export function summarizeRescanReport(report: RescanReport): string {
+  const parts = [`Indexed ${plural(report.visits_indexed, "track visit")}, ${plural(report.laps_indexed, "lap")}.`];
+  if (report.flags_cleared.length > 0) {
+    parts.push(`Cleared ${report.flags_cleared.join(", ")}.`);
+  }
+  if (report.warnings.length > 0) {
+    parts.push(`${plural(report.warnings.length, "warning")}: ${report.warnings.join("; ")}`);
+  }
+  return parts.join(" ");
+}
+
+/** Structurally matches `ipc/catalog.ts`'s `rescanTracks` — injected so
+ *  [[startMaintenanceAction]]'s tests don't need a real Tauri IPC
+ *  round-trip. */
+export type RescanTracksFn = (sessionId: string) => Promise<RescanReport>;
+
+/** Wraps `rescanTracks` as a `run` function for [[startMaintenanceAction]],
+ *  turning its report into the summary line (C3 §3.2, ruling R83). */
+export function runRescanTracks(rescanTracks: RescanTracksFn, sessionId: string): () => Promise<string> {
+  return () => rescanTracks(sessionId).then(summarizeRescanReport);
 }
 
 /** Structurally matches the proposed `list_quarantine` stub (IPC need 4). */

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useReducer } from "react";
 
-import { deleteSession, getSession, listLaps, listSessions, rebuildCatalog, type LapSummary, type SessionDetail, type SessionSummary } from "../../../ipc/catalog";
+import { deleteSession, getSession, listLaps, listSessions, rebuildCatalog, rescanTracks, type LapSummary, type SessionDetail, type SessionSummary } from "../../../ipc/catalog";
 import { useAppState } from "../../../state/AppState";
 import { ActiveChips } from "./ActiveChips";
 import { DetailPane } from "./DetailPane";
@@ -17,6 +17,7 @@ import {
   runForgetSession,
   runListQuarantine,
   runRebuildCatalog,
+  runRescanTracks,
   startMaintenanceAction,
 } from "./maintenance";
 import { toDetailView } from "./sessionDetail";
@@ -184,6 +185,22 @@ export default function Data() {
     loadSessions(() => false);
   };
 
+  /** Toolbar's "Rescan tracks" (C3 §3.2, ruling R83/L2b Task 8) — re-runs
+   *  visit/lap detection for the selected session against the current track
+   *  library and rewrites its `session.json`. Not destructive in the
+   *  "loses data" sense (idl0's own semantics: a rescan corrects lap/track
+   *  attribution, it does not delete a recording), so unlike delete/forget
+   *  it is not behind a confirm dialog. Redraws the detail pane from
+   *  canonical truth afterward via [[loadDetail]], since laps/sectors/
+   *  neutral-zone visits and any cleared lap flags may all have changed. */
+  const handleRescanTracks = () => {
+    if (selectedSessionId === null) return;
+    startMaintenanceAction(maintenanceState, "rescan_tracks", runRescanTracks(rescanTracks, selectedSessionId), (a) => {
+      maintenanceDispatch(a);
+      if (a.type === "SUCCEEDED") loadDetail(selectedSessionId, () => false);
+    });
+  };
+
   /** Toolbar's "Review quarantine" (IPC need 4, stubbed). Confirmed first,
    *  same reasoning as [[handleDeleteSession]]. */
   const handleReviewQuarantine = () => {
@@ -192,11 +209,35 @@ export default function Data() {
     startMaintenanceAction(maintenanceState, "list_quarantine", runListQuarantine(listQuarantine), maintenanceDispatch);
   };
 
-  /** Fetches `get_session` + `list_laps` in parallel on selection settle
-   *  (R53 Data Q3; C3 §4: both are settle-bound, never a hover/pan/zoom
-   *  handler). A `list_laps` rejection with kind `not_found` is not an
-   *  error for this pane (R53 Q4: laps aren't indexed for most sessions at
-   *  wave 2) — it renders as an empty lap table, not a banner. */
+  /** Fetches `get_session` + `list_laps` in parallel for `sessionId` (R53
+   *  Data Q3; C3 §4: both are settle-bound, never a hover/pan/zoom handler).
+   *  A `list_laps` rejection with kind `not_found` is not an error for this
+   *  pane (R53 Q4: laps aren't indexed for most sessions at wave 2) — it
+   *  renders as an empty lap table, not a banner. Shared by the
+   *  selection-settle effect below and `handleRescanTracks`, which must
+   *  redraw the same pane from canonical truth after a rescan rewrites
+   *  `session.json`. */
+  const loadDetail = useCallback((sessionId: string, isCancelled: () => boolean) => {
+    detailDispatch({ type: "detail-loading" });
+
+    const lapsAttempt: Promise<{ laps: LapSummary[]; errorText: string | null }> = listLaps(sessionId)
+      .then((laps) => ({ laps, errorText: null }))
+      .catch((e: unknown) => {
+        const described = describeIpcError(e);
+        return { laps: [], errorText: described.kind === "not_found" ? null : described.text };
+      });
+
+    Promise.all([getSession(sessionId), lapsAttempt])
+      .then(([detail, lapsResult]) => {
+        if (isCancelled()) return;
+        detailDispatch({ type: "detail-ready", detail, laps: lapsResult.laps, lapsErrorText: lapsResult.errorText });
+      })
+      .catch((e: unknown) => {
+        if (isCancelled()) return;
+        detailDispatch({ type: "detail-failed", text: describeIpcError(e).text });
+      });
+  }, []);
+
   useEffect(() => {
     if (selectedSessionId === null) {
       detailDispatch({ type: "detail-closed" });
@@ -204,29 +245,12 @@ export default function Data() {
     }
 
     let cancelled = false;
-    detailDispatch({ type: "detail-loading" });
-
-    const lapsAttempt: Promise<{ laps: LapSummary[]; errorText: string | null }> = listLaps(selectedSessionId)
-      .then((laps) => ({ laps, errorText: null }))
-      .catch((e: unknown) => {
-        const described = describeIpcError(e);
-        return { laps: [], errorText: described.kind === "not_found" ? null : described.text };
-      });
-
-    Promise.all([getSession(selectedSessionId), lapsAttempt])
-      .then(([detail, lapsResult]) => {
-        if (cancelled) return;
-        detailDispatch({ type: "detail-ready", detail, laps: lapsResult.laps, lapsErrorText: lapsResult.errorText });
-      })
-      .catch((e: unknown) => {
-        if (cancelled) return;
-        detailDispatch({ type: "detail-failed", text: describeIpcError(e).text });
-      });
+    loadDetail(selectedSessionId, () => cancelled);
 
     return () => {
       cancelled = true;
     };
-  }, [selectedSessionId]);
+  }, [selectedSessionId, loadDetail]);
 
   const sessions = state.status === "ready" ? state.sessions : [];
 
@@ -289,6 +313,13 @@ export default function Data() {
             disabled={selectedSessionId === null || maintenanceState.status === "running"}
           >
             Forget session
+          </button>
+          <button
+            type="button"
+            onClick={handleRescanTracks}
+            disabled={selectedSessionId === null || maintenanceState.status === "running"}
+          >
+            Rescan tracks
           </button>
           <button type="button" onClick={handleReviewQuarantine} disabled={maintenanceState.status === "running"}>
             Review quarantine

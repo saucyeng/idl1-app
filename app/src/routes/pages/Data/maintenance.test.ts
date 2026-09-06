@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import type { RebuildReport } from "../../../ipc/catalog";
+import type { RebuildReport, RescanReport } from "../../../ipc/catalog";
 import { NotImplementedError } from "./ipcStubs";
 import {
   initialMaintenanceState,
@@ -9,9 +9,11 @@ import {
   runForgetSession,
   runListQuarantine,
   runRebuildCatalog,
+  runRescanTracks,
   runResolveQuarantine,
   startMaintenanceAction,
   summarizeRebuildReport,
+  summarizeRescanReport,
   type MaintenanceAction,
   type MaintenanceState,
 } from "./maintenance";
@@ -140,6 +142,59 @@ describe("runDeleteSession / runForgetSession — the real command's success pat
     const result = await run();
 
     expect(result).toContain("kept");
+  });
+});
+
+describe("summarizeRescanReport", () => {
+  it("summarizeRescanReport — no flags cleared, no warnings — names the counts only", () => {
+    const report: RescanReport = { session_id: "s1", visits_indexed: 1, laps_indexed: 3, flags_cleared: [], warnings: [], elapsed_ms: 12 };
+
+    const summary = summarizeRescanReport(report);
+
+    expect(summary).toBe("Indexed 1 track visit, 3 laps.");
+  });
+
+  it("summarizeRescanReport — a cleared lap flag — names it, singular counts read correctly", () => {
+    const report: RescanReport = {
+      session_id: "s1",
+      visits_indexed: 1,
+      laps_indexed: 1,
+      flags_cleared: ["main_lap_number"],
+      warnings: [],
+      elapsed_ms: 5,
+    };
+
+    const summary = summarizeRescanReport(report);
+
+    expect(summary).toBe("Indexed 1 track visit, 1 lap. Cleared main_lap_number.");
+  });
+
+  it("summarizeRescanReport — a warning — named in the summary", () => {
+    const report: RescanReport = {
+      session_id: "s1",
+      visits_indexed: 0,
+      laps_indexed: 0,
+      flags_cleared: [],
+      warnings: ["catalog index failed: disk full"],
+      elapsed_ms: 3,
+    };
+
+    const summary = summarizeRescanReport(report);
+
+    expect(summary).toContain("1 warning");
+    expect(summary).toContain("disk full");
+  });
+});
+
+describe("runRescanTracks — the real command's success path", () => {
+  it("runRescanTracks — resolves — the summary line names the indexed counts", async () => {
+    const report: RescanReport = { session_id: "s1", visits_indexed: 2, laps_indexed: 5, flags_cleared: [], warnings: [], elapsed_ms: 8 };
+    const run = runRescanTracks(() => Promise.resolve(report), "s1");
+
+    const result = await run();
+
+    expect(result).toContain("2 track visits");
+    expect(result).toContain("5 laps");
   });
 });
 
