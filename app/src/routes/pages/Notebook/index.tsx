@@ -2,6 +2,7 @@ import { useEffect, useMemo, useReducer, useRef, useState, type CSSProperties } 
 
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@/components/ui/resizable";
 import { BrandSheet } from "@/components/brand/BrandSheet";
+import { NoteBlock } from "@/components/brand/NoteBlock";
 import { listSessions, listWorkbooks, getSession, rebuildCatalog, type RebuildReport, type SessionDetail } from "../../../ipc/catalog";
 import { cursorReadout } from "../../../ipc/cursor";
 import { fetchFft, type DecodedFft } from "../../../ipc/rasters";
@@ -454,6 +455,15 @@ export default function NotebookPage() {
       return next;
     });
   });
+  /** `true` once the current sandbox generation has gone `BOOT_TIMEOUT_MS`
+   *  without a `ready` (`host/SandboxHost.ts`'s `onSandboxUnavailable`) --
+   *  the real trigger this task fixes (2026-09-07: a broken dev-server CORS
+   *  path silently blanked the output column forever with no error and no
+   *  retry). Rendered as a fallback banner with a Retry button below,
+   *  cleared optimistically when Retry is pressed (a `retry()` that itself
+   *  times out sets it again). */
+  const [sandboxUnavailable, setSandboxUnavailable] = useState(false);
+  const onSandboxUnavailableRef = useRef(() => setSandboxUnavailable(true));
 
   // R95 item 2: the sandbox iframe is a live JS runtime -- it is not
   // constructed (or is torn down) while the Notebook route is not visible.
@@ -467,11 +477,13 @@ export default function NotebookPage() {
     const container = containerRef.current;
     if (container === null || !primeState.running) return;
 
+    setSandboxUnavailable(false);
     const host = new SandboxHost(container, {
       onCellRendered: (cellId, heightPx) => onCellRenderedRef.current(cellId, heightPx),
       onCellError: (cellId, message) => onCellErrorRef.current(cellId, message),
       onInlineResult: (spanId, text) => onInlineResultRef.current(spanId, text),
       onSpanError: (spanId, message) => onSpanErrorRef.current(spanId, message),
+      onSandboxUnavailable: () => onSandboxUnavailableRef.current(),
       onChannelsInvalidated: () => {
         sessionRef.current.onChannelsInvalidated(host, { fetchHostChannel: fetchHostChannelDep })();
         // L6 Task 20, Open Question 5: a spectrum has no `TileCache` entry
@@ -750,6 +762,15 @@ export default function NotebookPage() {
    * target and would error per `write_atomic`'s own semantics. Save is
    * reported as unavailable in that state rather than guessing a hash.
    */
+  /** The sandbox-unavailable banner's Retry button (`onSandboxUnavailable`
+   *  above): hides the banner optimistically and asks the current
+   *  `SandboxHost` to rebuild — a `retry()` that itself times out sets
+   *  `sandboxUnavailable` again via the same callback. */
+  function handleSandboxRetry(): void {
+    setSandboxUnavailable(false);
+    sandboxHostRef.current?.retry();
+  }
+
   async function handleSave() {
     if (state.handle === null || state.markdown === null || state.hash === null) return;
     const result = await saveFlowRef.current.save(state.handle.id, state.markdown, state.hash);
@@ -1382,6 +1403,18 @@ export default function NotebookPage() {
         disabled={!primeState.running}
         routeVisible={routeVisible}
       />
+      {sandboxUnavailable && (
+        <NoteBlock role="alert" className="border-brand-accent text-brand-accent flex items-center justify-between gap-3">
+          <span>The cell runtime failed to start, so cell output is unavailable.</span>
+          <button
+            type="button"
+            onClick={handleSandboxRetry}
+            className="shrink-0 rounded-[var(--radius-structural)] border border-rule px-2 py-1 font-mono text-label-2 text-fg-dim hover:text-fg"
+          >
+            Retry
+          </button>
+        </NoteBlock>
+      )}
       {functionCatalogMismatches.length > 0 && (
         <p role="status" className="notebook-function-catalog-warning">
           The function reference is out of date with the engine ({functionCatalogMismatches.length} mismatch

@@ -1705,8 +1705,30 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
   failure now renders a token-styled "`<Route>` hit an error and could not
   render" message with a Retry button in that tab alone, leaving the shell chrome
   and every other tab unaffected.
-
-### Changed
+- **Notebook column's real blank-screen cause: dev-server CORS blocked the
+  sandbox iframe's own module fetch (2026-09-07, from Isaac's WebView console).**
+  The Notebook sandbox is a deliberately origin-isolated `<iframe
+  sandbox="allow-scripts">` (R69, no `allow-same-origin`), so its document has
+  an opaque `null` origin; in dev that document's module-script fetches
+  (`sandbox/main.ts` and `@vitejs/plugin-react`'s auto-injected Fast Refresh
+  preamble) are cross-origin requests from `Origin: null`, which Vite's
+  default `server.cors` allowlist does not match, so both requests failed
+  outright and the sandbox never sent `ready` — the output column stayed
+  blank forever with nothing watching for it. `app/vite.config.ts`
+  (lead-owned, touched with the lead's sign-off) now (a) adds the literal
+  `"null"` origin to `server.cors` alongside Vite's own default allowlist —
+  dev-only, no effect on a `vite build`'s output or Tauri's own production
+  asset responses — and (b) wraps `@vitejs/plugin-react`'s plugin objects so
+  the preamble is never injected into the sandbox's HTML entry at all (it is
+  not a React page); `allow-same-origin` is untouched, R69's isolation is
+  unweakened either way. Separately, `host/SandboxHost.ts` now arms a 5s
+  boot timer per iframe generation and reports a new
+  `onSandboxUnavailable` callback if `ready` never arrives — `Notebook/
+  index.tsx` shows a `NoteBlock` banner ("The cell runtime failed to start…")
+  with a Retry button (`SandboxHost.retry()`) instead of a permanently silent
+  blank column, for this or any future load failure. Flagged, not fixed here:
+  `SandboxHost.tick()`'s ping/stall watchdog is not wired to any
+  `setInterval` caller today, so it never actually runs.
 
 - **Doc carry-over fixes (2026-09-03, L10).** `tools/README.md` no longer documents the
   uncarried `idl0_dump.dart`; points at `idl-rs info`/`idl-rs channels` for the overlapping

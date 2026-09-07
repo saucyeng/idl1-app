@@ -40,6 +40,26 @@ interface OutboundEnvelope {
  */
 const SANDBOX_PATH = "src/routes/pages/Notebook/sandbox/index.html";
 
+/**
+ * How long a freshly created iframe generation may take to send its first
+ * `ready` before this host gives up and reports
+ * {@link SandboxHostCallbacks.onSandboxUnavailable} instead of leaving the
+ * Notebook's output column silently blank forever. Real trigger (2026-09-07,
+ * Isaac's WebView console): a broken dev-server CORS path made the
+ * sandbox's own `main.ts` module fetch fail outright, so `ready` never
+ * arrived and nothing was watching for that — the column just stayed blank
+ * with no error and no retry. This is a one-shot boot timer, independent of
+ * `watchdog.ts`'s repeating ping/stall loop (`tick()`'s own doc comment:
+ * driven by "a real `setInterval` in the caller" — not currently wired by
+ * any caller, a separate pre-existing gap flagged but not taken on by this
+ * change), so it does its job even before that wiring exists. 5s is chosen
+ * generously above a normal module-graph load (Runtime/Plot/d3/Inputs/htl,
+ * a few hundred ms even on a cold dev-server cache) without making a
+ * genuine failure wait long to be reported — an undocumented judgement
+ * call, not a spec number.
+ */
+const BOOT_TIMEOUT_MS = 5000;
+
 /** Called once per completed `postMessage` round trip the host cares about. */
 export interface SandboxHostCallbacks {
   /**
@@ -72,6 +92,14 @@ export interface SandboxHostCallbacks {
    * calling `setChannelHostVar` again for each one costs no IPC (P2, P7).
    */
   onChannelsInvalidated: () => void;
+  /**
+   * The current iframe generation never sent `ready` within
+   * {@link BOOT_TIMEOUT_MS} of being created — the caller should show a
+   * fallback message with a Retry control (calling {@link SandboxHost.retry})
+   * instead of leaving the output column blank forever. Called at most once
+   * per boot attempt; a `retry()` that itself times out fires it again.
+   */
+  onSandboxUnavailable: () => void;
 }
 
 /**
@@ -91,6 +119,10 @@ export class SandboxHost {
   private readonly outboundQueue = new OutboundQueue<OutboundEnvelope>();
   /** The generation id `startGeneration()` returned for the current `iframe`. */
   private generation = 0;
+  /** The current generation's boot timer (`BOOT_TIMEOUT_MS`), armed by
+   *  `createIframe()` and cleared the moment that generation's `ready`
+   *  arrives; `null` once cleared or fired so it is never cleared twice. */
+  private bootTimeoutHandle: ReturnType<typeof setTimeout> | null = null;
   /** The last `init`/`setCells` payloads sent, replayed into a rebuilt
    *  iframe by `rebuild()` (`replayAfterRebuild`, review-task5.md Important
    *  finding: design §6's "state loss is the cost" means reactive state,
@@ -117,6 +149,10 @@ export class SandboxHost {
         // attached its own message listener (`sandbox/main.ts`) — not
         // gated on `init` (review-task5b.md Critical finding). Flushes
         // this generation's queued outbound messages, `init` included.
+        if (this.bootTimeoutHandle !== null) {
+          clearTimeout(this.bootTimeoutHandle);
+          this.bootTimeoutHandle = null;
+        }
         this.outboundQueue.markReady(this.generation, (envelope) =>
           this.iframe.contentWindow?.postMessage(envelope.message, "*", envelope.transfer)
         );
@@ -174,6 +210,13 @@ export class SandboxHost {
     iframe.style.height = "100%";
     iframe.style.border = "none";
     this.container.appendChild(iframe);
+    if (this.bootTimeoutHandle !== null) {
+      clearTimeout(this.bootTimeoutHandle);
+    }
+    this.bootTimeoutHandle = setTimeout(() => {
+      this.bootTimeoutHandle = null;
+      this.callbacks.onSandboxUnavailable();
+    }, BOOT_TIMEOUT_MS);
     return iframe;
   }
 
@@ -319,8 +362,24 @@ export class SandboxHost {
 
   /** Tears down the iframe and stops listening. Call when the notebook closes. */
   dispose(): void {
+    if (this.bootTimeoutHandle !== null) {
+      clearTimeout(this.bootTimeoutHandle);
+      this.bootTimeoutHandle = null;
+    }
     this.postToSandbox({ type: "teardown" });
     window.removeEventListener("message", this.onMessage);
     this.iframe.remove();
+  }
+
+  /**
+   * Re-attempts the sandbox after {@link SandboxHostCallbacks.onSandboxUnavailable}
+   * fired — the fallback UI's Retry control calls this. Rebuilds exactly
+   * like a watchdog-triggered rebuild (`rebuild()`'s own doc comment: the
+   * last `init`/JSON-host-var/channel/`setCells` payloads are replayed into
+   * the fresh generation), which also re-arms a fresh {@link BOOT_TIMEOUT_MS}
+   * timer via `createIframe()`.
+   */
+  retry(): void {
+    this.rebuild();
   }
 }
