@@ -4320,3 +4320,15 @@ small one for workbook/`session.json`/track/profile — each documented with
 what its class holds and why that number, each answering 413, with a
 per-class over-cap test asserting nothing is written. Caught by the fix
 implementer reading the domain rather than the ruling.
+
+**review-task9 (L11), ruled:** the Important — `browse()`'s task only
+notices its receiver was dropped when the next mDNS event arrives, so a
+quiet LAN leaks the `ServiceDaemon` and task — is real and must be fixed
+(a device that discovers once and idles is the normal case, not an edge
+one). Fix with the Task 10 dispatch, in `discovery.rs`: select over the
+event stream **and** a shutdown signal (channel closed / a `CancellationToken`
+-equivalent the crate already uses), so dropping the receiver ends the task
+and shuts the daemon down promptly; test that dropping the receiver ends
+the task with no event arriving. The Minor goes with it. The
+hostile-peer-id-as-path check came back clean: `peer_id` never reaches a
+filesystem path.
