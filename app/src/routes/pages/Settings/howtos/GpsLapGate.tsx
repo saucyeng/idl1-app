@@ -14,14 +14,17 @@
  * write-amendment lane. Neither L6's nor L7a's wave-2 plans build a gate
  * editor. This article now describes the *design* rather than a shipped
  * flow, and says so up front. */
+import { NoteBlock } from "@/components/brand/NoteBlock";
+import { HOWTO_ARTICLE_CLASSES } from "./proseClasses";
+
 export default function GpsLapGate() {
   return (
-    <article className="idl1-settings__howto">
+    <article className={HOWTO_ARTICLE_CLASSES}>
       <h3>GPS Lap Gate</h3>
-      <p className="idl1-settings__howto-warning">
+      <NoteBlock className="border-hivis text-hivis">
         Not yet available. Lap-gate placement, lap detection and the lap table are not built in this release —
         this article describes how the feature is designed to work once they land.
-      </p>
+      </NoteBlock>
       <p>
         A GPS lap gate is meant to let the app automatically detect each time you cross a start/finish line,
         splitting a session into individual laps with accurate timing.

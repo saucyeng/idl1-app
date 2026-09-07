@@ -151,6 +151,33 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
   unchanged — only what "visible" means to it. **New rule superseding R78's
   wording:** Device polls while mounted, the window is visible, and Device is
   the active route.
+- **UI-7: Settings restyle, plus theme and notebook output-register prefs
+  (2026-09-06, spec-during — two new `ui` preference keys).** `Settings/**`
+  restyled onto `SectionHead`/`SpecRow`/`ToggleGroup`/`Collapsible`/`Button`/
+  `Select`/`NoteBlock`; `settings.css` is deleted and its selected-row tint
+  re-expressed as `bg-control-active` (`tokenSheet.test.ts`'s
+  `KNOWN_EXCEPTIONS` entry removed with it). The section list grows from
+  seven to nine: `firmware` returns as an honest empty affordance (a
+  collapsed "arrives in a later version" sentence, no command or stub) and
+  `theme` is new; `data` (data-directory override) is kept, since nothing in
+  this brief or R53 Settings Q4 retires it. New pure module
+  `Settings/theme.ts`: `ThemeChoice` (`"dark" | "system"`) and
+  `OutputRegister` (`"paper" | "studio"`), `themeAttribute` (system stamps
+  nothing while the OS prefers light, since no light tokens exist —
+  decision 5 — and stamps `"dark"` otherwise), and `resolveRegister`
+  (defaults to paper below 1200 px / studio at or above it, only when the
+  user has made no choice — R92/R93 decision 37). Both land in `prefs.ts`'s
+  `UiPrefs` (`theme`, default `"dark"`; `output_register`, default `null` =
+  no choice made), read/written through the existing `PrefsStore`/
+  `PrefsBackend` — UI-10 reads the same key rather than a third storage
+  location, per the brief's Open question 1 recommendation. One toast call
+  site added: `SyncSection.tsx`'s `sync_now` success path raises
+  `toastFor({kind:"syncFinished", changed})` via `sonner`, `changed` being
+  `blobs_transferred + workbooks_merged` (no single field on `SyncResult`
+  names it). Four pre-existing tests updated for the two additive `UiPrefs`
+  fields (`prefsMigration.test.ts`, `settingsBackend.test.ts`) and
+  `sections.test.ts`'s section-count/firmware assertions, all mechanical
+  consequences of the fields/sections this task adds, not behaviour changes.
 - **L8x lane complete: Data-tab write commands (2026-09-06, idl-rs core +
   idl-rs-tauri, ruling R86).** Five new commands close the last C3 §6
   deferrals the Data tab still stubbed: `save_track`, `delete_track`,

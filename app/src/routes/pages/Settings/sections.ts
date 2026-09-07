@@ -1,9 +1,12 @@
 /** A single entry in the Settings tab's section list.
  *
- * idl1's Settings tab has seven sections, replacing idl0's seven: Google
+ * idl1's Settings tab has nine sections. Relative to idl0's seven: Google
  * Drive is dropped permanently (idl1 syncs peer-to-peer over the LAN
- * instead, see `sync`) and Firmware/OTA is deferred to wave 3 (operating
- * brief §3), so neither appears here. */
+ * instead, see `sync`); `data` (data-directory override, C4 §1) is new;
+ * `firmware` returns as an honest empty affordance (UI-7 brief, Open
+ * question 3) — the update path itself is still deferred to wave 3
+ * (operating brief §3), so this section names that rather than offering a
+ * control; `theme` is new (UI-DIRECTION decision 5, 31). */
 export interface SettingsSection {
   /** Stable identifier, used for routing/selection and as a React key.
    *  Never shown to the user directly. */
@@ -39,9 +42,19 @@ export const SECTIONS: readonly SettingsSection[] = [
     description: "LAN peer pairing and sync status.",
   },
   {
+    id: "firmware",
+    label: "Firmware",
+    description: "Device firmware updates.",
+  },
+  {
     id: "controls",
     label: "Chart controls",
     description: "Reference for the notebook chart's mouse and key controls.",
+  },
+  {
+    id: "theme",
+    label: "Theme",
+    description: "Appearance and notebook output register.",
   },
   {
     id: "howTos",

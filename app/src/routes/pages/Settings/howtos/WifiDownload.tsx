@@ -12,9 +12,11 @@
  * already drives the device into WiFi mode itself (`ControlCommand::WifiOn`,
  * `rust/tauri/src/commands/device.rs`) — there is no separate "turn WiFi on"
  * button in the app, unlike idl0. This article no longer describes one. */
+import { HOWTO_ARTICLE_CLASSES } from "./proseClasses";
+
 export default function WifiDownload() {
   return (
-    <article className="idl1-settings__howto">
+    <article className={HOWTO_ARTICLE_CLASSES}>
       <h3>WiFi Download</h3>
       <p>
         The device hosts its own WiFi access point so you can download sessions without an internet connection.

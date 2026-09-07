@@ -150,7 +150,7 @@ describe("settingsBackend — write()", () => {
     // Assert
     expect(stored.engine.rider_name).toBe("Isaac");
     expect(stored.engine.unit_system).toBe("metric");
-    expect(stored.ui).toEqual({ last_section: "sync", section_list_width_px: 260 });
+    expect(stored.ui).toEqual({ last_section: "sync", section_list_width_px: 260, theme: "dark", output_register: null });
     expect(stored.future_top_level).toBe("kept");
   });
 

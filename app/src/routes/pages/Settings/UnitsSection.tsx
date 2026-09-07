@@ -1,5 +1,7 @@
 import { useEffect, useState } from "react";
 
+import { SpecRow } from "@/components/brand/SpecRow";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import type { PrefsStore } from "./prefsStore";
 import { UNIT_SYSTEMS, unitSummary, type UnitSystem } from "./units";
 
@@ -54,66 +56,41 @@ export default function UnitsSection({ store, migrationNotice = null }: UnitsSec
   }
 
   return (
-    <div className="idl1-settings__section">
-      <div role="radiogroup" aria-label="Unit system">
+    <div className="flex flex-col gap-4">
+      <ToggleGroup
+        type="single"
+        aria-label="Unit system"
+        value={system}
+        onValueChange={(value) => value && handleSelect(value as UnitSystem)}
+      >
         {UNIT_SYSTEMS.map((option) => (
-          <label key={option.value}>
-            <input
-              type="radio"
-              name="idl1-settings-unit-system"
-              value={option.value}
-              checked={system === option.value}
-              onChange={() => handleSelect(option.value)}
-            />
+          <ToggleGroupItem key={option.value} value={option.value}>
             {option.label}
-          </label>
+          </ToggleGroupItem>
         ))}
-      </div>
-      <p className="idl1-settings__hint">
+      </ToggleGroup>
+      <p className="font-mono text-xs text-fg-faint">
         Changing the unit system does not retroactively convert existing channel values.
       </p>
       {writeFailed ? (
-        <p role="status" className="idl1-settings__hint idl1-settings__hint--error">
+        <p role="status" className="font-mono text-xs text-brand-accent">
           Your unit system could not be saved to this device. It will keep showing until you leave this screen.
         </p>
       ) : null}
       {migrationNotice !== null ? (
-        <p role="status" className="idl1-settings__hint">
+        <p role="status" className="font-mono text-xs text-fg-dim">
           {migrationNotice}
         </p>
       ) : null}
-      <table className="idl1-settings__unit-summary">
-        <tbody>
-          <tr>
-            <th>Speed</th>
-            <td>{summary.speed}</td>
-          </tr>
-          <tr>
-            <th>Distance</th>
-            <td>{summary.distance}</td>
-          </tr>
-          <tr>
-            <th>Pressure</th>
-            <td>{summary.pressure}</td>
-          </tr>
-          <tr>
-            <th>Temperature</th>
-            <td>{summary.temperature}</td>
-          </tr>
-          <tr>
-            <th>Force</th>
-            <td>{summary.force}</td>
-          </tr>
-          <tr>
-            <th>Power</th>
-            <td>{summary.power}</td>
-          </tr>
-          <tr>
-            <th>Spring rate</th>
-            <td>{summary.springRate}</td>
-          </tr>
-        </tbody>
-      </table>
+      <div className="flex flex-col gap-1.5">
+        <SpecRow label="Speed" value={summary.speed} />
+        <SpecRow label="Distance" value={summary.distance} />
+        <SpecRow label="Pressure" value={summary.pressure} />
+        <SpecRow label="Temperature" value={summary.temperature} />
+        <SpecRow label="Force" value={summary.force} />
+        <SpecRow label="Power" value={summary.power} />
+        <SpecRow label="Spring rate" value={summary.springRate} />
+      </div>
     </div>
   );
 }

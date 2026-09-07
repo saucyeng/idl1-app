@@ -1,5 +1,7 @@
 import { useEffect, useState } from "react";
 
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { getDataDir, setDataDir, type DataDirInfo } from "../../../ipc/app";
 import { describeOverrideChange, validateDataDir, type ValidationIssue } from "./dataDir";
 import { describeIpcError, type IpcErrorLike } from "./errors";
@@ -105,19 +107,23 @@ export default function DataSection({ store }: DataSectionProps) {
   }
 
   return (
-    <div className="idl1-settings__section">
-      <p>
-        <strong>Current location:</strong> {info ? info.resolved_path : (loadError ?? "Loading…")}
+    <div className="flex flex-col gap-3">
+      <p className="font-mono text-sm text-fg">
+        <span className="text-fg-dim">Current location: </span>
+        {info ? info.resolved_path : (loadError ?? "Loading…")}
       </p>
       {info?.restart_required ? (
-        <p className="idl1-settings__hint idl1-settings__hint--error">
+        <p className="font-mono text-xs text-brand-accent">
           A change is pending — restart the app for it to take effect.
         </p>
       ) : null}
-      <label htmlFor="idl1-settings-data-dir">Override directory</label>
-      <input
+      <label htmlFor="idl1-settings-data-dir" className="font-mono text-xs uppercase tracking-[var(--tracking-label)] text-fg-dim">
+        Override directory
+      </label>
+      <Input
         id="idl1-settings-data-dir"
         type="text"
+        className="max-w-md"
         value={overrideInput}
         onChange={(event) => handleInputChange(event.target.value)}
         placeholder="e.g. D:\race-data"
@@ -125,28 +131,30 @@ export default function DataSection({ store }: DataSectionProps) {
       {issues.map((issue) => (
         <p
           key={issue.message}
-          className={issue.severity === "error" ? "idl1-settings__hint idl1-settings__hint--error" : "idl1-settings__hint"}
+          className={issue.severity === "error" ? "font-mono text-xs text-brand-accent" : "font-mono text-xs text-fg-faint"}
         >
           {issue.message}
         </p>
       ))}
-      <p className="idl1-settings__hint">A change to this setting takes effect on restart.</p>
+      <p className="font-mono text-xs text-fg-faint">A change to this setting takes effect on restart.</p>
       {!confirming ? (
-        <button type="button" onClick={handleSaveClick} disabled={hasErrors}>
+        <Button type="button" onClick={handleSaveClick} disabled={hasErrors} className="w-fit">
           Save
-        </button>
+        </Button>
       ) : (
-        <div className="idl1-settings__confirm">
-          <p>{describeOverrideChange(info?.override_path ?? null, overrideInput)}</p>
-          <button type="button" onClick={handleConfirm}>
-            Confirm change
-          </button>
-          <button type="button" onClick={handleCancelConfirm}>
-            Cancel
-          </button>
+        <div className="flex flex-col gap-2 border-l border-rule pl-3">
+          <p className="font-mono text-xs text-fg-dim">{describeOverrideChange(info?.override_path ?? null, overrideInput)}</p>
+          <div className="flex gap-2">
+            <Button type="button" emphasis="good" filled onClick={handleConfirm}>
+              Confirm change
+            </Button>
+            <Button type="button" onClick={handleCancelConfirm}>
+              Cancel
+            </Button>
+          </div>
         </div>
       )}
-      {saveError ? <p className="idl1-settings__hint idl1-settings__hint--error">{saveError}</p> : null}
+      {saveError ? <p className="font-mono text-xs text-brand-accent">{saveError}</p> : null}
     </div>
   );
 }

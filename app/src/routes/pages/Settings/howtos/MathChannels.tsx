@@ -6,9 +6,11 @@
  * math channels are now `math` cells written directly in the notebook
  * document that opens with each session (the Notebook tab, L6), mixed with
  * prose and charts rather than kept in a separate screen. */
+import { HOWTO_ARTICLE_CLASSES } from "./proseClasses";
+
 export default function MathChannels() {
   return (
-    <article className="idl1-settings__howto">
+    <article className={HOWTO_ARTICLE_CLASSES}>
       <h3>Math Channels</h3>
       <p>
         Math channels let you create derived signals by writing expressions over the raw sensor channels.

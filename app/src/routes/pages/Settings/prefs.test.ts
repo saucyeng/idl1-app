@@ -108,6 +108,47 @@ describe("parsePrefs", () => {
     expect(roundTripped).toEqual(first);
   });
 
+  it("parsePrefs — theme and output_register — round-trip through serializePrefs unchanged", () => {
+    // Arrange
+    const raw = {
+      ui: { last_section: "theme", section_list_width_px: 220, theme: "system", output_register: "studio" },
+    };
+
+    // Act
+    const prefs = parsePrefs(raw);
+    const roundTripped = parsePrefs(JSON.parse(serializePrefs(prefs)));
+
+    // Assert
+    expect(prefs.ui.theme).toBe("system");
+    expect(prefs.ui.output_register).toBe("studio");
+    expect(roundTripped.ui.theme).toBe("system");
+    expect(roundTripped.ui.output_register).toBe("studio");
+  });
+
+  it("parsePrefs — an unknown theme or output_register value — falls back to the default, never throws", () => {
+    // Arrange
+    const raw = { ui: { theme: "sepia", output_register: "vellum" } };
+
+    // Act
+    const prefs = parsePrefs(raw);
+
+    // Assert
+    expect(prefs.ui.theme).toBe("dark");
+    expect(prefs.ui.output_register).toBeNull();
+  });
+
+  it("parsePrefs — ui absent — theme defaults to dark, output_register defaults to null (no choice made)", () => {
+    // Arrange
+    const raw = {};
+
+    // Act
+    const prefs = parsePrefs(raw);
+
+    // Assert
+    expect(prefs.ui.theme).toBe("dark");
+    expect(prefs.ui.output_register).toBeNull();
+  });
+
   it("serializePrefs — engine and ui halves — nested so the engine half can be lifted out unchanged for a future set_settings call", () => {
     // Arrange
     const prefs = parsePrefs({
