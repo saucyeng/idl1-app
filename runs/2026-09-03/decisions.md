@@ -4115,3 +4115,9 @@ phone.
 context are the signal UI-5 gates on and UI-10 reuses (R95 item 2).
 Worktree retired. Next: UI-5/6/7 concurrently, each its own worktree
 from main.
+
+## 2026-09-07 — UI-5 LANDED (Device restyle; review CLEAN)
+
+`1be44e0`. Device refinement list filed as question 12 in
+`runs/2026-09-05/QUESTIONS-FOR-ISAAC.md` (the reviewer could not see it
+from files — it is there now). Worktree retired.
