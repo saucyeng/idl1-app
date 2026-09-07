@@ -240,6 +240,188 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
   fields (`prefsMigration.test.ts`, `settingsBackend.test.ts`) and
   `sections.test.ts`'s section-count/firmware assertions, all mechanical
   consequences of the fields/sections this task adds, not behaviour changes.
+- **UI-8: Plot theme, series cycle and Turbo on the brand tokens (2026-09-06,
+  no spec change needed — decisions 25–27).** New `Notebook/theme/`: `turbo.ts`
+  (idl0's degree-5 Turbo polynomial ported to TS, `turbo`/`turboCss`, clamped
+  and NaN/Infinity-safe); `series.ts` (`seriesColor`/`seriesPalette` resolve
+  the 8-hue cycle through an injected `CssVarReader`, wrapping `% 8`; throws a
+  typed `MissingChartTokenError` rather than falling back to a guessed hex on
+  an empty token, since any hardcoded fallback would itself be a colour
+  literal outside `tokens.css`; `documentVars()` is the one impure
+  `getComputedStyle` adapter, usable against either document); `plotTheme.ts`
+  (the merged Plot options object: `--bg` background, `--fg-dim` mono
+  tabular-11px text, `--rule` grid, `marginLeft` fixed for six tabular
+  digits, no frame — see its doc comment for two documented gaps: Plot's
+  public API has no top-level knob to colour the axis tick vector separately
+  from tick-label text, so both inherit `style.color`; and Plot's text/axis
+  marks expose no `textTransform`/`letterSpacing` option at all, on any call
+  shape, so `UI-DIRECTION.md`'s "uppercase tracked axis titles" is not
+  implemented — not a scope choice, a real Plot API limitation); `slotStates.ts`
+  (`emptySlotMessage`/`errorSlotMessage`, a chart-slot-specific empty/error
+  vocabulary distinct from `model/jsCellNote.ts`'s existing whole-cell note).
+  Applied in `sandbox/main.ts`: a `themedPlot()` wrapper is bound as the
+  sandbox's `Plot` global in place of the raw library, since a cell's own
+  `Plot.plot({...})` source text is never rewritten (C2 §5, "the workbook is
+  a file") — every cell's call merges the theme automatically, `style`
+  merged key-by-key so a cell's own override wins per property. The sandbox
+  document imports `../../../../styles/tokens.css` directly (CSS custom
+  properties do not cross the iframe boundary) — confirmed by inspecting a
+  real `vite build`: `notebookSandbox-*.css` defines all eight `--chart-N`
+  tokens plus `--bg`/`--rule`/`--font-mono`, and `notebookSandbox-*.js`
+  contains the theme's `getPropertyValue`/`marginLeft`/`tabular-nums` calls.
+  **Parity gap:** no host-side `Plot.plot` call site exists in this tree to
+  merge the theme into — `ChartCell.tsx`/`RasterUnderlay.tsx` render via raw
+  canvas (`drawRaster`) and the sandbox's own DOM, never importing
+  `@observablehq/plot` themselves (confirmed by grep); the brief's own file
+  list named them as host-side call sites, which this task's survey did not
+  find. `theme/slotStates.ts` is delivered as a standalone tested module,
+  not yet wired into any render site (no existing chart-cell empty/error UI
+  to attach it to in this pass).
+- **UI-9: CodeMirror brand theme for md/js/math (2026-09-06, no spec change
+  needed — decision 32).** New `Notebook/editor/cmTheme.ts`: `SYNTAX_ROLE_VARS`
+  maps ten `SyntaxRole`s (`keyword`/`function`/`string`/`number`/`channelRef`/
+  `cellRef`/`operator`/`labelComment` onto the 8-hue chart series cycle,
+  `identifier`/`comment` onto the neutral `--fg`/`--fg-faint` ladder rather
+  than joining the cycle — an all-rainbow editor reads noisier than idl0's
+  chrome, and decision 32 says colour *comes from* the series, not that
+  every token must carry one); `brandHighlightStyle` builds a `HighlightStyle`
+  from it, covering both the general `@lezer/highlight` tags markdown/
+  JavaScript emit and the math `StreamLanguage`'s own `special(...)`/
+  `docComment` tags (`CodePane.tsx`'s `MATH_TOKEN_TAGS`), ordered so the more
+  specific math tags win over the general ones they nest under;
+  `brandEditorTheme` supplies chrome (background, gutter + hairline, active
+  line/gutter, selection, cursor, a dormant matching-bracket style, and the
+  `--focus` ring via `outline` — never `box-shadow`) plus mono type at
+  `--text-body-small` with tabular figures. Resolves every colour through
+  UI-8's `CssVarReader`/`documentVars()` (no second resolver), throwing a
+  `MissingThemeTokenError` on an empty token rather than a hex fallback, the
+  same shape as `theme/series.ts`'s `MissingChartTokenError`.
+  `CodePane.tsx` swaps `defaultHighlightStyle` for `brandHighlightStyle` and
+  adds `brandEditorTheme`; nothing else in that file (debounce, completion
+  source, math tokenizer, keymap) changes. **Parity gap:** bracket matching
+  itself is not wired up (`CodePane.tsx` never imports `bracketMatching()`);
+  the theme styles `.cm-matchingBracket` in anticipation, but it is inert
+  until a later task adds the extension.
+- **UI-10: Notebook cell frame, output registers and editor placement
+  (2026-09-06, spec-during — the output register is new user-visible
+  behaviour, decision 31/R92/R93).** `components/CellFrame.tsx` gained an
+  uppercase kicker (`KIND · NN`, `ScannedCell` has no name field), a
+  `StatusDot` for each cell's run state (pending/ok/error, derived from
+  `state.outputs`/`cellErrors`/`fftErrors`), a per-cell code-reveal toggle
+  (decision 30, new `model/codeVisibility.ts`, UI state only — never
+  persisted, never written into the workbook), the reserved `--good`
+  selection inset bar on a `--surface-2` fill, and an in-place error
+  `NoteBlock`. Three new pure modules with tests: `model/outputRegister.ts`
+  (`defaultRegister`/`registerMetrics`, thinning `Settings/theme.ts`'s
+  existing `OutputRegister`/`resolveRegister` down to the "nothing stored"
+  case rather than re-implementing the width breakpoint), `model/
+  editorPlacement.ts` (`editorPlacement`/`outputIsReadOnly`, sharing
+  `shell/layout.ts`'s `resolveLayout` breakpoints so the two can never
+  drift), `model/codeVisibility.ts`. `EditorPanes.tsx` now mounts a `js`
+  cell's Properties/Code panes as `Tabs` (decision 29) instead of side by
+  side; every other kind is unwrapped `CodePane`. `WorkbookBar.tsx`
+  restyled onto shadcn primitives as the worksheet bar (workbook `Select`,
+  a worksheet `Tabs` placeholder — this lane's `.idl1wb` model has no
+  multi-worksheet concept yet, so one fixed tab stands in and `+` is
+  disabled — and the paper/studio register `ToggleGroup`), every existing
+  behaviour (rescan, create, dirty guard, rebuild report) unchanged.
+  `index.tsx`'s layout is now width-aware: `Resizable` editor/output panes
+  on wide (inside the shell's already-reserved notebook output column, not
+  a second outer split — the split's own widths are not yet persisted,
+  flagged below), an inline editor under the selected cell on medium, and
+  read-only paper with the Properties form in a `BrandSheet` on narrow.
+  The output register is read from a second `Settings/prefsStore.ts`
+  `PrefsStore` instance (`createPrefsStore(localStorageBackend())`,
+  wrapping the same `idl1.settings.prefs.v1` document Settings' own
+  instance uses — UI-7's Open Question 1 recommendation) and falls back to
+  `defaultRegister(width)` when `output_register` is unset.
+  **R95 items 2/3 (sandbox/watcher/debounced-eval pausing):** new
+  `model/sandboxLifecycle.ts` (`sandboxShouldRun`/`initialSandboxPrimeState`/
+  `nextSandboxPrimeState`) decides, from `shell/routeVisibility.tsx`'s
+  `useRouteVisible`, whether the notebook's background work should be
+  running and whether a hidden→visible transition needs a re-prime. The
+  `SandboxHost` mount effect, the `watchWorkbook` subscription effect and
+  the debounced-eval effect each gained `primeState.running` as a
+  dependency, so React's own effect cleanup/re-run cycle tears the sandbox
+  down (and drops/re-subscribes the watcher, clears a pending eval timer)
+  while hidden and rebuilds it on return — no `pause()`/`resume()` pair was
+  added to `host/SandboxHost.ts` (untouched). The three effects that
+  populate a fresh `SandboxHost` (`setCells`/inline spans, channel bind,
+  FFT bind) additionally depend on `primeState.primeEpoch`, reused as the
+  re-prime trigger rather than a new replay path, matching R69's replay
+  order; `boundIdentityRef` is cleared exactly once per re-prime so every
+  cell's channel binding looks "new" again to those effects.
+  **Flagged for a ruling:** the inner wide-layout editor/output split
+  is an unpersisted 65/35 `ResizablePanelGroup` rather than living in
+  `shell/columnPrefs.ts` under its own ids as this task's own brief
+  recommended — `ColumnId` is a closed union in shell-owned code this
+  lane's "do not touch the shell" rule forbids editing, so the two
+  instructions conflicted; a Notebook-local prefs module was avoided too
+  (the brief's "not a second storage key"), leaving persistence undone
+  rather than guessing which rule wins. Also flagged: `watch_workbook`'s
+  C3 contract has no unsubscribe command, so pausing it while hidden reuses
+  this file's pre-existing "workbook changed" pattern (the callback becomes
+  inert; a fresh subscription starts on the next open) rather than closing
+  the prior Tauri-side handle, which was already true of every workbook
+  switch before this task.
+  **Parity gaps:** multiple worksheets (idl0 had no such concept either —
+  new chrome with no backend, not a regression); a persisted wide-layout
+  split width (see the ruling flag above); narrow-layout editing for
+  `math`/`table` cells (only `js` cells get the narrow Properties `Sheet`
+  in this pass — no code editor at narrow for the other two kinds).
+- **UI-11: shared cursor, chart action menu, keyboard zoom/pan, playback
+  transport (2026-09-07, spec-during — playback and keyboard bindings are
+  new user-visible behaviour, decisions 18/27; R99).** New
+  `routes/pages/Notebook/interaction/`: `chartActions.ts` (the ported,
+  narrowed `ChartAction` enum and `actionsFor`/`actionLabel`), `keymap.ts`
+  (`actionForKey`, arrow keys for zoom/pan since the given key-event shape
+  carries no `altKey` — diverges from `Settings/controls.ts`'s idl0-ported
+  table, see that module's doc comment), `playback.ts` (`tick`/`togglePlay`/
+  `formatPlaybackTime`, the live-speed clock — pure, an injected
+  `elapsedMs`, no timer of its own), `cursorFollow.ts`
+  (`pixelXForTUs`/`advanceViewportByTime`), `rectZoom.ts` (`zoomToRect`,
+  composing `model/viewport.ts`'s own `zoomAt`/`panBy`), `peak.ts`
+  (`findPeakTUs` for "cursor to peak"), `ChartContextMenu.tsx` (UI-3's
+  `context-menu` over the action set) and `PlaybackTransport.tsx` (portals
+  into `shell/TopBar.tsx`'s reserved slot by `id`, not new props on
+  `TopBar`/`App.tsx`/`AppState.tsx` — R99 keeps those untouched).
+  **R99 (this task's own ruling):** the shared worksheet cursor is new
+  state in `Notebook/index.tsx` (`manualCursorTUs` + `playback:
+  PlaybackState`), not a new field on any single `ChartCell` — every
+  mounted `ChartCell` receives the same `cursorTUs`/`playing` props and
+  keeps its **own** `cursorReadoutDriver` instance (R62's 150 ms
+  pointer-stop settle stays per chart; only the cursor *time* is shared).
+  During playback a `ChartCell` pans its own live viewport through the
+  *existing* settle debounce (`advanceViewportByTime` → `settleRef.notify`)
+  and calls its readout driver's `notify` (not `dispatchNow`) at the new
+  position every frame — the debounce keeps being reset by a continuously
+  advancing cursor, so neither the tile-fetch settle nor the
+  `cursorReadout` IPC call fires more than once per pause/stop. **No new
+  throttle was needed**; this task did not have to invent one. Drag-rectangle
+  zoom is Shift+drag (not idl0's right-click+drag) since right-click is now
+  `ChartContextMenu`'s own trigger. A plain left-click with negligible
+  movement sets the shared cursor (idl0's "Place cursor: Left-click"), the
+  menu's own "Set cursor here"/"Clear cursor" mirror it, and "cursor to
+  peak" scans the cell's own already-decoded tiles (no fetch). `CursorReadout.tsx`
+  restyled to token chips (`--surface-2` fill, `--rule` hairline, mono
+  tabular) per the chart style rules. **Parity gaps:** figure export
+  (decision 28, out of scope); a cascading submenu (not needed — the
+  landed action set is flat); Y-axis zoom and idl0's multi-cursor swap (no
+  landed Y-axis or second cursor to act on).
+- **UI-11 review fixes (2026-09-07).** `PlaybackTransport` portals into
+  `shell/TopBar.tsx`'s slot, which sits outside the Notebook route's own
+  `hidden` subtree — under mount-and-hide (R93) that `hidden` attribute
+  never reached the portal, so the play/pause control and running-time
+  readout leaked onto the shared top bar on every tab once a session had a
+  cursor time. Fixed by gating the component's own render (not just
+  `disabled`) on `shell/routeVisibility.tsx`'s `useRouteVisible("notebook")`,
+  through a new pure `interaction/playback.ts#shouldRenderPlaybackTransport`
+  decision (route-visible AND a cursor time), tested directly.
+  `Settings/controls.ts`'s "keyboard" group no longer carries idl0's
+  provisional table — it is now generated from `interaction/chartActions.ts`'s
+  `actionLabel` (the same landed bindings `interaction/keymap.ts` implements),
+  so it cannot silently re-diverge; `ControlsSection.tsx`'s banner now scopes
+  "provisional" to the still-idl0 "mouse wheel"/"mouse" groups only.
 - **L8x lane complete: Data-tab write commands (2026-09-06, idl-rs core +
   idl-rs-tauri, ruling R86).** Five new commands close the last C3 §6
   deferrals the Data tab still stubbed: `save_track`, `delete_track`,

@@ -1,5 +1,7 @@
-import { useEffect, useMemo, useReducer, useRef, useState } from "react";
+import { useEffect, useMemo, useReducer, useRef, useState, type CSSProperties } from "react";
 
+import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@/components/ui/resizable";
+import { BrandSheet } from "@/components/brand/BrandSheet";
 import { listSessions, listWorkbooks, getSession, rebuildCatalog, type RebuildReport, type SessionDetail } from "../../../ipc/catalog";
 import { cursorReadout } from "../../../ipc/cursor";
 import { fetchFft, type DecodedFft } from "../../../ipc/rasters";
@@ -17,12 +19,16 @@ import {
   type LapContext as EvalLapContext,
 } from "../../../ipc/workbook";
 import { useAppState } from "../../../state/AppState";
-import CellFrame from "./components/CellFrame";
+import { useRouteVisible } from "../../../shell/routeVisibility";
+import { resolveRegister } from "../Settings/theme";
+import { createPrefsStore, localStorageBackend } from "../Settings/prefsStore";
+import CellFrame, { type CellRunStatus } from "./components/CellFrame";
 import CellList from "./components/CellList";
 import ChartCell from "./components/ChartCell";
 import ConflictBanner from "./components/ConflictBanner";
 import EditorPanes from "./components/EditorPanes";
 import JsCellFrame, { DEFAULT_JS_CELL_HEIGHT_PX } from "./components/JsCellFrame";
+import PropertiesForm from "./components/PropertiesForm";
 import type { PropertiesFormChannelOption, PropertiesFormLapOption } from "./components/PropertiesForm.types";
 import WorkbookBar from "./components/WorkbookBar";
 import type { SandboxCell } from "./host/protocol";
@@ -32,6 +38,10 @@ import { dropCellHeight, initialCellHeights, recordCellHeight, type CellHeights 
 import { replaceCellBody } from "./model/cells";
 import { runChannelBind, runChannelSettle, type ChannelBindAction, type ChannelBindDeps, type ChartWindow } from "./model/channelBindDriver";
 import { CellRunSequencer } from "./model/cellRunSequencer";
+import { isCodeVisible, toggleCode } from "./model/codeVisibility";
+import PlaybackTransport from "./interaction/PlaybackTransport";
+import { tick, togglePlay, type PlaybackState } from "./interaction/playback";
+import { editorPlacement, outputIsReadOnly } from "./model/editorPlacement";
 import { runFft, type FftAction, type FftDeps } from "./model/fftDriver";
 import { exceedsBinCap, frequencyAxisHz } from "./model/fftRequest";
 import { diffFunctionCatalog, type FunctionCatalogMismatch } from "./model/functionCatalog";
@@ -39,9 +49,11 @@ import { bindingFor, bindingIdentity, unresolvedChannelId, type FftCellBinding }
 import { jsCellNote } from "./model/jsCellNote";
 import { readNotebookPrefs, writeNotebookPrefs } from "./model/notebookPrefs";
 import { runEval, runOpenAndEval, type OpenEvalDeps } from "./model/openEvalDriver";
+import { registerMetrics } from "./model/outputRegister";
 import { parse as parsePlotForm } from "./plotForm/parse";
 import { proseBlocksFor, spansToEvaluate } from "./model/proseBlocks";
 import { isSelfWrite, saveFlow, type SaveFlowState, type WorkbookEventWithHash } from "./model/saveFlow";
+import { initialSandboxPrimeState, nextSandboxPrimeState } from "./model/sandboxLifecycle";
 import { runSessionSpan, type SessionSpanAction, type SessionSpanDeps } from "./model/sessionSpanDriver";
 import { TileCache } from "./model/tileCache";
 import { chooseWorkbookEntry, type WorkbookEntry } from "./model/workbookEntry";
@@ -101,6 +113,39 @@ const SANDBOX_RUNTIME_VERSION = "1.0.0";
  * a documented judgment call, not a guess baked in silently.
  */
 const DEFAULT_CHART_WIDTH_PX = 640;
+
+/**
+ * A second {@link PrefsStore} instance over the same `localStorage`-backed
+ * document `Settings/prefsStore.ts`'s own module-scope instance reads and
+ * writes (UI-7 brief Open Question 1: "UI-10 reads it through
+ * `prefsStore.ts`'s `PrefsBackend` rather than a third storage key" — the
+ * recommendation the lead's UI-10 dispatch proceeded on). This is a second
+ * *object*, not a second *storage key*: both instances wrap the identical
+ * `idl1.settings.prefs.v1` document, so a register change from either tab
+ * is visible to the other the next time it reads. `Settings/index.tsx`'s
+ * own instance is not exported and is not imported here — constructing a
+ * second one from the same exported factory avoids a cross-page singleton
+ * import while landing on the same underlying key.
+ */
+const notebookPrefsStore = createPrefsStore(localStorageBackend());
+
+/** Tracks `window.innerWidth`, for `model/editorPlacement.ts`'s
+ *  `editorPlacement`/`model/outputRegister.ts`'s `registerMetrics` and
+ *  `Settings/theme.ts`'s `resolveRegister` — the same small resize-listener
+ *  hook every other width-dependent page in this app keeps its own copy of
+ *  (`Data/index.tsx`, `Settings/ThemeSection.tsx`), rather than a shared
+ *  export, per this lane's existing convention. */
+function useWindowWidth(): number {
+  const [widthPx, setWidthPx] = useState<number>(() => (typeof window === "undefined" ? 1200 : window.innerWidth));
+
+  useEffect(() => {
+    const onResize = () => setWidthPx(window.innerWidth);
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, []);
+
+  return widthPx;
+}
 
 /** Decodes a `[start, end)` **UTF-8 byte** range (`model/cells.ts`'s
  *  convention) back into text. Duplicated from `components/CellList.tsx`'s
@@ -208,6 +253,117 @@ export default function NotebookPage() {
    *  N workbook(s)" line (R81 Q6). */
   const [lastRebuild, setLastRebuild] = useState<RebuildReport | null>(null);
 
+  // R95 items 2/3: whether the Notebook route is on screen right now
+  // (`shell/routeVisibility.tsx`'s composed "window visible AND this route
+  // active" signal, the same one UI-4's Device tab gates its status poll
+  // on). `primeState` is `model/sandboxLifecycle.ts`'s pure decision over
+  // that boolean -- `running` gates the sandbox mount effect, the
+  // `watchWorkbook` subscription and the debounced-eval effect below;
+  // `primeEpoch` is included in the dependency array of every effect that
+  // must resend its state into a freshly (re)constructed `SandboxHost` on a
+  // hidden -> visible transition, reusing those effects' own existing
+  // replay order rather than a new one (R69).
+  const routeVisible = useRouteVisible("notebook");
+  const [primeState, setPrimeState] = useState(() => initialSandboxPrimeState(routeVisible));
+  useEffect(() => {
+    setPrimeState((prev) => nextSandboxPrimeState(prev, routeVisible));
+  }, [routeVisible]);
+
+  // UI-11 (R99): the worksheet's shared cursor time, split into a
+  // manually-set component (`setCursor`/`clearCursor`, a click, "cursor to
+  // peak") and playback's own clock (`interaction/playback.ts`) -- the
+  // *effective* shared cursor every mounted `ChartCell` receives is
+  // whichever of the two is currently authoritative (`sharedCursorTUs`
+  // below), never both merged, so there is exactly one source of truth at
+  // any instant.
+  const [manualCursorTUs, setManualCursorTUs] = useState<bigint | null>(null);
+  const [playback, setPlayback] = useState<PlaybackState>({ tUs: 0n, playing: false, speed: 1 });
+  const sharedCursorTUs = playback.playing ? playback.tUs : manualCursorTUs;
+
+  // The playback clock's `requestAnimationFrame` loop: local state only
+  // (`setPlayback`), never IPC or `postMessage` itself (the effects rule's
+  // carve-out for a RAF loop that "advances local state only"). Gated on
+  // `primeState.running` (R95/R99): a hidden Notebook route must not keep
+  // ticking a cursor nobody can see. `sessionSpanUs` is read fresh each
+  // frame via a ref (`sessionSpanUsRef`, populated below) rather than
+  // added to this effect's dependency array, so a mid-playback session
+  // change doesn't tear down and restart the RAF loop itself.
+  const sessionSpanUsRef = useRef(sessionSpanUs);
+  sessionSpanUsRef.current = sessionSpanUs;
+  useEffect(() => {
+    if (!playback.playing || !primeState.running) return;
+
+    let raf = 0;
+    let last = performance.now();
+    const loop = (now: number) => {
+      const elapsedMs = now - last;
+      last = now;
+      const spanEndUs = BigInt(Math.max(0, Math.round(sessionSpanUsRef.current ?? 0)));
+      setPlayback((prev) => tick(prev, elapsedMs, [0n, spanEndUs]));
+      raf = requestAnimationFrame(loop);
+    };
+    raf = requestAnimationFrame(loop);
+    return () => cancelAnimationFrame(raf);
+  }, [playback.playing, primeState.running]);
+
+  // R95's own rule ("pause ... while hidden") applied to playback: a
+  // hidden -> still-playing route pauses rather than silently continuing
+  // off-screen, so a later re-show shows a paused transport, not one that
+  // kept advancing invisibly.
+  useEffect(() => {
+    if (!primeState.running && playback.playing) {
+      setPlayback((prev) => togglePlay(prev));
+    }
+  }, [primeState.running, playback.playing]);
+
+  /** Play/pause toggle for `PlaybackTransport`. Starting play from a
+   *  manually-set cursor seeds the clock's `tUs` from it (a judgment call:
+   *  `interaction/playback.ts`'s `togglePlay` has no span/cursor parameter
+   *  to do this itself, see its own doc comment) so playback resumes from
+   *  where the user last pointed rather than wherever the clock was left. */
+  function handleTogglePlay(): void {
+    setPlayback((prev) => {
+      if (!prev.playing && manualCursorTUs !== null) {
+        return togglePlay({ ...prev, tUs: manualCursorTUs });
+      }
+      return togglePlay(prev);
+    });
+  }
+
+  // Width-dependent chrome (UI-10): the editor's placement (panes/inline/
+  // sheet, `model/editorPlacement.ts`) and the output register's CSS
+  // metrics (`model/outputRegister.ts`) both read this, never a second
+  // width listener.
+  const widthPx = useWindowWidth();
+  const placement = editorPlacement(widthPx);
+
+  // The notebook output register (decision 31) -- stored in `UiPrefs`
+  // (UI-7 Q1), read/written through `notebookPrefsStore` above. `null`
+  // means "no explicit choice yet"; `resolveRegister` then defaults to
+  // paper on narrow / studio on wide.
+  const [storedRegister, setStoredRegister] = useState<"paper" | "studio" | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    void notebookPrefsStore.get().then((prefs) => {
+      if (!cancelled) setStoredRegister(prefs.ui.output_register);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+  const register = resolveRegister(storedRegister, widthPx);
+  const registerCssMetrics = registerMetrics(register);
+
+  function handleRegisterChange(next: "paper" | "studio"): void {
+    setStoredRegister(next);
+    void notebookPrefsStore.get().then((current) => notebookPrefsStore.set({ ui: { ...current.ui, output_register: next } }));
+  }
+
+  /** Which cells currently have their raw source revealed in the output
+   *  (decision 30, `model/codeVisibility.ts`) -- UI state, never persisted
+   *  and never written into the workbook. */
+  const [revealedCells, setRevealedCells] = useState<ReadonlySet<string>>(new Set());
+
   const containerRef = useRef<HTMLDivElement>(null);
   const sandboxHostRef = useRef<SandboxHost | null>(null);
   const sessionRef = useRef<NotebookSession>(new NotebookSession(new TileCache()));
@@ -222,6 +378,14 @@ export default function NotebookPage() {
   const autoRebuiltRef = useRef(false);
   /** Every js cell's currently bound identity (`bindingIdentity`), so the channel-bind effect below only *starts a new run* for a cell whose binding actually changed -- this is purely the "should a new initial bind start" decision; it is never consulted as a staleness guard (that is `cellRunSequencerRef`'s job, below, review-task13c.md's Major fix). */
   const boundIdentityRef = useRef<Map<string, string>>(new Map());
+  /** The last `primeState.primeEpoch` this page has already reprimed for
+   *  (R95 item 2) -- compared inside the setCells effect below so
+   *  `boundIdentityRef` is cleared exactly once per hidden -> visible
+   *  transition (a freshly (re)constructed `SandboxHost` has none of this
+   *  document's channels bound yet, so every cell's binding must look
+   *  "changed" again to the channel-bind/FFT-bind effects below), never on
+   *  an ordinary cell edit that happens to run the same effect. */
+  const primeEpochSeenRef = useRef(0);
   /** One shared run-sequence counter per `js` cell (`model/cellRunSequencer.ts`), used by *every* channel-window run for that cell -- the initial-bind effect below and each `ChartCell`'s gesture-settle refetch (`renderJsCell`'s `onViewportSettled`) alike -- so whichever kind of run started last always wins, regardless of which one resolves first (fix for review-task13c.md's Major: an initial bind and a settle previously carried independent guards that never invalidated each other). Shared with the FFT bind effect below (L6 Task 20) -- one counter per cell id regardless of which arm the cell resolves to, never a second counter. */
   const cellRunSequencerRef = useRef<CellRunSequencer>(new CellRunSequencer());
   /** The last decoded spectrum this page fetched for each FFT cell (L6 Task
@@ -291,9 +455,17 @@ export default function NotebookPage() {
     });
   });
 
+  // R95 item 2: the sandbox iframe is a live JS runtime -- it is not
+  // constructed (or is torn down) while the Notebook route is not visible.
+  // `primeState.running` is the only dependency: React's own effect
+  // lifecycle already gives the pause/resume shape for free -- a
+  // true -> false transition runs this effect's cleanup (`host.dispose()`),
+  // a false -> true transition runs the effect body again (a fresh
+  // `SandboxHost`, freshly `init`ed), so no separate pause()/resume() pair
+  // was added to `host/SandboxHost.ts` (untouched by this task).
   useEffect(() => {
     const container = containerRef.current;
-    if (container === null) return;
+    if (container === null || !primeState.running) return;
 
     const host = new SandboxHost(container, {
       onCellRendered: (cellId, heightPx) => onCellRenderedRef.current(cellId, heightPx),
@@ -321,7 +493,7 @@ export default function NotebookPage() {
       host.dispose();
       sandboxHostRef.current = null;
     };
-  }, []);
+  }, [primeState.running]);
 
   // Verifies `model/functionCatalog.ts`'s hand-transcribed `MATH_FUNCTIONS`
   // against the engine's own `list_math_builtins` (C3 §3.4, ledger R64.2),
@@ -443,9 +615,18 @@ export default function NotebookPage() {
     return fetchHostChannel(workbookId, sessionIdRef.current, defName, budget);
   };
 
+  // R95 item 2: paused the same way the sandbox mount effect above is --
+  // `primeState.running` added to the dependency array so a hidden route
+  // drops this subscription (the cleanup below runs) and a visible one
+  // re-subscribes fresh, exactly the shape this effect already used for a
+  // *workbook* change before this task (its cleanup only ever set
+  // `disposed`, since `watch_workbook`'s C3 contract has no unsubscribe
+  // command to call) -- hiding the route is treated as the same kind of
+  // "this subscription is no longer current" event a workbook switch
+  // already was, not a new mechanism.
   useEffect(() => {
     const workbookId = state.handle?.id;
-    if (workbookId === undefined) return;
+    if (workbookId === undefined || !primeState.running) return;
 
     let disposed = false;
     void watchWorkbook(workbookId, (event: WorkbookEventWithHash) => {
@@ -465,7 +646,7 @@ export default function NotebookPage() {
     return () => {
       disposed = true;
     };
-  }, [state.handle?.id]);
+  }, [state.handle?.id, primeState.running]);
 
   // Re-runs `evalWorkbook` some time after a local edit (`handleCellCodeChange`
   // below, dispatched as `workbookReducer`'s `editCell`), debounced by
@@ -476,8 +657,14 @@ export default function NotebookPage() {
   // `evalWorkbook` call -- the same distinction `CodePane.tsx`'s own
   // debounce relies on -- so this is not the cancelling-cleanup pattern
   // reviewers grade Critical.
+  // R95 item 3: a hidden notebook must not call `eval_workbook` -- gated on
+  // `primeState.running` the same way as the two effects above. Going
+  // hidden mid-debounce runs this effect's cleanup (`clearTimeout`), so a
+  // pending edit's eval is dropped rather than firing into the background;
+  // the edit itself is not lost (`state.dirtyCellIds` is untouched), so
+  // becoming visible again with a still-dirty cell re-arms the same timer.
   useEffect(() => {
-    if (state.handle === null || state.dirtyCellIds.size === 0) return;
+    if (state.handle === null || state.dirtyCellIds.size === 0 || !primeState.running) return;
     const workbookId = state.handle.id;
 
     const timer = setTimeout(() => {
@@ -486,7 +673,7 @@ export default function NotebookPage() {
     }, EDIT_EVAL_DEBOUNCE_MS);
 
     return () => clearTimeout(timer);
-  }, [state.dirtyCellIds, state.handle?.id]);
+  }, [state.dirtyCellIds, state.handle?.id, primeState.running]);
 
   /**
    * `WorkbookBar`'s "Create" (L6 Task 21) -- explicit user action, never
@@ -648,6 +835,18 @@ export default function NotebookPage() {
     const host = sandboxHostRef.current;
     if (host === null || state.markdown === null) return;
 
+    // R95 item 2: this run is the first one to see a freshly (re)constructed
+    // `SandboxHost` -- clear the "already bound" record so the channel-bind
+    // and FFT-bind effects below (which run after this one in the same
+    // commit, since they share `primeState.primeEpoch` as a dependency)
+    // treat every cell's binding as new again and resend it, rather than
+    // skipping cells whose identity happens not to have changed since
+    // before the pause.
+    if (primeEpochSeenRef.current !== primeState.primeEpoch) {
+      primeEpochSeenRef.current = primeState.primeEpoch;
+      boundIdentityRef.current.clear();
+    }
+
     const jsCells: SandboxCell[] = [];
     const liveIds = new Set<string>();
     for (const cell of state.cells) {
@@ -694,7 +893,14 @@ export default function NotebookPage() {
       }
       return next;
     });
-  }, [state.cells, state.markdown, state.outputs]);
+    // `primeState.primeEpoch` (R95 item 2): a hidden -> visible transition
+    // constructs a brand-new `SandboxHost` with none of this document's
+    // cells or spans pushed into it yet -- this effect already is the code
+    // that populates a first-mounted host, so a re-prime reuses it rather
+    // than a second replay path, by re-running it even though
+    // `state.cells`/`state.markdown`/`state.outputs` may not themselves
+    // have changed.
+  }, [state.cells, state.markdown, state.outputs, primeState.primeEpoch]);
 
   // For each `js` cell newly bound to a real channel (`bindingFor`, R66
   // item 1) -- a cell whose binding's identity (`bindingIdentity`) has
@@ -781,7 +987,7 @@ export default function NotebookPage() {
 
       void runChannelBind(deps, sessionRef.current.cache, sid, cellId, binding, DEFAULT_CHART_WIDTH_PX, onAction, isStale);
     }
-  }, [state.cells, state.markdown, state.outputs, sessionDetail, sessionSpanUs, sessionId]);
+  }, [state.cells, state.markdown, state.outputs, sessionDetail, sessionSpanUs, sessionId, primeState.primeEpoch]);
 
   // For each `js` cell whose binding is the FFT arm and whose
   // `bindingIdentity` changed (L6 Task 20, C2 §5.3), fetches its spectrum
@@ -877,7 +1083,7 @@ export default function NotebookPage() {
 
       void runFft(deps, sid, cellId, fftBinding.request, dispatchFft, isStale);
     }
-  }, [state.cells, state.markdown, state.outputs, sessionDetail, sessionSpanUs, sessionId, mainLap]);
+  }, [state.cells, state.markdown, state.outputs, sessionDetail, sessionSpanUs, sessionId, mainLap, primeState.primeEpoch]);
 
   // Save is unavailable while there is no readable `hash` to base it on
   // (still loading, or a read error) -- see `handleSave`'s doc comment on
@@ -924,68 +1130,74 @@ export default function NotebookPage() {
     return new Map(blocks.map((block) => [block.blockId, block]));
   }, [state.cells, state.markdown, state.outputs]);
 
-  return (
-    <div>
-      {functionCatalogMismatches.length > 0 && (
-        <p role="status" className="notebook-function-catalog-warning">
-          The function reference is out of date with the engine ({functionCatalogMismatches.length} mismatch
-          {functionCatalogMismatches.length === 1 ? "" : "es"}). Completions and signatures may be inaccurate for
-          those functions.
-        </p>
-      )}
-      {(entry === null || entry.kind === "empty") && (
-        <WorkbookBar
-          entry={entry}
-          rescanning={rescanning}
-          creating={creating}
-          dirty={false}
-          error={workbookBarError}
-          lastRebuild={lastRebuild}
-          onCreate={(name) => void handleCreate(name)}
-          onRescan={() => void handleRescan()}
-          onSelect={handleSelect}
-        />
-      )}
-      {state.markdownStatus === "error" && state.markdownError !== null && (
-        <p className="workbook-markdown-error">Notebook error: {state.markdownError}</p>
-      )}
-      {state.evalError !== null && (
-        <p role="alert" className="workbook-eval-error">
-          {state.evalError.message}
-        </p>
-      )}
-      {selectedWorkbookId !== null && state.handle === null && state.markdownStatus === "loading" && <p>Opening notebook...</p>}
-      {state.handle !== null && (
-        <div className="workbook-save-bar">
-          {entry !== null && entry.kind !== "empty" && (
-            <WorkbookBar
-              entry={entry}
-              rescanning={rescanning}
-              creating={creating}
-              dirty={state.dirtyCellIds.size > 0}
-              error={workbookBarError}
-              lastRebuild={lastRebuild}
-              onCreate={(name) => void handleCreate(name)}
-              onRescan={() => void handleRescan()}
-              onSelect={handleSelect}
-            />
-          )}
-          <button type="button" onClick={() => void handleSave()} disabled={saveUnavailable || saveFlowState.status === "saving"}>
-            {saveFlowState.status === "saving" ? "Saving…" : "Save"}
-          </button>
-          {saveUnavailable && <span className="workbook-save-unavailable">save not available yet (the document's text could not be read)</span>}
-          {saveFlowState.status === "error" && <span className="workbook-save-error">save failed: {saveFlowState.error.message}</span>}
-        </div>
-      )}
-      {state.conflict && <ConflictBanner onReloadFromDisk={() => void handleReloadFromDisk()} onOverwrite={() => void handleOverwrite()} />}
-      {state.handle !== null && (
-        <CellList
-          doc={{ frontMatterRange: null, cells: state.cells }}
-          proseBlocks={proseBlocksByBlockId}
-          outputs={state.outputs}
-          inlineResults={inlineResults}
-          spanErrors={spanErrors}
-          renderJsCell={(cellId) => {
+  /** `CellFrame`'s `StatusDot` (UI-10): `"pending"` before an `eval_workbook`
+   *  result exists for `cellId`, `"error"` when the cell's own output
+   *  errors, its sandbox `cellError`, or its FFT fetch failure is set,
+   *  `"ok"` otherwise. `cellId === null` (an unresolved fence id) always
+   *  reads as pending -- it can never have an evaluated `CellOutput`
+   *  (Rust indexes by id). */
+  function cellStatus(cellId: string | null): CellRunStatus {
+    if (cellId === null) return "pending";
+    if (cellErrors.has(cellId)) return "error";
+    if (fftErrors.has(cellId)) return "error";
+    const output = state.outputs.get(cellId);
+    if (output === undefined) return "pending";
+    return output.errors.length > 0 ? "error" : "ok";
+  }
+
+  /** The message `CellFrame`'s error `NoteBlock` shows, in the same
+   *  precedence `cellStatus` checks: a sandbox render error first (the most
+   *  specific, cell-local failure), then an FFT fetch error, then
+   *  `eval_workbook`'s own per-cell errors joined together. */
+  function cellErrorMessage(cellId: string | null): string | undefined {
+    if (cellId === null) return undefined;
+    const sandboxError = cellErrors.get(cellId);
+    if (sandboxError !== undefined) return sandboxError;
+    const fftError = fftErrors.get(cellId);
+    if (fftError !== undefined) return fftError.message;
+    const output = state.outputs.get(cellId);
+    if (output !== undefined && output.errors.length > 0) return output.errors.map((e) => e.message).join("; ");
+    return undefined;
+  }
+
+  // The editor for the currently open cell (Task 15's `EditorPanes`), built
+  // once here and placed differently depending on `placement`
+  // (`model/editorPlacement.ts`): beside the output in a `Resizable` pane on
+  // wide, inline under the selected cell's `CellFrame` on medium, and not at
+  // all on narrow (`outputIsReadOnly` -- narrow's Properties form lives in a
+  // `Sheet` instead, built separately below).
+  const editorPanesElement =
+    openCellId !== null && openCell !== null && openCellCode !== null && !outputIsReadOnly(placement) ? (
+      <EditorPanes
+        cellId={openCellId}
+        kind={openCell.kind}
+        code={openCellCode}
+        onChange={(nextCode) => handleCellCodeChange(openCellId, nextCode)}
+        channelIds={channelIds}
+        definitionNames={definitionNames}
+        channels={propertiesChannels}
+        laps={propertiesLaps}
+      />
+    ) : null;
+
+  // The output register's CSS shape, applied to the one container both
+  // layout branches below wrap `CellList` in -- `data-register` names the
+  // value for anything that later wants a CSS hook; the actual styling is
+  // these inline Tailwind-driven values, matching this app's existing
+  // width-dependent-layout convention (`Data/index.tsx`'s `layout.railWidthPx`).
+  const registerContainerStyle: CSSProperties = {
+    fontFamily: registerCssMetrics.family === "sans" ? "var(--font-sans)" : "var(--font-mono)",
+    ...(registerCssMetrics.measureCh !== null ? { maxWidth: `${registerCssMetrics.measureCh}ch`, marginInline: "auto" } : {}),
+  };
+
+  const cellListElement = (
+    <CellList
+      doc={{ frontMatterRange: null, cells: state.cells }}
+      proseBlocks={proseBlocksByBlockId}
+      outputs={state.outputs}
+      inlineResults={inlineResults}
+      spanErrors={spanErrors}
+      renderJsCell={(cellId) => {
             const cell = state.cells.find((c) => c.id === cellId);
             const code = cell !== undefined && state.markdown !== null ? decodeByteRange(state.markdown, cell.bodyRange) : "";
             const binding = bindingFor({ id: cellId, code }, sessionDetail, sessionSpanUs, definitionsWithAxis, mainLap);
@@ -1125,33 +1337,152 @@ export default function NotebookPage() {
                 fetchCursorReadout={(sessId, channels, tUs) => cursorReadout(sessId, channels, tUs)}
                 sendTransform={(id, translateXPx, scaleX) => sandboxHostRef.current?.sendTransform(id, translateXPx, scaleX)}
                 sendLayout={sendLayout}
+                cursorTUs={sharedCursorTUs}
+                playing={playback.playing}
+                onSetCursor={(tUs) => setManualCursorTUs(BigInt(Math.round(tUs)))}
+                onClearCursor={() => setManualCursorTUs(null)}
+                onToggleCode={() => setRevealedCells((prev) => toggleCode(prev, cellId))}
               />
             );
           }}
-          frame={(cell, output) => (
+          frame={(cell, output, index) => (
             <CellFrame
               cell={cell}
+              index={index}
               selected={cell.id !== null && selectedCellId === cell.id}
               onSelect={() => {
                 if (cell.id !== null) setSelectedCellId(cell.id);
               }}
+              status={cellStatus(cell.id)}
+              error={cellErrorMessage(cell.id)}
+              codeVisible={cell.id !== null && isCodeVisible(revealedCells, cell.id)}
+              onToggleCode={() => {
+                const cellId = cell.id;
+                if (cellId === null) return;
+                setRevealedCells((prev) => toggleCode(prev, cellId));
+              }}
+              code={state.markdown !== null ? decodeByteRange(state.markdown, cell.bodyRange) : undefined}
             >
               {output}
+              {/* Medium layout (decision 29): the editor sits inline, under
+                  the selected cell's own frame, rather than at the bottom of
+                  the whole document. */}
+              {placement === "inline" && cell.id !== null && cell.id === openCellId && editorPanesElement}
             </CellFrame>
           )}
         />
+  );
+
+  return (
+    <div className="flex h-full flex-col">
+      <PlaybackTransport
+        playing={playback.playing}
+        cursorTUs={sharedCursorTUs}
+        onToggle={handleTogglePlay}
+        disabled={!primeState.running}
+        routeVisible={routeVisible}
+      />
+      {functionCatalogMismatches.length > 0 && (
+        <p role="status" className="notebook-function-catalog-warning">
+          The function reference is out of date with the engine ({functionCatalogMismatches.length} mismatch
+          {functionCatalogMismatches.length === 1 ? "" : "es"}). Completions and signatures may be inaccurate for
+          those functions.
+        </p>
       )}
-      {openCellId !== null && openCell !== null && openCellCode !== null && (
-        <EditorPanes
-          cellId={openCellId}
-          kind={openCell.kind}
-          code={openCellCode}
-          onChange={(nextCode) => handleCellCodeChange(openCellId, nextCode)}
-          channelIds={channelIds}
-          definitionNames={definitionNames}
-          channels={propertiesChannels}
-          laps={propertiesLaps}
+      {(entry === null || entry.kind === "empty") && (
+        <WorkbookBar
+          entry={entry}
+          rescanning={rescanning}
+          creating={creating}
+          dirty={false}
+          error={workbookBarError}
+          lastRebuild={lastRebuild}
+          register={register}
+          onCreate={(name) => void handleCreate(name)}
+          onRescan={() => void handleRescan()}
+          onSelect={handleSelect}
+          onRegisterChange={handleRegisterChange}
         />
+      )}
+      {state.markdownStatus === "error" && state.markdownError !== null && (
+        <p className="workbook-markdown-error">Notebook error: {state.markdownError}</p>
+      )}
+      {state.evalError !== null && (
+        <p role="alert" className="workbook-eval-error">
+          {state.evalError.message}
+        </p>
+      )}
+      {selectedWorkbookId !== null && state.handle === null && state.markdownStatus === "loading" && <p>Opening notebook...</p>}
+      {state.handle !== null && (
+        <div className="workbook-save-bar">
+          {entry !== null && entry.kind !== "empty" && (
+            <WorkbookBar
+              entry={entry}
+              rescanning={rescanning}
+              creating={creating}
+              dirty={state.dirtyCellIds.size > 0}
+              error={workbookBarError}
+              lastRebuild={lastRebuild}
+              register={register}
+              onCreate={(name) => void handleCreate(name)}
+              onRescan={() => void handleRescan()}
+              onSelect={handleSelect}
+              onRegisterChange={handleRegisterChange}
+            />
+          )}
+          <button type="button" onClick={() => void handleSave()} disabled={saveUnavailable || saveFlowState.status === "saving"}>
+            {saveFlowState.status === "saving" ? "Saving…" : "Save"}
+          </button>
+          {saveUnavailable && <span className="workbook-save-unavailable">save not available yet (the document's text could not be read)</span>}
+          {saveFlowState.status === "error" && <span className="workbook-save-error">save failed: {saveFlowState.error.message}</span>}
+        </div>
+      )}
+      {state.conflict && <ConflictBanner onReloadFromDisk={() => void handleReloadFromDisk()} onOverwrite={() => void handleOverwrite()} />}
+      {state.handle !== null && placement === "panes" && (
+        <ResizablePanelGroup orientation="horizontal" className="min-h-0 flex-1">
+          <ResizablePanel id="notebook-editor-output" defaultSize={65} minSize={30}>
+            <div className="h-full overflow-auto p-4" data-register={register} style={registerContainerStyle}>
+              {cellListElement}
+            </div>
+          </ResizablePanel>
+          {editorPanesElement !== null && (
+            <>
+              <ResizableHandle withHandle />
+              <ResizablePanel id="notebook-editor-panes" defaultSize={35} minSize={20}>
+                <div className="h-full overflow-auto">{editorPanesElement}</div>
+              </ResizablePanel>
+            </>
+          )}
+        </ResizablePanelGroup>
+      )}
+      {state.handle !== null && placement === "inline" && (
+        <div className="min-h-0 flex-1 overflow-auto p-4" data-register={register} style={registerContainerStyle}>
+          {cellListElement}
+        </div>
+      )}
+      {state.handle !== null && placement === "sheet" && (
+        <>
+          <div className="min-h-0 flex-1 overflow-auto p-4" data-register={register} style={registerContainerStyle}>
+            {cellListElement}
+          </div>
+          <BrandSheet
+            open={openCellId !== null && openCell?.kind === "js"}
+            onOpenChange={(open) => {
+              if (!open) setSelectedCellId(null);
+            }}
+            title="Cell properties"
+          >
+            {openCellId !== null && openCell !== null && openCell.kind === "js" && openCellCode !== null && (
+              <PropertiesForm
+                code={openCellCode}
+                channels={propertiesChannels}
+                laps={propertiesLaps}
+                unitsPreference="si"
+                onChange={(nextCode) => handleCellCodeChange(openCellId, nextCode)}
+              />
+            )}
+          </BrandSheet>
+        </>
       )}
       <div
         ref={containerRef}

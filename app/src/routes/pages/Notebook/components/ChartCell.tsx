@@ -1,17 +1,50 @@
-import { useCallback, useEffect, useRef, useState, type PointerEvent, type WheelEvent } from "react";
+import { useCallback, useEffect, useRef, useState, type KeyboardEvent, type PointerEvent, type WheelEvent } from "react";
 
 import type { CursorReadout } from "../../../../ipc/cursor";
 import type { DecodedRaster, Histogram2dParams, RasterKind, RasterMeta, SpectrogramParams } from "../../../../ipc/rasters";
 import type { DecodedTile } from "../../../../ipc/tiles";
-import type { ReadoutPanelState } from "../model/cursor";
+import { cursorRequestFor, type ReadoutPanelState } from "../model/cursor";
 import { CURSOR_SETTLE_MS, makeCursorReadoutDriver, type CursorReadoutDriverDeps } from "../model/cursorReadoutDriver";
 import { hoverAt, type HoverGeometry } from "../model/hover";
 import { isStaleSettleResult, makeSettle } from "../model/settle";
 import { chooseTier, tileRange } from "../model/tiers";
 import { ensureTiles, type TileCache, type TileCacheKey } from "../model/tileCache";
 import { clampTo, panBy, transformFor, zoomAt, type Viewport } from "../model/viewport";
+import ChartContextMenu from "../interaction/ChartContextMenu";
+import type { ChartAction } from "../interaction/chartActions";
+import { advanceViewportByTime, pixelXForTUs } from "../interaction/cursorFollow";
+import { actionForKey } from "../interaction/keymap";
+import { findPeakTUs } from "../interaction/peak";
+import { zoomToRect } from "../interaction/rectZoom";
 import CursorReadoutPanel from "./CursorReadout";
 import RasterUnderlay from "./RasterUnderlay";
+
+/** Keyboard zoom step (decision 27's `ArrowUp`/`ArrowDown`, `interaction/keymap.ts`):
+ *  scales the visible span by this factor per key press, anchored at the
+ *  chart's own horizontal centre (a keyboard action has no pointer position
+ *  to anchor on, unlike the wheel handler below). No spec number is given;
+ *  20% is a readable, discoverable step for a discrete key press. */
+const KEYBOARD_ZOOM_FACTOR = 1.2;
+
+/** Keyboard pan step (decision 27's `ArrowLeft`/`ArrowRight`), as a
+ *  fraction of the chart's own plotted width per key press. No spec number
+ *  is given; 10% mirrors a typical "page" step. */
+const KEYBOARD_PAN_FRACTION = 0.1;
+
+/** Minimum CSS-px width of a drag-rectangle selection (Shift+drag; see this
+ *  component's own doc comment on why Shift, not idl0's right-click+drag,
+ *  is the modifier here) before {@link zoomToRect} is applied on release —
+ *  below this, the gesture reads as an accidental jitter rather than an
+ *  intentional selection and is discarded with no viewport change. */
+const MIN_SELECTION_PX = 4;
+
+/** Maximum CSS-px movement between a left-button pointerdown and pointerup
+ *  for the release to count as a "click" (decision 27 / idl0's
+ *  `Settings/controls.ts` "Place cursor: Left-click") rather than a pan
+ *  drag — {@link handlePointerUp} sets the shared cursor at the release
+ *  position when under this threshold, and does nothing beyond the normal
+ *  pan-drag end otherwise. */
+const CLICK_MAX_MOVEMENT_PX = 3;
 
 /** The value a successful {@link hoverAt} lookup adds to on-screen hover state. */
 interface HoverReading {
@@ -174,6 +207,46 @@ export interface ChartCellProps {
    * instead of a full re-layout.
    */
   sendLayout: (cellId: string, rect: { top: number; left: number; width: number }) => void;
+  /**
+   * The worksheet's shared cursor time (UI-11, R99), in µs since session
+   * start, or `null` when no cursor is set. Every mounted `ChartCell` in
+   * the worksheet receives the same value from `Notebook/index.tsx` — this
+   * component never holds its own cursor-time state, only the per-cell
+   * `cursorReadoutDriver` instance that fetches *this* cell's own reading
+   * at that shared time (R99: "what is shared is the cursor time, not the
+   * driver"). See {@link playing}'s doc comment for how this value changing
+   * is interpreted.
+   */
+  cursorTUs: bigint | null;
+  /**
+   * Whether live-speed playback (decision 18) is currently advancing
+   * {@link cursorTUs}. When `true`, a change in `cursorTUs` pans this
+   * cell's own live viewport by the elapsed time (via
+   * `interaction/cursorFollow.ts`'s `advanceViewportByTime`) through the
+   * *existing* settle/debounce pipeline (`settleRef`'s `notify`, exactly as
+   * a drag/wheel gesture does) — a continuously-advancing cursor therefore
+   * never fires a tile re-fetch or a cursor-readout IPC call per animation
+   * frame, only once playback stops advancing for `SETTLE_DELAY_MS`/
+   * `CURSOR_SETTLE_MS` (R99: "ship playback as pan-visually-then-refetch-
+   * once-when-playback-stops"). When `false`, a `cursorTUs` change (a
+   * manual `setCursor`/`clearCursor` from any chart's own action menu or
+   * click) only redraws this cell's cursor line and refreshes its own
+   * readout — it never pans.
+   */
+  playing: boolean;
+  /**
+   * Lifts a user-chosen cursor time up to `Notebook/index.tsx`'s shared
+   * cursor state (a left-click, the "Set cursor here"/"Cursor to peak"
+   * menu actions) — `tUs` is in µs since session start, this cell's own
+   * time axis, matching {@link cursorTUs}'s unit.
+   */
+  onSetCursor: (tUs: number) => void;
+  /** Clears the shared cursor ("Clear cursor" menu action). */
+  onClearCursor: () => void;
+  /** Toggles this cell's code visibility ("Show/hide code" menu action) --
+   *  a thin closure over `Notebook/index.tsx`'s existing `model/codeVisibility.ts`
+   *  state, injected so this component never imports that module directly. */
+  onToggleCode: () => void;
 }
 
 /**
@@ -247,11 +320,36 @@ export default function ChartCell({
   channelLabel,
   sendTransform,
   sendLayout,
+  cursorTUs,
+  playing,
+  onSetCursor,
+  onClearCursor,
+  onToggleCode,
 }: ChartCellProps) {
   const [hover, setHover] = useState<HoverReading | null>(null);
   const [liveViewport, setLiveViewport] = useState<Viewport>(viewport);
   const [readoutState, setReadoutState] = useState<ReadoutPanelState>(null);
-  const draggingRef = useRef<{ pointerId: number; lastClientX: number } | null>(null);
+  // The pending Shift+drag selection rectangle (decision 27's
+  // drag-rectangle zoom), in this cell's own CSS px — `null` when no
+  // selection drag is in progress. Shift+drag, not idl0's right-click+drag
+  // (`Settings/controls.ts`), because right-click is this cell's own
+  // context-menu trigger (`ChartContextMenu`) and the two gestures would
+  // otherwise race on the same button (documented judgment call).
+  const [selectionRectPx, setSelectionRectPx] = useState<{ x0: number; x1: number } | null>(null);
+  const draggingRef = useRef<{ pointerId: number; lastClientX: number; startClientX: number } | null>(null);
+  const rectDragRef = useRef<{ pointerId: number } | null>(null);
+  // The shared cursor time (`cursorTUs`) this cell last reacted to, so the
+  // playback-pan effect below can compute *this frame's* delta rather than
+  // the delta since the cursor was first set — `null` means "no shared
+  // cursor applied yet" (mirrors `lastPointerXRef`'s own null-as-distinct
+  // convention). Read/written only inside that effect.
+  const lastCursorTUsAppliedRef = useRef<number | null>(null);
+  // Fresh-value indirection for the playback-pan effect, the same
+  // "stable callback, values read through a ref" shape as
+  // `transformDepsRef`/`layoutDepsRef` below -- keeps that effect's own
+  // dependency array data-only (`[cursorTUs, playing, sessionSpanUs]`).
+  const liveViewportRef = useRef(liveViewport);
+  liveViewportRef.current = liveViewport;
   // The pointer's last-known CSS-px position within this cell, updated on
   // every pointer move (drag or hover alike) with no IPC — only the settle
   // callback below reads this to decide whether/what to request from
@@ -415,8 +513,82 @@ export default function ChartCell({
     return () => settle.cancel();
   }, []);
 
+  // Commits a new live viewport through the exact same pipeline every
+  // gesture already uses (local state, the tile-fetch settle debounce, the
+  // live sandbox transform) — factored out so the wheel/drag gestures
+  // below, the new keyboard/menu actions, and the playback-pan effect all
+  // go through one path rather than three copies of it.
+  const applyViewport = useCallback(
+    (compute: (current: Viewport) => Viewport) => {
+      setLiveViewport((current) => {
+        const next = clampTo(compute(current), sessionSpanUs);
+        settleRef.current.notify(next);
+        const { cellId: id, sendTransform: send, viewport: settled } = transformDepsRef.current;
+        const frameTransform = transformFor(settled, next);
+        send(id, frameTransform.translateXPx, frameTransform.scaleX);
+        return next;
+      });
+    },
+    [sessionSpanUs]
+  );
+
+  // The shared worksheet cursor (UI-11, R99): reacts to `cursorTUs`
+  // changing, never to a gesture. `[cursorTUs, playing, sessionSpanUs]` is
+  // a data-only dependency array (the tightened effects rule) — no
+  // function prop, no cancelling cleanup.
+  useEffect(() => {
+    if (cursorTUs === null) {
+      if (lastCursorTUsAppliedRef.current !== null) {
+        cursorDriverRef.current.leave();
+      }
+      lastCursorTUsAppliedRef.current = null;
+      return;
+    }
+
+    const tUsNum = Number(cursorTUs);
+    const prevApplied = lastCursorTUsAppliedRef.current;
+    lastCursorTUsAppliedRef.current = tUsNum;
+
+    let atViewport = liveViewportRef.current;
+
+    // Only pan when playback is actually advancing the cursor *and* this
+    // isn't the first time this cell has seen a cursor value (a `null` ->
+    // non-null transition has no previous position to diff against, and
+    // must never be read as an infinite delta -- see `playing`'s doc
+    // comment on `ChartCellProps`).
+    if (playing && prevApplied !== null) {
+      const deltaUs = tUsNum - prevApplied;
+      atViewport = clampTo(advanceViewportByTime(atViewport, deltaUs), sessionSpanUs);
+      applyViewport(() => atViewport);
+    }
+
+    const pixelX = pixelXForTUs(atViewport, tUsNum);
+    if (pixelX === null) {
+      cursorDriverRef.current.leave();
+    } else {
+      // `notify`, not `dispatchNow`: during continuous playback this is
+      // called every animation frame, so its internal `CURSOR_SETTLE_MS`
+      // debounce keeps being reset and never actually fires a
+      // `cursorReadout` IPC call until the cursor stops advancing (pause or
+      // end of span) -- R99's "pan-visually-then-refetch-once" for the
+      // readout, for free from the existing debounce, no new throttle.
+      cursorDriverRef.current.notify(atViewport, pixelX);
+    }
+  }, [cursorTUs, playing, sessionSpanUs, applyViewport]);
+
   const handlePointerDown = useCallback((event: PointerEvent<HTMLDivElement>) => {
-    draggingRef.current = { pointerId: event.pointerId, lastClientX: event.clientX };
+    if (event.button === 2) {
+      return; // right-click: this cell's own `ChartContextMenu` handles it natively.
+    }
+    if (event.shiftKey) {
+      const bounds = event.currentTarget.getBoundingClientRect();
+      const pixelX = event.clientX - bounds.left;
+      rectDragRef.current = { pointerId: event.pointerId };
+      setSelectionRectPx({ x0: pixelX, x1: pixelX });
+      event.currentTarget.setPointerCapture(event.pointerId);
+      return;
+    }
+    draggingRef.current = { pointerId: event.pointerId, lastClientX: event.clientX, startClientX: event.clientX };
     event.currentTarget.setPointerCapture(event.pointerId);
   }, []);
 
@@ -424,6 +596,13 @@ export default function ChartCell({
     (event: PointerEvent<HTMLDivElement>) => {
       const bounds = event.currentTarget.getBoundingClientRect();
       const pixelX = event.clientX - bounds.left;
+
+      const rectDrag = rectDragRef.current;
+      if (rectDrag !== null && rectDrag.pointerId === event.pointerId) {
+        setSelectionRectPx((prev) => (prev === null ? prev : { x0: prev.x0, x1: pixelX }));
+        return;
+      }
+
       const dragging = draggingRef.current;
       lastPointerXRef.current = pixelX;
       // R62: every move — drag or hover alike — notifies the cursor
@@ -442,14 +621,7 @@ export default function ChartCell({
       if (dragging !== null && dragging.pointerId === event.pointerId) {
         const pixelDx = event.clientX - dragging.lastClientX;
         dragging.lastClientX = event.clientX;
-        setLiveViewport((current) => {
-          const next = clampTo(panBy(current, pixelDx), sessionSpanUs);
-          settleRef.current.notify(next);
-          const { cellId: id, sendTransform: send, viewport: settled } = transformDepsRef.current;
-          const frameTransform = transformFor(settled, next);
-          send(id, frameTransform.translateXPx, frameTransform.scaleX);
-          return next;
-        });
+        applyViewport((current) => panBy(current, pixelDx));
         setHover(null);
         return;
       }
@@ -458,21 +630,54 @@ export default function ChartCell({
       const reading = hoverAt(tiles, pixelX, geometry);
       setHover(reading === null ? null : { pixelX, ...reading });
     },
-    [tiles, width, sessionSpanUs, liveViewport]
+    [tiles, width, liveViewport, applyViewport]
   );
 
-  const handlePointerUp = useCallback((event: PointerEvent<HTMLDivElement>) => {
-    const dragging = draggingRef.current;
-    if (dragging !== null && dragging.pointerId === event.pointerId) {
-      event.currentTarget.releasePointerCapture(event.pointerId);
-      draggingRef.current = null;
-    }
-  }, []);
+  const handlePointerUp = useCallback(
+    (event: PointerEvent<HTMLDivElement>) => {
+      const rectDrag = rectDragRef.current;
+      if (rectDrag !== null && rectDrag.pointerId === event.pointerId) {
+        event.currentTarget.releasePointerCapture(event.pointerId);
+        rectDragRef.current = null;
+        setSelectionRectPx((rect) => {
+          if (rect !== null && Math.abs(rect.x1 - rect.x0) >= MIN_SELECTION_PX) {
+            const x0 = Math.min(rect.x0, rect.x1);
+            const x1 = Math.max(rect.x0, rect.x1);
+            applyViewport((current) => zoomToRect(current, x0, x1));
+          }
+          return null;
+        });
+        return;
+      }
+
+      const dragging = draggingRef.current;
+      if (dragging !== null && dragging.pointerId === event.pointerId) {
+        event.currentTarget.releasePointerCapture(event.pointerId);
+        draggingRef.current = null;
+        // decision 27 / idl0's "Place cursor: Left-click": a release with
+        // negligible movement since pointerdown reads as a click, not the
+        // end of a pan drag, and sets the shared cursor at that position.
+        if (Math.abs(event.clientX - dragging.startClientX) <= CLICK_MAX_MOVEMENT_PX) {
+          const bounds = event.currentTarget.getBoundingClientRect();
+          const pixelX = event.clientX - bounds.left;
+          const request = cursorRequestFor(liveViewport, pixelX, []);
+          if (request !== null) {
+            onSetCursor(request.tUs);
+          }
+        }
+      }
+    },
+    [liveViewport, onSetCursor, applyViewport]
+  );
 
   const handlePointerLeave = useCallback((event: PointerEvent<HTMLDivElement>) => {
     const dragging = draggingRef.current;
     if (dragging !== null && dragging.pointerId === event.pointerId) {
       draggingRef.current = null;
+    }
+    if (rectDragRef.current !== null && rectDragRef.current.pointerId === event.pointerId) {
+      rectDragRef.current = null;
+      setSelectionRectPx(null);
     }
     setHover(null);
     // The pointer has left the chart — the next viewport-settle dispatch
@@ -493,79 +698,183 @@ export default function ChartCell({
       const bounds = event.currentTarget.getBoundingClientRect();
       const pixelX = event.clientX - bounds.left;
       const factor = Math.exp(-event.deltaY * WHEEL_ZOOM_SENSITIVITY);
-      setLiveViewport((current) => {
-        const next = clampTo(zoomAt(current, pixelX, factor), sessionSpanUs);
-        settleRef.current.notify(next);
-        const { cellId: id, sendTransform: send, viewport: settled } = transformDepsRef.current;
-        const frameTransform = transformFor(settled, next);
-        send(id, frameTransform.translateXPx, frameTransform.scaleX);
-        return next;
-      });
+      applyViewport((current) => zoomAt(current, pixelX, factor));
     },
-    [sessionSpanUs]
+    [applyViewport]
   );
+
+  // Keyboard zoom/pan (decision 27; `interaction/keymap.ts`) — mounted on
+  // this focused chart `<div>` (`tabIndex=0` below), never on `window`, so
+  // it never fights a focused CodeMirror editor or another input
+  // (`ChartCell.tsx`'s own Step 6 requirement). A plain function, not a
+  // memoized `useCallback` -- it and `dispatchAction` below always close
+  // over the *current* render's `liveViewport`/`tiles`/`selectionRectPx`/
+  // etc., which a memoized version would need a large, easy-to-miss
+  // dependency array to keep fresh for (keyboard events are not a
+  // per-frame hot path, so recreating this each render costs nothing).
+  function handleKeyDown(event: KeyboardEvent<HTMLDivElement>): void {
+    const action = actionForKey({ key: event.key, ctrlKey: event.ctrlKey, metaKey: event.metaKey, shiftKey: event.shiftKey });
+    if (action === null) {
+      return;
+    }
+    event.preventDefault();
+    dispatchAction(action);
+  }
+
+  /** Applies one `ChartAction` (from the keyboard or `ChartContextMenu`) --
+   *  the single dispatch point both `handleKeyDown` and the context menu's
+   *  `onAction` use, so a key and its matching menu item can never diverge
+   *  in what they actually do. */
+  function dispatchAction(action: ChartAction): void {
+    switch (action) {
+      case "zoomIn":
+        applyViewport((current) => zoomAt(current, current.pixelWidth / 2, KEYBOARD_ZOOM_FACTOR));
+        return;
+      case "zoomOut":
+        applyViewport((current) => zoomAt(current, current.pixelWidth / 2, 1 / KEYBOARD_ZOOM_FACTOR));
+        return;
+      case "panLeft":
+        applyViewport((current) => panBy(current, current.pixelWidth * KEYBOARD_PAN_FRACTION));
+        return;
+      case "panRight":
+        applyViewport((current) => panBy(current, -current.pixelWidth * KEYBOARD_PAN_FRACTION));
+        return;
+      case "resetZoom":
+        applyViewport((current) => ({ startUs: 0, endUs: sessionSpanUs, pixelWidth: current.pixelWidth }));
+        return;
+      case "zoomToSelection":
+        if (selectionRectPx !== null && Math.abs(selectionRectPx.x1 - selectionRectPx.x0) >= MIN_SELECTION_PX) {
+          const x0 = Math.min(selectionRectPx.x0, selectionRectPx.x1);
+          const x1 = Math.max(selectionRectPx.x0, selectionRectPx.x1);
+          applyViewport((current) => zoomToRect(current, x0, x1));
+          setSelectionRectPx(null);
+        }
+        return;
+      case "setCursor": {
+        const pixelX = lastPointerXRef.current ?? width / 2;
+        const request = cursorRequestFor(liveViewport, pixelX, []);
+        if (request !== null) onSetCursor(request.tUs);
+        return;
+      }
+      case "clearCursor":
+        onClearCursor();
+        return;
+      case "cursorToPeak": {
+        const peakTUs = findPeakTUs(tiles);
+        if (peakTUs !== null) onSetCursor(Number(peakTUs));
+        return;
+      }
+      case "toggleCode":
+        onToggleCode();
+        return;
+      case "copyValue":
+        if (readoutState !== null && readoutState.kind === "rows" && typeof navigator !== "undefined" && navigator.clipboard) {
+          const text = readoutState.rows.map((row) => `${row.label}: ${row.value === null ? "no data" : row.value}`).join("\n");
+          void navigator.clipboard.writeText(text);
+        }
+        return;
+    }
+  }
 
   const transform = transformFor(viewport, liveViewport);
   // R69 item (a): once the sandbox has rendered this cell at least once,
   // its own reported height is authoritative — `height` is only the
   // pre-first-render fallback (see `ChartCellProps.heightPx`'s doc comment).
   const frameHeight = heightPx ?? height;
+  const cursorLinePx = cursorTUs !== null ? pixelXForTUs(liveViewport, Number(cursorTUs)) : null;
+  const canReset = liveViewport.startUs !== 0 || liveViewport.endUs !== sessionSpanUs;
 
   return (
-    <div
-      ref={frameRef}
-      className="chart-cell"
-      style={{ position: "relative", width, height: frameHeight, overflow: "hidden" }}
-      onPointerDown={handlePointerDown}
-      onPointerMove={handlePointerMove}
-      onPointerUp={handlePointerUp}
-      onPointerLeave={handlePointerLeave}
-      onWheel={handleWheel}
+    <ChartContextMenu
+      ctx={{ hasCursor: cursorTUs !== null, hasSelection: selectionRectPx !== null, canReset }}
+      onAction={dispatchAction}
     >
       <div
-        className="chart-cell-picture"
-        style={{
-          position: "absolute",
-          inset: 0,
-          transform: `translateX(${transform.translateXPx}px) scaleX(${transform.scaleX})`,
-          transformOrigin: "left",
-        }}
+        ref={frameRef}
+        className="chart-cell"
+        tabIndex={0}
+        style={{ position: "relative", width, height: frameHeight, overflow: "hidden", outline: "none" }}
+        onPointerDown={handlePointerDown}
+        onPointerMove={handlePointerMove}
+        onPointerUp={handlePointerUp}
+        onPointerLeave={handlePointerLeave}
+        onWheel={handleWheel}
+        onKeyDown={handleKeyDown}
       >
-        {raster === undefined ? (
-          <canvas
-            className="chart-cell-underlay"
-            width={width}
-            height={height}
-            style={{ position: "absolute", inset: 0, pointerEvents: "none" }}
-          />
-        ) : (
-          <RasterUnderlay
-            kind={raster.kind}
-            params={raster.params}
-            viewport={viewport}
-            width={width}
-            height={height}
-            devicePixelRatio={raster.devicePixelRatio}
-            sessionId={sessionId}
-            channelId={channelId}
-            fetchRaster={raster.fetchRaster}
-            fetchRasterMeta={raster.fetchRasterMeta}
+        <div
+          className="chart-cell-picture"
+          style={{
+            position: "absolute",
+            inset: 0,
+            transform: `translateX(${transform.translateXPx}px) scaleX(${transform.scaleX})`,
+            transformOrigin: "left",
+          }}
+        >
+          {raster === undefined ? (
+            <canvas
+              className="chart-cell-underlay"
+              width={width}
+              height={height}
+              style={{ position: "absolute", inset: 0, pointerEvents: "none" }}
+            />
+          ) : (
+            <RasterUnderlay
+              kind={raster.kind}
+              params={raster.params}
+              viewport={viewport}
+              width={width}
+              height={height}
+              devicePixelRatio={raster.devicePixelRatio}
+              sessionId={sessionId}
+              channelId={channelId}
+              fetchRaster={raster.fetchRaster}
+              fetchRasterMeta={raster.fetchRasterMeta}
+            />
+          )}
+          {/* No mount div here (R69): the sandbox renders this cell's own
+              picture in its own DOM, in the single shared iframe positioned
+              by `sendLayout` to appear at this frame's own rect; this
+              component never receives or injects that output's markup. */}
+        </div>
+        {hover !== null && (
+          <div
+            className="chart-cell-tooltip"
+            style={{ position: "absolute", left: hover.pixelX, top: 0, pointerEvents: "none" }}
+          >
+            {`t=${Number(hover.tUs) / 1_000_000}s min=${hover.min} max=${hover.max} mean=${hover.mean}`}
+          </div>
+        )}
+        {selectionRectPx !== null && (
+          <div
+            className="chart-cell-selection"
+            style={{
+              position: "absolute",
+              top: 0,
+              bottom: 0,
+              left: Math.min(selectionRectPx.x0, selectionRectPx.x1),
+              width: Math.abs(selectionRectPx.x1 - selectionRectPx.x0),
+              background: "var(--control-active)",
+              opacity: 0.4,
+              pointerEvents: "none",
+            }}
           />
         )}
-        {/* No mount div here (R69): the sandbox renders this cell's own
-            picture in its own DOM, in the single shared iframe positioned
-            by `sendLayout` to appear at this frame's own rect; this
-            component never receives or injects that output's markup. */}
+        {cursorLinePx !== null && (
+          <div
+            className="chart-cell-cursor-line"
+            style={{
+              position: "absolute",
+              top: 0,
+              bottom: 0,
+              left: cursorLinePx,
+              width: 1,
+              background: "var(--fg-dim)",
+              pointerEvents: "none",
+            }}
+          />
+        )}
+        <CursorReadoutPanel state={readoutState} />
       </div>
-      {hover !== null && (
-        <div
-          className="chart-cell-tooltip"
-          style={{ position: "absolute", left: hover.pixelX, top: 0, pointerEvents: "none" }}
-        >
-          {`t=${Number(hover.tUs) / 1_000_000}s min=${hover.min} max=${hover.max} mean=${hover.mean}`}
-        </div>
-      )}
-      <CursorReadoutPanel state={readoutState} />
-    </div>
+    </ChartContextMenu>
   );
 }

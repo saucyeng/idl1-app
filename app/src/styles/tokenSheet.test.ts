@@ -145,6 +145,11 @@ describe("stylesheets — hex colour literals — appear only in tokens.css", ()
   // check flags it too.
   const colorLiteralSource = "#[0-9a-fA-F]{3,8}\\b|\\b(?:rgba?|hsla?)\\([^)]*\\)";
 
+  // TODO(idl0): this scan's extension list is [".css", ".tsx"] only, so it
+  // never reaches plain `.ts` modules (e.g. `Notebook/theme/*.ts`, which read
+  // tokens rather than write literals today, but the gate wouldn't catch it
+  // if a future one did). Broadening to `.ts` is a follow-up task against
+  // this shared test infra, not a single lane's own files (UI-8 review).
   it("no .css or .tsx file outside tokens.css (or a listed KNOWN_EXCEPTIONS file) contains a hardcoded colour literal", () => {
     // Arrange
     const files = listFiles(SRC_DIR, [".css", ".tsx"]).filter((f) => f !== TOKENS_CSS_PATH);

@@ -1,5 +1,6 @@
 import { useRef } from "react";
 
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import type { CellKindToken } from "../model/cells";
 import { isEditorEcho } from "../model/editorEcho";
 import CodePane from "./CodePane";
@@ -43,10 +44,12 @@ export interface EditorPanesProps {
 /**
  * The editing surface for one open cell (design §6, D13; Task 15 — pure
  * assembly of Tasks 11–14, no logic of its own beyond the loop guard
- * below). A `js` cell mounts {@link PropertiesForm} and {@link CodePane}
- * side by side, writing through the same `onChange`; every other kind
- * mounts `CodePane` alone (`PropertiesForm`'s `plotForm` subset only
- * covers `js` Plot-chart code, C2 §5.3).
+ * below; restyled UI-10 per decision 29's "cell editor (`Tabs`: Properties ·
+ * Code)"). A `js` cell mounts {@link PropertiesForm} and {@link CodePane} as
+ * two tabs of one `Tabs` widget, writing through the same `onChange`; every
+ * other kind has no Properties tab (`PropertiesForm`'s `plotForm` subset
+ * only covers `js` Plot-chart code, C2 §5.3) and mounts `CodePane` alone,
+ * unwrapped.
  *
  * **Update-loop guard.** Both panes write to the same cell body, so an edit
  * committed by one pane changes the `code` prop the *other* pane receives.
@@ -88,12 +91,26 @@ export default function EditorPanes({ cellId, kind, code, onChange, channelIds, 
     onChange(nextCode);
   }
 
+  if (kind !== "js") {
+    return (
+      <div className="editor-panes flex h-full flex-col" data-cell-id={cellId}>
+        <CodePane kind={kind} code={code} onChange={handleChange} channelIds={channelIds} definitionNames={definitionNames} />
+      </div>
+    );
+  }
+
   return (
-    <div className="editor-panes" data-cell-id={cellId}>
-      {kind === "js" && (
+    <Tabs defaultValue="properties" className="editor-panes flex h-full flex-col" data-cell-id={cellId}>
+      <TabsList>
+        <TabsTrigger value="properties">Properties</TabsTrigger>
+        <TabsTrigger value="code">Code</TabsTrigger>
+      </TabsList>
+      <TabsContent value="properties" className="overflow-auto">
         <PropertiesForm code={code} channels={channels} laps={laps} unitsPreference="si" onChange={handleChange} />
-      )}
-      <CodePane kind={kind} code={code} onChange={handleChange} channelIds={channelIds} definitionNames={definitionNames} />
-    </div>
+      </TabsContent>
+      <TabsContent value="code" className="flex overflow-auto">
+        <CodePane kind={kind} code={code} onChange={handleChange} channelIds={channelIds} definitionNames={definitionNames} />
+      </TabsContent>
+    </Tabs>
   );
 }

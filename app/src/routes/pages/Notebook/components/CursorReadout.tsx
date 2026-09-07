@@ -24,6 +24,11 @@ export interface CursorReadoutProps {
  * `describeCursorReadoutError`'s two branches; this component only prints
  * what it is given.
  *
+ * Styled as token chips per `UI-DIRECTION`'s "Chart style rules for Plot"
+ * ("readout chips mono tabular on `--surface-2` with hairline"): each row
+ * is its own chip so a rejected/`null` reading looks like one broken chip
+ * among otherwise-fine ones, not a broken panel.
+ *
  * @param props See {@link CursorReadoutProps}.
  */
 export default function CursorReadout({ state }: CursorReadoutProps) {
@@ -34,10 +39,12 @@ export default function CursorReadout({ state }: CursorReadoutProps) {
   if (state.kind === "error") {
     return (
       <div
-        className="chart-cell-cursor-readout chart-cell-cursor-readout-error"
-        style={{ position: "absolute", top: 0, right: 0, pointerEvents: "none" }}
+        className="chart-cell-cursor-readout chart-cell-cursor-readout-error absolute top-1 right-1 flex flex-col items-end gap-1"
+        style={{ pointerEvents: "none" }}
       >
-        {state.message}
+        <span className="rounded-[var(--radius-structural)] border border-rule bg-surface-2 px-2 py-0.5 font-mono text-label-2 tabular-nums text-destructive">
+          {state.message}
+        </span>
       </div>
     );
   }
@@ -47,11 +54,14 @@ export default function CursorReadout({ state }: CursorReadoutProps) {
   }
 
   return (
-    <div className="chart-cell-cursor-readout" style={{ position: "absolute", top: 0, right: 0, pointerEvents: "none" }}>
+    <div className="chart-cell-cursor-readout absolute top-1 right-1 flex flex-col items-end gap-1" style={{ pointerEvents: "none" }}>
       {state.rows.map((row) => (
-        <div key={row.channel} className="chart-cell-cursor-readout-row">
+        <span
+          key={row.channel}
+          className="chart-cell-cursor-readout-row rounded-[var(--radius-structural)] border border-rule bg-surface-2 px-2 py-0.5 font-mono text-label-2 tabular-nums text-fg"
+        >
           {`${row.label}: ${row.value === null ? "no data" : row.value}`}
-        </div>
+        </span>
       ))}
     </div>
   );

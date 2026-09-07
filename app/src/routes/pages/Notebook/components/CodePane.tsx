@@ -4,13 +4,15 @@ import { autocompletion, type Completion, type CompletionSource } from "@codemir
 import { defaultKeymap, history, historyKeymap } from "@codemirror/commands";
 import { javascript } from "@codemirror/lang-javascript";
 import { markdown } from "@codemirror/lang-markdown";
-import { StreamLanguage, LanguageSupport, syntaxHighlighting, defaultHighlightStyle, type StreamParser } from "@codemirror/language";
+import { StreamLanguage, LanguageSupport, syntaxHighlighting, type StreamParser } from "@codemirror/language";
 import { EditorState, type Extension } from "@codemirror/state";
 import { EditorView, keymap, lineNumbers } from "@codemirror/view";
 import { tags, type Tag } from "@lezer/highlight";
 
+import { brandEditorTheme, brandHighlightStyle } from "../editor/cmTheme";
 import { tokenizeMath, type MathTokenKind } from "../model/mathMode";
 import { MATH_FUNCTIONS } from "../model/functionCatalog";
+import { documentVars } from "../theme/series";
 
 /** How long typing pauses in the Code pane before {@link CodePaneProps.onChange}
  *  fires (P6: no IPC on the interaction path — only a debounced settle
@@ -167,13 +169,15 @@ export default function CodePane({ kind, code, onChange, channelIds, definitionN
     }
 
     const completionSource = makeCompletionSource(channelIdsRef, definitionNamesRef);
+    const read = documentVars();
 
     const state = EditorState.create({
       doc: code,
       extensions: [
         lineNumbers(),
         history(),
-        syntaxHighlighting(defaultHighlightStyle),
+        syntaxHighlighting(brandHighlightStyle(read)),
+        brandEditorTheme(read),
         keymap.of([...defaultKeymap, ...historyKeymap]),
         autocompletion({ override: [completionSource] }),
         languageFor(kind),

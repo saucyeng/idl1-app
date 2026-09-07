@@ -8,7 +8,7 @@ import TableCell from "./TableCell";
 import ProseBlock from "./ProseBlock";
 
 /** {@link CellListProps.frame}'s default — no wrapper, returns `output` unchanged. */
-function identityFrame(_cell: ScannedCell, output: ReactNode): ReactNode {
+function identityFrame(_cell: ScannedCell, output: ReactNode, _index: number): ReactNode {
   return output;
 }
 
@@ -52,7 +52,7 @@ export interface CellListProps {
    * duplicating this component's iteration in `index.tsx` or restricting
    * selection to `js` cells only.
    */
-  frame?: (cell: ScannedCell, output: ReactNode) => ReactNode;
+  frame?: (cell: ScannedCell, output: ReactNode, index: number) => ReactNode;
 }
 
 /**
@@ -94,7 +94,7 @@ export default function CellList({ doc, proseBlocks, outputs, inlineResults, spa
             {before !== undefined && (
               <ProseBlock content={before.content} inlineResults={inlineResults} spanErrors={spanErrors} />
             )}
-            {frame(cell, rendered)}
+            {frame(cell, rendered, index)}
             {after !== undefined && (
               <ProseBlock content={after.content} inlineResults={inlineResults} spanErrors={spanErrors} />
             )}

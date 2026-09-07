@@ -5,16 +5,18 @@ import { CONTROL_GROUPS } from "./controls";
 /** The Chart controls section: a read-only reference of the notebook
  *  chart's mouse-wheel, mouse and keyboard shortcuts ({@link CONTROL_GROUPS}).
  *
- * **Provisional (R53 Q2).** The visible banner below is required, not
- * decorative — the table is idl0's until L6's notebook lane lands its own
- * bindings, and a settings screen listing shortcuts that might not match
- * the shipped chart is exactly the kind of confidently-wrong documentation
- * this banner exists to prevent. */
+ * **Partially provisional (R53 Q2).** The visible banner below is
+ * required, not decorative — the "mouse wheel" and "mouse" groups are
+ * still idl0's until they have a landed equivalent, and a settings screen
+ * listing shortcuts that might not match the shipped chart is exactly the
+ * kind of confidently-wrong documentation this banner exists to prevent.
+ * The "keyboard" group is no longer provisional: `controls.ts` generates
+ * it from the Notebook lane's landed `interaction/keymap.ts` bindings. */
 export default function ControlsSection() {
   return (
     <div className="flex flex-col gap-4">
       <NoteBlock className="w-fit border-hivis text-hivis">
-        Provisional — bindings land with the Notebook lane.
+        Mouse wheel / mouse bindings are provisional — they land with the Notebook lane.
       </NoteBlock>
       {CONTROL_GROUPS.map((group) => (
         <div key={group.title} className="flex flex-col gap-1.5">

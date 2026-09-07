@@ -47,6 +47,32 @@ export type MathTokenKind =
   | "comment" // # ... (not a label comment)
   | "labelComment"; // # label: ... (C2 §3.1's display-name form)
 
+/** Every {@link MathTokenKind} value, exactly once. The `Record<MathTokenKind,
+ *  true>` below is total over the union by construction — TypeScript
+ *  rejects this file if a kind is ever added to {@link MathTokenKind}
+ *  without a matching entry here — so callers (notably
+ *  `cmTheme.test.ts`'s coverage test) can treat {@link ALL_MATH_TOKEN_KINDS}
+ *  as the type's own canonical member list rather than re-typing it and
+ *  risking drift. */
+const ALL_MATH_TOKEN_KINDS_MAP: Record<MathTokenKind, true> = {
+  keyword: true,
+  identifier: true,
+  channelRef: true,
+  cellRef: true,
+  number: true,
+  operator: true,
+  function: true,
+  comment: true,
+  labelComment: true,
+};
+
+/** {@link MathTokenKind}'s full member set, derived from {@link
+ *  ALL_MATH_TOKEN_KINDS_MAP}'s compile-time totality — see that constant's
+ *  doc comment. */
+export const ALL_MATH_TOKEN_KINDS: readonly MathTokenKind[] = Object.keys(
+  ALL_MATH_TOKEN_KINDS_MAP,
+) as MathTokenKind[];
+
 /** One classified run of characters within a single tokenized line. */
 export interface MathToken {
   kind: MathTokenKind;
