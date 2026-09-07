@@ -1729,6 +1729,28 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
   blank column, for this or any future load failure. Flagged, not fixed here:
   `SandboxHost.tick()`'s ping/stall watchdog is not wired to any
   `setInterval` caller today, so it never actually runs.
+- **Global window-error/unhandledrejection surfacing (2026-09-07,
+  follow-up to the blank-Notebook fix above).** Traced the boot-timer path
+  end to end for the reported "Notebook renders, then goes black after a
+  few seconds": `bootTimer.ts`'s `onReady`/`dispose` correctly cancel the
+  pending 5s deadline the moment `ready` arrives or the host is torn down,
+  and `SandboxHost.tick()` (the watchdog) still has no caller anywhere
+  (confirmed unchanged from the note above), so neither can retroactively
+  fire `onSandboxUnavailable` against an already-booted sandbox — no
+  reproducible defect found in that path. `RouteErrorBoundary.tsx`'s own
+  doc comment already names the real remaining gap: it "cannot catch a
+  rejected promise ... that class of failure needs its own `.catch`, not a
+  boundary" — an async throw anywhere in the app (a timer callback, an
+  unguarded `.then()` such as `AppShell.tsx`'s own `fetchEngineVersion()`
+  call) had nothing watching for it and could leave whatever it happened to
+  blank with no visible trace beyond a console line. New pure
+  `shell/globalErrorFallback.ts` (`describeWindowError`/
+  `describeUnhandledRejection`, tested) plus two `window` listeners
+  registered once in `AppShell.tsx` and removed on teardown now catch
+  every `"error"`/`"unhandledrejection"` event app-wide and show a
+  token-styled, always-on-top banner naming the source/error with a Reload
+  button — no failure path can leave a blank screen with nothing to look
+  at again.
 
 - **Doc carry-over fixes (2026-09-03, L10).** `tools/README.md` no longer documents the
   uncarried `idl0_dump.dart`; points at `idl-rs info`/`idl-rs channels` for the overlapping
