@@ -4075,3 +4075,9 @@ no tooltip arrow (zero-elevation rule makes one awkward). Worktree
 retired. **Merge note:** the lead must `npm install` in `app/` after a
 merge that adds a dependency — `tsc` fails otherwise on the shared
 checkout.
+
+## 2026-09-07 — UI-3 LANDED (overlays + toasts; main suite 103 / 965)
+
+`f6d6140`, review CLEAN. Toaster built but unmounted (UI-4 mounts it).
+`next-themes` dropped (dark-only), sonner's vendored shadow neutralised
+in `index.css` rather than editing the vendored file. Worktree retired.
