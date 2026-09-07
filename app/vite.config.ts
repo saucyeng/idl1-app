@@ -1,12 +1,24 @@
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
+import tailwindcss from "@tailwindcss/vite";
 
 // @ts-expect-error process is a nodejs global
 const host = process.env.TAURI_DEV_HOST;
 
+const srcDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "./src");
+
 // https://vite.dev/config/
 export default defineConfig(async () => ({
-  plugins: [react()],
+  plugins: [react(), tailwindcss()],
+
+  // shadcn's `@/*` import alias (docs/vendor/shadcn/vite.mdx, existing-project path)
+  resolve: {
+    alias: {
+      "@": srcDir,
+    },
+  },
 
   // A second Vite entry for the Notebook's sandboxed iframe (design §6):
   // its own HTML page so Vite bundles `sandbox/main.ts`'s full module graph

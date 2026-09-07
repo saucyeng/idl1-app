@@ -6,6 +6,26 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 
 ### Added
 
+- **UI-1: design tokens, bundled Plex fonts, Tailwind v4 + shadcn wiring
+  (2026-09-06, no spec change needed — R92/R93 adopt the direction file).**
+  `app/src/styles/tokens.css` carries the 13 idl0 palette tokens, the 8-hue
+  chart series, the type/spacing/radii scale and the shadcn variable mapping,
+  all as CSS custom properties (the only file allowed a hex literal, enforced
+  by `app/src/styles/tokenSheet.test.ts`); `fonts.css` declares six local
+  `@font-face` blocks for IBM Plex Mono/Sans 400/500/600 (latin + latin-ext,
+  built with `pyftsubset` from the `@ibm/plex-mono`/`@ibm/plex-sans` npm
+  packages and committed as woff2 under `app/src/assets/fonts/`, source
+  recorded in `app/src/assets/fonts/FONTS.md`; no CDN). `@tailwindcss/vite`
+  is wired into `app/vite.config.ts`; `components.json` + `app/src/lib/utils.ts`
+  set up shadcn's `new-york` style with the Radix component library and the
+  `@/*` import alias. Docs vendored offline first: `docs/vendor/tailwind-v4/`
+  and `docs/vendor/shadcn/` (19 component pages + install/theming refs), each
+  with a `SOURCES.md`. No component is restyled; `App.css` is deleted and its
+  one used rule (`.idl1-root`) is re-expressed on tokens in `index.css`.
+  Flagged for a ruling: shadcn's own `--accent` CSS variable name collides
+  with the brand palette's `--accent` (alert/error red) — resolved in
+  `tokens.css` by aliasing shadcn's concept to `--shadcn-accent` rather than
+  overwriting the brand token; see the comment there.
 - **L8x lane complete: Data-tab write commands (2026-09-06, idl-rs core +
   idl-rs-tauri, ruling R86).** Five new commands close the last C3 §6
   deferrals the Data tab still stubbed: `save_track`, `delete_track`,
