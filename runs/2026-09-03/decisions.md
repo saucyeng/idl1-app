@@ -4188,3 +4188,48 @@ limitation in `plotTheme.ts` + CHANGELOG with a test asserting the
 omission. If Isaac wants it, the honest route is uppercasing the label
 string at authoring time in `plotForm/generate.ts` (tracking still
 unavailable) — a UI-10/11 question, not a silent transform.
+
+## 2026-09-07 — R98: UI-10's two ambiguities (editor split persistence; no unwatch command)
+
+1. **Inner editor/output split is not persisted.** `ColumnId` is a closed
+   union in shell-owned code UI-10 may not touch. **Accepted as landed.**
+   Persisting it is a small **UI-4 follow-on** (widen the union, add the
+   two ids, one test) — not worth a cross-lane edit inside a restyle.
+2. **`watch_workbook` has no unsubscribe in C3**, so a hidden Notebook
+   drops its callback but the Tauri-side watcher lives until the channel
+   is dropped. **Ruling:** the inert-callback pattern stands for this
+   pass — it satisfies R95's intent (no work, no eval, no sandbox) — and
+   the real fix is a contract change: **C3 gains `unwatch_workbook(id)`**
+   (or `watch_workbook` returns a handle whose drop stops the watcher),
+   filed as an L8-class Rust follow-on with the L11 sweep. Until it
+   lands, one OS file watch per opened workbook persists for the app's
+   life; note it in `TASKS.md` as a known leak, not a silent one.
+
+**Cost if wrong:** one file handle per workbook opened this session; the
+sandbox and eval — the expensive parts — do stop.
+
+## 2026-09-07 — R99: the shared cursor is worksheet state; `index.tsx` is in scope for UI-11
+
+UI-11 found no cross-cell cursor or viewport state: `chartWindows` is
+per-cell and each `ChartCell` runs its own `cursorReadoutDriver`. Isaac's
+decisions 18 and 27 are explicit that a cursor is shared by every chart
+in a worksheet and that playback pans all of them, so scoping the feature
+down would ship the label without the thing. **Ruling:** the Notebook
+page's own `index.tsx` **is** in scope for UI-11 (it is this lane's
+orchestration file, not another page), for exactly one addition: a
+worksheet-level cursor/playback state — a cursor time plus a playback
+clock — that every mounted `ChartCell` reads and that a playback tick
+advances by panning each cell's committed viewport. Constraints:
+- The decision logic is a pure tested module (`interaction/`): "given a
+  cursor time and each cell's viewport, what does each cell show", and
+  the clock with an injected scheduler. `index.tsx` only wires it.
+- Per-cell readout drivers stay (R62's 150 ms pointer-stop settle is per
+  chart); what is shared is the **cursor time**, not the driver.
+- Interaction path stays local (P3/P4): cursor moves and playback ticks
+  are host state + `transform` postMessages only; IPC on settle only. If
+  panning during playback would fire settle continuously, ship playback
+  **paused-on-settle** (pan visually, refetch once when playback stops)
+  and report it — do not stream IPC.
+- `App.tsx`/`state/AppState.tsx` stay untouched; this is Notebook state.
+
+**Cost if wrong:** one lifted state in one file, in the lane that owns it.
