@@ -6,6 +6,40 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 
 ### Added
 
+- **Sync UI shell task: `app/src/ipc/sync.ts` and Settings' `SyncSection.tsx`
+  brought up to C3 §3.9 as L11 landed it (2026-09-07, no spec change
+  needed).** `sync.ts` gains `startPairing`, `pairPeer(peerId, code)`
+  (signature amended by ruling R104 — was `code` alone), `unpairPeer`, the
+  `peer_appeared` app event (`onPeerAppeared`, via `@tauri-apps/api/event`),
+  and widens `PeerStatus`/`SyncResult` to their landed six/five-field shapes
+  (ruling R88, R102) — every field name checked byte-for-byte against
+  `rust/tauri/src/commands/sync.rs`'s DTOs. `SyncSection.tsx` gains a
+  paired-peer list with per-peer unpair and "Sync now" (decision logic in
+  new pure modules `pairForm.ts`/`syncPoll.ts`, tested), a pairing flow
+  (`start_pairing`'s own-device code, shown with a live "expires in m:ss"
+  countdown and marked dead with a "Get a new code" re-mint once
+  `expires_at_ms` (C3 §3.9, the 120 s TTL in `transport/src/sync/
+  pairing.rs`) passes — judged by `pairForm.ts`'s `pairingCodeState` against
+  an injected clock, ticked by a `SyncSection.tsx` timer gated on the same
+  R95 route-visibility signal as the two IPC drivers, so it does not tick
+  while Settings is hidden; plus a form that pairs against a
+  named peer id — see `pairForm.ts`'s doc comment: R104 forbids guessing
+  the peer, and C3 §3.9 today has no command/event enumerating *unpaired*
+  peers on the LAN for a "discovered-peer list" to read from, so the peer
+  id is a field the user types rather than a row picked from a list — a
+  clickable discovered-peer list waits on **L11 Task 14**
+  (`SyncStatus.discovered_peers` + `peer_appeared` for any sighting, not
+  only an already-paired one), filed by the lead and not built toward
+  here), and the "sync finished" toast (UI-DIRECTION decision 21). The
+  `sync_status` poll and the `peer_appeared` subscription are both pure
+  drivers (`startSyncStatusPoll`/`startPeerAppearedWatch` in `syncPoll.ts`,
+  mirroring `Device/statusPoll.ts`'s shape) gated on R95's route-visibility
+  context — neither runs while the Settings route is hidden.
+  `app/src-tauri/src/lib.rs`'s `SyncState::start()` wiring is **out of
+  scope for this task** (ruling R105): this device's own `peer_id`/`name`
+  come from a new `identity.json` in `app_config_dir()` (uuid v4 minted
+  once, name defaulting to the OS hostname), landing separately as
+  **L11 Task 13**.
 - **UI-1: design tokens, bundled Plex fonts, Tailwind v4 + shadcn wiring
   (2026-09-06, no spec change needed — R92/R93 adopt the direction file).**
   `app/src/styles/tokens.css` carries the 13 idl0 palette tokens, the 8-hue

@@ -38,14 +38,16 @@ export interface SyncState {
 
 /** An action fed to {@link syncStateReducer}. One variant per event source:
  *  a `sync_status` poll result, a `sync_now` `Progress` message, a
- *  `SyncResult`, a `pair_peer` success, or a failure from any of the three
- *  (already turned into user-facing text via `errors.ts`'s
- *  `describeIpcError`). */
+ *  `SyncResult`, a `pair_peer` success, an `unpair_peer` success, a
+ *  `peer_appeared` event, or a failure from any of the above (already
+ *  turned into user-facing text via `errors.ts`'s `describeIpcError`). */
 export type SyncAction =
   | { type: "status"; status: SyncStatus }
   | { type: "progress"; peerId: string; progress: Progress }
   | { type: "result"; peerId: string; result: SyncResult }
   | { type: "paired"; peer: PeerStatus }
+  | { type: "unpaired"; peerId: string }
+  | { type: "peerAppeared"; peer: PeerStatus }
   | { type: "failure"; message: string };
 
 /** Pure reducer over {@link SyncState}. Never calls IPC itself — the Sync
@@ -99,6 +101,26 @@ export function syncStateReducer(state: SyncState, action: SyncAction): SyncStat
         lastError: null,
       };
     }
+    case "unpaired": {
+      return {
+        ...state,
+        peers: state.peers.filter((peer) => peer.peer_id !== action.peerId),
+        lastError: null,
+      };
+    }
+    case "peerAppeared": {
+      // `peer_appeared` (C3 §3.9) only ever names an already-paired peer
+      // (`state.rs`'s discovery loop skips an unpaired sighting) — this
+      // refreshes that one row's `online`/`protocol_version` between polls
+      // rather than waiting up to `POLL_INTERVAL_MS` for the next one.
+      const alreadyPresent = state.peers.some((peer) => peer.peer_id === action.peer.peer_id);
+      return {
+        ...state,
+        peers: alreadyPresent
+          ? state.peers.map((peer) => (peer.peer_id === action.peer.peer_id ? action.peer : peer))
+          : [...state.peers, action.peer],
+      };
+    }
     case "failure": {
       return {
         ...state,
@@ -114,21 +136,35 @@ export function syncStateReducer(state: SyncState, action: SyncAction): SyncStat
 }
 
 /** Describes a `sync_now` result in one sentence for the Sync section, e.g.
- *  "12 blobs, 3 workbooks merged, 1 conflict cell". A non-zero
- *  `conflicts` reads as something to go resolve, not as a failure — LAN
- *  sync's per-cell merge (design §7) produces conflict cells as a normal,
- *  visible outcome, not an error state.
+ *  "12 blobs, 3 workbooks merged, 2 sessions, 1 track updated, 1 conflict
+ *  cell". A non-zero `conflicts` reads as something to go resolve, not as a
+ *  failure — LAN sync's per-cell merge (design §7) produces conflict cells
+ *  as a normal, visible outcome, not an error state. `sessions_updated`/
+ *  `tracks_updated`/`profiles_updated` are only named when non-zero, so a
+ *  run that only moved blobs and workbooks reads exactly as it used to
+ *  before ruling R102 widened `SyncResult` to six fields.
  *
- * @param result - The `sync_now` return value (C3 §3.9).
+ * @param result - The `sync_now` return value (C3 §3.9, ruling R102).
  * @returns A one-line, user-facing summary. */
 export function describeSyncResult(result: SyncResult): string {
-  const blobsPart = `${result.blobs_transferred} blob${result.blobs_transferred === 1 ? "" : "s"}`;
-  const workbooksPart = `${result.workbooks_merged} workbook${result.workbooks_merged === 1 ? "" : "s"} merged`;
-
-  if (result.conflicts === 0) {
-    return `${blobsPart}, ${workbooksPart} cleanly.`;
+  const parts: string[] = [
+    `${result.blobs_transferred} blob${result.blobs_transferred === 1 ? "" : "s"}`,
+    `${result.workbooks_merged} workbook${result.workbooks_merged === 1 ? "" : "s"} merged`,
+  ];
+  if (result.sessions_updated > 0) {
+    parts.push(`${result.sessions_updated} session${result.sessions_updated === 1 ? "" : "s"}`);
+  }
+  if (result.tracks_updated > 0) {
+    parts.push(`${result.tracks_updated} track${result.tracks_updated === 1 ? "" : "s"} updated`);
+  }
+  if (result.profiles_updated > 0) {
+    parts.push(`${result.profiles_updated} profile${result.profiles_updated === 1 ? "" : "s"} updated`);
   }
 
-  const conflictsPart = `${result.conflicts} conflict cell${result.conflicts === 1 ? "" : "s"} to resolve`;
-  return `${blobsPart}, ${workbooksPart}, ${conflictsPart}.`;
+  if (result.conflicts === 0) {
+    return `${parts.join(", ")} cleanly.`;
+  }
+
+  parts.push(`${result.conflicts} conflict cell${result.conflicts === 1 ? "" : "s"} to resolve`);
+  return `${parts.join(", ")}.`;
 }

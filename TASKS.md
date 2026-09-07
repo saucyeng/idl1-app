@@ -223,12 +223,41 @@ are defined in `docs/superpowers/specs/2026-09-02-idl1-rewrite-design.md` §10.
 - [ ] L11 LAN sync — Tasks 1-12 landed on `l11-sync` (idl-rs) /
       `l11-sync` (idl1-app); pairing, discovery, the axum server/client,
       the C2 §7 workbook merge, and the five `commands::sync` Tauri
-      commands are all in. Unblocks the Settings tab's sync section over
-      the five commands (R53 Settings Q3). Not yet wired: `app/src-tauri`'s
-      `.setup()` hook does not yet call `SyncState::start`/`app.manage`
-      (one line each, this lane's Task 12 left as the next crate's job);
-      `app/src/ipc/sync.ts` is stale against C3 §3.9 (a TS shell task).
-      Lane merge gate still to run (lead).
+      commands are all in. Lane gate PASS (idl-rs 1139/1 ignored, cli 53,
+      tauri 260); merged to `main` and landed 2026-09-07. **Unblocked, this
+      shell task (2026-09-07):** `app/src/ipc/sync.ts` brought up to C3
+      §3.9's landed shape (`startPairing`/`pairPeer(peerId, code)`/
+      `unpairPeer`/`onPeerAppeared`, six-field `SyncResult`); Settings'
+      `SyncSection.tsx` gains the paired-peer list, unpair, the pairing
+      flow and the "sync finished" toast (decision 21) over new pure
+      modules `pairForm.ts`/`syncPoll.ts`. **Still open:**
+  - `app/src-tauri`'s `.setup()` hook still does not call
+    `SyncState::start`/`app.manage` — ruling R105: this device's own
+    `peer_id`/`name` come from a new `identity.json` in
+    `app_config_dir()` (uuid v4 minted once, name defaulting to the OS
+    hostname). Landing as **L11 Task 13**, dispatched separately; out of
+    this shell task's scope.
+  - No C3 command or event enumerates *unpaired* peers currently visible on
+    the LAN (`sync_status` lists only paired peers; `peer_appeared` fires
+    only for an already-paired sighting, per `state.rs`'s discovery loop) —
+    so R104's "the UI may prefill `peer_id` when exactly one unpaired peer
+    is online" has no data source today. `SyncSection.tsx` instead asks the
+    user to type the peer id (never guessed, satisfies R104's letter).
+    **L11 Task 14** (filed by the lead) adds `SyncStatus.discovered_peers`
+    and widens `peer_appeared` to any sighting, so the UI can show a real
+    discovered-peer list; not done here.
+  - `unwatch_workbook` missing from C3 (R98): a hidden Notebook's
+    `watch_workbook` subscription drops its callback but the Tauri-side
+    watcher lives until the channel is dropped — one OS file handle per
+    workbook opened this session, for the app's life. Filed as an L8-class
+    Rust follow-on.
+  - `watcher::tests::self_write_with_pre_registered_hash_never_fires_
+    callback` is a named timing flake (asserts no callback within 500 ms
+    against a 100 ms debounce; fails only on a loaded machine) — not
+    broken code. Filed as an L8-class follow-on to make it deterministic.
+  - `verify_data_dir`'s symlink/junction finding (R101): a pre-existing
+    link inside `data_root` is out of `safe_join`'s stated boundary and not
+    yet a `verify_data_dir` finding. Filed as an L8-class follow-on.
 
 ## Wave 3
 
