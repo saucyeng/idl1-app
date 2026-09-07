@@ -4385,3 +4385,26 @@ review-task10 (three Importants, all correct):
 
 **Cost if wrong:** items 1 and 2 are a cap and a delete; item 3 is a
 contract field list the UI has not yet consumed.
+
+## 2026-09-07 — R103: `parse_workbook`/`render_workbook` must be a fixed point (found by L11 Task 11)
+
+Task 11's loopback proof found that re-parsing already-rendered markdown
+and rendering again shifts an untouched cell's blank-line spacing, which
+C2 §7.3 then reads as a `Changed` cell. That is a **real correctness bug,
+not a test artefact**: two peers that each save a workbook through the UI
+(which does round-trip text) would manufacture spurious conflicts on
+cells nobody edited. The task worked around it in its fixtures, correctly
+— production code was out of its scope.
+
+**Ruling:** `render_workbook(parse_workbook(s))` must be byte-identical
+to `s` for any document the parser accepts, and `parse(render(doc))` must
+equal `doc`. Fixed as **L11 Task 11b** (core, before the lane gate):
+find the divergence (blank-line handling around fences is the reported
+symptom), fix the renderer or the parser so both round trips hold, and
+pin them with property-style tests over a fixture set including the C2
+§2.5 worked example, a prose-only document, adjacent fences, and a
+document with trailing whitespace. Until it lands, the merge's
+`Changed`-detection cannot be trusted on a round-tripped document.
+
+**Cost if wrong:** spurious conflict cells on every synced workbook —
+exactly the thing the per-cell merge exists to avoid.
