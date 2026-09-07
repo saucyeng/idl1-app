@@ -33,7 +33,7 @@ import {
   startMaintenanceAction,
 } from "./maintenance";
 import { toDetailView } from "./sessionDetail";
-import { groupKeyOf, toSessionRow, type SessionRow } from "./sessionRow";
+import { groupKeyOf, nextSelectedSession, toSessionRow, type SessionRow } from "./sessionRow";
 import { compareSessions, sortFieldsForView, type SortField } from "./sort";
 import { TrackResults } from "./TrackResults";
 
@@ -139,10 +139,12 @@ function useWindowWidth(): number {
 
 /** One session row, plus (only when it is the selected/open session) its
  *  laps as recessed sub-rows on the same column grid (UI-DIRECTION "Data").
- *  Selection is the existing single-session model (`AppState.selection`,
- *  unchanged by this restyle) shown as a gutter checkbox — idl0's
- *  session-mode checkbox half of the XOR model (decision 33); this task
- *  wires no lap-mode checkbox (see the page's own "Parity gaps"). Lap
+ *  Selection is the single-session model (`AppState.selection`) shown as a
+ *  gutter checkbox — idl0's session-mode checkbox half of the XOR model
+ *  (decision 33), now including idl0's click-to-deselect toggle (R96 —
+ *  clicking the already-selected row clears the selection, see
+ *  `nextSelectedSession`); this task wires no lap-mode checkbox (see the
+ *  page's own "Parity gaps"). Lap
  *  sub-rows are sourced from the same `detailView` the `DetailPane` on the
  *  right already fetched for the selected session, rather than a second
  *  per-row `listLaps` call — expanding is therefore exactly "select", not an
@@ -423,9 +425,9 @@ export default function Data() {
    *  `SET_LAP_CONTEXT` — no lap UI in this task picks a main/overlay lap
    *  (deferred to L6, per the Data lane brief's Parity gaps). Selecting the
    *  already-selected row closes it — the same toggle idl0's row tap/gutter
-   *  checkbox both drive. */
+   *  checkbox both drive (R96, decided in `nextSelectedSession`). */
   const selectSession = (sessionId: string) => {
-    appDispatch({ type: "SET_SELECTED_SESSION", sessionId: sessionId === selectedSessionId ? null : sessionId });
+    appDispatch({ type: "SET_SELECTED_SESSION", sessionId: nextSelectedSession(selectedSessionId, sessionId) });
     if (layout.detail === "sheet") setDetailSheetOpen(true);
   };
 

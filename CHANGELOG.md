@@ -178,6 +178,13 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
   deferred to L6 per the page's own pre-existing comment (`AppState
   .SET_LAP_CONTEXT` is never dispatched here); the track-editor map UI stays
   wave 3 (R54); has-GPS/has-gates/Track facets stay wave 3 (R53 Data Q2/R54).
+- **R96: Data tab session-row click-to-deselect is a deliberate idl0-parity
+  fix (2026-09-06).** UI-6's `selectSession` clicking the already-selected
+  row now clears `AppState.selection` instead of re-selecting it, restoring
+  idl0's `SelectionNotifier.toggleSession`; kept because L6 reads
+  `AppState.selection` (R53 Data Q3) and a user otherwise has no way to
+  clear a selection. Decision lives in a new pure `sessionRow.ts
+  .nextSelectedSession` (tested), wired from `index.tsx`.
 - **L8x lane complete: Data-tab write commands (2026-09-06, idl-rs core +
   idl-rs-tauri, ruling R86).** Five new commands close the last C3 §6
   deferrals the Data tab still stubbed: `save_track`, `delete_track`,
