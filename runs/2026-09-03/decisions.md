@@ -4492,3 +4492,36 @@ Open, tracked: `SyncState::start` is not wired into `app/src-tauri`'s
 watcher test; `unwatch_workbook` (R98); the symlink finding in
 `verify_data_dir` (R101); Task 11's now-unnecessary loopback workaround
 (R103). Next: the sync UI shell task, then Isaac's preview.
+
+## 2026-09-07 — R105: this device's sync identity, and unpaired-peer discovery
+
+Two gaps the sync UI shell task found, neither answerable from the
+contracts:
+
+**(1) `peer_id` / `name` for this device.** Nothing mints them.
+**Ruling:** they live beside the peer list, not in `settings.json`
+(which is C4's user-facing store and syncs semantics the peer file must
+not): a small `identity.json` in `app_config_dir()` next to
+`settings.json`, holding `{ peer_id: <uuid v4, minted once>, name }`,
+created on first read if absent (atomic write, same helper as the peer
+file, outside `<data>` per R88 so it never syncs). Default `name` is the
+OS hostname when readable, else `"idl1"`; the user can change it — the
+Settings sync section gets a **device name** field writing this file.
+`SyncState::start` reads it. Implemented as **L11 Task 13** (core or
+tauri, implementer's call, tests for: absent ⇒ minted and persisted;
+present ⇒ read unchanged; corrupt ⇒ typed error, never a fresh id
+silently replacing a paired identity — that would orphan every existing
+pairing).
+
+**(2) No unpaired-peer discovery on the wire.** `sync_status` returns
+only paired peers and `peer_appeared` fires only for known ones, so
+R104's "prefill the peer id when one unpaired peer is online" has no
+data source. The shell task's interim — an explicit peer-id field beside
+the code — satisfies R104 and ships now. **Ruling:** `SyncStatus` gains
+`discovered_peers: PeerSighting[]` (peer id, name, protocol version,
+address, last-seen ms; paired or not) and `peer_appeared` fires for any
+sighting, so the UI can offer a list to click. **L11 Task 14**, with the
+C3 §3.9 amendment. Not this shell task's work.
+
+**Cost if wrong:** (1) is a file format we can migrate while only Isaac
+is pairing; (2) is additive.
