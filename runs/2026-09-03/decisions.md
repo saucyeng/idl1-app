@@ -4162,3 +4162,20 @@ intact; click-to-deselect kept and disclosed (R96, pure
 111 files / **1023 passed**. Worktree retired. Next: UI-8→11 serial in
 one Notebook worktree; UI-10 carries R95 item 2 (pause the sandbox,
 watcher and eval while the Notebook is hidden).
+
+## 2026-09-07 — R97: chart rendering lives in the sandbox; UI-8's host-side call sites were stale
+
+UI-8 found no host-side `Plot.plot` anywhere: `ChartCell`/`RasterUnderlay`
+draw rasters on a raw canvas, and every real chart is the sandbox cell's
+own `Plot.plot`. The brief's "apply host-side and in the sandbox" was
+written from the design doc, not the code. **Ruling:** correct as landed —
+the theme applies where charts are drawn (the sandbox's wrapped `Plot`
+global), and `sandbox/main.ts` importing `tokens.css` for its own `:root`
+copy is the right seam (CSS variables do not cross an iframe). A missing
+chart token throws rather than guessing a hex. `slotStates.ts` stays
+unwired until **UI-10** gives the chart cell its empty/error slot render
+site; `EmptyReason`'s three members are provisional until then and UI-10
+may rename them in the same commit.
+
+**Cost if wrong:** a theme applied in one place instead of two, where the
+second place does not exist.
