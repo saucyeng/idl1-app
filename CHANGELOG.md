@@ -6,6 +6,54 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 
 ### Added
 
+- **Root-level error boundary; the async-error banner survives an app-root
+  unmount (2026-09-07, shell-unmount task, no spec change needed).** Isaac
+  reported the whole shell — nav bar included — disappearing a few seconds
+  after every launch, not just the Notebook column. `shell/RouteErrorBoundary`
+  only ever wrapped the space inside `RouteHost`'s per-route `.map`; nothing
+  wrapped `AppShell`, `TopBar`, `BottomBar`, `RouteHost`'s own body/effects,
+  `CommandPalette`, or the `Toaster`, so a throw at that level took the
+  entire root down with no fallback. `main.tsx` now wraps `<App />` in a new
+  `shell/RootErrorBoundary`, a full-window fallback naming the error with a
+  Reload button. Separately, the async-error banner (`window` `"error"`/
+  `"unhandledrejection"` listeners, landed 2026-09-07 as `98ceb20`) moved out
+  of `AppShell` into `shell/GlobalErrorBanner.tsx`, mounted by `main.tsx` as
+  its **own separate React root** (a sibling DOM node of `#root`, not a
+  child or a portal target inside it) — a banner rendered by `AppShell`
+  would have died with the exact tree the reported bug kills, and a portal
+  would not have helped either (portalled content is still part of the
+  source root's fiber tree). No thrower was found in the Notebook's
+  mount-time path (`SandboxHost`, `bootTimer`, `watchdog`, the effects in
+  `Notebook/index.tsx`) beyond what the 2026-09-07 R106/notebook-black work
+  already covered; `TopBar`/`BottomBar`/`shell/layout.ts`/
+  `shell/routeVisibility.tsx` were read and ruled out (no effects, no risk).
+  This task's fix addresses the structural gap the lead flagged regardless
+  of whether the still-unconfirmed root cause is found later.
+
+- **`TopBar`/`BottomBar` now mount-and-hide instead of mount/unmount
+  (2026-09-07, shell-unmount task, no spec change needed).** New evidence
+  (no console exception at all when the shell blanks) ruled out a throw and
+  pointed at `Notebook/interaction/PlaybackTransport.tsx`'s portal into
+  `TopBar`'s `#playback-transport-slot`. Traced and confirmed: `TopBar` was
+  the one place in the shell still conditionally mounted/unmounted
+  (`{placement === "top" && <TopBar/>}`) rather than mount-and-hide (R93,
+  everywhere else in the shell); because `usePlaybackSlot`'s `resize`
+  listener is registered by a deeper component and so fires *before*
+  `AppShell`'s own width listener on the same event (React commits child
+  effects before parent effects), a breakpoint-crossing resize destroys the
+  slot `<div>` on a later, un-listened render — `usePlaybackSlot` is left
+  holding a stale, already-detached DOM node with nothing to tell it to
+  recheck. `AppShell.tsx` now renders both bars unconditionally, hidden via
+  the `hidden` attribute (matching `RouteHost.tsx`'s existing pattern);
+  neither bar has an effect of its own, so this costs nothing. This
+  explains the playback-transport widget silently going dark on a
+  breakpoint crossing with no exception; it was **not** reproduced live and
+  does not, on its own, obviously explain Isaac's full report of the nav
+  bar and every tab's content disappearing together (that would need
+  `RouteHost`'s own content area to blank too, which this fix does not
+  touch) — flagged as fixed-on-sight because it is real and matches the
+  reported symptom class, not claimed as the confirmed sole cause.
+
 - **Sync UI shell task: `app/src/ipc/sync.ts` and Settings' `SyncSection.tsx`
   brought up to C3 §3.9 as L11 landed it (2026-09-07, no spec change
   needed).** `sync.ts` gains `startPairing`, `pairPeer(peerId, code)`
