@@ -26,6 +26,43 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
   with the brand palette's `--accent` (alert/error red) — resolved in
   `tokens.css` by aliasing shadcn's concept to `--shadcn-accent` rather than
   overwriting the brand token; see the comment there.
+- **UI-2: shadcn primitives and brand widgets on the design tokens
+  (2026-09-06, no spec change needed — UI-DIRECTION "Component approach").**
+  Twelve components generated with `npx shadcn@4.21.0 add …` under
+  `app/src/components/ui/` (`toggle-group` pulled in `toggle` as a
+  dependency, so thirteen files landed) and restyled onto `tokens.css`: no
+  hex/rgb/hsl/hsla literal outside `tokens.css`, no `box-shadow`, the
+  `--focus` outline (1 px, 2 px offset) on every focusable, `--radius-card`
+  (0 + hairline) on `select`/`tooltip` popovers, and the `tw-animate-css`
+  utility classes stripped (UI-1 didn't add that package). `button` carries
+  idl0's five-emphasis `ButtonEmphasis` via a new `emphasisClasses(emphasis,
+  filled)` pure module (`app/src/components/brand/emphasis.ts`) instead of
+  shadcn's default/destructive/secondary/ghost/link variants; `badge` is
+  restyled into `BrandChip` (mono pill, optional trailing `×`);
+  `toggle-group` is `BrandSegmented` (hairline border, `--control`
+  resting/`--control-active` selected, a `tight` density variant); `table`
+  is dense with a reserved 3 px inset selection-bar `border-left`
+  (transparent unselected, `--good` selected, so selection never shifts
+  layout — same technique reused by the hand-rolled `DenseRow`). Hand-rolled
+  under `app/src/components/brand/`: `SectionHead`, `SpecRow` (leader dots
+  via a `repeating-radial-gradient`, brief Open question 2), `StatusDot`,
+  `PulsingDot` (the second of idl0's two permitted animations, decision 18,
+  a `@keyframes pulse-dot` in `index.css`), `NoteBlock`, `DenseRow` +
+  `TableHeader`, and (fell out cheaply) `StatusIcon`, `ToolGroup`/`IconBtn`.
+  New pure modules with tests: `emphasis.ts` (`emphasisClasses`) and
+  `labels.ts` (`abbreviateLabel`/`unabbreviated`, the uppercase-label
+  never-wrap rule). Generator added `radix-ui` (pinned exact, `1.6.7`) and a
+  new `cn` npm package; the latter isn't a Radix package or the icon
+  library the brief allows in `package.json`, so its generated `import {
+  cn } from "cn"` was pointed back at the project's own `@/lib/utils`
+  `cn` and the dependency was dropped. `lucide-react` (landed in UI-1,
+  R93/R94) is now consumed for the first time (`Checkbox`/`Select`'s
+  Radix-required icons, `Badge`'s `×`, `StatusIcon`/`IconBtn`); UI-1's Minor
+  about `components.json`'s `iconLibrary: "lucide"` field needs no code
+  change now that it's genuinely in use. Parity gaps (no sensible web
+  primitive, or deferred): `ColorGridPicker`, `StatusDropdownTrigger`,
+  `GroupedChannelList`, `ModeAwareCheckbox`, `ChartContextMenu`/`ChartAction`
+  (UI-11), `BrandSheet`/`CollapsibleSection` (UI-3 owns `sheet`).
 - **L8x lane complete: Data-tab write commands (2026-09-06, idl-rs core +
   idl-rs-tauri, ruling R86).** Five new commands close the last C3 §6
   deferrals the Data tab still stubbed: `save_track`, `delete_track`,

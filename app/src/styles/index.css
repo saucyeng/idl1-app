@@ -11,3 +11,22 @@
     padding: var(--space-7); /* 1.5rem / 24px, unchanged from the deleted App.css */
   }
 }
+
+/* One of idl0's two permitted animations (UI-DIRECTION decision 18):
+ * `PulsingDot`'s ~0.9s opacity pulse, the recording dash light. No colour
+ * literal here — the dot's colour is the caller's `currentColor`. */
+@layer utilities {
+  @keyframes pulse-dot {
+    0%,
+    100% {
+      opacity: 1;
+    }
+    50% {
+      opacity: 0.35;
+    }
+  }
+
+  .animate-pulse-dot {
+    animation: pulse-dot 0.9s ease-in-out infinite;
+  }
+}
