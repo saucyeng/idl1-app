@@ -1,5 +1,7 @@
 import { createContext, useContext, useReducer, type ReactNode } from "react";
 import type { RouteId } from "../routes/types";
+import { initialRoute } from "../shell/launchLayout";
+import { readColumnPrefs } from "../shell/columnPrefs";
 
 /** The main lap plus zero or more overlay laps chosen for a session, passed
  *  through unchanged to `eval_workbook`'s `lap_context` argument (R52 Q5) —
@@ -33,10 +35,21 @@ export interface AppState {
   selection: Selection;
 }
 
+/** `AppState.route`'s value in {@link initialAppState} — a fixed constant so
+ *  every existing test that spreads `initialAppState` keeps a deterministic
+ *  starting route. The real app never uses this value directly: the
+ *  provider below resolves the actual launch route through
+ *  `shell/launchLayout.ts`'s `initialRoute` (width + the remembered route
+ *  from `shell/columnPrefs.ts`, UI-4 brief "The shell itself") before the
+ *  first render. */
+const TEST_DEFAULT_ROUTE: RouteId = "device";
+
 /** The app's state before `engine_version` resolves (M0: `fetchEngineVersion`
- *  populates it on mount) and before any session is selected. */
+ *  populates it on mount) and before any session is selected. `route` here
+ *  is {@link TEST_DEFAULT_ROUTE}, not the real launch route — see its doc
+ *  comment. */
 export const initialAppState: AppState = {
-  route: "notebook",
+  route: TEST_DEFAULT_ROUTE,
   engineVersion: null,
   selection: initialSelection,
 };
@@ -66,11 +79,27 @@ export function appStateReducer(state: AppState, action: AppAction): AppState {
 
 const AppStateContext = createContext<[AppState, React.Dispatch<AppAction>] | null>(null);
 
+/** The app's real launch route, resolved once at provider construction from
+ *  the current window width and the remembered route in
+ *  `shell/columnPrefs.ts` (`shell/launchLayout.ts`'s `initialRoute`; UI-4
+ *  brief "The shell itself" — this replaces {@link TEST_DEFAULT_ROUTE} for
+ *  everything except the tests that spread {@link initialAppState}
+ *  directly). `window` is guarded for the SSR-less but still
+ *  test-environment-safe case (vitest's default `node` environment has no
+ *  `window`). */
+function resolveLaunchState(): AppState {
+  const widthPx = typeof window === "undefined" ? 1200 : window.innerWidth;
+  const remembered = readColumnPrefs().lastRoute;
+  return { ...initialAppState, route: initialRoute(widthPx, remembered) };
+}
+
 /** Provides `useAppState()` to every descendant via a `Context` +
  *  `useReducer` store (no external dependency — see this plan's Open
- *  Questions on state-management choice). */
+ *  Questions on state-management choice). The reducer's initial state is
+ *  computed lazily (`useReducer`'s third argument) so `resolveLaunchState`
+ *  runs once, at mount, not on every render. */
 export function AppStateProvider({ children }: { children: ReactNode }) {
-  const value = useReducer(appStateReducer, initialAppState);
+  const value = useReducer(appStateReducer, undefined, resolveLaunchState);
   return <AppStateContext.Provider value={value}>{children}</AppStateContext.Provider>;
 }
 

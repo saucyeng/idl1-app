@@ -119,6 +119,38 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
   builds on the `context-menu` primitive generated here; Radix tooltips
   need hover, so touch-first surfaces (Device, notebook output) get a
   visible label instead of relying on a tooltip (UI-5), no JS touch shim.
+- **UI-4: app shell — bars, mount-and-hide, resizable columns, command
+  palette (2026-09-07, spec-during — see the note below).** `app/src/App.tsx`
+  now mounts `shell/AppShell.tsx`, which shows `TopBar` (medium/wide) or
+  `BottomBar` (narrow, `shell/layout.ts`'s `resolveLayout`/`navPlacement` at
+  the 600/1200 px breakpoints) around `RouteHost` — every one of the four
+  routes (`routes/types.ts`'s `ROUTES`, reordered Device · Data · Notebook ·
+  Settings, decision 10) is always mounted and the inactive ones are hidden
+  with the `hidden` attribute plus a `.shell-route-panel[hidden]` CSS rule
+  (R93), replacing the previous unmount-on-switch. The wide layout's Notebook
+  route additionally docks inside `shell/ColumnFrame.tsx` (library/maths/
+  properties placeholders + the real Notebook page in the output column,
+  `react-resizable-panels` under shadcn's `resizable`), widths and collapse
+  persisted via `shell/columnPrefs.ts` (`idl1.shell.columns.v1`, also holding
+  the remembered launch route). `shell/launchLayout.ts`'s `initialRoute`
+  resolves the real launch route (Device below 1200 px, Notebook/studio at
+  and above, the remembered route once one exists) in `AppState.tsx`'s
+  provider; `initialAppState.route` keeps a fixed test constant. `Ctrl/⌘-K`
+  opens `shell/CommandPalette.tsx` (shadcn's `command`/`cmdk`) populated by
+  `shell/commands.ts`'s `tabSwitchCommands` (four commands, nothing else;
+  typed so a later lane appends its own array rather than editing this one).
+  UI-3's `<Toaster />` is mounted here for the first time. New pinned exact
+  deps: `cmdk` `1.1.1`, `react-resizable-panels` `4.12.4` (generator's stray
+  `cn` package pattern recurred and was dropped, same as UI-2/UI-3).
+  **Device poll fix (R78 amendment):** mount-and-hide broke "polls on
+  mount + a visibility pause" — a hidden but mounted Device tab would keep
+  BLE polling at 1 Hz forever. `shell/routeVisibility.tsx`'s
+  `composeVisibility(windowVisible, routeActive)` plus a module-scope active-
+  route/visibility store now feed `Device/index.tsx`'s `STATUS_POLL_DEPS`
+  (`isVisible`/`onVisibilityChange`); `statusPoll.ts`'s pause/resume driver is
+  unchanged — only what "visible" means to it. **New rule superseding R78's
+  wording:** Device polls while mounted, the window is visible, and Device is
+  the active route.
 - **L8x lane complete: Data-tab write commands (2026-09-06, idl-rs core +
   idl-rs-tauri, ruling R86).** Five new commands close the last C3 §6
   deferrals the Data tab still stubbed: `save_track`, `delete_track`,

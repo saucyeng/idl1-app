@@ -2,13 +2,16 @@
 @import "./fonts.css";
 @import "./tokens.css";
 
-/* `.idl1-root` carried over from the deleted `App.css` (still referenced by
- * `App.tsx`) as a token-driven rule — no component is restyled in UI-1, this
- * only moves the same declarations onto tokens instead of hardcoded values. */
-@layer base {
-  .idl1-root {
-    font-family: var(--font-sans);
-    padding: var(--space-7); /* 1.5rem / 24px, unchanged from the deleted App.css */
+/* UI-4: mount-and-hide (UI-DIRECTION "Persistence", decision 13) renders
+ * every route always, hiding the inactive ones with the `hidden` attribute
+ * (`shell/RouteHost.tsx`). The UA stylesheet already sets `display: none`
+ * for `[hidden]`, but a route panel's own layout classes (e.g. a flex
+ * container) can carry equal specificity and land later in the cascade —
+ * this rule guarantees `hidden` always wins, which is the entire point of
+ * using the attribute over an ad hoc "is this the active route" class. */
+@layer utilities {
+  .shell-route-panel[hidden] {
+    display: none;
   }
 }
 

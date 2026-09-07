@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 import type { DeviceStatus } from "../../../ipc/device";
+import { composeVisibility } from "../../../shell/routeVisibility";
 import type { DeviceIpcError } from "./errors";
 import {
   deviceStatusReducer,
@@ -235,6 +236,38 @@ describe("startStatusPoll", () => {
 
     (scheduler.deps.deviceStatus as ReturnType<typeof vi.fn>).mockResolvedValue(fakeStatus("ok"));
     scheduler.setVisible(true);
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(scheduler.deps.deviceStatus).toHaveBeenCalledTimes(1);
+  });
+
+  it("startStatusPoll — isVisible/onVisibilityChange composed from window+route visibility (Device/index.tsx's STATUS_POLL_DEPS shape) — the window being visible is not enough if the route is inactive, and rearming on the route becoming active reuses this same pause/resume path", async () => {
+    // Arrange — deps built the way `Device/index.tsx` builds `STATUS_POLL_DEPS`:
+    // `isVisible` composes the window's visibility with whether this route is
+    // active, and `onVisibilityChange` subscribes to the same underlying
+    // notifier `scheduler.setVisible` drives (standing in for the shared
+    // `subscribeRouteVisible` notifier both signals share in the real app).
+    const scheduler = fakeScheduler();
+    let routeActive = false;
+    const composedDeps: StatusPollDeps = {
+      ...scheduler.deps,
+      isVisible: () => composeVisibility(scheduler.deps.isVisible(), routeActive),
+      onVisibilityChange: (handler) => scheduler.deps.onVisibilityChange(handler),
+    };
+    const dispatch = vi.fn();
+
+    // Act — window visible but route inactive: no request yet.
+    startStatusPoll(composedDeps, "dev-1", dispatch);
+
+    // Assert
+    expect(scheduler.deps.deviceStatus).not.toHaveBeenCalled();
+    expect(scheduler.visibilitySubscriberCount()).toBe(1);
+
+    // Act — the route becomes active; the shared notifier fires exactly as a
+    // window-visibility change would, and the poll resumes.
+    (scheduler.deps.deviceStatus as ReturnType<typeof vi.fn>).mockResolvedValue(fakeStatus("ok"));
+    routeActive = true;
+    scheduler.setVisible(true); // window was already visible; this just fires the notifier
     await Promise.resolve();
     await Promise.resolve();
     expect(scheduler.deps.deviceStatus).toHaveBeenCalledTimes(1);
