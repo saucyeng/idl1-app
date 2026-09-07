@@ -224,6 +224,56 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
   gains the `"v4"` feature (`Uuid::new_v4()` needs it; not a new crate).
   Filter: `cargo test -p idl-transport sync::pairing` (11 passed).
   `cargo check -p idl-rs-tauri` clean.
+- **L11 Task 8: `axum` sync server (2026-09-07, idl-transport, `sync::{server, range}`,
+  ruling R88) plus its review-task8/R100 path-safety fix.** New
+  `sync/server.rs`: an `axum` 0.8.9-pinned HTTP server under `/idl1/v1`
+  (`pair`, `manifest`, and the id/hash-addressed `blob`/`derived`/session
+  `data.parquet`/`session.json`/`workbook`/`track`/`profile` GET+PUT
+  routes), bearer auth via `route_layer` (an unknown path answers `404`,
+  a known one with no/wrong token `401` — both intentional, not `layer`'s
+  behaviour), and a hand-parsed `Range` header (`sync/range.rs`, no
+  `tower-http`, PLAN §8 Q2) giving `206`/`416` byte-range support on every
+  GET route. `install`/`InstallContext` (`idl-rs::store::sync::apply`)
+  does the actual verified write; this server only routes and reads/writes
+  bytes. Landed by the lead after the task agent lost ~14h to a
+  `run_in_background` cargo notification that never arrived (see the
+  process-rule addendum below) — code unchanged from the agent's own.
+  Filters at landing: `sync::server` (14 passed), `sync::` (33 passed),
+  `cargo check -p idl-rs-tauri` clean.
+
+  **review-task8 found a Critical** (R100): the server's `is_valid_id`
+  rejected `/`, `\`, and `..` but not a Windows drive-relative segment
+  (`C:evil`) — a legal, unencoded URL path segment — and `PathBuf::join`
+  on a component with a prefix but no root silently discards the entire
+  base path, so a paired peer could read (every GET route) or, for a
+  brand-new workbook, write (`PUT /workbook/<id>`) outside `data_root`
+  entirely. Fixed with one shared validator, `idl-rs::store::sync::ids`
+  (new module): `IdClass::Uuid` (workbook/track/profile ids — canonical
+  36-character lowercase-hex-and-dashes form) and `IdClass::Session`
+  (session ids — lowercase hex, even length, 16-64 characters, covering
+  both a device-sourced 32-hex-char id and a non-device blob-hash-prefix
+  id per IDL0_SPEC), both allow-list shape checks with no escapable
+  character by construction; plus `safe_join`, a second, independent
+  layer that lexically normalises `.`/`..` and re-checks the joined
+  result is still inside `data_root`, closing the same class of bug even
+  for a call site that skipped (or has a bug in) the shape check —
+  `data_root.join(...)` call sites are now `safe_join(...)` everywhere an
+  id reaches a path, in both `idl-transport::sync::server` and
+  `idl-rs::store::sync::apply`'s five id-addressed install functions.
+  Escapes answer `404`, never `403` (nothing about what exists outside
+  `data_root` leaks). Also folded into this fix: `read_body`'s
+  `to_bytes(body, usize::MAX)` (an explicit *unlimited* cap, contradicting
+  its own doc comment) is now a real cap answering `413` above it —
+  `MAX_DOCUMENT_BODY_BYTES` (16 MiB) for the small JSON/markdown-ish
+  classes (`session.json`/workbook/track/profile), `MAX_RAW_FILE_BODY_BYTES`
+  (512 MiB) for the raw/large classes (`blob`/`derived`/`data.parquet`,
+  sized against IDL0_SPEC's ~200 MB device SD free-space threshold); and
+  `range.rs`'s `Range` numeric overflow (e.g. `bytes=0-99999999999999999999`)
+  now classifies `Unsatisfiable` (`416`) rather than `Malformed` (`400`),
+  matching every other "past the resource's real length" case.
+  Filters: `cargo test -p idl-transport sync::` and `cargo test -p idl-rs
+  store::sync::` (see this task's own commit for exact counts),
+  `cargo check -p idl-rs-tauri` clean.
 - **L11 Task 9: mDNS peer discovery (2026-09-07, idl-transport,
   `sync::discovery`, ruling R88).** New `sync/discovery.rs`: `SERVICE_TYPE`
   (`_idl1._tcp.local.`), `DiscoveredPeer`, and the pure TXT-record pair
