@@ -4081,3 +4081,30 @@ checkout.
 `f6d6140`, review CLEAN. Toaster built but unmounted (UI-4 mounts it).
 `next-themes` dropped (dark-only), sonner's vendored shadow neutralised
 in `index.css` rather than editing the vendored file. Worktree retired.
+
+## 2026-09-07 — R95: mount-and-hide — which background effects are allowed to keep running
+
+UI-4 reports every page effect now runs from app start rather than per
+visit. **Ruling, by cost:**
+1. **Device BLE poll** — already fixed by `composeVisibility` (R78 holds).
+2. **Notebook sandbox iframe + `watchWorkbook`** — must pause: the iframe
+   is a live JS runtime and the watcher an OS handle, both per-notebook.
+   → **UI-10** gains the route-visible gate (the same context UI-4 built):
+   sandbox torn down / not started while hidden, watcher unsubscribed,
+   re-primed on show through the existing rebuild replay (R69 order).
+3. **Notebook debounced eval** — gate on the same signal; a hidden
+   notebook must not call `eval_workbook`. → UI-10.
+4. **Data `listSessions` on mount, Settings prefs migration, Notebook
+   `listMathBuiltins`/`listWorkbooks`** — one-shot reads at app start,
+   cheap and idempotent; **accepted**, no change.
+
+Also ruled: `lastRoute` in `ColumnPrefs` (one key) accepted; column
+min/max width constants accepted as named invented constants; the
+TopBar device dot stays unwired until Device's connection state is
+lifted into `AppState` — a **UI-5 follow-on**, not a shell task; the
+`ColumnFrame` remount when crossing 1200 px is accepted for this pass and
+noted for UI-10 (state loss on a resize across the breakpoint only).
+
+**Cost if wrong:** item 2 is the one that matters — a hidden notebook
+holding a sandbox and a file watch is a battery and handle leak on a
+phone.
