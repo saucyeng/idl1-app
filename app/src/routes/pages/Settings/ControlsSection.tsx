@@ -1,3 +1,5 @@
+import { NoteBlock } from "@/components/brand/NoteBlock";
+import { SpecRow } from "@/components/brand/SpecRow";
 import { CONTROL_GROUPS } from "./controls";
 
 /** The Chart controls section: a read-only reference of the notebook
@@ -10,23 +12,16 @@ import { CONTROL_GROUPS } from "./controls";
  * this banner exists to prevent. */
 export default function ControlsSection() {
   return (
-    <div className="idl1-settings__section">
-      <p className="idl1-settings__hint idl1-settings__hint--provisional">
+    <div className="flex flex-col gap-4">
+      <NoteBlock className="w-fit border-hivis text-hivis">
         Provisional — bindings land with the Notebook lane.
-      </p>
+      </NoteBlock>
       {CONTROL_GROUPS.map((group) => (
-        <div key={group.title} className="idl1-settings__controls-group">
-          <h3>{group.title}</h3>
-          <table className="idl1-settings__controls-table">
-            <tbody>
-              {group.rows.map(([action, keystroke]) => (
-                <tr key={action}>
-                  <th>{action}</th>
-                  <td>{keystroke}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+        <div key={group.title} className="flex flex-col gap-1.5">
+          <h3 className="font-mono text-xs uppercase tracking-[var(--tracking-label)] text-fg-dim">{group.title}</h3>
+          {group.rows.map(([action, keystroke]) => (
+            <SpecRow key={action} label={action} value={keystroke} />
+          ))}
         </div>
       ))}
     </div>

@@ -1,6 +1,10 @@
 import { useEffect, useMemo, useReducer, useRef } from "react";
 
+import { NoteBlock } from "../../../components/brand/NoteBlock";
+import { Button } from "../../../components/ui/button";
 import { pullConfig, pushConfig } from "../../../ipc/device";
+import { toastFor } from "../../../components/toasts/events";
+import { toast } from "sonner";
 import type { DeviceConfig } from "./config/model";
 import { validateConfig } from "./config/validate";
 import type { ValidationIssue } from "./config/validate";
@@ -27,7 +31,11 @@ function IssueList({ issues }: { issues: ValidationIssue[] }) {
   return (
     <ul className="device-form__issues">
       {issues.map((issue) => (
-        <li key={issue.path + issue.message} data-severity={issue.severity}>
+        <li
+          key={issue.path + issue.message}
+          data-severity={issue.severity}
+          className={`font-mono text-sm ${issue.severity === "error" ? "text-brand-accent" : "text-hivis"}`}
+        >
           {issue.severity === "error" ? "Error: " : "Warning: "}
           {issue.message}
         </li>
@@ -84,6 +92,7 @@ export default function PushConfigBar({ deviceId, config, connected }: PushConfi
 
   function onPush(): void {
     if (config === null || pushState.phase === "pushing" || prepared === null || !prepared.ok) return; // button is disabled in this state; defensive no-op
+    const pushedProfileName = config.bike_profile.name;
     dispatch({ type: "PUSH_START" });
     pushConfig(deviceId, prepared.json)
       .then(() => {
@@ -92,6 +101,9 @@ export default function PushConfigBar({ deviceId, config, connected }: PushConfi
         // (SPEC §23.6's full reconnect-and-verify leg is not built here) —
         // every successful push reports the honest "applied, not verified" arm.
         dispatch({ type: "PUSH_SUCCEEDED", message: describePushResult(true, null) });
+        // Toast call site 1/2 (UI-DIRECTION decision 21): config pushed.
+        const descriptor = toastFor({ kind: "configPushed", profileName: pushedProfileName });
+        toast.info(descriptor.title, { description: descriptor.detail });
       })
       .catch((err: DeviceIpcError) => {
         if (!mountedRef.current) return; // bar unmounted mid-push; nothing left to update
@@ -116,21 +128,31 @@ export default function PushConfigBar({ deviceId, config, connected }: PushConfi
   }
 
   return (
-    <div className="device-tab__push-bar">
-      <p className="device-tab__push-note">
+    <div className="device-tab__push-bar flex flex-col gap-2">
+      <NoteBlock className="device-tab__push-note border-rule">
         Pushing a config reboots the device to apply it (SPEC §7.2). The device must be in idle mode to accept a push — this app
         cannot read the device's current mode yet, so a push attempted in the wrong mode surfaces as a rejection below rather than
         being blocked in advance.
-      </p>
+      </NoteBlock>
       <IssueList issues={issues} />
-      <button type="button" onClick={onPush} disabled={!canPush}>
-        {pushState.phase === "pushing" ? "Pushing…" : "Push config"}
-      </button>
-      <button type="button" onClick={onPull}>
-        Pull from device
-      </button>
-      {pushState.phase === "succeeded" && pushState.message && <p role="status">{pushState.message}</p>}
-      {pushState.phase === "failed" && pushState.message && <p role="alert">{pushState.message}</p>}
+      <div className="flex gap-2">
+        <Button type="button" emphasis="info" filled className="h-11" onClick={onPush} disabled={!canPush}>
+          {pushState.phase === "pushing" ? "Pushing…" : "Push config"}
+        </Button>
+        <Button type="button" className="h-11" onClick={onPull}>
+          Pull from device
+        </Button>
+      </div>
+      {pushState.phase === "succeeded" && pushState.message && (
+        <p role="status" className="font-mono text-sm text-good">
+          {pushState.message}
+        </p>
+      )}
+      {pushState.phase === "failed" && pushState.message && (
+        <p role="alert" className="font-mono text-sm text-brand-accent">
+          {pushState.message}
+        </p>
+      )}
     </div>
   );
 }

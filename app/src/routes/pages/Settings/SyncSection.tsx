@@ -1,10 +1,25 @@
 import { useEffect, useReducer, useState } from "react";
+import { toast } from "sonner";
 
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { StatusDot } from "@/components/brand/StatusDot";
+import { toastFor } from "@/components/toasts/events";
 import { describeIpcError, type IpcErrorLike } from "./errors";
 import { normalizePairCode, validatePairCode } from "./pairCode";
 import type { PrefsStore } from "./prefsStore";
 import { describeSyncResult, syncStateReducer, type SyncState } from "./syncState";
-import { pairPeer, syncNow, syncStatus } from "../../../ipc/sync";
+import { pairPeer, syncNow, syncStatus, type SyncResult } from "../../../ipc/sync";
+
+/** Raises the "sync finished" toast (UI-DIRECTION decision 21) for a
+ *  completed `sync_now` transfer — the lane's one toast call site. `changed`
+ *  is the total number of items the transfer actually touched (blobs plus
+ *  merged workbooks); `SyncResult` has no single "changed" field of its own. */
+function announceSyncFinished(result: SyncResult): void {
+  const descriptor = toastFor({ kind: "syncFinished", changed: result.blobs_transferred + result.workbooks_merged });
+  const raise = descriptor.tone === "good" ? toast.success : descriptor.tone === "info" ? toast.info : toast.error;
+  raise(descriptor.title, { description: descriptor.detail });
+}
 
 /** Props for {@link SyncSection}. Follows {@link ProfileSection}'s
  *  `{ store: PrefsStore }` shape for consistency across sections, even
@@ -130,6 +145,7 @@ export default function SyncSection({ store }: SyncSectionProps) {
       .then((result) => {
         dispatch({ type: "result", peerId, result });
         setLastResultSummary(describeSyncResult(result));
+        announceSyncFinished(result);
       })
       .catch((error: unknown) => {
         dispatch({ type: "failure", message: describeSyncError(error) });
@@ -137,62 +153,72 @@ export default function SyncSection({ store }: SyncSectionProps) {
   }
 
   return (
-    <div className="idl1-settings__section">
-      <h3>Paired devices</h3>
-      {state.peers.length === 0 ? (
-        <p className="idl1-settings__hint">No devices paired yet.</p>
-      ) : (
-        <ul className="idl1-settings__peer-list">
-          {state.peers.map((peer) => (
-            <li key={peer.peer_id}>
-              <span>{peer.name}</span>
-              <span>{peer.online ? "Online" : "Offline"}</span>
-              <button
-                type="button"
-                onClick={() => handleSyncNow(peer.peer_id)}
-                disabled={state.running !== null}
-              >
-                Sync now
-              </button>
-            </li>
-          ))}
-        </ul>
-      )}
+    <div className="flex flex-col gap-4">
+      <div className="flex flex-col gap-2">
+        <h3 className="font-mono text-xs uppercase tracking-[var(--tracking-label)] text-fg-dim">Paired devices</h3>
+        {state.peers.length === 0 ? (
+          <p className="font-mono text-xs text-fg-faint">No devices paired yet.</p>
+        ) : (
+          <ul className="flex flex-col gap-1.5">
+            {state.peers.map((peer) => (
+              <li key={peer.peer_id} className="flex items-center gap-3">
+                <span className="font-mono text-sm text-fg">{peer.name}</span>
+                <StatusDot className={peer.online ? "text-good" : "text-fg-faint"}>
+                  {peer.online ? "Online" : "Offline"}
+                </StatusDot>
+                <Button
+                  type="button"
+                  size="sm"
+                  onClick={() => handleSyncNow(peer.peer_id)}
+                  disabled={state.running !== null}
+                >
+                  Sync now
+                </Button>
+              </li>
+            ))}
+          </ul>
+        )}
 
-      {state.running ? (
-        <p className="idl1-settings__hint">
-          Syncing with {state.running.peerId} — {state.running.phase}
-          {state.running.total !== null
-            ? ` (${state.running.done}/${state.running.total})`
-            : ` (${state.running.done})`}
-        </p>
-      ) : null}
+        {state.running ? (
+          <p className="font-mono text-xs text-fg-dim">
+            Syncing with {state.running.peerId} — {state.running.phase}
+            {state.running.total !== null
+              ? ` (${state.running.done}/${state.running.total})`
+              : ` (${state.running.done})`}
+          </p>
+        ) : null}
 
-      {lastResultSummary ? <p className="idl1-settings__hint">{lastResultSummary}</p> : null}
+        {lastResultSummary ? <p className="font-mono text-xs text-fg-dim">{lastResultSummary}</p> : null}
 
-      {state.lastError ? (
-        <p className="idl1-settings__hint idl1-settings__hint--error">{state.lastError}</p>
-      ) : null}
+        {state.lastError ? (
+          <p className="font-mono text-xs text-brand-accent">{state.lastError}</p>
+        ) : null}
+      </div>
 
-      <h3>Pair a new device</h3>
-      <label htmlFor="idl1-settings-pair-code">Pairing code</label>
-      <input
-        id="idl1-settings-pair-code"
-        type="text"
-        value={codeInput}
-        onChange={(event) => setCodeInput(event.target.value)}
-        placeholder="123 456"
-      />
-      {codeInput.length > 0
-        ? codeIssues.map((issue) => (
-            <p key={issue.message} className="idl1-settings__hint idl1-settings__hint--error">
-              {issue.message}
-            </p>
-          ))
-        : null}
-      <button type="button" onClick={handlePair} disabled={codeHasErrors || pairing}>
-        Pair
-      </button>
+      <div className="flex flex-col gap-2">
+        <h3 className="font-mono text-xs uppercase tracking-[var(--tracking-label)] text-fg-dim">Pair a new device</h3>
+        <label htmlFor="idl1-settings-pair-code" className="font-mono text-xs text-fg-dim">
+          Pairing code
+        </label>
+        <Input
+          id="idl1-settings-pair-code"
+          type="text"
+          className="max-w-40"
+          value={codeInput}
+          onChange={(event) => setCodeInput(event.target.value)}
+          placeholder="123 456"
+        />
+        {codeInput.length > 0
+          ? codeIssues.map((issue) => (
+              <p key={issue.message} className="font-mono text-xs text-brand-accent">
+                {issue.message}
+              </p>
+            ))
+          : null}
+        <Button type="button" emphasis="info" filled onClick={handlePair} disabled={codeHasErrors || pairing} className="w-fit">
+          Pair
+        </Button>
+      </div>
     </div>
   );
 }

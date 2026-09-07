@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { SECTIONS, defaultSectionId, sectionById } from "./sections";
 
 describe("SECTIONS", () => {
-  it("SECTIONS — the list — holds exactly the seven idl1 sections, with no firmware or drive-sync entry", () => {
+  it("SECTIONS — the list — holds exactly the nine idl1 sections, with no drive-sync entry", () => {
     const ids = SECTIONS.map((section) => section.id);
 
     expect(ids).toEqual([
@@ -11,12 +11,13 @@ describe("SECTIONS", () => {
       "units",
       "data",
       "sync",
+      "firmware",
       "controls",
+      "theme",
       "howTos",
       "about",
     ]);
 
-    expect(ids).not.toContain("firmware");
     expect(ids).not.toContain("drive");
     expect(ids).not.toContain("driveSync");
   });
@@ -33,7 +34,7 @@ describe("SECTIONS", () => {
 describe("sectionById", () => {
   it("sectionById — a known id — returns that section; an unknown id — returns undefined, never throws", () => {
     const found = sectionById("sync");
-    const notFound = sectionById("firmware");
+    const notFound = sectionById("driveSync");
 
     expect(found).toEqual({
       id: "sync",

@@ -55,3 +55,18 @@ is 12 GB and every wave-2 worktree is now retired; clearing it is safe and
 rebuildable but forces cold compiles for wave 3 worktrees (memory cost).
 `idl1-app/app/src-tauri/target` is 9.2 GB. The lead will not build the
 Tauri preview until ≥10 GB is free — say which of these to clear.
+
+## 12. Device-tab refinements (UI-5, direction decision 35) — your call on each
+
+From the restyle, the gaps the Device tab still carries:
+1. Device picker is an inline discovered-device list in the hero card, not
+   idl0's picker sheet; no auto-connect ("headphones" model). Want either?
+2. No RX/TX live BLE-activity indicator distinct from the recording pulse.
+3. Recording timer is client-observed (first `logging:true` this session),
+   so it resets on reconnect — a device-reported start time needs firmware
+   or a status field.
+4. Calibration panel is a placeholder: `CMD_CALIBRATE_IMU` (SPEC §7.6/§20)
+   has no Tauri command yet.
+5. HRM "Search nearby" lists every BLE device (no service-UUID filter).
+6. Push config cannot read device mode first; a wrong-mode push surfaces as
+   a rejection, not a pre-check.

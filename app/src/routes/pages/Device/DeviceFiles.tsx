@@ -1,5 +1,9 @@
 import { useReducer, useRef, useState } from "react";
+import { toast } from "sonner";
 
+import { Badge } from "../../../components/ui/badge";
+import { Button } from "../../../components/ui/button";
+import { toastFor } from "../../../components/toasts/events";
 import { downloadFile, listDeviceFiles } from "../../../ipc/device";
 import type { DeviceIpcError } from "./errors";
 import { describeIpcError } from "./errors";
@@ -32,14 +36,14 @@ type ListPhase = "idle" | "loading" | "loaded" | "failed";
 function DownloadRow({ item, elapsedMs }: { item: DownloadItem; elapsedMs: number }) {
   if (item.status === "done") {
     return (
-      <li>
+      <li className="font-mono text-sm text-fg-dim">
         {item.name}: downloaded ({item.sha256?.slice(0, 12)}…) — import it from the Data tab.
       </li>
     );
   }
   if (item.status === "failed") {
     return (
-      <li role="alert">
+      <li role="alert" className="font-mono text-sm text-brand-accent">
         {item.name}: failed — {item.error}
       </li>
     );
@@ -47,7 +51,7 @@ function DownloadRow({ item, elapsedMs }: { item: DownloadItem; elapsedMs: numbe
   const rate = formatTransferRate(item.doneBytes, elapsedMs);
   const total = item.totalBytes === null ? "" : ` / ${item.totalBytes} bytes`;
   return (
-    <li>
+    <li className="font-mono text-sm text-fg-dim">
       {item.name}: {item.status === "downloading" ? "downloading" : "queued"} — {item.doneBytes} bytes{total} ({rate})
     </li>
   );
@@ -101,6 +105,11 @@ export default function DeviceFiles({ deviceId, knownSessionIds }: DeviceFilesPr
     })
       .then((result) => {
         dispatch({ type: "SUCCEEDED", name, result });
+        // Toast call site 2/2 (UI-DIRECTION decision 21): transfer complete.
+        // One file per download (this queue is strictly one-at-a-time, SPEC
+        // §24.17) — `fileCount` is always 1 here, never a batch total.
+        const descriptor = toastFor({ kind: "transferComplete", fileCount: 1 });
+        toast.success(descriptor.title, { description: descriptor.detail });
       })
       .catch((err: DeviceIpcError) => {
         dispatch({ type: "FAILED", name, error: describeIpcError(err) });
@@ -110,23 +119,31 @@ export default function DeviceFiles({ deviceId, knownSessionIds }: DeviceFilesPr
   const active = isDownloadActive(state.queue);
 
   return (
-    <section className="device-files">
-      <button type="button" onClick={onListFiles} disabled={listPhase === "loading"}>
-        {listPhase === "loading" ? "Listing…" : "List files"}
-      </button>
-      {listPhase === "failed" && listError && <p role="alert">{listError}</p>}
-      {listPhase === "loaded" && <p role="status">{newCount(state.files)} new of {state.files.length} files</p>}
-      <ul>
+    <section className="device-files flex flex-col gap-2">
+      <div className="flex items-center gap-2">
+        <Button type="button" className="h-11" onClick={onListFiles} disabled={listPhase === "loading"}>
+          {listPhase === "loading" ? "Listing…" : "List files"}
+        </Button>
+        {listPhase === "loaded" && (
+          <Badge role="status">
+            {newCount(state.files)} new of {state.files.length}
+          </Badge>
+        )}
+      </div>
+      {listPhase === "failed" && listError && <p role="alert" className="font-mono text-sm text-brand-accent">{listError}</p>}
+      <ul className="device-files__list flex flex-col">
         {state.files.map((file) => (
-          <li key={file.name}>
-            {file.name} ({file.size_bytes} bytes){file.isNew ? " — new" : " — in library"}{" "}
-            <button type="button" onClick={() => onDownload(file.name)} disabled={active}>
+          <li key={file.name} className="flex h-11 items-center justify-between gap-2 border-b border-rule font-mono text-sm text-fg last:border-b-0">
+            <span className="truncate">
+              {file.name} <span className="text-fg-dim">({file.size_bytes} bytes){file.isNew ? " — new" : " — in library"}</span>
+            </span>
+            <Button type="button" size="sm" className="h-11 shrink-0" onClick={() => onDownload(file.name)} disabled={active}>
               Download
-            </button>
+            </Button>
           </li>
         ))}
       </ul>
-      <ul className="device-files__queue">
+      <ul className="device-files__queue flex flex-col gap-1">
         {state.queue.map((item) => (
           <DownloadRow key={item.name} item={item} elapsedMs={Date.now() - (startedAtMsRef.current.get(item.name) ?? Date.now())} />
         ))}

@@ -1,3 +1,5 @@
+import { NoteBlock } from "../../../components/brand/NoteBlock";
+import { Button } from "../../../components/ui/button";
 import type { DeviceControlCommand, DeviceStatus } from "../../../ipc/device";
 import { controlAvailability } from "./control";
 
@@ -50,41 +52,39 @@ function outcomeText(outcome: ControlOutcomeView): string {
 }
 
 /**
- * The Device tab's provisional recording/WiFi controls (lane brief
- * Interface 6, R53/R63.1/R71). Buttons are gated by `controlAvailability`
- * (`control.ts`, SPEC §23.9's mutual exclusion and null-field withholding)
- * and disabled while a command is `pending`. The banner states the honesty
- * constraint plainly: this desktop BLE stack never surfaces the SPEC §7.2
- * acknowledgement byte, so a resolved `deviceControl` promise is not
- * evidence of anything — only the status line is.
+ * The Device tab's provisional WiFi controls (lane brief Interface 6,
+ * R53/R63.1/R71). Recording start/stop moved onto `HeroCard`'s three-state
+ * CTA in the UI-5 restyle (UI-DIRECTION Device) — this component now offers
+ * only the WiFi toggle, still gated by `controlAvailability` (`control.ts`,
+ * SPEC §23.9's mutual exclusion and null-field withholding) and disabled
+ * while a command is `pending`, and still reports whichever command
+ * (`lastOutcome`) last ran, including one sent from the hero CTA. The
+ * banner states the honesty constraint plainly: this desktop BLE stack
+ * never surfaces the SPEC §7.2 acknowledgement byte, so a resolved
+ * `deviceControl` promise is not evidence of anything — only the status
+ * line is.
  */
 export default function DeviceControls({ status, pending, lastOutcome, onControl }: DeviceControlsProps) {
   const availability = controlAvailability(status);
   const busy = pending !== null;
 
   return (
-    <div className="device-controls">
-      <p role="status" className="device-controls__banner">
+    <div className="device-controls flex flex-col gap-2">
+      <NoteBlock role="status" className="border-rule">
         These buttons send a command and then read the device&apos;s status back. On this desktop Bluetooth stack, a
         refusal from the device can&apos;t be told apart from a command that was never acted on — so the status line
         below, not the button itself, is the evidence a change happened.
-      </p>
-      <div className="device-controls__buttons">
-        <button type="button" onClick={() => onControl("start_recording")} disabled={busy || !availability.canStartRecording}>
-          {pending === "start_recording" ? "Starting…" : COMMAND_LABEL.start_recording}
-        </button>
-        <button type="button" onClick={() => onControl("stop_recording")} disabled={busy || !availability.canStopRecording}>
-          {pending === "stop_recording" ? "Stopping…" : COMMAND_LABEL.stop_recording}
-        </button>
-        <button type="button" onClick={() => onControl("wifi_on")} disabled={busy || !availability.canWifiOn}>
+      </NoteBlock>
+      <div className="device-controls__buttons flex flex-wrap gap-2">
+        <Button type="button" className="h-11" onClick={() => onControl("wifi_on")} disabled={busy || !availability.canWifiOn}>
           {pending === "wifi_on" ? "Turning on…" : COMMAND_LABEL.wifi_on}
-        </button>
-        <button type="button" onClick={() => onControl("wifi_off")} disabled={busy || !availability.canWifiOff}>
+        </Button>
+        <Button type="button" className="h-11" onClick={() => onControl("wifi_off")} disabled={busy || !availability.canWifiOff}>
           {pending === "wifi_off" ? "Turning off…" : COMMAND_LABEL.wifi_off}
-        </button>
+        </Button>
       </div>
       {lastOutcome && (
-        <p role="status" className="device-controls__outcome" data-outcome={lastOutcome.outcome}>
+        <p role="status" className="device-controls__outcome font-mono text-sm text-fg-dim" data-outcome={lastOutcome.outcome}>
           {outcomeText(lastOutcome)}
         </p>
       )}

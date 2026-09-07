@@ -1,5 +1,10 @@
 import { useState } from "react";
 
+import { NoteBlock } from "../../../components/brand/NoteBlock";
+import { StatusDot } from "../../../components/brand/StatusDot";
+import { Button } from "../../../components/ui/button";
+import { Input } from "../../../components/ui/input";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../../../components/ui/select";
 import type { ProfilesAction, ProfilesState } from "./profiles";
 import type { SkippedProfile } from "./profilesSync";
 
@@ -73,53 +78,61 @@ export default function ProfileBar({ state, dispatch, deviceId, dirty, saving, o
   }
 
   return (
-    <div className="device-tab__profile-bar">
-      <label>
-        Active profile
-        <select
-          value={state.activeId ?? ""}
-          onChange={(e) => dispatch({ type: "SELECT", profileId: e.target.value })}
+    <div className="device-tab__profile-bar flex flex-col gap-2">
+      <div className="flex flex-wrap items-center gap-2">
+        <Select
+          value={state.activeId ?? undefined}
+          onValueChange={(profileId) => dispatch({ type: "SELECT", profileId })}
           disabled={state.profiles.length === 0}
         >
-          {state.profiles.length === 0 && <option value="">No profiles yet</option>}
-          {state.profiles.map((p) => (
-            <option key={p.profile_id} value={p.profile_id}>
-              {p.profile_name}
-            </option>
-          ))}
-        </select>
-      </label>
-      <input
-        type="text"
-        value={draftName}
-        onChange={(e) => setDraftName(e.target.value)}
-        placeholder="Profile name"
-        aria-label="Profile name"
-      />
-      <button type="button" onClick={onCreate}>
-        + New profile
-      </button>
-      <button type="button" onClick={onDuplicate} disabled={active === null}>
-        Duplicate active
-      </button>
-      <button type="button" onClick={onRename} disabled={active === null}>
-        Rename active
-      </button>
-      <button type="button" onClick={onDeleteActive} disabled={active === null}>
-        Delete active
-      </button>
-      <button type="button" onClick={onSave} disabled={active === null || !dirty || saving}>
-        {saving ? "Saving…" : "Save profile"}
-      </button>
+          <SelectTrigger aria-label="Active profile" className="h-11 min-w-40">
+            <SelectValue placeholder="No profiles yet" />
+          </SelectTrigger>
+          <SelectContent>
+            {state.profiles.map((p) => (
+              <SelectItem key={p.profile_id} value={p.profile_id}>
+                {p.profile_name}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <Input
+          type="text"
+          className="h-11 w-40"
+          value={draftName}
+          onChange={(e) => setDraftName(e.target.value)}
+          placeholder="Profile name"
+          aria-label="Profile name"
+        />
+        <Button type="button" className="h-11" onClick={onCreate}>
+          + New profile
+        </Button>
+        <Button type="button" className="h-11" onClick={onDuplicate} disabled={active === null}>
+          Duplicate
+        </Button>
+        <Button type="button" className="h-11" onClick={onRename} disabled={active === null}>
+          Rename
+        </Button>
+        <Button type="button" emphasis="accent" className="h-11" onClick={onDeleteActive} disabled={active === null}>
+          Delete
+        </Button>
+        <Button type="button" emphasis="good" filled className="h-11" onClick={onSave} disabled={active === null || !dirty || saving}>
+          {saving ? "Saving…" : "Save profile"}
+        </Button>
+      </div>
       {active !== null && dirty && !saving && (
-        <span role="status" className="device-tab__profile-bar-dirty">
+        <StatusDot role="status" className="device-tab__profile-bar-dirty text-hivis">
           Unsaved changes
-        </span>
+        </StatusDot>
       )}
-      {error && <p role="alert">{error}</p>}
+      {error && (
+        <NoteBlock role="alert" className="border-brand-accent text-brand-accent">
+          {error}
+        </NoteBlock>
+      )}
       {skipped.length > 0 && (
-        <div className="device-tab__profile-bar-skipped">
-          <p role="status">
+        <NoteBlock role="status" className="device-tab__profile-bar-skipped border-hivis text-hivis">
+          <p>
             {skipped.length} profile{skipped.length === 1 ? "" : "s"} couldn&apos;t be loaded:
           </p>
           <ul>
@@ -129,7 +142,7 @@ export default function ProfileBar({ state, dispatch, deviceId, dirty, saving, o
               </li>
             ))}
           </ul>
-        </div>
+        </NoteBlock>
       )}
     </div>
   );

@@ -18,9 +18,11 @@
  * calibration command, no procedure UI); recording start/stop has no C3
  * command yet and is stubbed. All three are now stated plainly rather than
  * described as working. */
+import { HOWTO_ARTICLE_CLASSES } from "./proseClasses";
+
 export default function FirstSetup() {
   return (
-    <article className="idl1-settings__howto">
+    <article className={HOWTO_ARTICLE_CLASSES}>
       <h3>First Setup</h3>
       <p>
         This guide walks you through pairing your device for the first time and recording your first session.

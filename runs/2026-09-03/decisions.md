@@ -4115,3 +4115,40 @@ phone.
 context are the signal UI-5 gates on and UI-10 reuses (R95 item 2).
 Worktree retired. Next: UI-5/6/7 concurrently, each its own worktree
 from main.
+
+## 2026-09-07 — UI-5 LANDED (Device restyle; review CLEAN)
+
+`1be44e0`. Device refinement list filed as question 12 in
+`runs/2026-09-05/QUESTIONS-FOR-ISAAC.md` (the reviewer could not see it
+from files — it is there now). Worktree retired.
+
+## 2026-09-07 — UI-7 LANDED (Settings restyle + theme/register prefs; review CLEAN)
+
+`20447e5`. `settings.css` deleted and the token test's exception list is
+now empty — a colour literal anywhere outside `tokens.css` fails the
+suite. Nine sections (kept `data`, added `firmware`/`theme`) accepted.
+Worktree retired.
+
+## 2026-09-07 — UI-7 LANDED (Settings restyle + theme/register prefs; review CLEAN)
+
+`20447e5`, merged with a CHANGELOG conflict resolved keep-both.
+`settings.css` deleted and the token test's exception list is now empty —
+a colour literal anywhere outside `tokens.css` fails the suite. Nine
+sections (kept `data`, added `firmware`/`theme`) accepted. Main suite
+110 files / 1015 passed. Worktree retired.
+
+## 2026-09-07 — R96: click-to-deselect on a Data session row is kept (UI-6)
+
+UI-6 added a toggle to `selectSession` (re-clicking the selected row
+clears the selection) inside a presentation-only task, without a ruling
+or a CHANGELOG line — the reviewer graded the *disclosure*, not the code.
+**Ruling: keep it.** It restores idl0's own
+`SelectionNotifier.toggleSession` behaviour, and with L6 reading
+`AppState.selection` (R53 Data Q3) a user who cannot clear a selection
+cannot get the Notebook back to "no session". Fix commit: one CHANGELOG
+line naming it as a deliberate parity fix citing R96, and the stale
+`SessionRowView` doc comment corrected (review Minor). L7a stays the
+slice's only writer; nothing else changes.
+
+**Cost if wrong:** one line to revert; the alternative leaves the app
+with no way to deselect.
