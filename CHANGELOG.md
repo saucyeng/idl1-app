@@ -1691,7 +1691,44 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 - **Device commands (C3 §3.8) wired to L4's idl-transport.** ble_scan, ble_connect, list_device_files, download_file (streams Progress), push_config. Each command connects/acts/disconnects per call (no managed BLE session yet). `push_config` validates `config_json` is well-formed JSON only — full schema validation via `idl_rs::config::parse_config` is blocked on core defining a `VersionedConfig` type for SPEC §8's device-config schema, not yet landed.
 - **Data tab: session list over C3 §3.2 list_sessions.** DataPage becomes routes/pages/Data/; pure SessionRow view-model and typed IpcError mapper, both tested.
 
-### Changed
+### Fixed
+
+- **Per-route error boundary in `shell/RouteHost.tsx` (2026-09-07).** `RouteHost`
+  mounts every destination unconditionally (mount-and-hide, R93) and none of the
+  four had anything catching a throw — an uncaught render or effect exception in
+  *any* always-mounted route, active or not, propagated to React's root and
+  unmounted the entire shell with no fallback UI (confirmed live: a plain
+  `useEffect` throw in the hidden Data tab blanked the whole app, nav bar
+  included, while the user was on Notebook). New `shell/RouteErrorBoundary.tsx`
+  (class component) plus pure `shell/routeErrorFallback.ts` (`describeRouteError`,
+  tested) wrap each route's element individually in `RouteHost`, so one tab's
+  failure now renders a token-styled "`<Route>` hit an error and could not
+  render" message with a Retry button in that tab alone, leaving the shell chrome
+  and every other tab unaffected.
+- **Notebook column's real blank-screen cause: dev-server CORS blocked the
+  sandbox iframe's own module fetch (2026-09-07, from Isaac's WebView console).**
+  The Notebook sandbox is a deliberately origin-isolated `<iframe
+  sandbox="allow-scripts">` (R69, no `allow-same-origin`), so its document has
+  an opaque `null` origin; in dev that document's module-script fetches
+  (`sandbox/main.ts` and `@vitejs/plugin-react`'s auto-injected Fast Refresh
+  preamble) are cross-origin requests from `Origin: null`, which Vite's
+  default `server.cors` allowlist does not match, so both requests failed
+  outright and the sandbox never sent `ready` — the output column stayed
+  blank forever with nothing watching for it. `app/vite.config.ts`
+  (lead-owned, touched with the lead's sign-off) now (a) adds the literal
+  `"null"` origin to `server.cors` alongside Vite's own default allowlist —
+  dev-only, no effect on a `vite build`'s output or Tauri's own production
+  asset responses — and (b) wraps `@vitejs/plugin-react`'s plugin objects so
+  the preamble is never injected into the sandbox's HTML entry at all (it is
+  not a React page); `allow-same-origin` is untouched, R69's isolation is
+  unweakened either way. Separately, `host/SandboxHost.ts` now arms a 5s
+  boot timer per iframe generation and reports a new
+  `onSandboxUnavailable` callback if `ready` never arrives — `Notebook/
+  index.tsx` shows a `NoteBlock` banner ("The cell runtime failed to start…")
+  with a Retry button (`SandboxHost.retry()`) instead of a permanently silent
+  blank column, for this or any future load failure. Flagged, not fixed here:
+  `SandboxHost.tick()`'s ping/stall watchdog is not wired to any
+  `setInterval` caller today, so it never actually runs.
 
 - **Doc carry-over fixes (2026-09-03, L10).** `tools/README.md` no longer documents the
   uncarried `idl0_dump.dart`; points at `idl-rs info`/`idl-rs channels` for the overlapping

@@ -1,8 +1,9 @@
 /**
  * The thin host-side object that owns one notebook's sandboxed `<iframe>`
  * (design §6). Not unit-tested (CLAUDE.md §4 — it renders/owns a live
- * `<iframe>`); the pure protocol validation and watchdog scheduling it
- * delegates to are tested in `protocol.test.ts`/`watchdog.test.ts`.
+ * `<iframe>`); the pure protocol validation, watchdog scheduling and
+ * boot-timeout decision it delegates to are tested in
+ * `protocol.test.ts`/`watchdog.test.ts`/`bootTimer.test.ts`.
  */
 import {
   channelPayload,
@@ -15,6 +16,7 @@ import {
   type HostVarPayload,
   type SandboxCell,
 } from "./protocol";
+import { BOOT_TIMEOUT_MS, createBootTimer, type BootTimer } from "./bootTimer";
 import { OutboundQueue } from "./outboundQueue";
 import { replayInitAndHostVars, replaySetCells } from "./rebuildReplay";
 import { createWatchdog, type Watchdog } from "./watchdog";
@@ -72,6 +74,14 @@ export interface SandboxHostCallbacks {
    * calling `setChannelHostVar` again for each one costs no IPC (P2, P7).
    */
   onChannelsInvalidated: () => void;
+  /**
+   * The current iframe generation never sent `ready` within
+   * {@link BOOT_TIMEOUT_MS} of being created — the caller should show a
+   * fallback message with a Retry control (calling {@link SandboxHost.retry})
+   * instead of leaving the output column blank forever. Called at most once
+   * per boot attempt; a `retry()` that itself times out fires it again.
+   */
+  onSandboxUnavailable: () => void;
 }
 
 /**
@@ -91,6 +101,11 @@ export class SandboxHost {
   private readonly outboundQueue = new OutboundQueue<OutboundEnvelope>();
   /** The generation id `startGeneration()` returned for the current `iframe`. */
   private generation = 0;
+  /** The current generation's boot-timeout decision (`bootTimer.ts`),
+   *  armed by `createIframe()` and cleared the moment that generation's
+   *  `ready` arrives; the pure timing/fire-once logic lives in the injected
+   *  module so it can be unit-tested without a real timer. */
+  private readonly bootTimer: BootTimer;
   /** The last `init`/`setCells` payloads sent, replayed into a rebuilt
    *  iframe by `rebuild()` (`replayAfterRebuild`, review-task5.md Important
    *  finding: design §6's "state loss is the cost" means reactive state,
@@ -117,6 +132,7 @@ export class SandboxHost {
         // attached its own message listener (`sandbox/main.ts`) — not
         // gated on `init` (review-task5b.md Critical finding). Flushes
         // this generation's queued outbound messages, `init` included.
+        this.bootTimer.onReady();
         this.outboundQueue.markReady(this.generation, (envelope) =>
           this.iframe.contentWindow?.postMessage(envelope.message, "*", envelope.transfer)
         );
@@ -148,6 +164,11 @@ export class SandboxHost {
       send: () => this.postToSandbox({ type: "ping", nonce: this.nextPingNonce++ }),
       onStalled: () => this.rebuild(),
     });
+    this.bootTimer = createBootTimer({
+      schedule: (fn, delayMs) => setTimeout(fn, delayMs),
+      cancel: (handle) => clearTimeout(handle as ReturnType<typeof setTimeout>),
+      onUnavailable: () => this.callbacks.onSandboxUnavailable(),
+    });
     this.iframe = this.createIframe();
     window.addEventListener("message", this.onMessage);
   }
@@ -174,6 +195,7 @@ export class SandboxHost {
     iframe.style.height = "100%";
     iframe.style.border = "none";
     this.container.appendChild(iframe);
+    this.bootTimer.arm();
     return iframe;
   }
 
@@ -319,8 +341,21 @@ export class SandboxHost {
 
   /** Tears down the iframe and stops listening. Call when the notebook closes. */
   dispose(): void {
+    this.bootTimer.dispose();
     this.postToSandbox({ type: "teardown" });
     window.removeEventListener("message", this.onMessage);
     this.iframe.remove();
+  }
+
+  /**
+   * Re-attempts the sandbox after {@link SandboxHostCallbacks.onSandboxUnavailable}
+   * fired — the fallback UI's Retry control calls this. Rebuilds exactly
+   * like a watchdog-triggered rebuild (`rebuild()`'s own doc comment: the
+   * last `init`/JSON-host-var/channel/`setCells` payloads are replayed into
+   * the fresh generation), which also re-arms a fresh {@link BOOT_TIMEOUT_MS}
+   * timer via `createIframe()`.
+   */
+  retry(): void {
+    this.rebuild();
   }
 }
