@@ -4540,3 +4540,16 @@ Still open before sync runs end-to-end in the app: **L11 Task 13**
 (device identity + the `.setup()` wiring, in flight) and **Task 14**
 (discovered-peer sightings so the UI can offer a list instead of a typed
 peer id).
+
+## 2026-09-07 — L11 Task 13 LANDED (device identity + `.setup()` wiring; review CLEAN)
+
+idl-rs `bf6a21e`, idl1-app merge + submodule bump. `identity.json` in
+`app_config_dir()`: uuid minted once, name from the OS hostname,
+corruption is a typed error that never mints a replacement (R105's whole
+point — a silent new id orphans every pairing). `SyncState::start` is
+wired into `.setup()`, so the sync server runs when the app launches.
+One Minor accepted: the hostname shell-out has no timeout and is
+unreachable on Windows. Worktrees retired.
+
+**Sync is now live end-to-end in the app** except the discovered-peer
+list (Task 14, filed): pair by typing a peer id and code, then sync.
