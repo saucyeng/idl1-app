@@ -10,7 +10,15 @@
  * Not unit-tested (CLAUDE.md §4: rendering). The host realm's rule against
  * `eval`/`new Function` does not apply here — cell code legitimately runs
  * inside this, a *different* realm, through mechanisms this file owns.
+ *
+ * The `tokens.css` import below (UI-8) is this document's *own* copy of the
+ * brand token sheet: CSS custom properties do not cross an iframe boundary,
+ * so a cell's `Plot.plot({...})` call inside this realm needs its own
+ * `:root` definitions of `--bg`/`--rule`/`--chart-1`… to resolve anything.
+ * Vite's `notebookSandbox` entry (R56) bundles and links this stylesheet for
+ * this HTML entry same as any other CSS import.
  */
+import "../../../../styles/tokens.css";
 import { Runtime } from "@observablehq/runtime";
 import * as Plot from "@observablehq/plot";
 import * as d3 from "d3";
@@ -25,7 +33,41 @@ import type {
 } from "../host/protocol";
 import { spectrumKey } from "../plotForm/spectrumKey";
 import type { FftParams } from "../plotForm/types";
+import { plotTheme } from "../theme/plotTheme";
+import { documentVars } from "../theme/series";
 import { bindHostVariables, type HostVariableSink } from "./hostVariables";
+
+/**
+ * Wraps the real `Plot` module so every `Plot.plot({...})` call a notebook
+ * cell's own code makes automatically merges in {@link plotTheme} (UI-8;
+ * `brief-ui-8.md` "Applying it"). The theme cannot be spliced into a cell's
+ * own source text — a cell's code is exactly what a person wrote (C2 §5;
+ * "the workbook is a file") — so this wraps the bound `Plot` global instead,
+ * the one place every cell's `Plot.plot(...)` call actually runs. Every
+ * other export (`Plot.lineY`, `Plot.dot`, …) passes through unchanged.
+ *
+ * The merge is shallow at the top level (a cell's own `marginLeft`/`grid`
+ * wins if set) except `style`, which is merged key-by-key so a cell that
+ * only sets, say, `style.fontWeight` keeps the theme's `background`/`color`/
+ * `fontFamily` rather than losing them to a full-object overwrite.
+ */
+function themedPlot(read: Parameters<typeof plotTheme>[0]): typeof Plot {
+  const theme = plotTheme(read);
+  return {
+    ...Plot,
+    plot(options: Plot.PlotOptions = {}): (SVGSVGElement | HTMLElement) & Plot.Plot {
+      const themeStyle = typeof theme.style === "object" && theme.style !== null ? theme.style : undefined;
+      const cellStyle = typeof options.style === "object" && options.style !== null ? options.style : undefined;
+      const mergedStyle = themeStyle === undefined && cellStyle === undefined ? undefined : { ...themeStyle, ...cellStyle };
+      return Plot.plot({
+        grid: theme.grid,
+        marginLeft: theme.marginLeft,
+        ...options,
+        style: mergedStyle ?? options.style ?? theme.style,
+      });
+    },
+  };
+}
 
 /**
  * Sends a message to the host realm. `targetOrigin: "*"` is the standard,
@@ -212,11 +254,20 @@ class SandboxRuntime {
   private readonly cellVariables = new Map<string, { delete(): void }>();
 
   constructor() {
+    // The bound `Plot` is the themed wrapper (UI-8), not the raw library —
+    // every cell's own `Plot.plot({...})` call merges `plotTheme` this way,
+    // since a cell's source text is exactly what a person wrote and is
+    // never itself rewritten. `documentVars(document)` reads this
+    // document's *own* `:root` (this file's `tokens.css` import above),
+    // never the host document's, since custom properties do not cross the
+    // iframe boundary.
+    const themedPlotModule = themedPlot(documentVars(document));
+
     // Library bindings never change after construction, so a plain
     // `module.builtin()` (whose value a dependent cell reads verbatim, per
     // `bindHostVariables`'s doc comment) is correct and simpler here — no
     // update path is needed for these.
-    this.module.builtin("Plot", Plot);
+    this.module.builtin("Plot", themedPlotModule);
     this.module.builtin("d3", d3);
     this.module.builtin("Inputs", Inputs);
     this.module.builtin("html", html);
@@ -224,7 +275,7 @@ class SandboxRuntime {
     // only ever finds arrays) so `evalInline` can build the exact same
     // `inputNames`/argument-value pairing `compileCell` gives a persistent
     // cell, without a second bookkeeping structure.
-    this.hostVars.set("Plot", Plot);
+    this.hostVars.set("Plot", themedPlotModule);
     this.hostVars.set("d3", d3);
     this.hostVars.set("Inputs", Inputs);
     this.hostVars.set("html", html);

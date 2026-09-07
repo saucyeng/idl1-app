@@ -240,6 +240,40 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
   fields (`prefsMigration.test.ts`, `settingsBackend.test.ts`) and
   `sections.test.ts`'s section-count/firmware assertions, all mechanical
   consequences of the fields/sections this task adds, not behaviour changes.
+- **UI-8: Plot theme, series cycle and Turbo on the brand tokens (2026-09-06,
+  no spec change needed — decisions 25–27).** New `Notebook/theme/`: `turbo.ts`
+  (idl0's degree-5 Turbo polynomial ported to TS, `turbo`/`turboCss`, clamped
+  and NaN/Infinity-safe); `series.ts` (`seriesColor`/`seriesPalette` resolve
+  the 8-hue cycle through an injected `CssVarReader`, wrapping `% 8`; throws a
+  typed `MissingChartTokenError` rather than falling back to a guessed hex on
+  an empty token, since any hardcoded fallback would itself be a colour
+  literal outside `tokens.css`; `documentVars()` is the one impure
+  `getComputedStyle` adapter, usable against either document); `plotTheme.ts`
+  (the merged Plot options object: `--bg` background, `--fg-dim` mono
+  tabular-11px text, `--rule` grid, `marginLeft` fixed for six tabular
+  digits, no frame — see its doc comment for the one documented gap: Plot's
+  public API has no top-level knob to colour the axis tick vector separately
+  from tick-label text, so both inherit `style.color`); `slotStates.ts`
+  (`emptySlotMessage`/`errorSlotMessage`, a chart-slot-specific empty/error
+  vocabulary distinct from `model/jsCellNote.ts`'s existing whole-cell note).
+  Applied in `sandbox/main.ts`: a `themedPlot()` wrapper is bound as the
+  sandbox's `Plot` global in place of the raw library, since a cell's own
+  `Plot.plot({...})` source text is never rewritten (C2 §5, "the workbook is
+  a file") — every cell's call merges the theme automatically, `style`
+  merged key-by-key so a cell's own override wins per property. The sandbox
+  document imports `../../../../styles/tokens.css` directly (CSS custom
+  properties do not cross the iframe boundary) — confirmed by inspecting a
+  real `vite build`: `notebookSandbox-*.css` defines all eight `--chart-N`
+  tokens plus `--bg`/`--rule`/`--font-mono`, and `notebookSandbox-*.js`
+  contains the theme's `getPropertyValue`/`marginLeft`/`tabular-nums` calls.
+  **Parity gap:** no host-side `Plot.plot` call site exists in this tree to
+  merge the theme into — `ChartCell.tsx`/`RasterUnderlay.tsx` render via raw
+  canvas (`drawRaster`) and the sandbox's own DOM, never importing
+  `@observablehq/plot` themselves (confirmed by grep); the brief's own file
+  list named them as host-side call sites, which this task's survey did not
+  find. `theme/slotStates.ts` is delivered as a standalone tested module,
+  not yet wired into any render site (no existing chart-cell empty/error UI
+  to attach it to in this pass).
 - **L8x lane complete: Data-tab write commands (2026-09-06, idl-rs core +
   idl-rs-tauri, ruling R86).** Five new commands close the last C3 §6
   deferrals the Data tab still stubbed: `save_track`, `delete_track`,
