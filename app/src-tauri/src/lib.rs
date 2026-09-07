@@ -19,10 +19,27 @@ pub fn run() {
             // "Open questions").
             let data_dir = idl_rs_tauri::paths::resolve_data_dir(&app_data_dir, &app_config_dir)
                 .unwrap_or_else(|e| panic!("resolving <data>: {e:?}"));
-            app.manage(idl_rs_tauri::state::DataDir(data_dir));
+            app.manage(idl_rs_tauri::state::DataDir(data_dir.clone()));
             app.manage(idl_rs_tauri::state::Hashes(std::sync::Arc::new(idl_rs_tauri::watcher::ExpectedHashSet::new())));
             app.manage(idl_rs_tauri::state::Watchers(std::sync::Mutex::new(std::collections::HashMap::new())));
             app.manage(idl_rs_tauri::state::Connections(std::sync::Mutex::new(std::collections::HashMap::new())));
+
+            // `peers.json`/`identity.json` live outside `<data>` (PLAN §8
+            // Q7, ruling R105) so neither ever syncs. A failure here is the
+            // same launch-time condition as `resolve_data_dir`'s above — in
+            // particular a corrupt `identity.json` must never be papered
+            // over with a freshly minted id, which would orphan every
+            // existing pairing (ruling R105).
+            let peers_path = app_config_dir.join("peers.json");
+            let identity_path = app_config_dir.join("identity.json");
+            let sync_state = tauri::async_runtime::block_on(idl_rs_tauri::state::SyncState::start(
+                app.handle().clone(),
+                data_dir,
+                peers_path,
+                identity_path,
+            ))
+            .unwrap_or_else(|e| panic!("starting sync: {e:?}"));
+            app.manage(sync_state);
             Ok(())
         })
         .plugin(tauri_plugin_dialog::init())

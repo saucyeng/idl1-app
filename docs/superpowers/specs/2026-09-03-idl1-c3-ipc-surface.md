@@ -42,6 +42,12 @@
   the transport-internal `SyncRunResult` shape the client already returned;
   a sync run that only moved a session or a track was reporting "0 blobs,
   0 workbooks" under the old three-field shape. Task 12 applies this.
+- 2026-09-07: L11 Task 13 (spec-during, lead ruling R105 item 1) — §3.9
+  gains `set_sync_device_name(name)`. This device's own `peer_id`/`name`
+  now persist in `identity.json` (`app_config_dir()`, beside `peers.json`,
+  never under `<data>`), minted once on first read; a corrupt or unreadable
+  `identity.json` is a typed `sync` error, never a silently re-minted id
+  (which would orphan every existing pairing).
 
 Consumes: design doc §4 (IPC, data path for a chart, the reactive DAG), §6
 (interaction rules), §9 row C3, §10 (lanes); Task 5's M0 smoke commands
@@ -195,7 +201,7 @@ is applied uniformly, not case-by-case:
 | `ble` | `TransportErrorKind::Ble` | Device: `ble_scan`, `ble_connect`, `list_device_files`, `download_file`, `push_config` |
 | `wifi` | `TransportErrorKind::Wifi` | Device: `list_device_files`, `download_file`, `push_config` |
 | `config` | `TransportErrorKind::Config` | Device: `push_config` (device rejected or malformed the pushed config over the wire) |
-| `sync` | `TransportErrorKind::Sync` | Sync: `sync_status`, `sync_now`, `pair_peer`, `start_pairing`, `unpair_peer` |
+| `sync` | `TransportErrorKind::Sync` | Sync: `sync_status`, `sync_now`, `pair_peer`, `start_pairing`, `unpair_peer`, `set_sync_device_name` |
 | `parse_invalid_magic_bytes` | `ParseError::InvalidMagicBytes` | Import: `import_file` (`.idl0` source) |
 | `parse_unsupported_schema_version` | `ParseError::UnsupportedSchemaVersion` | Import: `import_file` (`.idl0` source) |
 | `parse_truncated_record` | `ParseError::TruncatedRecord` | Import: `import_file` (`.idl0` source, corrupt/incomplete file — recover what's readable per CLAUDE.md §5, surface as a warning in the returned `SessionSummary` rather than always rejecting; see open question 6.2) |
@@ -227,7 +233,7 @@ is applied uniformly, not case-by-case:
 | `export_unknown_channel` | `ExportError::UnknownChannel` | none in C3 v1 — see open question 6.1 |
 | `export_no_gps_data` | `FitExportError::NoGpsData` | none in C3 v1 — see open question 6.1 |
 | `not_found` | cross-cutting | Catalog: `get_session`, `list_laps`, `rescan_tracks`, `save_track` (a string `track_id` naming no existing track), `delete_track`, `resolve_quarantine` (unknown `entry_id`); Workbook: `open_workbook`, `eval_workbook`, `save_workbook`, `watch_workbook`; Tiles: `fetch_tile`; Rasters: `fetch_raster`; Cursor: `cursor_readout`; Device: `download_file`; Sync: `sync_now`, `pair_peer`, `unpair_peer` (unknown `peer_id`); Import: `import_file` (source path missing) |
-| `invalid_argument` | cross-cutting | Import: `import_file` (unknown `importer_id`); Workbook: `save_workbook` (malformed markdown/front matter); Tiles: `fetch_tile` (`tier` outside the engine's configured tier set); Rasters: `fetch_raster` (bad `width`/`height`/`kind`); Cursor: `cursor_readout` (unknown channel in the list); Sync: `pair_peer` (malformed code); Catalog: `save_track` (failed draft validation — empty name, non-finite/out-of-range gate coordinate, empty sector/neutral-zone name, or a zero-length gate), `resolve_quarantine` (`"restore"` whose `original_path` is occupied, or an `action` that is neither `"restore"` nor `"discard"`) |
+| `invalid_argument` | cross-cutting | Import: `import_file` (unknown `importer_id`); Workbook: `save_workbook` (malformed markdown/front matter); Tiles: `fetch_tile` (`tier` outside the engine's configured tier set); Rasters: `fetch_raster` (bad `width`/`height`/`kind`); Cursor: `cursor_readout` (unknown channel in the list); Sync: `pair_peer` (malformed code), `set_sync_device_name` (blank/whitespace-only name); Catalog: `save_track` (failed draft validation — empty name, non-finite/out-of-range gate coordinate, empty sector/neutral-zone name, or a zero-length gate), `resolve_quarantine` (`"restore"` whose `original_path` is occupied, or an `action` that is neither `"restore"` nor `"discard"`) |
 | `io` | cross-cutting (also folds `ParseError::Io`, `ConfigErrorKind::Io`, `ExportError::Io`, `FitExportError::Io`, `LapIndexErrorKind::Io`) | any command that touches the filesystem: Catalog (`list_sessions`, `get_session`, `list_laps`, `rebuild_catalog`, `list_workbooks`, `list_tracks`, `get_track`, `rescan_tracks`, `save_track`, `delete_track`, `list_quarantine`, `resolve_quarantine`), Import: `import_file`, Workbook (`open_workbook`, `save_workbook`, `watch_workbook`), Tiles: `fetch_tile`, Rasters: `fetch_raster`, Device: `download_file`, Sync: `sync_status`, App: `verify_data_dir` |
 | `internal` | cross-cutting (also folds `ExportError::Json`, `LapIndexErrorKind::Track` — currently unreached, see the variant's own doc comment) | any command — unexpected/programmer-error conditions that are not the caller's fault |
 | `device_rejected` | cross-cutting | Device: `device_control` (a refused control transition — see the R59 note above) |
@@ -1625,6 +1631,18 @@ R88, L11 Task 1).* Forgets a paired peer: discards its stored token and
 drops it from `sync_status`'s `paired_peers` list.
 Return: `void`.
 Errors: `sync`, `not_found` (unknown `peer_id`).
+
+**`set_sync_device_name(name: string)`** *Added post-sign (2026-09-07, lead
+ruling R105 item 1, L11 Task 13).* Renames this device: persists `name` to
+`identity.json` (keeping `peer_id` unchanged) and updates the running
+`SyncState` so `pair_peer`'s outgoing request reflects it for the rest of
+the process's life. Does not retroactively change what an already-paired
+peer displays for us — that name was copied into their own peer file at
+pairing time. `name` is trimmed; blank/whitespace-only is rejected before
+anything is written.
+Return: `string` — the name actually stored (trimmed).
+Errors: `invalid_argument` (blank/whitespace-only name), `sync` (the
+identity file could not be written).
 
 **`peer_appeared` event.** *Added post-sign (2026-09-06, lead ruling R88,
 L11 Task 1).* Not attached to any single command's `Channel` argument
