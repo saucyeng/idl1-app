@@ -30,3 +30,25 @@
     animation: pulse-dot 0.9s ease-in-out infinite;
   }
 }
+
+/* `sonner`'s vendored stylesheet (imported by `components/ui/sonner.tsx`)
+ * hardcodes a box-shadow and a sans-serif font stack that `Toaster.tsx`'s
+ * `style` prop cannot reach (UI-DIRECTION decision 23: zero elevation;
+ * decision 24/type scale: mono, tabular). Overridden here, not in the
+ * vendored file, so `sonner`'s package.json version stays untouched. */
+@layer utilities {
+  [data-sonner-toaster] {
+    font-family: var(--font-mono);
+    font-variant-numeric: tabular-nums;
+  }
+
+  [data-sonner-toast][data-styled="true"] {
+    box-shadow: none;
+  }
+
+  [data-sonner-toast]:focus-visible {
+    box-shadow: none;
+    outline: 1px solid var(--focus);
+    outline-offset: 2px;
+  }
+}
