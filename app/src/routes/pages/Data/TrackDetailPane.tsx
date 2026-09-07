@@ -1,5 +1,10 @@
+import { XIcon } from "lucide-react";
 import { useEffect, useState } from "react";
 
+import { SpecRow } from "../../../components/brand/SpecRow";
+import { IconBtn } from "../../../components/brand/ToolGroup";
+import { Button } from "../../../components/ui/button";
+import { Input } from "../../../components/ui/input";
 import { deleteTrack, getTrack, saveTrack, type TrackDetail } from "../../../ipc/catalog";
 import { describeIpcError } from "./errors";
 import {
@@ -69,22 +74,24 @@ export function TrackDetailPane({ trackId, onClose, onChanged, onRescanSessions 
 
   if (state.status !== "ready") {
     return (
-      <div className="data-detail-pane" role="region" aria-label="Track detail">
-        <div className="data-detail-header">
-          <h2>Track detail</h2>
-          <button type="button" onClick={onClose} aria-label="Close">
-            ×
-          </button>
+      <div className="flex h-full flex-col gap-3 overflow-y-auto p-3" role="region" aria-label="Track detail">
+        <div className="flex items-start justify-between gap-2">
+          <h2 className="font-mono text-sm font-medium text-fg">Track detail</h2>
+          <IconBtn icon={XIcon} label="Close" onClick={onClose} />
         </div>
-        {state.status === "loading" && <p>Loading track…</p>}
-        {state.status === "error" && <p role="alert">{state.text}</p>}
+        {state.status === "loading" && <p className="font-mono text-sm text-fg-dim">Loading track…</p>}
+        {state.status === "error" && (
+          <p role="alert" className="font-mono text-sm text-brand-accent">
+            {state.text}
+          </p>
+        )}
         {state.status === "deleted" && (
           <>
-            <p>Track deleted.</p>
+            <p className="font-mono text-sm text-fg-dim">Track deleted.</p>
             {state.staleSessionIds.length > 0 && (
-              <button type="button" onClick={() => onRescanSessions(state.staleSessionIds)}>
+              <Button type="button" size="sm" className="self-start" onClick={() => onRescanSessions(state.staleSessionIds)}>
                 {formatRescanSessionsLabel(state.staleSessionIds.length)}
-              </button>
+              </Button>
             )}
           </>
         )}
@@ -143,73 +150,70 @@ export function TrackDetailPane({ trackId, onClose, onChanged, onRescanSessions 
   const dirty = editing && isTrackDraftDirty(saveState.draft, detail);
 
   return (
-    <div className="data-detail-pane" role="region" aria-label="Track detail">
-      <div className="data-detail-header">
-        <h2>Track detail</h2>
-        <button type="button" onClick={onClose} aria-label="Close">
-          ×
-        </button>
+    <div className="flex h-full flex-col gap-3 overflow-y-auto p-3" role="region" aria-label="Track detail">
+      <div className="flex items-start justify-between gap-2">
+        <h2 className="font-mono text-sm font-medium text-fg">Track detail</h2>
+        <IconBtn icon={XIcon} label="Close" onClick={onClose} />
       </div>
 
       {editing ? (
         <form
+          className="flex flex-col gap-2"
           aria-label="Edit track"
           onSubmit={(e) => {
             e.preventDefault();
             handleSave();
           }}
         >
-          <label>
+          <label className="flex flex-col gap-1 font-mono text-xs text-fg-dim">
             Name
-            <input type="text" value={saveState.draft.name} onChange={(e) => setDraftField("name", e.target.value)} />
+            <Input type="text" value={saveState.draft.name} onChange={(e) => setDraftField("name", e.target.value)} />
           </label>
-          <label>
+          <label className="flex flex-col gap-1 font-mono text-xs text-fg-dim">
             Venue
-            <input type="text" value={saveState.draft.venue_name} onChange={(e) => setDraftField("venue_name", e.target.value)} />
+            <Input type="text" value={saveState.draft.venue_name} onChange={(e) => setDraftField("venue_name", e.target.value)} />
           </label>
-          <button type="submit" disabled={!dirty || saveState.status === "saving"}>
-            Save
-          </button>
-          <button type="button" onClick={cancelEdit} disabled={saveState.status === "saving"}>
-            Cancel
-          </button>
-          {saveState.status === "error" && <p role="alert">Couldn't save: {saveState.text}</p>}
+          <div className="flex gap-2">
+            <Button type="submit" emphasis="good" filled size="sm" disabled={!dirty || saveState.status === "saving"}>
+              Save
+            </Button>
+            <Button type="button" size="sm" onClick={cancelEdit} disabled={saveState.status === "saving"}>
+              Cancel
+            </Button>
+          </div>
+          {saveState.status === "error" && (
+            <p role="alert" className="font-mono text-sm text-brand-accent">
+              Couldn't save: {saveState.text}
+            </p>
+          )}
         </form>
       ) : (
-        <div role="toolbar" aria-label="Track actions">
-          <button type="button" onClick={startEdit}>
+        <div role="toolbar" aria-label="Track actions" className="flex gap-2">
+          <Button type="button" size="sm" onClick={startEdit}>
             Edit
-          </button>
-          <button type="button" onClick={handleDelete}>
+          </Button>
+          <Button type="button" size="sm" emphasis="accent" onClick={handleDelete}>
             Delete
-          </button>
+          </Button>
         </div>
       )}
 
       {staleSessionIds.length > 0 && (
-        <button type="button" onClick={() => onRescanSessions(staleSessionIds)}>
+        <Button type="button" size="sm" className="self-start" onClick={() => onRescanSessions(staleSessionIds)}>
           {formatRescanSessionsLabel(staleSessionIds.length)}
-        </button>
+        </Button>
       )}
 
-      <dl className="data-detail-meta">
-        <dt>Name</dt>
-        <dd>{row.name}</dd>
-        <dt>Venue</dt>
-        <dd>{row.venueText}</dd>
-        <dt>Created</dt>
-        <dd>{row.createdText}</dd>
-        <dt>Updated</dt>
-        <dd>{row.updatedText}</dd>
-        <dt>Lap timing</dt>
-        <dd>{formatLapTiming(detail.lap_timing)}</dd>
-        <dt>Sector gates</dt>
-        <dd>{formatSectorGates(detail.sector_gates)}</dd>
-        <dt>Neutral zones</dt>
-        <dd>{formatNeutralZones(detail.neutral_zones)}</dd>
-        <dt>Reference polyline</dt>
-        <dd>{formatReferencePolylineSummary(detail.reference_polyline)}</dd>
-      </dl>
+      <div className="flex flex-col gap-1.5">
+        <SpecRow label="Name" value={row.name} />
+        <SpecRow label="Venue" value={row.venueText} />
+        <SpecRow label="Created" value={row.createdText} />
+        <SpecRow label="Updated" value={row.updatedText} />
+        <SpecRow label="Lap timing" value={formatLapTiming(detail.lap_timing)} />
+        <SpecRow label="Sector gates" value={formatSectorGates(detail.sector_gates)} />
+        <SpecRow label="Neutral zones" value={formatNeutralZones(detail.neutral_zones)} />
+        <SpecRow label="Reference polyline" value={formatReferencePolylineSummary(detail.reference_polyline)} />
+      </div>
     </div>
   );
 }

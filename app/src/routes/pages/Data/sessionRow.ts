@@ -73,3 +73,13 @@ export function toSessionRow(s: SessionSummary): SessionRow {
 export function groupKeyOf(row: SessionRow): string {
   return row.groupKey;
 }
+
+/** Decides the next `AppState.selection` session id when a row is clicked:
+ *  clicking the already-selected row clears the selection (idl0's
+ *  `SelectionNotifier.toggleSession`, `idl0-app/app/lib/providers/
+ *  selection_provider.dart:92`), clicking any other row selects it (R96 —
+ *  kept as a deliberate idl0-parity fix; a user needs a way to clear the
+ *  selection so the Notebook can read "no session" again, R53 Data Q3). */
+export function nextSelectedSession(currentId: string | null, clickedId: string): string | null {
+  return clickedId === currentId ? null : clickedId;
+}

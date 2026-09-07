@@ -1,6 +1,9 @@
 import { useMemo, useState } from "react";
 
+import { Button } from "../../../components/ui/button";
+import { Input } from "../../../components/ui/input";
 import { saveSessionMetadata, type SessionDetail, type TrackSummary } from "../../../ipc/catalog";
+import { SectionHead } from "../../../components/brand/SectionHead";
 import { describeIpcError } from "./errors";
 import { initialDraft, isDirty, normalizeDraft, toSavePayload, venueOptions, type MetadataDraft } from "./metadataDraft";
 
@@ -94,7 +97,7 @@ export function MetadataForm({ detail, tracks, onSaved }: MetadataFormProps) {
 
   return (
     <form
-      className="data-metadata-form"
+      className="flex flex-col gap-3"
       aria-label="Session metadata"
       onSubmit={(e) => {
         e.preventDefault();
@@ -107,71 +110,69 @@ export function MetadataForm({ detail, tracks, onSaved }: MetadataFormProps) {
         ))}
       </datalist>
 
-      <label>
-        Rider
-        <input type="text" value={draft.rider} onChange={(e) => setField("rider", e.target.value)} />
-      </label>
-      <label>
-        Bike
-        <input type="text" value={draft.bike} onChange={(e) => setField("bike", e.target.value)} />
-      </label>
-      <label>
-        Bike comment
-        <input
-          type="text"
-          value={draft.bike_comment}
-          onChange={(e) => setField("bike_comment", e.target.value)}
-        />
-      </label>
-      <label>
-        Venue
-        <input
-          type="text"
-          list="data-metadata-venue-options"
-          value={draft.venue_name}
-          onChange={(e) => setField("venue_name", e.target.value)}
-        />
-      </label>
-      <label>
-        Event
-        <input type="text" value={draft.event_name} onChange={(e) => setField("event_name", e.target.value)} />
-      </label>
-      <label>
-        Event session
-        <input
-          type="text"
-          value={draft.event_session}
-          onChange={(e) => setField("event_session", e.target.value)}
-        />
-      </label>
-      <label>
-        Tag
-        <input type="text" value={draft.tag} onChange={(e) => setField("tag", e.target.value)} />
-      </label>
-      <label>
-        Comment
-        <input
-          type="text"
-          value={draft.short_comment}
-          onChange={(e) => setField("short_comment", e.target.value)}
-        />
-      </label>
-      <label>
-        Notes
-        <textarea value={draft.long_comment} onChange={(e) => setField("long_comment", e.target.value)} />
-      </label>
+      <div className="grid grid-cols-2 gap-3">
+        <label className="flex flex-col gap-1 font-mono text-xs text-fg-dim">
+          Rider
+          <Input type="text" value={draft.rider} onChange={(e) => setField("rider", e.target.value)} />
+        </label>
+        <label className="flex flex-col gap-1 font-mono text-xs text-fg-dim">
+          Bike
+          <Input type="text" value={draft.bike} onChange={(e) => setField("bike", e.target.value)} />
+        </label>
+        <label className="col-span-2 flex flex-col gap-1 font-mono text-xs text-fg-dim">
+          Bike comment
+          <Input type="text" value={draft.bike_comment} onChange={(e) => setField("bike_comment", e.target.value)} />
+        </label>
+        <label className="flex flex-col gap-1 font-mono text-xs text-fg-dim">
+          Venue
+          <Input
+            type="text"
+            list="data-metadata-venue-options"
+            value={draft.venue_name}
+            onChange={(e) => setField("venue_name", e.target.value)}
+          />
+        </label>
+        <label className="flex flex-col gap-1 font-mono text-xs text-fg-dim">
+          Event
+          <Input type="text" value={draft.event_name} onChange={(e) => setField("event_name", e.target.value)} />
+        </label>
+        <label className="flex flex-col gap-1 font-mono text-xs text-fg-dim">
+          Event session
+          <Input type="text" value={draft.event_session} onChange={(e) => setField("event_session", e.target.value)} />
+        </label>
+        <label className="flex flex-col gap-1 font-mono text-xs text-fg-dim">
+          Tag
+          <Input type="text" value={draft.tag} onChange={(e) => setField("tag", e.target.value)} />
+        </label>
+        <label className="col-span-2 flex flex-col gap-1 font-mono text-xs text-fg-dim">
+          Comment
+          <Input type="text" value={draft.short_comment} onChange={(e) => setField("short_comment", e.target.value)} />
+        </label>
+        <label className="col-span-2 flex flex-col gap-1 font-mono text-xs text-fg-dim">
+          Notes
+          <textarea
+            className="min-h-16 w-full rounded-[var(--radius)] border border-rule bg-control px-3 py-1.5 font-mono text-sm text-fg outline-none focus-visible:outline focus-visible:outline-1 focus-visible:outline-offset-2 focus-visible:outline-focus"
+            value={draft.long_comment}
+            onChange={(e) => setField("long_comment", e.target.value)}
+          />
+        </label>
+      </div>
 
-      <button type="submit" disabled={!dirty || saveState.status === "saving"}>
+      <Button type="submit" emphasis="good" filled size="sm" className="self-start" disabled={!dirty || saveState.status === "saving"}>
         Save
-      </button>
+      </Button>
 
-      {saveState.status === "error" && <p role="alert">Couldn't save: {saveState.text}</p>}
+      {saveState.status === "error" && (
+        <p role="alert" className="font-mono text-sm text-brand-accent">
+          Couldn't save: {saveState.text}
+        </p>
+      )}
 
-      <h3>Tracks visited</h3>
+      <SectionHead>Tracks visited</SectionHead>
       {visited.length === 0 ? (
-        <p>No track visits recorded for this session.</p>
+        <p className="font-mono text-sm text-fg-dim">No track visits recorded for this session.</p>
       ) : (
-        <ul>
+        <ul className="flex flex-col gap-1 font-mono text-sm text-fg">
           {visited.map((v) => (
             <li key={v.trackId}>
               {v.label} ({v.visitCount}×)

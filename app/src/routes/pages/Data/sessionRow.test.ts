@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { SessionSummary } from "../../../ipc/catalog";
-import { groupKeyOf, toSessionRow } from "./sessionRow";
+import { groupKeyOf, nextSelectedSession, toSessionRow } from "./sessionRow";
 
 /** A minimal, otherwise-valid `SessionSummary` — tests override only the
  *  fields they care about. */
@@ -86,5 +86,19 @@ describe("groupKeyOf", () => {
     const b = toSessionRow(baseSummary({ session_id: "b", timestamp_utc_ms: 1_725_000_000_000, venue_name: "Laguna Seca" }));
 
     expect(groupKeyOf(a)).not.toBe(groupKeyOf(b));
+  });
+});
+
+describe("nextSelectedSession", () => {
+  it("nextSelectedSession — clicked row already selected — clears the selection", () => {
+    expect(nextSelectedSession("s1", "s1")).toBeNull();
+  });
+
+  it("nextSelectedSession — clicked row is a different session — selects it", () => {
+    expect(nextSelectedSession("s1", "s2")).toBe("s2");
+  });
+
+  it("nextSelectedSession — no session currently selected — selects the clicked row", () => {
+    expect(nextSelectedSession(null, "s2")).toBe("s2");
   });
 });

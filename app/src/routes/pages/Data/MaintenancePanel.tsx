@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useReducer, useState } from "react";
 
+import { SectionHead } from "../../../components/brand/SectionHead";
+import { Button } from "../../../components/ui/button";
 import { listQuarantine, resolveQuarantine, verifyDataDir, type QuarantineEntry, type VerifyReport } from "../../../ipc/maintenance";
 import { describeIpcError } from "./errors";
 import { formatQuarantineEntry, summarizeVerifyReport } from "./quarantinePanel";
@@ -93,44 +95,64 @@ export function MaintenancePanel() {
   };
 
   return (
-    <div className="data-maintenance-panel" role="region" aria-label="Maintenance panel">
-      <h3>Quarantine</h3>
-      {quarantineState.status === "loading" && <p>Loading quarantine…</p>}
-      {quarantineState.status === "error" && <p role="alert">{quarantineState.text}</p>}
+    <div className="flex flex-col gap-3 border-t border-rule p-3" role="region" aria-label="Maintenance panel">
+      <SectionHead>Quarantine</SectionHead>
+      {quarantineState.status === "loading" && <p className="font-mono text-sm text-fg-dim">Loading quarantine…</p>}
+      {quarantineState.status === "error" && (
+        <p role="alert" className="font-mono text-sm text-brand-accent">
+          {quarantineState.text}
+        </p>
+      )}
       {quarantineState.status === "ready" &&
         (quarantineState.entries.length === 0 ? (
-          <p>No quarantined files.</p>
+          <p className="font-mono text-sm text-fg-dim">No quarantined files.</p>
         ) : (
-          <ul>
+          <ul className="flex flex-col gap-2">
             {quarantineState.entries.map((entry) => (
-              <li key={entry.entry_id}>
-                {formatQuarantineEntry(entry)}{" "}
-                <button type="button" onClick={() => handleResolve(entry.entry_id, "restore")} disabled={resolvingId !== null}>
+              <li key={entry.entry_id} className="flex flex-wrap items-center gap-2 font-mono text-sm text-fg">
+                <span className="flex-1">{formatQuarantineEntry(entry)}</span>
+                <Button type="button" size="xs" onClick={() => handleResolve(entry.entry_id, "restore")} disabled={resolvingId !== null}>
                   Restore
-                </button>{" "}
-                <button type="button" onClick={() => handleResolve(entry.entry_id, "discard")} disabled={resolvingId !== null}>
+                </Button>
+                <Button
+                  type="button"
+                  size="xs"
+                  emphasis="accent"
+                  onClick={() => handleResolve(entry.entry_id, "discard")}
+                  disabled={resolvingId !== null}
+                >
                   Discard
-                </button>
+                </Button>
               </li>
             ))}
           </ul>
         ))}
-      {resolveErrorText !== null && <p role="alert">{resolveErrorText}</p>}
+      {resolveErrorText !== null && (
+        <p role="alert" className="font-mono text-sm text-brand-accent">
+          {resolveErrorText}
+        </p>
+      )}
 
-      <h3>Verify data directory</h3>
-      <div role="toolbar" aria-label="Verify">
-        <button type="button" onClick={() => handleVerify(false)} disabled={verifyState.status === "running"}>
+      <SectionHead>Verify data directory</SectionHead>
+      <div role="toolbar" aria-label="Verify" className="flex gap-2">
+        <Button type="button" size="sm" onClick={() => handleVerify(false)} disabled={verifyState.status === "running"}>
           Verify
-        </button>
+        </Button>
         {verifyState.status === "done" && !verifyState.repaired && (
-          <button type="button" onClick={() => handleVerify(true)}>
+          <Button type="button" size="sm" onClick={() => handleVerify(true)}>
             Repair
-          </button>
+          </Button>
         )}
       </div>
-      {verifyState.status === "running" && <p>Running…</p>}
-      {verifyState.status === "done" && <p>{summarizeVerifyReport(verifyState.report, verifyState.repaired)}</p>}
-      {verifyState.status === "error" && <p role="alert">{verifyState.text}</p>}
+      {verifyState.status === "running" && <p className="font-mono text-sm text-fg-dim">Running…</p>}
+      {verifyState.status === "done" && (
+        <p className="font-mono text-sm text-fg-dim">{summarizeVerifyReport(verifyState.report, verifyState.repaired)}</p>
+      )}
+      {verifyState.status === "error" && (
+        <p role="alert" className="font-mono text-sm text-brand-accent">
+          {verifyState.text}
+        </p>
+      )}
     </div>
   );
 }

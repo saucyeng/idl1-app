@@ -1,3 +1,4 @@
+import { Table, TableBody, TableCell, TableHead, TableHeader as BrandTableHeader, TableRow } from "../../../components/ui/table";
 import { formatLapTimeMs } from "./format";
 import { formatNeutralZoneVisits, formatSectors } from "./lapDetailFormat";
 import type { DetailView } from "./sessionDetail";
@@ -25,22 +26,22 @@ function presenceBadge(presence: DetailView["laps"][number]["presence"]): string
  *  absent, never as a placeholder for a lap that genuinely has none. */
 export function LapTable({ laps }: LapTableProps) {
   if (laps.length === 0) {
-    return <p>No laps recorded for this session.</p>;
+    return <p className="font-mono text-sm text-fg-dim">No laps recorded for this session.</p>;
   }
 
   return (
-    <table>
-      <thead>
-        <tr>
-          <th>Lap</th>
-          <th>Time</th>
-          <th>Sectors</th>
-          <th>Neutral zones</th>
-          <th>Track</th>
-          <th>Flags</th>
-        </tr>
-      </thead>
-      <tbody>
+    <Table>
+      <BrandTableHeader>
+        <TableRow>
+          <TableHead>Lap</TableHead>
+          <TableHead>Time</TableHead>
+          <TableHead>Sectors</TableHead>
+          <TableHead>Neutral zones</TableHead>
+          <TableHead>Track</TableHead>
+          <TableHead>Flags</TableHead>
+        </TableRow>
+      </BrandTableHeader>
+      <TableBody>
         {laps.map((lap) => {
           const badge = presenceBadge(lap.presence);
           const flags = [lap.isReference ? "reference" : null, lap.ignored ? "ignored" : null, badge]
@@ -48,17 +49,17 @@ export function LapTable({ laps }: LapTableProps) {
             .join(", ");
 
           return (
-            <tr key={lap.lapNumber}>
-              <td>{lap.lapNumber}</td>
-              <td>{lap.lapTimeMs === null ? "—" : formatLapTimeMs(lap.lapTimeMs)}</td>
-              <td>{formatSectors(lap.sectors)}</td>
-              <td>{formatNeutralZoneVisits(lap.neutralZoneVisits)}</td>
-              <td>{lap.trackId ?? "—"}</td>
-              <td>{flags === "" ? "—" : flags}</td>
-            </tr>
+            <TableRow key={lap.lapNumber}>
+              <TableCell>{lap.lapNumber}</TableCell>
+              <TableCell>{lap.lapTimeMs === null ? "—" : formatLapTimeMs(lap.lapTimeMs)}</TableCell>
+              <TableCell>{formatSectors(lap.sectors)}</TableCell>
+              <TableCell>{formatNeutralZoneVisits(lap.neutralZoneVisits)}</TableCell>
+              <TableCell>{lap.trackId ?? "—"}</TableCell>
+              <TableCell>{flags === "" ? "—" : flags}</TableCell>
+            </TableRow>
           );
         })}
-      </tbody>
-    </table>
+      </TableBody>
+    </Table>
   );
 }
