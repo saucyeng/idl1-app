@@ -4310,3 +4310,13 @@ sent; the lead sent the hold without re-checking the worktree HEAD. No conflict 
 the fix agent was told to rebase onto it. **Rule sharpened:** a hold
 message must state "commit nothing" explicitly, and the lead verifies the
 worktree HEAD before dispatching a fix into a shared worktree, not after.
+
+**R100 amendment (body caps):** the lead's "the largest legitimate body is
+a workbook document" was wrong — a blob is a device dump (SPEC's SD
+threshold alone is ~200 MB), so one document-sized cap would 413 real
+blob and `data.parquet` syncs. **Corrected:** `read_body(max_bytes)` with
+two named constants — a generous cap for blob/derived/`data.parquet`, a
+small one for workbook/`session.json`/track/profile — each documented with
+what its class holds and why that number, each answering 413, with a
+per-class over-cap test asserting nothing is written. Caught by the fix
+implementer reading the domain rather than the ruling.
