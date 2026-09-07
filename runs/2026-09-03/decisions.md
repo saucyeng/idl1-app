@@ -4701,3 +4701,28 @@ Persisted column widths must not break for someone who already has a
 stored `library` width (migrate or ignore the stale key, do not throw).
 
 **Cost if wrong:** one column re-added; the frame still supports it.
+
+## 2026-09-07 — R108: the properties column hosts the real editor panes, not a placeholder
+
+Isaac, seeing the studio live: "the cell properties column says reserved
+for a later lane, but the UI for properties and code already exists in
+the far right column if I click on a chart. So that UI can get shifted
+over to the actual target column and it's done."
+
+He is right — UI-10 built `EditorPanes` (Properties + Code tabs,
+D13/decision 29) and mounts it *inside* the Notebook page's own
+`ResizablePanelGroup` in the output column, while the studio's dedicated
+properties column shows `ColumnPlaceholder`. **Ruling:** move it. The
+studio's properties column renders the existing `EditorPanes` for the
+selected cell; the Notebook page's inner editor pane is not rendered in
+the wide/studio layout (it stays for medium — inline under the selected
+cell — and narrow — the Properties form in a sheet, decision 29, both
+unchanged). One editor component, three placements. Selection stays where
+it is (`selectedCellId` in the Notebook page); the studio column reads
+it, so this is a placement change, not a state move — if it turns out to
+need state lifted, STOP and ask rather than duplicating it.
+
+With R107 the wide studio is therefore: maths graph (still reserved) |
+**properties = the real editor** | output.
+
+**Cost if wrong:** a component rendered in a different parent.
