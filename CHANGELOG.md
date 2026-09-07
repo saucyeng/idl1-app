@@ -63,6 +63,62 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
   primitive, or deferred): `ColorGridPicker`, `StatusDropdownTrigger`,
   `GroupedChannelList`, `ModeAwareCheckbox`, `ChartContextMenu`/`ChartAction`
   (UI-11), `BrandSheet`/`CollapsibleSection` (UI-3 owns `sheet`).
+- **UI-3: overlay primitives and the core-workflow toast set (2026-09-06, no
+  spec change needed — UI-DIRECTION decisions 21/23).** Six components
+  generated with `npx shadcn@4.21.0 add dialog sheet dropdown-menu
+  context-menu popover sonner` under `app/src/components/ui/`, committed
+  unmodified, then restyled in the same pass onto `tokens.css`: `--surface-2`
+  fill + 1 px `--rule` border + `--radius-card` (0) on every floating
+  content (`dialog`, `sheet`, `dropdown-menu`, `context-menu`, `popover`),
+  no `box-shadow`, a flat `bg-black/50` scrim (no blur) behind dialog/sheet,
+  `--focus` outline on every trigger/close control, and every
+  `tw-animate-css`-only utility class (`animate-in`/`fade-in`/`zoom-in`/
+  `slide-in-from-*` and their `-out` pairs) stripped — same class-removal
+  method as UI-2, that package still isn't installed. Generic shadcn
+  semantic classes (`bg-popover`, `text-popover-foreground`, `bg-background`,
+  `text-muted-foreground`, `bg-accent`/`text-accent-foreground`,
+  `bg-border`) were swapped for the direct token classes UI-2 already
+  established (`bg-surface-2`, `text-fg`, `text-fg-dim`, `bg-control-active`,
+  `bg-rule`) rather than left to resolve through the shadcn bridge, so every
+  file greps the same way; `text-destructive`/`bg-destructive` were kept
+  as-is since `tokens.css` already aliases `--destructive` to the brand
+  `--accent` red (R94) — no bare `-accent` class outside `brand-accent`
+  anywhere in the diff. `dialog.tsx`'s `DialogFooter` close button dropped
+  the nonexistent `variant="outline"` prop (our restyled `Button` has no
+  `variant`, only `emphasis`/`filled`) for the equivalent default
+  (`filled={false}`). Same stray-`cn`-package pattern as UI-2: the generator
+  again emitted `import { cn } from "cn"`, rewired to `@/lib/utils`, the
+  package removed. `sonner` also pulled in `next-themes`; idl1 is dark-only
+  (`tokens.css`'s fixed `color-scheme: dark`, no light-mode block), so
+  `ui/sonner.tsx` hardcodes `theme="dark"` instead and the dependency was
+  dropped rather than tracking a theme that doesn't exist. `sonner` needs
+  its CSS imported explicitly (`sonner/dist/styles.css`, in `ui/sonner.tsx`)
+  and its vendored stylesheet hardcodes a box-shadow and a sans-serif font
+  stack no prop reaches; both are overridden in `index.css` against the
+  `[data-sonner-toast]`/`[data-sonner-toaster]` selectors (mono, tabular,
+  no shadow, a `--focus` outline on keyboard focus) rather than editing the
+  vendored file. `sonner` pinned exact (`2.0.8`, matching `radix-ui`'s
+  no-caret convention).
+  Pure modules with tests: `overlays/sheetSide.ts` (`sheetSideFor`, the
+  bottom-under-600px/right-at-and-above breakpoint BrandSheet and the
+  toaster both read) and `toasts/events.ts` (`toastFor`, the closed
+  four-event `CoreToastEvent` union — transfer complete, config pushed,
+  sync finished, import failed — with an exhaustive switch and a `never`
+  check so a fifth event is a compile error, not a silent `default`).
+  `brand/BrandSheet.tsx`: a thin wrapper over `ui/sheet.tsx` (title row +
+  built-in `×` + a rule under the header + a scrollable body + an optional
+  ruled-off pinned footer), docking bottom/right via `sheetSideFor` behind
+  its own resize listener — the primitive itself is untouched.
+  `components/Toaster.tsx` renders `ui/sonner.tsx`'s `Toaster`, positioned
+  bottom-centre on narrow / bottom-right on wide (same breakpoint, its own
+  resize listener) — **not mounted anywhere in this task**; UI-4 mounts it
+  in the shell, and the four `toastFor` call sites land in UI-5 (config
+  pushed, transfer complete), UI-6 (import failed) and UI-7 (sync finished).
+  Parity gaps deferred on purpose (brief Open questions): `ColorGridPicker`
+  and cascading (`Sub*`) menus stay with UI-11's chart action set, which
+  builds on the `context-menu` primitive generated here; Radix tooltips
+  need hover, so touch-first surfaces (Device, notebook output) get a
+  visible label instead of relying on a tooltip (UI-5), no JS touch shim.
 - **L8x lane complete: Data-tab write commands (2026-09-06, idl-rs core +
   idl-rs-tauri, ruling R86).** Five new commands close the last C3 §6
   deferrals the Data tab still stubbed: `save_track`, `delete_track`,
