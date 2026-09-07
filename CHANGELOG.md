@@ -224,6 +224,25 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
   gains the `"v4"` feature (`Uuid::new_v4()` needs it; not a new crate).
   Filter: `cargo test -p idl-transport sync::pairing` (11 passed).
   `cargo check -p idl-rs-tauri` clean.
+- **L11 Task 9: mDNS peer discovery (2026-09-07, idl-transport,
+  `sync::discovery`, ruling R88).** New `sync/discovery.rs`: `SERVICE_TYPE`
+  (`_idl1._tcp.local.`), `DiscoveredPeer`, and the pure TXT-record pair
+  `build_txt(peer_id, name)`/`parse_txt(txt, addr)` — the only decidable
+  logic (a missing `pid`/`v` or an unparseable `v` is `None`, never a hard
+  failure; a `v` differing from `PROTOCOL_VERSION` still parses, carrying
+  the peer's real version, per PLAN §3). `advertise(peer_id, name, port)`
+  starts an `mdns-sd::ServiceDaemon`, registers a `_idl1._tcp` service
+  from `build_txt`, and returns an `Advertisement` that unregisters on
+  drop. `browse()` starts its own daemon and feeds a `tokio::mpsc::Receiver
+  <DiscoveredPeer>` from a task spawned on the caller's own runtime — this
+  crate still never creates one, matching `ble_transport::scan`'s pattern.
+  `transport/Cargo.toml` gains `mdns-sd = "0.21.1"` (PLAN §8 Q2's pin;
+  resolved to 0.21.2, a patch release, under the same caret-pin style as
+  `axum`/`tokio` elsewhere in this file). Filter: `cargo test -p
+  idl-transport sync::discovery` (6 passed, 1 ignored). The `#[ignore]`d
+  loopback round-trip (`advertise` then `browse` on the real network) was
+  also run manually (`-- --ignored`) and passed. `cargo check -p
+  idl-rs-tauri` clean.
 - **L8x lane complete: Data-tab write commands (2026-09-06, idl-rs core +
   idl-rs-tauri, ruling R86).** Five new commands close the last C3 §6
   deferrals the Data tab still stubbed: `save_track`, `delete_track`,
