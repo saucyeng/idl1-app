@@ -32,6 +32,16 @@
   editor's function reference to verify itself against at startup. No
   `unit_rule` field: R64.2 drops it (no source defines its vocabulary);
   `status` is `"implemented" | "not_implemented"` instead.
+- 2026-09-06: L11 Task 1 (spec-first, lead ruling R88) — §3.9 gains
+  `start_pairing()` and `unpair_peer(peer_id)`; `PeerStatus` gains
+  `protocol_version`/`paired_at_ms`; a `peer_appeared` event is added;
+  `sync_now`'s `phase` union is stated explicitly. New §2 rows: `sync`
+  gains `start_pairing`/`unpair_peer`, `not_found` gains `unpair_peer`.
+- 2026-09-07: L11 Task 10 review (lead ruling R102) — §3.9's `SyncResult`
+  gains `sessions_updated`, `tracks_updated`, `profiles_updated`, matching
+  the transport-internal `SyncRunResult` shape the client already returned;
+  a sync run that only moved a session or a track was reporting "0 blobs,
+  0 workbooks" under the old three-field shape. Task 12 applies this.
 
 Consumes: design doc §4 (IPC, data path for a chart, the reactive DAG), §6
 (interaction rules), §9 row C3, §10 (lanes); Task 5's M0 smoke commands
@@ -185,7 +195,7 @@ is applied uniformly, not case-by-case:
 | `ble` | `TransportErrorKind::Ble` | Device: `ble_scan`, `ble_connect`, `list_device_files`, `download_file`, `push_config` |
 | `wifi` | `TransportErrorKind::Wifi` | Device: `list_device_files`, `download_file`, `push_config` |
 | `config` | `TransportErrorKind::Config` | Device: `push_config` (device rejected or malformed the pushed config over the wire) |
-| `sync` | `TransportErrorKind::Sync` | Sync: `sync_status`, `sync_now`, `pair_peer` |
+| `sync` | `TransportErrorKind::Sync` | Sync: `sync_status`, `sync_now`, `pair_peer`, `start_pairing`, `unpair_peer` |
 | `parse_invalid_magic_bytes` | `ParseError::InvalidMagicBytes` | Import: `import_file` (`.idl0` source) |
 | `parse_unsupported_schema_version` | `ParseError::UnsupportedSchemaVersion` | Import: `import_file` (`.idl0` source) |
 | `parse_truncated_record` | `ParseError::TruncatedRecord` | Import: `import_file` (`.idl0` source, corrupt/incomplete file — recover what's readable per CLAUDE.md §5, surface as a warning in the returned `SessionSummary` rather than always rejecting; see open question 6.2) |
@@ -216,7 +226,7 @@ is applied uniformly, not case-by-case:
 | `config_unsupported_version` | `ConfigErrorKind::UnsupportedVersion` | Device: `push_config` |
 | `export_unknown_channel` | `ExportError::UnknownChannel` | none in C3 v1 — see open question 6.1 |
 | `export_no_gps_data` | `FitExportError::NoGpsData` | none in C3 v1 — see open question 6.1 |
-| `not_found` | cross-cutting | Catalog: `get_session`, `list_laps`, `rescan_tracks`, `save_track` (a string `track_id` naming no existing track), `delete_track`, `resolve_quarantine` (unknown `entry_id`); Workbook: `open_workbook`, `eval_workbook`, `save_workbook`, `watch_workbook`; Tiles: `fetch_tile`; Rasters: `fetch_raster`; Cursor: `cursor_readout`; Device: `download_file`; Sync: `sync_now`, `pair_peer`; Import: `import_file` (source path missing) |
+| `not_found` | cross-cutting | Catalog: `get_session`, `list_laps`, `rescan_tracks`, `save_track` (a string `track_id` naming no existing track), `delete_track`, `resolve_quarantine` (unknown `entry_id`); Workbook: `open_workbook`, `eval_workbook`, `save_workbook`, `watch_workbook`; Tiles: `fetch_tile`; Rasters: `fetch_raster`; Cursor: `cursor_readout`; Device: `download_file`; Sync: `sync_now`, `pair_peer`, `unpair_peer` (unknown `peer_id`); Import: `import_file` (source path missing) |
 | `invalid_argument` | cross-cutting | Import: `import_file` (unknown `importer_id`); Workbook: `save_workbook` (malformed markdown/front matter); Tiles: `fetch_tile` (`tier` outside the engine's configured tier set); Rasters: `fetch_raster` (bad `width`/`height`/`kind`); Cursor: `cursor_readout` (unknown channel in the list); Sync: `pair_peer` (malformed code); Catalog: `save_track` (failed draft validation — empty name, non-finite/out-of-range gate coordinate, empty sector/neutral-zone name, or a zero-length gate), `resolve_quarantine` (`"restore"` whose `original_path` is occupied, or an `action` that is neither `"restore"` nor `"discard"`) |
 | `io` | cross-cutting (also folds `ParseError::Io`, `ConfigErrorKind::Io`, `ExportError::Io`, `FitExportError::Io`, `LapIndexErrorKind::Io`) | any command that touches the filesystem: Catalog (`list_sessions`, `get_session`, `list_laps`, `rebuild_catalog`, `list_workbooks`, `list_tracks`, `get_track`, `rescan_tracks`, `save_track`, `delete_track`, `list_quarantine`, `resolve_quarantine`), Import: `import_file`, Workbook (`open_workbook`, `save_workbook`, `watch_workbook`), Tiles: `fetch_tile`, Rasters: `fetch_raster`, Device: `download_file`, Sync: `sync_status`, App: `verify_data_dir` |
 | `internal` | cross-cutting (also folds `ExportError::Json`, `LapIndexErrorKind::Track` — currently unreached, see the variant's own doc comment) | any command — unexpected/programmer-error conditions that are not the caller's fault |
@@ -1507,29 +1517,128 @@ interface SyncStatus {
 interface PeerStatus {
   peer_id: string;
   name: string;
-  online: boolean;   // currently visible on the LAN via mDNS
+  online: boolean;          // currently visible on the LAN via mDNS
+  protocol_version: number; // u32, the peer's `/idl1/v1`-style mDNS `v=` value
+                             // (added post-sign 2026-09-06, lead ruling R88,
+                             // L11 Task 1) — a peer advertising a `v` this
+                             // build does not speak is listed incompatible
+                             // (PLAN §3) rather than omitted
+  paired_at_ms: number;     // i64, ms since epoch when pairing completed
+                             // (added post-sign 2026-09-06, lead ruling R88)
 }
 ```
 Errors: `io`, `internal`, `sync` (a sync-layer failure while reading peer/pairing state — added post-sign 2026-09-05, lead ruling R57, to match the §2 kind table's row for `sync`).
 
 **`sync_now(peer_id: string, progress: Channel<Progress>)`**
 `Progress.done`/`.total` are blobs+cells transferred/expected (a mixed unit;
-`phase` disambiguates: `"manifest"`, `"blobs"`, `"workbooks"`).
+`phase` disambiguates — stated explicitly, added post-sign 2026-09-06, lead
+ruling R88, L11 Task 1, widened from the three named above; `app/src/ipc/sync.ts`
+already documents `phase` as free-form, so this widening breaks no caller):
+`"manifest" | "blobs" | "sessions" | "workbooks" | "tracks" | "profiles"`.
 Return:
 ```ts
 interface SyncResult {
-  blobs_transferred: number;    // u32
-  workbooks_merged: number;     // u32
-  conflicts: number;            // u32, conflict cells created (design §7 per-cell merge)
+  blobs_transferred: number;    // u32, successful `Blob` transfers this run,
+                                 // pull and push combined. Content-addressed
+                                 // session channels (`Derived`) and
+                                 // `data.parquet` are counted under
+                                 // `sessions_updated` instead — they are
+                                 // always session-scoped, unlike a raw blob
+                                 // (added post-sign 2026-09-07, lead ruling
+                                 // R102, L11 Task 10 review)
+  workbooks_merged: number;     // u32, workbooks installed locally by a
+                                 // pull this run. A push of a workbook is
+                                 // not counted: the merge it may cause
+                                 // happens on the peer, whose outcome this
+                                 // run never observes (the peer answers a
+                                 // bare 200) (added post-sign 2026-09-07,
+                                 // lead ruling R102, L11 Task 10 review)
+  conflicts: number;            // u32, conflict cells created across every
+                                 // workbook merge this run (design §7
+                                 // per-cell merge)
+  sessions_updated: number;     // u32, distinct session ids that had at
+                                 // least one successful `data.parquet`,
+                                 // derived-channel, or `session.json`
+                                 // transfer this run (pull or push) (added
+                                 // post-sign 2026-09-07, lead ruling R102,
+                                 // L11 Task 10 review)
+  tracks_updated: number;       // u32, successful `Track` transfers this
+                                 // run, pull and push combined (added
+                                 // post-sign 2026-09-07, lead ruling R102,
+                                 // L11 Task 10 review)
+  profiles_updated: number;     // u32, successful `Profile` transfers this
+                                 // run, pull and push combined (added
+                                 // post-sign 2026-09-07, lead ruling R102,
+                                 // L11 Task 10 review)
 }
 ```
 Errors: `sync`, `not_found` (unknown/unpaired `peer_id`).
 
-**`pair_peer(code: string)`**
+**Added post-sign (2026-09-07, lead ruling R102, L11 Task 10 review).**
+review-task10 found `SyncRunResult` (the transport-internal type
+`sync_with_peer` returns) had grown three fields
+(`sessions_updated`/`tracks_updated`/`profiles_updated`) past this
+contract's `SyncResult`: a sync run whose only effect was a
+`session.json` merge, or a track/profile last-write-wins transfer, showed
+zero change under every field of the old three-field shape — a count the
+UI needs and `SyncResult` lacked, which CLAUDE.md §1 pre-declares a STOP.
+Ruled: the fields are right (a run that moved a session or a track and
+reported "0 blobs, 0 workbooks" would be a lie to the user), so
+`SyncResult` is amended to carry all six, each field's attribution
+documented above exactly as `SyncRunResult`'s own doc comments define it.
+Task 12 applies this amendment and the UI reads six numbers, not three.
+
+**`pair_peer(peer_id: string, code: string)`** *Signature amended post-sign
+(2026-09-07, lead ruling R104, L11 Task 12) — was `pair_peer(code: string)`
+alone.* `peer_id`: the specific discovered peer (`sync_status`/
+`peer_appeared`'s `PeerStatus.peer_id`) the user chose as the one currently
+showing `code` on its own screen. This command never guesses which online
+peer offered a code and never fans a pairing secret out to every unpaired
+peer visible on the LAN — the caller names one. The UI may prefill
+`peer_id` when exactly one unpaired peer is online, but always sends it
+explicitly.
 `code`: the 6-digit pairing code (design §7).
 Return: `PeerStatus` (§3.9 above).
-Errors: `sync`, `invalid_argument` (malformed code — wrong length/non-digit),
-`not_found` (code not recognised or expired).
+Errors: `sync`, `invalid_argument` (malformed code — wrong length/non-digit,
+checked before `peer_id` is even resolved, so a malformed code never sends
+a request), `not_found` (`peer_id` not currently visible on the LAN, or the
+code that peer is offering does not recognise/has expired).
+
+**`start_pairing()`** *Added post-sign (2026-09-06, lead ruling R88, L11
+Task 1).* Mints a single-use, short-lived pairing code on this side so the
+other side can call `pair_peer(peer_id, code)` against it — pairing is
+symmetric (PLAN §8 Q4): either side presses "Show code", the other types
+it.
+Args: none.
+Return:
+```ts
+interface PairingCode {
+  code: string;          // the 6-digit code to display, digits only
+  expires_at_ms: number; // i64, ms since epoch (PLAN §8 Q3: 120 s lifetime,
+                          // burnt after 5 failed `pair_peer` attempts)
+}
+```
+Errors: `sync`, `internal`.
+
+**`unpair_peer(peer_id: string)`** *Added post-sign (2026-09-06, lead ruling
+R88, L11 Task 1).* Forgets a paired peer: discards its stored token and
+drops it from `sync_status`'s `paired_peers` list.
+Return: `void`.
+Errors: `sync`, `not_found` (unknown `peer_id`).
+
+**`peer_appeared` event.** *Added post-sign (2026-09-06, lead ruling R88,
+L11 Task 1).* Not attached to any single command's `Channel` argument
+(§1) — mDNS discovery runs continuously in background state (PLAN §2's
+"discovery lifecycle in state"), independent of any one call's lifetime.
+Emitted as a Tauri app event (`app.emit("peer_appeared", payload)`,
+frontend `listen<PeerStatus>("peer_appeared", ...)`) whenever a
+`PeerStatus`-bearing peer newly becomes visible on the LAN, listed here the
+way §3.4 lists `WorkbookEvent`'s payload shape:
+```ts
+// payload: PeerStatus (§3.9 above)
+```
+No error channel — a discovery-layer failure is not user-actionable per
+event; it surfaces the next time `sync_status()` is polled.
 
 ### 3.10 App
 

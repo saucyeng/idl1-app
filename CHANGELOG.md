@@ -422,6 +422,488 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
   `actionLabel` (the same landed bindings `interaction/keymap.ts` implements),
   so it cannot silently re-diverge; `ControlsSection.tsx`'s banner now scopes
   "provisional" to the still-idl0 "mouse wheel"/"mouse" groups only.
+- **L11 Task 1: sync contract amendments (2026-09-06, docs only, spec-first,
+  ruling R88).** C3 §3.9 gains `start_pairing()`, `unpair_peer(peer_id)`, a
+  `peer_appeared` event, `PeerStatus.protocol_version`/`.paired_at_ms`, and
+  an explicit `sync_now` `phase` union; §2's `sync`/`not_found` kind rows
+  updated to match. C4 §6 gains `profiles` in the manifest document and
+  entry table, the versioned `/idl1/v1/...` endpoint set (closing §8 item
+  4), `workbooks/.sync-base/` as a named never-synced/never-flagged
+  exception, and `session.json`'s per-field merge rule (closing §8 item 3).
+  New `docs/IDL0_SPEC.md` §28a carries the full sync model (moves/never-
+  moves, the conflict table, the plain-HTTP-no-TLS LAN-only posture,
+  resumability); §17a.4 now points at it instead of "contract to follow."
+  No Rust yet — this is the contract the lane's remaining eleven tasks are
+  held to.
+- **L11 Task 2: sync manifest core (2026-09-06, idl-rs core,
+  `store::sync::manifest`; fixed 2026-09-06 per review ruling R90).** The
+  typed C4 §6 manifest (`Manifest`, `BlobEntry`, `DataParquetEntry`,
+  `DerivedEntry`, `SessionJsonEntry`, `SessionEntry`, `WorkbookEntry`,
+  `TrackEntry`, `ProfileEntry`, `SkippedEntry`) and
+  `build_manifest(data_root, now_ms) -> (Manifest, Vec<SkippedEntry>)`, a
+  pure `std::fs` walk of `<data>` that fills it, sorted by identity key for
+  byte-identical repeat runs. Excludes `catalog.sqlite`/`-wal`/`-shm`,
+  `tmp/`, and any dotfile or dot-directory under `workbooks/` (`.sync-base/`
+  included). Blobs and derived-channel files are named by the hash their
+  CAS path already carries, never re-hashed from bytes (ruling R90); a
+  corrupted blob is `verify_data_dir`'s finding, not this walk's. A
+  malformed individual file (unparseable `data.parquet` metadata, a
+  `session.json` that doesn't parse, a front-matter parse failure, a
+  filename/content-id mismatch) is omitted from the manifest and named,
+  path and reason, in the returned `SkippedEntry` list — never silently
+  dropped (ruling R90). No network, no async, no clock of its own.
+- **L11 Task 3: sync diff (2026-09-06, idl-rs core, `store::sync::diff`,
+  ruling R89; extended 2026-09-06 per ruling R90).**
+  `plan_sync(local, remote, local_skipped) -> SyncPlan` over two
+  `Manifest`s and Task 2's local `SkippedEntry` list: a locally skipped
+  path gets no pull/merge/push item and instead a
+  `SyncNoteReason::LocalFileSkipped { path, reason }` note, so a malformed
+  local `session.json` or workbook is never overwritten by a peer's pull
+  nor offered as if it were a good copy. `SyncAction` (`Pull`/`Push`/
+  `PullForMerge`), `SyncItem`,
+  `SyncClass`, `SyncNote`/`SyncNoteReason`. Every conflict rule is C4 §6's:
+  blob/derived set difference by hash; `data.parquet` compares the
+  `(importer_version, seam_correction_version)` pair — equal pair, differing
+  hash keeps local with an `EquivalentDataParquet` note, a differing pair
+  transfers the newer side's bytes; `session.json` and workbook differ ⇒
+  `PullForMerge`, a workbook rename (same id, same hash) is naturally a
+  no-op since `file_name` is outside the hashed bytes; track/profile are
+  LWW by `updated_at_ms`. Absence on one side is never a deletion — it is
+  always a transfer, for every class. Ruling R89 (this task) closes the
+  `data.parquet` "newer" ordering C4 §6 left open: the pair orders
+  lexicographically, `importer_version` first as SemVer 2.0.0, then
+  `seam_correction_version` as the integer after its leading `v`; either
+  value failing to parse under its own rule makes the pair incomparable —
+  no transfer, a new `IncomparableDataParquetVersion` note naming both
+  sides' pairs. `actions` sort by `(class, key, session_id)` for
+  determinism; `plan_sync(a, b)`/`plan_sync(b, a)` are proven to mirror
+  `Pull`/`Push`.
+- **L11 Task 4: workbook merge — front matter and cell states (2026-09-06,
+  idl-rs core, `workbook::merge`).** Pure functions over three parsed
+  `.idl1wb` documents, deciding *content* only (ordering, conflict-cell id
+  minting and marker-text rendering are Task 5's job). `merge_front_matter`
+  implements C2 §7.1's per-key three-way rule for `name`/`units`/each
+  `constants` entry (unchanged-on-one-side takes the other, changed-on-both
+  keeps local's and warns with the peer's discarded value, same-value-on-
+  both is never a conflict); a mismatched `id` is `MergeError`, refusing to
+  merge rather than overwriting. `decide_cells` implements C2 §7.2's
+  sixteen-cell table: byte-identical content on both sides is never a
+  conflict even when both sides are independently `Changed`; a prose-only
+  edit still makes its cell `Changed` (prose travels with the cell); the six
+  `Added`-crossed grid cells are structurally impossible from a single
+  shared `base` document (proven, not just asserted — this module's own
+  derivation can never produce them) and are implemented only as C2 §7.2's
+  documented defensive fallback; one of the six (`Unchanged`×`Added`) is
+  unit-tested directly against the internal decision function, since
+  `decide_cells` itself can never reach any of them — the other five are
+  implemented-but-untested defensive fallback. Fixed 2026-09-06 per
+  `review-task4.md`: four of the nine reachable real (base-has-id) rows
+  gained named `decide_cells` tests, `merge_front_matter` now errors on a
+  `version` mismatch as well as an `id` mismatch (`MergeError` split into
+  `IdMismatch`/`VersionMismatch`), and `CellState`'s variants gained
+  per-variant doc comments.
+- **L11 Task 5: workbook merge — ordering, conflict cells, base cache
+  (2026-09-06, idl-rs core, `workbook::merge::{merge, order}`,
+  `store::sync::base_cache`).** `merge(local, peer, base, peer_name)` folds
+  Task 4's decisions into an actual `WorkbookDoc`: C2 §7.3's four ordering
+  rules (base order kept; a one-side addition anchored immediately after
+  its nearest preceding *surviving* base neighbour in that side's own
+  order, or at the document start; same-anchor ties put local's insertions
+  first); a `Conflict` outcome appends the peer's cell immediately below
+  local's under a fresh id minted on C2 §2.2's collision-avoidance path
+  (never local's or peer's, never colliding with another conflict copy
+  minted in the same merge), with `<!-- conflict from <peer> -->` as
+  `prose_before`'s first line; `MarkedDeletion` inserts a `deleted
+  upstream`/`deleted locally` marker into the surviving cell's own
+  `prose_before` instead of inventing a second cell; a front-matter
+  scalar/constant conflict's marker is prepended as the first line of the
+  document's leading prose. A document with zero fenced cells on all three
+  sides takes §7.3's plain three-way text path instead of the cell table.
+  `MergedDoc.doc`'s `const_lines`/`defs`/`constants` are recomputed from the
+  merged cell set (mirrors `parse_workbook`'s own per-cell pass) so the
+  in-memory result is consistent with what a save-then-reparse round trip
+  would produce, even though this module never renders to text or touches
+  a file — Task 6 still owns installing the merged document to
+  `workbooks/`. `store::sync::base_cache` adds `base_cache_path`/
+  `read_base`/`write_base` for `<data>/workbooks/.sync-base/<id>.idl1wb`:
+  bytes in, `WorkbookDoc` out, through the same atomic-write primitive and
+  the same path-separator/`..` guard `write_track` uses for its id; a cache
+  file that won't parse is treated as absent (`Ok(None)`), never a hard
+  failure — a corrupt cache must not block a sync. Note for the lane: C4
+  §6's amendment text already documents `.sync-base/` as exempt from
+  `verify`'s unmatched-path finding (#10), but `store::verify::matches_layout`
+  itself has no `.sync-base` arm yet — writing a base-cache file today will
+  surface a spurious Info finding until that's patched; flagged for the
+  lead, not fixed here (`store/verify.rs` is outside this task's files).
+- **L11 review fix (Task 5): `workbook::merge` — test `recompute_derived_fields`
+  against a merged conflict's const line.** Closes the review's one Important
+  finding: a new test merges two docs whose `const k` line changed via a
+  `Conflict` outcome (not just `TakePeer`/`KeepLocal`) and asserts
+  `merged.doc.constants`/`const_lines` reflect the *merged* cell set, not
+  either side's stale pre-merge value.
+- **L11 Task 6: `store::sync::apply` — verified install per class,
+  `session.json` per-field merge (2026-09-06, idl-rs core,
+  `store::sync::{apply, session_merge}`, `workbook::v3::render_workbook`).**
+  `install(data_root, item, bytes, peer_name, now_ms, ctx)` installs one
+  received sync item per C4 §6's per-class rule, trusting nothing about
+  `bytes` until it verifies: a blob/derived-channel is refused unless its
+  own sha256 equals the requested hash; `data.parquet` is refused unless its
+  own embedded `(importer_version, seam_correction_version)` matches what
+  the manifest claimed, otherwise written through the atomic primitive as
+  bytes, never regenerated; `session.json` runs a fresh
+  `session_merge::merge_session_json` per-field merge and writes the result;
+  a workbook with no local copy yet installs the peer's bytes verbatim
+  (nothing to merge against); one with a local copy merges against it and
+  the `.sync-base` cache (`workbook::merge::merge`, L11 Task 4/5), renders
+  the result via the new `workbook::v3::render_workbook` (the first writer
+  `WorkbookDoc` → `.idl1wb` text in this codebase — every prior consumer
+  round-trips the author's own markdown unchanged), renames the local file
+  when the peer's `file_name` differs (id wins, C4 §6), and overwrites the
+  base cache with the merged bytes; Track/Profile re-check LWW by
+  `updated_at_ms` at install time rather than trusting the sync plan (a
+  strictly-older peer copy is `KeptLocal`), defending against a race between
+  the manifest fetch and this file's fetch. `session_merge::merge_session_json`
+  (pure, C4 §6/C1 §6): a user-owned field "changed" means "not equal to this
+  type's zero value" (C1 §6's own `""`/`None`/`[]` "not set" convention,
+  read literally against the brief's "equal to neither side's default"
+  wording — resolves every field without needing the brief's no-base
+  "differs from the receiver's current value" fallback); a field changed on
+  one side only takes that side; changed on both to different values takes
+  the side whose file is newer by `updated_at_ms` (a tie keeps local); the
+  L2b lap cache (`laps`/`track_visits`/`track_visits_library_hash`/
+  `lap_detector_version`, ruling R83) is never merged, always the
+  receiver's own copy. **Two deviations from this task's interface sketch,
+  flagged for review:** (1) `install` gains a sixth parameter,
+  `ctx: &InstallContext`, carrying the peer manifest detail `SyncItem`
+  (landed by Task 3) does not itself carry — `data.parquet`'s claimed
+  version pair, `session.json`'s peer file mtime, a workbook's peer
+  `file_name` — populated by a future caller (Task 10/12) from the same
+  manifest it already fetched; extending `SyncItem`/`diff.rs` was judged
+  out of this task's file list. (2) `workbook::v3::render_workbook` is a new
+  function outside this task's declared files (`apply.rs`/
+  `session_merge.rs`/`sync/mod.rs`/`CHANGELOG.md`) — no prior task built the
+  `WorkbookDoc` → text direction (ordinary editing never needed it), and
+  Task 6 cannot install a merged workbook without it; built as pure
+  reassembly of C2 §1/§2.2–§2.4's already-signed grammar from fields
+  `parse_workbook` already captures verbatim (`raw_fence_body`,
+  `prose_before`/`prose_after`, `trailing_prose`), verified by round-tripping
+  the C2 §2.5 worked example back through `parse_workbook`. Filters:
+  `cargo test -p idl-rs store::sync::apply` (10 passed, since raised to 16
+  by the review fix below), `cargo test -p idl-rs store::sync::session_merge`
+  (5 passed), `cargo test -p idl-rs render_workbook` (3 passed, ad hoc —
+  outside the brief's named filters, run because `render_workbook` is this
+  task's own scope deviation). `cargo check -p idl-rs-cli --tests` clean.
+- **L11 review fix (Task 6): `store::sync::apply` — route the workbook and
+  `session.json` writes through `write_atomic_with_retry`.** Closes the
+  review's one Important finding: `install_workbook`'s two write sites and
+  `install_session_json`'s write used a single-attempt `write_atomic`, not
+  C4 §4 step 4's mandated retry-with-rederive for exactly this class ("a
+  local self-write race and a sync conflict are the same code path"). Both
+  now go through `write_atomic_with_retry`; on a conflict, `rederive_
+  workbook_write`/`rederive_session_json_write` re-read the current on-disk
+  bytes and re-run the same per-cell merge / per-field merge against them as
+  the new local side, retrying up to the primitive's bound of 3 attempts
+  before a typed `SyncError` surfaces. Also closes both Minors: a failed
+  `remove_file` after a workbook rename now surfaces as a typed `SyncError`
+  instead of being swallowed, and one malformed-bytes test each was added
+  for track and profile install. Filters: `cargo test -p idl-rs
+  store::sync::apply` (16 passed, up from 10 — 4 new race/exhaustion tests
+  covering both write sites, plus one malformed-bytes test each for track
+  and profile install), `cargo check -p idl-rs-cli --tests` clean.
+- **L11 Task 7: sync wire DTOs and pairing (2026-09-06, idl-transport,
+  `sync::{wire, pairing}`, ruling R88).** New `idl-transport::sync` module:
+  `wire.rs` carries `PROTOCOL_VERSION`, `Peer` (the paired-peer record
+  serialised to the peer file), `PairingOffer`, and `PairRequest`/
+  `PairResponse` (`POST /idl1/v1/pair`'s body/response, C3 §3.9 field
+  names). `pairing.rs`'s `PairingState` mints an offer (`offer(now_ms)`)
+  and redeems a presented code (`redeem(code, now_ms)`): the code is six
+  decimal digits derived from `uuid::Uuid::new_v4()`'s first four bytes
+  modulo 1,000,000, zero-padded so a leading zero survives (never an
+  integer round-trip); a `120_000` ms TTL (`PAIRING_TTL_MS`); five wrong
+  attempts (`MAX_ATTEMPTS`) burns the offer; the code comparison is
+  constant-time over the fixed six bytes. `check_protocol_version` refuses
+  a `PairRequest` speaking a version this build does not, naming both.
+  `load_peers`/`save_peers` read/write the peer file (outside `<data>`,
+  PLAN §8 Q7, path passed in by the caller): an absent file loads as `[]`;
+  a malformed one is a `Sync` error naming the path; the write is atomic
+  (tmp sibling in the same directory -> fsync -> rename -> fsync parent on
+  Unix). **Deviation flagged for review:** `save_peers` does not call
+  `idl-rs`'s `store::atomic::write_atomic` despite that file being listed
+  as this task's reference — that primitive's optimistic-concurrency check
+  requires the caller to track the target's last-read content hash across
+  calls and treats "file exists, no `based_on_hash` supplied" as a
+  conflict, which does not fit a small local last-write-wins peer list
+  with no such caller-tracked state; `pairing.rs` implements the same
+  tmp-fsync-rename recipe directly instead, keeping `idl-transport` free of
+  an `idl-rs` dependency for this task (none of the task's other types need
+  one either). `transport/Cargo.toml`'s existing pinned `uuid = "1"` line
+  gains the `"v4"` feature (`Uuid::new_v4()` needs it; not a new crate).
+  Filter: `cargo test -p idl-transport sync::pairing` (11 passed).
+  `cargo check -p idl-rs-tauri` clean.
+- **L11 Task 8: `axum` sync server (2026-09-07, idl-transport, `sync::{server, range}`,
+  ruling R88) plus its review-task8/R100 path-safety fix.** New
+  `sync/server.rs`: an `axum` 0.8.9-pinned HTTP server under `/idl1/v1`
+  (`pair`, `manifest`, and the id/hash-addressed `blob`/`derived`/session
+  `data.parquet`/`session.json`/`workbook`/`track`/`profile` GET+PUT
+  routes), bearer auth via `route_layer` (an unknown path answers `404`,
+  a known one with no/wrong token `401` — both intentional, not `layer`'s
+  behaviour), and a hand-parsed `Range` header (`sync/range.rs`, no
+  `tower-http`, PLAN §8 Q2) giving `206`/`416` byte-range support on every
+  GET route. `install`/`InstallContext` (`idl-rs::store::sync::apply`)
+  does the actual verified write; this server only routes and reads/writes
+  bytes. Landed by the lead after the task agent lost ~14h to a
+  `run_in_background` cargo notification that never arrived (see the
+  process-rule addendum below) — code unchanged from the agent's own.
+  Filters at landing: `sync::server` (14 passed), `sync::` (33 passed),
+  `cargo check -p idl-rs-tauri` clean.
+
+  **review-task8 found a Critical** (R100): the server's `is_valid_id`
+  rejected `/`, `\`, and `..` but not a Windows drive-relative segment
+  (`C:evil`) — a legal, unencoded URL path segment — and `PathBuf::join`
+  on a component with a prefix but no root silently discards the entire
+  base path, so a paired peer could read (every GET route) or, for a
+  brand-new workbook, write (`PUT /workbook/<id>`) outside `data_root`
+  entirely. Fixed with one shared validator, `idl-rs::store::sync::ids`
+  (new module): `IdClass::Uuid` (workbook/track/profile ids — canonical
+  36-character lowercase-hex-and-dashes form) and `IdClass::Session`
+  (session ids — lowercase hex, even length, 16-64 characters, covering
+  both a device-sourced 32-hex-char id and a non-device blob-hash-prefix
+  id per IDL0_SPEC), both allow-list shape checks with no escapable
+  character by construction; plus `safe_join`, a second, independent
+  layer that lexically normalises `.`/`..` and re-checks the joined
+  result is still inside `data_root`, closing the same class of bug even
+  for a call site that skipped (or has a bug in) the shape check —
+  `data_root.join(...)` call sites are now `safe_join(...)` everywhere an
+  id reaches a path, in both `idl-transport::sync::server` and
+  `idl-rs::store::sync::apply`'s five id-addressed install functions.
+  Escapes answer `404`, never `403` (nothing about what exists outside
+  `data_root` leaks). Also folded into this fix: `read_body`'s
+  `to_bytes(body, usize::MAX)` (an explicit *unlimited* cap, contradicting
+  its own doc comment) is now a real cap answering `413` above it —
+  `MAX_DOCUMENT_BODY_BYTES` (16 MiB) for the small JSON/markdown-ish
+  classes (`session.json`/workbook/track/profile), `MAX_RAW_FILE_BODY_BYTES`
+  (512 MiB) for the raw/large classes (`blob`/`derived`/`data.parquet`,
+  sized against IDL0_SPEC's ~200 MB device SD free-space threshold); and
+  `range.rs`'s `Range` numeric overflow (e.g. `bytes=0-99999999999999999999`)
+  now classifies `Unsatisfiable` (`416`) rather than `Malformed` (`400`),
+  matching every other "past the resource's real length" case.
+  Filters: `cargo test -p idl-transport sync::` and `cargo test -p idl-rs
+  store::sync::` (see this task's own commit for exact counts),
+  `cargo check -p idl-rs-tauri` clean.
+- **L11 Task 9: mDNS peer discovery (2026-09-07, idl-transport,
+  `sync::discovery`, ruling R88).** New `sync/discovery.rs`: `SERVICE_TYPE`
+  (`_idl1._tcp.local.`), `DiscoveredPeer`, and the pure TXT-record pair
+  `build_txt(peer_id, name)`/`parse_txt(txt, addr)` — the only decidable
+  logic (a missing `pid`/`v` or an unparseable `v` is `None`, never a hard
+  failure; a `v` differing from `PROTOCOL_VERSION` still parses, carrying
+  the peer's real version, per PLAN §3). `advertise(peer_id, name, port)`
+  starts an `mdns-sd::ServiceDaemon`, registers a `_idl1._tcp` service
+  from `build_txt`, and returns an `Advertisement` that unregisters on
+  drop. `browse()` starts its own daemon and feeds a `tokio::mpsc::Receiver
+  <DiscoveredPeer>` from a task spawned on the caller's own runtime — this
+  crate still never creates one, matching `ble_transport::scan`'s pattern.
+  `transport/Cargo.toml` gains `mdns-sd = "0.21.1"` (PLAN §8 Q2's pin;
+  resolved to 0.21.2, a patch release, under the same caret-pin style as
+  `axum`/`tokio` elsewhere in this file). Filter: `cargo test -p
+  idl-transport sync::discovery` (6 passed, 1 ignored). The `#[ignore]`d
+  loopback round-trip (`advertise` then `browse` on the real network) was
+  also run manually (`-- --ignored`) and passed. `cargo check -p
+  idl-rs-tauri` clean.
+- **L11 Task 9 review fix: prompt browse teardown + IPv6 scope id
+  (2026-09-07, idl-transport, `sync::discovery`, review-task9).** `browse`'s
+  spawned task raced `events.recv_async()` against `tx.closed()` in a
+  `tokio::select!` (new internal `drain_events`), so dropping the
+  `DiscoveredPeer` receiver on a quiet LAN ends the task and drops its
+  `ServiceDaemon` immediately, not only on the next mDNS event (Important).
+  `scoped_addr_to_socket_addr` builds the resolved peer's `SocketAddr` from
+  `mdns_sd::ScopedIp` directly instead of via `to_ip_addr()`, preserving an
+  IPv6 link-local address's zone/scope id so a multi-interface host does
+  not connect on the wrong NIC (Minor). New dev-only `flume = "0.12.0"`
+  (already resolved transitively via `mdns-sd`; `mdns_sd::Receiver<T>` is
+  `flume::Receiver<T>` with no public constructor) lets
+  `drain_events_receiver_dropped_no_event_arrives_task_ends` prove the
+  teardown without a real `ServiceDaemon`, matching PLAN §7's "no test
+  needs multicast." Filter: `cargo test -p idl-transport sync::discovery`
+  (7 passed, 1 ignored).
+- **L11 Task 10: the LAN sync client (2026-09-07, idl-transport,
+  `sync::client`, ruling R88).** New `sync/client.rs`:
+  `sync_with_peer(data_root, peer, addr, now_ms, on_progress)` — the
+  pull/push driver. Refuses before any request if `peer.protocol_version`
+  differs from `PROTOCOL_VERSION`; otherwise fetches the peer's manifest,
+  builds the local one via core's `build_manifest`, and runs core's
+  `plan_sync`'s actions phase by phase (`"manifest"`, `"blobs"`,
+  `"sessions"`, `"workbooks"`, `"tracks"`, `"profiles"`, Task 1's widened
+  `phase` union), reporting `SyncProgress { done, total, phase }` after
+  each item. Every `Pull`/`PullForMerge` streams into a deterministic
+  `tmp/<sha256 of the item's own identity>.part` file — the same logical
+  item always names the same partial, so an interrupted pull's leftover
+  `.part` is found and resumed (`Range: bytes=<len>-`, checked against the
+  peer's own `Content-Range` start) rather than restarted; the assembled
+  bytes are handed to core's `install` (which verifies and merges — this
+  file never parses a workbook or `session.json` itself, and never
+  duplicates `install`'s own hash check) and the `.part` is removed only
+  after `install` succeeds. `Push` is a bare `PUT` of the local bytes,
+  read through `safe_join`/`blob_path`, the same path-safety layer
+  `server.rs` uses. A single item's failure (a stale 404, a wrong token
+  reaching only that request, a network blip) is logged and counted, never
+  aborting the run — `SyncRunResult { blobs_transferred, workbooks_merged,
+  conflicts, sessions_updated, tracks_updated, profiles_updated }` (C3
+  §3.9's `SyncResult` plus the counts the command layer needs) simply comes
+  up short. `mod.rs` re-exports `sync_with_peer`/`SyncProgress`/
+  `SyncRunResult`. Filter: `cargo test -p idl-transport sync::client` (10
+  passed). `cargo check -p idl-rs-tauri` clean.
+- **L11 Task 11: the loopback two-peer proof (2026-09-07, idl-transport,
+  `sync::loopback_tests`, ruling R88).** New `sync/loopback_tests.rs`: two
+  full `<data>` roots, two real `SyncServer`s, paired over a genuine
+  `POST /pair` handshake (no mDNS — addresses come from `local_addr()`) and
+  driven through `sync_with_peer` both ways. Ten scenarios, each seeded
+  through core's own writers (`write_blob`/`write_session_parquet`/
+  `write_session_json`/`write_track`, and `write_atomic`/
+  `base_cache::write_base` for a workbook and its merge base — there is no
+  single dedicated workbook writer), asserting on the resulting files, not
+  just the run's counts: a session imported on A only lands on B with its
+  blob verified; a workbook created on A only lands on B (at
+  `<workbook_id>.idl1wb` — a brand-new peer has no file name to source, per
+  `handle_workbook_put`'s own documented fallback); the design doc's own
+  acceptance sentence — two-sided edits to *different* cells merge with
+  zero conflicts — and its flip side, the same cell edited on both sides
+  yielding exactly one conflict cell per side with the C2 §7 marker, both
+  files still parsing; a second sync run moves nothing; a track's
+  last-write-wins in one direction and leaves the other untouched;
+  `session.json` fields edited on each side both survive a two-way sync; a
+  server killed mid-transfer (a genuine partial ranged `GET` against the
+  live server, written into the client's own deterministic `.part` path)
+  resumes cleanly against a restarted server on the same port; every route
+  401s an unpaired caller and nothing on disk changes; and a mixed first
+  sync leaves neither root's `tmp/` nor `catalog.sqlite` touched. Two real
+  findings surfaced and were designed around rather than papered over:
+  `handle_workbook_put`'s documented file-name fallback (not a bug, just a
+  test-fixture correction), and `parse_workbook`/`render_workbook` are not
+  a fixed point of each other — re-parsing already-rendered markdown and
+  rendering it again shifts an *untouched* cell's surrounding blank-line
+  spacing, which C2 §7.3's "prose travels with its cell" rule then
+  correctly, but spuriously, reports as a second `Changed` cell; the
+  affected fixtures build sibling edits by cloning the parsed
+  `WorkbookDoc` and rendering once (matching how a real UI holds a
+  workbook open rather than re-parsing its own rendered output),
+  sidestepping the drift rather than hiding it — worth a look as a
+  possible `workbook::v3` rendering non-idempotence if a real device pair
+  ever hits it after several edit/save cycles. Filter: `cargo test -p
+  idl-transport sync::loopback` (10 passed, ~0.2s wall clock). `cargo
+  check -p idl-rs-tauri` clean.
+- **L11 Task 10 review fix (2026-09-07, idl-transport, `sync::client`,
+  lead ruling R102).** Three Importants: (1) client-side per-class body
+  caps mirroring `server.rs`'s `MAX_DOCUMENT_BODY_BYTES`/
+  `MAX_RAW_FILE_BODY_BYTES` in reverse — `fetch_manifest` and
+  `download_item` both refuse a `Content-Length` over the class's cap
+  before writing anything, and re-check the running total every chunk in
+  case the peer omits or lies about `Content-Length`; an over-cap transfer
+  is a typed error and the `.part` it was writing to is deleted. (2)
+  `pull_and_install` now discards the `.part` on any failure once
+  `download_item` has returned complete bytes — a manifest missing the
+  expected entry or `install`'s own hash/parse/version rejection — not
+  only on success; `download_item` itself now also discards a `.part` it
+  already knows is unrecoverable: a `416` (the peer's content no longer
+  covers the resumed range) or a `206` whose `Content-Range` start doesn't
+  match what was asked. Two new tests cover the adversarial cases the
+  review named: a resumed `.part` whose existing prefix turns out wrong
+  (hash-mismatches at `install`) and a `.part` longer than the peer's
+  now-shorter content (`416`) — both assert the `.part` is gone and a
+  second run recovers cleanly. (3) C3 §3.9's `SyncResult` amended to carry
+  all six fields `SyncRunResult` already returns (see the spec's own
+  revision note, same date/ruling). Minor: `tmp_part_path`'s peer-sourced
+  `session_id`/`key` are now shape-validated (`item_shape_is_valid`, via
+  `core::store::sync::ids::is_valid_id`) before ever being hashed into the
+  `.part` name, closing the colon-join collision the review flagged.
+  Filters: `cargo test -p idl-transport sync::client` (17 passed),
+  `cargo test -p idl-transport sync::` (73 passed, 1 ignored). `cargo
+  check -p idl-rs-tauri` clean.
+- **L11 Task 11b: `render_workbook`/`parse_workbook` fixed-point fix
+  (2026-09-07, idl-rs core, `workbook::v3`, ruling R103).** Task 11's
+  loopback proof found `render_workbook(parse_workbook(s)) != s`: re-
+  parsing and re-rendering an untouched cell shifted its surrounding
+  blank-line spacing, which C2 §7.3's byte-identical `Unchanged`/`Changed`
+  cell classification then misread as a spurious edit. Root cause:
+  `scan_cells`'s pulldown-cmark code-block byte range ends right at a
+  fence's closing `` ``` ``, *before* that line's own line-ending newline
+  — that newline is already the first byte of the following
+  `prose_before`/`prose_after`/`trailing_prose` span — but
+  `render_workbook` also hard-coded a `"\n"` after the closing marker,
+  doubling that byte into a spurious blank line around every fence, every
+  render. Fix: `render_workbook` no longer appends that newline; the
+  captured prose span supplies it (or supplies nothing, for a document
+  with no trailing newline at all). Front matter is excluded from the
+  strict invariant, on purpose: `render_front_matter`'s existing contract
+  is "round-trips through `parse_front_matter`, not exact bytes" (its own
+  doc comment), which is safe here because C2 §7.1 merges front matter
+  per structured top-level key, never as raw YAML text, so a reformatted-
+  but-equivalent front-matter block cannot manufacture R103's bug. New
+  `render_workbook_is_a_fixed_point_*` suite in `workbook::v3::mod::tests`
+  pins the body-exact invariant unconditionally and the whole-document
+  invariant when front matter is already canonical, over: the C2 §2.5
+  worked example, a prose-only document, adjacent fences with no blank
+  line between, a fence followed by prose with two blank lines, trailing
+  whitespace, a document with no trailing newline, and front matter with
+  every optional field populated. `sync::loopback_tests`'s `edit_cell`
+  helper (Task 11's clone-and-render-once workaround) is now provably
+  unnecessary but was left as-is per this task's scope — a follow-up can
+  simplify it to a plain re-parse-and-edit. Filters: `cargo test -p idl-rs
+  workbook::v3` (114 passed), `cargo check -p idl-rs-cli --tests` (clean).
+- **L11 lane complete — Task 12: the five sync commands, lifecycle state,
+  and the auto-trigger (idl-rs-tauri `commands::sync`; idl-transport
+  `sync::client`; two idl-rs core fixes; rulings R104 and its addendum).**
+  `sync_status`, `sync_now`, `pair_peer`, `start_pairing`, `unpair_peer`,
+  plus the `peer_appeared` event, thin over `idl-transport`'s `sync`
+  module — no HTTP client, no merge/diff logic in `idl-rs-tauri`.
+  `SyncState` (managed, held for the app's lifetime) owns the running
+  server, the loaded peer list, the pairing state, and the background
+  mDNS-browse task; `SyncState::start` is the constructor `app/src-tauri`'s
+  `.setup()` hook calls (one line, mirroring `paths::resolve_data_dir`) —
+  wiring that call and its `app.manage(...)` is that crate's job, not this
+  one's (out of this task's file list). `pair_peer` takes `(peer_id, code)`
+  (ruling R104, amending C3 §3.9's earlier `code`-alone signature): the
+  caller names the specific discovered peer showing the code, never a
+  guess or a fan-out to every unpaired peer on the LAN. `sync_now` re-
+  indexes exactly the sessions a run touched
+  (`idl_rs::store::catalog::index_session` per id, mirroring
+  `rescan_tracks_via` — never a whole `rebuild_catalog`) via
+  `idl_transport::sync::client::SyncRunResult`'s new `sessions_touched:
+  Vec<String>` field (R104 addendum; `sessions_updated`'s count is derived
+  from its length so the two can never disagree; the id list is a
+  Rust-side detail, never forwarded to the UI — C3 §3.9's wire shape is
+  unchanged). `idl_transport::sync::client::pair_with_peer(addr,
+  &PairRequest) -> Result<PairResponse, TransportError>` is the new
+  client-side `POST /pair` call (mirrors `fetch_manifest`'s shape, builds
+  its own short-lived `reqwest::Client` like `sync_with_peer` does, so no
+  crate outside `idl-transport` needs a `reqwest` dependency of its own).
+  `should_auto_sync` (peer, last-sync time, now, the running set) is the
+  pure decision PLAN §8 Q9/ruling R88 describes: never for an unpaired or
+  protocol-incompatible peer, never while that peer already has a sync
+  running, at most once per 60 s; the background browse task is its only
+  caller, never a command handler. DTOs
+  (`SyncStatusDto`/`SyncResultDto`/`PairingOfferDto`/`PeerStatusDto`)
+  field-for-field against C3 §3.9 as Task 1/R104 amended it —
+  `app/src/ipc/sync.ts` is stale against that amendment (missing
+  `protocol_version`/`paired_at_ms` on `PeerStatus`, three fields short on
+  `SyncResult`, and `startPairing`/`unpairPeer`(peer_id, code)/
+  `peer_appeared` entirely absent), a TS shell task, not this one.
+  Folded into the same commit: `install_session_json`'s race-retry
+  fallback now reports `KeptLocal` (not the previous hardcoded
+  `Installed`) when a concurrent write leaves `session.json` unparseable
+  mid-retry, matching `install_workbook`'s existing `Cell`-based pattern
+  (L11 Task 6 fix re-review Minor); `safe_join`'s doc comment states its
+  lexical-not-canonicalised boundary and the in-`data_root`-symlink case
+  it does not defend against, filing that case to `verify_data_dir` as an
+  L8-class follow-on (ruling R101, amending R100's "canonicalised"
+  wording). C4 §6 gains R89's `data.parquet` version-pair ordering
+  paragraph and R91's `session.json` per-field tie rule; C3 §3.9 gains
+  `pair_peer`'s amended signature (R104). `unwatch_workbook` (R98) is
+  **not** this lane's gap — UI-10/Notebook's, tracked there. Filters:
+  `cargo test -p idl-rs-tauri commands::sync` (15 passed), `cargo test -p
+  idl-transport sync::client` (20 passed), `cargo check -p idl-rs-tauri`
+  clean. Lane gate: `cargo test -p idl-rs -p idl-rs-cli --
+  test-threads=4` — idl-rs 1139 passed / 1 ignored, idl-rs-cli 53 passed,
+  0 failed.
 - **L8x lane complete: Data-tab write commands (2026-09-06, idl-rs core +
   idl-rs-tauri, ruling R86).** Five new commands close the last C3 §6
   deferrals the Data tab still stubbed: `save_track`, `delete_track`,

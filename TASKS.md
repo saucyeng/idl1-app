@@ -220,7 +220,15 @@ are defined in `docs/superpowers/specs/2026-09-02-idl1-rewrite-design.md` §10.
       3 per ruling R54; this task's Name/Venue edit is the only write path
       into an existing track's non-geometry fields.
 - [ ] L9 mobile scaffold
-- [ ] L11 LAN sync
+- [ ] L11 LAN sync — Tasks 1-12 landed on `l11-sync` (idl-rs) /
+      `l11-sync` (idl1-app); pairing, discovery, the axum server/client,
+      the C2 §7 workbook merge, and the five `commands::sync` Tauri
+      commands are all in. Unblocks the Settings tab's sync section over
+      the five commands (R53 Settings Q3). Not yet wired: `app/src-tauri`'s
+      `.setup()` hook does not yet call `SyncState::start`/`app.manage`
+      (one line each, this lane's Task 12 left as the next crate's job);
+      `app/src/ipc/sync.ts` is stale against C3 §3.9 (a TS shell task).
+      Lane merge gate still to run (lead).
 
 ## Wave 3
 
