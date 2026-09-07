@@ -54,6 +54,25 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
   touch) — flagged as fixed-on-sight because it is real and matches the
   reported symptom class, not claimed as the confirmed sole cause.
 
+- **Dev-only `#root` blackout tripwire (2026-09-07, root-observer task, no
+  spec change needed).** Two static readings and a headless-Chrome repro
+  attempt (`runs/2026-09-03/decisions.md`, "Shell hardening LANDED" entry)
+  failed to find what empties the shell, so `main.tsx` now arms three
+  listeners behind `import.meta.env.DEV` (stripped from `dist/` by Vite's
+  dead-code elimination — confirmed by grepping the built bundle for the
+  tripwire's tag string, no match): a `MutationObserver` on `#root` and
+  `document.body` that fires when the watched element's children drop to
+  zero and logs `new Error("root emptied").stack`, the removed nodes'
+  `nodeName`s, `#root`'s child count, `document.body.className`,
+  `location.href` and elapsed time since load; a `beforeunload`/`pagehide`
+  listener logging the same shape so a silent navigation is distinguishable
+  from a DOM wipe; and a 2 s interval (dev-only, cleared on
+  `beforeunload`) that logs once if `#root` collapses to zero height while
+  `document.visibilityState === "visible"`. A startup line confirms the
+  tripwire is armed. Decision logic (what counts as "emptied"/"collapsed",
+  what a report contains) lives in the pure, unit-tested
+  `shell/rootObserverTripwire.ts`; `main.tsx` only wires the listeners.
+
 - **Sync UI shell task: `app/src/ipc/sync.ts` and Settings' `SyncSection.tsx`
   brought up to C3 §3.9 as L11 landed it (2026-09-07, no spec change
   needed).** `sync.ts` gains `startPairing`, `pairPeer(peerId, code)`
