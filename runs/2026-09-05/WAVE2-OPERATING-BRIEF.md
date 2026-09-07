@@ -196,3 +196,12 @@ Compute is no longer the binding constraint; tokens are. Rules:
    defects in wave 2).
 5. **Briefs point, they do not restate.** A brief names files and sections
    to read; it does not copy contract text or code into itself.
+
+## 8. Filesystem search (added 2026-09-07 after two runaway processes)
+
+Never run a filesystem-wide `find` (`find / …`, `find C:/ …`) or an
+unbounded recursive scan. Two such commands from finished subagents ran
+for hours (8.5 and 6.5 CPU hours) walking every mount, and could not be
+killed from the lead's session. Use the repo's own tools: Glob for paths,
+Grep for content, both scoped to a directory. If a shell search is truly
+needed, bound it: a concrete root, `-maxdepth`, and a timeout.
