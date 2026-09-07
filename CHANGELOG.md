@@ -40,6 +40,23 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
   come from a new `identity.json` in `app_config_dir()` (uuid v4 minted
   once, name defaulting to the OS hostname), landing separately as
   **L11 Task 13**.
+- **L11 Task 13: this device's sync identity, and `SyncState::start` wired
+  into `app/src-tauri`'s `.setup()` (2026-09-07, spec-during — C3 §3.9
+  amended, lead ruling R105 item 1).** `identity.json` (`app_config_dir()`,
+  beside `peers.json`, outside `<data>` per R88 so it never syncs) holds
+  `{ peer_id, name }`: `peer_id` is a `uuid` v4 minted once on first read
+  and never regenerated (a corrupt or unreadable file is a typed `sync`
+  error, never a silently minted replacement, which would orphan every
+  existing pairing); `name` defaults to the OS hostname when readable, else
+  `"idl1"`. New command `set_sync_device_name(name)` (C3 §3.9) lets the
+  Settings sync section rename this device, rejecting a blank/whitespace-
+  only name before anything is written. `app/src-tauri/src/lib.rs`'s
+  `.setup()` now calls `SyncState::start(app.handle().clone(), data_dir,
+  peers_path, identity_path)` beside its other `app.manage(...)` calls —
+  the open item the sync UI shell task left (previous bullet) is closed.
+  idl-rs `rust/transport/src/sync/identity.rs`; `rust/tauri/src/state.rs`'s
+  `SyncState::name` is now a `Mutex<String>` (was a plain `String`) so a
+  rename takes effect on the live state without a restart.
 - **UI-1: design tokens, bundled Plex fonts, Tailwind v4 + shadcn wiring
   (2026-09-06, no spec change needed — R92/R93 adopt the direction file).**
   `app/src/styles/tokens.css` carries the 13 idl0 palette tokens, the 8-hue
