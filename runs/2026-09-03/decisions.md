@@ -4268,3 +4268,37 @@ unknown path answers 401 instead of 404 — both pinned by tests).
 notification" twice is stopped and its work finished by the lead. Cargo is
 foreground, always — the brief said so and this is the second lane where
 backgrounding it cost hours.
+
+## 2026-09-07 — R100: one shared id validator in core; ids are UUID-shaped, checked everywhere
+
+review-task8 found a **Critical**: `is_valid_id` rejects `/`, `\` and
+`..` but not a Windows drive-relative prefix (`C:foo`), and
+`PathBuf::join` treats that as drive-relative — so a paired peer could
+read or write outside `data_root` on every id-addressed route
+(workbooks, sessions, tracks, profiles). The hash routes are safe (64-hex
+check). The same weak validation exists at `core/src/store/sync/apply.rs`
+call sites.
+
+**Ruling:** one validator, in **core** (`store::sync::ids`), used by both
+crates and by every id-addressed path construction:
+- an id must match the shape its class actually uses — UUID for workbook/
+  track/profile ids, the session-id shape for sessions (state the regex in
+  the doc comment); anything else is rejected. Allow-list, not deny-list.
+- reject empty, any `/` or `\`, any `..`, any `:`, any control byte, any
+  non-ASCII, and anything not matching the class shape.
+- after joining, assert the canonicalised result is still inside
+  `data_root` (belt and braces — `path.starts_with(root)` on the
+  normalised path) and return 404, never 403, so nothing leaks.
+Tests: the review's `C:foo` case, `\?\C:\…`, `..\..`, a bare `.`, an
+over-long id, a valid UUID, plus one asserting the normalised-path guard
+catches anything the shape check misses.
+
+Also from that review, folded into the same fix: `read_body` must use a
+real cap (not `usize::MAX`) — the largest legitimate body is a workbook
+document, so bound it generously and return 413 above it; the range
+overflow case is `Unsatisfiable`, not `Malformed`; and the CHANGELOG
+entry plus the lane's full-suite run that the brief required.
+
+**Cost if wrong:** the Critical is a remote read/write outside the data
+directory from a paired peer on the same LAN — the highest-severity
+finding of the run so far, and it is why the review exists.
