@@ -4055,3 +4055,11 @@ brief deferred it. R93 approved the icon set; UI-2 is its first consumer
 and the dependency is pinned and unused, not wrong. **Accepted in place**
 (no revert-and-re-add churn); UI-2's brief now owns it. The Minor goes to
 UI-2 as well. UI-1 is CLEAN as landed.
+
+## 2026-09-07 — UI-1 LANDED (tokens, fonts, Tailwind v4 + shadcn; main suite 99 / 953)
+
+`6ce9427`, review one Important (ruled: `lucide-react` accepted in place,
+UI-2 owns it). Tokens in `app/src/styles/tokens.css` are the only place a
+colour literal may appear, enforced by `tokenSheet.test.ts`. Plex woff2
+committed (latin + latin-ext subsets); `vite build` output carries no
+external font/style URL. Worktree retired.
