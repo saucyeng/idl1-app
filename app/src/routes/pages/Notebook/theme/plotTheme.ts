@@ -25,6 +25,28 @@
  * declaring an explicit `Plot.axisX`/`Plot.axisY` mark at every call site
  * (out of this task's "one theme options object" scope, and not required by
  * this task's own test list). Recorded here rather than silently guessed.
+ *
+ * A second, unrelated gap: `UI-DIRECTION.md`'s chart rules also call for
+ * "uppercase tracked axis titles" (0.1em letter-spacing, 11 px, `--fg-dim`).
+ * This theme does not implement that. It is not merely out of this theme's
+ * one-options-object scope the way the tick-vector colour split is — Plot's
+ * public API has **no** `textTransform`/`letterSpacing` option anywhere on
+ * its text-rendering marks (`docs/vendor/observable-plot/marks/text.md`'s
+ * full option list has no such entries, nor does `marks/axis.md`'s, which
+ * only adds **fontVariant**, **color**, and the **textStroke** family on top
+ * of the text mark's list). The top-level `style` object here *is* typed as
+ * `Partial<CSSStyleDeclaration>` and could carry `textTransform`/
+ * `letterSpacing`, but `style` cascades to every text element inside the
+ * plot's SVG (ticks and title alike, the same `currentColor`-style
+ * inheritance documented above for `color`), so setting it here would
+ * uppercase and track the tick labels too, not just the title — the
+ * opposite of what the direction asks for. Reaching only the title text
+ * would need a CSS selector scoped to the axis-label `<text>` specifically
+ * (Plot's generated SVG structure is not part of its documented public
+ * surface, so no such selector is documented in `docs/vendor/`) or an
+ * explicit per-call axis mark with a title-only style hook, which this
+ * mark's own option list does not offer either. Not implemented; not a
+ * silent gap (see `CHANGELOG.md`'s UI-8 entry).
  */
 import type { PlotOptions } from "@observablehq/plot";
 

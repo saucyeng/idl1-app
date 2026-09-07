@@ -62,4 +62,14 @@ describe("plotTheme — a stub reader — grid and axis colours are the rule tok
     expect(theme.marginLeft).toBeGreaterThan(20);
     expect(theme.marginLeft).toBeLessThan(80);
   });
+
+  it("does not set textTransform/letterSpacing on the shared style — Plot has no title-only styling hook, and the shared style cascades to tick labels too", () => {
+    // Arrange & Act
+    const theme = plotTheme(stubReader);
+    const style = theme.style as Partial<CSSStyleDeclaration> | undefined;
+
+    // Assert
+    expect(style?.textTransform).toBeUndefined();
+    expect(style?.letterSpacing).toBeUndefined();
+  });
 });

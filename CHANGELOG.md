@@ -251,9 +251,12 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
   `getComputedStyle` adapter, usable against either document); `plotTheme.ts`
   (the merged Plot options object: `--bg` background, `--fg-dim` mono
   tabular-11px text, `--rule` grid, `marginLeft` fixed for six tabular
-  digits, no frame — see its doc comment for the one documented gap: Plot's
+  digits, no frame — see its doc comment for two documented gaps: Plot's
   public API has no top-level knob to colour the axis tick vector separately
-  from tick-label text, so both inherit `style.color`); `slotStates.ts`
+  from tick-label text, so both inherit `style.color`; and Plot's text/axis
+  marks expose no `textTransform`/`letterSpacing` option at all, on any call
+  shape, so `UI-DIRECTION.md`'s "uppercase tracked axis titles" is not
+  implemented — not a scope choice, a real Plot API limitation); `slotStates.ts`
   (`emptySlotMessage`/`errorSlotMessage`, a chart-slot-specific empty/error
   vocabulary distinct from `model/jsCellNote.ts`'s existing whole-cell note).
   Applied in `sandbox/main.ts`: a `themedPlot()` wrapper is bound as the
