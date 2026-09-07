@@ -4233,3 +4233,22 @@ advances by panning each cell's committed viewport. Constraints:
 - `App.tsx`/`state/AppState.tsx` stay untouched; this is Notebook state.
 
 **Cost if wrong:** one lifted state in one file, in the lane that owns it.
+
+## 2026-09-07 — UI-8…UI-11 LANDED; the UI styling pass is complete
+
+Merged `ui-notebook` (`9b1b9ff` Plot theme + `18955f1` fix, `21f3df8`
+CodeMirror theme + `b431aa6` fix, `bc61d8b` notebook frame + R95 pausing,
+`a6e66cd` cursor/menu/playback + `bb637df` fix). Main suite **126 files /
+1141 passed**, `tsc` clean, `vite build` both entries.
+
+All eleven UI tasks are in: tokens+fonts, primitives, overlays, shell,
+Device, Data, Settings, Plot theme, CodeMirror theme, notebook frame,
+interaction+playback. Rulings from the pass: R92–R99. Known gaps, all
+disclosed: no light palette (decision 5), no React Flow maths graph
+(column reserved), no figure export, Plot cannot track/uppercase axis
+titles (R97 addendum), `unwatch_workbook` missing from C3 (R98), the
+inner editor split unpersisted (UI-4 follow-on), `bracketMatching()` not
+wired.
+
+Next: a dev-app preview for Isaac (needs the cargo slot — L11 Task 8
+holds it), then L11 Tasks 9–12 and the sync UI.
