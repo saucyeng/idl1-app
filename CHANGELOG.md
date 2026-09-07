@@ -22,6 +22,25 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 
 ### Changed
 
+- **Math values are n-dimensional (2026-09-07, ruling R110, spec-first —
+  C2 §3.6 added).** A math value now carries a *shape*: an ordered list of
+  named axes (`time`, `freq`, `lap`, `window`, `component`, `index`), so a
+  series is `[t]`, a per-lap value `[lap]`, a spectrogram `[t,f]` and an
+  iEKF state vector `[t,c9]` — and every one of them can feed further
+  maths (UI-DIRECTION-2 decision 45c). Elementwise ops require equal
+  shapes (a scalar with anything is the only implicit rank change; there is
+  no NumPy-style broadcasting), reductions take an axis as a string literal
+  (`mean(spec, "f")`, `mean(x, "t:lap")`), and `argmax(spec, "f")` returns
+  the *coordinate* — the peak-frequency line. `spectrogram` becomes
+  `Implemented` and returns `[t,f]`; `fft`'s output carries a real
+  frequency axis. Shapes are inferred; an optional `# shape: [t,f]`
+  annotation checks but never coerces. Charts bind by axis kind and the
+  `[t,f]` case reuses C3's existing `fetch_raster` path rather than adding
+  a second rasteriser. **Workbook `version` stays `3`**: the extension is a
+  strict superset, no migration pass runs, and an older build still opens,
+  evaluates its siblings and round-trips such a file (C2 §3.6.8).
+  Spec-only — no code in this commit.
+
 - Code pane wraps long lines, so a cell's source stays readable in the
   narrow properties column instead of running off behind a scrollbar.
 

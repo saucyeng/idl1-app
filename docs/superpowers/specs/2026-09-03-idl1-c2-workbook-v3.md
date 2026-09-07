@@ -3,6 +3,12 @@
 **Status:** signed (lead) 2026-09-02 · **Date:** 2026-09-03 · **Owner:** lead
 
 **Revisions:**
+- 2026-09-07: **§3.6 added — value shapes / n-dimensional math values**
+  (ruling R110, wave-3 W3.1, spec-first). Math values gain a shape; the
+  builtin catalog gains axis-aware reductions, `argmax`/`argmin`, slicing and
+  `align`; `spectrogram` becomes `Implemented` and yields `[t,f]`; charts
+  bind by axis kind and the rank-2 case reuses C3's existing raster path.
+  `version` stays `3` and no migration pass is needed — §3.6.8.
 - 2026-09-06: §5.3 widened with an FFT chart production — `marks_array` splits
   into `time_marks`/`fft_marks`, a `spectrum_call`/`fft_params` grammar, the
   FFT Properties panel, and the FFT custom-code cases (rulings R78, L6
@@ -391,8 +397,8 @@ carried forward here as ordinary catalog entries, not new.
 | `sinh` `cosh` `tanh` | `sinh(x)` etc. | Trig | dimensionless | Implemented | yes |
 | `deg2rad` | `deg2rad(x)` | Trig conversion | radians (`x` in degrees) | Implemented | yes |
 | `rad2deg` | `rad2deg(x)` | Trig conversion | degrees (`x` in radians) | Implemented | yes |
-| `fft` | `fft(ch, "hann"\|"hamming"\|"rect"\|"rectangular")` | Frequency | same units as `ch` (magnitude), indexed by bin `k`, `freq[k] = k·sample_rate_hz/n` Hz | Implemented | yes |
-| `spectrogram` | `spectrogram(ch)` | Frequency | n/a — 2-D result, no 1-D channel form | NotImplemented (deferred permanently — no channel-shaped output exists; §5.1's raster path is the real spectrogram surface) | yes |
+| `fft` | `fft(ch, "hann"\|"hamming"\|"rect"\|"rectangular")` | Frequency | same units as `ch` (magnitude), over a `[f]` shape whose axis coordinate is `k·sample_rate_hz/n` Hz *(the frequency axis is attached as of 2026-09-07, R110 — §3.6.8 item 3; the magnitudes are unchanged)* | Implemented | yes |
+| `spectrogram` | `spectrogram(ch, window_size, hop_size, window, detrend, scaling)` | Frequency | same units as `ch` (magnitude) or `[ch]²/Hz` (density), over a `[t,f]` shape | Implemented *(revised 2026-09-07, R110 — §3.6.3 gives the signature and the shape; the earlier "NotImplemented, deferred permanently — no channel-shaped output exists" note is superseded: §3.6 defines the 2-D value it returns)* | yes |
 | `hilbert` | `hilbert(ch)` | Frequency | same units as `ch` | NotImplemented | yes |
 | `correlate` | `correlate(a, b)` | Correlation | `[a]·[b]` | NotImplemented | yes |
 | `convolve` | `convolve(ch, kernel)` | Correlation | `[ch]·[kernel]` | NotImplemented | yes |
@@ -421,11 +427,15 @@ carried forward here as ordinary catalog entries, not new.
 | `rotate_axis` | `rotate_axis(v, ax, ay, az, angle)` (scalars; `angle` radians) | Rotation | same units as `v` | Implemented | **no** |
 | `rotate_euler` | `rotate_euler(v, roll, pitch, yaw)` (radians; args may be channels — per-sample rotation) | Rotation | same units as `v` | Implemented | **no** |
 
-69 named functions total (63 `Implemented`, 6 `NotImplemented`/deferred:
-`sosfilt`, `spectrogram`, `hilbert`, `correlate`, `convolve`, `resample` —
+69 named functions total (**revised 2026-09-07, R110: 64 `Implemented`, 5
+`NotImplemented`/deferred** — `spectrogram` moved to `Implemented`; §3.6.3
+adds ten further names — `argmax`, `argmin`, `argmax_index`, `argmin_index`,
+`at`, `nearest`, `slice`, `axes`, `broadcast`, `align` — documented there
+rather than restated here, taking the total to 79). The five deferred are
+`sosfilt`, `hilbert`, `correlate`, `convolve`, `resample`. The 69 was
 recounted directly from the table above by expanding every multi-name row,
 e.g. `floor`/`ceil`/`round` as 3, `vx`/`vy`/`vz` as 3, `vadd`/`vsub` as 2,
-rather than restated from memory). One function,
+rather than restated from memory. One function,
 `main(col[])`, exists in `call_function` but is **table-cell only**
 (reads `MathLapContext::baseline_row`, which is never populated outside a
 table evaluation) — it is documented in §4, not here, and is a `Runtime`
@@ -513,6 +523,439 @@ channels") extends verbatim to workbook v3: the JS host variable for a
 failing definition surfaces as an error marker (§5.1), every other
 definition still evaluates.
 
+*Extended 2026-09-07 (R110):* §3.6.4 adds two parse-time kinds
+(`InvalidShapeAnnotation`, `UnknownAxisSymbol`) to list A and three
+`MathEvalErrorKind` variants (`ShapeMismatch`, `UnknownAxis`,
+`ShapeAnnotationMismatch`) to list B. The sibling rule above governs them
+unchanged — a shape error greys its own definition and its dependents, never
+another definition.
+
+---
+
+### 3.6 Value shapes — n-dimensional math values
+
+*Added post-sign (2026-09-07, lead ruling R110, wave-3 W3.1), spec-first: no
+maths-graph UI is built against this until it is merged. It settles
+UI-DIRECTION-2 decision 45c ("node outputs are typed arrays of any dimension …
+every kind can feed further maths") and closes that document's Open item
+"n-D values in the math language".*
+
+Until this section, every math definition evaluated to a 1-D channel or a
+scalar, and 2-D results (spectrogram, 2-D histogram) existed only as
+chart-side raster endpoints (design §4; C3 §3.6). This section gives every
+math value a **shape**, says which operators accept which shapes, how a shape
+is written and checked in a definition, and how a chart draws a value that is
+not 1-D. §3.6.8 states exactly what changes for workbooks written before it
+and why no version bump or migration pass is needed.
+
+#### 3.6.1 The shape type
+
+A math value is a dense, row-major array of `f64` plus a **shape**. A shape is
+an ordered list of **axes**; the number of axes is the value's **rank**.
+
+```
+Shape ::= [ Axis, Axis, … ]        (rank = number of axes; rank 0 = scalar)
+Axis  ::= { kind, len, unit, coords, origin }
+```
+
+| Axis field | Type | Meaning |
+|---|---|---|
+| `kind` | closed enum (below) | What the dimension *is*. Not derivable from a length. |
+| `len` | `usize` | Number of entries along the axis. |
+| `unit` | `String` | Unit of the axis **coordinate** (`"s"`, `"Hz"`, `""` for lap/index/component). Display metadata, exactly as C1 channel units are; never converted (§1). |
+| `coords` | `Option<Vec<f64>>` | The coordinate of each entry, in `unit`. Present for `time`, `freq`; absent for `lap`/`window`/`component`/`index`, whose coordinate *is* their integer position. Time coordinates are seconds derived from C1's recorded `t_us` — the value keeps the recorded time, it never synthesises `i / rate` ("time is recorded, not assumed"). |
+| `origin` | `AxisOrigin` (opaque, comparable) | Provenance token identifying *which* coordinate vector this is. Two axes are the same axis only if their origins are equal. §3.6.2. |
+
+**Axis kinds** (closed set in this revision; widening it is a contract change):
+
+| `kind` | Written | Coordinates | Produced by |
+|---|---|---|---|
+| `time` | `t` | seconds from the session origin (C1 `t_us`) | every session channel, every elementwise result over one, every STFT frame axis |
+| `freq` | `f` | Hz | `fft`, `spectrogram` |
+| `lap` | `lap` | lap number (1-based, C1 `laps[]`) | a reduction grouped by lap (§3.6.3) |
+| `window` | `win` | index into the selection's window list (R115) | a reduction grouped by window (§3.6.3) |
+| `component` | `c<n>` or `c{a,b,c}` | component index, or its name when named | `vec`-valued and state-vector producers; a fixed-width axis such as an iEKF state |
+| `index` | `i` | positional index, no physical meaning | `fft` bin index before a frequency axis is attached, rolling-window outputs, anything explicitly de-labelled |
+
+**Written form.** A shape is written as a bracketed, comma-separated list of
+axis symbols, innermost-last: `[]` (scalar), `[t]` (a series), `[lap]` (one
+value per lap), `[t,f]` (time × frequency), `[t,c9]` (nine components per
+sample — an iEKF state vector), `[t,c{roll,pitch,yaw}]` (the same with named
+components). Decision 45c's `[t×f]` is this document's `[t,f]`; the
+comma form is the canonical one — it is ASCII, so it is identical in source,
+in error messages and in the port label the graph card draws.
+
+**Axis order is part of the type.** Data is row-major: the last axis is
+contiguous. `[t,f]` and `[f,t]` are different shapes and never interconvert
+implicitly; `axes(x, "f", "t")` (§3.6.3) is the only transpose. This is the
+whole point of naming axes: without kinds, `[t,9]` and `[9,t]` differ only by
+a length nobody checks, and the transposed one is a silent wrong answer
+instead of a `ShapeMismatch`.
+
+**Rank 0 is a real shape, not a special case.** `mean(ch)` yields `[]`, and a
+scalar participates in every elementwise operation with every shape (§3.6.2)
+— that is the *only* implicit rank change in the language.
+
+#### 3.6.2 Axis identity, alignment, and broadcasting
+
+**Two axes are compatible** iff `kind`, `len` and `origin` are all equal.
+`origin` is compared as a token, never by scanning `coords`: a time axis's
+origin is `(session_id, window, resampling)` — the selected window (R115) and
+the identity of any resampling applied — and a frequency axis's is its STFT
+parameters plus that time origin. Equal tokens mean identical coordinates by
+construction; unequal tokens mean the implementer must not assume alignment
+even when the lengths match.
+
+This matters immediately in the §3.6.7 example: a spectrogram's time axis has
+one entry per STFT **frame**, not per sample, so it is *not* compatible with
+its own source channel's time axis. Multiplying a frame-rate series by a
+sample-rate series is a `ShapeMismatch`, not a broadcast and not a truncation.
+
+**Broadcasting rules — deliberately minimal:**
+
+1. **Scalar with anything.** A rank-0 operand combines elementwise with a
+   value of any shape; the result has the other operand's shape. This is how
+   `[Fork_Travel] * 2` and `x - mean(x)` already work and it is unchanged.
+2. **Equal shapes.** Two operands of equal rank whose axes are pairwise
+   compatible combine elementwise; the result has that shape.
+3. **There is no other implicit broadcasting.** `[t]` combined with `[t,f]` is
+   a `ShapeMismatch` even though the `t` axes are compatible. Rank-lifting is
+   written out: `broadcast(x, "f", ref)` repeats `x` along `ref`'s `f` axis,
+   giving `[t,f]`. Rejected alternative — NumPy-style trailing-axis
+   broadcasting: it makes a typo that drops a reduction produce a
+   spectrogram-sized array of plausible numbers rather than an error, and the
+   values here are large enough (an 800 Hz channel × 1025 bins) that the
+   failure is a hang, not a wrong pixel.
+4. **Never an implicit resample.** Two `time` axes with the same kind and
+   length but different origins do not combine; `align(x, ref)` (§3.6.3)
+   resamples explicitly and names the interpolation.
+
+#### 3.6.3 Operators and builtins by shape
+
+Nothing in §3.2's expression **grammar** changes: no new syntax, no keyword
+arguments. Axis-aware builtins take the axis as an ordinary **string literal
+argument**, exactly as `butter(2, 3, "low", ch)` and `detrend(ch, "linear")`
+already take their mode.
+
+**Elementwise** — `+ - * /`, `< > <= >= == !=`, `and`/`or`/`not`, unary `-`,
+and every §3.3 row whose Category is Elementwise/Trig, plus `if`, `clamp`,
+`pow`, `min(a,b)`, `max(a,b)`:
+
+> operands must satisfy §3.6.2 rule 1 or 2; the result has the operands'
+> shape. Rank is irrelevant — these work on `[t,f]` and `[t,c9]` exactly as
+> on `[t]`, which is what makes "the pictures feed further maths" true rather
+> than aspirational.
+
+**Time-domain operators** — `butter`, `sosfilt`, `declip`, `integrate`,
+`differentiate`, `detrend`, `resample`, and the rolling forms `mean(ch,w)`,
+`rms(ch,w)`, `std(ch,w)`:
+
+> require the value's **last** axis to be `time` and operate along it,
+> independently for every position of the leading axes. `butter(2, 3, "low",
+> state)` on `[c9,t]` filters nine signals. A value whose last axis is not
+> `time` is a `ShapeMismatch` naming the axis it found. (`[t,f]` therefore
+> cannot be filtered directly — `axes(spec, "f", "t")` first, giving
+> `[f,t]`.) Shape out = shape in.
+
+**Reductions** — `mean`, `sum`, `min(ch)`, `max(ch)`, `std`, `rms`, `median`,
+`count`, `first`, `last`, `p(ch, q)`:
+
+| Form | Accepts | Returns |
+|---|---|---|
+| `mean(x)` | any shape | `[]` — reduces **every** axis. Unchanged 1-D behaviour: `mean` of a `[t]` series is still a scalar. |
+| `mean(x, "f")` | any shape carrying exactly one axis written `f` | that shape with the `f` axis removed. `[t,f] → [t]`. |
+| `mean(x, "t:lap")` | a shape whose last axis is `time` | that shape with the `time` axis **replaced** by a `lap` axis: one entry per lap of the selected window. `[t] → [lap]`. |
+| `mean(x, "t:win")` | as above | `time` replaced by a `window` axis: one entry per selected window (R115). `[t] → [win]`. |
+| `mean(x, w)` — `w` a **number** | last axis `time` | rolling window of `w` samples; shape unchanged. Distinguished from the axis form by argument type, not by arity. |
+| `p(x, 90, "f")` | as the axis form | quantile along `f`. The axis string is always the **last** argument. |
+
+Reducing an axis drops it entirely; a rank-1 reduction therefore yields `[]`,
+which is why the no-axis form and the 1-D behaviour agree.
+
+**Argument extrema** — new, and the reason the peak-frequency line is
+expressible at all:
+
+| Function | Signature | Returns |
+|---|---|---|
+| `argmax` / `argmin` | `argmax(x, "axis")` | the **coordinate** at which the maximum occurs along that axis, in that axis's `unit`; shape = input minus that axis. On a `freq` axis this is Hz — the peak-frequency line. |
+| `argmax_index` / `argmin_index` | `argmax_index(x, "axis")` | the integer index instead, dimensionless. Use when the axis has no coordinates (`component`, `index`). |
+
+Ties resolve to the **lowest** index, deterministically. An all-`NaN` slice
+yields `NaN` for both the coordinate and the index (not an error — a lap with
+no data must not break the definition, §3.5.B).
+
+**Selection and reshaping** — new:
+
+| Function | Signature | Returns |
+|---|---|---|
+| `at` | `at(x, "axis", i)` — `i` an integer index, or a string naming a component of a named `component` axis | that shape minus the axis. `at(state, "c", "roll")` : `[t,c{roll,pitch,yaw}] → [t]`. |
+| `nearest` | `nearest(x, "axis", coord)` | the entry whose coordinate is nearest `coord`; shape minus the axis. `nearest(spec, "f", 12)` : `[t,f] → [t]`, the 12 Hz row. |
+| `slice` | `slice(x, "axis", lo, hi)` | coordinate range `[lo, hi)` (index range for coordinate-less axes); same shape, shorter axis, **new `origin`**. |
+| `axes` | `axes(x, "a", "b", …)` | the same data permuted to the named axis order. Every axis of `x` must be named exactly once. The only transpose. |
+| `broadcast` | `broadcast(x, "axis", ref)` | `x` repeated along `ref`'s named axis, appended as the **last** axis; `ref` is any expression carrying that axis. |
+| `align` | `align(x, ref)` | `x` resampled so that each of its axes shares `ref`'s `origin` for the same kind. Linear interpolation on `time` and `freq`; nearest on integer axes; ends are `NaN`-filled, never extrapolated. The **only** way two differently-originated axes come together. |
+
+**Rank-raising producers:**
+
+| Function | Signature | Returns |
+|---|---|---|
+| `spectrogram` | `spectrogram(ch, window_size, hop_size, "rectangular"\|"hann"\|"hamming", "none"\|"mean"\|"linear", "magnitude"\|"density")` | `[t,f]`. `window_size`/`hop_size` in samples. The six parameters are C3 §3.6's `SpectrogramParams` field-for-field, in that order, over the same `idl_rs::fft` code — this is not second DSP. The `t` axis is one entry per frame, coordinate = the frame's centre time in seconds; the `f` axis is `window_size/2 + 1` bins, coordinate `k · rate / window_size` Hz, where `rate` is derived from the channel's own `t_us` as `1e6 / median(Δt_us)` (R76's rule, unchanged). |
+| `fft` | `fft(ch, "hann"\|…)` | `[f]` — unchanged numerically; §3.6.8 covers the axis it now carries. |
+| `vec` | `vec(x, y, z)` | shape of the components with a trailing `c{x,y,z}` axis. The existing Vec3 intermediate, now expressible as an ordinary value; `vx`/`vy`/`vz` remain and are `at(v, "c", "x"\|"y"\|"z")`. |
+
+**Every other §3.3 entry is unchanged** and accepts rank ≤ 1 only —
+`current_lap`, `lap_start_time`, `lap_start_distance`, `sector_number`,
+`variance_time`, `variance_dist`, `attitude`, `body_accel`, `wheel_travel`,
+`wheel_velocity`, `cross`, `dot`, `norm`, `normalize`, `angle`,
+`rotate_mat`, `rotate_axis`, `rotate_euler`. Passing a rank ≥ 2 value to one
+of them is a `ShapeMismatch`, never a silent flatten.
+
+#### 3.6.4 Writing a shape in a definition
+
+**Shapes are inferred, always.** A definition never needs an annotation, and
+an annotation never coerces, converts or reshapes — it is a **check**, and
+the graph card's port label (decision 45c) shows the inferred shape whether or
+not one is written.
+
+An optional annotation rides in the `def_line`'s existing `trailing_comment`
+(§3.1). §3.1's terminal is unchanged — `trailing_comment` still matches
+`/[ \t]+#[^\n]*/`; what follows describes the **structure of that comment's
+text**, the same way §3.1 already describes the `label:` form inside it:
+
+```ebnf
+comment_text     ::= /[ \t]*/ shape_annotation? label_annotation? free_text?
+shape_annotation ::= "shape:" /[ \t]*/ shape /[ \t]*/
+shape            ::= "[" (axis_sym ("," axis_sym)*)? "]"
+axis_sym         ::= "t" | "f" | "lap" | "win" | "i"
+                   | "c" /[0-9]+/
+                   | "c{" identifier ("," identifier)* "}"
+```
+
+The scan is ordered and backward compatible: a trailing comment is checked for
+a leading `shape:` **first**; whatever remains is then scanned for `label:`
+exactly as §3.1 already specifies (free text to end of line). A comment that
+begins with `label:` is therefore unchanged in every respect, including one
+whose label text happens to contain the word `shape`. Both together read:
+
+```math
+fork_spec = spectrogram(wheel_travel("front"), 2048, 1024, "hann", "mean", "magnitude")  # shape: [t,f] label: Fork spectrogram
+```
+
+An annotation matches the inferred shape iff every axis symbol matches the
+corresponding axis's `kind` in order, and — for `c<n>` / `c{…}` — its length
+and, when named, its component names. Lengths of `t`, `f`, `lap`, `win` and
+`i` are **not** written: they are session-dependent, and a workbook that
+pinned them would break on the next session (the same reason `"all"` exists
+in §5.3 rather than a literal sample count).
+
+**Errors.** Per definition, lazy, and — per §3.5.B, unchanged — never blocking
+a sibling definition. Two new parse-time kinds (§3.5.A) and three new
+`MathEvalErrorKind` variants (§3.5.B; this is an additive change to
+`rust/core/src/math/error.rs` and to C3's error `detail`, see Open 1):
+
+| Layer | Kind | Trigger | Message shape |
+|---|---|---|---|
+| A | `InvalidShapeAnnotation` | `shape:` present but not matching the `shape` grammar above | `"'<text>' is not a valid shape — write it like [t], [t,f] or [t,c9]"` |
+| A | `UnknownAxisSymbol` | a well-formed shape naming a symbol outside the closed set | `"'<sym>' is not an axis — use t, f, lap, win, i or c<n>"` |
+| B | `ShapeMismatch` | operands that satisfy no §3.6.2 rule, or a builtin given a shape it does not accept | `"<op> expects <expected>, got <actual>"` — e.g. `"'*' expects both operands to have the same shape, got [t] and [t,f]"`, `"butter expects its last axis to be time, got [t,f]"` |
+| B | `UnknownAxis` | an axis-string argument naming an axis the value does not carry, or carries more than once | `"'<name>' is not an axis of <shape>"` |
+| B | `ShapeAnnotationMismatch` | the annotation and the inferred shape differ | `"'<name>' is annotated [t] but evaluates to [t,f]"` |
+
+`ShapeMismatch` and `UnknownAxis` are **evaluation-time**, not parse-time,
+because a shape depends on the selected session: the same definition is `[t,f]`
+against a session that has the channel and unresolved against one that does
+not (decision 44 — the node greys, nothing is deleted). A definition that
+cannot be shaped greys itself and everything downstream, and reports on the
+node card as decision 41's red ×.
+
+#### 3.6.5 Binding to JS
+
+§5.1's first row — one host variable per math definition — extends by rank,
+not by replacement:
+
+- **Rank 1 with a `time` axis** binds exactly as today: `{ length, t, v }`,
+  `t` seconds, `v` values. No existing js cell, `plotForm` production or
+  inline `${…}` changes.
+- **Rank 1 with another axis** binds `{ length, <sym>, v }` — `{length, f, v}`
+  for a frequency series, `{length, lap, v}` per lap — matching §5.3's
+  standing rule that a frequency shape binds `"f"` and never `"t"`.
+- **Rank 0** binds the bare `number`.
+- **Rank ≥ 2** binds `{ shape: string, axes: [{ kind, len, unit, coords }], v: Float64Array }`
+  with `v` row-major. Plot cannot consume this directly, which is precisely
+  why §3.6.6 requires charts to reduce first.
+
+#### 3.6.6 What a chart draws
+
+**A chart mark consumes a rank ≤ 1 value, plus exactly one rank-2 case.** The
+mark picks its x axis from the value's axis kind, so "charts render whatever
+dimension makes sense for the mark" (decision 45c) is a rule, not a judgement:
+
+| Value shape | Mark | Binding |
+|---|---|---|
+| `[t]` | `Plot.lineY`/`dot`/`areaY`/`rectY` | `{x:"t", y:"v"}` — §5.3's `time_marks`, unchanged |
+| `[f]` | `Plot.lineY`/`dot`/`areaY` | `{x:"f", y:"v"}` — §5.3's `fft_marks` shape, reached from a math definition instead of `spectrum(...)` |
+| `[lap]` / `[win]` | `Plot.barY`/`dot` | `{x:"lap"\|"win", y:"v"}` — a per-lap bar chart, x an ordinal axis |
+| `[]` | `Plot.ruleY`, or an inline `${…}` value | the scalar |
+| `[t,f]` | raster under Plot axes | **the existing raster path only** — below |
+| any other rank ≥ 2 | none | the cell renders decision 58's empty slot: `"peak_freq_2d is [t,c9] — reduce it to a series before charting"`, with the Fix button opening the definition |
+
+**The rank-2 raster case does not duplicate the raster path.** Density is a
+Rust raster under Plot axes (design §4) and stays so. A `[t,f]` definition
+whose expression is exactly a `spectrogram(ch, …)` call over a session channel
+is recognised by the host — the same `parse`-based recognition that binds
+`channel(...)` and `spectrum(...)` today, not a code scan — and drawn by
+calling the **existing** `fetch_raster(kind: "spectrogram")` /
+`fetch_raster_meta` (C3 §3.6) with the six parameters read off the definition
+line, keyed by a `rasterKey(channelId, params)` built the same way
+`spectrumKey` is (R79 Q2). The math value itself never crosses IPC as pixels
+and the sandbox never rasterises.
+
+A `[t,f]` value that is *not* such a call (a filtered, sliced or
+arithmetically combined matrix) has **no** raster endpoint in this revision
+and falls in the last row above: reduce it, or chart it once a general matrix
+raster exists (Open 4). This is a stated limit, not an omission — it keeps one
+rasteriser rather than growing a second one in the sandbox.
+
+#### 3.6.7 Worked example — spectrogram → peak frequency → line
+
+The case R110 names: a `[t,f]` matrix, a reduction of it to `[t]`, and that
+charted. Every shape below is the inferred one; the annotations are optional
+and written here to be read.
+
+```math id=7f3c9a12
+# Fork spectrogram and the peak-frequency line derived from it.
+fork_spec        = spectrogram(wheel_travel("front"), 2048, 1024, "hann", "mean", "magnitude")  # shape: [t,f] label: Fork spectrogram
+peak_freq        = argmax(fork_spec, "f")                        # shape: [t] label: Peak fork frequency
+peak_mag         = max(fork_spec, "f")                           # shape: [t] label: Peak magnitude
+peak_freq_smooth = butter(2, 1.5, "low", peak_freq)              # shape: [t]
+peak_freq_by_lap = mean(peak_freq, "t:lap")                      # shape: [lap] label: Mean peak frequency per lap
+low_band_energy  = sum(slice(fork_spec, "f", 0, 8), "f")         # shape: [t] label: 0-8 Hz energy
+```
+
+Shape at each step, and why:
+
+| Line | Shape | Notes |
+|---|---|---|
+| `wheel_travel("front")` | `[t]`, unit mm | Estimator over the session's sample-rate time axis. Origin **A**. |
+| `fork_spec` | `[t,f]` | `t`: one entry per STFT frame (hop 1024 samples), centre times in seconds — a **new** origin **B**, not A. `f`: 1025 bins, `k · rate / 2048` Hz. |
+| `peak_freq` | `[t]`, unit Hz | `f` reduced away by `argmax`, which returns the *coordinate*: the frequency of the strongest bin in each frame. Time axis is B. |
+| `peak_mag` | `[t]`, unit mm | Same reduction with `max`, keeping the magnitude instead. Time axis B. |
+| `peak_freq_smooth` | `[t]`, unit Hz | `butter` operates along the last axis, which is `time` ✓. Time axis B (a filter does not resample). |
+| `peak_freq_by_lap` | `[lap]`, unit Hz | `"t:lap"` replaces the time axis with one entry per lap of the selected window. |
+| `low_band_energy` | `[t]`, unit mm | `slice` narrows `f` to `[0, 8)` Hz (new `f` origin, same `t`), then `sum` reduces it. |
+
+Charting the line — an ordinary §5.3 time cell, because `peak_freq_smooth` is
+`[t]` and binds `{length, t, v}` per §3.6.5:
+
+```js
+Plot.plot({
+  x: {label: "Time (s)"},
+  y: {label: "Peak fork frequency (Hz)", domain: [0, 30]},
+  marks: [Plot.lineY(channel("peak_freq_smooth"), {x: "t", y: "v"})]
+})
+```
+
+Charting the matrix it came from is the `[t,f]` raster row of §3.6.6:
+`fork_spec` is exactly a `spectrogram(...)` call, so the cell draws
+`fetch_raster(kind: "spectrogram")` with `window_size: 2048, hop_size: 1024,
+window: "hann", detrend: "mean", scaling: "magnitude"` — the same six values
+the definition line states — with `peak_freq` overlaid as a line on the same
+axes, both on time axis B, which is why they align without an `align` call.
+
+**The error this design is here to produce.** Writing
+
+```math
+bad = peak_freq * wheel_travel("front")
+```
+
+is a `ShapeMismatch`: both operands are `[t]`, but their time axes have
+different origins (B vs A) — frames against samples. The definition reports
+`"'*' expects compatible axes, got [t] (frames) and [t] (samples)"`, greys its
+own node and its dependents, and every sibling definition still evaluates. The
+fix is explicit:
+
+```math
+good = peak_freq * align(wheel_travel("front"), peak_freq)   # shape: [t]
+```
+
+#### 3.6.8 What changes for existing workbooks
+
+**`version` stays `3`. There is no migration pass and `migrate-workbook` is
+unchanged.** The extension is a strict superset: every construct legal before
+this section is still legal, parses the same, and evaluates to the same
+numbers. Decision 75 (workbooks are durable across updates) is met by *not
+rewriting anything* — the strongest available form of "explicit and lossless".
+The specific claims:
+
+1. **Every existing definition acquires a shape it already had implicitly.** A
+   channel-valued definition is `[t]`; an aggregate (`mean(ch)`, `p(ch, 90)`,
+   `count(ch)`) is `[]`; a rolling form (`mean(ch, 64)`) is `[t]`. No numbers
+   change, no bindings change, no error that did not fire before fires now —
+   §3.6.2's rules 1 and 2 are exactly what the existing `elemwise`/
+   `apply_binary` already do, now named.
+2. **`spectrogram` moves from `NotImplemented` to `Implemented`** in §3.3,
+   superseding its "deferred permanently — no channel-shaped output exists"
+   note, which this section makes false. A workbook that called it received a
+   typed `NotImplemented` error and no result; it now receives a `[t,f]`
+   value. Nothing that worked stops working.
+3. **`fft`'s output axis is now `freq`, not a bare bin index.** Its
+   magnitudes are unchanged, but a rank-1 frequency value binds `{length, f,
+   v}` (§3.6.5), where before it bound `{length, t, v}` with bin index in `t`.
+   This is the **one** behaviour change in the section. To keep it lossless:
+   a `freq`-axis rank-1 value **also** binds `t` as a deprecated alias of `f`
+   for `version: 3` workbooks, so an existing js cell reading `.t` keeps
+   working and gets Hz where it previously got bin numbers — the number it
+   almost certainly wanted, since §3.3 already documented `freq[k] =
+   k·sample_rate_hz/n` as the thing a reader had to reconstruct by hand. The
+   alias is reported once per definition in the notebook's diagnostics, not as
+   an error. See Open 2 for when it goes.
+4. **Reduction builtins gain an optional trailing string argument.** Existing
+   arities and meanings are untouched; a number in that position is still the
+   rolling window it always was.
+5. **New catalog entries**, all additive: `argmax`, `argmin`, `argmax_index`,
+   `argmin_index`, `at`, `nearest`, `slice`, `axes`, `broadcast`, `align`.
+   `list_math_builtins` (C3) reports them like any other row; none shadows an
+   existing name.
+6. **`# shape:` is new and optional**, and lives inside a comment. A build
+   predating this section round-trips such a line byte-for-byte (it is
+   trailing-comment text) and simply infers nothing from it.
+7. **Opened by an older build**, a workbook using n-D features loses those
+   definitions to per-definition `UnknownFunction` / `NotImplemented` errors,
+   keeps every sibling definition, and saves back unchanged — §3.5.B's
+   sibling rule and §2's byte-preserving round-trip together make the
+   downgrade non-destructive. That is the property decision 75 actually needs,
+   and it is why this is not a version bump: bumping to `4` would make §1's
+   rule refuse every existing file outright.
+
+#### 3.6.9 Open — needs the lead
+
+1. **`MathEvalErrorKind` gains three variants** (`ShapeMismatch`,
+   `UnknownAxis`, `ShapeAnnotationMismatch`), which C3's error `detail` shape
+   mirrors. *Recommendation:* additive C3 amendment carrying
+   `detail: { expected: string, actual: string, axis?: string }`; no new
+   top-level error kind, since these are `MathEvalError`s like every other
+   per-definition failure.
+2. **Lifetime of the `t`-alias for frequency values** (§3.6.8 item 3).
+   *Recommendation:* keep it through wave 3, list it in `CHANGELOG.md` as
+   deprecated, and drop it at the next `version` bump — not before, because
+   nothing forces a bump today.
+3. **`"t:lap"` when the selection holds several windows** (R115): is the `lap`
+   axis within one window, or concatenated across all of them?
+   *Recommendation:* `"t:lap"` is legal only when the selection is a single
+   window and is a `ShapeMismatch` otherwise; `"t:win"` is the multi-window
+   form. One meaning each, and the error names the fix. This is the seam
+   between R110 and R115 and should be settled with the selection lane, not
+   inside it.
+4. **A raster endpoint for a rank-2 value that is not a `spectrogram(...)`
+   call** (§3.6.6). *Recommendation:* defer past wave 3; when it lands it is a
+   new `fetch_raster(kind: "matrix")` taking the value's id and a colour
+   scale, not a second rasteriser in the sandbox.
+5. **Component names for the iEKF state vector.** No iEKF specification exists
+   in this repo, so this section does not invent one; the example uses `c9`.
+   *Recommendation:* the iEKF subgraph (decision 43) names its own components
+   when it is specified, as `c{…}`; `at(x, "c", i)` works either way, so
+   nothing here blocks on it.
+
 ---
 
 ## 4. Table cells
@@ -574,7 +1017,7 @@ feeds results in via `postMessage`):
 
 | Variable | Shape | Source |
 |---|---|---|
-| one per `math` definition, by name (§3.1) | `{ length: number, t: Float64Array, v: Float64Array }` — a **column-oriented** (SoA) table matching Observable Plot's tabular-data protocol, so `Plot.lineY(fork_velocity, {x:"t", y:"v"})` addresses columns by name with zero-copy from the transferred `ArrayBuffer` (design's IPC data path: bytes → `Float32Array`/`Float64Array` view). | The host evaluates the definition (Rust), decimates to the current tile budget, and binds the result under its identifier. |
+| one per `math` definition, by name (§3.1) | `{ length: number, t: Float64Array, v: Float64Array }` for a `[t]` definition — **§3.6.5 extends this by rank**: a rank-0 value binds a bare number, a rank-1 value on a non-time axis binds that axis's key instead of `t`, and a rank ≥ 2 value binds `{ shape, axes, v }`. A **column-oriented** (SoA) table matching Observable Plot's tabular-data protocol, so `Plot.lineY(fork_velocity, {x:"t", y:"v"})` addresses columns by name with zero-copy from the transferred `ArrayBuffer` (design's IPC data path: bytes → `Float32Array`/`Float64Array` view). | The host evaluates the definition (Rust), decimates to the current tile budget, and binds the result under its identifier. |
 | `channel(name, {lap?: number, session?: string})` | Same `{length, t, v}` shape as above | General lookup — any raw/session/synthesized/math-defined channel by name, optionally windowed to one lap and/or a non-active session (cross-session compare, e.g. an overlay). Definitions already bound as bare identifiers are also reachable this way; `channel` is required when the id needed isn't a valid bare identifier caller-side (rare) or when lap/session scoping is needed. |
 | `laps` | `{ number: number, startT: number, endT: number }[]` | Active session's lap table. |
 | `session` | `{ id: string, name?: string, timestampUtcMs: number }` | Active session metadata (C1). |
