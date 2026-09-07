@@ -1,6 +1,7 @@
 import { Fragment, useRef, useState, type ReactNode } from "react";
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@/components/ui/resizable";
-import { COLUMN_IDS, readColumnPrefs, writeColumnPrefs, type ColumnId, type ColumnPrefs } from "./columnPrefs";
+import { readColumnPrefs, writeColumnPrefs, type ColumnId, type ColumnPrefs } from "./columnPrefs";
+import { visibleColumnIds } from "./columnVisibility";
 
 /** Props for {@link ColumnFrame}. */
 export interface ColumnFrameProps {
@@ -9,8 +10,15 @@ export interface ColumnFrameProps {
    *  "reserve the column only" — extended to every column, not only maths,
    *  since wiring real Data/Notebook content into a docked column is a
    *  later lane's job); `output` is the exception the caller may fill with
-   *  the real Notebook page. */
-  library: ReactNode;
+   *  the real Notebook page.
+   *
+   *  `library` is optional (R107): the wide-layout studio drops the
+   *  library column because it duplicates the Data tab. The column id and
+   *  its persisted width/collapsed bookkeeping stay in `columnPrefs.ts` so
+   *  a future filtering widget (not the whole Data tab) can take the slot
+   *  back without a `ColumnFrame` or prefs-schema change — the caller
+   *  simply omits the prop and no `library` panel or divider renders. */
+  library?: ReactNode;
   maths: ReactNode;
   properties: ReactNode;
   output: ReactNode;
@@ -25,9 +33,14 @@ const COLLAPSED_THRESHOLD_PX = 4;
 /**
  * The wide-layout (≥ 1200 px) dockable column frame (UI-DIRECTION "App shell
  * and navigation", reference order): library (280) | maths graph (flex) |
- * properties (320) | notebook output (flex). Widths and collapsed state
- * persist per machine through `columnPrefs.ts`; the output column is never
- * collapsible (the frame is empty without it).
+ * properties (320) | notebook output (flex) — the library column dropped
+ * from the Notebook studio (R107), so today's callers pass maths |
+ * properties | output and `library` is left undefined. Widths and
+ * collapsed state persist per machine through `columnPrefs.ts`, which
+ * keeps the `library` id (a stale stored width or collapsed flag loads
+ * fine, just unrendered) so a later filtering widget can take the slot
+ * back; the output column is never collapsible (the frame is empty
+ * without it).
  */
 export default function ColumnFrame({ library, maths, properties, output }: ColumnFrameProps) {
   const initialPrefs = useRef<ColumnPrefs>(readColumnPrefs()).current;
@@ -55,11 +68,12 @@ export default function ColumnFrame({ library, maths, properties, output }: Colu
     output: { defaultSize: prefs.widths.output, minSize: 200 },
   };
 
-  const content: Record<ColumnId, ReactNode> = { library, maths, properties, output };
+  const content: Partial<Record<ColumnId, ReactNode>> = { library, maths, properties, output };
+  const columns = visibleColumnIds(content);
 
   return (
     <ResizablePanelGroup orientation="horizontal" className="h-full w-full">
-      {COLUMN_IDS.map((id, index) => (
+      {columns.map((id, index) => (
         <Fragment key={id}>
           {index > 0 && <ResizableHandle withHandle />}
           <ResizablePanel
