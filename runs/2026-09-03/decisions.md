@@ -4764,3 +4764,115 @@ such string exists — today an unselected cell renders nothing at all.
 The copy is therefore new: "Select a cell to edit its properties and code.",
 rendered with `ColumnPlaceholder` (already the UI-DIRECTION line-97 pattern),
 and only in the column — medium and narrow placements gain no new text.
+
+## 2026-09-07 — R110: n-D math values are a core language extension, spec-first, before any graph UI
+
+**Question.** UI-DIRECTION-2 decision 45c: node outputs are typed arrays of
+any dimension (series, per-lap value, time×frequency matrix, iEKF state
+vector) and every kind must feed further maths. C2 §3 math definitions
+yield 1-D channels today, and rasters are chart-side endpoints (design §4).
+
+**Ruling.** The maths lane's first task is **spec-first** and lands in C2
+before a line of graph UI: a value-shape type in the math language, which
+operators accept which shapes, how a shape is written in a definition, and
+how a chart selects a slice. No node-graph code is dispatched until that
+SPEC section is merged. The spectrogram → peak-frequency path is the
+worked example the section must carry end to end, because it is the case
+Isaac named as a must and it exercises reduce-a-matrix-to-a-series.
+
+**Cost if wrong.** Building the canvas first would bake 1-D assumptions
+into ports, wires and chart binding, and the iEKF — whose state vectors
+"everything else is based on" — would arrive as a special case bolted to a
+language that cannot express it. Rewriting the value model under a live
+graph editor is the expensive order.
+
+## 2026-09-07 — R111: multi-session selection is a contract change, done before the lanes that consume it
+
+**Question.** UI-DIRECTION-2 decision 46: selection is app-wide and must
+hold more than one session. `AppState.Selection` today is
+`{ sessionId: string | null, lapContext: LapContext | null }`.
+
+**Ruling.** `Selection` becomes an ordered list of selected sessions, each
+with its own lap context and its Data-tab colour (decision 84); the empty
+list is the "nothing selected" state that decision 48 restores at launch.
+The single-session shape is not kept as a special case alongside the list —
+one representation, so no view can read the wrong one. This is a C1/C3
+change (session ids crossing IPC, evaluation scoped to a set of sessions),
+not a UI edit, and it goes **before** the time/cursor and maths-graph
+lanes rather than after: both consume selection on every path.
+
+**Cost if wrong.** Every chart, every math evaluation and every inline
+value is scoped by selection. Adding the second session later means
+touching all of them twice and living with a period where
+"the selected session" is ambiguous in code that has two.
+
+## 2026-09-07 — R112: calibration lives in the bike profile, bound to the session by config_crc32 — no firmware change
+
+**Question.** UI-DIRECTION-2 Open item: does the calibration matrix live
+on the device stamped into each session's binary, or in the bike sheet?
+
+**Ruling.** Neither new mechanism — the binding already exists and ships.
+SPEC §7.6: the device computes bias and orientation and the app writes them
+into that bike's `idl0_config.json`. SPEC §5.1: every session header
+carries `Config CRC32` over those exact config bytes. So a session already
+names the calibration it was recorded under, and the app applies it at
+parse time (§7.6's last paragraph). The app-side home is the bike sheet's
+versioned instance (decision 79): each version records the config bytes it
+corresponds to and their CRC32, and a session resolves its calibration by
+matching. The re-apply-to-past-sessions path (decision 78) is then an
+explicit override recorded on the session, never a silent rewrite of what
+it was recorded with.
+
+**Cost if wrong.** Stamping a new copy into the binary would need a
+firmware change and a schema-version bump for something the header already
+identifies, and would give two sources of truth for one bike's
+calibration — the exact split that makes "which calibration produced this
+number" unanswerable a season later.
+
+## 2026-09-07 — R113: the device must report logging elapsed time; until it does, the app shows client-side timing and says so
+
+**Question.** UI-DIRECTION-2 decision 66: the recording timer uses a
+device-reported start, not the client's first `logging:true`. SPEC §7.3's
+status characteristic has `Logging: RUNNING|STOPPED` and no time field.
+
+**Ruling.** Add one line to the §7.3 status payload:
+`LoggingElapsed: N` — integer seconds since the current logging session
+started, device monotonic, present only while `Logging: RUNNING`.
+**Elapsed, not an epoch start**: the device clock is not wall-clock
+anchored until first GPS fix (§5.1 note), so a start timestamp would be
+wrong or absent exactly when a rider is watching the timer. §7.3 already
+says unknown lines are ignored and the set may grow, so this is backward
+compatible in both directions. It is **firmware work** and therefore
+Isaac's call to schedule; the app implements the reader now and falls back
+to client-side timing, rendered dimmed per §7.3's staleness rule, when the
+line is absent.
+
+**Cost if wrong.** An epoch-based field would make the field timer show a
+1970 date or jump when GPS locks — during recording, which decision 72
+declares appliance-grade. Blocking the Device lane on firmware instead of
+degrading would stall UI work that is otherwise ready.
+
+## 2026-09-07 — R114: wave 3 order — foundations, then the two big lanes, then polish and the report
+
+**Question.** UI-DIRECTION-2 decision 85 leaves the report-export lane's
+wave order to the lead, and rounds 1–2 now describe more work than can run
+at once on a memory-bound machine.
+
+**Ruling.** Four stages, recorded in `runs/2026-09-07/WAVE3-PLAN.md`:
+**W3.1 foundations** — R111 selection extension, and R110's n-D SPEC
+section (spec-first, no UI). These gate everything else and are cheap to
+get wrong late. **W3.2 the two big lanes** — the maths graph, and time /
+cursors / playback; independent of each other, both dependent on W3.1.
+**W3.3 cross-cutting** — errors and staleness (section D), and the Device
+tab's N-device work (section E, philosophy 73's click-count ceiling as the
+gate). **W3.4 season-scale** — bike sheet with the calibration wizard, then
+the PDF report. The report is last of the four because it renders the
+notebook's paper register, which every earlier stage changes; building it
+first would mean rebuilding it. It is not lowest value — decision 85 makes
+it a required deliverable — so it is the stage that ships wave 3, not a
+backlog item.
+
+**Cost if wrong.** Running the maths graph and the time/cursor lanes before
+the selection change means both write single-session code and both get
+rewritten. Putting the report earlier means rendering a register whose
+layout, error states and chart set are still moving.

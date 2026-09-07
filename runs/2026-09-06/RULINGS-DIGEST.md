@@ -138,3 +138,8 @@ superseding form.
 
 *Contained decision: the digest omits wave-1 execution-fix rulings (R9–R12, R14–R18, R20–R50) whose subject matter has landed and is now recorded in code, tests and the contracts themselves; the process rules they produced are carried above.*
 - **R109** — Editor reaches the studio properties column by `createPortal` into a slot node published through a shell context; state stays in the Notebook page; external hosting is decided by slot presence, never by measured width.
+- **R110** — n-D math values are a C2 language extension; the SPEC section lands before any graph UI (spectrogram to peak-frequency is the worked example).
+- **R111** — `Selection` becomes an ordered list of sessions with per-session lap context and colour; one representation, no single-session special case; C1/C3 change, done before the lanes that read it.
+- **R112** — Calibration lives in the bike profile and binds to a session through the header's existing `config_crc32`; no firmware change, no second source of truth.
+- **R113** — Device must report `LoggingElapsed: N` (seconds, monotonic, only while RUNNING) in the §7.3 status payload; firmware work, app degrades to dimmed client-side timing meanwhile.
+- **R114** — Wave 3 runs W3.1 foundations, W3.2 maths graph + time/cursors, W3.3 errors + device, W3.4 bike sheet + PDF report (`runs/2026-09-07/WAVE3-PLAN.md`).
