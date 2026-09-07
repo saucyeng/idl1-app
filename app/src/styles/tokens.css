@@ -1,0 +1,178 @@
+/* idl1 design tokens (UI-1). This is the ONLY file in the repo allowed to
+ * contain a hex colour literal — everything else references these custom
+ * properties, directly or through the shadcn / `@theme inline` mapping below
+ * (enforced by `tokenSheet.test.ts`).
+ *
+ * Dark is the design and the only palette authored here (UI-DIRECTION
+ * decision 5). A later light-mode selector, keyed off a `data-theme`
+ * attribute, re-declares these same custom-property NAMES with light
+ * values and nothing else — no light values are written in this pass.
+ */
+
+:root {
+  /* ---- Palette (UI-DIRECTION "Design tokens to adopt") ---- */
+  --bg: #121412; /* page (brandBg) */
+  --surface: #1a1e18; /* panels/cards/dialogs (brandSurface) */
+  --surface-2: #161915; /* recessed regions, tooltips, nav indicator fill (brandSurface2) */
+  --control: #20251d; /* resting chip/segment/input fill (brandControlFill) */
+  --control-active: #2d3327; /* selected segment/row (brandControlActive) */
+  --fg: #efeae0; /* primary text (brandFg) */
+  --fg-dim: #9a968a; /* labels, captions (brandFgDim) */
+  --fg-faint: #6c6a60; /* placeholders, disabled (brandFgFaint) */
+  --rule: #353a32; /* every hairline, chart grid and axis (brandRule) */
+  --accent: #e63946; /* alert/error/destructive, never a large healthy fill (brandAccent) */
+  --good: #35c46e; /* connected/OK/go CTA/selection bar (brandGood) */
+  --hivis: #f5d547; /* live only: recording, armed, active nav box (brandHivis) */
+  --info: #3b92e8; /* connectivity: BLE/WiFi/pair/connect CTA (brandInfo) */
+  --focus: var(--hivis); /* new: idl0 had no keyboard focus ring */
+
+  /* ---- Chart series, cycle order (UI-8 reads these) ---- */
+  --chart-1: #5ba6f0; /* azure */
+  --chart-2: #35c46e; /* green */
+  --chart-3: #f5d547; /* amber */
+  --chart-4: #e8964b; /* orange */
+  --chart-5: #b98ae6; /* violet */
+  --chart-6: #3fc9c0; /* teal */
+  --chart-7: #e86fa6; /* rose */
+  --chart-8: #e05a63; /* coral */
+
+  /* ---- Type ---- */
+  --font-mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+  --font-sans: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+
+  /* Scale (px). Weights are applied with Tailwind's standard font-weight
+   * utilities (400/500/600 only, per the direction) — no separate weight
+   * token. Line-height 1.0 for display/headline is Tailwind's `leading-none`. */
+  --text-display-1: 48px;
+  --text-display-2: 36px;
+  --text-display-3: 28px;
+  --text-headline-1: 24px;
+  --text-headline-2: 20px;
+  --text-headline-3: 18px;
+  --text-title-1: 16px; /* weight 600 */
+  --text-title-2: 14px; /* weight 500 */
+  --text-title-3: 12px; /* weight 500, --fg-dim, --tracking-label */
+  --text-body: 14px;
+  --text-body-small: 12px; /* --fg-dim */
+  --text-label-1: 12px; /* weight 500 */
+  --text-label-2: 11px; /* weight 500, --fg-dim */
+  --text-nav: 10px; /* uppercase, --tracking-label */
+
+  --tracking-label: 0.1em; /* uppercase labels (brandLabelTracking 1.6px @ 12px) */
+  --tracking-kicker: 0.14em; /* kickers (brandKickerTracking 2.0) */
+
+  /* ---- Spacing (px). --space-1 is the 4px base (brandPad). ---- */
+  --space-1: 4px;
+  --space-2: 6px;
+  --space-3: 8px;
+  --space-4: 12px;
+  --space-5: 14px;
+  --space-6: 16px;
+  --space-7: 24px;
+  --space-8: 32px; /* new: column gutters */
+  --row-rhythm: 6px; /* DenseRow vertical rhythm */
+  --hit-target: 44px; /* new: touch-first surfaces (Device, notebook output) */
+
+  /* ---- Radii ---- */
+  --radius-structural: 2px; /* brandControlRadius */
+  --radius: 7px; /* brandControlRadiusSoft; shadcn's --radius */
+  --radius-card: 0px; /* cards, dialogs, sheets, menus, toasts: 0 + 1px --rule border */
+
+  /* ---- Elevation: none. No shadow token is defined (UI-DIRECTION: depth
+   * is a surface step + hairline, never box-shadow). ---- */
+
+  /* ---- shadcn variable mapping ----
+   * Every shadcn variable below is a var(...) reference onto a token above,
+   * never a repeated hex.
+   *
+   * NAME COLLISION (flagged, needs a ruling): shadcn's own theme uses a
+   * variable literally named `--accent` for a *subtle highlighted
+   * background* (its `bg-accent`/`text-accent-foreground` utilities), which
+   * is a different concept from this project's brand `--accent` (the alert
+   * / error colour, #e63946, defined above). They cannot share the same
+   * custom-property name — `--accent: var(--control-active)` here would
+   * silently overwrite the brand alert colour for every consumer of
+   * `var(--accent)`, including this very mapping's own
+   * `--destructive: var(--accent)` line, which is supposed to read the
+   * alert colour. Resolution used here: the brand `--accent` token above is
+   * left untouched (still #e63946 everywhere); shadcn's "highlighted
+   * background" concept is aliased to `--shadcn-accent` instead, and only
+   * `--shadcn-accent` (not `--accent`) is wired to the `bg-accent` /
+   * `text-accent` Tailwind utilities in the `@theme inline` block below.
+   * Flag for the lead: confirm this reading, or rule that shadcn's `accent`
+   * utility should be renamed/avoided in generated components instead. */
+  --background: var(--bg);
+  --card: var(--surface);
+  --popover: var(--surface-2);
+  --muted: var(--control);
+  --shadcn-accent: var(--control-active); /* see NAME COLLISION note above — not `--accent` */
+  --foreground: var(--fg);
+  --muted-foreground: var(--fg-dim);
+  --border: var(--rule); /* every hairline is --rule (UI-DIRECTION §"App shell", decision 2) */
+  --input: var(--rule);
+  --ring: var(--focus);
+  --destructive: var(--accent); /* the brand alert colour, unmodified */
+
+  /* ---- Tailwind v4 theme: `@theme inline` exposes the tokens above as
+   * utility class names (`bg-surface`, not an arbitrary value), and keeps
+   * them `var(...)`-forwarded so a later light-mode override of the tokens
+   * re-declared above still reaches every utility class. Only
+   * colours and the two font families are bridged into Tailwind's `--color-*`
+   * / `--font-*` namespaces here; the type scale, spacing, and radii above
+   * are consumed as plain custom properties (arbitrary-value classes or
+   * component CSS) — narrower scope than a full theme namespace for every
+   * scale, left for a later task to widen if a generated component needs it. */
+}
+
+@theme inline {
+  --font-mono: var(--font-mono);
+  --font-sans: var(--font-sans);
+
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-control: var(--control);
+  --color-control-active: var(--control-active);
+  --color-fg: var(--fg);
+  --color-fg-dim: var(--fg-dim);
+  --color-fg-faint: var(--fg-faint);
+  --color-rule: var(--rule);
+  --color-brand-accent: var(--accent); /* the brand alert colour; see NAME COLLISION note */
+  --color-good: var(--good);
+  --color-hivis: var(--hivis);
+  --color-info: var(--info);
+  --color-focus: var(--focus);
+
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+  --color-chart-6: var(--chart-6);
+  --color-chart-7: var(--chart-7);
+  --color-chart-8: var(--chart-8);
+
+  --color-background: var(--background);
+  --color-card: var(--card);
+  --color-popover: var(--popover);
+  --color-muted: var(--muted);
+  --color-accent: var(--shadcn-accent); /* shadcn's highlighted-background concept, not brand accent */
+  --color-foreground: var(--foreground);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-destructive: var(--destructive);
+
+  --radius-structural: var(--radius-structural);
+  --radius-card: var(--radius-card);
+}
+
+/* Root base rule (UI-DIRECTION "Design tokens to adopt", type section). */
+:root {
+  font-variant-numeric: tabular-nums;
+  font-family: var(--font-mono);
+  color-scheme: dark;
+  background: var(--bg);
+  color: var(--fg);
+}

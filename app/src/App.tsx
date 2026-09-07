@@ -1,5 +1,4 @@
 import { useEffect } from "react";
-import "./App.css";
 import { fetchEngineVersion } from "./ipc/engine";
 import { AppStateProvider, useAppState } from "./state/AppState";
 import { ROUTES } from "./routes/types";

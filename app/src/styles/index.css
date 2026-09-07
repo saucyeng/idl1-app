@@ -1,0 +1,13 @@
+@import "tailwindcss";
+@import "./fonts.css";
+@import "./tokens.css";
+
+/* `.idl1-root` carried over from the deleted `App.css` (still referenced by
+ * `App.tsx`) as a token-driven rule — no component is restyled in UI-1, this
+ * only moves the same declarations onto tokens instead of hardcoded values. */
+@layer base {
+  .idl1-root {
+    font-family: var(--font-sans);
+    padding: var(--space-7); /* 1.5rem / 24px, unchanged from the deleted App.css */
+  }
+}
