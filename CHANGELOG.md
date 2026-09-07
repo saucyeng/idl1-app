@@ -43,6 +43,27 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 
 ### Fixed
 
+- **Column-divider drag died after one tick (2026-09-07, column-drag task, no
+  spec change needed).** `ColumnFrame`'s `onColumnResize` ran `setPrefs(...)`
+  (a React state update) on every drag tick, feeding the just-committed,
+  rounded width straight back into the live-dragging `ResizablePanel` as its
+  `defaultSize` prop; the panel library treated that as authoritative and
+  re-applied it, fighting its own in-flight drag state so every tick after
+  the first produced no further movement — confirmed by headless-Chrome CDP
+  pointer-drag against the dev server: the original code grew the panel by
+  one tick's delta then flatlined for the rest of the gesture despite
+  continued captured pointermove events, while the fix tracked every tick
+  up to the panel's `maxSize`. Fixed by keeping the live drag entirely
+  inside `react-resizable-panels`: `ResizablePanel.onResize` now only
+  writes the latest per-column pixel size into a ref (no state update, no
+  `localStorage` write), and `ResizablePanelGroup.onLayoutChanged` commits
+  once, only when `meta.isUserInteraction` is true (pointer released or a
+  resize key pressed) — matching the IPC-effects process rule's "decide
+  what to persist in a pure module" shape. The settle decision itself
+  (fold settled sizes into `ColumnPrefs`, recompute `collapsed` at the
+  4 px threshold) lives in a new pure, unit-tested
+  `app/src/shell/columnResize.ts`.
+
 - **The blackout's real cause: the sandbox iframe's opaque document
   background painted over the whole shell (2026-09-07, black-paint task, no
   spec change needed).** Root cause found and fixed: `Notebook/index.tsx`'s

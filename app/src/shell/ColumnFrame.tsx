@@ -1,6 +1,8 @@
 import { Fragment, useRef, useState, type ReactNode } from "react";
+import type { LayoutChangedMeta } from "react-resizable-panels";
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@/components/ui/resizable";
 import { readColumnPrefs, writeColumnPrefs, type ColumnId, type ColumnPrefs } from "./columnPrefs";
+import { decideSettledColumnPrefs, type SettledColumnSizes } from "./columnResize";
 import { visibleColumnIds } from "./columnVisibility";
 
 /** Props for {@link ColumnFrame}. */
@@ -24,12 +26,6 @@ export interface ColumnFrameProps {
   output: ReactNode;
 }
 
-/** Whether a resized panel's pixel width counts as "collapsed" for
- *  {@link ColumnPrefs.collapsed} bookkeeping — a few pixels of slop below
- *  the column's own collapsed target, since drag-to-collapse rarely lands
- *  on exactly zero. */
-const COLLAPSED_THRESHOLD_PX = 4;
-
 /**
  * The wide-layout (≥ 1200 px) dockable column frame (UI-DIRECTION "App shell
  * and navigation", reference order): library (280) | maths graph (flex) |
@@ -46,19 +42,33 @@ export default function ColumnFrame({ library, maths, properties, output }: Colu
   const initialPrefs = useRef<ColumnPrefs>(readColumnPrefs()).current;
   const [prefs, setPrefs] = useState(initialPrefs);
 
-  function persist(next: ColumnPrefs): void {
-    setPrefs(next);
-    writeColumnPrefs(next);
-  }
+  // The live prefs, mirrored into a ref so the settle handler always reads
+  // the latest value without depending on `prefs` (which would re-create
+  // it, and every consumer that closes over it, on every settle).
+  const prefsRef = useRef(prefs);
+  prefsRef.current = prefs;
+
+  // Every column's most recent pixel size during the in-flight gesture.
+  // `onResize` (below) only ever writes here — no state update, no
+  // `localStorage` write — so a drag tick never re-renders `ColumnFrame`
+  // and the panel/handle elements the browser is mid-gesture with are
+  // never replaced under the pointer.
+  const liveSizesRef = useRef<SettledColumnSizes>({});
 
   function onColumnResize(id: ColumnId, inPixels: number): void {
-    const collapsedNow = id !== "output" && inPixels <= COLLAPSED_THRESHOLD_PX;
-    const collapsed = collapsedNow
-      ? prefs.collapsed.includes(id)
-        ? prefs.collapsed
-        : [...prefs.collapsed, id]
-      : prefs.collapsed.filter((c) => c !== id);
-    persist({ ...prefs, widths: { ...prefs.widths, [id]: Math.round(inPixels) }, collapsed });
+    liveSizesRef.current[id] = inPixels;
+  }
+
+  // Fires once, after the pointer is released (or a resize key pressed) —
+  // never per drag tick (`react-resizable-panels`' `onLayoutChanged`
+  // contract). `isUserInteraction` excludes the initial-mount call and any
+  // future imperative `setLayout`, so only an actual gesture ever writes.
+  function onLayoutChanged(_layout: unknown, meta: LayoutChangedMeta): void {
+    if (!meta.isUserInteraction) return;
+    const next = decideSettledColumnPrefs(prefsRef.current, liveSizesRef.current);
+    liveSizesRef.current = {};
+    setPrefs(next);
+    writeColumnPrefs(next);
   }
 
   const panelProps: Record<ColumnId, { defaultSize: number; minSize?: number; maxSize?: number }> = {
@@ -72,7 +82,7 @@ export default function ColumnFrame({ library, maths, properties, output }: Colu
   const columns = visibleColumnIds(content);
 
   return (
-    <ResizablePanelGroup orientation="horizontal" className="h-full w-full">
+    <ResizablePanelGroup orientation="horizontal" className="h-full w-full" onLayoutChanged={onLayoutChanged}>
       {columns.map((id, index) => (
         <Fragment key={id}>
           {index > 0 && <ResizableHandle withHandle />}
