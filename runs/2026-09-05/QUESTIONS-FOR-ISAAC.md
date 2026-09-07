@@ -70,3 +70,16 @@ From the restyle, the gaps the Device tab still carries:
 5. HRM "Search nearby" lists every BLE device (no service-UUID filter).
 6. Push config cannot read device mode first; a wrong-mode push surfaces as
    a rejection, not a pre-check.
+
+## 13. Firmware items unblocked 2026-09-07 ("firmware changes are completely okay")
+- **`LoggingElapsed: N`** in the §7.3 status payload (R113) — seconds,
+  device monotonic, present only while `Logging: RUNNING`. Needed for the
+  device-reported recording timer (direction-2 decision 66).
+- **Calibration (R116):** the from-scratch routine needs a straight-line
+  acceleration run to observe yaw. Open: is that a *device* mode (the
+  device detects the run and computes) or an *app* routine over a short
+  recorded session? Given §1 ("analysis DSP never runs on the device"),
+  the app is the natural home — confirm.
+- Assumption recorded: the 320 g IMUs' scale-factor error is not
+  calibrated today and v1 will not calibrate it. Flag if that is not
+  acceptable for the high-g channels.

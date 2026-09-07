@@ -4876,3 +4876,70 @@ backlog item.
 the selection change means both write single-session code and both get
 rewritten. Putting the report earlier means rendering a register whose
 layout, error states and chart set are still moving.
+
+## 2026-09-07 — R115: selection is a list of time windows, not of sessions (Isaac's amendment to R111)
+
+**Isaac, 2026-09-07:** "it's all one in the same though, we are just picking
+windows of time series data. it doesnt matter if it's a session or a lap."
+
+**Ruling.** R111's list is a list of **windows**, not of sessions. One
+selected window is `{ sessionId, span, colour }` where `span` is the whole
+session, a lap id, or an explicit time range. Session-to-session and
+lap-to-lap comparison are then the same operation on the same structure,
+and nothing in evaluation, charting or the cursor needs to know which kind
+it was picked as. Decision 52's draggable boundary cursors produce exactly
+this object — a dragged boundary mints an explicit-range window, the same
+type a lap click mints — so the master timeline needs no separate concept.
+Decision 48's "nothing selected" is the empty list.
+
+**Cost if wrong.** The session/lap distinction, kept in the type, would
+propagate a two-case branch into every consumer — evaluation scoping,
+chart alignment, the cursor value card, the colour legend — and the "pick
+an arbitrary range" gesture would arrive later as a third case rather than
+as the general one those two were always instances of.
+
+## 2026-09-07 — R116: decision 67 stands — do not port the calibration routine; the real one needs motion
+
+**Question.** Isaac: "can you think through that calibration routine and
+think if it's actually optimized? i doubt it because i didnt actually use
+it... maybe we just port it as is and worry about it later."
+
+**Analysis of SPEC §20 / §7.6 as specified.** A single static hold averages
+samples and claims to compute both a 6-element bias and a 3×3 sensor→vehicle
+rotation. Two independent problems:
+1. **Bias and orientation are not separable from one pose.** A static
+   reading gives `a_meas = R·g + b` — three equations for three bias
+   unknowns plus the rotation. One pose cannot solve both; the routine can
+   only work by assuming accel bias is zero and attributing all of it to
+   orientation (or vice versa). Separating them is what a multi-pose
+   (6- or 12-position) capture is for.
+2. **Yaw is unobservable from gravity.** Gravity fixes roll and pitch and
+   says nothing about heading around the vertical axis. §20's degenerate-case
+   note (a 180° fallback about vehicle X) confirms a shortest-arc
+   vector-to-vector rotation, which by construction leaves yaw arbitrary.
+   With several IMUs this is worse than imprecise: each gets a *different*
+   arbitrary yaw, so the sensors are not in one baseline frame — the exact
+   thing decision 78 says calibration is for — and any cross-IMU fusion
+   (the iEKF) inherits the inconsistency.
+
+Also uncalibrated: accel scale factor and cross-axis misalignment (which
+matter more at the new 320 g range), and the frame is captured unloaded
+while every session is ridden loaded.
+
+**Ruling.** Decision 67 stands: do not port the panel. Porting it would
+ship a rotation matrix that looks authoritative and is arbitrary in yaw,
+and Isaac does not use it today (he records a static session and applies
+the numbers in math channels), so a port has negative value. The
+from-scratch routine, specified in W3.4, is:
+- **static hold** → gyro bias, and roll/pitch from gravity;
+- **one straight-line acceleration run** → the forward axis, which is the
+  only way to observe yaw; this is the standard in-field vehicle-alignment
+  method and needs no rig;
+- accel bias/scale left out of v1 unless a multi-pose capture is shown to
+  be practical on a bike, and estimated instead from known-static periods
+  across sessions.
+Nothing blocks on this: calibration is W3.4.
+
+**Cost if wrong.** Porting first costs the port, then the rewrite, and in
+between produces sessions calibrated with an arbitrary-yaw matrix that
+later analysis cannot distinguish from a good one.
