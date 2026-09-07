@@ -4207,3 +4207,29 @@ unavailable) — a UI-10/11 question, not a silent transform.
 
 **Cost if wrong:** one file handle per workbook opened this session; the
 sandbox and eval — the expensive parts — do stop.
+
+## 2026-09-07 — R99: the shared cursor is worksheet state; `index.tsx` is in scope for UI-11
+
+UI-11 found no cross-cell cursor or viewport state: `chartWindows` is
+per-cell and each `ChartCell` runs its own `cursorReadoutDriver`. Isaac's
+decisions 18 and 27 are explicit that a cursor is shared by every chart
+in a worksheet and that playback pans all of them, so scoping the feature
+down would ship the label without the thing. **Ruling:** the Notebook
+page's own `index.tsx` **is** in scope for UI-11 (it is this lane's
+orchestration file, not another page), for exactly one addition: a
+worksheet-level cursor/playback state — a cursor time plus a playback
+clock — that every mounted `ChartCell` reads and that a playback tick
+advances by panning each cell's committed viewport. Constraints:
+- The decision logic is a pure tested module (`interaction/`): "given a
+  cursor time and each cell's viewport, what does each cell show", and
+  the clock with an injected scheduler. `index.tsx` only wires it.
+- Per-cell readout drivers stay (R62's 150 ms pointer-stop settle is per
+  chart); what is shared is the **cursor time**, not the driver.
+- Interaction path stays local (P3/P4): cursor moves and playback ticks
+  are host state + `transform` postMessages only; IPC on settle only. If
+  panning during playback would fire settle continuously, ship playback
+  **paused-on-settle** (pan visually, refetch once when playback stops)
+  and report it — do not stream IPC.
+- `App.tsx`/`state/AppState.tsx` stay untouched; this is Notebook state.
+
+**Cost if wrong:** one lifted state in one file, in the lane that owns it.
