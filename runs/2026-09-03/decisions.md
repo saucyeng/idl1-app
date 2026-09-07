@@ -4035,3 +4035,23 @@ owns the mount-and-hide fix for the Device poll (`composeVisibility`);
 UI-5 gates on it. Worktrees `ui-<n>`.
 
 **Cost if wrong:** all reversible in one task each.
+
+## 2026-09-07 — R94: `--accent` collision; the brand token wins
+
+UI-1 found shadcn's own `--accent` (a highlight background) colliding with
+the brand `--accent` (alert red `#E63946`, direction file's token table).
+**Ruling:** the brand token keeps the name; shadcn's is aliased to
+`--shadcn-accent` as UI-1 did. The token table in `UI-DIRECTION.md` is the
+vocabulary of this app; a library variable renames, never the design.
+UI-2 onward must map shadcn component classes onto `--shadcn-accent`
+where the library means "highlight" and onto `--accent` only for
+alert/error/destructive. The colour-literal test's broadening to
+`rgb()/rgba()/hsl()/hsla()` is accepted.
+
+**Cost if wrong:** one rename across generated components.
+
+**review-ui-1 Important, ruled:** `lucide-react` landed in UI-1 though the
+brief deferred it. R93 approved the icon set; UI-2 is its first consumer
+and the dependency is pinned and unused, not wrong. **Accepted in place**
+(no revert-and-re-add churn); UI-2's brief now owns it. The Minor goes to
+UI-2 as well. UI-1 is CLEAN as landed.
