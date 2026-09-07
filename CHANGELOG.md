@@ -402,6 +402,37 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
   Filters: `cargo test -p idl-transport sync::client` (17 passed),
   `cargo test -p idl-transport sync::` (73 passed, 1 ignored). `cargo
   check -p idl-rs-tauri` clean.
+- **L11 Task 11b: `render_workbook`/`parse_workbook` fixed-point fix
+  (2026-09-07, idl-rs core, `workbook::v3`, ruling R103).** Task 11's
+  loopback proof found `render_workbook(parse_workbook(s)) != s`: re-
+  parsing and re-rendering an untouched cell shifted its surrounding
+  blank-line spacing, which C2 §7.3's byte-identical `Unchanged`/`Changed`
+  cell classification then misread as a spurious edit. Root cause:
+  `scan_cells`'s pulldown-cmark code-block byte range ends right at a
+  fence's closing `` ``` ``, *before* that line's own line-ending newline
+  — that newline is already the first byte of the following
+  `prose_before`/`prose_after`/`trailing_prose` span — but
+  `render_workbook` also hard-coded a `"\n"` after the closing marker,
+  doubling that byte into a spurious blank line around every fence, every
+  render. Fix: `render_workbook` no longer appends that newline; the
+  captured prose span supplies it (or supplies nothing, for a document
+  with no trailing newline at all). Front matter is excluded from the
+  strict invariant, on purpose: `render_front_matter`'s existing contract
+  is "round-trips through `parse_front_matter`, not exact bytes" (its own
+  doc comment), which is safe here because C2 §7.1 merges front matter
+  per structured top-level key, never as raw YAML text, so a reformatted-
+  but-equivalent front-matter block cannot manufacture R103's bug. New
+  `render_workbook_is_a_fixed_point_*` suite in `workbook::v3::mod::tests`
+  pins the body-exact invariant unconditionally and the whole-document
+  invariant when front matter is already canonical, over: the C2 §2.5
+  worked example, a prose-only document, adjacent fences with no blank
+  line between, a fence followed by prose with two blank lines, trailing
+  whitespace, a document with no trailing newline, and front matter with
+  every optional field populated. `sync::loopback_tests`'s `edit_cell`
+  helper (Task 11's clone-and-render-once workaround) is now provably
+  unnecessary but was left as-is per this task's scope — a follow-up can
+  simplify it to a plain re-parse-and-edit. Filters: `cargo test -p idl-rs
+  workbook::v3` (114 passed), `cargo check -p idl-rs-cli --tests` (clean).
 - **L8x lane complete: Data-tab write commands (2026-09-06, idl-rs core +
   idl-rs-tauri, ruling R86).** Five new commands close the last C3 §6
   deferrals the Data tab still stubbed: `save_track`, `delete_track`,
