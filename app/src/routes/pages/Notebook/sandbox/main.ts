@@ -17,8 +17,14 @@
  * `:root` definitions of `--bg`/`--rule`/`--chart-1`… to resolve anything.
  * Vite's `notebookSandbox` entry (R56) bundles and links this stylesheet for
  * this HTML entry same as any other CSS import.
+ *
+ * `sandboxCanvas.css`, imported after it, neutralises `tokens.css`'s own
+ * `:root`/`body` background for this document only (see that file's doc
+ * comment for the full blackout mechanism it fixes) -- source order, not
+ * specificity, is what makes it win, so it must stay after this line.
  */
 import "../../../../styles/tokens.css";
+import "./sandboxCanvas.css";
 import { Runtime } from "@observablehq/runtime";
 import * as Plot from "@observablehq/plot";
 import * as d3 from "d3";

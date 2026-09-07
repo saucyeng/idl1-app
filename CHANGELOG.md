@@ -4,6 +4,35 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 
 ## [Unreleased]
 
+### Fixed
+
+- **The blackout's real cause: the sandbox iframe's opaque document
+  background painted over the whole shell (2026-09-07, black-paint task, no
+  spec change needed).** Root cause found and fixed: `Notebook/index.tsx`'s
+  sandbox container is `position: fixed; inset: 0` (needed so
+  `getBoundingClientRect()` rects line up with `SandboxHost`'s
+  `layoutMessage` coordinates), which spans the *whole browser viewport*,
+  including the space TopBar/BottomBar occupy — and Notebook is always
+  mounted (R93 mount-and-hide), so its iframe loads at every launch. A
+  `position: fixed` element paints above its document's ordinary,
+  non-positioned static-flow siblings regardless of z-index or DOM nesting
+  depth (CSS2.1 Appendix E) — confirmed by reproducing the exact mechanism
+  in a minimal headless-browser screenshot: an opaque, viewport-covering
+  `position: fixed` layer fully hid unrelated static sibling text. The
+  sandbox document's own copy of `tokens.css` sets `:root { background:
+  var(--bg) }`, painting that entire fixed, viewport-spanning canvas
+  near-black — blacking out the nav bar and every tab's content together,
+  with no thrown error, no removed DOM node and no navigation, which is
+  exactly why the dev-only root-observer tripwire (watching only `#root`'s
+  children/size) never fired. Fixed with a new
+  `Notebook/sandbox/sandboxCanvas.css`, imported after `tokens.css` in
+  `sandbox/main.ts`, that resets `:root`/`body` background to `transparent`
+  for the sandbox document only — every chart cell already paints its own
+  opaque `--bg` fill (`theme/plotTheme.ts`'s `style.background`), so no
+  chart's appearance changes; everywhere else in that canvas the host's own
+  identical `--bg` (or its real chrome) now shows through instead of being
+  painted over.
+
 ### Added
 
 - **Root-level error boundary; the async-error banner survives an app-root
