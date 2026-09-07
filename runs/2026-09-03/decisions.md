@@ -4063,3 +4063,15 @@ UI-2 owns it). Tokens in `app/src/styles/tokens.css` are the only place a
 colour literal may appear, enforced by `tokenSheet.test.ts`. Plex woff2
 committed (latin + latin-ext subsets); `vite build` output carries no
 external font/style URL. Worktree retired.
+
+## 2026-09-07 — UI-2 LANDED (primitives + brand widgets; main suite 101 / 959)
+
+`55ba799`, review CLEAN (two Minors: the latent `TableHeader` name
+collision — later tasks alias the brand one as `BrandTableHeader` when
+both are imported; four parity gaps assigned: ColorGridPicker/
+GroupedChannelList/ModeAwareCheckbox → UI-5, StatusDropdownTrigger →
+UI-6). Judgment calls accepted: filled-normal button = `--fg` on `--bg`;
+no tooltip arrow (zero-elevation rule makes one awkward). Worktree
+retired. **Merge note:** the lead must `npm install` in `app/` after a
+merge that adds a dependency — `tsc` fails otherwise on the shared
+checkout.
