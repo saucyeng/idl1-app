@@ -277,6 +277,31 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
   find. `theme/slotStates.ts` is delivered as a standalone tested module,
   not yet wired into any render site (no existing chart-cell empty/error UI
   to attach it to in this pass).
+- **UI-9: CodeMirror brand theme for md/js/math (2026-09-06, no spec change
+  needed — decision 32).** New `Notebook/editor/cmTheme.ts`: `SYNTAX_ROLE_VARS`
+  maps ten `SyntaxRole`s (`keyword`/`function`/`string`/`number`/`channelRef`/
+  `cellRef`/`operator`/`labelComment` onto the 8-hue chart series cycle,
+  `identifier`/`comment` onto the neutral `--fg`/`--fg-faint` ladder rather
+  than joining the cycle — an all-rainbow editor reads noisier than idl0's
+  chrome, and decision 32 says colour *comes from* the series, not that
+  every token must carry one); `brandHighlightStyle` builds a `HighlightStyle`
+  from it, covering both the general `@lezer/highlight` tags markdown/
+  JavaScript emit and the math `StreamLanguage`'s own `special(...)`/
+  `docComment` tags (`CodePane.tsx`'s `MATH_TOKEN_TAGS`), ordered so the more
+  specific math tags win over the general ones they nest under;
+  `brandEditorTheme` supplies chrome (background, gutter + hairline, active
+  line/gutter, selection, cursor, a dormant matching-bracket style, and the
+  `--focus` ring via `outline` — never `box-shadow`) plus mono type at
+  `--text-body-small` with tabular figures. Resolves every colour through
+  UI-8's `CssVarReader`/`documentVars()` (no second resolver), throwing a
+  `MissingThemeTokenError` on an empty token rather than a hex fallback, the
+  same shape as `theme/series.ts`'s `MissingChartTokenError`.
+  `CodePane.tsx` swaps `defaultHighlightStyle` for `brandHighlightStyle` and
+  adds `brandEditorTheme`; nothing else in that file (debounce, completion
+  source, math tokenizer, keymap) changes. **Parity gap:** bracket matching
+  itself is not wired up (`CodePane.tsx` never imports `bracketMatching()`);
+  the theme styles `.cm-matchingBracket` in anticipation, but it is inert
+  until a later task adds the extension.
 - **L8x lane complete: Data-tab write commands (2026-09-06, idl-rs core +
   idl-rs-tauri, ruling R86).** Five new commands close the last C3 §6
   deferrals the Data tab still stubbed: `save_track`, `delete_track`,
