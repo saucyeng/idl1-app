@@ -4179,3 +4179,12 @@ may rename them in the same commit.
 
 **Cost if wrong:** a theme applied in one place instead of two, where the
 second place does not exist.
+
+**R97 addendum:** Plot exposes no `textTransform`/`letterSpacing` on text
+or axis marks (verified against `docs/vendor/observable-plot/marks/{text,
+axis}.md`), so the direction's "uppercase tracked axis titles" is not
+implementable without uppercasing tick labels too. Recorded as a real API
+limitation in `plotTheme.ts` + CHANGELOG with a test asserting the
+omission. If Isaac wants it, the honest route is uppercasing the label
+string at authoring time in `plotForm/generate.ts` (tracking still
+unavailable) — a UI-10/11 question, not a silent transform.
