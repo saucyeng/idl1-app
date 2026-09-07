@@ -4644,3 +4644,14 @@ Chrome tab does not reproduce; (3) real data volumes the stubs do not
 exercise. Next instrument: a `MutationObserver` on `#root` logging a
 stack when its child count drops, shipped behind a dev-only flag so
 Isaac's own window captures the culprit.
+
+## 2026-09-07 — Blackout tripwire LANDED (`0b889d5`; main 132 / 1216)
+
+Dev-only (`import.meta.env.DEV`, absent from `dist/` — verified by grep):
+a `MutationObserver` on `#root`/`body` that `console.error`s a
+`[root-observer-tripwire]` block with a **stack at the moment of the
+mutation**, removed node names, child count, body class, href and ms
+since load; plus `beforeunload`/`pagehide` logging the same shape (so a
+silent navigation is distinguishable from a DOM wipe) and a 2 s poll for
+`#root` surviving at zero height. Decision logic pure and tested (13
+cases). Isaac reloads, reproduces once, and reads the red block.
