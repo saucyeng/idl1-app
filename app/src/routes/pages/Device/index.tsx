@@ -24,30 +24,34 @@ import PushConfigBar from "./PushConfigBar";
 import { listSources } from "./sources";
 import { deviceStatusReducer, initialDeviceStatusState, isLinkLost, startStatusPoll } from "./statusPoll";
 import type { StatusPollDeps } from "./statusPoll";
+import { composeVisibility, getActiveRoute, subscribeRouteVisible } from "../../../shell/routeVisibility";
 
 /** Scan window length passed to `bleScan` (C3 §3.8), in milliseconds. Not
  *  user-configurable in wave 2. */
 const SCAN_TIMEOUT_MS = 10_000;
 
 /** Real `StatusPollDeps` for `startStatusPoll` (`statusPoll.ts`): the actual
- *  `device_status` command plus the real timer and page-visibility APIs.
- *  Built once at module scope — every field is a stable, side-effect-free
+ *  `device_status` command plus the real timer and visibility APIs. Built
+ *  once at module scope — every field is a stable, side-effect-free
  *  function reference, so passing this object into an effect never
  *  violates the "no function props in a dependency array" rule (the object
  *  itself is not part of any dependency array; the effect below reads it
- *  directly from this module). */
+ *  directly from this module).
+ *
+ *  `isVisible`/`onVisibilityChange` compose the window's own visibility with
+ *  whether Device is the shell's active route (`shell/routeVisibility.tsx`'s
+ *  `composeVisibility`/`subscribeRouteVisible`, UI-4 brief "Mount-and-hide vs.
+ *  the Device poll", R78): under mount-and-hide every page stays mounted, so
+ *  `document.visibilityState` alone no longer means "on screen" — a hidden
+ *  Device tab would otherwise keep the BLE link polled at 1 Hz forever. The
+ *  poll's own pause/resume logic in `statusPoll.ts` is unchanged; only what
+ *  "visible" means to it has. */
 const STATUS_POLL_DEPS: StatusPollDeps = {
   deviceStatus,
   setTimeout: (fn, ms) => window.setTimeout(fn, ms),
   clearTimeout: (handle) => window.clearTimeout(handle),
-  isVisible: () => document.visibilityState === "visible",
-  onVisibilityChange: (handler) => {
-    const listener = () => {
-      if (document.visibilityState === "visible") handler();
-    };
-    document.addEventListener("visibilitychange", listener);
-    return () => document.removeEventListener("visibilitychange", listener);
-  },
+  isVisible: () => composeVisibility(document.visibilityState === "visible", getActiveRoute() === "device"),
+  onVisibilityChange: (handler) => subscribeRouteVisible("device", handler),
 };
 
 /** Real IO for `profilesSync.ts` — the landed `list_profiles`/`save_profile`/
