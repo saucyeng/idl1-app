@@ -1,0 +1,37 @@
+/* This document (`sandbox/main.ts`) fills the browser's whole viewport --
+ * `host/SandboxHost.ts`'s `createIframe()` sizes the iframe to its
+ * `container`, which `Notebook/index.tsx` deliberately makes
+ * `position: fixed; inset: 0` so `getBoundingClientRect()` rects line up
+ * 1:1 with the host's `layoutMessage` coordinates (viewport px). That
+ * includes the screen space the shell's own TopBar/BottomBar occupy, not
+ * just Notebook's own content area.
+ *
+ * `tokens.css`'s shared `:root { background: var(--bg) }` rule (imported
+ * by `main.ts` above this file) paints that *entire* canvas opaque. Because
+ * a `position: fixed` element always paints above its document's ordinary,
+ * non-positioned static-flow siblings regardless of z-index or how deep it
+ * sits in the DOM (CSS2.1 Appendix E, painting-order steps 3 vs. 6) --
+ * confirmed by reproducing the mechanism directly (a `position:fixed;
+ * inset:0` layer with an opaque fill painted over unrelated static
+ * sibling text in a minimal headless-browser repro) -- that opaque fill
+ * blacks out the *entire* app, nav bars included, the moment this document
+ * loads (Notebook is always mounted, R93 mount-and-hide), even while
+ * React's tree, `#root` and every component stay perfectly healthy. This
+ * is the 2026-09-07 blackout: no thrown error, no removed node, no
+ * navigation -- a pure paint-order defect the dev-only root-observer
+ * tripwire (`shell/rootObserverTripwire.ts`) structurally cannot see,
+ * since it never touches `#root`'s children or size.
+ *
+ * Every chart cell already paints its own opaque `--bg` fill explicitly
+ * (`theme/plotTheme.ts`'s `style.background`), so removing the
+ * document-level fill costs a rendered chart nothing. Elsewhere in this
+ * canvas -- everywhere no cell's own container (`main.ts`'s
+ * `CellContainers`) is currently positioned -- transparency lets the
+ * host's own identical `--bg` show through unchanged in the ordinary case,
+ * and its real TopBar/BottomBar/route chrome show through correctly
+ * instead of being painted over.
+ */
+:root,
+body {
+  background: transparent;
+}
