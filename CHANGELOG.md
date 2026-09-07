@@ -6,6 +6,24 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 
 ### Changed
 
+- **The studio's properties column hosts the real cell editor, not a
+  placeholder (2026-09-07, properties-editor task, no spec change needed).**
+  R108/R109: the wide-layout studio's properties column previously showed
+  `ColumnPlaceholder`'s "reserved for a later lane" text while the real
+  `EditorPanes` (Properties/Code tabs) rendered inside the Notebook page's
+  own resizable pane. A new shell-level slot (`shell/editorSlot.ts`,
+  published by the new `shell/EditorSlotColumn.tsx`) carries the column's
+  DOM node to `Notebook/index.tsx`, which portals the same `EditorPanes`
+  element into it via `createPortal` and renders no second instance.
+  Whether the editor is portal-hosted is decided by slot-node presence
+  alone (`model/editorHost.ts`'s `resolveEditorHost`, unit-tested), never by
+  the page's own measured width, which inside the studio is only the output
+  column's width and can read as medium/narrow while the properties column
+  is right there. Medium and narrow placements (inline under the cell,
+  Properties `Sheet`) are unchanged when no slot node is published. When no
+  cell is selected the column shows a `ColumnPlaceholder` empty-state
+  sentence instead of an editor.
+
 - **Notebook studio drops the library column (2026-09-07, notebook-columns
   task, no spec change needed).** R107: Isaac saw the wide-layout studio
   live and judged the library/filter column redundant with the Data tab.
