@@ -4,6 +4,22 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 
 ## [Unreleased]
 
+### Changed
+
+- **Notebook studio drops the library column (2026-09-07, notebook-columns
+  task, no spec change needed).** R107: Isaac saw the wide-layout studio
+  live and judged the library/filter column redundant with the Data tab.
+  `RouteHost` no longer passes a `library` child into `ColumnFrame`; the
+  remaining wide-layout columns are maths graph | properties | notebook
+  output. `ColumnFrame`'s `library` prop is now optional and a new
+  `columnVisibility.ts` (`visibleColumnIds`) renders only the columns given
+  content — no empty panel, no stray divider handle. `columnPrefs.ts` keeps
+  the `library` column id unchanged so a stored `library` width or
+  collapsed flag from before this change still loads (clamped, just
+  unrendered), and so a future filtering widget can take the slot back.
+  `runs/2026-09-06/ui/UI-DIRECTION.md` decision 11's reference layout is
+  amended with a note citing R107.
+
 ### Fixed
 
 - **The blackout's real cause: the sandbox iframe's opaque document

@@ -69,7 +69,6 @@ export default function RouteHost({ layout }: { layout: ShellLayout }) {
         const content =
           r.id === "notebook" && notebookInColumns ? (
             <ColumnFrame
-              library={<ColumnPlaceholder>Data library filter — reserved for a later lane</ColumnPlaceholder>}
               maths={<ColumnPlaceholder>Maths graph — reserved (UI-DIRECTION decision 11)</ColumnPlaceholder>}
               properties={<ColumnPlaceholder>Cell properties — reserved for a later lane</ColumnPlaceholder>}
               output={ROUTE_ELEMENTS.notebook}
