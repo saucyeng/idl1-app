@@ -4332,3 +4332,26 @@ and shuts the daemon down promptly; test that dropping the receiver ends
 the task with no event arriving. The Minor goes with it. The
 hostile-peer-id-as-path check came back clean: `peer_id` never reaches a
 filesystem path.
+
+## 2026-09-07 — R101: `safe_join` stays lexical; the symlink case is documented, not defended
+
+The security re-review confirms the remote path escape is closed, and
+raises that `safe_join` is lexical, not filesystem-canonicalised, so it
+does not defend against a symlink or junction **already inside**
+`data_root` pointing out of it — a deviation from R100's "canonicalised"
+wording. **Ruling: lexical is correct here and R100's wording is
+amended.** Canonicalising needs the target to exist, which it does not on
+a create path (Windows `canonicalize` fails on a missing file), so a
+canonicalising guard would either be skipped exactly where a new file is
+written or need a fragile parent-walk. The threat it would add cover for
+requires an attacker who can already create a link inside the user's data
+directory — at which point they have local write access and the sync
+server is not the weak point. **Required instead:** `safe_join`'s doc
+comment states the boundary precisely (lexical containment; a pre-existing
+link inside `data_root` is out of scope and why), and `verify_data_dir`
+(C4 §7) gains a finding for a symlink/junction inside the data directory
+so the case is *detected* rather than silently trusted — filed as an
+L8-class follow-on, not this lane's work.
+
+The other Important — no logged full-suite run — is real: the lane gate
+at Task 12 covers it, and the lead runs it there rather than mid-lane.
