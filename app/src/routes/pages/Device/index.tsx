@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useReducer, useState } from "react";
 
+import { SectionHead } from "../../../components/brand/SectionHead";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "../../../components/ui/collapsible";
 import { listProfiles, saveProfile, deleteProfile } from "../../../ipc/app";
 import { listSessions } from "../../../ipc/catalog";
 import { bleScan, connectDevice, deviceControl, deviceStatus, disconnectDevice } from "../../../ipc/device";
@@ -25,6 +27,11 @@ import { listSources } from "./sources";
 import { deviceStatusReducer, initialDeviceStatusState, isLinkLost, startStatusPoll } from "./statusPoll";
 import type { StatusPollDeps } from "./statusPoll";
 import { composeVisibility, getActiveRoute, subscribeRouteVisible } from "../../../shell/routeVisibility";
+
+/** How often the recording timer's local display state re-renders, in
+ *  milliseconds. Wall-clock display only — advancing this never calls IPC,
+ *  so it does not fall under the effects rule (lane brief Open question 2). */
+const TIMER_TICK_MS = 1_000;
 
 /** Scan window length passed to `bleScan` (C3 §3.8), in milliseconds. Not
  *  user-configurable in wave 2. */
@@ -102,6 +109,17 @@ export default function Device() {
   const [pendingControl, setPendingControl] = useState<DeviceControlCommand | null>(null);
   const [lastControlOutcome, setLastControlOutcome] = useState<ControlOutcomeView | null>(null);
   const [controlError, setControlError] = useState<string | null>(null);
+  // Wall-clock timestamp this session first observed `logging: true`, for
+  // `HeroCard`'s recording timer (lane brief Open question 2) — reset to
+  // null the moment a poll or control read-back reports `logging` false
+  // again. Not derived from any device-reported time (SPEC §23.10: the
+  // device does not report a recording-start time), so this is only ever
+  // "how long this app has seen it recording", not ground truth.
+  const [recordingStartedAtMs, setRecordingStartedAtMs] = useState<number | null>(null);
+  // Ticks once a second purely to re-render while recording, so the timer
+  // text advances — no IPC, so the effects rule does not reach it (lane
+  // brief Open question 2).
+  const [, tickTimer] = useState(0);
 
   function dispatchProfiles(action: Parameters<typeof profilesReducer>[1]): void {
     setProfilesState((prev) => profilesReducer(prev, action));
@@ -245,50 +263,68 @@ export default function Device() {
     return stop;
   }, [state.connected?.device_id]);
 
+  // Tracks when this session first saw `logging: true` (local display state
+  // only — no IPC, lane brief Open question 2). Cleared on disconnect and
+  // whenever a fresh read reports `logging: false`, so a stale timer never
+  // survives a stop it missed.
+  const logging = statusState.status?.logging === true;
+  useEffect(() => {
+    if (!logging) {
+      setRecordingStartedAtMs(null);
+      return;
+    }
+    setRecordingStartedAtMs((prev) => prev ?? Date.now());
+  }, [logging]);
+
+  // 1 Hz display tick while recording, so `HeroCard`'s elapsed-time text
+  // advances even though nothing else about `statusState` has changed.
+  useEffect(() => {
+    if (recordingStartedAtMs === null) return;
+    const handle = window.setInterval(() => tickTimer((n) => n + 1), TIMER_TICK_MS);
+    return () => window.clearInterval(handle);
+  }, [recordingStartedAtMs]);
+
+  const elapsedMs = recordingStartedAtMs === null ? null : Date.now() - recordingStartedAtMs;
+
   return (
-    <div className="device-tab">
-      <section className="device-tab__hero">
-        <button type="button" onClick={onScan} disabled={state.phase === "scanning"}>
-          {state.phase === "scanning" ? "Scanning…" : "Scan for devices"}
-        </button>
-        {state.connected && (
-          <button type="button" onClick={() => onDisconnect(state.connected!.device_id)}>
-            Disconnect
-          </button>
-        )}
-        <ul>
-          {state.discovered.map((d) => (
-            <li key={d.device_id}>
-              {d.name} ({d.rssi_dbm} dBm){" "}
-              <button type="button" onClick={() => onConnect(d.device_id)} disabled={state.phase === "connecting"}>
-                Connect
-              </button>
-            </li>
-          ))}
-        </ul>
+    <div className="device-tab mx-auto flex max-w-[480px] flex-col gap-4 p-4">
+      <section className="device-tab__status flex flex-col gap-2">
+        <HeroCard
+          connectionState={state}
+          status={statusState.status}
+          linkLost={isLinkLost(statusState)}
+          pending={pendingControl}
+          elapsedMs={elapsedMs}
+          onScan={onScan}
+          onConnect={onConnect}
+          onDisconnect={onDisconnect}
+          onControl={onControl}
+        />
+        {statusState.error && <p role="status" className="font-mono text-sm text-fg-dim">{describeIpcError(statusState.error)}</p>}
       </section>
-      <section className="device-tab__status">
-        <HeroCard connectionState={state} status={statusState.status} linkLost={isLinkLost(statusState)} />
-        {state.phase === "failed" && state.error && <p role="alert">{state.error}</p>}
-        {statusState.error && <p role="status">{describeIpcError(statusState.error)}</p>}
-      </section>
+
       {state.connected && (
-        <section className="device-tab__controls">
+        <section className="device-tab__controls flex flex-col gap-2">
+          <SectionHead>WiFi</SectionHead>
           <DeviceControls
             status={statusState.status}
             pending={pendingControl}
             lastOutcome={lastControlOutcome}
             onControl={onControl}
           />
-          {controlError && <p role="alert">{controlError}</p>}
+          {controlError && <p role="alert" className="font-mono text-sm text-brand-accent">{controlError}</p>}
         </section>
       )}
+
       {state.connected && (
-        <section className="device-tab__files">
+        <section className="device-tab__files flex flex-col gap-2">
+          <SectionHead>Files</SectionHead>
           <DeviceFiles deviceId={deviceId} knownSessionIds={knownSessionIds} />
         </section>
       )}
-      <section className="device-tab__config">
+
+      <section className="device-tab__config flex flex-col gap-3 rounded-[var(--radius-card)] border border-rule bg-surface p-4">
+        <SectionHead>Config</SectionHead>
         <ProfileBar
           state={profilesState}
           dispatch={dispatchProfiles}
@@ -301,18 +337,32 @@ export default function Device() {
           error={profileError}
         />
         {activeProfile === null && (
-          <p role="status" className="device-tab__config-placeholder-notice">
+          <p role="status" className="device-tab__config-placeholder-notice font-mono text-sm text-fg-dim">
             No profile active — create or select one above to edit and push a config.
           </p>
         )}
         {!hasPulledConfig && (
-          <p role="status" className="device-tab__config-placeholder-notice">
+          <p role="status" className="device-tab__config-placeholder-notice font-mono text-sm text-fg-dim">
             No device configuration loaded — showing defaults. Pull from device is not available yet.
           </p>
         )}
         <ChannelsTable sources={listSources(config)} config={config} onConfigChange={onConfigChange} />
         <PushConfigBar deviceId={deviceId} config={activeProfile?.config ?? null} connected={state.connected !== null} />
       </section>
+
+      <Collapsible className="device-tab__calibration rounded-[var(--radius-card)] border border-rule bg-surface p-4">
+        <CollapsibleTrigger asChild>
+          <button type="button" className="flex h-11 w-full items-center justify-between font-mono text-sm text-fg-dim">
+            <SectionHead>Calibration</SectionHead>
+          </button>
+        </CollapsibleTrigger>
+        <CollapsibleContent className="pt-2">
+          <p className="font-mono text-sm text-fg-dim">
+            IMU calibration (SPEC §7.6/§20) is not wired yet — `CMD_CALIBRATE_IMU` has no `idl-rs-tauri` command in this
+            wave, so there is nothing here to trigger yet. Tracked as a Device refinement.
+          </p>
+        </CollapsibleContent>
+      </Collapsible>
     </div>
   );
 }

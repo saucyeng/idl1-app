@@ -1,5 +1,11 @@
-import { Fragment, useState } from "react";
+import { ChevronDown, ChevronRight, Settings2 } from "lucide-react";
+import { Fragment, useEffect, useState } from "react";
 
+import { sheetSideFor } from "../../../components/overlays/sheetSide";
+import { Badge } from "../../../components/ui/badge";
+import { Button } from "../../../components/ui/button";
+import { Sheet, SheetContent, SheetHeader, SheetTitle } from "../../../components/ui/sheet";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../../../components/ui/table";
 import type { DeviceConfig } from "./config/model";
 import AddChannelPicker from "./forms/AddChannelPicker";
 import AnalogForm from "./forms/AnalogForm";
@@ -9,6 +15,23 @@ import HrmForm from "./forms/HrmForm";
 import ImuForm from "./forms/ImuForm";
 import WheelForm from "./forms/WheelForm";
 import type { SourceView } from "./sources";
+
+/** Tracks `sheetSideFor(window.innerWidth)` (UI-3): a phone gets a bottom
+ *  sheet, a desktop a right panel, for the per-source form the gear control
+ *  opens. One resize listener shared by every `ChannelsTable` instance is
+ *  unnecessary at this scale — the tab mounts one table — so this stays a
+ *  small local hook rather than a second shared module. */
+function useSheetSide(): "bottom" | "right" {
+  const [side, setSide] = useState<"bottom" | "right">(() =>
+    sheetSideFor(typeof window === "undefined" ? 1024 : window.innerWidth),
+  );
+  useEffect(() => {
+    const onResize = () => setSide(sheetSideFor(window.innerWidth));
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, []);
+  return side;
+}
 
 /** Props for {@link ChannelsTable}. */
 export interface ChannelsTableProps {
@@ -81,101 +104,146 @@ function formatConfigValue(value: number | undefined): string {
 export default function ChannelsTable({ sources, config, onConfigChange }: ChannelsTableProps) {
   const [expandedKey, setExpandedKey] = useState<string | null>(null);
   const [openForm, setOpenForm] = useState<OpenFormState>(null);
+  const sheetSide = useSheetSide();
 
   return (
     <>
-      <table className="device-channels-table">
-        <thead>
-          <tr>
-            <th>Source</th>
-            <th>Rate</th>
-            <th>Channels</th>
-            <th>Enabled</th>
-            <th aria-label="Configure" />
-          </tr>
-        </thead>
-        <tbody>
+      <Table className="device-channels-table">
+        <TableHeader>
+          <TableRow>
+            <TableHead>Source</TableHead>
+            <TableHead>Rate</TableHead>
+            <TableHead>Channels</TableHead>
+            <TableHead>Enabled</TableHead>
+            <TableHead aria-label="Configure" />
+          </TableRow>
+        </TableHeader>
+        <TableBody>
           {sources.map((source) => {
             const isExpanded = expandedKey === source.sourceKey;
             const enabledCount = source.channels.filter((c) => c.enabled).length;
             return (
               <Fragment key={source.sourceKey}>
-                <tr>
-                  <td>
-                    <button
+                <TableRow>
+                  <TableCell>
+                    <Button
                       type="button"
+                      emphasis="normal"
+                      className="h-11 justify-start gap-1.5 px-1"
                       onClick={() => setExpandedKey(isExpanded ? null : source.sourceKey)}
                       aria-expanded={isExpanded}
                     >
-                      {isExpanded ? "▾" : "▸"} {source.label}
-                    </button>
-                  </td>
-                  <td>{formatRateHz(source.sampleRateHz)}</td>
-                  <td>
-                    {enabledCount}/{source.channels.length}
-                  </td>
-                  <td>{source.enabled ? "On" : "Off"}</td>
-                  <td>
+                      {isExpanded ? <ChevronDown className="size-4" /> : <ChevronRight className="size-4" />}
+                      {source.label}
+                    </Button>
+                  </TableCell>
+                  <TableCell>{formatRateHz(source.sampleRateHz)}</TableCell>
+                  <TableCell>
+                    <Badge>
+                      {enabledCount}/{source.channels.length}
+                    </Badge>
+                  </TableCell>
+                  <TableCell>{source.enabled ? "On" : "Off"}</TableCell>
+                  <TableCell>
                     {(() => {
                       const next = openFormForSourceKey(source.sourceKey, config);
                       return (
-                        <button
+                        <Button
                           type="button"
+                          size="icon"
+                          className="h-11 w-11"
                           aria-label={`Configure ${source.label}`}
                           disabled={next === null}
                           onClick={() => setOpenForm(next)}
                         >
-                          ⚙
-                        </button>
+                          <Settings2 className="size-4" />
+                        </Button>
                       );
                     })()}
-                  </td>
-                </tr>
+                  </TableCell>
+                </TableRow>
                 {isExpanded && (
-                  <tr>
-                    <td colSpan={5}>
-                      <table className="device-channels-table__detail">
-                        <thead>
-                          <tr>
-                            <th>Name</th>
-                            <th>Units</th>
-                            <th>Enabled</th>
-                            <th>Scale</th>
-                            <th>Offset</th>
-                          </tr>
-                        </thead>
-                        <tbody>
+                  <TableRow>
+                    <TableCell colSpan={5}>
+                      <Table className="device-channels-table__detail">
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead>Name</TableHead>
+                            <TableHead>Units</TableHead>
+                            <TableHead>Enabled</TableHead>
+                            <TableHead>Scale</TableHead>
+                            <TableHead>Offset</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
                           {source.channels.map((channel) => (
-                            <tr key={channel.name}>
-                              <td>{channel.name}</td>
-                              <td>{channel.units}</td>
-                              <td>{channel.enabled ? "On" : "Off"}</td>
-                              <td>{formatConfigValue(channel.scale)}</td>
-                              <td>{formatConfigValue(channel.offset)}</td>
-                            </tr>
+                            <TableRow key={channel.name}>
+                              <TableCell>{channel.name}</TableCell>
+                              <TableCell>{channel.units}</TableCell>
+                              <TableCell>{channel.enabled ? "On" : "Off"}</TableCell>
+                              <TableCell>{formatConfigValue(channel.scale)}</TableCell>
+                              <TableCell>{formatConfigValue(channel.offset)}</TableCell>
+                            </TableRow>
                           ))}
-                        </tbody>
-                      </table>
-                    </td>
-                  </tr>
+                        </TableBody>
+                      </Table>
+                    </TableCell>
+                  </TableRow>
                 )}
               </Fragment>
             );
           })}
-        </tbody>
-      </table>
-      <button type="button" onClick={() => setOpenForm({ kind: "addChannel" })}>
+        </TableBody>
+      </Table>
+      <Button type="button" className="h-11" onClick={() => setOpenForm({ kind: "addChannel" })}>
         + Add channel…
-      </button>
-      <OpenForm openForm={openForm} config={config} onConfigChange={onConfigChange} onClose={() => setOpenForm(null)} />
+      </Button>
+      <Sheet open={openForm !== null} onOpenChange={(open) => !open && setOpenForm(null)}>
+        <SheetContent side={sheetSide === "bottom" ? "bottom" : "right"} className="overflow-y-auto">
+          <SheetHeader>
+            <SheetTitle>{openForm !== null ? formTitle(openForm) : ""}</SheetTitle>
+          </SheetHeader>
+          <div className="px-4 pb-4">
+            <OpenForm openForm={openForm} config={config} onConfigChange={onConfigChange} onClose={() => setOpenForm(null)} />
+          </div>
+        </SheetContent>
+      </Sheet>
     </>
   );
 }
 
+/** The per-source Sheet's title (UI-3's `sheetSideFor`: a bottom sheet on
+ *  narrow, a right panel on wide — Open question 3's recommendation) — the
+ *  `forms/*` components render `<h3>` headings of their own already, so
+ *  this is a short label rather than a duplicate of that copy. */
+function formTitle(openForm: NonNullable<OpenFormState>): string {
+  switch (openForm.kind) {
+    case "imu":
+      return "IMU settings";
+    case "gps":
+      return "GPS settings";
+    case "wheel":
+      return "Wheel speed settings";
+    case "hrm":
+      return "Heart rate monitor";
+    case "analog":
+      return "Analog channel";
+    case "digital":
+      return "Digital channel";
+    case "addChannel":
+      return "Add channel";
+    default: {
+      const exhaustive: never = openForm;
+      throw new Error(`unhandled OpenFormState: ${JSON.stringify(exhaustive)}`);
+    }
+  }
+}
+
 /** Renders the currently-open form (or the add-channel picker), if any,
- *  below the table itself rather than nested in a row — the IMU/wheel forms
- *  cover three/two rows' worth of source keys at once, so a per-row popover
- *  would have no single anchor row. */
+ *  inside the per-source `Sheet` — the IMU/wheel forms cover three/two
+ *  rows' worth of source keys at once, so a per-row popover would have no
+ *  single anchor row. `forms/*` themselves are unchanged (lane brief: they
+ *  move inside the sheet as-is; editors stay pointer-first, decision 15). */
 function OpenForm({ openForm, config, onConfigChange, onClose }: {
   openForm: OpenFormState;
   config: DeviceConfig;
