@@ -117,6 +117,13 @@ superseding form.
 - Quarantine: producer is `verify_data_dir(repair:true)` (C4 §7), never import; `resolve_quarantine` actions `restore|discard`; `verify_data_dir` lives in the App group. R86
 - Catalog indexes workbooks: rebuild step 6 walks `workbooks/*.idl1wb`; `create_workbook`/`save_workbook` upsert their row. R87
 
+## Sync / L11 (in flight)
+- Sync lives in `idl-transport/sync/`; transport depends on core one-directionally; no new crates beyond `axum` (pinned) + `idl-rs` path dep; plain HTTP + per-peer bearer tokens, LAN-only posture. R88
+- `data.parquet` version pair orders: importer SemVer, then seam `v<N>`; unparsable ⇒ incomparable, no transfer + warning. R89
+- Manifest names blobs by their CAS path (no rehash); locally malformed files are a local-only skipped list and are do-not-touch in `plan_sync`. R90
+- `session.json` per-field merge: zero-value = not set; both changed differently ⇒ newer `updated_at_ms`, tie keeps local. `render_workbook` is core's only renderer. R91
+- **Ids: one validator in `core::store::sync::ids`**, allow-list per class + post-join containment check; rejects `C:foo` and friends. Bodies capped. R100
+
 ## Open items
 
 - Isaac questions 1–5: IMU defaults; IMU mode-flag exclusivity; valid pin sets; whether the firmware can report SD free bytes / GPS fix quality / satellite count / battery millivolts; whether generic channel ids are deterministic from config order. (tracked notes, R58, R59 Q6, R63.2; sub-item 5b pressure 20/21 per R64.5)
