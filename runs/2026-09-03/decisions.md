@@ -4525,3 +4525,18 @@ C3 §3.9 amendment. Not this shell task's work.
 
 **Cost if wrong:** (1) is a file format we can migrate while only Isaac
 is pairing; (2) is additive.
+
+## 2026-09-07 — Sync UI shell task LANDED (main suite 128 / 1189)
+
+`a67e51b` + `72ead18` + fix `69ee8d4` (review: pairing-code expiry was
+never shown — a user would type a dead code and get an unexplained
+refusal; now a live m:ss countdown, an explicit dead state and a
+"Get a new code" action, decided in `pairForm.ts` with an injected
+clock). `ipc/sync.ts` matches C3 §3.9 byte-for-byte; the poll and the
+`peer_appeared` subscription are pure drivers gated on route visibility
+(R95). Worktree retired.
+
+Still open before sync runs end-to-end in the app: **L11 Task 13**
+(device identity + the `.setup()` wiring, in flight) and **Task 14**
+(discovered-peer sightings so the UI can offer a list instead of a typed
+peer id).
