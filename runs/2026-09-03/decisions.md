@@ -4447,3 +4447,24 @@ calls `index_session` per id, exactly as `rescan_tracks_via` does.
 
 **Cost if wrong:** one field; the alternative is a full catalog rebuild
 after every sync.
+
+## 2026-09-07 — L11 lane gate: PASS, with one flaky watcher test named
+
+Task 12 (`ad452c0`) reported only the core/cli half of the gate. The lead
+ran the tauri half: **first run FAILED** —
+`watcher::tests::self_write_with_pre_registered_hash_never_fires_callback`
+(259 passed / 1 failed) — then passed alone three times and passed on a
+clean whole-suite re-run (**260 passed**). Core/cli half: idl-rs **1139
+passed** / 1 ignored, cli **53**.
+
+**Ruling:** the test is **timing-flaky, not broken code** — it asserts a
+callback does *not* fire within 500 ms while the watcher debounces at
+100 ms, so a loaded machine (this one, mid-build) can let a debounced
+event land after the negative window opens. It is a real flake in our own
+test, not in the watcher. Filed as **L8-class follow-on**: make it
+deterministic (inject the clock/debounce, or drive the watcher's event
+path directly) rather than widening the timeout, which only moves the
+flake. Do not rerun-to-green in future gates without naming the test —
+this one is now named.
+
+Lane gate therefore **PASS**; L11 is ready to merge.
