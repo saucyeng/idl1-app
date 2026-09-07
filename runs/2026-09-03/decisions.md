@@ -4408,3 +4408,26 @@ document with trailing whitespace. Until it lands, the merge's
 
 **Cost if wrong:** spurious conflict cells on every synced workbook —
 exactly the thing the per-cell merge exists to avoid.
+
+## 2026-09-07 — R104: `pair_peer`'s HTTP call is transport's; the peer is named, not guessed
+
+Task 12 found `pair_peer` has no client-side call to make: `client.rs`
+holds every outbound request (`fetch_manifest` etc. over the crate's own
+`reqwest`), but nothing for `POST /pair`, and tauri has no HTTP client
+(nor may it — CLAUDE.md §2: bytes on the wire are transport's).
+**Ruling: option 1.** `idl-transport::sync::client` gains
+`pair_with_peer(addr, PairRequest) -> Result<PairResponse, TransportError>`,
+mirroring `fetch_manifest`'s shape; tauri calls it and stays thin. Task 12
+adds `cargo test -p idl-transport sync::client` to its filters and may
+touch `transport/src/sync/client.rs` for exactly that function.
+
+**Which peer:** `pair_peer(code)` must not guess. The command takes the
+code **and a `peer_id`** (the discovered peer the user chose in the UI) —
+C3 §3.9 is amended in this task's doc sweep to say so, citing R104. A
+code alone with several online unpaired peers would either fan out the
+user's secret to every listener on the LAN or pick one arbitrarily; both
+are wrong. If exactly one unpaired peer is online the UI can prefill it,
+but the command signature stays explicit.
+
+**Cost if wrong:** one function in the crate that already owns HTTP, and
+one argument the UI already has.
