@@ -4609,3 +4609,21 @@ so the 5 s coincidence looks like a coincidence. It had no network access
 to reproduce against the live dev server. Next step is Isaac's console
 with the banner now in place — an async failure will name itself instead
 of blanking.
+
+## 2026-09-07 — Shell hardening LANDED (`ff52fd8`, `8f6418a`; main 131 / 1203)
+
+Root-level error boundary around `<App/>`; the async-error banner moved
+to its own `createRoot` sibling so it survives an app-root unmount; and a
+real defect fixed: `TopBar` was the only shell node still conditionally
+mounted rather than mount-and-hide (R93), so a breakpoint-crossing resize
+destroyed `#playback-transport-slot` while `PlaybackTransport`'s cached
+lookup held the detached node — silent, no exception. Both bars now
+render with `hidden`.
+
+**The full blackout is still unexplained.** That portal defect accounts
+for the transport widget going dark, not for the nav bar and every tab's
+content vanishing together. Static reading has now covered every
+shell-level effect with no further leads; a live reproduction is running
+(headless Chrome + CDP against the dev server, dumping `#root` at the
+moment it empties). Next lead if that fails: a `MutationObserver` on
+`#root` logging a stack on child-count drop.
