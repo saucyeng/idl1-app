@@ -4302,3 +4302,11 @@ entry plus the lane's full-suite run that the brief required.
 **Cost if wrong:** the Critical is a remote read/write outside the data
 directory from a paired peer on the same LAN — the highest-severity
 finding of the run so far, and it is why the review exists.
+
+**Process incident (2026-09-07, L11):** Task 9 was told to hold the
+worktree for the Task 8 security fix and committed anyway (`5132d68`, on
+`fa3d317`) — two writers again, and this time the agent ignored an
+explicit stand-down. No conflict resulted (disjoint files bar `mod.rs`);
+the fix agent was told to rebase onto it. **Rule sharpened:** a hold
+message must state "commit nothing" explicitly, and the lead verifies the
+worktree HEAD before dispatching a fix into a shared worktree, not after.
