@@ -4682,3 +4682,22 @@ and navigation because the symptom looked like a crash. It was a paint
 defect. When "the UI is gone" comes with no error, no removed node and no
 navigation, the next question is *what is painting over it*, not *what
 broke*.
+
+## 2026-09-07 — R107: the Notebook studio drops the library column (Isaac, after seeing it live)
+
+Isaac, on the working Notebook: "the data library filter section of that
+notebook tab is what the data tab is. we can probably leave it out of the
+notebook tab for now. maybe we add in a filtering widget down the road,
+this simplifies it for now."
+
+**Ruling:** the wide-layout studio drops the **library** column. The
+remaining columns are maths graph (still a reserved placeholder) |
+properties | notebook output. `ColumnFrame` keeps its ability to host a
+library column — this is a wiring change in `RouteHost`, not a deletion
+of the component or its persisted prefs — so a future filtering widget
+(not the whole Data tab) can take that slot. UI-DIRECTION decision 11's
+reference layout is amended accordingly with a note citing R107.
+Persisted column widths must not break for someone who already has a
+stored `library` width (migrate or ignore the stale key, do not throw).
+
+**Cost if wrong:** one column re-added; the frame still supports it.
