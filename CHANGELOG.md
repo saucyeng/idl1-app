@@ -6,7 +6,33 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 
 ### Added
 
+- **Sync UI shell task: `app/src/ipc/sync.ts` and Settings' `SyncSection.tsx`
+  brought up to C3 §3.9 as L11 landed it (2026-09-07, no spec change
+  needed).** `sync.ts` gains `startPairing`, `pairPeer(peerId, code)`
+  (signature amended by ruling R104 — was `code` alone), `unpairPeer`, the
+  `peer_appeared` app event (`onPeerAppeared`, via `@tauri-apps/api/event`),
+  and widens `PeerStatus`/`SyncResult` to their landed six/five-field shapes
+  (ruling R88, R102) — every field name checked byte-for-byte against
+  `rust/tauri/src/commands/sync.rs`'s DTOs. `SyncSection.tsx` gains a
+  paired-peer list with per-peer unpair and "Sync now" (decision logic in
+  new pure modules `pairForm.ts`/`syncPoll.ts`, tested), a pairing flow
+  (`start_pairing`'s own-device code, plus a form that pairs against a
+  named peer id — see `pairForm.ts`'s doc comment: R104 forbids guessing
+  the peer, and C3 §3.9 today has no command/event enumerating *unpaired*
+  peers on the LAN for a "discovered-peer list" to read from, so the peer
+  id is a field the user types rather than a row picked from a list; flagged
+  as a possible small C3 follow-on, not done here), and the "sync finished"
+  toast (UI-DIRECTION decision 21). The `sync_status` poll and the
+  `peer_appeared` subscription are both pure drivers
+  (`startSyncStatusPoll`/`startPeerAppearedWatch` in `syncPoll.ts`, mirroring
+  `Device/statusPoll.ts`'s shape) gated on R95's route-visibility context —
+  neither runs while the Settings route is hidden. `app/src-tauri/src/
+  lib.rs`'s `SyncState::start()` wiring is **not done this task**: nothing
+  in C3 §3.9, the L11 PLAN, or `state.rs` specifies how this device's own
+  `peer_id`/`name` are minted or persisted, and CLAUDE.md §1 rules that out
+  as a guess — raised to the lead, tracked in `TASKS.md`.
 - **UI-1: design tokens, bundled Plex fonts, Tailwind v4 + shadcn wiring
+  (2026-09-06, no spec change needed — R92/R93 adopt the direction file).**
   (2026-09-06, no spec change needed — R92/R93 adopt the direction file).**
   `app/src/styles/tokens.css` carries the 13 idl0 palette tokens, the 8-hue
   chart series, the type/spacing/radii scale and the shadcn variable mapping,
