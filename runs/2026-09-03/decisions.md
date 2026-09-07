@@ -4431,3 +4431,19 @@ but the command signature stays explicit.
 
 **Cost if wrong:** one function in the crate that already owns HTTP, and
 one argument the UI already has.
+
+**R104 addendum — `SyncRunResult` carries the touched session ids:**
+Task 12 found `sync_with_peer` computes `sessions_touched:
+BTreeSet<String>` internally and exposes only its count, so the command
+cannot re-index exactly the sessions a run touched (and rebuilding the
+whole catalog is what the brief forbids). **Ruling: option (a).**
+`SyncRunResult` gains `sessions_touched: Vec<String>` (sorted, the ids
+themselves); `sessions_updated` stays as the count and is derived from
+`.len()` so the two cannot disagree. Same small transport amendment as
+`pair_with_peer`, same added filter. The wire shape in C3 §3.9 is
+unchanged — the id list is a Rust-side detail the command consumes and
+does not forward to the UI; say so in the doc comment. `sync_now` then
+calls `index_session` per id, exactly as `rescan_tracks_via` does.
+
+**Cost if wrong:** one field; the alternative is a full catalog rebuild
+after every sync.
