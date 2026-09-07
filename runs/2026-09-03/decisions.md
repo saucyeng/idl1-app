@@ -4152,3 +4152,13 @@ slice's only writer; nothing else changes.
 
 **Cost if wrong:** one line to revert; the alternative leaves the app
 with no way to deselect.
+
+## 2026-09-07 — UI-6 LANDED (Data restyle; review + R96 fix)
+
+`ee02620` + fix `8be5d06`. Window-level drag-and-drop through Tauri's
+webview event feeds the existing import queue; R55's pasted-path import
+intact; click-to-deselect kept and disclosed (R96, pure
+`nextSelectedSession`). All four tabs are now restyled. Main suite
+111 files / **1023 passed**. Worktree retired. Next: UI-8→11 serial in
+one Notebook worktree; UI-10 carries R95 item 2 (pause the sandbox,
+watcher and eval while the Notebook is hidden).
