@@ -4,6 +4,22 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 
 ## [Unreleased]
 
+### Fixed
+
+- **The sandbox stall watchdog now has a caller (2026-09-07, sandbox-watchdog
+  task, no spec change needed).** `host/watchdog.ts`'s ping/pong liveness
+  watchdog existed but was never ticked from anywhere, so a runaway cell
+  could hang the tab forever with no detection or rebuild. `Notebook/index.tsx`'s
+  existing sandbox-mount effect now drives `SandboxHost.tick()` from a
+  `setInterval` at the watchdog's own ping cadence
+  (`watchdog.ts`'s `PING_INTERVAL_MS`, newly exported); the timer is scoped
+  to that effect so its lifetime matches the host's exactly — it starts
+  only once a host exists (already gated on `primeState.running`, i.e. the
+  Notebook route being visible, R95/R99) and is cleared in the same
+  cleanup, before `host.dispose()`. It does not restart across an internal
+  `SandboxHost.rebuild()`, since one `Watchdog` instance already outlives
+  every rebuild.
+
 ### Changed
 
 - **Math values are n-dimensional (2026-09-07, ruling R110, spec-first —
