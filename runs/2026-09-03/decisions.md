@@ -4468,3 +4468,27 @@ flake. Do not rerun-to-green in future gates without naming the test —
 this one is now named.
 
 Lane gate therefore **PASS**; L11 is ready to merge.
+
+## 2026-09-07 — L11 LAN sync lane LANDED (idl-rs `fc4c8a3`; idl1-app merge + submodule bump)
+
+Twelve tasks plus 11b and three fix rounds; every review CLEAN after
+fixes. Lane gate: idl-rs **1139** / 1 ignored, cli **53**, tauri **260**
+(one flaky watcher test named for a follow-on). Main TS suite after the
+merge: 126 files / **1141 passed**.
+
+Shipped: manifest + pure diff, per-cell workbook merge with conflict
+cells, verified install, `session.json` field merge, the `axum` server
+(`/idl1/v1`, bearer auth, ranges), pairing, mDNS discovery, the resumable
+client, the loopback two-peer proof, and the five Tauri commands with the
+auto-trigger. Rulings R88–R104.
+
+Security work this lane: a remote path-traversal escape (R100), unbounded
+request and response bodies (R100 + R102), a resume that could never
+recover (R102), and `pair_peer` fanning a pairing secret to every online
+peer (R104) — all found by review, none shipped.
+
+Open, tracked: `SyncState::start` is not wired into `app/src-tauri`'s
+`.setup()`; `app/src/ipc/sync.ts` is stale against C3 §3.9; the flaky
+watcher test; `unwatch_workbook` (R98); the symlink finding in
+`verify_data_dir` (R101); Task 11's now-unnecessary loopback workaround
+(R103). Next: the sync UI shell task, then Isaac's preview.
