@@ -6,6 +6,9 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 
 ### Changed
 
+- Code pane wraps long lines, so a cell's source stays readable in the
+  narrow properties column instead of running off behind a scrollbar.
+
 - **The studio's properties column hosts the real cell editor, not a
   placeholder (2026-09-07, properties-editor task, no spec change needed).**
   R108/R109: the wide-layout studio's properties column previously showed

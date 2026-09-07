@@ -175,6 +175,14 @@ export default function CodePane({ kind, code, onChange, channelIds, definitionN
       doc: code,
       extensions: [
         lineNumbers(),
+        // The pane is now hosted in the studio's properties column (R108),
+        // which is ~320 px wide -- far narrower than the wide-layout pane it
+        // was built for, so an unwrapped line hides its own tail behind a
+        // horizontal scrollbar. Wrapping is unconditional rather than
+        // column-only: a wrapped long line reads the same in every
+        // placement, and a renderer-only parameter would be a P-rule
+        // violation (CLAUDE.md: no renderer-only parameters).
+        EditorView.lineWrapping,
         history(),
         syntaxHighlighting(brandHighlightStyle(read)),
         brandEditorTheme(read),
