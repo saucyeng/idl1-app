@@ -4049,3 +4049,9 @@ alert/error/destructive. The colour-literal test's broadening to
 `rgb()/rgba()/hsl()/hsla()` is accepted.
 
 **Cost if wrong:** one rename across generated components.
+
+**review-ui-1 Important, ruled:** `lucide-react` landed in UI-1 though the
+brief deferred it. R93 approved the icon set; UI-2 is its first consumer
+and the dependency is pinned and unused, not wrong. **Accepted in place**
+(no revert-and-re-add churn); UI-2's brief now owns it. The Minor goes to
+UI-2 as well. UI-1 is CLEAN as landed.
