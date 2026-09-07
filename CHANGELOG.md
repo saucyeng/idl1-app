@@ -293,6 +293,22 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
   loopback round-trip (`advertise` then `browse` on the real network) was
   also run manually (`-- --ignored`) and passed. `cargo check -p
   idl-rs-tauri` clean.
+- **L11 Task 9 review fix: prompt browse teardown + IPv6 scope id
+  (2026-09-07, idl-transport, `sync::discovery`, review-task9).** `browse`'s
+  spawned task raced `events.recv_async()` against `tx.closed()` in a
+  `tokio::select!` (new internal `drain_events`), so dropping the
+  `DiscoveredPeer` receiver on a quiet LAN ends the task and drops its
+  `ServiceDaemon` immediately, not only on the next mDNS event (Important).
+  `scoped_addr_to_socket_addr` builds the resolved peer's `SocketAddr` from
+  `mdns_sd::ScopedIp` directly instead of via `to_ip_addr()`, preserving an
+  IPv6 link-local address's zone/scope id so a multi-interface host does
+  not connect on the wrong NIC (Minor). New dev-only `flume = "0.12.0"`
+  (already resolved transitively via `mdns-sd`; `mdns_sd::Receiver<T>` is
+  `flume::Receiver<T>` with no public constructor) lets
+  `drain_events_receiver_dropped_no_event_arrives_task_ends` prove the
+  teardown without a real `ServiceDaemon`, matching PLAN §7's "no test
+  needs multicast." Filter: `cargo test -p idl-transport sync::discovery`
+  (7 passed, 1 ignored).
 - **L8x lane complete: Data-tab write commands (2026-09-06, idl-rs core +
   idl-rs-tauri, ruling R86).** Five new commands close the last C3 §6
   deferrals the Data tab still stubbed: `save_track`, `delete_track`,
