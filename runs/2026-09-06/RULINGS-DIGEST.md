@@ -137,3 +137,4 @@ superseding form.
 - Not yet observed by the lead: 60 fps pan/zoom and end-to-end chart rendering on a real session. (L6 follow-on LANDED)
 
 *Contained decision: the digest omits wave-1 execution-fix rulings (R9–R12, R14–R18, R20–R50) whose subject matter has landed and is now recorded in code, tests and the contracts themselves; the process rules they produced are carried above.*
+- **R109** — Editor reaches the studio properties column by `createPortal` into a slot node published through a shell context; state stays in the Notebook page; external hosting is decided by slot presence, never by measured width.

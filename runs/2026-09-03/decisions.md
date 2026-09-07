@@ -4726,3 +4726,34 @@ With R107 the wide studio is therefore: maths graph (still reserved) |
 **properties = the real editor** | output.
 
 **Cost if wrong:** a component rendered in a different parent.
+
+## 2026-09-07 — R109: the editor reaches the properties column by portal, not by lifted state
+
+**Question.** R108 puts the real `EditorPanes` in the studio's properties
+column, but the element is built inside `routes/pages/Notebook/index.tsx`
+from that page's own state (`openCellId`, `openCellCode`,
+`handleCellCodeChange`, `propertiesChannels`, `propertiesLaps`), and the
+column is rendered by `shell/RouteHost.tsx`, outside the page.
+
+**Ruling.**
+1. A new shell context (an "editor slot") carries a DOM node from the
+   properties column down to the Notebook page. The properties column
+   renders an empty container and publishes its node; the Notebook page,
+   when a node is present, renders the *same* `editorPanesElement` through
+   `createPortal` into it and renders no inner editor pane. All editor
+   state stays in the Notebook page. Nothing is lifted, nothing duplicated,
+   no second `EditorPanes` instance ever exists.
+2. Whether the editor is externally hosted is decided by the presence of a
+   slot node, **not** by the page's measured width. Inside the studio the
+   Notebook page's own width is the output column's width, which can read
+   as medium or narrow; placement logic must not be allowed to re-inline an
+   editor that the column already hosts. Medium and narrow placements are
+   unchanged when no slot node is published.
+3. The column shows the existing empty-state copy when no cell is selected;
+   the placeholder text "reserved for a later lane" is deleted.
+
+**Cost if wrong.** Lifting the state instead would move a dozen handlers
+and the edit-echo guard out of the page that owns the workbook, risking a
+second source of truth for cell code — the failure that R72 and the
+`CellRunSequencer` were needed to fix. Deciding by width instead of by slot
+would give the studio two editors or none at some window sizes.
