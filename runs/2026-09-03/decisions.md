@@ -4252,3 +4252,19 @@ wired.
 
 Next: a dev-app preview for Isaac (needs the cargo slot — L11 Task 8
 holds it), then L11 Tasks 9–12 and the sync UI.
+
+## 2026-09-07 — L11 Task 8 landed by the lead (`fa3d317`); the task agent was stopped
+
+The Task 8 agent stalled three times waiting on a `run_in_background`
+cargo notification that never reached it (once after a completed build
+whose exit code its own `tail` pipe masked). Wall clock lost: ~14 h of the
+cargo slot. The lead stopped it, ran the filters foreground and committed
+its code unchanged: `sync::server` **14 passed**, `sync::` **33 passed**,
+`cargo check -p idl-rs-tauri` clean; NUL check 0 on all four files.
+Auth uses `route_layer` (with `layer` the fallback is wrapped and an
+unknown path answers 401 instead of 404 — both pinned by tests).
+
+**Process rule added:** an agent that reports "waiting for a background
+notification" twice is stopped and its work finished by the lead. Cargo is
+foreground, always — the brief said so and this is the second lane where
+backgrounding it cost hours.
