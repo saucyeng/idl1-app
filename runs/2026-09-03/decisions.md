@@ -4757,3 +4757,10 @@ and the edit-echo guard out of the page that owns the workbook, risking a
 second source of truth for cell code — the failure that R72 and the
 `CellRunSequencer` were needed to fix. Deciding by width instead of by slot
 would give the studio two editors or none at some window sizes.
+
+**Amendment (2026-09-07).** R109 item 3 said the column reuses "the
+empty-state copy the editor already uses". The implementer checked and no
+such string exists — today an unselected cell renders nothing at all.
+The copy is therefore new: "Select a cell to edit its properties and code.",
+rendered with `ColumnPlaceholder` (already the UI-DIRECTION line-97 pattern),
+and only in the column — medium and narrow placements gain no new text.
