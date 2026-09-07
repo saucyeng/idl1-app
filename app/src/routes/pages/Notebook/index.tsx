@@ -1539,7 +1539,7 @@ export default function NotebookPage() {
       )}
       {editorSlotNode !== null &&
         createPortal(
-          editorPanesElement ?? <ColumnPlaceholder>Select a cell to see its properties</ColumnPlaceholder>,
+          editorPanesElement ?? <ColumnPlaceholder>Select a cell to edit its properties and code.</ColumnPlaceholder>,
           editorSlotNode
         )}
       <div
