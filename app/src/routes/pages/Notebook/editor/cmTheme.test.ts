@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 import { HighlightStyle } from "@codemirror/language";
 import { describe, expect, it } from "vitest";
 
-import { tokenizeMath } from "../model/mathMode";
+import { ALL_MATH_TOKEN_KINDS, tokenizeMath } from "../model/mathMode";
 import { brandHighlightStyle, SYNTAX_ROLE_VARS, type SyntaxRole } from "./cmTheme";
 
 const EDITOR_DIR = dirname(fileURLToPath(import.meta.url));
@@ -84,10 +84,16 @@ describe("SYNTAX_ROLE_VARS — the record — total over SyntaxRole and free of 
 });
 
 describe("SYNTAX_ROLE_VARS — every MathTokenKind the math mode actually emits — has a role", () => {
-  it("tokenizing a line exercising all nine math token kinds yields only known roles", () => {
-    // Arrange — one line touching every MathTokenKind tokenizeMath can emit:
-    // keyword, identifier, channelRef, cellRef, number, operator, function,
-    // then a second line for comment and labelComment (a comment ends the line).
+  it("tokenizing fixture lines exercising every MathTokenKind yields exactly the type's own full set, each with a role", () => {
+    // Arrange — lines chosen to provably hit every MathTokenKind:
+    // - expressionLine: keyword ("const", "and", "not"), identifier
+    //   ("total", "x"), channelRef ("[Speed]"), cellRef ("{lap}"), number
+    //   ("3.5"), operator ("=", "+", "*"), and function — "sum" is a
+    //   MATH_FUNCTIONS name immediately followed by "(" with no space, the
+    //   exact "function name before '('" path tokenizeMath distinguishes
+    //   from a plain identifier.
+    // - commentLine / labelCommentLine: a comment ends the line, so
+    //   "comment" and "labelComment" each need their own line.
     const expressionLine = "const total = sum([Speed]) + {lap} and not 3.5 * x";
     const commentLine = "# a plain comment";
     const labelCommentLine = "# label: a display name";
@@ -99,8 +105,13 @@ describe("SYNTAX_ROLE_VARS — every MathTokenKind the math mode actually emits 
       ...tokenizeMath(labelCommentLine).map((t) => t.kind),
     ]);
 
-    // Assert
-    expect(observedKinds.size).toBeGreaterThanOrEqual(8);
+    // Assert — exact equality against MathTokenKind's own canonical member
+    // set (ALL_MATH_TOKEN_KINDS, compile-time-total over the union in
+    // mathMode.ts), not a hand-written list here and not a "some observed"
+    // lower bound: a future kind added to MathTokenKind, or a regression
+    // that stops emitting one, changes this set and fails the assertion
+    // until the fixture and SYNTAX_ROLE_VARS both account for it.
+    expect(observedKinds).toEqual(new Set(ALL_MATH_TOKEN_KINDS));
     for (const kind of observedKinds) {
       expect(Object.keys(SYNTAX_ROLE_VARS)).toContain(kind);
     }
