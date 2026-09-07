@@ -4999,3 +4999,45 @@ kind, so the number is never an index into that vec — is the right shape.
 delivering session-to-session comparison generally, ghost delta would be
 discovered missing during the report lane (W3.4), after charts and the
 maths graph had been built against a per-window evaluation model.
+
+## 2026-09-07 — R118: the five n-D shape questions; `t:win` is not specified yet
+
+Answering C2 §3.6.9. The section is accepted; the axis-identity rule
+(a time axis carries an origin, so frames-from-an-STFT and samples are not
+interchangeable) is the part of this design most worth keeping — it turns a
+class of silently-plausible wrong numbers into a typed error.
+
+1. **Three new `MathEvalErrorKind` variants — accept**, with the additive
+   C3 `detail: { expected, actual, axis? }`. They are per-definition
+   `MathEvalError`s like every other; a new top-level kind would imply a
+   different failure mode to every existing handler.
+2. **`t`-alias on frequency values — accept, kept through wave 3**, listed
+   as deprecated, dropped at the next `version` bump. **Condition:** that
+   bump must *migrate* workbooks that use the alias, not merely stop
+   accepting it. Direction-2 decision 75 makes workbook durability across
+   updates a hard constraint, and "we deprecated it" is not a migration.
+3. **`"t:lap"` with several windows — the recommendation is rejected, and
+   the question dissolves.** R117.4 ruled evaluation is **per window**:
+   `eval_workbook_v2` loops the windows and returns `Vec<Vec<CellOutput>>`,
+   so a single evaluation sees exactly one window. `"t:lap"` is therefore
+   never ambiguous — it means the laps *within the window being evaluated* —
+   and needs no multi-window error case. `"t:lap"` and a per-window
+   reduction are also genuinely different things and both stay: `lap`
+   groups by the session's own recorded lap boundaries (a property of the
+   data), selection groups by what the user picked.
+   **`"t:win"` must NOT be specified now.** Under per-window evaluation no
+   expression can observe a second window; an axis that reduces across
+   windows *is* cross-window maths, which R117.4 deferred to the R73
+   cross-session-overlay amendment. Specifying it here would promise a
+   reduction the evaluator cannot perform.
+4. **`fetch_raster(kind: "matrix")` for a rank-2 value that is not a
+   `spectrogram(...)` call — accept, deferred past wave 3.** One
+   rasteriser, host-side, as recommended; never a second one in the sandbox.
+5. **iEKF component names — accept.** `c9` stays unnamed; the iEKF subgraph
+   (decision 43) names its own components when specified. Do not invent an
+   iEKF spec to satisfy an example.
+
+**Cost if wrong.** (3) is the load-bearing one: shipping `"t:win"` in the
+contract would have the maths lane build an axis the evaluator structurally
+cannot compute, and the gap would surface as "why does this reduction
+return one window's answer" long after cells were written against it.
