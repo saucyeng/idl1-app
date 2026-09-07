@@ -4627,3 +4627,20 @@ shell-level effect with no further leads; a live reproduction is running
 (headless Chrome + CDP against the dev server, dumping `#root` at the
 moment it empties). Next lead if that fails: a `MutationObserver` on
 `#root` logging a stack on child-count drop.
+
+**Blackout repro attempt (2026-09-07): NOT reproduced in plain Chrome.**
+Headless Chrome + CDP against the dev server with a stubbed `invoke`,
+including a real one-cell workbook so the sandbox iframe booted: `#root`,
+the nav bar and the route panel stayed present and correctly sized
+through 40 s idle on Notebook, both breakpoint crossings, and a reload
+mid-load. `location.href` never changed (kills the drag-drop-navigation
+theory); no route ever went hidden (kills the all-hidden theory). The
+`PlaybackTransport` portal never mounted in those runs — it needs a
+cursor time — so the portal theory is **untested, not cleared**.
+
+Remaining candidates, in order: (1) the portal path with a cursor set
+(click a chart or press Play); (2) something specific to WebView2 that a
+Chrome tab does not reproduce; (3) real data volumes the stubs do not
+exercise. Next instrument: a `MutationObserver` on `#root` logging a
+stack when its child count drops, shipped behind a dev-only flag so
+Isaac's own window captures the culprit.
