@@ -4553,3 +4553,41 @@ unreachable on Windows. Worktrees retired.
 
 **Sync is now live end-to-end in the app** except the discovered-peer
 list (Task 14, filed): pair by typing a peer id and code, then sync.
+
+## 2026-09-07 — R106: the blank Notebook has two causes; both get fixed
+
+Isaac's WebView console gave the real trigger; the diagnosis agent found
+a second, deeper one. Both are real:
+
+1. **Sandbox iframe cannot load in dev (the trigger).** The iframe is
+   `sandbox="allow-scripts"` with no `allow-same-origin` (R69), so its
+   origin is `null`. `iframe.src` points at the Vite dev server, which
+   (a) injects React's `@react-refresh` preamble into every HTML entry
+   including the sandbox's, and (b) sends no `Access-Control-Allow-Origin`,
+   so a null-origin fetch of both the preamble and `sandbox/main.ts`
+   fails. The sandbox never signals ready and its column paints nothing.
+   **Fix:** `app/vite.config.ts`'s dev `server` allows the null origin for
+   the sandbox entry, and the React plugin does not transform that entry
+   (it is not a React app). `allow-same-origin` is never added — the
+   isolation is the point. Verify a production `vite build` + Tauri build
+   is unaffected, and say so.
+2. **No error boundary anywhere (why it was invisible).** `RouteHost`
+   mounts all four routes (mount-and-hide, R93), so an uncaught throw in
+   *any* route — including a hidden one — unmounted the whole shell.
+   Landed as `8c856a2`: a per-route boundary with a token-styled message,
+   the error name, and Retry. Proven by reproducing a real latent crash in
+   the hidden Data tab that was blanking the app from another screen.
+
+**Cost if wrong:** (1) is dev-only ergonomics; (2) is the difference
+between a white screen and a message naming what broke.
+
+**R106 addendum — the watchdog was never wired.** The fix agent found
+`SandboxHost.tick()` (the ping/stall watchdog, design §6: a runaway cell
+gets the iframe torn down and rebuilt) has **no caller anywhere** — it
+has never run. That is a shipped-behaviour gap, not a cosmetic one: a
+cell that hangs the sandbox currently hangs it forever. Filed as **L6
+Task 22** (wire `tick()` to a real interval, torn down with the host and
+gated on route visibility per R95; test that a stalled sandbox is rebuilt
+and that a healthy one is never torn down). The 5 s boot timer +
+`onSandboxUnavailable` banner landed in this fix covers the *load*
+failure; the *stall* case is Task 22.
