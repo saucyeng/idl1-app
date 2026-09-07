@@ -4128,3 +4128,11 @@ from files — it is there now). Worktree retired.
 now empty — a colour literal anywhere outside `tokens.css` fails the
 suite. Nine sections (kept `data`, added `firmware`/`theme`) accepted.
 Worktree retired.
+
+## 2026-09-07 — UI-7 LANDED (Settings restyle + theme/register prefs; review CLEAN)
+
+`20447e5`, merged with a CHANGELOG conflict resolved keep-both.
+`settings.css` deleted and the token test's exception list is now empty —
+a colour literal anywhere outside `tokens.css` fails the suite. Nine
+sections (kept `data`, added `firmware`/`theme`) accepted. Main suite
+110 files / 1015 passed. Worktree retired.
