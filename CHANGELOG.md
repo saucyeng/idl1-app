@@ -302,6 +302,73 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
   itself is not wired up (`CodePane.tsx` never imports `bracketMatching()`);
   the theme styles `.cm-matchingBracket` in anticipation, but it is inert
   until a later task adds the extension.
+- **UI-10: Notebook cell frame, output registers and editor placement
+  (2026-09-06, spec-during — the output register is new user-visible
+  behaviour, decision 31/R92/R93).** `components/CellFrame.tsx` gained an
+  uppercase kicker (`KIND · NN`, `ScannedCell` has no name field), a
+  `StatusDot` for each cell's run state (pending/ok/error, derived from
+  `state.outputs`/`cellErrors`/`fftErrors`), a per-cell code-reveal toggle
+  (decision 30, new `model/codeVisibility.ts`, UI state only — never
+  persisted, never written into the workbook), the reserved `--good`
+  selection inset bar on a `--surface-2` fill, and an in-place error
+  `NoteBlock`. Three new pure modules with tests: `model/outputRegister.ts`
+  (`defaultRegister`/`registerMetrics`, thinning `Settings/theme.ts`'s
+  existing `OutputRegister`/`resolveRegister` down to the "nothing stored"
+  case rather than re-implementing the width breakpoint), `model/
+  editorPlacement.ts` (`editorPlacement`/`outputIsReadOnly`, sharing
+  `shell/layout.ts`'s `resolveLayout` breakpoints so the two can never
+  drift), `model/codeVisibility.ts`. `EditorPanes.tsx` now mounts a `js`
+  cell's Properties/Code panes as `Tabs` (decision 29) instead of side by
+  side; every other kind is unwrapped `CodePane`. `WorkbookBar.tsx`
+  restyled onto shadcn primitives as the worksheet bar (workbook `Select`,
+  a worksheet `Tabs` placeholder — this lane's `.idl1wb` model has no
+  multi-worksheet concept yet, so one fixed tab stands in and `+` is
+  disabled — and the paper/studio register `ToggleGroup`), every existing
+  behaviour (rescan, create, dirty guard, rebuild report) unchanged.
+  `index.tsx`'s layout is now width-aware: `Resizable` editor/output panes
+  on wide (inside the shell's already-reserved notebook output column, not
+  a second outer split — the split's own widths are not yet persisted,
+  flagged below), an inline editor under the selected cell on medium, and
+  read-only paper with the Properties form in a `BrandSheet` on narrow.
+  The output register is read from a second `Settings/prefsStore.ts`
+  `PrefsStore` instance (`createPrefsStore(localStorageBackend())`,
+  wrapping the same `idl1.settings.prefs.v1` document Settings' own
+  instance uses — UI-7's Open Question 1 recommendation) and falls back to
+  `defaultRegister(width)` when `output_register` is unset.
+  **R95 items 2/3 (sandbox/watcher/debounced-eval pausing):** new
+  `model/sandboxLifecycle.ts` (`sandboxShouldRun`/`initialSandboxPrimeState`/
+  `nextSandboxPrimeState`) decides, from `shell/routeVisibility.tsx`'s
+  `useRouteVisible`, whether the notebook's background work should be
+  running and whether a hidden→visible transition needs a re-prime. The
+  `SandboxHost` mount effect, the `watchWorkbook` subscription effect and
+  the debounced-eval effect each gained `primeState.running` as a
+  dependency, so React's own effect cleanup/re-run cycle tears the sandbox
+  down (and drops/re-subscribes the watcher, clears a pending eval timer)
+  while hidden and rebuilds it on return — no `pause()`/`resume()` pair was
+  added to `host/SandboxHost.ts` (untouched). The three effects that
+  populate a fresh `SandboxHost` (`setCells`/inline spans, channel bind,
+  FFT bind) additionally depend on `primeState.primeEpoch`, reused as the
+  re-prime trigger rather than a new replay path, matching R69's replay
+  order; `boundIdentityRef` is cleared exactly once per re-prime so every
+  cell's channel binding looks "new" again to those effects.
+  **Flagged for a ruling:** the inner wide-layout editor/output split
+  is an unpersisted 65/35 `ResizablePanelGroup` rather than living in
+  `shell/columnPrefs.ts` under its own ids as this task's own brief
+  recommended — `ColumnId` is a closed union in shell-owned code this
+  lane's "do not touch the shell" rule forbids editing, so the two
+  instructions conflicted; a Notebook-local prefs module was avoided too
+  (the brief's "not a second storage key"), leaving persistence undone
+  rather than guessing which rule wins. Also flagged: `watch_workbook`'s
+  C3 contract has no unsubscribe command, so pausing it while hidden reuses
+  this file's pre-existing "workbook changed" pattern (the callback becomes
+  inert; a fresh subscription starts on the next open) rather than closing
+  the prior Tauri-side handle, which was already true of every workbook
+  switch before this task.
+  **Parity gaps:** multiple worksheets (idl0 had no such concept either —
+  new chrome with no backend, not a regression); a persisted wide-layout
+  split width (see the ruling flag above); narrow-layout editing for
+  `math`/`table` cells (only `js` cells get the narrow Properties `Sheet`
+  in this pass — no code editor at narrow for the other two kinds).
 - **L8x lane complete: Data-tab write commands (2026-09-06, idl-rs core +
   idl-rs-tauri, ruling R86).** Five new commands close the last C3 §6
   deferrals the Data tab still stubbed: `save_track`, `delete_track`,

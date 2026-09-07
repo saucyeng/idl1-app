@@ -2,6 +2,16 @@ import { useEffect, useRef } from "react";
 
 import { resolveJsCellFrameHeightPx } from "../model/jsCellFrameHeight";
 
+/** `NoteBlock`'s own recipe (`components/brand/NoteBlock.tsx`), copied as a
+ *  literal class string rather than importing that component: `NoteBlock`
+ *  pulls in the shadcn `cn`/`@/lib/utils` alias chain, which the bare
+ *  `vitest.config.ts` used by this module's own `jsCellFrameHeight.test.ts`
+ *  (a `*.test.ts` file, no `@` alias configured there — `vite.config.ts`'s
+ *  alias is dev/build-only) cannot resolve; `jsCellFrameHeight.ts` imports
+ *  `DEFAULT_JS_CELL_HEIGHT_PX` from this file, so anything this file imports
+ *  is on that test's own module graph. */
+const NOTE_BLOCK_CLASSES = "border-l pl-3 py-1 font-mono text-sm";
+
 /**
  * Default height reserved for a plain-mount `js` cell before its first
  * `cellRendered` (`ChartCellProps.heightPx`'s doc comment gives
@@ -77,8 +87,8 @@ export default function JsCellFrame({ cellId, heightPx, error, note, sendLayout 
       className="js-cell-frame"
       style={{ position: "relative", width: "100%", height: resolvedHeightPx }}
     >
-      {note !== undefined && <div className="js-cell-frame-note">{note}</div>}
-      {error !== undefined && <div className="js-cell-frame-error">{error}</div>}
+      {note !== undefined && <div className={`${NOTE_BLOCK_CLASSES} border-rule text-fg-dim`}>{note}</div>}
+      {error !== undefined && <div className={`${NOTE_BLOCK_CLASSES} border-accent text-accent`}>{error}</div>}
     </div>
   );
 }
