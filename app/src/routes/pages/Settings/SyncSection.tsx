@@ -8,7 +8,15 @@ import { StatusDot } from "@/components/brand/StatusDot";
 import { toastFor } from "@/components/toasts/events";
 import { composeVisibility, getActiveRoute, subscribeRouteVisible } from "../../../shell/routeVisibility";
 import { describeIpcError, type IpcErrorLike } from "./errors";
-import { isSyncNowDisabled, pairButtonLabel, syncNowButtonLabel, validatePairForm } from "./pairForm";
+import {
+  isSyncNowDisabled,
+  pairButtonLabel,
+  pairingCodeState,
+  pairingCodeStatusText,
+  showCodeButtonLabel,
+  syncNowButtonLabel,
+  validatePairForm,
+} from "./pairForm";
 import { normalizePairCode } from "./pairCode";
 import type { PrefsStore } from "./prefsStore";
 import { startPeerAppearedWatch, startSyncStatusPoll, type PeerAppearedWatchDeps, type SyncStatusPollDeps } from "./syncPoll";
@@ -125,6 +133,7 @@ export default function SyncSection({ store }: SyncSectionProps) {
   const [lastResultSummary, setLastResultSummary] = useState<string | null>(null);
   const [myCode, setMyCode] = useState<PairingCode | null>(null);
   const [showingCode, setShowingCode] = useState<boolean>(false);
+  const [nowMs, setNowMs] = useState<number>(() => Date.now());
 
   // The `sync_status` poll (wave-2 operating brief §4's effects rule: all
   // decision logic lives in the pure `startSyncStatusPoll` driver, gated on
@@ -147,6 +156,48 @@ export default function SyncSection({ store }: SyncSectionProps) {
       dispatch({ type: "peerAppeared", peer });
     });
   }, []);
+
+  // The pairing-code expiry ticker: a local 1 Hz display timer, not an IPC
+  // driver, so it does not need `syncPoll.ts`'s full pure-driver shape —
+  // but it reuses the same route-visibility signal (R95) as the two effects
+  // above so a hidden Settings route holds no live interval either. Data-only
+  // deps (`showingCode`, `myCode`); cleanup always clears both the interval
+  // and the visibility subscription (wave-2 operating brief §4).
+  useEffect(() => {
+    if (!showingCode || myCode === null) {
+      return;
+    }
+
+    let intervalHandle: number | null = null;
+
+    function startTicking(): void {
+      if (intervalHandle !== null) return;
+      intervalHandle = window.setInterval(() => setNowMs(Date.now()), 1000);
+    }
+
+    function stopTicking(): void {
+      if (intervalHandle !== null) {
+        window.clearInterval(intervalHandle);
+        intervalHandle = null;
+      }
+    }
+
+    function sync(): void {
+      if (SYNC_STATUS_POLL_DEPS.isVisible()) {
+        startTicking();
+      } else {
+        stopTicking();
+      }
+    }
+
+    sync();
+    const unsubscribeVisibility = SYNC_STATUS_POLL_DEPS.onVisibilityChange(sync);
+
+    return () => {
+      stopTicking();
+      unsubscribeVisibility();
+    };
+  }, [showingCode, myCode]);
 
   function handleShowCode(): void {
     setShowingCode(true);
@@ -265,13 +316,16 @@ export default function SyncSection({ store }: SyncSectionProps) {
 
         <Button type="button" size="sm" onClick={handleShowCode} className="w-fit">
           <LinkIcon aria-hidden />
-          Show my code
+          {showCodeButtonLabel(pairingCodeState(myCode, nowMs))}
         </Button>
         {showingCode ? (
           myCode ? (
-            <p className="font-mono text-sm text-fg">
-              Code: <span className="tracking-[0.2em]">{myCode.code}</span>
-            </p>
+            <>
+              <p className={`font-mono text-sm ${pairingCodeState(myCode, nowMs).kind === "expired" ? "text-fg-faint" : "text-fg"}`}>
+                Code: <span className="tracking-[0.2em]">{myCode.code}</span>
+              </p>
+              <p className="font-mono text-xs text-fg-dim">{pairingCodeStatusText(pairingCodeState(myCode, nowMs))}</p>
+            </>
           ) : (
             <p className="font-mono text-xs text-fg-faint">Minting a code…</p>
           )

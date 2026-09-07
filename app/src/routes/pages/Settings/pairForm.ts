@@ -1,3 +1,4 @@
+import type { PairingCode } from "../../../ipc/sync";
 import type { ValidationIssue } from "./dataDir";
 import { validatePairCode } from "./pairCode";
 
@@ -66,4 +67,67 @@ export function syncNowButtonLabel(peerId: string, runningPeerId: string | null)
  * @param runningPeerId - The peer id of the in-flight run, or `null`. */
 export function isSyncNowDisabled(runningPeerId: string | null): boolean {
   return runningPeerId !== null;
+}
+
+/** This device's own pairing code, judged against a point in time. `code`'s
+ *  120 s lifetime (`transport/src/sync/pairing.rs`) is enforced server-side
+ *  by `pair_peer`; this is purely a display judgement so the person relaying
+ *  the code to the other device can see it die rather than typing a code the
+ *  peer will silently refuse. */
+export type PairingCodeState =
+  | { kind: "none" }
+  | { kind: "valid"; secondsRemaining: number }
+  | { kind: "expired" };
+
+/** Judges {@link PairingCode} `code` against `nowMs`, an injected clock so
+ *  callers (and tests) never read `Date.now()` themselves.
+ *
+ * @param code - The most recent `start_pairing` result, or `null` before one
+ *  has been requested this session.
+ * @param nowMs - The current time, ms since epoch.
+ * @returns `"none"` with no code yet; `"expired"` at or past
+ *  `code.expires_at_ms`; otherwise `"valid"` with the whole seconds left
+ *  (rounded up, so the display never reads "0:00" while still redeemable). */
+export function pairingCodeState(code: PairingCode | null, nowMs: number): PairingCodeState {
+  if (code === null) {
+    return { kind: "none" };
+  }
+  const msRemaining = code.expires_at_ms - nowMs;
+  if (msRemaining <= 0) {
+    return { kind: "expired" };
+  }
+  return { kind: "valid", secondsRemaining: Math.ceil(msRemaining / 1000) };
+}
+
+/** Formats a non-negative second count as `m:ss`, e.g. `120` → `"2:00"`.
+ *
+ * @param totalSeconds - Whole seconds, non-negative. */
+export function formatMmSs(totalSeconds: number): string {
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  return `${minutes}:${seconds.toString().padStart(2, "0")}`;
+}
+
+/** The status line shown under this device's pairing code.
+ *
+ * @param state - This code's current {@link PairingCodeState}.
+ * @returns `null` when there is no code to describe (nothing renders). */
+export function pairingCodeStatusText(state: PairingCodeState): string | null {
+  switch (state.kind) {
+    case "none":
+      return null;
+    case "expired":
+      return "Code expired.";
+    case "valid":
+      return `Expires in ${formatMmSs(state.secondsRemaining)}`;
+  }
+}
+
+/** The "Show my code" button's label for the current {@link PairingCodeState}
+ *  — once the code has died the same button re-mints a fresh one rather than
+ *  leaving the person stuck on a code the peer will refuse.
+ *
+ * @param state - This code's current {@link PairingCodeState}. */
+export function showCodeButtonLabel(state: PairingCodeState): string {
+  return state.kind === "expired" ? "Get a new code" : "Show my code";
 }

@@ -232,19 +232,20 @@ are defined in `docs/superpowers/specs/2026-09-02-idl1-rewrite-design.md` §10.
       flow and the "sync finished" toast (decision 21) over new pure
       modules `pairForm.ts`/`syncPoll.ts`. **Still open:**
   - `app/src-tauri`'s `.setup()` hook still does not call
-    `SyncState::start`/`app.manage` — blocked, not guessed: nothing in C3
-    §3.9, the L11 PLAN, or `state.rs` specifies how this device's own
-    `peer_id`/`name` are minted or persisted across launches. Raised to the
-    lead 2026-09-07.
+    `SyncState::start`/`app.manage` — ruling R105: this device's own
+    `peer_id`/`name` come from a new `identity.json` in
+    `app_config_dir()` (uuid v4 minted once, name defaulting to the OS
+    hostname). Landing as **L11 Task 13**, dispatched separately; out of
+    this shell task's scope.
   - No C3 command or event enumerates *unpaired* peers currently visible on
     the LAN (`sync_status` lists only paired peers; `peer_appeared` fires
     only for an already-paired sighting, per `state.rs`'s discovery loop) —
     so R104's "the UI may prefill `peer_id` when exactly one unpaired peer
     is online" has no data source today. `SyncSection.tsx` instead asks the
-    user to type the peer id (never guessed, satisfies R104's letter). A
-    small C3/tauri follow-on (e.g. a `discovered_peers` field on
-    `SyncStatus`) would let the UI show a real discovered-peer list; not
-    done here, out of this task's lane.
+    user to type the peer id (never guessed, satisfies R104's letter).
+    **L11 Task 14** (filed by the lead) adds `SyncStatus.discovered_peers`
+    and widens `peer_appeared` to any sighting, so the UI can show a real
+    discovered-peer list; not done here.
   - `unwatch_workbook` missing from C3 (R98): a hidden Notebook's
     `watch_workbook` subscription drops its callback but the Tauri-side
     watcher lives until the channel is dropped — one OS file handle per
