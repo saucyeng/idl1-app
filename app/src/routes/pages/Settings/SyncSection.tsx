@@ -1,22 +1,42 @@
 import { useEffect, useReducer, useState } from "react";
+import { LinkIcon, UnlinkIcon } from "lucide-react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { StatusDot } from "@/components/brand/StatusDot";
 import { toastFor } from "@/components/toasts/events";
+import { composeVisibility, getActiveRoute, subscribeRouteVisible } from "../../../shell/routeVisibility";
 import { describeIpcError, type IpcErrorLike } from "./errors";
-import { normalizePairCode, validatePairCode } from "./pairCode";
+import { isSyncNowDisabled, pairButtonLabel, syncNowButtonLabel, validatePairForm } from "./pairForm";
+import { normalizePairCode } from "./pairCode";
 import type { PrefsStore } from "./prefsStore";
+import { startPeerAppearedWatch, startSyncStatusPoll, type PeerAppearedWatchDeps, type SyncStatusPollDeps } from "./syncPoll";
 import { describeSyncResult, syncStateReducer, type SyncState } from "./syncState";
-import { pairPeer, syncNow, syncStatus, type SyncResult } from "../../../ipc/sync";
+import {
+  onPeerAppeared,
+  pairPeer,
+  startPairing,
+  syncNow,
+  syncStatus,
+  unpairPeer,
+  type PairingCode,
+  type SyncResult,
+} from "../../../ipc/sync";
 
 /** Raises the "sync finished" toast (UI-DIRECTION decision 21) for a
  *  completed `sync_now` transfer — the lane's one toast call site. `changed`
- *  is the total number of items the transfer actually touched (blobs plus
- *  merged workbooks); `SyncResult` has no single "changed" field of its own. */
+ *  is the total number of items the transfer actually touched (blobs,
+ *  merged workbooks, and every other class ruling R102 added to
+ *  `SyncResult`) — the result has no single "changed" field of its own. */
 function announceSyncFinished(result: SyncResult): void {
-  const descriptor = toastFor({ kind: "syncFinished", changed: result.blobs_transferred + result.workbooks_merged });
+  const changed =
+    result.blobs_transferred +
+    result.workbooks_merged +
+    result.sessions_updated +
+    result.tracks_updated +
+    result.profiles_updated;
+  const descriptor = toastFor({ kind: "syncFinished", changed });
   const raise = descriptor.tone === "good" ? toast.success : descriptor.tone === "info" ? toast.info : toast.error;
   raise(descriptor.title, { description: descriptor.detail });
 }
@@ -24,25 +44,42 @@ function announceSyncFinished(result: SyncResult): void {
 /** Props for {@link SyncSection}. Follows {@link ProfileSection}'s
  *  `{ store: PrefsStore }` shape for consistency across sections, even
  *  though this section's content comes entirely from `sync_status`/
- *  `sync_now`/`pair_peer` rather than `store`. */
+ *  `sync_now`/`pair_peer`/`start_pairing`/`unpair_peer` rather than `store`. */
 export interface SyncSectionProps {
   /** Unused by this section's own content; kept for prop-shape consistency
    *  with the other sections. */
   store: PrefsStore;
 }
 
-/** How often the section polls `sync_status` while mounted, in milliseconds.
- *  Not fixed by any contract (C3 §4 only requires "a periodic poll, never
- *  per-frame") — 5 s balances a paired peer's online flag going stale
- *  against calling the backend needlessly often; the poll stops entirely
- *  when the component unmounts (the section is not the selected one). */
-const POLL_INTERVAL_MS = 5000;
-
 const INITIAL_STATE: SyncState = {
   status: null,
   peers: [],
   running: null,
   lastError: null,
+};
+
+/** Real deps for {@link startSyncStatusPoll}/{@link startPeerAppearedWatch}
+ *  (wave-2 operating brief §4's effects rule): `isVisible` composes the
+ *  window's own visibility with whether Settings is the shell's active
+ *  route (R95's route-visibility context, `shell/routeVisibility.tsx`) —
+ *  under mount-and-hide every page stays mounted, so a hidden Settings tab
+ *  would otherwise keep polling `sync_status` and holding a live
+ *  `peer_appeared` subscription forever. Built once at module scope, the
+ *  same shape `Device/index.tsx`'s `STATUS_POLL_DEPS` follows. */
+const SYNC_STATUS_POLL_DEPS: SyncStatusPollDeps = {
+  syncStatus,
+  setTimeout: (fn, ms) => window.setTimeout(fn, ms),
+  clearTimeout: (handle) => window.clearTimeout(handle),
+  isVisible: () => composeVisibility(document.visibilityState === "visible", getActiveRoute() === "settings"),
+  onVisibilityChange: (handler) => subscribeRouteVisible("settings", handler),
+};
+
+/** Real deps for {@link startPeerAppearedWatch} — same composed visibility
+ *  signal as {@link SYNC_STATUS_POLL_DEPS}. */
+const PEER_APPEARED_WATCH_DEPS: PeerAppearedWatchDeps = {
+  onPeerAppeared,
+  isVisible: SYNC_STATUS_POLL_DEPS.isVisible,
+  onVisibilityChange: SYNC_STATUS_POLL_DEPS.onVisibilityChange,
 };
 
 /** Narrows an unknown rejection reason to C3 §2's `IpcError` shape, as this
@@ -58,82 +95,101 @@ function isIpcErrorLike(error: unknown): error is IpcErrorLike {
   );
 }
 
-/** Turns a rejection from `syncStatus`/`syncNow`/`pairPeer` into user-facing
- *  text. `sync_status`/`sync_now`/`pair_peer` are real, landed commands
- *  (C3 §3.9) — not stubs — but L11 (the Rust sync implementation) has not
- *  landed, so today every call rejects. A typed {@link IpcErrorLike}
- *  rejection is described via `describeIpcError`; anything else (e.g. the
- *  command not existing yet on this build) falls back to a message that
- *  says sync is not running yet, rather than surfacing a raw error. */
+/** Turns a rejection from `syncStatus`/`syncNow`/`pairPeer`/`startPairing`/
+ *  `unpairPeer` into user-facing text. A typed {@link IpcErrorLike}
+ *  rejection is described via `describeIpcError`; anything else falls back
+ *  to a generic message rather than surfacing a raw error. */
 function describeSyncError(error: unknown): string {
   if (isIpcErrorLike(error)) {
     return describeIpcError(error);
   }
-  return "LAN sync isn't running on this build yet. Pairing and sync will work once it's wired up.";
+  return "LAN sync ran into a problem. Check that both devices are on the same network and try again.";
 }
 
-/** The Sync section: paired-peer list with online status (polled every
- *  {@link POLL_INTERVAL_MS}), a 6-digit pairing-code field gated by
- *  `pairCode.ts`'s `validatePairCode`, and a manual "Sync now" per peer
- *  (design §7 — sync also triggers automatically when a paired peer
- *  appears, which is L11's job to wire once it lands; this section only
- *  renders status and offers the manual button).
- *
- * `sync_status`/`sync_now`/`pair_peer` (C3 §3.9) are called directly, never
- * stubbed — L11 has not landed, so every call rejects today, and that
- * rejection is shown via {@link describeSyncError} rather than a stub error. */
+/** The Sync section: paired-peer list with online status and per-peer
+ *  unpair/sync-now, a pairing flow (this device's own code via
+ *  `start_pairing`, and a form that pairs against a peer named explicitly —
+ *  see `pairForm.ts`'s doc comment for why the peer id is typed rather than
+ *  picked from a discovered list), and the "sync finished" toast
+ *  (UI-DIRECTION decision 21). Sync also triggers automatically when a
+ *  paired peer comes back online (the Rust auto-trigger, `commands::sync::
+ *  should_auto_sync`); `peer_appeared` refreshes that peer's row here
+ *  without waiting for the next poll. */
 export default function SyncSection({ store }: SyncSectionProps) {
   void store;
 
   const [state, dispatch] = useReducer(syncStateReducer, INITIAL_STATE);
+  const [peerIdInput, setPeerIdInput] = useState<string>("");
   const [codeInput, setCodeInput] = useState<string>("");
   const [pairing, setPairing] = useState<boolean>(false);
   const [lastResultSummary, setLastResultSummary] = useState<string | null>(null);
+  const [myCode, setMyCode] = useState<PairingCode | null>(null);
+  const [showingCode, setShowingCode] = useState<boolean>(false);
 
+  // The `sync_status` poll (wave-2 operating brief §4's effects rule: all
+  // decision logic lives in the pure `startSyncStatusPoll` driver, gated on
+  // R95's route-visibility signal). Data-only dependency array (empty —
+  // `SYNC_STATUS_POLL_DEPS` and `dispatch` are both stable references).
   useEffect(() => {
-    let cancelled = false;
-
-    function poll(): void {
-      void syncStatus()
-        .then((status) => {
-          if (!cancelled) {
-            dispatch({ type: "status", status });
-          }
-        })
-        .catch((error: unknown) => {
-          if (!cancelled) {
-            dispatch({ type: "failure", message: describeSyncError(error) });
-          }
-        });
-    }
-
-    poll();
-    const timer = window.setInterval(poll, POLL_INTERVAL_MS);
-    return () => {
-      cancelled = true;
-      window.clearInterval(timer);
-    };
+    return startSyncStatusPoll(SYNC_STATUS_POLL_DEPS, (action) => {
+      if (action.type === "status") {
+        dispatch({ type: "status", status: action.status });
+      } else {
+        dispatch({ type: "failure", message: describeSyncError(action.error) });
+      }
+    });
   }, []);
 
+  // The `peer_appeared` subscription (R95 item 2's pattern: torn down while
+  // this route is hidden, re-primed on show).
+  useEffect(() => {
+    return startPeerAppearedWatch(PEER_APPEARED_WATCH_DEPS, (peer) => {
+      dispatch({ type: "peerAppeared", peer });
+    });
+  }, []);
+
+  function handleShowCode(): void {
+    setShowingCode(true);
+    void startPairing()
+      .then((code) => setMyCode(code))
+      .catch((error: unknown) => {
+        dispatch({ type: "failure", message: describeSyncError(error) });
+        setShowingCode(false);
+      });
+  }
+
   const normalizedCode = normalizePairCode(codeInput);
-  const codeIssues = validatePairCode(normalizedCode);
-  const codeHasErrors = codeIssues.length > 0;
+  const formIssues = validatePairForm(peerIdInput, normalizedCode);
+  const formHasErrors = formIssues.length > 0;
 
   function handlePair(): void {
-    if (codeHasErrors) {
+    if (formHasErrors) {
       return;
     }
     setPairing(true);
-    void pairPeer(normalizedCode)
+    void pairPeer(peerIdInput.trim(), normalizedCode)
       .then((peer) => {
         dispatch({ type: "paired", peer });
+        setPeerIdInput("");
         setCodeInput("");
+        setMyCode(null);
+        setShowingCode(false);
       })
       .catch((error: unknown) => {
         dispatch({ type: "failure", message: describeSyncError(error) });
       })
       .finally(() => {
         setPairing(false);
+      });
+  }
+
+  function handleUnpair(peerId: string): void {
+    void unpairPeer(peerId)
+      .then(() => {
+        dispatch({ type: "unpaired", peerId });
+      })
+      .catch((error: unknown) => {
+        dispatch({ type: "failure", message: describeSyncError(error) });
       });
   }
 
@@ -151,6 +207,8 @@ export default function SyncSection({ store }: SyncSectionProps) {
         dispatch({ type: "failure", message: describeSyncError(error) });
       });
   }
+
+  const runningPeerId = state.running?.peerId ?? null;
 
   return (
     <div className="flex flex-col gap-4">
@@ -170,9 +228,18 @@ export default function SyncSection({ store }: SyncSectionProps) {
                   type="button"
                   size="sm"
                   onClick={() => handleSyncNow(peer.peer_id)}
-                  disabled={state.running !== null}
+                  disabled={isSyncNowDisabled(runningPeerId)}
                 >
-                  Sync now
+                  {syncNowButtonLabel(peer.peer_id, runningPeerId)}
+                </Button>
+                <Button
+                  type="button"
+                  size="icon-sm"
+                  emphasis="accent"
+                  aria-label={`Unpair ${peer.name}`}
+                  onClick={() => handleUnpair(peer.peer_id)}
+                >
+                  <UnlinkIcon aria-hidden />
                 </Button>
               </li>
             ))}
@@ -190,13 +257,38 @@ export default function SyncSection({ store }: SyncSectionProps) {
 
         {lastResultSummary ? <p className="font-mono text-xs text-fg-dim">{lastResultSummary}</p> : null}
 
-        {state.lastError ? (
-          <p className="font-mono text-xs text-brand-accent">{state.lastError}</p>
-        ) : null}
+        {state.lastError ? <p className="font-mono text-xs text-brand-accent">{state.lastError}</p> : null}
       </div>
 
       <div className="flex flex-col gap-2">
         <h3 className="font-mono text-xs uppercase tracking-[var(--tracking-label)] text-fg-dim">Pair a new device</h3>
+
+        <Button type="button" size="sm" onClick={handleShowCode} className="w-fit">
+          <LinkIcon aria-hidden />
+          Show my code
+        </Button>
+        {showingCode ? (
+          myCode ? (
+            <p className="font-mono text-sm text-fg">
+              Code: <span className="tracking-[0.2em]">{myCode.code}</span>
+            </p>
+          ) : (
+            <p className="font-mono text-xs text-fg-faint">Minting a code…</p>
+          )
+        ) : null}
+
+        <label htmlFor="idl1-settings-peer-id" className="font-mono text-xs text-fg-dim">
+          Device id
+        </label>
+        <Input
+          id="idl1-settings-peer-id"
+          type="text"
+          className="max-w-64"
+          value={peerIdInput}
+          onChange={(event) => setPeerIdInput(event.target.value)}
+          placeholder="the id shown on the other device"
+        />
+
         <label htmlFor="idl1-settings-pair-code" className="font-mono text-xs text-fg-dim">
           Pairing code
         </label>
@@ -208,15 +300,15 @@ export default function SyncSection({ store }: SyncSectionProps) {
           onChange={(event) => setCodeInput(event.target.value)}
           placeholder="123 456"
         />
-        {codeInput.length > 0
-          ? codeIssues.map((issue) => (
-              <p key={issue.message} className="font-mono text-xs text-brand-accent">
+        {codeInput.length > 0 || peerIdInput.length > 0
+          ? formIssues.map((issue) => (
+              <p key={issue.path} className="font-mono text-xs text-brand-accent">
                 {issue.message}
               </p>
             ))
           : null}
-        <Button type="button" emphasis="info" filled onClick={handlePair} disabled={codeHasErrors || pairing} className="w-fit">
-          Pair
+        <Button type="button" emphasis="info" filled onClick={handlePair} disabled={formHasErrors || pairing} className="w-fit">
+          {pairButtonLabel(pairing)}
         </Button>
       </div>
     </div>

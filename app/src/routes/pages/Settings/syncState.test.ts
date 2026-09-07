@@ -5,6 +5,7 @@ import {
   syncStateReducer,
   type SyncState,
 } from "./syncState";
+import type { PeerStatus, SyncResult } from "../../../ipc/sync";
 
 const initialState: SyncState = {
   status: null,
@@ -13,22 +14,41 @@ const initialState: SyncState = {
   lastError: null,
 };
 
+/** A full six-field `SyncResult` (C3 §3.9, ruling R102) with every field
+ *  overridable, so each test states only the fields it cares about. */
+function syncResult(overrides: Partial<SyncResult> = {}): SyncResult {
+  return {
+    blobs_transferred: 0,
+    workbooks_merged: 0,
+    conflicts: 0,
+    sessions_updated: 0,
+    tracks_updated: 0,
+    profiles_updated: 0,
+    ...overrides,
+  };
+}
+
+/** A full `PeerStatus` (C3 §3.9) with every field overridable. */
+function peer(overrides: Partial<PeerStatus> & { peer_id: string; name: string }): PeerStatus {
+  return { online: true, protocol_version: 1, paired_at_ms: 1_700_000_000_000, ...overrides };
+}
+
 describe("syncStateReducer", () => {
   it("syncStateReducer — a sync_status result — peers listed, online flags kept", () => {
     const next = syncStateReducer(initialState, {
       type: "status",
       status: {
         paired_peers: [
-          { peer_id: "a", name: "Desktop", online: true },
-          { peer_id: "b", name: "Phone", online: false },
+          peer({ peer_id: "a", name: "Desktop", online: true }),
+          peer({ peer_id: "b", name: "Phone", online: false }),
         ],
         last_sync_utc_ms: 1000,
       },
     });
 
     expect(next.peers).toEqual([
-      { peer_id: "a", name: "Desktop", online: true },
-      { peer_id: "b", name: "Phone", online: false },
+      peer({ peer_id: "a", name: "Desktop", online: true }),
+      peer({ peer_id: "b", name: "Phone", online: false }),
     ]);
     expect(next.status?.last_sync_utc_ms).toBe(1000);
   });
@@ -40,7 +60,7 @@ describe("syncStateReducer", () => {
     const next = syncStateReducer(runningState, {
       type: "status",
       status: {
-        paired_peers: [{ peer_id: "a", name: "Desktop", online: true }],
+        paired_peers: [peer({ peer_id: "a", name: "Desktop", online: true })],
         last_sync_utc_ms: null,
       },
     });
@@ -78,22 +98,25 @@ describe("syncStateReducer", () => {
     });
   });
 
-  it("describeSyncResult — conflicts 0 — the summary says merged cleanly", () => {
-    const summary = describeSyncResult({
-      blobs_transferred: 12,
-      workbooks_merged: 3,
-      conflicts: 0,
-    });
+  it("describeSyncResult — conflicts 0, no session/track/profile activity — the summary says merged cleanly", () => {
+    const summary = describeSyncResult(syncResult({ blobs_transferred: 12, workbooks_merged: 3 }));
 
     expect(summary).toMatch(/merged cleanly|no conflicts/i);
+    expect(summary).not.toMatch(/session|track|profile/i);
+  });
+
+  it("describeSyncResult — sessions/tracks/profiles updated — each is named", () => {
+    const summary = describeSyncResult(
+      syncResult({ blobs_transferred: 1, workbooks_merged: 0, sessions_updated: 2, tracks_updated: 1, profiles_updated: 1 })
+    );
+
+    expect(summary).toMatch(/2 sessions/i);
+    expect(summary).toMatch(/1 track updated/i);
+    expect(summary).toMatch(/1 profile updated/i);
   });
 
   it("describeSyncResult — conflicts 2 — the summary names the conflict cells as something to resolve, not as an error", () => {
-    const summary = describeSyncResult({
-      blobs_transferred: 12,
-      workbooks_merged: 3,
-      conflicts: 2,
-    });
+    const summary = describeSyncResult(syncResult({ blobs_transferred: 12, workbooks_merged: 3, conflicts: 2 }));
 
     expect(summary).toMatch(/resolve/i);
     expect(summary).not.toMatch(/error|failed/i);
@@ -106,7 +129,7 @@ describe("syncStateReducer", () => {
     const next = syncStateReducer(runningState, {
       type: "result",
       peerId: "a",
-      result: { blobs_transferred: 12, workbooks_merged: 3, conflicts: 0 },
+      result: syncResult({ blobs_transferred: 12, workbooks_merged: 3 }),
     });
 
     expect(next.running).toBeNull();
@@ -116,7 +139,7 @@ describe("syncStateReducer", () => {
   it("syncStateReducer — a failure with kind sync — lastError set, peers retained", () => {
     const peeredState: SyncState = {
       ...initialState,
-      peers: [{ peer_id: "a", name: "Desktop", online: true }],
+      peers: [peer({ peer_id: "a", name: "Desktop", online: true })],
     };
 
     const next = syncStateReducer(peeredState, {
@@ -127,20 +150,78 @@ describe("syncStateReducer", () => {
     expect(next.lastError).toBe(
       "LAN sync ran into a problem. Check that both devices are on the same network and try again."
     );
-    expect(next.peers).toEqual([{ peer_id: "a", name: "Desktop", online: true }]);
+    expect(next.peers).toEqual([peer({ peer_id: "a", name: "Desktop", online: true })]);
   });
 
   it("syncStateReducer — pair success — the new peer appears once, even if the poll also returns it", () => {
     const stateWithPeer: SyncState = {
       ...initialState,
-      peers: [{ peer_id: "a", name: "Desktop", online: true }],
+      peers: [peer({ peer_id: "a", name: "Desktop", online: true })],
     };
 
     const next = syncStateReducer(stateWithPeer, {
       type: "paired",
-      peer: { peer_id: "a", name: "Desktop", online: true },
+      peer: peer({ peer_id: "a", name: "Desktop", online: true }),
     });
 
-    expect(next.peers).toEqual([{ peer_id: "a", name: "Desktop", online: true }]);
+    expect(next.peers).toEqual([peer({ peer_id: "a", name: "Desktop", online: true })]);
+  });
+
+  it("syncStateReducer — pair success for a new peer id — appended to the list", () => {
+    const stateWithPeer: SyncState = {
+      ...initialState,
+      peers: [peer({ peer_id: "a", name: "Desktop" })],
+    };
+
+    const next = syncStateReducer(stateWithPeer, {
+      type: "paired",
+      peer: peer({ peer_id: "b", name: "Phone" }),
+    });
+
+    expect(next.peers.map((p) => p.peer_id)).toEqual(["a", "b"]);
+  });
+
+  it("syncStateReducer — unpair success — the peer is dropped and lastError cleared", () => {
+    const stateWithPeers: SyncState = {
+      ...initialState,
+      peers: [peer({ peer_id: "a", name: "Desktop" }), peer({ peer_id: "b", name: "Phone" })],
+      lastError: "earlier problem",
+    };
+
+    const next = syncStateReducer(stateWithPeers, { type: "unpaired", peerId: "a" });
+
+    expect(next.peers.map((p) => p.peer_id)).toEqual(["b"]);
+    expect(next.lastError).toBeNull();
+  });
+
+  it("syncStateReducer — unpair success for an id not in the list — a no-op", () => {
+    const stateWithPeer: SyncState = { ...initialState, peers: [peer({ peer_id: "a", name: "Desktop" })] };
+
+    const next = syncStateReducer(stateWithPeer, { type: "unpaired", peerId: "unknown" });
+
+    expect(next.peers.map((p) => p.peer_id)).toEqual(["a"]);
+  });
+
+  it("syncStateReducer — peerAppeared for a known peer — that row's online/protocol_version refresh", () => {
+    const stateWithPeer: SyncState = {
+      ...initialState,
+      peers: [peer({ peer_id: "a", name: "Desktop", online: false, protocol_version: 1 })],
+    };
+
+    const next = syncStateReducer(stateWithPeer, {
+      type: "peerAppeared",
+      peer: peer({ peer_id: "a", name: "Desktop", online: true, protocol_version: 2 }),
+    });
+
+    expect(next.peers).toEqual([peer({ peer_id: "a", name: "Desktop", online: true, protocol_version: 2 })]);
+  });
+
+  it("syncStateReducer — peerAppeared for a peer not yet in the list — appended", () => {
+    const next = syncStateReducer(initialState, {
+      type: "peerAppeared",
+      peer: peer({ peer_id: "a", name: "Desktop" }),
+    });
+
+    expect(next.peers.map((p) => p.peer_id)).toEqual(["a"]);
   });
 });
