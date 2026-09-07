@@ -1691,6 +1691,21 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 - **Device commands (C3 §3.8) wired to L4's idl-transport.** ble_scan, ble_connect, list_device_files, download_file (streams Progress), push_config. Each command connects/acts/disconnects per call (no managed BLE session yet). `push_config` validates `config_json` is well-formed JSON only — full schema validation via `idl_rs::config::parse_config` is blocked on core defining a `VersionedConfig` type for SPEC §8's device-config schema, not yet landed.
 - **Data tab: session list over C3 §3.2 list_sessions.** DataPage becomes routes/pages/Data/; pure SessionRow view-model and typed IpcError mapper, both tested.
 
+### Fixed
+
+- **Per-route error boundary in `shell/RouteHost.tsx` (2026-09-07).** `RouteHost`
+  mounts every destination unconditionally (mount-and-hide, R93) and none of the
+  four had anything catching a throw — an uncaught render or effect exception in
+  *any* always-mounted route, active or not, propagated to React's root and
+  unmounted the entire shell with no fallback UI (confirmed live: a plain
+  `useEffect` throw in the hidden Data tab blanked the whole app, nav bar
+  included, while the user was on Notebook). New `shell/RouteErrorBoundary.tsx`
+  (class component) plus pure `shell/routeErrorFallback.ts` (`describeRouteError`,
+  tested) wrap each route's element individually in `RouteHost`, so one tab's
+  failure now renders a token-styled "`<Route>` hit an error and could not
+  render" message with a Retry button in that tab alone, leaving the shell chrome
+  and every other tab unaffected.
+
 ### Changed
 
 - **Doc carry-over fixes (2026-09-03, L10).** `tools/README.md` no longer documents the

@@ -9,6 +9,7 @@ import { useAppState } from "../state/AppState";
 import { setActiveRoute } from "./routeVisibility";
 import { usesColumns, type ShellLayout } from "./layout";
 import ColumnFrame, { ColumnPlaceholder } from "./ColumnFrame";
+import { RouteErrorBoundary } from "./RouteErrorBoundary";
 
 /** Every destination's element, built once per render but reconciled by
  *  React against the same position (`RouteHost`'s `.map` below) every time
@@ -43,6 +44,14 @@ const ROUTE_ELEMENTS = {
  * function always renders; `ColumnFrame` only changes where it sits. Every
  * other route fills the full width, unchanged, at every layout (Device is
  * explicitly single-column at every width per its per-tab direction).
+ *
+ * Each route's element is wrapped in its own {@link RouteErrorBoundary}
+ * (mount-and-hide keeps every route's effects running whether or not it is
+ * the active tab, so a throw in an *inactive* route had nothing to catch it
+ * either — confirmed live, an uncaught effect throw in one always-mounted
+ * route blanked the whole shell). The boundary is per route, not one
+ * boundary around the whole `.map`, so one tab's failure never takes any
+ * other tab, or the shell chrome around this component, down with it.
  */
 export default function RouteHost({ layout }: { layout: ShellLayout }) {
   const [state] = useAppState();
@@ -70,7 +79,7 @@ export default function RouteHost({ layout }: { layout: ShellLayout }) {
           );
         return (
           <div key={r.id} hidden={!isActive} data-route={r.id} className="shell-route-panel h-full">
-            {content}
+            <RouteErrorBoundary routeLabel={r.label}>{content}</RouteErrorBoundary>
           </div>
         );
       })}
