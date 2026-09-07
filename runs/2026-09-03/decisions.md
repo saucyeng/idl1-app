@@ -4136,3 +4136,19 @@ Worktree retired.
 a colour literal anywhere outside `tokens.css` fails the suite. Nine
 sections (kept `data`, added `firmware`/`theme`) accepted. Main suite
 110 files / 1015 passed. Worktree retired.
+
+## 2026-09-07 — R96: click-to-deselect on a Data session row is kept (UI-6)
+
+UI-6 added a toggle to `selectSession` (re-clicking the selected row
+clears the selection) inside a presentation-only task, without a ruling
+or a CHANGELOG line — the reviewer graded the *disclosure*, not the code.
+**Ruling: keep it.** It restores idl0's own
+`SelectionNotifier.toggleSession` behaviour, and with L6 reading
+`AppState.selection` (R53 Data Q3) a user who cannot clear a selection
+cannot get the Notebook back to "no session". Fix commit: one CHANGELOG
+line naming it as a deliberate parity fix citing R96, and the stale
+`SessionRowView` doc comment corrected (review Minor). L7a stays the
+slice's only writer; nothing else changes.
+
+**Cost if wrong:** one line to revert; the alternative leaves the app
+with no way to deselect.
