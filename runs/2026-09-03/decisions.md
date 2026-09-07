@@ -4580,3 +4580,14 @@ a second, deeper one. Both are real:
 
 **Cost if wrong:** (1) is dev-only ergonomics; (2) is the difference
 between a white screen and a message naming what broke.
+
+**R106 addendum — the watchdog was never wired.** The fix agent found
+`SandboxHost.tick()` (the ping/stall watchdog, design §6: a runaway cell
+gets the iframe torn down and rebuilt) has **no caller anywhere** — it
+has never run. That is a shipped-behaviour gap, not a cosmetic one: a
+cell that hangs the sandbox currently hangs it forever. Filed as **L6
+Task 22** (wire `tick()` to a real interval, torn down with the host and
+gated on route visibility per R95; test that a stalled sandbox is rebuilt
+and that a healthy one is never torn down). The 5 s boot timer +
+`onSandboxUnavailable` banner landed in this fix covers the *load*
+failure; the *stall* case is Task 22.
