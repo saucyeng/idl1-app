@@ -6,6 +6,30 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 
 ### Added
 
+- **Root-level error boundary; the async-error banner survives an app-root
+  unmount (2026-09-07, shell-unmount task, no spec change needed).** Isaac
+  reported the whole shell — nav bar included — disappearing a few seconds
+  after every launch, not just the Notebook column. `shell/RouteErrorBoundary`
+  only ever wrapped the space inside `RouteHost`'s per-route `.map`; nothing
+  wrapped `AppShell`, `TopBar`, `BottomBar`, `RouteHost`'s own body/effects,
+  `CommandPalette`, or the `Toaster`, so a throw at that level took the
+  entire root down with no fallback. `main.tsx` now wraps `<App />` in a new
+  `shell/RootErrorBoundary`, a full-window fallback naming the error with a
+  Reload button. Separately, the async-error banner (`window` `"error"`/
+  `"unhandledrejection"` listeners, landed 2026-09-07 as `98ceb20`) moved out
+  of `AppShell` into `shell/GlobalErrorBanner.tsx`, mounted by `main.tsx` as
+  its **own separate React root** (a sibling DOM node of `#root`, not a
+  child or a portal target inside it) — a banner rendered by `AppShell`
+  would have died with the exact tree the reported bug kills, and a portal
+  would not have helped either (portalled content is still part of the
+  source root's fiber tree). No thrower was found in the Notebook's
+  mount-time path (`SandboxHost`, `bootTimer`, `watchdog`, the effects in
+  `Notebook/index.tsx`) beyond what the 2026-09-07 R106/notebook-black work
+  already covered; `TopBar`/`BottomBar`/`shell/layout.ts`/
+  `shell/routeVisibility.tsx` were read and ruled out (no effects, no risk).
+  This task's fix addresses the structural gap the lead flagged regardless
+  of whether the still-unconfirmed root cause is found later.
+
 - **Sync UI shell task: `app/src/ipc/sync.ts` and Settings' `SyncSection.tsx`
   brought up to C3 §3.9 as L11 landed it (2026-09-07, no spec change
   needed).** `sync.ts` gains `startPairing`, `pairPeer(peerId, code)`

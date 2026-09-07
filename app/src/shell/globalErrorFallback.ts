@@ -7,12 +7,14 @@
  * doc comment names this exact gap: "an unhandled rejection never reaches a
  * component's render or commit phase, so no boundary in React can see it —
  * that class of failure needs its own `.catch`, not a boundary". This
- * module is that catch's decision half; `AppShell.tsx` registers the two
- * `window` listeners once and feeds their event into the matching function
- * here, so a failure of this class is named for the user (a shell-level
- * banner) instead of leaving a blank/black screen with nothing but a
- * console line only a developer would see (2026-09-07, notebook-black
- * task).
+ * module is that catch's decision half; `GlobalErrorBanner.tsx` registers
+ * the two `window` listeners once and feeds their event into the matching
+ * function here, so a failure of this class is named for the user (a
+ * shell-level banner) instead of leaving a blank/black screen with nothing
+ * but a console line only a developer would see (2026-09-07,
+ * notebook-black task; moved from `AppShell.tsx` into its own separate
+ * React root by the 2026-09-07 shell-unmount task so the banner survives
+ * an app-root unmount -- see `GlobalErrorBanner.tsx`'s doc comment).
  */
 import { describeRouteError, type RouteErrorDescription } from "./routeErrorFallback";
 
