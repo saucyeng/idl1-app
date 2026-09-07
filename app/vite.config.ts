@@ -55,15 +55,31 @@ const SANDBOX_HTML_SUFFIX = "src/routes/pages/Notebook/sandbox/index.html";
  */
 function reactWithoutSandboxPreamble(): PluginOption[] {
   const plugins = react() as Plugin[];
+  let wrapped = 0;
   for (const plugin of plugins) {
     const hook = plugin.transformIndexHtml;
     if (hook === undefined) continue;
+    wrapped++;
     const original = typeof hook === "function" ? hook : hook.handler;
     const guarded: IndexHtmlTransformHook = function (html, ctx) {
       if (ctx.filename.replaceAll(path.sep, "/").endsWith(SANDBOX_HTML_SUFFIX)) return undefined;
       return original.call(this, html, ctx);
     };
     plugin.transformIndexHtml = typeof hook === "function" ? guarded : { ...hook, handler: guarded };
+  }
+  // Fails loudly instead of silently re-introducing the sandbox preamble
+  // bug: if a future `@vitejs/plugin-react` release moves its preamble
+  // injection off `transformIndexHtml` entirely, `wrapped` stays 0 and this
+  // guard can no longer intercept anything — better to break `vite dev`
+  // with a clear message here than to let the sandbox iframe silently
+  // start receiving the Fast Refresh preamble again (see this function's
+  // doc comment above).
+  if (wrapped === 0) {
+    throw new Error(
+      "reactWithoutSandboxPreamble: no @vitejs/plugin-react plugin exposed transformIndexHtml — " +
+        "its internals changed; update this guard (app/vite.config.ts) before the sandbox iframe " +
+        "silently starts receiving the Fast Refresh preamble again."
+    );
   }
   return plugins;
 }
@@ -137,7 +153,11 @@ export default defineConfig(async () => ({
     //    `server.cors` is a `vite dev`-only option; it does not exist in a
     //    `vite build`'s static output or apply to Tauri's own production
     //    asset responses, so this cannot change production behaviour
-    //    either way.
+    //    either way. Note for the next reader who tightens dev-server
+    //    posture: `cors.origin` is origin-wide, not path-scoped — Vite has
+    //    no per-path CORS option, so this allowance covers every request
+    //    this dev server answers from a `null`-origin document, not only
+    //    the sandbox iframe's own fetches.
     cors: { origin: [defaultAllowedOrigins, "null"] },
   },
 }));

@@ -1,8 +1,9 @@
 /**
  * The thin host-side object that owns one notebook's sandboxed `<iframe>`
  * (design §6). Not unit-tested (CLAUDE.md §4 — it renders/owns a live
- * `<iframe>`); the pure protocol validation and watchdog scheduling it
- * delegates to are tested in `protocol.test.ts`/`watchdog.test.ts`.
+ * `<iframe>`); the pure protocol validation, watchdog scheduling and
+ * boot-timeout decision it delegates to are tested in
+ * `protocol.test.ts`/`watchdog.test.ts`/`bootTimer.test.ts`.
  */
 import {
   channelPayload,
@@ -15,6 +16,7 @@ import {
   type HostVarPayload,
   type SandboxCell,
 } from "./protocol";
+import { BOOT_TIMEOUT_MS, createBootTimer, type BootTimer } from "./bootTimer";
 import { OutboundQueue } from "./outboundQueue";
 import { replayInitAndHostVars, replaySetCells } from "./rebuildReplay";
 import { createWatchdog, type Watchdog } from "./watchdog";
@@ -39,26 +41,6 @@ interface OutboundEnvelope {
  * imports (`d3`, `@observablehq/*`), only a real second HTML entry does.
  */
 const SANDBOX_PATH = "src/routes/pages/Notebook/sandbox/index.html";
-
-/**
- * How long a freshly created iframe generation may take to send its first
- * `ready` before this host gives up and reports
- * {@link SandboxHostCallbacks.onSandboxUnavailable} instead of leaving the
- * Notebook's output column silently blank forever. Real trigger (2026-09-07,
- * Isaac's WebView console): a broken dev-server CORS path made the
- * sandbox's own `main.ts` module fetch fail outright, so `ready` never
- * arrived and nothing was watching for that — the column just stayed blank
- * with no error and no retry. This is a one-shot boot timer, independent of
- * `watchdog.ts`'s repeating ping/stall loop (`tick()`'s own doc comment:
- * driven by "a real `setInterval` in the caller" — not currently wired by
- * any caller, a separate pre-existing gap flagged but not taken on by this
- * change), so it does its job even before that wiring exists. 5s is chosen
- * generously above a normal module-graph load (Runtime/Plot/d3/Inputs/htl,
- * a few hundred ms even on a cold dev-server cache) without making a
- * genuine failure wait long to be reported — an undocumented judgement
- * call, not a spec number.
- */
-const BOOT_TIMEOUT_MS = 5000;
 
 /** Called once per completed `postMessage` round trip the host cares about. */
 export interface SandboxHostCallbacks {
@@ -119,10 +101,11 @@ export class SandboxHost {
   private readonly outboundQueue = new OutboundQueue<OutboundEnvelope>();
   /** The generation id `startGeneration()` returned for the current `iframe`. */
   private generation = 0;
-  /** The current generation's boot timer (`BOOT_TIMEOUT_MS`), armed by
-   *  `createIframe()` and cleared the moment that generation's `ready`
-   *  arrives; `null` once cleared or fired so it is never cleared twice. */
-  private bootTimeoutHandle: ReturnType<typeof setTimeout> | null = null;
+  /** The current generation's boot-timeout decision (`bootTimer.ts`),
+   *  armed by `createIframe()` and cleared the moment that generation's
+   *  `ready` arrives; the pure timing/fire-once logic lives in the injected
+   *  module so it can be unit-tested without a real timer. */
+  private readonly bootTimer: BootTimer;
   /** The last `init`/`setCells` payloads sent, replayed into a rebuilt
    *  iframe by `rebuild()` (`replayAfterRebuild`, review-task5.md Important
    *  finding: design §6's "state loss is the cost" means reactive state,
@@ -149,10 +132,7 @@ export class SandboxHost {
         // attached its own message listener (`sandbox/main.ts`) — not
         // gated on `init` (review-task5b.md Critical finding). Flushes
         // this generation's queued outbound messages, `init` included.
-        if (this.bootTimeoutHandle !== null) {
-          clearTimeout(this.bootTimeoutHandle);
-          this.bootTimeoutHandle = null;
-        }
+        this.bootTimer.onReady();
         this.outboundQueue.markReady(this.generation, (envelope) =>
           this.iframe.contentWindow?.postMessage(envelope.message, "*", envelope.transfer)
         );
@@ -184,6 +164,11 @@ export class SandboxHost {
       send: () => this.postToSandbox({ type: "ping", nonce: this.nextPingNonce++ }),
       onStalled: () => this.rebuild(),
     });
+    this.bootTimer = createBootTimer({
+      schedule: (fn, delayMs) => setTimeout(fn, delayMs),
+      cancel: (handle) => clearTimeout(handle as ReturnType<typeof setTimeout>),
+      onUnavailable: () => this.callbacks.onSandboxUnavailable(),
+    });
     this.iframe = this.createIframe();
     window.addEventListener("message", this.onMessage);
   }
@@ -210,13 +195,7 @@ export class SandboxHost {
     iframe.style.height = "100%";
     iframe.style.border = "none";
     this.container.appendChild(iframe);
-    if (this.bootTimeoutHandle !== null) {
-      clearTimeout(this.bootTimeoutHandle);
-    }
-    this.bootTimeoutHandle = setTimeout(() => {
-      this.bootTimeoutHandle = null;
-      this.callbacks.onSandboxUnavailable();
-    }, BOOT_TIMEOUT_MS);
+    this.bootTimer.arm();
     return iframe;
   }
 
@@ -362,10 +341,7 @@ export class SandboxHost {
 
   /** Tears down the iframe and stops listening. Call when the notebook closes. */
   dispose(): void {
-    if (this.bootTimeoutHandle !== null) {
-      clearTimeout(this.bootTimeoutHandle);
-      this.bootTimeoutHandle = null;
-    }
+    this.bootTimer.dispose();
     this.postToSandbox({ type: "teardown" });
     window.removeEventListener("message", this.onMessage);
     this.iframe.remove();
