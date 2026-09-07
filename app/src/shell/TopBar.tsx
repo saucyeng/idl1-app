@@ -66,10 +66,11 @@ export default function TopBar({ activeRoute, onNavigate, selection, onOpenPalet
         </span>
       )}
 
-      {/* Reserved for UI-11's PlaybackTransport (play/pause, live-speed
-          cursor) — out of scope here (UI-DIRECTION decision 18, Suggested
-          lane split UI-11). */}
-      <div className="flex-1" data-slot="playback-transport-placeholder" />
+      {/* UI-11's PlaybackTransport (play/pause, live-speed cursor) portals
+          into this node by id from `Notebook/interaction/PlaybackTransport.tsx`
+          — `TopBar` itself holds no playback state (R99: that state lives in
+          `Notebook/index.tsx`, the worksheet's own orchestration file). */}
+      <div className="flex flex-1 items-center justify-end pr-2" id="playback-transport-slot" data-slot="playback-transport-placeholder" />
 
       <button
         type="button"

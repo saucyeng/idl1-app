@@ -39,6 +39,8 @@ import { replaceCellBody } from "./model/cells";
 import { runChannelBind, runChannelSettle, type ChannelBindAction, type ChannelBindDeps, type ChartWindow } from "./model/channelBindDriver";
 import { CellRunSequencer } from "./model/cellRunSequencer";
 import { isCodeVisible, toggleCode } from "./model/codeVisibility";
+import PlaybackTransport from "./interaction/PlaybackTransport";
+import { tick, togglePlay, type PlaybackState } from "./interaction/playback";
 import { editorPlacement, outputIsReadOnly } from "./model/editorPlacement";
 import { runFft, type FftAction, type FftDeps } from "./model/fftDriver";
 import { exceedsBinCap, frequencyAxisHz } from "./model/fftRequest";
@@ -266,6 +268,67 @@ export default function NotebookPage() {
   useEffect(() => {
     setPrimeState((prev) => nextSandboxPrimeState(prev, routeVisible));
   }, [routeVisible]);
+
+  // UI-11 (R99): the worksheet's shared cursor time, split into a
+  // manually-set component (`setCursor`/`clearCursor`, a click, "cursor to
+  // peak") and playback's own clock (`interaction/playback.ts`) -- the
+  // *effective* shared cursor every mounted `ChartCell` receives is
+  // whichever of the two is currently authoritative (`sharedCursorTUs`
+  // below), never both merged, so there is exactly one source of truth at
+  // any instant.
+  const [manualCursorTUs, setManualCursorTUs] = useState<bigint | null>(null);
+  const [playback, setPlayback] = useState<PlaybackState>({ tUs: 0n, playing: false, speed: 1 });
+  const sharedCursorTUs = playback.playing ? playback.tUs : manualCursorTUs;
+
+  // The playback clock's `requestAnimationFrame` loop: local state only
+  // (`setPlayback`), never IPC or `postMessage` itself (the effects rule's
+  // carve-out for a RAF loop that "advances local state only"). Gated on
+  // `primeState.running` (R95/R99): a hidden Notebook route must not keep
+  // ticking a cursor nobody can see. `sessionSpanUs` is read fresh each
+  // frame via a ref (`sessionSpanUsRef`, populated below) rather than
+  // added to this effect's dependency array, so a mid-playback session
+  // change doesn't tear down and restart the RAF loop itself.
+  const sessionSpanUsRef = useRef(sessionSpanUs);
+  sessionSpanUsRef.current = sessionSpanUs;
+  useEffect(() => {
+    if (!playback.playing || !primeState.running) return;
+
+    let raf = 0;
+    let last = performance.now();
+    const loop = (now: number) => {
+      const elapsedMs = now - last;
+      last = now;
+      const spanEndUs = BigInt(Math.max(0, Math.round(sessionSpanUsRef.current ?? 0)));
+      setPlayback((prev) => tick(prev, elapsedMs, [0n, spanEndUs]));
+      raf = requestAnimationFrame(loop);
+    };
+    raf = requestAnimationFrame(loop);
+    return () => cancelAnimationFrame(raf);
+  }, [playback.playing, primeState.running]);
+
+  // R95's own rule ("pause ... while hidden") applied to playback: a
+  // hidden -> still-playing route pauses rather than silently continuing
+  // off-screen, so a later re-show shows a paused transport, not one that
+  // kept advancing invisibly.
+  useEffect(() => {
+    if (!primeState.running && playback.playing) {
+      setPlayback((prev) => togglePlay(prev));
+    }
+  }, [primeState.running, playback.playing]);
+
+  /** Play/pause toggle for `PlaybackTransport`. Starting play from a
+   *  manually-set cursor seeds the clock's `tUs` from it (a judgment call:
+   *  `interaction/playback.ts`'s `togglePlay` has no span/cursor parameter
+   *  to do this itself, see its own doc comment) so playback resumes from
+   *  where the user last pointed rather than wherever the clock was left. */
+  function handleTogglePlay(): void {
+    setPlayback((prev) => {
+      if (!prev.playing && manualCursorTUs !== null) {
+        return togglePlay({ ...prev, tUs: manualCursorTUs });
+      }
+      return togglePlay(prev);
+    });
+  }
 
   // Width-dependent chrome (UI-10): the editor's placement (panes/inline/
   // sheet, `model/editorPlacement.ts`) and the output register's CSS
@@ -1274,6 +1337,11 @@ export default function NotebookPage() {
                 fetchCursorReadout={(sessId, channels, tUs) => cursorReadout(sessId, channels, tUs)}
                 sendTransform={(id, translateXPx, scaleX) => sandboxHostRef.current?.sendTransform(id, translateXPx, scaleX)}
                 sendLayout={sendLayout}
+                cursorTUs={sharedCursorTUs}
+                playing={playback.playing}
+                onSetCursor={(tUs) => setManualCursorTUs(BigInt(Math.round(tUs)))}
+                onClearCursor={() => setManualCursorTUs(null)}
+                onToggleCode={() => setRevealedCells((prev) => toggleCode(prev, cellId))}
               />
             );
           }}
@@ -1307,6 +1375,12 @@ export default function NotebookPage() {
 
   return (
     <div className="flex h-full flex-col">
+      <PlaybackTransport
+        playing={playback.playing}
+        cursorTUs={sharedCursorTUs}
+        onToggle={handleTogglePlay}
+        disabled={!primeState.running}
+      />
       {functionCatalogMismatches.length > 0 && (
         <p role="status" className="notebook-function-catalog-warning">
           The function reference is out of date with the engine ({functionCatalogMismatches.length} mismatch

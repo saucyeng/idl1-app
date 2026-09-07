@@ -369,6 +369,48 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
   split width (see the ruling flag above); narrow-layout editing for
   `math`/`table` cells (only `js` cells get the narrow Properties `Sheet`
   in this pass — no code editor at narrow for the other two kinds).
+- **UI-11: shared cursor, chart action menu, keyboard zoom/pan, playback
+  transport (2026-09-07, spec-during — playback and keyboard bindings are
+  new user-visible behaviour, decisions 18/27; R99).** New
+  `routes/pages/Notebook/interaction/`: `chartActions.ts` (the ported,
+  narrowed `ChartAction` enum and `actionsFor`/`actionLabel`), `keymap.ts`
+  (`actionForKey`, arrow keys for zoom/pan since the given key-event shape
+  carries no `altKey` — diverges from `Settings/controls.ts`'s idl0-ported
+  table, see that module's doc comment), `playback.ts` (`tick`/`togglePlay`/
+  `formatPlaybackTime`, the live-speed clock — pure, an injected
+  `elapsedMs`, no timer of its own), `cursorFollow.ts`
+  (`pixelXForTUs`/`advanceViewportByTime`), `rectZoom.ts` (`zoomToRect`,
+  composing `model/viewport.ts`'s own `zoomAt`/`panBy`), `peak.ts`
+  (`findPeakTUs` for "cursor to peak"), `ChartContextMenu.tsx` (UI-3's
+  `context-menu` over the action set) and `PlaybackTransport.tsx` (portals
+  into `shell/TopBar.tsx`'s reserved slot by `id`, not new props on
+  `TopBar`/`App.tsx`/`AppState.tsx` — R99 keeps those untouched).
+  **R99 (this task's own ruling):** the shared worksheet cursor is new
+  state in `Notebook/index.tsx` (`manualCursorTUs` + `playback:
+  PlaybackState`), not a new field on any single `ChartCell` — every
+  mounted `ChartCell` receives the same `cursorTUs`/`playing` props and
+  keeps its **own** `cursorReadoutDriver` instance (R62's 150 ms
+  pointer-stop settle stays per chart; only the cursor *time* is shared).
+  During playback a `ChartCell` pans its own live viewport through the
+  *existing* settle debounce (`advanceViewportByTime` → `settleRef.notify`)
+  and calls its readout driver's `notify` (not `dispatchNow`) at the new
+  position every frame — the debounce keeps being reset by a continuously
+  advancing cursor, so neither the tile-fetch settle nor the
+  `cursorReadout` IPC call fires more than once per pause/stop. **No new
+  throttle was needed**; this task did not have to invent one. Drag-rectangle
+  zoom is Shift+drag (not idl0's right-click+drag) since right-click is now
+  `ChartContextMenu`'s own trigger. A plain left-click with negligible
+  movement sets the shared cursor (idl0's "Place cursor: Left-click"), the
+  menu's own "Set cursor here"/"Clear cursor" mirror it, and "cursor to
+  peak" scans the cell's own already-decoded tiles (no fetch). `CursorReadout.tsx`
+  restyled to token chips (`--surface-2` fill, `--rule` hairline, mono
+  tabular) per the chart style rules. **Parity gaps:** figure export
+  (decision 28, out of scope); a cascading submenu (not needed — the
+  landed action set is flat); Y-axis zoom and idl0's multi-cursor swap (no
+  landed Y-axis or second cursor to act on); `Settings/controls.ts`'s
+  provisional keyboard table now disagrees with the landed bindings (that
+  table's own doc comment already flags it as provisional — a follow-on
+  should import/compare against `keymap.ts` per that file's Open question 2).
 - **L8x lane complete: Data-tab write commands (2026-09-06, idl-rs core +
   idl-rs-tauri, ruling R86).** Five new commands close the last C3 §6
   deferrals the Data tab still stubbed: `save_track`, `delete_track`,
