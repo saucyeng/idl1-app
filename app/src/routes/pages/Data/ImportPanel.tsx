@@ -1,10 +1,17 @@
+import { getCurrentWebview } from "@tauri-apps/api/webview";
+import { UploadIcon } from "lucide-react";
 import { useEffect, useReducer, useRef, useState } from "react";
+import { toast } from "sonner";
 
+import { toastFor } from "../../../components/toasts/events";
+import { Button } from "../../../components/ui/button";
+import { Input } from "../../../components/ui/input";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../../../components/ui/select";
 import { importFile, listImporters, type ImporterInfo } from "../../../ipc/import";
 import { describeIpcError } from "./errors";
 import { pickImportFile, resolvePastedPath } from "./FilePicker";
 import { isDrained, nextItemToStart, runImport } from "./importDriver";
-import { importQueueReducer, initialImportQueueState, overallPercent, type ImportItem } from "./importQueue";
+import { importQueueReducer, initialImportQueueState, overallPercent, type ImportItem, type ImportQueueAction } from "./importQueue";
 
 /** @param onImported Called once every time the queue drains (every item
  *  reaches `"done"`/`"failed"`) after having had at least one active item —
@@ -22,15 +29,26 @@ function ImportRow({ item, onDismiss }: { item: ImportItem; onDismiss: () => voi
   const countText = item.total !== null ? `${item.done}/${item.total}` : `${item.done}`;
 
   return (
-    <li>
-      <span>{item.path}</span>{" "}
-      <span>
-        {item.status}
-        {item.status === "running" ? ` — ${item.phase} (${countText})` : ""}
-      </span>
-      {item.status === "failed" && item.error !== undefined && <span role="alert"> {item.error}</span>}
+    <li className="flex flex-col gap-0.5 border-b border-rule py-1.5 font-mono text-sm last:border-b-0">
+      <div className="flex items-center gap-2">
+        <span className="flex-1 truncate text-fg">{item.path}</span>
+        <span className="shrink-0 text-fg-dim">
+          {item.status}
+          {item.status === "running" ? ` — ${item.phase} (${countText})` : ""}
+        </span>
+        {(item.status === "done" || item.status === "failed") && (
+          <Button type="button" size="xs" onClick={onDismiss}>
+            Dismiss
+          </Button>
+        )}
+      </div>
+      {item.status === "failed" && item.error !== undefined && (
+        <span role="alert" className="text-brand-accent">
+          {item.error}
+        </span>
+      )}
       {item.status === "done" && item.warnings !== undefined && item.warnings.length > 0 && (
-        <ul>
+        <ul className="pl-3 text-fg-dim">
           <li>
             imported with {item.warnings.length} warning{item.warnings.length === 1 ? "" : "s"}
           </li>
@@ -42,13 +60,20 @@ function ImportRow({ item, onDismiss }: { item: ImportItem; onDismiss: () => voi
           ))}
         </ul>
       )}
-      {(item.status === "done" || item.status === "failed") && (
-        <button type="button" onClick={onDismiss}>
-          Dismiss
-        </button>
-      )}
     </li>
   );
+}
+
+/** Shows `toastFor`'s descriptor (UI-DIRECTION decision 21) via `sonner`'s
+ *  `toast`, picking sonner's method from the descriptor's tone. The only
+ *  toast call site in the Data tab — an import failure, fired once per
+ *  failed item from the queue-driving effect's own dispatch wrapper below,
+ *  never from `importQueue.ts`/`importDriver.ts` themselves (neither module
+ *  knows about toasts). */
+function showImportFailedToast(fileName: string, message: string): void {
+  const descriptor = toastFor({ kind: "importFailed", fileName, message });
+  const show = descriptor.tone === "accent" ? toast.error : descriptor.tone === "good" ? toast.success : toast.info;
+  show(descriptor.title, { description: descriptor.detail });
 }
 
 /** The Data tab's import entry point over C3 §3.3's `import_file`/
@@ -59,16 +84,24 @@ function ImportRow({ item, onDismiss }: { item: ImportItem; onDismiss: () => voi
  *  native file dialog (`FilePicker.ts`'s `pickImportFile` seam, now backed
  *  by `@tauri-apps/plugin-dialog`'s `open()`) filtered to the four importer
  *  extensions, optionally seeded from whatever is currently pasted as its
- *  starting folder. Files run **one at a time, serialised** (R13: this
- *  machine is memory-bound, import is CPU/I/O-heavy) — the driving effect
- *  below never starts a second `importFile` call while one is `"running"`. */
+ *  starting folder. A third way in is a native OS file drop anywhere over
+ *  the window (Tauri's own `onDragDropEvent`, C3 has no wire shape here —
+ *  this is a desktop windowing event, not an IPC command): every dropped
+ *  path enqueues exactly like a pasted path, through the same
+ *  `importQueueReducer`/`runImport` this component already drives — no
+ *  second queue. Files run **one at a time, serialised** (R13: this machine
+ *  is memory-bound, import is CPU/I/O-heavy) — the driving effect below
+ *  never starts a second `importFile` call while one is `"running"`. */
 export function ImportPanel({ onImported }: ImportPanelProps) {
   const [state, dispatch] = useReducer(importQueueReducer, initialImportQueueState);
   const [importers, setImporters] = useState<ImporterInfo[]>([]);
   const [importersErrorText, setImportersErrorText] = useState<string | null>(null);
   const [pastedPath, setPastedPath] = useState("");
   const [importerId, setImporterId] = useState<string | null>(null);
+  const [dragActive, setDragActive] = useState(false);
   const drainedAtLengthRef = useRef(0);
+  const importerIdRef = useRef(importerId);
+  importerIdRef.current = importerId;
 
   // Populates the forced-importer override menu. A rejection here (e.g.
   // `list_importers` not yet landed) only disables the override, never the
@@ -91,6 +124,48 @@ export function ImportPanel({ onImported }: ImportPanelProps) {
     };
   }, []);
 
+  // The window-level native file drop (no per-element DOM drop target — a
+  // Tauri `DragDropEvent` fires for the whole webview, not a specific
+  // node, so the results panel's "drop target" is this component's overlay
+  // rendered while `dragActive`, not a scoped `onDrop` handler). Mount-only
+  // subscription, unlistened on unmount; `importerIdRef` avoids
+  // resubscribing every time the override menu selection changes.
+  useEffect(() => {
+    let unlisten: (() => void) | undefined;
+    let cancelled = false;
+
+    getCurrentWebview()
+      .onDragDropEvent((event) => {
+        if (event.payload.type === "enter" || event.payload.type === "over") {
+          setDragActive(true);
+        } else if (event.payload.type === "leave") {
+          setDragActive(false);
+        } else if (event.payload.type === "drop") {
+          setDragActive(false);
+          for (const path of event.payload.paths) {
+            dispatch({ type: "ENQUEUE", path, importerId: importerIdRef.current });
+          }
+        }
+      })
+      .then((fn) => {
+        if (cancelled) {
+          fn();
+        } else {
+          unlisten = fn;
+        }
+      })
+      .catch(() => {
+        // No webview to listen on (e.g. this build isn't running inside
+        // Tauri) — drag-and-drop just isn't available; paste/Browse still
+        // work.
+      });
+
+    return () => {
+      cancelled = true;
+      unlisten?.();
+    };
+  }, []);
+
   // Drives the queue: starts the next "queued" item whenever nothing is
   // "running", and fires `onImported` once when every item has reached a
   // terminal status (guarded by `drainedAtLengthRef` so it fires once per
@@ -100,7 +175,10 @@ export function ImportPanel({ onImported }: ImportPanelProps) {
   // very effect, and an effect that tears down "the import I'm babysitting"
   // on every dependency change can never let one complete (review-task5
   // Critical) — `nextItemToStart` already refuses to start a second item
-  // while one is `"running"`, which is all the guarding this needs.
+  // while one is `"running"`, which is all the guarding this needs. The
+  // dispatch wrapper below is the toast call site (decision 21): a `FAILED`
+  // action still reaches the real reducer unchanged, `showImportFailedToast`
+  // is only ever additional to that.
   useEffect(() => {
     const item = nextItemToStart(state);
     if (item === null) {
@@ -111,7 +189,14 @@ export function ImportPanel({ onImported }: ImportPanelProps) {
       return;
     }
 
-    runImport(item, importFile, dispatch);
+    const dispatchAndToast = (action: ImportQueueAction) => {
+      dispatch(action);
+      if (action.type === "FAILED") {
+        showImportFailedToast(item.path, describeIpcError(action.error).text);
+      }
+    };
+
+    runImport(item, importFile, dispatchAndToast);
   }, [state, onImported]);
 
   /** "Import" click: the pasted path, trimmed and used verbatim — no
@@ -142,42 +227,55 @@ export function ImportPanel({ onImported }: ImportPanelProps) {
   const percent = overallPercent(state);
 
   return (
-    <div className="import-panel">
-      <label>
-        Paste a file path{" "}
-        <input
+    <div className="relative flex flex-col gap-2">
+      {dragActive && (
+        <div
+          aria-hidden
+          className="pointer-events-none fixed inset-0 z-40 flex items-center justify-center border-2 border-dashed border-good bg-bg/80"
+        >
+          <p className="font-mono text-sm text-good">Drop to import</p>
+        </div>
+      )}
+      <div className="flex flex-wrap items-center gap-2">
+        <Input
           type="text"
+          className="w-64"
           value={pastedPath}
           onChange={(e) => setPastedPath(e.target.value)}
           placeholder="C:\path\to\file.idl0"
+          aria-label="Paste a file path"
         />
-      </label>
-      <label>
-        Importer{" "}
-        <select value={importerId ?? ""} onChange={(e) => setImporterId(e.target.value === "" ? null : e.target.value)}>
-          <option value="">Auto-detect</option>
-          {importers.map((importer) => (
-            <option key={importer.id} value={importer.id}>
-              {importer.label}
-            </option>
-          ))}
-        </select>
-      </label>
-      <button type="button" onClick={handleImportClick} disabled={pastedPath.trim().length === 0}>
-        Import
-      </button>
-      <button type="button" onClick={handleBrowseClick}>
-        Browse…
-      </button>
-      {importersErrorText !== null && <p role="alert">{importersErrorText}</p>}
-      {percent !== null && <progress value={percent} max={100} />}
-      {state.items.length > 0 && (
-        <ul>
-          {state.items.map((item) => (
-            <ImportRow key={item.id} item={item} onDismiss={() => dispatch({ type: "DISMISS", id: item.id })} />
-          ))}
-        </ul>
+        <Select value={importerId ?? "auto"} onValueChange={(v) => setImporterId(v === "auto" ? null : v)}>
+          <SelectTrigger size="sm" aria-label="Importer">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="auto">Auto-detect</SelectItem>
+            {importers.map((importer) => (
+              <SelectItem key={importer.id} value={importer.id}>
+                {importer.label}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <Button type="button" size="sm" onClick={handleImportClick} disabled={pastedPath.trim().length === 0}>
+          Import
+        </Button>
+        <Button type="button" size="sm" emphasis="good" filled className="ml-auto" onClick={handleBrowseClick}>
+          <UploadIcon /> Browse…
+        </Button>
+      </div>
+      {importersErrorText !== null && (
+        <p role="alert" className="font-mono text-sm text-brand-accent">
+          {importersErrorText}
+        </p>
       )}
+      {percent !== null && (
+        <progress className="h-1 w-full accent-good" value={percent} max={100} />
+      )}
+      {state.items.length > 0 && <ul className="flex flex-col">{state.items.map((item) => (
+        <ImportRow key={item.id} item={item} onDismiss={() => dispatch({ type: "DISMISS", id: item.id })} />
+      ))}</ul>}
     </div>
   );
 }

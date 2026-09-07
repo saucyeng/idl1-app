@@ -1,5 +1,10 @@
+import { XIcon } from "lucide-react";
 import { useCallback, useEffect, useReducer } from "react";
 
+import { NoteBlock } from "../../../components/brand/NoteBlock";
+import { SectionHead } from "../../../components/brand/SectionHead";
+import { IconBtn } from "../../../components/brand/ToolGroup";
+import { Table, TableBody, TableCell, TableHead, TableHeader as BrandTableHeader, TableRow } from "../../../components/ui/table";
 import { listTracks, type SessionDetail, type TrackSummary } from "../../../ipc/catalog";
 import { describeIpcError } from "./errors";
 import { LapTable } from "./LapTable";
@@ -74,57 +79,67 @@ export function DetailPane({ view, detail, lapsErrorText, onMetadataSaved, onClo
   }, [loadTracks]);
 
   return (
-    <div className="data-detail-pane" role="region" aria-label="Session detail">
-      <div className="data-detail-header">
-        <h2>
+    <div className="flex h-full flex-col gap-4 overflow-y-auto p-3" role="region" aria-label="Session detail">
+      <div className="flex items-start justify-between gap-2">
+        <h2 className="font-mono text-sm font-medium text-fg">
           {view.venue} · {view.eventName === "" ? "—" : view.eventName}
         </h2>
-        <button type="button" onClick={onClose} aria-label="Close">
-          ×
-        </button>
+        <IconBtn icon={XIcon} label="Close" onClick={onClose} />
       </div>
 
-      <h3>Metadata</h3>
-      {tracksState.status === "error" && (
-        <p role="alert">
-          Couldn't load tracks for the venue autocomplete ({tracksState.text}); metadata is still editable.
-        </p>
-      )}
-      <MetadataForm detail={detail} tracks={tracksState.status === "ready" ? tracksState.tracks : []} onSaved={onMetadataSaved} />
+      <div className="flex flex-col gap-2">
+        <SectionHead>Metadata</SectionHead>
+        {tracksState.status === "error" && (
+          <NoteBlock className="border-brand-accent text-brand-accent">
+            Couldn't load tracks for the venue autocomplete ({tracksState.text}); metadata is still editable.
+          </NoteBlock>
+        )}
+        <MetadataForm detail={detail} tracks={tracksState.status === "ready" ? tracksState.tracks : []} onSaved={onMetadataSaved} />
+      </div>
 
-      <h3>Channels</h3>
-      {view.channels.length === 0 ? (
-        <p>No channels recorded for this session.</p>
-      ) : (
-        <table>
-          <thead>
-            <tr>
-              <th>Channel</th>
-              <th>Source</th>
-              <th>Kind</th>
-              <th>Unit</th>
-              <th>Samples</th>
-              <th>Nominal rate</th>
-            </tr>
-          </thead>
-          <tbody>
-            {view.channels.map((c) => (
-              <tr key={c.channelId}>
-                <td>{c.channelId}</td>
-                <td>{c.sourceKind}</td>
-                <td>{c.channelKind}</td>
-                <td>{c.unit}</td>
-                <td>{c.sampleCount}</td>
-                {/* Metadata only — never used to synthesize time (C1 §3.5). */}
-                <td>{c.nominalRateHz} Hz (metadata only, not used for timing)</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      )}
+      <div className="flex flex-col gap-2">
+        <SectionHead>Channels</SectionHead>
+        {view.channels.length === 0 ? (
+          <p className="font-mono text-sm text-fg-dim">No channels recorded for this session.</p>
+        ) : (
+          <Table>
+            <BrandTableHeader>
+              <TableRow>
+                <TableHead>Channel</TableHead>
+                <TableHead>Source</TableHead>
+                <TableHead>Kind</TableHead>
+                <TableHead>Unit</TableHead>
+                <TableHead>Samples</TableHead>
+                <TableHead>Nominal rate</TableHead>
+              </TableRow>
+            </BrandTableHeader>
+            <TableBody>
+              {view.channels.map((c) => (
+                <TableRow key={c.channelId}>
+                  <TableCell>{c.channelId}</TableCell>
+                  <TableCell>{c.sourceKind}</TableCell>
+                  <TableCell>{c.channelKind}</TableCell>
+                  <TableCell>{c.unit}</TableCell>
+                  <TableCell>{c.sampleCount}</TableCell>
+                  {/* Metadata only — never used to synthesize time (C1 §3.5). */}
+                  <TableCell>{c.nominalRateHz} Hz (metadata only, not used for timing)</TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        )}
+      </div>
 
-      <h3>Laps</h3>
-      {lapsErrorText !== null ? <p role="alert">{lapsErrorText}</p> : <LapTable laps={view.laps} />}
+      <div className="flex flex-col gap-2">
+        <SectionHead>Laps</SectionHead>
+        {lapsErrorText !== null ? (
+          <p role="alert" className="font-mono text-sm text-brand-accent">
+            {lapsErrorText}
+          </p>
+        ) : (
+          <LapTable laps={view.laps} />
+        )}
+      </div>
     </div>
   );
 }

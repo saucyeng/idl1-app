@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useReducer, useState } from "react";
 
+import { DenseRow, TableHeader as BrandTableHeader } from "../../../components/brand/DenseRow";
 import { listTracks, type TrackSummary } from "../../../ipc/catalog";
 import { describeIpcError } from "./errors";
 import { compareTracks, type SortField } from "./sort";
@@ -72,58 +73,59 @@ export function TrackResults({ sortField, sortAscending, onRescanSessions }: Tra
   );
 
   if (state.status === "loading") {
-    return <p>Loading tracks…</p>;
+    return <p className="p-3 font-mono text-sm text-fg-dim">Loading tracks…</p>;
   }
 
   if (state.status === "error") {
-    return <p role="alert">{state.text}</p>;
+    return (
+      <p role="alert" className="p-3 font-mono text-sm text-brand-accent">
+        {state.text}
+      </p>
+    );
   }
 
   return (
-    <div className="data-tracks">
+    <div className="flex h-full flex-col overflow-y-auto">
       {rows.length === 0 ? (
-        <p>No tracks yet.</p>
+        <p className="p-3 font-mono text-sm text-fg-dim">No tracks yet.</p>
       ) : (
-        <table>
-          <thead>
-            <tr>
-              <th>Name</th>
-              <th>Venue</th>
-              <th>Created</th>
-              <th>Updated</th>
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((row) => (
-              <tr
-                key={row.trackId}
-                tabIndex={0}
-                aria-selected={row.trackId === selectedTrackId}
-                onClick={() => setSelectedTrackId(row.trackId)}
-                onKeyDown={(e) => {
-                  if (e.key !== "Enter" && e.key !== " ") return;
-                  e.preventDefault();
-                  setSelectedTrackId(row.trackId);
-                }}
-              >
-                <td>{row.name}</td>
-                <td>{row.venueText}</td>
-                <td>{row.createdText}</td>
-                <td>{row.updatedText}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+        <div className="flex flex-col">
+          <BrandTableHeader className="sticky top-0 z-10 bg-bg px-3">
+            <span className="flex-[2]">Name</span>
+            <span className="flex-[2]">Venue</span>
+            <span className="flex-1">Created</span>
+            <span className="flex-1">Updated</span>
+          </BrandTableHeader>
+          {rows.map((row) => (
+            <DenseRow
+              key={row.trackId}
+              tabIndex={0}
+              role="row"
+              aria-selected={row.trackId === selectedTrackId}
+              selected={row.trackId === selectedTrackId}
+              className="cursor-pointer px-3"
+              onClick={() => setSelectedTrackId(row.trackId)}
+              onKeyDown={(e) => {
+                if (e.key !== "Enter" && e.key !== " ") return;
+                e.preventDefault();
+                setSelectedTrackId(row.trackId);
+              }}
+            >
+              <span className="flex-[2] font-mono text-sm text-fg">{row.name}</span>
+              <span className="flex-[2] font-mono text-sm text-fg-dim">{row.venueText}</span>
+              <span className="flex-1 font-mono text-sm text-fg-dim">{row.createdText}</span>
+              <span className="flex-1 font-mono text-sm text-fg-dim">{row.updatedText}</span>
+            </DenseRow>
+          ))}
+        </div>
       )}
       {selectedTrackId !== null && (
-        <div className="data-detail">
-          <TrackDetailPane
-            trackId={selectedTrackId}
-            onClose={() => setSelectedTrackId(null)}
-            onChanged={() => loadTracks(() => false)}
-            onRescanSessions={onRescanSessions}
-          />
-        </div>
+        <TrackDetailPane
+          trackId={selectedTrackId}
+          onClose={() => setSelectedTrackId(null)}
+          onChanged={() => loadTracks(() => false)}
+          onRescanSessions={onRescanSessions}
+        />
       )}
     </div>
   );

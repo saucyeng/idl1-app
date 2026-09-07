@@ -1,5 +1,10 @@
+import { ChevronRightIcon } from "lucide-react";
 import type { Dispatch } from "react";
 
+import { Button } from "../../../components/ui/button";
+import { Checkbox } from "../../../components/ui/checkbox";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "../../../components/ui/collapsible";
+import { Input } from "../../../components/ui/input";
 import type { SessionSummary } from "../../../ipc/catalog";
 import type { FacetCounts } from "./facets";
 import type { DataFilters, FilterAction } from "./filters";
@@ -23,6 +28,23 @@ function optionsFromCounts(counts: ReadonlyMap<string, number>): FacetOption[] {
     .sort((a, b) => a.label.toLowerCase().localeCompare(b.label.toLowerCase()));
 }
 
+/** The `Collapsible` wrapper every facet group shares: an uppercase label
+ *  with a chevron and the group's total option count, opening onto its
+ *  option list (idl0's `_MultiSelectFacet`/`_DateSection` shell). Open by
+ *  default — the rail is meant to be scanned, not hunted through. */
+function FacetSection({ title, count, children }: { title: string; count?: number; children: React.ReactNode }) {
+  return (
+    <Collapsible defaultOpen className="border-b border-rule py-2">
+      <CollapsibleTrigger className="group flex w-full items-center gap-1.5 font-mono text-xs font-medium tracking-[var(--tracking-label)] text-fg-dim uppercase outline-none focus-visible:outline focus-visible:outline-1 focus-visible:outline-offset-2 focus-visible:outline-focus">
+        <ChevronRightIcon className="size-3.5 shrink-0 transition-transform group-data-[state=open]:rotate-90" aria-hidden />
+        <span>{title}</span>
+        {count !== undefined && <span className="text-fg-faint">({count})</span>}
+      </CollapsibleTrigger>
+      <CollapsibleContent className="mt-2 flex flex-col gap-1.5 pl-5">{children}</CollapsibleContent>
+    </Collapsible>
+  );
+}
+
 /** One multi-select facet group: a heading and a checkbox list with per-option
  *  counts (idl0's `_MultiSelectFacet`). */
 function FacetGroup({
@@ -37,27 +59,19 @@ function FacetGroup({
   onToggle: (value: string) => void;
 }) {
   return (
-    <fieldset className="data-facet-group">
-      <legend>{title}</legend>
+    <FacetSection title={title} count={options.length}>
       {options.length === 0 ? (
-        <p className="data-facet-empty">No options yet.</p>
+        <p className="font-mono text-xs text-fg-faint">No options yet.</p>
       ) : (
-        <ul>
-          {options.map((option) => (
-            <li key={option.value}>
-              <label>
-                <input
-                  type="checkbox"
-                  checked={selected.has(option.value)}
-                  onChange={() => onToggle(option.value)}
-                />
-                {option.label} ({option.count})
-              </label>
-            </li>
-          ))}
-        </ul>
+        options.map((option) => (
+          <label key={option.value} className="flex items-center gap-2 font-mono text-sm text-fg">
+            <Checkbox checked={selected.has(option.value)} onCheckedChange={() => onToggle(option.value)} />
+            <span className="flex-1">{option.label}</span>
+            <span className="text-fg-faint">({option.count})</span>
+          </label>
+        ))
       )}
-    </fieldset>
+    </FacetSection>
   );
 }
 
@@ -98,27 +112,27 @@ function DateSection({ filters, dispatch }: { filters: DataFilters; dispatch: Di
   }
 
   return (
-    <fieldset className="data-facet-group">
-      <legend>Date</legend>
-      <div className="data-date-presets">
-        <button type="button" onClick={() => setPreset(0)}>
+    <FacetSection title="Date">
+      <div className="flex flex-wrap gap-1.5">
+        <Button type="button" size="xs" onClick={() => setPreset(0)}>
           Today
-        </button>
-        <button type="button" onClick={() => setPreset(6)}>
+        </Button>
+        <Button type="button" size="xs" onClick={() => setPreset(6)}>
           Week
-        </button>
-        <button type="button" onClick={() => setPreset(29)}>
+        </Button>
+        <Button type="button" size="xs" onClick={() => setPreset(29)}>
           Month
-        </button>
-        <button type="button" onClick={() => dispatch({ type: "SET_DATE_RANGE", range: null })}>
+        </Button>
+        <Button type="button" size="xs" onClick={() => dispatch({ type: "SET_DATE_RANGE", range: null })}>
           Clear
-        </button>
+        </Button>
       </div>
-      <div className="data-date-custom">
-        <label>
-          From{" "}
-          <input
+      <div className="flex flex-col gap-1.5">
+        <label className="flex items-center gap-2 font-mono text-xs text-fg-dim">
+          From
+          <Input
             type="date"
+            className="h-7"
             value={filters.dateRange === null ? "" : dateInputValue(filters.dateRange.startMs)}
             onChange={(e) => {
               const startMs = parseDateInputValue(e.target.value);
@@ -130,10 +144,11 @@ function DateSection({ filters, dispatch }: { filters: DataFilters; dispatch: Di
             }}
           />
         </label>
-        <label>
-          To{" "}
-          <input
+        <label className="flex items-center gap-2 font-mono text-xs text-fg-dim">
+          To
+          <Input
             type="date"
+            className="h-7"
             value={filters.dateRange === null ? "" : dateInputValue(filters.dateRange.endMs)}
             onChange={(e) => {
               const endMs = parseDateInputValue(e.target.value);
@@ -146,7 +161,7 @@ function DateSection({ filters, dispatch }: { filters: DataFilters; dispatch: Di
           />
         </label>
       </div>
-    </fieldset>
+    </FacetSection>
   );
 }
 
@@ -167,32 +182,33 @@ function LapTimeSection({ filters, dispatch }: { filters: DataFilters; dispatch:
   }
 
   return (
-    <fieldset className="data-facet-group">
-      <legend>Lap time</legend>
-      <label>
-        Min (s){" "}
-        <input
+    <FacetSection title="Lap time">
+      <label className="flex items-center gap-2 font-mono text-xs text-fg-dim">
+        Min (s)
+        <Input
           type="number"
+          className="h-7"
           min={0}
           value={filters.lapTimeMs === null ? "" : secondsOf(filters.lapTimeMs.startMs)}
           onChange={(e) => setBound("startMs", Number(e.target.value))}
         />
       </label>
-      <label>
-        Max (s){" "}
-        <input
+      <label className="flex items-center gap-2 font-mono text-xs text-fg-dim">
+        Max (s)
+        <Input
           type="number"
+          className="h-7"
           min={0}
           value={filters.lapTimeMs === null ? "" : secondsOf(filters.lapTimeMs.endMs)}
           onChange={(e) => setBound("endMs", Number(e.target.value))}
         />
       </label>
       {filters.lapTimeMs !== null ? (
-        <button type="button" onClick={() => dispatch({ type: "SET_LAP_TIME_RANGE", range: null })}>
+        <Button type="button" size="xs" onClick={() => dispatch({ type: "SET_LAP_TIME_RANGE", range: null })}>
           Clear
-        </button>
+        </Button>
       ) : null}
-    </fieldset>
+    </FacetSection>
   );
 }
 
@@ -211,23 +227,15 @@ function SourceSection({
   dispatch: Dispatch<FilterAction>;
 }) {
   return (
-    <fieldset className="data-facet-group">
-      <legend>Source</legend>
-      <ul>
-        {SOURCE_FORMATS.map((source) => (
-          <li key={source}>
-            <label>
-              <input
-                type="checkbox"
-                checked={filters.sources.has(source)}
-                onChange={() => dispatch({ type: "TOGGLE_SOURCE", source })}
-              />
-              .{source} ({counts.sources.get(source) ?? 0})
-            </label>
-          </li>
-        ))}
-      </ul>
-    </fieldset>
+    <FacetSection title="Source">
+      {SOURCE_FORMATS.map((source) => (
+        <label key={source} className="flex items-center gap-2 font-mono text-sm text-fg">
+          <Checkbox checked={filters.sources.has(source)} onCheckedChange={() => dispatch({ type: "TOGGLE_SOURCE", source })} />
+          <span className="flex-1">.{source}</span>
+          <span className="text-fg-faint">({counts.sources.get(source) ?? 0})</span>
+        </label>
+      ))}
+    </FacetSection>
   );
 }
 
@@ -248,13 +256,12 @@ export interface FilterRailProps {
  *  Data Q2, R54) — there is no group for any of the three, stubbed or
  *  otherwise: a `SessionSummary` carries no track linkage, so a Track group
  *  could only ever exclude every row, which R54 rules is a trap rather than
- *  honest disclosure. Narrow-width presentation (bottom sheet, "FILTERS (n)"
- *  bar) is this component's own CSS/media-query concern; the markup here
- *  renders identically at every width and a stylesheet elsewhere narrows the
- *  chrome around it. */
+ *  honest disclosure. Docked column on wide/medium, a bottom `Sheet` on
+ *  narrow — the caller (`index.tsx`) decides which via `dataLayout`; this
+ *  component always renders the same content. */
 export function FilterRail({ filters, counts, dispatch }: FilterRailProps) {
   return (
-    <nav aria-label="Filters" className="data-filter-rail">
+    <nav aria-label="Filters" className="flex h-full flex-col gap-1 overflow-y-auto px-3 py-3">
       <DateSection filters={filters} dispatch={dispatch} />
       <FacetGroup
         title="Bike"
@@ -283,9 +290,9 @@ export function FilterRail({ filters, counts, dispatch }: FilterRailProps) {
       <LapTimeSection filters={filters} dispatch={dispatch} />
       <SourceSection filters={filters} counts={counts} dispatch={dispatch} />
       {activeCount(filters) > 0 ? (
-        <button type="button" onClick={() => dispatch({ type: "CLEAR_ALL" })}>
+        <Button type="button" size="sm" className="mt-2" onClick={() => dispatch({ type: "CLEAR_ALL" })}>
           Clear all
-        </button>
+        </Button>
       ) : null}
     </nav>
   );

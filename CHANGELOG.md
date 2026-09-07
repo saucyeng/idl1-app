@@ -151,6 +151,33 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
   unchanged — only what "visible" means to it. **New rule superseding R78's
   wording:** Device polls while mounted, the window is visible, and Device is
   the active route.
+- **UI-6: Data tab restyle — faceted browser layout (2026-09-06, no spec
+  change needed — presentation over landed L7a/L8x behaviour).**
+  `app/src/routes/pages/Data/**` is restyled onto the UI-2/UI-3 brand
+  primitives and tokens: `FilterRail`'s facet groups are `Collapsible`s with
+  `(N)` counts over `Checkbox`/`Input`; `ActiveChips` renders `Badge` pills;
+  the sessions results panel is a pinned `DenseRow`/`TableHeader` list over
+  collapsible date·venue groups (a new local grouping over `SessionRow
+  .groupKey`, unchanged), each row's gutter `Checkbox` driving the existing
+  single-session selection with a permanently reserved 3 px `--good` inset
+  bar; the selected row's laps render as recessed sub-rows sourced from the
+  same already-fetched detail (no second per-row `listLaps` call). `DetailPane`/
+  `TrackDetailPane`/`MetadataForm` move onto `SectionHead`/`SpecRow`/`Input`/
+  the `ui/table` primitives. New pure module `layout.ts`'s `dataLayout(widthPx)`
+  (tested) maps the shell's `resolveLayout` 600/1200 px boundaries onto
+  docked (280/320 px) / panel / `Sheet` modes for the rail and detail pane,
+  read by `index.tsx`'s own resize hook; narrow renders a "Filters (n)" bar
+  opening the rail as a bottom `BrandSheet` and the detail pane as a
+  full-height one. `ImportPanel` adds a native OS file-drop target (Tauri's
+  window-level `onDragDropEvent`, C3 has no wire shape here) enqueuing
+  through the existing `importQueueReducer`/`runImport` path — no second
+  queue — plus the lane's one toast call site (`toastFor({kind:
+  "importFailed", …})` in the queue-driving effect's dispatch wrapper).
+  **Parity gaps:** lap-mode selection (checking a lap sub-row to pick it for
+  chart-overlay, idl0's XOR session/lap checkbox half) stays out of scope,
+  deferred to L6 per the page's own pre-existing comment (`AppState
+  .SET_LAP_CONTEXT` is never dispatched here); the track-editor map UI stays
+  wave 3 (R54); has-GPS/has-gates/Track facets stay wave 3 (R53 Data Q2/R54).
 - **L8x lane complete: Data-tab write commands (2026-09-06, idl-rs core +
   idl-rs-tauri, ruling R86).** Five new commands close the last C3 §6
   deferrals the Data tab still stubbed: `save_track`, `delete_track`,

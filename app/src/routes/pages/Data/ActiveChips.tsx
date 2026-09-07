@@ -1,5 +1,7 @@
 import type { Dispatch } from "react";
 
+import { Badge } from "../../../components/ui/badge";
+import { Button } from "../../../components/ui/button";
 import { formatDateMs, formatDurationMs } from "./format";
 import type { DataFilters, FilterAction } from "./filters";
 
@@ -119,19 +121,15 @@ export function ActiveChips({ filters, dispatch }: ActiveChipsProps) {
   if (chips.length === 0) return null;
 
   return (
-    <div role="toolbar" aria-label="Active filters" className="data-active-chips">
-      <ul>
-        {chips.map((chip) => (
-          <li key={chip.key}>
-            <button type="button" onClick={chip.onDismiss}>
-              {chip.label} ×
-            </button>
-          </li>
-        ))}
-      </ul>
-      <button type="button" onClick={() => dispatch({ type: "CLEAR_ALL" })}>
+    <div role="toolbar" aria-label="Active filters" className="flex flex-wrap items-center gap-1.5 px-3 py-2">
+      {chips.map((chip) => (
+        <Badge key={chip.key} onRemove={chip.onDismiss}>
+          {chip.label}
+        </Badge>
+      ))}
+      <Button type="button" size="xs" onClick={() => dispatch({ type: "CLEAR_ALL" })}>
         Clear all
-      </button>
+      </Button>
     </div>
   );
 }
