@@ -4355,3 +4355,33 @@ L8-class follow-on, not this lane's work.
 
 The other Important — no logged full-suite run — is real: the lane gate
 at Task 12 covers it, and the lead runs it there rather than mid-lane.
+
+## 2026-09-07 — R102: L11 Task 10 review — client caps, `.part` discard, and C3's `SyncResult` gains three fields
+
+review-task10 (three Importants, all correct):
+1. **Unbounded peer response bodies.** The client must mirror R100's
+   server caps in reverse: a peer response is bounded by the same
+   per-class constants (document vs raw file), and an over-cap response
+   is a typed error that transfers nothing. A peer is not more trusted
+   than a client.
+2. **A `.part` is never discarded on an `install` failure**, so a poisoned
+   or mismatched resume can loop forever, contradicting PLAN §1's
+   "a re-run recovers". **Ruling:** any failure after the bytes are
+   complete — hash mismatch, parse failure, install error — deletes the
+   `.part` before returning, so the next run starts clean; a transport
+   interruption (incomplete bytes) keeps it, which is the whole point of
+   resume. Tests for the two adversarial cases the review named: the peer
+   returns different bytes at the same offset on the second attempt, and
+   the peer returns a shorter file than the existing partial.
+3. **`SyncRunResult` grew three fields past C3 §3.9's `SyncResult`**
+   (`sessions_updated`, `tracks_updated`, `profiles_updated`). The fields
+   are right — a sync that moves a session or a track and reports "0
+   blobs, 0 workbooks" is a lie to the user — so **C3 §3.9 is amended to
+   carry all six**, with each field's attribution documented as the
+   implementer defined it (blobs = `Blob` only; session-scoped classes
+   roll into `sessions_updated`; `workbooks_merged` counts local installs
+   only, a push's merge happens on the peer and is not observed). Task 12
+   applies the amendment and the UI reads six numbers.
+
+**Cost if wrong:** items 1 and 2 are a cap and a delete; item 3 is a
+contract field list the UI has not yet consumed.
