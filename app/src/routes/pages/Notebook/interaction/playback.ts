@@ -79,6 +79,24 @@ export function togglePlay(state: PlaybackState): PlaybackState {
 }
 
 /**
+ * Whether `PlaybackTransport` should render at all. It portals into
+ * `shell/TopBar.tsx`'s slot (outside the Notebook route's own `hidden`
+ * subtree, per mount-and-hide/R93), so the `hidden` attribute that
+ * correctly hides the rest of the Notebook page never reaches it — this
+ * function is the explicit substitute check the caller must apply before
+ * rendering `PlaybackTransport` at all (not just `disabled`), so the
+ * play/pause control and timer do not leak into the shared top bar while
+ * the Device/Data/Settings tab is the active route (R95/R99).
+ *
+ * @param routeVisible Whether the Notebook route is the active, visible route.
+ * @param cursorTUs The shared cursor's current time, or `null` when nothing
+ *   is loaded (no session/worksheet) or no cursor has ever been placed.
+ */
+export function shouldRenderPlaybackTransport(routeVisible: boolean, cursorTUs: bigint | null): boolean {
+  return routeVisible && cursorTUs !== null;
+}
+
+/**
  * Formats a cursor time as `mm:ss.mmm` for `PlaybackTransport`'s live-speed
  * readout. Pure text formatting, not a unit conversion of any sample value
  * (CLAUDE.md §4: UI rendering itself is not unit-tested, but this function

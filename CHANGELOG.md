@@ -407,10 +407,21 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
   tabular) per the chart style rules. **Parity gaps:** figure export
   (decision 28, out of scope); a cascading submenu (not needed — the
   landed action set is flat); Y-axis zoom and idl0's multi-cursor swap (no
-  landed Y-axis or second cursor to act on); `Settings/controls.ts`'s
-  provisional keyboard table now disagrees with the landed bindings (that
-  table's own doc comment already flags it as provisional — a follow-on
-  should import/compare against `keymap.ts` per that file's Open question 2).
+  landed Y-axis or second cursor to act on).
+- **UI-11 review fixes (2026-09-07).** `PlaybackTransport` portals into
+  `shell/TopBar.tsx`'s slot, which sits outside the Notebook route's own
+  `hidden` subtree — under mount-and-hide (R93) that `hidden` attribute
+  never reached the portal, so the play/pause control and running-time
+  readout leaked onto the shared top bar on every tab once a session had a
+  cursor time. Fixed by gating the component's own render (not just
+  `disabled`) on `shell/routeVisibility.tsx`'s `useRouteVisible("notebook")`,
+  through a new pure `interaction/playback.ts#shouldRenderPlaybackTransport`
+  decision (route-visible AND a cursor time), tested directly.
+  `Settings/controls.ts`'s "keyboard" group no longer carries idl0's
+  provisional table — it is now generated from `interaction/chartActions.ts`'s
+  `actionLabel` (the same landed bindings `interaction/keymap.ts` implements),
+  so it cannot silently re-diverge; `ControlsSection.tsx`'s banner now scopes
+  "provisional" to the still-idl0 "mouse wheel"/"mouse" groups only.
 - **L8x lane complete: Data-tab write commands (2026-09-06, idl-rs core +
   idl-rs-tauri, ruling R86).** Five new commands close the last C3 §6
   deferrals the Data tab still stubbed: `save_track`, `delete_track`,

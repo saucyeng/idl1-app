@@ -1380,6 +1380,7 @@ export default function NotebookPage() {
         cursorTUs={sharedCursorTUs}
         onToggle={handleTogglePlay}
         disabled={!primeState.running}
+        routeVisible={routeVisible}
       />
       {functionCatalogMismatches.length > 0 && (
         <p role="status" className="notebook-function-catalog-warning">

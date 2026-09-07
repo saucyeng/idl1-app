@@ -3,7 +3,7 @@ import { createPortal } from "react-dom";
 import { Pause, Play } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
-import { formatPlaybackTime } from "./playback";
+import { formatPlaybackTime, shouldRenderPlaybackTransport } from "./playback";
 
 /** The `id` `shell/TopBar.tsx` gives its reserved playback-transport slot
  *  (the top bar's only edit for this task). `usePlaybackSlot` looks this
@@ -45,21 +45,34 @@ export interface PlaybackTransportProps {
   /** `true` while the Notebook route is hidden (R95/R99): the transport
    *  renders disabled rather than starting/continuing a hidden loop. */
   disabled: boolean;
+  /** Whether the Notebook route is the active, visible route
+   *  (`shell/routeVisibility.tsx`'s `useRouteVisible("notebook")`). This
+   *  component portals outside its own React ancestor's `hidden` subtree
+   *  (see {@link usePlaybackSlot}), so under mount-and-hide (R93) that
+   *  `hidden` attribute never reaches it — `routeVisible` is the
+   *  substitute check that keeps the transport off every other tab's top
+   *  bar (see {@link shouldRenderPlaybackTransport}). */
+  routeVisible: boolean;
 }
 
 /**
  * The play/pause transport for the shared worksheet cursor (decision 18),
  * portaled into `TopBar.tsx`'s reserved slot (see {@link usePlaybackSlot})
  * rather than the top bar itself owning any playback state. Renders
- * nothing when the slot isn't present (narrow layout) or `cursorTUs` is
- * `null` (nothing loaded to play).
+ * nothing when the slot isn't present (narrow layout), `cursorTUs` is
+ * `null` (nothing loaded to play, or no cursor ever placed), or the
+ * Notebook route isn't the active/visible one (see
+ * {@link shouldRenderPlaybackTransport}) — the last case is required
+ * because a portal's target lives outside its React parent's DOM subtree,
+ * so mount-and-hide's `hidden` attribute on the rest of the Notebook page
+ * has no effect on it.
  *
  * @param props See {@link PlaybackTransportProps}.
  */
-export default function PlaybackTransport({ playing, cursorTUs, onToggle, disabled }: PlaybackTransportProps) {
+export default function PlaybackTransport({ playing, cursorTUs, onToggle, disabled, routeVisible }: PlaybackTransportProps) {
   const slot = usePlaybackSlot();
 
-  if (slot === null || cursorTUs === null) {
+  if (slot === null || cursorTUs === null || !shouldRenderPlaybackTransport(routeVisible, cursorTUs)) {
     return null;
   }
 

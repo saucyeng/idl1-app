@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { formatPlaybackTime, tick, togglePlay, type PlaybackState } from "./playback";
+import { formatPlaybackTime, shouldRenderPlaybackTransport, tick, togglePlay, type PlaybackState } from "./playback";
 
 describe("tick", () => {
   it("tick — playing at speed 1 for 1000 ms — the cursor advances 1 000 000 µs", () => {
@@ -68,6 +68,24 @@ describe("togglePlay", () => {
     const afterOneTick = tick(resumed, 16, span);
     expect(afterOneTick.playing).toBe(false);
     expect(afterOneTick.tUs).toBe(span[1]);
+  });
+});
+
+describe("shouldRenderPlaybackTransport", () => {
+  it("shouldRenderPlaybackTransport — route visible and a cursor time — true", () => {
+    expect(shouldRenderPlaybackTransport(true, 0n)).toBe(true);
+  });
+
+  it("shouldRenderPlaybackTransport — route hidden even with a cursor time — false", () => {
+    expect(shouldRenderPlaybackTransport(false, 5_000_000n)).toBe(false);
+  });
+
+  it("shouldRenderPlaybackTransport — route visible but no cursor time — false", () => {
+    expect(shouldRenderPlaybackTransport(true, null)).toBe(false);
+  });
+
+  it("shouldRenderPlaybackTransport — route hidden and no cursor time — false", () => {
+    expect(shouldRenderPlaybackTransport(false, null)).toBe(false);
   });
 });
 
