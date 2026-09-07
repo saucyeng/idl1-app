@@ -4121,3 +4121,10 @@ from main.
 `1be44e0`. Device refinement list filed as question 12 in
 `runs/2026-09-05/QUESTIONS-FOR-ISAAC.md` (the reviewer could not see it
 from files — it is there now). Worktree retired.
+
+## 2026-09-07 — UI-7 LANDED (Settings restyle + theme/register prefs; review CLEAN)
+
+`20447e5`. `settings.css` deleted and the token test's exception list is
+now empty — a colour literal anywhere outside `tokens.css` fails the
+suite. Nine sections (kept `data`, added `firmware`/`theme`) accepted.
+Worktree retired.

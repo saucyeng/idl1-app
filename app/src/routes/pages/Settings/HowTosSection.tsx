@@ -1,5 +1,7 @@
 import { useState } from "react";
+import { ChevronRightIcon } from "lucide-react";
 
+import { cn } from "@/lib/utils";
 import FirstSetup from "./howtos/FirstSetup";
 import GpsLapGate from "./howtos/GpsLapGate";
 import MathChannels from "./howtos/MathChannels";
@@ -57,22 +59,35 @@ export default function HowTosSection() {
   const [openId, setOpenId] = useState<string | null>(null);
 
   return (
-    <div className="idl1-settings__section">
-      <ul className="idl1-settings__howto-list">
-        {ARTICLES.map((article) => (
-          <li key={article.id}>
-            <button
-              type="button"
-              className="idl1-settings__howto-toggle"
-              onClick={() => setOpenId(openId === article.id ? null : article.id)}
-              aria-expanded={openId === article.id}
-            >
-              <strong>{article.title}</strong>
-              <span className="idl1-settings__description">{article.subtitle}</span>
-            </button>
-            {openId === article.id ? <article.Content /> : null}
-          </li>
-        ))}
+    <div className="flex flex-col gap-2">
+      <ul className="flex flex-col gap-1.5">
+        {ARTICLES.map((article) => {
+          const isOpen = openId === article.id;
+          return (
+            <li key={article.id} className="border-b border-rule pb-2">
+              <button
+                type="button"
+                className="flex w-full items-start gap-2 text-left"
+                onClick={() => setOpenId(isOpen ? null : article.id)}
+                aria-expanded={isOpen}
+              >
+                <ChevronRightIcon
+                  aria-hidden
+                  className={cn("mt-1 size-4 shrink-0 text-fg-dim transition-transform", isOpen && "rotate-90")}
+                />
+                <span className="flex flex-col">
+                  <strong className="font-mono text-sm text-fg">{article.title}</strong>
+                  <span className="font-mono text-xs text-fg-dim">{article.subtitle}</span>
+                </span>
+              </button>
+              {isOpen ? (
+                <div className="mt-2 border-l border-rule pl-5">
+                  <article.Content />
+                </div>
+              ) : null}
+            </li>
+          );
+        })}
       </ul>
     </div>
   );

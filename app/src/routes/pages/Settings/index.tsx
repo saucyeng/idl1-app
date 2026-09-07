@@ -1,9 +1,11 @@
 import { useEffect, useState } from "react";
 
-import "./settings.css";
+import { SectionHead } from "@/components/brand/SectionHead";
+import { cn } from "@/lib/utils";
 import AboutSection from "./AboutSection";
 import ControlsSection from "./ControlsSection";
 import DataSection from "./DataSection";
+import FirmwareSection from "./FirmwareSection";
 import HowTosSection from "./HowTosSection";
 import { MIGRATION_FLAG_KEY, runPrefsMigration, type MigrationOutcome, type SkippedField } from "./prefsMigration";
 import ProfileSection from "./ProfileSection";
@@ -11,6 +13,7 @@ import { createPrefsStore, localStorageBackend } from "./prefsStore";
 import { SECTIONS, defaultSectionId, sectionById } from "./sections";
 import { settingsBackend } from "./settingsBackend";
 import SyncSection from "./SyncSection";
+import ThemeSection from "./ThemeSection";
 import UnitsSection from "./UnitsSection";
 import { getSettings, setSettings } from "../../../ipc/app";
 import { useAppState } from "../../../state/AppState";
@@ -142,26 +145,25 @@ export default function Settings() {
   const migrationNotices = describeMigrationNotices(migrationOutcome);
 
   return (
-    <div className="idl1-settings">
-      <ul className="idl1-settings__list">
+    <div className="flex h-full flex-col gap-4 overflow-auto p-4 min-[720px]:flex-row min-[720px]:items-start min-[720px]:overflow-hidden">
+      <ul className="flex shrink-0 flex-col gap-1 min-[720px]:w-64 min-[720px]:overflow-auto">
         {SECTIONS.map((section) => (
           <li
             key={section.id}
-            className={
-              section.id === selected.id
-                ? "idl1-settings__list-item idl1-settings__list-item--selected"
-                : "idl1-settings__list-item"
-            }
+            className={cn(
+              "cursor-pointer rounded-[var(--radius-structural)] px-3 py-2 hover:bg-control",
+              section.id === selected.id && "bg-control-active font-medium",
+            )}
             onClick={() => setSelectedId(section.id)}
           >
-            <div>{section.label}</div>
-            <p className="idl1-settings__description">{section.description}</p>
+            <div className="font-mono text-sm text-fg">{section.label}</div>
+            <p className="font-mono text-xs text-fg-dim">{section.description}</p>
           </li>
         ))}
       </ul>
-      <div className="idl1-settings__detail">
-        <h2>{selected.label}</h2>
-        <p>{selected.description}</p>
+      <div className="flex min-w-0 flex-1 flex-col gap-4 border-t border-rule pt-4 min-[720px]:h-full min-[720px]:max-w-[720px] min-[720px]:overflow-auto min-[720px]:border-t-0 min-[720px]:border-l min-[720px]:pt-0 min-[720px]:pl-4">
+        <SectionHead>{selected.label}</SectionHead>
+        <p className="font-mono text-xs text-fg-dim">{selected.description}</p>
         {selected.id === "profile" ? (
           <ProfileSection store={prefsStore} migrationNotice={migrationNotices.profile} />
         ) : selected.id === "units" ? (
@@ -170,8 +172,12 @@ export default function Settings() {
           <DataSection store={prefsStore} />
         ) : selected.id === "sync" ? (
           <SyncSection store={prefsStore} />
+        ) : selected.id === "firmware" ? (
+          <FirmwareSection />
         ) : selected.id === "controls" ? (
           <ControlsSection />
+        ) : selected.id === "theme" ? (
+          <ThemeSection store={prefsStore} />
         ) : selected.id === "howTos" ? (
           <HowTosSection />
         ) : selected.id === "about" ? (

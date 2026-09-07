@@ -1,3 +1,4 @@
+import { SpecRow } from "@/components/brand/SpecRow";
 import { aboutRows } from "./about";
 
 /** Props for {@link AboutSection}. */
@@ -22,17 +23,10 @@ export default function AboutSection({ engineVersion }: AboutSectionProps) {
   const rows = aboutRows(engineVersion);
 
   return (
-    <div className="idl1-settings__section">
-      <table className="idl1-settings__about-table">
-        <tbody>
-          {rows.map((row) => (
-            <tr key={row.label}>
-              <th>{row.label}</th>
-              <td>{row.value}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+    <div className="flex flex-col gap-1.5">
+      {rows.map((row) => (
+        <SpecRow key={row.label} label={row.label} value={row.value} />
+      ))}
     </div>
   );
 }

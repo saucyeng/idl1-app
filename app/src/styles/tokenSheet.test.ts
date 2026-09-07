@@ -13,10 +13,12 @@ const fontsCss = readFileSync(FONTS_CSS_PATH, "utf-8");
 
 /** Known hex-literal exceptions to the "hex only in tokens.css" rule, each
  *  tagged with the task that removes it. Adding a new exception here without
- *  a task name is what this test is designed to catch. */
-const KNOWN_EXCEPTIONS: { file: string; task: string }[] = [
-  { file: join(SRC_DIR, "routes", "pages", "Settings", "settings.css"), task: "UI-7" },
-];
+ *  a task name is what this test is designed to catch.
+ *
+ * Empty since UI-7: `Settings/settings.css`'s `rgba(0,0,0,0.08)` selection
+ * tint was the last entry — the file is deleted and its selected-row state
+ * now uses `--control-active` like every other list. */
+const KNOWN_EXCEPTIONS: { file: string; task: string }[] = [];
 
 /** Recursively lists every file under `dir` whose name matches `extensions`. */
 function listFiles(dir: string, extensions: string[]): string[] {

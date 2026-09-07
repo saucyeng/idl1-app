@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 
+import { Input } from "@/components/ui/input";
 import type { PrefsStore } from "./prefsStore";
 
 /** How long typing in the rider-name field pauses before the value is
@@ -68,24 +69,27 @@ export default function ProfileSection({ store, migrationNotice = null }: Profil
   }
 
   return (
-    <div className="idl1-settings__section">
-      <label htmlFor="idl1-settings-rider-name">Rider name</label>
-      <input
+    <div className="flex flex-col gap-2">
+      <label htmlFor="idl1-settings-rider-name" className="font-mono text-xs uppercase tracking-[var(--tracking-label)] text-fg-dim">
+        Rider name
+      </label>
+      <Input
         id="idl1-settings-rider-name"
         type="text"
+        className="max-w-sm"
         value={riderName}
         onChange={(event) => handleChange(event.target.value)}
       />
-      <p className="idl1-settings__hint">
+      <p className="font-mono text-xs text-fg-faint">
         Pre-filled into new sessions.
       </p>
       {writeFailed ? (
-        <p role="status" className="idl1-settings__hint idl1-settings__hint--error">
+        <p role="status" className="font-mono text-xs text-brand-accent">
           Your rider name could not be saved to this device. It will keep showing until you leave this screen.
         </p>
       ) : null}
       {migrationNotice !== null ? (
-        <p role="status" className="idl1-settings__hint">
+        <p role="status" className="font-mono text-xs text-fg-dim">
           {migrationNotice}
         </p>
       ) : null}
