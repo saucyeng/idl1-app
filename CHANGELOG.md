@@ -433,6 +433,61 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
   unnecessary but was left as-is per this task's scope — a follow-up can
   simplify it to a plain re-parse-and-edit. Filters: `cargo test -p idl-rs
   workbook::v3` (114 passed), `cargo check -p idl-rs-cli --tests` (clean).
+- **L11 lane complete — Task 12: the five sync commands, lifecycle state,
+  and the auto-trigger (idl-rs-tauri `commands::sync`; idl-transport
+  `sync::client`; two idl-rs core fixes; rulings R104 and its addendum).**
+  `sync_status`, `sync_now`, `pair_peer`, `start_pairing`, `unpair_peer`,
+  plus the `peer_appeared` event, thin over `idl-transport`'s `sync`
+  module — no HTTP client, no merge/diff logic in `idl-rs-tauri`.
+  `SyncState` (managed, held for the app's lifetime) owns the running
+  server, the loaded peer list, the pairing state, and the background
+  mDNS-browse task; `SyncState::start` is the constructor `app/src-tauri`'s
+  `.setup()` hook calls (one line, mirroring `paths::resolve_data_dir`) —
+  wiring that call and its `app.manage(...)` is that crate's job, not this
+  one's (out of this task's file list). `pair_peer` takes `(peer_id, code)`
+  (ruling R104, amending C3 §3.9's earlier `code`-alone signature): the
+  caller names the specific discovered peer showing the code, never a
+  guess or a fan-out to every unpaired peer on the LAN. `sync_now` re-
+  indexes exactly the sessions a run touched
+  (`idl_rs::store::catalog::index_session` per id, mirroring
+  `rescan_tracks_via` — never a whole `rebuild_catalog`) via
+  `idl_transport::sync::client::SyncRunResult`'s new `sessions_touched:
+  Vec<String>` field (R104 addendum; `sessions_updated`'s count is derived
+  from its length so the two can never disagree; the id list is a
+  Rust-side detail, never forwarded to the UI — C3 §3.9's wire shape is
+  unchanged). `idl_transport::sync::client::pair_with_peer(addr,
+  &PairRequest) -> Result<PairResponse, TransportError>` is the new
+  client-side `POST /pair` call (mirrors `fetch_manifest`'s shape, builds
+  its own short-lived `reqwest::Client` like `sync_with_peer` does, so no
+  crate outside `idl-transport` needs a `reqwest` dependency of its own).
+  `should_auto_sync` (peer, last-sync time, now, the running set) is the
+  pure decision PLAN §8 Q9/ruling R88 describes: never for an unpaired or
+  protocol-incompatible peer, never while that peer already has a sync
+  running, at most once per 60 s; the background browse task is its only
+  caller, never a command handler. DTOs
+  (`SyncStatusDto`/`SyncResultDto`/`PairingOfferDto`/`PeerStatusDto`)
+  field-for-field against C3 §3.9 as Task 1/R104 amended it —
+  `app/src/ipc/sync.ts` is stale against that amendment (missing
+  `protocol_version`/`paired_at_ms` on `PeerStatus`, three fields short on
+  `SyncResult`, and `startPairing`/`unpairPeer`(peer_id, code)/
+  `peer_appeared` entirely absent), a TS shell task, not this one.
+  Folded into the same commit: `install_session_json`'s race-retry
+  fallback now reports `KeptLocal` (not the previous hardcoded
+  `Installed`) when a concurrent write leaves `session.json` unparseable
+  mid-retry, matching `install_workbook`'s existing `Cell`-based pattern
+  (L11 Task 6 fix re-review Minor); `safe_join`'s doc comment states its
+  lexical-not-canonicalised boundary and the in-`data_root`-symlink case
+  it does not defend against, filing that case to `verify_data_dir` as an
+  L8-class follow-on (ruling R101, amending R100's "canonicalised"
+  wording). C4 §6 gains R89's `data.parquet` version-pair ordering
+  paragraph and R91's `session.json` per-field tie rule; C3 §3.9 gains
+  `pair_peer`'s amended signature (R104). `unwatch_workbook` (R98) is
+  **not** this lane's gap — UI-10/Notebook's, tracked there. Filters:
+  `cargo test -p idl-rs-tauri commands::sync` (15 passed), `cargo test -p
+  idl-transport sync::client` (20 passed), `cargo check -p idl-rs-tauri`
+  clean. Lane gate: `cargo test -p idl-rs -p idl-rs-cli --
+  test-threads=4` — idl-rs 1139 passed / 1 ignored, idl-rs-cli 53 passed,
+  0 failed.
 - **L8x lane complete: Data-tab write commands (2026-09-06, idl-rs core +
   idl-rs-tauri, ruling R86).** Five new commands close the last C3 §6
   deferrals the Data tab still stubbed: `save_track`, `delete_track`,

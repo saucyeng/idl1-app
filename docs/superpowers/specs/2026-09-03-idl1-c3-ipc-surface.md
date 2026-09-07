@@ -1588,16 +1588,27 @@ reported "0 blobs, 0 workbooks" would be a lie to the user), so
 documented above exactly as `SyncRunResult`'s own doc comments define it.
 Task 12 applies this amendment and the UI reads six numbers, not three.
 
-**`pair_peer(code: string)`**
+**`pair_peer(peer_id: string, code: string)`** *Signature amended post-sign
+(2026-09-07, lead ruling R104, L11 Task 12) — was `pair_peer(code: string)`
+alone.* `peer_id`: the specific discovered peer (`sync_status`/
+`peer_appeared`'s `PeerStatus.peer_id`) the user chose as the one currently
+showing `code` on its own screen. This command never guesses which online
+peer offered a code and never fans a pairing secret out to every unpaired
+peer visible on the LAN — the caller names one. The UI may prefill
+`peer_id` when exactly one unpaired peer is online, but always sends it
+explicitly.
 `code`: the 6-digit pairing code (design §7).
 Return: `PeerStatus` (§3.9 above).
-Errors: `sync`, `invalid_argument` (malformed code — wrong length/non-digit),
-`not_found` (code not recognised or expired).
+Errors: `sync`, `invalid_argument` (malformed code — wrong length/non-digit,
+checked before `peer_id` is even resolved, so a malformed code never sends
+a request), `not_found` (`peer_id` not currently visible on the LAN, or the
+code that peer is offering does not recognise/has expired).
 
 **`start_pairing()`** *Added post-sign (2026-09-06, lead ruling R88, L11
 Task 1).* Mints a single-use, short-lived pairing code on this side so the
-other side can call `pair_peer(code)` against it — pairing is symmetric
-(PLAN §8 Q4): either side presses "Show code", the other types it.
+other side can call `pair_peer(peer_id, code)` against it — pairing is
+symmetric (PLAN §8 Q4): either side presses "Show code", the other types
+it.
 Args: none.
 Return:
 ```ts

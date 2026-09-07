@@ -522,6 +522,18 @@ seam_correction_version)` (C1 §4.3, design D6) — the concrete form of D6 for
 this file class, so sync compares that version pair rather than a content
 hash.
 
+**`data.parquet` version-pair ordering.** *Added post-sign (2026-09-06,
+lead ruling R89, L11 Task 3/12).* "The side with the newer pair is
+authoritative" (the row above) orders lexicographically on the pair:
+`importer_version` first, compared as SemVer 2.0.0 (C1 §4.3); only if
+equal, `seam_correction_version`, compared by the integer after its
+leading `v` (`v1` < `v2`). A value that fails to parse under its own rule
+makes the pair **incomparable**: neither side is authoritative, nothing
+transfers for that session's `data.parquet`, and the sync plan carries a
+warning naming the session and both pairs. Equal pairs never transfer
+(content is a pure function of blob + versions, so equal versions imply
+equal — or last-ulp-different, kept-local per the row above — bytes).
+
 **`session.json` per-field merge.** *Closed post-sign, 2026-09-06, lead
 ruling R88, L11 Task 1, per §8 item 3.* User-owned fields (C1 §6: rider,
 bike, venue, comments, tag, lap gates, lap flags) merge **per field**,
@@ -535,6 +547,17 @@ these four fields, re-derived locally from its own `data.parquet` rather
 than reconciled from a peer's. Whole-file last-write-wins was rejected
 (the alternative this row previously carried) because it would silently
 discard a rider's note in favour of a peer's unrelated lap re-index.
+
+**Per-field "changed" and tie rule.** *Added post-sign (2026-09-07, lead
+ruling R91, L11 Task 6/12.)* A user-owned field is "changed" from its base
+when it differs from its type's zero value (C1 §6's not-set convention —
+`""` for a string field, `0`/absent for a numeric or list field). One side
+changed, the other did not ⇒ the changed side wins. Both sides changed to
+the identical value ⇒ no conflict, that value stands. Both sides changed
+to different values ⇒ the side whose `session.json` carries the newer
+`updated_at_ms` wins; an exact tie **keeps local** (never the peer's),
+matching this file class's usual last-write-wins convention (Track/Profile
+rows above) rather than picking a side arbitrarily.
 
 **Transfer.** *Endpoint names below replace this section's original
 five-path proposal — closed post-sign, 2026-09-06, lead ruling R88, L11
