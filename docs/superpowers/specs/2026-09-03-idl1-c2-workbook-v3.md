@@ -927,7 +927,22 @@ The specific claims:
    and it is why this is not a version bump: bumping to `4` would make §1's
    rule refuse every existing file outright.
 
-#### 3.6.9 Open — needs the lead
+#### 3.6.9 Resolved by the lead (R118, 2026-09-07)
+
+All five items below were ruled on in `runs/2026-09-03/decisions.md` R118.
+Two answers changed the contract and are already reflected above:
+
+- **Item 3 is settled, not open.** Evaluation is **per window** (R117.4):
+  one evaluation sees exactly one window, so `"t:lap"` always means the laps
+  within the window being evaluated and needs no multi-window error case.
+  **`"t:win"` is deliberately NOT specified** — reducing across windows is
+  cross-window maths, which no per-window evaluation can perform; it belongs
+  to the R73 cross-session-overlay amendment.
+- **Item 2's deprecation carries a condition:** the next `version` bump must
+  *migrate* workbooks using the `t`-alias, not merely stop accepting it
+  (direction-2 decision 75 — workbooks are durable across updates).
+
+The original wording of all five, with the recommendations that were made:
 
 1. **`MathEvalErrorKind` gains three variants** (`ShapeMismatch`,
    `UnknownAxis`, `ShapeAnnotationMismatch`), which C3's error `detail` shape
