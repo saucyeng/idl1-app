@@ -143,3 +143,4 @@ superseding form.
 - **R112** — Calibration lives in the bike profile and binds to a session through the header's existing `config_crc32`; no firmware change, no second source of truth.
 - **R113** — Device must report `LoggingElapsed: N` (seconds, monotonic, only while RUNNING) in the §7.3 status payload; firmware work, app degrades to dimmed client-side timing meanwhile.
 - **R114** — Wave 3 runs W3.1 foundations, W3.2 maths graph + time/cursors, W3.3 errors + device, W3.4 bike sheet + PDF report (`runs/2026-09-07/WAVE3-PLAN.md`).
+- **R117** — S1 selection: session-relative range origin; repeated sessionId legal; `_v2` commands with one deprecation revision; per-window eval (does NOT deliver cross-window maths/ghost delta — that is the R73 amendment); deleted-session windows dropped with a stated reason; colour is a `--chart-N` token; `fetch_host_channel` lap-context gap fixed in Task 5. `main_lap_window` indexing defect confirmed real.
