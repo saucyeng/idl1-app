@@ -4108,3 +4108,10 @@ noted for UI-10 (state loss on a resize across the breakpoint only).
 **Cost if wrong:** item 2 is the one that matters — a hidden notebook
 holding a sandbox and a file watch is a battery and handle leak on a
 phone.
+
+## 2026-09-07 — UI-4 LANDED (shell: bars, mount-and-hide, columns, palette, Toaster)
+
+`b86a008`, review CLEAN. `composeVisibility` + the route-visibility
+context are the signal UI-5 gates on and UI-10 reuses (R95 item 2).
+Worktree retired. Next: UI-5/6/7 concurrently, each its own worktree
+from main.
