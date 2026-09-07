@@ -4591,3 +4591,21 @@ gated on route visibility per R95; test that a stalled sandbox is rebuilt
 and that a healthy one is never torn down). The 5 s boot timer +
 `onSandboxUnavailable` banner landed in this fix covers the *load*
 failure; the *stall* case is Task 22.
+
+## 2026-09-07 — Global async-error surfacing LANDED (`98ceb20`; main 131 / 1203)
+
+The per-route boundary catches render/lifecycle throws only. An async
+throw — a timer or event callback, or an unguarded promise (`AppShell`'s
+own `fetchEngineVersion().then()` has no `.catch`) — slipped past it and
+left a blank screen. Now `window` `error`/`unhandledrejection` listeners,
+registered once in `AppShell` and removed on teardown, raise a
+token-styled banner naming the source and error with a Reload, decided by
+the pure tested `shell/globalErrorFallback.ts`.
+
+**The black screen's own cause is still unconfirmed.** The agent read
+`bootTimer`/`watchdog`/`SandboxHost` and found no defect: `onReady`/
+`dispose` cancel the deadline correctly and `tick()` still has no caller,
+so the 5 s coincidence looks like a coincidence. It had no network access
+to reproduce against the live dev server. Next step is Isaac's console
+with the banner now in place — an async failure will name itself instead
+of blanking.
