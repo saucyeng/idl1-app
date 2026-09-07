@@ -37,6 +37,7 @@ import type { PropertiesFormChannelOption, PropertiesFormLapOption } from "./com
 import WorkbookBar from "./components/WorkbookBar";
 import type { SandboxCell } from "./host/protocol";
 import { SandboxHost } from "./host/SandboxHost";
+import { PING_INTERVAL_MS } from "./host/watchdog";
 import { NotebookSession } from "./host/NotebookSession";
 import { dropCellHeight, initialCellHeights, recordCellHeight, type CellHeights } from "./model/cellLayout";
 import { replaceCellBody } from "./model/cells";
@@ -515,7 +516,23 @@ export default function NotebookPage() {
     sandboxHostRef.current = host;
     host.init(SANDBOX_RUNTIME_VERSION);
 
+    // Drives the sandbox's liveness watchdog (`host/watchdog.ts`, never
+    // wired to a caller before this task) at its own ping cadence, so a
+    // stalled sandbox is torn down and rebuilt instead of hanging forever.
+    // Scoped to this effect (not a separate one) so the timer's lifetime is
+    // exactly `host`'s: it starts only once a host exists and is cleared in
+    // this same cleanup, before `host.dispose()` -- it never survives past
+    // the iframe it was ticking, and it is not re-created by `rebuild()`
+    // (`SandboxHost.tick` forwards to one `Watchdog` instance that outlives
+    // every rebuild internal to `host`, so one timer for this whole effect
+    // is correct, not one per generation). Piggybacking on `primeState.running`
+    // rather than reading `useRouteVisible` again here means a hidden
+    // Notebook route (R95/R99) has no host to tick in the first place --
+    // the same visibility gate already applied above, not a second one.
+    const watchdogTimer = window.setInterval(() => host.tick(Date.now()), PING_INTERVAL_MS);
+
     return () => {
+      window.clearInterval(watchdogTimer);
       host.dispose();
       sandboxHostRef.current = null;
     };

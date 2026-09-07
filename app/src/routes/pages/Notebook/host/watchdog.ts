@@ -6,8 +6,14 @@
  * injected so tests never need a real timer.
  */
 
-/** Interval, in ms, between pings sent to the sandbox. */
-const PING_INTERVAL_MS = 1000; // ms
+/**
+ * Interval, in ms, between pings sent to the sandbox. Also the cadence the
+ * caller should drive {@link Watchdog.tick} at (`Notebook/index.tsx`'s
+ * mount effect) — ticking any less often just delays noticing a stall past
+ * `STALL_TIMEOUT_MS`, and ticking more often sends no extra pings (`tick`
+ * itself only pings once this many ms have elapsed since the last one).
+ */
+export const PING_INTERVAL_MS = 1000; // ms
 
 /** Time, in ms, a pong may be outstanding before the sandbox is stalled. */
 const STALL_TIMEOUT_MS = 3000; // ms
