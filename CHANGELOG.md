@@ -151,6 +151,34 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
   unchanged — only what "visible" means to it. **New rule superseding R78's
   wording:** Device polls while mounted, the window is visible, and Device is
   the active route.
+- **UI-5: Device tab restyle, touch-first (2026-09-06, no spec change
+  needed — presentation over landed L7b work).** `Device/**` ported onto
+  UI-2/UI-3's primitives at 44 px (`--hit-target`) minimum hit targets, no
+  IPC/effect/behaviour change. New pure module `Device/hero.ts`
+  (`heroView`/`heroStateFrom`) drives `HeroCard`'s three-state CTA — Connect
+  (`--info`) with an inline device-discovery list, Start recording
+  (`--good`), Stop (`--hivis`, `PulsingDot` plus a live `mm:ss` timer
+  reusing `Data/format.ts`'s `formatDurationMs`; the elapsed time is local
+  display state only, ticked by a `setInterval` that never calls IPC) — plus
+  a colour-owned SD/GPS/IMU/HR/battery/firmware/WiFi `StatusIcon` strip and
+  the SPEC §23.9 mode line; `DeviceControls` now offers only the WiFi
+  toggle, since start/stop moved onto the hero CTA. `ChannelsTable`'s rows
+  move onto `Table`/`TableRow`/`TableCell`; the gear control opens its
+  source's form in a `Sheet` (`sheetSideFor`: bottom on narrow, right on
+  wide) rather than inline — `forms/*` are unchanged inside it, staying
+  pointer-first (decision 15). `ProfileBar`/`PushConfigBar`/`DeviceFiles`
+  restyled onto `Select`/`Input`/`Button`/`Badge`/`NoteBlock`; the profile
+  bar, channels table and push/pull bar are visually the "Config" card the
+  direction names (kept as three existing components under one
+  `SectionHead`, not a new `ConfigCard.tsx`). A collapsed `Collapsible`
+  placeholder covers Calibration (SPEC §7.6/§20 has no `idl-rs-tauri`
+  command yet — nothing to trigger). Two toast call sites wired from
+  UI-3's closed `CoreToastEvent` union: `PushConfigBar.tsx`'s push success
+  (`configPushed`) and `DeviceFiles.tsx`'s per-file download success
+  (`transferComplete`, `fileCount: 1` — the download queue is strictly
+  one-at-a-time, SPEC §24.17). Device tab refinements idl0 had that this
+  restyle deliberately deferred (decision 35) are listed in this task's
+  report, for `TASKS.md`.
 - **L8x lane complete: Data-tab write commands (2026-09-06, idl-rs core +
   idl-rs-tauri, ruling R86).** Five new commands close the last C3 §6
   deferrals the Data tab still stubbed: `save_track`, `delete_track`,
