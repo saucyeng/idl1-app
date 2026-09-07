@@ -309,6 +309,33 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
   teardown without a real `ServiceDaemon`, matching PLAN §7's "no test
   needs multicast." Filter: `cargo test -p idl-transport sync::discovery`
   (7 passed, 1 ignored).
+- **L11 Task 10: the LAN sync client (2026-09-07, idl-transport,
+  `sync::client`, ruling R88).** New `sync/client.rs`:
+  `sync_with_peer(data_root, peer, addr, now_ms, on_progress)` — the
+  pull/push driver. Refuses before any request if `peer.protocol_version`
+  differs from `PROTOCOL_VERSION`; otherwise fetches the peer's manifest,
+  builds the local one via core's `build_manifest`, and runs core's
+  `plan_sync`'s actions phase by phase (`"manifest"`, `"blobs"`,
+  `"sessions"`, `"workbooks"`, `"tracks"`, `"profiles"`, Task 1's widened
+  `phase` union), reporting `SyncProgress { done, total, phase }` after
+  each item. Every `Pull`/`PullForMerge` streams into a deterministic
+  `tmp/<sha256 of the item's own identity>.part` file — the same logical
+  item always names the same partial, so an interrupted pull's leftover
+  `.part` is found and resumed (`Range: bytes=<len>-`, checked against the
+  peer's own `Content-Range` start) rather than restarted; the assembled
+  bytes are handed to core's `install` (which verifies and merges — this
+  file never parses a workbook or `session.json` itself, and never
+  duplicates `install`'s own hash check) and the `.part` is removed only
+  after `install` succeeds. `Push` is a bare `PUT` of the local bytes,
+  read through `safe_join`/`blob_path`, the same path-safety layer
+  `server.rs` uses. A single item's failure (a stale 404, a wrong token
+  reaching only that request, a network blip) is logged and counted, never
+  aborting the run — `SyncRunResult { blobs_transferred, workbooks_merged,
+  conflicts, sessions_updated, tracks_updated, profiles_updated }` (C3
+  §3.9's `SyncResult` plus the counts the command layer needs) simply comes
+  up short. `mod.rs` re-exports `sync_with_peer`/`SyncProgress`/
+  `SyncRunResult`. Filter: `cargo test -p idl-transport sync::client` (10
+  passed). `cargo check -p idl-rs-tauri` clean.
 - **L8x lane complete: Data-tab write commands (2026-09-06, idl-rs core +
   idl-rs-tauri, ruling R86).** Five new commands close the last C3 §6
   deferrals the Data tab still stubbed: `save_track`, `delete_track`,
