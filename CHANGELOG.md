@@ -336,6 +336,45 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
   up short. `mod.rs` re-exports `sync_with_peer`/`SyncProgress`/
   `SyncRunResult`. Filter: `cargo test -p idl-transport sync::client` (10
   passed). `cargo check -p idl-rs-tauri` clean.
+- **L11 Task 11: the loopback two-peer proof (2026-09-07, idl-transport,
+  `sync::loopback_tests`, ruling R88).** New `sync/loopback_tests.rs`: two
+  full `<data>` roots, two real `SyncServer`s, paired over a genuine
+  `POST /pair` handshake (no mDNS — addresses come from `local_addr()`) and
+  driven through `sync_with_peer` both ways. Ten scenarios, each seeded
+  through core's own writers (`write_blob`/`write_session_parquet`/
+  `write_session_json`/`write_track`, and `write_atomic`/
+  `base_cache::write_base` for a workbook and its merge base — there is no
+  single dedicated workbook writer), asserting on the resulting files, not
+  just the run's counts: a session imported on A only lands on B with its
+  blob verified; a workbook created on A only lands on B (at
+  `<workbook_id>.idl1wb` — a brand-new peer has no file name to source, per
+  `handle_workbook_put`'s own documented fallback); the design doc's own
+  acceptance sentence — two-sided edits to *different* cells merge with
+  zero conflicts — and its flip side, the same cell edited on both sides
+  yielding exactly one conflict cell per side with the C2 §7 marker, both
+  files still parsing; a second sync run moves nothing; a track's
+  last-write-wins in one direction and leaves the other untouched;
+  `session.json` fields edited on each side both survive a two-way sync; a
+  server killed mid-transfer (a genuine partial ranged `GET` against the
+  live server, written into the client's own deterministic `.part` path)
+  resumes cleanly against a restarted server on the same port; every route
+  401s an unpaired caller and nothing on disk changes; and a mixed first
+  sync leaves neither root's `tmp/` nor `catalog.sqlite` touched. Two real
+  findings surfaced and were designed around rather than papered over:
+  `handle_workbook_put`'s documented file-name fallback (not a bug, just a
+  test-fixture correction), and `parse_workbook`/`render_workbook` are not
+  a fixed point of each other — re-parsing already-rendered markdown and
+  rendering it again shifts an *untouched* cell's surrounding blank-line
+  spacing, which C2 §7.3's "prose travels with its cell" rule then
+  correctly, but spuriously, reports as a second `Changed` cell; the
+  affected fixtures build sibling edits by cloning the parsed
+  `WorkbookDoc` and rendering once (matching how a real UI holds a
+  workbook open rather than re-parsing its own rendered output),
+  sidestepping the drift rather than hiding it — worth a look as a
+  possible `workbook::v3` rendering non-idempotence if a real device pair
+  ever hits it after several edit/save cycles. Filter: `cargo test -p
+  idl-transport sync::loopback` (10 passed, ~0.2s wall clock). `cargo
+  check -p idl-rs-tauri` clean.
 - **L8x lane complete: Data-tab write commands (2026-09-06, idl-rs core +
   idl-rs-tauri, ruling R86).** Five new commands close the last C3 §6
   deferrals the Data tab still stubbed: `save_track`, `delete_track`,
