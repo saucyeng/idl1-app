@@ -4701,3 +4701,66 @@ Persisted column widths must not break for someone who already has a
 stored `library` width (migrate or ignore the stale key, do not throw).
 
 **Cost if wrong:** one column re-added; the frame still supports it.
+
+## 2026-09-07 — R108: the properties column hosts the real editor panes, not a placeholder
+
+Isaac, seeing the studio live: "the cell properties column says reserved
+for a later lane, but the UI for properties and code already exists in
+the far right column if I click on a chart. So that UI can get shifted
+over to the actual target column and it's done."
+
+He is right — UI-10 built `EditorPanes` (Properties + Code tabs,
+D13/decision 29) and mounts it *inside* the Notebook page's own
+`ResizablePanelGroup` in the output column, while the studio's dedicated
+properties column shows `ColumnPlaceholder`. **Ruling:** move it. The
+studio's properties column renders the existing `EditorPanes` for the
+selected cell; the Notebook page's inner editor pane is not rendered in
+the wide/studio layout (it stays for medium — inline under the selected
+cell — and narrow — the Properties form in a sheet, decision 29, both
+unchanged). One editor component, three placements. Selection stays where
+it is (`selectedCellId` in the Notebook page); the studio column reads
+it, so this is a placement change, not a state move — if it turns out to
+need state lifted, STOP and ask rather than duplicating it.
+
+With R107 the wide studio is therefore: maths graph (still reserved) |
+**properties = the real editor** | output.
+
+**Cost if wrong:** a component rendered in a different parent.
+
+## 2026-09-07 — R109: the editor reaches the properties column by portal, not by lifted state
+
+**Question.** R108 puts the real `EditorPanes` in the studio's properties
+column, but the element is built inside `routes/pages/Notebook/index.tsx`
+from that page's own state (`openCellId`, `openCellCode`,
+`handleCellCodeChange`, `propertiesChannels`, `propertiesLaps`), and the
+column is rendered by `shell/RouteHost.tsx`, outside the page.
+
+**Ruling.**
+1. A new shell context (an "editor slot") carries a DOM node from the
+   properties column down to the Notebook page. The properties column
+   renders an empty container and publishes its node; the Notebook page,
+   when a node is present, renders the *same* `editorPanesElement` through
+   `createPortal` into it and renders no inner editor pane. All editor
+   state stays in the Notebook page. Nothing is lifted, nothing duplicated,
+   no second `EditorPanes` instance ever exists.
+2. Whether the editor is externally hosted is decided by the presence of a
+   slot node, **not** by the page's measured width. Inside the studio the
+   Notebook page's own width is the output column's width, which can read
+   as medium or narrow; placement logic must not be allowed to re-inline an
+   editor that the column already hosts. Medium and narrow placements are
+   unchanged when no slot node is published.
+3. The column shows the existing empty-state copy when no cell is selected;
+   the placeholder text "reserved for a later lane" is deleted.
+
+**Cost if wrong.** Lifting the state instead would move a dozen handlers
+and the edit-echo guard out of the page that owns the workbook, risking a
+second source of truth for cell code — the failure that R72 and the
+`CellRunSequencer` were needed to fix. Deciding by width instead of by slot
+would give the studio two editors or none at some window sizes.
+
+**Amendment (2026-09-07).** R109 item 3 said the column reuses "the
+empty-state copy the editor already uses". The implementer checked and no
+such string exists — today an unselected cell renders nothing at all.
+The copy is therefore new: "Select a cell to edit its properties and code.",
+rendered with `ColumnPlaceholder` (already the UI-DIRECTION line-97 pattern),
+and only in the column — medium and narrow placements gain no new text.

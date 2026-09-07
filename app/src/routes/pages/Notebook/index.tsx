@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useReducer, useRef, useState, type CSSProperties } from "react";
+import { createPortal } from "react-dom";
 
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@/components/ui/resizable";
 import { BrandSheet } from "@/components/brand/BrandSheet";
@@ -21,6 +22,8 @@ import {
 } from "../../../ipc/workbook";
 import { useAppState } from "../../../state/AppState";
 import { useRouteVisible } from "../../../shell/routeVisibility";
+import { useEditorSlotNode } from "../../../shell/editorSlot";
+import { ColumnPlaceholder } from "../../../shell/ColumnFrame";
 import { resolveRegister } from "../Settings/theme";
 import { createPrefsStore, localStorageBackend } from "../Settings/prefsStore";
 import CellFrame, { type CellRunStatus } from "./components/CellFrame";
@@ -43,6 +46,7 @@ import { isCodeVisible, toggleCode } from "./model/codeVisibility";
 import PlaybackTransport from "./interaction/PlaybackTransport";
 import { tick, togglePlay, type PlaybackState } from "./interaction/playback";
 import { editorPlacement, outputIsReadOnly } from "./model/editorPlacement";
+import { resolveEditorHost } from "./model/editorHost";
 import { runFft, type FftAction, type FftDeps } from "./model/fftDriver";
 import { exceedsBinCap, frequencyAxisHz } from "./model/fftRequest";
 import { diffFunctionCatalog, type FunctionCatalogMismatch } from "./model/functionCatalog";
@@ -337,6 +341,16 @@ export default function NotebookPage() {
   // width listener.
   const widthPx = useWindowWidth();
   const placement = editorPlacement(widthPx);
+
+  // R109: the wide studio's properties column (`shell/EditorSlotColumn.tsx`)
+  // publishes its DOM node here; when present, the editor portals into it
+  // instead of rendering in this page's own `placement`-chosen spot --
+  // `resolveEditorHost` decides which wins, by slot presence alone, never
+  // by the (possibly narrow-reading, inside the studio's own output
+  // column) measured `placement`.
+  const editorSlotNode = useEditorSlotNode();
+  const editorHost = resolveEditorHost(editorSlotNode !== null, placement);
+  const editorIsPortalHosted = editorHost === "portal";
 
   // The notebook output register (decision 31) -- stored in `UiPrefs`
   // (UI-7 Q1), read/written through `notebookPrefsStore` above. `null`
@@ -1186,9 +1200,15 @@ export default function NotebookPage() {
   // (`model/editorPlacement.ts`): beside the output in a `Resizable` pane on
   // wide, inline under the selected cell's `CellFrame` on medium, and not at
   // all on narrow (`outputIsReadOnly` -- narrow's Properties form lives in a
-  // `Sheet` instead, built separately below).
+  // `Sheet` instead, built separately below) -- except when the studio's
+  // properties column has published a slot node (R109): the editor always
+  // exists then, since it portals into that column regardless of this
+  // page's own (possibly narrow-reading, inside the studio) measured width.
   const editorPanesElement =
-    openCellId !== null && openCell !== null && openCellCode !== null && !outputIsReadOnly(placement) ? (
+    openCellId !== null &&
+    openCell !== null &&
+    openCellCode !== null &&
+    (editorIsPortalHosted || !outputIsReadOnly(placement)) ? (
       <EditorPanes
         cellId={openCellId}
         kind={openCell.kind}
@@ -1388,7 +1408,7 @@ export default function NotebookPage() {
               {/* Medium layout (decision 29): the editor sits inline, under
                   the selected cell's own frame, rather than at the bottom of
                   the whole document. */}
-              {placement === "inline" && cell.id !== null && cell.id === openCellId && editorPanesElement}
+              {!editorIsPortalHosted && placement === "inline" && cell.id !== null && cell.id === openCellId && editorPanesElement}
             </CellFrame>
           )}
         />
@@ -1478,7 +1498,7 @@ export default function NotebookPage() {
               {cellListElement}
             </div>
           </ResizablePanel>
-          {editorPanesElement !== null && (
+          {!editorIsPortalHosted && editorPanesElement !== null && (
             <>
               <ResizableHandle withHandle />
               <ResizablePanel id="notebook-editor-panes" defaultSize={35} minSize={20}>
@@ -1499,13 +1519,13 @@ export default function NotebookPage() {
             {cellListElement}
           </div>
           <BrandSheet
-            open={openCellId !== null && openCell?.kind === "js"}
+            open={!editorIsPortalHosted && openCellId !== null && openCell?.kind === "js"}
             onOpenChange={(open) => {
               if (!open) setSelectedCellId(null);
             }}
             title="Cell properties"
           >
-            {openCellId !== null && openCell !== null && openCell.kind === "js" && openCellCode !== null && (
+            {!editorIsPortalHosted && openCellId !== null && openCell !== null && openCell.kind === "js" && openCellCode !== null && (
               <PropertiesForm
                 code={openCellCode}
                 channels={propertiesChannels}
@@ -1517,6 +1537,11 @@ export default function NotebookPage() {
           </BrandSheet>
         </>
       )}
+      {editorSlotNode !== null &&
+        createPortal(
+          editorPanesElement ?? <ColumnPlaceholder>Select a cell to edit its properties and code.</ColumnPlaceholder>,
+          editorSlotNode
+        )}
       <div
         ref={containerRef}
         style={{ position: "fixed", inset: 0, pointerEvents: "none", zIndex: 0, border: "none" }}

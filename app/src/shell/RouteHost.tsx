@@ -9,6 +9,7 @@ import { useAppState } from "../state/AppState";
 import { setActiveRoute } from "./routeVisibility";
 import { usesColumns, type ShellLayout } from "./layout";
 import ColumnFrame, { ColumnPlaceholder } from "./ColumnFrame";
+import { EditorSlotColumn } from "./EditorSlotColumn";
 import { RouteErrorBoundary } from "./RouteErrorBoundary";
 
 /** Every destination's element, built once per render but reconciled by
@@ -69,9 +70,8 @@ export default function RouteHost({ layout }: { layout: ShellLayout }) {
         const content =
           r.id === "notebook" && notebookInColumns ? (
             <ColumnFrame
-              library={<ColumnPlaceholder>Data library filter — reserved for a later lane</ColumnPlaceholder>}
               maths={<ColumnPlaceholder>Maths graph — reserved (UI-DIRECTION decision 11)</ColumnPlaceholder>}
-              properties={<ColumnPlaceholder>Cell properties — reserved for a later lane</ColumnPlaceholder>}
+              properties={<EditorSlotColumn />}
               output={ROUTE_ELEMENTS.notebook}
             />
           ) : (
