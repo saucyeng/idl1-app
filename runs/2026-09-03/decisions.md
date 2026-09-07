@@ -4655,3 +4655,30 @@ since load; plus `beforeunload`/`pagehide` logging the same shape (so a
 silent navigation is distinguishable from a DOM wipe) and a 2 s poll for
 `#root` surviving at zero height. Decision logic pure and tested (13
 cases). Isaac reloads, reproduces once, and reads the red block.
+
+## 2026-09-07 — BLACKOUT SOLVED (`85884b7`; main 133 / 1219)
+
+**Cause:** the sandbox iframe's container is `position: fixed; inset: 0`
+by design (R69/§6 — cells are positioned into viewport coordinates), the
+Notebook is always mounted (R93), and the sandbox document imports
+`tokens.css`, whose `:root { background: var(--bg) }` painted that
+whole-viewport canvas **opaque**. A fixed element paints above ordinary
+static-flow siblings regardless of z-index, so the moment the sandbox
+loaded it blacked out the entire app, nav bars included, with the React
+tree, `#root` and every component perfectly healthy — no throw, no removed
+node, no navigation. That is why the tripwire could not see it: it watches
+`#root`'s children and size, and neither changed.
+
+**Fix:** `sandbox/sandboxCanvas.css` (`:root, body { background:
+transparent }`) imported after `tokens.css` in `sandbox/main.ts`. Charts
+are unaffected — `plotTheme` paints each chart's own opaque `--bg`.
+
+**Why it appeared only now:** the sandbox had never successfully loaded
+until the CORS fix (R106) landed. The bug was always there; making the
+sandbox work is what made it visible.
+
+**Lesson for the ledger:** three agents chased throws, unmounts, portals
+and navigation because the symptom looked like a crash. It was a paint
+defect. When "the UI is gone" comes with no error, no removed node and no
+navigation, the next question is *what is painting over it*, not *what
+broke*.
