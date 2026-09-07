@@ -375,6 +375,33 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
   ever hits it after several edit/save cycles. Filter: `cargo test -p
   idl-transport sync::loopback` (10 passed, ~0.2s wall clock). `cargo
   check -p idl-rs-tauri` clean.
+- **L11 Task 10 review fix (2026-09-07, idl-transport, `sync::client`,
+  lead ruling R102).** Three Importants: (1) client-side per-class body
+  caps mirroring `server.rs`'s `MAX_DOCUMENT_BODY_BYTES`/
+  `MAX_RAW_FILE_BODY_BYTES` in reverse — `fetch_manifest` and
+  `download_item` both refuse a `Content-Length` over the class's cap
+  before writing anything, and re-check the running total every chunk in
+  case the peer omits or lies about `Content-Length`; an over-cap transfer
+  is a typed error and the `.part` it was writing to is deleted. (2)
+  `pull_and_install` now discards the `.part` on any failure once
+  `download_item` has returned complete bytes — a manifest missing the
+  expected entry or `install`'s own hash/parse/version rejection — not
+  only on success; `download_item` itself now also discards a `.part` it
+  already knows is unrecoverable: a `416` (the peer's content no longer
+  covers the resumed range) or a `206` whose `Content-Range` start doesn't
+  match what was asked. Two new tests cover the adversarial cases the
+  review named: a resumed `.part` whose existing prefix turns out wrong
+  (hash-mismatches at `install`) and a `.part` longer than the peer's
+  now-shorter content (`416`) — both assert the `.part` is gone and a
+  second run recovers cleanly. (3) C3 §3.9's `SyncResult` amended to carry
+  all six fields `SyncRunResult` already returns (see the spec's own
+  revision note, same date/ruling). Minor: `tmp_part_path`'s peer-sourced
+  `session_id`/`key` are now shape-validated (`item_shape_is_valid`, via
+  `core::store::sync::ids::is_valid_id`) before ever being hashed into the
+  `.part` name, closing the colon-join collision the review flagged.
+  Filters: `cargo test -p idl-transport sync::client` (17 passed),
+  `cargo test -p idl-transport sync::` (73 passed, 1 ignored). `cargo
+  check -p idl-rs-tauri` clean.
 - **L8x lane complete: Data-tab write commands (2026-09-06, idl-rs core +
   idl-rs-tauri, ruling R86).** Five new commands close the last C3 §6
   deferrals the Data tab still stubbed: `save_track`, `delete_track`,

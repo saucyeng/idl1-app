@@ -37,6 +37,11 @@
   `protocol_version`/`paired_at_ms`; a `peer_appeared` event is added;
   `sync_now`'s `phase` union is stated explicitly. New §2 rows: `sync`
   gains `start_pairing`/`unpair_peer`, `not_found` gains `unpair_peer`.
+- 2026-09-07: L11 Task 10 review (lead ruling R102) — §3.9's `SyncResult`
+  gains `sessions_updated`, `tracks_updated`, `profiles_updated`, matching
+  the transport-internal `SyncRunResult` shape the client already returned;
+  a sync run that only moved a session or a track was reporting "0 blobs,
+  0 workbooks" under the old three-field shape. Task 12 applies this.
 
 Consumes: design doc §4 (IPC, data path for a chart, the reactive DAG), §6
 (interaction rules), §9 row C3, §10 (lanes); Task 5's M0 smoke commands
@@ -1533,12 +1538,55 @@ already documents `phase` as free-form, so this widening breaks no caller):
 Return:
 ```ts
 interface SyncResult {
-  blobs_transferred: number;    // u32
-  workbooks_merged: number;     // u32
-  conflicts: number;            // u32, conflict cells created (design §7 per-cell merge)
+  blobs_transferred: number;    // u32, successful `Blob` transfers this run,
+                                 // pull and push combined. Content-addressed
+                                 // session channels (`Derived`) and
+                                 // `data.parquet` are counted under
+                                 // `sessions_updated` instead — they are
+                                 // always session-scoped, unlike a raw blob
+                                 // (added post-sign 2026-09-07, lead ruling
+                                 // R102, L11 Task 10 review)
+  workbooks_merged: number;     // u32, workbooks installed locally by a
+                                 // pull this run. A push of a workbook is
+                                 // not counted: the merge it may cause
+                                 // happens on the peer, whose outcome this
+                                 // run never observes (the peer answers a
+                                 // bare 200) (added post-sign 2026-09-07,
+                                 // lead ruling R102, L11 Task 10 review)
+  conflicts: number;            // u32, conflict cells created across every
+                                 // workbook merge this run (design §7
+                                 // per-cell merge)
+  sessions_updated: number;     // u32, distinct session ids that had at
+                                 // least one successful `data.parquet`,
+                                 // derived-channel, or `session.json`
+                                 // transfer this run (pull or push) (added
+                                 // post-sign 2026-09-07, lead ruling R102,
+                                 // L11 Task 10 review)
+  tracks_updated: number;       // u32, successful `Track` transfers this
+                                 // run, pull and push combined (added
+                                 // post-sign 2026-09-07, lead ruling R102,
+                                 // L11 Task 10 review)
+  profiles_updated: number;     // u32, successful `Profile` transfers this
+                                 // run, pull and push combined (added
+                                 // post-sign 2026-09-07, lead ruling R102,
+                                 // L11 Task 10 review)
 }
 ```
 Errors: `sync`, `not_found` (unknown/unpaired `peer_id`).
+
+**Added post-sign (2026-09-07, lead ruling R102, L11 Task 10 review).**
+review-task10 found `SyncRunResult` (the transport-internal type
+`sync_with_peer` returns) had grown three fields
+(`sessions_updated`/`tracks_updated`/`profiles_updated`) past this
+contract's `SyncResult`: a sync run whose only effect was a
+`session.json` merge, or a track/profile last-write-wins transfer, showed
+zero change under every field of the old three-field shape — a count the
+UI needs and `SyncResult` lacked, which CLAUDE.md §1 pre-declares a STOP.
+Ruled: the fields are right (a run that moved a session or a track and
+reported "0 blobs, 0 workbooks" would be a lie to the user), so
+`SyncResult` is amended to carry all six, each field's attribution
+documented above exactly as `SyncRunResult`'s own doc comments define it.
+Task 12 applies this amendment and the UI reads six numbers, not three.
 
 **`pair_peer(code: string)`**
 `code`: the 6-digit pairing code (design §7).
