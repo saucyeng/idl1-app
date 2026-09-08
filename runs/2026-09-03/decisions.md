@@ -5951,3 +5951,43 @@ reads it. Adding a preset must not require touching the handler.
 **Cost if wrong.** Baking one mapping in means every future input device is
 a code change, and the one thing Isaac asked for — trying alternatives at
 runtime to find out which feels right — becomes a rebuild per experiment.
+
+**Amendment (2026-09-08, Isaac).** The reference-path recommendation above
+is **withdrawn as stated**. Isaac has already tried it: *"i tried the
+reference line by averaging all the runs, but averaged noise is still
+noise. the current implementation is actually fairly well tuned for the
+gate based approach. i think adding the distance based factor into it could
+help remove the noise from the +/-2 meter accuracy."*
+
+Averaging N noisy GPS tracks reduces variance but does not produce a
+*correct* line, and the residual is structured (multipath, canopy) rather
+than white, so it does not average out. The tuned gate implementation
+stays; it is not replaced.
+
+**Revised recommendation — a complementary filter, which is what Isaac
+described.** The two available measures have opposite error characteristics:
+- **Gate crossings**: absolutely correct in position, but each crossing time
+  carries the ±2 m GPS error, so short-interval spacing is noisy.
+- **Wheel-derived distance** (integrated wheel speed): very precise over
+  short intervals and immune to GPS noise, but drifts over long ones through
+  tyre-circumference error, pressure, wear and slip.
+
+That is textbook complementary structure: **wheel distance is the process
+model, gate crossings are the measurement updates.** State is `[station,
+wheel_scale_error]` — a 2-state filter, not an iEKF. Between gates the wheel
+model carries station; at each gate the filter corrects accumulated scale
+error. This is Isaac's "add the distance based factor into it", made
+concrete.
+
+It also dissolves the switchback problem instead of weighting around it:
+**place gates only where a crossing is unambiguous** (straights), and let
+wheel distance carry through the switchbacks. No section-dependent weighting
+is needed — the gate geometry supplies it. Isaac's original framing
+("higher weight on distance in tight sections, gates on straights") is
+therefore right, and falls out of the structure rather than needing to be
+tuned in.
+
+**Open, and it decides viability:** this depends on a wheel-speed sensor
+being present on the bikes that matter. SPEC lists wheel distance as
+"requires sensor". If a bike has no wheel sensor, the lane needs a stated
+fallback. Asked of Isaac 2026-09-08.
