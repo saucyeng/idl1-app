@@ -5393,3 +5393,51 @@ index-from-`t_us` directly would remove it.
 `last()`, `count()`, and any `max` whose peak is the final sample — and it
 makes the windowed and unwindowed answers disagree, which is precisely the
 invariant R124 was written to preserve.
+
+## 2026-09-08 — R127: one host variable per definition, carrying a window dimension; windows separated by a break
+
+**Finding** (S1 Task 10, correctly stopped). The sandbox host-variable model
+cannot express *n* series for one definition. There is one `SandboxHost`
+per notebook, and `setChannelHostVar(channelId, …)` /
+`setSpectrumHostVar(spectrumKey(channelId, fftParams), …)` are keyed by a
+bare, window-unqualified name. Two windows over the same channel — R117
+item 2's *normal* case, lap-to-lap — collide on one name and the second
+dispatch silently overwrites the first.
+
+**Ruling.**
+1. **Host-variable names stay keyed by the definition alone.** No window
+   qualification in the name. A cell author writes `channel("front_travel")`;
+   the name is user-facing vocabulary and must not carry selection state.
+   Qualifying it would make cell code depend on which windows happen to be
+   selected — a workbook that stops working when you click a second lap.
+2. **The payload gains a window dimension.** The columnar binding becomes
+   `{ length, t, v, w }` where `w` is the window index per sample, plus a
+   `windows` descriptor array mapping index → `{ sessionId, span, colour,
+   label }`. Colour comes from the descriptor, which is how decision 84's
+   per-session colour reaches a chart.
+3. **A single window is byte-identical to today.** `w` is all zeros and
+   nothing else changes, so every existing cell and every existing test
+   keeps its current behaviour. Multi-window is strictly additive.
+4. **Windows are separated by a break in the flat arrays** — an undefined /
+   NaN entry between one window's samples and the next. This is the part
+   that matters: Observable Plot breaks a line at NaN, so a cell written
+   before multi-window existed, which ignores `w`, renders *n separate
+   segments* in one colour rather than one line bogusly joining lap 2's end
+   to lap 3's start. The old cell degrades to "correct geometry, no colour
+   distinction" instead of drawing a lie. New cells add `stroke: "w"` (or
+   `z: "w"`) to colour by window.
+5. **Spectra are per window too.** A single-spectrum `fft` is a per-window
+   aggregation (R124), so `spectrumKey` gains the window index: *n* windows
+   yield *n* spectra, not one overwritten one.
+
+**Accepted from the same report:** `sessionSpanDriver.runSessionSpan` taking
+a single `Window | null` and being called once per window; and leaving
+`fftRequest.ts` unmigrated, since its only in-lane caller was blocked —
+retyping it in isolation would have broken an unedited file for no gain.
+Both are the right calls.
+
+**Cost if wrong.** Without (4), the first lap-to-lap comparison in an
+existing workbook draws a single line vaulting from the end of one lap to
+the start of another — a shape that looks like data and is an artefact of
+concatenation. Without (1), workbooks would encode selection state in
+variable names and break whenever the selection changed.
