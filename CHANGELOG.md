@@ -50,6 +50,40 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 
 ### Added
 
+- **`Notebook/model/timelineStrip.ts`: pure master-timeline-strip model
+  (2026-09-08, w32-time Task 8, ruling R134 item 1, spec-during).**
+  `stripLanesFor` builds one `StripLane` per selected window (never one
+  merged lane) from `Notebook/index.tsx`'s existing
+  `sessionDetailsByWindow`/`sessionSpanUsByWindow` maps, skipping any window
+  whose own session span hasn't resolved (the module's own no-sentinel
+  rule, matching Task 3). Each lane's background/edit surface is that
+  window's own *session's* full recorded duration (decision 52), with its
+  own currently-resolved span (session/lap/range, via `windowSpanFor` —
+  R138's "one definition of resolved") drawn as the highlighted,
+  handle-bearing region inside it. `pxForTimeUs`/`timeUsForPx` convert
+  between lane-relative µs and strip px; `hitTestHandle` finds which
+  boundary handle (if any) a pointerdown lands on; `dragCandidate` computes
+  the candidate `range` a drag would produce, clamped to the lane's own
+  session and floored at a 1 ms `MIN_RANGE_US` (R119/R120: a drag can never
+  mint an inverted or sub-µs range, even one legal in pixels at a zoomed-out
+  scale); `bracketForLane` re-bases the worksheet's shared viewport
+  (`sharedViewport.ts`) onto each lane via the same `mapViewportToWindow`
+  `channelBindDriver.ts` already uses for fetches, so the strip's bracket
+  and the data actually fetched can never disagree.
+- **`Notebook/model/timelineStrip.ts`'s `timelineCommit`; `Notebook/components/TimelineStrip.tsx`
+  (2026-09-08, w32-time Task 9, ruling R115/R134 item 3, spec-during).**
+  `timelineCommit(windows, laneIndex, candidate)` replaces one selected
+  window's `span` with the dragged `range` — the same object a lap click
+  mints (R115) — regardless of what kind of span it replaces; converting a
+  `"lap"` window's span to `"range"` changes its visible label for free
+  (`state/selection.ts`'s `describeWindow` already switches on `span.kind`,
+  so no separate "trimmed" flag is needed — R134 item 3's "the label must
+  change visibly"). `TimelineStrip.tsx` renders `stripLanesFor`'s lanes at
+  the top of the worksheet, drags a handle locally frame-by-frame (no
+  dispatch, no refetch) and calls `timelineCommit` — dispatched via
+  `SET_WINDOWS` — once, on pointer-up only (§3.1: a boundary drag re-runs
+  `eval_workbook_v2` per window and re-fetches every bound channel, so it
+  must not run per frame).
 - **`Notebook/model/viewportWindows.ts`'s `cursorTimeInWindow` + `cursorBus.ts`/`ChartCell.tsx`
   wiring: the worksheet cursor is window-relative (2026-09-08, w32-time Task
   6, ruling R131 Q2, spec-during).** `cursorTimeInWindow(offsetUs, window):
