@@ -5121,3 +5121,53 @@ better call than what R119 specified.
 zero width gets a spectrum and statistics computed from a single sample,
 presented identically to a real result — with no error anywhere to explain
 it.
+
+## 2026-09-08 — R121: a window that fails to resolve fails only that window; the wire shape must be able to say so
+
+**Finding** (review of S1 Task 4, Critical). C1 §6.1 — text I wrote — says a
+`range` that fails to resolve "fails only that window", siblings still
+evaluate, §D's empty-slot-with-message applies. `eval_workbook_v2` does the
+opposite: every per-window error goes through `?` inside
+`.map().collect::<Result<_, _>>()`, short-circuiting the **whole call**. With
+three windows selected, a single dragged-together range blanks all three.
+The reviewer also notes the return type
+`Result<Vec<Vec<CellOutput>>, IpcError>` **cannot represent** "window 2
+failed, 1 and 3 succeeded" — there is no per-window error slot on the wire,
+so this was not something the implementer could have inferred. Correct call
+to stop and surface it.
+
+**Ruling — option (a): the wire shape changes.** Blanking every chart
+because one selected window is degenerate is the wrong product behaviour,
+and it contradicts both decision 61 (a window's own views empty) and
+section D (a failure is shown in place, with its message and a Fix button).
+Two windows of good data must not disappear because a third is bad.
+
+`eval_workbook_v2` returns a per-window result: each entry is either that
+window's `Vec<CellOutput>` or that window's `IpcError`. The split is by
+**attribution**:
+- **Per-window** (an entry's error, siblings unaffected): unresolvable
+  `session_id`, unknown lap number, and R119/R120's `no_overlap` and
+  `invalid_range_order`. Everything that is a property of *one* window.
+- **Call-level** (`Err`, nothing evaluates): the workbook id is unknown or
+  the workbook cannot be parsed. Properties of the call itself, where no
+  window has a meaningful answer.
+
+C1 §6.1 keeps its sentence — it was right. C3 §3.4's return and error
+paragraphs are amended to match, including the note that its existing list
+("unresolvable `session_id`", "unknown lap number") was drafted before
+R119/R120 and never reconciled. A test pins the model: three windows, the
+middle one degenerate, first and third still returning their outputs.
+
+**Also accepted (Important, same review).** The lap-to-lap test cannot
+distinguish a correct per-window loop from one that always evaluates
+`windows[0]`: `CellDefResult.value` is a `HostChannelRef { length, has_t }`,
+which carries no scalar, so both windows report `length: 1` either way and
+`out[1]` is never inspected. A comparison test whose two sides cannot
+disagree proves nothing. The test must assert at a level that can
+distinguish them — reaching `eval_cells`/`Value::Scalar` directly, or
+arranging windows whose *lengths* differ — and must inspect `out[1]`.
+
+**Cost if wrong.** Left as-is, the first user to drag a boundary cursor
+together loses every chart for every selected window at once, with one
+error explaining none of it — and the wire shape would have to change
+later anyway, after the TypeScript half was built against it.
