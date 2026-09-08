@@ -913,6 +913,7 @@ interface CellDefResult {
   name: string;
   label: string | null;
   value: HostChannelRef | null;   // added post-sign (2026-09-04, lead ruling R22): the light wire marker { length: number /* u32 */, has_t: boolean } — the full {length, t, v} HostChannel stays in-process (core); sample bytes cross via the binary command assigned to L5 in the host-channel byte-path note below §3.4
+  sample_rate_hz: number | null;  // added post-sign (2026-09-08, lead ruling R144, amended R152) — this definition's sample rate, Hz, on success; null means genuinely not applicable (a scalar reduction has no rate), never "unknown", and is also null on failure. R144 originally asked for a `unit` field alongside this one; ruling R152 drops that half — no unit is tracked anywhere in the engine's math value type today, C2 §3.3 states output units only for named functions (not for `+ - * /` between two differently-unitted channels), and shipping a partial/guessed unit would be worse than shipping none (a reader stops checking a labelled-but-wrong number). A `unit` field is deferred to its own spec-first task.
   error: IpcError | null;      // math_* kind only — a structural problem on this definition (e.g. ReservedName) keeps it out of `defs` entirely and is reported, if anywhere, on the cell's own `error` above (R22)
 }
 interface HostChannelRef { length: number; has_t: boolean; }
