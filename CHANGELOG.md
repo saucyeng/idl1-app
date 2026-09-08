@@ -6,6 +6,14 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 
 ### Added
 
+- **`app/src/routes/pages/Notebook/model/graphLayout.ts`: pure read/write of
+  the C2 §3.7.1 `graph` front-matter key (2026-09-08, w32-maths Task 3, spec
+  exists — C2 §3.7, no spec change needed).** `readGraphLayout`/
+  `writeGraphLayout` operate on `scanCells`'s `frontMatterRange` byte range
+  only — no cell body, no other front-matter key. Reading is strict to
+  §3.7.1's EBNF; anything else under `graph:` reads as `EMPTY_GRAPH_LAYOUT`
+  (malformed ⇒ absent, per contract) and writing then replaces that block
+  wholesale rather than merging into it.
 - **`app/src/state/selection.ts`: pure selection module for C1 §6.1
   time-window selection (2026-09-08, s1-ts Task 7, spec exists — C1 §6.1,
   no spec change needed).** `SelectionWindow`/`Span` (session-relative
