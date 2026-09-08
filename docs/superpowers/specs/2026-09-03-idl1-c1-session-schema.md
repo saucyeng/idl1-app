@@ -722,6 +722,60 @@ write), verified by a round-trip test exploiting the algorithm's own scale-invar
 (`find_crossings` on a decimal-degree gate/track must equal `find_crossings` on the same
 gate/track scaled `×1e7`).
 
+### 6.1 Time windows
+
+*Added post-sign (2026-09-07, S1 selection lane, ruling R117).* A **time
+window** names a contiguous span of one session's recorded samples. It is
+the unit of selection (C3 §3.4, ruling R115) and has exactly one
+representation regardless of how the user picked it:
+
+```
+Window = { session_id: string, span: Span, colour: string }
+Span   = { kind: "session" }
+       | { kind: "lap", lap_number: u32 }        // 1-based, matches LapSummary.lap_number
+       | { kind: "range", t0_us: i64, t1_us: i64 } // session-relative, t0_us < t1_us
+```
+
+`t_us` is microseconds since the session's first sample's hardware
+timestamp — the same axis as `Channel.t_us` (§3.1), `EvalOutput.t_us` and
+`cursor_readout`'s `t_us`. It is *not* epoch time: absolute hardware time
+stays recorded in the session's own stamps (`timestamp_utc_ms`,
+`<source>_t_recorded_us`, §3.2) and a window never restates it. Resolving a
+window is therefore always a read of one session plus arithmetic, and a
+window is meaningless without its `session_id`.
+
+**Resolution.** `{ kind: "session" }` resolves to the session's full recorded
+span. `{ kind: "lap", n }` resolves to `laps[n].start_time_secs …
+end_time_secs` converted to `t_us`; an `n` absent from `laps[]` is
+`invalid_argument` with `detail: { "lap": n }` (unchanged from §6's existing
+rule). `{ kind: "range" }` resolves to itself, clamped to the session's
+recorded span; a range wholly outside it resolves to the empty window.
+
+**Ordering and duplicates.** Windows are an *ordered list*. Two windows over
+the same `session_id` with different spans are legal and are the normal
+case — that is lap-to-lap comparison (R115, ruling R117 item 2); nothing may
+treat a repeated `session_id` as a duplicate to collapse, and uniqueness is
+on the whole window, never on `session_id` alone. Two windows that resolve
+to the same span are also legal; they are not deduplicated, because the
+user may want the same lap in two colours in two roles.
+
+**`colour`** is a chart-token name (`--chart-1` … `--chart-8`), never a hex
+literal — the app resolves it through `Notebook/theme/series.ts`'s
+`seriesColor`, and `tokens.css` stays the only place a chart hue is written
+(decision 84 picks the token in the Data tab; ruling R117 item 6).
+
+**Deletion.** When a window's `session_id` no longer exists (a deleted
+session), the window is dropped — but not silently: the Data tab states
+once that a selected session was deleted (ruling R117 item 5).
+
+Nothing about a window is written to `session.json` or to a workbook. A
+window is UI selection state (ledger R41), lives only in memory, and does
+not survive a restart (decision 48).
+
+`session.json` itself is **unchanged**: `laps[]`, `main_lap_number` and the
+`lap_detector_version` stamp (R83) all keep their current meaning. `Span`'s
+`lap` arm reads them; it does not add to them.
+
 ---
 
 ## 7. Round-trip guarantees
