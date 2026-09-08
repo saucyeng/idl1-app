@@ -5272,3 +5272,470 @@ later. for now, i think calculating the whole session should work. at least
 then we can have a baseline to see if ~30s is enough to get the filters to
 settle." Recorded so the pad is chosen empirically, per filter, and never
 guessed. Do not build it now.
+
+## 2026-09-08 — R124: all eleven scalar aggregates plus `fft` are window-scoped; aggregate over an index range, not a NaN mask
+
+**Question.** The R123 implementer enumerated the reductions and found 12,
+over the ~8 stop-gate: `mean`, `max`, `min`, `rms`, `std`, `sum`, `count`,
+`first`, `last`, `median`, `p` (all through one `one_channel()` helper) plus
+single-spectrum `fft`. It asked whether to do all of them or only R123's
+named subset, and flagged `spectrogram` as ambiguous.
+
+**Ruling.**
+1. **All twelve. Do not split.** The gate was about blast radius, not
+   function count, and the enumeration shows the radius is small: one shared
+   helper, one `fft`-specific path, and the call sites. Shipping a subset is
+   *worse than shipping none* — with `max` window-scoped and `p`
+   session-scoped, `p([ChanA], 95)` over a selected lap silently returns the
+   session's 95th percentile while the `max` beside it returns the lap's.
+   A consistent wrong answer can be reasoned about; an inconsistent one
+   cannot.
+2. **Aggregate over an index range (a subslice), not a NaN-masked copy.**
+   The implementer proposed masking out-of-window samples to NaN so
+   `aggregate::*`'s existing `finite()` skip does the work. Rejected, for
+   two reasons. **NaN already means "no data here"** — real gaps and
+   burst-seam holes (direction-2 decision 60) are NaN, so masking conflates
+   "outside your selection" with "the sensor dropped out", and `count()`
+   then cannot tell them apart, nor can any later data-quality readout.
+   **And it allocates**: a session-length copy per reduction call, per
+   definition, per window. A subslice is a pointer and a length.
+   Resolve the window to an index range once and hand the aggregates that.
+3. **A rate-0 argument is never windowed — accepted as proposed.** A
+   `{col[]}` table-column argument has no time axis; windowing it would be
+   meaningless. Guard on `sample_rate_hz > 0`.
+4. **`spectrogram` stays session-wide.** It does not consume the time axis —
+   it *retains* one (`[t,f]`, C2 §3.6), so by R123 it is not an aggregation.
+   It is also strictly better this way: the STFT is local in time, so frames
+   inside the window are identical either way, while session-wide framing
+   gives the frames at the window's edges their proper context instead of
+   boundary artefacts. Display windows it, per R123's third domain.
+
+**Cost if wrong.** (1) is the expensive one to get wrong: a half-windowed
+reduction set puts two numbers on the same chart computed over different
+spans, with nothing on screen distinguishing them — the failure mode
+section D exists to prevent, arriving through the front door.
+
+## 2026-09-08 — R125: the per-session evaluation cache is a real follow-up, and R123 is what makes it easy
+
+**Finding** (S1 R124 implementer, answering R123's open question). The cost
+of evaluating the full session once per window is not hypothetical for the
+case that matters most: a **per-lap table column** — "max fork travel" as a
+lap-by-lap results table — evaluates the same definition, including its
+whole filter/estimator chain, once per lap row. That is
+O(N laps × session length) where O(session length) would do. For a handful
+of ad-hoc chart windows the cost is nothing; for a 20-lap session with an
+estimator-backed channel it is the difference between instant and not.
+
+**Ruling — a follow-up task, not part of S1, and here is its design.**
+R123 is what makes this straightforward: because the window scopes
+*aggregation and display only*, the expensive half — the session-wide
+computed series — **does not depend on the window at all**. So it is
+cacheable by `(session_id, definition, workbook revision)` with no window
+in the key, and only the cheap subslice-and-fold varies per window. Had
+R122's slicing survived, every window would have produced a different
+computation and there would be nothing to share.
+
+Not built now: S1's goal is that selection is *correct*, and the lane is
+already thirteen tasks plus reworks. Filed with its trigger named — the
+lap-time table (idl0 §21.1, and direction-2's lap-by-lap displays) is the
+feature that makes it necessary, so the cache lands with or before that
+work, not on general principle.
+
+**Cost if wrong.** Deferring too long means the first real lap table on a
+long session is slow, and the obvious wrong fix — reintroducing per-window
+computation to "avoid recomputing the session" — is exactly R123's
+filter-transient bug.
+
+## 2026-09-08 — R126: a resolved window is half-open [t0, t1); the session span's end must be one microsecond past the last sample
+
+**Finding** (review of R124, Important). A whole-session window **drops the
+session's final sample**. I verified it by hand:
+`full_session_span_us` (`tauri/src/session_source.rs:128`) takes the end as
+`max(c.t_us.last())` — the last sample's *own* timestamp — and
+`window_index_range` (`core/src/math/eval.rs`) computes
+`end = ceil(end_sec × rate)`. For samples at `i/rate`, the last index is
+`len-1` at `t = (len-1)/rate`, so `end = len-1` and the range is
+`[0, len-1)`. The last sample is excluded.
+
+This is the *common* case: it is what a user gets whenever a session is
+selected without a lap. Every windowed reduction — `max`, `mean`, `sum`,
+`count`, `last` — silently omits the final sample, and the R124 regression
+that was meant to catch exactly this ("a session-span window matches the
+unwindowed result") passed only because its fixture used a fabricated
+`(0.0, 1.0)` duration-shaped bound instead of the production-accurate
+`(0.0, 0.9)`. A test that dodges the real shape gives false confidence.
+
+**Ruling.**
+1. **A resolved window is half-open `[t0, t1)` everywhere.** State it once,
+   in C1 §6.1, and hold every span kind to it.
+2. **`SpanDto::Session` resolves to `[first_us, last_us + 1)`.** `t_us` is
+   integer microseconds, so `last_us + 1` is the exact, minimal bound that
+   contains the final sample — no sample can fall in `(last_us, last_us+1)`.
+   This is not a fudge factor; it is the half-open form of the closed
+   interval `[first, last]` on an integer axis.
+3. **Lap spans are already correct and change nothing.** Lap bounds are gate
+   crossings — a lap's `end_time_secs` is where the next lap begins — so
+   half-open is the right semantic and the boundary sample belongs to the
+   next lap. I checked before ruling; do not "fix" laps.
+4. **R119's range clamping clamps to the same session end** (`last_us + 1`),
+   or a range covering the whole session drops the last sample too.
+5. The R124 regression test uses the production-accurate bound, so it either
+   passes for real or catches the drop.
+
+**On the Minor** (float `ceil(bound × rate)` vs the per-sample `i/rate`
+comparison — algebraically equal, not bit-identical): accepted as a
+documented limitation, with one test at a realistic extreme (30 min at
+1 kHz ≈ 1.8 M samples) showing the two agree there. Exactness is not
+reachable while a float rate mediates an integer-µs axis; a future move to
+index-from-`t_us` directly would remove it.
+
+**Cost if wrong.** One missing sample rarely changes a mean, but it changes
+`last()`, `count()`, and any `max` whose peak is the final sample — and it
+makes the windowed and unwindowed answers disagree, which is precisely the
+invariant R124 was written to preserve.
+
+## 2026-09-08 — R127: one host variable per definition, carrying a window dimension; windows separated by a break
+
+**Finding** (S1 Task 10, correctly stopped). The sandbox host-variable model
+cannot express *n* series for one definition. There is one `SandboxHost`
+per notebook, and `setChannelHostVar(channelId, …)` /
+`setSpectrumHostVar(spectrumKey(channelId, fftParams), …)` are keyed by a
+bare, window-unqualified name. Two windows over the same channel — R117
+item 2's *normal* case, lap-to-lap — collide on one name and the second
+dispatch silently overwrites the first.
+
+**Ruling.**
+1. **Host-variable names stay keyed by the definition alone.** No window
+   qualification in the name. A cell author writes `channel("front_travel")`;
+   the name is user-facing vocabulary and must not carry selection state.
+   Qualifying it would make cell code depend on which windows happen to be
+   selected — a workbook that stops working when you click a second lap.
+2. **The payload gains a window dimension.** The columnar binding becomes
+   `{ length, t, v, w }` where `w` is the window index per sample, plus a
+   `windows` descriptor array mapping index → `{ sessionId, span, colour,
+   label }`. Colour comes from the descriptor, which is how decision 84's
+   per-session colour reaches a chart.
+3. **A single window is byte-identical to today.** `w` is all zeros and
+   nothing else changes, so every existing cell and every existing test
+   keeps its current behaviour. Multi-window is strictly additive.
+4. **Windows are separated by a break in the flat arrays** — an undefined /
+   NaN entry between one window's samples and the next. This is the part
+   that matters: Observable Plot breaks a line at NaN, so a cell written
+   before multi-window existed, which ignores `w`, renders *n separate
+   segments* in one colour rather than one line bogusly joining lap 2's end
+   to lap 3's start. The old cell degrades to "correct geometry, no colour
+   distinction" instead of drawing a lie. New cells add `stroke: "w"` (or
+   `z: "w"`) to colour by window.
+5. **Spectra are per window too.** A single-spectrum `fft` is a per-window
+   aggregation (R124), so `spectrumKey` gains the window index: *n* windows
+   yield *n* spectra, not one overwritten one.
+
+**Accepted from the same report:** `sessionSpanDriver.runSessionSpan` taking
+a single `Window | null` and being called once per window; and leaving
+`fftRequest.ts` unmigrated, since its only in-lane caller was blocked —
+retyping it in isolation would have broken an unedited file for no gain.
+Both are the right calls.
+
+**Cost if wrong.** Without (4), the first lap-to-lap comparison in an
+existing workbook draws a single line vaulting from the end of one lap to
+the start of another — a shape that looks like data and is an artefact of
+concatenation. Without (1), workbooks would encode selection state in
+variable names and break whenever the selection changed.
+
+## 2026-09-08 — R128: half-open bounds need half-open overlap operators, and "no window" must not share a value with "empty window"
+
+**Finding.** The R126 implementer flagged a residual and judged it "benign,
+not a crash". It is not benign — it is the worst shape in this lane.
+
+With R126 making the session span `[first_us, last_us + 1)`, the overlap
+test at `tauri/src/session_source.rs:271` is still written for closed
+bounds: `t1_us < session_start_us || t0_us > session_end_us`. A range
+beginning exactly at `session_end_us` therefore has `t0 == end`, fails
+`t0 > end`, is judged *overlapping*, and clamps to a zero-width `(X, X)`
+span. That span then reaches `window_index_range`, whose
+`if !(start_sec < end_sec) { return (0, len) }` branch hands back **the
+whole channel**.
+
+So a range entirely past the end of the session returns the **session-wide**
+aggregate. Not a panic — a confidently wrong number, which by this
+project's standards is worse. It is also the same defect R119 was written
+to kill, resurfacing through a different door.
+
+**Ruling.**
+1. **The overlap test becomes half-open:** no overlap iff
+   `t1_us <= session_start_us || t0_us >= session_end_us`. R126 changed the
+   bounds' meaning; every comparison against them must change with it.
+   Operators are part of the semantics, not incidental.
+2. **`window_index_range` must never turn a resolved window into the whole
+   channel.** Only the exact `(0.0, 0.0)` sentinel means "no window
+   selected, gate off". Any *other* `start >= end` is an empty window and
+   yields an empty range `(0, 0)`, never `(0, len)`. Defence in depth: even
+   if a degenerate span slips past resolution again, the answer is "nothing
+   selected" and not "everything".
+3. Long term the sentinel is the real flaw — "no window" and "a window from
+   0.0 to 0.0" are the same value, exactly the conflation that produced
+   this. Filed as a follow-up: carry the window as an `Option`, so the two
+   states cannot be spelled the same way. Not now; (1) and (2) close the
+   hole.
+
+**On severity judgement.** Flagging it was right. Classifying "returns the
+wrong number silently" as benign because it does not crash is the
+misjudgement — in this app a panic is recoverable and a plausible wrong
+number is not (section D). Report such a residual as a defect, not a note.
+
+**Cost if wrong.** A user drags a boundary cursor past the end of a session
+and every statistic on screen quietly reports the whole session instead of
+the empty selection they asked for.
+
+## 2026-09-08 — R129: spectra carry the window dimension in the payload (amends R127 item 5); and an interim shim may not silently widen a window
+
+**Two findings from the R127 implementation.**
+
+### 1. The spectrum addressing gap — R127 item 5 was wrong
+
+R127 item 5 said `spectrumKey` gains the window index, so *n* windows yield
+*n* spectra. The implementer built that and then correctly flagged the
+consequence: **C2 §5.3's `spectrum_call` grammar has no window token**, so
+sandboxed cell code has no way to *address* the extra keys. Host-side
+naming is ready; the cell-side addressing does not exist.
+
+**Ruling — amend R127 item 5. Spectra work exactly like channels.** One
+host variable per (definition, fft params), whose payload carries the
+window dimension — `{ length, f, m, w }` plus the same `windows` descriptor,
+with the same break between windows. No window index in `spectrumKey`, and
+**no C2 §5.3 grammar change**. The addressing gap disappears because there
+is nothing extra to address: a cell writes `spectrum("x")` and groups by
+`w`, precisely as it does for `channel("x")`.
+
+This is what R127 item 1 already required for channels — names must not
+encode selection state — and I failed to carry the same reasoning to
+spectra one item later. Symmetry here is not tidiness: two different
+addressing models for two host-variable kinds would need two mental models
+in cell code, and the grammar change avoided is a contract change avoided.
+
+The implementer's own instinct was already right: it made the single-window
+`spectrumKey` byte-identical to the pre-existing string rather than
+appending `_0`. Keep that property; the key simply never varies by window.
+
+### 2. `lapFromWindow` silently widens a range window to the whole session
+
+`fftDriver.ts`'s interim shim reduces a `Window` to a bare lap number:
+`span.kind === "lap" ? lap_number : null`. `null` means "no lap — whole
+session" to the old `fetch_fft`. So a **`range` window silently computes its
+FFT over the entire session**, and a `session` window happens to be right by
+luck. A spectrum of the whole run presented as the spectrum of a dragged
+selection is the silent-wrong-number failure this lane has now produced four
+times through four different doors.
+
+**Ruling.** An interim shim may narrow scope, never widen it. Until the
+driver migrates to `fetchFftV2` (Task 11), a `range` span must be an
+explicit typed failure — a cell error the user can see — not a `null` that
+means "everything". Failing loudly costs nothing here precisely because the
+shim is temporary.
+
+**Cost if wrong.** (2) ships a spectrum computed from thirty minutes of data
+labelled as a ten-second selection, with nothing on screen distinguishing
+it from the real thing.
+
+## 2026-09-08 — R130: validate lap bounds at resolution, exactly as ranges are validated
+
+**Finding** (review of R126/R128, on my re-grade request). A `laps[]` entry
+with `start_time_secs == end_time_secs == 0.0` reaches `window_index_range`
+as the exact `(0.0, 0.0)` value and is indistinguishable from the "no window
+selected" sentinel — so an empty lap would return **the whole channel**.
+`LapJson` derives plain `Deserialize` on `f64` with no validator and no
+ordering check; `resolve_window`'s `Lap` arm passes `session.json`'s bounds
+through verbatim.
+
+The reviewer then proved the useful half: **the shipped lap detector cannot
+produce it.** `find_crossings` requires `u > 0.0`, so a crossing can never
+land on a window's leading fix; `detect_circuit`'s first lap therefore ends
+strictly after it starts; `detect_point_to_point` has an explicit `t > ls`
+guard that discards a zero-duration lap before construction; and
+`fill_time_secs` cannot manufacture or reorder such a pair. It also
+confirmed that every *other* degenerate or reversed lap is already safe —
+R128 routes those to an empty range. Only exact `(0.0, 0.0)` is dangerous,
+and only from a corrupted or hand-edited `session.json`.
+
+**Ruling — close it now, cheaply, at the trust boundary.** `resolve_window`'s
+`Lap` arm validates `start_time_secs < end_time_secs` and returns
+`InvalidArgument` otherwise, mirroring R120's range check exactly. Three
+lines and a test. C1 treats `session.json` as data to be validated, not
+trusted, and a lap arriving from a synced peer or an older engine version is
+exactly the case that boundary exists for.
+
+This does **not** replace the filed `Option` follow-up (R128 item 3) — the
+sentinel sharing a value with a real window is still the underlying flaw,
+and it will find a fourth door. But validation closes this door today
+without a refactor, and the two are independent.
+
+**On the severity question the reviewer left to me:** it stays below
+Important *because* the detector cannot produce it, and the fix is small
+enough that grading it further is pointless — it is being fixed either way.
+Tracing all three detector paths to establish that was the right work; a
+reviewer that had simply said "corrupted input, out of scope" would have
+left me guessing.
+
+**Also accepted (Minor, same review):** the rebuilt R124 regression's
+comment claims all seven aggregates catch the dropped last sample, but the
+fixture's final value is `0.0`, so `sum` is coincidentally identical either
+way. Six of seven genuinely catch it. Make the fixture's last sample nonzero
+so the comment is true, rather than softening the comment.
+
+**Cost if wrong.** A hand-repaired or peer-synced `session.json` with one
+malformed lap silently turns that lap's every statistic into the whole
+session's.
+
+## 2026-09-08 — R131: per-window workbook state mirrors the wire union; the chart viewport is window-relative
+
+**Two questions from S1 Task 11, both correctly stopped on.**
+
+### Q1 — the shape of per-window eval state
+
+`workbookState.ts` holds flat `outputs: Map<cellId, CellOutput>` and a
+single `evalError`. Task 10's driver now dispatches per-window
+`evalWindowResult`/`evalWindowError`, which the reducer has no case for — so
+those actions are **silently dropped today** and no eval output reaches
+state at all. (That is a live defect in the merged branch, not just a gap.)
+
+**Ruling.** State mirrors the wire union exactly:
+
+    windows: Map<windowKey, WindowEvalState>
+    WindowEvalState = { kind: "ok";    outputs: Map<cellId, CellOutput> }
+                    | { kind: "error"; error: IpcError }
+
+Mirroring `WindowEval` is the point: R121's attribution model — this window
+failed, those succeeded — survives into state with no impedance mismatch,
+and a consumer must narrow before reading outputs, the same guarantee the
+IPC layer gives. A flat `outputs` map plus a parallel error map would let a
+caller read outputs for a window that failed.
+
+**Order is not stored here.** Selection is an ordered list and
+`AppState.selection` is its single source of truth; this map is a lookup.
+Rendering iterates the selection in order and looks up each window. Storing
+order twice is how the two drift.
+
+**The reducer prunes.** On a selection change, entries whose `windowKey` is
+no longer selected are dropped — decision 61: nothing shows data outside the
+current selection, and a stale entry is exactly that.
+
+### Q2 — one viewport, N windows of different length
+
+`ChartCell` carries one gesture-driven `viewport`/`tiles` pair, and N
+windows whose spans differ (two laps of different duration). Nothing said
+how one pan/zoom maps onto N fetch spans.
+
+**Ruling — the viewport is window-relative.** It is an offset range
+`[a, b)` measured from **each window's own start**, mapped per window into
+that window's absolute session time:
+`[start + a, min(start + b, end))`. This is direction-2 decision 55 —
+overlaid laps align by lap-relative time (or lap distance in distance mode)
+— and it is what overlay comparison means in this domain: lap 2 and lap 3
+are compared from their own starts, not from wall-clock.
+
+Where a window is shorter than the viewport, it simply has no data past its
+end. That is correct and legible: the shorter lap's trace stops where the
+lap stopped. It must render as absence, never as a value held flat to the
+right-hand edge.
+
+For a single window this is a pure re-basing and behaviour is unchanged,
+which keeps R127 item 3's "one window is byte-identical to today" true at
+this layer too.
+
+### Scope, and the interim rule
+
+`channelBindDriver.ts` becomes its own task (11b), because per-window
+fetching plus viewport re-basing is a task's worth of work and belongs in
+its own reviewable commit. **Until it lands, the channel path must not
+misrepresent a multi-window selection:** with one window it behaves exactly
+as today (`w` all zeros); with more than one it raises a typed cell error
+rather than rendering window 0's data as though it were the selection.
+R129's rule — an interim path may narrow scope, never widen or
+misrepresent it — applies unchanged.
+
+**Cost if wrong.** Q1 left as-is means evaluation output never reaches the
+page at all. Q2 guessed as *absolute* time would overlay two laps by
+wall-clock, drawing lap 3 far to the right of lap 2 instead of on top of
+it — the comparison the feature exists for, silently inverted.
+
+## 2026-09-08 — R132: a non-chart cell showing one window of several must say so
+
+**Finding** (S1 Task 11a, self-flagged). Charts now overlay every selected
+window. But math cells, table cells, prose `${…}` spans and completions
+still read a single "primary" window (`windows[0]`), because a multi-window
+layout for non-chart cell kinds is not designed. The implementer was right
+that R121's wording is about chart series, and right to flag the gap rather
+than invent a layout.
+
+**Ruling — the reading stays, the silence does not.** With more than one
+window selected, a non-chart cell that renders the primary window's value
+must **name the window it is showing**. Not a bare number.
+
+A prose sentence reading "peak fork travel was 112 mm" with two laps
+selected is a wrong statement — it is lap 2's peak presented as the
+selection's. Marked as lap 2's, it is a true statement and a smaller
+feature. That is the whole difference, and it costs a label.
+
+`jsCellNote` already carries `windowCount` after the R127 work, so the
+mechanism exists; use it rather than adding a second channel. With exactly
+one window, nothing changes — no marker, byte-identical to today (R127
+item 3).
+
+Designing what a math or table cell *should* show for N windows — a column
+per window, a per-window row, something else — is deferred to the maths
+lane, which is where per-lap columns live anyway (R125's lap-table trigger).
+
+**Accepted without change, from the same report:**
+- `NotebookSession`'s rebuild-replay path widened honestly to the 6-arg
+  form (single window, `w` all zeros). Not named in R131, but the same
+  "compiling and honest" rule applies and was applied. Correct.
+- The FFT cell-shape check resolving against the primary window only: a
+  channel present in a *non-primary* window's session would be missed.
+  Filed as a follow-up, not blocking — it needs two windows over
+  **different sessions with different channel sets**, where the normal case
+  (lap-to-lap within one session) is unaffected.
+
+**Cost if wrong.** Unmarked, every scalar in a notebook silently becomes
+"whichever window happens to be first" the moment a second lap is selected —
+and the number is *plausible*, so nothing prompts the reader to doubt it.
+
+## 2026-09-08 — R133: an inner identity cache is a second staleness gate; fixing the deps does not fix it
+
+**Finding** (review of the S1 pre-merge fix batch, Critical). The
+readiness-key fix made both IPC-driving effects re-run when any selected
+window's `SessionDetail` resolves — verified correct, order-independent,
+and combined with `windowsKeyValue` so two selections cannot collide. The
+**FFT effect is genuinely fixed**, because its identity is per-window
+(`perWindowIdentity` keyed by `wKey`).
+
+The **channel-bind effect is not.** Immediately after the deps let it run,
+a per-cell gate compares `bindingIdentity(binding)` — computed from the
+**primary window's binding only**, cached in `boundIdentityRef` by `cellId`
+— and `continue`s when unchanged. A sibling window resolving does not
+change the primary binding, so the loop skips the cell and
+`runChannelBind` is never called with the updated windows. The
+non-primary window's channel data is still never fetched.
+
+**Ruling.** The channel-bind effect's identity becomes **per (cell,
+window)**, mirroring the FFT effect that already works. Two effects
+answering the same question two different ways is what let one of them be
+fixed and the other look fixed.
+
+**The general rule, which is why this is a ruling and not a bug report:**
+an effect's dependency array and an inner memo/identity cache are *two*
+staleness gates in series, and a value that is absent from either one is
+invisible to the effect. Operating brief §4 says staleness belongs in a
+pure tested module by a monotonic sequence; a hand-rolled identity cache
+inside an effect body is a second, untested implementation of that same
+concern. When fixing a stale-dependency defect, check every gate between
+the dependency and the work — the deps are only the outermost.
+
+**Also:** the CHANGELOG bullet claims the fix covers "channel data or
+spectrum". It covers spectrum only. Correct it when the code is correct,
+not before — a changelog that overstates a fix is how a known defect gets
+re-reported as a regression months later.
+
+**Cost if wrong.** The lane would have merged with its headline feature —
+two laps overlaid on a time chart — silently broken for the ordinary case
+where the primary window resolves first, while the FFT path worked and
+made it look wired.
