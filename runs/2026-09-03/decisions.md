@@ -5216,3 +5216,48 @@ evaluation that returns identical numbers for every window except in
 variance functions — and the first person to trust a per-lap statistic gets
 a session-wide answer. Found after the TypeScript half was built on it, the
 fix would reach back through every driver and chart binding.
+
+## 2026-09-08 — R123: the window is the domain of aggregation and display, not of computation (supersedes R122)
+
+**Isaac, 2026-09-08:** "would evaluating by lap cause an issue with filters
+not settling for the first ~10 seconds of the lap? i assume the calculation
+windowing and the viewport windowing can be independent?"
+
+Yes to both, and R122 is withdrawn. Slicing the `ChannelLookup` to the
+window would start every IIR filter from a cold state at the lap boundary,
+so the first samples of every lap would carry the filter's startup
+transient — a settling artefact presented as data, at exactly the moment a
+rider is looking at corner entry. The same argument is worse for stateful
+operations: integration, cumulative distance and the iEKF need history from
+session start, and a per-lap slice would silently restart them at zero.
+
+**Ruling.**
+1. **Computation domain = the whole session.** Definitions evaluate over
+   the session's full recorded span. A `[t]` series keeps session length and
+   its existing axis origin — which also removes the new-origin churn R122
+   would have introduced into C2 §3.6's alignment rules.
+2. **Aggregation domain = the window.** Anything that consumes the time
+   axis aggregates over the selected window only: `max`, `min`, `mean`,
+   `rms`, `sum`, the `variance_*` family, and single-spectrum `fft`. A
+   per-lap statistic is the lap's statistic; a lap's spectrum is computed
+   from the lap's samples.
+3. **Display domain = the window, independently.** The viewport is a
+   chart-side concern (decision 52's master timeline and boundary cursors)
+   and never changes what was computed.
+
+**So the real gap is narrower than R122 claimed.** The existing design's
+instinct was right: `variance_*` reads `main_lap_bounds` while the series
+stays session-length. The defect is only that window-awareness stopped
+there — every *other* reduction ignores the window, so `peak = max([ChanA])`
+over a selected lap still reports the session's peak. The fix is to extend
+window scoping to every reduction, **not** to slice the input.
+`load_window_context`'s `MathLapContext` is already the right carrier.
+
+**Open, for the implementing task to answer:** evaluating the full session
+once per window repeats identical session-wide work for N windows over the
+same session. Report whether a per-session evaluation cache is needed now
+or is a later optimisation; do not build one speculatively.
+
+**Cost if wrong.** R122's slicing would have put a filter transient at the
+start of every lap and reset every integrator per lap — wrong numbers that
+look like real signal, in the derived channels the app exists to compute.
