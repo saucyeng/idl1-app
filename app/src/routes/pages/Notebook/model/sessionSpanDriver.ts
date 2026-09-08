@@ -1,16 +1,30 @@
 /**
- * Pure, unit-tested driver for resolving `AppState.selection.sessionId`
+ * Pure, unit-tested driver for resolving one selected {@link SelectedWindow}
  * into the `SessionDetail` and recorded session span (lead pre-ruling
  * 2026-09-05 #1, `runs/2026-09-05/lanes/l6/brief-task13b.md`) that
  * `model/jsCellBinding.ts`'s `bindingFor` needs. Follows the same shape as
  * `openEvalDriver.ts` (the tightened IPC-effects rule,
  * `runs/2026-09-05/lanes/l6/review-STANDING.md`): `Notebook/index.tsx`'s
- * effect depends only on `sessionId` and calls this driver, which owns
- * every branch and dispatches typed actions instead of the effect body
- * deciding anything itself.
+ * effect depends only on data (a stable key derived from the window, never
+ * the object identity) and calls this driver, which owns every branch and
+ * dispatches typed actions instead of the effect body deciding anything
+ * itself.
+ *
+ * Migrated from `sessionId: string | null` to `window: SelectedWindow |
+ * null` (C1 §6.1, ruling R111/R115/R117) — this driver resolves one
+ * window's `session_id` and reads `Span`/`colour` no further, so it is
+ * **per-window**: a caller with several selected windows calls
+ * `runSessionSpan` once per window (its own `isStale`/dispatch pair), not
+ * once for "the selection". Only `session_id` is consulted here; the
+ * window's `span`/`colour` are unrelated to resolving `SessionDetail` or
+ * the session's *recorded* span (the whole-session duration used to size
+ * `bindingForTime`'s `initialSpan`, unaffected by which lap/range is
+ * selected — R123: computation and the initial viewport are session-wide,
+ * only aggregation is window-scoped, and this driver produces neither).
  */
 import type { DecodedTile } from "../../../../ipc/tiles";
 import type { SessionDetail } from "../../../../ipc/catalog";
+import type { Window as SelectedWindow } from "../../../../ipc/workbook";
 import { MAX_TIER } from "./tiers";
 import { spanFromCoarsestTile } from "./sessionSpan";
 
@@ -40,26 +54,27 @@ export type SessionSpanAction =
 export type SessionSpanDispatch = (action: SessionSpanAction) => void;
 
 /**
- * Resolves `sessionId`'s `SessionDetail` and recorded span, once.
- * `sessionId === null` (no session selected) dispatches both as `null`
- * immediately, matching `bindingFor`'s own "nothing to bind against"
- * treatment. Never throws — every rejection dispatches `null` instead, so
- * a caller never needs its own top-level `.catch`.
+ * Resolves `window`'s `SessionDetail` and recorded span, once. `window ===
+ * null` (no window selected) dispatches both as `null` immediately,
+ * matching `bindingFor`'s own "nothing to bind against" treatment. Never
+ * throws — every rejection dispatches `null` instead, so a caller never
+ * needs its own top-level `.catch`.
  *
  * @param isStale Checked after every `await`, same contract as
  *   `openEvalDriver.ts`'s `runOpenAndEval`.
  */
 export async function runSessionSpan(
   deps: SessionSpanDeps,
-  sessionId: string | null,
+  window: SelectedWindow | null,
   dispatch: SessionSpanDispatch,
   isStale: () => boolean
 ): Promise<void> {
-  if (sessionId === null) {
+  if (window === null) {
     dispatch({ type: "sessionDetail", detail: null });
     dispatch({ type: "sessionSpan", spanUs: null });
     return;
   }
+  const sessionId = window.session_id;
 
   let detail: SessionDetail;
   try {

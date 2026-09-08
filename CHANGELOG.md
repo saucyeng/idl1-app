@@ -39,6 +39,39 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
   `shell/TopBar.tsx` and `routes/pages/Notebook/**` until Tasks 10–13 land**
   — those files still read the deleted `Selection` shape and call the
   deleted wrappers; out of this task's scope by dispatch.
+- **`Notebook/model/openEvalDriver.ts` and `sessionSpanDriver.ts` moved onto
+  `windows`/a single `Window` (2026-09-08, s1-ts Task 10, C1 §6.1, ruling
+  R117/R121, no spec change needed).** `runOpenAndEval`/`runEval` take
+  `windows: Window[]` and call `evalWorkbookV2`; per ruling R121 a per-window
+  failure must not blank the other windows, so each `windows` entry now
+  dispatches its own `evalWindowResult`/`evalWindowError` (a new
+  `OpenEvalWindowAction`, carrying the originating `Window`) instead of one
+  flat `evalResult`/`evalError` — the old pair (`workbookState.ts`'s
+  `WorkbookAction`) had no per-window slot and is left untouched for the
+  workbook-wide `handleOpened`/`markdownReady`/`markdownError` actions,
+  which are unaffected by windows. `windows: []` still dispatches
+  `evalWorkbookV2`'s one "nothing selected" result, paired with `window:
+  null`. `sessionSpanDriver.ts`'s `runSessionSpan` takes a single `Window |
+  null` (was `sessionId: string | null`) — per-window: a caller with
+  several selected windows calls it once per window, its own
+  `isStale`/dispatch pair.
+- **`fftRequest.ts`/`jsCellBinding.ts`/`jsCellNote.ts` intentionally left
+  unmigrated this task (2026-09-08, s1-ts Task 10) — reported, not
+  guessed.** The sandbox host-variable model (`SandboxHost.setChannelHostVar`/
+  `setSpectrumHostVar`, one whole-notebook `SandboxHost`/iframe) keys every
+  bound series by a bare `channelId` or `spectrumKey(channelId, fftParams)`
+  — neither qualified by session or window. Two selected windows over the
+  same channel (R117 item 2: the *normal* case, e.g. lap-to-lap comparison)
+  would silently collide on the same host-variable name, with the
+  last-dispatched window's data overwriting the other's — a wrong-numbers
+  bug (section D), not a missing feature. Resolving it needs either a
+  windowKey-qualified host-variable naming scheme or a `SandboxHost` per
+  window, both C3/sandbox-protocol-shaped decisions reserved for the lead.
+  `fftRequest.ts` was left with its old `lap: number | null` (not `window:
+  Window`) because its only caller in this lane, `jsCellBinding.ts`'s
+  `bindingForFft`, is itself blocked on the same question — retyping it now
+  would only inject a fresh compile break into that unedited file with no
+  caller in scope to benefit from it.
 
 ### Fixed
 
