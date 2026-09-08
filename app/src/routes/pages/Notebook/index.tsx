@@ -81,6 +81,7 @@ import { TileCache } from "./model/tileCache";
 import { timelineCommit } from "./model/timelineStrip";
 import { resolvedWindowKeysFor, toWireWindow, windowSpanFor } from "./model/viewportWindows";
 import { chooseWorkbookEntry, type WorkbookEntry } from "./model/workbookEntry";
+import { resolveXMode, X_MODE_OPTIONS, type XMode } from "./model/xMode";
 import { initialWorkbookState, NO_WINDOW_KEY, workbookReducer } from "./model/workbookState";
 
 /** `true` when `value` has the shape of a typed `IpcError` (C3 §2). Local
@@ -544,6 +545,22 @@ export default function NotebookPage() {
   function setInputMapPreset(preset: InputMapPreset): void {
     setInputMapPresetState(preset);
     writeNotebookPrefs({ ...readNotebookPrefs(), input_map_preset_id: preset.id });
+  }
+
+  // Decision 54's worksheet-level X mode (Task 13) -- initialized once from
+  // this machine's persisted choice, `resolveXMode`'d by `readNotebookPrefs`
+  // itself so a stored value this build can't honour never reaches state.
+  const [xMode, setXModeState] = useState<XMode>(() => readNotebookPrefs().x_mode);
+  /** Switches the worksheet's X mode and persists it -- routes through
+   *  `resolveXMode` again here (not only at read time) so a caller passing
+   *  an unselectable mode (`"distance"` while R136 keeps it disabled) can
+   *  never put the worksheet into a state `X_MODE_OPTIONS` itself says is
+   *  unavailable; `readNotebookPrefs()`/`{...}` preserves the other fields,
+   *  same as `setInputMapPreset` above. */
+  function setXMode(mode: XMode): void {
+    const resolved = resolveXMode(mode);
+    setXModeState(resolved);
+    writeNotebookPrefs({ ...readNotebookPrefs(), x_mode: resolved });
   }
 
   // Playback's playing window (decision 57/plan Task 10, R134 item 6): the
@@ -2134,6 +2151,30 @@ export default function NotebookPage() {
           {INPUT_MAP_PRESETS.map((preset) => (
             <option key={preset.id} value={preset.id}>
               {preset.label}
+            </option>
+          ))}
+        </select>
+      </label>
+      {/* Decision 54's worksheet-level X mode (Task 13). Distance is listed
+          and disabled with its reason as a `title` tooltip (R136) -- never
+          silently omitted, never silently falling back to time without
+          saying why. Changing the (only ever selectable) time option is a
+          no-op today; the field exists so a future core distance axis has
+          somewhere to read from without another prefs-shape change. */}
+      <label className="flex items-center gap-2 px-2 py-1 font-mono text-label-2 text-fg-dim">
+        X axis
+        <select
+          value={xMode}
+          onChange={(event) => {
+            const next = event.target.value;
+            if (next === "time" || next === "distance") setXMode(next);
+          }}
+          className="rounded-[var(--radius-structural)] border border-rule bg-transparent px-1 py-0.5 text-fg"
+        >
+          {X_MODE_OPTIONS.map((option) => (
+            <option key={option.value} value={option.value} disabled={option.disabledReason !== undefined} title={option.disabledReason}>
+              {option.label}
+              {option.disabledReason !== undefined ? " (unavailable)" : ""}
             </option>
           ))}
         </select>

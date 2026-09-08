@@ -50,6 +50,27 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 
 ### Added
 
+- **`Notebook/model/xMode.ts`: decision 54's worksheet-level X mode, shipped
+  with distance present and disabled (2026-09-08, w32-time Task 13, ruling
+  R136, spec-during).** `XMode = "time" | "distance"`; `X_MODE_OPTIONS`
+  always lists both, `"distance"` carrying a stated `disabledReason` (R136:
+  a naive cumulative-distance axis would silently misalign laps with
+  different lines through the same corner — the real fix is a per-venue
+  reference-path alignment, filed as its own core lane) — never omitted,
+  never silently falling back without saying why (plan §5 Q5). `resolveXMode`
+  is the one place that "is this mode actually runnable" predicate lives,
+  used both by `notebookPrefs.ts`'s reader (a stored `"distance"`, or a
+  document from before this field existed, both read as `"time"`) and by
+  `Notebook/index.tsx`'s own `setXMode` (so passing an unselectable mode
+  through code, not just through the UI, can't take effect either).
+  `NotebookPrefs` gains `x_mode: XMode`, persisted in the existing
+  `idl1.notebook.ui.v1` document beside `input_map_preset_id`. `index.tsx`
+  renders a plain `<select>` (matching Task 5's own input-map picker), the
+  disabled option's `title` showing the reason as a tooltip. Selecting
+  "Time" is presently a no-op — nothing yet reads `xMode` to change what a
+  chart shows, since there is no distance axis to switch to; the setting
+  exists so a future core distance-axis lane has a place to read from
+  without another prefs-shape change.
 - **`Notebook/interaction/PlaybackTransport.tsx`: speed select + mode toggle
   + the followed window's name (2026-09-08, w32-time Task 12, decision 57,
   ruling R134 item 6, spec-during).** UI only — every decision it makes
