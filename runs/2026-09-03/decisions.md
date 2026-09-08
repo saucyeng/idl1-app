@@ -5585,3 +5585,75 @@ so the comment is true, rather than softening the comment.
 **Cost if wrong.** A hand-repaired or peer-synced `session.json` with one
 malformed lap silently turns that lap's every statistic into the whole
 session's.
+
+## 2026-09-08 — R131: per-window workbook state mirrors the wire union; the chart viewport is window-relative
+
+**Two questions from S1 Task 11, both correctly stopped on.**
+
+### Q1 — the shape of per-window eval state
+
+`workbookState.ts` holds flat `outputs: Map<cellId, CellOutput>` and a
+single `evalError`. Task 10's driver now dispatches per-window
+`evalWindowResult`/`evalWindowError`, which the reducer has no case for — so
+those actions are **silently dropped today** and no eval output reaches
+state at all. (That is a live defect in the merged branch, not just a gap.)
+
+**Ruling.** State mirrors the wire union exactly:
+
+    windows: Map<windowKey, WindowEvalState>
+    WindowEvalState = { kind: "ok";    outputs: Map<cellId, CellOutput> }
+                    | { kind: "error"; error: IpcError }
+
+Mirroring `WindowEval` is the point: R121's attribution model — this window
+failed, those succeeded — survives into state with no impedance mismatch,
+and a consumer must narrow before reading outputs, the same guarantee the
+IPC layer gives. A flat `outputs` map plus a parallel error map would let a
+caller read outputs for a window that failed.
+
+**Order is not stored here.** Selection is an ordered list and
+`AppState.selection` is its single source of truth; this map is a lookup.
+Rendering iterates the selection in order and looks up each window. Storing
+order twice is how the two drift.
+
+**The reducer prunes.** On a selection change, entries whose `windowKey` is
+no longer selected are dropped — decision 61: nothing shows data outside the
+current selection, and a stale entry is exactly that.
+
+### Q2 — one viewport, N windows of different length
+
+`ChartCell` carries one gesture-driven `viewport`/`tiles` pair, and N
+windows whose spans differ (two laps of different duration). Nothing said
+how one pan/zoom maps onto N fetch spans.
+
+**Ruling — the viewport is window-relative.** It is an offset range
+`[a, b)` measured from **each window's own start**, mapped per window into
+that window's absolute session time:
+`[start + a, min(start + b, end))`. This is direction-2 decision 55 —
+overlaid laps align by lap-relative time (or lap distance in distance mode)
+— and it is what overlay comparison means in this domain: lap 2 and lap 3
+are compared from their own starts, not from wall-clock.
+
+Where a window is shorter than the viewport, it simply has no data past its
+end. That is correct and legible: the shorter lap's trace stops where the
+lap stopped. It must render as absence, never as a value held flat to the
+right-hand edge.
+
+For a single window this is a pure re-basing and behaviour is unchanged,
+which keeps R127 item 3's "one window is byte-identical to today" true at
+this layer too.
+
+### Scope, and the interim rule
+
+`channelBindDriver.ts` becomes its own task (11b), because per-window
+fetching plus viewport re-basing is a task's worth of work and belongs in
+its own reviewable commit. **Until it lands, the channel path must not
+misrepresent a multi-window selection:** with one window it behaves exactly
+as today (`w` all zeros); with more than one it raises a typed cell error
+rather than rendering window 0's data as though it were the selection.
+R129's rule — an interim path may narrow scope, never widen or
+misrepresent it — applies unchanged.
+
+**Cost if wrong.** Q1 left as-is means evaluation output never reaches the
+page at all. Q2 guessed as *absolute* time would overlay two laps by
+wall-clock, drawing lap 3 far to the right of lap 2 instead of on top of
+it — the comparison the feature exists for, silently inverted.
