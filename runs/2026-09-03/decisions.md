@@ -5739,3 +5739,215 @@ re-reported as a regression months later.
 two laps overlaid on a time chart — silently broken for the ordinary case
 where the primary window resolves first, while the FFT path worked and
 made it look wired.
+
+## 2026-09-08 — R134: the eight time-and-cursor questions
+
+Answering `runs/2026-09-08/w32-time-plan.md` §Open. Plan accepted; the
+13-task order stands. The survey's headline finding is accepted and worth
+restating because it shapes the lane: **the sandbox is not on the pointer
+path at all** — the iframe is `pointer-events: none` and each host
+`ChartCell` frame captures input over it. Cursor state therefore lives in
+the host and crosses charts by an imperative pub/sub bus, never React state
+at pointer rate, and the lane needs **no new sandbox messages** on the
+interaction path.
+
+1. **Strip with N windows — one lane per window, stacked, own handles.**
+   Accepted. A single merged lane would have to show a union, and windows
+   can come from different sessions, where a union of two unrelated clocks
+   means nothing. Stacked lanes also carry each window's colour, so the
+   strip and the charts read as the same objects.
+2. **Shift-drag pans.** Accepted. Decision 56 gives plain drag to zoom and
+   leaves panning unnamed; shift-drag is the least surprising inversion of
+   today's modifier. Note it is the *secondary* affordance — with a master
+   timeline the primary way to pan is dragging the window on the strip, so
+   this need not be discoverable on its own.
+3. **Dragging a `lap` window's boundary converts it to a `range` — yes, and
+   the label must change visibly.** R115 makes both the same object, so the
+   conversion is natural. The visibility is the ruling: a chip that still
+   says "Lap 2" while describing a hand-trimmed span is a lie of exactly the
+   kind R132 closed for cell values.
+4. **The shared X viewport is not persisted.** Accepted. Decision 48 keeps
+   only the last workbook across a restart, and a viewport is genuinely
+   renderer-only — it decides pixels, never numbers, so nothing downstream
+   depends on it surviving.
+5. **Distance-on-X ships disabled, with the reason stated in the UI.**
+   Accepted. The setting needs a core distance axis (idl0 had wheel-speed
+   integral and GPS distance) that a UI lane cannot build. A disabled
+   control naming why is honest; a control that silently plots time while
+   labelled distance is not. Filed as a core follow-on.
+6. **Playback stops at the primary window's end, named in the transport.**
+   Accepted — the same rule as R132: showing one window of several is
+   allowed, showing it unlabelled is not.
+7. **Hover drives the value card live; a pin freezes it and triggers the
+   exact readout.** Accepted; matches decisions 51, 55 and 56 exactly.
+8. **Add optional `plotRect` to `cellRendered`.** Accepted — the lane's only
+   protocol change, additive, and at settle rate, so it does not put IPC on
+   the interaction path.
+
+**Also accepted, and important:** task 3 removes
+`viewportWindows.ts`'s `AbsoluteSpan.endUs = Infinity` sentinel before the
+strip exists. That is the S1 "a default meaning everything" shape — here it
+would silently collapse every strip lane onto the left edge. Finding it in
+planning rather than in review is the outcome the warning was written for.
+
+**Cost if wrong.** (3) and (6) are the two that produce wrong beliefs rather
+than wrong pixels: a mislabelled window and an unlabelled playback range are
+both the reader trusting a number scoped to something other than what the
+label says.
+
+## 2026-09-08 — R135: the maths-graph plan, and a pre-existing front-matter round-trip defect
+
+Answering `runs/2026-09-08/w32-maths-plan.md` §Open. Plan accepted; the
+12-task order stands.
+
+### The defect found in passing, which outranks the lane
+
+`render_front_matter` **drops unknown top-level keys**, so `_migrate_charts`
+and `_migrate_math` already fail C2 §1's round-trip requirement *today*.
+That is not a graph problem: it means any workbook carrying a front-matter
+key this build does not know is **silently stripped on save**. Direction-2
+decision 75 makes workbook durability across updates a hard constraint, and
+this is precisely the failure it names — a file written by a newer build,
+or by a peer running a newer engine, quietly loses data when an older build
+opens and saves it. It also makes it unsafe to *ever* add a front-matter key,
+which is the mechanism the rest of this ruling depends on.
+
+Fixed in the lane's Rust task (Task 2), but it is a durability fix that
+happens to be found here, not a graph feature. It ships whether or not the
+graph does.
+
+### File mapping — accepted, and the reasoning is the point
+
+Positions live in a new optional front-matter `graph:` key (`nodes` by
+definition name, `cells` by hex8 id), written as a byte-range replacement of
+that block alone. **Front matter is the only home where a move is not a cell
+content change**: C2 §7.2 compares cell bytes, §7.1 merges front matter per
+key — so a moved node cannot conflict with an edited one. That was the
+constraint I set and the plan met it directly, having rejected the def-line
+trailing comment, a fence attribute, an inert `idl1graph` fence, a sidecar
+file, and auto-layout-only (kept as the fallback).
+
+### The eight questions
+
+1. **Ship ports against a degraded `shapeOf()` — accepted, with a
+   condition.** C2 §3.6 is spec-only in `core` today. An unknown shape must
+   render as **unknown**, never as a guess: a port showing `[t]` because
+   that is the common case would be a wrong type displayed with the same
+   confidence as a right one.
+2. **Dependency edges from a TS scan — accepted, on one condition.** Edges
+   are pictures and evaluation is unaffected if the scan is wrong, so the
+   blast radius is cosmetic. But the scanner must **reuse the existing
+   `tokenizeMath`** (`model/mathMode.ts`) rather than introduce a second
+   tokenizer — two parsers of one grammar drift, and then the graph draws
+   edges the evaluator does not have.
+3. **Rename as one atomic edit** touching both the cell body and the layout
+   key — accepted. A rename that half-lands is a node that loses its
+   position.
+4. **Grey by reachability from unresolved roots; downstream greys carry no
+   glyph** — accepted. Matches decision 44: grey out, hide nothing.
+5. **Node status across windows: worst-wins, card names the split; a
+   whole-window failure is a canvas banner, not fifty red ×s** — accepted,
+   and this is the right instinct. Fifty identical error glyphs describe the
+   *canvas*, not the nodes, and R132's rule (name the window you are
+   showing) is satisfied by the card.
+6. **New C2 §3.7 plus surgical §1/§2.4/§7.1 edits** — accepted.
+7. **The Rust task runs when no other cargo lane does** — accepted; CLAUDE.md
+   §8, one cargo process on the machine.
+8. **`@xyflow/react` pinned as a shell task** — accepted: MIT, pure npm,
+   local CSS, no CDN. Vendored into the lane worktree, not installed
+   globally.
+
+**Cost if wrong.** The front-matter defect is the expensive one: every day
+it stands is another chance for a workbook to lose a key on save, and the
+loss is silent and unrecoverable from the file itself.
+
+## 2026-09-08 — R136: lap-distance alignment is a core lane, not a worksheet setting (supersedes R134 item 5)
+
+**Isaac, 2026-09-08, asked whether distance-on-X should ship disabled or
+pull a core distance axis forward:** *"this was an issue before. i want to
+account for the fact that a lap's distance is never exactly the same as
+another lap's distance. they all have unique line choices. so, we want to
+correct for it with more of a 'gate based' approach. however the gate
+approach had issues at switchbacks, which added a bunch of noise, so maybe
+we almost need some sort of lightweight iekf to put higher weight on
+distance based in tight sections and higher weight on gate based correction
+on straightaways?"*
+
+**This changes the question.** R134 item 5 treated distance-on-X as a
+missing axis — integrate wheel speed, or accumulate GPS distance, done. It
+is not. A cumulative distance axis is *easy* and **wrong for the thing it is
+for**: comparing two laps. Line choice makes each lap's arc length differ,
+so lap 2's "400 m" and lap 3's "400 m" are not the same place on the track,
+and every overlaid comparison is silently misaligned by a drifting error
+that grows with distance. Shipping the naive axis would look correct and
+mislead.
+
+**Ruling.**
+1. **Distance-on-X stays disabled in W3.2**, with its reason stated in the
+   UI (R134 item 5's mechanism stands; only its rationale changes).
+   Shipping a naive cumulative axis is worse than shipping none.
+2. **Lap-distance alignment becomes its own core lane**, spec-first, sized
+   and scheduled separately. It is a signal-processing problem in `core`
+   (CLAUDE.md §2: physics of the bike → `core`), not a chart feature.
+3. Its acceptance test is Isaac's own constraint: **two laps with different
+   line choices through the same corner must align at the same track
+   position**, not at the same accumulated metres.
+
+**Recorded for that lane, from Isaac's own experience:** the gate approach
+was tried and its failure mode is known — **switchbacks add noise**, because
+a gate line near a hairpin is crossed ambiguously or repeatedly.
+
+**Lead's recommendation for that lane, to be tested not assumed:** prefer a
+**reference-path station coordinate** over gates or fusion. Build a
+per-venue reference path once, project each lap's GPS positions onto it, and
+use the along-path arc length ("station") as X. Different lines through one
+corner project to the same station, which is the property the feature needs
+and neither cumulative distance nor gates provide. Switchback ambiguity —
+two nearby path segments with opposite headings — is resolved by
+**disambiguating the projection with heading**, plus a monotonic-progression
+constraint, rather than by weighting two estimators against each other. That
+is likely simpler and more robust than a lightweight iEKF, and it makes
+gates a derived quantity (a gate is a station value) instead of a competing
+source. To be evaluated against real switchback data before it is chosen.
+
+**Cost if wrong.** A naive distance axis is the most dangerous shape this
+project keeps producing: a plausible number, drawn confidently, wrong by an
+amount that grows with the thing being measured.
+
+## 2026-09-08 — R137: pointer gestures are a swappable input map with presets (amends R134 item 2)
+
+**Isaac, 2026-09-08:** *"mouse and trackpad are different. on trackpad, the
+pinch and two finger drag should be zoom/pan. on mouse, i have an mx master
+with two scroll wheels, so maybe we use both of those for panning and
+zooming. i could imagine this being a part of the user config in the form of
+an interchangeable table that can have a few presets for me to try at
+runtime."*
+
+**Ruling — R134 item 2's "shift-drag pans" is withdrawn.** Gestures are not
+a single hard-coded mapping. The chart surface takes an **input map**: a
+table from input event (drag, shift-drag, wheel, horizontal wheel, pinch,
+two-finger pan) to action (pan-x, zoom-x, zoom-region, none), selected at
+runtime from named presets and stored in user prefs. Ships with at least:
+- **Trackpad** — pinch = zoom, two-finger drag = pan, drag = zoom-region.
+- **Mouse (two wheels)** — vertical wheel = zoom, horizontal wheel = pan-x,
+  drag = zoom-region. Written for the MX Master's second wheel, which is an
+  ordinary horizontal-wheel event.
+- **Basic mouse** — drag = zoom-region, shift-drag = pan, wheel = zoom.
+
+Decision 56 (plain drag zooms to the dragged region) is preserved as the
+default in every preset, so this amends *how panning is reached*, not what
+dragging does.
+
+**Constraints.** The map is a **renderer-only preference** and must stay
+one: it decides which gesture drives which pixel change, and no number
+depends on it (CLAUDE.md §3). It therefore lives in user prefs, is not part
+of a workbook, and never syncs (a workbook opened on another machine keeps
+that machine's input map). Switching preset takes effect immediately with no
+reload — the point is trying them.
+
+The mapping table itself is a **pure tested module**; the gesture handler
+reads it. Adding a preset must not require touching the handler.
+
+**Cost if wrong.** Baking one mapping in means every future input device is
+a code change, and the one thing Isaac asked for — trying alternatives at
+runtime to find out which feels right — becomes a rebuild per experiment.
