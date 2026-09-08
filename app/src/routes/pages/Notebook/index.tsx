@@ -74,6 +74,7 @@ import { proseBlocksFor, spansToEvaluate } from "./model/proseBlocks";
 import { isSelfWrite, saveFlow, type SaveFlowState, type WorkbookEventWithHash } from "./model/saveFlow";
 import { initialSandboxPrimeState, nextSandboxPrimeState } from "./model/sandboxLifecycle";
 import { runSessionSpan, type SessionSpanAction, type SessionSpanDeps } from "./model/sessionSpanDriver";
+import { commitSharedViewport, viewportForCell, type SharedViewport } from "./model/sharedViewport";
 import { TileCache } from "./model/tileCache";
 import { resolveWindowSpan } from "./model/viewportWindows";
 import { chooseWorkbookEntry, type WorkbookEntry } from "./model/workbookEntry";
@@ -375,6 +376,20 @@ export default function NotebookPage() {
    *  `null` for a window whose span hasn't resolved (or failed to). */
   const [sessionSpanUsByWindow, setSessionSpanUsByWindow] = useState<Map<string, number | null>>(new Map());
   const [chartWindows, setChartWindows] = useState<Map<string, ChartWindow>>(new Map());
+  /**
+   * The worksheet's one shared X range (decision 52, Task 4) --
+   * `chartWindows`' per-cell `Viewport`s are still where each cell's own
+   * settled `tiles` live, but the *time range* half of every chart's
+   * `viewport` prop below reads through this instead once it is non-`null`.
+   * Starts `null` -- "no gesture has settled anywhere yet" -- so a freshly
+   * opened workbook still shows each binding's own `initialSpan` (which can
+   * legitimately differ per cell before the user has ever panned/zoomed);
+   * the first settle in *any* chart (`onViewportSettled` below) commits it,
+   * and every mounted chart's `viewport` prop then reads the same range
+   * from that point on. Never `Infinity`/a sentinel -- `null` is the only
+   * "not yet known" state (plan §3.4's rule).
+   */
+  const [sharedViewport, setSharedViewport] = useState<SharedViewport | null>(null);
   const [functionCatalogMismatches, setFunctionCatalogMismatches] = useState<FunctionCatalogMismatch[]>([]);
   /** An FFT cell's per-window `fetch_fft_v2` failures (L6 Task 20,
    *  migrated to per-window in S1 Task 11a), typed -- never a bare string
@@ -1843,11 +1858,21 @@ export default function NotebookPage() {
                 height={DEFAULT_JS_CELL_HEIGHT_PX}
                 heightPx={heightPx}
                 viewport={
-                  window?.viewport ?? {
-                    startUs: binding.initialSpan.startUs,
-                    endUs: binding.initialSpan.endUs,
-                    pixelWidth: DEFAULT_CHART_WIDTH_PX,
-                  }
+                  // Decision 52 / Task 4: once any chart has settled a
+                  // gesture, every chart's own time range reads through the
+                  // one shared value -- `viewportForCell` applies this
+                  // chart's own `DEFAULT_CHART_WIDTH_PX` to it. Before that
+                  // first settle, each binding's own `initialSpan` still
+                  // applies per cell (bindings can legitimately open to
+                  // different spans; `sharedViewport` is `null` until a
+                  // gesture actually commits one).
+                  sharedViewport !== null
+                    ? viewportForCell(sharedViewport, DEFAULT_CHART_WIDTH_PX)
+                    : (window?.viewport ?? {
+                        startUs: binding.initialSpan.startUs,
+                        endUs: binding.initialSpan.endUs,
+                        pixelWidth: DEFAULT_CHART_WIDTH_PX,
+                      })
                 }
                 sessionSpanUs={sessionSpanUs ?? binding.initialSpan.endUs}
                 sessionId={sid}
@@ -1862,6 +1887,15 @@ export default function NotebookPage() {
                   // driver below, whose re-fetch of this same channel is a
                   // cache hit but still a microtask away.
                   setChartWindows((prev) => new Map(prev).set(cellId, { viewport, tiles }));
+
+                  // Decision 52 / Task 4: this settle is the one that
+                  // commits the worksheet's shared X range -- every mounted
+                  // `ChartCell`'s own `viewport` prop reads through
+                  // `viewportForCell(sharedViewport, …)` above, so every
+                  // chart visually snaps to this same time window on the
+                  // very next render, regardless of which chart's gesture
+                  // triggered it.
+                  setSharedViewport(commitSharedViewport(viewport));
 
                   // Every one of this cell's bound channels -- not only the
                   // mounted one -- must re-fetch for the newly settled
@@ -1902,6 +1936,52 @@ export default function NotebookPage() {
                     isStale,
                     sessionRef.current.boundChannelsFor(cellId)
                   );
+
+                  // "Every chart re-fetches" (plan Task 4): every *other*
+                  // time-bound chart cell must re-fetch its own bound
+                  // channels for this newly shared range too, not only the
+                  // one whose gesture triggered this settle -- otherwise a
+                  // sibling chart would keep showing tiles for its old
+                  // window while its `viewport` prop (via `sharedViewport`
+                  // above) has already moved, a picture-vs-viewport
+                  // mismatch of exactly the silent-wrong-number shape this
+                  // lane guards against. Mirrors the channel-bind effect
+                  // above cell for cell, but calls `runChannelSettle` at the
+                  // *shared* range (`viewport.startUs`/`endUs`, this chart's
+                  // own `DEFAULT_CHART_WIDTH_PX` since every chart renders
+                  // at that same constant width today), never
+                  // `runChannelBind` -- that would silently discard the
+                  // pan/zoom the user just performed for every chart but
+                  // this one, snapping the rest back to their own
+                  // `initialSpan`. `onAction` above is already
+                  // cellId-agnostic (reads `action.cellId` from the action
+                  // itself), so it's reused as-is.
+                  for (const otherCell of state.cells) {
+                    if (otherCell.id === null || otherCell.id === cellId || otherCell.kind !== "js") continue;
+                    const otherCellId = otherCell.id;
+                    const otherCode = state.markdown !== null ? decodeByteRange(state.markdown, otherCell.bodyRange) : "";
+                    const otherBinding = bindingFor({ id: otherCellId, code: otherCode }, sessionDetail, sessionSpanUs, definitionsWithAxis, primaryWireWindow);
+                    if (otherBinding === null || otherBinding.kind !== "time" || otherBinding.mountedChannelId === null) continue;
+                    const otherChannel = otherBinding.channels.find((c) => c.channelId === otherBinding.mountedChannelId);
+                    if (otherChannel === undefined) continue;
+
+                    const otherSeq = cellRunSequencerRef.current.start(otherCellId);
+                    const otherIsStale = () => !cellRunSequencerRef.current.isCurrent(otherCellId, otherSeq);
+                    void runChannelSettle(
+                      deps,
+                      sessionRef.current.cache,
+                      bindWindowsFor(windows, sessionDetailsByWindow, sessionSpanUsByWindow),
+                      otherCellId,
+                      otherBinding.channels,
+                      otherChannel.channelId,
+                      viewport.startUs,
+                      viewport.endUs,
+                      DEFAULT_CHART_WIDTH_PX,
+                      onAction,
+                      otherIsStale,
+                      sessionRef.current.boundChannelsFor(otherCellId)
+                    );
+                  }
                 }}
                 fetchCursorReadout={(sessId, channels, tUs) => cursorReadout(sessId, channels, tUs)}
                 sendTransform={(id, translateXPx, scaleX) => sandboxHostRef.current?.sendTransform(id, translateXPx, scaleX)}

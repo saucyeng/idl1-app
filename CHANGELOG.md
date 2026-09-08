@@ -23,6 +23,27 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 
 ### Added
 
+- **`Notebook/model/sharedViewport.ts` + `index.tsx` wiring: one worksheet-shared
+  X range (2026-09-08, w32-time Task 4, decision 52, spec-during).**
+  `SharedViewport {startUs, endUs}` is a `Viewport` with the pixel width
+  removed; `viewportForCell(shared, pixelWidth)` re-attaches a given chart's
+  own width, `commitSharedViewport(viewport)` drops it. `Notebook/index.tsx`
+  holds `sharedViewport: SharedViewport | null` (`null` — never a sentinel —
+  until the first gesture settles anywhere); every mounted `ChartCell`'s
+  `viewport` prop reads through `viewportForCell` once it is set, falling
+  back to that cell's own `binding.initialSpan` before the first settle
+  (bindings can legitimately open to different spans). `onViewportSettled`
+  now (1) commits the shared range from whichever chart's gesture just
+  settled, and (2) loops every *other* time-bound `js` cell and re-runs
+  `runChannelSettle` for it at that same range and each chart's own
+  `DEFAULT_CHART_WIDTH_PX` (every chart renders at that one constant width
+  today) — "every chart re-fetches," not only the one that gestured, so no
+  chart is left showing tiles for a viewport its own prop has already moved
+  past. Deliberately calls `runChannelSettle`, never `runChannelBind`, for
+  the other cells — the latter would silently snap them back to their own
+  `initialSpan` instead of the range the user just navigated to. `tiles`
+  stay per cell in the existing `chartWindows` map; only the time range is
+  shared.
 - **`Notebook/interaction/gestureVerbs.ts` + `ChartCell.tsx` wiring: the
   R137 input map is live (2026-09-08, w32-time Task 5, spec-during).**
   `ChartCell`'s drag/wheel handlers now read `inputMap.ts`'s presets
