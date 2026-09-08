@@ -13,14 +13,21 @@
 import type { LapDetail, SessionDetail } from "../../../../ipc/catalog";
 import type { Span } from "../../../../ipc/workbook";
 
-/** A span in session-relative microseconds, half-open `[startUs, endUs)` --
- *  one window's own resolved bounds, or the gesture viewport re-expressed
- *  in the same axis. `endUs: Infinity` marks an unbounded span (a
- *  `"session"`-kind window whose true recorded duration isn't resolved for
- *  every selected window today -- only the primary window's is, via
- *  `sessionSpanDriver.ts` -- so a `"session"` window never triggers the
- *  short-window clamp in {@link mapViewportToWindow} below). A `"lap"`/
- *  `"range"` window always carries a real, finite `endUs`. */
+/**
+ * A span in session-relative microseconds, half-open `[startUs, endUs)` --
+ * one window's own resolved bounds, or the gesture viewport re-expressed in
+ * the same axis. **Both fields are always finite.** There is no "unbounded"
+ * `AbsoluteSpan` -- ruling R134/plan Task 3: a `"session"`-kind window whose
+ * true recorded duration is not yet resolved is not representable here at
+ * all; {@link resolveWindowSpan} returns `null` for it instead, and its
+ * caller drops that window from the result rather than passing a sentinel
+ * through. This is the fix for the S1 "a default meaning everything" shape:
+ * an `endUs: Infinity` sitting in the same field as a real finite end would
+ * make `(t - start) / (end - start)` silently `0` for every `t` in a
+ * timeline strip -- every window collapsing onto the left edge with no
+ * error and no NaN. A window whose end is unresolved must be *absent*, not
+ * a number that reads as valid.
+ */
 export interface AbsoluteSpan {
   startUs: number;
   endUs: number;
@@ -64,8 +71,16 @@ export function mapViewportToWindow(viewport: AbsoluteSpan, primaryStartUs: numb
  * `[startUs, endUs)` within `detail`'s session, for
  * {@link mapViewportToWindow}'s `window` parameter.
  *
- * - `"session"` -- `[0, Infinity)` (see {@link AbsoluteSpan}'s doc comment
- *   on why the true end isn't resolved here).
+ * - `"session"` -- `[0, recordedSpanUs)`. `recordedSpanUs` is that same
+ *   window's own recorded duration, in µs -- `model/sessionSpanDriver.ts`'s
+ *   `runSessionSpan` result for *this* window, not only the primary one
+ *   (plan Task 3: `Notebook/index.tsx`'s driver loop already runs
+ *   `runSessionSpan` once per selected window; only the wiring dropped
+ *   every non-primary result before this task). `recordedSpanUs === null`
+ *   (not yet resolved, or resolution failed) returns `null` here -- the
+ *   window is excluded, never treated as "the whole session" by a `0` or an
+ *   `Infinity` standing in for "unknown" (this module's own `AbsoluteSpan`
+ *   doc comment).
  * - `"range"` -- `[t0_us, t1_us)` verbatim; already absolute, no lookup
  *   needed.
  * - `"lap"` -- `detail.laps`' matching `lap_number`'s
@@ -74,11 +89,16 @@ export function mapViewportToWindow(viewport: AbsoluteSpan, primaryStartUs: numb
  *   in `detail.laps` -- a per-window resolution failure, matching every
  *   other per-window failure this task isolates (requirement 4): the
  *   caller drops just this window, not the whole channel.
+ *
+ * @param recordedSpanUs This window's own recorded session duration in µs,
+ *   or `null` if unresolved -- only consulted for `"range"`/`"lap"` are
+ *   already self-contained kinds; passing `null` for those is harmless.
  */
-export function resolveWindowSpan(span: Span, detail: SessionDetail): AbsoluteSpan | null {
+export function resolveWindowSpan(span: Span, detail: SessionDetail, recordedSpanUs: number | null): AbsoluteSpan | null {
   switch (span.kind) {
     case "session":
-      return { startUs: 0, endUs: Infinity };
+      if (recordedSpanUs === null) return null;
+      return { startUs: 0, endUs: recordedSpanUs };
     case "range":
       return { startUs: span.t0_us, endUs: span.t1_us };
     case "lap": {

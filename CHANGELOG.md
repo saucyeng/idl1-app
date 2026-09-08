@@ -4,6 +4,23 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 
 ## [Unreleased]
 
+### Fixed
+
+- **`Notebook/model/viewportWindows.ts`: `AbsoluteSpan.endUs = Infinity`
+  sentinel removed (2026-09-08, w32-time Task 3, ruling R134/plan §3.4,
+  spec-during).** `resolveWindowSpan`'s `"session"` arm no longer returns
+  `[0, Infinity)` when a window's recorded duration isn't known yet; it
+  takes that window's own recorded span (`recordedSpanUs`) and returns
+  `null` — the window is excluded — when it's unresolved, never a sentinel
+  a downstream `(t - start) / (end - start)` would silently read as `0` for
+  every `t`. `Notebook/index.tsx`'s `sessionSpanDriver` loop, previously
+  discarding every non-primary window's resolved span, now keeps one per
+  window (`sessionSpanUsByWindow`) and feeds it through; the channel-bind
+  effect gained its own readiness dependency (`sessionSpansReadiness`,
+  mirroring `sessionDetailsReadiness`) so a window's span resolving after
+  its `SessionDetail` still re-runs the fetch (R133's "two staleness gates
+  in series").
+
 ### Added
 
 - **`Notebook/interaction/cursorFollowPolicy.ts` and `ChartCell.tsx` wiring:

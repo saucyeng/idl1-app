@@ -145,20 +145,28 @@ function windowDescriptorFor(w: SelectionWindow, detail: SessionDetail | null): 
  * already resolved per selected window for the FFT arm, R115) -- **not**
  * fetched here.
  *
- * A window whose `SessionDetail` hasn't resolved yet, or whose `"lap"` span
- * names a lap not present in `laps[]`, is dropped from the result rather
- * than blocking every other window (the same per-window failure isolation
- * `channelBindDriver.ts` itself applies downstream, R121) -- **except**
- * the primary window (`windows[0]` of the input): if it can't be resolved
- * there is no viewport coordinate frame to re-base any other window onto,
- * so the whole result is `[]` and the caller's effect skips this cell's
- * bind entirely, same as today's "no primary window" early return.
+ * A window whose `SessionDetail` hasn't resolved yet, whose `"lap"` span
+ * names a lap not present in `laps[]`, or whose `"session"` span has no
+ * recorded duration yet (`spanUsByWindow`, plan Task 3 -- the `Infinity`
+ * sentinel `resolveWindowSpan` used to fall back to no longer exists), is
+ * dropped from the result rather than blocking every other window (the same
+ * per-window failure isolation `channelBindDriver.ts` itself applies
+ * downstream, R121) -- **except** the primary window (`windows[0]` of the
+ * input): if it can't be resolved there is no viewport coordinate frame to
+ * re-base any other window onto, so the whole result is `[]` and the
+ * caller's effect skips this cell's bind entirely, same as today's "no
+ * primary window" early return.
  */
-function bindWindowsFor(windows: readonly SelectionWindow[], detailsByWindow: ReadonlyMap<string, SessionDetail | null>): BindWindow[] {
+function bindWindowsFor(
+  windows: readonly SelectionWindow[],
+  detailsByWindow: ReadonlyMap<string, SessionDetail | null>,
+  spanUsByWindow: ReadonlyMap<string, number | null>
+): BindWindow[] {
   const result: BindWindow[] = [];
   for (const w of windows) {
-    const detail = detailsByWindow.get(windowKey(w)) ?? null;
-    const span = detail !== null ? resolveWindowSpan(toWireWindow(w).span, detail) : null;
+    const key = windowKey(w);
+    const detail = detailsByWindow.get(key) ?? null;
+    const span = detail !== null ? resolveWindowSpan(toWireWindow(w).span, detail, spanUsByWindow.get(key) ?? null) : null;
     if (span === null) {
       if (result.length === 0) return [];
       continue;
@@ -356,6 +364,15 @@ export default function NotebookPage() {
    *  ever resolved for the primary window (unused by the FFT arm, per
    *  `jsCellBinding.ts`'s `bindingFor` doc comment). */
   const [sessionSpanUs, setSessionSpanUs] = useState<number | null>(null);
+  /** Every selected window's own recorded session span, in µs, keyed by
+   *  `windowKey` (plan Task 3, ruling R134: `resolveWindowSpan`'s
+   *  `"session"` arm needs *this* window's own recorded duration, not only
+   *  the primary window's `sessionSpanUs` above -- a `"session"` window in
+   *  a non-primary slot was previously fetched as `[0, Infinity)`, the
+   *  sentinel this task removes). Populated by the same per-window
+   *  `runSessionSpan` loop that already fills `sessionDetailsByWindow`;
+   *  `null` for a window whose span hasn't resolved (or failed to). */
+  const [sessionSpanUsByWindow, setSessionSpanUsByWindow] = useState<Map<string, number | null>>(new Map());
   const [chartWindows, setChartWindows] = useState<Map<string, ChartWindow>>(new Map());
   const [functionCatalogMismatches, setFunctionCatalogMismatches] = useState<FunctionCatalogMismatch[]>([]);
   /** An FFT cell's per-window `fetch_fft_v2` failures (L6 Task 20,
@@ -375,6 +392,18 @@ export default function NotebookPage() {
    *  `sessionDetail` (the primary window's entry) hasn't changed. See
    *  `state/selection.ts`'s `sessionDetailsReadinessKey` doc comment. */
   const sessionDetailsReadiness = sessionDetailsReadinessKey(windows, sessionDetailsByWindow);
+  /** Same shape as {@link sessionDetailsReadiness}, over
+   *  {@link sessionSpanUsByWindow} instead -- plan Task 3: `bindWindowsFor`
+   *  now needs a `"session"`-kind window's own recorded span (not only its
+   *  `SessionDetail`) to resolve it at all (the `Infinity` sentinel this
+   *  task removes used to make that resolution instant). Without this as
+   *  its own dependency, a window's span resolving *after* its
+   *  `SessionDetail` already had (R133's "an effect's dependency array and
+   *  an inner identity cache are two staleness gates" — this is the deps
+   *  array itself missing a value the effect body now reads) would leave
+   *  that window's channel data never fetched until some unrelated
+   *  dependency happened to change. */
+  const sessionSpansReadiness = sessionDetailsReadinessKey(windows, sessionSpanUsByWindow);
   /** `primaryWindow`'s own `WindowEvalState` entry (ruling R131 Q1), or
    *  `undefined` while still pending -- every math/table cell, prose span
    *  and completion list below reads this one window's result, same as
@@ -875,20 +904,37 @@ export default function NotebookPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [windowsKeyValue, selectedWorkbookId]);
 
-  // Resolves every selected window's `SessionDetail` and (primary window
-  // only) recorded span (lead pre-ruling 2026-09-05 #1), once per window
-  // change -- `model/jsCellBinding.ts`'s `bindingFor` needs both, and the
-  // FFT arm needs every selected window's own `SessionDetail` (R115: two
-  // windows may name different sessions). All branching lives in
-  // `model/sessionSpanDriver.ts`'s `runSessionSpan`, called once per
-  // window (R127's accepted item); this effect only dispatches its two
-  // action kinds into local state, keyed per window.
+  // Resolves every selected window's `SessionDetail` and its own recorded
+  // span (lead pre-ruling 2026-09-05 #1; extended to every window, not only
+  // the primary, by plan Task 3/ruling R134), once per window change --
+  // `model/jsCellBinding.ts`'s `bindingFor` needs both for the primary
+  // window, the FFT arm needs every selected window's own `SessionDetail`
+  // (R115: two windows may name different sessions), and
+  // `model/viewportWindows.ts`'s `resolveWindowSpan` needs every selected
+  // window's own recorded span to resolve a `"session"`-kind window without
+  // the `Infinity` sentinel this task removes. All branching lives in
+  // `model/sessionSpanDriver.ts`'s `runSessionSpan`, called once per window
+  // (R127's accepted item); this effect only dispatches its two action
+  // kinds into local state, keyed per window. `sessionSpanUs` (the primary
+  // window's span, singular) stays in sync from the same loop for the
+  // existing single-window consumers (`ChartCell`'s clamp, `jsCellBinding`'s
+  // `bindingFor`) that read it directly.
   useEffect(() => {
     const currentKeys = new Set(windows.map(windowKey));
     for (const key of sessionSpanSeqRef.current.keys()) {
       if (!currentKeys.has(key)) sessionSpanSeqRef.current.delete(key);
     }
     setSessionDetailsByWindow((prev) => {
+      let next = prev;
+      for (const key of prev.keys()) {
+        if (!currentKeys.has(key)) {
+          if (next === prev) next = new Map(prev);
+          next.delete(key);
+        }
+      }
+      return next;
+    });
+    setSessionSpanUsByWindow((prev) => {
       let next = prev;
       for (const key of prev.keys()) {
         if (!currentKeys.has(key)) {
@@ -913,8 +959,9 @@ export default function NotebookPage() {
       const onAction = (action: SessionSpanAction) => {
         if (action.type === "sessionDetail") {
           setSessionDetailsByWindow((prev) => new Map(prev).set(key, action.detail));
-        } else if (isPrimary) {
-          setSessionSpanUs(action.spanUs);
+        } else {
+          setSessionSpanUsByWindow((prev) => new Map(prev).set(key, action.spanUs));
+          if (isPrimary) setSessionSpanUs(action.spanUs);
         }
       };
       void runSessionSpan(deps, toWireWindow(w), onAction, () => sessionSpanSeqRef.current.get(key) !== mySeq);
@@ -1308,7 +1355,7 @@ export default function NotebookPage() {
   useEffect(() => {
     if (state.markdown === null || primaryWindow === null) return;
     const markdown = state.markdown;
-    const bindWindows = bindWindowsFor(windows, sessionDetailsByWindow);
+    const bindWindows = bindWindowsFor(windows, sessionDetailsByWindow, sessionSpanUsByWindow);
     if (bindWindows.length === 0) return;
     const windowKeys = windows.map(windowKey);
 
@@ -1366,6 +1413,7 @@ export default function NotebookPage() {
     primaryWindow,
     windowsKeyValue,
     sessionDetailsReadiness,
+    sessionSpansReadiness,
     primeState.primeEpoch,
   ]);
 
@@ -1818,7 +1866,7 @@ export default function NotebookPage() {
                   void runChannelSettle(
                     deps,
                     sessionRef.current.cache,
-                    bindWindowsFor(windows, sessionDetailsByWindow),
+                    bindWindowsFor(windows, sessionDetailsByWindow, sessionSpanUsByWindow),
                     cellId,
                     binding.channels,
                     channel.channelId,

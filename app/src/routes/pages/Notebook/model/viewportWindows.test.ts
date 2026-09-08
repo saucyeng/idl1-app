@@ -36,7 +36,7 @@ function detailWithLaps(laps: Array<{ lap_number: number; start_time_secs: numbe
 describe("mapViewportToWindow", () => {
   it("mapViewportToWindow — window equals the primary window (single-window case) — the mapped span equals the viewport exactly", () => {
     const viewport = { startUs: 100_000, endUs: 900_000 };
-    const primary = { startUs: 0, endUs: Infinity };
+    const primary = { startUs: 0, endUs: 10_000_000 };
 
     expect(mapViewportToWindow(viewport, 0, primary)).toEqual(viewport);
   });
@@ -66,32 +66,36 @@ describe("mapViewportToWindow", () => {
     expect(mapViewportToWindow(viewport, 0, window)).toBeNull();
   });
 
-  it("mapViewportToWindow — an unbounded (session-kind) window — never clamped by its own end", () => {
+  it("mapViewportToWindow — a session-kind window whose recorded span exceeds the viewport — not clamped by its own end", () => {
     const viewport = { startUs: 0, endUs: 1_000_000_000 };
-    const window = { startUs: 0, endUs: Infinity };
+    const window = { startUs: 0, endUs: 2_000_000_000 };
 
     expect(mapViewportToWindow(viewport, 0, window)).toEqual({ startUs: 0, endUs: 1_000_000_000 });
   });
 });
 
 describe("resolveWindowSpan", () => {
-  it("resolveWindowSpan — session span — [0, Infinity)", () => {
-    expect(resolveWindowSpan({ kind: "session" }, detailWithLaps([]))).toEqual({ startUs: 0, endUs: Infinity });
+  it("resolveWindowSpan — session span, recorded span resolved — [0, recordedSpanUs)", () => {
+    expect(resolveWindowSpan({ kind: "session" }, detailWithLaps([]), 900_000_000)).toEqual({ startUs: 0, endUs: 900_000_000 });
+  });
+
+  it("resolveWindowSpan — session span — window end unresolved — excluded, not treated as whole session", () => {
+    expect(resolveWindowSpan({ kind: "session" }, detailWithLaps([]), null)).toBeNull();
   });
 
   it("resolveWindowSpan — range span — the span's own t0_us/t1_us verbatim", () => {
-    expect(resolveWindowSpan({ kind: "range", t0_us: 12_000, t1_us: 34_000 }, detailWithLaps([]))).toEqual({ startUs: 12_000, endUs: 34_000 });
+    expect(resolveWindowSpan({ kind: "range", t0_us: 12_000, t1_us: 34_000 }, detailWithLaps([]), null)).toEqual({ startUs: 12_000, endUs: 34_000 });
   });
 
   it("resolveWindowSpan — lap span, lap found — the lap's start_time_secs/end_time_secs converted to µs", () => {
     const detail = detailWithLaps([{ lap_number: 2, start_time_secs: 30.5, end_time_secs: 61 }]);
 
-    expect(resolveWindowSpan({ kind: "lap", lap_number: 2 }, detail)).toEqual({ startUs: 30_500_000, endUs: 61_000_000 });
+    expect(resolveWindowSpan({ kind: "lap", lap_number: 2 }, detail, null)).toEqual({ startUs: 30_500_000, endUs: 61_000_000 });
   });
 
   it("resolveWindowSpan — lap span, no matching lap — null", () => {
     const detail = detailWithLaps([{ lap_number: 1, start_time_secs: 0, end_time_secs: 30 }]);
 
-    expect(resolveWindowSpan({ kind: "lap", lap_number: 5 }, detail)).toBeNull();
+    expect(resolveWindowSpan({ kind: "lap", lap_number: 5 }, detail, null)).toBeNull();
   });
 });
