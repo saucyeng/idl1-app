@@ -4,8 +4,319 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 
 ## [Unreleased]
 
+### Fixed
+
+- **`ChartCell.tsx`'s hover-cursor offset and cursor-card rows mis-scoped for
+  a `"lap"`/`"range"` primary window (2026-09-08, w32-time, merge review,
+  R138 pattern a fourth time).** `primaryWindowSpan` was locally derived as
+  `{startUs: 0, endUs: sessionSpanUs}` — correct only for a `"session"`-kind
+  primary window; the moment a user clicked a lap (the app's main gesture)
+  and it became primary, every `cursorBus` offset published/resolved by this
+  cell (hover line, click-pin, the value card's rows) was computed against
+  the wrong origin. Fixed by threading `Notebook/index.tsx`'s own
+  `windowSpanFor` result in as a new `primaryWindowSpan` prop instead — the
+  same single "resolved" predicate `bindWindowsFor` and the playback loop
+  (Task 10) already share, rather than a second, independently-derived
+  approximation beside them. `index.tsx` stabilizes it through a `useMemo`
+  keyed on `startUs`/`endUs` (`windowSpanFor` returns a fresh object literal
+  every render) so it is safe inside `ChartCell`'s own `useCallback`/
+  `useEffect` dependency arrays without resubscribing every render; every
+  call site now guards `primaryWindowSpan === null` (span not yet resolved)
+  rather than dereferencing it. `viewportWindows.test.ts` gained a
+  regression test with a lap starting at 120s of a 900s session, asserting
+  the correct resolved instant against the old wrong one directly — a
+  session-kind-only test would have passed under either assumption.
+- **`Notebook/model/viewportWindows.ts`: `AbsoluteSpan.endUs = Infinity`
+  sentinel removed (2026-09-08, w32-time Task 3, ruling R134/plan §3.4,
+  spec-during).** `resolveWindowSpan`'s `"session"` arm no longer returns
+  `[0, Infinity)` when a window's recorded duration isn't known yet; it
+  takes that window's own recorded span (`recordedSpanUs`) and returns
+  `null` — the window is excluded — when it's unresolved, never a sentinel
+  a downstream `(t - start) / (end - start)` would silently read as `0` for
+  every `t`. `Notebook/index.tsx`'s `sessionSpanDriver` loop, previously
+  discarding every non-primary window's resolved span, now keeps one per
+  window (`sessionSpanUsByWindow`) and feeds it through; the channel-bind
+  effect gained its own readiness dependency (`sessionSpansReadiness`,
+  mirroring `sessionDetailsReadiness`) so a window's span resolving after
+  its `SessionDetail` still re-runs the fetch (R133's "two staleness gates
+  in series").
+- **`Notebook/index.tsx`'s channel-bind identity gate: a non-primary
+  `"session"` window's data could go permanently un-refetched (2026-09-08,
+  w32-time, ruling R138, Critical from review of Tasks 1-3).** The gate's
+  `resolvedWindowKeys` used its own second, independently-spelled readiness
+  check (`sessionDetailsByWindow.has(key)`), which read `true` the instant
+  such a window's `SessionDetail` resolved even though `bindWindowsFor`
+  (the actual consumer) still excluded it pending its recorded span
+  (`sessionSpanUsByWindow`, Task 3). That falsely recorded the window's
+  identity as already bound; once its span *did* arrive, the identity
+  already matched and the window's data was never fetched again for the
+  cell's lifetime — silent and permanent. Fixed per R138's general rule
+  ("resolved" gets one definition; a gate must use the same code path as
+  the consumer's inclusion test): the shared predicate
+  (`Notebook/model/viewportWindows.ts`'s new `windowSpanFor`) now backs both
+  `bindWindowsFor` and the new `resolvedWindowKeysFor`, which the identity
+  gate calls instead of the old `.has()` filter. `toWireWindow` moved
+  alongside them (from `Notebook/index.tsx`, which imports `@/components/*`
+  and so can't be unit-tested) so all three are — a regression test in
+  `channelBindDriver.test.ts` drives the exact defect sequence (detail
+  resolves before span, span arrives later) through `resolvedWindowKeysFor`
+  + `updateChannelBindIdentity` and asserts the gate itself.
+- **`Notebook/index.tsx`'s `cursorBusRef`: lazy-initialized, not allocated
+  every render (2026-09-08, w32-time, folded in from review of Tasks
+  1-3).** `useRef(createCursorBus())` called `createCursorBus()` — and threw
+  away its result and subscriber-array allocation — on every render; now
+  `useRef<CursorBus | null>(null)` with a one-time `if (… === null)` init,
+  the standard React lazy-ref pattern.
+
 ### Added
 
+- **`Notebook/model/xMode.ts`: decision 54's worksheet-level X mode, shipped
+  with distance present and disabled (2026-09-08, w32-time Task 13, ruling
+  R136, spec-during).** `XMode = "time" | "distance"`; `X_MODE_OPTIONS`
+  always lists both, `"distance"` carrying a stated `disabledReason` (R136:
+  a naive cumulative-distance axis would silently misalign laps with
+  different lines through the same corner — the real fix is a per-venue
+  reference-path alignment, filed as its own core lane) — never omitted,
+  never silently falling back without saying why (plan §5 Q5). `resolveXMode`
+  is the one place that "is this mode actually runnable" predicate lives,
+  used both by `notebookPrefs.ts`'s reader (a stored `"distance"`, or a
+  document from before this field existed, both read as `"time"`) and by
+  `Notebook/index.tsx`'s own `setXMode` (so passing an unselectable mode
+  through code, not just through the UI, can't take effect either).
+  `NotebookPrefs` gains `x_mode: XMode`, persisted in the existing
+  `idl1.notebook.ui.v1` document beside `input_map_preset_id`. `index.tsx`
+  renders a plain `<select>` (matching Task 5's own input-map picker), the
+  disabled option's `title` showing the reason as a tooltip. Selecting
+  "Time" is presently a no-op — nothing yet reads `xMode` to change what a
+  chart shows, since there is no distance axis to switch to; the setting
+  exists so a future core distance-axis lane has a place to read from
+  without another prefs-shape change.
+- **`Notebook/interaction/PlaybackTransport.tsx`: speed select + mode toggle
+  + the followed window's name (2026-09-08, w32-time Task 12, decision 57,
+  ruling R134 item 6, spec-during).** UI only — every decision it makes
+  reuses Task 10/11's own tested pure functions, nothing new to unit-test.
+  A `Select` (shadcn/radix, matching the rest of the app's chrome) lists
+  `playback.ts`'s `PLAYBACK_SPEEDS`, calling `setSpeed` through
+  `Notebook/index.tsx`'s existing `setPlayback`; a `Pin`/`PinOff` icon
+  button toggles `playbackMode` between `"cursor-fixed"` and
+  `"scroll-at-edge"` (Task 11), with `aria-pressed`/`aria-label`/`title` all
+  naming the *current* mode and what clicking does, not just an icon.
+  `followingWindowLabel` reuses `model/jsCellNote.ts`'s `primaryWindowNote`
+  through the same `cellListWindowNote` value the cell list already computes
+  (R132's own precedent) — `null`, no label, with zero or one window
+  selected; the primary window's own descriptor label otherwise, so the
+  transport and the cell list agree word-for-word on which window a reader
+  is looking at (R134 item 6: "playback follows the primary window ...
+  the transport names which window it is following").
+- **`Notebook/interaction/playbackMode.ts`: decision 57's two playback modes
+  (2026-09-08, w32-time Task 11, decision 57, spec-during).**
+  `advanceForMode(viewport, cursorTUs, deltaUs, mode)` replaces the
+  unconditional `advanceViewportByTime` call `ChartCell.tsx`'s shared-cursor
+  effect used to make: `"cursor-fixed"` is that same call, unchanged (the
+  cursor stays put, the chart pans under it); `"scroll-at-edge"` — the
+  default — holds the viewport still while the cursor crosses it and pages
+  forward by exactly one viewport-width once the cursor reaches the right
+  edge, looping (not jumping once) so a long frame gap that skips more than
+  one page still lands on the page actually containing the cursor.
+  `ChartCell.tsx` gains a `playbackMode` prop threaded from a new
+  `Notebook/index.tsx` state slot (default `"scroll-at-edge"`, decision 57
+  names it first); the shared-cursor effect's dependency array gained
+  `playbackMode` alongside the existing data-only `[cursorTUs, playing,
+  sessionSpanUs]` (operating brief §4) — no function prop, no cancelling
+  cleanup. The mode's own select control is Task 12.
+- **`Notebook/interaction/playback.ts`: selectable speed set + play stops at
+  the primary window's own end, not the whole session (2026-09-08, w32-time
+  Task 10, decision 57, ruling R134 item 6, spec-during).**
+  `PLAYBACK_SPEEDS` names the offered rates (`0.25×`…`4×`) and `setSpeed`
+  changes `PlaybackState.speed` without touching `tUs`/`playing` (wiring a
+  select onto it is Task 12). `playableSpanUs(window: AbsoluteSpan | null)`
+  converts `model/viewportWindows.ts`'s resolved `AbsoluteSpan` to `tick`'s
+  bigint `spanUs` bound, `null` — never a fabricated `[0, 0]` — while the
+  span hasn't resolved; `tick` itself needed no change, since it already
+  took an arbitrary bound (only its caller assumed `[0, sessionSpanUs]`).
+  `Notebook/index.tsx`'s RAF loop now reads the **primary selected window's**
+  own resolved span (`windowSpanFor`, the same single "resolved" predicate
+  R138 unified the channel-bind gate on) via a ref, so a lap window's
+  playback stops at the lap's own end rather than running to the end of the
+  recording; a window that starts partway through the session (a lap other
+  than the first) plays from *its own* start, not `0`. `handleTogglePlay`
+  now seeds `tUs` from the playing window's own start when no manual cursor
+  is set, so resuming play on a freshly selected lap can't stall immediately
+  at the start bound because the clock was still at a previous window's
+  wherever-it-was. R134 item 6: playback follows the *primary* window when
+  several are selected; naming that window in the transport is Task 12.
+- **`Notebook/model/cursorCard.ts` + `Notebook/components/CursorCard.tsx`:
+  cursor value card, one row per overlaid window (2026-09-08, w32-time
+  Task 7, decision 55, ruling **R139**, spec-during).** First shipped wired
+  to the primary window only (`ChartCell.tsx` tracks decoded tiles for only
+  the primary window at the host level, R69(d)'s own TODO) with an R132
+  label naming the gap; ruled against (R139) because a comparison workflow
+  is the whole point of the card, and a single-window card would read as
+  "done" in this changelog while the gap gets rediscovered as a bug rather
+  than remembered as a TODO. **Fixed per R139's own answer: retain the
+  combined payload, not per-window tiles.** `channelBindDriver.ts` already
+  builds one combined `{t, v, w, windows}` typed-array payload per (cell,
+  channel) — every selected window's own decimated samples, concatenated,
+  `w[i]` naming which window (R127/R129) — immediately before handing it to
+  the sandbox via `setChannelHostVar` and dropping it. It now also
+  dispatches a **retained** copy (`CombinedChannelPayload`, `spans` aligned
+  1:1 with `windows` from the same filtered pass, no second `SessionDetail`
+  resolution — R138's lesson), cloning the buffers actually handed to
+  `setChannelHostVar`'s transfer list first (`postMessage` detaches whatever
+  buffer instance it moves — the retained copy must be a different one).
+  `Notebook/index.tsx` keeps one payload per `${cellId}::${channelId}` in a
+  ref (`combinedChannelDataRef`), passed to `ChartCell` as a new
+  `combinedChannelData` prop. `cursorCardRows` (was `cursorCardRow`) filters
+  that payload by `w` at the cursor's window-relative offset: a window
+  whose offset has run past its own resolved end is **omitted entirely**
+  (decision 55's "renders absence" — not a row holding a stale value,
+  ruling R131 Q2), while a row within a window's span but with no nearby
+  sample renders `value: null` (R31's "no data", distinct from the omitted
+  case). No new fetch and no IPC on hover (P2) — the arrays are already in
+  host memory at hover time.
+- **`Notebook/model/timelineStrip.ts`: pure master-timeline-strip model
+  (2026-09-08, w32-time Task 8, ruling R134 item 1, spec-during).**
+  `stripLanesFor` builds one `StripLane` per selected window (never one
+  merged lane) from `Notebook/index.tsx`'s existing
+  `sessionDetailsByWindow`/`sessionSpanUsByWindow` maps, skipping any window
+  whose own session span hasn't resolved (the module's own no-sentinel
+  rule, matching Task 3). Each lane's background/edit surface is that
+  window's own *session's* full recorded duration (decision 52), with its
+  own currently-resolved span (session/lap/range, via `windowSpanFor` —
+  R138's "one definition of resolved") drawn as the highlighted,
+  handle-bearing region inside it. `pxForTimeUs`/`timeUsForPx` convert
+  between lane-relative µs and strip px; `hitTestHandle` finds which
+  boundary handle (if any) a pointerdown lands on; `dragCandidate` computes
+  the candidate `range` a drag would produce, clamped to the lane's own
+  session and floored at a 1 ms `MIN_RANGE_US` (R119/R120: a drag can never
+  mint an inverted or sub-µs range, even one legal in pixels at a zoomed-out
+  scale); `bracketForLane` re-bases the worksheet's shared viewport
+  (`sharedViewport.ts`) onto each lane via the same `mapViewportToWindow`
+  `channelBindDriver.ts` already uses for fetches, so the strip's bracket
+  and the data actually fetched can never disagree.
+- **`Notebook/model/timelineStrip.ts`'s `timelineCommit`; `Notebook/components/TimelineStrip.tsx`
+  (2026-09-08, w32-time Task 9, ruling R115/R134 item 3, spec-during).**
+  `timelineCommit(windows, laneIndex, candidate)` replaces one selected
+  window's `span` with the dragged `range` — the same object a lap click
+  mints (R115) — regardless of what kind of span it replaces; converting a
+  `"lap"` window's span to `"range"` changes its visible label for free
+  (`state/selection.ts`'s `describeWindow` already switches on `span.kind`,
+  so no separate "trimmed" flag is needed — R134 item 3's "the label must
+  change visibly"). `TimelineStrip.tsx` renders `stripLanesFor`'s lanes at
+  the top of the worksheet, drags a handle locally frame-by-frame (no
+  dispatch, no refetch) and calls `timelineCommit` — dispatched via
+  `SET_WINDOWS` — once, on pointer-up only (§3.1: a boundary drag re-runs
+  `eval_workbook_v2` per window and re-fetches every bound channel, so it
+  must not run per frame).
+- **`Notebook/model/viewportWindows.ts`'s `cursorTimeInWindow` + `cursorBus.ts`/`ChartCell.tsx`
+  wiring: the worksheet cursor is window-relative (2026-09-08, w32-time Task
+  6, ruling R131 Q2, spec-during).** `cursorTimeInWindow(offsetUs, window):
+  number | null` resolves an elapsed-µs offset from a window's own start to
+  an absolute instant *within that window*, `null` once the offset runs
+  past a shorter window's own end (decision 55's "renders absence" —
+  mirrors `mapViewportToWindow`'s own clamp, for a single instant rather
+  than a span). `cursorBus.ts`'s `tUs` is redocumented as that offset from
+  the *primary* window's own start, not session-relative µs as before this
+  task — carrying an offset, not an absolute instant, is what lets the same
+  cursor value later be re-applied against any other selected window's own
+  start (task 7's value card). `ChartCell.tsx` converts at the boundary:
+  `handlePointerMove`/`handlePointerLeave` subtract the primary window's own
+  `startUs` before publishing to the bus, `handlePointerUp`'s click path
+  does the same before `cursorBus.pin` (leaving `onSetCursor`'s existing
+  absolute-µs contract to `Notebook/index.tsx`'s `manualCursorTUs`
+  untouched), and the hover-line subscriber adds it back via
+  `cursorTimeInWindow` before `pixelXForTUs`. The primary window's own span
+  is taken as `{startUs: 0, endUs: sessionSpanUs}` — a documented judgment
+  call: `ChartCell` only ever mounts the primary window's bound channel
+  today (R69(d)'s own TODO) and that window's gesture viewport is already
+  session-absolute µs from `0` (`jsCellBinding.ts`'s `initialSpan`), so this
+  is exactly the primary window's own span whenever it is `"session"`-kind
+  (today's default) and byte-identical to before this task; a primary
+  window of `"lap"`/`"range"` kind needs its own resolved span threaded in
+  as a future prop, out of this task's file list (`Notebook/index.tsx`
+  untouched).
+- **`Notebook/model/sharedViewport.ts` + `index.tsx` wiring: one worksheet-shared
+  X range (2026-09-08, w32-time Task 4, decision 52, spec-during).**
+  `SharedViewport {startUs, endUs}` is a `Viewport` with the pixel width
+  removed; `viewportForCell(shared, pixelWidth)` re-attaches a given chart's
+  own width, `commitSharedViewport(viewport)` drops it. `Notebook/index.tsx`
+  holds `sharedViewport: SharedViewport | null` (`null` — never a sentinel —
+  until the first gesture settles anywhere); every mounted `ChartCell`'s
+  `viewport` prop reads through `viewportForCell` once it is set, falling
+  back to that cell's own `binding.initialSpan` before the first settle
+  (bindings can legitimately open to different spans). `onViewportSettled`
+  now (1) commits the shared range from whichever chart's gesture just
+  settled, and (2) loops every *other* time-bound `js` cell and re-runs
+  `runChannelSettle` for it at that same range and each chart's own
+  `DEFAULT_CHART_WIDTH_PX` (every chart renders at that one constant width
+  today) — "every chart re-fetches," not only the one that gestured, so no
+  chart is left showing tiles for a viewport its own prop has already moved
+  past. Deliberately calls `runChannelSettle`, never `runChannelBind`, for
+  the other cells — the latter would silently snap them back to their own
+  `initialSpan` instead of the range the user just navigated to. `tiles`
+  stay per cell in the existing `chartWindows` map; only the time range is
+  shared.
+- **`Notebook/interaction/gestureVerbs.ts` + `ChartCell.tsx` wiring: the
+  R137 input map is live (2026-09-08, w32-time Task 5, spec-during).**
+  `ChartCell`'s drag/wheel handlers now read `inputMap.ts`'s presets
+  through `dragActionFor`/`wheelActionFor` (via `classifyPointerDown`/
+  `classifyWheelEvent`) instead of a hard-coded shift-drag-pans branch —
+  decision 56's plain-drag-zooms-to-region default now actually ships, and
+  which drag/wheel-family gesture pans, zooms or does nothing is entirely
+  the active preset's call. A single `dragStateRef` (replacing the old
+  separate `draggingRef`/`rectDragRef`) records the `GestureAction` decided
+  once at pointerdown and replays it for the rest of that gesture, so a
+  mid-drag preset switch never changes an already-started gesture; a
+  release under `CLICK_MAX_MOVEMENT_PX` still pins/unpins the cursor
+  regardless of which action the drag was bound to. `horizontalWheelActionFor`
+  documents and resolves the one real ambiguity: a trackpad's two-finger
+  horizontal scroll and a physical second wheel notch (the MX Master's)
+  report the identical DOM `wheel` event, so a `deltaX`-dominant wheel event
+  tries `horizontalWheel` then falls back to `twoFingerPan` rather than the
+  handler ever branching on which preset is active. `Notebook/index.tsx`
+  holds the selected preset as React state (`inputMapPreset`, default
+  `BASIC_MOUSE_PRESET` — a documented judgment call, no default is named in
+  R137 or decision 56), initialized from and persisted through
+  `notebookPrefs.ts`'s new `input_map_preset_id` field, and exposes a plain
+  `<select>` next to the playback transport — switching it re-renders every
+  mounted `ChartCell` with the new preset object, so the very next gesture
+  reads it with no reload (R137: "takes effect immediately"). No sentinel:
+  `input_map_preset_id: null` means "no choice persisted yet", read the
+  same way `findInputMapPreset` already treats an unknown/dropped preset id
+  — the caller's own `?? BASIC_MOUSE_PRESET` fallback, never a value baked
+  into the prefs document.
+- **`Notebook/interaction/inputMap.ts`: pure gesture input-map presets
+  (2026-09-08, w32-time, ruling R137, spec-during).** A table from pointer/
+  wheel event kind (`drag`/`shiftDrag`/`wheel`/`horizontalWheel`/`pinch`/
+  `twoFingerPan`) to action (`pan-x`/`zoom-x`/`zoom-region`/`none`), three
+  shipped presets (`TRACKPAD_PRESET`, `TWO_WHEEL_MOUSE_PRESET`,
+  `BASIC_MOUSE_PRESET`) and `findInputMapPreset`/`actionFor`. Decision 56's
+  drag-to-zoom-region default holds in every preset (asserted in the test).
+  R134 item 2's "shift-drag pans" is withdrawn by R137 and now lives only
+  in `BASIC_MOUSE_PRESET`'s own binding. Wired to `ChartCell`'s gesture
+  handler by Task 5, above. Renderer-only preference — belongs in user
+  prefs, never a workbook, never synced.
+- **`Notebook/interaction/cursorFollowPolicy.ts` and `ChartCell.tsx` wiring:
+  the pointer-following cursor (2026-09-08, w32-time Task 2, spec-during).**
+  Direction-2 decision 51's first half — the cursor follows the pointer
+  across every chart, a click pins it, a click on the pinned instant unpins.
+  `cursorFollowPolicy(eventKind, pinned, pinnedTUs, pixelX, viewport)` is
+  the pure verb decision (`publish`/`pin`/`unpin`/`nothing`), reusing
+  `model/cursor.ts`'s `cursorRequestFor` for the pixel→time mapping.
+  `ChartCell`'s pointer handlers call it and publish to the shared
+  `cursorBus` (Task 1) — hover never touches React state; each cell's new
+  hover-line element subscribes and repositions itself imperatively. Click
+  still mirrors `pin`/`unpin` into `Notebook/index.tsx`'s existing
+  `manualCursorTUs` React state (settle-grade, per `cursorBus.ts`'s own
+  doc comment), so playback/readout/context-menu are unaffected.
+- **`Notebook/interaction/cursorBus.ts`: pure worksheet cursor pub/sub
+  (2026-09-08, w32-time Task 1, spec-during — spec section lands with the
+  lane, no spec change in this commit).** `CursorState {tUs: number | null,
+  pinned: boolean}`, `publish`/`pin`/`unpin`/`subscribe`; no React, no DOM,
+  no timers, so cross-chart cursor propagation (direction-2 decision 51)
+  never re-renders `Notebook/index.tsx` at pointer rate — mirrors R69.2's
+  imperative `transform` push. `tUs` is `number` (µs), not `bigint`, per
+  ruling R134/plan §2.2's documented boundary.
 - **`app/src/state/selection.ts`: pure selection module for C1 §6.1
   time-window selection (2026-09-08, s1-ts Task 7, spec exists — C1 §6.1,
   no spec change needed).** `SelectionWindow`/`Span` (session-relative

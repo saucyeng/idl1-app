@@ -19,7 +19,6 @@ import {
   watchWorkbook,
   type CellOutput,
   type IpcError,
-  type Span as WireSpan,
   type Window as WireWindow,
 } from "../../../ipc/workbook";
 import { useAppState } from "../../../state/AppState";
@@ -37,6 +36,7 @@ import EditorPanes from "./components/EditorPanes";
 import JsCellFrame, { DEFAULT_JS_CELL_HEIGHT_PX } from "./components/JsCellFrame";
 import PropertiesForm from "./components/PropertiesForm";
 import type { PropertiesFormChannelOption, PropertiesFormLapOption } from "./components/PropertiesForm.types";
+import TimelineStrip from "./components/TimelineStrip";
 import WorkbookBar from "./components/WorkbookBar";
 import { combineSpectrumWindows, type SandboxCell, type SpectrumWindowSeries, type WindowDescriptor } from "./host/protocol";
 import { SandboxHost } from "./host/SandboxHost";
@@ -52,11 +52,15 @@ import {
   type ChannelBindAction,
   type ChannelBindDeps,
   type ChartWindow,
+  type CombinedChannelPayload,
 } from "./model/channelBindDriver";
 import { CellRunSequencer } from "./model/cellRunSequencer";
 import { isCodeVisible, toggleCode } from "./model/codeVisibility";
+import { createCursorBus, type CursorBus } from "./interaction/cursorBus";
+import { BASIC_MOUSE_PRESET, findInputMapPreset, INPUT_MAP_PRESETS, type InputMapPreset } from "./interaction/inputMap";
 import PlaybackTransport from "./interaction/PlaybackTransport";
-import { tick, togglePlay, type PlaybackState } from "./interaction/playback";
+import { playableSpanUs, setSpeed, tick, togglePlay, type PlaybackState } from "./interaction/playback";
+import type { PlaybackMode } from "./interaction/playbackMode";
 import { editorPlacement, outputIsReadOnly } from "./model/editorPlacement";
 import { resolveEditorHost } from "./model/editorHost";
 import { runFft, type FftAction, type FftDeps } from "./model/fftDriver";
@@ -72,9 +76,12 @@ import { proseBlocksFor, spansToEvaluate } from "./model/proseBlocks";
 import { isSelfWrite, saveFlow, type SaveFlowState, type WorkbookEventWithHash } from "./model/saveFlow";
 import { initialSandboxPrimeState, nextSandboxPrimeState } from "./model/sandboxLifecycle";
 import { runSessionSpan, type SessionSpanAction, type SessionSpanDeps } from "./model/sessionSpanDriver";
+import { commitSharedViewport, viewportForCell, type SharedViewport } from "./model/sharedViewport";
 import { TileCache } from "./model/tileCache";
-import { resolveWindowSpan } from "./model/viewportWindows";
+import { timelineCommit } from "./model/timelineStrip";
+import { resolvedWindowKeysFor, toWireWindow, windowSpanFor } from "./model/viewportWindows";
 import { chooseWorkbookEntry, type WorkbookEntry } from "./model/workbookEntry";
+import { resolveXMode, X_MODE_OPTIONS, type XMode } from "./model/xMode";
 import { initialWorkbookState, NO_WINDOW_KEY, workbookReducer } from "./model/workbookState";
 
 /** `true` when `value` has the shape of a typed `IpcError` (C3 §2). Local
@@ -99,20 +106,6 @@ function toIpcError(error: unknown): IpcError {
       : { kind: error.kind, message: error.message, detail: error.detail };
   }
   return { kind: "internal", message: error instanceof Error ? error.message : String(error) };
-}
-
-/** Converts one app-side `SelectionWindow` (`state/selection.ts`, camelCase)
- *  to its wire `Window` counterpart (`ipc/workbook.ts`, snake_case) -- the
- *  mapping `state/selection.ts`'s own `SelectionWindow` doc comment names
- *  explicitly ("a caller maps `sessionId`→`session_id`, …"). Pure. */
-function toWireWindow(w: SelectionWindow): WireWindow {
-  const span: WireSpan =
-    w.span.kind === "session"
-      ? { kind: "session" }
-      : w.span.kind === "lap"
-        ? { kind: "lap", lap_number: w.span.lapNumber }
-        : { kind: "range", t0_us: w.span.t0Us, t1_us: w.span.t1Us };
-  return { session_id: w.sessionId, span, colour: w.colour };
 }
 
 /** Synthetic label for an empty `venue_name`, matching `Data/sessionRow.ts`'s
@@ -144,24 +137,38 @@ function windowDescriptorFor(w: SelectionWindow, detail: SessionDetail | null): 
  * already resolved per selected window for the FFT arm, R115) -- **not**
  * fetched here.
  *
- * A window whose `SessionDetail` hasn't resolved yet, or whose `"lap"` span
- * names a lap not present in `laps[]`, is dropped from the result rather
- * than blocking every other window (the same per-window failure isolation
- * `channelBindDriver.ts` itself applies downstream, R121) -- **except**
- * the primary window (`windows[0]` of the input): if it can't be resolved
- * there is no viewport coordinate frame to re-base any other window onto,
- * so the whole result is `[]` and the caller's effect skips this cell's
- * bind entirely, same as today's "no primary window" early return.
+ * A window whose `SessionDetail` hasn't resolved yet, whose `"lap"` span
+ * names a lap not present in `laps[]`, or whose `"session"` span has no
+ * recorded duration yet (`spanUsByWindow`, plan Task 3 -- the `Infinity`
+ * sentinel `resolveWindowSpan` used to fall back to no longer exists), is
+ * dropped from the result rather than blocking every other window (the same
+ * per-window failure isolation `channelBindDriver.ts` itself applies
+ * downstream, R121) -- **except** the primary window (`windows[0]` of the
+ * input): if it can't be resolved there is no viewport coordinate frame to
+ * re-base any other window onto, so the whole result is `[]` and the
+ * caller's effect skips this cell's bind entirely, same as today's "no
+ * primary window" early return.
  */
-function bindWindowsFor(windows: readonly SelectionWindow[], detailsByWindow: ReadonlyMap<string, SessionDetail | null>): BindWindow[] {
+/**
+ * `windowSpanFor`/`resolvedWindowKeysFor` (`model/viewportWindows.ts`, R138
+ * fix) are the single predicate this function and the channel-bind effect's
+ * identity gate below both build on -- see that module's own doc comments.
+ * Moved out of this file so they're unit-testable (this file imports
+ * `@/components/*`, unresolvable in vitest's node test environment).
+ */
+function bindWindowsFor(
+  windows: readonly SelectionWindow[],
+  detailsByWindow: ReadonlyMap<string, SessionDetail | null>,
+  spanUsByWindow: ReadonlyMap<string, number | null>
+): BindWindow[] {
   const result: BindWindow[] = [];
   for (const w of windows) {
-    const detail = detailsByWindow.get(windowKey(w)) ?? null;
-    const span = detail !== null ? resolveWindowSpan(toWireWindow(w).span, detail) : null;
+    const span = windowSpanFor(w, detailsByWindow, spanUsByWindow);
     if (span === null) {
       if (result.length === 0) return [];
       continue;
     }
+    const detail = detailsByWindow.get(windowKey(w)) ?? null;
     result.push({ sessionId: w.sessionId, span, descriptor: windowDescriptorFor(w, detail) });
   }
   return result;
@@ -305,7 +312,7 @@ function decodeByteRange(markdown: string, range: [number, number]): string {
  * the *current* window for all of them, not only the one `ChartCell` mounts.
  */
 export default function NotebookPage() {
-  const [appState] = useAppState();
+  const [appState, appDispatch] = useAppState();
   /** `AppState.selection` (C1 §6.1, ruling R111/R115/R117): an ordered list
    *  of {@link SelectionWindow}s, superseding the old `{ sessionId,
    *  lapContext }` pair outright (S1 Task 11a). Every consumer below either
@@ -355,7 +362,45 @@ export default function NotebookPage() {
    *  ever resolved for the primary window (unused by the FFT arm, per
    *  `jsCellBinding.ts`'s `bindingFor` doc comment). */
   const [sessionSpanUs, setSessionSpanUs] = useState<number | null>(null);
+  /** Every selected window's own recorded session span, in µs, keyed by
+   *  `windowKey` (plan Task 3, ruling R134: `resolveWindowSpan`'s
+   *  `"session"` arm needs *this* window's own recorded duration, not only
+   *  the primary window's `sessionSpanUs` above -- a `"session"` window in
+   *  a non-primary slot was previously fetched as `[0, Infinity)`, the
+   *  sentinel this task removes). Populated by the same per-window
+   *  `runSessionSpan` loop that already fills `sessionDetailsByWindow`;
+   *  `null` for a window whose span hasn't resolved (or failed to). */
+  const [sessionSpanUsByWindow, setSessionSpanUsByWindow] = useState<Map<string, number | null>>(new Map());
   const [chartWindows, setChartWindows] = useState<Map<string, ChartWindow>>(new Map());
+  /**
+   * One combined multi-window payload per (cell, channel) -- `${cellId}::
+   * ${channelId}` -- retained from `channelBindDriver.ts`'s own
+   * `"channelData"` action instead of being dropped after
+   * `setChannelHostVar` (ruling R139). A plain ref, not React state:
+   * updated inside `onAction` alongside `setChannelHostVar` itself (a
+   * side effect, not a render input on its own), and read back out only
+   * when `ChartCell`'s own props are computed each render -- the same
+   * "cheap ref mutated at commit-relevant times, read on next render"
+   * shape as `sessionDetailsByWindowRef` below. The `chartWindow`/
+   * `boundChannels` actions dispatched alongside every `"channelData"`
+   * action already call `setState`, so the next render this ref's new
+   * value is read in is never more than one commit stale.
+   */
+  const combinedChannelDataRef = useRef<Map<string, CombinedChannelPayload>>(new Map());
+  /**
+   * The worksheet's one shared X range (decision 52, Task 4) --
+   * `chartWindows`' per-cell `Viewport`s are still where each cell's own
+   * settled `tiles` live, but the *time range* half of every chart's
+   * `viewport` prop below reads through this instead once it is non-`null`.
+   * Starts `null` -- "no gesture has settled anywhere yet" -- so a freshly
+   * opened workbook still shows each binding's own `initialSpan` (which can
+   * legitimately differ per cell before the user has ever panned/zoomed);
+   * the first settle in *any* chart (`onViewportSettled` below) commits it,
+   * and every mounted chart's `viewport` prop then reads the same range
+   * from that point on. Never `Infinity`/a sentinel -- `null` is the only
+   * "not yet known" state (plan §3.4's rule).
+   */
+  const [sharedViewport, setSharedViewport] = useState<SharedViewport | null>(null);
   const [functionCatalogMismatches, setFunctionCatalogMismatches] = useState<FunctionCatalogMismatch[]>([]);
   /** An FFT cell's per-window `fetch_fft_v2` failures (L6 Task 20,
    *  migrated to per-window in S1 Task 11a), typed -- never a bare string
@@ -374,6 +419,18 @@ export default function NotebookPage() {
    *  `sessionDetail` (the primary window's entry) hasn't changed. See
    *  `state/selection.ts`'s `sessionDetailsReadinessKey` doc comment. */
   const sessionDetailsReadiness = sessionDetailsReadinessKey(windows, sessionDetailsByWindow);
+  /** Same shape as {@link sessionDetailsReadiness}, over
+   *  {@link sessionSpanUsByWindow} instead -- plan Task 3: `bindWindowsFor`
+   *  now needs a `"session"`-kind window's own recorded span (not only its
+   *  `SessionDetail`) to resolve it at all (the `Infinity` sentinel this
+   *  task removes used to make that resolution instant). Without this as
+   *  its own dependency, a window's span resolving *after* its
+   *  `SessionDetail` already had (R133's "an effect's dependency array and
+   *  an inner identity cache are two staleness gates" — this is the deps
+   *  array itself missing a value the effect body now reads) would leave
+   *  that window's channel data never fetched until some unrelated
+   *  dependency happened to change. */
+  const sessionSpansReadiness = sessionDetailsReadinessKey(windows, sessionSpanUsByWindow);
   /** `primaryWindow`'s own `WindowEvalState` entry (ruling R131 Q1), or
    *  `undefined` while still pending -- every math/table cell, prose span
    *  and completion list below reads this one window's result, same as
@@ -441,17 +498,108 @@ export default function NotebookPage() {
   const [manualCursorTUs, setManualCursorTUs] = useState<bigint | null>(null);
   const [playback, setPlayback] = useState<PlaybackState>({ tUs: 0n, playing: false, speed: 1 });
   const sharedCursorTUs = playback.playing ? playback.tUs : manualCursorTUs;
+  /** Decision 57's playback mode (Task 11), beside `playback` itself since
+   *  it is the same kind of worksheet-scoped playback state; `"scroll-at-
+   *  edge"` (the picture holds still, the cursor moves) is the default --
+   *  decision 57 states it first ("stop at the end of the lap; yes on
+   *  scroll") and names cursor-fixed as the *second*, opt-in mode ("I kind
+   *  of want the *option* to..."). `PlaybackTransport`'s mode toggle (Task
+   *  12) is the only writer. */
+  const [playbackMode, setPlaybackMode] = useState<PlaybackMode>("scroll-at-edge");
+
+  // One worksheet-shared cursor bus (Task 1/2) -- created once and handed
+  // down to every `ChartCell` as a stable reference, never React state, so
+  // hover-follow publishes at pointer rate without re-rendering this page.
+  // `ChartCell`'s own click handler mirrors `pin`/`unpin` into
+  // `manualCursorTUs` above through `onSetCursor`/`onClearCursor`, so
+  // `sharedCursorTUs` stays the single source of truth for everything else
+  // this page already reads it for (playback seed, the readout settle).
+  // Lazy-init (`useRef(() => …)`, not `useRef(createCursorBus())`): the
+  // latter calls `createCursorBus()` on *every* render -- React discards
+  // every result but the first, but the call (and its throwaway
+  // subscriber-array allocation) still happens each time (review of Tasks
+  // 1-3, folded in per R138's dispatch).
+  const cursorBusRef = useRef<CursorBus | null>(null);
+  if (cursorBusRef.current === null) cursorBusRef.current = createCursorBus();
+  const cursorBus: CursorBus = cursorBusRef.current;
+
+  // The worksheet's selected gesture input-map preset (ruling R137,
+  // `interaction/inputMap.ts`; Task 5) -- plain React state, not a ref: a
+  // preset switch is a deliberate, infrequent user action (a picker
+  // selection), not an interaction-rate event, so re-rendering every
+  // mounted `ChartCell` with the newly chosen preset object is exactly how
+  // R137's "takes effect immediately, with no reload" is satisfied -- the
+  // very next gesture on any chart reads the new object, no extra
+  // plumbing. Initialized once from this machine's persisted choice
+  // (`readNotebookPrefs`); `BASIC_MOUSE_PRESET` is the fallback default
+  // (documented judgment call -- no preset is named as the default in R137
+  // or decision 56, and a single-wheel mouse with no modifier gestures is
+  // the least assumption to make about the machine this build first runs
+  // on).
+  const [inputMapPreset, setInputMapPresetState] = useState<InputMapPreset>(
+    () => findInputMapPreset(readNotebookPrefs().input_map_preset_id ?? "") ?? BASIC_MOUSE_PRESET
+  );
+  /** Switches the active preset and persists the choice (R137: "stored in
+   *  user prefs") -- preserves `last_workbook_id` rather than clobbering it,
+   *  since `writeNotebookPrefs` replaces the whole document. */
+  function setInputMapPreset(preset: InputMapPreset): void {
+    setInputMapPresetState(preset);
+    writeNotebookPrefs({ ...readNotebookPrefs(), input_map_preset_id: preset.id });
+  }
+
+  // Decision 54's worksheet-level X mode (Task 13) -- initialized once from
+  // this machine's persisted choice, `resolveXMode`'d by `readNotebookPrefs`
+  // itself so a stored value this build can't honour never reaches state.
+  const [xMode, setXModeState] = useState<XMode>(() => readNotebookPrefs().x_mode);
+  /** Switches the worksheet's X mode and persists it -- routes through
+   *  `resolveXMode` again here (not only at read time) so a caller passing
+   *  an unselectable mode (`"distance"` while R136 keeps it disabled) can
+   *  never put the worksheet into a state `X_MODE_OPTIONS` itself says is
+   *  unavailable; `readNotebookPrefs()`/`{...}` preserves the other fields,
+   *  same as `setInputMapPreset` above. */
+  function setXMode(mode: XMode): void {
+    const resolved = resolveXMode(mode);
+    setXModeState(resolved);
+    writeNotebookPrefs({ ...readNotebookPrefs(), x_mode: resolved });
+  }
+
+  // Playback's playing window (decision 57/plan Task 10, R134 item 6): the
+  // *primary* selected window's own resolved span -- a lap window's
+  // `AbsoluteSpan`, not `[0, sessionSpanUs]` -- so play stops at the end of
+  // the lap rather than the end of the whole session, exactly per Task 3's
+  // already-tested `windowSpanFor` (the same "resolved" predicate the
+  // channel-bind gate uses, R138). `null` while unresolved (nothing
+  // selected, or the window's own session/span hasn't loaded yet).
+  const primaryWindowSpan = primaryWindow !== null ? windowSpanFor(primaryWindow, sessionDetailsByWindow, sessionSpanUsByWindow) : null;
+  /**
+   * The same value as {@link primaryWindowSpan} above, but with a stable
+   * object identity across renders when its own `startUs`/`endUs` haven't
+   * changed -- `windowSpanFor` builds a fresh object literal every call, so
+   * passing `primaryWindowSpan` itself as a `ChartCell` prop would make
+   * every one of that cell's own `useCallback`/`useEffect` dependency
+   * arrays that include it "change" on every render regardless of whether
+   * the primary window's span actually moved. `ChartCell.tsx`'s own
+   * hover-follow/pin/value-card code needs this true resolved span (fixing
+   * the review finding: it previously assumed `{startUs: 0, endUs:
+   * sessionSpanUs}`, correct only for a `"session"`-kind primary window --
+   * silently wrong the moment a lap or range became primary, R138's
+   * pattern again).
+   */
+  const primaryWindowSpanForCell = useMemo(
+    () => (primaryWindowSpan === null ? null : { startUs: primaryWindowSpan.startUs, endUs: primaryWindowSpan.endUs }),
+    [primaryWindowSpan?.startUs, primaryWindowSpan?.endUs]
+  );
 
   // The playback clock's `requestAnimationFrame` loop: local state only
   // (`setPlayback`), never IPC or `postMessage` itself (the effects rule's
   // carve-out for a RAF loop that "advances local state only"). Gated on
   // `primeState.running` (R95/R99): a hidden Notebook route must not keep
-  // ticking a cursor nobody can see. `sessionSpanUs` is read fresh each
-  // frame via a ref (`sessionSpanUsRef`, populated below) rather than
-  // added to this effect's dependency array, so a mid-playback session
+  // ticking a cursor nobody can see. `primaryWindowSpan` is read fresh each
+  // frame via a ref (`primaryWindowSpanRef`, populated below) rather than
+  // added to this effect's dependency array, so a mid-playback selection
   // change doesn't tear down and restart the RAF loop itself.
-  const sessionSpanUsRef = useRef(sessionSpanUs);
-  sessionSpanUsRef.current = sessionSpanUs;
+  const primaryWindowSpanRef = useRef(primaryWindowSpan);
+  primaryWindowSpanRef.current = primaryWindowSpan;
   useEffect(() => {
     if (!playback.playing || !primeState.running) return;
 
@@ -460,8 +608,10 @@ export default function NotebookPage() {
     const loop = (now: number) => {
       const elapsedMs = now - last;
       last = now;
-      const spanEndUs = BigInt(Math.max(0, Math.round(sessionSpanUsRef.current ?? 0)));
-      setPlayback((prev) => tick(prev, elapsedMs, [0n, spanEndUs]));
+      const spanUs = playableSpanUs(primaryWindowSpanRef.current);
+      if (spanUs !== null) {
+        setPlayback((prev) => tick(prev, elapsedMs, spanUs));
+      }
       raf = requestAnimationFrame(loop);
     };
     raf = requestAnimationFrame(loop);
@@ -482,11 +632,23 @@ export default function NotebookPage() {
    *  manually-set cursor seeds the clock's `tUs` from it (a judgment call:
    *  `interaction/playback.ts`'s `togglePlay` has no span/cursor parameter
    *  to do this itself, see its own doc comment) so playback resumes from
-   *  where the user last pointed rather than wherever the clock was left. */
+   *  where the user last pointed rather than wherever the clock was left.
+   *  With no manual cursor, Task 10 seeds from the *playing window's own
+   *  start* (`primaryWindowSpan`, decision 57) instead of leaving `tUs`
+   *  wherever a previous window's playback left it -- otherwise pressing
+   *  play on a freshly selected lap that starts partway through the
+   *  session could resume from `0`, outside that lap entirely, and the
+   *  very next {@link tick} would stall it at the start bound. */
   function handleTogglePlay(): void {
     setPlayback((prev) => {
-      if (!prev.playing && manualCursorTUs !== null) {
-        return togglePlay({ ...prev, tUs: manualCursorTUs });
+      if (!prev.playing) {
+        if (manualCursorTUs !== null) {
+          return togglePlay({ ...prev, tUs: manualCursorTUs });
+        }
+        const spanUs = playableSpanUs(primaryWindowSpan);
+        if (spanUs !== null) {
+          return togglePlay({ ...prev, tUs: spanUs[0] });
+        }
       }
       return togglePlay(prev);
     });
@@ -865,20 +1027,37 @@ export default function NotebookPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [windowsKeyValue, selectedWorkbookId]);
 
-  // Resolves every selected window's `SessionDetail` and (primary window
-  // only) recorded span (lead pre-ruling 2026-09-05 #1), once per window
-  // change -- `model/jsCellBinding.ts`'s `bindingFor` needs both, and the
-  // FFT arm needs every selected window's own `SessionDetail` (R115: two
-  // windows may name different sessions). All branching lives in
-  // `model/sessionSpanDriver.ts`'s `runSessionSpan`, called once per
-  // window (R127's accepted item); this effect only dispatches its two
-  // action kinds into local state, keyed per window.
+  // Resolves every selected window's `SessionDetail` and its own recorded
+  // span (lead pre-ruling 2026-09-05 #1; extended to every window, not only
+  // the primary, by plan Task 3/ruling R134), once per window change --
+  // `model/jsCellBinding.ts`'s `bindingFor` needs both for the primary
+  // window, the FFT arm needs every selected window's own `SessionDetail`
+  // (R115: two windows may name different sessions), and
+  // `model/viewportWindows.ts`'s `resolveWindowSpan` needs every selected
+  // window's own recorded span to resolve a `"session"`-kind window without
+  // the `Infinity` sentinel this task removes. All branching lives in
+  // `model/sessionSpanDriver.ts`'s `runSessionSpan`, called once per window
+  // (R127's accepted item); this effect only dispatches its two action
+  // kinds into local state, keyed per window. `sessionSpanUs` (the primary
+  // window's span, singular) stays in sync from the same loop for the
+  // existing single-window consumers (`ChartCell`'s clamp, `jsCellBinding`'s
+  // `bindingFor`) that read it directly.
   useEffect(() => {
     const currentKeys = new Set(windows.map(windowKey));
     for (const key of sessionSpanSeqRef.current.keys()) {
       if (!currentKeys.has(key)) sessionSpanSeqRef.current.delete(key);
     }
     setSessionDetailsByWindow((prev) => {
+      let next = prev;
+      for (const key of prev.keys()) {
+        if (!currentKeys.has(key)) {
+          if (next === prev) next = new Map(prev);
+          next.delete(key);
+        }
+      }
+      return next;
+    });
+    setSessionSpanUsByWindow((prev) => {
       let next = prev;
       for (const key of prev.keys()) {
         if (!currentKeys.has(key)) {
@@ -903,8 +1082,9 @@ export default function NotebookPage() {
       const onAction = (action: SessionSpanAction) => {
         if (action.type === "sessionDetail") {
           setSessionDetailsByWindow((prev) => new Map(prev).set(key, action.detail));
-        } else if (isPrimary) {
-          setSessionSpanUs(action.spanUs);
+        } else {
+          setSessionSpanUsByWindow((prev) => new Map(prev).set(key, action.spanUs));
+          if (isPrimary) setSessionSpanUs(action.spanUs);
         }
       };
       void runSessionSpan(deps, toWireWindow(w), onAction, () => sessionSpanSeqRef.current.get(key) !== mySeq);
@@ -1012,7 +1192,7 @@ export default function NotebookPage() {
     setWorkbookBarError(null);
     try {
       const handle = await createWorkbook(name);
-      writeNotebookPrefs({ last_workbook_id: handle.id });
+      writeNotebookPrefs({ ...readNotebookPrefs(), last_workbook_id: handle.id });
       setEntry({ kind: "single", workbookId: handle.id });
       try {
         const report = await rebuildCatalog();
@@ -1057,7 +1237,7 @@ export default function NotebookPage() {
    * came from the last list already held in `entry`.
    */
   function handleSelect(workbookId: string) {
-    writeNotebookPrefs({ last_workbook_id: workbookId });
+    writeNotebookPrefs({ ...readNotebookPrefs(), last_workbook_id: workbookId });
     setEntry((prev) => (prev !== null && prev.kind !== "empty" ? { ...prev, workbookId } : prev));
   }
 
@@ -1298,9 +1478,15 @@ export default function NotebookPage() {
   useEffect(() => {
     if (state.markdown === null || primaryWindow === null) return;
     const markdown = state.markdown;
-    const bindWindows = bindWindowsFor(windows, sessionDetailsByWindow);
+    const bindWindows = bindWindowsFor(windows, sessionDetailsByWindow, sessionSpanUsByWindow);
     if (bindWindows.length === 0) return;
     const windowKeys = windows.map(windowKey);
+    // R138 fix: one predicate for "resolved," shared with `bindWindowsFor`
+    // itself (`windowSpanFor`) -- see `resolvedWindowKeysFor`'s own doc
+    // comment. Computed once per effect run, not per cell: it depends only
+    // on `windows`/`sessionDetailsByWindow`/`sessionSpanUsByWindow`, all
+    // fixed for the duration of this loop.
+    const resolvedWindowKeys = resolvedWindowKeysFor(windows, sessionDetailsByWindow, sessionSpanUsByWindow);
 
     for (const cell of state.cells) {
       if (cell.id === null || cell.kind !== "js") continue;
@@ -1324,7 +1510,6 @@ export default function NotebookPage() {
       const identity = bindingIdentity(binding);
       const perWindowIdentity = boundIdentityRef.current.get(cellId) ?? new Map<string, string>();
       boundIdentityRef.current.set(cellId, perWindowIdentity);
-      const resolvedWindowKeys = new Set(windowKeys.filter((wKey) => sessionDetailsByWindow.has(wKey)));
       const needsRun = updateChannelBindIdentity(perWindowIdentity, windowKeys, resolvedWindowKeys, identity);
       if (!needsRun) continue;
 
@@ -1335,6 +1520,9 @@ export default function NotebookPage() {
       const onAction = (action: ChannelBindAction) => {
         if (action.type === "channelData") {
           sandboxHostRef.current?.setChannelHostVar(action.channelId, action.length, action.t, action.v, action.w, action.windows);
+          // R139: retain the same combined arrays the sandbox just got a
+          // transfer clone of -- `model/cursorCard.ts` reads this back.
+          combinedChannelDataRef.current.set(`${action.cellId}::${action.channelId}`, action.retained);
         } else if (action.type === "boundChannels") {
           sessionRef.current.setBoundChannels(action.cellId, action.bound);
         } else {
@@ -1356,6 +1544,7 @@ export default function NotebookPage() {
     primaryWindow,
     windowsKeyValue,
     sessionDetailsReadiness,
+    sessionSpansReadiness,
     primeState.primeEpoch,
   ]);
 
@@ -1760,11 +1949,21 @@ export default function NotebookPage() {
                 height={DEFAULT_JS_CELL_HEIGHT_PX}
                 heightPx={heightPx}
                 viewport={
-                  window?.viewport ?? {
-                    startUs: binding.initialSpan.startUs,
-                    endUs: binding.initialSpan.endUs,
-                    pixelWidth: DEFAULT_CHART_WIDTH_PX,
-                  }
+                  // Decision 52 / Task 4: once any chart has settled a
+                  // gesture, every chart's own time range reads through the
+                  // one shared value -- `viewportForCell` applies this
+                  // chart's own `DEFAULT_CHART_WIDTH_PX` to it. Before that
+                  // first settle, each binding's own `initialSpan` still
+                  // applies per cell (bindings can legitimately open to
+                  // different spans; `sharedViewport` is `null` until a
+                  // gesture actually commits one).
+                  sharedViewport !== null
+                    ? viewportForCell(sharedViewport, DEFAULT_CHART_WIDTH_PX)
+                    : (window?.viewport ?? {
+                        startUs: binding.initialSpan.startUs,
+                        endUs: binding.initialSpan.endUs,
+                        pixelWidth: DEFAULT_CHART_WIDTH_PX,
+                      })
                 }
                 sessionSpanUs={sessionSpanUs ?? binding.initialSpan.endUs}
                 sessionId={sid}
@@ -1779,6 +1978,15 @@ export default function NotebookPage() {
                   // driver below, whose re-fetch of this same channel is a
                   // cache hit but still a microtask away.
                   setChartWindows((prev) => new Map(prev).set(cellId, { viewport, tiles }));
+
+                  // Decision 52 / Task 4: this settle is the one that
+                  // commits the worksheet's shared X range -- every mounted
+                  // `ChartCell`'s own `viewport` prop reads through
+                  // `viewportForCell(sharedViewport, …)` above, so every
+                  // chart visually snaps to this same time window on the
+                  // very next render, regardless of which chart's gesture
+                  // triggered it.
+                  setSharedViewport(commitSharedViewport(viewport));
 
                   // Every one of this cell's bound channels -- not only the
                   // mounted one -- must re-fetch for the newly settled
@@ -1799,6 +2007,10 @@ export default function NotebookPage() {
                   const onAction = (action: ChannelBindAction) => {
                     if (action.type === "channelData") {
                       sandboxHostRef.current?.setChannelHostVar(action.channelId, action.length, action.t, action.v, action.w, action.windows);
+                      // R139: retain the same combined arrays the sandbox
+                      // just got a transfer clone of -- `model/cursorCard.ts`
+                      // reads this back.
+                      combinedChannelDataRef.current.set(`${action.cellId}::${action.channelId}`, action.retained);
                     } else if (action.type === "boundChannels") {
                       sessionRef.current.setBoundChannels(action.cellId, action.bound);
                     } else {
@@ -1808,7 +2020,7 @@ export default function NotebookPage() {
                   void runChannelSettle(
                     deps,
                     sessionRef.current.cache,
-                    bindWindowsFor(windows, sessionDetailsByWindow),
+                    bindWindowsFor(windows, sessionDetailsByWindow, sessionSpanUsByWindow),
                     cellId,
                     binding.channels,
                     channel.channelId,
@@ -1819,14 +2031,67 @@ export default function NotebookPage() {
                     isStale,
                     sessionRef.current.boundChannelsFor(cellId)
                   );
+
+                  // "Every chart re-fetches" (plan Task 4): every *other*
+                  // time-bound chart cell must re-fetch its own bound
+                  // channels for this newly shared range too, not only the
+                  // one whose gesture triggered this settle -- otherwise a
+                  // sibling chart would keep showing tiles for its old
+                  // window while its `viewport` prop (via `sharedViewport`
+                  // above) has already moved, a picture-vs-viewport
+                  // mismatch of exactly the silent-wrong-number shape this
+                  // lane guards against. Mirrors the channel-bind effect
+                  // above cell for cell, but calls `runChannelSettle` at the
+                  // *shared* range (`viewport.startUs`/`endUs`, this chart's
+                  // own `DEFAULT_CHART_WIDTH_PX` since every chart renders
+                  // at that same constant width today), never
+                  // `runChannelBind` -- that would silently discard the
+                  // pan/zoom the user just performed for every chart but
+                  // this one, snapping the rest back to their own
+                  // `initialSpan`. `onAction` above is already
+                  // cellId-agnostic (reads `action.cellId` from the action
+                  // itself), so it's reused as-is.
+                  for (const otherCell of state.cells) {
+                    if (otherCell.id === null || otherCell.id === cellId || otherCell.kind !== "js") continue;
+                    const otherCellId = otherCell.id;
+                    const otherCode = state.markdown !== null ? decodeByteRange(state.markdown, otherCell.bodyRange) : "";
+                    const otherBinding = bindingFor({ id: otherCellId, code: otherCode }, sessionDetail, sessionSpanUs, definitionsWithAxis, primaryWireWindow);
+                    if (otherBinding === null || otherBinding.kind !== "time" || otherBinding.mountedChannelId === null) continue;
+                    const otherChannel = otherBinding.channels.find((c) => c.channelId === otherBinding.mountedChannelId);
+                    if (otherChannel === undefined) continue;
+
+                    const otherSeq = cellRunSequencerRef.current.start(otherCellId);
+                    const otherIsStale = () => !cellRunSequencerRef.current.isCurrent(otherCellId, otherSeq);
+                    void runChannelSettle(
+                      deps,
+                      sessionRef.current.cache,
+                      bindWindowsFor(windows, sessionDetailsByWindow, sessionSpanUsByWindow),
+                      otherCellId,
+                      otherBinding.channels,
+                      otherChannel.channelId,
+                      viewport.startUs,
+                      viewport.endUs,
+                      DEFAULT_CHART_WIDTH_PX,
+                      onAction,
+                      otherIsStale,
+                      sessionRef.current.boundChannelsFor(otherCellId)
+                    );
+                  }
                 }}
                 fetchCursorReadout={(sessId, channels, tUs) => cursorReadout(sessId, channels, tUs)}
+                channelUnit={sessionDetail?.channels.find((c) => c.channel_id === channel.channelId)?.unit}
+                windowCount={windows.length}
+                combinedChannelData={combinedChannelDataRef.current.get(`${cellId}::${channel.channelId}`)}
                 sendTransform={(id, translateXPx, scaleX) => sandboxHostRef.current?.sendTransform(id, translateXPx, scaleX)}
                 sendLayout={sendLayout}
                 cursorTUs={sharedCursorTUs}
                 playing={playback.playing}
+                playbackMode={playbackMode}
+                primaryWindowSpan={primaryWindowSpanForCell}
                 onSetCursor={(tUs) => setManualCursorTUs(BigInt(Math.round(tUs)))}
                 onClearCursor={() => setManualCursorTUs(null)}
+                cursorBus={cursorBus}
+                inputMapPreset={inputMapPreset}
                 onToggleCode={() => setRevealedCells((prev) => toggleCode(prev, cellId))}
               />
             );
@@ -1867,7 +2132,72 @@ export default function NotebookPage() {
         onToggle={handleTogglePlay}
         disabled={!primeState.running}
         routeVisible={routeVisible}
+        speed={playback.speed}
+        onSpeedChange={(speed) => setPlayback((prev) => setSpeed(prev, speed))}
+        mode={playbackMode}
+        onModeChange={setPlaybackMode}
+        followingWindowLabel={cellListWindowNote}
       />
+      {/* Master timeline strip (decision 52, R115, R134 item 1): one lane
+          per selected window, own draggable boundary handles. Commits a
+          drag to `AppState.selection` on pointer-up only
+          (`model/timelineStrip.ts`'s own settle-discipline doc comment) --
+          `timelineCommit` is the same pure function `TimelineStrip.tsx`'s
+          own test suite exercises directly; this call site only wires it
+          to `appDispatch`. */}
+      <TimelineStrip
+        windows={windows}
+        detailsByWindow={sessionDetailsByWindow}
+        spanUsByWindow={sessionSpanUsByWindow}
+        viewport={sharedViewport}
+        onCommit={(laneIndex, candidate) => appDispatch({ type: "SET_WINDOWS", windows: timelineCommit(windows, laneIndex, candidate) })}
+      />
+      {/* R137's own point: "a few presets for me to try at runtime" -- a
+          plain `<select>`, no dialog, no reload. Changing it updates
+          `inputMapPreset` React state above, which every mounted
+          `ChartCell` receives as a prop on the very next render; the next
+          gesture on any chart reads the new table. */}
+      <label className="flex items-center gap-2 px-2 py-1 font-mono text-label-2 text-fg-dim">
+        Gesture input map
+        <select
+          value={inputMapPreset.id}
+          onChange={(event) => {
+            const next = findInputMapPreset(event.target.value);
+            if (next !== null) setInputMapPreset(next);
+          }}
+          className="rounded-[var(--radius-structural)] border border-rule bg-transparent px-1 py-0.5 text-fg"
+        >
+          {INPUT_MAP_PRESETS.map((preset) => (
+            <option key={preset.id} value={preset.id}>
+              {preset.label}
+            </option>
+          ))}
+        </select>
+      </label>
+      {/* Decision 54's worksheet-level X mode (Task 13). Distance is listed
+          and disabled with its reason as a `title` tooltip (R136) -- never
+          silently omitted, never silently falling back to time without
+          saying why. Changing the (only ever selectable) time option is a
+          no-op today; the field exists so a future core distance axis has
+          somewhere to read from without another prefs-shape change. */}
+      <label className="flex items-center gap-2 px-2 py-1 font-mono text-label-2 text-fg-dim">
+        X axis
+        <select
+          value={xMode}
+          onChange={(event) => {
+            const next = event.target.value;
+            if (next === "time" || next === "distance") setXMode(next);
+          }}
+          className="rounded-[var(--radius-structural)] border border-rule bg-transparent px-1 py-0.5 text-fg"
+        >
+          {X_MODE_OPTIONS.map((option) => (
+            <option key={option.value} value={option.value} disabled={option.disabledReason !== undefined} title={option.disabledReason}>
+              {option.label}
+              {option.disabledReason !== undefined ? " (unavailable)" : ""}
+            </option>
+          ))}
+        </select>
+      </label>
       {sandboxUnavailable && (
         <NoteBlock role="alert" className="border-brand-accent text-brand-accent flex items-center justify-between gap-3">
           <span>The cell runtime failed to start, so cell output is unavailable.</span>
