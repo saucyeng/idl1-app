@@ -6,6 +6,14 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 
 ### Added
 
+- **`Notebook/interaction/cursorBus.ts`: pure worksheet cursor pub/sub
+  (2026-09-08, w32-time Task 1, spec-during — spec section lands with the
+  lane, no spec change in this commit).** `CursorState {tUs: number | null,
+  pinned: boolean}`, `publish`/`pin`/`unpin`/`subscribe`; no React, no DOM,
+  no timers, so cross-chart cursor propagation (direction-2 decision 51)
+  never re-renders `Notebook/index.tsx` at pointer rate — mirrors R69.2's
+  imperative `transform` push. `tUs` is `number` (µs), not `bigint`, per
+  ruling R134/plan §2.2's documented boundary.
 - **`app/src/state/selection.ts`: pure selection module for C1 §6.1
   time-window selection (2026-09-08, s1-ts Task 7, spec exists — C1 §6.1,
   no spec change needed).** `SelectionWindow`/`Span` (session-relative
