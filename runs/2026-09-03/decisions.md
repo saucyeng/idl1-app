@@ -5441,3 +5441,48 @@ existing workbook draws a single line vaulting from the end of one lap to
 the start of another — a shape that looks like data and is an artefact of
 concatenation. Without (1), workbooks would encode selection state in
 variable names and break whenever the selection changed.
+
+## 2026-09-08 — R128: half-open bounds need half-open overlap operators, and "no window" must not share a value with "empty window"
+
+**Finding.** The R126 implementer flagged a residual and judged it "benign,
+not a crash". It is not benign — it is the worst shape in this lane.
+
+With R126 making the session span `[first_us, last_us + 1)`, the overlap
+test at `tauri/src/session_source.rs:271` is still written for closed
+bounds: `t1_us < session_start_us || t0_us > session_end_us`. A range
+beginning exactly at `session_end_us` therefore has `t0 == end`, fails
+`t0 > end`, is judged *overlapping*, and clamps to a zero-width `(X, X)`
+span. That span then reaches `window_index_range`, whose
+`if !(start_sec < end_sec) { return (0, len) }` branch hands back **the
+whole channel**.
+
+So a range entirely past the end of the session returns the **session-wide**
+aggregate. Not a panic — a confidently wrong number, which by this
+project's standards is worse. It is also the same defect R119 was written
+to kill, resurfacing through a different door.
+
+**Ruling.**
+1. **The overlap test becomes half-open:** no overlap iff
+   `t1_us <= session_start_us || t0_us >= session_end_us`. R126 changed the
+   bounds' meaning; every comparison against them must change with it.
+   Operators are part of the semantics, not incidental.
+2. **`window_index_range` must never turn a resolved window into the whole
+   channel.** Only the exact `(0.0, 0.0)` sentinel means "no window
+   selected, gate off". Any *other* `start >= end` is an empty window and
+   yields an empty range `(0, 0)`, never `(0, len)`. Defence in depth: even
+   if a degenerate span slips past resolution again, the answer is "nothing
+   selected" and not "everything".
+3. Long term the sentinel is the real flaw — "no window" and "a window from
+   0.0 to 0.0" are the same value, exactly the conflation that produced
+   this. Filed as a follow-up: carry the window as an `Option`, so the two
+   states cannot be spelled the same way. Not now; (1) and (2) close the
+   hole.
+
+**On severity judgement.** Flagging it was right. Classifying "returns the
+wrong number silently" as benign because it does not crash is the
+misjudgement — in this app a panic is recoverable and a plausible wrong
+number is not (section D). Report such a residual as a defect, not a note.
+
+**Cost if wrong.** A user drags a boundary cursor past the end of a session
+and every statistic on screen quietly reports the whole session instead of
+the empty selection they asked for.

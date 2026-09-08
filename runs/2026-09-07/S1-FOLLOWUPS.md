@@ -14,3 +14,7 @@
 - **Per-session evaluation cache (R125).** Not in S1. Key on
   `(session_id, definition, workbook revision)`, no window in the key.
   Trigger: the lap-time table / per-lap columns.
+
+- **Replace the `(0.0, 0.0)` gating-off sentinel with an `Option` (R128.3).**
+  "No window selected" and "a window from 0.0 to 0.0" are currently the same
+  value; that conflation produced the R128 defect and will produce another.
