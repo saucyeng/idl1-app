@@ -6160,3 +6160,48 @@ implementation, not here.
 the graph can show a definition the evaluator parses differently — the same
 class as an edge the evaluator does not have, arriving through the line
 layer instead of the expression layer.
+
+## 2026-09-08 — R141: `channel_id` is the reference name; graph status takes the selection *and* the resolved map
+
+**Two questions from W3.2 maths task 7, both correctly stopped on.**
+
+### Q1 — how a `[Name]` reference maps to a channel
+
+The implementer read `ChannelSummary.channel_id` as "a hash-like id" with no
+display-name field, and could not see how a bracket reference's text should
+match it. **It is not a hash.** `channel_id` *is* the reference name —
+`jsCellBinding.ts`'s existing `findChannel` is
+`channels.find(c => c.channel_id === channelId)`, and its own test resolves
+`"fork_velocity"`. A `[Name]` reference matches `channel_id` exactly.
+
+**Ruling: reuse that predicate, do not write a third one.** `findChannel`
+(and `unresolvedChannelId` above it) already decide "does this name resolve
+against this session's channels", and the Notebook uses them to grey an
+unresolved chart today. Decision 44's grey-vs-red split must answer the same
+question the same way — export the existing predicate rather than
+re-implementing the lookup in `graphStatus.ts`. Two spellings of "resolves"
+is the shape that has now produced four defects in this project (R133,
+R138, R140's tokenizer concern, and the S1 pair).
+
+### Q2 — resolved-only state cannot express "2 of 3"
+
+`WorkbookState.windows` holds an entry only for a window that has already
+evaluated, so absence is ambiguous: it means both "not started" and "not
+selected". Per-window spinners and a "2 of 3 windows" summary cannot be
+derived from it alone.
+
+**Ruling: `graphStatus.ts` takes both** — the ordered `SelectionWindow[]`
+from `AppState.selection` **and** the resolved map. Selection supplies the
+denominator and the order; the map supplies each window's outcome; a
+selected window absent from the map is *pending*, which is what draws a
+spinner (decision 41). This is R131's rule applied one layer out: order and
+membership live in the selection, and the map is only a lookup. Do not add a
+"pending" entry to the map to make it self-sufficient — that would give
+absence two meanings again, which is exactly the sentinel shape that
+produced most of S1's silent-wrong-number defects.
+
+**Cost if wrong.** Q1 guessed would put a second channel-resolution rule in
+the graph, so a node could grey while the chart beside it renders — or
+worse, the reverse. Q2 guessed would make a *deselected* window and an
+*unevaluated* one indistinguishable, and the canvas would show spinners for
+windows nobody selected.
