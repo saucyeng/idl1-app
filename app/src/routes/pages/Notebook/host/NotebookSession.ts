@@ -19,6 +19,7 @@
 import type { ChannelData } from "../model/channelData";
 import { rebindChannelsAfterRebuild, type BoundChannel, type HostChannelRebindDeps } from "../model/channelRebind";
 import type { TileCache } from "../model/tileCache";
+import type { WindowDescriptor } from "./protocol";
 
 /**
  * The subset of `SandboxHost`'s API `onChannelsInvalidated` calls —
@@ -28,7 +29,7 @@ import type { TileCache } from "../model/tileCache";
  */
 export interface ChannelRebindSandbox {
   /** Binds a decoded channel as a sandbox host variable (`SandboxHost.setChannelHostVar`). */
-  setChannelHostVar(name: string, length: number, t: ArrayBuffer, v: ArrayBuffer): void;
+  setChannelHostVar(name: string, length: number, t: ArrayBuffer, v: ArrayBuffer, w: ArrayBuffer, windows: WindowDescriptor[]): void;
 }
 
 /**
@@ -43,21 +44,38 @@ export interface ChannelRebindSandbox {
  * re-fetches a `"definition"` bound channel (L6 Task 18, Q1(a), R78) — a
  * definition has no tile-cache entry to re-derive from, unlike a
  * `"session"` channel.
+ *
+ * `getWindowDescriptor` (S1 Task 11a, ruling R131: `channelBindDriver.ts`'s
+ * true multi-window fetching is Task 11b; this module stays honest by
+ * construction — it never even sees more than one window) is called fresh
+ * every rebuild too, same reason as `getBound`. Every bound channel here
+ * was bound while exactly one window was selected (the channel-bind
+ * effects gate on `windows.length <= 1`, ruling R131) — `w` is always
+ * filled with that one window's index (`0`), byte-identical to the
+ * pre-multi-window payload (R127 item 3). `null` (nothing selected right
+ * now — the selection can change between when a channel was bound and
+ * when a rebuild fires) skips the rebuild for every channel rather than
+ * guessing a window to label them with; a subsequent settle re-binds once
+ * a window is selected again.
  */
 export function makeChannelsInvalidatedHandler(
   getBound: () => BoundChannel[],
   cache: TileCache,
   hostChannelDeps: HostChannelRebindDeps,
-  sandboxHost: ChannelRebindSandbox
+  sandboxHost: ChannelRebindSandbox,
+  getWindowDescriptor: () => WindowDescriptor | null
 ): () => void {
   return () => {
+    const descriptor = getWindowDescriptor();
+    if (descriptor === null) return;
     rebindChannelsAfterRebuild(getBound(), cache, hostChannelDeps, (name, data: ChannelData) => {
       // `Float64Array.buffer` types as `ArrayBufferLike` (covering
       // `SharedArrayBuffer`) unless the array's own construction site lets
       // TS narrow it; `ChannelData.t`/`v` are plain `Float64Array` fields,
       // so the narrower cast is asserted here rather than threading a
       // generic parameter through `ChannelData` for one call site.
-      sandboxHost.setChannelHostVar(name, data.length, data.t.buffer as ArrayBuffer, data.v.buffer as ArrayBuffer);
+      const w = new Float64Array(data.length).fill(0);
+      sandboxHost.setChannelHostVar(name, data.length, data.t.buffer as ArrayBuffer, data.v.buffer as ArrayBuffer, w.buffer as ArrayBuffer, [descriptor]);
     });
   };
 }
@@ -112,8 +130,16 @@ export class NotebookSession {
    * this session's registry fresh on every rebuild ({@link makeChannelsInvalidatedHandler}).
    *
    * @param hostChannelDeps Re-fetches a `"definition"` bound channel on rebuild (Q1(a), R78).
+   * @param getWindowDescriptor The single window every currently bound
+   *   channel was bound under (S1 Task 11a, ruling R131), or `null` when
+   *   nothing is selected right now — see {@link makeChannelsInvalidatedHandler}'s
+   *   own doc comment.
    */
-  onChannelsInvalidated(sandboxHost: ChannelRebindSandbox, hostChannelDeps: HostChannelRebindDeps): () => void {
-    return makeChannelsInvalidatedHandler(() => this.allBoundChannels(), this.cache, hostChannelDeps, sandboxHost);
+  onChannelsInvalidated(
+    sandboxHost: ChannelRebindSandbox,
+    hostChannelDeps: HostChannelRebindDeps,
+    getWindowDescriptor: () => WindowDescriptor | null
+  ): () => void {
+    return makeChannelsInvalidatedHandler(() => this.allBoundChannels(), this.cache, hostChannelDeps, sandboxHost, getWindowDescriptor);
   }
 }

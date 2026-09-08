@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { assignColour, describeWindow, nextWindows, windowKey, type SelectionWindow } from "./selection";
+import { assignColour, describeWindow, nextWindows, windowKey, windowsKey, type SelectionWindow } from "./selection";
 
 const sessionWindow = (sessionId: string, colour = "--chart-1"): SelectionWindow => ({
   sessionId,
@@ -47,6 +47,34 @@ describe("windowKey", () => {
     const b = rangeWindow("s1", 0, 2000);
 
     expect(windowKey(a)).not.toBe(windowKey(b));
+  });
+});
+
+describe("windowsKey", () => {
+  it("windowsKey — same windows, different colours — same key", () => {
+    const a = [sessionWindow("s1", "--chart-1"), lapWindow("s2", 1, "--chart-2")];
+    const b = [sessionWindow("s1", "--chart-5"), lapWindow("s2", 1, "--chart-6")];
+
+    expect(windowsKey(a)).toBe(windowsKey(b));
+  });
+
+  it("windowsKey — same two windows in reverse order — different keys", () => {
+    const a = [sessionWindow("s1"), lapWindow("s2", 1)];
+    const b = [lapWindow("s2", 1), sessionWindow("s1")];
+
+    expect(windowsKey(a)).not.toBe(windowsKey(b));
+  });
+
+  it("windowsKey — an added window — changes the key", () => {
+    const a = [sessionWindow("s1")];
+    const b = [sessionWindow("s1"), lapWindow("s2", 1)];
+
+    expect(windowsKey(a)).not.toBe(windowsKey(b));
+  });
+
+  it("windowsKey — the empty list — a stable, distinct key", () => {
+    expect(windowsKey([])).toBe("");
+    expect(windowsKey([])).not.toBe(windowsKey([sessionWindow("s1")]));
   });
 });
 

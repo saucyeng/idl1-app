@@ -85,6 +85,27 @@ export function windowKey(w: SelectionWindow): string {
 }
 
 /**
+ * A stable string identity for the **whole ordered** `windows` list —
+ * operating brief §4's tightening ("effect dependencies key on a stable
+ * `windowsKey` string, never array identity"). Built from every entry's
+ * {@link windowKey}, in list order, joined by `|` — `colour` is excluded
+ * (same reasoning as `windowKey` itself: recolouring a window is not
+ * fetch-relevant) but list order is preserved, since reordering the same
+ * set of windows changes which window is "first" (`Notebook/index.tsx`'s
+ * "primary window" convention, S1 Task 11a) and which window a combined
+ * multi-window payload's break rows fall between (`host/protocol.ts`'s
+ * `combineChannelWindows`/`combineSpectrumWindows`).
+ *
+ * Two different `windows` lists may — rarely — collide on this string only
+ * if they are identical in both order and content; that is indistinguishable
+ * from "nothing changed" for every consumer of this key (an effect
+ * dependency, a `useMemo` cache key), so no stronger guarantee is needed.
+ */
+export function windowsKey(windows: readonly SelectionWindow[]): string {
+  return windows.map(windowKey).join("|");
+}
+
+/**
  * How a selection click combines with the existing selection. Named after
  * the gesture a UI binds it to (Task 12/13's concern, not this module's):
  * a plain click is `"replace"`, a shift-click is `"add"`, a ctrl/cmd-click

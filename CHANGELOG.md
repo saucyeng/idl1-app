@@ -149,6 +149,34 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
   `"session"` spans are unaffected (both were, and remain, correct). This
   interim shim still narrows scope until Task 11 migrates the driver to
   `fetchFftV2`; it must never widen it.
+- **`Notebook/index.tsx` wired onto the `windows` drivers; FFT charts get
+  full multi-window overlay, time-channel charts get an honest single-window
+  interim (2026-09-08, s1-ts Task 11a, ruling R131, no spec change needed
+  — C1 §6.1/C3 §3.4/§3.6 already cover this).** `AppState.selection` (a
+  `SelectionWindow[]`) replaces the deleted `{ sessionId, lapContext }`
+  pair everywhere in this page; every IPC-driving effect keys on
+  `state/selection.ts`'s new `windowsKey` string, never array identity
+  (operating brief §4). `workbookState.ts`'s reducer gained the
+  `windows: Map<windowKey, WindowEvalState>` shape R131 specified — the
+  `evalWindowResult`/`evalWindowError` actions `openEvalDriver.ts` (Task
+  10) already dispatched had no case here and were silently dropped before
+  this commit (R131's own finding); a `pruneWindows` action drops a
+  deselected window's stale entry (decision 61). `fftDriver.ts` migrated
+  to `fetchFftV2`/`Window`, `legacyLapFromWindow` deleted — a `runFft` call
+  is now per (cell, window), and `Notebook/index.tsx` fetches every
+  selected window's spectrum independently, combines them via
+  `host/protocol.ts`'s `combineSpectrumWindows`, and pushes one host
+  variable per cell (ruling R129): a window whose fetch fails is simply
+  omitted from the combined payload, its message surfacing in that cell's
+  note — the other windows' series still render (R121). Time-chart
+  channel binding (`channelBindDriver.ts`, still single-window) stays
+  exactly byte-identical for one selected window (`w` all zeros, R127 item
+  3); selecting more than one window shows a typed cell error on every
+  time-bound `js` cell instead of silently rendering `windows[0]`'s data as
+  the whole selection — true multi-window overlay for this chart kind is
+  Task 11b. `jsCellNote.ts`'s `windowCount` and `sessionSpanDriver.ts`'s
+  once-per-window contract (both landed in Task 10) are wired in for real
+  here for the first time.
 
 ### Fixed
 

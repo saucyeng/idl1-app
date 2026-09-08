@@ -6,21 +6,24 @@ import { BrandSheet } from "@/components/brand/BrandSheet";
 import { NoteBlock } from "@/components/brand/NoteBlock";
 import { listSessions, listWorkbooks, getSession, rebuildCatalog, type RebuildReport, type SessionDetail } from "../../../ipc/catalog";
 import { cursorReadout } from "../../../ipc/cursor";
-import { fetchFft, type DecodedFft } from "../../../ipc/rasters";
+import { fetchFftV2, type DecodedFft } from "../../../ipc/rasters";
 import { fetchTile } from "../../../ipc/tiles";
 import {
   createWorkbook,
-  evalWorkbook,
-  fetchHostChannel,
+  evalWorkbookV2,
+  fetchHostChannelV2,
   listMathBuiltins,
   openWorkbook,
   readWorkbook,
   saveWorkbook,
   watchWorkbook,
+  type CellOutput,
   type IpcError,
-  type LapContext as EvalLapContext,
+  type Span as WireSpan,
+  type Window as WireWindow,
 } from "../../../ipc/workbook";
 import { useAppState } from "../../../state/AppState";
+import { describeWindow, windowKey, windowsKey, type SelectionWindow } from "../../../state/selection";
 import { useRouteVisible } from "../../../shell/routeVisibility";
 import { useEditorSlotNode } from "../../../shell/editorSlot";
 import { ColumnPlaceholder } from "../../../shell/ColumnFrame";
@@ -35,7 +38,7 @@ import JsCellFrame, { DEFAULT_JS_CELL_HEIGHT_PX } from "./components/JsCellFrame
 import PropertiesForm from "./components/PropertiesForm";
 import type { PropertiesFormChannelOption, PropertiesFormLapOption } from "./components/PropertiesForm.types";
 import WorkbookBar from "./components/WorkbookBar";
-import type { SandboxCell } from "./host/protocol";
+import { combineSpectrumWindows, type SandboxCell, type SpectrumWindowSeries, type WindowDescriptor } from "./host/protocol";
 import { SandboxHost } from "./host/SandboxHost";
 import { PING_INTERVAL_MS } from "./host/watchdog";
 import { NotebookSession } from "./host/NotebookSession";
@@ -63,7 +66,7 @@ import { initialSandboxPrimeState, nextSandboxPrimeState } from "./model/sandbox
 import { runSessionSpan, type SessionSpanAction, type SessionSpanDeps } from "./model/sessionSpanDriver";
 import { TileCache } from "./model/tileCache";
 import { chooseWorkbookEntry, type WorkbookEntry } from "./model/workbookEntry";
-import { initialWorkbookState, workbookReducer } from "./model/workbookState";
+import { initialWorkbookState, NO_WINDOW_KEY, workbookReducer } from "./model/workbookState";
 
 /** `true` when `value` has the shape of a typed `IpcError` (C3 §2). Local
  *  copy of the same helper `openEvalDriver.ts`/`fftDriver.ts` each keep --
@@ -87,6 +90,50 @@ function toIpcError(error: unknown): IpcError {
       : { kind: error.kind, message: error.message, detail: error.detail };
   }
   return { kind: "internal", message: error instanceof Error ? error.message : String(error) };
+}
+
+/** Converts one app-side `SelectionWindow` (`state/selection.ts`, camelCase)
+ *  to its wire `Window` counterpart (`ipc/workbook.ts`, snake_case) -- the
+ *  mapping `state/selection.ts`'s own `SelectionWindow` doc comment names
+ *  explicitly ("a caller maps `sessionId`→`session_id`, …"). Pure. */
+function toWireWindow(w: SelectionWindow): WireWindow {
+  const span: WireSpan =
+    w.span.kind === "session"
+      ? { kind: "session" }
+      : w.span.kind === "lap"
+        ? { kind: "lap", lap_number: w.span.lapNumber }
+        : { kind: "range", t0_us: w.span.t0Us, t1_us: w.span.t1Us };
+  return { session_id: w.sessionId, span, colour: w.colour };
+}
+
+/** Synthetic label for an empty `venue_name`, matching `Data/sessionRow.ts`'s
+ *  own convention (kept as a local copy, not a cross-page import -- this
+ *  file's existing pattern for every small pure helper another page also
+ *  happens to need). */
+const NONE_VENUE = "(none)";
+
+/** Builds `w`'s `WindowDescriptor` (`host/protocol.ts`) for the sandbox
+ *  host-var payload -- `label` is human-facing (rendered by a chart's own
+ *  legend, per ruling R117 item 6/`state/selection.ts`'s `describeWindow`
+ *  doc comment: a raw `sessionId` must never reach it), so this always
+ *  goes through `describeWindow` with a resolved venue name, never the id
+ *  itself. `detail` is `sessionDetailsByWindow`'s entry for `w` -- `null`
+ *  while still resolving, which reads as the same "(none)" venue text a
+ *  session with no venue set would. */
+function windowDescriptorFor(w: SelectionWindow, detail: SessionDetail | null): WindowDescriptor {
+  const venueName = detail !== null && detail.venue_name !== "" ? detail.venue_name : NONE_VENUE;
+  return { sessionId: w.sessionId, span: toWireWindow(w).span, colour: w.colour, label: describeWindow(w, venueName) };
+}
+
+/** The `cellRunSequencerRef`/`fftBoundIdentityRef` composite key for one
+ *  FFT cell's one window's fetch (S1 Task 11a) -- `CellRunSequencer`
+ *  accepts any string, so a per-(cell, window) key lets one window's
+ *  fetch supersede only its own sibling runs, never a different window's
+ *  in-flight fetch for the same cell (ruling R129: each window's spectrum
+ *  is independent). The delimiter cannot collide with a real C2
+ *  fence-string cell id. */
+function fftRunKey(cellId: string, windowKeyValue: string): string {
+  return `${cellId}|fft|${windowKeyValue}`;
 }
 
 /** C4 §4's stated expected-hash-set TTL (5 s), matched here for the frontend's own independent self-write belt (`saveFlow.ts`'s `isSelfWrite`). */
@@ -217,14 +264,35 @@ function decodeByteRange(markdown: string, range: [number, number]): string {
  */
 export default function NotebookPage() {
   const [appState] = useAppState();
-  const { sessionId, lapContext } = appState.selection;
-  /** The selected main lap (R83/L2b Task 6), or `null` when no lap is
-   *  selected -- passed to `bindingFor`'s FFT arm so an FFT cell's
-   *  `fetch_fft` request targets the same lap window the rest of the app is
-   *  looking at. A time cell's own per-mark `lap` (`MarkProps.lap`) is
-   *  unrelated (`bindingFor`'s `mainLap` parameter is consulted only by its
-   *  FFT arm). */
-  const mainLap = lapContext?.mainLap ?? null;
+  /** `AppState.selection` (C1 §6.1, ruling R111/R115/R117): an ordered list
+   *  of {@link SelectionWindow}s, superseding the old `{ sessionId,
+   *  lapContext }` pair outright (S1 Task 11a). Every consumer below either
+   *  loops it (the FFT bind effect: full multi-window overlay, ruling
+   *  R129) or reads its first entry as the page's one "primary" window
+   *  (`primaryWindow` below) for everything this task does not extend to
+   *  true multi-window rendering yet -- math/table cell values and the
+   *  time-chart channel-bind pipeline (`channelBindDriver.ts`, deferred to
+   *  Task 11b per ruling R131). A documented S1 Task 11a judgment call, not
+   *  a value any ruling states: R121's "per-window failures render in
+   *  place" is, by its own wording ("shows where its series would be"),
+   *  about chart series -- this task extends true per-window rendering to
+   *  FFT charts (fully supported by `combineSpectrumWindows` already) and
+   *  keeps every other cell kind showing its one primary window's value,
+   *  same as before multi-window existed. */
+  const windows = appState.selection;
+  /** A stable identity for the *whole* selected list (`state/selection.ts`'s
+   *  `windowsKey`) -- the effect-dependency key every IPC-driving effect
+   *  below keys on instead of `windows`' own array identity (operating
+   *  brief §4's tightening). */
+  const windowsKeyValue = windowsKey(windows);
+  /** This page's one "primary" window -- see the `windows` doc comment
+   *  above. `null` when nothing is selected. */
+  const primaryWindow: SelectionWindow | null = windows[0] ?? null;
+  /** `primaryWindow`'s `workbookState.ts` lookup key (`windowKey`/
+   *  `wireWindowKey` produce the identical string for the same window) --
+   *  `NO_WINDOW_KEY` when nothing is selected, matching
+   *  `evalWorkbookV2([])`'s own "nothing selected" result key. */
+  const primaryKey = primaryWindow !== null ? windowKey(primaryWindow) : NO_WINDOW_KEY;
 
   const [state, dispatch] = useReducer(workbookReducer, initialWorkbookState);
   const [cellErrors, setCellErrors] = useState<Map<string, string>>(new Map());
@@ -232,12 +300,50 @@ export default function NotebookPage() {
   const [inlineResults, setInlineResults] = useState<Map<string, string>>(new Map());
   const [spanErrors, setSpanErrors] = useState<Map<string, string>>(new Map());
   const [selectedCellId, setSelectedCellId] = useState<string | null>(null);
-  const [sessionDetail, setSessionDetail] = useState<SessionDetail | null>(null);
+  /** One entry per window this page has resolved a `SessionDetail` for
+   *  (`model/sessionSpanDriver.ts`'s `runSessionSpan`, called once per
+   *  selected window -- R127's accepted item), keyed by `windowKey`. An
+   *  FFT cell's binding (`jsCellBinding.ts`'s `bindingForFft`) needs every
+   *  selected window's own channel list, since two windows may (R115) name
+   *  different sessions entirely; every other consumer reads only
+   *  `primaryWindow`'s entry (see the `windows` doc comment above). */
+  const [sessionDetailsByWindow, setSessionDetailsByWindow] = useState<Map<string, SessionDetail | null>>(new Map());
+  /** `primaryWindow`'s recorded session span, in µs -- unaffected by which
+   *  lap/range is selected (`sessionSpanDriver.ts`'s own doc comment); only
+   *  ever resolved for the primary window (unused by the FFT arm, per
+   *  `jsCellBinding.ts`'s `bindingFor` doc comment). */
   const [sessionSpanUs, setSessionSpanUs] = useState<number | null>(null);
   const [chartWindows, setChartWindows] = useState<Map<string, ChartWindow>>(new Map());
   const [functionCatalogMismatches, setFunctionCatalogMismatches] = useState<FunctionCatalogMismatch[]>([]);
-  /** An FFT cell's last `fetch_fft` failure (L6 Task 20), typed -- never a bare string (CLAUDE.md §5). Shown in the cell's `JsCellFrame` note slot. */
-  const [fftErrors, setFftErrors] = useState<Map<string, IpcError>>(new Map());
+  /** An FFT cell's per-window `fetch_fft_v2` failures (L6 Task 20,
+   *  migrated to per-window in S1 Task 11a), typed -- never a bare string
+   *  (CLAUDE.md §5) -- keyed `cellId` -> `windowKey`. `cellErrorMessage`
+   *  below joins a cell's own entries into one displayed string (R121's
+   *  "shows where its series would be" -- one note slot per cell, exactly
+   *  as before multi-window FFT existed, just describing more than one
+   *  window's failure when more than one fails). */
+  const [fftErrors, setFftErrors] = useState<Map<string, Map<string, IpcError>>>(new Map());
+  const sessionDetail = primaryWindow !== null ? (sessionDetailsByWindow.get(windowKey(primaryWindow)) ?? null) : null;
+  /** `primaryWindow`'s own `WindowEvalState` entry (ruling R131 Q1), or
+   *  `undefined` while still pending -- every math/table cell, prose span
+   *  and completion list below reads this one window's result, same as
+   *  before multi-window existed (see the `windows` doc comment above for
+   *  why this is a scoped S1 Task 11a judgment call, not full per-window
+   *  cell rendering). */
+  const primaryEval = state.windows.get(primaryKey);
+  /** The outputs a single-window-oriented consumer reads -- `primaryEval`'s
+   *  own map when it succeeded, otherwise empty (pending or errored: an
+   *  errored primary window has no per-cell outputs to show, its own
+   *  `IpcError` is surfaced separately, see `evalErrorMessage` below). */
+  const primaryOutputs: ReadonlyMap<string, CellOutput> = primaryEval?.kind === "ok" ? primaryEval.outputs : new Map();
+  /** The page-level error banner (below the `WorkbookBar`) -- a whole-call
+   *  `evalWorkbookV2` rejection (unknown/unparseable workbook id) or, when
+   *  nothing is selected, a rejection of the "nothing selected" call
+   *  itself; both key under `NO_WINDOW_KEY` (see that constant's doc
+   *  comment in `model/workbookState.ts`). Replaces the pre-Task-11a flat
+   *  `state.evalError` field. */
+  const evalErrorMessage = state.windows.get(NO_WINDOW_KEY);
+  const evalError: IpcError | null = evalErrorMessage?.kind === "error" ? evalErrorMessage.error : null;
   /** Which workbook to open and which chrome to show (L6 Task 21) --
    *  `null` while the first `list_workbooks` call (or the one
    *  first-open-when-empty rebuild, R81 Q1(a)) is still in flight.
@@ -385,7 +491,13 @@ export default function NotebookPage() {
   const sessionRef = useRef<NotebookSession>(new NotebookSession(new TileCache()));
   const openSeqRef = useRef(0);
   const evalSeqRef = useRef(0);
-  const sessionSpanSeqRef = useRef(0);
+  /** One monotonic run-sequence counter per selected window (keyed by
+   *  `windowKey`), for `model/sessionSpanDriver.ts`'s `runSessionSpan` --
+   *  called once per window (R127's accepted item), so staleness is
+   *  decided per window, not for the selection as a whole: a session
+   *  change on window 2 must not invalidate window 1's already-resolved
+   *  `SessionDetail`. */
+  const sessionSpanSeqRef = useRef<Map<string, number>>(new Map());
   const listSeqRef = useRef(0);
   /** `true` once the one first-open-when-empty automatic `rebuild_catalog`
    *  (R81 Q1(a)) has been attempted for this mount -- a later empty list
@@ -404,14 +516,26 @@ export default function NotebookPage() {
   const primeEpochSeenRef = useRef(0);
   /** One shared run-sequence counter per `js` cell (`model/cellRunSequencer.ts`), used by *every* channel-window run for that cell -- the initial-bind effect below and each `ChartCell`'s gesture-settle refetch (`renderJsCell`'s `onViewportSettled`) alike -- so whichever kind of run started last always wins, regardless of which one resolves first (fix for review-task13c.md's Major: an initial bind and a settle previously carried independent guards that never invalidated each other). Shared with the FFT bind effect below (L6 Task 20) -- one counter per cell id regardless of which arm the cell resolves to, never a second counter. */
   const cellRunSequencerRef = useRef<CellRunSequencer>(new CellRunSequencer());
-  /** The last decoded spectrum this page fetched for each FFT cell (L6 Task
-   *  20, Open Question 5), keyed by `cellId`, alongside the `hostVarName`
-   *  it was published under -- so a sandbox rebuild can re-push it (fresh
-   *  `Float64Array`s built from this retained `DecodedFft`, never the
-   *  transferred buffers themselves, which are detached on transfer) rather
-   *  than re-fetching or leaving the cell blank. Cleared when the cell is
-   *  removed from the document or its binding stops being an FFT cell. */
-  const retainedSpectraRef = useRef<Map<string, { hostVarName: string; fft: DecodedFft }>>(new Map());
+  /** Every FFT cell's currently bound per-window identity (S1 Task 11a,
+   *  extends `boundIdentityRef`'s "should a new run start" role to one
+   *  entry per selected window instead of one per cell): outer key
+   *  `cellId`, inner key `windowKey`. `cellRunSequencerRef` above is keyed
+   *  by the composite string `fftRunKey(cellId, windowKey)` for these runs
+   *  (see that function) so one window's fetch never supersedes a
+   *  sibling's -- each window's spectrum is independent (ruling R129). */
+  const fftBoundIdentityRef = useRef<Map<string, Map<string, string>>>(new Map());
+  /** The last decoded spectrum this page fetched for each FFT cell and
+   *  window (L6 Task 20, Open Question 5; extended to per-window in S1
+   *  Task 11a), keyed by `cellId` then `windowKey`, alongside the shared
+   *  `hostVarName` it is published under (ruling R129: one host variable
+   *  per (channel, `fft_params`), regardless of how many windows) -- so a
+   *  sandbox rebuild can re-push the combined payload (fresh
+   *  `Float64Array`s built from these retained `DecodedFft`s, never the
+   *  transferred buffers themselves, which are detached on transfer)
+   *  rather than re-fetching or leaving the cell blank. Cleared when the
+   *  cell is removed from the document, its binding stops being an FFT
+   *  cell, or (per window) that window is no longer selected (decision 61). */
+  const retainedSpectraRef = useRef<Map<string, { hostVarName: string; byWindow: Map<string, DecodedFft> }>>(new Map());
 
   // One `saveFlow` instance for this page's lifetime (Task 14) -- holds
   // its own `SaveFlowState` behind a closure; `saveFlowState` mirrors it
@@ -423,18 +547,67 @@ export default function NotebookPage() {
   const lastSavedHashRef = useRef<string | null>(null);
   const lastSavedAtMsRef = useRef<number | null>(null);
 
-  // `AppState.selection.lapContext` (R53 Data Q3), mapped to `ipc/workbook.ts`'s
-  // wire `LapContext` shape and passed to every `evalWorkbook` call below
-  // (C3 §3.4, ledger R59). Read via a ref, not the dependency array, for the
-  // same reason `sessionIdRef` is below: the watch/debounced-edit effects
+  // `AppState.selection` (C1 §6.1, ruling R117), mapped to `ipc/workbook.ts`'s
+  // wire `Window[]` shape and passed to every `evalWorkbookV2` call below
+  // (C3 §3.4). Read via a ref, not the dependency array, for the same
+  // reason `sessionIdRef` used to be: the watch/debounced-edit effects
   // should read the freshest selection at fire time without re-subscribing
-  // whenever the lap selection alone changes. `model/jsCellBinding.ts`'s
+  // whenever the selection changes. `model/jsCellBinding.ts`'s
   // `JsCellBindingChannel.lap` (from `MarkProps.lap`, per-mark) is a
   // separate, narrower lap reference plumbed independently -- read and
   // stored on each bound channel below, never applied to narrow a fetch
   // (lead pre-ruling 2026-09-05 #2).
-  const evalLapContextRef = useRef<EvalLapContext | null>(null);
-  evalLapContextRef.current = lapContext === null ? null : { main_lap: lapContext.mainLap, overlay_laps: lapContext.overlayLaps };
+  const windowsRef = useRef<WireWindow[]>([]);
+  windowsRef.current = windows.map(toWireWindow);
+
+  /** App-side mirror of `windows`, read fresh by {@link pushCombinedSpectrumFor}
+   *  when it is called from the mount effect's `onChannelsInvalidated`
+   *  closure below (captured once, at mount, and stale thereafter --
+   *  `fetchHostChannelDep`'s existing ref-based freshness pattern in this
+   *  same file). */
+  const selectionRef = useRef<SelectionWindow[]>(windows);
+  selectionRef.current = windows;
+  /** Same freshness reason as {@link selectionRef}, for `sessionDetailsByWindow`. */
+  const sessionDetailsByWindowRef = useRef<Map<string, SessionDetail | null>>(sessionDetailsByWindow);
+  sessionDetailsByWindowRef.current = sessionDetailsByWindow;
+
+  /**
+   * Rebuilds and pushes `cellId`'s combined multi-window spectrum host
+   * variable from `retainedSpectraRef`'s currently retained per-window
+   * spectra (ruling R129: one host variable per (channel, `fft_params`),
+   * window dimension in the payload). Iterates `selectionRef.current` (the
+   * current selection, in order) so `w`'s index matches each window's
+   * position in the selection and `host/protocol.ts`'s break-row insertion
+   * (ruling R127 item 4) falls in the right places -- a window with no
+   * retained entry (still resolving, unrequestable, or its own fetch
+   * errored, R121) is simply omitted, never padded with placeholder
+   * samples. Reads `selectionRef`/`sessionDetailsByWindowRef` rather than
+   * the render-scoped `windows`/`sessionDetailsByWindow` so it stays
+   * correct when called from the mount effect's `onChannelsInvalidated`
+   * closure below, captured once at mount and otherwise stale.
+   */
+  function pushCombinedSpectrumFor(cellId: string): void {
+    const retained = retainedSpectraRef.current.get(cellId);
+    const host = sandboxHostRef.current;
+    if (retained === undefined || host === null) return;
+    const series: SpectrumWindowSeries[] = [];
+    for (const w of selectionRef.current) {
+      const wKey = windowKey(w);
+      const fft = retained.byWindow.get(wKey);
+      if (fft === undefined) continue;
+      const detail = sessionDetailsByWindowRef.current.get(wKey) ?? null;
+      series.push({ descriptor: windowDescriptorFor(w, detail), f: frequencyAxisHz(fft), m: Float64Array.from(fft.magnitudes) });
+    }
+    const combined = combineSpectrumWindows(series);
+    host.setSpectrumHostVar(
+      retained.hostVarName,
+      combined.length,
+      combined.f.buffer as ArrayBuffer,
+      combined.m.buffer as ArrayBuffer,
+      combined.w.buffer as ArrayBuffer,
+      combined.windows
+    );
+  }
 
   // Callbacks are routed through refs updated on every render so the mount
   // effect below can keep an empty dependency array -- it only constructs
@@ -500,16 +673,20 @@ export default function NotebookPage() {
       onSpanError: (spanId, message) => onSpanErrorRef.current(spanId, message),
       onSandboxUnavailable: () => onSandboxUnavailableRef.current(),
       onChannelsInvalidated: () => {
-        sessionRef.current.onChannelsInvalidated(host, { fetchHostChannel: fetchHostChannelDep })();
-        // L6 Task 20, Open Question 5: a spectrum has no `TileCache` entry
-        // to re-derive from, so it is re-pushed from this page's own
-        // retained copy -- fresh `Float64Array`s built here, never the
-        // transferred buffers themselves (detached on transfer). No IPC,
-        // no refetch.
-        for (const { hostVarName, fft } of retainedSpectraRef.current.values()) {
-          const f = frequencyAxisHz(fft);
-          const m = Float64Array.from(fft.magnitudes);
-          host.setSpectrumHostVar(hostVarName, f.length, f.buffer as ArrayBuffer, m.buffer as ArrayBuffer);
+        const getPrimaryWindowDescriptor = (): WindowDescriptor | null => {
+          const w = selectionRef.current[0] ?? null;
+          if (w === null) return null;
+          return windowDescriptorFor(w, sessionDetailsByWindowRef.current.get(windowKey(w)) ?? null);
+        };
+        sessionRef.current.onChannelsInvalidated(host, { fetchHostChannel: fetchHostChannelDep }, getPrimaryWindowDescriptor)();
+        // L6 Task 20, Open Question 5 (extended to per-window in S1 Task
+        // 11a): a spectrum has no `TileCache` entry to re-derive from, so
+        // each cell's combined multi-window payload is rebuilt and
+        // re-pushed from this page's own retained per-window copies --
+        // fresh `Float64Array`s built here, never the transferred buffers
+        // themselves (detached on transfer). No IPC, no refetch.
+        for (const cellId of retainedSpectraRef.current.keys()) {
+          pushCombinedSpectrumFor(cellId);
         }
       },
     });
@@ -599,63 +776,97 @@ export default function NotebookPage() {
   const selectedWorkbookId = entry !== null && entry.kind !== "empty" ? entry.workbookId : null;
 
   // Open -> read -> eval, once a workbook is chosen and again whenever the
-  // selected session or the selected workbook changes (data-only
-  // dependencies -- never a callback). `model/openEvalDriver.ts`'s
-  // `runOpenAndEval` no longer decides which workbook to open (L6 Task 21)
-  // -- that is `entry`'s job, shared with the empty state and the picker.
+  // selected windows or the selected workbook change (data-only
+  // dependencies, keyed on `windowsKeyValue` per operating brief §4's
+  // tightening -- never `windows`' own array identity; `model/
+  // openEvalDriver.ts`'s `runOpenAndEval` no longer decides which workbook
+  // to open (L6 Task 21) -- that is `entry`'s job, shared with the empty
+  // state and the picker). `pruneWindows` runs first (ruling R131: "the
+  // reducer prunes") so a deselected window's stale result never lingers
+  // through to this run's fresh dispatches, which then repopulate whatever
+  // is still selected.
   useEffect(() => {
     if (selectedWorkbookId === null) return;
+    dispatch({ type: "pruneWindows", keep: new Set(windows.map(windowKey)) });
     const mySeq = ++openSeqRef.current;
     const deps: OpenEvalDeps = {
       openWorkbook: (idOrPath) => openWorkbook(idOrPath),
       readWorkbook: (idOrPath) => readWorkbook(idOrPath),
-      evalWorkbook: (id, sid, lapContext) => evalWorkbook(id, sid, lapContext),
+      evalWorkbookV2: (id, w) => evalWorkbookV2(id, w),
     };
-    void runOpenAndEval(deps, selectedWorkbookId, sessionId, dispatch, () => openSeqRef.current !== mySeq, evalLapContextRef.current);
-  }, [sessionId, selectedWorkbookId]);
+    void runOpenAndEval(deps, selectedWorkbookId, windows.map(toWireWindow), dispatch, () => openSeqRef.current !== mySeq);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [windowsKeyValue, selectedWorkbookId]);
 
-  // Resolves `sessionId`'s `SessionDetail` and recorded span (lead
-  // pre-ruling 2026-09-05 #1), once per session change -- `model/
-  // jsCellBinding.ts`'s `bindingFor` needs both. All branching lives in
-  // `model/sessionSpanDriver.ts`'s `runSessionSpan`; this effect only
-  // dispatches its two action kinds into local state.
+  // Resolves every selected window's `SessionDetail` and (primary window
+  // only) recorded span (lead pre-ruling 2026-09-05 #1), once per window
+  // change -- `model/jsCellBinding.ts`'s `bindingFor` needs both, and the
+  // FFT arm needs every selected window's own `SessionDetail` (R115: two
+  // windows may name different sessions). All branching lives in
+  // `model/sessionSpanDriver.ts`'s `runSessionSpan`, called once per
+  // window (R127's accepted item); this effect only dispatches its two
+  // action kinds into local state, keyed per window.
   useEffect(() => {
-    const mySeq = ++sessionSpanSeqRef.current;
+    const currentKeys = new Set(windows.map(windowKey));
+    for (const key of sessionSpanSeqRef.current.keys()) {
+      if (!currentKeys.has(key)) sessionSpanSeqRef.current.delete(key);
+    }
+    setSessionDetailsByWindow((prev) => {
+      let next = prev;
+      for (const key of prev.keys()) {
+        if (!currentKeys.has(key)) {
+          if (next === prev) next = new Map(prev);
+          next.delete(key);
+        }
+      }
+      return next;
+    });
+
     const deps: SessionSpanDeps = {
       getSession: (id) => getSession(id),
       listSessions: () => listSessions(),
       fetchTile: (sid, channel, tier, tileIndex, columnCount) => fetchTile(sid, channel, tier, tileIndex, columnCount),
     };
-    const onAction = (action: SessionSpanAction) => {
-      if (action.type === "sessionDetail") {
-        setSessionDetail(action.detail);
-      } else {
-        setSessionSpanUs(action.spanUs);
-      }
-    };
-    void runSessionSpan(deps, sessionId, onAction, () => sessionSpanSeqRef.current !== mySeq);
-  }, [sessionId]);
 
-  // Subscribes to the file watcher once this workbook has a handle.
-  // `sessionId` is read fresh at fire time via a ref rather than added to
-  // the dependency array, so a session change alone does not tear down and
-  // re-subscribe the watcher -- the watcher is scoped to the *workbook*,
-  // not to the session selection.
-  const sessionIdRef = useRef(sessionId);
-  sessionIdRef.current = sessionId;
+    for (const w of windows) {
+      const key = windowKey(w);
+      const mySeq = (sessionSpanSeqRef.current.get(key) ?? 0) + 1;
+      sessionSpanSeqRef.current.set(key, mySeq);
+      const isPrimary = primaryWindow !== null && windowKey(primaryWindow) === key;
+      const onAction = (action: SessionSpanAction) => {
+        if (action.type === "sessionDetail") {
+          setSessionDetailsByWindow((prev) => new Map(prev).set(key, action.detail));
+        } else if (isPrimary) {
+          setSessionSpanUs(action.spanUs);
+        }
+      };
+      void runSessionSpan(deps, toWireWindow(w), onAction, () => sessionSpanSeqRef.current.get(key) !== mySeq);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [windowsKeyValue]);
 
   // Read fresh at call time by the mount-once sandbox-construction effect
   // and the channel-bind driver's injected `fetchHostChannel` (L6 Task 18)
-  // -- same pattern as `sessionIdRef` above, so neither needs `state.handle`
-  // in a dependency array.
+  // -- so neither needs `state.handle` in a dependency array.
   const workbookIdRef = useRef<string | null>(state.handle?.id ?? null);
   workbookIdRef.current = state.handle?.id ?? null;
 
-  /** Binds `ipc/workbook.ts`'s `fetchHostChannel` to whatever workbook/session are current at call time (L6 Task 18, R77.3) -- the one place `ChannelBindDeps`'s injected `fetchHostChannel` is actually constructed, so `channelBindDriver.ts` and `channelRebind.ts` never import `ipc/workbook.ts` themselves. Rejects if no workbook is open yet, matching every other `workbookId`-dependent call site in this file. */
+  /** Binds `ipc/workbook.ts`'s `fetchHostChannelV2` to whatever workbook/
+   *  primary window are current at call time (L6 Task 18, R77.3; migrated
+   *  to `fetchHostChannelV2` in S1 Task 11a) -- the one place
+   *  `ChannelBindDeps`'s injected `fetchHostChannel` is actually
+   *  constructed, so `channelBindDriver.ts` and `channelRebind.ts` never
+   *  import `ipc/workbook.ts` themselves. `channelBindDriver.ts` itself is
+   *  still single-window (Task 11b, ruling R131) -- this always resolves
+   *  the *primary* window, `null` when nothing is selected, matching
+   *  `fetchHostChannelV2`'s own "old session-less behaviour" default.
+   *  Rejects if no workbook is open yet, matching every other
+   *  `workbookId`-dependent call site in this file. */
   const fetchHostChannelDep = (defName: string, budget: number) => {
     const workbookId = workbookIdRef.current;
     if (workbookId === null) return Promise.reject(new Error("fetchHostChannel: no workbook open"));
-    return fetchHostChannel(workbookId, sessionIdRef.current, defName, budget);
+    const window = windowsRef.current[0] ?? null;
+    return fetchHostChannelV2(workbookId, window, defName, budget);
   };
 
   // R95 item 2: paused the same way the sandbox mount effect above is --
@@ -683,7 +894,7 @@ export default function NotebookPage() {
       }
       dispatch({ type: "watchEvent", event });
       const mySeq = ++evalSeqRef.current;
-      void runEval({ evalWorkbook }, workbookId, sessionIdRef.current, dispatch, () => evalSeqRef.current !== mySeq, evalLapContextRef.current);
+      void runEval({ evalWorkbookV2 }, workbookId, windowsRef.current, dispatch, () => evalSeqRef.current !== mySeq);
     });
 
     return () => {
@@ -712,7 +923,7 @@ export default function NotebookPage() {
 
     const timer = setTimeout(() => {
       const mySeq = ++evalSeqRef.current;
-      void runEval({ evalWorkbook }, workbookId, sessionIdRef.current, dispatch, () => evalSeqRef.current !== mySeq, evalLapContextRef.current);
+      void runEval({ evalWorkbookV2 }, workbookId, windowsRef.current, dispatch, () => evalSeqRef.current !== mySeq);
     }, EDIT_EVAL_DEBOUNCE_MS);
 
     return () => clearTimeout(timer);
@@ -910,7 +1121,7 @@ export default function NotebookPage() {
     }
 
     host.setCells(jsCells);
-    const blocks = proseBlocksFor(state.cells, state.markdown, state.outputs);
+    const blocks = proseBlocksFor(state.cells, state.markdown, primaryOutputs);
     for (const span of spansToEvaluate(blocks)) {
       host.evalInline(span.id, span.expr);
     }
@@ -932,6 +1143,12 @@ export default function NotebookPage() {
         boundIdentityRef.current.delete(cellId);
         cellRunSequencerRef.current.delete(cellId);
         sessionRef.current.removeBoundChannel(cellId);
+      }
+    }
+    for (const [cellId, perWindow] of fftBoundIdentityRef.current) {
+      if (!liveIds.has(cellId)) {
+        for (const wKey of perWindow.keys()) cellRunSequencerRef.current.delete(fftRunKey(cellId, wKey));
+        fftBoundIdentityRef.current.delete(cellId);
         retainedSpectraRef.current.delete(cellId);
       }
     }
@@ -950,9 +1167,12 @@ export default function NotebookPage() {
     // cells or spans pushed into it yet -- this effect already is the code
     // that populates a first-mounted host, so a re-prime reuses it rather
     // than a second replay path, by re-running it even though
-    // `state.cells`/`state.markdown`/`state.outputs` may not themselves
-    // have changed.
-  }, [state.cells, state.markdown, state.outputs, primeState.primeEpoch]);
+    // `state.cells`/`state.markdown`/`primaryEval` may not themselves
+    // have changed. `primaryEval` (not `primaryOutputs`, a fresh `Map()`
+    // literal on every render when pending/errored) is the stable
+    // dependency -- it only changes identity when the reducer actually
+    // updates that window's entry.
+  }, [state.cells, state.markdown, primaryEval, primeState.primeEpoch]);
 
   // For each `js` cell newly bound to a real channel (`bindingFor`, R66
   // item 1) -- a cell whose binding's identity (`bindingIdentity`) has
@@ -979,30 +1199,45 @@ export default function NotebookPage() {
   // faster settle and overwrite its fresher `chartWindows`/registry state
   // with the stale initial-span one). Depends only on data
   // (`state.cells`/`state.markdown`/`sessionDetail`/`sessionSpanUs`/
-  // `sessionId`/`state.outputs`) -- the tightened IPC-effects rule.
-  // `state.outputs` was added for L6 Task 18 (definition-channel binding,
+  // `primaryWindow`/`multiWindowSelected`/`primaryEval`) -- the tightened
+  // IPC-effects rule. `primaryEval` was added for L6 Task 18 (definition-channel binding,
   // R77.3): `definitionsWithAxis` below is derived from it, so a cell
   // naming a `math` definition rebinds once that definition's first
-  // `eval_workbook` result exists, or once its `has_t` becomes known.
+  // `eval_workbook_v2` result exists, or once its `has_t` becomes known.
   //
   // `definitionsWithAxis` (this task): every workbook `math` definition
   // name with a recorded time axis (`CellDefResult.value.has_t`) --
-  // `eval_workbook`'s own output, the same source `definitionNames` below
-  // (CodePane completions) reads, just restricted to the subset a chart can
-  // bind to (Q3(a), R78: an axis-less definition is not bindable, and is
-  // treated exactly like an unresolvable channel by `bindingFor`).
+  // `eval_workbook_v2`'s own output for `primaryWindow`, the same source
+  // `definitionNames` below (CodePane completions) reads, just restricted
+  // to the subset a chart can bind to (Q3(a), R78: an axis-less definition
+  // is not bindable, and is treated exactly like an unresolvable channel by
+  // `bindingFor`).
   const definitionsWithAxis: ReadonlySet<string> = new Set(
-    Array.from(state.outputs.values())
+    Array.from(primaryOutputs.values())
       .filter((o) => o.kind === "math")
       .flatMap((o) => o.defs)
       .filter((d) => d.value !== null && d.value.has_t)
       .map((d) => d.name)
   );
 
+  // Time-chart channel binding (`ChartCell`'s tile-fetch pipeline,
+  // `channelBindDriver.ts`) is still single-window (Task 11b, ruling
+  // R131): the "one gesture-driven pan/zoom viewport, N windows of
+  // possibly-different length" re-basing that comparison-by-overlay needs
+  // has its own reviewable task. Per R131's interim rule ("compiling and
+  // honest"), one selected window behaves exactly as before (`w` all
+  // zeros, `windows` a single-entry descriptor -- byte-identical per R127
+  // item 3); more than one window shows a typed cell error on every
+  // time-bound `js` cell instead of silently rendering `windows[0]`'s data
+  // as though it were the whole selection.
+  const multiWindowSelected = windows.length > 1;
+  const MULTI_WINDOW_CHART_NOTE = "Comparing more than one window isn't supported for this chart yet — select a single window.";
+
   useEffect(() => {
-    if (state.markdown === null || sessionId === null) return;
+    if (state.markdown === null || primaryWindow === null) return;
     const markdown = state.markdown;
-    const sid = sessionId;
+    const window = primaryWindow;
+    const wireW = toWireWindow(window);
 
     for (const cell of state.cells) {
       if (cell.id === null || cell.kind !== "js") continue;
@@ -1017,6 +1252,15 @@ export default function NotebookPage() {
         continue;
       }
 
+      if (multiWindowSelected) {
+        // R131's interim rule: never render window 0's data as though it
+        // were the selection. Drop any stale identity so a later drop back
+        // to one window rebinds fresh rather than seeing "unchanged".
+        boundIdentityRef.current.delete(cellId);
+        setCellErrors((prev) => new Map(prev).set(cellId, MULTI_WINDOW_CHART_NOTE));
+        continue;
+      }
+
       const identity = bindingIdentity(binding);
       if (boundIdentityRef.current.get(cellId) === identity) continue;
       boundIdentityRef.current.set(cellId, identity);
@@ -1025,9 +1269,16 @@ export default function NotebookPage() {
         fetchTile: (sessId, channelId, tier, tileIndex, columnCount) => fetchTile(sessId, channelId, tier, tileIndex, columnCount),
         fetchHostChannel: (defName, budget) => fetchHostChannelDep(defName, budget),
       };
+      const descriptor = windowDescriptorFor(window, sessionDetail);
       const onAction = (action: ChannelBindAction) => {
         if (action.type === "channelData") {
-          sandboxHostRef.current?.setChannelHostVar(action.channelId, action.length, action.t, action.v);
+          // R127 item 3: a single window is byte-identical to the
+          // pre-multi-window payload -- `w` all zeros, one-entry
+          // `windows`. `channelBindDriver.ts` itself is not yet
+          // window-aware (Task 11b); this is the whole of what "honest
+          // against the landed 6-arg signature" means for one window.
+          const w = new Float64Array(action.length).fill(0);
+          sandboxHostRef.current?.setChannelHostVar(action.channelId, action.length, action.t, action.v, w.buffer, [descriptor]);
         } else if (action.type === "boundChannels") {
           sessionRef.current.setBoundChannels(action.cellId, action.bound);
         } else {
@@ -1037,53 +1288,58 @@ export default function NotebookPage() {
       const seq = cellRunSequencerRef.current.start(cellId);
       const isStale = () => !cellRunSequencerRef.current.isCurrent(cellId, seq);
 
-      void runChannelBind(deps, sessionRef.current.cache, sid, cellId, binding, DEFAULT_CHART_WIDTH_PX, onAction, isStale);
+      void runChannelBind(deps, sessionRef.current.cache, wireW.session_id, cellId, binding, DEFAULT_CHART_WIDTH_PX, onAction, isStale);
     }
-  }, [state.cells, state.markdown, state.outputs, sessionDetail, sessionSpanUs, sessionId, primeState.primeEpoch]);
+  }, [state.cells, state.markdown, primaryEval, sessionDetail, sessionSpanUs, primaryWindow, multiWindowSelected, primeState.primeEpoch]);
 
-  // For each `js` cell whose binding is the FFT arm and whose
-  // `bindingIdentity` changed (L6 Task 20, C2 §5.3), fetches its spectrum
-  // through the shared `CellRunSequencer`, exactly the same start/isStale
-  // shape `runChannelBind` above uses -- never a second counter. Depends
-  // only on data (`state.cells`/`state.markdown`/`state.outputs`/
-  // `sessionDetail`/`sessionSpanUs`/`sessionId`/`mainLap`), the tightened
-  // IPC-effects rule (wave-2 operating brief §4); its cleanup cancels
-  // nothing. `mainLap` (R83/L2b Task 6) is in the dependency array because
-  // `bindingIdentity` folds `request.lap` into an FFT cell's identity: a
-  // main-lap selection change must re-run this effect so the identity
-  // comparison below actually sees the new lap and starts a refetch.
+  // For each `js` cell whose binding is the FFT arm, once per **selected
+  // window** whose per-window `bindingIdentity` changed (L6 Task 20, C2
+  // §5.3; extended to full multi-window overlay in S1 Task 11a, ruling
+  // R129 -- unlike the time-chart channel-bind effect above, `fetch_fft_v2`
+  // and the sandbox's spectrum payload already carry a window dimension,
+  // so there is no interim single-window restriction here). Each window's
+  // fetch runs through the shared `CellRunSequencer`, keyed by
+  // `fftRunKey(cellId, windowKey)` so one window's fetch supersedes only
+  // its own prior runs, never a sibling window's in-flight fetch for the
+  // same cell. Depends only on data (`state.cells`/`state.markdown`/
+  // `primaryEval`/`sessionDetail`/`sessionSpanUs`/`windowsKeyValue`), the
+  // tightened IPC-effects rule (wave-2 operating brief §4); its cleanup
+  // cancels nothing.
   //
-  // A cell whose `unrequestable` is non-null never reaches `runFft` at all
-  // -- the note it carries is shown by `renderJsCell` below straight from
-  // `binding.unrequestable`, with no fetch and no host-variable push. A
-  // cell whose identity changes away from its last-requested spectrum
-  // drops any retained copy for it, so a stale spectrum is never re-pushed
-  // under a hostVarName that no longer describes this cell's current
-  // parameters.
+  // A cell whose `unrequestable` is non-null for a given window never
+  // reaches `runFft` for that window -- the note it carries is folded into
+  // `cellErrorMessage` below, with no fetch and no host-variable push for
+  // that window. Per ruling R121 ("shows where its series would be"), one
+  // window's failure never blocks a sibling window's spectrum from being
+  // fetched, retained or combined -- `pushCombinedSpectrumFor` omits only
+  // the failed window's own series.
   useEffect(() => {
-    if (state.markdown === null || sessionId === null) return;
+    if (state.markdown === null) return;
     const markdown = state.markdown;
-    const sid = sessionId;
+    const currentWindowKeys = new Set(windows.map(windowKey));
 
     for (const cell of state.cells) {
       if (cell.id === null || cell.kind !== "js") continue;
       const cellId = cell.id;
       const code = decodeByteRange(markdown, cell.bodyRange);
-      const binding = bindingFor({ id: cellId, code }, sessionDetail, sessionSpanUs, definitionsWithAxis, mainLap);
-      if (binding === null || binding.kind !== "fft") {
-        // A cell that used to be an FFT cell (chart-type switch, or an
-        // edit that now names a different channel) keeps no stale
-        // retained spectrum around for a hostVarName nothing binds to
-        // anymore.
-        retainedSpectraRef.current.delete(cellId);
-        continue;
-      }
 
-      const identity = bindingIdentity(binding);
-      if (boundIdentityRef.current.get(cellId) === identity) continue;
-      boundIdentityRef.current.set(cellId, identity);
-
-      if (binding.unrequestable !== null) {
+      // Whether this cell is FFT-shaped at all is session-independent
+      // beyond needing *some* non-null `sessionDetail`/`sessionSpanUs` to
+      // reach `bindingFor` in the first place (`props.chart === "fft"`
+      // does not vary by window) -- resolved against the primary window.
+      const shapeWindow = primaryWindow !== null ? toWireWindow(primaryWindow) : null;
+      const shapeBinding = bindingFor({ id: cellId, code }, sessionDetail, sessionSpanUs, definitionsWithAxis, shapeWindow);
+      if (shapeBinding === null || shapeBinding.kind !== "fft") {
+        // Not FFT-shaped (or nothing resolvable yet, e.g. no session) --
+        // drop every retained window's spectrum/identity/error for this
+        // cell (a chart-type switch, or an edit that now names a
+        // different channel, keeps no stale state around for a
+        // `hostVarName` nothing binds to anymore).
+        const perWindow = fftBoundIdentityRef.current.get(cellId);
+        if (perWindow !== undefined) {
+          for (const wKey of perWindow.keys()) cellRunSequencerRef.current.delete(fftRunKey(cellId, wKey));
+          fftBoundIdentityRef.current.delete(cellId);
+        }
         retainedSpectraRef.current.delete(cellId);
         setFftErrors((prev) => {
           if (!prev.has(cellId)) return prev;
@@ -1094,48 +1350,114 @@ export default function NotebookPage() {
         continue;
       }
 
-      const fftBinding: FftCellBinding = binding;
-      const deps: FftDeps = {
-        fetchFft: (sessId, channelId, lap, params, averaging) => fetchFft(sessId, channelId, lap, params, averaging),
-      };
-      const dispatchFft = (action: FftAction) => {
-        if (action.type === "spectrum") {
-          // MAX_FFT_BINS is checked again here, after decode, against the
-          // decoded spectrum's actual bin count -- the pre-fetch check in
-          // `jsCellBinding.ts`'s `bindingForFft` is a conservative estimate
-          // off the resolved window size, not a promise about the real FFT
-          // convention `fetch_fft` used (R79 Q4, R80 Q2). Over the cap: show
-          // the note, push no host variable, and never retain the spectrum.
-          if (exceedsBinCap(action.fft.magnitudes.length)) {
-            retainedSpectraRef.current.delete(action.cellId);
-            setFftErrors((prev) =>
-              new Map(prev).set(action.cellId, {
-                kind: "internal",
-                message: "This spectrum has more bins than the chart can draw — reduce the window size.",
-              })
-            );
-            return;
-          }
-          retainedSpectraRef.current.set(action.cellId, { hostVarName: fftBinding.hostVarName, fft: action.fft });
-          setFftErrors((prev) => {
-            if (!prev.has(action.cellId)) return prev;
-            const next = new Map(prev);
-            next.delete(action.cellId);
-            return next;
-          });
-          const f = frequencyAxisHz(action.fft);
-          const m = Float64Array.from(action.fft.magnitudes);
-          sandboxHostRef.current?.setSpectrumHostVar(fftBinding.hostVarName, f.length, f.buffer as ArrayBuffer, m.buffer as ArrayBuffer);
-        } else {
-          setFftErrors((prev) => new Map(prev).set(action.cellId, action.error));
+      // Prune this cell's per-window state to the currently selected
+      // windows (decision 61: nothing shows data outside the current
+      // selection) before considering which windows to (re)fetch.
+      const perWindowIdentity = fftBoundIdentityRef.current.get(cellId) ?? new Map<string, string>();
+      for (const wKey of Array.from(perWindowIdentity.keys())) {
+        if (!currentWindowKeys.has(wKey)) {
+          perWindowIdentity.delete(wKey);
+          cellRunSequencerRef.current.delete(fftRunKey(cellId, wKey));
         }
-      };
-      const seq = cellRunSequencerRef.current.start(cellId);
-      const isStale = () => !cellRunSequencerRef.current.isCurrent(cellId, seq);
+      }
+      fftBoundIdentityRef.current.set(cellId, perWindowIdentity);
+      const retained = retainedSpectraRef.current.get(cellId);
+      if (retained !== undefined) {
+        for (const wKey of Array.from(retained.byWindow.keys())) {
+          if (!currentWindowKeys.has(wKey)) retained.byWindow.delete(wKey);
+        }
+      }
+      setFftErrors((prev) => {
+        const cellMap = prev.get(cellId);
+        if (cellMap === undefined) return prev;
+        const nextCellMap = new Map(cellMap);
+        let changed = false;
+        for (const wKey of cellMap.keys()) {
+          if (!currentWindowKeys.has(wKey)) {
+            nextCellMap.delete(wKey);
+            changed = true;
+          }
+        }
+        return changed ? new Map(prev).set(cellId, nextCellMap) : prev;
+      });
 
-      void runFft(deps, sid, cellId, fftBinding.request, dispatchFft, isStale);
+      for (const w of windows) {
+        const wKey = windowKey(w);
+        const detail = sessionDetailsByWindow.get(wKey) ?? null;
+        if (detail === null) continue; // this window's session is still resolving
+
+        const binding = bindingFor({ id: cellId, code }, detail, sessionSpanUs, definitionsWithAxis, toWireWindow(w));
+        if (binding === null || binding.kind !== "fft") continue; // e.g. the channel isn't in this window's session
+
+        const identity = bindingIdentity(binding);
+        if (perWindowIdentity.get(wKey) === identity) continue;
+        perWindowIdentity.set(wKey, identity);
+
+        if (binding.unrequestable !== null) {
+          retainedSpectraRef.current.get(cellId)?.byWindow.delete(wKey);
+          setFftErrors((prev) => {
+            const cellMap = prev.get(cellId);
+            if (cellMap === undefined || !cellMap.has(wKey)) return prev;
+            const nextCellMap = new Map(cellMap);
+            nextCellMap.delete(wKey);
+            return new Map(prev).set(cellId, nextCellMap);
+          });
+          pushCombinedSpectrumFor(cellId);
+          continue;
+        }
+
+        const fftBinding: FftCellBinding = binding;
+        const deps: FftDeps = {
+          fetchFftV2: (window, channelId, params, averaging) => fetchFftV2(window, channelId, params, averaging),
+        };
+        const dispatchFft = (action: FftAction) => {
+          if (action.type === "spectrum") {
+            // MAX_FFT_BINS is checked again here, after decode, against the
+            // decoded spectrum's actual bin count -- the pre-fetch check in
+            // `jsCellBinding.ts`'s `bindingForFft` is a conservative
+            // estimate off the resolved window size, not a promise about
+            // the real FFT convention `fetch_fft_v2` used (R79 Q4, R80
+            // Q2). Over the cap: show the note, drop this window's
+            // retained copy, and re-combine the rest.
+            if (exceedsBinCap(action.fft.magnitudes.length)) {
+              retainedSpectraRef.current.get(cellId)?.byWindow.delete(wKey);
+              setFftErrors((prev) => {
+                const cellMap = new Map(prev.get(cellId));
+                cellMap.set(wKey, { kind: "internal", message: "This spectrum has more bins than the chart can draw — reduce the window size." });
+                return new Map(prev).set(cellId, cellMap);
+              });
+              pushCombinedSpectrumFor(cellId);
+              return;
+            }
+            const entry = retainedSpectraRef.current.get(cellId) ?? { hostVarName: fftBinding.hostVarName, byWindow: new Map<string, DecodedFft>() };
+            entry.hostVarName = fftBinding.hostVarName;
+            entry.byWindow.set(wKey, action.fft);
+            retainedSpectraRef.current.set(cellId, entry);
+            setFftErrors((prev) => {
+              const cellMap = prev.get(cellId);
+              if (cellMap === undefined || !cellMap.has(wKey)) return prev;
+              const nextCellMap = new Map(cellMap);
+              nextCellMap.delete(wKey);
+              return new Map(prev).set(cellId, nextCellMap);
+            });
+            pushCombinedSpectrumFor(cellId);
+          } else {
+            retainedSpectraRef.current.get(cellId)?.byWindow.delete(wKey);
+            setFftErrors((prev) => {
+              const cellMap = new Map(prev.get(cellId));
+              cellMap.set(wKey, action.error);
+              return new Map(prev).set(cellId, cellMap);
+            });
+            pushCombinedSpectrumFor(cellId);
+          }
+        };
+        const seq = cellRunSequencerRef.current.start(fftRunKey(cellId, wKey));
+        const isStale = () => !cellRunSequencerRef.current.isCurrent(fftRunKey(cellId, wKey), seq);
+
+        void runFft(deps, cellId, fftBinding.request, dispatchFft, isStale);
+      }
     }
-  }, [state.cells, state.markdown, state.outputs, sessionDetail, sessionSpanUs, sessionId, mainLap, primeState.primeEpoch]);
+  }, [state.cells, state.markdown, primaryEval, sessionDetail, sessionSpanUs, windowsKeyValue, primeState.primeEpoch]);
 
   // Save is unavailable while there is no readable `hash` to base it on
   // (still loading, or a read error) -- see `handleSave`'s doc comment on
@@ -1161,7 +1483,7 @@ export default function NotebookPage() {
   // with no recorded axis is still a valid completion for a `math` cell to
   // reference in non-chart code.
   const channelIds = sessionDetail?.channels.map((c) => c.channel_id) ?? [];
-  const definitionNames = Array.from(state.outputs.values())
+  const definitionNames = Array.from(primaryOutputs.values())
     .filter((o) => o.kind === "math")
     .flatMap((o) => o.defs.map((d) => d.name));
 
@@ -1178,36 +1500,44 @@ export default function NotebookPage() {
   // that component stays a pure "where in document order" layout, not a
   // second consumer of `state.markdown`'s byte-range decoding.
   const proseBlocksByBlockId = useMemo(() => {
-    const blocks = proseBlocksFor(state.cells, state.markdown ?? "", state.outputs);
+    const blocks = proseBlocksFor(state.cells, state.markdown ?? "", primaryOutputs);
     return new Map(blocks.map((block) => [block.blockId, block]));
-  }, [state.cells, state.markdown, state.outputs]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [state.cells, state.markdown, primaryEval]);
 
-  /** `CellFrame`'s `StatusDot` (UI-10): `"pending"` before an `eval_workbook`
-   *  result exists for `cellId`, `"error"` when the cell's own output
-   *  errors, its sandbox `cellError`, or its FFT fetch failure is set,
-   *  `"ok"` otherwise. `cellId === null` (an unresolved fence id) always
-   *  reads as pending -- it can never have an evaluated `CellOutput`
-   *  (Rust indexes by id). */
+  /** `CellFrame`'s `StatusDot` (UI-10): `"pending"` before an
+   *  `eval_workbook_v2` result exists for `cellId` in `primaryOutputs`,
+   *  `"error"` when the cell's own output errors, its sandbox `cellError`,
+   *  or any of its per-window FFT fetches failed, `"ok"` otherwise.
+   *  `cellId === null` (an unresolved fence id) always reads as pending --
+   *  it can never have an evaluated `CellOutput` (Rust indexes by id). */
   function cellStatus(cellId: string | null): CellRunStatus {
     if (cellId === null) return "pending";
     if (cellErrors.has(cellId)) return "error";
-    if (fftErrors.has(cellId)) return "error";
-    const output = state.outputs.get(cellId);
+    if ((fftErrors.get(cellId)?.size ?? 0) > 0) return "error";
+    const output = primaryOutputs.get(cellId);
     if (output === undefined) return "pending";
     return output.errors.length > 0 ? "error" : "ok";
   }
 
   /** The message `CellFrame`'s error `NoteBlock` shows, in the same
    *  precedence `cellStatus` checks: a sandbox render error first (the most
-   *  specific, cell-local failure), then an FFT fetch error, then
-   *  `eval_workbook`'s own per-cell errors joined together. */
+   *  specific, cell-local failure), then every selected window's own FFT
+   *  fetch error joined together (S1 Task 11a: one note slot per cell, R121
+   *  -- a sibling window's own successful spectrum still renders even when
+   *  another window's fetch failed), then `primaryOutputs`' own per-cell
+   *  errors. */
   function cellErrorMessage(cellId: string | null): string | undefined {
     if (cellId === null) return undefined;
     const sandboxError = cellErrors.get(cellId);
     if (sandboxError !== undefined) return sandboxError;
-    const fftError = fftErrors.get(cellId);
-    if (fftError !== undefined) return fftError.message;
-    const output = state.outputs.get(cellId);
+    const fftErrorsForCell = fftErrors.get(cellId);
+    if (fftErrorsForCell !== undefined && fftErrorsForCell.size > 0) {
+      return Array.from(fftErrorsForCell.values())
+        .map((e) => e.message)
+        .join("; ");
+    }
+    const output = primaryOutputs.get(cellId);
     if (output !== undefined && output.errors.length > 0) return output.errors.map((e) => e.message).join("; ");
     return undefined;
   }
@@ -1252,18 +1582,19 @@ export default function NotebookPage() {
     <CellList
       doc={{ frontMatterRange: null, cells: state.cells }}
       proseBlocks={proseBlocksByBlockId}
-      outputs={state.outputs}
+      outputs={primaryOutputs}
       inlineResults={inlineResults}
       spanErrors={spanErrors}
       renderJsCell={(cellId) => {
             const cell = state.cells.find((c) => c.id === cellId);
             const code = cell !== undefined && state.markdown !== null ? decodeByteRange(state.markdown, cell.bodyRange) : "";
-            const binding = bindingFor({ id: cellId, code }, sessionDetail, sessionSpanUs, definitionsWithAxis, mainLap);
+            const primaryWireWindow = primaryWindow !== null ? toWireWindow(primaryWindow) : null;
+            const binding = bindingFor({ id: cellId, code }, sessionDetail, sessionSpanUs, definitionsWithAxis, primaryWireWindow);
             const heightPx = cellHeights.get(cellId) ?? null;
             const sendLayout = (id: string, rect: { top: number; left: number; width: number }) =>
               sandboxHostRef.current?.sendLayout(id, rect);
 
-            if (binding === null || sessionId === null) {
+            if (binding === null || primaryWindow === null) {
               const unresolved = sessionDetail !== null ? unresolvedChannelId(code, sessionDetail, definitionsWithAxis) : null;
               // A name that resolves as a plain (unfiltered) definition but
               // was excluded from `definitionsWithAxis` is a definition with
@@ -1274,12 +1605,13 @@ export default function NotebookPage() {
               const isAxisLessDefinition = unresolved !== null && definitionNames.includes(unresolved) && !definitionsWithAxis.has(unresolved);
               // `model/jsCellNote.ts` (L6 Task 21): fixes the rendering gap
               // the 2026-09-06 preview captured -- a cell whose code
-              // round-trips through `plotForm.parse` but has no session
+              // round-trips through `plotForm.parse` but has no window
               // selected previously reserved blank space with no
-              // explanation at all.
+              // explanation at all. Migrated from `sessionId` to
+              // `windowCount` (S1 Task 11a, ruling R117).
               const note = jsCellNote({
                 isFormGenerated: parsePlotForm(code) !== null,
-                sessionId,
+                windowCount: windows.length,
                 unresolvedName: unresolved,
                 isAxisLessDefinition,
               });
@@ -1293,13 +1625,23 @@ export default function NotebookPage() {
               // an FFT cell has no time viewport, so it mounts the plain
               // `JsCellFrame` -- no pan, no zoom, no hover readout, no
               // cursor readout, and no `sendTransform`. `unrequestable`
-              // (too few samples, or over the bin cap) shows its reason in
-              // the note slot and never reaches `runFft` at all (the FFT
-              // bind effect above); a real fetch failure shows the typed
-              // error's message instead.
-              const fftError = fftErrors.get(cellId);
-              const note = binding.unrequestable ?? (fftError !== undefined ? fftError.message : undefined);
+              // (too few samples, or over the bin cap, checked against the
+              // primary window) shows its reason in the note slot; a real
+              // per-window fetch failure (S1 Task 11a: full multi-window
+              // overlay) shows `cellErrorMessage`'s joined text instead --
+              // a sibling window's own successful spectrum still renders
+              // (R121).
+              const note = binding.unrequestable ?? cellErrorMessage(cellId);
               return <JsCellFrame cellId={cellId} heightPx={heightPx} note={note} sendLayout={sendLayout} />;
+            }
+
+            if (multiWindowSelected) {
+              // R131's interim rule (ruling, S1 Task 11a/11b split):
+              // `channelBindDriver.ts` is not yet window-aware, so more
+              // than one selected window never renders `windows[0]`'s data
+              // as though it were the whole selection -- the bind effect
+              // above already set this cell's `cellErrors` entry.
+              return <JsCellFrame cellId={cellId} heightPx={heightPx} error={cellErrors.get(cellId) ?? MULTI_WINDOW_CHART_NOTE} sendLayout={sendLayout} />;
             }
 
             if (binding.mountedChannelId === null) {
@@ -1322,7 +1664,8 @@ export default function NotebookPage() {
             const mountedChannelId = binding.mountedChannelId;
             const channel = binding.channels.find((c) => c.channelId === mountedChannelId)!;
             const window = chartWindows.get(cellId);
-            const sid = sessionId;
+            const sid = primaryWireWindow!.session_id;
+            const descriptor = windowDescriptorFor(primaryWindow, sessionDetail);
 
             return (
               <ChartCell
@@ -1370,7 +1713,11 @@ export default function NotebookPage() {
                   };
                   const onAction = (action: ChannelBindAction) => {
                     if (action.type === "channelData") {
-                      sandboxHostRef.current?.setChannelHostVar(action.channelId, action.length, action.t, action.v);
+                      // R127 item 3: byte-identical to the pre-multi-window
+                      // payload for one window -- see the initial-bind
+                      // effect above's identical comment.
+                      const w = new Float64Array(action.length).fill(0);
+                      sandboxHostRef.current?.setChannelHostVar(action.channelId, action.length, action.t, action.v, w.buffer, [descriptor]);
                     } else if (action.type === "boundChannels") {
                       sessionRef.current.setBoundChannels(action.cellId, action.bound);
                     } else {
@@ -1477,9 +1824,9 @@ export default function NotebookPage() {
       {state.markdownStatus === "error" && state.markdownError !== null && (
         <p className="workbook-markdown-error">Notebook error: {state.markdownError}</p>
       )}
-      {state.evalError !== null && (
+      {evalError !== null && (
         <p role="alert" className="workbook-eval-error">
-          {state.evalError.message}
+          {evalError.message}
         </p>
       )}
       {selectedWorkbookId !== null && state.handle === null && state.markdownStatus === "loading" && <p>Opening notebook...</p>}
