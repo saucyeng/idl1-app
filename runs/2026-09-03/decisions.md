@@ -5951,3 +5951,525 @@ reads it. Adding a preset must not require touching the handler.
 **Cost if wrong.** Baking one mapping in means every future input device is
 a code change, and the one thing Isaac asked for — trying alternatives at
 runtime to find out which feels right — becomes a rebuild per experiment.
+
+**Amendment (2026-09-08, Isaac).** The reference-path recommendation above
+is **withdrawn as stated**. Isaac has already tried it: *"i tried the
+reference line by averaging all the runs, but averaged noise is still
+noise. the current implementation is actually fairly well tuned for the
+gate based approach. i think adding the distance based factor into it could
+help remove the noise from the +/-2 meter accuracy."*
+
+Averaging N noisy GPS tracks reduces variance but does not produce a
+*correct* line, and the residual is structured (multipath, canopy) rather
+than white, so it does not average out. The tuned gate implementation
+stays; it is not replaced.
+
+**Revised recommendation — a complementary filter, which is what Isaac
+described.** The two available measures have opposite error characteristics:
+- **Gate crossings**: absolutely correct in position, but each crossing time
+  carries the ±2 m GPS error, so short-interval spacing is noisy.
+- **Wheel-derived distance** (integrated wheel speed): very precise over
+  short intervals and immune to GPS noise, but drifts over long ones through
+  tyre-circumference error, pressure, wear and slip.
+
+That is textbook complementary structure: **wheel distance is the process
+model, gate crossings are the measurement updates.** State is `[station,
+wheel_scale_error]` — a 2-state filter, not an iEKF. Between gates the wheel
+model carries station; at each gate the filter corrects accumulated scale
+error. This is Isaac's "add the distance based factor into it", made
+concrete.
+
+It also dissolves the switchback problem instead of weighting around it:
+**place gates only where a crossing is unambiguous** (straights), and let
+wheel distance carry through the switchbacks. No section-dependent weighting
+is needed — the gate geometry supplies it. Isaac's original framing
+("higher weight on distance in tight sections, gates on straights") is
+therefore right, and falls out of the structure rather than needing to be
+tuned in.
+
+**Open, and it decides viability:** this depends on a wheel-speed sensor
+being present on the bikes that matter. SPEC lists wheel distance as
+"requires sensor". If a bike has no wheel sensor, the lane needs a stated
+fallback. Asked of Isaac 2026-09-08.
+
+**Amendment 2 (2026-09-08, Isaac + lead).** Wheel-derived distance is
+**out** for this lane. Isaac: *"yes, i'm adding wheel speed sensors, but
+it's a loose offroad surface where the wheels can lock so dont want to use
+it, unless it were for fusing the gps, imus, and wheel speed sensors into a
+more accurate velocity, but that's a whole separate math block we can play
+with down the road, not now."* Agreed on both counts — a locked or spinning
+wheel makes wheel distance wrong exactly when the rider is doing something
+interesting, and a proper GPS+IMU+wheel velocity estimator is its own block,
+not a prerequisite for lap alignment.
+
+**Revised recommendation — integrate the GPS speed we already record.**
+SPEC §5.6's GPS_FIX record already carries `speed` (u16, km/h × 100,
+resolution ≈ 0.0028 m/s). A GPS receiver derives speed from **Doppler
+shift**, not from differencing positions, so its error is roughly an order
+of magnitude better than the ±2 m position error and is *independent* of it.
+That is the missing precise short-interval measure:
+
+- **Gates** anchor station absolutely (already tuned, unchanged).
+- **Integrated GPS Doppler speed** carries station *between* gates, with far
+  less noise than interpolating between ±2 m positions, and each gate
+  crossing resets any accumulated integration drift.
+
+Same complementary structure as the previous amendment, with GPS speed in
+the process-model role instead of wheel distance. It needs **no new sensor,
+no firmware change, and no slip model** — the field is already in every
+recorded fix, and it is unaffected by a locked or spinning wheel.
+
+Caveats to check against real data before adopting: Doppler speed is a
+**scalar ground speed**, which is what along-track station wants, but it is
+unsigned — a reversing bike integrates forward. Many receivers also clamp or
+bias speed near zero, so a stationary or crawling section may need the
+monotonic-progression guard rather than the integral. Both are testable on
+existing sessions.
+
+The wheel/IMU/GPS velocity block stays deferred, per Isaac, and this lane
+does not depend on it. If that block ever lands, it drops into the same
+process-model slot as a better estimate without changing the structure.
+
+## 2026-09-08 — R138: "resolved" must have one definition, shared by the gate and the consumer
+
+**Finding** (review of W3.2 time tasks 1–3, Critical). The lane added
+`sessionSpansReadiness` to the channel-bind effect's **outer** dependency
+array — correct, and applied unprompted from R133. But the effect's **inner**
+gate still computes
+`resolvedWindowKeys = windowKeys.filter(k => sessionDetailsByWindow.has(k))`,
+which never consults `sessionSpanUsByWindow`. Since `runSessionSpan`
+dispatches `sessionDetail` before `sessionSpan`, a non-primary
+`"session"`-kind window is marked *resolved* and has its identity recorded
+**before** `bindWindowsFor` — which correctly excludes it while its span is
+unresolved — would include it. When the span later arrives, the identity
+already matches, `needsRun` stays false, and that window's channel data is
+**never fetched again for the cell's lifetime**.
+
+This is R133 for the third time: the gate and the work disagree about
+readiness, and fixing the dependency did not fix the gate.
+
+**Ruling — stop patching gates; unify the predicate.** "Resolved" gets **one
+definition**, and the gate must use the *same function* the consumer uses to
+decide inclusion. Concretely: `resolvedWindowKeys` is derived from what
+`bindWindowsFor` would actually include, not from a parallel
+`has()`-check maintained beside it. Two independent spellings of one
+predicate is the root cause, and it has now produced three defects (S1's
+`bindingIdentity`, S1's `sessionDetailsReadinessKey`, and this).
+
+**The general rule, added to the standing set:** when an effect gates work
+on "is X ready", the readiness test and the consumer's inclusion test must
+be the same code path. If a consumer can decline an item the gate called
+ready, the gate is wrong — and the failure is always silent, because
+declining to work looks exactly like having no work to do.
+
+**Also decided, from the same review:**
+- **Click-to-unpin is blessed.** Clicking the already-pinned instant
+  unpins. Decision 51 says a single click pins and is silent on unpinning;
+  the behaviour is discoverable (click the visible pinned line), reversible,
+  and round-trips through the pixel↔time formulas across a viewport change.
+  Recording it so it is an explicit decision rather than an implied one
+  inherited from a plan document (CLAUDE.md §1).
+- **Minor accepted:** `useRef(createCursorBus())` allocates on every render
+  and discards all but the first. Harmless, but lazy-init it.
+
+**Cost if wrong.** The Critical silently drops a selected window's channel
+data permanently — the same user-visible failure S1 shipped twice and fixed
+twice, arriving a third time through a third gate.
+
+## 2026-09-08 — R139: the cursor card reads the combined payload the host already builds, not per-window tiles
+
+**Question** (W3.2 time task 7). Decision 55 wants the cursor card to show
+one row per series **and per overlaid window**. But `channelBindDriver`
+fetches per-window tiles, combines them into typed `{t, v, w}` arrays, sends
+those to the sandbox via `setChannelHostVar`, and **retains nothing but the
+primary window's tiles** in host state. So `ChartCell` has no non-primary
+window's values to read. The implementer proposed shipping the card wired to
+the primary window only, labelled per R132, with a TODO — explicitly asking
+whether to plumb per-window tiles instead.
+
+**Ruling — neither. Retain the combined payload.**
+
+Primary-only is the wrong ship: the cursor card in a comparison workflow
+exists precisely to read lap 2's value against lap 3's at the same instant.
+A card that names one window honestly is still the feature with its purpose
+removed, and it would read as "done" in the changelog.
+
+Plumbing per-window *tiles* back through the action stream is the wrong fix:
+it is a real scope expansion, and it retains far more than the card needs.
+
+The data already exists. The host **builds** the combined `{t, v, w}` arrays
+itself, immediately before handing them to the sandbox, and then drops them.
+Keep them — one combined payload per (cell, channel), in a ref — and the
+card's rows are a filter on `w`. That is:
+- **no new fetch and no IPC on hover** (P2 and CLAUDE.md §2 hold — the arrays
+  are already in host memory at send time);
+- **no per-window tile retention** — the arrays are decimated to the point
+  budget, which is exactly the resolution the readout displays;
+- **correct for N windows by construction**, because `w` is the window index
+  R127 put there.
+
+**Hover versus pin.** The decimated arrays are right for hover, which is a
+live readout at pointer rate. R134 item 7 already says a **pin** freezes the
+card and triggers the exact readout — that path may do IPC, because a pin is
+a settle, not a pointer move.
+
+**Accepted from the same report:** building `cursorCard.ts`'s row shape
+generically, taking per-window input, is right regardless — keep that.
+
+**Cost if wrong.** Shipping primary-only means the first genuine two-lap
+comparison shows one lap's numbers beside two laps' traces, and the gap gets
+rediscovered as a bug rather than remembered as a TODO.
+
+## 2026-09-08 — R140: one tokenizer, one notion of "comment"; a line layer above it is fine
+
+**Question** (W3.2 maths task 5). `graphModel.ts`'s definition-line scan
+reuses `tokenizeMath` for token classification but adds its own line
+splitting and blank/comment/const filtering. The implementer flagged it
+against R135's "do not write a second tokenizer".
+
+**Ruling — acceptable, with one condition.** R135's rule is about the
+*expression grammar*: two parsers of one grammar drift, and then the graph
+draws edges the evaluator does not have. A line-level layer above the
+tokenizer is a different concern, and `cells.ts` already mirrors
+`scan_cells` for exactly this — precedent exists.
+
+**The condition: comment and label detection must come from
+`tokenizeMath`'s own token stream** (it emits `comment` and `labelComment`
+kinds), never from an independent scan for `#`. Splitting on newlines is
+safe because a newline is unambiguous; a `#` is not, and two independent
+`#` scans are a second grammar wearing a smaller hat.
+
+**A real gap found while checking this, filed not fixed.** `tokenizeMath`
+does **not** tokenize string literals — its own doc says it advances past
+string-literal quotes untokenized. So a `#` inside a string argument (e.g.
+`x = fft(ch, "a#b")`) is likely read as the start of a comment, truncating
+the expression. Today's catalog arguments are all plain words (`"hann"`,
+`"low"`, `"magnitude"`), so nothing hits it — but core's tokenizer and this
+one can disagree about where a definition line ends, which is precisely the
+drift R135 exists to prevent. Filed for the lane that implements C2 §3.6 in
+core, where both tokenizers should be reconciled against one grammar.
+
+**Also noted from the same report, no action:** the §3.3 function catalog
+(69 entries) does not yet include §3.6's reduction functions
+(`argmax`/`at`/`nearest`/`slice`/`axes`/`broadcast`/`align`), so the outer-call
+scanner treats them as opaque and wires them by refs. Correct for today —
+§3.6 is spec-only in core — and the catalog update belongs with that
+implementation, not here.
+
+**Cost if wrong.** Two independent notions of where a comment starts means
+the graph can show a definition the evaluator parses differently — the same
+class as an edge the evaluator does not have, arriving through the line
+layer instead of the expression layer.
+
+## 2026-09-08 — R141: `channel_id` is the reference name; graph status takes the selection *and* the resolved map
+
+**Two questions from W3.2 maths task 7, both correctly stopped on.**
+
+### Q1 — how a `[Name]` reference maps to a channel
+
+The implementer read `ChannelSummary.channel_id` as "a hash-like id" with no
+display-name field, and could not see how a bracket reference's text should
+match it. **It is not a hash.** `channel_id` *is* the reference name —
+`jsCellBinding.ts`'s existing `findChannel` is
+`channels.find(c => c.channel_id === channelId)`, and its own test resolves
+`"fork_velocity"`. A `[Name]` reference matches `channel_id` exactly.
+
+**Ruling: reuse that predicate, do not write a third one.** `findChannel`
+(and `unresolvedChannelId` above it) already decide "does this name resolve
+against this session's channels", and the Notebook uses them to grey an
+unresolved chart today. Decision 44's grey-vs-red split must answer the same
+question the same way — export the existing predicate rather than
+re-implementing the lookup in `graphStatus.ts`. Two spellings of "resolves"
+is the shape that has now produced four defects in this project (R133,
+R138, R140's tokenizer concern, and the S1 pair).
+
+### Q2 — resolved-only state cannot express "2 of 3"
+
+`WorkbookState.windows` holds an entry only for a window that has already
+evaluated, so absence is ambiguous: it means both "not started" and "not
+selected". Per-window spinners and a "2 of 3 windows" summary cannot be
+derived from it alone.
+
+**Ruling: `graphStatus.ts` takes both** — the ordered `SelectionWindow[]`
+from `AppState.selection` **and** the resolved map. Selection supplies the
+denominator and the order; the map supplies each window's outcome; a
+selected window absent from the map is *pending*, which is what draws a
+spinner (decision 41). This is R131's rule applied one layer out: order and
+membership live in the selection, and the map is only a lookup. Do not add a
+"pending" entry to the map to make it self-sufficient — that would give
+absence two meanings again, which is exactly the sentinel shape that
+produced most of S1's silent-wrong-number defects.
+
+**Cost if wrong.** Q1 guessed would put a second channel-resolution rule in
+the graph, so a node could grey while the chart beside it renders — or
+worse, the reverse. Q2 guessed would make a *deselected* window and an
+*unevaluated* one indistinguishable, and the canvas would show spinners for
+windows nobody selected.
+
+## 2026-09-08 — R142: the math language is measured against scipy/numpy/xarray convention (analysis; grammar question open for Isaac)
+
+**Isaac, 2026-09-08:** *"the idea is to have it be a language that has been
+around long enough to have models trained on it. the idea of having the app
+be a runtime editable sci-rs library is supposed to mirror how this would
+feel if it were scipy — something that the models have been trained on."*
+
+This is a **design criterion**, recorded as one: the math language's
+audience includes language models, and divergence from scipy/numpy costs
+model accuracy, not just human familiarity. It applies to every future
+addition to C2 §3.3.
+
+**Where we already are — better than expected.** The 69-entry catalog is
+largely scipy/numpy already: `butter`, `sosfilt`, `detrend`, `hilbert`,
+`correlate`, `convolve`, `resample`, `spectrogram`, `fft` (scipy.signal);
+`abs`, `sqrt`, `sign`, `floor`, `ceil`, `round`, `pow`, `min`, `max`, the
+trig set, `deg2rad`, `rad2deg`, `mean`, `std`, `median`, `sum`, `cross`,
+`dot` (numpy). No renaming is needed for the majority.
+
+**The divergences, in priority order.**
+
+1. **False friends — the dangerous class.** `angle` in this catalog is a
+   vector angle; `numpy.angle` is the phase of a complex number. A model
+   trained on numpy will produce confidently wrong code against it. A false
+   friend is *worse* than an invented name, because an invented name makes
+   a model ask. Rename these before anything else.
+2. **Gratuitous renames of functions that exist upstream:** `p` →
+   `percentile`, `clamp` → `clip`, `if` → `where`, `integrate` →
+   `cumulative_trapezoid` (or `cumtrapz`), `differentiate` → `gradient`.
+   Each is a free win — the semantics already match, only the spelling
+   diverges.
+3. **The axis argument, and the strongest single lever.** C2 §3.6 reduces
+   with a positional string: `mean(spec, "f")`. numpy spells this
+   `mean(x, axis=0)`; **xarray** — which is precisely "numpy with *named*
+   axes", exactly what §3.6 invented — spells it `x.mean(dim="f")`. xarray
+   is well-represented in training data. Adopting its vocabulary (`dim=`,
+   named dims) would put §3.6 on trained ground rather than beside it.
+   **This needs keyword arguments, which the grammar does not have** — a
+   real change, and Isaac's call.
+4. **Deliberate DSL affordances, worth keeping:** `[Channel]` and `{cell}`
+   references have no Python analogue but are the spreadsheet-like feel the
+   product wants, and they are unambiguous. `rms` is not numpy but is
+   standard in signal work. The `vec`/`vx`/`vadd`/`vscale` family is the
+   most custom corner and deserves a second look once array literals exist.
+
+**Cost of deferring.** Renames are a C2 version bump plus a migration —
+decision 75 requires migrating workbooks, not breaking them. Every workbook
+Isaac writes between now and then raises that cost, and the maths-graph lane
+is about to harden around these names in node cards and completions. This is
+cheapest today.
+
+**Open for Isaac:** whether to add keyword arguments to the grammar (item 3).
+Items 1 and 2 are renames and can proceed without it.
+
+## 2026-09-08 — R143: keyword arguments approved; mirror scipy where equivalent, diverge deliberately where not
+
+**Isaac, 2026-09-08:** *"yes, the keyword stuff makes sense - mirror scipy
+where we can and deliberately dont mirror it when it's not an equivalent
+function."*
+
+**Ruling.**
+1. **Keyword arguments are added to the math grammar** (C2 §3.2). This is
+   what lets reductions read as `mean(spec, dim="f")` — xarray's spelling,
+   and xarray is exactly "numpy with named axes", which is what C2 §3.6
+   independently invented. Positional form stays valid; keywords are
+   additive.
+2. **The naming rule, now policy for every future addition to §3.3:** where
+   a function is *semantically equivalent* to a scipy/numpy one, it takes
+   that name. Where it is **not** equivalent, it takes a **deliberately
+   different** name — never a familiar name with unfamiliar behaviour. A
+   false friend is worse than an invented name, because an invented name
+   makes a reader (or a model) check, and a false friend does not.
+
+**The first application, and it is a significant one.** The catalog's
+`fft(ch, "hann")` does **not** compute an FFT. `core/src/fft.rs` implements
+**`welch()`** — a segmented, windowed, averaged power spectrum — and the
+math language exposes it as `fft`. `numpy.fft.fft` returns a complex DFT;
+`scipy.signal.welch` returns `(f, Pxx)`. A model asked to "take the FFT" here
+would reason about a raw transform and be wrong about averaging, scaling,
+segment length and output type simultaneously.
+
+**Rename `fft` -> `welch`.** The engine function already has the right name;
+only the language surface diverges. This also frees `fft` to mean an actual
+DFT if one is ever exposed, rather than being permanently occupied by
+something else. Isaac's own idl0 spec already described this path as
+"computed via Welch's method (`welch()`)" — the language name was the
+outlier, not the implementation.
+
+**The rest of the alignment**, per R142: `angle` (a vector angle here,
+complex phase in numpy — a false friend, rename), `p` -> `percentile`,
+`clamp` -> `clip`, `if` -> `where`, `integrate` -> `cumulative_trapezoid`,
+`differentiate` -> `gradient`. `[Channel]` and `{cell}` references stay as
+deliberate DSL affordances.
+
+**Migration is required, not optional.** These renames are a C2 version bump
+and decision 75 says an update migrates workbooks rather than breaking them.
+The old spellings must keep parsing for one revision, rewritten on save,
+with the change reported — the mechanism C2 §7.1 already uses.
+
+**Also asked by Isaac**, and dispatched as a survey: which useful
+scipy-style functions we are missing, what `sci-rs` already offers that is
+unexposed, and what to model the FFT and iEKF work on.
+
+**Cost if wrong.** Every workbook and every model-written cell that says
+`fft` today means Welch. The longer that stands, the more code exists whose
+author believed something false about what it computes.
+
+## 2026-09-08 — R144: a computed value must carry its unit across the wire
+
+**Finding** (W3.2 maths task 8). Decision 45 wants a node card to show
+"name, unit, the key parameters and the status glyph". `CellDefResult`
+(`app/src/ipc/workbook.ts:44`) carries `name`, `label`, `value`
+(`HostChannelRef`) and `error` — and **no unit at all**. The implementer
+omitted the row rather than fabricate one, which was right.
+
+**This is bigger than the node card.** CLAUDE.md §3 requires units on every
+numeric value, and the engine *knows* them: C2 §3.3's table documents each
+function's output unit (`fft`: "same units as `ch`"), and a channel's unit
+comes from C1 §4.1. The unit is derived in `core` and then dropped at the
+IPC boundary. Every consumer that wants to show a number therefore cannot
+say what it is — the node card, the cursor value card (decision 55), the
+inline `${…}` prose spans, and the PDF report (decision 85), which is the
+one that goes to a rider or a mechanic.
+
+A suspension number without its unit is not a smaller feature; "112" is not
+a travel measurement, and a reader supplies the missing unit from
+assumption.
+
+**Ruling.** `CellDefResult` gains a `unit: string | null` — additive, `null`
+meaning genuinely dimensionless (a count, a ratio), never "unknown". The
+engine already computes it; this exposes it. C3 amended alongside. Where a
+function's output unit is not derivable from its inputs, the §3.3 table
+already states it and that is the source of truth.
+
+**Do not** let a consumer infer a unit from a channel name or a definition
+label — that is how a `deg`/`rad` confusion ships.
+
+Scheduled as a small Rust + C3 task, not folded into the graph lane: it is a
+contract change with several consumers, and the graph is merely the first to
+need it.
+
+**Accepted from the same report, no change:** the node card showing one
+representative window's port shape rather than a per-window shape. C2 §3.7.4
+defines one shape per node, so per-window nuance belongs to whoever wires
+Task 10 and chooses which window's outputs to pass.
+
+**Cost if wrong.** Every number the app displays outside a chart axis is
+unlabelled, and the report — the deliverable Isaac names in decision 85 —
+goes out with bare figures.
+
+## 2026-09-08 — R145: a rename may not silently break a reference it cannot rewrite
+
+**Finding** (W3.2 maths task 9). `renameDefinition` rewrites `[Name]`
+bracket references inside math cells — C2 §3.7.3's literal wording. It does
+**not** rewrite a js cell's plot code (a channel bound with
+`source: "definition"` names the definition by a bare string, no brackets)
+or a prose `${…}` span using the identifier as a bare JS variable (§5.1).
+So a rename today silently breaks either of those.
+
+Decision 45a makes renaming a **first-class one-gesture** operation, and
+decision 76 measures the lane by how cheap setting up a math channel is. A
+rename that quietly breaks a chart is not first-class; it is a trap that
+fires later, in a different cell, with no connection to the action that
+caused it.
+
+**Ruling — rewrite what can be rewritten safely, and *report* the rest.**
+1. Keep rewriting bracket references in math cells.
+2. Additionally rewrite references in **form-generated** plot code, where
+   the shape is known and parseable (`plotForm`'s own output). That is the
+   common case and it is safe precisely because we generated it.
+3. **Never textually rewrite arbitrary JS.** A hand-written cell or a prose
+   `${…}` span is an arbitrary expression; a find-and-replace there can
+   corrupt working code, which is worse than leaving it stale.
+4. **Every reference the rename could not update is collected and surfaced
+   with the rename** — "renamed; 2 references in *cell X* were not updated".
+   The rename does not present itself as complete when it is not.
+
+The *consequence* is already handled: a broken reference renders as an
+unresolved name and greys its chart (`unresolvedChannelId`, decision 44). The
+defect is purely that it happens silently, disconnected in time from the
+rename. Reporting closes that.
+
+**A refusal is not the answer.** Blocking the rename until every reference
+is hand-fixed would make the one-gesture operation a chore, contradicting
+decisions 45a and 76.
+
+**Also accepted, no change.** `editLiteralArg` re-serialising the edited
+call canonically rather than byte-splicing — the same posture `graphLayout`
+takes, and the bytes it rewrites are the ones the user is editing.
+`rewireInput` touching only the target definition's own def_line — rewiring
+is a per-edge gesture, genuinely distinct from rename's document-wide scope.
+
+**Cost if wrong.** The user renames a node, three charts elsewhere go grey
+at some later moment, and nothing on screen connects the two events.
+
+## 2026-09-08 — R146: corrects R143; the notebook and the charts compute *different* spectra
+
+The convention survey (`runs/2026-09-08/math-language-convention.md`)
+corrected R143 twice. Both corrections are right; I verified them.
+
+### Correction 1 — `fft` is not `welch`, and the real defect is worse
+
+R143 said the language's `fft` was Welch under another name. It is not.
+`core/src/math/eval.rs:940` calls `crate::fft::fft` — a **single windowed
+magnitude spectrum**, `|rfft(w·x)|`, no segmentation, no averaging, no
+detrend. `welch` is what the **charts** call
+(`tauri/src/commands/rasters.rs:508`).
+
+So **the notebook's FFT of a channel and the Analyze chart's FFT of the same
+channel are different computations today**, under one name, with no
+indication. That is a worse defect than the naming issue I thought I had
+found: a user comparing the two sees two spectra and has no way to know why
+they disagree. Renaming `fft`→`welch` would have *installed* a false friend
+rather than removed one.
+
+**Ruling — expose scipy's own pair, and retire the ambiguous name.**
+- **`periodogram(...)`** — the single-segment computation the notebook does
+  today (scipy's name for exactly this).
+- **`welch(...)`** — the segmented, averaged computation the charts already
+  do, with its existing parameters.
+- **`fft` is retired as a language function.** It stays reserved: if a true
+  complex DFT is ever exposed, `fft` is its name and nothing else's.
+Both paths then exist explicitly, and a user choosing between them is making
+a choice rather than discovering an inconsistency.
+
+### Correction 2 — `differentiate` → `gradient` is not a free rename
+
+Ours is a **backward difference with `result[0] = 0`**
+(`core/src/statistics.rs:11-15`); `numpy.gradient` is **central**. Adopting
+the name would create a false friend. R143's item is withdrawn. Either keep
+a deliberately different name, or implement central differencing and then
+take the name — not the reverse.
+
+### The worst false friends, per the survey — `variance_time` / `variance_dist`
+
+These compute **lap deltas**, not σ². "Variance" has one meaning in every
+statistics library a model has read. Rename to say what they do
+(`lap_delta_time` / `lap_delta_dist` or similar); this outranks the rest of
+the alignment work.
+
+### Also confirmed false friends
+`angle` (vector angle vs `numpy.angle`'s complex phase), `butter` (ours
+designs **and** applies zero-phase — scipy's only designs), `round`
+(half-away-from-zero vs numpy's banker's rounding), `hilbert`
+(pre-emptive — with no complex type it will be an envelope, not scipy's
+analytic signal), and `resample` at the **parameter** level (rate vs scipy's
+sample count). The `nan*`-semantics divergence across `aggregate.rs` is
+**documented, not renamed** — it is a consistent policy, not a trap.
+
+### Two real bugs, filed
+`clamp` panics when `lo > hi` or on NaN (`eval.rs:1152`); `butter` panics on
+a cutoff ≥ Nyquist (`filters.rs:67-84` → sci-rs `iirfilter.rs:137`). Both
+violate CLAUDE.md §5 — never a crash on bad data — and both are reachable
+from a user-typed expression. Filed as their own fix task, ahead of the
+renames.
+
+### R136 amended
+The survey could not verify my characterisation of GPS `speed` as
+**Doppler-derived** anywhere in the repo, and correctly declined to repeat
+it. It is true of NMEA receivers generally but is **not stated in SPEC
+§5.6**, so R136's recommendation rests on an assumption about the receiver,
+not on a documented fact. Confirm against the module's datasheet before the
+lap-distance lane relies on it.
+
+**Cost if wrong.** The `fft` divergence is live today: two spectra, one
+name. Every workbook written before it is fixed contains cells whose author
+believed they matched the chart beside them.

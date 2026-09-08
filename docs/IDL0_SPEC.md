@@ -479,7 +479,12 @@ device before trusting the link (every IDL0 AP shares `192.168.4.1`).
 mismatch the app refuses operations and surfaces a firmware-update prompt.
 `ble` is `on` until `/handoff`, `off` after. The remaining fields mirror the
 §7.3 status characteristic: once BLE drops, `/ping` **is** the status feed
-(§7.3). Unknown fields are ignored by the app, so the set may grow.
+(§7.3). Unknown fields are ignored by the app, so the set may grow. The §7.3
+additions (`LoggingElapsed`, `BatteryRaw`, `SDFreeMiB`, `GPSFix`, `GPSSats`,
+`GPSHDOP`, `IMU0`, `IMU1`, `IMU2`) carry the same names and the same presence
+rules — additive only, raw integer or fixed token, absent means unknown never
+zero — over `/ping` as over the BLE status characteristic; the device does
+not rename or reshape them for the HTTP path.
 
 ### 6.2 App ↔ Device Link Management
 
@@ -600,16 +605,59 @@ UTF-8, newline-delimited. Parse case-insensitively. Unknown lines are ignored, s
 ```
 WiFi: ON|OFF
 Logging: RUNNING|STOPPED
+LoggingElapsed: N       (seconds since Logging: RUNNING started; present only then — R113)
 Battery: N%
+BatteryRaw: N            (unscaled battery ADC count; always present — see below)
 SD: OK|FULL|ERROR|ABSENT
+SDFreeMiB: N             (free space on the card, MiB; present for SD: OK|FULL only)
 GPS: FIX|NOFIX|ABSENT
+GPSFix: 0|1|2|3          (NMEA GGA fix quality, raw; present when GPS is not ABSENT)
+GPSSats: N               (satellites used, GGA field 7; present when GPS is not ABSENT)
+GPSHDOP: N               (HDOP × 100, GGA field 8 scaled; present when GPSFix ≥ 1; optional)
 IMU: OK|PARTIAL|ERROR|ABSENT
+IMU0: OK|ERROR|ABSENT|OFF
+IMU1: OK|ERROR|ABSENT|OFF
+IMU2: OK|ERROR|ABSENT|OFF
 Firmware: <semver>      (running image version, e.g. 1.5.0)
 OTA: PENDING_VERIFY     (present only while the running image is awaiting CMD_OTA_CONFIRM — see §7.2)
 HR:         ABSENT | SEARCHING | CONNECTED N | NO_CONTACT N | SUSPENDED
 HR_Battery: N%
 ```
 `SD` reflects mount + free-space state. `GPS` reflects fix acquisition. `IMU` is an aggregate across the enabled IMUs — `PARTIAL` means at least one enabled IMU is responding and at least one is not. `Firmware` carries the running image's embedded version (`esp_app_desc_t.version`), the same value `/ping` reports as `fw`; the app uses it to offer over-the-air updates (§27.7). `OTA` is absent in the common case; it appears only between an OTA-installed reboot and the app's `CMD_OTA_CONFIRM`.
+
+**Additive fields (post-launch, R113 / R59 Q6 / UI-DIRECTION-2 decisions 66,
+87).** These lines were added after the characteristic's original definition
+above; the "unknown lines are ignored" rule at the top of this section is why
+they are safe to add without breaking older parsers. All of them are raw
+unsigned decimals or fixed tokens — no units in the text, no floats, no
+percent arithmetic on the device; the app does the scaling. **An absent line
+means "unknown," never zero.**
+
+`LoggingElapsed` is elapsed seconds since the current logging session
+started, device-monotonic (`esp_timer`), present only while
+`Logging: RUNNING` (R113: the device clock is not wall-clock-anchored until
+first GPS fix, so an elapsed counter is used instead of a start timestamp).
+When the line is absent, the app falls back to client-observed elapsed time,
+rendered dimmed per the staleness rule below. `BatteryRaw` is the unscaled
+battery ADC count (whatever the pin/ADC returns), always present; `Battery:
+N%` is **deprecated**: it stays one firmware revision for old parsers and is
+then removed, because a percentage is exactly the on-device arithmetic this
+section's rule forbids — the device cannot know the pack chemistry, the
+board revision's divider, or the app's own curve. The app scales
+`BatteryRaw` itself (scale/offset live in the app, per board revision) and
+prefers it whenever both are present. `SDFreeMiB` is free space on the mounted card in MiB, present when
+`SD: OK` or `SD: FULL`, absent for `ERROR`/`ABSENT`. `GPSFix` is the raw NMEA
+GGA fix-quality field (0 none, 1 GPS, 2 DGPS, 3 PPS or better), present
+whenever `GPS` is not `ABSENT`. `GPSSats` is satellites used in the solution
+(GGA field 7), present under the same condition, `0` while searching.
+`GPSHDOP` is HDOP × 100 (GGA field 8 scaled — e.g. 0.9 → 90), present when
+`GPSFix` ≥ 1; optional if the GPS driver does not expose it cheaply.
+`IMU0`/`IMU1`/`IMU2` report per-IMU state — `OFF` disabled in the loaded
+config, `ABSENT` enabled but not detected on the bus, `ERROR` detected but
+failing reads/FIFO — and the aggregate `IMU` line above stays derived from
+these three exactly as before. Cadence is unchanged: no new notifications,
+these lines ride in the existing status payload, at a cost of ≤ ~90 extra
+bytes per notification.
 
 `HR` reflects the HRM central-role state (§7.5). `CONNECTED N` carries the latest BPM. `NO_CONTACT N` means the strap's sensor-contact-detected flag (bits 1–2 of the HR Measurement flags byte) reports no skin contact; BPM continues to stream but is unreliable. `SUSPENDED` means the HRM link has been dropped because WiFi SoftAP is active (§10.4). `HR_Battery` is absent until the first successful battery read on connect; thereafter it stays present (with the last-read value) for the duration of the session.
 
