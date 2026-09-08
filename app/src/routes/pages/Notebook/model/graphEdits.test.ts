@@ -19,21 +19,22 @@ const DOC =
 describe("renameDefinition", () => {
   it("renameDefinition — the def_line's own identifier and every [OldName] reference — all become the new name", () => {
     // Act
-    const renamed = renameDefinition(DOC, "fork_velocity", "fork_v");
+    const result = renameDefinition(DOC, "fork_velocity", "fork_v");
 
     // Assert
-    expect(renamed).toContain("fork_v = differentiate([fork_travel])");
-    expect(renamed).toContain("fork_bottom_out = [fork_v] > 5");
-    expect(renamed).not.toContain("[fork_velocity]");
+    expect(result.markdown).toContain("fork_v = differentiate([fork_travel])");
+    expect(result.markdown).toContain("fork_bottom_out = [fork_v] > 5");
+    expect(result.markdown).not.toContain("[fork_velocity]");
+    expect(result.unresolved).toEqual([]);
   });
 
   it("renameDefinition — a name with no [Name] occurrences elsewhere in the document — leaves other cells untouched", () => {
     // Act
-    const renamed = renameDefinition(DOC, "shock_velocity", "shock_v");
+    const result = renameDefinition(DOC, "shock_velocity", "shock_v");
 
     // Assert
-    expect(renamed).toContain("shock_v = differentiate([shock_travel]) # label: Shock velocity");
-    expect(renamed).toContain("fork_velocity = differentiate([fork_travel])"); // unrelated cell untouched
+    expect(result.markdown).toContain("shock_v = differentiate([shock_travel]) # label: Shock velocity");
+    expect(result.markdown).toContain("fork_velocity = differentiate([fork_travel])"); // unrelated cell untouched
   });
 
   it("renameDefinition — a stored graph.nodes position — moves to the new key in the same edit", () => {
@@ -41,10 +42,10 @@ describe("renameDefinition", () => {
     const withPosition = writeGraphLayout(DOC, { nodes: { fork_velocity: [120, 80] }, cells: {} });
 
     // Act
-    const renamed = renameDefinition(withPosition, "fork_velocity", "fork_v");
+    const result = renameDefinition(withPosition, "fork_velocity", "fork_v");
 
     // Assert
-    expect(readGraphLayout(renamed)).toEqual({ nodes: { fork_v: [120, 80] }, cells: {} });
+    expect(readGraphLayout(result.markdown)).toEqual({ nodes: { fork_v: [120, 80] }, cells: {} });
   });
 
   it("renameDefinition — no stored position for the renamed name — leaves graph.nodes untouched", () => {
@@ -52,10 +53,10 @@ describe("renameDefinition", () => {
     const withOther = writeGraphLayout(DOC, { nodes: { shock_velocity: [1, 2] }, cells: {} });
 
     // Act
-    const renamed = renameDefinition(withOther, "fork_velocity", "fork_v");
+    const result = renameDefinition(withOther, "fork_velocity", "fork_v");
 
     // Assert
-    expect(readGraphLayout(renamed)).toEqual({ nodes: { shock_velocity: [1, 2] }, cells: {} });
+    expect(readGraphLayout(result.markdown)).toEqual({ nodes: { shock_velocity: [1, 2] }, cells: {} });
   });
 
   it("renameDefinition — a substring collision (fork_velocity vs a hypothetical fork_velocity_2) — renames only the exact reference", () => {
@@ -63,11 +64,54 @@ describe("renameDefinition", () => {
     const doc = "```math id=a1b2c3d4\nfork_velocity = 1\nfork_velocity_2 = [fork_velocity] + [fork_velocity_2]\n```\n";
 
     // Act
-    const renamed = renameDefinition(doc, "fork_velocity", "fv");
+    const result = renameDefinition(doc, "fork_velocity", "fv");
 
     // Assert
-    expect(renamed).toContain("fv = 1");
-    expect(renamed).toContain("fork_velocity_2 = [fv] + [fork_velocity_2]");
+    expect(result.markdown).toContain("fv = 1");
+    expect(result.markdown).toContain("fork_velocity_2 = [fv] + [fork_velocity_2]");
+  });
+
+  it("renameDefinition — a form-generated js cell charting the renamed definition — rewrites its channel too", () => {
+    // Arrange
+    const doc =
+      "```math id=a1b2c3d4\nfork_velocity = differentiate([fork_travel])\n```\n" +
+      '```js id=e5f6a7b8\nPlot.plot({ marks: [Plot.lineY(channel("fork_velocity"), { x: "t", y: "v" })] })\n```\n';
+
+    // Act
+    const result = renameDefinition(doc, "fork_velocity", "fork_v");
+
+    // Assert
+    expect(result.markdown).toContain('channel("fork_v")');
+    expect(result.unresolved).toEqual([]);
+  });
+
+  it("renameDefinition — custom js code naming the renamed definition — is never textually rewritten, and is reported unresolved", () => {
+    // Arrange
+    const doc =
+      "```math id=a1b2c3d4\nfork_velocity = differentiate([fork_travel])\n```\n" +
+      '```js id=e5f6a7b8\nconst v = channel("fork_velocity"); console.log(v.v.length);\n```\n';
+
+    // Act
+    const result = renameDefinition(doc, "fork_velocity", "fork_v");
+
+    // Assert — the custom cell's own text is byte-identical, not rewritten
+    expect(result.markdown).toContain('channel("fork_velocity")');
+    expect(result.unresolved).toEqual([{ cellId: "e5f6a7b8", kind: "custom-js" }]);
+  });
+
+  it("renameDefinition — a prose ${…} span naming the renamed definition — is untouched and reported unresolved", () => {
+    // Arrange
+    const doc =
+      "```math id=a1b2c3d4\nfork_velocity = differentiate([fork_travel])\n```\n" +
+      "\n" +
+      "Peak: ${fork_velocity.v.length}\n";
+
+    // Act
+    const result = renameDefinition(doc, "fork_velocity", "fork_v");
+
+    // Assert
+    expect(result.markdown).toContain("${fork_velocity.v.length}");
+    expect(result.unresolved).toEqual([{ cellId: "a1b2c3d4", kind: "prose" }]);
   });
 });
 

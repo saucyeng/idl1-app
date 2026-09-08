@@ -15,9 +15,6 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
   after the untouched line instead of replacing it — two top-level `graph`
   keys, permanently, in the one module that writes a user's workbook.
   Contradicted C2 §3.7.1's "malformed ⇒ replaced wholesale".
-
-### Fixed
-
 - **`graphStatus.ts`'s `"pending"` fallback no longer outlives its window
   (2026-09-08, w32-maths review follow-up).** A completed window
   (`windows` holds an entry) whose output has no `defs` entry for a node —
@@ -26,6 +23,19 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
   behaviour would spin forever for a definition the evaluator declines to
   ever emit a result for, the same class of defect as a silently wrong
   value, arriving through a spinner instead of a number.
+- **`renameDefinition` now rewrites form-generated `js`-cell channel
+  references too, and reports what it couldn't (ruling R145, 2026-09-08,
+  w32-maths follow-up).** A rename previously only rewrote `[Name]`
+  references in `math` cells, silently leaving a chart's `channel(...)`
+  call stale. Now: a `plotForm`-parseable `js` cell (`plotForm/parse.ts`
+  recognises it) is regenerated with the new channel name — safe because
+  the code is generated, not hand-written; custom `js` code and prose
+  `${…}` spans are **never** textually rewritten (a find-and-replace over
+  arbitrary JS can corrupt working code), but any such cell still naming
+  the old identifier is now collected and returned rather than silently
+  left stale. `renameDefinition`'s return type changes from `string` to
+  `{ markdown, unresolved: { cellId, kind }[] }` — its only caller so far
+  is this lane's own tests, updated in the same commit.
 
 ### Added
 
@@ -39,11 +49,10 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
   (re-serialises a single outer call canonically), `addNodeFromChannel`,
   `deleteNode` (never prunes a stored position — §3.7.1's orphan rule).
   Every def_line/comment classification reuses `tokenizeMath`, never a
-  second parser (R140). **Scope flagged, not resolved:** `renameDefinition`
-  rewrites only `[Name]` bracket references inside `math` cells, per
-  §3.7.3's literal wording — a `js` cell's plot code or a prose `${…}` span
-  naming the same identifier as a bare JS variable (§5.1) is not rewritten;
-  real gap for the lead to rule on.
+  second parser (R140). **Scope originally flagged, since ruled — see
+  "Fixed" above (R145):** `renameDefinition` now also rewrites
+  `plotForm`-generated `js`-cell channel references and reports every
+  reference it could not update.
 - **`Notebook/graph/`: the maths graph canvas (2026-09-08, w32-maths Task 8,
   spec exists — C2 §3.7, no spec change needed).** `GraphCanvas.tsx` (React
   Flow, `@xyflow/react`, CSS imported from `node_modules` — no CDN) renders

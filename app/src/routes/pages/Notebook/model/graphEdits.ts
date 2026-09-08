@@ -27,6 +27,9 @@
 import { readGraphLayout, writeGraphLayout } from "./graphLayout";
 import { scanCells, replaceCellBody } from "./cells";
 import { tokenizeMath, type MathToken } from "./mathMode";
+import { generate } from "../plotForm/generate";
+import { parse } from "../plotForm/parse";
+import type { PlotProps } from "../plotForm/types";
 
 /** Decodes cell `cellId`'s current body text out of `markdown`'s live scan
  *  — never a cached range, so a caller chaining several edits in sequence
@@ -90,17 +93,66 @@ function rewriteBody(body: string, oldName: string, newName: string): string {
  * one atomic edit, so the node's canvas position is never orphaned by a
  * rename the way it would be if only the cell-body half landed
  * (§3.7.1's orphan rule would otherwise re-lay-out a node the user never
- * asked to move). Scoped to `[Name]` bracket references inside `math`
- * cells, per §3.7.3's own wording ("every `[OldName]` reference across the
- * document") — a `js` cell's plot code or a prose `${…}` span naming the
- * same identifier as a bare JS variable (§5.1) is not rewritten here; that
- * is a real gap this task flags rather than resolves (see the lane's
- * report).
+ * asked to move).
+ *
+ * **Four scopes, ruling R145.** (1) `[Name]` bracket references inside
+ * `math` cells are always rewritten — that grammar is closed and this
+ * module already parses it. (2) A `js` cell whose code is `plotForm`-
+ * generated (`plotForm/parse.ts` recognises it) is also rewritten: its
+ * `channel` fields are regenerated through `plotForm/generate.ts`, safe
+ * precisely because the code is generated, not hand-written. (3) A `js`
+ * cell `parse.ts` calls custom code, and any prose `${…}` span, is
+ * **never** textually rewritten — a find-and-replace over arbitrary JS can
+ * corrupt working code, which is worse than leaving a stale name (decision
+ * 45a/76: rename must stay a one-gesture operation, not a block on every
+ * reference being hand-fixed first). (4) Every reference this function
+ * could not update is collected and returned, never silently dropped — a
+ * broken reference already renders correctly as unresolved and greys its
+ * chart (`jsCellBinding.ts`'s `unresolvedChannelId`, decision 44); what
+ * was missing was surfacing *that a rename caused it*, in the same gesture,
+ * not the handling of the broken reference itself.
  */
-export function renameDefinition(markdown: string, oldName: string, newName: string): string {
-  const mathCellIds = scanCells(markdown)
-    .cells.filter((c) => c.kind === "math" && c.id !== null)
-    .map((c) => c.id as string);
+export interface RenameResult {
+  markdown: string;
+  /** Every cell this rename could not update automatically — custom `js`
+   *  code or a prose span still naming `oldName`. Empty when every
+   *  reference was rewritten (or `oldName` had none). */
+  unresolved: UnresolvedRenameRef[];
+}
+
+/** One cell {@link renameDefinition} could not rewrite. `kind` names why:
+ *  `"custom-js"` — the cell's code isn't `plotForm`-parseable, so it was
+ *  left untouched even though it still names `oldName`; `"prose"` — the
+ *  cell's surrounding prose has a `${…}` span (or plain text) naming
+ *  `oldName`. Detection is a best-effort word-boundary text scan (read-
+ *  only — never used to drive a rewrite, so an over- or under-count here
+ *  is a much smaller harm than corrupting code would be). */
+export interface UnresolvedRenameRef {
+  cellId: string;
+  kind: "custom-js" | "prose";
+}
+
+/** A definition name is a C2 §3.1 `identifier` (`[A-Za-z_][A-Za-z0-9_]*`)
+ *  — no regex metacharacters — so a plain word-boundary match needs no
+ *  escaping. */
+function nameOccursIn(text: string, name: string): boolean {
+  return new RegExp(`\\b${name}\\b`).test(text);
+}
+
+/** Rewrites `channel` on every mark of a parsed plot cell that equals
+ *  `oldName` to `newName`. Handles both the time-cell (`marks[]`) and
+ *  FFT-cell (single `mark`) shapes (`plotForm/types.ts`'s `PlotProps`). */
+function renameChannelInProps(props: PlotProps, oldName: string, newName: string): PlotProps {
+  if (props.chart === "time") {
+    return { ...props, marks: props.marks.map((m) => (m.channel === oldName ? { ...m, channel: newName } : m)) };
+  }
+  return props.mark.channel === oldName ? { ...props, mark: { ...props.mark, channel: newName } } : props;
+}
+
+export function renameDefinition(markdown: string, oldName: string, newName: string): RenameResult {
+  const doc = scanCells(markdown);
+  const mathCellIds = doc.cells.filter((c) => c.kind === "math" && c.id !== null).map((c) => c.id as string);
+  const jsCellIds = doc.cells.filter((c) => c.kind === "js" && c.id !== null).map((c) => c.id as string);
 
   let next = markdown;
   for (const cellId of mathCellIds) {
@@ -110,13 +162,37 @@ export function renameDefinition(markdown: string, oldName: string, newName: str
     if (rewritten !== body) next = replaceCellBody(next, cellId, rewritten);
   }
 
+  const unresolved: UnresolvedRenameRef[] = [];
+  for (const cellId of jsCellIds) {
+    const body = cellBody(next, cellId);
+    if (body === null) continue;
+    const props = parse(body);
+    if (props === null) {
+      if (nameOccursIn(body, oldName)) unresolved.push({ cellId, kind: "custom-js" });
+      continue;
+    }
+    const renamedProps = renameChannelInProps(props, oldName, newName);
+    if (renamedProps !== props) next = replaceCellBody(next, cellId, generate(renamedProps));
+  }
+
+  for (const cell of scanCells(next).cells) {
+    const proseRanges = [cell.proseBeforeRange, cell.proseAfterRange].filter((r): r is [number, number] => r !== null);
+    for (const range of proseRanges) {
+      const prose = new TextDecoder().decode(new TextEncoder().encode(next).subarray(range[0], range[1]));
+      if (nameOccursIn(prose, oldName) && cell.id !== null) {
+        unresolved.push({ cellId: cell.id, kind: "prose" });
+        break;
+      }
+    }
+  }
+
   const layout = readGraphLayout(next);
   if (Object.prototype.hasOwnProperty.call(layout.nodes, oldName)) {
     const { [oldName]: position, ...rest } = layout.nodes;
     next = writeGraphLayout(next, { nodes: { ...rest, [newName]: position }, cells: layout.cells });
   }
 
-  return next;
+  return { markdown: next, unresolved };
 }
 
 /**
