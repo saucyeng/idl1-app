@@ -29,6 +29,21 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 
 ### Added
 
+- **`app/src/routes/pages/Notebook/model/graphEdits.ts`: every graph
+  mutation as pure text-in/text-out over `replaceCellBody` (2026-09-08,
+  w32-maths Task 9, spec exists — C2 §3.7.3, no spec change needed).**
+  `renameDefinition` (the def_line identifier + every `[OldName]` reference
+  across every math cell, plus the `graph.nodes` position entry, in one
+  pass — §3.7.3's one deliberate exception to "no pane writes both"),
+  `rewireInput` (one definition's own reference only), `editLiteralArg`
+  (re-serialises a single outer call canonically), `addNodeFromChannel`,
+  `deleteNode` (never prunes a stored position — §3.7.1's orphan rule).
+  Every def_line/comment classification reuses `tokenizeMath`, never a
+  second parser (R140). **Scope flagged, not resolved:** `renameDefinition`
+  rewrites only `[Name]` bracket references inside `math` cells, per
+  §3.7.3's literal wording — a `js` cell's plot code or a prose `${…}` span
+  naming the same identifier as a bare JS variable (§5.1) is not rewritten;
+  real gap for the lead to rule on.
 - **`Notebook/graph/`: the maths graph canvas (2026-09-08, w32-maths Task 8,
   spec exists — C2 §3.7, no spec change needed).** `GraphCanvas.tsx` (React
   Flow, `@xyflow/react`, CSS imported from `node_modules` — no CDN) renders
