@@ -6119,3 +6119,44 @@ generically, taking per-window input, is right regardless — keep that.
 **Cost if wrong.** Shipping primary-only means the first genuine two-lap
 comparison shows one lap's numbers beside two laps' traces, and the gap gets
 rediscovered as a bug rather than remembered as a TODO.
+
+## 2026-09-08 — R140: one tokenizer, one notion of "comment"; a line layer above it is fine
+
+**Question** (W3.2 maths task 5). `graphModel.ts`'s definition-line scan
+reuses `tokenizeMath` for token classification but adds its own line
+splitting and blank/comment/const filtering. The implementer flagged it
+against R135's "do not write a second tokenizer".
+
+**Ruling — acceptable, with one condition.** R135's rule is about the
+*expression grammar*: two parsers of one grammar drift, and then the graph
+draws edges the evaluator does not have. A line-level layer above the
+tokenizer is a different concern, and `cells.ts` already mirrors
+`scan_cells` for exactly this — precedent exists.
+
+**The condition: comment and label detection must come from
+`tokenizeMath`'s own token stream** (it emits `comment` and `labelComment`
+kinds), never from an independent scan for `#`. Splitting on newlines is
+safe because a newline is unambiguous; a `#` is not, and two independent
+`#` scans are a second grammar wearing a smaller hat.
+
+**A real gap found while checking this, filed not fixed.** `tokenizeMath`
+does **not** tokenize string literals — its own doc says it advances past
+string-literal quotes untokenized. So a `#` inside a string argument (e.g.
+`x = fft(ch, "a#b")`) is likely read as the start of a comment, truncating
+the expression. Today's catalog arguments are all plain words (`"hann"`,
+`"low"`, `"magnitude"`), so nothing hits it — but core's tokenizer and this
+one can disagree about where a definition line ends, which is precisely the
+drift R135 exists to prevent. Filed for the lane that implements C2 §3.6 in
+core, where both tokenizers should be reconciled against one grammar.
+
+**Also noted from the same report, no action:** the §3.3 function catalog
+(69 entries) does not yet include §3.6's reduction functions
+(`argmax`/`at`/`nearest`/`slice`/`axes`/`broadcast`/`align`), so the outer-call
+scanner treats them as opaque and wires them by refs. Correct for today —
+§3.6 is spec-only in core — and the catalog update belongs with that
+implementation, not here.
+
+**Cost if wrong.** Two independent notions of where a comment starts means
+the graph can show a definition the evaluator parses differently — the same
+class as an edge the evaluator does not have, arriving through the line
+layer instead of the expression layer.
