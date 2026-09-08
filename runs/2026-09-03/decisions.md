@@ -5261,3 +5261,14 @@ or is a later optimisation; do not build one speculatively.
 **Cost if wrong.** R122's slicing would have put a filter transient at the
 start of every lap and reset every integrator per lap — wrong numbers that
 look like real signal, in the derived channels the app exists to compute.
+
+**Amendment (2026-09-08, Isaac).** The eventual optimisation is a *padded*
+calculation window — the lap plus a lead-in (~30 s) long enough for filters
+to settle — rather than either extreme. Session-wide computation is the
+baseline that makes the pad measurable: with it in hand, compare a padded
+window's outputs against the session-wide result and grow the pad until
+they agree to tolerance. Isaac: "that can be a performance optimization for
+later. for now, i think calculating the whole session should work. at least
+then we can have a baseline to see if ~30s is enough to get the filters to
+settle." Recorded so the pad is chosen empirically, per filter, and never
+guessed. Do not build it now.
