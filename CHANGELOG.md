@@ -50,6 +50,27 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 
 ### Added
 
+- **`Notebook/interaction/playback.ts`: selectable speed set + play stops at
+  the primary window's own end, not the whole session (2026-09-08, w32-time
+  Task 10, decision 57, ruling R134 item 6, spec-during).**
+  `PLAYBACK_SPEEDS` names the offered rates (`0.25×`…`4×`) and `setSpeed`
+  changes `PlaybackState.speed` without touching `tUs`/`playing` (wiring a
+  select onto it is Task 12). `playableSpanUs(window: AbsoluteSpan | null)`
+  converts `model/viewportWindows.ts`'s resolved `AbsoluteSpan` to `tick`'s
+  bigint `spanUs` bound, `null` — never a fabricated `[0, 0]` — while the
+  span hasn't resolved; `tick` itself needed no change, since it already
+  took an arbitrary bound (only its caller assumed `[0, sessionSpanUs]`).
+  `Notebook/index.tsx`'s RAF loop now reads the **primary selected window's**
+  own resolved span (`windowSpanFor`, the same single "resolved" predicate
+  R138 unified the channel-bind gate on) via a ref, so a lap window's
+  playback stops at the lap's own end rather than running to the end of the
+  recording; a window that starts partway through the session (a lap other
+  than the first) plays from *its own* start, not `0`. `handleTogglePlay`
+  now seeds `tUs` from the playing window's own start when no manual cursor
+  is set, so resuming play on a freshly selected lap can't stall immediately
+  at the start bound because the clock was still at a previous window's
+  wherever-it-was. R134 item 6: playback follows the *primary* window when
+  several are selected; naming that window in the transport is Task 12.
 - **`Notebook/model/cursorCard.ts` + `Notebook/components/CursorCard.tsx`:
   cursor value card, one row per overlaid window (2026-09-08, w32-time
   Task 7, decision 55, ruling **R139**, spec-during).** First shipped wired

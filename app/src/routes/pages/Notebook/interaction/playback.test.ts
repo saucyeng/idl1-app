@@ -1,6 +1,15 @@
 import { describe, expect, it } from "vitest";
 
-import { formatPlaybackTime, shouldRenderPlaybackTransport, tick, togglePlay, type PlaybackState } from "./playback";
+import {
+  formatPlaybackTime,
+  PLAYBACK_SPEEDS,
+  playableSpanUs,
+  setSpeed,
+  shouldRenderPlaybackTransport,
+  tick,
+  togglePlay,
+  type PlaybackState,
+} from "./playback";
 
 describe("tick", () => {
   it("tick — playing at speed 1 for 1000 ms — the cursor advances 1 000 000 µs", () => {
@@ -86,6 +95,41 @@ describe("shouldRenderPlaybackTransport", () => {
 
   it("shouldRenderPlaybackTransport — route hidden and no cursor time — false", () => {
     expect(shouldRenderPlaybackTransport(false, null)).toBe(false);
+  });
+});
+
+describe("setSpeed", () => {
+  it("setSpeed — changes speed, leaves tUs and playing untouched", () => {
+    const state: PlaybackState = { tUs: 3_000_000n, playing: true, speed: 1 };
+
+    const next = setSpeed(state, 4);
+
+    expect(next).toEqual({ tUs: 3_000_000n, playing: true, speed: 4 });
+  });
+});
+
+describe("PLAYBACK_SPEEDS", () => {
+  it("PLAYBACK_SPEEDS — includes live speed 1×, ascending order", () => {
+    expect(PLAYBACK_SPEEDS.map((s) => s.value)).toEqual([0.25, 0.5, 1, 2, 4]);
+    expect(PLAYBACK_SPEEDS.some((s) => s.value === 1)).toBe(true);
+  });
+});
+
+describe("playableSpanUs", () => {
+  it("playableSpanUs — an unresolved window (null) — null, never a fabricated bound", () => {
+    expect(playableSpanUs(null)).toBeNull();
+  });
+
+  it("playableSpanUs — a lap that does not start at session t=0 — the window's own start, not clamped to 0", () => {
+    const span = playableSpanUs({ startUs: 120_000_000, endUs: 150_000_000 });
+
+    expect(span).toEqual([120_000_000n, 150_000_000n]);
+  });
+
+  it("playableSpanUs — the whole session window — start 0", () => {
+    const span = playableSpanUs({ startUs: 0, endUs: 60_000_000 });
+
+    expect(span).toEqual([0n, 60_000_000n]);
   });
 });
 

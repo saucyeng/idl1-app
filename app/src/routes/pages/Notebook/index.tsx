@@ -59,7 +59,7 @@ import { isCodeVisible, toggleCode } from "./model/codeVisibility";
 import { createCursorBus, type CursorBus } from "./interaction/cursorBus";
 import { BASIC_MOUSE_PRESET, findInputMapPreset, INPUT_MAP_PRESETS, type InputMapPreset } from "./interaction/inputMap";
 import PlaybackTransport from "./interaction/PlaybackTransport";
-import { tick, togglePlay, type PlaybackState } from "./interaction/playback";
+import { playableSpanUs, tick, togglePlay, type PlaybackState } from "./interaction/playback";
 import { editorPlacement, outputIsReadOnly } from "./model/editorPlacement";
 import { resolveEditorHost } from "./model/editorHost";
 import { runFft, type FftAction, type FftDeps } from "./model/fftDriver";
@@ -537,16 +537,25 @@ export default function NotebookPage() {
     writeNotebookPrefs({ ...readNotebookPrefs(), input_map_preset_id: preset.id });
   }
 
+  // Playback's playing window (decision 57/plan Task 10, R134 item 6): the
+  // *primary* selected window's own resolved span -- a lap window's
+  // `AbsoluteSpan`, not `[0, sessionSpanUs]` -- so play stops at the end of
+  // the lap rather than the end of the whole session, exactly per Task 3's
+  // already-tested `windowSpanFor` (the same "resolved" predicate the
+  // channel-bind gate uses, R138). `null` while unresolved (nothing
+  // selected, or the window's own session/span hasn't loaded yet).
+  const primaryWindowSpan = primaryWindow !== null ? windowSpanFor(primaryWindow, sessionDetailsByWindow, sessionSpanUsByWindow) : null;
+
   // The playback clock's `requestAnimationFrame` loop: local state only
   // (`setPlayback`), never IPC or `postMessage` itself (the effects rule's
   // carve-out for a RAF loop that "advances local state only"). Gated on
   // `primeState.running` (R95/R99): a hidden Notebook route must not keep
-  // ticking a cursor nobody can see. `sessionSpanUs` is read fresh each
-  // frame via a ref (`sessionSpanUsRef`, populated below) rather than
-  // added to this effect's dependency array, so a mid-playback session
+  // ticking a cursor nobody can see. `primaryWindowSpan` is read fresh each
+  // frame via a ref (`primaryWindowSpanRef`, populated below) rather than
+  // added to this effect's dependency array, so a mid-playback selection
   // change doesn't tear down and restart the RAF loop itself.
-  const sessionSpanUsRef = useRef(sessionSpanUs);
-  sessionSpanUsRef.current = sessionSpanUs;
+  const primaryWindowSpanRef = useRef(primaryWindowSpan);
+  primaryWindowSpanRef.current = primaryWindowSpan;
   useEffect(() => {
     if (!playback.playing || !primeState.running) return;
 
@@ -555,8 +564,10 @@ export default function NotebookPage() {
     const loop = (now: number) => {
       const elapsedMs = now - last;
       last = now;
-      const spanEndUs = BigInt(Math.max(0, Math.round(sessionSpanUsRef.current ?? 0)));
-      setPlayback((prev) => tick(prev, elapsedMs, [0n, spanEndUs]));
+      const spanUs = playableSpanUs(primaryWindowSpanRef.current);
+      if (spanUs !== null) {
+        setPlayback((prev) => tick(prev, elapsedMs, spanUs));
+      }
       raf = requestAnimationFrame(loop);
     };
     raf = requestAnimationFrame(loop);
@@ -577,11 +588,23 @@ export default function NotebookPage() {
    *  manually-set cursor seeds the clock's `tUs` from it (a judgment call:
    *  `interaction/playback.ts`'s `togglePlay` has no span/cursor parameter
    *  to do this itself, see its own doc comment) so playback resumes from
-   *  where the user last pointed rather than wherever the clock was left. */
+   *  where the user last pointed rather than wherever the clock was left.
+   *  With no manual cursor, Task 10 seeds from the *playing window's own
+   *  start* (`primaryWindowSpan`, decision 57) instead of leaving `tUs`
+   *  wherever a previous window's playback left it -- otherwise pressing
+   *  play on a freshly selected lap that starts partway through the
+   *  session could resume from `0`, outside that lap entirely, and the
+   *  very next {@link tick} would stall it at the start bound. */
   function handleTogglePlay(): void {
     setPlayback((prev) => {
-      if (!prev.playing && manualCursorTUs !== null) {
-        return togglePlay({ ...prev, tUs: manualCursorTUs });
+      if (!prev.playing) {
+        if (manualCursorTUs !== null) {
+          return togglePlay({ ...prev, tUs: manualCursorTUs });
+        }
+        const spanUs = playableSpanUs(primaryWindowSpan);
+        if (spanUs !== null) {
+          return togglePlay({ ...prev, tUs: spanUs[0] });
+        }
       }
       return togglePlay(prev);
     });
