@@ -93,7 +93,13 @@ export default function AppShell() {
           both plain presentational components), so keeping both mounted
           costs nothing. */}
       <div hidden={placement !== "top"}>
-        <TopBar activeRoute={state.route} onNavigate={onNavigate} selection={state.selection} onOpenPalette={() => setPaletteOpen(true)} />
+        <TopBar
+          activeRoute={state.route}
+          onNavigate={onNavigate}
+          selection={state.selection}
+          onWindowsChange={(windows) => dispatch({ type: "SET_WINDOWS", windows })}
+          onOpenPalette={() => setPaletteOpen(true)}
+        />
       </div>
       <div className="min-h-0 flex-1">
         <RouteHost layout={layout} />

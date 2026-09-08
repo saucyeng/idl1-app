@@ -239,6 +239,26 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
   dismissable one-time banner (R117 item 5) rather than silently emptying
   a chart. `tsc` is clean for this file; `shell/TopBar.tsx` is the one
   remaining break, closed by Task 13.
+- **Top bar: one dismissable chip per selected window, collapsing past four
+  (2026-09-08, s1-ts Task 13, ruling R111/R115/R117 item 6, no spec change
+  needed — this closes the last `tsc` break the s1-ts lane opened).** New
+  `shell/topBarSelection.ts`: `selectionChips` projects `AppState.selection`
+  into labelled, coloured, index-keyed chips via `state/selection.ts`'s
+  `describeWindow` (never the raw session id — the caller resolves a name);
+  `shouldCollapseChips`/`collapsedChipLabel` switch to a single "n windows"
+  chip past `CHIP_COLLAPSE_THRESHOLD = 4` (chosen for the bar's fixed 11 px
+  height and no room to grow past four dismiss-button-bearing chips — noted
+  in the module's own doc comment); `removeWindowAt` drops exactly the
+  clicked chip's window by array position, never by `windowKey` match (two
+  windows can share one, R117 item 2, and a dismiss must not take both).
+  `TopBar.tsx` replaces the old single hardcoded `Session ${sessionId}`
+  chip (a raw session id in the UI, the thing R117 item 6 forbids) with
+  this, and gains its own `list_sessions` fetch to resolve session names,
+  refetching on `windowsKey(selection)` changes (a stable data key, never a
+  function-prop dependency — operating brief §4's tightening) so a session
+  created after mount still gets a real label once selected. `AppShell.tsx`
+  passes a new `onWindowsChange` prop (`SET_WINDOWS`) through for the
+  dismiss buttons. `tsc --noEmit` is now clean across the whole tree.
 
 ### Fixed
 

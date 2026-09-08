@@ -1,40 +1,72 @@
+import { useEffect, useState } from "react";
+
 import { cn } from "@/lib/utils";
+import { listSessions } from "../ipc/catalog";
 import { ROUTES, type RouteId } from "../routes/types";
 import type { Selection } from "../state/AppState";
+import { windowsKey } from "../state/selection";
 import { StatusDot } from "@/components/brand/StatusDot";
+import { collapsedChipLabel, removeWindowAt, selectionChips, sessionLabel, shouldCollapseChips } from "./topBarSelection";
 
 /** Props for {@link TopBar}. */
 export interface TopBarProps {
   activeRoute: RouteId;
   onNavigate: (route: RouteId) => void;
   selection: Selection;
+  /** Dispatches `SET_WINDOWS` — a chip's dismiss button's whole effect
+   *  (S1 Task 13). */
+  onWindowsChange: (windows: Selection) => void;
   onOpenPalette: () => void;
-}
-
-/** `Session <id> · Lap <n>` (`+k overlay` when overlay laps are chosen), or
- *  `null` when nothing is selected — an empty chip is chrome that teaches
- *  nothing (UI-4 brief Open question 4; idl0 shows an empty-state sentence
- *  instead, owned by the Data/Notebook pages, not the shell). */
-function selectionChipLabel(selection: Selection): string | null {
-  if (selection.sessionId === null) return null;
-  const lap = selection.lapContext;
-  if (lap === null) return `Session ${selection.sessionId}`;
-  const overlay = lap.overlayLaps.length > 0 ? ` +${lap.overlayLaps.length} overlay` : "";
-  return `Session ${selection.sessionId} · Lap ${lap.mainLap}${overlay}`;
 }
 
 /**
  * The medium/wide-layout top bar (UI-DIRECTION "App shell and navigation",
  * "Top bar contents"): a typeset wordmark (no logo, decision 4), the
- * destination tabs, the active session/lap chip (nothing when unselected),
- * a placeholder slot for UI-11's playback transport, the `Ctrl/⌘-K` palette
- * trigger, and a device status dot. The dot is fed from existing app state
- * only (no IPC call belongs in the shell); today's `AppState` carries no
- * device-connection slice, so it reads as unknown/neutral until a later
- * lane lifts that state up (reported as a gap — see the UI-4 report).
+ * destination tabs, the selection chips (S1 Task 13 — one dismissable chip
+ * per selected window, collapsing to a count past
+ * `topBarSelection.ts`'s `CHIP_COLLAPSE_THRESHOLD`; nothing when the
+ * selection is empty, decision 48), a placeholder slot for UI-11's playback
+ * transport, the `Ctrl/⌘-K` palette trigger, and a device status dot. The
+ * dot is fed from existing app state only (no IPC call belongs in the
+ * shell); today's `AppState` carries no device-connection slice, so it
+ * reads as unknown/neutral until a later lane lifts that state up
+ * (reported as a gap — see the UI-4 report).
+ *
+ * Chip labels need each window's session name, which `AppState.selection`
+ * does not carry (only `sessionId` — a raw 32-char id must never reach a
+ * label, R117 item 6). This component is the label's caller
+ * (`topBarSelection.ts`'s `selectionChips` contract), so it holds its own
+ * `list_sessions` fetch and refetches whenever the selection's window set
+ * changes (`state/selection.ts`'s `windowsKey`, a stable data key — never
+ * a function-prop dependency, operating brief §4's tightening) — a session
+ * created after mount (e.g. by an import elsewhere in the app) still gets a
+ * real name the next time it is selected. A brand-new session picked before
+ * this fetch resolves falls back to its bare id for one render.
  */
-export default function TopBar({ activeRoute, onNavigate, selection, onOpenPalette }: TopBarProps) {
-  const chipLabel = selectionChipLabel(selection);
+export default function TopBar({ activeRoute, onNavigate, selection, onWindowsChange, onOpenPalette }: TopBarProps) {
+  const [sessionNamesById, setSessionNamesById] = useState<Map<string, string>>(new Map());
+
+  useEffect(() => {
+    let cancelled = false;
+    listSessions()
+      .then((sessions) => {
+        if (cancelled) return;
+        setSessionNamesById(new Map(sessions.map((s) => [s.session_id, sessionLabel(s)])));
+      })
+      .catch(() => {
+        // No error state here: a chip falling back to a bare session id
+        // (see sessionNameFor below) is a degraded label, not a failure the
+        // bar needs to report — the Data tab's own `list_sessions` fetch
+        // already surfaces a real error banner for the same call.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [windowsKey(selection)]);
+
+  const sessionNameFor = (sessionId: string) => sessionNamesById.get(sessionId) ?? sessionId;
+  const chips = selectionChips(selection, sessionNameFor);
+  const collapsed = shouldCollapseChips(chips.length);
 
   return (
     <header className="flex h-11 items-center gap-4 border-b border-rule bg-surface px-4 text-body-small">
@@ -60,10 +92,32 @@ export default function TopBar({ activeRoute, onNavigate, selection, onOpenPalet
         })}
       </nav>
 
-      {chipLabel !== null && (
-        <span className="rounded-[var(--radius-structural)] border border-rule bg-surface-2 px-2 py-0.5 font-mono text-label-2 text-fg-dim">
-          {chipLabel}
-        </span>
+      {chips.length > 0 && (
+        <div className="flex items-center gap-1.5" aria-label="Selection">
+          {collapsed ? (
+            <span className="rounded-[var(--radius-structural)] border border-rule bg-surface-2 px-2 py-0.5 font-mono text-label-2 text-fg-dim">
+              {collapsedChipLabel(chips.length)}
+            </span>
+          ) : (
+            chips.map((chip) => (
+              <span
+                key={chip.key}
+                className="inline-flex items-center gap-1 rounded-[var(--radius-structural)] border border-rule bg-surface-2 py-0.5 pr-1 pl-2 font-mono text-label-2 text-fg-dim"
+              >
+                <span aria-hidden className="size-2 shrink-0 rounded-full" style={{ backgroundColor: `var(${chip.colour})` }} />
+                {chip.label}
+                <button
+                  type="button"
+                  aria-label={`Remove ${chip.label} from the selection`}
+                  onClick={() => onWindowsChange(removeWindowAt(selection, chip.index))}
+                  className="rounded-[var(--radius-structural)] px-1 text-fg-faint hover:text-fg"
+                >
+                  ×
+                </button>
+              </span>
+            ))
+          )}
+        </div>
       )}
 
       {/* UI-11's PlaybackTransport (play/pause, live-speed cursor) portals
