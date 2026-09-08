@@ -5991,3 +5991,41 @@ tuned in.
 being present on the bikes that matter. SPEC lists wheel distance as
 "requires sensor". If a bike has no wheel sensor, the lane needs a stated
 fallback. Asked of Isaac 2026-09-08.
+
+**Amendment 2 (2026-09-08, Isaac + lead).** Wheel-derived distance is
+**out** for this lane. Isaac: *"yes, i'm adding wheel speed sensors, but
+it's a loose offroad surface where the wheels can lock so dont want to use
+it, unless it were for fusing the gps, imus, and wheel speed sensors into a
+more accurate velocity, but that's a whole separate math block we can play
+with down the road, not now."* Agreed on both counts — a locked or spinning
+wheel makes wheel distance wrong exactly when the rider is doing something
+interesting, and a proper GPS+IMU+wheel velocity estimator is its own block,
+not a prerequisite for lap alignment.
+
+**Revised recommendation — integrate the GPS speed we already record.**
+SPEC §5.6's GPS_FIX record already carries `speed` (u16, km/h × 100,
+resolution ≈ 0.0028 m/s). A GPS receiver derives speed from **Doppler
+shift**, not from differencing positions, so its error is roughly an order
+of magnitude better than the ±2 m position error and is *independent* of it.
+That is the missing precise short-interval measure:
+
+- **Gates** anchor station absolutely (already tuned, unchanged).
+- **Integrated GPS Doppler speed** carries station *between* gates, with far
+  less noise than interpolating between ±2 m positions, and each gate
+  crossing resets any accumulated integration drift.
+
+Same complementary structure as the previous amendment, with GPS speed in
+the process-model role instead of wheel distance. It needs **no new sensor,
+no firmware change, and no slip model** — the field is already in every
+recorded fix, and it is unaffected by a locked or spinning wheel.
+
+Caveats to check against real data before adopting: Doppler speed is a
+**scalar ground speed**, which is what along-track station wants, but it is
+unsigned — a reversing bike integrates forward. Many receivers also clamp or
+bias speed near zero, so a stationary or crawling section may need the
+monotonic-progression guard rather than the integral. Both are testable on
+existing sessions.
+
+The wheel/IMU/GPS velocity block stays deferred, per Isaac, and this lane
+does not depend on it. If that block ever lands, it drops into the same
+process-model slot as a better estimate without changing the structure.
