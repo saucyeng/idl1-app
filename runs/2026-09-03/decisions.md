@@ -5794,3 +5794,69 @@ planning rather than in review is the outcome the warning was written for.
 than wrong pixels: a mislabelled window and an unlabelled playback range are
 both the reader trusting a number scoped to something other than what the
 label says.
+
+## 2026-09-08 — R135: the maths-graph plan, and a pre-existing front-matter round-trip defect
+
+Answering `runs/2026-09-08/w32-maths-plan.md` §Open. Plan accepted; the
+12-task order stands.
+
+### The defect found in passing, which outranks the lane
+
+`render_front_matter` **drops unknown top-level keys**, so `_migrate_charts`
+and `_migrate_math` already fail C2 §1's round-trip requirement *today*.
+That is not a graph problem: it means any workbook carrying a front-matter
+key this build does not know is **silently stripped on save**. Direction-2
+decision 75 makes workbook durability across updates a hard constraint, and
+this is precisely the failure it names — a file written by a newer build,
+or by a peer running a newer engine, quietly loses data when an older build
+opens and saves it. It also makes it unsafe to *ever* add a front-matter key,
+which is the mechanism the rest of this ruling depends on.
+
+Fixed in the lane's Rust task (Task 2), but it is a durability fix that
+happens to be found here, not a graph feature. It ships whether or not the
+graph does.
+
+### File mapping — accepted, and the reasoning is the point
+
+Positions live in a new optional front-matter `graph:` key (`nodes` by
+definition name, `cells` by hex8 id), written as a byte-range replacement of
+that block alone. **Front matter is the only home where a move is not a cell
+content change**: C2 §7.2 compares cell bytes, §7.1 merges front matter per
+key — so a moved node cannot conflict with an edited one. That was the
+constraint I set and the plan met it directly, having rejected the def-line
+trailing comment, a fence attribute, an inert `idl1graph` fence, a sidecar
+file, and auto-layout-only (kept as the fallback).
+
+### The eight questions
+
+1. **Ship ports against a degraded `shapeOf()` — accepted, with a
+   condition.** C2 §3.6 is spec-only in `core` today. An unknown shape must
+   render as **unknown**, never as a guess: a port showing `[t]` because
+   that is the common case would be a wrong type displayed with the same
+   confidence as a right one.
+2. **Dependency edges from a TS scan — accepted, on one condition.** Edges
+   are pictures and evaluation is unaffected if the scan is wrong, so the
+   blast radius is cosmetic. But the scanner must **reuse the existing
+   `tokenizeMath`** (`model/mathMode.ts`) rather than introduce a second
+   tokenizer — two parsers of one grammar drift, and then the graph draws
+   edges the evaluator does not have.
+3. **Rename as one atomic edit** touching both the cell body and the layout
+   key — accepted. A rename that half-lands is a node that loses its
+   position.
+4. **Grey by reachability from unresolved roots; downstream greys carry no
+   glyph** — accepted. Matches decision 44: grey out, hide nothing.
+5. **Node status across windows: worst-wins, card names the split; a
+   whole-window failure is a canvas banner, not fifty red ×s** — accepted,
+   and this is the right instinct. Fifty identical error glyphs describe the
+   *canvas*, not the nodes, and R132's rule (name the window you are
+   showing) is satisfied by the card.
+6. **New C2 §3.7 plus surgical §1/§2.4/§7.1 edits** — accepted.
+7. **The Rust task runs when no other cargo lane does** — accepted; CLAUDE.md
+   §8, one cargo process on the machine.
+8. **`@xyflow/react` pinned as a shell task** — accepted: MIT, pure npm,
+   local CSS, no CDN. Vendored into the lane worktree, not installed
+   globally.
+
+**Cost if wrong.** The front-matter defect is the expensive one: every day
+it stands is another chance for a workbook to lose a key on save, and the
+loss is silent and unrecoverable from the file itself.
