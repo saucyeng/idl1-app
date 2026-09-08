@@ -6626,3 +6626,56 @@ the wheel is not.
 
 **Cost if wrong.** Every chart becomes a scroll trap, and a notebook of ten
 charts cannot be read to the bottom with a mouse.
+
+## 2026-09-08 — R150: an all-or-nothing binding must say which mark failed; and ctrl+wheel currently zooms by accident
+
+**Two findings from the first real workbook on real data.**
+
+### 1. One bad definition silently kills a whole chart
+
+`shakedown.idl1wb`'s math cell defined `accel_mag` correctly and
+`accel_mag_lp = butter(2, 5, "low", accel_mag)` incorrectly — a **bare**
+identifier, where the parser requires `[accel_mag]`. `eval.rs` resolves each
+definition independently, so `accel_mag` evaluated fine; only `accel_mag_lp`
+errored and was excluded from `definitionsWithAxis`.
+
+But `bindingForTime` is **all-or-nothing**: if any mark's channel does not
+resolve it returns `null` for the *whole cell*. So the chart plotting both
+definitions bound neither, and the perfectly good `accel_mag` drew nothing.
+On screen: an empty chart, no message, no indication that one of its two
+marks was at fault or which.
+
+The all-or-nothing rule itself is fine — a chart missing one of its series
+would mislead. **The silence is not.** Decision 58 already specifies the
+behaviour: an errored input shows an empty slot **with the error message and
+a Fix button**. That applies here. A cell whose binding failed must name
+*which mark* failed and why, so the user is pointed at
+`accel_mag_lp`, not left staring at a blank frame containing a channel that
+works.
+
+This is R148's finding a second time, through a different door: the app
+knows exactly what went wrong and shows nothing.
+
+### 2. The spec taught the mistake
+
+C2 §3.6.7's worked example used unbracketed references throughout
+(`butter(2, 1.5, "low", peak_freq)`) — which is where the workbook's author
+copied the pattern. Fixed, with a note recording that the brackets are
+load-bearing. **A worked example is executable documentation**: if it cannot
+run, it actively teaches an error. Any future spec example that shows math
+syntax must be one the parser accepts.
+
+### 3. `ctrl+wheel` zooms by accident, not by design
+
+R149's fix added a `ctrlWheel` verb and bound it, but
+`interaction/gestureVerbs.ts`'s `classifyWheelEvent` still maps **any**
+ctrl-held wheel event to `"pinch"`, so the new verb is never emitted. It
+works today only because every preset also binds `pinch` to `zoom-x`. A
+preset that gave pinch and ctrl+wheel different meanings would silently do
+the wrong thing. Filed as a follow-on: `classifyWheelEvent` must emit
+`ctrlWheel` for a mouse wheel and reserve `pinch` for an actual trackpad
+pinch.
+
+**Cost if wrong.** (1) is the expensive one: the app's most common authoring
+mistake — a missing pair of brackets — presents as "charts don't work",
+which is exactly the conclusion Isaac reached about the whole application.
