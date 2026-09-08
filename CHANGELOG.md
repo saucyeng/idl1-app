@@ -6,6 +6,19 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 
 ### Added
 
+- **`app/src/routes/pages/Notebook/model/graphModel.ts`: builds the maths
+  graph's `{nodes, edges, groups}` from markdown + `CellOutput[]`
+  (2026-09-08, w32-maths Task 5, spec exists — C2 §3.7.3, no spec change
+  needed).** One node per `def_line` (decision 40: the file is the source
+  of truth), one `"channel"` node per name referenced but not defined
+  anywhere in the document, one edge per `mathExpr.ts` reference, one group
+  per math cell in document order carrying its §3.7.3 `# label:` display
+  name. A definition's label prefers a completed evaluation's
+  `CellDefResult.label`, falling back to this module's own `# label:` scan
+  when no window has evaluated it yet — a node exists and is wired before
+  its first evaluation, never only after. `def_line` splitting is built
+  entirely on `mathMode.ts`'s `tokenizeMath`, mirroring `cells.ts`'s
+  non-authoritative fence-scan precedent (R52 Q3(a)) one grammar layer up.
 - **`app/src/routes/pages/Notebook/model/mathExpr.ts`: a narrow C2 §3.2 scan
   of one expression's references and outer call (2026-09-08, w32-maths Task
   4, spec exists — C2 §3.2/§3.7.4, no spec change needed).** `scanMathExpr`
