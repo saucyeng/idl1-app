@@ -36,6 +36,7 @@ import EditorPanes from "./components/EditorPanes";
 import JsCellFrame, { DEFAULT_JS_CELL_HEIGHT_PX } from "./components/JsCellFrame";
 import PropertiesForm from "./components/PropertiesForm";
 import type { PropertiesFormChannelOption, PropertiesFormLapOption } from "./components/PropertiesForm.types";
+import TimelineStrip from "./components/TimelineStrip";
 import WorkbookBar from "./components/WorkbookBar";
 import { combineSpectrumWindows, type SandboxCell, type SpectrumWindowSeries, type WindowDescriptor } from "./host/protocol";
 import { SandboxHost } from "./host/SandboxHost";
@@ -75,6 +76,7 @@ import { initialSandboxPrimeState, nextSandboxPrimeState } from "./model/sandbox
 import { runSessionSpan, type SessionSpanAction, type SessionSpanDeps } from "./model/sessionSpanDriver";
 import { commitSharedViewport, viewportForCell, type SharedViewport } from "./model/sharedViewport";
 import { TileCache } from "./model/tileCache";
+import { timelineCommit } from "./model/timelineStrip";
 import { resolvedWindowKeysFor, toWireWindow, windowSpanFor } from "./model/viewportWindows";
 import { chooseWorkbookEntry, type WorkbookEntry } from "./model/workbookEntry";
 import { initialWorkbookState, NO_WINDOW_KEY, workbookReducer } from "./model/workbookState";
@@ -307,7 +309,7 @@ function decodeByteRange(markdown: string, range: [number, number]): string {
  * the *current* window for all of them, not only the one `ChartCell` mounts.
  */
 export default function NotebookPage() {
-  const [appState] = useAppState();
+  const [appState, appDispatch] = useAppState();
   /** `AppState.selection` (C1 §6.1, ruling R111/R115/R117): an ordered list
    *  of {@link SelectionWindow}s, superseding the old `{ sessionId,
    *  lapContext }` pair outright (S1 Task 11a). Every consumer below either
@@ -2035,6 +2037,20 @@ export default function NotebookPage() {
         onToggle={handleTogglePlay}
         disabled={!primeState.running}
         routeVisible={routeVisible}
+      />
+      {/* Master timeline strip (decision 52, R115, R134 item 1): one lane
+          per selected window, own draggable boundary handles. Commits a
+          drag to `AppState.selection` on pointer-up only
+          (`model/timelineStrip.ts`'s own settle-discipline doc comment) --
+          `timelineCommit` is the same pure function `TimelineStrip.tsx`'s
+          own test suite exercises directly; this call site only wires it
+          to `appDispatch`. */}
+      <TimelineStrip
+        windows={windows}
+        detailsByWindow={sessionDetailsByWindow}
+        spanUsByWindow={sessionSpanUsByWindow}
+        viewport={sharedViewport}
+        onCommit={(laneIndex, candidate) => appDispatch({ type: "SET_WINDOWS", windows: timelineCommit(windows, laneIndex, candidate) })}
       />
       {/* R137's own point: "a few presets for me to try at runtime" -- a
           plain `<select>`, no dialog, no reload. Changing it updates
