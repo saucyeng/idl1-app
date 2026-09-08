@@ -5913,3 +5913,41 @@ source. To be evaluated against real switchback data before it is chosen.
 **Cost if wrong.** A naive distance axis is the most dangerous shape this
 project keeps producing: a plausible number, drawn confidently, wrong by an
 amount that grows with the thing being measured.
+
+## 2026-09-08 — R137: pointer gestures are a swappable input map with presets (amends R134 item 2)
+
+**Isaac, 2026-09-08:** *"mouse and trackpad are different. on trackpad, the
+pinch and two finger drag should be zoom/pan. on mouse, i have an mx master
+with two scroll wheels, so maybe we use both of those for panning and
+zooming. i could imagine this being a part of the user config in the form of
+an interchangeable table that can have a few presets for me to try at
+runtime."*
+
+**Ruling — R134 item 2's "shift-drag pans" is withdrawn.** Gestures are not
+a single hard-coded mapping. The chart surface takes an **input map**: a
+table from input event (drag, shift-drag, wheel, horizontal wheel, pinch,
+two-finger pan) to action (pan-x, zoom-x, zoom-region, none), selected at
+runtime from named presets and stored in user prefs. Ships with at least:
+- **Trackpad** — pinch = zoom, two-finger drag = pan, drag = zoom-region.
+- **Mouse (two wheels)** — vertical wheel = zoom, horizontal wheel = pan-x,
+  drag = zoom-region. Written for the MX Master's second wheel, which is an
+  ordinary horizontal-wheel event.
+- **Basic mouse** — drag = zoom-region, shift-drag = pan, wheel = zoom.
+
+Decision 56 (plain drag zooms to the dragged region) is preserved as the
+default in every preset, so this amends *how panning is reached*, not what
+dragging does.
+
+**Constraints.** The map is a **renderer-only preference** and must stay
+one: it decides which gesture drives which pixel change, and no number
+depends on it (CLAUDE.md §3). It therefore lives in user prefs, is not part
+of a workbook, and never syncs (a workbook opened on another machine keeps
+that machine's input map). Switching preset takes effect immediately with no
+reload — the point is trying them.
+
+The mapping table itself is a **pure tested module**; the gesture handler
+reads it. Adding a preset must not require touching the handler.
+
+**Cost if wrong.** Baking one mapping in means every future input device is
+a code change, and the one thing Isaac asked for — trying alternatives at
+runtime to find out which feels right — becomes a rebuild per experiment.
