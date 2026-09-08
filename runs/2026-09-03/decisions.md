@@ -6735,3 +6735,48 @@ must not duplicate it.
 
 **Cost if wrong.** (1) decides whether this work is safe at all. Every other
 item is a name; that one is a number.
+
+## 2026-09-08 — R152: R144 was wrong about units; ship the rate, design the unit model separately
+
+**Finding** (engine-fixes lane, correctly blocked). R144 asserted "the
+engine already knows" a computed value's unit and merely drops it at the IPC
+boundary. **That is false.** `ChannelValue`/`LookupChannel` carry **no unit
+at all**; nothing in `core` tracks one through evaluation. The claim was
+true only of `sample_rate_hz`.
+
+Worse, the missing piece is not plumbing. C2 §3.3 states output units for
+**named functions**, but a definition may equally be
+`[fork_travel] * [wheel_speed]` — and **no rule exists for arithmetic
+between two channels of different units**. Propagating units would require a
+unit model (what `*` does to units, what `+` requires of them, what a
+comparison yields), which is a language design question, not a wiring task.
+
+**Ruling — split R144.**
+1. **Ship `sample_rate_hz: Option<f64>` now.** It is genuinely known,
+   `None` genuinely means not-applicable (a scalar reduction has no rate),
+   and it unblocks the node-details pane. C3 amended alongside.
+2. **`unit` is withdrawn from that task** and becomes its own **spec-first**
+   piece of work: extend C2 §3.3 with a unit model covering the operators,
+   then implement propagation, then expose it.
+3. **Do not ship partial units.** My own R144 rule — `None` means *not
+   applicable*, never *unknown* — cannot hold under partial propagation,
+   where `None` would mean both. A number labelled with a **wrong** unit is
+   worse than one labelled with none, because the reader stops checking.
+   Until the model exists, consumers show no unit and say nothing about it.
+
+**On the error itself:** I wrote R144 from two consumers independently
+reporting a missing field and inferred the engine must have it. Two
+consumers wanting a value is evidence the value is *wanted*, not evidence it
+*exists*. The implementer checked and I did not.
+
+**Also mis-assigned by me:** the IMU flag validation (R144's commit 3) has
+no home in Rust — no config-field validation exists in `idl-rs` or
+`transport` beyond a byte-count check, and the actual rule table lives in
+`app/src/routes/pages/Device/config/validate.ts` (SPEC §8). It moves to the
+TypeScript side. The layer rule (CLAUDE.md §2) put me wrong here: config
+*validation against a device contract* is closer to the wire than to
+physics, but it is currently implemented app-side, and splitting it across
+two languages to satisfy a taxonomy would be worse than leaving it whole.
+
+**Cost if wrong.** (3) is the one to hold: a suspension figure labelled `mm`
+that is actually `mm·m/s` is a number a rider would act on.
