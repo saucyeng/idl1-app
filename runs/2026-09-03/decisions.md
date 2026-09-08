@@ -5345,3 +5345,51 @@ work, not on general principle.
 long session is slow, and the obvious wrong fix — reintroducing per-window
 computation to "avoid recomputing the session" — is exactly R123's
 filter-transient bug.
+
+## 2026-09-08 — R126: a resolved window is half-open [t0, t1); the session span's end must be one microsecond past the last sample
+
+**Finding** (review of R124, Important). A whole-session window **drops the
+session's final sample**. I verified it by hand:
+`full_session_span_us` (`tauri/src/session_source.rs:128`) takes the end as
+`max(c.t_us.last())` — the last sample's *own* timestamp — and
+`window_index_range` (`core/src/math/eval.rs`) computes
+`end = ceil(end_sec × rate)`. For samples at `i/rate`, the last index is
+`len-1` at `t = (len-1)/rate`, so `end = len-1` and the range is
+`[0, len-1)`. The last sample is excluded.
+
+This is the *common* case: it is what a user gets whenever a session is
+selected without a lap. Every windowed reduction — `max`, `mean`, `sum`,
+`count`, `last` — silently omits the final sample, and the R124 regression
+that was meant to catch exactly this ("a session-span window matches the
+unwindowed result") passed only because its fixture used a fabricated
+`(0.0, 1.0)` duration-shaped bound instead of the production-accurate
+`(0.0, 0.9)`. A test that dodges the real shape gives false confidence.
+
+**Ruling.**
+1. **A resolved window is half-open `[t0, t1)` everywhere.** State it once,
+   in C1 §6.1, and hold every span kind to it.
+2. **`SpanDto::Session` resolves to `[first_us, last_us + 1)`.** `t_us` is
+   integer microseconds, so `last_us + 1` is the exact, minimal bound that
+   contains the final sample — no sample can fall in `(last_us, last_us+1)`.
+   This is not a fudge factor; it is the half-open form of the closed
+   interval `[first, last]` on an integer axis.
+3. **Lap spans are already correct and change nothing.** Lap bounds are gate
+   crossings — a lap's `end_time_secs` is where the next lap begins — so
+   half-open is the right semantic and the boundary sample belongs to the
+   next lap. I checked before ruling; do not "fix" laps.
+4. **R119's range clamping clamps to the same session end** (`last_us + 1`),
+   or a range covering the whole session drops the last sample too.
+5. The R124 regression test uses the production-accurate bound, so it either
+   passes for real or catches the drop.
+
+**On the Minor** (float `ceil(bound × rate)` vs the per-sample `i/rate`
+comparison — algebraically equal, not bit-identical): accepted as a
+documented limitation, with one test at a realistic extreme (30 min at
+1 kHz ≈ 1.8 M samples) showing the two agree there. Exactness is not
+reachable while a float rate mediates an integer-µs axis; a future move to
+index-from-`t_us` directly would remove it.
+
+**Cost if wrong.** One missing sample rarely changes a mean, but it changes
+`last()`, `count()`, and any `max` whose peak is the final sample — and it
+makes the windowed and unwindowed answers disagree, which is precisely the
+invariant R124 was written to preserve.
