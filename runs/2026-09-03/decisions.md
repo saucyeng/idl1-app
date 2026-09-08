@@ -5272,3 +5272,45 @@ later. for now, i think calculating the whole session should work. at least
 then we can have a baseline to see if ~30s is enough to get the filters to
 settle." Recorded so the pad is chosen empirically, per filter, and never
 guessed. Do not build it now.
+
+## 2026-09-08 — R124: all eleven scalar aggregates plus `fft` are window-scoped; aggregate over an index range, not a NaN mask
+
+**Question.** The R123 implementer enumerated the reductions and found 12,
+over the ~8 stop-gate: `mean`, `max`, `min`, `rms`, `std`, `sum`, `count`,
+`first`, `last`, `median`, `p` (all through one `one_channel()` helper) plus
+single-spectrum `fft`. It asked whether to do all of them or only R123's
+named subset, and flagged `spectrogram` as ambiguous.
+
+**Ruling.**
+1. **All twelve. Do not split.** The gate was about blast radius, not
+   function count, and the enumeration shows the radius is small: one shared
+   helper, one `fft`-specific path, and the call sites. Shipping a subset is
+   *worse than shipping none* — with `max` window-scoped and `p`
+   session-scoped, `p([ChanA], 95)` over a selected lap silently returns the
+   session's 95th percentile while the `max` beside it returns the lap's.
+   A consistent wrong answer can be reasoned about; an inconsistent one
+   cannot.
+2. **Aggregate over an index range (a subslice), not a NaN-masked copy.**
+   The implementer proposed masking out-of-window samples to NaN so
+   `aggregate::*`'s existing `finite()` skip does the work. Rejected, for
+   two reasons. **NaN already means "no data here"** — real gaps and
+   burst-seam holes (direction-2 decision 60) are NaN, so masking conflates
+   "outside your selection" with "the sensor dropped out", and `count()`
+   then cannot tell them apart, nor can any later data-quality readout.
+   **And it allocates**: a session-length copy per reduction call, per
+   definition, per window. A subslice is a pointer and a length.
+   Resolve the window to an index range once and hand the aggregates that.
+3. **A rate-0 argument is never windowed — accepted as proposed.** A
+   `{col[]}` table-column argument has no time axis; windowing it would be
+   meaningless. Guard on `sample_rate_hz > 0`.
+4. **`spectrogram` stays session-wide.** It does not consume the time axis —
+   it *retains* one (`[t,f]`, C2 §3.6), so by R123 it is not an aggregation.
+   It is also strictly better this way: the STFT is local in time, so frames
+   inside the window are identical either way, while session-wide framing
+   gives the frames at the window's edges their proper context instead of
+   boundary artefacts. Display windows it, per R123's third domain.
+
+**Cost if wrong.** (1) is the expensive one to get wrong: a half-windowed
+reduction set puts two numbers on the same chart computed over different
+spans, with nothing on screen distinguishing them — the failure mode
+section D exists to prevent, arriving through the front door.
