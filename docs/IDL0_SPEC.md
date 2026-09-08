@@ -640,9 +640,12 @@ first GPS fix, so an elapsed counter is used instead of a start timestamp).
 When the line is absent, the app falls back to client-observed elapsed time,
 rendered dimmed per the staleness rule below. `BatteryRaw` is the unscaled
 battery ADC count (whatever the pin/ADC returns), always present; `Battery:
-N%` stays for old parsers, and the app scales `BatteryRaw` itself
-(scale/offset live in the app, per board revision) and prefers it when both
-exist. `SDFreeMiB` is free space on the mounted card in MiB, present when
+N%` is **deprecated**: it stays one firmware revision for old parsers and is
+then removed, because a percentage is exactly the on-device arithmetic this
+section's rule forbids — the device cannot know the pack chemistry, the
+board revision's divider, or the app's own curve. The app scales
+`BatteryRaw` itself (scale/offset live in the app, per board revision) and
+prefers it whenever both are present. `SDFreeMiB` is free space on the mounted card in MiB, present when
 `SD: OK` or `SD: FULL`, absent for `ERROR`/`ABSENT`. `GPSFix` is the raw NMEA
 GGA fix-quality field (0 none, 1 GPS, 2 DGPS, 3 PPS or better), present
 whenever `GPS` is not `ABSENT`. `GPSSats` is satellites used in the solution
