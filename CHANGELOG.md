@@ -23,6 +23,20 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 
 ### Added
 
+- **`Notebook/interaction/inputMap.ts`: pure gesture input-map presets
+  (2026-09-08, w32-time, ruling R137, spec-during).** A table from pointer/
+  wheel event kind (`drag`/`shiftDrag`/`wheel`/`horizontalWheel`/`pinch`/
+  `twoFingerPan`) to action (`pan-x`/`zoom-x`/`zoom-region`/`none`), three
+  shipped presets (`TRACKPAD_PRESET`, `TWO_WHEEL_MOUSE_PRESET`,
+  `BASIC_MOUSE_PRESET`) and `findInputMapPreset`/`actionFor`. Decision 56's
+  drag-to-zoom-region default holds in every preset (asserted in the test).
+  R134 item 2's "shift-drag pans" is withdrawn by R137 and now lives only
+  in `BASIC_MOUSE_PRESET`'s own binding. **Not yet wired** — this lane's
+  Task 5 (`interaction/gestureVerbs.ts`, not dispatched in this batch) is
+  where `ChartCell`'s gesture handler starts reading a selected preset; this
+  commit lands the table ahead of that so adding a fourth preset later never
+  touches the handler (R137's own constraint). Renderer-only preference —
+  belongs in user prefs, never a workbook, never synced.
 - **`Notebook/interaction/cursorFollowPolicy.ts` and `ChartCell.tsx` wiring:
   the pointer-following cursor (2026-09-08, w32-time Task 2, spec-during).**
   Direction-2 decision 51's first half — the cursor follows the pointer
