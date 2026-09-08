@@ -55,6 +55,7 @@ import {
 } from "./model/channelBindDriver";
 import { CellRunSequencer } from "./model/cellRunSequencer";
 import { isCodeVisible, toggleCode } from "./model/codeVisibility";
+import { createCursorBus } from "./interaction/cursorBus";
 import PlaybackTransport from "./interaction/PlaybackTransport";
 import { tick, togglePlay, type PlaybackState } from "./interaction/playback";
 import { editorPlacement, outputIsReadOnly } from "./model/editorPlacement";
@@ -441,6 +442,15 @@ export default function NotebookPage() {
   const [manualCursorTUs, setManualCursorTUs] = useState<bigint | null>(null);
   const [playback, setPlayback] = useState<PlaybackState>({ tUs: 0n, playing: false, speed: 1 });
   const sharedCursorTUs = playback.playing ? playback.tUs : manualCursorTUs;
+
+  // One worksheet-shared cursor bus (Task 1/2) -- created once and handed
+  // down to every `ChartCell` as a stable reference, never React state, so
+  // hover-follow publishes at pointer rate without re-rendering this page.
+  // `ChartCell`'s own click handler mirrors `pin`/`unpin` into
+  // `manualCursorTUs` above through `onSetCursor`/`onClearCursor`, so
+  // `sharedCursorTUs` stays the single source of truth for everything else
+  // this page already reads it for (playback seed, the readout settle).
+  const cursorBusRef = useRef(createCursorBus());
 
   // The playback clock's `requestAnimationFrame` loop: local state only
   // (`setPlayback`), never IPC or `postMessage` itself (the effects rule's
@@ -1827,6 +1837,7 @@ export default function NotebookPage() {
                 playing={playback.playing}
                 onSetCursor={(tUs) => setManualCursorTUs(BigInt(Math.round(tUs)))}
                 onClearCursor={() => setManualCursorTUs(null)}
+                cursorBus={cursorBusRef.current}
                 onToggleCode={() => setRevealedCells((prev) => toggleCode(prev, cellId))}
               />
             );

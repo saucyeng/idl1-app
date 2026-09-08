@@ -6,6 +6,19 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 
 ### Added
 
+- **`Notebook/interaction/cursorFollowPolicy.ts` and `ChartCell.tsx` wiring:
+  the pointer-following cursor (2026-09-08, w32-time Task 2, spec-during).**
+  Direction-2 decision 51's first half — the cursor follows the pointer
+  across every chart, a click pins it, a click on the pinned instant unpins.
+  `cursorFollowPolicy(eventKind, pinned, pinnedTUs, pixelX, viewport)` is
+  the pure verb decision (`publish`/`pin`/`unpin`/`nothing`), reusing
+  `model/cursor.ts`'s `cursorRequestFor` for the pixel→time mapping.
+  `ChartCell`'s pointer handlers call it and publish to the shared
+  `cursorBus` (Task 1) — hover never touches React state; each cell's new
+  hover-line element subscribes and repositions itself imperatively. Click
+  still mirrors `pin`/`unpin` into `Notebook/index.tsx`'s existing
+  `manualCursorTUs` React state (settle-grade, per `cursorBus.ts`'s own
+  doc comment), so playback/readout/context-menu are unaffected.
 - **`Notebook/interaction/cursorBus.ts`: pure worksheet cursor pub/sub
   (2026-09-08, w32-time Task 1, spec-during — spec section lands with the
   lane, no spec change in this commit).** `CursorState {tUs: number | null,

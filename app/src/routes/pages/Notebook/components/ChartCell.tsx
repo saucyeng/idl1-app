@@ -12,6 +12,8 @@ import { ensureTiles, type TileCache, type TileCacheKey } from "../model/tileCac
 import { clampTo, panBy, transformFor, zoomAt, type Viewport } from "../model/viewport";
 import ChartContextMenu from "../interaction/ChartContextMenu";
 import type { ChartAction } from "../interaction/chartActions";
+import type { CursorBus } from "../interaction/cursorBus";
+import { cursorFollowPolicy } from "../interaction/cursorFollowPolicy";
 import { advanceViewportByTime, pixelXForTUs } from "../interaction/cursorFollow";
 import { actionForKey } from "../interaction/keymap";
 import { findPeakTUs } from "../interaction/peak";
@@ -243,6 +245,21 @@ export interface ChartCellProps {
   onSetCursor: (tUs: number) => void;
   /** Clears the shared cursor ("Clear cursor" menu action). */
   onClearCursor: () => void;
+  /**
+   * The worksheet's one shared {@link CursorBus} (Task 1), passed down by
+   * `Notebook/index.tsx` as a stable ref -- every mounted `ChartCell`
+   * subscribes to the same instance. Drives the hover-follow half of
+   * decision 51 (the pointer-following cursor, not yet built before this
+   * task): `handlePointerMove`/`handlePointerLeave` `publish` to it at
+   * pointer rate through `interaction/cursorFollowPolicy.ts`'s decision,
+   * never through `setState` (operating brief §4); this component's own
+   * hover-line element subscribes and repositions itself imperatively.
+   * `handlePointerUp`'s click path calls `pin`/`unpin` on it directly,
+   * mirroring the same verb into {@link onSetCursor}/{@link onClearCursor}'s
+   * React state (`cursorFollowPolicy.ts`'s own doc comment on why pin/unpin
+   * are settle-grade and still land in state).
+   */
+  cursorBus: CursorBus;
   /** Toggles this cell's code visibility ("Show/hide code" menu action) --
    *  a thin closure over `Notebook/index.tsx`'s existing `model/codeVisibility.ts`
    *  state, injected so this component never imports that module directly. */
@@ -324,6 +341,7 @@ export default function ChartCell({
   playing,
   onSetCursor,
   onClearCursor,
+  cursorBus,
   onToggleCode,
 }: ChartCellProps) {
   const [hover, setHover] = useState<HoverReading | null>(null);
@@ -350,6 +368,30 @@ export default function ChartCell({
   // dependency array data-only (`[cursorTUs, playing, sessionSpanUs]`).
   const liveViewportRef = useRef(liveViewport);
   liveViewportRef.current = liveViewport;
+  // The hover-follow cursor line (decision 51's first half, Task 2) --
+  // positioned imperatively from `cursorBus` subscriptions, never via
+  // `setState`, since a hover fires at pointer rate. Distinct from the
+  // declarative, `cursorTUs`-prop-driven line below it in the JSX, which
+  // keeps rendering the *pinned*/playback cursor exactly as before; this
+  // element only ever shows while the bus reports `pinned: false`.
+  const hoverLineRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    return cursorBus.subscribe((state) => {
+      const el = hoverLineRef.current;
+      if (el === null) return;
+      if (state.pinned || state.tUs === null) {
+        el.hidden = true;
+        return;
+      }
+      const px = pixelXForTUs(liveViewportRef.current, state.tUs);
+      if (px === null) {
+        el.hidden = true;
+        return;
+      }
+      el.hidden = false;
+      el.style.transform = `translateX(${px}px)`;
+    });
+  }, [cursorBus]);
   // The pointer's last-known CSS-px position within this cell, updated on
   // every pointer move (drag or hover alike) with no IPC — only the settle
   // callback below reads this to decide whether/what to request from
@@ -626,11 +668,18 @@ export default function ChartCell({
         return;
       }
 
+      // Decision 51's hover-follow half (Task 2): while nothing is pinned,
+      // every hover move publishes to `cursorBus` for every chart's
+      // hover-line subscriber (`hoverLineRef`'s effect above) to pick up --
+      // never `setState` at pointer rate (operating brief §4).
+      const verb = cursorFollowPolicy("hover", cursorTUs !== null, cursorTUs !== null ? Number(cursorTUs) : null, pixelX, liveViewport);
+      if (verb.kind === "publish") cursorBus.publish(verb.tUs);
+
       const geometry: HoverGeometry = { originPx: 0, pixelWidth: width };
       const reading = hoverAt(tiles, pixelX, geometry);
       setHover(reading === null ? null : { pixelX, ...reading });
     },
-    [tiles, width, liveViewport, applyViewport]
+    [tiles, width, liveViewport, applyViewport, cursorTUs, cursorBus]
   );
 
   const handlePointerUp = useCallback(
@@ -656,42 +705,56 @@ export default function ChartCell({
         draggingRef.current = null;
         // decision 27 / idl0's "Place cursor: Left-click": a release with
         // negligible movement since pointerdown reads as a click, not the
-        // end of a pan drag, and sets the shared cursor at that position.
+        // end of a pan drag. `cursorFollowPolicy`'s click rule (Task 2)
+        // decides pin vs. unpin — a click at the instant already pinned
+        // releases it instead of re-pinning at the same place.
         if (Math.abs(event.clientX - dragging.startClientX) <= CLICK_MAX_MOVEMENT_PX) {
           const bounds = event.currentTarget.getBoundingClientRect();
           const pixelX = event.clientX - bounds.left;
-          const request = cursorRequestFor(liveViewport, pixelX, []);
-          if (request !== null) {
-            onSetCursor(request.tUs);
+          const verb = cursorFollowPolicy("click", cursorTUs !== null, cursorTUs !== null ? Number(cursorTUs) : null, pixelX, liveViewport);
+          if (verb.kind === "pin") {
+            onSetCursor(verb.tUs);
+            cursorBus.pin(verb.tUs);
+          } else if (verb.kind === "unpin") {
+            onClearCursor();
+            cursorBus.unpin();
           }
         }
       }
     },
-    [liveViewport, onSetCursor, applyViewport]
+    [liveViewport, cursorTUs, onSetCursor, onClearCursor, cursorBus, applyViewport]
   );
 
-  const handlePointerLeave = useCallback((event: PointerEvent<HTMLDivElement>) => {
-    const dragging = draggingRef.current;
-    if (dragging !== null && dragging.pointerId === event.pointerId) {
-      draggingRef.current = null;
-    }
-    if (rectDragRef.current !== null && rectDragRef.current.pointerId === event.pointerId) {
-      rectDragRef.current = null;
-      setSelectionRectPx(null);
-    }
-    setHover(null);
-    // The pointer has left the chart — the next viewport-settle dispatch
-    // must skip the cursor-readout request entirely rather than reading a
-    // stale position, and the readout panel itself must clear immediately
-    // rather than showing a reading for a cursor that no longer exists
-    // (review-task10.md Important). `driver.leave()` also cancels a
-    // not-yet-fired `notify` debounce timer outright and bumps the
-    // driver's sequence counter so a readout fetch already dispatched and
-    // in flight from either trigger path is dropped on arrival, never
-    // repopulating the panel after the pointer is gone (R62).
-    lastPointerXRef.current = null;
-    cursorDriverRef.current.leave();
-  }, []);
+  const handlePointerLeave = useCallback(
+    (event: PointerEvent<HTMLDivElement>) => {
+      const dragging = draggingRef.current;
+      if (dragging !== null && dragging.pointerId === event.pointerId) {
+        draggingRef.current = null;
+      }
+      if (rectDragRef.current !== null && rectDragRef.current.pointerId === event.pointerId) {
+        rectDragRef.current = null;
+        setSelectionRectPx(null);
+      }
+      setHover(null);
+      // The pointer has left the chart — the next viewport-settle dispatch
+      // must skip the cursor-readout request entirely rather than reading a
+      // stale position, and the readout panel itself must clear immediately
+      // rather than showing a reading for a cursor that no longer exists
+      // (review-task10.md Important). `driver.leave()` also cancels a
+      // not-yet-fired `notify` debounce timer outright and bumps the
+      // driver's sequence counter so a readout fetch already dispatched and
+      // in flight from either trigger path is dropped on arrival, never
+      // repopulating the panel after the pointer is gone (R62).
+      lastPointerXRef.current = null;
+      cursorDriverRef.current.leave();
+      // Hides this chart's hover-follow line the same way a hover move off
+      // the plotted area would (`cursorFollowPolicy`'s `pixelX: null` rule) —
+      // a no-op while pinned, matching "hover never moves a pinned cursor".
+      const verb = cursorFollowPolicy("hover", cursorTUs !== null, cursorTUs !== null ? Number(cursorTUs) : null, null, liveViewport);
+      if (verb.kind === "publish") cursorBus.publish(verb.tUs);
+    },
+    [cursorTUs, liveViewport, cursorBus]
+  );
 
   const handleWheel = useCallback(
     (event: WheelEvent<HTMLDivElement>) => {
@@ -873,6 +936,28 @@ export default function ChartCell({
             }}
           />
         )}
+        {
+          // Decision 51's hover-follow line (Task 2): positioned imperatively
+          // by `hoverLineRef`'s `cursorBus.subscribe` effect above, never by
+          // a render-time `left` (that would need `setState` at pointer
+          // rate). Starts `hidden` — the subscriber only un-hides it once a
+          // hover actually publishes an on-viewport instant.
+        }
+        <div
+          ref={hoverLineRef}
+          className="chart-cell-cursor-line chart-cell-cursor-line--hover"
+          hidden
+          style={{
+            position: "absolute",
+            top: 0,
+            bottom: 0,
+            left: 0,
+            width: 1,
+            background: "var(--fg-dim)",
+            opacity: 0.5,
+            pointerEvents: "none",
+          }}
+        />
         <CursorReadoutPanel state={readoutState} />
       </div>
     </ChartContextMenu>
