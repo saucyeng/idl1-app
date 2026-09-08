@@ -21,6 +21,18 @@ describe("INPUT_MAP_PRESETS", () => {
       expect(preset.map.drag).toBe("zoom-region");
     }
   });
+
+  it("every shipped preset — plain wheel is unbound, so it scrolls the notebook, per R149", () => {
+    for (const preset of INPUT_MAP_PRESETS) {
+      expect(preset.map.wheel).toBe("none");
+    }
+  });
+
+  it("every shipped preset — ctrl+wheel zooms, per R149", () => {
+    for (const preset of INPUT_MAP_PRESETS) {
+      expect(preset.map.ctrlWheel).toBe("zoom-x");
+    }
+  });
 });
 
 describe("TRACKPAD_PRESET", () => {
@@ -31,16 +43,24 @@ describe("TRACKPAD_PRESET", () => {
 });
 
 describe("TWO_WHEEL_MOUSE_PRESET", () => {
-  it("TWO_WHEEL_MOUSE_PRESET — vertical wheel zooms, horizontal wheel pans, per R137", () => {
-    expect(actionFor(TWO_WHEEL_MOUSE_PRESET, "wheel")).toBe("zoom-x");
+  it("TWO_WHEEL_MOUSE_PRESET — horizontal wheel pans, per R137", () => {
     expect(actionFor(TWO_WHEEL_MOUSE_PRESET, "horizontalWheel")).toBe("pan-x");
+  });
+
+  it("TWO_WHEEL_MOUSE_PRESET — ctrl+wheel zooms, plain wheel does not, per R149", () => {
+    expect(actionFor(TWO_WHEEL_MOUSE_PRESET, "ctrlWheel")).toBe("zoom-x");
+    expect(actionFor(TWO_WHEEL_MOUSE_PRESET, "wheel")).toBe("none");
   });
 });
 
 describe("BASIC_MOUSE_PRESET", () => {
-  it("BASIC_MOUSE_PRESET — shift-drag pans, wheel zooms, per R137", () => {
+  it("BASIC_MOUSE_PRESET — shift-drag pans, per R137", () => {
     expect(actionFor(BASIC_MOUSE_PRESET, "shiftDrag")).toBe("pan-x");
-    expect(actionFor(BASIC_MOUSE_PRESET, "wheel")).toBe("zoom-x");
+  });
+
+  it("BASIC_MOUSE_PRESET — ctrl+wheel zooms, plain wheel does not, per R149", () => {
+    expect(actionFor(BASIC_MOUSE_PRESET, "ctrlWheel")).toBe("zoom-x");
+    expect(actionFor(BASIC_MOUSE_PRESET, "wheel")).toBe("none");
   });
 });
 

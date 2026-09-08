@@ -1,11 +1,12 @@
 /**
  * Pure gesture input-map presets (ruling R137, which withdraws R134 item
- * 2's "shift-drag pans"). Isaac: "mouse and trackpad are different... i
- * could imagine this being a part of the user config in the form of an
- * interchangeable table that can have a few presets for me to try at
- * runtime." The chart surface reads which action a given pointer/wheel
- * event maps to from a table, selected at runtime by preset name; it is
- * **not** wired to `ChartCell.tsx` by this module -- this lane's Task 5
+ * 2's "shift-drag pans"; amended by R149, which moves zoom off the plain
+ * wheel). Isaac: "mouse and trackpad are different... i could imagine this
+ * being a part of the user config in the form of an interchangeable table
+ * that can have a few presets for me to try at runtime." The chart surface
+ * reads which action a given pointer/wheel event maps to from a table,
+ * selected at runtime by preset name; it is **not** wired to
+ * `ChartCell.tsx` by this module -- this lane's Task 5
  * (`interaction/gestureVerbs.ts`, not yet dispatched) is where the gesture
  * handler starts reading a preset. Landing the table now, ahead of that
  * wiring, means adding a fourth preset later never touches the handler
@@ -24,23 +25,27 @@
  */
 
 /**
- * The six pointer/wheel input events a preset maps, per R137's own list.
- * `"drag"` is a plain left-button drag with no modifier; `"shiftDrag"` is
- * the same with Shift held. `"wheel"`/`"horizontalWheel"` are a mouse
- * wheel's vertical/horizontal deltas (the MX Master's second wheel is an
- * ordinary horizontal-wheel event, R137's own note — no special-casing by
- * device). `"pinch"`/`"twoFingerPan"` are trackpad-only gestures with no
- * desktop DOM event of their own (see `ChartCell.tsx`'s existing note on
- * wheel-as-pinch-substitute) — presets that use them are meaningful once
- * Task 5 maps a real trackpad gesture source onto these names; this table
- * does not depend on how that mapping is done.
+ * The seven pointer/wheel input events a preset maps, per R137's own list
+ * plus R149's `ctrlWheel`. `"drag"` is a plain left-button drag with no
+ * modifier; `"shiftDrag"` is the same with Shift held. `"wheel"`/
+ * `"horizontalWheel"` are a mouse wheel's vertical/horizontal deltas (the
+ * MX Master's second wheel is an ordinary horizontal-wheel event, R137's
+ * own note — no special-casing by device). `"ctrlWheel"` is a vertical
+ * wheel delta with the Ctrl modifier held — the universal zoom convention
+ * (R149) — kept distinct from plain `"wheel"` because a notebook is a
+ * document and the plain wheel's meaning belongs to it, not to a chart
+ * under the pointer. `"pinch"`/`"twoFingerPan"` are trackpad-only gestures
+ * with no desktop DOM event of their own (see `ChartCell.tsx`'s existing
+ * note on wheel-as-pinch-substitute) — presets that use them are
+ * meaningful once Task 5 maps a real trackpad gesture source onto these
+ * names; this table does not depend on how that mapping is done.
  */
-export type InputEventKind = "drag" | "shiftDrag" | "wheel" | "horizontalWheel" | "pinch" | "twoFingerPan";
+export type InputEventKind = "drag" | "shiftDrag" | "wheel" | "horizontalWheel" | "ctrlWheel" | "pinch" | "twoFingerPan";
 
 /**
  * What an input event does to the chart's viewport, per R137. `"none"`
  * means this preset does not bind that event at all — distinct from
- * omitting it from the map (every {@link InputMap} names all six events
+ * omitting it from the map (every {@link InputMap} names all seven events
  * explicitly, `"none"` included, so a preset's intent is always visible
  * rather than left to a fallback).
  */
@@ -59,10 +64,15 @@ export interface InputMapPreset {
 }
 
 /**
- * Trackpad preset (R137): pinch zooms, a two-finger drag pans, a plain
- * drag stays decision 56's zoom-to-region default. Shift-drag/wheel/
- * horizontal-wheel are unbound — a trackpad's own gestures cover pan and
- * zoom without them.
+ * Trackpad preset (R137, amended by R149): pinch zooms, a two-finger drag
+ * pans, a plain drag stays decision 56's zoom-to-region default. `wheel`
+ * is deliberately `"none"` — a trackpad's two-finger vertical scroll is
+ * delivered as a plain wheel event, and R149 reserves that for scrolling
+ * the notebook document, not the chart under the pointer. `ctrlWheel`
+ * binds to zoom-x anyway: a user who holds Ctrl while scrolling a trackpad
+ * (rather than pinching) still gets the universal zoom gesture, matching
+ * both mouse presets. Shift-drag/horizontal-wheel are unbound — a
+ * trackpad's own gestures cover pan and zoom without them.
  */
 export const TRACKPAD_PRESET: InputMapPreset = {
   id: "trackpad",
@@ -72,16 +82,24 @@ export const TRACKPAD_PRESET: InputMapPreset = {
     shiftDrag: "none",
     wheel: "none",
     horizontalWheel: "none",
+    ctrlWheel: "zoom-x",
     pinch: "zoom-x",
     twoFingerPan: "pan-x",
   },
 };
 
 /**
- * Two-wheel mouse preset (R137), written for the MX Master's second wheel:
- * the vertical wheel zooms, the horizontal wheel pans, drag stays
- * zoom-to-region. Shift-drag/pinch/two-finger-pan are unbound — this
- * preset has no trackpad gestures to bind them to.
+ * Two-wheel mouse preset (R137, amended by R149), written for the MX
+ * Master's second wheel: the horizontal wheel pans, drag stays
+ * zoom-to-region. The vertical `wheel` is deliberately `"none"`, not
+ * zoom — R149: a notebook is a document, and the plain wheel's meaning
+ * belongs to it (scrolling past the chart), not to whichever chart
+ * happens to be under the pointer. Do not rebind `wheel` back to zoom;
+ * that is the exact regression R149 fixes. `ctrlWheel` carries zoom
+ * instead — the universal browser/editor convention, and it cannot
+ * collide with scrolling because holding Ctrl already means "not
+ * scrolling". Shift-drag/pinch/two-finger-pan are unbound — this preset
+ * has no trackpad gestures to bind them to.
  */
 export const TWO_WHEEL_MOUSE_PRESET: InputMapPreset = {
   id: "two-wheel-mouse",
@@ -89,19 +107,24 @@ export const TWO_WHEEL_MOUSE_PRESET: InputMapPreset = {
   map: {
     drag: "zoom-region",
     shiftDrag: "none",
-    wheel: "zoom-x",
+    wheel: "none",
     horizontalWheel: "pan-x",
+    ctrlWheel: "zoom-x",
     pinch: "none",
     twoFingerPan: "none",
   },
 };
 
 /**
- * Basic mouse preset (R137): the single-wheel case. Drag stays
- * zoom-to-region, shift-drag pans (R134 item 2's original ruling, kept
- * here as this preset's own binding rather than the app's only one), and
- * the one wheel zooms. Horizontal-wheel/pinch/two-finger-pan are unbound —
- * a basic mouse has none of them.
+ * Basic mouse preset (R137, amended by R149): the single-wheel case. Drag
+ * stays zoom-to-region, shift-drag pans (R134 item 2's original ruling,
+ * kept here as this preset's own binding rather than the app's only one).
+ * The plain `wheel` is deliberately `"none"`, not zoom — R149: it must
+ * scroll the notebook past this chart, like any other page content. Do
+ * not rebind `wheel` back to zoom; that is the exact regression R149
+ * fixes. `ctrlWheel` carries zoom instead, the universal convention.
+ * Horizontal-wheel/pinch/two-finger-pan are unbound — a basic mouse has
+ * none of them.
  */
 export const BASIC_MOUSE_PRESET: InputMapPreset = {
   id: "basic-mouse",
@@ -109,8 +132,9 @@ export const BASIC_MOUSE_PRESET: InputMapPreset = {
   map: {
     drag: "zoom-region",
     shiftDrag: "pan-x",
-    wheel: "zoom-x",
+    wheel: "none",
     horizontalWheel: "none",
+    ctrlWheel: "zoom-x",
     pinch: "none",
     twoFingerPan: "none",
   },
