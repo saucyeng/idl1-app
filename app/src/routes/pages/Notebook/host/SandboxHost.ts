@@ -113,6 +113,8 @@ export class SandboxHost {
    *  not the notebook's own cells). */
   private lastInitRuntimeVersion: string | null = null;
   private lastCells: SandboxCell[] | null = null;
+  /** True while a coalesced re-render is queued — see {@link scheduleRerender}. */
+  private rerenderPending = false;
   /** Last-sent value of every JSON-kind host variable, replayed after a
    *  rebuild (`replayAfterRebuild`, review-task5b.md Major finding). Never
    *  holds a `{kind:"channel"}` payload — see {@link SandboxHostCallbacks.onChannelsInvalidated}. */
@@ -244,6 +246,28 @@ export class SandboxHost {
   setChannelHostVar(name: string, length: number, t: ArrayBuffer, v: ArrayBuffer, w: ArrayBuffer, windows: WindowDescriptor[]): void {
     const { message, transfer } = channelPayload(name, length, t, v, w, windows);
     this.postToSandbox(message, transfer);
+    this.scheduleRerender();
+  }
+
+  /**
+   * Re-sends the current cell set so cells re-evaluate against host
+   * variables bound *after* they were first evaluated.
+   *
+   * `setHostVar` only binds a name — it does not re-render. Channel and
+   * spectrum data is fetched asynchronously, so it always arrives after
+   * `setCells` has already run the cells, and without this a chart whose
+   * `channel(...)` call resolved to an unbound name stays empty forever
+   * (the cell never runs again). Coalesced through a microtask so a burst
+   * of publishes — one per channel per cell — costs one re-render, not one
+   * each.
+   */
+  private scheduleRerender(): void {
+    if (this.rerenderPending || this.lastCells === null) return;
+    this.rerenderPending = true;
+    queueMicrotask(() => {
+      this.rerenderPending = false;
+      if (this.lastCells !== null) this.postToSandbox({ type: "setCells", cells: this.lastCells });
+    });
   }
 
   /**
@@ -263,6 +287,7 @@ export class SandboxHost {
   setSpectrumHostVar(name: string, length: number, f: ArrayBuffer, m: ArrayBuffer, w: ArrayBuffer, windows: WindowDescriptor[]): void {
     const { message, transfer } = spectrumPayload(name, length, f, m, w, windows);
     this.postToSandbox(message, transfer);
+    this.scheduleRerender();
   }
 
   /**

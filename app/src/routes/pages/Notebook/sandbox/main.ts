@@ -352,7 +352,16 @@ class SandboxRuntime {
    */
   private channelLookup(name: string, _opts?: { lap?: number; session?: string }): { t: number; v: number; w: number }[] {
     const value = this.hostVars.get(name);
-    return Array.isArray(value) ? (value as { t: number; v: number; w: number }[]) : [];
+    if (!Array.isArray(value)) {
+      // R148: an unbound channel returns an empty array, which Plot renders
+      // as axis labels and nothing else -- indistinguishable from a working
+      // chart with no data. Say so rather than fail silently.
+      console.warn(
+        `[sandbox] channel(${JSON.stringify(name)}) is not bound; known host vars: ${JSON.stringify([...this.hostVars.keys()])}`
+      );
+      return [];
+    }
+    return value as { t: number; v: number; w: number }[];
   }
 
   /**
