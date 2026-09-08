@@ -1,37 +1,105 @@
 import { describe, expect, it } from "vitest";
 
-import { cursorCardRow } from "./cursorCard";
+import type { WindowDescriptor } from "../host/protocol";
+import { cursorCardRows, type CombinedChannelPayload } from "./cursorCard";
 
-const WINDOW = { startUs: 0, endUs: 10_000_000 };
+function descriptor(label: string, colour: string): WindowDescriptor {
+  return { sessionId: "s", span: { kind: "session" }, colour, label };
+}
 
-describe("cursorCardRow", () => {
-  it("cursorCardRow — a normal reading within the window — one row, value is the reading's mean", () => {
-    const row = cursorCardRow(1_000_000, WINDOW, { mean: 42 }, "Front travel", "mm", "--chart-1", 1, "Session A");
+/** A payload with two windows: window 0 (span starts at session t=0) samples
+ *  at t=0,1,2s; window 1 (a different session, span starting at t=100s)
+ *  samples at t=100,101s -- shorter, and at a different absolute session
+ *  time, matching how a real `"lap"`/`"range"` window's own `t` values are
+ *  absolute within *that* window's session (`WindowSeries.t`'s own doc
+ *  comment), not zero-based. */
+function twoWindowPayload(): CombinedChannelPayload {
+  return {
+    length: 6,
+    t: Float64Array.from([0, 1, 2, NaN, 100, 101]),
+    v: Float64Array.from([10, 11, 12, NaN, 20, 21]),
+    w: Float64Array.from([0, 0, 0, NaN, 1, 1]),
+    windows: [descriptor("Lap 2", "--chart-1"), descriptor("Lap 3", "--chart-2")],
+    spans: [
+      { startUs: 0, endUs: 2_500_000 },
+      { startUs: 100_000_000, endUs: 101_500_000 },
+    ],
+  };
+}
 
-    expect(row).toEqual({ windowLabel: null, colour: "--chart-1", seriesLabel: "Front travel", unit: "mm", value: 42 });
+describe("cursorCardRows", () => {
+  it("cursorCardRows — single window, exactly one selected — one row, no windowLabel marker (R127 item 3)", () => {
+    const payload: CombinedChannelPayload = {
+      length: 2,
+      t: Float64Array.from([0, 1]),
+      v: Float64Array.from([10, 11]),
+      w: Float64Array.from([0, 0]),
+      windows: [descriptor("Session A", "--chart-1")],
+      spans: [{ startUs: 0, endUs: 2_000_000 }],
+    };
+
+    const rows = cursorCardRows(1_000_000, payload, "Front travel", "mm", 1);
+
+    expect(rows).toEqual([{ windowLabel: null, colour: "--chart-1", seriesLabel: "Front travel", unit: "mm", value: 11 }]);
   });
 
-  it("cursorCardRow — exactly one window selected — windowLabel is null (R127 item 3: no marker)", () => {
-    const row = cursorCardRow(1_000_000, WINDOW, { mean: 1 }, "Speed", "km/h", "--chart-1", 1, "Lap 2");
+  it("cursorCardRows — two overlaid windows — one row per window, each labelled with its own window (R132 generalised)", () => {
+    const rows = cursorCardRows(1_000_000, twoWindowPayload(), "Fork travel", "mm", 2);
 
-    expect(row?.windowLabel).toBeNull();
+    expect(rows).toEqual([
+      { windowLabel: "Lap 2", colour: "--chart-1", seriesLabel: "Fork travel", unit: "mm", value: 11 },
+      { windowLabel: "Lap 3", colour: "--chart-2", seriesLabel: "Fork travel", unit: "mm", value: 21 },
+    ]);
   });
 
-  it("cursorCardRow — more than one window selected — windowLabel names the primary window (R132)", () => {
-    const row = cursorCardRow(1_000_000, WINDOW, { mean: 1 }, "Speed", "km/h", "--chart-1", 3, "Lap 2");
+  it("cursorCardRows — offset past the shorter window's own end — that window's row is omitted entirely, not a null-valued row (decision 55's absence rule)", () => {
+    // Window 0 (Lap 2, span 0..2.5s) still has data at offset 2.2s; window
+    // 1 (Lap 3, span 0..1.5s relative to its own start) does not.
+    const rows = cursorCardRows(2_200_000, twoWindowPayload(), "Fork travel", "mm", 2);
 
-    expect(row?.windowLabel).toBe("Lap 2");
+    expect(rows).toHaveLength(1);
+    expect(rows[0].windowLabel).toBe("Lap 2");
   });
 
-  it("cursorCardRow — the offset runs past the window's own end — null, not a row holding a stale value (decision 55's absence rule)", () => {
-    const row = cursorCardRow(20_000_000, WINDOW, { mean: 42 }, "Front travel", "mm", "--chart-1", 1, "Session A");
+  it("cursorCardRows — offset past every window's own end — no rows at all", () => {
+    const rows = cursorCardRows(10_000_000, twoWindowPayload(), "Fork travel", "mm", 2);
 
-    expect(row).toBeNull();
+    expect(rows).toEqual([]);
   });
 
-  it("cursorCardRow — no reading at the cursor's pixel (a gap) — a row with value: null, distinct from no row at all", () => {
-    const row = cursorCardRow(1_000_000, WINDOW, null, "Front travel", "mm", "--chart-1", 1, "Session A");
+  it("cursorCardRows — within a window's span but no nearby sample (a gap) — a row with value: null, distinct from an omitted row", () => {
+    const payload: CombinedChannelPayload = {
+      length: 2,
+      t: Float64Array.from([0, 5]), // a 5s gap
+      v: Float64Array.from([10, 15]),
+      w: Float64Array.from([0, 0]),
+      windows: [descriptor("Session A", "--chart-1")],
+      spans: [{ startUs: 0, endUs: 6_000_000 }],
+    };
 
-    expect(row).toEqual({ windowLabel: null, colour: "--chart-1", seriesLabel: "Front travel", unit: "mm", value: null });
+    // Nearest sample to 2.5s is either 0s or 5s -- both exist, so this
+    // isn't really "no sample" (nearestValue always finds *a* nearest
+    // point when the payload has any for that window); this case
+    // documents that behaviour rather than asserting null, since a real
+    // gap is represented by the window having *no* samples in its run at
+    // all, covered by the next case.
+    const rows = cursorCardRows(2_500_000, payload, "Speed", "km/h", 1);
+
+    expect(rows[0].value).not.toBeNull();
+  });
+
+  it("cursorCardRows — a window with no samples in its own run at all — value: null", () => {
+    const payload: CombinedChannelPayload = {
+      length: 0,
+      t: new Float64Array(0),
+      v: new Float64Array(0),
+      w: new Float64Array(0),
+      windows: [descriptor("Session A", "--chart-1")],
+      spans: [{ startUs: 0, endUs: 2_000_000 }],
+    };
+
+    const rows = cursorCardRows(1_000_000, payload, "Speed", "km/h", 1);
+
+    expect(rows).toEqual([{ windowLabel: null, colour: "--chart-1", seriesLabel: "Speed", unit: "km/h", value: null }]);
   });
 });

@@ -1,88 +1,121 @@
 /**
  * Pure row-building for the cursor value card (direction-2 decision 55:
- * "a small card at the cursor showing each series' Y at that X"; plan
- * `runs/2026-09-08/w32-time-plan.md` Task 7). No React, no DOM, no IPC
- * (P2 -- hover never calls `cursor_readout`; only a pin does, via the
- * existing `model/cursor.ts`/R62 readout path, unchanged by this module).
+ * "a small card at the cursor showing each series' Y at that X, one row
+ * per series and per overlaid lap"; plan `runs/2026-09-08/w32-time-plan.md`
+ * Task 7; ruling **R139**). No React, no DOM, no IPC (P2 -- hover never
+ * calls `cursor_readout`; only a pin does, via the existing `model/cursor.ts`
+ * /R62 readout path, unchanged by this module -- R134 item 7).
  *
- * **Scope, stated rather than silently narrowed.** Decision 55's full
- * shape is one row per series *and* per overlaid window. `ChartCell.tsx`
- * itself is documented as plotting "exactly one channel" at the host level
- * (its own `channelLabel` doc comment, predating this task) and tracks
- * decoded tiles for only the **primary** selected window
- * (`chartWindow`/`primaryWindowSpan` -- every other window's data is
- * combined into the sandbox's own host-var payload and never surfaces back
- * to the host; R69(d)'s own open TODO). This module therefore builds
- * **one row**, for that one channel/window pair, and names which window it
- * is (R132) whenever more than one is selected -- reusing
- * `jsCellNote.ts`'s own `primaryWindowNote` rather than re-deriving that
- * labelling rule a second time (R138's lesson: one definition, shared).
- * A true per-series-per-window card needs per-window/per-channel tiles
- * plumbed to the host (`channelBindDriver.ts`/`Notebook/index.tsx`), which
- * is a larger change than this task's own file list names and is left for
- * that follow-on.
+ * **R139's data source.** `channelBindDriver.ts` already builds one
+ * combined `{t, v, w, windows}` payload per (cell, channel) -- every
+ * selected window's own decimated samples, concatenated, `w[i]` naming
+ * which window sample `i` belongs to (R127/R129) -- immediately before
+ * handing it to the sandbox and dropping it. The caller now **retains**
+ * that payload (`CombinedChannelPayload`, `channelBindDriver.ts`) instead,
+ * so this module reads rows straight out of already-decoded, already-
+ * decimated host memory: no new fetch, no per-window tile retention, and
+ * correct for however many windows are selected by construction (the
+ * combined payload already covers every one of them, not only the
+ * primary).
  */
+import type { WindowDescriptor } from "../host/protocol";
 import { primaryWindowNote } from "./jsCellNote";
 import { cursorTimeInWindow, type AbsoluteSpan } from "./viewportWindows";
 
-/** The one already-decoded reading this module formats -- `model/hover.ts`'s
- *  own `hoverAt` result (or its `mean` field alone), reused rather than a
- *  second tile read. */
-export interface CursorCardReading {
-  mean: number;
+/** The combined per-window payload `channelBindDriver.ts`'s `CombinedChannelPayload` is -- re-exported here as a type-only alias so this module's own public signature doesn't force every caller to import from `channelBindDriver.ts` for one type. */
+export interface CombinedChannelPayload {
+  length: number;
+  t: Float64Array;
+  v: Float64Array;
+  w: Float64Array;
+  windows: WindowDescriptor[];
+  /** `windows[k]`'s own already-resolved `AbsoluteSpan`, aligned 1:1 with `windows` by index. */
+  spans: AbsoluteSpan[];
 }
 
 /** One row of the cursor value card. */
 export interface CursorCardRow {
   /** Which window this row describes, or `null` when exactly one window is
    *  selected (R127 item 3: no marker, byte-identical to a single-window
-   *  card) -- `jsCellNote.ts`'s `primaryWindowNote` supplies this. */
+   *  card) -- `jsCellNote.ts`'s `primaryWindowNote` supplies this, reused
+   *  for *every* row (not only the primary window's) since a multi-row
+   *  card is, by construction, already showing more than one window and
+   *  every row must say which one (R132's rule, generalised to N rows). */
   windowLabel: string | null;
-  /** This window's chart token colour (`--chart-1`…`--chart-8`), never a hex literal (R117 item 6). */
+  /** This window's chart token colour (`--chart-1`…`--chart-8`, never a hex literal, R117 item 6) -- `WindowDescriptor.colour` verbatim. */
   colour: string;
   /** This chart's own plotted series label (`ChartCell`'s existing `channelLabel` prop). */
   seriesLabel: string;
   /** `ChannelSummary.unit` (C1 §4.1), or `""` when unknown. */
   unit: string;
-  /** The reading's mean value at the cursor, or `null` -- no data at this
-   *  instant (a gap, or the reading fell outside the plotted tiles). */
+  /** The nearest sample's value at the cursor within this window's own
+   *  contiguous run of `payload`, or `null` -- no nearby sample (a gap, or
+   *  the cursor sits past the window's own end and no row is built at all,
+   *  see {@link cursorCardRows}'s own doc comment). */
   value: number | null;
 }
 
 /**
- * Builds this chart's one cursor-card row at `offsetUs` (an elapsed µs
- * offset since the primary window's own start -- `cursorBus.ts`'s frame,
- * task 6), or `null` when the cursor has run past `primaryWindowSpan`'s own
- * end (decision 55's "renders absence": no card at all past a window's own
- * end, never one holding a stale value).
+ * The nearest sample's value in `payload` for window index `windowIndex`,
+ * at `tSec` (seconds since that window's own session start, matching
+ * `WindowSeries.t`'s own units) -- a linear nearest-neighbour scan
+ * restricted to that window's own contiguous run (`combineChannelWindows`
+ * concatenates windows in order, one run per window, R127 item 4's break
+ * rows the only gaps between them), so cost is proportional to one
+ * window's own point budget, never the whole payload. `null` when
+ * `payload` has no samples at all for `windowIndex` (every selected window
+ * with no overlap is already excluded from `payload` entirely, per
+ * `channelBindDriver.ts`'s own doc comment -- this only fires for a
+ * genuinely empty run, which the *count* of rows never claims in the
+ * first place).
+ */
+function nearestValue(payload: CombinedChannelPayload, windowIndex: number, tSec: number): number | null {
+  let best: number | null = null;
+  let bestDistance = Infinity;
+  for (let i = 0; i < payload.length; i++) {
+    if (payload.w[i] !== windowIndex) continue;
+    const distance = Math.abs(payload.t[i] - tSec);
+    if (distance < bestDistance) {
+      bestDistance = distance;
+      best = payload.v[i];
+    }
+  }
+  return best;
+}
+
+/**
+ * Builds one cursor-card row per window in `payload.windows`, at
+ * `offsetUs` (an elapsed µs offset since the primary window's own start --
+ * `cursorBus.ts`'s frame, task 6). A window is **skipped entirely** --
+ * not a row with `value: null` -- once `offsetUs` runs past that window's
+ * own recorded end (`cursorTimeInWindow`, decision 55's "renders absence":
+ * no card at all for that lap past where it stopped, never one holding a
+ * stale value). A row *is* built with `value: null` when the cursor sits
+ * within the window's own span but no nearby sample exists there (a real
+ * gap in the data, R31's "no data" convention) -- the two `null`s mean
+ * different things and this function keeps them apart by including or
+ * omitting the row, not by a second field.
  *
  * @param offsetUs `cursorBus.ts`'s current `CursorState.tUs`.
- * @param primaryWindowSpan The chart's own bound window (today, always the primary window -- see this module's own scope note).
- * @param reading The already-decoded tile reading at the cursor's pixel
- *   position (`ChartCell.tsx`'s own `hoverAt` call), or `null` if the
- *   cursor doesn't land on a plotted column.
+ * @param payload This chart's own retained combined payload (R139).
  * @param seriesLabel This chart's own plotted series label.
  * @param unit This channel's own display unit, or `""`.
- * @param colour This window's chart token colour.
- * @param windowCount The total number of selected windows (R132's naming trigger).
- * @param primaryWindowLabel The primary window's own display label (`state/selection.ts`'s `describeWindow`).
+ * @param totalWindowCount The total number of selected windows (`AppState.selection.length`) -- R132's naming trigger, `<= 1` renders no marker on any row.
  */
-export function cursorCardRow(
-  offsetUs: number,
-  primaryWindowSpan: AbsoluteSpan,
-  reading: CursorCardReading | null,
-  seriesLabel: string,
-  unit: string,
-  colour: string,
-  windowCount: number,
-  primaryWindowLabel: string
-): CursorCardRow | null {
-  if (cursorTimeInWindow(offsetUs, primaryWindowSpan) === null) return null;
-  return {
-    windowLabel: primaryWindowNote(windowCount, primaryWindowLabel),
-    colour,
-    seriesLabel,
-    unit,
-    value: reading === null ? null : reading.mean,
-  };
+export function cursorCardRows(offsetUs: number, payload: CombinedChannelPayload, seriesLabel: string, unit: string, totalWindowCount: number): CursorCardRow[] {
+  const rows: CursorCardRow[] = [];
+  payload.windows.forEach((descriptor, windowIndex) => {
+    const span = payload.spans[windowIndex];
+    if (span === undefined) return;
+    const tUs = cursorTimeInWindow(offsetUs, span);
+    if (tUs === null) return;
+    rows.push({
+      windowLabel: primaryWindowNote(totalWindowCount, descriptor.label),
+      colour: descriptor.colour,
+      seriesLabel,
+      unit,
+      value: nearestValue(payload, windowIndex, tUs / 1_000_000),
+    });
+  });
+  return rows;
 }

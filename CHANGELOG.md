@@ -51,27 +51,34 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 ### Added
 
 - **`Notebook/model/cursorCard.ts` + `Notebook/components/CursorCard.tsx`:
-  cursor value card (2026-09-08, w32-time Task 7, decision 55, spec-during).**
-  `cursorCardRow` builds one row — series label, unit, colour, value, and
-  (R132) the window label when more than one window is selected via the
-  existing `jsCellNote.ts`'s `primaryWindowNote` — at a window-relative
-  cursor offset, `null` past the window's own end (decision 55's "renders
-  absence", reusing `cursorTimeInWindow`, Task 6). **Scope, named rather
-  than silently narrowed:** decision 55's full shape is one row per series
-  *and* per overlaid window; `ChartCell.tsx` is already documented as
-  plotting exactly one channel at the host level and tracks tiles for only
-  the primary window (R69(d)'s own TODO — every other window's data is
-  combined into the sandbox's own host-var payload and never reaches the
-  host), so this ships **one row**, honestly labelled per R132 when more
-  than one window is selected, rather than a multi-row shape the host
-  cannot currently back with real data. A true per-series-per-window card
-  needs per-window/per-channel tiles plumbed to the host — a larger change
-  than this task's own file list, filed as a follow-on. `ChartCell.tsx`
-  gained four new optional props (`channelUnit`, `windowCount`,
-  `primaryWindowLabel`, `primaryWindowColour`) mirroring its existing
-  `channelLabel`'s missing-value convention, and computes the row from the
-  same `hoverAt` reading it already decodes for its own hover tooltip (no
-  second tile read, no new IPC).
+  cursor value card, one row per overlaid window (2026-09-08, w32-time
+  Task 7, decision 55, ruling **R139**, spec-during).** First shipped wired
+  to the primary window only (`ChartCell.tsx` tracks decoded tiles for only
+  the primary window at the host level, R69(d)'s own TODO) with an R132
+  label naming the gap; ruled against (R139) because a comparison workflow
+  is the whole point of the card, and a single-window card would read as
+  "done" in this changelog while the gap gets rediscovered as a bug rather
+  than remembered as a TODO. **Fixed per R139's own answer: retain the
+  combined payload, not per-window tiles.** `channelBindDriver.ts` already
+  builds one combined `{t, v, w, windows}` typed-array payload per (cell,
+  channel) — every selected window's own decimated samples, concatenated,
+  `w[i]` naming which window (R127/R129) — immediately before handing it to
+  the sandbox via `setChannelHostVar` and dropping it. It now also
+  dispatches a **retained** copy (`CombinedChannelPayload`, `spans` aligned
+  1:1 with `windows` from the same filtered pass, no second `SessionDetail`
+  resolution — R138's lesson), cloning the buffers actually handed to
+  `setChannelHostVar`'s transfer list first (`postMessage` detaches whatever
+  buffer instance it moves — the retained copy must be a different one).
+  `Notebook/index.tsx` keeps one payload per `${cellId}::${channelId}` in a
+  ref (`combinedChannelDataRef`), passed to `ChartCell` as a new
+  `combinedChannelData` prop. `cursorCardRows` (was `cursorCardRow`) filters
+  that payload by `w` at the cursor's window-relative offset: a window
+  whose offset has run past its own resolved end is **omitted entirely**
+  (decision 55's "renders absence" — not a row holding a stale value,
+  ruling R131 Q2), while a row within a window's span but with no nearby
+  sample renders `value: null` (R31's "no data", distinct from the omitted
+  case). No new fetch and no IPC on hover (P2) — the arrays are already in
+  host memory at hover time.
 - **`Notebook/model/timelineStrip.ts`: pure master-timeline-strip model
   (2026-09-08, w32-time Task 8, ruling R134 item 1, spec-during).**
   `stripLanesFor` builds one `StripLane` per selected window (never one

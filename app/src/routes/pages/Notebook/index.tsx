@@ -52,6 +52,7 @@ import {
   type ChannelBindAction,
   type ChannelBindDeps,
   type ChartWindow,
+  type CombinedChannelPayload,
 } from "./model/channelBindDriver";
 import { CellRunSequencer } from "./model/cellRunSequencer";
 import { isCodeVisible, toggleCode } from "./model/codeVisibility";
@@ -369,6 +370,21 @@ export default function NotebookPage() {
    *  `null` for a window whose span hasn't resolved (or failed to). */
   const [sessionSpanUsByWindow, setSessionSpanUsByWindow] = useState<Map<string, number | null>>(new Map());
   const [chartWindows, setChartWindows] = useState<Map<string, ChartWindow>>(new Map());
+  /**
+   * One combined multi-window payload per (cell, channel) -- `${cellId}::
+   * ${channelId}` -- retained from `channelBindDriver.ts`'s own
+   * `"channelData"` action instead of being dropped after
+   * `setChannelHostVar` (ruling R139). A plain ref, not React state:
+   * updated inside `onAction` alongside `setChannelHostVar` itself (a
+   * side effect, not a render input on its own), and read back out only
+   * when `ChartCell`'s own props are computed each render -- the same
+   * "cheap ref mutated at commit-relevant times, read on next render"
+   * shape as `sessionDetailsByWindowRef` below. The `chartWindow`/
+   * `boundChannels` actions dispatched alongside every `"channelData"`
+   * action already call `setState`, so the next render this ref's new
+   * value is read in is never more than one commit stale.
+   */
+  const combinedChannelDataRef = useRef<Map<string, CombinedChannelPayload>>(new Map());
   /**
    * The worksheet's one shared X range (decision 52, Task 4) --
    * `chartWindows`' per-cell `Viewport`s are still where each cell's own
@@ -1437,6 +1453,9 @@ export default function NotebookPage() {
       const onAction = (action: ChannelBindAction) => {
         if (action.type === "channelData") {
           sandboxHostRef.current?.setChannelHostVar(action.channelId, action.length, action.t, action.v, action.w, action.windows);
+          // R139: retain the same combined arrays the sandbox just got a
+          // transfer clone of -- `model/cursorCard.ts` reads this back.
+          combinedChannelDataRef.current.set(`${action.cellId}::${action.channelId}`, action.retained);
         } else if (action.type === "boundChannels") {
           sessionRef.current.setBoundChannels(action.cellId, action.bound);
         } else {
@@ -1921,6 +1940,10 @@ export default function NotebookPage() {
                   const onAction = (action: ChannelBindAction) => {
                     if (action.type === "channelData") {
                       sandboxHostRef.current?.setChannelHostVar(action.channelId, action.length, action.t, action.v, action.w, action.windows);
+                      // R139: retain the same combined arrays the sandbox
+                      // just got a transfer clone of -- `model/cursorCard.ts`
+                      // reads this back.
+                      combinedChannelDataRef.current.set(`${action.cellId}::${action.channelId}`, action.retained);
                     } else if (action.type === "boundChannels") {
                       sessionRef.current.setBoundChannels(action.cellId, action.bound);
                     } else {
@@ -1991,8 +2014,7 @@ export default function NotebookPage() {
                 fetchCursorReadout={(sessId, channels, tUs) => cursorReadout(sessId, channels, tUs)}
                 channelUnit={sessionDetail?.channels.find((c) => c.channel_id === channel.channelId)?.unit}
                 windowCount={windows.length}
-                primaryWindowLabel={primaryWindow !== null ? windowDescriptorFor(primaryWindow, sessionDetail).label : undefined}
-                primaryWindowColour={primaryWindow?.colour}
+                combinedChannelData={combinedChannelDataRef.current.get(`${cellId}::${channel.channelId}`)}
                 sendTransform={(id, translateXPx, scaleX) => sandboxHostRef.current?.sendTransform(id, translateXPx, scaleX)}
                 sendLayout={sendLayout}
                 cursorTUs={sharedCursorTUs}
