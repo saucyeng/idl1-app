@@ -5657,3 +5657,44 @@ misrepresent it — applies unchanged.
 page at all. Q2 guessed as *absolute* time would overlay two laps by
 wall-clock, drawing lap 3 far to the right of lap 2 instead of on top of
 it — the comparison the feature exists for, silently inverted.
+
+## 2026-09-08 — R132: a non-chart cell showing one window of several must say so
+
+**Finding** (S1 Task 11a, self-flagged). Charts now overlay every selected
+window. But math cells, table cells, prose `${…}` spans and completions
+still read a single "primary" window (`windows[0]`), because a multi-window
+layout for non-chart cell kinds is not designed. The implementer was right
+that R121's wording is about chart series, and right to flag the gap rather
+than invent a layout.
+
+**Ruling — the reading stays, the silence does not.** With more than one
+window selected, a non-chart cell that renders the primary window's value
+must **name the window it is showing**. Not a bare number.
+
+A prose sentence reading "peak fork travel was 112 mm" with two laps
+selected is a wrong statement — it is lap 2's peak presented as the
+selection's. Marked as lap 2's, it is a true statement and a smaller
+feature. That is the whole difference, and it costs a label.
+
+`jsCellNote` already carries `windowCount` after the R127 work, so the
+mechanism exists; use it rather than adding a second channel. With exactly
+one window, nothing changes — no marker, byte-identical to today (R127
+item 3).
+
+Designing what a math or table cell *should* show for N windows — a column
+per window, a per-window row, something else — is deferred to the maths
+lane, which is where per-lap columns live anyway (R125's lap-table trigger).
+
+**Accepted without change, from the same report:**
+- `NotebookSession`'s rebuild-replay path widened honestly to the 6-arg
+  form (single window, `w` all zeros). Not named in R131, but the same
+  "compiling and honest" rule applies and was applied. Correct.
+- The FFT cell-shape check resolving against the primary window only: a
+  channel present in a *non-primary* window's session would be missed.
+  Filed as a follow-up, not blocking — it needs two windows over
+  **different sessions with different channel sets**, where the normal case
+  (lap-to-lap within one session) is unaffected.
+
+**Cost if wrong.** Unmarked, every scalar in a notebook silently becomes
+"whichever window happens to be first" the moment a second lap is selected —
+and the number is *plausible*, so nothing prompts the reader to doubt it.

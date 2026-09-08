@@ -18,3 +18,8 @@
 - **Replace the `(0.0, 0.0)` gating-off sentinel with an `Option` (R128.3).**
   "No window selected" and "a window from 0.0 to 0.0" are currently the same
   value; that conflation produced the R128 defect and will produce another.
+
+- **FFT cell-shape check uses the primary window only (R132).** A channel
+  present only in a non-primary window's session is missed. Needs two
+  windows over different sessions with different channel sets; lap-to-lap
+  within one session is unaffected.
