@@ -1,7 +1,12 @@
 import { describe, expect, it } from "vitest";
 
 import type { ChannelSummary, SessionDetail } from "../../../../ipc/catalog";
+import type { Window as SelectedWindow } from "../../../../ipc/workbook";
 import { bindingFor, bindingIdentity, unresolvedChannelId, type JsCellBinding, type TimeCellBinding } from "./jsCellBinding";
+
+function lapWindow(lapNumber: number): SelectedWindow {
+  return { session_id: "session-a", span: { kind: "lap", lap_number: lapNumber }, colour: "--chart-1" };
+}
 
 function channel(overrides: Partial<ChannelSummary> = {}): ChannelSummary {
   return {
@@ -365,28 +370,47 @@ describe("bindingFor — FFT arm", () => {
     expect(binding.hostVarName).toBe("fork_velocity | 1024 | 512 | hann | mean | magnitude | mean");
   });
 
-  it("bindingFor — no mainLap argument — request.lap defaults to null (R83/L2b Task 6)", () => {
+  it("bindingFor — no window argument — request.window defaults to null (R117/R127)", () => {
     const detail = sessionDetail([channel()]);
 
     const binding = asFft(bindingFor({ id: "cell-a", code: fftCode("fork_velocity") }, detail, 60_000_000, noDefinitions));
 
-    expect(binding.request.lap).toBeNull();
+    expect(binding.request.window).toBeNull();
   });
 
-  it("bindingFor — a mainLap selected — request.lap carries it straight through", () => {
+  it("bindingFor — a window selected — request.window carries it straight through", () => {
     const detail = sessionDetail([channel()]);
+    const window = lapWindow(3);
 
-    const binding = asFft(bindingFor({ id: "cell-a", code: fftCode("fork_velocity") }, detail, 60_000_000, noDefinitions, 3));
+    const binding = asFft(bindingFor({ id: "cell-a", code: fftCode("fork_velocity") }, detail, 60_000_000, noDefinitions, window));
 
-    expect(binding.request.lap).toBe(3);
+    expect(binding.request.window).toBe(window);
   });
 
-  it("bindingFor — a mainLap selected on a time cell — unaffected (mainLap is consulted only by the FFT arm)", () => {
+  it("bindingFor — a window selected on a time cell — unaffected (window is consulted only by the FFT arm)", () => {
     const detail = sessionDetail([channel()]);
 
-    const binding = bindingFor({ id: "cell-a", code: oneMarkCode }, detail, 60_000_000, noDefinitions, 3);
+    const binding = bindingFor({ id: "cell-a", code: oneMarkCode }, detail, 60_000_000, noDefinitions, lapWindow(3));
 
     expect(binding?.kind).toBe("time");
+  });
+
+  it("bindingFor — hostVarName folds in windowIndex — two windowIndex values over the same channel/params produce distinct hostVarNames (R127 item 5)", () => {
+    const detail = sessionDetail([channel()]);
+
+    const a = asFft(bindingFor({ id: "cell-a", code: fftCode("fork_velocity") }, detail, 60_000_000, noDefinitions, lapWindow(1), 0));
+    const b = asFft(bindingFor({ id: "cell-a", code: fftCode("fork_velocity") }, detail, 60_000_000, noDefinitions, lapWindow(2), 1));
+
+    expect(a.hostVarName).not.toBe(b.hostVarName);
+  });
+
+  it("bindingFor — windowIndex 0 (default) — hostVarName is byte-identical to omitting windowIndex (R127 item 3)", () => {
+    const detail = sessionDetail([channel()]);
+
+    const withoutIndex = asFft(bindingFor({ id: "cell-a", code: fftCode("fork_velocity") }, detail, 60_000_000, noDefinitions, lapWindow(1)));
+    const withZero = asFft(bindingFor({ id: "cell-a", code: fftCode("fork_velocity") }, detail, 60_000_000, noDefinitions, lapWindow(1), 0));
+
+    expect(withoutIndex.hostVarName).toBe(withZero.hostVarName);
   });
 });
 
@@ -415,19 +439,27 @@ describe("bindingIdentity — FFT arm", () => {
     expect(bindingIdentity(fft!)).not.toBe(bindingIdentity(time!));
   });
 
-  it("bindingIdentity — a different mainLap, everything else unchanged — produces a different identity (R83/L2b Task 6)", () => {
+  it("bindingIdentity — a different selected window, everything else unchanged — produces a different identity (R83/L2b Task 6, extended by R117/R127)", () => {
     const detail = sessionDetail([channel()]);
-    const a = bindingFor({ id: "cell-a", code: fftCode("fork_velocity") }, detail, 60_000_000, noDefinitions, 1);
-    const b = bindingFor({ id: "cell-a", code: fftCode("fork_velocity") }, detail, 60_000_000, noDefinitions, 2);
+    const a = bindingFor({ id: "cell-a", code: fftCode("fork_velocity") }, detail, 60_000_000, noDefinitions, lapWindow(1));
+    const b = bindingFor({ id: "cell-a", code: fftCode("fork_velocity") }, detail, 60_000_000, noDefinitions, lapWindow(2));
 
     expect(bindingIdentity(a!)).not.toBe(bindingIdentity(b!));
   });
 
-  it("bindingIdentity — same mainLap on both sides, including both null — produces the same identity", () => {
+  it("bindingIdentity — same window content on both sides, including both null — produces the same identity", () => {
     const detail = sessionDetail([channel()]);
     const a = bindingFor({ id: "cell-a", code: fftCode("fork_velocity") }, detail, 60_000_000, noDefinitions, null);
     const b = bindingFor({ id: "cell-b", code: fftCode("fork_velocity") }, detail, 60_000_000, noDefinitions, null);
 
     expect(bindingIdentity(a!)).toBe(bindingIdentity(b!));
+  });
+
+  it("bindingIdentity — two windows sharing the same ordinal (windowIndex 0) but different content — still produce a different identity", () => {
+    const detail = sessionDetail([channel()]);
+    const a = bindingFor({ id: "cell-a", code: fftCode("fork_velocity") }, detail, 60_000_000, noDefinitions, lapWindow(1), 0);
+    const b = bindingFor({ id: "cell-a", code: fftCode("fork_velocity") }, detail, 60_000_000, noDefinitions, lapWindow(2), 0);
+
+    expect(bindingIdentity(a!)).not.toBe(bindingIdentity(b!));
   });
 });

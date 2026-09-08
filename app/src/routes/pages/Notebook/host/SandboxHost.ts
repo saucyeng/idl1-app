@@ -15,6 +15,7 @@ import {
   type HostToSandboxMessage,
   type HostVarPayload,
   type SandboxCell,
+  type WindowDescriptor,
 } from "./protocol";
 import { BOOT_TIMEOUT_MS, createBootTimer, type BootTimer } from "./bootTimer";
 import { OutboundQueue } from "./outboundQueue";
@@ -230,12 +231,18 @@ export class SandboxHost {
   }
 
   /**
-   * Binds a decoded channel as a host variable. The two buffers are moved
-   * (not copied) via `postMessage`'s transfer list (P7); the caller must not
-   * read `t`/`v` again after this call.
+   * Binds a decoded, possibly multi-window channel as a host variable
+   * (ruling R127) -- one call per *definition*, never one per window: two
+   * windows over the same channel must not collide on this method's `name`
+   * (R127 item 1), so a caller with several selected windows combines them
+   * first (`host/protocol.ts`'s `combineChannelWindows`) and calls this
+   * once with the combined `{t, v, w}` series and their `windows`
+   * descriptors. The three buffers are moved (not copied) via
+   * `postMessage`'s transfer list (P7); the caller must not read `t`/`v`/`w`
+   * again after this call.
    */
-  setChannelHostVar(name: string, length: number, t: ArrayBuffer, v: ArrayBuffer): void {
-    const { message, transfer } = channelPayload(name, length, t, v);
+  setChannelHostVar(name: string, length: number, t: ArrayBuffer, v: ArrayBuffer, w: ArrayBuffer, windows: WindowDescriptor[]): void {
+    const { message, transfer } = channelPayload(name, length, t, v, w, windows);
     this.postToSandbox(message, transfer);
   }
 

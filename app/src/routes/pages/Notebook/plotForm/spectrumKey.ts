@@ -10,6 +10,17 @@
  * `app/src/ipc/**` and pull `@tauri-apps/api/core` into the sandbox bundle.
  * `types.ts` (this module's only import) has no import at all, so this
  * module transitively has none either.
+ *
+ * Open gap (ruling R127 item 5, flagged rather than guessed): `windowIndex`
+ * lets the *host* publish `n` distinct spectra for `n` selected windows,
+ * but `spectrum_call`'s grammar (C2 §5.3) has no window token, so nothing
+ * lets a **sandboxed cell's own code** ask for a specific `windowIndex`'s
+ * spectrum by calling `spectrum(channel, fft_params)` — `sandbox/main.ts`'s
+ * `spectrumLookup` always recomputes `windowIndex = 0`'s key from a cell
+ * call's own arguments. Resolving that (a per-window `SandboxCell`
+ * instance? a grammar extension?) is left to whichever task wires multi-
+ * window FFT rendering (S1 Task 11-13 territory) — R127 only specifies the
+ * host-side naming this function performs.
  */
 import type { FftParams } from "./types";
 
@@ -34,9 +45,20 @@ const SEPARATOR = " | ";
  * character in practice. The key is opaque: nothing parses it back into its
  * parts, so an unlikely collision would at worst reuse a cached spectrum,
  * never corrupt state.
+ *
+ * @param windowIndex The selected window's ordinal among the notebook's
+ *   currently selected windows (R127 item 5: `fft` is a per-window
+ *   aggregation, R124, so *n* selected windows over the same channel and
+ *   `fft_params` must publish *n* distinct spectra, not one overwritten by
+ *   the next `setHostVar` call). Defaults to `0` and, at `0` only, is
+ *   **not** appended -- so a single selected window (the ordinary case, and
+ *   every case before multi-window selection existed) produces exactly the
+ *   same key as before this parameter was added (R127 item 3's
+ *   byte-identical guarantee, extended to this key). Only `windowIndex >
+ *   0` appends a further `" | "` plus the decimal index.
  */
-export function spectrumKey(channelId: string, params: FftParams): string {
-  return [
+export function spectrumKey(channelId: string, params: FftParams, windowIndex = 0): string {
+  const base = [
     channelId,
     String(params.windowSize),
     String(params.hopSize),
@@ -45,4 +67,5 @@ export function spectrumKey(channelId: string, params: FftParams): string {
     params.scaling,
     params.averaging,
   ].join(SEPARATOR);
+  return windowIndex === 0 ? base : `${base}${SEPARATOR}${windowIndex}`;
 }

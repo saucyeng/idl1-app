@@ -110,14 +110,29 @@ function renderCellValue(container: HTMLElement, value: unknown): void {
 /**
  * Materialises a `postMessage`d host-variable payload into the value cell
  * code actually sees. A `json` payload passes through unchanged. A
- * `channel` payload's two transferred buffers become an array of `{t, v}`
+ * `channel` payload's transferred buffers become an array of `{t, v, w}`
  * records (R52 Q2 — chosen over the SoA `{length, t, v}` shape C2 §5.1
  * originally proposed, pending that spec's own amendment) rather than the
  * raw `Float64Array` views, since record objects are what Observable Plot's
- * tabular-data protocol iterates. A `spectrum` payload (L6 Task 19) is the
- * same record-array shape over its own two buffers, `{f, m}` (frequency Hz,
- * magnitude) rather than `{t, v}` — a spectrum's axis is frequency, never
- * time.
+ * tabular-data protocol iterates. `w` (ruling R127 item 2) is each sample's
+ * window index -- a pre-multi-window cell that destructures only `{t, v}`
+ * simply never reads it, and a single-window payload's `w` is all `0`
+ * (R127 item 3), so this is additive, not a breaking change to any existing
+ * cell's shape. `payload.windows` (the `{sessionId, span, colour, label}`
+ * descriptor `windows[i]` names for every sample whose `w === i`) is
+ * attached to the returned array as a non-enumerable `windows` property --
+ * it does not appear in `for...of`/`Array.prototype.map` iteration or in
+ * Plot's own field access by index, but is reachable as
+ * `channel(name).windows` by code that wants a window's own colour/label
+ * (R127 item 2's "colour comes from the descriptor"), without inventing a
+ * second host variable or a second `channel(...)` return shape.
+ *
+ * A `spectrum` payload (L6 Task 19) is the same record-array shape over its
+ * own two buffers, `{f, m}` (frequency Hz, magnitude) rather than `{t, v}`
+ * — a spectrum's axis is frequency, never time — and carries no `w`/
+ * `windows` (ruling R127 item 5: a spectrum is one window per host
+ * variable, distinguished by name via `spectrumKey`'s `windowIndex`, not by
+ * a column within one payload).
  */
 function materializeHostVar(payload: HostVarPayload): unknown {
   if (payload.kind === "json") {
@@ -127,10 +142,12 @@ function materializeHostVar(payload: HostVarPayload): unknown {
   if (payload.kind === "channel") {
     const t = new Float64Array(payload.t);
     const v = new Float64Array(payload.v);
-    const records = new Array<{ t: number; v: number }>(payload.length);
+    const w = new Float64Array(payload.w);
+    const records = new Array<{ t: number; v: number; w: number }>(payload.length);
     for (let i = 0; i < payload.length; i++) {
-      records[i] = { t: t[i], v: v[i] };
+      records[i] = { t: t[i], v: v[i], w: w[i] };
     }
+    Object.defineProperty(records, "windows", { value: payload.windows, enumerable: false });
     return records;
   }
 
@@ -319,16 +336,20 @@ class SandboxRuntime {
 
   /**
    * `channel(name, {lap?, session?})` (C2 §5.1): general lookup by name.
+   * Returns the `{t, v, w}[]` array `materializeHostVar` built for `name`
+   * (ruling R127 -- `w` is the window index per sample, all `0` when only
+   * one window is bound), or `[]` before the host has pushed anything.
    *
    * // TODO(idl0): `lap`/`session` scoping is not implemented here — the
-   * // host is responsible for deciding which pre-resolved buffer to push
-   * // for a given `(name, lap, session)` combination (that resolution is
-   * // Task 7's `tileToChannelData`, per this task's brief); this is a
-   * // bare-name lookup over whatever the host has already sent.
+   * // host is responsible for deciding which pre-resolved windows to
+   * // combine for a given `(name, lap, session)` combination (that
+   * // resolution is Task 7's `tileToChannelData` plus R127's
+   * // `combineChannelWindows`, both host-side); this is a bare-name lookup
+   * // over whatever the host has already sent.
    */
-  private channelLookup(name: string, _opts?: { lap?: number; session?: string }): { t: number; v: number }[] {
+  private channelLookup(name: string, _opts?: { lap?: number; session?: string }): { t: number; v: number; w: number }[] {
     const value = this.hostVars.get(name);
-    return Array.isArray(value) ? (value as { t: number; v: number }[]) : [];
+    return Array.isArray(value) ? (value as { t: number; v: number; w: number }[]) : [];
   }
 
   /**

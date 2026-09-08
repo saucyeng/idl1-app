@@ -48,4 +48,25 @@ describe("spectrumKey", () => {
 
     expect(new Set(keys).size).toBe(4);
   });
+
+  it("spectrumKey — no windowIndex argument — matches windowIndex 0 exactly (R127 item 3, byte-identical)", () => {
+    const withoutArg = spectrumKey("fork_velocity", baseParams);
+    const withZero = spectrumKey("fork_velocity", baseParams, 0);
+
+    expect(withoutArg).toBe(withZero);
+  });
+
+  it("spectrumKey — windowIndex 1 versus 2, same channel and params — produce distinct keys (R127 item 5)", () => {
+    const a = spectrumKey("fork_velocity", baseParams, 1);
+    const b = spectrumKey("fork_velocity", baseParams, 2);
+
+    expect(a).not.toBe(b);
+  });
+
+  it("spectrumKey — windowIndex 1 versus the default (0) — produce distinct keys", () => {
+    const a = spectrumKey("fork_velocity", baseParams);
+    const b = spectrumKey("fork_velocity", baseParams, 1);
+
+    expect(a).not.toBe(b);
+  });
 });

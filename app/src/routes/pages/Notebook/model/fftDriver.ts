@@ -61,12 +61,29 @@ function toIpcError(error: unknown): IpcError {
 }
 
 /**
+ * Interim shim: `deps.fetchFft` still takes `fetch_fft`'s pre-windows `lap:
+ * number | null` (this driver's own migration to `fetch_fft_v2`'s `window:
+ * Window` -- ipc/rasters.ts's `fetchFftV2` -- is S1 Task 11's job, not this
+ * one's; `model/fftRequest.ts`'s `FftRequest.lap` was renamed to `window`
+ * ahead of it, ruling R117/R127). Recovers the old single-number shape from
+ * `request.window`'s `span` where possible so this file keeps compiling and
+ * behaving as before until that migration lands: a `"lap"` span's own
+ * number, `null` for `"session"`/`"range"` (neither expressible as a bare
+ * lap number) or no window at all.
+ */
+function lapFromWindow(request: FftRequest): number | null {
+  return request.window !== null && request.window.span.kind === "lap" ? request.window.span.lap_number : null;
+}
+
+/**
  * Runs one `fetch_fft` request for `cellId` and dispatches its outcome.
- * `request.lap` (`null` for the whole channel, or the selected main lap,
- * R83/L2b Task 6) is passed straight through, never overridden here.
- * `isStale()` is checked once, after the single `await`:
- * `true` means a newer run for this cell has started since, and this run
- * dispatches nothing at all, resolved or rejected alike.
+ * `request.window` (C1 §6.1, ruling R117/R127 -- replaces the pre-windows
+ * `request.lap`, R83/L2b Task 6) is reduced to a bare lap number via
+ * {@link lapFromWindow} until this driver itself migrates to
+ * `fetchFftV2`/`Window` (S1 Task 11). `isStale()` is checked once, after
+ * the single `await`: `true` means a newer run for this cell has started
+ * since, and this run dispatches nothing at all, resolved or rejected
+ * alike.
  *
  * @param isStale The caller's `CellRunSequencer.isCurrent(cellId, seq)`
  *   check (or a test's fake) -- this driver adds no sequencing of its own.
@@ -80,7 +97,7 @@ export async function runFft(
   isStale: () => boolean
 ): Promise<void> {
   try {
-    const fft = await deps.fetchFft(sessionId, request.channelId, request.lap, request.params, request.averaging);
+    const fft = await deps.fetchFft(sessionId, request.channelId, lapFromWindow(request), request.params, request.averaging);
     if (isStale()) {
       return;
     }

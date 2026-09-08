@@ -1033,7 +1033,7 @@ feeds results in via `postMessage`):
 | Variable | Shape | Source |
 |---|---|---|
 | one per `math` definition, by name (§3.1) | `{ length: number, t: Float64Array, v: Float64Array }` for a `[t]` definition — **§3.6.5 extends this by rank**: a rank-0 value binds a bare number, a rank-1 value on a non-time axis binds that axis's key instead of `t`, and a rank ≥ 2 value binds `{ shape, axes, v }`. A **column-oriented** (SoA) table matching Observable Plot's tabular-data protocol, so `Plot.lineY(fork_velocity, {x:"t", y:"v"})` addresses columns by name with zero-copy from the transferred `ArrayBuffer` (design's IPC data path: bytes → `Float32Array`/`Float64Array` view). | The host evaluates the definition (Rust), decimates to the current tile budget, and binds the result under its identifier. |
-| `channel(name, {lap?: number, session?: string})` | Same `{length, t, v}` shape as above | General lookup — any raw/session/synthesized/math-defined channel by name, optionally windowed to one lap and/or a non-active session (cross-session compare, e.g. an overlay). Definitions already bound as bare identifiers are also reachable this way; `channel` is required when the id needed isn't a valid bare identifier caller-side (rare) or when lap/session scoping is needed. |
+| `channel(name, {lap?: number, session?: string})` | `{length, t, v, w}` (**amended 2026-09-08, ruling R127**: gains `w`) plus a `windows: {sessionId, span, colour, label}[]` descriptor, `windows[w[i]]` naming sample `i`'s window — see the note below the table | General lookup — any raw/session/synthesized/math-defined channel by name, optionally windowed to one lap and/or a non-active session (cross-session compare, e.g. an overlay). Definitions already bound as bare identifiers are also reachable this way; `channel` is required when the id needed isn't a valid bare identifier caller-side (rare) or when lap/session scoping is needed. |
 | `laps` | `{ number: number, startT: number, endT: number }[]` | Active session's lap table. |
 | `session` | `{ id: string, name?: string, timestampUtcMs: number }` | Active session metadata (C1). |
 | `constants` | `{ [name: string]: number }` | Flattened §3.1 constants (front matter + all `const` lines). Keys may contain spaces (`constants["rider mass"]`); no per-name identifier restriction (§3.1). |
@@ -1041,6 +1041,32 @@ feeds results in via `postMessage`):
 | `d3` | module namespace | `d3` 7.9.0 (bundled). |
 | `Inputs` | module namespace | `@observablehq/inputs` 0.12.0 (bundled). |
 | `html` | tagged-template function | Observable Framework's standard `html` helper. **Open question §8-4**: the exact package (`htl`) is not yet in T1's pinned ecosystem list — flagged, not assumed. |
+
+**Amended 2026-09-08 (ruling R127) — the `w` column and `windows`
+descriptor.** Selection is a list of *windows* (C1 §6.1, ruling R117), and
+two windows over the same channel are the ordinary case (lap-to-lap
+comparison, R117 item 2) — a host variable is keyed by the definition
+alone, never by which windows are selected (R127 item 1: qualifying the
+name would make a cell's code depend on the current selection and break
+when the user clicks a second lap), so one `channel(name)` call publishes
+*every* selected window's data in one payload rather than one payload per
+window. `t`/`v` are the concatenation of each selected window's own
+samples, in window order; `w[i]` is the index into `windows` naming which
+window produced sample `i`; `windows[j]` is that window's
+`{sessionId, span, colour, label}` — `colour` (a `--chart-1`…`--chart-8`
+token, ruling R117 item 6) is how a chart's per-window colour is meant to
+reach it, e.g. `Plot.lineY(channel("front_travel"), {x:"t", y:"v",
+stroke:"w"})` with a colour `range` built from `windows[*].colour`.
+**A single selected window is byte-identical to before this amendment**:
+`w` is all `0` and `windows` has exactly one entry, so every cell written
+before multi-window selection existed keeps working unmodified. **Two or
+more windows have exactly one `NaN` row inserted between each adjacent
+pair** (`t = v = w = NaN`) — Observable Plot breaks a line mark at a `NaN`
+in `x` or `y`, so a cell that destructures only `{t, v}` and has no idea
+`w` exists still renders *n* separate line segments instead of one line
+falsely vaulting from one window's last sample to the next window's first.
+The reference implementation is `app/src/routes/pages/Notebook/host/
+protocol.ts`'s `combineChannelWindows`.
 
 **Provisional note on the `{length, t, v}` shape.** This is the shape
 `plotForm`'s `x: "t", y: "v"` accessors (§5.3) require to be literal string
@@ -1169,17 +1195,33 @@ fetch, never DSP, returning `{ f, m }[]` records (`f` Hz, `m` magnitude) or
 `[]` before the host has pushed anything. The lookup key is derived from
 the request, not the bare channel name — two cells on the same channel
 with different windows are different spectra — via one shared pure
-function, **`spectrumKey(channelId, fftParams)`** (R79 Q2): the channel id
-plus the six `fft_params` values joined in the grammar's fixed order,
-computed identically on both sides so the host and the sandbox cannot
-drift. The host recognises an FFT cell through `parse`, not a scan — an
-`fft` binding arm on the same recogniser that binds `channel(...)` today —
-so custom code cannot fetch a spectrum, exactly as custom code cannot bind
-a tile-backed channel today. `spectrum(...)`'s `params` argument is ignored
-at lookup time by everything except the key derivation: the host resolves
-those parameters before the fetch, and the argument exists so the document,
-not the host, states them (CLAUDE.md §3), and so a hand edit to a parameter
-changes the code the parser reads.
+function, **`spectrumKey(channelId, fftParams, windowIndex = 0)`** (R79 Q2,
+amended 2026-09-08 by **ruling R127 item 5**: adds `windowIndex`): the
+channel id plus the six `fft_params` values joined in the grammar's fixed
+order, plus — when `windowIndex > 0` — a further `" | "` and the decimal
+index, computed identically on both sides so the host and the sandbox
+cannot drift. `windowIndex` is the selected window's ordinal, not encoded
+in `params`: a single-spectrum `fft` is a per-window *aggregate* (ruling
+R124 — one spectrum per window, not a masked/concatenated series the way
+`channel(...)`'s R127 amendment above works), so *n* selected windows over
+the same channel and `fft_params` are `n` distinct spectra published under
+`n` distinct keys, rather than the R127-above `channel(...)` treatment of
+one payload carrying all of them — `windowIndex === 0` (the default, and
+every case before multi-window selection existed) produces **exactly** the
+pre-amendment key, so a single selected window's spectrum key is
+byte-identical to before. The host recognises an FFT cell through `parse`,
+not a scan — an `fft` binding arm on the same recogniser that binds
+`channel(...)` today — so custom code cannot fetch a spectrum, exactly as
+custom code cannot bind a tile-backed channel today. `spectrum(...)`'s
+`params` argument is ignored at lookup time by everything except the key
+derivation: the host resolves those parameters before the fetch, and the
+argument exists so the document, not the host, states them (CLAUDE.md §3),
+and so a hand edit to a parameter changes the code the parser reads.
+`windowIndex` is not (yet) expressible in `spectrum_call`'s grammar — a
+multi-window FFT cell's *sandbox-side* mechanism for addressing a specific
+window's published spectrum by index is an open gap this amendment does not
+close; see `app/src/routes/pages/Notebook/plotForm/spectrumKey.ts`'s doc
+comment.
 
 **Parameter table — type, default, C3 field** (added 2026-09-06):
 

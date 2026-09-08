@@ -72,6 +72,54 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
   `bindingForFft`, is itself blocked on the same question — retyping it now
   would only inject a fresh compile break into that unedited file with no
   caller in scope to benefit from it.
+- **`fftRequest.ts`/`jsCellBinding.ts`/`jsCellNote.ts` migrated onto windows
+  (2026-09-08, s1-ts Task 10 follow-on, C1 §6.1/C2 §5.1/§5.3, ruling
+  R127 — spec-during, C2 §5.1/§5.3 amended in this commit).** Resolves the
+  collision flagged above. `fftRequest.ts`'s `FftRequest.lap: number | null`
+  is now `window: SelectedWindow | null` (matches `fetch_fft_v2`'s actual
+  `window: Window` argument); `fftRequestEquals` compares it by content
+  (`session_id` + `span`), not identity. `jsCellBinding.ts`'s `bindingFor`
+  takes `window`/`windowIndex` in place of `mainLap` — the FFT arm folds
+  `windowIndex` into `spectrumKey(channelId, fft, windowIndex)`
+  (`plotForm/spectrumKey.ts` gains that parameter, default `0`, and at `0`
+  is byte-identical to before, ruling R127 item 3) so *n* selected windows
+  over the same channel/`fft_params` publish *n* distinct spectra instead
+  of colliding on one host-variable name (item 5); the time arm is
+  unaffected (channel names stay bare per item 1) and is still called once
+  per session, not once per window. `jsCellNote.ts`'s `sessionId: string |
+  null` input is now `windowCount: number` (`0` ⇒ the existing "No session
+  is selected" note).
+- **`host/protocol.ts`'s `"channel"` host-variable payload gains a window
+  dimension; `SandboxHost.setChannelHostVar` and `sandbox/main.ts`'s
+  `materializeHostVar` updated to match (2026-09-08, s1-ts Task 10
+  follow-on, C1 §6.1, ruling R127 — spec-during, C2 §5.1 amended in this
+  commit).** The other half of the collision above: a channel host variable
+  is keyed by the definition alone (never window-qualified, item 1), so
+  multiple selected windows over one channel must combine into *one*
+  `setChannelHostVar` call, not one per window. The payload becomes
+  `{ length, t, v, w }` plus a `windows: WindowDescriptor[]` (`{sessionId,
+  span, colour, label}`) array, `w[i]` naming which `windows` entry
+  produced sample `i` (item 2) — built by the new pure
+  `combineChannelWindows`, which concatenates each window's own `{t, v}` in
+  order and inserts exactly one `NaN` break row (`t = v = w = NaN`) between
+  each adjacent pair (item 4): Observable Plot breaks a line mark at `NaN`,
+  so a cell written before multi-window existed, which destructures only
+  `{t, v}` and never reads `w`, degrades to *n* separate line segments in
+  one colour instead of one line falsely vaulting from one window's last
+  sample to the next window's first. A single window (the ordinary,
+  pre-existing case) produces no break row and an all-zero `w` — byte-
+  identical to before (item 3), proven by `protocol.test.ts`. `sandbox/
+  main.ts`'s `materializeHostVar` now returns `{t, v, w}[]` records with a
+  non-enumerable `windows` property carrying the descriptor array (reachable
+  as `channel(name).windows`, e.g. for a chart's per-window `colour`) —
+  additive; a cell reading only `{t, v}` is unaffected. `"spectrum"`
+  payloads are deliberately **not** given the same columns (item 5): see
+  the entry above. **Known gap, flagged not guessed:** `spectrum_call`'s
+  grammar (C2 §5.3) has no window token, so nothing yet lets a sandboxed
+  cell's own code request a specific `windowIndex`'s spectrum by calling
+  `spectrum(channel, fft_params)` — `spectrumKey.ts`'s doc comment and C2
+  §5.3's amendment both flag this as open for whichever task wires
+  multi-window FFT rendering (S1 Task 11-13).
 
 ### Fixed
 
