@@ -5085,3 +5085,39 @@ and nothing exercises it.
 slicing. Had this shipped as written, an FFT over a non-overlapping range
 would have returned a spectrum computed from a single sample rather than
 an error — plausible-looking output from no data.
+
+## 2026-09-08 — R120: a `range` with `t0_us >= t1_us` is rejected too (amends R119)
+
+**Question.** S1's R119 fix left `t0_us == t1_us` *inside* the session span
+unrejected, on the reading that C1 §6.1 states `t0_us < t1_us` as "the
+producer's invariant, not checked here", and that an in-bounds instant is a
+legitimate single-sample overlap rather than R119's no-overlap case.
+
+**Ruling — reject it.** Two reasons.
+1. **The contract does not carry that qualifier.** C1 §6.1 line 736 writes
+   `{ kind: "range", t0_us: i64, t1_us: i64 } // session-relative, t0_us <
+   t1_us` as part of the *type*. "Not checked here" was added by the
+   implementer's own doc comment, not read from the contract. A value
+   violating its stated type is invalid input, and CLAUDE.md §5 requires
+   invalid input to be a typed error.
+2. **It is the same defect R119 just closed, one step inward.** Slicing is
+   inclusive at `t1`, so an in-span `(T, T)` selects exactly one sample.
+   R119 rejected a degenerate window precisely because "one arbitrary
+   sample" is a number that looks real and means nothing. That reasoning
+   does not stop at the session boundary — a user dragging the two boundary
+   cursors (decision 52) together is the *likely* way to produce this, and
+   the right answer there is an empty selection with a message, never a
+   one-sample FFT or statistic.
+
+So `resolve_window` returns `InvalidArgument` for any `range` with
+`t0_us >= t1_us`, with the same `detail` shape R119 specified.
+
+**Accepted from the same commit:** carrying `full_session_span_us` in
+microseconds so the error `detail` names the same integer axis as the
+caller's `t0_us`/`t1_us` rather than a lossy seconds round-trip. That is a
+better call than what R119 specified.
+
+**Cost if wrong.** Left as-is, the first user to drag a boundary cursor to
+zero width gets a spectrum and statistics computed from a single sample,
+presented identically to a real result — with no error anywhere to explain
+it.
