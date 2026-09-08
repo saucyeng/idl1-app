@@ -6400,3 +6400,76 @@ is a per-edge gesture, genuinely distinct from rename's document-wide scope.
 
 **Cost if wrong.** The user renames a node, three charts elsewhere go grey
 at some later moment, and nothing on screen connects the two events.
+
+## 2026-09-08 — R146: corrects R143; the notebook and the charts compute *different* spectra
+
+The convention survey (`runs/2026-09-08/math-language-convention.md`)
+corrected R143 twice. Both corrections are right; I verified them.
+
+### Correction 1 — `fft` is not `welch`, and the real defect is worse
+
+R143 said the language's `fft` was Welch under another name. It is not.
+`core/src/math/eval.rs:940` calls `crate::fft::fft` — a **single windowed
+magnitude spectrum**, `|rfft(w·x)|`, no segmentation, no averaging, no
+detrend. `welch` is what the **charts** call
+(`tauri/src/commands/rasters.rs:508`).
+
+So **the notebook's FFT of a channel and the Analyze chart's FFT of the same
+channel are different computations today**, under one name, with no
+indication. That is a worse defect than the naming issue I thought I had
+found: a user comparing the two sees two spectra and has no way to know why
+they disagree. Renaming `fft`→`welch` would have *installed* a false friend
+rather than removed one.
+
+**Ruling — expose scipy's own pair, and retire the ambiguous name.**
+- **`periodogram(...)`** — the single-segment computation the notebook does
+  today (scipy's name for exactly this).
+- **`welch(...)`** — the segmented, averaged computation the charts already
+  do, with its existing parameters.
+- **`fft` is retired as a language function.** It stays reserved: if a true
+  complex DFT is ever exposed, `fft` is its name and nothing else's.
+Both paths then exist explicitly, and a user choosing between them is making
+a choice rather than discovering an inconsistency.
+
+### Correction 2 — `differentiate` → `gradient` is not a free rename
+
+Ours is a **backward difference with `result[0] = 0`**
+(`core/src/statistics.rs:11-15`); `numpy.gradient` is **central**. Adopting
+the name would create a false friend. R143's item is withdrawn. Either keep
+a deliberately different name, or implement central differencing and then
+take the name — not the reverse.
+
+### The worst false friends, per the survey — `variance_time` / `variance_dist`
+
+These compute **lap deltas**, not σ². "Variance" has one meaning in every
+statistics library a model has read. Rename to say what they do
+(`lap_delta_time` / `lap_delta_dist` or similar); this outranks the rest of
+the alignment work.
+
+### Also confirmed false friends
+`angle` (vector angle vs `numpy.angle`'s complex phase), `butter` (ours
+designs **and** applies zero-phase — scipy's only designs), `round`
+(half-away-from-zero vs numpy's banker's rounding), `hilbert`
+(pre-emptive — with no complex type it will be an envelope, not scipy's
+analytic signal), and `resample` at the **parameter** level (rate vs scipy's
+sample count). The `nan*`-semantics divergence across `aggregate.rs` is
+**documented, not renamed** — it is a consistent policy, not a trap.
+
+### Two real bugs, filed
+`clamp` panics when `lo > hi` or on NaN (`eval.rs:1152`); `butter` panics on
+a cutoff ≥ Nyquist (`filters.rs:67-84` → sci-rs `iirfilter.rs:137`). Both
+violate CLAUDE.md §5 — never a crash on bad data — and both are reachable
+from a user-typed expression. Filed as their own fix task, ahead of the
+renames.
+
+### R136 amended
+The survey could not verify my characterisation of GPS `speed` as
+**Doppler-derived** anywhere in the repo, and correctly declined to repeat
+it. It is true of NMEA receivers generally but is **not stated in SPEC
+§5.6**, so R136's recommendation rests on an assumption about the receiver,
+not on a documented fact. Confirm against the module's datasheet before the
+lap-distance lane relies on it.
+
+**Cost if wrong.** The `fft` divergence is live today: two spectra, one
+name. Every workbook written before it is fixed contains cells whose author
+believed they matched the chart beside them.
