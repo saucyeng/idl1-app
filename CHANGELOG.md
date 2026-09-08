@@ -6,6 +6,16 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 
 ### Added
 
+- **`app/src/routes/pages/Notebook/model/mathExpr.ts`: a narrow C2 §3.2 scan
+  of one expression's references and outer call (2026-09-08, w32-maths Task
+  4, spec exists — C2 §3.2/§3.7.4, no spec change needed).** `scanMathExpr`
+  builds `refs` entirely on `mathMode.ts`'s `tokenizeMath` (no second
+  tokenizer of the grammar) and recognises an outer call only when the whole
+  expression is exactly one C2 §3.3 catalog-function call; anything else —
+  an operator expression, a call wrapped in more, a call to a name outside
+  the catalog (including the not-yet-catalogued §3.6 reduction functions:
+  `argmax`/`at`/`nearest`/`slice`/`axes`/`broadcast`/`align`) — is an opaque
+  expression, `call: null`, still wired by its `refs`.
 - **`app/src/routes/pages/Notebook/model/graphLayout.ts`: pure read/write of
   the C2 §3.7.1 `graph` front-matter key (2026-09-08, w32-maths Task 3, spec
   exists — C2 §3.7, no spec change needed).** `readGraphLayout`/
