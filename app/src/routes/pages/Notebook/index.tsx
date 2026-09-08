@@ -44,7 +44,15 @@ import { PING_INTERVAL_MS } from "./host/watchdog";
 import { NotebookSession } from "./host/NotebookSession";
 import { dropCellHeight, initialCellHeights, recordCellHeight, type CellHeights } from "./model/cellLayout";
 import { replaceCellBody } from "./model/cells";
-import { runChannelBind, runChannelSettle, type BindWindow, type ChannelBindAction, type ChannelBindDeps, type ChartWindow } from "./model/channelBindDriver";
+import {
+  runChannelBind,
+  runChannelSettle,
+  updateChannelBindIdentity,
+  type BindWindow,
+  type ChannelBindAction,
+  type ChannelBindDeps,
+  type ChartWindow,
+} from "./model/channelBindDriver";
 import { CellRunSequencer } from "./model/cellRunSequencer";
 import { isCodeVisible, toggleCode } from "./model/codeVisibility";
 import PlaybackTransport from "./interaction/PlaybackTransport";
@@ -546,8 +554,25 @@ export default function NotebookPage() {
    *  (e.g. after Rescan itself finds nothing) does not trigger a second
    *  automatic rebuild; the user's own Rescan already covered that case. */
   const autoRebuiltRef = useRef(false);
-  /** Every js cell's currently bound identity (`bindingIdentity`), so the channel-bind effect below only *starts a new run* for a cell whose binding actually changed -- this is purely the "should a new initial bind start" decision; it is never consulted as a staleness guard (that is `cellRunSequencerRef`'s job, below, review-task13c.md's Major fix). */
-  const boundIdentityRef = useRef<Map<string, string>>(new Map());
+  /** Every js cell's currently bound identity (`bindingIdentity`), recorded
+   *  **per selected window** (outer key `cellId`, inner key `windowKey` --
+   *  ruling R133, mirroring `fftBoundIdentityRef` below) so the
+   *  channel-bind effect only *starts a new run* for a cell whose binding
+   *  changed **or** whose set of ready windows changed -- keying this
+   *  purely by `cellId` (the pre-R133 shape) meant a sibling window's
+   *  `SessionDetail` resolving after the primary window's left every
+   *  already-bound cell's single recorded identity unchanged, so the gate
+   *  below never re-ran and that window's channel data was never fetched
+   *  (R133's finding: the dependency-array fix alone was not enough --
+   *  this inner cache is a second staleness gate in series with it). The
+   *  binding's own *content* still never varies by window (R127 item 1: a
+   *  channel's host-variable name must not encode which windows are
+   *  selected) -- one `runChannelBind` call still fetches every ready
+   *  window at once; this map only decides *whether* that call is needed.
+   *  This is purely the "should a new initial bind start" decision; it is
+   *  never consulted as a staleness guard (that is `cellRunSequencerRef`'s
+   *  job, below, review-task13c.md's Major fix). */
+  const boundIdentityRef = useRef<Map<string, Map<string, string>>>(new Map());
   /** The last `primeState.primeEpoch` this page has already reprimed for
    *  (R95 item 2) -- compared inside the setCells effect below so
    *  `boundIdentityRef` is cleared exactly once per hidden -> visible
@@ -1275,6 +1300,7 @@ export default function NotebookPage() {
     const markdown = state.markdown;
     const bindWindows = bindWindowsFor(windows, sessionDetailsByWindow);
     if (bindWindows.length === 0) return;
+    const windowKeys = windows.map(windowKey);
 
     for (const cell of state.cells) {
       if (cell.id === null || cell.kind !== "js") continue;
@@ -1289,15 +1315,18 @@ export default function NotebookPage() {
         continue;
       }
 
-      // The binding identity intentionally excludes the *other* selected
-      // windows (`bindingIdentity` reads only `binding` itself, resolved
-      // against the primary window/session) -- a rebind purely from a
-      // sibling window's selection changing is driven by `windowsKeyValue`
-      // being part of this effect's own dependency array below, not by
-      // this identity comparison.
+      // Ruling R133: the "should a new run start" decision is recorded
+      // **per window**, not once per cell -- `model/channelBindDriver.ts`'s
+      // `updateChannelBindIdentity` doc comment explains why (a sibling
+      // window's `SessionDetail` resolving after the primary window's must
+      // reopen this gate even though the binding's own content, and so
+      // `identity`, doesn't vary by window).
       const identity = bindingIdentity(binding);
-      if (boundIdentityRef.current.get(cellId) === identity) continue;
-      boundIdentityRef.current.set(cellId, identity);
+      const perWindowIdentity = boundIdentityRef.current.get(cellId) ?? new Map<string, string>();
+      boundIdentityRef.current.set(cellId, perWindowIdentity);
+      const resolvedWindowKeys = new Set(windowKeys.filter((wKey) => sessionDetailsByWindow.has(wKey)));
+      const needsRun = updateChannelBindIdentity(perWindowIdentity, windowKeys, resolvedWindowKeys, identity);
+      if (!needsRun) continue;
 
       const deps: ChannelBindDeps = {
         fetchTile: (sessId, channelId, tier, tileIndex, columnCount) => fetchTile(sessId, channelId, tier, tileIndex, columnCount),

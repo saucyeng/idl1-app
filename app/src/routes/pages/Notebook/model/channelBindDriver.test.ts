@@ -9,6 +9,7 @@ import {
   runChannelBind,
   runChannelSettle,
   shouldRefetchHostChannel,
+  updateChannelBindIdentity,
   type BindWindow,
   type ChannelBindAction,
   type ChannelBindDeps,
@@ -136,6 +137,79 @@ describe("shouldRefetchHostChannel", () => {
 
   it("shouldRefetchHostChannel — a different budget — true", () => {
     expect(shouldRefetchHostChannel(640, 800)).toBe(true);
+  });
+});
+
+describe("updateChannelBindIdentity", () => {
+  it("updateChannelBindIdentity — an already-bound cell, a sibling window resolving after the primary — needs a run (ruling R133)", () => {
+    // The primary window was already bound (its identity is recorded);
+    // a second, sibling window has just become selected and its
+    // SessionDetail has just resolved -- it has no recorded identity yet.
+    const perWindowIdentity = new Map([["primary-key", "identity-a"]]);
+
+    const needsRun = updateChannelBindIdentity(
+      perWindowIdentity,
+      ["primary-key", "sibling-key"],
+      new Set(["primary-key", "sibling-key"]),
+      "identity-a"
+    );
+
+    expect(needsRun).toBe(true);
+    expect(perWindowIdentity.get("sibling-key")).toBe("identity-a");
+  });
+
+  it("updateChannelBindIdentity — every selected, resolved window already has this identity — no run needed", () => {
+    const perWindowIdentity = new Map([
+      ["primary-key", "identity-a"],
+      ["sibling-key", "identity-a"],
+    ]);
+
+    const needsRun = updateChannelBindIdentity(
+      perWindowIdentity,
+      ["primary-key", "sibling-key"],
+      new Set(["primary-key", "sibling-key"]),
+      "identity-a"
+    );
+
+    expect(needsRun).toBe(false);
+  });
+
+  it("updateChannelBindIdentity — a sibling window still resolving — is skipped, not treated as stale", () => {
+    const perWindowIdentity = new Map([["primary-key", "identity-a"]]);
+
+    const needsRun = updateChannelBindIdentity(
+      perWindowIdentity,
+      ["primary-key", "sibling-key"],
+      new Set(["primary-key"]), // sibling-key not yet resolved
+      "identity-a"
+    );
+
+    expect(needsRun).toBe(false);
+    expect(perWindowIdentity.has("sibling-key")).toBe(false);
+  });
+
+  it("updateChannelBindIdentity — the binding's own content changed — every resolved window needs a run", () => {
+    const perWindowIdentity = new Map([
+      ["primary-key", "identity-a"],
+      ["sibling-key", "identity-a"],
+    ]);
+
+    const needsRun = updateChannelBindIdentity(perWindowIdentity, ["primary-key", "sibling-key"], new Set(["primary-key", "sibling-key"]), "identity-b");
+
+    expect(needsRun).toBe(true);
+    expect(perWindowIdentity.get("primary-key")).toBe("identity-b");
+    expect(perWindowIdentity.get("sibling-key")).toBe("identity-b");
+  });
+
+  it("updateChannelBindIdentity — a window deselected — its entry is pruned (decision 61)", () => {
+    const perWindowIdentity = new Map([
+      ["primary-key", "identity-a"],
+      ["stale-key", "identity-a"],
+    ]);
+
+    updateChannelBindIdentity(perWindowIdentity, ["primary-key"], new Set(["primary-key"]), "identity-a");
+
+    expect(perWindowIdentity.has("stale-key")).toBe(false);
   });
 });
 

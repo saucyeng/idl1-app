@@ -97,6 +97,63 @@ export function shouldRefetchHostChannel(prevBudget: number | null, nextBudget: 
   return prevBudget !== nextBudget;
 }
 
+/**
+ * Decides whether `Notebook/index.tsx`'s channel-bind effect must call
+ * {@link runChannelBind} again for one cell, and updates `perWindowIdentity`
+ * in place to reflect the decision (ruling R133, `runs/2026-09-03/
+ * decisions.md`).
+ *
+ * A binding's own content never varies by selected window (R127 item 1: a
+ * channel's host-variable name must not encode which windows are
+ * selected), so `identity` is the same string regardless of which window
+ * is being considered -- but it is recorded **per window** rather than
+ * once per cell. That is the fix: keying this purely by `cellId` (the
+ * pre-R133 shape) meant a sibling window's `SessionDetail` resolving after
+ * the primary window's left the cell's one recorded identity unchanged,
+ * so an already-bound cell's gate never re-opened and that window's
+ * channel data was never fetched -- even though the effect's own
+ * dependency array had already re-run it. An inner identity cache and a
+ * dependency array are two staleness gates in series; a value absent from
+ * either is invisible to the effect (R133's general point).
+ *
+ * `resolvedWindowKeys` names which of `windowKeys` currently have a
+ * resolved `SessionDetail` (`sessionDetailsByWindow.has(...)` at the call
+ * site) -- a still-resolving window is skipped on both sides: it has
+ * nothing to bind yet (already excluded from the caller's `bindWindows`),
+ * and it must not itself look "stale" and force a run before it is ready.
+ *
+ * Mutates `perWindowIdentity`: prunes entries for windows no longer in
+ * `windowKeys` (decision 61 — nothing lingers for a deselected window),
+ * then, only when a run is needed, records `identity` for every currently
+ * resolved window. Pure otherwise — no IPC, no React.
+ */
+export function updateChannelBindIdentity(
+  perWindowIdentity: Map<string, string>,
+  windowKeys: readonly string[],
+  resolvedWindowKeys: ReadonlySet<string>,
+  identity: string
+): boolean {
+  const currentWindowKeys = new Set(windowKeys);
+  for (const wKey of Array.from(perWindowIdentity.keys())) {
+    if (!currentWindowKeys.has(wKey)) perWindowIdentity.delete(wKey);
+  }
+
+  let needsRun = false;
+  for (const wKey of windowKeys) {
+    if (!resolvedWindowKeys.has(wKey)) continue;
+    if (perWindowIdentity.get(wKey) !== identity) {
+      needsRun = true;
+      break;
+    }
+  }
+  if (!needsRun) return false;
+
+  for (const wKey of windowKeys) {
+    if (resolvedWindowKeys.has(wKey)) perWindowIdentity.set(wKey, identity);
+  }
+  return true;
+}
+
 /** One bound `js` cell's currently rendered tile window (`ChartCell`'s `tiles`/`viewport` props), for the one channel it mounts. */
 export interface ChartWindow {
   viewport: Viewport;

@@ -263,19 +263,28 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 ### Fixed
 
 - **S1 pre-merge fix batch: non-primary windows could permanently miss their
-  data; non-chart cells now name the window they show (2026-09-08, no spec
-  change needed).** `Notebook/index.tsx`'s channel-bind and FFT effects
-  dependency arrays carried only `sessionDetail` (the **primary** window's
-  entry) and `windowsKeyValue`, but `sessionSpanDriver.runSessionSpan`
-  resolves each selected window's `SessionDetail` independently and
-  asynchronously with no ordering guarantee — so a non-primary window's
-  detail arriving after the primary's re-ran neither effect, and that
-  window silently never got its channel data or spectrum. Fixed with
-  `state/selection.ts`'s new `sessionDetailsReadinessKey` (a stable string
-  over which selected windows currently have a resolved `SessionDetail`,
-  order-of-resolution-independent by construction), added to both effects'
-  dependency arrays. Also, ruling R132: `MathCell`/`TableCell`/`ProseBlock`
-  now take an optional `windowNote` prop (`model/jsCellNote.ts`'s new
+  data; non-chart cells now name the window they show (2026-09-08, rulings
+  R132/R133, no spec change needed).** `Notebook/index.tsx`'s channel-bind
+  and FFT effects' dependency arrays carried only `sessionDetail` (the
+  **primary** window's entry) and `windowsKeyValue`, but
+  `sessionSpanDriver.runSessionSpan` resolves each selected window's
+  `SessionDetail` independently and asynchronously with no ordering
+  guarantee — so a non-primary window's detail arriving after the
+  primary's re-ran neither effect, and that window silently never got its
+  channel data or spectrum. Fixed with `state/selection.ts`'s new
+  `sessionDetailsReadinessKey` (a stable string over which selected windows
+  currently have a resolved `SessionDetail`, order-of-resolution-independent
+  by construction), added to both effects' dependency arrays — **and**,
+  per R133, the channel-bind effect's *inner* `boundIdentityRef` gate,
+  which the dependency-array fix alone did not reach: that gate compared
+  one identity per **cell**, computed from the primary window's binding
+  only, so a sibling window resolving never changed it and an
+  already-bound cell's channel data for that window was still never
+  fetched (the FFT effect's gate was already per-window and needed no
+  further fix). `model/channelBindDriver.ts`'s new `updateChannelBindIdentity`
+  makes the channel-bind gate per (cell, window) too, mirroring the FFT
+  shape. Also, ruling R132: `MathCell`/`TableCell`/`ProseBlock` now take an
+  optional `windowNote` prop (`model/jsCellNote.ts`'s new
   `primaryWindowNote`) — with more than one window selected, a non-chart
   cell reading the primary window's value now names it; with zero or one
   window selected, no marker (byte-identical to today). Minor:
