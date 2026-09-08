@@ -199,16 +199,17 @@ function bindingForTime(
  *   R83/L2b Task 6) — passed straight through to `fetch_fft_v2`'s `window`
  *   argument as-is via {@link FftRequest.window}, `null` when nothing is
  *   selected. C3 §3.6's FFT grammar has no per-mark lap or window token
- *   (R79), so this is the cell's only window source.
- * @param windowIndex This window's ordinal among the caller's selected
- *   windows (R127 item 5) — folded into {@link hostVarName} via
- *   `spectrumKey`'s own `windowIndex` parameter so *n* selected windows
- *   over the same channel and `fft_params` publish *n* distinct host
- *   variables instead of colliding on one name. Defaults to `0`, which
- *   `spectrumKey` treats identically to omitting the argument (R127 item 3)
- *   — a caller binding a single window need not pass this at all.
+ *   (R79), so this is the cell's only window source. A caller with several
+ *   selected windows calls this once per window (each with its own
+ *   `request.window`, to fetch each window's own spectrum) -- but every
+ *   call shares the same {@link hostVarName} (ruling R129, amending R127
+ *   item 5: a spectrum host variable's window dimension lives in its
+ *   *payload*, `host/protocol.ts`'s `combineSpectrumWindows`, never in the
+ *   key), so the caller combines the *n* fetched spectra into one payload
+ *   before publishing, exactly as it already must for a time cell's
+ *   channels (R127 item 1).
  */
-function bindingForFft(props: FftPlotProps, sessionDetail: SessionDetail, window: SelectedWindow | null, windowIndex = 0): FftCellBinding | null {
+function bindingForFft(props: FftPlotProps, sessionDetail: SessionDetail, window: SelectedWindow | null): FftCellBinding | null {
   const channel = findChannel(sessionDetail.channels, props.mark.channel);
   if (channel === null) return null;
 
@@ -227,7 +228,7 @@ function bindingForFft(props: FftPlotProps, sessionDetail: SessionDetail, window
     fft.averaging,
     window
   );
-  const hostVarName = spectrumKey(channel.channel_id, fft, windowIndex);
+  const hostVarName = spectrumKey(channel.channel_id, fft);
 
   let unrequestable: string | null = null;
   if (sampleCount < 2) {
@@ -274,20 +275,18 @@ function bindingForFft(props: FftPlotProps, sessionDetail: SessionDetail, window
  *   own channel/span resolution is per-session, not per-window (R127 item
  *   1 — a channel's host-variable name must not encode which windows are
  *   selected), so a caller with several selected windows over the same
- *   session calls this once, not once per window, for the time arm.
- * @param windowIndex `window`'s ordinal among the caller's selected windows
- *   (R127 item 5) — consulted only by the FFT arm, where it is folded into
- *   {@link FftCellBinding.hostVarName} so distinct windows publish distinct
- *   spectra instead of colliding on one host variable name. Defaults to
- *   `0`, byte-identical to omitting it (`spectrumKey`'s own contract).
+ *   session calls this once, not once per window, for the time arm. A
+ *   multi-window caller does call the FFT arm once per window (each with
+ *   its own `window`, to fetch each window's own spectrum), but every call
+ *   resolves to the *same* `hostVarName` (ruling R129: a spectrum's window
+ *   dimension lives in its payload, not its key, exactly like a channel's).
  */
 export function bindingFor(
   cell: { id: string; code: string },
   sessionDetail: SessionDetail | null,
   sessionSpanUs: number | null,
   definitionNames: ReadonlySet<string>,
-  window: SelectedWindow | null = null,
-  windowIndex = 0
+  window: SelectedWindow | null = null
 ): JsCellBinding | null {
   if (sessionDetail === null || sessionSpanUs === null) return null;
 
@@ -295,7 +294,7 @@ export function bindingFor(
   if (props === null) return null;
 
   return props.chart === "fft"
-    ? bindingForFft(props, sessionDetail, window, windowIndex)
+    ? bindingForFft(props, sessionDetail, window)
     : bindingForTime(props, sessionDetail, sessionSpanUs, definitionNames);
 }
 
@@ -338,17 +337,19 @@ function windowIdentity(window: SelectedWindow | null): string {
  *   `"definition"` to `"session"`, always produces a different identity --
  *   not only `channels[0]`/the mounted channel, since the effect re-fetches
  *   every distinct channel, not only the mounted one (R72).
- * - FFT: `hostVarName` (which already encodes the channel, all six
- *   `fft_params`, and now the window's ordinal, R127 item 5) plus the
- *   resolved sample count, the `unrequestable` state and `request.window`'s
- *   own content (R83/L2b Task 6, extended by R117/R127 from a bare lap
- *   number to a full selected window -- a window selection change must
- *   start a new fetch even when nothing else about the cell changed, and
- *   two different windows sharing the same ordinal, e.g. across two
- *   distinct cells, must still be told apart here even though
- *   `hostVarName` alone would not) -- two consecutive renders producing
- *   the same identity must not start a second fetch, the existing
- *   `boundIdentityRef` contract L6 Task 20 extends rather than replaces.
+ * - FFT: `hostVarName` (which encodes the channel and all six `fft_params`
+ *   -- **never** the window, ruling R129 amending R127 item 5: a spectrum's
+ *   window dimension lives in its payload, so two windows over the same
+ *   channel/`fft_params` share one `hostVarName`) plus the resolved sample
+ *   count, the `unrequestable` state and `request.window`'s own content
+ *   (R83/L2b Task 6, extended by R117 from a bare lap number to a full
+ *   selected window) -- a window selection change must start a new fetch
+ *   even when nothing else about the cell changed, and since `hostVarName`
+ *   no longer varies by window, `request.window`'s content is the *only*
+ *   thing here that can distinguish two calls bound to different windows --
+ *   two consecutive renders producing the same identity must not start a
+ *   second fetch, the existing `boundIdentityRef` contract L6 Task 20
+ *   extends rather than replaces.
  *
  * Pure string formatting, no IPC.
  */

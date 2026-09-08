@@ -66,24 +66,47 @@ function toIpcError(error: unknown): IpcError {
  * Window` -- ipc/rasters.ts's `fetchFftV2` -- is S1 Task 11's job, not this
  * one's; `model/fftRequest.ts`'s `FftRequest.lap` was renamed to `window`
  * ahead of it, ruling R117/R127). Recovers the old single-number shape from
- * `request.window`'s `span` where possible so this file keeps compiling and
- * behaving as before until that migration lands: a `"lap"` span's own
- * number, `null` for `"session"`/`"range"` (neither expressible as a bare
- * lap number) or no window at all.
+ * `request.window`'s `span` where possible: a `"lap"` span's own number, or
+ * `null` for `"session"`/no window at all -- both correctly mean "the whole
+ * channel" to the old `fetch_fft`, matching a `"session"` span's own
+ * meaning.
+ *
+ * **A `"range"` span is refused, not silently widened (ruling R129, finding
+ * 2).** `lap: null` also means "whole channel" to `fetch_fft` -- so
+ * naively falling through to it for a `"range"` span (a dragged
+ * selection this old command cannot express at all) would compute the FFT
+ * over the *entire session* and label it with the range's own name: a
+ * spectrum of thirty minutes presented as the spectrum of a ten-second
+ * selection, with nothing on screen to tell them apart. An interim shim may
+ * narrow scope; it may never widen it. Until this driver migrates, a
+ * `"range"`-windowed FFT cell is a typed, visible cell error instead.
  */
-function lapFromWindow(request: FftRequest): number | null {
-  return request.window !== null && request.window.span.kind === "lap" ? request.window.span.lap_number : null;
+function legacyLapFromWindow(request: FftRequest): { ok: number | null } | { error: IpcError } {
+  if (request.window === null || request.window.span.kind === "session") {
+    return { ok: null };
+  }
+  if (request.window.span.kind === "lap") {
+    return { ok: request.window.span.lap_number };
+  }
+  return {
+    error: {
+      kind: "unsupported_window",
+      message: "An FFT over a dragged range is not yet supported here — select a lap or the whole session instead.",
+    },
+  };
 }
 
 /**
  * Runs one `fetch_fft` request for `cellId` and dispatches its outcome.
  * `request.window` (C1 §6.1, ruling R117/R127 -- replaces the pre-windows
  * `request.lap`, R83/L2b Task 6) is reduced to a bare lap number via
- * {@link lapFromWindow} until this driver itself migrates to
- * `fetchFftV2`/`Window` (S1 Task 11). `isStale()` is checked once, after
- * the single `await`: `true` means a newer run for this cell has started
- * since, and this run dispatches nothing at all, resolved or rejected
- * alike.
+ * {@link legacyLapFromWindow} until this driver itself migrates to
+ * `fetchFftV2`/`Window` (S1 Task 11); a `"range"` window dispatches
+ * `fftError` immediately, without calling `deps.fetchFft` at all (ruling
+ * R129 -- see {@link legacyLapFromWindow}'s own doc comment). `isStale()`
+ * is checked once, after the single `await`: `true` means a newer run for
+ * this cell has started since, and this run dispatches nothing at all,
+ * resolved or rejected alike.
  *
  * @param isStale The caller's `CellRunSequencer.isCurrent(cellId, seq)`
  *   check (or a test's fake) -- this driver adds no sequencing of its own.
@@ -96,8 +119,16 @@ export async function runFft(
   dispatch: FftDispatch,
   isStale: () => boolean
 ): Promise<void> {
+  const legacyLap = legacyLapFromWindow(request);
+  if ("error" in legacyLap) {
+    if (!isStale()) {
+      dispatch({ type: "fftError", cellId, error: legacyLap.error });
+    }
+    return;
+  }
+
   try {
-    const fft = await deps.fetchFft(sessionId, request.channelId, lapFromWindow(request), request.params, request.averaging);
+    const fft = await deps.fetchFft(sessionId, request.channelId, legacyLap.ok, request.params, request.averaging);
     if (isStale()) {
       return;
     }

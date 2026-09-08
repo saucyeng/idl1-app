@@ -1191,37 +1191,43 @@ R78 L6 Task 19 Q1–Q2 / R79 L6 Task 20 Q1–Q7):
 **The spectrum host variable.** `spectrum(name, params)` is the one
 recognisable host form — one call, one shape, mirroring `channel(...)`:
 in the sandbox it is an ambient host variable resolved by lookup, never a
-fetch, never DSP, returning `{ f, m }[]` records (`f` Hz, `m` magnitude) or
-`[]` before the host has pushed anything. The lookup key is derived from
-the request, not the bare channel name — two cells on the same channel
-with different windows are different spectra — via one shared pure
-function, **`spectrumKey(channelId, fftParams, windowIndex = 0)`** (R79 Q2,
-amended 2026-09-08 by **ruling R127 item 5**: adds `windowIndex`): the
-channel id plus the six `fft_params` values joined in the grammar's fixed
-order, plus — when `windowIndex > 0` — a further `" | "` and the decimal
-index, computed identically on both sides so the host and the sandbox
-cannot drift. `windowIndex` is the selected window's ordinal, not encoded
-in `params`: a single-spectrum `fft` is a per-window *aggregate* (ruling
-R124 — one spectrum per window, not a masked/concatenated series the way
-`channel(...)`'s R127 amendment above works), so *n* selected windows over
-the same channel and `fft_params` are `n` distinct spectra published under
-`n` distinct keys, rather than the R127-above `channel(...)` treatment of
-one payload carrying all of them — `windowIndex === 0` (the default, and
-every case before multi-window selection existed) produces **exactly** the
-pre-amendment key, so a single selected window's spectrum key is
-byte-identical to before. The host recognises an FFT cell through `parse`,
-not a scan — an `fft` binding arm on the same recogniser that binds
-`channel(...)` today — so custom code cannot fetch a spectrum, exactly as
-custom code cannot bind a tile-backed channel today. `spectrum(...)`'s
-`params` argument is ignored at lookup time by everything except the key
-derivation: the host resolves those parameters before the fetch, and the
-argument exists so the document, not the host, states them (CLAUDE.md §3),
-and so a hand edit to a parameter changes the code the parser reads.
-`windowIndex` is not (yet) expressible in `spectrum_call`'s grammar — a
-multi-window FFT cell's *sandbox-side* mechanism for addressing a specific
-window's published spectrum by index is an open gap this amendment does not
-close; see `app/src/routes/pages/Notebook/plotForm/spectrumKey.ts`'s doc
-comment.
+fetch, never DSP, returning `{ f, m, w }[]` records (`f` Hz, `m` magnitude,
+`w` the window index per sample — see below) or `[]` before the host has
+pushed anything. The lookup key is derived from the request, not the bare
+channel name — two cells on the same channel with different `fft_params`
+are different spectra — via one shared pure function,
+**`spectrumKey(channelId, fftParams)`** (R79 Q2): the channel id plus the
+six `fft_params` values joined in the grammar's fixed order, computed
+identically on both sides so the host and the sandbox cannot drift. The
+host recognises an FFT cell through `parse`, not a scan — an `fft` binding
+arm on the same recogniser that binds `channel(...)` today — so custom
+code cannot fetch a spectrum, exactly as custom code cannot bind a
+tile-backed channel today. `spectrum(...)`'s `params` argument is ignored
+at lookup time by everything except the key derivation: the host resolves
+those parameters before the fetch, and the argument exists so the
+document, not the host, states them (CLAUDE.md §3), and so a hand edit to
+a parameter changes the code the parser reads.
+
+**Amended 2026-09-08 (ruling R129, amending R127 item 5) — `spectrumKey`
+never varies by window; the payload carries the window dimension
+instead.** R127 item 5 originally had `spectrumKey` take a `windowIndex`
+so *n* selected windows would publish *n* distinct spectra under *n*
+distinct keys — but `spectrum_call`'s grammar has no window token, so cell
+code had no way to *address* the extra keys; the addressing gap was
+flagged rather than guessed by the implementer. R129 makes spectra
+symmetric with channels instead (the channel amendment above): a spectrum
+host variable's payload gains the same `w` column and `windows` descriptor
+array a channel's does, combining *n* selected windows' own `{f, m}` into
+one flat `{length, f, m, w}` array with one `NaN` break row between each
+adjacent pair, exactly as `combineChannelWindows` does for `{t, v}` — the
+reference implementation is `combineSpectrumWindows`, sharing its
+break-insertion rule with `combineChannelWindows` via one internal
+generic combiner. **A single selected window is byte-identical to before
+this amendment**: `w` is all `0` and `windows` has exactly one entry, and
+`spectrumKey`'s own string never varied by window in the first place. No
+grammar change: a cell writes `spectrum("x", {...})` and groups by `w`,
+precisely as it does for `channel("x")` — there is nothing left to
+address, because there is no longer a second key to address.
 
 **Parameter table — type, default, C3 field** (added 2026-09-06):
 

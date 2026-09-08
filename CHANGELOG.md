@@ -113,13 +113,42 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
   non-enumerable `windows` property carrying the descriptor array (reachable
   as `channel(name).windows`, e.g. for a chart's per-window `colour`) —
   additive; a cell reading only `{t, v}` is unaffected. `"spectrum"`
-  payloads are deliberately **not** given the same columns (item 5): see
-  the entry above. **Known gap, flagged not guessed:** `spectrum_call`'s
-  grammar (C2 §5.3) has no window token, so nothing yet lets a sandboxed
-  cell's own code request a specific `windowIndex`'s spectrum by calling
-  `spectrum(channel, fft_params)` — `spectrumKey.ts`'s doc comment and C2
-  §5.3's amendment both flag this as open for whichever task wires
-  multi-window FFT rendering (S1 Task 11-13).
+  payloads were, at the time of that commit, deliberately **not** given the
+  same columns (item 5) — see the entry directly below, which supersedes
+  that call.
+- **`spectrumKey`'s `windowIndex` withdrawn; `"spectrum"` host-variable
+  payloads gain the same `w`/`windows` shape as `"channel"` instead
+  (2026-09-08, s1-ts follow-on, C1 §6.1/C2 §5.3, ruling **R129** amending
+  R127 item 5 — spec-during, C2 §5.3 amended in this commit).** The FFT
+  addressing gap flagged in the previous commit ("nothing lets a sandboxed
+  cell's own code request a specific `windowIndex`'s spectrum") is closed
+  by removing the need to address anything: `spectrumKey(channelId,
+  fftParams)` drops its `windowIndex` parameter entirely and never varies
+  by window again, and `host/protocol.ts`'s `"spectrum"` `HostVarPayload`
+  gains `w`/`windows` exactly like `"channel"`'s (ruling R127 item 2/4) —
+  `combineSpectrumWindows` combines *n* selected windows' own `{f, m}` into
+  one `{length, f, m, w}` array with the same NaN-break rule, sharing its
+  implementation with `combineChannelWindows` via one internal generic
+  combiner (`combinePairedWindows`). `SandboxHost.setSpectrumHostVar` and
+  `sandbox/main.ts`'s `spectrumLookup`/`materializeHostVar` updated to
+  match — a spectrum record is now `{f, m, w}` with the same non-enumerable
+  `windows` property a channel record carries. A single selected window
+  remains byte-identical (both to the pre-multi-window shape and to the
+  withdrawn `windowIndex` scheme's own byte-identical `0` case). No C2
+  §5.3 grammar change, and none is needed: a cell writes `spectrum("x",
+  {...})` and groups by `w`, exactly as it already does for `channel("x")`.
+- **`fftDriver.ts`'s interim shim no longer silently widens a `range`
+  window to the whole session (2026-09-08, s1-ts follow-on, ruling R129
+  finding 2, no spec change needed).** `legacyLapFromWindow` (renamed from
+  `lapFromWindow`) now returns a typed `{ error: IpcError }` for a
+  `"range"`-spanned `request.window`, dispatched as `fftError` before
+  `deps.fetchFft` is ever called, instead of falling through to `lap:
+  null` — which meant "whole channel" to the old `fetch_fft` and so
+  silently computed the FFT over the entire session for a dragged-range
+  selection, indistinguishable on screen from the real thing. `"lap"` and
+  `"session"` spans are unaffected (both were, and remain, correct). This
+  interim shim still narrows scope until Task 11 migrates the driver to
+  `fetchFftV2`; it must never widen it.
 
 ### Fixed
 

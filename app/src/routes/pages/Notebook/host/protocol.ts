@@ -40,23 +40,25 @@ export interface WindowDescriptor {
  * `new Float64Array(payload.f)`/`new Float64Array(payload.m)`
  * unconditionally on receipt.
  *
- * `"channel"` gains a `w` column and a `windows` descriptor array (ruling
- * R127, replacing the earlier plan of one host variable per (definition,
- * window) pair -- that plan collides, because a host-variable name is keyed
- * by the definition alone, R127 item 1): `w[i]` is the window index that
- * produced sample `i` of `t`/`v`, and `windows[w[i]]` is that window's own
- * `{ sessionId, span, colour, label }`. Every existing single-window caller
- * is unaffected (R127 item 3): `w` is all zeros and `windows` has exactly
- * one entry. `"spectrum"` does **not** gain the same columns -- a
- * single-spectrum `fft` is a per-window *aggregate* (ruling R124), so
- * `n` selected windows publish `n` distinct `"spectrum"` host variables
- * (ruling R127 item 5, `plotForm/spectrumKey.ts`'s own `windowIndex`
- * parameter) rather than one payload carrying all of them.
+ * Both `"channel"` and `"spectrum"` gain a `w` column and a `windows`
+ * descriptor array (ruling R127, amended by **ruling R129**: R127
+ * originally gave only `"channel"` this shape and instead had
+ * `"spectrum"` vary its *key* per window (`spectrumKey`'s withdrawn
+ * `windowIndex` parameter) -- but `spectrum_call`'s grammar, C2 §5.3, has
+ * no window token, so cell code had no way to address the extra keys.
+ * R129 makes `"spectrum"` symmetric with `"channel"` instead: one host
+ * variable per (channel, `fft_params`), never one per (…, window) pair --
+ * a host-variable name is keyed by the definition alone, R127 item 1,
+ * which R129 extends to spectra too): `w[i]` is the window index that
+ * produced sample `i`, and `windows[w[i]]` is that window's own
+ * `{ sessionId, span, colour, label }`. Every existing single-window
+ * caller of either kind is unaffected (R127 item 3): `w` is all zeros and
+ * `windows` has exactly one entry.
  */
 export type HostVarPayload =
   | { kind: "json"; value: unknown }
   | { kind: "channel"; length: number; t: ArrayBuffer; v: ArrayBuffer; w: ArrayBuffer; windows: WindowDescriptor[] }
-  | { kind: "spectrum"; length: number; f: ArrayBuffer; m: ArrayBuffer };
+  | { kind: "spectrum"; length: number; f: ArrayBuffer; m: ArrayBuffer; w: ArrayBuffer; windows: WindowDescriptor[] };
 
 /** One cell as the host hands it to the sandbox for (re)definition. */
 export interface SandboxCell {
@@ -215,8 +217,99 @@ export function channelPayload(
   };
 }
 
-/** One selected window's own `{t, v}` series plus the descriptor
- *  {@link combineChannelWindows} attaches to every sample drawn from it. */
+/** One selected window's own paired `{a, b}` samples plus the descriptor
+ *  {@link combinePairedWindows} attaches to every sample drawn from it --
+ *  `a`/`b` are named generically here because the same combining shape
+ *  serves both a channel's `{t, v}` ({@link WindowSeries}) and a spectrum's
+ *  `{f, m}` ({@link SpectrumWindowSeries}), the two axes R129 made
+ *  symmetric. `a.length` must equal `b.length`. */
+interface PairedWindowSeries {
+  descriptor: WindowDescriptor;
+  a: Float64Array;
+  b: Float64Array;
+}
+
+/** {@link combinePairedWindows}'s return -- generic over the same `a`/`b`
+ *  naming; {@link combineChannelWindows}/{@link combineSpectrumWindows}
+ *  relabel `a`/`b` to `t`/`v` or `f`/`m` for their own callers. */
+interface CombinedPairedSeries {
+  length: number;
+  a: Float64Array;
+  b: Float64Array;
+  w: Float64Array;
+  windows: WindowDescriptor[];
+}
+
+/**
+ * Combines *n* selected windows' own paired samples into the single flat
+ * `{length, a, b, w}` layout ruling R127 requires (extended to spectra by
+ * **ruling R129**): one host variable per definition (item 1), never one
+ * per (definition, window) pair. Windows are concatenated in `series`
+ * order; `w[i]` is the index into the returned `windows` array that
+ * produced sample `i`. Shared by {@link combineChannelWindows} (`a, b` =
+ * `t, v`) and {@link combineSpectrumWindows} (`a, b` = `f, m`) -- the
+ * break-insertion rule below does not care what the two axes mean.
+ *
+ * **A single window (`series.length <= 1`) is byte-identical to the
+ * pre-multi-window shape** (ruling R127 item 3): no break row is inserted,
+ * and `w` is filled with that one window's index (`0`, in the ordinary
+ * one-window call). `series: []` returns an all-empty result.
+ *
+ * **Two or more windows get one break row inserted between each pair**
+ * (ruling R127 item 4, the load-bearing part): a row of `a = NaN, b = NaN,
+ * w = NaN`. Observable Plot's line marks break at a `NaN` in either channel
+ * (`a` is typically `x`, `b` is typically `y`), so a cell written before
+ * multi-window existed, which reads only `{a, b}` and ignores `w`, renders
+ * *n separate segments* in one colour instead of one line vaulting from one
+ * window's last sample to the next window's first -- a shape that would
+ * look like real data and isn't (R127's own "cost if wrong"). `w`'s break
+ * entry is `NaN` too, not `-1` or some other sentinel index: `w` is a
+ * lookup key into `windows`, and there is no window `NaN` would name that a
+ * reader could mistake for a real one, whereas a small integer sentinel
+ * (`-1`) risks exactly that if `windows.length` ever reached it.
+ */
+function combinePairedWindows(series: readonly PairedWindowSeries[]): CombinedPairedSeries {
+  const windows = series.map((s) => s.descriptor);
+
+  if (series.length <= 1) {
+    const only = series[0];
+    const length = only?.b.length ?? 0;
+    return {
+      length,
+      a: only?.a ?? new Float64Array(0),
+      b: only?.b ?? new Float64Array(0),
+      w: new Float64Array(length).fill(0),
+      windows,
+    };
+  }
+
+  const breaks = series.length - 1;
+  const length = series.reduce((sum, s) => sum + s.b.length, 0) + breaks;
+  const a = new Float64Array(length);
+  const b = new Float64Array(length);
+  const w = new Float64Array(length);
+
+  let i = 0;
+  series.forEach((s, windowIndex) => {
+    if (windowIndex > 0) {
+      a[i] = NaN;
+      b[i] = NaN;
+      w[i] = NaN;
+      i++;
+    }
+    for (let j = 0; j < s.b.length; j++) {
+      a[i] = s.a[j];
+      b[i] = s.b[j];
+      w[i] = windowIndex;
+      i++;
+    }
+  });
+
+  return { length, a, b, w, windows };
+}
+
+/** One selected window's own `{t, v}` series -- see {@link
+ *  combineChannelWindows}. */
 export interface WindowSeries {
   descriptor: WindowDescriptor;
   /** Seconds since `descriptor`'s session start. */
@@ -234,100 +327,77 @@ export interface CombinedChannelSeries {
   windows: WindowDescriptor[];
 }
 
-/**
- * Combines one channel's per-window `{t, v}` series into the single flat
- * `{length, t, v, w}` layout ruling R127 requires: one host variable per
- * definition (item 1), never one per (definition, window) pair. Windows are
- * concatenated in `series` order; `w[i]` is the index into the returned
- * `windows` array that produced sample `i`.
- *
- * **A single window (`series.length <= 1`) is byte-identical to the
- * pre-multi-window shape** (ruling R127 item 3): no break row is inserted,
- * and `w` is filled with that one window's index (`0`, in the ordinary
- * one-window call). `series: []` returns an all-empty result.
- *
- * **Two or more windows get one break row inserted between each pair**
- * (ruling R127 item 4, the load-bearing part): a row of `t = NaN, v = NaN,
- * w = NaN`. Observable Plot's line marks break at a `NaN` in either channel
- * (`t` here is typically `x`, `v` is typically `y`), so a cell written
- * before multi-window existed, which reads only `{t, v}` and ignores `w`,
- * renders *n separate segments* in one colour instead of one line vaulting
- * from one window's last sample to the next window's first -- a shape that
- * would look like real data and isn't (R127's own "cost if wrong"). `w`'s
- * break entry is `NaN` too, not `-1` or some other sentinel index: `w` is a
- * lookup key into `windows`, and there is no window `NaN` would name that a
- * reader could mistake for a real one, whereas a small integer sentinel
- * (`-1`) risks exactly that if `windows.length` ever reached it.
- */
+/** Combines one channel's per-window `{t, v}` series -- see
+ *  {@link combinePairedWindows} for the shared combining/break rule this
+ *  wraps (ruling R127). */
 export function combineChannelWindows(series: readonly WindowSeries[]): CombinedChannelSeries {
-  const windows = series.map((s) => s.descriptor);
+  const combined = combinePairedWindows(series.map((s) => ({ descriptor: s.descriptor, a: s.t, b: s.v })));
+  return { length: combined.length, t: combined.a, v: combined.b, w: combined.w, windows: combined.windows };
+}
 
-  if (series.length <= 1) {
-    const only = series[0];
-    const length = only?.v.length ?? 0;
-    return {
-      length,
-      t: only?.t ?? new Float64Array(0),
-      v: only?.v ?? new Float64Array(0),
-      w: new Float64Array(length).fill(0),
-      windows,
-    };
-  }
+/** One selected window's own `{f, m}` spectrum -- see {@link
+ *  combineSpectrumWindows}. */
+export interface SpectrumWindowSeries {
+  descriptor: WindowDescriptor;
+  /** Hz. */
+  f: Float64Array;
+  /** Magnitude. */
+  m: Float64Array;
+}
 
-  const breaks = series.length - 1;
-  const length = series.reduce((sum, s) => sum + s.v.length, 0) + breaks;
-  const t = new Float64Array(length);
-  const v = new Float64Array(length);
-  const w = new Float64Array(length);
-
-  let i = 0;
-  series.forEach((s, windowIndex) => {
-    if (windowIndex > 0) {
-      t[i] = NaN;
-      v[i] = NaN;
-      w[i] = NaN;
-      i++;
-    }
-    for (let j = 0; j < s.v.length; j++) {
-      t[i] = s.t[j];
-      v[i] = s.v[j];
-      w[i] = windowIndex;
-      i++;
-    }
-  });
-
-  return { length, t, v, w, windows };
+/** {@link combineSpectrumWindows}'s return -- ready to pass straight into
+ *  {@link spectrumPayload} (via each array's `.buffer`). */
+export interface CombinedSpectrumSeries {
+  length: number;
+  f: Float64Array;
+  m: Float64Array;
+  w: Float64Array;
+  windows: WindowDescriptor[];
 }
 
 /**
- * Builds a `setHostVar` message for a decoded FFT spectrum (L6 Task 19; C2
- * §5.3) plus its transfer list, mirroring {@link channelPayload}'s pre-R127
- * two-buffer shape except for the axis: `f` (Hz, built from
+ * Combines one channel's per-window `{f, m}` spectra into the single flat
+ * `{length, f, m, w}` layout -- **ruling R129**, amending R127 item 5:
+ * a spectrum host variable now carries its window dimension in the
+ * payload, exactly like {@link combineChannelWindows}, rather than in
+ * `spectrumKey`. See {@link combinePairedWindows} for the shared
+ * combining/break rule this wraps.
+ */
+export function combineSpectrumWindows(series: readonly SpectrumWindowSeries[]): CombinedSpectrumSeries {
+  const combined = combinePairedWindows(series.map((s) => ({ descriptor: s.descriptor, a: s.f, b: s.m })));
+  return { length: combined.length, f: combined.a, m: combined.b, w: combined.w, windows: combined.windows };
+}
+
+/**
+ * Builds a `setHostVar` message for a decoded, possibly multi-window FFT
+ * spectrum (L6 Task 19; C2 §5.3) plus its transfer list, mirroring
+ * {@link channelPayload} exactly except for the axis: `f` (Hz, built from
  * `model/fftRequest.ts`'s `frequencyAxisHz`) and `m` (magnitude,
  * `DecodedFft.magnitudes` widened from `Float32Array` to `Float64Array`)
- * rather than `t`/`v`. `f`/`m` must not be read again by the caller after
- * this call -- they are neutered once transferred.
+ * rather than `t`/`v`. `f`/`m`/`w` must not be read again by the caller
+ * after this call -- they are neutered once transferred.
  *
- * Deliberately **not** given `channelPayload`'s `w`/`windows` columns
- * (ruling R127 item 5): a single-spectrum `fft` is a per-window *aggregate*
- * (R124), so `n` selected windows over the same channel and `fft_params`
- * are `n` separate spectra, published under `n` distinct names via
- * `plotForm/spectrumKey.ts`'s `windowIndex` parameter -- `name` here
- * already carries that distinction, so this payload itself stays exactly
- * the shape it was before multi-window selection existed.
+ * Gains `w`/`windows` by **ruling R129** (amending R127 item 5): *n*
+ * selected windows over one (channel, `fft_params`) pair are one host
+ * variable, one call, with the window dimension carried in the payload
+ * (typically {@link combineSpectrumWindows}'s output) -- never *n* calls
+ * under *n* distinct names, which would need a window token
+ * `spectrum_call`'s grammar (C2 §5.3) does not have.
  */
 export function spectrumPayload(
   name: string,
   length: number,
   f: ArrayBuffer,
-  m: ArrayBuffer
+  m: ArrayBuffer,
+  w: ArrayBuffer,
+  windows: WindowDescriptor[]
 ): { message: { type: "setHostVar"; name: string; value: HostVarPayload }; transfer: Transferable[] } {
   return {
     message: {
       type: "setHostVar",
       name,
-      value: { kind: "spectrum", length, f, m },
+      value: { kind: "spectrum", length, f, m, w, windows },
     },
-    transfer: [f, m],
+    transfer: [f, m, w],
   };
 }

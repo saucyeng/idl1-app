@@ -11,16 +11,17 @@
  * `types.ts` (this module's only import) has no import at all, so this
  * module transitively has none either.
  *
- * Open gap (ruling R127 item 5, flagged rather than guessed): `windowIndex`
- * lets the *host* publish `n` distinct spectra for `n` selected windows,
- * but `spectrum_call`'s grammar (C2 §5.3) has no window token, so nothing
- * lets a **sandboxed cell's own code** ask for a specific `windowIndex`'s
- * spectrum by calling `spectrum(channel, fft_params)` — `sandbox/main.ts`'s
- * `spectrumLookup` always recomputes `windowIndex = 0`'s key from a cell
- * call's own arguments. Resolving that (a per-window `SandboxCell`
- * instance? a grammar extension?) is left to whichever task wires multi-
- * window FFT rendering (S1 Task 11-13 territory) — R127 only specifies the
- * host-side naming this function performs.
+ * **Never window-qualified (ruling R129, amending R127 item 5).** R127
+ * item 5 originally had this function take a `windowIndex` so *n* selected
+ * windows would publish *n* distinct spectra -- but `spectrum_call`'s
+ * grammar (C2 §5.3) has no window token, so cell code would have had no way
+ * to *address* the extra keys. R129 amends this: a spectrum host variable
+ * now carries its window dimension in the **payload**, exactly like a
+ * channel host variable (`host/protocol.ts`'s `spectrumPayload`/
+ * `combineSpectrumWindows`, `{ length, f, m, w }` plus a `windows`
+ * descriptor array) rather than in the key. This key therefore never
+ * varies by window -- one host variable per (channel, `fft_params`), same
+ * as before multi-window selection existed.
  */
 import type { FftParams } from "./types";
 
@@ -29,7 +30,7 @@ const SEPARATOR = " | ";
 /**
  * The channel id plus the six `fft_params` values, joined in C2 par. 5.3's
  * fixed grammar order, so two cells on the same channel with different
- * windows are different spectra. Computed identically on the host side
+ * `fft_params` are different spectra. Computed identically on the host side
  * (`model/jsCellBinding.ts`'s `bindingFor`, which pushes the decoded
  * spectrum under this name) and the sandbox side (`sandbox/main.ts`'s
  * `spectrumLookup`, which recomputes it from the `spectrum(...)` call's own
@@ -45,20 +46,9 @@ const SEPARATOR = " | ";
  * character in practice. The key is opaque: nothing parses it back into its
  * parts, so an unlikely collision would at worst reuse a cached spectrum,
  * never corrupt state.
- *
- * @param windowIndex The selected window's ordinal among the notebook's
- *   currently selected windows (R127 item 5: `fft` is a per-window
- *   aggregation, R124, so *n* selected windows over the same channel and
- *   `fft_params` must publish *n* distinct spectra, not one overwritten by
- *   the next `setHostVar` call). Defaults to `0` and, at `0` only, is
- *   **not** appended -- so a single selected window (the ordinary case, and
- *   every case before multi-window selection existed) produces exactly the
- *   same key as before this parameter was added (R127 item 3's
- *   byte-identical guarantee, extended to this key). Only `windowIndex >
- *   0` appends a further `" | "` plus the decimal index.
  */
-export function spectrumKey(channelId: string, params: FftParams, windowIndex = 0): string {
-  const base = [
+export function spectrumKey(channelId: string, params: FftParams): string {
+  return [
     channelId,
     String(params.windowSize),
     String(params.hopSize),
@@ -67,5 +57,4 @@ export function spectrumKey(channelId: string, params: FftParams, windowIndex = 
     params.scaling,
     params.averaging,
   ].join(SEPARATOR);
-  return windowIndex === 0 ? base : `${base}${SEPARATOR}${windowIndex}`;
 }

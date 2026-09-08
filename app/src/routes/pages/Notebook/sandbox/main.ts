@@ -128,11 +128,12 @@ function renderCellValue(container: HTMLElement, value: unknown): void {
  * second host variable or a second `channel(...)` return shape.
  *
  * A `spectrum` payload (L6 Task 19) is the same record-array shape over its
- * own two buffers, `{f, m}` (frequency Hz, magnitude) rather than `{t, v}`
- * — a spectrum's axis is frequency, never time — and carries no `w`/
- * `windows` (ruling R127 item 5: a spectrum is one window per host
- * variable, distinguished by name via `spectrumKey`'s `windowIndex`, not by
- * a column within one payload).
+ * own axis, `{f, m}` (frequency Hz, magnitude) rather than `{t, v}` — a
+ * spectrum's axis is frequency, never time — and, since **ruling R129**
+ * (amending R127 item 5), carries the same `w`/`windows` treatment as a
+ * `channel` payload: `spectrumKey` never varies by window, so a multi-window
+ * FFT cell's `n` spectra arrive combined in one payload, grouped by `w`,
+ * exactly like a multi-window channel's samples.
  */
 function materializeHostVar(payload: HostVarPayload): unknown {
   if (payload.kind === "json") {
@@ -153,10 +154,12 @@ function materializeHostVar(payload: HostVarPayload): unknown {
 
   const f = new Float64Array(payload.f);
   const m = new Float64Array(payload.m);
-  const records = new Array<{ f: number; m: number }>(payload.length);
+  const w = new Float64Array(payload.w);
+  const records = new Array<{ f: number; m: number; w: number }>(payload.length);
   for (let i = 0; i < payload.length; i++) {
-    records[i] = { f: f[i], m: m[i] };
+    records[i] = { f: f[i], m: m[i], w: w[i] };
   }
+  Object.defineProperty(records, "windows", { value: payload.windows, enumerable: false });
   return records;
 }
 
@@ -358,15 +361,18 @@ class SandboxRuntime {
    * combination, by recomputing {@link spectrumKey} from this call's own
    * arguments -- the same shared pure function `model/jsCellBinding.ts`'s
    * `bindingFor` uses on the host side to name the host variable it
-   * pushes, so the two sides cannot drift. Returns the `{f, m}[]` records
-   * `materializeHostVar` built for that key, or `[]` before the host has
-   * pushed anything (or if this cell's `fft_params` do not match what was
-   * actually requested) -- the exact shape and failure mode
-   * {@link channelLookup} already has. Never fetches, never does DSP.
+   * pushes, so the two sides cannot drift. Returns the `{f, m, w}[]`
+   * records `materializeHostVar` built for that key (ruling R129: `w` is
+   * the window index per sample, grouping every selected window's own
+   * spectrum in one array, the same treatment `channelLookup` gets), or
+   * `[]` before the host has pushed anything (or if this cell's
+   * `fft_params` do not match what was actually requested) -- the exact
+   * shape and failure mode {@link channelLookup} already has. Never
+   * fetches, never does DSP.
    */
-  private spectrumLookup(name: string, params: FftParams): { f: number; m: number }[] {
+  private spectrumLookup(name: string, params: FftParams): { f: number; m: number; w: number }[] {
     const value = this.hostVars.get(spectrumKey(name, params));
-    return Array.isArray(value) ? (value as { f: number; m: number }[]) : [];
+    return Array.isArray(value) ? (value as { f: number; m: number; w: number }[]) : [];
   }
 
   /** Binds or updates one host variable (`setHostVar`). */

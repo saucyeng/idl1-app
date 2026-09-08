@@ -3,6 +3,7 @@ import { describe, expect, test } from "vitest";
 import {
   channelPayload,
   combineChannelWindows,
+  combineSpectrumWindows,
   evalInlineMessage,
   isHostMessage,
   layoutMessage,
@@ -140,41 +141,76 @@ describe("combineChannelWindows", () => {
 });
 
 describe("spectrumPayload", () => {
-  test("spectrumPayload — a decoded spectrum — puts both buffers in the transfer list exactly once", () => {
+  test("spectrumPayload — a decoded single-window spectrum — puts all three buffers in the transfer list exactly once", () => {
     const f = new ArrayBuffer(8);
     const m = new ArrayBuffer(8);
+    const w = new ArrayBuffer(8);
+    const windows = [descriptor()];
 
-    const { message, transfer } = spectrumPayload("fork_travel_fft", 1, f, m);
+    const { message, transfer } = spectrumPayload("fork_travel_fft", 1, f, m, w, windows);
 
-    expect(transfer).toHaveLength(2);
+    expect(transfer).toHaveLength(3);
     expect(transfer.filter((b) => b === f)).toHaveLength(1);
     expect(transfer.filter((b) => b === m)).toHaveLength(1);
+    expect(transfer.filter((b) => b === w)).toHaveLength(1);
     expect(message).toEqual({
       type: "setHostVar",
       name: "fork_travel_fft",
-      value: { kind: "spectrum", length: 1, f, m },
+      value: { kind: "spectrum", length: 1, f, m, w, windows },
     });
   });
 
   // Same byte-for-byte proof as `channelPayload`'s own Float64Array
   // round-trip test, and for the same reason: `sandbox/main.ts`'s
   // `materializeHostVar` unconditionally does `new
-  // Float64Array(payload.f)`/`new Float64Array(payload.m)` on receipt, so a
-  // narrower host-side element type would silently corrupt every value.
-  test("spectrumPayload — f/m built as Float64Array — survive the sandbox's Float64Array reinterpretation bit-for-bit", () => {
+  // Float64Array(payload.f)`/`new Float64Array(payload.m)`/`.w` on receipt,
+  // so a narrower host-side element type would silently corrupt every value.
+  test("spectrumPayload — f/m/w built as Float64Array — survive the sandbox's Float64Array reinterpretation bit-for-bit", () => {
     const fSource = new Float64Array([0, 1000, 2000]);
     const mSource = new Float64Array([10.1, -2.5, NaN]);
+    const wSource = new Float64Array([0, 0, 1]);
 
-    const { message } = spectrumPayload("fork_travel_fft", 3, fSource.buffer, mSource.buffer);
+    const { message } = spectrumPayload("fork_travel_fft", 3, fSource.buffer, mSource.buffer, wSource.buffer, [descriptor(), descriptor()]);
 
     const payload = message.value as Extract<HostVarPayload, { kind: "spectrum" }>;
     const fRoundTripped = new Float64Array(payload.f);
     const mRoundTripped = new Float64Array(payload.m);
+    const wRoundTripped = new Float64Array(payload.w);
 
     expect(Array.from(fRoundTripped)).toEqual([0, 1000, 2000]);
     expect(mRoundTripped[0]).toBe(10.1);
     expect(mRoundTripped[1]).toBe(-2.5);
     expect(Number.isNaN(mRoundTripped[2])).toBe(true);
+    expect(Array.from(wRoundTripped)).toEqual([0, 0, 1]);
+  });
+});
+
+describe("combineSpectrumWindows", () => {
+  test("combineSpectrumWindows — a single window — is byte-identical to the pre-R129 shape: no break, w all zero", () => {
+    const f = new Float64Array([0, 100, 200]);
+    const m = new Float64Array([1, 2, 3]);
+
+    const combined = combineSpectrumWindows([{ descriptor: descriptor(), f, m }]);
+
+    expect(combined.length).toBe(3);
+    expect(Array.from(combined.f)).toEqual([0, 100, 200]);
+    expect(Array.from(combined.m)).toEqual([1, 2, 3]);
+    expect(Array.from(combined.w)).toEqual([0, 0, 0]);
+    expect(combined.windows).toEqual([descriptor()]);
+  });
+
+  test("combineSpectrumWindows — two windows — inserts exactly one NaN break row between them, tagged with each window's own index", () => {
+    const a = { descriptor: descriptor({ sessionId: "session-a" }), f: new Float64Array([0, 100]), m: new Float64Array([1, 2]) };
+    const b = { descriptor: descriptor({ sessionId: "session-b" }), f: new Float64Array([0, 100]), m: new Float64Array([3, 4]) };
+
+    const combined = combineSpectrumWindows([a, b]);
+
+    expect(combined.length).toBe(5); // 2 + 1 break + 2
+    expect(Array.from(combined.m)).toEqual([1, 2, NaN, 3, 4]);
+    expect(Number.isNaN(combined.f[2])).toBe(true);
+    expect(Number.isNaN(combined.w[2])).toBe(true);
+    expect(Array.from(combined.w.slice(0, 2))).toEqual([0, 0]);
+    expect(Array.from(combined.w.slice(3))).toEqual([1, 1]);
   });
 });
 

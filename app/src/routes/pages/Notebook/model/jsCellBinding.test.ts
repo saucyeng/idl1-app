@@ -395,22 +395,13 @@ describe("bindingFor — FFT arm", () => {
     expect(binding?.kind).toBe("time");
   });
 
-  it("bindingFor — hostVarName folds in windowIndex — two windowIndex values over the same channel/params produce distinct hostVarNames (R127 item 5)", () => {
+  it("bindingFor — hostVarName never varies by window (ruling R129, amending R127 item 5) — two different selected windows over the same channel/params produce the same hostVarName", () => {
     const detail = sessionDetail([channel()]);
 
-    const a = asFft(bindingFor({ id: "cell-a", code: fftCode("fork_velocity") }, detail, 60_000_000, noDefinitions, lapWindow(1), 0));
-    const b = asFft(bindingFor({ id: "cell-a", code: fftCode("fork_velocity") }, detail, 60_000_000, noDefinitions, lapWindow(2), 1));
+    const a = asFft(bindingFor({ id: "cell-a", code: fftCode("fork_velocity") }, detail, 60_000_000, noDefinitions, lapWindow(1)));
+    const b = asFft(bindingFor({ id: "cell-a", code: fftCode("fork_velocity") }, detail, 60_000_000, noDefinitions, lapWindow(2)));
 
-    expect(a.hostVarName).not.toBe(b.hostVarName);
-  });
-
-  it("bindingFor — windowIndex 0 (default) — hostVarName is byte-identical to omitting windowIndex (R127 item 3)", () => {
-    const detail = sessionDetail([channel()]);
-
-    const withoutIndex = asFft(bindingFor({ id: "cell-a", code: fftCode("fork_velocity") }, detail, 60_000_000, noDefinitions, lapWindow(1)));
-    const withZero = asFft(bindingFor({ id: "cell-a", code: fftCode("fork_velocity") }, detail, 60_000_000, noDefinitions, lapWindow(1), 0));
-
-    expect(withoutIndex.hostVarName).toBe(withZero.hostVarName);
+    expect(a.hostVarName).toBe(b.hostVarName);
   });
 });
 
@@ -455,11 +446,12 @@ describe("bindingIdentity — FFT arm", () => {
     expect(bindingIdentity(a!)).toBe(bindingIdentity(b!));
   });
 
-  it("bindingIdentity — two windows sharing the same ordinal (windowIndex 0) but different content — still produce a different identity", () => {
+  it("bindingIdentity — two different windows sharing the same hostVarName (ruling R129) — still produce a different identity, from request.window's content alone", () => {
     const detail = sessionDetail([channel()]);
-    const a = bindingFor({ id: "cell-a", code: fftCode("fork_velocity") }, detail, 60_000_000, noDefinitions, lapWindow(1), 0);
-    const b = bindingFor({ id: "cell-a", code: fftCode("fork_velocity") }, detail, 60_000_000, noDefinitions, lapWindow(2), 0);
+    const a = bindingFor({ id: "cell-a", code: fftCode("fork_velocity") }, detail, 60_000_000, noDefinitions, lapWindow(1));
+    const b = bindingFor({ id: "cell-a", code: fftCode("fork_velocity") }, detail, 60_000_000, noDefinitions, lapWindow(2));
 
+    expect(asFft(a).hostVarName).toBe(asFft(b).hostVarName);
     expect(bindingIdentity(a!)).not.toBe(bindingIdentity(b!));
   });
 });
