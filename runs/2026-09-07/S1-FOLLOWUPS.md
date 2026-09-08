@@ -23,3 +23,34 @@
   present only in a non-primary window's session is missed. Needs two
   windows over different sessions with different channel sets; lap-to-lap
   within one session is unaffected.
+
+## MUST FIX BEFORE THE S1 MERGE
+
+- **Non-primary windows can permanently miss their data** (review of Task
+  11a/11b, Important). Both IPC-driving effects in `Notebook/index.tsx` read
+  the whole `sessionDetailsByWindow` map, but their dependency arrays carry
+  only `sessionDetail` (the **primary** window's entry) and
+  `windowsKeyValue`. `sessionSpanDriver` resolves each window's
+  `SessionDetail` independently and asynchronously with no ordering
+  guarantee, so when a non-primary window's detail arrives *after* the
+  primary's, neither dep has changed and neither effect re-runs. A later
+  unrelated re-run does not help: `bindingIdentity`/`perWindowIdentity` for
+  the primary window is unchanged, so the identity check short-circuits
+  before that window's data is read. Net effect: on an ordinary two-lap
+  selection, a window can silently never get its channel data or spectrum,
+  with no error and no recovery short of reselecting — defeating exactly
+  the feature Tasks 11a/11b exist to deliver.
+  **Fix:** add a stable dependency that changes whenever *any* selected
+  window's `SessionDetail` resolves — a derived readiness string over
+  `windows.map(w => sessionDetailsByWindow.has(windowKey(w)))`, or a
+  monotonic sequence bumped with the map — and include it in both effects'
+  dependency arrays. Operating brief §4: deps are stable *strings*, never
+  object identity; the primary window's identity is not a proxy for the
+  selection's readiness.
+  Not catchable by the current gate — `channelBindDriver.test.ts` and
+  `fftDriver.test.ts` are pure-driver tests, not effect tests.
+
+- **Minor, `NotebookSession.ts:52`:** the doc comment says the channel-bind
+  effects gate on `windows.length <= 1` per R131. Task 11b removed that
+  gate; what actually stays single-window is `BoundChannel`'s own
+  rebuild-replay registration. Substance correct, stated reason stale.
