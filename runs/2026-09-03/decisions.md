@@ -6473,3 +6473,53 @@ lap-distance lane relies on it.
 **Cost if wrong.** The `fft` divergence is live today: two spectra, one
 name. Every workbook written before it is fixed contains cells whose author
 believed they matched the chart beside them.
+
+## 2026-09-08 — R147: a lane that builds the logic and wires none of the gestures has shipped a library, not a feature
+
+**Finding** (W3.2 maths lane's own gap list, self-reported). All twelve
+planned tasks landed: `graphLayout`, `mathExpr`, `graphModel`,
+`graphAutoLayout`, `graphStatus`, `graphEdits`, `graphView`, `dragCommit`,
+`portShape`, `graphToChart`, `graphSubgraph`, plus the canvas and node card
+— 126 tests, all pure logic tested. And:
+
+> "`graphEdits.ts`'s five mutations (rename/rewire/editLiteralArg/
+> addNodeFromChannel/deleteNode) are fully implemented and tested as pure
+> functions, but **none of them are wired to any UI gesture**."
+
+The only gestures wired end to end are drag-to-reposition and a chart
+button. Decision 45a says adding from a raw channel, rewiring an input,
+changing a constant and renaming are each **first-class, one gesture**.
+Decision 76 measures this lane by *the number of gestures from raw channel
+to charted derived channel*. By that measure the lane currently scores
+nearly zero, while every unit test passes.
+
+**This is a planning failure, not an implementation failure**, and the rule
+is worth stating: **a lane's task plan must land at least one gesture end to
+end early, and each subsequent capability must be reachable by the user in
+the task that introduces it.** Building twelve pure modules and wiring two
+of them produces a codebase that is entirely green and a product that cannot
+do the thing. Purity and testability are means; a reachable gesture is the
+deliverable.
+
+It is also invisible to every gate we run. `tsc` passes, vitest passes, the
+reviewer's checks pass — because unwired correct code is still correct code.
+Only the honest gap list caught it, for the second time today (the time
+lane's caught a live mis-scoping bug the same way). **Every lane closes with
+one.**
+
+**Ruling.** The lane merges as it stands — the modules are correct, tested
+and reviewed, and holding them back helps nobody. The gesture wiring for
+decision 45a becomes the **next dispatched work**, ahead of the remaining
+polish items (search pan-to-result, minimap theming, the subsheet frame,
+chart-type pictograms), because those make an already-usable thing nicer
+whereas this makes an unusable thing usable.
+
+**Sequence for the follow-on:** double-click-to-rename first (it exercises
+R145's report-what-could-not-be-rewritten path), then edit-a-literal-on-the-
+card, then drag-a-port-to-rewire, then drag-a-channel-to-add. Add the
+per-node details pane in the properties column that decision 45a's first
+half asks for — today a card click opens the *cell's* code editor, which is
+not the same thing.
+
+**Cost if wrong.** Isaac opens the canvas, sees his whole workbook drawn
+correctly, and cannot change a single thing on it.
