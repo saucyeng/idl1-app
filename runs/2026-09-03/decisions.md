@@ -6029,3 +6029,49 @@ existing sessions.
 The wheel/IMU/GPS velocity block stays deferred, per Isaac, and this lane
 does not depend on it. If that block ever lands, it drops into the same
 process-model slot as a better estimate without changing the structure.
+
+## 2026-09-08 — R138: "resolved" must have one definition, shared by the gate and the consumer
+
+**Finding** (review of W3.2 time tasks 1–3, Critical). The lane added
+`sessionSpansReadiness` to the channel-bind effect's **outer** dependency
+array — correct, and applied unprompted from R133. But the effect's **inner**
+gate still computes
+`resolvedWindowKeys = windowKeys.filter(k => sessionDetailsByWindow.has(k))`,
+which never consults `sessionSpanUsByWindow`. Since `runSessionSpan`
+dispatches `sessionDetail` before `sessionSpan`, a non-primary
+`"session"`-kind window is marked *resolved* and has its identity recorded
+**before** `bindWindowsFor` — which correctly excludes it while its span is
+unresolved — would include it. When the span later arrives, the identity
+already matches, `needsRun` stays false, and that window's channel data is
+**never fetched again for the cell's lifetime**.
+
+This is R133 for the third time: the gate and the work disagree about
+readiness, and fixing the dependency did not fix the gate.
+
+**Ruling — stop patching gates; unify the predicate.** "Resolved" gets **one
+definition**, and the gate must use the *same function* the consumer uses to
+decide inclusion. Concretely: `resolvedWindowKeys` is derived from what
+`bindWindowsFor` would actually include, not from a parallel
+`has()`-check maintained beside it. Two independent spellings of one
+predicate is the root cause, and it has now produced three defects (S1's
+`bindingIdentity`, S1's `sessionDetailsReadinessKey`, and this).
+
+**The general rule, added to the standing set:** when an effect gates work
+on "is X ready", the readiness test and the consumer's inclusion test must
+be the same code path. If a consumer can decline an item the gate called
+ready, the gate is wrong — and the failure is always silent, because
+declining to work looks exactly like having no work to do.
+
+**Also decided, from the same review:**
+- **Click-to-unpin is blessed.** Clicking the already-pinned instant
+  unpins. Decision 51 says a single click pins and is silent on unpinning;
+  the behaviour is discoverable (click the visible pinned line), reversible,
+  and round-trips through the pixel↔time formulas across a viewport change.
+  Recording it so it is an explicit decision rather than an implied one
+  inherited from a plan document (CLAUDE.md §1).
+- **Minor accepted:** `useRef(createCursorBus())` allocates on every render
+  and discards all but the first. Harmless, but lazy-init it.
+
+**Cost if wrong.** The Critical silently drops a selected window's channel
+data permanently — the same user-visible failure S1 shipped twice and fixed
+twice, arriving a third time through a third gate.
