@@ -214,6 +214,31 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
   new `bindWindowsFor` helper reading the already-resolved
   `sessionDetailsByWindow`; the Task 11a interim multi-window cell error
   (`MULTI_WINDOW_CHART_NOTE`) is deleted.
+- **Data tab: session rows are multi-select, laps are selectable for the
+  first time, and a per-window colour picker (2026-09-08, s1-ts Task 12,
+  ruling R111/R115/R117 item 6/decision 84, no spec change needed).**
+  `sessionRow.ts` gains `modifierFromClick` (shift → `"add"`, ctrl/cmd →
+  `"toggle"`, plain → `"replace"`) and `sessionRowClicked`, both delegating
+  to `state/selection.ts`'s `nextWindows`/`assignColour`; the old
+  single-session `nextSelectedSession` is deleted outright. New
+  `lapSelection.ts`'s `lapRowClicked` mints a `{ kind: "lap" }` window —
+  `DetailPane`'s `LapTable` rows are now clickable, the first UI path ever
+  to dispatch a lap selection (R117 item 7's context: `main_lap_window`'s
+  indexing defect, fixed in Task 3, had never been exercised because of
+  this). New `ColourPicker.tsx`: eight swatch buttons over the `--chart-1…8`
+  tokens only (never a hex), shared by `DetailPane`'s header (a selected
+  session window) and `LapTable`'s rows (a selected lap window), each
+  dispatching `SET_WINDOW_COLOUR` by the window's index in
+  `AppState.selection`. `Data/index.tsx` now tracks a `focusedSessionId`
+  local state (which row's detail pane is open) separately from
+  `AppState.selection` (which windows drive the charts) — a row click
+  always focuses that row and (modifier-dependent) updates its window; a
+  new effect compares the fetched session list against `selection` on every
+  `loadSessions` and drops any window whose session is gone via
+  `sessionRow.ts`'s new `dropDeletedSessionWindows`, surfacing a
+  dismissable one-time banner (R117 item 5) rather than silently emptying
+  a chart. `tsc` is clean for this file; `shell/TopBar.tsx` is the one
+  remaining break, closed by Task 13.
 
 ### Fixed
 

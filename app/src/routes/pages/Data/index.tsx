@@ -12,6 +12,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from ".
 import { Tabs, TabsList, TabsTrigger } from "../../../components/ui/tabs";
 import { deleteSession, getSession, listLaps, listSessions, rebuildCatalog, rescanTracks, type LapSummary, type SessionDetail, type SessionSummary } from "../../../ipc/catalog";
 import { useAppState } from "../../../state/AppState";
+import type { SelectionWindow } from "../../../state/selection";
 import { ActiveChips } from "./ActiveChips";
 import { DetailPane } from "./DetailPane";
 import { dataLayout } from "./layout";
@@ -33,7 +34,7 @@ import {
   startMaintenanceAction,
 } from "./maintenance";
 import { toDetailView } from "./sessionDetail";
-import { groupKeyOf, nextSelectedSession, toSessionRow, type SessionRow } from "./sessionRow";
+import { dropDeletedSessionWindows, groupKeyOf, modifierFromClick, sessionRowClicked, toSessionRow, type SessionRow } from "./sessionRow";
 import { compareSessions, sortFieldsForView, type SortField } from "./sort";
 import { TrackResults } from "./TrackResults";
 
@@ -137,29 +138,39 @@ function useWindowWidth(): number {
   return width;
 }
 
-/** One session row, plus (only when it is the selected/open session) its
- *  laps as recessed sub-rows on the same column grid (UI-DIRECTION "Data").
- *  Selection is the single-session model (`AppState.selection`) shown as a
- *  gutter checkbox — idl0's session-mode checkbox half of the XOR model
- *  (decision 33), now including idl0's click-to-deselect toggle (R96 —
- *  clicking the already-selected row clears the selection, see
- *  `nextSelectedSession`); this task wires no lap-mode checkbox (see the
- *  page's own "Parity gaps"). Lap
- *  sub-rows are sourced from the same `detailView` the `DetailPane` on the
- *  right already fetched for the selected session, rather than a second
- *  per-row `listLaps` call — expanding is therefore exactly "select", not an
- *  independent fetch. */
+/** One session row, plus (only when it is the *focused* row — the one the
+ *  right-hand `DetailPane` is open on) its laps as recessed sub-rows on the
+ *  same column grid (UI-DIRECTION "Data"). Selection (S1 Task 12,
+ *  R111/R115) is now multi-window: the gutter checkbox reflects `checked` —
+ *  whether *this session's own* `{ kind: "session" }` window is in
+ *  `AppState.selection` — independently of `expanded`, which is only about
+ *  which row's detail is open (one at a time, idl0-parity). A click still
+ *  both toggles the window (via `onSelect`'s modifier) and opens the
+ *  detail pane, matching idl0's single-click-does-both behaviour; the
+ *  modifier keys (shift/ctrl/cmd) only change *how* the window combines
+ *  with the rest of the selection (`sessionRow.ts`'s `modifierFromClick`).
+ *  Lap sub-rows here are inline eye-candy only (not independently
+ *  selectable — lap selection lives in `DetailPane`'s `LapTable`, this
+ *  task's other clickable-row surface), sourced from the same `detailView`
+ *  the `DetailPane` on the right already fetched, rather than a second
+ *  per-row `listLaps` call. */
 function SessionRowView({
   row,
-  selected,
+  checked,
+  expanded,
   onSelect,
   laps,
   lapsErrorText,
 }: {
   row: SessionRow;
-  selected: boolean;
-  onSelect: () => void;
-  /** Non-null only when `selected` and the detail fetch for this session has
+  /** Whether this session's own `{ kind: "session" }` window is currently
+   *  selected — drives the checkbox and the gutter bar. */
+  checked: boolean;
+  /** Whether this row's detail pane is the one open on the right — drives
+   *  the inline lap sub-rows. */
+  expanded: boolean;
+  onSelect: (e: { shiftKey: boolean; ctrlKey: boolean; metaKey: boolean }) => void;
+  /** Non-null only when `expanded` and the detail fetch for this session has
    *  resolved with laps. */
   laps: ReturnType<typeof toDetailView>["laps"] | null;
   lapsErrorText: string | null;
@@ -167,23 +178,23 @@ function SessionRowView({
   return (
     <div className="flex flex-col">
       <DenseRow
-        selected={selected}
+        selected={checked}
         role="row"
         tabIndex={0}
-        aria-selected={selected}
+        aria-selected={checked}
         className="cursor-pointer px-3"
-        onClick={onSelect}
+        onClick={(e) => onSelect({ shiftKey: e.shiftKey, ctrlKey: e.ctrlKey, metaKey: e.metaKey })}
         onKeyDown={(e) => {
           if (e.key !== "Enter" && e.key !== " ") return;
           e.preventDefault();
-          onSelect();
+          onSelect({ shiftKey: e.shiftKey, ctrlKey: e.ctrlKey, metaKey: e.metaKey });
         }}
       >
         <Checkbox
-          checked={selected}
-          onCheckedChange={onSelect}
+          checked={checked}
+          onCheckedChange={() => onSelect({ shiftKey: false, ctrlKey: false, metaKey: false })}
           onClick={(e) => e.stopPropagation()}
-          aria-label={selected ? "Selected" : "Select session"}
+          aria-label={checked ? "Selected" : "Select session"}
           className="shrink-0 data-[state=unchecked]:opacity-50"
         />
         <span className="w-16 shrink-0 font-mono text-sm text-fg">{row.timeText}</span>
@@ -193,7 +204,7 @@ function SessionRowView({
         <span className="w-14 shrink-0 font-mono text-sm text-fg-dim">{row.lapCountText}</span>
         <Badge className="shrink-0">.{row.sourceFormat}</Badge>
       </DenseRow>
-      {selected && laps !== null && (
+      {expanded && laps !== null && (
         <div className="flex flex-col bg-surface-2 pl-9">
           {lapsErrorText !== null ? (
             <p role="alert" className="px-3 py-1.5 font-mono text-xs text-brand-accent">
@@ -239,7 +250,20 @@ export default function Data() {
   const [filterSheetOpen, setFilterSheetOpen] = useState(false);
   const [detailSheetOpen, setDetailSheetOpen] = useState(false);
   const [appState, appDispatch] = useAppState();
-  const selectedSessionId = appState.selection.sessionId;
+  const selection = appState.selection;
+  /** The session whose detail pane is open on the right — separate from
+   *  `AppState.selection` (S1 Task 12, R111/R115): selection is now a
+   *  multi-window list, but only one row's detail is shown at a time
+   *  (idl0-parity). A row click always focuses that row regardless of
+   *  modifier, even when the modifier means "add" or "toggle" for the
+   *  selection itself. */
+  const [focusedSessionId, setFocusedSessionId] = useState<string | null>(null);
+  /** R117 item 5: set once when `loadSessions` finds that a selected
+   *  session's windows had to be dropped (deleted/forgotten/rebuilt away) —
+   *  shown as a one-time banner, cleared by the close button or the next
+   *  drop. Not re-derived from `state`/`selection` on every render, so
+   *  dismissing it stays dismissed until the next real drop. */
+  const [deletedSessionNotice, setDeletedSessionNotice] = useState<string | null>(null);
   const width = useWindowWidth();
   const layout = dataLayout(width);
 
@@ -267,6 +291,24 @@ export default function Data() {
     };
   }, [loadSessions]);
 
+  // R117 item 5: whenever the fetched session list changes (mount, import,
+  // delete/forget/rescan/rebuild — every one of those calls `loadSessions`),
+  // drop any selected window whose session is no longer in the catalog and
+  // say so once. Pure data dependencies only (`state`, `selection`) —
+  // no IPC, no function-prop dependency (operating brief §4's tightening).
+  useEffect(() => {
+    if (state.status !== "ready") return;
+    const existingIds = new Set(state.sessions.map((s) => s.session_id));
+    const result = dropDeletedSessionWindows(selection, existingIds);
+    if (result.droppedCount === 0) return;
+    appDispatch({ type: "SET_WINDOWS", windows: result.windows });
+    setDeletedSessionNotice(
+      result.droppedCount === 1
+        ? "A selected session was deleted and removed from your selection."
+        : `${result.droppedCount} selected sessions were deleted and removed from your selection.`,
+    );
+  }, [state, selection, appDispatch]);
+
   const handleImported = useCallback(() => {
     loadSessions(() => false);
   }, [loadSessions]);
@@ -287,10 +329,10 @@ export default function Data() {
    *  lands, so the confirmation is built now rather than added later
    *  alongside the real wiring (this task's brief). */
   const handleDeleteSession = () => {
-    if (selectedSessionId === null) return;
+    if (focusedSessionId === null) return;
     // TODO(idl0): replace window.confirm() with the shell's in-app modal once one exists
     if (!window.confirm("Delete this session and its source file? This cannot be undone.")) return;
-    startMaintenanceAction(maintenanceState, "delete_session", runDeleteSession(deleteSession, selectedSessionId, true), (a) => {
+    startMaintenanceAction(maintenanceState, "delete_session", runDeleteSession(deleteSession, focusedSessionId, true), (a) => {
       maintenanceDispatch(a);
       if (a.type === "SUCCEEDED") {
         closeDetail();
@@ -303,10 +345,10 @@ export default function Data() {
    *  onto the same `deleteSession` (C3 §3.2) with `deleteBlob: false`
    *  rather than a fourth call site. */
   const handleForgetSession = () => {
-    if (selectedSessionId === null) return;
+    if (focusedSessionId === null) return;
     // TODO(idl0): replace window.confirm() with the shell's in-app modal once one exists
     if (!window.confirm("Remove this session from the catalog? Its source file is kept.")) return;
-    startMaintenanceAction(maintenanceState, "forget_session", runForgetSession(deleteSession, selectedSessionId), (a) => {
+    startMaintenanceAction(maintenanceState, "forget_session", runForgetSession(deleteSession, focusedSessionId), (a) => {
       maintenanceDispatch(a);
       if (a.type === "SUCCEEDED") {
         closeDetail();
@@ -339,10 +381,10 @@ export default function Data() {
    *  canonical truth afterward via [[loadDetail]], since laps/sectors/
    *  neutral-zone visits and any cleared lap flags may all have changed. */
   const handleRescanTracks = () => {
-    if (selectedSessionId === null) return;
-    startMaintenanceAction(maintenanceState, "rescan_tracks", runRescanTracks(rescanTracks, selectedSessionId), (a) => {
+    if (focusedSessionId === null) return;
+    startMaintenanceAction(maintenanceState, "rescan_tracks", runRescanTracks(rescanTracks, focusedSessionId), (a) => {
       maintenanceDispatch(a);
-      if (a.type === "SUCCEEDED") loadDetail(selectedSessionId, () => false);
+      if (a.type === "SUCCEEDED") loadDetail(focusedSessionId, () => false);
     });
   };
 
@@ -388,18 +430,18 @@ export default function Data() {
   }, []);
 
   useEffect(() => {
-    if (selectedSessionId === null) {
+    if (focusedSessionId === null) {
       detailDispatch({ type: "detail-closed" });
       return;
     }
 
     let cancelled = false;
-    loadDetail(selectedSessionId, () => cancelled);
+    loadDetail(focusedSessionId, () => cancelled);
 
     return () => {
       cancelled = true;
     };
-  }, [selectedSessionId, loadDetail]);
+  }, [focusedSessionId, loadDetail]);
 
   const sessions = state.status === "ready" ? state.sessions : [];
 
@@ -420,19 +462,27 @@ export default function Data() {
     [detailState],
   );
 
-  /** Row selection (R53 Data Q3): dispatches into `AppState.selection` so
-   *  the notebook can read the chosen session later. Never dispatches
-   *  `SET_LAP_CONTEXT` — no lap UI in this task picks a main/overlay lap
-   *  (deferred to L6, per the Data lane brief's Parity gaps). Selecting the
-   *  already-selected row closes it — the same toggle idl0's row tap/gutter
-   *  checkbox both drive (R96, decided in `nextSelectedSession`). */
-  const selectSession = (sessionId: string) => {
-    appDispatch({ type: "SET_SELECTED_SESSION", sessionId: nextSelectedSession(selectedSessionId, sessionId) });
+  /** Row selection (S1 Task 12, R111/R115): a click computes the next
+   *  `AppState.selection` via `sessionRow.ts`'s `sessionRowClicked`
+   *  (modifier-dependent replace/add/toggle over the session's own
+   *  `{ kind: "session" }` window) and *always* focuses the clicked row's
+   *  detail pane, regardless of modifier — the multi-select gesture is
+   *  about which windows drive the charts, not which row's detail is open.
+   *  Never dispatches a lap window here — that path is `DetailPane`'s
+   *  `LapTable` (this task's other clickable-row surface). */
+  const selectSession = (sessionId: string, e: { shiftKey: boolean; ctrlKey: boolean; metaKey: boolean }) => {
+    appDispatch({ type: "SET_WINDOWS", windows: sessionRowClicked(selection, sessionId, modifierFromClick(e)) });
+    setFocusedSessionId(sessionId);
     if (layout.detail === "sheet") setDetailSheetOpen(true);
   };
 
+  /** Closes the detail pane only — never touches `AppState.selection`
+   *  (S1 Task 12: closing the pane a row opened is not the same gesture as
+   *  deselecting that row's window; a chart built from a closed-pane
+   *  session keeps showing it, exactly as decision 61 says it should until
+   *  the window itself is toggled off). */
   const closeDetail = () => {
-    appDispatch({ type: "SET_SELECTED_SESSION", sessionId: null });
+    setFocusedSessionId(null);
   };
 
   // Keeps the detail sheet open on a resize into the narrow layout while a
@@ -440,8 +490,8 @@ export default function Data() {
   // shrinks) — width-dependent, but reading `dataLayout`'s own pure result,
   // never deciding layout itself.
   useEffect(() => {
-    if (layout.detail === "sheet" && selectedSessionId !== null) setDetailSheetOpen(true);
-  }, [layout.detail, selectedSessionId]);
+    if (layout.detail === "sheet" && focusedSessionId !== null) setDetailSheetOpen(true);
+  }, [layout.detail, focusedSessionId]);
 
   const detailContent =
     detailState.status === "loading" ? (
@@ -455,6 +505,9 @@ export default function Data() {
         view={detailView}
         detail={detailState.detail}
         lapsErrorText={detailState.lapsErrorText}
+        selection={selection}
+        onWindowsChange={(windows: SelectionWindow[]) => appDispatch({ type: "SET_WINDOWS", windows })}
+        onSetColour={(index: number, colour: string) => appDispatch({ type: "SET_WINDOW_COLOUR", index, colour })}
         onMetadataSaved={handleMetadataSaved}
         onClose={closeDetail}
       />
@@ -467,13 +520,13 @@ export default function Data() {
       <Button type="button" size="sm" onClick={handleRebuildCatalog} disabled={maintenanceState.status === "running"}>
         <DatabaseIcon /> Rebuild catalog
       </Button>
-      <Button type="button" size="sm" onClick={handleDeleteSession} disabled={selectedSessionId === null || maintenanceState.status === "running"}>
+      <Button type="button" size="sm" onClick={handleDeleteSession} disabled={focusedSessionId === null || maintenanceState.status === "running"}>
         Delete session
       </Button>
-      <Button type="button" size="sm" onClick={handleForgetSession} disabled={selectedSessionId === null || maintenanceState.status === "running"}>
+      <Button type="button" size="sm" onClick={handleForgetSession} disabled={focusedSessionId === null || maintenanceState.status === "running"}>
         Forget session
       </Button>
-      <Button type="button" size="sm" onClick={handleRescanTracks} disabled={selectedSessionId === null || maintenanceState.status === "running"}>
+      <Button type="button" size="sm" onClick={handleRescanTracks} disabled={focusedSessionId === null || maintenanceState.status === "running"}>
         Rescan tracks
       </Button>
       <Button
@@ -558,6 +611,15 @@ export default function Data() {
           <ImportPanel onImported={handleImported} />
         </div>
 
+        {deletedSessionNotice !== null && (
+          <div role="status" className="flex items-center justify-between gap-2 border-b border-rule bg-surface-2 px-3 py-1.5">
+            <NoteBlock className="border-brand-accent text-brand-accent">{deletedSessionNotice}</NoteBlock>
+            <Button type="button" size="icon-sm" aria-label="Dismiss" onClick={() => setDeletedSessionNotice(null)}>
+              ×
+            </Button>
+          </div>
+        )}
+
         {maintenanceToolbar}
         {maintenancePanelOpen && <MaintenancePanel />}
         {viewAndSortToolbar}
@@ -593,10 +655,11 @@ export default function Data() {
                       <SessionRowView
                         key={row.sessionId}
                         row={row}
-                        selected={row.sessionId === selectedSessionId}
-                        onSelect={() => selectSession(row.sessionId)}
-                        laps={row.sessionId === selectedSessionId && detailView !== null ? detailView.laps : null}
-                        lapsErrorText={row.sessionId === selectedSessionId ? detailState.status === "ready" ? detailState.lapsErrorText : null : null}
+                        checked={selection.some((w) => w.sessionId === row.sessionId && w.span.kind === "session")}
+                        expanded={row.sessionId === focusedSessionId}
+                        onSelect={(e) => selectSession(row.sessionId, e)}
+                        laps={row.sessionId === focusedSessionId && detailView !== null ? detailView.laps : null}
+                        lapsErrorText={row.sessionId === focusedSessionId ? detailState.status === "ready" ? detailState.lapsErrorText : null : null}
                       />
                     ))}
                   </CollapsibleContent>
@@ -607,12 +670,12 @@ export default function Data() {
         </div>
       </div>
 
-      {filters.view === "sessions" && selectedSessionId !== null && layout.detail === "docked" && (
+      {filters.view === "sessions" && focusedSessionId !== null && layout.detail === "docked" && (
         <div className="shrink-0 border-l border-rule" style={{ width: layout.detailWidthPx ?? undefined }}>
           {detailContent}
         </div>
       )}
-      {filters.view === "sessions" && selectedSessionId !== null && layout.detail === "panel" && (
+      {filters.view === "sessions" && focusedSessionId !== null && layout.detail === "panel" && (
         <div className="w-72 shrink-0 border-l border-rule">{detailContent}</div>
       )}
 
@@ -623,7 +686,7 @@ export default function Data() {
       )}
       {layout.detail === "sheet" && (
         <BrandSheet
-          open={detailSheetOpen && selectedSessionId !== null}
+          open={detailSheetOpen && focusedSessionId !== null}
           onOpenChange={(open) => {
             setDetailSheetOpen(open);
             if (!open) closeDetail();
