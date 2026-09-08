@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 
+import type { SessionDetail } from "../../../../ipc/catalog";
 import type { DecodedHostChannel } from "../../../../ipc/hostChannel";
 import type { DecodedTile } from "../../../../ipc/tiles";
+import type { SelectionWindow } from "../../../../state/selection";
 import type { WindowDescriptor } from "../host/protocol";
 import { CellRunSequencer } from "./cellRunSequencer";
 import {
@@ -17,6 +19,40 @@ import {
 import type { BoundChannel } from "./channelRebind";
 import type { JsCellBindingChannel, TimeCellBinding } from "./jsCellBinding";
 import { TileCache } from "./tileCache";
+import { resolvedWindowKeysFor } from "./viewportWindows";
+
+/** A minimal, valid `SessionDetail` for the R138 regression test below --
+ *  only `session_id` varies between fixtures; every other field is filler
+ *  a `SessionDetail`-shaped value needs but this test doesn't read. */
+function minimalSessionDetail(sessionId: string): SessionDetail {
+  return {
+    session_id: sessionId,
+    device_id: null,
+    timestamp_utc_ms: 0,
+    config_checksum: null,
+    source_format: "idl0",
+    blob_sha256: "0".repeat(64),
+    channels: [],
+    rider: "",
+    bike: "",
+    bike_comment: "",
+    venue_name: "",
+    event_name: "",
+    event_session: "",
+    short_comment: "",
+    long_comment: "",
+    tag: "",
+    bike_profile_snapshot: null,
+    laps: [],
+    track_visits: [],
+    reference_lap_number: null,
+    ignored_lap_numbers: [],
+    main_lap_number: null,
+    overlay_lap_key: null,
+    starred_lap_number: null,
+    track_visits_library_hash: null,
+  };
+}
 
 /** Builds a `WindowDescriptor` for a test fixture -- `span`/`colour`/`label` are unread by `channelBindDriver.ts` itself (they pass straight through to the combined payload), so a placeholder is fine everywhere but the tests that assert on it directly. */
 function descriptor(sessionId: string, colour = "--chart-1"): WindowDescriptor {
@@ -210,6 +246,60 @@ describe("updateChannelBindIdentity", () => {
     updateChannelBindIdentity(perWindowIdentity, ["primary-key"], new Set(["primary-key"]), "identity-a");
 
     expect(perWindowIdentity.has("stale-key")).toBe(false);
+  });
+
+  it("updateChannelBindIdentity — R138's own regression: a non-primary session window's detail resolves before its span, then the span arrives — fetches once, not never", () => {
+    // The exact defect ruling R138 fixes: task 3's channel-bind effect used
+    // to compute `resolvedWindowKeys` with its own second, independently
+    // spelled predicate (`sessionDetailsByWindow.has(key)`), which read
+    // `true` the instant a non-primary "session" window's `SessionDetail`
+    // resolved even though its recorded span hadn't. That falsely marked
+    // the window "resolved" for this gate, so once the span *did* arrive
+    // the identity already matched and `needsRun` never flipped back to
+    // `true` -- the window's data was never fetched, silently, for the
+    // cell's lifetime. This test drives the real `resolvedWindowKeysFor`
+    // (the fix: one predicate, shared with `bindWindowsFor`) into
+    // `updateChannelBindIdentity` across both moments and asserts the gate
+    // itself, not only the derivation.
+    const primary: SelectionWindow = { sessionId: "primary", span: { kind: "session" }, colour: "--chart-1" };
+    const sibling: SelectionWindow = { sessionId: "sibling", span: { kind: "session" }, colour: "--chart-2" };
+    const windows = [primary, sibling];
+    const windowKeys = windows.map((w) => `${w.sessionId}::session`);
+    const identity = "binding-identity-a";
+    const perWindowIdentity = new Map<string, string>();
+
+    // Moment 1: both windows' SessionDetail have resolved, but only the
+    // primary's recorded span has -- this is the cell's very first bind
+    // attempt for this identity, so it still needs a run (the primary
+    // window alone is enough to start one), but the sibling's own entry
+    // must not be recorded as bound yet.
+    const detailsByWindow1 = new Map([
+      ["primary::session", minimalSessionDetail("primary")],
+      ["sibling::session", minimalSessionDetail("sibling")],
+    ]);
+    const spanUsByWindow1 = new Map([["primary::session", 1_000_000]]); // sibling's span not yet resolved
+    const resolved1 = resolvedWindowKeysFor(windows, detailsByWindow1, spanUsByWindow1);
+    const needsRun1 = updateChannelBindIdentity(perWindowIdentity, windowKeys, resolved1, identity);
+
+    expect(needsRun1).toBe(true);
+    expect(perWindowIdentity.get("sibling::session")).toBeUndefined();
+
+    // Moment 2: the sibling's span has now arrived -- with the buggy
+    // `.has(detail)` predicate this window was already (wrongly) marked
+    // resolved at moment 1 and its identity already recorded, so this
+    // would read `needsRun: false` and its data would never be fetched.
+    // With `resolvedWindowKeysFor`, the sibling was genuinely excluded at
+    // moment 1, so it still has no recorded identity now and this must
+    // report a run is needed.
+    const spanUsByWindow2 = new Map([
+      ["primary::session", 1_000_000],
+      ["sibling::session", 2_000_000],
+    ]);
+    const resolved2 = resolvedWindowKeysFor(windows, detailsByWindow1, spanUsByWindow2);
+    const needsRun2 = updateChannelBindIdentity(perWindowIdentity, windowKeys, resolved2, identity);
+
+    expect(needsRun2).toBe(true);
+    expect(perWindowIdentity.get("sibling::session")).toBe(identity);
   });
 });
 

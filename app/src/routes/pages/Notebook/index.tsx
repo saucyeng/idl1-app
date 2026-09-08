@@ -19,7 +19,6 @@ import {
   watchWorkbook,
   type CellOutput,
   type IpcError,
-  type Span as WireSpan,
   type Window as WireWindow,
 } from "../../../ipc/workbook";
 import { useAppState } from "../../../state/AppState";
@@ -55,7 +54,7 @@ import {
 } from "./model/channelBindDriver";
 import { CellRunSequencer } from "./model/cellRunSequencer";
 import { isCodeVisible, toggleCode } from "./model/codeVisibility";
-import { createCursorBus } from "./interaction/cursorBus";
+import { createCursorBus, type CursorBus } from "./interaction/cursorBus";
 import { BASIC_MOUSE_PRESET, findInputMapPreset, INPUT_MAP_PRESETS, type InputMapPreset } from "./interaction/inputMap";
 import PlaybackTransport from "./interaction/PlaybackTransport";
 import { tick, togglePlay, type PlaybackState } from "./interaction/playback";
@@ -76,7 +75,7 @@ import { initialSandboxPrimeState, nextSandboxPrimeState } from "./model/sandbox
 import { runSessionSpan, type SessionSpanAction, type SessionSpanDeps } from "./model/sessionSpanDriver";
 import { commitSharedViewport, viewportForCell, type SharedViewport } from "./model/sharedViewport";
 import { TileCache } from "./model/tileCache";
-import { resolveWindowSpan } from "./model/viewportWindows";
+import { resolvedWindowKeysFor, toWireWindow, windowSpanFor } from "./model/viewportWindows";
 import { chooseWorkbookEntry, type WorkbookEntry } from "./model/workbookEntry";
 import { initialWorkbookState, NO_WINDOW_KEY, workbookReducer } from "./model/workbookState";
 
@@ -102,20 +101,6 @@ function toIpcError(error: unknown): IpcError {
       : { kind: error.kind, message: error.message, detail: error.detail };
   }
   return { kind: "internal", message: error instanceof Error ? error.message : String(error) };
-}
-
-/** Converts one app-side `SelectionWindow` (`state/selection.ts`, camelCase)
- *  to its wire `Window` counterpart (`ipc/workbook.ts`, snake_case) -- the
- *  mapping `state/selection.ts`'s own `SelectionWindow` doc comment names
- *  explicitly ("a caller maps `sessionId`→`session_id`, …"). Pure. */
-function toWireWindow(w: SelectionWindow): WireWindow {
-  const span: WireSpan =
-    w.span.kind === "session"
-      ? { kind: "session" }
-      : w.span.kind === "lap"
-        ? { kind: "lap", lap_number: w.span.lapNumber }
-        : { kind: "range", t0_us: w.span.t0Us, t1_us: w.span.t1Us };
-  return { session_id: w.sessionId, span, colour: w.colour };
 }
 
 /** Synthetic label for an empty `venue_name`, matching `Data/sessionRow.ts`'s
@@ -159,6 +144,13 @@ function windowDescriptorFor(w: SelectionWindow, detail: SessionDetail | null): 
  * caller's effect skips this cell's bind entirely, same as today's "no
  * primary window" early return.
  */
+/**
+ * `windowSpanFor`/`resolvedWindowKeysFor` (`model/viewportWindows.ts`, R138
+ * fix) are the single predicate this function and the channel-bind effect's
+ * identity gate below both build on -- see that module's own doc comments.
+ * Moved out of this file so they're unit-testable (this file imports
+ * `@/components/*`, unresolvable in vitest's node test environment).
+ */
 function bindWindowsFor(
   windows: readonly SelectionWindow[],
   detailsByWindow: ReadonlyMap<string, SessionDetail | null>,
@@ -166,13 +158,12 @@ function bindWindowsFor(
 ): BindWindow[] {
   const result: BindWindow[] = [];
   for (const w of windows) {
-    const key = windowKey(w);
-    const detail = detailsByWindow.get(key) ?? null;
-    const span = detail !== null ? resolveWindowSpan(toWireWindow(w).span, detail, spanUsByWindow.get(key) ?? null) : null;
+    const span = windowSpanFor(w, detailsByWindow, spanUsByWindow);
     if (span === null) {
       if (result.length === 0) return [];
       continue;
     }
+    const detail = detailsByWindow.get(windowKey(w)) ?? null;
     result.push({ sessionId: w.sessionId, span, descriptor: windowDescriptorFor(w, detail) });
   }
   return result;
@@ -495,7 +486,14 @@ export default function NotebookPage() {
   // `manualCursorTUs` above through `onSetCursor`/`onClearCursor`, so
   // `sharedCursorTUs` stays the single source of truth for everything else
   // this page already reads it for (playback seed, the readout settle).
-  const cursorBusRef = useRef(createCursorBus());
+  // Lazy-init (`useRef(() => …)`, not `useRef(createCursorBus())`): the
+  // latter calls `createCursorBus()` on *every* render -- React discards
+  // every result but the first, but the call (and its throwaway
+  // subscriber-array allocation) still happens each time (review of Tasks
+  // 1-3, folded in per R138's dispatch).
+  const cursorBusRef = useRef<CursorBus | null>(null);
+  if (cursorBusRef.current === null) cursorBusRef.current = createCursorBus();
+  const cursorBus: CursorBus = cursorBusRef.current;
 
   // The worksheet's selected gesture input-map preset (ruling R137,
   // `interaction/inputMap.ts`; Task 5) -- plain React state, not a ref: a
@@ -1398,6 +1396,12 @@ export default function NotebookPage() {
     const bindWindows = bindWindowsFor(windows, sessionDetailsByWindow, sessionSpanUsByWindow);
     if (bindWindows.length === 0) return;
     const windowKeys = windows.map(windowKey);
+    // R138 fix: one predicate for "resolved," shared with `bindWindowsFor`
+    // itself (`windowSpanFor`) -- see `resolvedWindowKeysFor`'s own doc
+    // comment. Computed once per effect run, not per cell: it depends only
+    // on `windows`/`sessionDetailsByWindow`/`sessionSpanUsByWindow`, all
+    // fixed for the duration of this loop.
+    const resolvedWindowKeys = resolvedWindowKeysFor(windows, sessionDetailsByWindow, sessionSpanUsByWindow);
 
     for (const cell of state.cells) {
       if (cell.id === null || cell.kind !== "js") continue;
@@ -1421,7 +1425,6 @@ export default function NotebookPage() {
       const identity = bindingIdentity(binding);
       const perWindowIdentity = boundIdentityRef.current.get(cellId) ?? new Map<string, string>();
       boundIdentityRef.current.set(cellId, perWindowIdentity);
-      const resolvedWindowKeys = new Set(windowKeys.filter((wKey) => sessionDetailsByWindow.has(wKey)));
       const needsRun = updateChannelBindIdentity(perWindowIdentity, windowKeys, resolvedWindowKeys, identity);
       if (!needsRun) continue;
 
@@ -1990,7 +1993,7 @@ export default function NotebookPage() {
                 playing={playback.playing}
                 onSetCursor={(tUs) => setManualCursorTUs(BigInt(Math.round(tUs)))}
                 onClearCursor={() => setManualCursorTUs(null)}
-                cursorBus={cursorBusRef.current}
+                cursorBus={cursorBus}
                 inputMapPreset={inputMapPreset}
                 onToggleCode={() => setRevealedCells((prev) => toggleCode(prev, cellId))}
               />

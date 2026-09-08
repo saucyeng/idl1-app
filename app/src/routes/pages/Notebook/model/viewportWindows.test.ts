@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 
 import type { SessionDetail } from "../../../../ipc/catalog";
-import { cursorTimeInWindow, mapViewportToWindow, resolveWindowSpan } from "./viewportWindows";
+import type { SelectionWindow } from "../../../../state/selection";
+import { cursorTimeInWindow, mapViewportToWindow, resolveWindowSpan, resolvedWindowKeysFor, toWireWindow, windowSpanFor } from "./viewportWindows";
 
 function detailWithLaps(laps: Array<{ lap_number: number; start_time_secs: number; end_time_secs: number }>): SessionDetail {
   return {
@@ -135,5 +136,89 @@ describe("cursorTimeInWindow", () => {
     const window = { startUs: 120_000_000, endUs: 180_000_000 };
 
     expect(cursorTimeInWindow(0, window)).toBe(120_000_000);
+  });
+});
+
+describe("toWireWindow", () => {
+  it("toWireWindow — a session-kind window — session_id/colour carried, span narrowed to {kind: session}", () => {
+    const w: SelectionWindow = { sessionId: "s1", span: { kind: "session" }, colour: "--chart-1" };
+
+    expect(toWireWindow(w)).toEqual({ session_id: "s1", span: { kind: "session" }, colour: "--chart-1" });
+  });
+
+  it("toWireWindow — a range-kind window — t0Us/t1Us renamed to t0_us/t1_us", () => {
+    const w: SelectionWindow = { sessionId: "s1", span: { kind: "range", t0Us: 1_000, t1Us: 2_000 }, colour: "--chart-2" };
+
+    expect(toWireWindow(w)).toEqual({ session_id: "s1", span: { kind: "range", t0_us: 1_000, t1_us: 2_000 }, colour: "--chart-2" });
+  });
+});
+
+describe("windowSpanFor", () => {
+  it("windowSpanFor — a session-kind window whose SessionDetail has resolved but whose recorded span has not — null, not [0, 0)", () => {
+    const w: SelectionWindow = { sessionId: "s1", span: { kind: "session" }, colour: "--chart-1" };
+    const detailsByWindow = new Map([["s1::session", detailWithLaps([])]]);
+    const spanUsByWindow = new Map<string, number | null>(); // no entry yet for "s1::session"
+
+    expect(windowSpanFor(w, detailsByWindow, spanUsByWindow)).toBeNull();
+  });
+
+  it("windowSpanFor — a session-kind window whose recorded span has since resolved — [0, recordedSpanUs)", () => {
+    const w: SelectionWindow = { sessionId: "s1", span: { kind: "session" }, colour: "--chart-1" };
+    const detailsByWindow = new Map([["s1::session", detailWithLaps([])]]);
+    const spanUsByWindow = new Map([["s1::session", 900_000_000]]);
+
+    expect(windowSpanFor(w, detailsByWindow, spanUsByWindow)).toEqual({ startUs: 0, endUs: 900_000_000 });
+  });
+
+  it("windowSpanFor — no SessionDetail entry at all for this window's key — null", () => {
+    const w: SelectionWindow = { sessionId: "s1", span: { kind: "session" }, colour: "--chart-1" };
+
+    expect(windowSpanFor(w, new Map(), new Map())).toBeNull();
+  });
+});
+
+describe("resolvedWindowKeysFor", () => {
+  it("resolvedWindowKeysFor — R138's own regression: a non-primary session-kind window whose detail resolved before its span — excluded", () => {
+    const primary: SelectionWindow = { sessionId: "primary", span: { kind: "session" }, colour: "--chart-1" };
+    const sibling: SelectionWindow = { sessionId: "sibling", span: { kind: "session" }, colour: "--chart-2" };
+    const detailsByWindow = new Map([
+      ["primary::session", detailWithLaps([])],
+      ["sibling::session", detailWithLaps([])], // detail resolved...
+    ]);
+    const spanUsByWindow = new Map([["primary::session", 1_000_000]]); // ...but sibling's span has not
+
+    const resolved = resolvedWindowKeysFor([primary, sibling], detailsByWindow, spanUsByWindow);
+
+    expect(resolved.has("primary::session")).toBe(true);
+    expect(resolved.has("sibling::session")).toBe(false);
+  });
+
+  it("resolvedWindowKeysFor — the sibling's span later resolves too — now included", () => {
+    const primary: SelectionWindow = { sessionId: "primary", span: { kind: "session" }, colour: "--chart-1" };
+    const sibling: SelectionWindow = { sessionId: "sibling", span: { kind: "session" }, colour: "--chart-2" };
+    const detailsByWindow = new Map([
+      ["primary::session", detailWithLaps([])],
+      ["sibling::session", detailWithLaps([])],
+    ]);
+    const spanUsByWindow = new Map([
+      ["primary::session", 1_000_000],
+      ["sibling::session", 2_000_000],
+    ]);
+
+    const resolved = resolvedWindowKeysFor([primary, sibling], detailsByWindow, spanUsByWindow);
+
+    expect(resolved.has("primary::session")).toBe(true);
+    expect(resolved.has("sibling::session")).toBe(true);
+  });
+
+  it("resolvedWindowKeysFor — the primary window itself unresolved — every window excluded, mirroring bindWindowsFor's own return []", () => {
+    const primary: SelectionWindow = { sessionId: "primary", span: { kind: "session" }, colour: "--chart-1" };
+    const sibling: SelectionWindow = { sessionId: "sibling", span: { kind: "session" }, colour: "--chart-2" };
+    const detailsByWindow = new Map([["sibling::session", detailWithLaps([])]]); // primary's detail hasn't resolved
+    const spanUsByWindow = new Map([["sibling::session", 2_000_000]]);
+
+    const resolved = resolvedWindowKeysFor([primary, sibling], detailsByWindow, spanUsByWindow);
+
+    expect(resolved.size).toBe(0);
   });
 });

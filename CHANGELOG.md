@@ -20,6 +20,33 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
   mirroring `sessionDetailsReadiness`) so a window's span resolving after
   its `SessionDetail` still re-runs the fetch (R133's "two staleness gates
   in series").
+- **`Notebook/index.tsx`'s channel-bind identity gate: a non-primary
+  `"session"` window's data could go permanently un-refetched (2026-09-08,
+  w32-time, ruling R138, Critical from review of Tasks 1-3).** The gate's
+  `resolvedWindowKeys` used its own second, independently-spelled readiness
+  check (`sessionDetailsByWindow.has(key)`), which read `true` the instant
+  such a window's `SessionDetail` resolved even though `bindWindowsFor`
+  (the actual consumer) still excluded it pending its recorded span
+  (`sessionSpanUsByWindow`, Task 3). That falsely recorded the window's
+  identity as already bound; once its span *did* arrive, the identity
+  already matched and the window's data was never fetched again for the
+  cell's lifetime — silent and permanent. Fixed per R138's general rule
+  ("resolved" gets one definition; a gate must use the same code path as
+  the consumer's inclusion test): the shared predicate
+  (`Notebook/model/viewportWindows.ts`'s new `windowSpanFor`) now backs both
+  `bindWindowsFor` and the new `resolvedWindowKeysFor`, which the identity
+  gate calls instead of the old `.has()` filter. `toWireWindow` moved
+  alongside them (from `Notebook/index.tsx`, which imports `@/components/*`
+  and so can't be unit-tested) so all three are — a regression test in
+  `channelBindDriver.test.ts` drives the exact defect sequence (detail
+  resolves before span, span arrives later) through `resolvedWindowKeysFor`
+  + `updateChannelBindIdentity` and asserts the gate itself.
+- **`Notebook/index.tsx`'s `cursorBusRef`: lazy-initialized, not allocated
+  every render (2026-09-08, w32-time, folded in from review of Tasks
+  1-3).** `useRef(createCursorBus())` called `createCursorBus()` — and threw
+  away its result and subscriber-array allocation — on every render; now
+  `useRef<CursorBus | null>(null)` with a one-time `if (… === null)` init,
+  the standard React lazy-ref pattern.
 
 ### Added
 

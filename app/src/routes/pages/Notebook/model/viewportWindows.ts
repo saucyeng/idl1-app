@@ -11,7 +11,8 @@
  * (`sessionDetailsByWindow`), never fetching anything itself.
  */
 import type { LapDetail, SessionDetail } from "../../../../ipc/catalog";
-import type { Span } from "../../../../ipc/workbook";
+import type { Span, Window as WireWindow } from "../../../../ipc/workbook";
+import { windowKey, type SelectionWindow } from "../../../../state/selection";
 
 /**
  * A span in session-relative microseconds, half-open `[startUs, endUs)` --
@@ -141,4 +142,81 @@ export function cursorTimeInWindow(offsetUs: number, window: AbsoluteSpan): numb
   const tUs = window.startUs + offsetUs;
   if (tUs < window.startUs || tUs >= window.endUs) return null;
   return tUs;
+}
+
+/** Converts one app-side `SelectionWindow` (`state/selection.ts`, camelCase)
+ *  to its wire `Window` counterpart (`ipc/workbook.ts`, snake_case) -- the
+ *  mapping `state/selection.ts`'s own `SelectionWindow` doc comment names
+ *  explicitly ("a caller maps `sessionId`→`session_id`, …"). Pure. Moved
+ *  here from `Notebook/index.tsx` (R138 fix) so {@link windowSpanFor} below
+ *  can share it with that file's own `bindWindowsFor`, rather than either
+ *  duplicating this conversion or `windowSpanFor` staying untestable inside
+ *  `index.tsx` (which imports `@/components/*` -- unresolvable in vitest's
+ *  node test environment). */
+export function toWireWindow(w: SelectionWindow): WireWindow {
+  const span: Span =
+    w.span.kind === "session"
+      ? { kind: "session" }
+      : w.span.kind === "lap"
+        ? { kind: "lap", lap_number: w.span.lapNumber }
+        : { kind: "range", t0_us: w.span.t0Us, t1_us: w.span.t1Us };
+  return { session_id: w.sessionId, span, colour: w.colour };
+}
+
+/**
+ * One window's own resolved {@link AbsoluteSpan}, or `null` if it isn't
+ * resolvable yet -- the single predicate `Notebook/index.tsx`'s
+ * `bindWindowsFor` and {@link resolvedWindowKeysFor} below both build on
+ * (ruling R138: "resolved" gets one definition; a gate must use the *same
+ * code path* as the consumer's inclusion test, not an independently-spelled
+ * second check). `null` whenever `detailsByWindow` has no entry for `w`'s
+ * own key yet, or {@link resolveWindowSpan} itself returns `null` for it
+ * (an unresolved `"session"` span, or a `"lap"` naming a lap this session
+ * doesn't have).
+ */
+export function windowSpanFor(
+  w: SelectionWindow,
+  detailsByWindow: ReadonlyMap<string, SessionDetail | null>,
+  spanUsByWindow: ReadonlyMap<string, number | null>
+): AbsoluteSpan | null {
+  const key = windowKey(w);
+  const detail = detailsByWindow.get(key) ?? null;
+  return detail !== null ? resolveWindowSpan(toWireWindow(w).span, detail, spanUsByWindow.get(key) ?? null) : null;
+}
+
+/**
+ * The set of `windowKey`s `Notebook/index.tsx`'s `bindWindowsFor` would
+ * actually include for `windows` right now -- ruling R138's fix for the
+ * channel-bind effect's identity gate (task 3's Critical defect): that gate
+ * used to test readiness with its own second spelling,
+ * `sessionDetailsByWindow.has(key)`, which reads `true` the instant a
+ * non-primary `"session"` window's `SessionDetail` resolves even though its
+ * recorded span (`sessionSpanUsByWindow`) hasn't, and {@link windowSpanFor}/
+ * `bindWindowsFor` still exclude it at that point. The gate recorded that
+ * window's identity as already bound before `bindWindowsFor` ever fetched
+ * it; once the span *did* arrive, the identity already matched and the
+ * window's data was never fetched again for the cell's lifetime -- silent
+ * and permanent. Deriving this set from the exact same {@link windowSpanFor}
+ * predicate `bindWindowsFor` itself calls (mirroring its own primary-window
+ * short-circuit below: an unresolved *primary* window means no window is
+ * resolved, matching `bindWindowsFor`'s own "no viewport coordinate frame,
+ * whole result empty" rule) closes that gap by construction -- the two can
+ * no longer drift out of sync, because there is only one predicate between
+ * them.
+ */
+export function resolvedWindowKeysFor(
+  windows: readonly SelectionWindow[],
+  detailsByWindow: ReadonlyMap<string, SessionDetail | null>,
+  spanUsByWindow: ReadonlyMap<string, number | null>
+): Set<string> {
+  const keys = new Set<string>();
+  for (const w of windows) {
+    const span = windowSpanFor(w, detailsByWindow, spanUsByWindow);
+    if (span === null) {
+      if (keys.size === 0) return new Set();
+      continue;
+    }
+    keys.add(windowKey(w));
+  }
+  return keys;
 }
