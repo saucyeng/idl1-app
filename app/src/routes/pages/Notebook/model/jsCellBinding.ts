@@ -122,8 +122,12 @@ export interface FftCellBinding {
  */
 export type JsCellBinding = TimeCellBinding | FftCellBinding;
 
-/** Looks up one mark's channel in `sessionDetail.channels` by id, or `null` if it isn't a real channel on this session. */
-function findChannel(channels: ChannelSummary[], channelId: string): ChannelSummary | null {
+/** Looks up one mark's channel in `sessionDetail.channels` by id, or `null`
+ *  if it isn't a real channel on this session. Exported so every "does this
+ *  name resolve against this session's channels" check in the app answers
+ *  the same question the same way (`graphStatus.ts`'s decision 44 grey-vs-
+ *  red split reuses this rather than a second predicate — ruling R141). */
+export function findChannel(channels: ChannelSummary[], channelId: string): ChannelSummary | null {
   return channels.find((c) => c.channel_id === channelId) ?? null;
 }
 

@@ -6,6 +6,36 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 
 ### Fixed
 
+- **`graphLayout.ts`'s `findGraphBlockLines` locates a top-level `graph:` key
+  by prefix match (`/^graph:/`), not exact-line equality (2026-09-08,
+  w32-maths review fix).** A hand-edited flow-style or trailing-content
+  variant (`graph: {nodes: {...}}`, `graph:  `, `graph: # note`) was
+  invisible to the old exact match: read still degraded correctly to
+  `EMPTY_GRAPH_LAYOUT`, but write appended a second canonical `graph:` block
+  after the untouched line instead of replacing it — two top-level `graph`
+  keys, permanently, in the one module that writes a user's workbook.
+  Contradicted C2 §3.7.1's "malformed ⇒ replaced wholesale".
+- **`graphStatus.ts`'s `"pending"` fallback no longer outlives its window
+  (2026-09-08, w32-maths review follow-up).** A completed window
+  (`windows` holds an entry) whose output has no `defs` entry for a node —
+  a structural problem `CellDefResult`'s own doc comment says "keeps it out
+  of `defs` entirely" — now reads `"error"`, not `"pending"`: the previous
+  behaviour would spin forever for a definition the evaluator declines to
+  ever emit a result for, the same class of defect as a silently wrong
+  value, arriving through a spinner instead of a number.
+- **`renameDefinition` now rewrites form-generated `js`-cell channel
+  references too, and reports what it couldn't (ruling R145, 2026-09-08,
+  w32-maths follow-up).** A rename previously only rewrote `[Name]`
+  references in `math` cells, silently leaving a chart's `channel(...)`
+  call stale. Now: a `plotForm`-parseable `js` cell (`plotForm/parse.ts`
+  recognises it) is regenerated with the new channel name — safe because
+  the code is generated, not hand-written; custom `js` code and prose
+  `${…}` spans are **never** textually rewritten (a find-and-replace over
+  arbitrary JS can corrupt working code), but any such cell still naming
+  the old identifier is now collected and returned rather than silently
+  left stale. `renameDefinition`'s return type changes from `string` to
+  `{ markdown, unresolved: { cellId, kind }[] }` — its only caller so far
+  is this lane's own tests, updated in the same commit.
 - **`ChartCell.tsx`'s hover-cursor offset and cursor-card rows mis-scoped for
   a `"lap"`/`"range"` primary window (2026-09-08, w32-time, merge review,
   R138 pattern a fourth time).** `primaryWindowSpan` was locally derived as
@@ -69,6 +99,179 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
   the standard React lazy-ref pattern.
 
 ### Added
+
+- **Three of decision 45a's five gestures wired to the maths graph canvas
+  (2026-09-08, w32-maths, ruling R147 follow-on — the five `graphEdits.ts`
+  mutations landed with Tasks 3-9 but were reachable from no UI gesture
+  until now).** Double-click a card's name to rename (calls
+  `graphEdits.ts`'s `renameDefinition`; when it reports an unresolved
+  reference — R145's custom-`js`/prose case — a dismissible notice names
+  the affected cell(s), so a rename never presents itself as complete when
+  it isn't). Click a call's literal argument to edit it in place (`edit
+  LiteralArg`). Drag an edge's endpoint onto a different node to rewire
+  that one input (`rewireInput`, via xyflow's native edge-reconnection
+  gesture, `onReconnect` — not a fresh `onConnect`, since every edge here
+  already names a `[Name]` reference the document owns; "connect" only
+  ever means "replace which reference an existing edge names"). Every
+  commit round-trips through the same `onCommit` prop drag-to-reposition
+  and the chart button already used. **Two gestures and the details pane
+  remain unwired, flagged not attempted:** drag-a-channel-from-the-list
+  has no channel-list UI to drag *from* at all yet (a prerequisite gap,
+  not a wiring gap — the survey's own gap list item 10); a card click
+  still opens the owning *cell's* code editor (`EditorPanes`), not a
+  focused per-node details pane (decision 45a's own first half) — building
+  a real one needs new UI, not a rewire of an existing prop.
+- **`app/src/routes/pages/Notebook/model/graphSubgraph.ts`: subgraph
+  collapse/expand and canvas search (2026-09-08, w32-maths Task 12, spec
+  exists — C2 §3.7.3, decisions 42/43/77, no spec change needed).**
+  `subgraphsFor` computes each math cell's input/output/internal node ids
+  directly from `GraphModel.edges`' cell membership; `visibleNodeIds` hides
+  a collapsed cell's internal-only nodes (decision 39, read at cell scope)
+  while its inputs/outputs (referenced elsewhere) stay visible;
+  `searchNodeIds` matches a query against each node's display name
+  (`# label:`, falling back to the identifier), case-insensitively, `[]`
+  for a blank query. Wired into `GraphCanvas.tsx`: a search box highlights
+  matching cards (a `--hivis` border, no hex literal); one collapse/expand
+  toggle per subgraph in a toolbar row. `MiniMap`/`Controls` were already
+  present from Task 8. Desktop-only (decision 77): `Notebook/index.tsx`'s
+  existing narrow-width signal (`editorPlacement.ts`'s `placement ===
+  "sheet"`) now also hides the Graph toggle and forces the cell list, so
+  the Properties pane's narrow `BrandSheet` behaviour is unaffected.
+  **Two flagged gaps:** `subgraphsFor`'s "output" definition only covers
+  dependency edges between math cells — a definition charted only by a
+  `js` cell or interpolated only in prose (§3.7.3's other two "output"
+  cases) is classified internal and hides on collapse, since `graphModel.ts`
+  doesn't track either kind of external reference (Task 5's own scope).
+  Collapse/expand is a toolbar list, not a visual frame drawn around a
+  cell's cards on the canvas itself — xyflow's parent/child node grouping
+  (positioning, resizing, a group node type) was out of this task's budget.
+- **`Notebook/graph/graphToChart.ts`: node → chart (2026-09-08, w32-maths
+  Task 11, spec exists — C2 §3.6.6, decision 83, no spec change needed).**
+  `insertChartCell` appends a `plotForm/generate.ts`-generated `js` cell
+  charting a node by name (no `id=` attribute — C2 §2.2 leaves that to
+  Rust's next parse); `chartEligibilityFor` gates a card's chart button on
+  a chartable rank-≤1 shape or the one `spectrogram(...)` raster exception
+  (§3.6.6). Wired: `NodeCard.tsx` shows a "Chart" button when eligible;
+  `GraphCanvas.tsx` calls `insertChartCell` and `onCommit`s the result.
+  **Two real gaps, flagged not resolved (see the lane's report):** the
+  chart button fires with a fixed `"lineY"` mark — decision 83's
+  chart-type-selector/idl0-pictograms step is not built, so this is one
+  gesture, not two; and the output-port drag-into-notebook-column gesture
+  has no drag-and-drop UI at all (only the same pure `insertChartCell` it
+  would call). `chartEligibilityFor` also cannot yet detect "rank ≥ 2 and
+  not `spectrogram`" at all — §3.6 is spec-only in `core` — so decision
+  58's actual "reduce it first" slot is unreachable; every not-yet-known
+  shape reads `"unknown"` and shows no chart button, never a guess.
+- **The maths graph wired into `Notebook/index.tsx` (2026-09-08, w32-maths
+  Task 10, spec exists — C2 §3.7, no spec change needed).** A "Graph"/
+  "Cells" toggle switches the main content area between the existing cell
+  list and a new `GraphCanvas`, both views of the same open workbook
+  (decision 40) — never a second document. A card click calls the new
+  `GraphCanvas` `onSelectCell` prop, which opens the node's owning cell in
+  `EditorPanes` through the existing `selectedCellId` mechanism (no new
+  editor path). `onCommit` dispatches `workbookState.ts`'s new
+  `editFrontMatter` action: updates `markdown`/`cells` and sets the new
+  `frontMatterDirty` flag (which `WorkbookBar`'s `dirty` prop now also
+  watches) **without** touching `dirtyCellIds` — a moved node must not
+  re-arm the debounced re-eval effect, since nothing in the `graph` key
+  feeds a value (§3.7.1's advisory guarantee). `dirtyCellIds` empty must
+  keep meaning "no re-eval pending", not "nothing to save", which is why
+  this is a second flag rather than folded into the first. New pure
+  `model/graphView.ts` derives `GraphCanvas`'s `sessionDetails` (keyed by
+  session id, from the page's per-window `SessionDetail` map) and
+  `outputs` (the primary window's `CellOutput[]`, `[]` if unresolved or
+  the window's whole call failed) — kept out of the 2000-line component so
+  the derivation itself is unit-tested.
+- **`app/src/routes/pages/Notebook/model/graphEdits.ts`: every graph
+  mutation as pure text-in/text-out over `replaceCellBody` (2026-09-08,
+  w32-maths Task 9, spec exists — C2 §3.7.3, no spec change needed).**
+  `renameDefinition` (the def_line identifier + every `[OldName]` reference
+  across every math cell, plus the `graph.nodes` position entry, in one
+  pass — §3.7.3's one deliberate exception to "no pane writes both"),
+  `rewireInput` (one definition's own reference only), `editLiteralArg`
+  (re-serialises a single outer call canonically), `addNodeFromChannel`,
+  `deleteNode` (never prunes a stored position — §3.7.1's orphan rule).
+  Every def_line/comment classification reuses `tokenizeMath`, never a
+  second parser (R140). **Scope originally flagged, since ruled — see
+  "Fixed" above (R145):** `renameDefinition` now also rewrites
+  `plotForm`-generated `js`-cell channel references and reports every
+  reference it could not update.
+- **`Notebook/graph/`: the maths graph canvas (2026-09-08, w32-maths Task 8,
+  spec exists — C2 §3.7, no spec change needed).** `GraphCanvas.tsx` (React
+  Flow, `@xyflow/react`, CSS imported from `node_modules` — no CDN) renders
+  one `NodeCard.tsx` per `GraphModel` node, positioned by the document's
+  stored `graph` key or `graphAutoLayout.ts`'s fallback, coloured by
+  `graphStatus.ts`. Dragging is entirely local (`useNodesState`); only
+  `onNodeDragStop` calls the new `dragCommit.ts`'s `commitDrag` (rounds to
+  the nearest integer before writing — §3.7.1's `position_entry` is
+  integer-only, and a raw float would malform the whole key on the next
+  read) and hands the caller the new markdown — no IPC on the interaction
+  path. `portShape.ts`'s `shapeOf` resolves only the two shapes
+  `HostChannelRef`'s `{length, has_t}` can honestly distinguish (`[]`,
+  `[t]`); everything else — no evaluation yet, or a shape `core` hasn't
+  implemented — is `"unknown"`, never guessed (C2 §3.7.4, R135 Open Q1). A
+  `"channel"` node never commits a drag (no stored-position home, §3.7.1).
+  **Gap, not fixed here:** `CellDefResult` carries no unit (survey §1.2's
+  own finding) — `NodeCard` has nothing to show for it and omits that row
+  rather than fabricate one.
+- **`app/src/routes/pages/Notebook/model/graphStatus.ts`: per-node status
+  glyph from `WorkbookState.windows` (2026-09-08, w32-maths Task 7, spec
+  exists — C2 §3.7, decisions 44/R121/R131/R132, ruling R141, no spec
+  change needed).** `computeNodeStatuses` worst-wins across the current
+  selection (`error` > `grey` > `pending` > `ok`), names the split
+  ("2 of 3 windows", R132) when selected windows disagree, and excludes a
+  whole-window failure (`WindowEvalState.kind === "error"`) from every
+  node's aggregation — `bannerWindows` names those separately for a
+  canvas-level banner instead of fifty identical ×s. Decision 44's grey-vs-
+  red split reuses `jsCellBinding.ts`'s `findChannel` (newly exported, R141
+  Q1) rather than a second "does this name resolve" predicate; a channel
+  reachable from no selected session is a red × (typo), one present on some
+  selected session but not another greys — and every node reachable
+  forward from it greys too for the windows lacking it, even where core's
+  own evaluation legitimately reports `UnknownChannel` for that window.
+  Selection (`SelectedWindow[]`) supplies the per-window denominator `windows`
+  can't (R141 Q2 — an absent `windows` entry already means "pending"; this
+  module never gives absence a second meaning by synthesizing an entry).
+- **`app/src/routes/pages/Notebook/model/graphAutoLayout.ts`: deterministic
+  layered auto-layout for the maths graph (2026-09-08, w32-maths Task 6,
+  C2 §3.7.1's "view's own fallback algorithm", no spec change needed).**
+  `computeAutoLayoutPositions` places every node at a column equal to its
+  longest dependency chain, row order following `GraphModel.nodes`'s
+  document order; a `"definition"` node's stored `graph.nodes` position
+  (§3.7.1 — `"channel"` nodes have no stored-position home at all) always
+  wins. A dependency cycle (invalid per core, but not this rendering
+  fallback's to reject) terminates rather than recursing forever.
+- **`app/src/routes/pages/Notebook/model/graphModel.ts`: builds the maths
+  graph's `{nodes, edges, groups}` from markdown + `CellOutput[]`
+  (2026-09-08, w32-maths Task 5, spec exists — C2 §3.7.3, no spec change
+  needed).** One node per `def_line` (decision 40: the file is the source
+  of truth), one `"channel"` node per name referenced but not defined
+  anywhere in the document, one edge per `mathExpr.ts` reference, one group
+  per math cell in document order carrying its §3.7.3 `# label:` display
+  name. A definition's label prefers a completed evaluation's
+  `CellDefResult.label`, falling back to this module's own `# label:` scan
+  when no window has evaluated it yet — a node exists and is wired before
+  its first evaluation, never only after. `def_line` splitting is built
+  entirely on `mathMode.ts`'s `tokenizeMath`, mirroring `cells.ts`'s
+  non-authoritative fence-scan precedent (R52 Q3(a)) one grammar layer up.
+- **`app/src/routes/pages/Notebook/model/mathExpr.ts`: a narrow C2 §3.2 scan
+  of one expression's references and outer call (2026-09-08, w32-maths Task
+  4, spec exists — C2 §3.2/§3.7.4, no spec change needed).** `scanMathExpr`
+  builds `refs` entirely on `mathMode.ts`'s `tokenizeMath` (no second
+  tokenizer of the grammar) and recognises an outer call only when the whole
+  expression is exactly one C2 §3.3 catalog-function call; anything else —
+  an operator expression, a call wrapped in more, a call to a name outside
+  the catalog (including the not-yet-catalogued §3.6 reduction functions:
+  `argmax`/`at`/`nearest`/`slice`/`axes`/`broadcast`/`align`) — is an opaque
+  expression, `call: null`, still wired by its `refs`.
+- **`app/src/routes/pages/Notebook/model/graphLayout.ts`: pure read/write of
+  the C2 §3.7.1 `graph` front-matter key (2026-09-08, w32-maths Task 3, spec
+  exists — C2 §3.7, no spec change needed).** `readGraphLayout`/
+  `writeGraphLayout` operate on `scanCells`'s `frontMatterRange` byte range
+  only — no cell body, no other front-matter key. Reading is strict to
+  §3.7.1's EBNF; anything else under `graph:` reads as `EMPTY_GRAPH_LAYOUT`
+  (malformed ⇒ absent, per contract) and writing then replaces that block
+  wholesale rather than merging into it.
 
 - **`Notebook/model/xMode.ts`: decision 54's worksheet-level X mode, shipped
   with distance present and disabled (2026-09-08, w32-time Task 13, ruling

@@ -3,6 +3,14 @@
 **Status:** signed (lead) 2026-09-02 · **Date:** 2026-09-03 · **Owner:** lead
 
 **Revisions:**
+- 2026-09-08: **§3.7 added — the maths graph view's file mapping** (ruling
+  R135, wave-3 lane M, spec-first). A new optional front-matter `graph` key
+  stores node canvas positions; §1's front-matter table and its round-trip
+  rule, §2.4's cell-level display name, and §7.1's merge rule are amended to
+  match. Along the way, a pre-existing conformance defect is fixed
+  independently in `core` (not a spec change): `render_front_matter` dropped
+  every top-level key it did not itself define, which already broke this
+  section's own `_migrate_charts`/`_migrate_math` round-trip requirement.
 - 2026-09-07: **§3.6 added — value shapes / n-dimensional math values**
   (ruling R110, wave-3 W3.1, spec-first). Math values gain a shape; the
   builtin catalog gains axis-aware reductions, `argmax`/`argmin`, slicing and
@@ -47,8 +55,9 @@ segment       ::= prose_span | cell
 | `constants` | map\<string, number \| string\> | no (default `{}`) | Named scalars for math-cell `[Name]`-free literal substitution. Value is a bare YAML number (unitless) or a `"<number> <unit>"` string (§3.2). |
 | `units` | `"si"` \| `"imperial"` | no (default `"si"`) | Workbook-level unit-system *preference*. Consumed only by the editor UI (L6) when it suggests an axis label / number format from a channel's C1 column `unit` metadata (e.g. defaulting a new mark's `y.label`). It has **no effect on parsing, evaluation, or the `plotForm` grammar** — no v3 construct performs unit conversion. This is a deliberate narrowing from idl0, where `MathQuantity.defaultUnit` picked a per-channel display unit (§3.4 records the same table for L6 to reuse); v3 has no per-math-definition unit field to apply it to (§3.1). |
 | `version` | integer | no (default `3`) | Fixed at `3` for this contract; **omitting the key defaults to `3`**, mirroring idl0's own rule ("Omitting `workbook_version` defaults to 1, the current max" — `docs/legacy/idl0-workbook_format.md` §3). A parser encountering an explicit `version` ≠ `3` refuses the file (`UnsupportedWorkbookVersionException`) rather than guessing at compatibility; only *absence* defaults, a wrong value never does. |
+| `graph` | mapping, optional `nodes`/`cells` sub-keys | no (default absent) | Maths graph view canvas positions — §3.7. Advisory only: never read by the parser, the evaluator, or `[Name]`/`# label:` resolution; nothing in it can change a value, a wire, or an error. |
 
-No other top-level front-matter keys are defined by this contract. §6 defines two **transient, migration-only** keys (`_migrate_charts`, `_migrate_math` — *the latter added post-sign, 2026-09-04, lead ruling R25, wave-1 L3*) that a v3 parser must tolerate (round-trip them unmodified) but never itself produces except via `migrate-workbook`.
+No other top-level front-matter keys are defined by this contract. §6 defines two **transient, migration-only** keys (`_migrate_charts`, `_migrate_math` — *the latter added post-sign, 2026-09-04, lead ruling R25, wave-1 L3*) that a v3 parser must tolerate (round-trip them unmodified) but never itself produces except via `migrate-workbook`. This is one case of a general rule (ruling R135, 2026-09-08): **a v3 parser preserves every top-level front-matter key it does not itself define**, round-tripping it unmodified on render — including a key a future contract adds, opened by this build, and `graph` itself, opened by a build predating §3.7. An unrecognised key is inert: parsed as opaque YAML, never interpreted, never dropped. (Before this ruling, `render_front_matter` emitted only the five keys above and silently deleted everything else on save — a workbook written by a newer build, or synced from a peer running one, lost data when an older build opened and re-saved it. That was already a violation of this section's own requirement for `_migrate_charts`/`_migrate_math`; §3.7's Task 2 is the fix, and it is a `core` durability fix independent of the graph feature.)
 
 ---
 
@@ -121,6 +130,15 @@ included) and the JS Runtime's initial DOM insertion order. It governs
   document position (design §4, "Reactive DAG across two runtimes").
 - Front matter always precedes the first segment; there is no "front-matter
   cell." §7 gives its own (non-cell) merge rule.
+- **Cell-level display name.** A `math` cell's first non-blank line, when it
+  is a whole-line comment matching `# label: <text>`, carries that text as
+  the *cell's* display name — the same `label:` word §3.1 defines for a
+  `def_line`'s trailing comment, applied here to a whole line at the start of
+  a cell instead of to one definition. This is a new meaning for a line that
+  is `MathCellLine::Comment` today (`math_cell.rs`) and costs nothing to add:
+  it is still an ordinary comment, so an older build round-trips it
+  unchanged, unaware of the meaning. Full rule, including how it names a
+  maths-graph subgraph, is §3.7.3.
 
 **Prose merge unit.** Prose has no id, so §7's per-cell merge cannot apply to
 it directly. Rule: **a prose span belongs to the fenced cell that
@@ -973,6 +991,132 @@ The original wording of all five, with the recommendations that were made:
 
 ---
 
+### 3.7 The maths graph view's file mapping
+
+Ruling R135 (2026-09-08). This section fixes the graph view's four file-level
+questions (decision 45b): where a node's canvas position lives, how it
+merges, what names a subgraph, and how a port shows a shape it doesn't itself
+compute. Nothing here is read by the parser or the evaluator — see §3.7.1's
+advisory guarantee — so it changes no existing behaviour of a workbook that
+never opens the graph view.
+
+#### 3.7.1 Front-matter `graph` key
+
+```ebnf
+graph_key      ::= "graph:" "\n" nodes_key? cells_key?
+nodes_key      ::= "  nodes:" "\n" position_entry*
+cells_key      ::= "  cells:" "\n" position_entry*
+position_entry ::= "    " (identifier | hex8) ": [" int "," int "]" "\n"
+```
+
+An optional top-level front-matter key (§1). `nodes` maps a math-cell
+definition **name** (§3.1's `identifier`) to an `[x, y]` integer canvas
+position; `cells` maps a math cell's **`hex8` id** (§2.2) to a position for
+that cell's subgraph frame (§3.7.3). Both sub-keys are individually optional,
+and so is the whole `graph` key; its absence means no position is stored for
+any node, and the graph view auto-lays-out the document (the view's own
+fallback algorithm, out of scope for this contract).
+
+**Writer.** Only the graph view writes this key, as a byte-range replacement
+of the `graph:` block inside front matter — touching no other front-matter
+key and no cell, on drag settle rather than on every pointer move (no IPC on
+the interaction path). It always writes the block in one canonical, fully
+ASCII shape — identifier or `hex8` keys, `[x, y]` flow-sequence integer
+values — so it needs no YAML library and never reformats a byte it did not
+write: a general YAML serialiser would risk rewriting, say, `constants: {
+rider_mass_kg: 82 }` into block style the first time anyone dragged a card,
+which is unacceptable (§1's `constants` bytes belong to whoever typed them).
+
+**Advisory guarantee.** `graph` is read by nothing that computes a value: not
+the parser beyond opaque YAML, not `math::resolve`, not `[Name]`/`# label:`
+resolution (§3.1), not evaluation (§3.5, §3.6). Every failure mode therefore
+degrades to layout, never to data or an error:
+
+- key absent, or a sub-key absent: affected nodes auto-placed; others keep
+  their stored position.
+- an entry naming a definition name or cell id that no longer exists (a
+  rename, a deleted cell, a hand edit): the entry is **preserved on write,
+  never pruned** — §7.1's `graph` merge rule already requires this, so parse
+  and merge agree — but **ignored on read**, so the orphaned node simply
+  re-lays-out. A definition commented out and later restored keeps its old
+  position; a definition renamed loses it (§3.7.3's rename rule is the one
+  exception that keeps it).
+- the block is malformed YAML: the whole `graph` key is treated as absent
+  for that parse (no `WorkbookError` — this is advisory data, §3.5's error
+  model does not apply to it) and is replaced wholesale, not merged, the
+  next time the graph view writes it.
+
+#### 3.7.2 Merge rule (amends §7.1)
+
+`graph` is merged **per entry**, within each of `nodes`/`cells`
+independently, on the same three-way rule as `constants` (§7.1) — except
+with **no conflict note**. An entry (one node's or one cell's position)
+changed on both sides since `base` keeps local's value silently; an entry
+present or changed on only one side carries through unconditionally. A
+canvas position is cosmetic, not data the user reads for its content —
+injecting an HTML comment into body prose because two people dragged the
+same card on two machines would be noise, unlike `constants`, where a
+differing numeric value is exactly the kind of thing a conflict note exists
+to surface. This is also why `graph` positions are never a reason for sync
+to report a conflict at all: §7.2's cell-level conflict machinery (append,
+mark, duplicate) does not apply to this key, and can't — a moved node is a
+front-matter entry, not a cell, and front matter merges outside the cell
+table entirely (§7.1's opening line). That separation is the whole reason
+positions live in front matter rather than in a cell body or a trailing
+comment (§3.7's design rationale, recorded in `runs/2026-09-08/
+w32-maths-plan.md` §2.2's rejected alternatives): any of those would make a
+drag and a same-cell expression edit collide under §7.2's `Changed`×`Changed`
+rule, duplicating the whole cell over a position change.
+
+#### 3.7.3 Cell-level display name and subgraph boundary (amends §2.4, §3.1)
+
+**Name.** A `math` cell whose first non-blank line is a whole-line comment
+matching `# label: <text>` (§2.4) carries that text as the cell's display
+name in the graph view — decision 45b's "one `math` cell named by
+`# label:`". A cell with no such line has no display name; the graph view
+falls back to the cell's `id` (§2.2). Renaming a cell (editing that comment
+line) is an ordinary cell-body edit like any other — it does not touch
+`graph`, and does not move the cell's stored position.
+
+**Rename of a definition, however, touches both.** Renaming a definition
+(the identifier left of `=`) changes the `name` key `graph.nodes` is keyed
+by, so the graph view's rename operation is specified as **one atomic
+edit**: it rewrites the `def_line` and every `[OldName]` reference across
+the document (an ordinary cell-body edit) *and* renames the `graph.nodes`
+entry, in the same save. A rename that only did the first half would silently
+orphan the node's position (§3.7.1's orphan rule would then re-lay-out a
+node the user didn't move) — the one place this contract has a pane write
+both a cell body and the `graph` key in a single gesture, and it is
+deliberate, not an accident of implementation.
+
+**Subgraph boundary.** In the graph view, a `math` cell forms one
+collapsible subgraph made of its own definitions. Its **inputs** are names
+referenced by those definitions but defined outside the cell — another
+cell's definition, or a session channel. Its **outputs** are names it
+defines that are referenced outside the cell, charted by a `js` cell, or
+used in a prose `${…}` interpolation (§5.2). Every other definition is
+internal and hides when the subgraph is collapsed, matching decision 39's
+"intermediate datasets never appear unless the user names them" read at cell
+scope. Copying a math cell's text (into another position in the same
+workbook, or into another workbook) copies its subgraph; nothing more about
+sharing a subgraph across workbooks is specified here (decision 82).
+
+#### 3.7.4 Ports show the inferred shape (cross-reference to §3.6)
+
+A node's ports display the value shape §3.6 defines — `[]`, `[t]`, `[f]`,
+`[lap]`, `[t,f]`, `[t,c9]`, `[t,c{roll,pitch,yaw}]`, and so on — inferred
+from a completed evaluation's `CellDefResult` and the definition's own
+`# shape:` annotation (§3.6.4) where one is written. The graph view performs
+no shape inference of its own and has no independent notion of a port's
+type. Where the true shape cannot be read from a completed evaluation — no
+window has evaluated this definition yet, or `core` has not yet implemented
+the shape being asked for (§3.6.9 records that `spectrogram` and the rest of
+§3.6 are landing incrementally) — the port shows **unknown**, never a
+guessed shape: a wrong shape rendered with the same confidence as a right
+one is worse than an honest blank (ruling R135, Open question 1).
+
+---
+
 ## 4. Table cells
 
 A `table` cell's fence body is one JSON object — the existing
@@ -1651,6 +1795,16 @@ Merged **per top-level key**, independently of the cell table below:
   values keeps local's value and the same HTML-comment conflict note
   (one line per conflicting constant), rather than duplicating a "conflict
   constant" (constants have no natural conflict-copy form either).
+- `graph` — merged **per entry** within each of its `nodes`/`cells`
+  sub-maps, same shape as `constants`, but with **no conflict note**: an
+  entry (a node or cell position) changed on both sides keeps local's value
+  silently, and an entry present on only one side carries through. A
+  position is cosmetic, not data — injecting an HTML comment into body
+  prose because two people dragged the same card on two machines would be
+  noise in the document a human reads, unlike a genuinely conflicting
+  constant value. An entry naming a definition or cell id absent from the
+  merged result is kept, not pruned (§3.7.1) — deletion by merge is §7.2's
+  job, not this key's. Full rule and rationale: §3.7.2.
 
 ### 7.2 Cell decision table
 
