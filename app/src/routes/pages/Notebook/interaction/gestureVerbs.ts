@@ -34,16 +34,30 @@ export function dragActionFor(preset: InputMapPreset, shiftKey: boolean): Gestur
 
 /**
  * Classifies a wheel/trackpad event's DOM fields into one of
- * `inputMap.ts`'s three wheel-family {@link InputEventKind}s.
+ * `inputMap.ts`'s wheel-family {@link InputEventKind}s.
+ *
  * `event.ctrlKey` is the standard cross-browser signal for a trackpad pinch
  * synthesized as a wheel event (Chrome/Firefox/Safari all set it; there is
- * no separate pinch DOM event on desktop) — checked first, since a pinch
- * can also report a nonzero `deltaX`. Otherwise, a `deltaX` that dominates
- * `deltaY` reads as the horizontal-wheel family; anything else is the
- * plain vertical wheel.
+ * no separate pinch DOM event on desktop) — but it is also exactly what a
+ * real keyboard's held Ctrl key plus a mouse wheel reports, and the two are
+ * **not reliably separable** from this event shape alone (R150 item 3: no
+ * `deltaY`-magnitude or `wheelDeltaY`-ratio heuristic is used here, since
+ * one that happens to work on one machine is not guaranteed to on
+ * another). Rather than guess, every ctrl-held wheel event classifies as
+ * `"ctrlWheel"` — R149's universal zoom gesture — which keeps R149 true
+ * (a plain, non-ctrl wheel is never misread as pinch/ctrlWheel and stolen
+ * from the document scroll) at the cost of `"pinch"` being unreachable
+ * from this function; every preset also binds `pinch` to the same
+ * `"zoom-x"` as `ctrlWheel`, so a trackpad pinch still zooms exactly as
+ * before, just through the `ctrlWheel` verb. `"pinch"` stays a distinct
+ * {@link InputEventKind} for a future dedicated trackpad gesture API that
+ * can tell the two apart (`inputMap.ts`'s own note on `Task 5`).
+ *
+ * Absent `ctrlKey`, a `deltaX` that dominates `deltaY` reads as the
+ * horizontal-wheel family; anything else is the plain vertical wheel.
  */
 export function classifyWheelEvent(deltaX: number, deltaY: number, ctrlKey: boolean): InputEventKind {
-  if (ctrlKey) return "pinch";
+  if (ctrlKey) return "ctrlWheel";
   return Math.abs(deltaX) > Math.abs(deltaY) ? "horizontalWheel" : "wheel";
 }
 

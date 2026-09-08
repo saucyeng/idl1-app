@@ -30,8 +30,8 @@ describe("dragActionFor", () => {
 });
 
 describe("classifyWheelEvent", () => {
-  it("classifyWheelEvent — ctrlKey set — pinch, regardless of deltas", () => {
-    expect(classifyWheelEvent(50, 0, true)).toBe("pinch");
+  it("classifyWheelEvent — ctrlKey set — ctrlWheel, regardless of deltas, per R150 item 3", () => {
+    expect(classifyWheelEvent(50, 0, true)).toBe("ctrlWheel");
   });
 
   it("classifyWheelEvent — deltaX dominates deltaY, no ctrlKey — horizontalWheel", () => {
@@ -66,8 +66,12 @@ describe("wheelActionFor", () => {
     expect(wheelActionFor(TRACKPAD_PRESET, "horizontalWheel")).toBe("pan-x");
   });
 
-  it("wheelActionFor — wheel — plain lookup, matching actionFor directly", () => {
-    expect(wheelActionFor(TWO_WHEEL_MOUSE_PRESET, "wheel")).toBe("zoom-x");
+  it("wheelActionFor — wheel — none in every mouse preset, per R149 (the notebook scrolls instead)", () => {
+    expect(wheelActionFor(TWO_WHEEL_MOUSE_PRESET, "wheel")).toBe("none");
+  });
+
+  it("wheelActionFor — ctrlWheel — zoom-x, plain lookup, matching actionFor directly (R149)", () => {
+    expect(wheelActionFor(TWO_WHEEL_MOUSE_PRESET, "ctrlWheel")).toBe("zoom-x");
   });
 
   it("wheelActionFor — pinch — plain lookup, matching actionFor directly", () => {
