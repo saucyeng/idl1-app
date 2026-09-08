@@ -29,6 +29,24 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 
 ### Added
 
+- **`Notebook/graph/`: the maths graph canvas (2026-09-08, w32-maths Task 8,
+  spec exists — C2 §3.7, no spec change needed).** `GraphCanvas.tsx` (React
+  Flow, `@xyflow/react`, CSS imported from `node_modules` — no CDN) renders
+  one `NodeCard.tsx` per `GraphModel` node, positioned by the document's
+  stored `graph` key or `graphAutoLayout.ts`'s fallback, coloured by
+  `graphStatus.ts`. Dragging is entirely local (`useNodesState`); only
+  `onNodeDragStop` calls the new `dragCommit.ts`'s `commitDrag` (rounds to
+  the nearest integer before writing — §3.7.1's `position_entry` is
+  integer-only, and a raw float would malform the whole key on the next
+  read) and hands the caller the new markdown — no IPC on the interaction
+  path. `portShape.ts`'s `shapeOf` resolves only the two shapes
+  `HostChannelRef`'s `{length, has_t}` can honestly distinguish (`[]`,
+  `[t]`); everything else — no evaluation yet, or a shape `core` hasn't
+  implemented — is `"unknown"`, never guessed (C2 §3.7.4, R135 Open Q1). A
+  `"channel"` node never commits a drag (no stored-position home, §3.7.1).
+  **Gap, not fixed here:** `CellDefResult` carries no unit (survey §1.2's
+  own finding) — `NodeCard` has nothing to show for it and omits that row
+  rather than fabricate one.
 - **`app/src/routes/pages/Notebook/model/graphStatus.ts`: per-node status
   glyph from `WorkbookState.windows` (2026-09-08, w32-maths Task 7, spec
   exists — C2 §3.7, decisions 44/R121/R131/R132, ruling R141, no spec
