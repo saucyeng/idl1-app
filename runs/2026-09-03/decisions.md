@@ -5536,3 +5536,52 @@ shim is temporary.
 **Cost if wrong.** (2) ships a spectrum computed from thirty minutes of data
 labelled as a ten-second selection, with nothing on screen distinguishing
 it from the real thing.
+
+## 2026-09-08 — R130: validate lap bounds at resolution, exactly as ranges are validated
+
+**Finding** (review of R126/R128, on my re-grade request). A `laps[]` entry
+with `start_time_secs == end_time_secs == 0.0` reaches `window_index_range`
+as the exact `(0.0, 0.0)` value and is indistinguishable from the "no window
+selected" sentinel — so an empty lap would return **the whole channel**.
+`LapJson` derives plain `Deserialize` on `f64` with no validator and no
+ordering check; `resolve_window`'s `Lap` arm passes `session.json`'s bounds
+through verbatim.
+
+The reviewer then proved the useful half: **the shipped lap detector cannot
+produce it.** `find_crossings` requires `u > 0.0`, so a crossing can never
+land on a window's leading fix; `detect_circuit`'s first lap therefore ends
+strictly after it starts; `detect_point_to_point` has an explicit `t > ls`
+guard that discards a zero-duration lap before construction; and
+`fill_time_secs` cannot manufacture or reorder such a pair. It also
+confirmed that every *other* degenerate or reversed lap is already safe —
+R128 routes those to an empty range. Only exact `(0.0, 0.0)` is dangerous,
+and only from a corrupted or hand-edited `session.json`.
+
+**Ruling — close it now, cheaply, at the trust boundary.** `resolve_window`'s
+`Lap` arm validates `start_time_secs < end_time_secs` and returns
+`InvalidArgument` otherwise, mirroring R120's range check exactly. Three
+lines and a test. C1 treats `session.json` as data to be validated, not
+trusted, and a lap arriving from a synced peer or an older engine version is
+exactly the case that boundary exists for.
+
+This does **not** replace the filed `Option` follow-up (R128 item 3) — the
+sentinel sharing a value with a real window is still the underlying flaw,
+and it will find a fourth door. But validation closes this door today
+without a refactor, and the two are independent.
+
+**On the severity question the reviewer left to me:** it stays below
+Important *because* the detector cannot produce it, and the fix is small
+enough that grading it further is pointless — it is being fixed either way.
+Tracing all three detector paths to establish that was the right work; a
+reviewer that had simply said "corrupted input, out of scope" would have
+left me guessing.
+
+**Also accepted (Minor, same review):** the rebuilt R124 regression's
+comment claims all seven aggregates catch the dropped last sample, but the
+fixture's final value is `0.0`, so `sum` is coincidentally identical either
+way. Six of seven genuinely catch it. Make the fixture's last sample nonzero
+so the comment is true, rather than softening the comment.
+
+**Cost if wrong.** A hand-repaired or peer-synced `session.json` with one
+malformed lap silently turns that lap's every statistic into the whole
+session's.
