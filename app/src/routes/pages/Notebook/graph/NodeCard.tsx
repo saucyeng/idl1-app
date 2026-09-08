@@ -41,6 +41,10 @@ export interface MathNodeData extends Record<string, unknown> {
    *  a fixed `"lineY"` mark — decision 83's own "chart-type selector, idl0
    *  pictograms" step is not built; there is one gesture here, not two. */
   onChart?: (nodeName: string) => void;
+  /** True when this node matches the canvas search query
+   *  (`model/graphSubgraph.ts`'s `searchNodeIds`, decision 42). Purely a
+   *  render hint — the decision of what matches lives in that module. */
+  highlighted: boolean;
 }
 
 /**
@@ -55,7 +59,7 @@ export interface MathNodeData extends Record<string, unknown> {
  * `model/mathExpr.ts`, and `graph/portShape.ts`.
  */
 export default function NodeCard({ data }: NodeProps<Node<MathNodeData, "mathNode">>) {
-  const { graphNode, status, split, shape, call, onChart } = data;
+  const { graphNode, status, split, shape, call, onChart, highlighted } = data;
   const isChannel = graphNode.kind === "channel";
   const displayName = graphNode.label ?? graphNode.name;
   const hoverText = graphNode.exprText !== null ? `${graphNode.name} = ${graphNode.exprText}` : graphNode.name;
@@ -63,7 +67,7 @@ export default function NodeCard({ data }: NodeProps<Node<MathNodeData, "mathNod
 
   return (
     <div
-      className={`min-w-[160px] rounded-[var(--radius-card)] border border-rule bg-surface px-3 py-2 ${status === "grey" ? "opacity-50" : ""}`}
+      className={`min-w-[160px] rounded-[var(--radius-card)] border px-3 py-2 ${highlighted ? "border-hivis" : "border-rule"} bg-surface ${status === "grey" ? "opacity-50" : ""}`}
       title={hoverText}
     >
       {!isChannel && <Handle type="target" position={Position.Left} />}

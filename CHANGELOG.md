@@ -39,6 +39,30 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 
 ### Added
 
+- **`app/src/routes/pages/Notebook/model/graphSubgraph.ts`: subgraph
+  collapse/expand and canvas search (2026-09-08, w32-maths Task 12, spec
+  exists — C2 §3.7.3, decisions 42/43/77, no spec change needed).**
+  `subgraphsFor` computes each math cell's input/output/internal node ids
+  directly from `GraphModel.edges`' cell membership; `visibleNodeIds` hides
+  a collapsed cell's internal-only nodes (decision 39, read at cell scope)
+  while its inputs/outputs (referenced elsewhere) stay visible;
+  `searchNodeIds` matches a query against each node's display name
+  (`# label:`, falling back to the identifier), case-insensitively, `[]`
+  for a blank query. Wired into `GraphCanvas.tsx`: a search box highlights
+  matching cards (a `--hivis` border, no hex literal); one collapse/expand
+  toggle per subgraph in a toolbar row. `MiniMap`/`Controls` were already
+  present from Task 8. Desktop-only (decision 77): `Notebook/index.tsx`'s
+  existing narrow-width signal (`editorPlacement.ts`'s `placement ===
+  "sheet"`) now also hides the Graph toggle and forces the cell list, so
+  the Properties pane's narrow `BrandSheet` behaviour is unaffected.
+  **Two flagged gaps:** `subgraphsFor`'s "output" definition only covers
+  dependency edges between math cells — a definition charted only by a
+  `js` cell or interpolated only in prose (§3.7.3's other two "output"
+  cases) is classified internal and hides on collapse, since `graphModel.ts`
+  doesn't track either kind of external reference (Task 5's own scope).
+  Collapse/expand is a toolbar list, not a visual frame drawn around a
+  cell's cards on the canvas itself — xyflow's parent/child node grouping
+  (positioning, resizing, a group node type) was out of this task's budget.
 - **`Notebook/graph/graphToChart.ts`: node → chart (2026-09-08, w32-maths
   Task 11, spec exists — C2 §3.6.6, decision 83, no spec change needed).**
   `insertChartCell` appends a `plotForm/generate.ts`-generated `js` cell

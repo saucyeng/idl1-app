@@ -1897,7 +1897,15 @@ export default function NotebookPage() {
       />
     ) : null;
 
-  const mainContentElement = graphViewOpen && graphCanvasElement !== null ? graphCanvasElement : cellListElement;
+  // Desktop-only canvas (decision 77): `placement === "sheet"` is this
+  // page's existing narrow-width signal (`editorPlacement.ts`) -- the
+  // Properties pane keeps its narrow `BrandSheet` behaviour unchanged
+  // (Task 12), the graph simply never takes over the main content area at
+  // that width, falling back to the cell list even if the toggle was left
+  // on from a wider layout.
+  const graphViewAvailable = placement !== "sheet";
+  const mainContentElement =
+    graphViewOpen && graphViewAvailable && graphCanvasElement !== null ? graphCanvasElement : cellListElement;
 
   return (
     <div className="flex h-full flex-col">
@@ -1968,9 +1976,11 @@ export default function NotebookPage() {
               onRegisterChange={handleRegisterChange}
             />
           )}
-          <button type="button" onClick={() => setGraphViewOpen((prev) => !prev)} aria-pressed={graphViewOpen}>
-            {graphViewOpen ? "Cells" : "Graph"}
-          </button>
+          {graphViewAvailable && (
+            <button type="button" onClick={() => setGraphViewOpen((prev) => !prev)} aria-pressed={graphViewOpen}>
+              {graphViewOpen ? "Cells" : "Graph"}
+            </button>
+          )}
           <button type="button" onClick={() => void handleSave()} disabled={saveUnavailable || saveFlowState.status === "saving"}>
             {saveFlowState.status === "saving" ? "Saving…" : "Save"}
           </button>

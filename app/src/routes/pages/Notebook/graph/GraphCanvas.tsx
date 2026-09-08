@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Background,
   Controls,
@@ -24,6 +24,7 @@ import { readGraphLayout } from "../model/graphLayout";
 import { computeNodeStatuses } from "../model/graphStatus";
 import { scanMathExpr, type MathExprCall } from "../model/mathExpr";
 import type { WindowEvalState } from "../model/workbookState";
+import { subgraphsFor, searchNodeIds, visibleNodeIds } from "../model/graphSubgraph";
 import { commitDrag } from "./dragCommit";
 import { insertChartCell } from "./graphToChart";
 import NodeCard, { type MathNodeData } from "./NodeCard";
@@ -103,21 +104,50 @@ export default function GraphCanvas({ markdown, outputs, selectedWindows, window
     [model, selectedWindows, windows, sessionDetails]
   );
 
-  const flowNodes = useMemo<Node<MathNodeData, "mathNode">[]>(() => {
-    return model.nodes.map((graphNode) => {
-      const call: MathExprCall | null = graphNode.exprText !== null ? scanMathExpr(graphNode.exprText).call : null;
-      const result = statuses.get(graphNode.id) ?? { status: "pending" as const, split: null };
-      const position = positions[graphNode.id] ?? [0, 0];
-      return {
-        id: graphNode.id,
-        type: "mathNode",
-        position: { x: position[0], y: position[1] },
-        data: { graphNode, status: result.status, split: result.split, shape: shapeOf(valueFor(graphNode, outputs)), call, onChart: handleChart },
-      };
-    });
-  }, [model.nodes, positions, statuses, outputs, handleChart]);
+  // Subgraph collapse/expand (decision 42) -- a list of collapsed cell ids
+  // is enough state to drive `visibleNodeIds`; which cell frame each
+  // definition belongs to on the canvas itself is `model/graphSubgraph.ts`'s
+  // job, not this component's.
+  const [collapsedCellIds, setCollapsedCellIds] = useState<Set<string>>(new Set());
+  const subgraphs = useMemo(() => subgraphsFor(model), [model]);
+  const visibleIds = useMemo(() => visibleNodeIds(model, subgraphs, collapsedCellIds), [model, subgraphs, collapsedCellIds]);
 
-  const flowEdges = useMemo<Edge[]>(() => model.edges.map((edge) => ({ id: edge.id, source: edge.source, target: edge.target })), [model.edges]);
+  // Canvas search (decision 42) -- matched node ids are passed through to
+  // each card as a `highlighted` flag (`MathNodeData`) rather than this
+  // component reaching into xyflow's own selection/viewport state, so the
+  // decision of *which* nodes match stays in `model/graphSubgraph.ts`'s
+  // pure `searchNodeIds`.
+  const [searchQuery, setSearchQuery] = useState("");
+  const matchedIds = useMemo(() => new Set(searchNodeIds(model, searchQuery)), [model, searchQuery]);
+
+  const flowNodes = useMemo<Node<MathNodeData, "mathNode">[]>(() => {
+    return model.nodes
+      .filter((graphNode) => visibleIds.has(graphNode.id))
+      .map((graphNode) => {
+        const call: MathExprCall | null = graphNode.exprText !== null ? scanMathExpr(graphNode.exprText).call : null;
+        const result = statuses.get(graphNode.id) ?? { status: "pending" as const, split: null };
+        const position = positions[graphNode.id] ?? [0, 0];
+        return {
+          id: graphNode.id,
+          type: "mathNode",
+          position: { x: position[0], y: position[1] },
+          data: {
+            graphNode,
+            status: result.status,
+            split: result.split,
+            shape: shapeOf(valueFor(graphNode, outputs)),
+            call,
+            onChart: handleChart,
+            highlighted: matchedIds.has(graphNode.id),
+          },
+        };
+      });
+  }, [model.nodes, positions, statuses, outputs, handleChart, visibleIds, matchedIds]);
+
+  const flowEdges = useMemo<Edge[]>(
+    () => model.edges.filter((edge) => visibleIds.has(edge.source) && visibleIds.has(edge.target)).map((edge) => ({ id: edge.id, source: edge.source, target: edge.target })),
+    [model.edges, visibleIds]
+  );
 
   const [nodes, setNodes, onNodesChange] = useNodesState(flowNodes);
   const [edges, setEdges, onEdgesChange] = useEdgesState(flowEdges);
@@ -145,22 +175,57 @@ export default function GraphCanvas({ markdown, outputs, selectedWindows, window
     [onSelectCell]
   );
 
+  function toggleCollapsed(cellId: string): void {
+    setCollapsedCellIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(cellId)) next.delete(cellId);
+      else next.add(cellId);
+      return next;
+    });
+  }
+
   return (
-    <div className="h-full w-full bg-bg">
-      <ReactFlow
-        nodes={nodes}
-        edges={edges}
-        nodeTypes={NODE_TYPES}
-        onNodesChange={onNodesChange}
-        onEdgesChange={onEdgesChange}
-        onNodeDragStop={handleNodeDragStop}
-        onNodeClick={handleNodeClick}
-        fitView
-      >
-        <Background />
-        <Controls />
-        <MiniMap />
-      </ReactFlow>
+    <div className="flex h-full w-full flex-col bg-bg">
+      <div className="flex items-center gap-3 border-b border-rule px-3 py-2">
+        <input
+          type="text"
+          placeholder="Search nodes…"
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          className="rounded-[var(--radius-structural)] border border-rule bg-control px-2 py-1 text-label-2 text-fg"
+        />
+        {subgraphs.length > 0 && (
+          <div className="flex flex-wrap items-center gap-2">
+            {subgraphs.map((sg) => (
+              <button
+                key={sg.cellId}
+                type="button"
+                onClick={() => toggleCollapsed(sg.cellId)}
+                aria-pressed={collapsedCellIds.has(sg.cellId)}
+                className="rounded-[var(--radius-structural)] border border-rule px-2 py-0.5 text-label-2 text-fg-dim hover:text-fg"
+              >
+                {collapsedCellIds.has(sg.cellId) ? "▸" : "▾"} {sg.label ?? sg.cellId}
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+      <div className="min-h-0 flex-1">
+        <ReactFlow
+          nodes={nodes}
+          edges={edges}
+          nodeTypes={NODE_TYPES}
+          onNodesChange={onNodesChange}
+          onEdgesChange={onEdgesChange}
+          onNodeDragStop={handleNodeDragStop}
+          onNodeClick={handleNodeClick}
+          fitView
+        >
+          <Background />
+          <Controls />
+          <MiniMap />
+        </ReactFlow>
+      </div>
     </div>
   );
 }
