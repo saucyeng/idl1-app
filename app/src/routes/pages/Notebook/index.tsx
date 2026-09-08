@@ -59,7 +59,7 @@ import { isCodeVisible, toggleCode } from "./model/codeVisibility";
 import { createCursorBus, type CursorBus } from "./interaction/cursorBus";
 import { BASIC_MOUSE_PRESET, findInputMapPreset, INPUT_MAP_PRESETS, type InputMapPreset } from "./interaction/inputMap";
 import PlaybackTransport from "./interaction/PlaybackTransport";
-import { playableSpanUs, tick, togglePlay, type PlaybackState } from "./interaction/playback";
+import { playableSpanUs, setSpeed, tick, togglePlay, type PlaybackState } from "./interaction/playback";
 import type { PlaybackMode } from "./interaction/playbackMode";
 import { editorPlacement, outputIsReadOnly } from "./model/editorPlacement";
 import { resolveEditorHost } from "./model/editorHost";
@@ -504,9 +504,7 @@ export default function NotebookPage() {
    *  scroll") and names cursor-fixed as the *second*, opt-in mode ("I kind
    *  of want the *option* to..."). `PlaybackTransport`'s mode toggle (Task
    *  12) is the only writer. */
-  // Setter added in Task 12 alongside `PlaybackTransport`'s mode toggle --
-  // this task only wires the value through to every mounted `ChartCell`.
-  const [playbackMode] = useState<PlaybackMode>("scroll-at-edge");
+  const [playbackMode, setPlaybackMode] = useState<PlaybackMode>("scroll-at-edge");
 
   // One worksheet-shared cursor bus (Task 1/2) -- created once and handed
   // down to every `ChartCell` as a stable reference, never React state, so
@@ -2098,6 +2096,11 @@ export default function NotebookPage() {
         onToggle={handleTogglePlay}
         disabled={!primeState.running}
         routeVisible={routeVisible}
+        speed={playback.speed}
+        onSpeedChange={(speed) => setPlayback((prev) => setSpeed(prev, speed))}
+        mode={playbackMode}
+        onModeChange={setPlaybackMode}
+        followingWindowLabel={cellListWindowNote}
       />
       {/* Master timeline strip (decision 52, R115, R134 item 1): one lane
           per selected window, own draggable boundary handles. Commits a

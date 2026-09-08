@@ -50,6 +50,23 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 
 ### Added
 
+- **`Notebook/interaction/PlaybackTransport.tsx`: speed select + mode toggle
+  + the followed window's name (2026-09-08, w32-time Task 12, decision 57,
+  ruling R134 item 6, spec-during).** UI only — every decision it makes
+  reuses Task 10/11's own tested pure functions, nothing new to unit-test.
+  A `Select` (shadcn/radix, matching the rest of the app's chrome) lists
+  `playback.ts`'s `PLAYBACK_SPEEDS`, calling `setSpeed` through
+  `Notebook/index.tsx`'s existing `setPlayback`; a `Pin`/`PinOff` icon
+  button toggles `playbackMode` between `"cursor-fixed"` and
+  `"scroll-at-edge"` (Task 11), with `aria-pressed`/`aria-label`/`title` all
+  naming the *current* mode and what clicking does, not just an icon.
+  `followingWindowLabel` reuses `model/jsCellNote.ts`'s `primaryWindowNote`
+  through the same `cellListWindowNote` value the cell list already computes
+  (R132's own precedent) — `null`, no label, with zero or one window
+  selected; the primary window's own descriptor label otherwise, so the
+  transport and the cell list agree word-for-word on which window a reader
+  is looking at (R134 item 6: "playback follows the primary window ...
+  the transport names which window it is following").
 - **`Notebook/interaction/playbackMode.ts`: decision 57's two playback modes
   (2026-09-08, w32-time Task 11, decision 57, spec-during).**
   `advanceForMode(viewport, cursorTUs, deltaUs, mode)` replaces the
