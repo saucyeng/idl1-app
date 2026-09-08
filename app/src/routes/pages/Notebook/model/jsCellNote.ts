@@ -59,3 +59,28 @@ export function jsCellNote(input: {
 
   return null;
 }
+
+/**
+ * Ruling R132 (`runs/2026-09-03/decisions.md`): a non-chart cell (a `math`
+ * cell's definition value, a `table` cell's grid, a prose `${…}` span) that
+ * reads only the **primary** window's value must say so once more than one
+ * window is selected — "the reading stays, the silence does not". Reuses
+ * `windowCount` rather than a second channel (same input `jsCellNote`
+ * already takes).
+ *
+ * `null` with zero or one window selected: no marker, byte-identical to
+ * today (R127 item 3) — the common case, and the one every existing
+ * workbook and test already exercises. With more than one window selected,
+ * returns `primaryWindowLabel` (`state/selection.ts`'s `describeWindow`
+ * output for the primary window, e.g. `"Silverstone · Lap 2"`) for the
+ * caller to render next to the value it names.
+ *
+ * Designing a per-window *layout* for these cell kinds (a column per
+ * window, a row per window, …) is explicitly deferred to the maths lane
+ * (R132) — this function only answers "should a label show, and what does
+ * it say", not "where".
+ */
+export function primaryWindowNote(windowCount: number, primaryWindowLabel: string): string | null {
+  if (windowCount <= 1) return null;
+  return primaryWindowLabel;
+}

@@ -106,6 +106,35 @@ export function windowsKey(windows: readonly SelectionWindow[]): string {
 }
 
 /**
+ * A stable string that changes exactly when the set of `windows` with a
+ * resolved `SessionDetail` in `detailsByWindow` changes — the readiness
+ * dependency the S1 merge-blocker fix needs (`Notebook/index.tsx`'s
+ * channel-bind and FFT effects).
+ *
+ * `sessionSpanDriver.runSessionSpan` resolves each selected window's
+ * `SessionDetail` independently and asynchronously with no ordering
+ * guarantee. Neither effect's prior dependency array (`sessionDetail` — the
+ * **primary** window's entry only — plus `windowsKeyValue`) changes when a
+ * *non-primary* window's detail arrives, so that window's data was never
+ * fetched. This function is read once per render and fed into both effects'
+ * dependency arrays instead.
+ *
+ * Built from `windows` in **selection order**, not `detailsByWindow`'s own
+ * iteration order — resolution order (which window's async fetch lands
+ * first) therefore never affects the string, only which windows are
+ * currently resolved does. `detailsByWindow.has(key)` is the readiness
+ * test, not the value at `key`: a window whose `SessionDetail` resolution
+ * failed still has a `null` entry set for it (`Notebook/index.tsx`'s
+ * `setSessionDetailsByWindow` effect), and that is "resolved, failed" —
+ * distinct from "not yet resolved" — for this purpose, same as everywhere
+ * else a resolved-but-failed window is not indistinguishable from a
+ * still-pending one.
+ */
+export function sessionDetailsReadinessKey(windows: readonly SelectionWindow[], detailsByWindow: ReadonlyMap<string, unknown>): string {
+  return windows.map((w) => (detailsByWindow.has(windowKey(w)) ? "1" : "0")).join("");
+}
+
+/**
  * How a selection click combines with the existing selection. Named after
  * the gesture a UI binds it to (Task 12/13's concern, not this module's):
  * a plain click is `"replace"`, a shift-click is `"add"`, a ctrl/cmd-click

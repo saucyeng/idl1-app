@@ -49,10 +49,13 @@ export interface ChannelRebindSandbox {
  * true multi-window fetching is Task 11b; this module stays honest by
  * construction — it never even sees more than one window) is called fresh
  * every rebuild too, same reason as `getBound`. Every bound channel here
- * was bound while exactly one window was selected (the channel-bind
- * effects gate on `windows.length <= 1`, ruling R131) — `w` is always
- * filled with that one window's index (`0`), byte-identical to the
- * pre-multi-window payload (R127 item 3). `null` (nothing selected right
+ * was bound while exactly one window was selected — not because the
+ * channel-bind effects gate on `windows.length <= 1` (S1 Task 11b removed
+ * that gate; they are fully multi-window now, ruling R131 Q2), but because
+ * `BoundChannel`'s own rebuild-replay registration (`channelRebind.ts`)
+ * stays single-window — `w` is always filled with that one window's index
+ * (`0`), byte-identical to the pre-multi-window payload (R127 item 3).
+ * `null` (nothing selected right
  * now — the selection can change between when a channel was bound and
  * when a rebuild fires) skips the rebuild for every channel rather than
  * guessing a window to label them with; a subsequent settle re-binds once

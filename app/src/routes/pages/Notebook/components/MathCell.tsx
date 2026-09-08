@@ -34,10 +34,19 @@ function DefRow({ def }: { def: CellDefResult }) {
  *  `HostChannelRef` summary or per-definition error, plus the cell's own
  *  `errors` (structural problems that never made it into `defs` at all —
  *  ledger R22). A cell with errors still renders its definitions, if any —
- *  a per-cell failure never blanks the cell (CLAUDE.md §5, C3 §3.4). */
-export default function MathCell({ output }: { output: CellOutput }) {
+ *  a per-cell failure never blanks the cell (CLAUDE.md §5, C3 §3.4).
+ *
+ *  `windowNote` is `model/jsCellNote.ts`'s `primaryWindowNote` result —
+ *  `null` with zero or one window selected (no marker, byte-identical to
+ *  today), otherwise the primary window's label. Every value below is that
+ *  window's own `eval_workbook_v2` result (ruling R131 Q1: this component
+ *  has never read any other window's), so ruling R132 requires saying
+ *  which window when more than one is selected — the reading stays, the
+ *  silence does not. */
+export default function MathCell({ output, windowNote = null }: { output: CellOutput; windowNote?: string | null }) {
   return (
     <div className="math-cell">
+      {windowNote !== null && <div className="math-cell-window-note">Showing {windowNote}</div>}
       {output.errors.length > 0 && (
         <ul className="math-cell-errors">
           {output.errors.map((error, i) => (

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { jsCellNote } from "./jsCellNote";
+import { jsCellNote, primaryWindowNote } from "./jsCellNote";
 
 describe("jsCellNote", () => {
   it("jsCellNote — custom code (not form-generated) — is null", () => {
@@ -31,5 +31,19 @@ describe("jsCellNote", () => {
     const note = jsCellNote({ isFormGenerated: true, windowCount: 1, unresolvedName: null, isAxisLessDefinition: false });
 
     expect(note).toBeNull();
+  });
+});
+
+describe("primaryWindowNote", () => {
+  it("primaryWindowNote — zero windows selected — is null", () => {
+    expect(primaryWindowNote(0, "Silverstone · Lap 2")).toBeNull();
+  });
+
+  it("primaryWindowNote — exactly one window selected — is null (byte-identical to today)", () => {
+    expect(primaryWindowNote(1, "Silverstone · Lap 2")).toBeNull();
+  });
+
+  it("primaryWindowNote — more than one window selected — names the primary window", () => {
+    expect(primaryWindowNote(2, "Silverstone · Lap 2")).toBe("Silverstone · Lap 2");
   });
 });

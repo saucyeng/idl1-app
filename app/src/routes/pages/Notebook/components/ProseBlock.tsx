@@ -10,6 +10,18 @@ export interface ProseBlockProps {
   inlineResults: ReadonlyMap<string, string>;
   /** Every inline `${…}` span's last-received `spanError.message`, by span id (R66 item 2). Checked before `inlineResults` — the two are kept mutually exclusive per id by `Notebook/index.tsx`'s callbacks. */
   spanErrors?: ReadonlyMap<string, string>;
+  /**
+   * Ruling R132: `null` with zero or one window selected (no marker,
+   * byte-identical to today), otherwise the primary window's label
+   * (`model/jsCellNote.ts`'s `primaryWindowNote`). A resolved `${…}` span
+   * is that window's own `evalInline` result — with more than one window
+   * selected, appended in parentheses so the rendered sentence names which
+   * window's value it is showing, rather than presenting it as the whole
+   * selection's. A span already showing its error is left alone — the
+   * error text names no window's value to attribute. Optional; defaults to
+   * `null` so a caller from before this task is unaffected.
+   */
+  windowNote?: string | null;
 }
 
 /**
@@ -31,7 +43,7 @@ export interface ProseBlockProps {
  * re-injecting HTML — from the sandbox's own `evalInline` result
  * (`spanId`/`inlineResult`/`spanError`, unchanged since before this task).
  */
-export default function ProseBlock({ content, inlineResults, spanErrors }: ProseBlockProps) {
+export default function ProseBlock({ content, inlineResults, spanErrors, windowNote = null }: ProseBlockProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
@@ -49,9 +61,13 @@ export default function ProseBlock({ content, inlineResults, spanErrors }: Prose
         continue;
       }
       const resolved = inlineResults.get(span.id);
-      el.textContent = resolved ?? `\${${span.expr}}`;
+      if (resolved === undefined) {
+        el.textContent = `\${${span.expr}}`;
+        continue;
+      }
+      el.textContent = windowNote !== null ? `${resolved} (${windowNote})` : resolved;
     }
-  }, [content, inlineResults, spanErrors]);
+  }, [content, inlineResults, spanErrors, windowNote]);
 
   if (content.kind === "raw") {
     return <div className="prose-block">{content.text}</div>;

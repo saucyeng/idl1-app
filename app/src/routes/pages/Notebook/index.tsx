@@ -23,7 +23,7 @@ import {
   type Window as WireWindow,
 } from "../../../ipc/workbook";
 import { useAppState } from "../../../state/AppState";
-import { describeWindow, windowKey, windowsKey, type SelectionWindow } from "../../../state/selection";
+import { describeWindow, sessionDetailsReadinessKey, windowKey, windowsKey, type SelectionWindow } from "../../../state/selection";
 import { useRouteVisible } from "../../../shell/routeVisibility";
 import { useEditorSlotNode } from "../../../shell/editorSlot";
 import { ColumnPlaceholder } from "../../../shell/ColumnFrame";
@@ -55,7 +55,7 @@ import { runFft, type FftAction, type FftDeps } from "./model/fftDriver";
 import { exceedsBinCap, frequencyAxisHz } from "./model/fftRequest";
 import { diffFunctionCatalog, type FunctionCatalogMismatch } from "./model/functionCatalog";
 import { bindingFor, bindingIdentity, unresolvedChannelId, type FftCellBinding } from "./model/jsCellBinding";
-import { jsCellNote } from "./model/jsCellNote";
+import { jsCellNote, primaryWindowNote } from "./model/jsCellNote";
 import { readNotebookPrefs, writeNotebookPrefs } from "./model/notebookPrefs";
 import { runEval, runOpenAndEval, type OpenEvalDeps } from "./model/openEvalDriver";
 import { registerMetrics } from "./model/outputRegister";
@@ -358,6 +358,14 @@ export default function NotebookPage() {
    *  window's failure when more than one fails). */
   const [fftErrors, setFftErrors] = useState<Map<string, Map<string, IpcError>>>(new Map());
   const sessionDetail = primaryWindow !== null ? (sessionDetailsByWindow.get(windowKey(primaryWindow)) ?? null) : null;
+  /** Changes exactly when the set of selected windows with a resolved
+   *  `SessionDetail` changes -- the readiness dependency the channel-bind
+   *  and FFT effects below key on, so a non-primary window's detail
+   *  arriving (independently, asynchronously, in no particular order --
+   *  `sessionSpanDriver.runSessionSpan`) re-runs those effects even though
+   *  `sessionDetail` (the primary window's entry) hasn't changed. See
+   *  `state/selection.ts`'s `sessionDetailsReadinessKey` doc comment. */
+  const sessionDetailsReadiness = sessionDetailsReadinessKey(windows, sessionDetailsByWindow);
   /** `primaryWindow`'s own `WindowEvalState` entry (ruling R131 Q1), or
    *  `undefined` while still pending -- every math/table cell, prose span
    *  and completion list below reads this one window's result, same as
@@ -1233,8 +1241,8 @@ export default function NotebookPage() {
   // faster settle and overwrite its fresher `chartWindows`/registry state
   // with the stale initial-span one). Depends only on data
   // (`state.cells`/`state.markdown`/`sessionDetail`/`sessionSpanUs`/
-  // `primaryWindow`/`windowsKeyValue`/`primaryEval`) -- the tightened
-  // IPC-effects rule. `primaryEval` was added for L6 Task 18 (definition-channel binding,
+  // `primaryWindow`/`windowsKeyValue`/`sessionDetailsReadiness`/`primaryEval`)
+  // -- the tightened IPC-effects rule. `primaryEval` was added for L6 Task 18 (definition-channel binding,
   // R77.3): `definitionsWithAxis` below is derived from it, so a cell
   // naming a `math` definition rebinds once that definition's first
   // `eval_workbook_v2` result exists, or once its `has_t` becomes known.
@@ -1310,7 +1318,17 @@ export default function NotebookPage() {
       void runChannelBind(deps, sessionRef.current.cache, bindWindows, cellId, binding, DEFAULT_CHART_WIDTH_PX, onAction, isStale);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [state.cells, state.markdown, primaryEval, sessionDetail, sessionSpanUs, primaryWindow, windowsKeyValue, primeState.primeEpoch]);
+  }, [
+    state.cells,
+    state.markdown,
+    primaryEval,
+    sessionDetail,
+    sessionSpanUs,
+    primaryWindow,
+    windowsKeyValue,
+    sessionDetailsReadiness,
+    primeState.primeEpoch,
+  ]);
 
   // For each `js` cell whose binding is the FFT arm, once per **selected
   // window** whose per-window `bindingIdentity` changed (L6 Task 20, C2
@@ -1322,9 +1340,9 @@ export default function NotebookPage() {
   // `fftRunKey(cellId, windowKey)` so one window's fetch supersedes only
   // its own prior runs, never a sibling window's in-flight fetch for the
   // same cell. Depends only on data (`state.cells`/`state.markdown`/
-  // `primaryEval`/`sessionDetail`/`sessionSpanUs`/`windowsKeyValue`), the
-  // tightened IPC-effects rule (wave-2 operating brief §4); its cleanup
-  // cancels nothing.
+  // `primaryEval`/`sessionDetail`/`sessionSpanUs`/`windowsKeyValue`/
+  // `sessionDetailsReadiness`), the tightened IPC-effects rule (wave-2
+  // operating brief §4); its cleanup cancels nothing.
   //
   // A cell whose `unrequestable` is non-null for a given window never
   // reaches `runFft` for that window -- the note it carries is folded into
@@ -1333,6 +1351,15 @@ export default function NotebookPage() {
   // window's failure never blocks a sibling window's spectrum from being
   // fetched, retained or combined -- `pushCombinedSpectrumFor` omits only
   // the failed window's own series.
+  //
+  // `sessionDetailsReadiness` is in the dependency array below for the same
+  // reason as the channel-bind effect above: `sessionSpanDriver` resolves
+  // each selected window's `SessionDetail` independently and
+  // asynchronously, and the per-window loop just below reads
+  // `sessionDetailsByWindow` for every selected window, not only the
+  // primary one -- without this dependency, a non-primary window's detail
+  // arriving after the primary's would never re-run this effect, and that
+  // window's spectrum would never be fetched (S1 merge blocker).
   useEffect(() => {
     if (state.markdown === null) return;
     const markdown = state.markdown;
@@ -1477,7 +1504,16 @@ export default function NotebookPage() {
         void runFft(deps, cellId, fftBinding.request, dispatchFft, isStale);
       }
     }
-  }, [state.cells, state.markdown, primaryEval, sessionDetail, sessionSpanUs, windowsKeyValue, primeState.primeEpoch]);
+  }, [
+    state.cells,
+    state.markdown,
+    primaryEval,
+    sessionDetail,
+    sessionSpanUs,
+    windowsKeyValue,
+    sessionDetailsReadiness,
+    primeState.primeEpoch,
+  ]);
 
   // Save is unavailable while there is no readable `hash` to base it on
   // (still loading, or a read error) -- see `handleSave`'s doc comment on
@@ -1598,6 +1634,15 @@ export default function NotebookPage() {
     ...(registerCssMetrics.measureCh !== null ? { maxWidth: `${registerCssMetrics.measureCh}ch`, marginInline: "auto" } : {}),
   };
 
+  // Ruling R132: `null` with zero or one window selected (no marker,
+  // byte-identical to today, R127 item 3); with more than one window
+  // selected, the primary window's own label -- every math/table/prose
+  // cell below reads only that window's `eval_workbook_v2`/`evalInline`
+  // result (`primaryOutputs`/`inlineResults`), so it must say which window
+  // it is showing once the selection names more than one.
+  const cellListWindowNote =
+    primaryWindow !== null ? primaryWindowNote(windows.length, windowDescriptorFor(primaryWindow, sessionDetail).label) : null;
+
   const cellListElement = (
     <CellList
       doc={{ frontMatterRange: null, cells: state.cells }}
@@ -1605,6 +1650,7 @@ export default function NotebookPage() {
       outputs={primaryOutputs}
       inlineResults={inlineResults}
       spanErrors={spanErrors}
+      windowNote={cellListWindowNote}
       renderJsCell={(cellId) => {
             const cell = state.cells.find((c) => c.id === cellId);
             const code = cell !== undefined && state.markdown !== null ? decodeByteRange(state.markdown, cell.bodyRange) : "";

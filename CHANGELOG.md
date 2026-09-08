@@ -262,6 +262,28 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 
 ### Fixed
 
+- **S1 pre-merge fix batch: non-primary windows could permanently miss their
+  data; non-chart cells now name the window they show (2026-09-08, no spec
+  change needed).** `Notebook/index.tsx`'s channel-bind and FFT effects
+  dependency arrays carried only `sessionDetail` (the **primary** window's
+  entry) and `windowsKeyValue`, but `sessionSpanDriver.runSessionSpan`
+  resolves each selected window's `SessionDetail` independently and
+  asynchronously with no ordering guarantee — so a non-primary window's
+  detail arriving after the primary's re-ran neither effect, and that
+  window silently never got its channel data or spectrum. Fixed with
+  `state/selection.ts`'s new `sessionDetailsReadinessKey` (a stable string
+  over which selected windows currently have a resolved `SessionDetail`,
+  order-of-resolution-independent by construction), added to both effects'
+  dependency arrays. Also, ruling R132: `MathCell`/`TableCell`/`ProseBlock`
+  now take an optional `windowNote` prop (`model/jsCellNote.ts`'s new
+  `primaryWindowNote`) — with more than one window selected, a non-chart
+  cell reading the primary window's value now names it; with zero or one
+  window selected, no marker (byte-identical to today). Minor:
+  `host/NotebookSession.ts`'s stale doc comment claiming the channel-bind
+  effects still gate on `windows.length <= 1` (Task 11b removed that gate)
+  is corrected to say what actually stays single-window is `BoundChannel`'s
+  own rebuild-replay registration.
+
 - **The sandbox stall watchdog now has a caller (2026-09-07, sandbox-watchdog
   task, no spec change needed).** `host/watchdog.ts`'s ping/pong liveness
   watchdog existed but was never ticked from anywhere, so a runaway cell

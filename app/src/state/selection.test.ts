@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { assignColour, describeWindow, nextWindows, windowKey, windowsKey, type SelectionWindow } from "./selection";
+import { assignColour, describeWindow, nextWindows, sessionDetailsReadinessKey, windowKey, windowsKey, type SelectionWindow } from "./selection";
 
 const sessionWindow = (sessionId: string, colour = "--chart-1"): SelectionWindow => ({
   sessionId,
@@ -75,6 +75,38 @@ describe("windowsKey", () => {
   it("windowsKey — the empty list — a stable, distinct key", () => {
     expect(windowsKey([])).toBe("");
     expect(windowsKey([])).not.toBe(windowsKey([sessionWindow("s1")]));
+  });
+});
+
+describe("sessionDetailsReadinessKey", () => {
+  it("sessionDetailsReadinessKey — two windows resolved in different orders — same key", () => {
+    const windows = [sessionWindow("s1"), lapWindow("s2", 1)];
+    const resolvedS1First = new Map([[windowKey(windows[0]), {}], [windowKey(windows[1]), {}]]);
+    const resolvedS2First = new Map([[windowKey(windows[1]), {}], [windowKey(windows[0]), {}]]);
+
+    expect(sessionDetailsReadinessKey(windows, resolvedS1First)).toBe(sessionDetailsReadinessKey(windows, resolvedS2First));
+  });
+
+  it("sessionDetailsReadinessKey — one more window resolving — changes the key", () => {
+    const windows = [sessionWindow("s1"), lapWindow("s2", 1)];
+    const onlyFirstResolved = new Map([[windowKey(windows[0]), {}]]);
+    const bothResolved = new Map([[windowKey(windows[0]), {}], [windowKey(windows[1]), {}]]);
+
+    expect(sessionDetailsReadinessKey(windows, onlyFirstResolved)).not.toBe(sessionDetailsReadinessKey(windows, bothResolved));
+  });
+
+  it("sessionDetailsReadinessKey — a resolved-but-failed (null) entry counts as resolved", () => {
+    const windows = [sessionWindow("s1")];
+    const pending = new Map<string, unknown>();
+    const resolvedNull = new Map<string, unknown>([[windowKey(windows[0]), null]]);
+
+    expect(sessionDetailsReadinessKey(windows, pending)).not.toBe(sessionDetailsReadinessKey(windows, resolvedNull));
+  });
+
+  it("sessionDetailsReadinessKey — nothing selected — a stable key, unaffected by unrelated map entries", () => {
+    const empty = new Map([["unrelated", {}]]);
+
+    expect(sessionDetailsReadinessKey([], empty)).toBe(sessionDetailsReadinessKey([], new Map()));
   });
 });
 
