@@ -10,3 +10,7 @@
   the window gate alone. No code change; correct the comment to say index 9
   is covered by the same gate as index 6, or drop the heading claim. A wrong
   explanation in a test misleads the next reader more than no explanation.
+
+- **Per-session evaluation cache (R125).** Not in S1. Key on
+  `(session_id, definition, workbook revision)`, no window in the key.
+  Trigger: the lap-time table / per-lap columns.

@@ -5314,3 +5314,34 @@ named subset, and flagged `spectrogram` as ambiguous.
 reduction set puts two numbers on the same chart computed over different
 spans, with nothing on screen distinguishing them — the failure mode
 section D exists to prevent, arriving through the front door.
+
+## 2026-09-08 — R125: the per-session evaluation cache is a real follow-up, and R123 is what makes it easy
+
+**Finding** (S1 R124 implementer, answering R123's open question). The cost
+of evaluating the full session once per window is not hypothetical for the
+case that matters most: a **per-lap table column** — "max fork travel" as a
+lap-by-lap results table — evaluates the same definition, including its
+whole filter/estimator chain, once per lap row. That is
+O(N laps × session length) where O(session length) would do. For a handful
+of ad-hoc chart windows the cost is nothing; for a 20-lap session with an
+estimator-backed channel it is the difference between instant and not.
+
+**Ruling — a follow-up task, not part of S1, and here is its design.**
+R123 is what makes this straightforward: because the window scopes
+*aggregation and display only*, the expensive half — the session-wide
+computed series — **does not depend on the window at all**. So it is
+cacheable by `(session_id, definition, workbook revision)` with no window
+in the key, and only the cheap subslice-and-fold varies per window. Had
+R122's slicing survived, every window would have produced a different
+computation and there would be nothing to share.
+
+Not built now: S1's goal is that selection is *correct*, and the lane is
+already thirteen tasks plus reworks. Filed with its trigger named — the
+lap-time table (idl0 §21.1, and direction-2's lap-by-lap displays) is the
+feature that makes it necessary, so the cache lands with or before that
+work, not on general principle.
+
+**Cost if wrong.** Deferring too long means the first real lap table on a
+long session is slow, and the obvious wrong fix — reintroducing per-window
+computation to "avoid recomputing the session" — is exactly R123's
+filter-transient bug.
