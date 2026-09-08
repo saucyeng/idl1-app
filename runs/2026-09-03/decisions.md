@@ -6205,3 +6205,57 @@ the graph, so a node could grey while the chart beside it renders — or
 worse, the reverse. Q2 guessed would make a *deselected* window and an
 *unevaluated* one indistinguishable, and the canvas would show spinners for
 windows nobody selected.
+
+## 2026-09-08 — R142: the math language is measured against scipy/numpy/xarray convention (analysis; grammar question open for Isaac)
+
+**Isaac, 2026-09-08:** *"the idea is to have it be a language that has been
+around long enough to have models trained on it. the idea of having the app
+be a runtime editable sci-rs library is supposed to mirror how this would
+feel if it were scipy — something that the models have been trained on."*
+
+This is a **design criterion**, recorded as one: the math language's
+audience includes language models, and divergence from scipy/numpy costs
+model accuracy, not just human familiarity. It applies to every future
+addition to C2 §3.3.
+
+**Where we already are — better than expected.** The 69-entry catalog is
+largely scipy/numpy already: `butter`, `sosfilt`, `detrend`, `hilbert`,
+`correlate`, `convolve`, `resample`, `spectrogram`, `fft` (scipy.signal);
+`abs`, `sqrt`, `sign`, `floor`, `ceil`, `round`, `pow`, `min`, `max`, the
+trig set, `deg2rad`, `rad2deg`, `mean`, `std`, `median`, `sum`, `cross`,
+`dot` (numpy). No renaming is needed for the majority.
+
+**The divergences, in priority order.**
+
+1. **False friends — the dangerous class.** `angle` in this catalog is a
+   vector angle; `numpy.angle` is the phase of a complex number. A model
+   trained on numpy will produce confidently wrong code against it. A false
+   friend is *worse* than an invented name, because an invented name makes
+   a model ask. Rename these before anything else.
+2. **Gratuitous renames of functions that exist upstream:** `p` →
+   `percentile`, `clamp` → `clip`, `if` → `where`, `integrate` →
+   `cumulative_trapezoid` (or `cumtrapz`), `differentiate` → `gradient`.
+   Each is a free win — the semantics already match, only the spelling
+   diverges.
+3. **The axis argument, and the strongest single lever.** C2 §3.6 reduces
+   with a positional string: `mean(spec, "f")`. numpy spells this
+   `mean(x, axis=0)`; **xarray** — which is precisely "numpy with *named*
+   axes", exactly what §3.6 invented — spells it `x.mean(dim="f")`. xarray
+   is well-represented in training data. Adopting its vocabulary (`dim=`,
+   named dims) would put §3.6 on trained ground rather than beside it.
+   **This needs keyword arguments, which the grammar does not have** — a
+   real change, and Isaac's call.
+4. **Deliberate DSL affordances, worth keeping:** `[Channel]` and `{cell}`
+   references have no Python analogue but are the spreadsheet-like feel the
+   product wants, and they are unambiguous. `rms` is not numpy but is
+   standard in signal work. The `vec`/`vx`/`vadd`/`vscale` family is the
+   most custom corner and deserves a second look once array literals exist.
+
+**Cost of deferring.** Renames are a C2 version bump plus a migration —
+decision 75 requires migrating workbooks, not breaking them. Every workbook
+Isaac writes between now and then raises that cost, and the maths-graph lane
+is about to harden around these names in node cards and completions. This is
+cheapest today.
+
+**Open for Isaac:** whether to add keyword arguments to the grammar (item 3).
+Items 1 and 2 are renames and can proceed without it.
