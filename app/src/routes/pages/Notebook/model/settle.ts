@@ -29,7 +29,19 @@ export interface SettleTimer {
  *  vitest's fake-timer mode mixed with this injected-timer design, both
  *  disallowed by this module's own testing constraints; the gap is accepted
  *  rather than silently left uncovered. */
-const REAL_TIMER: SettleTimer = { setTimeout, clearTimeout };
+const REAL_TIMER: SettleTimer = {
+  // Wrapped, not copied. `{ setTimeout, clearTimeout }` puts the bare
+  // function references on an object literal, so `timer.setTimeout(...)`
+  // calls them with `this === REAL_TIMER`. A browser's `window.setTimeout`
+  // requires the Window as its receiver and throws "Illegal invocation";
+  // Node's does not care, so vitest's `node` environment passes and only a
+  // real browser fails. Keep the arrow wrappers.
+  // `globalThis` rather than `window` so importing this module does not
+  // require a DOM; the cast is because Node's overload types the handle as
+  // `Timeout` while the browser's is a `number`.
+  setTimeout: (fn, ms) => globalThis.setTimeout(fn, ms) as unknown as number,
+  clearTimeout: (handle) => globalThis.clearTimeout(handle),
+};
 
 /**
  * Builds a settle debouncer. `notify(value)` records `value` as the latest
