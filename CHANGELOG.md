@@ -4,6 +4,21 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 
 ## [Unreleased]
 
+### Added
+
+- **`app/src/state/selection.ts`: pure selection module for C1 §6.1
+  time-window selection (2026-09-08, s1-ts Task 7, spec exists — C1 §6.1,
+  no spec change needed).** `SelectionWindow`/`Span` (session-relative
+  `t0Us`/`t1Us`, per C1 §6.1 and ruling R117 item 1), `windowKey` (identity
+  by `sessionId` + `span`, never `colour`, so a repeated `sessionId` with a
+  different lap/range is never collapsed — R117 item 2), `nextWindows`
+  (`"replace"`/`"add"`/`"toggle"` modifiers), `assignColour` (cycles the
+  eight `--chart-1…8` tokens, never a hex literal — R117 item 6; wraps past
+  eight windows), and `describeWindow` (top-bar chip label). No React, no
+  IPC — dependency-free, following `shell/columnVisibility.ts`'s pattern so
+  vitest's `node` environment can resolve it. `AppState.tsx` wiring is
+  Task 8, not this commit.
+
 ### Fixed
 
 - **The sandbox stall watchdog now has a caller (2026-09-07, sandbox-watchdog
