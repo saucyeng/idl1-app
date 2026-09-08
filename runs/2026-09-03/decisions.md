@@ -6312,3 +6312,46 @@ unexposed, and what to model the FFT and iEKF work on.
 **Cost if wrong.** Every workbook and every model-written cell that says
 `fft` today means Welch. The longer that stands, the more code exists whose
 author believed something false about what it computes.
+
+## 2026-09-08 — R144: a computed value must carry its unit across the wire
+
+**Finding** (W3.2 maths task 8). Decision 45 wants a node card to show
+"name, unit, the key parameters and the status glyph". `CellDefResult`
+(`app/src/ipc/workbook.ts:44`) carries `name`, `label`, `value`
+(`HostChannelRef`) and `error` — and **no unit at all**. The implementer
+omitted the row rather than fabricate one, which was right.
+
+**This is bigger than the node card.** CLAUDE.md §3 requires units on every
+numeric value, and the engine *knows* them: C2 §3.3's table documents each
+function's output unit (`fft`: "same units as `ch`"), and a channel's unit
+comes from C1 §4.1. The unit is derived in `core` and then dropped at the
+IPC boundary. Every consumer that wants to show a number therefore cannot
+say what it is — the node card, the cursor value card (decision 55), the
+inline `${…}` prose spans, and the PDF report (decision 85), which is the
+one that goes to a rider or a mechanic.
+
+A suspension number without its unit is not a smaller feature; "112" is not
+a travel measurement, and a reader supplies the missing unit from
+assumption.
+
+**Ruling.** `CellDefResult` gains a `unit: string | null` — additive, `null`
+meaning genuinely dimensionless (a count, a ratio), never "unknown". The
+engine already computes it; this exposes it. C3 amended alongside. Where a
+function's output unit is not derivable from its inputs, the §3.3 table
+already states it and that is the source of truth.
+
+**Do not** let a consumer infer a unit from a channel name or a definition
+label — that is how a `deg`/`rad` confusion ships.
+
+Scheduled as a small Rust + C3 task, not folded into the graph lane: it is a
+contract change with several consumers, and the graph is merely the first to
+need it.
+
+**Accepted from the same report, no change:** the node card showing one
+representative window's port shape rather than a per-window shape. C2 §3.7.4
+defines one shape per node, so per-window nuance belongs to whoever wires
+Task 10 and chooses which window's outputs to pass.
+
+**Cost if wrong.** Every number the app displays outside a chart axis is
+unlabelled, and the report — the deliverable Isaac names in decision 85 —
+goes out with bare figures.
