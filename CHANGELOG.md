@@ -177,6 +177,43 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
   Task 11b. `jsCellNote.ts`'s `windowCount` and `sessionSpanDriver.ts`'s
   once-per-window contract (both landed in Task 10) are wired in for real
   here for the first time.
+- **`channelBindDriver.ts` (time-chart channel binding) gets full
+  multi-window overlay, closing the Task 11a interim (2026-09-08, s1-ts
+  Task 11b, ruling R131 Q2, no spec change needed — C1 §6.1 already covers
+  this).** New pure module `model/viewportWindows.ts`: `mapViewportToWindow`
+  re-bases the current gesture viewport onto one selected window's own
+  start, `[window.startUs + a, min(window.startUs + b, window.endUs))`
+  (`a`/`b` the offset from the *primary* window's own start) — a window
+  shorter than the viewport is clamped at its own end and simply has no
+  data past it (absence, never a value held flat to the edge); a mapped
+  span with no overlap at all returns `null` and the caller fetches
+  nothing for that window. `resolveWindowSpan` resolves a selected
+  window's `Span` to that absolute bound against its `SessionDetail`
+  (`"range"` verbatim, `"lap"` via `laps[].start_time_secs`/
+  `end_time_secs`, `"session"` as `[0, Infinity)` — no per-window recorded
+  duration is resolved today outside the primary window, so a `"session"`
+  window's own end is never clamped; noted as an interim simplification,
+  narrower than what R131 asked for, never wider). `channelBindDriver.ts`
+  now takes `windows: BindWindow[]` (`windows[0]` the primary) in place of
+  a bare `sessionId`: a `"session"` channel is fetched once per selected
+  window at its own mapped span and combined via `host/protocol.ts`'s
+  `combineChannelWindows` into one `channelData` action carrying `w`/
+  `windows` directly (the caller's interim all-zero-`w` shim is gone); a
+  per-window fetch failure (a rejected `fetchTile` or an evicted tile)
+  drops only that window's contribution, every other selected window
+  still renders (R121) — the channel itself is dropped only if every
+  window fails. `BoundChannel`/`ChartCell`'s mounted-channel state
+  (`channelRebind.ts`, untouched this task) still describes only the
+  primary window's own fetch, matching its existing single-window shape.
+  A single selected window is unchanged end to end: `mapViewportToWindow`
+  is the identity re-basing and `combineChannelWindows` is byte-identical
+  for one series (R127 item 3) — proved by re-running the full
+  pre-existing `channelBindDriver.test.ts` suite unmodified except for the
+  new `windows` argument. `Notebook/index.tsx`'s two `channelBindDriver`
+  call sites (initial bind, gesture settle) now build `BindWindow[]` via a
+  new `bindWindowsFor` helper reading the already-resolved
+  `sessionDetailsByWindow`; the Task 11a interim multi-window cell error
+  (`MULTI_WINDOW_CHART_NOTE`) is deleted.
 
 ### Fixed
 

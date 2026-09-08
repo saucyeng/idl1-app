@@ -44,7 +44,7 @@ import { PING_INTERVAL_MS } from "./host/watchdog";
 import { NotebookSession } from "./host/NotebookSession";
 import { dropCellHeight, initialCellHeights, recordCellHeight, type CellHeights } from "./model/cellLayout";
 import { replaceCellBody } from "./model/cells";
-import { runChannelBind, runChannelSettle, type ChannelBindAction, type ChannelBindDeps, type ChartWindow } from "./model/channelBindDriver";
+import { runChannelBind, runChannelSettle, type BindWindow, type ChannelBindAction, type ChannelBindDeps, type ChartWindow } from "./model/channelBindDriver";
 import { CellRunSequencer } from "./model/cellRunSequencer";
 import { isCodeVisible, toggleCode } from "./model/codeVisibility";
 import PlaybackTransport from "./interaction/PlaybackTransport";
@@ -65,6 +65,7 @@ import { isSelfWrite, saveFlow, type SaveFlowState, type WorkbookEventWithHash }
 import { initialSandboxPrimeState, nextSandboxPrimeState } from "./model/sandboxLifecycle";
 import { runSessionSpan, type SessionSpanAction, type SessionSpanDeps } from "./model/sessionSpanDriver";
 import { TileCache } from "./model/tileCache";
+import { resolveWindowSpan } from "./model/viewportWindows";
 import { chooseWorkbookEntry, type WorkbookEntry } from "./model/workbookEntry";
 import { initialWorkbookState, NO_WINDOW_KEY, workbookReducer } from "./model/workbookState";
 
@@ -123,6 +124,39 @@ const NONE_VENUE = "(none)";
 function windowDescriptorFor(w: SelectionWindow, detail: SessionDetail | null): WindowDescriptor {
   const venueName = detail !== null && detail.venue_name !== "" ? detail.venue_name : NONE_VENUE;
   return { sessionId: w.sessionId, span: toWireWindow(w).span, colour: w.colour, label: describeWindow(w, venueName) };
+}
+
+/**
+ * Builds `model/channelBindDriver.ts`'s `BindWindow[]` for every entry of
+ * `windows`, in order (S1 Task 11b, ruling R131 Q2) -- `windows[0]` stays
+ * the primary window in the result, matching this file's own "primary
+ * window" convention. Each window's own absolute `[startUs, endUs)` is
+ * resolved via `model/viewportWindows.ts`'s `resolveWindowSpan`, reading
+ * `detailsByWindow`'s entry for that window (`sessionDetailsByWindow`,
+ * already resolved per selected window for the FFT arm, R115) -- **not**
+ * fetched here.
+ *
+ * A window whose `SessionDetail` hasn't resolved yet, or whose `"lap"` span
+ * names a lap not present in `laps[]`, is dropped from the result rather
+ * than blocking every other window (the same per-window failure isolation
+ * `channelBindDriver.ts` itself applies downstream, R121) -- **except**
+ * the primary window (`windows[0]` of the input): if it can't be resolved
+ * there is no viewport coordinate frame to re-base any other window onto,
+ * so the whole result is `[]` and the caller's effect skips this cell's
+ * bind entirely, same as today's "no primary window" early return.
+ */
+function bindWindowsFor(windows: readonly SelectionWindow[], detailsByWindow: ReadonlyMap<string, SessionDetail | null>): BindWindow[] {
+  const result: BindWindow[] = [];
+  for (const w of windows) {
+    const detail = detailsByWindow.get(windowKey(w)) ?? null;
+    const span = detail !== null ? resolveWindowSpan(toWireWindow(w).span, detail) : null;
+    if (span === null) {
+      if (result.length === 0) return [];
+      continue;
+    }
+    result.push({ sessionId: w.sessionId, span, descriptor: windowDescriptorFor(w, detail) });
+  }
+  return result;
 }
 
 /** The `cellRunSequencerRef`/`fftBoundIdentityRef` composite key for one
@@ -1199,7 +1233,7 @@ export default function NotebookPage() {
   // faster settle and overwrite its fresher `chartWindows`/registry state
   // with the stale initial-span one). Depends only on data
   // (`state.cells`/`state.markdown`/`sessionDetail`/`sessionSpanUs`/
-  // `primaryWindow`/`multiWindowSelected`/`primaryEval`) -- the tightened
+  // `primaryWindow`/`windowsKeyValue`/`primaryEval`) -- the tightened
   // IPC-effects rule. `primaryEval` was added for L6 Task 18 (definition-channel binding,
   // R77.3): `definitionsWithAxis` below is derived from it, so a cell
   // naming a `math` definition rebinds once that definition's first
@@ -1221,23 +1255,18 @@ export default function NotebookPage() {
   );
 
   // Time-chart channel binding (`ChartCell`'s tile-fetch pipeline,
-  // `channelBindDriver.ts`) is still single-window (Task 11b, ruling
-  // R131): the "one gesture-driven pan/zoom viewport, N windows of
-  // possibly-different length" re-basing that comparison-by-overlay needs
-  // has its own reviewable task. Per R131's interim rule ("compiling and
-  // honest"), one selected window behaves exactly as before (`w` all
-  // zeros, `windows` a single-entry descriptor -- byte-identical per R127
-  // item 3); more than one window shows a typed cell error on every
-  // time-bound `js` cell instead of silently rendering `windows[0]`'s data
-  // as though it were the whole selection.
-  const multiWindowSelected = windows.length > 1;
-  const MULTI_WINDOW_CHART_NOTE = "Comparing more than one window isn't supported for this chart yet — select a single window.";
-
+  // `channelBindDriver.ts`) is fully window-aware as of S1 Task 11b
+  // (ruling R131 Q2): every selected window is fetched and combined into
+  // one host variable per channel (`bindWindowsFor`/`runChannelBind`), the
+  // gesture viewport re-based onto each window's own start. A single
+  // selected window stays byte-identical to the pre-multi-window shape
+  // (R127 item 3) end to end -- see `channelBindDriver.ts`'s own top doc
+  // comment.
   useEffect(() => {
     if (state.markdown === null || primaryWindow === null) return;
     const markdown = state.markdown;
-    const window = primaryWindow;
-    const wireW = toWireWindow(window);
+    const bindWindows = bindWindowsFor(windows, sessionDetailsByWindow);
+    if (bindWindows.length === 0) return;
 
     for (const cell of state.cells) {
       if (cell.id === null || cell.kind !== "js") continue;
@@ -1252,15 +1281,12 @@ export default function NotebookPage() {
         continue;
       }
 
-      if (multiWindowSelected) {
-        // R131's interim rule: never render window 0's data as though it
-        // were the selection. Drop any stale identity so a later drop back
-        // to one window rebinds fresh rather than seeing "unchanged".
-        boundIdentityRef.current.delete(cellId);
-        setCellErrors((prev) => new Map(prev).set(cellId, MULTI_WINDOW_CHART_NOTE));
-        continue;
-      }
-
+      // The binding identity intentionally excludes the *other* selected
+      // windows (`bindingIdentity` reads only `binding` itself, resolved
+      // against the primary window/session) -- a rebind purely from a
+      // sibling window's selection changing is driven by `windowsKeyValue`
+      // being part of this effect's own dependency array below, not by
+      // this identity comparison.
       const identity = bindingIdentity(binding);
       if (boundIdentityRef.current.get(cellId) === identity) continue;
       boundIdentityRef.current.set(cellId, identity);
@@ -1269,16 +1295,9 @@ export default function NotebookPage() {
         fetchTile: (sessId, channelId, tier, tileIndex, columnCount) => fetchTile(sessId, channelId, tier, tileIndex, columnCount),
         fetchHostChannel: (defName, budget) => fetchHostChannelDep(defName, budget),
       };
-      const descriptor = windowDescriptorFor(window, sessionDetail);
       const onAction = (action: ChannelBindAction) => {
         if (action.type === "channelData") {
-          // R127 item 3: a single window is byte-identical to the
-          // pre-multi-window payload -- `w` all zeros, one-entry
-          // `windows`. `channelBindDriver.ts` itself is not yet
-          // window-aware (Task 11b); this is the whole of what "honest
-          // against the landed 6-arg signature" means for one window.
-          const w = new Float64Array(action.length).fill(0);
-          sandboxHostRef.current?.setChannelHostVar(action.channelId, action.length, action.t, action.v, w.buffer, [descriptor]);
+          sandboxHostRef.current?.setChannelHostVar(action.channelId, action.length, action.t, action.v, action.w, action.windows);
         } else if (action.type === "boundChannels") {
           sessionRef.current.setBoundChannels(action.cellId, action.bound);
         } else {
@@ -1288,9 +1307,10 @@ export default function NotebookPage() {
       const seq = cellRunSequencerRef.current.start(cellId);
       const isStale = () => !cellRunSequencerRef.current.isCurrent(cellId, seq);
 
-      void runChannelBind(deps, sessionRef.current.cache, wireW.session_id, cellId, binding, DEFAULT_CHART_WIDTH_PX, onAction, isStale);
+      void runChannelBind(deps, sessionRef.current.cache, bindWindows, cellId, binding, DEFAULT_CHART_WIDTH_PX, onAction, isStale);
     }
-  }, [state.cells, state.markdown, primaryEval, sessionDetail, sessionSpanUs, primaryWindow, multiWindowSelected, primeState.primeEpoch]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [state.cells, state.markdown, primaryEval, sessionDetail, sessionSpanUs, primaryWindow, windowsKeyValue, primeState.primeEpoch]);
 
   // For each `js` cell whose binding is the FFT arm, once per **selected
   // window** whose per-window `bindingIdentity` changed (L6 Task 20, C2
@@ -1635,15 +1655,6 @@ export default function NotebookPage() {
               return <JsCellFrame cellId={cellId} heightPx={heightPx} note={note} sendLayout={sendLayout} />;
             }
 
-            if (multiWindowSelected) {
-              // R131's interim rule (ruling, S1 Task 11a/11b split):
-              // `channelBindDriver.ts` is not yet window-aware, so more
-              // than one selected window never renders `windows[0]`'s data
-              // as though it were the whole selection -- the bind effect
-              // above already set this cell's `cellErrors` entry.
-              return <JsCellFrame cellId={cellId} heightPx={heightPx} error={cellErrors.get(cellId) ?? MULTI_WINDOW_CHART_NOTE} sendLayout={sendLayout} />;
-            }
-
             if (binding.mountedChannelId === null) {
               // Q2(a), R78: every one of this cell's bound channels is a
               // workbook definition -- there is no session channel, no time
@@ -1665,7 +1676,6 @@ export default function NotebookPage() {
             const channel = binding.channels.find((c) => c.channelId === mountedChannelId)!;
             const window = chartWindows.get(cellId);
             const sid = primaryWireWindow!.session_id;
-            const descriptor = windowDescriptorFor(primaryWindow, sessionDetail);
 
             return (
               <ChartCell
@@ -1713,11 +1723,7 @@ export default function NotebookPage() {
                   };
                   const onAction = (action: ChannelBindAction) => {
                     if (action.type === "channelData") {
-                      // R127 item 3: byte-identical to the pre-multi-window
-                      // payload for one window -- see the initial-bind
-                      // effect above's identical comment.
-                      const w = new Float64Array(action.length).fill(0);
-                      sandboxHostRef.current?.setChannelHostVar(action.channelId, action.length, action.t, action.v, w.buffer, [descriptor]);
+                      sandboxHostRef.current?.setChannelHostVar(action.channelId, action.length, action.t, action.v, action.w, action.windows);
                     } else if (action.type === "boundChannels") {
                       sessionRef.current.setBoundChannels(action.cellId, action.bound);
                     } else {
@@ -1727,7 +1733,7 @@ export default function NotebookPage() {
                   void runChannelSettle(
                     deps,
                     sessionRef.current.cache,
-                    sid,
+                    bindWindowsFor(windows, sessionDetailsByWindow),
                     cellId,
                     binding.channels,
                     channel.channelId,

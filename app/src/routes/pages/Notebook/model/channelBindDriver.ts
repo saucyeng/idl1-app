@@ -3,7 +3,8 @@
  * (R66 item 1; lead pre-ruling 2026-09-05 #3, `runs/2026-09-05/lanes/l6/
  * brief-task13b.md`) and its gesture-settle refetch (R72, Task 13c): given
  * one `js` cell's distinct bound channels, fetches each one's window of
- * tiles for a given `[startUs, endUs)` span and dispatches its transfer
+ * tiles for every selected window's own mapped `[startUs, endUs)` span
+ * (S1 Task 11b, ruling R131 Q2) and dispatches its combined transfer
  * buffers, then -- once every channel has resolved and the run is still
  * current -- registers the *whole* channel list with the caller's
  * `NotebookSession` (`setBoundChannels`, one call, replacing the cell's
@@ -14,23 +15,59 @@
  * data-only dependencies and holds callbacks in refs (the tightened
  * IPC-effects rule, `runs/2026-09-05/WAVE2-OPERATING-BRIEF.md` §4).
  *
+ * **Multi-window (Task 11b).** `windows[0]` is always the *primary* window
+ * -- the one `binding.initialSpan`/a settle's viewport is expressed
+ * against (`index.tsx`'s own "primary window" convention, S1 Task 11a).
+ * For each `"session"` channel, `model/viewportWindows.ts`'s
+ * `mapViewportToWindow` re-bases the current viewport onto every selected
+ * window's own start (R131 Q2) and each window is fetched independently;
+ * a window the mapped span excludes entirely (`null`) or whose own fetch
+ * fails contributes nothing and every other window still renders (R121,
+ * requirement 4) -- never a blanked chart for one bad window. The
+ * per-channel results are combined into one host variable via
+ * `host/protocol.ts`'s `combineChannelWindows` (R127/R129's break-row
+ * rule; not reimplemented here). A single selected window is a pure
+ * re-basing with no behaviour change (`mapViewportToWindow`'s own doc
+ * comment) and `combineChannelWindows` is itself byte-identical for
+ * `series.length <= 1` (R127 item 3) -- so one window's chart stays
+ * byte-identical to the pre-multi-window shape end to end.
+ *
  * {@link runChannelBind} (initial bind, `binding.initialSpan`) and
  * {@link runChannelSettle} (a gesture settle's newly committed viewport)
  * both delegate to the same {@link runChannelBindWindow} loop -- the only
- * difference between the two call sites is which `[startUs, endUs)` window
- * and which channel is "mounted" (feeds `ChartCell`'s tiles/viewport). A
- * settle's re-fetch of the mounted channel is a cache hit off the same
- * `TileCache` `ChartCell`'s own settle-fetch just filled (same key), so it
- * costs no extra `fetchTile` call.
+ * difference between the two call sites is which viewport and which
+ * channel is "mounted" (feeds `ChartCell`'s tiles/viewport, always fetched
+ * against the *primary* window's own mapped span). A settle's re-fetch of
+ * the mounted channel against the primary window is a cache hit off the
+ * same `TileCache` `ChartCell`'s own settle-fetch just filled (same key),
+ * so it costs no extra `fetchTile` call.
  */
 import type { DecodedHostChannel } from "../../../../ipc/hostChannel";
 import type { DecodedTile } from "../../../../ipc/tiles";
 import { tileToChannelData } from "./channelData";
 import type { BoundChannel } from "./channelRebind";
+import { combineChannelWindows, type WindowDescriptor, type WindowSeries } from "../host/protocol";
 import type { JsCellBindingChannel, TimeCellBinding } from "./jsCellBinding";
 import { chooseTier, pointBudget, tileRange } from "./tiers";
 import { ensureTiles, type TileCache, type TileCacheKey } from "./tileCache";
 import type { Viewport } from "./viewport";
+import { mapViewportToWindow, type AbsoluteSpan } from "./viewportWindows";
+
+/**
+ * One selected window as `channelBindDriver.ts` needs it: `span` is that
+ * window's own already-resolved absolute bounds (`model/viewportWindows.ts`'s
+ * `resolveWindowSpan`, run by the caller against `SessionDetail` before
+ * calling in -- this module never resolves a lap itself), `sessionId`
+ * names which session to fetch tiles from, and `descriptor` is the
+ * `host/protocol.ts` `WindowDescriptor` this window's samples carry in the
+ * combined payload (colour/label/span for the sandbox). `windows[0]` is
+ * always the primary window -- see this module's own top doc comment.
+ */
+export interface BindWindow {
+  sessionId: string;
+  span: AbsoluteSpan;
+  descriptor: WindowDescriptor;
+}
 
 /** Largest `budget` `fetch_host_channel` accepts (C3 §3.4: validated `1..=65536`). */
 const MAX_HOST_CHANNEL_BUDGET = 65536;
@@ -77,9 +114,14 @@ export interface ChannelBindDeps {
   fetchHostChannel: (defName: string, budget: number) => Promise<DecodedHostChannel>;
 }
 
-/** One piece of state a completed (non-stale) run writes. */
+/** One piece of state a completed (non-stale) run writes. `channelData`
+ *  carries `host/protocol.ts`'s `combineChannelWindows` output verbatim
+ *  (`w`/`windows` included) -- ready for the caller's `setChannelHostVar`
+ *  with no further shaping (Task 11b; previously this action carried only
+ *  `{t, v}` and the caller filled an all-zero `w` itself as an interim
+ *  single-window shim -- that shim is gone). */
 export type ChannelBindAction =
-  | { type: "channelData"; channelId: string; length: number; t: ArrayBuffer; v: ArrayBuffer }
+  | { type: "channelData"; channelId: string; length: number; t: ArrayBuffer; v: ArrayBuffer; w: ArrayBuffer; windows: WindowDescriptor[] }
   | { type: "boundChannels"; cellId: string; bound: BoundChannel[] }
   | { type: "chartWindow"; cellId: string; chartWindow: ChartWindow };
 
@@ -164,18 +206,27 @@ export async function fetchChannelWindow(
 async function runChannelBindWindow(
   deps: ChannelBindDeps,
   cache: TileCache,
-  sessionId: string,
+  windows: BindWindow[],
   cellId: string,
   channels: JsCellBindingChannel[],
   mountedChannelId: string | null,
-  startUs: number,
-  endUs: number,
+  viewport: AbsoluteSpan,
   chartWidthPx: number,
   dispatch: ChannelBindDispatch,
   isStale: () => boolean,
   previousBound: BoundChannel[] = []
 ): Promise<void> {
   const bounds: BoundChannel[] = [];
+  // The primary window (`windows[0]`) both defines the offset every other
+  // window's mapped span is re-based from (R131 Q2) and is the one
+  // `ChartCell` mounts -- see this module's top doc comment. `windows`
+  // is never empty in production (a caller with nothing selected never
+  // reaches this driver at all); guarded defensively anyway.
+  const primary = windows[0];
+  if (primary === undefined) {
+    if (!isStale()) dispatch({ type: "boundChannels", cellId, bound: [] });
+    return;
+  }
 
   for (const channel of channels) {
     if (channel.source === "definition") {
@@ -215,12 +266,20 @@ async function runChannelBindWindow(
         continue;
       }
 
+      // A definition has no time window at all (`fetch_host_channel` takes
+      // none, C3 §3.4) -- it is never re-fetched per selected window, so
+      // its combined payload is always the single-window shape:
+      // `combineChannelWindows` on a one-entry `series` is byte-identical
+      // to the pre-multi-window shape (R127 item 3), `w` all zero.
+      const combined = combineChannelWindows([{ descriptor: primary.descriptor, t: result.t, v: result.v }]);
       dispatch({
         type: "channelData",
         channelId: channel.channelId,
-        length: result.v.length,
-        t: result.t.buffer as ArrayBuffer,
-        v: result.v.buffer as ArrayBuffer,
+        length: combined.length,
+        t: combined.t.buffer as ArrayBuffer,
+        v: combined.v.buffer as ArrayBuffer,
+        w: combined.w.buffer as ArrayBuffer,
+        windows: combined.windows,
       });
       bounds.push({ source: "definition", name: channel.channelId, budget });
       // No `chartWindow` dispatch: a definition channel is never the
@@ -229,39 +288,95 @@ async function runChannelBindWindow(
       continue;
     }
 
-    const result = await fetchChannelWindow(deps, cache, sessionId, channel, startUs, endUs, chartWidthPx);
-    // The whole run was superseded (a newer run for this cell started) --
-    // drop everything, including `boundChannels` below and any channel not
-    // yet fetched. Distinct from the `result === null` check just below:
-    // that one drops only *this* channel (its own tile was evicted) while
-    // the run itself is still current and every other channel still lands.
-    if (isStale()) return;
-    // Only this channel's own fetch came back empty (a tile evicted
-    // between `ensureTiles` resolving and `fetchChannelWindow`'s read) --
-    // the run is still current, so skip just this channel and keep going;
-    // see `fetchChannelWindow`'s doc comment for why it returns `null`
-    // instead of throwing.
-    if (result === null) continue;
-
     const budget = pointBudget(chartWidthPx, false);
-    const data = tileToChannelData(result.tiles, startUs, endUs, budget);
+    const series: WindowSeries[] = [];
+    // The primary window's own fetch result, kept for `BoundChannel`
+    // (rebuild-replay, `channelRebind.ts`) and the `chartWindow` dispatch
+    // -- both stay single-window (the primary's own mapped span/tiles),
+    // matching `BoundChannel`'s existing one-window shape; a comparison
+    // overlay's *other* windows are represented only in the combined
+    // `channelData` payload below, not in the rebuild-replay state.
+    let primaryResult: { tiles: DecodedTile[]; tier: number; range: { first: number; last: number } } | null = null;
+    let primaryMapped: AbsoluteSpan | null = null;
+
+    for (const w of windows) {
+      const mapped = mapViewportToWindow(viewport, primary.span.startUs, w.span);
+      // No overlap at all -- this window has no data in the current
+      // viewport (requirement 2: a window shorter than the viewport has
+      // no data past its end). Skip the fetch entirely; the window is
+      // simply absent from the combined result, not an error.
+      if (mapped === null) continue;
+
+      let result: { tiles: DecodedTile[]; tier: number; range: { first: number; last: number } } | null;
+      try {
+        result = await fetchChannelWindow(deps, cache, w.sessionId, channel, mapped.startUs, mapped.endUs, chartWidthPx);
+      } catch {
+        // A per-window fetch failure (R121, requirement 4) drops only this
+        // window's contribution -- every other selected window still
+        // fetches and renders, and the whole channel is not dropped
+        // unless every window fails (`series` stays empty below).
+        result = null;
+      }
+      // The whole run was superseded (a newer run for this cell started) --
+      // drop everything, including `boundChannels` below and any channel/
+      // window not yet fetched. Distinct from `result === null` just
+      // below: that drops only *this window* (an evicted tile or a
+      // rejected fetch) while the run itself is still current.
+      if (isStale()) return;
+      if (result === null) continue;
+
+      const data = tileToChannelData(result.tiles, mapped.startUs, mapped.endUs, budget);
+      series.push({ descriptor: w.descriptor, t: data.t, v: data.v });
+
+      if (w === primary) {
+        primaryResult = result;
+        primaryMapped = mapped;
+      }
+    }
+
+    // Every selected window either had no overlap or its own fetch
+    // failed -- nothing to show for this channel at all; skip it exactly
+    // as the single-window path always has (no `channelData`, no
+    // `boundChannels` entry).
+    if (series.length === 0) continue;
+
+    const combined = combineChannelWindows(series);
     dispatch({
       type: "channelData",
       channelId: channel.channelId,
-      length: data.length,
-      t: data.t.buffer as ArrayBuffer,
-      v: data.v.buffer as ArrayBuffer,
+      length: combined.length,
+      t: combined.t.buffer as ArrayBuffer,
+      v: combined.v.buffer as ArrayBuffer,
+      w: combined.w.buffer as ArrayBuffer,
+      windows: combined.windows,
     });
 
-    const key: Omit<TileCacheKey, "tileIndex"> = { sessionId, channelId: channel.channelId, tier: result.tier, columnCount: chartWidthPx };
-    bounds.push({ source: "session", name: channel.channelId, key, range: result.range, startUs, endUs, budget });
-
-    if (channel.channelId === mountedChannelId) {
-      dispatch({
-        type: "chartWindow",
-        cellId,
-        chartWindow: { viewport: { startUs, endUs, pixelWidth: chartWidthPx }, tiles: result.tiles },
+    // The primary window's own fetch is what `BoundChannel`/`chartWindow`
+    // describe (see the comment above the loop) -- if it had no overlap or
+    // itself failed while a *different* window still rendered above, this
+    // channel keeps its `channelData` (comparison still shows the windows
+    // that did resolve, R121) but is left out of `bounds`/`chartWindow`,
+    // matching the single-window path's existing "nothing to describe"
+    // treatment when its one and only fetch fails.
+    if (primaryResult !== null && primaryMapped !== null) {
+      const key: Omit<TileCacheKey, "tileIndex"> = { sessionId: primary.sessionId, channelId: channel.channelId, tier: primaryResult.tier, columnCount: chartWidthPx };
+      bounds.push({
+        source: "session",
+        name: channel.channelId,
+        key,
+        range: primaryResult.range,
+        startUs: primaryMapped.startUs,
+        endUs: primaryMapped.endUs,
+        budget,
       });
+
+      if (channel.channelId === mountedChannelId) {
+        dispatch({
+          type: "chartWindow",
+          cellId,
+          chartWindow: { viewport: { startUs: primaryMapped.startUs, endUs: primaryMapped.endUs, pixelWidth: chartWidthPx }, tiles: primaryResult.tiles },
+        });
+      }
     }
   }
 
@@ -284,11 +399,15 @@ async function runChannelBindWindow(
  * binding (L6 Task 20) has no tile-fetch window at all and never reaches
  * this driver; `Notebook/index.tsx` dispatches an FFT cell's binding to
  * `model/fftDriver.ts`'s `runFft` instead.
+ *
+ * @param windows Every selected window, `windows[0]` the primary --
+ *   `binding.initialSpan` is expressed in its coordinate frame (Task 11b,
+ *   R131 Q2; see this module's top doc comment).
  */
 export async function runChannelBind(
   deps: ChannelBindDeps,
   cache: TileCache,
-  sessionId: string,
+  windows: BindWindow[],
   cellId: string,
   binding: TimeCellBinding,
   chartWidthPx: number,
@@ -296,7 +415,7 @@ export async function runChannelBind(
   isStale: () => boolean
 ): Promise<void> {
   const { startUs, endUs } = binding.initialSpan;
-  return runChannelBindWindow(deps, cache, sessionId, cellId, binding.channels, binding.mountedChannelId, startUs, endUs, chartWidthPx, dispatch, isStale);
+  return runChannelBindWindow(deps, cache, windows, cellId, binding.channels, binding.mountedChannelId, { startUs, endUs }, chartWidthPx, dispatch, isStale);
 }
 
 /**
@@ -315,6 +434,13 @@ export async function runChannelBind(
  * budget can only ever return the same bytes). See
  * {@link runChannelBindWindow} for the shared loop and staleness contract.
  *
+ * @param windows Every selected window, `windows[0]` the primary (the one
+ *   `startUs`/`endUs` below are expressed against, and the one
+ *   `BoundChannel`/`chartWindow` describe) -- see this module's top doc
+ *   comment (Task 11b, R131 Q2).
+ * @param startUs,endUs The settled viewport, in the *primary* window's own
+ *   coordinate frame -- re-based onto every other window's own start
+ *   before fetching (`model/viewportWindows.ts`'s `mapViewportToWindow`).
  * @param previousBound This cell's `BoundChannel[]` as registered before
  *   this settle (`NotebookSession.boundChannelsFor(cellId)`) -- read only to
  *   decide the definition-channel budget-unchanged skip above.
@@ -322,7 +448,7 @@ export async function runChannelBind(
 export async function runChannelSettle(
   deps: ChannelBindDeps,
   cache: TileCache,
-  sessionId: string,
+  windows: BindWindow[],
   cellId: string,
   channels: JsCellBindingChannel[],
   mountedChannelId: string,
@@ -333,5 +459,5 @@ export async function runChannelSettle(
   isStale: () => boolean,
   previousBound: BoundChannel[] = []
 ): Promise<void> {
-  return runChannelBindWindow(deps, cache, sessionId, cellId, channels, mountedChannelId, startUs, endUs, chartWidthPx, dispatch, isStale, previousBound);
+  return runChannelBindWindow(deps, cache, windows, cellId, channels, mountedChannelId, { startUs, endUs }, chartWidthPx, dispatch, isStale, previousBound);
 }
