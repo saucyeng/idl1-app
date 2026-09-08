@@ -965,14 +965,35 @@ Two windows over the same `session_id` with different spans are legal and
 are the normal case — lap-to-lap comparison (C1 §6.1, ruling R117 item 2);
 uniqueness is on the whole window, never on `session_id`.
 
-Return: `CellOutput[][]` (§3.4 above), one array per `windows` entry, same
-order.
+Return: one entry per `windows` entry, same order, each entry **either**
+that window's `CellOutput[]` **or** that window's error:
 
-Errors are per call, not per window: an unresolvable `session_id`
-(`not_found`) or an unknown lap number (`invalid_argument`, `detail: {
-"lap": n }`) fails the whole call, naming the offending window's index in
-`detail: { "window": i }`. Per-cell evaluation errors keep their existing
-home in `CellOutput.errors`.
+```
+WindowEval = { ok: CellOutput[] } | { error: IpcError }
+```
+
+**Errors are split by attribution (ruling R121).** An error that is a
+property of *one* window fails only that entry; the other windows still
+return their outputs:
+
+| Failure | Kind | Where it lands |
+|---|---|---|
+| Unresolvable `session_id` | `not_found` | that window's entry |
+| Unknown lap number | `invalid_argument`, `detail: { "lap": n }` | that window's entry |
+| Range with no overlap (R119) | `invalid_argument`, `detail: { session_id, t0_us, t1_us, session_span_us }` | that window's entry |
+| Range with `t0_us >= t1_us` (R120) | `invalid_argument`, same `detail` shape | that window's entry |
+| Unknown or unparseable workbook `id` | `not_found` / `invalid_argument` | **the call** (`Err`) — no window has a meaningful answer |
+
+Each per-window error still names its index in `detail: { "window": i }`.
+Per-cell evaluation errors keep their existing home in
+`CellOutput.errors`.
+
+> *Revision note.* Before R121 this paragraph read "Errors are per call,
+> not per window" and listed only the first two rows. It was drafted before
+> R119/R120 added the two range failures and was never reconciled with C1
+> §6.1's "fails only that window". C1 was right; this section was not.
+> Blanking every selected window's charts because one range is degenerate
+> contradicts decision 61 and section D's in-place error presentation.
 
 **`eval_workbook(id, session_id, lap_context)` is deprecated** as of this
 revision (§5) and is removed in the next. It stays registered and behaves
