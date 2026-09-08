@@ -5860,3 +5860,56 @@ file, and auto-layout-only (kept as the fallback).
 **Cost if wrong.** The front-matter defect is the expensive one: every day
 it stands is another chance for a workbook to lose a key on save, and the
 loss is silent and unrecoverable from the file itself.
+
+## 2026-09-08 — R136: lap-distance alignment is a core lane, not a worksheet setting (supersedes R134 item 5)
+
+**Isaac, 2026-09-08, asked whether distance-on-X should ship disabled or
+pull a core distance axis forward:** *"this was an issue before. i want to
+account for the fact that a lap's distance is never exactly the same as
+another lap's distance. they all have unique line choices. so, we want to
+correct for it with more of a 'gate based' approach. however the gate
+approach had issues at switchbacks, which added a bunch of noise, so maybe
+we almost need some sort of lightweight iekf to put higher weight on
+distance based in tight sections and higher weight on gate based correction
+on straightaways?"*
+
+**This changes the question.** R134 item 5 treated distance-on-X as a
+missing axis — integrate wheel speed, or accumulate GPS distance, done. It
+is not. A cumulative distance axis is *easy* and **wrong for the thing it is
+for**: comparing two laps. Line choice makes each lap's arc length differ,
+so lap 2's "400 m" and lap 3's "400 m" are not the same place on the track,
+and every overlaid comparison is silently misaligned by a drifting error
+that grows with distance. Shipping the naive axis would look correct and
+mislead.
+
+**Ruling.**
+1. **Distance-on-X stays disabled in W3.2**, with its reason stated in the
+   UI (R134 item 5's mechanism stands; only its rationale changes).
+   Shipping a naive cumulative axis is worse than shipping none.
+2. **Lap-distance alignment becomes its own core lane**, spec-first, sized
+   and scheduled separately. It is a signal-processing problem in `core`
+   (CLAUDE.md §2: physics of the bike → `core`), not a chart feature.
+3. Its acceptance test is Isaac's own constraint: **two laps with different
+   line choices through the same corner must align at the same track
+   position**, not at the same accumulated metres.
+
+**Recorded for that lane, from Isaac's own experience:** the gate approach
+was tried and its failure mode is known — **switchbacks add noise**, because
+a gate line near a hairpin is crossed ambiguously or repeatedly.
+
+**Lead's recommendation for that lane, to be tested not assumed:** prefer a
+**reference-path station coordinate** over gates or fusion. Build a
+per-venue reference path once, project each lap's GPS positions onto it, and
+use the along-path arc length ("station") as X. Different lines through one
+corner project to the same station, which is the property the feature needs
+and neither cumulative distance nor gates provide. Switchback ambiguity —
+two nearby path segments with opposite headings — is resolved by
+**disambiguating the projection with heading**, plus a monotonic-progression
+constraint, rather than by weighting two estimators against each other. That
+is likely simpler and more robust than a lightweight iEKF, and it makes
+gates a derived quantity (a gate is a station value) instead of a competing
+source. To be evaluated against real switchback data before it is chosen.
+
+**Cost if wrong.** A naive distance axis is the most dangerous shape this
+project keeps producing: a plausible number, drawn confidently, wrong by an
+amount that grows with the thing being measured.
