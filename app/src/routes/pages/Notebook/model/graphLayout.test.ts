@@ -68,6 +68,17 @@ describe("readGraphLayout", () => {
     expect(layout).toEqual({ nodes: { a: [1, 2] }, cells: {} });
   });
 
+  it("readGraphLayout — a flow-style graph key on its own start line — reads as absent", () => {
+    // Arrange
+    const markdown = "---\nid: x\nname: y\ngraph: {nodes: {a: [1, 2]}}\n---\n```math id=a1b2c3d4\nx = 1\n```\n";
+
+    // Act
+    const layout = readGraphLayout(markdown);
+
+    // Assert
+    expect(layout).toEqual(EMPTY_GRAPH_LAYOUT);
+  });
+
   it("readGraphLayout — a malformed graph block (unrecognised interior line) — reads as absent", () => {
     // Arrange
     const markdown = "---\nid: x\nname: y\ngraph:\n  nodes:\n    a: [1, 2]\n  extra: weird\n---\n```math id=a1b2c3d4\nx = 1\n```\n";
@@ -159,6 +170,19 @@ describe("writeGraphLayout", () => {
 
     // Assert
     expect(written.split("\n").filter((l) => l === "graph:")).toHaveLength(1);
+    expect(readGraphLayout(written)).toEqual({ nodes: { b: [5, 6] }, cells: {} });
+  });
+
+  it("writeGraphLayout — a hand-edited flow-style graph key on its own start line — is found and replaced wholesale, not duplicated", () => {
+    // Arrange — the malformed *start* line itself, not just its interior
+    // (see the exact-interior-mismatch test above, which this complements).
+    const malformed = "---\nid: x\nname: y\ngraph: {nodes: {a: [1, 2]}}\n---\n```math id=a1b2c3d4\nx = 1\n```\n";
+
+    // Act
+    const written = writeGraphLayout(malformed, { nodes: { b: [5, 6] }, cells: {} });
+
+    // Assert
+    expect(written.split("\n").filter((l) => /^graph:/.test(l))).toHaveLength(1);
     expect(readGraphLayout(written)).toEqual({ nodes: { b: [5, 6] }, cells: {} });
   });
 

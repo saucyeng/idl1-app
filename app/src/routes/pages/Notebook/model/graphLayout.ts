@@ -93,7 +93,14 @@ function indentOf(line: string): number {
  *  replaced wholesale, per the module doc comment). `null` when no
  *  top-level `graph:` line exists. */
 function findGraphBlockLines(body: string[]): { start: number; end: number } | null {
-  const start = body.findIndex((line) => line === "graph:");
+  // Matches on the top-level key alone, not the exact well-formed line —
+  // `graph: {nodes: {...}}`, `graph:  ` (trailing whitespace), `graph: #
+  // note` must all be found (and wholesale-replaced by the writer) even
+  // though none of them is the canonical shape this module writes. Finding
+  // *only* the exact "graph:" line would let a hand-edited variant survive
+  // untouched beside a freshly written block — two top-level `graph` keys,
+  // which is exactly the corruption §3.7.1's "replaced wholesale" rules out.
+  const start = body.findIndex((line) => /^graph:/.test(line));
   if (start === -1) return null;
 
   let end = body.length;

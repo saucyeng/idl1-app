@@ -4,6 +4,18 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 
 ## [Unreleased]
 
+### Fixed
+
+- **`graphLayout.ts`'s `findGraphBlockLines` locates a top-level `graph:` key
+  by prefix match (`/^graph:/`), not exact-line equality (2026-09-08,
+  w32-maths review fix).** A hand-edited flow-style or trailing-content
+  variant (`graph: {nodes: {...}}`, `graph:  `, `graph: # note`) was
+  invisible to the old exact match: read still degraded correctly to
+  `EMPTY_GRAPH_LAYOUT`, but write appended a second canonical `graph:` block
+  after the untouched line instead of replacing it — two top-level `graph`
+  keys, permanently, in the one module that writes a user's workbook.
+  Contradicted C2 §3.7.1's "malformed ⇒ replaced wholesale".
+
 ### Added
 
 - **`app/src/routes/pages/Notebook/model/graphAutoLayout.ts`: deterministic
