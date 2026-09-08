@@ -171,14 +171,47 @@ export interface ChannelBindDeps {
   fetchHostChannel: (defName: string, budget: number) => Promise<DecodedHostChannel>;
 }
 
+/**
+ * The combined per-window `{t, v, w, windows}` payload this driver builds
+ * for one (cell, channel) pair, retained by the caller instead of being
+ * dropped after `setChannelHostVar` (ruling R139: "the host builds the
+ * combined arrays itself, immediately before handing them to the sandbox,
+ * and then drops them -- keep them"). `spans[k]` is `windows[k]`'s own
+ * already-resolved `AbsoluteSpan`, aligned 1:1 by construction -- both
+ * arrays are built from the same filtered, in-order pass over this
+ * driver's own `windows: BindWindow[]` parameter (a window with no overlap
+ * for this channel is skipped from both, never leaving a gap between
+ * them). This is what `model/cursorCard.ts`'s row-per-window read needs to
+ * re-base a cursor offset into each window's own absolute time (R131 Q2)
+ * without re-resolving `SessionDetail` a second time (R138's lesson: one
+ * definition, shared).
+ *
+ * These are the **same typed-array objects** `combineChannelWindows`
+ * built -- never the ones handed to `setChannelHostVar`'s transfer list,
+ * which `postMessage` detaches. The driver clones a copy for transfer and
+ * keeps these for retention (see {@link runChannelBindWindow}'s own
+ * comment at its dispatch sites).
+ */
+export interface CombinedChannelPayload {
+  length: number;
+  t: Float64Array;
+  v: Float64Array;
+  w: Float64Array;
+  windows: WindowDescriptor[];
+  spans: AbsoluteSpan[];
+}
+
 /** One piece of state a completed (non-stale) run writes. `channelData`
  *  carries `host/protocol.ts`'s `combineChannelWindows` output verbatim
  *  (`w`/`windows` included) -- ready for the caller's `setChannelHostVar`
  *  with no further shaping (Task 11b; previously this action carried only
  *  `{t, v}` and the caller filled an all-zero `w` itself as an interim
- *  single-window shim -- that shim is gone). */
+ *  single-window shim -- that shim is gone). `t`/`v`/`w` here are
+ *  **transfer-safe clones** (R139) -- the caller passes them straight to
+ *  `setChannelHostVar`'s transfer list; `retained` (a separate, un-
+ *  transferred copy) is what a caller keeps for `model/cursorCard.ts`. */
 export type ChannelBindAction =
-  | { type: "channelData"; channelId: string; length: number; t: ArrayBuffer; v: ArrayBuffer; w: ArrayBuffer; windows: WindowDescriptor[] }
+  | { type: "channelData"; cellId: string; channelId: string; length: number; t: ArrayBuffer; v: ArrayBuffer; w: ArrayBuffer; windows: WindowDescriptor[]; retained: CombinedChannelPayload }
   | { type: "boundChannels"; cellId: string; bound: BoundChannel[] }
   | { type: "chartWindow"; cellId: string; chartWindow: ChartWindow };
 
@@ -329,14 +362,22 @@ async function runChannelBindWindow(
       // `combineChannelWindows` on a one-entry `series` is byte-identical
       // to the pre-multi-window shape (R127 item 3), `w` all zero.
       const combined = combineChannelWindows([{ descriptor: primary.descriptor, t: result.t, v: result.v }]);
+      // R139: clone each buffer for the sandbox's transfer list -- the
+      // original `combined.t/v/w` typed arrays are kept in `retained`
+      // for `model/cursorCard.ts`, and `postMessage`'s transfer detaches
+      // whatever buffer instance it moves, so retaining the same one that
+      // gets transferred would leave it unreadable the instant this
+      // dispatch's `t/v/w` reach the sandbox.
       dispatch({
         type: "channelData",
+        cellId,
         channelId: channel.channelId,
         length: combined.length,
-        t: combined.t.buffer as ArrayBuffer,
-        v: combined.v.buffer as ArrayBuffer,
-        w: combined.w.buffer as ArrayBuffer,
+        t: combined.t.buffer.slice(0) as ArrayBuffer,
+        v: combined.v.buffer.slice(0) as ArrayBuffer,
+        w: combined.w.buffer.slice(0) as ArrayBuffer,
         windows: combined.windows,
+        retained: { length: combined.length, t: combined.t, v: combined.v, w: combined.w, windows: combined.windows, spans: [primary.span] },
       });
       bounds.push({ source: "definition", name: channel.channelId, budget });
       // No `chartWindow` dispatch: a definition channel is never the
@@ -347,6 +388,12 @@ async function runChannelBindWindow(
 
     const budget = pointBudget(chartWidthPx, false);
     const series: WindowSeries[] = [];
+    // Every window that actually contributed a `series` entry, in the same
+    // order -- `combined.windows[k]`'s own `AbsoluteSpan`, for
+    // `CombinedChannelPayload.spans` (R139). Pushed in lockstep with
+    // `series` below so the two can never drift apart (a window skipped
+    // for no overlap or a failed fetch is skipped from both, together).
+    const contributingSpans: AbsoluteSpan[] = [];
     // The primary window's own fetch result, kept for `BoundChannel`
     // (rebuild-replay, `channelRebind.ts`) and the `chartWindow` dispatch
     // -- both stay single-window (the primary's own mapped span/tiles),
@@ -384,6 +431,14 @@ async function runChannelBindWindow(
 
       const data = tileToChannelData(result.tiles, mapped.startUs, mapped.endUs, budget);
       series.push({ descriptor: w.descriptor, t: data.t, v: data.v });
+      // `w.span`, not `mapped` -- `model/cursorCard.ts`'s absence rule
+      // (R131 Q2/decision 55) is "past *this window's own* end", not past
+      // whatever range the current viewport happened to fetch; a cursor
+      // beyond the fetched-but-within-window range simply finds no nearby
+      // sample (`nearestValue` returns `null`, R31's existing "no data"
+      // convention), never a false "absent" for real recorded data the
+      // viewport hasn't scrolled to yet.
+      contributingSpans.push(w.span);
 
       if (w === primary) {
         primaryResult = result;
@@ -398,14 +453,18 @@ async function runChannelBindWindow(
     if (series.length === 0) continue;
 
     const combined = combineChannelWindows(series);
+    // R139: transfer clones, retained originals -- see the definition-path
+    // dispatch above for why.
     dispatch({
       type: "channelData",
+      cellId,
       channelId: channel.channelId,
       length: combined.length,
-      t: combined.t.buffer as ArrayBuffer,
-      v: combined.v.buffer as ArrayBuffer,
-      w: combined.w.buffer as ArrayBuffer,
+      t: combined.t.buffer.slice(0) as ArrayBuffer,
+      v: combined.v.buffer.slice(0) as ArrayBuffer,
+      w: combined.w.buffer.slice(0) as ArrayBuffer,
       windows: combined.windows,
+      retained: { length: combined.length, t: combined.t, v: combined.v, w: combined.w, windows: combined.windows, spans: contributingSpans },
     });
 
     // The primary window's own fetch is what `BoundChannel`/`chartWindow`

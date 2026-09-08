@@ -29,21 +29,51 @@ afterEach(() => {
 });
 
 describe("readNotebookPrefs", () => {
-  it("readNotebookPrefs — nothing stored yet — returns the default (null last_workbook_id)", () => {
+  it("readNotebookPrefs — nothing stored yet — returns the default (null/null/time)", () => {
     (globalThis as { window?: unknown }).window = { localStorage: fakeLocalStorage() };
 
     const prefs = readNotebookPrefs();
 
-    expect(prefs).toEqual({ last_workbook_id: null });
+    expect(prefs).toEqual({ last_workbook_id: null, input_map_preset_id: null, x_mode: "time" });
+  });
+
+  it("readNotebookPrefs — a document written before x_mode existed — normalized to time, not undefined", () => {
+    const storage = fakeLocalStorage();
+    storage.setItem("idl1.notebook.ui.v1", JSON.stringify({ last_workbook_id: "wb-1" }));
+    (globalThis as { window?: unknown }).window = { localStorage: storage };
+
+    const prefs = readNotebookPrefs();
+
+    expect(prefs.x_mode).toBe("time");
+  });
+
+  it("readNotebookPrefs — x_mode: 'distance' stored while still unselectable (R136) — clamped to time, never silently drawn as distance", () => {
+    const storage = fakeLocalStorage();
+    storage.setItem("idl1.notebook.ui.v1", JSON.stringify({ last_workbook_id: "wb-1", x_mode: "distance" }));
+    (globalThis as { window?: unknown }).window = { localStorage: storage };
+
+    const prefs = readNotebookPrefs();
+
+    expect(prefs.x_mode).toBe("time");
   });
 
   it("readNotebookPrefs — a written value — round-trips through write then read", () => {
     (globalThis as { window?: unknown }).window = { localStorage: fakeLocalStorage() };
 
-    writeNotebookPrefs({ last_workbook_id: "wb-1" });
+    writeNotebookPrefs({ last_workbook_id: "wb-1", input_map_preset_id: "basic-mouse", x_mode: "time" });
     const prefs = readNotebookPrefs();
 
-    expect(prefs).toEqual({ last_workbook_id: "wb-1" });
+    expect(prefs).toEqual({ last_workbook_id: "wb-1", input_map_preset_id: "basic-mouse", x_mode: "time" });
+  });
+
+  it("readNotebookPrefs — a document written before input_map_preset_id existed — normalized to null, not undefined", () => {
+    const storage = fakeLocalStorage();
+    storage.setItem("idl1.notebook.ui.v1", JSON.stringify({ last_workbook_id: "wb-1" }));
+    (globalThis as { window?: unknown }).window = { localStorage: storage };
+
+    const prefs = readNotebookPrefs();
+
+    expect(prefs).toEqual({ last_workbook_id: "wb-1", input_map_preset_id: null, x_mode: "time" });
   });
 
   it("readNotebookPrefs — corrupt JSON stored under the key — falls back to defaults", () => {
@@ -53,7 +83,7 @@ describe("readNotebookPrefs", () => {
 
     const prefs = readNotebookPrefs();
 
-    expect(prefs).toEqual({ last_workbook_id: null });
+    expect(prefs).toEqual({ last_workbook_id: null, input_map_preset_id: null, x_mode: "time" });
   });
 
   it("readNotebookPrefs — a value of the wrong shape — falls back to defaults", () => {
@@ -63,7 +93,7 @@ describe("readNotebookPrefs", () => {
 
     const prefs = readNotebookPrefs();
 
-    expect(prefs).toEqual({ last_workbook_id: null });
+    expect(prefs).toEqual({ last_workbook_id: null, input_map_preset_id: null, x_mode: "time" });
   });
 
   it("readNotebookPrefs — getItem throws — returns defaults rather than throwing", () => {
@@ -77,7 +107,7 @@ describe("readNotebookPrefs", () => {
 
     const prefs = readNotebookPrefs();
 
-    expect(prefs).toEqual({ last_workbook_id: null });
+    expect(prefs).toEqual({ last_workbook_id: null, input_map_preset_id: null, x_mode: "time" });
   });
 });
 
@@ -91,6 +121,6 @@ describe("writeNotebookPrefs", () => {
       }),
     };
 
-    expect(() => writeNotebookPrefs({ last_workbook_id: "wb-1" })).not.toThrow();
+    expect(() => writeNotebookPrefs({ last_workbook_id: "wb-1", input_map_preset_id: null, x_mode: "time" })).not.toThrow();
   });
 });

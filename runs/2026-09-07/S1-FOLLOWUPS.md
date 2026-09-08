@@ -71,3 +71,21 @@
   shown as an error and absence shown as absence; today both render as
   nothing. Not a merge blocker; file for the errors-and-staleness lane
   (W3.3), which is where that distinction is the whole subject.
+
+## W3.2 time lane — must fix before merge
+
+- **`ChartCell`'s `primaryWindowSpan` assumes a session-kind window.** It
+  uses `{startUs: 0, endUs: sessionSpanUs}`, while Task 10's playback uses
+  `windowSpanFor` and is correct. So the hover cursor's offset and the
+  cursor card's rows are mis-scoped whenever the primary window is a **lap
+  or a range** — which is the common case the moment a user clicks a lap,
+  not an edge case. Two spellings of "the primary window's span", one right
+  and one assumed: **R138 exactly**, for the fourth time.
+  Fix: `ChartCell` uses `windowSpanFor` too. The `TODO(idl0):` added
+  earlier names "per-window `ChartCell` instances" as the trigger; the real
+  trigger is sooner and already reachable.
+
+- **Follow-up, not blocking:** playback speed and mode are in-memory only,
+  while `inputMapPreset` and `xMode` persist to `notebookPrefs`. Decision 57
+  did not ask for persistence. Worth making sticky if Isaac wants it; ask
+  before widening.

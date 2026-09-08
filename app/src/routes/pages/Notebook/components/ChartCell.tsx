@@ -5,17 +5,25 @@ import type { DecodedRaster, Histogram2dParams, RasterKind, RasterMeta, Spectrog
 import type { DecodedTile } from "../../../../ipc/tiles";
 import { cursorRequestFor, type ReadoutPanelState } from "../model/cursor";
 import { CURSOR_SETTLE_MS, makeCursorReadoutDriver, type CursorReadoutDriverDeps } from "../model/cursorReadoutDriver";
+import { cursorCardRows, type CombinedChannelPayload, type CursorCardRow } from "../model/cursorCard";
 import { hoverAt, type HoverGeometry } from "../model/hover";
 import { isStaleSettleResult, makeSettle } from "../model/settle";
 import { chooseTier, tileRange } from "../model/tiers";
 import { ensureTiles, type TileCache, type TileCacheKey } from "../model/tileCache";
 import { clampTo, panBy, transformFor, zoomAt, type Viewport } from "../model/viewport";
+import { cursorTimeInWindow, type AbsoluteSpan } from "../model/viewportWindows";
 import ChartContextMenu from "../interaction/ChartContextMenu";
 import type { ChartAction } from "../interaction/chartActions";
-import { advanceViewportByTime, pixelXForTUs } from "../interaction/cursorFollow";
+import type { CursorBus } from "../interaction/cursorBus";
+import { cursorFollowPolicy } from "../interaction/cursorFollowPolicy";
+import { pixelXForTUs } from "../interaction/cursorFollow";
+import { advanceForMode, type PlaybackMode } from "../interaction/playbackMode";
+import { classifyWheelEvent, dragActionFor, wheelActionFor } from "../interaction/gestureVerbs";
+import type { GestureAction, InputMapPreset } from "../interaction/inputMap";
 import { actionForKey } from "../interaction/keymap";
 import { findPeakTUs } from "../interaction/peak";
 import { zoomToRect } from "../interaction/rectZoom";
+import CursorCard from "./CursorCard";
 import CursorReadoutPanel from "./CursorReadout";
 import RasterUnderlay from "./RasterUnderlay";
 
@@ -109,6 +117,23 @@ export interface ChartCellProps {
   viewport: Viewport;
   /** Total session duration, in µs, for clamping pan/zoom at the session's edges. */
   sessionSpanUs: number;
+  /**
+   * The *true* primary window's own resolved `AbsoluteSpan` (`model/
+   * viewportWindows.ts`'s `windowSpanFor`), `null` while it hasn't resolved
+   * yet — the one predicate `Notebook/index.tsx`'s `bindWindowsFor` and its
+   * playback loop already share (R138: "resolved" has one definition). This
+   * cell's own hover-follow offset (`cursorBus`), the value card's rows, and
+   * a click's pin all use it as `cursorTimeInWindow`'s `window`/the offset
+   * origin — **not** `{startUs: 0, endUs: sessionSpanUs}`: that was only
+   * ever correct for a `"session"`-kind primary window (the review that
+   * added this prop found it silently mis-scoping every `"lap"`/`"range"`
+   * primary window, R138's pattern for the fourth time — see the removed
+   * `TODO(idl0)` this replaces). `Notebook/index.tsx` passes a
+   * `useMemo`-stabilized object (same `startUs`/`endUs` ⇒ same reference)
+   * so this prop is safe in a dependency array without resubscribing every
+   * render.
+   */
+  primaryWindowSpan: AbsoluteSpan | null;
   /** Owning session id, for the tile cache key and `fetchTile`. */
   sessionId: string;
   /** This cell's bound channel id, for the tile cache key and `fetchTile`. */
@@ -186,6 +211,28 @@ export interface ChartCellProps {
    * missing-label fallback, documented in `model/cursor.ts`).
    */
   channelLabel?: string;
+  /** `ChannelSummary.unit` (C1 §4.1) for this cell's own channel, for the
+   *  cursor value card's rows (Task 7, decision 55). `undefined` renders as
+   *  `""` (`model/cursorCard.ts`'s own fallback), same shape as
+   *  {@link channelLabel}'s missing-label convention. */
+  channelUnit?: string;
+  /** The total number of selected windows (`AppState.selection.length`),
+   *  for the cursor value card's R132 naming (`model/jsCellNote.ts`'s
+   *  `primaryWindowNote`: no marker at `1`, that row's own window's label
+   *  otherwise). `undefined` treated as `1` -- byte-identical, no marker. */
+  windowCount?: number;
+  /**
+   * This cell's own mounted channel's combined multi-window payload
+   * (ruling R139): `Notebook/index.tsx` retains `channelBindDriver.ts`'s
+   * `CombinedChannelPayload` -- the same `{t, v, w, windows}` arrays sent
+   * to the sandbox, kept in host memory rather than dropped -- and hands
+   * the mounted channel's own entry down here. The cursor value card
+   * (Task 7) reads it at pointer rate with no new fetch and no IPC (P2):
+   * `model/cursorCard.ts`'s `cursorCardRows` is a filter over already-
+   * decoded, already-decimated arrays. `undefined` before the first
+   * channel-bind dispatch resolves -- the card renders nothing.
+   */
+  combinedChannelData?: CombinedChannelPayload;
   /**
    * Sends one gesture frame's CSS transform to the sandbox for this cell
    * (R69 item (b)) -- a thin closure over `host/SandboxHost.ts`'s
@@ -235,6 +282,17 @@ export interface ChartCellProps {
    */
   playing: boolean;
   /**
+   * Decision 57's playback mode (plan Task 11) -- which of
+   * `interaction/playbackMode.ts`'s two arithmetics {@link playing} applies
+   * while it is panning this cell's own live viewport: `"cursor-fixed"`
+   * (today's `advanceViewportByTime`, the cursor stays put on screen and
+   * the chart passes under it) or `"scroll-at-edge"` (the chart holds still
+   * until the cursor reaches its right edge, then pages forward). Read only
+   * while {@link playing} is `true`; irrelevant otherwise. `Notebook/
+   * index.tsx` owns the worksheet-level toggle (Task 12).
+   */
+  playbackMode: PlaybackMode;
+  /**
    * Lifts a user-chosen cursor time up to `Notebook/index.tsx`'s shared
    * cursor state (a left-click, the "Set cursor here"/"Cursor to peak"
    * menu actions) — `tUs` is in µs since session start, this cell's own
@@ -243,6 +301,34 @@ export interface ChartCellProps {
   onSetCursor: (tUs: number) => void;
   /** Clears the shared cursor ("Clear cursor" menu action). */
   onClearCursor: () => void;
+  /**
+   * The worksheet's one shared {@link CursorBus} (Task 1), passed down by
+   * `Notebook/index.tsx` as a stable ref -- every mounted `ChartCell`
+   * subscribes to the same instance. Drives the hover-follow half of
+   * decision 51 (the pointer-following cursor, not yet built before this
+   * task): `handlePointerMove`/`handlePointerLeave` `publish` to it at
+   * pointer rate through `interaction/cursorFollowPolicy.ts`'s decision,
+   * never through `setState` (operating brief §4); this component's own
+   * hover-line element subscribes and repositions itself imperatively.
+   * `handlePointerUp`'s click path calls `pin`/`unpin` on it directly,
+   * mirroring the same verb into {@link onSetCursor}/{@link onClearCursor}'s
+   * React state (`cursorFollowPolicy.ts`'s own doc comment on why pin/unpin
+   * are settle-grade and still land in state).
+   */
+  cursorBus: CursorBus;
+  /**
+   * The worksheet's currently selected gesture input-map preset (ruling
+   * R137, `interaction/inputMap.ts`; Task 5), read fresh on every
+   * pointerdown/wheel event -- `Notebook/index.tsx` holds the chosen preset
+   * as React state and re-renders every mounted `ChartCell` with the new
+   * object when the user switches it, so a preset switch takes effect on
+   * the very next gesture with no reload and no extra plumbing here.
+   * Preset objects are the `INPUT_MAP_PRESETS` module constants (stable
+   * identity), so this changing recreates `handlePointerDown`/`handleWheel`
+   * (it is in their dependency arrays) without recreating them on every
+   * unrelated render.
+   */
+  inputMapPreset: InputMapPreset;
   /** Toggles this cell's code visibility ("Show/hide code" menu action) --
    *  a thin closure over `Notebook/index.tsx`'s existing `model/codeVisibility.ts`
    *  state, injected so this component never imports that module directly. */
@@ -309,6 +395,7 @@ export default function ChartCell({
   heightPx,
   viewport,
   sessionSpanUs,
+  primaryWindowSpan,
   sessionId,
   channelId,
   sampleRateHz,
@@ -318,26 +405,49 @@ export default function ChartCell({
   raster,
   fetchCursorReadout,
   channelLabel,
+  channelUnit,
+  windowCount,
+  combinedChannelData,
   sendTransform,
   sendLayout,
   cursorTUs,
   playing,
+  playbackMode,
   onSetCursor,
   onClearCursor,
+  cursorBus,
+  inputMapPreset,
   onToggleCode,
 }: ChartCellProps) {
   const [hover, setHover] = useState<HoverReading | null>(null);
+  /** The cursor value card's rows (Task 7, decision 55, R139) -- kept as
+   *  its own state, alongside `hover`, since it depends on `cursorBus`'s
+   *  window-relative offset rather than `hover.tUs` (this chart's own
+   *  absolute-µs reading), and can legitimately be `[]` (every window's
+   *  offset ran past its own end -- decision 55's "renders absence") while
+   *  `hover` is not `null`. */
+  const [card, setCard] = useState<{ pixelX: number; rows: CursorCardRow[] } | null>(null);
   const [liveViewport, setLiveViewport] = useState<Viewport>(viewport);
   const [readoutState, setReadoutState] = useState<ReadoutPanelState>(null);
-  // The pending Shift+drag selection rectangle (decision 27's
-  // drag-rectangle zoom), in this cell's own CSS px — `null` when no
-  // selection drag is in progress. Shift+drag, not idl0's right-click+drag
-  // (`Settings/controls.ts`), because right-click is this cell's own
-  // context-menu trigger (`ChartContextMenu`) and the two gestures would
-  // otherwise race on the same button (documented judgment call).
+  // The pending drag-rectangle selection (decision 56, wired per-preset by
+  // R137/Task 5: whichever drag `inputMapPreset` binds to `"zoom-region"`
+  // — every shipped preset binds *plain* drag there), in this cell's own
+  // CSS px — `null` when no selection drag is in progress. A drag whose
+  // preset instead binds it to `"pan-x"`/`"none"` never touches this state
+  // (see `DragGestureState`/`handlePointerDown` below). Right-click is
+  // this cell's own context-menu trigger (`ChartContextMenu`) and is
+  // filtered out of gesture classification entirely (documented judgment
+  // call carried over from the pre-R137 implementation).
   const [selectionRectPx, setSelectionRectPx] = useState<{ x0: number; x1: number } | null>(null);
-  const draggingRef = useRef<{ pointerId: number; lastClientX: number; startClientX: number } | null>(null);
-  const rectDragRef = useRef<{ pointerId: number } | null>(null);
+  // One ref for whichever gesture a pointerdown started (Task 5): its
+  // `action` is `inputMapPreset`'s own lookup for that drag/modifier
+  // combination, decided once at pointerdown and replayed for every move
+  // and the eventual release -- never re-read mid-drag, so a preset switch
+  // mid-gesture (the user opens Settings while dragging) cannot change
+  // what an already-started drag does. `x0` is only meaningful for a
+  // `"zoom-region"` drag (the selection rectangle's anchor); other actions
+  // ignore it.
+  const dragStateRef = useRef<{ pointerId: number; action: GestureAction; startClientX: number; lastClientX: number; x0: number } | null>(null);
   // The shared cursor time (`cursorTUs`) this cell last reacted to, so the
   // playback-pan effect below can compute *this frame's* delta rather than
   // the delta since the cursor was first set — `null` means "no shared
@@ -350,6 +460,39 @@ export default function ChartCell({
   // dependency array data-only (`[cursorTUs, playing, sessionSpanUs]`).
   const liveViewportRef = useRef(liveViewport);
   liveViewportRef.current = liveViewport;
+  // The hover-follow cursor line (decision 51's first half, Task 2) --
+  // positioned imperatively from `cursorBus` subscriptions, never via
+  // `setState`, since a hover fires at pointer rate. Distinct from the
+  // declarative, `cursorTUs`-prop-driven line below it in the JSX, which
+  // keeps rendering the *pinned*/playback cursor exactly as before; this
+  // element only ever shows while the bus reports `pinned: false`.
+  const hoverLineRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    return cursorBus.subscribe((state) => {
+      const el = hoverLineRef.current;
+      if (el === null) return;
+      if (state.pinned || state.tUs === null) {
+        el.hidden = true;
+        return;
+      }
+      // Task 6 / R131 Q2: the bus reports an *offset* from the primary
+      // window's own start, not an absolute instant -- `cursorTimeInWindow`
+      // resolves it against `primaryWindowSpan` before `pixelXForTUs` (which
+      // still works in this chart's own absolute session-µs axis, matching
+      // `liveViewport`). `null` here means either the primary window's own
+      // span hasn't resolved yet, or the offset has run past its recorded
+      // end (decision 55's "renders absence"), same as an off-viewport pixel
+      // below.
+      const tUs = primaryWindowSpan === null ? null : cursorTimeInWindow(state.tUs, primaryWindowSpan);
+      const px = tUs === null ? null : pixelXForTUs(liveViewportRef.current, tUs);
+      if (px === null) {
+        el.hidden = true;
+        return;
+      }
+      el.hidden = false;
+      el.style.transform = `translateX(${px}px)`;
+    });
+  }, [cursorBus, sessionSpanUs, primaryWindowSpan]);
   // The pointer's last-known CSS-px position within this cell, updated on
   // every pointer move (drag or hover alike) with no IPC — only the settle
   // callback below reads this to decide whether/what to request from
@@ -533,9 +676,12 @@ export default function ChartCell({
   );
 
   // The shared worksheet cursor (UI-11, R99): reacts to `cursorTUs`
-  // changing, never to a gesture. `[cursorTUs, playing, sessionSpanUs]` is
-  // a data-only dependency array (the tightened effects rule) — no
-  // function prop, no cancelling cleanup.
+  // changing, never to a gesture. `[cursorTUs, playing, playbackMode,
+  // sessionSpanUs]` is a data-only dependency array (the tightened effects
+  // rule) — no function prop, no cancelling cleanup. `playbackMode` decides
+  // *how* `playing` pans (Task 11's `advanceForMode`, decision 57); it is
+  // otherwise inert here (no branch on it besides the call itself), so it
+  // never needs its own conditional the way `playing` does.
   useEffect(() => {
     if (cursorTUs === null) {
       if (lastCursorTUsAppliedRef.current !== null) {
@@ -558,7 +704,7 @@ export default function ChartCell({
     // comment on `ChartCellProps`).
     if (playing && prevApplied !== null) {
       const deltaUs = tUsNum - prevApplied;
-      atViewport = clampTo(advanceViewportByTime(atViewport, deltaUs), sessionSpanUs);
+      atViewport = clampTo(advanceForMode(atViewport, tUsNum, deltaUs, playbackMode), sessionSpanUs);
       applyViewport(() => atViewport);
     }
 
@@ -574,36 +720,53 @@ export default function ChartCell({
       // readout, for free from the existing debounce, no new throttle.
       cursorDriverRef.current.notify(atViewport, pixelX);
     }
-  }, [cursorTUs, playing, sessionSpanUs, applyViewport]);
+  }, [cursorTUs, playing, playbackMode, sessionSpanUs, applyViewport]);
 
-  const handlePointerDown = useCallback((event: PointerEvent<HTMLDivElement>) => {
-    if (event.button === 2) {
-      return; // right-click: this cell's own `ChartContextMenu` handles it natively.
-    }
-    if (event.shiftKey) {
+  const handlePointerDown = useCallback(
+    (event: PointerEvent<HTMLDivElement>) => {
+      if (event.button === 2) {
+        return; // right-click: this cell's own `ChartContextMenu` handles it natively.
+      }
       const bounds = event.currentTarget.getBoundingClientRect();
       const pixelX = event.clientX - bounds.left;
-      rectDragRef.current = { pointerId: event.pointerId };
-      setSelectionRectPx({ x0: pixelX, x1: pixelX });
+      const action = dragActionFor(inputMapPreset, event.shiftKey);
+      dragStateRef.current = { pointerId: event.pointerId, action, startClientX: event.clientX, lastClientX: event.clientX, x0: pixelX };
+      if (action === "zoom-region") {
+        setSelectionRectPx({ x0: pixelX, x1: pixelX });
+      }
       event.currentTarget.setPointerCapture(event.pointerId);
-      return;
-    }
-    draggingRef.current = { pointerId: event.pointerId, lastClientX: event.clientX, startClientX: event.clientX };
-    event.currentTarget.setPointerCapture(event.pointerId);
-  }, []);
+    },
+    [inputMapPreset]
+  );
 
   const handlePointerMove = useCallback(
     (event: PointerEvent<HTMLDivElement>) => {
       const bounds = event.currentTarget.getBoundingClientRect();
       const pixelX = event.clientX - bounds.left;
 
-      const rectDrag = rectDragRef.current;
-      if (rectDrag !== null && rectDrag.pointerId === event.pointerId) {
-        setSelectionRectPx((prev) => (prev === null ? prev : { x0: prev.x0, x1: pixelX }));
-        return;
+      const dragState = dragStateRef.current;
+      if (dragState !== null && dragState.pointerId === event.pointerId) {
+        if (dragState.action === "zoom-region") {
+          setSelectionRectPx((prev) => (prev === null ? prev : { x0: prev.x0, x1: pixelX }));
+          return;
+        }
+        if (dragState.action === "pan-x") {
+          const pixelDx = event.clientX - dragState.lastClientX;
+          dragState.lastClientX = event.clientX;
+          applyViewport((current) => panBy(current, pixelDx));
+          setHover(null);
+          return;
+        }
+        // `"none"`/`"zoom-x"`: this preset doesn't bind this drag to a
+        // viewport change (`"zoom-x"` is never a shipped drag binding, but
+        // the type doesn't forbid it — treated the same as `"none"` here,
+        // documented rather than silently mis-zooming). Movement is still
+        // tracked (`lastClientX` stays stale, which is fine: only
+        // `startClientX` matters for the click check below) and falls
+        // through to the hover-follow path, since nothing is visually
+        // "dragging".
       }
 
-      const dragging = draggingRef.current;
       lastPointerXRef.current = pixelX;
       // R62: every move — drag or hover alike — notifies the cursor
       // readout's own pointer-stop settle (no IPC here; `notify` only
@@ -618,27 +781,82 @@ export default function ChartCell({
       // both be 150ms, not by design.
       cursorDriverRef.current.notify(liveViewport, pixelX);
 
-      if (dragging !== null && dragging.pointerId === event.pointerId) {
-        const pixelDx = event.clientX - dragging.lastClientX;
-        dragging.lastClientX = event.clientX;
-        applyViewport((current) => panBy(current, pixelDx));
-        setHover(null);
-        return;
-      }
+      // Decision 51's hover-follow half (Task 2): while nothing is pinned,
+      // every hover move publishes to `cursorBus` for every chart's
+      // hover-line subscriber (`hoverLineRef`'s effect above) to pick up --
+      // never `setState` at pointer rate (operating brief §4).
+      // `cursorFollowPolicy` itself still works in this chart's own
+      // absolute session-µs axis (`cursorTUs` prop, `liveViewport`); Task 6
+      // converts its result to an offset from the primary window's own
+      // start before it reaches the bus (`cursorBus.ts`'s own doc comment).
+      // `primaryWindowSpan === null` (its own span hasn't resolved yet) --
+      // there is no offset origin to convert against, so nothing publishes.
+      const verb = cursorFollowPolicy("hover", cursorTUs !== null, cursorTUs !== null ? Number(cursorTUs) : null, pixelX, liveViewport);
+      const offsetUs = verb.kind === "publish" && verb.tUs !== null && primaryWindowSpan !== null ? verb.tUs - primaryWindowSpan.startUs : null;
+      if (verb.kind === "publish" && primaryWindowSpan !== null) cursorBus.publish(verb.tUs === null ? null : verb.tUs - primaryWindowSpan.startUs);
 
       const geometry: HoverGeometry = { originPx: 0, pixelWidth: width };
       const reading = hoverAt(tiles, pixelX, geometry);
       setHover(reading === null ? null : { pixelX, ...reading });
+
+      // Cursor value card (Task 7, decision 55, R139) -- reads
+      // `combinedChannelData` (retained by `Notebook/index.tsx` from the
+      // same combined arrays `channelBindDriver.ts` already built for the
+      // sandbox), filtered by `w` at the same window-relative `offsetUs`
+      // the hover-follow line just published. No second tile read, no IPC.
+      // `[]` while unpinned and off this chart's own plotted area
+      // (`offsetUs === null`), or before `combinedChannelData` has
+      // resolved -- the card renders nothing either way.
+      const rows =
+        offsetUs === null || combinedChannelData === undefined
+          ? []
+          : cursorCardRows(offsetUs, combinedChannelData, channelLabel ?? channelId, channelUnit ?? "", windowCount ?? 1);
+      setCard(rows.length === 0 ? null : { pixelX, rows });
     },
-    [tiles, width, liveViewport, applyViewport]
+    [tiles, width, liveViewport, applyViewport, cursorTUs, cursorBus, channelId, channelLabel, channelUnit, windowCount, combinedChannelData, primaryWindowSpan]
   );
 
   const handlePointerUp = useCallback(
     (event: PointerEvent<HTMLDivElement>) => {
-      const rectDrag = rectDragRef.current;
-      if (rectDrag !== null && rectDrag.pointerId === event.pointerId) {
-        event.currentTarget.releasePointerCapture(event.pointerId);
-        rectDragRef.current = null;
+      const dragState = dragStateRef.current;
+      if (dragState === null || dragState.pointerId !== event.pointerId) {
+        return;
+      }
+      event.currentTarget.releasePointerCapture(event.pointerId);
+      dragStateRef.current = null;
+
+      // decision 27 / idl0's "Place cursor: Left-click": a release with
+      // negligible movement since pointerdown reads as a click, not the end
+      // of whatever drag action was in effect (`"zoom-region"`, `"pan-x"`
+      // or `"none"` alike — a click is a click regardless of the preset).
+      // `cursorFollowPolicy`'s click rule (Task 2) decides pin vs. unpin —
+      // a click at the instant already pinned releases it instead of
+      // re-pinning at the same place.
+      if (Math.abs(event.clientX - dragState.startClientX) <= CLICK_MAX_MOVEMENT_PX) {
+        if (dragState.action === "zoom-region") setSelectionRectPx(null);
+        const bounds = event.currentTarget.getBoundingClientRect();
+        const pixelX = event.clientX - bounds.left;
+        const verb = cursorFollowPolicy("click", cursorTUs !== null, cursorTUs !== null ? Number(cursorTUs) : null, pixelX, liveViewport);
+        if (verb.kind === "pin") {
+          // `onSetCursor` keeps its existing absolute-µs contract
+          // (`Notebook/index.tsx`'s `manualCursorTUs`, unchanged by this
+          // task); only `cursorBus` -- Task 6's own offset frame -- gets
+          // the converted value, and only once there is a resolved primary
+          // window to convert against (`primaryWindowSpan !== null`) --
+          // `onSetCursor` still fires either way, so a click still pins the
+          // worksheet's absolute cursor even the instant before the primary
+          // window's own span has resolved; only the bus's window-relative
+          // line/card lag behind it by that same instant.
+          onSetCursor(verb.tUs);
+          if (primaryWindowSpan !== null) cursorBus.pin(verb.tUs - primaryWindowSpan.startUs);
+        } else if (verb.kind === "unpin") {
+          onClearCursor();
+          cursorBus.unpin();
+        }
+        return;
+      }
+
+      if (dragState.action === "zoom-region") {
         setSelectionRectPx((rect) => {
           if (rect !== null && Math.abs(rect.x1 - rect.x0) >= MIN_SELECTION_PX) {
             const x0 = Math.min(rect.x0, rect.x1);
@@ -647,60 +865,77 @@ export default function ChartCell({
           }
           return null;
         });
-        return;
       }
-
-      const dragging = draggingRef.current;
-      if (dragging !== null && dragging.pointerId === event.pointerId) {
-        event.currentTarget.releasePointerCapture(event.pointerId);
-        draggingRef.current = null;
-        // decision 27 / idl0's "Place cursor: Left-click": a release with
-        // negligible movement since pointerdown reads as a click, not the
-        // end of a pan drag, and sets the shared cursor at that position.
-        if (Math.abs(event.clientX - dragging.startClientX) <= CLICK_MAX_MOVEMENT_PX) {
-          const bounds = event.currentTarget.getBoundingClientRect();
-          const pixelX = event.clientX - bounds.left;
-          const request = cursorRequestFor(liveViewport, pixelX, []);
-          if (request !== null) {
-            onSetCursor(request.tUs);
-          }
-        }
-      }
+      // `"pan-x"` already applied its viewport change per-frame in
+      // `handlePointerMove`; `"none"` never changed the viewport at all —
+      // neither needs anything further on release.
     },
-    [liveViewport, onSetCursor, applyViewport]
+    [liveViewport, cursorTUs, onSetCursor, onClearCursor, cursorBus, applyViewport, primaryWindowSpan]
   );
 
-  const handlePointerLeave = useCallback((event: PointerEvent<HTMLDivElement>) => {
-    const dragging = draggingRef.current;
-    if (dragging !== null && dragging.pointerId === event.pointerId) {
-      draggingRef.current = null;
-    }
-    if (rectDragRef.current !== null && rectDragRef.current.pointerId === event.pointerId) {
-      rectDragRef.current = null;
-      setSelectionRectPx(null);
-    }
-    setHover(null);
-    // The pointer has left the chart — the next viewport-settle dispatch
-    // must skip the cursor-readout request entirely rather than reading a
-    // stale position, and the readout panel itself must clear immediately
-    // rather than showing a reading for a cursor that no longer exists
-    // (review-task10.md Important). `driver.leave()` also cancels a
-    // not-yet-fired `notify` debounce timer outright and bumps the
-    // driver's sequence counter so a readout fetch already dispatched and
-    // in flight from either trigger path is dropped on arrival, never
-    // repopulating the panel after the pointer is gone (R62).
-    lastPointerXRef.current = null;
-    cursorDriverRef.current.leave();
-  }, []);
+  const handlePointerLeave = useCallback(
+    (event: PointerEvent<HTMLDivElement>) => {
+      const dragState = dragStateRef.current;
+      if (dragState !== null && dragState.pointerId === event.pointerId) {
+        dragStateRef.current = null;
+        if (dragState.action === "zoom-region") setSelectionRectPx(null);
+      }
+      setHover(null);
+      setCard(null);
+      // The pointer has left the chart — the next viewport-settle dispatch
+      // must skip the cursor-readout request entirely rather than reading a
+      // stale position, and the readout panel itself must clear immediately
+      // rather than showing a reading for a cursor that no longer exists
+      // (review-task10.md Important). `driver.leave()` also cancels a
+      // not-yet-fired `notify` debounce timer outright and bumps the
+      // driver's sequence counter so a readout fetch already dispatched and
+      // in flight from either trigger path is dropped on arrival, never
+      // repopulating the panel after the pointer is gone (R62).
+      lastPointerXRef.current = null;
+      cursorDriverRef.current.leave();
+      // Hides this chart's hover-follow line the same way a hover move off
+      // the plotted area would (`cursorFollowPolicy`'s `pixelX: null` rule) —
+      // a no-op while pinned, matching "hover never moves a pinned cursor".
+      const verb = cursorFollowPolicy("hover", cursorTUs !== null, cursorTUs !== null ? Number(cursorTUs) : null, null, liveViewport);
+      // `verb.tUs` is already `null` here (a `pixelX: null` hover always
+      // resolves to `{kind: "publish", tUs: null}`) -- the same
+      // null-preserving conversion as `handlePointerMove`'s, for symmetry
+      // (and the reason `primaryWindowSpan` is never actually dereferenced
+      // in this particular call, since `verb.tUs` is always `null` here).
+      if (verb.kind === "publish") cursorBus.publish(verb.tUs === null || primaryWindowSpan === null ? null : verb.tUs - primaryWindowSpan.startUs);
+    },
+    [cursorTUs, liveViewport, cursorBus, primaryWindowSpan]
+  );
 
   const handleWheel = useCallback(
     (event: WheelEvent<HTMLDivElement>) => {
       const bounds = event.currentTarget.getBoundingClientRect();
       const pixelX = event.clientX - bounds.left;
-      const factor = Math.exp(-event.deltaY * WHEEL_ZOOM_SENSITIVITY);
-      applyViewport((current) => zoomAt(current, pixelX, factor));
+      const eventKind = classifyWheelEvent(event.deltaX, event.deltaY, event.ctrlKey);
+      const action = wheelActionFor(inputMapPreset, eventKind);
+      if (action === "zoom-x") {
+        // `deltaY` is the magnitude for both the plain wheel and a
+        // ctrlKey-synthesized pinch — a pinch's "deltaY" is the browser's
+        // own zoom-intensity signal, not a real vertical scroll amount, but
+        // it is delivered in the same field (`gestureVerbs.ts`'s own doc
+        // comment on why there is no separate pinch DOM event).
+        const factor = Math.exp(-event.deltaY * WHEEL_ZOOM_SENSITIVITY);
+        applyViewport((current) => zoomAt(current, pixelX, factor));
+      } else if (action === "pan-x") {
+        // A trackpad's two-finger horizontal scroll and a physical
+        // horizontal-wheel notch both report `deltaX` directly in CSS px
+        // for the common `deltaMode: 0` case — no separate sensitivity
+        // constant, mirroring `handlePointerMove`'s 1:1 drag-to-pan.
+        // Negated: scrolling/panning right (positive `deltaX`) moves the
+        // visible window to *later* time, the opposite sign convention
+        // from `panBy`'s drag-to-pan (`viewport.ts`'s own doc comment).
+        applyViewport((current) => panBy(current, -event.deltaX));
+      }
+      // `"none"`/`"zoom-region"`: this preset doesn't bind this wheel-family
+      // event to a viewport change (`"zoom-region"` is never a shipped
+      // wheel binding; treated the same as `"none"`, not applied).
     },
-    [applyViewport]
+    [applyViewport, inputMapPreset]
   );
 
   // Keyboard zoom/pan (decision 27; `interaction/keymap.ts`) — mounted on
@@ -844,6 +1079,7 @@ export default function ChartCell({
             {`t=${Number(hover.tUs) / 1_000_000}s min=${hover.min} max=${hover.max} mean=${hover.mean}`}
           </div>
         )}
+        {card !== null && <CursorCard pixelX={card.pixelX} rows={card.rows} />}
         {selectionRectPx !== null && (
           <div
             className="chart-cell-selection"
@@ -873,6 +1109,28 @@ export default function ChartCell({
             }}
           />
         )}
+        {
+          // Decision 51's hover-follow line (Task 2): positioned imperatively
+          // by `hoverLineRef`'s `cursorBus.subscribe` effect above, never by
+          // a render-time `left` (that would need `setState` at pointer
+          // rate). Starts `hidden` — the subscriber only un-hides it once a
+          // hover actually publishes an on-viewport instant.
+        }
+        <div
+          ref={hoverLineRef}
+          className="chart-cell-cursor-line chart-cell-cursor-line--hover"
+          hidden
+          style={{
+            position: "absolute",
+            top: 0,
+            bottom: 0,
+            left: 0,
+            width: 1,
+            background: "var(--fg-dim)",
+            opacity: 0.5,
+            pointerEvents: "none",
+          }}
+        />
         <CursorReadoutPanel state={readoutState} />
       </div>
     </ChartContextMenu>
