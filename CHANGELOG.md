@@ -18,6 +18,24 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 
 ### Added
 
+- **`app/src/routes/pages/Notebook/model/graphStatus.ts`: per-node status
+  glyph from `WorkbookState.windows` (2026-09-08, w32-maths Task 7, spec
+  exists — C2 §3.7, decisions 44/R121/R131/R132, ruling R141, no spec
+  change needed).** `computeNodeStatuses` worst-wins across the current
+  selection (`error` > `grey` > `pending` > `ok`), names the split
+  ("2 of 3 windows", R132) when selected windows disagree, and excludes a
+  whole-window failure (`WindowEvalState.kind === "error"`) from every
+  node's aggregation — `bannerWindows` names those separately for a
+  canvas-level banner instead of fifty identical ×s. Decision 44's grey-vs-
+  red split reuses `jsCellBinding.ts`'s `findChannel` (newly exported, R141
+  Q1) rather than a second "does this name resolve" predicate; a channel
+  reachable from no selected session is a red × (typo), one present on some
+  selected session but not another greys — and every node reachable
+  forward from it greys too for the windows lacking it, even where core's
+  own evaluation legitimately reports `UnknownChannel` for that window.
+  Selection (`SelectedWindow[]`) supplies the per-window denominator `windows`
+  can't (R141 Q2 — an absent `windows` entry already means "pending"; this
+  module never gives absence a second meaning by synthesizing an entry).
 - **`app/src/routes/pages/Notebook/model/graphAutoLayout.ts`: deterministic
   layered auto-layout for the maths graph (2026-09-08, w32-maths Task 6,
   C2 §3.7.1's "view's own fallback algorithm", no spec change needed).**
