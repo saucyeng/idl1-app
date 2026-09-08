@@ -6590,3 +6590,39 @@ limitation.
 **Cost if wrong.** Every hand-written cell in every workbook renders an
 empty chart frame with no explanation, and the app reads as broken to
 exactly the user who is doing the thing it was built for.
+
+## 2026-09-08 — R149: the plain wheel scrolls the notebook; zoom needs a modifier (amends R137)
+
+**Isaac, 2026-09-08, on first use:** *"i immediately realize the regular
+scrollwheel should just scroll the notebook."*
+
+**He is right, and R137 got this wrong.** Both mouse presets bind
+`wheel: "zoom-x"`, so a chart under the pointer swallows the page's scroll.
+A notebook is a **document** — the wheel's meaning belongs to the document,
+and a chart that captures it makes the page unscrollable wherever charts
+are, which is most of it. This is worse than a missing feature: it breaks a
+gesture the user already knows works everywhere else.
+
+**Ruling — amends R137's preset table.**
+1. **Plain `wheel` is `"none"` in every preset.** The chart never captures
+   it; it scrolls the notebook, like any other page content.
+2. **Zoom moves to `ctrl+wheel`**, the universal convention — browsers,
+   maps, image viewers, editors. A user who wants to zoom a chart already
+   knows this gesture, and it cannot collide with scrolling because holding
+   ctrl already means "not scrolling".
+3. **Horizontal wheel keeps `pan-x`** on the two-wheel preset. An MX
+   Master's second wheel produces horizontal-wheel events, which no
+   document scroll competes for, so it stays.
+4. Trackpad is unchanged: pinch zooms, two-finger pans, and its two-finger
+   vertical gesture is a wheel event — now correctly left to the page.
+
+The input map gains a `ctrlWheel` verb; `wheel` stays in the table so a
+future preset may bind it, but no shipped preset does.
+
+**The general rule this is an instance of:** an embedded view may not
+capture a gesture whose meaning is owned by the document around it unless a
+modifier distinguishes it. Drag is the chart's (there is no document drag);
+the wheel is not.
+
+**Cost if wrong.** Every chart becomes a scroll trap, and a notebook of ten
+charts cannot be read to the bottom with a mouse.
