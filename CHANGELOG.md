@@ -39,6 +39,23 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 
 ### Added
 
+- **`Notebook/graph/graphToChart.ts`: node → chart (2026-09-08, w32-maths
+  Task 11, spec exists — C2 §3.6.6, decision 83, no spec change needed).**
+  `insertChartCell` appends a `plotForm/generate.ts`-generated `js` cell
+  charting a node by name (no `id=` attribute — C2 §2.2 leaves that to
+  Rust's next parse); `chartEligibilityFor` gates a card's chart button on
+  a chartable rank-≤1 shape or the one `spectrogram(...)` raster exception
+  (§3.6.6). Wired: `NodeCard.tsx` shows a "Chart" button when eligible;
+  `GraphCanvas.tsx` calls `insertChartCell` and `onCommit`s the result.
+  **Two real gaps, flagged not resolved (see the lane's report):** the
+  chart button fires with a fixed `"lineY"` mark — decision 83's
+  chart-type-selector/idl0-pictograms step is not built, so this is one
+  gesture, not two; and the output-port drag-into-notebook-column gesture
+  has no drag-and-drop UI at all (only the same pure `insertChartCell` it
+  would call). `chartEligibilityFor` also cannot yet detect "rank ≥ 2 and
+  not `spectrogram`" at all — §3.6 is spec-only in `core` — so decision
+  58's actual "reduce it first" slot is unreachable; every not-yet-known
+  shape reads `"unknown"` and shows no chart button, never a guess.
 - **The maths graph wired into `Notebook/index.tsx` (2026-09-08, w32-maths
   Task 10, spec exists — C2 §3.7, no spec change needed).** A "Graph"/
   "Cells" toggle switches the main content area between the existing cell

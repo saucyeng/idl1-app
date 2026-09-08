@@ -4,6 +4,7 @@ import { StatusDot } from "@/components/brand/StatusDot";
 import type { MathExprCall } from "../model/mathExpr";
 import type { GraphNode } from "../model/graphModel";
 import type { NodeStatus } from "../model/graphStatus";
+import { chartEligibilityFor } from "./graphToChart";
 import type { PortShape } from "./portShape";
 
 /** Matches `CellFrame.tsx`'s own `STATUS_DOT_CLASS` mapping (pending →
@@ -32,6 +33,14 @@ export interface MathNodeData extends Record<string, unknown> {
   /** The definition's outer call (`mathExpr.ts`), or `null` for an opaque
    *  expression or a `"channel"` node. */
   call: MathExprCall | null;
+  /** Fired with this node's name when the chart button is clicked — only
+   *  rendered when `chartEligibilityFor` says `"chart"` (decision 83's
+   *  chart button, §3.6.6's honest-unknown gate — see `graphToChart.ts`).
+   *  `undefined` for a `"channel"` node (it has no data of its own to
+   *  chart). **Task 11 gap, flagged in the lane's report:** this fires with
+   *  a fixed `"lineY"` mark — decision 83's own "chart-type selector, idl0
+   *  pictograms" step is not built; there is one gesture here, not two. */
+  onChart?: (nodeName: string) => void;
 }
 
 /**
@@ -46,10 +55,11 @@ export interface MathNodeData extends Record<string, unknown> {
  * `model/mathExpr.ts`, and `graph/portShape.ts`.
  */
 export default function NodeCard({ data }: NodeProps<Node<MathNodeData, "mathNode">>) {
-  const { graphNode, status, split, shape, call } = data;
+  const { graphNode, status, split, shape, call, onChart } = data;
   const isChannel = graphNode.kind === "channel";
   const displayName = graphNode.label ?? graphNode.name;
   const hoverText = graphNode.exprText !== null ? `${graphNode.name} = ${graphNode.exprText}` : graphNode.name;
+  const eligibility = chartEligibilityFor(shape, call);
 
   return (
     <div
@@ -68,6 +78,18 @@ export default function NodeCard({ data }: NodeProps<Node<MathNodeData, "mathNod
           <span className="truncate">{call !== null ? `${call.name}(${call.args.join(", ")})` : "…"}</span>
           <span className="font-mono text-fg-faint">{shape}</span>
         </div>
+      )}
+      {!isChannel && eligibility === "chart" && onChart !== undefined && (
+        <button
+          type="button"
+          className="mt-1 w-full rounded-[var(--radius-structural)] border border-rule px-2 py-0.5 text-label-2 text-fg-dim hover:text-fg"
+          onClick={(e) => {
+            e.stopPropagation(); // a click here is "chart this node", not "select this node" (onNodeClick)
+            onChart(graphNode.name);
+          }}
+        >
+          Chart
+        </button>
       )}
       <Handle type="source" position={Position.Right} />
     </div>

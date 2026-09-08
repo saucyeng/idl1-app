@@ -25,6 +25,7 @@ import { computeNodeStatuses } from "../model/graphStatus";
 import { scanMathExpr, type MathExprCall } from "../model/mathExpr";
 import type { WindowEvalState } from "../model/workbookState";
 import { commitDrag } from "./dragCommit";
+import { insertChartCell } from "./graphToChart";
 import NodeCard, { type MathNodeData } from "./NodeCard";
 import { shapeOf } from "./portShape";
 
@@ -86,6 +87,14 @@ function valueFor(node: GraphNode, outputs: CellOutput[]) {
  * §3.7.1's "no IPC on the interaction path".
  */
 export default function GraphCanvas({ markdown, outputs, selectedWindows, windows, sessionDetails, onCommit, onSelectCell }: GraphCanvasProps) {
+  const handleChart = useCallback(
+    (nodeName: string) => {
+      const next = insertChartCell(markdown, nodeName, "lineY");
+      if (next !== markdown) onCommit(next);
+    },
+    [markdown, onCommit]
+  );
+
   const model = useMemo(() => buildGraphModel(markdown, outputs), [markdown, outputs]);
   const layout = useMemo(() => readGraphLayout(markdown), [markdown]);
   const positions = useMemo(() => computeAutoLayoutPositions(model, layout), [model, layout]);
@@ -103,10 +112,10 @@ export default function GraphCanvas({ markdown, outputs, selectedWindows, window
         id: graphNode.id,
         type: "mathNode",
         position: { x: position[0], y: position[1] },
-        data: { graphNode, status: result.status, split: result.split, shape: shapeOf(valueFor(graphNode, outputs)), call },
+        data: { graphNode, status: result.status, split: result.split, shape: shapeOf(valueFor(graphNode, outputs)), call, onChart: handleChart },
       };
     });
-  }, [model.nodes, positions, statuses, outputs]);
+  }, [model.nodes, positions, statuses, outputs, handleChart]);
 
   const flowEdges = useMemo<Edge[]>(() => model.edges.map((edge) => ({ id: edge.id, source: edge.source, target: edge.target })), [model.edges]);
 
