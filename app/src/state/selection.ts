@@ -153,23 +153,24 @@ function formatOffsetUs(us: number): string {
 
 /**
  * The short human label for `w`, for the top-bar selection chip (Task 13).
- * This module has no session catalog to resolve `sessionId` to a display
- * name or ordinal ("Session 3") — it names the session by its raw
- * `sessionId` and describes the span; a caller with the session list may
- * substitute a friendlier session name for the same purpose.
+ * A raw `sessionId` is a 32-char hex id and must never appear in the UI, so
+ * this module has no way to resolve one itself and takes `sessionName`
+ * instead — the caller resolves it from the session catalog (by
+ * `w.sessionId`) before calling this function. This keeps the module pure
+ * and catalog-free while ruling out the id ever leaking into a label.
  *
- * - `"session"` span: the session id alone (the whole recording).
- * - `"lap"` span: `"<sessionId> · Lap <n>"`.
- * - `"range"` span: `"<sessionId> · <t0>–<t1>"`, offsets formatted as
+ * - `"session"` span: the session name alone (the whole recording).
+ * - `"lap"` span: `"<sessionName> · Lap <n>"`.
+ * - `"range"` span: `"<sessionName> · <t0>–<t1>"`, offsets formatted as
  *   seconds from the session's first sample (see {@link SelectionWindow}).
  */
-export function describeWindow(w: SelectionWindow): string {
+export function describeWindow(w: SelectionWindow, sessionName: string): string {
   switch (w.span.kind) {
     case "session":
-      return w.sessionId;
+      return sessionName;
     case "lap":
-      return `${w.sessionId} · Lap ${w.span.lapNumber}`;
+      return `${sessionName} · Lap ${w.span.lapNumber}`;
     case "range":
-      return `${w.sessionId} · ${formatOffsetUs(w.span.t0Us)}–${formatOffsetUs(w.span.t1Us)}`;
+      return `${sessionName} · ${formatOffsetUs(w.span.t0Us)}–${formatOffsetUs(w.span.t1Us)}`;
   }
 }

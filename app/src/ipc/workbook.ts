@@ -130,15 +130,25 @@ export interface WorkbookSource {
   path: string;
 }
 
-/** C3 §3.4 `LapContext` (ledger R52 Q5/R59, R64.1): a per-call UI
- *  selection, not a property of the file — passed unchanged from
- *  `state/AppState.tsx`'s `selection.lapContext`. 1-based lap numbers,
- *  matching `LapSummary.lap_number`. `overlayLaps` names laps of the same
- *  recorded session only in wave 2 (R64.1). */
-export interface LapContext {
-  /** `null` designates no main lap. */
-  main_lap: number | null;
-  overlay_laps: number[];
+/** C1 §6.1's `Span` (ruling R117): the span a `Window` covers within one
+ *  session, `snake_case` on the wire. `t0_us`/`t1_us` on a `"range"` span
+ *  are session-relative microseconds from that session's first sample —
+ *  the same axis as `Channel.t_us` — never epoch time. */
+export type Span =
+  | { kind: "session" }
+  | { kind: "lap"; lap_number: number }
+  | { kind: "range"; t0_us: number; t1_us: number };
+
+/** C1 §6.1's `Window` (ruling R117): one selected span of one session, with
+ *  its display colour. `colour` is a `--chart-1` … `--chart-8` token name,
+ *  never a hex literal — resolved through `Notebook/theme/series.ts`'s
+ *  `seriesColor`. The wire counterpart of `state/selection.ts`'s
+ *  `SelectionWindow`; a caller maps `sessionId`→`session_id`,
+ *  `lapNumber`→`lap_number`, `t0Us`/`t1Us`→`t0_us`/`t1_us`. */
+export interface Window {
+  session_id: string;
+  span: Span;
+  colour: string;
 }
 
 /** One `list_math_builtins` catalog row (C3 §3.4, ledger R64.2). */
@@ -171,44 +181,57 @@ export async function createWorkbook(name: string): Promise<WorkbookHandle> {
   return invoke<WorkbookHandle>("create_workbook", { name });
 }
 
-/** Evaluates every cell in document order (C3 §3.4). Runs on cell content
- *  change (debounced by the editor), on a `watchWorkbook` file-change event,
- *  and once on workbook open — never per animation frame (C3 §4).
- *  `sessionId` added post-sign (ledger R41): `null` means no session is
- *  bound — every `[Channel]` reference then surfaces as a per-cell
- *  `math_unknown_channel` rather than rejecting the whole command.
- *  `lapContext` added post-sign (ledger R59, R64.1): `null` reproduces
- *  today's behaviour exactly (`MathLapContext::empty()`) — pass
- *  `state/AppState.tsx`'s `selection.lapContext`, mapped to this module's
- *  `LapContext` wire shape. A `lapContext` naming a lap that does not exist
- *  in `sessionId`'s `session.json` `laps[]` rejects with `invalid_argument`
- *  (detail `{ lap }`, C3 §3.4) — lap indexing at import landed (R83), so a
- *  real lap number now succeeds. */
-export async function evalWorkbook(
-  id: string,
-  sessionId: string | null,
-  lapContext: LapContext | null = null
-): Promise<CellOutput[]> {
-  return invoke<CellOutput[]>("eval_workbook", { id, sessionId, lapContext });
+/** `eval_workbook_v2`'s per-window result (C3 §3.4, ruling R121): a
+ *  discriminated union that must be narrowed before a caller can reach the
+ *  outputs, so a failed window's `CellOutput[]` cannot be read by accident
+ *  — there is no `ok` key to index into on the `error` branch. Errors are
+ *  attributed per window (unresolvable `session_id`, unknown lap, an
+ *  out-of-span or degenerate `range`) versus per call (an unknown or
+ *  unparseable workbook `id`, which rejects the whole `evalWorkbookV2`
+ *  `Promise` instead of appearing here). */
+export type WindowEval = { ok: CellOutput[] } | { error: IpcError };
+
+/** Evaluates every cell in document order, once per entry of `windows`, in
+ *  order (C3 §3.4, ruling R117 — replaces `evalWorkbook`'s `sessionId` +
+ *  `lapContext` pair). Runs on cell content change (debounced by the
+ *  editor), on a `watchWorkbook` file-change event, and once on workbook
+ *  open — never per animation frame (C3 §4).
+ *
+ *  `windows: []` evaluates once against no session — byte-identical to the
+ *  deprecated `eval_workbook(id, null, null)` "nothing selected" result
+ *  (decision 48) — and still resolves a one-element array, so a caller
+ *  always has a result to render.
+ *
+ *  The returned array has exactly one {@link WindowEval} per `windows`
+ *  entry, same order: each is that window's `{ ok: CellOutput[] }` or that
+ *  window's `{ error: IpcError }` (ruling R121) — siblings still evaluate
+ *  when one window's session/lap/range fails to resolve. Only an unknown or
+ *  unparseable workbook `id` rejects the whole call. */
+export async function evalWorkbookV2(id: string, windows: Window[]): Promise<WindowEval[]> {
+  return invoke<WindowEval[]>("eval_workbook_v2", { id, windows });
 }
 
-/** A decoded `fetch_host_channel` result (C3 §3.4): the binary counterpart
- *  to `evalWorkbook`'s `HostChannelRef` marker — the definition's actual
- *  decimated sample data. */
+/** A decoded `fetch_host_channel_v2` result (C3 §3.4): the binary
+ *  counterpart to `evalWorkbookV2`'s `HostChannelRef` marker — the
+ *  definition's actual decimated sample data. */
 export type HostChannel = DecodedHostChannel;
 
 /** Evaluates the named `math` definition and fetches its sample data,
- *  decimated to `budget` points (C3 §3.4, ledger R59). `budget`: max
- *  points, `1..=65536`. Settle-bound only (C3 §4) — never a hover/pan/zoom
- *  handler; decimation to the caller's own tile/chart budget happens
- *  server-side before any byte is produced. */
-export async function fetchHostChannel(
+ *  decimated to `budget` points (C3 §3.4, ruling R117 — replaces
+ *  `fetchHostChannel`'s `sessionId`). `window: null` reproduces the old
+ *  session-less behaviour; a non-null `window` closes the gap where the old
+ *  command evaluated session-wide even when a lap was selected (ruling R117
+ *  item 7), so this always agrees with `evalWorkbookV2` over the same
+ *  window. `budget`: max points, `1..=65536`. Settle-bound only (C3 §4) —
+ *  never a hover/pan/zoom handler; decimation to the caller's own
+ *  tile/chart budget happens server-side before any byte is produced. */
+export async function fetchHostChannelV2(
   workbookId: string,
-  sessionId: string | null,
+  window: Window | null,
   defName: string,
   budget: number
 ): Promise<HostChannel> {
-  const buf = await invoke<ArrayBuffer>("fetch_host_channel", { workbookId, sessionId, defName, budget });
+  const buf = await invoke<ArrayBuffer>("fetch_host_channel_v2", { workbookId, window, defName, budget });
   return decodeHostChannel(buf);
 }
 

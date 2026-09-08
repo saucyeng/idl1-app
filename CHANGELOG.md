@@ -18,6 +18,27 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
   IPC — dependency-free, following `shell/columnVisibility.ts`'s pattern so
   vitest's `node` environment can resolve it. `AppState.tsx` wiring is
   Task 8, not this commit.
+- **`state/AppState.tsx`'s selection slice and `ipc/workbook.ts`/`ipc/rasters.ts`'s
+  `_v2` selection commands (2026-09-08, s1-ts Tasks 8–9, C1 §6.1/C3
+  §3.4/§3.6, no spec change needed — the spec already landed with Task 1).**
+  `Selection` is now `SelectionWindow[]` (`initialSelection = []`); the old
+  `{ sessionId, lapContext }` shape is deleted outright (ruling R111 — one
+  representation). `SET_SELECTED_SESSION`/`SET_LAP_CONTEXT` are replaced by
+  `SET_WINDOWS`/`TOGGLE_WINDOW`/`SET_WINDOW_COLOUR`, each delegating to
+  `selection.ts`'s pure functions — the reducer holds no selection logic of
+  its own. `selection.ts`'s `describeWindow` now takes a `sessionName`
+  argument instead of formatting the raw `sessionId` — a hex session id
+  must never reach the UI; the caller resolves the name from the catalog.
+  `ipc/workbook.ts` gains the wire `Window`/`Span` types, `evalWorkbookV2`
+  (returns one `WindowEval` — `{ ok: CellOutput[] } | { error: IpcError }`
+  — per window, per ruling R121's per-window error attribution) and
+  `fetchHostChannelV2`; `ipc/rasters.ts` gains `fetchFftV2`. The `LapContext`
+  wire type and the `evalWorkbook`/`fetchHostChannel`/`fetchFft` wrappers
+  are deleted (the Rust commands stay registered but unused, per C3 §5's
+  one-revision deprecation). **Breaks `tsc` in `routes/pages/Data/index.tsx`,
+  `shell/TopBar.tsx` and `routes/pages/Notebook/**` until Tasks 10–13 land**
+  — those files still read the deleted `Selection` shape and call the
+  deleted wrappers; out of this task's scope by dispatch.
 
 ### Fixed
 

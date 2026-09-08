@@ -137,15 +137,15 @@ describe("assignColour", () => {
 });
 
 describe("describeWindow", () => {
-  it("describeWindow — session span — just the session id", () => {
-    expect(describeWindow(sessionWindow("s1"))).toBe("s1");
+  it("describeWindow — session span — just the session name", () => {
+    expect(describeWindow(sessionWindow("s1"), "Practice 1")).toBe("Practice 1");
   });
 
-  it("describeWindow — lap span — session id and lap number", () => {
-    expect(describeWindow(lapWindow("s1", 2))).toBe("s1 · Lap 2");
+  it("describeWindow — lap span — session name and lap number", () => {
+    expect(describeWindow(lapWindow("s1", 2), "Practice 1")).toBe("Practice 1 · Lap 2");
   });
 
-  it("describeWindow — range span — session id and formatted offsets in seconds", () => {
-    expect(describeWindow(rangeWindow("s1", 0, 1_500_000))).toBe("s1 · 0.000s–1.500s");
+  it("describeWindow — range span — session name and formatted offsets in seconds", () => {
+    expect(describeWindow(rangeWindow("s1", 0, 1_500_000), "Practice 1")).toBe("Practice 1 · 0.000s–1.500s");
   });
 });

@@ -1,73 +1,118 @@
 import { describe, expect, it } from "vitest";
 import { appStateReducer, initialAppState } from "./AppState";
+import type { SelectionWindow } from "./selection";
+
+const sessionWindow = (sessionId: string, colour = "--chart-1"): SelectionWindow => ({
+  sessionId,
+  span: { kind: "session" },
+  colour,
+});
+
+const lapWindow = (sessionId: string, lapNumber: number, colour = "--chart-1"): SelectionWindow => ({
+  sessionId,
+  span: { kind: "lap", lapNumber },
+  colour,
+});
 
 describe("appStateReducer — selection slice", () => {
-  it("initial state — sessionId and lapContext are both null", () => {
-    // Arrange / Act
+  it("initial state — an empty window list", () => {
+    // Arrange
     const state = initialAppState;
 
     // Assert
-    expect(state.selection).toEqual({ sessionId: null, lapContext: null });
+    expect(state.selection).toEqual([]);
   });
 
-  it("SET_SELECTED_SESSION action — sets the session id and clears lapContext", () => {
+  it("SET_WINDOWS action — replaces the whole list", () => {
+    // Arrange
+    const state = { ...initialAppState, selection: [sessionWindow("old-session")] };
+    const windows = [sessionWindow("s1"), lapWindow("s1", 2)];
+
+    // Act
+    const next = appStateReducer(state, { type: "SET_WINDOWS", windows });
+
+    // Assert
+    expect(next.selection).toEqual(windows);
+  });
+
+  it("SET_WINDOWS with an empty list — clears the selection", () => {
+    // Arrange
+    const state = { ...initialAppState, selection: [sessionWindow("s1")] };
+
+    // Act
+    const next = appStateReducer(state, { type: "SET_WINDOWS", windows: [] });
+
+    // Assert
+    expect(next.selection).toEqual([]);
+  });
+
+  it("TOGGLE_WINDOW with modifier replace — delegates to nextWindows, discarding the prior selection", () => {
+    // Arrange
+    const state = { ...initialAppState, selection: [sessionWindow("s1"), lapWindow("s2", 3)] };
+
+    // Act
+    const next = appStateReducer(state, {
+      type: "TOGGLE_WINDOW",
+      window: sessionWindow("s3"),
+      modifier: "replace",
+    });
+
+    // Assert
+    expect(next.selection).toEqual([sessionWindow("s3")]);
+  });
+
+  it("TOGGLE_WINDOW with modifier add — appends, preserving order", () => {
+    // Arrange
+    const state = { ...initialAppState, selection: [sessionWindow("s1")] };
+
+    // Act
+    const next = appStateReducer(state, {
+      type: "TOGGLE_WINDOW",
+      window: lapWindow("s1", 2),
+      modifier: "add",
+    });
+
+    // Assert
+    expect(next.selection).toEqual([sessionWindow("s1"), lapWindow("s1", 2)]);
+  });
+
+  it("TOGGLE_WINDOW with modifier toggle on a selected window — removes it, empty list is legal", () => {
+    // Arrange
+    const state = { ...initialAppState, selection: [sessionWindow("s1")] };
+
+    // Act
+    const next = appStateReducer(state, {
+      type: "TOGGLE_WINDOW",
+      window: sessionWindow("s1"),
+      modifier: "toggle",
+    });
+
+    // Assert
+    expect(next.selection).toEqual([]);
+  });
+
+  it("SET_WINDOW_COLOUR action — recolours only the window at the given index", () => {
     // Arrange
     const state = {
       ...initialAppState,
-      selection: { sessionId: "old-session", lapContext: { mainLap: 3, overlayLaps: [1, 2] } },
+      selection: [sessionWindow("s1", "--chart-1"), lapWindow("s2", 1, "--chart-2")],
     };
 
     // Act
-    const next = appStateReducer(state, { type: "SET_SELECTED_SESSION", sessionId: "new-session" });
+    const next = appStateReducer(state, { type: "SET_WINDOW_COLOUR", index: 1, colour: "--chart-5" });
 
     // Assert
-    expect(next.selection).toEqual({ sessionId: "new-session", lapContext: null });
+    expect(next.selection).toEqual([sessionWindow("s1", "--chart-1"), lapWindow("s2", 1, "--chart-5")]);
   });
 
-  it("SET_LAP_CONTEXT action — sets the lap context without touching sessionId", () => {
+  it("SET_WINDOW_COLOUR action — does not change a window's sessionId or span", () => {
     // Arrange
-    const state = { ...initialAppState, selection: { sessionId: "session-1", lapContext: null } };
-    const lapContext = { mainLap: 2, overlayLaps: [1] };
+    const state = { ...initialAppState, selection: [lapWindow("s1", 4, "--chart-1")] };
 
     // Act
-    const next = appStateReducer(state, { type: "SET_LAP_CONTEXT", lapContext });
+    const next = appStateReducer(state, { type: "SET_WINDOW_COLOUR", index: 0, colour: "--chart-8" });
 
     // Assert
-    expect(next.selection).toEqual({ sessionId: "session-1", lapContext });
-  });
-
-  it("SET_LAP_CONTEXT action with null — clears an existing lap context", () => {
-    // Arrange
-    const state = {
-      ...initialAppState,
-      selection: { sessionId: "session-1", lapContext: { mainLap: 2, overlayLaps: [1] } },
-    };
-
-    // Act
-    const next = appStateReducer(state, { type: "SET_LAP_CONTEXT", lapContext: null });
-
-    // Assert
-    expect(next.selection).toEqual({ sessionId: "session-1", lapContext: null });
-  });
-
-  it("SET_SELECTED_SESSION after a lapContext was set — clears the lapContext on session change", () => {
-    // Arrange
-    const withLap = appStateReducer(initialAppState, {
-      type: "SET_SELECTED_SESSION",
-      sessionId: "session-1",
-    });
-    const withLapContext = appStateReducer(withLap, {
-      type: "SET_LAP_CONTEXT",
-      lapContext: { mainLap: 1, overlayLaps: [] },
-    });
-
-    // Act
-    const next = appStateReducer(withLapContext, {
-      type: "SET_SELECTED_SESSION",
-      sessionId: "session-2",
-    });
-
-    // Assert
-    expect(next.selection).toEqual({ sessionId: "session-2", lapContext: null });
+    expect(next.selection).toEqual([lapWindow("s1", 4, "--chart-8")]);
   });
 });
