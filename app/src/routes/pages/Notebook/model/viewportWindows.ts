@@ -108,3 +108,37 @@ export function resolveWindowSpan(span: Span, detail: SessionDetail, recordedSpa
     }
   }
 }
+
+/**
+ * Resolves the worksheet's shared cursor -- carried as `offsetUs`, an
+ * elapsed time **since the primary window's own start** (ruling R131 Q2;
+ * plan §3.2: "the cursor must be carried in the same frame [as the
+ * viewport]... an offset from the primary window's start, not an absolute
+ * session `t_us`") -- to an absolute instant *within `window`*, `window`'s
+ * own `startUs` playing the same role {@link mapViewportToWindow}'s
+ * `primaryStartUs` parameter does for a viewport span.
+ *
+ * Returns `null` once `offsetUs` runs past `window`'s own recorded end
+ * (`window.startUs + offsetUs >= window.endUs`) -- decision 55's "a window
+ * shorter than the [cursor's elapsed time] renders absence past its end,"
+ * the same rule {@link mapViewportToWindow} already applies to a viewport
+ * span, extended to the single instant a cursor is. A negative `offsetUs`
+ * (the cursor sits before this window's own start -- only possible for a
+ * window whose start postdates the primary window's) is `null` for the
+ * same reason: it names no sample this window recorded.
+ *
+ * @param offsetUs Elapsed µs since the primary window's own start. May be
+ *   negative (a window that starts *before* the primary window would then
+ *   have real data there) -- this function only rejects an offset that
+ *   falls outside `window` itself, never a negative one on principle.
+ * @param window The window to resolve the cursor within -- the primary
+ *   window itself (the ordinary single-window case; then this is the
+ *   identity transform, `window.startUs + offsetUs`, `null` only past the
+ *   primary window's own end) or any other selected window, re-based the
+ *   same way `mapViewportToWindow` re-bases a whole viewport span.
+ */
+export function cursorTimeInWindow(offsetUs: number, window: AbsoluteSpan): number | null {
+  const tUs = window.startUs + offsetUs;
+  if (tUs < window.startUs || tUs >= window.endUs) return null;
+  return tUs;
+}

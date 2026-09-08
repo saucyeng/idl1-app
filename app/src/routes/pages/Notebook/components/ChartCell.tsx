@@ -10,6 +10,7 @@ import { isStaleSettleResult, makeSettle } from "../model/settle";
 import { chooseTier, tileRange } from "../model/tiers";
 import { ensureTiles, type TileCache, type TileCacheKey } from "../model/tileCache";
 import { clampTo, panBy, transformFor, zoomAt, type Viewport } from "../model/viewport";
+import { cursorTimeInWindow } from "../model/viewportWindows";
 import ChartContextMenu from "../interaction/ChartContextMenu";
 import type { ChartAction } from "../interaction/chartActions";
 import type { CursorBus } from "../interaction/cursorBus";
@@ -360,6 +361,18 @@ export default function ChartCell({
   inputMapPreset,
   onToggleCode,
 }: ChartCellProps) {
+  // The primary window's own `AbsoluteSpan`, for `cursorTimeInWindow`
+  // (Task 6 / R131 Q2). Today this cell only ever mounts the *primary*
+  // window's own bound channel (no per-window `ChartCell` instances yet,
+  // R69(d)'s own TODO), and that window's gesture viewport is already
+  // expressed in session-absolute µs starting at `0`
+  // (`jsCellBinding.ts`'s `initialSpan: {startUs: 0, endUs: sessionSpanUs}`)
+  // -- so `{startUs: 0, endUs: sessionSpanUs}` *is* the primary window's own
+  // span whenever that window is `"session"`-kind (today's default), byte-
+  // identical to before this task. A primary window of `"lap"`/`"range"`
+  // kind would need its own resolved span threaded in as a future prop --
+  // out of this task's scope (`Notebook/index.tsx` is not among its files).
+  const primaryWindowSpan = { startUs: 0, endUs: sessionSpanUs };
   const [hover, setHover] = useState<HoverReading | null>(null);
   const [liveViewport, setLiveViewport] = useState<Viewport>(viewport);
   const [readoutState, setReadoutState] = useState<ReadoutPanelState>(null);
@@ -409,7 +422,15 @@ export default function ChartCell({
         el.hidden = true;
         return;
       }
-      const px = pixelXForTUs(liveViewportRef.current, state.tUs);
+      // Task 6 / R131 Q2: the bus reports an *offset* from the primary
+      // window's own start, not an absolute instant -- `cursorTimeInWindow`
+      // resolves it against `primaryWindowSpan` before `pixelXForTUs` (which
+      // still works in this chart's own absolute session-µs axis, matching
+      // `liveViewport`). `null` here means the offset has run past the
+      // primary window's own recorded end (decision 55's "renders
+      // absence"), same as an off-viewport pixel below.
+      const tUs = cursorTimeInWindow(state.tUs, primaryWindowSpan);
+      const px = tUs === null ? null : pixelXForTUs(liveViewportRef.current, tUs);
       if (px === null) {
         el.hidden = true;
         return;
@@ -417,7 +438,7 @@ export default function ChartCell({
       el.hidden = false;
       el.style.transform = `translateX(${px}px)`;
     });
-  }, [cursorBus]);
+  }, [cursorBus, sessionSpanUs]);
   // The pointer's last-known CSS-px position within this cell, updated on
   // every pointer move (drag or hover alike) with no IPC — only the settle
   // callback below reads this to decide whether/what to request from
@@ -707,8 +728,12 @@ export default function ChartCell({
       // every hover move publishes to `cursorBus` for every chart's
       // hover-line subscriber (`hoverLineRef`'s effect above) to pick up --
       // never `setState` at pointer rate (operating brief §4).
+      // `cursorFollowPolicy` itself still works in this chart's own
+      // absolute session-µs axis (`cursorTUs` prop, `liveViewport`); Task 6
+      // converts its result to an offset from the primary window's own
+      // start before it reaches the bus (`cursorBus.ts`'s own doc comment).
       const verb = cursorFollowPolicy("hover", cursorTUs !== null, cursorTUs !== null ? Number(cursorTUs) : null, pixelX, liveViewport);
-      if (verb.kind === "publish") cursorBus.publish(verb.tUs);
+      if (verb.kind === "publish") cursorBus.publish(verb.tUs === null ? null : verb.tUs - primaryWindowSpan.startUs);
 
       const geometry: HoverGeometry = { originPx: 0, pixelWidth: width };
       const reading = hoverAt(tiles, pixelX, geometry);
@@ -739,8 +764,12 @@ export default function ChartCell({
         const pixelX = event.clientX - bounds.left;
         const verb = cursorFollowPolicy("click", cursorTUs !== null, cursorTUs !== null ? Number(cursorTUs) : null, pixelX, liveViewport);
         if (verb.kind === "pin") {
+          // `onSetCursor` keeps its existing absolute-µs contract
+          // (`Notebook/index.tsx`'s `manualCursorTUs`, unchanged by this
+          // task); only `cursorBus` -- Task 6's own offset frame -- gets
+          // the converted value.
           onSetCursor(verb.tUs);
-          cursorBus.pin(verb.tUs);
+          cursorBus.pin(verb.tUs - primaryWindowSpan.startUs);
         } else if (verb.kind === "unpin") {
           onClearCursor();
           cursorBus.unpin();
@@ -788,7 +817,10 @@ export default function ChartCell({
       // the plotted area would (`cursorFollowPolicy`'s `pixelX: null` rule) —
       // a no-op while pinned, matching "hover never moves a pinned cursor".
       const verb = cursorFollowPolicy("hover", cursorTUs !== null, cursorTUs !== null ? Number(cursorTUs) : null, null, liveViewport);
-      if (verb.kind === "publish") cursorBus.publish(verb.tUs);
+      // `verb.tUs` is already `null` here (a `pixelX: null` hover always
+      // resolves to `{kind: "publish", tUs: null}`) -- the same
+      // null-preserving conversion as `handlePointerMove`'s, for symmetry.
+      if (verb.kind === "publish") cursorBus.publish(verb.tUs === null ? null : verb.tUs - primaryWindowSpan.startUs);
     },
     [cursorTUs, liveViewport, cursorBus]
   );

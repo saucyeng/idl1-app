@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { SessionDetail } from "../../../../ipc/catalog";
-import { mapViewportToWindow, resolveWindowSpan } from "./viewportWindows";
+import { cursorTimeInWindow, mapViewportToWindow, resolveWindowSpan } from "./viewportWindows";
 
 function detailWithLaps(laps: Array<{ lap_number: number; start_time_secs: number; end_time_secs: number }>): SessionDetail {
   return {
@@ -97,5 +97,43 @@ describe("resolveWindowSpan", () => {
     const detail = detailWithLaps([{ lap_number: 1, start_time_secs: 0, end_time_secs: 30 }]);
 
     expect(resolveWindowSpan({ kind: "lap", lap_number: 5 }, detail, null)).toBeNull();
+  });
+});
+
+describe("cursorTimeInWindow", () => {
+  it("cursorTimeInWindow — window starts at 0 (the ordinary primary-window case) — the identity transform", () => {
+    const window = { startUs: 0, endUs: 1_000_000 };
+
+    expect(cursorTimeInWindow(400_000, window)).toBe(400_000);
+  });
+
+  it("cursorTimeInWindow — window starts partway through the session — offset re-applied from window.startUs", () => {
+    const window = { startUs: 120_000_000, endUs: 180_000_000 };
+
+    expect(cursorTimeInWindow(5_000_000, window)).toBe(125_000_000);
+  });
+
+  it("cursorTimeInWindow — offset past a shorter window's end — null, decision 55's 'renders absence'", () => {
+    const window = { startUs: 0, endUs: 1_000_000 };
+
+    expect(cursorTimeInWindow(1_500_000, window)).toBeNull();
+  });
+
+  it("cursorTimeInWindow — offset exactly at the window's end (half-open) — null, the end is exclusive", () => {
+    const window = { startUs: 0, endUs: 1_000_000 };
+
+    expect(cursorTimeInWindow(1_000_000, window)).toBeNull();
+  });
+
+  it("cursorTimeInWindow — offset lands before window.startUs (a negative offset) — null, not this window's data", () => {
+    const window = { startUs: 120_000_000, endUs: 180_000_000 };
+
+    expect(cursorTimeInWindow(-5_000_000, window)).toBeNull();
+  });
+
+  it("cursorTimeInWindow — offset exactly at window.startUs — the window's own first instant, not null", () => {
+    const window = { startUs: 120_000_000, endUs: 180_000_000 };
+
+    expect(cursorTimeInWindow(0, window)).toBe(120_000_000);
   });
 });

@@ -23,13 +23,23 @@
  */
 
 /**
- * The worksheet's shared cursor, at a point in time. `tUs` is
- * session-relative microseconds — `number`, not `bigint`: this bus runs at
- * pointer rate, and `bigint` allocates per arithmetic operation. `bigint`
- * stays at the pinned/playback boundary where it already lives today
- * (`PlaybackState.tUs`); the one documented `number`↔`bigint` conversion
- * happens at the call site that seeds a pin from a pointer event, mirroring
- * `ChartCell.tsx`'s existing `Number(cursorTUs)`.
+ * The worksheet's shared cursor, at a point in time. `tUs` is an **elapsed
+ * µs offset since the primary window's own start** (ruling R131 Q2, plan
+ * Task 6 — *not* session-relative µs as this field was documented before
+ * that task; `model/viewportWindows.ts`'s `cursorTimeInWindow` is the
+ * function that turns this offset back into an absolute instant *within* a
+ * given window, the primary window included). Carrying an offset rather
+ * than an absolute instant is what lets the same cursor value be re-applied
+ * against any other selected window's own start, the same re-basing
+ * `mapViewportToWindow` already does for a whole viewport span — a cursor
+ * pinned in one window's chart reads every other window's chart at the same
+ * *elapsed* instant, not the same wall-clock one. `number`, not `bigint`:
+ * this bus runs at pointer rate, and `bigint` allocates per arithmetic
+ * operation. `bigint` stays at the pinned/playback boundary where it
+ * already lives today (`PlaybackState.tUs`); the one documented
+ * `number`↔`bigint` conversion happens at the call site that seeds a pin
+ * from a pointer event, mirroring `ChartCell.tsx`'s existing
+ * `Number(cursorTUs)`.
  *
  * `tUs === null` means no cursor is shown (nothing hovered, nothing
  * pinned) — never a sentinel number standing in for "absent".

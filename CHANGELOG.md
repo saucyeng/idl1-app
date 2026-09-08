@@ -23,6 +23,33 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 
 ### Added
 
+- **`Notebook/model/viewportWindows.ts`'s `cursorTimeInWindow` + `cursorBus.ts`/`ChartCell.tsx`
+  wiring: the worksheet cursor is window-relative (2026-09-08, w32-time Task
+  6, ruling R131 Q2, spec-during).** `cursorTimeInWindow(offsetUs, window):
+  number | null` resolves an elapsed-µs offset from a window's own start to
+  an absolute instant *within that window*, `null` once the offset runs
+  past a shorter window's own end (decision 55's "renders absence" —
+  mirrors `mapViewportToWindow`'s own clamp, for a single instant rather
+  than a span). `cursorBus.ts`'s `tUs` is redocumented as that offset from
+  the *primary* window's own start, not session-relative µs as before this
+  task — carrying an offset, not an absolute instant, is what lets the same
+  cursor value later be re-applied against any other selected window's own
+  start (task 7's value card). `ChartCell.tsx` converts at the boundary:
+  `handlePointerMove`/`handlePointerLeave` subtract the primary window's own
+  `startUs` before publishing to the bus, `handlePointerUp`'s click path
+  does the same before `cursorBus.pin` (leaving `onSetCursor`'s existing
+  absolute-µs contract to `Notebook/index.tsx`'s `manualCursorTUs`
+  untouched), and the hover-line subscriber adds it back via
+  `cursorTimeInWindow` before `pixelXForTUs`. The primary window's own span
+  is taken as `{startUs: 0, endUs: sessionSpanUs}` — a documented judgment
+  call: `ChartCell` only ever mounts the primary window's bound channel
+  today (R69(d)'s own TODO) and that window's gesture viewport is already
+  session-absolute µs from `0` (`jsCellBinding.ts`'s `initialSpan`), so this
+  is exactly the primary window's own span whenever it is `"session"`-kind
+  (today's default) and byte-identical to before this task; a primary
+  window of `"lap"`/`"range"` kind needs its own resolved span threaded in
+  as a future prop, out of this task's file list (`Notebook/index.tsx`
+  untouched).
 - **`Notebook/model/sharedViewport.ts` + `index.tsx` wiring: one worksheet-shared
   X range (2026-09-08, w32-time Task 4, decision 52, spec-during).**
   `SharedViewport {startUs, endUs}` is a `Viewport` with the pixel width
