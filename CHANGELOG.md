@@ -6,6 +6,15 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 
 ### Added
 
+- **`app/src/routes/pages/Notebook/model/graphAutoLayout.ts`: deterministic
+  layered auto-layout for the maths graph (2026-09-08, w32-maths Task 6,
+  C2 §3.7.1's "view's own fallback algorithm", no spec change needed).**
+  `computeAutoLayoutPositions` places every node at a column equal to its
+  longest dependency chain, row order following `GraphModel.nodes`'s
+  document order; a `"definition"` node's stored `graph.nodes` position
+  (§3.7.1 — `"channel"` nodes have no stored-position home at all) always
+  wins. A dependency cycle (invalid per core, but not this rendering
+  fallback's to reject) terminates rather than recursing forever.
 - **`app/src/routes/pages/Notebook/model/graphModel.ts`: builds the maths
   graph's `{nodes, edges, groups}` from markdown + `CellOutput[]`
   (2026-09-08, w32-maths Task 5, spec exists — C2 §3.7.3, no spec change
