@@ -40,6 +40,16 @@
  * already means one thing (not yet run); giving it a second meaning is the
  * sentinel shape CLAUDE.md's own review guidance names as the recurring
  * defect here.
+ *
+ * **`"pending"` never outlives its window.** Once `windows` holds an entry
+ * for a window, that window's evaluation is *finished* — `"pending"` for
+ * that window is reachable only via the "no entry at all" case above.
+ * `CellDefResult`'s own doc comment says a structural problem on a
+ * definition "keeps it out of `defs` entirely" — so a completed window
+ * whose output has no `defs` entry for this node is never re-labelled
+ * `"pending"` (a spinner with nothing left to finish it would spin
+ * forever, the same class of defect as a silently wrong value); it reads
+ * as `"error"` instead. See {@link definitionPerWindow}.
  */
 
 import type { SessionDetail } from "../../../../ipc/catalog";
@@ -215,11 +225,21 @@ function definitionPerWindow(
   return usableWindows.map((w) => {
     const key = wireWindowKey(w);
     const state = windows.get(key);
-    if (state === undefined) return "pending"; // R141 Q2 — selection not yet resolved
+    if (state === undefined) return "pending"; // R141 Q2 — this window hasn't evaluated at all yet
     // state.kind === "error" windows were already excluded from usableWindows.
     const output = state.kind === "ok" ? state.outputs.get(node.cellId ?? "") : undefined;
     const defResult = output?.defs.find((d) => d.name === node.name);
-    if (defResult === undefined) return "pending"; // structural gap — not yet reported for this window
+    // `state` being present means this window's evaluation has *finished* —
+    // so an absent `defs` entry here is never "not evaluated yet" (that
+    // case already returned above). `CellDefResult`'s own doc comment: "a
+    // structural problem on this definition keeps it out of `defs` entirely
+    // ... reported, if anywhere, on the cell's own `errors` instead" — a
+    // known-complete evaluation with no result for this node is a genuine,
+    // permanent failure, and must read as `"error"`, never `"pending"`: a
+    // pending node with nothing left to finish it would spin forever,
+    // which is the same class of defect as a silently wrong value (ruling
+    // R141 follow-up).
+    if (defResult === undefined) return "error";
     if (defResult.error === null) return "ok";
     return eligibleWindowKeys?.has(key) ? "grey" : "error";
   });

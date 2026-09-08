@@ -63,6 +63,22 @@ describe("computeNodeStatuses", () => {
     expect(statuses.get("def:x")).toEqual({ status: "pending", split: null });
   });
 
+  it("computeNodeStatuses — a completed window whose output has no defs entry for this node — is error, never a permanent pending", () => {
+    // Arrange — a structural problem keeps the definition out of `defs`
+    // entirely (CellDefResult's own doc comment); the window has still
+    // finished evaluating, so this must not read as "still running".
+    const model: GraphModel = { nodes: [node("def:x", "definition")], edges: [], groups: [] };
+    const w = window("s1");
+    const windows = new Map([[wireWindowKey(w), okWindow([cellOutput("a1b2c3d4", [])])]]); // no "x" entry in defs
+    const inputs: GraphStatusInputs = { model, selectedWindows: [w], windows, sessionDetails: new Map() };
+
+    // Act
+    const statuses = computeNodeStatuses(inputs);
+
+    // Assert
+    expect(statuses.get("def:x")).toEqual({ status: "error", split: null });
+  });
+
   it("computeNodeStatuses — a definition that evaluated with no error — is ok", () => {
     // Arrange
     const model: GraphModel = { nodes: [node("def:x", "definition")], edges: [], groups: [] };

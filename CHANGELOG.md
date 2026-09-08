@@ -16,6 +16,17 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
   keys, permanently, in the one module that writes a user's workbook.
   Contradicted C2 §3.7.1's "malformed ⇒ replaced wholesale".
 
+### Fixed
+
+- **`graphStatus.ts`'s `"pending"` fallback no longer outlives its window
+  (2026-09-08, w32-maths review follow-up).** A completed window
+  (`windows` holds an entry) whose output has no `defs` entry for a node —
+  a structural problem `CellDefResult`'s own doc comment says "keeps it out
+  of `defs` entirely" — now reads `"error"`, not `"pending"`: the previous
+  behaviour would spin forever for a definition the evaluator declines to
+  ever emit a result for, the same class of defect as a silently wrong
+  value, arriving through a spinner instead of a number.
+
 ### Added
 
 - **`app/src/routes/pages/Notebook/model/graphStatus.ts`: per-node status
