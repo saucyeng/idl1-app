@@ -50,7 +50,24 @@
   Not catchable by the current gate — `channelBindDriver.test.ts` and
   `fftDriver.test.ts` are pure-driver tests, not effect tests.
 
+- **R132's window naming is still unimplemented.** The reviewer read R132
+  as fully deferred to the maths lane; it is not. R132 defers only the
+  *layout* question (what a math or table cell should show for N windows).
+  It **requires now** that a non-chart cell rendering the primary window's
+  value with >1 window selected **names the window it is showing**, via
+  `jsCellNote`'s existing `windowCount`. 11a predates the ruling, so this is
+  a follow-up rather than a finding against it — but it is a silent-wrong-
+  number path (a prose sentence stating one lap's peak as the selection's),
+  so it ships in the same fix batch, before the merge.
+
 - **Minor, `NotebookSession.ts:52`:** the doc comment says the channel-bind
   effects gate on `windows.length <= 1` per R131. Task 11b removed that
   gate; what actually stays single-window is `BoundChannel`'s own
   rebuild-replay registration. Substance correct, stated reason stale.
+
+- **A failed window is not distinguishable from a window with no data in
+  view** at the tile-fetch layer (review of 11a/11b, priority 4 — confirmed
+  pre-existing, not introduced by these commits). Section D wants an error
+  shown as an error and absence shown as absence; today both render as
+  nothing. Not a merge blocker; file for the errors-and-staleness lane
+  (W3.3), which is where that distinction is the whole subject.
