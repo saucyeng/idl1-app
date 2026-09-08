@@ -6259,3 +6259,56 @@ cheapest today.
 
 **Open for Isaac:** whether to add keyword arguments to the grammar (item 3).
 Items 1 and 2 are renames and can proceed without it.
+
+## 2026-09-08 — R143: keyword arguments approved; mirror scipy where equivalent, diverge deliberately where not
+
+**Isaac, 2026-09-08:** *"yes, the keyword stuff makes sense - mirror scipy
+where we can and deliberately dont mirror it when it's not an equivalent
+function."*
+
+**Ruling.**
+1. **Keyword arguments are added to the math grammar** (C2 §3.2). This is
+   what lets reductions read as `mean(spec, dim="f")` — xarray's spelling,
+   and xarray is exactly "numpy with named axes", which is what C2 §3.6
+   independently invented. Positional form stays valid; keywords are
+   additive.
+2. **The naming rule, now policy for every future addition to §3.3:** where
+   a function is *semantically equivalent* to a scipy/numpy one, it takes
+   that name. Where it is **not** equivalent, it takes a **deliberately
+   different** name — never a familiar name with unfamiliar behaviour. A
+   false friend is worse than an invented name, because an invented name
+   makes a reader (or a model) check, and a false friend does not.
+
+**The first application, and it is a significant one.** The catalog's
+`fft(ch, "hann")` does **not** compute an FFT. `core/src/fft.rs` implements
+**`welch()`** — a segmented, windowed, averaged power spectrum — and the
+math language exposes it as `fft`. `numpy.fft.fft` returns a complex DFT;
+`scipy.signal.welch` returns `(f, Pxx)`. A model asked to "take the FFT" here
+would reason about a raw transform and be wrong about averaging, scaling,
+segment length and output type simultaneously.
+
+**Rename `fft` -> `welch`.** The engine function already has the right name;
+only the language surface diverges. This also frees `fft` to mean an actual
+DFT if one is ever exposed, rather than being permanently occupied by
+something else. Isaac's own idl0 spec already described this path as
+"computed via Welch's method (`welch()`)" — the language name was the
+outlier, not the implementation.
+
+**The rest of the alignment**, per R142: `angle` (a vector angle here,
+complex phase in numpy — a false friend, rename), `p` -> `percentile`,
+`clamp` -> `clip`, `if` -> `where`, `integrate` -> `cumulative_trapezoid`,
+`differentiate` -> `gradient`. `[Channel]` and `{cell}` references stay as
+deliberate DSL affordances.
+
+**Migration is required, not optional.** These renames are a C2 version bump
+and decision 75 says an update migrates workbooks rather than breaking them.
+The old spellings must keep parsing for one revision, rewritten on save,
+with the change reported — the mechanism C2 §7.1 already uses.
+
+**Also asked by Isaac**, and dispatched as a survey: which useful
+scipy-style functions we are missing, what `sci-rs` already offers that is
+unexposed, and what to model the FFT and iEKF work on.
+
+**Cost if wrong.** Every workbook and every model-written cell that says
+`fft` today means Welch. The longer that stands, the more code exists whose
+author believed something false about what it computes.
