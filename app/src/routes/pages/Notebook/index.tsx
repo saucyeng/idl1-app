@@ -60,6 +60,7 @@ import { createCursorBus, type CursorBus } from "./interaction/cursorBus";
 import { BASIC_MOUSE_PRESET, findInputMapPreset, INPUT_MAP_PRESETS, type InputMapPreset } from "./interaction/inputMap";
 import PlaybackTransport from "./interaction/PlaybackTransport";
 import { playableSpanUs, tick, togglePlay, type PlaybackState } from "./interaction/playback";
+import type { PlaybackMode } from "./interaction/playbackMode";
 import { editorPlacement, outputIsReadOnly } from "./model/editorPlacement";
 import { resolveEditorHost } from "./model/editorHost";
 import { runFft, type FftAction, type FftDeps } from "./model/fftDriver";
@@ -496,6 +497,16 @@ export default function NotebookPage() {
   const [manualCursorTUs, setManualCursorTUs] = useState<bigint | null>(null);
   const [playback, setPlayback] = useState<PlaybackState>({ tUs: 0n, playing: false, speed: 1 });
   const sharedCursorTUs = playback.playing ? playback.tUs : manualCursorTUs;
+  /** Decision 57's playback mode (Task 11), beside `playback` itself since
+   *  it is the same kind of worksheet-scoped playback state; `"scroll-at-
+   *  edge"` (the picture holds still, the cursor moves) is the default --
+   *  decision 57 states it first ("stop at the end of the lap; yes on
+   *  scroll") and names cursor-fixed as the *second*, opt-in mode ("I kind
+   *  of want the *option* to..."). `PlaybackTransport`'s mode toggle (Task
+   *  12) is the only writer. */
+  // Setter added in Task 12 alongside `PlaybackTransport`'s mode toggle --
+  // this task only wires the value through to every mounted `ChartCell`.
+  const [playbackMode] = useState<PlaybackMode>("scroll-at-edge");
 
   // One worksheet-shared cursor bus (Task 1/2) -- created once and handed
   // down to every `ChartCell` as a stable reference, never React state, so
@@ -2042,6 +2053,7 @@ export default function NotebookPage() {
                 sendLayout={sendLayout}
                 cursorTUs={sharedCursorTUs}
                 playing={playback.playing}
+                playbackMode={playbackMode}
                 onSetCursor={(tUs) => setManualCursorTUs(BigInt(Math.round(tUs)))}
                 onClearCursor={() => setManualCursorTUs(null)}
                 cursorBus={cursorBus}

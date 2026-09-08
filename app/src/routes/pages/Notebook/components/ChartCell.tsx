@@ -16,7 +16,8 @@ import ChartContextMenu from "../interaction/ChartContextMenu";
 import type { ChartAction } from "../interaction/chartActions";
 import type { CursorBus } from "../interaction/cursorBus";
 import { cursorFollowPolicy } from "../interaction/cursorFollowPolicy";
-import { advanceViewportByTime, pixelXForTUs } from "../interaction/cursorFollow";
+import { pixelXForTUs } from "../interaction/cursorFollow";
+import { advanceForMode, type PlaybackMode } from "../interaction/playbackMode";
 import { classifyWheelEvent, dragActionFor, wheelActionFor } from "../interaction/gestureVerbs";
 import type { GestureAction, InputMapPreset } from "../interaction/inputMap";
 import { actionForKey } from "../interaction/keymap";
@@ -264,6 +265,17 @@ export interface ChartCellProps {
    */
   playing: boolean;
   /**
+   * Decision 57's playback mode (plan Task 11) -- which of
+   * `interaction/playbackMode.ts`'s two arithmetics {@link playing} applies
+   * while it is panning this cell's own live viewport: `"cursor-fixed"`
+   * (today's `advanceViewportByTime`, the cursor stays put on screen and
+   * the chart passes under it) or `"scroll-at-edge"` (the chart holds still
+   * until the cursor reaches its right edge, then pages forward). Read only
+   * while {@link playing} is `true`; irrelevant otherwise. `Notebook/
+   * index.tsx` owns the worksheet-level toggle (Task 12).
+   */
+  playbackMode: PlaybackMode;
+  /**
    * Lifts a user-chosen cursor time up to `Notebook/index.tsx`'s shared
    * cursor state (a left-click, the "Set cursor here"/"Cursor to peak"
    * menu actions) — `tUs` is in µs since session start, this cell's own
@@ -382,6 +394,7 @@ export default function ChartCell({
   sendLayout,
   cursorTUs,
   playing,
+  playbackMode,
   onSetCursor,
   onClearCursor,
   cursorBus,
@@ -664,9 +677,12 @@ export default function ChartCell({
   );
 
   // The shared worksheet cursor (UI-11, R99): reacts to `cursorTUs`
-  // changing, never to a gesture. `[cursorTUs, playing, sessionSpanUs]` is
-  // a data-only dependency array (the tightened effects rule) — no
-  // function prop, no cancelling cleanup.
+  // changing, never to a gesture. `[cursorTUs, playing, playbackMode,
+  // sessionSpanUs]` is a data-only dependency array (the tightened effects
+  // rule) — no function prop, no cancelling cleanup. `playbackMode` decides
+  // *how* `playing` pans (Task 11's `advanceForMode`, decision 57); it is
+  // otherwise inert here (no branch on it besides the call itself), so it
+  // never needs its own conditional the way `playing` does.
   useEffect(() => {
     if (cursorTUs === null) {
       if (lastCursorTUsAppliedRef.current !== null) {
@@ -689,7 +705,7 @@ export default function ChartCell({
     // comment on `ChartCellProps`).
     if (playing && prevApplied !== null) {
       const deltaUs = tUsNum - prevApplied;
-      atViewport = clampTo(advanceViewportByTime(atViewport, deltaUs), sessionSpanUs);
+      atViewport = clampTo(advanceForMode(atViewport, tUsNum, deltaUs, playbackMode), sessionSpanUs);
       applyViewport(() => atViewport);
     }
 
@@ -705,7 +721,7 @@ export default function ChartCell({
       // readout, for free from the existing debounce, no new throttle.
       cursorDriverRef.current.notify(atViewport, pixelX);
     }
-  }, [cursorTUs, playing, sessionSpanUs, applyViewport]);
+  }, [cursorTUs, playing, playbackMode, sessionSpanUs, applyViewport]);
 
   const handlePointerDown = useCallback(
     (event: PointerEvent<HTMLDivElement>) => {

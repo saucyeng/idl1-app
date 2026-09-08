@@ -50,6 +50,22 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 
 ### Added
 
+- **`Notebook/interaction/playbackMode.ts`: decision 57's two playback modes
+  (2026-09-08, w32-time Task 11, decision 57, spec-during).**
+  `advanceForMode(viewport, cursorTUs, deltaUs, mode)` replaces the
+  unconditional `advanceViewportByTime` call `ChartCell.tsx`'s shared-cursor
+  effect used to make: `"cursor-fixed"` is that same call, unchanged (the
+  cursor stays put, the chart pans under it); `"scroll-at-edge"` — the
+  default — holds the viewport still while the cursor crosses it and pages
+  forward by exactly one viewport-width once the cursor reaches the right
+  edge, looping (not jumping once) so a long frame gap that skips more than
+  one page still lands on the page actually containing the cursor.
+  `ChartCell.tsx` gains a `playbackMode` prop threaded from a new
+  `Notebook/index.tsx` state slot (default `"scroll-at-edge"`, decision 57
+  names it first); the shared-cursor effect's dependency array gained
+  `playbackMode` alongside the existing data-only `[cursorTUs, playing,
+  sessionSpanUs]` (operating brief §4) — no function prop, no cancelling
+  cleanup. The mode's own select control is Task 12.
 - **`Notebook/interaction/playback.ts`: selectable speed set + play stops at
   the primary window's own end, not the whole session (2026-09-08, w32-time
   Task 10, decision 57, ruling R134 item 6, spec-during).**
