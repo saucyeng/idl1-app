@@ -6355,3 +6355,48 @@ Task 10 and chooses which window's outputs to pass.
 **Cost if wrong.** Every number the app displays outside a chart axis is
 unlabelled, and the report — the deliverable Isaac names in decision 85 —
 goes out with bare figures.
+
+## 2026-09-08 — R145: a rename may not silently break a reference it cannot rewrite
+
+**Finding** (W3.2 maths task 9). `renameDefinition` rewrites `[Name]`
+bracket references inside math cells — C2 §3.7.3's literal wording. It does
+**not** rewrite a js cell's plot code (a channel bound with
+`source: "definition"` names the definition by a bare string, no brackets)
+or a prose `${…}` span using the identifier as a bare JS variable (§5.1).
+So a rename today silently breaks either of those.
+
+Decision 45a makes renaming a **first-class one-gesture** operation, and
+decision 76 measures the lane by how cheap setting up a math channel is. A
+rename that quietly breaks a chart is not first-class; it is a trap that
+fires later, in a different cell, with no connection to the action that
+caused it.
+
+**Ruling — rewrite what can be rewritten safely, and *report* the rest.**
+1. Keep rewriting bracket references in math cells.
+2. Additionally rewrite references in **form-generated** plot code, where
+   the shape is known and parseable (`plotForm`'s own output). That is the
+   common case and it is safe precisely because we generated it.
+3. **Never textually rewrite arbitrary JS.** A hand-written cell or a prose
+   `${…}` span is an arbitrary expression; a find-and-replace there can
+   corrupt working code, which is worse than leaving it stale.
+4. **Every reference the rename could not update is collected and surfaced
+   with the rename** — "renamed; 2 references in *cell X* were not updated".
+   The rename does not present itself as complete when it is not.
+
+The *consequence* is already handled: a broken reference renders as an
+unresolved name and greys its chart (`unresolvedChannelId`, decision 44). The
+defect is purely that it happens silently, disconnected in time from the
+rename. Reporting closes that.
+
+**A refusal is not the answer.** Blocking the rename until every reference
+is hand-fixed would make the one-gesture operation a chore, contradicting
+decisions 45a and 76.
+
+**Also accepted, no change.** `editLiteralArg` re-serialising the edited
+call canonically rather than byte-splicing — the same posture `graphLayout`
+takes, and the bytes it rewrites are the ones the user is editing.
+`rewireInput` touching only the target definition's own def_line — rewiring
+is a per-edge gesture, genuinely distinct from rename's document-wide scope.
+
+**Cost if wrong.** The user renames a node, three charts elsewhere go grey
+at some later moment, and nothing on screen connects the two events.
