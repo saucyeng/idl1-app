@@ -380,8 +380,20 @@ class SandboxRuntime {
    * fetches, never does DSP.
    */
   private spectrumLookup(name: string, params: FftParams): { f: number; m: number; w: number }[] {
-    const value = this.hostVars.get(spectrumKey(name, params));
-    return Array.isArray(value) ? (value as { f: number; m: number; w: number }[]) : [];
+    const key = spectrumKey(name, params);
+    const value = this.hostVars.get(key);
+    if (!Array.isArray(value)) {
+      // R148, same reasoning as `channelLookup`: an unbound spectrum returns
+      // an empty array, which Plot renders as axis labels and nothing else.
+      // The key is printed because host and sandbox each compute it from
+      // their own `FftParams`, so a mismatch here is a real failure mode.
+      console.warn(
+        `[sandbox] spectrum(${JSON.stringify(name)}) is not bound under key ${JSON.stringify(key)};` +
+          ` known host vars: ${JSON.stringify([...this.hostVars.keys()])}`
+      );
+      return [];
+    }
+    return value as { f: number; m: number; w: number }[];
   }
 
   /** Binds or updates one host variable (`setHostVar`). */
