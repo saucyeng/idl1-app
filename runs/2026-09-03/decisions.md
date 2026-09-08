@@ -6523,3 +6523,22 @@ not the same thing.
 
 **Cost if wrong.** Isaac opens the canvas, sees his whole workbook drawn
 correctly, and cannot change a single thing on it.
+
+**Amendment (2026-09-08).** R144 is extended to carry **sample rate**
+alongside unit. The maths lane found the same gap from the other side: a
+node's details pane wants to show the definition's rate, and *nothing on the
+wire carries it* — only `ChannelSummary.nominal_rate_hz` exists, per raw
+channel, and a computed definition has no rate field at all. The engine
+knows it (a derived series inherits or resamples from its inputs; `channel()`
+in `eval.rs` is constructed with a `sample_rate_hz`), and it is dropped at
+the IPC boundary exactly as the unit is.
+
+So `CellDefResult` gains **both** `unit: string | null` and
+`sample_rate_hz: number | null` in one additive change — same task, same
+contract amendment, same reason. `null` means genuinely not applicable (a
+scalar reduction has no rate), never "unknown".
+
+This is now the second consumer to hit the same shape, which is the signal
+that it is a contract defect and not a UI want: the engine computes
+metadata, the wire drops it, and every consumer independently discovers it
+cannot label what it is showing.
