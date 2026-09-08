@@ -372,6 +372,14 @@ export default function ChartCell({
   // identical to before this task. A primary window of `"lap"`/`"range"`
   // kind would need its own resolved span threaded in as a future prop --
   // out of this task's scope (`Notebook/index.tsx` is not among its files).
+  // TODO(idl0): this shortcut expires the moment per-window `ChartCell`
+  // instances exist (R69(d)'s TODO landing) -- once a non-primary window
+  // gets its own mounted chart, *that* cell's own `primaryWindowSpan` must
+  // still be the true *primary* window's span (for the offset to mean the
+  // same instant everywhere), which `sessionSpanUs` alone can no longer
+  // stand in for regardless of the primary window's own kind. Needs a real
+  // `primaryWindowSpan` prop threaded from `Notebook/index.tsx` at that
+  // point, not this derivation.
   const primaryWindowSpan = { startUs: 0, endUs: sessionSpanUs };
   const [hover, setHover] = useState<HoverReading | null>(null);
   const [liveViewport, setLiveViewport] = useState<Viewport>(viewport);
