@@ -843,12 +843,20 @@ and written here to be read.
 ```math id=7f3c9a12
 # Fork spectrogram and the peak-frequency line derived from it.
 fork_spec        = spectrogram(wheel_travel("front"), 2048, 1024, "hann", "mean", "magnitude")  # shape: [t,f] label: Fork spectrogram
-peak_freq        = argmax(fork_spec, "f")                        # shape: [t] label: Peak fork frequency
-peak_mag         = max(fork_spec, "f")                           # shape: [t] label: Peak magnitude
-peak_freq_smooth = butter(2, 1.5, "low", peak_freq)              # shape: [t]
-peak_freq_by_lap = mean(peak_freq, "t:lap")                      # shape: [lap] label: Mean peak frequency per lap
-low_band_energy  = sum(slice(fork_spec, "f", 0, 8), "f")         # shape: [t] label: 0-8 Hz energy
+peak_freq        = argmax([fork_spec], "f")                        # shape: [t] label: Peak fork frequency
+peak_mag         = max([fork_spec], "f")                           # shape: [t] label: Peak magnitude
+peak_freq_smooth = butter(2, 1.5, "low", [peak_freq])              # shape: [t]
+peak_freq_by_lap = mean([peak_freq], "t:lap")                      # shape: [lap] label: Mean peak frequency per lap
+low_band_energy  = sum(slice([fork_spec], "f", 0, 8), "f")         # shape: [t] label: 0-8 Hz energy
 ```
+
+> **A definition references another definition with brackets**, exactly as
+> it references a raw channel: `[peak_freq]`, never a bare `peak_freq`.
+> `parse.rs`'s `primary()` resolves a bare identifier only as a universal
+> constant (`pi`, `tau`, `e`, `g`) or a workbook `constants` entry — every
+> other bare name is a parse error. This example carried unbracketed
+> references until 2026-09-08 and was the source of at least one broken
+> workbook, so the brackets above are load-bearing, not decoration.
 
 Shape at each step, and why:
 
@@ -883,7 +891,7 @@ axes, both on time axis B, which is why they align without an `align` call.
 **The error this design is here to produce.** Writing
 
 ```math
-bad = peak_freq * wheel_travel("front")
+bad = [peak_freq] * wheel_travel("front")
 ```
 
 is a `ShapeMismatch`: both operands are `[t]`, but their time axes have
@@ -893,7 +901,7 @@ own node and its dependents, and every sibling definition still evaluates. The
 fix is explicit:
 
 ```math
-good = peak_freq * align(wheel_travel("front"), peak_freq)   # shape: [t]
+good = [peak_freq] * align(wheel_travel("front"), [peak_freq])   # shape: [t]
 ```
 
 #### 3.6.8 What changes for existing workbooks
