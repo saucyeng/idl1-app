@@ -4943,3 +4943,101 @@ Nothing blocks on this: calibration is W3.4.
 **Cost if wrong.** Porting first costs the port, then the rewrite, and in
 between produces sessions calibrated with an arbitrary-yaw matrix that
 later analysis cannot distinguish from a good one.
+
+## 2026-09-07 — R117: the seven S1 selection questions
+
+Answering `runs/2026-09-07/s1-selection-plan.md` §4. Plan accepted; the
+13-task order stands.
+
+1. **Range time base — accept session-relative, pinned.** An explicit
+   range is stored as session-relative microseconds from that session's
+   first sample's hardware timestamp. An absolute epoch range is
+   meaningless across sessions recorded on different days, which is the
+   comparison decision 46 exists for. The origin is named in the contract,
+   not left to a reader.
+2. **Two windows over one session with different laps — legal, and it is
+   the common case.** Nothing may treat a repeated `sessionId` as a
+   duplicate to collapse. Uniqueness is on the whole window, not on the
+   session id.
+3. **`_v2` commands — accept, with one revision of deprecation.** An
+   additive `windows` argument would leave three live representations of
+   selection, which R111 exists to forbid. The old commands stay
+   registered but unused after Task 9, and are deleted next revision.
+4. **Per-window evaluation — accept, and record what it does not
+   deliver.** A per-window loop returning `Vec<Vec<CellOutput>>` gives
+   comparison-by-overlay: n windows drawn together, coloured per window
+   (decision 84). It does **not** give cross-window *maths* — a definition
+   whose expression reads two windows at once, which is what a ghost-delta
+   chart (idl0 §21.1) needs. That requires a multi-session `ChannelLookup`
+   in `core` and is the R73 cross-session-overlay amendment, a separate
+   lane. Nobody may report S1 as delivering ghost delta.
+5. **A deleted session's windows are dropped — but not silently.** Drop
+   the window (decision 61: views empty immediately, no extra click), and
+   the Data tab states once that a selected session was deleted. Section D
+   forbids a view that changes what it shows without saying why; an
+   emptied chart with no cause given is exactly that.
+6. **Colour is a token name (`--chart-1…8`), never a hex — accept.**
+   Round-1 decision 26 and `tokenSheet.test.ts` already hold this line;
+   a hex in selection state would be the first renderer-only parameter in
+   the app (CLAUDE.md P-rules).
+7. **Fix `fetch_host_channel`'s missing lap context in Task 5 — accept.**
+   It is the same `load_window_context` call the task already adds;
+   leaving it would ship a command that silently ignores the selection
+   every other path honours.
+
+**Also confirmed:** the `main_lap_window` indexing defect
+(`core/src/math/eval.rs:661-668` against `session_source.rs:154`) is real —
+I reproduced the reasoning: an explicit main lap builds a one-entry bounds
+vec while passing the true lap number, so `get(n-1)` misses for any lap but
+1 and returns the `(0.0, 0.0)` gating-off sentinel, silently disabling
+`variance_*` gating. It has never bitten because no UI dispatches
+`SET_LAP_CONTEXT`; decision 47 makes lap selection central, so it would
+bite immediately. Task 3's fix — `main_lap_number = Some(1)` for every span
+kind, so the number is never an index into that vec — is the right shape.
+
+**Cost if wrong.** (4) is the one that bites: if the lane were reported as
+delivering session-to-session comparison generally, ghost delta would be
+discovered missing during the report lane (W3.4), after charts and the
+maths graph had been built against a per-window evaluation model.
+
+## 2026-09-07 — R118: the five n-D shape questions; `t:win` is not specified yet
+
+Answering C2 §3.6.9. The section is accepted; the axis-identity rule
+(a time axis carries an origin, so frames-from-an-STFT and samples are not
+interchangeable) is the part of this design most worth keeping — it turns a
+class of silently-plausible wrong numbers into a typed error.
+
+1. **Three new `MathEvalErrorKind` variants — accept**, with the additive
+   C3 `detail: { expected, actual, axis? }`. They are per-definition
+   `MathEvalError`s like every other; a new top-level kind would imply a
+   different failure mode to every existing handler.
+2. **`t`-alias on frequency values — accept, kept through wave 3**, listed
+   as deprecated, dropped at the next `version` bump. **Condition:** that
+   bump must *migrate* workbooks that use the alias, not merely stop
+   accepting it. Direction-2 decision 75 makes workbook durability across
+   updates a hard constraint, and "we deprecated it" is not a migration.
+3. **`"t:lap"` with several windows — the recommendation is rejected, and
+   the question dissolves.** R117.4 ruled evaluation is **per window**:
+   `eval_workbook_v2` loops the windows and returns `Vec<Vec<CellOutput>>`,
+   so a single evaluation sees exactly one window. `"t:lap"` is therefore
+   never ambiguous — it means the laps *within the window being evaluated* —
+   and needs no multi-window error case. `"t:lap"` and a per-window
+   reduction are also genuinely different things and both stay: `lap`
+   groups by the session's own recorded lap boundaries (a property of the
+   data), selection groups by what the user picked.
+   **`"t:win"` must NOT be specified now.** Under per-window evaluation no
+   expression can observe a second window; an axis that reduces across
+   windows *is* cross-window maths, which R117.4 deferred to the R73
+   cross-session-overlay amendment. Specifying it here would promise a
+   reduction the evaluator cannot perform.
+4. **`fetch_raster(kind: "matrix")` for a rank-2 value that is not a
+   `spectrogram(...)` call — accept, deferred past wave 3.** One
+   rasteriser, host-side, as recommended; never a second one in the sandbox.
+5. **iEKF component names — accept.** `c9` stays unnamed; the iEKF subgraph
+   (decision 43) names its own components when specified. Do not invent an
+   iEKF spec to satisfy an example.
+
+**Cost if wrong.** (3) is the load-bearing one: shipping `"t:win"` in the
+contract would have the maths lane build an axis the evaluator structurally
+cannot compute, and the gap would surface as "why does this reduction
+return one window's answer" long after cells were written against it.

@@ -4,7 +4,42 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 
 ## [Unreleased]
 
+### Fixed
+
+- **The sandbox stall watchdog now has a caller (2026-09-07, sandbox-watchdog
+  task, no spec change needed).** `host/watchdog.ts`'s ping/pong liveness
+  watchdog existed but was never ticked from anywhere, so a runaway cell
+  could hang the tab forever with no detection or rebuild. `Notebook/index.tsx`'s
+  existing sandbox-mount effect now drives `SandboxHost.tick()` from a
+  `setInterval` at the watchdog's own ping cadence
+  (`watchdog.ts`'s `PING_INTERVAL_MS`, newly exported); the timer is scoped
+  to that effect so its lifetime matches the host's exactly — it starts
+  only once a host exists (already gated on `primeState.running`, i.e. the
+  Notebook route being visible, R95/R99) and is cleared in the same
+  cleanup, before `host.dispose()`. It does not restart across an internal
+  `SandboxHost.rebuild()`, since one `Watchdog` instance already outlives
+  every rebuild.
+
 ### Changed
+
+- **Math values are n-dimensional (2026-09-07, ruling R110, spec-first —
+  C2 §3.6 added).** A math value now carries a *shape*: an ordered list of
+  named axes (`time`, `freq`, `lap`, `window`, `component`, `index`), so a
+  series is `[t]`, a per-lap value `[lap]`, a spectrogram `[t,f]` and an
+  iEKF state vector `[t,c9]` — and every one of them can feed further
+  maths (UI-DIRECTION-2 decision 45c). Elementwise ops require equal
+  shapes (a scalar with anything is the only implicit rank change; there is
+  no NumPy-style broadcasting), reductions take an axis as a string literal
+  (`mean(spec, "f")`, `mean(x, "t:lap")`), and `argmax(spec, "f")` returns
+  the *coordinate* — the peak-frequency line. `spectrogram` becomes
+  `Implemented` and returns `[t,f]`; `fft`'s output carries a real
+  frequency axis. Shapes are inferred; an optional `# shape: [t,f]`
+  annotation checks but never coerces. Charts bind by axis kind and the
+  `[t,f]` case reuses C3's existing `fetch_raster` path rather than adding
+  a second rasteriser. **Workbook `version` stays `3`**: the extension is a
+  strict superset, no migration pass runs, and an older build still opens,
+  evaluates its siblings and round-trips such a file (C2 §3.6.8).
+  Spec-only — no code in this commit.
 
 - Code pane wraps long lines, so a cell's source stays readable in the
   narrow properties column instead of running off behind a scrollbar.
