@@ -50,6 +50,28 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 
 ### Added
 
+- **`Notebook/model/cursorCard.ts` + `Notebook/components/CursorCard.tsx`:
+  cursor value card (2026-09-08, w32-time Task 7, decision 55, spec-during).**
+  `cursorCardRow` builds one row — series label, unit, colour, value, and
+  (R132) the window label when more than one window is selected via the
+  existing `jsCellNote.ts`'s `primaryWindowNote` — at a window-relative
+  cursor offset, `null` past the window's own end (decision 55's "renders
+  absence", reusing `cursorTimeInWindow`, Task 6). **Scope, named rather
+  than silently narrowed:** decision 55's full shape is one row per series
+  *and* per overlaid window; `ChartCell.tsx` is already documented as
+  plotting exactly one channel at the host level and tracks tiles for only
+  the primary window (R69(d)'s own TODO — every other window's data is
+  combined into the sandbox's own host-var payload and never reaches the
+  host), so this ships **one row**, honestly labelled per R132 when more
+  than one window is selected, rather than a multi-row shape the host
+  cannot currently back with real data. A true per-series-per-window card
+  needs per-window/per-channel tiles plumbed to the host — a larger change
+  than this task's own file list, filed as a follow-on. `ChartCell.tsx`
+  gained four new optional props (`channelUnit`, `windowCount`,
+  `primaryWindowLabel`, `primaryWindowColour`) mirroring its existing
+  `channelLabel`'s missing-value convention, and computes the row from the
+  same `hoverAt` reading it already decodes for its own hover tooltip (no
+  second tile read, no new IPC).
 - **`Notebook/model/timelineStrip.ts`: pure master-timeline-strip model
   (2026-09-08, w32-time Task 8, ruling R134 item 1, spec-during).**
   `stripLanesFor` builds one `StripLane` per selected window (never one

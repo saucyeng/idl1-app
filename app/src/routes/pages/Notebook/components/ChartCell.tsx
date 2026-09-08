@@ -5,6 +5,7 @@ import type { DecodedRaster, Histogram2dParams, RasterKind, RasterMeta, Spectrog
 import type { DecodedTile } from "../../../../ipc/tiles";
 import { cursorRequestFor, type ReadoutPanelState } from "../model/cursor";
 import { CURSOR_SETTLE_MS, makeCursorReadoutDriver, type CursorReadoutDriverDeps } from "../model/cursorReadoutDriver";
+import { cursorCardRow, type CursorCardRow } from "../model/cursorCard";
 import { hoverAt, type HoverGeometry } from "../model/hover";
 import { isStaleSettleResult, makeSettle } from "../model/settle";
 import { chooseTier, tileRange } from "../model/tiers";
@@ -21,6 +22,7 @@ import type { GestureAction, InputMapPreset } from "../interaction/inputMap";
 import { actionForKey } from "../interaction/keymap";
 import { findPeakTUs } from "../interaction/peak";
 import { zoomToRect } from "../interaction/rectZoom";
+import CursorCard from "./CursorCard";
 import CursorReadoutPanel from "./CursorReadout";
 import RasterUnderlay from "./RasterUnderlay";
 
@@ -191,6 +193,24 @@ export interface ChartCellProps {
    * missing-label fallback, documented in `model/cursor.ts`).
    */
   channelLabel?: string;
+  /** `ChannelSummary.unit` (C1 §4.1) for this cell's own channel, for the
+   *  cursor value card's row (Task 7, decision 55). `undefined` renders as
+   *  `""` (`model/cursorCard.ts`'s own fallback), same shape as
+   *  {@link channelLabel}'s missing-label convention. */
+  channelUnit?: string;
+  /** The total number of selected windows (`AppState.selection.length`),
+   *  for the cursor value card's R132 naming (`model/jsCellNote.ts`'s
+   *  `primaryWindowNote`: no marker at `1`, the primary window's label
+   *  otherwise). `undefined` treated as `1` -- byte-identical, no marker. */
+  windowCount?: number;
+  /** The primary window's own display label (`state/selection.ts`'s
+   *  `describeWindow`), for the cursor value card's R132 naming. Unused
+   *  when {@link windowCount} is `1` or fewer. */
+  primaryWindowLabel?: string;
+  /** The primary window's own chart token colour (`--chart-1`…`--chart-8`,
+   *  never a hex literal, R117 item 6), for the cursor value card's left
+   *  border. `undefined` falls back to `--chart-1`. */
+  primaryWindowColour?: string;
   /**
    * Sends one gesture frame's CSS transform to the sandbox for this cell
    * (R69 item (b)) -- a thin closure over `host/SandboxHost.ts`'s
@@ -351,6 +371,10 @@ export default function ChartCell({
   raster,
   fetchCursorReadout,
   channelLabel,
+  channelUnit,
+  windowCount,
+  primaryWindowLabel,
+  primaryWindowColour,
   sendTransform,
   sendLayout,
   cursorTUs,
@@ -382,6 +406,13 @@ export default function ChartCell({
   // point, not this derivation.
   const primaryWindowSpan = { startUs: 0, endUs: sessionSpanUs };
   const [hover, setHover] = useState<HoverReading | null>(null);
+  /** The cursor value card's one row (Task 7, decision 55) -- kept as its
+   *  own state, alongside `hover`, since it depends on `cursorBus`'s
+   *  window-relative offset rather than `hover.tUs` (this chart's own
+   *  absolute-µs reading), and can legitimately be `null` (no row) while
+   *  `hover` is not (the offset ran past the primary window's own end --
+   *  decision 55's "renders absence"). */
+  const [card, setCard] = useState<{ pixelX: number; row: CursorCardRow } | null>(null);
   const [liveViewport, setLiveViewport] = useState<Viewport>(viewport);
   const [readoutState, setReadoutState] = useState<ReadoutPanelState>(null);
   // The pending drag-rectangle selection (decision 56, wired per-preset by
@@ -741,13 +772,35 @@ export default function ChartCell({
       // converts its result to an offset from the primary window's own
       // start before it reaches the bus (`cursorBus.ts`'s own doc comment).
       const verb = cursorFollowPolicy("hover", cursorTUs !== null, cursorTUs !== null ? Number(cursorTUs) : null, pixelX, liveViewport);
+      const offsetUs = verb.kind === "publish" && verb.tUs !== null ? verb.tUs - primaryWindowSpan.startUs : null;
       if (verb.kind === "publish") cursorBus.publish(verb.tUs === null ? null : verb.tUs - primaryWindowSpan.startUs);
 
       const geometry: HoverGeometry = { originPx: 0, pixelWidth: width };
       const reading = hoverAt(tiles, pixelX, geometry);
       setHover(reading === null ? null : { pixelX, ...reading });
+
+      // Cursor value card (Task 7, decision 55) -- built from the same
+      // `reading` this cell just decoded for its own hover tooltip (no
+      // second tile read), at the same window-relative `offsetUs` the
+      // hover-follow line just published. `null` while unpinned and off
+      // this chart's own plotted area (`offsetUs === null`) hides the
+      // card, matching the hover tooltip's own `hover === null` rule.
+      const row =
+        offsetUs === null
+          ? null
+          : cursorCardRow(
+              offsetUs,
+              primaryWindowSpan,
+              reading,
+              channelLabel ?? channelId,
+              channelUnit ?? "",
+              primaryWindowColour ?? "--chart-1",
+              windowCount ?? 1,
+              primaryWindowLabel ?? ""
+            );
+      setCard(row === null ? null : { pixelX, row });
     },
-    [tiles, width, liveViewport, applyViewport, cursorTUs, cursorBus]
+    [tiles, width, liveViewport, applyViewport, cursorTUs, cursorBus, channelId, channelLabel, channelUnit, windowCount, primaryWindowLabel, primaryWindowColour]
   );
 
   const handlePointerUp = useCallback(
@@ -810,6 +863,7 @@ export default function ChartCell({
         if (dragState.action === "zoom-region") setSelectionRectPx(null);
       }
       setHover(null);
+      setCard(null);
       // The pointer has left the chart — the next viewport-settle dispatch
       // must skip the cursor-readout request entirely rather than reading a
       // stale position, and the readout panel itself must clear immediately
@@ -1005,6 +1059,7 @@ export default function ChartCell({
             {`t=${Number(hover.tUs) / 1_000_000}s min=${hover.min} max=${hover.max} mean=${hover.mean}`}
           </div>
         )}
+        {card !== null && <CursorCard pixelX={card.pixelX} row={card.row} />}
         {selectionRectPx !== null && (
           <div
             className="chart-cell-selection"

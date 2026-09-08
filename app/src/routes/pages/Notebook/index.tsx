@@ -1989,6 +1989,10 @@ export default function NotebookPage() {
                   }
                 }}
                 fetchCursorReadout={(sessId, channels, tUs) => cursorReadout(sessId, channels, tUs)}
+                channelUnit={sessionDetail?.channels.find((c) => c.channel_id === channel.channelId)?.unit}
+                windowCount={windows.length}
+                primaryWindowLabel={primaryWindow !== null ? windowDescriptorFor(primaryWindow, sessionDetail).label : undefined}
+                primaryWindowColour={primaryWindow?.colour}
                 sendTransform={(id, translateXPx, scaleX) => sandboxHostRef.current?.sendTransform(id, translateXPx, scaleX)}
                 sendLayout={sendLayout}
                 cursorTUs={sharedCursorTUs}
