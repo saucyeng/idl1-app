@@ -39,6 +39,26 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 
 ### Added
 
+- **The maths graph wired into `Notebook/index.tsx` (2026-09-08, w32-maths
+  Task 10, spec exists — C2 §3.7, no spec change needed).** A "Graph"/
+  "Cells" toggle switches the main content area between the existing cell
+  list and a new `GraphCanvas`, both views of the same open workbook
+  (decision 40) — never a second document. A card click calls the new
+  `GraphCanvas` `onSelectCell` prop, which opens the node's owning cell in
+  `EditorPanes` through the existing `selectedCellId` mechanism (no new
+  editor path). `onCommit` dispatches `workbookState.ts`'s new
+  `editFrontMatter` action: updates `markdown`/`cells` and sets the new
+  `frontMatterDirty` flag (which `WorkbookBar`'s `dirty` prop now also
+  watches) **without** touching `dirtyCellIds` — a moved node must not
+  re-arm the debounced re-eval effect, since nothing in the `graph` key
+  feeds a value (§3.7.1's advisory guarantee). `dirtyCellIds` empty must
+  keep meaning "no re-eval pending", not "nothing to save", which is why
+  this is a second flag rather than folded into the first. New pure
+  `model/graphView.ts` derives `GraphCanvas`'s `sessionDetails` (keyed by
+  session id, from the page's per-window `SessionDetail` map) and
+  `outputs` (the primary window's `CellOutput[]`, `[]` if unresolved or
+  the window's whole call failed) — kept out of the 2000-line component so
+  the derivation itself is unit-tested.
 - **`app/src/routes/pages/Notebook/model/graphEdits.ts`: every graph
   mutation as pure text-in/text-out over `replaceCellBody` (2026-09-08,
   w32-maths Task 9, spec exists — C2 §3.7.3, no spec change needed).**

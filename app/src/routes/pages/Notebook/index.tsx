@@ -38,6 +38,7 @@ import JsCellFrame, { DEFAULT_JS_CELL_HEIGHT_PX } from "./components/JsCellFrame
 import PropertiesForm from "./components/PropertiesForm";
 import type { PropertiesFormChannelOption, PropertiesFormLapOption } from "./components/PropertiesForm.types";
 import WorkbookBar from "./components/WorkbookBar";
+import GraphCanvas from "./graph/GraphCanvas";
 import { combineSpectrumWindows, type SandboxCell, type SpectrumWindowSeries, type WindowDescriptor } from "./host/protocol";
 import { SandboxHost } from "./host/SandboxHost";
 import { PING_INTERVAL_MS } from "./host/watchdog";
@@ -62,6 +63,7 @@ import { resolveEditorHost } from "./model/editorHost";
 import { runFft, type FftAction, type FftDeps } from "./model/fftDriver";
 import { exceedsBinCap, frequencyAxisHz } from "./model/fftRequest";
 import { diffFunctionCatalog, type FunctionCatalogMismatch } from "./model/functionCatalog";
+import { primaryWindowOutputs, sessionDetailsBySessionId } from "./model/graphView";
 import { bindingFor, bindingIdentity, unresolvedChannelId, type FftCellBinding } from "./model/jsCellBinding";
 import { jsCellNote, primaryWindowNote } from "./model/jsCellNote";
 import { readNotebookPrefs, writeNotebookPrefs } from "./model/notebookPrefs";
@@ -342,6 +344,10 @@ export default function NotebookPage() {
   const [inlineResults, setInlineResults] = useState<Map<string, string>>(new Map());
   const [spanErrors, setSpanErrors] = useState<Map<string, string>>(new Map());
   const [selectedCellId, setSelectedCellId] = useState<string | null>(null);
+  /** Whether the maths graph canvas (Task 10) is showing in place of the
+   *  cell list -- a view toggle, not a second document; both read the same
+   *  `state.markdown` (decision 40). */
+  const [graphViewOpen, setGraphViewOpen] = useState(false);
   /** One entry per window this page has resolved a `SessionDetail` for
    *  (`model/sessionSpanDriver.ts`'s `runSessionSpan`, called once per
    *  selected window -- R127's accepted item), keyed by `windowKey`. An
@@ -1859,6 +1865,40 @@ export default function NotebookPage() {
         />
   );
 
+  /**
+   * The maths graph canvas (Task 10, C2 §3.7): a view of the same open
+   * workbook `cellListElement` renders, not a second document (decision
+   * 40). `graphOutputs`/`graphSessionDetails` derive from state this
+   * component already holds via the pure `model/graphView.ts` helpers, so
+   * the derivation itself stays unit-tested rather than living inline
+   * here. A card click opens the node's owning cell in `EditorPanes`
+   * through the existing `selectedCellId` mechanism -- no new editor path.
+   * `onCommit` dispatches `editFrontMatter`, which marks the document
+   * dirty for save without touching `dirtyCellIds` (no re-evaluation for a
+   * move, §3.7.1's advisory guarantee).
+   */
+  // Memoized on identity, not recomputed every render: `GraphCanvas.tsx`
+  // itself `useMemo`s its heavy derivations (`buildGraphModel`,
+  // `computeNodeStatuses`, ...) keyed on these same props' identity, so a
+  // fresh array/map here on every render (this page re-renders often, e.g.
+  // every cursor tick) would silently defeat that memoization.
+  const graphOutputs = useMemo(() => primaryWindowOutputs(state.windows, primaryWindow), [state.windows, primaryWindow]);
+  const graphSessionDetails = useMemo(() => sessionDetailsBySessionId(windows, sessionDetailsByWindow), [windows, sessionDetailsByWindow]);
+  const graphCanvasElement =
+    state.markdown !== null ? (
+      <GraphCanvas
+        markdown={state.markdown}
+        outputs={graphOutputs}
+        selectedWindows={windows.map(toWireWindow)}
+        windows={state.windows}
+        sessionDetails={graphSessionDetails}
+        onCommit={(nextMarkdown) => dispatch({ type: "editFrontMatter", markdown: nextMarkdown })}
+        onSelectCell={(cellId) => setSelectedCellId(cellId)}
+      />
+    ) : null;
+
+  const mainContentElement = graphViewOpen && graphCanvasElement !== null ? graphCanvasElement : cellListElement;
+
   return (
     <div className="flex h-full flex-col">
       <PlaybackTransport
@@ -1918,7 +1958,7 @@ export default function NotebookPage() {
               entry={entry}
               rescanning={rescanning}
               creating={creating}
-              dirty={state.dirtyCellIds.size > 0}
+              dirty={state.dirtyCellIds.size > 0 || state.frontMatterDirty}
               error={workbookBarError}
               lastRebuild={lastRebuild}
               register={register}
@@ -1928,6 +1968,9 @@ export default function NotebookPage() {
               onRegisterChange={handleRegisterChange}
             />
           )}
+          <button type="button" onClick={() => setGraphViewOpen((prev) => !prev)} aria-pressed={graphViewOpen}>
+            {graphViewOpen ? "Cells" : "Graph"}
+          </button>
           <button type="button" onClick={() => void handleSave()} disabled={saveUnavailable || saveFlowState.status === "saving"}>
             {saveFlowState.status === "saving" ? "Saving…" : "Save"}
           </button>
@@ -1940,7 +1983,7 @@ export default function NotebookPage() {
         <ResizablePanelGroup orientation="horizontal" className="min-h-0 flex-1">
           <ResizablePanel id="notebook-editor-output" defaultSize={65} minSize={30}>
             <div className="h-full overflow-auto p-4" data-register={register} style={registerContainerStyle}>
-              {cellListElement}
+              {mainContentElement}
             </div>
           </ResizablePanel>
           {!editorIsPortalHosted && editorPanesElement !== null && (
@@ -1955,13 +1998,13 @@ export default function NotebookPage() {
       )}
       {state.handle !== null && placement === "inline" && (
         <div className="min-h-0 flex-1 overflow-auto p-4" data-register={register} style={registerContainerStyle}>
-          {cellListElement}
+          {mainContentElement}
         </div>
       )}
       {state.handle !== null && placement === "sheet" && (
         <>
           <div className="min-h-0 flex-1 overflow-auto p-4" data-register={register} style={registerContainerStyle}>
-            {cellListElement}
+            {mainContentElement}
           </div>
           <BrandSheet
             open={!editorIsPortalHosted && openCellId !== null && openCell?.kind === "js"}

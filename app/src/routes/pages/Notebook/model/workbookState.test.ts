@@ -142,6 +142,33 @@ describe("workbookReducer", () => {
     expect(next.hash).toBe("abc123");
   });
 
+  it("workbookReducer — a front-matter-only edit — updates the markdown/cells and sets frontMatterDirty, touching no dirtyCellIds", () => {
+    const markdown = "---\nid: x\nname: y\ngraph:\n  nodes:\n    a: [1, 2]\n---\n```js id=aaaaaaaa\n1\n```\n";
+
+    const next = workbookReducer(initialWorkbookState, { type: "editFrontMatter", markdown });
+
+    expect(next.markdown).toBe(markdown);
+    expect(next.cells).toHaveLength(1);
+    expect(next.frontMatterDirty).toBe(true);
+    expect(next.dirtyCellIds.size).toBe(0);
+  });
+
+  it("workbookReducer — a save result after a front-matter-only edit — clears frontMatterDirty too", () => {
+    const dirty = workbookReducer(initialWorkbookState, { type: "editFrontMatter", markdown: "---\nid: x\nname: y\n---\n" });
+
+    const next = workbookReducer(dirty, { type: "saveResult", hash: "abc123" });
+
+    expect(next.frontMatterDirty).toBe(false);
+  });
+
+  it("workbookReducer — a fresh markdownReady read — clears a pending frontMatterDirty", () => {
+    const dirty = workbookReducer(initialWorkbookState, { type: "editFrontMatter", markdown: "---\nid: x\nname: y\n---\n" });
+
+    const next = workbookReducer(dirty, { type: "markdownReady", markdown: "---\nid: x\nname: y\n---\n", hash: "h1" });
+
+    expect(next.frontMatterDirty).toBe(false);
+  });
+
   it("workbookReducer — a watch event naming two cells — marks exactly those two stale", () => {
     const next = workbookReducer(initialWorkbookState, {
       type: "watchEvent",

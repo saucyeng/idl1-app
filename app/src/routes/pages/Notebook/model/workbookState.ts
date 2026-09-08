@@ -109,6 +109,13 @@ export interface WorkbookState {
   windows: Map<string, WindowEvalState>;
   /** Cell ids that need re-evaluation: either edited locally (`editCell`) or named by a `watchWorkbook` event (`watchEvent`). Cleared wholesale on a successful save. */
   dirtyCellIds: Set<string>;
+  /** Set by `editFrontMatter` (the maths graph's `graph` key, C2 §3.7.1) —
+   *  a document change that needs saving but never re-evaluating, so it is
+   *  tracked separately from {@link dirtyCellIds} rather than folded into
+   *  it (an empty `dirtyCellIds` must keep meaning "no re-eval pending",
+   *  not "nothing to save"). Cleared on a successful save, same as
+   *  `dirtyCellIds`. */
+  frontMatterDirty: boolean;
   /** True while `saveFlow.ts`'s state is `"conflict"` (Task 14, R44) -- `Notebook/index.tsx` renders `ConflictBanner` while this is true. Cleared by a fresh read (`markdownReady`, i.e. "Reload from disk") or a subsequent successful save (`saveResult`, i.e. "Overwrite" landing). */
   conflict: boolean;
 }
@@ -123,6 +130,7 @@ export const initialWorkbookState: WorkbookState = {
   cells: [],
   windows: new Map(),
   dirtyCellIds: new Set(),
+  frontMatterDirty: false,
   conflict: false,
 };
 
@@ -162,6 +170,19 @@ export type WorkbookAction =
    *  present, `cells` is re-derived from it the same way `markdownReady`
    *  does, so a cell's byte ranges stay correct after the edit. */
   | { type: "editCell"; cellId: string; markdown?: string }
+  /** A front-matter-only edit — today, the maths graph's `graph` key
+   *  (C2 §3.7.1, `model/graphLayout.ts`'s `writeGraphLayout`) — landed by a
+   *  gesture that touches no cell (a drag settle, a canvas-only rename
+   *  half). `markdown` is the whole document's new text, same convention
+   *  as `editCell`'s. Deliberately does **not** touch `dirtyCellIds`: a
+   *  moved node is not a reason to re-evaluate (§3.7.1's advisory
+   *  guarantee — nothing in `graph` feeds a value), so this must not
+   *  re-arm the debounced re-eval effect the way `editCell` does. It marks
+   *  {@link WorkbookState.frontMatterDirty} instead — a separate flag,
+   *  since `dirtyCellIds` empty must not read as "nothing to save" the way
+   *  it correctly does for `editCell` (`Notebook/index.tsx`'s `WorkbookBar`
+   *  `dirty` prop watches both). */
+  | { type: "editFrontMatter"; markdown: string }
   | { type: "saveResult"; hash: string }
   /** `saveFlow.ts`'s state reached `"conflict"` (Task 14, R44) -- `Notebook/index.tsx` should now render `ConflictBanner`. */
   | { type: "saveConflict" }
@@ -192,7 +213,9 @@ export function workbookReducer(state: WorkbookState, action: WorkbookAction): W
         markdownError: null,
         cells: scanCells(action.markdown).cells,
         // A fresh read is "Reload from disk" landing (or the first open) --
-        // either way any prior conflict is now addressed.
+        // either way any prior conflict, and any front-matter-only edit
+        // that hadn't been saved, is now moot (the reload replaced it).
+        frontMatterDirty: false,
         conflict: false,
       };
 
@@ -240,8 +263,11 @@ export function workbookReducer(state: WorkbookState, action: WorkbookAction): W
       return { ...state, dirtyCellIds, markdown: action.markdown, cells: scanCells(action.markdown).cells };
     }
 
+    case "editFrontMatter":
+      return { ...state, markdown: action.markdown, cells: scanCells(action.markdown).cells, frontMatterDirty: true };
+
     case "saveResult":
-      return { ...state, hash: action.hash, dirtyCellIds: new Set(), conflict: false };
+      return { ...state, hash: action.hash, dirtyCellIds: new Set(), frontMatterDirty: false, conflict: false };
 
     case "saveConflict":
       return { ...state, conflict: true };

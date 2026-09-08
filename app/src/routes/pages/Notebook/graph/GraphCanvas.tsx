@@ -1,5 +1,17 @@
 import { useCallback, useEffect, useMemo } from "react";
-import { Background, Controls, MiniMap, ReactFlow, useEdgesState, useNodesState, type Edge, type Node, type NodeTypes, type OnNodeDrag } from "@xyflow/react";
+import {
+  Background,
+  Controls,
+  MiniMap,
+  ReactFlow,
+  useEdgesState,
+  useNodesState,
+  type Edge,
+  type Node,
+  type NodeMouseHandler,
+  type NodeTypes,
+  type OnNodeDrag,
+} from "@xyflow/react";
 // Bundled from node_modules, like every other asset (offline-first: no CDN,
 // CLAUDE.md §3) — not a network fetch.
 import "@xyflow/react/dist/style.css";
@@ -47,6 +59,12 @@ export interface GraphCanvasProps {
    *  stop, never while dragging). Not fired for a `"channel"` node (no
    *  stored-position home, §3.7.1) or a no-op drag. */
   onCommit: (markdown: string) => void;
+  /** Fired when a card is clicked — the caller opens that node's owning
+   *  cell in `EditorPanes` (Task 10's own "card click opens EditorPanes in
+   *  the properties column", reusing `Notebook/index.tsx`'s existing
+   *  `selectedCellId` mechanism, not a new one). Not fired for a
+   *  `"channel"` node (it has no owning cell). */
+  onSelectCell: (cellId: string) => void;
 }
 
 /** One node's `CellDefResult.value`, or `null` — looked up from `outputs`
@@ -67,7 +85,7 @@ function valueFor(node: GraphNode, outputs: CellOutput[]) {
  * {@link commitDrag} and hands the caller the updated markdown, matching
  * §3.7.1's "no IPC on the interaction path".
  */
-export default function GraphCanvas({ markdown, outputs, selectedWindows, windows, sessionDetails, onCommit }: GraphCanvasProps) {
+export default function GraphCanvas({ markdown, outputs, selectedWindows, windows, sessionDetails, onCommit, onSelectCell }: GraphCanvasProps) {
   const model = useMemo(() => buildGraphModel(markdown, outputs), [markdown, outputs]);
   const layout = useMemo(() => readGraphLayout(markdown), [markdown]);
   const positions = useMemo(() => computeAutoLayoutPositions(model, layout), [model, layout]);
@@ -110,6 +128,14 @@ export default function GraphCanvas({ markdown, outputs, selectedWindows, window
     [markdown, onCommit]
   );
 
+  const handleNodeClick = useCallback<NodeMouseHandler<Node<MathNodeData, "mathNode">>>(
+    (_event, clickedNode) => {
+      const cellId = clickedNode.data.graphNode.cellId;
+      if (cellId !== null) onSelectCell(cellId);
+    },
+    [onSelectCell]
+  );
+
   return (
     <div className="h-full w-full bg-bg">
       <ReactFlow
@@ -119,6 +145,7 @@ export default function GraphCanvas({ markdown, outputs, selectedWindows, window
         onNodesChange={onNodesChange}
         onEdgesChange={onEdgesChange}
         onNodeDragStop={handleNodeDragStop}
+        onNodeClick={handleNodeClick}
         fitView
       >
         <Background />
