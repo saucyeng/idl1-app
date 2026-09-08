@@ -6679,3 +6679,59 @@ pinch.
 **Cost if wrong.** (1) is the expensive one: the app's most common authoring
 mistake — a missing pair of brackets — presents as "charts don't work",
 which is exactly the conclusion Isaac reached about the whole application.
+
+## 2026-09-08 — R151: the ten scipy-alignment questions, all accepted
+
+Answering `runs/2026-09-08/scipy-alignment-plan.md` §Open. Plan accepted;
+the 13-task order stands. Every recommendation is adopted — the reasoning
+below is for the ones that carry a principle, not a restatement of the list.
+
+**1. `periodogram` normalisation — accepted, and this is the important
+one.** scipy's `density`/`spectrum` scalings, **plus** a deliberately-named
+`raw_magnitude` for what the engine computes today, with the migration
+pinning existing calls to `raw_magnitude`. That means **no existing
+workbook's numbers move**. A rename that silently rescales every spectrum a
+user has already looked at would be far worse than the false friend it
+fixes: the workbook still opens, the chart still draws, and the values are
+different. Adopting scipy's names must never change an existing result — it
+changes what things are *called*, and where behaviour genuinely differs it
+gets its own name.
+
+**2. The chart surface spells the same un-normalised value `"magnitude"`** —
+rename the option value on both surfaces now, defer wider chart-parameter
+alignment. Accepted: the two surfaces must not disagree about what one word
+means, which is the whole reason R146 exists.
+
+**3. `differentiate` keeps its name; a true central `gradient` is added
+alongside.** Accepted. Two honest names beat one borrowed one.
+
+**4–6. `lap_delta_time`/`lap_delta_dist`, `angle_between`,
+`cumulative_trapezoid` with `cumtrapz` as a permanent second spelling** —
+all accepted. `lap_delta_*` says what it measures *and* its scope;
+`angle_between` cannot be confused with `numpy.angle`; scipy itself carries
+both trapezoid spellings, so matching that is free.
+
+**7. One versioning axis: front-matter `version: 4`.** Accepted. A second
+axis would need its own migration story forever.
+
+**8. Do `hilbert`→`envelope` and `resample`'s parameterisation now**, defer
+`butter` and `round` with §3.8 notes. Accepted, and the sequencing insight
+is worth naming: both are `NotImplemented`, so renaming them costs **zero
+migration** — rename what has no users before it has users. `butter` and
+`round` have both.
+
+**9. Rewrite on save only; a passive notice on open.** Accepted. The app
+must not rewrite a file the user did not ask to save — opening a workbook is
+not consent to modify it, and a background rewrite would also make every
+sync peer see a change nobody made.
+
+**10. An old name in a `version: 4` document is a typed error naming its
+replacement — never silently accepted.** Accepted; that is what ends a
+deprecation rather than extending it forever.
+
+**Sequencing note.** The plan's task 1 (the two reachable panics) is already
+in flight in the `engine-fixes` lane. The scipy lane starts at its task 2 and
+must not duplicate it.
+
+**Cost if wrong.** (1) decides whether this work is safe at all. Every other
+item is a name; that one is a number.
