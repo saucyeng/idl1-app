@@ -48,6 +48,15 @@
   never under `<data>`), minted once on first read; a corrupt or unreadable
   `identity.json` is a typed `sync` error, never a silently re-minted id
   (which would orphan every existing pairing).
+- 2026-09-07: S1 selection lane (ruling R117) — §3.4 gains
+  `eval_workbook_v2(id, windows)` and `fetch_host_channel_v2(workbook_id,
+  window, def_name, budget)`; §3.6 gains `fetch_fft_v2(window, channel,
+  params, averaging)`. All three take C1 §6.1's `Window` (`{ session_id,
+  span, colour }`) in place of a `session_id`/`lap`/`lap_context` pair.
+  `eval_workbook`, `fetch_host_channel` and `fetch_fft` are deprecated as of
+  this revision and removed in the next (§5); `fetch_tile`,
+  `cursor_readout`, `fetch_raster`/`fetch_raster_meta` and the session-entity
+  CRUD commands are unchanged.
 
 Consumes: design doc §4 (IPC, data path for a chart, the reactive DAG), §6
 (interaction rules), §9 row C3, §10 (lanes); Task 5's M0 smoke commands
@@ -932,6 +941,43 @@ Errors (command-level): `not_found`, `io`, `internal`,
 post-sign (2026-09-05, lead ruling R59)* — `invalid_argument` when a named
 lap in `lap_context` does not exist on `session_id`, with `detail { lap }`.
 
+**`eval_workbook_v2(id: string, windows: Window[])`**
+*Added post-sign (2026-09-07, S1 selection lane, ruling R117).* Replaces
+`session_id` + `lap_context` with an ordered list of `Window` (C1 §6.1) —
+R111 forbids selection having two live representations in the app, so this
+is a `_v2` rename rather than an additive argument (§5, ruling R117 item 3).
+```ts
+interface Window {
+  session_id: string;
+  span: { kind: "session" }
+      | { kind: "lap"; lap_number: number }        // 1-based, matches §3.2 LapSummary.lap_number
+      | { kind: "range"; t0_us: number; t1_us: number }; // i64, session-relative, t0_us < t1_us
+  colour: string;   // a `--chart-1` … `--chart-8` token name, never a hex literal (C1 §6.1)
+}
+```
+Evaluates workbook `id` once per entry of `windows`, in order, returning one
+`CellOutput[]` per window in the same order. `windows: []` evaluates once
+against no session — byte-identical to `eval_workbook(id, null, null)`, the
+"nothing selected" result (decision 48), and returns `[[…]]` (one element,
+not zero) so a caller always has a result array to render.
+
+Two windows over the same `session_id` with different spans are legal and
+are the normal case — lap-to-lap comparison (C1 §6.1, ruling R117 item 2);
+uniqueness is on the whole window, never on `session_id`.
+
+Return: `CellOutput[][]` (§3.4 above), one array per `windows` entry, same
+order.
+
+Errors are per call, not per window: an unresolvable `session_id`
+(`not_found`) or an unknown lap number (`invalid_argument`, `detail: {
+"lap": n }`) fails the whole call, naming the offending window's index in
+`detail: { "window": i }`. Per-cell evaluation errors keep their existing
+home in `CellOutput.errors`.
+
+**`eval_workbook(id, session_id, lap_context)` is deprecated** as of this
+revision (§5) and is removed in the next. It stays registered and behaves
+exactly as before. No TypeScript caller uses it after this revision.
+
 **`save_workbook(id: string, markdown: string, based_on_hash: string | null)`**
 *`based_on_hash` added post-sign (2026-09-04, lead ruling R44).* C4 §4 steps
 3-4 mandate an optimistic concurrency check on `workbooks/*.idl1wb`, and
@@ -1005,6 +1051,24 @@ so `length` is always ≤ `budget`.
 Errors: `not_found` (unknown workbook or definition), `invalid_argument`
 (`budget` outside range), the `math_*` kinds when the definition itself
 fails to evaluate, `io`, `internal`.
+
+**`fetch_host_channel_v2(workbook_id: string, window: Window | null, def_name: string, budget: number)`**
+*Added post-sign (2026-09-07, S1 selection lane, ruling R117).* Replaces
+`session_id` with a single `Window | null` (§3.4's `eval_workbook_v2`
+shape, C1 §6.1); `null` reproduces today's session-less behaviour. Same
+binary layout, `budget` validation and error set as `fetch_host_channel`
+above.
+
+This closes a live gap: `fetch_host_channel`'s backend
+(`fetch_host_channel_via`) passes `None` for the lap selection today, so a
+host channel is evaluated session-wide while the matching `eval_workbook`
+result is evaluated lap-aware — the two disagree whenever a lap is
+selected (ruling R117 item 7). `fetch_host_channel_v2` uses the same
+per-window resolution `eval_workbook_v2` uses, so the two always agree.
+
+**`fetch_host_channel(workbook_id, session_id, def_name, budget)` is
+deprecated** as of this revision (§5) and is removed in the next. It stays
+registered and behaves exactly as before, missing lap context and all.
 
 **Host-channel byte path — open item, owner L5 (added post-sign,
 2026-09-04, lead ruling R21).** `CellDefResult.value` above and C2 §5.1's
@@ -1300,6 +1364,37 @@ short/degenerate to derive a sample rate), `io`, `internal`.
   t_us/sample count, not the whole channel's, closing a gap where a
   1-2-sample degenerate lap window bypassed both guards (ruling R85, L2b
   Task 6 fix).
+
+**`fetch_fft_v2(window: Window, channel: string, params: SpectrogramParams, averaging: "none" | "mean" | "max" | "median")`**
+*Added post-sign (2026-09-07, S1 selection lane, ruling R117).* Replaces
+`session_id` + `lap: number | null` with a single `Window` (§3.4's
+`eval_workbook_v2` shape, C1 §6.1): `lap: null` becomes `{ kind: "session"
+}`, `lap: n` becomes `{ kind: "lap", lap_number: n }`, and `{ kind: "range"
+}` makes an FFT over a dragged range expressible for the first time. Same
+binary layout (`IDLF`, version 1), the same `"none"`-averaging
+exactly-one-segment rule, and the same R76 guards as `fetch_fft` above —
+ruling R85's order stands: slice to the window first, then apply R76's
+guards to the window's own samples.
+
+Errors: `not_found`, `invalid_argument` (bad `params`, an unresolvable
+window span, a window that fails the `"none"`-averaging segment check, or a
+window too short/degenerate to derive a sample rate), `io`, `internal`.
+
+**`fetch_fft(session_id, channel, lap, params, averaging)` is deprecated**
+as of this revision (§5) and is removed in the next. It stays registered
+and behaves exactly as before.
+
+**Unchanged commands, stated so no lane guesses (ruling R117).**
+`fetch_tile` (§3.5) stays session-scoped: tiles are a resolution pyramid
+over the whole session and the host clips by viewport — putting a window
+in the tile key would fragment the cache for no gain. `cursor_readout`
+(§3.7) stays `(session_id, channels, t_us)`: a cursor is a point, and the
+caller already knows which window it is in. `fetch_raster` /
+`fetch_raster_meta` (above) keep no window in **this** lane — the
+spectrogram's own time axis is a separate question, deferred to the T lane,
+and noted here so it is not silently assumed done. `get_session`,
+`list_laps`, `save_session_metadata`, `delete_session`, `rescan_tracks`
+(§3.2) are session-entity CRUD and are untouched.
 
 ### 3.7 Cursor (L3)
 
