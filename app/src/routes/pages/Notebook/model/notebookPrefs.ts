@@ -19,6 +19,16 @@
 export interface NotebookPrefs {
   /** `workbook_id` of the last workbook opened here, or `null`. */
   last_workbook_id: string | null;
+  /**
+   * `InputMapPreset.id` of the last-selected gesture input-map preset
+   * (ruling R137, `interaction/inputMap.ts`), or `null` before any choice
+   * has been made — the caller falls back to a default preset id in that
+   * case, never a guessed one (`findInputMapPreset` itself returns `null`
+   * for an id from a build that has since dropped that preset, which reads
+   * the same way). A renderer-only preference (CLAUDE.md §3): never part of
+   * a workbook, never synced — this machine's own choice.
+   */
+  input_map_preset_id: string | null;
 }
 
 /** `idl1.<area>.<thing>.v<n>` — the same shape `Settings`'s
@@ -27,17 +37,18 @@ const STORAGE_KEY = "idl1.notebook.ui.v1";
 
 /** `NotebookPrefs`'s value when nothing has been stored yet, or storage is
  *  unavailable/unparsable. */
-const DEFAULT_PREFS: NotebookPrefs = { last_workbook_id: null };
+const DEFAULT_PREFS: NotebookPrefs = { last_workbook_id: null, input_map_preset_id: null };
 
-/** `true` when `value` has the shape of a `NotebookPrefs` document. */
+/** `true` when `value` has the shape of a `NotebookPrefs` document. `input_map_preset_id`
+ *  is read as `null` when absent (a document written before this field existed)
+ *  rather than rejecting the whole document — the same forward-compatible
+ *  reading `last_workbook_id` already gets. */
 function isNotebookPrefs(value: unknown): value is NotebookPrefs {
-  return (
-    typeof value === "object" &&
-    value !== null &&
-    "last_workbook_id" in value &&
-    (typeof (value as Record<string, unknown>).last_workbook_id === "string" ||
-      (value as Record<string, unknown>).last_workbook_id === null)
-  );
+  if (typeof value !== "object" || value === null || !("last_workbook_id" in value)) return false;
+  const record = value as Record<string, unknown>;
+  const lastWorkbookIdOk = typeof record.last_workbook_id === "string" || record.last_workbook_id === null;
+  const presetIdOk = !("input_map_preset_id" in record) || typeof record.input_map_preset_id === "string" || record.input_map_preset_id === null;
+  return lastWorkbookIdOk && presetIdOk;
 }
 
 /** Reads this machine's Notebook prefs. Never throws: a WebView that
@@ -48,7 +59,12 @@ export function readNotebookPrefs(): NotebookPrefs {
     const raw = window.localStorage.getItem(STORAGE_KEY);
     if (raw === null) return DEFAULT_PREFS;
     const parsed: unknown = JSON.parse(raw);
-    return isNotebookPrefs(parsed) ? parsed : DEFAULT_PREFS;
+    if (!isNotebookPrefs(parsed)) return DEFAULT_PREFS;
+    // A document written before `input_map_preset_id` existed has no such
+    // key at all -- normalized to `null` here rather than left `undefined`,
+    // so every reader downstream only ever sees the two states this
+    // module's own doc comment promises.
+    return { last_workbook_id: parsed.last_workbook_id, input_map_preset_id: parsed.input_map_preset_id ?? null };
   } catch {
     return DEFAULT_PREFS;
   }

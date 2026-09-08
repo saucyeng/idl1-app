@@ -56,6 +56,7 @@ import {
 import { CellRunSequencer } from "./model/cellRunSequencer";
 import { isCodeVisible, toggleCode } from "./model/codeVisibility";
 import { createCursorBus } from "./interaction/cursorBus";
+import { BASIC_MOUSE_PRESET, findInputMapPreset, INPUT_MAP_PRESETS, type InputMapPreset } from "./interaction/inputMap";
 import PlaybackTransport from "./interaction/PlaybackTransport";
 import { tick, togglePlay, type PlaybackState } from "./interaction/playback";
 import { editorPlacement, outputIsReadOnly } from "./model/editorPlacement";
@@ -480,6 +481,30 @@ export default function NotebookPage() {
   // `sharedCursorTUs` stays the single source of truth for everything else
   // this page already reads it for (playback seed, the readout settle).
   const cursorBusRef = useRef(createCursorBus());
+
+  // The worksheet's selected gesture input-map preset (ruling R137,
+  // `interaction/inputMap.ts`; Task 5) -- plain React state, not a ref: a
+  // preset switch is a deliberate, infrequent user action (a picker
+  // selection), not an interaction-rate event, so re-rendering every
+  // mounted `ChartCell` with the newly chosen preset object is exactly how
+  // R137's "takes effect immediately, with no reload" is satisfied -- the
+  // very next gesture on any chart reads the new object, no extra
+  // plumbing. Initialized once from this machine's persisted choice
+  // (`readNotebookPrefs`); `BASIC_MOUSE_PRESET` is the fallback default
+  // (documented judgment call -- no preset is named as the default in R137
+  // or decision 56, and a single-wheel mouse with no modifier gestures is
+  // the least assumption to make about the machine this build first runs
+  // on).
+  const [inputMapPreset, setInputMapPresetState] = useState<InputMapPreset>(
+    () => findInputMapPreset(readNotebookPrefs().input_map_preset_id ?? "") ?? BASIC_MOUSE_PRESET
+  );
+  /** Switches the active preset and persists the choice (R137: "stored in
+   *  user prefs") -- preserves `last_workbook_id` rather than clobbering it,
+   *  since `writeNotebookPrefs` replaces the whole document. */
+  function setInputMapPreset(preset: InputMapPreset): void {
+    setInputMapPresetState(preset);
+    writeNotebookPrefs({ ...readNotebookPrefs(), input_map_preset_id: preset.id });
+  }
 
   // The playback clock's `requestAnimationFrame` loop: local state only
   // (`setPlayback`), never IPC or `postMessage` itself (the effects rule's
@@ -1069,7 +1094,7 @@ export default function NotebookPage() {
     setWorkbookBarError(null);
     try {
       const handle = await createWorkbook(name);
-      writeNotebookPrefs({ last_workbook_id: handle.id });
+      writeNotebookPrefs({ ...readNotebookPrefs(), last_workbook_id: handle.id });
       setEntry({ kind: "single", workbookId: handle.id });
       try {
         const report = await rebuildCatalog();
@@ -1114,7 +1139,7 @@ export default function NotebookPage() {
    * came from the last list already held in `entry`.
    */
   function handleSelect(workbookId: string) {
-    writeNotebookPrefs({ last_workbook_id: workbookId });
+    writeNotebookPrefs({ ...readNotebookPrefs(), last_workbook_id: workbookId });
     setEntry((prev) => (prev !== null && prev.kind !== "empty" ? { ...prev, workbookId } : prev));
   }
 
@@ -1886,6 +1911,7 @@ export default function NotebookPage() {
                 onSetCursor={(tUs) => setManualCursorTUs(BigInt(Math.round(tUs)))}
                 onClearCursor={() => setManualCursorTUs(null)}
                 cursorBus={cursorBusRef.current}
+                inputMapPreset={inputMapPreset}
                 onToggleCode={() => setRevealedCells((prev) => toggleCode(prev, cellId))}
               />
             );
@@ -1927,6 +1953,28 @@ export default function NotebookPage() {
         disabled={!primeState.running}
         routeVisible={routeVisible}
       />
+      {/* R137's own point: "a few presets for me to try at runtime" -- a
+          plain `<select>`, no dialog, no reload. Changing it updates
+          `inputMapPreset` React state above, which every mounted
+          `ChartCell` receives as a prop on the very next render; the next
+          gesture on any chart reads the new table. */}
+      <label className="flex items-center gap-2 px-2 py-1 font-mono text-label-2 text-fg-dim">
+        Gesture input map
+        <select
+          value={inputMapPreset.id}
+          onChange={(event) => {
+            const next = findInputMapPreset(event.target.value);
+            if (next !== null) setInputMapPreset(next);
+          }}
+          className="rounded-[var(--radius-structural)] border border-rule bg-transparent px-1 py-0.5 text-fg"
+        >
+          {INPUT_MAP_PRESETS.map((preset) => (
+            <option key={preset.id} value={preset.id}>
+              {preset.label}
+            </option>
+          ))}
+        </select>
+      </label>
       {sandboxUnavailable && (
         <NoteBlock role="alert" className="border-brand-accent text-brand-accent flex items-center justify-between gap-3">
           <span>The cell runtime failed to start, so cell output is unavailable.</span>

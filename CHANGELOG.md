@@ -23,6 +23,35 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 
 ### Added
 
+- **`Notebook/interaction/gestureVerbs.ts` + `ChartCell.tsx` wiring: the
+  R137 input map is live (2026-09-08, w32-time Task 5, spec-during).**
+  `ChartCell`'s drag/wheel handlers now read `inputMap.ts`'s presets
+  through `dragActionFor`/`wheelActionFor` (via `classifyPointerDown`/
+  `classifyWheelEvent`) instead of a hard-coded shift-drag-pans branch —
+  decision 56's plain-drag-zooms-to-region default now actually ships, and
+  which drag/wheel-family gesture pans, zooms or does nothing is entirely
+  the active preset's call. A single `dragStateRef` (replacing the old
+  separate `draggingRef`/`rectDragRef`) records the `GestureAction` decided
+  once at pointerdown and replays it for the rest of that gesture, so a
+  mid-drag preset switch never changes an already-started gesture; a
+  release under `CLICK_MAX_MOVEMENT_PX` still pins/unpins the cursor
+  regardless of which action the drag was bound to. `horizontalWheelActionFor`
+  documents and resolves the one real ambiguity: a trackpad's two-finger
+  horizontal scroll and a physical second wheel notch (the MX Master's)
+  report the identical DOM `wheel` event, so a `deltaX`-dominant wheel event
+  tries `horizontalWheel` then falls back to `twoFingerPan` rather than the
+  handler ever branching on which preset is active. `Notebook/index.tsx`
+  holds the selected preset as React state (`inputMapPreset`, default
+  `BASIC_MOUSE_PRESET` — a documented judgment call, no default is named in
+  R137 or decision 56), initialized from and persisted through
+  `notebookPrefs.ts`'s new `input_map_preset_id` field, and exposes a plain
+  `<select>` next to the playback transport — switching it re-renders every
+  mounted `ChartCell` with the new preset object, so the very next gesture
+  reads it with no reload (R137: "takes effect immediately"). No sentinel:
+  `input_map_preset_id: null` means "no choice persisted yet", read the
+  same way `findInputMapPreset` already treats an unknown/dropped preset id
+  — the caller's own `?? BASIC_MOUSE_PRESET` fallback, never a value baked
+  into the prefs document.
 - **`Notebook/interaction/inputMap.ts`: pure gesture input-map presets
   (2026-09-08, w32-time, ruling R137, spec-during).** A table from pointer/
   wheel event kind (`drag`/`shiftDrag`/`wheel`/`horizontalWheel`/`pinch`/
@@ -31,12 +60,9 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
   `BASIC_MOUSE_PRESET`) and `findInputMapPreset`/`actionFor`. Decision 56's
   drag-to-zoom-region default holds in every preset (asserted in the test).
   R134 item 2's "shift-drag pans" is withdrawn by R137 and now lives only
-  in `BASIC_MOUSE_PRESET`'s own binding. **Not yet wired** — this lane's
-  Task 5 (`interaction/gestureVerbs.ts`, not dispatched in this batch) is
-  where `ChartCell`'s gesture handler starts reading a selected preset; this
-  commit lands the table ahead of that so adding a fourth preset later never
-  touches the handler (R137's own constraint). Renderer-only preference —
-  belongs in user prefs, never a workbook, never synced.
+  in `BASIC_MOUSE_PRESET`'s own binding. Wired to `ChartCell`'s gesture
+  handler by Task 5, above. Renderer-only preference — belongs in user
+  prefs, never a workbook, never synced.
 - **`Notebook/interaction/cursorFollowPolicy.ts` and `ChartCell.tsx` wiring:
   the pointer-following cursor (2026-09-08, w32-time Task 2, spec-during).**
   Direction-2 decision 51's first half — the cursor follows the pointer
