@@ -1,23 +1,32 @@
 /**
- * Pure request-building math for one FFT chart's `fetch_fft` call (L6 Task
- * 19; C3 §3.6, ruling R76, ruling R63 (3)). No React, no DOM -- and, beyond
- * `SpectrogramParams`/`FftAveraging`/`DecodedFft` as **types**, no import
- * from `app/src/ipc/**`, so this module carries no `@tauri-apps/api/core`
- * *value* import and stays free to be imported by the sandbox bundle too
- * (`app/src/ipc/rasters.ts` imports `invoke` as a value; a value import of
- * that module here would pull it along transitively).
+ * Pure request-building math for one FFT chart's `fetch_fft_v2` call (L6
+ * Task 19; C3 §3.6, ruling R76, ruling R63 (3); migrated from `fetch_fft`'s
+ * `lap: number | null` to `fetch_fft_v2`'s `window: Window`, C1 §6.1,
+ * ruling R117/R127). No React, no DOM -- and, beyond
+ * `SpectrogramParams`/`FftAveraging`/`DecodedFft`/`Window` as **types**, no
+ * import from `app/src/ipc/**`, so this module carries no
+ * `@tauri-apps/api/core` *value* import and stays free to be imported by
+ * the sandbox bundle too (`app/src/ipc/rasters.ts` and `ipc/workbook.ts`
+ * import `invoke` as a value; a value import of either module here would
+ * pull it along transitively).
  */
 import type { DecodedFft, FftAveraging, SpectrogramParams } from "../../../../ipc/rasters";
+import type { Window as SelectedWindow } from "../../../../ipc/workbook";
 
 /** The whole FFT request one chart cell makes, as a pure function of the
  *  channel and the user's segmentation choice (C3 §3.6). */
 export interface FftRequest {
   channelId: string;
-  /** The selected main lap (`AppState.selection.lapContext.mainLap`,
-   *  R83/L2b Task 6), or `null` for the whole channel -- C3 §3.6's FFT
-   *  grammar carries no per-mark lap token (R79), so this is always the
-   *  session-wide main-lap selection, never a per-cell choice. */
-  lap: number | null;
+  /** The window this spectrum is scoped to (C1 §6.1, ruling R117 --
+   *  replaces the pre-windows `lap: number | null`), or `null` for the
+   *  whole channel -- C3 §3.6's FFT grammar carries no per-mark lap or
+   *  window token (R79), so this is always the caller's own selected
+   *  window (`Notebook/model/jsCellBinding.ts`'s `bindingFor`'s `window`
+   *  parameter), never a value parsed from the cell's own code. A caller
+   *  wanting "the whole channel, no restriction" passes a window whose
+   *  `span` is `{ kind: "session" }`, or `null` when there is nothing
+   *  selected at all (mirrors the old `lap: null` default). */
+  window: SelectedWindow | null;
   params: SpectrogramParams;
   averaging: FftAveraging;
 }
@@ -36,18 +45,20 @@ export interface FftSegmentation {
 }
 
 /**
- * Builds one `fetch_fft` request from a channel and a segmentation choice
- * (R76, "sizing a single-segment request"). `sampleCount` is
+ * Builds one `fetch_fft_v2` request from a channel and a segmentation
+ * choice (R76, "sizing a single-segment request"). `sampleCount` is
  * `ChannelSummary.sample_count` -- the whole channel's sample count, used to
  * size the request's `window_size`/`hop_size` under `"none"` averaging and
- * to resolve `"all"` (`bindingForFft`) -- regardless of `lap`. `lap` (R83/L2b
- * Task 6) selects which window `fetch_fft` slices server-side: `null` for
- * the whole channel, or a 1-based lap number for that lap's recording-time
- * window (C3 §3.6); this function does not know the lap window's own sample
- * count, so a lap request's `window_size`/`hop_size` are still sized against
- * the whole channel here -- R76's segment/rate guards re-run server-side
- * against the sliced window's own `t_us` (ruling R85), which is what
- * actually governs whether the request succeeds.
+ * to resolve `"all"` (`bindingForFft`) -- regardless of `selectedWindow`.
+ * `selectedWindow` (C1 §6.1, ruling R117 -- replaces the pre-windows `lap:
+ * number | null`, R83/L2b Task 6) selects which window `fetch_fft_v2`
+ * slices server-side: `null` for the whole channel, or a resolved
+ * {@link SelectedWindow} for that window's own span (C3 §3.6); this
+ * function does not know the selected window's own sample count, so its
+ * request's `window_size`/`hop_size` are still sized against the whole
+ * channel here -- R76's segment/rate guards re-run server-side against the
+ * sliced window's own `t_us` (ruling R85), which is what actually governs
+ * whether the request succeeds.
  *
  * With `averaging === "none"`, `window_size`/`hop_size` are forced to
  * `sampleCount`, ignoring `segmentation`'s own `windowSize`/`hopSize`, so
@@ -73,7 +84,7 @@ export function fftRequestFor(
   sampleCount: number,
   segmentation: FftSegmentation,
   averaging: FftAveraging,
-  lap: number | null = null
+  selectedWindow: SelectedWindow | null = null
 ): FftRequest {
   const { windowSize, hopSize } =
     averaging === "none"
@@ -82,7 +93,7 @@ export function fftRequestFor(
 
   return {
     channelId,
-    lap,
+    window: selectedWindow,
     params: {
       window_size: windowSize,
       hop_size: hopSize,
@@ -141,12 +152,24 @@ export function frequencyAxisHz(fft: DecodedFft): Float64Array {
   return axis;
 }
 
+/** Content equality for a {@link SelectedWindow}, ignoring `colour` --
+ *  recolouring a window is not fetch-relevant, mirrors
+ *  `state/selection.ts`'s `windowKey`, which excludes it for the same
+ *  reason. `null` compares equal only to `null`. */
+function selectedWindowEquals(a: SelectedWindow | null, b: SelectedWindow | null): boolean {
+  if (a === null || b === null) {
+    return a === b;
+  }
+  return a.session_id === b.session_id && JSON.stringify(a.span) === JSON.stringify(b.span);
+}
+
 /**
  * Pure "did anything fetch-relevant change" -- the `rasterFetchKeyEquals`
  * pattern (`model/rasterLayer.ts`), so a closure identity can never trigger
- * a refetch. `null` compares equal only to `null`. `lap` is compared (R83/L2b
- * Task 6): a main-lap selection change must trigger a refetch of the same
- * channel's spectrum over the newly selected window.
+ * a refetch. `null` compares equal only to `null`. `window` is compared by
+ * content (R117/R127): a selected window changing -- a different lap, a
+ * redragged range, or a different session entirely -- must trigger a
+ * refetch of the same channel's spectrum over the newly selected window.
  */
 export function fftRequestEquals(a: FftRequest | null, b: FftRequest | null): boolean {
   if (a === null || b === null) {
@@ -154,7 +177,7 @@ export function fftRequestEquals(a: FftRequest | null, b: FftRequest | null): bo
   }
   return (
     a.channelId === b.channelId &&
-    a.lap === b.lap &&
+    selectedWindowEquals(a.window, b.window) &&
     a.averaging === b.averaging &&
     a.params.window_size === b.params.window_size &&
     a.params.hop_size === b.params.hop_size &&

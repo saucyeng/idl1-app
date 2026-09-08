@@ -33,12 +33,19 @@ function isTableCellValue(value: unknown): value is TableCellValue {
  * `output.errors` (the whole cell's own structural/evaluation errors, e.g.
  * `workbook_invalid_table_json`) render above the grid, if any; `output.value`
  * is `null` when evaluation did not produce a grid at all (C3 §3.4).
+ *
+ * `windowNote` is `model/jsCellNote.ts`'s `primaryWindowNote` result —
+ * `null` with zero or one window selected (no marker, byte-identical to
+ * today), otherwise the primary window's label (ruling R132: this grid is
+ * that window's own evaluated result, R131 Q1, and must say so once a
+ * second window is selected).
  */
-export default function TableCell({ output }: { output: CellOutput }) {
+export default function TableCell({ output, windowNote = null }: { output: CellOutput; windowNote?: string | null }) {
   const value = output.value;
 
   return (
     <div className="table-cell">
+      {windowNote !== null && <div className="table-cell-window-note">Showing {windowNote}</div>}
       {output.errors.length > 0 && (
         <ul className="table-cell-errors">
           {output.errors.map((error, i) => (

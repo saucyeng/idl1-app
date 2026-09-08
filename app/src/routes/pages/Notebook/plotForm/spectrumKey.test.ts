@@ -48,4 +48,12 @@ describe("spectrumKey", () => {
 
     expect(new Set(keys).size).toBe(4);
   });
+
+  it("spectrumKey — never window-qualified (ruling R129, amending R127 item 5) — a spectrum's window dimension lives in the payload, not this key", () => {
+    // spectrumKey takes only (channelId, params); there is no windowIndex
+    // argument to vary. This test exists so a future re-introduction of one
+    // fails loudly here rather than silently reopening the addressing gap
+    // R129 closed.
+    expect(spectrumKey.length).toBe(2);
+  });
 });

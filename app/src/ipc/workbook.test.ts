@@ -24,47 +24,55 @@ describe("openWorkbook", () => {
   });
 });
 
-describe("evalWorkbook", () => {
-  it("eval_workbook resolves — calls invoke with id and sessionId and returns the value unchanged", async () => {
+describe("evalWorkbookV2", () => {
+  it("eval_workbook_v2 resolves — calls invoke with id and windows and returns the value unchanged", async () => {
     // Arrange
     const { invoke } = await import("@tauri-apps/api/core");
-    const cells = [{ cell_id: "aaaaaaaa", kind: "math", value: null, defs: [], errors: [] }];
-    (invoke as ReturnType<typeof vi.fn>).mockResolvedValue(cells);
-    const { evalWorkbook } = await import("./workbook");
+    const windows = [{ session_id: "s1", span: { kind: "session" as const }, colour: "--chart-1" }];
+    const outcome = [{ ok: [{ cell_id: "aaaaaaaa", kind: "math", value: null, defs: [], errors: [] }] }];
+    (invoke as ReturnType<typeof vi.fn>).mockResolvedValue(outcome);
+    const { evalWorkbookV2 } = await import("./workbook");
 
     // Act
-    const result = await evalWorkbook("w1", "s1");
+    const result = await evalWorkbookV2("w1", windows);
 
     // Assert
-    expect(result).toBe(cells);
-    expect(invoke).toHaveBeenCalledWith("eval_workbook", { id: "w1", sessionId: "s1", lapContext: null });
+    expect(result).toBe(outcome);
+    expect(invoke).toHaveBeenCalledWith("eval_workbook_v2", { id: "w1", windows });
   });
 
-  it("eval_workbook with no session bound — calls invoke with sessionId null", async () => {
+  it("eval_workbook_v2 with no windows — calls invoke with an empty array", async () => {
     // Arrange
     const { invoke } = await import("@tauri-apps/api/core");
-    (invoke as ReturnType<typeof vi.fn>).mockResolvedValue([]);
-    const { evalWorkbook } = await import("./workbook");
+    (invoke as ReturnType<typeof vi.fn>).mockResolvedValue([{ ok: [] }]);
+    const { evalWorkbookV2 } = await import("./workbook");
 
     // Act
-    await evalWorkbook("w1", null);
+    await evalWorkbookV2("w1", []);
 
     // Assert
-    expect(invoke).toHaveBeenCalledWith("eval_workbook", { id: "w1", sessionId: null, lapContext: null });
+    expect(invoke).toHaveBeenCalledWith("eval_workbook_v2", { id: "w1", windows: [] });
   });
 
-  it("eval_workbook with a lap context — passes it through unchanged", async () => {
+  it("eval_workbook_v2 with a mix of ok and error entries — returns the union untouched, no narrowing", async () => {
     // Arrange
     const { invoke } = await import("@tauri-apps/api/core");
-    (invoke as ReturnType<typeof vi.fn>).mockResolvedValue([]);
-    const { evalWorkbook } = await import("./workbook");
-    const lapContext = { main_lap: 3, overlay_laps: [1, 2] };
+    const windows = [
+      { session_id: "s1", span: { kind: "lap" as const, lap_number: 1 }, colour: "--chart-1" },
+      { session_id: "s1", span: { kind: "lap" as const, lap_number: 99 }, colour: "--chart-2" },
+    ];
+    const outcome = [
+      { ok: [] },
+      { error: { kind: "invalid_argument", message: "unknown lap", detail: { lap: 99, window: 1 } } },
+    ];
+    (invoke as ReturnType<typeof vi.fn>).mockResolvedValue(outcome);
+    const { evalWorkbookV2 } = await import("./workbook");
 
     // Act
-    await evalWorkbook("w1", "s1", lapContext);
+    const result = await evalWorkbookV2("w1", windows);
 
     // Assert
-    expect(invoke).toHaveBeenCalledWith("eval_workbook", { id: "w1", sessionId: "s1", lapContext });
+    expect(result).toEqual(outcome);
   });
 });
 
@@ -165,8 +173,8 @@ describe("listMathBuiltins", () => {
   });
 });
 
-describe("fetchHostChannel", () => {
-  it("fetch_host_channel resolves — calls invoke with the four named arguments and decodes the response", async () => {
+describe("fetchHostChannelV2", () => {
+  it("fetch_host_channel_v2 resolves — calls invoke with the four named arguments and decodes the response", async () => {
     // Arrange
     const { invoke } = await import("@tauri-apps/api/core");
     const buf = new ArrayBuffer(24);
@@ -177,16 +185,39 @@ describe("fetchHostChannel", () => {
     view.setUint32(8, 0, true); // length
     view.setUint32(12, 0, true); // t_length
     (invoke as ReturnType<typeof vi.fn>).mockResolvedValue(buf);
-    const { fetchHostChannel } = await import("./workbook");
+    const { fetchHostChannelV2 } = await import("./workbook");
+    const window = { session_id: "s1", span: { kind: "session" as const }, colour: "--chart-1" };
 
     // Act
-    const result = await fetchHostChannel("w1", "s1", "avg_speed", 1000);
+    const result = await fetchHostChannelV2("w1", window, "avg_speed", 1000);
 
     // Assert
     expect(result.hasT).toBe(false);
     expect(result.v.length).toBe(0);
-    expect(invoke).toHaveBeenCalledWith("fetch_host_channel", {
-      workbookId: "w1", sessionId: "s1", defName: "avg_speed", budget: 1000,
+    expect(invoke).toHaveBeenCalledWith("fetch_host_channel_v2", {
+      workbookId: "w1", window, defName: "avg_speed", budget: 1000,
+    });
+  });
+
+  it("fetch_host_channel_v2 with window null — calls invoke with window null", async () => {
+    // Arrange
+    const { invoke } = await import("@tauri-apps/api/core");
+    const buf = new ArrayBuffer(24);
+    const view = new DataView(buf);
+    [0x49, 0x44, 0x4c, 0x48].forEach((b, i) => view.setUint8(i, b)); // "IDLH"
+    view.setUint16(4, 1, true);
+    view.setUint16(6, 0, true);
+    view.setUint32(8, 0, true);
+    view.setUint32(12, 0, true);
+    (invoke as ReturnType<typeof vi.fn>).mockResolvedValue(buf);
+    const { fetchHostChannelV2 } = await import("./workbook");
+
+    // Act
+    await fetchHostChannelV2("w1", null, "avg_speed", 1000);
+
+    // Assert
+    expect(invoke).toHaveBeenCalledWith("fetch_host_channel_v2", {
+      workbookId: "w1", window: null, defName: "avg_speed", budget: 1000,
     });
   });
 });

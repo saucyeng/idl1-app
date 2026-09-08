@@ -6,10 +6,14 @@ import { SectionHead } from "../../../components/brand/SectionHead";
 import { IconBtn } from "../../../components/brand/ToolGroup";
 import { Table, TableBody, TableCell, TableHead, TableHeader as BrandTableHeader, TableRow } from "../../../components/ui/table";
 import { listTracks, type SessionDetail, type TrackSummary } from "../../../ipc/catalog";
+import type { SelectionWindow } from "../../../state/selection";
+import { ColourPicker } from "./ColourPicker";
 import { describeIpcError } from "./errors";
+import { lapRowClicked } from "./lapSelection";
 import { LapTable } from "./LapTable";
 import { MetadataForm } from "./MetadataForm";
 import type { DetailView } from "./sessionDetail";
+import { modifierFromClick } from "./sessionRow";
 
 /** Props for [[DetailPane]]. */
 interface DetailPaneProps {
@@ -23,6 +27,17 @@ interface DetailPaneProps {
    *  Q4 — it renders via `view.laps` being empty instead). Null when
    *  `listLaps` succeeded or wasn't attempted. */
   lapsErrorText: string | null;
+  /** `AppState.selection` (S1 Task 12) — filtered here to `view.sessionId`'s
+   *  own windows, to know which lap rows are selected and which windows'
+   *  colour this pane's pickers edit. */
+  selection: SelectionWindow[];
+  /** Dispatches `SET_WINDOWS` — the whole-list replace `lapRowClicked` and
+   *  the session-row click (owned by the results list, not this pane)
+   *  both produce. */
+  onWindowsChange: (windows: SelectionWindow[]) => void;
+  /** Dispatches `SET_WINDOW_COLOUR` for the window at `index` in
+   *  `AppState.selection` (decision 84's per-window colour picker). */
+  onSetColour: (index: number, colour: string) => void;
   /** Passed straight through to `MetadataForm`'s `onSaved` — the owning
    *  page redraws `detail` from `save_session_metadata`'s re-read result. */
   onMetadataSaved: (detail: SessionDetail) => void;
@@ -54,9 +69,28 @@ function tracksReducer(_state: TracksState, action: TracksAction): TracksState {
  *  §3.2's `get_session` + `list_laps`, R53 Data Q3), plus its own
  *  `list_tracks` fetch for [[MetadataForm]] (Task 7). Metadata is editable
  *  (Task 7); delete and track-create affordances remain out of scope for
- *  this task (Parity gaps table). */
-export function DetailPane({ view, detail, lapsErrorText, onMetadataSaved, onClose }: DetailPaneProps) {
+ *  this task (Parity gaps table). Selection (S1 Task 12): the header carries
+ *  a colour picker for this session's own `{ kind: "session" }` window when
+ *  one is selected, and [[LapTable]]'s rows are clickable and each carry
+ *  their own picker when selected as a `{ kind: "lap" }` window. */
+export function DetailPane({ view, detail, lapsErrorText, selection, onWindowsChange, onSetColour, onMetadataSaved, onClose }: DetailPaneProps) {
   const [tracksState, tracksDispatch] = useReducer(tracksReducer, { status: "loading" });
+
+  // This session's own windows only — a colour picker or a lap-row click
+  // never touches another session's window, and `findIndex` below needs the
+  // index *into the whole `selection` array* (`SET_WINDOW_COLOUR`'s shape),
+  // not an index into this filtered subset.
+  const sessionWindowIndex = selection.findIndex((w) => w.sessionId === view.sessionId && w.span.kind === "session");
+  const selectedLapNumbers = new Set<number>();
+  for (const w of selection) {
+    if (w.sessionId === view.sessionId && w.span.kind === "lap") selectedLapNumbers.add(w.span.lapNumber);
+  }
+  const lapWindowIndex = (lapNumber: number) =>
+    selection.findIndex((w) => w.sessionId === view.sessionId && w.span.kind === "lap" && w.span.lapNumber === lapNumber);
+
+  const handleLapClick = (lapNumber: number, e: { shiftKey: boolean; ctrlKey: boolean; metaKey: boolean }) => {
+    onWindowsChange(lapRowClicked(selection, view.sessionId, lapNumber, modifierFromClick(e)));
+  };
 
   const loadTracks = useCallback((isCancelled: () => boolean) => {
     listTracks()
@@ -84,7 +118,16 @@ export function DetailPane({ view, detail, lapsErrorText, onMetadataSaved, onClo
         <h2 className="font-mono text-sm font-medium text-fg">
           {view.venue} · {view.eventName === "" ? "—" : view.eventName}
         </h2>
-        <IconBtn icon={XIcon} label="Close" onClick={onClose} />
+        <div className="flex items-center gap-2">
+          {sessionWindowIndex !== -1 && (
+            <ColourPicker
+              label="Session colour"
+              colour={selection[sessionWindowIndex].colour}
+              onChange={(token) => onSetColour(sessionWindowIndex, token)}
+            />
+          )}
+          <IconBtn icon={XIcon} label="Close" onClick={onClose} />
+        </div>
       </div>
 
       <div className="flex flex-col gap-2">
@@ -137,7 +180,19 @@ export function DetailPane({ view, detail, lapsErrorText, onMetadataSaved, onClo
             {lapsErrorText}
           </p>
         ) : (
-          <LapTable laps={view.laps} />
+          <LapTable
+            laps={view.laps}
+            selectedLapNumbers={selectedLapNumbers}
+            onLapClick={handleLapClick}
+            colourFor={(lapNumber) => {
+              const index = lapWindowIndex(lapNumber);
+              return index === -1 ? null : selection[index].colour;
+            }}
+            onColourChange={(lapNumber, token) => {
+              const index = lapWindowIndex(lapNumber);
+              if (index !== -1) onSetColour(index, token);
+            }}
+          />
         )}
       </div>
     </div>

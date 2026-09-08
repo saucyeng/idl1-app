@@ -2,26 +2,20 @@ import { createContext, useContext, useReducer, type ReactNode } from "react";
 import type { RouteId } from "../routes/types";
 import { initialRoute } from "../shell/launchLayout";
 import { readColumnPrefs } from "../shell/columnPrefs";
+import { nextWindows, type SelectionModifier, type SelectionWindow } from "./selection";
 
-/** The main lap plus zero or more overlay laps chosen for a session, passed
- *  through unchanged to `eval_workbook`'s `lap_context` argument (R52 Q5) —
- *  a UI selection, not file content, so it lives here rather than in the
- *  workbook itself. */
-export interface LapContext {
-  mainLap: number;
-  overlayLaps: number[];
-}
+/** The session and lap/range selection shared across tabs: the Data tab
+ *  writes this slice, the Notebook reads it to drive `eval_workbook_v2`
+ *  (C1 §6.1, ruling R111/R115). An ordered list of {@link SelectionWindow}
+ *  — one representation for a session, a lap or an explicit drag range, no
+ *  single-session special case. Supersedes the old `{ sessionId,
+ *  lapContext }` shape (ledger R41/R52 Q5) outright — see this module's
+ *  git history for that shape, not a field kept alongside this one. */
+export type Selection = SelectionWindow[];
 
-/** The session and lap selection shared across tabs: the Data tab writes
- *  this slice, the Notebook reads it to drive `eval_workbook` (R53 Data
- *  Q3). Supersedes R52 Q9(iii)'s bare `activeSessionId`. */
-export interface Selection {
-  sessionId: string | null;
-  lapContext: LapContext | null;
-}
-
-/** The `Selection` slice's value before any session is chosen. */
-export const initialSelection: Selection = { sessionId: null, lapContext: null };
+/** The `Selection` slice's value before any window is chosen — "nothing
+ *  selected" (decision 48). */
+export const initialSelection: Selection = [];
 
 /** App-shell state: the current tab plus the values every tab may need
  *  (engine version, for a footer/about display; resolved <data> path, for
@@ -58,22 +52,30 @@ export const initialAppState: AppState = {
 export type AppAction =
   | { type: "NAVIGATE"; route: RouteId }
   | { type: "SET_ENGINE_VERSION"; version: string }
-  | { type: "SET_SELECTED_SESSION"; sessionId: string | null }
-  | { type: "SET_LAP_CONTEXT"; lapContext: LapContext | null };
+  | { type: "SET_WINDOWS"; windows: Selection }
+  | { type: "TOGGLE_WINDOW"; window: SelectionWindow; modifier: SelectionModifier }
+  | { type: "SET_WINDOW_COLOUR"; index: number; colour: string };
 
 /** Pure reducer — the unit-tested half of this module (CLAUDE.md §4: UI
- *  rendering is not unit-tested; this is not rendering). */
+ *  rendering is not unit-tested; this is not rendering). Holds no selection
+ *  logic of its own: `TOGGLE_WINDOW` delegates to `selection.ts`'s
+ *  `nextWindows`, and a caller minting a brand-new window picks its colour
+ *  via `selection.ts`'s `assignColour` before dispatching. */
 export function appStateReducer(state: AppState, action: AppAction): AppState {
   switch (action.type) {
     case "NAVIGATE":
       return { ...state, route: action.route };
     case "SET_ENGINE_VERSION":
       return { ...state, engineVersion: action.version };
-    case "SET_SELECTED_SESSION":
-      // A new (or cleared) session invalidates any lap chosen for the old one.
-      return { ...state, selection: { sessionId: action.sessionId, lapContext: null } };
-    case "SET_LAP_CONTEXT":
-      return { ...state, selection: { ...state.selection, lapContext: action.lapContext } };
+    case "SET_WINDOWS":
+      return { ...state, selection: action.windows };
+    case "TOGGLE_WINDOW":
+      return { ...state, selection: nextWindows(state.selection, action.window, action.modifier) };
+    case "SET_WINDOW_COLOUR":
+      return {
+        ...state,
+        selection: state.selection.map((w, i) => (i === action.index ? { ...w, colour: action.colour } : w)),
+      };
   }
 }
 

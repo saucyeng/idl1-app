@@ -1,4 +1,5 @@
 import type { SessionSummary } from "../../../ipc/catalog";
+import { assignColour, nextWindows, type SelectionModifier, type SelectionWindow } from "../../../state/selection";
 import { formatDateMs, formatDurationMs, formatTimeMs, localIsoDate } from "./format";
 
 /** Synthetic label for an empty `venue_name`, shared with the venue facet
@@ -74,12 +75,54 @@ export function groupKeyOf(row: SessionRow): string {
   return row.groupKey;
 }
 
-/** Decides the next `AppState.selection` session id when a row is clicked:
- *  clicking the already-selected row clears the selection (idl0's
- *  `SelectionNotifier.toggleSession`, `idl0-app/app/lib/providers/
- *  selection_provider.dart:92`), clicking any other row selects it (R96 —
- *  kept as a deliberate idl0-parity fix; a user needs a way to clear the
- *  selection so the Notebook can read "no session" again, R53 Data Q3). */
-export function nextSelectedSession(currentId: string | null, clickedId: string): string | null {
-  return clickedId === currentId ? null : clickedId;
+/** Maps a session/lap row click's modifier keys to a `state/selection.ts`
+ *  `SelectionModifier` — the app-wide convention this task establishes for
+ *  every clickable selection row (session rows here, lap rows in
+ *  `lapSelection.ts`): shift-click extends the selection (`"add"`),
+ *  ctrl/cmd-click toggles just the clicked window on or off (`"toggle"`),
+ *  a plain click replaces the whole selection with the clicked window
+ *  (`"replace"`) — idl0-parity (R96: a plain click is still how a user
+ *  gets back to "just this one" after building a multi-window selection). */
+export function modifierFromClick(e: { shiftKey: boolean; ctrlKey: boolean; metaKey: boolean }): SelectionModifier {
+  if (e.shiftKey) return "add";
+  if (e.ctrlKey || e.metaKey) return "toggle";
+  return "replace";
+}
+
+/** Computes the next `AppState.selection` when a session row (the whole
+ *  session, `{ kind: "session" }`) is clicked, per `modifier`. All the
+ *  combination logic — replace/add/toggle, de-duplication on toggle — lives
+ *  in `state/selection.ts`'s `nextWindows`; this function is only "which
+ *  window does a session-row click mint" (S1 Task 12, R117 item 2: a
+ *  session already selected via a lap window and now clicked as a whole
+ *  session is a second, legal window, not a collapse). A freshly minted
+ *  window's colour comes from `assignColour(current)`; a window being
+ *  toggled off is dropped by `nextWindows` and never needs one. */
+export function sessionRowClicked(
+  current: readonly SelectionWindow[],
+  sessionId: string,
+  modifier: SelectionModifier,
+): SelectionWindow[] {
+  // A "replace" click's result is `[clicked]` alone (`nextWindows`), so its
+  // colour is the first of the cycle — `assignColour` against the *current*
+  // (about-to-be-discarded) list would otherwise pick up wherever that list
+  // left off.
+  const colourBase = modifier === "replace" ? [] : current;
+  const clicked: SelectionWindow = { sessionId, span: { kind: "session" }, colour: assignColour(colourBase) };
+  return nextWindows(current, clicked, modifier);
+}
+
+/** Drops every window in `windows` whose `sessionId` is no longer in
+ *  `existingSessionIds` — R117 item 5: a session removed from the catalog
+ *  (deleted, forgotten, or missing after a rebuild) takes its windows with
+ *  it, silently from the selection's point of view but never silently from
+ *  the user's (the caller surfaces `droppedCount`, per decision 61/R117.5,
+ *  as the Data tab's one-time notice). Pure set difference — no IPC, no
+ *  knowledge of *why* a session is gone. */
+export function dropDeletedSessionWindows(
+  windows: readonly SelectionWindow[],
+  existingSessionIds: ReadonlySet<string>,
+): { windows: SelectionWindow[]; droppedCount: number } {
+  const kept = windows.filter((w) => existingSessionIds.has(w.sessionId));
+  return { windows: kept, droppedCount: windows.length - kept.length };
 }

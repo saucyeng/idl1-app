@@ -2,18 +2,39 @@ import { describe, expect, it } from "vitest";
 
 import type { DecodedHostChannel } from "../../../../ipc/hostChannel";
 import type { DecodedTile } from "../../../../ipc/tiles";
+import type { WindowDescriptor } from "../host/protocol";
 import { CellRunSequencer } from "./cellRunSequencer";
 import {
   clampHostChannelBudget,
   runChannelBind,
   runChannelSettle,
   shouldRefetchHostChannel,
+  updateChannelBindIdentity,
+  type BindWindow,
   type ChannelBindAction,
   type ChannelBindDeps,
 } from "./channelBindDriver";
 import type { BoundChannel } from "./channelRebind";
 import type { JsCellBindingChannel, TimeCellBinding } from "./jsCellBinding";
 import { TileCache } from "./tileCache";
+
+/** Builds a `WindowDescriptor` for a test fixture -- `span`/`colour`/`label` are unread by `channelBindDriver.ts` itself (they pass straight through to the combined payload), so a placeholder is fine everywhere but the tests that assert on it directly. */
+function descriptor(sessionId: string, colour = "--chart-1"): WindowDescriptor {
+  return { sessionId, span: { kind: "session" }, colour, label: sessionId };
+}
+
+/** One selected window, unbounded (`endUs: Infinity`) -- the single-window fixture every existing (pre-Task-11b) test uses; `mapViewportToWindow` re-bases a viewport of `[startUs, endUs)` onto a window starting at `0` as the identity, so this keeps every existing assertion's numbers unchanged (R127 item 3, byte-identical). */
+function oneWindow(sessionId = "session-a"): BindWindow[] {
+  return [{ sessionId, span: { startUs: 0, endUs: Infinity }, descriptor: descriptor(sessionId) }];
+}
+
+/** `n` selected windows, each covering `[i * spanUs, (i + 1) * spanUs)` of its own (distinct) session -- a multi-window comparison fixture, e.g. two laps back to back. */
+function windowsOf(n: number, spanUs = 10_000_000): BindWindow[] {
+  return Array.from({ length: n }, (_, i) => {
+    const sessionId = `session-${i}`;
+    return { sessionId, span: { startUs: i * spanUs, endUs: (i + 1) * spanUs }, descriptor: descriptor(sessionId) };
+  });
+}
 
 /** Builds a small fake `DecodedTile` from parallel arrays, matching the fixture style used by `channelRebind.test.ts`. */
 function fakeTile(columnTUs: bigint[], columnMean: number[], tileIndex = 0): DecodedTile {
@@ -119,6 +140,79 @@ describe("shouldRefetchHostChannel", () => {
   });
 });
 
+describe("updateChannelBindIdentity", () => {
+  it("updateChannelBindIdentity — an already-bound cell, a sibling window resolving after the primary — needs a run (ruling R133)", () => {
+    // The primary window was already bound (its identity is recorded);
+    // a second, sibling window has just become selected and its
+    // SessionDetail has just resolved -- it has no recorded identity yet.
+    const perWindowIdentity = new Map([["primary-key", "identity-a"]]);
+
+    const needsRun = updateChannelBindIdentity(
+      perWindowIdentity,
+      ["primary-key", "sibling-key"],
+      new Set(["primary-key", "sibling-key"]),
+      "identity-a"
+    );
+
+    expect(needsRun).toBe(true);
+    expect(perWindowIdentity.get("sibling-key")).toBe("identity-a");
+  });
+
+  it("updateChannelBindIdentity — every selected, resolved window already has this identity — no run needed", () => {
+    const perWindowIdentity = new Map([
+      ["primary-key", "identity-a"],
+      ["sibling-key", "identity-a"],
+    ]);
+
+    const needsRun = updateChannelBindIdentity(
+      perWindowIdentity,
+      ["primary-key", "sibling-key"],
+      new Set(["primary-key", "sibling-key"]),
+      "identity-a"
+    );
+
+    expect(needsRun).toBe(false);
+  });
+
+  it("updateChannelBindIdentity — a sibling window still resolving — is skipped, not treated as stale", () => {
+    const perWindowIdentity = new Map([["primary-key", "identity-a"]]);
+
+    const needsRun = updateChannelBindIdentity(
+      perWindowIdentity,
+      ["primary-key", "sibling-key"],
+      new Set(["primary-key"]), // sibling-key not yet resolved
+      "identity-a"
+    );
+
+    expect(needsRun).toBe(false);
+    expect(perWindowIdentity.has("sibling-key")).toBe(false);
+  });
+
+  it("updateChannelBindIdentity — the binding's own content changed — every resolved window needs a run", () => {
+    const perWindowIdentity = new Map([
+      ["primary-key", "identity-a"],
+      ["sibling-key", "identity-a"],
+    ]);
+
+    const needsRun = updateChannelBindIdentity(perWindowIdentity, ["primary-key", "sibling-key"], new Set(["primary-key", "sibling-key"]), "identity-b");
+
+    expect(needsRun).toBe(true);
+    expect(perWindowIdentity.get("primary-key")).toBe("identity-b");
+    expect(perWindowIdentity.get("sibling-key")).toBe("identity-b");
+  });
+
+  it("updateChannelBindIdentity — a window deselected — its entry is pruned (decision 61)", () => {
+    const perWindowIdentity = new Map([
+      ["primary-key", "identity-a"],
+      ["stale-key", "identity-a"],
+    ]);
+
+    updateChannelBindIdentity(perWindowIdentity, ["primary-key"], new Set(["primary-key"]), "identity-a");
+
+    expect(perWindowIdentity.has("stale-key")).toBe(false);
+  });
+});
+
 describe("runChannelBind", () => {
   it("runChannelBind — two-channel binding — dispatches channelData for both, in order, mounts only the first, and registers both bound channels in order", async () => {
     const cache = new TileCache();
@@ -132,7 +226,7 @@ describe("runChannelBind", () => {
     };
     const actions: ChannelBindAction[] = [];
 
-    await runChannelBind(deps, cache, "session-a", "cell-a", binding(["fork_velocity", "rear_wheel_speed"]), 64, (a) => actions.push(a), neverStale);
+    await runChannelBind(deps, cache, oneWindow(), "cell-a", binding(["fork_velocity", "rear_wheel_speed"]), 64, (a) => actions.push(a), neverStale);
 
     expect(fetched).toEqual(["fork_velocity", "rear_wheel_speed"]);
     const channelDataActions = actions.filter((a): a is Extract<ChannelBindAction, { type: "channelData" }> => a.type === "channelData");
@@ -149,7 +243,7 @@ describe("runChannelBind", () => {
     const deps: ChannelBindDeps = { fetchTile: () => Promise.resolve(fakeTile([0n], [1])), fetchHostChannel: neverFetchesHostChannel() };
     const actions: ChannelBindAction[] = [];
 
-    await runChannelBind(deps, cache, "session-a", "cell-a", binding(["fork_velocity"]), 64, (a) => actions.push(a), neverStale);
+    await runChannelBind(deps, cache, oneWindow(), "cell-a", binding(["fork_velocity"]), 64, (a) => actions.push(a), neverStale);
 
     expect(actions.filter((a) => a.type === "channelData")).toHaveLength(1);
     expect(actions.filter((a) => a.type === "boundChannels")).toHaveLength(1);
@@ -165,7 +259,7 @@ describe("runChannelBind", () => {
       return calls >= 1;
     };
 
-    await runChannelBind(deps, cache, "session-a", "cell-a", binding(["fork_velocity", "rear_wheel_speed"]), 64, (a) => actions.push(a), isStale);
+    await runChannelBind(deps, cache, oneWindow(), "cell-a", binding(["fork_velocity", "rear_wheel_speed"]), 64, (a) => actions.push(a), isStale);
 
     expect(actions).toEqual([]);
   });
@@ -182,7 +276,7 @@ describe("runChannelBind", () => {
     };
     const actions: ChannelBindAction[] = [];
 
-    await runChannelBind(deps, cache, "session-a", "cell-a", binding(["fork_velocity"]), 64, (a) => actions.push(a), neverStale);
+    await runChannelBind(deps, cache, oneWindow(), "cell-a", binding(["fork_velocity"]), 64, (a) => actions.push(a), neverStale);
 
     expect(fetchCalls).toBe(1);
     expect(actions).toHaveLength(3); // channelData + boundChannels + chartWindow
@@ -201,7 +295,7 @@ describe("runChannelBind", () => {
     const actions: ChannelBindAction[] = [];
     const cellBinding = mixedBinding([{ channelId: "avg_speed", source: "definition" }]);
 
-    await runChannelBind(deps, cache, "session-a", "cell-a", cellBinding, 640, (a) => actions.push(a), neverStale);
+    await runChannelBind(deps, cache, oneWindow(), "cell-a", cellBinding, 640, (a) => actions.push(a), neverStale);
 
     expect(hostChannelCalls).toEqual([{ defName: "avg_speed", budget: 1280 }]);
     expect(actions.filter((a) => a.type === "channelData")).toHaveLength(1);
@@ -230,7 +324,7 @@ describe("runChannelBind", () => {
       { channelId: "avg_speed", source: "definition" },
     ]);
 
-    await runChannelBind(deps, cache, "session-a", "cell-a", cellBinding, 64, (a) => actions.push(a), neverStale);
+    await runChannelBind(deps, cache, oneWindow(), "cell-a", cellBinding, 64, (a) => actions.push(a), neverStale);
 
     expect(fetchOrder).toEqual(["tile:fork_velocity", "host:avg_speed"]);
     const channelDataActions = actions.filter((a): a is Extract<ChannelBindAction, { type: "channelData" }> => a.type === "channelData");
@@ -252,7 +346,7 @@ describe("runChannelBind", () => {
       { channelId: "avg_speed", source: "definition" },
     ]);
 
-    await runChannelBind(deps, cache, "session-a", "cell-a", cellBinding, 64, (a) => actions.push(a), neverStale);
+    await runChannelBind(deps, cache, oneWindow(), "cell-a", cellBinding, 64, (a) => actions.push(a), neverStale);
 
     const channelDataActions = actions.filter((a): a is Extract<ChannelBindAction, { type: "channelData" }> => a.type === "channelData");
     expect(channelDataActions.map((a) => a.channelId)).toEqual(["fork_velocity"]);
@@ -280,7 +374,7 @@ describe("runChannelBind", () => {
       { channelId: "avg_speed", source: "definition" },
     ]);
 
-    await runChannelBind(deps, cache, "session-a", "cell-a", cellBinding, 64, (a) => actions.push(a), isStale);
+    await runChannelBind(deps, cache, oneWindow(), "cell-a", cellBinding, 64, (a) => actions.push(a), isStale);
 
     const channelDataActions = actions.filter((a) => a.type === "channelData");
     expect(channelDataActions.map((a) => (a as Extract<ChannelBindAction, { type: "channelData" }>).channelId)).toEqual(["fork_velocity"]);
@@ -296,11 +390,134 @@ describe("runChannelBind", () => {
     const actions: ChannelBindAction[] = [];
     const cellBinding = mixedBinding([{ channelId: "scalar_def", source: "definition" }]);
 
-    await runChannelBind(deps, cache, "session-a", "cell-a", cellBinding, 64, (a) => actions.push(a), neverStale);
+    await runChannelBind(deps, cache, oneWindow(), "cell-a", cellBinding, 64, (a) => actions.push(a), neverStale);
 
     expect(actions.filter((a) => a.type === "channelData")).toHaveLength(0);
     const bound = (actions.find((a) => a.type === "boundChannels") as Extract<ChannelBindAction, { type: "boundChannels" }>).bound;
     expect(bound).toEqual([]);
+  });
+});
+
+describe("runChannelBind — multi-window (S1 Task 11b, ruling R131 Q2)", () => {
+  it("two selected windows — fetches the channel once per window and combines them into one channelData action carrying both windows' descriptors", async () => {
+    const cache = new TileCache();
+    const fetchedSessions: string[] = [];
+    // Each window's own tile carries columns at its *own* absolute start
+    // (matching `windowsOf`'s spans, session-0 at 0, session-1 at
+    // 10_000_000) -- the mapped fetch span for each window is re-based
+    // onto that window's own start (R131 Q2), so a tile with columns
+    // outside it would be filtered out by `tileToChannelData`.
+    const deps: ChannelBindDeps = {
+      fetchTile: (sessionId) => {
+        fetchedSessions.push(sessionId);
+        const base = sessionId === "session-0" ? 0n : 10_000_000n;
+        return Promise.resolve(fakeTile([base, base + 1_000_000n], [1, 2]));
+      },
+      fetchHostChannel: neverFetchesHostChannel(),
+    };
+    const windows = windowsOf(2);
+    const actions: ChannelBindAction[] = [];
+
+    await runChannelBind(deps, cache, windows, "cell-a", binding(["fork_velocity"]), 64, (a) => actions.push(a), neverStale);
+
+    expect(fetchedSessions).toEqual(["session-0", "session-1"]);
+    const channelData = actions.find((a): a is Extract<ChannelBindAction, { type: "channelData" }> => a.type === "channelData")!;
+    expect(channelData.windows).toEqual([windows[0].descriptor, windows[1].descriptor]);
+    // Two windows -- `combineChannelWindows`'s break-row rule (R127 item 4)
+    // inserts one NaN row between them; not reimplemented here, just
+    // trusted -- see this suite's `w`-index assertion below instead.
+    const w = new Float64Array(channelData.w);
+    expect(Array.from(w)).toContain(0);
+    expect(Array.from(w)).toContain(1);
+  });
+
+  it("a window shorter than the mapped viewport — that window's data stops at its own end, not held flat to the viewport's edge (requirement 2)", async () => {
+    const cache = new TileCache();
+    const deps: ChannelBindDeps = {
+      // Every fetch resolves the same three-column tile spanning
+      // [0, 20_000_000) -- the point is which columns `tileToChannelData`
+      // keeps once the mapped `[startUs, endUs)` clamps to the short
+      // window's own end, not what the fetch itself returns.
+      fetchTile: () => Promise.resolve(fakeTile([0n, 5_000_000n, 15_000_000n], [1, 2, 3])),
+      fetchHostChannel: neverFetchesHostChannel(),
+    };
+    // Window 0 (primary) is unbounded; window 1 ends at 8_000_000 -- shorter
+    // than the 0..20_000_000 viewport below.
+    const windows: BindWindow[] = [
+      { sessionId: "session-0", span: { startUs: 0, endUs: Infinity }, descriptor: descriptor("session-0") },
+      { sessionId: "session-1", span: { startUs: 0, endUs: 8_000_000 }, descriptor: descriptor("session-1") },
+    ];
+    const b = binding(["fork_velocity"]);
+    b.initialSpan.endUs = 20_000_000;
+    const actions: ChannelBindAction[] = [];
+
+    await runChannelBind(deps, cache, windows, "cell-a", b, 64, (a) => actions.push(a), neverStale);
+
+    const channelData = actions.find((a): a is Extract<ChannelBindAction, { type: "channelData" }> => a.type === "channelData")!;
+    const t = new Float64Array(channelData.t);
+    const w = new Float64Array(channelData.w);
+    // Window 1's own samples (w === 1) are only the columns inside its own
+    // [0, 8_000_000) span -- 0 and 5_000_000_000ns=5s, never the 15s column,
+    // which is past its end and simply absent, not clamped to its last value.
+    const window1Times = Array.from(t).filter((_, i) => w[i] === 1);
+    expect(window1Times).toEqual([0, 5]);
+  });
+
+  it("one window's fetch rejects — the other window still renders (R121, requirement 4)", async () => {
+    const cache = new TileCache();
+    const deps: ChannelBindDeps = {
+      fetchTile: (sessionId) => {
+        if (sessionId === "session-0") return Promise.reject(new Error("network down for session-0"));
+        // session-1's own window starts at 10_000_000 (`windowsOf`'s
+        // default spanUs) -- the column must fall inside its own mapped
+        // fetch span, not window 0's.
+        return Promise.resolve(fakeTile([10_000_000n], [1]));
+      },
+      fetchHostChannel: neverFetchesHostChannel(),
+    };
+    const windows = windowsOf(2);
+    const actions: ChannelBindAction[] = [];
+
+    await runChannelBind(deps, cache, windows, "cell-a", binding(["fork_velocity"]), 64, (a) => actions.push(a), neverStale);
+
+    const channelData = actions.find((a): a is Extract<ChannelBindAction, { type: "channelData" }> => a.type === "channelData")!;
+    expect(channelData).toBeDefined();
+    const w = new Float64Array(channelData.w);
+    // Only window 1 (index 0 in the combined result, since it's the only
+    // series present -- see `combineChannelWindows`'s single-series shape)
+    // -- window 0's failed fetch contributes nothing, and the chart isn't
+    // blanked because of it.
+    expect(Array.from(w).every((wi) => wi === 0)).toBe(true);
+    expect(channelData.windows).toEqual([windows[1].descriptor]);
+  });
+
+  it("every window's fetch fails — the channel is dropped entirely, exactly as the single-window path drops a channel whose one fetch fails", async () => {
+    const cache = new TileCache();
+    const deps: ChannelBindDeps = {
+      fetchTile: () => Promise.reject(new Error("network down")),
+      fetchHostChannel: neverFetchesHostChannel(),
+    };
+    const windows = windowsOf(2);
+    const actions: ChannelBindAction[] = [];
+
+    await runChannelBind(deps, cache, windows, "cell-a", binding(["fork_velocity"]), 64, (a) => actions.push(a), neverStale);
+
+    expect(actions.filter((a) => a.type === "channelData")).toHaveLength(0);
+    const bound = (actions.find((a) => a.type === "boundChannels") as Extract<ChannelBindAction, { type: "boundChannels" }>).bound;
+    expect(bound).toEqual([]);
+  });
+
+  it("a single selected window — combineChannelWindows produces the byte-identical pre-multi-window shape (w all zeros, no break)", async () => {
+    const cache = new TileCache();
+    const deps: ChannelBindDeps = { fetchTile: () => Promise.resolve(fakeTile([0n, 1_000_000n], [1, 2])), fetchHostChannel: neverFetchesHostChannel() };
+    const actions: ChannelBindAction[] = [];
+
+    await runChannelBind(deps, cache, oneWindow(), "cell-a", binding(["fork_velocity"]), 64, (a) => actions.push(a), neverStale);
+
+    const channelData = actions.find((a): a is Extract<ChannelBindAction, { type: "channelData" }> => a.type === "channelData")!;
+    const w = new Float64Array(channelData.w);
+    expect(Array.from(w)).toEqual([0, 0]);
+    expect(channelData.length).toBe(2);
   });
 });
 
@@ -318,7 +535,7 @@ describe("runChannelSettle", () => {
     const channels = binding(["fork_velocity", "rear_wheel_speed"]).channels;
     const actions: ChannelBindAction[] = [];
 
-    await runChannelSettle(deps, cache, "session-a", "cell-a", channels, "fork_velocity", 0, 1_000_000, 64, (a) => actions.push(a), neverStale);
+    await runChannelSettle(deps, cache, oneWindow(), "cell-a", channels, "fork_velocity", 0, 1_000_000, 64, (a) => actions.push(a), neverStale);
 
     expect(fetched).toEqual(["fork_velocity", "rear_wheel_speed"]);
     const boundActions = actions.filter((a): a is Extract<ChannelBindAction, { type: "boundChannels" }> => a.type === "boundChannels");
@@ -338,7 +555,7 @@ describe("runChannelSettle", () => {
       return calls >= 1;
     };
 
-    await runChannelSettle(deps, cache, "session-a", "cell-a", channels, "fork_velocity", 0, 1_000_000, 64, (a) => actions.push(a), isStale);
+    await runChannelSettle(deps, cache, oneWindow(), "cell-a", channels, "fork_velocity", 0, 1_000_000, 64, (a) => actions.push(a), isStale);
 
     expect(actions).toEqual([]);
   });
@@ -362,7 +579,7 @@ describe("runChannelSettle", () => {
 
     // pointBudget(32, false) = 64 (DESKTOP_POINTS_PER_PIXEL_COLUMN = 2),
     // matching `previousBound`'s recorded budget exactly.
-    await runChannelSettle(deps, cache, "session-a", "cell-a", channels, "fork_velocity", 0, 1_000_000, 32, (a) => actions.push(a), neverStale, previousBound);
+    await runChannelSettle(deps, cache, oneWindow(), "cell-a", channels, "fork_velocity", 0, 1_000_000, 32, (a) => actions.push(a), neverStale, previousBound);
 
     expect(hostChannelCalls).toBe(0);
     const bound = (actions.find((a) => a.type === "boundChannels") as Extract<ChannelBindAction, { type: "boundChannels" }>).bound;
@@ -383,7 +600,7 @@ describe("runChannelSettle", () => {
     const previousBound: BoundChannel[] = [{ source: "definition", name: "avg_speed", budget: 64 }];
     const actions: ChannelBindAction[] = [];
 
-    await runChannelSettle(deps, cache, "session-a", "cell-a", channels, "avg_speed", 0, 1_000_000, 640, (a) => actions.push(a), neverStale, previousBound);
+    await runChannelSettle(deps, cache, oneWindow(), "cell-a", channels, "avg_speed", 0, 1_000_000, 640, (a) => actions.push(a), neverStale, previousBound);
 
     expect(hostChannelCalls).toEqual([1280]);
   });
@@ -401,7 +618,7 @@ describe("runChannelSettle", () => {
     const channels = mixedBinding([{ channelId: "avg_speed", source: "definition" }]).channels;
     const actions: ChannelBindAction[] = [];
 
-    await runChannelSettle(deps, cache, "session-a", "cell-a", channels, "avg_speed", 0, 1_000_000, 100, (a) => actions.push(a), neverStale);
+    await runChannelSettle(deps, cache, oneWindow(), "cell-a", channels, "avg_speed", 0, 1_000_000, 100, (a) => actions.push(a), neverStale);
 
     // pointBudget(100, false) = 200 (2 points/pixel column, DESKTOP_POINTS_PER_PIXEL_COLUMN).
     expect(hostChannelCalls).toEqual([200]);
@@ -443,7 +660,7 @@ describe("cross-effect staleness via a shared CellRunSequencer (review-task13c.m
     const initialRun = runChannelBind(
       { fetchTile: () => initialFetch.promise, fetchHostChannel: neverFetchesHostChannel() },
       initialCache,
-      "session-a",
+      oneWindow(),
       cellId,
       binding(["fork_velocity"]),
       64,
@@ -456,7 +673,7 @@ describe("cross-effect staleness via a shared CellRunSequencer (review-task13c.m
     await runChannelSettle(
       { fetchTile: () => Promise.resolve(fakeTile([0n], [1])), fetchHostChannel: neverFetchesHostChannel() },
       settleCache,
-      "session-a",
+      oneWindow(),
       cellId,
       settleChannels,
       "fork_velocity",
@@ -486,7 +703,7 @@ describe("cross-effect staleness via a shared CellRunSequencer (review-task13c.m
     await runChannelBind(
       { fetchTile: () => Promise.resolve(fakeTile([0n], [1])), fetchHostChannel: neverFetchesHostChannel() },
       cache,
-      "session-a",
+      oneWindow(),
       cellId,
       binding(["fork_velocity"]),
       64,
@@ -499,7 +716,7 @@ describe("cross-effect staleness via a shared CellRunSequencer (review-task13c.m
     await runChannelSettle(
       { fetchTile: () => Promise.resolve(fakeTile([0n], [1])), fetchHostChannel: neverFetchesHostChannel() },
       cache,
-      "session-a",
+      oneWindow(),
       cellId,
       settleChannels,
       "fork_velocity",
@@ -531,7 +748,7 @@ describe("cross-effect staleness via a shared CellRunSequencer (review-task13c.m
     const firstRun = runChannelSettle(
       { fetchTile: () => firstFetch.promise, fetchHostChannel: neverFetchesHostChannel() },
       firstCache,
-      "session-a",
+      oneWindow(),
       cellId,
       channels,
       "fork_velocity",
@@ -546,7 +763,7 @@ describe("cross-effect staleness via a shared CellRunSequencer (review-task13c.m
     await runChannelSettle(
       { fetchTile: () => Promise.resolve(fakeTile([0n], [1])), fetchHostChannel: neverFetchesHostChannel() },
       secondCache,
-      "session-a",
+      oneWindow(),
       cellId,
       channels,
       "fork_velocity",
@@ -576,7 +793,7 @@ describe("cross-effect staleness via a shared CellRunSequencer (review-task13c.m
     const oldRun = runChannelBind(
       { fetchTile: () => oldFetch.promise, fetchHostChannel: neverFetchesHostChannel() },
       cache,
-      "session-a",
+      oneWindow(),
       cellId,
       binding(["fork_velocity"]),
       64,
@@ -588,7 +805,7 @@ describe("cross-effect staleness via a shared CellRunSequencer (review-task13c.m
     await runChannelBind(
       { fetchTile: () => Promise.resolve(fakeTile([0n], [1])), fetchHostChannel: neverFetchesHostChannel() },
       cache,
-      "session-a",
+      oneWindow(),
       cellId,
       binding(["rear_wheel_speed"]),
       64,

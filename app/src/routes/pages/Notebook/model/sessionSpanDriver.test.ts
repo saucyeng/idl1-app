@@ -2,7 +2,14 @@ import { describe, expect, it } from "vitest";
 
 import type { DecodedTile } from "../../../../ipc/tiles";
 import type { SessionDetail } from "../../../../ipc/catalog";
+import type { Window as SelectedWindow } from "../../../../ipc/workbook";
 import { runSessionSpan, type SessionSpanAction, type SessionSpanDeps } from "./sessionSpanDriver";
+
+/** A minimal selected window naming `sessionId` — the span/colour are
+ *  unread by this driver (see its own doc comment). */
+function windowFor(sessionId: string): SelectedWindow {
+  return { session_id: sessionId, span: { kind: "session" }, colour: "--chart-1" };
+}
 
 function fakeDetail(overrides: Partial<SessionDetail> = {}): SessionDetail {
   return {
@@ -75,7 +82,7 @@ describe("runSessionSpan", () => {
   it("runSessionSpan — a session with a catalog duration_ms — dispatches the detail then the span in milliseconds converted to microseconds", async () => {
     const actions: SessionSpanAction[] = [];
 
-    await runSessionSpan(baseDeps(), "session-a", (a) => actions.push(a), () => false);
+    await runSessionSpan(baseDeps(), windowFor("session-a"), (a) => actions.push(a), () => false);
 
     expect(actions[0]).toEqual({ type: "sessionDetail", detail: fakeDetail() });
     expect(actions[1]).toEqual({ type: "sessionSpan", spanUs: 60_000_000 });
@@ -88,7 +95,7 @@ describe("runSessionSpan", () => {
     });
     const actions: SessionSpanAction[] = [];
 
-    await runSessionSpan(deps, "session-a", (a) => actions.push(a), () => false);
+    await runSessionSpan(deps, windowFor("session-a"), (a) => actions.push(a), () => false);
 
     expect(actions[1]).toEqual({ type: "sessionSpan", spanUs: 4_000_000 });
   });
@@ -101,7 +108,7 @@ describe("runSessionSpan", () => {
     });
     const actions: SessionSpanAction[] = [];
 
-    await runSessionSpan(deps, "session-a", (a) => actions.push(a), () => false);
+    await runSessionSpan(deps, windowFor("session-a"), (a) => actions.push(a), () => false);
 
     expect(actions[1]).toEqual({ type: "sessionSpan", spanUs: null });
   });
@@ -114,7 +121,7 @@ describe("runSessionSpan", () => {
     });
     const actions: SessionSpanAction[] = [];
 
-    await runSessionSpan(deps, "session-a", (a) => actions.push(a), () => false);
+    await runSessionSpan(deps, windowFor("session-a"), (a) => actions.push(a), () => false);
 
     expect(actions).toEqual([
       { type: "sessionDetail", detail: null },
@@ -134,7 +141,7 @@ describe("runSessionSpan", () => {
     });
     const actions: SessionSpanAction[] = [];
 
-    await runSessionSpan(deps, "session-a", (a) => actions.push(a), () => false);
+    await runSessionSpan(deps, windowFor("session-a"), (a) => actions.push(a), () => false);
 
     expect(actions[1]).toEqual({ type: "sessionSpan", spanUs: null });
     expect(fetchTileCalled).toBe(false);
@@ -148,7 +155,7 @@ describe("runSessionSpan", () => {
     });
     const actions: SessionSpanAction[] = [];
 
-    await runSessionSpan(deps, "session-a", (a) => actions.push(a), () => false);
+    await runSessionSpan(deps, windowFor("session-a"), (a) => actions.push(a), () => false);
 
     expect(actions).toEqual([
       { type: "sessionDetail", detail: fakeDetail() },
@@ -160,7 +167,7 @@ describe("runSessionSpan", () => {
     const actions: SessionSpanAction[] = [];
     let calls = 0;
 
-    await runSessionSpan(baseDeps(), "session-a", (a) => actions.push(a), () => {
+    await runSessionSpan(baseDeps(), windowFor("session-a"), (a) => actions.push(a), () => {
       calls++;
       return calls > 1;
     });
@@ -171,7 +178,7 @@ describe("runSessionSpan", () => {
   it("runSessionSpan — stale after getSession resolves — dispatches nothing", async () => {
     const actions: SessionSpanAction[] = [];
 
-    await runSessionSpan(baseDeps(), "session-a", (a) => actions.push(a), () => true);
+    await runSessionSpan(baseDeps(), windowFor("session-a"), (a) => actions.push(a), () => true);
 
     expect(actions).toEqual([]);
   });

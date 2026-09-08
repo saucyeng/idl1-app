@@ -25,6 +25,15 @@ export interface CellListProps {
   /** Every inline `${…}` span's last-received error message, by span id (R66 item 2, `ProseBlock`'s `spanErrors` prop). */
   spanErrors: ReadonlyMap<string, string>;
   /**
+   * Ruling R132: `null` with zero or one window selected (no marker,
+   * byte-identical to today), otherwise the primary window's label
+   * (`model/jsCellNote.ts`'s `primaryWindowNote`) — passed through to
+   * `MathCell`/`TableCell`/`ProseBlock`, every non-chart cell kind that
+   * reads only the primary window's value. Optional; defaults to `null` so
+   * a caller from before this task is unaffected.
+   */
+  windowNote?: string | null;
+  /**
    * Renders a `js`-kind cell's sandbox-mounted output. Injected rather than
    * built here: a `js` cell's rendering is a `ChartCell` (or similar)
    * carrying its own viewport/tile-cache/cursor-readout state, which
@@ -70,7 +79,16 @@ export interface CellListProps {
  * document is corrected, is what resolves it, not anything in this
  * component.
  */
-export default function CellList({ doc, proseBlocks, outputs, inlineResults, spanErrors, renderJsCell, frame = identityFrame }: CellListProps) {
+export default function CellList({
+  doc,
+  proseBlocks,
+  outputs,
+  inlineResults,
+  spanErrors,
+  renderJsCell,
+  frame = identityFrame,
+  windowNote = null,
+}: CellListProps) {
   return (
     <div className="cell-list">
       {doc.cells.map((cell, index) => {
@@ -82,9 +100,9 @@ export default function CellList({ doc, proseBlocks, outputs, inlineResults, spa
           output === undefined ? (
             <div className="cell-list-pending">…</div>
           ) : output.kind === "math" ? (
-            <MathCell output={output} />
+            <MathCell output={output} windowNote={windowNote} />
           ) : output.kind === "table" ? (
-            <TableCell output={output} />
+            <TableCell output={output} windowNote={windowNote} />
           ) : (
             renderJsCell(cell.id as string)
           );
@@ -92,11 +110,11 @@ export default function CellList({ doc, proseBlocks, outputs, inlineResults, spa
         return (
           <div className="cell-list-item" key={key}>
             {before !== undefined && (
-              <ProseBlock content={before.content} inlineResults={inlineResults} spanErrors={spanErrors} />
+              <ProseBlock content={before.content} inlineResults={inlineResults} spanErrors={spanErrors} windowNote={windowNote} />
             )}
             {frame(cell, rendered, index)}
             {after !== undefined && (
-              <ProseBlock content={after.content} inlineResults={inlineResults} spanErrors={spanErrors} />
+              <ProseBlock content={after.content} inlineResults={inlineResults} spanErrors={spanErrors} windowNote={windowNote} />
             )}
           </div>
         );

@@ -10,6 +10,18 @@
  * `app/src/ipc/**` and pull `@tauri-apps/api/core` into the sandbox bundle.
  * `types.ts` (this module's only import) has no import at all, so this
  * module transitively has none either.
+ *
+ * **Never window-qualified (ruling R129, amending R127 item 5).** R127
+ * item 5 originally had this function take a `windowIndex` so *n* selected
+ * windows would publish *n* distinct spectra -- but `spectrum_call`'s
+ * grammar (C2 §5.3) has no window token, so cell code would have had no way
+ * to *address* the extra keys. R129 amends this: a spectrum host variable
+ * now carries its window dimension in the **payload**, exactly like a
+ * channel host variable (`host/protocol.ts`'s `spectrumPayload`/
+ * `combineSpectrumWindows`, `{ length, f, m, w }` plus a `windows`
+ * descriptor array) rather than in the key. This key therefore never
+ * varies by window -- one host variable per (channel, `fft_params`), same
+ * as before multi-window selection existed.
  */
 import type { FftParams } from "./types";
 
@@ -18,7 +30,7 @@ const SEPARATOR = " | ";
 /**
  * The channel id plus the six `fft_params` values, joined in C2 par. 5.3's
  * fixed grammar order, so two cells on the same channel with different
- * windows are different spectra. Computed identically on the host side
+ * `fft_params` are different spectra. Computed identically on the host side
  * (`model/jsCellBinding.ts`'s `bindingFor`, which pushes the decoded
  * spectrum under this name) and the sandbox side (`sandbox/main.ts`'s
  * `spectrumLookup`, which recomputes it from the `spectrum(...)` call's own

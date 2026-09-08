@@ -4,7 +4,294 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 
 ## [Unreleased]
 
+### Added
+
+- **`app/src/state/selection.ts`: pure selection module for C1 §6.1
+  time-window selection (2026-09-08, s1-ts Task 7, spec exists — C1 §6.1,
+  no spec change needed).** `SelectionWindow`/`Span` (session-relative
+  `t0Us`/`t1Us`, per C1 §6.1 and ruling R117 item 1), `windowKey` (identity
+  by `sessionId` + `span`, never `colour`, so a repeated `sessionId` with a
+  different lap/range is never collapsed — R117 item 2), `nextWindows`
+  (`"replace"`/`"add"`/`"toggle"` modifiers), `assignColour` (cycles the
+  eight `--chart-1…8` tokens, never a hex literal — R117 item 6; wraps past
+  eight windows), and `describeWindow` (top-bar chip label). No React, no
+  IPC — dependency-free, following `shell/columnVisibility.ts`'s pattern so
+  vitest's `node` environment can resolve it. `AppState.tsx` wiring is
+  Task 8, not this commit.
+- **`state/AppState.tsx`'s selection slice and `ipc/workbook.ts`/`ipc/rasters.ts`'s
+  `_v2` selection commands (2026-09-08, s1-ts Tasks 8–9, C1 §6.1/C3
+  §3.4/§3.6, no spec change needed — the spec already landed with Task 1).**
+  `Selection` is now `SelectionWindow[]` (`initialSelection = []`); the old
+  `{ sessionId, lapContext }` shape is deleted outright (ruling R111 — one
+  representation). `SET_SELECTED_SESSION`/`SET_LAP_CONTEXT` are replaced by
+  `SET_WINDOWS`/`TOGGLE_WINDOW`/`SET_WINDOW_COLOUR`, each delegating to
+  `selection.ts`'s pure functions — the reducer holds no selection logic of
+  its own. `selection.ts`'s `describeWindow` now takes a `sessionName`
+  argument instead of formatting the raw `sessionId` — a hex session id
+  must never reach the UI; the caller resolves the name from the catalog.
+  `ipc/workbook.ts` gains the wire `Window`/`Span` types, `evalWorkbookV2`
+  (returns one `WindowEval` — `{ ok: CellOutput[] } | { error: IpcError }`
+  — per window, per ruling R121's per-window error attribution) and
+  `fetchHostChannelV2`; `ipc/rasters.ts` gains `fetchFftV2`. The `LapContext`
+  wire type and the `evalWorkbook`/`fetchHostChannel`/`fetchFft` wrappers
+  are deleted (the Rust commands stay registered but unused, per C3 §5's
+  one-revision deprecation). **Breaks `tsc` in `routes/pages/Data/index.tsx`,
+  `shell/TopBar.tsx` and `routes/pages/Notebook/**` until Tasks 10–13 land**
+  — those files still read the deleted `Selection` shape and call the
+  deleted wrappers; out of this task's scope by dispatch.
+- **`Notebook/model/openEvalDriver.ts` and `sessionSpanDriver.ts` moved onto
+  `windows`/a single `Window` (2026-09-08, s1-ts Task 10, C1 §6.1, ruling
+  R117/R121, no spec change needed).** `runOpenAndEval`/`runEval` take
+  `windows: Window[]` and call `evalWorkbookV2`; per ruling R121 a per-window
+  failure must not blank the other windows, so each `windows` entry now
+  dispatches its own `evalWindowResult`/`evalWindowError` (a new
+  `OpenEvalWindowAction`, carrying the originating `Window`) instead of one
+  flat `evalResult`/`evalError` — the old pair (`workbookState.ts`'s
+  `WorkbookAction`) had no per-window slot and is left untouched for the
+  workbook-wide `handleOpened`/`markdownReady`/`markdownError` actions,
+  which are unaffected by windows. `windows: []` still dispatches
+  `evalWorkbookV2`'s one "nothing selected" result, paired with `window:
+  null`. `sessionSpanDriver.ts`'s `runSessionSpan` takes a single `Window |
+  null` (was `sessionId: string | null`) — per-window: a caller with
+  several selected windows calls it once per window, its own
+  `isStale`/dispatch pair.
+- **`fftRequest.ts`/`jsCellBinding.ts`/`jsCellNote.ts` intentionally left
+  unmigrated this task (2026-09-08, s1-ts Task 10) — reported, not
+  guessed.** The sandbox host-variable model (`SandboxHost.setChannelHostVar`/
+  `setSpectrumHostVar`, one whole-notebook `SandboxHost`/iframe) keys every
+  bound series by a bare `channelId` or `spectrumKey(channelId, fftParams)`
+  — neither qualified by session or window. Two selected windows over the
+  same channel (R117 item 2: the *normal* case, e.g. lap-to-lap comparison)
+  would silently collide on the same host-variable name, with the
+  last-dispatched window's data overwriting the other's — a wrong-numbers
+  bug (section D), not a missing feature. Resolving it needs either a
+  windowKey-qualified host-variable naming scheme or a `SandboxHost` per
+  window, both C3/sandbox-protocol-shaped decisions reserved for the lead.
+  `fftRequest.ts` was left with its old `lap: number | null` (not `window:
+  Window`) because its only caller in this lane, `jsCellBinding.ts`'s
+  `bindingForFft`, is itself blocked on the same question — retyping it now
+  would only inject a fresh compile break into that unedited file with no
+  caller in scope to benefit from it.
+- **`fftRequest.ts`/`jsCellBinding.ts`/`jsCellNote.ts` migrated onto windows
+  (2026-09-08, s1-ts Task 10 follow-on, C1 §6.1/C2 §5.1/§5.3, ruling
+  R127 — spec-during, C2 §5.1/§5.3 amended in this commit).** Resolves the
+  collision flagged above. `fftRequest.ts`'s `FftRequest.lap: number | null`
+  is now `window: SelectedWindow | null` (matches `fetch_fft_v2`'s actual
+  `window: Window` argument); `fftRequestEquals` compares it by content
+  (`session_id` + `span`), not identity. `jsCellBinding.ts`'s `bindingFor`
+  takes `window`/`windowIndex` in place of `mainLap` — the FFT arm folds
+  `windowIndex` into `spectrumKey(channelId, fft, windowIndex)`
+  (`plotForm/spectrumKey.ts` gains that parameter, default `0`, and at `0`
+  is byte-identical to before, ruling R127 item 3) so *n* selected windows
+  over the same channel/`fft_params` publish *n* distinct spectra instead
+  of colliding on one host-variable name (item 5); the time arm is
+  unaffected (channel names stay bare per item 1) and is still called once
+  per session, not once per window. `jsCellNote.ts`'s `sessionId: string |
+  null` input is now `windowCount: number` (`0` ⇒ the existing "No session
+  is selected" note).
+- **`host/protocol.ts`'s `"channel"` host-variable payload gains a window
+  dimension; `SandboxHost.setChannelHostVar` and `sandbox/main.ts`'s
+  `materializeHostVar` updated to match (2026-09-08, s1-ts Task 10
+  follow-on, C1 §6.1, ruling R127 — spec-during, C2 §5.1 amended in this
+  commit).** The other half of the collision above: a channel host variable
+  is keyed by the definition alone (never window-qualified, item 1), so
+  multiple selected windows over one channel must combine into *one*
+  `setChannelHostVar` call, not one per window. The payload becomes
+  `{ length, t, v, w }` plus a `windows: WindowDescriptor[]` (`{sessionId,
+  span, colour, label}`) array, `w[i]` naming which `windows` entry
+  produced sample `i` (item 2) — built by the new pure
+  `combineChannelWindows`, which concatenates each window's own `{t, v}` in
+  order and inserts exactly one `NaN` break row (`t = v = w = NaN`) between
+  each adjacent pair (item 4): Observable Plot breaks a line mark at `NaN`,
+  so a cell written before multi-window existed, which destructures only
+  `{t, v}` and never reads `w`, degrades to *n* separate line segments in
+  one colour instead of one line falsely vaulting from one window's last
+  sample to the next window's first. A single window (the ordinary,
+  pre-existing case) produces no break row and an all-zero `w` — byte-
+  identical to before (item 3), proven by `protocol.test.ts`. `sandbox/
+  main.ts`'s `materializeHostVar` now returns `{t, v, w}[]` records with a
+  non-enumerable `windows` property carrying the descriptor array (reachable
+  as `channel(name).windows`, e.g. for a chart's per-window `colour`) —
+  additive; a cell reading only `{t, v}` is unaffected. `"spectrum"`
+  payloads were, at the time of that commit, deliberately **not** given the
+  same columns (item 5) — see the entry directly below, which supersedes
+  that call.
+- **`spectrumKey`'s `windowIndex` withdrawn; `"spectrum"` host-variable
+  payloads gain the same `w`/`windows` shape as `"channel"` instead
+  (2026-09-08, s1-ts follow-on, C1 §6.1/C2 §5.3, ruling **R129** amending
+  R127 item 5 — spec-during, C2 §5.3 amended in this commit).** The FFT
+  addressing gap flagged in the previous commit ("nothing lets a sandboxed
+  cell's own code request a specific `windowIndex`'s spectrum") is closed
+  by removing the need to address anything: `spectrumKey(channelId,
+  fftParams)` drops its `windowIndex` parameter entirely and never varies
+  by window again, and `host/protocol.ts`'s `"spectrum"` `HostVarPayload`
+  gains `w`/`windows` exactly like `"channel"`'s (ruling R127 item 2/4) —
+  `combineSpectrumWindows` combines *n* selected windows' own `{f, m}` into
+  one `{length, f, m, w}` array with the same NaN-break rule, sharing its
+  implementation with `combineChannelWindows` via one internal generic
+  combiner (`combinePairedWindows`). `SandboxHost.setSpectrumHostVar` and
+  `sandbox/main.ts`'s `spectrumLookup`/`materializeHostVar` updated to
+  match — a spectrum record is now `{f, m, w}` with the same non-enumerable
+  `windows` property a channel record carries. A single selected window
+  remains byte-identical (both to the pre-multi-window shape and to the
+  withdrawn `windowIndex` scheme's own byte-identical `0` case). No C2
+  §5.3 grammar change, and none is needed: a cell writes `spectrum("x",
+  {...})` and groups by `w`, exactly as it already does for `channel("x")`.
+- **`fftDriver.ts`'s interim shim no longer silently widens a `range`
+  window to the whole session (2026-09-08, s1-ts follow-on, ruling R129
+  finding 2, no spec change needed).** `legacyLapFromWindow` (renamed from
+  `lapFromWindow`) now returns a typed `{ error: IpcError }` for a
+  `"range"`-spanned `request.window`, dispatched as `fftError` before
+  `deps.fetchFft` is ever called, instead of falling through to `lap:
+  null` — which meant "whole channel" to the old `fetch_fft` and so
+  silently computed the FFT over the entire session for a dragged-range
+  selection, indistinguishable on screen from the real thing. `"lap"` and
+  `"session"` spans are unaffected (both were, and remain, correct). This
+  interim shim still narrows scope until Task 11 migrates the driver to
+  `fetchFftV2`; it must never widen it.
+- **`Notebook/index.tsx` wired onto the `windows` drivers; FFT charts get
+  full multi-window overlay, time-channel charts get an honest single-window
+  interim (2026-09-08, s1-ts Task 11a, ruling R131, no spec change needed
+  — C1 §6.1/C3 §3.4/§3.6 already cover this).** `AppState.selection` (a
+  `SelectionWindow[]`) replaces the deleted `{ sessionId, lapContext }`
+  pair everywhere in this page; every IPC-driving effect keys on
+  `state/selection.ts`'s new `windowsKey` string, never array identity
+  (operating brief §4). `workbookState.ts`'s reducer gained the
+  `windows: Map<windowKey, WindowEvalState>` shape R131 specified — the
+  `evalWindowResult`/`evalWindowError` actions `openEvalDriver.ts` (Task
+  10) already dispatched had no case here and were silently dropped before
+  this commit (R131's own finding); a `pruneWindows` action drops a
+  deselected window's stale entry (decision 61). `fftDriver.ts` migrated
+  to `fetchFftV2`/`Window`, `legacyLapFromWindow` deleted — a `runFft` call
+  is now per (cell, window), and `Notebook/index.tsx` fetches every
+  selected window's spectrum independently, combines them via
+  `host/protocol.ts`'s `combineSpectrumWindows`, and pushes one host
+  variable per cell (ruling R129): a window whose fetch fails is simply
+  omitted from the combined payload, its message surfacing in that cell's
+  note — the other windows' series still render (R121). Time-chart
+  channel binding (`channelBindDriver.ts`, still single-window) stays
+  exactly byte-identical for one selected window (`w` all zeros, R127 item
+  3); selecting more than one window shows a typed cell error on every
+  time-bound `js` cell instead of silently rendering `windows[0]`'s data as
+  the whole selection — true multi-window overlay for this chart kind is
+  Task 11b. `jsCellNote.ts`'s `windowCount` and `sessionSpanDriver.ts`'s
+  once-per-window contract (both landed in Task 10) are wired in for real
+  here for the first time.
+- **`channelBindDriver.ts` (time-chart channel binding) gets full
+  multi-window overlay, closing the Task 11a interim (2026-09-08, s1-ts
+  Task 11b, ruling R131 Q2, no spec change needed — C1 §6.1 already covers
+  this).** New pure module `model/viewportWindows.ts`: `mapViewportToWindow`
+  re-bases the current gesture viewport onto one selected window's own
+  start, `[window.startUs + a, min(window.startUs + b, window.endUs))`
+  (`a`/`b` the offset from the *primary* window's own start) — a window
+  shorter than the viewport is clamped at its own end and simply has no
+  data past it (absence, never a value held flat to the edge); a mapped
+  span with no overlap at all returns `null` and the caller fetches
+  nothing for that window. `resolveWindowSpan` resolves a selected
+  window's `Span` to that absolute bound against its `SessionDetail`
+  (`"range"` verbatim, `"lap"` via `laps[].start_time_secs`/
+  `end_time_secs`, `"session"` as `[0, Infinity)` — no per-window recorded
+  duration is resolved today outside the primary window, so a `"session"`
+  window's own end is never clamped; noted as an interim simplification,
+  narrower than what R131 asked for, never wider). `channelBindDriver.ts`
+  now takes `windows: BindWindow[]` (`windows[0]` the primary) in place of
+  a bare `sessionId`: a `"session"` channel is fetched once per selected
+  window at its own mapped span and combined via `host/protocol.ts`'s
+  `combineChannelWindows` into one `channelData` action carrying `w`/
+  `windows` directly (the caller's interim all-zero-`w` shim is gone); a
+  per-window fetch failure (a rejected `fetchTile` or an evicted tile)
+  drops only that window's contribution, every other selected window
+  still renders (R121) — the channel itself is dropped only if every
+  window fails. `BoundChannel`/`ChartCell`'s mounted-channel state
+  (`channelRebind.ts`, untouched this task) still describes only the
+  primary window's own fetch, matching its existing single-window shape.
+  A single selected window is unchanged end to end: `mapViewportToWindow`
+  is the identity re-basing and `combineChannelWindows` is byte-identical
+  for one series (R127 item 3) — proved by re-running the full
+  pre-existing `channelBindDriver.test.ts` suite unmodified except for the
+  new `windows` argument. `Notebook/index.tsx`'s two `channelBindDriver`
+  call sites (initial bind, gesture settle) now build `BindWindow[]` via a
+  new `bindWindowsFor` helper reading the already-resolved
+  `sessionDetailsByWindow`; the Task 11a interim multi-window cell error
+  (`MULTI_WINDOW_CHART_NOTE`) is deleted.
+- **Data tab: session rows are multi-select, laps are selectable for the
+  first time, and a per-window colour picker (2026-09-08, s1-ts Task 12,
+  ruling R111/R115/R117 item 6/decision 84, no spec change needed).**
+  `sessionRow.ts` gains `modifierFromClick` (shift → `"add"`, ctrl/cmd →
+  `"toggle"`, plain → `"replace"`) and `sessionRowClicked`, both delegating
+  to `state/selection.ts`'s `nextWindows`/`assignColour`; the old
+  single-session `nextSelectedSession` is deleted outright. New
+  `lapSelection.ts`'s `lapRowClicked` mints a `{ kind: "lap" }` window —
+  `DetailPane`'s `LapTable` rows are now clickable, the first UI path ever
+  to dispatch a lap selection (R117 item 7's context: `main_lap_window`'s
+  indexing defect, fixed in Task 3, had never been exercised because of
+  this). New `ColourPicker.tsx`: eight swatch buttons over the `--chart-1…8`
+  tokens only (never a hex), shared by `DetailPane`'s header (a selected
+  session window) and `LapTable`'s rows (a selected lap window), each
+  dispatching `SET_WINDOW_COLOUR` by the window's index in
+  `AppState.selection`. `Data/index.tsx` now tracks a `focusedSessionId`
+  local state (which row's detail pane is open) separately from
+  `AppState.selection` (which windows drive the charts) — a row click
+  always focuses that row and (modifier-dependent) updates its window; a
+  new effect compares the fetched session list against `selection` on every
+  `loadSessions` and drops any window whose session is gone via
+  `sessionRow.ts`'s new `dropDeletedSessionWindows`, surfacing a
+  dismissable one-time banner (R117 item 5) rather than silently emptying
+  a chart. `tsc` is clean for this file; `shell/TopBar.tsx` is the one
+  remaining break, closed by Task 13.
+- **Top bar: one dismissable chip per selected window, collapsing past four
+  (2026-09-08, s1-ts Task 13, ruling R111/R115/R117 item 6, no spec change
+  needed — this closes the last `tsc` break the s1-ts lane opened).** New
+  `shell/topBarSelection.ts`: `selectionChips` projects `AppState.selection`
+  into labelled, coloured, index-keyed chips via `state/selection.ts`'s
+  `describeWindow` (never the raw session id — the caller resolves a name);
+  `shouldCollapseChips`/`collapsedChipLabel` switch to a single "n windows"
+  chip past `CHIP_COLLAPSE_THRESHOLD = 4` (chosen for the bar's fixed 11 px
+  height and no room to grow past four dismiss-button-bearing chips — noted
+  in the module's own doc comment); `removeWindowAt` drops exactly the
+  clicked chip's window by array position, never by `windowKey` match (two
+  windows can share one, R117 item 2, and a dismiss must not take both).
+  `TopBar.tsx` replaces the old single hardcoded `Session ${sessionId}`
+  chip (a raw session id in the UI, the thing R117 item 6 forbids) with
+  this, and gains its own `list_sessions` fetch to resolve session names,
+  refetching on `windowsKey(selection)` changes (a stable data key, never a
+  function-prop dependency — operating brief §4's tightening) so a session
+  created after mount still gets a real label once selected. `AppShell.tsx`
+  passes a new `onWindowsChange` prop (`SET_WINDOWS`) through for the
+  dismiss buttons. `tsc --noEmit` is now clean across the whole tree.
+
 ### Fixed
+
+- **S1 pre-merge fix batch: non-primary windows could permanently miss their
+  data; non-chart cells now name the window they show (2026-09-08, rulings
+  R132/R133, no spec change needed).** `Notebook/index.tsx`'s channel-bind
+  and FFT effects' dependency arrays carried only `sessionDetail` (the
+  **primary** window's entry) and `windowsKeyValue`, but
+  `sessionSpanDriver.runSessionSpan` resolves each selected window's
+  `SessionDetail` independently and asynchronously with no ordering
+  guarantee — so a non-primary window's detail arriving after the
+  primary's re-ran neither effect, and that window silently never got its
+  channel data or spectrum. Fixed with `state/selection.ts`'s new
+  `sessionDetailsReadinessKey` (a stable string over which selected windows
+  currently have a resolved `SessionDetail`, order-of-resolution-independent
+  by construction), added to both effects' dependency arrays — **and**,
+  per R133, the channel-bind effect's *inner* `boundIdentityRef` gate,
+  which the dependency-array fix alone did not reach: that gate compared
+  one identity per **cell**, computed from the primary window's binding
+  only, so a sibling window resolving never changed it and an
+  already-bound cell's channel data for that window was still never
+  fetched (the FFT effect's gate was already per-window and needed no
+  further fix). `model/channelBindDriver.ts`'s new `updateChannelBindIdentity`
+  makes the channel-bind gate per (cell, window) too, mirroring the FFT
+  shape. Also, ruling R132: `MathCell`/`TableCell`/`ProseBlock` now take an
+  optional `windowNote` prop (`model/jsCellNote.ts`'s new
+  `primaryWindowNote`) — with more than one window selected, a non-chart
+  cell reading the primary window's value now names it; with zero or one
+  window selected, no marker (byte-identical to today). Minor:
+  `host/NotebookSession.ts`'s stale doc comment claiming the channel-bind
+  effects still gate on `windows.length <= 1` (Task 11b removed that gate)
+  is corrected to say what actually stays single-window is `BoundChannel`'s
+  own rebuild-replay registration.
 
 - **The sandbox stall watchdog now has a caller (2026-09-07, sandbox-watchdog
   task, no spec change needed).** `host/watchdog.ts`'s ping/pong liveness

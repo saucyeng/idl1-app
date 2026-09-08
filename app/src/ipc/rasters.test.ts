@@ -148,8 +148,8 @@ describe("decodeFft", () => {
   });
 });
 
-describe("fetchFft", () => {
-  it("resolves — calls invoke with the five named arguments and decodes the IDLF response", async () => {
+describe("fetchFftV2", () => {
+  it("resolves — calls invoke with the four named arguments and decodes the IDLF response", async () => {
     // Arrange
     const { invoke } = await import("@tauri-apps/api/core");
     const buf = new ArrayBuffer(16);
@@ -159,16 +159,40 @@ describe("fetchFft", () => {
     view.setUint32(8, 0, true);
     view.setFloat32(12, 200, true);
     (invoke as ReturnType<typeof vi.fn>).mockResolvedValue(buf);
-    const { fetchFft } = await import("./rasters");
+    const { fetchFftV2 } = await import("./rasters");
     const params = { window_size: 64, hop_size: 32, window: "hann", detrend: "mean", scaling: "density" } as const;
+    const window = { session_id: "s1", span: { kind: "session" as const }, colour: "--chart-1" };
 
     // Act
-    const result = await fetchFft("s1", "fork_travel", null, params, "mean");
+    const result = await fetchFftV2(window, "fork_travel", params, "mean");
 
     // Assert
     expect(result.sampleRateHz).toBe(200);
-    expect(invoke).toHaveBeenCalledWith("fetch_fft", {
-      sessionId: "s1", channel: "fork_travel", lap: null, params, averaging: "mean",
+    expect(invoke).toHaveBeenCalledWith("fetch_fft_v2", {
+      window, channel: "fork_travel", params, averaging: "mean",
+    });
+  });
+
+  it("with a range window — calls invoke with the range span", async () => {
+    // Arrange
+    const { invoke } = await import("@tauri-apps/api/core");
+    const buf = new ArrayBuffer(16);
+    const view = new DataView(buf);
+    [0x49, 0x44, 0x4c, 0x46].forEach((b, i) => view.setUint8(i, b)); // "IDLF"
+    view.setUint16(4, 1, true);
+    view.setUint32(8, 0, true);
+    view.setFloat32(12, 200, true);
+    (invoke as ReturnType<typeof vi.fn>).mockResolvedValue(buf);
+    const { fetchFftV2 } = await import("./rasters");
+    const params = { window_size: 64, hop_size: 32, window: "hann", detrend: "mean", scaling: "density" } as const;
+    const window = { session_id: "s1", span: { kind: "range" as const, t0_us: 0, t1_us: 1_000_000 }, colour: "--chart-1" };
+
+    // Act
+    await fetchFftV2(window, "fork_travel", params, "mean");
+
+    // Assert
+    expect(invoke).toHaveBeenCalledWith("fetch_fft_v2", {
+      window, channel: "fork_travel", params, averaging: "mean",
     });
   });
 });

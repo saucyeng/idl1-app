@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 
+import type { Window as SelectedWindow } from "../../../../ipc/workbook";
 import {
   binFrequencyHz,
   exceedsBinCap,
@@ -18,6 +19,10 @@ const segmentation: FftSegmentation = {
   detrend: "mean",
   scaling: "magnitude",
 };
+
+function lapWindow(lapNumber: number): SelectedWindow {
+  return { session_id: "session-a", span: { kind: "lap", lap_number: lapNumber }, colour: "--chart-1" };
+}
 
 describe("fftRequestFor", () => {
   it("fftRequestFor — averaging none — forces window_size and hop_size to sampleCount", () => {
@@ -41,16 +46,17 @@ describe("fftRequestFor", () => {
     expect(request.params.hop_size).toBe(512);
   });
 
-  it("fftRequestFor — no lap argument — defaults lap to null", () => {
+  it("fftRequestFor — no window argument — defaults window to null", () => {
     const request = fftRequestFor("fork_travel", 4096, segmentation, "median");
 
-    expect(request.lap).toBeNull();
+    expect(request.window).toBeNull();
   });
 
-  it("fftRequestFor — a lap number passed — carries it straight through as request.lap", () => {
-    const request = fftRequestFor("fork_travel", 4096, segmentation, "median", 3);
+  it("fftRequestFor — a selected window passed — carries it straight through as request.window", () => {
+    const window = lapWindow(3);
+    const request = fftRequestFor("fork_travel", 4096, segmentation, "median", window);
 
-    expect(request.lap).toBe(3);
+    expect(request.window).toBe(window);
   });
 
   it("fftRequestFor — every mode — carries window/detrend/scaling and averaging straight through", () => {
@@ -214,14 +220,21 @@ describe("fftRequestEquals", () => {
     expect(fftRequestEquals(null, null)).toBe(true);
   });
 
-  it("fftRequestEquals — a different lap — are not equal (a main-lap selection change must refetch)", () => {
-    const a = fftRequestFor("fork_travel", 4096, segmentation, "mean", 1);
-    const b = fftRequestFor("fork_travel", 4096, segmentation, "mean", 2);
+  it("fftRequestEquals — a different selected window — are not equal (a window selection change must refetch)", () => {
+    const a = fftRequestFor("fork_travel", 4096, segmentation, "mean", lapWindow(1));
+    const b = fftRequestFor("fork_travel", 4096, segmentation, "mean", lapWindow(2));
 
     expect(fftRequestEquals(a, b)).toBe(false);
   });
 
-  it("fftRequestEquals — same lap on both sides, including both null — are equal", () => {
+  it("fftRequestEquals — same window content on both sides (different object identity) — are equal", () => {
+    const a = fftRequestFor("fork_travel", 4096, segmentation, "mean", lapWindow(1));
+    const b = fftRequestFor("fork_travel", 4096, segmentation, "mean", lapWindow(1));
+
+    expect(fftRequestEquals(a, b)).toBe(true);
+  });
+
+  it("fftRequestEquals — both windows null — are equal", () => {
     const a = fftRequestFor("fork_travel", 4096, segmentation, "mean", null);
     const b = fftRequestFor("fork_travel", 4096, segmentation, "mean", null);
 

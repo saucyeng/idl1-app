@@ -1,5 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 
+import type { Window } from "./workbook";
+
 /** Decoded raster (C3 §3.6): row-major top-down RGBA8 pixel data. */
 export interface DecodedRaster {
   width: number;
@@ -150,18 +152,23 @@ export function decodeFft(buf: ArrayBuffer): DecodedFft {
   return { sampleRateHz, magnitudes };
 }
 
-/** Fetches and decodes one channel's FFT spectrum (C3 §3.6, ruling R63 (3)).
- *  `lap: null` takes the whole channel; `lap: n` selects that lap's
- *  recording-time window from `session.json`'s `laps[]` (ruling R83) — an
- *  unknown lap number is `invalid_argument` with `detail: { lap }`.
- *  Settle-bound only, same rule as `fetchRaster`. */
-export async function fetchFft(
-  sessionId: string,
+/** Fetches and decodes one channel's FFT spectrum over `window` (C3 §3.6,
+ *  ruling R117 — replaces `fetchFft`'s `sessionId` + `lap`). `window`'s
+ *  span resolves the same way `evalWorkbookV2` resolves one: `{ kind:
+ *  "session" }` takes the whole channel, `{ kind: "lap", lap_number: n }`
+ *  selects that lap's recording-time window from `session.json`'s
+ *  `laps[]` (ruling R83), and `{ kind: "range" }` makes an FFT over a
+ *  dragged range expressible for the first time. Ruling R85's order
+ *  stands: slice to the window first, then apply R76's guards
+ *  (`"none"`-averaging exactly-one-segment; a window too short/degenerate
+ *  to derive a sample rate) to the window's own samples. Settle-bound
+ *  only, same rule as `fetchRaster`. */
+export async function fetchFftV2(
+  window: Window,
   channel: string,
-  lap: number | null,
   params: SpectrogramParams,
   averaging: FftAveraging
 ): Promise<DecodedFft> {
-  const buf = await invoke<ArrayBuffer>("fetch_fft", { sessionId, channel, lap, params, averaging });
+  const buf = await invoke<ArrayBuffer>("fetch_fft_v2", { window, channel, params, averaging });
   return decodeFft(buf);
 }
