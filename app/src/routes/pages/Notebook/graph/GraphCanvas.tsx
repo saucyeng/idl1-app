@@ -11,6 +11,7 @@ import {
   type NodeMouseHandler,
   type NodeTypes,
   type OnNodeDrag,
+  type OnReconnect,
 } from "@xyflow/react";
 // Bundled from node_modules, like every other asset (offline-first: no CDN,
 // CLAUDE.md §3) — not a network fetch.
@@ -25,6 +26,7 @@ import { computeNodeStatuses } from "../model/graphStatus";
 import { scanMathExpr, type MathExprCall } from "../model/mathExpr";
 import type { WindowEvalState } from "../model/workbookState";
 import { subgraphsFor, searchNodeIds, visibleNodeIds } from "../model/graphSubgraph";
+import { editLiteralArg, renameDefinition, rewireInput, type UnresolvedRenameRef } from "../model/graphEdits";
 import { commitDrag } from "./dragCommit";
 import { insertChartCell } from "./graphToChart";
 import NodeCard, { type MathNodeData } from "./NodeCard";
@@ -77,6 +79,13 @@ function valueFor(node: GraphNode, outputs: CellOutput[]) {
   return output?.defs.find((d) => d.name === node.name)?.value ?? null;
 }
 
+/** R145's "renamed; N reference(s) in cell(s) X were not updated" line —
+ *  named cells, not a bare count, so the note is enough to go find them. */
+function describeUnresolved(oldName: string, newName: string, unresolved: UnresolvedRenameRef[]): string {
+  const cellIds = [...new Set(unresolved.map((u) => u.cellId))];
+  return `Renamed ${oldName} → ${newName}. ${unresolved.length} reference(s) in cell(s) ${cellIds.join(", ")} could not be updated automatically (custom code or prose) — check them by hand.`;
+}
+
 /**
  * The maths graph canvas (C2 §3.7, decision 40/44, ruling R135): one React
  * Flow node per {@link import("../model/graphModel").GraphNode}, laid out
@@ -91,6 +100,34 @@ export default function GraphCanvas({ markdown, outputs, selectedWindows, window
   const handleChart = useCallback(
     (nodeName: string) => {
       const next = insertChartCell(markdown, nodeName, "lineY");
+      if (next !== markdown) onCommit(next);
+    },
+    [markdown, onCommit]
+  );
+
+  // Rename (decision 45a): the one gesture that writes both a cell body
+  // and the `graph` key in a single dispatch (§3.7.3's deliberate
+  // exception) -- `renameDefinition` already does both in one pass. R145's
+  // "report what could not be rewritten" surfaces here as `renameNotice`,
+  // a plain dismissible line rather than a silent success: a rename must
+  // never present itself as complete when a js cell's custom code or a
+  // prose span still names the old identifier.
+  const [renameNotice, setRenameNotice] = useState<string | null>(null);
+  const handleRename = useCallback(
+    (oldName: string, newName: string) => {
+      const result = renameDefinition(markdown, oldName, newName);
+      if (result.markdown !== markdown) onCommit(result.markdown);
+      setRenameNotice(result.unresolved.length > 0 ? describeUnresolved(oldName, newName, result.unresolved) : null);
+    },
+    [markdown, onCommit]
+  );
+
+  // Edit a literal argument on the card (decision 45a) -- `editLiteralArg`
+  // re-serialises just that one call, verbatim text, no validation beyond
+  // what that pure function already does (see its own doc comment).
+  const handleEditArg = useCallback(
+    (cellId: string, defName: string, argIndex: number, newText: string) => {
+      const next = editLiteralArg(markdown, cellId, defName, argIndex, newText);
       if (next !== markdown) onCommit(next);
     },
     [markdown, onCommit]
@@ -138,11 +175,16 @@ export default function GraphCanvas({ markdown, outputs, selectedWindows, window
             shape: shapeOf(valueFor(graphNode, outputs)),
             call,
             onChart: handleChart,
+            onRename: handleRename,
+            onEditArg:
+              graphNode.kind === "definition" && graphNode.cellId !== null
+                ? (argIndex: number, newText: string) => handleEditArg(graphNode.cellId as string, graphNode.name, argIndex, newText)
+                : undefined,
             highlighted: matchedIds.has(graphNode.id),
           },
         };
       });
-  }, [model.nodes, positions, statuses, outputs, handleChart, visibleIds, matchedIds]);
+  }, [model.nodes, positions, statuses, outputs, handleChart, handleRename, handleEditArg, visibleIds, matchedIds]);
 
   const flowEdges = useMemo<Edge[]>(
     () => model.edges.filter((edge) => visibleIds.has(edge.source) && visibleIds.has(edge.target)).map((edge) => ({ id: edge.id, source: edge.source, target: edge.target })),
@@ -173,6 +215,30 @@ export default function GraphCanvas({ markdown, outputs, selectedWindows, window
       if (cellId !== null) onSelectCell(cellId);
     },
     [onSelectCell]
+  );
+
+  // Drag-a-port-to-rewire (decision 45a's third gesture): dragging an
+  // edge's own endpoint onto a different node reconnects it — xyflow's
+  // native edge-reconnection gesture, not a fresh connection (`onConnect`
+  // is intentionally not wired: this graph's edges are derived entirely
+  // from the document's own `[Name]` references, so "connect" only ever
+  // makes sense as "replace the reference an existing edge already
+  // names"). `oldEdge.source`/`newConnection.source` are node ids; the old
+  // and new *reference names* `rewireInput` needs are each that node's own
+  // `GraphNode.name` — a `"channel"` node's `id` and `name` differ
+  // (`channel:x` vs `x`), so this never passes a raw node id where the
+  // document expects an identifier or a channel id.
+  const nodesById = useMemo(() => new Map(model.nodes.map((n) => [n.id, n])), [model.nodes]);
+  const handleReconnect = useCallback<OnReconnect<Edge>>(
+    (oldEdge, newConnection) => {
+      const target = nodesById.get(oldEdge.target);
+      const oldSource = nodesById.get(oldEdge.source);
+      const newSource = newConnection.source !== null ? nodesById.get(newConnection.source) : undefined;
+      if (target?.cellId === undefined || target?.cellId === null || oldSource === undefined || newSource === undefined) return;
+      const next = rewireInput(markdown, target.cellId, target.name, oldSource.name, newSource.name);
+      if (next !== markdown) onCommit(next);
+    },
+    [markdown, onCommit, nodesById]
   );
 
   function toggleCollapsed(cellId: string): void {
@@ -210,6 +276,14 @@ export default function GraphCanvas({ markdown, outputs, selectedWindows, window
           </div>
         )}
       </div>
+      {renameNotice !== null && (
+        <div className="flex items-center justify-between gap-3 border-b border-rule bg-surface-2 px-3 py-1 text-label-2 text-fg-dim">
+          <span>{renameNotice}</span>
+          <button type="button" onClick={() => setRenameNotice(null)} className="text-fg-faint hover:text-fg">
+            Dismiss
+          </button>
+        </div>
+      )}
       <div className="min-h-0 flex-1">
         <ReactFlow
           nodes={nodes}
@@ -219,6 +293,8 @@ export default function GraphCanvas({ markdown, outputs, selectedWindows, window
           onEdgesChange={onEdgesChange}
           onNodeDragStop={handleNodeDragStop}
           onNodeClick={handleNodeClick}
+          onReconnect={handleReconnect}
+          edgesReconnectable
           fitView
         >
           <Background />

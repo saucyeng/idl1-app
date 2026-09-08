@@ -100,6 +100,27 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 
 ### Added
 
+- **Three of decision 45a's five gestures wired to the maths graph canvas
+  (2026-09-08, w32-maths, ruling R147 follow-on — the five `graphEdits.ts`
+  mutations landed with Tasks 3-9 but were reachable from no UI gesture
+  until now).** Double-click a card's name to rename (calls
+  `graphEdits.ts`'s `renameDefinition`; when it reports an unresolved
+  reference — R145's custom-`js`/prose case — a dismissible notice names
+  the affected cell(s), so a rename never presents itself as complete when
+  it isn't). Click a call's literal argument to edit it in place (`edit
+  LiteralArg`). Drag an edge's endpoint onto a different node to rewire
+  that one input (`rewireInput`, via xyflow's native edge-reconnection
+  gesture, `onReconnect` — not a fresh `onConnect`, since every edge here
+  already names a `[Name]` reference the document owns; "connect" only
+  ever means "replace which reference an existing edge names"). Every
+  commit round-trips through the same `onCommit` prop drag-to-reposition
+  and the chart button already used. **Two gestures and the details pane
+  remain unwired, flagged not attempted:** drag-a-channel-from-the-list
+  has no channel-list UI to drag *from* at all yet (a prerequisite gap,
+  not a wiring gap — the survey's own gap list item 10); a card click
+  still opens the owning *cell's* code editor (`EditorPanes`), not a
+  focused per-node details pane (decision 45a's own first half) — building
+  a real one needs new UI, not a rewire of an existing prop.
 - **`app/src/routes/pages/Notebook/model/graphSubgraph.ts`: subgraph
   collapse/expand and canvas search (2026-09-08, w32-maths Task 12, spec
   exists — C2 §3.7.3, decisions 42/43/77, no spec change needed).**
