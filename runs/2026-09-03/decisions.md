@@ -5171,3 +5171,48 @@ arranging windows whose *lengths* differ — and must inspect `out[1]`.
 together loses every chart for every selected window at once, with one
 error explaining none of it — and the wire shape would have to change
 later anyway, after the TypeScript half was built against it.
+
+## 2026-09-08 — R122: a window must scope the channel data a definition sees, not just the lap-aware functions
+
+**Finding.** Reported in passing by the S1 R121 implementer ("`[ChanA]` bare
+channel refs aren't lap-windowed at all in `core` — only `variance_time`/
+`variance_dist` read `main_lap_bounds`") and confirmed by reading
+`eval_workbook_v2_via`: it calls `load_session_handle(data_dir,
+&window.session_id)`, which returns the **whole session**, and passes that
+to `build_cell_outputs`. `load_window_context` only produces the
+`MathLapContext` carrying bounds. So today a definition's channel
+references evaluate over the entire session regardless of which lap or
+range the window names; per-window evaluation differs **only** for the
+handful of window-aware functions.
+
+**Why this matters.** Direction-2 decision 47: "Selecting a lap
+re-evaluates every math definition over that lap and re-scopes every
+chart." It also produces an inconsistency inside one chart: a raw channel
+is windowed by its own tile request, while a *derived* definition drawn
+beside it is not — so `peak = max([ChanA])` over a selected lap silently
+reports the whole session's peak. That is a wrong number presented as a
+right one, which section D exists to prevent.
+
+**Ruling — the window slices the `ChannelLookup`.** `eval_workbook_v2` (and
+`fetch_host_channel_v2`) must hand evaluation a handle sliced to the
+resolved window, not the full session. Slicing, not masking-with-NaN:
+- masking would keep every series at session length and require every
+  reduction, filter and estimator to be NaN-aware to stay correct — a
+  cross-cutting obligation that holds only until one function forgets;
+- slicing is already the model C2 §3.6 uses for shapes: narrowing an axis
+  produces a **new origin** on that axis (§3.6.7's `slice(fork_spec, "f",
+  0, 8)`), and `align` exists precisely to relate series across origins.
+  A window is the same operation on the time axis.
+`SessionHandle::slice_by_time` already exists and is the primitive.
+
+The window-aware functions keep their `MathLapContext` bounds: after
+slicing, the bounds are the slice's own extent, so `variance_*` gating
+becomes a no-op rather than a contradiction. Confirm that when implementing
+— if slicing makes the existing gating double-apply, say so rather than
+deleting the gate.
+
+**Cost if wrong.** Left as-is, the entire S1 lane delivers per-window
+evaluation that returns identical numbers for every window except in
+variance functions — and the first person to trust a per-lap statistic gets
+a session-wide answer. Found after the TypeScript half was built on it, the
+fix would reach back through every driver and chart binding.
