@@ -6075,3 +6075,47 @@ declining to work looks exactly like having no work to do.
 **Cost if wrong.** The Critical silently drops a selected window's channel
 data permanently — the same user-visible failure S1 shipped twice and fixed
 twice, arriving a third time through a third gate.
+
+## 2026-09-08 — R139: the cursor card reads the combined payload the host already builds, not per-window tiles
+
+**Question** (W3.2 time task 7). Decision 55 wants the cursor card to show
+one row per series **and per overlaid window**. But `channelBindDriver`
+fetches per-window tiles, combines them into typed `{t, v, w}` arrays, sends
+those to the sandbox via `setChannelHostVar`, and **retains nothing but the
+primary window's tiles** in host state. So `ChartCell` has no non-primary
+window's values to read. The implementer proposed shipping the card wired to
+the primary window only, labelled per R132, with a TODO — explicitly asking
+whether to plumb per-window tiles instead.
+
+**Ruling — neither. Retain the combined payload.**
+
+Primary-only is the wrong ship: the cursor card in a comparison workflow
+exists precisely to read lap 2's value against lap 3's at the same instant.
+A card that names one window honestly is still the feature with its purpose
+removed, and it would read as "done" in the changelog.
+
+Plumbing per-window *tiles* back through the action stream is the wrong fix:
+it is a real scope expansion, and it retains far more than the card needs.
+
+The data already exists. The host **builds** the combined `{t, v, w}` arrays
+itself, immediately before handing them to the sandbox, and then drops them.
+Keep them — one combined payload per (cell, channel), in a ref — and the
+card's rows are a filter on `w`. That is:
+- **no new fetch and no IPC on hover** (P2 and CLAUDE.md §2 hold — the arrays
+  are already in host memory at send time);
+- **no per-window tile retention** — the arrays are decimated to the point
+  budget, which is exactly the resolution the readout displays;
+- **correct for N windows by construction**, because `w` is the window index
+  R127 put there.
+
+**Hover versus pin.** The decimated arrays are right for hover, which is a
+live readout at pointer rate. R134 item 7 already says a **pin** freezes the
+card and triggers the exact readout — that path may do IPC, because a pin is
+a settle, not a pointer move.
+
+**Accepted from the same report:** building `cursorCard.ts`'s row shape
+generically, taking per-window input, is right regardless — keep that.
+
+**Cost if wrong.** Shipping primary-only means the first genuine two-lap
+comparison shows one lap's numbers beside two laps' traces, and the gap gets
+rediscovered as a bug rather than remembered as a TODO.
