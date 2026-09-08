@@ -5698,3 +5698,44 @@ lane, which is where per-lap columns live anyway (R125's lap-table trigger).
 **Cost if wrong.** Unmarked, every scalar in a notebook silently becomes
 "whichever window happens to be first" the moment a second lap is selected —
 and the number is *plausible*, so nothing prompts the reader to doubt it.
+
+## 2026-09-08 — R133: an inner identity cache is a second staleness gate; fixing the deps does not fix it
+
+**Finding** (review of the S1 pre-merge fix batch, Critical). The
+readiness-key fix made both IPC-driving effects re-run when any selected
+window's `SessionDetail` resolves — verified correct, order-independent,
+and combined with `windowsKeyValue` so two selections cannot collide. The
+**FFT effect is genuinely fixed**, because its identity is per-window
+(`perWindowIdentity` keyed by `wKey`).
+
+The **channel-bind effect is not.** Immediately after the deps let it run,
+a per-cell gate compares `bindingIdentity(binding)` — computed from the
+**primary window's binding only**, cached in `boundIdentityRef` by `cellId`
+— and `continue`s when unchanged. A sibling window resolving does not
+change the primary binding, so the loop skips the cell and
+`runChannelBind` is never called with the updated windows. The
+non-primary window's channel data is still never fetched.
+
+**Ruling.** The channel-bind effect's identity becomes **per (cell,
+window)**, mirroring the FFT effect that already works. Two effects
+answering the same question two different ways is what let one of them be
+fixed and the other look fixed.
+
+**The general rule, which is why this is a ruling and not a bug report:**
+an effect's dependency array and an inner memo/identity cache are *two*
+staleness gates in series, and a value that is absent from either one is
+invisible to the effect. Operating brief §4 says staleness belongs in a
+pure tested module by a monotonic sequence; a hand-rolled identity cache
+inside an effect body is a second, untested implementation of that same
+concern. When fixing a stale-dependency defect, check every gate between
+the dependency and the work — the deps are only the outermost.
+
+**Also:** the CHANGELOG bullet claims the fix covers "channel data or
+spectrum". It covers spectrum only. Correct it when the code is correct,
+not before — a changelog that overstates a fix is how a known defect gets
+re-reported as a regression months later.
+
+**Cost if wrong.** The lane would have merged with its headline feature —
+two laps overlaid on a time chart — silently broken for the ordinary case
+where the primary window resolves first, while the FFT path worked and
+made it look wired.
