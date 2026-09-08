@@ -175,6 +175,37 @@ describe("windowSpanFor", () => {
 
     expect(windowSpanFor(w, new Map(), new Map())).toBeNull();
   });
+
+  it("windowSpanFor — a lap primary window starting partway through the session — cursorTimeInWindow resolves against the lap's own start, not {0, sessionSpanUs} (regression: ChartCell used to assume the latter)", () => {
+    // Lap 3 runs from 120s to 150s of a much longer session -- exactly the
+    // shape `ChartCell.tsx`'s own `{startUs: 0, endUs: sessionSpanUs}`
+    // shortcut got wrong: the whole *session* may be 900s long, but the
+    // *primary window* (lap 3, once clicked) starts at 120_000_000 µs, not
+    // 0. A hover offset of 5_000_000 µs (5 s into the lap) must resolve to
+    // 125_000_000 µs -- the lap's own fifth second -- not 5_000_000 µs,
+    // which under the old assumption would land in lap 1 or 2's data
+    // instead, five *session* seconds in.
+    const w: SelectionWindow = { sessionId: "s1", span: { kind: "lap", lapNumber: 3 }, colour: "--chart-1" };
+    const detail = detailWithLaps([{ lap_number: 3, start_time_secs: 120, end_time_secs: 150 }]);
+    const detailsByWindow = new Map([["s1::lap:3", detail]]);
+    const spanUsByWindow = new Map<string, number | null>(); // lap span needs no recorded-session-span lookup
+
+    const primaryWindowSpan = windowSpanFor(w, detailsByWindow, spanUsByWindow);
+    expect(primaryWindowSpan).toEqual({ startUs: 120_000_000, endUs: 150_000_000 });
+
+    const offsetUs = 5_000_000; // 5s into the lap, from cursorBus (offset from the primary window's own start)
+    const resolvedTUs = cursorTimeInWindow(offsetUs, primaryWindowSpan!);
+    expect(resolvedTUs).toBe(125_000_000);
+
+    // The regression this guards: resolving the same offset against the old
+    // `{startUs: 0, endUs: sessionSpanUs}` shortcut gives a different,
+    // wrong instant -- proof the two are not interchangeable for a
+    // non-`"session"`-kind primary window.
+    const wrongAssumedSpan = { startUs: 0, endUs: 900_000_000 };
+    const wrongResolvedTUs = cursorTimeInWindow(offsetUs, wrongAssumedSpan);
+    expect(wrongResolvedTUs).toBe(5_000_000);
+    expect(wrongResolvedTUs).not.toBe(resolvedTUs);
+  });
 });
 
 describe("resolvedWindowKeysFor", () => {

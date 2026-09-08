@@ -6,6 +6,26 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 
 ### Fixed
 
+- **`ChartCell.tsx`'s hover-cursor offset and cursor-card rows mis-scoped for
+  a `"lap"`/`"range"` primary window (2026-09-08, w32-time, merge review,
+  R138 pattern a fourth time).** `primaryWindowSpan` was locally derived as
+  `{startUs: 0, endUs: sessionSpanUs}` — correct only for a `"session"`-kind
+  primary window; the moment a user clicked a lap (the app's main gesture)
+  and it became primary, every `cursorBus` offset published/resolved by this
+  cell (hover line, click-pin, the value card's rows) was computed against
+  the wrong origin. Fixed by threading `Notebook/index.tsx`'s own
+  `windowSpanFor` result in as a new `primaryWindowSpan` prop instead — the
+  same single "resolved" predicate `bindWindowsFor` and the playback loop
+  (Task 10) already share, rather than a second, independently-derived
+  approximation beside them. `index.tsx` stabilizes it through a `useMemo`
+  keyed on `startUs`/`endUs` (`windowSpanFor` returns a fresh object literal
+  every render) so it is safe inside `ChartCell`'s own `useCallback`/
+  `useEffect` dependency arrays without resubscribing every render; every
+  call site now guards `primaryWindowSpan === null` (span not yet resolved)
+  rather than dereferencing it. `viewportWindows.test.ts` gained a
+  regression test with a lap starting at 120s of a 900s session, asserting
+  the correct resolved instant against the old wrong one directly — a
+  session-kind-only test would have passed under either assumption.
 - **`Notebook/model/viewportWindows.ts`: `AbsoluteSpan.endUs = Infinity`
   sentinel removed (2026-09-08, w32-time Task 3, ruling R134/plan §3.4,
   spec-during).** `resolveWindowSpan`'s `"session"` arm no longer returns

@@ -571,6 +571,24 @@ export default function NotebookPage() {
   // channel-bind gate uses, R138). `null` while unresolved (nothing
   // selected, or the window's own session/span hasn't loaded yet).
   const primaryWindowSpan = primaryWindow !== null ? windowSpanFor(primaryWindow, sessionDetailsByWindow, sessionSpanUsByWindow) : null;
+  /**
+   * The same value as {@link primaryWindowSpan} above, but with a stable
+   * object identity across renders when its own `startUs`/`endUs` haven't
+   * changed -- `windowSpanFor` builds a fresh object literal every call, so
+   * passing `primaryWindowSpan` itself as a `ChartCell` prop would make
+   * every one of that cell's own `useCallback`/`useEffect` dependency
+   * arrays that include it "change" on every render regardless of whether
+   * the primary window's span actually moved. `ChartCell.tsx`'s own
+   * hover-follow/pin/value-card code needs this true resolved span (fixing
+   * the review finding: it previously assumed `{startUs: 0, endUs:
+   * sessionSpanUs}`, correct only for a `"session"`-kind primary window --
+   * silently wrong the moment a lap or range became primary, R138's
+   * pattern again).
+   */
+  const primaryWindowSpanForCell = useMemo(
+    () => (primaryWindowSpan === null ? null : { startUs: primaryWindowSpan.startUs, endUs: primaryWindowSpan.endUs }),
+    [primaryWindowSpan?.startUs, primaryWindowSpan?.endUs]
+  );
 
   // The playback clock's `requestAnimationFrame` loop: local state only
   // (`setPlayback`), never IPC or `postMessage` itself (the effects rule's
@@ -2069,6 +2087,7 @@ export default function NotebookPage() {
                 cursorTUs={sharedCursorTUs}
                 playing={playback.playing}
                 playbackMode={playbackMode}
+                primaryWindowSpan={primaryWindowSpanForCell}
                 onSetCursor={(tUs) => setManualCursorTUs(BigInt(Math.round(tUs)))}
                 onClearCursor={() => setManualCursorTUs(null)}
                 cursorBus={cursorBus}

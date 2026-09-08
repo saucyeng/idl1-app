@@ -11,7 +11,7 @@ import { isStaleSettleResult, makeSettle } from "../model/settle";
 import { chooseTier, tileRange } from "../model/tiers";
 import { ensureTiles, type TileCache, type TileCacheKey } from "../model/tileCache";
 import { clampTo, panBy, transformFor, zoomAt, type Viewport } from "../model/viewport";
-import { cursorTimeInWindow } from "../model/viewportWindows";
+import { cursorTimeInWindow, type AbsoluteSpan } from "../model/viewportWindows";
 import ChartContextMenu from "../interaction/ChartContextMenu";
 import type { ChartAction } from "../interaction/chartActions";
 import type { CursorBus } from "../interaction/cursorBus";
@@ -117,6 +117,23 @@ export interface ChartCellProps {
   viewport: Viewport;
   /** Total session duration, in µs, for clamping pan/zoom at the session's edges. */
   sessionSpanUs: number;
+  /**
+   * The *true* primary window's own resolved `AbsoluteSpan` (`model/
+   * viewportWindows.ts`'s `windowSpanFor`), `null` while it hasn't resolved
+   * yet — the one predicate `Notebook/index.tsx`'s `bindWindowsFor` and its
+   * playback loop already share (R138: "resolved" has one definition). This
+   * cell's own hover-follow offset (`cursorBus`), the value card's rows, and
+   * a click's pin all use it as `cursorTimeInWindow`'s `window`/the offset
+   * origin — **not** `{startUs: 0, endUs: sessionSpanUs}`: that was only
+   * ever correct for a `"session"`-kind primary window (the review that
+   * added this prop found it silently mis-scoping every `"lap"`/`"range"`
+   * primary window, R138's pattern for the fourth time — see the removed
+   * `TODO(idl0)` this replaces). `Notebook/index.tsx` passes a
+   * `useMemo`-stabilized object (same `startUs`/`endUs` ⇒ same reference)
+   * so this prop is safe in a dependency array without resubscribing every
+   * render.
+   */
+  primaryWindowSpan: AbsoluteSpan | null;
   /** Owning session id, for the tile cache key and `fetchTile`. */
   sessionId: string;
   /** This cell's bound channel id, for the tile cache key and `fetchTile`. */
@@ -378,6 +395,7 @@ export default function ChartCell({
   heightPx,
   viewport,
   sessionSpanUs,
+  primaryWindowSpan,
   sessionId,
   channelId,
   sampleRateHz,
@@ -401,26 +419,6 @@ export default function ChartCell({
   inputMapPreset,
   onToggleCode,
 }: ChartCellProps) {
-  // The primary window's own `AbsoluteSpan`, for `cursorTimeInWindow`
-  // (Task 6 / R131 Q2). Today this cell only ever mounts the *primary*
-  // window's own bound channel (no per-window `ChartCell` instances yet,
-  // R69(d)'s own TODO), and that window's gesture viewport is already
-  // expressed in session-absolute µs starting at `0`
-  // (`jsCellBinding.ts`'s `initialSpan: {startUs: 0, endUs: sessionSpanUs}`)
-  // -- so `{startUs: 0, endUs: sessionSpanUs}` *is* the primary window's own
-  // span whenever that window is `"session"`-kind (today's default), byte-
-  // identical to before this task. A primary window of `"lap"`/`"range"`
-  // kind would need its own resolved span threaded in as a future prop --
-  // out of this task's scope (`Notebook/index.tsx` is not among its files).
-  // TODO(idl0): this shortcut expires the moment per-window `ChartCell`
-  // instances exist (R69(d)'s TODO landing) -- once a non-primary window
-  // gets its own mounted chart, *that* cell's own `primaryWindowSpan` must
-  // still be the true *primary* window's span (for the offset to mean the
-  // same instant everywhere), which `sessionSpanUs` alone can no longer
-  // stand in for regardless of the primary window's own kind. Needs a real
-  // `primaryWindowSpan` prop threaded from `Notebook/index.tsx` at that
-  // point, not this derivation.
-  const primaryWindowSpan = { startUs: 0, endUs: sessionSpanUs };
   const [hover, setHover] = useState<HoverReading | null>(null);
   /** The cursor value card's rows (Task 7, decision 55, R139) -- kept as
    *  its own state, alongside `hover`, since it depends on `cursorBus`'s
@@ -481,10 +479,11 @@ export default function ChartCell({
       // window's own start, not an absolute instant -- `cursorTimeInWindow`
       // resolves it against `primaryWindowSpan` before `pixelXForTUs` (which
       // still works in this chart's own absolute session-µs axis, matching
-      // `liveViewport`). `null` here means the offset has run past the
-      // primary window's own recorded end (decision 55's "renders
-      // absence"), same as an off-viewport pixel below.
-      const tUs = cursorTimeInWindow(state.tUs, primaryWindowSpan);
+      // `liveViewport`). `null` here means either the primary window's own
+      // span hasn't resolved yet, or the offset has run past its recorded
+      // end (decision 55's "renders absence"), same as an off-viewport pixel
+      // below.
+      const tUs = primaryWindowSpan === null ? null : cursorTimeInWindow(state.tUs, primaryWindowSpan);
       const px = tUs === null ? null : pixelXForTUs(liveViewportRef.current, tUs);
       if (px === null) {
         el.hidden = true;
@@ -493,7 +492,7 @@ export default function ChartCell({
       el.hidden = false;
       el.style.transform = `translateX(${px}px)`;
     });
-  }, [cursorBus, sessionSpanUs]);
+  }, [cursorBus, sessionSpanUs, primaryWindowSpan]);
   // The pointer's last-known CSS-px position within this cell, updated on
   // every pointer move (drag or hover alike) with no IPC — only the settle
   // callback below reads this to decide whether/what to request from
@@ -790,9 +789,11 @@ export default function ChartCell({
       // absolute session-µs axis (`cursorTUs` prop, `liveViewport`); Task 6
       // converts its result to an offset from the primary window's own
       // start before it reaches the bus (`cursorBus.ts`'s own doc comment).
+      // `primaryWindowSpan === null` (its own span hasn't resolved yet) --
+      // there is no offset origin to convert against, so nothing publishes.
       const verb = cursorFollowPolicy("hover", cursorTUs !== null, cursorTUs !== null ? Number(cursorTUs) : null, pixelX, liveViewport);
-      const offsetUs = verb.kind === "publish" && verb.tUs !== null ? verb.tUs - primaryWindowSpan.startUs : null;
-      if (verb.kind === "publish") cursorBus.publish(verb.tUs === null ? null : verb.tUs - primaryWindowSpan.startUs);
+      const offsetUs = verb.kind === "publish" && verb.tUs !== null && primaryWindowSpan !== null ? verb.tUs - primaryWindowSpan.startUs : null;
+      if (verb.kind === "publish" && primaryWindowSpan !== null) cursorBus.publish(verb.tUs === null ? null : verb.tUs - primaryWindowSpan.startUs);
 
       const geometry: HoverGeometry = { originPx: 0, pixelWidth: width };
       const reading = hoverAt(tiles, pixelX, geometry);
@@ -812,7 +813,7 @@ export default function ChartCell({
           : cursorCardRows(offsetUs, combinedChannelData, channelLabel ?? channelId, channelUnit ?? "", windowCount ?? 1);
       setCard(rows.length === 0 ? null : { pixelX, rows });
     },
-    [tiles, width, liveViewport, applyViewport, cursorTUs, cursorBus, channelId, channelLabel, channelUnit, windowCount, combinedChannelData]
+    [tiles, width, liveViewport, applyViewport, cursorTUs, cursorBus, channelId, channelLabel, channelUnit, windowCount, combinedChannelData, primaryWindowSpan]
   );
 
   const handlePointerUp = useCallback(
@@ -840,9 +841,14 @@ export default function ChartCell({
           // `onSetCursor` keeps its existing absolute-µs contract
           // (`Notebook/index.tsx`'s `manualCursorTUs`, unchanged by this
           // task); only `cursorBus` -- Task 6's own offset frame -- gets
-          // the converted value.
+          // the converted value, and only once there is a resolved primary
+          // window to convert against (`primaryWindowSpan !== null`) --
+          // `onSetCursor` still fires either way, so a click still pins the
+          // worksheet's absolute cursor even the instant before the primary
+          // window's own span has resolved; only the bus's window-relative
+          // line/card lag behind it by that same instant.
           onSetCursor(verb.tUs);
-          cursorBus.pin(verb.tUs - primaryWindowSpan.startUs);
+          if (primaryWindowSpan !== null) cursorBus.pin(verb.tUs - primaryWindowSpan.startUs);
         } else if (verb.kind === "unpin") {
           onClearCursor();
           cursorBus.unpin();
@@ -864,7 +870,7 @@ export default function ChartCell({
       // `handlePointerMove`; `"none"` never changed the viewport at all —
       // neither needs anything further on release.
     },
-    [liveViewport, cursorTUs, onSetCursor, onClearCursor, cursorBus, applyViewport]
+    [liveViewport, cursorTUs, onSetCursor, onClearCursor, cursorBus, applyViewport, primaryWindowSpan]
   );
 
   const handlePointerLeave = useCallback(
@@ -893,10 +899,12 @@ export default function ChartCell({
       const verb = cursorFollowPolicy("hover", cursorTUs !== null, cursorTUs !== null ? Number(cursorTUs) : null, null, liveViewport);
       // `verb.tUs` is already `null` here (a `pixelX: null` hover always
       // resolves to `{kind: "publish", tUs: null}`) -- the same
-      // null-preserving conversion as `handlePointerMove`'s, for symmetry.
-      if (verb.kind === "publish") cursorBus.publish(verb.tUs === null ? null : verb.tUs - primaryWindowSpan.startUs);
+      // null-preserving conversion as `handlePointerMove`'s, for symmetry
+      // (and the reason `primaryWindowSpan` is never actually dereferenced
+      // in this particular call, since `verb.tUs` is always `null` here).
+      if (verb.kind === "publish") cursorBus.publish(verb.tUs === null || primaryWindowSpan === null ? null : verb.tUs - primaryWindowSpan.startUs);
     },
-    [cursorTUs, liveViewport, cursorBus]
+    [cursorTUs, liveViewport, cursorBus, primaryWindowSpan]
   );
 
   const handleWheel = useCallback(
