@@ -5739,3 +5739,58 @@ re-reported as a regression months later.
 two laps overlaid on a time chart — silently broken for the ordinary case
 where the primary window resolves first, while the FFT path worked and
 made it look wired.
+
+## 2026-09-08 — R134: the eight time-and-cursor questions
+
+Answering `runs/2026-09-08/w32-time-plan.md` §Open. Plan accepted; the
+13-task order stands. The survey's headline finding is accepted and worth
+restating because it shapes the lane: **the sandbox is not on the pointer
+path at all** — the iframe is `pointer-events: none` and each host
+`ChartCell` frame captures input over it. Cursor state therefore lives in
+the host and crosses charts by an imperative pub/sub bus, never React state
+at pointer rate, and the lane needs **no new sandbox messages** on the
+interaction path.
+
+1. **Strip with N windows — one lane per window, stacked, own handles.**
+   Accepted. A single merged lane would have to show a union, and windows
+   can come from different sessions, where a union of two unrelated clocks
+   means nothing. Stacked lanes also carry each window's colour, so the
+   strip and the charts read as the same objects.
+2. **Shift-drag pans.** Accepted. Decision 56 gives plain drag to zoom and
+   leaves panning unnamed; shift-drag is the least surprising inversion of
+   today's modifier. Note it is the *secondary* affordance — with a master
+   timeline the primary way to pan is dragging the window on the strip, so
+   this need not be discoverable on its own.
+3. **Dragging a `lap` window's boundary converts it to a `range` — yes, and
+   the label must change visibly.** R115 makes both the same object, so the
+   conversion is natural. The visibility is the ruling: a chip that still
+   says "Lap 2" while describing a hand-trimmed span is a lie of exactly the
+   kind R132 closed for cell values.
+4. **The shared X viewport is not persisted.** Accepted. Decision 48 keeps
+   only the last workbook across a restart, and a viewport is genuinely
+   renderer-only — it decides pixels, never numbers, so nothing downstream
+   depends on it surviving.
+5. **Distance-on-X ships disabled, with the reason stated in the UI.**
+   Accepted. The setting needs a core distance axis (idl0 had wheel-speed
+   integral and GPS distance) that a UI lane cannot build. A disabled
+   control naming why is honest; a control that silently plots time while
+   labelled distance is not. Filed as a core follow-on.
+6. **Playback stops at the primary window's end, named in the transport.**
+   Accepted — the same rule as R132: showing one window of several is
+   allowed, showing it unlabelled is not.
+7. **Hover drives the value card live; a pin freezes it and triggers the
+   exact readout.** Accepted; matches decisions 51, 55 and 56 exactly.
+8. **Add optional `plotRect` to `cellRendered`.** Accepted — the lane's only
+   protocol change, additive, and at settle rate, so it does not put IPC on
+   the interaction path.
+
+**Also accepted, and important:** task 3 removes
+`viewportWindows.ts`'s `AbsoluteSpan.endUs = Infinity` sentinel before the
+strip exists. That is the S1 "a default meaning everything" shape — here it
+would silently collapse every strip lane onto the left edge. Finding it in
+planning rather than in review is the outcome the warning was written for.
+
+**Cost if wrong.** (3) and (6) are the two that produce wrong beliefs rather
+than wrong pixels: a mislabelled window and an unlabelled playback range are
+both the reader trusting a number scoped to something other than what the
+label says.
