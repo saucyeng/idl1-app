@@ -5486,3 +5486,53 @@ number is not (section D). Report such a residual as a defect, not a note.
 **Cost if wrong.** A user drags a boundary cursor past the end of a session
 and every statistic on screen quietly reports the whole session instead of
 the empty selection they asked for.
+
+## 2026-09-08 — R129: spectra carry the window dimension in the payload (amends R127 item 5); and an interim shim may not silently widen a window
+
+**Two findings from the R127 implementation.**
+
+### 1. The spectrum addressing gap — R127 item 5 was wrong
+
+R127 item 5 said `spectrumKey` gains the window index, so *n* windows yield
+*n* spectra. The implementer built that and then correctly flagged the
+consequence: **C2 §5.3's `spectrum_call` grammar has no window token**, so
+sandboxed cell code has no way to *address* the extra keys. Host-side
+naming is ready; the cell-side addressing does not exist.
+
+**Ruling — amend R127 item 5. Spectra work exactly like channels.** One
+host variable per (definition, fft params), whose payload carries the
+window dimension — `{ length, f, m, w }` plus the same `windows` descriptor,
+with the same break between windows. No window index in `spectrumKey`, and
+**no C2 §5.3 grammar change**. The addressing gap disappears because there
+is nothing extra to address: a cell writes `spectrum("x")` and groups by
+`w`, precisely as it does for `channel("x")`.
+
+This is what R127 item 1 already required for channels — names must not
+encode selection state — and I failed to carry the same reasoning to
+spectra one item later. Symmetry here is not tidiness: two different
+addressing models for two host-variable kinds would need two mental models
+in cell code, and the grammar change avoided is a contract change avoided.
+
+The implementer's own instinct was already right: it made the single-window
+`spectrumKey` byte-identical to the pre-existing string rather than
+appending `_0`. Keep that property; the key simply never varies by window.
+
+### 2. `lapFromWindow` silently widens a range window to the whole session
+
+`fftDriver.ts`'s interim shim reduces a `Window` to a bare lap number:
+`span.kind === "lap" ? lap_number : null`. `null` means "no lap — whole
+session" to the old `fetch_fft`. So a **`range` window silently computes its
+FFT over the entire session**, and a `session` window happens to be right by
+luck. A spectrum of the whole run presented as the spectrum of a dragged
+selection is the silent-wrong-number failure this lane has now produced four
+times through four different doors.
+
+**Ruling.** An interim shim may narrow scope, never widen it. Until the
+driver migrates to `fetchFftV2` (Task 11), a `range` span must be an
+explicit typed failure — a cell error the user can see — not a `null` that
+means "everything". Failing loudly costs nothing here precisely because the
+shim is temporary.
+
+**Cost if wrong.** (2) ships a spectrum computed from thirty minutes of data
+labelled as a ten-second selection, with nothing on screen distinguishing
+it from the real thing.
