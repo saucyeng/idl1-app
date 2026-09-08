@@ -5041,3 +5041,47 @@ class of silently-plausible wrong numbers into a typed error.
 contract would have the maths lane build an axis the evaluator structurally
 cannot compute, and the gap would surface as "why does this reduction
 return one window's answer" long after cells were written against it.
+
+## 2026-09-08 — R119: a range that does not overlap its session is an error, not a zero-width window
+
+**Finding** (review of S1 Task 2, `runs/2026-09-07/findings-s1-task2.md`,
+Important). `resolve_window` clamps an out-of-span `range` to a zero-width
+`(t, t)` tuple and its doc calls that "the empty window". It is not one.
+The codebase's own slicing primitive,
+`core::session::handle::time_window_index_range` (`t < t0` / `t <= t1`,
+used by `slice_by_time`), is **inclusive at `t1`**, and the clamp target is
+always a real recorded sample's `t_us` (it comes from `t_us.first()` /
+`.last()`). Feeding it `(T, T)` selects **exactly one sample**, not zero.
+
+**Ruling — the contract changes, the doc does not get softened.**
+1. A `range` that **partially** overlaps the session's recorded span clamps
+   to the intersection. That is a user dragging a boundary cursor past the
+   edge (decision 52) and is entirely legitimate.
+2. A `range` that does **not overlap at all** is a typed error —
+   `IpcError::InvalidArgument` with
+   `detail: { session_id, t0_us, t1_us, session_span_us }` — not a
+   zero-width tuple. Under per-window evaluation (R117.4) it fails only
+   that window, and section D already specifies what the user sees: an
+   empty slot carrying the message and a Fix button (decision 58).
+3. **C1 §6.1's sentence "a range wholly outside it resolves to the empty
+   window" is struck**, because `(f64, f64)` cannot represent an empty
+   window and nothing downstream reads one. I wrote that sentence when I
+   merged Task 1; it described a state the code cannot hold.
+
+**Why not the reviewer's suggested fix.** Softening the doc to "consumers
+must treat `t0 == t1` as zero samples themselves" pushes an invariant onto
+every future caller and is exactly the kind of rule that holds until
+someone forgets. Worse, the failure it permits is a chart or statistic
+computed over one arbitrary edge sample — a number that looks real and is
+meaningless. Section D's whole point is that the app never shows a
+silently-wrong value.
+
+**Also accepted from the review** (both minor, folded into the same fix
+commit): replace the stale `C1 §6.x` citations with `§6.1`, and add the
+missing one-sided-clamp test, since the doc already claims that behaviour
+and nothing exercises it.
+
+**Cost if wrong.** Task 6 wires the `range` arm into `fetch_fft_v2`'s
+slicing. Had this shipped as written, an FFT over a non-overlapping range
+would have returned a spectrum computed from a single sample rather than
+an error — plausible-looking output from no data.

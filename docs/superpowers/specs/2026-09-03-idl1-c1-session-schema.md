@@ -748,8 +748,15 @@ window is meaningless without its `session_id`.
 span. `{ kind: "lap", n }` resolves to `laps[n].start_time_secs …
 end_time_secs` converted to `t_us`; an `n` absent from `laps[]` is
 `invalid_argument` with `detail: { "lap": n }` (unchanged from §6's existing
-rule). `{ kind: "range" }` resolves to itself, clamped to the session's
-recorded span; a range wholly outside it resolves to the empty window.
+rule). `{ kind: "range" }` that overlaps the session's recorded span resolves to
+the intersection — a boundary cursor dragged past the edge (decision 52)
+clamps, which is legitimate. A range that does **not overlap at all** is
+`invalid_argument` with
+`detail: { session_id, t0_us, t1_us, session_span_us }`, **not** a
+zero-width window: a resolved span is a `(t0, t1)` pair and the engine's
+slicing is inclusive at `t1`, so `(T, T)` selects one sample rather than
+none (ruling R119). Under per-window evaluation it fails only that window,
+and §D's error presentation applies.
 
 **Ordering and duplicates.** Windows are an *ordered list*. Two windows over
 the same `session_id` with different spans are legal and are the normal
