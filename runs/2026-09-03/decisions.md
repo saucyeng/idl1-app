@@ -6542,3 +6542,51 @@ This is now the second consumer to hit the same shape, which is the signal
 that it is a contract defect and not a UI want: the engine computes
 metadata, the wire drops it, and every consumer independently discovers it
 cannot label what it is showing.
+
+## 2026-09-08 — R148: a cell whose code the host cannot parse must say so, and binding must not require parsing the whole cell
+
+**Finding, from Isaac driving the app on real data.** Charts rendered their
+axis **labels** and nothing else — no axes, no lines. Diagnosis: the cell
+executed fine and Plot ran; `channel("HR_BPM")` returned an **empty array**.
+
+The cause is `bindingFor` (`model/jsCellBinding.ts`): it calls
+`plotForm/parse.ts`'s `parse(cell.code)`, and if the code is not **exactly**
+a recognised plot form it returns `null` — no binding, so the host never
+fetches or publishes that channel, so `channel(...)` is empty. `parse`
+requires the whole cell to be one `Plot.plot({…})` call with only recognised
+keys: a `height:` property, an `opacity:` on a mark, a `stroke:
+"var(--chart-2)"`, a statement before the call, or any trailing token all
+make the cell "custom" and silently dataless.
+
+Two defects, and the second is the one that matters.
+
+**1. It fails silently.** An unparseable cell is indistinguishable from a
+working one until you notice the chart is empty. Section D exists to prevent
+exactly this: the app must never present an unexplained absence. A cell whose
+code the host could not parse **must show a note saying so** — "custom code:
+no channels bound" — naming that the host cannot see its `channel(...)`
+calls. `jsCellNote` is already the mechanism (R132 uses it); this needs no
+new machinery.
+
+**2. Binding must not require parsing the entire cell.** Isaac's stated
+premise is *"a runtime editable sci-rs library… like scipy"* (R142). A
+notebook where only host-generated cell code receives data is not that — it
+is a chart builder with a code view. Hand-written cells are the point, and
+today they are guaranteed empty.
+
+**Ruling.** Binding is driven by **extracting the `channel(…)` and
+`spectrum(…)` calls a cell makes**, not by parsing the cell's whole
+structure. Finding those calls is a far weaker requirement than recognising
+a plot form, and the project already has the precedent: `mathExpr.ts`
+extracts references from an arbitrary expression using the shared tokenizer
+rather than demanding a fixed shape. The strict `parse` stays where it
+belongs — driving the **properties form**, which legitimately needs to
+round-trip a known structure — but it must no longer gate whether data
+arrives.
+
+Until that lands, (1) is mandatory: the silence is worse than the
+limitation.
+
+**Cost if wrong.** Every hand-written cell in every workbook renders an
+empty chart frame with no explanation, and the app reads as broken to
+exactly the user who is doing the thing it was built for.
