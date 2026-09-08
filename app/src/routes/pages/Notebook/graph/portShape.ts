@@ -9,6 +9,15 @@
  * "no evaluation yet". A wrong shape shown with the same confidence as a
  * right one is worse than an honest blank (C2 §3.7.4, R135 Open Q1) — this
  * module has no fallback guess to reach for.
+ *
+ * **One shape per node, not one per selected window.** C2 §3.7.4 defines a
+ * single shape for a node's port; this module takes one `CellDefResult`
+ * and has no notion of "which window". `GraphCanvas.tsx` decides which
+ * window's `CellOutput[]` to read that `CellDefResult` from (today: one
+ * caller-supplied representative window, `GraphCanvasProps.outputs`'s own
+ * doc comment) — multi-window port-shape nuance (should a port show a
+ * union, a per-window split, the primary selection's value only?) is that
+ * decision, not this one, and is unmade as of this task.
  */
 
 import type { HostChannelRef } from "../../../../ipc/workbook";
