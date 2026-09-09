@@ -6849,3 +6849,60 @@ two and R150, both queued.
 presented as one symptom — an empty chart frame — and the first led Isaac to
 conclude the application did not work. The diagnostic cost was hours; each
 underlying fault was one line.
+
+## 2026-09-09 — R154: the unit model — symbolic, three-state, inferred in a separate pass
+
+Answering `runs/2026-09-08/unit-model.md`'s six questions. Design accepted;
+the 8-task plan stands. Three of its calls are worth recording as
+principles, not just answers.
+
+**Representation — a small symbolic algebra, accepted.** Opaque atoms taken
+verbatim from C1 mapped to **rational** exponents, never canonicalised and
+never converted. It is already the notation C2 §3.3 writes (`[ch]·s`,
+`√[x]`), and it catches `mm + m`, which a dimension vector cannot — a
+dimension vector says both are "length" and lets a real error through. Not
+converting is the safety property: the app never silently restates a number
+in units the author did not write.
+
+**Inference is a separate pass over the `Ast`, not a field on
+`ChannelValue`.** This is the call that makes the work affordable: 38
+construction sites, `call_function`'s 70-arm match, and every `pub`
+signature stay untouched, and `elemwise` gains no per-sample work. A unit is
+a property of an *expression*, not of a buffer of samples, and modelling it
+where it actually lives is why the blast radius collapsed.
+
+**A three-state `UnitLabel` is mandatory** — `known` / `dimensionless` /
+`unknown{reason}`. The survey proved the unknown case is unavoidable: a CSV
+channel's C1 unit is `""`, and `pow(x, [n])` has no static exponent. So
+R144's proposed `unit: string | null` must not ship, exactly as R152
+suspected but could not yet demonstrate.
+
+**A live defect found in passing:** `Notebook/model/cursorCard.ts:49`
+**already** ships the `""`-means-both ambiguity R152 forbids — for raw
+channels, today. Folded into task 5 rather than filed separately, since that
+task introduces the label the fix needs.
+
+**The six questions.**
+1. **A `+` between mismatched units is a visible diagnostic, not a hard
+   error** — accepted, with a condition. A hard error would stop rendering
+   workbooks that render today, and worse, it would let *our own* inference
+   bugs break a user's file. But the diagnostic must appear **on the cell**,
+   never only in a log — an invisible diagnostic is R153's shape again.
+   Promotion to a hard error is reconsidered once inference has proven
+   itself on real workbooks.
+2. **An author-declared `# unit: N/mm` on a def_line — yes.** It is the only
+   escape from a permanent `unknown` for CSV-sourced maths, and it keeps the
+   declaration next to the definition it describes.
+3. **`g` carries `m/s²` — yes**, since C2 §3.2 already documents it.
+4. **No units on workbook constants this revision** — they are substituted
+   as literals before parsing, so there is nowhere to attach one. (2)'s
+   annotation covers the case that matters.
+5. **A prose `${…}` does not auto-append a unit** — accepted. The span is
+   arbitrary JS; expose `.unit` and let the author place it. Appending to an
+   expression whose value may not be the quantity would produce a confident
+   mislabel, which is the failure this whole model exists to prevent.
+6. **Raw channels adopt the three-state label too** — yes, task 5. One card
+   must not carry two meanings of a blank unit.
+
+**Cost if wrong.** (1) is the live tension: a diagnostic that nobody sees is
+worse than no model at all, because it implies the units were checked.
