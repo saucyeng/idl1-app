@@ -4,8 +4,10 @@ import {
   Controls,
   MiniMap,
   ReactFlow,
+  ReactFlowProvider,
   useEdgesState,
   useNodesState,
+  useReactFlow,
   type Edge,
   type Node,
   type NodeMouseHandler,
@@ -26,7 +28,7 @@ import { computeNodeStatuses } from "../model/graphStatus";
 import { scanMathExpr, type MathExprCall } from "../model/mathExpr";
 import type { WindowEvalState } from "../model/workbookState";
 import { subgraphsFor, searchNodeIds, visibleNodeIds } from "../model/graphSubgraph";
-import { collapsedNodePosition, collapsedSubgraphNodesFor, subgraphFramesFor } from "../model/graphSubgraphFrame";
+import { collapsedNodePosition, collapsedSubgraphNodesFor, subgraphFramesFor, FRAME_NODE_HEIGHT, FRAME_NODE_WIDTH } from "../model/graphSubgraphFrame";
 import { editLiteralArg, renameDefinition, rewireInput, type UnresolvedRenameRef } from "../model/graphEdits";
 import { commitDrag } from "./dragCommit";
 import { insertChartCell } from "./graphToChart";
@@ -107,7 +109,20 @@ function describeUnresolved(oldName: string, newName: string, unresolved: Unreso
  * {@link commitDrag} and hands the caller the updated markdown, matching
  * §3.7.1's "no IPC on the interaction path".
  */
-export default function GraphCanvas({ markdown, outputs, selectedWindows, windows, sessionDetails, onCommit, onSelectCell }: GraphCanvasProps) {
+export default function GraphCanvas(props: GraphCanvasProps) {
+  // `useReactFlow` (search-hit centring, below) only resolves inside a
+  // `<ReactFlowProvider>` — this outer component exists solely to host
+  // that provider around the search input *and* the `<ReactFlow>` tree,
+  // since the two are siblings (the search input lives in this component's
+  // own toolbar, not inside `<ReactFlow>`'s rendered subtree).
+  return (
+    <ReactFlowProvider>
+      <GraphCanvasInner {...props} />
+    </ReactFlowProvider>
+  );
+}
+
+function GraphCanvasInner({ markdown, outputs, selectedWindows, windows, sessionDetails, onCommit, onSelectCell }: GraphCanvasProps) {
   const handleChart = useCallback(
     (nodeName: string) => {
       const next = insertChartCell(markdown, nodeName, "lineY");
@@ -184,6 +199,23 @@ export default function GraphCanvas({ markdown, outputs, selectedWindows, window
   // pure `searchNodeIds`.
   const [searchQuery, setSearchQuery] = useState("");
   const matchedIds = useMemo(() => new Set(searchNodeIds(model, searchQuery)), [model, searchQuery]);
+
+  // A hit pans to it, not just highlights it (Task 3's own gap: with ~50
+  // definitions expected a search that highlights without navigating is
+  // barely better than none). Only the first match centres — this is a
+  // "go there" gesture, not a multi-result carousel, which decision 42
+  // never asked for. A match inside a collapsed cell centres on that
+  // cell's own synthetic node (`collapsedNodePosition`) since the matched
+  // node itself is not on the canvas.
+  const { setCenter } = useReactFlow();
+  const firstMatchId = matchedIds.size > 0 ? [...matchedIds][0] : null;
+  useEffect(() => {
+    if (firstMatchId === null) return;
+    const collapsedInto = collapsedCellIdByMemberId.get(firstMatchId);
+    const sg = collapsedInto !== undefined ? subgraphs.find((s) => s.cellId === collapsedInto) : undefined;
+    const [x, y] = sg !== undefined ? collapsedNodePosition(sg, positions) : positions[firstMatchId] ?? [0, 0];
+    setCenter(x + FRAME_NODE_WIDTH / 2, y + FRAME_NODE_HEIGHT / 2, { zoom: 1, duration: 300 });
+  }, [firstMatchId, collapsedCellIdByMemberId, subgraphs, positions, setCenter]);
 
   const mathFlowNodes = useMemo<Node<MathNodeData, "mathNode">[]>(() => {
     return model.nodes

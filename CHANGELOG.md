@@ -168,6 +168,16 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 
 ### Added
 
+- **The maths graph's canvas search pans to a hit instead of only
+  highlighting it (2026-09-08, decision 42).** `GraphCanvas.tsx` now wraps
+  itself in a `ReactFlowProvider` (needed for `useReactFlow`'s viewport
+  control from the toolbar, which sits outside `<ReactFlow>`'s own
+  subtree) and centres the first matched node with `setCenter` whenever
+  the search query changes matches — a match hidden inside a collapsed
+  cell centres on that cell's own closed-subsheet node instead, since the
+  matched card itself is not on the canvas. With ~50 definitions expected,
+  a search that only highlights without navigating was barely better than
+  none.
 - **The maths graph draws a KiCad-subsheet frame around a subgraph instead
   of just deleting its internal cards on collapse (2026-09-08, decision
   43).** `model/graphSubgraphFrame.ts` (pure, tested) computes an expanded
