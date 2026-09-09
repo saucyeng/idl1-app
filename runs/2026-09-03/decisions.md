@@ -7444,3 +7444,50 @@ code where the next reader meets it.
 **Cost if wrong.** (1) decided the wrong way — a fallback-only annotation —
 would leave a rider unable to correct a unit the engine got wrong, on the
 one path (CSV imports) where the engine has nothing to go on.
+
+## 2026-09-09 — R165: the IDLH byte payload stays samples-only; metadata travels with the definition
+
+**Finding** (unit-model lane, reported rather than guessed). `HostChannel`
+now carries a `UnitLabel`, and it reaches the JS-sandbox path because
+`HostChannel` derives `Serialize` for `postMessage`. It does **not** reach
+`fetch_host_channel`'s **IDLH binary encoder** (`host_channel_wire.rs`,
+C3 §3.4), which touches `HostChannel` directly and has its own byte layout.
+So the unit is present on one route and absent on another, and extending the
+byte format is a C3 contract change the lane correctly declined to invent.
+
+**Ruling — do not extend IDLH. The absence is correct, and C3 must say so.**
+
+IDLH is a **bulk sample transport**: two typed arrays and the framing needed
+to read them, chosen so heavy arrays cross IPC as raw bytes rather than JSON
+(CLAUDE.md §2). Metadata does not belong in it. Put the unit there and the
+byte layout must be versioned every time the metadata changes — a unit
+today, a unit *and* a rate tomorrow, an axis origin after that — and every
+one of those becomes a wire-compatibility question about a format whose
+whole purpose is moving numbers quickly.
+
+**The unit already travels, once, where metadata belongs:**
+`CellDefResult.unit`/`unit_notes` for a definition's result, and
+`HostChannel`'s own serialised form on the sandbox path. A consumer that has
+samples from `fetch_host_channel` has, by construction, also asked for the
+definition those samples belong to — so it has the unit without IDLH
+carrying it.
+
+**C3 §3.4 records this deliberately**, so the next reader meets a decision
+rather than an oversight: *IDLH carries samples and framing only; a value's
+unit, rate and shape travel with its `CellDefResult`.* An unexplained
+absence is the shape R148 and R150 spent yesterday removing.
+
+**Also accepted, both documented in code rather than hidden:**
+- `norm`/`angle_between` implemented as their **algebraic simplification**
+  (`SameAsArg(0)`, `Fixed(rad)`) rather than §3.3.1's literal
+  `PowN(Product(...))` form — same output, fewer steps, and the code says
+  so. A rule and its simplification are the same rule.
+- `pow`'s literal-exponent recovery reconstructs **integers and halves
+  only**, reporting `NonLiteralExponent` for anything else rather than
+  guessing a rational from an `f64`. That under-claims, which is the correct
+  direction under R152, and it is documented as a narrower rule rather than
+  presented as the general one.
+
+**Cost if wrong.** Extending IDLH would put metadata in a format whose
+compatibility story is about bytes per sample, and every future metadata
+field would inherit that cost.
