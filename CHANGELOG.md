@@ -168,6 +168,20 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 
 ### Added
 
+- **The node card's chart button is now a pictogram chart-type picker
+  instead of a fixed `lineY` mark (2026-09-08, decision 83 — Isaac: "my
+  chart type selector was really pretty, I want those small chart type
+  images to carry over").** `graph/chartTypeCatalog.ts` (pure, tested)
+  offers exactly `plotForm/types.ts`'s five `MARK_NAMES` values — the
+  marks this notebook can actually render, not idl0's full chart-kind list
+  (time series/FFT/spectrogram/histogram/GPS map/…), most of which this
+  card's single-node chart button was never going to draw. **No pictogram
+  asset exists anywhere in this repo** (idl0's own picker used bundled
+  Material Design glyphs, not an image file) — `graph/chartTypeIcons.tsx`
+  draws all five as inline SVG instead, offline-first, no new dependency.
+  `graph/ChartTypePicker.tsx` renders the row; `NodeCard.tsx`'s `onChart`
+  now carries the chosen mark through to `GraphCanvas.tsx`'s
+  `insertChartCell` call.
 - **The maths graph's `MiniMap`/`Controls` are themed from `tokens.css`
   instead of xyflow's stock light-mode defaults (2026-09-08, decision
   42).** `graph/graphCanvasTheme.css`, imported after

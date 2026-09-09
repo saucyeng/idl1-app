@@ -5,6 +5,8 @@ import { StatusDot } from "@/components/brand/StatusDot";
 import type { MathExprCall } from "../model/mathExpr";
 import type { GraphNode } from "../model/graphModel";
 import type { NodeStatus } from "../model/graphStatus";
+import type { MarkProps } from "../plotForm/types";
+import ChartTypePicker from "./ChartTypePicker";
 import { chartEligibilityFor } from "./graphToChart";
 import type { PortShape } from "./portShape";
 
@@ -34,14 +36,12 @@ export interface MathNodeData extends Record<string, unknown> {
   /** The definition's outer call (`mathExpr.ts`), or `null` for an opaque
    *  expression or a `"channel"` node. */
   call: MathExprCall | null;
-  /** Fired with this node's name when the chart button is clicked — only
-   *  rendered when `chartEligibilityFor` says `"chart"` (decision 83's
-   *  chart button, §3.6.6's honest-unknown gate — see `graphToChart.ts`).
-   *  `undefined` for a `"channel"` node (it has no data of its own to
-   *  chart). **Task 11 gap, flagged in the lane's report:** this fires with
-   *  a fixed `"lineY"` mark — decision 83's own "chart-type selector, idl0
-   *  pictograms" step is not built; there is one gesture here, not two. */
-  onChart?: (nodeName: string) => void;
+  /** Fired with this node's name and the chosen mark once the card's
+   *  {@link ChartTypePicker} commits a pictogram — only rendered when
+   *  `chartEligibilityFor` says `"chart"` (§3.6.6's honest-unknown gate —
+   *  see `graphToChart.ts`). `undefined` for a `"channel"` node (it has no
+   *  data of its own to chart). */
+  onChart?: (nodeName: string, mark: MarkProps["mark"]) => void;
   /** True when this node matches the canvas search query
    *  (`model/graphSubgraph.ts`'s `searchNodeIds`, decision 42). Purely a
    *  render hint — the decision of what matches lives in that module. */
@@ -216,16 +216,7 @@ export default function NodeCard({ data }: NodeProps<Node<MathNodeData, "mathNod
         </div>
       )}
       {!isChannel && eligibility === "chart" && onChart !== undefined && (
-        <button
-          type="button"
-          className="mt-1 w-full rounded-[var(--radius-structural)] border border-rule px-2 py-0.5 text-label-2 text-fg-dim hover:text-fg"
-          onClick={(e) => {
-            e.stopPropagation(); // a click here is "chart this node", not "select this node" (onNodeClick)
-            onChart(graphNode.name);
-          }}
-        >
-          Chart
-        </button>
+        <ChartTypePicker onSelect={(mark) => onChart(graphNode.name, mark)} />
       )}
       <Handle type="source" position={Position.Right} />
     </div>

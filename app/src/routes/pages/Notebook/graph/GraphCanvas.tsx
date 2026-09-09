@@ -30,6 +30,7 @@ import { readGraphLayout } from "../model/graphLayout";
 import { computeNodeStatuses } from "../model/graphStatus";
 import { scanMathExpr, type MathExprCall } from "../model/mathExpr";
 import type { WindowEvalState } from "../model/workbookState";
+import type { MarkProps } from "../plotForm/types";
 import { subgraphsFor, searchNodeIds, visibleNodeIds } from "../model/graphSubgraph";
 import { collapsedNodePosition, collapsedSubgraphNodesFor, subgraphFramesFor, FRAME_NODE_HEIGHT, FRAME_NODE_WIDTH } from "../model/graphSubgraphFrame";
 import { editLiteralArg, renameDefinition, rewireInput, type UnresolvedRenameRef } from "../model/graphEdits";
@@ -126,9 +127,13 @@ export default function GraphCanvas(props: GraphCanvasProps) {
 }
 
 function GraphCanvasInner({ markdown, outputs, selectedWindows, windows, sessionDetails, onCommit, onSelectCell }: GraphCanvasProps) {
+  // Task 5's own chart-type picker (decision 83, "idl0 pictograms carry
+  // over") replaces the old fixed-"lineY" chart button — `mark` now comes
+  // from `NodeCard.tsx`'s `ChartTypePicker`, one of `MARK_NAMES`'s five
+  // values, never guessed here.
   const handleChart = useCallback(
-    (nodeName: string) => {
-      const next = insertChartCell(markdown, nodeName, "lineY");
+    (nodeName: string, mark: MarkProps["mark"]) => {
+      const next = insertChartCell(markdown, nodeName, mark);
       if (next !== markdown) onCommit(next);
     },
     [markdown, onCommit]
