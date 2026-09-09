@@ -55,8 +55,20 @@ export const FFT_WINDOW_FUNCTIONS: readonly FftParams["window"][] = ["rectangula
 /** `FftParams.detrend`'s union type, as a runtime array (C2 §5.3's `detrend`). */
 export const FFT_DETRENDS: readonly FftParams["detrend"][] = ["none", "mean", "linear"];
 
-/** `FftParams.scaling`'s union type, as a runtime array (C2 §5.3's `scaling`). */
-export const FFT_SCALINGS: readonly FftParams["scaling"][] = ["magnitude", "density"];
+/** Every spelling `FftParams.scaling` **accepts** when parsing stored cell
+ *  code (C2 §5.3's `scaling`, widened by ruling R167/R168): the maths
+ *  language's three current names plus the retired `"magnitude"` spelling a
+ *  pre-R167 workbook may still carry. `plotForm/parse.ts`'s grammar reader
+ *  uses this one, unchanged, so an old cell keeps round-tripping. Not for a
+ *  picker — see {@link FFT_SCALING_OPTIONS} for what a control offers. */
+export const FFT_SCALINGS: readonly FftParams["scaling"][] = ["density", "spectrum", "raw_magnitude", "magnitude"];
+
+/** The three scalings a picker **offers** (C2 §5.3's `scaling`, ruling
+ *  R167/R168) — the maths language's current names, with the retired
+ *  `"magnitude"` spelling deliberately excluded (R168: accepted, never
+ *  offered). `components/PropertiesForm.tsx`'s scaling `<select>` renders
+ *  this. */
+export const FFT_SCALING_OPTIONS: readonly FftParams["scaling"][] = ["density", "spectrum", "raw_magnitude"];
 
 /** `FftParams.averaging`'s union type, as a runtime array (C2 §5.3's `averaging`). */
 export const FFT_AVERAGINGS: readonly FftParams["averaging"][] = ["none", "mean", "median", "max"];
@@ -78,7 +90,7 @@ export interface FftParams {
   hopSize: number | "all";
   window: "rectangular" | "hann" | "hamming";
   detrend: "none" | "mean" | "linear";
-  scaling: "magnitude" | "density";
+  scaling: "density" | "spectrum" | "raw_magnitude" | "magnitude";
   averaging: "none" | "mean" | "median" | "max";
 }
 
