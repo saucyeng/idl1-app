@@ -38,31 +38,31 @@ describe("cursorCardRows", () => {
       spans: [{ startUs: 0, endUs: 2_000_000 }],
     };
 
-    const rows = cursorCardRows(1_000_000, payload, "Front travel", "mm", 1);
+    const rows = cursorCardRows(1_000_000, payload, "Front travel", { state: "known", text: "mm" }, 1);
 
-    expect(rows).toEqual([{ windowLabel: null, colour: "--chart-1", seriesLabel: "Front travel", unit: "mm", value: 11 }]);
+    expect(rows).toEqual([{ windowLabel: null, colour: "--chart-1", seriesLabel: "Front travel", unit: { state: "known", text: "mm" }, value: 11 }]);
   });
 
   it("cursorCardRows — two overlaid windows — one row per window, each labelled with its own window (R132 generalised)", () => {
-    const rows = cursorCardRows(1_000_000, twoWindowPayload(), "Fork travel", "mm", 2);
+    const rows = cursorCardRows(1_000_000, twoWindowPayload(), "Fork travel", { state: "known", text: "mm" }, 2);
 
     expect(rows).toEqual([
-      { windowLabel: "Lap 2", colour: "--chart-1", seriesLabel: "Fork travel", unit: "mm", value: 11 },
-      { windowLabel: "Lap 3", colour: "--chart-2", seriesLabel: "Fork travel", unit: "mm", value: 21 },
+      { windowLabel: "Lap 2", colour: "--chart-1", seriesLabel: "Fork travel", unit: { state: "known", text: "mm" }, value: 11 },
+      { windowLabel: "Lap 3", colour: "--chart-2", seriesLabel: "Fork travel", unit: { state: "known", text: "mm" }, value: 21 },
     ]);
   });
 
   it("cursorCardRows — offset past the shorter window's own end — that window's row is omitted entirely, not a null-valued row (decision 55's absence rule)", () => {
     // Window 0 (Lap 2, span 0..2.5s) still has data at offset 2.2s; window
     // 1 (Lap 3, span 0..1.5s relative to its own start) does not.
-    const rows = cursorCardRows(2_200_000, twoWindowPayload(), "Fork travel", "mm", 2);
+    const rows = cursorCardRows(2_200_000, twoWindowPayload(), "Fork travel", { state: "known", text: "mm" }, 2);
 
     expect(rows).toHaveLength(1);
     expect(rows[0].windowLabel).toBe("Lap 2");
   });
 
   it("cursorCardRows — offset past every window's own end — no rows at all", () => {
-    const rows = cursorCardRows(10_000_000, twoWindowPayload(), "Fork travel", "mm", 2);
+    const rows = cursorCardRows(10_000_000, twoWindowPayload(), "Fork travel", { state: "known", text: "mm" }, 2);
 
     expect(rows).toEqual([]);
   });
@@ -83,7 +83,7 @@ describe("cursorCardRows", () => {
     // documents that behaviour rather than asserting null, since a real
     // gap is represented by the window having *no* samples in its run at
     // all, covered by the next case.
-    const rows = cursorCardRows(2_500_000, payload, "Speed", "km/h", 1);
+    const rows = cursorCardRows(2_500_000, payload, "Speed", { state: "known", text: "km/h" }, 1);
 
     expect(rows[0].value).not.toBeNull();
   });
@@ -98,9 +98,9 @@ describe("cursorCardRows", () => {
       spans: [{ startUs: 0, endUs: 2_000_000 }],
     };
 
-    const rows = cursorCardRows(1_000_000, payload, "Speed", "km/h", 1);
+    const rows = cursorCardRows(1_000_000, payload, "Speed", { state: "known", text: "km/h" }, 1);
 
-    expect(rows).toEqual([{ windowLabel: null, colour: "--chart-1", seriesLabel: "Speed", unit: "km/h", value: null }]);
+    expect(rows).toEqual([{ windowLabel: null, colour: "--chart-1", seriesLabel: "Speed", unit: { state: "known", text: "km/h" }, value: null }]);
   });
 
   it("cursorCardRows — decision 61: a window still in payload.windows but no longer selected — its row is omitted, even though it still has data in range", () => {
@@ -121,19 +121,19 @@ describe("cursorCardRows", () => {
     // Lap 3 was just unchecked -- only Lap 2's key remains selected.
     const selectedWindowKeys = new Set(["session-a::lap:2"]);
 
-    const rows = cursorCardRows(1_000_000, payload, "Fork travel", "mm", 2, selectedWindowKeys);
+    const rows = cursorCardRows(1_000_000, payload, "Fork travel", { state: "known", text: "mm" }, 2, selectedWindowKeys);
 
-    expect(rows).toEqual([{ windowLabel: "Lap 2", colour: "--chart-1", seriesLabel: "Fork travel", unit: "mm", value: 11 }]);
+    expect(rows).toEqual([{ windowLabel: "Lap 2", colour: "--chart-1", seriesLabel: "Fork travel", unit: { state: "known", text: "mm" }, value: 11 }]);
   });
 
   it("cursorCardRows — no selectedWindowKeys argument — every window in payload.windows still renders (backward compatible)", () => {
-    const rows = cursorCardRows(1_000_000, twoWindowPayload(), "Fork travel", "mm", 2);
+    const rows = cursorCardRows(1_000_000, twoWindowPayload(), "Fork travel", { state: "known", text: "mm" }, 2);
 
     expect(rows).toHaveLength(2);
   });
 
   it("cursorCardRows — an empty selectedWindowKeys set (everything just deselected) — no rows at all", () => {
-    const rows = cursorCardRows(1_000_000, twoWindowPayload(), "Fork travel", "mm", 2, new Set());
+    const rows = cursorCardRows(1_000_000, twoWindowPayload(), "Fork travel", { state: "known", text: "mm" }, 2, new Set());
 
     expect(rows).toEqual([]);
   });

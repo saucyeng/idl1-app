@@ -38,6 +38,28 @@ export interface HostChannelRef {
   has_t: boolean;
 }
 
+/** The unit as it crosses IPC (C2 §3.3.1's unit model, rulings R154/R162),
+ *  mirroring `idl_rs::math::units::UnitLabel` (via its `idl-rs-tauri` mirror,
+ *  `rust/tauri/src/commands/workbook.rs`) exactly — `#[serde(tag = "state",
+ *  rename_all = "snake_case")]` on the Rust side, so this is a discriminated
+ *  union keyed by `state`, never `unit: string | null` (R154: `null` cannot
+ *  mean both "not applicable" and "we could not work it out" — the
+ *  three-state model exists specifically to keep those apart). */
+export type UnitLabel =
+  | { state: "known"; text: string }
+  | { state: "dimensionless" }
+  | { state: "unknown"; reason: string };
+
+/** One non-fatal unit diagnostic (R154 §2.1) — most often a `+`/`-`
+ *  mismatch between two `Known` operands, or a declared `# unit:`
+ *  annotation disagreeing with the inferred one (R164 item 1). Never an
+ *  evaluation failure — the definition's own `value` is unaffected.
+ *  Mirrors `idl_rs::math::units::UnitNote` via its `UnitNote` IPC mirror. */
+export interface UnitNote {
+  /** Display-ready English, e.g. "`+`: units differ (`bpm` and `km/h`)". */
+  message: string;
+}
+
 /** One `math`-cell definition's evaluated result (C3 §3.4, ledger R21) — one
  *  entry per definition, in `def_line` source order; empty for `table`/`js`
  *  cells. */
@@ -52,9 +74,15 @@ export interface CellDefResult {
   error: IpcError | null;
   /** Hz, or `null` when a rate is genuinely **not applicable** — a scalar
    *  reduction has no sample rate. Never "unknown": ruling R152 split this
-   *  from the unit, which the engine does *not* know and which ships only
-   *  once the unit model (R154) lands. Do not infer a unit from a name. */
+   *  from the unit. Do not infer a unit from a name. */
   sample_rate_hz: number | null;
+  /** This definition's inferred unit (R144/R152/R154, ruling R162) —
+   *  independent of `value`/`error`: a definition can carry a determined
+   *  unit even when its own evaluation failed. */
+  unit: UnitLabel;
+  /** Non-fatal unit diagnostics for this definition (R154 §2.1). `[]` in
+   *  the overwhelming majority of cases. */
+  unit_notes: UnitNote[];
 }
 
 /** One `${…}` inline span (C2 §5.2) inside a cell's rendered prose HTML

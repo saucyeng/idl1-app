@@ -27,6 +27,16 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
   heading. A calibration routine is designed from scratch later; a
   placeholder control implying a working feature is worse than none.
 
+### Fixed
+
+- **Notebook: the cursor value card's `""`-means-both unit ambiguity
+  (2026-09-09, R154 item 6).** `model/cursorCard.ts`'s `CursorCardRow.unit`
+  and `cursorCardRows` now take the three-state `UnitLabel` (`ipc/workbook.ts`)
+  instead of a bare `unit: string`, so a raw channel with no recorded C1
+  unit never renders identically to one that is genuinely dimensionless.
+  `ChartCell.tsx` converts `ChannelSummary.unit` via the new
+  `model/unitLabel.ts`'s `rawUnitToLabel`.
+
 ### Added
 
 - **Notebook: the maths graph's source palette (2026-09-09, ruling R160).**

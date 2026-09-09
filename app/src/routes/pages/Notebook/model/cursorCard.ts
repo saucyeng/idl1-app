@@ -18,6 +18,7 @@
  * combined payload already covers every one of them, not only the
  * primary).
  */
+import type { UnitLabel } from "../../../../ipc/workbook";
 import type { WindowDescriptor } from "../host/protocol";
 import { primaryWindowNote } from "./jsCellNote";
 import { cursorTimeInWindow, type AbsoluteSpan } from "./viewportWindows";
@@ -47,8 +48,13 @@ export interface CursorCardRow {
   colour: string;
   /** This chart's own plotted series label (`ChartCell`'s existing `channelLabel` prop). */
   seriesLabel: string;
-  /** `ChannelSummary.unit` (C1 §4.1), or `""` when unknown. */
-  unit: string;
+  /** This channel's unit, three-state (R154 item 6, fixing the live defect
+   *  this file previously shipped: a bare `unit: string` with `""` meaning
+   *  both "genuinely dimensionless" and "C1 gave us nothing" — a card must
+   *  never present the second as the first). `model/unitLabel.ts`'s
+   *  `rawUnitToLabel` is how a caller turns `ChannelSummary.unit` (C1
+   *  §4.1's raw string) into this. */
+  unit: UnitLabel;
   /** The nearest sample's value at the cursor within this window's own
    *  contiguous run of `payload`, or `null` -- no nearby sample (a gap, or
    *  the cursor sits past the window's own end and no row is built at all,
@@ -100,7 +106,8 @@ function nearestValue(payload: CombinedChannelPayload, windowIndex: number, tSec
  * @param offsetUs `cursorBus.ts`'s current `CursorState.tUs`.
  * @param payload This chart's own retained combined payload (R139).
  * @param seriesLabel This chart's own plotted series label.
- * @param unit This channel's own display unit, or `""`.
+ * @param unit This channel's own three-state unit (R154 item 6) --
+ *   `model/unitLabel.ts`'s `rawUnitToLabel` for a raw C1 channel.
  * @param totalWindowCount The total number of selected windows (`AppState.selection.length`) -- R132's naming trigger, `<= 1` renders no marker on any row.
  * @param selectedWindowKeys Decision 61: `AppState.selection`'s own windows,
  *   as `model/workbookState.ts`'s `wireWindowKey` strings -- `payload` is a
@@ -118,7 +125,7 @@ export function cursorCardRows(
   offsetUs: number,
   payload: CombinedChannelPayload,
   seriesLabel: string,
-  unit: string,
+  unit: UnitLabel,
   totalWindowCount: number,
   selectedWindowKeys?: ReadonlySet<string>
 ): CursorCardRow[] {
