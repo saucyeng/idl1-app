@@ -20,11 +20,12 @@
  * host-side re-render); every one becomes a named {@link ChartAbsenceBlock}
  * rather than a silent gap (R148/R150/R153).
  */
-import type { CellOutput, UnitLabel, WindowEval } from "../../../../../ipc/workbook";
+import type { CellOutput, WindowEval } from "../../../../../ipc/workbook";
 import type { SessionSummary } from "../../../../../ipc/catalog";
 import { describeWindow, type SelectionWindow } from "../../../../../state/selection";
 import type { ScannedCell } from "../cells";
 import type { ProseBlock as ProseBlockData } from "../proseBlocks";
+import { formatRate, formatUnit, type UnitDisplay } from "../unitText";
 
 /** The report's cover page: title, when it was built, and the provenance a
  *  reader would need to reproduce any number in it (plan §3.1 item 1). */
@@ -92,15 +93,6 @@ export interface WindowSectionBlock {
 export type ReportProseBlock =
   | { kind: "prose"; cellId: string; position: "before" | "after"; html: string }
   | { kind: "prose"; cellId: string; position: "before" | "after"; text: string };
-
-/** Renders `unit` per the three-state rule (plan §3.2, R154): `known` shows
- *  its text; `dimensionless` shows nothing; `unknown` shows nothing here
- *  too, but names itself in `unknownReason` for the caller to render as a
- *  marker and for the appendix to carry. */
-export interface UnitDisplay {
-  text: string;
-  unknownReason: string | null;
-}
 
 /** One `math`-cell definition's row (plan §3.2 — the fix for the gap
  *  `MathCell.tsx` has today: name and sample count with no unit and no
@@ -223,22 +215,6 @@ function buildSelectionBlock(windows: readonly SelectionWindow[], sessions: read
   };
 }
 
-/** Formats `unit` per the three-state rule (plan §3.2). Inlined here for
- *  R1; task R3 extracts this exact logic to `model/unitText.ts` so
- *  `MathCell.tsx` renders the same text this document does. */
-function formatUnit(unit: UnitLabel): UnitDisplay {
-  switch (unit.state) {
-    case "known":
-      return { text: unit.text, unknownReason: null };
-    case "dimensionless":
-      return { text: "", unknownReason: null };
-    case "unknown":
-      return { text: "", unknownReason: unit.reason };
-    default:
-      return { text: "", unknownReason: null };
-  }
-}
-
 /** Mirrors `MathCell.tsx`'s `DefRow` value text exactly, so the screen and
  *  the report never disagree about what a definition's own value cell
  *  says. */
@@ -266,7 +242,7 @@ function buildDefTable(cellId: string, output: CellOutput, entries: string[]): D
       label: def.label,
       valueText: defValueText(def),
       unit,
-      rateText: def.sample_rate_hz === null ? null : `${def.sample_rate_hz} Hz`,
+      rateText: formatRate(def.sample_rate_hz),
     };
   });
   return { kind: "defTable", cellId, rows };

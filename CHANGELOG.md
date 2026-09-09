@@ -106,6 +106,16 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
   charts yet — every chart cell already renders as a named absence
   (task R1).
 
+- **Notebook: `MathCell` shows a definition's unit and sample rate
+  (2026-09-09, ruling R166 item "a live gap found while surveying",
+  task R3).** New `model/unitText.ts`'s `formatUnit`/`formatRate` — the
+  three-state `UnitLabel` (R154) to display text, and `sample_rate_hz`'s
+  "`null` means not applicable, never unknown" rule (R152) — extracted
+  from task R1's own inline copy so `MathCell.tsx`'s `DefRow` and the
+  report's `defTable` render the identical text for the same definition.
+  Both fields were already on the wire (`CellDefResult.unit`/
+  `.sample_rate_hz`) but `MathCell.tsx` rendered neither.
+
 - **Device tab: the recording-only live status pane (2026-09-09, decisions
   66/87, ruling R113, unblocked by the Rust lane's C3 amendment/R157 item
   2).** New `Device/liveStatus.ts` (pure, vitest-covered): while recording,
