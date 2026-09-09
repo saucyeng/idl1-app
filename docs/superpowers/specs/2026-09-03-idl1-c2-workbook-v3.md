@@ -369,6 +369,65 @@ the point of use) but is not built into the tokenizer — it is a workbook-
 level table the parser consults (`name → f64`) before falling through to
 "unexpected identifier" (§3.1's flat constants namespace).
 
+**Keyword arguments** (R143 item 1, `runs/2026-09-08/scipy-alignment-plan.md`
+§2). The one call-site production changes; every other production is
+unchanged:
+
+```
+call      ::= identifier "(" [ arg { "," arg } ] ")"
+arg       ::= expression | identifier "=" expression
+```
+
+Positional form stays valid for every function; a keyword argument is
+**additive**, never a replacement syntax. Grammar makes three rules
+explicit rather than leaving a model to infer them:
+
+1. A keyword argument may not precede a positional one in the same call —
+   `mean(x, window=5)` parses, `mean(window=5, x)` is a `Parse` error.
+2. A name may not be bound twice in the same call — twice by keyword
+   (`mean(x, window=5, window=9)`), or once positionally and once by the
+   same keyword (`mean(x, 5, window=9)`) — a `Runtime` error naming the
+   parameter, since the parser has no callee-parameter-name table to check
+   the positional/keyword case against; only the double-keyword case is
+   caught in the parser itself.
+3. An unknown keyword name is a typed error, never silently dropped — a
+   silently-ignored `prominence=` would be a false friend in parameter
+   form, exactly the defect class this whole naming pass exists to remove.
+   A function with no documented keyword form at all rejects **any**
+   keyword argument the same way.
+
+Tokenizer (`rust/core/src/math/token.rs`): `TokenKind::Equals` for a bare
+`=` (previously a hard parse error unless immediately followed by a second
+`=`). A bare `=` reached while parsing an *expression* (never as a keyword
+name's separator, which `parse_one_arg`'s two-token lookahead consumes
+first) is still the same `"did you mean =="` diagnostic as before, raised
+by the parser now rather than the tokenizer, since only the parser knows
+whether an `=` it just saw was consumed as a keyword separator.
+
+Parser (`rust/core/src/math/parse.rs`): `Ast::Call` gains
+`kwargs: Vec<(String, Ast)>`, call-site order, alongside the existing
+`args: Vec<Ast>` (never a replacement for it). `parse_args` look-aheads one
+token: an `Ident` immediately followed by `Equals` starts a keyword
+argument; otherwise the argument is positional. This makes
+`rust/core/src/workbook/v3/math_cell.rs`'s `classify_line` — which splits a
+`def_line`/`const_line` at the **first `=`** in the line — load-bearing in
+a way it was not before: a definition's own `=` is always the line's first
+one (a keyword argument's `=` can only appear after it, inside the call),
+so the split stays correct, but a call like
+`x = where([a] > 0, mean([b], dim="t"), 0)` must classify as one `Def` with
+the whole call as `expr_text`, not split again at the keyword's `=`.
+
+Two of the grammar's three rules above need the callee's own parameter
+names (rules 2's positional/keyword case, and rule 3) — that is
+`eval::call_function`'s job, not the parser's, so a keyword-argument call
+can parse successfully and still fail at evaluation with a named,
+typed error.
+
+Per-function keyword forms are documented on their own §3.3 rows (e.g.
+`mean(ch, window=w)`, `periodogram(ch, window=…, detrend=…, scaling=…)`) —
+this section states the grammar once; it does not enumerate which function
+accepts which keyword.
+
 ### 3.3 Builtin catalog
 
 Every function `crate::math::eval::call_function` dispatches, by reference
@@ -386,11 +445,13 @@ carried forward here as ordinary catalog entries, not new.
 
 | Function | Signature | Category | Output units | Status | In idl0 `knownFunctions`? |
 |---|---|---|---|---|---|
-| `butter` | `butter(order, cutoff_hz, "low"\|"lowpass"\|"high"\|"highpass", ch)` | Filter | same units as `ch` | Implemented (`"band"` rejected as a `Runtime` error, not parsed as a 3rd type) | yes |
+| `butter` | `butter(order, cutoff_hz, "low"\|"lowpass"\|"high"\|"highpass", ch)` | Filter | same units as `ch` | Implemented (`"band"` rejected as a `Runtime` error, not parsed as a 3rd type). A confirmed false friend deferred rather than fixed (R151 item 8, C2 §3.8): scipy's `butter` only *designs* a filter (returns coefficients); *applying* it is a separate call (`lfilter`/`sosfilt`). This `butter` designs **and** applies, zero-phase, in one call — splitting design from application is a real behaviour change with its own migration, not a naming fix. | yes |
 | `sosfilt` | `sosfilt(sos, ch)` | Filter | same units as `ch` | NotImplemented | yes |
 | `declip` | `declip(ch)` | Reconstruction | same units as `ch` (designed for ±32 g-clipped accel, g) | Implemented | yes |
-| `integrate` | `integrate(ch)` | Time-domain | `[ch]·s` | Implemented | yes |
-| `differentiate` | `differentiate(ch)` | Time-domain | `[ch]/s` | Implemented | yes |
+| `cumulative_trapezoid` | `cumulative_trapezoid(ch)` | Time-domain | `[ch]·s` | Implemented (retired from `integrate` — gratuitous rename, matches `scipy.integrate.cumulative_trapezoid`'s name, R143/R151 item 6) | yes |
+| `cumtrapz` | `cumtrapz(ch)` | Time-domain | `[ch]·s` | Implemented — a permanent second spelling of `cumulative_trapezoid`, not a deprecated one; scipy itself carries both (R151 item 6) | **no** |
+| `differentiate` | `differentiate(ch)` | Time-domain | `[ch]/s` | Implemented — a backward difference, `result[0] = 0` (`rust/core/src/statistics.rs`); **deliberately not** `numpy.gradient`'s central difference — see `gradient`'s own row (R151 item 3) | yes |
+| `gradient` | `gradient(ch)` | Time-domain | `[ch]/s` | Implemented — `numpy.gradient`'s own central-difference formula, added alongside `differentiate` rather than replacing it, since the two compute different values (R151 item 3) | **no** |
 | `detrend` | `detrend(ch)` \| `detrend(ch, "linear"\|"constant"\|"mean"\|"none")` | Time-domain | same units as `ch` | Implemented | **no** |
 | `rms` | `rms(ch)` → scalar \| `rms(ch, w)` → rolling channel, `w` window in samples | Time-domain / aggregate | same units as `ch` | Implemented | yes |
 | `mean` | `mean(ch)` → scalar \| `mean(ch, w)` → rolling channel | Time-domain / aggregate | same units as `ch` | Implemented | yes |
@@ -400,28 +461,29 @@ carried forward here as ordinary catalog entries, not new.
 | `count` | `count(ch)` → scalar | Aggregate | count (dimensionless) | Implemented | **no** |
 | `first` | `first(ch)` → scalar | Aggregate | same units as `ch` | Implemented | **no** |
 | `last` | `last(ch)` → scalar | Aggregate | same units as `ch` | Implemented | **no** |
-| `p` | `p(ch, quantile)` → scalar, `quantile` ∈ [0,100] | Aggregate | same units as `ch` | Implemented | **no** |
+| `percentile` | `percentile(ch, quantile)` → scalar, `quantile` ∈ [0,100] | Aggregate | same units as `ch` | Implemented (retired from `p` — gratuitous rename, matches `numpy.percentile`'s name (R143, plan §1 task 10)) | **no** |
 | `abs` | `abs(x)` | Elementwise | same units as `x` | Implemented | yes |
 | `sqrt` | `sqrt(x)` | Elementwise | `√[x]` (meaningful only if `x` is unitless or a squared unit) | Implemented | yes |
 | `sign` | `sign(x)` | Elementwise | dimensionless, ∈ {-1, 0, 1} (NaN→NaN) | Implemented | yes |
-| `floor` `ceil` `round` | `floor(x)` / `ceil(x)` / `round(x)` | Elementwise | same units as `x` | Implemented | yes |
+| `floor` `ceil` `round` | `floor(x)` / `ceil(x)` / `round(x)` | Elementwise | same units as `x` | Implemented — `round` is `f64::round`, half-**away-from-zero** (`2.5 → 3`, `-2.5 → -3`); `numpy.round` is banker's rounding (round-half-to-even, `2.5 → 2`). A confirmed false friend the scipy-alignment lane deferred rather than fixed (R151 item 8, C2 §3.8) — recorded here rather than changed, since a silent rounding-rule change would move existing values at exactly the halfway point. | yes |
 | `pow` | `pow(x, y)` | Elementwise | `[x]^y` (engine does not track units; meaningful for unitless/integer `y`) | Implemented | yes |
 | `min` | `min(ch)` → scalar \| `min(a, b)` → elementwise | Aggregate / elementwise | same units as operand(s) | Implemented | yes |
 | `max` | `max(ch)` → scalar \| `max(a, b)` → elementwise | Aggregate / elementwise | same units as operand(s) | Implemented | yes |
-| `clamp` | `clamp(ch, lo, hi)` | Elementwise | same units as `ch` (`lo`/`hi` given in `ch`'s units) | Implemented | yes |
+| `clip` | `clip(ch, lo, hi)` | Elementwise | same units as `ch` (`lo`/`hi` given in `ch`'s units) | Implemented (retired from `clamp` — gratuitous rename, matches `numpy.clip`'s name, R143, plan §1 task 10; `lo > hi` or either NaN is now a typed `Runtime` error instead of a panic, plan §4 task 1) | yes |
 | `sin` `cos` `tan` | `sin(x)` etc. | Trig | dimensionless ratio; `x` in radians | Implemented | yes |
 | `asin` `acos` `atan` | `asin(x)` etc. | Trig | radians | Implemented | yes |
 | `atan2` | `atan2(y, x)` | Trig | radians | Implemented | yes |
 | `sinh` `cosh` `tanh` | `sinh(x)` etc. | Trig | dimensionless | Implemented | yes |
 | `deg2rad` | `deg2rad(x)` | Trig conversion | radians (`x` in degrees) | Implemented | yes |
 | `rad2deg` | `rad2deg(x)` | Trig conversion | degrees (`x` in radians) | Implemented | yes |
-| `fft` | `fft(ch, "hann"\|"hamming"\|"rect"\|"rectangular")` | Frequency | same units as `ch` (magnitude), over a `[f]` shape whose axis coordinate is `k·sample_rate_hz/n` Hz *(the frequency axis is attached as of 2026-09-07, R110 — §3.6.8 item 3; the magnitudes are unchanged)* | Implemented | yes |
+| `periodogram` | `periodogram(ch, window="boxcar", detrend="constant", scaling="density"\|"spectrum"\|"raw_magnitude")` | Frequency | `scaling="density"` → `[ch]²/Hz`; `"spectrum"` → `[ch]²`; `"raw_magnitude"` → same units as `ch` (magnitude) — over a `[f]` shape whose axis coordinate is `k·sample_rate_hz/n` Hz | Implemented — retired `fft`'s single-segment shape, scipy-named and scipy-scaled (`density`/`spectrum` are scipy's own two scalings; `raw_magnitude` is deliberately not one of them — it names the un-normalised value the legacy `fft()` computed, R151 item 1) | yes |
+| `welch` | `welch(ch, window="hann", nperseg=n, noverlap=n, detrend="constant", average="mean"\|"median"\|"max"\|"none", scaling="density"\|"spectrum"\|"raw_magnitude")` | Frequency | same scaling rules as `periodogram`, over a `[f]` shape | Implemented — segmented/averaged, what the charts already compute (`rust/core/src/fft.rs`'s `welch`, `rasters.rs:508`); `average="max"`/`"none"` are idl1 extensions beyond scipy's own two values (ruling R63(3)), kept reachable under the same keyword | **no** |
 | `spectrogram` | `spectrogram(ch, window_size, hop_size, window, detrend, scaling)` | Frequency | same units as `ch` (magnitude) or `[ch]²/Hz` (density), over a `[t,f]` shape | Implemented *(revised 2026-09-07, R110 — §3.6.3 gives the signature and the shape; the earlier "NotImplemented, deferred permanently — no channel-shaped output exists" note is superseded: §3.6 defines the 2-D value it returns)* | yes |
 | `hilbert` | `hilbert(ch)` | Frequency | same units as `ch` | NotImplemented | yes |
 | `correlate` | `correlate(a, b)` | Correlation | `[a]·[b]` | NotImplemented | yes |
 | `convolve` | `convolve(ch, kernel)` | Correlation | `[ch]·[kernel]` | NotImplemented | yes |
 | `resample` | `resample(ch, hz)` | Resampling | same units as `ch` | NotImplemented | yes |
-| `if` | `if(cond, t, f)` | Logic | units of `t`/`f` branches (must match) | Implemented | yes |
+| `where` | `where(cond, t, f)` | Logic | units of `t`/`f` branches (must match) | Implemented (retired from `if` — gratuitous rename, matches `numpy.where`'s name, R143, plan §1 task 10; `cond` now also accepts a scalar, selecting a whole branch — additive, every existing per-sample channel `cond` call is unaffected) | yes |
 | `current_lap` | `current_lap()` | Lap | 1-based lap number, `0` outside any lap (dimensionless) | Implemented | yes |
 | `lap_start_time` | `lap_start_time(n)` | Lap | s, `NaN` if `n` out of range | Implemented | yes |
 | `lap_start_distance` | `lap_start_distance(n)` | Lap | m, `NaN` if `n` out of range or no `[Distance]` in session | Implemented | yes |
@@ -440,20 +502,42 @@ carried forward here as ordinary catalog entries, not new.
 | `dot` | `dot(a, b)` | Vector | `[a]·[b]` | Implemented | **no** |
 | `norm` | `norm(v)` | Vector | same units as `v`'s components | Implemented | **no** |
 | `normalize` | `normalize(v)` | Vector | dimensionless (unit vector) | Implemented | **no** |
-| `angle` | `angle(a, b)` | Vector | radians, ∈ [0, π] | Implemented | **no** |
+| `angle_between` | `angle_between(a, b)` | Vector | radians, ∈ [0, π] | Implemented (retired from `angle` — `numpy.angle` is complex phase, not the angle between two vectors, a false friend; R143/R151 item 4) | **no** |
 | `rotate_mat` | `rotate_mat(v, m00..m22)` (row-major, scalar entries) | Rotation | same units as `v` | Implemented | **no** |
 | `rotate_axis` | `rotate_axis(v, ax, ay, az, angle)` (scalars; `angle` radians) | Rotation | same units as `v` | Implemented | **no** |
 | `rotate_euler` | `rotate_euler(v, roll, pitch, yaw)` (radians; args may be channels — per-sample rotation) | Rotation | same units as `v` | Implemented | **no** |
 
-69 named functions total (**revised 2026-09-07, R110: 64 `Implemented`, 5
-`NotImplemented`/deferred** — `spectrogram` moved to `Implemented`; §3.6.3
-adds ten further names — `argmax`, `argmin`, `argmax_index`, `argmin_index`,
+**72 named functions total** (revised again by the scipy-alignment lane,
+`runs/2026-09-08/scipy-alignment-plan.md`, ledger R151/R157 — was 69,
+**revised 2026-09-07, R110: 64 `Implemented`, 5 `NotImplemented`/deferred**
+— `spectrogram` moved to `Implemented`). This lane adds three entries to
+the table above without removing any: `fft` retired and split into
+`periodogram` + `welch` (net **+1** — the row above is gone, two rows
+replace it), `cumtrapz` added as `cumulative_trapezoid`'s permanent second
+spelling (net **+1**), and `gradient` added alongside `differentiate` (net
+**+1**) — 69 + 3 = 72. The five previously-deferred names are unaffected:
+`sosfilt`, `hilbert`, `correlate`, `convolve`, `resample`. §3.6.3 adds ten
+further names — `argmax`, `argmin`, `argmax_index`, `argmin_index`,
 `at`, `nearest`, `slice`, `axes`, `broadcast`, `align` — documented there
-rather than restated here, taking the total to 79). The five deferred are
-`sosfilt`, `hilbert`, `correlate`, `convolve`, `resample`. The 69 was
-recounted directly from the table above by expanding every multi-name row,
-e.g. `floor`/`ceil`/`round` as 3, `vx`/`vy`/`vz` as 3, `vadd`/`vsub` as 2,
-rather than restated from memory. One function,
+rather than restated here, taking the grand total to 82. The table's own
+row count was recounted directly by expanding every multi-name row, e.g.
+`floor`/`ceil`/`round` as 3, `vx`/`vy`/`vz` as 3, `vadd`/`vsub` as 2, rather
+than restated from memory.
+
+**A disagreement this lane found but did not resolve, recorded rather than
+silently fixed (overnight rule):** `rust/core/src/math/catalog.rs`'s own
+`math_builtin_catalog()` — the wire source for `list_math_builtins`, C3
+§3.4 — still marks `spectrogram` `NotImplemented`, giving that file's own
+counting tests `66 Implemented / 6 NotImplemented = 72`, not this
+paragraph's `67`/`5` (64 + 3 new, all Implemented). The two totals agree
+(72) only because one extra `NotImplemented` in the engine's real catalog
+happens to offset one fewer `Implemented`; the *split* disagrees, and the
+engine's catalog — not this paragraph's R110-era claim — is what the app
+actually receives over IPC and what `functionCatalog.ts` was brought into
+line with (this lane's TS half). Whether `spectrogram`'s R110 promotion to
+`Implemented` ever landed in `call_function` itself, or `catalog.rs` was
+simply never updated to match, is a question for whoever picks this up
+next — not re-derived here. One function,
 `main(col[])`, exists in `call_function` but is **table-cell only**
 (reads `MathLapContext::baseline_row`, which is never populated outside a
 table evaluation) — it is documented in §4, not here, and is a `Runtime`
@@ -461,12 +545,14 @@ error (`NaN` result, not an error — it returns `Value::Scalar(NaN)` when
 `baseline_row` is `None`) if called from a `math` cell.
 
 **Checklist cross-check (brief item e):** every one of idl0's 48
-`MathChannelValidator.knownFunctions` entries — `butter`, `sosfilt`,
-`declip`, `integrate`, `differentiate`, `rms`, `mean`, `std`, `median`,
-`fft`, `spectrogram`, `hilbert`, `correlate`, `convolve`, `resample`,
-`abs`, `sqrt`, `pow`, `sign`, `min`, `max`, `clamp`, `floor`, `ceil`,
+`MathChannelValidator.knownFunctions` entries, under its **current** name
+where the scipy-alignment lane retired the idl0-era spelling (C2 §3.8 has
+the mapping) — `butter`, `sosfilt`,
+`declip`, `cumulative_trapezoid`, `differentiate`, `rms`, `mean`, `std`, `median`,
+`periodogram`, `spectrogram`, `hilbert`, `correlate`, `convolve`, `resample`,
+`abs`, `sqrt`, `pow`, `sign`, `min`, `max`, `clip`, `floor`, `ceil`,
 `round`, `sin`, `cos`, `tan`, `asin`, `acos`, `atan`, `atan2`, `sinh`,
-`cosh`, `tanh`, `deg2rad`, `rad2deg`, `if`, `current_lap`,
+`cosh`, `tanh`, `deg2rad`, `rad2deg`, `where`, `current_lap`,
 `lap_start_time`, `lap_start_distance`, `sector_number`, `lap_delta_time`,
 `lap_delta_dist`, `wheel_travel`, `wheel_velocity`, `attitude`,
 `body_accel` — appears in the table above. None omitted.
@@ -589,11 +675,11 @@ Axis  ::= { kind, len, unit, coords, origin }
 | `kind` | Written | Coordinates | Produced by |
 |---|---|---|---|
 | `time` | `t` | seconds from the session origin (C1 `t_us`) | every session channel, every elementwise result over one, every STFT frame axis |
-| `freq` | `f` | Hz | `fft`, `spectrogram` |
+| `freq` | `f` | Hz | `periodogram`, `welch`, `spectrogram` |
 | `lap` | `lap` | lap number (1-based, C1 `laps[]`) | a reduction grouped by lap (§3.6.3) |
 | `window` | `win` | index into the selection's window list (R115) | a reduction grouped by window (§3.6.3) |
 | `component` | `c<n>` or `c{a,b,c}` | component index, or its name when named | `vec`-valued and state-vector producers; a fixed-width axis such as an iEKF state |
-| `index` | `i` | positional index, no physical meaning | `fft` bin index before a frequency axis is attached, rolling-window outputs, anything explicitly de-labelled |
+| `index` | `i` | positional index, no physical meaning | `periodogram`/`welch` bin index before a frequency axis is attached, rolling-window outputs, anything explicitly de-labelled |
 
 **Written form.** A shape is written as a bracketed, comma-separated list of
 axis symbols, innermost-last: `[]` (scalar), `[t]` (a series), `[lap]` (one
@@ -656,7 +742,7 @@ argument**, exactly as `butter(2, 3, "low", ch)` and `detrend(ch, "linear")`
 already take their mode.
 
 **Elementwise** — `+ - * /`, `< > <= >= == !=`, `and`/`or`/`not`, unary `-`,
-and every §3.3 row whose Category is Elementwise/Trig, plus `if`, `clamp`,
+and every §3.3 row whose Category is Elementwise/Trig, plus `where`, `clip`,
 `pow`, `min(a,b)`, `max(a,b)`:
 
 > operands must satisfy §3.6.2 rule 1 or 2; the result has the operands'
@@ -718,13 +804,13 @@ no data must not break the definition, §3.5.B).
 | Function | Signature | Returns |
 |---|---|---|
 | `spectrogram` | `spectrogram(ch, window_size, hop_size, "rectangular"\|"hann"\|"hamming", "none"\|"mean"\|"linear", "magnitude"\|"density")` | `[t,f]`. `window_size`/`hop_size` in samples. The six parameters are C3 §3.6's `SpectrogramParams` field-for-field, in that order, over the same `idl_rs::fft` code — this is not second DSP. The `t` axis is one entry per frame, coordinate = the frame's centre time in seconds; the `f` axis is `window_size/2 + 1` bins, coordinate `k · rate / window_size` Hz, where `rate` is derived from the channel's own `t_us` as `1e6 / median(Δt_us)` (R76's rule, unchanged). |
-| `fft` | `fft(ch, "hann"\|…)` | `[f]` — unchanged numerically; §3.6.8 covers the axis it now carries. |
+| `periodogram` / `welch` | `periodogram(ch, window=…)` / `welch(ch, window=…, …)` | `[f]` — unchanged numerically from the retired `fft`'s single-segment shape when `scaling="raw_magnitude"` (the migration's own pinned form, C2 §3.8); §3.6.8 covers the axis both carry. |
 | `vec` | `vec(x, y, z)` | shape of the components with a trailing `c{x,y,z}` axis. The existing Vec3 intermediate, now expressible as an ordinary value; `vx`/`vy`/`vz` remain and are `at(v, "c", "x"\|"y"\|"z")`. |
 
 **Every other §3.3 entry is unchanged** and accepts rank ≤ 1 only —
 `current_lap`, `lap_start_time`, `lap_start_distance`, `sector_number`,
 `lap_delta_time`, `lap_delta_dist`, `attitude`, `body_accel`, `wheel_travel`,
-`wheel_velocity`, `cross`, `dot`, `norm`, `normalize`, `angle`,
+`wheel_velocity`, `cross`, `dot`, `norm`, `normalize`, `angle_between`,
 `rotate_mat`, `rotate_axis`, `rotate_euler`. Passing a rank ≥ 2 value to one
 of them is a `ShapeMismatch`, never a silent flatten.
 
@@ -1135,6 +1221,12 @@ authoritative list is `rust/core/src/math/alias.rs`'s
 |---|---|---|
 | `variance_time` | `lap_delta_time` | It never computed a variance (σ²). It computes a lap's delta against an overlay lap, time-matched. "Variance" has one meaning in every statistics library, so the old name was a false friend (R143, R146): a reader — or a language model — would reason about σ² and be wrong. |
 | `variance_dist` | `lap_delta_dist` | The same, arc-length-matched. |
+| `fft` | `periodogram` (this migration's target; `welch` is the split's other half — see below) | `fft(ch, window)` was one un-normalised windowed magnitude spectrum, no segmentation, no averaging — not the Welch spectrum the charts already computed under the same word (R146: "the notebook and the charts compute *different* spectra"). Split into `periodogram` (this shape, scipy-named and scipy-scaled) and `welch` (segmented/averaged, what the charts already compute); `fft` itself is retired and reserved for a true complex DFT. The migration is a **rewrite**, not a bare rename — every migrated call is pinned to `scaling="raw_magnitude"` so no existing workbook's spectrum moves under cover of the rename (R151 item 1); a `version: 4` document's `fft(...)` error names both `periodogram` and `welch`, not `periodogram` alone. |
+| `angle` | `angle_between` | `numpy.angle` is complex phase, not the angle between two vectors — a false friend (R143/R151 item 4). |
+| `p` | `percentile` | Gratuitous rename — matches `numpy.percentile`'s name, no behaviour change (R143, plan §1 task 10). |
+| `clamp` | `clip` | Gratuitous rename — matches `numpy.clip`'s name. Landed alongside a real bug fix, not renamed over it: `lo > hi` or either being NaN previously panicked (`f64::clamp`'s own precondition); both are now a typed `Runtime` error (plan §4 task 1). |
+| `if` | `where` | Gratuitous rename — matches `numpy.where`'s name. `cond` also widened to accept a scalar (selecting a whole branch) alongside the existing per-sample channel form — additive, not a migration concern, since every existing call's `cond` was already a channel. |
+| `integrate` | `cumulative_trapezoid` | Gratuitous rename — matches `scipy.integrate.cumulative_trapezoid`'s name. `cumtrapz` is *not* in this table: it is a **permanent** second spelling of `cumulative_trapezoid`, not a retired one — scipy itself carries both names, so a document already spelling it `cumtrapz` needs no migration (R151 item 6). |
 
 **How a retired name is handled.** A `version: 3` workbook may still use one:
 it is migrated on read, rewritten **on save only** (opening a workbook is
@@ -1146,6 +1238,16 @@ first sync after a rename would conflict an entire document.
 A retired name in a **`version: 4`** workbook is a typed error naming its
 replacement — never silently accepted. That is what ends a deprecation
 rather than extending it forever (R151 item 10).
+
+**Known false friends deferred, not retired (R151 item 8).** `butter`
+(designs *and* applies the filter, zero-phase — scipy's `butter`/`sosfilt`
+split design from application) and `round` (half-away-from-zero, not
+`numpy.round`'s banker's rounding) are confirmed false friends the
+scipy-alignment lane did **not** rename: `butter`'s fix is a real behaviour
+change with its own migration story, and `round`'s divergence is
+documented in its own §3.3 row rather than fixed. Recorded here so the next
+reader does not re-derive the finding — neither is a promise either name
+changes soon.
 
 **The naming policy this table serves** (R143): where a function is
 semantically equivalent to a scipy/numpy one it takes that name; where it is
@@ -1279,7 +1381,7 @@ per §5.1's first row; `count` is `@observablehq/plot`/user JS, **not**
 cells' expression grammar — `${…}` is JavaScript, with no access to the
 Rust math grammar's functions except through the already-evaluated
 `channel`/named-definition variables). This is worth stating explicitly:
-`${…}` cannot call `integrate(...)`, `butter(...)`, etc. — those are
+`${…}` cannot call `cumulative_trapezoid(...)`, `butter(...)`, etc. — those are
 `math`-cell-only syntax.
 
 ### 5.3 The `plotForm` subset

@@ -32,6 +32,7 @@ import CellFrame, { type CellRunStatus } from "./components/CellFrame";
 import CellList from "./components/CellList";
 import ChartCell from "./components/ChartCell";
 import ConflictBanner from "./components/ConflictBanner";
+import MigrationBanner from "./components/MigrationBanner";
 import VersionBanner from "./components/VersionBanner";
 import { engineVersionBanner } from "./model/engineVersionBanner";
 import { fetchEngineVersion } from "../../../ipc/engine";
@@ -508,6 +509,12 @@ export default function NotebookPage() {
    *  reappears once the selection (or the live engine version) changes
    *  under it, never remembered permanently. */
   const [versionBannerDismissedFor, setVersionBannerDismissedFor] = useState<string | null>(null);
+  /** R151 item 9's on-save migration report: the `hash` (`SaveResult.hash`)
+   *  it was last dismissed for -- a later save producing a new `hash` (even
+   *  one with no migrations, which then renders nothing anyway) un-dismisses
+   *  it, mirroring `versionBannerDismissedFor`'s own "keyed on what changed
+   *  it" scoping rather than a one-time permanent dismissal. */
+  const [appliedMigrationsDismissedFor, setAppliedMigrationsDismissedFor] = useState<string | null>(null);
 
   // R95 items 2/3: whether the Notebook route is on screen right now
   // (`shell/routeVisibility.tsx`'s composed "window visible AND this route
@@ -1353,7 +1360,7 @@ export default function NotebookPage() {
     if (result.status === "saved") {
       lastSavedHashRef.current = result.hash;
       lastSavedAtMsRef.current = result.savedAtMs;
-      dispatch({ type: "saveResult", hash: result.hash });
+      dispatch({ type: "saveResult", hash: result.hash, migrations: result.migrations });
     } else if (result.status === "conflict") {
       dispatch({ type: "saveConflict" });
     }
@@ -1364,7 +1371,7 @@ export default function NotebookPage() {
     if (state.handle === null) return;
     try {
       const source = await readWorkbook(state.handle.id);
-      dispatch({ type: "markdownReady", markdown: source.markdown, hash: source.hash });
+      dispatch({ type: "markdownReady", markdown: source.markdown, hash: source.hash, pendingMigrations: source.pending_migrations });
     } catch (error) {
       dispatch({ type: "markdownError", message: error instanceof Error ? error.message : String(error) });
     }
@@ -1387,7 +1394,7 @@ export default function NotebookPage() {
       if (result.status === "saved") {
         lastSavedHashRef.current = result.hash;
         lastSavedAtMsRef.current = result.savedAtMs;
-        dispatch({ type: "saveResult", hash: result.hash });
+        dispatch({ type: "saveResult", hash: result.hash, migrations: result.migrations });
       } else if (result.status === "conflict") {
         dispatch({ type: "saveConflict" });
       }
@@ -2526,6 +2533,16 @@ export default function NotebookPage() {
       {state.conflict && <ConflictBanner onReloadFromDisk={() => void handleReloadFromDisk()} onOverwrite={() => void handleOverwrite()} />}
       {versionBannerVisible && versionBanner !== null && (
         <VersionBanner banner={versionBanner} onDismiss={() => setVersionBannerDismissedFor(versionBannerDismissKey)} />
+      )}
+      {/* R151 items 9/10 (C2 §3.8): a passive on-open notice, never a rewrite the user didn't ask for. */}
+      <MigrationBanner variant="pending" migrations={state.pendingMigrations} />
+      {/* The on-save report of what the save just rewrote -- dismissable, re-shown by the next save that produces a new hash. */}
+      {appliedMigrationsDismissedFor !== state.hash && (
+        <MigrationBanner
+          variant="applied"
+          migrations={state.appliedMigrations}
+          onDismiss={() => setAppliedMigrationsDismissedFor(state.hash)}
+        />
       )}
       {state.handle !== null && placement === "panes" && (
         <ResizablePanelGroup orientation="horizontal" className="min-h-0 flex-1">

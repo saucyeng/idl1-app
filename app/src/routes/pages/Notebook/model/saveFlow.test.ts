@@ -5,7 +5,7 @@ import type { SaveResult } from "../../../../ipc/workbook";
 
 function baseDeps(overrides: Partial<SaveFlowDeps> = {}): SaveFlowDeps {
   return {
-    save: async () => ({ hash: "h-unused", saved_utc_ms: 0 }),
+    save: async () => ({ hash: "h-unused", saved_utc_ms: 0, migrations: [] }),
     now: () => 0,
     ...overrides,
   };
@@ -14,7 +14,7 @@ function baseDeps(overrides: Partial<SaveFlowDeps> = {}): SaveFlowDeps {
 describe("saveFlow", () => {
   it("saveFlow — a save with the hash last read — passes it as based_on_hash and stores the returned hash", async () => {
     const calls: [string, string, string | null][] = [];
-    const result: SaveResult = { hash: "h2", saved_utc_ms: 5000 };
+    const result: SaveResult = { hash: "h2", saved_utc_ms: 5000, migrations: [] };
     const flow = saveFlow(
       baseDeps({
         save: async (id, markdown, basedOnHash) => {
@@ -28,7 +28,7 @@ describe("saveFlow", () => {
     const state = await flow.save("wb-1", "# doc", "h1");
 
     expect(calls).toEqual([["wb-1", "# doc", "h1"]]);
-    expect(state).toEqual({ status: "saved", hash: "h2", savedAtMs: 1234 });
+    expect(state).toEqual({ status: "saved", hash: "h2", savedAtMs: 1234, migrations: [] });
     expect(flow.state()).toEqual(state);
   });
 
@@ -64,13 +64,26 @@ describe("saveFlow", () => {
     // "saveResult" action, which a caller must not dispatch on this state.
   });
 
+  it("saveFlow — a save that migrated a retired function name — passes SaveResult.migrations through unchanged (R151 item 9)", async () => {
+    const migrations = [{ cell_id: "aaaaaaaa", line: 0, old: "variance_time", new: "lap_delta_time" }];
+    const flow = saveFlow(
+      baseDeps({
+        save: async () => ({ hash: "h3", saved_utc_ms: 9000, migrations }),
+      })
+    );
+
+    const state = await flow.save("wb-1", "# doc", "h1");
+
+    expect(state).toEqual({ status: "saved", hash: "h3", savedAtMs: 0, migrations });
+  });
+
   it("saveFlow — creating a new workbook — passes based_on_hash null (C3 §3.4)", async () => {
     const calls: (string | null)[] = [];
     const flow = saveFlow(
       baseDeps({
         save: async (_id, _markdown, basedOnHash) => {
           calls.push(basedOnHash);
-          return { hash: "h1", saved_utc_ms: 0 };
+          return { hash: "h1", saved_utc_ms: 0, migrations: [] };
         },
       })
     );

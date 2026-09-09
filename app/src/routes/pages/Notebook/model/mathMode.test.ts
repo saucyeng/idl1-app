@@ -93,13 +93,13 @@ describe("tokenizeMath", () => {
 });
 
 describe("MATH_FUNCTIONS", () => {
-  it("MATH_FUNCTIONS — the catalog — contains all 69 of C2 §3.3's names", () => {
-    expect(MATH_FUNCTIONS).toHaveLength(69);
+  it("MATH_FUNCTIONS — the catalog — contains all 72 of C2 §3.3's names (scipy-alignment lane, was 69)", () => {
+    expect(MATH_FUNCTIONS).toHaveLength(72);
 
     const names = new Set(MATH_FUNCTIONS.map((f) => f.name));
-    expect(names.size).toBe(69);
+    expect(names.size).toBe(72);
 
-    for (const name of ["butter", "spectrogram", "rotate_euler", "vec", "current_lap", "if"]) {
+    for (const name of ["butter", "spectrogram", "rotate_euler", "vec", "current_lap", "where"]) {
       expect(names.has(name)).toBe(true);
     }
   });

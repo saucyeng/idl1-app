@@ -34,7 +34,7 @@
  * accident — the same guarantee the IPC layer already gives, carried
  * through into state with no impedance mismatch.
  */
-import type { CellOutput, IpcError, Span, Window as SelectedWindow, WorkbookEvent, WorkbookHandle } from "../../../../ipc/workbook";
+import type { CellOutput, IpcError, RenamedFunction, Span, Window as SelectedWindow, WorkbookEvent, WorkbookHandle } from "../../../../ipc/workbook";
 import { scanCells, type ScannedCell } from "./cells";
 
 /** The document-text slice's own status — independent of whether cells have evaluated. */
@@ -141,6 +141,17 @@ export interface WorkbookState {
   frontMatterDirty: boolean;
   /** True while `saveFlow.ts`'s state is `"conflict"` (Task 14, R44) -- `Notebook/index.tsx` renders `ConflictBanner` while this is true. Cleared by a fresh read (`markdownReady`, i.e. "Reload from disk") or a subsequent successful save (`saveResult`, i.e. "Overwrite" landing). */
   conflict: boolean;
+  /** Retired function names the last `markdownReady` read found still
+   *  un-migrated (`WorkbookSource.pending_migrations`, R151 item 9) --
+   *  `[]` when the document carries none. `MigrationBanner`'s `"pending"`
+   *  variant reads this; a fresh read or a save (`saveResult`, which
+   *  resolves them) both clear it. */
+  pendingMigrations: RenamedFunction[];
+  /** Retired function names the most recent successful save rewrote
+   *  (`SaveResult.migrations`, R151 item 9) -- `[]` before any save this
+   *  session, and after a save that carried none. `MigrationBanner`'s
+   *  `"applied"` variant reads this. */
+  appliedMigrations: RenamedFunction[];
 }
 
 /** `WorkbookState`'s value before `open_workbook` resolves. */
@@ -156,13 +167,18 @@ export const initialWorkbookState: WorkbookState = {
   evalRequestGeneration: 0,
   frontMatterDirty: false,
   conflict: false,
+  pendingMigrations: [],
+  appliedMigrations: [],
 };
 
 /** Every action `workbookReducer` accepts. */
 export type WorkbookAction =
   | { type: "handleOpened"; handle: WorkbookHandle }
   | { type: "markdownLoading" }
-  | { type: "markdownReady"; markdown: string; hash: string }
+  /** `pendingMigrations` is `WorkbookSource.pending_migrations` (R151 item
+   *  9) -- defaults to `[]` so the many existing call sites/tests that
+   *  predate the migration lane still type-check without naming it. */
+  | { type: "markdownReady"; markdown: string; hash: string; pendingMigrations?: RenamedFunction[] }
   | { type: "markdownError"; message: string }
   /** One `windows` entry's success (ruling R121/R131) — dispatched once per
    *  `evalWorkbookV2` result by `model/openEvalDriver.ts`'s
@@ -211,7 +227,9 @@ export type WorkbookAction =
    *  it correctly does for `editCell` (`Notebook/index.tsx`'s `WorkbookBar`
    *  `dirty` prop watches both). */
   | { type: "editFrontMatter"; markdown: string }
-  | { type: "saveResult"; hash: string }
+  /** `migrations` is `SaveResult.migrations` (R151 item 9) -- defaults to
+   *  `[]` for the same reason `markdownReady`'s `pendingMigrations` does. */
+  | { type: "saveResult"; hash: string; migrations?: RenamedFunction[] }
   /** `saveFlow.ts`'s state reached `"conflict"` (Task 14, R44) -- `Notebook/index.tsx` should now render `ConflictBanner`. */
   | { type: "saveConflict" }
   | { type: "watchEvent"; event: WorkbookEvent };
@@ -245,6 +263,10 @@ export function workbookReducer(state: WorkbookState, action: WorkbookAction): W
         // that hadn't been saved, is now moot (the reload replaced it).
         frontMatterDirty: false,
         conflict: false,
+        // A fresh read re-establishes what is pending from scratch -- it
+        // may find fewer (a peer already saved) or more (a peer wrote a
+        // still-older document) retired names than the previous read did.
+        pendingMigrations: action.pendingMigrations ?? [],
       };
 
     case "markdownError":
@@ -306,7 +328,18 @@ export function workbookReducer(state: WorkbookState, action: WorkbookAction): W
       return { ...state, markdown: action.markdown, cells: scanCells(action.markdown).cells, frontMatterDirty: true };
 
     case "saveResult":
-      return { ...state, hash: action.hash, dirtyCellIds: new Set(), frontMatterDirty: false, conflict: false };
+      return {
+        ...state,
+        hash: action.hash,
+        dirtyCellIds: new Set(),
+        frontMatterDirty: false,
+        conflict: false,
+        // A completed save rewrote every retired name `pendingMigrations`
+        // named (R151 item 9) -- both fields are the same save's two
+        // sides: what was pending going in, what was just applied.
+        pendingMigrations: [],
+        appliedMigrations: action.migrations ?? [],
+      };
 
     case "saveConflict":
       return { ...state, conflict: true };
