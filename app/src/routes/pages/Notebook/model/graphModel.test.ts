@@ -114,7 +114,7 @@ describe("buildGraphModel", () => {
   it("buildGraphModel — a completed evaluation's CellDefResult.label — takes priority over the markdown scan's own label", () => {
     // Arrange
     const markdown = "```math id=a1b2c3d4\nroll_deg = [IMU1_Gyro] # label: Roll (deg)\n```\n";
-    const outputs = [cellOutput("a1b2c3d4", [{ name: "roll_deg", label: "Roll — from evaluation", value: null, error: null }])];
+    const outputs = [cellOutput("a1b2c3d4", [{ name: "roll_deg", label: "Roll — from evaluation", value: null, error: null, sample_rate_hz: null }])];
 
     // Act
     const model = buildGraphModel(markdown, outputs);

@@ -50,6 +50,11 @@ export interface CellDefResult {
    *  out of `defs` entirely and is reported, if anywhere, on the cell's own
    *  `errors` instead (ledger R22). */
   error: IpcError | null;
+  /** Hz, or `null` when a rate is genuinely **not applicable** — a scalar
+   *  reduction has no sample rate. Never "unknown": ruling R152 split this
+   *  from the unit, which the engine does *not* know and which ships only
+   *  once the unit model (R154) lands. Do not infer a unit from a name. */
+  sample_rate_hz: number | null;
 }
 
 /** One `${…}` inline span (C2 §5.2) inside a cell's rendered prose HTML
