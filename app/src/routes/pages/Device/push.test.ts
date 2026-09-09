@@ -1,9 +1,28 @@
 import { describe, expect, it } from "vitest";
 
+import type { DeviceStatus } from "../../../ipc/device";
 import { defaultConfig } from "./config/defaults";
 import { parseConfig } from "./config/model";
 import { validateConfig } from "./config/validate";
-import { describePushResult, initialPushState, preparePush, pushReducer } from "./push";
+import { checkPushMode, describePushResult, initialPushState, preparePush, pushReducer } from "./push";
+
+/** A `DeviceStatus` with every field `null`/`false`, overridden per test —
+ *  `checkPushMode` only reads `logging`/`wifi_on`, so the rest is filler. */
+function statusWith(fields: Partial<DeviceStatus>): DeviceStatus {
+  return {
+    wifi_on: null,
+    logging: null,
+    battery_pct: null,
+    sd: null,
+    gps: null,
+    imu: null,
+    firmware: null,
+    ota_pending_verify: false,
+    hr: null,
+    hr_battery_pct: null,
+    ...fields,
+  };
+}
 
 describe("preparePush", () => {
   it("preparePush — a valid config — ok, and the JSON parses back to the same config", () => {
@@ -67,6 +86,74 @@ describe("preparePush", () => {
     if (result.ok) {
       expect(JSON.parse(result.json).future_field).toEqual({ nested: true });
     }
+  });
+});
+
+describe("checkPushMode", () => {
+  it("checkPushMode — no status yet — not ok, waiting-for-status reason", () => {
+    // Act
+    const result = checkPushMode(null);
+
+    // Assert
+    expect(result.ok).toBe(false);
+    expect(result.reason).toBe("Waiting for the device's status before a push can be checked as safe.");
+  });
+
+  it("checkPushMode — idle (both false) — ok, no reason", () => {
+    // Arrange
+    const status = statusWith({ logging: false, wifi_on: false });
+
+    // Act
+    const result = checkPushMode(status);
+
+    // Assert
+    expect(result).toEqual({ ok: true, reason: null });
+  });
+
+  it("checkPushMode — recording — not ok, names recording specifically", () => {
+    // Arrange
+    const status = statusWith({ logging: true, wifi_on: false });
+
+    // Act
+    const result = checkPushMode(status);
+
+    // Assert
+    expect(result.ok).toBe(false);
+    expect(result.reason).toContain("recording");
+  });
+
+  it("checkPushMode — WiFi mode — not ok, names WiFi specifically", () => {
+    // Arrange
+    const status = statusWith({ logging: false, wifi_on: true });
+
+    // Act
+    const result = checkPushMode(status);
+
+    // Assert
+    expect(result.ok).toBe(false);
+    expect(result.reason).toContain("WiFi");
+  });
+
+  it("checkPushMode — logging unreported (null) — not ok, never assumed idle from an unknown field", () => {
+    // Arrange
+    const status = statusWith({ logging: null, wifi_on: false });
+
+    // Act
+    const result = checkPushMode(status);
+
+    // Assert
+    expect(result.ok).toBe(false);
+  });
+
+  it("checkPushMode — wifi_on unreported (null) — not ok, never assumed idle from an unknown field", () => {
+    // Arrange
+    const status = statusWith({ logging: false, wifi_on: null });
+
+    // Act
+    const result = checkPushMode(status);
+
+    // Assert
+    expect(result.ok).toBe(false);
   });
 });
 

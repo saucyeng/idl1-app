@@ -6,6 +6,21 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 
 ### Added
 
+- **Device tab: push config reads the device's mode first, refuses before
+  sending (2026-09-08, `runs/2026-09-07/ui/UI-DIRECTION-2.md` decision
+  69).** New `push.ts` `checkPushMode(status)`: idle mode (SPEC §23.6)
+  means both `logging` and `wifi_on` read back confirmed `false` — either
+  being unreported (`null`) is "don't know yet," never assumed idle.
+  `PushConfigBar` gates **Push config** on it and shows the specific reason
+  (recording / WiFi mode / mode unknown) in place of letting the device's
+  own after-the-fact rejection be the first the rider hears of it. Decision
+  68 (HRM search filtered to the heart-rate service by default) is **not
+  implemented**: `bleScan`'s `DeviceDiscovered` carries no service-UUID
+  data at all (`ipc/device.ts`) — there is nothing to filter on
+  client-side without a new IPC field, a contract/Rust change out of scope
+  for this TS-only lane; `HrmForm.tsx`'s own doc comment already names
+  this as a parity gap.
+
 - **Device tab: auto-connect to the last-used device on launch (2026-09-08,
   `runs/2026-09-07/ui/UI-DIRECTION-2.md` decision 64).** New
   `Device/lastDevice.ts`: a `localStorage`-backed seam (no `AppSettings`

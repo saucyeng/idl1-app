@@ -1,3 +1,4 @@
+import type { DeviceStatus } from "../../../ipc/device";
 import { isPushable, validateConfig, type ValidationIssue } from "./config/validate";
 import { serializeConfig, type DeviceConfig } from "./config/model";
 
@@ -66,6 +67,46 @@ export function describePushResult(reconnected: boolean, verified: boolean | nul
     return "Config applied, but what the device is now running doesn't match what was pushed. Try pushing again.";
   }
   return "Config applied, not verified.";
+}
+
+/**
+ * The result of {@link checkPushMode} — SPEC §23.6: pushing a config
+ * requires idle mode ("BLE control is suspended in WiFi mode, §10.4"). A
+ * `false` result carries the exact sentence `PushConfigBar` shows in place
+ * of the push button, rather than letting the device's own rejection
+ * (`kind: "config"`/`"ble"`) be the first the rider hears of it (decision
+ * 69: "read mode first").
+ */
+export interface ModeCheck {
+  ok: boolean;
+  /** `null` when `ok` is `true`; otherwise the reason shown to the rider. */
+  reason: string | null;
+}
+
+/**
+ * Reads `status` for whether a push is currently allowed, **before**
+ * `pushConfig` is ever called (decision 69). Idle mode means neither
+ * recording nor WiFi is active (SPEC §23.9's mutual exclusion) — both
+ * fields must be confirmed `false`; either being unreported (`null`) is
+ * treated as "don't know yet," not "assume idle," since a push sent into
+ * WiFi mode is the exact silent-rejection SPEC §23.6 describes for wave 2
+ * and this function exists to prevent. No `DeviceStatus` at all (before the
+ * first poll returns) is the same "don't know yet" case.
+ */
+export function checkPushMode(status: DeviceStatus | null): ModeCheck {
+  if (status === null) {
+    return { ok: false, reason: "Waiting for the device's status before a push can be checked as safe." };
+  }
+  if (status.logging === true) {
+    return { ok: false, reason: "The device is recording. Stop the recording before pushing a config." };
+  }
+  if (status.wifi_on === true) {
+    return { ok: false, reason: "The device is in WiFi mode, which suspends BLE control. Turn WiFi off before pushing a config." };
+  }
+  if (status.logging === null || status.wifi_on === null) {
+    return { ok: false, reason: "The device's mode isn't fully known yet — wait for the next status read before pushing." };
+  }
+  return { ok: true, reason: null };
 }
 
 /** Lifecycle phase of `PushConfigBar`'s push flow (standing reviewer

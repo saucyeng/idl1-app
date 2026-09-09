@@ -405,7 +405,12 @@ export default function Device() {
           </p>
         )}
         <ChannelsTable sources={listSources(config)} config={config} onConfigChange={onConfigChange} />
-        <PushConfigBar deviceId={deviceId} config={activeProfile?.config ?? null} connected={state.activeDeviceId !== null} />
+        <PushConfigBar
+          deviceId={deviceId}
+          config={activeProfile?.config ?? null}
+          connected={state.activeDeviceId !== null}
+          deviceStatus={statusState.status}
+        />
       </section>
 
       <Collapsible className="device-tab__calibration rounded-[var(--radius-card)] border border-rule bg-surface p-4">
