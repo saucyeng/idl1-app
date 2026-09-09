@@ -57,6 +57,12 @@
   this revision and removed in the next (§5); `fetch_tile`,
   `cursor_readout`, `fetch_raster`/`fetch_raster_meta` and the session-entity
   CRUD commands are unchanged.
+- 2026-09-09: scipy-alignment lane (ledger R151 item 9, R157) — `WorkbookSource`
+  (`read_workbook`) gains `pending_migrations: RenamedFunction[]`; `SaveResult`
+  (`save_workbook`) gains `migrations: RenamedFunction[]`; `MathBuiltinDto`
+  (`list_math_builtins`) gains `renamed_from: string[]` and the catalog's
+  stated size moves from 69 (63 implemented, 6 not) to 72 (66 implemented, 6
+  not). All three are additive — no existing field changes shape.
 
 Consumes: design doc §4 (IPC, data path for a chart, the reactive DAG), §6
 (interaction rules), §9 row C3, §10 (lanes); Task 5's M0 smoke commands
@@ -805,10 +811,18 @@ specified: no command let the editor read the file it was about to save
 `based_on_hash` against.
 
 ```ts
+interface RenamedFunction {          // added 2026-09-09 (scipy-alignment lane, R151 item 9)
+  cell_id: string;
+  line: number;                      // u32, 0-based within cell_id
+  old: string;                       // the retired spelling
+  new: string;                       // what it was (or would be) rewritten to
+}
+
 interface WorkbookSource {
   markdown: string;   // the file's UTF-8 text, verbatim
   hash: string;       // sha256 of those bytes, hex — the `based_on_hash` a later save passes
   path: string;       // absolute, under <data>/workbooks/
+  pending_migrations: RenamedFunction[];  // added 2026-09-09, R151 item 9 — see below
 }
 ```
 Return: `WorkbookSource`.
@@ -817,6 +831,17 @@ Returns bytes and **does not parse**. Deliberately does not raise the four
 document-fatal `workbook_*` kinds: a document whose front matter is
 malformed must still be readable in order to be repaired in the editor.
 That separation from `open_workbook` is the entire point of the command.
+
+**`pending_migrations`** *(added 2026-09-09, scipy-alignment lane, ledger
+R151 item 9)*: retired math-builtin names (C2 §3.8) this document would be
+rewritten to on the next save — `[]` when `markdown` carries none,
+including every `version: 4` document. Computed by running
+`idl_rs::math::migrate_document` read-only (it never fails a malformed
+front matter, it just reports no migrations, so it cannot regress this
+command's "read anyway" contract above). Nothing is written and nothing
+here changes `hash` — decision 75: opening a workbook is not consent to
+modify it. The editor renders this as a passive, dismissable-only-by-saving
+strip; the actual rewrite happens only inside `save_workbook`, below.
 
 Errors: `not_found`, `io`, `internal`.
 
@@ -1015,10 +1040,22 @@ Return:
 interface SaveResult {
   hash: string;          // sha256 of the written bytes, hex
   saved_utc_ms: number;  // i64
+  migrations: RenamedFunction[];  // added 2026-09-09, R151 item 9 — see below
 }
 ```
 Errors: `not_found`, `invalid_argument` (front matter fails to parse, or a
 fence is malformed enough that cell ids cannot be assigned — C2), `io`, `internal`.
+
+**`migrations`** *(added 2026-09-09, scipy-alignment lane, ledger R151 item
+9, `RenamedFunction` shape above)*: every retired math-builtin name (C2
+§3.8) this save rewrote to its current spelling — `[]` when the document
+carried none. This is the **only** place a rewrite happens — `save_workbook`
+runs `idl_rs::math::migrate_document` on `markdown` before writing, hashing,
+and returning; `hash` above is the hash of the **migrated** bytes, never the
+caller's original text with a retired name still in it. The editor renders
+this list as a dismissable report ("N retired function names were updated
+in this workbook"), reusing the same banner slot `ConflictBanner`/
+`VersionBanner` already occupy rather than a second mechanism.
 
 **`watch_workbook(id: string, channel: Channel<WorkbookEvent>)`**
 Subscribes to the file watcher (design §7) for one workbook; the command's
@@ -1132,9 +1169,23 @@ interface MathBuiltinDto {
                       // one entry when C2 §3.3's signature documents more
                       // than one call form, e.g. rms(ch) | rms(ch, w) -> [1, 2]
   status: "implemented" | "not_implemented";
+  renamed_from: string[];  // added 2026-09-09, R151 item 9 — see below
 }
-type MathBuiltins = MathBuiltinDto[];  // 69 entries (63 implemented, 6 not)
+type MathBuiltins = MathBuiltinDto[];  // 72 entries (66 implemented, 6 not) — revised
+                                        // 2026-09-09, scipy-alignment lane, from 69
+                                        // (63 implemented, 6 not); see C2 §3.3's own
+                                        // count paragraph for the +3 breakdown and a
+                                        // recorded disagreement over the split
 ```
+
+**`renamed_from`** *(added 2026-09-09, scipy-alignment lane, ledger R151
+item 9)*: retired names that now migrate to this one (C2 §3.8), drawn from
+`idl_rs::math::math_name_migrations()` — e.g. `["variance_time"]` for
+`lap_delta_time`, `["p"]` for `percentile`. `[]` for every function nothing
+was ever renamed from. Lets the notebook's function reference and
+completion catalog show "was `X`" beside a renamed builtin, rather than the
+old name simply vanishing from view.
+
 No `unit_rule` field — an earlier draft of this task proposed one, but C2
 §3.3 has no "units" column and no other Rust or TS artifact names a
 per-builtin unit-propagation vocabulary; R64.2 drops it rather than ship a

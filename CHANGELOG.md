@@ -29,6 +29,30 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 
 ### Added
 
+- **Notebook: `functionCatalog.ts` brought current with the scipy-alignment
+  lane's 72-entry engine catalog (2026-09-09,
+  `runs/2026-09-08/scipy-alignment-plan.md`, ledger R151/R157).** Renamed
+  rows (`lap_delta_time`/`lap_delta_dist`, `angle_between`, `percentile`,
+  `clip`, `where`, `cumulative_trapezoid`), the `fft` → `periodogram`/`welch`
+  split with scipy's `density`/`spectrum` scalings plus the deliberately
+  un-scipy `raw_magnitude`, `cumtrapz` as a permanent second spelling, and
+  `gradient` alongside `differentiate` — cross-checked directly against
+  `rust/core/src/math/catalog.rs`'s own `math_builtin_catalog()`.
+  `CodePane`'s completion signatures update automatically (they read
+  `functionCatalog.ts`'s `signature` strings directly).
+
+- **Notebook: retired math-builtin names are surfaced to the user
+  (2026-09-09, ledger R151 items 9/10).** `read_workbook`'s
+  `pending_migrations` renders as a passive strip on open ("this workbook
+  uses N retired names; saving will update them") — nothing is rewritten by
+  opening a file. `save_workbook`'s `migrations` renders as a dismissable
+  report of what the save just rewrote, reusing the notebook's existing
+  banner slot (`ConflictBanner`/`VersionBanner`) rather than a second
+  mechanism: new `components/MigrationBanner.tsx`, pure decision logic in
+  `model/migrationNotice.ts`, `workbookState.ts`'s `pendingMigrations`/
+  `appliedMigrations`, and `saveFlow.ts`'s `"saved"` state carrying
+  `migrations` through.
+
 - **Device tab: push config reads the device's mode first, refuses before
   sending (2026-09-08, `runs/2026-09-07/ui/UI-DIRECTION-2.md` decision
   69).** New `push.ts` `checkPushMode(status)`: idle mode (SPEC §23.6)
