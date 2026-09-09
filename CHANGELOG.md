@@ -4,6 +4,19 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 
 ## [Unreleased]
 
+### Skipped (recorded rather than guessed)
+
+- **Device tab: the live status pane (decisions 66, 87) — not built.**
+  Per-IMU OK, GPS satellite count, and device-reported recording duration
+  all require `DeviceStatus` fields (`imu0`/`imu1`/`imu2`, `gps_satellites`,
+  `logging_elapsed`) that SPEC §7.3 documents as additive lines but that
+  neither the C3 contract (`docs/superpowers/specs/2026-09-03-idl1-c3-ipc-surface.md`
+  §`device_status`) nor `ipc/device.ts`'s `DeviceStatus` interface expose
+  yet — a Rust/`idl-rs-tauri` change this TS-only lane may not make. Rather
+  than build a pane with two of its three fields permanently "unavailable"
+  (or guess a wire field, which CLAUDE.md §1 and this dispatch both forbid),
+  this task is left undone until a Rust lane threads those fields through.
+
 ### Removed
 
 - **Device tab: the Calibration placeholder panel (2026-09-08,
