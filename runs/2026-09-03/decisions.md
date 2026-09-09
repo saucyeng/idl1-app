@@ -6780,3 +6780,32 @@ two languages to satisfy a taxonomy would be worse than leaving it whole.
 
 **Cost if wrong.** (3) is the one to hold: a suspension figure labelled `mm`
 that is actually `mm·m/s` is a number a rider would act on.
+
+**Amendment (2026-09-08, third instance).** R150's silent-binding-failure
+finding recurred twice more in the same hour, both on the same workbook:
+
+- A **bare definition reference** (`butter(2, 5, "low", accel_mag)` instead
+  of `[accel_mag]`) — one definition failed to parse, and
+  `bindingForTime`'s all-or-nothing rule blanked a chart whose *other*
+  channel was perfectly good.
+- A **missing required key**: an FFT cell's `x` axis requires `type`
+  (`FftXAxisProps.type` is not optional). `x: { label: "Frequency (Hz)" }`
+  alone made `parse` return null, so the cell was not FFT-shaped, so the
+  effect dropped it — no fetch, no message, an empty frame.
+
+Three distinct authoring mistakes, three identical symptoms: **a chart
+frame with axis labels and nothing in it**. In every case the app knew
+exactly what was wrong — an unparseable definition, an unresolved mark, a
+missing grammar key — and displayed none of it.
+
+This settles the priority. **R148 part 2 (bind by extracting `channel(…)`
+calls rather than parsing the whole cell) and R150 (say which mark failed
+and why) are no longer improvements; they are the difference between a
+notebook a person can author in and one where every mistake looks identical
+to a broken application.** Isaac's own conclusion after the first instance
+was that the charts did not work at all.
+
+A corollary for the properties form: because `parse` must round-trip what
+the form generates, **the form's own output is the only reliably parseable
+shape**. Any hand-authored cell is one missing key away from silence. That
+is acceptable only while the failure is *visible*.
