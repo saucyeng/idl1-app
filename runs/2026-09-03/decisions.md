@@ -7758,3 +7758,70 @@ already covers it.
 **Cost if wrong.** If drift is in fact worse than one audit found, the next
 stale mirror shows up as a runtime `undefined` in a lane, which is how the
 first two were found — recoverable, and cheaper than owning a generator.
+
+---
+
+## R169 amended — the fourth copy is folded in; `sessionLabel` takes the two fields it reads
+
+*2026-09-09, lead. The `session-label` lane's task-3 grep found one more.*
+
+`Notebook/index.tsx`'s `windowDescriptorFor` had its own `NONE_VENUE =
+"(none)"` feeding `describeWindow` for the **chart legend's** window label,
+doc-commented as a deliberate local copy. The lane reported it and did not
+fold it in, exactly as the brief said. That was right: R169 warns against
+centralising every string, and the lane was not the place to decide.
+
+**It is folded in.** R169's own test is whether two surfaces name the same
+thing for the same reader. A chart legend, a top-bar chip and a report line
+all label *the same selected window* for *the same person looking at the
+same screen*. Three of the four already agreed; leaving the fourth would
+have meant the legend under a chart disagreeing with the chip above it.
+
+**Why it had drifted is the interesting part.** It holds a `SessionDetail`,
+not a `SessionSummary`, and `sessionLabel` took a whole `SessionSummary` —
+so the cheapest correct thing available to that call site was a local copy.
+The fix is therefore not "call the shared one"; it is to make the shared one
+takeable: `sessionLabel` now accepts `Pick<SessionSummary, "venue_name" |
+"timestamp_utc_ms">`, the two fields it actually reads, which a
+`SessionDetail` satisfies structurally. **A signature that demands more than
+it reads manufactures its own copies.**
+
+**One visible change, accepted:** the chart legend now carries the date.
+That is more text, and it is the right more — the legend's job is telling
+two windows apart, and two visits to one venue were previously
+indistinguishable in it.
+
+The lane's other judgment call — keeping a thin `windowSessionLabel`
+wrapper in `report/document.ts` for the null-session case ("Unknown
+session"), delegating all label text to `sessionLabel` — is accepted. It
+makes no venue-or-date decision of its own, so it is not a formatter.
+
+## R171 — Never `git worktree remove --force` a worktree holding a junctioned `node_modules`
+
+*2026-09-09, lead. My own mistake, recorded so no lane repeats it.*
+
+App lanes get their `node_modules` as a Windows directory junction to the
+main checkout's, to avoid a full install per worktree. `git worktree remove
+--force` **follows that junction and deletes the target's contents** — so
+retiring two finished lanes silently emptied the main checkout's
+`node_modules`, and the next `npx tsc` in an unrelated worktree failed with
+"This is not the tsc command you are looking for" rather than anything that
+names the real cause.
+
+**The rule:** unlink first, remove second.
+
+```
+cmd /c "rmdir node_modules"      # removes the LINK, never the target
+git worktree remove <path> --force
+```
+
+`rmdir` on a junction is the safe form; `rm -rf` through the link is not.
+
+Recovery, if it happens again, is `npm ci` in `app/` — nothing is lost but
+time. Verify with `ls app/node_modules | wc -l` (136 entries today) before
+concluding a worktree is at fault for a toolchain error.
+
+**Cost if wrong.** Minutes, and a confusing error at exactly the moment a
+lane is being gated — the failure surfaces in the *next* lane's gate, not in
+the removal that caused it, which is what makes it worth a ruling rather
+than a shrug.

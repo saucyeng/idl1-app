@@ -245,11 +245,19 @@ export function venueLabel(venueName: string): string {
  * The short human label for a whole session `s`: its venue (or the shared
  * "(none)" text — {@link venueLabel}) plus its local calendar date,
  * omitted when `timestamp_utc_ms` is 0 (C1 §3.1: 0 means unknown). The one
- * formatter for "name this session as text", used by the top-bar chip and
- * the report's per-window labels alike (ruling R169) — a reader comparing
- * the two must see the same string for the same session.
+ * formatter for "name this session as text", used by the top-bar chip, the
+ * chart legend's window label and the report's per-window labels alike
+ * (ruling R169, amended) — a reader comparing any two of them must see the
+ * same string for the same session.
+ *
+ * Takes the two fields it reads rather than a whole `SessionSummary`, so a
+ * caller holding a `SessionDetail` (C1 §4.1 — the same two fields under the
+ * same names) can pass it directly. Widening the parameter was the
+ * alternative to a fourth local copy: `Notebook/index.tsx`'s chart-legend
+ * label had grown its own `(none)` literal precisely because it holds a
+ * `SessionDetail`, not a summary.
  */
-export function sessionLabel(s: SessionSummary): string {
+export function sessionLabel(s: Pick<SessionSummary, "venue_name" | "timestamp_utc_ms">): string {
   const venue = venueLabel(s.venue_name);
   if (s.timestamp_utc_ms === 0) return venue;
   const d = new Date(s.timestamp_utc_ms);

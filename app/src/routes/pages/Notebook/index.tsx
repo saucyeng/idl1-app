@@ -25,7 +25,7 @@ import {
   type WindowEval,
 } from "../../../ipc/workbook";
 import { useAppState } from "../../../state/AppState";
-import { describeWindow, sessionDetailsReadinessKey, windowKey, windowsKey, type SelectionWindow } from "../../../state/selection";
+import { describeWindow, sessionDetailsReadinessKey, sessionLabel, venueLabel, windowKey, windowsKey, type SelectionWindow } from "../../../state/selection";
 import { useRouteVisible } from "../../../shell/routeVisibility";
 import { useEditorSlotNode } from "../../../shell/editorSlot";
 import { ColumnPlaceholder } from "../../../shell/ColumnFrame";
@@ -127,12 +127,6 @@ function toIpcError(error: unknown): IpcError {
   return { kind: "internal", message: error instanceof Error ? error.message : String(error) };
 }
 
-/** Synthetic label for an empty `venue_name`, matching `Data/sessionRow.ts`'s
- *  own convention (kept as a local copy, not a cross-page import -- this
- *  file's existing pattern for every small pure helper another page also
- *  happens to need). */
-const NONE_VENUE = "(none)";
-
 /** Builds `w`'s `WindowDescriptor` (`host/protocol.ts`) for the sandbox
  *  host-var payload -- `label` is human-facing (rendered by a chart's own
  *  legend, per ruling R117 item 6/`state/selection.ts`'s `describeWindow`
@@ -140,10 +134,16 @@ const NONE_VENUE = "(none)";
  *  goes through `describeWindow` with a resolved venue name, never the id
  *  itself. `detail` is `sessionDetailsByWindow`'s entry for `w` -- `null`
  *  while still resolving, which reads as the same "(none)" venue text a
- *  session with no venue set would. */
+ *  session with no venue set would.
+ *
+ *  Names the session through `state/selection.ts`'s shared `sessionLabel`
+ *  (ruling R169, amended): a chart legend, the top-bar chip and the report
+ *  all label the same window for the same reader, so all three must say the
+ *  same thing -- this file's own `(none)` literal was the fourth copy R169
+ *  set out to remove. */
 function windowDescriptorFor(w: SelectionWindow, detail: SessionDetail | null): WindowDescriptor {
-  const venueName = detail !== null && detail.venue_name !== "" ? detail.venue_name : NONE_VENUE;
-  return { sessionId: w.sessionId, span: toWireWindow(w).span, colour: w.colour, label: describeWindow(w, venueName) };
+  const name = detail === null ? venueLabel("") : sessionLabel(detail);
+  return { sessionId: w.sessionId, span: toWireWindow(w).span, colour: w.colour, label: describeWindow(w, name) };
 }
 
 /**
