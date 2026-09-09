@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { SessionDetail } from "../../../../ipc/catalog";
-import type { Window as SelectedWindow } from "../../../../ipc/workbook";
+import type { CellOutput, Window as SelectedWindow } from "../../../../ipc/workbook";
 import { buildGraphModel } from "./graphModel";
 import { buildSourcePalette, filterSourcePalette } from "./sourcePalette";
 
@@ -79,6 +79,32 @@ describe("buildSourcePalette — channels", () => {
     const imu1 = palette.channelGroups.find((g) => g.label === "IMU1");
     expect(imu1?.rows.map((r) => r.name)).toEqual(["IMU1_AccelX", "IMU1_AccelZ"]);
     expect(imu1?.rows.every((r) => r.rateHz === 100 && r.partial === false)).toBe(true);
+  });
+
+  it("buildSourcePalette — a channel with no recorded C1 unit — row is unknown, not dimensionless (R154 item 6)", () => {
+    // Arrange
+    const details = new Map([["s1", session("s1", ["IMU1_AccelZ"])]]); // session()'s fixture channels all carry unit: ""
+
+    // Act
+    const palette = buildSourcePalette({ markdown: DOC, model: buildGraphModel(DOC, []), selectedWindows: [window("s1")], sessionDetails: details });
+
+    // Assert
+    const row = palette.channelGroups.flatMap((g) => g.rows).find((r) => r.name === "IMU1_AccelZ");
+    expect(row?.unit).toEqual({ state: "unknown", reason: "no unit recorded for this channel" });
+  });
+
+  it("buildSourcePalette — a channel with a recorded C1 unit — row is known, verbatim", () => {
+    // Arrange
+    const detail = session("s1", ["GPS_SpeedKmh"]);
+    detail.channels = detail.channels.map((c) => ({ ...c, unit: "km/h" }));
+    const details = new Map([["s1", detail]]);
+
+    // Act
+    const palette = buildSourcePalette({ markdown: DOC, model: buildGraphModel(DOC, []), selectedWindows: [window("s1")], sessionDetails: details });
+
+    // Assert
+    const row = palette.channelGroups.flatMap((g) => g.rows).find((r) => r.name === "GPS_SpeedKmh");
+    expect(row?.unit).toEqual({ state: "known", text: "km/h" });
   });
 
   it("buildSourcePalette — two resolved sessions disagreeing on a channel — union, the missing one marked partial, none hidden", () => {
@@ -176,6 +202,41 @@ describe("buildSourcePalette — definitions", () => {
     // Assert
     expect(palette.definitions[0]?.rows.map((r) => r.name)).toEqual(["fork_velocity", "fork_bottom_out"]);
     expect(palette.definitions[0]?.rows.every((r) => r.sampleRateHz === null)).toBe(true);
+  });
+
+  it("buildSourcePalette — no outputs — every definition row is UNIT_NOT_YET_EVALUATED", () => {
+    // Act
+    const palette = buildSourcePalette({ markdown: DOC, model: buildGraphModel(DOC, []), selectedWindows: [], sessionDetails: new Map() });
+
+    // Assert
+    expect(palette.definitions[0]?.rows.every((r) => r.unit.state === "unknown" && r.unit.reason === "not evaluated yet")).toBe(true);
+  });
+
+  it("buildSourcePalette — outputs carrying this definition's CellDefResult — the row's own unit, not the fallback", () => {
+    // Arrange
+    const outputs: CellOutput[] = [
+      {
+        cell_id: "a1b2c3d4",
+        kind: "math",
+        value: null,
+        defs: [
+          { name: "fork_velocity", label: null, value: null, error: null, sample_rate_hz: null, unit: { state: "known", text: "mm/s" }, unit_notes: [] },
+          { name: "fork_bottom_out", label: null, value: null, error: null, sample_rate_hz: null, unit: { state: "dimensionless" }, unit_notes: [] },
+        ],
+        errors: [],
+        prose_before_html: null,
+        prose_after_html: null,
+        prose_spans: [],
+      },
+    ];
+
+    // Act
+    const palette = buildSourcePalette({ markdown: DOC, model: buildGraphModel(DOC, []), selectedWindows: [], sessionDetails: new Map(), outputs });
+
+    // Assert
+    const rows = palette.definitions[0]?.rows ?? [];
+    expect(rows.find((r) => r.name === "fork_velocity")?.unit).toEqual({ state: "known", text: "mm/s" });
+    expect(rows.find((r) => r.name === "fork_bottom_out")?.unit).toEqual({ state: "dimensionless" });
   });
 });
 

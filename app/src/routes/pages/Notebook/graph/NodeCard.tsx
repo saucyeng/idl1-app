@@ -6,6 +6,7 @@ import type { MathExprCall } from "../model/mathExpr";
 import type { GraphNode } from "../model/graphModel";
 import type { NodeStatus } from "../model/graphStatus";
 import type { MarkProps } from "../plotForm/types";
+import type { UnitLabel } from "../../../../ipc/workbook";
 import ChartTypePicker from "./ChartTypePicker";
 import { chartEligibilityFor } from "./graphToChart";
 import type { PortShape } from "./portShape";
@@ -27,6 +28,15 @@ const STATUS_DOT_CLASS: Record<Exclude<NodeStatus, "grey">, string> = {
 export interface MathNodeData extends Record<string, unknown> {
   graphNode: GraphNode;
   status: NodeStatus;
+  /** This node's three-state unit (decision 45: "a node draws as a small
+   *  card: name, unit, the key parameters…", R154/R164) — a `"channel"`
+   *  node's own `ChannelSummary.unit` via `model/unitLabel.ts`'s
+   *  `rawUnitToLabel`, or a `"definition"` node's `CellDefResult.unit`
+   *  from `outputs`. `null` only when neither source has resolved yet
+   *  (e.g. before the first evaluation, or a channel absent from every
+   *  resolved session) — distinct from `UnitLabel`'s own `unknown` state,
+   *  which means "resolved, but no unit could be determined". */
+  unit: UnitLabel | null;
   /** R132's named split ("2 of 3 windows"), or `null`. */
   split: string | null;
   /** `"unknown"` for a `"channel"` node — a source node has no shape of its
@@ -135,11 +145,20 @@ function EditableArg({ value, onCommit }: { value: string; onCommit: (newText: s
  * `model/mathExpr.ts`, and `graph/portShape.ts`.
  */
 export default function NodeCard({ data }: NodeProps<Node<MathNodeData, "mathNode">>) {
-  const { graphNode, status, split, shape, call, onChart, highlighted, onRename, onEditArg } = data;
+  const { graphNode, status, split, shape, call, unit, onChart, highlighted, onRename, onEditArg } = data;
   const isChannel = graphNode.kind === "channel";
   const displayName = graphNode.label ?? graphNode.name;
   const hoverText = graphNode.exprText !== null ? `${graphNode.name} = ${graphNode.exprText}` : graphNode.name;
   const eligibility = chartEligibilityFor(shape, call);
+  // Decision 45's own row order: "name, unit, the key parameters…". The
+  // three states render distinctly (this task's own rule) — `known` shows
+  // the unit itself, `dimensionless` shows no row at all (a count
+  // genuinely has no unit — not a blank that reads as missing), `unknown`
+  // shows an explicit `?` with the reason as its tooltip so a reader can
+  // tell the two apart, and `null` (nothing has resolved yet, e.g. before
+  // the first evaluation) shows nothing either, same as `dimensionless`.
+  const unitText = unit !== null && unit.state === "known" ? unit.text : unit !== null && unit.state === "unknown" ? "?" : null;
+  const unitTitle = unit !== null && unit.state === "unknown" ? unit.reason : undefined;
 
   // Rename (decision 45a's first gesture): a double-click on the
   // identifier swaps it for an inline `<input>`; Enter/blur commits
@@ -194,6 +213,11 @@ export default function NodeCard({ data }: NodeProps<Node<MathNodeData, "mathNod
           <StatusDot className={STATUS_DOT_CLASS[status]}>{split ?? status}</StatusDot>
         )}
       </div>
+      {unitText !== null && (
+        <div className="text-label-2 text-fg-faint" title={unitTitle}>
+          {unitText}
+        </div>
+      )}
       {!isChannel && (
         <div className="mt-1 flex items-center justify-between gap-2 text-label-2 text-fg-dim">
           <span className="truncate">

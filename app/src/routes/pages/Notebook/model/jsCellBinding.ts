@@ -12,7 +12,7 @@ import { spectrumKey } from "../plotForm/spectrumKey";
 import type { FftPlotProps, TimePlotProps } from "../plotForm/types";
 import { exceedsBinCap, fftRequestFor, type FftRequest } from "./fftRequest";
 import { extractChannelCalls, extractSpectrumCalls, type ChannelCallRef, type SpectrumCallRef } from "./jsCellCalls";
-import { rawUnitToLabel } from "./unitLabel";
+import { rawUnitToLabel, UNIT_NOT_YET_EVALUATED } from "./unitLabel";
 import type { ChannelSummary, SessionDetail } from "../../../../ipc/catalog";
 import type { Span, UnitLabel, Window as SelectedWindow } from "../../../../ipc/workbook";
 
@@ -58,13 +58,6 @@ export interface JsCellBindingChannel {
    *  resolves it, so nothing downstream re-derives it. */
   unit: UnitLabel;
 }
-
-/** {@link JsCellBindingChannel.unit}'s fallback when a `"definition"`
- *  channel has no entry in the caller's `definitionUnitByName` yet (its
- *  first `eval_workbook_v2` result hasn't landed) — distinct wording from
- *  a raw channel's "no unit recorded" so the two `unknown` reasons don't
- *  read as the same cause if ever surfaced side by side. */
-const UNIT_NOT_YET_EVALUATED: UnitLabel = { state: "unknown", reason: "not evaluated yet" };
 
 /**
  * The initial time window every channel bound from this cell starts at,

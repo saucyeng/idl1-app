@@ -36,15 +36,21 @@
  *
  * **Rate is honest about what's on the wire (R147/R152).** A channel row
  * always has a rate (`ChannelSummary.nominal_rate_hz`). A definition row's
- * `sampleRateHz` is `null` until `CellDefResult` gains the field the
- * ruling describes — this module never fabricates one.
+ * `sampleRateHz` is `null` until `CellDefResult` gains the sample-rate
+ * field that ruling describes — this module never fabricates one. Its
+ * `unit` column, by contrast, is populated now (R154/R164 landed): a
+ * channel row's from `ChannelSummary.unit`, a definition row's from the
+ * primary window's own `CellDefResult.unit` ({@link SourcePaletteInputs.
+ * outputs}) — R160's original "leave the unit column out entirely" applied
+ * only while the field did not exist yet.
  */
 
 import type { SessionDetail } from "../../../../ipc/catalog";
-import type { Window as SelectedWindow } from "../../../../ipc/workbook";
+import type { CellOutput, UnitLabel, Window as SelectedWindow } from "../../../../ipc/workbook";
 import type { GraphModel } from "./graphModel";
 import { scanCells } from "./cells";
 import { tokenizeMath, type MathToken } from "./mathMode";
+import { rawUnitToLabel, UNIT_NOT_YET_EVALUATED } from "./unitLabel";
 
 /** Decodes a `scanCells`/`ScannedCell` UTF-8 byte range out of `markdown`
  *  — the same conversion `graphEdits.ts`'s own `cellBody` does (`.slice`
@@ -69,6 +75,10 @@ export interface PaletteChannelRow {
    *  session but absent from at least one other — decision 44's grey rule.
    *  Never true for a channel present on every resolved session. */
   partial: boolean;
+  /** This channel's three-state unit (R154/R164, decision 45/R160's unit
+   *  column — landed now that the field exists), from `ChannelSummary.unit`
+   *  (C1 §4.1) via `model/unitLabel.ts`'s `rawUnitToLabel`. */
+  unit: UnitLabel;
 }
 
 /** One workbook-constant row (front matter `constants:` or a math cell's
@@ -93,6 +103,11 @@ export interface PaletteDefinitionRow {
   cellId: string | null;
   /** Hz, or `null` — see the module doc comment's "rate" paragraph. */
   sampleRateHz: number | null;
+  /** This definition's three-state unit (R154/R164) — its own
+   *  `CellDefResult.unit` from the primary window's evaluation, or
+   *  `model/unitLabel.ts`'s `UNIT_NOT_YET_EVALUATED` before that first
+   *  evaluation has resolved. */
+  unit: UnitLabel;
 }
 
 export type PaletteRow = PaletteChannelRow | PaletteConstantRow | PaletteDefinitionRow;
@@ -149,6 +164,7 @@ function buildChannelGroups(selectedWindows: SelectedWindow[], sessionDetails: M
   const resolvedSessionIds = [...new Set(selectedWindows.map((w) => w.session_id))].filter((id) => sessionDetails.has(id));
 
   const rateByName = new Map<string, number>();
+  const unitByName = new Map<string, UnitLabel>();
   const presentCountByName = new Map<string, number>();
   for (const sessionId of resolvedSessionIds) {
     const detail = sessionDetails.get(sessionId) as SessionDetail;
@@ -157,13 +173,24 @@ function buildChannelGroups(selectedWindows: SelectedWindow[], sessionDetails: M
       if (seenInThisSession.has(channel.channel_id)) continue; // a session's own channel list has no duplicate ids
       seenInThisSession.add(channel.channel_id);
       rateByName.set(channel.channel_id, channel.nominal_rate_hz);
+      // The first resolved session to carry this channel decides its unit
+      // row — every session records the same C1 §4.1 unit for the same
+      // channel id in practice, and this module doesn't adjudicate a
+      // disagreement (Rust's importer is the source of truth for that).
+      if (!unitByName.has(channel.channel_id)) unitByName.set(channel.channel_id, rawUnitToLabel(channel.unit));
       presentCountByName.set(channel.channel_id, (presentCountByName.get(channel.channel_id) ?? 0) + 1);
     }
   }
 
   const groups = new Map<string, PaletteChannelRow[]>();
   for (const [name, rateHz] of rateByName) {
-    const row: PaletteChannelRow = { kind: "channel", name, rateHz, partial: (presentCountByName.get(name) ?? 0) < resolvedSessionIds.length };
+    const row: PaletteChannelRow = {
+      kind: "channel",
+      name,
+      rateHz,
+      partial: (presentCountByName.get(name) ?? 0) < resolvedSessionIds.length,
+      unit: unitByName.get(name) ?? UNIT_NOT_YET_EVALUATED,
+    };
     const label = channelGroupLabel(name);
     const list = groups.get(label);
     if (list) list.push(row);
@@ -293,12 +320,24 @@ function buildConstantGroups(markdown: string): PaletteGroup<PaletteConstantRow>
   return [{ label: "Constants", rows: rows.sort((a, b) => a.name.localeCompare(b.name)) }];
 }
 
+/** This definition node's own unit — its `CellDefResult.unit` from
+ *  `outputs` (the primary window's evaluation, matching `GraphCanvas.tsx`'s
+ *  own `valueFor`/`unitFor` lookup by owning cell and name), or
+ *  `UNIT_NOT_YET_EVALUATED` when no output has resolved for it yet
+ *  (`cellId === null`, or that cell hasn't evaluated, or this name isn't
+ *  among its `defs`). */
+function definitionUnit(cellId: string | null, name: string, outputs: readonly CellOutput[]): UnitLabel {
+  if (cellId === null) return UNIT_NOT_YET_EVALUATED;
+  const output = outputs.find((o) => o.cell_id === cellId);
+  return output?.defs.find((d) => d.name === name)?.unit ?? UNIT_NOT_YET_EVALUATED;
+}
+
 /** Every declared definition, one `"Definitions"` group, in the graph
  *  model's own node order. */
-function buildDefinitionGroups(model: GraphModel): PaletteGroup<PaletteDefinitionRow>[] {
+function buildDefinitionGroups(model: GraphModel, outputs: readonly CellOutput[]): PaletteGroup<PaletteDefinitionRow>[] {
   const rows: PaletteDefinitionRow[] = model.nodes
     .filter((n) => n.kind === "definition")
-    .map((n) => ({ kind: "definition" as const, name: n.name, cellId: n.cellId, sampleRateHz: null }));
+    .map((n) => ({ kind: "definition" as const, name: n.name, cellId: n.cellId, sampleRateHz: null, unit: definitionUnit(n.cellId, n.name, outputs) }));
   return rows.length === 0 ? [] : [{ label: "Definitions", rows }];
 }
 
@@ -310,13 +349,20 @@ export interface SourcePaletteInputs {
   model: GraphModel;
   selectedWindows: SelectedWindow[];
   sessionDetails: Map<string, SessionDetail>;
+  /** One representative window's `CellOutput[]` (typically the primary
+   *  selection, matching `GraphCanvas.tsx`'s own `outputs` prop) — a
+   *  definition row's unit (R154/R164) comes from here. Optional,
+   *  defaulting to `[]`, so a caller that only cares about channels/
+   *  constants (or a pre-existing test) is unaffected; every definition row
+   *  then reports `UNIT_NOT_YET_EVALUATED` rather than a crash. */
+  outputs?: CellOutput[];
 }
 
 /**
  * Computes the graph canvas's source palette (ruling R160) — see the
  * module doc comment for the union/grey and rate rules.
  */
-export function buildSourcePalette({ markdown, model, selectedWindows, sessionDetails }: SourcePaletteInputs): SourcePalette {
+export function buildSourcePalette({ markdown, model, selectedWindows, sessionDetails, outputs = [] }: SourcePaletteInputs): SourcePalette {
   const selectedSessionIds = new Set(selectedWindows.map((w) => w.session_id));
   const resolvedSessionCount = [...selectedSessionIds].filter((id) => sessionDetails.has(id)).length;
 
@@ -327,7 +373,7 @@ export function buildSourcePalette({ markdown, model, selectedWindows, sessionDe
     pendingSessionCount: selectedSessionIds.size - resolvedSessionCount,
     channelGroups: buildChannelGroups(selectedWindows, sessionDetails),
     constants: buildConstantGroups(markdown),
-    definitions: buildDefinitionGroups(model),
+    definitions: buildDefinitionGroups(model, outputs),
   };
 }
 

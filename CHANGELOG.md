@@ -54,6 +54,19 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
   three-state discriminator) properties — so a prose `${…}` can reach it
   (C2 §5.1/§5.2), without ever auto-appending it to a value (R154 item 5).
 
+- **Notebook: the graph node card's unit row, and the source palette's unit
+  column (2026-09-09, decision 45, R154/R160/R164).** `NodeCard.tsx` gains a
+  unit row under the name/status row — a `"channel"` node's own
+  `ChannelSummary.unit`, or a `"definition"` node's `CellDefResult.unit`
+  (`GraphCanvas.tsx`'s new `unitFor`, mirroring `valueFor`'s lookup).
+  `sourcePalette.ts`'s `PaletteChannelRow`/`PaletteDefinitionRow` gain the
+  unit column R160 deliberately left out while the field didn't exist;
+  `SourcePaletteRail.tsx` renders it beside the rate badge. All three
+  render the three states distinctly (this task's own rule): `known` shows
+  the unit itself, `dimensionless` shows no badge at all (not a blank that
+  reads as missing), `unknown` shows an explicit `?` with the reason as its
+  tooltip.
+
 ### Added
 
 - **Notebook: the maths graph's source palette (2026-09-09, ruling R160).**

@@ -36,3 +36,13 @@ export function rawUnitToLabel(unit: string): UnitLabel {
 export function unitLabelText(unit: UnitLabel): string {
   return unit.state === "known" ? unit.text : "";
 }
+
+/**
+ * Shared fallback for "this is a workbook `math` definition, but its own
+ * `CellDefResult.unit` hasn't reached this caller yet" — distinct wording
+ * from {@link rawUnitToLabel}'s `""` case so the two `unknown` reasons
+ * never read as the same cause if a caller ever shows both side by side
+ * (`jsCellBinding.ts`'s `"definition"` channel binding, `sourcePalette.ts`'s
+ * definition rows).
+ */
+export const UNIT_NOT_YET_EVALUATED: UnitLabel = { state: "unknown", reason: "not evaluated yet" };

@@ -23,12 +23,13 @@ import "@xyflow/react/dist/style.css";
 import "./graphCanvasTheme.css";
 
 import type { SessionDetail } from "../../../../ipc/catalog";
-import type { CellOutput, Window as SelectedWindow } from "../../../../ipc/workbook";
+import type { CellOutput, UnitLabel, Window as SelectedWindow } from "../../../../ipc/workbook";
 import { computeAutoLayoutPositions } from "../model/graphAutoLayout";
 import { buildGraphModel, type GraphNode } from "../model/graphModel";
 import { readGraphLayout } from "../model/graphLayout";
 import { computeNodeStatuses } from "../model/graphStatus";
 import { scanMathExpr, type MathExprCall } from "../model/mathExpr";
+import { rawUnitToLabel } from "../model/unitLabel";
 import type { WindowEvalState } from "../model/workbookState";
 import type { MarkProps } from "../plotForm/types";
 import { subgraphsFor, searchNodeIds, visibleNodeIds } from "../model/graphSubgraph";
@@ -97,6 +98,30 @@ function valueFor(node: GraphNode, outputs: CellOutput[]) {
   if (node.kind !== "definition" || node.cellId === null) return null;
   const output = outputs.find((o) => o.cell_id === node.cellId);
   return output?.defs.find((d) => d.name === node.name)?.value ?? null;
+}
+
+/** One node's three-state unit (decision 45, R154/R164), for `NodeCard`'s
+ *  own unit row. A `"channel"` node's `ChannelSummary.unit` (C1 §4.1) via
+ *  `model/unitLabel.ts`'s `rawUnitToLabel` — read from any resolved
+ *  session that carries it, the same "first resolved session decides"
+ *  rule `sourcePalette.ts`'s `buildChannelGroups` uses; `null` when no
+ *  resolved session has this channel yet. A `"definition"` node's
+ *  `CellDefResult.unit` from `outputs`, mirroring {@link valueFor}'s own
+ *  lookup; `null` only when neither `cellId` nor a matching `defs` entry
+ *  exists yet (before the first evaluation) — distinct from `UnitLabel`'s
+ *  own `unknown` state, which means "resolved, but no unit could be
+ *  determined". */
+function unitFor(node: GraphNode, outputs: CellOutput[], sessionDetails: Map<string, SessionDetail>): UnitLabel | null {
+  if (node.kind === "channel") {
+    for (const detail of sessionDetails.values()) {
+      const channel = detail.channels.find((c) => c.channel_id === node.name);
+      if (channel !== undefined) return rawUnitToLabel(channel.unit);
+    }
+    return null;
+  }
+  if (node.cellId === null) return null;
+  const output = outputs.find((o) => o.cell_id === node.cellId);
+  return output?.defs.find((d) => d.name === node.name)?.unit ?? null;
 }
 
 /** R145's "renamed; N reference(s) in cell(s) X were not updated" line —
@@ -188,8 +213,8 @@ function GraphCanvasInner({ markdown, outputs, selectedWindows, windows, session
   // `statuses` already reads, so a channel greyed on the canvas and a
   // channel greyed in the palette agree for the same reason.
   const sourcePalette = useMemo(
-    () => buildSourcePalette({ markdown, model, selectedWindows, sessionDetails }),
-    [markdown, model, selectedWindows, sessionDetails]
+    () => buildSourcePalette({ markdown, model, selectedWindows, sessionDetails, outputs }),
+    [markdown, model, selectedWindows, sessionDetails, outputs]
   );
 
   // Drag-a-channel/constant/definition-to-add (decision 45a's fourth
@@ -294,6 +319,7 @@ function GraphCanvasInner({ markdown, outputs, selectedWindows, windows, session
             split: result.split,
             shape: shapeOf(valueFor(graphNode, outputs)),
             call,
+            unit: unitFor(graphNode, outputs, sessionDetails),
             onChart: handleChart,
             onRename: handleRename,
             onEditArg:
@@ -304,7 +330,7 @@ function GraphCanvasInner({ markdown, outputs, selectedWindows, windows, session
           },
         };
       });
-  }, [model.nodes, positions, statuses, outputs, handleChart, handleRename, handleEditArg, visibleIds, matchedIds, collapsedCellIdByMemberId]);
+  }, [model.nodes, positions, statuses, outputs, sessionDetails, handleChart, handleRename, handleEditArg, visibleIds, matchedIds, collapsedCellIdByMemberId]);
 
   const frameFlowNodes = useMemo<Node<SubgraphFrameData, "subgraphFrame">[]>(
     () =>
