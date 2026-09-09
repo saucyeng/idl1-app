@@ -7629,3 +7629,40 @@ passes for the wrong reason.
 **Cost if wrong.** (1) left alone means the chart and the maths language
 disagree about what "magnitude" means, in an app whose whole subject is
 spectra.
+
+---
+
+## R168 — The retired scaling spelling stays in the TS union and out of the pickers
+
+*2026-09-09, lead. Closing R167's app half.*
+
+`SpectrogramParams["scaling"]` in `app/src/ipc/rasters.ts` is now
+`"density" | "spectrum" | "raw_magnitude" | "magnitude"` — four names for
+three computations, deliberately.
+
+**Why the fourth stays.** `"magnitude"` is not only a wire spelling: it is
+written into stored workbooks' plot props and into the generated `js` cell
+text (`spectrum(ch, { …, scaling: "magnitude" })`), and it is one field of
+the spectrum host-var key. Dropping it from the union would make every
+workbook already on disk fail to typecheck on read, which is the one thing
+a back-compat alias exists to prevent. The engine's serde alias means the
+two spellings are the *same* computation, so nothing renders differently.
+
+**Why it is out of the pickers.** A retired name that a user can still
+*choose* is a second way to spell one thing, which is how R143's false
+friend got in. The union accepts it on the way in; nothing newly written
+offers it.
+
+**What is deliberately not done yet.** The FFT properties form still offers
+only Magnitude/Density and still seeds/generates `"magnitude"` — so the
+`spectrum` scaling R167 added remains unreachable from the chart UI. That
+is a UI lane (picker gains the third option, `defaultFftPlotProps` and
+`plotForm/generate.ts` emit `raw_magnitude`, `suggestSpectrumAxisLabel`
+gains its third branch), queued rather than folded into a wire task: it
+changes generated cell text and the host-var cache key, which wants its own
+review and its own gate.
+
+**Cost if wrong.** Narrow. If the union is later tightened without the
+alias, old workbooks stop typechecking on read; if the UI lane never runs,
+the app keeps the exact asymmetry R167 was written to remove — a scaling
+the language has and the chart cannot spell.
