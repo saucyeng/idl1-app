@@ -76,6 +76,21 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 
 ### Added
 
+- **Notebook: the report document model (2026-09-09, decisions 85/89,
+  ruling R166, `runs/2026-09-09/report-plan.md` task R1).** New pure
+  `Notebook/model/report/document.ts`: `buildReportDocument(cells,
+  proseBlocks, evals, windows, sessions, appVersion, generatedAtMs)` turns
+  a settled `evalWorkbookV2` result into a flat, typed `ReportDocument`
+  block list (cover, one session block per distinct selected session, a
+  selection block listing every window, the primary window's prose/
+  defTable/table sections in document order, and an appendix). Every
+  `math`-cell definition's row now carries its unit (three-state, R154)
+  and sample rate — the gap `MathCell.tsx` still has on screen; every
+  `js`-kind (chart) cell becomes a named absence block, never a silent
+  gap (R148/R150/R153). Scoped to the primary window only, matching the
+  screen's own `primaryWindow` limit (R131 Q1) — lifting this to every
+  selected window plus a scalar comparison table is task R4.
+
 - **Device tab: the recording-only live status pane (2026-09-09, decisions
   66/87, ruling R113, unblocked by the Rust lane's C3 amendment/R157 item
   2).** New `Device/liveStatus.ts` (pure, vitest-covered): while recording,
