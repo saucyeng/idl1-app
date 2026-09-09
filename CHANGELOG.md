@@ -91,6 +91,21 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
   screen's own `primaryWindow` limit (R131 Q1) — lifting this to every
   selected window plus a scalar comparison table is task R4.
 
+- **Notebook: "Export report" produces a real printable PDF end-to-end
+  (2026-09-09, decisions 85/89, ruling R166, task R2).** New
+  `components/ReportView.tsx` renders a `ReportDocument` as a
+  purpose-built document (never the notebook column, which cannot be
+  printed — every chart container is `position: fixed` in a different
+  document); new `styles/report-print.css` (`@page`, `break-inside`/
+  `break-before` rules, reuses the app's own `@font-face`s, no new fonts
+  declared). `Notebook/index.tsx` gains an "Export report" action beside
+  Save: builds the primary window's `ReportDocument`
+  (`listSessions`/`getVersion`, one-shot settle-bound fetches) into
+  `#report-print-root`, then `window.print()` — the v1 path the plan's
+  §2.2 accepted over a vendored PDF writer (task R7). One session, no
+  charts yet — every chart cell already renders as a named absence
+  (task R1).
+
 - **Device tab: the recording-only live status pane (2026-09-09, decisions
   66/87, ruling R113, unblocked by the Rust lane's C3 amendment/R157 item
   2).** New `Device/liveStatus.ts` (pure, vitest-covered): while recording,

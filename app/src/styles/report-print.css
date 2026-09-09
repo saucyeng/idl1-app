@@ -1,0 +1,79 @@
+/* The report's print stylesheet (decisions 85/89, ruling R166,
+ * `runs/2026-09-09/report-plan.md` task R2). `#report-print-root` is the
+ * only thing `Notebook/index.tsx`'s "Export report" action ever mounts
+ * `ReportView` into -- it holds a purpose-built document, never the
+ * notebook column, which cannot be printed (the plan's §1.2: every chart
+ * container is `position: fixed` in viewport pixels in a different
+ * document). No `@font-face` here: this file reuses the same IBM Plex
+ * faces `fonts.css` already registers globally -- the report is printed
+ * from this same host document, so nothing needs re-declaring.
+ */
+
+#report-print-root {
+  display: none;
+}
+
+@media print {
+  body > *:not(#report-print-root) {
+    display: none !important;
+  }
+
+  #report-print-root {
+    display: block;
+    position: static;
+  }
+
+  @page {
+    size: A4;
+    margin: 18mm;
+  }
+
+  .report-view {
+    font-family: "IBM Plex Mono", monospace;
+    color: #000;
+    background: #fff;
+  }
+
+  .report-cover,
+  .report-session,
+  .report-selection,
+  .report-appendix {
+    break-inside: avoid;
+  }
+
+  .report-window-section {
+    break-before: page;
+    border-left: 4px solid;
+    padding-left: 8px;
+  }
+
+  .report-def-table,
+  .report-grid-table {
+    break-inside: avoid;
+    border-collapse: collapse;
+    width: 100%;
+  }
+
+  .report-def-table td,
+  .report-grid-table td {
+    border: 1px solid #999;
+    padding: 2px 6px;
+  }
+
+  .report-grid-error {
+    color: #900;
+  }
+
+  .report-selection-swatch {
+    display: inline-block;
+    width: 10px;
+    height: 10px;
+    margin-right: 6px;
+    border-radius: 2px;
+  }
+
+  .report-absence {
+    font-style: italic;
+    color: #555;
+  }
+}

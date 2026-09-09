@@ -1,5 +1,6 @@
 import { Fragment, useEffect, useMemo, useReducer, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { createPortal } from "react-dom";
+import { getVersion } from "@tauri-apps/api/app";
 
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@/components/ui/resizable";
 import { BrandSheet } from "@/components/brand/BrandSheet";
@@ -21,6 +22,7 @@ import {
   type IpcError,
   type UnitLabel,
   type Window as WireWindow,
+  type WindowEval,
 } from "../../../ipc/workbook";
 import { useAppState } from "../../../state/AppState";
 import { describeWindow, sessionDetailsReadinessKey, windowKey, windowsKey, type SelectionWindow } from "../../../state/selection";
@@ -31,6 +33,8 @@ import { resolveRegister } from "../Settings/theme";
 import { createPrefsStore, localStorageBackend } from "../Settings/prefsStore";
 import CellFrame, { type CellRunStatus } from "./components/CellFrame";
 import CellList from "./components/CellList";
+import ReportView from "./components/ReportView";
+import { buildReportDocument, type ReportDocument } from "./model/report/document";
 import ChartCell from "./components/ChartCell";
 import ConflictBanner from "./components/ConflictBanner";
 import MigrationBanner from "./components/MigrationBanner";
@@ -515,6 +519,16 @@ export default function NotebookPage() {
   /** The last `rebuild_catalog` report, for `WorkbookBar`'s "Rescan found
    *  N workbook(s)" line (R81 Q6). */
   const [lastRebuild, setLastRebuild] = useState<RebuildReport | null>(null);
+  /** Task R2 (ruling R166): the report currently mounted into `#report-
+   *  print-root` for `window.print()`, or `null` when no export is in
+   *  flight. Set by `handleExportReport`, cleared once printing finishes
+   *  (the `afterprint` effect below) -- never left mounted between exports,
+   *  since a stale report reprinted by a second `Ctrl+P` would be wrong. */
+  const [reportDoc, setReportDoc] = useState<ReportDocument | null>(null);
+  /** True while `handleExportReport` is building the document (a
+   *  `listSessions` + `getVersion` round trip) -- disables the button so a
+   *  second click cannot race the first. */
+  const [exportingReport, setExportingReport] = useState(false);
   /** Decision 62: the live engine's own version (`fetchEngineVersion`,
    *  C3 §3.1 -- never fails), fetched once on mount since it cannot change
    *  while this app instance is running. `null` until that first call
@@ -1101,6 +1115,21 @@ export default function NotebookPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [windowsKeyValue, selectedWorkbookId]);
 
+  // Task R2: once `reportDoc` is mounted into `#report-print-root`, print
+  // on the next frame (letting the just-set DOM commit first) and clear it
+  // once the print dialog closes (`afterprint`) -- a stale report must
+  // never sit mounted for a second, unrelated `Ctrl+P` to pick up.
+  useEffect(() => {
+    if (reportDoc === null) return;
+    const frame = requestAnimationFrame(() => window.print());
+    const onAfterPrint = () => setReportDoc(null);
+    window.addEventListener("afterprint", onAfterPrint);
+    return () => {
+      cancelAnimationFrame(frame);
+      window.removeEventListener("afterprint", onAfterPrint);
+    };
+  }, [reportDoc]);
+
   // Decision 62: the live engine's own version, once -- `fetchEngineVersion`
   // never fails (C3 §3.1) and cannot change mid-session, so this never
   // needs to run again.
@@ -1385,6 +1414,30 @@ export default function NotebookPage() {
       dispatch({ type: "saveResult", hash: result.hash, migrations: result.migrations });
     } else if (result.status === "conflict") {
       dispatch({ type: "saveConflict" });
+    }
+  }
+
+  /**
+   * "Export report" (decisions 85/89, task R2): builds a
+   * {@link ReportDocument} from the primary window's already-settled
+   * evaluation and mounts it into `#report-print-root` for
+   * `window.print()` -- the v1 path `report-plan.md` §2.2 accepted
+   * (`window.print()` works on every platform with zero new
+   * dependencies; a vendored PDF writer is task R7). `listSessions` and
+   * `getVersion` are one-shot, settle-bound fetches, the same shape as
+   * `handleRescan`'s own `rebuildCatalog` call -- never a hot path.
+   */
+  async function handleExportReport() {
+    if (state.markdown === null) return;
+    setExportingReport(true);
+    try {
+      const [sessions, appVersion] = await Promise.all([listSessions(), getVersion()]);
+      const evals: WindowEval[] =
+        primaryEval === undefined ? [] : primaryEval.kind === "ok" ? [{ ok: Array.from(primaryEval.outputs.values()) }] : [{ error: primaryEval.error }];
+      const proseBlocks = new Map(proseBlocksFor(state.cells, state.markdown, primaryOutputs).map((block) => [block.blockId, block]));
+      setReportDoc(buildReportDocument(state.cells, proseBlocks, evals, windows, sessions, appVersion, Date.now()));
+    } finally {
+      setExportingReport(false);
     }
   }
 
@@ -2503,6 +2556,9 @@ export default function NotebookPage() {
             </button>
             {saveUnavailable && <span className="workbook-save-unavailable">save not available yet (the document's text could not be read)</span>}
             {saveFlowState.status === "error" && <span className="workbook-save-error">save failed: {saveFlowState.error.message}</span>}
+            <button type="button" onClick={() => void handleExportReport()} disabled={exportingReport || state.markdown === null}>
+              {exportingReport ? "Building report…" : "Export report"}
+            </button>
           </div>
         )}
         <PlaybackTransport
@@ -2708,6 +2764,11 @@ export default function NotebookPage() {
         ref={containerRef}
         style={{ position: "fixed", inset: 0, pointerEvents: "none", zIndex: 0, border: "none" }}
       />
+      {/* Task R2: `styles/report-print.css` hides everything else and
+          shows only this root once `window.print()` runs -- the report is
+          a purpose-built document, never the notebook column (which
+          cannot be printed, report-plan.md §1.2). */}
+      <div id="report-print-root">{reportDoc !== null && <ReportView document={reportDoc} />}</div>
     </div>
   );
 }
