@@ -265,10 +265,27 @@ function makeObserver(cellId: string) {
 function compileCell(inputNames: string[], code: string): (...args: unknown[]) => unknown {
   try {
     return new Function(...inputNames, `return (\n${code}\n);`) as (...args: unknown[]) => unknown;
-  } catch {
-    return new Function(...inputNames, code) as (...args: unknown[]) => unknown;
+  } catch (expressionError) {
+    // The expression form failed — the cell may legitimately be a
+    // statement body (`const x = ...; x`). But this fallback drops the
+    // `return`, so a cell that *was* an expression silently evaluates to
+    // `undefined` and renders the literal text "undefined" — which is
+    // exactly what an illegal parameter name in `inputNames` caused for
+    // every cell at once (a spectrum's host-var key is not an
+    // identifier). If the statement form fails too, the code itself is
+    // bad and the error must reach the cell rather than be swallowed.
+    try {
+      return new Function(...inputNames, code) as (...args: unknown[]) => unknown;
+    } catch {
+      throw expressionError;
+    }
   }
 }
+
+/** A name that may be used as a `new Function` parameter — see
+ *  {@link SandboxRuntime.bindHostVar}. Deliberately conservative: ASCII
+ *  identifier characters only, never starting with a digit. */
+const IDENTIFIER_RE = /^[A-Za-z_$][A-Za-z0-9_$]*$/;
 
 /** Owns the one `Runtime`/`module` pair this sandbox document runs for its whole lifetime. */
 class SandboxRuntime {
@@ -334,7 +351,17 @@ class SandboxRuntime {
   private bindHostVar(name: string, value: unknown): void {
     this.hostVars.set(name, value);
     bindHostVariables(this.module, this.hostVariables, { [name]: value });
-    this.boundNames.add(name);
+    // Only a name that is a legal JS identifier may join `boundNames`,
+    // because `setCells` passes that set as `new Function`'s *parameter
+    // list*. A spectrum's host-var name is `spectrumKey(...)` — e.g.
+    // `"IMU0_AccelZ | 4096 | 2048 | hann | mean | magnitude | mean"` —
+    // which is not an identifier, so including it made every cell's
+    // compile throw and fall back to the no-`return` form, rendering the
+    // literal string "undefined" in every chart. Such a value is still in
+    // `hostVars`, so `channel(...)`/`spectrum(...)` reach it by name; only
+    // the bare-identifier binding (C2 §5.1) is skipped, which it could
+    // never have supported anyway.
+    if (IDENTIFIER_RE.test(name)) this.boundNames.add(name);
   }
 
   /**
