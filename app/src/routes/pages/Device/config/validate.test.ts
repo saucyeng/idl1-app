@@ -134,7 +134,7 @@ describe("validateConfig", () => {
     expect(rateIssues[0].severity).toBe("error");
   });
 
-  it("validateConfig — imu.low_power_mode and imu.high_performance_mode both true — a warning, not an error: SPEC §8 does not say which flag wins", () => {
+  it("validateConfig — imu.low_power_mode and imu.high_performance_mode both true — an error: firmware treats them as XOR", () => {
     // Arrange
     const config = workedConfig();
     config.imu.low_power_mode = true;
@@ -146,8 +146,24 @@ describe("validateConfig", () => {
     // Assert
     const modeIssues = issues.filter((i) => i.path === "imu.low_power_mode");
     expect(modeIssues).toHaveLength(1);
-    expect(modeIssues[0].severity).toBe("warning");
-    expect(modeIssues[0].message).toBe("low_power_mode and high_performance_mode both set; firmware behaviour unspecified (SPEC §8)");
+    expect(modeIssues[0].severity).toBe("error");
+    expect(modeIssues[0].message).toBe(
+      "low_power_mode and high_performance_mode cannot both be set — firmware treats them as mutually exclusive (STATUS-7.3-DELTA.md)"
+    );
+    expect(isPushable(issues)).toBe(false);
+  });
+
+  it("validateConfig — imu.low_power_mode and imu.high_performance_mode both false — no mode-flag issue (reads as ordinary high-performance mode)", () => {
+    // Arrange
+    const config = workedConfig();
+    config.imu.low_power_mode = false;
+    config.imu.high_performance_mode = false;
+
+    // Act
+    const issues = validateConfig(config);
+
+    // Assert
+    expect(issues.filter((i) => i.path === "imu.low_power_mode")).toHaveLength(0);
   });
 
   it("validateConfig — imu0.accel_range_g 20 — an error listing ±4/8/16/32 g", () => {

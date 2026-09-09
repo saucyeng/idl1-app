@@ -69,11 +69,12 @@ import { exceedsBinCap, frequencyAxisHz } from "./model/fftRequest";
 import { diffFunctionCatalog, type FunctionCatalogMismatch } from "./model/functionCatalog";
 import { primaryWindowOutputs, sessionDetailsBySessionId } from "./model/graphView";
 import { bindingFor, bindingIdentity, unresolvedChannelId, type FftCellBinding } from "./model/jsCellBinding";
+import { extractChannelCalls, extractSpectrumCalls } from "./model/jsCellCalls";
 import { jsCellNote, primaryWindowNote } from "./model/jsCellNote";
+import { declaredDefinitionNames } from "./model/graphModel";
 import { readNotebookPrefs, writeNotebookPrefs } from "./model/notebookPrefs";
 import { runEval, runOpenAndEval, type OpenEvalDeps } from "./model/openEvalDriver";
 import { registerMetrics } from "./model/outputRegister";
-import { parse as parsePlotForm } from "./plotForm/parse";
 import { proseBlocksFor, spansToEvaluate } from "./model/proseBlocks";
 import { isSelfWrite, saveFlow, type SaveFlowState, type WorkbookEventWithHash } from "./model/saveFlow";
 import { initialSandboxPrimeState, nextSandboxPrimeState } from "./model/sandboxLifecycle";
@@ -1767,6 +1768,14 @@ export default function NotebookPage() {
     .filter((o) => o.kind === "math")
     .flatMap((o) => o.defs.map((d) => d.name));
 
+  // Every `def_line` identifier the document declares, regardless of
+  // whether it evaluated (ruling R150's amendment): a structural error on
+  // one definition drops it from `defs` entirely (`CellDefResult`'s own
+  // doc comment), so `definitionNames` above can't tell "never declared"
+  // apart from "declared, but its own math cell errored" -- this can, and
+  // feeds `jsCellNote`'s `isDeclaredDefinitionFailed` below.
+  const declaredDefNames = useMemo(() => declaredDefinitionNames(state.markdown ?? ""), [state.markdown]);
+
   // `PropertiesForm`'s channel/lap pickers (`js` cells only -- `EditorPanes`
   // ignores these props for every other kind). `label` has no separate
   // source in `ChannelSummary` (`ipc/catalog.ts`) -- `channel_id` doubles
@@ -1893,17 +1902,29 @@ export default function NotebookPage() {
               // valid, it just has nothing to chart against (C1: "time is
               // recorded, not assumed").
               const isAxisLessDefinition = unresolved !== null && definitionNames.includes(unresolved) && !definitionsWithAxis.has(unresolved);
-              // `model/jsCellNote.ts` (L6 Task 21): fixes the rendering gap
-              // the 2026-09-06 preview captured -- a cell whose code
-              // round-trips through `plotForm.parse` but has no window
-              // selected previously reserved blank space with no
-              // explanation at all. Migrated from `sessionId` to
+              // A name that resolves as neither a session channel, a
+              // definition with a value, nor an axis-less definition, but
+              // *is* declared as a `def_line` somewhere in the document, is
+              // a definition whose own math cell errored (ruling R150's
+              // amendment) -- distinct from a name the session has simply
+              // never heard of.
+              const isDeclaredDefinitionFailed = unresolved !== null && !isAxisLessDefinition && declaredDefNames.has(unresolved);
+              // `model/jsCellNote.ts` (L6 Task 21, extended by ruling R148
+              // part 2/R150): fixes the rendering gap the 2026-09-06
+              // preview captured -- a cell with no window selected
+              // previously reserved blank space with no explanation at
+              // all. `hasChannelReference` no longer requires `code` to
+              // round-trip through `plotForm.parse` -- `bindingFor` binds
+              // by extracting `channel(...)`/`spectrum(...)` calls, so this
+              // note must recognise the same cells it does, not only
+              // form-generated ones. Migrated from `sessionId` to
               // `windowCount` (S1 Task 11a, ruling R117).
               const note = jsCellNote({
-                isFormGenerated: parsePlotForm(code) !== null,
+                hasChannelReference: extractChannelCalls(code).length > 0 || extractSpectrumCalls(code).length > 0,
                 windowCount: windows.length,
                 unresolvedName: unresolved,
                 isAxisLessDefinition,
+                isDeclaredDefinitionFailed,
               });
               return (
                 <JsCellFrame cellId={cellId} heightPx={heightPx} error={cellErrors.get(cellId)} note={note ?? undefined} sendLayout={sendLayout} />

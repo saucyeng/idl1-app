@@ -6,6 +6,64 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 
 ### Fixed
 
+- **`imu.low_power_mode`/`imu.high_performance_mode` both set is now a
+  validation error, not a warning (2026-09-08).** Firmware confirms the two
+  are XOR (`runs/2026-09-08/firmware/STATUS-7.3-DELTA.md`, "Resolved with
+  Isaac") — supersedes the earlier "SPEC §8 doesn't say which flag wins"
+  warning now that firmware has said there is nothing to win. Neither flag
+  set is left unchecked (reads as ordinary high-performance mode). The
+  six-channels-all-or-nothing half of the same brief item (direction-2
+  decision 70) is **not** done: SPEC §8's own worked example
+  (`validate.test.ts`'s `SPEC_WORKED_EXAMPLE`, transcribed verbatim from the
+  device spec) itself enables an IMU with only 3-5 of its six channels on,
+  so a hard validation error there would fail the spec's own example config
+  — a real conflict between the wire spec and the newer app-side UI policy
+  that needs the lead's call, not a guess.
+- **`SandboxHost`'s re-render coalescing is a trailing debounce, not a bare
+  `queueMicrotask` (2026-09-08, overnight brief "coalesce the re-render").**
+  A `queueMicrotask` only merges calls made within the same microtask; a
+  page load's channel/spectrum publishes each resolve their own IPC round
+  trip independently and land in separate tasks, so it produced roughly one
+  re-render (and warning) per channel instead of one for the whole load.
+  New `host/rerenderCoalescer.ts` wraps `model/settle.ts`'s `makeSettle`
+  (`SandboxHost` itself is not unit-tested, CLAUDE.md §4) — same shape
+  gesture settle already uses. A late-bound host var still triggers its own
+  re-render (tested): coalescing is not removed, only made to actually
+  coalesce a spread-out burst.
+- **Four swallowing catches in the Notebook's bind drivers now warn instead
+  of silently absorbing a fetch failure (2026-09-08, ruling R153 audit).**
+  `channelBindDriver.ts`'s per-definition and per-window fetch catches,
+  `channelRebind.ts`'s rebuild re-fetch catch, and `sessionSpanDriver.ts`'s
+  two catches all converted a specific rejection into a `null`/dropped
+  result identical to a legitimate empty state, with no trace anywhere.
+  `sessionSpanDriver.ts`'s two remain deliberately broad (a real session
+  fetch failure is intentionally indistinguishable from "no window
+  selected" today) — narrowing those needs a new dispatch variant and UI
+  treatment, out of this task's scope; flagged in the ledger instead.
+- **A `js` cell's note names which channel or definition failed to resolve,
+  and distinguishes an unknown name from a declared definition whose own
+  math cell errored (2026-09-08, ruling R150).** `jsCellNote`'s
+  `isFormGenerated` gate is now `hasChannelReference` (a hand-written cell
+  referencing a channel gets the same notes a form-generated one does, per
+  R148 part 2 below); new `graphModel.ts`'s `declaredDefinitionNames` scans
+  every `def_line` regardless of evaluation success, so an unresolved name
+  that is a definition whose `def_line` itself errored (dropped from
+  `CellDefResult` entirely — "a bare identifier instead of `[Name]`" was the
+  first shakedown-workbook example) now says "failed to evaluate — check
+  its math cell for an error" instead of the misleading generic "not part
+  of this session".
+- **A `js` cell binds by extracting its `channel(...)`/`spectrum(...)` calls,
+  not by requiring the whole cell to match `plotForm.parse`'s closed
+  `Plot.plot({...})` grammar (2026-09-08, ruling R148 part 2).** A `height:`
+  key, an `opacity:` on a mark, a `stroke: "var(--chart-2)"`, or any
+  statement before the call previously made `bindingFor` return `null` —
+  the host never fetched or published that channel, so a hand-written cell
+  rendered its axes and nothing else, with no explanation. New
+  `model/jsCellCalls.ts` locates each `channel(...)`/`spectrum(...)` call
+  site with a string/comment-aware character scan (`mathExpr.ts`'s
+  precedent), then re-tokenizes each call's own span with `parse.ts`'s
+  existing tokenizer/readers — no second JS parser. `parse` still drives the
+  Properties form unchanged.
 - **`graphLayout.ts`'s `findGraphBlockLines` locates a top-level `graph:` key
   by prefix match (`/^graph:/`), not exact-line equality (2026-09-08,
   w32-maths review fix).** A hand-edited flow-style or trailing-content

@@ -18,8 +18,10 @@ import {
 
 /** A lexical token produced by {@link tokenize}: an identifier (bare word),
  *  a decoded string literal, a decoded numeric literal, or one of the
- *  grammar's punctuation characters (`{ } [ ] ( ) , : .`). */
-type Token =
+ *  grammar's punctuation characters (`{ } [ ] ( ) , : .`). Exported so
+ *  {@link tokenize}'s callers outside this module (`model/jsCellCalls.ts`,
+ *  ruling R148 part 2) can type a `Cursor` over it. */
+export type Token =
   | { kind: "ident"; value: string }
   | { kind: "string"; value: string }
   | { kind: "number"; value: number }
@@ -29,7 +31,7 @@ type Token =
  *  function below either advances `pos` and returns a value, or leaves
  *  `pos` unchanged and returns `null` (never a partial advance), so a
  *  caller can safely try an alternative production. */
-interface Cursor {
+export interface Cursor {
   tokens: Token[];
   pos: number;
 }
@@ -165,8 +167,12 @@ function readNumberLiteral(code: string, start: number): { value: number; next: 
  *  so its mere presence disqualifies the cell), a backtick template
  *  literal (this subset does not distinguish a plain template from an
  *  interpolated one, so both are rejected), or any character outside the
- *  supported set. */
-function tokenize(code: string): Token[] | null {
+ *  supported set. Exported (unchanged) for {@link Cursor}'s other
+ *  consumer, `model/jsCellCalls.ts` (ruling R148 part 2): a `channel(...)`/
+ *  `spectrum(...)` call span extracted from a larger, otherwise-unparseable
+ *  cell is itself well within this grammar, so it re-tokenizes with this
+ *  same function rather than a second one. */
+export function tokenize(code: string): Token[] | null {
   const tokens: Token[] = [];
   let i = 0;
   const n = code.length;
@@ -473,8 +479,11 @@ function readColorOpt(c: Cursor): { legend: true } | null {
  *  is always reported as `lap: null`, the canonical, always-present form
  *  matching `MarkProps.lap`'s doc comment ("null for session scope"),
  *  never an omitted key, so a caller can always deep-equal against an
- *  explicit `lap: null | number`. */
-function readChannelCall(c: Cursor): { channel: string; lap: number | null } | null {
+ *  explicit `lap: null | number`. Exported for `model/jsCellCalls.ts`
+ *  (ruling R148 part 2), which tokenizes one extracted `channel(...)` call
+ *  span at a time and runs this same reader over it, rather than requiring
+ *  the whole cell to match {@link readPlotCall}'s grammar. */
+export function readChannelCall(c: Cursor): { channel: string; lap: number | null } | null {
   const start = c.pos;
   if (!consumeIdent(c, "channel") || !consumePunct(c, "(")) {
     c.pos = start;
@@ -694,8 +703,9 @@ function readFftParams(c: Cursor): FftParams | null {
  *  `spectrum_call`") — there is no third argument in this production at
  *  all, so a hand-written third argument (of any shape, including
  *  `{ lap: n }`) simply fails to match `)` immediately after `fft_params`
- *  and makes the whole cell custom. */
-function readSpectrumCall(c: Cursor): { channel: string; fft: FftParams } | null {
+ *  and makes the whole cell custom. Exported for `model/jsCellCalls.ts`
+ *  (ruling R148 part 2) — same reuse rationale as {@link readChannelCall}. */
+export function readSpectrumCall(c: Cursor): { channel: string; fft: FftParams } | null {
   const start = c.pos;
   if (!consumeIdent(c, "spectrum") || !consumePunct(c, "(")) {
     c.pos = start;

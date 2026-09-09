@@ -16,6 +16,22 @@
  * `Window[]` list itself, because this note only ever distinguishes "zero"
  * from "at least one" -- it has no reason to import the wire `Window` type
  * or hold onto any window's own content.
+ *
+ * `isFormGenerated` renamed to `hasChannelReference` and `isDeclaredDefinitionFailed`
+ * added (ruling R150, `runs/2026-09-03/decisions.md`): `bindingFor` now
+ * binds by extracting `channel(...)`/`spectrum(...)` calls rather than
+ * requiring the whole cell to match `plotForm.parse` (ruling R148 part 2),
+ * so "no note" can no longer mean "not form-generated" -- a hand-written
+ * cell that *does* reference a channel must get exactly the same notes a
+ * form-generated one does; only a cell with no such calls at all stays
+ * silent (that is genuinely custom code, R148's "legitimate state").
+ * `isDeclaredDefinitionFailed` closes the gap two of R150's three
+ * authoring mistakes shared: an unresolved name that turns out to be a
+ * math definition whose own `def_line` errored (`CellDefResult`'s doc
+ * comment: a structural problem "keeps it out of `defs` entirely", so it
+ * looks exactly like a name the session has never heard of) now says so,
+ * instead of the misleading generic "not part of this session" -- the
+ * bug R150 filed against `bindingForTime`'s silence, one door further in.
  */
 
 /** Why a `js` cell is plain-mounting with no chart, or `null` when it has a
@@ -31,9 +47,13 @@ export type JsCellNote = string | null;
  * the generic no-session line.
  */
 export function jsCellNote(input: {
-  /** `false` when `plotForm.parse` returned `null` — custom code, which is
-   *  a legitimate state and gets no note. */
-  isFormGenerated: boolean;
+  /** `false` when the cell makes no `channel(...)`/`spectrum(...)` call at
+   *  all (`extractChannelCalls`/`extractSpectrumCalls` both empty) —
+   *  genuine custom code, a legitimate state that gets no note. `true` for
+   *  any cell referencing at least one channel, form-generated or
+   *  hand-written (ruling R148 part 2 — binding no longer requires the
+   *  whole cell to parse, so this note logic must not either). */
+  hasChannelReference: boolean;
   /** `AppState.selection.windows.length` (C1 §6.1, ruling R117 — replaces
    *  `AppState.selection.sessionId`; `0` means nothing selected). */
   windowCount: number;
@@ -42,11 +62,21 @@ export function jsCellNote(input: {
   /** True when `unresolvedName` is a known definition with no recorded axis
    *  (the existing `definitionsWithAxis` distinction, R78 Q3(a)). */
   isAxisLessDefinition: boolean;
+  /** True when `unresolvedName` is not a session channel and not a
+   *  resolvable definition, but is declared as a `def_line` somewhere in
+   *  the document (`graphModel.ts`'s `declaredDefinitionNames`) — i.e. its
+   *  own math cell's definition is malformed or otherwise failed to
+   *  evaluate, rather than the name simply not existing (ruling R150). */
+  isDeclaredDefinitionFailed: boolean;
 }): JsCellNote {
-  if (!input.isFormGenerated) return null;
+  if (!input.hasChannelReference) return null;
 
   if (input.isAxisLessDefinition) {
     return `Definition "${input.unresolvedName}" has no recorded axis.`;
+  }
+
+  if (input.isDeclaredDefinitionFailed) {
+    return `Definition "${input.unresolvedName}" failed to evaluate — check its math cell for an error.`;
   }
 
   if (input.unresolvedName !== null) {

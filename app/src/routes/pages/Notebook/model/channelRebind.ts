@@ -95,9 +95,12 @@ export function rebindChannelsAfterRebuild(
           if (!result.hasT) return;
           send(channel.name, { length: result.v.length, t: result.t, v: result.v });
         })
-        .catch(() => {
+        .catch((error: unknown) => {
           // A rebuild is not itself a fetch trigger even for a definition
-          // channel's re-fetch failure -- the cell's own next settle retries.
+          // channel's re-fetch failure -- the cell's own next settle
+          // retries. Warned (R153) so the failure is visible somewhere
+          // rather than the channel simply staying stale with no trace.
+          console.warn(`[channelRebind] fetchHostChannel(${JSON.stringify(channel.name)}) failed on rebuild:`, error);
         });
       continue;
     }
