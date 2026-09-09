@@ -67,6 +67,26 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
   reads as missing), `unknown` shows an explicit `?` with the reason as its
   tooltip.
 
+- **Notebook: the CAD-style top toolbar (2026-09-09, ruling R161).** One
+  toolbar row spans the tab above the columns, so the preview beneath it
+  runs full height. Its leading group is column visibility -- three
+  independent toggles (`model/notebookColumns.ts`'s `NotebookColumnId`:
+  `graph`/`properties`/`cells`), replacing the old binary Graph/Cells view
+  toggle (`graphViewOpen`) — both can now show at once in the wide/`"panes"`
+  layout, each its own resizable panel (mirroring `ColumnFrame.tsx`'s "no
+  panel, no divider when hidden" rule, R107). Everything else merges in:
+  the workbook selector and Save, playback transport, and — behind a
+  `<details>` "More…" overflow disclosure, since the row never wraps — the
+  gesture-preset and X-axis selects. Banners (sandbox/catalog/markdown/eval
+  status, conflict, version, migration) move under the toolbar, above the
+  columns, so they never shrink one column; the master timeline strip stays
+  its own full-width row (not one of R161's named toolbar controls).
+  Visibility persists per machine (`idl1.notebook.columns.v1`, a sibling key
+  to `shell/columnPrefs.ts`'s own storage — a different concept, the outer
+  shell's four docked columns vs. these three Notebook-local panes — never
+  synced, never in a workbook). A restructure, not a feature: every control
+  keeps its prior condition/props, only its position changed.
+
 ### Added
 
 - **Notebook: the maths graph's source palette (2026-09-09, ruling R160).**
