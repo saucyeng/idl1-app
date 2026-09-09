@@ -426,8 +426,8 @@ carried forward here as ordinary catalog entries, not new.
 | `lap_start_time` | `lap_start_time(n)` | Lap | s, `NaN` if `n` out of range | Implemented | yes |
 | `lap_start_distance` | `lap_start_distance(n)` | Lap | m, `NaN` if `n` out of range or no `[Distance]` in session | Implemented | yes |
 | `sector_number` | `sector_number()` | Lap | 0-based sector index, `NaN` outside any sector (dimensionless) | Implemented | yes |
-| `variance_time` | `variance_time(ch)` | Variance | same units as `ch` (main − overlay, time-matched; mean across every `overlay_laps` entry when more than one, R73) | Implemented | yes |
-| `variance_dist` | `variance_dist(ch)` | Variance | same units as `ch` (main − overlay, arc-length-matched; mean across every `overlay_laps` entry when more than one, R73) | Implemented | yes |
+| `lap_delta_time` | `lap_delta_time(ch)` | Lap delta | same units as `ch` (main − overlay, time-matched; mean across every `overlay_laps` entry when more than one, R73) | Implemented | yes |
+| `lap_delta_dist` | `lap_delta_dist(ch)` | Lap delta | same units as `ch` (main − overlay, arc-length-matched; mean across every `overlay_laps` entry when more than one, R73) | Implemented | yes |
 | `attitude` | `attitude("roll"\|"pitch")` | Estimator (diagnostic) | degrees | Implemented | yes |
 | `body_accel` | `body_accel("long"\|"lat")` | Estimator (diagnostic) | g | Implemented | yes |
 | `wheel_travel` | `wheel_travel("front"\|"rear")` | Estimator | mm | Implemented | yes |
@@ -467,8 +467,8 @@ error (`NaN` result, not an error — it returns `Value::Scalar(NaN)` when
 `abs`, `sqrt`, `pow`, `sign`, `min`, `max`, `clamp`, `floor`, `ceil`,
 `round`, `sin`, `cos`, `tan`, `asin`, `acos`, `atan`, `atan2`, `sinh`,
 `cosh`, `tanh`, `deg2rad`, `rad2deg`, `if`, `current_lap`,
-`lap_start_time`, `lap_start_distance`, `sector_number`, `variance_time`,
-`variance_dist`, `wheel_travel`, `wheel_velocity`, `attitude`,
+`lap_start_time`, `lap_start_distance`, `sector_number`, `lap_delta_time`,
+`lap_delta_dist`, `wheel_travel`, `wheel_velocity`, `attitude`,
 `body_accel` — appears in the table above. None omitted.
 
 ### 3.4 Unit table
@@ -527,7 +527,7 @@ expression):
 | `ReservedName` | A definition or constant is named `const`, one of the four universal constants (`pi`/`tau`/`e`/`g`), a host-var name (`Plot`/`d3`/`Inputs`/`html`/`laps`/`session`/`constants`/`channel`), or — *added post-sign 2026-09-04, lead ruling R20 (`runs/2026-09-03/decisions.md`)* — one of the two engine-synthesized channel names (`Time`/`Distance`): a definition named `Time` would otherwise shadow the session's time axis document-wide, silently, which C1's "time is recorded, not assumed" exists to prevent | `"'<name>' is reserved and can't be used as a definition or constant name"` |
 | `InvalidFrontMatter` | *Added post-sign (2026-09-04, lead ruling R21)* — the front-matter YAML block itself fails to parse (a scanning/mapping error before any key, including `id`, can be read) | `"Workbook front matter is not valid YAML: <parser error>"` |
 | `MissingFrontMatterId` | Front matter **parses as valid YAML** but lacks a well-formed UUIDv4 `id` (key absent, empty, or not a UUIDv4) — *narrowed post-sign (2026-09-04, lead ruling R21): a front-matter block that isn't valid YAML at all is `InvalidFrontMatter` above, not this kind. Withdraws Task 1's interim collapse of both failure modes into this one kind (`runs/2026-09-03/decisions.md`, "Tracked: L3 Task 1 landed")* | `"Workbook front matter is missing a valid 'id'"` |
-| `UnsupportedWorkbookVersion` | `version` ≠ `3` | `"Workbook version <n> is not supported (expected 3)"` |
+| `UnsupportedWorkbookVersion` | `version` ∉ {`3`, `4`} | `"Workbook version <n> is not supported (expected 3 or 4)"` |
 | `InvalidCellId` | *Added post-sign (2026-09-04, lead ruling R21)* — a fence's `id=` attribute is present but its value does not match `hex8` (§2.2, `/[0-9a-f]{8}/`: exactly 8 lowercase hex characters). Withdraws Task 1's interim behaviour of silently treating a malformed `id=` as absent and generating a fresh replacement id (`runs/2026-09-03/decisions.md`, "Tracked: L3 Task 1 landed") — a typo'd id can no longer be lost silently on save | `"Cell id '<id>' is not a valid identifier — must be 8 lowercase hex characters"` (`<id>` is the fence's literal, malformed `id=` value) |
 | `InvalidTableJson` | *Added post-sign (2026-09-04, lead ruling R21)* — a `table` cell's fence body does not deserialize as `TableModel` (§4) | `"Table cell JSON is malformed: <serde_json error text>"` |
 
@@ -723,7 +723,7 @@ no data must not break the definition, §3.5.B).
 
 **Every other §3.3 entry is unchanged** and accepts rank ≤ 1 only —
 `current_lap`, `lap_start_time`, `lap_start_distance`, `sector_number`,
-`variance_time`, `variance_dist`, `attitude`, `body_accel`, `wheel_travel`,
+`lap_delta_time`, `lap_delta_dist`, `attitude`, `body_accel`, `wheel_travel`,
 `wheel_velocity`, `cross`, `dot`, `norm`, `normalize`, `angle`,
 `rotate_mat`, `rotate_axis`, `rotate_euler`. Passing a rank ≥ 2 value to one
 of them is a `ShapeMismatch`, never a silent flatten.
@@ -1124,6 +1124,34 @@ guessed shape: a wrong shape rendered with the same confidence as a right
 one is worse than an honest blank (ruling R135, Open question 1).
 
 ---
+
+### 3.8 Retired names
+
+Function names the language no longer uses, and what replaced them. The
+authoritative list is `rust/core/src/math/alias.rs`'s
+`math_name_migrations()` — this table mirrors it and must not drift.
+
+| Retired | Replacement | Why |
+|---|---|---|
+| `variance_time` | `lap_delta_time` | It never computed a variance (σ²). It computes a lap's delta against an overlay lap, time-matched. "Variance" has one meaning in every statistics library, so the old name was a false friend (R143, R146): a reader — or a language model — would reason about σ² and be wrong. |
+| `variance_dist` | `lap_delta_dist` | The same, arc-length-matched. |
+
+**How a retired name is handled.** A `version: 3` workbook may still use one:
+it is migrated on read, rewritten **on save only** (opening a workbook is
+not consent to modify it — decision 75), and the change is reported through
+`save_workbook`'s result rather than left as sediment in the document.
+`merge` normalises all three inputs *before* per-cell classification, or the
+first sync after a rename would conflict an entire document.
+
+A retired name in a **`version: 4`** workbook is a typed error naming its
+replacement — never silently accepted. That is what ends a deprecation
+rather than extending it forever (R151 item 10).
+
+**The naming policy this table serves** (R143): where a function is
+semantically equivalent to a scipy/numpy one it takes that name; where it is
+**not** equivalent it takes a deliberately different name. A familiar name
+with unfamiliar behaviour is worse than an invented one, because an invented
+name makes a reader check and a false friend does not.
 
 ## 4. Table cells
 
