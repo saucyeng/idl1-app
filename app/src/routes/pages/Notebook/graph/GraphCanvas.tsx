@@ -18,6 +18,9 @@ import {
 // Bundled from node_modules, like every other asset (offline-first: no CDN,
 // CLAUDE.md §3) — not a network fetch.
 import "@xyflow/react/dist/style.css";
+// Themes the stock MiniMap/Controls from `tokens.css` (Task 4) — imported
+// after xyflow's own stylesheet so its declarations win the cascade.
+import "./graphCanvasTheme.css";
 
 import type { SessionDetail } from "../../../../ipc/catalog";
 import type { CellOutput, Window as SelectedWindow } from "../../../../ipc/workbook";
@@ -394,7 +397,7 @@ function GraphCanvasInner({ markdown, outputs, selectedWindows, windows, session
           </button>
         </div>
       )}
-      <div className="min-h-0 flex-1">
+      <div className="idl-graph-canvas min-h-0 flex-1">
         <ReactFlow
           nodes={nodes}
           edges={edges}

@@ -168,6 +168,15 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 
 ### Added
 
+- **The maths graph's `MiniMap`/`Controls` are themed from `tokens.css`
+  instead of xyflow's stock light-mode defaults (2026-09-08, decision
+  42).** `graph/graphCanvasTheme.css`, imported after
+  `@xyflow/react/dist/style.css`, sets xyflow's own documented `--xy-*`
+  theming variables (minimap background/mask/node fills, control button
+  fill/hover/border/icon colour) to `var(--token)` references only — never
+  a hex literal (`tokenSheet.test.ts` enforces this repo-wide) — and drops
+  the controls' box-shadow (UI-DIRECTION: depth is a surface step +
+  hairline, never `box-shadow`).
 - **The maths graph's canvas search pans to a hit instead of only
   highlighting it (2026-09-08, decision 42).** `GraphCanvas.tsx` now wraps
   itself in a `ReactFlowProvider` (needed for `useReactFlow`'s viewport
