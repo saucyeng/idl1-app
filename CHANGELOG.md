@@ -4,6 +4,16 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 
 ## [Unreleased]
 
+### Removed
+
+- **Device tab: the Calibration placeholder panel (2026-09-08,
+  `runs/2026-09-07/ui/UI-DIRECTION-2.md` decision 67, ruling R116).** Not
+  ported — R116: a single static-hold routine is mathematically
+  underdetermined (it cannot separate bias from orientation, and gravity
+  cannot observe yaw), so each IMU would land on a different arbitrary
+  heading. A calibration routine is designed from scratch later; a
+  placeholder control implying a working feature is worse than none.
+
 ### Added
 
 - **Device tab: push config reads the device's mode first, refuses before

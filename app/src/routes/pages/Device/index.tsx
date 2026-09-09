@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useReducer, useRef, useState } from "react";
 
 import { SectionHead } from "../../../components/brand/SectionHead";
-import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "../../../components/ui/collapsible";
 import { listProfiles, saveProfile, deleteProfile } from "../../../ipc/app";
 import { listSessions } from "../../../ipc/catalog";
 import { bleScan, connectDevice, deviceControl, deviceStatus, disconnectDevice } from "../../../ipc/device";
@@ -412,20 +411,6 @@ export default function Device() {
           deviceStatus={statusState.status}
         />
       </section>
-
-      <Collapsible className="device-tab__calibration rounded-[var(--radius-card)] border border-rule bg-surface p-4">
-        <CollapsibleTrigger asChild>
-          <button type="button" className="flex h-11 w-full items-center justify-between font-mono text-sm text-fg-dim">
-            <SectionHead>Calibration</SectionHead>
-          </button>
-        </CollapsibleTrigger>
-        <CollapsibleContent className="pt-2">
-          <p className="font-mono text-sm text-fg-dim">
-            IMU calibration (SPEC §7.6/§20) is not wired yet — `CMD_CALIBRATE_IMU` has no `idl-rs-tauri` command in this
-            wave, so there is nothing here to trigger yet. Tracked as a Device refinement.
-          </p>
-        </CollapsibleContent>
-      </Collapsible>
     </div>
   );
 }
