@@ -29,6 +29,25 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 
 ### Added
 
+- **Notebook: the maths graph's source palette (2026-09-09, ruling R160).**
+  A collapsible rail on the graph canvas, closed by default, listing the
+  three droppable source kinds — raw channels of the current selection
+  (grouped by prefix, unioned across selected windows, greyed when absent
+  from some resolved session per decision 44, never hidden), workbook
+  constants (front matter `constants:` and every math cell's own `const`
+  lines), and already-declared definitions. Search-first, per-group
+  collapsible (decision 42). Dragging a row onto the canvas mints a node
+  through `graphEdits.ts`'s `addNodeFromChannel` (channels/definitions,
+  bracket-referenced) or the new sibling `addNodeFromConstant` (a constant
+  is bare per C2 §3.1 — bracketing it would look up a channel instead);
+  both share one `appendDefLine` insertion path. `sourcePalette.ts` and
+  `graphPaletteDrop.ts` are pure and vitest-covered; the rail component and
+  the drop target live in `GraphCanvas.tsx`/`SourcePaletteRail.tsx`. This
+  is decision 45a's "drag from the channel list" gesture and closes the gap
+  R147 flagged: `addNodeFromChannel` was fully tested but unreachable.
+  `CellDefResult.sample_rate_hz` hasn't landed yet (R147/R152), so a
+  definition row's rate is omitted rather than shown blank.
+
 - **Notebook: `functionCatalog.ts` brought current with the scipy-alignment
   lane's 72-entry engine catalog (2026-09-09,
   `runs/2026-09-08/scipy-alignment-plan.md`, ledger R151/R157).** Renamed
