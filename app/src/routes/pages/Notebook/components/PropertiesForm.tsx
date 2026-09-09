@@ -3,7 +3,6 @@ import { useState } from "react";
 import {
   FFT_AVERAGINGS,
   FFT_DETRENDS,
-  FFT_SCALINGS,
   FFT_WINDOW_FUNCTIONS,
   generate,
   MARK_NAMES,
@@ -19,6 +18,7 @@ import {
 import {
   addMark,
   advanceFormState,
+  fftScalingSelectOptions,
   INITIAL_FORM_STATE,
   moveMark,
   overlapPercent,
@@ -586,9 +586,9 @@ function FftPropertiesForm({
         <label>
           Scaling
           <select value={fft.scaling} onChange={(e) => handleScalingChange(e.target.value as FftParams["scaling"])}>
-            {FFT_SCALINGS.map((s) => (
+            {fftScalingSelectOptions(fft.scaling).map((s) => (
               <option key={s} value={s}>
-                {s === "magnitude" ? "Magnitude" : "Density"}
+                {s === "density" ? "Density (PSD)" : s === "spectrum" ? "Spectrum" : "Magnitude"}
               </option>
             ))}
           </select>
