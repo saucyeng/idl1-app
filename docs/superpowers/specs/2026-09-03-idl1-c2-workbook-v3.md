@@ -442,70 +442,74 @@ appears in the Dart allowlist being retired by this migration (§6);
 `sum`/`count`/`first`/`last`/`p`/`detrend` and every vector/rotation
 function are omissions in that allowlist the engine already implemented —
 carried forward here as ordinary catalog entries, not new.
+**Unit rule** formalises the prose in **Output units** into the rule
+vocabulary of §3.3.1, so the engine's inference table is a transcription of
+this contract rather than a second source of truth (R162). Where the two
+columns could ever disagree, the rule column is the normative one.
 
-| Function | Signature | Category | Output units | Status | In idl0 `knownFunctions`? |
-|---|---|---|---|---|---|
-| `butter` | `butter(order, cutoff_hz, "low"\|"lowpass"\|"high"\|"highpass", ch)` | Filter | same units as `ch` | Implemented (`"band"` rejected as a `Runtime` error, not parsed as a 3rd type). A confirmed false friend deferred rather than fixed (R151 item 8, C2 §3.8): scipy's `butter` only *designs* a filter (returns coefficients); *applying* it is a separate call (`lfilter`/`sosfilt`). This `butter` designs **and** applies, zero-phase, in one call — splitting design from application is a real behaviour change with its own migration, not a naming fix. | yes |
-| `sosfilt` | `sosfilt(sos, ch)` | Filter | same units as `ch` | NotImplemented | yes |
-| `declip` | `declip(ch)` | Reconstruction | same units as `ch` (designed for ±32 g-clipped accel, g) | Implemented | yes |
-| `cumulative_trapezoid` | `cumulative_trapezoid(ch)` | Time-domain | `[ch]·s` | Implemented (retired from `integrate` — gratuitous rename, matches `scipy.integrate.cumulative_trapezoid`'s name, R143/R151 item 6) | yes |
-| `cumtrapz` | `cumtrapz(ch)` | Time-domain | `[ch]·s` | Implemented — a permanent second spelling of `cumulative_trapezoid`, not a deprecated one; scipy itself carries both (R151 item 6) | **no** |
-| `differentiate` | `differentiate(ch)` | Time-domain | `[ch]/s` | Implemented — a backward difference, `result[0] = 0` (`rust/core/src/statistics.rs`); **deliberately not** `numpy.gradient`'s central difference — see `gradient`'s own row (R151 item 3) | yes |
-| `gradient` | `gradient(ch)` | Time-domain | `[ch]/s` | Implemented — `numpy.gradient`'s own central-difference formula, added alongside `differentiate` rather than replacing it, since the two compute different values (R151 item 3) | **no** |
-| `detrend` | `detrend(ch)` \| `detrend(ch, "linear"\|"constant"\|"mean"\|"none")` | Time-domain | same units as `ch` | Implemented | **no** |
-| `rms` | `rms(ch)` → scalar \| `rms(ch, w)` → rolling channel, `w` window in samples | Time-domain / aggregate | same units as `ch` | Implemented | yes |
-| `mean` | `mean(ch)` → scalar \| `mean(ch, w)` → rolling channel | Time-domain / aggregate | same units as `ch` | Implemented | yes |
-| `std` | `std(ch)` → scalar (population σ) \| `std(ch, w)` → rolling channel | Time-domain / aggregate | same units as `ch` | Implemented | yes |
-| `median` | `median(ch)` → scalar | Aggregate | same units as `ch` | Implemented (2-arg rolling `median(ch, w)` is NotImplemented) | yes |
-| `sum` | `sum(ch)` → scalar | Aggregate | same units as `ch` (raw sum, not time-normalised) | Implemented | **no** |
-| `count` | `count(ch)` → scalar | Aggregate | count (dimensionless) | Implemented | **no** |
-| `first` | `first(ch)` → scalar | Aggregate | same units as `ch` | Implemented | **no** |
-| `last` | `last(ch)` → scalar | Aggregate | same units as `ch` | Implemented | **no** |
-| `percentile` | `percentile(ch, quantile)` → scalar, `quantile` ∈ [0,100] | Aggregate | same units as `ch` | Implemented (retired from `p` — gratuitous rename, matches `numpy.percentile`'s name (R143, plan §1 task 10)) | **no** |
-| `abs` | `abs(x)` | Elementwise | same units as `x` | Implemented | yes |
-| `sqrt` | `sqrt(x)` | Elementwise | `√[x]` (meaningful only if `x` is unitless or a squared unit) | Implemented | yes |
-| `sign` | `sign(x)` | Elementwise | dimensionless, ∈ {-1, 0, 1} (NaN→NaN) | Implemented | yes |
-| `floor` `ceil` `round` | `floor(x)` / `ceil(x)` / `round(x)` | Elementwise | same units as `x` | Implemented — `round` is `f64::round`, half-**away-from-zero** (`2.5 → 3`, `-2.5 → -3`); `numpy.round` is banker's rounding (round-half-to-even, `2.5 → 2`). A confirmed false friend the scipy-alignment lane deferred rather than fixed (R151 item 8, C2 §3.8) — recorded here rather than changed, since a silent rounding-rule change would move existing values at exactly the halfway point. | yes |
-| `pow` | `pow(x, y)` | Elementwise | `[x]^y` (engine does not track units; meaningful for unitless/integer `y`) | Implemented | yes |
-| `min` | `min(ch)` → scalar \| `min(a, b)` → elementwise | Aggregate / elementwise | same units as operand(s) | Implemented | yes |
-| `max` | `max(ch)` → scalar \| `max(a, b)` → elementwise | Aggregate / elementwise | same units as operand(s) | Implemented | yes |
-| `clip` | `clip(ch, lo, hi)` | Elementwise | same units as `ch` (`lo`/`hi` given in `ch`'s units) | Implemented (retired from `clamp` — gratuitous rename, matches `numpy.clip`'s name, R143, plan §1 task 10; `lo > hi` or either NaN is now a typed `Runtime` error instead of a panic, plan §4 task 1) | yes |
-| `sin` `cos` `tan` | `sin(x)` etc. | Trig | dimensionless ratio; `x` in radians | Implemented | yes |
-| `asin` `acos` `atan` | `asin(x)` etc. | Trig | radians | Implemented | yes |
-| `atan2` | `atan2(y, x)` | Trig | radians | Implemented | yes |
-| `sinh` `cosh` `tanh` | `sinh(x)` etc. | Trig | dimensionless | Implemented | yes |
-| `deg2rad` | `deg2rad(x)` | Trig conversion | radians (`x` in degrees) | Implemented | yes |
-| `rad2deg` | `rad2deg(x)` | Trig conversion | degrees (`x` in radians) | Implemented | yes |
-| `periodogram` | `periodogram(ch, window="boxcar", detrend="constant", scaling="density"\|"spectrum"\|"raw_magnitude")` | Frequency | `scaling="density"` → `[ch]²/Hz`; `"spectrum"` → `[ch]²`; `"raw_magnitude"` → same units as `ch` (magnitude) — over a `[f]` shape whose axis coordinate is `k·sample_rate_hz/n` Hz | Implemented — retired `fft`'s single-segment shape, scipy-named and scipy-scaled (`density`/`spectrum` are scipy's own two scalings; `raw_magnitude` is deliberately not one of them — it names the un-normalised value the legacy `fft()` computed, R151 item 1) | yes |
-| `welch` | `welch(ch, window="hann", nperseg=n, noverlap=n, detrend="constant", average="mean"\|"median"\|"max"\|"none", scaling="density"\|"spectrum"\|"raw_magnitude")` | Frequency | same scaling rules as `periodogram`, over a `[f]` shape | Implemented — segmented/averaged, what the charts already compute (`rust/core/src/fft.rs`'s `welch`, `rasters.rs:508`); `average="max"`/`"none"` are idl1 extensions beyond scipy's own two values (ruling R63(3)), kept reachable under the same keyword | **no** |
-| `spectrogram` | `spectrogram(ch, window_size, hop_size, window, detrend, scaling)` | Frequency | same units as `ch` (magnitude) or `[ch]²/Hz` (density), over a `[t,f]` shape | NotImplemented *(corrected 2026-09-09, R158. R110's revision flipped this to `Implemented` on the strength of §3.6 **defining** the `[t,f]` value — but the engine does not compute it: `catalog.rs` marks it `N` and `eval.rs` groups it with the unimplemented builtins. §3.6.3 still gives the signature and shape it will have; the status column reports what the engine does today, not what the contract specifies.)* | yes |
-| `hilbert` | `hilbert(ch)` | Frequency | same units as `ch` | NotImplemented | yes |
-| `correlate` | `correlate(a, b)` | Correlation | `[a]·[b]` | NotImplemented | yes |
-| `convolve` | `convolve(ch, kernel)` | Correlation | `[ch]·[kernel]` | NotImplemented | yes |
-| `resample` | `resample(ch, hz)` | Resampling | same units as `ch` | NotImplemented | yes |
-| `where` | `where(cond, t, f)` | Logic | units of `t`/`f` branches (must match) | Implemented (retired from `if` — gratuitous rename, matches `numpy.where`'s name, R143, plan §1 task 10; `cond` now also accepts a scalar, selecting a whole branch — additive, every existing per-sample channel `cond` call is unaffected) | yes |
-| `current_lap` | `current_lap()` | Lap | 1-based lap number, `0` outside any lap (dimensionless) | Implemented | yes |
-| `lap_start_time` | `lap_start_time(n)` | Lap | s, `NaN` if `n` out of range | Implemented | yes |
-| `lap_start_distance` | `lap_start_distance(n)` | Lap | m, `NaN` if `n` out of range or no `[Distance]` in session | Implemented | yes |
-| `sector_number` | `sector_number()` | Lap | 0-based sector index, `NaN` outside any sector (dimensionless) | Implemented | yes |
-| `lap_delta_time` | `lap_delta_time(ch)` | Lap delta | same units as `ch` (main − overlay, time-matched; mean across every `overlay_laps` entry when more than one, R73) | Implemented | yes |
-| `lap_delta_dist` | `lap_delta_dist(ch)` | Lap delta | same units as `ch` (main − overlay, arc-length-matched; mean across every `overlay_laps` entry when more than one, R73) | Implemented | yes |
-| `attitude` | `attitude("roll"\|"pitch")` | Estimator (diagnostic) | degrees | Implemented | yes |
-| `body_accel` | `body_accel("long"\|"lat")` | Estimator (diagnostic) | g | Implemented | yes |
-| `wheel_travel` | `wheel_travel("front"\|"rear")` | Estimator | mm | Implemented | yes |
-| `wheel_velocity` | `wheel_velocity("front"\|"rear")` | Estimator | mm/s | Implemented | yes |
-| `vec` | `vec(x, y, z)` | Vector | Vec3 (intermediate; units of `x`/`y`/`z`, must match) | Implemented | **no** |
-| `vx` `vy` `vz` | `vx(v)` etc. | Vector | same units as `v`'s components | Implemented | **no** |
-| `vadd` `vsub` | `vadd(a, b)` / `vsub(a, b)` | Vector | same units as operands (must match) | Implemented | **no** |
-| `vscale` | `vscale(v, s)` | Vector | `[v]·[s]` | Implemented | **no** |
-| `cross` | `cross(a, b)` | Vector | `[a]·[b]` | Implemented | **no** |
-| `dot` | `dot(a, b)` | Vector | `[a]·[b]` | Implemented | **no** |
-| `norm` | `norm(v)` | Vector | same units as `v`'s components | Implemented | **no** |
-| `normalize` | `normalize(v)` | Vector | dimensionless (unit vector) | Implemented | **no** |
-| `angle_between` | `angle_between(a, b)` | Vector | radians, ∈ [0, π] | Implemented (retired from `angle` — `numpy.angle` is complex phase, not the angle between two vectors, a false friend; R143/R151 item 4) | **no** |
-| `rotate_mat` | `rotate_mat(v, m00..m22)` (row-major, scalar entries) | Rotation | same units as `v` | Implemented | **no** |
-| `rotate_axis` | `rotate_axis(v, ax, ay, az, angle)` (scalars; `angle` radians) | Rotation | same units as `v` | Implemented | **no** |
-| `rotate_euler` | `rotate_euler(v, roll, pitch, yaw)` (radians; args may be channels — per-sample rotation) | Rotation | same units as `v` | Implemented | **no** |
+| Function | Signature | Category | Output units | Unit rule (§3.3.1) | Status | In idl0 `knownFunctions`? |
+|---|---|---|---|---|---|---|
+| `butter` | `butter(order, cutoff_hz, "low"\|"lowpass"\|"high"\|"highpass", ch)` | Filter | same units as `ch` | `SameAsArg(3)` — the channel is the **fourth** argument; `cutoff_hz` is expected in `Hz`, `order` is `Dimensionless` | Implemented (`"band"` rejected as a `Runtime` error, not parsed as a 3rd type). A confirmed false friend deferred rather than fixed (R151 item 8, C2 §3.8): scipy's `butter` only *designs* a filter (returns coefficients); *applying* it is a separate call (`lfilter`/`sosfilt`). This `butter` designs **and** applies, zero-phase, in one call — splitting design from application is a real behaviour change with its own migration, not a naming fix. | yes |
+| `sosfilt` | `sosfilt(sos, ch)` | Filter | same units as `ch` | `SameAsArg(1)` — the channel is the **second** argument; `sos` coefficients are `Dimensionless` | NotImplemented | yes |
+| `declip` | `declip(ch)` | Reconstruction | same units as `ch` (designed for ±32 g-clipped accel, g) | `SameAsArg(0)` | Implemented | yes |
+| `cumulative_trapezoid` | `cumulative_trapezoid(ch)` | Time-domain | `[ch]·s` | `Product(SameAsArg(0), Fixed(s))` | Implemented (retired from `integrate` — gratuitous rename, matches `scipy.integrate.cumulative_trapezoid`'s name, R143/R151 item 6) | yes |
+| `cumtrapz` | `cumtrapz(ch)` | Time-domain | `[ch]·s` | `Product(SameAsArg(0), Fixed(s))` | Implemented — a permanent second spelling of `cumulative_trapezoid`, not a deprecated one; scipy itself carries both (R151 item 6) | **no** |
+| `differentiate` | `differentiate(ch)` | Time-domain | `[ch]/s` | `Quotient(SameAsArg(0), Fixed(s))` | Implemented — a backward difference, `result[0] = 0` (`rust/core/src/statistics.rs`); **deliberately not** `numpy.gradient`'s central difference — see `gradient`'s own row (R151 item 3) | yes |
+| `gradient` | `gradient(ch)` | Time-domain | `[ch]/s` | `Quotient(SameAsArg(0), Fixed(s))` | Implemented — `numpy.gradient`'s own central-difference formula, added alongside `differentiate` rather than replacing it, since the two compute different values (R151 item 3) | **no** |
+| `detrend` | `detrend(ch)` \| `detrend(ch, "linear"\|"constant"\|"mean"\|"none")` | Time-domain | same units as `ch` | `SameAsArg(0)` | Implemented | **no** |
+| `rms` | `rms(ch)` → scalar \| `rms(ch, w)` → rolling channel, `w` window in samples | Time-domain / aggregate | same units as `ch` | `SameAsArg(0)` — `w` is a window in samples, `Dimensionless` | Implemented | yes |
+| `mean` | `mean(ch)` → scalar \| `mean(ch, w)` → rolling channel | Time-domain / aggregate | same units as `ch` | `SameAsArg(0)` — `w` is a window in samples, `Dimensionless` | Implemented | yes |
+| `std` | `std(ch)` → scalar (population σ) \| `std(ch, w)` → rolling channel | Time-domain / aggregate | same units as `ch` | `SameAsArg(0)` — `w` is a window in samples, `Dimensionless` | Implemented | yes |
+| `median` | `median(ch)` → scalar | Aggregate | same units as `ch` | `SameAsArg(0)` | Implemented (2-arg rolling `median(ch, w)` is NotImplemented) | yes |
+| `sum` | `sum(ch)` → scalar | Aggregate | same units as `ch` (raw sum, not time-normalised) | `SameAsArg(0)` | Implemented | **no** |
+| `count` | `count(ch)` → scalar | Aggregate | count (dimensionless) | `Dimensionless` — a count of samples, not the C1 atom `count` (§3.3.1) | Implemented | **no** |
+| `first` | `first(ch)` → scalar | Aggregate | same units as `ch` | `SameAsArg(0)` | Implemented | **no** |
+| `last` | `last(ch)` → scalar | Aggregate | same units as `ch` | `SameAsArg(0)` | Implemented | **no** |
+| `percentile` | `percentile(ch, quantile)` → scalar, `quantile` ∈ [0,100] | Aggregate | same units as `ch` | `SameAsArg(0)` — `quantile` is `Dimensionless` (0–100) | Implemented (retired from `p` — gratuitous rename, matches `numpy.percentile`'s name (R143, plan §1 task 10)) | **no** |
+| `abs` | `abs(x)` | Elementwise | same units as `x` | `SameAsArg(0)` | Implemented | yes |
+| `sqrt` | `sqrt(x)` | Elementwise | `√[x]` — total, since unit exponents are rational (`√(g²/Hz)` is `g/√Hz`) | `PowN(0, 1/2)` | Implemented | yes |
+| `sign` | `sign(x)` | Elementwise | dimensionless, ∈ {-1, 0, 1} (NaN→NaN) | `Dimensionless` | Implemented | yes |
+| `floor` `ceil` `round` | `floor(x)` / `ceil(x)` / `round(x)` | Elementwise | same units as `x` | `SameAsArg(0)` | Implemented — `round` is `f64::round`, half-**away-from-zero** (`2.5 → 3`, `-2.5 → -3`); `numpy.round` is banker's rounding (round-half-to-even, `2.5 → 2`). A confirmed false friend the scipy-alignment lane deferred rather than fixed (R151 item 8, C2 §3.8) — recorded here rather than changed, since a silent rounding-rule change would move existing values at exactly the halfway point. | yes |
+| `pow` | `pow(x, y)` | Elementwise | `[x]^y` when `y` is statically known; withheld otherwise (the *engine* does not track units — the separate inference pass of §3.3.1 does) | `PowN(0, y)` when `y` is a numeric literal or a substituted constant; otherwise `Dimensionless` if `[x]` is dimensionless, else `Unknown(non-literal exponent)` | Implemented | yes |
+| `min` | `min(ch)` → scalar \| `min(a, b)` → elementwise | Aggregate / elementwise | 1-arg: same units as `ch`; 2-arg: units of `a`/`b` (must match) | 1-arg: `SameAsArg(0)`. 2-arg: `AllMatch(0, 1)` | Implemented | yes |
+| `max` | `max(ch)` → scalar \| `max(a, b)` → elementwise | Aggregate / elementwise | 1-arg: same units as `ch`; 2-arg: units of `a`/`b` (must match) | 1-arg: `SameAsArg(0)`. 2-arg: `AllMatch(0, 1)` | Implemented | yes |
+| `clip` | `clip(ch, lo, hi)` | Elementwise | same units as `ch` (`lo`/`hi` given in `ch`'s units) | `SameAsArg(0)` — `lo`/`hi` are required scalars and adopt `[ch]` | Implemented (retired from `clamp` — gratuitous rename, matches `numpy.clip`'s name, R143, plan §1 task 10; `lo > hi` or either NaN is now a typed `Runtime` error instead of a panic, plan §4 task 1) | yes |
+| `sin` `cos` `tan` | `sin(x)` etc. | Trig | dimensionless ratio; `x` in radians | `Dimensionless` — check `Expect(0, rad)`: a `deg` argument is a diagnostic, not a conversion | Implemented | yes |
+| `asin` `acos` `atan` | `asin(x)` etc. | Trig | radians | `Fixed(rad)` — check `Expect(0, dimensionless)` | Implemented | yes |
+| `atan2` | `atan2(y, x)` | Trig | radians | `Fixed(rad)` — check `SameUnit(0, 1)`; a mismatch is a diagnostic and does not change the result | Implemented | yes |
+| `sinh` `cosh` `tanh` | `sinh(x)` etc. | Trig | dimensionless | `Dimensionless` — check `Expect(0, dimensionless)` | Implemented | yes |
+| `deg2rad` | `deg2rad(x)` | Trig conversion | radians (`x` in degrees) | `Fixed(rad)` — check `Expect(0, deg)` | Implemented | yes |
+| `rad2deg` | `rad2deg(x)` | Trig conversion | degrees (`x` in radians) | `Fixed(deg)` — check `Expect(0, rad)` | Implemented | yes |
+| `periodogram` | `periodogram(ch, window="boxcar", detrend="constant", scaling="density"\|"spectrum"\|"raw_magnitude")` | Frequency | `scaling="density"` → `[ch]²/Hz`; `"spectrum"` → `[ch]²`; `"raw_magnitude"` → same units as `ch` (magnitude) — over a `[f]` shape whose axis coordinate is `k·sample_rate_hz/n` Hz | `SelectByLiteral(scaling, { "density" → Quotient(PowN(0, 2), Fixed(Hz)), "spectrum" → PowN(0, 2), "raw_magnitude" → SameAsArg(0) }, default "density")` | Implemented — retired `fft`'s single-segment shape, scipy-named and scipy-scaled (`density`/`spectrum` are scipy's own two scalings; `raw_magnitude` is deliberately not one of them — it names the un-normalised value the legacy `fft()` computed, R151 item 1) | yes |
+| `welch` | `welch(ch, window="hann", nperseg=n, noverlap=n, detrend="constant", average="mean"\|"median"\|"max"\|"none", scaling="density"\|"spectrum"\|"raw_magnitude")` | Frequency | same scaling rules as `periodogram`, over a `[f]` shape | `SelectByLiteral(scaling, { "density" → Quotient(PowN(0, 2), Fixed(Hz)), "spectrum" → PowN(0, 2), "raw_magnitude" → SameAsArg(0) }, default "density")` | Implemented — segmented/averaged, what the charts already compute (`rust/core/src/fft.rs`'s `welch`, `rasters.rs:508`); `average="max"`/`"none"` are idl1 extensions beyond scipy's own two values (ruling R63(3)), kept reachable under the same keyword | **no** |
+| `spectrogram` | `spectrogram(ch, window_size, hop_size, window, detrend, scaling)` | Frequency | same units as `ch` (magnitude) or `[ch]²/Hz` (density), over a `[t,f]` shape | *(contingent — see Open 1)* `SelectByLiteral(scaling, …)` as `periodogram`, over the `[t,f]` shape of §3.6.3 | NotImplemented *(corrected 2026-09-09, R158. R110's revision flipped this to `Implemented` on the strength of §3.6 **defining** the `[t,f]` value — but the engine does not compute it: `catalog.rs` marks it `N` and `eval.rs` groups it with the unimplemented builtins. §3.6.3 still gives the signature and shape it will have; the status column reports what the engine does today, not what the contract specifies.)* | yes |
+| `hilbert` | `hilbert(ch)` | Frequency | same units as `ch` | `SameAsArg(0)` | NotImplemented | yes |
+| `correlate` | `correlate(a, b)` | Correlation | `[a]·[b]` | `Product(0, 1)` | NotImplemented | yes |
+| `convolve` | `convolve(ch, kernel)` | Correlation | `[ch]·[kernel]` | `Product(0, 1)` | NotImplemented | yes |
+| `resample` | `resample(ch, hz)` | Resampling | same units as `ch` | `SameAsArg(0)` — `hz` is expected in `Hz` | NotImplemented | yes |
+| `where` | `where(cond, t, f)` | Logic | units of `t`/`f` branches (must match) | `AllMatch(1, 2)` — `cond` is a truthiness test and is unconstrained | Implemented (retired from `if` — gratuitous rename, matches `numpy.where`'s name, R143, plan §1 task 10; `cond` now also accepts a scalar, selecting a whole branch — additive, every existing per-sample channel `cond` call is unaffected) | yes |
+| `current_lap` | `current_lap()` | Lap | 1-based lap number, `0` outside any lap (dimensionless) | `Dimensionless` | Implemented | yes |
+| `lap_start_time` | `lap_start_time(n)` | Lap | s, `NaN` if `n` out of range | `Fixed(s)` — `n` is a lap number, `Dimensionless` | Implemented | yes |
+| `lap_start_distance` | `lap_start_distance(n)` | Lap | m, `NaN` if `n` out of range or no `[Distance]` in session | `Fixed(m)` — `n` is a lap number, `Dimensionless` | Implemented | yes |
+| `sector_number` | `sector_number()` | Lap | 0-based sector index, `NaN` outside any sector (dimensionless) | `Dimensionless` | Implemented | yes |
+| `lap_delta_time` | `lap_delta_time(ch)` | Lap delta | same units as `ch` (main − overlay, time-matched; mean across every `overlay_laps` entry when more than one, R73) | `SameAsArg(0)` — a difference of two `[ch]` series, not a time | Implemented | yes |
+| `lap_delta_dist` | `lap_delta_dist(ch)` | Lap delta | same units as `ch` (main − overlay, arc-length-matched; mean across every `overlay_laps` entry when more than one, R73) | `SameAsArg(0)` — a difference of two `[ch]` series, not a distance | Implemented | yes |
+| `attitude` | `attitude("roll"\|"pitch")` | Estimator (diagnostic) | degrees | `Fixed(deg)` | Implemented | yes |
+| `body_accel` | `body_accel("long"\|"lat")` | Estimator (diagnostic) | g | `Fixed(g)` | Implemented | yes |
+| `wheel_travel` | `wheel_travel("front"\|"rear")` | Estimator | mm | `Fixed(mm)` | Implemented | yes |
+| `wheel_velocity` | `wheel_velocity("front"\|"rear")` | Estimator | mm/s | `Fixed(mm/s)` | Implemented | yes |
+| `vec` | `vec(x, y, z)` | Vector | Vec3 (intermediate; units of `x`/`y`/`z`, must match) | `AllMatch(0, 1, 2)` — the Vec3's single unit; mismatched components are a diagnostic and yield `unknown` | Implemented | **no** |
+| `vx` `vy` `vz` | `vx(v)` etc. | Vector | same units as `v`'s components | `SameAsArg(0)` | Implemented | **no** |
+| `vadd` `vsub` | `vadd(a, b)` / `vsub(a, b)` | Vector | same units as operands (must match) | `AllMatch(0, 1)` | Implemented | **no** |
+| `vscale` | `vscale(v, s)` | Vector | `[v]·[s]` | `Product(0, 1)` | Implemented | **no** |
+| `cross` | `cross(a, b)` | Vector | `[a]·[b]` | `Product(0, 1)` | Implemented | **no** |
+| `dot` | `dot(a, b)` | Vector | `[a]·[b]` | `Product(0, 1)` | Implemented | **no** |
+| `norm` | `norm(v)` | Vector | same units as `v`'s components | `SameAsArg(0)` — formally `PowN(Product(0, 0), 1/2)`, which reduces to `[v]` because a Vec3 carries one unit | Implemented | **no** |
+| `normalize` | `normalize(v)` | Vector | dimensionless (unit vector) | `Dimensionless` | Implemented | **no** |
+| `angle_between` | `angle_between(a, b)` | Vector | radians, ∈ [0, π] | `Fixed(rad)` — the `Product(0, 1)` units of `atan2`'s two operands are identical and cancel | Implemented (retired from `angle` — `numpy.angle` is complex phase, not the angle between two vectors, a false friend; R143/R151 item 4) | **no** |
+| `rotate_mat` | `rotate_mat(v, m00..m22)` (row-major, scalar entries) | Rotation | same units as `v` | `SameAsArg(0)` — the matrix entries are `Dimensionless` | Implemented | **no** |
+| `rotate_axis` | `rotate_axis(v, ax, ay, az, angle)` (scalars; `angle` radians) | Rotation | same units as `v` | `SameAsArg(0)` — the axis components are `Dimensionless`, `angle` is `rad` | Implemented | **no** |
+| `rotate_euler` | `rotate_euler(v, roll, pitch, yaw)` (radians; args may be channels — per-sample rotation) | Rotation | same units as `v` | `SameAsArg(0)` — `roll`/`pitch`/`yaw` are `rad` | Implemented | **no** |
 
 **72 named functions total** (revised again by the scipy-alignment lane,
 `runs/2026-09-08/scipy-alignment-plan.md`, ledger R151/R157 — was 69,
@@ -556,6 +560,129 @@ the mapping) — `butter`, `sosfilt`,
 `lap_start_time`, `lap_start_distance`, `sector_number`, `lap_delta_time`,
 `lap_delta_dist`, `wheel_travel`, `wheel_velocity`, `attitude`,
 `body_accel` — appears in the table above. None omitted.
+
+### 3.3.1 The unit rule vocabulary
+
+The **Unit rule** column of §3.3 states, for each of the 72 entries, how a
+call's output unit is derived from its arguments' units. Rulings R152/R154
+(the model) and R162 (this column's location) govern; the design is
+`runs/2026-09-08/unit-model.md`.
+
+**Units are metadata about a value, never syntax inside an expression.**
+Nothing in this section adds a construct to §3.2's grammar. A unit is
+*inferred* by a separate pass over the same `Ast` the evaluator walks; the
+numbers a workbook computes are unchanged by it.
+
+**The three states** (R154 — they never collapse into two):
+
+| State | Meaning |
+|---|---|
+| `known(u)` | A determined unit, e.g. `mm`, `km/h`, `g/√Hz`. |
+| `dimensionless` | Genuinely no unit — a count, a ratio, a comparison result, a unit vector. |
+| `unknown{reason}` | Not derivable, and the reason says why. |
+
+`dimensionless` and `unknown` are different claims. A count *has* no unit; an
+un-inferable exponent's unit is merely *unknown to us*. A consumer that
+renders them identically is a defect (§5 of the design; the PDF report is the
+case where the distinction is visible to a reader who is not in the room).
+
+**A unit is a product of atoms.** An atom is a unit token exactly as C1 §4.1
+recorded it — `mm`, `m`, `km`, `h`, `s`, `Hz`, `bar`, `deg`, `rad`, `g`,
+`bpm`, `pulse`, `count` — mapped to a **rational** exponent. The empty
+product is `dimensionless`. **Atoms are never canonicalised and never
+converted**: `mm` and `m` are different atoms, so `mm + m` is a diagnostic,
+not a silent rescaling. Rational exponents are what make `sqrt` total
+(`g²/Hz` → `g/√Hz`).
+
+**The rules.** `SameAsArg`, `Fixed`, `Dimensionless` and `Unknown` are
+leaves; `Product`, `Quotient`, `PowN` and `SelectByLiteral` compose over
+other rules, so `[ch]·s` is written `Product(SameAsArg(0), Fixed(s))` rather
+than needing a rule kind of its own. Argument positions are **0-based over
+the positional arguments** of the signature in §3.3.
+
+| Rule | Meaning |
+|---|---|
+| `SameAsArg(n)` | The output carries positional argument `n`'s unit. |
+| `Fixed(u)` | A constant unit regardless of the arguments — `Fixed(rad)`, `Fixed(mm/s)`. |
+| `Dimensionless` | The empty unit product. Never a stand-in for "we don't know". |
+| `Product(a, b)` / `Quotient(a, b)` | Exponents added / subtracted. A bare integer means `SameAsArg` of that position, so `Product(0, 1)` is `Product(SameAsArg(0), SameAsArg(1))`. |
+| `PowN(n, k)` | Argument `n`'s exponents multiplied by the rational `k`. `PowN(0, 1/2)` is a square root. |
+| `AllMatch(n, m, …)` | Every listed argument must share one unit, which is also the output's. A mismatch is the §3.3.1 diagnostic below and the output is `unknown{mismatch}`. |
+| `SelectByLiteral(name, { literal → rule }, default d)` | A string-literal argument selects which rule applies. If that argument is absent the `default` applies; if it is present but not a string literal, the output is `unknown{non-literal selector}`. |
+| `Unknown(reason)` | Not derivable. `reason` is display-ready English. |
+
+**Checks are diagnostics, never coercions.** A rule may carry a trailing
+`check Expect(n, u)` or `check SameUnit(n, m)`. These constrain what an
+argument *should* be — `sin`'s argument in `rad`, `atan2`'s two operands in
+the same unit — and a violation raises a **non-fatal diagnostic on the cell**
+(R154 item 1). It never converts the value, never changes the output unit,
+and never fails the evaluation. `deg` and `rad` are different atoms, so
+`sin([angle_deg])` is caught by this check and not by the algebra.
+
+**Constants** (§3.2's four universal names): `pi`, `tau`, `e` are
+`dimensionless`; **`g` is `known(m/s²)`** (R162 — it survives parsing as a
+named constant precisely so inference can see it; treating it as
+dimensionless would mislabel `[body_accel] / g`). A numeric literal is a
+*scalar*, which adopts the other operand's unit under `+ - min max clip
+where` and is dimensionless under `* /`; scalar is an internal state and
+never crosses the wire — a top-level scalar result reports `dimensionless`.
+
+**Two entries worth reading twice.**
+
+- **`periodogram` / `welch`** have *three* output units, chosen by the
+  `scaling=` keyword argument (R151 item 1). `"density"` is `[ch]²/Hz`,
+  `"spectrum"` is `[ch]²`, and `"raw_magnitude"` is `[ch]` un-normalised.
+  Because `scaling=` is a string literal at the call site, the rule is
+  statically readable — that is exactly what `SelectByLiteral` exists for.
+  Omitting the argument selects `"density"`, matching the engine's default.
+- **The vector family.** A `Vec3` carries **one** unit, not three:
+  `vec(x, y, z)` is `AllMatch(0, 1, 2)`, so mismatched components are a
+  diagnostic rather than a three-unit value. From that, `vx`/`vy`/`vz` and
+  every `rotate_*` are `SameAsArg(0)`; `vadd`/`vsub` are `AllMatch`;
+  `vscale`, `cross` and `dot` are `Product`; `norm(v)` is
+  `PowN(Product(0, 0), 1/2)`, which reduces to `[v]`; `normalize(v)` is
+  `Dimensionless` because the magnitude divides out; and `angle_between` is
+  `Fixed(rad)` because `atan2`'s two operands both carry `[a]·[b]`, which
+  cancels.
+
+**`count` and the atom `count`.** `count(ch)` is `Dimensionless` — a count of
+samples. A *channel* whose C1 §4.1 unit string is literally `"count"` is
+`known(count)`, because atoms are taken verbatim. The asymmetry is
+deliberate: one is a claim this contract makes about a function, the other is
+a label a recording device wrote down.
+
+**Where a unit cannot be derived**, the reason is one of: the source channel
+recorded no unit (a CSV import's unit is `""`); a `{cell}` table reference,
+which has no recorded unit today; a `+`/`AllMatch` mismatch; a non-literal
+`pow` exponent or `SelectByLiteral` selector; a definition cycle; or an
+operand that was already unknown. `unknown` is contagious and is never
+guessed away — `unknown * mm` is `unknown`, not `mm`. The single exception is
+algebraic: a dimensionless base raised to any exponent is dimensionless.
+
+**Open — not settled from the engine or a ruling.**
+
+1. **`spectrogram`'s scalings.** Its row is `NotImplemented` (R158), so the
+   engine offers no evidence for what `scaling` will accept. Its rule is
+   recorded as `periodogram`'s and marked contingent. *Recommendation:* when
+   §3.6.3's `[t,f]` value lands, give it `periodogram`'s three scalings
+   verbatim and drop the contingency; if it ships with only
+   `magnitude`/`density`, the rule's literal set narrows and nothing else
+   changes.
+2. **`correlate` / `convolve` are `NotImplemented`**, so `Product(0, 1)` is
+   read off §3.3's existing prose, not off an implementation. scipy's
+   `correlate` in `"full"` mode also has no time normalisation, which is
+   consistent with `Product`. *Recommendation:* keep `Product(0, 1)` and
+   re-verify at implementation time.
+3. **`hilbert` is `NotImplemented`**; `SameAsArg(0)` assumes it returns the
+   analytic signal's envelope/magnitude in the input's units rather than a
+   complex pair. *Recommendation:* keep `SameAsArg(0)`; if it lands returning
+   phase as well, phase is a second output in `rad`, which is a signature
+   change, not a unit-rule change.
+4. **`cumulative_trapezoid` / `differentiate` / `gradient` multiply or
+   divide by the atom `s`**, hard-coded, because today's values carry no axis
+   object. *Recommendation:* when §3.6's axes land, generalise these to the
+   last axis's unit (§3.6.3 requires it to be `time`, whose unit is `s`), so
+   the rule's meaning is unchanged on every value that exists today.
 
 ### 3.4 Unit table
 
