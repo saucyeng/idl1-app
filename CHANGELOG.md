@@ -4,6 +4,23 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 
 ## [Unreleased]
 
+### Added
+
+- **`unwatch_workbook(id)` — a workbook's OS file watch can now be stopped
+  by name (2026-09-09, ruling R98).** Closing a workbook, or hiding the
+  Notebook route, previously dropped the frontend callback but left the
+  `notify` handle open for the app's life: one leaked file watch per
+  workbook opened this session, disclosed in `TASKS.md` rather than silent.
+  C3 §3.4's original claim that "unsubscribe is closing the channel from
+  the frontend side" was wrong — Tauri v2 gives the Rust side no observable
+  channel-close signal — and is corrected in place. The command has **no
+  error case**: unwatching an id that is not currently watched (never
+  subscribed, already unwatched, or already replaced by a later
+  `watch_workbook`) resolves, so an unmount path need not track whether a
+  watch was ever established. `Notebook/index.tsx`'s watch effect calls it
+  in cleanup; re-subscribing to the same id still replaces the previous
+  watch, the backstop for a frontend that never calls unwatch.
+
 ### Changed
 
 - **Notebook: the FFT properties pane's Scaling picker offers all three of

@@ -1060,10 +1060,18 @@ in this workbook"), reusing the same banner slot `ConflictBanner`/
 **`watch_workbook(id: string, channel: Channel<WorkbookEvent>)`**
 Subscribes to the file watcher (design §7) for one workbook; the command's
 own `Promise` resolves once subscription is established, then the channel
-carries events for the life of the subscription (unsubscribe is closing the
-channel from the frontend side).
+carries events until `unwatch_workbook(id)` stops it.
 Return: `void` (the subscription's events are carried on `channel`, not on
 the resolved value).
+
+*Corrected 2026-09-09 (ruling R98).* This paragraph previously said
+unsubscribing was "closing the channel from the frontend side". **It is
+not** — Tauri v2 gives the Rust side no observable channel-close signal, so
+dropping the frontend callback left the OS file watch running for the life
+of the app: one `notify` handle per workbook opened. `unwatch_workbook`
+below is the actual mechanism. Re-subscribing to the same `id` also
+replaces (and so stops) the previous watch, which remains the backstop for
+a frontend that never calls unwatch.
 ```ts
 interface WorkbookEvent {
   kind: "changed" | "conflict";
@@ -1075,6 +1083,20 @@ interface WorkbookEvent {
 }
 ```
 Errors (on the initial `Promise` only): `not_found`, `io`, `internal`.
+
+**`unwatch_workbook(id: string)`**
+*Added 2026-09-09 (ruling R98).* Stops the watch `watch_workbook` started
+for `id`, releasing its OS file handle. Return: `void`.
+
+**No error case.** Unwatching an id that is not currently watched — never
+subscribed, already unwatched, or already replaced by a later
+`watch_workbook` for the same id — resolves `Ok`, deliberately. The
+frontend calls this on close/unmount, a path that must be idempotent and
+must not depend on whether a watch was ever established (a workbook closed
+before `watch_workbook` resolved, a double unmount in React strict mode, an
+unwatch racing a re-subscribe). An error here would make correct frontend
+code log spurious failures. The absence of `not_found` in this command's
+error list is therefore deliberate, not an omission.
 
 **`fetch_host_channel(workbook_id: string, session_id: string | null, def_name: string, budget: number)`**
 *Added post-sign (2026-09-05, lead ruling R59, wave-2 write lane, ruling

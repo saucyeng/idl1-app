@@ -122,6 +122,21 @@ describe("watchWorkbook", () => {
   });
 });
 
+describe("unwatchWorkbook", () => {
+  it("unwatch_workbook resolves — calls invoke with the id alone, no channel", async () => {
+    // Arrange
+    const { invoke } = await import("@tauri-apps/api/core");
+    (invoke as ReturnType<typeof vi.fn>).mockResolvedValue(undefined);
+    const { unwatchWorkbook } = await import("./workbook");
+
+    // Act
+    await unwatchWorkbook("w1");
+
+    // Assert
+    expect(invoke).toHaveBeenCalledWith("unwatch_workbook", { id: "w1" });
+  });
+});
+
 describe("readWorkbook", () => {
   it("read_workbook resolves — calls invoke with idOrPath and returns the value unchanged", async () => {
     // Arrange

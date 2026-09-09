@@ -17,6 +17,7 @@ import {
   openWorkbook,
   readWorkbook,
   saveWorkbook,
+  unwatchWorkbook,
   watchWorkbook,
   type CellOutput,
   type IpcError,
@@ -1263,12 +1264,17 @@ export default function NotebookPage() {
   // R95 item 2: paused the same way the sandbox mount effect above is --
   // `primeState.running` added to the dependency array so a hidden route
   // drops this subscription (the cleanup below runs) and a visible one
-  // re-subscribes fresh, exactly the shape this effect already used for a
-  // *workbook* change before this task (its cleanup only ever set
-  // `disposed`, since `watch_workbook`'s C3 contract has no unsubscribe
-  // command to call) -- hiding the route is treated as the same kind of
+  // re-subscribes fresh -- hiding the route is treated as the same kind of
   // "this subscription is no longer current" event a workbook switch
   // already was, not a new mechanism.
+  //
+  // The cleanup now also calls `unwatchWorkbook` (R98): setting `disposed`
+  // alone silenced the callback but left the OS file handle open for the
+  // app's life, because Tauri v2 gives the Rust side no channel-close
+  // signal. `unwatch_workbook` resolves for an id that is not currently
+  // watched, so this is safe on every path that reaches it -- an unmount
+  // racing the subscribe, React strict mode's double unmount, or a
+  // re-subscribe that already replaced the entry.
   useEffect(() => {
     const workbookId = state.handle?.id;
     if (workbookId === undefined || !primeState.running) return;
@@ -1290,6 +1296,7 @@ export default function NotebookPage() {
 
     return () => {
       disposed = true;
+      void unwatchWorkbook(workbookId);
     };
   }, [state.handle?.id, primeState.running]);
 

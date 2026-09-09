@@ -323,11 +323,26 @@ export async function saveWorkbook(id: string, markdown: string, basedOnHash: st
 
 /** Subscribes to the file watcher (design §7) for one workbook (C3 §3.4).
  *  The returned `Promise` resolves once subscription is established; events
- *  after that arrive via `onEvent` for the life of the subscription
- *  (unsubscribe is closing the channel from the frontend side — not yet
- *  exposed by this wrapper). One-time subscribe, not a hot path. */
+ *  after that arrive via `onEvent` until {@link unwatchWorkbook} stops the
+ *  watch. One-time subscribe, not a hot path.
+ *
+ *  Dropping this callback is **not** an unsubscribe: Tauri v2 gives the
+ *  Rust side no observable channel-close signal, so the OS file handle
+ *  outlives the callback until `unwatch_workbook` removes it (ruling R98,
+ *  which corrected C3's original claim that closing the channel sufficed). */
 export async function watchWorkbook(id: string, onEvent: (e: WorkbookEvent) => void): Promise<void> {
   const channel = new Channel<WorkbookEvent>();
   channel.onmessage = onEvent;
   return invoke<void>("watch_workbook", { id, channel });
+}
+
+/** Stops the watch {@link watchWorkbook} started for `id`, releasing its OS
+ *  file handle (C3 §3.4, ruling R98).
+ *
+ *  Safe to call unconditionally — for an id that was never watched, already
+ *  unwatched, or already replaced by a later `watchWorkbook`, the command
+ *  resolves rather than erroring, precisely so an unmount path need not
+ *  track whether a watch was ever established. */
+export async function unwatchWorkbook(id: string): Promise<void> {
+  return invoke<void>("unwatch_workbook", { id });
 }
