@@ -722,21 +722,21 @@ The firmware never *applies* calibration — it writes raw int16 LSB values into
       "accel_range_g": 32,
       "gyro_range_dps": 2000,
       "channels": { "accel_x": true, "accel_y": true, "accel_z": true,
-                    "gyro_x": true, "gyro_y": true, "gyro_z": false }
+                    "gyro_x": true, "gyro_y": true, "gyro_z": true }
     },
     "imu1": {
       "enabled": true,
       "accel_range_g": 16,
       "gyro_range_dps": 500,
       "channels": { "accel_x": true, "accel_y": true, "accel_z": true,
-                    "gyro_x": false, "gyro_y": false, "gyro_z": false }
+                    "gyro_x": true, "gyro_y": true, "gyro_z": true }
     },
     "imu2": {
       "enabled": true,
       "accel_range_g": 16,
       "gyro_range_dps": 500,
       "channels": { "accel_x": true, "accel_y": true, "accel_z": true,
-                    "gyro_x": false, "gyro_y": false, "gyro_z": false }
+                    "gyro_x": true, "gyro_y": true, "gyro_z": true }
     },
     "orientation": {
       "imu0_rotation_matrix": [[1,0,0],[0,1,0],[0,0,1]],
@@ -801,6 +801,8 @@ No default entries — users add channels via the Device tab as they wire up sen
 
 **Per-IMU range resolution.** Each `imu.imu0`, `imu.imu1`, and `imu.imu2` sub-block carries its own `accel_range_g` and `gyro_range_dps`. The top-level `imu.accel_range_g` and `imu.gyro_range_dps` fields (shown above) act as defaults: the firmware seeds all three IMU slots from those values, then applies any per-IMU overrides. A config file that omits the per-IMU sub-blocks entirely is valid — all three IMUs inherit the top-level range. The resolved per-axis values are written verbatim into the channel registry entry (§5.2) at session start; the parser uses those registry values without further reference to the config.
 
+**Per-IMU channel mask.** `channels` is a bitfield on the wire — a device can and does record a file where an enabled IMU has fewer than all six axis channels set, and the parser must go on reading such files forever (ruling R155; real sessions predate the policy below). The companion app, however, only ever *writes* an all-or-nothing mask: enabling an IMU enables all six of its channels, because a partial mask has cost Isaac channels mid-session that could not be re-ridden. That policy lives in the app (`validateConfig`, below), not on the wire — this schema and the firmware place no constraint on which channel bits are set together.
+
 **Configurable chip options:**
 
 LSM6DSO32: sample rate (12.5–1666 Hz), accel range (±4/8/16/32g), gyro range (±125–2000 dps), high-performance vs low-power mode, anti-aliasing filter bandwidth.
@@ -852,6 +854,7 @@ emits, so a reviewer can check the code against this table line by line.
 | `imuN.accel_range_g` (N=0,1,2) | error | not one of ±4/8/16/32 g | §8 "Per-IMU range resolution" |
 | `imuN.gyro_range_dps` (N=0,1,2) | error | not one of ±125/250/500/1000/2000 dps | §8 "Per-IMU range resolution" |
 | `imuN.channels` (N=0,1,2) | warning | `imuN.enabled` true and every axis channel false | load-bearing invariant: an enabled IMU logging nothing is a mistake |
+| `imuN.channels` (N=0,1,2) | error | `imuN.enabled` true and some but not all six axis channels are true | decision 70 / ruling R155: the app only ever writes an all-or-nothing channel mask; a partial mask stays wire-legal and importer-readable but is no longer something this app sends |
 | `gps.sample_rate_hz` | error | not an integer | §8 "Integer 1-10 Hz" |
 | `gps.sample_rate_hz` | error | integer but outside 1..10 | §8 "Integer 1-10 Hz" |
 | `gps.dynamic_model` | error | not one of portable/pedestrian/automotive/sea/airborne | §8 "Configurable chip options" |

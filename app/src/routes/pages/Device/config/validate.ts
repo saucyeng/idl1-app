@@ -89,13 +89,26 @@ function checkRange(value: number, validValues: readonly number[], path: string,
 }
 
 /** Checks one `imu.imuN` slot: its own accel/gyro range, and — when
- *  enabled — that at least one axis channel is turned on. */
+ *  enabled — its channel mask. Ruling R155 (Direction-2 decision 70,
+ *  Isaac's own lived experience: partial masks lost him channels
+ *  mid-session): the app only ever writes an all-or-nothing channel mask.
+ *  A partial mask stays wire-legal and importer-readable forever — the
+ *  wire's §5.3 mask is a bitfield and files with one already exist — but
+ *  this app refuses to *create* one. Zero channels on is the pre-existing
+ *  "logs nothing" mistake and stays a warning, not this new error. */
 function checkImuSlot(slot: ImuSlot, slotPath: string, issues: ValidationIssue[]): void {
   checkRange(slot.accel_range_g, ACCEL_RANGES_G, `${slotPath}.accel_range_g`, "accel range", "g", issues);
   checkRange(slot.gyro_range_dps, GYRO_RANGES_DPS, `${slotPath}.gyro_range_dps`, "gyro range", "dps", issues);
-  const anyChannelOn = Object.values(slot.channels).some((on) => on);
-  if (slot.enabled && !anyChannelOn) {
+  const channelValues = Object.values(slot.channels);
+  const channelsOn = channelValues.filter((on) => on).length;
+  if (slot.enabled && channelsOn === 0) {
     pushWarning(issues, `${slotPath}.channels`, `${slotPath} is enabled but every channel is off — it will log nothing`);
+  } else if (slot.enabled && channelsOn < channelValues.length) {
+    pushError(
+      issues,
+      `${slotPath}.channels`,
+      `${slotPath} has only ${channelsOn} of ${channelValues.length} channels on — the app only writes an all-or-nothing channel mask (a partial mask is wire-legal and stays importer-readable, but this app will not create one; ruling R155)`,
+    );
   }
 }
 

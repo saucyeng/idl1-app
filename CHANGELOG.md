@@ -6,6 +6,16 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 
 ### Fixed
 
+- **IMU channel masks are all-or-nothing again, and SPEC §8's worked example
+  is corrected, not the validator (2026-09-08, ruling R155).**
+  `validate.ts`'s `checkImuSlot` now errors when an enabled IMU has some but
+  not all six axis channels on (all-off stays the pre-existing "logs
+  nothing" warning); a disabled slot is unaffected. SPEC §8's own worked
+  example enabled IMUs with only 3-5 of 6 channels — that example is now
+  corrected to all-six-on, with a new paragraph recording that a partial
+  mask stays wire-legal and importer-readable forever, it is just no longer
+  something this app writes. `validate.test.ts`/`model.test.ts`'s
+  `SPEC_WORKED_EXAMPLE` fixtures follow the corrected example.
 - **`imu.low_power_mode`/`imu.high_performance_mode` both set is now a
   validation error, not a warning (2026-09-08).** Firmware confirms the two
   are XOR (`runs/2026-09-08/firmware/STATUS-7.3-DELTA.md`, "Resolved with
