@@ -45,7 +45,7 @@ describe("connectionReducer", () => {
     expect(ended.error).toBeNull();
   });
 
-  it("connectionReducer — CONNECTED — phase connected, the ConnectionInfo's firmware_version retained", () => {
+  it("connectionReducer — CONNECTED — phase connected, active set, the ConnectionInfo's firmware_version retained", () => {
     // Arrange
     const connecting = connectionReducer(initialConnectionState, { type: "CONNECT_START" });
     const info = { device_id: "d1", firmware_version: "1.4.0", connected: true };
@@ -55,7 +55,60 @@ describe("connectionReducer", () => {
 
     // Assert
     expect(connected.phase).toBe("connected");
-    expect(connected.connected?.firmware_version).toBe("1.4.0");
+    expect(connected.activeDeviceId).toBe("d1");
+    expect(connected.connections).toHaveLength(1);
+    expect(connected.connections[0].firmware_version).toBe("1.4.0");
+  });
+
+  it("connectionReducer — CONNECTED for a second device — both held, the new one becomes active (decision 86)", () => {
+    // Arrange
+    const first = connectionReducer(initialConnectionState, {
+      type: "CONNECTED",
+      info: { device_id: "d1", firmware_version: "1.4.0", connected: true },
+    });
+
+    // Act
+    const second = connectionReducer(first, {
+      type: "CONNECTED",
+      info: { device_id: "d2", firmware_version: "1.5.0", connected: true },
+    });
+
+    // Assert
+    expect(second.connections.map((c) => c.device_id)).toEqual(["d1", "d2"]);
+    expect(second.activeDeviceId).toBe("d2");
+  });
+
+  it("connectionReducer — SWITCH_ACTIVE to a connected device — one tap, no IPC, activeDeviceId changes only", () => {
+    // Arrange
+    const first = connectionReducer(initialConnectionState, {
+      type: "CONNECTED",
+      info: { device_id: "d1", firmware_version: "1.4.0", connected: true },
+    });
+    const both = connectionReducer(first, {
+      type: "CONNECTED",
+      info: { device_id: "d2", firmware_version: "1.5.0", connected: true },
+    });
+
+    // Act
+    const switched = connectionReducer(both, { type: "SWITCH_ACTIVE", deviceId: "d1" });
+
+    // Assert
+    expect(switched.activeDeviceId).toBe("d1");
+    expect(switched.connections).toEqual(both.connections);
+  });
+
+  it("connectionReducer — SWITCH_ACTIVE to a device that isn't connected — ignored, no state change", () => {
+    // Arrange
+    const connected = connectionReducer(initialConnectionState, {
+      type: "CONNECTED",
+      info: { device_id: "d1", firmware_version: "1.4.0", connected: true },
+    });
+
+    // Act
+    const attempted = connectionReducer(connected, { type: "SWITCH_ACTIVE", deviceId: "d9" });
+
+    // Assert
+    expect(attempted).toEqual(connected);
   });
 
   it("connectionReducer — FAILED during connect — phase failed, previously discovered devices retained so the user can retry another", () => {
@@ -75,18 +128,59 @@ describe("connectionReducer", () => {
     expect(failed.error).toBe("no adapter");
   });
 
-  it("connectionReducer — DISCONNECTED after CONNECTED — phase idle, connected cleared", () => {
+  it("connectionReducer — DISCONNECTED for the active device with another still connected — active falls back to the remaining one", () => {
+    // Arrange
+    const first = connectionReducer(initialConnectionState, {
+      type: "CONNECTED",
+      info: { device_id: "d1", firmware_version: "1.4.0", connected: true },
+    });
+    const both = connectionReducer(first, {
+      type: "CONNECTED",
+      info: { device_id: "d2", firmware_version: "1.5.0", connected: true },
+    });
+    const switchedToD1 = connectionReducer(both, { type: "SWITCH_ACTIVE", deviceId: "d1" });
+
+    // Act
+    const disconnected = connectionReducer(switchedToD1, { type: "DISCONNECTED", deviceId: "d1" });
+
+    // Assert
+    expect(disconnected.connections.map((c) => c.device_id)).toEqual(["d2"]);
+    expect(disconnected.activeDeviceId).toBe("d2");
+    expect(disconnected.phase).toBe("connected");
+  });
+
+  it("connectionReducer — DISCONNECTED for the only connected device — phase idle, active cleared", () => {
     // Arrange
     const connecting = connectionReducer(initialConnectionState, { type: "CONNECT_START" });
     const info = { device_id: "d1", firmware_version: "1.4.0", connected: true };
     const connected = connectionReducer(connecting, { type: "CONNECTED", info });
 
     // Act
-    const disconnected = connectionReducer(connected, { type: "DISCONNECTED" });
+    const disconnected = connectionReducer(connected, { type: "DISCONNECTED", deviceId: "d1" });
 
     // Assert
     expect(disconnected.phase).toBe("idle");
-    expect(disconnected.connected).toBeNull();
+    expect(disconnected.connections).toEqual([]);
+    expect(disconnected.activeDeviceId).toBeNull();
+  });
+
+  it("connectionReducer — DISCONNECTED for a non-active device — active device unaffected", () => {
+    // Arrange
+    const first = connectionReducer(initialConnectionState, {
+      type: "CONNECTED",
+      info: { device_id: "d1", firmware_version: "1.4.0", connected: true },
+    });
+    const both = connectionReducer(first, {
+      type: "CONNECTED",
+      info: { device_id: "d2", firmware_version: "1.5.0", connected: true },
+    });
+
+    // Act
+    const disconnected = connectionReducer(both, { type: "DISCONNECTED", deviceId: "d1" });
+
+    // Assert
+    expect(disconnected.activeDeviceId).toBe("d2");
+    expect(disconnected.connections.map((c) => c.device_id)).toEqual(["d2"]);
   });
 
   it("connectionReducer — DEVICE_DISCOVERED after SCAN_END — ignored, no state change", () => {

@@ -85,11 +85,14 @@ function profileViewsEqual(a: ProfileView | undefined, b: ProfileView | undefine
  * visible, offers provisional recording/WiFi controls, and persists bike
  * profiles over `list_profiles`/`save_profile`/`delete_profile`.
  *
- * `connectionState.connected` is a managed connection (see `connection.ts`'s
- * doc) — not, by itself, proof of a live link at this instant; the status
- * poll is that evidence, and a run of failed polls surfaces as a
- * "link lost?" note (R78 Q2) without changing `connected` or stopping the
- * poll, since the device may simply be temporarily out of range.
+ * Each entry in `connectionState.connections` is a managed connection (see
+ * `connection.ts`'s doc) — not, by itself, proof of a live link at this
+ * instant; the status poll (run only against the active device) is that
+ * evidence, and a run of failed polls surfaces as a "link lost?" note
+ * (R78 Q2) without changing `connections` or stopping the poll, since the
+ * device may simply be temporarily out of range. `activeDeviceId` picks
+ * which connected device the hero/status/files/config sections show
+ * (decision 86); switching it is one tap and touches no IPC.
  */
 export default function Device() {
   const [state, dispatch] = useReducer(connectionReducer, initialConnectionState);
@@ -98,7 +101,7 @@ export default function Device() {
   const [skippedProfiles, setSkippedProfiles] = useState<SkippedProfile[]>([]);
   const [profileError, setProfileError] = useState<string | null>(null);
   const [savingProfile, setSavingProfile] = useState(false);
-  const deviceId = state.connected?.device_id ?? "";
+  const deviceId = state.activeDeviceId ?? "";
   // Session ids the catalog already knows about (`listSessions`, C3 §3.2),
   // used only to compute `DeviceFiles`' `isNew` flags. Refreshed on every
   // successful connect (a user action), never by an effect — the standing
@@ -165,8 +168,15 @@ export default function Device() {
 
   const onDisconnect = useCallback((disconnectingDeviceId: string) => {
     disconnectDevice(disconnectingDeviceId)
-      .then(() => dispatch({ type: "DISCONNECTED" }))
+      .then(() => dispatch({ type: "DISCONNECTED", deviceId: disconnectingDeviceId }))
       .catch((err: DeviceIpcError) => dispatch({ type: "FAILED", error: describeIpcError(err) }));
+  }, []);
+
+  // One-tap switch between already-connected devices (decision 86) — a
+  // pure state change, no IPC call, so it needs no loading/error handling
+  // of its own.
+  const onSwitchActive = useCallback((switchToDeviceId: string) => {
+    dispatch({ type: "SWITCH_ACTIVE", deviceId: switchToDeviceId });
   }, []);
 
   const onControl = useCallback(
@@ -253,15 +263,18 @@ export default function Device() {
 
   // 1 Hz `device_status` poll (wave-2 operating brief §4's effects rule):
   // all decision logic lives in the pure `startStatusPoll` driver. Only
-  // mounted while a device is connected (data-only dependency array); the
+  // mounted while a device is active (data-only dependency array); the
   // driver itself pauses while the window is hidden (R78 Q1) and guards
   // against a stale in-flight result after `stop()` with its own generation
-  // counter, so this cleanup never needs to cancel anything.
+  // counter, so this cleanup never needs to cancel anything. Polls only the
+  // active device (decision 86) — the other connected devices' recordings
+  // are unaffected by the app's poll either way, so switching which one is
+  // active is enough to redirect it.
   useEffect(() => {
-    if (!state.connected) return;
-    const stop = startStatusPoll(STATUS_POLL_DEPS, state.connected.device_id, dispatchStatus);
+    if (state.activeDeviceId === null) return;
+    const stop = startStatusPoll(STATUS_POLL_DEPS, state.activeDeviceId, dispatchStatus);
     return stop;
-  }, [state.connected?.device_id]);
+  }, [state.activeDeviceId]);
 
   // Tracks when this session first saw `logging: true` (local display state
   // only — no IPC, lane brief Open question 2). Cleared on disconnect and
@@ -298,12 +311,13 @@ export default function Device() {
           onScan={onScan}
           onConnect={onConnect}
           onDisconnect={onDisconnect}
+          onSwitchActive={onSwitchActive}
           onControl={onControl}
         />
         {statusState.error && <p role="status" className="font-mono text-sm text-fg-dim">{describeIpcError(statusState.error)}</p>}
       </section>
 
-      {state.connected && (
+      {state.activeDeviceId !== null && (
         <section className="device-tab__controls flex flex-col gap-2">
           <SectionHead>WiFi</SectionHead>
           <DeviceControls
@@ -316,7 +330,7 @@ export default function Device() {
         </section>
       )}
 
-      {state.connected && (
+      {state.activeDeviceId !== null && (
         <section className="device-tab__files flex flex-col gap-2">
           <SectionHead>Files</SectionHead>
           <DeviceFiles deviceId={deviceId} knownSessionIds={knownSessionIds} />
@@ -347,7 +361,7 @@ export default function Device() {
           </p>
         )}
         <ChannelsTable sources={listSources(config)} config={config} onConfigChange={onConfigChange} />
-        <PushConfigBar deviceId={deviceId} config={activeProfile?.config ?? null} connected={state.connected !== null} />
+        <PushConfigBar deviceId={deviceId} config={activeProfile?.config ?? null} connected={state.activeDeviceId !== null} />
       </section>
 
       <Collapsible className="device-tab__calibration rounded-[var(--radius-card)] border border-rule bg-surface p-4">

@@ -6,6 +6,20 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 
 ### Added
 
+- **Device tab: a real N-device picker, one-tap active switch (2026-09-08,
+  `runs/2026-09-07/ui/UI-DIRECTION-2.md` decisions 64, 86).** `connection.ts`'s
+  `ConnectionState` now holds `connections: ConnectionInfo[]` and
+  `activeDeviceId` instead of a single `connected` slot — `connect_device`/
+  `disconnect_device`/`device_status`/`device_control` already key on
+  `device_id`, so the Rust side needed no change. `HeroCard`'s new
+  `DevicePicker` dropdown lists every already-connected device as a one-tap
+  radio switch above a "Discovered" section of devices seen this scan with
+  their own Connect action. The status poll and hero/Files/Config sections
+  follow whichever device is active; switching is a pure state change, no
+  IPC. Closes the exact gap the pre-wave-3 hero card's own doc comment
+  named ("the device dropdown/picker sheet... this renders the discovered
+  list inline instead").
+
 - **Notebook errors and staleness (2026-09-08, `runs/2026-09-07/ui/UI-DIRECTION-2.md`
   §D decisions 58-63).** Five changes making the app say what it knows
   instead of an unexplained empty chart frame: (1) a chart's note/error slot

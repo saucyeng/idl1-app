@@ -40,9 +40,9 @@ export function heroView(state: HeroState): HeroView {
 
 /**
  * Derives `HeroState` from the connection + status the page already holds —
- * no new source of truth, no new IPC. `connected` is `index.tsx`'s
- * `connectionState.connected !== null` (a managed BLE connection);
- * `recording` is the last known `DeviceStatus.logging` read as a plain
+ * no new source of truth, no new IPC. `connected` is `index.tsx`'s active
+ * device being present in `connectionState.connections` (a managed BLE
+ * connection); `recording` is the last known `DeviceStatus.logging` read as a plain
  * boolean (the caller decides how to treat `null`/not-yet-polled, since that
  * is a display nuance the hero state machine itself does not need).
  */
