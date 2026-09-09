@@ -252,3 +252,21 @@ assertion, which is exactly what happened on 2026-09-08.
 reached main through that gap: the lane's own `workbook::merge` filter was
 green because the bug lived one layer up in `render_workbook`, and only
 transport's loopback integration test exercised the path.
+
+### 9.1 Retiring an app worktree (R171)
+
+An app lane's `app/node_modules` is a Windows **junction** to the main
+checkout's. `git worktree remove --force` follows it and deletes the
+*target's* contents, emptying the main checkout's `node_modules`. The damage
+shows up later, in an unrelated lane's gate, as:
+
+    This is not the tsc command you are looking for
+
+Unlink first, remove second — always, in this order:
+
+    cmd /c "rmdir node_modules"      # removes the LINK, never the target
+    git worktree remove <path> --force
+
+`rmdir` on a junction is the safe form; `rm -rf` through the link is not.
+Recovery is `npm ci` in `app/`. Before blaming a worktree for a toolchain
+error, check the target survived: `ls app/node_modules | wc -l`.
