@@ -102,4 +102,39 @@ describe("cursorCardRows", () => {
 
     expect(rows).toEqual([{ windowLabel: null, colour: "--chart-1", seriesLabel: "Speed", unit: "km/h", value: null }]);
   });
+
+  it("cursorCardRows — decision 61: a window still in payload.windows but no longer selected — its row is omitted, even though it still has data in range", () => {
+    const payload: CombinedChannelPayload = {
+      length: 2,
+      t: Float64Array.from([1, 1]),
+      v: Float64Array.from([11, 21]),
+      w: Float64Array.from([0, 1]),
+      windows: [
+        { sessionId: "session-a", span: { kind: "lap", lap_number: 2 }, colour: "--chart-1", label: "Lap 2" },
+        { sessionId: "session-a", span: { kind: "lap", lap_number: 3 }, colour: "--chart-2", label: "Lap 3" },
+      ],
+      spans: [
+        { startUs: 0, endUs: 5_000_000 },
+        { startUs: 0, endUs: 5_000_000 },
+      ],
+    };
+    // Lap 3 was just unchecked -- only Lap 2's key remains selected.
+    const selectedWindowKeys = new Set(["session-a::lap:2"]);
+
+    const rows = cursorCardRows(1_000_000, payload, "Fork travel", "mm", 2, selectedWindowKeys);
+
+    expect(rows).toEqual([{ windowLabel: "Lap 2", colour: "--chart-1", seriesLabel: "Fork travel", unit: "mm", value: 11 }]);
+  });
+
+  it("cursorCardRows — no selectedWindowKeys argument — every window in payload.windows still renders (backward compatible)", () => {
+    const rows = cursorCardRows(1_000_000, twoWindowPayload(), "Fork travel", "mm", 2);
+
+    expect(rows).toHaveLength(2);
+  });
+
+  it("cursorCardRows — an empty selectedWindowKeys set (everything just deselected) — no rows at all", () => {
+    const rows = cursorCardRows(1_000_000, twoWindowPayload(), "Fork travel", "mm", 2, new Set());
+
+    expect(rows).toEqual([]);
+  });
 });
