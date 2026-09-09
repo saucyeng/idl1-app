@@ -9,8 +9,9 @@
  */
 import { parse } from "../plotForm/parse";
 import { spectrumKey } from "../plotForm/spectrumKey";
-import type { FftPlotProps, MarkProps, PlotProps, TimePlotProps } from "../plotForm/types";
+import type { FftPlotProps, TimePlotProps } from "../plotForm/types";
 import { exceedsBinCap, fftRequestFor, type FftRequest } from "./fftRequest";
+import { extractChannelCalls, extractSpectrumCalls, type ChannelCallRef, type SpectrumCallRef } from "./jsCellCalls";
 import type { ChannelSummary, SessionDetail } from "../../../../ipc/catalog";
 import type { Span, Window as SelectedWindow } from "../../../../ipc/workbook";
 
@@ -131,39 +132,62 @@ export function findChannel(channels: ChannelSummary[], channelId: string): Chan
   return channels.find((c) => c.channel_id === channelId) ?? null;
 }
 
-/** Builds the `TimeCellBinding` for a parsed `TimePlotProps`, or `null` if
- *  any referenced channel is unresolvable (see {@link bindingFor}'s own
- *  doc comment for the exact rule). Split out so {@link bindingFor} reads
- *  as one dispatch over `props.chart`. */
+/** A minimal, synthetic `TimePlotProps` standing in for `TimeCellBinding.props`
+ *  when `code` didn't round-trip through `plotForm.parse` (ruling R148 part
+ *  2). Every mark it lists is `"lineY"` with no styling -- a placeholder,
+ *  not a claim about how the cell actually draws (a hand-written cell may
+ *  use any Plot mark at all; this module never sees which). Nothing in
+ *  `Notebook/index.tsx` reads a `TimeCellBinding`'s `props` today (it reads
+ *  `channels`/`mountedChannelId`/`initialSpan` only) -- the field exists
+ *  for a future caller (its own doc comment: "anything a caller needs
+ *  beyond the channel list"), and a synthetic value here keeps that field
+ *  populated rather than making it `| null` for the one arm that can't
+ *  produce a real one. */
+function syntheticTimeProps(calls: readonly ChannelCallRef[]): TimePlotProps {
+  return {
+    chart: "time",
+    marks: calls.map((c) => ({ channel: c.channel, mark: "lineY", lap: c.lap })),
+  };
+}
+
+/** Builds the `TimeCellBinding` from the `channel(...)` calls a cell makes
+ *  (ruling R148 part 2), or `null` if any referenced channel is
+ *  unresolvable (see {@link bindingFor}'s own doc comment for the exact
+ *  rule). `displayProps` is `TimeCellBinding.props` verbatim -- the real
+ *  parsed form state when `code` matched it, or {@link syntheticTimeProps}
+ *  otherwise; this function's own channel-resolution logic never consults
+ *  it. Split out so {@link bindingFor} reads as one dispatch over which
+ *  calls a cell makes. */
 function bindingForTime(
-  props: TimePlotProps,
+  calls: readonly ChannelCallRef[],
+  displayProps: TimePlotProps,
   sessionDetail: SessionDetail,
   sessionSpanUs: number,
   definitionNames: ReadonlySet<string>
 ): TimeCellBinding | null {
   const channels: JsCellBindingChannel[] = [];
   const seen = new Set<string>();
-  for (const mark of props.marks as MarkProps[]) {
-    if (seen.has(mark.channel)) continue;
-    seen.add(mark.channel);
+  for (const call of calls) {
+    if (seen.has(call.channel)) continue;
+    seen.add(call.channel);
 
-    const channel = findChannel(sessionDetail.channels, mark.channel);
+    const channel = findChannel(sessionDetail.channels, call.channel);
     if (channel !== null) {
       channels.push({
         channelId: channel.channel_id,
         source: "session",
         sampleRateHz: channel.nominal_rate_hz,
-        lap: mark.lap ?? null,
+        lap: call.lap,
       });
       continue;
     }
 
-    if (definitionNames.has(mark.channel)) {
+    if (definitionNames.has(call.channel)) {
       channels.push({
-        channelId: mark.channel,
+        channelId: call.channel,
         source: "definition",
         sampleRateHz: 0,
-        lap: mark.lap ?? null,
+        lap: call.lap,
       });
       continue;
     }
@@ -175,7 +199,7 @@ function bindingForTime(
 
   return {
     kind: "time",
-    props,
+    props: displayProps,
     channels,
     initialSpan: { startUs: 0, endUs: sessionSpanUs },
     mountedChannelId,
@@ -213,12 +237,17 @@ function bindingForTime(
  *   before publishing, exactly as it already must for a time cell's
  *   channels (R127 item 1).
  */
-function bindingForFft(props: FftPlotProps, sessionDetail: SessionDetail, window: SelectedWindow | null): FftCellBinding | null {
-  const channel = findChannel(sessionDetail.channels, props.mark.channel);
+function bindingForFft(
+  call: SpectrumCallRef,
+  displayProps: FftPlotProps,
+  sessionDetail: SessionDetail,
+  window: SelectedWindow | null
+): FftCellBinding | null {
+  const channel = findChannel(sessionDetail.channels, call.channel);
   if (channel === null) return null;
 
   const sampleCount = channel.sample_count;
-  const { fft } = props.mark;
+  const fft = call.fft;
   const request = fftRequestFor(
     channel.channel_id,
     sampleCount,
@@ -241,12 +270,38 @@ function bindingForFft(props: FftPlotProps, sessionDetail: SessionDetail, window
     unrequestable = "This spectrum has more bins than the chart can draw — reduce the window size.";
   }
 
-  return { kind: "fft", props, channelId: channel.channel_id, sampleCount, request, hostVarName, unrequestable };
+  return { kind: "fft", props: displayProps, channelId: channel.channel_id, sampleCount, request, hostVarName, unrequestable };
+}
+
+/** A minimal, synthetic `FftPlotProps` standing in for `FftCellBinding.props`
+ *  when `code` didn't round-trip through `plotForm.parse` -- same
+ *  reasoning as {@link syntheticTimeProps}. `x.type` must be present on
+ *  the real type ({@link FftXAxisProps}, C2 §5.3), so this always says
+ *  `"linear"`; nothing reads it for a cell on this path (index.tsx reads
+ *  only `channelId`/`hostVarName`/`request`/`unrequestable`). */
+function syntheticFftProps(call: SpectrumCallRef): FftPlotProps {
+  return {
+    chart: "fft",
+    mark: { channel: call.channel, mark: "lineY", fft: call.fft },
+    x: { type: "linear" },
+  };
 }
 
 /**
- * `plotForm.parse`s `code`; returns `null` when it doesn't (custom code --
- * plain mount), when a time cell references a channel that is not in
+ * Extracts `code`'s `channel(...)`/`spectrum(...)` calls (`model/jsCellCalls.ts`,
+ * ruling R148 part 2) and binds against them -- **not** by requiring `code`
+ * to round-trip through `plotForm.parse` as one recognised form. A cell
+ * with a `spectrum(...)` call is an FFT cell (`fetch_fft` takes exactly one
+ * channel, C3 §3.6, so only the first such call is used); otherwise a cell
+ * with at least one `channel(...)` call is a time cell; a cell with
+ * neither is custom code with nothing to bind (`null`, plain mount, same
+ * as always). `TimeCellBinding.props`/`FftCellBinding.props` carry the real
+ * parsed form state when `code` happens to match it, and a synthetic
+ * placeholder ({@link syntheticTimeProps}/{@link syntheticFftProps})
+ * otherwise -- `parse` still runs, but only to populate that display field,
+ * never to gate whether binding happens at all.
+ *
+ * Returns `null` when a time cell references a channel that is not in
  * `sessionDetail.channels` and not a name in `definitionNames` either (an
  * unresolvable channel is never fetched -- a plain mount with a visible
  * note instead, per this task's dispatch), when an FFT cell's one channel
@@ -294,12 +349,20 @@ export function bindingFor(
 ): JsCellBinding | null {
   if (sessionDetail === null || sessionSpanUs === null) return null;
 
-  const props: PlotProps | null = parse(cell.code);
-  if (props === null) return null;
+  const parsedProps = parse(cell.code);
 
-  return props.chart === "fft"
-    ? bindingForFft(props, sessionDetail, window)
-    : bindingForTime(props, sessionDetail, sessionSpanUs, definitionNames);
+  const spectrumCalls = extractSpectrumCalls(cell.code);
+  if (spectrumCalls.length > 0) {
+    const call = spectrumCalls[0];
+    const displayProps = parsedProps !== null && parsedProps.chart === "fft" ? parsedProps : syntheticFftProps(call);
+    return bindingForFft(call, displayProps, sessionDetail, window);
+  }
+
+  const channelCalls = extractChannelCalls(cell.code);
+  if (channelCalls.length === 0) return null;
+
+  const displayProps = parsedProps !== null && parsedProps.chart === "time" ? parsedProps : syntheticTimeProps(channelCalls);
+  return bindingForTime(channelCalls, displayProps, sessionDetail, sessionSpanUs, definitionNames);
 }
 
 /** A stable string identity for one `Span` (mirrors `state/selection.ts`'s
@@ -367,34 +430,39 @@ export function bindingIdentity(binding: JsCellBinding): string {
 }
 
 /**
- * Names the first channel `code` references that is not present in
- * `sessionDetail.channels`, or `null` when `code` is custom (`parse`
- * returns `null`) or every referenced channel resolves. Split out from
- * {@link bindingFor} so a caller whose binding came back `null` can tell
- * "custom code, plain mount as always" apart from "form-generated, but
- * naming a channel this session doesn't have" -- the two plain-mount cases
- * this task's dispatch requires a visibly different note for.
+ * Names the first channel `code`'s `channel(...)`/`spectrum(...)` calls
+ * reference that is not present in `sessionDetail.channels`, or `null`
+ * when `code` makes no such calls at all (custom code) or every referenced
+ * channel resolves. Split out from {@link bindingFor} so a caller whose
+ * binding came back `null` can tell "custom code, plain mount as always"
+ * apart from "names a channel this session doesn't have" -- the two
+ * plain-mount cases this task's dispatch requires a visibly different note
+ * for. Uses the same extraction as `bindingFor` (ruling R148 part 2), not
+ * `plotForm.parse`, so this distinction is available for a hand-written
+ * cell exactly as it is for a form-generated one.
  *
- * Covers both chart types: a time cell's marks (a name in `definitionNames`
- * is never reported unresolved, L6 Task 18 -- it resolves through
- * `bindingFor`'s `"definition"` path instead; the caller is responsible for
- * the further distinction of a definition with no recorded axis, see
- * `bindingFor`'s own doc comment on `definitionNames`) and an FFT cell's
- * one spectrum channel (never resolved against `definitionNames` -- an FFT
+ * Covers both chart types, with the same dispatch rule as `bindingFor`: a
+ * `spectrum(...)` call makes this an FFT cell (only the first such call is
+ * consulted, matching `bindingFor`); otherwise every `channel(...)` call is
+ * checked. A name in `definitionNames` is never reported unresolved for a
+ * time cell (L6 Task 18 -- it resolves through `bindingFor`'s
+ * `"definition"` path instead; the caller is responsible for the further
+ * distinction of a definition with no recorded axis, see `bindingFor`'s own
+ * doc comment on `definitionNames`) but always is for an FFT cell's one
+ * spectrum channel (never resolved against `definitionNames` -- an FFT
  * cell's channel is always a session channel, C3 §3.6). Pure, same
  * guarantees as `bindingFor`.
  */
 export function unresolvedChannelId(code: string, sessionDetail: SessionDetail, definitionNames: ReadonlySet<string>): string | null {
-  const props = parse(code);
-  if (props === null) return null;
-
-  if (props.chart === "fft") {
-    return findChannel(sessionDetail.channels, props.mark.channel) === null ? props.mark.channel : null;
+  const spectrumCalls = extractSpectrumCalls(code);
+  if (spectrumCalls.length > 0) {
+    const { channel } = spectrumCalls[0];
+    return findChannel(sessionDetail.channels, channel) === null ? channel : null;
   }
 
-  for (const mark of props.marks as MarkProps[]) {
-    if (findChannel(sessionDetail.channels, mark.channel) === null && !definitionNames.has(mark.channel)) {
-      return mark.channel;
+  for (const call of extractChannelCalls(code)) {
+    if (findChannel(sessionDetail.channels, call.channel) === null && !definitionNames.has(call.channel)) {
+      return call.channel;
     }
   }
   return null;

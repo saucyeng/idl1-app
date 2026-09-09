@@ -6,6 +6,18 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 
 ### Fixed
 
+- **A `js` cell binds by extracting its `channel(...)`/`spectrum(...)` calls,
+  not by requiring the whole cell to match `plotForm.parse`'s closed
+  `Plot.plot({...})` grammar (2026-09-08, ruling R148 part 2).** A `height:`
+  key, an `opacity:` on a mark, a `stroke: "var(--chart-2)"`, or any
+  statement before the call previously made `bindingFor` return `null` —
+  the host never fetched or published that channel, so a hand-written cell
+  rendered its axes and nothing else, with no explanation. New
+  `model/jsCellCalls.ts` locates each `channel(...)`/`spectrum(...)` call
+  site with a string/comment-aware character scan (`mathExpr.ts`'s
+  precedent), then re-tokenizes each call's own span with `parse.ts`'s
+  existing tokenizer/readers — no second JS parser. `parse` still drives the
+  Properties form unchanged.
 - **`graphLayout.ts`'s `findGraphBlockLines` locates a top-level `graph:` key
   by prefix match (`/^graph:/`), not exact-line equality (2026-09-08,
   w32-maths review fix).** A hand-edited flow-style or trailing-content

@@ -279,6 +279,125 @@ describe("unresolvedChannelId", () => {
 });
 
 // ---------------------------------------------------------------------------
+// Hand-written cells that don't round-trip through `plotForm.parse`
+// (ruling R148 part 2, runs/2026-09-03/decisions.md): binding must work
+// from the `channel(...)`/`spectrum(...)` calls alone.
+// ---------------------------------------------------------------------------
+
+describe("bindingFor — hand-written code (R148 part 2)", () => {
+  it("bindingFor — a Plot.plot call with an extra key — still binds (the exact R148 failure)", () => {
+    const detail = sessionDetail([channel()]);
+    const code = [
+      "Plot.plot({",
+      "  height: 300,",
+      "  marks: [",
+      '    Plot.lineY(channel("fork_velocity"), { x: "t", y: "v" })',
+      "  ]",
+      "})",
+    ].join("\n");
+
+    const binding = bindingFor({ id: "cell-a", code }, detail, 60_000_000, noDefinitions);
+
+    expect(asTime(binding).channels).toEqual([{ channelId: "fork_velocity", source: "session", sampleRateHz: 200, lap: null }]);
+  });
+
+  it("bindingFor — a statement before the plot call — still binds", () => {
+    const detail = sessionDetail([channel()]);
+    const code = ['const data = channel("fork_velocity");', "Plot.plot({ marks: [Plot.lineY(data, { x: \"t\", y: \"v\" })] })"].join("\n");
+
+    const binding = bindingFor({ id: "cell-a", code }, detail, 60_000_000, noDefinitions);
+
+    expect(asTime(binding).channels).toEqual([{ channelId: "fork_velocity", source: "session", sampleRateHz: 200, lap: null }]);
+  });
+
+  it("bindingFor — a channel(...) call with a { lap } option, entirely outside a recognised form — binds with that lap", () => {
+    const detail = sessionDetail([channel()]);
+    const code = 'const data = channel("fork_velocity", { lap: 3 });\nrenderSomethingCustom(data);';
+
+    const binding = bindingFor({ id: "cell-a", code }, detail, 60_000_000, noDefinitions);
+
+    expect(asTime(binding).channels).toEqual([{ channelId: "fork_velocity", source: "session", sampleRateHz: 200, lap: 3 }]);
+  });
+
+  it("bindingFor — a channel(...) call named inside a comment — is not extracted", () => {
+    const detail = sessionDetail([channel()]);
+    const code = ['// channel("fork_velocity")', "Plot.plot({ marks: [] })"].join("\n");
+
+    const binding = bindingFor({ id: "cell-a", code }, detail, 60_000_000, noDefinitions);
+
+    expect(binding).toBeNull();
+  });
+
+  it("bindingFor — a channel(...) call named inside a string literal — is not extracted", () => {
+    const detail = sessionDetail([channel()]);
+    const code = 'const label = \'channel("fork_velocity")\';\nPlot.plot({ marks: [] })';
+
+    const binding = bindingFor({ id: "cell-a", code }, detail, 60_000_000, noDefinitions);
+
+    expect(binding).toBeNull();
+  });
+
+  it("bindingFor — a .channel(...) property access — is not treated as the channel_call grammar", () => {
+    const detail = sessionDetail([channel()]);
+    const code = 'someOtherObject.channel("fork_velocity");';
+
+    const binding = bindingFor({ id: "cell-a", code }, detail, 60_000_000, noDefinitions);
+
+    expect(binding).toBeNull();
+  });
+
+  it("bindingFor — two hand-written channel(...) calls for distinct channels — both bind, in source order", () => {
+    const detail = sessionDetail([channel(), channel({ channel_id: "rear_wheel_speed" })]);
+    const code = [
+      'const a = channel("fork_velocity");',
+      'const b = channel("rear_wheel_speed");',
+      "renderTwoSeries(a, b);",
+    ].join("\n");
+
+    const binding = bindingFor({ id: "cell-a", code }, detail, 60_000_000, noDefinitions);
+
+    expect(asTime(binding).channels).toEqual([
+      { channelId: "fork_velocity", source: "session", sampleRateHz: 200, lap: null },
+      { channelId: "rear_wheel_speed", source: "session", sampleRateHz: 200, lap: null },
+    ]);
+  });
+
+  it("bindingFor — a hand-written spectrum(...) call — binds as an FFT cell", () => {
+    const detail = sessionDetail([channel()]);
+    const code = [
+      "const s = spectrum(\"fork_velocity\", {",
+      '  windowSize: 1024, hopSize: 512, window: "hann", detrend: "mean", scaling: "magnitude", averaging: "mean"',
+      "});",
+      "renderMyOwnSpectrumPlot(s);",
+    ].join("\n");
+
+    const binding = bindingFor({ id: "cell-a", code }, detail, 60_000_000, noDefinitions);
+
+    expect(asFft(binding).channelId).toBe("fork_velocity");
+  });
+
+  it("bindingFor — form-recognised code behaves exactly as before this change", () => {
+    const detail = sessionDetail([channel()]);
+
+    const binding = bindingFor({ id: "cell-a", code: oneMarkCode }, detail, 60_000_000, noDefinitions);
+
+    expect(asTime(binding).props).toEqual({
+      chart: "time",
+      marks: [{ channel: "fork_velocity", mark: "lineY", lap: null }],
+    });
+  });
+});
+
+describe("unresolvedChannelId — hand-written code (R148 part 2)", () => {
+  it("unresolvedChannelId — a hand-written channel(...) call naming an unresolvable channel — names it", () => {
+    const detail = sessionDetail([channel({ channel_id: "unrelated_channel" })]);
+    const code = 'const data = channel("fork_velocity");\nrenderSomethingCustom(data);';
+
+    expect(unresolvedChannelId(code, detail, noDefinitions)).toBe("fork_velocity");
+  });
+});
+
+// ---------------------------------------------------------------------------
 // FFT arm (L6 Task 20, C2 §5.3).
 // ---------------------------------------------------------------------------
 
