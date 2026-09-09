@@ -1,6 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 
-import type { Window } from "./workbook";
+import type { UnitLabel, Window } from "./workbook";
 
 /** Decoded raster (C3 §3.6): row-major top-down RGBA8 pixel data. */
 export interface DecodedRaster {
@@ -49,7 +49,13 @@ export interface SpectrogramParams {
   hop_size: number;
   window: "rectangular" | "hann" | "hamming";
   detrend: "none" | "mean" | "linear";
-  scaling: "magnitude" | "density";
+  /** The maths language's three scaling names, which the wire adopted in
+   *  ruling R167 so a chart cannot offer a scaling no definition can spell.
+   *  `"magnitude"` is the retired spelling of `"raw_magnitude"`: the engine
+   *  still accepts it (a serde alias, identical computation) and stored
+   *  workbooks carry it in their plot props, so it stays in the union and
+   *  out of the pickers. Anything newly written spells `"raw_magnitude"`. */
+  scaling: "density" | "spectrum" | "raw_magnitude" | "magnitude";
 }
 
 /** `fetch_raster`/`fetch_raster_meta`'s `params` when `kind === "histogram2d"`
@@ -87,6 +93,11 @@ export interface RasterMeta {
   y_label: string;
   scale: { vmin: number; vmax: number; kind: "linear" };
   transparent_zero: boolean;
+  /** The unit of a spectral raster's magnitude axis, derived from the
+   *  channel's own unit and `scaling` (C2 §3.3.1's `SelectByLiteral`
+   *  rule). `null` when the raster has no spectral magnitude, i.e.
+   *  `kind: "histogram2d"`. */
+  magnitude_unit: UnitLabel | null;
 }
 
 /** Fetches one raster's axis domains and colour scale, without its pixel

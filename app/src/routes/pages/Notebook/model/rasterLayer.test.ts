@@ -77,6 +77,7 @@ describe("alignRasterToAxes", () => {
       y_label: "value",
       scale: { vmin: 0, vmax: 1, kind: "linear" },
       transparent_zero: false,
+      magnitude_unit: null,
     };
     const viewport: Viewport = { startUs: 10_000_000, endUs: 20_000_000, pixelWidth: 800 };
 
@@ -107,6 +108,7 @@ describe("alignRasterToAxes", () => {
       y_label: "value",
       scale: { vmin: 0, vmax: 1, kind: "linear" },
       transparent_zero: false,
+      magnitude_unit: null,
     };
     const viewport: Viewport = { startUs: 10_000_000, endUs: 20_000_000, pixelWidth: 800 };
 
