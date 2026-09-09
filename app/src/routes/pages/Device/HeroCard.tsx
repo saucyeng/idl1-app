@@ -1,11 +1,21 @@
-import { BatteryMedium, Cable, HardDrive, HeartPulse, Radio, Satellite, Wifi } from "lucide-react";
+import { BatteryMedium, Cable, ChevronDown, HardDrive, HeartPulse, Radio, Satellite, Wifi } from "lucide-react";
 
 import { NoteBlock } from "../../../components/brand/NoteBlock";
 import { PulsingDot } from "../../../components/brand/PulsingDot";
 import { StatusIcon } from "../../../components/brand/StatusIcon";
 import { Button } from "../../../components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "../../../components/ui/dropdown-menu";
 import { formatDurationMs } from "../Data/format";
-import type { DeviceControlCommand, DeviceDiscovered, DeviceStatus } from "../../../ipc/device";
+import type { DeviceControlCommand, DeviceStatus } from "../../../ipc/device";
 import type { ConnectionState } from "./connection";
 import { heroStateFrom, heroView } from "./hero";
 
@@ -17,7 +27,7 @@ export interface HeroCardProps {
    *  returns for this connection. */
   status: DeviceStatus | null;
   /** True once `statusPoll.ts`'s `isLinkLost` has fired (R78 Q2): the poll
-   *  keeps running and `connectionState.connected` is unchanged either way
+   *  keeps running and `connectionState.connections` is unchanged either way
    *  — this is purely a "something might be wrong" note, not a state
    *  transition. */
   linkLost: boolean;
@@ -37,6 +47,9 @@ export interface HeroCardProps {
   onConnect: (deviceId: string) => void;
   /** Disconnects the current managed connection. */
   onDisconnect: (deviceId: string) => void;
+  /** Makes an already-connected device the active one (decision 86) — a
+   *  pure state change, no IPC, one tap. */
+  onSwitchActive: (deviceId: string) => void;
   /** Sends `start_recording`/`stop_recording` (`deviceControl`). */
   onControl: (command: DeviceControlCommand) => void;
 }
@@ -121,35 +134,101 @@ function modeText(status: DeviceStatus | null): string {
   return "Idle";
 }
 
-/** One discovered device row (44 px hit target) with its own Connect
- *  button, sorted by signal strength (`connection.ts`'s reducer). */
-function DiscoveredRow({ device, onConnect, disabled }: { device: DeviceDiscovered; onConnect: () => void; disabled: boolean }) {
+/**
+ * A real device picker (decision 64/86, wave-3 lane D task 1): the
+ * dropdown trigger names the active device (or "Not connected"); its
+ * content lists every already-connected device as a one-tap radio switch
+ * (decision 86 — no IPC, `onSwitchActive` alone) above a "Discovered"
+ * section of devices seen this scan window that aren't connected yet, each
+ * with its own Connect action, plus a "Scan for devices" row. Replaces the
+ * pre-wave-3 inline discovered-list-while-disconnected rendering, which
+ * only ever supported one device at a time.
+ */
+function DevicePicker({
+  connectionState,
+  busy,
+  onScan,
+  onConnect,
+  onSwitchActive,
+}: {
+  connectionState: ConnectionState;
+  busy: boolean;
+  onScan: () => void;
+  onConnect: (deviceId: string) => void;
+  onSwitchActive: (deviceId: string) => void;
+}) {
+  const { connections, discovered, activeDeviceId, phase } = connectionState;
+  const active = connections.find((c) => c.device_id === activeDeviceId) ?? null;
+  const connectedIds = new Set(connections.map((c) => c.device_id));
+  const notConnected = discovered.filter((d) => !connectedIds.has(d.device_id));
+  const triggerLabel = active ? active.device_id : "Not connected";
+
   return (
-    <li className="flex h-11 items-center justify-between gap-2 border-b border-rule px-1 font-mono text-sm text-fg last:border-b-0">
-      <span className="truncate">
-        {device.name || device.device_id} <span className="text-fg-dim">({device.rssi_dbm} dBm)</span>
-      </span>
-      <Button type="button" emphasis="info" size="sm" className="h-11 shrink-0" onClick={onConnect} disabled={disabled}>
-        Connect
-      </Button>
-    </li>
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button type="button" emphasis="normal" size="sm" className="h-11 min-w-0 gap-1 font-mono text-xs">
+          <span className="truncate">{triggerLabel}</span>
+          <ChevronDown className="size-3.5 shrink-0" />
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="start">
+        {connections.length > 0 && (
+          <>
+            <DropdownMenuLabel>Connected</DropdownMenuLabel>
+            <DropdownMenuRadioGroup value={activeDeviceId ?? undefined} onValueChange={onSwitchActive}>
+              {connections.map((c) => (
+                <DropdownMenuRadioItem key={c.device_id} value={c.device_id}>
+                  {c.device_id}
+                </DropdownMenuRadioItem>
+              ))}
+            </DropdownMenuRadioGroup>
+            <DropdownMenuSeparator />
+          </>
+        )}
+        <DropdownMenuLabel>Discovered</DropdownMenuLabel>
+        {notConnected.length === 0 && (
+          <p className="px-2 py-1.5 font-mono text-xs text-fg-dim">
+            {phase === "scanning" ? "Scanning…" : "No other devices found yet."}
+          </p>
+        )}
+        {notConnected.map((device) => (
+          <DropdownMenuItem
+            key={device.device_id}
+            disabled={busy}
+            onSelect={(e) => {
+              e.preventDefault(); // keep the menu open — connecting can take a moment
+              onConnect(device.device_id);
+            }}
+          >
+            {device.name || device.device_id} ({device.rssi_dbm} dBm)
+          </DropdownMenuItem>
+        ))}
+        <DropdownMenuSeparator />
+        <DropdownMenuItem
+          disabled={phase === "scanning"}
+          onSelect={(e) => {
+            e.preventDefault();
+            onScan();
+          }}
+        >
+          {phase === "scanning" ? "Scanning…" : "Scan for devices"}
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }
 
 /**
  * The Device tab's hero card (plan Task 9, SPEC §23.10, UI-DIRECTION
- * Device, wired live by L7b Task 10, R77.4): a full-width, ≥ 56 px CTA
- * driven by {@link heroView}'s three-state machine (Connect / Start
- * recording / Stop with a live timer), a device-discovery list while
- * disconnected, a colour-owned SD/GPS/IMU/HR/battery/firmware/WiFi status
- * strip, and the SPEC §23.9 mode line. A fabricated reading is worse than a
- * blank one (SPEC §23.10) — every field still goes through {@link
- * fieldText}'s three-state rule; this restyle changes none of that logic.
- *
- * What idl0's hero card also did and this one does not (still gaps, see the
- * commit's CHANGELOG bullet and the report's refinement list): the device
- * dropdown/picker sheet (this renders the discovered list inline instead)
- * and auto-connect ("headphones" model).
+ * Device, wired live by L7b Task 10, R77.4; N-device picker and auto-connect
+ * by wave-3 lane D tasks 1–2): a full-width, ≥ 56 px CTA driven by {@link
+ * heroView}'s three-state machine (Connect / Start recording / Stop with a
+ * live timer), a real device picker ({@link DevicePicker}, decisions 64/86)
+ * that connects to any discovered idl0 and switches the active one in one
+ * tap, a colour-owned SD/GPS/IMU/HR/battery/firmware/WiFi status strip, and
+ * the SPEC §23.9 mode line. A fabricated reading is worse than a blank one
+ * (SPEC §23.10) — every field still goes through {@link fieldText}'s
+ * three-state rule; the picker changes none of that logic.
  */
 export default function HeroCard({
   connectionState,
@@ -160,10 +239,11 @@ export default function HeroCard({
   onScan,
   onConnect,
   onDisconnect,
+  onSwitchActive,
   onControl,
 }: HeroCardProps) {
-  const connected = connectionState.connected;
-  const state = heroStateFrom(connected !== null, status?.logging === true);
+  const active = connectionState.connections.find((c) => c.device_id === connectionState.activeDeviceId) ?? null;
+  const state = heroStateFrom(active !== null, status?.logging === true);
   const view = heroView(state);
   const busy = pending !== null || connectionState.phase === "connecting";
 
@@ -200,21 +280,13 @@ export default function HeroCard({
       </Button>
 
       <div className="flex items-center justify-between gap-2 font-mono text-xs text-fg-dim">
-        <span>{connected ? `Connected — ${connected.device_id}` : "Not connected"}</span>
-        {connected && (
-          <Button type="button" emphasis="normal" size="sm" className="h-11" onClick={() => onDisconnect(connected.device_id)}>
+        <DevicePicker connectionState={connectionState} busy={busy} onScan={onScan} onConnect={onConnect} onSwitchActive={onSwitchActive} />
+        {active && (
+          <Button type="button" emphasis="normal" size="sm" className="h-11" onClick={() => onDisconnect(active.device_id)}>
             Disconnect
           </Button>
         )}
       </div>
-
-      {state === "disconnected" && connectionState.discovered.length > 0 && (
-        <ul className="rounded-[var(--radius)] border border-rule">
-          {connectionState.discovered.map((device) => (
-            <DiscoveredRow key={device.device_id} device={device} onConnect={() => onConnect(device.device_id)} disabled={busy} />
-          ))}
-        </ul>
-      )}
 
       {connectionState.phase === "failed" && connectionState.error && (
         <NoteBlock className="border-brand-accent text-brand-accent" role="alert">

@@ -4,7 +4,71 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 
 ## [Unreleased]
 
+### Skipped (recorded rather than guessed)
+
+- **Device tab: the live status pane (decisions 66, 87) — not built.**
+  Per-IMU OK, GPS satellite count, and device-reported recording duration
+  all require `DeviceStatus` fields (`imu0`/`imu1`/`imu2`, `gps_satellites`,
+  `logging_elapsed`) that SPEC §7.3 documents as additive lines but that
+  neither the C3 contract (`docs/superpowers/specs/2026-09-03-idl1-c3-ipc-surface.md`
+  §`device_status`) nor `ipc/device.ts`'s `DeviceStatus` interface expose
+  yet — a Rust/`idl-rs-tauri` change this TS-only lane may not make. Rather
+  than build a pane with two of its three fields permanently "unavailable"
+  (or guess a wire field, which CLAUDE.md §1 and this dispatch both forbid),
+  this task is left undone until a Rust lane threads those fields through.
+
+### Removed
+
+- **Device tab: the Calibration placeholder panel (2026-09-08,
+  `runs/2026-09-07/ui/UI-DIRECTION-2.md` decision 67, ruling R116).** Not
+  ported — R116: a single static-hold routine is mathematically
+  underdetermined (it cannot separate bias from orientation, and gravity
+  cannot observe yaw), so each IMU would land on a different arbitrary
+  heading. A calibration routine is designed from scratch later; a
+  placeholder control implying a working feature is worse than none.
+
 ### Added
+
+- **Device tab: push config reads the device's mode first, refuses before
+  sending (2026-09-08, `runs/2026-09-07/ui/UI-DIRECTION-2.md` decision
+  69).** New `push.ts` `checkPushMode(status)`: idle mode (SPEC §23.6)
+  means both `logging` and `wifi_on` read back confirmed `false` — either
+  being unreported (`null`) is "don't know yet," never assumed idle.
+  `PushConfigBar` gates **Push config** on it and shows the specific reason
+  (recording / WiFi mode / mode unknown) in place of letting the device's
+  own after-the-fact rejection be the first the rider hears of it. Decision
+  68 (HRM search filtered to the heart-rate service by default) is **not
+  implemented**: `bleScan`'s `DeviceDiscovered` carries no service-UUID
+  data at all (`ipc/device.ts`) — there is nothing to filter on
+  client-side without a new IPC field, a contract/Rust change out of scope
+  for this TS-only lane; `HrmForm.tsx`'s own doc comment already names
+  this as a parity gap.
+
+- **Device tab: auto-connect to the last-used device on launch (2026-09-08,
+  `runs/2026-09-07/ui/UI-DIRECTION-2.md` decision 64).** New
+  `Device/lastDevice.ts`: a `localStorage`-backed seam (no `AppSettings`
+  field exists yet for this device preference; a Rust change is out of
+  scope for this TS-only lane) remembering the last connected device id
+  across restarts, plus the pure `shouldAutoConnect` decision the mount
+  effect calls. Never dispatches `CONNECT_START`, so the hero CTA and
+  device picker stay interactive throughout, and a failed attempt (device
+  off, out of range) is silently ignored rather than shown as a "failed"
+  banner — a routine "not on yet" case at launch isn't the kind of failure
+  a deliberate manual connect reports.
+
+- **Device tab: a real N-device picker, one-tap active switch (2026-09-08,
+  `runs/2026-09-07/ui/UI-DIRECTION-2.md` decisions 64, 86).** `connection.ts`'s
+  `ConnectionState` now holds `connections: ConnectionInfo[]` and
+  `activeDeviceId` instead of a single `connected` slot — `connect_device`/
+  `disconnect_device`/`device_status`/`device_control` already key on
+  `device_id`, so the Rust side needed no change. `HeroCard`'s new
+  `DevicePicker` dropdown lists every already-connected device as a one-tap
+  radio switch above a "Discovered" section of devices seen this scan with
+  their own Connect action. The status poll and hero/Files/Config sections
+  follow whichever device is active; switching is a pure state change, no
+  IPC. Closes the exact gap the pre-wave-3 hero card's own doc comment
+  named ("the device dropdown/picker sheet... this renders the discovered
+  list inline instead").
 
 - **Notebook errors and staleness (2026-09-08, `runs/2026-09-07/ui/UI-DIRECTION-2.md`
   §D decisions 58-63).** Five changes making the app say what it knows
