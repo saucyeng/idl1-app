@@ -4,19 +4,6 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 
 ## [Unreleased]
 
-### Skipped (recorded rather than guessed)
-
-- **Device tab: the live status pane (decisions 66, 87) — not built.**
-  Per-IMU OK, GPS satellite count, and device-reported recording duration
-  all require `DeviceStatus` fields (`imu0`/`imu1`/`imu2`, `gps_satellites`,
-  `logging_elapsed`) that SPEC §7.3 documents as additive lines but that
-  neither the C3 contract (`docs/superpowers/specs/2026-09-03-idl1-c3-ipc-surface.md`
-  §`device_status`) nor `ipc/device.ts`'s `DeviceStatus` interface expose
-  yet — a Rust/`idl-rs-tauri` change this TS-only lane may not make. Rather
-  than build a pane with two of its three fields permanently "unavailable"
-  (or guess a wire field, which CLAUDE.md §1 and this dispatch both forbid),
-  this task is left undone until a Rust lane threads those fields through.
-
 ### Removed
 
 - **Device tab: the Calibration placeholder panel (2026-09-08,
@@ -88,6 +75,39 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
   keeps its prior condition/props, only its position changed.
 
 ### Added
+
+- **Device tab: the recording-only live status pane (2026-09-09, decisions
+  66/87, ruling R113, unblocked by the Rust lane's C3 amendment/R157 item
+  2).** New `Device/liveStatus.ts` (pure, vitest-covered): while recording,
+  `HeroCard` now shows **per-IMU OK, GPS satellite count, and duration —
+  nothing more** ("keep it lightweight on the ESP32"), replacing the
+  SD/GPS/IMU/HR/battery/WiFi/firmware strip shown at other times. Duration
+  prefers the device-reported `DeviceStatus.logging_elapsed_s`
+  (`recordingDuration`) and falls back to the existing client-observed
+  clock, rendered dimmed, exactly when firmware hasn't sent the line yet.
+  `gps_sats: 0` ("searching") renders as `"0"`, never collapsed into the
+  same "unavailable" text as a genuinely absent `GPSSats` line — SPEC
+  §7.3's absent-vs-zero rule, tested explicitly since every one of these
+  fields is legitimately absent on firmware today. `ipc/device.ts`'s
+  `DeviceStatus`/`DeviceDiscovered` gained the mirror fields
+  (`imu0`/`imu1`/`imu2`, `gps_sats`, `gps_fix_quality`, `gps_hdop_x100`,
+  `logging_elapsed_s`, `battery_raw`, `sd_free_mib`, `service_uuids`) that
+  `commands/device.rs` already carries but the TS side hadn't picked up.
+
+- **Device tab: HRM search filters to the heart-rate service by default
+  (2026-09-09, decision 68, ruling R157 item 3) — supersedes the "not
+  implemented" note on the 2026-09-08 push-config entry below.** New
+  `Device/forms/hrmFilter.ts` (pure, vitest-covered): `HrmForm`'s "Search
+  nearby" list now defaults to devices advertising the standard heart-rate
+  service (`0000180d-…`), with a "Show all devices" toggle. A device that
+  advertised **no** service UUIDs at all is kept even while filtered — an
+  empty `DeviceDiscovered.service_uuids` means the scan record didn't carry
+  a service list, not that the device has none, and hiding it risked
+  making a real strap invisible; only a device that positively advertised
+  a *different* non-empty set is excluded. When the filter hides every
+  discovered device, the form says so by count ("N devices found, none
+  look like heart-rate straps") rather than reading as "nothing nearby"
+  (R153).
 
 - **Notebook: the maths graph's source palette (2026-09-09, ruling R160).**
   A collapsible rail on the graph canvas, closed by default, listing the

@@ -28,6 +28,15 @@ function fakeStatus(sd: "ok" | "full"): DeviceStatus {
     ota_pending_verify: false,
     hr: null,
     hr_battery_pct: null,
+    logging_elapsed_s: null,
+    battery_raw: null,
+    sd_free_mib: null,
+    gps_fix_quality: null,
+    gps_sats: null,
+    gps_hdop_x100: null,
+    imu0: null,
+    imu1: null,
+    imu2: null,
   };
 }
 

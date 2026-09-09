@@ -7,6 +7,7 @@ import type { DeviceConfig } from "../config/model";
 import { BLE_ADDRESS_RE, validateConfig } from "../config/validate";
 import type { ValidationIssue } from "../config/validate";
 import { describeIpcError } from "../errors";
+import { filterHrmCandidates, hiddenByFilterCount } from "./hrmFilter";
 
 /** Props for {@link HrmForm}. */
 export interface HrmFormProps {
@@ -47,20 +48,26 @@ function IssueList({ issues }: { issues: ValidationIssue[] }) {
  * The Heart Rate Monitor source form (SPEC §23.3.6): the enable flag, a
  * "Search nearby" BLE scan the user picks a strap from, manual
  * uppercase-hex address entry, an informational device-name field, and
- * Forget. `bleScan`'s `DeviceDiscovered` shape carries no service-UUID
- * filter (C3 §3.8), so this form cannot narrow the scan to heart-rate
- * straps specifically — it lists every discovered BLE device and leaves
- * the pick to the user (Parity gap, `runs/2026-09-05/lanes/l7/IPC-NEEDS.md`).
- * A discovered device's own identifier is written into `device_address`
- * verbatim; on a platform where that identifier is not the colon-separated
- * uppercase-hex MAC SPEC §8 states, `validateConfig` reports it as an
- * invalid address rather than this form silently reformatting or rejecting
- * it — visible, not silent, matching ruling R58's cost-if-wrong stance.
+ * Forget. The scan list defaults to devices advertising the standard
+ * heart-rate service (`hrmFilter.ts`'s `filterHrmCandidates`, decision 68 —
+ * this closes the parity gap this doc comment used to name; the filter
+ * became buildable once `DeviceDiscovered.service_uuids` landed), with a
+ * "Show all devices" toggle for a strap that didn't advertise its service
+ * list in the scan record this app saw. A discovered device's own
+ * identifier is written into `device_address` verbatim; on a platform
+ * where that identifier is not the colon-separated uppercase-hex MAC
+ * SPEC §8 states, `validateConfig` reports it as an invalid address rather
+ * than this form silently reformatting or rejecting it — visible, not
+ * silent, matching ruling R58's cost-if-wrong stance.
  */
 export default function HrmForm({ config, onConfigChange, onClose }: HrmFormProps) {
   const [scanning, setScanning] = useState(false);
   const [discovered, setDiscovered] = useState<DeviceDiscovered[]>([]);
   const [scanError, setScanError] = useState<string | null>(null);
+  const [showAllDevices, setShowAllDevices] = useState(false);
+
+  const visibleDiscovered = filterHrmCandidates(discovered, showAllDevices);
+  const hiddenCount = hiddenByFilterCount(discovered, showAllDevices);
 
   const issues = validateConfig(config);
   const hrm = config.heart_rate_monitor ?? { enabled: false, device_address: "", device_name: "" };
@@ -95,8 +102,14 @@ export default function HrmForm({ config, onConfigChange, onClose }: HrmFormProp
       </button>
       {scanError !== null && <p role="alert">{scanError}</p>}
       {discovered.length > 0 && (
+        <label>
+          <input type="checkbox" checked={showAllDevices} onChange={(e) => setShowAllDevices(e.target.checked)} />
+          Show all devices
+        </label>
+      )}
+      {visibleDiscovered.length > 0 && (
         <ul>
-          {discovered.map((device) => (
+          {visibleDiscovered.map((device) => (
             <li key={device.device_id}>
               {device.name || device.device_id} ({device.rssi_dbm} dBm){" "}
               <button type="button" onClick={() => onSelectDiscovered(device)}>
@@ -105,6 +118,12 @@ export default function HrmForm({ config, onConfigChange, onClose }: HrmFormProp
             </li>
           ))}
         </ul>
+      )}
+      {!scanning && hiddenCount > 0 && visibleDiscovered.length === 0 && (
+        <p role="status">
+          {hiddenCount} device{hiddenCount === 1 ? "" : "s"} found, none look like heart-rate straps. Try &quot;Show all
+          devices&quot;.
+        </p>
       )}
 
       <label>

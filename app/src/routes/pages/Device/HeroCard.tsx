@@ -18,6 +18,7 @@ import { formatDurationMs } from "../Data/format";
 import type { DeviceControlCommand, DeviceStatus } from "../../../ipc/device";
 import type { ConnectionState } from "./connection";
 import { heroStateFrom, heroView } from "./hero";
+import { formatGpsSats, imuLiveLabel, liveImuStates, recordingDuration } from "./liveStatus";
 
 /** Props for {@link HeroCard}. */
 export interface HeroCardProps {
@@ -37,8 +38,9 @@ export interface HeroCardProps {
   pending: DeviceControlCommand | null;
   /** Milliseconds since this session first observed `status.logging` go
    *  true, or null before a recording has started. Wall-clock display state
-   *  only (`index.tsx`'s ticking `setInterval`) — never a value a pure
-   *  module needs to reproduce. */
+   *  only (`index.tsx`'s ticking `setInterval`) — the *fallback* source
+   *  `liveStatus.ts`'s `recordingDuration` uses when `status` carries no
+   *  device-reported `logging_elapsed_s` yet (ruling R113). */
   elapsedMs: number | null;
   /** Starts a BLE scan (`bleScan`, unchanged from the pre-restyle
    *  `device-tab__hero` section). */
@@ -93,6 +95,9 @@ const IMU_LABEL: Record<NonNullable<DeviceStatus["imu"]>, string> = {
   partial: "Partial",
   error: "Error",
   absent: "Absent",
+  // "off" is per-sensor only (`imu0`/`imu1`/`imu2`) — the aggregate `imu`
+  // field never reports it, but the two share `ImuState`'s type.
+  off: "Off",
 };
 
 /** Tailwind text-colour class for one status field's reading — `--good` for
@@ -246,6 +251,7 @@ export default function HeroCard({
   const state = heroStateFrom(active !== null, status?.logging === true);
   const view = heroView(state);
   const busy = pending !== null || connectionState.phase === "connecting";
+  const duration = recordingDuration(status, elapsedMs);
 
   function onCta(): void {
     if (state === "disconnected") {
@@ -274,8 +280,10 @@ export default function HeroCard({
       >
         {view.pulsing && <PulsingDot className="text-bg" />}
         {connectionState.phase === "scanning" && state === "disconnected" ? "Scanning…" : view.label}
-        {view.showTimer && elapsedMs !== null && (
-          <span className="font-mono tabular-nums">{formatDurationMs(elapsedMs)}</span>
+        {view.showTimer && duration.ms !== null && (
+          <span className={`font-mono tabular-nums${duration.source === "client" ? " text-fg-dim" : ""}`}>
+            {formatDurationMs(duration.ms)}
+          </span>
         )}
       </Button>
 
@@ -301,17 +309,34 @@ export default function HeroCard({
         </NoteBlock>
       )}
 
-      <div className="flex flex-wrap items-center gap-4">
-        <StatusIcon icon={Cable} label="Mode" value={modeText(status)} />
-        <StatusIcon icon={HardDrive} label="SD" value={fieldText(status, (s) => s.sd, (v) => SD_LABEL[v])} className={sdTone(status?.sd ?? null)} />
-        <StatusIcon icon={Satellite} label="GPS" value={fieldText(status, (s) => s.gps, (v) => GPS_LABEL[v])} className={gpsTone(status?.gps ?? null)} />
-        <StatusIcon icon={Radio} label="IMU" value={fieldText(status, (s) => s.imu, (v) => IMU_LABEL[v])} className={imuTone(status?.imu ?? null)} />
-        <StatusIcon icon={HeartPulse} label="HR" value={fieldText(status, (s) => s.hr, (v) => v)} />
-        <StatusIcon icon={BatteryMedium} label="Battery" value={fieldText(status, (s) => s.battery_pct, (v) => `${v}%`)} />
-        <StatusIcon icon={Wifi} label="WiFi" value={fieldText(status, (s) => s.wifi_on, (v) => (v ? "On" : "Off"))} />
-      </div>
+      {state === "recording" ? (
+        // Decision 87: while recording, show per-IMU OK, GPS satellite
+        // count and duration — nothing more ("keep it lightweight on the
+        // ESP32"). The timer is already in the CTA above; this row adds
+        // only the two fields that aren't. No SD/HR/battery/WiFi/firmware
+        // here even though `status` carries them — that omission is the
+        // point of decision 87, not an oversight.
+        <div className="flex flex-wrap items-center gap-4">
+          {liveImuStates(status).map((imu, i) => (
+            <StatusIcon key={i} icon={Radio} label={`IMU${i}`} value={imuLiveLabel(imu)} className={imuTone(imu)} />
+          ))}
+          <StatusIcon icon={Satellite} label="Sats" value={formatGpsSats(status)} />
+        </div>
+      ) : (
+        <>
+          <div className="flex flex-wrap items-center gap-4">
+            <StatusIcon icon={Cable} label="Mode" value={modeText(status)} />
+            <StatusIcon icon={HardDrive} label="SD" value={fieldText(status, (s) => s.sd, (v) => SD_LABEL[v])} className={sdTone(status?.sd ?? null)} />
+            <StatusIcon icon={Satellite} label="GPS" value={fieldText(status, (s) => s.gps, (v) => GPS_LABEL[v])} className={gpsTone(status?.gps ?? null)} />
+            <StatusIcon icon={Radio} label="IMU" value={fieldText(status, (s) => s.imu, (v) => IMU_LABEL[v])} className={imuTone(status?.imu ?? null)} />
+            <StatusIcon icon={HeartPulse} label="HR" value={fieldText(status, (s) => s.hr, (v) => v)} />
+            <StatusIcon icon={BatteryMedium} label="Battery" value={fieldText(status, (s) => s.battery_pct, (v) => `${v}%`)} />
+            <StatusIcon icon={Wifi} label="WiFi" value={fieldText(status, (s) => s.wifi_on, (v) => (v ? "On" : "Off"))} />
+          </div>
 
-      {status?.firmware != null && <p className="font-mono text-xs text-fg-dim">FW v{status.firmware}</p>}
+          {status?.firmware != null && <p className="font-mono text-xs text-fg-dim">FW v{status.firmware}</p>}
+        </>
+      )}
     </section>
   );
 }
