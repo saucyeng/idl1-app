@@ -23,7 +23,7 @@
  */
 import type { CellOutput, IpcError, WindowEval } from "../../../../../ipc/workbook";
 import type { SessionSummary } from "../../../../../ipc/catalog";
-import { describeWindow, type SelectionWindow } from "../../../../../state/selection";
+import { describeWindow, sessionLabel, type SelectionWindow } from "../../../../../state/selection";
 import type { ScannedCell } from "../cells";
 import type { ProseBlock as ProseBlockData } from "../proseBlocks";
 import { formatRate, formatUnit, type UnitDisplay } from "../unitText";
@@ -208,14 +208,14 @@ function findSession(sessionId: string, sessions: readonly SessionSummary[]): Se
   return sessions.find((s) => s.session_id === sessionId) ?? null;
 }
 
-/** The bare display name `describeWindow` prefixes its label with — venue
- *  name when recorded, else a generic fallback. Deliberately minimal: it
- *  exists only to feed `describeWindow`, not as a general session-naming
- *  scheme (that is `shell/topBarSelection.ts`'s `sessionLabel`, a
- *  different layer this pure model does not import). */
-function sessionDisplayName(session: SessionSummary | null): string {
-  if (session === null) return "Unknown session";
-  return session.venue_name !== "" ? session.venue_name : "Session";
+/** The bare display name `describeWindow` prefixes its label with —
+ *  `state/selection.ts`'s `sessionLabel` (ruling R169: the one session
+ *  display-name formatter, also the top-bar chip's), or "Unknown session"
+ *  when `findSession` could not resolve the window's `sessionId` at all —
+ *  a case `sessionLabel` itself has no way to express, since it takes an
+ *  already-resolved `SessionSummary`. */
+function windowSessionLabel(session: SessionSummary | null): string {
+  return session === null ? "Unknown session" : sessionLabel(session);
 }
 
 function buildCover(primarySession: SessionSummary | null, appVersion: string, generatedAtMs: number): CoverBlock {
@@ -247,7 +247,7 @@ function buildSelectionBlock(windows: readonly SelectionWindow[], sessions: read
   return {
     kind: "selection",
     windows: windows.map((w) => ({
-      label: describeWindow(w, sessionDisplayName(findSession(w.sessionId, sessions))),
+      label: describeWindow(w, windowSessionLabel(findSession(w.sessionId, sessions))),
       colour: w.colour,
     })),
   };
@@ -443,7 +443,7 @@ export function buildReportDocument(
   blocks.push(buildSelectionBlock(windows, sessions));
 
   windows.forEach((window, i) => {
-    const label = describeWindow(window, sessionDisplayName(findSession(window.sessionId, sessions)));
+    const label = describeWindow(window, windowSessionLabel(findSession(window.sessionId, sessions)));
     const ev = evals[i];
     if (ev === undefined) {
       entries.push(`Window ${label}: not evaluated.`);
