@@ -43,8 +43,21 @@ export type MarkdownStatus = "loading" | "ready" | "error";
 /** One selected window's eval outcome (ruling R131 Q1) — mirrors
  *  `ipc/workbook.ts`'s `WindowEval` field for field, so a `windows` map
  *  entry needs no re-narrowing beyond what `evalWorkbookV2`'s own response
- *  already required. */
-export type WindowEvalState = { kind: "ok"; outputs: Map<string, CellOutput> } | { kind: "error"; error: IpcError };
+ *  already required.
+ *
+ * `generation` (decision 59, `runs/2026-09-07/ui/UI-DIRECTION-2.md` §D)
+ * carries the {@link WorkbookState.evalRequestGeneration} value in effect
+ * when the `runEval`/`runOpenAndEval` call that produced this entry was
+ * *started* (`model/openEvalDriver.ts`'s `requestGeneration` parameter),
+ * not when it resolved. A window whose stored `generation` is behind the
+ * state's current `evalRequestGeneration` is showing a result from before
+ * the document's latest edit — {@link isWindowStale} is the one place that
+ * comparison is made, so a chart's "is my data stale" question and the
+ * state's own bookkeeping can never drift apart (the R133 lesson: one
+ * definition of "resolved/stale", not a gate and a separate derivation). */
+export type WindowEvalState =
+  | { kind: "ok"; outputs: Map<string, CellOutput>; generation: number }
+  | { kind: "error"; error: IpcError; generation: number };
 
 /** The `windows` map key for `window: null` — `evalWorkbookV2`'s
  *  "nothing selected" result (`windows: []`, decision 48) and a whole-call
@@ -109,6 +122,16 @@ export interface WorkbookState {
   windows: Map<string, WindowEvalState>;
   /** Cell ids that need re-evaluation: either edited locally (`editCell`) or named by a `watchWorkbook` event (`watchEvent`). Cleared wholesale on a successful save. */
   dirtyCellIds: Set<string>;
+  /**
+   * Decision 59's staleness generation: bumped every time `editCell` (with a
+   * markdown change) or `watchEvent` fires — i.e. every time the document
+   * changes in a way that makes every currently-landed `windows` entry a
+   * candidate for being outdated. Never reset by a save (unlike
+   * `dirtyCellIds`): saving does not change what the document evaluates to,
+   * only whether the change is persisted, so it must not affect staleness.
+   * See {@link WindowEvalState.generation} and {@link isWindowStale}.
+   */
+  evalRequestGeneration: number;
   /** Set by `editFrontMatter` (the maths graph's `graph` key, C2 §3.7.1) —
    *  a document change that needs saving but never re-evaluating, so it is
    *  tracked separately from {@link dirtyCellIds} rather than folded into
@@ -130,6 +153,7 @@ export const initialWorkbookState: WorkbookState = {
   cells: [],
   windows: new Map(),
   dirtyCellIds: new Set(),
+  evalRequestGeneration: 0,
   frontMatterDirty: false,
   conflict: false,
 };
@@ -145,11 +169,15 @@ export type WorkbookAction =
    *  `dispatchWindowResults`. Replaces cell-by-cell merging into a flat map
    *  (Task 10's `evalResult`): a window's entire `outputs` is replaced
    *  wholesale each time, matching `WindowEval`'s own "one window, one
-   *  result" shape — there is no cross-window merge to perform. */
-  | { type: "evalWindowResult"; window: SelectedWindow | null; outputs: CellOutput[] }
+   *  result" shape — there is no cross-window merge to perform.
+   *  `generation` (decision 59) is the `evalRequestGeneration` value the
+   *  originating `runEval`/`runOpenAndEval` call captured when it started —
+   *  stored on the resulting `WindowEvalState` unchanged. */
+  | { type: "evalWindowResult"; window: SelectedWindow | null; outputs: CellOutput[]; generation: number }
   /** One `windows` entry's failure — a per-window resolve failure (R121) or
-   *  a whole-call rejection (`window: null`, see {@link NO_WINDOW_KEY}). */
-  | { type: "evalWindowError"; window: SelectedWindow | null; error: IpcError }
+   *  a whole-call rejection (`window: null`, see {@link NO_WINDOW_KEY}).
+   *  `generation` — see `evalWindowResult`'s own doc comment. */
+  | { type: "evalWindowError"; window: SelectedWindow | null; error: IpcError; generation: number }
   /** Drops every `windows` entry whose key is not in `keep` (ruling R131:
    *  "the reducer prunes" — decision 61, nothing shows data outside the
    *  current selection). Dispatched by `Notebook/index.tsx` whenever the
@@ -229,14 +257,14 @@ export function workbookReducer(state: WorkbookState, action: WorkbookAction): W
         outputs.set(output.cell_id, output);
       }
       const windows = new Map(state.windows);
-      windows.set(key, { kind: "ok", outputs });
+      windows.set(key, { kind: "ok", outputs, generation: action.generation });
       return { ...state, windows };
     }
 
     case "evalWindowError": {
       const key = wireWindowKey(action.window);
       const windows = new Map(state.windows);
-      windows.set(key, { kind: "error", error: action.error });
+      windows.set(key, { kind: "error", error: action.error, generation: action.generation });
       return { ...state, windows };
     }
 
@@ -260,7 +288,18 @@ export function workbookReducer(state: WorkbookState, action: WorkbookAction): W
       if (action.markdown === undefined) {
         return { ...state, dirtyCellIds };
       }
-      return { ...state, dirtyCellIds, markdown: action.markdown, cells: scanCells(action.markdown).cells };
+      // Decision 59: a text-changing edit invalidates every currently-landed
+      // window result, since the debounced re-eval effect (`Notebook/
+      // index.tsx`) has not run yet — bumping here, at the moment the edit
+      // itself is recorded, means a chart reads as stale from the instant
+      // the keystroke lands, not only once the IPC call is in flight.
+      return {
+        ...state,
+        dirtyCellIds,
+        markdown: action.markdown,
+        cells: scanCells(action.markdown).cells,
+        evalRequestGeneration: state.evalRequestGeneration + 1,
+      };
     }
 
     case "editFrontMatter":
@@ -277,10 +316,29 @@ export function workbookReducer(state: WorkbookState, action: WorkbookAction): W
       for (const cellId of action.event.cell_ids) {
         dirtyCellIds.add(cellId);
       }
-      return { ...state, dirtyCellIds };
+      // A change landing from outside this session (another sync peer, a
+      // device transfer) is exactly as staleness-causing as a local edit —
+      // decision 59 makes no distinction by source.
+      const evalRequestGeneration = action.event.cell_ids.length > 0 ? state.evalRequestGeneration + 1 : state.evalRequestGeneration;
+      return { ...state, dirtyCellIds, evalRequestGeneration };
     }
 
     default:
       return state;
   }
+}
+
+/**
+ * Decision 59: `true` when `entry` (a landed `WindowEvalState`) reflects an
+ * older edit than `evalRequestGeneration`'s current value — the one place
+ * "is this window's data stale" is decided, so `Notebook/index.tsx`'s
+ * per-cell status and any other consumer read the same answer (the R133
+ * lesson: a single definition, not a second gate that can drift from this
+ * one). `entry === undefined` (the window has never evaluated at all) is
+ * not stale — that is "pending", a distinct state this function does not
+ * speak to; the caller decides "pending" vs "stale" from whether `entry`
+ * exists at all before asking this.
+ */
+export function isWindowStale(entry: WindowEvalState | undefined, evalRequestGeneration: number): boolean {
+  return entry !== undefined && entry.generation < evalRequestGeneration;
 }
