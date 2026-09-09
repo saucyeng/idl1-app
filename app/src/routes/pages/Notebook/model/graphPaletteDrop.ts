@@ -36,6 +36,14 @@ import { addNodeFromChannel, addNodeFromConstant } from "./graphEdits";
 import type { GraphModel } from "./graphModel";
 import type { PaletteRow } from "./sourcePalette";
 
+/** Everything a drop needs to know about the row that was dragged —
+ *  `PaletteRow`'s discriminant and name, nothing else. Narrower than
+ *  `PaletteRow` on purpose: this is also the shape a native HTML5 drag's
+ *  `dataTransfer` payload carries (`SourcePaletteRail.tsx`), and a
+ *  drag-start handler shouldn't have to fabricate a row's `rateHz`/`value`/
+ *  `cellId` fields just to satisfy a type this module never reads. */
+export type PaletteDragSource = Pick<PaletteRow, "kind" | "name">;
+
 /** Not a valid C2 §3.1 identifier leading/continuing character. */
 const INVALID_IDENTIFIER_CHAR_RE = /[^A-Za-z0-9_]/g;
 
@@ -71,7 +79,7 @@ export interface DropResult {
  * the bracket-reference path exactly as `"channel"` does (C2 §3.1: both
  * are bracket references, only a constant is bare).
  */
-export function dropPaletteSource(markdown: string, model: GraphModel, row: PaletteRow): DropResult {
+export function dropPaletteSource(markdown: string, model: GraphModel, row: PaletteDragSource): DropResult {
   const targetCellId = model.groups.length > 0 ? model.groups[model.groups.length - 1].id : undefined;
   if (targetCellId === undefined) return { markdown, newDefName: null };
 
