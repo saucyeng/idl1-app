@@ -19,6 +19,13 @@ export interface DeviceDiscovered {
   name: string;
   /** i32 */
   rssi_dbm: number;
+  /** Service UUIDs from the device's advertisement (lowercase hyphenated
+   *  full-128-bit form, e.g. `"0000180d-0000-1000-8000-00805f9b34fb"`),
+   *  mirroring `commands/device.rs`'s `DeviceDiscovered`. Empty if the
+   *  advertisement carried none — not evidence the device has no services,
+   *  since a scan record can omit the service list even for a device that
+   *  has one (see `Device/forms/hrmFilter.ts`). */
+  service_uuids: string[];
 }
 
 /** `ble_connect`'s return (C3 §3.8). */
@@ -107,8 +114,10 @@ export async function disconnectDevice(deviceId: string): Promise<void> {
 export type SdState = "ok" | "full" | "error" | "absent";
 /** GPS fix state (C3 §3.8's `deviceStatus`). `null` means unreported. */
 export type GpsState = "fix" | "no_fix" | "absent";
-/** IMU health state (C3 §3.8's `deviceStatus`). `null` means unreported. */
-export type ImuState = "ok" | "partial" | "error" | "absent";
+/** IMU health state (C3 §3.8's `deviceStatus`). `null` means unreported.
+ *  `"off"` appears only on the per-sensor `imu0`/`imu1`/`imu2` fields
+ *  (disabled in the loaded config), never on the aggregate `imu` field. */
+export type ImuState = "ok" | "partial" | "error" | "absent" | "off";
 
 /** `deviceStatus`'s return (C3 §3.8, ruling R59): one read of SPEC §7.3's
  *  status characteristic. Every field except `ota_pending_verify` is
@@ -130,6 +139,36 @@ export interface DeviceStatus {
   hr: string | null;
   /** u8, percent */
   hr_battery_pct: number | null;
+  /** Seconds elapsed since the current logging session started
+   *  (`esp_timer`, device-monotonic — R113). Present only while `logging`
+   *  is `true`; `null` otherwise, including while logging on firmware that
+   *  doesn't report it yet. Prefer this over a client-side clock whenever
+   *  present. */
+  logging_elapsed_s: number | null;
+  /** Unscaled main battery ADC count. `battery_pct` is deprecated on the
+   *  wire (SPEC §7.3); the app scales this raw count itself and prefers it
+   *  whenever both are present. */
+  battery_raw: number | null;
+  /** Free space on the mounted SD card, MiB. Present when `sd` is `"ok"` or
+   *  `"full"`; `null` for `"error"`/`"absent"` or when unreported. */
+  sd_free_mib: number | null;
+  /** Raw NMEA GGA fix-quality field: 0 none, 1 GPS, 2 DGPS, 3 PPS or
+   *  better. Present whenever `gps` is not `"absent"`; `null` if
+   *  unreported. */
+  gps_fix_quality: number | null;
+  /** Satellites used in the GPS solution (GGA field 7). `0` is a valid
+   *  reported value ("searching"), distinct from `null` ("unknown" — the
+   *  `GPSSats` line is absent) — never collapse the two. */
+  gps_sats: number | null;
+  /** HDOP × 100 (e.g. 0.9 → 90). Optional even when a fix is present, so
+   *  `null` is always "unknown", never a health judgement. */
+  gps_hdop_x100: number | null;
+  /** Per-IMU state for IMU index 0. `null` if unreported. */
+  imu0: ImuState | null;
+  /** Per-IMU state for IMU index 1. `null` if unreported. */
+  imu1: ImuState | null;
+  /** Per-IMU state for IMU index 2. `null` if unreported. */
+  imu2: ImuState | null;
 }
 
 /** One read of `deviceId`'s status characteristic (C3 §3.8, ruling R59) —

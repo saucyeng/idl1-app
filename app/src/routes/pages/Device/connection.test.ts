@@ -6,8 +6,8 @@ describe("connectionReducer", () => {
   it("connectionReducer — DEVICE_DISCOVERED twice for the same device_id — one entry, the newer rssi kept", () => {
     // Arrange
     const scanning = connectionReducer(initialConnectionState, { type: "SCAN_START" });
-    const first = { device_id: "d1", name: "IDL0-A3F2", rssi_dbm: -70 };
-    const second = { device_id: "d1", name: "IDL0-A3F2", rssi_dbm: -40 };
+    const first = { device_id: "d1", name: "IDL0-A3F2", rssi_dbm: -70, service_uuids: [] };
+    const second = { device_id: "d1", name: "IDL0-A3F2", rssi_dbm: -40, service_uuids: [] };
 
     // Act
     const afterFirst = connectionReducer(scanning, { type: "DEVICE_DISCOVERED", device: first });
@@ -21,8 +21,8 @@ describe("connectionReducer", () => {
   it("connectionReducer — DEVICE_DISCOVERED — list stays sorted by rssi_dbm descending (strongest first)", () => {
     // Arrange
     const scanning = connectionReducer(initialConnectionState, { type: "SCAN_START" });
-    const weak = { device_id: "d1", name: "IDL0-A3F2", rssi_dbm: -80 };
-    const strong = { device_id: "d2", name: "IDL0-B7C1", rssi_dbm: -35 };
+    const weak = { device_id: "d1", name: "IDL0-A3F2", rssi_dbm: -80, service_uuids: [] };
+    const strong = { device_id: "d2", name: "IDL0-B7C1", rssi_dbm: -35, service_uuids: [] };
 
     // Act
     const afterWeak = connectionReducer(scanning, { type: "DEVICE_DISCOVERED", device: weak });
@@ -114,7 +114,7 @@ describe("connectionReducer", () => {
   it("connectionReducer — FAILED during connect — phase failed, previously discovered devices retained so the user can retry another", () => {
     // Arrange
     const scanning = connectionReducer(initialConnectionState, { type: "SCAN_START" });
-    const device = { device_id: "d1", name: "IDL0-A3F2", rssi_dbm: -60 };
+    const device = { device_id: "d1", name: "IDL0-A3F2", rssi_dbm: -60, service_uuids: [] };
     const discovered = connectionReducer(scanning, { type: "DEVICE_DISCOVERED", device });
     const ended = connectionReducer(discovered, { type: "SCAN_END" });
     const connecting = connectionReducer(ended, { type: "CONNECT_START" });
@@ -187,7 +187,7 @@ describe("connectionReducer", () => {
     // Arrange
     const scanning = connectionReducer(initialConnectionState, { type: "SCAN_START" });
     const ended = connectionReducer(scanning, { type: "SCAN_END" });
-    const device = { device_id: "d1", name: "IDL0-A3F2", rssi_dbm: -60 };
+    const device = { device_id: "d1", name: "IDL0-A3F2", rssi_dbm: -60, service_uuids: [] };
 
     // Act
     const afterLateDiscovery = connectionReducer(ended, { type: "DEVICE_DISCOVERED", device });
