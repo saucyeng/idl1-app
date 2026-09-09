@@ -7570,3 +7570,62 @@ where an engine field lands and a consumer never picks it up.
 **Cost if wrong.** (2) decided the other way gives a rider a report in a
 different typeface from the app that produced it — small, but it is the one
 artefact that leaves the machine.
+
+## 2026-09-09 — R167: the raster wire adopts the language's three scaling names, and carries the magnitude unit
+
+**Finding** (spectral-units lane, correctly refused to guess). Math cells
+already get correct spectral units through `infer`. The gap is the
+**raster/`fetch_fft` path**, which calls `idl_rs::fft::welch` directly with
+no `Ast` to infer over. The lane added `spectral_output_unit(source_unit,
+scaling)` reusing the same `spectral_rule()` — no second table, and tested
+equal to `infer`'s own answer for all three scalings. Right shape.
+
+It then stopped on a naming question rather than guessing, and the question
+is real: **the raster wire's `Scaling` has two values (`Magnitude`,
+`Density`) where the language has three** (`density`, `spectrum`,
+`raw_magnitude`), so which the raster's `Magnitude` means is undecided.
+
+**It is `raw_magnitude`, and the code says so.** `core/src/fft.rs:454`:
+`Scaling::Magnitude => avg_power.iter().map(|p| p.sqrt())` — un-normalised
+RMS magnitude. `Scaling::Spectrum` normalises by `sum(w)²` (scipy's
+`spectrum`) and `Scaling::Density` by `fs·sum(w²)`. Core computes all three;
+only the wire exposes two.
+
+**Ruling.**
+1. **The raster wire adopts the language's three names** — `density`,
+   `spectrum`, `raw_magnitude` — and exposes all three, since the engine
+   already computes them. Two surfaces naming the same computation
+   differently is R143's false-friend policy applied to a wire: a chart
+   offering "Magnitude" while a math cell offers `raw_magnitude` invites a
+   reader to assume they differ, or that the chart's is normalised.
+2. **`RasterMetaOut` gains the magnitude unit**, computed by
+   `spectral_output_unit` — the metadata path, not the bytes. R165 stands:
+   `fetch_fft`'s payload stays samples and framing only.
+3. C3 amended for both.
+
+**This also removes a live asymmetry**, not just a naming wart: a user could
+pick a chart scaling that has no equivalent in the maths language, and a
+`spectrum`-scaled definition had no chart counterpart. Same three
+everywhere.
+
+**Two other items from the same lane:**
+
+**`hilbert` → `envelope` and `resample`'s target-count parameterisation
+landed in code**; C2 §3.8 and §3.3 still owe their rows, which I am writing
+— the lane correctly did not reach across the worktree boundary.
+
+**The flaky watcher test was root-caused, not silenced.** A self-write's
+*earlier* filesystem event can be read mid-flush — partial bytes, hash
+mismatch, debounce scheduled — before a *later* event for the same write
+reads complete, matching content; the match never cancelled the earlier
+pending entry. Fixed by removing any pending entry on a matched self-write.
+The lane could not force-reproduce the original race under load and **said
+so**, rather than claiming the fix proven: a deterministic regression test
+needs `pending` or the clock exposed as an injectable seam, which is a
+design change in a filesystem watcher and not one to make blind. Accepted
+as-is; the honest uncertainty is worth more than a confident test that
+passes for the wrong reason.
+
+**Cost if wrong.** (1) left alone means the chart and the maths language
+disagree about what "magnitude" means, in an app whose whole subject is
+spectra.
