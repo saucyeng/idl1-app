@@ -246,11 +246,12 @@ are defined in `docs/superpowers/specs/2026-09-02-idl1-rewrite-design.md` §10.
     **L11 Task 14** (filed by the lead) adds `SyncStatus.discovered_peers`
     and widens `peer_appeared` to any sighting, so the UI can show a real
     discovered-peer list; not done here.
-  - `unwatch_workbook` missing from C3 (R98): a hidden Notebook's
-    `watch_workbook` subscription drops its callback but the Tauri-side
-    watcher lives until the channel is dropped — one OS file handle per
-    workbook opened this session, for the app's life. Filed as an L8-class
-    Rust follow-on.
+  - ~~`unwatch_workbook` missing from C3 (R98)~~ — **closed 2026-09-09.**
+    The command exists, C3 §3.4 is corrected (its "unsubscribe is closing
+    the channel from the frontend side" was never true: Tauri v2 gives the
+    Rust side no channel-close signal), and `Notebook/index.tsx`'s watch
+    effect calls `unwatchWorkbook` in cleanup. No more leaked file handle
+    per workbook opened.
   - `watcher::tests::self_write_with_pre_registered_hash_never_fires_
     callback` is a named timing flake (asserts no callback within 500 ms
     against a 100 ms debounce; fails only on a loaded machine) — not
