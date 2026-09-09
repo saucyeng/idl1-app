@@ -6949,3 +6949,50 @@ tail wagging the dog, and the fixture is the thing that is wrong.
 **Cost if wrong.** Left as-is, the app keeps offering a configuration that
 produces the exact data loss decision 70 exists to prevent — and the rider
 finds out after the session, when the ride cannot be repeated.
+
+## 2026-09-09 — R156: the importer-version banner needs a version to compare against; C3 has none
+
+**Finding** (errors-staleness lane, correctly skipped). Decision 62 wants a
+dismissable banner when an **engine or importer version change** will
+regenerate derived files. The engine half landed. The importer half cannot
+be built: `SessionSummary.importer_version` records the version a session
+was imported *with*, but **no C3 command exposes an importer's current
+version** to compare it against — `ImporterInfo` carries no version field.
+
+**Ruling — `ImporterInfo` gains a `version`, and it is the same string
+`SessionSummary.importer_version` records.** Additive, C3 amended, and the
+banner compares the two.
+
+The principle worth stating: **`data.parquet` is a function of (blob,
+importer version)** — that is a standing principle in CLAUDE.md §3, and it
+is the reason the field exists on a session at all. A version that is
+recorded on the output but not readable from the thing that produces it
+cannot be checked, so the invariant is unenforceable and the user cannot be
+told when it has moved. Recording a version is only useful if the current
+one is knowable.
+
+Scheduled as a small Rust + C3 task, not folded into a UI lane: the field is
+the engine's to report, and the banner is already written and waiting for
+it.
+
+**Also accepted from the same lane, no change asked:**
+- **Commit granularity.** Four tasks all touched `index.tsx`, and the lane
+  landed the standalone modules as four task commits plus one integration
+  commit rather than hand-splitting a shared diff. That is the right call —
+  a mechanically split patch that compiles but interleaves wrongly is worse
+  than an honest integration commit, and it said so rather than pretending.
+- **Task 2's greying is primary-window only.** True per-window greying would
+  need per-series staleness *inside* the sandbox-rendered picture, which is
+  a protocol change. Deferred, matching every other single-window reader in
+  that file, and reported rather than half-built.
+
+**A real defect fixed in passing, worth recording because it was shipped:**
+`pushCombinedSpectrumFor` was not called after pruning a deselected window
+from `retainedSpectraRef`, so **an unchecked lap's spectrum trace could
+linger on the chart** — a live violation of decision 61 ("nothing shows data
+outside the current selection"). Found by auditing for the failure mode
+rather than by a test, which is exactly what task 3 asked for.
+
+**Cost if wrong.** Without the importer version, a re-import that silently
+regenerates every derived file is invisible — the numbers change and nothing
+says why.
