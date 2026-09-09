@@ -1,4 +1,3 @@
-import type { SessionSummary } from "../ipc/catalog";
 import type { Selection } from "../state/AppState";
 import { describeWindow, windowKey, type SelectionWindow } from "../state/selection";
 
@@ -36,21 +35,6 @@ export interface SelectionChip {
   /** This window's position in `AppState.selection` — what a dismiss click
    *  passes to {@link removeWindowAt}. */
   index: number;
-}
-
-/** Formats `s` as a short human label for its top-bar chip: `venue_name`
- *  (or the shared "(none)" synthetic label) plus the local calendar date,
- *  omitted when `timestamp_utc_ms` is 0 (C1 §3.1: 0 means unknown). Kept as
- *  this module's own minimal formatter rather than importing
- *  `routes/pages/Data/sessionRow.ts`'s `venueLabel`/`format.ts` — those are
- *  that lane's own display layer, and the shell owes them no coupling for
- *  one short label. */
-export function sessionLabel(s: SessionSummary): string {
-  const venue = s.venue_name === "" ? "(none)" : s.venue_name;
-  if (s.timestamp_utc_ms === 0) return venue;
-  const d = new Date(s.timestamp_utc_ms);
-  const date = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-  return `${venue} · ${date}`;
 }
 
 /**

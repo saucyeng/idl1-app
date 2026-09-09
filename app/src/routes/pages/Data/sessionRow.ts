@@ -1,28 +1,10 @@
 import type { SessionSummary } from "../../../ipc/catalog";
-import { assignColour, nextWindows, type SelectionModifier, type SelectionWindow } from "../../../state/selection";
+import { assignColour, nextWindows, venueLabel, type SelectionModifier, type SelectionWindow } from "../../../state/selection";
 import { formatDateMs, formatDurationMs, formatTimeMs, localIsoDate } from "./format";
-
-/** Synthetic label for an empty `venue_name`, shared with the venue facet
- *  (Task 3) so a filtered row and its chip always agree. */
-const NONE_VENUE = "(none)";
 
 /** Synthetic label for a `timestamp_utc_ms` of 0 (C1 §3.1: 0 means
  *  "unknown", never rendered as the 1970 epoch). */
 const UNKNOWN_DATE = "unknown";
-
-/** `venue_name`, or the synthetic "(none)" label when it is empty — shared
- *  by the session list, its facet, and the detail pane (Task 4) so the same
- *  session always reads the same venue text everywhere. `toSessionRow`
- *  below has no Track-venue fallback (R54 drops track linkage from
- *  `SessionSummary` entirely, and the session list only ever sees a
- *  `SessionSummary`) — this is the "(none)" convention alone, not a track
- *  lookup. A context that does have `TrackVisitSummary[]`/`tracksById`
- *  (e.g. a future session-detail venue line) uses [[resolveDisplayVenue]]
- *  (`trackRow.ts`, Task 6) instead, then still passes the result through
- *  this same `venueLabel` for the shared "(none)" text. */
-export function venueLabel(venueName: string): string {
-  return venueName === "" ? NONE_VENUE : venueName;
-}
 
 /** One row in the sessions result list — a pure display derivation of one
  *  `SessionSummary` (C3 §3.2). Holds no engine truth: every number here came

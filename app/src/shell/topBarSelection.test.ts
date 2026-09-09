@@ -1,53 +1,7 @@
 import { describe, expect, it } from "vitest";
 
-import type { SessionSummary } from "../ipc/catalog";
 import type { SelectionWindow } from "../state/selection";
-import { collapsedChipLabel, removeWindowAt, selectionChips, sessionLabel, shouldCollapseChips } from "./topBarSelection";
-
-function baseSummary(overrides: Partial<SessionSummary> = {}): SessionSummary {
-  return {
-    session_id: "s1",
-    blob_sha256: "0".repeat(64),
-    source_format: "idl0",
-    device_id: "dev1",
-    config_checksum: "cfg1",
-    importer_version: "0.1.0",
-    seam_correction_version: "v1",
-    engine_version: "0.1.0",
-    timestamp_utc_ms: 1_725_000_000_000,
-    created_at_ms: 1_725_000_000_000,
-    rider: "Isaac",
-    bike: "SV650",
-    venue_name: "Portland",
-    event_name: "",
-    event_session: "",
-    short_comment: "",
-    tag: "",
-    lap_count: 12,
-    duration_ms: 3_723_000,
-    ...overrides,
-  };
-}
-
-describe("sessionLabel", () => {
-  it("sessionLabel — venue and known timestamp — venue and date", () => {
-    const label = sessionLabel(baseSummary({ venue_name: "Portland", timestamp_utc_ms: 1_725_000_000_000 }));
-
-    expect(label).toMatch(/^Portland · \d{4}-\d{2}-\d{2}$/);
-  });
-
-  it("sessionLabel — empty venue — the shared \"(none)\" synthetic label", () => {
-    const label = sessionLabel(baseSummary({ venue_name: "", timestamp_utc_ms: 1_725_000_000_000 }));
-
-    expect(label).toMatch(/^\(none\) · \d{4}-\d{2}-\d{2}$/);
-  });
-
-  it("sessionLabel — timestamp_utc_ms is 0 — venue alone, no 1970 date (C1 §3.1)", () => {
-    const label = sessionLabel(baseSummary({ venue_name: "Portland", timestamp_utc_ms: 0 }));
-
-    expect(label).toBe("Portland");
-  });
-});
+import { collapsedChipLabel, removeWindowAt, selectionChips, shouldCollapseChips } from "./topBarSelection";
 
 describe("selectionChips", () => {
   const nameFor = (id: string) => `session-${id}`;

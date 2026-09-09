@@ -1,5 +1,5 @@
 import type { ChannelSummary, LapChannelStat, LapNeutralZoneVisit, LapSector, LapSummary, SessionDetail } from "../../../ipc/catalog";
-import { venueLabel } from "./sessionRow";
+import { venueLabel } from "../../../state/selection";
 
 /** One row of the session detail pane's channel table — a pure projection
  *  of one `ChannelSummary` (C3 §3.2). `nominalRateHz` is metadata only —
@@ -59,8 +59,8 @@ export interface DetailView {
   rider: string;
   bike: string;
   bikeComment: string;
-  /** `venue_name`, or "(none)" — the session list's synthetic label
-   *  ([[sessionRow.ts]]'s `venueLabel`), so the list and the detail pane
+  /** `venue_name`, or "(none)" — the shared synthetic label
+   *  ([[selection.ts]]'s `venueLabel`), so the list and the detail pane
    *  always agree. */
   venue: string;
   eventName: string;

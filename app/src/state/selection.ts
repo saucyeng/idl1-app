@@ -11,6 +11,7 @@
  * `AppState.tsx` (Task 8) holds the list and dispatches through the
  * functions here.
  */
+import type { SessionSummary } from "../ipc/catalog";
 
 /** The span a window covers within one session, C1 §6.1's `Span`. */
 export type Span =
@@ -223,4 +224,35 @@ export function describeWindow(w: SelectionWindow, sessionName: string): string 
     case "range":
       return `${sessionName} · ${formatOffsetUs(w.span.t0Us)}–${formatOffsetUs(w.span.t1Us)}`;
   }
+}
+
+/** Synthetic label for an empty `venue_name` — the single spelling of
+ *  "unrecorded venue" for every reader in the app (ruling R169): the
+ *  session list and its facet, the session detail pane, the top-bar chip
+ *  (via {@link sessionLabel}) and the report all show the same text for
+ *  the same session. */
+const NONE_VENUE = "(none)";
+
+/** `venueName`, or the shared "(none)" synthetic label when it is empty
+ *  (ruling R169). Kept separate from {@link sessionLabel}: venue-without-
+ *  date is a real second need — a table with its own date column reads the
+ *  venue alone and would double up a date `sessionLabel` already carries. */
+export function venueLabel(venueName: string): string {
+  return venueName === "" ? NONE_VENUE : venueName;
+}
+
+/**
+ * The short human label for a whole session `s`: its venue (or the shared
+ * "(none)" text — {@link venueLabel}) plus its local calendar date,
+ * omitted when `timestamp_utc_ms` is 0 (C1 §3.1: 0 means unknown). The one
+ * formatter for "name this session as text", used by the top-bar chip and
+ * the report's per-window labels alike (ruling R169) — a reader comparing
+ * the two must see the same string for the same session.
+ */
+export function sessionLabel(s: SessionSummary): string {
+  const venue = venueLabel(s.venue_name);
+  if (s.timestamp_utc_ms === 0) return venue;
+  const d = new Date(s.timestamp_utc_ms);
+  const date = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  return `${venue} · ${date}`;
 }

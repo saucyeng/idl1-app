@@ -4,9 +4,9 @@ import { cn } from "@/lib/utils";
 import { listSessions } from "../ipc/catalog";
 import { ROUTES, type RouteId } from "../routes/types";
 import type { Selection } from "../state/AppState";
-import { windowsKey } from "../state/selection";
+import { sessionLabel, windowsKey } from "../state/selection";
 import { StatusDot } from "@/components/brand/StatusDot";
-import { collapsedChipLabel, removeWindowAt, selectionChips, sessionLabel, shouldCollapseChips } from "./topBarSelection";
+import { collapsedChipLabel, removeWindowAt, selectionChips, shouldCollapseChips } from "./topBarSelection";
 
 /** Props for {@link TopBar}. */
 export interface TopBarProps {

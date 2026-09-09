@@ -36,6 +36,16 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 
 ### Fixed
 
+- **One session display-name formatter, in `state/selection.ts` (2026-09-09,
+  ruling R169).** `Data/sessionRow.ts`'s `venueLabel` and
+  `shell/topBarSelection.ts`'s `sessionLabel` moved to `state/selection.ts`,
+  beside `describeWindow`; the Notebook report's `model/report/document.ts`
+  now calls `sessionLabel` instead of its own `sessionDisplayName`. The
+  three had disagreed on the empty-venue text (`(none)` vs `Session`) and
+  whether the date was shown — a report window's label now carries the
+  date and reads `(none)` for an unrecorded venue, matching the top-bar
+  chip it was printed from.
+
 - **Notebook: the cursor value card's `""`-means-both unit ambiguity
   (2026-09-09, R154 item 6).** `model/cursorCard.ts`'s `CursorCardRow.unit`
   and `cursorCardRows` now take the three-state `UnitLabel` (`ipc/workbook.ts`)

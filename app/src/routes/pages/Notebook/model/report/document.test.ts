@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import type { CellOutput } from "../../../../../ipc/workbook";
 import type { SessionSummary } from "../../../../../ipc/catalog";
-import type { SelectionWindow } from "../../../../../state/selection";
+import { describeWindow, sessionLabel, type SelectionWindow } from "../../../../../state/selection";
 import type { ScannedCell } from "../cells";
 import { buildReportDocument } from "./document";
 
@@ -213,5 +213,14 @@ describe("buildReportDocument", () => {
     const doc = buildReportDocument([mathCell("cell-1")], new Map(), [{ ok: [mathOutput("cell-1")] }], [window()], [session()], "1.0.0", 0);
 
     expect(doc.blocks.some((b) => b.kind === "comparison")).toBe(false);
+  });
+
+  it("a report window's label and a top-bar chip for the same session are the same text (R169)", () => {
+    const s = session({ venue_name: "Portland", timestamp_utc_ms: 1_700_000_000_000 });
+
+    const doc = buildReportDocument([], new Map(), [{ ok: [] }], [window()], [s], "1.0.0", 0);
+
+    const selectionBlock = doc.blocks.find((b) => b.kind === "selection");
+    expect(selectionBlock).toEqual({ kind: "selection", windows: [{ label: describeWindow(window(), sessionLabel(s)), colour: "--chart-1" }] });
   });
 });
