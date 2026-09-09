@@ -7491,3 +7491,20 @@ absence is the shape R148 and R150 spent yesterday removing.
 **Cost if wrong.** Extending IDLH would put metadata in a format whose
 compatibility story is about bytes per sample, and every future metadata
 field would inherit that cost.
+
+**Amendment (2026-09-09) to R161.** R161 said the Notebook's column
+visibility persists "in `columnPrefs.ts`, beside the widths it already
+stores". The implementer put it in a **sibling** module,
+`Notebook/model/notebookColumns.ts`, under its own storage key, and left
+`shell/columnPrefs.ts` untouched — and that is right, not a deviation.
+
+`shell/columnPrefs.ts`'s `ColumnId` describes the **outer shell's four
+docked columns**, where `output` is never collapsible. The Notebook's three
+panes are a different concept that happens to share a storage convention.
+Merging them would have made one `ColumnId` mean two things depending on who
+asked — the ambiguity R138 and R141 kept collapsing, arriving by way of a
+shared name rather than a shared value. Same convention, sibling key,
+neither file knowing about the other's ids.
+
+I named the wrong file because the two look alike from outside. Reading them
+is what distinguished them.
