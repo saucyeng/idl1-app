@@ -7274,3 +7274,57 @@ must still pass untouched.
 
 **Cost if wrong.** A toolbar that wraps, or banners that live inside a
 column, reproduce the letterboxing this removes.
+
+## 2026-09-09 — R162: `g` must survive parsing as a named constant; unit rules belong in C2 §3.3, not in a plan's stale function list
+
+Two findings from the unit-model lane, both correctly stopped on.
+
+### 1. `g` is substituted before inference can see it — and treating it as dimensionless would be *wrong*, not merely incomplete
+
+`core/src/math/parse.rs`'s `constant_value` turns a bare `g` into
+`Ast::Number(9.806_65)` **at parse time**, indistinguishable from any
+literal by the time the inference pass walks the `Ast`. R154 answered "`g`
+carries `m/s²` — yes" assuming inference could see it. It cannot.
+
+The lane currently treats `g` as a dimensionless scalar, and **that is the
+dangerous option**, not the safe one. `[body_accel] / g` would then infer
+the accelerometer's own units when the true answer is dimensionless — a
+confidently wrong label on exactly the acceleration maths this app exists to
+compute. R152 already ruled that a wrong unit is worse than none, because
+the reader stops checking.
+
+**Ruling: `g` (and `pi`, `tau`, `e`) survive parsing as named constants.**
+Add the `Ast` variant. The blast radius is one variant plus its match arms,
+which is bounded and mechanical; the alternative is a permanent, silent
+mislabel in the one domain the model was built for. `pi`/`tau`/`e` are
+genuinely dimensionless and say so; `g` carries `m/s²` as C2 §3.2 already
+documents.
+
+If the variant turns out to reach further than the `Ast` matches — into
+serialisation, or a public signature — **stop and report the extent before
+finishing it**, and I will decide again with the real number rather than an
+estimate.
+
+### 2. The design's function list predates the renames; unit rules belong in the contract
+
+The design's task 3 maps functions to unit rules using names the catalog no
+longer has — `integrate`, `clamp`, `p`, `angle`, `if`, `variance_time`. The
+scipy alignment renamed every one of them (`cumulative_trapezoid`/`cumtrapz`,
+`clip`, `percentile`, `angle_between`, `where`), and `variance_*` became
+`lap_delta_*`. The lane was right that mapping 72 real functions to rule
+buckets is a design call, not an implementation detail.
+
+**Ruling: the per-function unit rule is a column in C2 §3.3**, not a table
+buried in `core`. §3.3 already states each function's output unit in prose
+("same units as `ch`", "`[ch]²/Hz`"); formalising that prose into a rule
+(`SameAsArg` / `Fixed(u)` / `Product` / `AllMatch` / `Dimensionless` /
+`Unknown`) puts the rule where the contract already makes the claim, and
+makes the engine's table a transcription of the spec rather than a second
+source of truth. That is the same relationship `functionCatalog.ts` has to
+§3.3, and R158 just showed what happens when the two drift.
+
+So task 3 becomes **spec-first**: add the rule column to §3.3 for all 72
+entries, then implement against it.
+
+**Cost if wrong.** (1) mislabels every acceleration expression that
+normalises by gravity — silently, and in the units a rider reads.
