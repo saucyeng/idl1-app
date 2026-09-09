@@ -1,4 +1,5 @@
 import type { CursorCardRow } from "../model/cursorCard";
+import { unitLabelText } from "../model/unitLabel";
 
 /** Props for {@link CursorCard}. */
 export interface CursorCardProps {
@@ -26,15 +27,24 @@ export interface CursorCardProps {
 export default function CursorCard({ pixelX, rows }: CursorCardProps) {
   return (
     <div className="chart-cell-cursor-card pointer-events-none absolute top-0 z-10 flex flex-col gap-0.5 rounded-[var(--radius-structural)] border border-rule bg-bg-raised px-1.5 py-1 font-mono text-label-2" style={{ left: pixelX }}>
-      {rows.map((row, i) => (
-        <div key={i} className="flex items-center gap-1" style={{ borderLeft: `2px solid var(${row.colour})`, paddingLeft: 4 }}>
-          {row.windowLabel !== null && <span className="text-fg-dim">{row.windowLabel}</span>}
-          <span className="text-fg">
-            {row.seriesLabel}: {row.value === null ? "no data" : row.value}
-            {row.value !== null && row.unit !== "" ? ` ${row.unit}` : ""}
-          </span>
-        </div>
-      ))}
+      {rows.map((row, i) => {
+        // R154 item 6: only a `known` unit prints a suffix -- `dimensionless`
+        // prints nothing (a count genuinely has no unit to append) and
+        // `unknown` also prints nothing here rather than a "?" marker, since
+        // this small inline card has no room for a tooltip explaining why;
+        // the explicit `unknown` marker belongs to the graph node card and
+        // source palette (Task 3), which have space for one.
+        const unitText = unitLabelText(row.unit);
+        return (
+          <div key={i} className="flex items-center gap-1" style={{ borderLeft: `2px solid var(${row.colour})`, paddingLeft: 4 }}>
+            {row.windowLabel !== null && <span className="text-fg-dim">{row.windowLabel}</span>}
+            <span className="text-fg">
+              {row.seriesLabel}: {row.value === null ? "no data" : row.value}
+              {row.value !== null && unitText !== "" ? ` ${unitText}` : ""}
+            </span>
+          </div>
+        );
+      })}
     </div>
   );
 }

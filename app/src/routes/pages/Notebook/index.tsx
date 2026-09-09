@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useReducer, useRef, useState, type CSSProperties } from "react";
+import { Fragment, useEffect, useMemo, useReducer, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@/components/ui/resizable";
@@ -19,6 +19,7 @@ import {
   watchWorkbook,
   type CellOutput,
   type IpcError,
+  type UnitLabel,
   type Window as WireWindow,
 } from "../../../ipc/workbook";
 import { useAppState } from "../../../state/AppState";
@@ -77,6 +78,12 @@ import { extractChannelCalls, extractSpectrumCalls } from "./model/jsCellCalls";
 import { jsCellNote, primaryWindowNote } from "./model/jsCellNote";
 import { definitionCellIds } from "./model/graphModel";
 import { fixTargetCellId } from "./model/fixTarget";
+import {
+  readNotebookColumnVisibility,
+  toggleNotebookColumn,
+  writeNotebookColumnVisibility,
+  type NotebookColumnId,
+} from "./model/notebookColumns";
 import { readNotebookPrefs, writeNotebookPrefs } from "./model/notebookPrefs";
 import { runEval, runOpenAndEval, type OpenEvalDeps } from "./model/openEvalDriver";
 import { registerMetrics } from "./model/outputRegister";
@@ -367,10 +374,25 @@ export default function NotebookPage() {
   const [inlineResults, setInlineResults] = useState<Map<string, string>>(new Map());
   const [spanErrors, setSpanErrors] = useState<Map<string, string>>(new Map());
   const [selectedCellId, setSelectedCellId] = useState<string | null>(null);
-  /** Whether the maths graph canvas (Task 10) is showing in place of the
-   *  cell list -- a view toggle, not a second document; both read the same
-   *  `state.markdown` (decision 40). */
-  const [graphViewOpen, setGraphViewOpen] = useState(false);
+  /** Which of the three Notebook-local panes (maths graph, properties/code,
+   *  cells) the top toolbar's leading group currently shows (ruling R161)
+   *  -- generalises the old binary Graph/Cells view toggle: showing or
+   *  hiding a pane is the same gesture, extended from two mutually
+   *  exclusive states to three independent ones. Read once at mount
+   *  (`readNotebookColumnVisibility`'s own per-machine default reproduces
+   *  the old `graphViewOpen = false` starting state byte-for-byte: cells
+   *  on, graph off). */
+  const [columnVisibility, setColumnVisibility] = useState(() => readNotebookColumnVisibility());
+
+  /** Flips one pane's visibility and persists the result (`model/
+   *  notebookColumns.ts`'s own no-op guard keeps at least one pane on). */
+  function toggleColumn(id: NotebookColumnId): void {
+    setColumnVisibility((prev) => {
+      const next = toggleNotebookColumn(prev, id);
+      writeNotebookColumnVisibility(next);
+      return next;
+    });
+  }
   /** One entry per window this page has resolved a `SessionDetail` for
    *  (`model/sessionSpanDriver.ts`'s `runSessionSpan`, called once per
    *  selected window -- R127's accepted item), keyed by `windowKey`. An
@@ -1560,6 +1582,19 @@ export default function NotebookPage() {
       .map((d) => d.name)
   );
 
+  // `bindingFor`'s `definitionUnitByName` (R154/R164, Task 2 of the unit
+  // model's TS half): every workbook `math` definition's own inferred unit,
+  // same primary-window source as `definitionsWithAxis` above -- a
+  // `"definition"` bound channel's host-variable `.unit`/`.unitState`
+  // (C2 §5.1) comes from here, not from `fetch_host_channel`'s IDLH bytes
+  // (R165, which carries samples only).
+  const definitionUnitByName: ReadonlyMap<string, UnitLabel> = new Map(
+    Array.from(primaryOutputs.values())
+      .filter((o) => o.kind === "math")
+      .flatMap((o) => o.defs)
+      .map((d) => [d.name, d.unit] as const)
+  );
+
   // Time-chart channel binding (`ChartCell`'s tile-fetch pipeline,
   // `channelBindDriver.ts`) is fully window-aware as of S1 Task 11b
   // (ruling R131 Q2): every selected window is fetched and combined into
@@ -1585,7 +1620,7 @@ export default function NotebookPage() {
       if (cell.id === null || cell.kind !== "js") continue;
       const cellId = cell.id;
       const code = decodeByteRange(markdown, cell.bodyRange);
-      const binding = bindingFor({ id: cellId, code }, sessionDetail, sessionSpanUs, definitionsWithAxis);
+      const binding = bindingFor({ id: cellId, code }, sessionDetail, sessionSpanUs, definitionsWithAxis, null, definitionUnitByName);
       if (binding === null || binding.kind !== "time") {
         // An FFT binding is handled by the dedicated effect below; either
         // way, this cell has no time-viewport identity to compare against
@@ -1612,7 +1647,7 @@ export default function NotebookPage() {
       };
       const onAction = (action: ChannelBindAction) => {
         if (action.type === "channelData") {
-          sandboxHostRef.current?.setChannelHostVar(action.channelId, action.length, action.t, action.v, action.w, action.windows);
+          sandboxHostRef.current?.setChannelHostVar(action.channelId, action.length, action.t, action.v, action.w, action.windows, action.unit);
           // R139: retain the same combined arrays the sandbox just got a
           // transfer clone of -- `model/cursorCard.ts` reads this back.
           combinedChannelDataRef.current.set(`${action.cellId}::${action.channelId}`, action.retained);
@@ -1686,7 +1721,7 @@ export default function NotebookPage() {
       // reach `bindingFor` in the first place (`props.chart === "fft"`
       // does not vary by window) -- resolved against the primary window.
       const shapeWindow = primaryWindow !== null ? toWireWindow(primaryWindow) : null;
-      const shapeBinding = bindingFor({ id: cellId, code }, sessionDetail, sessionSpanUs, definitionsWithAxis, shapeWindow);
+      const shapeBinding = bindingFor({ id: cellId, code }, sessionDetail, sessionSpanUs, definitionsWithAxis, shapeWindow, definitionUnitByName);
       if (shapeBinding === null || shapeBinding.kind !== "fft") {
         // Not FFT-shaped (or nothing resolvable yet, e.g. no session) --
         // drop every retained window's spectrum/identity/error for this
@@ -1757,7 +1792,7 @@ export default function NotebookPage() {
         const detail = sessionDetailsByWindow.get(wKey) ?? null;
         if (detail === null) continue; // this window's session is still resolving
 
-        const binding = bindingFor({ id: cellId, code }, detail, sessionSpanUs, definitionsWithAxis, toWireWindow(w));
+        const binding = bindingFor({ id: cellId, code }, detail, sessionSpanUs, definitionsWithAxis, toWireWindow(w), definitionUnitByName);
         if (binding === null || binding.kind !== "fft") continue; // e.g. the channel isn't in this window's session
 
         const identity = bindingIdentity(binding);
@@ -2031,7 +2066,7 @@ export default function NotebookPage() {
             const cell = state.cells.find((c) => c.id === cellId);
             const code = cell !== undefined && state.markdown !== null ? decodeByteRange(state.markdown, cell.bodyRange) : "";
             const primaryWireWindow = primaryWindow !== null ? toWireWindow(primaryWindow) : null;
-            const binding = bindingFor({ id: cellId, code }, sessionDetail, sessionSpanUs, definitionsWithAxis, primaryWireWindow);
+            const binding = bindingFor({ id: cellId, code }, sessionDetail, sessionSpanUs, definitionsWithAxis, primaryWireWindow, definitionUnitByName);
             const heightPx = cellHeights.get(cellId) ?? null;
             const sendLayout = (id: string, rect: { top: number; left: number; width: number }) =>
               sandboxHostRef.current?.sendLayout(id, rect);
@@ -2222,7 +2257,7 @@ export default function NotebookPage() {
                   };
                   const onAction = (action: ChannelBindAction) => {
                     if (action.type === "channelData") {
-                      sandboxHostRef.current?.setChannelHostVar(action.channelId, action.length, action.t, action.v, action.w, action.windows);
+                      sandboxHostRef.current?.setChannelHostVar(action.channelId, action.length, action.t, action.v, action.w, action.windows, action.unit);
                       // R139: retain the same combined arrays the sandbox
                       // just got a transfer clone of -- `model/cursorCard.ts`
                       // reads this back.
@@ -2271,7 +2306,7 @@ export default function NotebookPage() {
                     if (otherCell.id === null || otherCell.id === cellId || otherCell.kind !== "js") continue;
                     const otherCellId = otherCell.id;
                     const otherCode = state.markdown !== null ? decodeByteRange(state.markdown, otherCell.bodyRange) : "";
-                    const otherBinding = bindingFor({ id: otherCellId, code: otherCode }, sessionDetail, sessionSpanUs, definitionsWithAxis, primaryWireWindow);
+                    const otherBinding = bindingFor({ id: otherCellId, code: otherCode }, sessionDetail, sessionSpanUs, definitionsWithAxis, primaryWireWindow, definitionUnitByName);
                     if (otherBinding === null || otherBinding.kind !== "time" || otherBinding.mountedChannelId === null) continue;
                     const otherChannel = otherBinding.channels.find((c) => c.channelId === otherBinding.mountedChannelId);
                     if (otherChannel === undefined) continue;
@@ -2336,7 +2371,7 @@ export default function NotebookPage() {
               {/* Medium layout (decision 29): the editor sits inline, under
                   the selected cell's own frame, rather than at the bottom of
                   the whole document. */}
-              {!editorIsPortalHosted && placement === "inline" && cell.id !== null && cell.id === openCellId && editorPanesElement}
+              {!editorIsPortalHosted && placement === "inline" && columnVisibility.properties && cell.id !== null && cell.id === openCellId && editorPanesElement}
             </CellFrame>
           )}
         />
@@ -2379,32 +2414,176 @@ export default function NotebookPage() {
   // Properties pane keeps its narrow `BrandSheet` behaviour unchanged
   // (Task 12), the graph simply never takes over the main content area at
   // that width, falling back to the cell list even if the toggle was left
-  // on from a wider layout.
+  // on from a wider layout. Ruling R161, decision 29: a narrow layout has
+  // no columns to toggle at all, so the toolbar's leading group hides
+  // entirely rather than showing dead controls -- `columnsToggleAvailable`.
   const graphViewAvailable = placement !== "sheet";
-  const mainContentElement =
-    graphViewOpen && graphViewAvailable && graphCanvasElement !== null ? graphCanvasElement : cellListElement;
+  const columnsToggleAvailable = placement !== "sheet";
+  const showGraph = columnVisibility.graph && graphViewAvailable && graphCanvasElement !== null;
+  const showCells = columnVisibility.cells;
+  // Fallback single content (medium/`"inline"` and narrow/`"sheet"`
+  // placements have one content area, not a resizable split) -- same
+  // preference order the pre-R161 `graphViewOpen` toggle had: graph when
+  // it's on and available, the cell list otherwise. Also the wide/`"panes"`
+  // placement's own last-resort fallback when neither pane below ends up
+  // rendering (graph unavailable and cells toggled off at once) -- an empty
+  // main area is a worse regression than showing the cell list unasked.
+  const mainContentElement = showGraph ? graphCanvasElement : cellListElement;
+  // Wide/`"panes"` placement's own panel list -- both graph and cells can
+  // show at once now (R161: "these replace the current Graph/Cells toggle,
+  // since showing or hiding a column is the same gesture, generalised" --
+  // generalised *from* mutually exclusive *to* independent).
+  const mainPanels: { id: "graph" | "cells"; element: ReactNode }[] =
+    showGraph || showCells
+      ? [...(showGraph ? [{ id: "graph" as const, element: graphCanvasElement }] : []), ...(showCells ? [{ id: "cells" as const, element: cellListElement }] : [])]
+      : [{ id: "cells", element: cellListElement }];
+  const showPropertiesPane = !editorIsPortalHosted && placement === "panes" && columnVisibility.properties && editorPanesElement !== null;
 
   return (
     <div className="flex h-full flex-col">
-      <PlaybackTransport
-        playing={playback.playing}
-        cursorTUs={sharedCursorTUs}
-        onToggle={handleTogglePlay}
-        disabled={!primeState.running}
-        routeVisible={routeVisible}
-        speed={playback.speed}
-        onSpeedChange={(speed) => setPlayback((prev) => setSpeed(prev, speed))}
-        mode={playbackMode}
-        onModeChange={setPlaybackMode}
-        followingWindowLabel={cellListWindowNote}
-      />
+      {/* Ruling R161: one CAD-style top toolbar spanning the tab, above the
+          columns, so the preview beneath it runs full height. Everything
+          that used to stack above the content in its own row now merges
+          into this one row -- the leading group is column visibility
+          (item 2), everything else follows (item 3), and the row never
+          wraps to a second line: the gesture-preset/X-axis selects (the
+          two purely-configuration controls, changed rarely once set) sit
+          behind the "More" overflow disclosure rather than risking a wrap
+          (item 5) -- a static split rather than a width-measured one,
+          since nothing in this codebase measures toolbar overflow yet
+          (small, safe judgment call, CLAUDE.md §1). */}
+      <div className="flex flex-nowrap items-center gap-2 overflow-x-auto border-b border-rule px-2 py-1">
+        {columnsToggleAvailable && (
+          <div role="group" aria-label="Notebook columns" className="flex items-center gap-1">
+            <button type="button" onClick={() => toggleColumn("graph")} aria-pressed={columnVisibility.graph}>
+              Graph
+            </button>
+            <button type="button" onClick={() => toggleColumn("properties")} aria-pressed={columnVisibility.properties}>
+              Properties
+            </button>
+            <button type="button" onClick={() => toggleColumn("cells")} aria-pressed={columnVisibility.cells}>
+              Cells
+            </button>
+          </div>
+        )}
+        {(entry === null || entry.kind === "empty") && (
+          <WorkbookBar
+            entry={entry}
+            rescanning={rescanning}
+            creating={creating}
+            dirty={false}
+            error={workbookBarError}
+            lastRebuild={lastRebuild}
+            register={register}
+            onCreate={(name) => void handleCreate(name)}
+            onRescan={() => void handleRescan()}
+            onSelect={handleSelect}
+            onRegisterChange={handleRegisterChange}
+          />
+        )}
+        {state.handle !== null && (
+          <div className="workbook-save-bar flex items-center gap-2">
+            {entry !== null && entry.kind !== "empty" && (
+              <WorkbookBar
+                entry={entry}
+                rescanning={rescanning}
+                creating={creating}
+                dirty={state.dirtyCellIds.size > 0 || state.frontMatterDirty}
+                error={workbookBarError}
+                lastRebuild={lastRebuild}
+                register={register}
+                onCreate={(name) => void handleCreate(name)}
+                onRescan={() => void handleRescan()}
+                onSelect={handleSelect}
+                onRegisterChange={handleRegisterChange}
+              />
+            )}
+            <button type="button" onClick={() => void handleSave()} disabled={saveUnavailable || saveFlowState.status === "saving"}>
+              {saveFlowState.status === "saving" ? "Saving…" : "Save"}
+            </button>
+            {saveUnavailable && <span className="workbook-save-unavailable">save not available yet (the document's text could not be read)</span>}
+            {saveFlowState.status === "error" && <span className="workbook-save-error">save failed: {saveFlowState.error.message}</span>}
+          </div>
+        )}
+        <PlaybackTransport
+          playing={playback.playing}
+          cursorTUs={sharedCursorTUs}
+          onToggle={handleTogglePlay}
+          disabled={!primeState.running}
+          routeVisible={routeVisible}
+          speed={playback.speed}
+          onSpeedChange={(speed) => setPlayback((prev) => setSpeed(prev, speed))}
+          mode={playbackMode}
+          onModeChange={setPlaybackMode}
+          followingWindowLabel={cellListWindowNote}
+        />
+        {/* The overflow group (item 5): gesture preset and X-axis mode --
+            same controls, same semantics, as their pre-R161 standalone rows
+            below; a native `<details>` disclosure needs no extra state and
+            closes on outside click/Escape for free. */}
+        <details className="relative ml-auto">
+          <summary className="cursor-pointer select-none rounded-[var(--radius-structural)] border border-rule px-2 py-1 font-mono text-label-2 text-fg-dim hover:text-fg">
+            More…
+          </summary>
+          <div className="absolute right-0 z-10 mt-1 flex flex-col gap-2 rounded-[var(--radius-structural)] border border-rule bg-bg-raised p-2 shadow-lg">
+            {/* R137's own point: "a few presets for me to try at runtime" --
+                a plain `<select>`, no dialog, no reload. Changing it updates
+                `inputMapPreset` React state above, which every mounted
+                `ChartCell` receives as a prop on the very next render; the
+                next gesture on any chart reads the new table. */}
+            <label className="flex items-center gap-2 font-mono text-label-2 text-fg-dim">
+              Gesture input map
+              <select
+                value={inputMapPreset.id}
+                onChange={(event) => {
+                  const next = findInputMapPreset(event.target.value);
+                  if (next !== null) setInputMapPreset(next);
+                }}
+                className="rounded-[var(--radius-structural)] border border-rule bg-transparent px-1 py-0.5 text-fg"
+              >
+                {INPUT_MAP_PRESETS.map((preset) => (
+                  <option key={preset.id} value={preset.id}>
+                    {preset.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            {/* Decision 54's worksheet-level X mode (Task 13). Distance is
+                listed and disabled with its reason as a `title` tooltip
+                (R136) -- never silently omitted, never silently falling
+                back to time without saying why. Changing the (only ever
+                selectable) time option is a no-op today; the field exists
+                so a future core distance axis has somewhere to read from
+                without another prefs-shape change. */}
+            <label className="flex items-center gap-2 font-mono text-label-2 text-fg-dim">
+              X axis
+              <select
+                value={xMode}
+                onChange={(event) => {
+                  const next = event.target.value;
+                  if (next === "time" || next === "distance") setXMode(next);
+                }}
+                className="rounded-[var(--radius-structural)] border border-rule bg-transparent px-1 py-0.5 text-fg"
+              >
+                {X_MODE_OPTIONS.map((option) => (
+                  <option key={option.value} value={option.value} disabled={option.disabledReason !== undefined} title={option.disabledReason}>
+                    {option.label}
+                    {option.disabledReason !== undefined ? " (unavailable)" : ""}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
+        </details>
+      </div>
       {/* Master timeline strip (decision 52, R115, R134 item 1): one lane
-          per selected window, own draggable boundary handles. Commits a
-          drag to `AppState.selection` on pointer-up only
-          (`model/timelineStrip.ts`'s own settle-discipline doc comment) --
-          `timelineCommit` is the same pure function `TimelineStrip.tsx`'s
-          own test suite exercises directly; this call site only wires it
-          to `appDispatch`. */}
+          per selected window, own draggable boundary handles. Not one of
+          R161's named toolbar controls -- kept as its own full-width strip,
+          same as before, directly under the toolbar. Commits a drag to
+          `AppState.selection` on pointer-up only (`model/timelineStrip.ts`'s
+          own settle-discipline doc comment) -- `timelineCommit` is the same
+          pure function `TimelineStrip.tsx`'s own test suite exercises
+          directly; this call site only wires it to `appDispatch`. */}
       <TimelineStrip
         windows={windows}
         detailsByWindow={sessionDetailsByWindow}
@@ -2412,52 +2591,11 @@ export default function NotebookPage() {
         viewport={sharedViewport}
         onCommit={(laneIndex, candidate) => appDispatch({ type: "SET_WINDOWS", windows: timelineCommit(windows, laneIndex, candidate) })}
       />
-      {/* R137's own point: "a few presets for me to try at runtime" -- a
-          plain `<select>`, no dialog, no reload. Changing it updates
-          `inputMapPreset` React state above, which every mounted
-          `ChartCell` receives as a prop on the very next render; the next
-          gesture on any chart reads the new table. */}
-      <label className="flex items-center gap-2 px-2 py-1 font-mono text-label-2 text-fg-dim">
-        Gesture input map
-        <select
-          value={inputMapPreset.id}
-          onChange={(event) => {
-            const next = findInputMapPreset(event.target.value);
-            if (next !== null) setInputMapPreset(next);
-          }}
-          className="rounded-[var(--radius-structural)] border border-rule bg-transparent px-1 py-0.5 text-fg"
-        >
-          {INPUT_MAP_PRESETS.map((preset) => (
-            <option key={preset.id} value={preset.id}>
-              {preset.label}
-            </option>
-          ))}
-        </select>
-      </label>
-      {/* Decision 54's worksheet-level X mode (Task 13). Distance is listed
-          and disabled with its reason as a `title` tooltip (R136) -- never
-          silently omitted, never silently falling back to time without
-          saying why. Changing the (only ever selectable) time option is a
-          no-op today; the field exists so a future core distance axis has
-          somewhere to read from without another prefs-shape change. */}
-      <label className="flex items-center gap-2 px-2 py-1 font-mono text-label-2 text-fg-dim">
-        X axis
-        <select
-          value={xMode}
-          onChange={(event) => {
-            const next = event.target.value;
-            if (next === "time" || next === "distance") setXMode(next);
-          }}
-          className="rounded-[var(--radius-structural)] border border-rule bg-transparent px-1 py-0.5 text-fg"
-        >
-          {X_MODE_OPTIONS.map((option) => (
-            <option key={option.value} value={option.value} disabled={option.disabledReason !== undefined} title={option.disabledReason}>
-              {option.label}
-              {option.disabledReason !== undefined ? " (unavailable)" : ""}
-            </option>
-          ))}
-        </select>
-      </label>
+      {/* R161 item 4: banners stay banners -- a statement about the
+          document, not a control -- and move under the toolbar, spanning
+          the tab, so they never shrink one column. Same conditions, same
+          components, as before; only their position (below the toolbar and
+          timeline, above the columns) changed. */}
       {sandboxUnavailable && (
         <NoteBlock role="alert" className="border-brand-accent text-brand-accent flex items-center justify-between gap-3">
           <span>The cell runtime failed to start, so cell output is unavailable.</span>
@@ -2477,21 +2615,6 @@ export default function NotebookPage() {
           those functions.
         </p>
       )}
-      {(entry === null || entry.kind === "empty") && (
-        <WorkbookBar
-          entry={entry}
-          rescanning={rescanning}
-          creating={creating}
-          dirty={false}
-          error={workbookBarError}
-          lastRebuild={lastRebuild}
-          register={register}
-          onCreate={(name) => void handleCreate(name)}
-          onRescan={() => void handleRescan()}
-          onSelect={handleSelect}
-          onRegisterChange={handleRegisterChange}
-        />
-      )}
       {state.markdownStatus === "error" && state.markdownError !== null && (
         <p className="workbook-markdown-error">Notebook error: {state.markdownError}</p>
       )}
@@ -2501,35 +2624,6 @@ export default function NotebookPage() {
         </p>
       )}
       {selectedWorkbookId !== null && state.handle === null && state.markdownStatus === "loading" && <p>Opening notebook...</p>}
-      {state.handle !== null && (
-        <div className="workbook-save-bar">
-          {entry !== null && entry.kind !== "empty" && (
-            <WorkbookBar
-              entry={entry}
-              rescanning={rescanning}
-              creating={creating}
-              dirty={state.dirtyCellIds.size > 0 || state.frontMatterDirty}
-              error={workbookBarError}
-              lastRebuild={lastRebuild}
-              register={register}
-              onCreate={(name) => void handleCreate(name)}
-              onRescan={() => void handleRescan()}
-              onSelect={handleSelect}
-              onRegisterChange={handleRegisterChange}
-            />
-          )}
-          {graphViewAvailable && (
-            <button type="button" onClick={() => setGraphViewOpen((prev) => !prev)} aria-pressed={graphViewOpen}>
-              {graphViewOpen ? "Cells" : "Graph"}
-            </button>
-          )}
-          <button type="button" onClick={() => void handleSave()} disabled={saveUnavailable || saveFlowState.status === "saving"}>
-            {saveFlowState.status === "saving" ? "Saving…" : "Save"}
-          </button>
-          {saveUnavailable && <span className="workbook-save-unavailable">save not available yet (the document's text could not be read)</span>}
-          {saveFlowState.status === "error" && <span className="workbook-save-error">save failed: {saveFlowState.error.message}</span>}
-        </div>
-      )}
       {state.conflict && <ConflictBanner onReloadFromDisk={() => void handleReloadFromDisk()} onOverwrite={() => void handleOverwrite()} />}
       {versionBannerVisible && versionBanner !== null && (
         <VersionBanner banner={versionBanner} onDismiss={() => setVersionBannerDismissedFor(versionBannerDismissKey)} />
@@ -2546,12 +2640,23 @@ export default function NotebookPage() {
       )}
       {state.handle !== null && placement === "panes" && (
         <ResizablePanelGroup orientation="horizontal" className="min-h-0 flex-1">
-          <ResizablePanel id="notebook-editor-output" defaultSize={65} minSize={30}>
-            <div className="h-full overflow-auto p-4" data-register={register} style={registerContainerStyle}>
-              {mainContentElement}
-            </div>
-          </ResizablePanel>
-          {!editorIsPortalHosted && editorPanesElement !== null && (
+          {/* R161 item 2, generalised: `mainPanels` holds graph and/or cells,
+              whichever `columnVisibility` currently has on (both, either, or
+              (via its own fallback) cells alone) -- each its own resizable
+              panel, a divider only between two actually-rendered panels,
+              same "no panel, no divider when hidden" rule `ColumnFrame.tsx`
+              already established (R107). */}
+          {mainPanels.map((panel, index) => (
+            <Fragment key={panel.id}>
+              {index > 0 && <ResizableHandle withHandle />}
+              <ResizablePanel id={`notebook-${panel.id}`} defaultSize={mainPanels.length === 1 ? 65 : 65 / mainPanels.length} minSize={20}>
+                <div className="h-full overflow-auto p-4" data-register={register} style={registerContainerStyle}>
+                  {panel.element}
+                </div>
+              </ResizablePanel>
+            </Fragment>
+          ))}
+          {showPropertiesPane && (
             <>
               <ResizableHandle withHandle />
               <ResizablePanel id="notebook-editor-panes" defaultSize={35} minSize={20}>
@@ -2592,7 +2697,11 @@ export default function NotebookPage() {
       )}
       {editorSlotNode !== null &&
         createPortal(
-          editorPanesElement ?? <ColumnPlaceholder>Select a cell to edit its properties and code.</ColumnPlaceholder>,
+          !columnVisibility.properties ? (
+            <ColumnPlaceholder>Properties hidden -- shown via the toolbar&apos;s Properties toggle.</ColumnPlaceholder>
+          ) : (
+            editorPanesElement ?? <ColumnPlaceholder>Select a cell to edit its properties and code.</ColumnPlaceholder>
+          ),
           editorSlotNode
         )}
       <div

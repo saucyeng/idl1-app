@@ -20,6 +20,7 @@ import type { ChannelData } from "../model/channelData";
 import { rebindChannelsAfterRebuild, type BoundChannel, type HostChannelRebindDeps } from "../model/channelRebind";
 import type { TileCache } from "../model/tileCache";
 import type { WindowDescriptor } from "./protocol";
+import type { UnitLabel } from "../../../../ipc/workbook";
 
 /**
  * The subset of `SandboxHost`'s API `onChannelsInvalidated` calls —
@@ -29,7 +30,7 @@ import type { WindowDescriptor } from "./protocol";
  */
 export interface ChannelRebindSandbox {
   /** Binds a decoded channel as a sandbox host variable (`SandboxHost.setChannelHostVar`). */
-  setChannelHostVar(name: string, length: number, t: ArrayBuffer, v: ArrayBuffer, w: ArrayBuffer, windows: WindowDescriptor[]): void;
+  setChannelHostVar(name: string, length: number, t: ArrayBuffer, v: ArrayBuffer, w: ArrayBuffer, windows: WindowDescriptor[], unit: UnitLabel): void;
 }
 
 /**
@@ -71,14 +72,14 @@ export function makeChannelsInvalidatedHandler(
   return () => {
     const descriptor = getWindowDescriptor();
     if (descriptor === null) return;
-    rebindChannelsAfterRebuild(getBound(), cache, hostChannelDeps, (name, data: ChannelData) => {
+    rebindChannelsAfterRebuild(getBound(), cache, hostChannelDeps, (name, data: ChannelData, unit: UnitLabel) => {
       // `Float64Array.buffer` types as `ArrayBufferLike` (covering
       // `SharedArrayBuffer`) unless the array's own construction site lets
       // TS narrow it; `ChannelData.t`/`v` are plain `Float64Array` fields,
       // so the narrower cast is asserted here rather than threading a
       // generic parameter through `ChannelData` for one call site.
       const w = new Float64Array(data.length).fill(0);
-      sandboxHost.setChannelHostVar(name, data.length, data.t.buffer as ArrayBuffer, data.v.buffer as ArrayBuffer, w.buffer as ArrayBuffer, [descriptor]);
+      sandboxHost.setChannelHostVar(name, data.length, data.t.buffer as ArrayBuffer, data.v.buffer as ArrayBuffer, w.buffer as ArrayBuffer, [descriptor], unit);
     });
   };
 }

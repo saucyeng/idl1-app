@@ -51,7 +51,7 @@ describe("channelPayload", () => {
     const w = new ArrayBuffer(8);
     const windows = [descriptor()];
 
-    const { message, transfer } = channelPayload("fork_velocity", 1, t, v, w, windows);
+    const { message, transfer } = channelPayload("fork_velocity", 1, t, v, w, windows, { state: "known", text: "mm" });
 
     expect(transfer).toHaveLength(3);
     expect(transfer.filter((b) => b === t)).toHaveLength(1);
@@ -60,7 +60,7 @@ describe("channelPayload", () => {
     expect(message).toEqual({
       type: "setHostVar",
       name: "fork_velocity",
-      value: { kind: "channel", length: 1, t, v, w, windows },
+      value: { kind: "channel", length: 1, t, v, w, windows, unit: { state: "known", text: "mm" } },
     });
   });
 
@@ -78,7 +78,7 @@ describe("channelPayload", () => {
     const vSource = new Float64Array([10.1, -2.5, NaN]);
     const wSource = new Float64Array([0, 0, 1]);
 
-    const { message } = channelPayload("fork_velocity", 3, tSource.buffer, vSource.buffer, wSource.buffer, [descriptor(), descriptor()]);
+    const { message } = channelPayload("fork_velocity", 3, tSource.buffer, vSource.buffer, wSource.buffer, [descriptor(), descriptor()], { state: "dimensionless" });
 
     const payload = message.value as Extract<HostVarPayload, { kind: "channel" }>;
     const tRoundTripped = new Float64Array(payload.t);

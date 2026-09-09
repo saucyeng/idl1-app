@@ -19,7 +19,7 @@ const DOC =
 const NO_MATH_DOC = "---\nid: 9f3c1e2d-4b6a-4f1c-9c3d-2a7e8f9b0c1d\nname: Empty\n---\n" + "some prose, no cells at all\n";
 
 function channelRow(name: string): PaletteChannelRow {
-  return { kind: "channel", name, rateHz: 100, partial: false };
+  return { kind: "channel", name, rateHz: 100, partial: false, unit: { state: "known", text: "mm" } };
 }
 
 function constantRow(name: string): PaletteConstantRow {
@@ -27,7 +27,7 @@ function constantRow(name: string): PaletteConstantRow {
 }
 
 function definitionRow(name: string): PaletteDefinitionRow {
-  return { kind: "definition", name, cellId: "a1b2c3d4", sampleRateHz: null };
+  return { kind: "definition", name, cellId: "a1b2c3d4", sampleRateHz: null, unit: { state: "unknown", reason: "not evaluated yet" } };
 }
 
 describe("dropPaletteSource — target cell", () => {

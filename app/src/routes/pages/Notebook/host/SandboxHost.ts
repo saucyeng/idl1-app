@@ -17,6 +17,7 @@ import {
   type SandboxCell,
   type WindowDescriptor,
 } from "./protocol";
+import type { UnitLabel } from "../../../../ipc/workbook";
 import { BOOT_TIMEOUT_MS, createBootTimer, type BootTimer } from "./bootTimer";
 import { OutboundQueue } from "./outboundQueue";
 import { replayInitAndHostVars, replaySetCells } from "./rebuildReplay";
@@ -254,10 +255,13 @@ export class SandboxHost {
    * once with the combined `{t, v, w}` series and their `windows`
    * descriptors. The three buffers are moved (not copied) via
    * `postMessage`'s transfer list (P7); the caller must not read `t`/`v`/`w`
-   * again after this call.
+   * again after this call. `unit` is this channel's three-state unit
+   * (R154/R164) -- small JSON metadata, not transferred -- which
+   * `sandbox/main.ts`'s `materializeHostVar` projects onto the bound array
+   * as `.unit`/`.unitState`.
    */
-  setChannelHostVar(name: string, length: number, t: ArrayBuffer, v: ArrayBuffer, w: ArrayBuffer, windows: WindowDescriptor[]): void {
-    const { message, transfer } = channelPayload(name, length, t, v, w, windows);
+  setChannelHostVar(name: string, length: number, t: ArrayBuffer, v: ArrayBuffer, w: ArrayBuffer, windows: WindowDescriptor[], unit: UnitLabel): void {
+    const { message, transfer } = channelPayload(name, length, t, v, w, windows, unit);
     this.postToSandbox(message, transfer);
     this.scheduleRerender();
   }

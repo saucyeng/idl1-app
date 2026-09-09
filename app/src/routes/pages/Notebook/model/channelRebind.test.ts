@@ -46,7 +46,7 @@ describe("rebindChannelsAfterRebuild", () => {
     const k = key();
     cache.put({ ...k, tileIndex: 0 }, fakeTile([0n, 1_000_000n], [1, 2], 0));
     const bound: BoundChannel[] = [
-      { source: "session", name: "fork_velocity", key: k, range: { first: 0, last: 0 }, startUs: 0, endUs: 2_000_000, budget: 100 },
+      { source: "session", name: "fork_velocity", key: k, range: { first: 0, last: 0 }, startUs: 0, endUs: 2_000_000, budget: 100, unit: { state: "known", text: "mm" } },
     ];
     const sent: Array<{ name: string; data: ChannelData }> = [];
 
@@ -64,8 +64,8 @@ describe("rebindChannelsAfterRebuild", () => {
     cache.put({ ...forkKey, tileIndex: 0 }, fakeTile([0n], [1], 0));
     cache.put({ ...wheelKey, tileIndex: 0 }, fakeTile([0n], [5], 0));
     const bound: BoundChannel[] = [
-      { source: "session", name: "fork", key: forkKey, range: { first: 0, last: 0 }, startUs: 0, endUs: 1_000_000, budget: 100 },
-      { source: "session", name: "wheel", key: wheelKey, range: { first: 0, last: 0 }, startUs: 0, endUs: 1_000_000, budget: 100 },
+      { source: "session", name: "fork", key: forkKey, range: { first: 0, last: 0 }, startUs: 0, endUs: 1_000_000, budget: 100, unit: { state: "known", text: "mm" } },
+      { source: "session", name: "wheel", key: wheelKey, range: { first: 0, last: 0 }, startUs: 0, endUs: 1_000_000, budget: 100, unit: { state: "known", text: "km/h" } },
     ];
     const sent: string[] = [];
 
@@ -80,7 +80,7 @@ describe("rebindChannelsAfterRebuild", () => {
     // Only tileIndex 0 is cached; the channel's range also needs tileIndex 1.
     cache.put({ ...k, tileIndex: 0 }, fakeTile([0n], [1], 0));
     const bound: BoundChannel[] = [
-      { source: "session", name: "fork_velocity", key: k, range: { first: 0, last: 1 }, startUs: 0, endUs: 2_000_000, budget: 100 },
+      { source: "session", name: "fork_velocity", key: k, range: { first: 0, last: 1 }, startUs: 0, endUs: 2_000_000, budget: 100, unit: { state: "known", text: "mm" } },
     ];
     const sent: string[] = [];
 
@@ -91,7 +91,7 @@ describe("rebindChannelsAfterRebuild", () => {
 
   it("rebindChannelsAfterRebuild — a definition channel — is re-fetched (never read from the tile cache) and sent once resolved", async () => {
     const cache = new TileCache(1_000_000);
-    const bound: BoundChannel[] = [{ source: "definition", name: "avg_speed", budget: 640 }];
+    const bound: BoundChannel[] = [{ source: "definition", name: "avg_speed", budget: 640, unit: { state: "known", text: "km/h" } }];
     const fetchCalls: Array<{ defName: string; budget: number }> = [];
     const deps: HostChannelRebindDeps = {
       fetchHostChannel: (defName, budget) => {
@@ -110,7 +110,7 @@ describe("rebindChannelsAfterRebuild", () => {
 
   it("rebindChannelsAfterRebuild — a definition channel whose re-fetch has lost its recorded axis — is dropped, not sent", async () => {
     const cache = new TileCache(1_000_000);
-    const bound: BoundChannel[] = [{ source: "definition", name: "avg_speed", budget: 640 }];
+    const bound: BoundChannel[] = [{ source: "definition", name: "avg_speed", budget: 640, unit: { state: "known", text: "km/h" } }];
     const deps: HostChannelRebindDeps = {
       fetchHostChannel: () => Promise.resolve<DecodedHostChannel>({ hasT: false, t: new Float64Array(0), v: new Float64Array([42]) }),
     };
@@ -127,8 +127,8 @@ describe("rebindChannelsAfterRebuild", () => {
     const forkKey = key();
     cache.put({ ...forkKey, tileIndex: 0 }, fakeTile([0n], [1], 0));
     const bound: BoundChannel[] = [
-      { source: "definition", name: "avg_speed", budget: 640 },
-      { source: "session", name: "fork_velocity", key: forkKey, range: { first: 0, last: 0 }, startUs: 0, endUs: 1_000_000, budget: 100 },
+      { source: "definition", name: "avg_speed", budget: 640, unit: { state: "known", text: "km/h" } },
+      { source: "session", name: "fork_velocity", key: forkKey, range: { first: 0, last: 0 }, startUs: 0, endUs: 1_000_000, budget: 100, unit: { state: "known", text: "mm" } },
     ];
     const deps: HostChannelRebindDeps = {
       fetchHostChannel: () => Promise.reject(new Error("host channel unavailable")),

@@ -62,7 +62,7 @@ describe("workbookReducer", () => {
     const withDefError = output("cell-a", {
       kind: "math",
       errors: [],
-      defs: [{ name: "speed", label: null, value: null, error: { kind: "math_reserved_name", message: "reserved" }, sample_rate_hz: null }],
+      defs: [{ name: "speed", label: null, value: null, error: { kind: "math_reserved_name", message: "reserved" }, sample_rate_hz: null, unit: { state: "dimensionless" }, unit_notes: [] }],
     });
 
     const next = workbookReducer(initialWorkbookState, { type: "evalWindowResult", window: w, outputs: [withDefError], generation: 0 });

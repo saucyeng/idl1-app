@@ -100,6 +100,7 @@ function binding(channelIds: string[]): TimeCellBinding {
     source: "session",
     sampleRateHz: 50 + i * 25,
     lap: null,
+    unit: { state: "known", text: "mm" },
   }));
   return {
     kind: "time",
@@ -117,6 +118,7 @@ function mixedBinding(entries: Array<{ channelId: string; source: "session" | "d
     source: entry.source,
     sampleRateHz: entry.source === "session" ? 50 + i * 25 : 0,
     lap: null,
+    unit: entry.source === "session" ? { state: "known" as const, text: "mm" } : { state: "known" as const, text: "km/h" },
   }));
   return {
     kind: "time",
@@ -392,7 +394,7 @@ describe("runChannelBind", () => {
     expect(actions.filter((a) => a.type === "boundChannels")).toHaveLength(1);
     expect(actions.filter((a) => a.type === "chartWindow")).toHaveLength(0);
     const bound = (actions.find((a) => a.type === "boundChannels") as Extract<ChannelBindAction, { type: "boundChannels" }>).bound;
-    expect(bound).toEqual([{ source: "definition", name: "avg_speed", budget: 1280 }]);
+    expect(bound).toEqual([{ source: "definition", name: "avg_speed", budget: 1280, unit: { state: "known", text: "km/h" } }]);
   });
 
   it("runChannelBind — a mixed cell (session + definition) — dispatches both kinds in channel order, mounts only the session channel", async () => {
@@ -513,6 +515,9 @@ describe("runChannelBind — multi-window (S1 Task 11b, ruling R131 Q2)", () => 
     expect(fetchedSessions).toEqual(["session-0", "session-1"]);
     const channelData = actions.find((a): a is Extract<ChannelBindAction, { type: "channelData" }> => a.type === "channelData")!;
     expect(channelData.windows).toEqual([windows[0].descriptor, windows[1].descriptor]);
+    // R154/R164: the dispatched channelData carries the binding's own unit
+    // verbatim -- not re-derived, not dropped.
+    expect(channelData.unit).toEqual({ state: "known", text: "mm" });
     // Two windows -- `combineChannelWindows`'s break-row rule (R127 item 4)
     // inserts one NaN row between them; not reimplemented here, just
     // trusted -- see this suite's `w`-index assertion below instead.
@@ -664,7 +669,7 @@ describe("runChannelSettle", () => {
       { channelId: "fork_velocity", source: "session" },
       { channelId: "avg_speed", source: "definition" },
     ]).channels;
-    const previousBound: BoundChannel[] = [{ source: "definition", name: "avg_speed", budget: 64 }];
+    const previousBound: BoundChannel[] = [{ source: "definition", name: "avg_speed", budget: 64, unit: { state: "known", text: "km/h" } }];
     const actions: ChannelBindAction[] = [];
 
     // pointBudget(32, false) = 64 (DESKTOP_POINTS_PER_PIXEL_COLUMN = 2),
@@ -673,7 +678,7 @@ describe("runChannelSettle", () => {
 
     expect(hostChannelCalls).toBe(0);
     const bound = (actions.find((a) => a.type === "boundChannels") as Extract<ChannelBindAction, { type: "boundChannels" }>).bound;
-    expect(bound.find((b) => b.source === "definition")).toEqual({ source: "definition", name: "avg_speed", budget: 64 });
+    expect(bound.find((b) => b.source === "definition")).toEqual({ source: "definition", name: "avg_speed", budget: 64, unit: { state: "known", text: "km/h" } });
   });
 
   it("runChannelSettle — a definition channel's budget changed from previousBound — refetches with the new budget", async () => {
@@ -687,7 +692,7 @@ describe("runChannelSettle", () => {
       },
     };
     const channels = mixedBinding([{ channelId: "avg_speed", source: "definition" }]).channels;
-    const previousBound: BoundChannel[] = [{ source: "definition", name: "avg_speed", budget: 64 }];
+    const previousBound: BoundChannel[] = [{ source: "definition", name: "avg_speed", budget: 64, unit: { state: "known", text: "km/h" } }];
     const actions: ChannelBindAction[] = [];
 
     await runChannelSettle(deps, cache, oneWindow(), "cell-a", channels, "avg_speed", 0, 1_000_000, 640, (a) => actions.push(a), neverStale, previousBound);

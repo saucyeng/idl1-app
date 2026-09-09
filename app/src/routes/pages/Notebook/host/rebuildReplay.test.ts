@@ -98,7 +98,7 @@ describe("replayInitAndHostVars + onChannelsInvalidated + replaySetCells (Sandbo
       post({
         type: "setHostVar",
         name: "front-fork",
-        value: { kind: "channel", length: 0, t: new ArrayBuffer(0), v: new ArrayBuffer(0), w: new ArrayBuffer(0), windows: [] },
+        value: { kind: "channel", length: 0, t: new ArrayBuffer(0), v: new ArrayBuffer(0), w: new ArrayBuffer(0), windows: [], unit: { state: "dimensionless" } },
       });
     };
 
@@ -111,7 +111,7 @@ describe("replayInitAndHostVars + onChannelsInvalidated + replaySetCells (Sandbo
     expect(posted).toEqual([
       { type: "init", runtimeVersion: "1.0.0" },
       { type: "setHostVar", name: "laps", value: { kind: "json", value: [1, 2, 3] } },
-      { type: "setHostVar", name: "front-fork", value: { kind: "channel", length: 0, t: new ArrayBuffer(0), v: new ArrayBuffer(0), w: new ArrayBuffer(0), windows: [] } },
+      { type: "setHostVar", name: "front-fork", value: { kind: "channel", length: 0, t: new ArrayBuffer(0), v: new ArrayBuffer(0), w: new ArrayBuffer(0), windows: [], unit: { state: "dimensionless" } } },
       { type: "setCells", cells },
     ]);
   });

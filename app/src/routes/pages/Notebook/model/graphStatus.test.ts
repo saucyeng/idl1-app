@@ -38,7 +38,7 @@ function session(sessionId: string, channelIds: string[]): SessionDetail {
 }
 
 function defResult(name: string, error: CellDefResult["error"] = null): CellDefResult {
-  return { name, label: null, value: error === null ? { length: 10, has_t: true } : null, error, sample_rate_hz: error === null ? 10 : null };
+  return { name, label: null, value: error === null ? { length: 10, has_t: true } : null, error, sample_rate_hz: error === null ? 10 : null, unit: { state: "dimensionless" }, unit_notes: [] };
 }
 
 function cellOutput(cellId: string, defs: CellDefResult[]): CellOutput {

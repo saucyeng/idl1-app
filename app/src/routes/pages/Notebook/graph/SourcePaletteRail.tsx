@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 
 import { filterSourcePalette, type PaletteGroup, type PaletteRow, type SourcePalette } from "../model/sourcePalette";
 import type { PaletteDragSource } from "../model/graphPaletteDrop";
+import type { UnitLabel } from "../../../../ipc/workbook";
 
 /** The `dataTransfer` MIME type a palette row's drag carries — a JSON-
  *  encoded {@link PaletteDragSource}. `GraphCanvas.tsx`'s own drop handler
@@ -23,15 +24,32 @@ export interface SourcePaletteRailProps {
  *  without this component needing to know about it in advance. */
 type CollapsedGroups = Set<string>;
 
+/** The unit badge's own text/tooltip for a channel or definition row
+ *  (R154/R164, R160's unit column — landed now that the field exists).
+ *  Renders the three states distinctly, per this task's own rule: `known`
+ *  shows the unit itself; `dimensionless` shows nothing at all (`null`,
+ *  not an empty-looking placeholder — a count genuinely has no unit);
+ *  `unknown` shows an explicit `?` marker with the reason as its tooltip,
+ *  so a reader can tell "no unit" apart from "we don't know" at a glance. */
+function unitBadge(unit: UnitLabel): { text: string; title?: string } | null {
+  if (unit.state === "known") return { text: unit.text };
+  if (unit.state === "unknown") return { text: "?", title: unit.reason };
+  return null;
+}
+
 /** One draggable row — name, and a `Rate: … Hz` badge for a channel or a
  *  `= value` badge for a constant (decision: "each row shows name and
  *  rate"; a constant has no rate, so it shows its own value instead — the
  *  analogous "what would I be dragging in" fact). A definition's rate is
  *  `null` until `CellDefResult` carries one (R147/R152) — its badge is
- *  omitted rather than shown blank (R152: a blank column invites a guess). */
+ *  omitted rather than shown blank (R152: a blank column invites a guess).
+ *  A channel/definition row also gets its own unit badge, right of the
+ *  rate one, from {@link unitBadge} — a constant row has none (its `= value`
+ *  badge already says everything this row needs to say). */
 function PaletteRowView({ row }: { row: PaletteRow }) {
   const badge =
     row.kind === "channel" ? `${row.rateHz} Hz` : row.kind === "constant" ? `= ${row.value}` : row.kind === "definition" && row.sampleRateHz !== null ? `${row.sampleRateHz} Hz` : null;
+  const unit = row.kind === "channel" || row.kind === "definition" ? unitBadge(row.unit) : null;
 
   return (
     <div
@@ -48,6 +66,11 @@ function PaletteRowView({ row }: { row: PaletteRow }) {
       title={row.kind === "channel" && row.partial ? `${row.name} — missing from at least one selected session` : row.name}
     >
       <span className="truncate">{row.name}</span>
+      {unit !== null && (
+        <span className="shrink-0 text-fg-faint" title={unit.title}>
+          {unit.text}
+        </span>
+      )}
       {badge !== null && <span className="shrink-0 text-fg-faint">{badge}</span>}
     </div>
   );

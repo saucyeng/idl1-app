@@ -27,6 +27,66 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
   heading. A calibration routine is designed from scratch later; a
   placeholder control implying a working feature is worse than none.
 
+### Fixed
+
+- **Notebook: the cursor value card's `""`-means-both unit ambiguity
+  (2026-09-09, R154 item 6).** `model/cursorCard.ts`'s `CursorCardRow.unit`
+  and `cursorCardRows` now take the three-state `UnitLabel` (`ipc/workbook.ts`)
+  instead of a bare `unit: string`, so a raw channel with no recorded C1
+  unit never renders identically to one that is genuinely dimensionless.
+  `ChartCell.tsx` converts `ChannelSummary.unit` via the new
+  `model/unitLabel.ts`'s `rawUnitToLabel`.
+
+- **Notebook: the unit model reaches the sandbox host variables and
+  `CellDefResult` (2026-09-09, R154/R162/R164/R165).** `ipc/workbook.ts`
+  gains the three-state `UnitLabel`/`UnitNote` types and `CellDefResult.
+  unit`/`unit_notes`, mirroring the landed Rust shape. A `"channel"` host
+  variable now carries `unit` end to end — `jsCellBinding.ts`'s
+  `JsCellBindingChannel.unit` (a session channel's `ChannelSummary.unit`
+  via `rawUnitToLabel`, or a `"definition"` channel's `CellDefResult.unit`
+  via `Notebook/index.tsx`'s new `definitionUnitByName` map) through
+  `channelBindDriver.ts`'s dispatched `channelData`/`BoundChannel`,
+  `channelRebind.ts`'s `BoundChannel` (carried across a sandbox rebuild,
+  never re-derived — `fetch_host_channel`'s IDLH bytes have no unit,
+  R165), `host/protocol.ts`'s `HostVarPayload`, to `sandbox/main.ts`'s
+  `materializeHostVar`, which projects it onto the bound record array as
+  non-enumerable `.unit` (display string) and `.unitState` (the
+  three-state discriminator) properties — so a prose `${…}` can reach it
+  (C2 §5.1/§5.2), without ever auto-appending it to a value (R154 item 5).
+
+- **Notebook: the graph node card's unit row, and the source palette's unit
+  column (2026-09-09, decision 45, R154/R160/R164).** `NodeCard.tsx` gains a
+  unit row under the name/status row — a `"channel"` node's own
+  `ChannelSummary.unit`, or a `"definition"` node's `CellDefResult.unit`
+  (`GraphCanvas.tsx`'s new `unitFor`, mirroring `valueFor`'s lookup).
+  `sourcePalette.ts`'s `PaletteChannelRow`/`PaletteDefinitionRow` gain the
+  unit column R160 deliberately left out while the field didn't exist;
+  `SourcePaletteRail.tsx` renders it beside the rate badge. All three
+  render the three states distinctly (this task's own rule): `known` shows
+  the unit itself, `dimensionless` shows no badge at all (not a blank that
+  reads as missing), `unknown` shows an explicit `?` with the reason as its
+  tooltip.
+
+- **Notebook: the CAD-style top toolbar (2026-09-09, ruling R161).** One
+  toolbar row spans the tab above the columns, so the preview beneath it
+  runs full height. Its leading group is column visibility -- three
+  independent toggles (`model/notebookColumns.ts`'s `NotebookColumnId`:
+  `graph`/`properties`/`cells`), replacing the old binary Graph/Cells view
+  toggle (`graphViewOpen`) — both can now show at once in the wide/`"panes"`
+  layout, each its own resizable panel (mirroring `ColumnFrame.tsx`'s "no
+  panel, no divider when hidden" rule, R107). Everything else merges in:
+  the workbook selector and Save, playback transport, and — behind a
+  `<details>` "More…" overflow disclosure, since the row never wraps — the
+  gesture-preset and X-axis selects. Banners (sandbox/catalog/markdown/eval
+  status, conflict, version, migration) move under the toolbar, above the
+  columns, so they never shrink one column; the master timeline strip stays
+  its own full-width row (not one of R161's named toolbar controls).
+  Visibility persists per machine (`idl1.notebook.columns.v1`, a sibling key
+  to `shell/columnPrefs.ts`'s own storage — a different concept, the outer
+  shell's four docked columns vs. these three Notebook-local panes — never
+  synced, never in a workbook). A restructure, not a feature: every control
+  keeps its prior condition/props, only its position changed.
+
 ### Added
 
 - **Notebook: the maths graph's source palette (2026-09-09, ruling R160).**

@@ -149,6 +149,15 @@ function materializeHostVar(payload: HostVarPayload): unknown {
       records[i] = { t: t[i], v: v[i], w: w[i] };
     }
     Object.defineProperty(records, "windows", { value: payload.windows, enumerable: false });
+    // C2 §5.1's `.unit`/`.unitState` host-variable properties (R154/R164):
+    // `.unit` a plain display string so a prose `${…}` splices it directly
+    // (R154 item 5 — this never auto-appends it to a value; an author
+    // places it explicitly), `.unitState` the three-state discriminator for
+    // code that must tell "no unit" apart from "we don't know" (§3.3.1).
+    // Non-enumerable, same as `windows` above, so `for...of`/`Plot`'s own
+    // field access by index never sees them.
+    Object.defineProperty(records, "unit", { value: payload.unit.state === "known" ? payload.unit.text : "", enumerable: false });
+    Object.defineProperty(records, "unitState", { value: payload.unit.state, enumerable: false });
     return records;
   }
 

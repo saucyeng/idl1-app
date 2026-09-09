@@ -43,6 +43,7 @@
  * so it costs no extra `fetchTile` call.
  */
 import type { DecodedHostChannel } from "../../../../ipc/hostChannel";
+import type { UnitLabel } from "../../../../ipc/workbook";
 import type { DecodedTile } from "../../../../ipc/tiles";
 import { tileToChannelData } from "./channelData";
 import type { BoundChannel } from "./channelRebind";
@@ -211,7 +212,7 @@ export interface CombinedChannelPayload {
  *  `setChannelHostVar`'s transfer list; `retained` (a separate, un-
  *  transferred copy) is what a caller keeps for `model/cursorCard.ts`. */
 export type ChannelBindAction =
-  | { type: "channelData"; cellId: string; channelId: string; length: number; t: ArrayBuffer; v: ArrayBuffer; w: ArrayBuffer; windows: WindowDescriptor[]; retained: CombinedChannelPayload }
+  | { type: "channelData"; cellId: string; channelId: string; length: number; t: ArrayBuffer; v: ArrayBuffer; w: ArrayBuffer; windows: WindowDescriptor[]; unit: UnitLabel; retained: CombinedChannelPayload }
   | { type: "boundChannels"; cellId: string; bound: BoundChannel[] }
   | { type: "chartWindow"; cellId: string; chartWindow: ChartWindow };
 
@@ -380,9 +381,10 @@ async function runChannelBindWindow(
         v: combined.v.buffer.slice(0) as ArrayBuffer,
         w: combined.w.buffer.slice(0) as ArrayBuffer,
         windows: combined.windows,
+        unit: channel.unit,
         retained: { length: combined.length, t: combined.t, v: combined.v, w: combined.w, windows: combined.windows, spans: [primary.span] },
       });
-      bounds.push({ source: "definition", name: channel.channelId, budget });
+      bounds.push({ source: "definition", name: channel.channelId, budget, unit: channel.unit });
       // No `chartWindow` dispatch: a definition channel is never the
       // mounted channel (`bindingFor`'s `mountedChannelId` is always a
       // `"session"` channel or `null`).
@@ -470,6 +472,7 @@ async function runChannelBindWindow(
       v: combined.v.buffer.slice(0) as ArrayBuffer,
       w: combined.w.buffer.slice(0) as ArrayBuffer,
       windows: combined.windows,
+      unit: channel.unit,
       retained: { length: combined.length, t: combined.t, v: combined.v, w: combined.w, windows: combined.windows, spans: contributingSpans },
     });
 
@@ -490,6 +493,7 @@ async function runChannelBindWindow(
         startUs: primaryMapped.startUs,
         endUs: primaryMapped.endUs,
         budget,
+        unit: channel.unit,
       });
 
       if (channel.channelId === mountedChannelId) {

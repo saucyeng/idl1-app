@@ -10,6 +10,7 @@ import { hoverAt, type HoverGeometry } from "../model/hover";
 import { isStaleSettleResult, makeSettle } from "../model/settle";
 import { chooseTier, tileRange } from "../model/tiers";
 import { ensureTiles, type TileCache, type TileCacheKey } from "../model/tileCache";
+import { rawUnitToLabel } from "../model/unitLabel";
 import { clampTo, panBy, transformFor, zoomAt, type Viewport } from "../model/viewport";
 import { cursorTimeInWindow, type AbsoluteSpan } from "../model/viewportWindows";
 import ChartContextMenu from "../interaction/ChartContextMenu";
@@ -211,10 +212,12 @@ export interface ChartCellProps {
    * missing-label fallback, documented in `model/cursor.ts`).
    */
   channelLabel?: string;
-  /** `ChannelSummary.unit` (C1 §4.1) for this cell's own channel, for the
-   *  cursor value card's rows (Task 7, decision 55). `undefined` renders as
-   *  `""` (`model/cursorCard.ts`'s own fallback), same shape as
-   *  {@link channelLabel}'s missing-label convention. */
+  /** `ChannelSummary.unit` (C1 §4.1), verbatim, for this cell's own channel
+   *  -- for the cursor value card's rows (Task 7, decision 55). This
+   *  component converts it to the three-state `UnitLabel` `cursorCardRows`
+   *  now takes (R154 item 6, `model/unitLabel.ts`'s `rawUnitToLabel`) --
+   *  `undefined` is treated the same as `""` (no unit recorded), same shape
+   *  as {@link channelLabel}'s missing-label convention. */
   channelUnit?: string;
   /** The total number of selected windows (`AppState.selection.length`),
    *  for the cursor value card's R132 naming (`model/jsCellNote.ts`'s
@@ -822,7 +825,7 @@ export default function ChartCell({
       const rows =
         offsetUs === null || combinedChannelData === undefined
           ? []
-          : cursorCardRows(offsetUs, combinedChannelData, channelLabel ?? channelId, channelUnit ?? "", windowCount ?? 1, selectedWindowKeys);
+          : cursorCardRows(offsetUs, combinedChannelData, channelLabel ?? channelId, rawUnitToLabel(channelUnit ?? ""), windowCount ?? 1, selectedWindowKeys);
       setCard(rows.length === 0 ? null : { pixelX, rows });
     },
     [

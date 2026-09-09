@@ -5,7 +5,7 @@
  * realm sends, `SandboxToHostMessage` for what it receives — even though the
  * plan lists both in one table for readability.
  */
-import type { Span } from "../../../../ipc/workbook";
+import type { Span, UnitLabel } from "../../../../ipc/workbook";
 
 /**
  * One selected window's display metadata, as carried alongside a
@@ -40,6 +40,22 @@ export interface WindowDescriptor {
  * `new Float64Array(payload.f)`/`new Float64Array(payload.m)`
  * unconditionally on receipt.
  *
+ * `"channel"` also carries `unit` (R154/R164, C2 §5.1's `.unit`/`.unitState`
+ * host-variable properties) — the same three-state `UnitLabel` a
+ * `CellDefResult`/`HostChannel` carries, threaded through unchanged from
+ * whichever caller resolved it (a `math` definition's `CellDefResult.unit`,
+ * or a raw session channel's `ChannelSummary.unit` via
+ * `model/unitLabel.ts`'s `rawUnitToLabel` — R165: neither ever comes from
+ * `fetch_host_channel`'s IDLH bytes, which carry samples only).
+ * `sandbox/main.ts`'s `materializeHostVar` projects it onto the returned
+ * record array as two non-enumerable properties, the same pattern already
+ * used for `windows` below — `.unit` a plain display string (so a prose
+ * `${…}` can splice it directly, C2 §5.2) and `.unitState` the
+ * `"known"|"dimensionless"|"unknown"` discriminator for code that needs to
+ * tell the three states apart. `"spectrum"` has no unit of its own yet — a
+ * spectrum's magnitude unit is a separate open question (C2 §3.3's
+ * `periodogram`/`welch` rows), out of this task's scope.
+ *
  * Both `"channel"` and `"spectrum"` gain a `w` column and a `windows`
  * descriptor array (ruling R127, amended by **ruling R129**: R127
  * originally gave only `"channel"` this shape and instead had
@@ -57,7 +73,7 @@ export interface WindowDescriptor {
  */
 export type HostVarPayload =
   | { kind: "json"; value: unknown }
-  | { kind: "channel"; length: number; t: ArrayBuffer; v: ArrayBuffer; w: ArrayBuffer; windows: WindowDescriptor[] }
+  | { kind: "channel"; length: number; t: ArrayBuffer; v: ArrayBuffer; w: ArrayBuffer; windows: WindowDescriptor[]; unit: UnitLabel }
   | { kind: "spectrum"; length: number; f: ArrayBuffer; m: ArrayBuffer; w: ArrayBuffer; windows: WindowDescriptor[] };
 
 /** One cell as the host hands it to the sandbox for (re)definition. */
@@ -205,13 +221,14 @@ export function channelPayload(
   t: ArrayBuffer,
   v: ArrayBuffer,
   w: ArrayBuffer,
-  windows: WindowDescriptor[]
+  windows: WindowDescriptor[],
+  unit: UnitLabel
 ): { message: { type: "setHostVar"; name: string; value: HostVarPayload }; transfer: Transferable[] } {
   return {
     message: {
       type: "setHostVar",
       name,
-      value: { kind: "channel", length, t, v, w, windows },
+      value: { kind: "channel", length, t, v, w, windows, unit },
     },
     transfer: [t, v, w],
   };
