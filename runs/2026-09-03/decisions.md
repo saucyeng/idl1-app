@@ -7218,3 +7218,59 @@ deleted.
 **Cost if wrong.** A palette that duplicates the Data tab is a column Isaac
 has already had removed once; one that hides channels missing from one
 window makes a user think the data is gone.
+
+## 2026-09-09 — R161: the Notebook gets a CAD-style top toolbar; the preview column becomes full height
+
+**Isaac, 2026-09-09:** *"there's a toolbar at the top of the right Preview
+panel in the notebook tab. i'd like that to get converted to a top bar, cad
+style. The first few buttons on the tab can probably be the show/hide
+buttons for the channel registry/maths chart and notebook code/properties
+tab. The rest of the items can get merged into the top toolbar so that the
+preview on the right is the full height preview."*
+
+**The problem it solves.** Everything currently stacks *above* the content
+inside the notebook page — the playback transport, the X-mode select, the
+gesture-preset picker, the workbook save bar with its Graph/Cells toggle,
+and up to four banners (version, conflict, migration pending, migration
+saved). Every one of them steals vertical pixels from the thing the page
+exists to show. On a 1200 px window with three banners up, the preview is a
+letterbox.
+
+**Ruling — one toolbar spanning the tab, above the columns.**
+
+1. **A single top bar, full tab width**, above `ColumnFrame`. The preview
+   column then runs **full height** beneath it, and nothing else consumes
+   vertical space inside a column.
+2. **The leading group is column visibility** — CAD-style toggles for the
+   maths-graph column, the properties/code column, and the notebook cells
+   column. `ColumnFrame` already has the capability: R107 made `library`
+   optional and `visibleColumnIds` decides which panels and dividers render,
+   so a hidden column renders nothing rather than collapsing to a sliver.
+   These are the buttons Isaac wants first, and they replace the current
+   Graph/Cells toggle — showing or hiding a column *is* the same gesture,
+   generalised.
+3. **Everything else merges in**, grouped and separated: the workbook
+   selector and Save, the Graph/Cells content switch, playback transport,
+   worksheet X mode, gesture preset.
+4. **Banners stay banners.** A version, conflict or migration banner is a
+   *transient statement about the document*, not a control, and must not
+   move into a toolbar of controls — but it belongs **under** the toolbar
+   and above the columns, spanning the tab, so it never shrinks one column.
+5. **The toolbar is one row and stays one row.** If it cannot fit, controls
+   collapse into an overflow menu rather than wrapping — a toolbar that
+   wraps to two rows has given back the vertical space this ruling exists to
+   reclaim.
+
+**Where the state already lives.** Column visibility belongs with
+`columnPrefs.ts`, beside the widths and collapsed flags it already persists
+per machine — it is a renderer-only preference (CLAUDE.md §3), so it never
+enters a workbook and never syncs.
+
+**Sequencing.** This lands **after** the unit-model and palette lanes, both
+of which touch `Notebook/index.tsx`; three lanes in one file would conflict
+for no reason. It is a restructure, not a feature — no behaviour changes,
+every control keeps its current semantics, and the tests that cover them
+must still pass untouched.
+
+**Cost if wrong.** A toolbar that wraps, or banners that live inside a
+column, reproduce the letterboxing this removes.
