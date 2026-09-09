@@ -6906,3 +6906,46 @@ task introduces the label the fix needs.
 
 **Cost if wrong.** (1) is the live tension: a diagnostic that nobody sees is
 worse than no model at all, because it implies the units were checked.
+
+## 2026-09-09 — R155: the app refuses partial IMU channel sets even though the wire permits them; SPEC §8's example is corrected
+
+**Finding** (notebook-diag lane, correctly skipped rather than guessed).
+Direction-2 **decision 70** — Isaac's own, from lived experience: *"they're
+all 6 or nothing; I had sessions where two of the IMUs didn't have all their
+channels"* — says enabling an IMU enables all six of its channels. But
+**SPEC §8's own worked example** enables IMUs with only three to five
+channels on, and `validate.test.ts` uses that example verbatim as its
+fixture. Enforcing decision 70 would make the spec's canonical config fail
+its own validator.
+
+**Ruling — the policy stands; the example is wrong.**
+
+The two are not actually in conflict once the layers are separated:
+- **The wire permits a partial channel mask.** §5.3's IMU channel mask is a
+  bitfield and the device will happily record three axes. Nothing in the
+  protocol needs to change, and the parser must keep reading such a file —
+  Isaac **has** sessions like that, and they must stay readable forever.
+- **The app refuses to *create* one.** Decision 70 is a policy about what a
+  user may configure, adopted precisely because partial masks produced
+  sessions with missing channels that were discovered too late to re-ride.
+
+So: `Device/config/validate.ts` enforces all-or-nothing on **config the app
+writes**, and **SPEC §8's worked example is corrected** to a compliant
+config, with a sentence recording that a partial mask remains representable
+on the wire and readable by the importer — it is simply no longer something
+this app will send. `validate.test.ts`'s fixture follows the corrected
+example.
+
+**The general rule this is an instance of:** a spec example is *executable
+documentation* (R150), so an example that violates a current policy will
+keep teaching the violation — and here it also silently anchored a test.
+When a policy and an example disagree, one of them must move; deciding
+*which* requires knowing whether the constraint lives on the wire or in the
+product. This one is in the product.
+
+**Do not** weaken the validator to keep the fixture green. That is the
+tail wagging the dog, and the fixture is the thing that is wrong.
+
+**Cost if wrong.** Left as-is, the app keeps offering a configuration that
+produces the exact data loss decision 70 exists to prevent — and the rider
+finds out after the session, when the ride cannot be repeated.
