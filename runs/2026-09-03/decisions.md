@@ -7957,3 +7957,57 @@ singular payload signature above, and the jsdom assumption here. Both were
 caught because the lane stopped and asked (standing order §1) instead of
 implementing what was written. Worth saying plainly: a plan is evidence
 about intent, not evidence about the tree.
+
+---
+
+## R174 — The report has its own print palette, and the chips move with the lines
+
+*2026-09-09, lead. Raised as a disclosed gap by the `report2` lane.*
+
+`ReportView` passes `seriesPalette(documentVars())` and the screen's
+`PlotThemeOptions` straight into `renderChart`. Those are the **dark
+theme's** values — `--chart-3: #f5d547` amber, a `#353a32` grid, `#9a968a`
+axis text — onto a page that `report-print.css` deliberately forces to
+`color: black; background: white`, because paper is not the dark theme.
+Amber on white is a highlighter stroke; a `#353a32` grid on white is
+invisible; `#9a968a` axis labels wash out. The report's own stylesheet and
+its own charts currently disagree about what surface they are printing on.
+
+**This is not only legibility. The report contains its own legend.** Task
+R1's selection block (plan §3.1 item 3) renders each window's colour chip
+from the same `--chart-N` tokens, and R173 made that block the colour key
+precisely because Plot has no scale to legend against. So if the charts get
+print colours and the chips do not, a reader matches a chip to the wrong
+line — R169's failure, this time *inside a single document*, where there is
+nothing to check it against. **Chips and lines must be resolved from one
+palette or neither.**
+
+**Ruling.**
+
+1. A print palette and print plot-theme live in the report's own module —
+   one resolver, called once per report build, feeding both the selection
+   block's chips and every `chartSlot`. No component reaches for
+   `documentVars()` on a report path.
+2. Chart chrome follows `report-print.css`'s existing rule: near-black
+   axis text and rules, a grid light enough to read through but present.
+   Do not invent a third convention — match the stylesheet already there.
+3. The eight series colours are **derived from the existing `--chart-N`
+   hues, not replaced**. Keep the hue and the slot order; adjust lightness/
+   saturation until each meets a stated contrast ratio against white, and
+   write the target into the code as a named constant with its rationale.
+   Preserving hue and order means a chart Isaac knows from the screen is
+   still recognisably the same chart on paper.
+4. Retuning is expected. State in the module that these are a first pass
+   chosen for contrast, not brand-approved values, so the next person
+   changes them without archaeology.
+
+**Why derive rather than ask.** There is no light palette in this app —
+that is a disclosed gap from the UI pass (decision 5). Waiting for one
+would leave every printed chart illegible; picking eight fresh colours
+would be inventing a brand palette in a report lane. Deriving is the only
+option that is defensible tonight and cheap to overrule later.
+
+**Cost if wrong.** Colours on paper — visible, subjective, and a one-file
+change to retune. The expensive half is item 1: if chips and lines are ever
+resolved separately, the report's key silently lies, and that is the part
+worth getting right the first time.
