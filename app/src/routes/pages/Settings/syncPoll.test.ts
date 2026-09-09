@@ -9,7 +9,7 @@ import {
   type SyncStatusPollDeps,
 } from "./syncPoll";
 
-const EMPTY_STATUS: SyncStatus = { paired_peers: [], last_sync_utc_ms: null };
+const EMPTY_STATUS: SyncStatus = { paired_peers: [], last_sync_utc_ms: null, this_device: { peer_id: "self", name: "This machine" } };
 
 function fakePeer(id: string): PeerStatus {
   return { peer_id: id, name: "Pit Tablet", online: true, protocol_version: 1, paired_at_ms: 1000 };

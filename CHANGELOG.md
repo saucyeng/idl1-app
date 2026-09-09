@@ -6,6 +6,20 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 
 ### Added
 
+- **Settings → Sync shows this device's own name and id, and can rename it
+  (2026-09-09, rulings R170/R172).** `set_sync_device_name` had been live in
+  Rust since 2026-09-07 with no TypeScript caller at all (found by this
+  week's IPC mirror audit), and wiring it was blocked on a gap the audit
+  could not see: nothing on the wire reported this device's own name, so a
+  rename field had no current value to show. `sync_status` now carries
+  `this_device: { peer_id, name }` — the identity rides on the status the
+  pane already polls rather than a command of its own. The pane shows the
+  id (never guessed by the app, per R104: pairing two of your own machines
+  means reading it off the other one's screen) and states plainly that a
+  rename affects new pairings only — an already-paired device keeps the
+  name it recorded at pairing time, and changing that would need a wire
+  message the contract does not define.
+
 - **`unwatch_workbook(id)` — a workbook's OS file watch can now be stopped
   by name (2026-09-09, ruling R98).** Closing a workbook, or hiding the
   Notebook route, previously dropped the frontend callback but left the

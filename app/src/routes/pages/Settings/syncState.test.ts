@@ -5,7 +5,7 @@ import {
   syncStateReducer,
   type SyncState,
 } from "./syncState";
-import type { PeerStatus, SyncResult } from "../../../ipc/sync";
+import type { PeerStatus, SyncResult, SyncStatus } from "../../../ipc/sync";
 
 const initialState: SyncState = {
   status: null,
@@ -42,6 +42,7 @@ describe("syncStateReducer", () => {
         peer({ peer_id: "b", name: "Phone", online: false }),
       ],
       last_sync_utc_ms: 1000,
+      this_device: { peer_id: "self", name: "This machine" },
     };
 
     // Act
@@ -55,6 +56,33 @@ describe("syncStateReducer", () => {
     expect(next.status?.last_sync_utc_ms).toBe(1000);
   });
 
+  it("syncStateReducer — a rename after a poll — this_device.name updates without waiting for the next poll", () => {
+    // Arrange
+    const status: SyncStatus = {
+      paired_peers: [],
+      last_sync_utc_ms: null,
+      this_device: { peer_id: "self", name: "old-name" },
+    };
+    const polled = syncStateReducer(initialState, { type: "status", status });
+
+    // Act
+    const next = syncStateReducer(polled, { type: "renamed", name: "Pit laptop" });
+
+    // Assert
+    expect(next.status?.this_device).toEqual({ peer_id: "self", name: "Pit laptop" });
+  });
+
+  it("syncStateReducer — a rename before the first poll resolves — dropped, no synthetic status", () => {
+    // Arrange — `status` is null until the first poll lands.
+
+    // Act
+    const next = syncStateReducer(initialState, { type: "renamed", name: "Pit laptop" });
+
+    // Assert — the rename is persisted server-side, so the first poll
+    // carries it; inventing a status here would fabricate a peer_id.
+    expect(next.status).toBeNull();
+  });
+
   it("syncStateReducer — a status poll while a sync is running — the running progress is not clobbered", () => {
     // Arrange
     const running = { peerId: "a", done: 3, total: 10, phase: "blobs" };
@@ -66,6 +94,7 @@ describe("syncStateReducer", () => {
       status: {
         paired_peers: [peer({ peer_id: "a", name: "Desktop", online: true })],
         last_sync_utc_ms: null,
+        this_device: { peer_id: "self", name: "This machine" },
       },
     });
 

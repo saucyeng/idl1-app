@@ -24,6 +24,7 @@ import { describeSyncResult, syncStateReducer, type SyncState } from "./syncStat
 import {
   onPeerAppeared,
   pairPeer,
+  setSyncDeviceName,
   startPairing,
   syncNow,
   syncStatus,
@@ -134,6 +135,11 @@ export default function SyncSection({ store }: SyncSectionProps) {
   const [myCode, setMyCode] = useState<PairingCode | null>(null);
   const [showingCode, setShowingCode] = useState<boolean>(false);
   const [nowMs, setNowMs] = useState<number>(() => Date.now());
+  /** The rename field's draft text, or `null` when not editing. `null`
+   *  rather than "equal to the current name" so a poll landing mid-edit
+   *  cannot silently overwrite what the user is typing. */
+  const [nameDraft, setNameDraft] = useState<string | null>(null);
+  const [renaming, setRenaming] = useState<boolean>(false);
 
   // The `sync_status` poll (wave-2 operating brief §4's effects rule: all
   // decision logic lives in the pure `startSyncStatusPoll` driver, gated on
@@ -259,10 +265,72 @@ export default function SyncSection({ store }: SyncSectionProps) {
       });
   }
 
+  /** Commits the rename draft. `set_sync_device_name` returns the name as
+   *  stored, so the pane updates from that rather than from the draft (a
+   *  trailing space is trimmed server-side — showing the draft would
+   *  display something the device is not actually called). A blank name is
+   *  rejected by the command with `invalid_argument`; the draft is kept so
+   *  the user can correct it rather than losing what they typed. */
+  function handleRename(): void {
+    if (nameDraft === null || renaming) return;
+
+    setRenaming(true);
+    setSyncDeviceName(nameDraft)
+      .then((stored) => {
+        dispatch({ type: "renamed", name: stored });
+        setNameDraft(null);
+      })
+      .catch((error: unknown) => {
+        dispatch({ type: "failure", message: describeSyncError(error) });
+      })
+      .finally(() => {
+        setRenaming(false);
+      });
+  }
+
+  const thisDevice = state.status?.this_device ?? null;
   const runningPeerId = state.running?.peerId ?? null;
 
   return (
     <div className="flex flex-col gap-4">
+      <div className="flex flex-col gap-2">
+        <h3 className="font-mono text-xs uppercase tracking-[var(--tracking-label)] text-fg-dim">This device</h3>
+        {thisDevice === null ? (
+          <p className="font-mono text-xs text-fg-faint">Reading this device’s identity…</p>
+        ) : (
+          <>
+            <div className="flex items-center gap-2">
+              <Input
+                aria-label="This device’s name"
+                className="w-64 font-mono text-sm"
+                value={nameDraft ?? thisDevice.name}
+                disabled={renaming}
+                onChange={(e) => setNameDraft(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") handleRename();
+                  if (e.key === "Escape") setNameDraft(null);
+                }}
+              />
+              <Button
+                type="button"
+                size="sm"
+                onClick={handleRename}
+                disabled={renaming || nameDraft === null || nameDraft.trim() === "" || nameDraft === thisDevice.name}
+              >
+                {renaming ? "Renaming…" : "Rename"}
+              </Button>
+            </div>
+            <p className="font-mono text-xs text-fg-dim">
+              ID: <span className="select-all text-fg">{thisDevice.peer_id}</span>
+            </p>
+            <p className="font-mono text-xs text-fg-faint">
+              Read this ID on the other device when pairing. Renaming affects new pairings only — a
+              device already paired with this one keeps the name it recorded then.
+            </p>
+          </>
+        )}
+      </div>
+
       <div className="flex flex-col gap-2">
         <h3 className="font-mono text-xs uppercase tracking-[var(--tracking-label)] text-fg-dim">Paired devices</h3>
         {state.peers.length === 0 ? (

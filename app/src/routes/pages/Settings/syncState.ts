@@ -48,6 +48,7 @@ export type SyncAction =
   | { type: "paired"; peer: PeerStatus }
   | { type: "unpaired"; peerId: string }
   | { type: "peerAppeared"; peer: PeerStatus }
+  | { type: "renamed"; name: string }
   | { type: "failure"; message: string };
 
 /** Pure reducer over {@link SyncState}. Never calls IPC itself — the Sync
@@ -105,6 +106,21 @@ export function syncStateReducer(state: SyncState, action: SyncAction): SyncStat
       return {
         ...state,
         peers: state.peers.filter((peer) => peer.peer_id !== action.peerId),
+        lastError: null,
+      };
+    }
+    case "renamed": {
+      // `set_sync_device_name` returns the name as stored, so the pane
+      // shows it at once rather than waiting up to `POLL_INTERVAL_MS`
+      // (ruling R172 — that return value existed for exactly this). A
+      // rename before the first poll resolves has no `status` to patch and
+      // is simply dropped: the first poll will carry the new name anyway,
+      // since the rename is already persisted server-side.
+      if (state.status === null) return { ...state, lastError: null };
+
+      return {
+        ...state,
+        status: { ...state.status, this_device: { ...state.status.this_device, name: action.name } },
         lastError: null,
       };
     }

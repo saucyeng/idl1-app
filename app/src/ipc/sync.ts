@@ -35,11 +35,26 @@ export interface PeerStatus {
   paired_at_ms: number;
 }
 
+/** This device's own sync identity, as peers see it (C3 §3.9, ruling
+ *  R172). Both fields are non-optional: the identity is minted on first
+ *  launch, so there is no state in which it is absent. */
+export interface ThisDevice {
+  /** This device's stable wire id. Reported here rather than guessed by
+   *  the app (ruling R104) — pairing two of your own machines means
+   *  reading this off the other one's screen. */
+  peer_id: string;
+  /** This device's display name, as sent in outgoing pair requests and as
+   *  last set by {@link setSyncDeviceName}. */
+  name: string;
+}
+
 /** `sync_status`'s return (C3 §3.9). */
 export interface SyncStatus {
   paired_peers: PeerStatus[];
   /** i64, null if never synced */
   last_sync_utc_ms: number | null;
+  /** This device's own id and name (ruling R172). */
+  this_device: ThisDevice;
 }
 
 /** `sync_now`'s return (C3 §3.9, all six fields per ruling R102). */
@@ -110,6 +125,23 @@ export async function pairPeer(peerId: string, code: string): Promise<PeerStatus
  *  `syncStatus`'s `paired_peers` list (C3 §3.9). */
 export async function unpairPeer(peerId: string): Promise<void> {
   return invoke<void>("unpair_peer", { peerId });
+}
+
+/** Renames this device (C3 §3.9, ruling R105/R172): persists the new name
+ *  and updates what future pair requests announce. Returns the name as
+ *  stored, so a caller can render it immediately rather than waiting for
+ *  the next `sync_status` poll.
+ *
+ *  **Not retroactive.** An already-paired peer keeps the name it copied
+ *  into its own peer file at pairing time; changing that would need a wire
+ *  message this contract does not define. A UI offering the rename has to
+ *  say so.
+ *
+ *  Rejects a blank or whitespace-only name with `invalid_argument` — once
+ *  the user has explicitly chosen to rename, there is no sensible default
+ *  to silently apply (unlike the hostname seed used on first launch). */
+export async function setSyncDeviceName(name: string): Promise<string> {
+  return invoke<string>("set_sync_device_name", { name });
 }
 
 /** Subscribes to the `peer_appeared` app event (C3 §3.9): fires whenever a
