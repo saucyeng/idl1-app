@@ -10,7 +10,7 @@ const segmentation: FftSegmentation = {
   hopSize: 1024,
   window: "hann",
   detrend: "mean",
-  scaling: "magnitude",
+  scaling: "raw_magnitude",
 };
 
 function selectedWindow(span: SelectedWindow["span"]): SelectedWindow {
