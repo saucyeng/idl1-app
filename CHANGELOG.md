@@ -94,6 +94,21 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
   `logging_elapsed_s`, `battery_raw`, `sd_free_mib`, `service_uuids`) that
   `commands/device.rs` already carries but the TS side hadn't picked up.
 
+- **Device tab: HRM search filters to the heart-rate service by default
+  (2026-09-09, decision 68, ruling R157 item 3) — supersedes the "not
+  implemented" note on the 2026-09-08 push-config entry below.** New
+  `Device/forms/hrmFilter.ts` (pure, vitest-covered): `HrmForm`'s "Search
+  nearby" list now defaults to devices advertising the standard heart-rate
+  service (`0000180d-…`), with a "Show all devices" toggle. A device that
+  advertised **no** service UUIDs at all is kept even while filtered — an
+  empty `DeviceDiscovered.service_uuids` means the scan record didn't carry
+  a service list, not that the device has none, and hiding it risked
+  making a real strap invisible; only a device that positively advertised
+  a *different* non-empty set is excluded. When the filter hides every
+  discovered device, the form says so by count ("N devices found, none
+  look like heart-rate straps") rather than reading as "nothing nearby"
+  (R153).
+
 - **Notebook: the maths graph's source palette (2026-09-09, ruling R160).**
   A collapsible rail on the graph canvas, closed by default, listing the
   three droppable source kinds — raw channels of the current selection
