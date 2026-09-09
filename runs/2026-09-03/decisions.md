@@ -7155,3 +7155,66 @@ joins the lane gate** alongside `-p idl-rs -p idl-rs-cli` and
 **Cost if wrong.** A conflict cell is minted precisely when two people edited
 the same thing — so the cell most likely to be swallowed is the one carrying
 work someone would otherwise lose.
+
+## 2026-09-09 — R160: the graph's source palette is a canvas rail, not a studio column; `migrate-workbook` is struck permanently
+
+**Isaac, 2026-09-09, on the channel list:** *"i recognize the use for that,
+but don't exactly know what it should look like. maybe a lightweight version
+of the data explorer?? maybe just a collapsible dropdown that includes the
+constants as well?"* And on the CLI: *"2. no."*
+
+### `migrate-workbook` — struck permanently
+
+R157 removed it from the rename lane because its premise was false (R30 cut
+it in wave 1). Isaac has now declined it as a feature outright. The migration
+a user's workbook actually needs is already delivered by the four doors that
+exist — read, save, merge, and the version floor. **Do not re-propose it**;
+if a future plan assumes it exists, that plan is wrong, as the scipy plan
+was.
+
+### The source palette — a collapsible rail on the graph canvas
+
+**What the data flow needs.** To add a node you need a *source* to drag. The
+sources are exactly three, and they are not what the Data tab shows:
+1. **Raw channels of the selected session(s)** — `SessionDetail.channels`,
+   about thirty on a real ride, naturally grouped by prefix (`IMU0_`,
+   `IMU1_`, `IMU2_`, `GPS_`, `HR_`).
+2. **Workbook constants** — Isaac's own suggestion, and right: a constant is
+   a droppable source like any other.
+3. **Definitions already declared** — so a second node can reference one
+   without hunting the canvas for it.
+
+**Why a rail on the canvas rather than a studio column.** R107 removed the
+library column because it duplicated the Data tab. This does not: the Data
+tab answers *which session and which lap*, while the palette answers *which
+signal*. But it is only useful while the graph is open, so a studio column
+would be dead space in the cell view — exactly the mistake R107 corrected.
+It lives **on the graph canvas, collapsed by default**, and it costs nothing
+when closed.
+
+**Behaviour.**
+- **Search-first.** With ~50 definitions and ~30 channels expected
+  (decision 42), typing filters; the list is grouped and collapsible per
+  group, not a flat scroll.
+- **Drag onto the canvas mints the node** — decision 45a's gesture, through
+  `graphEdits.ts`'s already-tested `addNodeFromChannel`. Drag is the
+  primary verb; a click may select for keyboard-add later, but the ruling
+  does not require it.
+- **Each row shows what a person needs to choose:** name, unit, and rate.
+  Rate is available now (R152 shipped `sample_rate_hz`); **unit is not until
+  the unit model lands (R154)** — show the rate, leave the unit column out
+  entirely rather than blank, and add it when it exists. A blank unit column
+  invites someone to fill it in from a channel name.
+- **Scoped to the selection, honestly.** Channels exist per session, so with
+  several windows selected show the **union**, and **grey** any channel
+  absent from some selected window — decision 44's rule (grey out, hide
+  nothing), so a channel does not silently vanish when a second lap is
+  added.
+
+**What it is not.** Not a second Data tab, not a session browser, not a
+place to select laps. If it grows those, it has become the thing R107
+deleted.
+
+**Cost if wrong.** A palette that duplicates the Data tab is a column Isaac
+has already had removed once; one that hides channels missing from one
+window makes a user think the data is gone.
