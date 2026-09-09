@@ -7377,3 +7377,70 @@ and its unit rule assumes exactly that.
 **Cost if wrong.** An unmarked prose-derived rule is indistinguishable from
 a verified one, so the first person to implement `correlate` has no signal
 that its unit was never checked against code.
+
+## 2026-09-09 — R164: the `# unit:` annotation grammar; where a host channel's unit attaches; conservative propagation accepted
+
+Three items from the unit-model lane, all correctly stopped on.
+
+### 1. `# unit:` needs a grammar, and it is authoritative
+
+R154 accepted an author-declared `# unit: N/mm` as "the only escape from a
+permanent `unknown` for CSV-sourced maths", but **no grammar for it exists
+in C2** — the lane grepped and found nothing, and §1 makes a stated-nowhere
+grammar a stop-and-ask. Correct.
+
+**Ruling — it joins the existing trailing-comment annotation scan**, beside
+`shape:` and `label:` (C2 §3.6's ordered-scan production), on the same
+comment line and in the same lowercase key form:
+
+    spring_rate = [force] / [travel]   # unit: N/mm label: Spring rate
+
+Same terminator rule as its siblings — a key runs until the next recognised
+annotation key or end of line — so `unit:` costs no new lexical machinery
+and an author already knows the shape.
+
+**It is authoritative, not a fallback.** A declared unit wins over
+inference. The author knows what their CSV column holds and the engine
+cannot; a fallback-only rule would leave them unable to *correct* a wrong
+inference, only to fill a blank one.
+
+**But a disagreement is visible.** If inference produces a `Known` unit that
+differs from the declaration, that is a **diagnostic on the cell** — the
+same treatment as a mismatched `+` (R154). Silently preferring either one
+would hide a real conflict: either the annotation is stale or the inference
+is wrong, and both are worth knowing.
+
+Spec-first: C2 §3.2's annotation production gains `unit:` before the code
+does.
+
+### 2. A host channel's unit attaches to `HostChannel`
+
+`HostChannel` is `pub` with consumers beyond the sandbox, so the lane asked
+whether the unit belongs there or on a sandbox-only wrapper.
+
+**Ruling: on `HostChannel` itself**, as an optional field. A unit is
+metadata about *the value*, and a wrapper would create two shapes for one
+concept — the same duplication that R138 and R141 kept collapsing. Consumers
+that do not care ignore an added optional field.
+
+**If it reaches beyond the struct and its constructors** — into a `pub`
+signature, the tile path, or serialisation with behaviour attached — **stop
+and report the real extent** before finishing, exactly as with R162's `Ast`
+variant. That estimate has been wrong before.
+
+### 3. Conservative sibling propagation — accepted as landed
+
+A sibling definition's unit propagates through `[Name]` only when it is
+`Known` and non-dimensionless; a dimensionless or scalar sibling reports
+`Unknown(NoSourceUnit)` rather than adopting that state. Not the full
+cascade, and the lane said so.
+
+**Accepted.** It is never *wrong* — it under-claims, which is the correct
+direction under R152, where a wrong unit is worse than no unit. The full
+cascade needs `infer` to accept something richer than `Option<String>`;
+filed as a follow-up rather than widened mid-lane, and documented in the
+code where the next reader meets it.
+
+**Cost if wrong.** (1) decided the wrong way — a fallback-only annotation —
+would leave a rider unable to correct a unit the engine got wrong, on the
+one path (CSV imports) where the engine has nothing to go on.
