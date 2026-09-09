@@ -1477,6 +1477,37 @@ two windows over the same channel are the ordinary case (lap-to-lap
 comparison, R117 item 2) — a host variable is keyed by the definition
 alone, never by which windows are selected (R127 item 1: qualifying the
 name would make a cell's code depend on the current selection and break
+**Unit properties (added 2026-09-09, rulings R154/R164/R165).** A
+`channel(...)` result also carries its unit, as **two non-enumerable
+properties** on the returned record array — the same projection pattern
+`windows` already uses, so neither appears in a `for...of` over the samples
+nor in Plot's column inference:
+
+| Property | Type | Meaning |
+|---|---|---|
+| `.unit` | `string` | The unit as text, ready to splice into a prose `${…}` (§5.2). Empty when the value is dimensionless. |
+| `.unitState` | `"known" \| "dimensionless" \| "unknown"` | Which of the three states `.unit` represents. |
+
+**Two properties, not one, because the three states do not collapse into a
+string.** A dimensionless value and a value whose unit could not be inferred
+both have no text to show, and they are different claims: a count *has* no
+unit; an unknowable exponent's unit is *unknown*. Ruling R152 made this the
+governing rule — a wrong unit is worse than none, because the reader stops
+checking — and R154 made the third state mandatory once the survey proved
+`unknown` unavoidable (a CSV channel's C1 unit is `""`; `pow(x, [n])` has no
+static exponent).
+
+The unit comes from whichever source resolved the value — a definition's
+`CellDefResult.unit`, or a raw channel's C1 unit — and **never** from
+`fetch_host_channel`'s IDLH bytes, which carry samples and framing only
+(R165).
+
+**A prose `${…}` does not auto-append the unit** (R154 item 5). The span is
+an arbitrary JS expression whose value may not be the quantity the unit
+describes; appending would produce a confident mislabel, which is precisely
+what this model exists to prevent. The author writes
+`${peak_travel} ${channel("fork").unit}` — or omits it — deliberately.
+
 when the user clicks a second lap), so one `channel(name)` call publishes
 *every* selected window's data in one payload rather than one payload per
 window. `t`/`v` are the concatenation of each selected window's own
