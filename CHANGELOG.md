@@ -6,6 +6,19 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 
 ### Fixed
 
+- **`imu.low_power_mode`/`imu.high_performance_mode` both set is now a
+  validation error, not a warning (2026-09-08).** Firmware confirms the two
+  are XOR (`runs/2026-09-08/firmware/STATUS-7.3-DELTA.md`, "Resolved with
+  Isaac") — supersedes the earlier "SPEC §8 doesn't say which flag wins"
+  warning now that firmware has said there is nothing to win. Neither flag
+  set is left unchecked (reads as ordinary high-performance mode). The
+  six-channels-all-or-nothing half of the same brief item (direction-2
+  decision 70) is **not** done: SPEC §8's own worked example
+  (`validate.test.ts`'s `SPEC_WORKED_EXAMPLE`, transcribed verbatim from the
+  device spec) itself enables an IMU with only 3-5 of its six channels on,
+  so a hard validation error there would fail the spec's own example config
+  — a real conflict between the wire spec and the newer app-side UI policy
+  that needs the lead's call, not a guess.
 - **`SandboxHost`'s re-render coalescing is a trailing debounce, not a bare
   `queueMicrotask` (2026-09-08, overnight brief "coalesce the re-render").**
   A `queueMicrotask` only merges calls made within the same microtask; a

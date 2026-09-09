@@ -100,12 +100,17 @@ function checkImuSlot(slot: ImuSlot, slotPath: string, issues: ValidationIssue[]
 }
 
 /** Checks `imu.low_power_mode`/`imu.high_performance_mode` for both being
- *  set at once. SPEC §8 does not state which flag wins when both are true,
- *  so this is a `warning` — it does not affect `isPushable` — flagging an
- *  unspecified firmware state rather than guessing a precedence rule. */
+ *  set at once. Firmware confirms the two are XOR (`runs/2026-09-08/firmware/STATUS-7.3-DELTA.md`,
+ *  "Resolved with Isaac"): both set is a config validation error, blocking
+ *  a push (`isPushable`) — supersedes the earlier `warning` (SPEC §8 alone
+ *  didn't state a precedence rule; firmware now says there is none to
+ *  state, because the combination is simply invalid). Neither flag set is
+ *  not checked here — that reads as ordinary high-performance mode
+ *  (`checkImuSampleRate`'s own `low_power_mode ? ... : ...` default) and
+ *  firmware has stated no objection to it. */
 function checkImuModeFlags(imu: DeviceConfig["imu"], issues: ValidationIssue[]): void {
   if (imu.low_power_mode && imu.high_performance_mode) {
-    pushWarning(issues, "imu.low_power_mode", "low_power_mode and high_performance_mode both set; firmware behaviour unspecified (SPEC §8)");
+    pushError(issues, "imu.low_power_mode", "low_power_mode and high_performance_mode cannot both be set — firmware treats them as mutually exclusive (STATUS-7.3-DELTA.md)");
   }
 }
 
