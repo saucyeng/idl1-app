@@ -1749,6 +1749,15 @@ Return:
 interface SyncStatus {
   paired_peers: PeerStatus[];
   last_sync_utc_ms: number | null;   // i64, null if never synced
+  this_device: ThisDevice;           // added post-sign 2026-09-09, lead ruling R172
+}
+interface ThisDevice {
+  peer_id: string;   // this device's stable wire id. Reported here, never
+                     //   guessed by the app (R104): a user pairing two of
+                     //   their own machines reads it off this screen
+  name: string;      // this device's display name, as sent in outgoing
+                     //   PairRequests and as last set by
+                     //   set_sync_device_name
 }
 interface PeerStatus {
   peer_id: string;
@@ -1764,6 +1773,23 @@ interface PeerStatus {
 }
 ```
 Errors: `io`, `internal`, `sync` (a sync-layer failure while reading peer/pairing state — added post-sign 2026-09-05, lead ruling R57, to match the §2 kind table's row for `sync`).
+
+**`this_device` (added 2026-09-09, ruling R172).** Both fields are
+non-optional: `identity::load_or_create` mints the identity on first
+launch, so there is no state in which it is absent, and an `Option` would
+model one that cannot occur.
+
+It rides on `sync_status` rather than a command of its own because what
+peers see you as **is** sync status, and the pane that shows it already
+polls this. The rename setter (`set_sync_device_name`, below) returns the
+updated name, so a caller can render the new value immediately and let the
+next poll reconcile.
+
+**A rename is not retroactive.** `set_sync_device_name` changes this field
+and future pairings; it does **not** change what an already-paired peer
+displays for us — that name was copied into their peer file at pairing
+time, and re-sending it would need a wire message this contract does not
+define. A UI offering the rename must say so.
 
 **`sync_now(peer_id: string, progress: Channel<Progress>)`**
 `Progress.done`/`.total` are blobs+cells transferred/expected (a mixed unit;
