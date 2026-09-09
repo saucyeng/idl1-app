@@ -1702,14 +1702,14 @@ address, because there is no longer a second key to address.
 | `hopSize` | `fft.hopSize` | positive integer, samples, or `"all"` | `1024` samples (50 % overlap of 2048) | `params.hop_size` |
 | `window` | `fft.window` | `"rectangular" \| "hann" \| "hamming"` | `"hann"` | `params.window` |
 | `detrend` | `fft.detrend` | `"none" \| "mean" \| "linear"` | `"mean"` | `params.detrend` |
-| `scaling` | `fft.scaling` | `"magnitude" \| "density"` | `"magnitude"` | `params.scaling` |
+| `scaling` | `fft.scaling` | `"density" \| "spectrum" \| "raw_magnitude"` (ruling R167/R168 — the retired `"magnitude"` spelling still parses on a pre-R167 cell, but a newly-seeded/picker-offered cell never writes it) | `"raw_magnitude"` | `params.scaling` |
 | `averaging` | `fft.averaging` | `"none" \| "mean" \| "median" \| "max"` | `"mean"` | `fetch_fft`'s `averaging` |
 | `stroke` | `SpectrumMarkProps.stroke` | CSS colour literal | omitted | none |
 | `strokeWidth` | `SpectrumMarkProps.strokeWidth` | number, CSS px | omitted | none |
 | `x.type` | `XAxisProps.type` | `"linear" \| "log"` | `"log"` | none |
 | `x.label` | `XAxisProps.label` | string | `"Frequency (Hz)"` | none |
 | `y.type` | `YAxisProps.type` | `"linear" \| "log" \| "sqrt"` | `"linear"` | none |
-| `y.label` | `YAxisProps.label` | string | `"Magnitude (<unit>)"` / `"PSD (<unit>²/Hz)"` per scaling | none |
+| `y.label` | `YAxisProps.label` | string | `"Magnitude (<unit>)"` (`raw_magnitude`/`magnitude`) / `"PSD (<unit>²/Hz)"` (`density`) / `"Power (<unit>²)"` (`spectrum`) per scaling | none |
 | — no bin/point budget grammar token (R79 Q4) — | — | — | — | a host-side `bin_count` cap; above it the cell shows a note and does not fetch |
 
 **`PlotProps` shape** (illustrative — L6 Task 20 owns the code):

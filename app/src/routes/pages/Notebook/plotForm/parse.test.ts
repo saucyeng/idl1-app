@@ -310,7 +310,7 @@ describe("parse", () => {
 });
 
 describe("parse — FFT chart (C2 §5.3, added 2026-09-06)", () => {
-  it("parse — C2 §5.3 example 5, defaults — returns props deep-equal to the original", () => {
+  it("parse — a stored cell on the retired \"magnitude\" scaling spelling (R168 back-compat) — returns props deep-equal to the original", () => {
     // Arrange
     const code = [
       "Plot.plot({",
@@ -346,7 +346,7 @@ describe("parse — FFT chart (C2 §5.3, added 2026-09-06)", () => {
       '  x: { label: "Frequency (Hz)", type: "log" },',
       '  y: { label: "Magnitude (m/s)", type: "log" },',
       "  marks: [",
-      '    Plot.lineY(spectrum("fork_velocity", { windowSize: "all", hopSize: "all", window: "hann", detrend: "mean", scaling: "magnitude", averaging: "none" }), { x: "f", y: "m", stroke: "#2196F3" })',
+      '    Plot.lineY(spectrum("fork_velocity", { windowSize: "all", hopSize: "all", window: "hann", detrend: "mean", scaling: "raw_magnitude", averaging: "none" }), { x: "f", y: "m", stroke: "#2196F3" })',
       "  ]",
       "})",
     ].join("\n");
@@ -355,7 +355,7 @@ describe("parse — FFT chart (C2 §5.3, added 2026-09-06)", () => {
       mark: {
         channel: "fork_velocity",
         mark: "lineY",
-        fft: { windowSize: "all", hopSize: "all", window: "hann", detrend: "mean", scaling: "magnitude", averaging: "none" },
+        fft: { windowSize: "all", hopSize: "all", window: "hann", detrend: "mean", scaling: "raw_magnitude", averaging: "none" },
         stroke: "#2196F3",
       },
       x: { label: "Frequency (Hz)", type: "log" },
@@ -376,7 +376,7 @@ describe("parse — FFT chart (C2 §5.3, added 2026-09-06)", () => {
       '  x: { type: "log" },',
       "  marks: [",
       '    Plot.lineY(channel("fork_velocity"), { x: "t", y: "v" }),',
-      '    Plot.lineY(spectrum("fork_velocity", { windowSize: 1024, hopSize: 512, window: "hann", detrend: "mean", scaling: "magnitude", averaging: "mean" }), { x: "f", y: "m" })',
+      '    Plot.lineY(spectrum("fork_velocity", { windowSize: 1024, hopSize: 512, window: "hann", detrend: "mean", scaling: "raw_magnitude", averaging: "mean" }), { x: "f", y: "m" })',
       "  ]",
       "})",
     ].join("\n");
@@ -394,7 +394,7 @@ describe("parse — FFT chart (C2 §5.3, added 2026-09-06)", () => {
       "Plot.plot({",
       '  x: { type: "log" },',
       "  marks: [",
-      '    Plot.lineY(spectrum("fork_velocity", { windowSize: 1024, hopSize: 512, window: "hann", detrend: "mean", scaling: "magnitude", averaging: "mean" }), { x: "f", y: "m" }),',
+      '    Plot.lineY(spectrum("fork_velocity", { windowSize: 1024, hopSize: 512, window: "hann", detrend: "mean", scaling: "raw_magnitude", averaging: "mean" }), { x: "f", y: "m" }),',
       '    Plot.lineY(channel("fork_velocity"), { x: "t", y: "v" })',
       "  ]",
       "})",
@@ -413,8 +413,8 @@ describe("parse — FFT chart (C2 §5.3, added 2026-09-06)", () => {
       "Plot.plot({",
       '  x: { type: "log" },',
       "  marks: [",
-      '    Plot.lineY(spectrum("a", { windowSize: 1024, hopSize: 512, window: "hann", detrend: "mean", scaling: "magnitude", averaging: "mean" }), { x: "f", y: "m" }),',
-      '    Plot.dot(spectrum("b", { windowSize: 1024, hopSize: 512, window: "hann", detrend: "mean", scaling: "magnitude", averaging: "mean" }), { x: "f", y: "m" })',
+      '    Plot.lineY(spectrum("a", { windowSize: 1024, hopSize: 512, window: "hann", detrend: "mean", scaling: "raw_magnitude", averaging: "mean" }), { x: "f", y: "m" }),',
+      '    Plot.dot(spectrum("b", { windowSize: 1024, hopSize: 512, window: "hann", detrend: "mean", scaling: "raw_magnitude", averaging: "mean" }), { x: "f", y: "m" })',
       "  ]",
       "})",
     ].join("\n");
@@ -432,7 +432,7 @@ describe("parse — FFT chart (C2 §5.3, added 2026-09-06)", () => {
       "Plot.plot({",
       '  x: { type: "log" },',
       "  marks: [",
-      '    Plot.lineY(spectrum("a", { windowSize: 1024, hopSize: 512, window: "hann", detrend: "mean", scaling: "magnitude" }), { x: "f", y: "m" })',
+      '    Plot.lineY(spectrum("a", { windowSize: 1024, hopSize: 512, window: "hann", detrend: "mean", scaling: "raw_magnitude" }), { x: "f", y: "m" })',
       "  ]",
       "})",
     ].join("\n");
@@ -450,7 +450,7 @@ describe("parse — FFT chart (C2 §5.3, added 2026-09-06)", () => {
       "Plot.plot({",
       '  x: { type: "log" },',
       "  marks: [",
-      '    Plot.lineY(spectrum("a", { windowSize: 1024, hopSize: 512, window: "hann", detrend: "mean", scaling: "magnitude", averaging: "mean", extra: 1 }), { x: "f", y: "m" })',
+      '    Plot.lineY(spectrum("a", { windowSize: 1024, hopSize: 512, window: "hann", detrend: "mean", scaling: "raw_magnitude", averaging: "mean", extra: 1 }), { x: "f", y: "m" })',
       "  ]",
       "})",
     ].join("\n");
@@ -468,7 +468,7 @@ describe("parse — FFT chart (C2 §5.3, added 2026-09-06)", () => {
       "Plot.plot({",
       '  x: { type: "log" },',
       "  marks: [",
-      '    Plot.lineY(spectrum("a", { windowSize: windowSize, hopSize: 512, window: "hann", detrend: "mean", scaling: "magnitude", averaging: "mean" }), { x: "f", y: "m" })',
+      '    Plot.lineY(spectrum("a", { windowSize: windowSize, hopSize: 512, window: "hann", detrend: "mean", scaling: "raw_magnitude", averaging: "mean" }), { x: "f", y: "m" })',
       "  ]",
       "})",
     ].join("\n");
@@ -486,7 +486,7 @@ describe("parse — FFT chart (C2 §5.3, added 2026-09-06)", () => {
       "Plot.plot({",
       '  x: { type: "log" },',
       "  marks: [",
-      '    Plot.lineY(spectrum("a", { windowSize: 1024, hopSize: 512, window: "hann", detrend: "mean", scaling: "magnitude", averaging: "mean" }), { x: "t", y: "v" })',
+      '    Plot.lineY(spectrum("a", { windowSize: 1024, hopSize: 512, window: "hann", detrend: "mean", scaling: "raw_magnitude", averaging: "mean" }), { x: "t", y: "v" })',
       "  ]",
       "})",
     ].join("\n");
@@ -521,7 +521,7 @@ describe("parse — FFT chart (C2 §5.3, added 2026-09-06)", () => {
     const code = [
       "Plot.plot({",
       "  marks: [",
-      '    Plot.lineY(spectrum("a", { windowSize: 1024, hopSize: 512, window: "hann", detrend: "mean", scaling: "magnitude", averaging: "mean" }), { x: "f", y: "m" })',
+      '    Plot.lineY(spectrum("a", { windowSize: 1024, hopSize: 512, window: "hann", detrend: "mean", scaling: "raw_magnitude", averaging: "mean" }), { x: "f", y: "m" })',
       "  ]",
       "})",
     ].join("\n");
@@ -539,7 +539,7 @@ describe("parse — FFT chart (C2 §5.3, added 2026-09-06)", () => {
       "Plot.plot({",
       '  x: { label: "Frequency (Hz)" },',
       "  marks: [",
-      '    Plot.lineY(spectrum("a", { windowSize: 1024, hopSize: 512, window: "hann", detrend: "mean", scaling: "magnitude", averaging: "mean" }), { x: "f", y: "m" })',
+      '    Plot.lineY(spectrum("a", { windowSize: 1024, hopSize: 512, window: "hann", detrend: "mean", scaling: "raw_magnitude", averaging: "mean" }), { x: "f", y: "m" })',
       "  ]",
       "})",
     ].join("\n");
@@ -557,7 +557,7 @@ describe("parse — FFT chart (C2 §5.3, added 2026-09-06)", () => {
       "Plot.plot({",
       '  x: { type: "log" },',
       "  marks: [",
-      '    Plot.rectY(spectrum("a", { windowSize: 1024, hopSize: 512, window: "hann", detrend: "mean", scaling: "magnitude", averaging: "mean" }), { x: "f", y: "m" })',
+      '    Plot.rectY(spectrum("a", { windowSize: 1024, hopSize: 512, window: "hann", detrend: "mean", scaling: "raw_magnitude", averaging: "mean" }), { x: "f", y: "m" })',
       "  ]",
       "})",
     ].join("\n");
@@ -575,7 +575,7 @@ describe("parse — FFT chart (C2 §5.3, added 2026-09-06)", () => {
       "Plot.plot({",
       '  x: { type: "log" },',
       "  marks: [",
-      '    Plot.lineY(spectrum("a", { windowSize: 1024, hopSize: 512, window: "hann", detrend: "mean", scaling: "magnitude", averaging: "mean" }, { lap: 1 }), { x: "f", y: "m" })',
+      '    Plot.lineY(spectrum("a", { windowSize: 1024, hopSize: 512, window: "hann", detrend: "mean", scaling: "raw_magnitude", averaging: "mean" }, { lap: 1 }), { x: "f", y: "m" })',
       "  ]",
       "})",
     ].join("\n");
@@ -593,13 +593,13 @@ describe("parse — FFT chart (C2 §5.3, added 2026-09-06)", () => {
       "Plot.plot({",
       '  x: { type: "log" },',
       "  marks: [",
-      '    Plot.lineY(spectrum("a", { averaging: "mean", scaling: "magnitude", detrend: "mean", window: "hann", hopSize: 512, windowSize: 1024 }), { y: "m", x: "f" })',
+      '    Plot.lineY(spectrum("a", { averaging: "mean", scaling: "raw_magnitude", detrend: "mean", window: "hann", hopSize: 512, windowSize: 1024 }), { y: "m", x: "f" })',
       "  ]",
       "})",
     ].join("\n");
     const expected: FftPlotProps = {
       chart: "fft",
-      mark: { channel: "a", mark: "lineY", fft: { windowSize: 1024, hopSize: 512, window: "hann", detrend: "mean", scaling: "magnitude", averaging: "mean" } },
+      mark: { channel: "a", mark: "lineY", fft: { windowSize: 1024, hopSize: 512, window: "hann", detrend: "mean", scaling: "raw_magnitude", averaging: "mean" } },
       x: { type: "log" },
     };
 

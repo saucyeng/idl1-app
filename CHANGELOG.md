@@ -4,6 +4,26 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 
 ## [Unreleased]
 
+### Changed
+
+- **Notebook: the FFT properties pane's Scaling picker offers all three of
+  the maths language's names (2026-09-09, ruling R167/R168).** `plotForm/
+  types.ts` splits the old two-name `FFT_SCALINGS` in two: `FFT_SCALINGS`
+  (all four accepted spellings — `density`/`spectrum`/`raw_magnitude`, plus
+  the retired `magnitude` a pre-R167 workbook may still carry) for
+  `parse.ts`'s grammar reader, and `FFT_SCALING_OPTIONS` (the three
+  offered) for the picker. `PropertiesForm.tsx`'s Scaling `<select>` now
+  offers "Density (PSD)" / "Spectrum" / "Magnitude"
+  (`model/propertiesForm.ts`'s new `fftScalingSelectOptions`, which appends
+  a fourth `"magnitude"` option, for that render only, when the cell is
+  currently on the retired spelling — an unmatched `<select>` value would
+  otherwise silently render as, and rewrite on the next edit into, Density).
+  `defaultFftPlotProps` now seeds `scaling: "raw_magnitude"` (was
+  `"magnitude"`), and `suggestSpectrumAxisLabel` gains a `"spectrum"` branch
+  (`` `Power (${unit}²)` ``, C2 §3.3.1's `spectral_rule`), written as an
+  exhaustive switch. C2 §5.3's parameter table corrected to the three
+  current names and the `"spectrum"` y-label default.
+
 ### Removed
 
 - **Device tab: the Calibration placeholder panel (2026-09-08,

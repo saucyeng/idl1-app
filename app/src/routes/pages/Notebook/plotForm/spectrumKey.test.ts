@@ -8,7 +8,7 @@ const baseParams: FftParams = {
   hopSize: 1024,
   window: "hann",
   detrend: "mean",
-  scaling: "magnitude",
+  scaling: "raw_magnitude",
   averaging: "mean",
 };
 

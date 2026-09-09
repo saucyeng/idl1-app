@@ -366,7 +366,7 @@ describe("bindingFor — hand-written code (R148 part 2)", () => {
     const detail = sessionDetail([channel()]);
     const code = [
       "const s = spectrum(\"fork_velocity\", {",
-      '  windowSize: 1024, hopSize: 512, window: "hann", detrend: "mean", scaling: "magnitude", averaging: "mean"',
+      '  windowSize: 1024, hopSize: 512, window: "hann", detrend: "mean", scaling: "raw_magnitude", averaging: "mean"',
       "});",
       "renderMyOwnSpectrumPlot(s);",
     ].join("\n");
@@ -412,7 +412,7 @@ function fftCode(channelId: string, windowSize: number | "all" = 1024, hopSize: 
     "Plot.plot({",
     '  x: { type: "log" },',
     "  marks: [",
-    `    Plot.lineY(spectrum(${JSON.stringify(channelId)}, { windowSize: ${JSON.stringify(windowSize)}, hopSize: ${JSON.stringify(hopSize)}, window: "hann", detrend: "mean", scaling: "magnitude", averaging: ${JSON.stringify(averaging)} }), { x: "f", y: "m" })`,
+    `    Plot.lineY(spectrum(${JSON.stringify(channelId)}, { windowSize: ${JSON.stringify(windowSize)}, hopSize: ${JSON.stringify(hopSize)}, window: "hann", detrend: "mean", scaling: "raw_magnitude", averaging: ${JSON.stringify(averaging)} }), { x: "f", y: "m" })`,
     "  ]",
     "})",
   ].join("\n");
@@ -486,7 +486,7 @@ describe("bindingFor — FFT arm", () => {
 
     const binding = asFft(bindingFor({ id: "cell-a", code: fftCode("fork_velocity", 1024, 512, "mean") }, detail, 60_000_000, noDefinitions));
 
-    expect(binding.hostVarName).toBe("fork_velocity | 1024 | 512 | hann | mean | magnitude | mean");
+    expect(binding.hostVarName).toBe("fork_velocity | 1024 | 512 | hann | mean | raw_magnitude | mean");
   });
 
   it("bindingFor — no window argument — request.window defaults to null (R117/R127)", () => {
