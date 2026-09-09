@@ -30,6 +30,14 @@ export interface JsCellFrameProps {
   error?: string;
   /** A visible note distinguishing "form-generated but names a channel this session doesn't have" from plain custom code (this task's dispatch). */
   note?: string;
+  /**
+   * Opens the cell decision 58's "Fix" button should point at
+   * (`model/fixTarget.ts`'s `fixTargetCellId` — the failing definition's own
+   * cell when known, this cell otherwise). `undefined` hides the button
+   * entirely: a frame with neither `note` nor `error` never shows one, and
+   * the same is true for a frame from before this task's callers.
+   */
+  onFix?: () => void;
   /** Sends this cell's current on-screen rectangle to the sandbox (`host/SandboxHost.ts`'s `sendLayout`), same contract as `ChartCellProps.sendLayout`. */
   sendLayout: (cellId: string, rect: { top: number; left: number; width: number }) => void;
 }
@@ -45,7 +53,29 @@ export interface JsCellFrameProps {
  * positioned under this frame via `sendLayout`, exactly like `ChartCell`'s
  * own layout effect.
  */
-export default function JsCellFrame({ cellId, heightPx, error, note, sendLayout }: JsCellFrameProps) {
+/**
+ * Decision 58's affordance: shown beside a note or error `NoteBlock`, opens
+ * `onFix`'s target cell (`model/fixTarget.ts`) — never this frame's own
+ * `onSelect`-equivalent, since `CellFrame`'s wrapping `onClick` would
+ * otherwise re-select *this* cell right after `onFix` opens the actual
+ * offending one; `stopPropagation` keeps the two from racing.
+ */
+function FixButton({ onFix }: { onFix: () => void }) {
+  return (
+    <button
+      type="button"
+      className="ml-2 underline text-fg"
+      onClick={(e) => {
+        e.stopPropagation();
+        onFix();
+      }}
+    >
+      Fix
+    </button>
+  );
+}
+
+export default function JsCellFrame({ cellId, heightPx, error, note, onFix, sendLayout }: JsCellFrameProps) {
   const frameRef = useRef<HTMLDivElement>(null);
   const depsRef = useRef({ cellId, sendLayout });
   depsRef.current = { cellId, sendLayout };
@@ -87,8 +117,18 @@ export default function JsCellFrame({ cellId, heightPx, error, note, sendLayout 
       className="js-cell-frame"
       style={{ position: "relative", width: "100%", height: resolvedHeightPx }}
     >
-      {note !== undefined && <div className={`${NOTE_BLOCK_CLASSES} border-rule text-fg-dim`}>{note}</div>}
-      {error !== undefined && <div className={`${NOTE_BLOCK_CLASSES} border-accent text-accent`}>{error}</div>}
+      {note !== undefined && (
+        <div className={`${NOTE_BLOCK_CLASSES} border-rule text-fg-dim`}>
+          {note}
+          {onFix !== undefined && <FixButton onFix={onFix} />}
+        </div>
+      )}
+      {error !== undefined && (
+        <div className={`${NOTE_BLOCK_CLASSES} border-accent text-accent`}>
+          {error}
+          {onFix !== undefined && <FixButton onFix={onFix} />}
+        </div>
+      )}
     </div>
   );
 }

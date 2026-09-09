@@ -177,6 +177,29 @@ export function declaredDefinitionNames(markdown: string): ReadonlySet<string> {
 }
 
 /**
+ * Maps every `def_line` name to the `math` cell that declares it (decision
+ * 58's "Fix" affordance, `model/fixTarget.ts`): the same scan as
+ * {@link declaredDefinitionNames}, keeping the owning `cellId` instead of
+ * discarding it. A name declared twice (a document error C3 §3.4 already
+ * rejects at eval time) keeps whichever cell this scan visits last — this
+ * module makes no attempt to pick a "correct" one, since the document
+ * itself is already invalid in that case.
+ */
+export function definitionCellIds(markdown: string): ReadonlyMap<string, string> {
+  const doc = scanCells(markdown);
+  const bytes = new TextEncoder().encode(markdown);
+  const decoder = new TextDecoder();
+
+  const cellIds = new Map<string, string>();
+  for (const cell of doc.cells) {
+    if (cell.kind !== "math" || cell.id === null) continue;
+    const body = decoder.decode(bytes.subarray(cell.bodyRange[0], cell.bodyRange[1]));
+    for (const def of parseDefLines(body)) cellIds.set(def.name, cell.id);
+  }
+  return cellIds;
+}
+
+/**
  * Builds the graph's nodes, edges, and groups from `markdown`'s math cells
  * and (optionally) the latest `CellOutput[]` for display labels. One node
  * per `def_line`; one additional `"channel"` node per name referenced but
