@@ -7870,3 +7870,52 @@ omission; the pane states it.
 undone, the cost is a device permanently named whatever hostname the
 identity file was minted from, and a pairing flow that asks for an id the
 app never shows.
+
+---
+
+## R173 — The report renders every channel a chart binds, and `document.ts` owns the decision
+
+*2026-09-09, lead. Two questions from the `report2` lane, both correct to ask.*
+
+**1. `renderChart` takes a map, not one payload.** The report plan wrote the
+signature as `(PlotProps, CombinedChannelPayload, …)` — singular — before
+anyone checked how the data is actually retained. `index.tsx:438` keys
+`combinedChannelDataRef` by `${cellId}::${channelId}`, and line 2402 hands
+`ChartCell` one payload per channel: **multi-channel overlay is live
+behaviour on screen today.** The singular signature would print a
+three-trace chart with one trace, or as an absence.
+
+A report that disagrees with the screen it was printed from is R169's
+failure exactly, and worse here: on paper there is no chip to hover, no
+second view to check against. Widening a signature to match data that
+already exists is not scope creep — it is the plan being corrected by the
+code.
+
+**2. `document.ts` gains the `chartSlot` block kind.** The plan's own R1 row
+listed `chartSlot`; R2 stubbed it as a generic absence to reach end-to-end
+early (R147's whole point). Finishing it completes R1's stated shape.
+
+Rejected: having `ReportView` post-process `absence` blocks back into
+charts. That puts cell-kind dispatch in a renderer *alongside* the copy in
+`document.ts` — two spellings of one decision, which is how every drift
+ruled on this week began (R143, R169).
+
+**The purity line, restated because this is where it would break.**
+`document.ts` stays pure: zero React, zero DOM, zero IPC. A `chartSlot`
+carries *inputs* — `cellId`, parsed `PlotProps`, that cell's channel-data
+map, the caption — and **never** an `SVGSVGElement`. `document.ts` decides
+that a chart belongs there and what it is made of; `renderChart` is the only
+thing that touches the DOM. Charts still reach the page host-side (R166):
+no user code runs, the R69 trust boundary does not move.
+
+**3. Unasked, but exposed by the question: `buildReportDocument` converts to
+an options object.** It is at seven positional parameters, three of them
+`Map`s — `proseBlocks`, `evals`, and now `chartInputs`. Transposing two
+same-shaped positional maps is a silent bug that typechecks. One caller
+exists and R1's tests are three days old; this is cheap now and compounds.
+Folded into the `chartSlot` commit rather than a separate refactor.
+
+**Cost if wrong.** (1) is a wider type — harmless if multi-channel report
+charts turn out unwanted. (3) is mechanical and reversible. (2) is the one
+with a real alternative, and the cost of choosing wrong is a second place
+that decides what a cell becomes.
