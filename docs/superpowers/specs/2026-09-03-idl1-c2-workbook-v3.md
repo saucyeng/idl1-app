@@ -1117,7 +1117,7 @@ Plot.plot({
 Charting the matrix it came from is the `[t,f]` raster row of §3.6.6:
 `fork_spec` is exactly a `spectrogram(...)` call, so the cell draws
 `fetch_raster(kind: "spectrogram")` with `window_size: 2048, hop_size: 1024,
-window: "hann", detrend: "mean", scaling: "magnitude"` — the same six values
+window: "hann", detrend: "mean", scaling: "raw_magnitude"` — the same six values
 the definition line states — with `peak_freq` overlaid as a line on the same
 axes, both on time axis B, which is why they align without an `align` call.
 
@@ -1609,7 +1609,16 @@ window_size   ::= js_int | "\"all\""                              (* new 2026-09
 hop_size      ::= js_int | "\"all\""                              (* new 2026-09-06 — R79 Q1 *)
 window_fn     ::= "\"rectangular\"" | "\"hann\"" | "\"hamming\""  (* new 2026-09-06 *)
 detrend       ::= "\"none\"" | "\"mean\"" | "\"linear\""          (* new 2026-09-06 *)
-scaling       ::= "\"magnitude\"" | "\"density\""                 (* new 2026-09-06 *)
+scaling       ::= "\"density\"" | "\"spectrum\"" | "\"raw_magnitude\""
+                | "\"magnitude\""                                 (* R167/R168: the maths
+                                                                       language's three names.
+                                                                       "magnitude" is the retired
+                                                                       spelling of "raw_magnitude" —
+                                                                       still ACCEPTED by the reader,
+                                                                       so a pre-R167 cell parses and
+                                                                       round-trips, but never offered
+                                                                       by a picker and never newly
+                                                                       written. Was 2 names 2026-09-06. *)
 averaging     ::= "\"none\"" | "\"mean\"" | "\"median\"" | "\"max\""   (* new 2026-09-06 *)
 spectrum_options ::= "{" "x" ":" "\"f\"" "," "y" ":" "\"m\""      (* new 2026-09-06 *)
                        ("," "stroke" ":" css_color)?
@@ -1885,7 +1894,7 @@ props = {
   chart: "fft",
   mark: { channel: "fork_velocity", mark: "lineY", fft: {
     windowSize: 2048, hopSize: 1024, window: "hann",
-    detrend: "mean", scaling: "magnitude", averaging: "mean"
+    detrend: "mean", scaling: "raw_magnitude", averaging: "mean"
   } },
   x: { label: "Frequency (Hz)", type: "log" },
   y: { label: "Magnitude (m/s)" }
@@ -1896,7 +1905,7 @@ Plot.plot({
   x: { label: "Frequency (Hz)", type: "log" },
   y: { label: "Magnitude (m/s)" },
   marks: [
-    Plot.lineY(spectrum("fork_velocity", { windowSize: 2048, hopSize: 1024, window: "hann", detrend: "mean", scaling: "magnitude", averaging: "mean" }), { x: "f", y: "m" })
+    Plot.lineY(spectrum("fork_velocity", { windowSize: 2048, hopSize: 1024, window: "hann", detrend: "mean", scaling: "raw_magnitude", averaging: "mean" }), { x: "f", y: "m" })
   ]
 })
 ```
@@ -1907,7 +1916,7 @@ Plot.plot({
   x: { label: "Frequency (Hz)", type: "log" },
   y: { label: "Magnitude (m/s)", type: "log" },
   marks: [
-    Plot.lineY(spectrum("fork_velocity", { windowSize: "all", hopSize: "all", window: "hann", detrend: "mean", scaling: "magnitude", averaging: "none" }), { x: "f", y: "m", stroke: "#2196F3" })
+    Plot.lineY(spectrum("fork_velocity", { windowSize: "all", hopSize: "all", window: "hann", detrend: "mean", scaling: "raw_magnitude", averaging: "none" }), { x: "f", y: "m", stroke: "#2196F3" })
   ]
 })
 ```
