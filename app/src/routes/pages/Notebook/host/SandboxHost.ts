@@ -20,7 +20,16 @@ import {
 import { BOOT_TIMEOUT_MS, createBootTimer, type BootTimer } from "./bootTimer";
 import { OutboundQueue } from "./outboundQueue";
 import { replayInitAndHostVars, replaySetCells } from "./rebuildReplay";
+import { makeRerenderCoalescer, type RerenderCoalescer } from "./rerenderCoalescer";
 import { createWatchdog, type Watchdog } from "./watchdog";
+
+/** How long a coalesced re-render waits for the burst of publishes it's
+ *  merging to go quiet, in ms — see {@link makeRerenderCoalescer}'s own doc
+ *  comment. Short enough that a settled chart still redraws promptly; long
+ *  enough to merge a page load's channel/spectrum publishes, which each
+ *  resolve their own IPC round trip independently but land close together
+ *  in practice. */
+const RERENDER_COALESCE_MS = 50;
 
 /** One queued outbound message plus the transfer list it must be posted with. */
 interface OutboundEnvelope {
@@ -113,8 +122,12 @@ export class SandboxHost {
    *  not the notebook's own cells). */
   private lastInitRuntimeVersion: string | null = null;
   private lastCells: SandboxCell[] | null = null;
-  /** True while a coalesced re-render is queued — see {@link scheduleRerender}. */
-  private rerenderPending = false;
+  /** Coalesces a burst of `setChannelHostVar`/`setSpectrumHostVar` publishes
+   *  into one re-render — see {@link scheduleRerender} and
+   *  `rerenderCoalescer.ts`'s own doc comment. */
+  private readonly rerenderCoalescer: RerenderCoalescer = makeRerenderCoalescer(RERENDER_COALESCE_MS, () => {
+    if (this.lastCells !== null) this.postToSandbox({ type: "setCells", cells: this.lastCells });
+  });
   /** Last-sent value of every JSON-kind host variable, replayed after a
    *  rebuild (`replayAfterRebuild`, review-task5b.md Major finding). Never
    *  holds a `{kind:"channel"}` payload — see {@link SandboxHostCallbacks.onChannelsInvalidated}. */
@@ -257,17 +270,16 @@ export class SandboxHost {
    * spectrum data is fetched asynchronously, so it always arrives after
    * `setCells` has already run the cells, and without this a chart whose
    * `channel(...)` call resolved to an unbound name stays empty forever
-   * (the cell never runs again). Coalesced through a microtask so a burst
-   * of publishes — one per channel per cell — costs one re-render, not one
-   * each.
+   * (the cell never runs again). Coalesced through {@link rerenderCoalescer}
+   * (a trailing debounce, `RERENDER_COALESCE_MS`) rather than a bare
+   * `queueMicrotask` — a `queueMicrotask` only merges calls made within the
+   * same microtask, and a page load's publishes each resolve their own IPC
+   * round trip independently, landing in separate tasks; a microtask alone
+   * produced roughly one re-render per channel instead of one for the
+   * whole load.
    */
   private scheduleRerender(): void {
-    if (this.rerenderPending || this.lastCells === null) return;
-    this.rerenderPending = true;
-    queueMicrotask(() => {
-      this.rerenderPending = false;
-      if (this.lastCells !== null) this.postToSandbox({ type: "setCells", cells: this.lastCells });
-    });
+    this.rerenderCoalescer.notify();
   }
 
   /**
@@ -377,6 +389,7 @@ export class SandboxHost {
   /** Tears down the iframe and stops listening. Call when the notebook closes. */
   dispose(): void {
     this.bootTimer.dispose();
+    this.rerenderCoalescer.cancel();
     this.postToSandbox({ type: "teardown" });
     window.removeEventListener("message", this.onMessage);
     this.iframe.remove();

@@ -6,6 +6,17 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 
 ### Fixed
 
+- **`SandboxHost`'s re-render coalescing is a trailing debounce, not a bare
+  `queueMicrotask` (2026-09-08, overnight brief "coalesce the re-render").**
+  A `queueMicrotask` only merges calls made within the same microtask; a
+  page load's channel/spectrum publishes each resolve their own IPC round
+  trip independently and land in separate tasks, so it produced roughly one
+  re-render (and warning) per channel instead of one for the whole load.
+  New `host/rerenderCoalescer.ts` wraps `model/settle.ts`'s `makeSettle`
+  (`SandboxHost` itself is not unit-tested, CLAUDE.md §4) — same shape
+  gesture settle already uses. A late-bound host var still triggers its own
+  re-render (tested): coalescing is not removed, only made to actually
+  coalesce a spread-out burst.
 - **Four swallowing catches in the Notebook's bind drivers now warn instead
   of silently absorbing a fetch failure (2026-09-08, ruling R153 audit).**
   `channelBindDriver.ts`'s per-definition and per-window fetch catches,
