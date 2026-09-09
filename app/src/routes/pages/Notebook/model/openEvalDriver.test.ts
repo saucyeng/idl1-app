@@ -7,7 +7,7 @@ import { runEval, runOpenAndEval, type OpenEvalDeps, type OpenEvalWindowAction }
 function baseDeps(overrides: Partial<OpenEvalDeps> = {}): OpenEvalDeps {
   return {
     openWorkbook: async (idOrPath) => ({ id: idOrPath, name: "n", path: "/p", cell_count: 0 }),
-    readWorkbook: async () => ({ markdown: "# hi", hash: "h1", path: "/p" }),
+    readWorkbook: async () => ({ markdown: "# hi", hash: "h1", path: "/p", pending_migrations: [] }),
     evalWorkbookV2: async () => [
       { ok: [{ cell_id: "c1", kind: "math", value: null, defs: [], errors: [], prose_before_html: null, prose_after_html: null, prose_spans: [] }] },
     ],
@@ -40,6 +40,19 @@ describe("runOpenAndEval", () => {
     await runOpenAndEval(deps, "wb-42", [], () => {}, () => false, 0);
 
     expect(seen).toEqual(["wb-42"]);
+  });
+
+  it("runOpenAndEval — readWorkbook reports a retired name — passes pending_migrations through to markdownReady's pendingMigrations", async () => {
+    const pending = [{ cell_id: "aaaaaaaa", line: 0, old: "variance_time", new: "lap_delta_time" }];
+    const deps = baseDeps({
+      readWorkbook: async () => ({ markdown: "# hi", hash: "h1", path: "/p", pending_migrations: pending }),
+    });
+    const actions: (WorkbookAction | OpenEvalWindowAction)[] = [];
+
+    await runOpenAndEval(deps, "wb-1", [], (a) => actions.push(a), () => false, 0);
+
+    const markdownReady = actions.find((a) => a.type === "markdownReady");
+    expect(markdownReady).toMatchObject({ pendingMigrations: pending });
   });
 
   it("runOpenAndEval — readWorkbook throws a real error — reports it but still evaluates", async () => {

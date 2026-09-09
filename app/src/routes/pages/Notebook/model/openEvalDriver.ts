@@ -29,7 +29,7 @@
  * `markdownError` actions are unaffected by windows (a workbook's markdown
  * is not scoped to any window) and still flow through `WorkbookAction`.
  */
-import type { CellOutput, IpcError, WindowEval, Window as SelectedWindow, WorkbookHandle } from "../../../../ipc/workbook";
+import type { CellOutput, IpcError, RenamedFunction, WindowEval, Window as SelectedWindow, WorkbookHandle } from "../../../../ipc/workbook";
 import type { WorkbookAction } from "./workbookState";
 
 /** `true` when `value` has the shape of a typed `IpcError` (C3 §2: a `kind`
@@ -80,7 +80,7 @@ export type OpenEvalWindowAction =
 export interface OpenEvalDeps {
   openWorkbook: (idOrPath: string) => Promise<WorkbookHandle>;
   /** `ipc/workbook.ts`'s `readWorkbook`. */
-  readWorkbook: (idOrPath: string) => Promise<{ markdown: string; hash: string; path: string }>;
+  readWorkbook: (idOrPath: string) => Promise<{ markdown: string; hash: string; path: string; pending_migrations: RenamedFunction[] }>;
   /** `ipc/workbook.ts`'s `evalWorkbookV2` (C1 §6.1, ruling R117 — replaces
    *  `evalWorkbook`'s `sessionId` + `lapContext` pair). */
   evalWorkbookV2: (id: string, windows: SelectedWindow[]) => Promise<WindowEval[]>;
@@ -154,7 +154,7 @@ export async function runOpenAndEval(
   try {
     const source = await deps.readWorkbook(handle.id);
     if (isStale()) return;
-    dispatch({ type: "markdownReady", markdown: source.markdown, hash: source.hash });
+    dispatch({ type: "markdownReady", markdown: source.markdown, hash: source.hash, pendingMigrations: source.pending_migrations });
   } catch (error) {
     if (!isStale()) {
       dispatch({ type: "markdownError", message: error instanceof Error ? error.message : String(error) });

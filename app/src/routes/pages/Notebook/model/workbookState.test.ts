@@ -186,6 +186,35 @@ describe("workbookReducer", () => {
     expect(next.frontMatterDirty).toBe(false);
   });
 
+  it("workbookReducer — a markdownReady read reporting a retired name — stores it as pendingMigrations (R151 item 9)", () => {
+    const pendingMigrations = [{ cell_id: "aaaaaaaa", line: 2, old: "variance_time", new: "lap_delta_time" }];
+
+    const next = workbookReducer(initialWorkbookState, { type: "markdownReady", markdown: "prose\n", hash: "h1", pendingMigrations });
+
+    expect(next.pendingMigrations).toEqual(pendingMigrations);
+  });
+
+  it("workbookReducer — a save result reporting a migration — clears pendingMigrations and stores appliedMigrations", () => {
+    const withPending = workbookReducer(initialWorkbookState, {
+      type: "markdownReady",
+      markdown: "prose\n",
+      hash: "h1",
+      pendingMigrations: [{ cell_id: "aaaaaaaa", line: 2, old: "variance_time", new: "lap_delta_time" }],
+    });
+    const migrations = [{ cell_id: "aaaaaaaa", line: 2, old: "variance_time", new: "lap_delta_time" }];
+
+    const next = workbookReducer(withPending, { type: "saveResult", hash: "h2", migrations });
+
+    expect(next.pendingMigrations).toEqual([]);
+    expect(next.appliedMigrations).toEqual(migrations);
+  });
+
+  it("workbookReducer — a save result carrying no migrations — leaves appliedMigrations empty", () => {
+    const next = workbookReducer(initialWorkbookState, { type: "saveResult", hash: "h2" });
+
+    expect(next.appliedMigrations).toEqual([]);
+  });
+
   it("workbookReducer — a watch event naming two cells — marks exactly those two stale", () => {
     const next = workbookReducer(initialWorkbookState, {
       type: "watchEvent",

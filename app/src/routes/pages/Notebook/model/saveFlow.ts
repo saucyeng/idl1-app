@@ -17,7 +17,7 @@
  * without) the server-side suppression reaching this subscription --
  * removing the Rust mechanism because this one exists would be wrong.
  */
-import type { IpcError, SaveResult, WorkbookEvent } from "../../../../ipc/workbook";
+import type { IpcError, RenamedFunction, SaveResult, WorkbookEvent } from "../../../../ipc/workbook";
 
 /**
  * Deprecated alias for `ipc/workbook.ts`'s `WorkbookEvent`, kept only so
@@ -62,8 +62,11 @@ export interface SaveFlowDeps {
 export type SaveFlowState =
   | { status: "idle" }
   | { status: "saving" }
-  /** `hash`/`savedAtMs` (ms epoch) come from the resolved `SaveResult` and `deps.now()`, and feed a later `isSelfWrite` check. */
-  | { status: "saved"; hash: string; savedAtMs: number }
+  /** `hash`/`savedAtMs` (ms epoch) come from the resolved `SaveResult` and
+   *  `deps.now()`, and feed a later `isSelfWrite` check. `migrations` is
+   *  `SaveResult.migrations` passed through unchanged (R151 item 9, C2
+   *  §3.8) — `[]` when this save rewrote no retired function name. */
+  | { status: "saved"; hash: string; savedAtMs: number; migrations: RenamedFunction[] }
   /** A `conflict`-kind rejection (C3 §2, R44) -- offers reload-or-overwrite via `ConflictBanner`, never a generic error toast. */
   | { status: "conflict" }
   /** Any other rejection. The caller's document-dirty tracking (`workbookState.ts`'s `dirtyCellIds`) is untouched by this state -- only a successful save clears it. */
@@ -84,7 +87,7 @@ export function saveFlow(deps: SaveFlowDeps): {
     current = { status: "saving" };
     try {
       const result = await deps.save(id, markdown, basedOnHash);
-      current = { status: "saved", hash: result.hash, savedAtMs: deps.now() };
+      current = { status: "saved", hash: result.hash, savedAtMs: deps.now(), migrations: result.migrations };
     } catch (reason) {
       // A rejected `saveWorkbook` always rejects with the C3 §2 `IpcError`
       // shape (`ipc/workbook.ts`'s own `IpcError` doc comment) in the

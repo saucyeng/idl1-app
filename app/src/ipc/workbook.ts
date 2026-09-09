@@ -97,12 +97,33 @@ export interface CellOutput {
   prose_spans: ProseSpan[];
 }
 
+/** One retired math-builtin name a migration rewrote (C2 §3.8, ledger
+ *  R151 item 9/10) — `SaveResult.migrations` and `WorkbookSource.
+ *  pending_migrations`'s element shape, mirroring `idl_rs::math::
+ *  DocumentRename` (`rust/tauri/src/commands/workbook.rs`'s
+ *  `RenamedFunction`). */
+export interface RenamedFunction {
+  /** The `math`/`table` cell this rename occurred in. */
+  cell_id: string;
+  /** u32, the 0-based line within `cell_id` the call was found on. */
+  line: number;
+  /** The retired spelling, as it appeared in the document. */
+  old: string;
+  /** What it was (or would be) rewritten to. */
+  new: string;
+}
+
 /** `save_workbook`'s return (C3 §3.4). */
 export interface SaveResult {
   /** sha256 of the written bytes, hex */
   hash: string;
   /** i64 */
   saved_utc_ms: number;
+  /** Retired function names this save rewrote to their current spelling
+   *  (R151 item 9, C2 §3.8) — `[]` when the document carried none. The
+   *  bytes hashed into `hash` above are the migrated markdown, never the
+   *  caller's original text with a retired name still in it. */
+  migrations: RenamedFunction[];
 }
 
 /** One file-watcher event for a subscribed workbook (C3 §3.4, design §7). */
@@ -128,6 +149,12 @@ export interface WorkbookSource {
   hash: string;
   /** Absolute path, under `<data>/workbooks/`. */
   path: string;
+  /** Retired function names this file would be rewritten to on the next
+   *  save (R151 item 9's passive on-open notice) — `[]` when `markdown`
+   *  carries none, including every `version: 4` document. Read-only:
+   *  nothing has been written, and this list plays no part in `hash`
+   *  (`markdown` above is unmigrated). */
+  pending_migrations: RenamedFunction[];
 }
 
 /** C1 §6.1's `Span` (ruling R117): the span a `Window` covers within one
@@ -158,6 +185,10 @@ export interface MathBuiltinDto {
    *  builtin documents more than one call form. */
   arity: number[];
   status: "implemented" | "not_implemented";
+  /** Retired names that now migrate to this one (C2 §3.8), e.g.
+   *  `["variance_time"]` for `lap_delta_time` — `[]` for every function
+   *  nothing was ever renamed from (ledger R157, scipy-alignment lane). */
+  renamed_from: string[];
 }
 
 /** Opens a workbook by id or path (C3 §3.4). */
