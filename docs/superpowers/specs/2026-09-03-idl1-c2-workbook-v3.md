@@ -954,8 +954,10 @@ An optional annotation rides in the `def_line`'s existing `trailing_comment`
 text**, the same way §3.1 already describes the `label:` form inside it:
 
 ```ebnf
-comment_text     ::= /[ \t]*/ shape_annotation? label_annotation? free_text?
+comment_text     ::= /[ \t]*/ shape_annotation? unit_annotation? label_annotation? free_text?
 shape_annotation ::= "shape:" /[ \t]*/ shape /[ \t]*/
+unit_annotation  ::= "unit:" /[ \t]*/ unit_expr /[ \t]*/
+unit_expr        ::= /[^ \t\n]+/          (* §3.3.1's rendered unit, e.g. N/mm *)
 shape            ::= "[" (axis_sym ("," axis_sym)*)? "]"
 axis_sym         ::= "t" | "f" | "lap" | "win" | "i"
                    | "c" /[0-9]+/
@@ -971,6 +973,24 @@ whose label text happens to contain the word `shape`. Both together read:
 ```math
 fork_spec = spectrogram(wheel_travel("front"), 2048, 1024, "hann", "mean", "magnitude")  # shape: [t,f] label: Fork spectrogram
 ```
+
+The scan is ordered: `shape:` first, then `unit:`, then `label:` (free text
+to end of line, §3.1). Each key runs until the next recognised annotation key
+or end of line, so `unit:` adds no new lexical machinery and reads the way an
+author already knows.
+
+**`unit:` is authoritative, not a fallback** (ruling R164). A declared unit
+**wins** over the inferred one: the author knows what a CSV column holds and
+the engine, having only C1's empty `unit` string to go on, cannot. A
+fallback-only rule would let an author fill a blank but never *correct* a
+wrong inference — which is the case the annotation exists for.
+
+A declaration that **disagrees** with a `Known` inferred unit is a
+**diagnostic on the cell**, never a silent preference — the same treatment
+§3.3.1 gives a mismatched `+`. Either the annotation is stale or the
+inference is wrong; both are worth telling the author and neither is worth
+hiding. A declaration over an `Unknown` inference is the ordinary case and
+reports nothing.
 
 An annotation matches the inferred shape iff every axis symbol matches the
 corresponding axis's `kind` in order, and — for `c<n>` / `c{…}` — its length
