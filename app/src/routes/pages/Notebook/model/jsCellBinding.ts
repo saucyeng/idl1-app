@@ -12,8 +12,9 @@ import { spectrumKey } from "../plotForm/spectrumKey";
 import type { FftPlotProps, TimePlotProps } from "../plotForm/types";
 import { exceedsBinCap, fftRequestFor, type FftRequest } from "./fftRequest";
 import { extractChannelCalls, extractSpectrumCalls, type ChannelCallRef, type SpectrumCallRef } from "./jsCellCalls";
+import { rawUnitToLabel } from "./unitLabel";
 import type { ChannelSummary, SessionDetail } from "../../../../ipc/catalog";
-import type { Span, Window as SelectedWindow } from "../../../../ipc/workbook";
+import type { Span, UnitLabel, Window as SelectedWindow } from "../../../../ipc/workbook";
 
 /** Where one bound channel's samples come from (L6 Task 18, R77.3):
  *  `"session"` — a real session channel, fetched tile-by-tile through
@@ -45,7 +46,25 @@ export interface JsCellBindingChannel {
    * all today.
    */
   lap: number | null;
+  /** This channel's three-state unit (R154/R164) — `source === "session"`:
+   *  `ChannelSummary.unit` (C1 §4.1) via `model/unitLabel.ts`'s
+   *  `rawUnitToLabel`; `source === "definition"`: the owning workbook
+   *  definition's `CellDefResult.unit`, from the caller's own
+   *  `definitionUnitByName` (`bindingFor`'s own doc comment) — `unknown`
+   *  with a generic reason when that map has no entry yet (e.g. before the
+   *  first `eval_workbook_v2` for this window has resolved). Threaded
+   *  straight through to `channelBindDriver.ts`'s dispatched
+   *  `ChannelBindAction`/`BoundChannel` — this module is the one place that
+   *  resolves it, so nothing downstream re-derives it. */
+  unit: UnitLabel;
 }
+
+/** {@link JsCellBindingChannel.unit}'s fallback when a `"definition"`
+ *  channel has no entry in the caller's `definitionUnitByName` yet (its
+ *  first `eval_workbook_v2` result hasn't landed) — distinct wording from
+ *  a raw channel's "no unit recorded" so the two `unknown` reasons don't
+ *  read as the same cause if ever surfaced side by side. */
+const UNIT_NOT_YET_EVALUATED: UnitLabel = { state: "unknown", reason: "not evaluated yet" };
 
 /**
  * The initial time window every channel bound from this cell starts at,
@@ -163,7 +182,8 @@ function bindingForTime(
   displayProps: TimePlotProps,
   sessionDetail: SessionDetail,
   sessionSpanUs: number,
-  definitionNames: ReadonlySet<string>
+  definitionNames: ReadonlySet<string>,
+  definitionUnitByName: ReadonlyMap<string, UnitLabel> = new Map()
 ): TimeCellBinding | null {
   const channels: JsCellBindingChannel[] = [];
   const seen = new Set<string>();
@@ -178,6 +198,7 @@ function bindingForTime(
         source: "session",
         sampleRateHz: channel.nominal_rate_hz,
         lap: call.lap,
+        unit: rawUnitToLabel(channel.unit),
       });
       continue;
     }
@@ -188,6 +209,7 @@ function bindingForTime(
         source: "definition",
         sampleRateHz: 0,
         lap: call.lap,
+        unit: definitionUnitByName.get(call.channel) ?? UNIT_NOT_YET_EVALUATED,
       });
       continue;
     }
@@ -345,7 +367,15 @@ export function bindingFor(
   sessionDetail: SessionDetail | null,
   sessionSpanUs: number | null,
   definitionNames: ReadonlySet<string>,
-  window: SelectedWindow | null = null
+  window: SelectedWindow | null = null,
+  /** A `"definition"` channel's own unit (R154/R164), keyed by name --
+   *  typically the same `CellDefResult.unit` map `Notebook/index.tsx`
+   *  builds alongside `definitionNames` from the primary window's
+   *  `eval_workbook_v2` output (both filter the same `.defs`). Optional,
+   *  defaulting to empty, so every existing caller/test that only cares
+   *  about resolvability (not the unit) is unaffected -- a name absent from
+   *  this map resolves to {@link UNIT_NOT_YET_EVALUATED}, not a crash. */
+  definitionUnitByName: ReadonlyMap<string, UnitLabel> = new Map()
 ): JsCellBinding | null {
   if (sessionDetail === null || sessionSpanUs === null) return null;
 
@@ -362,7 +392,7 @@ export function bindingFor(
   if (channelCalls.length === 0) return null;
 
   const displayProps = parsedProps !== null && parsedProps.chart === "time" ? parsedProps : syntheticTimeProps(channelCalls);
-  return bindingForTime(channelCalls, displayProps, sessionDetail, sessionSpanUs, definitionNames);
+  return bindingForTime(channelCalls, displayProps, sessionDetail, sessionSpanUs, definitionNames, definitionUnitByName);
 }
 
 /** A stable string identity for one `Span` (mirrors `state/selection.ts`'s

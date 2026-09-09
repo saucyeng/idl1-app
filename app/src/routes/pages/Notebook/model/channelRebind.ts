@@ -1,5 +1,6 @@
 import type { DecodedHostChannel } from "../../../../ipc/hostChannel";
 import type { DecodedTile } from "../../../../ipc/tiles";
+import type { UnitLabel } from "../../../../ipc/workbook";
 import { tileToChannelData, type ChannelData } from "./channelData";
 import type { TileCache, TileCacheKey } from "./tileCache";
 
@@ -28,6 +29,12 @@ export type BoundChannel =
       endUs: number;
       /** Point budget for this channel's rendering (Task 6's `pointBudget`). */
       budget: number;
+      /** This channel's unit as it was last known when bound (R154/R164) —
+       *  never re-derived on a rebuild (nothing in this module's own re-fetch
+       *  path carries a fresh one; a rebuild is a rare, watchdog-triggered
+       *  event, so resending the last-known unit costs nothing a subsequent
+       *  settle wouldn't already correct). */
+      unit: UnitLabel;
     }
   | {
       source: "definition";
@@ -35,6 +42,12 @@ export type BoundChannel =
       name: string;
       /** The `fetch_host_channel` budget last used for this definition (`clampHostChannelBudget`'s result) — re-sent verbatim on a rebuild's re-fetch. */
       budget: number;
+      /** This channel's unit as it was last known when bound (R154/R165) —
+       *  `fetch_host_channel`'s IDLH bytes never carry one (R165), so a
+       *  rebuild's re-fetch below has nothing fresher to read; the
+       *  last-known `CellDefResult.unit` is resent instead, same reasoning
+       *  as the `"session"` arm above. */
+      unit: UnitLabel;
     };
 
 /** The IPC this module needs to restore a `"definition"` `BoundChannel`
@@ -79,13 +92,13 @@ export interface HostChannelRebindDeps {
  * @param bound Every channel currently bound in the sandbox.
  * @param cache The tile cache to read decoded `"session"` tiles from (never fetches).
  * @param deps Re-fetches a `"definition"` channel's data (never reads `cache` for one).
- * @param send Called once per `bound` entry that could be restored, with that channel's {@link ChannelData}. For a `"session"` entry this call is synchronous with the loop; for a `"definition"` entry it fires later, once its re-fetch resolves.
+ * @param send Called once per `bound` entry that could be restored, with that channel's {@link ChannelData} and its last-known {@link UnitLabel} (`channel.unit`, never re-derived here — see `BoundChannel`'s own doc comment). For a `"session"` entry this call is synchronous with the loop; for a `"definition"` entry it fires later, once its re-fetch resolves.
  */
 export function rebindChannelsAfterRebuild(
   bound: BoundChannel[],
   cache: TileCache,
   deps: HostChannelRebindDeps,
-  send: (name: string, data: ChannelData) => void
+  send: (name: string, data: ChannelData, unit: UnitLabel) => void
 ): void {
   for (const channel of bound) {
     if (channel.source === "definition") {
@@ -93,7 +106,7 @@ export function rebindChannelsAfterRebuild(
         .fetchHostChannel(channel.name, channel.budget)
         .then((result) => {
           if (!result.hasT) return;
-          send(channel.name, { length: result.v.length, t: result.t, v: result.v });
+          send(channel.name, { length: result.v.length, t: result.t, v: result.v }, channel.unit);
         })
         .catch((error: unknown) => {
           // A rebuild is not itself a fetch trigger even for a definition
@@ -122,6 +135,6 @@ export function rebindChannelsAfterRebuild(
     }
 
     const data = tileToChannelData(tiles, channel.startUs, channel.endUs, channel.budget);
-    send(channel.name, data);
+    send(channel.name, data, channel.unit);
   }
 }

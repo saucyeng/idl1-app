@@ -121,7 +121,7 @@ describe("bindingFor", () => {
     const binding = bindingFor({ id: "cell-a", code: oneMarkCode }, detail, 60_000_000, noDefinitions);
 
     expect(binding).not.toBeNull();
-    expect(asTime(binding).channels).toEqual([{ channelId: "fork_velocity", source: "session", sampleRateHz: 200, lap: null }]);
+    expect(asTime(binding).channels).toEqual([{ channelId: "fork_velocity", source: "session", sampleRateHz: 200, lap: null, unit: { state: "known", text: "m/s" } }]);
     expect(asTime(binding).initialSpan).toEqual({ startUs: 0, endUs: 60_000_000 });
     expect(asTime(binding).mountedChannelId).toBe("fork_velocity");
   });
@@ -132,8 +132,8 @@ describe("bindingFor", () => {
     const binding = bindingFor({ id: "cell-a", code: twoDistinctChannelsCode }, detail, 60_000_000, noDefinitions);
 
     expect(asTime(binding).channels).toEqual([
-      { channelId: "fork_velocity", source: "session", sampleRateHz: 200, lap: null },
-      { channelId: "rear_wheel_speed", source: "session", sampleRateHz: 50, lap: null },
+      { channelId: "fork_velocity", source: "session", sampleRateHz: 200, lap: null, unit: { state: "known", text: "m/s" } },
+      { channelId: "rear_wheel_speed", source: "session", sampleRateHz: 50, lap: null, unit: { state: "known", text: "m/s" } },
     ]);
   });
 
@@ -143,7 +143,7 @@ describe("bindingFor", () => {
     const binding = bindingFor({ id: "cell-a", code: twoMarksSameChannelCode }, detail, 60_000_000, noDefinitions);
 
     expect(asTime(binding).channels).toHaveLength(1);
-    expect(asTime(binding).channels).toEqual([{ channelId: "fork_velocity", source: "session", sampleRateHz: 200, lap: null }]);
+    expect(asTime(binding).channels).toEqual([{ channelId: "fork_velocity", source: "session", sampleRateHz: 200, lap: null, unit: { state: "known", text: "m/s" } }]);
   });
 
   it("bindingFor — custom code — returns null", () => {
@@ -184,7 +184,7 @@ describe("bindingFor", () => {
 
     const binding = bindingFor({ id: "cell-a", code: definitionMarkCode }, detail, 60_000_000, definitionNames);
 
-    expect(asTime(binding).channels).toEqual([{ channelId: "avg_speed", source: "definition", sampleRateHz: 0, lap: null }]);
+    expect(asTime(binding).channels).toEqual([{ channelId: "avg_speed", source: "definition", sampleRateHz: 0, lap: null, unit: { state: "unknown", reason: "not evaluated yet" } }]);
     expect(asTime(binding).mountedChannelId).toBeNull();
   });
 
@@ -195,8 +195,8 @@ describe("bindingFor", () => {
     const binding = bindingFor({ id: "cell-a", code: mixedMarkCode }, detail, 60_000_000, definitionNames);
 
     expect(asTime(binding).channels).toEqual([
-      { channelId: "fork_velocity", source: "session", sampleRateHz: 200, lap: null },
-      { channelId: "avg_speed", source: "definition", sampleRateHz: 0, lap: null },
+      { channelId: "fork_velocity", source: "session", sampleRateHz: 200, lap: null, unit: { state: "known", text: "m/s" } },
+      { channelId: "avg_speed", source: "definition", sampleRateHz: 0, lap: null, unit: { state: "unknown", reason: "not evaluated yet" } },
     ]);
     expect(asTime(binding).mountedChannelId).toBe("fork_velocity");
   });
@@ -218,7 +218,7 @@ describe("bindingFor", () => {
 
     const binding = bindingFor({ id: "cell-a", code: definitionMarkCode }, detail, 60_000_000, definitionNames);
 
-    expect(asTime(binding).channels).toEqual([{ channelId: "avg_speed", source: "session", sampleRateHz: 200, lap: null }]);
+    expect(asTime(binding).channels).toEqual([{ channelId: "avg_speed", source: "session", sampleRateHz: 200, lap: null, unit: { state: "known", text: "m/s" } }]);
   });
 });
 
@@ -298,7 +298,7 @@ describe("bindingFor — hand-written code (R148 part 2)", () => {
 
     const binding = bindingFor({ id: "cell-a", code }, detail, 60_000_000, noDefinitions);
 
-    expect(asTime(binding).channels).toEqual([{ channelId: "fork_velocity", source: "session", sampleRateHz: 200, lap: null }]);
+    expect(asTime(binding).channels).toEqual([{ channelId: "fork_velocity", source: "session", sampleRateHz: 200, lap: null, unit: { state: "known", text: "m/s" } }]);
   });
 
   it("bindingFor — a statement before the plot call — still binds", () => {
@@ -307,7 +307,7 @@ describe("bindingFor — hand-written code (R148 part 2)", () => {
 
     const binding = bindingFor({ id: "cell-a", code }, detail, 60_000_000, noDefinitions);
 
-    expect(asTime(binding).channels).toEqual([{ channelId: "fork_velocity", source: "session", sampleRateHz: 200, lap: null }]);
+    expect(asTime(binding).channels).toEqual([{ channelId: "fork_velocity", source: "session", sampleRateHz: 200, lap: null, unit: { state: "known", text: "m/s" } }]);
   });
 
   it("bindingFor — a channel(...) call with a { lap } option, entirely outside a recognised form — binds with that lap", () => {
@@ -316,7 +316,7 @@ describe("bindingFor — hand-written code (R148 part 2)", () => {
 
     const binding = bindingFor({ id: "cell-a", code }, detail, 60_000_000, noDefinitions);
 
-    expect(asTime(binding).channels).toEqual([{ channelId: "fork_velocity", source: "session", sampleRateHz: 200, lap: 3 }]);
+    expect(asTime(binding).channels).toEqual([{ channelId: "fork_velocity", source: "session", sampleRateHz: 200, lap: 3, unit: { state: "known", text: "m/s" } }]);
   });
 
   it("bindingFor — a channel(...) call named inside a comment — is not extracted", () => {
@@ -357,8 +357,8 @@ describe("bindingFor — hand-written code (R148 part 2)", () => {
     const binding = bindingFor({ id: "cell-a", code }, detail, 60_000_000, noDefinitions);
 
     expect(asTime(binding).channels).toEqual([
-      { channelId: "fork_velocity", source: "session", sampleRateHz: 200, lap: null },
-      { channelId: "rear_wheel_speed", source: "session", sampleRateHz: 200, lap: null },
+      { channelId: "fork_velocity", source: "session", sampleRateHz: 200, lap: null, unit: { state: "known", text: "m/s" } },
+      { channelId: "rear_wheel_speed", source: "session", sampleRateHz: 200, lap: null, unit: { state: "known", text: "m/s" } },
     ]);
   });
 

@@ -37,6 +37,23 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
   `ChartCell.tsx` converts `ChannelSummary.unit` via the new
   `model/unitLabel.ts`'s `rawUnitToLabel`.
 
+- **Notebook: the unit model reaches the sandbox host variables and
+  `CellDefResult` (2026-09-09, R154/R162/R164/R165).** `ipc/workbook.ts`
+  gains the three-state `UnitLabel`/`UnitNote` types and `CellDefResult.
+  unit`/`unit_notes`, mirroring the landed Rust shape. A `"channel"` host
+  variable now carries `unit` end to end — `jsCellBinding.ts`'s
+  `JsCellBindingChannel.unit` (a session channel's `ChannelSummary.unit`
+  via `rawUnitToLabel`, or a `"definition"` channel's `CellDefResult.unit`
+  via `Notebook/index.tsx`'s new `definitionUnitByName` map) through
+  `channelBindDriver.ts`'s dispatched `channelData`/`BoundChannel`,
+  `channelRebind.ts`'s `BoundChannel` (carried across a sandbox rebuild,
+  never re-derived — `fetch_host_channel`'s IDLH bytes have no unit,
+  R165), `host/protocol.ts`'s `HostVarPayload`, to `sandbox/main.ts`'s
+  `materializeHostVar`, which projects it onto the bound record array as
+  non-enumerable `.unit` (display string) and `.unitState` (the
+  three-state discriminator) properties — so a prose `${…}` can reach it
+  (C2 §5.1/§5.2), without ever auto-appending it to a value (R154 item 5).
+
 ### Added
 
 - **Notebook: the maths graph's source palette (2026-09-09, ruling R160).**

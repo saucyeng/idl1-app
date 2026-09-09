@@ -19,6 +19,7 @@ import {
   watchWorkbook,
   type CellOutput,
   type IpcError,
+  type UnitLabel,
   type Window as WireWindow,
 } from "../../../ipc/workbook";
 import { useAppState } from "../../../state/AppState";
@@ -1560,6 +1561,19 @@ export default function NotebookPage() {
       .map((d) => d.name)
   );
 
+  // `bindingFor`'s `definitionUnitByName` (R154/R164, Task 2 of the unit
+  // model's TS half): every workbook `math` definition's own inferred unit,
+  // same primary-window source as `definitionsWithAxis` above -- a
+  // `"definition"` bound channel's host-variable `.unit`/`.unitState`
+  // (C2 §5.1) comes from here, not from `fetch_host_channel`'s IDLH bytes
+  // (R165, which carries samples only).
+  const definitionUnitByName: ReadonlyMap<string, UnitLabel> = new Map(
+    Array.from(primaryOutputs.values())
+      .filter((o) => o.kind === "math")
+      .flatMap((o) => o.defs)
+      .map((d) => [d.name, d.unit] as const)
+  );
+
   // Time-chart channel binding (`ChartCell`'s tile-fetch pipeline,
   // `channelBindDriver.ts`) is fully window-aware as of S1 Task 11b
   // (ruling R131 Q2): every selected window is fetched and combined into
@@ -1585,7 +1599,7 @@ export default function NotebookPage() {
       if (cell.id === null || cell.kind !== "js") continue;
       const cellId = cell.id;
       const code = decodeByteRange(markdown, cell.bodyRange);
-      const binding = bindingFor({ id: cellId, code }, sessionDetail, sessionSpanUs, definitionsWithAxis);
+      const binding = bindingFor({ id: cellId, code }, sessionDetail, sessionSpanUs, definitionsWithAxis, null, definitionUnitByName);
       if (binding === null || binding.kind !== "time") {
         // An FFT binding is handled by the dedicated effect below; either
         // way, this cell has no time-viewport identity to compare against
@@ -1612,7 +1626,7 @@ export default function NotebookPage() {
       };
       const onAction = (action: ChannelBindAction) => {
         if (action.type === "channelData") {
-          sandboxHostRef.current?.setChannelHostVar(action.channelId, action.length, action.t, action.v, action.w, action.windows);
+          sandboxHostRef.current?.setChannelHostVar(action.channelId, action.length, action.t, action.v, action.w, action.windows, action.unit);
           // R139: retain the same combined arrays the sandbox just got a
           // transfer clone of -- `model/cursorCard.ts` reads this back.
           combinedChannelDataRef.current.set(`${action.cellId}::${action.channelId}`, action.retained);
@@ -1686,7 +1700,7 @@ export default function NotebookPage() {
       // reach `bindingFor` in the first place (`props.chart === "fft"`
       // does not vary by window) -- resolved against the primary window.
       const shapeWindow = primaryWindow !== null ? toWireWindow(primaryWindow) : null;
-      const shapeBinding = bindingFor({ id: cellId, code }, sessionDetail, sessionSpanUs, definitionsWithAxis, shapeWindow);
+      const shapeBinding = bindingFor({ id: cellId, code }, sessionDetail, sessionSpanUs, definitionsWithAxis, shapeWindow, definitionUnitByName);
       if (shapeBinding === null || shapeBinding.kind !== "fft") {
         // Not FFT-shaped (or nothing resolvable yet, e.g. no session) --
         // drop every retained window's spectrum/identity/error for this
@@ -1757,7 +1771,7 @@ export default function NotebookPage() {
         const detail = sessionDetailsByWindow.get(wKey) ?? null;
         if (detail === null) continue; // this window's session is still resolving
 
-        const binding = bindingFor({ id: cellId, code }, detail, sessionSpanUs, definitionsWithAxis, toWireWindow(w));
+        const binding = bindingFor({ id: cellId, code }, detail, sessionSpanUs, definitionsWithAxis, toWireWindow(w), definitionUnitByName);
         if (binding === null || binding.kind !== "fft") continue; // e.g. the channel isn't in this window's session
 
         const identity = bindingIdentity(binding);
@@ -2031,7 +2045,7 @@ export default function NotebookPage() {
             const cell = state.cells.find((c) => c.id === cellId);
             const code = cell !== undefined && state.markdown !== null ? decodeByteRange(state.markdown, cell.bodyRange) : "";
             const primaryWireWindow = primaryWindow !== null ? toWireWindow(primaryWindow) : null;
-            const binding = bindingFor({ id: cellId, code }, sessionDetail, sessionSpanUs, definitionsWithAxis, primaryWireWindow);
+            const binding = bindingFor({ id: cellId, code }, sessionDetail, sessionSpanUs, definitionsWithAxis, primaryWireWindow, definitionUnitByName);
             const heightPx = cellHeights.get(cellId) ?? null;
             const sendLayout = (id: string, rect: { top: number; left: number; width: number }) =>
               sandboxHostRef.current?.sendLayout(id, rect);
@@ -2222,7 +2236,7 @@ export default function NotebookPage() {
                   };
                   const onAction = (action: ChannelBindAction) => {
                     if (action.type === "channelData") {
-                      sandboxHostRef.current?.setChannelHostVar(action.channelId, action.length, action.t, action.v, action.w, action.windows);
+                      sandboxHostRef.current?.setChannelHostVar(action.channelId, action.length, action.t, action.v, action.w, action.windows, action.unit);
                       // R139: retain the same combined arrays the sandbox
                       // just got a transfer clone of -- `model/cursorCard.ts`
                       // reads this back.
@@ -2271,7 +2285,7 @@ export default function NotebookPage() {
                     if (otherCell.id === null || otherCell.id === cellId || otherCell.kind !== "js") continue;
                     const otherCellId = otherCell.id;
                     const otherCode = state.markdown !== null ? decodeByteRange(state.markdown, otherCell.bodyRange) : "";
-                    const otherBinding = bindingFor({ id: otherCellId, code: otherCode }, sessionDetail, sessionSpanUs, definitionsWithAxis, primaryWireWindow);
+                    const otherBinding = bindingFor({ id: otherCellId, code: otherCode }, sessionDetail, sessionSpanUs, definitionsWithAxis, primaryWireWindow, definitionUnitByName);
                     if (otherBinding === null || otherBinding.kind !== "time" || otherBinding.mountedChannelId === null) continue;
                     const otherChannel = otherBinding.channels.find((c) => c.channelId === otherBinding.mountedChannelId);
                     if (otherChannel === undefined) continue;
