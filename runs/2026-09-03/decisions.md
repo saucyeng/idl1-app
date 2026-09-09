@@ -7666,3 +7666,95 @@ review and its own gate.
 alias, old workbooks stop typechecking on read; if the UI lane never runs,
 the app keeps the exact asymmetry R167 was written to remove — a scaling
 the language has and the chart cannot spell.
+
+---
+
+## R169 — One session display name, beside `describeWindow`
+
+*2026-09-09, lead. Raised by the report lane's own honest note.*
+
+The report lane wrote a third session-name formatter, `sessionDisplayName`
+in `model/report/document.ts`, and **said so in its doc comment** — naming
+`shell/topBarSelection.ts`'s `sessionLabel` as "a different layer this pure
+model does not import". That honesty is what makes this rulable instead of
+a bug found in six months.
+
+There are now three:
+
+| where | empty venue | date |
+|---|---|---|
+| `Data/sessionRow.ts::venueLabel` | `(none)` | never (its own column) |
+| `shell/topBarSelection.ts::sessionLabel` | `(none)` | `· YYYY-MM-DD`, omitted when 0 |
+| `report/document.ts::sessionDisplayName` | `Session` | never |
+
+Each was individually justified as minimal and uncoupled. Each justification
+was reasonable. The result is that the same session is called three
+different things, and **the report is the one surface where you cannot
+hover a chip to check** — a printed page saying "Portland" beside a screen
+chip saying "Portland · 2026-09-02", and "Session" where the app says
+"(none)", is R143's false friend wearing a display string.
+
+**Ruling.** One formatter, in `state/selection.ts` beside `describeWindow`
+— which already exists as the shared window-description layer, and which
+already takes `sessionName` as a caller-supplied string *precisely* so it
+does not couple to a page. That parameter was the seam the three copies
+grew in. `state/` is the correct direction for all three callers
+(`shell/` → `state/`, `routes/` → `state/`, the Notebook's pure model →
+`state/`); nothing imports a page from a page.
+
+`venueLabel` moves there too, so `(none)` is spelled once, and
+`Data/sessionRow.ts` imports it rather than owning it. It stays a separate
+function: venue-without-date is a real second need (a table with its own
+date column), not a duplicate.
+
+**Not a licence to centralise every string.** The test is whether two
+surfaces name *the same thing* for *the same reader*. Two formatters that
+happen to both produce text are not duplicates.
+
+**Cost if wrong.** Low and recoverable — this is display text, no stored
+data, no wire. Left alone, the cost is a printed report that disagrees with
+the screen it was printed from, which is worse than either spelling.
+
+---
+
+## R170 — The mirror surface is not drifting; no codegen
+
+*2026-09-09, lead. Correcting my own premise.*
+
+I commissioned a full audit of every `#[tauri::command]` DTO against its
+hand-written `app/src/ipc/` mirror on the theory that two lanes tripping
+over a stale mirror meant systemic drift, and that codegen might be owed.
+
+**It does not, and it is not.** 58 commands, 54 mirrored, and across the
+whole surface: **zero `runtime-wrong`, zero `accepts-less`**, one
+`accepts-more` (`RegistryRow.data_type`'s TS union carries an `"i32"` the
+Rust encoder never emits — harmless), and one cosmetic. The four unmirrored
+commands are three deliberate `_v1` supersessions, each saying so in its own
+doc comment, plus one real gap. Full report:
+`runs/2026-09-09/MIRROR-PARITY.md`.
+
+So: **no codegen.** A generator is a permanent build dependency and a new
+failure mode, and the evidence says the hand-written mirrors are being kept
+honest by review. The two stale ones I hit were both *the same week's*
+in-flight work — a mirror lagging its Rust side by hours inside an open
+lane, not by months. That is a merge-order problem, and R159's lane gate
+already covers it.
+
+**The two findings worth acting on:**
+
+1. **`RenamedFunction.line` was documented 0-based; it is 1-based**
+   (`alias.rs:511` counts newlines and adds one). No consumer reads it yet,
+   which is exactly why it was worth fixing now — the first one to subtract
+   1 would have been off by one against a spec comment that agreed with it.
+   Fixed in `app/src/ipc/workbook.ts`, with the reason stated: it is a line
+   number for a human, not an index.
+2. **`set_sync_device_name` is unwired** — a live, non-deprecated C3 §3.9
+   command with no TypeScript reachability at all. Not drift: a UI that was
+   never built. The user cannot rename their device, so a peer pairing with
+   them sees whatever default the identity file was minted with. Queued for
+   the Settings lane (`routes/pages/Settings/SyncSection.tsx`, wrapper in
+   `ipc/sync.ts` beside `unpairPeer`).
+
+**Cost if wrong.** If drift is in fact worse than one audit found, the next
+stale mirror shows up as a runtime `undefined` in a lane, which is how the
+first two were found — recoverable, and cheaper than owning a generator.
