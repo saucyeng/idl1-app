@@ -148,6 +148,35 @@ const definitionNodeId = (name: string): string => `def:${name}`;
 const channelNodeId = (name: string): string => `channel:${name}`;
 
 /**
+ * Every `def_line` identifier declared anywhere in `markdown`'s `math`
+ * cells — regardless of whether it evaluated successfully (ruling R150's
+ * amendment: `CellDefResult`'s own doc comment says a structural problem
+ * "keeps it out of `defs` entirely", so a definition whose `def_line` is
+ * itself malformed, e.g. a bare `channel(...)` argument instead of
+ * `[Name]`, has no `CellDefResult` at all — this scan is the only source
+ * that still knows the name was declared). Used by `Notebook/index.tsx`'s
+ * `jsCellNote` wiring to tell "this name was never declared" apart from
+ * "this name is declared, but its own math cell errored" for a `js` cell's
+ * unresolved `channel(...)`/`spectrum(...)` reference. Same first-pass scan
+ * {@link buildGraphModel} runs internally, exposed standalone so a caller
+ * that only needs the name set isn't required to also pass `CellOutput[]`
+ * or build the full graph.
+ */
+export function declaredDefinitionNames(markdown: string): ReadonlySet<string> {
+  const doc = scanCells(markdown);
+  const bytes = new TextEncoder().encode(markdown);
+  const decoder = new TextDecoder();
+
+  const names = new Set<string>();
+  for (const cell of doc.cells) {
+    if (cell.kind !== "math" || cell.id === null) continue;
+    const body = decoder.decode(bytes.subarray(cell.bodyRange[0], cell.bodyRange[1]));
+    for (const def of parseDefLines(body)) names.add(def.name);
+  }
+  return names;
+}
+
+/**
  * Builds the graph's nodes, edges, and groups from `markdown`'s math cells
  * and (optionally) the latest `CellOutput[]` for display labels. One node
  * per `def_line`; one additional `"channel"` node per name referenced but

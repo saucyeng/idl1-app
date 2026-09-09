@@ -6,6 +6,18 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 
 ### Fixed
 
+- **A `js` cell's note names which channel or definition failed to resolve,
+  and distinguishes an unknown name from a declared definition whose own
+  math cell errored (2026-09-08, ruling R150).** `jsCellNote`'s
+  `isFormGenerated` gate is now `hasChannelReference` (a hand-written cell
+  referencing a channel gets the same notes a form-generated one does, per
+  R148 part 2 below); new `graphModel.ts`'s `declaredDefinitionNames` scans
+  every `def_line` regardless of evaluation success, so an unresolved name
+  that is a definition whose `def_line` itself errored (dropped from
+  `CellDefResult` entirely — "a bare identifier instead of `[Name]`" was the
+  first shakedown-workbook example) now says "failed to evaluate — check
+  its math cell for an error" instead of the misleading generic "not part
+  of this session".
 - **A `js` cell binds by extracting its `channel(...)`/`spectrum(...)` calls,
   not by requiring the whole cell to match `plotForm.parse`'s closed
   `Plot.plot({...})` grammar (2026-09-08, ruling R148 part 2).** A `height:`

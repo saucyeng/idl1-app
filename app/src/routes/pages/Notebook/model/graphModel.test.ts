@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { CellOutput } from "../../../../ipc/workbook";
-import { buildGraphModel } from "./graphModel";
+import { buildGraphModel, declaredDefinitionNames } from "./graphModel";
 
 /** A minimal, otherwise-empty `CellOutput` for `defs`/`cell_id` fixtures — the
  *  fields `graphModel.ts` never reads are filled with harmless placeholders. */
@@ -152,5 +152,33 @@ describe("buildGraphModel", () => {
 
     // Assert
     expect(model.groups).toEqual([{ id: "a1b2c3d4", label: null, nodeIds: ["def:x"] }]);
+  });
+});
+
+describe("declaredDefinitionNames", () => {
+  it("declaredDefinitionNames — one def_line — names it, with no evaluation needed", () => {
+    // Arrange
+    const markdown = "```math id=a1b2c3d4\naccel_mag = [fork_accel]\n```\n";
+
+    // Act
+    const names = declaredDefinitionNames(markdown);
+
+    // Assert
+    expect(names.has("accel_mag")).toBe(true);
+  });
+
+  it("declaredDefinitionNames — a name never declared anywhere — is absent", () => {
+    // Arrange
+    const markdown = "```math id=a1b2c3d4\naccel_mag = [fork_accel]\n```\n";
+
+    // Act
+    const names = declaredDefinitionNames(markdown);
+
+    // Assert
+    expect(names.has("front_shock")).toBe(false);
+  });
+
+  it("declaredDefinitionNames — an empty document — is empty, not a crash", () => {
+    expect(declaredDefinitionNames("").size).toBe(0);
   });
 });
