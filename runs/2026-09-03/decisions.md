@@ -7508,3 +7508,65 @@ neither file knowing about the other's ids.
 
 I named the wrong file because the two look alike from outside. Reading them
 is what distinguished them.
+
+## 2026-09-09 — R166: the report lane — host-side re-render, and the eight open questions
+
+Answering `runs/2026-09-09/report-plan.md`. Plan accepted; 9 tasks, with the
+end-to-end path at task 2.
+
+**The architecture is right, and the reasoning is why.** Charts reach the
+page by **host-side re-render**: for any cell `plotForm.parse` recognises,
+the host already owns the props, the decoded channel payload, the theme and
+the palette, so it can render a real `SVGSVGElement` in its own realm —
+**no user code executed, no trust boundary moved**. The rejected
+alternative matters as much: a sandbox→host **SVG string** would
+reintroduce exactly the `dangerouslySetInnerHTML` that R69 removed. Refusing
+the convenient option because of what it re-opens is the judgement I wanted
+from this plan.
+
+It also establishes a fact worth recording: **the notebook column cannot be
+printed at all.** Every chart container is `position: fixed` in viewport
+pixels **in a different document** (`sandbox/main.ts:186-224`), so
+"print the page" was never available — the report is necessarily a
+purpose-built document, not a print stylesheet.
+
+**The eight questions.**
+1. **A "Report" section in the design doc plus a C3 §3.4 entry — accepted.**
+   No new contract letter; this is a command and a document, not a new
+   surface.
+2. **Vendor jsPDF, svg2pdf and the Plex TTF — accepted.** ~400 KB of TTF
+   because jsPDF embeds TTF and we vendor woff2 for the app. It is a
+   duplicate of a font we already ship, which is real but cheap in a desktop
+   binary, and the alternative — jsPDF's built-in Helvetica — makes the one
+   artefact Isaac hands to another person the only thing that does not look
+   like his app. Subset if the toolchain allows. No CDN, ever (CLAUDE.md §3).
+3. **Custom-code cells are a named absence now**, sandbox PNG later and only
+   after verifying `canvas.toDataURL()` works in an opaque-origin document —
+   accepted, and the ordering is right: prove the capability before planning
+   around it.
+4. **Whole notebook for v1, then a `# report: false` opt-out — accepted.**
+   The opt-out fits C2 §3.2's existing annotation scan beside `shape:`,
+   `unit:` and `label:`, so it costs no new grammar (R164's precedent).
+5. **A save dialog to a user path, nothing cached under the data directory —
+   accepted.** Writing into `<data>` would make the report a synced artefact
+   and need a C4 change; it is an export, not app state.
+6. **Per-window sections plus a scalar comparison table — accepted.** Two
+   laps is the normal case (R115), and the comparison table is the thing a
+   mechanic actually reads.
+7. **A Setup block that says "no setup sheet recorded for this session" —
+   accepted, and this is the important one.** The bike sheet (lane B) has
+   not landed, and a section that silently appears later is an unexplained
+   absence today (R148/R150). Saying what is missing is the whole discipline
+   this project spent two days learning.
+8. **Desktop only for v1 — accepted.** The mobile save/share path would
+   double the Tauri task.
+
+**A live gap found while surveying:** `MathCell.tsx:9` renders a definition's
+name and sample count with **no unit and no rate**, though
+`CellDefResult.unit` and `.sample_rate_hz` have both landed. Task R3 fixes
+it for the screen and the report at once — a third instance of the pattern
+where an engine field lands and a consumer never picks it up.
+
+**Cost if wrong.** (2) decided the other way gives a rider a report in a
+different typeface from the app that produced it — small, but it is the one
+artefact that leaves the machine.
