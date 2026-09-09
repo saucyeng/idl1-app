@@ -270,3 +270,15 @@ Unlink first, remove second — always, in this order:
 `rmdir` on a junction is the safe form; `rm -rf` through the link is not.
 Recovery is `npm ci` in `app/`. Before blaming a worktree for a toolchain
 error, check the target survived: `ls app/node_modules | wc -l`.
+
+### 9.2 `CHANGELOG.md` lives in the superproject only (2026-09-09)
+
+There is no `CHANGELOG.md` tracked in the `idl-rs` submodule. A brief that
+tells a Rust lane to add a changelog line is asking for a file that does not
+exist there — the `unwatch` lane correctly flagged this and left it out
+rather than inventing a path, which is the behaviour we want.
+
+**When writing a Rust-lane brief:** ask for the CHANGELOG *wording* in the
+report, and write the line yourself in the superproject. Same pattern as C3
+amendments, and for the same reason: a worktree-confined lane cannot reach
+the superproject, so anything living there is the lead's half.
