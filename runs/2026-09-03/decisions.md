@@ -7328,3 +7328,52 @@ entries, then implement against it.
 
 **Cost if wrong.** (1) mislabels every acceleration expression that
 normalises by gravity — silently, and in the units a rider reads.
+
+## 2026-09-09 — R163: the unit-rule column, and a standing rule for a rule derived from prose
+
+C2 §3.3 now carries a unit-rule column for all 72 functions, with §3.3.1
+defining the vocabulary (`eb08c33`). Accepted as written. Three things in it
+are worth recording as decisions rather than notes.
+
+**1. The vocabulary composes, and that was the right call.** Rather than a
+flat list of rule kinds, `Product`/`Quotient`/`PowN`/`SelectByLiteral` take
+*other rules* as arguments — so `[ch]·s` is
+`Product(SameAsArg(0), Fixed(s))` and `[ch]²/Hz` is
+`Quotient(PowN(0,2), Fixed(Hz))`, with no need for `TimesTime`, `PerTime` or
+`Sqrt` kinds. A closed set of composable primitives beats an open set of
+special cases, and it is why `sqrt` falls out as `PowN(0, 1/2)` — which only
+works because R154 chose **rational** exponents.
+
+**2. `SelectByLiteral` solves the one function whose unit depends on an
+argument.** `periodogram`/`welch` return `[ch]²/Hz`, `[ch]²`, or `[ch]`
+depending on the `scaling=` string. One function, three output units,
+expressed as a rule rather than a special case — and the default (`density`)
+matches `eval.rs:1082` rather than being assumed.
+
+**3. My brief was wrong about `lap_delta_time`.** I called it `Fixed(s)`.
+`eval.rs:1554` returns *main − overlay of `ch` itself*, so it is
+`SameAsArg(0)` — a delta of the channel, not a duration. `Fixed(s)`/`Fixed(m)`
+belong to `lap_start_time`/`lap_start_distance`. Corrected in the spec. This
+is the third time in two days that reading the engine has overturned
+something I asserted from a name; the pattern is that a name describes
+intent and only the code describes behaviour.
+
+**Four open items, all accepted with their recommendations, and all sharing
+one shape:** `spectrogram`'s scaling set, `correlate`/`convolve`'s
+`Product(0,1)`, `hilbert`'s `SameAsArg(0)`, and the hard-coded `s` atom in
+`cumulative_trapezoid`/`differentiate`/`gradient`. Every one is a rule
+derived from **prose or from an unimplemented function**, not from a running
+implementation.
+
+**Standing rule, from that shape:** a unit rule inferred from prose rather
+than read from an implementation is **marked contingent in §3.3 and
+re-verified when the function is implemented**. R158 established that a
+status column reports what the engine does; the same discipline applies to a
+unit rule. A contingent rule is honest; an unmarked guess becomes a fact by
+sitting still. `hilbert` is the clearest case — R146 already flagged it as a
+pre-emptive false friend, since with no complex type it will be an envelope,
+and its unit rule assumes exactly that.
+
+**Cost if wrong.** An unmarked prose-derived rule is indistinguishable from
+a verified one, so the first person to implement `correlate` has no signal
+that its unit was never checked against code.
