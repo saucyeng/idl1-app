@@ -7666,3 +7666,51 @@ review and its own gate.
 alias, old workbooks stop typechecking on read; if the UI lane never runs,
 the app keeps the exact asymmetry R167 was written to remove — a scaling
 the language has and the chart cannot spell.
+
+---
+
+## R169 — One session display name, beside `describeWindow`
+
+*2026-09-09, lead. Raised by the report lane's own honest note.*
+
+The report lane wrote a third session-name formatter, `sessionDisplayName`
+in `model/report/document.ts`, and **said so in its doc comment** — naming
+`shell/topBarSelection.ts`'s `sessionLabel` as "a different layer this pure
+model does not import". That honesty is what makes this rulable instead of
+a bug found in six months.
+
+There are now three:
+
+| where | empty venue | date |
+|---|---|---|
+| `Data/sessionRow.ts::venueLabel` | `(none)` | never (its own column) |
+| `shell/topBarSelection.ts::sessionLabel` | `(none)` | `· YYYY-MM-DD`, omitted when 0 |
+| `report/document.ts::sessionDisplayName` | `Session` | never |
+
+Each was individually justified as minimal and uncoupled. Each justification
+was reasonable. The result is that the same session is called three
+different things, and **the report is the one surface where you cannot
+hover a chip to check** — a printed page saying "Portland" beside a screen
+chip saying "Portland · 2026-09-02", and "Session" where the app says
+"(none)", is R143's false friend wearing a display string.
+
+**Ruling.** One formatter, in `state/selection.ts` beside `describeWindow`
+— which already exists as the shared window-description layer, and which
+already takes `sessionName` as a caller-supplied string *precisely* so it
+does not couple to a page. That parameter was the seam the three copies
+grew in. `state/` is the correct direction for all three callers
+(`shell/` → `state/`, `routes/` → `state/`, the Notebook's pure model →
+`state/`); nothing imports a page from a page.
+
+`venueLabel` moves there too, so `(none)` is spelled once, and
+`Data/sessionRow.ts` imports it rather than owning it. It stays a separate
+function: venue-without-date is a real second need (a table with its own
+date column), not a duplicate.
+
+**Not a licence to centralise every string.** The test is whether two
+surfaces name *the same thing* for *the same reader*. Two formatters that
+happen to both produce text are not duplicates.
+
+**Cost if wrong.** Low and recoverable — this is display text, no stored
+data, no wire. Left alone, the cost is a printed report that disagrees with
+the screen it was printed from, which is worse than either spelling.
