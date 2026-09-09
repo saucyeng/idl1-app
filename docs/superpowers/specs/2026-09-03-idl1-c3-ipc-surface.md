@@ -1314,7 +1314,10 @@ interface SpectrogramParams {
   hop_size: number;      // samples; hop = nperseg − noverlap (idl_rs::fft's own noverlap parameter)
   window: "rectangular" | "hann" | "hamming";   // idl_rs::fft::FftWindow, snake_case
   detrend: "none" | "mean" | "linear";          // idl_rs::fft::Detrend, snake_case
-  scaling: "magnitude" | "density";             // idl_rs::fft::Scaling, snake_case
+  scaling: "density" | "spectrum" | "raw_magnitude";  // idl_rs::fft::Scaling
+                                               // "magnitude" is accepted as a
+                                               // back-compat alias for
+                                               // "raw_magnitude" (R167)
 }
 interface Histogram2dParams {
   y_channel: string;   // the second channel; `channel` above is the x channel
@@ -1348,8 +1351,26 @@ interface RasterMeta {
   y_label: string;
   scale: { vmin: number; vmax: number; kind: "linear" };
   transparent_zero: boolean;
+  /** The unit of a spectral raster's magnitude axis, from C2 §3.3.1's
+   *  `SelectByLiteral` rule for `periodogram`/`welch` — the same
+   *  three-state `UnitLabel` a `CellDefResult.unit` carries. `null` for a
+   *  raster with no spectral magnitude (`kind: "histogram2d"`). Metadata
+   *  only: R165 keeps `fetch_raster`/`fetch_fft`'s byte payload to samples
+   *  and framing. */
+  magnitude_unit: UnitLabel | null;
 }
 ```
+**Scaling names (amended 2026-09-09, ruling R167).** These are the same
+three the maths language uses — `density`, `spectrum`, `raw_magnitude` —
+because they name the same computations. The wire previously exposed only
+`"magnitude"` and `"density"`, which meant a chart offered a scaling the
+language had no word for while a `spectrum`-scaled definition had no chart
+counterpart. `"magnitude"` was never scipy's `spectrum`: it is
+un-normalised `sqrt(avg_power)` (`core/src/fft.rs`), i.e. `raw_magnitude`,
+so it is kept as a **serde alias** and every stored `js` cell naming it
+deserialises to the identical computation. No workbook's numbers or
+renderings change (R151).
+
 Errors: `not_found`, `invalid_argument`, `io`, `internal` (same conditions
 as `fetch_raster` above).
 
