@@ -32,6 +32,9 @@ import CellFrame, { type CellRunStatus } from "./components/CellFrame";
 import CellList from "./components/CellList";
 import ChartCell from "./components/ChartCell";
 import ConflictBanner from "./components/ConflictBanner";
+import VersionBanner from "./components/VersionBanner";
+import { engineVersionBanner } from "./model/engineVersionBanner";
+import { fetchEngineVersion } from "../../../ipc/engine";
 import EditorPanes from "./components/EditorPanes";
 import JsCellFrame, { DEFAULT_JS_CELL_HEIGHT_PX } from "./components/JsCellFrame";
 import PropertiesForm from "./components/PropertiesForm";
@@ -71,7 +74,8 @@ import { primaryWindowOutputs, sessionDetailsBySessionId } from "./model/graphVi
 import { bindingFor, bindingIdentity, unresolvedChannelId, type FftCellBinding } from "./model/jsCellBinding";
 import { extractChannelCalls, extractSpectrumCalls } from "./model/jsCellCalls";
 import { jsCellNote, primaryWindowNote } from "./model/jsCellNote";
-import { declaredDefinitionNames } from "./model/graphModel";
+import { definitionCellIds } from "./model/graphModel";
+import { fixTargetCellId } from "./model/fixTarget";
 import { readNotebookPrefs, writeNotebookPrefs } from "./model/notebookPrefs";
 import { runEval, runOpenAndEval, type OpenEvalDeps } from "./model/openEvalDriver";
 import { registerMetrics } from "./model/outputRegister";
@@ -85,7 +89,7 @@ import { timelineCommit } from "./model/timelineStrip";
 import { resolvedWindowKeysFor, toWireWindow, windowSpanFor } from "./model/viewportWindows";
 import { chooseWorkbookEntry, type WorkbookEntry } from "./model/workbookEntry";
 import { resolveXMode, X_MODE_OPTIONS, type XMode } from "./model/xMode";
-import { initialWorkbookState, NO_WINDOW_KEY, workbookReducer } from "./model/workbookState";
+import { initialWorkbookState, isWindowStale, NO_WINDOW_KEY, workbookReducer } from "./model/workbookState";
 
 /** `true` when `value` has the shape of a typed `IpcError` (C3 §2). Local
  *  copy of the same helper `openEvalDriver.ts`/`fftDriver.ts` each keep --
@@ -337,6 +341,16 @@ export default function NotebookPage() {
    *  below keys on instead of `windows`' own array identity (operating
    *  brief §4's tightening). */
   const windowsKeyValue = windowsKey(windows);
+  /**
+   * Decision 61: every currently selected window's own lookup key, for
+   * `ChartCell`'s `selectedWindowKeys` prop (`model/cursorCard.ts`'s own
+   * doc comment) -- memoized on `windowsKeyValue` rather than rebuilt
+   * every render, since it is handed to a `useCallback`'s dependency array
+   * (`handlePointerMove`) and a fresh `Set` identity there would rebuild
+   * that callback (and its pointer-capture closures) every render for no
+   * reason.
+   */
+  const selectedWindowKeys = useMemo(() => new Set(windows.map(windowKey)), [windowsKeyValue]); // eslint-disable-line react-hooks/exhaustive-deps
   /** This page's one "primary" window -- see the `windows` doc comment
    *  above. `null` when nothing is selected. */
   const primaryWindow: SelectionWindow | null = windows[0] ?? null;
@@ -478,6 +492,22 @@ export default function NotebookPage() {
   /** The last `rebuild_catalog` report, for `WorkbookBar`'s "Rescan found
    *  N workbook(s)" line (R81 Q6). */
   const [lastRebuild, setLastRebuild] = useState<RebuildReport | null>(null);
+  /** Decision 62: the live engine's own version (`fetchEngineVersion`,
+   *  C3 §3.1 -- never fails), fetched once on mount since it cannot change
+   *  while this app instance is running. `null` until that first call
+   *  resolves; the banner effect below simply has nothing to compare yet. */
+  const [currentEngineVersion, setCurrentEngineVersion] = useState<string | null>(null);
+  /** Decision 62: each currently selected session's own recorded
+   *  `engine_version` (`SessionSummary`, C1 §4.3), refreshed whenever the
+   *  selection changes. Only the sessions windows are keyed for
+   *  (`sessionId`) -- unrelated sessions are dropped, not accumulated. */
+  const [sessionEngineVersions, setSessionEngineVersions] = useState<Map<string, string>>(new Map());
+  /** Decision 62's "dismissable": the `windowsKeyValue` the banner was last
+   *  dismissed for -- Isaac: "a banner for now so it can be temporarily
+   *  ignored", so a dismissal is scoped to the current selection and
+   *  reappears once the selection (or the live engine version) changes
+   *  under it, never remembered permanently. */
+  const [versionBannerDismissedFor, setVersionBannerDismissedFor] = useState<string | null>(null);
 
   // R95 items 2/3: whether the Notebook route is on screen right now
   // (`shell/routeVisibility.tsx`'s composed "window visible AND this route
@@ -796,6 +826,14 @@ export default function NotebookPage() {
   const windowsRef = useRef<WireWindow[]>([]);
   windowsRef.current = windows.map(toWireWindow);
 
+  /** Decision 59's staleness generation, read fresh by every `runEval`/
+   *  `runOpenAndEval` call site below -- the same "fresh values through a
+   *  ref" shape as {@link windowsRef}, so a run started from an effect never
+   *  captures a stale `state.evalRequestGeneration` from the render that
+   *  scheduled it. */
+  const evalGenerationRef = useRef(state.evalRequestGeneration);
+  evalGenerationRef.current = state.evalRequestGeneration;
+
   /** App-side mirror of `windows`, read fresh by {@link pushCombinedSpectrumFor}
    *  when it is called from the mount effect's `onChannelsInvalidated`
    *  closure below (captured once, at mount, and stale thereafter --
@@ -1030,9 +1068,50 @@ export default function NotebookPage() {
       readWorkbook: (idOrPath) => readWorkbook(idOrPath),
       evalWorkbookV2: (id, w) => evalWorkbookV2(id, w),
     };
-    void runOpenAndEval(deps, selectedWorkbookId, windows.map(toWireWindow), dispatch, () => openSeqRef.current !== mySeq);
+    void runOpenAndEval(deps, selectedWorkbookId, windows.map(toWireWindow), dispatch, () => openSeqRef.current !== mySeq, evalGenerationRef.current);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [windowsKeyValue, selectedWorkbookId]);
+
+  // Decision 62: the live engine's own version, once -- `fetchEngineVersion`
+  // never fails (C3 §3.1) and cannot change mid-session, so this never
+  // needs to run again.
+  useEffect(() => {
+    let disposed = false;
+    void fetchEngineVersion().then((version) => {
+      if (!disposed) setCurrentEngineVersion(version);
+    });
+    return () => {
+      disposed = true;
+    };
+  }, []);
+
+  // Decision 62: refreshes each selected session's own recorded
+  // `engine_version` whenever the selection changes -- `listSessions`
+  // (already used by `model/sessionSpanDriver.ts` for the same catalog
+  // read) is the only IPC surface that carries it (`SessionDetail`, unlike
+  // `SessionSummary`, does not). Filtered down to this selection's own
+  // session ids so this map never grows to hold every session the catalog
+  // has ever seen.
+  useEffect(() => {
+    if (windows.length === 0) {
+      setSessionEngineVersions(new Map());
+      return;
+    }
+    let disposed = false;
+    const selectedSessionIds = new Set(windows.map((w) => w.sessionId));
+    void listSessions().then((sessions) => {
+      if (disposed) return;
+      const next = new Map<string, string>();
+      for (const s of sessions) {
+        if (selectedSessionIds.has(s.session_id)) next.set(s.session_id, s.engine_version);
+      }
+      setSessionEngineVersions(next);
+    });
+    return () => {
+      disposed = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [windowsKeyValue]);
 
   // Resolves every selected window's `SessionDetail` and its own recorded
   // span (lead pre-ruling 2026-09-05 #1; extended to every window, not only
@@ -1148,7 +1227,7 @@ export default function NotebookPage() {
       }
       dispatch({ type: "watchEvent", event });
       const mySeq = ++evalSeqRef.current;
-      void runEval({ evalWorkbookV2 }, workbookId, windowsRef.current, dispatch, () => evalSeqRef.current !== mySeq);
+      void runEval({ evalWorkbookV2 }, workbookId, windowsRef.current, dispatch, () => evalSeqRef.current !== mySeq, evalGenerationRef.current);
     });
 
     return () => {
@@ -1177,7 +1256,7 @@ export default function NotebookPage() {
 
     const timer = setTimeout(() => {
       const mySeq = ++evalSeqRef.current;
-      void runEval({ evalWorkbookV2 }, workbookId, windowsRef.current, dispatch, () => evalSeqRef.current !== mySeq);
+      void runEval({ evalWorkbookV2 }, workbookId, windowsRef.current, dispatch, () => evalSeqRef.current !== mySeq, evalGenerationRef.current);
     }, EDIT_EVAL_DEBOUNCE_MS);
 
     return () => clearTimeout(timer);
@@ -1635,9 +1714,22 @@ export default function NotebookPage() {
       fftBoundIdentityRef.current.set(cellId, perWindowIdentity);
       const retained = retainedSpectraRef.current.get(cellId);
       if (retained !== undefined) {
+        let prunedAny = false;
         for (const wKey of Array.from(retained.byWindow.keys())) {
-          if (!currentWindowKeys.has(wKey)) retained.byWindow.delete(wKey);
+          if (!currentWindowKeys.has(wKey)) {
+            retained.byWindow.delete(wKey);
+            prunedAny = true;
+          }
         }
+        // Decision 61: dropping a deselected window's entry above is not
+        // enough on its own -- the sandbox already has this cell's *old*
+        // combined host variable, built while that window was still
+        // selected, and nothing else in this loop necessarily re-pushes it
+        // (a remaining window whose own identity is unchanged is skipped
+        // below without calling `pushCombinedSpectrumFor`). Without this,
+        // an unchecked lap's spectrum trace would keep rendering until some
+        // unrelated edit happened to touch a still-selected window.
+        if (prunedAny) pushCombinedSpectrumFor(cellId);
       }
       setFftErrors((prev) => {
         const cellMap = prev.get(cellId);
@@ -1774,7 +1866,11 @@ export default function NotebookPage() {
   // doc comment), so `definitionNames` above can't tell "never declared"
   // apart from "declared, but its own math cell errored" -- this can, and
   // feeds `jsCellNote`'s `isDeclaredDefinitionFailed` below.
-  const declaredDefNames = useMemo(() => declaredDefinitionNames(state.markdown ?? ""), [state.markdown]);
+  // Also the source `model/fixTarget.ts`'s `fixTargetCellId` resolves a
+  // "Fix" button's target cell id from (decision 58) -- one scan serves
+  // both, since a definition's own declaring cell is exactly what "Fix"
+  // must open.
+  const declaredDefCellIds = useMemo(() => definitionCellIds(state.markdown ?? ""), [state.markdown]);
 
   // `PropertiesForm`'s channel/lap pickers (`js` cells only -- `EditorPanes`
   // ignores these props for every other kind). `label` has no separate
@@ -1807,6 +1903,30 @@ export default function NotebookPage() {
     const output = primaryOutputs.get(cellId);
     if (output === undefined) return "pending";
     return output.errors.length > 0 ? "error" : "ok";
+  }
+
+  /**
+   * Decision 59: `true` when this cell already has a rendered result
+   * (`primaryOutputs` carries an entry for it) but the primary window's own
+   * `WindowEvalState.generation` is behind the document's current
+   * `evalRequestGeneration` -- an edit landed since that result was
+   * computed and a fresh one has not arrived yet. `CellFrame` renders this
+   * as a grey overlay with a spinner *over* the still-mounted `children`,
+   * never by blanking them (decision 59: "a chart never blanks while
+   * recomputing"). A cell with no output yet at all (`primaryOutputs` has
+   * no entry) is "pending", a distinct state this deliberately excludes --
+   * there is nothing on screen yet to greyed-over.
+   *
+   * Scoped to the *primary* window, mirroring every other single-window
+   * reader in this file (`cellStatus`, `cellErrorMessage`) -- a genuinely
+   * per-window greying for a multi-window overlay chart is deferred (see
+   * this task's own report), since it would need per-series staleness
+   * inside the sandbox-rendered picture, not just this frame's chrome.
+   */
+  function cellStale(cellId: string | null): boolean {
+    if (cellId === null) return false;
+    if (!primaryOutputs.has(cellId)) return false;
+    return isWindowStale(primaryEval, state.evalRequestGeneration);
   }
 
   /** The message `CellFrame`'s error `NoteBlock` shows, in the same
@@ -1876,6 +1996,22 @@ export default function NotebookPage() {
   const cellListWindowNote =
     primaryWindow !== null ? primaryWindowNote(windows.length, windowDescriptorFor(primaryWindow, sessionDetail).label) : null;
 
+  // Decision 62: `null` while the live engine version hasn't resolved yet,
+  // or once every selected session already matches it -- `model/
+  // engineVersionBanner.ts` decides the rest. `versionBannerDismissedFor`
+  // scopes a dismissal to the exact selection it was dismissed for, so a
+  // changed selection (or a changed live engine version, folded into the
+  // same key) brings the banner back rather than hiding it forever.
+  const versionBanner =
+    currentEngineVersion !== null
+      ? engineVersionBanner(
+          windows.map((w) => ({ sessionId: w.sessionId, engineVersion: sessionEngineVersions.get(w.sessionId) ?? currentEngineVersion })),
+          currentEngineVersion
+        )
+      : null;
+  const versionBannerDismissKey = `${windowsKeyValue}::${currentEngineVersion ?? ""}`;
+  const versionBannerVisible = versionBanner !== null && versionBannerDismissedFor !== versionBannerDismissKey;
+
   const cellListElement = (
     <CellList
       doc={{ frontMatterRange: null, cells: state.cells }}
@@ -1908,7 +2044,7 @@ export default function NotebookPage() {
               // a definition whose own math cell errored (ruling R150's
               // amendment) -- distinct from a name the session has simply
               // never heard of.
-              const isDeclaredDefinitionFailed = unresolved !== null && !isAxisLessDefinition && declaredDefNames.has(unresolved);
+              const isDeclaredDefinitionFailed = unresolved !== null && !isAxisLessDefinition && declaredDefCellIds.has(unresolved);
               // `model/jsCellNote.ts` (L6 Task 21, extended by ruling R148
               // part 2/R150): fixes the rendering gap the 2026-09-06
               // preview captured -- a cell with no window selected
@@ -1926,8 +2062,34 @@ export default function NotebookPage() {
                 isAxisLessDefinition,
                 isDeclaredDefinitionFailed,
               });
+              // Decision 58's "Fix" affordance: any note naming a specific
+              // unresolved reference (a declared definition that failed, an
+              // unknown channel, an axis-less definition) points somewhere
+              // fixable -- a failed declared definition opens its own math
+              // cell (`model/fixTarget.ts`), everything else opens this
+              // chart's own cell so the user can correct the reference.
+              // "No session selected" (`unresolved === null`) has no
+              // per-cell fix -- no button in that case.
+              const onFix =
+                unresolved !== null
+                  ? () =>
+                      setSelectedCellId(
+                        fixTargetCellId({
+                          cellId,
+                          failedDefinitionName: isDeclaredDefinitionFailed ? unresolved : null,
+                          definitionCellIds: declaredDefCellIds,
+                        })
+                      )
+                  : undefined;
               return (
-                <JsCellFrame cellId={cellId} heightPx={heightPx} error={cellErrors.get(cellId)} note={note ?? undefined} sendLayout={sendLayout} />
+                <JsCellFrame
+                  cellId={cellId}
+                  heightPx={heightPx}
+                  error={cellErrors.get(cellId)}
+                  note={note ?? undefined}
+                  onFix={onFix}
+                  sendLayout={sendLayout}
+                />
               );
             }
 
@@ -1943,7 +2105,18 @@ export default function NotebookPage() {
               // a sibling window's own successful spectrum still renders
               // (R121).
               const note = binding.unrequestable ?? cellErrorMessage(cellId);
-              return <JsCellFrame cellId={cellId} heightPx={heightPx} note={note} sendLayout={sendLayout} />;
+              // Decision 58: the only fixable location for either cause is
+              // this FFT cell's own properties (its axis config, or the
+              // definition it names) -- opens itself.
+              return (
+                <JsCellFrame
+                  cellId={cellId}
+                  heightPx={heightPx}
+                  note={note}
+                  onFix={note !== undefined ? () => setSelectedCellId(cellId) : undefined}
+                  sendLayout={sendLayout}
+                />
+              );
             }
 
             if (binding.mountedChannelId === null) {
@@ -1954,7 +2127,16 @@ export default function NotebookPage() {
               // effect above feeds it every definition's data as a host
               // variable, same as a session channel); this frame just has
               // no pan/zoom/hover.
-              return <JsCellFrame cellId={cellId} heightPx={heightPx} error={cellErrors.get(cellId)} sendLayout={sendLayout} />;
+              const ownError = cellErrors.get(cellId);
+              return (
+                <JsCellFrame
+                  cellId={cellId}
+                  heightPx={heightPx}
+                  error={ownError}
+                  onFix={ownError !== undefined ? () => setSelectedCellId(cellId) : undefined}
+                  sendLayout={sendLayout}
+                />
+              );
             }
 
             // TODO(idl0): `ChartCell` mounts `binding.mountedChannelId` only
@@ -2108,6 +2290,7 @@ export default function NotebookPage() {
                 fetchCursorReadout={(sessId, channels, tUs) => cursorReadout(sessId, channels, tUs)}
                 channelUnit={sessionDetail?.channels.find((c) => c.channel_id === channel.channelId)?.unit}
                 windowCount={windows.length}
+                selectedWindowKeys={selectedWindowKeys}
                 combinedChannelData={combinedChannelDataRef.current.get(`${cellId}::${channel.channelId}`)}
                 sendTransform={(id, translateXPx, scaleX) => sandboxHostRef.current?.sendTransform(id, translateXPx, scaleX)}
                 sendLayout={sendLayout}
@@ -2132,6 +2315,7 @@ export default function NotebookPage() {
                 if (cell.id !== null) setSelectedCellId(cell.id);
               }}
               status={cellStatus(cell.id)}
+              stale={cellStale(cell.id)}
               error={cellErrorMessage(cell.id)}
               codeVisible={cell.id !== null && isCodeVisible(revealedCells, cell.id)}
               onToggleCode={() => {
@@ -2340,6 +2524,9 @@ export default function NotebookPage() {
         </div>
       )}
       {state.conflict && <ConflictBanner onReloadFromDisk={() => void handleReloadFromDisk()} onOverwrite={() => void handleOverwrite()} />}
+      {versionBannerVisible && versionBanner !== null && (
+        <VersionBanner banner={versionBanner} onDismiss={() => setVersionBannerDismissedFor(versionBannerDismissKey)} />
+      )}
       {state.handle !== null && placement === "panes" && (
         <ResizablePanelGroup orientation="horizontal" className="min-h-0 flex-1">
           <ResizablePanel id="notebook-editor-output" defaultSize={65} minSize={30}>
