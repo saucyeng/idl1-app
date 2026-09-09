@@ -1,6 +1,6 @@
 import type { SessionSummary, TrackSummary, TrackVisitSummary } from "../../../ipc/catalog";
+import { venueLabel } from "../../../state/selection";
 import { formatDateMs } from "./format";
-import { venueLabel } from "./sessionRow";
 
 /** One row in the tracks result list — a pure display derivation of one
  *  `TrackSummary` (C3 §3.2). Holds no engine truth: every field here came
@@ -8,8 +8,8 @@ import { venueLabel } from "./sessionRow";
 export interface TrackRow {
   trackId: string;
   name: string;
-  /** `venue_name`, or "(none)" when empty — the same synthetic label the
-   *  session list uses ([[sessionRow.ts]]'s `venueLabel`). */
+  /** `venue_name`, or "(none)" when empty — the shared synthetic label
+   *  ([[selection.ts]]'s `venueLabel`). */
   venueText: string;
   /** `created_at_ms` rendered in the viewer's locale. */
   createdText: string;
@@ -35,8 +35,9 @@ export function toTrackRow(summary: TrackSummary): TrackRow {
  *  order. A visit whose `track_id` does not resolve in `tracksById` is
  *  skipped rather than stopping the search there (idl0 §12.3's
  *  skip-on-resolve rule — a stale visit must not hide a later, valid one).
- *  Returns `""` (rendered as "(none)" by [[venueLabel]]) when neither the
- *  session nor any resolvable visited track carries a venue. */
+ *  Returns `""` (rendered as "(none)" by [[selection.ts]]'s [[venueLabel]])
+ *  when neither the session nor any resolvable visited track carries a
+ *  venue. */
 export function resolveDisplayVenue(
   session: SessionSummary,
   visits: TrackVisitSummary[],
