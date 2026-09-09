@@ -7825,3 +7825,48 @@ concluding a worktree is at fault for a toolchain error.
 lane is being gated — the failure surfaces in the *next* lane's gate, not in
 the removal that caused it, which is what makes it worth a ruling rather
 than a shrug.
+
+---
+
+## R172 — This device's own sync identity rides on `sync_status`, not a new command
+
+*2026-09-09, lead. Unblocking R170's second finding.*
+
+The mirror audit found `set_sync_device_name` (C3 §3.9, ruling R105) live in
+Rust and completely unreachable from TypeScript. Wiring it turned out to be
+blocked on something the audit could not see: **nothing on the wire reports
+this device's own name.** `SyncStatusDto` carries `paired_peers` and
+`last_sync_utc_ms` and no identity at all. A rename field with no current
+value to show is not a feature, so the setter alone was never enough.
+
+**Ruling: `SyncStatusDto` gains `this_device: { peer_id, name }`**, rather
+than a new `sync_device_identity()` command.
+
+Why the field and not the command:
+
+1. What peers see you as **is** sync status — arguably the first thing on
+   that pane a user looks for. It is not a separate subject.
+2. `SyncSection.tsx` already polls `sync_status`; one field costs nothing
+   and needs no second lifecycle, no second error path, no second stale
+   state to reason about.
+3. `set_sync_device_name` already **returns** the updated name, so the pane
+   can show the new value immediately and let the next poll reconcile. That
+   return value was previously dead — it existed for a caller that did not
+   exist yet.
+
+`peer_id` rides along because pairing needs it: R104's letter is that the
+app never guesses a peer id, so a user pairing two of their own machines has
+to read this one's id off this one's screen. Today it is not displayed
+anywhere.
+
+**Not retroactive, and the UI must say so.** `set_sync_device_name`'s own
+doc comment is explicit: renaming does not change what an already-paired
+peer displays for us — that name was copied into their peer file at pairing
+time, and re-sending it would need a wire message this contract does not
+define. A rename field that silently implies otherwise would be a lie by
+omission; the pane states it.
+
+**Cost if wrong.** One field on a polled DTO — cheap to remove. Left
+undone, the cost is a device permanently named whatever hostname the
+identity file was minted from, and a pairing flow that asks for an id the
+app never shows.
