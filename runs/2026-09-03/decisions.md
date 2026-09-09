@@ -6809,3 +6809,43 @@ A corollary for the properties form: because `parse` must round-trip what
 the form generates, **the form's own output is the only reliably parseable
 shape**. Any hand-authored cell is one missing key away from silence. That
 is acceptable only while the failure is *visible*.
+
+## 2026-09-08 — R153: a `catch` may not broaden a specific failure into a plausible result
+
+**The day's four blank-chart bugs shared one mechanism**, worth naming
+separately from R148/R150's "say something" rule, because this one is not
+about *messaging* — it is about a `catch` converting a precise, knowable
+error into a result that looks like data.
+
+1. `plotForm/parse` returning `null` for any unrecognised cell — a missing
+   `x.type`, an extra `height`, a `var()` stroke — so the host bound
+   nothing and Plot drew empty axes.
+2. `bindingForTime`'s all-or-nothing rule blanking a chart because one of
+   its two marks failed, discarding the mark that was fine.
+3. `channelLookup`/`spectrumLookup` returning `[]` for an unbound name.
+4. `compileCell`'s fallback catching **every** compile failure — including
+   an illegal parameter name — and re-compiling without the `return`, so
+   every cell in the notebook evaluated to `undefined`.
+
+Each is a `catch` (or a null-return standing in for one) whose scope is far
+wider than the case it was written for. (4) is the clearest: the fallback
+exists so a statement-bodied cell works, and it silently absorbed a
+completely unrelated fault — an invalid host-variable name — turning nine
+working charts into the word "undefined".
+
+**Ruling.** A `catch` (or a `null`/empty-collection return used as one) must
+be **as narrow as the case it handles**, and must re-raise anything else.
+Where narrowing is impractical, the broad path must produce a *visible
+failure*, never a value that renders as ordinary output. An empty array, a
+`null` binding, and `undefined` all render as "nothing is wrong here", which
+is the one thing they must never mean.
+
+Applied now: `compileCell` retries the statement form and rethrows the
+original error if that fails too. `channelLookup`/`spectrumLookup` warn with
+the key they wanted and the keys that exist. The remaining two are R148 part
+two and R150, both queued.
+
+**Cost if wrong.** Four separate authoring or wiring mistakes today
+presented as one symptom — an empty chart frame — and the first led Isaac to
+conclude the application did not work. The diagnostic cost was hours; each
+underlying fault was one line.
