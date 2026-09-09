@@ -1,0 +1,29 @@
+/* Themes xyflow's stock `MiniMap`/`Controls` from `styles/tokens.css`'s
+ * custom properties (Task 4, decision 42) -- imported after
+ * `@xyflow/react/dist/style.css` so these declarations win the cascade.
+ * Every value here is a `var(--token)` reference, never a hex literal
+ * (`tokens.css` is the one file in the repo allowed to contain one).
+ *
+ * xyflow itself reads `--xy-*` custom properties with its own
+ * `-default`-suffixed fallback (`node_modules/@xyflow/react/dist/style.css`)
+ * -- setting the unsuffixed name here is the documented theming hook, not
+ * an override of internal implementation detail.
+ */
+.idl-graph-canvas {
+  --xy-minimap-background-color: var(--surface-2);
+  --xy-minimap-mask-background-color: color-mix(in srgb, var(--control) 60%, transparent);
+  --xy-minimap-mask-stroke-color: var(--rule);
+  --xy-minimap-mask-stroke-width: 1;
+  --xy-minimap-node-background-color: var(--control-active);
+  --xy-minimap-node-stroke-color: var(--rule);
+  --xy-minimap-node-stroke-width: 1;
+
+  --xy-controls-button-background-color: var(--control);
+  --xy-controls-button-background-color-hover: var(--control-active);
+  --xy-controls-button-color: var(--fg-dim);
+  --xy-controls-button-color-hover: var(--fg);
+  --xy-controls-button-border-color: var(--rule);
+  --xy-controls-box-shadow: none; /* UI-DIRECTION: depth is a surface step + hairline, never box-shadow */
+
+  --xy-attribution-background-color: transparent;
+}

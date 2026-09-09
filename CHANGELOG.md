@@ -6,6 +6,16 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 
 ### Fixed
 
+- **IMU channel masks are all-or-nothing again, and SPEC §8's worked example
+  is corrected, not the validator (2026-09-08, ruling R155).**
+  `validate.ts`'s `checkImuSlot` now errors when an enabled IMU has some but
+  not all six axis channels on (all-off stays the pre-existing "logs
+  nothing" warning); a disabled slot is unaffected. SPEC §8's own worked
+  example enabled IMUs with only 3-5 of 6 channels — that example is now
+  corrected to all-six-on, with a new paragraph recording that a partial
+  mask stays wire-legal and importer-readable forever, it is just no longer
+  something this app writes. `validate.test.ts`/`model.test.ts`'s
+  `SPEC_WORKED_EXAMPLE` fixtures follow the corrected example.
 - **`imu.low_power_mode`/`imu.high_performance_mode` both set is now a
   validation error, not a warning (2026-09-08).** Firmware confirms the two
   are XOR (`runs/2026-09-08/firmware/STATUS-7.3-DELTA.md`, "Resolved with
@@ -158,6 +168,53 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 
 ### Added
 
+- **The node card's chart button is now a pictogram chart-type picker
+  instead of a fixed `lineY` mark (2026-09-08, decision 83 — Isaac: "my
+  chart type selector was really pretty, I want those small chart type
+  images to carry over").** `graph/chartTypeCatalog.ts` (pure, tested)
+  offers exactly `plotForm/types.ts`'s five `MARK_NAMES` values — the
+  marks this notebook can actually render, not idl0's full chart-kind list
+  (time series/FFT/spectrogram/histogram/GPS map/…), most of which this
+  card's single-node chart button was never going to draw. **No pictogram
+  asset exists anywhere in this repo** (idl0's own picker used bundled
+  Material Design glyphs, not an image file) — `graph/chartTypeIcons.tsx`
+  draws all five as inline SVG instead, offline-first, no new dependency.
+  `graph/ChartTypePicker.tsx` renders the row; `NodeCard.tsx`'s `onChart`
+  now carries the chosen mark through to `GraphCanvas.tsx`'s
+  `insertChartCell` call.
+- **The maths graph's `MiniMap`/`Controls` are themed from `tokens.css`
+  instead of xyflow's stock light-mode defaults (2026-09-08, decision
+  42).** `graph/graphCanvasTheme.css`, imported after
+  `@xyflow/react/dist/style.css`, sets xyflow's own documented `--xy-*`
+  theming variables (minimap background/mask/node fills, control button
+  fill/hover/border/icon colour) to `var(--token)` references only — never
+  a hex literal (`tokenSheet.test.ts` enforces this repo-wide) — and drops
+  the controls' box-shadow (UI-DIRECTION: depth is a surface step +
+  hairline, never `box-shadow`).
+- **The maths graph's canvas search pans to a hit instead of only
+  highlighting it (2026-09-08, decision 42).** `GraphCanvas.tsx` now wraps
+  itself in a `ReactFlowProvider` (needed for `useReactFlow`'s viewport
+  control from the toolbar, which sits outside `<ReactFlow>`'s own
+  subtree) and centres the first matched node with `setCenter` whenever
+  the search query changes matches — a match hidden inside a collapsed
+  cell centres on that cell's own closed-subsheet node instead, since the
+  matched card itself is not on the canvas. With ~50 definitions expected,
+  a search that only highlights without navigating was barely better than
+  none.
+- **The maths graph draws a KiCad-subsheet frame around a subgraph instead
+  of just deleting its internal cards on collapse (2026-09-08, decision
+  43).** `model/graphSubgraphFrame.ts` (pure, tested) computes an expanded
+  cell's boundary box from its member nodes' canvas positions and, for a
+  collapsed cell, a synthetic node's centroid position plus its named
+  input/output ports (resolved from `GraphModel`, not raw ids).
+  `graph/SubgraphFrameNode.tsx` draws the dashed boundary box behind an
+  expanded cell's cards; `graph/SubgraphCollapsedNode.tsx` draws the closed
+  subsheet — one node, the cell's label, and a `Handle` per named port on
+  its left/right edge. `GraphCanvas.tsx` now hides a collapsed cell's
+  output cards too (not just the internal ones `visibleNodeIds` already
+  hid) and rewires any edge that touched one onto the synthetic node's
+  matching port handle, so collapsing never drops a cell's cards off the
+  canvas with nothing left to show it was ever there.
 - **Three of decision 45a's five gestures wired to the maths graph canvas
   (2026-09-08, w32-maths, ruling R147 follow-on — the five `graphEdits.ts`
   mutations landed with Tasks 3-9 but were reachable from no UI gesture

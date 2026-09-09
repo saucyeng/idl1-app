@@ -23,19 +23,19 @@ const SPEC_WORKED_EXAMPLE = {
       enabled: true,
       accel_range_g: 32,
       gyro_range_dps: 2000,
-      channels: { accel_x: true, accel_y: true, accel_z: true, gyro_x: true, gyro_y: true, gyro_z: false },
+      channels: { accel_x: true, accel_y: true, accel_z: true, gyro_x: true, gyro_y: true, gyro_z: true },
     },
     imu1: {
       enabled: true,
       accel_range_g: 16,
       gyro_range_dps: 500,
-      channels: { accel_x: true, accel_y: true, accel_z: true, gyro_x: false, gyro_y: false, gyro_z: false },
+      channels: { accel_x: true, accel_y: true, accel_z: true, gyro_x: true, gyro_y: true, gyro_z: true },
     },
     imu2: {
       enabled: true,
       accel_range_g: 16,
       gyro_range_dps: 500,
-      channels: { accel_x: true, accel_y: true, accel_z: true, gyro_x: false, gyro_y: false, gyro_z: false },
+      channels: { accel_x: true, accel_y: true, accel_z: true, gyro_x: true, gyro_y: true, gyro_z: true },
     },
     orientation: {
       imu0_rotation_matrix: [

@@ -25,19 +25,19 @@ const SPEC_WORKED_EXAMPLE = {
       enabled: true,
       accel_range_g: 32,
       gyro_range_dps: 2000,
-      channels: { accel_x: true, accel_y: true, accel_z: true, gyro_x: true, gyro_y: true, gyro_z: false },
+      channels: { accel_x: true, accel_y: true, accel_z: true, gyro_x: true, gyro_y: true, gyro_z: true },
     },
     imu1: {
       enabled: true,
       accel_range_g: 16,
       gyro_range_dps: 500,
-      channels: { accel_x: true, accel_y: true, accel_z: true, gyro_x: false, gyro_y: false, gyro_z: false },
+      channels: { accel_x: true, accel_y: true, accel_z: true, gyro_x: true, gyro_y: true, gyro_z: true },
     },
     imu2: {
       enabled: true,
       accel_range_g: 16,
       gyro_range_dps: 500,
-      channels: { accel_x: true, accel_y: true, accel_z: true, gyro_x: false, gyro_y: false, gyro_z: false },
+      channels: { accel_x: true, accel_y: true, accel_z: true, gyro_x: true, gyro_y: true, gyro_z: true },
     },
     orientation: {
       imu0_rotation_matrix: [
@@ -203,6 +203,70 @@ describe("validateConfig", () => {
     const channelIssues = issues.filter((i) => i.path === "imu0.channels");
     expect(channelIssues).toHaveLength(1);
     expect(channelIssues[0].severity).toBe("warning");
+  });
+
+  it("validateConfig — imu0 enabled with 5 of 6 channels on — an error: the app only writes an all-or-nothing channel mask (ruling R155)", () => {
+    // Arrange
+    const config = workedConfig();
+    config.imu.imu0.channels = {
+      accel_x: true,
+      accel_y: true,
+      accel_z: true,
+      gyro_x: true,
+      gyro_y: true,
+      gyro_z: false,
+    };
+
+    // Act
+    const issues = validateConfig(config);
+
+    // Assert
+    const channelIssues = issues.filter((i) => i.path === "imu0.channels");
+    expect(channelIssues).toHaveLength(1);
+    expect(channelIssues[0].severity).toBe("error");
+    expect(channelIssues[0].message).toContain("5 of 6");
+    expect(isPushable(issues)).toBe(false);
+  });
+
+  it("validateConfig — imu1 enabled with only 3 of 6 channels on — an error naming the count", () => {
+    // Arrange
+    const config = workedConfig();
+    config.imu.imu1.channels = {
+      accel_x: true,
+      accel_y: true,
+      accel_z: true,
+      gyro_x: false,
+      gyro_y: false,
+      gyro_z: false,
+    };
+
+    // Act
+    const issues = validateConfig(config).filter((i) => i.path === "imu1.channels");
+
+    // Assert
+    expect(issues).toHaveLength(1);
+    expect(issues[0].severity).toBe("error");
+    expect(issues[0].message).toContain("3 of 6");
+  });
+
+  it("validateConfig — imu0 disabled with a partial channel mask — no issue: a disabled slot is never pushed", () => {
+    // Arrange
+    const config = workedConfig();
+    config.imu.imu0.enabled = false;
+    config.imu.imu0.channels = {
+      accel_x: true,
+      accel_y: false,
+      accel_z: false,
+      gyro_x: false,
+      gyro_y: false,
+      gyro_z: false,
+    };
+
+    // Act
+    const issues = validateConfig(config).filter((i) => i.path === "imu0.channels");
+
+    // Assert
+    expect(issues).toEqual([]);
   });
 
   it("validateConfig — gps.sample_rate_hz 0 and 11 — an error each, naming the 1..10 Hz range", () => {
