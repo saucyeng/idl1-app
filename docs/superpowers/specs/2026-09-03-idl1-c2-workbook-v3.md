@@ -14,7 +14,7 @@
 - 2026-09-07: **§3.6 added — value shapes / n-dimensional math values**
   (ruling R110, wave-3 W3.1, spec-first). Math values gain a shape; the
   builtin catalog gains axis-aware reductions, `argmax`/`argmin`, slicing and
-  `align`; `spectrogram` becomes `Implemented` and yields `[t,f]`; charts
+  `align`; `spectrogram` is *specified* to yield `[t,f]` (still NotImplemented — R158); charts
   bind by axis kind and the rank-2 case reuses C3's existing raster path.
   `version` stays `3` and no migration pass is needed — §3.6.8.
 - 2026-09-06: §5.3 widened with an FFT chart production — `marks_array` splits
@@ -478,7 +478,7 @@ carried forward here as ordinary catalog entries, not new.
 | `rad2deg` | `rad2deg(x)` | Trig conversion | degrees (`x` in radians) | Implemented | yes |
 | `periodogram` | `periodogram(ch, window="boxcar", detrend="constant", scaling="density"\|"spectrum"\|"raw_magnitude")` | Frequency | `scaling="density"` → `[ch]²/Hz`; `"spectrum"` → `[ch]²`; `"raw_magnitude"` → same units as `ch` (magnitude) — over a `[f]` shape whose axis coordinate is `k·sample_rate_hz/n` Hz | Implemented — retired `fft`'s single-segment shape, scipy-named and scipy-scaled (`density`/`spectrum` are scipy's own two scalings; `raw_magnitude` is deliberately not one of them — it names the un-normalised value the legacy `fft()` computed, R151 item 1) | yes |
 | `welch` | `welch(ch, window="hann", nperseg=n, noverlap=n, detrend="constant", average="mean"\|"median"\|"max"\|"none", scaling="density"\|"spectrum"\|"raw_magnitude")` | Frequency | same scaling rules as `periodogram`, over a `[f]` shape | Implemented — segmented/averaged, what the charts already compute (`rust/core/src/fft.rs`'s `welch`, `rasters.rs:508`); `average="max"`/`"none"` are idl1 extensions beyond scipy's own two values (ruling R63(3)), kept reachable under the same keyword | **no** |
-| `spectrogram` | `spectrogram(ch, window_size, hop_size, window, detrend, scaling)` | Frequency | same units as `ch` (magnitude) or `[ch]²/Hz` (density), over a `[t,f]` shape | Implemented *(revised 2026-09-07, R110 — §3.6.3 gives the signature and the shape; the earlier "NotImplemented, deferred permanently — no channel-shaped output exists" note is superseded: §3.6 defines the 2-D value it returns)* | yes |
+| `spectrogram` | `spectrogram(ch, window_size, hop_size, window, detrend, scaling)` | Frequency | same units as `ch` (magnitude) or `[ch]²/Hz` (density), over a `[t,f]` shape | NotImplemented *(corrected 2026-09-09, R158. R110's revision flipped this to `Implemented` on the strength of §3.6 **defining** the `[t,f]` value — but the engine does not compute it: `catalog.rs` marks it `N` and `eval.rs` groups it with the unimplemented builtins. §3.6.3 still gives the signature and shape it will have; the status column reports what the engine does today, not what the contract specifies.)* | yes |
 | `hilbert` | `hilbert(ch)` | Frequency | same units as `ch` | NotImplemented | yes |
 | `correlate` | `correlate(a, b)` | Correlation | `[a]·[b]` | NotImplemented | yes |
 | `convolve` | `convolve(ch, kernel)` | Correlation | `[ch]·[kernel]` | NotImplemented | yes |

@@ -7067,3 +7067,43 @@ drifting in.
 
 **Cost if wrong.** (1) is the one that would have wasted a day: building a
 CLI command to satisfy a plan's false premise about its own codebase.
+
+## 2026-09-09 — R158: a status column reports what the engine does, not what the contract specifies
+
+**Finding** (scipy-ts lane, flagged and correctly left unresolved). C2 §3.3
+lists `spectrogram` as **Implemented**, revised 2026-09-07 under R110. The
+engine disagrees: `core/src/math/catalog.rs` marks it `N`, and
+`core/src/math/eval.rs:1428` groups it with `hilbert`/`correlate`/
+`convolve`/`resample`/`sosfilt` in the unimplemented arm. The totals agreed
+at 72 only by coincidence — the Implemented/NotImplemented **split** did
+not.
+
+**How it happened, and why it is worth a ruling.** R110 wrote C2 §3.6, which
+*defines* the `[t,f]` value a spectrogram returns. The revision then flipped
+the status column on the strength of having specified it. That conflates two
+different claims: *the contract now describes this* and *the engine now does
+this*. Only the second belongs in a status column.
+
+The consequence is concrete and user-facing: someone reads the catalog,
+writes `spectrogram(...)`, and gets a NotImplemented error from a function
+the specification told them was available. That is the same class as every
+defect this project fought yesterday — the app knowing one thing and telling
+the user another — arriving through documentation instead of code.
+
+**Ruling.**
+1. **C2 §3.3's status column reports the engine's current behaviour**, and
+   nothing else. Corrected: `spectrogram` is `NotImplemented`, with §3.6.3
+   still giving the signature and shape it will have when it lands.
+2. **A spec revision may not flip a status because it specified the
+   behaviour.** Specifying is what a contract does; implementing is what
+   moves the column. The two land in different commits, usually weeks apart.
+3. **The engine is the source of truth for status**, and the parity check
+   between `functionCatalog.ts` and `list_math_builtins` (R64.2) is what
+   keeps the TypeScript mirror honest. The scipy-ts lane followed the engine
+   rather than the spec, which was right — **read the code, not the plan
+   text**, and it also caught a stale hardcoded `69` that no targeted filter
+   covered.
+
+**Cost if wrong.** Left standing, the one function C2 §3.6's entire worked
+example is built around is documented as available and is not — and §3.6.7
+is the example a reader follows to learn n-D values.
