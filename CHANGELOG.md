@@ -30,9 +30,19 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
   involved, so R69's trust boundary does not move (plan §1.2 option C).
   Split into a pure `buildPlotOptions` (fully tested) and a thin,
   DOM-touching `renderChart` (untested per CLAUDE.md §4 — no `jsdom` in
-  this worktree and adding one is out of this lane's scope). A window with
-  no author-set `stroke` draws in its own `--chart-N` colour so the report
-  can tell overlaid windows apart with no hover legend; FFT cells and
+  this worktree and adding one is out of this lane's scope — R173's
+  amendment confirmed this is the repo's existing pattern, not a
+  workaround). `renderChart.test.ts` exercises `buildPlotOptions` against
+  the real `@observablehq/plot` mark constructors (no DOM needed for those
+  — only `Plot.plot(...)` itself needs one — so no stub of `Plot` was
+  needed either), which also caught a real correctness gap on the way: a
+  `stroke` value Plot does not recognise as a CSS colour is read as a data
+  *channel* name instead, so a resolved-but-malformed colour token can
+  never be handed to Plot verbatim (it would silently bind to a
+  nonexistent field) — the fallback is `"currentColor"`, always a literal.
+  A window with no author-set `stroke` draws in its own `--chart-N` colour
+  so the report can tell overlaid windows apart with no hover legend; FFT
+  cells and
   cells `plotForm.parse` rejects are still out of this task (decided as
   typed absences one level up, in `document.ts`).
 

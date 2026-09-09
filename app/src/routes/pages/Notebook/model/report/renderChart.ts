@@ -105,6 +105,21 @@ function recordsForWindow(payload: CombinedChannelPayload, windowIndex: number):
 const CHART_TOKEN_RE = /^--chart-([1-8])$/;
 
 /**
+ * A mark's `stroke`, an Observable Plot mark option, is ambiguous by
+ * design: a value Plot recognises as a CSS colour is a literal paint, but
+ * any other string is instead read as a *data channel* — a field name to
+ * bind a colour scale to, per record (confirmed against this worktree's
+ * actual `@observablehq/plot`; every raw `--chart-N`/`--not-...` token
+ * this module could otherwise emit here fails that check). A raw,
+ * unresolved token would therefore not render "harmlessly unstyled" but
+ * would silently become a channel binding to a field that does not exist
+ * on any record — a worse, quieter failure than this fallback is trying to
+ * avoid. `"currentColor"` is always a valid CSS colour keyword, so it is
+ * always read as the literal it is.
+ */
+const FALLBACK_STROKE = "currentColor";
+
+/**
  * Resolves one window's `--chart-N` colour token to a concrete colour from
  * `palette` (`theme/series.ts`'s `seriesPalette`, resolved once by
  * `ReportView` against the host document — this module takes it as a
@@ -112,13 +127,13 @@ const CHART_TOKEN_RE = /^--chart-([1-8])$/;
  * `palette` is expected to hold all eight tokens in `--chart-1`…`--chart-8`
  * order (`seriesPalette`'s own contract); a malformed token (never emitted
  * by this codebase, ruling R117 item 6) or an empty `palette` falls back to
- * the raw token string rather than throwing — an unresolved-but-harmless
- * `stroke` value (SVG treats an unrecognised paint as "none") is a smaller
- * failure than aborting the whole chart over one window's colour.
+ * {@link FALLBACK_STROKE} rather than throwing — a plain, visible line in
+ * the surrounding text colour is a smaller failure than aborting the whole
+ * chart over one window's colour.
  */
 function windowColour(colourToken: string, palette: readonly string[]): string {
   const match = CHART_TOKEN_RE.exec(colourToken);
-  if (match === null || palette.length === 0) return colourToken;
+  if (match === null || palette.length === 0) return FALLBACK_STROKE;
   const index = Number(match[1]) - 1;
   return palette[index % palette.length];
 }
@@ -182,10 +197,20 @@ function buildMarks(mark: MarkProps, channelData: ReadonlyMap<string, CombinedCh
 /**
  * Pure: `props` + already-fetched `channelData` + the screen's own theme/
  * palette -> the exact options object {@link renderChart} hands to
- * `Plot.plot`. No DOM, no `@observablehq/plot` value import (`Plot` is
- * passed in by the one real caller, {@link renderChart}, so this function
- * needs no dynamic import of its own and can run under plain Node in
- * `renderChart.test.ts`).
+ * `Plot.plot`. No DOM, no `@observablehq/plot` *value* import of its own —
+ * `Plot` is passed in by the caller, so this module never has to decide
+ * whether to import it statically or dynamically. {@link renderChart}
+ * passes the module its own dynamic `import()` resolved (so
+ * `@observablehq/plot`/`d3` stay out of the startup bundle, plan §2.3);
+ * `renderChart.test.ts` passes a plain top-level `import * as Plot from
+ * "@observablehq/plot"` instead, and calls the real mark constructors
+ * (`Plot.lineY`, `Plot.dot`, …) directly — those do no DOM work at all
+ * (only `Plot.plot(...)` itself needs a real `document`, confirmed against
+ * this worktree's actual dependency), so this function runs, genuinely
+ * exercised, under plain Node with no `jsdom`/`happy-dom` (not installed
+ * here, and adding one is out of this lane's scope — ruling R173's
+ * amendment). No stub of `Plot` anywhere: a fake that exists only to let
+ * an untested one-liner be half-tested would buy nothing.
  *
  * Mirrors `sandbox/main.ts`'s `themedPlot` merge (grid/marginLeft from the
  * theme, a cell's own `style` — here, the report has none — merged key-by-
@@ -241,6 +266,13 @@ export class UnexpectedPlotOutputError extends Error {
  * (plan §1.2 option C). The only DOM-touching line in this module; see the
  * module doc comment for why the data-shaping half is split out into
  * {@link buildPlotOptions} instead. Not unit-tested (CLAUDE.md §4).
+ *
+ * **Stays a one-liner over `buildPlotOptions`.** If this function ever
+ * needs a conditional of its own — a fallback, an empty-data guard, a
+ * branch on chart kind — that conditional belongs in `buildPlotOptions`,
+ * where it is testable, not here. The moment untested code makes a
+ * decision, "UI rendering is not unit-tested" (CLAUDE.md §4) has quietly
+ * become "this logic is not tested."
  */
 export async function renderChart(
   props: TimePlotProps,
