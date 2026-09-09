@@ -7107,3 +7107,51 @@ the user another — arriving through documentation instead of code.
 **Cost if wrong.** Left standing, the one function C2 §3.6's entire worked
 example is built around is documented as available and is not — and §3.6.7
 is the example a reader follows to learn n-D values.
+
+## 2026-09-09 — R159: a merge-minted cell exposed a latent renderer bug that swallowed a whole cell
+
+**The failure.** `cargo test -p idl-transport`'s loopback test found a
+merged workbook containing **one cell where it should contain two** — a
+sync merge losing a cell, which is the data loss C2 §7's conflict-cell
+mechanism exists to prevent.
+
+**My hypothesis was wrong, and the implementer corrected it.** I attributed
+it to R151's requirement that merge normalise retired names on all three
+sides before classification. It is not: `merge()`'s classification and
+conflict-minting are correct — two cells and one conflict come out of it.
+
+**The real cause is in `render_workbook`.** It closes a fence with a bare
+```` ``` ```` and relies on the **next cell's `prose_before` already
+starting with the newline** that terminates that closing-fence line. That
+holds for every cell scanned from real source text — which is why it never
+showed. A merge-minted conflict copy's `prose_before` is a *freshly built*
+marker string (`<!-- conflict from … -->\n`) with no leading byte, so the
+closing fence fuses onto the marker's line, CommonMark no longer recognises
+it as a closing fence, and `scan_cells` runs on and swallows the second
+cell whole.
+
+**Why this is worth recording rather than just fixing.** The renderer
+carried an **unstated invariant** — "every cell's `prose_before` begins with
+a newline" — that was true of parsed documents and false of constructed
+ones. Nothing asserted it, and no test could have caught it until a code
+path *built* a cell rather than reading one. Merge was the first such path.
+The lesson: a function that consumes parser output silently inherits the
+parser's incidental guarantees, and the first synthetic input finds them.
+
+The fix adds the newline **only when missing** (`starts_with('\n')`), so
+R103's byte-fixed-point invariant for real parsed documents is untouched —
+confirmed by every existing `render_workbook_is_a_fixed_point_*` test still
+passing.
+
+**A gap in our gates, not in anyone's diligence:** **no lane runs the
+transport suite.** The scipy lane gated on `workbook::merge` (37 passed) and
+was green; the defect lived one layer up in rendering and only showed
+through an integration test nobody's filter covered. Two corrections: the
+regression test now lives in `core/src/workbook/v3/mod.rs` at the render
+level where the defect actually is, and **`cargo test -p idl-transport`
+joins the lane gate** alongside `-p idl-rs -p idl-rs-cli` and
+`-p idl-rs-tauri`.
+
+**Cost if wrong.** A conflict cell is minted precisely when two people edited
+the same thing — so the cell most likely to be swallowed is the one carrying
+work someone would otherwise lose.

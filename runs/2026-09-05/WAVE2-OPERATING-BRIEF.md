@@ -241,3 +241,14 @@ task genuinely needs it.
 **And `cargo check` is not `cargo test`** — it compiles without running
 anything. A `pub` type change that compiles can still break a fixture
 assertion, which is exactly what happened on 2026-09-08.
+
+**Lane gate, corrected (2026-09-09, R159).** The full gate is now:
+
+    cargo test -p idl-rs -p idl-rs-cli -- --test-threads=4
+    cargo test -p idl-rs-tauri
+    cargo test -p idl-transport
+
+`-p idl-transport` was missing, and a merge defect that lost a workbook cell
+reached main through that gap: the lane's own `workbook::merge` filter was
+green because the bug lived one layer up in `render_workbook`, and only
+transport's loopback integration test exercised the path.
