@@ -6,6 +6,19 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 
 ### Added
 
+- **`model/report/renderChart.ts` — host-side chart re-render for the report
+  (2026-09-09, task R5, ruling R173).** A form-generated `js` cell's time
+  chart can now be redrawn in the host document, from the same already-
+  fetched channel data, theme and palette the screen uses — no sandbox
+  involved, so R69's trust boundary does not move (plan §1.2 option C).
+  Split into a pure `buildPlotOptions` (fully tested) and a thin,
+  DOM-touching `renderChart` (untested per CLAUDE.md §4 — no `jsdom` in
+  this worktree and adding one is out of this lane's scope). A window with
+  no author-set `stroke` draws in its own `--chart-N` colour so the report
+  can tell overlaid windows apart with no hover legend; FFT cells and
+  cells `plotForm.parse` rejects are still out of this task (decided as
+  typed absences one level up, in `document.ts`).
+
 - **Settings → Sync shows this device's own name and id, and can rename it
   (2026-09-09, rulings R170/R172).** `set_sync_device_name` had been live in
   Rust since 2026-09-07 with no TypeScript caller at all (found by this
