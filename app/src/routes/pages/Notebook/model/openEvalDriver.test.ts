@@ -23,7 +23,7 @@ describe("runOpenAndEval", () => {
   it("runOpenAndEval — a fully successful run — dispatches open, markdown, then one window result in order", async () => {
     const actions: (WorkbookAction | OpenEvalWindowAction)[] = [];
 
-    await runOpenAndEval(baseDeps(), "wb-1", [windowFor("session-a")], (a) => actions.push(a), () => false);
+    await runOpenAndEval(baseDeps(), "wb-1", [windowFor("session-a")], (a) => actions.push(a), () => false, 0);
 
     expect(actions.map((a) => a.type)).toEqual(["handleOpened", "markdownReady", "evalWindowResult"]);
   });
@@ -37,7 +37,7 @@ describe("runOpenAndEval", () => {
       },
     });
 
-    await runOpenAndEval(deps, "wb-42", [], () => {}, () => false);
+    await runOpenAndEval(deps, "wb-42", [], () => {}, () => false, 0);
 
     expect(seen).toEqual(["wb-42"]);
   });
@@ -50,7 +50,7 @@ describe("runOpenAndEval", () => {
     });
     const actions: (WorkbookAction | OpenEvalWindowAction)[] = [];
 
-    await runOpenAndEval(deps, "wb-1", [], (a) => actions.push(a), () => false);
+    await runOpenAndEval(deps, "wb-1", [], (a) => actions.push(a), () => false, 0);
 
     expect(actions.map((a) => a.type)).toEqual(["handleOpened", "markdownError", "evalWindowResult"]);
   });
@@ -63,7 +63,7 @@ describe("runOpenAndEval", () => {
     });
     const actions: (WorkbookAction | OpenEvalWindowAction)[] = [];
 
-    await runOpenAndEval(deps, "wb-1", [], (a) => actions.push(a), () => false);
+    await runOpenAndEval(deps, "wb-1", [], (a) => actions.push(a), () => false, 0);
 
     expect(actions).toEqual([{ type: "markdownError", message: "workbook not found" }]);
   });
@@ -76,10 +76,10 @@ describe("runOpenAndEval", () => {
     });
     const actions: (WorkbookAction | OpenEvalWindowAction)[] = [];
 
-    await runOpenAndEval(deps, "wb-1", [windowFor("session-a")], (a) => actions.push(a), () => false);
+    await runOpenAndEval(deps, "wb-1", [windowFor("session-a")], (a) => actions.push(a), () => false, 0);
 
     expect(actions.map((a) => a.type)).toEqual(["handleOpened", "markdownReady", "evalWindowError"]);
-    expect(actions[2]).toEqual({ type: "evalWindowError", window: null, error: { kind: "internal", message: "unknown workbook" } });
+    expect(actions[2]).toEqual({ type: "evalWindowError", window: null, error: { kind: "internal", message: "unknown workbook" }, generation: 0 });
   });
 
   it("runOpenAndEval — three windows, the middle one degenerate — dispatches a result for windows 1 and 3 and an error for window 2, none suppressing the others (ruling R121)", async () => {
@@ -93,19 +93,19 @@ describe("runOpenAndEval", () => {
     });
     const actions: (WorkbookAction | OpenEvalWindowAction)[] = [];
 
-    await runOpenAndEval(deps, "wb-1", windows, (a) => actions.push(a), () => false);
+    await runOpenAndEval(deps, "wb-1", windows, (a) => actions.push(a), () => false, 0);
 
     const windowActions = actions.filter((a) => a.type === "evalWindowResult" || a.type === "evalWindowError") as OpenEvalWindowAction[];
     expect(windowActions).toHaveLength(3);
     expect(windowActions[0]).toMatchObject({ type: "evalWindowResult", window: windows[0] });
-    expect(windowActions[1]).toEqual({ type: "evalWindowError", window: windows[1], error: { kind: "invalid_argument", message: "no_overlap" } });
+    expect(windowActions[1]).toEqual({ type: "evalWindowError", window: windows[1], error: { kind: "invalid_argument", message: "no_overlap" }, generation: 0 });
     expect(windowActions[2]).toMatchObject({ type: "evalWindowResult", window: windows[2] });
   });
 
   it("runOpenAndEval — windows: [] — evalWorkbookV2's single result is dispatched with a null window", async () => {
     const actions: (WorkbookAction | OpenEvalWindowAction)[] = [];
 
-    await runOpenAndEval(baseDeps(), "wb-1", [], (a) => actions.push(a), () => false);
+    await runOpenAndEval(baseDeps(), "wb-1", [], (a) => actions.push(a), () => false, 0);
 
     const windowActions = actions.filter((a) => a.type === "evalWindowResult") as OpenEvalWindowAction[];
     expect(windowActions).toHaveLength(1);
@@ -120,7 +120,7 @@ describe("runOpenAndEval", () => {
     await runOpenAndEval(deps, "wb-1", [], (a) => actions.push(a), () => {
       calls++;
       return calls > 1;
-    });
+    }, 0);
 
     expect(actions.map((a) => a.type)).toEqual(["handleOpened"]);
   });
@@ -133,7 +133,7 @@ describe("runOpenAndEval", () => {
     await runOpenAndEval(deps, "wb-1", [], (a) => actions.push(a), () => {
       calls++;
       return calls > 2;
-    });
+    }, 0);
 
     expect(actions.map((a) => a.type)).toEqual(["handleOpened", "markdownReady"]);
   });
@@ -141,7 +141,7 @@ describe("runOpenAndEval", () => {
   it("runOpenAndEval — already stale when openWorkbook resolves — dispatches nothing at all", async () => {
     const actions: (WorkbookAction | OpenEvalWindowAction)[] = [];
 
-    await runOpenAndEval(baseDeps(), "wb-1", [], (a) => actions.push(a), () => true);
+    await runOpenAndEval(baseDeps(), "wb-1", [], (a) => actions.push(a), () => true, 0);
 
     expect(actions).toEqual([]);
   });
@@ -156,9 +156,9 @@ describe("runEval", () => {
       },
     };
 
-    await runEval(deps, "wb-1", [], (a) => actions.push(a), () => false);
+    await runEval(deps, "wb-1", [], (a) => actions.push(a), () => false, 0);
 
-    expect(actions).toEqual([{ type: "evalWindowError", window: null, error: { kind: "invalid_argument", message: "lap context not supported yet" } }]);
+    expect(actions).toEqual([{ type: "evalWindowError", window: null, error: { kind: "invalid_argument", message: "lap context not supported yet" }, generation: 0 }]);
   });
 
   it("runEval — stale after evalWorkbookV2 rejects — dispatches nothing", async () => {
@@ -169,7 +169,7 @@ describe("runEval", () => {
       },
     };
 
-    await runEval(deps, "wb-1", [], (a) => actions.push(a), () => true);
+    await runEval(deps, "wb-1", [], (a) => actions.push(a), () => true, 0);
 
     expect(actions).toEqual([]);
   });
@@ -179,8 +179,18 @@ describe("runEval", () => {
     const window = windowFor("session-a");
     const deps = { evalWorkbookV2: async () => [{ ok: [] }] };
 
-    await runEval(deps, "wb-1", [window], (a) => actions.push(a), () => false);
+    await runEval(deps, "wb-1", [window], (a) => actions.push(a), () => false, 0);
 
-    expect(actions).toEqual([{ type: "evalWindowResult", window, outputs: [] }]);
+    expect(actions).toEqual([{ type: "evalWindowResult", window, outputs: [], generation: 0 }]);
+  });
+
+  it("runEval — a non-zero generation — is stamped onto the dispatched result unchanged (decision 59)", async () => {
+    const actions: (WorkbookAction | OpenEvalWindowAction)[] = [];
+    const window = windowFor("session-a");
+    const deps = { evalWorkbookV2: async () => [{ ok: [] }] };
+
+    await runEval(deps, "wb-1", [window], (a) => actions.push(a), () => false, 7);
+
+    expect(actions).toEqual([{ type: "evalWindowResult", window, outputs: [], generation: 7 }]);
   });
 });

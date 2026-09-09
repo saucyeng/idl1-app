@@ -71,8 +71,8 @@ function toIpcError(error: unknown): IpcError {
  *  []` ("nothing selected", decision 48) — the one case where a result
  *  exists but there is no window to pair it with. */
 export type OpenEvalWindowAction =
-  | { type: "evalWindowResult"; window: SelectedWindow | null; outputs: CellOutput[] }
-  | { type: "evalWindowError"; window: SelectedWindow | null; error: IpcError };
+  | { type: "evalWindowResult"; window: SelectedWindow | null; outputs: CellOutput[]; generation: number }
+  | { type: "evalWindowError"; window: SelectedWindow | null; error: IpcError; generation: number };
 
 /** The IPC calls one open→read→eval run needs, injected so this module
  *  never imports `ipc/workbook.ts` directly — a caller supplies the real
@@ -98,13 +98,13 @@ export type OpenEvalDispatch = (action: WorkbookAction | OpenEvalWindowAction) =
  * paired here with `window: null`). Split out of {@link runEval} so the
  * pairing rule has one place to be correct.
  */
-function dispatchWindowResults(windows: SelectedWindow[], results: WindowEval[], dispatch: OpenEvalDispatch): void {
+function dispatchWindowResults(windows: SelectedWindow[], results: WindowEval[], dispatch: OpenEvalDispatch, generation: number): void {
   results.forEach((result, i) => {
     const window = windows.length === 0 ? null : windows[i];
     if ("ok" in result) {
-      dispatch({ type: "evalWindowResult", window, outputs: result.ok });
+      dispatch({ type: "evalWindowResult", window, outputs: result.ok, generation });
     } else {
-      dispatch({ type: "evalWindowError", window, error: result.error });
+      dispatch({ type: "evalWindowError", window, error: result.error, generation });
     }
   });
 }
@@ -124,13 +124,20 @@ function dispatchWindowResults(windows: SelectedWindow[], results: WindowEval[],
  *   `Window[]` shape (ruling R117) — passed straight to `evalWorkbookV2`;
  *   `[]` is a legal value (decision 48, "nothing selected") and still
  *   produces one result (see {@link dispatchWindowResults}).
+ * @param generation Decision 59: `WorkbookState.evalRequestGeneration`'s
+ *   value at the moment this run starts, stamped onto every
+ *   `OpenEvalWindowAction` this run dispatches (`model/workbookState.ts`'s
+ *   `WindowEvalState.generation`) — the caller reads its own state just
+ *   before calling, the same "fresh values through a ref" shape
+ *   `Notebook/index.tsx` already uses for `windowsRef`.
  */
 export async function runOpenAndEval(
   deps: OpenEvalDeps,
   workbookId: string,
   windows: SelectedWindow[],
   dispatch: OpenEvalDispatch,
-  isStale: () => boolean
+  isStale: () => boolean,
+  generation: number
 ): Promise<void> {
   let handle: WorkbookHandle;
   try {
@@ -154,26 +161,28 @@ export async function runOpenAndEval(
     }
   }
 
-  await runEval(deps, handle.id, windows, dispatch, isStale);
+  await runEval(deps, handle.id, windows, dispatch, isStale, generation);
 }
 
 /**
  * Runs `evalWorkbookV2` alone — the step `runOpenAndEval` ends with, reused
  * on its own for a `watchWorkbook` event or a debounced editor change,
  * neither of which need to re-open the workbook. Same staleness contract
- * as {@link runOpenAndEval}.
+ * as {@link runOpenAndEval}; `generation` — see that function's own doc
+ * comment.
  */
 export async function runEval(
   deps: Pick<OpenEvalDeps, "evalWorkbookV2">,
   id: string,
   windows: SelectedWindow[],
   dispatch: OpenEvalDispatch,
-  isStale: () => boolean
+  isStale: () => boolean,
+  generation: number
 ): Promise<void> {
   try {
     const results = await deps.evalWorkbookV2(id, windows);
     if (isStale()) return;
-    dispatchWindowResults(windows, results, dispatch);
+    dispatchWindowResults(windows, results, dispatch, generation);
   } catch (error) {
     // A whole-command rejection from `evalWorkbookV2` (not a per-window
     // error, which arrives inside a successful `WindowEval[]` instead, R121)
@@ -184,7 +193,7 @@ export async function runEval(
     // window as `null` (matching the `windows: []` pairing rule) since a
     // call-level failure has no single window to attribute to either.
     if (!isStale()) {
-      dispatch({ type: "evalWindowError", window: null, error: toIpcError(error) });
+      dispatch({ type: "evalWindowError", window: null, error: toIpcError(error), generation });
     }
   }
 }

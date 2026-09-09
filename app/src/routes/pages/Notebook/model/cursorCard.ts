@@ -21,6 +21,7 @@
 import type { WindowDescriptor } from "../host/protocol";
 import { primaryWindowNote } from "./jsCellNote";
 import { cursorTimeInWindow, type AbsoluteSpan } from "./viewportWindows";
+import { wireWindowKey } from "./workbookState";
 
 /** The combined per-window payload `channelBindDriver.ts`'s `CombinedChannelPayload` is -- re-exported here as a type-only alias so this module's own public signature doesn't force every caller to import from `channelBindDriver.ts` for one type. */
 export interface CombinedChannelPayload {
@@ -101,10 +102,31 @@ function nearestValue(payload: CombinedChannelPayload, windowIndex: number, tSec
  * @param seriesLabel This chart's own plotted series label.
  * @param unit This channel's own display unit, or `""`.
  * @param totalWindowCount The total number of selected windows (`AppState.selection.length`) -- R132's naming trigger, `<= 1` renders no marker on any row.
+ * @param selectedWindowKeys Decision 61: `AppState.selection`'s own windows,
+ *   as `model/workbookState.ts`'s `wireWindowKey` strings -- `payload` is a
+ *   *retained* map keyed by (cell, channel), not by window (see
+ *   `channelBindDriver.ts`'s `CombinedChannelPayload` doc comment), so a
+ *   window unchecked in the Data tab can still be sitting in `payload`
+ *   until the next successful bind overwrites it. This card must never
+ *   show that window's row in the meantime -- every window in
+ *   `payload.windows` is checked against the *current* selection here,
+ *   independent of whether the retained cache itself has caught up yet, so
+ *   this is correct even during that gap. `undefined` keeps every window
+ *   from before this parameter existed, for callers not yet passing it.
  */
-export function cursorCardRows(offsetUs: number, payload: CombinedChannelPayload, seriesLabel: string, unit: string, totalWindowCount: number): CursorCardRow[] {
+export function cursorCardRows(
+  offsetUs: number,
+  payload: CombinedChannelPayload,
+  seriesLabel: string,
+  unit: string,
+  totalWindowCount: number,
+  selectedWindowKeys?: ReadonlySet<string>
+): CursorCardRow[] {
   const rows: CursorCardRow[] = [];
   payload.windows.forEach((descriptor, windowIndex) => {
+    if (selectedWindowKeys !== undefined && !selectedWindowKeys.has(wireWindowKey({ session_id: descriptor.sessionId, span: descriptor.span, colour: descriptor.colour }))) {
+      return;
+    }
     const span = payload.spans[windowIndex];
     if (span === undefined) return;
     const tUs = cursorTimeInWindow(offsetUs, span);

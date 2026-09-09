@@ -1,4 +1,5 @@
 import type { MouseEvent, ReactNode } from "react";
+import { Loader2Icon } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { NoteBlock } from "@/components/brand/NoteBlock";
@@ -45,6 +46,16 @@ export interface CellFrameProps {
   /** This cell's run state (UI-DIRECTION "Notebook": a `StatusDot` per
    *  cell). */
   status: CellRunStatus;
+  /**
+   * Decision 59 (`runs/2026-09-07/ui/UI-DIRECTION-2.md` §D): `true` when
+   * this cell already has a rendered result on screen (`children`) but a
+   * fresher one is pending re-evaluation after an edit
+   * (`Notebook/index.tsx`'s `cellStale`). Renders a grey overlay with a
+   * spinner *over* `children`, which stay mounted underneath — the result
+   * must never blank while recomputing. Optional; defaults to `false` so a
+   * caller from before this task is unaffected.
+   */
+  stale?: boolean;
   /** This cell's error message, shown as an in-place `NoteBlock` when
    *  `status === "error"`. `undefined` renders nothing even if `status` is
    *  `"error"` (a sandbox `cellError` with no message text is not expected
@@ -89,6 +100,7 @@ export default function CellFrame({
   selected,
   onSelect,
   status,
+  stale = false,
   error,
   codeVisible,
   onToggleCode,
@@ -126,7 +138,18 @@ export default function CellFrame({
           {code}
         </pre>
       )}
-      {children}
+      <div className="relative">
+        {children}
+        {stale && (
+          <div
+            className="absolute inset-0 flex items-center justify-center bg-surface/60 pointer-events-none"
+            role="status"
+            aria-label="Recomputing"
+          >
+            <Loader2Icon className="size-5 animate-spin text-fg-dim" />
+          </div>
+        )}
+      </div>
       {status === "error" && error !== undefined && (
         <NoteBlock className="border-accent text-accent">{error}</NoteBlock>
       )}

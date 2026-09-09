@@ -58,7 +58,7 @@ describe("primaryWindowOutputs", () => {
     // Arrange
     const w = window("s1");
     const output: CellOutput = { cell_id: "a1b2c3d4", kind: "math", value: null, defs: [], errors: [], prose_before_html: null, prose_after_html: null, prose_spans: [] };
-    const windows = new Map<string, WindowEvalState>([[`${w.sessionId}::session`, { kind: "ok", outputs: new Map([["a1b2c3d4", output]]) }]]);
+    const windows = new Map<string, WindowEvalState>([[`${w.sessionId}::session`, { kind: "ok", outputs: new Map([["a1b2c3d4", output]]), generation: 0 }]]);
 
     // Act
     const outputs = primaryWindowOutputs(windows, w);
@@ -86,7 +86,7 @@ describe("primaryWindowOutputs", () => {
   it("primaryWindowOutputs — the primary window's whole evaluation call failed — returns [], not stale data", () => {
     // Arrange
     const w = window("s1");
-    const windows = new Map<string, WindowEvalState>([[`${w.sessionId}::session`, { kind: "error", error: { kind: "InternalError", message: "boom" } }]]);
+    const windows = new Map<string, WindowEvalState>([[`${w.sessionId}::session`, { kind: "error", error: { kind: "InternalError", message: "boom" }, generation: 0 }]]);
 
     // Act
     const outputs = primaryWindowOutputs(windows, w);

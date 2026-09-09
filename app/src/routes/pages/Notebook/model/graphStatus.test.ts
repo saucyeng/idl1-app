@@ -46,7 +46,7 @@ function cellOutput(cellId: string, defs: CellDefResult[]): CellOutput {
 }
 
 function okWindow(outputs: CellOutput[]): WindowEvalState {
-  return { kind: "ok", outputs: new Map(outputs.map((o) => [o.cell_id, o])) };
+  return { kind: "ok", outputs: new Map(outputs.map((o) => [o.cell_id, o])), generation: 0 };
 }
 
 describe("computeNodeStatuses", () => {
@@ -189,7 +189,7 @@ describe("computeNodeStatuses", () => {
     const w2 = window("s2");
     const windows = new Map<string, WindowEvalState>([
       [wireWindowKey(w1), okWindow([cellOutput("a1b2c3d4", [defResult("x")])])],
-      [wireWindowKey(w2), { kind: "error", error: { kind: "InternalError", message: "eval crashed" } }],
+      [wireWindowKey(w2), { kind: "error", error: { kind: "InternalError", message: "eval crashed" }, generation: 0 }],
     ]);
     const inputs: GraphStatusInputs = { model, selectedWindows: [w1, w2], windows, sessionDetails: new Map() };
 
@@ -206,7 +206,7 @@ describe("computeNodeStatuses", () => {
     const w2 = window("s2");
     const windows = new Map<string, WindowEvalState>([
       [wireWindowKey(w1), okWindow([])],
-      [wireWindowKey(w2), { kind: "error", error: { kind: "InternalError", message: "eval crashed" } }],
+      [wireWindowKey(w2), { kind: "error", error: { kind: "InternalError", message: "eval crashed" }, generation: 0 }],
     ]);
 
     // Act

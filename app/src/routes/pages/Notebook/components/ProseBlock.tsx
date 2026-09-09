@@ -1,6 +1,7 @@
 import { useEffect, useRef } from "react";
 
 import type { ProseBlockContent } from "../model/proseBlocks";
+import { proseSpanErrorMarker } from "../model/proseSpanError";
 
 /** Props for {@link ProseBlock}. */
 export interface ProseBlockProps {
@@ -57,9 +58,17 @@ export default function ProseBlock({ content, inlineResults, spanErrors, windowN
 
       const error = spanErrors?.get(span.id);
       if (error !== undefined) {
-        el.textContent = `\${${span.expr}} failed: ${error}`;
+        // Decision 63: an errored span never renders a stale or plausible
+        // number — an `--accent` `⚠ name` marker in place, the failure
+        // message only on hover (`model/proseSpanError.ts`).
+        const marker = proseSpanErrorMarker(span.expr, error);
+        el.textContent = marker.text;
+        el.setAttribute("title", marker.title);
+        el.classList.add("text-accent");
         continue;
       }
+      el.classList.remove("text-accent");
+      el.removeAttribute("title");
       const resolved = inlineResults.get(span.id);
       if (resolved === undefined) {
         el.textContent = `\${${span.expr}}`;

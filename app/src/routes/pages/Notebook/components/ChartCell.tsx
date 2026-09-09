@@ -234,6 +234,17 @@ export interface ChartCellProps {
    */
   combinedChannelData?: CombinedChannelPayload;
   /**
+   * Decision 61 (`runs/2026-09-07/ui/UI-DIRECTION-2.md` §D): the currently
+   * selected windows, as `model/workbookState.ts`'s `wireWindowKey`
+   * strings -- passed straight through to `cursorCardRows` so a window
+   * unchecked in the Data tab can never show a cursor-card row here, even
+   * during the gap before `combinedChannelData`'s own retained cache has
+   * caught up to the new selection (`model/cursorCard.ts`'s own doc
+   * comment on this parameter). `undefined` keeps every window, matching
+   * this component's behaviour from before this task.
+   */
+  selectedWindowKeys?: ReadonlySet<string>;
+  /**
    * Sends one gesture frame's CSS transform to the sandbox for this cell
    * (R69 item (b)) -- a thin closure over `host/SandboxHost.ts`'s
    * `sendTransform`, bound to `cellId`, injected the same way
@@ -408,6 +419,7 @@ export default function ChartCell({
   channelUnit,
   windowCount,
   combinedChannelData,
+  selectedWindowKeys,
   sendTransform,
   sendLayout,
   cursorTUs,
@@ -810,10 +822,24 @@ export default function ChartCell({
       const rows =
         offsetUs === null || combinedChannelData === undefined
           ? []
-          : cursorCardRows(offsetUs, combinedChannelData, channelLabel ?? channelId, channelUnit ?? "", windowCount ?? 1);
+          : cursorCardRows(offsetUs, combinedChannelData, channelLabel ?? channelId, channelUnit ?? "", windowCount ?? 1, selectedWindowKeys);
       setCard(rows.length === 0 ? null : { pixelX, rows });
     },
-    [tiles, width, liveViewport, applyViewport, cursorTUs, cursorBus, channelId, channelLabel, channelUnit, windowCount, combinedChannelData, primaryWindowSpan]
+    [
+      tiles,
+      width,
+      liveViewport,
+      applyViewport,
+      cursorTUs,
+      cursorBus,
+      channelId,
+      channelLabel,
+      channelUnit,
+      windowCount,
+      combinedChannelData,
+      selectedWindowKeys,
+      primaryWindowSpan,
+    ]
   );
 
   const handlePointerUp = useCallback(

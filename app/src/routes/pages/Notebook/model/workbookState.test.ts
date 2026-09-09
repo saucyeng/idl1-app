@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { CellOutput, Window as SelectedWindow } from "../../../../ipc/workbook";
-import { initialWorkbookState, NO_WINDOW_KEY, workbookReducer, wireWindowKey } from "./workbookState";
+import { initialWorkbookState, isWindowStale, NO_WINDOW_KEY, workbookReducer, wireWindowKey } from "./workbookState";
 
 /** Builds a minimal, otherwise-empty `CellOutput` for one cell id. */
 function output(cellId: string, overrides: Partial<CellOutput> = {}): CellOutput {
@@ -29,9 +29,15 @@ describe("workbookReducer", () => {
       type: "evalWindowResult",
       window: w,
       outputs: [output("cell-a", { value: "old" }), output("cell-b", { value: "kept" })],
+      generation: 0,
     });
 
-    const next = workbookReducer(seeded, { type: "evalWindowResult", window: w, outputs: [output("cell-a", { value: "new" })] });
+    const next = workbookReducer(seeded, {
+      type: "evalWindowResult",
+      window: w,
+      outputs: [output("cell-a", { value: "new" })],
+      generation: 0,
+    });
 
     const entry = next.windows.get(wireWindowKey(w));
     expect(entry?.kind).toBe("ok");
@@ -43,7 +49,7 @@ describe("workbookReducer", () => {
     const w = window({ kind: "session" });
     const errored = output("cell-a", { errors: [{ kind: "math_unknown_channel", message: "no such channel" }] });
 
-    const next = workbookReducer(initialWorkbookState, { type: "evalWindowResult", window: w, outputs: [errored] });
+    const next = workbookReducer(initialWorkbookState, { type: "evalWindowResult", window: w, outputs: [errored], generation: 0 });
 
     const entry = next.windows.get(wireWindowKey(w));
     expect(entry?.kind === "ok" && entry.outputs.get("cell-a")?.errors).toEqual([
@@ -59,7 +65,7 @@ describe("workbookReducer", () => {
       defs: [{ name: "speed", label: null, value: null, error: { kind: "math_reserved_name", message: "reserved" } }],
     });
 
-    const next = workbookReducer(initialWorkbookState, { type: "evalWindowResult", window: w, outputs: [withDefError] });
+    const next = workbookReducer(initialWorkbookState, { type: "evalWindowResult", window: w, outputs: [withDefError], generation: 0 });
 
     const entry = next.windows.get(wireWindowKey(w));
     const stored = entry?.kind === "ok" ? entry.outputs.get("cell-a") : undefined;
@@ -74,16 +80,26 @@ describe("workbookReducer", () => {
       type: "evalWindowResult",
       window: ok,
       outputs: [output("cell-a", { value: "fine" })],
+      generation: 0,
     });
 
     const next = workbookReducer(seeded, {
       type: "evalWindowError",
       window: bad,
       error: { kind: "invalid_argument", message: "t0_us >= t1_us" },
+      generation: 0,
     });
 
-    expect(next.windows.get(wireWindowKey(ok))).toEqual({ kind: "ok", outputs: new Map([["cell-a", output("cell-a", { value: "fine" })]]) });
-    expect(next.windows.get(wireWindowKey(bad))).toEqual({ kind: "error", error: { kind: "invalid_argument", message: "t0_us >= t1_us" } });
+    expect(next.windows.get(wireWindowKey(ok))).toEqual({
+      kind: "ok",
+      outputs: new Map([["cell-a", output("cell-a", { value: "fine" })]]),
+      generation: 0,
+    });
+    expect(next.windows.get(wireWindowKey(bad))).toEqual({
+      kind: "error",
+      error: { kind: "invalid_argument", message: "t0_us >= t1_us" },
+      generation: 0,
+    });
   });
 
   it("workbookReducer — a whole-call rejection (window: null) — stores under NO_WINDOW_KEY", () => {
@@ -91,17 +107,18 @@ describe("workbookReducer", () => {
       type: "evalWindowError",
       window: null,
       error: { kind: "internal", message: "unknown workbook id" },
+      generation: 0,
     });
 
-    expect(next.windows.get(NO_WINDOW_KEY)).toEqual({ kind: "error", error: { kind: "internal", message: "unknown workbook id" } });
+    expect(next.windows.get(NO_WINDOW_KEY)).toEqual({ kind: "error", error: { kind: "internal", message: "unknown workbook id" }, generation: 0 });
   });
 
   it("workbookReducer — pruneWindows with a non-empty keep set — drops every window not in it, including NO_WINDOW_KEY", () => {
     const kept = window({ kind: "lap", lap_number: 1 });
     const dropped = window({ kind: "lap", lap_number: 2 });
-    let state = workbookReducer(initialWorkbookState, { type: "evalWindowResult", window: kept, outputs: [] });
-    state = workbookReducer(state, { type: "evalWindowResult", window: dropped, outputs: [] });
-    state = workbookReducer(state, { type: "evalWindowError", window: null, error: { kind: "internal", message: "boom" } });
+    let state = workbookReducer(initialWorkbookState, { type: "evalWindowResult", window: kept, outputs: [], generation: 0 });
+    state = workbookReducer(state, { type: "evalWindowResult", window: dropped, outputs: [], generation: 0 });
+    state = workbookReducer(state, { type: "evalWindowError", window: null, error: { kind: "internal", message: "boom" }, generation: 0 });
 
     const next = workbookReducer(state, { type: "pruneWindows", keep: new Set([wireWindowKey(kept)]) });
 
@@ -111,7 +128,7 @@ describe("workbookReducer", () => {
   });
 
   it("workbookReducer — pruneWindows with an empty keep set — keeps NO_WINDOW_KEY (the legitimate 'nothing selected' result)", () => {
-    const state = workbookReducer(initialWorkbookState, { type: "evalWindowResult", window: null, outputs: [] });
+    const state = workbookReducer(initialWorkbookState, { type: "evalWindowResult", window: null, outputs: [], generation: 0 });
 
     const next = workbookReducer(state, { type: "pruneWindows", keep: new Set() });
 
@@ -120,7 +137,7 @@ describe("workbookReducer", () => {
 
   it("workbookReducer — pruneWindows that changes nothing — returns the same windows map identity", () => {
     const w = window({ kind: "session" });
-    const state = workbookReducer(initialWorkbookState, { type: "evalWindowResult", window: w, outputs: [] });
+    const state = workbookReducer(initialWorkbookState, { type: "evalWindowResult", window: w, outputs: [], generation: 0 });
 
     const next = workbookReducer(state, { type: "pruneWindows", keep: new Set([wireWindowKey(w)]) });
 
@@ -202,5 +219,54 @@ describe("workbookReducer", () => {
 
     expect(next.markdownStatus).toBe("error");
     expect(next.markdownError).toBe("boom");
+  });
+
+  it("workbookReducer — an edit that changes text — bumps evalRequestGeneration (decision 59)", () => {
+    const next = workbookReducer(initialWorkbookState, { type: "editCell", cellId: "cell-a", markdown: "```js id=aaaaaaaa\n1\n```\n" });
+
+    expect(next.evalRequestGeneration).toBe(1);
+  });
+
+  it("workbookReducer — an editCell with no markdown (dirty-marking only) — does not bump the generation", () => {
+    const next = workbookReducer(initialWorkbookState, { type: "editCell", cellId: "cell-a" });
+
+    expect(next.evalRequestGeneration).toBe(0);
+  });
+
+  it("workbookReducer — a watch event naming cells — bumps the generation; one naming none does not", () => {
+    const withCells = workbookReducer(initialWorkbookState, {
+      type: "watchEvent",
+      event: { kind: "changed", cell_ids: ["cell-a"], hash: "h9" },
+    });
+    expect(withCells.evalRequestGeneration).toBe(1);
+
+    const empty = workbookReducer(initialWorkbookState, { type: "watchEvent", event: { kind: "changed", cell_ids: [], hash: "h9" } });
+    expect(empty.evalRequestGeneration).toBe(0);
+  });
+
+  it("workbookReducer — saveResult never touches evalRequestGeneration (staleness is not a save concept)", () => {
+    const edited = workbookReducer(initialWorkbookState, { type: "editCell", cellId: "cell-a", markdown: "```js id=aaaaaaaa\n1\n```\n" });
+
+    const saved = workbookReducer(edited, { type: "saveResult", hash: "abc" });
+
+    expect(saved.evalRequestGeneration).toBe(1);
+  });
+});
+
+describe("isWindowStale", () => {
+  it("no entry yet (never evaluated) — not stale, that is 'pending', a different state", () => {
+    expect(isWindowStale(undefined, 3)).toBe(false);
+  });
+
+  it("an entry from an older generation than the current request — stale", () => {
+    expect(isWindowStale({ kind: "ok", outputs: new Map(), generation: 1 }, 2)).toBe(true);
+  });
+
+  it("an entry from the current generation — fresh, not stale", () => {
+    expect(isWindowStale({ kind: "ok", outputs: new Map(), generation: 2 }, 2)).toBe(false);
+  });
+
+  it("an error entry from an older generation — also stale (staleness is orthogonal to ok/error)", () => {
+    expect(isWindowStale({ kind: "error", error: { kind: "internal", message: "x" }, generation: 0 }, 1)).toBe(true);
   });
 });

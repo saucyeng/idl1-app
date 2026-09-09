@@ -4,6 +4,31 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 
 ## [Unreleased]
 
+### Added
+
+- **Notebook errors and staleness (2026-09-08, `runs/2026-09-07/ui/UI-DIRECTION-2.md`
+  §D decisions 58-63).** Five changes making the app say what it knows
+  instead of an unexplained empty chart frame: (1) a chart's note/error slot
+  gets a **Fix** button that opens the failed reference's own declaring math
+  cell (`model/fixTarget.ts`), not merely the chart's own cell; (2) a cell
+  whose result predates the document's latest edit stays on screen **greyed
+  with a spinner overlay** (`CellFrame`'s new `stale` prop) rather than
+  blanking — tracked by a new `WorkbookState.evalRequestGeneration` /
+  `WindowEvalState.generation` pair (`model/workbookState.ts`'s
+  `isWindowStale`); (3) the cursor value card never shows a row for a window
+  that has since been unchecked, even during the gap before the retained
+  channel-data cache catches up (`model/cursorCard.ts`'s new
+  `selectedWindowKeys` parameter), and the FFT overlay's combined spectrum
+  is now re-pushed to the sandbox immediately when a window is pruned from
+  it, not only on the next unrelated re-fetch; (4) a dismissable banner
+  names any selected session whose recorded `engine_version` is behind the
+  live engine's (`model/engineVersionBanner.ts`) — the importer-version half
+  is **not implemented**: no C3 command exposes an importer's current
+  version to compare against (`ImporterInfo` carries no version field), a
+  contract gap recorded rather than guessed; (5) a failed inline `${…}`
+  span renders an `--accent` `⚠ name` marker with the error on hover
+  (`model/proseSpanError.ts`), never the stale value it last resolved to.
+
 ### Fixed
 
 - **IMU channel masks are all-or-nothing again, and SPEC §8's worked example
