@@ -4,7 +4,9 @@ import type { CellOutput } from "../../../../../ipc/workbook";
 import type { SessionSummary } from "../../../../../ipc/catalog";
 import { describeWindow, sessionLabel, type SelectionWindow } from "../../../../../state/selection";
 import type { ScannedCell } from "../cells";
-import { buildReportDocument } from "./document";
+import type { ProseBlock as ProseBlockData } from "../proseBlocks";
+import type { CombinedChannelPayload } from "../channelBindDriver";
+import { buildReportDocument, type BuildReportDocumentInput } from "./document";
 
 function session(overrides: Partial<SessionSummary> = {}): SessionSummary {
   return {
@@ -39,8 +41,11 @@ function mathCell(id: string): ScannedCell {
   return { id, idRaw: id, kind: "math", infoLine: `math id=${id}`, bodyRange: [0, 0], proseBeforeRange: null, proseAfterRange: null };
 }
 
-function jsCell(id: string): ScannedCell {
-  return { id, idRaw: id, kind: "js", infoLine: `js id=${id}`, bodyRange: [0, 0], proseBeforeRange: null, proseAfterRange: null };
+/** A `js` cell whose fenced body is `text` (byte range `[0, byteLength)` —
+ *  callers pass `text` as this fixture's whole `markdown` too, so the byte
+ *  range and the source line up without a real fence scan. */
+function jsCell(id: string, text = ""): ScannedCell {
+  return { id, idRaw: id, kind: "js", infoLine: `js id=${id}`, bodyRange: [0, new TextEncoder().encode(text).length], proseBeforeRange: null, proseAfterRange: null };
 }
 
 function mathOutput(id: string, overrides: Partial<CellOutput> = {}): CellOutput {
@@ -57,9 +62,38 @@ function mathOutput(id: string, overrides: Partial<CellOutput> = {}): CellOutput
   };
 }
 
+/** Fills in every {@link BuildReportDocumentInput} field a test does not
+ *  care about, so each `it` only states what it is actually exercising. */
+function input(overrides: Partial<BuildReportDocumentInput> = {}): BuildReportDocumentInput {
+  return {
+    cells: [],
+    markdown: "",
+    proseBlocks: new Map(),
+    evals: [],
+    windows: [],
+    sessions: [],
+    chartChannelData: new Map(),
+    appVersion: "1.0.0",
+    generatedAtMs: 0,
+    ...overrides,
+  };
+}
+
+function payload(overrides: Partial<CombinedChannelPayload> = {}): CombinedChannelPayload {
+  return {
+    length: 2,
+    t: new Float64Array([0, 1]),
+    v: new Float64Array([10, 11]),
+    w: new Float64Array([0, 0]),
+    windows: [{ sessionId: "sess-1", span: { kind: "session" }, colour: "--chart-1", label: "Session" }],
+    spans: [],
+    ...overrides,
+  };
+}
+
 describe("buildReportDocument", () => {
   it("no windows selected — returns a cover, an empty selection block and no content section", () => {
-    const doc = buildReportDocument([], new Map(), [], [], [], "1.0.0", 1_700_000_500_000);
+    const doc = buildReportDocument(input({ evals: [], generatedAtMs: 1_700_000_500_000 }));
 
     expect(doc.blocks[0]).toEqual({
       kind: "cover",
@@ -75,7 +109,7 @@ describe("buildReportDocument", () => {
   });
 
   it("a session field left as \"\" — renders as \"not recorded\", never blank", () => {
-    const doc = buildReportDocument([], new Map(), [{ ok: [] }], [window()], [session()], "1.0.0", 1_700_000_500_000);
+    const doc = buildReportDocument(input({ evals: [{ ok: [] }], windows: [window()], sessions: [session()], generatedAtMs: 1_700_000_500_000 }));
 
     const sessionBlock = doc.blocks.find((b) => b.kind === "session");
     expect(sessionBlock).toMatchObject({ rider: "not recorded", bike: "not recorded", venueName: "not recorded", deviceId: "not recorded" });
@@ -99,7 +133,7 @@ describe("buildReportDocument", () => {
       }),
     ];
 
-    const doc = buildReportDocument(cells, new Map(), [{ ok: outputs }], [window()], [session()], "1.0.0", 0);
+    const doc = buildReportDocument(input({ cells, evals: [{ ok: outputs }], windows: [window()], sessions: [session()] }));
 
     const defTable = doc.blocks.find((b) => b.kind === "defTable");
     expect(defTable).toMatchObject({
@@ -125,7 +159,7 @@ describe("buildReportDocument", () => {
       }),
     ];
 
-    const doc = buildReportDocument(cells, new Map(), [{ ok: outputs }], [window()], [session()], "1.0.0", 0);
+    const doc = buildReportDocument(input({ cells, evals: [{ ok: outputs }], windows: [window()], sessions: [session()] }));
 
     const defTable = doc.blocks.find((b) => b.kind === "defTable");
     expect(defTable).toMatchObject({ rows: [{ unit: { text: "", unknownReason: "mixed operands" }, rateText: null }] });
@@ -133,25 +167,51 @@ describe("buildReportDocument", () => {
     expect(appendix).toMatchObject({ entries: expect.arrayContaining([expect.stringContaining("mixed operands")]) });
   });
 
-  it("a js (chart) cell — becomes a named absence block, never a silent gap", () => {
-    const cells = [jsCell("cell-7")];
-    const outputs: CellOutput[] = [{ cell_id: "cell-7", kind: "js", value: null, defs: [], errors: [], prose_before_html: null, prose_after_html: null, prose_spans: [] }];
+  it("a js cell whose code is custom (plotForm.parse rejects) — becomes a named absence block, never a silent gap", () => {
+    const cells = [jsCell("cell-7", "doSomethingCustom()")];
 
-    const doc = buildReportDocument(cells, new Map(), [{ ok: outputs }], [window()], [session()], "1.0.0", 0);
+    const doc = buildReportDocument(input({ cells, markdown: "doSomethingCustom()", evals: [{ ok: [] }], windows: [window()], sessions: [session()] }));
 
     const absence = doc.blocks.find((b) => b.kind === "absence");
     expect(absence).toMatchObject({ cellId: "cell-7" });
-    expect((absence as { reason: string }).reason).toContain("not yet included");
+    expect((absence as { reason: string }).reason).toContain("custom code");
     const appendix = doc.blocks.find((b) => b.kind === "appendix");
     expect(appendix).toMatchObject({ entries: expect.arrayContaining([expect.stringContaining("cell-7")]) });
   });
 
+  it("a js cell that parses but has no supplied channel data — a named absence, not a chart", () => {
+    const code = 'Plot.plot({\n  marks: [Plot.lineY(channel("speed"), {x: "t", y: "v"})]\n})';
+    const cells = [jsCell("cell-8", code)];
+
+    const doc = buildReportDocument(input({ cells, markdown: code, evals: [{ ok: [] }], windows: [window()], sessions: [session()] }));
+
+    const absence = doc.blocks.find((b) => b.kind === "absence");
+    expect(absence).toMatchObject({ cellId: "cell-8" });
+    expect(doc.blocks.some((b) => b.kind === "chartSlot")).toBe(false);
+  });
+
+  it("a js cell that parses with its channel data supplied — a chartSlot block, once, not per window", () => {
+    const code = 'Plot.plot({\n  marks: [Plot.lineY(channel("speed"), {x: "t", y: "v"})]\n})';
+    const cells = [jsCell("cell-8", code)];
+    const chartChannelData = new Map([["cell-8", new Map([["speed", payload()]])]]);
+    const windows = [window(), window({ sessionId: "sess-2", colour: "--chart-2" })];
+    const evals = [{ ok: [] }, { ok: [] }];
+
+    const doc = buildReportDocument(input({ cells, markdown: code, evals, windows, sessions: [session(), session({ session_id: "sess-2" })], chartChannelData }));
+
+    const chartSlots = doc.blocks.filter((b) => b.kind === "chartSlot");
+    expect(chartSlots).toHaveLength(1);
+    expect(chartSlots[0]).toMatchObject({ cellId: "cell-8", windowLabels: ["Session"] });
+  });
+
   it("prose before a cell — carried through in document order", () => {
     const cells = [mathCell("cell-1")];
-    const proseBlocks = new Map([["cell-1::before", { blockId: "cell-1::before", cellId: "cell-1", position: "before" as const, content: { kind: "raw" as const, text: "Lap notes" } }]]);
+    const proseBlocks: ReadonlyMap<string, ProseBlockData> = new Map([
+      ["cell-1::before", { blockId: "cell-1::before", cellId: "cell-1", position: "before" as const, content: { kind: "raw" as const, text: "Lap notes" } }],
+    ]);
     const outputs = [mathOutput("cell-1")];
 
-    const doc = buildReportDocument(cells, proseBlocks, [{ ok: outputs }], [window()], [session()], "1.0.0", 0);
+    const doc = buildReportDocument(input({ cells, proseBlocks, evals: [{ ok: outputs }], windows: [window()], sessions: [session()] }));
 
     const proseIndex = doc.blocks.findIndex((b) => b.kind === "prose");
     const defTableIndex = doc.blocks.findIndex((b) => b.kind === "defTable");
@@ -162,13 +222,12 @@ describe("buildReportDocument", () => {
 
   it("the primary window's own eval failed — the failure is recorded, not thrown or dropped", () => {
     const doc = buildReportDocument(
-      [mathCell("cell-1")],
-      new Map(),
-      [{ error: { kind: "not_found", message: "session gone" } }],
-      [window()],
-      [session()],
-      "1.0.0",
-      0,
+      input({
+        cells: [mathCell("cell-1")],
+        evals: [{ error: { kind: "not_found", message: "session gone" } }],
+        windows: [window()],
+        sessions: [session()],
+      }),
     );
 
     expect(doc.blocks.some((b) => b.kind === "windowSection")).toBe(false);
@@ -184,7 +243,7 @@ describe("buildReportDocument", () => {
     const windows = [window({ colour: "--chart-1" }), window({ sessionId: "sess-2", colour: "--chart-2" })];
     const evals = [{ error: { kind: "range_out_of_bounds", message: "lap 9 does not exist" } }, { ok: lap2Outputs }];
 
-    const doc = buildReportDocument(cells, new Map(), evals, windows, [session(), session({ session_id: "sess-2", venue_name: "Silverstone" })], "1.0.0", 0);
+    const doc = buildReportDocument(input({ cells, evals, windows, sessions: [session(), session({ session_id: "sess-2", venue_name: "Silverstone" })] }));
 
     const failureIndex = doc.blocks.findIndex((b) => b.kind === "windowFailure");
     const sectionIndex = doc.blocks.findIndex((b) => b.kind === "windowSection");
@@ -200,7 +259,7 @@ describe("buildReportDocument", () => {
     const windows = [window({ colour: "--chart-1" }), window({ sessionId: "sess-2", colour: "--chart-2" })];
     const evals = [{ ok: scalarOutputs(1) }, { ok: scalarOutputs(1) }];
 
-    const doc = buildReportDocument(cells, new Map(), evals, windows, [session(), session({ session_id: "sess-2" })], "1.0.0", 0);
+    const doc = buildReportDocument(input({ cells, evals, windows, sessions: [session(), session({ session_id: "sess-2" })] }));
 
     const comparison = doc.blocks.find((b) => b.kind === "comparison");
     expect(comparison).toMatchObject({
@@ -210,7 +269,7 @@ describe("buildReportDocument", () => {
   });
 
   it("one window selected — no comparison table (nothing to compare)", () => {
-    const doc = buildReportDocument([mathCell("cell-1")], new Map(), [{ ok: [mathOutput("cell-1")] }], [window()], [session()], "1.0.0", 0);
+    const doc = buildReportDocument(input({ cells: [mathCell("cell-1")], evals: [{ ok: [mathOutput("cell-1")] }], windows: [window()], sessions: [session()] }));
 
     expect(doc.blocks.some((b) => b.kind === "comparison")).toBe(false);
   });
@@ -218,7 +277,7 @@ describe("buildReportDocument", () => {
   it("a report window's label and a top-bar chip for the same session are the same text (R169)", () => {
     const s = session({ venue_name: "Portland", timestamp_utc_ms: 1_700_000_000_000 });
 
-    const doc = buildReportDocument([], new Map(), [{ ok: [] }], [window()], [s], "1.0.0", 0);
+    const doc = buildReportDocument(input({ evals: [{ ok: [] }], windows: [window()], sessions: [s] }));
 
     const selectionBlock = doc.blocks.find((b) => b.kind === "selection");
     expect(selectionBlock).toEqual({ kind: "selection", windows: [{ label: describeWindow(window(), sessionLabel(s)), colour: "--chart-1" }] });

@@ -6,6 +6,46 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 
 ### Added
 
+- **The exported report now includes charts (2026-09-09, task R6, ruling
+  R173).** `model/report/document.ts` gained a `chartSlot` block: a `js`
+  cell is decided exactly once, in cell order (never once per selected
+  window — a chart already overlays every window in one draw), as a
+  chart to render, an FFT/spectrum chart (not yet supported), custom code,
+  or missing channel data — each of the latter three a named absence, never
+  a silent gap. `ReportView` calls `renderChart` and mounts the resulting
+  `<svg>`; printing now waits for every chart to finish rendering
+  (`ReportView`'s own `onReady`) rather than firing on a fixed next frame,
+  since chart rendering is asynchronous. `buildReportDocument` is now a
+  single options object instead of seven positional parameters (three of
+  them same-shaped `Map`s) — one caller, `Notebook/index.tsx`. Known gaps:
+  a chart's caption names only the windows it covers, not yet the X mode or
+  decimation point budget plan §3.4 calls for; a report chart's colours are
+  baked in from the screen's own (dark) theme at render time, unreviewed
+  for print legibility.
+
+- **`model/report/renderChart.ts` — host-side chart re-render for the report
+  (2026-09-09, task R5, ruling R173).** A form-generated `js` cell's time
+  chart can now be redrawn in the host document, from the same already-
+  fetched channel data, theme and palette the screen uses — no sandbox
+  involved, so R69's trust boundary does not move (plan §1.2 option C).
+  Split into a pure `buildPlotOptions` (fully tested) and a thin,
+  DOM-touching `renderChart` (untested per CLAUDE.md §4 — no `jsdom` in
+  this worktree and adding one is out of this lane's scope — R173's
+  amendment confirmed this is the repo's existing pattern, not a
+  workaround). `renderChart.test.ts` exercises `buildPlotOptions` against
+  the real `@observablehq/plot` mark constructors (no DOM needed for those
+  — only `Plot.plot(...)` itself needs one — so no stub of `Plot` was
+  needed either), which also caught a real correctness gap on the way: a
+  `stroke` value Plot does not recognise as a CSS colour is read as a data
+  *channel* name instead, so a resolved-but-malformed colour token can
+  never be handed to Plot verbatim (it would silently bind to a
+  nonexistent field) — the fallback is `"currentColor"`, always a literal.
+  A window with no author-set `stroke` draws in its own `--chart-N` colour
+  so the report can tell overlaid windows apart with no hover legend; FFT
+  cells and
+  cells `plotForm.parse` rejects are still out of this task (decided as
+  typed absences one level up, in `document.ts`).
+
 - **Settings → Sync shows this device's own name and id, and can rename it
   (2026-09-09, rulings R170/R172).** `set_sync_device_name` had been live in
   Rust since 2026-09-07 with no TypeScript caller at all (found by this
