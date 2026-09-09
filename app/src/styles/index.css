@@ -1,6 +1,7 @@
 @import "tailwindcss";
 @import "./fonts.css";
 @import "./tokens.css";
+@import "./report-print.css";
 
 /* UI-4: mount-and-hide (UI-DIRECTION "Persistence", decision 13) renders
  * every route always, hiding the inactive ones with the `hidden` attribute

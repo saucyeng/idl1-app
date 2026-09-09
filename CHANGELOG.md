@@ -76,6 +76,59 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 
 ### Added
 
+- **Notebook: the report document model (2026-09-09, decisions 85/89,
+  ruling R166, `runs/2026-09-09/report-plan.md` task R1).** New pure
+  `Notebook/model/report/document.ts`: `buildReportDocument(cells,
+  proseBlocks, evals, windows, sessions, appVersion, generatedAtMs)` turns
+  a settled `evalWorkbookV2` result into a flat, typed `ReportDocument`
+  block list (cover, one session block per distinct selected session, a
+  selection block listing every window, the primary window's prose/
+  defTable/table sections in document order, and an appendix). Every
+  `math`-cell definition's row now carries its unit (three-state, R154)
+  and sample rate — the gap `MathCell.tsx` still has on screen; every
+  `js`-kind (chart) cell becomes a named absence block, never a silent
+  gap (R148/R150/R153). Scoped to the primary window only, matching the
+  screen's own `primaryWindow` limit (R131 Q1) — lifting this to every
+  selected window plus a scalar comparison table is task R4.
+
+- **Notebook: "Export report" produces a real printable PDF end-to-end
+  (2026-09-09, decisions 85/89, ruling R166, task R2).** New
+  `components/ReportView.tsx` renders a `ReportDocument` as a
+  purpose-built document (never the notebook column, which cannot be
+  printed — every chart container is `position: fixed` in a different
+  document); new `styles/report-print.css` (`@page`, `break-inside`/
+  `break-before` rules, reuses the app's own `@font-face`s, no new fonts
+  declared). `Notebook/index.tsx` gains an "Export report" action beside
+  Save: builds the primary window's `ReportDocument`
+  (`listSessions`/`getVersion`, one-shot settle-bound fetches) into
+  `#report-print-root`, then `window.print()` — the v1 path the plan's
+  §2.2 accepted over a vendored PDF writer (task R7). One session, no
+  charts yet — every chart cell already renders as a named absence
+  (task R1).
+
+- **Notebook: `MathCell` shows a definition's unit and sample rate
+  (2026-09-09, ruling R166 item "a live gap found while surveying",
+  task R3).** New `model/unitText.ts`'s `formatUnit`/`formatRate` — the
+  three-state `UnitLabel` (R154) to display text, and `sample_rate_hz`'s
+  "`null` means not applicable, never unknown" rule (R152) — extracted
+  from task R1's own inline copy so `MathCell.tsx`'s `DefRow` and the
+  report's `defTable` render the identical text for the same definition.
+  Both fields were already on the wire (`CellDefResult.unit`/
+  `.sample_rate_hz`) but `MathCell.tsx` rendered neither.
+
+- **Notebook: the report covers every selected window, not just the
+  primary one (2026-09-09, plan §4, task R4).** `buildReportDocument` now
+  iterates every `WindowEval`, one `windowSection` (or, for a window
+  whose own evaluation failed, a new named `windowFailure` block, ruling
+  R121 — never dropped, never merged into a neighbour) per selected
+  window in selection order, plus a new `comparison` block once more than
+  one window is selected: one row per scalar definition
+  (`sample_rate_hz === null`, or `value.has_t === false`), one column per
+  window, matched by definition name. `Notebook/index.tsx`'s "Export
+  report" action now reads every selected window's own `WindowEvalState`
+  entry (`state.windows`, keyed by `windowKey`) instead of the primary
+  window alone. `ReportView.tsx` renders both new block kinds.
+
 - **Device tab: the recording-only live status pane (2026-09-09, decisions
   66/87, ruling R113, unblocked by the Rust lane's C3 amendment/R157 item
   2).** New `Device/liveStatus.ts` (pure, vitest-covered): while recording,

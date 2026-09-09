@@ -1,12 +1,21 @@
 import type { CellDefResult, CellOutput, IpcError } from "../../../../ipc/workbook";
+import { formatRate, formatUnit } from "../model/unitText";
 
 /** Renders one `IpcError` as plain text — `kind: message`, never a raw stack (CLAUDE.md §5). */
 function ErrorText({ error }: { error: IpcError }) {
   return <span className="cell-error-text">{error.kind}: {error.message}</span>;
 }
 
-/** One `math`-cell definition's row: its name/label, and either its `HostChannelRef` summary or its own error (ledger R21/R22). */
+/** One `math`-cell definition's row: its name/label, its `HostChannelRef`
+ *  summary or its own error (ledger R21/R22), and — since task R3 — its
+ *  unit and sample rate, the gap this component used to leave blank even
+ *  though `CellDefResult.unit`/`.sample_rate_hz` were already on the wire
+ *  (ruling R166). Uses `model/unitText.ts`'s `formatUnit`/`formatRate` so
+ *  this exact text can never disagree with what the report prints for the
+ *  same definition. */
 function DefRow({ def }: { def: CellDefResult }) {
+  const unit = formatUnit(def.unit);
+  const rate = formatRate(def.sample_rate_hz);
   return (
     <div className="math-cell-def">
       <span className="math-cell-def-name">{def.label ?? def.name}</span>
@@ -26,6 +35,13 @@ function DefRow({ def }: { def: CellDefResult }) {
       ) : (
         <span className="math-cell-def-empty">—</span>
       )}
+      {unit.text !== "" && <span className="math-cell-def-unit">{unit.text}</span>}
+      {unit.unknownReason !== null && (
+        <span className="math-cell-def-unit-unknown" title={unit.unknownReason}>
+          unit unknown
+        </span>
+      )}
+      {rate !== null && <span className="math-cell-def-rate">{rate}</span>}
     </div>
   );
 }
