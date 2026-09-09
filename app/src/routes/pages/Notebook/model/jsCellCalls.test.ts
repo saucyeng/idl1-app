@@ -91,7 +91,7 @@ describe("extractSpectrumCalls", () => {
   it("extractSpectrumCalls — a bare spectrum() call with no surrounding form — extracts its channel and fft params", () => {
     // Arrange
     const code =
-      'const s = spectrum("fork_velocity", { windowSize: 1024, hopSize: 512, window: "hann", detrend: "mean", scaling: "magnitude", averaging: "mean" });';
+      'const s = spectrum("fork_velocity", { windowSize: 1024, hopSize: 512, window: "hann", detrend: "mean", scaling: "raw_magnitude", averaging: "mean" });';
 
     // Act
     const calls = extractSpectrumCalls(code);
@@ -100,14 +100,14 @@ describe("extractSpectrumCalls", () => {
     expect(calls).toEqual([
       {
         channel: "fork_velocity",
-        fft: { windowSize: 1024, hopSize: 512, window: "hann", detrend: "mean", scaling: "magnitude", averaging: "mean" },
+        fft: { windowSize: 1024, hopSize: 512, window: "hann", detrend: "mean", scaling: "raw_magnitude", averaging: "mean" },
       },
     ]);
   });
 
   it("extractSpectrumCalls — a call missing a required fft_params key — is not extracted", () => {
     // Arrange
-    const code = 'spectrum("fork_velocity", { windowSize: 1024, hopSize: 512, window: "hann", detrend: "mean", scaling: "magnitude" });';
+    const code = 'spectrum("fork_velocity", { windowSize: 1024, hopSize: 512, window: "hann", detrend: "mean", scaling: "raw_magnitude" });';
 
     // Act
     const calls = extractSpectrumCalls(code);

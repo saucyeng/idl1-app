@@ -225,7 +225,7 @@ describe("generate — FFT chart (C2 §5.3, added 2026-09-06)", () => {
       mark: {
         channel: "fork_velocity",
         mark: "lineY",
-        fft: { windowSize: 2048, hopSize: 1024, window: "hann", detrend: "mean", scaling: "magnitude", averaging: "mean" },
+        fft: { windowSize: 2048, hopSize: 1024, window: "hann", detrend: "mean", scaling: "raw_magnitude", averaging: "mean" },
       },
       x: { label: "Frequency (Hz)", type: "log" },
       y: { label: "Magnitude (m/s)" },
@@ -241,7 +241,7 @@ describe("generate — FFT chart (C2 §5.3, added 2026-09-06)", () => {
         '  x: { label: "Frequency (Hz)", type: "log" },',
         '  y: { label: "Magnitude (m/s)" },',
         "  marks: [",
-        '    Plot.lineY(spectrum("fork_velocity", { windowSize: 2048, hopSize: 1024, window: "hann", detrend: "mean", scaling: "magnitude", averaging: "mean" }), { x: "f", y: "m" })',
+        '    Plot.lineY(spectrum("fork_velocity", { windowSize: 2048, hopSize: 1024, window: "hann", detrend: "mean", scaling: "raw_magnitude", averaging: "mean" }), { x: "f", y: "m" })',
         "  ]",
         "})",
       ].join("\n"),
@@ -255,7 +255,7 @@ describe("generate — FFT chart (C2 §5.3, added 2026-09-06)", () => {
       mark: {
         channel: "fork_velocity",
         mark: "lineY",
-        fft: { windowSize: "all", hopSize: "all", window: "hann", detrend: "mean", scaling: "magnitude", averaging: "none" },
+        fft: { windowSize: "all", hopSize: "all", window: "hann", detrend: "mean", scaling: "raw_magnitude", averaging: "none" },
         stroke: "#2196F3",
       },
       x: { label: "Frequency (Hz)", type: "log" },
@@ -272,7 +272,7 @@ describe("generate — FFT chart (C2 §5.3, added 2026-09-06)", () => {
         '  x: { label: "Frequency (Hz)", type: "log" },',
         '  y: { label: "Magnitude (m/s)", type: "log" },',
         "  marks: [",
-        '    Plot.lineY(spectrum("fork_velocity", { windowSize: "all", hopSize: "all", window: "hann", detrend: "mean", scaling: "magnitude", averaging: "none" }), { x: "f", y: "m", stroke: "#2196F3" })',
+        '    Plot.lineY(spectrum("fork_velocity", { windowSize: "all", hopSize: "all", window: "hann", detrend: "mean", scaling: "raw_magnitude", averaging: "none" }), { x: "f", y: "m", stroke: "#2196F3" })',
         "  ]",
         "})",
       ].join("\n"),
@@ -302,7 +302,7 @@ describe("generate — FFT chart (C2 §5.3, added 2026-09-06)", () => {
     const codes = markNames.map((mark) =>
       generate({
         chart: "fft",
-        mark: { channel: "c", mark, fft: { windowSize: 1024, hopSize: 512, window: "hann", detrend: "mean", scaling: "magnitude", averaging: "mean" } },
+        mark: { channel: "c", mark, fft: { windowSize: 1024, hopSize: 512, window: "hann", detrend: "mean", scaling: "raw_magnitude", averaging: "mean" } },
         x: { type: "log" },
       })
     );
@@ -317,7 +317,7 @@ describe("generate — FFT chart (C2 §5.3, added 2026-09-06)", () => {
     // Arrange
     const props: FftPlotProps = {
       chart: "fft",
-      mark: { channel: "c", mark: "lineY", fft: { windowSize: "all", hopSize: "all", window: "hann", detrend: "mean", scaling: "magnitude", averaging: "none" } },
+      mark: { channel: "c", mark: "lineY", fft: { windowSize: "all", hopSize: "all", window: "hann", detrend: "mean", scaling: "raw_magnitude", averaging: "none" } },
       x: { type: "log" },
     };
 
@@ -333,7 +333,7 @@ describe("generate — FFT chart (C2 §5.3, added 2026-09-06)", () => {
     // Arrange
     const props: FftPlotProps = {
       chart: "fft",
-      mark: { channel: "c", mark: "lineY", fft: { windowSize: 4096, hopSize: 2048, window: "hann", detrend: "mean", scaling: "magnitude", averaging: "mean" } },
+      mark: { channel: "c", mark: "lineY", fft: { windowSize: 4096, hopSize: 2048, window: "hann", detrend: "mean", scaling: "raw_magnitude", averaging: "mean" } },
       x: { type: "log" },
     };
 
@@ -354,7 +354,7 @@ describe("generate — FFT chart (C2 §5.3, added 2026-09-06)", () => {
       mark: {
         channel: "c",
         mark: "lineY",
-        fft: { windowSize: 1024, hopSize: 512, window: "hann", detrend: "mean", scaling: "magnitude", averaging: "mean" },
+        fft: { windowSize: 1024, hopSize: 512, window: "hann", detrend: "mean", scaling: "raw_magnitude", averaging: "mean" },
         stroke: "#000000",
         strokeWidth: 3,
       },
@@ -372,7 +372,7 @@ describe("generate — FFT chart (C2 §5.3, added 2026-09-06)", () => {
     // Arrange
     const props: FftPlotProps = {
       chart: "fft",
-      mark: { channel: "c", mark: "lineY", fft: { windowSize: 1024, hopSize: 512, window: "hann", detrend: "mean", scaling: "magnitude", averaging: "mean" } },
+      mark: { channel: "c", mark: "lineY", fft: { windowSize: 1024, hopSize: 512, window: "hann", detrend: "mean", scaling: "raw_magnitude", averaging: "mean" } },
       x: { type: "log" },
     };
 

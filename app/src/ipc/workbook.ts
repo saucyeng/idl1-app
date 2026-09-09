@@ -138,7 +138,11 @@ export interface CellOutput {
 export interface RenamedFunction {
   /** The `math`/`table` cell this rename occurred in. */
   cell_id: string;
-  /** u32, the 0-based line within `cell_id` the call was found on. */
+  /** u32, the **1-based** line the call was found on, within the cell's
+   *  raw fence body for a `math` cell or its front matter for a `js`
+   *  cell (`idl_rs::math::alias::DocumentRename::line`). One-based, not
+   *  zero: it is a line number for a human to read, not an index — the
+   *  first consumer that subtracts 1 will be off by one. */
   line: number;
   /** The retired spelling, as it appeared in the document. */
   old: string;

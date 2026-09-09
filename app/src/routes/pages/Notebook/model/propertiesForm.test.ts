@@ -7,6 +7,7 @@ import {
   defaultFftPlotProps,
   defaultPlotProps,
   deriveFormViewState,
+  fftScalingSelectOptions,
   INITIAL_FORM_STATE,
   moveMark,
   overlapPercent,
@@ -233,7 +234,7 @@ describe("setColorLegend", () => {
 const CHANNELS = [{ id: "fork_velocity", label: "Fork velocity", unit: "m/s" }, { id: "shock_velocity", label: "Shock velocity" }];
 
 describe("defaultFftPlotProps", () => {
-  it("defaultFftPlotProps — a channel with a unit — seeds windowSize 2048, hopSize 1024, hann/mean/magnitude/mean, x.type log, and a y label", () => {
+  it("defaultFftPlotProps — a channel with a unit — seeds windowSize 2048, hopSize 1024, hann/mean/raw_magnitude/mean, x.type log, and a y label", () => {
     const props = defaultFftPlotProps(CHANNELS);
 
     expect(props).toEqual({
@@ -241,7 +242,7 @@ describe("defaultFftPlotProps", () => {
       mark: {
         channel: "fork_velocity",
         mark: "lineY",
-        fft: { windowSize: 2048, hopSize: 1024, window: "hann", detrend: "mean", scaling: "magnitude", averaging: "mean" },
+        fft: { windowSize: 2048, hopSize: 1024, window: "hann", detrend: "mean", scaling: "raw_magnitude", averaging: "mean" },
       },
       x: { label: "Frequency (Hz)", type: "log" },
       y: { label: "Magnitude (m/s)" },
@@ -257,7 +258,11 @@ describe("defaultFftPlotProps", () => {
 });
 
 describe("suggestSpectrumAxisLabel", () => {
-  it("suggestSpectrumAxisLabel — magnitude scaling, a channel with a unit — suggests Magnitude (unit)", () => {
+  it("suggestSpectrumAxisLabel — raw_magnitude scaling, a channel with a unit — suggests Magnitude (unit)", () => {
+    expect(suggestSpectrumAxisLabel({ label: "Fork velocity", unit: "m/s" }, "raw_magnitude")).toBe("Magnitude (m/s)");
+  });
+
+  it("suggestSpectrumAxisLabel — the retired magnitude scaling spelling, a channel with a unit (R168 back-compat) — suggests Magnitude (unit)", () => {
     expect(suggestSpectrumAxisLabel({ label: "Fork velocity", unit: "m/s" }, "magnitude")).toBe("Magnitude (m/s)");
   });
 
@@ -265,12 +270,16 @@ describe("suggestSpectrumAxisLabel", () => {
     expect(suggestSpectrumAxisLabel({ label: "Fork velocity", unit: "m/s" }, "density")).toBe("PSD (m/s²/Hz)");
   });
 
+  it("suggestSpectrumAxisLabel — spectrum scaling, a channel with a unit — suggests Power (unit²)", () => {
+    expect(suggestSpectrumAxisLabel({ label: "Fork velocity", unit: "m/s" }, "spectrum")).toBe("Power (m/s²)");
+  });
+
   it("suggestSpectrumAxisLabel — a channel with no unit — suggests nothing", () => {
-    expect(suggestSpectrumAxisLabel({ label: "Fork velocity" }, "magnitude")).toBeUndefined();
+    expect(suggestSpectrumAxisLabel({ label: "Fork velocity" }, "raw_magnitude")).toBeUndefined();
   });
 
   it("suggestSpectrumAxisLabel — no channel selected — suggests nothing", () => {
-    expect(suggestSpectrumAxisLabel(undefined, "magnitude")).toBeUndefined();
+    expect(suggestSpectrumAxisLabel(undefined, "raw_magnitude")).toBeUndefined();
   });
 });
 
@@ -315,7 +324,7 @@ describe("setChartType", () => {
 
     expect(next.chart).toBe("fft");
     expect((next as FftPlotProps).mark.channel).toBe("fork_velocity");
-    expect((next as FftPlotProps).mark.fft).toEqual({ windowSize: 2048, hopSize: 1024, window: "hann", detrend: "mean", scaling: "magnitude", averaging: "mean" });
+    expect((next as FftPlotProps).mark.fft).toEqual({ windowSize: 2048, hopSize: 1024, window: "hann", detrend: "mean", scaling: "raw_magnitude", averaging: "mean" });
   });
 
   it("setChartType — fft to time — preserves the spectrum's channel and seeds a single time mark", () => {
@@ -340,14 +349,14 @@ describe("setChartType", () => {
 describe("updateFftParams", () => {
   const fftProps: FftPlotProps = {
     chart: "fft",
-    mark: { channel: "fork_velocity", mark: "lineY", fft: { windowSize: 2048, hopSize: 1024, window: "hann", detrend: "mean", scaling: "magnitude", averaging: "mean" } },
+    mark: { channel: "fork_velocity", mark: "lineY", fft: { windowSize: 2048, hopSize: 1024, window: "hann", detrend: "mean", scaling: "raw_magnitude", averaging: "mean" } },
     x: { type: "log" },
   };
 
   it("updateFftParams — a patch to one field — merges it, leaving the rest untouched", () => {
     const next = updateFftParams(fftProps, { window: "hamming" });
 
-    expect(next.mark.fft).toEqual({ windowSize: 2048, hopSize: 1024, window: "hamming", detrend: "mean", scaling: "magnitude", averaging: "mean" });
+    expect(next.mark.fft).toEqual({ windowSize: 2048, hopSize: 1024, window: "hamming", detrend: "mean", scaling: "raw_magnitude", averaging: "mean" });
   });
 
   it("updateFftParams — setting averaging to none — forces windowSize and hopSize to \"all\" in the same returned value", () => {
@@ -380,5 +389,17 @@ describe("updateFftParams", () => {
 
     expect(next.mark.fft.averaging).toBe("mean");
     expect(next.mark.fft.windowSize).toBe("all");
+  });
+});
+
+describe("fftScalingSelectOptions", () => {
+  it("fftScalingSelectOptions — current scaling is one of the three offered — returns exactly the three offered options", () => {
+    expect(fftScalingSelectOptions("density")).toEqual(["density", "spectrum", "raw_magnitude"]);
+  });
+
+  it("fftScalingSelectOptions — current scaling is the retired \"magnitude\" spelling (R168 back-compat) — appends it as a fourth option", () => {
+    const options = fftScalingSelectOptions("magnitude");
+
+    expect(options).toEqual(["density", "spectrum", "raw_magnitude", "magnitude"]);
   });
 });

@@ -17,7 +17,7 @@ const segmentation: FftSegmentation = {
   hopSize: 512,
   window: "hann",
   detrend: "mean",
-  scaling: "magnitude",
+  scaling: "raw_magnitude",
 };
 
 function lapWindow(lapNumber: number): SelectedWindow {
@@ -64,7 +64,7 @@ describe("fftRequestFor", () => {
 
     expect(request.params.window).toBe("hann");
     expect(request.params.detrend).toBe("mean");
-    expect(request.params.scaling).toBe("magnitude");
+    expect(request.params.scaling).toBe("raw_magnitude");
     expect(request.averaging).toBe("max");
     expect(request.channelId).toBe("fork_travel");
   });
