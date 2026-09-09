@@ -93,7 +93,10 @@ function enumerateCases(): PlotProps[] {
 
 const FFT_WINDOW_FUNCTIONS: FftParams["window"][] = ["rectangular", "hann", "hamming"];
 const FFT_DETRENDS: FftParams["detrend"][] = ["none", "mean", "linear"];
-const FFT_SCALINGS: FftParams["scaling"][] = ["magnitude", "density"];
+// The three offered scalings (R167/R168) — the retired "magnitude" spelling
+// gets its own dedicated back-compat case below instead, since it is never
+// newly-generated.
+const FFT_SCALINGS: FftParams["scaling"][] = ["density", "spectrum", "raw_magnitude"];
 const FFT_AVERAGINGS: FftParams["averaging"][] = ["none", "mean", "median", "max"];
 const FFT_MARK_NAMES: SpectrumMarkProps["mark"][] = ["lineY", "dot", "areaY"];
 const FFT_X_TYPES: FftXAxisProps["type"][] = ["linear", "log"];
@@ -138,12 +141,12 @@ function buildFftProps(mark: SpectrumMarkProps, xType: FftXAxisProps["type"]): F
   return { chart: "fft", mark, x: { type: xType } };
 }
 
-/** 3 window functions × 3 detrends × 2 scalings = 18 parameter base
+/** 3 window functions × 3 detrends × 3 scalings = 27 parameter base
  *  combinations; each crossed with its available windowSize/hopSize forms
  *  (1 for `"none"`, 2 otherwise — 4 averaging modes give 1+2+2+2 = 7 per
- *  base combination, so 18 × 7 = 126 parameter+form combinations), crossed
+ *  base combination, so 27 × 7 = 189 parameter+form combinations), crossed
  *  with 3 spectrum mark names × 2 `x.type` values × 2 stroke states × 2
- *  strokeWidth states = 24, for 126 × 24 = 3024 total cases. */
+ *  strokeWidth states = 24, for 189 × 24 = 4536 total cases. */
 function enumerateFftCases(): FftPlotProps[] {
   const cases: FftPlotProps[] = [];
   for (const window of FFT_WINDOW_FUNCTIONS) {
@@ -186,7 +189,7 @@ describe("plotForm round trip", () => {
   it("generate then parse — every combination of the FFT-cell props grammar — returns props deep-equal to the input", () => {
     // Arrange
     const cases = enumerateFftCases();
-    expect(cases.length).toBe(3024);
+    expect(cases.length).toBe(4536);
 
     // Act & Assert
     for (const props of cases) {
@@ -194,6 +197,26 @@ describe("plotForm round trip", () => {
       const parsed = parse(code);
       expect(parsed).toEqual(props);
     }
+  });
+
+  it("generate then parse — a stored cell on the retired \"magnitude\" scaling spelling (R168 back-compat) — returns props deep-equal to the input", () => {
+    // Arrange
+    const props: FftPlotProps = {
+      chart: "fft",
+      mark: {
+        channel: "fork_velocity",
+        mark: "lineY",
+        fft: { windowSize: 2048, hopSize: 1024, window: "hann", detrend: "mean", scaling: "magnitude", averaging: "mean" },
+      },
+      x: { type: "log" },
+    };
+
+    // Act
+    const code = generate(props);
+    const parsed = parse(code);
+
+    // Assert
+    expect(parsed).toEqual(props);
   });
 
   it("parse then generate — code the form itself produced — returns byte-identical code", () => {
@@ -221,7 +244,7 @@ describe("plotForm round trip", () => {
         mark: {
           channel: "fork_velocity",
           mark: "lineY",
-          fft: { windowSize: 2048, hopSize: 1024, window: "hann", detrend: "mean", scaling: "magnitude", averaging: "mean" },
+          fft: { windowSize: 2048, hopSize: 1024, window: "hann", detrend: "mean", scaling: "raw_magnitude", averaging: "mean" },
         },
         x: { label: "Frequency (Hz)", type: "log" },
         y: { label: "Magnitude (m/s)" },
@@ -231,7 +254,7 @@ describe("plotForm round trip", () => {
         mark: {
           channel: "fork_velocity",
           mark: "lineY",
-          fft: { windowSize: "all", hopSize: "all", window: "hann", detrend: "mean", scaling: "magnitude", averaging: "none" },
+          fft: { windowSize: "all", hopSize: "all", window: "hann", detrend: "mean", scaling: "raw_magnitude", averaging: "none" },
           stroke: "#2196F3",
         },
         x: { label: "Frequency (Hz)", type: "log" },

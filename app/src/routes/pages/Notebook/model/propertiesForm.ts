@@ -14,6 +14,7 @@
  * this module only ever builds the next `PlotProps` value.
  */
 import {
+  FFT_SCALING_OPTIONS,
   generate,
   parse,
   type FftParams,
@@ -91,22 +92,22 @@ export function defaultPlotProps(channels: readonly { id: string }[]): PlotProps
 /** The default single-spectrum-mark `FftPlotProps` a chart-type switch (or
  *  a brand-new FFT cell) seeds (C2 §5.3's parameter table's defaults):
  *  `windowSize: 2048`, `hopSize: 1024` (50% overlap), `window: "hann"`,
- *  `detrend: "mean"`, `scaling: "magnitude"`, `averaging: "mean"`; `x.type`
- *  seeds `"log"` and `x.label` seeds `"Frequency (Hz)"` (this task's brief,
- *  matching C2 §5.3's parameter table). `channel` is `channels`' first
- *  entry when one is available, or the empty string otherwise, mirroring
- *  {@link defaultPlotProps}. */
+ *  `detrend: "mean"`, `scaling: "raw_magnitude"`, `averaging: "mean"`;
+ *  `x.type` seeds `"log"` and `x.label` seeds `"Frequency (Hz)"` (this
+ *  task's brief, matching C2 §5.3's parameter table). `channel` is
+ *  `channels`' first entry when one is available, or the empty string
+ *  otherwise, mirroring {@link defaultPlotProps}. */
 export function defaultFftPlotProps(channels: readonly { id: string; label: string; unit?: string }[]): FftPlotProps {
   const props: FftPlotProps = {
     chart: "fft",
     mark: {
       channel: channels[0]?.id ?? "",
       mark: "lineY",
-      fft: { windowSize: 2048, hopSize: 1024, window: "hann", detrend: "mean", scaling: "magnitude", averaging: "mean" },
+      fft: { windowSize: 2048, hopSize: 1024, window: "hann", detrend: "mean", scaling: "raw_magnitude", averaging: "mean" },
     },
     x: { label: "Frequency (Hz)", type: "log" },
   };
-  const label = suggestSpectrumAxisLabel(channels[0], "magnitude");
+  const label = suggestSpectrumAxisLabel(channels[0], "raw_magnitude");
   if (label !== undefined) props.y = { label };
   return props;
 }
@@ -136,15 +137,21 @@ export function suggestAxisLabel(channel: { label: string; unit?: string } | und
   return `${channel.label} (${channel.unit})`;
 }
 
-/** Suggests an FFT cell's y-axis label per scaling (R79 Q5): `"Magnitude
- *  (<unit>)"` for `"magnitude"`, `"PSD (<unit>²/Hz)"` for `"density"`;
- *  `undefined` when the channel has no recorded unit (same "no v3 construct
- *  converts units" rule as {@link suggestAxisLabel} — this is a plain
- *  string concatenation of the unit the engine already supplied, never a
- *  conversion). An ordinary editable suggestion on R65's existing seed
- *  path, not a locked display: the caller writes it into `y.label` once,
- *  on the channel pick or on a scaling change, and never overwrites a
- *  label the author already typed. */
+/** Suggests an FFT cell's y-axis label per scaling (R79 Q5, widened by
+ *  R167/R168 to the maths language's three names): `"PSD (<unit>²/Hz)"` for
+ *  `"density"`, `"Power (<unit>²)"` for `"spectrum"`, `"Magnitude (<unit>)"`
+ *  for `"raw_magnitude"` and for the retired `"magnitude"` spelling — the
+ *  three labels match C2 §3.3.1's rule exactly
+ *  (`core/src/math/units.rs::spectral_rule`). `undefined` when the channel
+ *  has no recorded unit (same "no v3 construct converts units" rule as
+ *  {@link suggestAxisLabel} — this is a plain string concatenation of the
+ *  unit the engine already supplied, never a conversion). An ordinary
+ *  editable suggestion on R65's existing seed path, not a locked display:
+ *  the caller writes it into `y.label` once, on the channel pick or on a
+ *  scaling change, and never overwrites a label the author already typed.
+ *  Written as an exhaustive switch, not a ternary chain, so a future fourth
+ *  name is a compile error rather than a silent fall-through to
+ *  Magnitude. */
 export function suggestSpectrumAxisLabel(
   channel: { label: string; unit?: string } | undefined,
   scaling: FftParams["scaling"]
@@ -152,7 +159,16 @@ export function suggestSpectrumAxisLabel(
   if (channel === undefined || channel.unit === undefined || channel.unit === "") {
     return undefined;
   }
-  return scaling === "density" ? `PSD (${channel.unit}²/Hz)` : `Magnitude (${channel.unit})`;
+  const unit = channel.unit;
+  switch (scaling) {
+    case "density":
+      return `PSD (${unit}²/Hz)`;
+    case "spectrum":
+      return `Power (${unit}²)`;
+    case "raw_magnitude":
+    case "magnitude":
+      return `Magnitude (${unit})`;
+  }
 }
 
 /** Segment overlap as a percentage, for display only (R79 Q3): the
@@ -228,6 +244,22 @@ export function updateFftParams(props: FftPlotProps, patch: Partial<FftParams>):
     merged.hopSize = "all";
   }
   return { ...props, mark: { ...props.mark, fft: merged } };
+}
+
+/** The scaling `<option>` values the Properties pane's scaling `<select>`
+ *  renders for one FFT cell's current `scaling` (this task's brief): the
+ *  three offered scalings ({@link FFT_SCALING_OPTIONS}), plus the retired
+ *  `"magnitude"` spelling appended, **for this render only**, when the cell
+ *  is currently on it. An HTML `<select>` with a `value` that matches none
+ *  of its `<option>`s silently displays its first option instead — without
+ *  this, a `"magnitude"` cell would render as "Density (PSD)" and the next
+ *  unrelated edit would write that lie back. Picking anything else from the
+ *  rendered list drops the appended option; the caller never has to special
+ *  case it beyond rendering what this returns. Pure so `PropertiesForm.tsx`
+ *  need not be rendered to test it (CLAUDE.md §4: UI rendering itself is
+ *  not unit-tested, but the logic behind it is). */
+export function fftScalingSelectOptions(current: FftParams["scaling"]): readonly FftParams["scaling"][] {
+  return current === "magnitude" ? [...FFT_SCALING_OPTIONS, "magnitude"] : FFT_SCALING_OPTIONS;
 }
 
 /** Appends a new mark bound to `channel`, defaulting to the `lineY` mark
