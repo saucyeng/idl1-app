@@ -1510,9 +1510,13 @@ readout is one atomic answer for one instant), `io`, `internal`.
 resolves (with no value) when the scan window ends.
 ```ts
 interface DeviceDiscovered {
-  device_id: string;   // platform BLE address/identifier
+  device_id: string;      // platform BLE address/identifier
   name: string;
-  rssi_dbm: number;    // i32
+  rssi_dbm: number;       // i32
+  service_uuids: string[]; // advertised service UUIDs, lowercase hyphenated
+                            // form; [] if the advertisement carried none —
+                            // added 2026-09-08 (device-status lane, R157),
+                            // see "Device-status amendment" (§6)
 }
 ```
 Errors: `ble`.
@@ -1592,7 +1596,7 @@ One read of SPEC §7.3's status characteristic, mirroring
 interface DeviceStatus {
   wifi_on: boolean | null;
   logging: boolean | null;                                 // true while recording
-  battery_pct: number | null;                              // u8, percent
+  battery_pct: number | null;                              // u8, percent — deprecated, see below
   sd: "ok" | "full" | "error" | "absent" | null;
   gps: "fix" | "no_fix" | "absent" | null;
   imu: "ok" | "partial" | "error" | "absent" | null;
@@ -1600,17 +1604,32 @@ interface DeviceStatus {
   ota_pending_verify: boolean;                             // never null
   hr: string | null;                                       // raw §7.3 line value
   hr_battery_pct: number | null;                           // u8, percent
+  // Added 2026-09-08 (device-status lane, R113/R157) — see "Device-status
+  // amendment" (§6), resolving the wave-2 open question below.
+  logging_elapsed_s: number | null;                        // u32, seconds; present only while logging === true
+  battery_raw: number | null;                              // u32, unscaled ADC count; app scales itself
+  sd_free_mib: number | null;                              // u32, MiB; present only when sd is "ok" or "full"
+  gps_fix_quality: number | null;                          // u8, raw NMEA GGA fix-quality (0-3); present when gps !== "absent"
+  gps_sats: number | null;                                 // u32, satellites used; 0 is a real "searching" reading, distinct from null
+  gps_hdop_x100: number | null;                            // u32, HDOP x100; optional even with a fix
+  imu0: "ok" | "partial" | "error" | "absent" | "off" | null; // per-IMU state, IMU index 0
+  imu1: "ok" | "partial" | "error" | "absent" | "off" | null; // per-IMU state, IMU index 1
+  imu2: "ok" | "partial" | "error" | "absent" | "off" | null; // per-IMU state, IMU index 2
 }
 ```
 Every field except `ota_pending_verify` is nullable, and `null` means "the
 device did not report this line" — never zero. `parse_status` already
 guarantees that: unknown lines are ignored so the set may grow, and a
 malformed value for a known key leaves that field `None` rather than
-failing the parse. This shape mirrors the landed transport rather than the
-ten fields the lane's IPC needs list proposed — four of those
-(`sd_free_bytes`, `gps_fix_quality`, `gps_satellites`,
-`battery_millivolts`) have no source in SPEC §7.3 or the landed parser; see
-§6's wave-2 amendment note for the follow-up question to Isaac.
+failing the parse. This rule extends to the fields added 2026-09-08 exactly
+as written: `gps_sats: 0` is the device reporting "searching" (a real
+`GPSSats: 0` line), never the same as `gps_sats: null` ("no such line" —
+e.g. `gps` is `"absent"`). `battery_pct` (`Battery: NN%`) is deprecated on
+the wire in favour of `battery_raw`; it stays one firmware revision for old
+parsers and the app should prefer `battery_raw` (scaling it itself) whenever
+both are present. `imu0`/`imu1`/`imu2` share `DeviceStatus.imu`'s enum
+values plus `"off"` (disabled in the loaded config) — `"off"` never appears
+on the aggregate `imu` field itself.
 
 Errors: `ble`, `not_found`, `internal`.
 
@@ -2183,3 +2202,34 @@ SPEC §7.3 status block? `device_status` (§3.8) mirrors the landed
 source those four values from. If the firmware can add them, a SPEC §7.3
 amendment lets `device_status` grow additively (§5); if not, they stay
 absent from the contract.
+
+**Resolved 2026-09-08** — see "Device-status amendment" immediately below.
+
+### Device-status amendment (R113/R157)
+
+*Added post-sign (2026-09-08, device-status lane.)* Isaac folded the
+firmware delta into SPEC §7.3 (R113: `LoggingElapsed`, `BatteryRaw`,
+`SDFreeMiB`, `GPSFix`, `GPSSats`, `GPSHDOP`, `IMU0`/`IMU1`/`IMU2`; R157),
+answering the wave-2 open question above — with `BatteryRaw` (a raw ADC
+count) standing in for the requested battery millivolts, since the device
+cannot itself know the pack chemistry or board revision needed to produce a
+voltage or percentage (SPEC §7.3's own reasoning for deprecating
+`Battery: NN%`). Two Device-tab features (UI-DIRECTION-2 decisions 66, 68,
+87 — per-IMU status, satellite count and recording duration in the live
+status pane; an HRM search filtered to the heart-rate service by default)
+were written and blocked on these wire fields; this lane threads them
+through:
+
+- `device_status` (§3.8) gains `logging_elapsed_s`, `battery_raw`,
+  `sd_free_mib`, `gps_fix_quality`, `gps_sats`, `gps_hdop_x100`, `imu0`,
+  `imu1`, `imu2` — additive, all nullable, `null` meaning "unknown" per
+  SPEC §7.3's own rule for these lines (never a zero/false default). See
+  the updated `DeviceStatus` interface above.
+- `ble_scan`'s `DeviceDiscovered` (§3.8) gains `service_uuids: string[]` —
+  the advertised service UUIDs, letting the UI filter a scan client-side
+  (e.g. to the standard heart-rate service) without a second GATT round
+  trip. See the updated `DeviceDiscovered` interface above.
+
+No command signature changed — both additions are new fields on existing
+return/stream payload shapes, so no `app/src/ipc/` call-site rewrite is
+required, only new fields becoming available to read.
