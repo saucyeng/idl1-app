@@ -205,3 +205,39 @@ for hours (8.5 and 6.5 CPU hours) walking every mount, and could not be
 killed from the lead's session. Use the repo's own tools: Glob for paths,
 Grep for content, both scoped to a directory. If a shell search is truly
 needed, bound it: a concrete root, `-maxdepth`, and a timeout.
+
+## §9. Cargo, restated (2026-09-09, after three stalls in one night)
+
+The old instruction — "never background cargo" — is **not actionable**, and
+telling agents it is has now cost time three times in one night plus two
+incidents earlier. An implementer's tool **auto-backgrounds any command that
+exceeds its timeout**. The agent does not choose it, so it cannot obey.
+
+**What to do instead:**
+
+1. Run cargo in the **foreground**, timeout at your maximum, with no pipe
+   that can swallow the exit code (`| tail`, a separate stderr redirect read
+   later).
+2. **When the harness moves it to the background anyway — poll the
+   process**, never wait on the completion notification:
+   `Get-Process cargo,rustc -ErrorAction SilentlyContinue`. While a `rustc`
+   is alive and accumulating CPU, it is working. When they are gone, read
+   the output file and continue.
+3. **Never start a second cargo command while one is running** — this part
+   *is* a choice, and it is the one that actually breaks things. Concurrent
+   invocations block on the target-directory lock: four of them ran at
+   ~0% CPU on 2026-09-08 and had to be killed. Near-zero CPU across several
+   cargo processes is a **deadlock**, and it looks exactly like a slow
+   build.
+4. A run burning CPU is healthy however long it takes. A run with **no CPU
+   being burned** past ~20 minutes is a deadlock — report it, do not wait.
+
+**Why builds are slow right now:** the shared target cache was cleared on
+2026-09-08 to recover 12 GB. Cold Tauri builds cost ten minutes or more;
+incremental ones are fast. Prefer `-p idl-rs` filters over `-p idl-rs-tauri`
+when a change does not reach the Tauri crate, and say in your report when a
+task genuinely needs it.
+
+**And `cargo check` is not `cargo test`** — it compiles without running
+anything. A `pub` type change that compiles can still break a fixture
+assertion, which is exactly what happened on 2026-09-08.
