@@ -78,4 +78,40 @@ describe("diffFunctionCatalog", () => {
     // Assert
     expect(result).toEqual([]);
   });
+
+  // The self-check above only proves internal consistency -- it would still
+  // pass on a stale or truncated table compared against itself. This test
+  // pins MATH_FUNCTIONS to the actual 72-entry ground truth transcribed from
+  // `rust/core/src/math/catalog.rs`'s `math_builtin_catalog()`
+  // (scipy-alignment lane, ledger R151/R157), so a future edit that drops or
+  // mis-spells a name fails here rather than only showing up as a silent
+  // completion gap.
+  it("MATH_FUNCTIONS — the scipy-alignment lane's renames and additions — are present with the engine's exact spellings", () => {
+    // Arrange
+    const names = new Set(MATH_FUNCTIONS.map((entry) => entry.name));
+
+    // Act / Assert -- renamed
+    for (const renamed of ["lap_delta_time", "lap_delta_dist", "angle_between", "percentile", "clip", "where", "cumulative_trapezoid"]) {
+      expect(names.has(renamed), `expected renamed builtin "${renamed}"`).toBe(true);
+    }
+    // Act / Assert -- retired, must not appear as callable entries
+    for (const retired of ["variance_time", "variance_dist", "angle", "p", "clamp", "if", "integrate", "fft"]) {
+      expect(names.has(retired), `retired name "${retired}" should not be a catalog entry`).toBe(false);
+    }
+    // Act / Assert -- net-new
+    for (const added of ["periodogram", "welch", "cumtrapz", "gradient"]) {
+      expect(names.has(added), `expected new builtin "${added}"`).toBe(true);
+    }
+  });
+
+  it("MATH_FUNCTIONS — total count and implemented/notImplemented split — match the engine catalog's own counts (72 = 66 + 6)", () => {
+    // Arrange
+    const implemented = MATH_FUNCTIONS.filter((e) => e.status === "implemented").length;
+    const notImplemented = MATH_FUNCTIONS.filter((e) => e.status === "notImplemented").length;
+
+    // Act / Assert
+    expect(MATH_FUNCTIONS.length).toBe(72);
+    expect(implemented).toBe(66);
+    expect(notImplemented).toBe(6);
+  });
 });
