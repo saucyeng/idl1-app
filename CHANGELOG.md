@@ -6,6 +6,18 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 
 ### Added
 
+- **Device tab: auto-connect to the last-used device on launch (2026-09-08,
+  `runs/2026-09-07/ui/UI-DIRECTION-2.md` decision 64).** New
+  `Device/lastDevice.ts`: a `localStorage`-backed seam (no `AppSettings`
+  field exists yet for this device preference; a Rust change is out of
+  scope for this TS-only lane) remembering the last connected device id
+  across restarts, plus the pure `shouldAutoConnect` decision the mount
+  effect calls. Never dispatches `CONNECT_START`, so the hero CTA and
+  device picker stay interactive throughout, and a failed attempt (device
+  off, out of range) is silently ignored rather than shown as a "failed"
+  banner — a routine "not on yet" case at launch isn't the kind of failure
+  a deliberate manual connect reports.
+
 - **Device tab: a real N-device picker, one-tap active switch (2026-09-08,
   `runs/2026-09-07/ui/UI-DIRECTION-2.md` decisions 64, 86).** `connection.ts`'s
   `ConnectionState` now holds `connections: ConnectionInfo[]` and

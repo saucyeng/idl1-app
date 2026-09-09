@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useReducer, useState } from "react";
+import { useCallback, useEffect, useReducer, useRef, useState } from "react";
 
 import { SectionHead } from "../../../components/brand/SectionHead";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "../../../components/ui/collapsible";
@@ -17,6 +17,7 @@ import DeviceFiles from "./DeviceFiles";
 import { describeIpcError } from "./errors";
 import type { DeviceIpcError } from "./errors";
 import HeroCard from "./HeroCard";
+import { localStorageLastDeviceBackend, shouldAutoConnect } from "./lastDevice";
 import ProfileBar from "./ProfileBar";
 import { initialProfilesState, profilesReducer } from "./profiles";
 import type { ProfileView } from "./profiles";
@@ -60,6 +61,12 @@ const STATUS_POLL_DEPS: StatusPollDeps = {
   isVisible: () => composeVisibility(document.visibilityState === "visible", getActiveRoute() === "device"),
   onVisibilityChange: (handler) => subscribeRouteVisible("device", handler),
 };
+
+/** The last-used device id backend (Task 2, decision 64) — `localStorage`
+ *  until a real `AppSettings` field exists (`lastDevice.ts`'s doc). Built
+ *  once at module scope for the same "stable reference, never a dependency
+ *  array entry" reason as {@link STATUS_POLL_DEPS}. */
+const LAST_DEVICE_BACKEND = localStorageLastDeviceBackend();
 
 /** Real IO for `profilesSync.ts` — the landed `list_profiles`/`save_profile`/
  *  `delete_profile` commands, unwrapped so the interaction-side code that
@@ -156,6 +163,10 @@ export default function Device() {
     connectDevice(deviceId)
       .then((info) => {
         dispatch({ type: "CONNECTED", info });
+        // Remembered for next launch's auto-connect (decision 64, Task 2) —
+        // best-effort; a failed write here only costs the *next* launch's
+        // auto-connect, never this one.
+        LAST_DEVICE_BACKEND.write(info.device_id).catch(() => {});
         // Best-effort refresh of known session ids for the files view's
         // `isNew` computation; a failure here leaves the previous set in
         // place rather than blocking the connect result.
@@ -259,6 +270,39 @@ export default function Device() {
     return () => {
       stale = true;
     };
+  }, []);
+
+  // Mirrors `state` for the auto-connect effect below to read at the
+  // moment `LAST_DEVICE_BACKEND.read()` resolves, without adding `state` to
+  // that effect's dependency array (which would make it re-run on every
+  // connection-state change instead of once at mount). Updated on every
+  // render — a plain assignment, not a side effect.
+  const connectionStateRef = useRef(state);
+  connectionStateRef.current = state;
+
+  // Auto-connects to the last-used device once, on mount (Task 2, decision
+  // 64: "open the app, it connects automatically"). Never blocks the UI —
+  // unlike `onConnect`, this never dispatches `CONNECT_START`, so the hero
+  // CTA and device picker stay interactive throughout, and a failure
+  // (device off, out of range) is silently ignored rather than surfaced as
+  // a "failed" banner: a routine "not on yet" case at launch is not the
+  // kind of failure a deliberate manual connect attempt reports (philosophy
+  // 72 — no surprise mid-launch). `autoConnectAttempted` (a ref, not state —
+  // it drives no render) guards against a second attempt if the read
+  // resolves after the user has already started their own scan/connect.
+  const autoConnectAttempted = useRef(false);
+  useEffect(() => {
+    LAST_DEVICE_BACKEND.read().then((lastDeviceId) => {
+      const current = connectionStateRef.current;
+      if (lastDeviceId === null) return;
+      if (!shouldAutoConnect(lastDeviceId, autoConnectAttempted.current, current.connections.length, current.phase)) {
+        return;
+      }
+      autoConnectAttempted.current = true;
+      connectDevice(lastDeviceId)
+        .then((info) => dispatch({ type: "CONNECTED", info }))
+        .catch(() => {});
+    });
   }, []);
 
   // 1 Hz `device_status` poll (wave-2 operating brief §4's effects rule):
