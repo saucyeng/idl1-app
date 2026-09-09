@@ -1432,8 +1432,14 @@ export default function NotebookPage() {
     setExportingReport(true);
     try {
       const [sessions, appVersion] = await Promise.all([listSessions(), getVersion()]);
-      const evals: WindowEval[] =
-        primaryEval === undefined ? [] : primaryEval.kind === "ok" ? [{ ok: Array.from(primaryEval.outputs.values()) }] : [{ error: primaryEval.error }];
+      // Task R4: one `WindowEval` per selected window, same order -- reads
+      // `state.windows` (ruling R131 Q1's per-window map) by each window's
+      // own key rather than the primary-only `primaryEval`.
+      const evals: (WindowEval | undefined)[] = windows.map((w) => {
+        const entry = state.windows.get(windowKey(w));
+        if (entry === undefined) return undefined;
+        return entry.kind === "ok" ? { ok: Array.from(entry.outputs.values()) } : { error: entry.error };
+      });
       const proseBlocks = new Map(proseBlocksFor(state.cells, state.markdown, primaryOutputs).map((block) => [block.blockId, block]));
       setReportDoc(buildReportDocument(state.cells, proseBlocks, evals, windows, sessions, appVersion, Date.now()));
     } finally {

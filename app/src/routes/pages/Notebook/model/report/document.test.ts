@@ -172,7 +172,46 @@ describe("buildReportDocument", () => {
     );
 
     expect(doc.blocks.some((b) => b.kind === "windowSection")).toBe(false);
+    const failure = doc.blocks.find((b) => b.kind === "windowFailure");
+    expect(failure).toMatchObject({ error: { kind: "not_found", message: "session gone" } });
     const appendix = doc.blocks.find((b) => b.kind === "appendix");
     expect(appendix).toMatchObject({ entries: expect.arrayContaining([expect.stringContaining("session gone")]) });
+  });
+
+  it("two windows, one failing — both get their own section, in selection position, never a silent gap", () => {
+    const cells = [mathCell("cell-1")];
+    const lap2Outputs = [mathOutput("cell-1", { defs: [{ name: "peak", label: "Peak", value: { length: 1, has_t: false }, error: null, sample_rate_hz: null, unit: { state: "dimensionless" }, unit_notes: [] }] })];
+    const windows = [window({ colour: "--chart-1" }), window({ sessionId: "sess-2", colour: "--chart-2" })];
+    const evals = [{ error: { kind: "range_out_of_bounds", message: "lap 9 does not exist" } }, { ok: lap2Outputs }];
+
+    const doc = buildReportDocument(cells, new Map(), evals, windows, [session(), session({ session_id: "sess-2", venue_name: "Silverstone" })], "1.0.0", 0);
+
+    const failureIndex = doc.blocks.findIndex((b) => b.kind === "windowFailure");
+    const sectionIndex = doc.blocks.findIndex((b) => b.kind === "windowSection");
+    expect(failureIndex).toBeGreaterThanOrEqual(0);
+    expect(sectionIndex).toBeGreaterThan(failureIndex);
+  });
+
+  it("two windows, both succeeding — a comparison table carries the shared scalar definition, one column per window", () => {
+    const cells = [mathCell("cell-1")];
+    function scalarOutputs(len: number) {
+      return [mathOutput("cell-1", { defs: [{ name: "peak_g", label: "Peak g", value: { length: len, has_t: false }, error: null, sample_rate_hz: null, unit: { state: "known", text: "g" }, unit_notes: [] }] })];
+    }
+    const windows = [window({ colour: "--chart-1" }), window({ sessionId: "sess-2", colour: "--chart-2" })];
+    const evals = [{ ok: scalarOutputs(1) }, { ok: scalarOutputs(1) }];
+
+    const doc = buildReportDocument(cells, new Map(), evals, windows, [session(), session({ session_id: "sess-2" })], "1.0.0", 0);
+
+    const comparison = doc.blocks.find((b) => b.kind === "comparison");
+    expect(comparison).toMatchObject({
+      columns: [{ colour: "--chart-1" }, { colour: "--chart-2" }],
+      rows: [{ name: "peak_g", label: "Peak g", cells: ["1 sample g", "1 sample g"] }],
+    });
+  });
+
+  it("one window selected — no comparison table (nothing to compare)", () => {
+    const doc = buildReportDocument([mathCell("cell-1")], new Map(), [{ ok: [mathOutput("cell-1")] }], [window()], [session()], "1.0.0", 0);
+
+    expect(doc.blocks.some((b) => b.kind === "comparison")).toBe(false);
   });
 });

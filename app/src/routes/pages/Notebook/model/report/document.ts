@@ -1,26 +1,27 @@
 /**
  * The report's document model (decisions 85/89, `runs/2026-09-09/report-plan.md`
- * task R1, ruling R166). Pure: no React, no DOM, no IPC import — this module
- * turns already-fetched data into a flat, typed, ordered block list that
- * `components/ReportView.tsx` (task R2) renders and `model/report/toPdf.ts`
- * (task R7) will one day feed to a PDF writer. Every test in
- * `document.test.ts` exercises this module directly, with no jsdom.
+ * tasks R1/R4, ruling R166). Pure: no React, no DOM, no IPC import — this
+ * module turns already-fetched data into a flat, typed, ordered block list
+ * that `components/ReportView.tsx` (task R2) renders and
+ * `model/report/toPdf.ts` (task R7) will one day feed to a PDF writer.
+ * Every test in `document.test.ts` exercises this module directly, with no
+ * jsdom.
  *
- * **R1's scope, deliberately narrow.** The screen only ever shows the
- * *primary* window (`index.tsx`'s `primaryWindow`, ruling R131 Q1) — this
- * first pass builds the report's content sections the same way, from
- * `evals[0]` alone. The plan's section 4 explicitly says the report must
- * not inherit that limit; lifting this to one section per `WindowEval`,
- * plus a scalar comparison table and named window failures, is task R4,
- * not this one. The **Selection block** is the one exception: it already
- * lists every selected window regardless of which window's content is
- * shown, because that block carries no evaluated content at all.
+ * **Per-window, not primary-window-only (task R4).** The screen only ever
+ * shows the *primary* window (`index.tsx`'s `primaryWindow`, ruling
+ * R131 Q1) — this document does not inherit that limit (plan §4): one
+ * `windowSection` (or, for a window whose own evaluation failed,
+ * {@link WindowFailureBlock} — R121, never dropped, never merged into a
+ * neighbour) per entry of `windows`/`evals`, in selection order, plus a
+ * {@link ComparisonBlock} of every scalar definition once more than one
+ * window is selected (plan §4: two laps is the normal case, not an edge
+ * case).
  *
  * Charts (`js`-kind cells) are not renderable yet (task R5/R6 land the
- * host-side re-render); every one becomes a named {@link ChartAbsenceBlock}
+ * host-side re-render); every one becomes a named {@link AbsenceBlock}
  * rather than a silent gap (R148/R150/R153).
  */
-import type { CellOutput, WindowEval } from "../../../../../ipc/workbook";
+import type { CellOutput, IpcError, WindowEval } from "../../../../../ipc/workbook";
 import type { SessionSummary } from "../../../../../ipc/catalog";
 import { describeWindow, type SelectionWindow } from "../../../../../state/selection";
 import type { ScannedCell } from "../cells";
@@ -75,12 +76,23 @@ export interface SelectionBlock {
   windows: SelectionRow[];
 }
 
-/** One heading marking the start of a window's content sections (R1: the
- *  primary window only; R4 lifts this to every window). */
+/** One heading marking the start of a window's content sections — one per
+ *  entry of the selection (task R4). */
 export interface WindowSectionBlock {
   kind: "windowSection";
   label: string;
   colour: string;
+}
+
+/** A window whose own `evalWorkbookV2` entry failed (ruling R121) —
+ *  its own section, in its selection position, never dropped and never
+ *  merged into a neighbour (plan §4: "the single worst outcome this lane
+ *  can produce" is a report that silently omits a lap that errored). */
+export interface WindowFailureBlock {
+  kind: "windowFailure";
+  label: string;
+  colour: string;
+  error: IpcError;
 }
 
 /** One rendered prose block (a cell's `prose_before`/`prose_after`, C2
@@ -133,6 +145,30 @@ export interface AbsenceBlock {
   reason: string;
 }
 
+/** One scalar definition's row in the {@link ComparisonBlock} (plan §4) —
+ *  matched by definition `name` across every window that evaluated it.
+ *  `cells[i]` corresponds to `ComparisonBlock.columns[i]` (the same
+ *  selection order as {@link SelectionBlock}); `null` marks a window with
+ *  no result for this definition (it never evaluated, or that window's
+ *  own evaluation failed) — never coerced to an empty string, so
+ *  `ReportView` can render it as its own dash rather than an
+ *  indistinguishable blank. */
+export interface ComparisonRow {
+  name: string;
+  label: string | null;
+  cells: (string | null)[];
+}
+
+/** Scalar definitions (`sample_rate_hz === null`, or `value.has_t ===
+ *  false`, plan §4) across every window, one column per selected window —
+ *  present only once more than one window is selected (plan §3.1 item 5:
+ *  "when more than one window is selected"). */
+export interface ComparisonBlock {
+  kind: "comparison";
+  columns: SelectionRow[];
+  rows: ComparisonRow[];
+}
+
 /** Every diagnostic this document collected while it was built: unit notes
  *  (R154 §2.1), structural cell errors, and every absence's reason —
  *  gathered once here rather than scattered per-section, so a reader can
@@ -147,10 +183,12 @@ export type ReportBlock =
   | SessionBlock
   | SelectionBlock
   | WindowSectionBlock
+  | WindowFailureBlock
   | ReportProseBlock
   | DefTableBlock
   | TableBlock
   | AbsenceBlock
+  | ComparisonBlock
   | AppendixBlock;
 
 export interface ReportDocument {
@@ -305,6 +343,60 @@ function buildContentBlocks(
   return blocks;
 }
 
+/** A "scalar" definition, per plan §4: no sample rate at all, or a value
+ *  that carries no time axis — the two independent signals a reduction
+ *  (rather than a still-time-indexed series) produced. A def whose own
+ *  evaluation failed (`value === null`) has no `has_t` to read, so it
+ *  qualifies only via `sample_rate_hz === null`. */
+function isScalarDef(def: CellOutput["defs"][number]): boolean {
+  return def.sample_rate_hz === null || (def.value !== null && !def.value.has_t);
+}
+
+/** Builds the comparison table (plan §4/§3.1 item 5): one row per scalar
+ *  definition `name`, one column per selected window, matched across every
+ *  window that evaluated it. `null` when fewer than two windows are
+ *  selected — the table has nothing to compare. */
+function buildComparisonTable(
+  windows: readonly SelectionWindow[],
+  evals: readonly (WindowEval | undefined)[],
+  sessions: readonly SessionSummary[],
+): ComparisonBlock | null {
+  if (windows.length <= 1) return null;
+
+  const rowOrder: string[] = [];
+  const rowsByName = new Map<string, { label: string | null; cells: (string | null)[] }>();
+
+  windows.forEach((_w, i) => {
+    const ev = evals[i];
+    if (ev === undefined || !("ok" in ev)) return;
+    for (const output of ev.ok) {
+      if (output.kind !== "math") continue;
+      for (const def of output.defs) {
+        if (!isScalarDef(def)) continue;
+        let row = rowsByName.get(def.name);
+        if (row === undefined) {
+          row = { label: def.label, cells: windows.map(() => null) };
+          rowsByName.set(def.name, row);
+          rowOrder.push(def.name);
+        }
+        const unit = formatUnit(def.unit);
+        row.cells[i] = unit.text === "" ? defValueText(def) : `${defValueText(def)} ${unit.text}`;
+      }
+    }
+  });
+
+  return {
+    kind: "comparison",
+    columns: buildSelectionBlock(windows, sessions).windows,
+    rows: rowOrder.map((name) => {
+      const row = rowsByName.get(name);
+      // rowOrder and rowsByName are built together above -- every name in
+      // rowOrder has a corresponding map entry by construction.
+      return { name, label: row!.label, cells: row!.cells };
+    }),
+  };
+}
+
 function proseToBlock(block: ProseBlockData): ReportProseBlock {
   if (block.content.kind === "html") {
     return { kind: "prose", cellId: block.cellId, position: block.position, html: block.content.html };
@@ -313,11 +405,15 @@ function proseToBlock(block: ProseBlockData): ReportProseBlock {
 }
 
 /**
- * Builds a {@link ReportDocument} from a settled evaluation of one
- * workbook's primary window (R1's scope — see this module's doc comment).
- * `evals[0]` (`ruling R121`'s `WindowEval`) is read; further entries are
- * left for R4. `evals: []` (nothing selected) still returns a document —
- * cover and an empty selection block, no content section.
+ * Builds a {@link ReportDocument} from a settled evaluation of every
+ * selected window (task R4 — plan §4: "two laps is the normal case, not
+ * an edge case"). `evals[i]` is `windows[i]`'s own `evalWorkbookV2` result
+ * (`ruling R121`'s `WindowEval`); a window with no corresponding `evals`
+ * entry (still pending) contributes no section, only an appendix note —
+ * the caller is expected to wait for a settled evaluation before building
+ * a report at all (plan §3.4). `evals: []`/`windows: []` (nothing
+ * selected) still returns a document — cover and an empty selection block,
+ * no window sections, no comparison table.
  *
  * `appVersion` and `generatedAtMs` are supplied by the caller rather than
  * read here (`@tauri-apps/api/app`'s `getVersion`, `Date.now()`) so this
@@ -326,7 +422,7 @@ function proseToBlock(block: ProseBlockData): ReportProseBlock {
 export function buildReportDocument(
   cells: readonly ScannedCell[],
   proseBlocks: ReadonlyMap<string, ProseBlockData>,
-  evals: readonly WindowEval[],
+  evals: readonly (WindowEval | undefined)[],
   windows: readonly SelectionWindow[],
   sessions: readonly SessionSummary[],
   appVersion: string,
@@ -346,15 +442,24 @@ export function buildReportDocument(
 
   blocks.push(buildSelectionBlock(windows, sessions));
 
-  const primaryEval = evals[0];
-  if (primaryWindow !== null && primaryEval !== undefined) {
-    if ("ok" in primaryEval) {
-      blocks.push({ kind: "windowSection", label: describeWindow(primaryWindow, sessionDisplayName(primarySession)), colour: primaryWindow.colour });
-      blocks.push(...buildContentBlocks(cells, proseBlocks, primaryEval.ok, entries));
-    } else {
-      entries.push(`Window ${describeWindow(primaryWindow, sessionDisplayName(primarySession))}: ${primaryEval.error.kind}: ${primaryEval.error.message}`);
+  windows.forEach((window, i) => {
+    const label = describeWindow(window, sessionDisplayName(findSession(window.sessionId, sessions)));
+    const ev = evals[i];
+    if (ev === undefined) {
+      entries.push(`Window ${label}: not evaluated.`);
+      return;
     }
-  }
+    if ("ok" in ev) {
+      blocks.push({ kind: "windowSection", label, colour: window.colour });
+      blocks.push(...buildContentBlocks(cells, proseBlocks, ev.ok, entries));
+    } else {
+      blocks.push({ kind: "windowFailure", label, colour: window.colour, error: ev.error });
+      entries.push(`Window ${label}: ${ev.error.kind}: ${ev.error.message}`);
+    }
+  });
+
+  const comparison = buildComparisonTable(windows, evals, sessions);
+  if (comparison !== null) blocks.push(comparison);
 
   blocks.push({ kind: "appendix", entries });
 

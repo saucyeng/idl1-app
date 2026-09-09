@@ -104,6 +104,15 @@ function Block({ block }: { block: ReportBlock }) {
           {block.label}
         </h2>
       );
+    case "windowFailure":
+      return (
+        <section className="report-window-failure" style={{ borderColor: `var(${block.colour})` }}>
+          <h2>{block.label}</h2>
+          <p className="report-error">
+            {block.error.kind}: {block.error.message}
+          </p>
+        </section>
+      );
     case "prose":
       return "html" in block ? (
         // SAFETY: `block.html` is core's own rendered prose HTML, the same
@@ -119,6 +128,35 @@ function Block({ block }: { block: ReportBlock }) {
       return <Table block={block} />;
     case "absence":
       return <p className="report-absence">{block.reason}</p>;
+    case "comparison":
+      return (
+        <section className="report-comparison">
+          <h2>Comparison</h2>
+          <table className="report-comparison-table">
+            <thead>
+              <tr>
+                <th>Definition</th>
+                {block.columns.map((col, i) => (
+                  <th key={i}>
+                    <span className="report-selection-swatch" style={{ backgroundColor: `var(${col.colour})` }} />
+                    {col.label}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {block.rows.map((row, i) => (
+                <tr key={i}>
+                  <td>{row.label ?? row.name}</td>
+                  {row.cells.map((cell, c) => (
+                    <td key={c}>{cell ?? "—"}</td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </section>
+      );
     case "appendix":
       return block.entries.length === 0 ? null : (
         <section className="report-appendix">

@@ -116,6 +116,19 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
   Both fields were already on the wire (`CellDefResult.unit`/
   `.sample_rate_hz`) but `MathCell.tsx` rendered neither.
 
+- **Notebook: the report covers every selected window, not just the
+  primary one (2026-09-09, plan §4, task R4).** `buildReportDocument` now
+  iterates every `WindowEval`, one `windowSection` (or, for a window
+  whose own evaluation failed, a new named `windowFailure` block, ruling
+  R121 — never dropped, never merged into a neighbour) per selected
+  window in selection order, plus a new `comparison` block once more than
+  one window is selected: one row per scalar definition
+  (`sample_rate_hz === null`, or `value.has_t === false`), one column per
+  window, matched by definition name. `Notebook/index.tsx`'s "Export
+  report" action now reads every selected window's own `WindowEvalState`
+  entry (`state.windows`, keyed by `windowKey`) instead of the primary
+  window alone. `ReportView.tsx` renders both new block kinds.
+
 - **Device tab: the recording-only live status pane (2026-09-09, decisions
   66/87, ruling R113, unblocked by the Rust lane's C3 amendment/R157 item
   2).** New `Device/liveStatus.ts` (pure, vitest-covered): while recording,
