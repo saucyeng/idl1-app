@@ -1,8 +1,8 @@
 /**
  * The report's document model (decisions 85/89, `runs/2026-09-09/report-plan.md`
- * tasks R1/R4, ruling R166). Pure: no React, no DOM, no IPC import — this
- * module turns already-fetched data into a flat, typed, ordered block list
- * that `components/ReportView.tsx` (task R2) renders and
+ * tasks R1/R4/R6, rulings R166/R173). Pure: no React, no DOM, no IPC import —
+ * this module turns already-fetched data into a flat, typed, ordered block
+ * list that `components/ReportView.tsx` (tasks R2/R6) renders and
  * `model/report/toPdf.ts` (task R7) will one day feed to a PDF writer.
  * Every test in `document.test.ts` exercises this module directly, with no
  * jsdom.
@@ -17,15 +17,33 @@
  * window is selected (plan §4: two laps is the normal case, not an edge
  * case).
  *
- * Charts (`js`-kind cells) are not renderable yet (task R5/R6 land the
- * host-side re-render); every one becomes a named {@link AbsenceBlock}
- * rather than a silent gap (R148/R150/R153).
+ * **Charts (task R6, ruling R173).** A `js` cell never appears inline in a
+ * window's own content — unlike a `math`/`table` cell, its chart is not
+ * per-window content at all: `plotForm`-generated code always overlays
+ * every selected window in the one chart it draws (plan §4), because that
+ * is how `channelBindDriver.ts`'s `CombinedChannelPayload` already arrives
+ * (every window's samples in one array, `w`-tagged). So every `js` cell is
+ * decided exactly **once**, in document-cell order, by {@link
+ * buildChartBlocks} — never once per selected window — and its block (a
+ * {@link ChartSlotBlock} or a chart {@link AbsenceBlock}) is placed after
+ * every window's own section, grouped with the others (plan §4: "overlay
+ * charts grouped after them"). Per **ruling R173**'s split, this module
+ * decides *that* a chart belongs there and *what* it is made of — the
+ * parsed `PlotProps`, the already-fetched channel data — and never
+ * constructs an `SVGSVGElement` or touches the DOM itself; only
+ * `model/report/renderChart.ts` (task R5), called from `ReportView`, does
+ * that. A cell `plotForm.parse` rejects (custom code) or whose `PlotProps`
+ * is an FFT chart (not yet supported by `renderChart.ts`) is a named
+ * absence instead, never a silent gap (R148/R150/R153).
  */
 import type { CellOutput, IpcError, WindowEval } from "../../../../../ipc/workbook";
 import type { SessionSummary } from "../../../../../ipc/catalog";
 import { describeWindow, sessionLabel, type SelectionWindow } from "../../../../../state/selection";
 import type { ScannedCell } from "../cells";
+import { parse } from "../../plotForm/parse";
+import type { TimePlotProps } from "../../plotForm/types";
 import type { ProseBlock as ProseBlockData } from "../proseBlocks";
+import type { CombinedChannelPayload } from "../channelBindDriver";
 import { formatRate, formatUnit, type UnitDisplay } from "../unitText";
 
 /** The report's cover page: title, when it was built, and the provenance a
@@ -137,12 +155,34 @@ export interface TableBlock {
 }
 
 /** A cell this report could not include, named rather than silently
- *  dropped (R148/R150/R153) — today this is every `js`-kind cell (chart
- *  re-render is task R5/R6) plus any cell with no evaluated output at all. */
+ *  dropped (R148/R150/R153) — a `math`/`table` cell with no evaluated
+ *  output for a window, or (task R6) a `js` cell whose code is custom
+ *  (`plotForm.parse` returned `null`), whose chart is an FFT/spectrum
+ *  chart (not yet supported by `renderChart.ts`), or whose channel data
+ *  was not supplied to this build. */
 export interface AbsenceBlock {
   kind: "absence";
   cellId: string;
   reason: string;
+}
+
+/** One `js` cell this report **will** render (task R6, ruling R173) —
+ *  everything `renderChart.ts` needs and nothing it doesn't: the parsed
+ *  form state, and that cell's own channel-data map (`channelId` ->
+ *  {@link CombinedChannelPayload}, every mark's channel already resolved —
+ *  {@link buildChartBlocks} never emits this block otherwise). No
+ *  `SVGSVGElement` here — this module stays DOM-free; `ReportView` is what
+ *  calls `renderChart`. `windowLabels` is every window this chart's data
+ *  actually spans (deduplicated, selection order not guaranteed — read
+ *  from the channel payloads themselves), for `ReportView`'s caption; see
+ *  this module's doc comment for what a fuller caption (X mode, point
+ *  budget, plan §3.4) still needs and does not yet have. */
+export interface ChartSlotBlock {
+  kind: "chartSlot";
+  cellId: string;
+  props: TimePlotProps;
+  channelData: ReadonlyMap<string, CombinedChannelPayload>;
+  windowLabels: string[];
 }
 
 /** One scalar definition's row in the {@link ComparisonBlock} (plan §4) —
@@ -188,6 +228,7 @@ export type ReportBlock =
   | DefTableBlock
   | TableBlock
   | AbsenceBlock
+  | ChartSlotBlock
   | ComparisonBlock
   | AppendixBlock;
 
@@ -195,8 +236,33 @@ export interface ReportDocument {
   blocks: ReportBlock[];
 }
 
-const CHART_ABSENCE_REASON =
-  "Charts are not yet included in reports — this cell's chart could not be captured.";
+/** `plotForm.parse` rejected this cell's code — the plan's own quoted
+ *  example (§1.2): "never as a gap." */
+function customCodeReason(cellId: string): string {
+  return `Chart \`${cellId}\` is custom code and could not be included in this report.`;
+}
+
+/** An FFT/spectrum chart — `renderChart.ts` (task R5) only renders a time
+ *  chart; an FFT cell is parseable (not "custom code") but still out of
+ *  this task's scope. */
+const FFT_CHART_ABSENCE_REASON = "FFT/spectrum charts are not yet included in reports — this cell's chart could not be included.";
+
+/** This cell parsed and is a time chart, but no channel data was supplied
+ *  for it at all (the caller never fetched/retained any, e.g. the cell was
+ *  never bound this session) — distinct from a *specific* missing channel
+ *  (see `missingChannelReason`), which can only happen for a multi-channel
+ *  cell missing one of several. */
+function noChartDataReason(cellId: string): string {
+  return `Cell ${cellId}: no channel data was available when this report was built.`;
+}
+
+/** One of a multi-channel chart's marks names a channel this build's
+ *  channel-data map has no entry for — named specifically, not folded into
+ *  {@link noChartDataReason}'s generic text, since the cell's *other*
+ *  channels did resolve. */
+function missingChannelReason(channel: string): string {
+  return `Chart data for channel "${channel}" was not available when this report was built.`;
+}
 
 /** `""`/`null` -> `"not recorded"`, the one shared rule for every "not set"
  *  field this document renders (C1 §2/§6, R148/R153). */
@@ -300,10 +366,16 @@ function buildTable(cellId: string, output: CellOutput): TableBlock {
   return { kind: "table", cellId, rows };
 }
 
-/** Builds the content blocks (prose/defTable/table/absence) for one
- *  window's already-succeeded evaluation, in document order, and appends
- *  every diagnostic it finds to `entries` (mutated in place — this
- *  function's one side effect, kept local to this file). */
+/** Builds the content blocks (prose/defTable/table) for one window's
+ *  already-succeeded evaluation, in document order, and appends every
+ *  diagnostic it finds to `entries` (mutated in place — this function's
+ *  one side effect, kept local to this file).
+ *
+ *  A `js`-kind cell contributes **no** def/table/absence content here — its
+ *  chart is not per-window content at all (this module's own doc comment,
+ *  task R6) — but its surrounding prose still runs through this per-window
+ *  walk exactly like every other cell's, since prose *is* window-position
+ *  narrative and a window's own section is still the right place for it. */
 function buildContentBlocks(
   cells: readonly ScannedCell[],
   proseBlocks: ReadonlyMap<string, ProseBlockData>,
@@ -318,26 +390,90 @@ function buildContentBlocks(
     const before = proseBlocks.get(`${cell.id}::before`);
     if (before !== undefined) blocks.push(proseToBlock(before));
 
-    const output = byId.get(cell.id);
-    if (output === undefined) {
-      entries.push(`Cell ${cell.id}: not evaluated for this window.`);
-      blocks.push({ kind: "absence", cellId: cell.id, reason: "This cell has no evaluated result for this window." });
-    } else {
-      for (const err of output.errors) {
-        entries.push(`Cell ${cell.id}: ${err.kind}: ${err.message}`);
-      }
-      if (output.kind === "math") {
-        blocks.push(buildDefTable(cell.id, output, entries));
-      } else if (output.kind === "table") {
-        blocks.push(buildTable(cell.id, output));
+    if (cell.kind !== "js") {
+      const output = byId.get(cell.id);
+      if (output === undefined) {
+        entries.push(`Cell ${cell.id}: not evaluated for this window.`);
+        blocks.push({ kind: "absence", cellId: cell.id, reason: "This cell has no evaluated result for this window." });
       } else {
-        entries.push(`Cell ${cell.id}: ${CHART_ABSENCE_REASON}`);
-        blocks.push({ kind: "absence", cellId: cell.id, reason: CHART_ABSENCE_REASON });
+        for (const err of output.errors) {
+          entries.push(`Cell ${cell.id}: ${err.kind}: ${err.message}`);
+        }
+        if (output.kind === "math") {
+          blocks.push(buildDefTable(cell.id, output, entries));
+        } else if (output.kind === "table") {
+          blocks.push(buildTable(cell.id, output));
+        }
       }
     }
 
     const after = proseBlocks.get(`${cell.id}::after`);
     if (after !== undefined) blocks.push(proseToBlock(after));
+  }
+
+  return blocks;
+}
+
+/** Decodes a `ScannedCell.bodyRange` UTF-8 byte range out of `markdown` —
+ *  the same conversion `model/sourcePalette.ts`'s own private
+ *  `decodeByteRange` does (`.slice` alone is wrong here: a byte range, not
+ *  a UTF-16 code-unit range). */
+function decodeByteRange(markdown: string, range: [number, number]): string {
+  const bytes = new TextEncoder().encode(markdown);
+  return new TextDecoder().decode(bytes.subarray(range[0], range[1]));
+}
+
+/**
+ * Builds every `js`-kind cell's chart block, once each, in document-cell
+ * order (task R6, ruling R173) — never once per window, see this module's
+ * doc comment. A cell whose code `plotForm.parse` rejects, whose parsed
+ * chart is FFT (not yet renderable, `renderChart.ts`), or that names a
+ * channel `chartChannelData` has no entry for, becomes a named
+ * {@link AbsenceBlock}; otherwise a {@link ChartSlotBlock} carrying exactly
+ * what `renderChart.ts` needs.
+ */
+function buildChartBlocks(
+  cells: readonly ScannedCell[],
+  markdown: string,
+  chartChannelData: ReadonlyMap<string, ReadonlyMap<string, CombinedChannelPayload>>,
+  entries: string[],
+): ReportBlock[] {
+  const blocks: ReportBlock[] = [];
+
+  for (const cell of cells) {
+    if (cell.id === null || cell.kind !== "js") continue;
+    const cellId = cell.id;
+
+    const props = parse(decodeByteRange(markdown, cell.bodyRange));
+    if (props === null) {
+      const reason = customCodeReason(cellId);
+      entries.push(reason);
+      blocks.push({ kind: "absence", cellId, reason });
+      continue;
+    }
+    if (props.chart === "fft") {
+      entries.push(`Cell ${cellId}: ${FFT_CHART_ABSENCE_REASON}`);
+      blocks.push({ kind: "absence", cellId, reason: FFT_CHART_ABSENCE_REASON });
+      continue;
+    }
+
+    const channelData = chartChannelData.get(cellId);
+    if (channelData === undefined || channelData.size === 0) {
+      const reason = noChartDataReason(cellId);
+      entries.push(reason);
+      blocks.push({ kind: "absence", cellId, reason });
+      continue;
+    }
+    const missingChannel = props.marks.find((mark) => !channelData.has(mark.channel));
+    if (missingChannel !== undefined) {
+      const reason = missingChannelReason(missingChannel.channel);
+      entries.push(`Cell ${cellId}: ${reason}`);
+      blocks.push({ kind: "absence", cellId, reason });
+      continue;
+    }
+
+    const windowLabels = [...new Set(Array.from(channelData.values()).flatMap((payload) => payload.windows.map((w) => w.label)))];
+    blocks.push({ kind: "chartSlot", cellId, props, channelData, windowLabels });
   }
 
   return blocks;
@@ -405,29 +541,50 @@ function proseToBlock(block: ProseBlockData): ReportProseBlock {
 }
 
 /**
+ * {@link buildReportDocument}'s parameters, as one options object rather
+ * than seven positional ones (task R6 review finding — three same-shaped
+ * `Map`s among them, `proseBlocks`/`chartChannelData` plus the implicit
+ * per-index alignment of `evals`/`windows`; transposing two same-shaped
+ * positional arguments is a silent bug that typechecks, and there is
+ * exactly one caller, `Notebook/index.tsx`).
+ */
+export interface BuildReportDocumentInput {
+  cells: readonly ScannedCell[];
+  /** The whole workbook source — the one place a `js` cell's own code text
+   *  comes from (task R6): `ScannedCell.bodyRange` is a byte range into
+   *  this string, not a string itself. */
+  markdown: string;
+  proseBlocks: ReadonlyMap<string, ProseBlockData>;
+  /** `windows[i]`'s own `evalWorkbookV2` result (`ruling R121`'s
+   *  `WindowEval`), aligned 1:1 with `windows` by index. A window with no
+   *  corresponding entry (still pending) contributes no section, only an
+   *  appendix note — the caller is expected to wait for a settled
+   *  evaluation before building a report at all (plan §3.4). */
+  evals: readonly (WindowEval | undefined)[];
+  windows: readonly SelectionWindow[];
+  sessions: readonly SessionSummary[];
+  /** One entry per `js`-kind cell this build has channel data for —
+   *  `channelId` -> {@link CombinedChannelPayload}, already combined
+   *  across every selected window (task R6, ruling R173). A cell absent
+   *  from this map, or present with an empty inner map, is not renderable
+   *  this build (`buildChartBlocks`'s own doc comment names the resulting
+   *  absence reason). */
+  chartChannelData: ReadonlyMap<string, ReadonlyMap<string, CombinedChannelPayload>>;
+  /** This build's own app version (`@tauri-apps/api/app`'s `getVersion`) — read by the caller, not here, so this function stays pure. */
+  appVersion: string;
+  /** i64, Unix epoch ms — when this document was built (`Date.now()`, read by the caller for the same reason). */
+  generatedAtMs: number;
+}
+
+/**
  * Builds a {@link ReportDocument} from a settled evaluation of every
  * selected window (task R4 — plan §4: "two laps is the normal case, not
- * an edge case"). `evals[i]` is `windows[i]`'s own `evalWorkbookV2` result
- * (`ruling R121`'s `WindowEval`); a window with no corresponding `evals`
- * entry (still pending) contributes no section, only an appendix note —
- * the caller is expected to wait for a settled evaluation before building
- * a report at all (plan §3.4). `evals: []`/`windows: []` (nothing
- * selected) still returns a document — cover and an empty selection block,
- * no window sections, no comparison table.
- *
- * `appVersion` and `generatedAtMs` are supplied by the caller rather than
- * read here (`@tauri-apps/api/app`'s `getVersion`, `Date.now()`) so this
- * function stays pure and its output deterministic under test.
+ * an edge case"). `input.evals: []`/`input.windows: []` (nothing selected)
+ * still returns a document — cover and an empty selection block, no window
+ * sections, no comparison table.
  */
-export function buildReportDocument(
-  cells: readonly ScannedCell[],
-  proseBlocks: ReadonlyMap<string, ProseBlockData>,
-  evals: readonly (WindowEval | undefined)[],
-  windows: readonly SelectionWindow[],
-  sessions: readonly SessionSummary[],
-  appVersion: string,
-  generatedAtMs: number,
-): ReportDocument {
+export function buildReportDocument(input: BuildReportDocumentInput): ReportDocument {
+  const { cells, markdown, proseBlocks, evals, windows, sessions, chartChannelData, appVersion, generatedAtMs } = input;
   const entries: string[] = [];
   const primaryWindow = windows[0] ?? null;
   const primarySession = primaryWindow === null ? null : findSession(primaryWindow.sessionId, sessions);
@@ -457,6 +614,8 @@ export function buildReportDocument(
       entries.push(`Window ${label}: ${ev.error.kind}: ${ev.error.message}`);
     }
   });
+
+  blocks.push(...buildChartBlocks(cells, markdown, chartChannelData, entries));
 
   const comparison = buildComparisonTable(windows, evals, sessions);
   if (comparison !== null) blocks.push(comparison);

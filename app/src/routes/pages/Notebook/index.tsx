@@ -1116,20 +1116,27 @@ export default function NotebookPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [windowsKeyValue, selectedWorkbookId]);
 
-  // Task R2: once `reportDoc` is mounted into `#report-print-root`, print
-  // on the next frame (letting the just-set DOM commit first) and clear it
-  // once the print dialog closes (`afterprint`) -- a stale report must
-  // never sit mounted for a second, unrelated `Ctrl+P` to pick up.
+  // Task R2/R6: once `reportDoc` is mounted into `#report-print-root`,
+  // clear it once the print dialog closes (`afterprint`) -- a stale report
+  // must never sit mounted for a second, unrelated `Ctrl+P` to pick up.
+  // Printing itself is triggered by `handleReportReady` below, not on a
+  // fixed next frame (task R2's original timing) -- task R6 added charts,
+  // which render asynchronously (`renderChart.ts`'s dynamic `import()`),
+  // so "the DOM has committed" is no longer the same moment as "every
+  // chart has painted"; `ReportView`'s own `onReady` reports the latter.
   useEffect(() => {
     if (reportDoc === null) return;
-    const frame = requestAnimationFrame(() => window.print());
     const onAfterPrint = () => setReportDoc(null);
     window.addEventListener("afterprint", onAfterPrint);
-    return () => {
-      cancelAnimationFrame(frame);
-      window.removeEventListener("afterprint", onAfterPrint);
-    };
+    return () => window.removeEventListener("afterprint", onAfterPrint);
   }, [reportDoc]);
+
+  /** `ReportView`'s `onReady` (task R6): every `chartSlot` this report
+   *  built has settled (rendered or failed) -- fires immediately for a
+   *  chartless report, matching task R2's original "next frame" timing. */
+  function handleReportReady(): void {
+    requestAnimationFrame(() => window.print());
+  }
 
   // Decision 62: the live engine's own version, once -- `fetchEngineVersion`
   // never fails (C3 §3.1) and cannot change mid-session, so this never
@@ -1425,7 +1432,31 @@ export default function NotebookPage() {
   }
 
   /**
-   * "Export report" (decisions 85/89, task R2): builds a
+   * Splits `combinedChannelDataRef`'s own `${cellId}::${channelId}` keys
+   * (`channelBindDriver.ts`'s key shape, set at `index.tsx:1719`/`:2330`)
+   * back into a per-cell map for `buildReportDocument`'s `chartChannelData`
+   * input (task R6, ruling R173). A cell id is always a hex8 (C2 §2.2,
+   * ruling R21) — eight characters, always — so slicing the key's first
+   * eight characters off before the fixed `"::"` separator is a safe split
+   * point regardless of what a channel id itself contains.
+   */
+  function groupChannelDataByCell(flat: ReadonlyMap<string, CombinedChannelPayload>): Map<string, Map<string, CombinedChannelPayload>> {
+    const byCell = new Map<string, Map<string, CombinedChannelPayload>>();
+    for (const [key, payload] of flat) {
+      const cellId = key.slice(0, 8);
+      const channelId = key.slice(10);
+      let inner = byCell.get(cellId);
+      if (inner === undefined) {
+        inner = new Map();
+        byCell.set(cellId, inner);
+      }
+      inner.set(channelId, payload);
+    }
+    return byCell;
+  }
+
+  /**
+   * "Export report" (decisions 85/89, tasks R2/R6): builds a
    * {@link ReportDocument} from the primary window's already-settled
    * evaluation and mounts it into `#report-print-root` for
    * `window.print()` -- the v1 path `report-plan.md` §2.2 accepted
@@ -1448,7 +1479,19 @@ export default function NotebookPage() {
         return entry.kind === "ok" ? { ok: Array.from(entry.outputs.values()) } : { error: entry.error };
       });
       const proseBlocks = new Map(proseBlocksFor(state.cells, state.markdown, primaryOutputs).map((block) => [block.blockId, block]));
-      setReportDoc(buildReportDocument(state.cells, proseBlocks, evals, windows, sessions, appVersion, Date.now()));
+      setReportDoc(
+        buildReportDocument({
+          cells: state.cells,
+          markdown: state.markdown,
+          proseBlocks,
+          evals,
+          windows,
+          sessions,
+          chartChannelData: groupChannelDataByCell(combinedChannelDataRef.current),
+          appVersion,
+          generatedAtMs: Date.now(),
+        }),
+      );
     } finally {
       setExportingReport(false);
     }
@@ -2781,7 +2824,7 @@ export default function NotebookPage() {
           shows only this root once `window.print()` runs -- the report is
           a purpose-built document, never the notebook column (which
           cannot be printed, report-plan.md §1.2). */}
-      <div id="report-print-root">{reportDoc !== null && <ReportView document={reportDoc} />}</div>
+      <div id="report-print-root">{reportDoc !== null && <ReportView document={reportDoc} onReady={handleReportReady} />}</div>
     </div>
   );
 }

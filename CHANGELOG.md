@@ -6,6 +6,23 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 
 ### Added
 
+- **The exported report now includes charts (2026-09-09, task R6, ruling
+  R173).** `model/report/document.ts` gained a `chartSlot` block: a `js`
+  cell is decided exactly once, in cell order (never once per selected
+  window — a chart already overlays every window in one draw), as a
+  chart to render, an FFT/spectrum chart (not yet supported), custom code,
+  or missing channel data — each of the latter three a named absence, never
+  a silent gap. `ReportView` calls `renderChart` and mounts the resulting
+  `<svg>`; printing now waits for every chart to finish rendering
+  (`ReportView`'s own `onReady`) rather than firing on a fixed next frame,
+  since chart rendering is asynchronous. `buildReportDocument` is now a
+  single options object instead of seven positional parameters (three of
+  them same-shaped `Map`s) — one caller, `Notebook/index.tsx`. Known gaps:
+  a chart's caption names only the windows it covers, not yet the X mode or
+  decimation point budget plan §3.4 calls for; a report chart's colours are
+  baked in from the screen's own (dark) theme at render time, unreviewed
+  for print legibility.
+
 - **`model/report/renderChart.ts` — host-side chart re-render for the report
   (2026-09-09, task R5, ruling R173).** A form-generated `js` cell's time
   chart can now be redrawn in the host document, from the same already-
