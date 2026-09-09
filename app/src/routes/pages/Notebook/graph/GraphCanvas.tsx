@@ -26,13 +26,24 @@ import { computeNodeStatuses } from "../model/graphStatus";
 import { scanMathExpr, type MathExprCall } from "../model/mathExpr";
 import type { WindowEvalState } from "../model/workbookState";
 import { subgraphsFor, searchNodeIds, visibleNodeIds } from "../model/graphSubgraph";
+import { collapsedNodePosition, collapsedSubgraphNodesFor, subgraphFramesFor } from "../model/graphSubgraphFrame";
 import { editLiteralArg, renameDefinition, rewireInput, type UnresolvedRenameRef } from "../model/graphEdits";
 import { commitDrag } from "./dragCommit";
 import { insertChartCell } from "./graphToChart";
 import NodeCard, { type MathNodeData } from "./NodeCard";
 import { shapeOf } from "./portShape";
+import SubgraphCollapsedNode, { type SubgraphCollapsedData } from "./SubgraphCollapsedNode";
+import SubgraphFrameNode, { type SubgraphFrameData } from "./SubgraphFrameNode";
 
-const NODE_TYPES: NodeTypes = { mathNode: NodeCard };
+const NODE_TYPES: NodeTypes = { mathNode: NodeCard, subgraphFrame: SubgraphFrameNode, subgraphCollapsed: SubgraphCollapsedNode };
+
+/** The three node shapes this canvas ever hands xyflow — a math node, an
+ *  expanded cell's boundary box, or a collapsed cell's closed subsheet
+ *  node (decision 43). `useNodesState`/`onNodeDragStop`/`onNodeClick` all
+ *  see the union; only `"mathNode"` ever drags or opens `EditorPanes`
+ *  (the frame and collapsed nodes gate on `type` before touching
+ *  `MathNodeData`-only fields). */
+type FlowNode = Node<MathNodeData, "mathNode"> | Node<SubgraphFrameData, "subgraphFrame"> | Node<SubgraphCollapsedData, "subgraphCollapsed">;
 
 /** Props for {@link GraphCanvas}. Every input is data the caller
  *  (`Notebook/index.tsx`, Task 10) already holds in `WorkbookState`/
@@ -149,6 +160,23 @@ export default function GraphCanvas({ markdown, outputs, selectedWindows, window
   const subgraphs = useMemo(() => subgraphsFor(model), [model]);
   const visibleIds = useMemo(() => visibleNodeIds(model, subgraphs, collapsedCellIds), [model, subgraphs, collapsedCellIds]);
 
+  // KiCad-subsheet frame (decision 43) -- an expanded cell draws a boundary
+  // box behind its own member cards; a collapsed cell replaces every one of
+  // its member cards (not just the internal ones `visibleNodeIds` hides —
+  // see `memberNodeIdsByCollapsedCell` below) with one synthetic node
+  // showing its name and named input/output ports, closing the way a
+  // KiCad subsheet does rather than reading as deletion.
+  const subgraphFrames = useMemo(() => subgraphFramesFor(subgraphs, positions, collapsedCellIds), [subgraphs, positions, collapsedCellIds]);
+  const collapsedSubgraphNodes = useMemo(() => collapsedSubgraphNodesFor(subgraphs, model, collapsedCellIds), [subgraphs, model, collapsedCellIds]);
+  const collapsedCellIdByMemberId = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const sg of subgraphs) {
+      if (!collapsedCellIds.has(sg.cellId)) continue;
+      for (const id of [...sg.internalIds, ...sg.outputIds]) map.set(id, sg.cellId);
+    }
+    return map;
+  }, [subgraphs, collapsedCellIds]);
+
   // Canvas search (decision 42) -- matched node ids are passed through to
   // each card as a `highlighted` flag (`MathNodeData`) rather than this
   // component reaching into xyflow's own selection/viewport state, so the
@@ -157,9 +185,9 @@ export default function GraphCanvas({ markdown, outputs, selectedWindows, window
   const [searchQuery, setSearchQuery] = useState("");
   const matchedIds = useMemo(() => new Set(searchNodeIds(model, searchQuery)), [model, searchQuery]);
 
-  const flowNodes = useMemo<Node<MathNodeData, "mathNode">[]>(() => {
+  const mathFlowNodes = useMemo<Node<MathNodeData, "mathNode">[]>(() => {
     return model.nodes
-      .filter((graphNode) => visibleIds.has(graphNode.id))
+      .filter((graphNode) => visibleIds.has(graphNode.id) && !collapsedCellIdByMemberId.has(graphNode.id))
       .map((graphNode) => {
         const call: MathExprCall | null = graphNode.exprText !== null ? scanMathExpr(graphNode.exprText).call : null;
         const result = statuses.get(graphNode.id) ?? { status: "pending" as const, split: null };
@@ -184,12 +212,61 @@ export default function GraphCanvas({ markdown, outputs, selectedWindows, window
           },
         };
       });
-  }, [model.nodes, positions, statuses, outputs, handleChart, handleRename, handleEditArg, visibleIds, matchedIds]);
+  }, [model.nodes, positions, statuses, outputs, handleChart, handleRename, handleEditArg, visibleIds, matchedIds, collapsedCellIdByMemberId]);
 
-  const flowEdges = useMemo<Edge[]>(
-    () => model.edges.filter((edge) => visibleIds.has(edge.source) && visibleIds.has(edge.target)).map((edge) => ({ id: edge.id, source: edge.source, target: edge.target })),
-    [model.edges, visibleIds]
+  const frameFlowNodes = useMemo<Node<SubgraphFrameData, "subgraphFrame">[]>(
+    () =>
+      subgraphFrames.map((frame) => ({
+        id: `frame:${frame.cellId}`,
+        type: "subgraphFrame",
+        position: { x: frame.x, y: frame.y },
+        zIndex: -1,
+        draggable: false,
+        selectable: false,
+        data: { frame, onCollapse: toggleCollapsed },
+      })),
+    [subgraphFrames]
   );
+
+  const collapsedFlowNodes = useMemo<Node<SubgraphCollapsedData, "subgraphCollapsed">[]>(
+    () =>
+      collapsedSubgraphNodes.map((collapsed) => {
+        const sg = subgraphs.find((s) => s.cellId === collapsed.cellId);
+        const [x, y] = sg !== undefined ? collapsedNodePosition(sg, positions) : [0, 0];
+        return {
+          id: `subgraph:${collapsed.cellId}`,
+          type: "subgraphCollapsed",
+          position: { x, y },
+          data: { collapsed, onExpand: toggleCollapsed },
+        };
+      }),
+    [collapsedSubgraphNodes, subgraphs, positions]
+  );
+
+  const flowNodes = useMemo<FlowNode[]>(() => [...frameFlowNodes, ...mathFlowNodes, ...collapsedFlowNodes], [frameFlowNodes, mathFlowNodes, collapsedFlowNodes]);
+
+  // A collapsed cell's own member nodes (internal AND output — the whole
+  // cell closes into one synthetic node, decision 43) are gone from the
+  // canvas; an edge that touched one is rewired onto the synthetic node's
+  // matching named `Handle` (`SubgraphCollapsedNode.tsx` gives every port a
+  // handle id equal to the original node id) instead of being dropped. An
+  // edge wholly inside one collapsed cell resolves to the same synthetic
+  // node on both ends and is dropped — it is now internal wiring the closed
+  // sheet no longer shows.
+  const flowEdges = useMemo<Edge[]>(() => {
+    const endpoint = (id: string): { node: string; handle: string | undefined } => {
+      const cellId = collapsedCellIdByMemberId.get(id);
+      return cellId !== undefined ? { node: `subgraph:${cellId}`, handle: id } : { node: id, handle: undefined };
+    };
+    return model.edges
+      .filter((edge) => visibleIds.has(edge.source) && visibleIds.has(edge.target))
+      .map((edge) => {
+        const source = endpoint(edge.source);
+        const target = endpoint(edge.target);
+        return { id: edge.id, source: source.node, sourceHandle: source.handle, target: target.node, targetHandle: target.handle };
+      })
+      .filter((edge) => edge.source !== edge.target);
+  }, [model.edges, visibleIds, collapsedCellIdByMemberId]);
 
   const [nodes, setNodes, onNodesChange] = useNodesState(flowNodes);
   const [edges, setEdges, onEdgesChange] = useEdgesState(flowEdges);
@@ -200,17 +277,18 @@ export default function GraphCanvas({ markdown, outputs, selectedWindows, window
   useEffect(() => setNodes(flowNodes), [flowNodes, setNodes]);
   useEffect(() => setEdges(flowEdges), [flowEdges, setEdges]);
 
-  const handleNodeDragStop = useCallback<OnNodeDrag<Node<MathNodeData, "mathNode">>>(
+  const handleNodeDragStop = useCallback<OnNodeDrag<FlowNode>>(
     (_event, draggedNode) => {
-      if (draggedNode.data.graphNode.kind !== "definition") return; // no stored-position home, §3.7.1
+      if (draggedNode.type !== "mathNode" || draggedNode.data.graphNode.kind !== "definition") return; // no stored-position home, §3.7.1; frame/collapsed nodes never drag
       const next = commitDrag(markdown, { kind: "node", name: draggedNode.data.graphNode.name }, draggedNode.position.x, draggedNode.position.y);
       if (next !== markdown) onCommit(next);
     },
     [markdown, onCommit]
   );
 
-  const handleNodeClick = useCallback<NodeMouseHandler<Node<MathNodeData, "mathNode">>>(
+  const handleNodeClick = useCallback<NodeMouseHandler<FlowNode>>(
     (_event, clickedNode) => {
+      if (clickedNode.type !== "mathNode") return; // frame/collapsed nodes have their own collapse/expand click target
       const cellId = clickedNode.data.graphNode.cellId;
       if (cellId !== null) onSelectCell(cellId);
     },

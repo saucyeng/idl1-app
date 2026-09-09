@@ -168,6 +168,20 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 
 ### Added
 
+- **The maths graph draws a KiCad-subsheet frame around a subgraph instead
+  of just deleting its internal cards on collapse (2026-09-08, decision
+  43).** `model/graphSubgraphFrame.ts` (pure, tested) computes an expanded
+  cell's boundary box from its member nodes' canvas positions and, for a
+  collapsed cell, a synthetic node's centroid position plus its named
+  input/output ports (resolved from `GraphModel`, not raw ids).
+  `graph/SubgraphFrameNode.tsx` draws the dashed boundary box behind an
+  expanded cell's cards; `graph/SubgraphCollapsedNode.tsx` draws the closed
+  subsheet — one node, the cell's label, and a `Handle` per named port on
+  its left/right edge. `GraphCanvas.tsx` now hides a collapsed cell's
+  output cards too (not just the internal ones `visibleNodeIds` already
+  hid) and rewires any edge that touched one onto the synthetic node's
+  matching port handle, so collapsing never drops a cell's cards off the
+  canvas with nothing left to show it was ever there.
 - **Three of decision 45a's five gestures wired to the maths graph canvas
   (2026-09-08, w32-maths, ruling R147 follow-on — the five `graphEdits.ts`
   mutations landed with Tasks 3-9 but were reachable from no UI gesture
