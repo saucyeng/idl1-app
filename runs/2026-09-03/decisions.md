@@ -7919,3 +7919,41 @@ Folded into the `chartSlot` commit rather than a separate refactor.
 charts turn out unwanted. (3) is mechanical and reversible. (2) is the one
 with a real alternative, and the cost of choosing wrong is a second place
 that decides what a cell becomes.
+
+**R173 amended (same day) — no jsdom; `renderChart` splits pure/DOM.**
+
+The plan's R5 row also said the chart renderer would be "tested against a
+jsdom SVG root". `jsdom` is not installed, `app/vitest.config.ts` is
+`environment: "node"`, its `include` is `src/**/*.test.ts` (`.ts` only),
+coverage excludes `**/*.tsx`, and no file in the repo carries a
+`@vitest-environment` pragma. `Plot.plot(...)` genuinely needs a real
+`document`.
+
+That configuration is not an oversight to work around — it *is*
+CLAUDE.md §4 ("UI rendering is not unit-tested") expressed in the tooling.
+So: **no jsdom**, and `renderChart.ts` splits in two —
+
+- `buildPlotOptions(props, channelData, theme, palette) -> PlotOptions` —
+  pure, fully tested, where every decision lives;
+- `renderChart(...)` — awaits the dynamic import, calls
+  `Plot.plot(buildPlotOptions(...))`, untested, one line.
+
+**The rule that keeps this honest, and it goes in the doc comment:** if
+`renderChart` ever grows a conditional — a fallback, an empty-data guard, a
+branch on chart kind — that conditional moves into `buildPlotOptions`. The
+moment untested code makes a decision, "UI rendering is not unit-tested"
+has silently become "this logic is not tested". Also ruled: assert on the
+`PlotOptions` structurally, never a snapshot (a snapshot tests
+`@observablehq/plot`'s shape, which §4 says is not ours to test), and do
+not inject or stub `Plot` to half-test a one-liner — a seam that exists
+only for that buys nothing and adds a fake to maintain.
+
+Adding jsdom is dev-only but would change the test-environment story for
+the whole repo. That is a decision to make deliberately with Isaac, not one
+an overnight lane needs.
+
+**Twice now this week the plan has been corrected by the code** — the
+singular payload signature above, and the jsdom assumption here. Both were
+caught because the lane stopped and asked (standing order §1) instead of
+implementing what was written. Worth saying plainly: a plan is evidence
+about intent, not evidence about the tree.
