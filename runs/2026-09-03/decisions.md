@@ -6996,3 +6996,74 @@ rather than by a test, which is exactly what task 3 asked for.
 **Cost if wrong.** Without the importer version, a re-import that silently
 regenerates every derived file is invisible — the numbers change and nothing
 says why.
+
+## 2026-09-09 — R157: overnight lane results — three contract gaps, one plan premise that was false
+
+Four lanes merged overnight. Three stopped on gaps rather than guessing;
+each needs a ruling.
+
+### 1. Task 5's premise was false — `migrate-workbook` does not exist
+
+The scipy plan's task 5 extends a `migrate-workbook` CLI command "which
+already exists for `.idl0wb` v2". It does not: **ruling R30 (2026-09-04) cut
+`migrate_workbook`/`MigrationReport` from wave 1 entirely.** The lane checked
+rather than building against the assumption, which is the right instinct —
+a plan is not evidence.
+
+**Ruling: task 5 is struck from the scipy lane, not deferred.** The
+migration it would carry is already delivered by the four doors that *do*
+exist (read, save, merge, and the version floor), and those are the paths a
+user's workbook actually travels. A CLI migration command is a separate
+feature with its own justification — batch-migrating a directory of
+workbooks — and it should be argued for on that basis, not smuggled in as a
+sub-task of a rename.
+
+### 2. Live device status needs wire fields nobody has threaded (decisions 66, 87)
+
+`DeviceStatus`/C3 carry no `imu0`/`imu1`/`imu2`, `gps_satellites` or
+`logging_elapsed`. SPEC §7.3 documents them — I folded Isaac's firmware
+delta in yesterday — but **no Rust lane has threaded them from the status
+characteristic to the wire**. A TypeScript lane cannot add them without
+inventing the shape.
+
+**Ruling: a small Rust + C3 task**, parsing §7.3's new lines into
+`DeviceStatus` and exposing them. §7.3's own rule binds it: **an absent line
+means "unknown", never zero** — so every field is optional, and a missing
+satellite count must never surface as `0`. The UI half is already specified
+by decisions 66/87 and waits on it.
+
+### 3. HRM filtering has nothing to filter on (decision 68)
+
+`bleScan`'s `DeviceDiscovered` carries **no service-UUID data at all**, so a
+client-side heart-rate filter is not merely unimplemented — it is
+impossible. `HrmForm.tsx`'s own doc comment had already flagged this as a
+parity gap.
+
+**Ruling: fold the advertised service UUIDs into the same Rust + C3 task**
+as (2). Filtering is then trivial and honest; without them, decision 68's
+"filter by default, with a show-all toggle" cannot be built at all.
+
+### Accepted without change
+- **Reordering tasks 7 before 6** — keyword arguments had to land before the
+  `fft` split, because the split's own migration text
+  (`periodogram(ch, window=…, scaling=…)`) does not parse without them.
+  Shipping a migration that writes unparseable text would have been a
+  workbook-corrupting bug; catching the ordering dependency was the point of
+  having a person read the plan.
+- **Fixing `unknown_function_error` to consult `math_name_migrations()`** —
+  a task-2 gap found opportunistically. Every retired name's error now names
+  its replacement, which is the whole point of a deprecation.
+- **The device lane's report on the field loop**: no step added; auto-connect
+  *removes* one for the single-device case, and the picker costs nothing
+  unless deliberately opened. Philosophy 73 held.
+
+### Still open, carried forward
+Task 8 (TS) blocks task 12 (`dim=` reductions) — the engine half alone would
+ship an unreachable feature (R147). C2 §3.3's function count is now 72, not
+69, and the spec needs that edit along with the rename rows. R151 item 8
+(`hilbert`→`envelope`, `resample`'s parameterisation) was accepted but is
+not among the plan's 13 tasks; it needs scheduling explicitly rather than
+drifting in.
+
+**Cost if wrong.** (1) is the one that would have wasted a day: building a
+CLI command to satisfy a plan's false premise about its own codebase.
