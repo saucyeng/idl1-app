@@ -336,10 +336,13 @@ async function runChannelBindWindow(
       let result: DecodedHostChannel | null;
       try {
         result = await deps.fetchHostChannel(channel.channelId, budget);
-      } catch {
+      } catch (error) {
         // Never throws out of the driver -- a `fetch_host_channel`
         // rejection drops only this channel's bind, exactly as an evicted
-        // tile does for a `"session"` channel below.
+        // tile does for a `"session"` channel below. Warned (R153) so a
+        // real fetch failure is distinguishable, at least in the console,
+        // from a definition that legitimately has no data yet.
+        console.warn(`[channelBindDriver] fetchHostChannel(${JSON.stringify(channel.channelId)}) failed:`, error);
         result = null;
       }
       // `isStale()` after this `await` regardless of outcome (success or
@@ -414,11 +417,14 @@ async function runChannelBindWindow(
       let result: { tiles: DecodedTile[]; tier: number; range: { first: number; last: number } } | null;
       try {
         result = await fetchChannelWindow(deps, cache, w.sessionId, channel, mapped.startUs, mapped.endUs, chartWidthPx);
-      } catch {
+      } catch (error) {
         // A per-window fetch failure (R121, requirement 4) drops only this
         // window's contribution -- every other selected window still
         // fetches and renders, and the whole channel is not dropped
-        // unless every window fails (`series` stays empty below).
+        // unless every window fails (`series` stays empty below). Warned
+        // (R153) so a real fetch failure is distinguishable, at least in
+        // the console, from a window with no overlap.
+        console.warn(`[channelBindDriver] fetchChannelWindow(${JSON.stringify(channel.channelId)}, session ${w.sessionId}) failed:`, error);
         result = null;
       }
       // The whole run was superseded (a newer run for this cell started) --

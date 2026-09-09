@@ -6,6 +6,16 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 
 ### Fixed
 
+- **Four swallowing catches in the Notebook's bind drivers now warn instead
+  of silently absorbing a fetch failure (2026-09-08, ruling R153 audit).**
+  `channelBindDriver.ts`'s per-definition and per-window fetch catches,
+  `channelRebind.ts`'s rebuild re-fetch catch, and `sessionSpanDriver.ts`'s
+  two catches all converted a specific rejection into a `null`/dropped
+  result identical to a legitimate empty state, with no trace anywhere.
+  `sessionSpanDriver.ts`'s two remain deliberately broad (a real session
+  fetch failure is intentionally indistinguishable from "no window
+  selected" today) — narrowing those needs a new dispatch variant and UI
+  treatment, out of this task's scope; flagged in the ledger instead.
 - **A `js` cell's note names which channel or definition failed to resolve,
   and distinguishes an unknown name from a declared definition whose own
   math cell errored (2026-09-08, ruling R150).** `jsCellNote`'s

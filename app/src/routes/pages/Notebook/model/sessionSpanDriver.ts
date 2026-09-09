@@ -79,8 +79,15 @@ export async function runSessionSpan(
   let detail: SessionDetail;
   try {
     detail = await deps.getSession(sessionId);
-  } catch {
+  } catch (error) {
+    // A `getSession` rejection dispatches the same `null` a caller sees
+    // for "no window selected" -- deliberately, so every consumer keeps
+    // one "nothing to bind against" state rather than two. Too risky to
+    // narrow into its own visible state within this task (it would need a
+    // new dispatch variant and a UI treatment, R153 audit note): flagged
+    // here so the failure is at least not silent everywhere.
     if (!isStale()) {
+      console.warn(`[sessionSpanDriver] getSession(${JSON.stringify(sessionId)}) failed:`, error);
       dispatch({ type: "sessionDetail", detail: null });
       dispatch({ type: "sessionSpan", spanUs: null });
     }
@@ -110,8 +117,12 @@ export async function runSessionSpan(
     if (isStale()) return;
     const span = spanFromCoarsestTile(tile);
     dispatch({ type: "sessionSpan", spanUs: span === null ? null : span.endUs - span.startUs });
-  } catch {
+  } catch (error) {
+    // Same shape as the `getSession` catch above: `spanUs: null` reads as
+    // "still resolving" to `bindingFor`, not as a failure. Flagged rather
+    // than fixed here for the same reason (R153 audit note).
     if (!isStale()) {
+      console.warn(`[sessionSpanDriver] resolving the session span for ${JSON.stringify(sessionId)} failed:`, error);
       dispatch({ type: "sessionSpan", spanUs: null });
     }
   }
