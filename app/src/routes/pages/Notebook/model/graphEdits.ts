@@ -319,23 +319,47 @@ function splitTopLevelForEdit(argsText: string): string[] {
 }
 
 /**
- * Appends a new `def_line` referencing `channelName` to the end of cell
- * `cellId`'s body — "add a node from a channel" (a session channel dragged
- * onto the canvas becomes `newDefName = [channelName]`). The caller is
+ * Appends one new `def_line` — `${newDefName} = ${rhs}` — to the end of
+ * cell `cellId`'s body. Shared by {@link addNodeFromChannel} and
+ * {@link addNodeFromConstant} (R160's source-palette drag gesture): both
+ * mint a node the same way, differing only in `rhs`'s own grammar (a
+ * bracket reference vs a bare constant name — C2 §3.1, "channel refs are
+ * always bracketed" but "a bare `g` is unambiguously the constant"), so
+ * this is the one insertion path R160 asks for, not two. The caller is
  * responsible for `newDefName`'s uniqueness (this module validates
- * nothing; Rust's own `DuplicateCellId`-style checks are for ids, not
- * definition names, and a colliding name is Rust's `ReservedName`/shadow
- * behaviour to report the next time the document evaluates — the same
- * "Rust remains the authority" posture every module in this lane takes).
- * Returns `markdown` unchanged when `cellId` doesn't resolve to a cell.
+ * nothing; Rust's own `ReservedName`/shadow behaviour is what reports a
+ * colliding name the next time the document evaluates — the same "Rust
+ * remains the authority" posture every module in this lane takes). Returns
+ * `markdown` unchanged when `cellId` doesn't resolve to a cell.
  */
-export function addNodeFromChannel(markdown: string, cellId: string, channelName: string, newDefName: string): string {
+function appendDefLine(markdown: string, cellId: string, newDefName: string, rhs: string): string {
   const body = cellBody(markdown, cellId);
   if (body === null) return markdown;
 
   const separator = body.length === 0 || body.endsWith("\n") ? "" : "\n";
-  const newBody = `${body}${separator}${newDefName} = [${channelName}]\n`;
+  const newBody = `${body}${separator}${newDefName} = ${rhs}\n`;
   return replaceCellBody(markdown, cellId, newBody);
+}
+
+/**
+ * "Add a node from a channel" (decision 45a) — a session channel, or an
+ * already-declared definition (both are bracket references, C2 §3.1),
+ * dragged onto the canvas becomes `newDefName = [channelName]`. See
+ * {@link appendDefLine}.
+ */
+export function addNodeFromChannel(markdown: string, cellId: string, channelName: string, newDefName: string): string {
+  return appendDefLine(markdown, cellId, newDefName, `[${channelName}]`);
+}
+
+/**
+ * "Add a node from a constant" (R160) — a workbook constant dragged onto
+ * the canvas becomes `newDefName = constantName`, bare (never bracketed —
+ * C2 §3.1's "a bare `g` is unambiguously the constant"; wrapping it in
+ * `[...]` would make it a channel lookup instead). See {@link
+ * appendDefLine}.
+ */
+export function addNodeFromConstant(markdown: string, cellId: string, constantName: string, newDefName: string): string {
+  return appendDefLine(markdown, cellId, newDefName, constantName);
 }
 
 /**

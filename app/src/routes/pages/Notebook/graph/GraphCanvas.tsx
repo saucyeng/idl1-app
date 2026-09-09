@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState, type DragEvent } from "react";
 import {
   Background,
   Controls,
@@ -34,10 +34,13 @@ import type { MarkProps } from "../plotForm/types";
 import { subgraphsFor, searchNodeIds, visibleNodeIds } from "../model/graphSubgraph";
 import { collapsedNodePosition, collapsedSubgraphNodesFor, subgraphFramesFor, FRAME_NODE_HEIGHT, FRAME_NODE_WIDTH } from "../model/graphSubgraphFrame";
 import { editLiteralArg, renameDefinition, rewireInput, type UnresolvedRenameRef } from "../model/graphEdits";
+import { dropPaletteSource, type PaletteDragSource } from "../model/graphPaletteDrop";
+import { buildSourcePalette } from "../model/sourcePalette";
 import { commitDrag } from "./dragCommit";
 import { insertChartCell } from "./graphToChart";
 import NodeCard, { type MathNodeData } from "./NodeCard";
 import { shapeOf } from "./portShape";
+import SourcePaletteRail, { PALETTE_DRAG_MIME } from "./SourcePaletteRail";
 import SubgraphCollapsedNode, { type SubgraphCollapsedData } from "./SubgraphCollapsedNode";
 import SubgraphFrameNode, { type SubgraphFrameData } from "./SubgraphFrameNode";
 
@@ -167,12 +170,61 @@ function GraphCanvasInner({ markdown, outputs, selectedWindows, windows, session
     [markdown, onCommit]
   );
 
+  // One `useReactFlow()` call for the whole component -- `screenToFlowPosition`
+  // (palette drop) and `setCenter` (search-hit centring, below) both need
+  // it; calling the hook twice would work but reads as two unrelated
+  // instances of the same handle.
+  const reactFlow = useReactFlow();
+
   const model = useMemo(() => buildGraphModel(markdown, outputs), [markdown, outputs]);
   const layout = useMemo(() => readGraphLayout(markdown), [markdown]);
   const positions = useMemo(() => computeAutoLayoutPositions(model, layout), [model, layout]);
   const statuses = useMemo(
     () => computeNodeStatuses({ model, selectedWindows, windows, sessionDetails }),
     [model, selectedWindows, windows, sessionDetails]
+  );
+
+  // The source palette rail (ruling R160) -- scoped to the same selection
+  // `statuses` already reads, so a channel greyed on the canvas and a
+  // channel greyed in the palette agree for the same reason.
+  const sourcePalette = useMemo(
+    () => buildSourcePalette({ markdown, model, selectedWindows, sessionDetails }),
+    [markdown, model, selectedWindows, sessionDetails]
+  );
+
+  // Drag-a-channel/constant/definition-to-add (decision 45a's fourth
+  // gesture, R160): the drop target is the whole `<ReactFlow>` pane, not a
+  // node -- `dropPaletteSource` picks the target cell and the new
+  // definition's name (its own doc comment explains both judgment calls);
+  // this handler only decodes the drag payload and folds the resulting
+  // markdown edit with a `commitDrag` at the drop point in one `onCommit`
+  // call, so a fresh node appears roughly where it was dropped rather than
+  // wherever auto-layout would otherwise place it. A document with no math
+  // cell to add to is a no-op `dropPaletteSource` itself reports via a
+  // `null` `newDefName` -- surfaced here exactly like `renameNotice`
+  // (R153: a drop that does nothing must say so, not look like it worked).
+  const { screenToFlowPosition } = reactFlow;
+  const [paletteNotice, setPaletteNotice] = useState<string | null>(null);
+  const handlePaletteDrop = useCallback(
+    (event: DragEvent) => {
+      event.preventDefault();
+      const raw = event.dataTransfer.getData(PALETTE_DRAG_MIME);
+      if (raw === "") return;
+      let source: PaletteDragSource;
+      try {
+        source = JSON.parse(raw) as PaletteDragSource;
+      } catch {
+        return; // not our own drag payload
+      }
+      const result = dropPaletteSource(markdown, model, source);
+      if (result.newDefName === null) {
+        setPaletteNotice(`No math cell to add "${source.name}" to yet -- add one first.`);
+        return;
+      }
+      const { x, y } = screenToFlowPosition({ x: event.clientX, y: event.clientY });
+      onCommit(commitDrag(result.markdown, { kind: "node", name: result.newDefName }, x, y));
+    },
+    [markdown, model, onCommit, screenToFlowPosition]
   );
 
   // Subgraph collapse/expand (decision 42) -- a list of collapsed cell ids
@@ -215,7 +267,7 @@ function GraphCanvasInner({ markdown, outputs, selectedWindows, windows, session
   // never asked for. A match inside a collapsed cell centres on that
   // cell's own synthetic node (`collapsedNodePosition`) since the matched
   // node itself is not on the canvas.
-  const { setCenter } = useReactFlow();
+  const { setCenter } = reactFlow;
   const firstMatchId = matchedIds.size > 0 ? [...matchedIds][0] : null;
   useEffect(() => {
     if (firstMatchId === null) return;
@@ -402,23 +454,34 @@ function GraphCanvasInner({ markdown, outputs, selectedWindows, windows, session
           </button>
         </div>
       )}
-      <div className="idl-graph-canvas min-h-0 flex-1">
-        <ReactFlow
-          nodes={nodes}
-          edges={edges}
-          nodeTypes={NODE_TYPES}
-          onNodesChange={onNodesChange}
-          onEdgesChange={onEdgesChange}
-          onNodeDragStop={handleNodeDragStop}
-          onNodeClick={handleNodeClick}
-          onReconnect={handleReconnect}
-          edgesReconnectable
-          fitView
-        >
-          <Background />
-          <Controls />
-          <MiniMap />
-        </ReactFlow>
+      {paletteNotice !== null && (
+        <div className="flex items-center justify-between gap-3 border-b border-rule bg-surface-2 px-3 py-1 text-label-2 text-fg-dim">
+          <span>{paletteNotice}</span>
+          <button type="button" onClick={() => setPaletteNotice(null)} className="text-fg-faint hover:text-fg">
+            Dismiss
+          </button>
+        </div>
+      )}
+      <div className="flex min-h-0 flex-1">
+        <SourcePaletteRail palette={sourcePalette} />
+        <div className="idl-graph-canvas min-h-0 flex-1" onDragOver={(e) => e.preventDefault()} onDrop={handlePaletteDrop}>
+          <ReactFlow
+            nodes={nodes}
+            edges={edges}
+            nodeTypes={NODE_TYPES}
+            onNodesChange={onNodesChange}
+            onEdgesChange={onEdgesChange}
+            onNodeDragStop={handleNodeDragStop}
+            onNodeClick={handleNodeClick}
+            onReconnect={handleReconnect}
+            edgesReconnectable
+            fitView
+          >
+            <Background />
+            <Controls />
+            <MiniMap />
+          </ReactFlow>
+        </div>
       </div>
     </div>
   );

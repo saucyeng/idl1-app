@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { addNodeFromChannel, deleteNode, editLiteralArg, renameDefinition, rewireInput } from "./graphEdits";
+import { addNodeFromChannel, addNodeFromConstant, deleteNode, editLiteralArg, renameDefinition, rewireInput } from "./graphEdits";
 import { readGraphLayout, writeGraphLayout } from "./graphLayout";
 
 const DOC =
@@ -198,6 +198,25 @@ describe("addNodeFromChannel", () => {
   it("addNodeFromChannel — an unknown cellId — is a no-op", () => {
     // Act
     const added = addNodeFromChannel(DOC, "deadbeef", "IMU1_AccelZ", "accel_z");
+
+    // Assert
+    expect(added).toBe(DOC);
+  });
+});
+
+describe("addNodeFromConstant", () => {
+  it("addNodeFromConstant — appends a new def_line referencing the constant bare, not bracketed", () => {
+    // Act
+    const added = addNodeFromConstant(DOC, "a1b2c3d4", "rider_mass_kg", "mass");
+
+    // Assert
+    expect(added).toContain("mass = rider_mass_kg");
+    expect(added).not.toContain("[rider_mass_kg]");
+  });
+
+  it("addNodeFromConstant — an unknown cellId — is a no-op", () => {
+    // Act
+    const added = addNodeFromConstant(DOC, "deadbeef", "rider_mass_kg", "mass");
 
     // Assert
     expect(added).toBe(DOC);
