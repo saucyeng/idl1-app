@@ -1749,6 +1749,7 @@ Return:
 interface SyncStatus {
   paired_peers: PeerStatus[];
   last_sync_utc_ms: number | null;   // i64, null if never synced
+  discovered_peers: DiscoveredPeer[];  // added post-sign 2026-09-09, L11 Task 14
   this_device: ThisDevice;           // added post-sign 2026-09-09, lead ruling R172
 }
 interface ThisDevice {
@@ -1771,7 +1772,26 @@ interface PeerStatus {
   paired_at_ms: number;     // i64, ms since epoch when pairing completed
                              // (added post-sign 2026-09-06, lead ruling R88)
 }
+interface DiscoveredPeer {   // added post-sign 2026-09-09, L11 Task 14
+  peer_id: string;
+  name: string;
+  protocol_version: number;  // u32, the peer's mDNS `v=` value
+  address: string;
+  port: number;
+}
 ```
+
+**`discovered_peers` (added 2026-09-09, L11 Task 14).** Peers currently
+visible on the LAN via mDNS that are **not** in `paired_peers`. The two
+lists are **disjoint by construction**: a paired peer appears in
+`paired_peers` and only there. A peer in both would force every consumer to
+decide which entry wins, and they would not all decide the same way.
+
+It exists because ruling R104 forbids the app from *guessing* a peer id:
+without this, pairing two of the user's own machines means reading a
+32-character id off one screen and typing it into the other. `address` and
+`port` are what the browse set already knows and what pairing needs; an
+unpaired peer's row carries nothing token-adjacent.
 Errors: `io`, `internal`, `sync` (a sync-layer failure while reading peer/pairing state — added post-sign 2026-09-05, lead ruling R57, to match the §2 kind table's row for `sync`).
 
 **`this_device` (added 2026-09-09, ruling R172).** Both fields are
@@ -1905,12 +1925,45 @@ L11 Task 1).* Not attached to any single command's `Channel` argument
 (§1) — mDNS discovery runs continuously in background state (PLAN §2's
 "discovery lifecycle in state"), independent of any one call's lifetime.
 Emitted as a Tauri app event (`app.emit("peer_appeared", payload)`,
-frontend `listen<PeerStatus>("peer_appeared", ...)`) whenever a
-`PeerStatus`-bearing peer newly becomes visible on the LAN, listed here the
-way §3.4 lists `WorkbookEvent`'s payload shape:
+frontend `listen<PeerSighting>("peer_appeared", ...)`) for **any** sighting
+on the LAN — paired or not — listed here the way §3.4 lists
+`WorkbookEvent`'s payload shape:
 ```ts
-// payload: PeerStatus (§3.9 above)
+type PeerSighting =              // widened 2026-09-09, L11 Task 14 / R175
+  | ({ status: "paired" } & PeerStatus)
+  | ({ status: "discovered" } & DiscoveredPeer);
 ```
+
+**Tagged, not flagged (ruling R175).** A flat `paired: boolean` on one
+widened struct was rejected: `PeerStatus.paired_at_ms` is a fact an
+unpaired peer has not earned, so flattening would demote it to a nullable
+field whose `null` really means "wrong variant". The tag makes the illegal
+state unrepresentable and gives the frontend a discriminant to switch on.
+Two separate events were also rejected — a consumer wanting "everything
+that just changed" would have to subscribe to both and interleave them by
+timestamp.
+
+**Emission rule (ruling R176) — part of the contract, not an implementation
+detail.** `peer_appeared` fires:
+
+- on a **genuine appearance** — `peer_id` not currently in the discovered
+  set; **or**
+- when `name`, `protocol_version`, `address` or `port` **differs** from
+  what is currently stored for that `peer_id`.
+
+It **never** fires on a byte-identical re-resolve. Before this rule the
+emission was level-triggered — once per underlying mDNS resolve — which was
+survivable while it covered only the handful of paired peers and would have
+become a per-tick firehose once widened to every device on a LAN. A plain
+first-sighting-only rule was also rejected: a peer's address or port can
+change while it stays continuously visible, and pairing needs the address,
+so id-only edge-triggering would leave a consumer holding a stale address
+with no event to tell it — trading a firehose for a silent staleness bug.
+
+**A peer going offline emits nothing.** There is no disappearance event;
+`sync_status()` polling is the only signal for a peer no longer being
+visible. A consumer must not treat the absence of events as presence.
+
 No error channel — a discovery-layer failure is not user-actionable per
 event; it surfaces the next time `sync_status()` is polled.
 
