@@ -39,7 +39,12 @@ false claim that closing a channel unsubscribes a watcher.
 
 ## Queued, unblocked, no decision needed
 
-- `RasterMeta.magnitude_unit` is computed on the wire and displayed nowhere.
+- ~~`RasterMeta.magnitude_unit` displayed nowhere~~ — closed; `RasterUnderlay.tsx`
+  now shows it via `unitText.ts`. **But the same class of gap remains on the
+  same DTO:** `RasterMeta`'s `x_label`, `y_label` and `scale.vmin`/`vmax` are
+  fetched and drawn nowhere (found by the `honesty` lane, 2026-09-09). A
+  spectrogram therefore has no axis labels and no colour-scale legend — the
+  engine computes all four and the UI ignores them.
 - Report R8 (Analyze button), R9 (custom-code chart capture, gated on the
   opaque-origin `toDataURL` check).
 - Chart captions do not yet name X mode or decimation budget (plan §3.4).
