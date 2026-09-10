@@ -288,6 +288,26 @@ are defined in `docs/superpowers/specs/2026-09-02-idl1-rewrite-design.md` §10.
     link inside `data_root` is out of `safe_join`'s stated boundary and not
     yet a `verify_data_dir` finding. Filed as an L8-class follow-on.
 
+## M4c — library (rulings R191, R194)
+
+- [x] M4c library lane — landed 2026-09-10 on `m4c` (both repos). Four gaps
+  from `runs/2026-09-10/M4C-SURVEY.md` closed: a user-supplied session start
+  (`session.json` `timestamp_utc_ms`/`timestamp_source`, C1 §3.1/§6, with the
+  Data tab's "start time unknown — set it" prompt on a catalogued start of
+  `0`); importer staleness (`list_stale_sessions`) and rebuild-from-blob
+  (`reimport_sessions`, keeping every human-owned field, dropping `derived/`,
+  atomic per session) behind "Rebuild N stale sessions" in the maintenance
+  panel; a non-recursive folder scan (`scan_folder`, extension → importer id,
+  sha256 → `already_imported`, `.idl0` header peek) behind "Import folder…"
+  with a preview table that enqueues one `import_file` per row; and
+  `<data>/inbox`, a desktop-only drop folder watched while the app runs and
+  scanned at launch, importing after two seconds of stable size, deleting the
+  imported copy and moving failures to `inbox/failed/` with an `.error.txt`
+  (`inbox_status`). The metadata editor and CAS de-duplication needed no work
+  — both already existed. Not done here: no bulk-import command (R191 keeps
+  progress and errors per file), and no inbox setting (the path is fixed at
+  `<data>/inbox`).
+
 ## Wave 3
 
 - [ ] L9 mobile plugins · L12 in-app agent (optional)

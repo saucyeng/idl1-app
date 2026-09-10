@@ -6,6 +6,21 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 
 ### Added
 
+- **The library grows up (2026-09-10, M4c, rulings R191/R194).** A session
+  whose log carried no clock and no GPS fix can be given its start time by
+  hand on the Data tab; the value lives in `session.json` as
+  `timestamp_source: "user"` and never rewrites `data.parquet`, which stays a
+  function of (blob, importer version). Sessions built by an older importer
+  are listed and can be rebuilt from their blobs in place, keeping venue,
+  notes, tags, lap gates and a user-set start, dropping only the derived
+  cache. "Import folder…" scans a folder non-recursively and previews what it
+  found — size, importer, header start, and which files are already imported
+  — then enqueues them one at a time through the existing import queue. And
+  `<data>/inbox` is now a drop folder: desktop only, scanned at launch and
+  watched while the app runs, importing a file once its size has been stable
+  for two seconds, deleting the imported copy (its bytes are in `blobs/`) and
+  moving failures to `inbox/failed/` with an `.error.txt` beside them.
+
 - **CI on GitHub Actions (2026-09-10).** `.github/workflows/ci.yml` runs the
   Rust test suite (idl-rs/idl-rs-cli, idl-rs-tauri, idl-transport) and the
   app's typecheck + vitest suite on every push to `main` and on dispatch.

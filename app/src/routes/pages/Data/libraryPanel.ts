@@ -1,0 +1,148 @@
+import type { SessionDetail } from "../../../ipc/catalog";
+import type { InboxStatus, ReimportReport, ScanEntry, StaleSession } from "../../../ipc/library";
+import { describeIpcError } from "./errors";
+import { formatBytes, formatDateMs, formatTimeMs } from "./format";
+
+/** Pure shaping for the M4c library affordances (C3 §3.3, ruling R191):
+ *  the folder-import preview, the stale-session rebuild summary, the
+ *  unknown-start prompt's decision, and the inbox status line. No IPC and
+ *  no engine computation lives here — every number arrived from Rust
+ *  already (CLAUDE.md §2). */
+
+/** "1 session" / "42 sessions" — never "1 sessions". */
+function plural(count: number, noun: string): string {
+  return `${count} ${noun}${count === 1 ? "" : "s"}`;
+}
+
+/** One row of the "Import folder…" preview table — a display projection of
+ *  one [[ScanEntry]]. `importable` drives both the row's greying and
+ *  whether "Import N files" counts it. */
+export interface ScanPreviewRow {
+  path: string;
+  fileName: string;
+  sizeText: string;
+  /** The importer id, or "—" when nothing covers this extension. */
+  importerText: string;
+  /** The header-peek start rendered in the viewer's locale, "unknown" when
+   *  the peek returned `0` (C1 §3.1: `0` means unknown, never 1970), and
+   *  "—" when the format offers no peek at all. */
+  startText: string;
+  /** `true` when this file has an importer and is not already imported —
+   *  the rows "Import N files" enqueues. */
+  importable: boolean;
+  /** Why the row is not importable, or `null` when it is. */
+  skipReason: "already imported" | "no importer" | null;
+}
+
+/** Shapes one folder scan into preview rows, in the order `scanFolder`
+ *  returned them (already sorted by file name). A file whose sha256 is
+ *  already a blob is shown, not hidden: the user asked what is in the
+ *  folder, and "already imported" is the useful answer (C4 §3 — importing
+ *  it again would be a no-op anyway). */
+export function toScanPreviewRows(entries: ScanEntry[]): ScanPreviewRow[] {
+  return entries.map((entry) => {
+    const skipReason = entry.importer_id === null ? "no importer" : entry.already_imported ? "already imported" : null;
+    return {
+      path: entry.path,
+      fileName: entry.file_name,
+      sizeText: formatBytes(entry.size_bytes),
+      importerText: entry.importer_id ?? "—",
+      startText:
+        entry.session_start_utc_ms === null
+          ? "—"
+          : entry.session_start_utc_ms === 0
+            ? "unknown"
+            : `${formatDateMs(entry.session_start_utc_ms)} ${formatTimeMs(entry.session_start_utc_ms)}`,
+      importable: skipReason === null,
+      skipReason,
+    };
+  });
+}
+
+/** The paths "Import N files" enqueues: every importable row, in preview
+ *  order. Already-imported and unsupported files are never enqueued. */
+export function importablePaths(rows: ScanPreviewRow[]): string[] {
+  return rows.filter((row) => row.importable).map((row) => row.path);
+}
+
+/** The preview's one-line summary, e.g. "3 of 5 files can be imported (1
+ *  already imported, 1 with no importer)." An empty folder says so rather
+ *  than reading "0 of 0 files". */
+export function summarizeScanPreview(rows: ScanPreviewRow[]): string {
+  if (rows.length === 0) return "No files in that folder.";
+
+  const importable = rows.filter((row) => row.importable).length;
+  const already = rows.filter((row) => row.skipReason === "already imported").length;
+  const unsupported = rows.filter((row) => row.skipReason === "no importer").length;
+
+  const skipped: string[] = [];
+  if (already > 0) skipped.push(`${already} already imported`);
+  if (unsupported > 0) skipped.push(`${unsupported} with no importer`);
+
+  const head = `${importable} of ${plural(rows.length, "file")} can be imported`;
+  return skipped.length > 0 ? `${head} (${skipped.join(", ")}).` : `${head}.`;
+}
+
+/** The "Rebuild N stale sessions" button's label, or `null` when nothing is
+ *  stale — the caller hides the button entirely rather than offering a
+ *  no-op (`list_stale_sessions` returning empty is the normal case). */
+export function staleRebuildLabel(stale: StaleSession[]): string | null {
+  if (stale.length === 0) return null;
+  return `Rebuild ${plural(stale.length, "stale session")}`;
+}
+
+/** The stale list's detail line, naming each distinct importer and the
+ *  version step it would take, e.g. "idl0 0.0.1 → 0.1.0". Distinct pairs
+ *  only: fifty sessions from one old build read as one clause, not fifty. */
+export function summarizeStaleSessions(stale: StaleSession[]): string {
+  if (stale.length === 0) return "Every session was built with the current importer.";
+
+  const steps = [...new Set(stale.map((s) => `${s.importer_id} ${s.stored_version} → ${s.current_version}`))];
+  return `${plural(stale.length, "session")} to rebuild: ${steps.join(", ")}.`;
+}
+
+/** `reimport_sessions`' report as the maintenance toolbar's summary line.
+ *  A partial batch reads as partial — a failed session's own error text is
+ *  named, never swallowed by the successes' count (C3 §3.3 keeps
+ *  per-session errors in the report precisely so this line can say so). */
+export function summarizeReimportReport(report: ReimportReport): string {
+  const parts = [`Rebuilt ${plural(report.rebuilt.length, "session")}.`];
+  if (report.failed.length > 0) {
+    const failures = report.failed.map((f) => `${f.session_id} (${describeIpcError(f.error).text})`).join("; ");
+    parts.push(`${plural(report.failed.length, "session")} failed: ${failures}.`);
+  }
+  return parts.join(" ");
+}
+
+/** Whether the Data tab offers "this session's start time is unknown — set
+ *  it" for `detail`. The single rule (ruling R191): a catalogued start of
+ *  `0` means no importer, GPS back-fill included, could determine one (C1
+ *  §3.1). A session that already has a start never shows the prompt, even
+ *  though `set_session_start` would accept one for it. */
+export function shouldPromptForStart(detail: SessionDetail): boolean {
+  return detail.timestamp_utc_ms === 0;
+}
+
+/** Parses an `<input type="datetime-local">` value ("2026-09-10T14:30") as
+ *  local wall-clock time into epoch milliseconds — the value
+ *  `setSessionStart` takes. `null` for empty, unparseable, or non-positive
+ *  input (the command rejects `<= 0` with `invalid_argument`; catching it
+ *  here keeps the round trip out of the way of an obviously blank field). */
+export function parseStartInput(value: string): number | null {
+  if (value.trim().length === 0) return null;
+  const ms = new Date(value).getTime();
+  if (!Number.isFinite(ms) || ms <= 0) return null;
+  return ms;
+}
+
+/** The Data page's inbox status line, e.g. "Inbox: C:\\data\\inbox — 3
+ *  imported since launch, 1 failed." Names the folder even when nothing
+ *  has happened, because the line's main job is telling the user where to
+ *  drop files (C4 §2 fixes the path; there is no setting). */
+export function describeInboxStatus(status: InboxStatus): string {
+  const parts = [`${status.imported_since_launch} imported since launch`];
+  if (status.failed.length > 0) {
+    parts.push(`${status.failed.length} failed`);
+  }
+  return `Inbox: ${status.path} — ${parts.join(", ")}.`;
+}

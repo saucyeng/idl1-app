@@ -88,6 +88,10 @@ const KNOWN_KINDS: Record<string, { text: string; retryable: boolean }> = {
     text: "This idl0 log is truncated; some data may be missing.",
     retryable: false,
   },
+  unsupported_platform: {
+    text: "This feature is not available on this platform.",
+    retryable: false,
+  },
 };
 
 /** Generic text for a kind this build of the frontend has never seen —

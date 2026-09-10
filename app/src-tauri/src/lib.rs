@@ -24,6 +24,19 @@ pub fn run() {
             app.manage(idl_rs_tauri::state::Watchers(std::sync::Mutex::new(std::collections::HashMap::new())));
             app.manage(idl_rs_tauri::state::Connections(std::sync::Mutex::new(std::collections::HashMap::new())));
 
+            // `<data>/inbox` (C4 §2, ruling R191): scanned once now, watched
+            // while the app runs. Desktop only — the module does not exist
+            // on mobile, where `inbox_status` answers
+            // `unsupported_platform`. A failure to create or watch the
+            // folder is not fatal: every other import path still works, so
+            // this one is logged by leaving the state unmanaged rather than
+            // panicking the launch.
+            #[cfg(not(any(target_os = "android", target_os = "ios")))]
+            match idl_rs_tauri::inbox::InboxState::start(&data_dir) {
+                Ok(inbox) => app.manage(inbox),
+                Err(e) => eprintln!("inbox unavailable: {e}"),
+            }
+
             // `peers.json`/`identity.json` live outside `<data>` (PLAN §8
             // Q7, ruling R105) so neither ever syncs. A failure here is the
             // same launch-time condition as `resolve_data_dir`'s above — in
