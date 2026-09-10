@@ -389,8 +389,27 @@ are defined in `docs/superpowers/specs/2026-09-02-idl1-rewrite-design.md` §10.
   estimator, math-store and derived caches a per-channel lookup cannot
   serve; and `load_session` deliberately does **not** read through the
   cache, since assembling a `Session` out of cached channels would leave it
-  resident twice. Not done here: a lazy `ChannelLookup` for the eval
-  engine's host-channel path, which needs that `SessionHandle` redesign.
+  resident twice. **Where R203.3's letter was not met, and why:** the
+  ruling asks for "each channel's Vec dropped as its batch is written, so
+  peak is ~1 channel + the map", but `finish_import` moves the parsed
+  `Session` into the lap-index handle *after* the parquet write, so
+  draining the channels during the write would break lap indexing. What was
+  dropped per channel is the Arrow column, not the source `Vec`; measured
+  peak on a real 377 MB log fell from 4,939 MB to 3,542 MB private bytes
+  (a 28 % cut), and what remains is dominated by the parsed `Session`
+  itself — every sample keeps an 8-byte hardware timestamp per channel
+  (C1 §3.1), which R203 did not ask to change. Also found by that proof
+  and fixed here: `HR_RR` reports timestamps that repeat and step
+  backwards, so C1 §3.5 invariant 1 does not hold for every real source;
+  the column writer falls back to a search when its merge walk misses.
+  Not done here: a lazy `ChannelLookup` for the eval engine's host-channel
+  path, which needs that `SessionHandle` redesign; the app-side manual
+  proof (peak private bytes of `app.exe` before and after a pan of a
+  400 MB session), which needs a person at the dev app; and eviction of a
+  *mounted* cell's payload for a channel it has rebound away from — the
+  `boundChannels` action carries sandbox host-variable names, not the
+  `channelId` those cache keys are built from, so that residue waits for
+  the cell to be removed.
 
 ## Wave 3
 

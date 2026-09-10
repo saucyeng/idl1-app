@@ -67,7 +67,7 @@ describe("channelDataKeysForCell", () => {
 });
 
 describe("channelDataKeysToEvict", () => {
-  it("a cell that is still mounted with bindings unknown — its entries are retained", () => {
+  it("a cell that is still mounted — its entries are retained whatever it binds", () => {
     // Arrange
     const keys = [key("a1b2c3d4", "Speed"), key("a1b2c3d4", "Distance")];
 
@@ -87,42 +87,6 @@ describe("channelDataKeysToEvict", () => {
 
     // Assert
     expect(evict).toEqual([key("deadbeef", "Speed"), key("deadbeef", "Distance")]);
-  });
-
-  it("a mounted cell that no longer binds a channel — only that channel's entry is evicted", () => {
-    // Arrange
-    const keys = [key("a1b2c3d4", "Speed"), key("a1b2c3d4", "Distance")];
-    const bound = new Map([["a1b2c3d4", new Set(["Speed"])]]);
-
-    // Act
-    const evict = channelDataKeysToEvict(keys, new Set(["a1b2c3d4"]), bound);
-
-    // Assert
-    expect(evict).toEqual([key("a1b2c3d4", "Distance")]);
-  });
-
-  it("a mounted cell whose binding went away entirely — an empty bound set evicts all of its entries", () => {
-    // Arrange
-    const keys = [key("a1b2c3d4", "Speed"), key("a1b2c3d4", "Distance")];
-    const bound = new Map([["a1b2c3d4", new Set<string>()]]);
-
-    // Act
-    const evict = channelDataKeysToEvict(keys, new Set(["a1b2c3d4"]), bound);
-
-    // Assert
-    expect(evict).toEqual(keys);
-  });
-
-  it("a bindings map naming only one cell — the other mounted cells are left alone", () => {
-    // Arrange
-    const keys = [key("a1b2c3d4", "Speed"), key("00112233", "Speed")];
-    const bound = new Map([["a1b2c3d4", new Set<string>()]]);
-
-    // Act
-    const evict = channelDataKeysToEvict(keys, new Set(["a1b2c3d4", "00112233"]), bound);
-
-    // Assert
-    expect(evict).toEqual([key("a1b2c3d4", "Speed")]);
   });
 
   it("no keys at all — nothing to evict, and the input is not mutated", () => {

@@ -63,38 +63,22 @@ export function channelDataKeysForCell(keys: Iterable<string>, cellId: string): 
 }
 
 /**
- * The keys of `keys` whose payload is no longer reachable, in iteration
- * order.
+ * The keys of `keys` whose cell is no longer mounted, in iteration order.
  *
- * A key is evicted when either half of it is gone:
- *
- * - its cell is no longer mounted (`cellId` absent from `liveCellIds`), or
- * - its cell is mounted but no longer binds that channel — only checked
- *   for cells `boundChannelsByCell` has an entry for.
- *
- * The second argument is deliberately partial: a caller cleaning up after
- * removed cells knows the live cell set but not every live cell's current
- * bindings, and a caller reacting to one cell's rebind knows that cell's
- * bindings and nothing about the others. A cell with no entry in
- * `boundChannelsByCell` is treated as "bindings unknown, keep what it
- * has" — never as "binds nothing", which would evict live charts.
+ * Mounted-ness is the only test here. A cell that is still mounted but has
+ * rebound to a different channel keeps its old channel's payload until the
+ * cell itself goes away — that residue is bounded by the channels a cell
+ * has named rather than by how long the session runs, and evicting it
+ * would need a reliable map from a bound channel back to this key's
+ * `channelId`, which `ChannelBindAction`'s `boundChannels` payload does
+ * not carry (its `name` is the sandbox host-variable name).
  *
  * Returns a new array; it mutates nothing.
  */
-export function channelDataKeysToEvict(
-  keys: Iterable<string>,
-  liveCellIds: ReadonlySet<string>,
-  boundChannelsByCell?: ReadonlyMap<string, ReadonlySet<string>>,
-): string[] {
+export function channelDataKeysToEvict(keys: Iterable<string>, liveCellIds: ReadonlySet<string>): string[] {
   const evict: string[] = [];
   for (const key of keys) {
-    const { cellId, channelId } = splitChannelDataKey(key);
-    if (!liveCellIds.has(cellId)) {
-      evict.push(key);
-      continue;
-    }
-    const bound = boundChannelsByCell?.get(cellId);
-    if (bound !== undefined && !bound.has(channelId)) evict.push(key);
+    if (!liveCellIds.has(splitChannelDataKey(key).cellId)) evict.push(key);
   }
   return evict;
 }
