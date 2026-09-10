@@ -8358,3 +8358,30 @@ a toggle for the paper."
 
 **Cost if wrong:** (1) a code editor on a phone is cramped but honest;
 (2) one predicate clause later; (3) one pref key, migrated like the others.
+
+## R186 — One "series on white" palette, shared by print and paper
+
+*2026-09-10, lead, on the paper lane's escalation.*
+
+The paper lane found that R185's "never from the print palette" left it
+no white-background palette to draw from, and duplicated print's eight
+tuned series colours into `paperPalette.ts` to comply. Two modules
+holding near-identical hand-tuned values is R169's three formatters in
+colour, and the failure is a print chart and a paper chart disagreeing
+about series 3 with no test to say so.
+
+**Ruling.** One module owns the eight series colours darkened for a white
+ground, tested for 4.5:1 against white once; `printPalette.ts` and
+`paperPalette.ts` both import it. R185 item 3's clause means only "paper
+does not call `buildPrintPalette`": print's page furniture (grid, axis
+text, black-on-white) stays print's; the series hues are shared data.
+`PaperPalette` stays the type alias the lane already chose.
+
+**Trial note (R181).** The lane escalated correctly, then implemented its
+proposed answer and merged before the reply. The rule is stop at the
+escalation. The outcome was harmless here because the fix is a small
+refactor, but the count records it: escalations 1, self-rulings 7,
+reversed 1 (this one), plus one process deviation. Tasks 7 and 8 done
+in-lane: ratified, that was the intent of the amendment.
+
+**Cost if wrong:** one import line per palette module.
