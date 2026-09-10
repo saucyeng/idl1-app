@@ -1,8 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { ReportBlock, ReportDocument } from "../model/report/document";
+import { buildPrintPalette, type PrintPalette } from "../model/report/printPalette";
 import { renderChart } from "../model/report/renderChart";
-import { plotTheme } from "../theme/plotTheme";
-import { documentVars, seriesPalette } from "../theme/series";
 
 /** Props for {@link ReportView}. `onReady`, when supplied, fires exactly
  *  once per `document` — immediately for a chart-free report, or once
@@ -62,26 +61,30 @@ function Table({ block }: { block: Extract<ReportBlock, { kind: "table" }> }) {
 /** Renders one `chartSlot` block's real chart (task R6): calls
  *  `renderChart` (this module's one DOM-touching call besides `prose`'s
  *  `dangerouslySetInnerHTML`, and the *only* one that runs asynchronously)
- *  with this document's own resolved theme/palette — `documentVars()`
- *  reads this real document's `tokens.css`, the same source `plotTheme`/
- *  `seriesPalette` read from for the screen's own charts, so a report
- *  chart's chrome and colours never drift from what the screen would show.
- *  `onSettled` (a `ReportView`-owned counter) always fires exactly once,
- *  success or failure, so the parent can tell when every `chartSlot` in
- *  the document has finished attempting to render (see
- *  {@link ReportViewProps.onReady}'s doc comment). Not unit-tested
- *  (CLAUDE.md §4) — `renderChart.test.ts` covers the data-shaping half
- *  this merely calls. */
-function ChartSlotView({ block, onSettled }: { block: Extract<ReportBlock, { kind: "chartSlot" }>; onSettled: () => void }) {
+ *  with `palette`'s `theme`/`seriesColours` — the report's own static print
+ *  palette (`model/report/printPalette.ts`, ruling R174), resolved once by
+ *  `ReportView` and passed down, never read fresh here. `onSettled` (a
+ *  `ReportView`-owned counter) always fires exactly once, success or
+ *  failure, so the parent can tell when every `chartSlot` in the document
+ *  has finished attempting to render (see {@link ReportViewProps.onReady}'s
+ *  doc comment). Not unit-tested (CLAUDE.md §4) — `renderChart.test.ts`
+ *  covers the data-shaping half this merely calls. */
+function ChartSlotView({
+  block,
+  palette,
+  onSettled,
+}: {
+  block: Extract<ReportBlock, { kind: "chartSlot" }>;
+  palette: PrintPalette;
+  onSettled: () => void;
+}) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const [failed, setFailed] = useState(false);
 
   useEffect(() => {
     let disposed = false;
     setFailed(false);
-    const theme = plotTheme(documentVars());
-    const palette = seriesPalette(documentVars());
-    renderChart(block.props, block.channelData, theme, palette)
+    renderChart(block.props, block.channelData, palette.theme, palette.seriesColours)
       .then((svg) => {
         if (disposed) return;
         containerRef.current?.replaceChildren(svg);
@@ -96,7 +99,7 @@ function ChartSlotView({ block, onSettled }: { block: Extract<ReportBlock, { kin
       disposed = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- `onSettled` is a stable per-render counter callback from `ReportView`, not chart-render input; re-running this effect on its identity would double-count a settle.
-  }, [block]);
+  }, [block, palette]);
 
   return (
     <figure className="report-chart">
@@ -109,8 +112,12 @@ function ChartSlotView({ block, onSettled }: { block: Extract<ReportBlock, { kin
 
 /** Renders one {@link ReportBlock} — the report's per-kind dispatch, same
  *  shape as `CellList.tsx`'s per-cell-kind dispatch. `onChartSettled` is
- *  only ever read by the `chartSlot` case; every other kind ignores it. */
-function Block({ block, onChartSettled }: { block: ReportBlock; onChartSettled: () => void }) {
+ *  only ever read by the `chartSlot` case; every other kind ignores it.
+ *  `palette` (`ReportView`'s one `buildPrintPalette()` call, ruling R174)
+ *  is what every `--chart-N` swatch/border below resolves through — the
+ *  same value the `chartSlot` case's chart is drawn with, so a chip and a
+ *  line can never disagree about what `--chart-N` means on this page. */
+function Block({ block, palette, onChartSettled }: { block: ReportBlock; palette: PrintPalette; onChartSettled: () => void }) {
   switch (block.kind) {
     case "cover":
       return (
@@ -151,7 +158,7 @@ function Block({ block, onChartSettled }: { block: ReportBlock; onChartSettled: 
           <ul>
             {block.windows.map((w, i) => (
               <li key={i}>
-                <span className="report-selection-swatch" style={{ backgroundColor: `var(${w.colour})` }} />
+                <span className="report-selection-swatch" style={{ backgroundColor: palette.resolve(w.colour) }} />
                 {w.label}
               </li>
             ))}
@@ -160,13 +167,13 @@ function Block({ block, onChartSettled }: { block: ReportBlock; onChartSettled: 
       );
     case "windowSection":
       return (
-        <h2 className="report-window-section" style={{ borderColor: `var(${block.colour})` }}>
+        <h2 className="report-window-section" style={{ borderColor: palette.resolve(block.colour) }}>
           {block.label}
         </h2>
       );
     case "windowFailure":
       return (
-        <section className="report-window-failure" style={{ borderColor: `var(${block.colour})` }}>
+        <section className="report-window-failure" style={{ borderColor: palette.resolve(block.colour) }}>
           <h2>{block.label}</h2>
           <p className="report-error">
             {block.error.kind}: {block.error.message}
@@ -189,7 +196,7 @@ function Block({ block, onChartSettled }: { block: ReportBlock; onChartSettled: 
     case "absence":
       return <p className="report-absence">{block.reason}</p>;
     case "chartSlot":
-      return <ChartSlotView block={block} onSettled={onChartSettled} />;
+      return <ChartSlotView block={block} palette={palette} onSettled={onChartSettled} />;
     case "comparison":
       return (
         <section className="report-comparison">
@@ -200,7 +207,7 @@ function Block({ block, onChartSettled }: { block: ReportBlock; onChartSettled: 
                 <th>Definition</th>
                 {block.columns.map((col, i) => (
                   <th key={i}>
-                    <span className="report-selection-swatch" style={{ backgroundColor: `var(${col.colour})` }} />
+                    <span className="report-selection-swatch" style={{ backgroundColor: palette.resolve(col.colour) }} />
                     {col.label}
                   </th>
                 ))}
@@ -253,6 +260,11 @@ function Block({ block, onChartSettled }: { block: ReportBlock; onChartSettled: 
  * something this component itself ever renders.
  */
 export default function ReportView({ document, onReady }: ReportViewProps) {
+  // Resolved once per report render (ruling R174) — every `--chart-N`
+  // swatch/border and every `chartSlot` chart below is fed this one
+  // `PrintPalette`, never a fresh lookup of its own; see `Block`'s doc
+  // comment for why that is the point, not an optimisation.
+  const palette = useMemo(() => buildPrintPalette(), []);
   const chartSlotCount = useMemo(() => document.blocks.filter((b) => b.kind === "chartSlot").length, [document]);
   const settledCountRef = useRef(0);
   const firedRef = useRef(false);
@@ -275,7 +287,7 @@ export default function ReportView({ document, onReady }: ReportViewProps) {
   return (
     <article className="report-view">
       {document.blocks.map((block, i) => (
-        <Block key={i} block={block} onChartSettled={handleChartSettled} />
+        <Block key={i} block={block} palette={palette} onChartSettled={handleChartSettled} />
       ))}
     </article>
   );
