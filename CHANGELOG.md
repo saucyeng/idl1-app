@@ -6,6 +6,19 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 
 ### Added
 
+- **Long sessions stay open (2026-09-10, ruling R203).** A multi-hour
+  recording no longer runs the app out of memory. Charts, the cursor
+  readout and rasters now read one channel out of a session instead of the
+  whole file, and each channel is decoded once and shared rather than
+  re-read on every pan; what is held is capped at a quarter of the
+  machine's memory (at most 2 GB), oldest channel dropped first. Importing
+  a log reads it as a memory map and writes the columns out one at a time,
+  so a 400 MB file no longer needs three copies of itself in memory. When
+  something genuinely will not fit, the app now says so — a toast naming
+  what it needed and what it had — instead of dying, and the notebook keeps
+  running. Notebooks also let go of a chart's samples once its cell is
+  removed or stops naming that channel.
+
 - **Library management from the command line (2026-09-10, ruling R197).**
   `idl-rs library fold-in <folder> --data-dir <dir>` imports a whole folder
   of logs in one command, printing a preview table first (file, importer,

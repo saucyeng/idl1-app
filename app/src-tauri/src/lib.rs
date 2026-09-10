@@ -44,6 +44,11 @@ pub fn run() {
             app.manage(idl_rs_tauri::state::Hashes(std::sync::Arc::new(idl_rs_tauri::watcher::ExpectedHashSet::new())));
             app.manage(idl_rs_tauri::state::Watchers(std::sync::Mutex::new(std::collections::HashMap::new())));
             app.manage(idl_rs_tauri::state::Connections(std::sync::Mutex::new(std::collections::HashMap::new())));
+            // Decoded per-channel samples, LRU by bytes against a budget of
+            // min(2 GiB, 25 % of physical RAM) read once here (ruling R203.2).
+            // Every command that serves samples reads through it, so a
+            // channel is decoded at most once while it stays resident.
+            app.manage(idl_rs_tauri::session_cache::SessionCache::new());
             // The firmware/OTA state machine's current state (C3 §3.8, R198).
             // Managed unconditionally: it holds no data-root-dependent state,
             // and updating firmware is exactly the kind of thing a user may

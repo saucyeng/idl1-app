@@ -213,7 +213,17 @@ is applied uniformly, not case-by-case:
   app declined to try. `detail` carries `{ needed_bytes, budget_bytes, hint }`
   and the UI presents it as a toast with both numbers; the notebook keeps
   running. The app never aborts on allocation failure (CLAUDE.md §5).
-  Raised by: Workbook (`save_workbook`).
+  The estimate is a ceiling derived from `data.parquet`'s footer (row count
+  × per-column width) or, for an import, from the source file's size; a
+  25 % margin is added before it is compared with the budget, so a command
+  is refused slightly early rather than aborting slightly late.
+  `budget_bytes` is `min(2 GiB, 25 % of physical RAM)`, read once at
+  startup — the same number the session cache evicts against, because a
+  decode the cache could not hold is a decode the app should not attempt.
+  Raised by: Import (`import_file`); Chart (`fetch_tile`); Cursor
+  (`cursor_readout`); Raster (`fetch_raster`, `fetch_raster_meta`,
+  `fetch_fft`, `fetch_fft_v2`); and every command that loads a whole
+  session, including Workbook (`eval_workbook`, `save_workbook`).
 - **`device_rejected`** — *added post-sign (2026-09-05, lead ruling R59,
   wave-2 write lane).* A sixth cross-cutting kind, raised when a device
   refuses a control transition (SPEC §7.2 `AckCode` non-success value)

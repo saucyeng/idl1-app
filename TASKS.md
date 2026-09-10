@@ -361,6 +361,37 @@ are defined in `docs/superpowers/specs/2026-09-02-idl1-rewrite-design.md` §10.
   rather than resuming in place, because `<data>` is resolved once per
   process.
 
+## Session memory (ruling R203)
+
+- [x] memory lane — landed 2026-09-10 on `memory` (both repos). The
+  incident: a multi-hour 395 MB `.idl0` killed the app with `memory
+  allocation of 60391864 bytes failed`. Five changes. (1) `data.parquet` is
+  read one column at a time — `store::parquet::read_channel` projects the
+  channel, `t` and the channel's `<source>_t_recorded_us` and decodes
+  nothing else, including for synthesized `Time`/`Distance`, which it
+  rebuilds from only the columns that could win the source election.
+  `read_session_parquet` survives for import verification, export, rebuild
+  and the workbook evaluator. (2) `SessionCache` in `idl-rs-tauri` holds
+  `session_id -> channel -> Arc<ChannelSamples>`, LRU by bytes against
+  `min(2 GiB, 25 % of physical RAM)`; `fetch_tile`, `cursor_readout` and
+  every raster/FFT path read through it, and delete/reimport/import
+  invalidate by session. (3) Import maps the log (`memmap2`) instead of
+  `std::fs::read`, and `data.parquet` is now written one column at a time
+  through parquet's per-column writers — byte-identical to the old
+  whole-`RecordBatch` writer, proved by a reference implementation kept in
+  the tests, multi-row-group case included. (4) Every session-scaled
+  allocation is sized from the footer first and refused as C3 §1's
+  `resource_exhausted` (`{ needed_bytes, budget_bytes, hint }`) rather than
+  aborting. (5) `combinedChannelDataRef` evicts on cell removal and unbind
+  via a pure `model/channelDataRetention.ts`. Lane decisions worth a
+  reader's attention: the workbook evaluator's `SessionHandle` still
+  decodes whole sessions (guarded by the failsafe) because it also owns the
+  estimator, math-store and derived caches a per-channel lookup cannot
+  serve; and `load_session` deliberately does **not** read through the
+  cache, since assembling a `Session` out of cached channels would leave it
+  resident twice. Not done here: a lazy `ChannelLookup` for the eval
+  engine's host-channel path, which needs that `SessionHandle` redesign.
+
 ## Wave 3
 
 - [ ] L9 mobile plugins · L12 in-app agent (optional)
