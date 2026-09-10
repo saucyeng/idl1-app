@@ -5,7 +5,7 @@ import { getVersion } from "@tauri-apps/api/app";
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@/components/ui/resizable";
 import { BrandSheet } from "@/components/brand/BrandSheet";
 import { NoteBlock } from "@/components/brand/NoteBlock";
-import { listSessions, listWorkbooks, getSession, rebuildCatalog, type RebuildReport, type SessionDetail } from "../../../ipc/catalog";
+import { listSessions, listWorkbooks, getSession, rebuildCatalog, type RebuildReport, type SessionDetail, type SessionSummary } from "../../../ipc/catalog";
 import { cursorReadout } from "../../../ipc/cursor";
 import { fetchFftV2, type DecodedFft } from "../../../ipc/rasters";
 import { fetchTile } from "../../../ipc/tiles";
@@ -36,6 +36,7 @@ import { createPrefsStore, localStorageBackend } from "../Settings/prefsStore";
 import CellFrame, { type CellRunStatus } from "./components/CellFrame";
 import CellList from "./components/CellList";
 import ReportView from "./components/ReportView";
+import PaperView from "./components/PaperView";
 import { buildReportDocument, type ReportDocument } from "./model/report/document";
 import ChartCell from "./components/ChartCell";
 import ConflictBanner from "./components/ConflictBanner";
@@ -74,6 +75,8 @@ import PlaybackTransport from "./interaction/PlaybackTransport";
 import { playableSpanUs, setSpeed, tick, togglePlay, type PlaybackState } from "./interaction/playback";
 import type { PlaybackMode } from "./interaction/playbackMode";
 import { editorPlacement, outputIsReadOnly } from "./model/editorPlacement";
+import { paperViewActive } from "./model/paperView";
+import { paperLiveDecision } from "./model/paperLive";
 import { resolveEditorHost } from "./model/editorHost";
 import { runFft, type FftAction, type FftDeps } from "./model/fftDriver";
 import { exceedsBinCap, frequencyAxisHz } from "./model/fftRequest";
@@ -87,8 +90,10 @@ import { fixTargetCellId } from "./model/fixTarget";
 import {
   readNotebookColumnVisibility,
   toggleNotebookColumn,
+  visibleNotebookColumnIds,
   writeNotebookColumnVisibility,
   type NotebookColumnId,
+  type NotebookColumnVisibility,
 } from "./model/notebookColumns";
 import { readNotebookPrefs, writeNotebookPrefs } from "./model/notebookPrefs";
 import { runEval, runOpenAndEval, type OpenEvalDeps } from "./model/openEvalDriver";
@@ -236,6 +241,22 @@ const SANDBOX_RUNTIME_VERSION = "1.0.0";
  * a documented judgment call, not a guess baked in silently.
  */
 const DEFAULT_CHART_WIDTH_PX = 640;
+
+/** `buildReportDocument`'s `appVersion`, as the paper view passes it
+ *  (ruling R184). The builder reads this field for the `cover` block
+ *  alone, and `model/report/paperDocument.ts` drops `cover` on screen, so
+ *  paper never renders it. A fixed placeholder rather than a real
+ *  `getVersion()` call: fetching a version for a block that is discarded
+ *  would make every settle an await, and the string is deliberately one no
+ *  reader could mistake for a version if a future change ever did print
+ *  it. */
+const PAPER_UNPRINTED_APP_VERSION = "not applicable on screen";
+
+/** `buildReportDocument`'s `generatedAtMs`, as the paper view passes it --
+ *  same reasoning as {@link PAPER_UNPRINTED_APP_VERSION}, plus one of its
+ *  own: `Date.now()` here would make each rebuild produce a document that
+ *  differs from the last even when nothing about the workbook changed. */
+const PAPER_UNPRINTED_GENERATED_AT_MS = 0;
 
 /**
  * A second {@link PrefsStore} instance over the same `localStorage`-backed
@@ -437,6 +458,14 @@ export default function NotebookPage() {
    * value is read in is never more than one commit stale.
    */
   const combinedChannelDataRef = useRef<Map<string, CombinedChannelPayload>>(new Map());
+  /** Bumped every time `combinedChannelDataRef` above gains new combined
+   *  arrays. That ref is deliberately a ref -- the cell list reads it
+   *  during render and must not re-render for it -- but the paper view's
+   *  document (ruling R184) is rebuilt by an effect, and an effect cannot
+   *  depend on a mutation no render ever hears about. Without this counter
+   *  a chart's data landing after paper's last rebuild would leave that
+   *  chart an `absence` block until something unrelated changed. */
+  const [channelDataEpoch, setChannelDataEpoch] = useState(0);
   /**
    * The worksheet's one shared X range (decision 52, Task 4) --
    * `chartWindows`' per-cell `Viewport`s are still where each cell's own
@@ -541,6 +570,25 @@ export default function NotebookPage() {
    *  selection changes. Only the sessions windows are keyed for
    *  (`sessionId`) -- unrelated sessions are dropped, not accumulated. */
   const [sessionEngineVersions, setSessionEngineVersions] = useState<Map<string, string>>(new Map());
+  /** Every catalog session the current selection could name, for the paper
+   *  view's own document build (ruling R184) -- `buildReportDocument` reads
+   *  these for its session block and for each window's label. Filled by the
+   *  same `listSessions` call `sessionEngineVersions` above already makes,
+   *  rather than a second round trip on the same trigger. */
+  const [paperSessions, setPaperSessions] = useState<readonly SessionSummary[]>([]);
+  /** The paper view's current document (ruling R184), or `null` for "nothing
+   *  to show yet". Rebuilt from a settled evaluation, kept across an
+   *  in-flight one -- `model/paperLive.ts` owns that rule. Distinct from
+   *  `reportDoc` above, which is print's one-shot document and is mounted
+   *  into `#report-print-root`: the two are built from the same builder but
+   *  have opposite lifetimes (one press versus every settle). */
+  const [paperDoc, setPaperDoc] = useState<ReportDocument | null>(null);
+  /** `paperDoc`'s current value, readable from inside the rebuild effect
+   *  without making it a dependency of that effect -- it is only ever asked
+   *  the yes/no question "is a last good document being held", and adding
+   *  the document itself as a dependency would make every rebuild schedule
+   *  the next one. */
+  const paperDocRef = useRef<ReportDocument | null>(null);
   /** Decision 62's "dismissable": the `windowsKeyValue` the banner was last
    *  dismissed for -- Isaac: "a banner for now so it can be temporarily
    *  ignored", so a dismissal is scoped to the current selection and
@@ -742,6 +790,10 @@ export default function NotebookPage() {
   // width listener.
   const widthPx = useWindowWidth();
   const placement = editorPlacement(widthPx);
+  // Ruling R184: paper *is* the narrow placement, named through
+  // `model/paperView.ts` so this page reads intent rather than an enum
+  // member -- and so the two can never be given different breakpoints.
+  const paperActive = paperViewActive(widthPx);
 
   // R109: the wide studio's properties column (`shell/EditorSlotColumn.tsx`)
   // publishes its DOM node here; when present, the editor portals into it
@@ -1172,6 +1224,7 @@ export default function NotebookPage() {
   useEffect(() => {
     if (windows.length === 0) {
       setSessionEngineVersions(new Map());
+      setPaperSessions([]);
       return;
     }
     let disposed = false;
@@ -1183,6 +1236,10 @@ export default function NotebookPage() {
         if (selectedSessionIds.has(s.session_id)) next.set(s.session_id, s.engine_version);
       }
       setSessionEngineVersions(next);
+      // Ruling R184: the paper view needs the summaries themselves, not
+      // just their engine versions, and this is already the one call that
+      // has them at exactly the right cadence (once per selection change).
+      setPaperSessions(sessions);
     });
     return () => {
       disposed = true;
@@ -1772,6 +1829,7 @@ export default function NotebookPage() {
           // R139: retain the same combined arrays the sandbox just got a
           // transfer clone of -- `model/cursorCard.ts` reads this back.
           combinedChannelDataRef.current.set(`${action.cellId}::${action.channelId}`, action.retained);
+          setChannelDataEpoch((n) => n + 1);
         } else if (action.type === "boundChannels") {
           sessionRef.current.setBoundChannels(action.cellId, action.bound);
         } else {
@@ -2052,6 +2110,83 @@ export default function NotebookPage() {
     return new Map(blocks.map((block) => [block.blockId, block]));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state.cells, state.markdown, primaryEval]);
+
+  /**
+   * Paper's rebuild (ruling R184, L9-PAPER-PLAN task 5). The printed report
+   * is built once, by `handleExportReport`, from an evaluation the user
+   * waited for; paper is the same document rebuilt as the workbook
+   * re-evaluates underneath the reader. `model/paperLive.ts` owns the one
+   * rule that difference needs -- an in-flight evaluation keeps the last
+   * good document rather than blanking a phone that is being read.
+   *
+   * A window counts as settled only if its stored result is *current*
+   * (`isWindowStale`): showing a number computed from code the document has
+   * since changed would be worse than showing the previous complete
+   * document for another moment.
+   *
+   * `appVersion`/`generatedAtMs` are the two inputs paper genuinely has no
+   * use for -- `buildReportDocument` reads them only for the `cover` block,
+   * which `toPaperDocument` drops on screen (R184 item 2). They are passed
+   * as fixed placeholders rather than fetched, which is also what keeps
+   * this rebuild synchronous: a `getVersion()` await here would make every
+   * settle a round trip, and `Date.now()` would make the document differ
+   * from itself on every rebuild.
+   */
+  useEffect(() => {
+    if (!paperActive) return;
+    const settledWindowCount = windows.filter((w) => {
+      const entry = state.windows.get(windowKey(w));
+      return entry !== undefined && !isWindowStale(entry, state.evalRequestGeneration);
+    }).length;
+    const decision = paperLiveDecision({
+      workbookReady: state.handle !== null && state.markdown !== null,
+      windowCount: windows.length,
+      settledWindowCount,
+      hasLastDocument: paperDocRef.current !== null,
+    });
+    if (decision === "keep-last") return;
+    if (decision === "empty") {
+      paperDocRef.current = null;
+      setPaperDoc(null);
+      return;
+    }
+    const evals: (WindowEval | undefined)[] = windows.map((w) => {
+      const entry = state.windows.get(windowKey(w));
+      if (entry === undefined) return undefined;
+      return entry.kind === "ok" ? { ok: Array.from(entry.outputs.values()) } : { error: entry.error };
+    });
+    const next = buildReportDocument({
+      cells: state.cells,
+      markdown: state.markdown ?? "",
+      proseBlocks: proseBlocksByBlockId,
+      evals,
+      windows,
+      sessions: paperSessions,
+      chartChannelData: groupChannelDataByCell(combinedChannelDataRef.current),
+      xMode,
+      appVersion: PAPER_UNPRINTED_APP_VERSION,
+      generatedAtMs: PAPER_UNPRINTED_GENERATED_AT_MS,
+    });
+    paperDocRef.current = next;
+    setPaperDoc(next);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- `windows` is
+    // covered by `windowsKeyValue` (this page's existing convention for a
+    // selection dependency), and `paperDocRef` is read deliberately as a
+    // ref: see its own doc comment for why the held document must not be a
+    // dependency of the effect that replaces it.
+  }, [
+    paperActive,
+    windowsKeyValue,
+    state.windows,
+    state.cells,
+    state.markdown,
+    state.handle,
+    state.evalRequestGeneration,
+    proseBlocksByBlockId,
+    paperSessions,
+    channelDataEpoch,
+    xMode,
+  ]);
 
   /** `CellFrame`'s `StatusDot` (UI-10): `"pending"` before an
    *  `eval_workbook_v2` result exists for `cellId` in `primaryOutputs`,
@@ -2383,6 +2518,7 @@ export default function NotebookPage() {
                       // just got a transfer clone of -- `model/cursorCard.ts`
                       // reads this back.
                       combinedChannelDataRef.current.set(`${action.cellId}::${action.channelId}`, action.retained);
+                      setChannelDataEpoch((n) => n + 1);
                     } else if (action.type === "boundChannels") {
                       sessionRef.current.setBoundChannels(action.cellId, action.bound);
                     } else {
@@ -2538,10 +2674,22 @@ export default function NotebookPage() {
   // on from a wider layout. Ruling R161, decision 29: a narrow layout has
   // no columns to toggle at all, so the toolbar's leading group hides
   // entirely rather than showing dead controls -- `columnsToggleAvailable`.
-  const graphViewAvailable = placement !== "sheet";
-  const columnsToggleAvailable = placement !== "sheet";
-  const showGraph = columnVisibility.graph && graphViewAvailable && graphCanvasElement !== null;
-  const showCells = columnVisibility.cells;
+  //
+  // Ruling R184 extends that to `cells`: where paper is active the cell
+  // list is *replaced* by the paper view, so the cells pane is unavailable
+  // too. Availability goes through `visibleNotebookColumnIds`'s
+  // availability record and **never** by writing stored visibility -- a
+  // phone that overwrote `columnVisibility` would silently retune the
+  // desktop's remembered toggles (R161 is renderer-only and per-machine).
+  const notebookColumnAvailability: NotebookColumnVisibility = {
+    graph: !paperActive,
+    properties: !paperActive,
+    cells: !paperActive,
+  };
+  const visibleColumnIds = visibleNotebookColumnIds(columnVisibility, notebookColumnAvailability);
+  const columnsToggleAvailable = !paperActive;
+  const showGraph = visibleColumnIds.includes("graph") && graphCanvasElement !== null;
+  const showCells = visibleColumnIds.includes("cells");
   // Fallback single content (medium/`"inline"` and narrow/`"sheet"`
   // placements have one content area, not a resizable split) -- same
   // preference order the pre-R161 `graphViewOpen` toggle had: graph when
@@ -2549,7 +2697,24 @@ export default function NotebookPage() {
   // placement's own last-resort fallback when neither pane below ends up
   // rendering (graph unavailable and cells toggled off at once) -- an empty
   // main area is a worse regression than showing the cell list unasked.
-  const mainContentElement = showGraph ? graphCanvasElement : cellListElement;
+  // Ruling R184: at paper widths the notebook's one content area is the
+  // paper view, never the cell list or the graph -- both are unavailable
+  // there (`notebookColumnAvailability` above), and `showGraph`/`showCells`
+  // are already false, so this is the only branch that can put paper on
+  // screen. `paperDoc === null` is a real state, not an error: the first
+  // evaluation of a freshly opened workbook has not settled yet
+  // (`model/paperLive.ts`), and saying so beats an unexplained blank page.
+  const mainContentElement = paperActive ? (
+    paperDoc !== null ? (
+      <PaperView document={paperDoc} onSelectCell={(cellId) => setSelectedCellId(cellId)} />
+    ) : (
+      <p className="paper-empty">No output yet -- this notebook has not finished evaluating.</p>
+    )
+  ) : showGraph ? (
+    graphCanvasElement
+  ) : (
+    cellListElement
+  );
   // Wide/`"panes"` placement's own panel list -- both graph and cells can
   // show at once now (R161: "these replace the current Graph/Cells toggle,
   // since showing or hiding a column is the same gesture, generalised" --

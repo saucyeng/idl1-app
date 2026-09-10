@@ -24,6 +24,14 @@
   gap: var(--space-5);
 }
 
+/* Paper's "nothing to show yet" line (`model/paperLive.ts`'s `empty`
+ * decision) -- a stated state, never a blank page. */
+.paper-empty {
+  font-family: var(--font-mono);
+  font-size: var(--text-body-small);
+  color: var(--fg-dim);
+}
+
 /* One block's tap target. `--hit-target` is the touch-first minimum this
  * token sheet already defines for the notebook output; the negative inline
  * margin plus matching padding widens the tappable area to the full column
