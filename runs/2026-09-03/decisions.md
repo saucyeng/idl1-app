@@ -8301,3 +8301,32 @@ origin; the gate before every push is the guard.
 **Cost if wrong:** (1) nothing lost, iOS is additive; (2) a few generated
 files in git; (3) one small Kotlin file; (4) an error kind that is easy to
 retire; (5) a desktop feature that stays desktop; (6) a one-line change.
+
+## R184 — Mobile paper view: the narrow "sheet" placement is the paper view
+
+*2026-09-10, lead, from `runs/2026-09-10/L9-PAPER-PLAN.md`.*
+
+The paper view is not a new view: `editorPlacement(width) === "sheet"` has
+described it since R161, and `buildReportDocument` is already the pure,
+DOM-free block model it needs. Adopted: (1) **static `renderChart` SVG**,
+not the live sandbox iframe — outputs rendered, per design line 154; no
+hover/pan/zoom in v1. (2) `cover` and `appendix` are print furniture and
+are **dropped on screen** by a sibling filter, `document.ts` untouched.
+(3) **No desktop toggle**; width is the trigger, like every other
+width-dependent behaviour. (4) Tapping a `math`/`table` block is a
+**no-op**; only `js` cells have a form. (5) **Every selected window**, as
+the report already does. (6) **Width only** in v1: a large phone in
+landscape can exceed 600 px and fall back to the inline layout; that is a
+named gap, closed after a real device has run the app, not guessed at
+now. (7) Theme is **inherited**; daylight readability is Isaac's call.
+Detection lives in `model/paperView.ts` delegating to `resolveLayout`,
+never restating 600. Availability of `cells`/`graph`/`properties` goes
+through `visibleNotebookColumnIds`'s availability record, **never** by
+writing stored visibility (a phone must not overwrite the desktop's
+toggles). The six-task plan is accepted as written; TypeScript only.
+
+Runs under an **Opus lane owner** (second concurrent R181 trial; no cargo,
+so it cannot contend with the legend lane).
+
+**Cost if wrong:** (1) a later task swaps the static SVG for the iframe
+behind the same block interface; (6) one clause in one predicate.
