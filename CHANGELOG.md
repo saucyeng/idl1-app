@@ -115,6 +115,18 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 
 ### Fixed
 
+- **Notebook toolbar now spans the window, not just the tab's own column
+  area (2026-09-09, correcting R161).** The toolbar (column show/hide,
+  workbook bar, playback, the gesture/X-axis "More" overflow) is hoisted
+  out of the Notebook route's own root into a shell-owned row,
+  `shell/AppShell.tsx`'s new `ToolbarSlotRow`, via a sibling of
+  `shell/editorSlot.ts` (`shell/toolbarSlot.ts`) — R161 said the toolbar
+  spans "the tab"; Isaac wanted the window, which the route's own column
+  area can never provide. The row is a childless block with no intrinsic
+  size on every other tab, so Data/Device/Settings never show an empty
+  bar. Notebook still owns the toolbar's content and handlers, only where
+  it renders changed.
+
 - **One session display-name formatter, in `state/selection.ts` (2026-09-09,
   ruling R169).** `Data/sessionRow.ts`'s `venueLabel` and
   `shell/topBarSelection.ts`'s `sessionLabel` moved to `state/selection.ts`,
