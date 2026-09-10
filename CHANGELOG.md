@@ -17,9 +17,18 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
   (`ReportView`'s own `onReady`) rather than firing on a fixed next frame,
   since chart rendering is asynchronous. `buildReportDocument` is now a
   single options object instead of seven positional parameters (three of
-  them same-shaped `Map`s) — one caller, `Notebook/index.tsx`. Known gap:
-  a chart's caption names only the windows it covers, not yet the X mode or
-  decimation point budget plan §3.4 calls for.
+  them same-shaped `Map`s) — one caller, `Notebook/index.tsx`.
+
+- **A printed chart's caption states its X mode and its real point count
+  (2026-09-09, chart-honesty lane task 1, plan §3.4).** `document.ts`'s new
+  `formatChartCaption` names every window a chart covers, the worksheet's
+  X mode (`model/xMode.ts`), and the point count the chart's data was
+  **actually** carried at — the largest `CombinedChannelPayload.length`
+  across the chart's own channels, never the point budget that was
+  requested. `BuildReportDocumentInput` gains an `xMode` field
+  (`Notebook/index.tsx`'s existing worksheet-level state); `ChartSlotBlock`
+  gains `caption`, which `ReportView` now prints unconditionally instead of
+  only when `windowLabels` is non-empty.
 
 - **The report has its own print palette and plot theme (2026-09-09, ruling
   R174).** `model/report/printPalette.ts` is a new, static module — no
