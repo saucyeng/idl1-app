@@ -8272,3 +8272,32 @@ hook's push rule is removed and CLAUDE.md §7 now reads: the lead pushes
 `main` in both repos, submodule first, after each green gate. Lanes never
 push. No attribution trailers, ever. **Cost if wrong:** a red `main` on
 origin; the gate before every push is the guard.
+
+## R183 — L9 scope: Android first, on this machine, with the survey's answers adopted
+
+*2026-09-10, lead, from `runs/2026-09-10/L9-SURVEY.md`.*
+
+1. **Android only** for the scaffold lane. iOS needs a Mac this machine is
+   not; a permanently red iOS gate teaches lanes to ignore the gate (R178's
+   lesson). iOS is its own lane, gated on hardware.
+2. **`app/src-tauri/gen/android/` is committed.** It carries hand-edited
+   manifest permissions; regeneration would lose them silently.
+3. **The mDNS MulticastLock lands in this lane**, not wave 3. Without it
+   sync on the phone looks like it works and finds nothing, the worst
+   failure mode, for about twenty lines of Kotlin.
+4. **BLE commands on Android return a typed `unsupported_platform` error**
+   (new C3 §1 error kind) until the Kotlin plugin exists, so the Device
+   tab greys itself out instead of showing a connection failure that reads
+   as a bug. The `BleTransport` trait seam stays; only the concrete
+   constructor is cfg-gated.
+5. **The Settings data-dir override is desktop-only.** Hidden on mobile;
+   C4 §1 amended to say so. Android has no user-chosen writable directory
+   outside the Storage Access Framework.
+6. **Minimum API level 26**, provisional until Isaac names his test phone.
+7. Task 8 (mobile paper view, responsive shell) is TypeScript-only and
+   independent of tasks 2–7; it gets its own plan and can run now. Tasks
+   1–2 wait on Isaac's environment variables.
+
+**Cost if wrong:** (1) nothing lost, iOS is additive; (2) a few generated
+files in git; (3) one small Kotlin file; (4) an error kind that is easy to
+retire; (5) a desktop feature that stays desktop; (6) a one-line change.
