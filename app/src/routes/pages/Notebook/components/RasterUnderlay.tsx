@@ -1,6 +1,7 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import type { DecodedRaster, Histogram2dParams, RasterKind, RasterMeta, SpectrogramParams } from "../../../../ipc/rasters";
+import type { UnitLabel } from "../../../../ipc/workbook";
 import {
   alignRasterToAxes,
   devicePxSize,
@@ -11,6 +12,7 @@ import {
 } from "../model/rasterLayer";
 import { isStaleSettleResult } from "../model/settle";
 import type { Viewport } from "../model/viewport";
+import { formatUnit } from "../model/unitText";
 
 /** Props for {@link RasterUnderlay}. */
 export interface RasterUnderlayProps {
@@ -68,6 +70,12 @@ export interface RasterUnderlayProps {
  * smaller, more localized change than lifting a canvas ref up through props
  * (the other option the plan's Task 9 note allows).
  *
+ * Alongside the canvas, prints the fetched `RasterMeta.magnitude_unit`
+ * (chart-honesty lane task 2, ruling R167) — the only place a spectral
+ * raster's own axes are labelled at all today (`x_label`/`y_label`/`scale`
+ * are likewise fetched here and, like the unit was before this task, drawn
+ * nowhere; widening that is out of this task's scope).
+ *
  * The fetch is triggered only by `kind`/`params`/`viewport`/`width`/
  * `height`/`devicePixelRatio`/`sessionId`/`channelId` actually changing
  * (see {@link rasterFetchKeyEquals}) — never merely by an unrelated
@@ -115,6 +123,12 @@ export default function RasterUnderlay({
 }: RasterUnderlayProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
+  // `RasterMeta.magnitude_unit` (R167) — `null` until the first fetch
+  // resolves, indistinguishable on screen from a genuine `null` (a
+  // histogram2d has no spectral magnitude at all): both render nothing,
+  // so there is no wrong state to show before the first result arrives.
+  const [magnitudeUnit, setMagnitudeUnit] = useState<UnitLabel | null>(null);
+
   // Held in refs so an unrelated re-render's fresh closure identity for
   // these two props can never by itself invalidate the effect below —
   // review-task9.md Critical, the same pattern ChartCell.tsx's
@@ -160,6 +174,7 @@ export default function RasterUnderlay({
         if (isStaleSettleResult(dispatchEpoch, epochRef.current)) {
           return;
         }
+        setMagnitudeUnit(meta.magnitude_unit);
         // Always clear in the canvas's own (identity) device-px coordinate
         // space first, regardless of whether a rect is drawn below.
         ctx.setTransform(1, 0, 0, 1, 0, 0);
@@ -183,19 +198,35 @@ export default function RasterUnderlay({
       });
   });
 
+  const magnitudeUnitDisplay = magnitudeUnit === null ? null : formatUnit(magnitudeUnit);
+
   return (
-    <canvas
-      ref={canvasRef}
-      className="chart-cell-underlay"
-      // Backing store sized in device px (review-task9.md Important: the
-      // raster itself was fetched at device-px resolution via
-      // `rasterRequestFor`'s own `devicePixelRatio` multiplication — a
-      // canvas whose buffer is only CSS-px resolution would silently
-      // downscale that crisper source). The CSS box below stays at the
-      // CSS-px size so the element still occupies the same on-screen area.
-      width={devicePxSize(width, devicePixelRatio)}
-      height={devicePxSize(height, devicePixelRatio)}
-      style={{ position: "absolute", inset: 0, width: `${width}px`, height: `${height}px`, pointerEvents: "none" }}
-    />
+    <>
+      <canvas
+        ref={canvasRef}
+        className="chart-cell-underlay"
+        // Backing store sized in device px (review-task9.md Important: the
+        // raster itself was fetched at device-px resolution via
+        // `rasterRequestFor`'s own `devicePixelRatio` multiplication — a
+        // canvas whose buffer is only CSS-px resolution would silently
+        // downscale that crisper source). The CSS box below stays at the
+        // CSS-px size so the element still occupies the same on-screen area.
+        width={devicePxSize(width, devicePixelRatio)}
+        height={devicePxSize(height, devicePixelRatio)}
+        style={{ position: "absolute", inset: 0, width: `${width}px`, height: `${height}px`, pointerEvents: "none" }}
+      />
+      {/* `RasterMeta.magnitude_unit` (R167): a spectrogram's own magnitude
+          axis unit, three-state per `formatUnit` (R154) — `known` shows its
+          text, `dimensionless` and a pre-first-fetch/histogram2d `null`
+          show nothing, `unknown` shows nothing but its `title` attribute
+          carries `unknownReason` where a reader can reach it (there is no
+          appendix to route it to on screen, unlike the report). */}
+      {magnitudeUnitDisplay !== null && (magnitudeUnitDisplay.text !== "" || magnitudeUnitDisplay.unknownReason !== null) && (
+        <div className="chart-cell-raster-unit" style={{ position: "absolute", top: 4, right: 4, fontSize: 11, pointerEvents: "none" }}>
+          {magnitudeUnitDisplay.text}
+          {magnitudeUnitDisplay.unknownReason !== null && <span title={magnitudeUnitDisplay.unknownReason}>{"†"}</span>}
+        </div>
+      )}
+    </>
   );
 }

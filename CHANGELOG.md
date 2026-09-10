@@ -30,6 +30,18 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
   gains `caption`, which `ReportView` now prints unconditionally instead of
   only when `windowLabels` is non-empty.
 
+- **A spectrogram states its magnitude unit (2026-09-09, chart-honesty lane
+  task 2, ruling R167).** `RasterMeta.magnitude_unit` was fetched on every
+  raster settle and shown nowhere. `RasterUnderlay` now keeps the fetched
+  unit in state and prints it beside the raster canvas through the shared
+  `model/unitText.ts` `formatUnit` (R169 — no second formatter): `known`
+  shows its text, `dimensionless` and a `null` (a histogram2d, which has no
+  spectral magnitude) show nothing, `unknown` shows nothing but a small `†`
+  marker whose `title` carries the reason. This is the only place a
+  spectral raster's own axes are labelled at all today — `x_label`/
+  `y_label`/`scale.vmin`/`scale.vmax` are still fetched and drawn nowhere,
+  unchanged by this task.
+
 - **The report has its own print palette and plot theme (2026-09-09, ruling
   R174).** `model/report/printPalette.ts` is a new, static module — no
   `documentVars()` on any report path — exporting eight print series
