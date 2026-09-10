@@ -42,7 +42,7 @@ production function, not the grep hit alone).
 ## (h) `move_data_dir` (added 2026-09-10, rulings R196/R197)
 
 - rust/tauri/src/commands/app.rs — `copy_verify_delete`: removes a source file only after its copy has landed at the destination and verified (sha256 against the blob’s own path-named digest; byte length for everything else). A verify failure returns before the delete, leaving the source untouched.
-- rust/tauri/src/commands/app.rs — `move_data_dir_via`: removes a source file whose destination copy already verifies, which is how an interrupted move resumes on rerun without recopying.
+- rust/tauri/src/commands/app.rs — `move_data_dir_with`: removes a source file whose destination copy already verifies, which is how an interrupted move resumes on rerun without recopying.
 - rust/tauri/src/commands/app.rs — `prune_emptied_dirs`: `remove_dir` (never `remove_dir_all`) on the five moved trees’ directories, deepest first. A directory still holding anything makes the call fail and be ignored, so this can only remove what the move itself emptied. The old `<data>` root, its `tmp/` and `inbox/`, and the user’s folder above it are never touched.
 
 ## Answers to the five questions
