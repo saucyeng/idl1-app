@@ -37,20 +37,20 @@ describe("pickLibraryFolder", () => {
 });
 
 describe("describeMove", () => {
-  it("describeMove — a chosen destination — names both paths and says the old one is kept", () => {
+  it("describeMove — a chosen destination — names both paths and says files move, not copy", () => {
     const text = describeMove("D:\\race-data\\data", "E:\\new-library");
 
     expect(text).toContain("D:\\race-data\\data");
     expect(text).toContain("E:\\new-library");
-    expect(text).toContain("Nothing is deleted");
+    expect(text).toContain("only after it has arrived and been checked");
   });
 });
 
 describe("movePhaseLabel", () => {
-  it("movePhaseLabel — the three contract phases — reads as plain English", () => {
-    const labels = ["copy", "verify", "catalog"].map(movePhaseLabel);
+  it("movePhaseLabel — the two contract phases — reads as plain English", () => {
+    const labels = ["move", "catalog"].map(movePhaseLabel);
 
-    expect(labels).toEqual(["Copying files", "Verifying checksums", "Rebuilding the index"]);
+    expect(labels).toEqual(["Moving and verifying files", "Rebuilding the index"]);
   });
 
   it("movePhaseLabel — an unrecognised phase — falls through as itself", () => {
@@ -67,24 +67,24 @@ describe("describeMoveProgress", () => {
     expect(line).toBeNull();
   });
 
-  it("describeMoveProgress — a copy tick — names the phase and the file counts", () => {
-    const line = describeMoveProgress({ done: 12, total: 40, phase: "copy" });
+  it("describeMoveProgress — a move tick — names the phase and the file counts", () => {
+    const line = describeMoveProgress({ done: 12, total: 40, phase: "move" });
 
-    expect(line).toBe("Copying files: 12 of 40 files");
+    expect(line).toBe("Moving and verifying files: 12 of 40 files");
   });
 
   it("describeMoveProgress — an unknown or zero total — prints the phase alone", () => {
-    const unknown = describeMoveProgress({ done: 0, total: null, phase: "verify" });
+    const unknown = describeMoveProgress({ done: 0, total: null, phase: "move" });
     const empty = describeMoveProgress({ done: 0, total: 0, phase: "catalog" });
 
-    expect(unknown).toBe("Verifying checksums…");
+    expect(unknown).toBe("Moving and verifying files…");
     expect(empty).toBe("Rebuilding the index…");
   });
 });
 
 describe("moveProgressFraction", () => {
-  it("moveProgressFraction — a partial copy — is done over total", () => {
-    const fraction = moveProgressFraction({ done: 1, total: 4, phase: "copy" });
+  it("moveProgressFraction — a partially moved library — is done over total", () => {
+    const fraction = moveProgressFraction({ done: 1, total: 4, phase: "move" });
 
     expect(fraction).toBe(0.25);
   });
@@ -92,22 +92,22 @@ describe("moveProgressFraction", () => {
   it("moveProgressFraction — no tick, or a zero or unknown total — is null", () => {
     const results = [
       moveProgressFraction(null),
-      moveProgressFraction({ done: 0, total: 0, phase: "copy" }),
-      moveProgressFraction({ done: 3, total: null, phase: "copy" }),
+      moveProgressFraction({ done: 0, total: 0, phase: "move" }),
+      moveProgressFraction({ done: 3, total: null, phase: "move" }),
     ];
 
     expect(results).toEqual([null, null, null]);
   });
 
   it("moveProgressFraction — a done that overshoots total — clamps to 1", () => {
-    const fraction = moveProgressFraction({ done: 9, total: 4, phase: "copy" });
+    const fraction = moveProgressFraction({ done: 9, total: 4, phase: "move" });
 
     expect(fraction).toBe(1);
   });
 });
 
 describe("describeMoveResult", () => {
-  it("describeMoveResult — a finished move — names the new root and the old copy left behind", () => {
+  it("describeMoveResult — a finished move — names the new root and the emptied old folder", () => {
     const text = describeMoveResult("E:\\new-library", "D:\\race-data\\data");
 
     expect(text).toContain("E:\\new-library");

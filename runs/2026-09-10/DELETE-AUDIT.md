@@ -39,6 +39,12 @@ production function, not the grep hit alone).
 - rust/core/src/store/profile.rs:112-118 — `profile::delete`: explicit single-profile-file delete, used by an explicit "delete profile" command; no-op if absent.
 - rust/tauri/src/commands/catalog.rs:1029 — the `blob_path` remove_file inside `delete_session_via`, already covered under (e).
 
+## (h) `move_data_dir` (added 2026-09-10, rulings R196/R197)
+
+- rust/tauri/src/commands/app.rs — `copy_verify_delete`: removes a source file only after its copy has landed at the destination and verified (sha256 against the blob’s own path-named digest; byte length for everything else). A verify failure returns before the delete, leaving the source untouched.
+- rust/tauri/src/commands/app.rs — `move_data_dir_via`: removes a source file whose destination copy already verifies, which is how an interrupted move resumes on rerun without recopying.
+- rust/tauri/src/commands/app.rs — `prune_emptied_dirs`: `remove_dir` (never `remove_dir_all`) on the five moved trees’ directories, deepest first. A directory still holding anything makes the call fail and be ignored, so this can only remove what the move itself emptied. The old `<data>` root, its `tmp/` and `inbox/`, and the user’s folder above it are never touched.
+
 ## Answers to the five questions
 
 **(1) Dev vs release data dir.** Same. `app/src-tauri/tauri.conf.json` sets a single `identifier: "com.saucyeng.idl1"` (line 5) with no separate dev config file (no `tauri.conf.dev.json` / `--config` override found) and no dev-only branch in `lib.rs`'s `.setup()`. `tauri dev` and a release build both resolve through the same `app.path().app_data_dir()`, which Tauri derives from that one identifier — so both target `%APPDATA%\com.saucyeng.idl1`.

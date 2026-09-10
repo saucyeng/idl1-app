@@ -62,7 +62,7 @@ export default function DataSection({ store }: DataSectionProps) {
   /** The folder chosen for a move, awaiting confirmation. `null` = no move
    *  is being proposed. Separate from `overrideInput` because a move and a
    *  bare override change are different actions with different consequences
-   *  (one copies and verifies, the other only repoints). */
+   *  (one moves and verifies every file, the other only repoints). */
   const [moveTarget, setMoveTarget] = useState<string | null>(null);
   const [moveProgress, setMoveProgress] = useState<MoveProgress | null>(null);
   const [moving, setMoving] = useState<boolean>(false);
@@ -209,8 +209,8 @@ export default function DataSection({ store }: DataSectionProps) {
       <div className="mt-2 flex flex-col gap-2 border-t border-rule pt-3">
         <p className="font-mono text-xs uppercase tracking-[var(--tracking-label)] text-fg-dim">Move library</p>
         <p className="font-mono text-xs text-fg-faint">
-          Copies everything to a new folder, checks it against its own checksums, and switches to it. The old folder
-          is left in place.
+          Moves everything to a folder you pick, one file at a time, checking each against its own checksum before
+          removing it from the old folder.
         </p>
         {moveTarget === null ? (
           <Button type="button" onClick={handlePickMoveTarget} disabled={moving} className="w-fit">

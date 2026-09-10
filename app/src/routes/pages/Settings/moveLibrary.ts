@@ -29,36 +29,35 @@ export async function pickLibraryFolder(
 }
 
 /** The confirmation shown before a move runs. Says the three things a user
- *  needs to decide with: that everything is copied and verified, that the
- *  old folder is left alone rather than emptied (C4 §1 — the app never
- *  deletes it, so disk use doubles until the user does), and that the app
- *  reopens against the new location.
+ *  needs to decide with: that this is a real move rather than a copy (C4
+ *  §1 as amended by ruling R197 — the disk may not hold two libraries),
+ *  that each file is only removed from the old folder once it has verified
+ *  in the new one, and that a failure stops without switching.
  *
  * @param currentPath - The `<data>` root in use right now.
  * @param newRoot - The folder chosen to move to.
  * @returns The confirmation paragraph. Not localized. */
 export function describeMove(currentPath: string, newRoot: string): string {
   return (
-    `idl1 will copy your whole library from "${currentPath}" to "${newRoot}", checking every file against its ` +
-    "own checksum as it arrives, and then start using the new location. " +
-    `Nothing is deleted: the copy at "${currentPath}" is left exactly as it is, so you will be using disk space ` +
-    "in both places until you remove the old one yourself. " +
-    "If anything fails to verify, the move stops and idl1 keeps using the current location."
+    `idl1 will move your whole library from "${currentPath}" to "${newRoot}", one file at a time, and then start ` +
+    "using the new location. " +
+    "Each file is removed from the old folder only after it has arrived and been checked against its own " +
+    "checksum, so only one file is ever in both places at once. " +
+    "If anything fails to check out, the move stops there, that file stays where it is, and idl1 keeps using " +
+    "the current location — run the move again to pick up where it left off."
   );
 }
 
-/** Human-readable name for a `move_data_dir` progress phase (C3 §3.10:
- *  `"copy"`, then `"verify"`, then `"catalog"`). An unrecognised phase
+/** Human-readable name for a `move_data_dir` progress phase (C3 §3.10 as
+ *  amended by R197: `"move"`, then `"catalog"`). An unrecognised phase
  *  falls through as itself rather than being hidden — a new phase should
  *  look unfamiliar, not invisible.
  *
  * @param phase - The `phase` field of a {@link MoveProgress} tick. */
 export function movePhaseLabel(phase: string): string {
   switch (phase) {
-    case "copy":
-      return "Copying files";
-    case "verify":
-      return "Verifying checksums";
+    case "move":
+      return "Moving and verifying files";
     case "catalog":
       return "Rebuilding the index";
     default:
@@ -105,7 +104,7 @@ export function moveProgressFraction(progress: MoveProgress | null): number | nu
  * @param oldPath - The `<data>` root the app is still running against. */
 export function describeMoveResult(newRoot: string, oldPath: string): string {
   return (
-    `Your library was copied to "${newRoot}" and verified, and idl1 will use it after you restart. ` +
-    `The old copy is still at "${oldPath}" — delete it yourself once you are satisfied the move worked.`
+    `Your library was moved to "${newRoot}" and every file verified, and idl1 will use it after you restart. ` +
+    `Nothing of it is left at "${oldPath}"; the empty folders there are yours to remove.`
   );
 }

@@ -54,27 +54,28 @@ export async function setDataDir(path: string | null): Promise<DataDirInfo> {
   return invoke<DataDirInfo>("set_data_dir", { path });
 }
 
-/** One `move_data_dir` progress tick (C3 §3.10). `done`/`total` count
- *  files, and `phase` runs `"copy"` → `"verify"` → `"catalog"` in that
- *  order. Structurally the same shape `ipc/device.ts` uses; declared here
- *  rather than imported so neither module depends on the other. */
+/** One `move_data_dir` progress tick (C3 §3.10 as amended by ruling R197).
+ *  `done`/`total` count files, and `phase` runs `"move"` then `"catalog"`.
+ *  Structurally the same shape `ipc/device.ts` uses; declared here rather
+ *  than imported so neither module depends on the other. */
 export interface MoveProgress {
   done: number;
   total: number | null;
-  /** `"copy"`, `"verify"` or `"catalog"`. Not localized. */
+  /** `"move"` or `"catalog"`. Not localized. */
   phase: string;
 }
 
 /** Moves the whole library to `newRoot` and switches the override to it
- *  (C3 §3.10, C4 §1 "Moving the root", ruling R196).
+ *  (C3 §3.10, C4 §1 "Moving the root", ruling R196 as amended by R197).
  *
- *  Copies `blobs/`, `sessions/`, `workbooks/`, `tracks/` and `profiles/`,
- *  verifying every blob's sha256 on arrival, rebuilds the catalog at the
- *  destination, and only then writes `settings.json`. Nothing is deleted:
- *  the old root is left in place for the user, and any failure leaves the
- *  override pointing where it did before. Rejects with `invalid_argument`
- *  for a relative, overlapping, non-empty or unwritable target,
- *  `unsupported_platform` on mobile. Desktop only, explicit user action. */
+ *  Moves `blobs/`, `sessions/`, `workbooks/`, `tracks/` and `profiles/` one
+ *  file at a time — a rename on the same volume, otherwise copy, verify,
+ *  delete — so peak extra disk is one file, rebuilds the catalog at the
+ *  destination, and only then writes `settings.json`. A file is removed from
+ *  the old root only once its copy has verified; a failure stops there,
+ *  leaving the override where it was, and rerunning finishes the job.
+ *  Rejects with `invalid_argument` for a relative, overlapping, non-empty or
+ *  unwritable target, `unsupported_platform` on mobile. Desktop only. */
 export async function moveDataDir(newRoot: string, onProgress: (p: MoveProgress) => void): Promise<DataDirInfo> {
   const progress = new Channel<MoveProgress>();
   progress.onmessage = onProgress;

@@ -317,23 +317,29 @@ are defined in `docs/superpowers/specs/2026-09-02-idl1-rewrite-design.md` §10.
   directory, or cannot be written (C4 §1 "Missing root"), and creates
   nothing anywhere — the launch keeps the window but starts no library
   subsystem, and the frontend gate blocks every tab behind a screen naming
-  the folder, with Retry and Choose folder. (2) `move_data_dir` (C3 §3.10)
-  copies `blobs/`, `sessions/`, `workbooks/`, `tracks/` and `profiles/` to a
-  new root, re-hashes every copied file and checks each blob against the
-  digest its own path names, rebuilds the catalog at the destination, and
-  only then writes the override; it refuses a relative, overlapping,
-  non-empty or unwritable target and never deletes anything, so the old root
-  stays for the user. Settings > Data drives it with a folder picker,
+  the folder, with Retry and Choose folder. (2) `move_data_dir` (C3 §3.10,
+  amended by R197 to move rather than copy) moves `blobs/`, `sessions/`,
+  `workbooks/`, `tracks/` and `profiles/` to a new root one file at a time —
+  rename on the same volume, otherwise copy, verify (sha256 against the
+  blob's own path-named digest, byte length for the rest), delete the source
+  — then rebuilds the catalog at the destination and only then writes the
+  override; it refuses a relative, overlapping or unwritable target, prunes
+  only directories it emptied, and a copy that does not verify leaves its
+  source untouched. Settings > Data drives it with a folder picker,
   confirmation, per-phase progress and a result line. (3) `tauri dev` runs
   under `com.saucyeng.idl1.dev` via a `--config` overlay
   (`npm run tauri:dev`), so a dev build can no longer open the real library.
   (4) A delete-guard `#[test]` scans core/transport/tauri for non-test
   `remove_*` calls and fails unless the set matches the allowlist audited in
   `runs/2026-09-10/DELETE-AUDIT.md`; it immediately found `delete_track`
-  missing from that audit. Not done here: nothing cleans up a partial copy at
-  a failed move's destination (deleting it would be a new delete site), and
-  Retry/Choose folder both end at "restart idl1" rather than resuming in
-  place, because `<data>` is resolved once per process.
+  missing from that audit. Lane decision worth a reader's attention: C3 §3.10
+  refuses a non-empty move target while C4 §1 requires an interrupted move to
+  resume on rerun, so a target is accepted when it is absent, empty, or holds
+  nothing but a `data/` directory whose entries are all moved-tree names.
+  Not done here: R197's CLI half (`idl-rs library fold-in|scan|stale|rebuild`)
+  is a separate lane, and Retry/Choose folder both end at "restart idl1"
+  rather than resuming in place, because `<data>` is resolved once per
+  process.
 
 ## Wave 3
 
