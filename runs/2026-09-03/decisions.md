@@ -8434,3 +8434,21 @@ operates a service, which is a product decision he has now made.
 **Cost if wrong:** the broker is ~200 lines and the namespace is a
 prefix; a single-user Drive path (offered earlier) would have to be
 rebuilt for multi-user, which is why it is not the default any more.
+
+## R189 amended — Local for this phase; forward-compatible where it is free
+
+*2026-09-10, Isaac: "let's keep it local for this phase, but make the
+architecture forward compatible where we can."* Cloud sync is not built
+this phase. Standing constraints on everything that IS built, so the
+R189 shape can be added without rework: (1) sync stays behind the
+transport trait; nothing outside `idl-transport` knows a peer is on a
+LAN; (2) manifest and blob layouts stay content-addressed and
+**prefixable**: no path assumes a single user or a single device;
+(3) the per-cell workbook merge stays a pure client-side function;
+(4) secrets (pair tokens, any future identity token) live in
+`app_config_dir`, never in `<data>`, never synced; (5) "peer appeared"
+is one trigger among possible triggers, never the only path into a sync;
+(6) the C5 draft is written to R189's shape when a spec slot is free, so
+the first cloud lane starts from a contract, not a memory. **Cost if
+wrong:** none of these cost anything today; each is already true or one
+naming choice away.
