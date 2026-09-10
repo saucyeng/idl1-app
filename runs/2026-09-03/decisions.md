@@ -8118,3 +8118,46 @@ legible on its own.
 **Cost if wrong.** Under-emitting would show as a stale pane between polls
 — bounded by the poll interval, and the tests pin the change case. Over-
 emitting is what we had.
+
+---
+
+## R177 — Spectrogram axes get labels now; the colour ramp is never reimplemented in TypeScript
+
+*2026-09-09, lead. Gap found by the `honesty` lane.*
+
+`RasterMeta` (C3 §3.6) carries `x_label`, `y_label` and
+`scale.vmin`/`vmax`. The app fetches all four and draws **none** of them.
+So a spectrogram today has unlabelled axes and no indication of what its
+colours mean, while the engine has already computed every piece of that.
+`magnitude_unit` was the same gap and closed this evening; these are its
+three siblings on the same DTO.
+
+**Split, because the obvious single lane contains a trap.**
+
+**Now, app-only:** `x_label` and `y_label` render on the raster's axes, and
+`scale.vmin`/`vmax` render as **text** — a plain numeric range, with
+`magnitude_unit` (already surfaced) as its unit. That is most of the value
+and needs nothing new on the wire.
+
+**Deferred, and deliberately:** a gradient colour-bar legend. Drawing one
+means knowing the ramp, and the ramp is `idl_rs::colormap::turbo_rgba8` —
+**Rust**. Reimplementing Turbo in TypeScript to draw a legend would put the
+same colour ramp in two languages, where the legend can drift from the
+pixels it describes and no test would catch it. That is R143's false friend
+and R169's three formatters, in colour.
+
+**When it lands, the ramp comes from the engine**: `RasterMeta` (or a
+one-time command) exposes the ramp as a short list of RGBA stops — sixteen
+is visually continuous for a legend bar — and TypeScript builds a CSS
+gradient from stops it was *given*, never from a ramp it recomputed. One
+definition of Turbo, in the language that owns it. Needs the cargo slot and
+a C3 amendment, so it waits for a Rust lane.
+
+**Not acceptable as a shortcut:** sampling the ramp by reading pixels back
+out of a fetched raster. It would work and it would be clever, and it makes
+the legend depend on whatever data happened to be on screen.
+
+**Cost if wrong.** Text-only bounds are less pretty than a colour bar and
+strictly honest; the split costs one extra lane. Getting it wrong the other
+way puts a second Turbo in the codebase, and the failure mode is a legend
+that confidently mislabels the picture beside it.
