@@ -25,7 +25,7 @@
  * DOM-free — the `CssVarReader` is injected, so every branch below is
  * testable with no browser.
  */
-import type { PaperTheme } from "../../../Settings/theme";
+import type { PaperTheme, ThemeChoice } from "../../../Settings/theme";
 import type { CssVarReader } from "../../theme/series";
 import type { PlotThemeOptions } from "../../theme/plotTheme";
 import type { PrintPalette } from "./printPalette";
@@ -100,35 +100,51 @@ const PAPER_LIGHT_PLOT_THEME: PlotThemeOptions = {
 };
 
 /**
- * Which scheme `choice` is actually drawn in.
+ * Which scheme paper is actually drawn in, from the two stored choices
+ * (ruling R185 item 3).
  *
- * `"app"` follows the app, and the app is dark: `tokens.css` authors no
- * light theme at all (decision 5's non-goal, asserted by
- * `styles/tokenSheet.test.ts`), so "follow the app" and "force dark" agree
- * today and will stop agreeing by themselves the day light tokens land —
- * which is why `"app"` is a stored choice rather than a synonym written
- * into the pref.
+ * `"light"` and `"dark"` force, ignoring `appTheme` entirely — that is what
+ * makes them forces rather than defaults. `"app"` follows, and following
+ * lands on dark either way today: `themeAttribute` stamps `"dark"` for the
+ * `"dark"` choice, and `"system"` degrades to dark as well, because
+ * `tokens.css` authors no light theme at all (decision 5's non-goal,
+ * asserted by `styles/tokenSheet.test.ts`). `appTheme` is still a real
+ * parameter rather than an assumption baked in here: the day light tokens
+ * land, the `"app"` branch starts returning `"light"` on its own, and the
+ * stored `"app"` choice is what makes that possible without rewriting
+ * anyone's pref.
  *
- * @param choice - The user's stored paper theme.
+ * @param appTheme - The app's own theme choice (`Settings/prefs.ts`'s
+ *   `ui.theme`).
+ * @param paperTheme - The user's stored paper theme (`ui.paper_theme`).
  */
-export function paperScheme(choice: PaperTheme): PaperScheme {
-  return choice === "light" ? "light" : "dark";
+export function effectivePaperTheme(appTheme: ThemeChoice, paperTheme: PaperTheme): PaperScheme {
+  if (paperTheme === "light") return "light";
+  if (paperTheme === "dark") return "dark";
+  return appThemeScheme(appTheme);
+}
+
+/** What the app itself currently resolves to. Always `"dark"` today; the
+ *  one place that fact lives, so light tokens landing is a change here and
+ *  nowhere else. */
+function appThemeScheme(_appTheme: ThemeChoice): PaperScheme {
+  return "dark";
 }
 
 /**
- * The palette paper draws with under `choice`.
+ * The palette paper draws with in `scheme`.
  *
- * `"light"` gets this module's own fixed values. `"app"` and `"dark"` both
- * read the app's live tokens through `buildScreenPalette` — the app's own
- * palette *is* the dark one today ({@link paperScheme}), and reading it
- * live means a retuned `--chart-N` shows up on paper with no second edit
- * here.
+ * `"light"` gets this module's own fixed values, read from no token at all
+ * — a forced scheme that read the app's tokens would not be forced.
+ * `"dark"` reads the app's live tokens through `buildScreenPalette`, since
+ * the app's own palette *is* the dark one, and reading it live means a
+ * retuned `--chart-N` reaches paper with no second edit here.
  *
- * @param choice - The user's stored paper theme.
+ * @param scheme - {@link effectivePaperTheme}'s result.
  * @param read - Resolves a CSS custom property (`documentVars()` in the app).
  */
-export function buildPaperPalette(choice: PaperTheme, read: CssVarReader): PrintPalette {
-  if (paperScheme(choice) === "dark") return buildScreenPalette(read);
+export function buildPaperPalette(scheme: PaperScheme, read: CssVarReader): PrintPalette {
+  if (scheme === "dark") return buildScreenPalette(read);
 
   return {
     theme: PAPER_LIGHT_PLOT_THEME,

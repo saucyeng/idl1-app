@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { buildPaperPalette, paperScheme, PAPER_LIGHT_CONTRAST_TARGET, PAPER_LIGHT_SERIES_COLOURS } from "./paperPalette";
+import { buildPaperPalette, effectivePaperTheme, PAPER_LIGHT_CONTRAST_TARGET, PAPER_LIGHT_SERIES_COLOURS } from "./paperPalette";
 
 /** A reader standing in for the app's live dark tokens. */
 function appTokens(name: string): string {
@@ -24,30 +24,37 @@ function contrastAgainstWhite(hex: string): number {
   return 1.05 / (luminance + 0.05);
 }
 
-describe("paperScheme", () => {
-  it("paperScheme — light — light", () => {
-    expect(paperScheme("light")).toBe("light");
+describe("effectivePaperTheme", () => {
+  it("effectivePaperTheme — paper forced light — light, whatever the app is", () => {
+    const schemes = [effectivePaperTheme("dark", "light"), effectivePaperTheme("system", "light")];
+
+    expect(schemes).toEqual(["light", "light"]);
   });
 
-  it("paperScheme — dark — dark", () => {
-    expect(paperScheme("dark")).toBe("dark");
+  it("effectivePaperTheme — paper forced dark — dark, whatever the app is", () => {
+    const schemes = [effectivePaperTheme("dark", "dark"), effectivePaperTheme("system", "dark")];
+
+    expect(schemes).toEqual(["dark", "dark"]);
   });
 
-  it("paperScheme — app — dark, the only authored app palette", () => {
-    expect(paperScheme("app")).toBe("dark");
+  it("effectivePaperTheme — paper follows the app, app dark — dark", () => {
+    const scheme = effectivePaperTheme("dark", "app");
+
+    expect(scheme).toBe("dark");
+  });
+
+  it("effectivePaperTheme — paper follows the app, app follows the OS — dark, since no light tokens exist", () => {
+    const scheme = effectivePaperTheme("system", "app");
+
+    expect(scheme).toBe("dark");
   });
 });
 
 describe("buildPaperPalette", () => {
-  it("buildPaperPalette — app — the app's own live tokens", () => {
-    const palette = buildPaperPalette("app", appTokens);
-
-    expect(palette.resolve("--chart-2")).toBe("app-colour-2");
-  });
-
   it("buildPaperPalette — dark — the app's own live tokens", () => {
     const palette = buildPaperPalette("dark", appTokens);
 
+    expect(palette.resolve("--chart-2")).toBe("app-colour-2");
     expect(palette.seriesColours[0]).toBe("app-colour-1");
   });
 
