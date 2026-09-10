@@ -397,6 +397,43 @@ describe("runChannelBind", () => {
     expect(bound).toEqual([{ source: "definition", name: "avg_speed", budget: 1280, unit: { state: "known", text: "km/h" } }]);
   });
 
+  it("runChannelBind — the same width on mobile — a strictly lower budget than on desktop", async () => {
+    const cellBinding = mixedBinding([{ channelId: "avg_speed", source: "definition" }]);
+    const budgetsAt = async (isMobile: boolean): Promise<number[]> => {
+      const calls: number[] = [];
+      const deps: ChannelBindDeps = {
+        fetchTile: () => Promise.reject(new Error("fetchTile not expected for a definition-only cell")),
+        fetchHostChannel: (_defName, budget) => {
+          calls.push(budget);
+          return Promise.resolve(fakeHostChannel([1, 2, 3]));
+        },
+      };
+      await runChannelBind(deps, new TileCache(), oneWindow(), "cell-a", cellBinding, 640, () => {}, neverStale, isMobile);
+      return calls;
+    };
+
+    const desktop = await budgetsAt(false);
+    const mobile = await budgetsAt(true);
+
+    expect(mobile[0]).toBeLessThan(desktop[0]);
+  });
+
+  it("runChannelBind — no isMobile argument — the desktop budget, unchanged", async () => {
+    const cellBinding = mixedBinding([{ channelId: "avg_speed", source: "definition" }]);
+    const calls: number[] = [];
+    const deps: ChannelBindDeps = {
+      fetchTile: () => Promise.reject(new Error("fetchTile not expected for a definition-only cell")),
+      fetchHostChannel: (_defName, budget) => {
+        calls.push(budget);
+        return Promise.resolve(fakeHostChannel([1, 2, 3]));
+      },
+    };
+
+    await runChannelBind(deps, new TileCache(), oneWindow(), "cell-a", cellBinding, 640, () => {}, neverStale);
+
+    expect(calls).toEqual([1280]);
+  });
+
   it("runChannelBind — a mixed cell (session + definition) — dispatches both kinds in channel order, mounts only the session channel", async () => {
     const cache = new TileCache();
     const fetchOrder: string[] = [];
@@ -717,6 +754,27 @@ describe("runChannelSettle", () => {
 
     // pointBudget(100, false) = 200 (2 points/pixel column, DESKTOP_POINTS_PER_PIXEL_COLUMN).
     expect(hostChannelCalls).toEqual([200]);
+  });
+
+  it("runChannelSettle — the same width on mobile — a strictly lower budget than on desktop", async () => {
+    const channels = mixedBinding([{ channelId: "avg_speed", source: "definition" }]).channels;
+    const budgetsAt = async (isMobile: boolean): Promise<number[]> => {
+      const calls: number[] = [];
+      const deps: ChannelBindDeps = {
+        fetchTile: () => Promise.reject(new Error("no session channel in this fixture")),
+        fetchHostChannel: (_defName, budget) => {
+          calls.push(budget);
+          return Promise.resolve(fakeHostChannel([1]));
+        },
+      };
+      await runChannelSettle(deps, new TileCache(), oneWindow(), "cell-a", channels, "avg_speed", 0, 1_000_000, 100, () => {}, neverStale, [], isMobile);
+      return calls;
+    };
+
+    const desktop = await budgetsAt(false);
+    const mobile = await budgetsAt(true);
+
+    expect(mobile[0]).toBeLessThan(desktop[0]);
   });
 });
 

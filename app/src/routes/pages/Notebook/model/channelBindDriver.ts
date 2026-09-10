@@ -279,6 +279,15 @@ export async function fetchChannelWindow(
  *   addition to `channelData`; `null` when every one of `channels` is a
  *   `"definition"` (L6 Task 18, Q2(a)) -- no `chartWindow` dispatch happens
  *   then, since there is no mounted `ChartCell` to feed one.
+ * @param isMobile Whether this chart is being drawn at a paper/mobile
+ *   viewport width (`model/paperView.ts`'s `paperViewActive`, ruling R184)
+ *   -- halves every `pointBudget` below, closing design line 152's
+ *   "the host caps line marks at ~2 points per pixel column per series and
+ *   lower on mobile", whose mobile half had no wiring: both call sites
+ *   passed a hardcoded `false`. Defaulted to `false` on the two exported
+ *   entry points so a caller that has no width opinion still gets exactly
+ *   the desktop behaviour it had before; `Notebook/index.tsx` passes the
+ *   real predicate.
  * @param previousBound This cell's `BoundChannel[]` as of the last time it
  *   was registered (`NotebookSession.boundChannelsFor`, `[]` on an initial
  *   bind) -- read only to decide whether a `"definition"` channel's
@@ -303,6 +312,7 @@ async function runChannelBindWindow(
   mountedChannelId: string | null,
   viewport: AbsoluteSpan,
   chartWidthPx: number,
+  isMobile: boolean,
   dispatch: ChannelBindDispatch,
   isStale: () => boolean,
   previousBound: BoundChannel[] = []
@@ -321,7 +331,7 @@ async function runChannelBindWindow(
 
   for (const channel of channels) {
     if (channel.source === "definition") {
-      const budget = clampHostChannelBudget(pointBudget(chartWidthPx, false));
+      const budget = clampHostChannelBudget(pointBudget(chartWidthPx, isMobile));
       const previous = previousBound.find((b) => b.source === "definition" && b.name === channel.channelId);
       if (previous !== undefined && !shouldRefetchHostChannel(previous.budget, budget)) {
         // The consequence of `fetch_host_channel` having no time window
@@ -391,7 +401,7 @@ async function runChannelBindWindow(
       continue;
     }
 
-    const budget = pointBudget(chartWidthPx, false);
+    const budget = pointBudget(chartWidthPx, isMobile);
     const series: WindowSeries[] = [];
     // Every window that actually contributed a `series` entry, in the same
     // order -- `combined.windows[k]`'s own `AbsoluteSpan`, for
@@ -529,6 +539,9 @@ async function runChannelBindWindow(
  * @param windows Every selected window, `windows[0]` the primary --
  *   `binding.initialSpan` is expressed in its coordinate frame (Task 11b,
  *   R131 Q2; see this module's top doc comment).
+ * @param isMobile Whether this chart is being drawn at a paper/mobile
+ *   viewport width -- see {@link runChannelBindWindow}'s own `isMobile`
+ *   doc for what it changes and why it defaults to `false`.
  */
 export async function runChannelBind(
   deps: ChannelBindDeps,
@@ -538,10 +551,11 @@ export async function runChannelBind(
   binding: TimeCellBinding,
   chartWidthPx: number,
   dispatch: ChannelBindDispatch,
-  isStale: () => boolean
+  isStale: () => boolean,
+  isMobile = false
 ): Promise<void> {
   const { startUs, endUs } = binding.initialSpan;
-  return runChannelBindWindow(deps, cache, windows, cellId, binding.channels, binding.mountedChannelId, { startUs, endUs }, chartWidthPx, dispatch, isStale);
+  return runChannelBindWindow(deps, cache, windows, cellId, binding.channels, binding.mountedChannelId, { startUs, endUs }, chartWidthPx, isMobile, dispatch, isStale);
 }
 
 /**
@@ -567,6 +581,15 @@ export async function runChannelBind(
  * @param startUs,endUs The settled viewport, in the *primary* window's own
  *   coordinate frame -- re-based onto every other window's own start
  *   before fetching (`model/viewportWindows.ts`'s `mapViewportToWindow`).
+ * @param isMobile Whether this chart is being drawn at a paper/mobile
+ *   viewport width (`model/paperView.ts`'s `paperViewActive`, ruling R184)
+ *   -- halves every `pointBudget` below, closing design line 152's
+ *   "the host caps line marks at ~2 points per pixel column per series and
+ *   lower on mobile", whose mobile half had no wiring: both call sites
+ *   passed a hardcoded `false`. Defaulted to `false` on the two exported
+ *   entry points so a caller that has no width opinion still gets exactly
+ *   the desktop behaviour it had before; `Notebook/index.tsx` passes the
+ *   real predicate.
  * @param previousBound This cell's `BoundChannel[]` as registered before
  *   this settle (`NotebookSession.boundChannelsFor(cellId)`) -- read only to
  *   decide the definition-channel budget-unchanged skip above.
@@ -583,7 +606,8 @@ export async function runChannelSettle(
   chartWidthPx: number,
   dispatch: ChannelBindDispatch,
   isStale: () => boolean,
-  previousBound: BoundChannel[] = []
+  previousBound: BoundChannel[] = [],
+  isMobile = false
 ): Promise<void> {
-  return runChannelBindWindow(deps, cache, windows, cellId, channels, mountedChannelId, { startUs, endUs }, chartWidthPx, dispatch, isStale, previousBound);
+  return runChannelBindWindow(deps, cache, windows, cellId, channels, mountedChannelId, { startUs, endUs }, chartWidthPx, isMobile, dispatch, isStale, previousBound);
 }

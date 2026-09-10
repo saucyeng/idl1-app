@@ -1839,7 +1839,10 @@ export default function NotebookPage() {
       const seq = cellRunSequencerRef.current.start(cellId);
       const isStale = () => !cellRunSequencerRef.current.isCurrent(cellId, seq);
 
-      void runChannelBind(deps, sessionRef.current.cache, bindWindows, cellId, binding, DEFAULT_CHART_WIDTH_PX, onAction, isStale);
+      // Design line 152's mobile half (ruling R184, task 6): the same
+      // predicate that decides paper decides the point budget, so a phone
+      // fetches half the points a desktop does at the same chart width.
+      void runChannelBind(deps, sessionRef.current.cache, bindWindows, cellId, binding, DEFAULT_CHART_WIDTH_PX, onAction, isStale, paperActive);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
@@ -2537,7 +2540,8 @@ export default function NotebookPage() {
                     viewport.pixelWidth,
                     onAction,
                     isStale,
-                    sessionRef.current.boundChannelsFor(cellId)
+                    sessionRef.current.boundChannelsFor(cellId),
+                    paperActive
                   );
 
                   // "Every chart re-fetches" (plan Task 4): every *other*
@@ -2582,7 +2586,8 @@ export default function NotebookPage() {
                       DEFAULT_CHART_WIDTH_PX,
                       onAction,
                       otherIsStale,
-                      sessionRef.current.boundChannelsFor(otherCellId)
+                      sessionRef.current.boundChannelsFor(otherCellId),
+                      paperActive
                     );
                   }
                 }}
