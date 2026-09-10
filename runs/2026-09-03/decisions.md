@@ -8452,3 +8452,25 @@ is one trigger among possible triggers, never the only path into a sync;
 the first cloud lane starts from a contract, not a memory. **Cost if
 wrong:** none of these cost anything today; each is already true or one
 naming choice away.
+
+## R190 — The setup sheet is a per-session snapshot, not a per-bike constant
+
+*2026-09-10, lead, from Isaac's `Sample Setup Sheet.csv` (copied to
+`docs/setup-sheet/sample-setup-sheet.csv`; the original stays untracked in
+the repo root as his working file).* What the sheet says about the M6
+task 1 design: (1) it is headed by Date, Bike, Rider, Session, so it is a
+**snapshot at ride time**, attached to a session, with a per-bike
+template and "copy from last session" as the editing path; (2) it is
+**sectioned** (front tire, rear tire, wheels, fork, shock, geometry) with
+a notes line per section; (3) fields are **model-dependent**: the X2
+Performance has no HSC/HSR and an air shock has no spring rate, so blanks
+are "not applicable", not "unknown", and the schema is typed known keys
+plus free notes, never a fixed table; (4) units on every numeric: PSI,
+mm of travel, clicks for damper settings (click convention to confirm
+with Isaac: counted from fully closed is the industry norm), mm bar
+height; (5) it is an **input** to analysis (a damper setting is exactly
+the kind of thing frequency-response comparisons are keyed on), so it is
+content-addressed and synced like a profile, and M5's cross-session
+queries must be able to filter on it. Spec-first when M6 opens.
+**Cost if wrong:** a schema is a file format; per-session attachment is
+the one choice that is hard to retrofit, and the sheet itself argues for it.
