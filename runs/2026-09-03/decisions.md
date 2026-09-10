@@ -8011,3 +8011,52 @@ option that is defensible tonight and cheap to overrule later.
 change to retune. The expensive half is item 1: if chips and lines are ever
 resolved separately, the report's key silently lies, and that is the part
 worth getting right the first time.
+
+---
+
+## R175 — `peer_appeared` carries a tagged sighting, and stays edge-triggered
+
+*2026-09-09, lead. Task 2 of the `discovered` lane, stopped to ask as briefed.*
+
+**Shape: a tagged enum**, `PeerSightingDto` with `Paired(PeerStatusDto)` /
+`Discovered(DiscoveredPeerDto)`, internally tagged as
+`status: "paired" | "discovered"`.
+
+Rejected: a flat `paired: bool` on one widened struct. `PeerStatusDto`
+carries `paired_at_ms`, a fact a discovered-only peer has not earned;
+flattening would demote it to `Option<i64>`, and every consumer would then
+handle a `None` that really means "wrong variant" wearing a nullable field.
+The enum makes the illegal state unrepresentable rather than merely
+unlikely, and gives TypeScript a discriminant to switch on.
+
+Rejected: two events (`peer_appeared` / `peer_discovered`). A pane wanting
+"everything that just changed" would subscribe to both and interleave them
+by timestamp — pushing a merge problem onto every subscriber to avoid one
+enum. The lane reached this conclusion itself and was right.
+
+The event keeps its name. "Appeared" still describes what happens, and
+renaming costs a C3 entry and a TS listener for nothing.
+
+**The part the lane did not raise, which is the actual risk.** Today the
+loop fires only for peers already in the paired set — few, and therefore
+level-triggered firing (once per browse tick while visible) would have gone
+unnoticed. Unpaired peers are however many devices are on the LAN. On an
+office or café network, widening a level-triggered event turns it into a
+per-tick firehose into the frontend, re-rendering the pane every tick.
+
+**Ruling: preserve today's edge semantics for both variants** — a sighting
+fires on not-visible → visible, not repeatedly while visible. Tested
+directly: a peer seen on two consecutive ticks fires **once**. If today's
+loop turns out to already be level-triggered, that is *not* to be quietly
+fixed inside this task — making an existing event fire less often is a
+behaviour change with its own consumers, and gets its own ruling.
+
+Also settled: a peer that pairs mid-session arrives as `Paired` on its next
+sighting — the variant follows current membership, not the state at first
+sighting. `DiscoveredPeerDto` may carry address/port (the user's own LAN,
+and pairing needs it) but nothing token-adjacent.
+
+**Cost if wrong.** The shape is a wire change before any consumer exists —
+cheap now, expensive once the pane ships. The edge/level point is the
+expensive one: a firehose event is not a visible bug, it is a slow pane and
+a flat battery, and nobody traces that back to a discovery loop.
