@@ -106,7 +106,8 @@ are defined in `docs/superpowers/specs/2026-09-02-idl1-rewrite-design.md` §10.
   wave-2 paragraph. Parity gaps dropped or deferred
   per the plan's table (`docs/superpowers/plans/
   2026-09-05-idl1-wave2-l7b-device-tab.md`): IMU calibration and
-  firmware OTA (wave 3), the Android WiFi bind-follows-mode controller
+  firmware OTA (landed 2026-09-10, see the OTA lane entry below), the
+  Android WiFi bind-follows-mode controller
   and the RX/TX link-activity blink (dropped), reserved digital
   `level`/`pwm` channel kinds and per-channel analog rate overrides
   (parsed/preserved, not exposed), HRM scan filtering to heart-rate
@@ -119,11 +120,30 @@ are defined in `docs/superpowers/specs/2026-09-02-idl1-rewrite-design.md` §10.
   call site — prefs still live in `localStorage` via `prefsStore.ts`
   (Task 2's own design), and migrating that to `settings.json` (R53 Q1's
   stated risk) is a separate task, not scheduled by this one. Parity gaps: Google Drive dropped
-  permanently (replaced by Sync, not deferred); Firmware/OTA deferred to
-  wave 3 (operating brief §3); "Full reference"/"Report issue" links
+  permanently (replaced by Sync, not deferred); Firmware/OTA landed
+  2026-09-10 (see the OTA lane entry below), no longer deferred;
+  "Full reference"/"Report issue" links
   dropped (idl0 `example.com` placeholders); Licenses omitted (no
   license-page generator wired into idl1's build); chart controls
   reference carried but provisional pending L6's actual bindings.
+- [x] Firmware OTA lane (2026-09-10, rulings R197/R198) — all 4 tasks
+  landed. `idl-transport` streams `POST /ota` with byte progress and splits
+  SPEC §6.1's 400/500/other responses into typed errors carrying the
+  device's own body text, and gains `firmware_catalog` (GitHub Releases,
+  semver precedence, channel filter, `.bin.sha256` sidecar verify).
+  `idl-rs-tauri` owns the state machine — idle → downloading → pushing →
+  rebooting → reconnecting → pending-verify → confirmed / rolled back /
+  failed — behind `push_firmware`, `confirm_firmware`, `firmware_catalog`,
+  `ota_state` and the `ota_state_changed` event (C3 §3.8, written in the
+  same commit). Settings > Firmware replaces the deferred placeholder.
+  Auto-confirm fires only for a catalog push whose sha256 verified and
+  whose device came back on the pushed version; a manual `.bin` always
+  waits for the user. Not built: no roll-back command (the bootloader
+  reverts an unconfirmed image on the next boot — the app shows the
+  power-cycle instruction), no auto-check on a timer or on connect (R198),
+  no Device-hero update banner (SPEC §27.7's second surface — Settings
+  only), and no real-device proof: every test here runs against stubs and
+  a local mock HTTP server.
 - [x] L8w Rust write-amendment lane — all 14 tasks (incl. lead-added Task
   12b) landed on `wave2-l8w-write-amendment`, 20 commands registered;
   lane gate green (`cargo test -p idl-rs-tauri` 188 passed, `cargo test
