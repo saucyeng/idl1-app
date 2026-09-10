@@ -34,6 +34,36 @@ const ABSENCE: ReportBlock = { kind: "absence", cellId: "11223344", reason: "Cha
 
 const APPENDIX: ReportBlock = { kind: "appendix", entries: ["Window Lap 2: not evaluated."] };
 
+/** One sample block per `ReportBlock` kind, keyed by that kind — a
+ *  `Record` over the union's discriminant, so a block kind added to
+ *  `document.ts` later is a compile error here until it is classified as
+ *  screen content or print furniture. */
+const SAMPLE_BY_KIND: Record<ReportBlock["kind"], ReportBlock> = {
+  cover: COVER,
+  session: SESSION,
+  selection: SELECTION,
+  windowSection: WINDOW_SECTION,
+  windowFailure: { kind: "windowFailure", label: "Lap 2", colour: "--chart-2", error: { kind: "eval_failed", message: "boom" } },
+  prose: PROSE,
+  defTable: {
+    kind: "defTable",
+    cellId: "deadbeef",
+    rows: [{ name: "travel", label: null, valueText: "12.0", unit: { text: "mm", unknownReason: null }, rateText: null }],
+  },
+  table: { kind: "table", cellId: "cafebabe", rows: [[{ text: "1.0", isError: false }]] },
+  absence: ABSENCE,
+  chartSlot: {
+    kind: "chartSlot",
+    cellId: "0badf00d",
+    props: { chart: "time", marks: [{ channel: "fork", mark: "lineY" }] },
+    channelData: new Map(),
+    windowLabels: ["Lap 1"],
+    caption: "Lap 1 · time · 1000 points",
+  },
+  comparison: { kind: "comparison", columns: [{ label: "Lap 1", colour: "--chart-1" }], rows: [{ name: "peak", label: null, cells: ["12.0"] }] },
+  appendix: APPENDIX,
+};
+
 describe("blockShowsOnScreen", () => {
   it("blockShowsOnScreen — a cover block — false", () => {
     const shows = blockShowsOnScreen(COVER);
@@ -47,10 +77,12 @@ describe("blockShowsOnScreen", () => {
     expect(shows).toBe(false);
   });
 
-  it("blockShowsOnScreen — every content kind — true", () => {
-    const kept = [SESSION, SELECTION, WINDOW_SECTION, PROSE, ABSENCE].map(blockShowsOnScreen);
+  it("blockShowsOnScreen — every block kind — true for all but cover and appendix", () => {
+    const hidden = Object.entries(SAMPLE_BY_KIND)
+      .filter(([, block]) => !blockShowsOnScreen(block))
+      .map(([kind]) => kind);
 
-    expect(kept).toEqual([true, true, true, true, true]);
+    expect(hidden).toEqual(["cover", "appendix"]);
   });
 });
 
