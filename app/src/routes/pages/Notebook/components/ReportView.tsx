@@ -105,7 +105,7 @@ function ChartSlotView({
     <figure className="report-chart">
       <div ref={containerRef} className="report-chart-svg" />
       {failed && <p className="report-absence">{`Chart \`${block.cellId}\` could not be rendered.`}</p>}
-      {block.windowLabels.length > 0 && <figcaption className="report-chart-caption">{block.windowLabels.join(", ")}</figcaption>}
+      <figcaption className="report-chart-caption">{block.caption}</figcaption>
     </figure>
   );
 }

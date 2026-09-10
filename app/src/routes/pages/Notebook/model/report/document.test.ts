@@ -6,7 +6,8 @@ import { describeWindow, sessionLabel, type SelectionWindow } from "../../../../
 import type { ScannedCell } from "../cells";
 import type { ProseBlock as ProseBlockData } from "../proseBlocks";
 import type { CombinedChannelPayload } from "../channelBindDriver";
-import { buildReportDocument, type BuildReportDocumentInput } from "./document";
+import { generate } from "../../plotForm/generate";
+import { buildReportDocument, formatChartCaption, type BuildReportDocumentInput } from "./document";
 
 function session(overrides: Partial<SessionSummary> = {}): SessionSummary {
   return {
@@ -73,6 +74,7 @@ function input(overrides: Partial<BuildReportDocumentInput> = {}): BuildReportDo
     windows: [],
     sessions: [],
     chartChannelData: new Map(),
+    xMode: "time",
     appVersion: "1.0.0",
     generatedAtMs: 0,
     ...overrides,
@@ -201,7 +203,34 @@ describe("buildReportDocument", () => {
 
     const chartSlots = doc.blocks.filter((b) => b.kind === "chartSlot");
     expect(chartSlots).toHaveLength(1);
-    expect(chartSlots[0]).toMatchObject({ cellId: "cell-8", windowLabels: ["Session"] });
+    expect(chartSlots[0]).toMatchObject({ cellId: "cell-8", windowLabels: ["Session"], caption: "Session — Time axis, 2 points" });
+  });
+
+  it("a chartSlot's caption uses the largest channel's real length, not the requested budget", () => {
+    const code = generate({
+      chart: "time",
+      marks: [
+        { channel: "speed", mark: "lineY" },
+        { channel: "cadence", mark: "lineY" },
+      ],
+    });
+    const cells = [jsCell("cell-9", code)];
+    const chartChannelData = new Map([
+      [
+        "cell-9",
+        new Map([
+          ["speed", payload({ length: 5 })],
+          ["cadence", payload({ length: 40 })],
+        ]),
+      ],
+    ]);
+    const windows = [window()];
+    const evals = [{ ok: [] }];
+
+    const doc = buildReportDocument(input({ cells, markdown: code, evals, windows, sessions: [session()], chartChannelData, xMode: "distance" }));
+
+    const chartSlots = doc.blocks.filter((b) => b.kind === "chartSlot");
+    expect(chartSlots[0]).toMatchObject({ caption: "Session — Distance axis, 40 points" });
   });
 
   it("prose before a cell — carried through in document order", () => {
@@ -281,5 +310,37 @@ describe("buildReportDocument", () => {
 
     const selectionBlock = doc.blocks.find((b) => b.kind === "selection");
     expect(selectionBlock).toEqual({ kind: "selection", windows: [{ label: describeWindow(window(), sessionLabel(s)), colour: "--chart-1" }] });
+  });
+});
+
+describe("formatChartCaption", () => {
+  it("one window, time mode, plural point count — names the window, the axis and the count", () => {
+    const caption = formatChartCaption(["Session — Lap 2"], "time", 2048);
+
+    expect(caption).toBe("Session — Lap 2 — Time axis, 2048 points");
+  });
+
+  it("distance mode — names the distance axis, not time", () => {
+    const caption = formatChartCaption(["Session"], "distance", 512);
+
+    expect(caption).toBe("Session — Distance axis, 512 points");
+  });
+
+  it("a singular point count — says \"point\", not \"points\"", () => {
+    const caption = formatChartCaption(["Session"], "time", 1);
+
+    expect(caption).toBe("Session — Time axis, 1 point");
+  });
+
+  it("no window labels — still states the axis and the count, never a bare dash", () => {
+    const caption = formatChartCaption([], "time", 300);
+
+    expect(caption).toBe("Time axis, 300 points");
+  });
+
+  it("two windows — joins their labels rather than picking one", () => {
+    const caption = formatChartCaption(["Lap 1", "Lap 2"], "time", 900);
+
+    expect(caption).toBe("Lap 1, Lap 2 — Time axis, 900 points");
   });
 });

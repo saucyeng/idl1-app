@@ -1499,6 +1499,7 @@ export default function NotebookPage() {
           windows,
           sessions,
           chartChannelData: groupChannelDataByCell(combinedChannelDataRef.current),
+          xMode,
           appVersion,
           generatedAtMs: Date.now(),
         }),

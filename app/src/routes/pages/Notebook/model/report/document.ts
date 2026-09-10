@@ -25,7 +25,8 @@
  * (every window's samples in one array, `w`-tagged). So every `js` cell is
  * decided exactly **once**, in document-cell order, by {@link
  * buildChartBlocks} — never once per selected window — and its block (a
- * {@link ChartSlotBlock} or a chart {@link AbsenceBlock}) is placed after
+ * {@link ChartSlotBlock}, carrying its own printed caption — see
+ * {@link formatChartCaption} — or a chart {@link AbsenceBlock}) is placed after
  * every window's own section, grouped with the others (plan §4: "overlay
  * charts grouped after them"). Per **ruling R173**'s split, this module
  * decides *that* a chart belongs there and *what* it is made of — the
@@ -45,6 +46,7 @@ import type { TimePlotProps } from "../../plotForm/types";
 import type { ProseBlock as ProseBlockData } from "../proseBlocks";
 import type { CombinedChannelPayload } from "../channelBindDriver";
 import { formatRate, formatUnit, type UnitDisplay } from "../unitText";
+import { X_MODE_OPTIONS, type XMode } from "../xMode";
 
 /** The report's cover page: title, when it was built, and the provenance a
  *  reader would need to reproduce any number in it (plan §3.1 item 1). */
@@ -174,15 +176,20 @@ export interface AbsenceBlock {
  *  `SVGSVGElement` here — this module stays DOM-free; `ReportView` is what
  *  calls `renderChart`. `windowLabels` is every window this chart's data
  *  actually spans (deduplicated, selection order not guaranteed — read
- *  from the channel payloads themselves), for `ReportView`'s caption; see
- *  this module's doc comment for what a fuller caption (X mode, point
- *  budget, plan §3.4) still needs and does not yet have. */
+ *  from the channel payloads themselves), for `ReportView`'s caption.
+ *  `caption` ({@link formatChartCaption}) is that caption's full printed
+ *  text -- the window names plus the worksheet's X mode and the point
+ *  count the data was *actually* reduced to (plan §3.4), never the budget
+ *  that was requested: a zoomed-out static chart has no hover/zoom to
+ *  check that against, so a wrong number here is a specific false
+ *  statement about the signal, worse than no caption at all. */
 export interface ChartSlotBlock {
   kind: "chartSlot";
   cellId: string;
   props: TimePlotProps;
   channelData: ReadonlyMap<string, CombinedChannelPayload>;
   windowLabels: string[];
+  caption: string;
 }
 
 /** One scalar definition's row in the {@link ComparisonBlock} (plan §4) —
@@ -423,6 +430,44 @@ function decodeByteRange(markdown: string, range: [number, number]): string {
   return new TextDecoder().decode(bytes.subarray(range[0], range[1]));
 }
 
+/** The worksheet-level {@link XMode}'s display label, read from the one
+ *  place that names it (`model/xMode.ts`'s `X_MODE_OPTIONS`, the same list
+ *  the worksheet's own X-mode control renders) rather than a second literal
+ *  `"Time"`/`"Distance"` copy here. Falls back to the raw mode value for a
+ *  future mode this list has not yet named — never throws on a value this
+ *  module cannot otherwise reject at the type level. */
+function xModeLabel(mode: XMode): string {
+  return X_MODE_OPTIONS.find((option) => option.value === mode)?.label ?? mode;
+}
+
+/** The real number of points a chart's most granular channel actually
+ *  carries — the maximum `CombinedChannelPayload.length` across every
+ *  channel feeding one chart, since a multi-channel overlay's channels can
+ *  each resolve to a different actual count (a shorter record, a slower
+ *  native rate) even though every channel in one `js` cell is fetched
+ *  against the same point budget. `channelData` is never empty here — see
+ *  {@link buildChartBlocks}'s own emptiness check before this is called. */
+function chartPointCount(channelData: ReadonlyMap<string, CombinedChannelPayload>): number {
+  return Math.max(...Array.from(channelData.values(), (payload) => payload.length));
+}
+
+/**
+ * Formats one chart's printed caption (plan §3.4): the windows it covers,
+ * the worksheet's X mode, and the point count the chart's data was
+ * **actually** carried at — never the budget that was requested, which
+ * this function is never handed at all (see {@link ChartSlotBlock}'s doc
+ * comment for why printing that instead would be a false statement about
+ * the signal, not a disclosed limitation). Exported for
+ * `document.test.ts`; every other caller goes through {@link
+ * buildChartBlocks}.
+ */
+export function formatChartCaption(windowLabels: readonly string[], xMode: XMode, pointCount: number): string {
+  const windows = windowLabels.join(", ");
+  const points = `${pointCount} point${pointCount === 1 ? "" : "s"}`;
+  const axis = `${xModeLabel(xMode)} axis, ${points}`;
+  return windows === "" ? axis : `${windows} — ${axis}`;
+}
+
 /**
  * Builds every `js`-kind cell's chart block, once each, in document-cell
  * order (task R6, ruling R173) — never once per window, see this module's
@@ -430,12 +475,14 @@ function decodeByteRange(markdown: string, range: [number, number]): string {
  * chart is FFT (not yet renderable, `renderChart.ts`), or that names a
  * channel `chartChannelData` has no entry for, becomes a named
  * {@link AbsenceBlock}; otherwise a {@link ChartSlotBlock} carrying exactly
- * what `renderChart.ts` needs.
+ * what `renderChart.ts` needs, plus its printed {@link formatChartCaption}
+ * caption.
  */
 function buildChartBlocks(
   cells: readonly ScannedCell[],
   markdown: string,
   chartChannelData: ReadonlyMap<string, ReadonlyMap<string, CombinedChannelPayload>>,
+  xMode: XMode,
   entries: string[],
 ): ReportBlock[] {
   const blocks: ReportBlock[] = [];
@@ -473,7 +520,8 @@ function buildChartBlocks(
     }
 
     const windowLabels = [...new Set(Array.from(channelData.values()).flatMap((payload) => payload.windows.map((w) => w.label)))];
-    blocks.push({ kind: "chartSlot", cellId, props, channelData, windowLabels });
+    const caption = formatChartCaption(windowLabels, xMode, chartPointCount(channelData));
+    blocks.push({ kind: "chartSlot", cellId, props, channelData, windowLabels, caption });
   }
 
   return blocks;
@@ -570,6 +618,11 @@ export interface BuildReportDocumentInput {
    *  this build (`buildChartBlocks`'s own doc comment names the resulting
    *  absence reason). */
   chartChannelData: ReadonlyMap<string, ReadonlyMap<string, CombinedChannelPayload>>;
+  /** Decision 54's worksheet-level X-axis mode, for every chart's printed
+   *  caption ({@link formatChartCaption}, plan §3.4) — one value for the
+   *  whole document, matching the worksheet setting it names (never
+   *  per-chart, `model/xMode.ts`'s own doc comment). */
+  xMode: XMode;
   /** This build's own app version (`@tauri-apps/api/app`'s `getVersion`) — read by the caller, not here, so this function stays pure. */
   appVersion: string;
   /** i64, Unix epoch ms — when this document was built (`Date.now()`, read by the caller for the same reason). */
@@ -584,7 +637,7 @@ export interface BuildReportDocumentInput {
  * sections, no comparison table.
  */
 export function buildReportDocument(input: BuildReportDocumentInput): ReportDocument {
-  const { cells, markdown, proseBlocks, evals, windows, sessions, chartChannelData, appVersion, generatedAtMs } = input;
+  const { cells, markdown, proseBlocks, evals, windows, sessions, chartChannelData, xMode, appVersion, generatedAtMs } = input;
   const entries: string[] = [];
   const primaryWindow = windows[0] ?? null;
   const primarySession = primaryWindow === null ? null : findSession(primaryWindow.sessionId, sessions);
@@ -615,7 +668,7 @@ export function buildReportDocument(input: BuildReportDocumentInput): ReportDocu
     }
   });
 
-  blocks.push(...buildChartBlocks(cells, markdown, chartChannelData, entries));
+  blocks.push(...buildChartBlocks(cells, markdown, chartChannelData, xMode, entries));
 
   const comparison = buildComparisonTable(windows, evals, sessions);
   if (comparison !== null) blocks.push(comparison);
