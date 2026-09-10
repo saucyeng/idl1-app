@@ -17,19 +17,24 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
   (`ReportView`'s own `onReady`) rather than firing on a fixed next frame,
   since chart rendering is asynchronous. `buildReportDocument` is now a
   single options object instead of seven positional parameters (three of
-  them same-shaped `Map`s) — one caller, `Notebook/index.tsx`. Known gaps:
+  them same-shaped `Map`s) — one caller, `Notebook/index.tsx`. Known gap:
   a chart's caption names only the windows it covers, not yet the X mode or
-  decimation point budget plan §3.4 calls for; and a report chart's colours are baked in
-  from the screen's own (**dark**) theme at render time, onto a page
-  `report-print.css` deliberately forces to black-on-white — a real defect,
-  not a polish item, and worse than legibility alone: the selection block
-  draws its window chips from those same `--chart-N` tokens and is the
-  report's only colour key (Plot has no scale to legend against), so charts
-  and chips must move together or a reader matches a chip to the wrong
-  line. Ruled separately as **R174** (one print palette and plot theme,
-  resolved once per report build, feeding both; series colours derived from
-  the existing hues to a stated contrast ratio against white rather than
-  replaced).
+  decimation point budget plan §3.4 calls for.
+
+- **The report has its own print palette and plot theme (2026-09-09, ruling
+  R174).** `model/report/printPalette.ts` is a new, static module — no
+  `documentVars()` on any report path — exporting eight print series
+  colours (`tokens.css`'s own `--chart-1`…`--chart-8` hues, lightness
+  lowered until each clears a stated 4.5:1 contrast ratio against white; a
+  first pass, not brand-approved, meant to be retuned without archaeology)
+  and a print `PlotThemeOptions` (near-black axis text and rules, a grid
+  visible but quiet, matching `report-print.css`'s existing black/white/
+  gray convention). `ReportView` now calls `buildPrintPalette()` exactly
+  once per report render and threads the one result to both every
+  `chartSlot` chart and every `--chart-N` swatch/border it draws (the
+  selection block's chips, window-section borders, comparison-table chips)
+  — closing the defect the R6 entry above disclosed: charts and chips can
+  no longer be resolved separately and drift apart.
 
 - **`model/report/renderChart.ts` — host-side chart re-render for the report
   (2026-09-09, task R5, ruling R173).** A form-generated `js` cell's time

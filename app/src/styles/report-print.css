@@ -85,9 +85,10 @@
    * caption naming the chart's windows stranded on the next page from the
    * chart itself would be worse than no caption at all. The chart's own
    * `<svg>` (`renderChart.ts`) already carries concrete colours baked in
-   * at render time from the screen's own theme/palette, so it needs no
-   * colour override here -- the report's colour key (the selection block)
-   * is what lets a reader read those same hues off the page. */
+   * at render time from the report's own static print palette
+   * (`model/report/printPalette.ts`, ruling R174), so it needs no colour
+   * override here -- the report's colour key (the selection block) is what
+   * lets a reader read those same hues off the page. */
   .report-chart {
     break-inside: avoid;
     margin: 0 0 12px;
