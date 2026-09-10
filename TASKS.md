@@ -243,9 +243,12 @@ are defined in `docs/superpowers/specs/2026-09-02-idl1-rewrite-design.md` §10.
     so R104's "the UI may prefill `peer_id` when exactly one unpaired peer
     is online" has no data source today. `SyncSection.tsx` instead asks the
     user to type the peer id (never guessed, satisfies R104's letter).
-    **L11 Task 14** (filed by the lead) adds `SyncStatus.discovered_peers`
-    and widens `peer_appeared` to any sighting, so the UI can show a real
-    discovered-peer list; not done here.
+    ~~**L11 Task 14** (filed by the lead) adds `SyncStatus.discovered_peers`
+    and widens `peer_appeared` to any sighting~~ -- **closed 2026-09-10.**
+    Rust side (R175/R176) and the TS mirror both landed; Settings -> Sync
+    shows a "Nearby devices" list whose entries prefill the peer id (never
+    auto-pair, R104). Each poll replaces the discovered list wholesale; a
+    successful pair removes the peer from it.
   - ~~`unwatch_workbook` missing from C3 (R98)~~ — **closed 2026-09-09.**
     The command exists, C3 §3.4 is corrected (its "unsubscribe is closing
     the channel from the frontend side" was never true: Tauri v2 gives the
