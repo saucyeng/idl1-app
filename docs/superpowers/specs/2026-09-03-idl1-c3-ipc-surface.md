@@ -1869,7 +1869,7 @@ and power-cycling the device, which the bootloader handles (R198, SPEC §4.6).
 **`push_firmware(device_id: string, source: FirmwareSource, firmware_repo: string, channel: "stable" | "beta", progress: Channel<Progress>)`**
 ```ts
 type FirmwareSource =
-  | { kind: "file"; version?: never; path: string }
+  | { kind: "file"; path: string }
   | { kind: "catalog"; version: string };
 
 interface OtaOutcome {
