@@ -6,6 +6,17 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 
 ### Added
 
+- **The Notebook is a readable paper view on a phone (2026-09-10, L9 task 8,
+  rulings R184/R185).** Below 600 CSS px the cell list is replaced by the
+  report document itself, rendered to the screen with static charts and
+  rebuilt on every settled evaluation (an in-flight one keeps the last good
+  page rather than blanking). Cover and appendix are dropped on screen;
+  every absence is kept. Tapping a block opens that cell's editor in the
+  narrow sheet — Properties beside Code for a `js` cell, code alone for
+  every other kind. Charts at that width now fetch the mobile point budget
+  the design doc always specified. Paper has its own theme preference in
+  Settings (follow the app, light, or dark), independent of the app theme.
+
 - **The Sync section now shows nearby unpaired devices (2026-09-10, L11
   Task 14, app-side half).** `SyncStatus.discovered_peers` and the widened
   `peer_appeared` `PeerSighting` payload (C3 §3.9) are mirrored in
