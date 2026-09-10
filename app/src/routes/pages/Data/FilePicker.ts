@@ -11,6 +11,17 @@ export type OpenDialogFn = (options: {
   multiple?: false;
 }) => Promise<string | null>;
 
+/** [[OpenDialogFn]]'s folder counterpart (`directory: true`), the seam
+ *  behind [[pickImportFolder]] — the "Import folder…" entry point added by
+ *  M4c (C3 §3.3 `scan_folder`, ruling R191). Structurally compatible with
+ *  `open()`'s own single-directory overload; no `filters`, which the
+ *  dialog plugin ignores for directory selection. */
+export type OpenFolderDialogFn = (options: {
+  defaultPath?: string;
+  directory: true;
+  multiple?: false;
+}) => Promise<string | null>;
+
 /** The four importer extensions `list_importers` (C3 §3.3) advertises
  *  today (`idl0`, `fit`, `gpx`, `csv`), dot-stripped for
  *  `@tauri-apps/plugin-dialog`'s `filters[].extensions` convention (no
@@ -41,6 +52,20 @@ export function resolvePastedPath(pastedPath: string): string | null {
  *  separate direct-import button. Resolves `null` when the user cancels
  *  the dialog, matching `open()`'s own cancel value — never rejects on
  *  cancel. */
+/** Opens the native folder picker for the bulk-import preview (C3 §3.3,
+ *  ruling R191): the chosen folder is handed to `scanFolder`, which lists
+ *  it non-recursively; nothing is imported by choosing a folder. Seeds the
+ *  dialog's starting directory from `startingFolder` when non-empty once
+ *  trimmed. Resolves `null` when the user cancels, matching `open()`'s own
+ *  cancel value — never rejects on cancel. */
+export async function pickImportFolder(
+  startingFolder: string,
+  openDialog: OpenFolderDialogFn = open
+): Promise<string | null> {
+  const trimmed = startingFolder.trim();
+  return openDialog({ defaultPath: trimmed.length > 0 ? trimmed : undefined, directory: true, multiple: false });
+}
+
 export async function pickImportFile(startingFolder: string, openDialog: OpenDialogFn = open): Promise<string | null> {
   const trimmed = startingFolder.trim();
   return openDialog({

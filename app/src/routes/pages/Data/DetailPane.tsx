@@ -1,15 +1,19 @@
 import { XIcon } from "lucide-react";
-import { useCallback, useEffect, useReducer } from "react";
+import { useCallback, useEffect, useReducer, useState } from "react";
 
 import { NoteBlock } from "../../../components/brand/NoteBlock";
 import { SectionHead } from "../../../components/brand/SectionHead";
 import { IconBtn } from "../../../components/brand/ToolGroup";
+import { Button } from "../../../components/ui/button";
+import { Input } from "../../../components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader as BrandTableHeader, TableRow } from "../../../components/ui/table";
 import { listTracks, type SessionDetail, type TrackSummary } from "../../../ipc/catalog";
+import { setSessionStart } from "../../../ipc/library";
 import type { SelectionWindow } from "../../../state/selection";
 import { ColourPicker } from "./ColourPicker";
 import { describeIpcError } from "./errors";
 import { lapRowClicked } from "./lapSelection";
+import { parseStartInput, shouldPromptForStart } from "./libraryPanel";
 import { LapTable } from "./LapTable";
 import { MetadataForm } from "./MetadataForm";
 import type { DetailView } from "./sessionDetail";
@@ -63,6 +67,59 @@ function tracksReducer(_state: TracksState, action: TracksAction): TracksState {
     case "failed":
       return { status: "error", text: action.text };
   }
+}
+
+/** "This session's start time is unknown — set it" (C1 §3.1/§6, C3 §3.3
+ *  `set_session_start`, ruling R191). Shown only when the catalogued start
+ *  is `0`, meaning no importer — GPS back-fill included — could determine
+ *  one. The value the user types is stored in `session.json` with
+ *  `timestamp_source: "user"`; `data.parquet` is never rewritten, because
+ *  it is a function of (blob, importer version) and never of a human. */
+function UnknownStartPrompt({ detail, onSaved }: { detail: SessionDetail; onSaved: (d: SessionDetail) => void }) {
+  const [value, setValue] = useState("");
+  const [errorText, setErrorText] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+  const parsed = parseStartInput(value);
+
+  const handleSave = () => {
+    if (parsed === null) return;
+    setSaving(true);
+    setErrorText(null);
+    setSessionStart(detail.session_id, parsed)
+      .then((updated) => {
+        setSaving(false);
+        onSaved(updated);
+      })
+      .catch((e: unknown) => {
+        setSaving(false);
+        setErrorText(describeIpcError(e).text);
+      });
+  };
+
+  return (
+    <NoteBlock className="flex flex-col gap-2">
+      <span className="font-mono text-sm text-fg">
+        This session's start time is unknown — the log carried no clock and no GPS fix to recover one from. Set it:
+      </span>
+      <div className="flex flex-wrap items-center gap-2">
+        <Input
+          type="datetime-local"
+          className="w-56"
+          value={value}
+          onChange={(e) => setValue(e.target.value)}
+          aria-label="Session start time"
+        />
+        <Button type="button" size="sm" onClick={handleSave} disabled={parsed === null || saving}>
+          Set start time
+        </Button>
+      </div>
+      {errorText !== null && (
+        <span role="alert" className="font-mono text-sm text-brand-accent">
+          {errorText}
+        </span>
+      )}
+    </NoteBlock>
+  );
 }
 
 /** The Data tab's session detail pane, over one `toDetailView` result (C3
@@ -129,6 +186,8 @@ export function DetailPane({ view, detail, lapsErrorText, selection, onWindowsCh
           <IconBtn icon={XIcon} label="Close" onClick={onClose} />
         </div>
       </div>
+
+      {shouldPromptForStart(detail) && <UnknownStartPrompt detail={detail} onSaved={onMetadataSaved} />}
 
       <div className="flex flex-col gap-2">
         <SectionHead>Metadata</SectionHead>

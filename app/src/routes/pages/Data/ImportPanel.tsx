@@ -8,8 +8,10 @@ import { Button } from "../../../components/ui/button";
 import { Input } from "../../../components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../../../components/ui/select";
 import { importFile, listImporters, type ImporterInfo } from "../../../ipc/import";
+import { scanFolder } from "../../../ipc/library";
 import { describeIpcError } from "./errors";
-import { pickImportFile, resolvePastedPath } from "./FilePicker";
+import { pickImportFile, pickImportFolder, resolvePastedPath } from "./FilePicker";
+import { importableRows, summarizeScanPreview, toScanPreviewRows, type ScanPreviewRow } from "./libraryPanel";
 import { isDrained, nextItemToStart, runImport } from "./importDriver";
 import { importQueueReducer, initialImportQueueState, overallPercent, type ImportItem, type ImportQueueAction } from "./importQueue";
 
@@ -76,6 +78,31 @@ function showImportFailedToast(fileName: string, message: string): void {
   show(descriptor.title, { description: descriptor.detail });
 }
 
+/** The "Import folder…" preview's own fetch state (C3 §3.3 `scan_folder`).
+ *  Independent of the import queue: a scan failure narrows the panel to its
+ *  other entry points rather than disturbing files already queued. */
+type ScanState =
+  | { status: "idle" }
+  | { status: "scanning"; folder: string }
+  | { status: "ready"; folder: string; rows: ScanPreviewRow[] }
+  | { status: "error"; text: string };
+
+/** One preview row: name, size, importer and header-peek start. An
+ *  already-imported or unsupported file is greyed and never enqueued —
+ *  shown rather than hidden, because "what is in this folder" is the
+ *  question the preview answers. */
+function ScanPreviewLine({ row }: { row: ScanPreviewRow }) {
+  return (
+    <li className={`flex items-center gap-2 border-b border-rule py-1 last:border-b-0 ${row.importable ? "text-fg" : "text-fg-dim"}`}>
+      <span className="flex-1 truncate">{row.fileName}</span>
+      <span className="shrink-0">{row.sizeText}</span>
+      <span className="w-16 shrink-0">{row.importerText}</span>
+      <span className="w-40 shrink-0 truncate">{row.startText}</span>
+      <span className="w-32 shrink-0">{row.skipReason ?? ""}</span>
+    </li>
+  );
+}
+
 /** The Data tab's import entry point over C3 §3.3's `import_file`/
  *  `list_importers`. Two ways in, per lead ruling R55/R77.1
  *  (2026-09-06): the "Paste a file path" field's `Import` button imports
@@ -99,6 +126,7 @@ export function ImportPanel({ onImported }: ImportPanelProps) {
   const [pastedPath, setPastedPath] = useState("");
   const [importerId, setImporterId] = useState<string | null>(null);
   const [dragActive, setDragActive] = useState(false);
+  const [scanState, setScanState] = useState<ScanState>({ status: "idle" });
   const drainedAtLengthRef = useRef(0);
   const importerIdRef = useRef(importerId);
   importerIdRef.current = importerId;
@@ -224,6 +252,39 @@ export function ImportPanel({ onImported }: ImportPanelProps) {
       });
   };
 
+  /** "Import folder…" click: picks a folder, scans it (C3 §3.3
+   *  `scan_folder` — non-recursive, nothing imported yet) and shows the
+   *  preview. The scan hashes every file to answer `already_imported`, so
+   *  it can be slow on a folder of large files; it runs once per pick,
+   *  never on a timer (ruling R191). */
+  const handleFolderClick = () => {
+    pickImportFolder(pastedPath)
+      .then((folder) => {
+        if (folder === null) return; // user cancelled the native dialog
+        setScanState({ status: "scanning", folder });
+        return scanFolder(folder).then((entries) => {
+          setScanState({ status: "ready", folder, rows: toScanPreviewRows(entries) });
+        });
+      })
+      .catch((e: unknown) => {
+        setScanState({ status: "error", text: describeIpcError(e).text });
+      });
+  };
+
+  /** Enqueues every importable row of the current preview, one
+   *  `import_file` per file through the queue this panel already drives
+   *  (C3 §3.3 has no bulk-import command by design, R191: progress and
+   *  errors stay per file). Each row goes in with the importer the scan
+   *  detected for that file, never the panel's single-file override menu —
+   *  one dropdown cannot describe a folder holding two formats. */
+  const handleImportPreviewClick = () => {
+    if (scanState.status !== "ready") return;
+    for (const row of importableRows(scanState.rows)) {
+      dispatch({ type: "ENQUEUE", path: row.path, importerId: row.importerId });
+    }
+    setScanState({ status: "idle" });
+  };
+
   const percent = overallPercent(state);
 
   return (
@@ -261,10 +322,46 @@ export function ImportPanel({ onImported }: ImportPanelProps) {
         <Button type="button" size="sm" onClick={handleImportClick} disabled={pastedPath.trim().length === 0}>
           Import
         </Button>
-        <Button type="button" size="sm" emphasis="good" filled className="ml-auto" onClick={handleBrowseClick}>
+        <Button type="button" size="sm" onClick={handleFolderClick} className="ml-auto">
+          Import folder…
+        </Button>
+        <Button type="button" size="sm" emphasis="good" filled onClick={handleBrowseClick}>
           <UploadIcon /> Browse…
         </Button>
       </div>
+      {scanState.status === "scanning" && (
+        <p className="font-mono text-sm text-fg-dim">Scanning {scanState.folder}…</p>
+      )}
+      {scanState.status === "error" && (
+        <p role="alert" className="font-mono text-sm text-brand-accent">
+          {scanState.text}
+        </p>
+      )}
+      {scanState.status === "ready" && (
+        <div role="region" aria-label="Folder import preview" className="flex flex-col gap-1 border border-rule p-2">
+          <div className="flex items-center gap-2 font-mono text-sm">
+            <span className="flex-1 truncate text-fg-dim">{summarizeScanPreview(scanState.rows)}</span>
+            <Button
+              type="button"
+              size="xs"
+              emphasis="good"
+              filled
+              onClick={handleImportPreviewClick}
+              disabled={importableRows(scanState.rows).length === 0}
+            >
+              Import {importableRows(scanState.rows).length} files
+            </Button>
+            <Button type="button" size="xs" onClick={() => setScanState({ status: "idle" })}>
+              Cancel
+            </Button>
+          </div>
+          <ul className="flex max-h-64 flex-col overflow-y-auto font-mono text-sm">
+            {scanState.rows.map((row) => (
+              <ScanPreviewLine key={row.path} row={row} />
+            ))}
+          </ul>
+        </div>
+      )}
       {importersErrorText !== null && (
         <p role="alert" className="font-mono text-sm text-brand-accent">
           {importersErrorText}
