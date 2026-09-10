@@ -1,11 +1,11 @@
 import { useEffect, useRef, useState } from "react";
 
 import type { DecodedRaster, Histogram2dParams, RasterKind, RasterMeta, SpectrogramParams } from "../../../../ipc/rasters";
-import type { UnitLabel } from "../../../../ipc/workbook";
 import {
   alignRasterToAxes,
   devicePxSize,
   drawRaster,
+  formatScaleRange,
   rasterFetchKeyEquals,
   rasterRequestFor,
   type RasterFetchKey,
@@ -13,6 +13,26 @@ import {
 import { isStaleSettleResult } from "../model/settle";
 import type { Viewport } from "../model/viewport";
 import { formatUnit } from "../model/unitText";
+
+/** The subset of a resolved `RasterMeta` this component keeps in state to
+ *  draw its label overlay (raster-labels lane, ruling R177) — `x_domain`/
+ *  `y_domain`/`transparent_zero` feed `alignRasterToAxes`/`drawRaster`
+ *  directly inside the fetch effect and are never needed after that, so
+ *  they are not carried into state. */
+interface RasterLabels {
+  xLabel: string;
+  yLabel: string;
+  /** Pre-formatted per {@link formatScaleRange}: `scale.vmin`/`vmax` plus
+   *  `magnitude_unit` (`formatUnit`'s three-state text, R154), computed
+   *  once when the fetch resolves rather than on every render. */
+  rangeText: string;
+  /** `formatUnit(magnitude_unit).unknownReason` (`null` for `known`,
+   *  `dimensionless`, or a `null` `magnitude_unit`) — carried separately
+   *  from `rangeText` since `formatUnit`'s `unknown` state renders no text
+   *  of its own but still has a reason worth surfacing (R154), same as the
+   *  magnitude-unit-only display did before this task. */
+  unknownReason: string | null;
+}
 
 /** Props for {@link RasterUnderlay}. */
 export interface RasterUnderlayProps {
@@ -70,11 +90,15 @@ export interface RasterUnderlayProps {
  * smaller, more localized change than lifting a canvas ref up through props
  * (the other option the plan's Task 9 note allows).
  *
- * Alongside the canvas, prints the fetched `RasterMeta.magnitude_unit`
- * (chart-honesty lane task 2, ruling R167) — the only place a spectral
- * raster's own axes are labelled at all today (`x_label`/`y_label`/`scale`
- * are likewise fetched here and, like the unit was before this task, drawn
- * nowhere; widening that is out of this task's scope).
+ * Alongside the canvas, prints the fetched `RasterMeta.x_label`/`y_label`
+ * and `scale.vmin`/`vmax` (raster-labels lane, ruling R177) — this canvas
+ * has no other axis furniture at all (no Plot `<svg>` axis layer sits over
+ * a raster underlay today, per this lane's report), so the labels are
+ * plain absolutely-positioned overlay text rather than drawn ticks: the
+ * `x_label` bottom-centre, `y_label` top-left rotated, and the range —
+ * `scale.vmin`/`vmax` formatted by {@link formatScaleRange} with the
+ * already-fetched `magnitude_unit` (chart-honesty lane task 2, ruling
+ * R167) as its unit — top-right, where the unit alone used to sit alone.
  *
  * The fetch is triggered only by `kind`/`params`/`viewport`/`width`/
  * `height`/`devicePixelRatio`/`sessionId`/`channelId` actually changing
@@ -123,11 +147,10 @@ export default function RasterUnderlay({
 }: RasterUnderlayProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
-  // `RasterMeta.magnitude_unit` (R167) — `null` until the first fetch
-  // resolves, indistinguishable on screen from a genuine `null` (a
-  // histogram2d has no spectral magnitude at all): both render nothing,
-  // so there is no wrong state to show before the first result arrives.
-  const [magnitudeUnit, setMagnitudeUnit] = useState<UnitLabel | null>(null);
+  // `null` until the first `fetchRasterMeta` resolves — there is no wrong
+  // state to show before that (the labels simply don't render, same as
+  // `magnitudeUnit`'s own pre-R177 null state did).
+  const [labels, setLabels] = useState<RasterLabels | null>(null);
 
   // Held in refs so an unrelated re-render's fresh closure identity for
   // these two props can never by itself invalidate the effect below —
@@ -174,7 +197,18 @@ export default function RasterUnderlay({
         if (isStaleSettleResult(dispatchEpoch, epochRef.current)) {
           return;
         }
-        setMagnitudeUnit(meta.magnitude_unit);
+        // `magnitude_unit === null` (a histogram2d, which has no spectral
+        // magnitude) formats with no unit at all rather than routing
+        // through `formatUnit`'s `unknown` path (task 2).
+        const unitDisplay = meta.magnitude_unit === null ? null : formatUnit(meta.magnitude_unit);
+        setLabels({
+          // `x_label`/`y_label` arrive as engine-authored display strings
+          // (task 1) — rendered as given, never reformatted/re-cased/unit-suffixed.
+          xLabel: meta.x_label,
+          yLabel: meta.y_label,
+          rangeText: formatScaleRange(meta.scale.vmin, meta.scale.vmax, unitDisplay === null ? "" : unitDisplay.text),
+          unknownReason: unitDisplay === null ? null : unitDisplay.unknownReason,
+        });
         // Always clear in the canvas's own (identity) device-px coordinate
         // space first, regardless of whether a rect is drawn below.
         ctx.setTransform(1, 0, 0, 1, 0, 0);
@@ -198,8 +232,6 @@ export default function RasterUnderlay({
       });
   });
 
-  const magnitudeUnitDisplay = magnitudeUnit === null ? null : formatUnit(magnitudeUnit);
-
   return (
     <>
       <canvas
@@ -215,17 +247,46 @@ export default function RasterUnderlay({
         height={devicePxSize(height, devicePixelRatio)}
         style={{ position: "absolute", inset: 0, width: `${width}px`, height: `${height}px`, pointerEvents: "none" }}
       />
-      {/* `RasterMeta.magnitude_unit` (R167): a spectrogram's own magnitude
-          axis unit, three-state per `formatUnit` (R154) — `known` shows its
-          text, `dimensionless` and a pre-first-fetch/histogram2d `null`
-          show nothing, `unknown` shows nothing but its `title` attribute
-          carries `unknownReason` where a reader can reach it (there is no
-          appendix to route it to on screen, unlike the report). */}
-      {magnitudeUnitDisplay !== null && (magnitudeUnitDisplay.text !== "" || magnitudeUnitDisplay.unknownReason !== null) && (
-        <div className="chart-cell-raster-unit" style={{ position: "absolute", top: 4, right: 4, fontSize: 11, pointerEvents: "none" }}>
-          {magnitudeUnitDisplay.text}
-          {magnitudeUnitDisplay.unknownReason !== null && <span title={magnitudeUnitDisplay.unknownReason}>{"†"}</span>}
-        </div>
+      {labels !== null && (
+        <>
+          {/* `RasterMeta.x_label` (task 1): rendered as given, no axis
+              furniture (ticks, a line) exists on this canvas to attach it
+              to today — plain overlay text, bottom-centre. */}
+          <div
+            className="chart-cell-raster-x-label"
+            style={{ position: "absolute", bottom: 2, left: 0, right: 0, textAlign: "center", fontSize: 11, pointerEvents: "none" }}
+          >
+            {labels.xLabel}
+          </div>
+          {/* `RasterMeta.y_label` (task 1), rotated to sit flush against
+              the left edge — the same "no existing furniture" placement
+              call as `x_label` above. */}
+          <div
+            className="chart-cell-raster-y-label"
+            style={{
+              position: "absolute",
+              top: 4,
+              left: 2,
+              fontSize: 11,
+              pointerEvents: "none",
+              transformOrigin: "top left",
+              transform: "rotate(-90deg) translateX(-100%)",
+            }}
+          >
+            {labels.yLabel}
+          </div>
+          {/* `RasterMeta.scale.vmin`/`vmax` (task 2, ruling R177): a plain
+              numeric range with `magnitude_unit` as its unit — three-state
+              per `formatUnit` (R154), same convention the magnitude-unit-only
+              display used before this task: `unknown` shows no text of its
+              own but its `title` attribute carries `unknownReason` where a
+              reader can reach it (there is no appendix to route it to on
+              screen, unlike the report). */}
+          <div className="chart-cell-raster-unit" style={{ position: "absolute", top: 4, right: 4, fontSize: 11, pointerEvents: "none" }}>
+            {labels.rangeText}
+            {labels.unknownReason !== null && <span title={labels.unknownReason}>{"†"}</span>}
+          </div>
+        </>
       )}
     </>
   );

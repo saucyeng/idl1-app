@@ -1,7 +1,15 @@
 import { describe, expect, it } from "vitest";
 
 import type { Histogram2dParams, RasterMeta, SpectrogramParams } from "../../../../ipc/rasters";
-import { alignRasterToAxes, devicePxSize, rasterFetchKeyEquals, rasterRequestFor, type RasterFetchKey } from "./rasterLayer";
+import {
+  alignRasterToAxes,
+  devicePxSize,
+  formatMagnitude,
+  formatScaleRange,
+  rasterFetchKeyEquals,
+  rasterRequestFor,
+  type RasterFetchKey,
+} from "./rasterLayer";
 import type { Viewport } from "./viewport";
 
 describe("rasterRequestFor", () => {
@@ -218,5 +226,65 @@ describe("devicePxSize", () => {
 
     // Assert
     expect(size).toBe(801); // 400.4 * 2 = 800.8, rounded to 801
+  });
+});
+
+describe("formatMagnitude", () => {
+  it("formatMagnitude — zero — renders fixed to two decimals, not exponential", () => {
+    // Arrange / Act
+    const text = formatMagnitude(0);
+
+    // Assert
+    expect(text).toBe("0.00");
+  });
+
+  it("formatMagnitude — a mid-range value — renders fixed to two decimals", () => {
+    // Arrange / Act
+    const text = formatMagnitude(1.4231);
+
+    // Assert
+    expect(text).toBe("1.42");
+  });
+
+  it("formatMagnitude — a value below the exponential threshold — switches to exponential notation", () => {
+    // Arrange / Act
+    const text = formatMagnitude(0.00042);
+
+    // Assert
+    expect(text).toBe("4.20e-4");
+  });
+
+  it("formatMagnitude — a value at or above the exponential threshold — switches to exponential notation", () => {
+    // Arrange / Act
+    const text = formatMagnitude(12345.6);
+
+    // Assert
+    expect(text).toBe("1.23e+4");
+  });
+
+  it("formatMagnitude — a negative mid-range value — keeps its sign", () => {
+    // Arrange / Act
+    const text = formatMagnitude(-2.5);
+
+    // Assert
+    expect(text).toBe("-2.50");
+  });
+});
+
+describe("formatScaleRange", () => {
+  it("formatScaleRange — a unit text — appends it verbatim after the range", () => {
+    // Arrange / Act
+    const text = formatScaleRange(0, 1.4231, "(m/s)²/Hz");
+
+    // Assert
+    expect(text).toBe("0.00 – 1.42 (m/s)²/Hz");
+  });
+
+  it("formatScaleRange — an empty unit text — omits the trailing unit and space entirely", () => {
+    // Arrange / Act
+    const text = formatScaleRange(0, 1.4231, "");
+
+    // Assert
+    expect(text).toBe("0.00 – 1.42");
   });
 });
