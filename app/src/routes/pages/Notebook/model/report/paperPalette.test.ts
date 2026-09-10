@@ -1,27 +1,13 @@
 import { describe, expect, it } from "vitest";
 
 import { buildPaperPalette, effectivePaperTheme, PAPER_LIGHT_CONTRAST_TARGET, PAPER_LIGHT_SERIES_COLOURS } from "./paperPalette";
+import { SERIES_ON_WHITE, WHITE_CONTRAST_TARGET } from "./seriesOnWhite";
 
 /** A reader standing in for the app's live dark tokens. */
 function appTokens(name: string): string {
   const chart = /^--chart-([1-8])$/.exec(name);
   if (chart !== null) return `app-colour-${chart[1]}`;
   return `app-${name}`;
-}
-
-/** One channel's sRGB relative luminance term (WCAG 2.x). */
-function channelLuminance(component: number): number {
-  const c = component / 255;
-  return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
-}
-
-/** WCAG 2.x contrast ratio of `hex` against white. */
-function contrastAgainstWhite(hex: string): number {
-  const r = channelLuminance(parseInt(hex.slice(1, 3), 16));
-  const g = channelLuminance(parseInt(hex.slice(3, 5), 16));
-  const b = channelLuminance(parseInt(hex.slice(5, 7), 16));
-  const luminance = 0.2126 * r + 0.7152 * g + 0.0722 * b;
-  return 1.05 / (luminance + 0.05);
 }
 
 describe("effectivePaperTheme", () => {
@@ -84,13 +70,15 @@ describe("buildPaperPalette", () => {
 });
 
 describe("PAPER_LIGHT_SERIES_COLOURS", () => {
-  it("PAPER_LIGHT_SERIES_COLOURS — every slot — one colour per chart token", () => {
-    expect(PAPER_LIGHT_SERIES_COLOURS).toHaveLength(8);
+  it("PAPER_LIGHT_SERIES_COLOURS — its source — the same array print draws with (R186)", () => {
+    const colours = PAPER_LIGHT_SERIES_COLOURS;
+
+    expect(colours).toBe(SERIES_ON_WHITE);
   });
 
-  it("PAPER_LIGHT_SERIES_COLOURS — against white — every colour clears the contrast target", () => {
-    const ratios = PAPER_LIGHT_SERIES_COLOURS.map(contrastAgainstWhite);
+  it("PAPER_LIGHT_CONTRAST_TARGET — its source — the shared target", () => {
+    const target = PAPER_LIGHT_CONTRAST_TARGET;
 
-    expect(ratios.every((ratio) => ratio >= PAPER_LIGHT_CONTRAST_TARGET)).toBe(true);
+    expect(target).toBe(WHITE_CONTRAST_TARGET);
   });
 });

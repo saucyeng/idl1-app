@@ -30,41 +30,32 @@
  * Colour literals are permitted in this module only — the same exemption
  * `tokens.css` and `report-print.css` already carry, because this module's
  * entire job is defining a palette (`tokenSheet.test.ts` bans hex/rgb
- * literals everywhere else).
+ * literals everywhere else). The eight series colours themselves now live
+ * in `seriesOnWhite.ts` (R186); what is left here is print's own page
+ * furniture.
  */
 import type { PlotThemeOptions } from "../../theme/plotTheme";
+import { SERIES_ON_WHITE, WHITE_CONTRAST_TARGET } from "./seriesOnWhite";
+
+/** The contrast ratio {@link PRINT_SERIES_COLOURS} is tuned to against
+ *  white — `seriesOnWhite.ts`'s own target, re-exported under print's
+ *  established name (ruling R186: one module owns these values, tested
+ *  once; this name is what print's existing callers and tests already
+ *  say). */
+export const PRINT_CONTRAST_TARGET = WHITE_CONTRAST_TARGET;
 
 /**
- * The WCAG 2.x contrast ratio every {@link PRINT_SERIES_COLOURS} entry is
- * tuned to meet or exceed against white (`#ffffff`). 4.5:1 is the WCAG AA
- * floor for normal text; a chart stroke is thinner than body text, but this
- * module has no chart-specific contrast standard to reach for, so it holds
- * series colours to the same floor the rest of the page's text already
- * must clear rather than inventing a laxer, graphics-only threshold.
+ * The eight print series colours, in `--chart-1`…`--chart-8` slot order —
+ * `seriesOnWhite.ts`'s shared values (ruling R186), which that module's
+ * own doc comment explains the derivation of. Not print's own copy any
+ * more: the paper view forced light draws the same eight, and two
+ * hand-tuned copies of the same hues is exactly the drift R186 exists to
+ * stop.
+ *
+ * What stays print's below is the page furniture those colours sit on —
+ * the grid, the axis text, the white page.
  */
-export const PRINT_CONTRAST_TARGET = 4.5;
-
-/**
- * The eight print series colours, in `--chart-1`…`--chart-8` slot order.
- * Each is `tokens.css`'s own hue at a lowered lightness — chosen by
- * bisecting lightness downward, hue and saturation held fixed, until the
- * WCAG relative-luminance contrast ratio against white first reached {@link
- * PRINT_CONTRAST_TARGET} (each entry actually clears ~4.51–4.55:1; WCAG's
- * formula has no closed-form inverse for lightness, so this is a numeric
- * search, not an exact solve). Keeping the hue and slot order means a chart
- * Isaac recognises on screen is still recognisably the same chart on paper
- * (R174 item 3).
- */
-export const PRINT_SERIES_COLOURS: readonly string[] = [
-  "#1477d8", // --chart-1 azure #5ba6f0, darkened
-  "#24874c", // --chart-2 green #35c46e, darkened
-  "#8c7408", // --chart-3 amber #f5d547, darkened
-  "#b36117", // --chart-4 orange #e8964b, darkened
-  "#9954db", // --chart-5 violet #b98ae6, darkened
-  "#25837d", // --chart-6 teal #3fc9c0, darkened
-  "#dd287a", // --chart-7 rose #e86fa6, darkened
-  "#da3944", // --chart-8 coral #e05a63, darkened
-];
+export const PRINT_SERIES_COLOURS: readonly string[] = SERIES_ON_WHITE;
 
 /** Matches a `--chart-N` token (`theme/series.ts`'s own token names,
  *  `renderChart.ts`'s `CHART_TOKEN_RE`) — the only shape this codebase ever
