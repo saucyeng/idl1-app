@@ -6,6 +6,12 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 
 ### Added
 
+- **The Sync section now shows nearby unpaired devices (2026-09-10, L11
+  Task 14, app-side half).** `SyncStatus.discovered_peers` and the widened
+  `peer_appeared` `PeerSighting` payload (C3 §3.9) are mirrored in
+  `app/src/ipc/sync.ts`; `SyncSection.tsx` lists them under the pair form,
+  clicking a row prefills the peer-id field without auto-pairing (R104).
+
 - **The exported report now includes charts (2026-09-09, task R6, ruling
   R173).** `model/report/document.ts` gained a `chartSlot` block: a `js`
   cell is decided exactly once, in cell order (never once per selected

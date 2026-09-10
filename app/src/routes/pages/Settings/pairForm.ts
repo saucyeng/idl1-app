@@ -3,14 +3,12 @@ import type { ValidationIssue } from "./dataDir";
 import { validatePairCode } from "./pairCode";
 
 /** Validates a peer id typed into the pairing form. C3 §3.9's `pair_peer`
- *  takes `(peer_id, code)` — ruling R104 — and this UI has no command or
- *  event that enumerates *unpaired* peers currently on the LAN (`sync_status`
- *  lists only paired peers; `peer_appeared` fires only for a sighting that is
- *  already paired, per `state.rs`'s discovery loop) — so the peer id is a
- *  field the user types, read off the other device's own pairing screen,
- *  rather than a row picked from a discovered-peer list. R104 forbids
- *  guessing it, which this satisfies: there is no default and no fallback,
- *  only "empty is an error".
+ *  takes `(peer_id, code)` — ruling R104. `SyncSection.tsx`'s "Nearby
+ *  devices" list (L11 Task 14) can prefill this field from a discovered
+ *  sighting, but never pairs on click — the field stays a user-editable
+ *  value the code confirms against, not a value the app trusts on its own.
+ *  R104 forbids guessing it, which this satisfies: there is no default and
+ *  no fallback, only "empty is an error".
  *
  * @param peerId - The raw peer-id field value.
  * @returns Zero or more issues. Empty means non-blank. */

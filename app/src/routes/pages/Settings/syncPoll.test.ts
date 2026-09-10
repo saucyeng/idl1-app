@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-import type { PeerStatus, SyncStatus } from "../../../ipc/sync";
+import type { PeerSighting, PeerStatus, SyncStatus } from "../../../ipc/sync";
 import {
   startPeerAppearedWatch,
   startSyncStatusPoll,
@@ -9,10 +9,19 @@ import {
   type SyncStatusPollDeps,
 } from "./syncPoll";
 
-const EMPTY_STATUS: SyncStatus = { paired_peers: [], last_sync_utc_ms: null, this_device: { peer_id: "self", name: "This machine" } };
+const EMPTY_STATUS: SyncStatus = {
+  paired_peers: [],
+  discovered_peers: [],
+  last_sync_utc_ms: null,
+  this_device: { peer_id: "self", name: "This machine" },
+};
 
 function fakePeer(id: string): PeerStatus {
   return { peer_id: id, name: "Pit Tablet", online: true, protocol_version: 1, paired_at_ms: 1000 };
+}
+
+function fakeSighting(id: string): PeerSighting {
+  return { status: "paired", ...fakePeer(id) };
 }
 
 /** A fake `setTimeout`/`clearTimeout` pair the test drives by hand, plus a
@@ -200,10 +209,10 @@ function fakeWatchScheduler() {
   const visibilityHandlers = new Set<() => void>();
   const unlistenFns: (() => void)[] = [];
   let subscriberCount = 0;
-  let latestCallback: ((p: PeerStatus) => void) | null = null;
+  let latestCallback: ((p: PeerSighting) => void) | null = null;
 
   const deps: PeerAppearedWatchDeps = {
-    onPeerAppeared: vi.fn((onEvent: (p: PeerStatus) => void) => {
+    onPeerAppeared: vi.fn((onEvent: (p: PeerSighting) => void) => {
       subscriberCount++;
       latestCallback = onEvent;
       const unlisten = vi.fn(() => {
@@ -227,8 +236,8 @@ function fakeWatchScheduler() {
     },
     subscriberCount: () => subscriberCount,
     visibilityHandlerCount: () => visibilityHandlers.size,
-    fireEvent(peer: PeerStatus): void {
-      latestCallback?.(peer);
+    fireEvent(sighting: PeerSighting): void {
+      latestCallback?.(sighting);
     },
   };
 }
@@ -256,10 +265,10 @@ describe("startPeerAppearedWatch", () => {
     await Promise.resolve();
 
     // Act
-    scheduler.fireEvent(fakePeer("a"));
+    scheduler.fireEvent(fakeSighting("a"));
 
     // Assert
-    expect(dispatch).toHaveBeenCalledWith(fakePeer("a"));
+    expect(dispatch).toHaveBeenCalledWith(fakeSighting("a"));
   });
 
   it("startPeerAppearedWatch — start while hidden — no subscription until visible", async () => {
