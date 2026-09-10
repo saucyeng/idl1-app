@@ -11,14 +11,35 @@ pub fn run() {
         .setup(|app| {
             let app_data_dir = app.path().app_data_dir()?;
             let app_config_dir = app.path().app_config_dir()?;
-            // Resolution failure here is a launch-time condition, not a
-            // command-boundary one — C3's typed-error contract governs
-            // command results, not `.setup()`. Panicking before any window
-            // exists is the current behaviour; showing a native error
-            // dialog instead is tracked as an open question (this plan,
-            // "Open questions").
-            let data_dir = idl_rs_tauri::paths::resolve_data_dir(&app_data_dir, &app_config_dir)
-                .unwrap_or_else(|e| panic!("resolving <data>: {e:?}"));
+            // Two failure shapes, deliberately handled differently (C4 §1
+            // "Missing root", ruling R196).
+            //
+            // `DataDirMissing` — the user's own override folder is gone (an
+            // unplugged drive, a renamed directory). The library must not
+            // open: no fallback to the platform default, which would show an
+            // empty library and invite the user to re-import on top of it.
+            // But the *window* must open, because the recovery ("Retry" /
+            // "Choose folder") is UI. So the launch continues with the
+            // library subsystems deliberately not started, and the frontend's
+            // launch gate — which routes on `get_data_dir` rejecting with
+            // `io` + `detail.reason == "missing_root"` — blocks every other
+            // screen until the folder is back or a new one is chosen.
+            //
+            // Anything else is a genuine filesystem failure under the
+            // platform default, with nothing to recover to: still a panic.
+            let resolved = idl_rs_tauri::paths::resolve_data_dir(&app_data_dir, &app_config_dir);
+            let missing_root = matches!(resolved, Err(idl_rs_tauri::paths::ResolveError::DataDirMissing { .. }));
+            let data_dir = match resolved {
+                Ok(dir) => dir,
+                Err(idl_rs_tauri::paths::ResolveError::DataDirMissing { ref path, .. }) => {
+                    eprintln!("data folder unavailable: {}", path.display());
+                    // Managed so `get_data_dir` is callable at all — it is
+                    // the very command the gate asks. It re-resolves and
+                    // rejects with `missing_root` until the folder returns.
+                    path.join("data")
+                }
+                Err(e) => panic!("resolving <data>: {e:?}"),
+            };
             app.manage(idl_rs_tauri::state::DataDir(data_dir.clone()));
             app.manage(idl_rs_tauri::state::Hashes(std::sync::Arc::new(idl_rs_tauri::watcher::ExpectedHashSet::new())));
             app.manage(idl_rs_tauri::state::Watchers(std::sync::Mutex::new(std::collections::HashMap::new())));
@@ -32,9 +53,11 @@ pub fn run() {
             // this one is logged by leaving the state unmanaged rather than
             // panicking the launch.
             #[cfg(not(any(target_os = "android", target_os = "ios")))]
-            match idl_rs_tauri::inbox::InboxState::start(&data_dir) {
-                Ok(inbox) => app.manage(inbox),
-                Err(e) => eprintln!("inbox unavailable: {e}"),
+            if !missing_root {
+                match idl_rs_tauri::inbox::InboxState::start(&data_dir) {
+                    Ok(inbox) => app.manage(inbox),
+                    Err(e) => eprintln!("inbox unavailable: {e}"),
+                }
             }
 
             // `peers.json`/`identity.json` live outside `<data>` (PLAN §8
@@ -43,16 +66,21 @@ pub fn run() {
             // particular a corrupt `identity.json` must never be papered
             // over with a freshly minted id, which would orphan every
             // existing pairing (ruling R105).
-            let peers_path = app_config_dir.join("peers.json");
-            let identity_path = app_config_dir.join("identity.json");
-            let sync_state = tauri::async_runtime::block_on(idl_rs_tauri::state::SyncState::start(
-                app.handle().clone(),
-                data_dir,
-                peers_path,
-                identity_path,
-            ))
-            .unwrap_or_else(|e| panic!("starting sync: {e:?}"));
-            app.manage(sync_state);
+            //
+            // Not started at all when the data root is missing: sync would
+            // write a library into a folder the user never chose.
+            if !missing_root {
+                let peers_path = app_config_dir.join("peers.json");
+                let identity_path = app_config_dir.join("identity.json");
+                let sync_state = tauri::async_runtime::block_on(idl_rs_tauri::state::SyncState::start(
+                    app.handle().clone(),
+                    data_dir,
+                    peers_path,
+                    identity_path,
+                ))
+                .unwrap_or_else(|e| panic!("starting sync: {e:?}"));
+                app.manage(sync_state);
+            }
             Ok(())
         })
         .plugin(tauri_plugin_dialog::init())
