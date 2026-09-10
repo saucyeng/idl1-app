@@ -19,6 +19,51 @@ import type { Viewport } from "./viewport";
  *  arguments accept (C3 §3.6: both are wire `u16`s). */
 const U16_MAX = 65535;
 
+/** Below this magnitude (and above zero), {@link formatMagnitude} switches
+ *  to exponential notation — a fixed-decimal `0.00` would otherwise erase
+ *  a small spectral value entirely. */
+const MAGNITUDE_EXPONENTIAL_LOW = 0.01;
+
+/** At or above this magnitude, {@link formatMagnitude} switches to
+ *  exponential notation rather than printing a long fixed-decimal string. */
+const MAGNITUDE_EXPONENTIAL_HIGH = 10_000;
+
+/**
+ * Formats one `RasterMeta.scale.vmin`/`vmax` value for a human at a
+ * glance (raster-labels lane, task 2, ruling R177): two fixed decimals in
+ * `[0.01, 10000)` (and exactly `0`), exponential (also two decimals)
+ * outside that range — spectral magnitudes span several orders of
+ * magnitude, so a single fixed precision would either erase small values
+ * to `0.00` or print unreadably long strings for large ones. `0` itself
+ * is excluded from the exponential branch (it is `< MAGNITUDE_EXPONENTIAL_LOW`)
+ * so it prints as the fixed-decimal `"0.00"` rather than `"0.00e+0"`.
+ */
+export function formatMagnitude(value: number): string {
+  const abs = Math.abs(value);
+  if (abs !== 0 && (abs < MAGNITUDE_EXPONENTIAL_LOW || abs >= MAGNITUDE_EXPONENTIAL_HIGH)) {
+    return value.toExponential(2);
+  }
+  return value.toFixed(2);
+}
+
+/**
+ * Renders `RasterMeta.scale.vmin`/`vmax` as a compact human-readable range
+ * (raster-labels lane, task 2, ruling R177), e.g. `"0.00 – 1.42 (m/s)²/Hz"`.
+ * `unitText` is the caller's own `formatUnit(magnitude_unit).text` (R154's
+ * three-state rule; this function does not call `formatUnit` itself, so it
+ * stays a single, unit-agnostic formatter rather than a second copy of the
+ * unit rule) and is appended verbatim — the engine's own unit text already
+ * carries any parenthesisation a compound unit needs (e.g. a PSD unit
+ * reads `(m/s)²/Hz`), so this function neither adds nor strips parentheses
+ * of its own. An empty `unitText` (dimensionless, unknown, or a `null`
+ * `magnitude_unit`, i.e. `kind: "histogram2d"`) omits the trailing unit
+ * entirely rather than leaving a trailing space.
+ */
+export function formatScaleRange(vmin: number, vmax: number, unitText: string): string {
+  const range = `${formatMagnitude(vmin)} – ${formatMagnitude(vmax)}`;
+  return unitText === "" ? range : `${range} ${unitText}`;
+}
+
 /** One `fetch_raster`/`fetch_raster_meta` request's `width`/`height`/`params`,
  *  built from the current viewport and cell size by {@link rasterRequestFor}. */
 export interface RasterRequest {

@@ -42,6 +42,21 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
   `y_label`/`scale.vmin`/`scale.vmax` are still fetched and drawn nowhere,
   unchanged by this task.
 
+- **A spectrogram's axes now say what they are (2026-09-09, raster-labels
+  lane, ruling R177).** `RasterUnderlay` renders `RasterMeta.x_label`/
+  `y_label` as given (bottom-centre/left, rotated — the raster canvas has
+  no other axis furniture to match) and `scale.vmin`/`scale.vmax` as a
+  plain numeric range with `magnitude_unit` as its unit, replacing the
+  unit-only display from R167 above. New pure `model/rasterLayer.ts`
+  helper `formatMagnitude` (fixed two decimals in `[0.01, 10000)`,
+  exponential outside it — spectral magnitudes span several orders of
+  magnitude) and `formatScaleRange` (the range plus a verbatim unit
+  string, via the existing `formatUnit`, R169 — no second unit formatter).
+  Deliberately **not** in this lane: a gradient colour-bar legend — the
+  Turbo ramp is `idl_rs::colormap::turbo_rgba8`, Rust-only, and stays that
+  way until a later lane hands TypeScript RGBA stops to build a CSS
+  gradient from (R177's own deferred half).
+
 - **The report has its own print palette and plot theme (2026-09-09, ruling
   R174).** `model/report/printPalette.ts` is a new, static module — no
   `documentVars()` on any report path — exporting eight print series
