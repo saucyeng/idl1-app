@@ -217,3 +217,4 @@ superseding form.
 - **R180** — Mobile L9 **starts now** in parallel: read-only survey first (machine SDKs + code seams), cargo scaffold after.
 - **R181** — **Opus lane-owner trial** approved: legend lane runs implement→review→gate→merge under an Opus owner; may self-rule on lane-local reversible choices (listed for ratification), must escalate contract/`pub`/spec/cross-lane with a proposed answer. Counts: escalations, self-rulings, reversals.
 - **R182** — The **lead pushes `main`** (both repos, submodule first) after each green gate; hook rule removed, §7 updated. Lanes never push. No attribution trailers.
+- **Watcher flake closed 2026-09-10** — the test's `std::fs::write` surfaced as Create+Modify and the first event could be hashed before bytes landed; tests now self-write via `write_atomic` and assert ordering. No watcher change. No named flakes remain in the lane gate.

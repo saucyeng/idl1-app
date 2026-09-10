@@ -273,7 +273,11 @@ are defined in `docs/superpowers/specs/2026-09-02-idl1-rewrite-design.md` §10.
   - `watcher::tests::self_write_with_pre_registered_hash_never_fires_
     callback` is a named timing flake (asserts no callback within 500 ms
     against a 100 ms debounce; fails only on a loaded machine) — not
-    broken code. Filed as an L8-class follow-on to make it deterministic.
+    broken code. **Closed 2026-09-10:** cause was the test writing with
+    `std::fs::write` (Create+Modify; the first event can be hashed before
+    the bytes land). Tests now self-write through the production
+    `write_atomic` path and assert ordering, not a timeout. Watcher logic
+    untouched. Gate 3's named flakes: none.
   - `verify_data_dir`'s symlink/junction finding (R101): a pre-existing
     link inside `data_root` is out of `safe_join`'s stated boundary and not
     yet a `verify_data_dir` finding. Filed as an L8-class follow-on.
