@@ -8548,3 +8548,19 @@ before any hardware. Draft stays `-DRAFT` until the simulator exists and
 the thresholds are exercised. **Cost if wrong:** the namespace and the
 authored-vs-measured flag are the two choices that outlive v1; both are
 metadata, both cheap to rename before anything is written to disk.
+
+## R193 — BLE device ids are Bluetooth addresses; peripherals are found by address
+
+*2026-09-10, lead. Found by CI's Linux build: `idl-transport` did not compile
+there.* `connect` built a `PeripheralId` from a `BDAddr`, a conversion
+btleplug offers only on Windows; and `scan` handed out `PeripheralId`'s
+`Display`, which is a MAC on Windows, a bluez object path on Linux and a
+UUID on macOS, so the round trip was Windows-only twice over. Ruling:
+`DiscoveredDevice.device_id` is the **Bluetooth address** on every
+platform, and `connect` looks it up among `adapter.peripherals()` by
+`properties().address`. C3 §3.8's `device_id` stays an opaque string to
+the app. Verified by CI's Linux compile and by the Windows gate when the
+cargo slot frees; no behaviour change on Windows. **Cost if wrong:**
+macOS hides real addresses behind per-app random ones, so a future macOS
+lane may need a different id; that is a platform lane's problem, not a
+reason to keep a Windows-only path.
