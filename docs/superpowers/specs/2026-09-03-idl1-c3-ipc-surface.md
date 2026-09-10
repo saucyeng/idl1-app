@@ -1380,8 +1380,24 @@ interface RasterMeta {
    *  only: R165 keeps `fetch_raster`/`fetch_fft`'s byte payload to samples
    *  and framing. */
   magnitude_unit: UnitLabel | null;
+  /** The colour ramp this raster's pixels were encoded with, sampled at
+   *  evenly spaced `t` including both endpoints: stop `i` of `n` is the
+   *  ramp at `t = i / (n - 1)`, and `n >= 16`. Each stop is opaque RGBA8
+   *  `[r, g, b, a]`; the ramp's transparent-NaN case is not a stop (see
+   *  `transparent_zero`). The app builds a legend gradient from these
+   *  stops and never reimplements the ramp (ruling R177): one Turbo, in
+   *  `core::colormap`, is the only definition. Carried per raster rather
+   *  than by a one-time command so a legend can only ever describe the
+   *  encoder that produced the pixels beside it. */
+  ramp_stops: [number, number, number, number][];
 }
 ```
+**Colour-bar legend (amended 2026-09-10, ruling R177).** `scale.vmin`/
+`vmax` label the ends of a bar drawn from `ramp_stops`; `vmin` maps to
+stop 0 and `vmax` to the last stop, `kind: "linear"` in between.
+Sampling the ramp from a fetched raster's pixels is not an acceptable
+substitute: it makes the legend depend on whatever data is on screen.
+
 **Scaling names (amended 2026-09-09, ruling R167).** These are the same
 three the maths language uses — `density`, `spectrum`, `raw_magnitude` —
 because they name the same computations. The wire previously exposed only
