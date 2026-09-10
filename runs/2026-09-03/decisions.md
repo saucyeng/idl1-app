@@ -8412,3 +8412,25 @@ stands with headroom; portrait is ~412 CSS px wide, landscape ~915, so
 landscape falls into the `medium` side-by-side layout, which is the
 wide-screen option R185 item 2 described, not a gap. **Cost if wrong:**
 a spec written early is cheap; a phone width is a fact.
+
+## R189 — Cloud sync must scale to ~1000 users; C5 is identity + broker + storage
+
+*2026-09-10, Isaac: "for now it's just me, but it needs to be able to scale
+to, say, a thousand users; not necessarily a Gmail."* This changes the
+C5 draft's shape (R188 keeps it design-only). OAuth/OIDC yields an
+identity, never a storage credential, so the architecture is three
+parts: (1) **identity** from a hosted OIDC provider offering several
+sign-ins (Google, Apple, email link); never a home-grown password store;
+(2) a **stateless broker** that verifies the identity token and mints
+short-lived, prefix-scoped storage access (presigned URLs), so it never
+touches ride data and costs nothing at rest; (3) any **S3-compatible
+store** with a per-user namespace `users/<sub>/devices/<peer_id>/…` over
+the existing content-addressed layout. The per-cell workbook merge stays
+on the client. Storage provider is interchangeable behind (2); at a
+thousand users egress dominates cost, which is where R2's pricing stops
+being a convenience and becomes the decision. "No SaaS" (design D7)
+meant no dependency for the single user; a thousand users means Isaac
+operates a service, which is a product decision he has now made.
+**Cost if wrong:** the broker is ~200 lines and the namespace is a
+prefix; a single-user Drive path (offered earlier) would have to be
+rebuilt for multi-user, which is why it is not the default any more.
