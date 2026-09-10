@@ -8474,3 +8474,19 @@ content-addressed and synced like a profile, and M5's cross-session
 queries must be able to filter on it. Spec-first when M6 opens.
 **Cost if wrong:** a schema is a file format; per-session attachment is
 the one choice that is hard to retrofit, and the sheet itself argues for it.
+
+## R190 amended — User-defined parameters; clicks from closed
+
+*2026-09-10, Isaac.* The sample is only a sample: users define whatever
+parameters they want, and each becomes usable in the maths editor.
+Compression and rebound clicks are **counted from closed** (the sheet's
+values are recorded in that convention; a unit label `clicks` carries it).
+Consequence for the C2 half of M6: a setup value is **not** a workbook
+constant, because a workbook can hold windows from several sessions and
+`fork_psi` differs between them; it is a per-window scalar, resolved
+from the window's session sheet, addressed through a reserved namespace
+(the spelling is the spec's job). Missing on a given session reads as
+absent, never zero. Open for the M6 spec, not decided now: whether a
+value may vary *within* a session (a mid-day clicker change) or is one
+number per session. Original sample deleted from the repo root at Isaac's
+request; the copy in `docs/setup-sheet/` is the reference.
