@@ -6,6 +6,20 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 
 ### Added
 
+- **Library management from the command line (2026-09-10, ruling R197).**
+  `idl-rs library fold-in <folder> --data-dir <dir>` imports a whole folder
+  of logs in one command, printing a preview table first (file, importer,
+  size, whether it is already in the library, session start) and a summary
+  of what was imported, skipped, and failed at the end. `--dry-run` stops
+  after the table, `--recursive` descends into sub-folders, and `--move`
+  deletes each source file once its contents have verified byte-for-byte in
+  the library, so folding in an archive does not need room for two copies.
+  A file that fails to import is never deleted. `library scan` is the
+  preview table on its own; `library stale` lists sessions whose data was
+  built by an older importer than this build runs, and `library rebuild`
+  re-imports them from the originals. Every command takes `--json` for
+  scripting and exits non-zero if anything failed.
+
 - **Firmware updates, over the air (2026-09-10, rulings R197/R198).**
   Settings > Firmware replaces its "arrives in a later version" placeholder
   with the real thing. Point it at a GitHub repository that publishes idl1
