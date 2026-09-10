@@ -308,6 +308,33 @@ are defined in `docs/superpowers/specs/2026-09-02-idl1-rewrite-design.md` §10.
   progress and errors per file), and no inbox setting (the path is fixed at
   `<data>/inbox`).
 
+## Data root safety (ruling R196)
+
+- [x] dataroot lane — landed 2026-09-10 on `dataroot` (both repos). Four
+  changes, all aimed at one failure: an unavailable library folder that used
+  to look like an empty library. (1) `resolve_data_dir` now returns a typed
+  `DataDirMissing` when the `settings.json` override is absent, is not a
+  directory, or cannot be written (C4 §1 "Missing root"), and creates
+  nothing anywhere — the launch keeps the window but starts no library
+  subsystem, and the frontend gate blocks every tab behind a screen naming
+  the folder, with Retry and Choose folder. (2) `move_data_dir` (C3 §3.10)
+  copies `blobs/`, `sessions/`, `workbooks/`, `tracks/` and `profiles/` to a
+  new root, re-hashes every copied file and checks each blob against the
+  digest its own path names, rebuilds the catalog at the destination, and
+  only then writes the override; it refuses a relative, overlapping,
+  non-empty or unwritable target and never deletes anything, so the old root
+  stays for the user. Settings > Data drives it with a folder picker,
+  confirmation, per-phase progress and a result line. (3) `tauri dev` runs
+  under `com.saucyeng.idl1.dev` via a `--config` overlay
+  (`npm run tauri:dev`), so a dev build can no longer open the real library.
+  (4) A delete-guard `#[test]` scans core/transport/tauri for non-test
+  `remove_*` calls and fails unless the set matches the allowlist audited in
+  `runs/2026-09-10/DELETE-AUDIT.md`; it immediately found `delete_track`
+  missing from that audit. Not done here: nothing cleans up a partial copy at
+  a failed move's destination (deleting it would be a new delete site), and
+  Retry/Choose folder both end at "restart idl1" rather than resuming in
+  place, because `<data>` is resolved once per process.
+
 ## Wave 3
 
 - [ ] L9 mobile plugins · L12 in-app agent (optional)
