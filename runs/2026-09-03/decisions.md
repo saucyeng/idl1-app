@@ -8060,3 +8060,61 @@ and pairing needs it) but nothing token-adjacent.
 cheap now, expensive once the pane ships. The edge/level point is the
 expensive one: a firehose event is not a visible bug, it is a slow pane and
 a flat battery, and nobody traces that back to a discovery loop.
+
+---
+
+## R176 — `peer_appeared` fires on appearance or change, never on an unchanged re-resolve
+
+*2026-09-09, lead. R175 asked the lane to check; the answer was the one
+that needed a ruling.*
+
+**Finding.** `run_discovery_loop` is **level-triggered today**. Every mDNS
+`ServiceResolved` event unconditionally inserts into `discovered` and, if
+the peer is paired, emits `peer_appeared` — with no comparison against what
+was already there. A paired peer that stays visible re-fires on every
+underlying resolve. With only paired peers that is a handful and nobody
+noticed. Widened to every device on a LAN it is a per-tick re-render of the
+Settings pane for information that did not change.
+
+So R175's "preserve today's edge semantics" had nothing to preserve. The
+lane checked, found the opposite of what I assumed, and correctly did not
+fix it on its own initiative.
+
+**Ruling: neither pure option — emit on *change*.**
+
+On a sighting, compare against the entry already in `discovered`. Emit if
+there is **no** existing entry (a genuine appearance) **or** if any field
+the DTO carries differs (name, protocol_version, address, port). If it is
+identical to what is stored, refresh as today and **emit nothing**.
+
+**Why not the plain transition check I originally called for.** A peer's
+address or port can change while it stays continuously visible, and pairing
+needs the address. Edge-on-peer-id-alone would leave a consumer holding a
+stale address with no event to tell it otherwise — trading a firehose for a
+silent staleness bug, which is strictly worse. I asked for the wrong thing
+in R175; the finding is what corrected it.
+
+**Why not level.** An event carrying no new information is pure cost: it is
+not a visible bug, it is a slow pane and a flat battery, and nobody traces
+that back to a discovery loop.
+
+Content-dedupe gets both properties — told whenever there is something to
+know, never when there is not — for one comparison against the entry being
+overwritten.
+
+**This changes behaviour for paired peers**, which is why it is a ruling
+and not a quiet fix. Safe: the only consumer is `SyncSection.tsx`'s
+peer-appeared watch, which refreshes that peer's row, and it now receives
+strictly fewer events with identical information content. The `sync_status`
+poll stays the backstop — a peer going *offline* remains poll-only, since
+there is no disappearance event and this lane does not add one.
+
+**C3 §3.9 must state the emission rule**, not just the payload: "fires on
+appearance or change, never on an unchanged re-resolve" is a contract
+statement a consumer needs in order to reason about what it may rely on.
+Landing as a separate commit from the enum work, so the behaviour change is
+legible on its own.
+
+**Cost if wrong.** Under-emitting would show as a stale pane between polls
+— bounded by the poll interval, and the tests pin the change case. Over-
+emitting is what we had.
