@@ -28,7 +28,11 @@ export function editorPlacement(widthPx: number): EditorPlacement {
 /**
  * Whether `placement`'s output shows no editor affordances at all —
  * true only for `"sheet"` (narrow): the output is read-only paper there,
- * and the Properties form moves into a `Sheet` instead of sitting beside it.
+ * and the whole cell editor moves into a `Sheet` over it instead of
+ * sitting beside it. Under ruling R185 that sheet holds the editor for
+ * every cell kind, not only a `js` cell's Properties form; read-only is
+ * still exactly what the output itself is, which is why
+ * `model/paperView.ts`'s `paperViewActive` asks this predicate.
  *
  * @param placement - The placement to check.
  */
