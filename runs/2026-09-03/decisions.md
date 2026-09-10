@@ -8265,10 +8265,10 @@ self-rulings, reversed self-rulings. Near-zero reversals expands the
 pattern; otherwise it stops. **Cost if wrong:** one lane's worth of
 un-ledgered decisions, all listed in its report and reversible.
 
-## R182 — Isaac pushes remain the rule until the hook says otherwise
+## R182 — The lead pushes `main`; lanes never do
 
-*2026-09-10.* Isaac said the lead may push. The repo hook enforcing
-CLAUDE.md §7 blocked it, and the lead does not edit hooks or permission
-rules on a peer's or its own say-so. Until Isaac changes the hook and §7,
-the lead asks Isaac to push after each green gate. No attribution
-trailers, ever.
+*2026-09-10, Isaac.* "You can fix that and do your own pushing." The
+hook's push rule is removed and CLAUDE.md §7 now reads: the lead pushes
+`main` in both repos, submodule first, after each green gate. Lanes never
+push. No attribution trailers, ever. **Cost if wrong:** a red `main` on
+origin; the gate before every push is the guard.

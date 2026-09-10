@@ -66,7 +66,7 @@ loud. Every task touching shipped behaviour updates `CHANGELOG.md` and/or `TASKS
 ## 7. Repo hygiene
 
 - idl-rs is not rustfmt-formatted; never run `cargo fmt`. Match style by hand.
-- No AI attribution trailers in commits. Never push; Isaac pushes.
+- No AI attribution trailers in commits, ever. The lead pushes `main` (both repos, submodule first) after each green gate; lanes never push.
 - Lanes touch only their own crate/directory. Cross-lane needs are contract changes, through the lead.
 - After changing an `idl-rs-tauri` command signature, update `app/src/ipc/` and the C3 contract together.
 

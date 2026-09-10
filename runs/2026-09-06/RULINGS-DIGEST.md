@@ -216,4 +216,4 @@ superseding form.
 - **R179** — R7 PDF export **parked** by Isaac; pipeline first. No PDF deps.
 - **R180** — Mobile L9 **starts now** in parallel: read-only survey first (machine SDKs + code seams), cargo scaffold after.
 - **R181** — **Opus lane-owner trial** approved: legend lane runs implement→review→gate→merge under an Opus owner; may self-rule on lane-local reversible choices (listed for ratification), must escalate contract/`pub`/spec/cross-lane with a proposed answer. Counts: escalations, self-rulings, reversals.
-- **R182** — Isaac said the lead may push; the §7 hook blocked it and the lead does not touch hooks. Isaac pushes until he changes the hook and §7.
+- **R182** — The **lead pushes `main`** (both repos, submodule first) after each green gate; hook rule removed, §7 updated. Lanes never push. No attribution trailers.

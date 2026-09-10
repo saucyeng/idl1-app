@@ -23,9 +23,6 @@ m 'cargo[[:space:]]+doc\b' \
   && deny "CLAUDE.md §8: no cargo doc inside a task"
 m 'cargo[[:space:]]+[^"\\;&|]*([[:space:]]-j[[:space:]]*[0-9]|[[:space:]]--jobs\b)' \
   && deny "CLAUDE.md §8: never override cargo jobs (-j/--jobs); machine-wide cap applies"
-m 'git[[:space:]]+([^"\\;&|]*[[:space:]])?push\b' \
-  && deny "CLAUDE.md §7: never git push; Isaac pushes"
-
 # A bare `cargo test`/`build`/`check` with no -p/--package is workspace-wide in
 # this virtual manifest -- it builds the Tauri graph, exactly what --workspace
 # was denied for. Caught 2026-09-05 after an implementer ran bare `cargo test`
