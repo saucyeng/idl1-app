@@ -36,7 +36,10 @@ describe("buildLegendGradient", () => {
     expect(coloursIn(gradient ?? "")).toHaveLength(16);
     expect(gradient).toContain("rgba(0, 0, 255, 1) 0%");
     expect(gradient).toContain("rgba(240, 15, 15, 1) 100%");
-    expect(gradient).toContain(`rgba(16, 1, 239, 1) ${(1 / 15) * 100}%`);
+    // Every interior stop sits at its own `i/(n-1)*100`, not just the ends.
+    for (let i = 0; i < 16; i++) {
+      expect(gradient).toContain(`rgba(${i * 16}, ${i}, ${255 - i * 16}, 1) ${(i / 15) * 100}%`);
+    }
   });
 
   it("buildLegendGradient — any stop list — contains no colour that was not an input stop", () => {
