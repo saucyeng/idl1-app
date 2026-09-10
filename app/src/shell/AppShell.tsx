@@ -10,6 +10,7 @@ import BottomBar from "./BottomBar";
 import RouteHost from "./RouteHost";
 import { ToolbarSlotRow } from "./ToolbarSlotRow";
 import CommandPalette from "./CommandPalette";
+import ImportStatusChip from "./ImportStatusChip";
 import { tabSwitchCommands } from "./commands";
 import { Toaster } from "../components/Toaster";
 
@@ -108,6 +109,13 @@ export default function AppShell() {
           does; the row itself carries no size until the active route
           portals real content into it (`ToolbarSlotRow.tsx`'s doc
           comment) — Data, Device and Settings never show an empty bar. */}
+      {/* Global import status (ruling R201 item 3), above the toolbar row
+          and below whichever nav bar is placed at the top. Rendered here
+          rather than inside `TopBar` because `TopBar` is `hidden` at narrow
+          widths, and "visible on every route" has to mean every width too.
+          It renders `null` while nothing is importing, so it costs no
+          vertical space in the common case. */}
+      <ImportStatusChip onOpenImportPanel={() => onNavigate("data")} />
       <ToolbarSlotRow />
       <div className="min-h-0 flex-1">
         <RouteHost layout={layout} />

@@ -1,4 +1,5 @@
 import { AppStateProvider } from "./state/AppState";
+import { ImportQueueProvider } from "./state/ImportQueue";
 import AppShell from "./shell/AppShell";
 import DataRootGate from "./shell/DataRootGate";
 
@@ -9,12 +10,18 @@ import DataRootGate from "./shell/DataRootGate";
  *  The gate is outermost on purpose (C4 §1 "Missing root", ruling R196): if
  *  the configured library folder is not there, no tab should mount, because
  *  every one of them would render an empty library over a real one that is
- *  merely offline. */
+ *  merely offline.
+ *
+ *  `ImportQueueProvider` sits inside it and outside the shell because the
+ *  import queue outlives any one route: the shell's status chip and the
+ *  Data tab's panel are two views of the same queue (ruling R201 item 3). */
 export default function App() {
   return (
     <DataRootGate>
       <AppStateProvider>
-        <AppShell />
+        <ImportQueueProvider>
+          <AppShell />
+        </ImportQueueProvider>
       </AppStateProvider>
     </DataRootGate>
   );

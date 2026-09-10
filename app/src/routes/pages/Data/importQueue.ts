@@ -69,7 +69,8 @@ export type ImportQueueAction =
   | { type: "PROGRESS"; id: number; progress: Progress }
   | { type: "SUCCEEDED"; id: number; outcome: ImportOutcome }
   | { type: "FAILED"; id: number; error: unknown }
-  | { type: "DISMISS"; id: number };
+  | { type: "DISMISS"; id: number }
+  | { type: "STOP_AFTER_CURRENT" };
 
 /** Pure reducer over [[ImportQueueState]]. Never calls `importFile` itself —
  *  that side effect lives in `importDriver.ts`'s `runImport`, called from
@@ -126,6 +127,15 @@ export function importQueueReducer(state: ImportQueueState, action: ImportQueueA
         })),
       };
     }
+    case "STOP_AFTER_CURRENT":
+      // Ruling R201 item 4: a bulk import is not all-or-nothing. Dropping
+      // every `"queued"` item leaves the one `"running"` item to finish on
+      // its own — there is no way to abort an `import_file` call already in
+      // flight (C3 §3.3 has no cancel), and killing it half-way would leave
+      // the user guessing whether that file landed. The items already
+      // `"done"`/`"failed"` stay in the list so the run's outcome is still
+      // readable afterwards.
+      return { ...state, items: state.items.filter((item) => item.status !== "queued") };
     case "DISMISS":
       return {
         ...state,
@@ -163,6 +173,13 @@ function itemFraction(item: ImportItem): number | null {
       if (item.total === 0) return 1;
       return item.done / item.total;
   }
+}
+
+/** `true` when the queue has at least one `"queued"` item left to drop —
+ *  the "Stop after current" button's enabled condition. A queue whose last
+ *  item is already running has nothing left to stop. */
+export function canStopAfterCurrent(state: ImportQueueState): boolean {
+  return state.items.some((item) => item.status === "queued");
 }
 
 /** Overall queue progress as a percentage (`0`–`100`), averaged equally

@@ -6,6 +6,23 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 
 ### Added
 
+- **The app no longer freezes while it works (2026-09-10, ruling R201).**
+  Scanning a folder for import now returns instantly however large it is:
+  it reads the folder listing and a few kilobytes of each log's header
+  instead of hashing every file, so a 193-file, 6.9 GB folder previews at
+  once rather than after minutes of a frozen window. The preview's
+  "already imported" column reads "checked on import", because duplicates
+  are caught by content hash when a file is actually imported. Every
+  command that reads the library, imports, or evaluates a session now runs
+  off the app's main thread, so nothing it does locks up the interface.
+  Imports show their progress in a status strip visible from every tab
+  ("Importing 12 / 193" with the file's name, then "Import done" with the
+  counts for a minute afterwards); clicking it opens the import panel.
+  A folder import is no longer all-or-nothing: each file in the preview
+  has its own checkbox, all ticked to begin with, "Import selected"
+  imports just those, and "Stop after current" abandons the rest of a run
+  in progress without interrupting the file being imported.
+
 - **Library management from the command line (2026-09-10, ruling R197).**
   `idl-rs library fold-in <folder> --data-dir <dir>` imports a whole folder
   of logs in one command, printing a preview table first (file, importer,
