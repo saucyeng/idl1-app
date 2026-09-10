@@ -173,6 +173,15 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 
 ### Changed
 
+- **Maths: the main lap window is an `Option`, not a `(0.0, 0.0)` sentinel
+  (2026-09-10, ruling R128 item 3).** `main_lap_window` returns
+  `Option<(f64, f64)>`, so "no window selected, gate off" (`None`) and "a
+  resolved window", including an empty one, can no longer be spelled the
+  same way. `window_index_range` keeps R128's exact semantics — `None` is
+  the whole channel, a resolved `start >= end` is the empty range — but now
+  reads them off the type instead of comparing against a magic pair. No
+  numeric result changes; the parity tests are the proof.
+
 - **Notebook: the FFT properties pane's Scaling picker offers all three of
   the maths language's names (2026-09-09, ruling R167/R168).** `plotForm/
   types.ts` splits the old two-name `FFT_SCALINGS` in two: `FFT_SCALINGS`
