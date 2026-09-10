@@ -58,6 +58,12 @@ jobs:
         working-directory: rust
         run: cargo test -p idl-transport -- --test-threads=4
 
+      - name: cargo check app crate (app/src-tauri)
+        # The Tauri app crate is compiled by nobody but `tauri dev/build`, so a
+        # lane can land a type error here that every crate gate misses (R199).
+        working-directory: app/src-tauri
+        run: cargo check
+
   app:
     runs-on: ubuntu-latest
     timeout-minutes: 45
