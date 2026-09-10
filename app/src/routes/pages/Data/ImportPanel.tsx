@@ -11,7 +11,7 @@ import { importFile, listImporters, type ImporterInfo } from "../../../ipc/impor
 import { scanFolder } from "../../../ipc/library";
 import { describeIpcError } from "./errors";
 import { pickImportFile, pickImportFolder, resolvePastedPath } from "./FilePicker";
-import { importablePaths, summarizeScanPreview, toScanPreviewRows, type ScanPreviewRow } from "./libraryPanel";
+import { importableRows, summarizeScanPreview, toScanPreviewRows, type ScanPreviewRow } from "./libraryPanel";
 import { isDrained, nextItemToStart, runImport } from "./importDriver";
 import { importQueueReducer, initialImportQueueState, overallPercent, type ImportItem, type ImportQueueAction } from "./importQueue";
 
@@ -274,11 +274,13 @@ export function ImportPanel({ onImported }: ImportPanelProps) {
   /** Enqueues every importable row of the current preview, one
    *  `import_file` per file through the queue this panel already drives
    *  (C3 §3.3 has no bulk-import command by design, R191: progress and
-   *  errors stay per file). */
+   *  errors stay per file). Each row goes in with the importer the scan
+   *  detected for that file, never the panel's single-file override menu —
+   *  one dropdown cannot describe a folder holding two formats. */
   const handleImportPreviewClick = () => {
     if (scanState.status !== "ready") return;
-    for (const path of importablePaths(scanState.rows)) {
-      dispatch({ type: "ENQUEUE", path, importerId });
+    for (const row of importableRows(scanState.rows)) {
+      dispatch({ type: "ENQUEUE", path: row.path, importerId: row.importerId });
     }
     setScanState({ status: "idle" });
   };
@@ -345,9 +347,9 @@ export function ImportPanel({ onImported }: ImportPanelProps) {
               emphasis="good"
               filled
               onClick={handleImportPreviewClick}
-              disabled={importablePaths(scanState.rows).length === 0}
+              disabled={importableRows(scanState.rows).length === 0}
             >
-              Import {importablePaths(scanState.rows).length} files
+              Import {importableRows(scanState.rows).length} files
             </Button>
             <Button type="button" size="xs" onClick={() => setScanState({ status: "idle" })}>
               Cancel

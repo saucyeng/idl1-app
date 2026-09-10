@@ -20,6 +20,10 @@ function plural(count: number, noun: string): string {
 export interface ScanPreviewRow {
   path: string;
   fileName: string;
+  /** The importer id detected from this file's own extension, or `null`
+   *  when nothing covers it — what an import of this row must be given, so
+   *  a mixed-format folder imports each file with its own importer. */
+  importerId: string | null;
   sizeText: string;
   /** The importer id, or "—" when nothing covers this extension. */
   importerText: string;
@@ -45,6 +49,7 @@ export function toScanPreviewRows(entries: ScanEntry[]): ScanPreviewRow[] {
     return {
       path: entry.path,
       fileName: entry.file_name,
+      importerId: entry.importer_id,
       sizeText: formatBytes(entry.size_bytes),
       importerText: entry.importer_id ?? "—",
       startText:
@@ -59,10 +64,17 @@ export function toScanPreviewRows(entries: ScanEntry[]): ScanPreviewRow[] {
   });
 }
 
-/** The paths "Import N files" enqueues: every importable row, in preview
- *  order. Already-imported and unsupported files are never enqueued. */
+/** The rows "Import N files" enqueues: every importable row, in preview
+ *  order. Already-imported and unsupported files are never enqueued. Each
+ *  row carries its own [[ScanPreviewRow.importerId]], so a folder holding
+ *  `.idl0` and `.gpx` side by side imports each with the right importer. */
+export function importableRows(rows: ScanPreviewRow[]): ScanPreviewRow[] {
+  return rows.filter((row) => row.importable);
+}
+
+/** [[importableRows]]' paths alone, for callers that only need the list. */
 export function importablePaths(rows: ScanPreviewRow[]): string[] {
-  return rows.filter((row) => row.importable).map((row) => row.path);
+  return importableRows(rows).map((row) => row.path);
 }
 
 /** The preview's one-line summary, e.g. "3 of 5 files can be imported (1

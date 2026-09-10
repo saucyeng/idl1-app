@@ -5,6 +5,7 @@ import type { InboxStatus, ReimportReport, ScanEntry, StaleSession } from "../..
 import {
   describeInboxStatus,
   importablePaths,
+  importableRows,
   parseStartInput,
   shouldPromptForStart,
   staleRebuildLabel,
@@ -62,6 +63,19 @@ describe("toScanPreviewRows", () => {
 
     expect(rows[0].startText).not.toBe("unknown");
     expect(rows[0].startText).toContain("2026");
+  });
+});
+
+describe("importableRows", () => {
+  it("importableRows — a mixed-format folder — each row keeps its own detected importer id", () => {
+    const rows = toScanPreviewRows([
+      entry({ path: "a", file_name: "a.idl0", importer_id: "idl0" }),
+      entry({ path: "b", file_name: "b.gpx", importer_id: "gpx", session_start_utc_ms: null }),
+    ]);
+
+    const importable = importableRows(rows);
+
+    expect(importable.map((row) => row.importerId)).toEqual(["idl0", "gpx"]);
   });
 });
 
