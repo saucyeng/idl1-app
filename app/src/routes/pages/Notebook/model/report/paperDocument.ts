@@ -40,12 +40,11 @@ export function blockShowsOnScreen(block: ReportBlock): boolean {
  * `selection`, `windowSection`, `windowFailure`, `comparison`, and the two
  * print-furniture kinds).
  *
- * Paper's tap-to-edit gesture (R184 item 4) is one delegated handler over
- * this value: a block that has a cell id is tappable and carries it in
- * `data-cell-id`; a block without one is inert. Whether tapping actually
- * opens anything is `Notebook/index.tsx`'s existing narrow `Sheet`
- * condition (`js` cells only) — a `math` or `table` block selects its cell
- * and opens nothing, R184 item 4's accepted no-op.
+ * Paper's tap-to-edit gesture is one delegated handler over this value: a
+ * block that has a cell id is tappable and carries it in `data-cell-id`;
+ * a block without one is inert. Every tappable kind opens an editor —
+ * ruling R185 item 1 amended R184's `js`-only sheet so a `math` or
+ * `table` block opens the code editor rather than doing nothing.
  *
  * @param block - The block to read.
  */

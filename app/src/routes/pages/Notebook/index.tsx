@@ -46,7 +46,6 @@ import { engineVersionBanner } from "./model/engineVersionBanner";
 import { fetchEngineVersion } from "../../../ipc/engine";
 import EditorPanes from "./components/EditorPanes";
 import JsCellFrame, { DEFAULT_JS_CELL_HEIGHT_PX } from "./components/JsCellFrame";
-import PropertiesForm from "./components/PropertiesForm";
 import type { PropertiesFormChannelOption, PropertiesFormLapOption } from "./components/PropertiesForm.types";
 import TimelineStrip from "./components/TimelineStrip";
 import WorkbookBar from "./components/WorkbookBar";
@@ -74,7 +73,7 @@ import { BASIC_MOUSE_PRESET, findInputMapPreset, INPUT_MAP_PRESETS, type InputMa
 import PlaybackTransport from "./interaction/PlaybackTransport";
 import { playableSpanUs, setSpeed, tick, togglePlay, type PlaybackState } from "./interaction/playback";
 import type { PlaybackMode } from "./interaction/playbackMode";
-import { editorPlacement, outputIsReadOnly } from "./model/editorPlacement";
+import { editorPlacement } from "./model/editorPlacement";
 import { paperViewActive } from "./model/paperView";
 import { paperLiveDecision } from "./model/paperLive";
 import { resolveEditorHost } from "./model/editorHost";
@@ -2255,17 +2254,19 @@ export default function NotebookPage() {
   // The editor for the currently open cell (Task 15's `EditorPanes`), built
   // once here and placed differently depending on `placement`
   // (`model/editorPlacement.ts`): beside the output in a `Resizable` pane on
-  // wide, inline under the selected cell's `CellFrame` on medium, and not at
-  // all on narrow (`outputIsReadOnly` -- narrow's Properties form lives in a
-  // `Sheet` instead, built separately below) -- except when the studio's
-  // properties column has published a slot node (R109): the editor always
-  // exists then, since it portals into that column regardless of this
-  // page's own (possibly narrow-reading, inside the studio) measured width.
+  // wide, inline under the selected cell's `CellFrame` on medium, and inside
+  // the narrow `Sheet` on paper widths -- or portalled into the studio's
+  // properties column when that column has published a slot node (R109).
+  //
+  // Ruling R185 item 1 is what put the sheet in that list. Narrow used to
+  // build no editor at all (`outputIsReadOnly`) and hand the sheet a bare
+  // `PropertiesForm`, which only exists for `js` cells -- so a `math` or
+  // `table` cell was uneditable on a phone. `EditorPanes` already covers
+  // every kind (`js` gets Properties beside Code, everything else gets Code
+  // alone), so the sheet now holds the same editor every other placement
+  // does, and each branch below decides only *where* it goes.
   const editorPanesElement =
-    openCellId !== null &&
-    openCell !== null &&
-    openCellCode !== null &&
-    (editorIsPortalHosted || !outputIsReadOnly(placement)) ? (
+    openCellId !== null && openCell !== null && openCellCode !== null ? (
       <EditorPanes
         cellId={openCellId}
         kind={openCell.kind}
@@ -3001,22 +3002,19 @@ export default function NotebookPage() {
           <div className="min-h-0 flex-1 overflow-auto p-4" data-register={register} style={registerContainerStyle}>
             {mainContentElement}
           </div>
+          {/* Ruling R185 item 1: paper and the editor alternate on narrow
+              and never share the screen -- the editor is this overlay, over
+              the paper it was opened from. Every cell kind opens it now, so
+              the title names what the sheet actually holds: a `js` cell's
+              Properties tab beside its Code, or the code editor alone. */}
           <BrandSheet
-            open={!editorIsPortalHosted && openCellId !== null && openCell?.kind === "js"}
+            open={!editorIsPortalHosted && editorPanesElement !== null}
             onOpenChange={(open) => {
               if (!open) setSelectedCellId(null);
             }}
-            title="Cell properties"
+            title={openCell?.kind === "js" ? "Cell properties" : "Cell code"}
           >
-            {!editorIsPortalHosted && openCellId !== null && openCell !== null && openCell.kind === "js" && openCellCode !== null && (
-              <PropertiesForm
-                code={openCellCode}
-                channels={propertiesChannels}
-                laps={propertiesLaps}
-                unitsPreference="si"
-                onChange={(nextCode) => handleCellCodeChange(openCellId, nextCode)}
-              />
-            )}
+            {!editorIsPortalHosted && editorPanesElement}
           </BrandSheet>
         </>
       )}

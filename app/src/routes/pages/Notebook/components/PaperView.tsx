@@ -11,7 +11,7 @@ import { ReportBlockView } from "./reportBlocks";
  *  filter itself (`toPaperDocument`), so a caller can hand the same value
  *  to paper and to print without deciding which blocks are furniture.
  *  `onSelectCell` receives the cell id of a tapped block; a block with no
- *  cell of its own never calls it (R184 item 4). */
+ *  cell of its own never calls it. */
 export interface PaperViewProps {
   document: ReportDocument;
   onSelectCell: (cellId: string) => void;
@@ -36,9 +36,11 @@ export interface PaperViewProps {
  *    Theme is inherited, light or dark (R184 item 7).
  * 3. **Taps.** Every block that belongs to a cell carries that cell's id in
  *    `data-cell-id`, and one delegated handler on the container turns a tap
- *    into `onSelectCell` — `Notebook/index.tsx` then opens its existing
- *    narrow `Sheet` for a `js` cell and, per R184 item 4, nothing at all
- *    for a `math` or `table` cell.
+ *    into `onSelectCell` — `Notebook/index.tsx` then opens its narrow
+ *    `Sheet` over the paper: Properties beside Code for a `js` cell, the
+ *    code editor alone for every other kind (ruling R185 item 1, which
+ *    replaced R184's `js`-only sheet). Paper and the editor alternate on a
+ *    phone; they never share the screen.
  *
  * Charts are `renderChart`'s static SVG, not the live sandbox iframe (R184
  * item 1): outputs rendered, with no `position: fixed` layout tracking and
