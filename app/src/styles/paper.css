@@ -144,3 +144,43 @@
   font-size: var(--text-label-2);
   color: var(--fg-dim);
 }
+
+/* Forced light paper (ruling R185 item 3): `PaperView` stamps
+ * `data-paper-theme` from the user's own paper toggle, and this scope is
+ * the page half of that choice -- the chart half is
+ * `Notebook/model/report/paperPalette.ts`, whose colours are baked into
+ * each `<svg>` at render time and so need no override here.
+ *
+ * Named CSS colours, not tokens: a forced scheme that read `--fg`/`--bg`
+ * would not be forced, it would follow the app. `report-print.css` already
+ * establishes this convention -- `tokenSheet.test.ts` bans numeric colour
+ * literals in stylesheets, not the CSS named colours. Only
+ * `light` is written out; `dark` is the app's own palette, which the rules
+ * above already apply.
+ */
+.paper-view[data-paper-theme="light"] {
+  color: black;
+  background: white;
+}
+
+.paper-view[data-paper-theme="light"] .report-session dt,
+.paper-view[data-paper-theme="light"] .report-absence,
+.paper-view[data-paper-theme="light"] .report-chart-caption {
+  color: dimgray;
+}
+
+.paper-view[data-paper-theme="light"] .report-def-table td,
+.paper-view[data-paper-theme="light"] .report-grid-table td,
+.paper-view[data-paper-theme="light"] .report-comparison-table td,
+.paper-view[data-paper-theme="light"] .report-comparison-table th {
+  border-color: gray;
+}
+
+.paper-view[data-paper-theme="light"] .report-grid-error,
+.paper-view[data-paper-theme="light"] .report-error {
+  color: maroon;
+}
+
+.paper-view[data-paper-theme="light"] .paper-block[data-cell-id]:active {
+  background: gainsboro;
+}

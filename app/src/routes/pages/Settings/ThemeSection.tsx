@@ -3,7 +3,7 @@ import { useEffect, useState } from "react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import type { PrefsStore } from "./prefsStore";
-import { resolveRegister, themeAttribute, type OutputRegister, type ThemeChoice } from "./theme";
+import { resolveRegister, themeAttribute, type OutputRegister, type PaperTheme, type ThemeChoice } from "./theme";
 
 /** Props for {@link ThemeSection}. */
 export interface ThemeSectionProps {
@@ -46,7 +46,8 @@ function useViewportWidth(): number {
   return widthPx;
 }
 
-/** The Theme section: dark / follow-OS choice, and the notebook output
+/** The Theme section: the app's dark / follow-OS choice, the paper view's
+ *  own theme (ruling R185 item 3), and the notebook output
  *  register (UI-DIRECTION decision 5, 31; R92/R93). Both are `ui` keys
  *  (`prefs.ts`'s `UiPrefs.theme` / `output_register`) written through
  *  {@link PrefsStore}. The register's effective value ({@link resolveRegister})
@@ -55,6 +56,7 @@ function useViewportWidth(): number {
 export default function ThemeSection({ store }: ThemeSectionProps) {
   const [theme, setTheme] = useState<ThemeChoice>("dark");
   const [outputRegister, setOutputRegister] = useState<OutputRegister | null>(null);
+  const [paperTheme, setPaperTheme] = useState<PaperTheme>("app");
   const prefersLight = usePrefersLight();
   const widthPx = useViewportWidth();
 
@@ -64,6 +66,7 @@ export default function ThemeSection({ store }: ThemeSectionProps) {
       if (!cancelled) {
         setTheme(prefs.ui.theme);
         setOutputRegister(prefs.ui.output_register);
+        setPaperTheme(prefs.ui.paper_theme);
       }
     });
     return () => {
@@ -84,6 +87,18 @@ export default function ThemeSection({ store }: ThemeSectionProps) {
     const next = value === "system" ? "system" : "dark";
     setTheme(next);
     void store.get().then((current) => store.set({ ui: { ...current.ui, theme: next } }));
+  }
+
+  /** Ruling R185 item 3's second toggle. Unlike {@link handleThemeChange}
+   *  this stamps nothing on the document: paper's theme is scoped to the
+   *  paper view itself (`PaperView`'s `data-paper-theme` and
+   *  `Notebook/model/report/paperPalette.ts`), never to the whole app. */
+  function handlePaperThemeChange(value: string): void {
+    if (value !== "app" && value !== "light" && value !== "dark") {
+      return;
+    }
+    setPaperTheme(value);
+    void store.get().then((current) => store.set({ ui: { ...current.ui, paper_theme: value } }));
   }
 
   function handleRegisterChange(value: string): void {
@@ -113,6 +128,25 @@ export default function ThemeSection({ store }: ThemeSectionProps) {
         </Select>
         <p className="font-mono text-xs text-fg-faint">
           Dark is the only styled palette today; Follow OS falls back to dark until a light theme lands.
+        </p>
+      </div>
+
+      <div className="flex flex-col gap-2">
+        <label htmlFor="idl1-settings-paper-theme" className="font-mono text-xs uppercase tracking-[var(--tracking-label)] text-fg-dim">
+          Paper view
+        </label>
+        <Select value={paperTheme} onValueChange={handlePaperThemeChange}>
+          <SelectTrigger id="idl1-settings-paper-theme" className="w-48">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="app">Follow app</SelectItem>
+            <SelectItem value="light">Light</SelectItem>
+            <SelectItem value="dark">Dark</SelectItem>
+          </SelectContent>
+        </Select>
+        <p className="font-mono text-xs text-fg-faint">
+          The Notebook&apos;s paper view on a narrow screen. Light is for reading outdoors; it does not change the rest of the app.
         </p>
       </div>
 

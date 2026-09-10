@@ -3,6 +3,19 @@
  *  `settings.json` (R78 L7c Task 8 — `ui` keys stay local). */
 export type ThemeChoice = "dark" | "system";
 
+/** The Notebook paper view's own theme (ruling R185 item 3): a second
+ *  toggle beside the app's, because paper is read in daylight where the
+ *  app's dark palette can be unreadable, and the two choices are genuinely
+ *  independent. `"app"` follows whatever the app theme resolves to;
+ *  `"light"` and `"dark"` force one regardless of it. Like
+ *  {@link ThemeChoice} this is a `ui` key -- per machine, never synced.
+ *
+ *  Where it is applied: `Notebook/model/report/paperPalette.ts` (the chart
+ *  and swatch colours) and `styles/paper.css`'s `[data-paper-theme]` scope
+ *  (the page's own text and rules). Never the print palette (R174), which
+ *  belongs to the printed document alone. */
+export type PaperTheme = "app" | "light" | "dark";
+
 /** The notebook output register (UI-DIRECTION decision 31, R92/R93):
  *  `paper` is prose-oriented, `studio` is dense chrome. Switchable here and
  *  in the worksheet bar (UI-10); this module only decides the value, it

@@ -31,7 +31,7 @@ import { useRouteVisible } from "../../../shell/routeVisibility";
 import { useEditorSlotNode } from "../../../shell/editorSlot";
 import { useToolbarSlotNode } from "../../../shell/toolbarSlot";
 import { ColumnPlaceholder } from "../../../shell/ColumnFrame";
-import { resolveRegister } from "../Settings/theme";
+import { resolveRegister, type PaperTheme } from "../Settings/theme";
 import { createPrefsStore, localStorageBackend } from "../Settings/prefsStore";
 import CellFrame, { type CellRunStatus } from "./components/CellFrame";
 import CellList from "./components/CellList";
@@ -819,15 +819,29 @@ export default function NotebookPage() {
   // means "no explicit choice yet"; `resolveRegister` then defaults to
   // paper on narrow / studio on wide.
   const [storedRegister, setStoredRegister] = useState<"paper" | "studio" | null>(null);
+  /** The paper view's own theme (ruling R185 item 3, `Settings/prefs.ts`'s
+   *  `ui.paper_theme`) -- read from the same store as the register beside
+   *  it, never a second storage key. */
+  const [paperTheme, setPaperTheme] = useState<PaperTheme>("app");
+  // Re-read on every transition into visibility, not only on mount: the
+  // Settings tab writes these two through its *own* `PrefsStore` instance
+  // over the same backend, so this page's instance never hears that store's
+  // `subscribe` notification. Routes are mounted-and-hidden (decision 13),
+  // so "the user came back from Settings" is exactly `routeVisible` going
+  // true -- which is when a changed paper theme has to be picked up, or the
+  // toggle would appear to do nothing until the app restarted.
   useEffect(() => {
+    if (!routeVisible) return;
     let cancelled = false;
     void notebookPrefsStore.get().then((prefs) => {
-      if (!cancelled) setStoredRegister(prefs.ui.output_register);
+      if (cancelled) return;
+      setStoredRegister(prefs.ui.output_register);
+      setPaperTheme(prefs.ui.paper_theme);
     });
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [routeVisible]);
   const register = resolveRegister(storedRegister, widthPx);
   const registerCssMetrics = registerMetrics(register);
 
@@ -2712,7 +2726,7 @@ export default function NotebookPage() {
   // (`model/paperLive.ts`), and saying so beats an unexplained blank page.
   const mainContentElement = paperActive ? (
     paperDoc !== null ? (
-      <PaperView document={paperDoc} onSelectCell={(cellId) => setSelectedCellId(cellId)} />
+      <PaperView document={paperDoc} onSelectCell={(cellId) => setSelectedCellId(cellId)} theme={paperTheme} />
     ) : (
       <p className="paper-empty">No output yet -- this notebook has not finished evaluating.</p>
     )
