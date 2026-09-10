@@ -65,13 +65,16 @@ never falls back to the platform default, never creates the override path,
 and never writes the bootstrap file. An empty-looking library is the
 failure this rule exists to prevent.
 
-**Moving the root (added 2026-09-10, ruling R196).** `move_data_dir` (C3
-§3.10) copies `blobs/`, `sessions/`, `workbooks/`, `tracks/` and
-`profiles/` to the new root, verifying every blob's sha256 on arrival and
-skipping `tmp/`, `inbox/` and `catalog.sqlite*` (the catalog is rebuilt at
-the destination), then switches the override and reopens. The old root is
-left untouched for the user to delete; the switch happens only after every
-copied byte has verified. Because `catalog.sqlite` (and everything else) lives *inside*
+**Moving the root (added 2026-09-10, ruling R196; amended R197: move, not
+copy).** `move_data_dir` (C3 §3.10) **moves** `blobs/`, `sessions/`,
+`workbooks/`, `tracks/` and `profiles/` to the new root one file at a
+time: a rename on the same volume, otherwise copy, verify (sha256 for
+blobs, size for the rest), then delete the source, so peak extra disk is
+one file. `tmp/`, `inbox/` contents and `catalog.sqlite*` are not moved;
+the catalog is rebuilt at the destination. The switch happens only after
+every file has verified; an interrupted move is resumed by running it
+again (verified files are skipped), and the old root's directories are
+removed only when empty. Because `catalog.sqlite` (and everything else) lives *inside*
 `<data>`, the override itself cannot live inside `<data>` — it has to be
 readable before `<data>` is known. It is stored in the bootstrap file
 described above, at:
