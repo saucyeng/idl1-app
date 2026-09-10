@@ -8523,3 +8523,28 @@ the app enqueues `import_file` per entry so progress and errors stay per
 file, which the existing queue already does. **Cost if wrong:** deleting
 from the inbox is the one irreversible choice; it is safe precisely
 because the import succeeded and the blob is content-addressed.
+
+## R192 — Rigid-body calibration draft accepted; its seven recommendations adopted
+
+*2026-09-10, lead, on `docs/superpowers/specs/2026-09-10-idl1-rigid-body-calibration-DRAFT.md`.*
+Two bodies (frame+swingarm, fork) joined by a one-DoF steering hinge;
+Wahba initialisation then Levenberg–Marquardt in nalgebra; rest-only is
+the same model with every excitation gate failing. Adopted: (1) the
+record lives in a reserved, typed, read-only **`calibration.*`** namespace
+beside the user-defined setup scalars (R190); (2) `δ = 0` is bars held
+straight for 2 s at the start of the bar-turn segment; (3) the
+unobservable cross-body lever arm is **authored** from setup-sheet
+geometry (head angle, reach, axle-to-crown become typed known keys with
+units) and marked so, never presented as measured; (4) no wheel sensor:
+the operator steadies the front wheel; (5) scale factor and
+non-orthogonality are out of v1; (6) `IMU2` is on the rear body with a
+runtime gyro-residual check that catches an un-topped-out shock; (7) the
+model stays N-sensor and specifies no bar sensor until SPEC §3.2 lists
+one. Noise thresholds are justified from the estimator's own Allan
+coefficients because the LSM6DSO32 density is not stated in the docs: a
+named unknown, to be replaced by the datasheet figure when Isaac's
+firmware session supplies it. Validation runs on the synthetic rigid body
+before any hardware. Draft stays `-DRAFT` until the simulator exists and
+the thresholds are exercised. **Cost if wrong:** the namespace and the
+authored-vs-measured flag are the two choices that outlive v1; both are
+metadata, both cheap to rename before anything is written to disk.
