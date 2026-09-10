@@ -2571,8 +2571,23 @@ export default function NotebookPage() {
   // rather than risking a wrap (item 5) -- a static split rather than a
   // width-measured one, since nothing in this codebase measures toolbar
   // overflow yet (small, safe judgment call, CLAUDE.md §1).
+  //
+  // Layer order (bug report fixed 2026-09-09): this row needs `relative` +
+  // an explicit `z-index` and an opaque background, or the sandbox iframe
+  // host below (`containerRef`'s `position: fixed` div, further down this
+  // file) paints over it while a chart is scrolled underneath -- a fixed
+  // element with any explicit z-index (even 0) stacks above ordinary static
+  // in-flow content regardless of DOM order. The z-index values touching
+  // this stack are spread across the Notebook feature, not one file:
+  // `graph/GraphCanvas.tsx` sets `-1` on its background subgraph frame
+  // nodes, this toolbar is `10`, and its own "More" popover below is also
+  // `10` but in a nested stacking context (the two never actually compare).
+  // Lowering the sandbox host's z-index instead was rejected (brief,
+  // 2026-09-09): that host already needs to sit above ordinary in-flow
+  // cell/column content everywhere *except* this toolbar, and dropping it
+  // below zero globally would hide charts behind that content too.
   const toolbarElement = (
-    <div className="flex flex-nowrap items-center gap-2 overflow-x-auto border-b border-rule px-2 py-1">
+    <div className="relative z-10 flex flex-nowrap items-center gap-2 overflow-x-auto border-b border-rule bg-surface px-2 py-1">
       {columnsToggleAvailable && (
           <div role="group" aria-label="Notebook columns" className="flex items-center gap-1">
             <button type="button" onClick={() => toggleColumn("graph")} aria-pressed={columnVisibility.graph}>
@@ -2843,6 +2858,16 @@ export default function NotebookPage() {
           ),
           editorSlotNode
         )}
+      {/* The sandbox iframe host: fixed to the full viewport so cell
+          iframes positioned into it (`sendLayout`) track scroll in real
+          pixels. `zIndex: 0` is explicit, not incidental -- a fixed element
+          with *any* stated z-index stacks above ordinary static in-flow
+          content regardless of DOM order, which is exactly what a chart
+          needs against the cell text around it. See the toolbar's own
+          layer-order comment above (`toolbarElement`) for why this host
+          must stay above in-flow content everywhere except that one row,
+          and why the toolbar's `z-10` -- not lowering this `0` -- is what
+          keeps a scrolled chart from painting over it. */}
       <div
         ref={containerRef}
         style={{ position: "fixed", inset: 0, pointerEvents: "none", zIndex: 0, border: "none" }}
