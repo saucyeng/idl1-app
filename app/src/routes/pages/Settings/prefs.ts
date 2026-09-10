@@ -1,3 +1,4 @@
+import type { FirmwareChannel } from "../../../ipc/device";
 import type { OutputRegister, PaperTheme, ThemeChoice } from "./theme";
 
 /** The engine half — field for field `idl_rs::store::settings::AppSettings`
@@ -34,6 +35,16 @@ export interface UiPrefs {
    *  "migrated like the others" means here: no migration step, a lenient
    *  parse. */
   paper_theme: PaperTheme;
+  /** The GitHub repository firmware releases are pulled from, as
+   *  `"owner/name"` (ruling R198). `""` — the default — means the catalog is
+   *  disabled: the Firmware section then offers only the manual `.bin`
+   *  picker, and the app makes no internet call at all. UI-only rather than
+   *  engine-side because nothing in `idl-rs` reads it; it names where the
+   *  app looks, not anything about the data on disk. */
+  firmware_repo: string;
+  /** Which release channel the catalog check uses (R198). Default
+   *  `"stable"`. Ignored while {@link UiPrefs.firmware_repo} is empty. */
+  firmware_channel: FirmwareChannel;
 }
 
 /** The full persisted-prefs document — the engine-mirroring half plus the
@@ -59,6 +70,8 @@ export const DEFAULT_PREFS: Prefs = {
     theme: "dark",
     output_register: null,
     paper_theme: "app",
+    firmware_repo: "",
+    firmware_channel: "stable",
   },
 };
 
@@ -96,6 +109,12 @@ function parseUi(raw: unknown): UiPrefs {
     record.paper_theme === "app" || record.paper_theme === "light" || record.paper_theme === "dark"
       ? record.paper_theme
       : DEFAULT_PREFS.ui.paper_theme;
+  const firmwareRepo =
+    typeof record.firmware_repo === "string" ? record.firmware_repo : DEFAULT_PREFS.ui.firmware_repo;
+  const firmwareChannel =
+    record.firmware_channel === "stable" || record.firmware_channel === "beta"
+      ? record.firmware_channel
+      : DEFAULT_PREFS.ui.firmware_channel;
   return {
     ...record,
     last_section: lastSection,
@@ -103,6 +122,8 @@ function parseUi(raw: unknown): UiPrefs {
     theme,
     output_register: outputRegister,
     paper_theme: paperTheme,
+    firmware_repo: firmwareRepo,
+    firmware_channel: firmwareChannel,
   } as UiPrefs;
 }
 

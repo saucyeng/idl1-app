@@ -44,6 +44,11 @@ pub fn run() {
             app.manage(idl_rs_tauri::state::Hashes(std::sync::Arc::new(idl_rs_tauri::watcher::ExpectedHashSet::new())));
             app.manage(idl_rs_tauri::state::Watchers(std::sync::Mutex::new(std::collections::HashMap::new())));
             app.manage(idl_rs_tauri::state::Connections(std::sync::Mutex::new(std::collections::HashMap::new())));
+            // The firmware/OTA state machine's current state (C3 §3.8, R198).
+            // Managed unconditionally: it holds no data-root-dependent state,
+            // and updating firmware is exactly the kind of thing a user may
+            // want to do while the library is unavailable.
+            app.manage(idl_rs_tauri::state::Ota::default());
 
             // `<data>/inbox` (C4 §2, ruling R191): scanned once now, watched
             // while the app runs. Desktop only — the module does not exist

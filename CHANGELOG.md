@@ -6,6 +6,23 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 
 ### Added
 
+- **Firmware updates, over the air (2026-09-10, rulings R197/R198).**
+  Settings > Firmware replaces its "arrives in a later version" placeholder
+  with the real thing. Point it at a GitHub repository that publishes idl1
+  firmware, pick the stable or beta channel, and it tells you whether your
+  device is behind, level, or ahead of what is published; "Update to vX"
+  downloads the image, checks it against the published checksum, and pushes
+  it to the device over WiFi with a progress bar. idl1 then waits out the
+  reboot and reconnects on its own, retrying for a minute, and commits the
+  new image for you when the download's checksum checked out. A firmware
+  file you picked yourself is never committed automatically: idl1 pushes it
+  and then asks, because only you know what is in it. If an update does not
+  take, the device keeps running the firmware it had, and idl1 says which of
+  the three things went wrong in the device's own words. Leaving the
+  repository field empty turns update checks off entirely, and idl1 then
+  makes no connection to the internet at all — it never checks on a timer
+  either way.
+
 - **The library stops disappearing quietly (2026-09-10, ruling R196).** If
   the folder you told idl1 to keep your library in is not there at launch —
   an unplugged drive, a renamed directory — idl1 now says so and stops,

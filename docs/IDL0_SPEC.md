@@ -3649,6 +3649,23 @@ still available. An update is offered only when hosted is strictly newer; a
 channel switch that leaves the device ahead of the channel shows an
 informational note, not a downgrade prompt.
 
+**idl1 amendment (2026-09-10, rulings R197/R198, firmware OTA lane).** The
+flow above is what idl1 implements; four things differ from the idl0 text.
+(1) **Asset names** are `idl1-firmware-<semver>.bin` and
+`idl1-firmware-<semver>.bin.sha256`, not idl0's `idl0-firmware-v<ver>` — no
+leading `v` on either, since the version is the tag with its `v` stripped.
+(2) **The repository is a setting**, `firmware_repo` (`"owner/name"`), empty
+by default so the catalog is disabled until the user names one — not a
+compiled-in `kFirmwareRepoSlug`. (3) **No auto-check on a timer or on
+connect**: the catalog is fetched only on "Check now" or on opening the
+Firmware section with a repo configured, and it is the only call idl1 makes
+to the public internet. (4) **The state machine is Rust's**, in
+`idl-rs-tauri` (`push_firmware`/`confirm_firmware`/`firmware_catalog`/
+`ota_state` plus the `ota_state_changed` event, C3 §3.8) rather than the
+app's, and the catalog client itself is `idl-transport`'s
+(`firmware_catalog`). The idl0 workarounds this section describes — the
+pre-`isConnected` handshake-frame skip in particular — are **not** ported.
+
 ### 27.8 Data directory override (idl1, no idl0 counterpart)
 
 **New section (2026-09-05, L7c Task 4).** idl0 has no equivalent screen —
