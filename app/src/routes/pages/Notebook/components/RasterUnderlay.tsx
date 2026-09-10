@@ -10,6 +10,7 @@ import {
   rasterRequestFor,
   type RasterFetchKey,
 } from "../model/rasterLayer";
+import { buildLegendGradient } from "../model/rasterLegend";
 import { isStaleSettleResult } from "../model/settle";
 import type { Viewport } from "../model/viewport";
 import { formatUnit } from "../model/unitText";
@@ -32,6 +33,12 @@ interface RasterLabels {
    *  of its own but still has a reason worth surfacing (R154), same as the
    *  magnitude-unit-only display did before this task. */
   unknownReason: string | null;
+  /** The colour-bar's CSS gradient, built by {@link buildLegendGradient}
+   *  from the engine's `RasterMeta.ramp_stops` (C3 §3.6, ruling R177) —
+   *  never from a ramp recomputed here. `null` when the meta carried too
+   *  few stops to form a gradient, in which case no bar renders and the
+   *  range text alone still says what the colours mean. */
+  legendGradient: string | null;
 }
 
 /** Props for {@link RasterUnderlay}. */
@@ -99,6 +106,12 @@ export interface RasterUnderlayProps {
  * `scale.vmin`/`vmax` formatted by {@link formatScaleRange} with the
  * already-fetched `magnitude_unit` (chart-honesty lane task 2, ruling
  * R167) as its unit — top-right, where the unit alone used to sit alone.
+ * Beside that range sits the colour bar itself, a CSS gradient built by
+ * {@link buildLegendGradient} from `RasterMeta.ramp_stops` — the engine's
+ * own Turbo samples (C3 §3.6, ruling R177). The ramp is never recomputed
+ * here and never sampled back out of the fetched pixels, so the bar cannot
+ * drift from the picture it describes. The text range stays: it prints, and
+ * it is what a reader with no colour still gets.
  *
  * The fetch is triggered only by `kind`/`params`/`viewport`/`width`/
  * `height`/`devicePixelRatio`/`sessionId`/`channelId` actually changing
@@ -208,6 +221,7 @@ export default function RasterUnderlay({
           yLabel: meta.y_label,
           rangeText: formatScaleRange(meta.scale.vmin, meta.scale.vmax, unitDisplay === null ? "" : unitDisplay.text),
           unknownReason: unitDisplay === null ? null : unitDisplay.unknownReason,
+          legendGradient: buildLegendGradient(meta.ramp_stops),
         });
         // Always clear in the canvas's own (identity) device-px coordinate
         // space first, regardless of whether a rect is drawn below.
@@ -282,8 +296,34 @@ export default function RasterUnderlay({
               own but its `title` attribute carries `unknownReason` where a
               reader can reach it (there is no appendix to route it to on
               screen, unlike the report). */}
-          <div className="chart-cell-raster-unit" style={{ position: "absolute", top: 4, right: 4, fontSize: 11, pointerEvents: "none" }}>
-            {labels.rangeText}
+          <div
+            className="chart-cell-raster-unit"
+            style={{ position: "absolute", top: 4, right: 4, fontSize: 11, pointerEvents: "none", display: "flex", alignItems: "center", gap: 4 }}
+          >
+            {/* The colour bar (ruling R177): the engine's own ramp stops as
+                a CSS gradient, left end `scale.vmin`, right end `scale.vmax`
+                — the same order the range text beside it reads in. The bar
+                is *data*, not decoration: `printColorAdjust: "exact"` keeps
+                it as-is on paper, where a browser would otherwise drop a
+                background gradient and leave a legend of nothing. No palette
+                swap; a re-hued ramp would mislabel the pixels it describes.
+                Renders only when `buildLegendGradient` had two or more stops
+                — the text range alone still carries the meaning. */}
+            {labels.legendGradient !== null && (
+              <span
+                className="chart-cell-raster-legend"
+                aria-hidden="true"
+                style={{
+                  display: "inline-block",
+                  width: 48,
+                  height: 6,
+                  background: labels.legendGradient,
+                  printColorAdjust: "exact",
+                  WebkitPrintColorAdjust: "exact",
+                }}
+              />
+            )}
+            <span>{labels.rangeText}</span>
             {labels.unknownReason !== null && <span title={labels.unknownReason}>{"†"}</span>}
           </div>
         </>

@@ -24,6 +24,23 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
   The eight series colours for a white ground now live in one module the
   printed report and light paper both import, tested for contrast once.
 
+- **A spectrogram now has a colour-bar legend, and the ramp still lives in
+  exactly one language (2026-09-10, legend lane, ruling R177's deferred
+  half).** `core::colormap::turbo_stops(n)` samples the Turbo ramp at `n`
+  evenly spaced `t` including both endpoints (`n < 2` returns the two
+  endpoints), and C3 §3.6's `RasterMeta` now carries those samples as
+  `ramp_stops` — sixteen opaque RGBA8 stops, for both raster kinds, which
+  encode with the same ramp. The app's new pure
+  `model/rasterLegend.ts` turns stops it was *given* into a CSS
+  `linear-gradient`, and `RasterUnderlay` draws it as a thin bar beside the
+  existing `vmin`/`vmax` range text — `vmin` at the left end, `vmax` at the
+  right. TypeScript still contains no definition of Turbo, and the ramp is
+  never sampled back out of fetched pixels, so the bar cannot drift from
+  the picture it labels. The range text stays: it is what a reader on paper
+  or without colour still gets, and the bar carries
+  `print-color-adjust: exact` so it prints as data rather than vanishing.
+  This closes the forward reference in the raster-labels entry below.
+
 - **The Sync section now shows nearby unpaired devices (2026-09-10, L11
   Task 14, app-side half).** `SyncStatus.discovered_peers` and the widened
   `peer_appeared` `PeerSighting` payload (C3 §3.9) are mirrored in

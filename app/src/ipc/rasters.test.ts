@@ -98,6 +98,7 @@ describe("fetchRasterMeta", () => {
       y_label: "frequency (Hz)",
       scale: { vmin: 0, vmax: 1, kind: "linear" as const },
       transparent_zero: false,
+      ramp_stops: [[35, 23, 27, 255], [144, 13, 0, 255]] as [number, number, number, number][],
     };
     (invoke as ReturnType<typeof vi.fn>).mockResolvedValue(meta);
     const { fetchRasterMeta } = await import("./rasters");
