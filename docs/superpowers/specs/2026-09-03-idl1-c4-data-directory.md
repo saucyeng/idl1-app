@@ -50,8 +50,12 @@ fixed by this contract — shown as `<bundle-id>`):
 | Android | app-private internal storage (`Context.getFilesDir()` equivalent), exposed to Rust as a real path by the Tauri mobile runtime — not user-browsable outside the app | `.../data` | Android has no OS-level data/config split; expected to land in the same app-private storage area as `app_data_dir()` — not independently verified, no coincidence claim relied on here since `<data>` is a subdirectory either way |
 | iOS | `Library/Application Support` inside the app's sandboxed container — already app-scoped, no extra bundle-id subdirectory | `.../Application Support/data` | expected `Library/Preferences` (or the same container area) inside the same sandboxed container — exact Tauri v2 mapping unconfirmed, same open item as the bundle id (§8) |
 
-**Override in Settings.** The Settings tab may point `<data>` at any writable
-directory. Because `catalog.sqlite` (and everything else) lives *inside*
+**Override in Settings (desktop only, amended 2026-09-10, ruling R183).**
+On desktop the Settings tab may point `<data>` at any writable directory.
+On Android and iOS the override is hidden and ignored: neither platform
+offers a user-chosen writable directory outside its app sandbox without
+document-picker machinery this contract does not adopt, so `<data>` is
+always the platform default there. Because `catalog.sqlite` (and everything else) lives *inside*
 `<data>`, the override itself cannot live inside `<data>` — it has to be
 readable before `<data>` is known. It is stored in the bootstrap file
 described above, at:
