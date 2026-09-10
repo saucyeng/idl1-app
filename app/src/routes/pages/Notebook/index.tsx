@@ -76,7 +76,7 @@ import type { PlaybackMode } from "./interaction/playbackMode";
 import { editorPlacement } from "./model/editorPlacement";
 import { paperViewActive } from "./model/paperView";
 import { paperLiveDecision } from "./model/paperLive";
-import { paperSheetContent, paperSheetTitle } from "./model/paperSheet";
+import { editorContentFor, sheetTitleFor } from "./model/editorContent";
 import { effectivePaperTheme } from "./model/report/paperPalette";
 import { resolveEditorHost } from "./model/editorHost";
 import { runFft, type FftAction, type FftDeps } from "./model/fftDriver";
@@ -3034,7 +3034,7 @@ export default function NotebookPage() {
             onOpenChange={(open) => {
               if (!open) setSelectedCellId(null);
             }}
-            title={openCell === null ? "" : paperSheetTitle(paperSheetContent(openCell.kind))}
+            title={openCell === null ? "" : sheetTitleFor(editorContentFor(openCell.kind))}
           >
             {!editorIsPortalHosted && editorPanesElement}
           </BrandSheet>
