@@ -48,3 +48,30 @@ and opening the HTML reports (both crates and app).
 Superproject repo is private: 2000 Actions minutes/month. `ci.yml` is the
 frugal default; the Android build is comparatively expensive (NDK + Rust
 Android targets + Gradle) and is opt-in for that reason.
+
+## Running the app in development
+
+`npm run tauri:dev` and `npm run tauri dev` both work and are both safe.
+Both go through `app/scripts/tauri.mjs`, a wrapper that adds
+`--config src-tauri/tauri.dev.conf.json` to the `dev` subcommand and passes
+every other subcommand through untouched. That is a Tauri v2 config overlay
+(the CLI's `-c, --config` flag takes "JSON strings or paths to JSON, JSON5
+or TOML files to merge with the default configuration file") whose only
+substantive key is `identifier: "com.saucyeng.idl1.dev"`. It also retitles
+the window "idl1 (dev)" so the two are distinguishable on screen.
+
+The wrapper exists rather than a documented "always type this one" rule
+because the unprotected command is the one a developer types by habit. An
+explicit `--config` of your own suppresses the overlay, so a deliberate
+choice is still possible.
+
+Why it matters (ruling R196): Tauri derives `app_data_dir()` from the
+identifier, so without the overlay a `tauri dev` run opens, writes to, and
+can delete from the **same** `%APPDATA%\com.saucyeng.idl1` library a release
+build uses — the finding that opened `runs/2026-09-10/DELETE-AUDIT.md`. With
+it, development lives in `%APPDATA%\com.saucyeng.idl1.dev` and the real
+library is untouchable from a dev build.
+
+The release identifier in `tauri.conf.json` is unchanged, so `tauri build`
+and every bundle target are unaffected; the overlay is only ever passed on
+the `tauri:dev` path.

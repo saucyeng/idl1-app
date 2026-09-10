@@ -6,6 +6,22 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 
 ### Added
 
+- **The library stops disappearing quietly (2026-09-10, ruling R196).** If
+  the folder you told idl1 to keep your library in is not there at launch —
+  an unplugged drive, a renamed directory — idl1 now says so and stops,
+  naming the folder and offering Retry or a different folder. It no longer
+  falls back to its default location, which looked like a library that had
+  lost everything. Settings > Data gains "Move library to…": it moves
+  everything to a folder you pick, one file at a time, removing each from
+  the old folder only after it has arrived and matched its own checksum, so
+  you never need room for two libraries at once. It rebuilds the index at
+  the new location and switches over only when everything has arrived; if
+  something fails to check out it stops there and changes nothing, and
+  running it again picks up where it left off. Development builds now
+  use their own folder, so running idl1 from source can no longer touch a
+  real library, and a build-time guard fails the test suite if new code
+  deletes anything outside the audited list.
+
 - **The library grows up (2026-09-10, M4c, rulings R191/R194).** A session
   whose log carried no clock and no GPS fix can be given its start time by
   hand on the Data tab; the value lives in `session.json` as

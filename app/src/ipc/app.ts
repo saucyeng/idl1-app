@@ -1,4 +1,4 @@
-import { invoke } from "@tauri-apps/api/core";
+import { Channel, invoke } from "@tauri-apps/api/core";
 
 /** Exactly `idl_rs::store::settings::AppSettings` and C4 §1's settings.json
  *  keys (C3 §3.10) — no translation layer. */
@@ -52,6 +52,34 @@ export async function getDataDir(): Promise<DataDirInfo> {
  *  restart. */
 export async function setDataDir(path: string | null): Promise<DataDirInfo> {
   return invoke<DataDirInfo>("set_data_dir", { path });
+}
+
+/** One `move_data_dir` progress tick (C3 §3.10 as amended by ruling R197).
+ *  `done`/`total` count files, and `phase` runs `"move"` then `"catalog"`.
+ *  Structurally the same shape `ipc/device.ts` uses; declared here rather
+ *  than imported so neither module depends on the other. */
+export interface MoveProgress {
+  done: number;
+  total: number | null;
+  /** `"move"` or `"catalog"`. Not localized. */
+  phase: string;
+}
+
+/** Moves the whole library to `newRoot` and switches the override to it
+ *  (C3 §3.10, C4 §1 "Moving the root", ruling R196 as amended by R197).
+ *
+ *  Moves `blobs/`, `sessions/`, `workbooks/`, `tracks/` and `profiles/` one
+ *  file at a time — a rename on the same volume, otherwise copy, verify,
+ *  delete — so peak extra disk is one file, rebuilds the catalog at the
+ *  destination, and only then writes `settings.json`. A file is removed from
+ *  the old root only once its copy has verified; a failure stops there,
+ *  leaving the override where it was, and rerunning finishes the job.
+ *  Rejects with `invalid_argument` for a relative, overlapping, non-empty or
+ *  unwritable target, `unsupported_platform` on mobile. Desktop only. */
+export async function moveDataDir(newRoot: string, onProgress: (p: MoveProgress) => void): Promise<DataDirInfo> {
+  const progress = new Channel<MoveProgress>();
+  progress.onmessage = onProgress;
+  return invoke<DataDirInfo>("move_data_dir", { newRoot, progress });
 }
 
 /** The SPEC §8 device-config document a bike profile stores and pushes

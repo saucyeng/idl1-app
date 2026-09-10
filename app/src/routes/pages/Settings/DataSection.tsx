@@ -2,9 +2,16 @@ import { useEffect, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { getDataDir, setDataDir, type DataDirInfo } from "../../../ipc/app";
+import { getDataDir, moveDataDir, setDataDir, type DataDirInfo, type MoveProgress } from "../../../ipc/app";
 import { describeOverrideChange, validateDataDir, type ValidationIssue } from "./dataDir";
 import { describeIpcError, type IpcErrorLike } from "./errors";
+import {
+  describeMove,
+  describeMoveProgress,
+  describeMoveResult,
+  moveProgressFraction,
+  pickLibraryFolder,
+} from "./moveLibrary";
 import type { PrefsStore } from "./prefsStore";
 
 /** Props for {@link DataSection}. Follows {@link ProfileSection}'s
@@ -52,6 +59,15 @@ export default function DataSection({ store }: DataSectionProps) {
   const [overrideInput, setOverrideInput] = useState<string>("");
   const [confirming, setConfirming] = useState<boolean>(false);
   const [saveError, setSaveError] = useState<string | null>(null);
+  /** The folder chosen for a move, awaiting confirmation. `null` = no move
+   *  is being proposed. Separate from `overrideInput` because a move and a
+   *  bare override change are different actions with different consequences
+   *  (one moves and verifies every file, the other only repoints). */
+  const [moveTarget, setMoveTarget] = useState<string | null>(null);
+  const [moveProgress, setMoveProgress] = useState<MoveProgress | null>(null);
+  const [moving, setMoving] = useState<boolean>(false);
+  const [moveResult, setMoveResult] = useState<string | null>(null);
+  const [moveError, setMoveError] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -106,6 +122,40 @@ export default function DataSection({ store }: DataSectionProps) {
     setConfirming(false);
   }
 
+  function handlePickMoveTarget(): void {
+    setMoveError(null);
+    setMoveResult(null);
+    void pickLibraryFolder(info?.resolved_path ?? "")
+      .then((chosen) => {
+        if (chosen !== null) {
+          setMoveTarget(chosen);
+        }
+      })
+      .catch(() => {
+        setMoveError("The folder picker could not be opened.");
+      });
+  }
+
+  function handleConfirmMove(target: string): void {
+    setMoveTarget(null);
+    setMoving(true);
+    setMoveProgress(null);
+    setMoveError(null);
+    const from = info?.resolved_path ?? "";
+    void moveDataDir(target, setMoveProgress)
+      .then((result) => {
+        setInfo(result);
+        setMoveResult(describeMoveResult(target, from));
+      })
+      .catch((error: unknown) => {
+        setMoveError(describeDataDirError(error));
+      })
+      .finally(() => {
+        setMoving(false);
+        setMoveProgress(null);
+      });
+  }
+
   return (
     <div className="flex flex-col gap-3">
       <p className="font-mono text-sm text-fg">
@@ -155,6 +205,41 @@ export default function DataSection({ store }: DataSectionProps) {
         </div>
       )}
       {saveError ? <p className="font-mono text-xs text-brand-accent">{saveError}</p> : null}
+
+      <div className="mt-2 flex flex-col gap-2 border-t border-rule pt-3">
+        <p className="font-mono text-xs uppercase tracking-[var(--tracking-label)] text-fg-dim">Move library</p>
+        <p className="font-mono text-xs text-fg-faint">
+          Moves everything to a folder you pick, one file at a time, checking each against its own checksum before
+          removing it from the old folder.
+        </p>
+        {moveTarget === null ? (
+          <Button type="button" onClick={handlePickMoveTarget} disabled={moving} className="w-fit">
+            Move library to…
+          </Button>
+        ) : (
+          <div className="flex flex-col gap-2 border-l border-rule pl-3">
+            <p className="font-mono text-xs text-fg-dim">{describeMove(info?.resolved_path ?? "", moveTarget)}</p>
+            <div className="flex gap-2">
+              <Button type="button" emphasis="good" filled onClick={() => handleConfirmMove(moveTarget)}>
+                Move and verify
+              </Button>
+              <Button type="button" onClick={() => setMoveTarget(null)}>
+                Cancel
+              </Button>
+            </div>
+          </div>
+        )}
+        {moving ? (
+          <p className="font-mono text-xs text-fg-dim">
+            {describeMoveProgress(moveProgress) ?? "Preparing…"}
+            {moveProgressFraction(moveProgress) === null
+              ? null
+              : ` (${Math.round((moveProgressFraction(moveProgress) ?? 0) * 100)}%)`}
+          </p>
+        ) : null}
+        {moveResult ? <p className="font-mono text-xs text-fg">{moveResult}</p> : null}
+        {moveError ? <p className="font-mono text-xs text-brand-accent">{moveError}</p> : null}
+      </div>
     </div>
   );
 }

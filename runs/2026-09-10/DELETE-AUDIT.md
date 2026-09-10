@@ -34,8 +34,16 @@ production function, not the grep hit alone).
 
 ## (g) anything else
 - rust/core/src/store/sync/apply.rs:440-449 — workbook merge install: after a sync-driven rename (peer's `workbook_id` wins per C4 §6), removes the *old*-named `.idl1wb` file only, single file, only when `target_path != local_path`.
+- rust/core/src/track_artifact/write.rs:81-89 — `delete_track`: removes one `tracks/<track_id>.idl0t`, the explicit "delete track" action, after rejecting a `track_id` containing a path separator or `..`. A missing file is `Ok(false)`, not an error. **Added 2026-09-10** — missed by the original grep pass; the delete-guard scan test (`rust/tauri/src/delete_guard.rs`, ruling R196) is what found it, which is the point of that test.
+- rust/transport/src/sync/client.rs:572 — `pull_and_install`: drops the `tmp/*.part` file once the bytes are complete, whichever way the install went (R102). Same tmp-only scope as (a)'s `download_item_with_cap` entry; named separately here because the guard test keys on the enclosing function.
 - rust/core/src/store/profile.rs:112-118 — `profile::delete`: explicit single-profile-file delete, used by an explicit "delete profile" command; no-op if absent.
 - rust/tauri/src/commands/catalog.rs:1029 — the `blob_path` remove_file inside `delete_session_via`, already covered under (e).
+
+## (h) `move_data_dir` (added 2026-09-10, rulings R196/R197)
+
+- rust/tauri/src/commands/app.rs — `copy_verify_delete`: removes a source file only after its copy has landed at the destination and verified (sha256 against the blob’s own path-named digest; byte length for everything else). A verify failure returns before the delete, leaving the source untouched.
+- rust/tauri/src/commands/app.rs — `move_data_dir_via`: removes a source file whose destination copy already verifies, which is how an interrupted move resumes on rerun without recopying.
+- rust/tauri/src/commands/app.rs — `prune_emptied_dirs`: `remove_dir` (never `remove_dir_all`) on the five moved trees’ directories, deepest first. A directory still holding anything makes the call fail and be ignored, so this can only remove what the move itself emptied. The old `<data>` root, its `tmp/` and `inbox/`, and the user’s folder above it are never touched.
 
 ## Answers to the five questions
 
