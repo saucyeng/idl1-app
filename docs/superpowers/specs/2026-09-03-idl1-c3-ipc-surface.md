@@ -206,6 +206,13 @@ is applied uniformly, not case-by-case:
   `invalid_argument` (the caller did nothing wrong): the UI presents it
   by greying the feature out, never as a failure toast. `detail` carries
   `{ platform: "android" | "ios" | "linux" | "macos" | "windows" }`.
+- **`resource_exhausted`** — *added 2026-09-10, ruling R203.* A seventh
+  cross-cutting kind: the command was refused before allocating because the
+  work would not fit the app's memory budget (a session too large to
+  decode, a raster too large to render). Not `internal`: nothing failed, the
+  app declined to try. `detail` carries `{ needed_bytes, budget_bytes, hint }`
+  and the UI presents it as a toast with both numbers; the notebook keeps
+  running. The app never aborts on allocation failure (CLAUDE.md §5).
   Raised by: Workbook (`save_workbook`).
 - **`device_rejected`** — *added post-sign (2026-09-05, lead ruling R59,
   wave-2 write lane).* A sixth cross-cutting kind, raised when a device
