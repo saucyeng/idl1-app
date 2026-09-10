@@ -98,6 +98,16 @@ export interface RasterMeta {
    *  rule). `null` when the raster has no spectral magnitude, i.e.
    *  `kind: "histogram2d"`. */
   magnitude_unit: UnitLabel | null;
+  /** The colour ramp this raster's pixels were encoded with, sampled at
+   *  evenly spaced `t` including both endpoints: stop `i` of `n` is the
+   *  ramp at `t = i / (n - 1)`, and `n >= 16`. Each stop is opaque RGBA8
+   *  `[r, g, b, a]`; the ramp's transparent-NaN case is not a stop (see
+   *  `transparent_zero`). The app builds a legend gradient from these
+   *  stops and never reimplements the ramp (ruling R177): one Turbo, in
+   *  `core::colormap`, is the only definition. Carried per raster rather
+   *  than by a one-time command so a legend can only ever describe the
+   *  encoder that produced the pixels beside it. */
+  ramp_stops: [number, number, number, number][];
 }
 
 /** Fetches one raster's axis domains and colour scale, without its pixel

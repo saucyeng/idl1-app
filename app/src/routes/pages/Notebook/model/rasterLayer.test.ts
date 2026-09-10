@@ -86,6 +86,7 @@ describe("alignRasterToAxes", () => {
       scale: { vmin: 0, vmax: 1, kind: "linear" },
       transparent_zero: false,
       magnitude_unit: null,
+      ramp_stops: [[35, 23, 27, 255], [144, 13, 0, 255]],
     };
     const viewport: Viewport = { startUs: 10_000_000, endUs: 20_000_000, pixelWidth: 800 };
 
@@ -117,6 +118,7 @@ describe("alignRasterToAxes", () => {
       scale: { vmin: 0, vmax: 1, kind: "linear" },
       transparent_zero: false,
       magnitude_unit: null,
+      ramp_stops: [[35, 23, 27, 255], [144, 13, 0, 255]],
     };
     const viewport: Viewport = { startUs: 10_000_000, endUs: 20_000_000, pixelWidth: 800 };
 
