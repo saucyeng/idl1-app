@@ -203,7 +203,7 @@ describe("buildReportDocument", () => {
 
     const chartSlots = doc.blocks.filter((b) => b.kind === "chartSlot");
     expect(chartSlots).toHaveLength(1);
-    expect(chartSlots[0]).toMatchObject({ cellId: "cell-8", windowLabels: ["Session"], caption: "Session — Time axis, 2 points" });
+    expect(chartSlots[0]).toMatchObject({ cellId: "cell-8", windowLabels: ["Session"], caption: "Session — Time axis, drawn at 2 points" });
   });
 
   it("a chartSlot's caption uses the largest channel's real length, not the requested budget", () => {
@@ -230,7 +230,7 @@ describe("buildReportDocument", () => {
     const doc = buildReportDocument(input({ cells, markdown: code, evals, windows, sessions: [session()], chartChannelData, xMode: "distance" }));
 
     const chartSlots = doc.blocks.filter((b) => b.kind === "chartSlot");
-    expect(chartSlots[0]).toMatchObject({ caption: "Session — Distance axis, 40 points" });
+    expect(chartSlots[0]).toMatchObject({ caption: "Session — Distance axis, drawn at 40 points" });
   });
 
   it("prose before a cell — carried through in document order", () => {
@@ -317,30 +317,30 @@ describe("formatChartCaption", () => {
   it("one window, time mode, plural point count — names the window, the axis and the count", () => {
     const caption = formatChartCaption(["Session — Lap 2"], "time", 2048);
 
-    expect(caption).toBe("Session — Lap 2 — Time axis, 2048 points");
+    expect(caption).toBe("Session — Lap 2 — Time axis, drawn at 2048 points");
   });
 
   it("distance mode — names the distance axis, not time", () => {
     const caption = formatChartCaption(["Session"], "distance", 512);
 
-    expect(caption).toBe("Session — Distance axis, 512 points");
+    expect(caption).toBe("Session — Distance axis, drawn at 512 points");
   });
 
   it("a singular point count — says \"point\", not \"points\"", () => {
     const caption = formatChartCaption(["Session"], "time", 1);
 
-    expect(caption).toBe("Session — Time axis, 1 point");
+    expect(caption).toBe("Session — Time axis, drawn at 1 point");
   });
 
   it("no window labels — still states the axis and the count, never a bare dash", () => {
     const caption = formatChartCaption([], "time", 300);
 
-    expect(caption).toBe("Time axis, 300 points");
+    expect(caption).toBe("Time axis, drawn at 300 points");
   });
 
   it("two windows — joins their labels rather than picking one", () => {
     const caption = formatChartCaption(["Lap 1", "Lap 2"], "time", 900);
 
-    expect(caption).toBe("Lap 1, Lap 2 — Time axis, 900 points");
+    expect(caption).toBe("Lap 1, Lap 2 — Time axis, drawn at 900 points");
   });
 });

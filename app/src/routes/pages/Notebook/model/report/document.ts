@@ -463,7 +463,15 @@ function chartPointCount(channelData: ReadonlyMap<string, CombinedChannelPayload
  */
 export function formatChartCaption(windowLabels: readonly string[], xMode: XMode, pointCount: number): string {
   const windows = windowLabels.join(", ");
-  const points = `${pointCount} point${pointCount === 1 ? "" : "s"}`;
+  // "drawn at N points", not a bare "N points": the number is a *render*
+  // count, and the reason plan §3.4 wants it printed at all is so a reader
+  // does not over-read a smoothed trace as the real signal. A bare
+  // "2048 points" reads as a fact about the ride; "drawn at 2048 points"
+  // reads as a fact about the picture, which is what it is. The
+  // pre-decimation sample count would be better still, but it is not
+  // reachable per window without span arithmetic this pure module has no
+  // inputs for — so this says exactly what it knows and no more.
+  const points = `drawn at ${pointCount} point${pointCount === 1 ? "" : "s"}`;
   const axis = `${xModeLabel(xMode)} axis, ${points}`;
   return windows === "" ? axis : `${windows} — ${axis}`;
 }
