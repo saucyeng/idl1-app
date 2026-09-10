@@ -31,21 +31,30 @@ export interface ScanPreviewRow {
    *  the peek returned `0` (C1 §3.1: `0` means unknown, never 1970), and
    *  "—" when the format offers no peek at all. */
   startText: string;
-  /** `true` when this file has an importer and is not already imported —
-   *  the rows "Import N files" enqueues. */
+  /** `true` when this file has an importer and is not known to be already
+   *  imported — the rows "Import selected" may enqueue. */
   importable: boolean;
   /** Why the row is not importable, or `null` when it is. */
   skipReason: "already imported" | "no importer" | null;
+  /** The `already_imported` column's text: `"yes"`, `"no"`, or "checked on
+   *  import" for the `null` the scan now always returns (ruling R201 item
+   *  2 — the scan does not hash, and import de-duplicates by content hash
+   *  anyway, so the honest answer is that nobody has looked yet). */
+  alreadyText: string;
 }
 
 /** Shapes one folder scan into preview rows, in the order `scanFolder`
- *  returned them (already sorted by file name). A file whose sha256 is
- *  already a blob is shown, not hidden: the user asked what is in the
+ *  returned them (already sorted by file name). A file the scan reports as
+ *  already imported is shown, not hidden: the user asked what is in the
  *  folder, and "already imported" is the useful answer (C4 §3 — importing
- *  it again would be a no-op anyway). */
+ *  it again would be a no-op anyway). Since ruling R201 item 2 the scan
+ *  never decides that question (`already_imported: null`), so in practice
+ *  every row with an importer is offered and the duplicate, if any, is
+ *  caught by the content-hash de-duplication `import_file` already does. */
 export function toScanPreviewRows(entries: ScanEntry[]): ScanPreviewRow[] {
   return entries.map((entry) => {
-    const skipReason = entry.importer_id === null ? "no importer" : entry.already_imported ? "already imported" : null;
+    const skipReason =
+      entry.importer_id === null ? "no importer" : entry.already_imported === true ? "already imported" : null;
     return {
       path: entry.path,
       fileName: entry.file_name,
@@ -60,6 +69,7 @@ export function toScanPreviewRows(entries: ScanEntry[]): ScanPreviewRow[] {
             : `${formatDateMs(entry.session_start_utc_ms)} ${formatTimeMs(entry.session_start_utc_ms)}`,
       importable: skipReason === null,
       skipReason,
+      alreadyText: entry.already_imported === null ? "checked on import" : entry.already_imported ? "yes" : "no",
     };
   });
 }
@@ -75,6 +85,29 @@ export function importableRows(rows: ScanPreviewRow[]): ScanPreviewRow[] {
 /** [[importableRows]]' paths alone, for callers that only need the list. */
 export function importablePaths(rows: ScanPreviewRow[]): string[] {
   return importableRows(rows).map((row) => row.path);
+}
+
+/** The paths selected by default when a preview first appears: every
+ *  importable row (ruling R201 item 4 — rows are individually checkable,
+ *  "defaulting to all"). A non-importable row is never selectable, so it is
+ *  never in this set. */
+export function defaultSelectedPaths(rows: ScanPreviewRow[]): string[] {
+  return importablePaths(rows);
+}
+
+/** `selected` with `path` added if absent and removed if present — one
+ *  checkbox click. Returns a new array; the caller's own array is never
+ *  mutated, so React state updates stay by-value. */
+export function togglePath(selected: readonly string[], path: string): string[] {
+  return selected.includes(path) ? selected.filter((p) => p !== path) : [...selected, path];
+}
+
+/** The rows "Import selected" enqueues: the importable rows whose path is
+ *  in `selected`, in preview order (never in click order — the queue runs
+ *  in enqueue order, and a user who ticked the last file first still
+ *  expects the folder imported top to bottom). */
+export function selectedRows(rows: ScanPreviewRow[], selected: readonly string[]): ScanPreviewRow[] {
+  return importableRows(rows).filter((row) => selected.includes(row.path));
 }
 
 /** The preview's one-line summary, e.g. "3 of 5 files can be imported (1
