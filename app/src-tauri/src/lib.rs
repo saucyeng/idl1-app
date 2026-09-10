@@ -55,7 +55,9 @@ pub fn run() {
             #[cfg(not(any(target_os = "android", target_os = "ios")))]
             if !missing_root {
                 match idl_rs_tauri::inbox::InboxState::start(&data_dir) {
-                    Ok(inbox) => app.manage(inbox),
+                    Ok(inbox) => {
+                        app.manage(inbox);
+                    }
                     Err(e) => eprintln!("inbox unavailable: {e}"),
                 }
             }
