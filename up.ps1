@@ -22,9 +22,13 @@ Write-Host "== node deps"
 $lockHash = (Get-FileHash app\package-lock.json).Hash
 $stamp = "app\node_modules\.package-lock.hash"
 $have = if (Test-Path $stamp) { Get-Content $stamp } else { "" }
-if ($have -ne $lockHash -or -not (Test-Path app\node_modules\.bin\tauri.cmd)) {
+$installed = Test-Path app\node_modules\.bin\tauri.cmd
+if ($installed -and $have -eq "") {
+    # First run with deps already present: adopt them, do not reinstall.
+    Set-Content $stamp $lockHash; Write-Host "   present (stamped)"
+} elseif (-not $installed -or $have -ne $lockHash) {
     Push-Location app; npm ci; Pop-Location
-    if ($LASTEXITCODE -ne 0) { throw "npm ci failed" }
+    if ($LASTEXITCODE -ne 0) { throw "npm ci failed (is a dev server or editor holding node_modules?)" }
     Set-Content $stamp $lockHash
 } else { Write-Host "   unchanged" }
 
