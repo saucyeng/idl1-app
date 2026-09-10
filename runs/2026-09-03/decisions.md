@@ -8604,3 +8604,24 @@ is a view (tags/venue/date), the phone holds the only legitimate subset.
 Google Drive must be in mirror mode; catalog conflict copies are harmless
 because the catalog is rebuildable. **Cost if wrong:** copying doubles disk
 use until the user deletes the old root, which is the safe direction.
+
+## R197 — Library management in the CLI; move not copy; firmware OTA lane
+
+*2026-09-10, Isaac.* (1) **Yes, the CLI is the right home for library
+management**: `idl-rs library fold-in <folder> <data_dir> [--move]`,
+`library scan`, `library stale`, `library rebuild`, each a thin wrapper
+over the same core functions the app's C3 commands call, so the two can
+never drift and a 193-file fold-in is one scripted command. `--move`
+deletes each source file only after its blob's sha256 has verified in the
+store. (2) **Move, not copy** (disk may not hold two copies; the old folder
+is backed up externally): `move_data_dir` moves per file, rename on the
+same volume, copy-verify-delete across volumes, idempotent on rerun; C4 §1
+and C3 §3.10 amended, the dataroot lane told. The archive fold-in from
+`Documents\sessions` uses `--move` for the same reason. (3) **Firmware
+OTA** is wave-3 work that starts now: the transport already implements
+`POST /ota` and `CMD_OTA_CONFIRM`; the lane adds `push_firmware(path,
+progress)` and `confirm_firmware()` to C3 §3.8 plus the Settings Firmware
+section, copying the Flutter app's flow where it was sound
+(`runs/2026-09-10/OTA-FLUTTER-FLOW.md` extracts it). Spec-during. **Cost
+if wrong:** CLI wrappers are a few hundred lines; `--move` is guarded by
+the hash check; OTA has rollback on the device by design.
