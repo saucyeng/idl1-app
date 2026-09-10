@@ -77,5 +77,5 @@ loud. Every task touching shipped behaviour updates `CHANGELOG.md` and/or `TASKS
 - The full suite runs once per lane at its merge gate: `cargo test -p idl-rs -p idl-rs-cli -- --test-threads=4`. Never `--workspace`.
 - No reruns to hunt flakiness unless the lead asks; a known-flaky test is rerun alone by name, once.
 - A task that changes a `pub` signature in `core` adds `cargo check -p idl-rs-cli --tests`.
-- A lane that touches `idl-rs-tauri` or `app/src-tauri` adds `cargo check` run from `app/src-tauri` at its merge gate: nothing else compiles the app crate (R199).
+- A lane that touches `idl-rs-tauri` or `app/src-tauri` adds `cargo check -p app` run from `app/src-tauri` at its merge gate: nothing else compiles the app crate (R199).
 - Never `cargo fmt`, `cargo tarpaulin`, or `cargo doc` inside a task. Readers (reviewers, adjudicators) never build.
