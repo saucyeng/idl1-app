@@ -17,9 +17,11 @@ export interface ScanEntry {
   /** Importer id by extension (`listImporters`' vocabulary), or `null` when
    *  no importer covers this file. */
   importer_id: string | null;
-  /** `true` when this file's sha256 is already a blob in `<data>/blobs` —
-   *  importing it again would be a no-op. */
-  already_imported: boolean;
+  /** `null` = not checked; import de-duplicates by content hash regardless
+   *  (C3 §3.3, ruling R201 item 2). Always `null` from `scanFolder`, which
+   *  never hashes — deciding this for a folder of large files was minutes
+   *  of a frozen picker. `true` would mean "importing it again is a no-op". */
+  already_imported: boolean | null;
   /** i64 UTC ms from a header peek where the format offers one (`0` =
    *  the header carries no clock value); `null` when there is no peek. */
   session_start_utc_ms: number | null;
@@ -82,9 +84,9 @@ export async function setSessionStart(sessionId: string, timestampUtcMs: number)
 }
 
 /** Lists importable files directly inside `path` (C3 §3.3, non-recursive).
- *  Hashes each file to answer `already_imported`, so it is allowed to be
- *  slow on a folder of large files — call it once per picker use, never on
- *  a timer (ruling R191). Desktop only. */
+ *  Returns from directory metadata plus a 4 KiB header peek per `.idl0` —
+ *  nothing is hashed and no file body is read, so it is effectively instant
+ *  however large the folder is (ruling R201 item 2). Desktop only. */
 export async function scanFolder(path: string): Promise<ScanEntry[]> {
   return invoke<ScanEntry[]>("scan_folder", { path });
 }

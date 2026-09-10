@@ -29,6 +29,7 @@ import { useAppState } from "../../../state/AppState";
 import { describeWindow, sessionDetailsReadinessKey, sessionLabel, venueLabel, windowKey, windowsKey, type SelectionWindow } from "../../../state/selection";
 import { useRouteVisible } from "../../../shell/routeVisibility";
 import { useEditorSlotNode } from "../../../shell/editorSlot";
+import { useGraphSlotNode } from "../../../shell/graphSlot";
 import { useToolbarSlotNode } from "../../../shell/toolbarSlot";
 import { ColumnPlaceholder } from "../../../shell/ColumnFrame";
 import { resolveRegister, type PaperTheme, type ThemeChoice } from "../Settings/theme";
@@ -80,6 +81,7 @@ import { paperLiveDecision } from "./model/paperLive";
 import { editorContentFor, sheetTitleFor } from "./model/editorContent";
 import { effectivePaperTheme } from "./model/report/paperPalette";
 import { resolveEditorHost } from "./model/editorHost";
+import { resolveGraphHost } from "./model/graphHost";
 import { runFft, type FftAction, type FftDeps } from "./model/fftDriver";
 import { exceedsBinCap, frequencyAxisHz } from "./model/fftRequest";
 import { diffFunctionCatalog, type FunctionCatalogMismatch } from "./model/functionCatalog";
@@ -806,6 +808,20 @@ export default function NotebookPage() {
   const editorSlotNode = useEditorSlotNode();
   const editorHost = resolveEditorHost(editorSlotNode !== null, placement);
   const editorIsPortalHosted = editorHost === "portal";
+
+  // The same arrangement for the maths graph: the wide studio's maths
+  // column (`shell/GraphSlotColumn.tsx`) publishes its DOM node, and the
+  // canvas this page builds portals into it rather than taking a pane in
+  // this page's own content area. Slot presence decides, never the
+  // measured `placement` -- inside the studio this page's width *is* the
+  // output column's, so a width test would put a second `GraphCanvas`
+  // beside the one the column already holds (R109 ruling 2's failure,
+  // applied to the graph). Before this, the maths column rendered a
+  // "reserved" placeholder while the real canvas sat inside the output
+  // column beside the cell list.
+  const graphSlotNode = useGraphSlotNode();
+  const graphHost = resolveGraphHost(graphSlotNode !== null, placement);
+  const graphIsPortalHosted = graphHost === "portal";
 
   // Bug report fixed 2026-09-09, correcting R161: the toolbar spans the
   // *window*, not just this tab's own column area. `AppShell.tsx` mounts
@@ -2732,7 +2748,11 @@ export default function NotebookPage() {
   };
   const visibleColumnIds = visibleNotebookColumnIds(columnVisibility, notebookColumnAvailability);
   const columnsToggleAvailable = !paperActive;
-  const showGraph = visibleColumnIds.includes("graph") && graphCanvasElement !== null;
+  // `!graphIsPortalHosted`: when the wide studio's maths column hosts the
+  // canvas, this page renders no graph pane of its own -- one
+  // `GraphCanvas` instance, in one place, exactly as `editorIsPortalHosted`
+  // does for `EditorPanes` (R109 ruling 1).
+  const showGraph = visibleColumnIds.includes("graph") && graphCanvasElement !== null && !graphIsPortalHosted;
   const showCells = visibleColumnIds.includes("cells");
   // Fallback single content (medium/`"inline"` and narrow/`"sheet"`
   // placements have one content area, not a resizable split) -- same
@@ -3064,6 +3084,22 @@ export default function NotebookPage() {
             editorPanesElement ?? <ColumnPlaceholder>Select a cell to edit its properties and code.</ColumnPlaceholder>
           ),
           editorSlotNode
+        )}
+      {/* The maths column's content, on the properties column's own model
+          just above: the toolbar's Graph toggle says whether the canvas
+          shows, and a hidden column says so rather than going blank (the
+          toggle is right there in the top bar, and R161's toggles never
+          remove a studio column). `graphCanvasElement` is `null` until a
+          workbook is open -- a stated absence beats an empty column
+          (R148/R150). */}
+      {graphSlotNode !== null &&
+        createPortal(
+          !columnVisibility.graph ? (
+            <ColumnPlaceholder>Maths graph hidden -- shown via the toolbar&apos;s Graph toggle.</ColumnPlaceholder>
+          ) : (
+            graphCanvasElement ?? <ColumnPlaceholder>Open a workbook to see its maths graph.</ColumnPlaceholder>
+          ),
+          graphSlotNode
         )}
       {/* The sandbox iframe host: fixed to the full viewport so cell
           iframes positioned into it (`sendLayout`) track scroll in real

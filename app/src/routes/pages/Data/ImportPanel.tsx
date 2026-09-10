@@ -1,19 +1,29 @@
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { UploadIcon } from "lucide-react";
-import { useEffect, useReducer, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 
 import { toastFor } from "../../../components/toasts/events";
 import { Button } from "../../../components/ui/button";
+import { Checkbox } from "../../../components/ui/checkbox";
 import { Input } from "../../../components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../../../components/ui/select";
 import { importFile, listImporters, type ImporterInfo } from "../../../ipc/import";
 import { scanFolder } from "../../../ipc/library";
 import { describeIpcError } from "./errors";
 import { pickImportFile, pickImportFolder, resolvePastedPath } from "./FilePicker";
-import { importableRows, summarizeScanPreview, toScanPreviewRows, type ScanPreviewRow } from "./libraryPanel";
+import {
+  defaultSelectedPaths,
+  importableRows,
+  selectedRows,
+  summarizeScanPreview,
+  toScanPreviewRows,
+  togglePath,
+  type ScanPreviewRow,
+} from "./libraryPanel";
 import { isDrained, nextItemToStart, runImport } from "./importDriver";
-import { importQueueReducer, initialImportQueueState, overallPercent, type ImportItem, type ImportQueueAction } from "./importQueue";
+import { canStopAfterCurrent, overallPercent, type ImportItem, type ImportQueueAction } from "./importQueue";
+import { useImportQueue } from "../../../state/ImportQueue";
 
 /** @param onImported Called once every time the queue drains (every item
  *  reaches `"done"`/`"failed"`) after having had at least one active item —
@@ -84,21 +94,28 @@ function showImportFailedToast(fileName: string, message: string): void {
 type ScanState =
   | { status: "idle" }
   | { status: "scanning"; folder: string }
-  | { status: "ready"; folder: string; rows: ScanPreviewRow[] }
+  | { status: "ready"; folder: string; rows: ScanPreviewRow[]; selected: string[] }
   | { status: "error"; text: string };
 
-/** One preview row: name, size, importer and header-peek start. An
- *  already-imported or unsupported file is greyed and never enqueued —
- *  shown rather than hidden, because "what is in this folder" is the
- *  question the preview answers. */
-function ScanPreviewLine({ row }: { row: ScanPreviewRow }) {
+/** One preview row: a checkbox, name, size, importer, header-peek start
+ *  and the already-imported column. An unsupported file is greyed and has
+ *  no checkbox at all — shown rather than hidden, because "what is in this
+ *  folder" is the question the preview answers. Every importable row is
+ *  individually checkable and starts checked (ruling R201 item 4: a bulk
+ *  import is not all-or-nothing). */
+function ScanPreviewLine({ row, checked, onToggle }: { row: ScanPreviewRow; checked: boolean; onToggle: () => void }) {
   return (
     <li className={`flex items-center gap-2 border-b border-rule py-1 last:border-b-0 ${row.importable ? "text-fg" : "text-fg-dim"}`}>
+      {row.importable ? (
+        <Checkbox checked={checked} onCheckedChange={onToggle} aria-label={`Import ${row.fileName}`} />
+      ) : (
+        <span className="size-4 shrink-0" aria-hidden />
+      )}
       <span className="flex-1 truncate">{row.fileName}</span>
       <span className="shrink-0">{row.sizeText}</span>
       <span className="w-16 shrink-0">{row.importerText}</span>
       <span className="w-40 shrink-0 truncate">{row.startText}</span>
-      <span className="w-32 shrink-0">{row.skipReason ?? ""}</span>
+      <span className="w-32 shrink-0">{row.skipReason ?? row.alreadyText}</span>
     </li>
   );
 }
@@ -120,7 +137,7 @@ function ScanPreviewLine({ row }: { row: ScanPreviewRow }) {
  *  is memory-bound, import is CPU/I/O-heavy) — the driving effect below
  *  never starts a second `importFile` call while one is `"running"`. */
 export function ImportPanel({ onImported }: ImportPanelProps) {
-  const [state, dispatch] = useReducer(importQueueReducer, initialImportQueueState);
+  const [state, dispatch] = useImportQueue();
   const [importers, setImporters] = useState<ImporterInfo[]>([]);
   const [importersErrorText, setImportersErrorText] = useState<string | null>(null);
   const [pastedPath, setPastedPath] = useState("");
@@ -254,16 +271,17 @@ export function ImportPanel({ onImported }: ImportPanelProps) {
 
   /** "Import folder…" click: picks a folder, scans it (C3 §3.3
    *  `scan_folder` — non-recursive, nothing imported yet) and shows the
-   *  preview. The scan hashes every file to answer `already_imported`, so
-   *  it can be slow on a folder of large files; it runs once per pick,
-   *  never on a timer (ruling R191). */
+   *  preview with every importable row checked. The scan hashes nothing
+   *  and reads no file body, so it returns effectively instantly however
+   *  large the folder is (ruling R201 item 2). */
   const handleFolderClick = () => {
     pickImportFolder(pastedPath)
       .then((folder) => {
         if (folder === null) return; // user cancelled the native dialog
         setScanState({ status: "scanning", folder });
         return scanFolder(folder).then((entries) => {
-          setScanState({ status: "ready", folder, rows: toScanPreviewRows(entries) });
+          const rows = toScanPreviewRows(entries);
+          setScanState({ status: "ready", folder, rows, selected: defaultSelectedPaths(rows) });
         });
       })
       .catch((e: unknown) => {
@@ -271,18 +289,26 @@ export function ImportPanel({ onImported }: ImportPanelProps) {
       });
   };
 
-  /** Enqueues every importable row of the current preview, one
+  /** Enqueues the *checked* rows of the current preview, one
    *  `import_file` per file through the queue this panel already drives
    *  (C3 §3.3 has no bulk-import command by design, R191: progress and
-   *  errors stay per file). Each row goes in with the importer the scan
+   *  errors stay per file; R201 item 4: the selection is per row, so a
+   *  folder can be imported in pieces). Each row goes in with the importer the scan
    *  detected for that file, never the panel's single-file override menu —
    *  one dropdown cannot describe a folder holding two formats. */
   const handleImportPreviewClick = () => {
     if (scanState.status !== "ready") return;
-    for (const row of importableRows(scanState.rows)) {
+    for (const row of selectedRows(scanState.rows, scanState.selected)) {
       dispatch({ type: "ENQUEUE", path: row.path, importerId: row.importerId });
     }
     setScanState({ status: "idle" });
+  };
+
+  /** One preview checkbox. Rebuilds only the `selected` list — the scanned
+   *  rows themselves never change, so the table does not re-shape under the
+   *  user mid-selection. */
+  const handleToggleRow = (path: string) => {
+    setScanState((prev) => (prev.status === "ready" ? { ...prev, selected: togglePath(prev.selected, path) } : prev));
   };
 
   const percent = overallPercent(state);
@@ -344,12 +370,26 @@ export function ImportPanel({ onImported }: ImportPanelProps) {
             <Button
               type="button"
               size="xs"
+              onClick={() =>
+                setScanState((prev) =>
+                  prev.status === "ready"
+                    ? { ...prev, selected: prev.selected.length === 0 ? defaultSelectedPaths(prev.rows) : [] }
+                    : prev,
+                )
+              }
+              disabled={importableRows(scanState.rows).length === 0}
+            >
+              {scanState.selected.length === 0 ? "Select all" : "Select none"}
+            </Button>
+            <Button
+              type="button"
+              size="xs"
               emphasis="good"
               filled
               onClick={handleImportPreviewClick}
-              disabled={importableRows(scanState.rows).length === 0}
+              disabled={selectedRows(scanState.rows, scanState.selected).length === 0}
             >
-              Import {importableRows(scanState.rows).length} files
+              Import selected ({selectedRows(scanState.rows, scanState.selected).length})
             </Button>
             <Button type="button" size="xs" onClick={() => setScanState({ status: "idle" })}>
               Cancel
@@ -357,7 +397,12 @@ export function ImportPanel({ onImported }: ImportPanelProps) {
           </div>
           <ul className="flex max-h-64 flex-col overflow-y-auto font-mono text-sm">
             {scanState.rows.map((row) => (
-              <ScanPreviewLine key={row.path} row={row} />
+              <ScanPreviewLine
+                key={row.path}
+                row={row}
+                checked={scanState.selected.includes(row.path)}
+                onToggle={() => handleToggleRow(row.path)}
+              />
             ))}
           </ul>
         </div>
@@ -368,7 +413,14 @@ export function ImportPanel({ onImported }: ImportPanelProps) {
         </p>
       )}
       {percent !== null && (
-        <progress className="h-1 w-full accent-good" value={percent} max={100} />
+        <div className="flex items-center gap-2">
+          <progress className="h-1 flex-1 accent-good" value={percent} max={100} />
+          {canStopAfterCurrent(state) && (
+            <Button type="button" size="xs" onClick={() => dispatch({ type: "STOP_AFTER_CURRENT" })}>
+              Stop after current
+            </Button>
+          )}
+        </div>
       )}
       {state.items.length > 0 && <ul className="flex flex-col">{state.items.map((item) => (
         <ImportRow key={item.id} item={item} onDismiss={() => dispatch({ type: "DISMISS", id: item.id })} />

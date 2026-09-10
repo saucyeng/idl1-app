@@ -3,10 +3,13 @@ import { describe, expect, it } from "vitest";
 import type { SessionDetail } from "../../../ipc/catalog";
 import type { InboxStatus, ReimportReport, ScanEntry, StaleSession } from "../../../ipc/library";
 import {
+  defaultSelectedPaths,
   describeInboxStatus,
   importablePaths,
   importableRows,
   parseStartInput,
+  selectedRows,
+  togglePath,
   shouldPromptForStart,
   staleRebuildLabel,
   summarizeReimportReport,
@@ -216,5 +219,72 @@ describe("describeInboxStatus", () => {
     };
 
     expect(describeInboxStatus(status)).toBe("Inbox: /data/inbox — 3 imported since launch, 1 failed.");
+  });
+});
+
+describe("toScanPreviewRows — unchecked already_imported", () => {
+  it("toScanPreviewRows — already_imported null — the row is importable and reads \"checked on import\"", () => {
+    const rows = toScanPreviewRows([entry({ already_imported: null })]);
+
+    expect(rows[0].importable).toBe(true);
+    expect(rows[0].skipReason).toBeNull();
+    expect(rows[0].alreadyText).toBe("checked on import");
+  });
+
+  it("toScanPreviewRows — already_imported true or false — the column still reads yes or no", () => {
+    const rows = toScanPreviewRows([
+      entry({ path: "a", already_imported: true }),
+      entry({ path: "b", already_imported: false }),
+    ]);
+
+    expect(rows.map((row) => row.alreadyText)).toEqual(["yes", "no"]);
+  });
+});
+
+describe("preview selection", () => {
+  it("defaultSelectedPaths — a mixed folder — every importable row starts selected", () => {
+    const rows = toScanPreviewRows([
+      entry({ path: "a", file_name: "a.idl0", already_imported: null }),
+      entry({ path: "b", file_name: "b.txt", importer_id: null }),
+    ]);
+
+    const selected = defaultSelectedPaths(rows);
+
+    expect(selected).toEqual(["a"]);
+  });
+
+  it("togglePath — a path already selected — is removed, and the input array is untouched", () => {
+    const selected = ["a", "b"];
+
+    const next = togglePath(selected, "a");
+
+    expect(next).toEqual(["b"]);
+    expect(selected).toEqual(["a", "b"]);
+  });
+
+  it("togglePath — a path not selected — is added", () => {
+    const next = togglePath(["a"], "b");
+
+    expect(next).toEqual(["a", "b"]);
+  });
+
+  it("selectedRows — a selection in click order — returns the rows in preview order", () => {
+    const rows = toScanPreviewRows([
+      entry({ path: "a", file_name: "a.idl0", already_imported: null }),
+      entry({ path: "b", file_name: "b.idl0", already_imported: null }),
+      entry({ path: "c", file_name: "c.idl0", already_imported: null }),
+    ]);
+
+    const chosen = selectedRows(rows, ["c", "a"]);
+
+    expect(chosen.map((row) => row.path)).toEqual(["a", "c"]);
+  });
+
+  it("selectedRows — a selection naming a non-importable row — never returns it", () => {
+    const rows = toScanPreviewRows([entry({ path: "b", file_name: "b.txt", importer_id: null })]);
+
+    const chosen = selectedRows(rows, ["b"]);
+
+    expect(chosen).toEqual([]);
   });
 });

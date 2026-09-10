@@ -19,6 +19,23 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
   running. Notebooks also let go of a chart's samples once its cell is
   removed or stops naming that channel.
 
+- **The app no longer freezes while it works (2026-09-10, ruling R201).**
+  Scanning a folder for import now returns instantly however large it is:
+  it reads the folder listing and a few kilobytes of each log's header
+  instead of hashing every file, so a 193-file, 6.9 GB folder previews at
+  once rather than after minutes of a frozen window. The preview's
+  "already imported" column reads "checked on import", because duplicates
+  are caught by content hash when a file is actually imported. Every
+  command that reads the library, imports, or evaluates a session now runs
+  off the app's main thread, so nothing it does locks up the interface.
+  Imports show their progress in a status strip visible from every tab
+  ("Importing 12 / 193" with the file's name, then "Import done" with the
+  counts for a minute afterwards); clicking it opens the import panel.
+  A folder import is no longer all-or-nothing: each file in the preview
+  has its own checkbox, all ticked to begin with, "Import selected"
+  imports just those, and "Stop after current" abandons the rest of a run
+  in progress without interrupting the file being imported.
+
 - **Library management from the command line (2026-09-10, ruling R197).**
   `idl-rs library fold-in <folder> --data-dir <dir>` imports a whole folder
   of logs in one command, printing a preview table first (file, importer,
@@ -286,6 +303,23 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
   placeholder control implying a working feature is worse than none.
 
 ### Fixed
+
+- **The studio's maths column shows the real graph, not a "reserved"
+  placeholder (2026-09-10).** On the wide layout the leftmost Notebook
+  column read "Maths graph — reserved (UI-DIRECTION decision 11)" while the
+  working `GraphCanvas` (its source-palette rail, chart-type pickers,
+  drag-to-commit edits and node-to-chart action) sat in the output column
+  beside the cell list. The column now hosts the canvas itself, by the same
+  slot-and-portal route the properties column already uses for the editor
+  (R109): `shell/graphSlot.ts` and `shell/GraphSlotColumn.tsx` publish the
+  column's DOM node, and the Notebook page portals its one `GraphCanvas`
+  instance into it. The page renders no graph pane of its own while the
+  column hosts one, decided by slot presence rather than measured width
+  (`Notebook/model/graphHost.ts`) — inside the studio the page's own width
+  is the output column's, which would otherwise mint a second canvas. The
+  toolbar's Graph toggle still governs it, and the column says so when it
+  is off; with no workbook open it says that instead of going blank.
+  Nothing changes below 1200 px, where there is no column frame.
 
 - **Notebook toolbar now spans the window, not just the tab's own column
   area (2026-09-09, correcting R161).** The toolbar (column show/hide,

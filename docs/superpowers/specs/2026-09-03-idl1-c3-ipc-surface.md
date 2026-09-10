@@ -57,6 +57,12 @@
   this revision and removed in the next (§5); `fetch_tile`,
   `cursor_readout`, `fetch_raster`/`fetch_raster_meta` and the session-entity
   CRUD commands are unchanged.
+- 2026-09-10: async-cmds lane (ruling R201, spec-during) — §1 gains the
+  "nothing blocks the main thread" rule and every command that touches the
+  filesystem beyond a stat or computes over a session is now
+  `#[tauri::command(async)]`; §3.3's `scan_folder` no longer hashes, so
+  `ScanEntry.already_imported` becomes `boolean | null` and is always `null`
+  from this command. Neither is a wire-shape change for any other command.
 - 2026-09-09: scipy-alignment lane (ledger R151 item 9, R157) — `WorkbookSource`
   (`read_workbook`) gains `pending_migrations: RenamedFunction[]`; `SaveResult`
   (`save_workbook`) gains `migrations: RenamedFunction[]`; `MathBuiltinDto`
@@ -82,6 +88,18 @@ Consumes: design doc §4 (IPC, data path for a chart, the reactive DAG), §6
 parameters (Rust `fn foo(a: A, b: B) -> ...`), not one wrapped object — this
 is the pattern Task 5 already shipped (`engine_version()`, `smoke_tile(n:
 u32)`) and this contract keeps it.
+
+**Nothing blocks the main thread (ruling R201).** Tauri v2 runs a
+non-`async` `#[tauri::command]` on the main thread, where its whole duration
+is a frozen webview. Every command that touches the filesystem beyond a
+`stat`, talks to a device or the network, or computes over a session is
+therefore declared `#[tauri::command(async)]`; the body may stay synchronous,
+since that attribute alone moves it to Tauri's thread pool. Only commands
+that read managed state or return constants stay non-`async` — today
+`engine_version`, `list_importers`, `list_math_builtins`,
+`preview_channel_registry`, `ota_state` and `unwatch_workbook`. A long
+command reports progress over a `Channel` (below) rather than making the
+caller wait in silence.
 
 **Transport per payload shape:**
 - **Control and metadata** (small structs, lists, status) cross as JSON:
@@ -822,22 +840,31 @@ Errors: `not_found`, `invalid_argument` (`timestamp_utc_ms <= 0`), `io`,
 
 **`scan_folder(path: string): ScanEntry[]`**
 Lists importable files directly inside `path` (non-recursive), cheaply: no
-import runs. Desktop only.
+import runs, nothing is hashed, and no file body is read. It answers from
+directory metadata plus, for `.idl0` only, a 4 KiB header peek, so it
+returns effectively instantly however large the folder is (*changed
+post-sign, 2026-09-10, ruling R201 item 2* — the previous definition hashed
+every file to decide `already_imported`, which on a 6.9 GB folder was
+minutes of a frozen picker). Desktop only.
 ```ts
 interface ScanEntry {
   path: string;
   file_name: string;
   size_bytes: number;                 // u64
   importer_id: string | null;         // by extension via list_importers; null = not importable
-  already_imported: boolean;          // its sha256 is already a blob in <data>/blobs
+  /** null = not checked; import de-duplicates by content hash regardless.
+   *  Always null from this command, which never hashes. */
+  already_imported: boolean | null;
   /** i64 UTC ms from a header peek where the importer offers one (.idl0
    *  header `Session start UTC`, else 0 = unknown); null when no peek exists. */
   session_start_utc_ms: number | null;
 }
 ```
-The app enqueues `import_file` per chosen entry; there is no bulk import
-command, so progress and errors stay per file. Errors: `not_found`, `io`,
-`internal`.
+The preview shows "checked on import" for a `null`. The app enqueues
+`import_file` per chosen entry; there is no bulk import command, so progress
+and errors stay per file, a partial selection is just a shorter list of
+`import_file` calls, and stopping a bulk import is a queue-level decision the
+app makes without the engine. Errors: `not_found`, `io`, `internal`.
 
 **`list_stale_sessions(): StaleSession[]`**
 Every catalogued session whose stored `importer_version` differs from the

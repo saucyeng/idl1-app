@@ -2,7 +2,13 @@ import { describe, expect, it } from "vitest";
 
 import type { SessionSummary } from "../../../ipc/catalog";
 import type { ImportOutcome, Progress } from "../../../ipc/import";
-import { importQueueReducer, initialImportQueueState, overallPercent, type ImportQueueState } from "./importQueue";
+import {
+  canStopAfterCurrent,
+  importQueueReducer,
+  initialImportQueueState,
+  overallPercent,
+  type ImportQueueState,
+} from "./importQueue";
 
 function withOneQueued(path = "C:/rides/one.idl0"): ImportQueueState {
   return importQueueReducer(initialImportQueueState, { type: "ENQUEUE", path, importerId: null });
@@ -184,5 +190,39 @@ describe("overallPercent", () => {
     expect(percent).not.toBeNull();
     expect(percent as number).toBeGreaterThan(50);
     expect(percent as number).toBeLessThan(100);
+  });
+});
+
+describe("STOP_AFTER_CURRENT", () => {
+  it("importQueue — STOP_AFTER_CURRENT while one item runs — drops the queued items and keeps the running one", () => {
+    let state = withOneQueued("C:/rides/one.idl0");
+    state = importQueueReducer(state, { type: "ENQUEUE", path: "C:/rides/two.idl0", importerId: null });
+    state = importQueueReducer(state, { type: "ENQUEUE", path: "C:/rides/three.idl0", importerId: null });
+    state = importQueueReducer(state, { type: "START", id: 0 });
+
+    state = importQueueReducer(state, { type: "STOP_AFTER_CURRENT" });
+
+    expect(state.items.map((item) => item.path)).toEqual(["C:/rides/one.idl0"]);
+    expect(state.items[0].status).toBe("running");
+  });
+
+  it("importQueue — STOP_AFTER_CURRENT — keeps items that already finished, so the run stays readable", () => {
+    let state = withOneQueued("C:/rides/one.idl0");
+    state = importQueueReducer(state, { type: "ENQUEUE", path: "C:/rides/two.idl0", importerId: null });
+    state = importQueueReducer(state, { type: "START", id: 0 });
+    state = importQueueReducer(state, { type: "SUCCEEDED", id: 0, outcome: sampleOutcome });
+
+    state = importQueueReducer(state, { type: "STOP_AFTER_CURRENT" });
+
+    expect(state.items.map((item) => item.status)).toEqual(["done"]);
+  });
+
+  it("canStopAfterCurrent — nothing queued behind the running item — false", () => {
+    let state = withOneQueued();
+    expect(canStopAfterCurrent(state)).toBe(true);
+
+    state = importQueueReducer(state, { type: "START", id: 0 });
+
+    expect(canStopAfterCurrent(state)).toBe(false);
   });
 });
