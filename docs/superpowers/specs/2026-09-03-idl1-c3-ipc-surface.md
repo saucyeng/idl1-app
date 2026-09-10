@@ -1830,6 +1830,120 @@ TypeScript).
 Errors: `config_parse`, `config_unsupported_version` (both already in §2's
 table), `invalid_argument`, `internal`.
 
+**Firmware / OTA** — *added post-sign (2026-09-10, lead rulings R197/R198,
+firmware OTA lane).* Four commands and one event. They supersede the note
+under `device_control` above that `OtaConfirm` "belongs to the deferred
+firmware path": it is no longer deferred and is reached through
+`confirm_firmware`, **not** through `device_control` (whose `command`
+vocabulary is unchanged — the four transitions it already names).
+
+The **state machine lives in Rust** (R198): `idl-rs-tauri` owns the push →
+reboot → reconnect → confirm sequence including the reconnect retry loop,
+and the app draws whatever state it is handed. Every transition is stored
+(readable with `ota_state`) *and* emitted as `ota_state_changed`, so a UI
+that mounts mid-flight and one that watched from the start agree.
+
+```ts
+type OtaState =
+  | { phase: "idle" }
+  | { phase: "downloading"; done_bytes: number; total_bytes: number | null; pct: number | null }
+  | { phase: "pushing"; done_bytes: number; total_bytes: number; pct: number }
+  | { phase: "rebooting" }
+  | { phase: "reconnecting"; attempt: number; max_attempts: number }
+  | { phase: "pending_verify"; auto_confirm_armed: boolean }
+  | { phase: "confirmed" }
+  | { phase: "rolled_back" }
+  | { phase: "failed"; error: IpcError };
+```
+`downloading` occurs only for a `catalog` source, and its `total_bytes`/
+`pct` are `null` until the server reports a length. `reconnecting` counts
+R198's retry budget: every 3 s for 60 s, i.e. `max_attempts === 20`.
+`pending_verify` means the device reports SPEC §7.3's `OTA: PENDING_VERIFY`
+— the new image runs but reverts on the next reboot unless committed;
+`auto_confirm_armed` is `true` only for a catalog push whose sha256
+verified, in which case the state is passed through rather than waited in.
+`rolled_back` means the device came back on a different version than the one
+pushed. There is **no roll-back command**: rolling back is not confirming
+and power-cycling the device, which the bootloader handles (R198, SPEC §4.6).
+
+**`push_firmware(device_id: string, source: FirmwareSource, firmware_repo: string, channel: "stable" | "beta", progress: Channel<Progress>)`**
+```ts
+type FirmwareSource =
+  | { kind: "file"; version?: never; path: string }
+  | { kind: "catalog"; version: string };
+
+interface OtaOutcome {
+  state: OtaState;                    // confirmed | pending_verify | rolled_back
+  pushed_version: string | null;      // the catalog release's version; null for a .bin off disk
+  device_version: string | null;      // SPEC §7.3 `Firmware:` after reconnecting
+  auto_confirmed: boolean;            // whether this flow sent CMD_OTA_CONFIRM itself
+  sha256_verified: boolean;           // always false for a .bin off disk
+}
+```
+Return: `OtaOutcome`. `firmware_repo`/`channel` are read only for a
+`catalog` source; a `file` source ignores them (they are still required
+arguments — the command is a single entry point, not two). `Progress.done`/
+`.total` are bytes, with `phase` `"download"` then `"ota_push"`.
+
+Preconditions (R198): a **managed** BLE connection must exist for
+`device_id` (`connect_device`), and the device must not be recording. A
+device version that does not parse as semver is *not* a refusal — the app
+says "unknown version" and a manual push is still allowed. The device is
+driven into WiFi mode over the existing control path, exactly as
+`list_device_files`/`download_file` already do.
+
+Errors: `not_found` (no managed connection, or a `catalog` version the
+repo does not publish, or a `file` path that does not exist),
+`device_rejected` (the device is recording), `invalid_argument` (an empty
+`.bin`), `io` (reading the `.bin`), `wifi` (the catalog fetch, the image
+download, a sha256 mismatch, or `POST /ota` itself) and `ble` (the device
+never came back inside the reconnect window). A `wifi` error raised by
+`POST /ota` carries structured `detail`:
+`{ ota_error: "rejected" | "device_error" | "transport", status_code: number | null, device_body: string }`
+— SPEC §6.1's three response classes, with the firmware's own body text
+verbatim so the UI quotes it rather than paraphrasing.
+
+**`confirm_firmware(device_id: string)`**
+Sends SPEC §7.2's `CMD_OTA_CONFIRM` over `device_id`'s managed link and
+reports what the device says afterwards. Return: `OtaState` —
+`{ phase: "confirmed" }`, or `{ phase: "pending_verify", auto_confirm_armed: false }`
+if the device still reports `OTA: PENDING_VERIFY` (SPEC §7.2: the command is
+a no-op in any other state, so an unchanged flag means it was not taken).
+Errors: `not_found` (no managed connection), `ble`.
+
+**`firmware_catalog(firmware_repo: string, channel: "stable" | "beta")`**
+Return: `FirmwareRelease[]`, newest version first.
+```ts
+interface FirmwareRelease {
+  version: string;            // semver, no leading "v"
+  tag: string;                // the git tag verbatim, e.g. "v1.6.0-beta.1"
+  name: string;               // display name, falling back to the tag
+  notes: string;              // release body, markdown as authored
+  prerelease: boolean;
+  published_at: string;       // RFC 3339, "" if GitHub reported none
+  image_url: string;
+  image_size_bytes: number;   // u64
+  sha256_url: string | null;  // null when the release publishes no sidecar
+}
+```
+The public GitHub Releases API of `firmware_repo` (`"owner/name"`, from
+Settings; empty by default = catalog disabled). **This is the only call the
+app makes to the public internet**, and it runs only on "Check now" or on
+opening the Firmware section with the catalog enabled — never on a timer
+(R198). Only releases publishing an `idl1-firmware-<version>.bin` asset are
+listed; drafts, non-semver tags and asset-less releases are omitted rather
+than reported. `stable` keeps non-prereleases only, `beta` keeps everything.
+Errors: `wifi` (unreachable, non-2xx, malformed body, or an empty
+`firmware_repo` — refused without a round trip).
+
+**`ota_state()`**
+Args: none. Return: `OtaState` — the same value the most recent
+`ota_state_changed` carried. Never fails.
+
+**Event `ota_state_changed`** — payload `OtaState`, emitted on every
+transition. Listened to with `listen()`, the same shape §3.9's
+`peer_appeared` uses.
+
 ### 3.9 Sync (L11)
 
 **`sync_status()`**
