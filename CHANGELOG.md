@@ -6,6 +6,24 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 
 ### Added
 
+- **CI on GitHub Actions (2026-09-10).** `.github/workflows/ci.yml` runs the
+  Rust test suite (idl-rs/idl-rs-cli, idl-rs-tauri, idl-transport) and the
+  app's typecheck + vitest suite on every push to `main` and on dispatch.
+  `.github/workflows/android-apk.yml` is a manual-only, dispatch-triggered
+  debug APK build. See `docs/CI.md`.
+- **The Notebook is a readable paper view on a phone (2026-09-10, L9 task 8,
+  rulings R184/R185).** Below 600 CSS px the cell list is replaced by the
+  report document itself, rendered to the screen with static charts and
+  rebuilt on every settled evaluation (an in-flight one keeps the last good
+  page rather than blanking). Cover and appendix are dropped on screen;
+  every absence is kept. Tapping a block opens that cell's editor in the
+  narrow sheet — Properties beside Code for a `js` cell, code alone for
+  every other kind. Charts at that width now fetch the mobile point budget
+  the design doc always specified. Paper has its own theme preference in
+  Settings (follow the app, light, or dark), independent of the app theme.
+  The eight series colours for a white ground now live in one module the
+  printed report and light paper both import, tested for contrast once.
+
 - **A spectrogram now has a colour-bar legend, and the ramp still lives in
   exactly one language (2026-09-10, legend lane, ruling R177's deferred
   half).** `core::colormap::turbo_stops(n)` samples the Turbo ramp at `n`

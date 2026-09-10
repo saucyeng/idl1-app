@@ -8272,3 +8272,183 @@ hook's push rule is removed and CLAUDE.md §7 now reads: the lead pushes
 `main` in both repos, submodule first, after each green gate. Lanes never
 push. No attribution trailers, ever. **Cost if wrong:** a red `main` on
 origin; the gate before every push is the guard.
+
+## R183 — L9 scope: Android first, on this machine, with the survey's answers adopted
+
+*2026-09-10, lead, from `runs/2026-09-10/L9-SURVEY.md`.*
+
+1. **Android only** for the scaffold lane. iOS needs a Mac this machine is
+   not; a permanently red iOS gate teaches lanes to ignore the gate (R178's
+   lesson). iOS is its own lane, gated on hardware.
+2. **`app/src-tauri/gen/android/` is committed.** It carries hand-edited
+   manifest permissions; regeneration would lose them silently.
+3. **The mDNS MulticastLock lands in this lane**, not wave 3. Without it
+   sync on the phone looks like it works and finds nothing, the worst
+   failure mode, for about twenty lines of Kotlin.
+4. **BLE commands on Android return a typed `unsupported_platform` error**
+   (new C3 §1 error kind) until the Kotlin plugin exists, so the Device
+   tab greys itself out instead of showing a connection failure that reads
+   as a bug. The `BleTransport` trait seam stays; only the concrete
+   constructor is cfg-gated.
+5. **The Settings data-dir override is desktop-only.** Hidden on mobile;
+   C4 §1 amended to say so. Android has no user-chosen writable directory
+   outside the Storage Access Framework.
+6. **Minimum API level 26**, provisional until Isaac names his test phone.
+7. Task 8 (mobile paper view, responsive shell) is TypeScript-only and
+   independent of tasks 2–7; it gets its own plan and can run now. Tasks
+   1–2 wait on Isaac's environment variables.
+
+**Cost if wrong:** (1) nothing lost, iOS is additive; (2) a few generated
+files in git; (3) one small Kotlin file; (4) an error kind that is easy to
+retire; (5) a desktop feature that stays desktop; (6) a one-line change.
+
+## R184 — Mobile paper view: the narrow "sheet" placement is the paper view
+
+*2026-09-10, lead, from `runs/2026-09-10/L9-PAPER-PLAN.md`.*
+
+The paper view is not a new view: `editorPlacement(width) === "sheet"` has
+described it since R161, and `buildReportDocument` is already the pure,
+DOM-free block model it needs. Adopted: (1) **static `renderChart` SVG**,
+not the live sandbox iframe — outputs rendered, per design line 154; no
+hover/pan/zoom in v1. (2) `cover` and `appendix` are print furniture and
+are **dropped on screen** by a sibling filter, `document.ts` untouched.
+(3) **No desktop toggle**; width is the trigger, like every other
+width-dependent behaviour. (4) Tapping a `math`/`table` block is a
+**no-op**; only `js` cells have a form. (5) **Every selected window**, as
+the report already does. (6) **Width only** in v1: a large phone in
+landscape can exceed 600 px and fall back to the inline layout; that is a
+named gap, closed after a real device has run the app, not guessed at
+now. (7) Theme is **inherited**; daylight readability is Isaac's call.
+Detection lives in `model/paperView.ts` delegating to `resolveLayout`,
+never restating 600. Availability of `cells`/`graph`/`properties` goes
+through `visibleNotebookColumnIds`'s availability record, **never** by
+writing stored visibility (a phone must not overwrite the desktop's
+toggles). The six-task plan is accepted as written; TypeScript only.
+
+Runs under an **Opus lane owner** (second concurrent R181 trial; no cargo,
+so it cannot contend with the legend lane).
+
+**Cost if wrong:** (1) a later task swaps the static SVG for the iframe
+behind the same block interface; (6) one clause in one predicate.
+
+## R185 — Mobile is viewer and editor, not both at once; paper theme is its own toggle
+
+*2026-09-10, Isaac.* "I do want both the viewer and editor on mobile, but I
+don't expect them to be simultaneous. Maybe the option on a sufficiently
+wide screen. The theme should be user selectable: a toggle for the app and
+a toggle for the paper."
+
+1. **Amends R184 item 4.** Tapping a `math` or `table` block is no longer a
+   no-op: it opens the **code editor in the sheet** (the same `BrandSheet`
+   that holds the Properties form for `js` cells), so every cell kind is
+   editable on a phone. Paper and editor alternate; they never share the
+   screen on narrow. Paper lane **task 7**.
+2. **"Option on a sufficiently wide screen" is already the `medium`
+   layout**: its inline editor placement is exactly paper-beside-editor.
+   So R184 item 6's landscape "gap" is not a gap; it is the wide-screen
+   option Isaac asked for. No toggle is added now; width decides, as
+   everywhere else. Revisit only if a real device makes the 600 px line
+   feel wrong.
+3. **Paper theme is a second preference**, `paperTheme: "app" | "light" |
+   "dark"`, stored in the existing Settings prefs store beside the app
+   theme and shown in `ThemeSection` under the app toggle. `"app"` follows
+   the app theme; the other two force. `PaperView` resolves its palette
+   from this, never from the print palette (R174) and never from the
+   screen palette directly. Paper lane **task 8**.
+
+**Cost if wrong:** (1) a code editor on a phone is cramped but honest;
+(2) one predicate clause later; (3) one pref key, migrated like the others.
+
+## R186 — One "series on white" palette, shared by print and paper
+
+*2026-09-10, lead, on the paper lane's escalation.*
+
+The paper lane found that R185's "never from the print palette" left it
+no white-background palette to draw from, and duplicated print's eight
+tuned series colours into `paperPalette.ts` to comply. Two modules
+holding near-identical hand-tuned values is R169's three formatters in
+colour, and the failure is a print chart and a paper chart disagreeing
+about series 3 with no test to say so.
+
+**Ruling.** One module owns the eight series colours darkened for a white
+ground, tested for 4.5:1 against white once; `printPalette.ts` and
+`paperPalette.ts` both import it. R185 item 3's clause means only "paper
+does not call `buildPrintPalette`": print's page furniture (grid, axis
+text, black-on-white) stays print's; the series hues are shared data.
+`PaperPalette` stays the type alias the lane already chose.
+
+**Trial note (R181).** The lane escalated correctly, then implemented its
+proposed answer and merged before the reply. The rule is stop at the
+escalation. The outcome was harmless here because the fix is a small
+refactor, but the count records it: escalations 1, self-rulings 7,
+reversed 1 (this one), plus one process deviation. Tasks 7 and 8 done
+in-lane: ratified, that was the intent of the amendment.
+
+**Cost if wrong:** one import line per palette module.
+
+## R187 — Wave 3 is the data pipeline; roadmap drafted for Isaac's markup
+
+*2026-09-10, lead, from Isaac's pipeline description.* Logger → phone
+(WiFi) → instant report from premade workbooks → computer (LAN or bucket)
+→ library → meta-analysis. `runs/2026-09-10/ROADMAP-WAVE3.md` holds the
+milestones M4a–M6, the release toolchain, and the five decisions still
+Isaac's. Adopted now without waiting: (1) LAN sync stays and a
+content-addressed **bucket transport** is added behind the same trait,
+spec-first as C5; (2) CI on GitHub Actions is dispatched **first** because
+it moves the gates off the memory-bound dev machine; (3) firmware is
+incremental with hardware, app side proceeds against a **synthetic
+session generator** in core; (4) rigid-body multi-IMU calibration is core
+maths validated on a simulated body before any logger exists; (5) idl0
+firmware is never touched. **Cost if wrong:** the roadmap is a document;
+each milestone gets its own spec before code.
+
+## R188 — LAN sync is v1 for real; the bucket is a spec, not a lane; Pixel 8 Pro
+
+*2026-09-10, Isaac.* LAN stays as the only built transport while it works;
+the bucket transport is **designed now (C5 draft) and built later**.
+Firmware stays in Isaac's own session; the lead supplies specs. Test phone
+is a **Pixel 8 Pro**: API 34, so the provisional minimum of 26 (R183)
+stands with headroom; portrait is ~412 CSS px wide, landscape ~915, so
+landscape falls into the `medium` side-by-side layout, which is the
+wide-screen option R185 item 2 described, not a gap. **Cost if wrong:**
+a spec written early is cheap; a phone width is a fact.
+
+## R189 — Cloud sync must scale to ~1000 users; C5 is identity + broker + storage
+
+*2026-09-10, Isaac: "for now it's just me, but it needs to be able to scale
+to, say, a thousand users; not necessarily a Gmail."* This changes the
+C5 draft's shape (R188 keeps it design-only). OAuth/OIDC yields an
+identity, never a storage credential, so the architecture is three
+parts: (1) **identity** from a hosted OIDC provider offering several
+sign-ins (Google, Apple, email link); never a home-grown password store;
+(2) a **stateless broker** that verifies the identity token and mints
+short-lived, prefix-scoped storage access (presigned URLs), so it never
+touches ride data and costs nothing at rest; (3) any **S3-compatible
+store** with a per-user namespace `users/<sub>/devices/<peer_id>/…` over
+the existing content-addressed layout. The per-cell workbook merge stays
+on the client. Storage provider is interchangeable behind (2); at a
+thousand users egress dominates cost, which is where R2's pricing stops
+being a convenience and becomes the decision. "No SaaS" (design D7)
+meant no dependency for the single user; a thousand users means Isaac
+operates a service, which is a product decision he has now made.
+**Cost if wrong:** the broker is ~200 lines and the namespace is a
+prefix; a single-user Drive path (offered earlier) would have to be
+rebuilt for multi-user, which is why it is not the default any more.
+
+## R189 amended — Local for this phase; forward-compatible where it is free
+
+*2026-09-10, Isaac: "let's keep it local for this phase, but make the
+architecture forward compatible where we can."* Cloud sync is not built
+this phase. Standing constraints on everything that IS built, so the
+R189 shape can be added without rework: (1) sync stays behind the
+transport trait; nothing outside `idl-transport` knows a peer is on a
+LAN; (2) manifest and blob layouts stay content-addressed and
+**prefixable**: no path assumes a single user or a single device;
+(3) the per-cell workbook merge stays a pure client-side function;
+(4) secrets (pair tokens, any future identity token) live in
+`app_config_dir`, never in `<data>`, never synced; (5) "peer appeared"
+is one trigger among possible triggers, never the only path into a sync;
+(6) the C5 draft is written to R189's shape when a spec slot is free, so
+the first cloud lane starts from a contract, not a memory. **Cost if
+wrong:** none of these cost anything today; each is already true or one
+naming choice away.

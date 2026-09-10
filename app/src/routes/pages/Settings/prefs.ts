@@ -1,4 +1,4 @@
-import type { OutputRegister, ThemeChoice } from "./theme";
+import type { OutputRegister, PaperTheme, ThemeChoice } from "./theme";
 
 /** The engine half — field for field `idl_rs::store::settings::AppSettings`
  *  and C4 §1's `settings.json` keys, so the eventual `get_settings` /
@@ -27,6 +27,13 @@ export interface UiPrefs {
    *  paper on narrow / studio on wide (R92/R93). Read by UI-10 through this
    *  same `PrefsStore`, never a third storage key. */
   output_register: OutputRegister | null;
+  /** The Notebook paper view's own theme (ruling R185 item 3), independent
+   *  of {@link UiPrefs.theme} above. Default `"app"` — paper follows the
+   *  app until the user says otherwise. An older app reading a document
+   *  that lacks this key gets that default from `parseUi`, which is what
+   *  "migrated like the others" means here: no migration step, a lenient
+   *  parse. */
+  paper_theme: PaperTheme;
 }
 
 /** The full persisted-prefs document — the engine-mirroring half plus the
@@ -51,6 +58,7 @@ export const DEFAULT_PREFS: Prefs = {
     section_list_width_px: 220,
     theme: "dark",
     output_register: null,
+    paper_theme: "app",
   },
 };
 
@@ -84,12 +92,17 @@ function parseUi(raw: unknown): UiPrefs {
     record.output_register === "paper" || record.output_register === "studio"
       ? record.output_register
       : DEFAULT_PREFS.ui.output_register;
+  const paperTheme =
+    record.paper_theme === "app" || record.paper_theme === "light" || record.paper_theme === "dark"
+      ? record.paper_theme
+      : DEFAULT_PREFS.ui.paper_theme;
   return {
     ...record,
     last_section: lastSection,
     section_list_width_px: widthPx,
     theme,
     output_register: outputRegister,
+    paper_theme: paperTheme,
   } as UiPrefs;
 }
 

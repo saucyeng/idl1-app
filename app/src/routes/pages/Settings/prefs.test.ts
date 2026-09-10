@@ -149,6 +149,39 @@ describe("parsePrefs", () => {
     expect(prefs.ui.output_register).toBeNull();
   });
 
+  it("parsePrefs — paper_theme absent (an older app's document) — defaults to app", () => {
+    // Arrange
+    const raw = { ui: { theme: "dark" } };
+
+    // Act
+    const prefs = parsePrefs(raw);
+
+    // Assert
+    expect(prefs.ui.paper_theme).toBe("app");
+  });
+
+  it("parsePrefs — a stored paper_theme — kept as written", () => {
+    // Arrange
+    const raw = { ui: { paper_theme: "light" } };
+
+    // Act
+    const prefs = parsePrefs(raw);
+
+    // Assert
+    expect(prefs.ui.paper_theme).toBe("light");
+  });
+
+  it("parsePrefs — an unknown paper_theme value — falls back to app, never throws", () => {
+    // Arrange
+    const raw = { ui: { paper_theme: "sepia" } };
+
+    // Act
+    const prefs = parsePrefs(raw);
+
+    // Assert
+    expect(prefs.ui.paper_theme).toBe("app");
+  });
+
   it("serializePrefs — engine and ui halves — nested so the engine half can be lifted out unchanged for a future set_settings call", () => {
     // Arrange
     const prefs = parsePrefs({

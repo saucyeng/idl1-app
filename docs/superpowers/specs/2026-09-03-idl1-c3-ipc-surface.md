@@ -198,6 +198,14 @@ is applied uniformly, not case-by-case:
   conflict is neither the caller's fault nor a bug, it is a recoverable
   condition the UI must present differently ("this file changed elsewhere —
   reload?" rather than an error toast). `detail` carries `{ expected, found }`.
+- **`unsupported_platform`** — *added 2026-09-10, ruling R183.* A sixth
+  cross-cutting kind: the command exists in the contract but this build
+  has no implementation of it on the platform it is running on. First
+  use: every BLE command on Android until the Kotlin BLE plugin lands
+  (design D5, wave 3). It is not `internal` (nothing went wrong) and not
+  `invalid_argument` (the caller did nothing wrong): the UI presents it
+  by greying the feature out, never as a failure toast. `detail` carries
+  `{ platform: "android" | "ios" | "linux" | "macos" | "windows" }`.
   Raised by: Workbook (`save_workbook`).
 - **`device_rejected`** — *added post-sign (2026-09-05, lead ruling R59,
   wave-2 write lane).* A sixth cross-cutting kind, raised when a device
