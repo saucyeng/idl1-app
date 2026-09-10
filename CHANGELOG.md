@@ -11,6 +11,12 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
   app's typecheck + vitest suite on every push to `main` and on dispatch.
   `.github/workflows/android-apk.yml` is a manual-only, dispatch-triggered
   debug APK build. See `docs/CI.md`.
+- **Manual coverage workflow (2026-09-10).** `.github/workflows/coverage.yml`
+  is dispatch-only (never on push, to protect the Actions minute budget) and
+  runs `cargo tarpaulin` over the four Rust crates and `vitest run
+  --coverage` over the app, uploading Cobertura/HTML and v8 HTML reports as
+  artifacts and printing the Rust line-coverage percentage to the job
+  summary. See `docs/CI.md`.
 - **The Notebook is a readable paper view on a phone (2026-09-10, L9 task 8,
   rulings R184/R185).** Below 600 CSS px the cell list is replaced by the
   report document itself, rendered to the screen with static charts and

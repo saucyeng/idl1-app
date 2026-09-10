@@ -8,7 +8,9 @@ export default defineConfig({
       provider: "v8",
       include: ["src/**/*.ts"],
       exclude: ["src/**/*.test.ts", "src/**/*.tsx", "src/vite-env.d.ts"],
-      reporter: ["text"],
+      // "text" is console-only (CI log); "html" writes files under
+      // coverage/ so coverage.yml has something to upload as an artifact.
+      reporter: ["text", "html"],
     },
   },
 });
