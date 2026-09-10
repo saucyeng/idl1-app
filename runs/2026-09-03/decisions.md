@@ -8161,3 +8161,76 @@ the legend depend on whatever data happened to be on screen.
 strictly honest; the split costs one extra lane. Getting it wrong the other
 way puts a second Turbo in the codebase, and the failure mode is a legend
 that confidently mislabels the picture beside it.
+
+---
+
+## R178 — The `idl-transport` gate's flake is a 512 MiB allocation in a test
+
+*2026-09-09, lead. Root-caused after the `discovered` lane flagged it.*
+
+The `discovered` lane reported gate 3
+(`cargo test -p idl-transport -- --test-threads=4`) failing twice, two
+different ways — an OOM (`memory allocation of 417792 bytes failed`) and
+then a spurious failure in
+`sync::client::tests::download_item_a_raw_file_tier_response_over_the_cap_is_refused_and_nothing_is_written`.
+It had touched no `idl-transport` code, correctly refused to hunt reruns
+(CLAUDE.md §8), and diagnosed it as **machine resource contention with
+other lanes**.
+
+**Half right, and the wrong half matters.** I reproduced it on `main`, with
+every other lane retired and the machine quiet — so it is not contention
+*between lanes*. Run alone (`--test-threads=1`, single filter) it passes.
+It only fails inside the parallel run.
+
+**The cause is the test itself:**
+
+```rust
+let oversized = vec![b'a'; (MAX_RAW_FILE_BODY_BYTES + 1) as usize];
+```
+
+`MAX_RAW_FILE_BODY_BYTES` is `512 * 1024 * 1024`. The test allocates
+**512 MiB** on the heap, writes it to disk, and serves it over HTTP. Four
+test threads on a 16 GB swap-bound machine (ruling R13's whole subject) is
+how that becomes an OOM or a spurious error. A sibling document-tier test
+does the same with `MAX_DOCUMENT_BODY_BYTES`.
+
+**And the allocation is unnecessary.** `client.rs`'s `bounded_bytes`
+refuses on **`Content-Length`** before streaming a single chunk:
+
+```rust
+if let Some(len) = response.content_length() { if len > cap_bytes { ...err } }
+```
+
+So the behaviour under test — "a response over the cap is refused and
+nothing is written" — is decided by a *header*. The test does not need a
+real over-cap file; it needs a response that **advertises** an over-cap
+`Content-Length`. The 512 MiB is pure cost, and it is the reason the third
+lane-gate command is unreliable.
+
+**Ruling.**
+
+1. **Fixed, not silenced.** The test asserts a real requirement and keeps
+   asserting it; only the way it manufactures the condition changes.
+2. Exercise the cap via an advertised `Content-Length` with a small body,
+   or an injectable cap — whichever the existing test server supports
+   without a new seam. Do **not** merely shrink the constant: the
+   production cap is a real security-ish bound and must stay 512 MiB.
+3. The mid-stream branch (`buf.len() + chunk.len() > cap`) is a *second*
+   requirement and needs its own small-cap test — it is not covered by the
+   header check.
+4. Until it lands: this is a **named flake**, in `TASKS.md`, reproducible
+   as "passes alone, fails under `--test-threads=4`". A lane hitting it
+   re-runs that one test by name, once (§8's existing allowance), and does
+   not treat gate 3 as red on this test alone.
+
+**Why this is worth a ruling rather than a fix-and-move-on.** R159 put
+`-p idl-transport` in the lane gate. A gate that fails for reasons
+unrelated to the change teaches every lane to disbelieve it, and a
+disbelieved gate stops catching anything. This is the second named flake;
+the first (`watcher::tests::self_write_with_pre_registered_hash_never_fires_callback`)
+is also a machine-load artefact. Both should be made deterministic.
+
+**Cost if wrong.** If the header path is not in fact what refuses the
+oversized response, the rewritten test would pass for the wrong reason —
+so the fix must assert the *error message* distinguishes the header refusal
+from the mid-stream one, which the two messages already do.

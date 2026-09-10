@@ -252,6 +252,18 @@ are defined in `docs/superpowers/specs/2026-09-02-idl1-rewrite-design.md` §10.
     Rust side no channel-close signal), and `Notebook/index.tsx`'s watch
     effect calls `unwatchWorkbook` in cleanup. No more leaked file handle
     per workbook opened.
+  - `sync::client::tests::download_item_a_raw_file_tier_response_over_the_
+    cap_is_refused_and_nothing_is_written` is a named flake (**R178**,
+    2026-09-09): it allocates `MAX_RAW_FILE_BODY_BYTES + 1` = **512 MiB**,
+    writes it to disk and serves it over HTTP, so four test threads on this
+    machine OOM. Passes alone; fails under `--test-threads=4`. Not a
+    regression and not contention with other lanes — reproduced on a quiet
+    `main`. The allocation is also unnecessary: the cap is refused on
+    `Content-Length` before streaming. Fix queued: advertise an over-cap
+    length with a small body, keep the assertion, never shrink the
+    production cap, and give the mid-stream branch its own small-cap test.
+    Until then, a lane hitting it reruns that one test by name, once, and
+    does not treat gate 3 as red on this test alone.
   - `watcher::tests::self_write_with_pre_registered_hash_never_fires_
     callback` is a named timing flake (asserts no callback within 500 ms
     against a 100 ms debounce; fails only on a loaded machine) — not
