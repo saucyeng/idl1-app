@@ -6,6 +6,11 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 
 ### Added
 
+- **CI on GitHub Actions (2026-09-10).** `.github/workflows/ci.yml` runs the
+  Rust test suite (idl-rs/idl-rs-cli, idl-rs-tauri, idl-transport) and the
+  app's typecheck + vitest suite on every push to `main` and on dispatch.
+  `.github/workflows/android-apk.yml` is a manual-only, dispatch-triggered
+  debug APK build. See `docs/CI.md`.
 - **The Notebook is a readable paper view on a phone (2026-09-10, L9 task 8,
   rulings R184/R185).** Below 600 CSS px the cell list is replaced by the
   report document itself, rendered to the screen with static charts and
