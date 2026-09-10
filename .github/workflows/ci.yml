@@ -13,6 +13,11 @@ jobs:
   rust:
     runs-on: ubuntu-latest
     timeout-minutes: 45
+    env:
+      # rust/.cargo/config.toml pins target-dir to a Windows path shared across
+      # the dev machine's worktrees; on Linux that path cannot be joined into
+      # LD_LIBRARY_PATH. The env var overrides it.
+      CARGO_TARGET_DIR: ${{ github.workspace }}/rust/target
     steps:
       - name: Checkout
         uses: actions/checkout@v4
