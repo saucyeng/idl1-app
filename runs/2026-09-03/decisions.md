@@ -8490,3 +8490,14 @@ absent, never zero. Open for the M6 spec, not decided now: whether a
 value may vary *within* a session (a mid-day clicker change) or is one
 number per session. Original sample deleted from the repo root at Isaac's
 request; the copy in `docs/setup-sheet/` is the reference.
+
+## R190 closed — One sheet per session, captured at the start
+
+*2026-09-10, Isaac.* Mid-session clicker changes are not modelled: the
+setup sheet records the state at the start of the session, and a change
+during it is text in the sheet's notes or in session metadata. So a setup
+parameter is exactly one number per session, and per-window resolution
+is per-session resolution. Nothing varies within a session. The M6 spec
+has no open questions left on shape. **Cost if wrong:** a rider who
+wants per-run settings splits the day into sessions, which the logger
+already does per power cycle.
