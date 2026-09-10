@@ -791,6 +791,65 @@ interface ImporterInfo {
   extensions: string[];    // e.g. [".idl0"]
 }
 ```
+
+**Library commands (added 2026-09-10, ruling R191).** Four commands and one
+status query for the M4c library; none runs on the interaction path.
+
+**`set_session_start(session_id: string, timestamp_utc_ms: number): Session`**
+Writes a user-supplied wall-clock start into `session.json` with
+`timestamp_source: "user"` (C1 §3.1). Returns the updated `Session`.
+Errors: `not_found`, `invalid_argument` (`timestamp_utc_ms <= 0`), `io`,
+`conflict`, `internal`.
+
+**`scan_folder(path: string): ScanEntry[]`**
+Lists importable files directly inside `path` (non-recursive), cheaply: no
+import runs. Desktop only.
+```ts
+interface ScanEntry {
+  path: string;
+  file_name: string;
+  size_bytes: number;                 // u64
+  importer_id: string | null;         // by extension via list_importers; null = not importable
+  already_imported: boolean;          // its sha256 is already a blob in <data>/blobs
+  /** i64 UTC ms from a header peek where the importer offers one (.idl0
+   *  header `Session start UTC`, else 0 = unknown); null when no peek exists. */
+  session_start_utc_ms: number | null;
+}
+```
+The app enqueues `import_file` per chosen entry; there is no bulk import
+command, so progress and errors stay per file. Errors: `not_found`, `io`,
+`internal`.
+
+**`list_stale_sessions(): StaleSession[]`**
+Every catalogued session whose stored `importer_version` differs from the
+running build's constant for its importer. Cheap: a catalog query.
+```ts
+interface StaleSession { session_id: string; importer_id: string; stored_version: number; current_version: number }
+```
+Errors: `io`, `internal`.
+
+**`reimport_sessions(session_ids: string[], progress: Channel<Progress>): ReimportReport`**
+Rebuilds `data.parquet` for each session from its blob with the current
+importer, keeping every human-owned field of `session.json` (`venue_name`,
+notes, tags, `timestamp_source: "user"` values, track visits) and
+re-deriving the rest; `derived/` for the session is dropped, since its
+inputs changed. `Progress.phase` is `"sessions"`, `done` counts sessions.
+```ts
+interface ReimportReport { rebuilt: string[]; failed: { session_id: string; error: IpcError }[] }
+```
+A session that fails stays on its old `data.parquet`, never half-rebuilt
+(atomic replace, C4 §4). Errors: `internal` only; per-session errors are
+in the report.
+
+**`inbox_status(): InboxStatus`**
+```ts
+interface InboxStatus {
+  path: string;                       // <data>/inbox, C4 §2
+  imported_since_launch: number;      // u32
+  failed: { file_name: string; error: IpcError }[];   // contents of inbox/failed
+}
+```
+Desktop only; on mobile returns `unsupported_platform`. Errors: `io`, `internal`.
 Errors: `internal`.
 
 ### 3.4 Workbook (L3)

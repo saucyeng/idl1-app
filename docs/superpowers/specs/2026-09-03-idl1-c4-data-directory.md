@@ -115,6 +115,18 @@ of this tree, on any platform.
   tmp/                                               atomic-write staging (§4); tmp/quarantine/ for repair (§7)
 ```
 
+**Inbox (added 2026-09-10, ruling R191, desktop only).** `<data>/inbox/` is
+a drop folder: a `.idl0`/`.fit`/`.gpx`/`.csv` file placed there is imported
+by the running app as if chosen in the import dialog. On success the file is
+**deleted** from the inbox, since its bytes now live under `blobs/` (a second
+copy would be the duplicate the CAS exists to prevent); on failure it is moved
+to `inbox/failed/<file_name>` beside a `<file_name>.error.txt` holding the
+typed error, and never retried automatically. A file is only picked up once
+its size has been stable for two seconds (a copy in progress is not a file
+yet). The inbox is scanned at launch and watched while the app runs; it is
+not synced, not catalogued, and absent on mobile, where there is no
+user-browsable directory to drop into. Repair (§7) ignores it.
+
 **Added post-sign (2026-09-03, lead ruling R6, wave-1 L1):** `profiles/` was
 missing from this layout even though design §10's L1 row names "profile/
 settings persistence" in scope with no other location given. Rooted inside

@@ -8501,3 +8501,25 @@ is per-session resolution. Nothing varies within a session. The M6 spec
 has no open questions left on shape. **Cost if wrong:** a rider who
 wants per-run settings splits the day into sessions, which the logger
 already does per power cycle.
+
+## R191 — M4c library: inbox, user-supplied start, stale re-import, folder scan (spec-first)
+
+*2026-09-10, lead, from `runs/2026-09-10/M4C-SURVEY.md`.* Metadata editor
+and CAS de-duplication already exist; the four gaps get contracts before
+code. **C4 §2:** `<data>/inbox/` drop folder, desktop only; imported files
+are deleted (their bytes are in `blobs/`), failures move to `inbox/failed/`
+with an `.error.txt`, never auto-retried; a file counts only after two
+seconds of stable size; scanned at launch, watched while running; not
+synced, not catalogued, ignored by repair. **C1 §3.1:** a user-supplied
+start lives in `session.json` only, with `timestamp_source: "header" |
+"gps_backfill" | "source_file" | "user"`; `data.parquet` keeps the
+importer's value because it is a function of (blob, importer version) and
+never of a human. **C3 §3.3:** `set_session_start`, `scan_folder`
+(non-recursive, cheap, header peek, `already_imported` by hash),
+`list_stale_sessions`, `reimport_sessions` (rebuild from blob, keep every
+human-owned `session.json` field, drop `derived/`, atomic per session,
+per-session errors in the report), `inbox_status`. No bulk-import command:
+the app enqueues `import_file` per entry so progress and errors stay per
+file, which the existing queue already does. **Cost if wrong:** deleting
+from the inbox is the one irreversible choice; it is safe precisely
+because the import succeeded and the blob is content-addressed.

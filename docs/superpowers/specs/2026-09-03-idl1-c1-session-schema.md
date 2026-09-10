@@ -181,6 +181,16 @@ millisecond instant corresponding to `t=0`:
   `timestamp_utc_ms = gps_epoch_ms − round((device_timestamp_us − t0_us) / 1000.0)`, rounding
   half away from zero. If the session has no such fix, `timestamp_utc_ms = 0` ("unknown"; same
   sentinel the header already uses).
+- **User-supplied start (amended 2026-09-10, ruling R191).** A session whose
+  importer left `timestamp_utc_ms = 0` may be given a start by the user through
+  `set_session_start` (C3 §3.3). The value is written to `session.json` only:
+  `data.parquet` is a function of (blob, importer version) and never carries a
+  human's input, so its §4.3 metadata keeps the importer's `0`. `session.json`
+  gains `timestamp_source: "header" | "gps_backfill" | "source_file" | "user"`
+  recording where the displayed value came from; readers prefer `session.json`.
+  A user value is metadata, synced with the session like `venue_name`; it may
+  be set on any session, including one whose importer found a time, and it
+  replaces that time for display and sorting while `timestamp_source` says so.
 - `.fit`/`.gpx` sources: the earliest converted UTC millisecond value across all channels (§3.4)
   — there is no separate device clock to back-fill from.
 
