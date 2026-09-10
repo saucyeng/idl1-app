@@ -1,0 +1,138 @@
+/* The mobile paper view's stylesheet (design doc line 154, ruling R184).
+ * The screen counterpart of `report-print.css`: the same `report-*` class
+ * names, because both views are drawn by the same per-block renderer
+ * (`Notebook/components/reportBlocks.tsx`), but every rule here is scoped
+ * under `.paper-view` and every colour is a `tokens.css` custom property
+ * rather than a paper black/white/gray -- paper is drawn inside the app, on
+ * the app's own background, and inherits the app's theme (R184 item 7).
+ *
+ * Nothing here is inside a `@media` block: `.paper-view` only ever mounts
+ * at `paperViewActive` widths (`model/paperView.ts`), so the width
+ * condition is decided once, in TypeScript, rather than restated as a
+ * second breakpoint here that could drift from the 600 px in
+ * `shell/layout.ts`. `report-print.css`'s own rules cannot reach this view
+ * either way: they live inside `@media print`, and its
+ * `#report-print-root` container is a different element entirely.
+ */
+
+.paper-view {
+  font-family: var(--font-mono);
+  color: var(--fg);
+  font-size: var(--text-body);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+}
+
+/* One block's tap target. `--hit-target` is the touch-first minimum this
+ * token sheet already defines for the notebook output; the negative inline
+ * margin plus matching padding widens the tappable area to the full column
+ * without indenting the text inside it. A block with no cell of its own
+ * carries no `data-cell-id` and gets neither the target nor the pressed
+ * state -- an inert block must not look tappable. */
+.paper-view .paper-block[data-cell-id] {
+  min-height: var(--hit-target);
+  margin-inline: calc(-1 * var(--space-3));
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-structural);
+  cursor: pointer;
+}
+
+.paper-view .paper-block[data-cell-id]:active {
+  background: var(--control-active);
+}
+
+.paper-view h1,
+.paper-view h2 {
+  font-size: var(--text-title-1);
+  font-weight: 600;
+  margin: 0 0 var(--space-2);
+}
+
+.paper-view .report-session dl {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: var(--space-1) var(--space-4);
+  margin: 0;
+}
+
+.paper-view .report-session dt {
+  color: var(--fg-dim);
+}
+
+.paper-view .report-session dd {
+  margin: 0;
+}
+
+.paper-view .report-selection ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.paper-view .report-selection-swatch {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  margin-right: var(--space-2);
+  border-radius: var(--radius-structural);
+}
+
+.paper-view .report-window-section {
+  border-left: 4px solid;
+  padding-left: var(--space-3);
+}
+
+/* A phone is narrower than any of these tables: each scrolls inside its own
+ * box rather than widening the page, so the document itself never scrolls
+ * sideways. */
+.paper-view .report-def-table,
+.paper-view .report-grid-table,
+.paper-view .report-comparison-table {
+  border-collapse: collapse;
+  width: 100%;
+  display: block;
+  overflow-x: auto;
+}
+
+.paper-view .report-def-table td,
+.paper-view .report-grid-table td,
+.paper-view .report-comparison-table td,
+.paper-view .report-comparison-table th {
+  border: 1px solid var(--rule);
+  padding: var(--space-1) var(--space-3);
+  white-space: nowrap;
+}
+
+.paper-view .report-grid-error,
+.paper-view .report-error {
+  color: var(--accent);
+}
+
+.paper-view .report-absence {
+  font-style: italic;
+  color: var(--fg-dim);
+}
+
+.paper-view .report-window-failure {
+  border-left: 4px solid;
+  padding-left: var(--space-3);
+}
+
+/* The chart's own `<svg>` (`model/report/renderChart.ts`) is rendered at a
+ * fixed pixel width; on a phone that is wider than the column, so it is
+ * scaled down to fit rather than clipped or given its own scrollbar -- a
+ * trace read at a glance matters more here than exact pixel width. */
+.paper-view .report-chart {
+  margin: 0;
+}
+
+.paper-view .report-chart-svg svg {
+  max-width: 100%;
+  height: auto;
+}
+
+.paper-view .report-chart-caption {
+  font-size: var(--text-label-2);
+  color: var(--fg-dim);
+}

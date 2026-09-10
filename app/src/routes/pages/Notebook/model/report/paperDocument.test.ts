@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { ReportBlock, ReportDocument } from "./document";
-import { blockShowsOnScreen, toPaperDocument } from "./paperDocument";
+import { blockCellId, blockShowsOnScreen, toPaperDocument } from "./paperDocument";
 
 const COVER: ReportBlock = {
   kind: "cover",
@@ -133,5 +133,33 @@ describe("toPaperDocument", () => {
     toPaperDocument(document);
 
     expect(document.blocks).toEqual([COVER, PROSE, APPENDIX]);
+  });
+});
+
+describe("blockCellId", () => {
+  it("blockCellId — a prose block — that cell's id", () => {
+    const cellId = blockCellId(PROSE);
+
+    expect(cellId).toBe("aabbccdd");
+  });
+
+  it("blockCellId — an absence block — that cell's id", () => {
+    const cellId = blockCellId(ABSENCE);
+
+    expect(cellId).toBe("11223344");
+  });
+
+  it("blockCellId — every block kind — non-null exactly for the per-cell kinds", () => {
+    const tappable = Object.entries(SAMPLE_BY_KIND)
+      .filter(([, block]) => blockCellId(block) !== null)
+      .map(([kind]) => kind);
+
+    expect(tappable).toEqual(["prose", "defTable", "table", "absence", "chartSlot"]);
+  });
+
+  it("blockCellId — a document-level block — null", () => {
+    const cellId = blockCellId(SELECTION);
+
+    expect(cellId).toBeNull();
   });
 });
