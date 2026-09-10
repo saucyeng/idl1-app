@@ -8385,3 +8385,19 @@ reversed 1 (this one), plus one process deviation. Tasks 7 and 8 done
 in-lane: ratified, that was the intent of the amendment.
 
 **Cost if wrong:** one import line per palette module.
+
+## R187 — Wave 3 is the data pipeline; roadmap drafted for Isaac's markup
+
+*2026-09-10, lead, from Isaac's pipeline description.* Logger → phone
+(WiFi) → instant report from premade workbooks → computer (LAN or bucket)
+→ library → meta-analysis. `runs/2026-09-10/ROADMAP-WAVE3.md` holds the
+milestones M4a–M6, the release toolchain, and the five decisions still
+Isaac's. Adopted now without waiting: (1) LAN sync stays and a
+content-addressed **bucket transport** is added behind the same trait,
+spec-first as C5; (2) CI on GitHub Actions is dispatched **first** because
+it moves the gates off the memory-bound dev machine; (3) firmware is
+incremental with hardware, app side proceeds against a **synthetic
+session generator** in core; (4) rigid-body multi-IMU calibration is core
+maths validated on a simulated body before any logger exists; (5) idl0
+firmware is never touched. **Cost if wrong:** the roadmap is a document;
+each milestone gets its own spec before code.
