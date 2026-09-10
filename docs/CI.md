@@ -49,14 +49,21 @@ Superproject repo is private: 2000 Actions minutes/month. `ci.yml` is the
 frugal default; the Android build is comparatively expensive (NDK + Rust
 Android targets + Gradle) and is opt-in for that reason.
 
-## Running the app in development: `npm run tauri:dev`
+## Running the app in development
 
-Use `npm run tauri:dev` from `app/`, never `npm run tauri dev`. The script
-adds `--config src-tauri/tauri.dev.conf.json`, a Tauri v2 config overlay
+`npm run tauri:dev` and `npm run tauri dev` both work and are both safe.
+Both go through `app/scripts/tauri.mjs`, a wrapper that adds
+`--config src-tauri/tauri.dev.conf.json` to the `dev` subcommand and passes
+every other subcommand through untouched. That is a Tauri v2 config overlay
 (the CLI's `-c, --config` flag takes "JSON strings or paths to JSON, JSON5
 or TOML files to merge with the default configuration file") whose only
 substantive key is `identifier: "com.saucyeng.idl1.dev"`. It also retitles
 the window "idl1 (dev)" so the two are distinguishable on screen.
+
+The wrapper exists rather than a documented "always type this one" rule
+because the unprotected command is the one a developer types by habit. An
+explicit `--config` of your own suppresses the overlay, so a deliberate
+choice is still possible.
 
 Why it matters (ruling R196): Tauri derives `app_data_dir()` from the
 identifier, so without the overlay a `tauri dev` run opens, writes to, and
