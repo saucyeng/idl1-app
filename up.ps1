@@ -36,8 +36,16 @@ if (-not $NoWait) {
     # One cargo process on this machine at a time (CLAUDE.md section 8): a lane
     # may be compiling in a worktree. Two builds at once exhaust RAM and swap
     # and the compiler dies mid-crate with errors like "can't find crate".
+    # A running dev app keeps a parent `cargo run` alive without compiling, so
+    # look for actual compilation: any rustc, or a cargo doing build/test/check.
+    function Test-CargoBusy {
+        if (Get-Process -Name rustc -ErrorAction SilentlyContinue) { return $true }
+        $cargos = Get-CimInstance Win32_Process -Filter "Name = 'cargo.exe'" -ErrorAction SilentlyContinue
+        foreach ($c in $cargos) { if ($c.CommandLine -match '\s(build|test|check|clippy|tarpaulin)\b') { return $true } }
+        return $false
+    }
     $waited = 0
-    while (Get-Process -Name cargo, rustc -ErrorAction SilentlyContinue) {
+    while (Test-CargoBusy) {
         if ($waited -eq 0) { Write-Host "== another cargo build is running; waiting for the slot (Ctrl+C to stop)" }
         Start-Sleep -Seconds 10; $waited += 10
         if ($waited % 60 -eq 0) { Write-Host "   still waiting ($waited s)" }
