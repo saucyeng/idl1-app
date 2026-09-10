@@ -8401,3 +8401,14 @@ session generator** in core; (4) rigid-body multi-IMU calibration is core
 maths validated on a simulated body before any logger exists; (5) idl0
 firmware is never touched. **Cost if wrong:** the roadmap is a document;
 each milestone gets its own spec before code.
+
+## R188 — LAN sync is v1 for real; the bucket is a spec, not a lane; Pixel 8 Pro
+
+*2026-09-10, Isaac.* LAN stays as the only built transport while it works;
+the bucket transport is **designed now (C5 draft) and built later**.
+Firmware stays in Isaac's own session; the lead supplies specs. Test phone
+is a **Pixel 8 Pro**: API 34, so the provisional minimum of 26 (R183)
+stands with headroom; portrait is ~412 CSS px wide, landscape ~915, so
+landscape falls into the `medium` side-by-side layout, which is the
+wide-screen option R185 item 2 described, not a gap. **Cost if wrong:**
+a spec written early is cheap; a phone width is a fact.

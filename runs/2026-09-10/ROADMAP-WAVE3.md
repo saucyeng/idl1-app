@@ -26,7 +26,11 @@ library once and future ones arrive automatically.
 Gate: ride, then the phone shows the report before the logger is powered down. Real-device
 check is the first use of the old hardware (Isaac, when the app is usable).
 
-### M4b — Phone to computer: keep LAN, add the bucket
+### M4b — Phone to computer: LAN is v1; the bucket is designed now, built later
+*Isaac, 2026-09-10: "if the LAN transfer is close, stick with that for now; it's a tool for
+me. Doesn't hurt to think about the cloud architecture now so we're prepared." So this
+milestone is a **C5 spec draft only** in wave 3; the tasks below are its content.*
+
 | # | Task | Decide |
 |---|---|---|
 | 1 | `idl-transport` gains a **bucket transport** behind the existing sync trait: manifest per device at `devices/<peer_id>/manifest.json`, blobs at `blobs/<hash>`, workbooks versioned by hash; pull merges with the same per-cell merge; catalog never synced | **Provider:** R2 (default, no egress fees) / B2 / S3 |
@@ -82,13 +86,15 @@ incrementally when hardware lands.** A `synthetic_session` generator in core (ri
 motion plus GPS at 5 Hz with the M10 fields from `docs/HARDWARE_M10_SETUP.md`) gives every
 lane a fixture and gives M6 task 3 its validation data. idl0 firmware is not touched.
 
-## Decisions still yours
-1. Bucket provider (default R2) and whether cellular push is on by default (lead: yes).
-2. Repo visibility for both repos, for Actions minutes and the submodule token.
-3. The setup-sheet parameter list.
-4. Whether the idl1 firmware repo is handed to the lead or stays yours with a spec.
-5. Your phone model (min API level, viewport).
+## Decisions (2026-09-10)
+1. Bucket: design only for now; provider decided when it is built (lead's default R2).
+2. Repo visibility: idl1-app private (2000 Actions min/month), idl-rs public. Settled.
+3. The setup-sheet parameter list: Isaac will supply.
+4. Firmware stays Isaac's, in a separate session; the lead writes specs
+   (`docs/HARDWARE_M10_SETUP.md` is the first).
+5. Phone: **Pixel 8 Pro** (Android 14+, API 34; ~412 x 915 CSS px portrait, 915 wide in
+   landscape, so landscape lands in the `medium` side-by-side layout by design).
 
 ## Order of dispatch
 Release toolchain task 1 first (it multiplies everything after it), then M4a, M6 task 3
-in parallel (hardware-free, core-only), M4c, M4b once the provider is chosen, M5 last.
+in parallel (hardware-free, core-only), M4c, the C5 draft whenever a spec slot is free, M5 last.
