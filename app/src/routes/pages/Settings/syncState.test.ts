@@ -5,11 +5,12 @@ import {
   syncStateReducer,
   type SyncState,
 } from "./syncState";
-import type { PeerStatus, SyncResult, SyncStatus } from "../../../ipc/sync";
+import type { DiscoveredPeer, PeerStatus, SyncResult, SyncStatus } from "../../../ipc/sync";
 
 const initialState: SyncState = {
   status: null,
   peers: [],
+  discovered: {},
   running: null,
   lastError: null,
 };
@@ -33,6 +34,12 @@ function peer(overrides: Partial<PeerStatus> & { peer_id: string; name: string }
   return { online: true, protocol_version: 1, paired_at_ms: 1_700_000_000_000, ...overrides };
 }
 
+/** A full `DiscoveredPeer` (C3 §3.9, L11 Task 14) with every field
+ *  overridable. */
+function discoveredPeer(overrides: Partial<DiscoveredPeer> & { peer_id: string }): DiscoveredPeer {
+  return { name: "Pit Tablet", protocol_version: 1, address: "192.168.1.5", port: 4123, ...overrides };
+}
+
 describe("syncStateReducer", () => {
   it("syncStateReducer — a sync_status result — peers listed, online flags kept", () => {
     // Arrange
@@ -41,6 +48,7 @@ describe("syncStateReducer", () => {
         peer({ peer_id: "a", name: "Desktop", online: true }),
         peer({ peer_id: "b", name: "Phone", online: false }),
       ],
+      discovered_peers: [],
       last_sync_utc_ms: 1000,
       this_device: { peer_id: "self", name: "This machine" },
     };
@@ -60,6 +68,7 @@ describe("syncStateReducer", () => {
     // Arrange
     const status: SyncStatus = {
       paired_peers: [],
+      discovered_peers: [],
       last_sync_utc_ms: null,
       this_device: { peer_id: "self", name: "old-name" },
     };
@@ -93,6 +102,7 @@ describe("syncStateReducer", () => {
       type: "status",
       status: {
         paired_peers: [peer({ peer_id: "a", name: "Desktop", online: true })],
+        discovered_peers: [],
         last_sync_utc_ms: null,
         this_device: { peer_id: "self", name: "This machine" },
       },
@@ -277,7 +287,7 @@ describe("syncStateReducer", () => {
     expect(next.peers.map((p) => p.peer_id)).toEqual(["a"]);
   });
 
-  it("syncStateReducer — peerAppeared for a known peer — that row's online/protocol_version refresh", () => {
+  it("syncStateReducer — peerAppeared, status paired, for a known peer — that row's online/protocol_version refresh", () => {
     // Arrange
     const stateWithPeer: SyncState = {
       ...initialState,
@@ -287,21 +297,91 @@ describe("syncStateReducer", () => {
     // Act
     const next = syncStateReducer(stateWithPeer, {
       type: "peerAppeared",
-      peer: peer({ peer_id: "a", name: "Desktop", online: true, protocol_version: 2 }),
+      sighting: { status: "paired", ...peer({ peer_id: "a", name: "Desktop", online: true, protocol_version: 2 }) },
     });
 
     // Assert
     expect(next.peers).toEqual([peer({ peer_id: "a", name: "Desktop", online: true, protocol_version: 2 })]);
   });
 
-  it("syncStateReducer — peerAppeared for a peer not yet in the list — appended", () => {
+  it("syncStateReducer — peerAppeared, status paired, for a peer not yet in the list — appended", () => {
     // Act
     const next = syncStateReducer(initialState, {
       type: "peerAppeared",
-      peer: peer({ peer_id: "a", name: "Desktop" }),
+      sighting: { status: "paired", ...peer({ peer_id: "a", name: "Desktop" }) },
     });
 
     // Assert
     expect(next.peers.map((p) => p.peer_id)).toEqual(["a"]);
+  });
+
+  it("syncStateReducer — peerAppeared, status discovered, for a new sighting — added to discovered, not peers", () => {
+    // Act
+    const next = syncStateReducer(initialState, {
+      type: "peerAppeared",
+      sighting: { status: "discovered", ...discoveredPeer({ peer_id: "c", name: "Kitchen laptop" }) },
+    });
+
+    // Assert
+    expect(next.discovered).toEqual({ c: discoveredPeer({ peer_id: "c", name: "Kitchen laptop" }) });
+    expect(next.peers).toEqual([]);
+  });
+
+  it("syncStateReducer — peerAppeared, status discovered, for an existing entry — that entry's fields refresh (R176)", () => {
+    // Arrange
+    const stateWithDiscovered: SyncState = {
+      ...initialState,
+      discovered: { c: discoveredPeer({ peer_id: "c", name: "Old name" }) },
+    };
+
+    // Act
+    const next = syncStateReducer(stateWithDiscovered, {
+      type: "peerAppeared",
+      sighting: { status: "discovered", ...discoveredPeer({ peer_id: "c", name: "New name" }) },
+    });
+
+    // Assert
+    expect(next.discovered).toEqual({ c: discoveredPeer({ peer_id: "c", name: "New name" }) });
+  });
+
+  it("syncStateReducer — pair success for a peer that was in discovered — dropped from discovered", () => {
+    // Arrange
+    const stateWithDiscovered: SyncState = {
+      ...initialState,
+      discovered: { a: discoveredPeer({ peer_id: "a", name: "Desktop" }) },
+    };
+
+    // Act
+    const next = syncStateReducer(stateWithDiscovered, {
+      type: "paired",
+      peer: peer({ peer_id: "a", name: "Desktop" }),
+    });
+
+    // Assert
+    expect(next.discovered).toEqual({});
+    expect(next.peers.map((p) => p.peer_id)).toEqual(["a"]);
+  });
+
+  it("syncStateReducer — a status poll — discovered_peers replaces `discovered` wholesale, dropping stale entries", () => {
+    // Arrange — a peer seen via an earlier peerAppeared event...
+    const seen = syncStateReducer(initialState, {
+      type: "peerAppeared",
+      sighting: { status: "discovered", ...discoveredPeer({ peer_id: "stale", name: "Gone now" }) },
+    });
+
+    // Act — ...that the next poll no longer reports (it went offline, which
+    // emits nothing — the poll result is the only way it ages out).
+    const next = syncStateReducer(seen, {
+      type: "status",
+      status: {
+        paired_peers: [],
+        discovered_peers: [discoveredPeer({ peer_id: "fresh", name: "Still here" })],
+        last_sync_utc_ms: null,
+        this_device: { peer_id: "self", name: "This machine" },
+      },
+    });
+
+    // Assert
+    expect(next.discovered).toEqual({ fresh: discoveredPeer({ peer_id: "fresh", name: "Still here" }) });
   });
 });

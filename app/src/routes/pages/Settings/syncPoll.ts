@@ -1,4 +1,4 @@
-import type { PeerStatus, SyncStatus } from "../../../ipc/sync";
+import type { PeerSighting, SyncStatus } from "../../../ipc/sync";
 
 /** Injected IO/scheduler for {@link startSyncStatusPoll} — wave-2 operating
  *  brief §4's effects rule: the poll's decision logic is a pure driver,
@@ -120,7 +120,7 @@ export function startSyncStatusPoll(
 export interface PeerAppearedWatchDeps {
   /** Subscribes to the `peer_appeared` app event (`app/src/ipc/sync.ts`'s
    *  `onPeerAppeared`); resolves with an unlisten function. */
-  onPeerAppeared: (onEvent: (p: PeerStatus) => void) => Promise<() => void>;
+  onPeerAppeared: (onEvent: (p: PeerSighting) => void) => Promise<() => void>;
   /** Same composed visibility signal as {@link SyncStatusPollDeps.isVisible}. */
   isVisible: () => boolean;
   /** Same subscription as {@link SyncStatusPollDeps.onVisibilityChange}. */
@@ -146,7 +146,7 @@ export interface PeerAppearedWatchDeps {
  */
 export function startPeerAppearedWatch(
   deps: PeerAppearedWatchDeps,
-  dispatch: (peer: PeerStatus) => void,
+  dispatch: (sighting: PeerSighting) => void,
 ): () => void {
   let generation = 0;
   let unlisten: (() => void) | null = null;

@@ -48,14 +48,52 @@ export interface ThisDevice {
   name: string;
 }
 
+/** One peer visible on the LAN via mDNS that this device has not paired
+ *  with (C3 §3.9, L11 Task 14). Lets a Settings pane prefill `peerId` for
+ *  {@link pairPeer} (ruling R104) instead of Isaac typing a 32-character id
+ *  read off another screen. Byte-exact to `rust/tauri/src/commands/sync.rs`'s
+ *  `DiscoveredPeerDto`. */
+export interface DiscoveredPeer {
+  peer_id: string;
+  /** Display name advertised by the peer. May be empty. */
+  name: string;
+  /** u32, the peer's mDNS TXT-record `v` value, as broadcast (may differ
+   *  from this device's own protocol version). Not gated in TS — Rust is
+   *  the authority on compatibility and {@link pairPeer} fails typed if the
+   *  versions are incompatible; this is shown as text only. */
+  protocol_version: number;
+  /** IP address the peer's sync server was last seen at. */
+  address: string;
+  /** u16, port the peer's sync server was last seen at. */
+  port: number;
+}
+
 /** `sync_status`'s return (C3 §3.9). */
 export interface SyncStatus {
   paired_peers: PeerStatus[];
+  /** Peers currently visible on the LAN via mDNS that are NOT in
+   *  `paired_peers` (L11 Task 14). Disjoint from `paired_peers` by
+   *  construction — a peer that is paired appears there and only there.
+   *  This is the source of truth for the nearby-devices list: each poll
+   *  replaces it wholesale, which is how an entry ages out (an offline
+   *  peer's sighting simply stops being reported). */
+  discovered_peers: DiscoveredPeer[];
   /** i64, null if never synced */
   last_sync_utc_ms: number | null;
   /** This device's own id and name (ruling R172). */
   this_device: ThisDevice;
 }
+
+/** One LAN sighting as delivered by `peer_appeared` (C3 §3.9, L11 Task 14):
+ *  either an already-paired peer or one this device has not paired with,
+ *  distinguished by `status` so a listener never needs a second
+ *  `sync_status` call to tell the two apart. Byte-exact to
+ *  `rust/tauri/src/commands/sync.rs`'s `PeerSightingDto`. Emits on
+ *  appearance or field change, never on an identical re-resolve (R176);
+ *  offline emits nothing. */
+export type PeerSighting =
+  | ({ status: "paired" } & PeerStatus)
+  | ({ status: "discovered" } & DiscoveredPeer);
 
 /** `sync_now`'s return (C3 §3.9, all six fields per ruling R102). */
 export interface SyncResult {
@@ -145,11 +183,12 @@ export async function setSyncDeviceName(name: string): Promise<string> {
 }
 
 /** Subscribes to the `peer_appeared` app event (C3 §3.9): fires whenever a
- *  `PeerStatus`-bearing peer newly becomes visible on the LAN. Not attached
- *  to any command's `Channel` — mDNS discovery runs continuously in
- *  background state, independent of any one call's lifetime. Returns the
- *  unlisten function; call it to stop receiving events (e.g. when the
- *  Settings route is hidden, R95). */
-export async function onPeerAppeared(onEvent: (p: PeerStatus) => void): Promise<UnlistenFn> {
-  return listen<PeerStatus>("peer_appeared", (event) => onEvent(event.payload));
+ *  peer newly becomes visible on the LAN, or an already-visible peer's
+ *  fields change (R176) — paired or not (L11 Task 14's widened
+ *  {@link PeerSighting}). Not attached to any command's `Channel` — mDNS
+ *  discovery runs continuously in background state, independent of any one
+ *  call's lifetime. Returns the unlisten function; call it to stop
+ *  receiving events (e.g. when the Settings route is hidden, R95). */
+export async function onPeerAppeared(onEvent: (p: PeerSighting) => void): Promise<UnlistenFn> {
+  return listen<PeerSighting>("peer_appeared", (event) => onEvent(event.payload));
 }

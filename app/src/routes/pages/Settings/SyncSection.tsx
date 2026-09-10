@@ -63,6 +63,7 @@ export interface SyncSectionProps {
 const INITIAL_STATE: SyncState = {
   status: null,
   peers: [],
+  discovered: {},
   running: null,
   lastError: null,
 };
@@ -158,8 +159,8 @@ export default function SyncSection({ store }: SyncSectionProps) {
   // The `peer_appeared` subscription (R95 item 2's pattern: torn down while
   // this route is hidden, re-primed on show).
   useEffect(() => {
-    return startPeerAppearedWatch(PEER_APPEARED_WATCH_DEPS, (peer) => {
-      dispatch({ type: "peerAppeared", peer });
+    return startPeerAppearedWatch(PEER_APPEARED_WATCH_DEPS, (sighting) => {
+      dispatch({ type: "peerAppeared", sighting });
     });
   }, []);
 
@@ -290,6 +291,14 @@ export default function SyncSection({ store }: SyncSectionProps) {
 
   const thisDevice = state.status?.this_device ?? null;
   const runningPeerId = state.running?.peerId ?? null;
+  const discoveredList = Object.values(state.discovered);
+
+  /** Prefills the peer-id field from a "Nearby devices" row. Never pairs on
+   *  click (R104) — the code still has to be typed, read off the other
+   *  device's own pairing screen. */
+  function handlePickDiscovered(peerId: string): void {
+    setPeerIdInput(peerId);
+  }
 
   return (
     <div className="flex flex-col gap-4">
@@ -398,6 +407,27 @@ export default function SyncSection({ store }: SyncSectionProps) {
             <p className="font-mono text-xs text-fg-faint">Minting a code…</p>
           )
         ) : null}
+
+        <div className="flex flex-col gap-1.5">
+          <h4 className="font-mono text-xs uppercase tracking-[var(--tracking-label)] text-fg-dim">Nearby devices</h4>
+          {discoveredList.length === 0 ? (
+            <p className="font-mono text-xs text-fg-faint">No unpaired devices visible</p>
+          ) : (
+            <ul className="flex flex-col gap-1">
+              {discoveredList.map((peer) => (
+                <li key={peer.peer_id}>
+                  <button
+                    type="button"
+                    className="font-mono text-xs text-fg-dim hover:text-fg"
+                    onClick={() => handlePickDiscovered(peer.peer_id)}
+                  >
+                    {peer.name || peer.peer_id} <span className="text-fg-faint">(v{peer.protocol_version})</span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
 
         <label htmlFor="idl1-settings-peer-id" className="font-mono text-xs text-fg-dim">
           Device id
