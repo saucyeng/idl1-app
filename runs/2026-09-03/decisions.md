@@ -8234,3 +8234,41 @@ is also a machine-load artefact. Both should be made deterministic.
 oversized response, the rewritten test would pass for the wrong reason —
 so the fix must assert the *error message* distinguishes the header refusal
 from the mid-stream one, which the two messages already do.
+
+## R179 — R7 PDF export is parked; the data pipeline is the focus
+
+*2026-09-10, Isaac.* "This can probably hold off now. I just want to focus on
+the data pipeline itself before worrying about export formats." No PDF
+dependencies are added; the report stays a printable page. Re-raise only
+when Isaac raises it. **Cost if wrong:** a report nobody can hand to a
+teammate as a file; recoverable in one lane whenever wanted.
+
+## R180 — Mobile (L9) starts now, in parallel with the pipeline work
+
+*2026-09-10, Isaac.* L9 is not parked. First step is a read-only survey
+of what a Tauri mobile scaffold needs from this machine (SDKs, NDK,
+toolchains) and from the code (plugin seams, IPC that assumes a desktop
+filesystem), before any cargo-touching scaffold task. **Cost if wrong:**
+a scaffold that cannot build on this machine, or desktop polish that has
+to be undone for a small screen.
+
+## R181 — Opus lane-owner trial
+
+*2026-09-10, Isaac approved.* One lane (the R177 legend) is run by an
+Opus lane owner that drives implement, review, gate, merge and worktree
+retirement end to end. It may rule on anything whose blast radius is the
+lane's own files and reversible in one commit, recording each such ruling
+in its report for ratification. It must escalate, with a proposed answer,
+anything touching a contract (C1–C4), a `pub` signature in `core`, a spec
+section, or another lane. Measured by three counts: escalations,
+self-rulings, reversed self-rulings. Near-zero reversals expands the
+pattern; otherwise it stops. **Cost if wrong:** one lane's worth of
+un-ledgered decisions, all listed in its report and reversible.
+
+## R182 — Isaac pushes remain the rule until the hook says otherwise
+
+*2026-09-10.* Isaac said the lead may push. The repo hook enforcing
+CLAUDE.md §7 blocked it, and the lead does not edit hooks or permission
+rules on a peer's or its own say-so. Until Isaac changes the hook and §7,
+the lead asks Isaac to push after each green gate. No attribution
+trailers, ever.
