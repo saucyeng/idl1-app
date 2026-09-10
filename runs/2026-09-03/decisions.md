@@ -8625,3 +8625,23 @@ section, copying the Flutter app's flow where it was sound
 (`runs/2026-09-10/OTA-FLUTTER-FLOW.md` extracts it). Spec-during. **Cost
 if wrong:** CLI wrappers are a few hundred lines; `--move` is guarded by
 the hash check; OTA has rollback on the device by design.
+
+## R201 — No command blocks the UI; the folder scan is instant; import status is global
+
+*2026-09-10, Isaac: "I tried to import the folder and it's just been
+scanning. I don't need to import everything at once, and if I do, we need
+an import status and not freeze the rest of the app."* Two lead errors
+corrected. (1) R191 let `scan_folder` hash every file to answer
+`already_imported`; on 6.9 GB that is minutes of silence. It now hashes
+nothing (`already_imported: null`; import de-duplicates by hash anyway).
+(2) Tauri v2 runs a non-`async` command on the main thread, and
+`scan_folder`, `import_file` and `reimport_sessions` were all synchronous,
+so the webview froze for their whole duration. Rule, into C3 §1: every
+command that touches the filesystem beyond a stat or computes over a
+session runs off the main thread (`#[tauri::command(async)]`); the lane
+audits every command. (3) Import status is a global chip in the shell top
+bar over the existing per-file queue; the folder preview is per-row
+selectable and the queue can stop after the current file. Brief:
+`runs/2026-09-10/BRIEF-async-commands.md`. **Cost if wrong:** the
+attribute change is mechanical; a stray sync heavy command shows up as a
+freeze, which is now a named bug class rather than a mystery.
