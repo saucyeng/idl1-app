@@ -67,6 +67,7 @@ import {
   type ChartWindow,
   type CombinedChannelPayload,
 } from "./model/channelBindDriver";
+import { channelDataKeysForCell, channelDataKeysToEvict } from "./model/channelDataRetention";
 import { CellRunSequencer } from "./model/cellRunSequencer";
 import { isCodeVisible, toggleCode } from "./model/codeVisibility";
 import { createCursorBus, type CursorBus } from "./interaction/cursorBus";
@@ -1722,6 +1723,13 @@ export default function NotebookPage() {
         sessionRef.current.removeBoundChannel(cellId);
       }
     }
+    // R203.5: the retained full-resolution t/v/w arrays a removed cell's
+    // charts were reading. Every sibling ref above is cleaned up here;
+    // this one used to only ever grow, so a long session accumulated
+    // every channel every cell had ever bound.
+    for (const key of channelDataKeysToEvict(combinedChannelDataRef.current.keys(), liveIds)) {
+      combinedChannelDataRef.current.delete(key);
+    }
     for (const [cellId, perWindow] of fftBoundIdentityRef.current) {
       if (!liveIds.has(cellId)) {
         for (const wKey of perWindow.keys()) cellRunSequencerRef.current.delete(fftRunKey(cellId, wKey));
@@ -1840,7 +1848,15 @@ export default function NotebookPage() {
         // An FFT binding is handled by the dedicated effect below; either
         // way, this cell has no time-viewport identity to compare against
         // here.
-        if (binding === null) boundIdentityRef.current.delete(cellId);
+        if (binding === null) {
+          boundIdentityRef.current.delete(cellId);
+          // R203.5: this cell binds no channel any more, so its retained
+          // arrays are unreachable. Narrowed to this cell's own keys first
+          // — nothing here knows which other cells are still mounted.
+          for (const key of channelDataKeysForCell(combinedChannelDataRef.current.keys(), cellId)) {
+            combinedChannelDataRef.current.delete(key);
+          }
+        }
         continue;
       }
 
