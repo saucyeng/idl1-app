@@ -265,8 +265,11 @@ are defined in `docs/superpowers/specs/2026-09-02-idl1-rewrite-design.md` §10.
     `Content-Length` before streaming. Fix queued: advertise an over-cap
     length with a small body, keep the assertion, never shrink the
     production cap, and give the mid-stream branch its own small-cap test.
-    Until then, a lane hitting it reruns that one test by name, once, and
-    does not treat gate 3 as red on this test alone.
+    **Fixed 2026-09-10:** both over-cap tests use a raw one-shot TCP peer
+    that advertises `Content-Length: cap+1` with a 4-byte body; the
+    mid-stream branch has its own chunked-body tests through a new
+    `download_item_with_cap(..., cap)` seam with a 4 KiB cap. Production
+    caps unchanged. Transport gate green in one run (118 passed).
   - `watcher::tests::self_write_with_pre_registered_hash_never_fires_
     callback` is a named timing flake (asserts no callback within 500 ms
     against a 100 ms debounce; fails only on a loaded machine) — not
