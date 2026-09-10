@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { plotTheme } from "../../theme/plotTheme";
 import { buildPrintPalette, PRINT_CONTRAST_TARGET, PRINT_SERIES_COLOURS, resolvePrintColour } from "./printPalette";
+import { SERIES_ON_WHITE } from "./seriesOnWhite";
 
 /** Screen-theme stub values (`theme/plotTheme.test.ts`'s own stubs) — used
  *  only to prove the print theme is not equal to a live screen theme, never
@@ -40,27 +41,17 @@ function contrastRatio(hexA: string, hexB: string): number {
   return lumA > lumB ? lumA / lumB : lumB / lumA;
 }
 
-describe("PRINT_SERIES_COLOURS — all eight — each meets the stated contrast ratio against white", () => {
-  it.each(PRINT_SERIES_COLOURS.map((colour, index) => [index, colour] as const))(
-    "slot %i (%s) contrasts white at or above PRINT_CONTRAST_TARGET",
-    (_index, colour) => {
-      // Arrange
-      const white = "#ffffff";
+// The eight series colours' own contrast check lives in
+// `seriesOnWhite.test.ts` (ruling R186): print and light paper share one
+// array, so it is verified once, there, rather than in each consumer.
 
-      // Act
-      const ratio = contrastRatio(colour, white);
-
-      // Assert
-      expect(ratio).toBeGreaterThanOrEqual(PRINT_CONTRAST_TARGET);
-    },
-  );
-
-  it("there are exactly eight, one per --chart-N slot", () => {
+describe("PRINT_SERIES_COLOURS — its source — the shared series-on-white array (R186)", () => {
+  it("PRINT_SERIES_COLOURS — after R186 — is seriesOnWhite.ts's array, not a second copy", () => {
     // Arrange & Act
-    const count = PRINT_SERIES_COLOURS.length;
+    const colours = PRINT_SERIES_COLOURS;
 
     // Assert
-    expect(count).toBe(8);
+    expect(colours).toBe(SERIES_ON_WHITE);
   });
 });
 

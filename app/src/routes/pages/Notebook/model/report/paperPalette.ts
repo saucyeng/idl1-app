@@ -5,24 +5,18 @@
  * for a second toggle at all is daylight: a dark notebook read on a phone
  * at a trailside is not the same problem as a dark notebook read indoors.
  *
- * **Never the print palette (R185 item 3).** `printPalette.ts` belongs to
- * the printed page and is frozen for it (R174: no live token reads, ever).
- * Paper's light values are its own, authored here, for the same reason
- * print's are authored there — a screen forced light and a sheet of A4 are
- * different media that happen to share a background colour today. The
- * duplication of "hues at contrast against white" between the two modules
- * is real and deliberate; unifying them would put one palette under two
- * rulings' constraints at once.
+ * **Never `buildPrintPalette` (R185 item 3), but the same eight series
+ * colours (R186).** Print's palette is frozen for the printed page (R174:
+ * no live token reads, ever), and its grid, axis text and white page
+ * belong to it. The series hues on a white ground are not print's property
+ * though: they are data, owned by `seriesOnWhite.ts` and imported by both,
+ * so a chart printed and the same chart read on light paper cannot
+ * disagree about which lap is which.
  *
- * **First pass, not brand-approved** — the same status R174 gives print's:
- * the eight light-mode series colours below are `tokens.css`'s own hues at
- * a lightness lowered until each clears {@link PAPER_LIGHT_CONTRAST_TARGET}
- * against white. Isaac is expected to retune them; nothing here needs
- * archaeology to change.
+ * The light *furniture* below is paper's own — a screen forced light and a
+ * sheet of A4 are still different media.
  *
- * Colour literals live in this module by the same exemption
- * `printPalette.ts` carries: defining a palette is its entire job.
- * DOM-free — the `CssVarReader` is injected, so every branch below is
+ * DOM-free: the `CssVarReader` is injected, so every branch below is
  * testable with no browser.
  */
 import type { PaperTheme, ThemeChoice } from "../../../Settings/theme";
@@ -30,32 +24,23 @@ import type { CssVarReader } from "../../theme/series";
 import type { PlotThemeOptions } from "../../theme/plotTheme";
 import type { PrintPalette } from "./printPalette";
 import { buildScreenPalette } from "./screenPalette";
+import { SERIES_ON_WHITE, WHITE_CONTRAST_TARGET } from "./seriesOnWhite";
 
 /** The two schemes paper can actually be drawn in — what {@link PaperTheme}
  *  resolves to once `"app"` has been followed. */
 export type PaperScheme = "light" | "dark";
 
-/** The WCAG 2.x contrast ratio every {@link PAPER_LIGHT_SERIES_COLOURS}
- *  entry meets or exceeds against white. 4.5:1 is WCAG AA for normal text;
- *  paper holds a chart stroke to the same floor its own body text must
- *  clear rather than inventing a laxer graphics-only threshold. */
-export const PAPER_LIGHT_CONTRAST_TARGET = 4.5;
+/** The contrast ratio {@link PAPER_LIGHT_SERIES_COLOURS} clears against
+ *  white — `seriesOnWhite.ts`'s own target (ruling R186). */
+export const PAPER_LIGHT_CONTRAST_TARGET = WHITE_CONTRAST_TARGET;
 
-/** The eight light-mode series colours, in `--chart-1`…`--chart-8` slot
- *  order — `tokens.css`'s hues, darkened until each clears
- *  {@link PAPER_LIGHT_CONTRAST_TARGET} against white. Slot order and hue
- *  are preserved so a lap Isaac recognises in the dark app is the same lap
- *  in light paper. */
-export const PAPER_LIGHT_SERIES_COLOURS: readonly string[] = [
-  "#1477d8", // --chart-1 azure #5ba6f0, darkened
-  "#24874c", // --chart-2 green #35c46e, darkened
-  "#8c7408", // --chart-3 amber #f5d547, darkened
-  "#b36117", // --chart-4 orange #e8964b, darkened
-  "#9954db", // --chart-5 violet #b98ae6, darkened
-  "#25837d", // --chart-6 teal #3fc9c0, darkened
-  "#dd287a", // --chart-7 rose #e86fa6, darkened
-  "#da3944", // --chart-8 coral #e05a63, darkened
-];
+/** The eight colours light paper draws series in, in `--chart-1`…
+ *  `--chart-8` slot order: `seriesOnWhite.ts`'s shared values, the same
+ *  eight the printed report uses (ruling R186). Paper reaching for the
+ *  same hues as print is the point — one "series on white" answer, tested
+ *  once — and is not the same thing as paper calling `buildPrintPalette`,
+ *  which R185 item 3 forbids and this module still never does. */
+export const PAPER_LIGHT_SERIES_COLOURS: readonly string[] = SERIES_ON_WHITE;
 
 /** Matches a `--chart-N` token — the only colour shape this codebase emits
  *  for a window (ruling R117 item 6). */
