@@ -8585,3 +8585,22 @@ an undefined `Session`, and updates the catalog row. The catalog's
 populate path applies the "prefer session.json when user" rule, so the
 index agrees with the file. **Cost if wrong:** all three are additive
 and omit-when-absent; the only migration is none.
+
+## R196 — Data root: move safely, fail loudly when missing, dev builds use their own dir
+
+*2026-09-10, Isaac: "can I just set it to a directory in Google Drive or on
+an external drive? I kind of just want all this dealt with and clean."*
+Yes: the C4 override already allows any writable folder. Four things make
+it clean: (1) **missing root fails loudly** (C4 §1): no silent fallback to
+the default folder, ever; (2) **`move_data_dir`** (C3 §3.10) copies with
+hash verification, rebuilds the catalog at the destination, switches only
+after verification, leaves the old root for the user; (3) **dev builds use
+`com.saucyeng.idl1.dev`** so `tauri dev` cannot open the real library
+(the delete audit found dev and release sharing one folder); (4) a
+**delete-guard source-scan test** in `idl-rs-tauri` fails if any non-test
+`remove_*`/`create`-over call appears outside the audited allowlist in
+`runs/2026-09-10/DELETE-AUDIT.md`. One library, not two: a "smaller group"
+is a view (tags/venue/date), the phone holds the only legitimate subset.
+Google Drive must be in mirror mode; catalog conflict copies are harmless
+because the catalog is rebuildable. **Cost if wrong:** copying doubles disk
+use until the user deletes the old root, which is the safe direction.

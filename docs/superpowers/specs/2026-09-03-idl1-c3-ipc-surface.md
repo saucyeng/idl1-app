@@ -2059,6 +2059,16 @@ event; it surfaces the next time `sync_status()` is polled.
 
 ### 3.10 App
 
+**`move_data_dir(new_root: string, progress: Channel<Progress>): DataDirInfo`**
+*Added 2026-09-10, ruling R196.* Copies the library to `new_root` per C4
+§1 "Moving the root" (blob hashes verified, catalog rebuilt, old root left
+in place), then sets the override and reopens the library. `Progress.phase`
+is `"copy"` then `"verify"` then `"catalog"`; `done`/`total` count files.
+Refuses if `new_root` is inside the current root, is not empty, or is on a
+path the app cannot write. Desktop only. Errors: `invalid_argument`, `io`,
+`unsupported_platform`, `internal`. Returns the same shape `set_data_dir`
+returns.
+
 **Added post-sign (2026-09-05, lead ruling R59, wave-2 write lane).** New
 group: `get_settings`/`set_settings`, `get_data_dir`/`set_data_dir` and the
 three profile commands are app and profile state — not catalog rows, not

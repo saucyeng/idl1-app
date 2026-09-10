@@ -55,7 +55,23 @@ On desktop the Settings tab may point `<data>` at any writable directory.
 On Android and iOS the override is hidden and ignored: neither platform
 offers a user-chosen writable directory outside its app sandbox without
 document-picker machinery this contract does not adopt, so `<data>` is
-always the platform default there. Because `catalog.sqlite` (and everything else) lives *inside*
+always the platform default there.
+
+**Missing root (added 2026-09-10, ruling R196).** If the override names a
+path that does not exist or is not writable at launch (an unplugged drive,
+a renamed folder), the app **refuses to open the library**: it shows the
+configured path with "Retry" and "Choose folder" and does nothing else. It
+never falls back to the platform default, never creates the override path,
+and never writes the bootstrap file. An empty-looking library is the
+failure this rule exists to prevent.
+
+**Moving the root (added 2026-09-10, ruling R196).** `move_data_dir` (C3
+§3.10) copies `blobs/`, `sessions/`, `workbooks/`, `tracks/` and
+`profiles/` to the new root, verifying every blob's sha256 on arrival and
+skipping `tmp/`, `inbox/` and `catalog.sqlite*` (the catalog is rebuilt at
+the destination), then switches the override and reopens. The old root is
+left untouched for the user to delete; the switch happens only after every
+copied byte has verified. Because `catalog.sqlite` (and everything else) lives *inside*
 `<data>`, the override itself cannot live inside `<data>` — it has to be
 readable before `<data>` is known. It is stored in the bootstrap file
 described above, at:
