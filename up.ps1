@@ -52,6 +52,9 @@ if (-not $NoWait) {
     }
 }
 
+# node prints deprecation notices on stderr; under Stop that reads as a
+# terminating NativeCommandError when output is redirected. Relax for the run.
+$ErrorActionPreference = "Continue"
 Push-Location app
 try {
     if ($Build) { Write-Host "== tauri build (release)"; npm run tauri build }

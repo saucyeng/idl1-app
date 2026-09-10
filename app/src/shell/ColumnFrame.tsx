@@ -7,12 +7,13 @@ import { visibleColumnIds } from "./columnVisibility";
 
 /** Props for {@link ColumnFrame}. */
 export interface ColumnFrameProps {
-  /** Content for each of the four docked columns, left to right. Every
-   *  column here is a placeholder in this pass (UI-DIRECTION decision 11:
-   *  "reserve the column only" — extended to every column, not only maths,
-   *  since wiring real Data/Notebook content into a docked column is a
-   *  later lane's job); `output` is the exception the caller may fill with
-   *  the real Notebook page.
+  /** Content for each of the four docked columns, left to right. Three of
+   *  them now hold real content: `output` is the Notebook page itself,
+   *  and `maths`/`properties` are the empty slot containers
+   *  (`GraphSlotColumn`, `EditorSlotColumn`) that page portals its one
+   *  `GraphCanvas`/`EditorPanes` instance into — R109's rule, since the
+   *  state both need lives in the page. UI-DIRECTION decision 11's
+   *  "reserve the column only" no longer describes any of them.
    *
    *  `library` is optional (R107): the wide-layout studio drops the
    *  library column because it duplicates the Data tab. The column id and

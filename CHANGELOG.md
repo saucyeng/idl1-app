@@ -291,6 +291,23 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 
 ### Fixed
 
+- **The studio's maths column shows the real graph, not a "reserved"
+  placeholder (2026-09-10).** On the wide layout the leftmost Notebook
+  column read "Maths graph — reserved (UI-DIRECTION decision 11)" while the
+  working `GraphCanvas` (its source-palette rail, chart-type pickers,
+  drag-to-commit edits and node-to-chart action) sat in the output column
+  beside the cell list. The column now hosts the canvas itself, by the same
+  slot-and-portal route the properties column already uses for the editor
+  (R109): `shell/graphSlot.ts` and `shell/GraphSlotColumn.tsx` publish the
+  column's DOM node, and the Notebook page portals its one `GraphCanvas`
+  instance into it. The page renders no graph pane of its own while the
+  column hosts one, decided by slot presence rather than measured width
+  (`Notebook/model/graphHost.ts`) — inside the studio the page's own width
+  is the output column's, which would otherwise mint a second canvas. The
+  toolbar's Graph toggle still governs it, and the column says so when it
+  is off; with no workbook open it says that instead of going blank.
+  Nothing changes below 1200 px, where there is no column frame.
+
 - **Notebook toolbar now spans the window, not just the tab's own column
   area (2026-09-09, correcting R161).** The toolbar (column show/hide,
   workbook bar, playback, the gesture/X-axis "More" overflow) is hoisted

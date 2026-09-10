@@ -8,8 +8,9 @@ import SettingsPage from "../routes/pages/Settings";
 import { useAppState } from "../state/AppState";
 import { setActiveRoute } from "./routeVisibility";
 import { usesColumns, type ShellLayout } from "./layout";
-import ColumnFrame, { ColumnPlaceholder } from "./ColumnFrame";
+import ColumnFrame from "./ColumnFrame";
 import { EditorSlotColumn } from "./EditorSlotColumn";
+import { GraphSlotColumn } from "./GraphSlotColumn";
 import { RouteErrorBoundary } from "./RouteErrorBoundary";
 
 /** Every destination's element, built once per render but reconciled by
@@ -42,7 +43,11 @@ const ROUTE_ELEMENTS = {
  * `ColumnFrame` — the "studio" layout (UI-DIRECTION decision 20's model:
  * "Notebook = maths graph + properties + output columns; Data docks left of
  * it"). The Notebook page element is still the single instance this
- * function always renders; `ColumnFrame` only changes where it sits. Every
+ * function always renders; `ColumnFrame` only changes where it sits. The
+ * maths and properties columns are both empty containers that publish
+ * their DOM node (`graphSlot.ts`, `editorSlot.ts`) for the Notebook page
+ * to portal its real `GraphCanvas`/`EditorPanes` into — R109's rule, since
+ * every value either one needs lives in that page. Every
  * other route fills the full width, unchanged, at every layout (Device is
  * explicitly single-column at every width per its per-tab direction).
  *
@@ -70,7 +75,7 @@ export default function RouteHost({ layout }: { layout: ShellLayout }) {
         const content =
           r.id === "notebook" && notebookInColumns ? (
             <ColumnFrame
-              maths={<ColumnPlaceholder>Maths graph — reserved (UI-DIRECTION decision 11)</ColumnPlaceholder>}
+              maths={<GraphSlotColumn />}
               properties={<EditorSlotColumn />}
               output={ROUTE_ELEMENTS.notebook}
             />

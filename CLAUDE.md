@@ -42,6 +42,7 @@ wire → `transport`. Pixels or clicks → `app/src`.
 - Log files and blobs are immutable. `data.parquet` is a function of (blob, importer version).
 - Offline-first means bundled: no CDN, ever.
 - No renderer-only parameters.
+- Nothing blocks the main thread (R201). A Tauri command that touches the filesystem beyond a stat, talks to a device or the network, or computes over a session is `#[tauri::command(async)]` and reports progress over a `Channel`; the webview never waits on it. In the UI, work over more than a frame's worth of data leaves the render path.
 
 ## 4. Testing
 
