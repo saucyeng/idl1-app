@@ -29,6 +29,7 @@ import { useAppState } from "../../../state/AppState";
 import { describeWindow, sessionDetailsReadinessKey, sessionLabel, venueLabel, windowKey, windowsKey, type SelectionWindow } from "../../../state/selection";
 import { useRouteVisible } from "../../../shell/routeVisibility";
 import { useEditorSlotNode } from "../../../shell/editorSlot";
+import { useToolbarSlotNode } from "../../../shell/toolbarSlot";
 import { ColumnPlaceholder } from "../../../shell/ColumnFrame";
 import { resolveRegister } from "../Settings/theme";
 import { createPrefsStore, localStorageBackend } from "../Settings/prefsStore";
@@ -751,6 +752,16 @@ export default function NotebookPage() {
   const editorSlotNode = useEditorSlotNode();
   const editorHost = resolveEditorHost(editorSlotNode !== null, placement);
   const editorIsPortalHosted = editorHost === "portal";
+
+  // Bug report fixed 2026-09-09, correcting R161: the toolbar spans the
+  // *window*, not just this tab's own column area. `AppShell.tsx` mounts
+  // `shell/ToolbarSlotRow.tsx` unconditionally, so its node exists whether
+  // or not Notebook is the active tab (mount-and-hide, R93) -- unlike the
+  // editor slot above, node presence alone cannot gate the portal here, or
+  // every other tab would show this toolbar too. `routeVisible` (already
+  // read further down for `PlaybackTransport`) is the same "is this tab the
+  // one currently shown" signal.
+  const toolbarSlotNode = useToolbarSlotNode();
 
   // The notebook output register (decision 31) -- stored in `UiPrefs`
   // (UI-7 Q1), read/written through `notebookPrefsStore` above. `null`
@@ -2548,21 +2559,36 @@ export default function NotebookPage() {
       : [{ id: "cells", element: cellListElement }];
   const showPropertiesPane = !editorIsPortalHosted && placement === "panes" && columnVisibility.properties && editorPanesElement !== null;
 
-  return (
-    <div className="flex h-full flex-col">
-      {/* Ruling R161: one CAD-style top toolbar spanning the tab, above the
-          columns, so the preview beneath it runs full height. Everything
-          that used to stack above the content in its own row now merges
-          into this one row -- the leading group is column visibility
-          (item 2), everything else follows (item 3), and the row never
-          wraps to a second line: the gesture-preset/X-axis selects (the
-          two purely-configuration controls, changed rarely once set) sit
-          behind the "More" overflow disclosure rather than risking a wrap
-          (item 5) -- a static split rather than a width-measured one,
-          since nothing in this codebase measures toolbar overflow yet
-          (small, safe judgment call, CLAUDE.md §1). */}
-      <div className="flex flex-nowrap items-center gap-2 overflow-x-auto border-b border-rule px-2 py-1">
-        {columnsToggleAvailable && (
+  // Ruling R161, corrected by a 2026-09-09 bug report: one CAD-style top
+  // toolbar spanning the *window* (not just this tab's own column area --
+  // that correction is what `shell/toolbarSlot.ts` exists for), above the
+  // columns, so the preview beneath it runs full height. Everything that
+  // used to stack above the content in its own row now merges into this one
+  // row -- the leading group is column visibility (item 2), everything else
+  // follows (item 3), and the row never wraps to a second line: the
+  // gesture-preset/X-axis selects (the two purely-configuration controls,
+  // changed rarely once set) sit behind the "More" overflow disclosure
+  // rather than risking a wrap (item 5) -- a static split rather than a
+  // width-measured one, since nothing in this codebase measures toolbar
+  // overflow yet (small, safe judgment call, CLAUDE.md §1).
+  //
+  // Layer order (bug report fixed 2026-09-09): this row needs `relative` +
+  // an explicit `z-index` and an opaque background, or the sandbox iframe
+  // host below (`containerRef`'s `position: fixed` div, further down this
+  // file) paints over it while a chart is scrolled underneath -- a fixed
+  // element with any explicit z-index (even 0) stacks above ordinary static
+  // in-flow content regardless of DOM order. The z-index values touching
+  // this stack are spread across the Notebook feature, not one file:
+  // `graph/GraphCanvas.tsx` sets `-1` on its background subgraph frame
+  // nodes, this toolbar is `10`, and its own "More" popover below is also
+  // `10` but in a nested stacking context (the two never actually compare).
+  // Lowering the sandbox host's z-index instead was rejected (brief,
+  // 2026-09-09): that host already needs to sit above ordinary in-flow
+  // cell/column content everywhere *except* this toolbar, and dropping it
+  // below zero globally would hide charts behind that content too.
+  const toolbarElement = (
+    <div className="relative z-10 flex flex-nowrap items-center gap-2 overflow-x-auto border-b border-rule bg-surface px-2 py-1">
+      {columnsToggleAvailable && (
           <div role="group" aria-label="Notebook columns" className="flex items-center gap-1">
             <button type="button" onClick={() => toggleColumn("graph")} aria-pressed={columnVisibility.graph}>
               Graph
@@ -2688,6 +2714,22 @@ export default function NotebookPage() {
           </div>
         </details>
       </div>
+  );
+
+  return (
+    <div className="flex h-full flex-col">
+      {/* Portal-hosted whenever this tab is the active route (bug report
+          fixed 2026-09-09): `toolbarSlotNode` exists whether or not
+          Notebook is the active tab (it is always mounted, R93), so
+          `routeVisible` is the gate that keeps every other tab from
+          showing this toolbar too. The inline fallback below only fires in
+          the brief window before `AppShell.tsx`'s `ToolbarSlotRow` has
+          published its node (same latency `editorSlotNode` already
+          accepts) -- Notebook's own route panel is `hidden` in that case
+          whenever this tab is not the active one, so the fallback never
+          leaks onto another tab either. */}
+      {routeVisible && toolbarSlotNode !== null && createPortal(toolbarElement, toolbarSlotNode)}
+      {routeVisible && toolbarSlotNode === null && toolbarElement}
       {/* Master timeline strip (decision 52, R115, R134 item 1): one lane
           per selected window, own draggable boundary handles. Not one of
           R161's named toolbar controls -- kept as its own full-width strip,
@@ -2816,6 +2858,16 @@ export default function NotebookPage() {
           ),
           editorSlotNode
         )}
+      {/* The sandbox iframe host: fixed to the full viewport so cell
+          iframes positioned into it (`sendLayout`) track scroll in real
+          pixels. `zIndex: 0` is explicit, not incidental -- a fixed element
+          with *any* stated z-index stacks above ordinary static in-flow
+          content regardless of DOM order, which is exactly what a chart
+          needs against the cell text around it. See the toolbar's own
+          layer-order comment above (`toolbarElement`) for why this host
+          must stay above in-flow content everywhere except that one row,
+          and why the toolbar's `z-10` -- not lowering this `0` -- is what
+          keeps a scrolled chart from painting over it. */}
       <div
         ref={containerRef}
         style={{ position: "fixed", inset: 0, pointerEvents: "none", zIndex: 0, border: "none" }}

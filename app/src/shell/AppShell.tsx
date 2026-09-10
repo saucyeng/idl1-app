@@ -8,6 +8,7 @@ import { readColumnPrefs, writeColumnPrefs } from "./columnPrefs";
 import TopBar from "./TopBar";
 import BottomBar from "./BottomBar";
 import RouteHost from "./RouteHost";
+import { ToolbarSlotRow } from "./ToolbarSlotRow";
 import CommandPalette from "./CommandPalette";
 import { tabSwitchCommands } from "./commands";
 import { Toaster } from "../components/Toaster";
@@ -101,6 +102,13 @@ export default function AppShell() {
           onOpenPalette={() => setPaletteOpen(true)}
         />
       </div>
+      {/* Full-window toolbar row (bug report fixed 2026-09-09, correcting
+          R161's "spans the tab" to span the window instead). Always
+          mounted so `toolbarSlot.ts`'s node exists as soon as the shell
+          does; the row itself carries no size until the active route
+          portals real content into it (`ToolbarSlotRow.tsx`'s doc
+          comment) — Data, Device and Settings never show an empty bar. */}
+      <ToolbarSlotRow />
       <div className="min-h-0 flex-1">
         <RouteHost layout={layout} />
       </div>
