@@ -3,10 +3,10 @@
  * idl1's Settings tab has nine sections. Relative to idl0's seven: Google
  * Drive is dropped permanently (idl1 syncs peer-to-peer over the LAN
  * instead, see `sync`); `data` (data-directory override, C4 §1) is new;
- * `firmware` returns as an honest empty affordance (UI-7 brief, Open
- * question 3) — the update path itself is still deferred to wave 3
- * (operating brief §3), so this section names that rather than offering a
- * control; `theme` is new (UI-DIRECTION decision 5, 31). */
+ * `firmware` is the OTA update path (SPEC §27.7 as amended for idl1,
+ * rulings R197/R198) — a catalog check against the configured repository
+ * plus the manual `.bin` push; `theme` is new (UI-DIRECTION decision 5,
+ * 31). */
 export interface SettingsSection {
   /** Stable identifier, used for routing/selection and as a React key.
    *  Never shown to the user directly. */
@@ -44,7 +44,7 @@ export const SECTIONS: readonly SettingsSection[] = [
   {
     id: "firmware",
     label: "Firmware",
-    description: "Device firmware updates.",
+    description: "Device firmware updates over the air.",
   },
   {
     id: "controls",

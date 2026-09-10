@@ -1,4 +1,5 @@
 import { Channel, invoke } from "@tauri-apps/api/core";
+import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 
 /** Progress payload streamed by long-running commands (C3 §1). */
 export interface Progress {
@@ -217,4 +218,109 @@ export interface RegistryRow {
  *  the config document. */
 export async function previewChannelRegistry(configJson: string): Promise<RegistryRow[]> {
   return invoke<RegistryRow[]>("preview_channel_registry", { configJson });
+}
+
+// ---------------------------------------------------------------------------
+// Firmware / OTA (C3 §3.8, rulings R197/R198). Field names below are
+// byte-exact to `rust/tauri/src/commands/firmware.rs`'s serde output.
+// ---------------------------------------------------------------------------
+
+/** Which release channel a catalog check is against (C3 §3.8). `stable` is
+ *  the latest non-prerelease, `beta` the latest including prereleases. */
+export type FirmwareChannel = "stable" | "beta";
+
+/** One installable firmware release from the catalog (C3 §3.8). */
+export interface FirmwareRelease {
+  /** Semver, no leading `v` — the same value the device reports as its
+   *  running firmware. */
+  version: string;
+  /** The git tag verbatim, e.g. `"v1.6.0-beta.1"`. */
+  tag: string;
+  /** Display name, falling back to the tag when GitHub reports none. */
+  name: string;
+  /** Release body, markdown as authored. May be empty. */
+  notes: string;
+  prerelease: boolean;
+  /** RFC 3339, or `""` when GitHub reported none. */
+  published_at: string;
+  image_url: string;
+  /** u64 */
+  image_size_bytes: number;
+  /** `null` when the release publishes no `.bin.sha256` sidecar — which is
+   *  what leaves auto-confirm disarmed for that push. */
+  sha256_url: string | null;
+}
+
+/** Where a firmware image comes from (C3 §3.8). A `file` is a `.bin` the
+ *  user picked off disk and never arms auto-confirm. */
+export type FirmwareSource = { kind: "file"; path: string } | { kind: "catalog"; version: string };
+
+/** Where the OTA sequence has got to (C3 §3.8). Rust owns this machine and
+ *  the app draws it; `downloading` occurs only for a catalog source. */
+export type OtaState =
+  | { phase: "idle" }
+  | { phase: "downloading"; done_bytes: number; total_bytes: number | null; pct: number | null }
+  | { phase: "pushing"; done_bytes: number; total_bytes: number; pct: number }
+  | { phase: "rebooting" }
+  | { phase: "reconnecting"; attempt: number; max_attempts: number }
+  | { phase: "pending_verify"; auto_confirm_armed: boolean }
+  | { phase: "confirmed" }
+  | { phase: "rolled_back" }
+  | { phase: "failed"; error: { kind: string; message: string; detail?: unknown } };
+
+/** What one completed {@link pushFirmware} did (C3 §3.8). */
+export interface OtaOutcome {
+  /** The terminal state: `confirmed`, `pending_verify` or `rolled_back`. */
+  state: OtaState;
+  /** The catalog release's version, or `null` for a `.bin` off disk. */
+  pushed_version: string | null;
+  /** SPEC §7.3's `Firmware:` after reconnecting, or `null` if unreported. */
+  device_version: string | null;
+  /** Whether the flow sent `CMD_OTA_CONFIRM` on the user's behalf. */
+  auto_confirmed: boolean;
+  /** Always `false` for a `.bin` off disk. */
+  sha256_verified: boolean;
+}
+
+/** Lists `firmwareRepo`'s firmware releases on `channel`, newest first
+ *  (C3 §3.8). The only call this app makes to the public internet — run it
+ *  on "Check now" or on opening the Firmware section, never on a timer. */
+export async function firmwareCatalog(firmwareRepo: string, channel: FirmwareChannel): Promise<FirmwareRelease[]> {
+  return invoke<FirmwareRelease[]>("firmware_catalog", { firmwareRepo, channel });
+}
+
+/** Pushes firmware to `deviceId` and drives the whole OTA sequence
+ *  (C3 §3.8): load, push, reboot, reconnect, confirm. `firmwareRepo`/
+ *  `channel` are read only for a `catalog` source. `Progress.done`/`.total`
+ *  are bytes, with `phase` `"download"` then `"ota_push"`; the coarser state
+ *  machine arrives through {@link onOtaStateChanged}. */
+export async function pushFirmware(
+  deviceId: string,
+  source: FirmwareSource,
+  firmwareRepo: string,
+  channel: FirmwareChannel,
+  onProgress: (p: Progress) => void
+): Promise<OtaOutcome> {
+  const progress = new Channel<Progress>();
+  progress.onmessage = onProgress;
+  return invoke<OtaOutcome>("push_firmware", { deviceId, source, firmwareRepo, channel, progress });
+}
+
+/** Commits the running image after an OTA (C3 §3.8, SPEC §7.2
+ *  `CMD_OTA_CONFIRM`). There is no matching roll-back call: rolling back is
+ *  *not* confirming and power-cycling the device. */
+export async function confirmFirmware(deviceId: string): Promise<OtaState> {
+  return invoke<OtaState>("confirm_firmware", { deviceId });
+}
+
+/** The current OTA state (C3 §3.8) — the same value the most recent
+ *  `ota_state_changed` carried. Never rejects. */
+export async function otaState(): Promise<OtaState> {
+  return invoke<OtaState>("ota_state");
+}
+
+/** Subscribes to `ota_state_changed` (C3 §3.8). Resolves with an unlisten
+ *  function; call it on unmount. */
+export async function onOtaStateChanged(handler: (state: OtaState) => void): Promise<UnlistenFn> {
+  return listen<OtaState>("ota_state_changed", (event) => handler(event.payload));
 }

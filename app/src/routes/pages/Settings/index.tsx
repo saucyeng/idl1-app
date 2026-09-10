@@ -173,7 +173,7 @@ export default function Settings() {
         ) : selected.id === "sync" ? (
           <SyncSection store={prefsStore} />
         ) : selected.id === "firmware" ? (
-          <FirmwareSection />
+          <FirmwareSection store={prefsStore} />
         ) : selected.id === "controls" ? (
           <ControlsSection />
         ) : selected.id === "theme" ? (
