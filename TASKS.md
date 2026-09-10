@@ -219,7 +219,13 @@ are defined in `docs/superpowers/specs/2026-09-02-idl1-rewrite-design.md` §10.
       editing lap-timing/sector/neutral-zone geometry on a map — stays wave
       3 per ruling R54; this task's Name/Venue edit is the only write path
       into an existing track's non-geometry fields.
-- [ ] L9 mobile scaffold
+- [ ] L9 mobile scaffold — Android-only on this machine (R183);
+      survey `runs/2026-09-10/L9-SURVEY.md`. Tasks 1-2 wait on Isaac's
+      `JAVA_HOME`/`ANDROID_HOME`/`NDK_HOME`. **Task 8 (mobile paper view)
+      landed 2026-09-10** (R184/R185/R186): paper is the narrow `"sheet"`
+      placement; viewer and editor alternate; `paperTheme` pref; one
+      series-on-white palette shared with print. Open: landscape > 600 px
+      falls back to the inline layout (by design until a device runs it).
 - [ ] L11 LAN sync — Tasks 1-12 landed on `l11-sync` (idl-rs) /
       `l11-sync` (idl1-app); pairing, discovery, the axum server/client,
       the C2 §7 workbook merge, and the five `commands::sync` Tauri
