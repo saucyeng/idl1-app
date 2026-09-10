@@ -8564,3 +8564,24 @@ cargo slot frees; no behaviour change on Windows. **Cost if wrong:**
 macOS hides real addresses behind per-app random ones, so a future macOS
 lane may need a different id; that is a platform lane's problem, not a
 reason to keep a Windows-only path.
+
+## R194 — M4c escalation: session.json fields, `Session.timestamp_source`, `StaleSession` strings
+
+*2026-09-10, lead, on the m4c owner's escalation (correct: it held the
+cargo slot idle and proposed answers).* (1) **C1 §6** gains two additive,
+omit-when-absent fields: `timestamp_utc_ms` present only when
+`timestamp_source` is `"user"` (then it is the displayed and catalogued
+start and overrides the parquet), and `timestamp_source`, omitted on
+legacy files, which read as the importer's source with the parquet value.
+No `schema_version` bump. (2) **C1 §2** `Session` gains
+`timestamp_source: TimestampSource` (`header | gps_backfill | source_file
+| user`), set by each importer, carried in `session.json`, never in
+`data.parquet` §4.3, so no parquet is invalidated; C3's `SessionSummary`/
+`SessionDetail` are unchanged because the Data page decides its prompt
+from `timestamp_utc_ms === 0` alone. (3) **C3 §3.3** `StaleSession`
+versions are SemVer **strings** (the importers stamp `"0.1.0"` and the
+catalog column is TEXT); `set_session_start` returns `SessionDetail`, not
+an undefined `Session`, and updates the catalog row. The catalog's
+populate path applies the "prefer session.json when user" rule, so the
+index agrees with the file. **Cost if wrong:** all three are additive
+and omit-when-absent; the only migration is none.

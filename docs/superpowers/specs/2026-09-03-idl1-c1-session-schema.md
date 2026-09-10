@@ -65,6 +65,14 @@ pub struct Session {
     /// value and no GPS fix to back-fill from — see §3.1). Same sentinel convention as the
     /// existing `.idl0` header field (SPEC §5.1).
     pub timestamp_utc_ms: i64,
+    /// Where `timestamp_utc_ms` came from (added 2026-09-10, ruling R194): `Header`
+    /// (`.idl0` header `Session start UTC`), `GpsBackfill` (§3.1's first-fix formula),
+    /// `SourceFile` (FIT/GPX/CSV earliest converted instant), or `User`
+    /// (`set_session_start`, C3 §3.3). Set by each importer; carried in `session.json`
+    /// (§6) and deliberately NOT in `data.parquet` §4.3 metadata, so no parquet is
+    /// invalidated by its introduction. Serialises as the lowercase snake_case strings
+    /// `"header" | "gps_backfill" | "source_file" | "user"`.
+    pub timestamp_source: TimestampSource,
     /// CRC32 of `idl0_config.json` at recording time, 8-char lowercase hex (SPEC §5.1's
     /// Config CRC32 algorithm). `None` for FIT/GPX/CSV — there is no device config.
     pub config_checksum: Option<String>,
@@ -697,6 +705,14 @@ under one key due to last-ulp CPU differences, and either is valid).
     }
   ],
   "track_visits_library_hash": null,     // string | omitted — opaque, do not parse
+  "timestamp_utc_ms": null,              // i64 | omitted — ruling R194, additive: present ONLY when
+                                          // "timestamp_source" is "user"; then it is the displayed and
+                                          // catalogued start and overrides data.parquet §4.3's value.
+                                          // Omitted for every other source: the parquet is the truth.
+  "timestamp_source": null,              // "header" | "gps_backfill" | "source_file" | "user" | omitted —
+                                          // ruling R194, additive: omitted = legacy file, read as the
+                                          // importer's source with the parquet value; only "user" makes
+                                          // a reader prefer this file. Does not bump schema_version.
   "lap_detector_version": null           // string | omitted — L2b Task 2, ruling R83 Q2, additive:
                                           // stamps `store::lap_index::LAP_DETECTOR_VERSION`; a
                                           // mismatch against the running build's constant (including

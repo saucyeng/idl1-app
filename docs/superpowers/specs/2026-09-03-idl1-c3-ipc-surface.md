@@ -795,9 +795,11 @@ interface ImporterInfo {
 **Library commands (added 2026-09-10, ruling R191).** Four commands and one
 status query for the M4c library; none runs on the interaction path.
 
-**`set_session_start(session_id: string, timestamp_utc_ms: number): Session`**
+**`set_session_start(session_id: string, timestamp_utc_ms: number): SessionDetail`**
 Writes a user-supplied wall-clock start into `session.json` with
-`timestamp_source: "user"` (C1 §3.1). Returns the updated `Session`.
+`timestamp_source: "user"` (C1 §3.1, §6) and updates the catalog row so
+sorting and listing see it. Returns the re-read `SessionDetail` (§3.2),
+the shape `save_session_metadata` returns for the same reason.
 Errors: `not_found`, `invalid_argument` (`timestamp_utc_ms <= 0`), `io`,
 `conflict`, `internal`.
 
@@ -824,7 +826,12 @@ command, so progress and errors stay per file. Errors: `not_found`, `io`,
 Every catalogued session whose stored `importer_version` differs from the
 running build's constant for its importer. Cheap: a catalog query.
 ```ts
-interface StaleSession { session_id: string; importer_id: string; stored_version: number; current_version: number }
+interface StaleSession {
+  session_id: string;
+  importer_id: string;
+  stored_version: string;    // SemVer as the importer stamps it, e.g. "0.1.0" (catalog column is TEXT)
+  current_version: string;   // the running build's constant for importer_id
+}
 ```
 Errors: `io`, `internal`.
 
