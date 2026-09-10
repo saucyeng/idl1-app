@@ -2,9 +2,9 @@ import { useMemo } from "react";
 import type { MouseEvent } from "react";
 import type { ReportDocument } from "../model/report/document";
 import { blockCellId, toPaperDocument } from "../model/report/paperDocument";
-import { buildPaperPalette, paperScheme } from "../model/report/paperPalette";
+import { buildPaperPalette } from "../model/report/paperPalette";
+import type { PaperScheme } from "../model/report/paperPalette";
 import { documentVars } from "../theme/series";
-import type { PaperTheme } from "../../Settings/theme";
 import { ReportBlockView } from "./reportBlocks";
 
 /** Props for {@link PaperView}. `document` is the full document
@@ -16,11 +16,13 @@ import { ReportBlockView } from "./reportBlocks";
 export interface PaperViewProps {
   document: ReportDocument;
   onSelectCell: (cellId: string) => void;
-  /** The user's paper theme (ruling R185 item 3, `Settings/prefs.ts`'s
-   *  `ui.paper_theme`) — `"app"` follows the app's tokens, `"light"` and
-   *  `"dark"` force one. It picks both this view's palette and the
-   *  `data-paper-theme` scope `styles/paper.css` styles the page through. */
-  theme: PaperTheme;
+  /** The scheme paper is drawn in — `model/report/paperPalette.ts`'s
+   *  `effectivePaperTheme` applied to the app's theme and the user's own
+   *  paper theme (ruling R185 item 3). Resolved by the caller, not here,
+   *  so this component takes one already-decided value rather than two
+   *  preferences and the rule connecting them. It picks both the palette
+   *  and the `data-paper-theme` scope `styles/paper.css` styles through. */
+  scheme: PaperScheme;
 }
 
 /**
@@ -36,11 +38,10 @@ export interface PaperViewProps {
  *    print furniture a live viewer does not need (R184 item 2). Every
  *    `absence` block survives — a phone must still say why something is
  *    missing rather than leaving a gap.
- * 2. **Which palette.** `model/report/paperPalette.ts`, resolved from the
- *    user's own paper theme (R185 item 3) — the app's live `--chart-N`
- *    tokens when paper follows the app, paper's own light values when it
- *    is forced light. Never `printPalette.ts`: that palette belongs to the
- *    printed page.
+ * 2. **Which palette.** `model/report/paperPalette.ts`, chosen by the
+ *    `scheme` prop (R185 item 3) — the app's live `--chart-N` tokens on
+ *    dark, paper's own fixed values on light. Never `printPalette.ts`:
+ *    that palette belongs to the printed page.
  * 3. **Taps.** Every block that belongs to a cell carries that cell's id in
  *    `data-cell-id`, and one delegated handler on the container turns a tap
  *    into `onSelectCell` — `Notebook/index.tsx` then opens its narrow
@@ -61,12 +62,12 @@ export interface PaperViewProps {
  * Rendering only — not unit-tested (CLAUDE.md §4); `paperDocument.test.ts`
  * and `screenPalette.test.ts` cover the decisions this component makes.
  */
-export default function PaperView({ document, onSelectCell, theme }: PaperViewProps) {
+export default function PaperView({ document, onSelectCell, scheme }: PaperViewProps) {
   // Resolved once per document render, exactly as `ReportView` resolves its
   // print palette (R174's "one place that turns a `--chart-N` into a
   // colour"): every swatch, every border and every chart on this page is
   // fed this one value, so a chip and a line can never disagree.
-  const palette = useMemo(() => buildPaperPalette(theme, documentVars()), [theme]);
+  const palette = useMemo(() => buildPaperPalette(scheme, documentVars()), [scheme]);
   const paper = useMemo(() => toPaperDocument(document), [document]);
 
   /** One delegated handler for the whole page rather than a handler per
@@ -85,7 +86,7 @@ export default function PaperView({ document, onSelectCell, theme }: PaperViewPr
   }
 
   return (
-    <article className="paper-view" data-paper-theme={paperScheme(theme)} onClick={handleTap}>
+    <article className="paper-view" data-paper-theme={scheme} onClick={handleTap}>
       {paper.blocks.map((block, i) => {
         const cellId = blockCellId(block);
         return (

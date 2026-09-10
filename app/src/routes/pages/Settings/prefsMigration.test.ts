@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { DEFAULT_PREFS, serializePrefs, type Prefs } from "./prefs";
+import { DEFAULT_PREFS, parsePrefs, serializePrefs, type Prefs } from "./prefs";
 import { migrationPlan, runPrefsMigration, type PrefsMigrationDeps } from "./prefsMigration";
 import type { EngineSettings } from "./settingsBackend";
 
@@ -209,6 +209,30 @@ describe("runPrefsMigration", () => {
     expect(deps.isMigrated()).toBe(true);
     expect(rewritten.engine).toBeUndefined();
     expect(rewritten.ui).toEqual({ last_section: "sync", section_list_width_px: 260, theme: "dark", output_register: null, paper_theme: "app" });
+  });
+
+  it("runPrefsMigration — a document written before paper_theme existed — migrates, and the key reads back as app", async () => {
+    // Arrange
+    let storedLocal = JSON.stringify({
+      engine: { data_dir: null, rider_name: "Isaac", unit_system: "metric" },
+      ui: { last_section: "sync", section_list_width_px: 260, theme: "dark", output_register: null },
+    });
+    const deps = fakeDeps({
+      readLocal: () => Promise.resolve(storedLocal),
+      writeLocal: (text: string) => {
+        storedLocal = text;
+        return Promise.resolve();
+      },
+    });
+
+    // Act
+    const outcome = await runPrefsMigration(deps);
+    const rewritten = parsePrefs(JSON.parse(storedLocal));
+
+    // Assert
+    expect(outcome.kind).toBe("migrated");
+    expect(rewritten.ui.paper_theme).toBe("app");
+    expect(rewritten.ui.output_register).toBeNull();
   });
 
   it("runPrefsMigration — local document has an unknown key nested inside engine — the local rewrite keeps it, dropping only the imported fields", async () => {

@@ -2,6 +2,7 @@ import { useRef } from "react";
 
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import type { CellKindToken } from "../model/cells";
+import { editorContentFor } from "../model/editorContent";
 import { isEditorEcho } from "../model/editorEcho";
 import CodePane from "./CodePane";
 import PropertiesForm from "./PropertiesForm";
@@ -91,7 +92,10 @@ export default function EditorPanes({ cellId, kind, code, onChange, channelIds, 
     onChange(nextCode);
   }
 
-  if (kind !== "js") {
+  // One decision, one place (`model/editorContent.ts`): the narrow sheet
+  // titles itself from the same call, so the title and what is under it
+  // can never disagree about which editor a cell gets.
+  if (editorContentFor(kind) === "code") {
     return (
       <div className="editor-panes flex h-full flex-col" data-cell-id={cellId}>
         <CodePane kind={kind} code={code} onChange={handleChange} channelIds={channelIds} definitionNames={definitionNames} />

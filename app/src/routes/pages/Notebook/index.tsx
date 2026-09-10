@@ -31,7 +31,7 @@ import { useRouteVisible } from "../../../shell/routeVisibility";
 import { useEditorSlotNode } from "../../../shell/editorSlot";
 import { useToolbarSlotNode } from "../../../shell/toolbarSlot";
 import { ColumnPlaceholder } from "../../../shell/ColumnFrame";
-import { resolveRegister, type PaperTheme } from "../Settings/theme";
+import { resolveRegister, type PaperTheme, type ThemeChoice } from "../Settings/theme";
 import { createPrefsStore, localStorageBackend } from "../Settings/prefsStore";
 import CellFrame, { type CellRunStatus } from "./components/CellFrame";
 import CellList from "./components/CellList";
@@ -76,6 +76,8 @@ import type { PlaybackMode } from "./interaction/playbackMode";
 import { editorPlacement } from "./model/editorPlacement";
 import { paperViewActive } from "./model/paperView";
 import { paperLiveDecision } from "./model/paperLive";
+import { editorContentFor, sheetTitleFor } from "./model/editorContent";
+import { effectivePaperTheme } from "./model/report/paperPalette";
 import { resolveEditorHost } from "./model/editorHost";
 import { runFft, type FftAction, type FftDeps } from "./model/fftDriver";
 import { exceedsBinCap, frequencyAxisHz } from "./model/fftRequest";
@@ -823,6 +825,11 @@ export default function NotebookPage() {
    *  `ui.paper_theme`) -- read from the same store as the register beside
    *  it, never a second storage key. */
   const [paperTheme, setPaperTheme] = useState<PaperTheme>("app");
+  /** The app's own theme choice, read for one reason: `"app"` paper follows
+   *  it (`effectivePaperTheme`). The app *applies* its own theme in
+   *  `Settings/ThemeSection.tsx`, which stamps `data-theme`; this page only
+   *  reads the choice. */
+  const [appTheme, setAppTheme] = useState<ThemeChoice>("dark");
   // Re-read on every transition into visibility, not only on mount: the
   // Settings tab writes these two through its *own* `PrefsStore` instance
   // over the same backend, so this page's instance never hears that store's
@@ -837,6 +844,7 @@ export default function NotebookPage() {
       if (cancelled) return;
       setStoredRegister(prefs.ui.output_register);
       setPaperTheme(prefs.ui.paper_theme);
+      setAppTheme(prefs.ui.theme);
     });
     return () => {
       cancelled = true;
@@ -2726,7 +2734,7 @@ export default function NotebookPage() {
   // (`model/paperLive.ts`), and saying so beats an unexplained blank page.
   const mainContentElement = paperActive ? (
     paperDoc !== null ? (
-      <PaperView document={paperDoc} onSelectCell={(cellId) => setSelectedCellId(cellId)} theme={paperTheme} />
+      <PaperView document={paperDoc} onSelectCell={(cellId) => setSelectedCellId(cellId)} scheme={effectivePaperTheme(appTheme, paperTheme)} />
     ) : (
       <p className="paper-empty">No output yet -- this notebook has not finished evaluating.</p>
     )
@@ -3026,7 +3034,7 @@ export default function NotebookPage() {
             onOpenChange={(open) => {
               if (!open) setSelectedCellId(null);
             }}
-            title={openCell?.kind === "js" ? "Cell properties" : "Cell code"}
+            title={openCell === null ? "" : sheetTitleFor(editorContentFor(openCell.kind))}
           >
             {!editorIsPortalHosted && editorPanesElement}
           </BrandSheet>
