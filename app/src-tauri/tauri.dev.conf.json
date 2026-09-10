@@ -1,0 +1,13 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "identifier": "com.saucyeng.idl1.dev",
+  "app": {
+    "windows": [
+      {
+        "title": "idl1 (dev)",
+        "width": 800,
+        "height": 600
+      }
+    ]
+  }
+}
