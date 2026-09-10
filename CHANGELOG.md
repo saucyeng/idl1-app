@@ -16,6 +16,8 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
   every other kind. Charts at that width now fetch the mobile point budget
   the design doc always specified. Paper has its own theme preference in
   Settings (follow the app, light, or dark), independent of the app theme.
+  The eight series colours for a white ground now live in one module the
+  printed report and light paper both import, tested for contrast once.
 
 - **The Sync section now shows nearby unpaired devices (2026-09-10, L11
   Task 14, app-side half).** `SyncStatus.discovered_peers` and the widened
