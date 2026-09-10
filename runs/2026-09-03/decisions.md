@@ -8330,3 +8330,31 @@ so it cannot contend with the legend lane).
 
 **Cost if wrong:** (1) a later task swaps the static SVG for the iframe
 behind the same block interface; (6) one clause in one predicate.
+
+## R185 — Mobile is viewer and editor, not both at once; paper theme is its own toggle
+
+*2026-09-10, Isaac.* "I do want both the viewer and editor on mobile, but I
+don't expect them to be simultaneous. Maybe the option on a sufficiently
+wide screen. The theme should be user selectable: a toggle for the app and
+a toggle for the paper."
+
+1. **Amends R184 item 4.** Tapping a `math` or `table` block is no longer a
+   no-op: it opens the **code editor in the sheet** (the same `BrandSheet`
+   that holds the Properties form for `js` cells), so every cell kind is
+   editable on a phone. Paper and editor alternate; they never share the
+   screen on narrow. Paper lane **task 7**.
+2. **"Option on a sufficiently wide screen" is already the `medium`
+   layout**: its inline editor placement is exactly paper-beside-editor.
+   So R184 item 6's landscape "gap" is not a gap; it is the wide-screen
+   option Isaac asked for. No toggle is added now; width decides, as
+   everywhere else. Revisit only if a real device makes the 600 px line
+   feel wrong.
+3. **Paper theme is a second preference**, `paperTheme: "app" | "light" |
+   "dark"`, stored in the existing Settings prefs store beside the app
+   theme and shown in `ThemeSection` under the app toggle. `"app"` follows
+   the app theme; the other two force. `PaperView` resolves its palette
+   from this, never from the print palette (R174) and never from the
+   screen palette directly. Paper lane **task 8**.
+
+**Cost if wrong:** (1) a code editor on a phone is cramped but honest;
+(2) one predicate clause later; (3) one pref key, migrated like the others.
