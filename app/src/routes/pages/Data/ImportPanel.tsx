@@ -1,7 +1,11 @@
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { UploadIcon } from "lucide-react";
+
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
+
+import { useCommand } from "../../../shell/commandRegistry";
+import { MENU_COMMAND_IDS } from "../../../shell/menuModel";
 
 import { toastFor } from "../../../components/toasts/events";
 import { Button } from "../../../components/ui/button";
@@ -288,6 +292,15 @@ export function ImportPanel({ onImported }: ImportPanelProps) {
         setScanState({ status: "error", text: describeIpcError(e).text });
       });
   };
+
+  // `File ▸ Import files` and `File ▸ Import folder` (ruling R220 item 1).
+  // Registered here rather than in the shell because these two handlers
+  // close over the import queue's dispatch, the importer override and the
+  // scan preview -- all of it state that lives in this panel (R109). The
+  // panel is mounted from launch (mount-and-hide, R93), so both menu
+  // entries are live whichever tab is showing.
+  useCommand(MENU_COMMAND_IDS.libraryImportFiles, true, handleBrowseClick);
+  useCommand(MENU_COMMAND_IDS.libraryImportFolder, true, handleFolderClick);
 
   /** Enqueues the *checked* rows of the current preview, one
    *  `import_file` per file through the queue this panel already drives

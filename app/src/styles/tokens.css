@@ -94,6 +94,16 @@
   --nb-pad: 4px; /* a control's inner padding */
   --nb-gap: 6px; /* gap between controls, and between toolbar groups' members */
 
+  /* ---- Shell chrome (ruling R220): the four fixed bands of the window,
+   * stated once here rather than as a literal on each component. The
+   * anatomy is VS Code's, at R212's density — the title bar is already
+   * R216's 32 px custom bar, the status bar is exactly one dense control
+   * tall (`--nb-control-h`), and the activity bar is the one band sized
+   * for a touch target rather than a pointer. ---- */
+  --shell-title-bar-h: 32px; /* R216's custom title bar; also the narrow title strip */
+  --shell-activity-bar-w: 48px; /* the four activity icons' column, and the narrow tab bar's height */
+  --shell-status-bar-h: 22px; /* the bottom band: session, jobs, memory, preset */
+
   /* ---- Radii ---- */
   --radius-structural: 2px; /* brandControlRadius */
   --radius: 7px; /* brandControlRadiusSoft; shadcn's --radius */

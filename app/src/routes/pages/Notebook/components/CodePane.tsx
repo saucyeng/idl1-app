@@ -1,9 +1,12 @@
 import { useEffect, useRef } from "react";
 
-import { defaultKeymap, history, historyKeymap } from "@codemirror/commands";
+import { defaultKeymap, history, historyKeymap, redo, undo } from "@codemirror/commands";
 import { syntaxHighlighting } from "@codemirror/language";
 import { EditorState } from "@codemirror/state";
 import { EditorView, keymap, lineNumbers } from "@codemirror/view";
+
+import { useCommand } from "../../../../shell/commandRegistry";
+import { MENU_COMMAND_IDS } from "../../../../shell/menuModel";
 
 import { brandEditorTheme, brandHighlightStyle } from "../editor/cmTheme";
 import { completionExtension, languageFor } from "../editor/idl1Language";
@@ -48,6 +51,27 @@ export interface CodePaneProps {
 export default function CodePane({ kind, code, onChange, channelIds, definitionNames }: CodePaneProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const viewRef = useRef<EditorView | null>(null);
+
+  // `Edit ▸ Undo` and `Edit ▸ Redo` (ruling R220 item 1). The history they
+  // walk is CodeMirror's own, the same one `historyKeymap` binds `Ctrl+Z`
+  // and `Ctrl+Shift+Z` to below -- the menu is a second door to it, not a
+  // second history. Focus is taken first, because a command chosen from a
+  // menu leaves the editor unfocused and an undo you cannot see land is
+  // worse than no menu item. Registered only while a code pane is mounted,
+  // so with no cell open both entries grey out rather than silently doing
+  // nothing.
+  useCommand(MENU_COMMAND_IDS.editUndo, true, () => {
+    const view = viewRef.current;
+    if (view === null) return;
+    view.focus();
+    undo(view);
+  });
+  useCommand(MENU_COMMAND_IDS.editRedo, true, () => {
+    const view = viewRef.current;
+    if (view === null) return;
+    view.focus();
+    redo(view);
+  });
   const debounceRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const channelIdsRef = useRef(channelIds);
   const definitionNamesRef = useRef(definitionNames);
