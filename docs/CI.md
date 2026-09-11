@@ -28,8 +28,7 @@ filename order. Regenerate it with:
 CI runs exactly that and then `git diff --exit-code`, so a lane that adds,
 renames or re-documents a builtin and forgets to regenerate fails the build
 rather than shipping a reference that disagrees with the engine (ruling R222
-item 1). The renderer writes `
-` line endings on every platform and reads the
+item 1). The renderer writes LF line endings on every platform and reads the
 curated files with CRLF normalised, so a Windows-generated file and the
 Linux CI run produce identical bytes.
 
