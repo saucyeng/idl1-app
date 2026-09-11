@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
-import { tabSwitchCommands } from "./commands";
+import { COMMAND_IDS } from "./commandTiers";
+import { tabSwitchCommands, tieredPaletteCommands } from "./commands";
 
 describe("tabSwitchCommands", () => {
   it("tabSwitchCommands — one command per route, in ROUTES order", () => {
@@ -17,5 +18,42 @@ describe("tabSwitchCommands", () => {
 
     expect(onNavigate).toHaveBeenCalledWith("data");
     expect(onNavigate).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("tieredPaletteCommands", () => {
+  it("palette — a command with a registered handler — is listed under its tier's heading", () => {
+    const available = new Set<string>([COMMAND_IDS.workbookSave, COMMAND_IDS.libraryRescan]);
+
+    const commands = tieredPaletteCommands(available, () => undefined);
+
+    expect(commands.map((command) => [command.label, command.group])).toEqual([
+      ["Save", "Notebook"],
+      ["Rescan library", "Notebook — more"],
+    ]);
+  });
+
+  it("palette — a command nothing has registered — is absent, not an inert row", () => {
+    const available = new Set<string>([COMMAND_IDS.workbookSave]);
+
+    const commands = tieredPaletteCommands(available, () => undefined);
+
+    expect(commands.map((command) => command.id)).toEqual([COMMAND_IDS.workbookSave]);
+  });
+
+  it("palette — the View dropdown root — is never an entry, having nothing to run", () => {
+    const available = new Set<string>(Object.values(COMMAND_IDS));
+
+    const commands = tieredPaletteCommands(available, () => undefined);
+
+    expect(commands.map((command) => command.id)).not.toContain(COMMAND_IDS.viewMenu);
+  });
+
+  it("palette — running an entry — invokes that command's registry id", () => {
+    const run = vi.fn();
+
+    tieredPaletteCommands(new Set([COMMAND_IDS.workbookSave]), run)[0]?.run();
+
+    expect(run).toHaveBeenCalledWith(COMMAND_IDS.workbookSave);
   });
 });

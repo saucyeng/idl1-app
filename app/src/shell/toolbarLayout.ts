@@ -26,21 +26,32 @@
  * ResizeObserver on the row, not window width") and hands the width here.
  */
 
-/** The six toolbar groups, left to right (R212 item 4's own order, with
- *  `document` — the workbook picker and worksheet tabs — placed between the
- *  column toggles and the view register; R212 names the other five and
- *  leaves this one, which the toolbar already carried, unplaced). */
-export type ToolbarGroupId = "columns" | "document" | "view" | "window" | "transport" | "actions";
+/**
+ * The six ribbon groups, left to right (ruling R225 item 3, replacing
+ * R212's own six).
+ *
+ * The four command groups are `shell/commandTiers.ts`'s `RibbonGroupId` —
+ * `panels`, `file`, `library`, `view` — and the two that are not commands
+ * at all are `window` (which windows are selected) and `transport` (play,
+ * speed, follow mode). The old `columns`/`document`/`actions` trio is gone:
+ * `columns` became `panels` under full words, and `document` and `actions`
+ * were the two groups whose loose buttons overlapped, now split between
+ * `file` and `library` as core buttons with their occasional commands
+ * behind a chevron.
+ */
+export type ToolbarGroupId = "panels" | "file" | "library" | "view" | "window" | "transport";
 
-/** {@link ToolbarGroupId}'s members in rendering order, left to right. */
-export const TOOLBAR_GROUP_ORDER: readonly ToolbarGroupId[] = ["columns", "document", "view", "window", "transport", "actions"];
+/** {@link ToolbarGroupId}'s members in rendering order, left to right.
+ *  Panels lead, under the activity bar's own column: "what am I looking at"
+ *  is read before "what do I do to it". */
+export const TOOLBAR_GROUP_ORDER: readonly ToolbarGroupId[] = ["panels", "file", "library", "view", "window", "transport"];
 
-/** The order groups leave the row in as it narrows — right to left, as
- *  R212 states it: "actions first, then view, then column toggles".
- *  `document` sits between `view` and `columns` for the same reason it sits
- *  between them on the row. `window` and `transport` are absent because
- *  they never collapse. */
-export const TOOLBAR_COLLAPSE_ORDER: readonly ToolbarGroupId[] = ["actions", "view", "document", "columns"];
+/** The order groups leave the row in as it narrows — right to left, which
+ *  is R212's rule unchanged: the view group first, then library, then file,
+ *  and the panel toggles last, because a reader who cannot see the columns
+ *  cannot get them back. `window` and `transport` are absent because they
+ *  never collapse (R212 rule 4). */
+export const TOOLBAR_COLLAPSE_ORDER: readonly ToolbarGroupId[] = ["view", "library", "file", "panels"];
 
 /**
  * One group's two footprints, in CSS pixels at the `--nb-*` density scale
@@ -76,20 +87,22 @@ export const TOOLBAR_GROUP_GAP = 13;
 export const TOOLBAR_OVERFLOW_WIDTH = 22 + TOOLBAR_GROUP_GAP;
 
 /** The six groups' nominal footprints — the first-frame fallback only. See
- *  {@link ToolbarGroupSpec} and {@link withMeasuredGroupWidths}. */
+ *  {@link ToolbarGroupSpec} and {@link withMeasuredGroupWidths}. Sized for
+ *  R225 item 3's geometry: a big button is 36 px wide unlabelled and about
+ *  64 px with its 11 px label, and a split button adds a 16 px chevron. */
 export const NOTEBOOK_TOOLBAR_GROUPS: readonly ToolbarGroupSpec[] = [
-  // Graph · Properties · Cells, as a segmented toggle group.
-  { id: "columns", labelledWidth: 168, compactWidth: 72 },
-  // Workbook picker + worksheet tabs + "+".
-  { id: "document", labelledWidth: 244, compactWidth: 152 },
-  // Paper · Studio, then R213's four-way layout preset picker.
-  { id: "view", labelledWidth: 356, compactWidth: 152 },
+  // Notebook · Maths · Code, three big toggle buttons.
+  { id: "panels", labelledWidth: 204, compactWidth: 120 },
+  // Open ▾ and Save ▾, two split buttons.
+  { id: "file", labelledWidth: 166, compactWidth: 110 },
+  // Import ▾, one split button.
+  { id: "library", labelledWidth: 86, compactWidth: 58 },
+  // View ▾, then Paper · Studio, R213's preset picker and Dense.
+  { id: "view", labelledWidth: 400, compactWidth: 200 },
   // Session + laps. Never collapses; truncates instead.
   { id: "window", labelledWidth: 160, compactWidth: 96 },
   // Play/pause + speed + follow mode. Never collapses.
   { id: "transport", labelledWidth: 214, compactWidth: 118 },
-  // Save · Export report · New workbook · Rescan · gesture map · X axis.
-  { id: "actions", labelledWidth: 352, compactWidth: 148 },
 ];
 
 /** What {@link toolbarLayout} decides for one measured row width. */
@@ -212,7 +225,7 @@ export function withMeasuredGroupWidths(
  * what {@link inlineGroupSpans} models and what the tests assert against.
  */
 export interface ToolbarGroupSpan {
-  id: ToolbarGroupId;
+  id: string;
   /** px from the row's left content edge to the group box's left edge. */
   start: number;
   /** px to the group box's right edge (shrunk, when over-subscribed). */
@@ -245,19 +258,63 @@ export function inlineGroupSpans(
   const natural = layout.inline.map((id) => {
     const spec = specs.find((s) => s.id === id);
     const width = spec === undefined ? 0 : layout.labelled ? spec.labelledWidth : spec.compactWidth;
-    return { id, width };
+    return { id: id as string, width };
   });
 
-  const total = rowWidth(layout.inline, specs, layout.labelled, layout.overflow.length > 0);
-  const sum = natural.reduce((running, group) => running + group.width, 0);
-  const excess = Math.max(0, total - availableWidth);
+  const reserved = layout.overflow.length > 0 ? TOOLBAR_OVERFLOW_WIDTH : 0;
+  return packedSpans(natural, availableWidth, TOOLBAR_GROUP_GAP, reserved);
+}
+
+/** One item to pack along the row: anything with an id and a natural width
+ *  — a whole group, or a single button inside one. */
+export interface PackedItem {
+  id: string;
+  /** px the item occupies at its natural, unshrunk size. */
+  width: number;
+}
+
+/**
+ * `items` packed left to right along a track `availableWidth` CSS pixels
+ * wide, with `gap` between neighbours and `reserved` px held back at the
+ * right (ruling R225 item 3's root-cause fix).
+ *
+ * This is the model behind both halves of the overlap bug, and the reason
+ * it is one function rather than two. R216 item 4 fixed it between *groups*:
+ * a `flex-shrink` box compresses below its contents, the contents paint past
+ * the box's right edge, and the next box — which starts where this one ends
+ * — is painted over. R225 item 3 fixes the same thing one level down,
+ * between *buttons inside a group*, where Save, Export, Create, Rescan, the
+ * gesture select and the X-axis select were siblings with the default
+ * `flex-shrink: 1` and did exactly that to each other. The fix in the markup
+ * is `flex-nowrap` on the container and `shrink-0` on every child; the
+ * guarantee that it holds is a test over this function at every width.
+ *
+ * Excess is taken off the boxes in proportion to their widths, CSS
+ * `flex-shrink: 1`'s own rule, while `contentEnd` keeps the natural size.
+ * A layout in which no `end` ever falls short of its own `contentEnd` is one
+ * that cannot overlap.
+ *
+ * @param items The boxes to place, in visual order.
+ * @param availableWidth The track's inner width, in CSS px.
+ * @param gap px between two neighbouring items.
+ * @param reserved px held back at the right — the "⋯" trigger, or nothing.
+ */
+export function packedSpans(
+  items: readonly PackedItem[],
+  availableWidth: number,
+  gap: number,
+  reserved = 0,
+): ToolbarGroupSpan[] {
+  const sum = items.reduce((running, item) => running + item.width, 0);
+  const gaps = items.length > 1 ? (items.length - 1) * gap : 0;
+  const excess = Math.max(0, sum + gaps + reserved - availableWidth);
 
   let cursor = 0;
-  return natural.map((group, index) => {
-    const shrunk = sum > 0 ? group.width - (excess * group.width) / sum : group.width;
+  return items.map((item, index) => {
+    const shrunk = sum > 0 ? item.width - (excess * item.width) / sum : item.width;
     const start = cursor;
     const end = start + Math.max(0, shrunk);
-    cursor = end + (index < natural.length - 1 ? TOOLBAR_GROUP_GAP : 0);
-    return { id: group.id, start, end, contentEnd: start + group.width };
+    cursor = end + (index < items.length - 1 ? gap : 0);
+    return { id: item.id, start, end, contentEnd: start + item.width };
   });
 }

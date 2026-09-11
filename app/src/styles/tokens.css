@@ -103,6 +103,7 @@
   --shell-title-bar-h: 32px; /* R216's custom title bar; also the narrow title strip */
   --shell-activity-bar-w: 48px; /* the four activity icons' column, and the narrow tab bar's height */
   --shell-status-bar-h: 22px; /* the bottom band: session, jobs, memory, preset */
+  --shell-ribbon-h: 40px; /* R225's Notebook ribbon: one 36 px big button plus its margin */
   /* The one z-index the shell's layout states (ruling R221.1). Every
    * chrome region carries it; the content container carries none and
    * isolates instead, so nothing inside a route -- the sandbox iframe host
