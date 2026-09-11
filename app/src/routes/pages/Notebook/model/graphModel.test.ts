@@ -182,3 +182,57 @@ describe("declaredDefinitionNames", () => {
     expect(declaredDefinitionNames("").size).toBe(0);
   });
 });
+
+describe("buildGraphModel — chart nodes (R214 item 1)", () => {
+  it("chart node — a js cell charting a definition — one chart node fed by that definition", () => {
+    // Arrange
+    const markdown =
+      "```math id=a1b2c3d4\nfork_velocity = differentiate([fork_travel])\n```\n\n" +
+      '```js id=b2c3d4e5\nPlot.plot({marks: [Plot.lineY(channel("fork_velocity"), {x: "t", y: "v"})]})\n```\n';
+
+    // Act
+    const model = buildGraphModel(markdown, []);
+
+    // Assert
+    const chart = model.nodes.find((n) => n.kind === "chart")!;
+    expect(chart.id).toBe("chart:b2c3d4e5");
+    expect(chart.cellId).toBe("b2c3d4e5");
+    expect(model.edges).toContainEqual({ id: "def:fork_velocity->chart:b2c3d4e5", source: "def:fork_velocity", target: "chart:b2c3d4e5" });
+  });
+
+  it("chart node — a js cell reading an undeclared name — that name becomes a source node", () => {
+    // Arrange
+    const markdown = '```js id=b2c3d4e5\nPlot.plot({marks: [Plot.lineY(channel("RearShock"), {x: "t", y: "v"})]})\n```\n';
+
+    // Act
+    const model = buildGraphModel(markdown, []);
+
+    // Assert
+    const source = model.nodes.find((n) => n.kind === "channel")!;
+    expect(source.name).toBe("RearShock");
+    expect(model.edges).toContainEqual({ id: "channel:RearShock->chart:b2c3d4e5", source: "channel:RearShock", target: "chart:b2c3d4e5" });
+  });
+
+  it("chart node — a js cell outside the plotForm grammar — states an unknown mark rather than guessing one", () => {
+    // Arrange
+    const markdown = '```js id=b2c3d4e5\nconst raw = channel("Speed");\nrender(raw);\n```\n';
+
+    // Act
+    const model = buildGraphModel(markdown, []);
+
+    // Assert
+    const chart = model.nodes.find((n) => n.kind === "chart")!;
+    expect(chart.mark).toBeNull();
+  });
+
+  it("chart node — a js cell with no fence id — has no node", () => {
+    // Arrange
+    const markdown = '```js\nPlot.plot({marks: [Plot.lineY(channel("Speed"), {x: "t", y: "v"})]})\n```\n';
+
+    // Act
+    const model = buildGraphModel(markdown, []);
+
+    // Assert
+    expect(model.nodes.filter((n) => n.kind === "chart")).toEqual([]);
+  });
+});

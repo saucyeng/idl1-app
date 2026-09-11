@@ -3,6 +3,13 @@ import { useMemo, useState } from "react";
 import { filterSourcePalette, type PaletteGroup, type PaletteRow, type SourcePalette } from "../model/sourcePalette";
 import type { PaletteDragSource } from "../model/graphPaletteDrop";
 import type { UnitLabel } from "../../../../ipc/workbook";
+import { NODE_KIND_CUES, NODE_KINDS, type NodeKind } from "./nodeKind";
+
+/** The legend's own one-character stand-in for each kind's card glyph
+ *  (R214 item 1) — a footer line has room for a character, not for the
+ *  card's inline SVG, and these read as the same three things: a waveform,
+ *  a function, a chart. */
+const LEGEND_GLYPH: Record<NodeKind, string> = { source: "∿", derived: "ƒ", chart: "▦" };
 
 /** The `dataTransfer` MIME type a palette row's drag carries — a JSON-
  *  encoded {@link PaletteDragSource}. `GraphCanvas.tsx`'s own drop handler
@@ -16,6 +23,10 @@ export interface SourcePaletteRailProps {
    *  `buildSourcePalette`) — this component computes no decision of its
    *  own, only search-filters and renders. */
   palette: SourcePalette;
+  /** The Settings preference "Colour-code graph nodes" (R214 item 1) — the
+   *  footer legend shows a colour swatch per kind only while it is on, so
+   *  the key never names a cue the canvas isn't drawing. */
+  colourCoded: boolean;
 }
 
 /** One collapsible group's own open/closed state, keyed by its label —
@@ -114,7 +125,7 @@ function channelsStatusLine(palette: SourcePalette): string | null {
  * drop target and the document edit via `graphPaletteDrop.ts`); this
  * component only starts the drag.
  */
-export default function SourcePaletteRail({ palette }: SourcePaletteRailProps) {
+export default function SourcePaletteRail({ palette, colourCoded }: SourcePaletteRailProps) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [collapsedGroups, setCollapsedGroups] = useState<CollapsedGroups>(new Set());
@@ -174,6 +185,19 @@ export default function SourcePaletteRail({ palette }: SourcePaletteRailProps) {
           <PaletteGroupView key={`channel:${g.label}`} group={g} collapsed={collapsedGroups.has(`channel:${g.label}`)} onToggle={() => toggleGroup(`channel:${g.label}`)} />
         ))}
         {!hasAnyRows && channelsStatus === null && <div className="px-2 py-1 text-label-2 text-fg-faint">No matches for &ldquo;{query}&rdquo;.</div>}
+      </div>
+      {/* R214 item 1: "Legend: a one-line key in the palette rail footer."
+          The three node kinds, named, each with the same glyph its cards
+          carry — and its colour swatch only while the Settings toggle is
+          on, since the key must describe what is actually drawn. */}
+      <div className="flex items-center gap-2 border-t border-rule px-2 py-1 text-label-2 text-fg-faint">
+        {NODE_KINDS.map((kind) => (
+          <span key={kind} className="flex items-center gap-1" title={NODE_KIND_CUES[kind].hint}>
+            {colourCoded && <span aria-hidden="true" className="inline-block h-2 w-1" style={{ background: NODE_KIND_CUES[kind].stripeVar }} />}
+            <span aria-hidden="true">{LEGEND_GLYPH[kind]}</span>
+            {NODE_KIND_CUES[kind].label}
+          </span>
+        ))}
       </div>
     </div>
   );

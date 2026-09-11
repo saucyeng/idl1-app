@@ -6,6 +6,35 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 
 ### Added
 
+- **The maths graph says what each node is (2026-09-11, ruling R214).**
+  Three kinds now read apart at a glance without relying on colour: a
+  source is a device channel, square-cornered on its left edge with a small
+  waveform glyph and its name in mono; a derived value is a maths
+  definition, rounded, marked with an f; a chart is a cell's output,
+  carrying that chart's own pictogram and a thin rule along its bottom.
+  Charts are new to the graph entirely — a js cell now appears as a node
+  fed by every channel its code reads. A key to the three sits in the
+  source palette's footer, and Settings gains "Colour-code graph nodes", a
+  switch that adds a coloured stripe per kind. It is off by default and
+  nothing depends on it.
+
+- **Cells are named, not numbered in hex (2026-09-11, ruling R214).** A
+  cell with no "# label:" line used to show its raw id on the graph, like
+  1a000006. It now reads "Cell 3" — its place in the file — with the id
+  kept as a tooltip. Double-clicking a maths cell's frame title renames it,
+  writing the label into the cell itself, so the name travels with the
+  workbook.
+
+- **The code panel is the whole workbook (2026-09-11, ruling R214).** The
+  Properties/Code column used to show one cell's body at a time. It now
+  shows the entire .idl1wb document in one editor, each cell foldable, with
+  the selection tied both ways: click a graph node, a cell frame or a cell
+  in the list and the document scrolls to it with its lines banded in the
+  gutter; put the caret inside a cell and that cell is selected everywhere
+  else. Editing works as before, with the same settle delay. The per-cell
+  editors in the Cells column are unchanged, and a phone-width sheet still
+  opens just the cell it was opened from.
+
 - **Four layout presets, remembered per screen shape (2026-09-11, ruling
   R213).** Output puts the notebook full width with the graph and
   properties away; Maths brings both back and squeezes the output to its

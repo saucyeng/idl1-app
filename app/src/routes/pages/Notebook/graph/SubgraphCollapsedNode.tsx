@@ -8,6 +8,10 @@ export interface SubgraphCollapsedData extends Record<string, unknown> {
   /** Fired when the node's header is clicked — expands the cell back open
    *  (decision 43's KiCad-subsheet open gesture). */
   onExpand: (cellId: string) => void;
+  /** What the closed sheet titles itself with: the cell's `# label:`, else
+   *  `"Cell N"` by document order (`cellDisplayName.ts`, R214 item 2) —
+   *  never the bare `hex8`, which is the title's tooltip instead. */
+  displayName: string;
 }
 
 /** Even vertical spacing (percent of the node's own height) for `n` stacked
@@ -28,7 +32,7 @@ function portOffsetsPercent(n: number): number[] {
  * itself is tested on `collapsedSubgraphNodesFor`.
  */
 export default function SubgraphCollapsedNode({ data }: NodeProps<Node<SubgraphCollapsedData, "subgraphCollapsed">>) {
-  const { collapsed, onExpand } = data;
+  const { collapsed, onExpand, displayName } = data;
   const inputOffsets = portOffsetsPercent(collapsed.inputs.length);
   const outputOffsets = portOffsetsPercent(collapsed.outputs.length);
 
@@ -47,9 +51,10 @@ export default function SubgraphCollapsedNode({ data }: NodeProps<Node<SubgraphC
           e.stopPropagation();
           onExpand(collapsed.cellId);
         }}
-        className="w-full truncate text-center font-mono text-label-1 text-fg hover:text-hivis"
+        title={collapsed.cellId}
+        className="w-full truncate text-center text-label-1 text-fg hover:text-hivis"
       >
-        ▸ {collapsed.label ?? collapsed.cellId}
+        ▸ {displayName}
       </button>
 
       <div className="mt-1 flex justify-between gap-2 text-label-2 text-fg-faint">
