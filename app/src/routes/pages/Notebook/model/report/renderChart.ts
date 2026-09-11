@@ -52,21 +52,28 @@ export class MissingChannelDataError extends Error {
   }
 }
 
-/** One mark's fixed option pair (C2 §5.3: every mark binds `x: "t"`,
- *  `y: "v"`, literally — see `plotForm/parse.ts`'s `readMarkOptions`),
- *  plus whichever `stroke`/`strokeWidth` this mark ends up drawn with. */
-type TimeMarkOptions = Pick<PlotMarkOptions, "stroke" | "strokeWidth"> & { x: "t"; y: "v" };
+/** One mark's fixed option pair (C2 §5.3: every mark binds `y: "v"` and
+ *  an `x` of `"t"` or `"tr"` — see `plotForm/parse.ts`'s
+ *  `readMarkOptions`), plus whichever `stroke`/`strokeWidth` this mark ends
+ *  up drawn with. */
+type TimeMarkOptions = Pick<PlotMarkOptions, "stroke" | "strokeWidth"> & { x: "t" | "tr"; y: "v" };
 
-/** One channel-payload row, in the shape `x: "t"`/`y: "v"` mark options bind
- *  against — the same `{t, v}` pairing `sandbox/main.ts`'s
+/** One channel-payload row, in the shape `x`/`y: "v"` mark options bind
+ *  against — the same `{t, v, tr}` triple `sandbox/main.ts`'s
  *  `materializeHostVar` builds for a `"channel"` host variable, minus the
  *  `w` column: a caller here has already partitioned by window (see
  *  {@link recordsForWindow}) or intends every window's samples in one mark
  *  (see {@link recordsFor}), so `w` has already done its job by the time
- *  this shape exists. */
+ *  this shape exists.
+ *
+ *  `tr` is carried alongside `t` rather than being resolved to one column
+ *  here (ruling R215 items 4-5): which of the two a mark binds is the
+ *  mark's own `xField`, and building both keeps one record shape for every
+ *  mark in a plot even though a plot's marks all bind the same one. */
 interface TimeRecord {
   t: number;
   v: number;
+  tr: number;
 }
 
 /** Every sample in `payload`, across every window it carries, in original
@@ -82,7 +89,7 @@ interface TimeRecord {
 function recordsFor(payload: CombinedChannelPayload): TimeRecord[] {
   const records = new Array<TimeRecord>(payload.length);
   for (let i = 0; i < payload.length; i++) {
-    records[i] = { t: payload.t[i], v: payload.v[i] };
+    records[i] = { t: payload.t[i], v: payload.v[i], tr: payload.tr[i] };
   }
   return records;
 }
@@ -95,7 +102,7 @@ function recordsFor(payload: CombinedChannelPayload): TimeRecord[] {
 function recordsForWindow(payload: CombinedChannelPayload, windowIndex: number): TimeRecord[] {
   const records: TimeRecord[] = [];
   for (let i = 0; i < payload.length; i++) {
-    if (payload.w[i] === windowIndex) records.push({ t: payload.t[i], v: payload.v[i] });
+    if (payload.w[i] === windowIndex) records.push({ t: payload.t[i], v: payload.v[i], tr: payload.tr[i] });
   }
   return records;
 }
@@ -138,7 +145,7 @@ function windowColour(colourToken: string, palette: readonly string[]): string {
   return palette[index % palette.length];
 }
 
-function timeMarkOptions(x: "t", y: "v", stroke: string | undefined, strokeWidth: number | undefined): TimeMarkOptions {
+function timeMarkOptions(x: "t" | "tr", y: "v", stroke: string | undefined, strokeWidth: number | undefined): TimeMarkOptions {
   const options: TimeMarkOptions = { x, y };
   if (stroke !== undefined) options.stroke = stroke;
   if (strokeWidth !== undefined) options.strokeWidth = strokeWidth;
@@ -183,13 +190,20 @@ function buildMarks(mark: MarkProps, channelData: ReadonlyMap<string, CombinedCh
   const payload = channelData.get(mark.channel);
   if (payload === undefined) throw new MissingChannelDataError(mark.channel);
 
+  // Ruling R215 items 4-5: a mark binds the lap-relative column when its
+  // own `xField` says so. Without this the report would silently redraw a
+  // lap-pair overlay or a variance trace on session time -- the traces
+  // would sit end to end instead of superimposed, which looks like real
+  // data and is not what the cell says.
+  const xField = mark.xField ?? "t";
+
   if (mark.stroke !== undefined) {
-    const options = timeMarkOptions("t", "v", mark.stroke, mark.strokeWidth);
+    const options = timeMarkOptions(xField, "v", mark.stroke, mark.strokeWidth);
     return [callMark(Plot, mark.mark, recordsFor(payload), options)];
   }
 
   return payload.windows.map((descriptor, windowIndex) => {
-    const options = timeMarkOptions("t", "v", windowColour(descriptor.colour, palette), mark.strokeWidth);
+    const options = timeMarkOptions(xField, "v", windowColour(descriptor.colour, palette), mark.strokeWidth);
     return callMark(Plot, mark.mark, recordsForWindow(payload, windowIndex), options);
   });
 }
@@ -231,6 +245,10 @@ export function buildPlotOptions(
   Plot: typeof import("@observablehq/plot"),
 ): PlotOptions {
   const marks: Markish[] = [];
+  // C2 §5.3's `zero_rule`, first so it draws under the data (ruling R215
+  // item 5) — the same order `plotForm/generate.ts` emits it in, so the
+  // report and the live chart stack their marks identically.
+  if (props.zeroLine === true) marks.push(Plot.ruleY([0]));
   for (const mark of props.marks) {
     marks.push(...buildMarks(mark, channelData, palette, Plot));
   }
