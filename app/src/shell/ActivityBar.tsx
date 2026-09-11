@@ -38,7 +38,7 @@ export default function ActivityBar({ activeRoute, onNavigate, badges, shortcutL
   return (
     <nav
       aria-label="Activities"
-      className="flex w-[var(--shell-activity-bar-w)] shrink-0 flex-col items-stretch border-r border-rule bg-surface"
+      className="shell-chrome flex w-[var(--shell-activity-bar-w)] shrink-0 flex-col items-stretch border-r border-rule bg-surface"
     >
       {ROUTES.map((route) => {
         const Icon = ACTIVITY_ICONS[route.id];

@@ -26,5 +26,5 @@ export function ToolbarSlotRow() {
     return () => setToolbarSlotNode(null);
   }, []);
 
-  return <div ref={ref} />;
+  return <div ref={ref} className="shell-chrome" />;
 }

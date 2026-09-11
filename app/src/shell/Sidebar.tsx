@@ -118,7 +118,7 @@ export default function Sidebar({
   const activeLabel = ROUTES.find((route) => route.id === activeRoute)?.label ?? "";
 
   return (
-    <div className="flex shrink-0" style={{ width: `${widthPx}px` }}>
+    <div className="shell-chrome flex shrink-0" style={{ width: `${widthPx}px` }}>
       <div className="flex min-w-0 flex-1 flex-col bg-surface">
         <div className="flex h-[var(--shell-status-bar-h)] shrink-0 items-center justify-between gap-2 pr-1 pl-3">
           <h2 className="truncate font-mono text-label-2 tracking-[var(--tracking-label)] text-fg-dim uppercase">{activeLabel}</h2>

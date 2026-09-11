@@ -4,6 +4,21 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 
 ## [Unreleased]
 
+### Fixed
+
+- **A chart can no longer paint over the window's own controls
+  (2026-09-11, ruling R221.1).** Charts are drawn in a layer that floats
+  above the page so they can track scrolling in real pixels, and one piece
+  of the app's furniture at a time kept turning up underneath it — most
+  recently the timeline strip above the notebook. Every part of the window
+  frame (title bar and menus, the activity icons, the side panel, the
+  toolbar row, the timeline strip and the status bar) now sits in one
+  layer above one container that holds everything a tab draws, so nothing
+  a chart does can reach past it. The timeline strip moved into that frame
+  — same place on screen, same controls. Nothing inside a tab needs to
+  claim a stacking order any more, and the two patches that had been added
+  for this reason are gone.
+
 ### Added
 
 - **[docs] Release pipeline (2026-09-11, ruling R224).** `release.yml`

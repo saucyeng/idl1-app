@@ -32,15 +32,13 @@ export default function TitleBar({ collapsed = false }: TitleBarProps) {
   const dragRegion = customTitleBar ? "" : undefined;
 
   return (
-    /* `relative z-10` over an opaque `bg-surface`, the same treatment the
-       Notebook toolbar row carries: the notebook's sandbox iframe host is
-       `position: fixed` with an explicit `zIndex: 0`, so a chart scrolled up
-       the page paints above every static in-flow element, and only a
-       positioned element with a higher stated z-index clips it (R209 item
-       1). */
+    /* `shell-chrome` is the whole stacking story now (ruling R221.1): one
+       class, one z-index, shared by every chrome region. It replaces the
+       `relative z-10` this bar carried since R209 — the patch that started
+       the one-element-at-a-time habit R221.1 ends. */
     <header
       className={cn(
-        "relative z-10 flex h-[var(--shell-title-bar-h)] shrink-0 items-center border-b border-rule bg-surface pl-3 text-body-small",
+        "shell-chrome flex h-[var(--shell-title-bar-h)] shrink-0 items-center border-b border-rule bg-surface pl-3 text-body-small",
         customTitleBar ? "pr-0" : "pr-3",
       )}
     >
