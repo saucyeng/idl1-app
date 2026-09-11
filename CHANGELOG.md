@@ -6,6 +6,35 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 
 ### Added
 
+- **The window's title bar is the app's own (2026-09-11, ruling R216).** On
+  Windows, idl1 no longer draws a native caption above its own top bar.
+  Minimize, maximize and close sit inline on the right of the app's
+  navigation row, the row itself is 32 px instead of 44, and dragging or
+  double-clicking its empty space moves or maximizes the window. Known
+  cost: hovering the maximize button no longer offers Windows' Snap
+  Layouts flyout. Win+arrow and dragging to a screen edge still work.
+  macOS and Linux keep their native decorations unchanged.
+
+- **A plot's chrome is inside the plot (2026-09-11, ruling R216).** The
+  "JS 01 · Settled · Show code" strip above every chart is gone, and the
+  chart has the space. What it said is now a 12 px mark in the plot's own
+  top-left corner: a spinner while the cell runs, a green tick that fades
+  two seconds after it settles, and a red cross that stays put when it
+  fails — hover the cross for the full error, click it to pin the message
+  open. "Show code" moved to the plot's right-click menu, alongside
+  Properties and Tidy in graph, and onto Alt+C. A cell with a "# label:"
+  line shows that label centred above its plot, and a plot drawing more
+  than one series gets a compact key in its top-right corner. The label
+  line is the only title source today: the Properties form has no title
+  field of its own, and adding one would change the workbook grammar.
+
+- **Dense stacking (2026-09-11, ruling R216).** A "Dense" switch in the
+  toolbar's view group stacks cells with no gap, no padding and no chrome
+  rows, and lets two charts one above the other read as a single shared
+  time axis. Both charts still compute their own axes; nothing about the
+  data changes. Maths and table cells lose their status row in this mode
+  too, keeping the same corner mark a chart gets. The setting is remembered
+  per machine and is off by default.
 - **Indexing is a background job, and it says what it is doing (2026-09-11,
   rulings R207 and R208 item 1).** Detecting every session's track visits
   and laps used to happen on the way to opening a workbook, behind a
@@ -116,6 +145,14 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
   recording to show a channel list.
 
 ### Fixed
+
+- **The toolbar's right-hand tools no longer overlap (2026-09-11, ruling
+  R216).** After the workbook picker and the layout presets were added, the
+  tools on the right of the Notebook toolbar could paint over one another
+  at some window widths: the row decided what fitted from a table of
+  written-down widths that those two additions had outgrown. It measures
+  each group of tools instead, so what it collapses into the "⋯" menu is
+  based on how wide they really are.
 
 - **The ResizeObserver loop notice no longer trips the global error banner
   (2026-09-11).** "ResizeObserver loop completed with undelivered

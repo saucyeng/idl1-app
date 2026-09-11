@@ -7,6 +7,8 @@ import type { Selection } from "../state/AppState";
 import { sessionLabel, windowsKey } from "../state/selection";
 import { StatusDot } from "@/components/brand/StatusDot";
 import { collapsedChipLabel, removeWindowAt, selectionChips, shouldCollapseChips } from "./topBarSelection";
+import WindowControls from "./WindowControls";
+import { usesCustomTitleBar } from "./windowChrome";
 
 /** Props for {@link TopBar}. */
 export interface TopBarProps {
@@ -46,6 +48,14 @@ export interface TopBarProps {
 export default function TopBar({ activeRoute, onNavigate, selection, onWindowsChange, onOpenPalette }: TopBarProps) {
   const [sessionNamesById, setSessionNamesById] = useState<Map<string, string>>(new Map());
 
+  // Ruling R216 item 1. Read once per render from the user agent, which
+  // never changes for the life of the window; `windowChrome.ts` explains
+  // why that rather than the OS plugin. `undefined` rather than `false` for
+  // the attribute, because Tauri tests for the attribute's *presence*:
+  // `data-tauri-drag-region="false"` would still drag.
+  const customTitleBar = typeof navigator !== "undefined" && usesCustomTitleBar(navigator.userAgent);
+  const dragRegion = customTitleBar ? "" : undefined;
+
   useEffect(() => {
     let cancelled = false;
     listSessions()
@@ -77,8 +87,22 @@ export default function TopBar({ activeRoute, onNavigate, selection, onWindowsCh
        positioned element with a higher stated z-index clips it, so this bar
        states one too (R209 item 1 -- charts were painting over the top bar
        even after the toolbar row was fixed). */
-    <header className="relative z-10 flex h-11 items-center gap-4 border-b border-rule bg-surface px-4 text-body-small">
-      <span className="font-mono text-title-2 font-semibold tracking-[var(--tracking-kicker)] text-fg">idl1</span>
+    <header
+      className={cn(
+        "relative z-10 flex items-center gap-3 border-b border-rule bg-surface pl-3 text-body-small",
+        // 32 px, not 44 (ruling R216 item 1): on Windows this bar *is* the
+        // title bar, so it replaces the native caption rather than sitting
+        // under it. The height is the same on every platform — a bar that
+        // changed height with the OS would change every downstream layout
+        // measurement with it — only the drag region and the controls are
+        // Windows-only.
+        "h-[var(--space-8)]",
+        customTitleBar ? "pr-0" : "pr-3",
+      )}
+    >
+      <span data-tauri-drag-region={dragRegion} className="font-mono text-title-2 font-semibold tracking-[var(--tracking-kicker)] text-fg">
+        idl1
+      </span>
 
       <nav className="flex items-center gap-1" aria-label="Primary">
         {ROUTES.map((route) => {
@@ -131,8 +155,15 @@ export default function TopBar({ activeRoute, onNavigate, selection, onWindowsCh
       {/* The playback transport used to portal into a reserved slot here.
           Ruling R212 item 4 moves it into the Notebook toolbar's centre
           group, so the slot is gone and this is now plain spacing pushing
-          the command-palette trigger to the right edge. */}
-      <div className="flex-1" />
+          the command-palette trigger to the right edge.
+
+          On Windows this same empty space is the window's drag handle
+          (R216 item 1): `data-tauri-drag-region` makes a press here move
+          the window and a double-click toggle maximize, both handled by
+          Tauri itself. It is on the spacer and the wordmark, never on the
+          header, so a press that lands on a tab, a chip's dismiss button or
+          the palette trigger is a click on that control and not a drag. */}
+      <div data-tauri-drag-region={dragRegion} className="h-full flex-1" />
 
       <button
         type="button"
@@ -145,6 +176,9 @@ export default function TopBar({ activeRoute, onNavigate, selection, onWindowsCh
       <StatusDot className="text-fg-faint" title="Device status is not wired into the shell yet">
         DEVICE
       </StatusDot>
+
+      {/* Far right, flush to the window edge, where Windows puts them. */}
+      {customTitleBar && <WindowControls className="-mr-px ml-1" />}
     </header>
   );
 }

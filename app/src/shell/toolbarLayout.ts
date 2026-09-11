@@ -48,12 +48,16 @@ export const TOOLBAR_COLLAPSE_ORDER: readonly ToolbarGroupId[] = ["actions", "vi
  * what it occupies once labels are hidden and only icons, values and the
  * chips' own text remain.
  *
- * These are **nominal** widths, declared here rather than measured per
- * group, and deliberately a touch generous: the row is `flex-nowrap` with
- * `overflow-hidden` and truncating text, so an over-estimate costs a little
- * empty space at the right and an under-estimate truncates the window
- * chip's session name — neither wraps the row or brings back a scrollbar,
- * which are the two failures R212 exists to remove. One place to tune.
+ * {@link NOTEBOOK_TOOLBAR_GROUPS} declares a **nominal** pair per group,
+ * used only until the row has measured that group for the first time.
+ * Ruling R216 item 4: nominal widths on their own were the overlap bug —
+ * the presets picker (R213) and the `document` group grew past the numbers
+ * declared here, `toolbarLayout` kept reporting "it fits", and the row's
+ * flex shrink compressed each group's box below its content so neighbouring
+ * groups painted over one another. The row now measures every rendered
+ * group with a `ResizeObserver` and feeds the real widths back through
+ * {@link withMeasuredGroupWidths}; the nominal pair is the first-frame
+ * fallback and nothing more.
  */
 export interface ToolbarGroupSpec {
   id: ToolbarGroupId;
@@ -71,8 +75,8 @@ export const TOOLBAR_GROUP_GAP = 13;
  *  when at least one group has actually collapsed into it. */
 export const TOOLBAR_OVERFLOW_WIDTH = 22 + TOOLBAR_GROUP_GAP;
 
-/** The six groups' nominal footprints. See {@link ToolbarGroupSpec} on why
- *  these are declared rather than measured. */
+/** The six groups' nominal footprints — the first-frame fallback only. See
+ *  {@link ToolbarGroupSpec} and {@link withMeasuredGroupWidths}. */
 export const NOTEBOOK_TOOLBAR_GROUPS: readonly ToolbarGroupSpec[] = [
   // Graph · Properties · Cells, as a segmented toggle group.
   { id: "columns", labelledWidth: 168, compactWidth: 72 },
@@ -153,4 +157,107 @@ export function toolbarLayout(availableWidth: number, specs: readonly ToolbarGro
   // Rule 4: nothing collapsible is left. The window chip and the transport
   // stay and the row truncates its own text rather than hiding either.
   return { labelled: false, inline: all.filter((id) => !overflow.includes(id)), overflow };
+}
+
+/** A group's measured footprint in one label state, as the row reports it
+ *  (ruling R216 item 4). Both fields are optional because a group is only
+ *  ever rendered in one label state at a time: the row learns a group's
+ *  labelled width the first time it renders labelled, and its compact width
+ *  the first time it renders compact. */
+export interface MeasuredGroupWidth {
+  /** px measured with text labels showing, or `undefined` if never seen. */
+  labelledWidth?: number;
+  /** px measured with text labels hidden, or `undefined` if never seen. */
+  compactWidth?: number;
+}
+
+/**
+ * `specs` with every measured width substituted for its nominal one
+ * (ruling R216 item 4).
+ *
+ * Field by field, not spec by spec: a group the row has only ever rendered
+ * labelled keeps its nominal *compact* width until it is first seen
+ * compact, rather than falling back to nominal for both. A measurement of
+ * `0` — what a hidden or not-yet-laid-out element reports — is ignored,
+ * because a zero-width group would make every layout "fit" and bring the
+ * overlap straight back.
+ *
+ * Pure: the caller owns the `ResizeObserver` and the map it fills.
+ *
+ * @param measured Measured widths by group id; missing ids keep their nominal pair.
+ * @param specs The groups to adjust; defaults to {@link NOTEBOOK_TOOLBAR_GROUPS}.
+ */
+export function withMeasuredGroupWidths(
+  measured: ReadonlyMap<ToolbarGroupId, MeasuredGroupWidth>,
+  specs: readonly ToolbarGroupSpec[] = NOTEBOOK_TOOLBAR_GROUPS,
+): ToolbarGroupSpec[] {
+  return specs.map((spec) => {
+    const seen = measured.get(spec.id);
+    if (seen === undefined) return { ...spec };
+    const labelledWidth = seen.labelledWidth !== undefined && seen.labelledWidth > 0 ? seen.labelledWidth : spec.labelledWidth;
+    const compactWidth = seen.compactWidth !== undefined && seen.compactWidth > 0 ? seen.compactWidth : spec.compactWidth;
+    return { id: spec.id, labelledWidth, compactWidth };
+  });
+}
+
+/**
+ * Where one inline group sits on the row, and where its contents actually
+ * paint (ruling R216 item 4's regression guard).
+ *
+ * `start`/`end` bound the group's flex **box**; `contentEnd` is where its
+ * contents reach. The two differ only when the row is over-subscribed: a
+ * `flex-shrink` box compresses below its content, the content paints past
+ * the box's right edge, and the next group's box — which starts where this
+ * box ends — is painted over. That is exactly the reported bug, so it is
+ * what {@link inlineGroupSpans} models and what the tests assert against.
+ */
+export interface ToolbarGroupSpan {
+  id: ToolbarGroupId;
+  /** px from the row's left content edge to the group box's left edge. */
+  start: number;
+  /** px to the group box's right edge (shrunk, when over-subscribed). */
+  end: number;
+  /** px to the right edge of the group's *contents*, which never shrink. */
+  contentEnd: number;
+}
+
+/**
+ * The inline groups of `layout` laid out across a row `availableWidth` CSS
+ * pixels wide, as the browser's `flex-nowrap` packing would place them.
+ *
+ * Groups are packed left to right in {@link TOOLBAR_GROUP_ORDER} with
+ * {@link TOOLBAR_GROUP_GAP} between them, plus
+ * {@link TOOLBAR_OVERFLOW_WIDTH} reserved at the right when `layout` has
+ * anything in its overflow menu. When the natural total exceeds
+ * `availableWidth`, the excess is taken off the boxes in proportion to
+ * their widths — CSS `flex-shrink: 1`'s own rule — while contents keep
+ * their natural size.
+ *
+ * @param layout The decision to place; normally {@link toolbarLayout}'s result.
+ * @param availableWidth Measured inner width of the toolbar row, in CSS px.
+ * @param specs The group footprints in play; defaults to {@link NOTEBOOK_TOOLBAR_GROUPS}.
+ */
+export function inlineGroupSpans(
+  layout: ToolbarLayout,
+  availableWidth: number,
+  specs: readonly ToolbarGroupSpec[] = NOTEBOOK_TOOLBAR_GROUPS,
+): ToolbarGroupSpan[] {
+  const natural = layout.inline.map((id) => {
+    const spec = specs.find((s) => s.id === id);
+    const width = spec === undefined ? 0 : layout.labelled ? spec.labelledWidth : spec.compactWidth;
+    return { id, width };
+  });
+
+  const total = rowWidth(layout.inline, specs, layout.labelled, layout.overflow.length > 0);
+  const sum = natural.reduce((running, group) => running + group.width, 0);
+  const excess = Math.max(0, total - availableWidth);
+
+  let cursor = 0;
+  return natural.map((group, index) => {
+    const shrunk = sum > 0 ? group.width - (excess * group.width) / sum : group.width;
+    const start = cursor;
+    const end = start + Math.max(0, shrunk);
+    cursor = end + (index < natural.length - 1 ? TOOLBAR_GROUP_GAP : 0);
+    return { id: group.id, start, end, contentEnd: start + group.width };
+  });
 }
