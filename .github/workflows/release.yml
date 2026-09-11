@@ -1,7 +1,12 @@
-# Builds and drafts a GitHub Release for idl1. Unsigned: Windows builds show
-# a SmartScreen warning and Linux .deb/.AppImage are unsigned too. Signing
-# (a Windows code-signing cert, an Android keystore) is a follow-up — see
-# docs/RELEASING.md.
+# Builds and drafts a GitHub Release for idl1, publishing to the public
+# saucyeng/idl1-releases repo so the in-app updater (ruling R231) has a
+# `latest.json` it can fetch without auth. Bundles are updater-signed with
+# `TAURI_SIGNING_PRIVATE_KEY`/`_PASSWORD` once Isaac has generated and
+# stored that keypair (docs/RELEASING.md); absent, the build is unsigned —
+# Windows installers show a SmartScreen warning, and the app's own
+# placeholder-pubkey guard keeps update checks off rather than trusting an
+# unsigned `latest.json`. Windows code-signing and an Android keystore
+# remain a separate follow-up.
 #
 # Trigger: push a tag matching v* (e.g. `git tag v0.1.0-alpha.1 && git push
 # --tags`), or run manually via workflow_dispatch. Draft release only —
@@ -82,14 +87,43 @@ jobs:
         working-directory: app
         run: npm ci
 
+      - name: Extract release notes from CHANGELOG.md
+        id: notes
+        shell: bash
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          body="$(.github/scripts/extract-changelog.sh "$version" CHANGELOG.md)"
+          {
+            echo "body<<RELEASE_NOTES_EOF"
+            echo "$body"
+            echo "RELEASE_NOTES_EOF"
+          } >> "$GITHUB_OUTPUT"
+
       - name: Build and release
         uses: tauri-apps/tauri-action@v0
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Publishes to the public `saucyeng/idl1-releases` repo (ruling
+          # R231: the app repo is private, and the updater's `latest.json`
+          # endpoint must be fetchable without auth) via a fine-grained
+          # `RELEASES_TOKEN` secret Isaac creates on that repo. Falls back
+          # to the app repo's own `GITHUB_TOKEN` when the secret is absent,
+          # so the workflow keeps working before that secret exists —
+          # `owner`/`repo` below fall back the same way.
+          GITHUB_TOKEN: ${{ secrets.RELEASES_TOKEN || secrets.GITHUB_TOKEN }}
+          # The updater's signing keypair (docs/RELEASING.md: `npm run
+          # tauri signer generate`). Isaac stores these as repo secrets;
+          # absent, `tauri-action` builds unsigned updater artifacts and
+          # the app's own placeholder-pubkey guard keeps checking off.
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
           projectPath: app
           tagName: ${{ github.ref_name }}
           releaseName: "idl1 ${{ github.ref_name }}"
+          releaseBody: ${{ steps.notes.outputs.body }}
           releaseDraft: true
           prerelease: ${{ contains(github.ref_name, '-') }}
+          includeUpdaterJson: true
+          owner: ${{ secrets.RELEASES_TOKEN && 'saucyeng' || '' }}
+          repo: ${{ secrets.RELEASES_TOKEN && 'idl1-releases' || '' }}
           args: ${{ matrix.platform == 'ubuntu-22.04' && '--bundles appimage,deb' || '--bundles msi,nsis' }}

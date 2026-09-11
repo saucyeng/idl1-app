@@ -81,6 +81,7 @@ export const COMMAND_IDS = {
   goNotebook: "go.notebook",
   goSettings: "go.settings",
   helpAbout: "help.about",
+  helpCheckForUpdates: "help.checkForUpdates",
 } as const;
 
 /** Every id in {@link COMMAND_IDS}. */

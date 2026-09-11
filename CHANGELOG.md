@@ -4,6 +4,18 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 
 ## [Unreleased]
 
+### Added
+
+- **In-app updates [docs] (2026-09-11, ruling R231).** The app checks
+  `saucyeng/idl1-releases`' `latest.json` on launch (+30 s) and every
+  4 h, and from `Help ▸ Check for updates…`; a status-bar item names the
+  version found and opens a release-notes panel with "Restart to update"
+  (download with progress, install, relaunch) and "Later". `release.yml`
+  now signs updater bundles and publishes to that public repo once Isaac
+  has generated the keypair and stored the secrets — see
+  `docs/RELEASING.md`'s new "In-app updates" section for the one-time
+  setup. Dev builds and a build with no real pubkey never check.
+
 ### Changed
 
 - **The Notebook toolbar is a ribbon [docs] (2026-09-11, ruling R225).**
