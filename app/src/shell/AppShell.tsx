@@ -19,7 +19,6 @@ import TitleBar from "./TitleBar";
 import BottomBar from "./BottomBar";
 import RouteHost from "./RouteHost";
 import { ToolbarSlotRow } from "./ToolbarSlotRow";
-import { usesCustomTitleBar } from "./windowChrome";
 import CommandPalette from "./CommandPalette";
 import { registerCommand, runCommand, unregisterCommand } from "./commandRegistry";
 import { commandForEvent, formatShortcut, MENU_COMMAND_IDS, MENUS, usesCommandGlyph } from "./menuModel";
@@ -112,7 +111,6 @@ export default function AppShell() {
   const aspectClass = useAspectClass();
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [aboutOpen, setAboutOpen] = useState(false);
-  const customTitleBar = typeof navigator !== "undefined" && usesCustomTitleBar(navigator.userAgent);
   const commandGlyph = typeof navigator !== "undefined" && usesCommandGlyph(navigator.userAgent);
   const activePreset = useActiveLayoutPreset();
   const deviceLink = useDeviceLink();
@@ -234,14 +232,13 @@ export default function AppShell() {
 
   return (
     <div className="flex h-screen w-screen flex-col bg-bg text-fg">
-      {/* Narrow layouts have no menu bar beside the window controls (R220
-          item 3), but a window with `decorations: false` still needs
-          somewhere to drag, maximize and close. The same 32 px title bar
-          serves both: at this width its menus collapse into one "⋯"
-          button. Mounted on every platform when wide, and when narrow only
-          where the app draws its own decorations — no platform with a
-          native caption pays for a second one. */}
-      {(!narrow || customTitleBar) && <TitleBar collapsed={narrow} />}
+      {/* One 32 px title bar at every width (R220 items 1 and 3). Narrow
+          layouts have no room for five menu titles beside the window
+          controls, so the bar collapses its menus into one "⋯" button
+          rather than disappearing — the strip is also where a window with
+          `decorations: false` is dragged, maximized and closed, and where
+          the ruling puts the narrow layout's commands. */}
+      <TitleBar collapsed={narrow} />
 
       <div className="flex min-h-0 flex-1">
         {!narrow && (

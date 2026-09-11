@@ -56,7 +56,7 @@ export type ActivityBadges = Readonly<Record<RouteId, ActivityBadge | null>>;
 const DEVICE_BADGE: Readonly<Record<DeviceLink, ActivityBadge | null>> = {
   disconnected: null,
   connected: { kind: "dot", count: null, tone: "good", title: "Device connected" },
-  lost: { kind: "dot", count: null, tone: "warn", title: "Device connected, not answering" },
+  lost: { kind: "dot", count: null, tone: "warn", title: "Device not answering" },
 };
 
 /**
