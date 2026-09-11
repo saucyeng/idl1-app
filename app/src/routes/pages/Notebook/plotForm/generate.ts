@@ -72,10 +72,15 @@ function renderChannelCall(m: MarkProps): string {
   return `channel(${jsString(m.channel)}${lapArg})`;
 }
 
-/** Renders a mark's `mark_options` (C2 §5.3): the fixed `x`/`y` pair,
- *  then optionally `stroke`, then optionally `strokeWidth`. */
+/** Renders a mark's `mark_options` (C2 §5.3): the `x`/`y` pair — `y`
+ *  always `"v"`, `x` either `"t"` (session time, the default) or `"tr"`
+ *  (lap-relative time, ruling R215 items 4-5) — then optionally `stroke`,
+ *  then optionally `strokeWidth`. */
 function renderMarkOptions(m: MarkProps): string {
-  const fields: string[] = [`x: "t"`, `y: "v"`];
+  // `x` binds the lap-relative column only when the mark asks for it;
+  // omitting `xField` emits `x: "t"` exactly as this generator always has,
+  // so no landed document changes on disk (C2 §5.3).
+  const fields: string[] = [`x: ${jsString(m.xField ?? "t")}`, `y: "v"`];
   if (m.stroke !== undefined) fields.push(`stroke: ${jsString(m.stroke)}`);
   if (m.strokeWidth !== undefined) fields.push(`strokeWidth: ${String(m.strokeWidth)}`);
   return `{ ${fields.join(", ")} }`;

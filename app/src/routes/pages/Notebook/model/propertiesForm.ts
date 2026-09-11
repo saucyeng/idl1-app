@@ -177,6 +177,71 @@ export function defaultScatterPlotProps(channels: readonly { id: string; label: 
   return props;
 }
 
+/** The default `TimePlotProps` the **lap variance** chart type seeds
+ *  (ruling R215 item 4): one line mark on the chosen definition, bound to
+ *  the lap-relative time column so every selected lap's trace starts at
+ *  zero and they superimpose.
+ *
+ *  **Why this is a preset over the time cell, not its own chart kind.**
+ *  `lap_delta_time(...)` (C2 §3.8's current name for what R73 shipped as
+ *  `variance_time`) already evaluates as an ordinary `math` definition with
+ *  a time axis, and the app already fetches a definition per selected
+ *  window through `fetch_host_channel_v2`. A variance trace is therefore
+ *  exactly a time cell charting that definition on a lap-relative axis --
+ *  no new engine command, no new grammar production, and no second code
+ *  path that could drift from the one every other definition chart uses.
+ *  The picker offers it because "chart this definition as a lap trace" is a
+ *  real gesture; the Properties pane does not list it as a chart *type*,
+ *  because a cell's `PlotProps.chart` would say `"time"` and a control that
+ *  disagreed with the document would be a lie.
+ *
+ *  **The overlay is the window selection**, not a per-mark `lap`: the app
+ *  fetches one series per selected window and
+ *  `host/protocol.ts`'s `combineChannelWindows` combines them under one
+ *  host variable (R127 item 1). Selecting three laps draws three traces
+ *  from this one mark. `MarkProps.lap` is deliberately left unset -- it is
+ *  plumbed but not applied to narrow a fetch (`jsCellBinding.ts`'s own
+ *  note), so seeding it would promise a narrowing that does not happen. */
+export function defaultVariancePlotProps(channels: readonly { id: string; label: string; unit?: string }[]): TimePlotProps {
+  const props: TimePlotProps = {
+    chart: "time",
+    marks: [{ channel: channels[0]?.id ?? "", mark: "lineY", xField: "tr" }],
+    x: { label: "Lap time (s)" },
+  };
+  const label = suggestAxisLabel(channels[0]);
+  if (label !== undefined) props.y = { label };
+  return props;
+}
+
+/** Sets every mark's x binding (C2 §5.3's `x_field_binding`, ruling R215
+ *  items 4-5): `"tr"` for the lap-relative axis, or `undefined` for
+ *  session time. Applied to **every** mark at once, not per mark: a plot
+ *  has one x scale, and two marks on different time columns would draw one
+ *  against the other's axis. That is why the Properties pane presents this
+ *  as a plot-level control even though the grammar stores it per mark --
+ *  the grammar has no plot-level slot for it, and inventing one would put
+ *  the same fact in two places that could disagree. */
+export function setTimeXField(props: TimePlotProps, xField: "tr" | undefined): TimePlotProps {
+  return {
+    ...props,
+    marks: props.marks.map((m) => {
+      if (xField === undefined) {
+        const { xField: _drop, ...rest } = m;
+        return rest;
+      }
+      return { ...m, xField };
+    }),
+  };
+}
+
+/** The x binding the Properties pane shows for a whole time cell: `"tr"`
+ *  only when **every** mark binds it (a mixed cell is a hand edit, and
+ *  reporting the first mark's choice for all of them would misdescribe the
+ *  others). An empty `marks` array reads as session time, the default. */
+export function timeXFieldOf(props: TimePlotProps): "tr" | undefined {
+  return props.marks.length > 0 && props.marks.every((m) => m.xField === "tr") ? "tr" : undefined;
+}
+
 /** The code "Reset to form" writes back: `generate` of `lastKnownProps`
  *  when one exists, or of {@link defaultPlotProps} otherwise (design §6 /
  *  this task's brief — never a no-op, even for a cell that started as

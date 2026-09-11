@@ -28,17 +28,27 @@ describe("CHART_TYPE_CATALOG", () => {
     }
   });
 
-  it("CHART_TYPE_CATALOG — a mark entry's mark equals its id and charts \"time\"; a chart-kind entry's mark is null", () => {
-    // Assert
+  it("CHART_TYPE_CATALOG — a mark entry's mark equals its id and charts \"time\"; every other entry's mark is null", () => {
+    // Assert — a non-mark entry is either a whole-cell chart kind (its
+    // `chart` is not `"time"`) or a preset over the time cell whose picture
+    // is not a plain line (`"variance"`, R215 item 4, which does chart
+    // `"time"`); both carry `mark: null`, which is what `NodeCard.tsx`'s
+    // header glyph reads.
     for (const entry of CHART_TYPE_CATALOG) {
       if ((MARK_NAMES as readonly string[]).includes(entry.id)) {
         expect(entry.mark).toBe(entry.id);
         expect(entry.chart).toBe("time");
       } else {
         expect(entry.mark).toBeNull();
-        expect(entry.chart).not.toBe("time");
       }
     }
+  });
+
+  it("CHART_TYPE_CATALOG — \"variance\" — is a time-cell preset: charts \"time\" but carries no mark", () => {
+    // Assert
+    const variance = CHART_TYPE_CATALOG.find((c) => c.id === "variance");
+    expect(variance?.chart).toBe("time");
+    expect(variance?.mark).toBeNull();
   });
 });
 

@@ -2186,7 +2186,7 @@ export default function NotebookPage() {
       };
       const onAction = (action: ChannelBindAction) => {
         if (action.type === "channelData") {
-          sandboxHostRef.current?.setChannelHostVar(action.channelId, action.length, action.t, action.v, action.w, action.windows, action.unit);
+          sandboxHostRef.current?.setChannelHostVar(action.channelId, action.length, action.t, action.v, action.tr, action.w, action.windows, action.unit);
           // R139: retain the same combined arrays the sandbox just got a
           // transfer clone of -- `model/cursorCard.ts` reads this back.
           combinedChannelDataRef.current.set(`${action.cellId}::${action.channelId}`, action.retained);
@@ -3242,7 +3242,7 @@ export default function NotebookPage() {
                   };
                   const onAction = (action: ChannelBindAction) => {
                     if (action.type === "channelData") {
-                      sandboxHostRef.current?.setChannelHostVar(action.channelId, action.length, action.t, action.v, action.w, action.windows, action.unit);
+                      sandboxHostRef.current?.setChannelHostVar(action.channelId, action.length, action.t, action.v, action.tr, action.w, action.windows, action.unit);
                       // R139: retain the same combined arrays the sandbox
                       // just got a transfer clone of -- `model/cursorCard.ts`
                       // reads this back.

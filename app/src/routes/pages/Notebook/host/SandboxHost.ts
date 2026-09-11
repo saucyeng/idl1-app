@@ -254,16 +254,27 @@ export class SandboxHost {
    * windows over the same channel must not collide on this method's `name`
    * (R127 item 1), so a caller with several selected windows combines them
    * first (`host/protocol.ts`'s `combineChannelWindows`) and calls this
-   * once with the combined `{t, v, w}` series and their `windows`
-   * descriptors. The three buffers are moved (not copied) via
-   * `postMessage`'s transfer list (P7); the caller must not read `t`/`v`/`w`
-   * again after this call. `unit` is this channel's three-state unit
+   * once with the combined `{t, v, tr, w}` series and their `windows`
+   * descriptors. The four buffers are moved (not copied) via
+   * `postMessage`'s transfer list (P7); the caller must not read
+   * `t`/`v`/`tr`/`w` again after this call. `tr` is the lap-relative time
+   * column (`combineChannelWindows`, ruling R215 items 4-5) — seconds since
+   * each sample's own window began, so *n* selected laps superimpose. `unit` is this channel's three-state unit
    * (R154/R164) -- small JSON metadata, not transferred -- which
    * `sandbox/main.ts`'s `materializeHostVar` projects onto the bound array
    * as `.unit`/`.unitState`.
    */
-  setChannelHostVar(name: string, length: number, t: ArrayBuffer, v: ArrayBuffer, w: ArrayBuffer, windows: WindowDescriptor[], unit: UnitLabel): void {
-    const { message, transfer } = channelPayload(name, length, t, v, w, windows, unit);
+  setChannelHostVar(
+    name: string,
+    length: number,
+    t: ArrayBuffer,
+    v: ArrayBuffer,
+    tr: ArrayBuffer,
+    w: ArrayBuffer,
+    windows: WindowDescriptor[],
+    unit: UnitLabel
+  ): void {
+    const { message, transfer } = channelPayload(name, length, t, v, tr, w, windows, unit);
     this.postToSandbox(message, transfer);
     this.scheduleRerender();
   }

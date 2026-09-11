@@ -145,10 +145,11 @@ function materializeHostVar(payload: HostVarPayload): unknown {
   if (payload.kind === "channel") {
     const t = new Float64Array(payload.t);
     const v = new Float64Array(payload.v);
+    const tr = new Float64Array(payload.tr);
     const w = new Float64Array(payload.w);
-    const records = new Array<{ t: number; v: number; w: number }>(payload.length);
+    const records = new Array<{ t: number; v: number; tr: number; w: number }>(payload.length);
     for (let i = 0; i < payload.length; i++) {
-      records[i] = { t: t[i], v: v[i], w: w[i] };
+      records[i] = { t: t[i], v: v[i], tr: tr[i], w: w[i] };
     }
     Object.defineProperty(records, "windows", { value: payload.windows, enumerable: false });
     // C2 §5.1's `.unit`/`.unitState` host-variable properties (R154/R164):
@@ -442,7 +443,7 @@ class SandboxRuntime {
    * // `combineChannelWindows`, both host-side); this is a bare-name lookup
    * // over whatever the host has already sent.
    */
-  private channelLookup(name: string, _opts?: { lap?: number; session?: string }): { t: number; v: number; w: number }[] {
+  private channelLookup(name: string, _opts?: { lap?: number; session?: string }): { t: number; v: number; tr: number; w: number }[] {
     const value = this.hostVars.get(name);
     if (!Array.isArray(value)) {
       // R148: an unbound channel returns an empty array, which Plot renders
@@ -453,7 +454,7 @@ class SandboxRuntime {
       );
       return [];
     }
-    return value as { t: number; v: number; w: number }[];
+    return value as { t: number; v: number; tr: number; w: number }[];
   }
 
   /**

@@ -1592,9 +1592,10 @@ fft_marks     ::= "[" spectrum_mark "]"                           (* new 2026-09
 time_mark     ::= "Plot." mark_name "(" channel_call "," mark_options ")"
 mark_name     ::= "lineY" | "dot" | "areaY" | "rectY" | "ruleY"
 channel_call  ::= "channel(" js_string ("," "{" "lap" ":" js_int "}")? ")"
-mark_options  ::= "{" "x" ":" "\"t\"" "," "y" ":" "\"v\""
+mark_options  ::= "{" "x" ":" x_field_binding "," "y" ":" "\"v\""   (* changed 2026-09-11 *)
                        ("," "stroke" ":" css_color)?
                        ("," "strokeWidth" ":" js_number)? "}"
+x_field_binding ::= "\"t\"" | "\"tr\""                            (* new 2026-09-11 — R215 items 4-5 *)
 
 spectrum_mark ::= "Plot." spectrum_mark_name "(" spectrum_call "," spectrum_options ")"   (* new 2026-09-06 *)
 spectrum_mark_name ::= "lineY" | "dot" | "areaY"                  (* new 2026-09-06 *)
@@ -1741,6 +1742,64 @@ kind rather than a mark. Nothing in the grammar changed for this: an FFT
 cell inserted from the picker is byte-identical to one the Properties
 pane's `Time → FFT` switch produces.
 
+**The lap-relative time axis** (added 2026-09-11, ruling R215 items 4-5).
+A time mark's `x` binds one of two time columns, and the choice is in the
+document:
+
+- **`x: "t"`** — seconds since the session's first sample. The default, and
+  what every landed document says; the generator emits it whenever
+  `MarkProps.xField` is absent, so **no landed document changes on disk**.
+- **`x: "tr"`** — seconds since **this sample's own selected window**
+  began. *n* selected laps therefore start at zero together and
+  superimpose, instead of sitting end to end on a session-time axis. This
+  is the axis idl0's lap-pair overlay and its `varianceTrace` both drew on
+  (`worksheet.dart:79-87`'s `VarianceMode.lapTime`).
+
+`tr` is derived host-side, in `host/protocol.ts`'s
+`combineChannelWindows`, alongside the `w` column R127 already added: the
+per-window rebase only exists once *n* windows are combined, which is a
+host-side concept — the engine serves tiles per channel and knows nothing
+about which windows this session has selected. It is an axis offset for one
+picture, not a number the sync model carries. **It is measured from each
+window's own first sample, not its span boundary**: a lap window's first
+recorded sample can fall slightly after the lap boundary, and starting both
+laps at their own first sample is the alignment that answers "how do these
+two laps differ" — two different sub-sample offsets would put a fixed skew
+between the traces.
+
+**The binding is stored per mark but edited per plot.** A plot has one x
+scale, so two marks on different time columns would draw one against the
+other's axis; the Properties pane's axis control writes every mark at once
+and reports `"tr"` only when *every* mark binds it. The grammar has no
+plot-level slot for it, and adding one would put the same fact in two
+places that could disagree.
+
+**There is no distance binding, by design** (ruling R136). Wheel/GPS
+distance on X is offered in the control, **disabled, with its reason**
+(`model/xMode.ts`'s `DISTANCE_X_MODE_DISABLED_REASON`) — a naive cumulative
+distance axis misaligns two laps that took different lines through the same
+corner, so it would look correct and mislead. It has no `x_field_binding`
+spelling at all: a grammar slot would be a promise the engine cannot keep,
+the same rule that keeps `lap` off `spectrum_call`.
+
+**The lap variance trace is a preset over the time cell, not a chart kind**
+(ruling R215 item 4). `lap_delta_time(...)` (§3.8's current name for what
+R73 shipped as `variance_time`) already evaluates as an ordinary `math`
+definition with a time axis, and a definition is already fetched per
+selected window through C3 §3.4's `fetch_host_channel_v2`. A variance trace
+is therefore exactly a time cell charting that definition on the
+lap-relative axis — no new engine command, no new grammar production, and
+no second code path to drift from the one every other definition chart
+uses. The **overlay is the window selection**: one series per selected
+window, combined under one host variable (R127 item 1), so selecting three
+laps draws three traces from one mark. `MarkProps.lap` is deliberately not
+seeded — it is plumbed but not applied to narrow a fetch, so setting it
+would promise a narrowing that does not happen. The graph card's picker
+offers the preset (charting a definition as a lap trace is a real gesture);
+the Properties pane's chart-type control does not list it, because such a
+cell's `PlotProps.chart` says `"time"` and a control that disagreed with the
+document would be a lie.
+
 **The histogram cell** (added 2026-09-11, ruling R215 item 2). idl0's
 value-distribution chart (`chart_workspace.dart:600-606`), ported onto the
 engine's existing binner through a new command, `fetch_histogram` (C3 §3.6).
@@ -1878,7 +1937,8 @@ which defeats the point of overlaying them.
 
 | Grammar slot | Props field | Type | Default | Maps to |
 |---|---|---|---|---|
-| chart type (which `marks_array` alternative) | `PlotProps.chart: "time" \| "fft"` | closed enum | `"time"` | nothing on the wire; selects `fetch_fft` vs the tile path |
+| chart type (which `marks_array` alternative) | `PlotProps.chart` | closed enum (`"time"`, `"fft"`, `"histogram"`, `"scatter"`) | `"time"` | nothing on the wire; selects which fetch the cell makes |
+| `x_field_binding` (time cell) | `MarkProps.xField` | `"tr"`, or absent for session time | absent (`x: "t"`) | nothing on the wire; selects the `tr` column of the channel payload |
 | `spectrum_call`'s `js_string` | `SpectrumMarkProps.channel` | string | first channel in the session picker | `fetch_fft`'s `channel` |
 | `spectrum_mark_name` | `SpectrumMarkProps.mark` | `"lineY" \| "dot" \| "areaY"` | `"lineY"` | none (Plot mark) |
 | `windowSize` | `fft.windowSize` | positive integer, samples, or `"all"` | `2048` samples | `params.window_size` |

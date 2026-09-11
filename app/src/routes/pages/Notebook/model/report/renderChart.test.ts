@@ -22,6 +22,7 @@ function payload(overrides: Partial<CombinedChannelPayload> = {}): CombinedChann
     length: 4,
     t: new Float64Array([0, 1, NaN, 2]),
     v: new Float64Array([10, 11, NaN, 12]),
+    tr: new Float64Array([0, 1, NaN, 0]),
     w: new Float64Array([0, 0, NaN, 1]),
     windows: [
       { sessionId: "s1", span: { kind: "session" }, colour: "--chart-3", label: "Lap 1" },

@@ -5,6 +5,30 @@ export interface MarkProps {
   channel: string;
   mark: "lineY" | "dot" | "areaY" | "rectY" | "ruleY";
   lap?: number | null;
+  /**
+   * Which time column this mark's x axis binds (C2 §5.3's
+   * `x_field_binding`, ruling R215 items 4-5). **Absent means session
+   * time** — `x: "t"`, seconds since the session's first sample, what
+   * every landed document says and what `generate` emits when this field
+   * is omitted. The one other value, `"tr"`, binds the lap-relative
+   * column: seconds since *this sample's own selected window* began
+   * (`host/protocol.ts`'s `combineChannelWindows`), so *n* selected laps
+   * superimpose instead of sitting end to end. That is the axis idl0's
+   * lap-pair overlay and variance trace both drew on.
+   *
+   * Typed as the single value rather than `"t" | "tr"` for the same reason
+   * `lap` is "omitted = session scope": with only `"tr"` expressible, the
+   * absent case has exactly one spelling and `parse(generate(p))` is
+   * deep-equal to `p` with no normalisation step.
+   *
+   * There is deliberately **no distance value.** Wheel/GPS distance on X
+   * is disabled with its reason (ruling R136) — a naive cumulative
+   * distance axis misaligns two laps that took different lines through the
+   * same corner, and a grammar slot for it would be a promise the engine
+   * cannot keep. `model/xMode.ts`'s `DISTANCE_X_MODE_DISABLED_REASON` is
+   * what the Properties pane shows instead.
+   */
+  xField?: "tr";
   stroke?: string;      // any valid CSS colour literal
   strokeWidth?: number; // px
 }

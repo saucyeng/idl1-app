@@ -527,8 +527,10 @@ export function readChannelCall(c: Cursor): { channel: string; lap: number | nul
 function parseMarkOptionField(key: string, c: Cursor): FieldResult {
   switch (key) {
     case "x": {
+      // `"t"` (session time) or `"tr"` (lap-relative time, ruling R215
+      // items 4-5). Any other literal makes the cell custom.
       const v = consumeString(c);
-      return v === "t" ? { ok: true, value: v } : { ok: false };
+      return v === "t" || v === "tr" ? { ok: true, value: v } : { ok: false };
     }
     case "y": {
       const v = consumeString(c);
@@ -547,15 +549,20 @@ function parseMarkOptionField(key: string, c: Cursor): FieldResult {
   }
 }
 
-/** Reads a mark's `mark_options`: the fixed literal pair `x: "t"`,
- *  `y: "v"` (both required, order-insensitive with the optional fields),
- *  plus optional `stroke`/`strokeWidth`. Any other key, or `x`/`y` not
- *  exactly the literal strings `"t"`/`"v"`, makes the cell custom. */
-function readMarkOptions(c: Cursor): { stroke?: string; strokeWidth?: number } | null {
+/** Reads a mark's `mark_options`: `x` (required, `"t"` or `"tr"`) and
+ *  `y` (required, always `"v"`), order-insensitive with the optional
+ *  fields, plus optional `stroke`/`strokeWidth`. Any other key, an `x`
+ *  outside those two literals, or a `y` that is not `"v"`, makes the cell
+ *  custom. */
+function readMarkOptions(c: Cursor): { xField?: "tr"; stroke?: string; strokeWidth?: number } | null {
   const fields = readBracedFields(c, parseMarkOptionField);
-  if (fields === null || fields.x !== "t" || fields.y !== "v") return null;
+  if (fields === null || (fields.x !== "t" && fields.x !== "tr") || fields.y !== "v") return null;
 
-  const options: { stroke?: string; strokeWidth?: number } = {};
+  const options: { xField?: "tr"; stroke?: string; strokeWidth?: number } = {};
+  // `"t"` normalises to the field being absent — `MarkProps.xField`'s one
+  // spelling for "session time" (see its doc comment), which is what keeps
+  // `parse(generate(p))` deep-equal to `p` with no second normalisation.
+  if (fields.x === "tr") options.xField = "tr";
   if (fields.stroke !== undefined) options.stroke = fields.stroke as string;
   if (fields.strokeWidth !== undefined) options.strokeWidth = fields.strokeWidth as number;
   return options;
@@ -595,6 +602,7 @@ function readMark(c: Cursor): MarkProps | null {
     mark: markName as MarkProps["mark"],
     lap: channelResult.lap,
   };
+  if (markOptions.xField !== undefined) mark.xField = markOptions.xField;
   if (markOptions.stroke !== undefined) mark.stroke = markOptions.stroke;
   if (markOptions.strokeWidth !== undefined) mark.strokeWidth = markOptions.strokeWidth;
   return mark;

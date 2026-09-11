@@ -41,6 +41,7 @@ import {
   resetToFormCode,
   setChartType,
   setColorLegend,
+  setTimeXField,
   suggestAxisLabel,
   suggestSpectrumAxisLabel,
   updateFftParams,
@@ -48,10 +49,12 @@ import {
   updateHistogramParams,
   updateMark,
   updateScatterParams,
+  timeXFieldOf,
   updateXAxis,
   updateYAxis,
   type PropertiesFormState,
 } from "../model/propertiesForm";
+import { TIME_CHART_X_AXIS_OPTIONS } from "../model/xMode";
 import type { PropertiesFormChannelOption, PropertiesFormLapOption, PropertiesFormProps } from "./PropertiesForm.types";
 
 /** The `windowSize`/`hopSize` sample counts the Properties panel's select
@@ -368,6 +371,7 @@ function TimePropertiesForm({
       </FieldGroup>
 
       <FieldGroup title="X axis" className="properties-form-x-axis">
+        <TimeXAxisControl xField={timeXFieldOf(props)} onChange={(next) => onChange(setTimeXField(props, next))} />
         <TextField
           label="Label"
           value={props.x?.label ?? ""}
@@ -395,6 +399,47 @@ function TimePropertiesForm({
 
       <LegendControl props={props} onChange={onChange} />
     </>
+  );
+}
+
+/**
+ * A time chart's x-axis mode (ruling R215 items 4-5): which time column
+ * every mark binds. Session time is the default; lap time (`x: "tr"`)
+ * rebases each selected window to its own start so *n* laps superimpose,
+ * which is what makes a lap-pair overlay and a lap variance trace readable.
+ *
+ * **Distance is rendered, disabled, with its reason** (R136,
+ * `model/xMode.ts`'s `DISTANCE_X_MODE_DISABLED_REASON`) rather than hidden:
+ * the control never conceals that the mode exists or why it cannot be
+ * chosen. It has no `MarkProps.xField` spelling to select, so picking it is
+ * not merely refused — it is unrepresentable.
+ *
+ * Plot-level, not per mark, because a plot has one x scale: two marks on
+ * different time columns would draw one against the other's axis. The
+ * grammar stores the binding per mark (it has no plot-level slot for it),
+ * so this control writes every mark at once — see `setTimeXField`.
+ */
+function TimeXAxisControl({ xField, onChange }: { xField: "tr" | undefined; onChange: (next: "tr" | undefined) => void }) {
+  const selected = xField ?? "t";
+  const option = TIME_CHART_X_AXIS_OPTIONS.find((o) => o.value === selected);
+  return (
+    <SelectField
+      label="Axis"
+      value={selected}
+      hint={option?.blurb}
+      options={TIME_CHART_X_AXIS_OPTIONS.map((o) => ({
+        value: o.value,
+        label: o.disabledReason === undefined ? o.label : `${o.label} (unavailable)`,
+        disabled: o.disabledReason !== undefined,
+        title: o.disabledReason,
+      }))}
+      onChange={(value) => {
+        // A disabled option cannot be committed, and `"distance"` has no
+        // `MarkProps.xField` spelling to commit even if it could be.
+        if (value === "t") onChange(undefined);
+        else if (value === "tr") onChange("tr");
+      }}
+    />
   );
 }
 

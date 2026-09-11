@@ -120,6 +120,22 @@ function ScatterIcon({ className }: IconProps) {
   );
 }
 
+/** The lap variance trace's pictogram (R215 item 4): three traces
+ *  diverging from a shared origin at the left -- laps superimposed on one
+ *  lap-relative axis, which is exactly what the lap-relative x binding
+ *  makes the picture do, and what tells it apart from the plain line
+ *  mark's single stroke. */
+function VarianceIcon({ className }: IconProps) {
+  return (
+    <svg viewBox="0 0 16 16" width="16" height="16" className={className} aria-hidden="true">
+      <line x1="1" y1="8" x2="15" y2="8" stroke="currentColor" strokeWidth="0.8" opacity="0.4" />
+      <polyline points="1,8 5,6 9,7 15,4" fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" />
+      <polyline points="1,8 5,10 9,9 15,12" fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" opacity="0.7" />
+      <polyline points="1,8 5,8.5 9,11 15,9" fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" opacity="0.45" />
+    </svg>
+  );
+}
+
 /** Maps every {@link ChartTypeId} to its pictogram component — kept
  *  exhaustive by the `Record` type itself (a chart type added to
  *  `chartTypeCatalog.ts` without an entry here is a compile error). */
@@ -132,4 +148,5 @@ export const CHART_TYPE_ICONS: Record<ChartTypeId, (props: IconProps) => React.J
   fft: FftIcon,
   histogram: HistogramIcon,
   scatter: ScatterIcon,
+  variance: VarianceIcon,
 };

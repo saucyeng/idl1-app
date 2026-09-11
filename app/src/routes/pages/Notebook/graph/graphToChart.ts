@@ -25,10 +25,9 @@
 
 import { generate } from "../plotForm/generate";
 import type { PlotProps } from "../plotForm/types";
-import { defaultFftPlotProps, defaultHistogramPlotProps, defaultScatterPlotProps } from "../model/propertiesForm";
+import { defaultFftPlotProps, defaultHistogramPlotProps, defaultScatterPlotProps, defaultVariancePlotProps } from "../model/propertiesForm";
 import type { MathExprCall } from "../model/mathExpr";
 import type { ChartTypeId } from "./chartTypeCatalog";
-import { chartTypeInfo } from "./chartTypeCatalog";
 import type { PortShape } from "./portShape";
 
 /** Whether a card's chart button should offer a normal chart, the one
@@ -51,11 +50,14 @@ export function chartEligibilityFor(shape: PortShape, call: MathExprCall | null)
 /**
  * The `PlotProps` a picker row seeds for `nodeName` (ruling R215): a
  * single-mark time cell for each of C2 §5.3's five `mark_name`s, or that
- * chart kind's own documented defaults for a whole-cell chart type. The
- * FFT arm reuses `model/propertiesForm.ts`'s `defaultFftPlotProps` — the
- * same seed the Properties pane's own `Time → FFT` switch produces (R79
- * Q6) — rather than a second copy of C2 §5.3's parameter-table defaults
- * that could drift from it. No `unit` is passed: a graph card knows a
+ * chart kind's own documented defaults for a whole-cell chart type or
+ * time-cell preset. Every non-mark arm reuses
+ * `model/propertiesForm.ts`'s own `default*PlotProps` — the same seeds the
+ * Properties pane's chart-type switch produces (R79 Q6) — rather than a
+ * second copy of C2 §5.3's parameter-table defaults that could drift from
+ * them. A `switch` over the id, not a lookup through the catalog's `mark`
+ * field, so a chart type added to `ChartTypeId` without a seed here is a
+ * compile error. No `unit` is passed: a graph card knows a
  * node's name, not its evaluated unit, so the seed carries no y-label
  * suggestion and the author picks one in the Properties pane (R65's
  * suggestion is a one-time seed on a *channel pick*, never a recomputed
@@ -65,12 +67,14 @@ export function chartEligibilityFor(shape: PortShape, call: MathExprCall | null)
  * caller in the app.
  */
 export function plotPropsForChartType(chartType: ChartTypeId, nodeName: string): PlotProps {
-  const info = chartTypeInfo(chartType);
-  if (info.mark !== null) {
-    return { chart: "time", marks: [{ channel: nodeName, mark: info.mark }] };
-  }
   const channels = [{ id: nodeName, label: nodeName }];
-  switch (info.chart) {
+  switch (chartType) {
+    case "lineY":
+    case "dot":
+    case "areaY":
+    case "rectY":
+    case "ruleY":
+      return { chart: "time", marks: [{ channel: nodeName, mark: chartType }] };
     case "fft":
       return defaultFftPlotProps(channels);
     case "histogram":
@@ -81,12 +85,8 @@ export function plotPropsForChartType(chartType: ChartTypeId, nodeName: string):
       // which is honest about there being no second channel to pick yet.
       // The author picks the y channel in the Properties pane.
       return defaultScatterPlotProps(channels);
-    case "time":
-      // Unreachable: every `chart: "time"` catalog entry carries a mark,
-      // which the branch above already returned on. Stated as a thrown
-      // error rather than a silent `lineY` fall-back so a future entry
-      // that breaks the invariant is caught, not quietly mis-seeded.
-      throw new Error(`plotPropsForChartType: catalog entry "${chartType}" charts "time" but has no mark`);
+    case "variance":
+      return defaultVariancePlotProps(channels);
   }
 }
 
