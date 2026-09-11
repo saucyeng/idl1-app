@@ -33,6 +33,36 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 
 ### Changed
 
+- **Sessions open about five times faster [no-docs] (2026-09-11, ruling
+  R232).** Opening the largest recording in the library still cost most of
+  a minute, and the R221 measurement found why: every channel decode read
+  its session's shared time columns again from scratch, and the channels a
+  notebook binds were decoded one after another. Two changes. A session's
+  union time axis and each source's recorded-time companion are now decoded
+  once and borrowed by every channel that reads through them — the first
+  channel of a session reads them in the same single pass it was already
+  making, so priming costs nothing and the six IMU channels behind it cost
+  only their own columns. And a request that needs several channels at once
+  — a notebook binding, a report, a two-axis histogram — decodes them in
+  parallel on a pool of `physical cores − 1` workers instead of in series,
+  each worker still reserving through the one memory budget, so a burst
+  queues on memory rather than failing on it. A channel two threads want at
+  the same time is decoded once and handed to both. Measured on the
+  library's largest session (516 MB, 28 channels, three hours), copied to a
+  scratch directory, release build, cold cache:
+
+  | Decoding all 28 channels | Wall time |
+  |---|---|
+  | Before: one at a time, axes re-read per channel | 35 318 ms |
+  | Shared axes alone, still one at a time | 20 595 ms |
+  | After: shared axes, five workers in parallel | 7 589 ms |
+
+  Seven axis columns are decoded for those 28 channels — the union axis and
+  one per source — where there were 56 before. No IPC contract changes: the
+  cache's keys are internal and reach no DTO, and `decode_progress` keeps
+  its shape, so the per-cell ring and the "n of m channels" chip now count a
+  parallel set as it lands.
+
 - **The Notebook toolbar is a ribbon [docs] (2026-09-11, ruling R225).**
   Save, Export, New, Create, Rescan, the gesture map and the time/distance
   axis were loose buttons on one row and overlapped each other at ordinary
