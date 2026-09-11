@@ -98,8 +98,27 @@ export interface ChartCellProps {
   cellId: string;
   /** Decoded tiles currently covering `viewport`, in ascending time order. */
   tiles: DecodedTile[];
-  /** CSS px width of the plotted area; also the `columnCount` tiles are fetched at (R43). */
+  /**
+   * CSS px width of the plotted area; also the `columnCount` tiles are
+   * fetched at (R43).
+   *
+   * Since ruling R221 item 4 this is a *measured* width, not a constant: the
+   * parent resolves it (`model/chartWidth.ts`) from what
+   * {@link onMeasuredWidthPx} last reported and hands it back here. The
+   * frame itself is laid out at `100%` of its column regardless, so this
+   * value can never make the frame disagree with the column it sits in — it
+   * only decides how many columns of data are fetched to fill it.
+   */
   width: number;
+  /**
+   * Reports this frame's measured CSS-px width to the parent whenever it
+   * settles (ruling R221 item 4) — the same rAF-deferred `ResizeObserver`
+   * callback that sends {@link sendLayout}, so both describe one layout.
+   *
+   * Optional: a caller that plots at a fixed width (the paper/report build)
+   * passes nothing and nothing is measured back.
+   */
+  onMeasuredWidthPx?: (cellId: string, widthPx: number) => void;
   /**
    * CSS px height of the plotted area, used until the sandbox's own
    * `cellRendered` reports this cell's actual rendered height
@@ -425,6 +444,7 @@ export default function ChartCell({
   selectedWindowKeys,
   sendTransform,
   sendLayout,
+  onMeasuredWidthPx,
   cursorTUs,
   playing,
   playbackMode,
@@ -525,8 +545,8 @@ export default function ChartCell({
   // callback and a `window` `resize`/`scroll` listener are the only
   // triggers, not a prop identity change.
   const frameRef = useRef<HTMLDivElement>(null);
-  const layoutDepsRef = useRef({ cellId, sendLayout });
-  layoutDepsRef.current = { cellId, sendLayout };
+  const layoutDepsRef = useRef({ cellId, sendLayout, onMeasuredWidthPx });
+  layoutDepsRef.current = { cellId, sendLayout, onMeasuredWidthPx };
 
   // `sendTransform`'s own fresh-values-through-a-ref indirection (same
   // shape as `layoutDepsRef` above): `handlePointerMove`/`handleWheel`
@@ -578,6 +598,13 @@ export default function ChartCell({
       pending = false;
       const rect = frame.getBoundingClientRect();
       layoutDepsRef.current.sendLayout(layoutDepsRef.current.cellId, { top: rect.top, left: rect.left, width: rect.width });
+      // Ruling R221 item 4: the frame fills its column, so its own measured
+      // width *is* the width this chart should be fetched and plotted at.
+      // Reported from the same rAF-deferred callback that positions the
+      // sandbox container, so the number the parent resolves and the
+      // rectangle the sandbox is given can never come from two different
+      // layouts.
+      layoutDepsRef.current.onMeasuredWidthPx?.(layoutDepsRef.current.cellId, rect.width);
     };
     const scheduleSend = () => {
       if (pending) return;
@@ -1072,7 +1099,13 @@ export default function ChartCell({
         ref={frameRef}
         className="chart-cell"
         tabIndex={0}
-        style={{ position: "relative", width, height: frameHeight, overflow: "hidden", outline: "none" }}
+        /* `width: "100%"`, not the `width` prop (ruling R221 item 4): the
+           frame is sized by the column it sits in, and the prop is what that
+           measurement resolved to on the last settle. Laying the frame out
+           at the prop instead is the bug this ruling names — a chart stuck
+           at whatever width it was first mounted at while its column grew
+           and shrank around it. */
+        style={{ position: "relative", width: "100%", height: frameHeight, overflow: "hidden", outline: "none" }}
         onPointerDown={handlePointerDown}
         onPointerMove={handlePointerMove}
         onPointerUp={handlePointerUp}

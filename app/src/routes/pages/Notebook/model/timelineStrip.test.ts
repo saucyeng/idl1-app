@@ -8,6 +8,7 @@ import {
   dragCandidate,
   handlePositionsFor,
   hitTestHandle,
+  lanePixelX,
   pxForTimeUs,
   stripLanesFor,
   timeUsForPx,
@@ -47,6 +48,36 @@ function detailWithLaps(laps: Array<{ lap_number: number; start_time_secs: numbe
 
 const SESSION_WINDOW: SelectionWindow = { sessionId: "s1", span: { kind: "session" }, colour: "--chart-1" };
 const LAP_WINDOW: SelectionWindow = { sessionId: "s2", span: { kind: "lap", lapNumber: 2 }, colour: "--chart-2" };
+
+describe("lanePixelX", () => {
+  it("lanePixelX — a pointer on the lane's own left edge — is zero, the origin the handle positions are measured from", () => {
+    const clientX = 120;
+
+    const x = lanePixelX(clientX, 120);
+
+    expect(x).toBe(0);
+  });
+
+  it("lanePixelX — the padded container's left instead of the lane's — is the R221 bug: a pointer on a handle tests a padding's width away from it", () => {
+    // Arrange — a lane whose start handle sits at lane px 0, inside a
+    // container padded by `px-2` (8 CSS px), so the lane element starts 8 px
+    // right of the container. The hit tolerance is 6 px.
+    const lane: StripLane = { key: "k", windowIndex: 0, colour: "--chart-1", sessionSpanUs: 10_000_000, windowSpan: { startUs: 0, endUs: 10_000_000 } };
+    const containerLeftPx = 100;
+    const laneLeftPx = containerLeftPx + 8;
+    const pointerOnTheStartHandle = laneLeftPx;
+
+    // Act
+    const correct = lanePixelX(pointerOnTheStartHandle, laneLeftPx);
+    const wrong = lanePixelX(pointerOnTheStartHandle, containerLeftPx);
+
+    // Assert — measured from the lane the handle is hit; measured from the
+    // padded container it is 8 px away, past the 6 px tolerance, and no
+    // drag ever starts.
+    expect(hitTestHandle(lane, 600, correct, 6)).toBe("start");
+    expect(hitTestHandle(lane, 600, wrong, 6)).toBeNull();
+  });
+});
 
 describe("stripLanesFor", () => {
   it("stripLanesFor — a resolved session window — one lane, background span equals the session's own recorded duration", () => {
