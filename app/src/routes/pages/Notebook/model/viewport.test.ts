@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { clampTo, panBy, transformFor, zoomAt, type Viewport } from "./viewport";
+import { clampTo, commitViewport, panBy, transformFor, zoomAt, type Viewport } from "./viewport";
 
 describe("panBy", () => {
   it("panBy — a drag of 100 px on a 1000 px wide 10 s window — moves the window by exactly 1 s", () => {
@@ -135,5 +135,51 @@ describe("transformFor", () => {
     const anchorXInRendered = 25;
     const pixelAtAnchor = result.scaleX * anchorXInRendered + result.translateXPx;
     expect(pixelAtAnchor).toBeCloseTo(25);
+  });
+});
+
+describe("commitViewport", () => {
+  it("commitViewport — a commit while no gesture is running — adopts the committed window at identity", () => {
+    const committed: Viewport = { startUs: 2_000_000, endUs: 3_000_000, pixelWidth: 100 };
+    const live: Viewport = { startUs: 5_000_000, endUs: 6_000_000, pixelWidth: 100 };
+
+    const result = commitViewport(committed, live, false);
+
+    expect(result.live).toEqual(committed);
+    expect(result.transform.scaleX).toBe(1);
+    expect(result.transform.translateXPx).toBe(0);
+  });
+
+  it("commitViewport — a commit while a pan is still in progress — keeps the live window", () => {
+    const committed: Viewport = { startUs: 2_000_000, endUs: 3_000_000, pixelWidth: 100 };
+    const live = panBy(committed, -50);
+
+    const result = commitViewport(committed, live, true);
+
+    expect(result.live).toEqual(live);
+  });
+
+  it("commitViewport — a commit mid-pan — re-bases the transform so the picture does not snap back", () => {
+    const committed: Viewport = { startUs: 2_000_000, endUs: 3_000_000, pixelWidth: 100 };
+    const live = panBy(committed, -50);
+
+    const result = commitViewport(committed, live, true);
+
+    // The picture the sandbox has just rendered covers `committed`; the
+    // user has dragged it 50 px to the left since, so it must be drawn 50
+    // px left of where it was rendered, unscaled.
+    expect(result.transform.scaleX).toBe(1);
+    expect(result.transform.translateXPx).toBeCloseTo(-50);
+  });
+
+  it("commitViewport — a mid-pan commit then the gesture ending — settles on the panned window, not the committed one", () => {
+    const committed: Viewport = { startUs: 2_000_000, endUs: 3_000_000, pixelWidth: 100 };
+    const live = panBy(committed, -50);
+
+    const duringGesture = commitViewport(committed, live, true);
+    const afterSettle = commitViewport(duringGesture.live, duringGesture.live, false);
+
+    expect(afterSettle.live).toEqual(live);
+    expect(afterSettle.transform.translateXPx).toBe(0);
   });
 });

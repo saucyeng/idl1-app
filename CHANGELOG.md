@@ -304,6 +304,28 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 
 ### Fixed
 
+- **Every notebook cell reports its own state (2026-09-11, ruling R210).**
+  A cell now reads queued, evaluating, settled or error for itself, the way
+  a Jupyter cell does, and spins only while its own result is being
+  recomputed. Before, a cell could only say pending, ok or error, so one
+  waiting to start and one actually running looked the same. A cell whose
+  previous run failed keeps that message on screen while the next run
+  works, instead of flickering it away and back.
+
+- **Charts no longer jump back during a pan (2026-09-11, ruling R209 item
+  2).** Panning a chart in the short bursts people actually drag in made
+  the picture snap backwards every so often. A pan pauses long enough for
+  the chart to fetch fresh data, and when that data arrived the chart
+  adopted the window it had asked for, discarding every pixel panned in the
+  meantime. It now keeps the window under the pointer and re-bases the
+  freshly drawn picture to it, so nothing moves except with the drag.
+
+- **Charts no longer paint over the top bar (2026-09-11, ruling R209 item
+  1).** Scrolling the notebook used to push a chart up over the app's
+  wordmark, tabs and selection chips. The notebook's toolbar row was
+  already fixed; the top bar now carries the same opaque background and
+  stacking order, so scrolled charts clip under it too.
+
 - **The studio's maths column shows the real graph, not a "reserved"
   placeholder (2026-09-10).** On the wide layout the leftmost Notebook
   column read "Maths graph — reserved (UI-DIRECTION decision 11)" while the
