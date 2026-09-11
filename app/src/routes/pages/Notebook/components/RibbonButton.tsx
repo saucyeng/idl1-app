@@ -42,7 +42,7 @@ import {
  *
  * Three shapes and nothing else:
  *
- * - {@link RibbonBigButton} — 36 × 36, icon over an 11 px label. The core
+ * - {@link RibbonBigButton} — 44 × 44, icon over an 11 px label. The core
  *   tier, and the only thing a first run shows.
  * - {@link RibbonSplitButton} — a big button whose right 16 px is a chevron
  *   opening its dropdown. One bordered shell, the two halves parted by the
@@ -100,7 +100,7 @@ export function ribbonIcon(name: string): LucideIcon | undefined {
  *  split button's two halves must be indistinguishable from a plain big
  *  button's single surface. */
 const BIG_BASE =
-  "flex h-9 shrink-0 flex-col items-center justify-center gap-px rounded-[var(--radius)] px-[var(--nb-pad)] " +
+  "flex h-11 shrink-0 flex-col items-center justify-center gap-px rounded-[var(--radius)] px-[var(--nb-pad)] " +
   "text-fg transition-colors outline-none hover:bg-control focus-visible:outline focus-visible:outline-1 " +
   "focus-visible:outline-offset-1 focus-visible:outline-focus disabled:pointer-events-none disabled:opacity-50";
 
@@ -149,7 +149,7 @@ export interface RibbonBigButtonProps extends BigButtonContent {
   onClick: () => void;
 }
 
-/** One core command as a 36 × 36 icon-over-label button (R225 item 3). */
+/** One core command as a 44 × 44 icon-over-label button (R225 item 3). */
 export function RibbonBigButton({ icon, label, labelled, disabled, pressed, title, onClick }: RibbonBigButtonProps) {
   return (
     <button
@@ -158,7 +158,7 @@ export function RibbonBigButton({ icon, label, labelled, disabled, pressed, titl
       disabled={disabled === true}
       title={title ?? label}
       aria-pressed={pressed === undefined ? undefined : pressed}
-      className={cn(BIG_BASE, "min-w-9", pressed === true && "bg-control shadow-[inset_0_-2px_0_0_var(--accent)]")}
+      className={cn(BIG_BASE, "min-w-11", pressed === true && "bg-control shadow-[inset_0_-2px_0_0_var(--accent)]")}
     >
       <BigFace icon={icon} label={label} labelled={labelled} />
     </button>
@@ -205,7 +205,7 @@ export function RibbonSplitButton({ icon, label, labelled, onClick, disabled, pr
             disabled={disabled === true}
             title={title ?? label}
             aria-pressed={pressed === undefined ? undefined : pressed}
-            className={cn(BIG_BASE, "min-w-9 rounded-r-none")}
+            className={cn(BIG_BASE, "min-w-11 rounded-r-none")}
           >
             <BigFace icon={icon} label={label} labelled={labelled} />
           </button>
@@ -222,7 +222,7 @@ export function RibbonSplitButton({ icon, label, labelled, onClick, disabled, pr
             // 16 px half, parted from it by the same hairline that parts two
             // toolbar groups. With no default action the whole control is
             // the trigger, so it carries the face and the chevron together.
-            onClick === null ? "min-w-9 flex-row px-[var(--nb-pad)] rounded-l-[var(--radius)]" : "w-4 min-w-4 border-l border-rule px-0 text-fg-dim",
+            onClick === null ? "min-w-11 flex-row px-[var(--nb-pad)] rounded-l-[var(--radius)]" : "w-4 min-w-4 border-l border-rule px-0 text-fg-dim",
           )}
         >
           {onClick === null && <BigFace icon={icon} label={label} labelled={labelled} />}
