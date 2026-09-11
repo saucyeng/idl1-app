@@ -98,19 +98,38 @@ export interface NotebookToolbarProps {
  *  the row itself (R212 item 4: "measure with a ResizeObserver on the row,
  *  not window width"). `0` until the first observation, and `0` forever in
  *  an environment with no `ResizeObserver` (jsdom) — `toolbarLayout`'s own
- *  doc comment defines that as the tightest layout, never a blank row. */
+ *  doc comment defines that as the tightest layout, never a blank row.
+ *
+ * The width feeds `toolbarLayout`, which decides how many groups render
+ * inline vs. collapse into the "⋯" menu — collapsing/expanding a group
+ * changes how much content the row holds. The row itself does not grow or
+ * shrink to fit that content (fixed height, `overflow-hidden`, width set by
+ * its flex parent), but the browser still re-measures on every layout pass
+ * within the frame, and a same-frame `setState` from inside the observer
+ * callback was enough to trip the browser's own "ResizeObserver loop
+ * completed with undelivered notifications" notice under rapid resizes.
+ * Deferring the `setWidth` to `requestAnimationFrame` (already this file's
+ * neighbours' pattern in `ChartCell.tsx`/`JsCellFrame.tsx`) keeps the
+ * re-render out of the observer's own callback stack. */
 function useRowWidth(ref: React.RefObject<HTMLDivElement | null>): number {
   const [width, setWidth] = useState(0);
 
   useEffect(() => {
     const node = ref.current;
     if (node === null || typeof ResizeObserver === "undefined") return;
+    let frame = 0;
     const observer = new ResizeObserver((entries) => {
       const entry = entries[0];
-      if (entry !== undefined) setWidth(entry.contentRect.width);
+      if (entry === undefined) return;
+      const nextWidth = entry.contentRect.width;
+      cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(() => setWidth(nextWidth));
     });
     observer.observe(node);
-    return () => observer.disconnect();
+    return () => {
+      cancelAnimationFrame(frame);
+      observer.disconnect();
+    };
   }, [ref]);
 
   return width;
