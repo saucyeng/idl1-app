@@ -444,6 +444,16 @@ for foreign-key insert order:
    encodes its own SHA-256 (§7 #1) and insert `(sha256, size_bytes, mtime_ms)`
    from a `stat`. A path that doesn't match the pattern or fails the hash
    check is skipped and reported, not inserted.
+   **Amended 2026-09-11 (ruling R219): incremental by default.** When a
+   previous `catalog.sqlite` exists, a blob whose `(sha256 path, size_bytes,
+   mtime_ms)` all match its existing row is carried over **without
+   re-hashing**; only new paths and paths whose size or mtime changed are
+   hashed. The full re-hash of every blob is `verify_data_dir`'s job (§7 #1),
+   never the rebuild's: on a 159-session library the hash pass alone took
+   minutes and was the whole of the first-open wait. A rebuild is a
+   **background job with progress** (`index_progress`'s sibling
+   `rebuild_progress`, C3 §3.2) that no route awaits; the app opens on the
+   old catalog and swaps to the new one when it lands.
 2. **`tracks`** — walk `tracks/*.idl0t`; parse each JSON, verify the
    filename's `track_id` matches the JSON's own `track_id` field (§7 #8),
    insert.
