@@ -8,6 +8,7 @@ import type { NodeStatus } from "../model/graphStatus";
 import type { MarkProps } from "../plotForm/types";
 import type { UnitLabel } from "../../../../ipc/workbook";
 import ChartTypePicker from "./ChartTypePicker";
+import type { ChartTypeId } from "./chartTypeCatalog";
 import { CHART_TYPE_ICONS } from "./chartTypeIcons";
 import { chartEligibilityFor } from "./graphToChart";
 import { NODE_KIND_CUES, nodeKindOf, type NodeKind } from "./nodeKind";
@@ -48,12 +49,12 @@ export interface MathNodeData extends Record<string, unknown> {
   /** The definition's outer call (`mathExpr.ts`), or `null` for an opaque
    *  expression or a `"channel"` node. */
   call: MathExprCall | null;
-  /** Fired with this node's name and the chosen mark once the card's
+  /** Fired with this node's name and the chosen chart type once the card's
    *  {@link ChartTypePicker} commits a pictogram — only rendered when
    *  `chartEligibilityFor` says `"chart"` (§3.6.6's honest-unknown gate —
    *  see `graphToChart.ts`). `undefined` for a `"channel"` node (it has no
    *  data of its own to chart). */
-  onChart?: (nodeName: string, mark: MarkProps["mark"]) => void;
+  onChart?: (nodeName: string, chartType: ChartTypeId) => void;
   /** True when this node matches the canvas search query
    *  (`model/graphSubgraph.ts`'s `searchNodeIds`, decision 42). Purely a
    *  render hint — the decision of what matches lives in that module. */
@@ -289,7 +290,7 @@ export default function NodeCard({ data }: NodeProps<Node<MathNodeData, "mathNod
         </div>
       )}
       {graphNode.kind === "definition" && eligibility === "chart" && onChart !== undefined && (
-        <ChartTypePicker onSelect={(mark) => onChart(graphNode.name, mark)} />
+        <ChartTypePicker onSelect={(chartType) => onChart(graphNode.name, chartType)} />
       )}
       {/* R214 item 1's third chart cue — a thin bottom rule, so a chart
           card is told from a derived one by more than its glyph. */}

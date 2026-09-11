@@ -3,55 +3,85 @@
  * pictograms carry over" — Isaac's own words: *"my chart type selector was
  * really pretty, I want those small chart type images to carry over"*).
  *
- * **Scope, deliberately narrow.** idl0's own picker (`idl0-app/app/lib/ui/
- * tabs/analyze/chart_type_catalog.dart`) covered a whole workbook's chart
+ * **Scope (ruling R215).** idl0's own picker (`idl0-app/app/lib/ui/tabs/
+ * analyze/chart_type_catalog.dart`) covered a whole workbook's chart
  * *kinds* — time series, FFT, spectrogram, histogram, GPS map, lap table,
- * lap progression, variance trace, scatter. This card's button only ever
- * inserts one `js` cell charting a single node's already-computed value
- * (`graphToChart.ts`'s `insertChartCell`), which the notebook can only
- * currently render as a **Plot mark** (C2 §5.3's `mark` production) — this
- * catalog offers exactly `MarkProps.mark`'s five values (`plotForm/
- * types.ts`'s `MARK_NAMES`), nothing idl0 had that this app cannot draw.
+ * lap progression, variance trace, scatter. This catalog offers two things
+ * side by side, which is why an entry's `mark` is nullable:
+ *
+ * - the five **time-cell marks** (`plotForm/types.ts`'s `MARK_NAMES`,
+ *   C2 §5.3's `time_mark` production), each inserting a `chart: "time"`
+ *   cell over a single node's already-computed value; and
+ * - one entry per **whole-cell chart kind** C2 §5.3 has a production for
+ *   — today the FFT cell (`chart: "fft"`), whose grammar, engine command
+ *   (`fetch_fft_v2`) and Properties section all already existed but which
+ *   no picker row offered (R215 item 1).
+ *
  * `graph/chartTypeIcons.tsx` draws a pictogram for each entry inline (no
  * pictogram asset exists in this repo to import — see that module's own
  * doc comment) rather than reusing idl0's Material glyphs, which were
  * never a bundled asset either.
  */
 
-import type { MarkProps } from "../plotForm/types";
+import type { MarkProps, PlotProps } from "../plotForm/types";
 import { MARK_NAMES } from "../plotForm/types";
 
-/** One chart type's picker-row metadata: the mark it inserts, a
- *  human-facing label, and a one-line blurb (idl0's own picker convention,
+/** What one picker row inserts: one of C2 §5.3's five time-cell mark names
+ *  (a `chart: "time"` cell drawn with that mark), or the name of a
+ *  whole-cell chart kind the grammar has its own production for. The two
+ *  live in one union, and one catalog, because the picker presents them as
+ *  one row of pictograms — the distinction between "a mark" and "a chart
+ *  kind" is C2 §5.3's, not the user's. */
+export type ChartTypeId = MarkProps["mark"] | "fft";
+
+/** Every {@link ChartTypeId}, in the picker's presentation order: the five
+ *  marks first (unchanged order), then each whole-cell chart kind. The
+ *  single source `CHART_TYPE_CATALOG`, `CHART_TYPE_ICONS` and
+ *  `chartTypeCatalog.test.ts` all enumerate against, the same discipline
+ *  `MARK_NAMES` already carries for the mark half. */
+export const CHART_TYPE_IDS: readonly ChartTypeId[] = [...MARK_NAMES, "fft"];
+
+/** One chart type's picker-row metadata: what it inserts, a human-facing
+ *  label, and a one-line blurb (idl0's own picker convention,
  *  `chart_type_catalog.dart`'s `ChartTypeInfo.blurb`). */
 export interface ChartTypeInfo {
-  mark: MarkProps["mark"];
+  id: ChartTypeId;
+  /** The time-cell mark this row inserts, or `null` when `id` names a
+   *  whole-cell chart kind (C2 §5.3's own `chart` discriminant) rather
+   *  than a mark within a time cell. Nullable rather than absent so
+   *  `NodeCard.tsx`'s header glyph — which shows a node's *mark* — can ask
+   *  one question of any entry. */
+  mark: MarkProps["mark"] | null;
+  /** The `PlotProps.chart` discriminant a cell inserted from this row
+   *  carries (C2 §5.3). `"time"` for every mark row. */
+  chart: PlotProps["chart"];
   label: string;
   blurb: string;
 }
 
-/** Per-mark display metadata, in the picker's presentation order. Kept in
- *  lockstep with `MARK_NAMES` by `chartTypeCatalog.test.ts` — a mark added
+/** Per-chart-type display metadata, in {@link CHART_TYPE_IDS}' order. Kept
+ *  in lockstep with that list by `chartTypeCatalog.test.ts` — an id added
  *  to one and not the other is a drift bug that test catches immediately,
  *  the same discipline `plotForm/types.ts`'s own doc comment already
  *  states for `MARK_NAMES` itself. */
 export const CHART_TYPE_CATALOG: readonly ChartTypeInfo[] = [
-  { mark: "lineY", label: "Line", blurb: "Value over time, one line." },
-  { mark: "dot", label: "Dot", blurb: "One point per sample." },
-  { mark: "areaY", label: "Area", blurb: "Value over time, filled to the axis." },
-  { mark: "rectY", label: "Bar", blurb: "One bar per sample." },
-  { mark: "ruleY", label: "Rule", blurb: "A horizontal reference line." },
+  { id: "lineY", mark: "lineY", chart: "time", label: "Line", blurb: "Value over time, one line." },
+  { id: "dot", mark: "dot", chart: "time", label: "Dot", blurb: "One point per sample." },
+  { id: "areaY", mark: "areaY", chart: "time", label: "Area", blurb: "Value over time, filled to the axis." },
+  { id: "rectY", mark: "rectY", chart: "time", label: "Bar", blurb: "One bar per sample." },
+  { id: "ruleY", mark: "ruleY", chart: "time", label: "Rule", blurb: "A horizontal reference line." },
+  { id: "fft", mark: null, chart: "fft", label: "FFT", blurb: "Magnitude spectrum of one channel." },
 ];
 
-/** Looks up `mark`'s {@link ChartTypeInfo}. Every {@link MarkProps.mark}
- *  value has a catalog entry (enforced by `chartTypeCatalog.test.ts`), so
- *  this never falls through to a made-up default. */
-export function chartTypeInfo(mark: MarkProps["mark"]): ChartTypeInfo {
-  const info = CHART_TYPE_CATALOG.find((c) => c.mark === mark);
-  if (info === undefined) throw new Error(`chartTypeInfo: no catalog entry for mark "${mark}" — MARK_NAMES and CHART_TYPE_CATALOG have drifted`);
+/** Looks up `id`'s {@link ChartTypeInfo}. Every {@link ChartTypeId} has a
+ *  catalog entry (enforced by `chartTypeCatalog.test.ts`), so this never
+ *  falls through to a made-up default. */
+export function chartTypeInfo(id: ChartTypeId): ChartTypeInfo {
+  const info = CHART_TYPE_CATALOG.find((c) => c.id === id);
+  if (info === undefined) throw new Error(`chartTypeInfo: no catalog entry for chart type "${id}" — CHART_TYPE_IDS and CHART_TYPE_CATALOG have drifted`);
   return info;
 }
 
 // Re-exported so a caller of this catalog does not also need a separate
-// import of `plotForm/types.ts` just to iterate the same five names.
+// import of `plotForm/types.ts` just to iterate the same five mark names.
 export { MARK_NAMES };

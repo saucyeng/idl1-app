@@ -1,4 +1,4 @@
-import type { MarkProps } from "../plotForm/types";
+import type { ChartTypeId } from "./chartTypeCatalog";
 
 /** One pictogram's own props — a small square glyph, coloured by
  *  `currentColor` (the picker button sets `text-*` around it, same
@@ -67,13 +67,34 @@ function RuleIcon({ className }: IconProps) {
   );
 }
 
-/** Maps every {@link MarkProps.mark} value to its pictogram component —
- *  kept exhaustive by the `Record` type itself (a mark added to
- *  `plotForm/types.ts` without an entry here is a compile error). */
-export const CHART_TYPE_ICONS: Record<MarkProps["mark"], (props: IconProps) => React.JSX.Element> = {
+/** The FFT cell's pictogram (R215 item 1): a decaying magnitude spectrum
+ *  with one resonant peak — the shape a suspension channel's spectrum
+ *  actually makes, so the row reads as "frequency, not time" beside the
+ *  five time marks. */
+function FftIcon({ className }: IconProps) {
+  return (
+    <svg viewBox="0 0 16 16" width="16" height="16" className={className} aria-hidden="true">
+      <polyline
+        points="1,13 3,11 4.5,4 6,11 8,12 10,9.5 12,12 15,12.5"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.3"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <line x1="1" y1="14" x2="15" y2="14" stroke="currentColor" strokeWidth="1" opacity="0.4" />
+    </svg>
+  );
+}
+
+/** Maps every {@link ChartTypeId} to its pictogram component — kept
+ *  exhaustive by the `Record` type itself (a chart type added to
+ *  `chartTypeCatalog.ts` without an entry here is a compile error). */
+export const CHART_TYPE_ICONS: Record<ChartTypeId, (props: IconProps) => React.JSX.Element> = {
   lineY: LineIcon,
   dot: DotIcon,
   areaY: AreaIcon,
   rectY: BarIcon,
   ruleY: RuleIcon,
+  fft: FftIcon,
 };

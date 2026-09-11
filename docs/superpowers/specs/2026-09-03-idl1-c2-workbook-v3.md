@@ -1700,6 +1700,21 @@ grammar change: a cell writes `spectrum("x", {...})` and groups by `w`,
 precisely as it does for `channel("x")` — there is nothing left to
 address, because there is no longer a second key to address.
 
+**The chart-type picker offers the FFT cell** (added 2026-09-11, ruling
+R215 item 1). The graph card's picker (`Notebook/graph/
+chartTypeCatalog.ts`) previously listed only the five `mark_name`s, so a
+chart type this grammar had a full production for — and the engine a full
+command for (`fetch_fft_v2`, C3 §3.6) — could be reached only by hand-editing
+a cell or by switching type in the Properties pane of a cell that already
+existed. The catalog is now keyed by a **chart type**, not a mark:
+`CHART_TYPE_IDS` is the five `mark_name`s plus one id per whole-cell chart
+kind this section defines, and a picker row for a chart kind seeds that
+kind's own defaults from this section's parameter table (never a second
+copy of them). A row's `mark` is `null` exactly when its id names a chart
+kind rather than a mark. Nothing in the grammar changed for this: an FFT
+cell inserted from the picker is byte-identical to one the Properties
+pane's `Time → FFT` switch produces.
+
 **Parameter table — type, default, C3 field** (added 2026-09-06):
 
 | Grammar slot | Props field | Type | Default | Maps to |
