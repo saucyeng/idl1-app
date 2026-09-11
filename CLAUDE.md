@@ -73,7 +73,7 @@ loud. Every task touching shipped behaviour updates `CHANGELOG.md` and/or `TASKS
 
 ## 8. Compute rules (the dev machine is memory-bound — ruling R13)
 
-- One cargo process on the machine at a time; jobs are capped machine-wide (`~/.cargo/config.toml`), never override with `-j`.
+- At most **two** cargo processes on the machine at a time (R216; four or more is what crashed it), and a cargo command starts only with ≥ 6 GB of memory commit free (`Get-CimInstance Win32_OperatingSystem | % FreeVirtualMemory`); jobs are capped machine-wide (`~/.cargo/config.toml`), never override with `-j`.
 - Task cycles run only the targeted test filter the dispatch names; each run must report a non-zero `passed` count (a filter matching nothing is a failed gate, not a pass).
 - The full suite runs once per lane at its merge gate: `cargo test -p idl-rs -p idl-rs-cli -- --test-threads=4`. Never `--workspace`.
 - No reruns to hunt flakiness unless the lead asks; a known-flaky test is rerun alone by name, once.
