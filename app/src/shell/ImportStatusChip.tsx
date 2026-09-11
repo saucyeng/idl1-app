@@ -1,10 +1,11 @@
 import { useEffect, useState } from "react";
 
 import { indexStatus, onIndexProgress, startIndexJob, type IndexProgressEvent } from "../ipc/index_job";
+import { onRebuildProgress, rebuildStatus, type RebuildProgressEvent } from "../ipc/rebuild_job";
 import type { IpcError } from "../ipc/workbook";
 import { isDrained } from "../routes/pages/Data/importDriver";
 import { useImportQueue } from "../state/ImportQueue";
-import { importChip, indexChip } from "./importStatus";
+import { importChip, indexChip, rebuildChip } from "./importStatus";
 
 /** Props for {@link ImportStatusChip}. */
 export interface ImportStatusChipProps {
@@ -33,7 +34,49 @@ export default function ImportStatusChip({ onOpenImportPanel }: ImportStatusChip
   const [index, setIndex] = useState<IndexProgressEvent | null>(null);
   const [indexFinishedAtMs, setIndexFinishedAtMs] = useState<number | null>(null);
   const [indexError, setIndexError] = useState<IpcError | null>(null);
+  const [rebuild, setRebuild] = useState<RebuildProgressEvent | null>(null);
+  const [rebuildFinishedAtMs, setRebuildFinishedAtMs] = useState<number | null>(null);
+  const [rebuildError, setRebuildError] = useState<IpcError | null>(null);
   const drained = isDrained(state);
+
+  // The background catalog rebuild (ruling R219): read whatever is already
+  // running and subscribe. Unlike indexing, nothing is *started* here — a
+  // rebuild is a response to a user action or an empty catalog, not a thing
+  // the shell does on every launch.
+  useEffect(() => {
+    let cancelled = false;
+    let unlisten: (() => void) | null = null;
+
+    (async () => {
+      const status = await rebuildStatus();
+      if (cancelled) return;
+      if (status.running && status.phase !== null) {
+        setRebuild({ done: status.done, total: status.total, phase: status.phase });
+      }
+      setRebuildError(status.last_error);
+      const stop = await onRebuildProgress((event) => {
+        setRebuild(event);
+        // Only the `workbooks` phase's terminal observation ends a run;
+        // every other phase also finishes at `done === total`.
+        if (event.phase !== "workbooks" || event.done < event.total) {
+          setRebuildFinishedAtMs(null);
+          return;
+        }
+        setRebuildFinishedAtMs(Date.now());
+        void rebuildStatus().then((after) => setRebuildError(after.last_error));
+      });
+      if (cancelled) {
+        stop();
+        return;
+      }
+      unlisten = stop;
+    })();
+
+    return () => {
+      cancelled = true;
+      unlisten?.();
+    };
+  }, []);
 
   // The library index job (rulings R207/R208.1): read whatever is already
   // running, subscribe, then ask for one. `startIndexJob` resolves as soon
@@ -94,16 +137,20 @@ export default function ImportStatusChip({ onOpenImportPanel }: ImportStatusChip
   // index job) re-renders on its own dispatches and events, and an idle app
   // renders nothing, so neither needs a timer.
   const indexDone = indexFinishedAtMs !== null;
+  const rebuildDone = rebuildFinishedAtMs !== null;
   useEffect(() => {
-    if (!drained && !indexDone) return;
+    if (!drained && !indexDone && !rebuildDone) return;
     const id = window.setInterval(() => setNowMs(Date.now()), 1000);
     return () => window.clearInterval(id);
-  }, [drained, indexDone]);
+  }, [drained, indexDone, rebuildDone]);
 
-  // An import in flight outranks indexing: the import is what the user just
-  // asked for, and indexing follows it anyway.
+  // An import in flight outranks everything: it is what the user just asked
+  // for, and both background jobs follow it anyway. A rebuild outranks
+  // indexing for the same reason one step down — indexing is what a rebuild
+  // starts when it lands.
   const chip =
     importChip(state, drainedAtMs === null ? null : nowMs - drainedAtMs) ??
+    rebuildChip(rebuild, rebuildFinishedAtMs === null ? null : nowMs - rebuildFinishedAtMs, rebuildError) ??
     indexChip(index, indexFinishedAtMs === null ? null : nowMs - indexFinishedAtMs, indexError);
   if (chip === null) return null;
 
