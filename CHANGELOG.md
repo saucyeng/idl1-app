@@ -51,6 +51,17 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
   every channel, so the library screen no longer pays for the whole
   recording to show a channel list.
 
+### Fixed
+
+- **The ResizeObserver loop notice no longer trips the global error banner
+  (2026-09-11).** "ResizeObserver loop completed with undelivered
+  notifications" is the browser's own benign notice, not a real failure;
+  `GlobalErrorBanner` now recognises it and its "loop limit exceeded"
+  sibling (`shell/isBenignWindowError.ts`) and swallows both with a
+  `console.debug` instead of showing the banner. The notebook toolbar's own
+  `ResizeObserver`, which was setting its measured width synchronously in
+  the callback, now defers that update to `requestAnimationFrame`.
+
 ### Changed
 
 - **The chart properties form is built from real controls (2026-09-11,
