@@ -6,6 +6,16 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 
 ### Fixed
 
+- **The window no longer scrolls as a whole [no-docs] (2026-09-11, ruling
+  R221.1).** The title bar, the activity icons, the side panel and the
+  status bar stayed put only as long as nothing inside the window grew past
+  it; when something did, the entire shell scrolled inside the outer window
+  and took the frame with it. The window is now pinned to its own height,
+  and the editor area is the only thing that scrolls. The two remaining
+  hand-picked stacking numbers went with it: the crash banner states its
+  one layer above the chrome by name, and the chart host states none at
+  all.
+
 - **A chart can no longer paint over the window's own controls
   (2026-09-11, ruling R221.1).** Charts are drawn in a layer that floats
   above the page so they can track scrolling in real pixels, and one piece

@@ -110,6 +110,13 @@
    * large number: a value chosen to "win" is how a stack of ad hoc
    * z-indexes starts. The model lives in `shell/stackingLayers.ts`. */
   --z-chrome: 1;
+  /* The only layer above the chrome (ruling R221.1): the global error
+   * banner, mounted as its own React root outside `#root` so it survives a
+   * crash that takes the app tree with it (`shell/GlobalErrorBanner.tsx`).
+   * It has to out-stack chrome, or a fatal error would be reported behind
+   * the title bar; `2` states that one relationship, where the `9999` it
+   * replaces stated only "higher than whatever else turns up". */
+  --z-global-banner: 2;
 
   /* ---- Radii ---- */
   --radius-structural: 2px; /* brandControlRadius */
