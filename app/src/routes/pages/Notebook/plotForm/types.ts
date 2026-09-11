@@ -209,6 +209,60 @@ export interface HistogramPlotProps {
   color?: { legend: true };
 }
 
+/** C2 §5.3's `scatter_params` production — the two parameters of one
+ *  scatter chart, both required in this fixed order, for the same reason
+ *  {@link FftParams}' six and {@link HistogramParams}' four are (C2 §5.3:
+ *  "a missing key is custom code, not a default").
+ *
+ *  There is deliberately **no** density-mode or colour-by-third-channel
+ *  slot. idl0's scatter chart had both (`scatter_chart.dart`) and
+ *  `core/src/scatter.rs` still implements both, but neither is reachable
+ *  from a v3 cell yet — a grammar slot for either would be a promise the
+ *  IPC surface cannot keep (C3 §3.5 records the same gap). */
+export interface ScatterParams {
+  /** Maximum points the engine decimates the cloud to, by uniform stride.
+   *  A positive integer, at most C3 §3.5's `MAX_SCATTER_POINTS`. In the
+   *  document rather than in host state because it changes the picture:
+   *  a budget of 500 and one of 20 000 draw visibly different clouds. */
+  pointBudget: number;
+  /** Square both axes onto one range so a G-G cloud's friction circle is
+   *  round (idl0's own default). A *rendering* choice, but a stated one:
+   *  C2 §5.3's "no renderer-only parameters" rule means the document says
+   *  whether the axes are squared, not the host. */
+  equalAspect: boolean;
+}
+
+/** One scatter cell's single dot mark (C2 §5.3's `scatter_mark`
+ *  production, ruling R215 item 3). Singular by type, like
+ *  {@link FftPlotProps.mark} and {@link HistogramPlotProps.mark}: one
+ *  `fetch_scatter` call resolves one cloud.
+ *
+ *  The mark name is fixed at `dot` — a cloud of paired samples has no
+ *  ordering along either axis, so `lineY`/`areaY` would connect points in
+ *  sample order and draw a scribble that looks like a trajectory. */
+export interface ScatterMarkProps {
+  /** The channel on the x axis (`fetch_scatter`'s `x_channel`). */
+  xChannel: string;
+  /** The channel on the y axis (`fetch_scatter`'s `y_channel`). */
+  yChannel: string;
+  scatter: ScatterParams;
+  /** Any valid CSS colour literal. */
+  fill?: string;
+  /** Dot radius, CSS px; Plot's own `r`. */
+  r?: number;
+}
+
+/** C2 §5.3's scatter-cell `plot_options` production (ruling R215 item 3).
+ *  Both axes carry a channel's own unit rather than time or frequency, so
+ *  both are the plain optional {@link XAxisProps}/{@link YAxisProps}. */
+export interface ScatterPlotProps {
+  chart: "scatter";
+  mark: ScatterMarkProps;
+  x?: XAxisProps;
+  y?: YAxisProps;
+  color?: { legend: true };
+}
+
 /** C2 §5.3's `plot_options` production — the Properties pane's whole
  *  internal state for one `js` cell in the `plotForm` subset. A
  *  discriminated union on `chart`: a cell is exactly one chart kind, never
@@ -224,10 +278,10 @@ export interface HistogramPlotProps {
  *  grammar's `x_field` allows only the literal `"linear"`, reserved for a
  *  future non-time x-axis, C2 §8-2 — now realised as the FFT cell's own
  *  {@link FftXAxisProps}, a distinct type, not a widened `XAxisProps`). */
-export type PlotProps = TimePlotProps | FftPlotProps | HistogramPlotProps;
+export type PlotProps = TimePlotProps | FftPlotProps | HistogramPlotProps | ScatterPlotProps;
 
 /** Every `PlotProps.chart` discriminant, as a runtime array — the single
  *  list a chart-type control enumerates against, same rationale as
  *  {@link MARK_NAMES}. In the order the Properties pane's chart-type
  *  control presents them. */
-export const CHART_KINDS: readonly PlotProps["chart"][] = ["time", "fft", "histogram"];
+export const CHART_KINDS: readonly PlotProps["chart"][] = ["time", "fft", "histogram", "scatter"];

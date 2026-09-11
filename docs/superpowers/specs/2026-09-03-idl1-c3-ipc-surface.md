@@ -1441,6 +1441,70 @@ ruling R25, wave-1 L3):* design §4's L3 row lists a **tier cache**
 alongside these tile endpoints. No such cache exists yet — recorded here
 so this section is not read as claiming one.
 
+**`fetch_scatter(window: Window, x_channel: string, y_channel: string, point_budget: number)`**
+*Added post-sign (2026-09-11, chart-port lane, ruling R215 item 3.)* Two
+channels paired against each other over `window` — idl0's G-G diagram
+(`scatter_chart.dart`), ported onto the engine's existing
+`core/src/scatter.rs`. `point_budget`: `u32`, `1..=65536`, the caller's own
+cap on how many points it will draw; the engine decimates to it by uniform
+stride.
+
+Return: `IDLS` v1 bytes, little-endian throughout.
+```
+offset  0, length  4   magic "IDLS"
+offset  4, length  2   version (u16, always 1)
+offset  6, length  2   reserved (zero)
+offset  8, length  4   point_count (u32)
+offset 12, length  4   reserved (zero) — pads the f64 block to 8-byte alignment
+offset 16, length 32   x_min, x_max, y_min, y_max (f64 ×4)
+offset 48, length n*8  x values (f64 × point_count)
+offset 48+n*8, n*8     y values (f64 × point_count)
+total: 48 + point_count * 16
+```
+
+**`f64` on the wire, unlike `IDLF`'s `f32`.** A spectrum magnitude is a
+displayed quantity with no downstream arithmetic, so `fetch_fft` drops to
+`f32`. A scatter cloud's axes are the channels' own values, and the G-G
+diagram's whole point is an **equal-aspect** comparison against a reference
+friction circle — a wire-precision drop shows up as a visibly non-circular
+circle at small radii. The cost is bounded by `point_budget`.
+
+**The bounds are the pre-decimation extent** of the finite cloud over the
+window, not the extent of the thinned cloud that follows them. An
+equal-aspect caller squares its axes from this one result and never makes a
+second call for bounds.
+
+**Decimation happens in the engine.** The sandbox draws the points it is
+given and computes nothing (design §4, CLAUDE.md §2). Pairing is by sample
+index over the two channels' common length after both are sliced to the
+window, and a pair with a non-finite `x` or `y` is dropped before the extent
+is taken.
+
+**Window resolution is `fetch_fft_v2`'s, unchanged** (rulings R85, R123):
+the span resolves first, then both channels are sliced to it. A scatter
+consumes the time axis — it plots one channel against another, not against
+`t` — so the window is its slicing domain. Both channels are read one column
+at a time through the byte-budgeted session cache (R203.1, R211).
+
+**Both channel ids are validated before any pairing.** An absent channel
+would otherwise slice to nothing and pair to an empty cloud,
+indistinguishable from "these two genuinely never overlap"; a typo must say
+so.
+
+Settle-bound only (§4): never a hover/pan/zoom handler.
+
+Errors: `not_found` (unknown `session_id`, `x_channel` or `y_channel`),
+`invalid_argument` (an unresolvable window span, or a `point_budget` outside
+`1..=65536`), `resource_exhausted` (the session cache refused a column),
+`io`, `internal`.
+
+*Not in this revision:* idl0's scatter chart also had a **density** mode
+(`scatter_density`, a 2-D count grid) and an optional **colour-by-third-
+channel** on the point cloud. `core/src/scatter.rs` implements both; neither
+is reachable from a v3 cell yet, because C2 §5.3's `scatter_call` has no slot
+for either. Stated here as a parity gap rather than left to be inferred from
+the command's argument list.
+
 ### 3.6 Rasters (L3)
 
 **`fetch_raster(session_id: string, channel: string, kind: "spectrogram" | "histogram2d", width: number, height: number, params: SpectrogramParams | Histogram2dParams)`**

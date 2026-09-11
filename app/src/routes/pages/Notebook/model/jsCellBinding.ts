@@ -9,11 +9,22 @@
  */
 import { histogramKey } from "../plotForm/histogramKey";
 import { parse } from "../plotForm/parse";
+import { scatterKey } from "../plotForm/scatterKey";
 import { spectrumKey } from "../plotForm/spectrumKey";
-import type { FftPlotProps, HistogramParams, HistogramPlotProps, TimePlotProps } from "../plotForm/types";
+import type { FftPlotProps, HistogramParams, HistogramPlotProps, ScatterPlotProps, TimePlotProps } from "../plotForm/types";
 import { exceedsBinCap, fftRequestFor, type FftRequest } from "./fftRequest";
-import { extractChannelCalls, extractHistogramCalls, extractSpectrumCalls, type ChannelCallRef, type HistogramCallRef, type SpectrumCallRef } from "./jsCellCalls";
+import {
+  extractChannelCalls,
+  extractHistogramCalls,
+  extractScatterCalls,
+  extractSpectrumCalls,
+  type ChannelCallRef,
+  type HistogramCallRef,
+  type ScatterCallRef,
+  type SpectrumCallRef,
+} from "./jsCellCalls";
 import { MAX_HISTOGRAM_BINS, type HistogramParams as WireHistogramParams } from "../../../../ipc/histogram";
+import { MAX_SCATTER_POINTS } from "../../../../ipc/scatter";
 import { rawUnitToLabel, UNIT_NOT_YET_EVALUATED } from "./unitLabel";
 import type { ChannelSummary, SessionDetail } from "../../../../ipc/catalog";
 import type { Span, UnitLabel, Window as SelectedWindow } from "../../../../ipc/workbook";
@@ -166,7 +177,36 @@ export interface HistogramCellBinding {
   unrequestable: string | null;
 }
 
-export type JsCellBinding = TimeCellBinding | FftCellBinding | HistogramCellBinding;
+/**
+ * What a form-generated **scatter** `js` cell needs to render its XY cloud
+ * (ruling R215 item 3, C2 §5.3, C3 §3.5). Two channels, one request, one
+ * host-variable name.
+ */
+export interface ScatterCellBinding {
+  kind: "scatter";
+  props: ScatterPlotProps;
+  xChannelId: string;
+  yChannelId: string;
+  /** Each axis's three-state unit (R154/R164). A scatter is the one binding
+   *  whose two axes carry different units, so it resolves both. */
+  unitX: UnitLabel;
+  unitY: UnitLabel;
+  /** `fetch_scatter`'s `point_budget`, straight from the document. */
+  pointBudget: number;
+  /** Whether the host squares both axes onto one domain before publishing
+   *  (`ipc/scatter.ts`'s `equalAspectDomain`) — the document's choice, per
+   *  C2 §5.3's "no renderer-only parameters". */
+  equalAspect: boolean;
+  /** `scatterKey(xChannelId, yChannelId, props.mark.scatter)`. */
+  hostVarName: string;
+  /** Non-null when this cell must not fetch: a `pointBudget` outside C3
+   *  §3.5's `1..=MAX_SCATTER_POINTS`. The string is the note the cell
+   *  shows, refused here rather than round-tripped as the engine's
+   *  `invalid_argument`. */
+  unrequestable: string | null;
+}
+
+export type JsCellBinding = TimeCellBinding | FftCellBinding | HistogramCellBinding | ScatterCellBinding;
 
 /** Looks up one mark's channel in `sessionDetail.channels` by id, or `null`
  *  if it isn't a real channel on this session. Exported so every "does this
@@ -399,7 +439,51 @@ function syntheticHistogramProps(call: HistogramCallRef): HistogramPlotProps {
 }
 
 /**
- * Extracts `code`'s `channel(...)`/`spectrum(...)`/`histogram(...)` calls (`model/jsCellCalls.ts`,
+ * Builds the `ScatterCellBinding` for a scatter cell's one `scatter(...)`
+ * call, or `null` if **either** channel is not a real session channel (C3
+ * §3.5's `fetch_scatter` takes two session channel ids; a workbook
+ * definition has no column in `data.parquet` to pair from). Both are
+ * checked, not just the x channel: a cloud with one resolvable axis is not
+ * a partially-valid cloud, it is no cloud.
+ */
+function bindingForScatter(
+  call: ScatterCallRef,
+  displayProps: ScatterPlotProps,
+  sessionDetail: SessionDetail
+): ScatterCellBinding | null {
+  const x = findChannel(sessionDetail.channels, call.xChannel);
+  const y = findChannel(sessionDetail.channels, call.yChannel);
+  if (x === null || y === null) return null;
+
+  const { pointBudget, equalAspect } = call.scatter;
+  const unrequestable =
+    Number.isInteger(pointBudget) && pointBudget >= 1 && pointBudget <= MAX_SCATTER_POINTS
+      ? null
+      : `Point budget must be a whole number between 1 and ${MAX_SCATTER_POINTS}.`;
+
+  return {
+    kind: "scatter",
+    props: displayProps,
+    xChannelId: x.channel_id,
+    yChannelId: y.channel_id,
+    unitX: rawUnitToLabel(x.unit),
+    unitY: rawUnitToLabel(y.unit),
+    pointBudget,
+    equalAspect,
+    hostVarName: scatterKey(x.channel_id, y.channel_id, call.scatter),
+    unrequestable,
+  };
+}
+
+/** A minimal, synthetic `ScatterPlotProps` standing in for
+ *  `ScatterCellBinding.props` when `code` didn't round-trip through
+ *  `plotForm.parse` -- same reasoning as {@link syntheticTimeProps}. */
+function syntheticScatterProps(call: ScatterCallRef): ScatterPlotProps {
+  return { chart: "scatter", mark: { xChannel: call.xChannel, yChannel: call.yChannel, scatter: call.scatter } };
+}
+
+/**
+ * Extracts `code`'s `channel(...)`/`spectrum(...)`/`histogram(...)`/`scatter(...)` calls (`model/jsCellCalls.ts`,
  * ruling R148 part 2) and binds against them -- **not** by requiring `code`
  * to round-trip through `plotForm.parse` as one recognised form. A cell
  * with a `spectrum(...)` call is an FFT cell (`fetch_fft` takes exactly one
@@ -469,6 +553,13 @@ export function bindingFor(
   if (sessionDetail === null || sessionSpanUs === null) return null;
 
   const parsedProps = parse(cell.code);
+
+  const scatterCalls = extractScatterCalls(cell.code);
+  if (scatterCalls.length > 0) {
+    const call = scatterCalls[0];
+    const displayProps = parsedProps !== null && parsedProps.chart === "scatter" ? parsedProps : syntheticScatterProps(call);
+    return bindingForScatter(call, displayProps, sessionDetail);
+  }
 
   const histogramCalls = extractHistogramCalls(cell.code);
   if (histogramCalls.length > 0) {
@@ -547,6 +638,13 @@ function windowIdentity(window: SelectedWindow | null): string {
  * Pure string formatting, no IPC.
  */
 export function bindingIdentity(binding: JsCellBinding): string {
+  if (binding.kind === "scatter") {
+    // `hostVarName` encodes both channels and both `scatter_params`
+    // (`scatterKey`), so only the refusal state can distinguish two
+    // bindings beyond it. Per-cell, not per-window, for the reason the
+    // histogram arm's is -- see that branch's comment.
+    return `scatter|${binding.hostVarName}|${binding.unrequestable ?? ""}`;
+  }
   if (binding.kind === "histogram") {
     // `hostVarName` already encodes the channel and all four
     // `histogram_params` (`histogramKey`), so only the refusal state can
@@ -591,6 +689,16 @@ export function bindingIdentity(binding: JsCellBinding): string {
  * guarantees as `bindingFor`.
  */
 export function unresolvedChannelId(code: string, sessionDetail: SessionDetail, definitionNames: ReadonlySet<string>): string | null {
+  const scatterCalls = extractScatterCalls(code);
+  if (scatterCalls.length > 0) {
+    const { xChannel, yChannel } = scatterCalls[0];
+    // The x channel is reported first when both are unresolvable: the note
+    // slot holds one name, and reporting the first-written one matches the
+    // order the author reads their own call in.
+    if (findChannel(sessionDetail.channels, xChannel) === null) return xChannel;
+    return findChannel(sessionDetail.channels, yChannel) === null ? yChannel : null;
+  }
+
   const histogramCalls = extractHistogramCalls(code);
   if (histogramCalls.length > 0) {
     const { channel } = histogramCalls[0];

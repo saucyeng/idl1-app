@@ -3,3 +3,4 @@ export { generate } from "./generate";
 export { parse } from "./parse";
 export { spectrumKey } from "./spectrumKey";
 export { histogramKey } from "./histogramKey";
+export { scatterKey } from "./scatterKey";

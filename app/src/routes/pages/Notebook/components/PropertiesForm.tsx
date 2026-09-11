@@ -23,10 +23,13 @@ import {
   type HistogramPlotProps,
   type MarkProps,
   type PlotProps,
+  type ScatterParams,
+  type ScatterPlotProps,
   type SpectrumMarkProps,
   type TimePlotProps,
 } from "../plotForm";
 import { MAX_HISTOGRAM_BINS } from "@/ipc/histogram";
+import { MAX_SCATTER_POINTS } from "@/ipc/scatter";
 import {
   addMark,
   advanceFormState,
@@ -44,6 +47,7 @@ import {
   updateFftXAxisType,
   updateHistogramParams,
   updateMark,
+  updateScatterParams,
   updateXAxis,
   updateYAxis,
   type PropertiesFormState,
@@ -180,6 +184,7 @@ export default function PropertiesForm({ code, channels, laps, onChange }: Prope
       <ChartTypeControl chart={props.chart} onChange={(next) => commit(setChartType(props, next, channels))} />
       {props.chart === "fft" && <FftPropertiesForm props={props} channels={channels} onChange={commit} />}
       {props.chart === "histogram" && <HistogramPropertiesForm props={props} channels={channels} onChange={commit} />}
+      {props.chart === "scatter" && <ScatterPropertiesForm props={props} channels={channels} onChange={commit} />}
       {props.chart === "time" && <TimePropertiesForm props={props} channels={channels} laps={laps} onChange={commit} />}
     </div>
   );
@@ -195,6 +200,7 @@ const CHART_KIND_LABELS: Record<PlotProps["chart"], string> = {
   time: "Time",
   fft: "FFT",
   histogram: "Histogram",
+  scatter: "Scatter",
 };
 
 /** Control 1 (C2 §5.3): the chart-type segmented control, one item per
@@ -816,6 +822,139 @@ function HistogramPropertiesForm({
           value={props.y?.type}
           options={scaleOptions()}
           onChange={(value) => onChange(updateYAxis(props, { type: value as NonNullable<HistogramPlotProps["y"]>["type"] | undefined }))}
+        />
+      </FieldGroup>
+
+      <LegendControl props={props} onChange={onChange} />
+    </>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Scatter-cell body (ruling R215 item 3, C2 §5.3, C3 §3.5).
+// ---------------------------------------------------------------------------
+
+/** The point budgets the Properties pane offers directly, each at or below
+ *  C3 §3.5's `MAX_SCATTER_POINTS`. A stored value outside this list still
+ *  displays through the accompanying free numeric entry — opening the pane
+ *  never silently changes it, the same rule the other two param sections
+ *  follow. */
+const SCATTER_POINT_BUDGET_OPTIONS: readonly number[] = [1024, 4096, 16384, 65536];
+
+function ScatterPropertiesForm({
+  props,
+  channels,
+  onChange,
+}: {
+  props: ScatterPlotProps;
+  channels: PropertiesFormChannelOption[];
+  onChange: (next: PlotProps) => void;
+}) {
+  const { mark } = props;
+  const xChannel = channels.find((c) => c.id === mark.xChannel);
+  const yChannel = channels.find((c) => c.id === mark.yChannel);
+  const budgetIsStandard = (SCATTER_POINT_BUDGET_OPTIONS as readonly number[]).includes(mark.scatter.pointBudget);
+
+  /** An axis's channel pick — also seeds that axis's own label from the
+   *  newly-picked channel's unit (R65) when it is not already set. A
+   *  scatter is the one chart kind where **both** axes carry a channel's
+   *  unit, so both get the same one-time seed. */
+  function handleChannelChange(axis: "x" | "y", channelId: string): void {
+    const nextMark = axis === "x" ? { ...mark, xChannel: channelId } : { ...mark, yChannel: channelId };
+    let next: PlotProps = { ...props, mark: nextMark };
+    const suggestion = suggestAxisLabel(channels.find((c) => c.id === channelId));
+    if (suggestion !== undefined) {
+      if (axis === "x" && next.x?.label === undefined) next = updateXAxis(next, { label: suggestion });
+      if (axis === "y" && next.y?.label === undefined) next = updateYAxis(next, { label: suggestion });
+    }
+    onChange(next);
+  }
+
+  function patchScatter(patch: Partial<ScatterParams>): void {
+    onChange(updateScatterParams(props, patch));
+  }
+
+  return (
+    <>
+      <FieldGroup title="Channels" className="properties-form-mark">
+        <SelectField
+          label="X channel"
+          value={mark.xChannel}
+          options={channels.map((c) => ({ value: c.id, label: c.label }))}
+          onChange={(value) => value !== undefined && handleChannelChange("x", value)}
+        />
+        <SelectField
+          label="Y channel"
+          value={mark.yChannel}
+          options={channels.map((c) => ({ value: c.id, label: c.label }))}
+          hint={mark.xChannel === mark.yChannel ? "Both axes are the same channel, so every point sits on the diagonal." : undefined}
+          onChange={(value) => value !== undefined && handleChannelChange("y", value)}
+        />
+        <ColourField label="Point colour" value={mark.fill} onChange={(value) => onChange({ ...props, mark: { ...mark, fill: value } })} />
+        <NumberField
+          label="Point radius"
+          unit="px"
+          min={0}
+          step={0.5}
+          placeholder="auto"
+          value={mark.r ?? null}
+          onChange={(value) => onChange({ ...props, mark: { ...mark, r: value ?? undefined } })}
+        />
+      </FieldGroup>
+
+      <FieldGroup title="Cloud" className="properties-form-scatter-params">
+        <SelectField
+          label="Point budget"
+          value={budgetIsStandard ? String(mark.scatter.pointBudget) : CUSTOM_WINDOW_SIZE}
+          options={[
+            ...options(SCATTER_POINT_BUDGET_OPTIONS, (n) => String(n)),
+            ...(budgetIsStandard ? [] : [{ value: CUSTOM_WINDOW_SIZE, label: "Custom…" }]),
+          ]}
+          hint="The engine decimates to this by uniform stride."
+          onChange={(value) => {
+            if (value !== undefined && value !== CUSTOM_WINDOW_SIZE) patchScatter({ pointBudget: Number(value) });
+          }}
+        />
+        <NumberField
+          label="Point budget"
+          unit="points"
+          min={1}
+          max={MAX_SCATTER_POINTS}
+          step={512}
+          value={mark.scatter.pointBudget}
+          hint={`At most ${MAX_SCATTER_POINTS}.`}
+          onChange={(value) => value !== null && patchScatter({ pointBudget: value })}
+        />
+        <SwitchField
+          label="Equal aspect"
+          checked={mark.scatter.equalAspect}
+          onChange={(checked) => patchScatter({ equalAspect: checked })}
+        />
+      </FieldGroup>
+
+      <FieldGroup title="X axis" className="properties-form-x-axis">
+        <TextField
+          label="Label"
+          value={props.x?.label ?? ""}
+          placeholder="auto"
+          onChange={(value) => onChange(updateXAxis(props, { label: value === "" ? undefined : value }))}
+        />
+        <DomainFields domain={props.x?.domain} unit={xChannel?.unit} onChange={(domain) => onChange(updateXAxis(props, { domain }))} />
+      </FieldGroup>
+
+      <FieldGroup title="Y axis" className="properties-form-y-axis">
+        <TextField
+          label="Label"
+          value={props.y?.label ?? ""}
+          placeholder="auto"
+          onChange={(value) => onChange(updateYAxis(props, { label: value === "" ? undefined : value }))}
+        />
+        <DomainFields domain={props.y?.domain} unit={yChannel?.unit} onChange={(domain) => onChange(updateYAxis(props, { domain }))} />
+        <SelectField
+          label="Scale"
+          value={props.y?.type}
+          options={scaleOptions()}
+          onChange={(value) => onChange(updateYAxis(props, { type: value as NonNullable<ScatterPlotProps["y"]>["type"] | undefined }))}
         />
       </FieldGroup>
 

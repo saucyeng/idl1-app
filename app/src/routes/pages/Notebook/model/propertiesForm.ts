@@ -22,6 +22,8 @@ import {
   type HistogramParams,
   type HistogramPlotProps,
   type MarkProps,
+  type ScatterParams,
+  type ScatterPlotProps,
   type PlotProps,
   type TimePlotProps,
   type XAxisProps,
@@ -144,6 +146,37 @@ export function defaultHistogramPlotProps(channels: readonly { id: string; label
   return props;
 }
 
+/** The default single-mark `ScatterPlotProps` a chart-type switch (or a
+ *  brand-new scatter cell) seeds (ruling R215 item 3): the first two
+ *  available channels against each other, 4096 points, equal-aspect axes.
+ *
+ *  **Why these three.** Equal aspect on by default is idl0's own G-G
+ *  behaviour and the reason the chart exists — an unsquared friction circle
+ *  is an ellipse, which misreads as a lateral/longitudinal grip asymmetry
+ *  that is not there. 4096 points is a dense cloud that still draws as
+ *  4096 SVG circles without stalling a frame; the author raises it when
+ *  they want the tails and lowers it when they want responsiveness. The
+ *  *second* channel defaults to `channels[1]`, not to `channels[0]` again:
+ *  a cloud of a channel against itself is the identity diagonal, which is
+ *  a correct picture of nothing. With only one channel available it does
+ *  fall back to the same one, because there is no other honest choice.
+ *
+ *  Both axis labels are seeded from each channel's own recorded unit
+ *  (R65), since both axes carry a channel's value rather than time. */
+export function defaultScatterPlotProps(channels: readonly { id: string; label: string; unit?: string }[]): ScatterPlotProps {
+  const xChannel = channels[0]?.id ?? "";
+  const yChannel = channels[1]?.id ?? xChannel;
+  const props: ScatterPlotProps = {
+    chart: "scatter",
+    mark: { xChannel, yChannel, scatter: { pointBudget: 4096, equalAspect: true } },
+  };
+  const xLabel = suggestAxisLabel(channels[0]);
+  if (xLabel !== undefined) props.x = { label: xLabel };
+  const yLabel = suggestAxisLabel(channels.find((c) => c.id === yChannel));
+  if (yLabel !== undefined) props.y = { label: yLabel };
+  return props;
+}
+
 /** The code "Reset to form" writes back: `generate` of `lastKnownProps`
  *  when one exists, or of {@link defaultPlotProps} otherwise (design §6 /
  *  this task's brief — never a no-op, even for a cell that started as
@@ -259,6 +292,24 @@ export function setChartType(
     return withChannel;
   }
 
+  if (next === "scatter") {
+    // The carried channel takes the **x** axis; y keeps the seed's own
+    // second choice unless that is the same channel, in which case the
+    // seed's first is used instead — switching into a scatter must not
+    // land on the identity diagonal just because the source cell happened
+    // to chart `channels[1]`.
+    const seed = defaultScatterPlotProps(channels);
+    const yChannel = seed.mark.yChannel === channelId ? (seed.mark.xChannel === channelId ? channelId : seed.mark.xChannel) : seed.mark.yChannel;
+    const withChannels: ScatterPlotProps = { ...seed, mark: { ...seed.mark, xChannel: channelId, yChannel } };
+    const xLabel = suggestAxisLabel(channel);
+    if (xLabel !== undefined) withChannels.x = { label: xLabel };
+    else delete withChannels.x;
+    const yLabel = suggestAxisLabel(channels.find((c) => c.id === yChannel));
+    if (yLabel !== undefined) withChannels.y = { label: yLabel };
+    else delete withChannels.y;
+    return withChannels;
+  }
+
   const seed = defaultPlotProps(channels) as TimePlotProps;
   return { ...seed, marks: [{ ...seed.marks[0], channel: channelId }] };
 }
@@ -271,7 +322,19 @@ export function setChartType(
  *  at each switch arm, so "first mark drives it" is stated once. */
 function chartTypeChannel(props: PlotProps, channels: readonly { id: string }[]): string {
   if (props.chart === "time") return props.marks[0]?.channel ?? channels[0]?.id ?? "";
+  // A scatter cell has two channels; its **x** channel is the one that
+  // carries, matching how the switch *into* a scatter puts the carried
+  // channel on x. The y channel is not preserved across a switch to a
+  // one-channel kind: there is nowhere for it to go, and silently
+  // preferring it over x would be arbitrary.
+  if (props.chart === "scatter") return props.mark.xChannel;
   return props.mark.channel;
+}
+
+/** Patches the two scatter parameters (ruling R215 item 3). A plain merge:
+ *  neither parameter forces the other. */
+export function updateScatterParams(props: ScatterPlotProps, patch: Partial<ScatterParams>): ScatterPlotProps {
+  return { ...props, mark: { ...props.mark, scatter: { ...props.mark.scatter, ...patch } } };
 }
 
 /** Patches the four histogram parameters (ruling R215 item 2). A plain
@@ -389,8 +452,8 @@ export function updateXAxis(props: PlotProps, patch: Partial<Pick<XAxisProps, "l
   if (props.chart === "fft") {
     return { ...props, x: { ...props.x, ...patch } };
   }
-  // A histogram cell's `x` is the same optional `XAxisProps` a time cell's
-  // is (its meaning differs -- the binned channel's own unit rather than
+  // A histogram or scatter cell's `x` is the same optional `XAxisProps` a
+  // time cell's is (its meaning differs -- a channel's own unit rather than
   // seconds -- but its shape does not), so it takes the drop-when-empty
   // path below rather than the FFT arm's always-present one.
   const next: XAxisProps = { ...(props.x ?? {}), ...patch };

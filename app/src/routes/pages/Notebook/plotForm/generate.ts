@@ -7,6 +7,9 @@ import type {
   HistogramPlotProps,
   MarkProps,
   PlotProps,
+  ScatterMarkProps,
+  ScatterParams,
+  ScatterPlotProps,
   SpectrumMarkProps,
   TimePlotProps,
   XAxisProps,
@@ -242,6 +245,50 @@ function generateHistogram(props: HistogramPlotProps): string {
   return renderPlotBody(topLines);
 }
 
+/** Renders a `scatter_call`'s `scatter_params` object (C2 §5.3, ruling
+ *  R215 item 3): both keys, in the grammar's fixed order, on one line. */
+function renderScatterParams(s: ScatterParams): string {
+  return `{ pointBudget: ${String(s.pointBudget)}, equalAspect: ${String(s.equalAspect)} }`;
+}
+
+/** Renders a `scatter_mark`'s `scatter_options` (C2 §5.3, ruling R215 item
+ *  3): the fixed pair `x: "x"`, `y: "y"` binding the cloud's own two
+ *  columns, then optionally `fill`, then optionally `r`. The literal names
+ *  are `"x"`/`"y"` rather than `"t"`/`"v"` because neither axis is time —
+ *  the same rule that makes a spectrum bind `"f"`/`"m"`. */
+function renderScatterOptions(m: ScatterMarkProps): string {
+  const fields: string[] = [`x: "x"`, `y: "y"`];
+  if (m.fill !== undefined) fields.push(`fill: ${jsString(m.fill)}`);
+  if (m.r !== undefined) fields.push(`r: ${String(m.r)}`);
+  return `{ ${fields.join(", ")} }`;
+}
+
+/** Renders C2 §5.3's `scatter_mark` production (ruling R215 item 3):
+ *  `Plot.dot(scatter("<x>", "<y>", {scatter_params}), {scatter_options})`.
+ *  The mark name is fixed — see {@link ScatterMarkProps}' doc comment. */
+function renderScatterMark(m: ScatterMarkProps): string {
+  return `Plot.dot(scatter(${jsString(m.xChannel)}, ${jsString(m.yChannel)}, ${renderScatterParams(m.scatter)}), ${renderScatterOptions(m)})`;
+}
+
+/** Emits a scatter cell's Plot code (C2 §5.3, ruling R215 item 3): the same
+ *  top-level order and formatting policy as {@link generateHistogram}, over
+ *  the single dot mark. */
+function generateScatter(props: ScatterPlotProps): string {
+  const topLines: string[] = [];
+  if (props.x !== undefined) {
+    const renderedX = renderXAxis(props.x);
+    if (renderedX !== null) topLines.push(`x: ${renderedX}`);
+  }
+  if (props.y !== undefined) {
+    const renderedY = renderYAxis(props.y);
+    if (renderedY !== null) topLines.push(`y: ${renderedY}`);
+  }
+  if (props.color !== undefined) topLines.push(`color: { legend: true }`);
+  topLines.push(`marks: [\n    ${renderScatterMark(props.mark)}\n  ]`);
+
+  return renderPlotBody(topLines);
+}
+
 /** Emits C2 §5.3's Plot subset as JavaScript source code — a string
  *  builder, not a JS-AST printer, over the grammar's closed, small
  *  vocabulary. Branches on `props.chart`: a time cell emits exactly what
@@ -257,6 +304,8 @@ export function generate(props: PlotProps): string {
       return generateFft(props);
     case "histogram":
       return generateHistogram(props);
+    case "scatter":
+      return generateScatter(props);
     case "time":
       return generateTime(props);
   }

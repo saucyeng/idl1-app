@@ -1585,7 +1585,7 @@ y_field       ::= "label" ":" js_string
                 | "domain" ":" "[" js_number "," js_number "]"
                 | "type" ":" ("\"linear\"" | "\"log\"" | "\"sqrt\"")
 color_opt     ::= "{" "legend" ":" "true" "}"
-marks_array   ::= time_marks | fft_marks | histogram_marks        (* changed 2026-09-11 *)
+marks_array   ::= time_marks | fft_marks | histogram_marks | scatter_marks   (* changed 2026-09-11 *)
 time_marks    ::= "[" time_mark ("," time_mark)* "]"              (* new 2026-09-06 *)
 fft_marks     ::= "[" spectrum_mark "]"                           (* new 2026-09-06, exactly one *)
 
@@ -1637,6 +1637,14 @@ js_bool       ::= "true" | "false"                                (* new 2026-09
 histogram_options ::= "{" "x1" ":" "\"v0\"" "," "x2" ":" "\"v1\"" "," "y" ":" "\"n\""   (* new 2026-09-11 *)
                        ("," "fill" ":" css_color)?
                        ("," "fillOpacity" ":" js_number)? "}"
+scatter_marks ::= "[" scatter_mark "]"                            (* new 2026-09-11, exactly one *)
+scatter_mark  ::= "Plot.dot(" scatter_call "," scatter_options ")" (* new 2026-09-11; mark name fixed *)
+scatter_call  ::= "scatter(" js_string "," js_string "," scatter_params ")"  (* new 2026-09-11; x channel, y channel *)
+scatter_params ::= "{" "pointBudget" ":" js_int ","                (* new 2026-09-11; both required, fixed order *)
+                       "equalAspect" ":" js_bool "}"
+scatter_options ::= "{" "x" ":" "\"x\"" "," "y" ":" "\"y\""          (* new 2026-09-11 *)
+                       ("," "fill" ":" css_color)?
+                       ("," "r" ":" js_number)? "}"
 css_color     ::= js_string                (* any valid CSS color literal *)
 ```
 
@@ -1647,11 +1655,11 @@ R78 L6 Task 19 Q1–Q2 / R79 L6 Task 20 Q1–Q7):
   chart kind by ruling R215). `marks_array` is `time_marks`, `fft_marks` or
   `histogram_marks`; a `marks` array mixing marks from two of them parses to
   `null` (custom). This makes "its own cell" structural rather than an author
-  convention: three x axes (seconds, Hz, and the channel's own unit) cannot
-  share one `Plot.plot`. The **callee name of the first mark's data call**
-  (`channel` / `spectrum` / `histogram`) is the discriminant a reader routes
-  on, which is why each chart kind's data call is a distinct host-variable
-  name rather than an argument to a shared one.
+  convention: four x axes (seconds, Hz, and two different channels' units)
+  cannot share one `Plot.plot`. The **callee name of the first mark's data
+  call** (`channel` / `spectrum` / `histogram` / `scatter`) is the
+  discriminant a reader routes on, which is why each chart kind's data call
+  is a distinct host-variable name rather than an argument to a shared one.
 - **An FFT cell has exactly one mark** in v1 (R79 Q7). `fetch_fft` returns
   one spectrum and the host's `fftDriver` keys its `spectrum` action by
   `cellId`, so one cell resolves one spectrum. idl0's overlay of up to ten
@@ -1798,6 +1806,74 @@ segment to break, and a break row would only be one more bar to discard.
 | `x.label` | `XAxisProps.label` | string | seeded from the channel's own unit (R65) | none |
 | `y.label` | `YAxisProps.label` | string | omitted | none |
 
+**The scatter cell** (added 2026-09-11, ruling R215 item 3). idl0's G-G
+diagram (`scatter_chart.dart`), ported onto the engine's existing
+`core/src/scatter.rs` through a new command, `fetch_scatter` (C3 §3.5).
+Rules that carry the same weight as the EBNF above:
+
+- **Exactly one mark**, like an FFT or histogram cell: one `fetch_scatter`
+  call resolves one cloud.
+- **The mark name is fixed at `dot`.** A cloud of paired samples has no
+  ordering along either axis, so `lineY`/`areaY` would connect points in
+  sample order and draw a scribble that reads as a trajectory.
+  `Plot.lineY(scatter(…), …)` is custom code, not a second legal spelling.
+- **`scatter_call` names two channels**, x then y — the only data call in
+  this grammar that names two, and what makes a scatter cell recognisable
+  by the same first-callee lookahead every other kind uses. A one-argument
+  `scatter(…)` is custom code.
+- **Both `scatter_params` keys are required**, in the order given.
+- **`equalAspect` is in the document, not in host state.** Squaring both
+  axes onto one range is what makes a friction circle round, and an
+  unsquared one reads as a grip asymmetry that is not there — a picture
+  that different is not a renderer-only parameter (CLAUDE.md §3). The host
+  computes the square domain from the engine's own pre-decimation extent
+  (C3 §3.5) and publishes it on the payload; the sandbox hands it to both
+  scales and derives nothing.
+- **`pointBudget` is in the document** for the same reason: 500 points and
+  20 000 points are visibly different clouds of the same data.
+- **Mark options bind `x: "x"`, `y: "y"`**, the cloud's own two columns —
+  never `"t"`/`"v"`, since neither axis is time.
+- **`lap` is not expressible on `scatter_call`**, for the reason it is not
+  on `spectrum_call` or `histogram_call`.
+
+**The scatter host variable.** `scatter(xChannel, yChannel, params)` is the
+one recognisable host form: in the sandbox it is an ambient host variable
+resolved by lookup, never a fetch, never pairing and never decimating,
+returning `{ x, y, w }` records (`w` the window index per point) or `[]`
+before the host has pushed anything. It carries three non-enumerable
+properties rather than the usual two: `.domain` (the equal-aspect square
+both scales share, or `null`), and **two** units — `.unit`/`.unitState` for
+x and `.unitY`/`.unitYState` for y, since a scatter is the one payload whose
+two axes carry different units. The lookup key is
+**`scatterKey(xChannel, yChannel, scatterParams)`**, tagged `"scatter"` and
+never window-qualified, exactly as `histogramKey` is. Swapping the two
+channels is a different key: a G-G cloud is not symmetric. Like a
+histogram's, no `NaN` break row separates windows — a dot is an independent
+point with no connecting segment to break.
+
+**Multi-window clouds share one squared domain.** When several windows are
+selected, the equal-aspect square is computed from the **union** of every
+retained window's own pre-decimation extent, not per window: squaring each
+separately would draw one window's cloud against another window's axes,
+which defeats the point of overlaying them.
+
+**Scatter parameter table — type, default, C3 field:**
+
+| Grammar slot | Props field | Type | Default | Maps to |
+|---|---|---|---|---|
+| `scatter_call`'s first `js_string` | `ScatterMarkProps.xChannel` | string | first channel in the session picker | `fetch_scatter`'s `x_channel` |
+| `scatter_call`'s second `js_string` | `ScatterMarkProps.yChannel` | string | the **second** channel in the picker (a channel against itself is the identity diagonal) | `fetch_scatter`'s `y_channel` |
+| `pointBudget` | `scatter.pointBudget` | integer, `1..=65536` | `4096` | `fetch_scatter`'s `point_budget` |
+| `equalAspect` | `scatter.equalAspect` | boolean | `true` (idl0's G-G default) | nothing on the wire; selects the published `domain` |
+| `fill` | `ScatterMarkProps.fill` | CSS colour literal | omitted | none |
+| `r` | `ScatterMarkProps.r` | number, CSS px | omitted | none |
+| `x.label` / `y.label` | `XAxisProps.label` / `YAxisProps.label` | string | each seeded from its own channel's unit (R65) | none |
+
+*Parity gap, stated rather than inferred:* idl0's scatter chart also had a
+**density** mode and an optional **colour-by-third-channel**.
+`core/src/scatter.rs` implements both; neither has a slot in
+`scatter_params`, because C3 §3.5 does not yet expose either.
+
 **Parameter table — type, default, C3 field** (added 2026-09-06):
 
 | Grammar slot | Props field | Type | Default | Maps to |
@@ -1822,7 +1898,7 @@ segment to break, and a break row would only be one more bar to discard.
 **`PlotProps` shape** (illustrative — L6 Task 20 owns the code):
 
 ```ts
-export type PlotProps = TimePlotProps | FftPlotProps | HistogramPlotProps;
+export type PlotProps = TimePlotProps | FftPlotProps | HistogramPlotProps | ScatterPlotProps;
 export interface TimePlotProps { chart: "time"; marks: MarkProps[]; x?: XAxisProps; y?: YAxisProps; color?: { legend: true } }
 export interface FftPlotProps  { chart: "fft";  mark: SpectrumMarkProps; x?: XAxisProps; y?: YAxisProps; color?: { legend: true } }
 export interface HistogramPlotProps { chart: "histogram"; mark: HistogramMarkProps; x?: XAxisProps; y?: YAxisProps; color?: { legend: true } }
@@ -1838,6 +1914,14 @@ export interface HistogramMarkProps {
   histogram: HistogramParams;  // all four fields required; no `mark` field — the mark name is fixed
   fill?: string;
   fillOpacity?: number;        // 0..1
+}
+export interface ScatterPlotProps { chart: "scatter"; mark: ScatterMarkProps; x?: XAxisProps; y?: YAxisProps; color?: { legend: true } }
+export interface ScatterMarkProps {
+  xChannel: string;
+  yChannel: string;
+  scatter: ScatterParams;      // both fields required; no `mark` field — the mark name is fixed
+  fill?: string;
+  r?: number;                  // px
 }
 ```
 

@@ -15,6 +15,9 @@ import {
   type HistogramPlotProps,
   type MarkProps,
   type PlotProps,
+  type ScatterMarkProps,
+  type ScatterParams,
+  type ScatterPlotProps,
   type SpectrumMarkProps,
   type TimePlotProps,
   type XAxisProps,
@@ -1003,6 +1006,145 @@ function readHistogramMarksArray(c: Cursor): HistogramMarkProps | null {
   return mark;
 }
 
+// ---------------------------------------------------------------------------
+// Scatter branch: scatter_params, scatter_call, scatter_mark, scatter_marks
+// (C2 §5.3, ruling R215 item 3, added 2026-09-11).
+// ---------------------------------------------------------------------------
+
+function parseScatterParamsField(key: string, c: Cursor): FieldResult {
+  switch (key) {
+    case "pointBudget": {
+      const v = consumeNumber(c);
+      return v === null ? { ok: false } : { ok: true, value: v };
+    }
+    case "equalAspect": {
+      const v = readBool(c);
+      return v === null ? { ok: false } : { ok: true, value: v };
+    }
+    default:
+      return { ok: false };
+  }
+}
+
+/** The two keys `scatter_params` requires, both of them, per C2 §5.3. */
+const SCATTER_PARAMS_KEYS = ["pointBudget", "equalAspect"] as const;
+
+/** Reads a `scatter_call`'s `scatter_params` object, requiring both keys. */
+function readScatterParams(c: Cursor): ScatterParams | null {
+  const start = c.pos;
+  const fields = readBracedFields(c, parseScatterParamsField);
+  if (fields === null || !SCATTER_PARAMS_KEYS.every((k) => fields[k] !== undefined)) {
+    c.pos = start;
+    return null;
+  }
+  return { pointBudget: fields.pointBudget as number, equalAspect: fields.equalAspect as boolean };
+}
+
+/** Reads a `scatter_call`: `scatter("x", "y", {scatter_params})`. Two
+ *  channel names, not one — the only data call in this grammar that names
+ *  two, which is also what makes a scatter cell recognisable. Exported for
+ *  `model/jsCellCalls.ts`, same reuse rationale as {@link readChannelCall}. */
+export function readScatterCall(c: Cursor): { xChannel: string; yChannel: string; scatter: ScatterParams } | null {
+  const start = c.pos;
+  if (!consumeIdent(c, "scatter") || !consumePunct(c, "(")) {
+    c.pos = start;
+    return null;
+  }
+  const xChannel = consumeString(c);
+  if (xChannel === null || !consumePunct(c, ",")) {
+    c.pos = start;
+    return null;
+  }
+  const yChannel = consumeString(c);
+  if (yChannel === null || !consumePunct(c, ",")) {
+    c.pos = start;
+    return null;
+  }
+  const scatter = readScatterParams(c);
+  if (scatter === null || !consumePunct(c, ")")) {
+    c.pos = start;
+    return null;
+  }
+  return { xChannel, yChannel, scatter };
+}
+
+function parseScatterOptionField(key: string, c: Cursor): FieldResult {
+  switch (key) {
+    case "x": {
+      const v = consumeString(c);
+      return v === "x" ? { ok: true, value: v } : { ok: false };
+    }
+    case "y": {
+      const v = consumeString(c);
+      return v === "y" ? { ok: true, value: v } : { ok: false };
+    }
+    case "fill": {
+      const v = consumeString(c);
+      return v === null ? { ok: false } : { ok: true, value: v };
+    }
+    case "r": {
+      const v = consumeNumber(c);
+      return v === null ? { ok: false } : { ok: true, value: v };
+    }
+    default:
+      return { ok: false };
+  }
+}
+
+/** Reads a `scatter_mark`'s `scatter_options`: the fixed literal pair
+ *  `x: "x"`, `y: "y"` (both required), plus optional `fill`/`r`. */
+function readScatterOptions(c: Cursor): { fill?: string; r?: number } | null {
+  const fields = readBracedFields(c, parseScatterOptionField);
+  if (fields === null || fields.x !== "x" || fields.y !== "y") return null;
+
+  const options: { fill?: string; r?: number } = {};
+  if (fields.fill !== undefined) options.fill = fields.fill as string;
+  if (fields.r !== undefined) options.r = fields.r as number;
+  return options;
+}
+
+/** Reads one `scatter_mark` production:
+ *  `Plot.dot(scatter_call, scatter_options)`. The mark name is fixed (C2
+ *  §5.3, ruling R215 item 3) — a cloud has no ordering along either axis,
+ *  so a line mark over it would draw a scribble that looks like a path. */
+function readScatterMark(c: Cursor): ScatterMarkProps | null {
+  const start = c.pos;
+  if (!consumeIdent(c, "Plot") || !consumePunct(c, ".") || !consumeIdent(c, "dot") || !consumePunct(c, "(")) {
+    c.pos = start;
+    return null;
+  }
+  const call = readScatterCall(c);
+  if (call === null || !consumePunct(c, ",")) {
+    c.pos = start;
+    return null;
+  }
+  const options = readScatterOptions(c);
+  if (options === null || !consumePunct(c, ")")) {
+    c.pos = start;
+    return null;
+  }
+
+  const mark: ScatterMarkProps = { xChannel: call.xChannel, yChannel: call.yChannel, scatter: call.scatter };
+  if (options.fill !== undefined) mark.fill = options.fill;
+  if (options.r !== undefined) mark.r = options.r;
+  return mark;
+}
+
+/** Reads a `scatter_marks` array: `[` one `scatter_mark` `]`, exactly one. */
+function readScatterMarksArray(c: Cursor): ScatterMarkProps | null {
+  const start = c.pos;
+  if (!consumePunct(c, "[")) {
+    c.pos = start;
+    return null;
+  }
+  const mark = readScatterMark(c);
+  if (mark === null || !consumePunct(c, "]")) {
+    c.pos = start;
+    return null;
+  }
+  return mark;
+}
+
 /**
  * Looks ahead in `tokens` (from `from`, without moving any cursor) for the
  * `marks` key's value and decides whether this cell's `plot_options` is a
@@ -1062,6 +1204,7 @@ function detectChartKind(tokens: Token[], from: number): PlotProps["chart"] {
   if (calleeIdent?.kind !== "ident") return "time";
   if (calleeIdent.value === "spectrum") return "fft";
   if (calleeIdent.value === "histogram") return "histogram";
+  if (calleeIdent.value === "scatter") return "scatter";
   return "time";
 }
 
@@ -1211,6 +1354,52 @@ function readHistogramPlotOptions(c: Cursor): HistogramPlotProps | null {
   return props;
 }
 
+function parseScatterPlotOptionField(key: string, c: Cursor): FieldResult {
+  switch (key) {
+    case "x": {
+      const v = readXScale(c);
+      return v === null ? { ok: false } : { ok: true, value: v };
+    }
+    case "y": {
+      const v = readYScale(c);
+      return v === null ? { ok: false } : { ok: true, value: v };
+    }
+    case "color": {
+      const v = readColorOpt(c);
+      return v === null ? { ok: false } : { ok: true, value: v };
+    }
+    case "marks": {
+      const v = readScatterMarksArray(c);
+      return v === null ? { ok: false } : { ok: true, value: v };
+    }
+    default:
+      return { ok: false }; // any key outside x/y/color/marks -> custom
+  }
+}
+
+/** Reads a scatter cell's `plot_options` (ruling R215 item 3), requiring
+ *  `marks` (the one dot mark). Both axes reuse the time cell's own
+ *  `x_scale`/`y_scale` readers: each carries a channel's unit rather than
+ *  seconds, which is a label, not a grammar distinction. */
+function readScatterPlotOptions(c: Cursor): ScatterPlotProps | null {
+  const start = c.pos;
+  const fields = readBracedFields(c, parseScatterPlotOptionField);
+  if (fields === null || fields.marks === undefined) {
+    c.pos = start;
+    return null;
+  }
+
+  const props: ScatterPlotProps = { chart: "scatter", mark: fields.marks as ScatterMarkProps };
+  if (fields.x !== undefined && Object.keys(fields.x as XAxisProps).length > 0) {
+    props.x = fields.x as XAxisProps;
+  }
+  if (fields.y !== undefined && Object.keys(fields.y as YAxisProps).length > 0) {
+    props.y = fields.y as YAxisProps;
+  }
+  if (fields.color !== undefined) props.color = fields.color as { legend: true };
+  return props;
+}
+
 /** Reads `plot_options`, dispatching to the reader for the chart kind
  *  {@link detectChartKind}'s lookahead over the `marks` key's value picked
  *  (C2 §5.3: "A cell is a time cell or an FFT cell, never both", widened by
@@ -1222,6 +1411,8 @@ function readPlotOptions(c: Cursor): PlotProps | null {
       return readFftPlotOptions(c);
     case "histogram":
       return readHistogramPlotOptions(c);
+    case "scatter":
+      return readScatterPlotOptions(c);
     case "time":
       return readTimePlotOptions(c);
   }

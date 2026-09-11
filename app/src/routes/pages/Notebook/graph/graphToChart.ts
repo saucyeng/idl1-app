@@ -25,7 +25,7 @@
 
 import { generate } from "../plotForm/generate";
 import type { PlotProps } from "../plotForm/types";
-import { defaultFftPlotProps, defaultHistogramPlotProps } from "../model/propertiesForm";
+import { defaultFftPlotProps, defaultHistogramPlotProps, defaultScatterPlotProps } from "../model/propertiesForm";
 import type { MathExprCall } from "../model/mathExpr";
 import type { ChartTypeId } from "./chartTypeCatalog";
 import { chartTypeInfo } from "./chartTypeCatalog";
@@ -75,6 +75,12 @@ export function plotPropsForChartType(chartType: ChartTypeId, nodeName: string):
       return defaultFftPlotProps(channels);
     case "histogram":
       return defaultHistogramPlotProps(channels);
+    case "scatter":
+      // A graph card knows one node's name, so a scatter seeded from it
+      // starts with that node on **both** axes -- the identity diagonal,
+      // which is honest about there being no second channel to pick yet.
+      // The author picks the y channel in the Properties pane.
+      return defaultScatterPlotProps(channels);
     case "time":
       // Unreachable: every `chart: "time"` catalog entry carries a mark,
       // which the branch above already returned on. Stated as a thrown

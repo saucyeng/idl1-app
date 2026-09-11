@@ -1,6 +1,6 @@
 /**
- * Finds every `channel(...)`/`spectrum(...)`/`histogram(...)` call a `js`
- * cell's source text makes, without requiring the cell to be one recognised
+ * Finds every `channel(...)`/`spectrum(...)`/`histogram(...)`/`scatter(...)`
+ * call a `js` cell's source text makes, without requiring the cell to be one recognised
  * `Plot.plot({...})` form (ruling R148 part 2, `runs/2026-09-03/decisions.md`).
  * `plotForm/parse.ts`'s `parse` demands the whole cell match a closed
  * grammar — a `height:` key, an extra statement, a `stroke: "var(...)"`, or
@@ -35,8 +35,8 @@
  * this lane (`mathExpr.ts`'s `extractRefs` skips a malformed `[...]` the
  * same way) — never a guess at what the author meant.
  */
-import { readChannelCall, readHistogramCall, readSpectrumCall, tokenize, type Cursor } from "../plotForm/parse";
-import type { FftParams, HistogramParams } from "../plotForm/types";
+import { readChannelCall, readHistogramCall, readScatterCall, readSpectrumCall, tokenize, type Cursor } from "../plotForm/parse";
+import type { FftParams, HistogramParams, ScatterParams } from "../plotForm/types";
 
 /** One `channel(...)` call this scan found, decoded exactly as
  *  `readChannelCall` would from a full parse. */
@@ -57,6 +57,15 @@ export interface SpectrumCallRef {
 export interface HistogramCallRef {
   channel: string;
   histogram: HistogramParams;
+}
+
+/** One `scatter(...)` call this scan found (ruling R215 item 3), decoded
+ *  exactly as `readScatterCall` would from a full parse. Two channel names,
+ *  not one — the only data call in this grammar that names two. */
+export interface ScatterCallRef {
+  xChannel: string;
+  yChannel: string;
+  scatter: ScatterParams;
 }
 
 /** One `name(` call site the raw-text scan located: `name` is the
@@ -257,6 +266,23 @@ export function extractHistogramCalls(code: string): HistogramCallRef[] {
     const result = readHistogramCall(cursor);
     if (result === null || cursor.pos !== tokens.length) continue;
     calls.push({ channel: result.channel, histogram: result.histogram });
+  }
+  return calls;
+}
+
+/**
+ * Every `scatter(...)` call `code` makes, in source order (ruling R215 item
+ * 3) — same mechanism as {@link extractChannelCalls}, via `readScatterCall`.
+ */
+export function extractScatterCalls(code: string): ScatterCallRef[] {
+  const calls: ScatterCallRef[] = [];
+  for (const span of findCallSpans(code, "scatter")) {
+    const tokens = tokenize(code.slice(span.start, span.end));
+    if (tokens === null) continue;
+    const cursor: Cursor = { tokens, pos: 0 };
+    const result = readScatterCall(cursor);
+    if (result === null || cursor.pos !== tokens.length) continue;
+    calls.push({ xChannel: result.xChannel, yChannel: result.yChannel, scatter: result.scatter });
   }
   return calls;
 }

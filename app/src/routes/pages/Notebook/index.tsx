@@ -11,6 +11,7 @@ import { NoteBlock } from "@/components/brand/NoteBlock";
 import { listSessions, listWorkbooks, getSession, rebuildCatalog, type RebuildReport, type SessionDetail, type SessionSummary } from "../../../ipc/catalog";
 import { cursorReadout } from "../../../ipc/cursor";
 import { fetchHistogram, type HistogramResponse } from "../../../ipc/histogram";
+import { equalAspectDomain, fetchScatter, type DecodedScatter } from "../../../ipc/scatter";
 import { fetchFftV2, type DecodedFft } from "../../../ipc/rasters";
 import { fetchTile } from "../../../ipc/tiles";
 import {
@@ -59,8 +60,10 @@ import { WorkbookNotices } from "./components/WorkbookBar";
 import GraphCanvas from "./graph/GraphCanvas";
 import {
   combineHistogramWindows,
+  combineScatterWindows,
   combineSpectrumWindows,
   type HistogramWindowSeries,
+  type ScatterWindowSeries,
   type SandboxCell,
   type SpectrumWindowSeries,
   type WindowDescriptor,
@@ -98,10 +101,18 @@ import { resolveEditorHost } from "./model/editorHost";
 import { resolveGraphHost } from "./model/graphHost";
 import { runFft, type FftAction, type FftDeps } from "./model/fftDriver";
 import { histogramColumns, runHistogram, type HistogramAction } from "./model/histogramDriver";
+import { runScatter, unionScatterBounds, type ScatterAction } from "./model/scatterDriver";
 import { exceedsBinCap, frequencyAxisHz } from "./model/fftRequest";
 import { diffFunctionCatalog, type FunctionCatalogMismatch } from "./model/functionCatalog";
 import { primaryWindowOutputs, sessionDetailsBySessionId } from "./model/graphView";
-import { bindingFor, bindingIdentity, unresolvedChannelId, type FftCellBinding, type HistogramCellBinding } from "./model/jsCellBinding";
+import {
+  bindingFor,
+  bindingIdentity,
+  unresolvedChannelId,
+  type FftCellBinding,
+  type HistogramCellBinding,
+  type ScatterCellBinding,
+} from "./model/jsCellBinding";
 import { extractChannelCalls, extractSpectrumCalls } from "./model/jsCellCalls";
 import { jsCellNote, primaryWindowNote } from "./model/jsCellNote";
 import { definitionCellIds } from "./model/graphModel";
@@ -234,6 +245,11 @@ function fftRunKey(cellId: string, windowKeyValue: string): string {
  *  have one kind's in-flight run supersede the other's. */
 function histogramRunKey(cellId: string, windowKeyValue: string): string {
   return `${cellId}|histogram|${windowKeyValue}`;
+}
+
+/** {@link fftRunKey}'s scatter counterpart (ruling R215 item 3). */
+function scatterRunKey(cellId: string, windowKeyValue: string): string {
+  return `${cellId}|scatter|${windowKeyValue}`;
 }
 
 /** C4 §4's stated expected-hash-set TTL (5 s), matched here for the frontend's own independent self-write belt (`saveFlow.ts`'s `isSelfWrite`). */
@@ -581,6 +597,9 @@ export default function NotebookPage() {
    *  `cellId` -> `windowKey`, exactly like {@link fftErrors}, and joined
    *  into one displayed string by `cellErrorMessage` the same way. */
   const [histogramErrors, setHistogramErrors] = useState<Map<string, Map<string, IpcError>>>(new Map());
+  /** A scatter cell's per-window `fetch_scatter` failures (ruling R215 item
+   *  3), typed and keyed the same way as {@link fftErrors}. */
+  const [scatterErrors, setScatterErrors] = useState<Map<string, Map<string, IpcError>>>(new Map());
   const sessionDetail = primaryWindow !== null ? (sessionDetailsByWindow.get(windowKey(primaryWindow)) ?? null) : null;
   /** Changes exactly when the set of selected windows with a resolved
    *  `SessionDetail` changes -- the readiness dependency the channel-bind
@@ -1073,6 +1092,15 @@ export default function NotebookPage() {
   const retainedHistogramsRef = useRef<Map<string, { hostVarName: string; unit: UnitLabel; byWindow: Map<string, HistogramResponse> }>>(new Map());
   /** {@link fftBoundIdentityRef}'s histogram counterpart. */
   const histogramBoundIdentityRef = useRef<Map<string, Map<string, string>>>(new Map());
+  /** {@link retainedSpectraRef}'s scatter counterpart (ruling R215 item 3),
+   *  plus both axes' units and whether the cell asked for equal-aspect
+   *  axes -- the combined push needs all three and none can be re-derived
+   *  from the retained clouds alone. */
+  const retainedScattersRef = useRef<
+    Map<string, { hostVarName: string; unitX: UnitLabel; unitY: UnitLabel; equalAspect: boolean; byWindow: Map<string, DecodedScatter> }>
+  >(new Map());
+  /** {@link fftBoundIdentityRef}'s scatter counterpart. */
+  const scatterBoundIdentityRef = useRef<Map<string, Map<string, string>>>(new Map());
 
   // One `saveFlow` instance for this page's lifetime (Task 14) -- holds
   // its own `SaveFlowState` behind a closure; `saveFlowState` mirrors it
@@ -1187,6 +1215,46 @@ export default function NotebookPage() {
     );
   }
 
+  /**
+   * Rebuilds and pushes `cellId`'s combined multi-window scatter host
+   * variable from `retainedScattersRef`'s currently retained per-window
+   * clouds (ruling R215 item 3). The shape of
+   * {@link pushCombinedHistogramFor}, plus one thing neither sibling has:
+   * the equal-aspect domain, squared from the **union** of every retained
+   * window's own pre-decimation extent (`unionScatterBounds`). Squaring
+   * each window separately would draw one window's cloud against another
+   * window's axes, which defeats the point of overlaying them.
+   */
+  function pushCombinedScatterFor(cellId: string): void {
+    const retained = retainedScattersRef.current.get(cellId);
+    const host = sandboxHostRef.current;
+    if (retained === undefined || host === null) return;
+    const series: ScatterWindowSeries[] = [];
+    const clouds: DecodedScatter[] = [];
+    for (const w of selectionRef.current) {
+      const wKey = windowKey(w);
+      const cloud = retained.byWindow.get(wKey);
+      if (cloud === undefined) continue;
+      const detail = sessionDetailsByWindowRef.current.get(wKey) ?? null;
+      series.push({ descriptor: windowDescriptorFor(w, detail), x: cloud.xs, y: cloud.ys });
+      clouds.push(cloud);
+    }
+    const combined = combineScatterWindows(series);
+    const union = unionScatterBounds(clouds);
+    const domain = retained.equalAspect && union !== null ? equalAspectDomain(union) : null;
+    host.setScatterHostVar(
+      retained.hostVarName,
+      combined.length,
+      combined.x.buffer as ArrayBuffer,
+      combined.y.buffer as ArrayBuffer,
+      combined.w.buffer as ArrayBuffer,
+      combined.windows,
+      domain,
+      retained.unitX,
+      retained.unitY
+    );
+  }
+
   // Callbacks are routed through refs updated on every render so the mount
   // effect below can keep an empty dependency array -- it only constructs
   // and disposes the one `SandboxHost`, it never needs a fresh callback
@@ -1271,6 +1339,9 @@ export default function NotebookPage() {
         // this page's own retained copies here too. No IPC, no refetch.
         for (const cellId of retainedHistogramsRef.current.keys()) {
           pushCombinedHistogramFor(cellId);
+        }
+        for (const cellId of retainedScattersRef.current.keys()) {
+          pushCombinedScatterFor(cellId);
         }
       },
     });
@@ -1957,7 +2028,24 @@ export default function NotebookPage() {
       }
       return next;
     });
+    for (const [cellId, perWindow] of scatterBoundIdentityRef.current) {
+      if (!liveIds.has(cellId)) {
+        for (const wKey of perWindow.keys()) cellRunSequencerRef.current.delete(scatterRunKey(cellId, wKey));
+        scatterBoundIdentityRef.current.delete(cellId);
+        retainedScattersRef.current.delete(cellId);
+      }
+    }
     setHistogramErrors((prev) => {
+      let next = prev;
+      for (const cellId of prev.keys()) {
+        if (!liveIds.has(cellId)) {
+          if (next === prev) next = new Map(prev);
+          next.delete(cellId);
+        }
+      }
+      return next;
+    });
+    setScatterErrors((prev) => {
       let next = prev;
       for (const cellId of prev.keys()) {
         if (!liveIds.has(cellId)) {
@@ -2499,6 +2587,168 @@ export default function NotebookPage() {
     primeState.primeEpoch,
   ]);
 
+  // For each `js` cell whose binding is the scatter arm, once per
+  // **selected window** whose per-window identity changed (ruling R215 item
+  // 3, C2 §5.3, C3 §3.5). The same shape as the histogram effect above --
+  // per-window `CellRunSequencer` keying via `scatterRunKey`, decision-61
+  // pruning of deselected windows, and R121's "one window's failure never
+  // blocks a sibling's".
+  //
+  // A cell whose `unrequestable` is non-null (a point budget outside C3
+  // §3.5's range) never reaches `runScatter`; its note is folded into
+  // `cellErrorMessage` below.
+  useEffect(() => {
+    if (state.markdown === null) return;
+    const markdown = state.markdown;
+    const currentWindowKeys = new Set(windows.map(windowKey));
+
+    for (const cell of state.cells) {
+      if (cell.id === null || cell.kind !== "js") continue;
+      const cellId = cell.id;
+      const code = decodeByteRange(markdown, cell.bodyRange);
+
+      const shapeWindow = primaryWindow !== null ? toWireWindow(primaryWindow) : null;
+      const shapeBinding = bindingFor({ id: cellId, code }, sessionDetail, sessionSpanUs, definitionsWithAxis, shapeWindow, definitionUnitByName);
+      if (shapeBinding === null || shapeBinding.kind !== "scatter") {
+        const perWindow = scatterBoundIdentityRef.current.get(cellId);
+        if (perWindow !== undefined) {
+          for (const wKey of perWindow.keys()) cellRunSequencerRef.current.delete(scatterRunKey(cellId, wKey));
+          scatterBoundIdentityRef.current.delete(cellId);
+        }
+        retainedScattersRef.current.delete(cellId);
+        setScatterErrors((prev) => {
+          if (!prev.has(cellId)) return prev;
+          const next = new Map(prev);
+          next.delete(cellId);
+          return next;
+        });
+        continue;
+      }
+
+      const perWindowIdentity = scatterBoundIdentityRef.current.get(cellId) ?? new Map<string, string>();
+      for (const wKey of Array.from(perWindowIdentity.keys())) {
+        if (!currentWindowKeys.has(wKey)) {
+          perWindowIdentity.delete(wKey);
+          cellRunSequencerRef.current.delete(scatterRunKey(cellId, wKey));
+        }
+      }
+      scatterBoundIdentityRef.current.set(cellId, perWindowIdentity);
+      const retained = retainedScattersRef.current.get(cellId);
+      if (retained !== undefined) {
+        let prunedAny = false;
+        for (const wKey of Array.from(retained.byWindow.keys())) {
+          if (!currentWindowKeys.has(wKey)) {
+            retained.byWindow.delete(wKey);
+            prunedAny = true;
+          }
+        }
+        if (prunedAny) pushCombinedScatterFor(cellId);
+      }
+      setScatterErrors((prev) => {
+        const cellMap = prev.get(cellId);
+        if (cellMap === undefined) return prev;
+        const nextCellMap = new Map(cellMap);
+        let changed = false;
+        for (const wKey of cellMap.keys()) {
+          if (!currentWindowKeys.has(wKey)) {
+            nextCellMap.delete(wKey);
+            changed = true;
+          }
+        }
+        return changed ? new Map(prev).set(cellId, nextCellMap) : prev;
+      });
+
+      for (const w of windows) {
+        const wKey = windowKey(w);
+        const detail = sessionDetailsByWindow.get(wKey) ?? null;
+        if (detail === null) continue; // this window's session is still resolving
+
+        const binding = bindingFor({ id: cellId, code }, detail, sessionSpanUs, definitionsWithAxis, toWireWindow(w), definitionUnitByName);
+        if (binding === null || binding.kind !== "scatter") continue; // e.g. a channel isn't in this window's session
+
+        // Per-cell identity plus the window key, same reason the histogram
+        // effect appends one: a scatter's host-variable key carries no
+        // window, so without it the first window's fetch would mark every
+        // sibling as current and they would never be fetched.
+        const identity = `${bindingIdentity(binding)}|${wKey}`;
+        if (perWindowIdentity.get(wKey) === identity) continue;
+        perWindowIdentity.set(wKey, identity);
+
+        if (binding.unrequestable !== null) {
+          retainedScattersRef.current.get(cellId)?.byWindow.delete(wKey);
+          setScatterErrors((prev) => {
+            const cellMap = prev.get(cellId);
+            if (cellMap === undefined || !cellMap.has(wKey)) return prev;
+            const nextCellMap = new Map(cellMap);
+            nextCellMap.delete(wKey);
+            return new Map(prev).set(cellId, nextCellMap);
+          });
+          pushCombinedScatterFor(cellId);
+          continue;
+        }
+
+        const scatterBinding: ScatterCellBinding = binding;
+        const dispatchScatter = (action: ScatterAction) => {
+          if (action.type === "scatter") {
+            const entry =
+              retainedScattersRef.current.get(cellId) ??
+              {
+                hostVarName: scatterBinding.hostVarName,
+                unitX: scatterBinding.unitX,
+                unitY: scatterBinding.unitY,
+                equalAspect: scatterBinding.equalAspect,
+                byWindow: new Map<string, DecodedScatter>(),
+              };
+            entry.hostVarName = scatterBinding.hostVarName;
+            entry.unitX = scatterBinding.unitX;
+            entry.unitY = scatterBinding.unitY;
+            entry.equalAspect = scatterBinding.equalAspect;
+            entry.byWindow.set(wKey, action.scatter);
+            retainedScattersRef.current.set(cellId, entry);
+            setScatterErrors((prev) => {
+              const cellMap = prev.get(cellId);
+              if (cellMap === undefined || !cellMap.has(wKey)) return prev;
+              const nextCellMap = new Map(cellMap);
+              nextCellMap.delete(wKey);
+              return new Map(prev).set(cellId, nextCellMap);
+            });
+            pushCombinedScatterFor(cellId);
+          } else {
+            retainedScattersRef.current.get(cellId)?.byWindow.delete(wKey);
+            setScatterErrors((prev) => {
+              const cellMap = new Map(prev.get(cellId));
+              cellMap.set(wKey, action.error);
+              return new Map(prev).set(cellId, cellMap);
+            });
+            pushCombinedScatterFor(cellId);
+          }
+        };
+        const seq = cellRunSequencerRef.current.start(scatterRunKey(cellId, wKey));
+        const isStale = () => !cellRunSequencerRef.current.isCurrent(scatterRunKey(cellId, wKey), seq);
+
+        void runScatter(
+          { fetchScatter },
+          cellId,
+          toWireWindow(w),
+          scatterBinding.xChannelId,
+          scatterBinding.yChannelId,
+          scatterBinding.pointBudget,
+          dispatchScatter,
+          isStale
+        );
+      }
+    }
+  }, [
+    state.cells,
+    state.markdown,
+    primaryEval,
+    sessionDetail,
+    sessionSpanUs,
+    windowsKeyValue,
+    sessionDetailsReadiness,
+    primeState.primeEpoch,
+  ]);
+
   // Save is unavailable while there is no readable `hash` to base it on
   // (still loading, or a read error) -- see `handleSave`'s doc comment on
   // why `null` cannot stand in for it.
@@ -2699,6 +2949,12 @@ export default function NotebookPage() {
         .map((e) => e.message)
         .join("; ");
     }
+    const scatterErrorsForCell = scatterErrors.get(cellId);
+    if (scatterErrorsForCell !== undefined && scatterErrorsForCell.size > 0) {
+      return Array.from(scatterErrorsForCell.values())
+        .map((e) => e.message)
+        .join("; ");
+    }
     const output = primaryOutputs.get(cellId);
     if (output !== undefined && output.errors.length > 0) return output.errors.map((e) => e.message).join("; ");
     return undefined;
@@ -2869,7 +3125,8 @@ export default function NotebookPage() {
               // `JsCellFrame` -- no pan, no zoom, no hover readout, no
               // cursor readout, and no `sendTransform`. `unrequestable`
               // (an FFT cell: too few samples or over the bin cap; a
-              // histogram cell: a bin count/width outside C3 §3.6's range)
+              // histogram cell: a bin count/width outside C3 §3.6's range;
+              // a scatter cell: a point budget outside C3 §3.5's range)
               // shows its reason in the note slot; a real per-window fetch
               // failure shows `cellErrorMessage`'s joined text instead --
               // a sibling window's own successful series still renders

@@ -75,7 +75,26 @@ export type HostVarPayload =
   | { kind: "json"; value: unknown }
   | { kind: "channel"; length: number; t: ArrayBuffer; v: ArrayBuffer; w: ArrayBuffer; windows: WindowDescriptor[]; unit: UnitLabel }
   | { kind: "spectrum"; length: number; f: ArrayBuffer; m: ArrayBuffer; w: ArrayBuffer; windows: WindowDescriptor[] }
-  | { kind: "histogram"; length: number; v0: ArrayBuffer; v1: ArrayBuffer; n: ArrayBuffer; w: ArrayBuffer; windows: WindowDescriptor[]; unit: UnitLabel };
+  | { kind: "histogram"; length: number; v0: ArrayBuffer; v1: ArrayBuffer; n: ArrayBuffer; w: ArrayBuffer; windows: WindowDescriptor[]; unit: UnitLabel }
+  | {
+      kind: "scatter";
+      length: number;
+      x: ArrayBuffer;
+      y: ArrayBuffer;
+      w: ArrayBuffer;
+      windows: WindowDescriptor[];
+      /** The equal-aspect square domain both axes share, or `null` when the
+       *  cell did not ask for one or the cloud has no extent to square
+       *  (`ipc/scatter.ts`'s `equalAspectDomain`). Small JSON, not
+       *  transferred — a cell reads it as `scatter(...).domain` and hands
+       *  it to both of Plot's scales. */
+      domain: [number, number] | null;
+      /** The **x** channel's three-state unit (R154/R164). */
+      unit: UnitLabel;
+      /** The **y** channel's three-state unit. A scatter is the one payload
+       *  whose two axes carry different units, so it carries two. */
+      unitY: UnitLabel;
+    };
 
 /** One cell as the host hands it to the sandbox for (re)definition. */
 export interface SandboxCell {
@@ -455,6 +474,89 @@ export function combineHistogramWindows(series: readonly HistogramWindowSeries[]
   });
 
   return { length, v0, v1, n, w, windows };
+}
+
+/** One selected window's own paired `{x, y}` cloud -- see
+ *  {@link combineScatterWindows}. */
+export interface ScatterWindowSeries {
+  descriptor: WindowDescriptor;
+  x: Float64Array;
+  y: Float64Array;
+}
+
+/** {@link combineScatterWindows}'s return -- ready to pass straight into
+ *  {@link scatterPayload} (via each array's `.buffer`). */
+export interface CombinedScatterSeries {
+  length: number;
+  x: Float64Array;
+  y: Float64Array;
+  w: Float64Array;
+  windows: WindowDescriptor[];
+}
+
+/**
+ * Combines *n* selected windows' own clouds into the single flat
+ * `{length, x, y, w}` layout (ruling R215 item 3), the scatter counterpart
+ * of {@link combineChannelWindows}/{@link combineSpectrumWindows}.
+ *
+ * **No break row is inserted between windows**, for the reason
+ * {@link combineHistogramWindows}' doc comment gives: the mark is
+ * `Plot.dot`, so every row is an independent point with no connecting
+ * segment to break, and a `NaN` row would be one more point to discard.
+ * `w` groups the points by window, which is what lets a cell colour each
+ * window's cloud from its own descriptor.
+ */
+export function combineScatterWindows(series: readonly ScatterWindowSeries[]): CombinedScatterSeries {
+  const windows = series.map((s) => s.descriptor);
+  const length = series.reduce((sum, s) => sum + Math.min(s.x.length, s.y.length), 0);
+  const x = new Float64Array(length);
+  const y = new Float64Array(length);
+  const w = new Float64Array(length);
+
+  let i = 0;
+  series.forEach((s, windowIndex) => {
+    const n = Math.min(s.x.length, s.y.length);
+    for (let j = 0; j < n; j++) {
+      x[i] = s.x[j];
+      y[i] = s.y[j];
+      w[i] = windowIndex;
+      i++;
+    }
+  });
+
+  return { length, x, y, w, windows };
+}
+
+/**
+ * Builds a `setHostVar` message for a decoded, possibly multi-window XY
+ * cloud (ruling R215 item 3) plus its transfer list, mirroring
+ * {@link channelPayload}. `x`/`y`/`w` must not be read again by the caller
+ * after this call -- they are neutered once transferred.
+ *
+ * `domain` and the two units are small JSON carried alongside, not
+ * transferred: `domain` is the equal-aspect square both scales share (or
+ * `null`), and a scatter is the one payload kind whose two axes carry
+ * *different* units, so it names both rather than one.
+ */
+export function scatterPayload(
+  name: string,
+  length: number,
+  x: ArrayBuffer,
+  y: ArrayBuffer,
+  w: ArrayBuffer,
+  windows: WindowDescriptor[],
+  domain: [number, number] | null,
+  unit: UnitLabel,
+  unitY: UnitLabel
+): { message: { type: "setHostVar"; name: string; value: HostVarPayload }; transfer: Transferable[] } {
+  return {
+    message: {
+      type: "setHostVar",
+      name,
+      value: { kind: "scatter", length, x, y, w, windows, domain, unit, unitY },
+    },
+    transfer: [x, y, w],
+  };
 }
 
 /**

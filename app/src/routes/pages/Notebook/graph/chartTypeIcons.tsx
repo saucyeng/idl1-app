@@ -103,6 +103,23 @@ function HistogramIcon({ className }: IconProps) {
   );
 }
 
+/** The scatter cell's pictogram (R215 item 3): a ring of dots around a
+ *  faint circle -- the G-G friction circle, which is what tells this apart
+ *  from the `dot` time mark's four rising points. */
+function ScatterIcon({ className }: IconProps) {
+  return (
+    <svg viewBox="0 0 16 16" width="16" height="16" className={className} aria-hidden="true">
+      <circle cx="8" cy="8" r="6" fill="none" stroke="currentColor" strokeWidth="0.8" opacity="0.4" />
+      <circle cx="8" cy="3" r="1.1" fill="currentColor" />
+      <circle cx="12" cy="6" r="1.1" fill="currentColor" />
+      <circle cx="11" cy="11" r="1.1" fill="currentColor" />
+      <circle cx="5" cy="10.5" r="1.1" fill="currentColor" />
+      <circle cx="4.5" cy="5.5" r="1.1" fill="currentColor" />
+      <circle cx="8" cy="8" r="1.1" fill="currentColor" />
+    </svg>
+  );
+}
+
 /** Maps every {@link ChartTypeId} to its pictogram component — kept
  *  exhaustive by the `Record` type itself (a chart type added to
  *  `chartTypeCatalog.ts` without an entry here is a compile error). */
@@ -114,4 +131,5 @@ export const CHART_TYPE_ICONS: Record<ChartTypeId, (props: IconProps) => React.J
   ruleY: RuleIcon,
   fft: FftIcon,
   histogram: HistogramIcon,
+  scatter: ScatterIcon,
 };

@@ -10,6 +10,7 @@ import {
   evalInlineMessage,
   histogramPayload,
   isHostMessage,
+  scatterPayload,
   layoutMessage,
   spectrumPayload,
   transformMessage,
@@ -303,6 +304,32 @@ export class SandboxHost {
    */
   setSpectrumHostVar(name: string, length: number, f: ArrayBuffer, m: ArrayBuffer, w: ArrayBuffer, windows: WindowDescriptor[]): void {
     const { message, transfer } = spectrumPayload(name, length, f, m, w, windows);
+    this.postToSandbox(message, transfer);
+    this.scheduleRerender();
+  }
+
+  /**
+   * Binds a decoded, possibly multi-window XY cloud as a host variable
+   * (ruling R215 item 3). Same transfer-list mechanics and multi-window
+   * contract as {@link setChannelHostVar} -- one call per (x channel, y
+   * channel, `scatter_params`) triple, never one per window; the three
+   * buffers are moved (not copied) via `postMessage`'s transfer list (P7),
+   * and the caller must not read `x`/`y`/`w` again after this call. Not
+   * cached for rebuild replay, for the same structural reason a spectrum
+   * is not (`rebuildReplay.ts`).
+   */
+  setScatterHostVar(
+    name: string,
+    length: number,
+    x: ArrayBuffer,
+    y: ArrayBuffer,
+    w: ArrayBuffer,
+    windows: WindowDescriptor[],
+    domain: [number, number] | null,
+    unit: UnitLabel,
+    unitY: UnitLabel
+  ): void {
+    const { message, transfer } = scatterPayload(name, length, x, y, w, windows, domain, unit, unitY);
     this.postToSandbox(message, transfer);
     this.scheduleRerender();
   }
