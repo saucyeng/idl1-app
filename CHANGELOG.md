@@ -6,6 +6,21 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 
 ### Added
 
+- **Prose is edited where it is read [docs] (2026-09-11, ruling R226).**
+  A notebook's text could only be changed from the code column. Clicking a
+  rendered prose block — or pressing Enter with it focused — now replaces
+  it in place with a Markdown mini-editor holding that block's own source,
+  inline `${…}` spans and all. Ctrl/Cmd+Enter or clicking away commits,
+  Esc discards. A commit writes through the same `editCell` path every
+  other edit uses, so the owning cell re-evaluates (its status glyph shows
+  beside the editor until it settles) and the whole-workbook code column
+  shows the change at once. It is source, not rich text: a Markdown
+  round-trip through a WYSIWYG layer loses what the file says. An edit
+  that would change the document's cells rather than its prose — a ```
+  fence typed into a paragraph — is refused, with the reason under the
+  editor and the draft left alone. At paper widths the existing sheet
+  still opens instead (R185).
+
 - **In-app updates [docs] (2026-09-11, ruling R231).** The app checks
   `saucyeng/idl1-releases`' `latest.json` on launch (+30 s) and every
   4 h, and from `Help ▸ Check for updates…`; a status-bar item names the

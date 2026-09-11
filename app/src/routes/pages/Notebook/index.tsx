@@ -51,6 +51,7 @@ import { chartWidthNeedsRefetch, resolveChartWidthPx } from "./model/chartWidth"
 import { applyDecodeProgress, cellDecodeFraction, decodeKey, NO_DECODES, type DecodeProgressState } from "../../../state/decodeProgress";
 import { onDecodeProgress } from "../../../ipc/decode_progress";
 import CellList from "./components/CellList";
+import ProseEditor from "./components/ProseEditor";
 import ReportView from "./components/ReportView";
 import PaperView from "./components/PaperView";
 import { buildReportDocument, type ReportDocument } from "./model/report/document";
@@ -108,6 +109,7 @@ import { playableSpanUs, setSpeed, tick, togglePlay, type PlaybackState } from "
 import type { PlaybackMode } from "./interaction/playbackMode";
 import { editorPlacement } from "./model/editorPlacement";
 import { paperViewActive } from "./model/paperView";
+import { commitProseEdit, draftProseEdit, openProseEdit, type ProseEditSession } from "./model/proseEdit";
 import { paperLiveDecision } from "./model/paperLive";
 import { editorContentFor, sheetTitleFor } from "./model/editorContent";
 import { effectivePaperTheme } from "./model/report/paperPalette";
@@ -459,6 +461,10 @@ export default function NotebookPage() {
   const [inlineResults, setInlineResults] = useState<Map<string, string>>(new Map());
   const [spanErrors, setSpanErrors] = useState<Map<string, string>>(new Map());
   const [selectedCellId, setSelectedCellId] = useState<string | null>(null);
+  /** The prose block open in the mini-editor, or `null` when none is
+   *  (ruling R226 item 1). The draft itself lives inside `ProseEditor` --
+   *  this is only what was opened and, after a refused commit, why. */
+  const [proseEdit, setProseEdit] = useState<ProseEditSession | null>(null);
   /** Which of the three Notebook-local panes (maths graph, properties/code,
    *  cells) the top toolbar's leading group currently shows (ruling R161)
    *  -- generalises the old binary Graph/Cells view toggle: showing or
@@ -2005,6 +2011,41 @@ export default function NotebookPage() {
     handleCellCodeChange(cellId, setCellLabelLine(decodeByteRange(state.markdown, cell.bodyRange), label));
   }
 
+  /**
+   * Ruling R226 item 1's three gestures, on one open prose block.
+   *
+   * `openProseBlockEditor` replaces the rendered block with the
+   * mini-editor over that block's own Markdown (`model/proseEdit.ts`);
+   * `commitProseBlockEdit` folds the draft back into the document and
+   * writes it through the same `editCell` action every other cell edit
+   * uses, so the owning cell re-evaluates (its prose HTML and its `${...}`
+   * spans are that evaluation's output) and the whole-workbook code column
+   * (R214 item 3) shows the change immediately -- there is only ever one
+   * document string. A commit the transform refuses keeps the editor open
+   * with the message under it rather than dropping the user's text.
+   */
+  function openProseBlockEditor(blockId: string): void {
+    if (state.markdown === null) return;
+    const session = openProseEdit(state.markdown, state.cells, blockId);
+    if (session === null) return;
+    setProseEdit(session);
+  }
+
+  function commitProseBlockEdit(draft: string): void {
+    if (proseEdit === null || state.markdown === null) return;
+    const session = draftProseEdit(proseEdit, draft);
+    const result = commitProseEdit(state.markdown, state.cells, session);
+
+    if (result.status === "rejected") {
+      setProseEdit(result.session);
+      return;
+    }
+    setProseEdit(null);
+    if (result.status === "committed") {
+      dispatch({ type: "editCell", cellId: result.cellId, markdown: result.markdown });
+    }
+  }
+
   function handleCellCodeChange(cellId: string, nextCode: string) {
     if (state.markdown === null) return;
     const nextMarkdown = replaceCellBody(state.markdown, cellId, nextCode);
@@ -3266,6 +3307,21 @@ export default function NotebookPage() {
     applyColumnToggleValue([...visibleNotebookColumnIds(columnVisibility, notebookColumnAvailability), column]);
   }
 
+  /** The open prose mini-editor, or `null` (ruling R226 item 1). Built
+   *  here rather than in `CellList` because the edit session, the owning
+   *  cell's R210 status and the `editCell` write path all live in this
+   *  file. Never offered at paper widths: there the whole editor opens in
+   *  the narrow sheet instead (R226 item 2, R185). */
+  const proseEditorElement =
+    proseEdit === null || paperActive ? null : (
+      <ProseEditor
+        source={proseEdit.target.source}
+        status={cellStatusFor(proseEdit.target.cellId)}
+        error={proseEdit.error}
+        onCommit={commitProseBlockEdit}
+        onCancel={() => setProseEdit(null)}
+      />
+    );
   /**
    * Each `js` cell's own channels, as `model/decodeProgress.ts` keys
    * (ruling R221 item 1(a)) — what a cell's determinate ring is the fraction
@@ -3322,6 +3378,9 @@ export default function NotebookPage() {
       inlineResults={inlineResults}
       spanErrors={spanErrors}
       windowNote={cellListWindowNote}
+      editingProseBlockId={proseEdit?.target.blockId ?? null}
+      proseEditor={proseEditorElement}
+      onEditProseBlock={paperActive ? undefined : openProseBlockEditor}
       renderJsCell={(cellId) => {
             const cell = state.cells.find((c) => c.id === cellId);
             const code = cell !== undefined && state.markdown !== null ? decodeByteRange(state.markdown, cell.bodyRange) : "";
