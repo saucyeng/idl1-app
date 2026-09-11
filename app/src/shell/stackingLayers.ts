@@ -31,6 +31,14 @@
  * chrome and content tile the window, so anything the host paints outside
  * the content box is painted under a chrome region.
  *
+ * The module carries R221.1's other half too: {@link SHELL_ROOT_SCROLLS}
+ * and {@link SHELL_REGION_SCROLLS} state that the window is a frame rather
+ * than a page — the content container is the only region that scrolls, and
+ * nothing at the document level overflows at all. The two halves belong
+ * together because they are the same mistake twice: a shell that scrolls
+ * and a chart that paints over a bar are both the window behaving like a
+ * document.
+ *
  * Pure and dependency-free (`aspectClass.ts`'s pattern): no React, no DOM.
  * This module is the model the shell's classes and this lane's invariant
  * test are both written against.
@@ -106,4 +114,43 @@ export function chromeRegions(): ShellRegionId[] {
  *  sufficient. */
 export function contentRegions(): ShellRegionId[] {
   return SHELL_REGION_IDS.filter((region) => !isChrome(region));
+}
+
+/**
+ * Whether the window itself scrolls. It does not, and this constant is
+ * here to be asserted against rather than to be read: ruling R221.1's
+ * second half is that the shell is a frame, not a page.
+ *
+ * The symptom it fixes: the whole shell — title bar, activity bar, status
+ * bar and all — scrolled inside the window whenever anything inside it
+ * grew past the viewport, because `html`, `body` and `#root` were at
+ * `height: auto` with `overflow: visible` and the app root asked for
+ * `100vh` (the largest viewport, not the visible one) and `100vw` (which
+ * counts the scrollbar). All four are pinned now: `styles/index.css` for
+ * the document, `AppShell.tsx` for the root.
+ */
+export const SHELL_ROOT_SCROLLS = false;
+
+/**
+ * Which regions may scroll. Exactly one does — the content container —
+ * and every chrome region holds its place by being a flex item that
+ * neither grows nor shrinks.
+ *
+ * A chrome region that scrolled would be a bar whose contents moved out
+ * from under the pointer; the sidebar's own list scrolls *inside* the
+ * sidebar frame, which is a container within the region, not the region.
+ */
+export const SHELL_REGION_SCROLLS: Readonly<Record<ShellRegionId, boolean>> = {
+  titleBar: false,
+  activityBar: false,
+  sidebar: false,
+  toolbarRow: false,
+  timelineStrip: false,
+  statusBar: false,
+  content: true,
+};
+
+/** The regions that scroll. Exactly one, by {@link SHELL_REGION_SCROLLS}. */
+export function scrollingRegions(): ShellRegionId[] {
+  return SHELL_REGION_IDS.filter((region) => SHELL_REGION_SCROLLS[region]);
 }

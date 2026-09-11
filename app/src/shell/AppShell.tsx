@@ -21,10 +21,10 @@ import RouteHost from "./RouteHost";
 import { ToolbarSlotRow } from "./ToolbarSlotRow";
 import { TimelineSlotRow } from "./TimelineSlotRow";
 import CommandPalette from "./CommandPalette";
-import { registerCommand, runCommand, unregisterCommand } from "./commandRegistry";
+import { registerCommand, runCommand, unregisterCommand, useRegisteredCommands } from "./commandRegistry";
 import { commandForEvent, formatShortcut, MENU_COMMAND_IDS, MENUS, usesCommandGlyph } from "./menuModel";
 import { DEFAULT_SIDEBAR_STATE, withSidebarState, type SidebarState } from "./sidebarPrefs";
-import { tabSwitchCommands } from "./commands";
+import { tabSwitchCommands, tieredPaletteCommands } from "./commands";
 import { Toaster } from "../components/Toaster";
 
 /** The current `window.innerWidth`, updated on `resize` (width-dependent
@@ -211,7 +211,15 @@ export default function AppShell() {
     return () => window.removeEventListener("keydown", onKeyDown);
   }, []);
 
-  const commands = useMemo(() => tabSwitchCommands(onNavigate), [onNavigate]);
+  // The palette is the third renderer of the one command-tier table
+  // (ruling R225 item 1), after the ribbon and the menu bar: the four
+  // tab-switch commands, then every notebook command that currently has a
+  // handler, each under its tier's heading.
+  const registeredCommands = useRegisteredCommands();
+  const commands = useMemo(
+    () => [...tabSwitchCommands(onNavigate), ...tieredPaletteCommands(registeredCommands, runCommand)],
+    [onNavigate, registeredCommands],
+  );
 
   const shortcutLabels = useMemo(() => {
     const labels = {} as Record<RouteId, string | null>;
@@ -232,7 +240,25 @@ export default function AppShell() {
   const sidebarShortcut = formatShortcut({ key: "b", mod: true }, commandGlyph);
 
   return (
-    <div className="flex h-screen w-screen flex-col bg-bg text-fg">
+    /* THE LAYER ROOT (ruling R221.1). Two invariants live here, and
+       `shell/stackingLayers.test.ts` checks both against this file:
+
+       1. **One chrome layer over one content container.** Every chrome
+          region carries `shell-chrome` -- one class, one z-index -- and the
+          single `shell-content` container below isolates everything a route
+          draws. Nothing in this file states a z-index. A new piece of
+          chrome found painting under a chart is missing that class; it does
+          not need a number of its own.
+       2. **Nothing here scrolls.** This root is a fixed viewport-height
+          column with `overflow-hidden`, as are `html`, `body` and `#root`
+          (`styles/index.css`). The title bar, activity bar, sidebar and
+          status bar hold their place by being flex items that neither grow
+          nor shrink; the content container is the only thing that scrolls.
+          `h-[100dvh]`, not `h-screen`: on a webview whose toolbars come and
+          go, `100vh` is the *largest* viewport and overflows the visible
+          one. `w-full`, not `w-screen`: `100vw` counts the scrollbar's
+          width and overflows the window by it. */
+    <div className="flex h-[100dvh] w-full flex-col overflow-hidden bg-bg text-fg">
       {/* One 32 px title bar at every width (R220 items 1 and 3). Narrow
           layouts have no room for five menu titles beside the window
           controls, so the bar collapses its menus into one "⋯" button
@@ -268,8 +294,8 @@ export default function AppShell() {
           {/* THE ONE CONTENT CONTAINER (ruling R221.1). Everything a route
               draws lives inside this element, and `shell-content`'s
               `isolation: isolate` makes it a stacking context: the sandbox
-              iframe host's `zIndex: 0`, a sticky table header's `z-10`, a
-              cell's overlay chrome — every z-index inside a route is scoped
+              iframe host's fixed positioning, a sticky table header's
+              `z-10`, a cell's overlay chrome — every z-index inside a route is scoped
               here and cannot reach past the chrome layer, whatever value it
               picks.
 

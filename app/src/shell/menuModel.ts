@@ -13,19 +13,17 @@
  * not active), and a menu whose every item is disabled still renders,
  * because a menu that appeared and disappeared with the active tab would be
  * a moving target.
+ *
+ * **Amended by ruling R225 item 1.** Every notebook command's id, label and
+ * shortcut now come from `shell/commandTiers.ts`, the one table the ribbon
+ * renders from too, so the menu bar cannot print a label or a keystroke the
+ * ribbon disagrees with. Only Edit, Go and Help — which are the editor's
+ * undo history, the activity bar's destinations and the About dialog, none
+ * of them notebook commands — are still declared here.
  */
+import { COMMAND_IDS, commandById, type CommandId, type Shortcut } from "./commandTiers";
 
-/** A keyboard binding, as the menu renders it. `key` is a
- *  `KeyboardEvent.key` value, lower-cased for letters — the same form
- *  `AppShell.tsx`'s own handlers compare against. */
-export interface Shortcut {
-  key: string;
-  /** Ctrl on Windows/Linux, ⌘ on macOS — the app's one accelerator
-   *  modifier, matching the existing `e.metaKey || e.ctrlKey` tests. */
-  mod?: boolean;
-  shift?: boolean;
-  alt?: boolean;
-}
+export type { Shortcut };
 
 /** One command entry in a menu. */
 export interface MenuCommandItem {
@@ -76,37 +74,27 @@ export interface ResolvedMenu {
   items: readonly ResolvedMenuItem[];
 }
 
-/** The command ids the menu bar names, as one namespace. Values, not a
- *  bare `string`, so a typo in a menu entry or a registration is a compile
- *  error rather than a permanently greyed-out item. */
-export const MENU_COMMAND_IDS = {
-  workbookNew: "workbook.new",
-  workbookOpen: "workbook.open",
-  workbookSave: "workbook.save",
-  workbookExportReport: "workbook.exportReport",
-  libraryImportFiles: "library.importFiles",
-  libraryImportFolder: "library.importFolder",
-  libraryRescan: "library.rescan",
-  editUndo: "edit.undo",
-  editRedo: "edit.redo",
-  viewToggleSidebar: "view.toggleSidebar",
-  viewToggleGraph: "view.toggleGraph",
-  viewToggleProperties: "view.toggleProperties",
-  viewToggleDense: "view.toggleDense",
-  viewCyclePreset: "view.cyclePreset",
-  viewCommandPalette: "view.commandPalette",
-  goDevice: "go.device",
-  goData: "go.data",
-  goNotebook: "go.notebook",
-  goSettings: "go.settings",
-  helpAbout: "help.about",
-} as const;
+/** The command ids the menu bar names. One namespace, shared with the
+ *  ribbon: `shell/commandTiers.ts`'s {@link COMMAND_IDS}, re-exported under
+ *  the name the shell and the Notebook page already import (R225 item 1 —
+ *  one table, not two that must be kept in step). */
+export const MENU_COMMAND_IDS = COMMAND_IDS;
 
 /** Every id in {@link MENU_COMMAND_IDS}. */
-export type MenuCommandId = (typeof MENU_COMMAND_IDS)[keyof typeof MENU_COMMAND_IDS];
+export type MenuCommandId = CommandId;
 
 function command(id: MenuCommandId, label: string, shortcut: Shortcut | null): MenuCommandItem {
   return { kind: "command", id, label, shortcut };
+}
+
+/** A menu entry for a command the tier table already describes: its label
+ *  and its shortcut are read from there rather than written a second time
+ *  (R225 item 1). Throws at module load if the id is not in the table,
+ *  which is a build-time failure, never a silently mislabelled item. */
+function tiered(id: MenuCommandId): MenuCommandItem {
+  const entry = commandById(id);
+  if (entry === undefined) throw new Error(`menuModel: ${id} is not in COMMAND_TIERS`);
+  return { kind: "command", id, label: entry.label, shortcut: entry.shortcut };
 }
 
 function separator(id: string): MenuSeparatorItem {
@@ -131,15 +119,16 @@ export const MENUS: readonly Menu[] = [
     id: "file",
     label: "File",
     items: [
-      command(MENU_COMMAND_IDS.workbookNew, "New workbook", { key: "n", mod: true }),
-      command(MENU_COMMAND_IDS.workbookOpen, "Open workbook", { key: "o", mod: true }),
+      tiered(MENU_COMMAND_IDS.workbookNew),
+      tiered(MENU_COMMAND_IDS.workbookOpen),
       separator("file-1"),
-      command(MENU_COMMAND_IDS.libraryImportFiles, "Import files", { key: "i", mod: true }),
-      command(MENU_COMMAND_IDS.libraryImportFolder, "Import folder", { key: "i", mod: true, shift: true }),
-      command(MENU_COMMAND_IDS.libraryRescan, "Rescan library", null),
+      tiered(MENU_COMMAND_IDS.libraryImportFiles),
+      tiered(MENU_COMMAND_IDS.libraryImportFolder),
+      tiered(MENU_COMMAND_IDS.libraryRescan),
+      tiered(MENU_COMMAND_IDS.libraryRebuild),
       separator("file-2"),
-      command(MENU_COMMAND_IDS.workbookSave, "Save workbook", { key: "s", mod: true }),
-      command(MENU_COMMAND_IDS.workbookExportReport, "Export report", { key: "e", mod: true, shift: true }),
+      tiered(MENU_COMMAND_IDS.workbookSave),
+      tiered(MENU_COMMAND_IDS.workbookExportReport),
     ],
   },
   {
@@ -154,14 +143,18 @@ export const MENUS: readonly Menu[] = [
     id: "view",
     label: "View",
     items: [
-      command(MENU_COMMAND_IDS.viewToggleSidebar, "Toggle sidebar", { key: "b", mod: true }),
+      tiered(MENU_COMMAND_IDS.viewToggleSidebar),
       separator("view-1"),
-      command(MENU_COMMAND_IDS.viewToggleGraph, "Toggle maths graph", null),
-      command(MENU_COMMAND_IDS.viewToggleProperties, "Toggle properties", null),
-      command(MENU_COMMAND_IDS.viewToggleDense, "Toggle dense output", null),
-      command(MENU_COMMAND_IDS.viewCyclePreset, "Next layout preset", { key: "l", mod: true, shift: true }),
+      // The three notebook panels, under the words R225 item 2 gives them:
+      // the cells column is "Notebook", the graph is "Maths", the
+      // properties/code column is "Code".
+      tiered(MENU_COMMAND_IDS.viewToggleCells),
+      tiered(MENU_COMMAND_IDS.viewToggleGraph),
+      tiered(MENU_COMMAND_IDS.viewToggleProperties),
+      tiered(MENU_COMMAND_IDS.viewToggleDense),
+      tiered(MENU_COMMAND_IDS.viewCyclePreset),
       separator("view-2"),
-      command(MENU_COMMAND_IDS.viewCommandPalette, "Command palette", { key: "k", mod: true }),
+      tiered(MENU_COMMAND_IDS.viewCommandPalette),
     ],
   },
   {
