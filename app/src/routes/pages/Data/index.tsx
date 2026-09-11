@@ -10,7 +10,8 @@ import { Checkbox } from "../../../components/ui/checkbox";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "../../../components/ui/collapsible";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../../../components/ui/select";
 import { Tabs, TabsList, TabsTrigger } from "../../../components/ui/tabs";
-import { deleteSession, getSession, listLaps, listSessions, rebuildCatalog, rescanTracks, type LapSummary, type SessionDetail, type SessionSummary } from "../../../ipc/catalog";
+import { deleteSession, getSession, listLaps, listSessions, rescanTracks, type LapSummary, type SessionDetail, type SessionSummary } from "../../../ipc/catalog";
+import { startRebuildJob, whenRebuildFinishes } from "../../../ipc/rebuild_job";
 import { useAppState } from "../../../state/AppState";
 import type { SelectionWindow } from "../../../state/selection";
 import { ActiveChips } from "./ActiveChips";
@@ -318,7 +319,7 @@ export default function Data() {
    *  driver — operating brief §4's rule). Refreshes the sessions list on
    *  success, since a rebuild can surface sessions this render never saw. */
   const handleRebuildCatalog = () => {
-    startMaintenanceAction(maintenanceState, "rebuild_catalog", runRebuildCatalog(rebuildCatalog), (a) => {
+    startMaintenanceAction(maintenanceState, "rebuild_catalog", runRebuildCatalog(startRebuildJob, whenRebuildFinishes), (a) => {
       maintenanceDispatch(a);
       if (a.type === "SUCCEEDED") loadSessions(() => false);
     });

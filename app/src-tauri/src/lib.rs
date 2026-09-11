@@ -59,6 +59,7 @@ pub fn run() {
             // (`start_index_job`) on launch and by `rebuild_catalog`; this
             // only holds its progress so a chip mounting mid-run can read it.
             app.manage(idl_rs_tauri::state::IndexJob::default());
+            app.manage(idl_rs_tauri::state::RebuildJob::default());
 
             // `<data>/inbox` (C4 §2, ruling R191): scanned once now, watched
             // while the app runs. Desktop only — the module does not exist

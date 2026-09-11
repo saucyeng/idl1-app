@@ -8,7 +8,8 @@ import { noteColumnsChangedByHand, setActiveLayoutPreset, useActiveLayoutPreset 
 import { presetLayout, type LayoutPresetId } from "../../../shell/layoutPresets";
 import { BrandSheet } from "@/components/brand/BrandSheet";
 import { NoteBlock } from "@/components/brand/NoteBlock";
-import { listSessions, listWorkbooks, getSession, rebuildCatalog, type RebuildReport, type SessionDetail, type SessionSummary } from "../../../ipc/catalog";
+import { listSessions, listWorkbooks, getSession, type SessionDetail, type SessionSummary } from "../../../ipc/catalog";
+import { startRebuildJob, whenRebuildFinishes, type RebuildRunSummary } from "../../../ipc/rebuild_job";
 import { cursorReadout } from "../../../ipc/cursor";
 import { fetchFftV2, type DecodedFft } from "../../../ipc/rasters";
 import { fetchTile } from "../../../ipc/tiles";
@@ -632,9 +633,11 @@ export default function NotebookPage() {
   /** The last `create_workbook`/`rebuild_catalog` failure (L6 Task 21),
    *  typed -- never a bare string. Shown by `WorkbookBar`. */
   const [workbookBarError, setWorkbookBarError] = useState<IpcError | null>(null);
-  /** The last `rebuild_catalog` report, for `WorkbookBar`'s "Rescan found
-   *  N workbook(s)" line (R81 Q6). */
-  const [lastRebuild, setLastRebuild] = useState<RebuildReport | null>(null);
+  /** The last finished rebuild's counts, for `WorkbookBar`'s "Rescan found
+   *  N workbook(s)" line (R81 Q6). Read from `rebuild_status().last_run`
+   *  once the background job lands (ruling R219), not from a command's
+   *  return -- no route awaits a rebuild any more. */
+  const [lastRebuild, setLastRebuild] = useState<RebuildRunSummary | null>(null);
   /** Task R2 (ruling R166): the report currently mounted into `#report-
    *  print-root` for `window.print()`, or `null` when no export is in
    *  flight. Set by `handleExportReport`, cleared once printing finishes
@@ -1276,27 +1279,18 @@ export default function NotebookPage() {
     const isStale = () => listSeqRef.current !== mySeq;
 
     (async () => {
-      let workbooks = await listWorkbooks();
+      const workbooks = await listWorkbooks();
       if (isStale()) return;
+
+      // Render whatever the catalog already has, first and always (ruling
+      // R219 item 3): the rebuild below is started, never awaited, and the
+      // page re-lists when it lands.
+      setEntry(chooseWorkbookEntry(workbooks, readNotebookPrefs().last_workbook_id));
 
       if (workbooks.length === 0 && !autoRebuiltRef.current) {
         autoRebuiltRef.current = true;
-        setRescanning(true);
-        try {
-          const report = await rebuildCatalog();
-          if (isStale()) return;
-          setLastRebuild(report);
-          workbooks = await listWorkbooks();
-          if (isStale()) return;
-        } catch (error) {
-          if (isStale()) return;
-          setWorkbookBarError(toIpcError(error));
-        } finally {
-          if (!isStale()) setRescanning(false);
-        }
+        void startBackgroundRebuild();
       }
-
-      setEntry(chooseWorkbookEntry(workbooks, readNotebookPrefs().last_workbook_id));
     })();
   }, [reloadSeq]);
 
@@ -1568,13 +1562,10 @@ export default function NotebookPage() {
       const handle = await createWorkbook(name);
       writeNotebookPrefs({ ...readNotebookPrefs(), last_workbook_id: handle.id });
       setEntry({ kind: "single", workbookId: handle.id });
-      try {
-        const report = await rebuildCatalog();
-        setLastRebuild(report);
-      } catch {
-        // The new workbook is already open from its own handle; a failed
-        // rebuild only means the picker won't see it yet -- not fatal here.
-      }
+      // The new workbook is already open from its own handle; the rebuild
+      // serves only the picker's next `list_workbooks`, so it runs in the
+      // background and this never waits for it (ruling R219 item 3).
+      void startBackgroundRebuild();
       setReloadSeq((n) => n + 1);
     } catch (error) {
       setWorkbookBarError(toIpcError(error));
@@ -1591,11 +1582,27 @@ export default function NotebookPage() {
    * catalog was rebuilt, not only workbooks.
    */
   async function handleRescan() {
+    await startBackgroundRebuild();
+  }
+
+  /**
+   * Starts the background catalog rebuild and re-lists when it lands
+   * (ruling R219 items 2-3). Shared by the Rescan button, `handleCreate`,
+   * and the one first-open-when-empty trigger (R81) -- all three used to
+   * await a synchronous `rebuild_catalog`, which on a 159-session library
+   * meant minutes of re-hashing between the user and their workbook.
+   *
+   * `rescanning` is a button state here, not a blocked route: the page has
+   * already rendered from whatever the catalog held. A run that was already
+   * in flight is joined rather than started twice -- `start_rebuild_job`
+   * returns `false` and `whenRebuildFinishes` waits for the running one.
+   */
+  async function startBackgroundRebuild() {
     setRescanning(true);
     setWorkbookBarError(null);
     try {
-      const report = await rebuildCatalog();
-      setLastRebuild(report);
+      await startRebuildJob();
+      setLastRebuild(await whenRebuildFinishes());
       setReloadSeq((n) => n + 1);
     } catch (error) {
       setWorkbookBarError(toIpcError(error));
