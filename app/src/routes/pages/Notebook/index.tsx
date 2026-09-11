@@ -40,6 +40,17 @@ import { resolveRegister, type PaperTheme, type ThemeChoice } from "../Settings/
 import { createPrefsStore, localStorageBackend } from "../Settings/prefsStore";
 import CellFrame from "./components/CellFrame";
 import { cellStatus, type CellStatus } from "./model/cellStatus";
+import { resolveChartWidthPx } from "./model/chartWidth";
+import {
+  applyDecodeProgress,
+  cellDecodeFraction,
+  decodeKey,
+  decodeSummary,
+  describeDecodeSummary,
+  NO_DECODES,
+  type DecodeProgressState,
+} from "./model/decodeProgress";
+import { onDecodeProgress } from "../../../ipc/decode_progress";
 import CellList from "./components/CellList";
 import ReportView from "./components/ReportView";
 import PaperView from "./components/PaperView";
@@ -246,14 +257,16 @@ const EDIT_EVAL_DEBOUNCE_MS = 400;
 const SANDBOX_RUNTIME_VERSION = "1.0.0";
 
 /**
- * Chart width, in CSS px, every bound `js` cell fetches/plots at, and the
- * `columnCount` its tiles are cached under (R43). This task does not build
- * a responsive per-cell layout (measuring an actual rendered column width
- * is a Task 15/16 concern once the editor shell's own layout exists) --
- * a fixed width, matching Observable Plot's own conventional default, is
- * a documented judgment call, not a guess baked in silently.
+ * Chart width is no longer a constant of this module (ruling R221 item 4).
+ *
+ * It was: a fixed 640 CSS px every bound `js` cell fetched and plotted at,
+ * whatever the notebook column happened to be — the "charts aren't resizing
+ * to the width of the notebook tab" report. Every use below now reads
+ * `chartWidthPx`, which is `model/chartWidth.ts`'s `resolveChartWidthPx`
+ * over the width the chart frames themselves report through
+ * `ChartCell.onMeasuredWidthPx`. That module's `DEFAULT_CHART_WIDTH_PX` is
+ * still 640, and is what the first render uses until a measurement lands.
  */
-const DEFAULT_CHART_WIDTH_PX = 640;
 
 /** `buildReportDocument`'s `appVersion`, as the paper view passes it
  *  (ruling R184). The builder reads this field for the `cover` block
@@ -877,6 +890,43 @@ export default function NotebookPage() {
   // metrics (`model/outputRegister.ts`) both read this, never a second
   // width listener.
   const widthPx = useWindowWidth();
+  // Ruling R221 item 4: the width charts are fetched and plotted at, from
+  // the chart frames' own rAF-deferred `ResizeObserver` rather than a
+  // constant. One number for every cell, because every cell is in the same
+  // column and therefore the same width; the first frame to report after a
+  // layout change reports the new width for all of them.
+  const [measuredChartWidthPx, setMeasuredChartWidthPx] = useState<number | null>(null);
+  const chartWidthPx = resolveChartWidthPx(measuredChartWidthPx);
+  // Dedupe on the *resolved* width, not the raw measurement: a window drag
+  // reports a new fractional width every frame, and every distinct resolved
+  // width is a new tile-cache `columnCount` (R43) and a re-fetch. Snapping
+  // first (`model/chartWidth.ts`) turns a drag into a handful of refetches
+  // instead of one per frame, and this guard turns the rest into no render
+  // at all.
+  const handleMeasuredChartWidth = useCallback((_cellId: string, reportedPx: number) => {
+    setMeasuredChartWidthPx((prev) => (prev !== null && resolveChartWidthPx(prev) === resolveChartWidthPx(reportedPx) ? prev : reportedPx));
+  }, []);
+  // Ruling R221 item 1: the engine reports every channel decode that takes
+  // more than ~200 ms, and this is where the notebook keeps them. One
+  // subscription for the page, folded by `model/decodeProgress.ts`; the
+  // per-cell rings and the loading chip are both read back out of it.
+  const [decodeProgress, setDecodeProgress] = useState<DecodeProgressState>(NO_DECODES);
+  useEffect(() => {
+    let unlisten: (() => void) | null = null;
+    let cancelled = false;
+    void onDecodeProgress((event) => setDecodeProgress((prev) => applyDecodeProgress(prev, event))).then((stop) => {
+      if (cancelled) {
+        stop();
+        return;
+      }
+      unlisten = stop;
+    });
+    return () => {
+      cancelled = true;
+      unlisten?.();
+    };
+  }, []);
+  const loadingSummary = decodeSummary(decodeProgress);
   const placement = editorPlacement(widthPx);
   // Ruling R184: paper *is* the narrow placement, named through
   // `model/paperView.ts` so this page reads intent rather than an enum
@@ -2050,7 +2100,7 @@ export default function NotebookPage() {
       // Design line 152's mobile half (ruling R184, task 6): the same
       // predicate that decides paper decides the point budget, so a phone
       // fetches half the points a desktop does at the same chart width.
-      void runChannelBind(deps, sessionRef.current.cache, bindWindows, cellId, binding, DEFAULT_CHART_WIDTH_PX, onAction, isStale, paperActive);
+      void runChannelBind(deps, sessionRef.current.cache, bindWindows, cellId, binding, chartWidthPx, onAction, isStale, paperActive);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
@@ -2600,6 +2650,46 @@ export default function NotebookPage() {
     applyColumnToggleValue([...visibleNotebookColumnIds(columnVisibility, notebookColumnAvailability), column]);
   }
 
+  /**
+   * Each `js` cell's own channels, as `model/decodeProgress.ts` keys
+   * (ruling R221 item 1(a)) — what a cell's determinate ring is the fraction
+   * *of*. Every selected window's session is keyed, since the same channel
+   * of two sessions is two decodes.
+   *
+   * Built from the same `bindingFor` every cell's own render calls, so a
+   * cell's ring can only ever count the channels that cell actually binds.
+   * Memoised because it re-parses every cell's code: the inputs are the
+   * document, the session and the selection, and none of them changes on a
+   * hover or a pan.
+   */
+  const decodeKeysByCell = useMemo(() => {
+    const byCell = new Map<string, string[]>();
+    if (state.markdown === null) return byCell;
+
+    const primaryWireWindow = primaryWindow !== null ? toWireWindow(primaryWindow) : null;
+    const sessionIds = windows.map((w) => w.sessionId);
+    for (const cell of state.cells) {
+      if (cell.id === null || cell.kind !== "js") continue;
+      const code = decodeByteRange(state.markdown, cell.bodyRange);
+      const binding = bindingFor({ id: cell.id, code }, sessionDetail, sessionSpanUs, definitionsWithAxis, primaryWireWindow, definitionUnitByName);
+      if (binding === null) continue;
+      byCell.set(
+        cell.id,
+        binding.channels.flatMap((c) => sessionIds.map((sid) => decodeKey(sid, c.channelId)))
+      );
+    }
+    return byCell;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [state.cells, state.markdown, windows, sessionDetail, sessionSpanUs, definitionsWithAxis, definitionUnitByName, primaryWindow]);
+
+  /** The fraction this cell's still-decoding channels have got through, or
+   *  `null` when none of them is decoding (ruling R221 item 1(a)). */
+  function decodeFractionFor(cellId: string | null): number | null {
+    if (cellId === null) return null;
+    const keys = decodeKeysByCell.get(cellId);
+    return keys === undefined ? null : cellDecodeFraction(decodeProgress, keys);
+  }
+
   const cellListElement = (
     <CellList
       doc={{ frontMatterRange: null, cells: state.cells }}
@@ -2742,24 +2832,25 @@ export default function NotebookPage() {
               <ChartCell
                 cellId={cellId}
                 tiles={window?.tiles ?? []}
-                width={DEFAULT_CHART_WIDTH_PX}
+                width={chartWidthPx}
+                onMeasuredWidthPx={handleMeasuredChartWidth}
                 height={DEFAULT_JS_CELL_HEIGHT_PX}
                 heightPx={heightPx}
                 viewport={
                   // Decision 52 / Task 4: once any chart has settled a
                   // gesture, every chart's own time range reads through the
                   // one shared value -- `viewportForCell` applies this
-                  // chart's own `DEFAULT_CHART_WIDTH_PX` to it. Before that
+                  // chart's own measured width to it. Before that
                   // first settle, each binding's own `initialSpan` still
                   // applies per cell (bindings can legitimately open to
                   // different spans; `sharedViewport` is `null` until a
                   // gesture actually commits one).
                   sharedViewport !== null
-                    ? viewportForCell(sharedViewport, DEFAULT_CHART_WIDTH_PX)
+                    ? viewportForCell(sharedViewport, chartWidthPx)
                     : (window?.viewport ?? {
                         startUs: binding.initialSpan.startUs,
                         endUs: binding.initialSpan.endUs,
-                        pixelWidth: DEFAULT_CHART_WIDTH_PX,
+                        pixelWidth: chartWidthPx,
                       })
                 }
                 sessionSpanUs={sessionSpanUs ?? binding.initialSpan.endUs}
@@ -2841,9 +2932,9 @@ export default function NotebookPage() {
                   // mismatch of exactly the silent-wrong-number shape this
                   // lane guards against. Mirrors the channel-bind effect
                   // above cell for cell, but calls `runChannelSettle` at the
-                  // *shared* range (`viewport.startUs`/`endUs`, this chart's
-                  // own `DEFAULT_CHART_WIDTH_PX` since every chart renders
-                  // at that same constant width today), never
+                  // *shared* range (`viewport.startUs`/`endUs`, at the one
+                  // measured `chartWidthPx` every chart in this column
+                  // renders at), never
                   // `runChannelBind` -- that would silently discard the
                   // pan/zoom the user just performed for every chart but
                   // this one, snapping the rest back to their own
@@ -2870,7 +2961,7 @@ export default function NotebookPage() {
                       otherChannel.channelId,
                       viewport.startUs,
                       viewport.endUs,
-                      DEFAULT_CHART_WIDTH_PX,
+                      chartWidthPx,
                       onAction,
                       otherIsStale,
                       sessionRef.current.boundChannelsFor(otherCellId),
@@ -2909,6 +3000,10 @@ export default function NotebookPage() {
                 if (cell.id !== null) setSelectedCellId(cell.id);
               }}
               status={cellStatusFor(cell.id)}
+              /* Ruling R221 item 1(a): while this cell's own channels are
+                 being decoded, its status glyph is a determinate ring at
+                 this fraction rather than an indeterminate spinner. */
+              decodeFraction={decodeFractionFor(cell.id)}
               error={cellErrorMessage(cell.id)}
               codeVisible={cell.id !== null && isCodeVisible(revealedCells, cell.id)}
               onToggleCode={() => {

@@ -867,6 +867,52 @@ produce (CLAUDE.md §5). A *per-session* failure is not that: it is counted
 in `IndexRunSummary.failed` and the run continues.
 `index_status` and `cancel_index_job` read managed state only.
 
+**The `decode_progress` event.**
+*Added post-sign (2026-09-11, ruling R221 item 1).*
+
+```ts
+interface DecodeProgressEvent {   // the `decode_progress` event payload
+  session_id: string;
+  channel: string;
+  done_rows: number;              // rows decoded so far, this decode
+  total_rows: number;             // rows this decode has to get through; never 0
+  finished: boolean;              // true on this decode's one terminal observation
+}
+```
+
+Decoding one channel out of a multi-million-row `data.parquet` takes about a
+second, and a notebook binding nine of them takes long enough that a user
+reads the silence as a hang. Every decode that has been running **more than
+about 200 ms** therefore reports itself: no command is added and no call
+changes shape — the engine's one decode path (`SessionCache::channel`, the
+function every tile, cursor, raster and workbook evaluation goes through)
+emits this event as it streams.
+
+`done_rows`/`total_rows` count rows, not bytes or seconds: the row count is
+the one quantity known before the decode starts. A decode that makes more
+than one pass over the file — a synthesized `Distance`, which reads its
+`Time` source and `GPS_SpeedKmh` — counts every pass in both numbers, so the
+fraction is monotonic and never returns to zero part-way.
+
+Three rules a consumer can rely on:
+
+- **A fast decode reports nothing at all.** Nothing is emitted until the
+  decode has already been running ~200 ms, so a hover or a pan that hits a
+  resident channel is silent. Absence of events means nothing slow is
+  happening, never that nothing is happening.
+- **At most ten events a second per decode.** The reader yields a batch every
+  thousand rows or so; sending each one would flood IPC for no visible gain.
+- **Exactly one `finished: true` per decode that reported at all**, emitted
+  whether the decode succeeded or failed. A decode that fails part-way sends
+  it with the counts it had reached, so a determinate ring always has a last
+  frame.
+
+A cache *hit* decodes nothing and therefore reports nothing — the event
+stream describes work, not requests.
+
+Errors: none. This is an event, and a failure to deliver it (a webview that
+has gone away) is not a decode failure.
+
 **`start_rebuild_job() -> boolean`** /
 **`rebuild_status() -> RebuildStatus`** and the **`rebuild_progress`** event.
 *Added post-sign (2026-09-11, ruling R219).*
