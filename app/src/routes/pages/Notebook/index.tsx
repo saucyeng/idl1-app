@@ -47,7 +47,7 @@ import { resolveRegister, type PaperTheme, type ThemeChoice } from "../Settings/
 import { createPrefsStore, localStorageBackend } from "../Settings/prefsStore";
 import CellFrame from "./components/CellFrame";
 import { cellStatus, type CellStatus } from "./model/cellStatus";
-import { resolveChartWidthPx } from "./model/chartWidth";
+import { chartWidthNeedsRefetch, resolveChartWidthPx } from "./model/chartWidth";
 import { applyDecodeProgress, cellDecodeFraction, decodeKey, NO_DECODES, type DecodeProgressState } from "../../../state/decodeProgress";
 import { onDecodeProgress } from "../../../ipc/decode_progress";
 import CellList from "./components/CellList";
@@ -2296,6 +2296,96 @@ export default function NotebookPage() {
     sessionSpansReadiness,
     primeState.primeEpoch,
   ]);
+
+  // Ruling R221 item 4, second half: a *measurement landing* must move the
+  // tiles, not only the `width` prop.
+  //
+  // The bind effect above fetches at `chartWidthPx`, but its own gate is
+  // `bindingIdentity` -- the binding's *content* -- and its dependency array
+  // is the data the binding is built from. Neither carries a width. So the
+  // first measurement, and every column toggle or window resize after it,
+  // left every chart plotted from the tiles fetched at the width it was
+  // mounted at: a chart drawn 1200 px wide out of 640 columns of data, the
+  // half of the reported bug a `width` prop alone does not fix.
+  //
+  // Re-fetching is `runChannelSettle`, never `runChannelBind`: a settle
+  // re-fetches a stated time range at a new pixel width, where a bind would
+  // snap every chart back to its `initialSpan` and silently discard the
+  // pan/zoom the user had performed -- the same reasoning as the sibling
+  // re-fetch loop in the settle handler below. The range each cell settles
+  // at is exactly the one its `viewport` prop is rendering: the shared
+  // range once any gesture has committed one, else this cell's own last
+  // settled window, else its binding's `initialSpan`.
+  //
+  // Held in a ref rather than an effect dependency list because this must
+  // fire on a width change and on nothing else -- a re-render from a hover
+  // or a decode-progress event must not re-fetch every chart on the page.
+  const refetchAtWidthRef = useRef<() => void>(() => {});
+  refetchAtWidthRef.current = () => {
+    if (state.markdown === null || primaryWindow === null) return;
+    const markdown = state.markdown;
+    const bindWindows = bindWindowsFor(windows, sessionDetailsByWindow, sessionSpanUsByWindow);
+    if (bindWindows.length === 0) return;
+
+    const deps: ChannelBindDeps = {
+      fetchTile: (sessId, channelId, tier, tileIndex, columnCount) => fetchTile(sessId, channelId, tier, tileIndex, columnCount),
+      fetchHostChannel: (defName, budget) => fetchHostChannelDep(defName, budget),
+    };
+    const onAction = (action: ChannelBindAction) => {
+      if (action.type === "channelData") {
+        sandboxHostRef.current?.setChannelHostVar(action.channelId, action.length, action.t, action.v, action.tr, action.w, action.windows, action.unit);
+        combinedChannelDataRef.current.set(`${action.cellId}::${action.channelId}`, action.retained);
+        setChannelDataEpoch((n) => n + 1);
+      } else if (action.type === "boundChannels") {
+        sessionRef.current.setBoundChannels(action.cellId, action.bound);
+      } else {
+        setChartWindows((prev) => new Map(prev).set(action.cellId, action.chartWindow));
+      }
+    };
+
+    for (const cell of state.cells) {
+      if (cell.id === null || cell.kind !== "js") continue;
+      const cellId = cell.id;
+      const code = decodeByteRange(markdown, cell.bodyRange);
+      const binding = bindingFor({ id: cellId, code }, sessionDetail, sessionSpanUs, definitionsWithAxis, null, definitionUnitByName);
+      if (binding === null || binding.kind !== "time" || binding.mountedChannelId === null) continue;
+      const mountedChannelId = binding.mountedChannelId;
+      if (!binding.channels.some((c) => c.channelId === mountedChannelId)) continue;
+
+      const settled = chartWindows.get(cellId)?.viewport;
+      const range =
+        sharedViewport !== null
+          ? { startUs: sharedViewport.startUs, endUs: sharedViewport.endUs }
+          : (settled ?? { startUs: binding.initialSpan.startUs, endUs: binding.initialSpan.endUs });
+
+      const seq = cellRunSequencerRef.current.start(cellId);
+      const isStale = () => !cellRunSequencerRef.current.isCurrent(cellId, seq);
+      void runChannelSettle(
+        deps,
+        sessionRef.current.cache,
+        bindWindows,
+        cellId,
+        binding.channels,
+        mountedChannelId,
+        range.startUs,
+        range.endUs,
+        chartWidthPx,
+        onAction,
+        isStale,
+        sessionRef.current.boundChannelsFor(cellId),
+        paperActive
+      );
+    }
+  };
+  // The width the charts on the page were last *fetched* at. `null` until
+  // the first run: the mount pass records the width the bind effect is
+  // already fetching at (`DEFAULT_CHART_WIDTH_PX`) without re-fetching it.
+  const fetchedChartWidthRef = useRef<number | null>(null);
+  useEffect(() => {
+    const needed = chartWidthNeedsRefetch(fetchedChartWidthRef.current, chartWidthPx);
+    fetchedChartWidthRef.current = chartWidthPx;
+    if (needed) refetchAtWidthRef.current();
+  }, [chartWidthPx]);
 
   // For each `js` cell whose binding is the FFT arm, once per **selected
   // window** whose per-window `bindingIdentity` changed (L6 Task 20, C2

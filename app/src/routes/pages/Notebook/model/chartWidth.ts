@@ -77,3 +77,24 @@ export function resolveChartWidthPx(measuredPx: number | null): number {
   const snapped = Math.floor(clamped / CHART_WIDTH_QUANTUM_PX) * CHART_WIDTH_QUANTUM_PX;
   return Math.max(snapped, MIN_CHART_WIDTH_PX);
 }
+
+/**
+ * Whether charts already fetched at `fetchedPx` must be re-fetched now that
+ * the resolved width is `resolvedPx` — the gate `Notebook/index.tsx`'s
+ * width-change effect runs on.
+ *
+ * A chart's `width` prop and the tiles behind it are two different things:
+ * the prop only says how wide to draw, while the width is also the
+ * `columnCount` the tiles were fetched at (R43). Moving the prop alone
+ * leaves a chart drawn 1200 px wide out of 640 columns of data, which is
+ * the half of the reported bug a measured prop does not fix.
+ *
+ * `false` on the first pass (`fetchedPx === null`): nothing has been fetched
+ * by this gate yet, and the bind effect is already fetching at that width,
+ * so a re-fetch there would be a duplicate of a request in flight. Both
+ * arguments are expected to be {@link resolveChartWidthPx} outputs, so an
+ * unsnapped drag frame can never reach here as a distinct width.
+ */
+export function chartWidthNeedsRefetch(fetchedPx: number | null, resolvedPx: number): boolean {
+  return fetchedPx !== null && fetchedPx !== resolvedPx;
+}

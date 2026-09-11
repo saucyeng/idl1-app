@@ -5,6 +5,7 @@ import {
   DEFAULT_CHART_WIDTH_PX,
   MAX_CHART_WIDTH_PX,
   MIN_CHART_WIDTH_PX,
+  chartWidthNeedsRefetch,
   resolveChartWidthPx,
 } from "./chartWidth";
 
@@ -49,5 +50,35 @@ describe("resolveChartWidthPx", () => {
       expect(width).toBeLessThanOrEqual(MAX_CHART_WIDTH_PX);
       expect(width % CHART_WIDTH_QUANTUM_PX).toBe(0);
     }
+  });
+});
+
+describe("chartWidthNeedsRefetch", () => {
+  it("nothing fetched by this gate yet — the mount pass — does not re-fetch what the bind effect is already fetching", () => {
+    const needed = chartWidthNeedsRefetch(null, DEFAULT_CHART_WIDTH_PX);
+
+    expect(needed).toBe(false);
+  });
+
+  it("the first measurement landing wider than the default — the reported bug — re-fetches the tiles", () => {
+    const measured = resolveChartWidthPx(1204.7);
+
+    const needed = chartWidthNeedsRefetch(DEFAULT_CHART_WIDTH_PX, measured);
+
+    expect(needed).toBe(true);
+  });
+
+  it("a drag frame that resolves to the width already fetched does not re-fetch", () => {
+    const fetched = resolveChartWidthPx(812.4);
+
+    const needed = chartWidthNeedsRefetch(fetched, resolveChartWidthPx(812.7));
+
+    expect(needed).toBe(false);
+  });
+
+  it("a column toggle narrowing the notebook re-fetches at the narrower width, not only the wider one", () => {
+    const needed = chartWidthNeedsRefetch(resolveChartWidthPx(1200), resolveChartWidthPx(800));
+
+    expect(needed).toBe(true);
   });
 });
