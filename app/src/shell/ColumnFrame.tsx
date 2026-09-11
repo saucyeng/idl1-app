@@ -22,7 +22,14 @@ export interface ColumnFrameProps {
    *  back without a `ColumnFrame` or prefs-schema change — the caller
    *  simply omits the prop and no `library` panel or divider renders. */
   library?: ReactNode;
-  maths: ReactNode;
+  /** Optional for the same reason `library` is, and through the same
+   *  `visibleColumnIds` rule: the Notebook toolbar's Graph toggle turned
+   *  off passes `undefined` (R208 item 2, via `shell/
+   *  graphColumnVisible.ts`), and no `maths` panel or divider renders at
+   *  all. A stored width for the column survives in `columnPrefs.ts`
+   *  untouched, so toggling it back restores the width the user last
+   *  dragged it to. */
+  maths?: ReactNode;
   properties: ReactNode;
   output: ReactNode;
 }

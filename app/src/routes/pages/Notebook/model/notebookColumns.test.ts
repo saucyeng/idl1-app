@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it } from "vitest";
 
 import {
   DEFAULT_NOTEBOOK_COLUMN_VISIBILITY,
+  notebookColumnVisibilityFrom,
   readNotebookColumnVisibility,
   sanitizeNotebookColumnVisibility,
   toggleNotebookColumn,
@@ -117,5 +118,31 @@ describe("readNotebookColumnVisibility / writeNotebookColumnVisibility", () => {
     (globalThis as { window?: unknown }).window = { localStorage: storage };
 
     expect(readNotebookColumnVisibility()).toEqual(DEFAULT_NOTEBOOK_COLUMN_VISIBILITY);
+  });
+});
+
+describe("notebookColumnVisibilityFrom", () => {
+  it("notebookColumnVisibilityFrom — a set naming two columns — turns exactly those on", () => {
+    const prev = { graph: true, properties: false, cells: false } as const;
+
+    const next = notebookColumnVisibilityFrom(prev, ["properties", "cells"]);
+
+    expect(next).toEqual({ graph: false, properties: true, cells: true });
+  });
+
+  it("notebookColumnVisibilityFrom — an empty set — keeps the previous visibility rather than blanking the preview", () => {
+    const prev = { graph: false, properties: false, cells: true } as const;
+
+    const next = notebookColumnVisibilityFrom(prev, []);
+
+    expect(next).toEqual(prev);
+  });
+
+  it("notebookColumnVisibilityFrom — an unknown id alongside a real one — ignores the unknown id", () => {
+    const prev = DEFAULT_NOTEBOOK_COLUMN_VISIBILITY;
+
+    const next = notebookColumnVisibilityFrom(prev, ["graph", "library"]);
+
+    expect(next).toEqual({ graph: true, properties: false, cells: false });
   });
 });

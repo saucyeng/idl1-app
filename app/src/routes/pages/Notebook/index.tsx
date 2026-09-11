@@ -3,6 +3,8 @@ import { createPortal } from "react-dom";
 import { getVersion } from "@tauri-apps/api/app";
 
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@/components/ui/resizable";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
+import { setGraphColumnVisible } from "../../../shell/graphColumnVisible";
 import { BrandSheet } from "@/components/brand/BrandSheet";
 import { NoteBlock } from "@/components/brand/NoteBlock";
 import { listSessions, listWorkbooks, getSession, rebuildCatalog, type RebuildReport, type SessionDetail, type SessionSummary } from "../../../ipc/catalog";
@@ -93,11 +95,11 @@ import { jsCellNote, primaryWindowNote } from "./model/jsCellNote";
 import { definitionCellIds } from "./model/graphModel";
 import { fixTargetCellId } from "./model/fixTarget";
 import {
+  NOTEBOOK_COLUMN_IDS,
+  notebookColumnVisibilityFrom,
   readNotebookColumnVisibility,
-  toggleNotebookColumn,
   visibleNotebookColumnIds,
   writeNotebookColumnVisibility,
-  type NotebookColumnId,
   type NotebookColumnVisibility,
 } from "./model/notebookColumns";
 import { readNotebookPrefs, writeNotebookPrefs } from "./model/notebookPrefs";
@@ -416,11 +418,25 @@ export default function NotebookPage() {
    *  on, graph off). */
   const [columnVisibility, setColumnVisibility] = useState(() => readNotebookColumnVisibility());
 
-  /** Flips one pane's visibility and persists the result (`model/
-   *  notebookColumns.ts`'s own no-op guard keeps at least one pane on). */
-  function toggleColumn(id: NotebookColumnId): void {
+  // R208 item 2: publishes this page's own Graph toggle to the shell, so
+  // `RouteHost.tsx` can drop the studio's maths column entirely when it is
+  // off rather than dock a full-width panel holding a placeholder that
+  // names the toggle. Data-only dependency array (a boolean); the store's
+  // own setter is module-scope and idempotent, so this is a plain state
+  // mirror, not an IPC or subscription effect.
+  useEffect(() => {
+    setGraphColumnVisible(columnVisibility.graph);
+  }, [columnVisibility.graph]);
+
+  /** Persists the toolbar column toggle group's whole next set of on-ids.
+   *  The group reports the full selection rather than the one item that
+   *  changed (`type="multiple"`), so this replaced the per-id
+   *  `toggleNotebookColumn` call site; that function stays the model's
+   *  single-id entry point for a future keyboard/menu binding. The
+   *  never-all-off guard lives in `model/notebookColumns.ts` either way. */
+  function applyColumnToggleValue(ids: string[]): void {
     setColumnVisibility((prev) => {
-      const next = toggleNotebookColumn(prev, id);
+      const next = notebookColumnVisibilityFrom(prev, ids);
       writeNotebookColumnVisibility(next);
       return next;
     });
@@ -2840,17 +2856,30 @@ export default function NotebookPage() {
   const toolbarElement = (
     <div className="relative z-10 flex flex-nowrap items-center gap-2 overflow-x-auto border-b border-rule bg-surface px-2 py-1">
       {columnsToggleAvailable && (
-          <div role="group" aria-label="Notebook columns" className="flex items-center gap-1">
-            <button type="button" onClick={() => toggleColumn("graph")} aria-pressed={columnVisibility.graph}>
-              Graph
-            </button>
-            <button type="button" onClick={() => toggleColumn("properties")} aria-pressed={columnVisibility.properties}>
-              Properties
-            </button>
-            <button type="button" onClick={() => toggleColumn("cells")} aria-pressed={columnVisibility.cells}>
-              Cells
-            </button>
-          </div>
+          /* R208 item 2: these three were bare unstyled `<button>`
+             elements. Under Tailwind's preflight reset a bare `<button>`
+             has no background, border or padding, so "Graph" rendered as
+             plain text against the toolbar's own `--surface` -- a caption,
+             not a control -- and `aria-pressed` alone gave its on/off state
+             no visual form at all. Isaac read the maths column's "shown via
+             the toolbar's Graph toggle" placeholder and could not find the
+             toggle it names. They are now a `BrandSegmented` group
+             (`components/ui/toggle-group.tsx`, `type="multiple"` since the
+             three columns are independent, not mutually exclusive), the
+             same labelled-text control the Paper/Studio register switch in
+             this very toolbar already uses: hairline-bordered, `--control`
+             resting and `--control-active` when the column is showing. */
+          <ToggleGroup
+            type="multiple"
+            density="tight"
+            aria-label="Notebook columns"
+            value={NOTEBOOK_COLUMN_IDS.filter((id) => columnVisibility[id])}
+            onValueChange={(next) => applyColumnToggleValue(next)}
+          >
+            <ToggleGroupItem value="graph">Graph</ToggleGroupItem>
+            <ToggleGroupItem value="properties">Properties</ToggleGroupItem>
+            <ToggleGroupItem value="cells">Cells</ToggleGroupItem>
+          </ToggleGroup>
         )}
         {(entry === null || entry.kind === "empty") && (
           <WorkbookBar
@@ -3106,20 +3135,18 @@ export default function NotebookPage() {
           ),
           editorSlotNode
         )}
-      {/* The maths column's content, on the properties column's own model
-          just above: the toolbar's Graph toggle says whether the canvas
-          shows, and a hidden column says so rather than going blank (the
-          toggle is right there in the top bar, and R161's toggles never
-          remove a studio column). `graphCanvasElement` is `null` until a
-          workbook is open -- a stated absence beats an empty column
-          (R148/R150). */}
+      {/* The maths column's content. Unlike the properties column just
+          above, there is no "hidden" placeholder branch here: R208 item 2
+          made the Graph toggle remove the whole column, so `graphSlotNode`
+          is non-null exactly when the column is showing and a hidden-state
+          message would have nowhere to render and nothing to say. R161's
+          "the toggles never remove a studio column" is superseded for this
+          column -- a column that stays put to explain where its own toggle
+          is was the bug. `graphCanvasElement` is `null` until a workbook is
+          open -- a stated absence beats an empty column (R148/R150). */}
       {graphSlotNode !== null &&
         createPortal(
-          !columnVisibility.graph ? (
-            <ColumnPlaceholder>Maths graph hidden -- shown via the toolbar&apos;s Graph toggle.</ColumnPlaceholder>
-          ) : (
-            graphCanvasElement ?? <ColumnPlaceholder>Open a workbook to see its maths graph.</ColumnPlaceholder>
-          ),
+          graphCanvasElement ?? <ColumnPlaceholder>Open a workbook to see its maths graph.</ColumnPlaceholder>,
           graphSlotNode
         )}
       {/* The sandbox iframe host: fixed to the full viewport so cell

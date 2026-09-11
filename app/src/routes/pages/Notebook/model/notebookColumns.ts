@@ -75,6 +75,29 @@ export function toggleNotebookColumn(prev: NotebookColumnVisibility, id: Noteboo
   return anyVisible ? next : prev;
 }
 
+/**
+ * The visibility `ids` describes — every id present reads as on, every
+ * absent one as off. The inverse of {@link visibleNotebookColumnIds}'s
+ * `availability`-free half, for a caller handed the whole next set at once
+ * (`components/ui/toggle-group.tsx`'s `type="multiple"` `onValueChange`)
+ * rather than the one id that changed.
+ *
+ * Carries {@link toggleNotebookColumn}'s own no-op guard for the same
+ * reason: an empty `ids` would hide every pane and leave the preview blank,
+ * so it returns `prev` unchanged instead. Unknown strings are ignored (the
+ * toggle group's values are this module's own ids, but nothing in its type
+ * says so).
+ *
+ * @param prev The visibility before this gesture, returned unchanged if `ids` selects nothing.
+ * @param ids The ids that should now be on, in any order.
+ */
+export function notebookColumnVisibilityFrom(prev: NotebookColumnVisibility, ids: readonly string[]): NotebookColumnVisibility {
+  const on = new Set(ids);
+  const next = Object.fromEntries(NOTEBOOK_COLUMN_IDS.map((id) => [id, on.has(id)])) as unknown as NotebookColumnVisibility;
+  const anyVisible = NOTEBOOK_COLUMN_IDS.some((id) => next[id]);
+  return anyVisible ? next : prev;
+}
+
 /** `NOTEBOOK_COLUMN_IDS` filtered to those both toggled on in `visibility`
  *  and currently available (`availability[id]`, e.g. `graph` unavailable
  *  on a narrow/`"sheet"` layout, decision 29 -- "no columns to toggle" --
