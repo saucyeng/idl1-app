@@ -38,14 +38,31 @@ import { MARK_NAMES } from "../plotForm/types";
  *  live in one union, and one catalog, because the picker presents them as
  *  one row of pictograms — the distinction between "a mark" and "a chart
  *  kind" is C2 §5.3's, not the user's. */
-export type ChartTypeId = MarkProps["mark"] | "fft" | "histogram" | "scatter" | "variance";
+export type ChartTypeId =
+  | MarkProps["mark"]
+  | "fft"
+  | "histogram"
+  | "scatter"
+  | "map"
+  | "lap"
+  | "spectrogram"
+  | "variance";
 
 /** Every {@link ChartTypeId}, in the picker's presentation order: the five
  *  marks first (unchanged order), then each whole-cell chart kind. The
  *  single source `CHART_TYPE_CATALOG`, `CHART_TYPE_ICONS` and
  *  `chartTypeCatalog.test.ts` all enumerate against, the same discipline
  *  `MARK_NAMES` already carries for the mark half. */
-export const CHART_TYPE_IDS: readonly ChartTypeId[] = [...MARK_NAMES, "fft", "histogram", "scatter", "variance"];
+export const CHART_TYPE_IDS: readonly ChartTypeId[] = [
+  ...MARK_NAMES,
+  "fft",
+  "histogram",
+  "scatter",
+  "map",
+  "lap",
+  "spectrogram",
+  "variance",
+];
 
 /** One chart type's picker-row metadata: what it inserts, a human-facing
  *  label, and a one-line blurb (idl0's own picker convention,
@@ -82,6 +99,15 @@ export const CHART_TYPE_CATALOG: readonly ChartTypeInfo[] = [
   { id: "fft", mark: null, chart: "fft", label: "FFT", blurb: "Magnitude spectrum of one channel." },
   { id: "histogram", mark: null, chart: "histogram", label: "Histogram", blurb: "How often one channel sits at each value." },
   { id: "scatter", mark: null, chart: "scatter", label: "Scatter", blurb: "One channel against another — the G-G cloud." },
+  { id: "map", mark: null, chart: "map", label: "Map", blurb: "The GPS trace, projected, over the track outline." },
+  { id: "lap", mark: null, chart: "lap", label: "Lap progression", blurb: "One value per lap, against lap number." },
+  {
+    id: "spectrogram",
+    mark: null,
+    chart: "spectrogram",
+    label: "Spectrogram",
+    blurb: "One channel's frequency content over time.",
+  },
   { id: "variance", mark: null, chart: "time", label: "Lap variance", blurb: "One lap-delta definition, every selected lap on one axis." },
 ];
 

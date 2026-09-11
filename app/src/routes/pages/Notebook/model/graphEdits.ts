@@ -164,8 +164,24 @@ function renameChannelInProps(props: PlotProps, oldName: string, newName: string
       },
     };
   }
+  if (props.chart === "map") {
+    // A map's colour-by slot may name the definition, and `null` (an
+    // uncoloured trace) names nothing — so it is never renamed.
+    return {
+      ...props,
+      marks: props.marks.map((m) => (m.colourBy === oldName ? { ...m, colourBy: newName } : m)),
+    };
+  }
+  if (props.chart === "lap") {
+    // A lap cell's data slot is a definition *identifier*, not a channel
+    // name — which is precisely what a rename changes.
+    return props.mark.definition === oldName ? { ...props, mark: { ...props.mark, definition: newName } } : props;
+  }
   if (props.mark.channel !== oldName) return props;
   if (props.chart === "fft") {
+    return { ...props, mark: { ...props.mark, channel: newName } };
+  }
+  if (props.chart === "spectrogram") {
     return { ...props, mark: { ...props.mark, channel: newName } };
   }
   return { ...props, mark: { ...props.mark, channel: newName } };
