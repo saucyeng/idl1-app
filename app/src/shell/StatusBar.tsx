@@ -6,6 +6,7 @@ import { listSessions } from "../ipc/catalog";
 import type { RouteId } from "../routes/types";
 import type { Selection } from "../state/AppState";
 import { sessionLabel, windowsKey } from "../state/selection";
+import AskAnAgentButton from "./AskAnAgentButton";
 import { useDeviceLink } from "./deviceLink";
 import ImportStatusChip from "./ImportStatusChip";
 import { LAYOUT_PRESETS, type ActivePreset } from "./layoutPresets";
@@ -142,6 +143,11 @@ export default function StatusBar({ selection, activePreset, onCyclePreset, onNa
       )}
 
       <span className="flex-1" />
+
+      {/* Ruling R222 item 3's third placement. No context: the status bar
+          belongs to the whole app, not to whatever tab is in front, so the
+          agent is told only which library it is in. */}
+      <AskAnAgentButton variant="icon" className="px-2" />
 
       <ImportStatusChip onOpenImportPanel={() => onNavigate("data")} />
 

@@ -31,6 +31,7 @@ import {
   type Window as WireWindow,
   type WindowEval,
 } from "../../../ipc/workbook";
+import { setBuiltinDocs } from "./editor/builtinDocs";
 import { useAppState } from "../../../state/AppState";
 import { describeWindow, sessionDetailsReadinessKey, sessionLabel, venueLabel, windowKey, windowsKey, type SelectionWindow } from "../../../state/selection";
 import { useRouteVisible } from "../../../shell/routeVisibility";
@@ -1413,6 +1414,10 @@ export default function NotebookPage() {
     let cancelled = false;
     listMathBuiltins().then((remote) => {
       if (cancelled) return;
+      // The same fetch feeds the editor's hover help and `F1` (ruling R222
+      // item 2) -- one round-trip, not two, for a list that cannot change
+      // while the app is running.
+      setBuiltinDocs(remote);
       setFunctionCatalogMismatches(diffFunctionCatalog(remote));
     });
     return () => {
@@ -3020,6 +3025,7 @@ export default function NotebookPage() {
   const editorPanesElement =
     state.markdown !== null ? (
       <EditorPanes
+        workbook={entry !== null && "workbookId" in entry ? entry.workbookId : undefined}
         cellId={openCellId}
         kind={openCell?.kind ?? null}
         code={openCellCode}
