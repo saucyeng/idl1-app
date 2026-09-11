@@ -2,7 +2,6 @@ import { describe, expect, it } from "vitest";
 
 import {
   cellChromeMode,
-  cellDisplayLabel,
   isShowCodeShortcut,
   plotLegendEntries,
   plotStatusGlyph,
@@ -109,30 +108,6 @@ describe("plotLegendEntries — a multi-series plot — names every series with 
     expect(colours[0]).toBe("--chart-1");
     expect(colours[7]).toBe("--chart-8");
     expect(colours[8]).toBe("--chart-1");
-  });
-});
-
-describe("cellDisplayLabel — a cell whose first non-blank line is a label comment — is titled by it", () => {
-  it("reads the text after the label word, ignoring leading blank lines", () => {
-    // Arrange
-    const code = "\n\n#  label :   Fork and shock travel  \nPlot.plot({})\n";
-
-    // Act
-    const label = cellDisplayLabel(code);
-
-    // Assert
-    expect(label).toBe("Fork and shock travel");
-  });
-
-  it("is null for a cell whose first line is code, a plain comment, or an empty label", () => {
-    // Arrange
-    const bodies = ["Plot.plot({})\n# label: too late\n", "# just a comment\n# label: too late\n", "# label:   \n", ""];
-
-    // Act
-    const labels = bodies.map(cellDisplayLabel);
-
-    // Assert
-    expect(labels).toEqual([null, null, null, null]);
   });
 });
 

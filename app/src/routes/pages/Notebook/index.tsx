@@ -77,7 +77,8 @@ import {
 import { channelDataKeysForCell, channelDataKeysToEvict } from "./model/channelDataRetention";
 import { CellRunSequencer } from "./model/cellRunSequencer";
 import { isCodeVisible, toggleCode } from "./model/codeVisibility";
-import { cellDisplayLabel, plotLegendEntries } from "./model/plotChrome";
+import { plotLegendEntries } from "./model/plotChrome";
+import { cellLabelFromBody } from "./graph/cellDisplayName";
 import { denseChromeMode, readDenseMode, sharesXAxisAbove, writeDenseMode } from "./model/denseMode";
 import { createCursorBus, type CursorBus } from "./interaction/cursorBus";
 import { BASIC_MOUSE_PRESET, findInputMapPreset, INPUT_MAP_PRESETS, type InputMapPreset } from "./interaction/inputMap";
@@ -2872,7 +2873,7 @@ export default function NotebookPage() {
           }}
           frame={(cell, output, index) => {
             const cellCode = state.markdown !== null ? decodeByteRange(state.markdown, cell.bodyRange) : undefined;
-            const cellTitle = cellCode !== undefined ? cellDisplayLabel(cellCode) : null;
+            const cellTitle = cellCode !== undefined ? cellLabelFromBody(cellCode) : null;
             return (
             <CellFrame
               cell={cell}

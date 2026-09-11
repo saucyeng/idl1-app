@@ -123,33 +123,6 @@ export function plotLegendEntries(series: readonly PlotSeries[]): PlotLegendEntr
   });
 }
 
-/**
- * The cell's own display name, or `null` when it has none (C2 §2.4's
- * cell-level display name: a first non-blank line that is a whole-line
- * `# label: <text>` comment and nothing else).
- *
- * C2 §2.4 defines this for `math` cells. R216 item 2 asks a *plot* to show
- * it, and the `plotForm` grammar (C2 §5.3's `plot_options`) has no title
- * field to read instead — so this reads the same leading-comment form from
- * whatever cell body it is given, and a `js` cell that does not carry one
- * simply has no title and shows no title row, which is R216 item 2's own
- * "no label = no title row". Adding a title field to the form's grammar is
- * a C2 change and belongs to the lead, not to this lane.
- *
- * @param code The cell's body text, exactly as decoded from the document.
- */
-export function cellDisplayLabel(code: string): string | null {
-  for (const line of code.split("\n")) {
-    const trimmed = line.trim();
-    if (trimmed === "") continue;
-    const match = /^#\s*label\s*:\s*(.+)$/.exec(trimmed);
-    if (match === null) return null;
-    const text = match[1].trim();
-    return text === "" ? null : text;
-  }
-  return null;
-}
-
 /** The keyboard-event fields {@link isShowCodeShortcut} reads — a plain
  *  object so the test needs no `KeyboardEvent` constructor. */
 export interface ShortcutEvent {
