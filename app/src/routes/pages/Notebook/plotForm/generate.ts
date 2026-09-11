@@ -438,12 +438,16 @@ function generateLap(props: LapPlotProps): string {
 
 /** Renders C2 §5.3's `raster_mark` production (ruling R217 item 4):
  *  `Plot.image(spectrogram("<channel>", {fft_params}), {x:"x", y:"y",
- *  width:"w", height:"h", src:"src"})`. Both the mark name and the option
+ *  width:"iw", height:"ih", src:"src"})`. Both the mark name and the option
  *  object are fixed — a raster is pixels, and there is nothing to choose
- *  about how an image binds its own frame. */
+ *  about how an image binds its own frame.
+ *
+ *  See `parse.ts`'s `readRasterMark` for why the size fields are `iw`/`ih`
+ *  rather than the `w`/`h` C2 §5.3 first spelled: `w` is the window index
+ *  `fx: "w"` facets by. */
 function renderSpectrogramMark(m: SpectrogramMarkProps): string {
   const call = `spectrogram(${jsString(m.channel)}, ${renderFftParams(m.fft)})`;
-  return `Plot.image(${call}, {x:"x", y:"y", width:"w", height:"h", src:"src"})`;
+  return `Plot.image(${call}, {x:"x", y:"y", width:"iw", height:"ih", src:"src"})`;
 }
 
 /** Emits a spectrogram cell's Plot code (C2 §5.3, ruling R217 item 4).

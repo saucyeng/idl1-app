@@ -12,6 +12,7 @@ import { listSessions, listWorkbooks, getSession, type SessionDetail, type Sessi
 import { startRebuildJob, whenRebuildFinishes, type RebuildRunSummary } from "../../../ipc/rebuild_job";
 import { cursorReadout } from "../../../ipc/cursor";
 import { fetchGpsTrace, fetchGpsTraceMeta, type DecodedGpsTrace } from "../../../ipc/gps";
+import { fetchRasterMetaV2, fetchRasterV2 } from "../../../ipc/rasters";
 import { fetchHistogram, type HistogramResponse } from "../../../ipc/histogram";
 import { equalAspectDomain, fetchScatter, type DecodedScatter } from "../../../ipc/scatter";
 import { fetchFftV2, type DecodedFft } from "../../../ipc/rasters";
@@ -75,6 +76,7 @@ import {
   type GpsWindowSeries,
   type HistogramWindowSeries,
   type ScatterWindowSeries,
+  type RasterFramePayload,
   type SandboxCell,
   type SpectrumWindowSeries,
   type WindowDescriptor,
@@ -115,6 +117,15 @@ import { resolveEditorHost } from "./model/editorHost";
 import { resolveGraphHost } from "./model/graphHost";
 import { runFft, type FftAction, type FftDeps } from "./model/fftDriver";
 import { gpsColumns, runGpsMeta, runGpsTrace, type GpsAction, type GpsDeps } from "./model/gpsDriver";
+import {
+  rasterFrame,
+  rasterWidthForCell,
+  runRaster,
+  RASTER_HEIGHT,
+  type FetchedRaster,
+  type RasterAction,
+  type RasterDeps,
+} from "./model/rasterCellDriver";
 import { histogramColumns, runHistogram, type HistogramAction } from "./model/histogramDriver";
 import { runScatter, unionScatterBounds, type ScatterAction } from "./model/scatterDriver";
 import { exceedsBinCap, frequencyAxisHz } from "./model/fftRequest";
@@ -128,6 +139,8 @@ import {
   type HistogramCellBinding,
   type MapCellBinding,
   type ScatterCellBinding,
+  type SpectrogramCellBinding,
+  NOMINAL_CELL_WIDTH_PX,
 } from "./model/jsCellBinding";
 import { extractChannelCalls, extractSpectrumCalls } from "./model/jsCellCalls";
 import { jsCellNote, primaryWindowNote } from "./model/jsCellNote";
@@ -267,6 +280,11 @@ function histogramRunKey(cellId: string, windowKeyValue: string): string {
 /** {@link fftRunKey}'s scatter counterpart (ruling R215 item 3). */
 function scatterRunKey(cellId: string, windowKeyValue: string): string {
   return `${cellId}|scatter|${windowKeyValue}`;
+}
+
+/** {@link fftRunKey}'s spectrogram counterpart (ruling R217 item 4). */
+function rasterRunKey(cellId: string, windowKeyValue: string): string {
+  return `${cellId}|raster|${windowKeyValue}`;
 }
 
 /** {@link fftRunKey}'s map counterpart (ruling R217 item 1). */
@@ -644,6 +662,9 @@ export default function NotebookPage() {
   /** A scatter cell's per-window `fetch_scatter` failures (ruling R215 item
    *  3), typed and keyed the same way as {@link fftErrors}. */
   const [scatterErrors, setScatterErrors] = useState<Map<string, Map<string, IpcError>>>(new Map());
+  /** A spectrogram cell's per-window `fetch_raster_v2` failures (ruling R217
+   *  item 4), typed and keyed the same way as {@link fftErrors}. */
+  const [rasterErrors, setRasterErrors] = useState<Map<string, Map<string, IpcError>>>(new Map());
   /** A map cell's per-window `fetch_gps_trace_v2` failures (ruling R217 item
    *  1), typed and keyed the same way as {@link fftErrors}. A failed
    *  `fetch_gps_trace_meta` is deliberately **not** here: the underlay is
@@ -1160,6 +1181,14 @@ export default function NotebookPage() {
   const retainedGpsRef = useRef<Map<string, { hostVarName: string; byWindow: Map<string, DecodedGpsTrace> }>>(new Map());
   /** {@link fftBoundIdentityRef}'s map counterpart. */
   const gpsBoundIdentityRef = useRef<Map<string, Map<string, string>>>(new Map());
+  /** {@link retainedSpectraRef}'s spectrogram counterpart (ruling R217 item
+   *  4). Retained rather than re-fetched on a sandbox rebuild for the same
+   *  reason, with one extra: the decoded pixels here are this page's own
+   *  copies, and `rasterFrame` copies them again for each push, so a rebuild
+   *  never has to re-render a raster the engine already rendered. */
+  const retainedRastersRef = useRef<Map<string, { hostVarName: string; byWindow: Map<string, FetchedRaster> }>>(new Map());
+  /** {@link fftBoundIdentityRef}'s spectrogram counterpart. */
+  const rasterBoundIdentityRef = useRef<Map<string, Map<string, string>>>(new Map());
   /** The `(sessionId, trackId)` pair each session's `trackGeometry` was last
    *  fetched for, so a re-render does not refetch the same underlay -- the
    *  per-session equivalent of {@link fftBoundIdentityRef}'s per-cell map.
@@ -1286,6 +1315,45 @@ export default function NotebookPage() {
       combined.w.buffer as ArrayBuffer,
       combined.windows,
       retained.unit
+    );
+  }
+
+  /**
+   * Rebuilds and pushes `cellId`'s spectrogram host variable from
+   * `retainedRastersRef`'s currently retained per-window frames (ruling R217
+   * item 4). The analogue of {@link pushCombinedGpsFor}, except that nothing
+   * is *combined*: a raster is pixels, so each window keeps its own frame
+   * and its own buffer and the cell facets them by `w`.
+   *
+   * The colour scale and ramp stops are taken from the **first** retained
+   * frame and shared across every frame, so two windows' heatmaps are read
+   * against one legend -- comparing two laps against two different colour
+   * scales is exactly the false picture C2 §5.3's "the document states the
+   * colour range" rule exists to prevent.
+   */
+  function pushRastersFor(cellId: string): void {
+    const retained = retainedRastersRef.current.get(cellId);
+    const host = sandboxHostRef.current;
+    if (retained === undefined || host === null) return;
+    const frames: RasterFramePayload[] = [];
+    const descriptors: WindowDescriptor[] = [];
+    let first: FetchedRaster | null = null;
+    for (const w of selectionRef.current) {
+      const wKey = windowKey(w);
+      const fetched = retained.byWindow.get(wKey);
+      if (fetched === undefined) continue;
+      if (first === null) first = fetched;
+      const detail = sessionDetailsByWindowRef.current.get(wKey) ?? null;
+      frames.push(rasterFrame(fetched, descriptors.length));
+      descriptors.push(windowDescriptorFor(w, detail));
+    }
+    host.setRasterHostVar(
+      retained.hostVarName,
+      frames,
+      descriptors,
+      first?.meta.magnitude_unit ?? null,
+      first?.meta.ramp_stops ?? [],
+      first === null ? null : { vmin: first.meta.scale.vmin, vmax: first.meta.scale.vmax }
     );
   }
 
@@ -1723,6 +1791,17 @@ export default function NotebookPage() {
       return fetchGpsTrace(workbookId, window, colourBy, budget);
     },
     fetchGpsTraceMeta,
+  };
+
+  /** `model/rasterCellDriver.ts`'s injected IPC (ruling R217 item 4). Both
+   *  commands are windowed (`_v2`) and neither takes a workbook, so this is
+   *  a plain forward -- it exists only so the driver stays free of `ipc/**`
+   *  imports, matching every other chart driver in this file. The fixed
+   *  `kind: "spectrogram"` argument is supplied here rather than by the
+   *  driver: a spectrogram cell can request no other raster kind. */
+  const rasterDeps: RasterDeps = {
+    fetchRaster: (window, channel, width, height, params) => fetchRasterV2(window, channel, "spectrogram", width, height, params),
+    fetchRasterMeta: (window, channel, width, height, params) => fetchRasterMetaV2(window, channel, "spectrogram", width, height, params),
   };
 
   // R95 item 2: paused the same way the sandbox mount effect above is --
@@ -3007,6 +3086,156 @@ export default function NotebookPage() {
     primeState.primeEpoch,
   ]);
 
+  // For each `js` cell whose binding is the spectrogram arm, once per
+  // **selected window** whose per-window `bindingIdentity` changed (ruling
+  // R217 item 4, C2 §5.3, C3 §3.6). Structurally identical to the map
+  // effect above -- same per-window `CellRunSequencer` keying (via
+  // `rasterRunKey`), same decision-61 pruning, same R121 rule that one
+  // window's failure never blocks a sibling's.
+  //
+  // The one structural difference is downstream, in `pushRastersFor`:
+  // nothing is combined, because pixels cannot interleave. Each window
+  // keeps its own frame and the cell facets them with `fx: "w"`.
+  useEffect(() => {
+    if (state.markdown === null) return;
+    const markdown = state.markdown;
+    const currentWindowKeys = new Set(windows.map(windowKey));
+    const width = rasterWidthForCell(NOMINAL_CELL_WIDTH_PX);
+
+    for (const cell of state.cells) {
+      if (cell.id === null || cell.kind !== "js") continue;
+      const cellId = cell.id;
+      const code = decodeByteRange(markdown, cell.bodyRange);
+
+      const shapeWindow = primaryWindow !== null ? toWireWindow(primaryWindow) : null;
+      const shapeBinding = bindingFor({ id: cellId, code }, sessionDetail, sessionSpanUs, definitionsWithAxis, shapeWindow, definitionUnitByName);
+      if (shapeBinding === null || shapeBinding.kind !== "spectrogram") {
+        const perWindow = rasterBoundIdentityRef.current.get(cellId);
+        if (perWindow !== undefined) {
+          for (const wKey of perWindow.keys()) cellRunSequencerRef.current.delete(rasterRunKey(cellId, wKey));
+          rasterBoundIdentityRef.current.delete(cellId);
+        }
+        retainedRastersRef.current.delete(cellId);
+        setRasterErrors((prev) => {
+          if (!prev.has(cellId)) return prev;
+          const next = new Map(prev);
+          next.delete(cellId);
+          return next;
+        });
+        continue;
+      }
+
+      const perWindowIdentity = rasterBoundIdentityRef.current.get(cellId) ?? new Map<string, string>();
+      for (const wKey of Array.from(perWindowIdentity.keys())) {
+        if (!currentWindowKeys.has(wKey)) {
+          perWindowIdentity.delete(wKey);
+          cellRunSequencerRef.current.delete(rasterRunKey(cellId, wKey));
+        }
+      }
+      rasterBoundIdentityRef.current.set(cellId, perWindowIdentity);
+      const retained = retainedRastersRef.current.get(cellId);
+      if (retained !== undefined) {
+        let prunedAny = false;
+        for (const wKey of Array.from(retained.byWindow.keys())) {
+          if (!currentWindowKeys.has(wKey)) {
+            retained.byWindow.delete(wKey);
+            prunedAny = true;
+          }
+        }
+        if (prunedAny) pushRastersFor(cellId);
+      }
+      setRasterErrors((prev) => {
+        const cellMap = prev.get(cellId);
+        if (cellMap === undefined) return prev;
+        const nextCellMap = new Map(cellMap);
+        let changed = false;
+        for (const wKey of cellMap.keys()) {
+          if (!currentWindowKeys.has(wKey)) {
+            nextCellMap.delete(wKey);
+            changed = true;
+          }
+        }
+        return changed ? new Map(prev).set(cellId, nextCellMap) : prev;
+      });
+
+      for (const w of windows) {
+        const wKey = windowKey(w);
+        const detail = sessionDetailsByWindow.get(wKey) ?? null;
+        if (detail === null) continue; // this window's session is still resolving
+
+        const binding = bindingFor({ id: cellId, code }, detail, sessionSpanUs, definitionsWithAxis, toWireWindow(w), definitionUnitByName);
+        if (binding === null || binding.kind !== "spectrogram") continue; // e.g. the channel isn't in this window's session
+
+        const identity = `${bindingIdentity(binding)}|${wKey}`;
+        if (perWindowIdentity.get(wKey) === identity) continue;
+        perWindowIdentity.set(wKey, identity);
+
+        if (binding.unrequestable !== null) {
+          retainedRastersRef.current.get(cellId)?.byWindow.delete(wKey);
+          setRasterErrors((prev) => {
+            const cellMap = prev.get(cellId);
+            if (cellMap === undefined || !cellMap.has(wKey)) return prev;
+            const nextCellMap = new Map(cellMap);
+            nextCellMap.delete(wKey);
+            return new Map(prev).set(cellId, nextCellMap);
+          });
+          pushRastersFor(cellId);
+          continue;
+        }
+
+        const rasterBinding: SpectrogramCellBinding = binding;
+        const dispatchRaster = (action: RasterAction) => {
+          if (action.type === "raster") {
+            const entry =
+              retainedRastersRef.current.get(cellId) ?? { hostVarName: rasterBinding.hostVarName, byWindow: new Map<string, FetchedRaster>() };
+            entry.hostVarName = rasterBinding.hostVarName;
+            entry.byWindow.set(wKey, action.fetched);
+            retainedRastersRef.current.set(cellId, entry);
+            setRasterErrors((prev) => {
+              const cellMap = prev.get(cellId);
+              if (cellMap === undefined || !cellMap.has(wKey)) return prev;
+              const nextCellMap = new Map(cellMap);
+              nextCellMap.delete(wKey);
+              return new Map(prev).set(cellId, nextCellMap);
+            });
+            pushRastersFor(cellId);
+          } else {
+            retainedRastersRef.current.get(cellId)?.byWindow.delete(wKey);
+            setRasterErrors((prev) => {
+              const cellMap = new Map(prev.get(cellId));
+              cellMap.set(wKey, action.error);
+              return new Map(prev).set(cellId, cellMap);
+            });
+            pushRastersFor(cellId);
+          }
+        };
+        const seq = cellRunSequencerRef.current.start(rasterRunKey(cellId, wKey));
+        const isStale = () => !cellRunSequencerRef.current.isCurrent(rasterRunKey(cellId, wKey), seq);
+
+        void runRaster(
+          rasterDeps,
+          cellId,
+          toWireWindow(w),
+          rasterBinding.channelId,
+          width,
+          RASTER_HEIGHT,
+          rasterBinding.params,
+          dispatchRaster,
+          isStale
+        );
+      }
+    }
+  }, [
+    state.cells,
+    state.markdown,
+    primaryEval,
+    sessionDetail,
+    sessionSpanUs,
+    windowsKeyValue,
+    sessionDetailsReadiness,
+    primeState.primeEpoch,
+  ]);
+
   // The map cell's track underlay (ruling R217 item 1, C3 §3.5): one
   // `fetch_gps_trace_meta` per **session**, bound under the bare identifier
   // `trackGeometry` as a plain JSON host variable.
@@ -3251,6 +3480,12 @@ export default function NotebookPage() {
     const scatterErrorsForCell = scatterErrors.get(cellId);
     if (scatterErrorsForCell !== undefined && scatterErrorsForCell.size > 0) {
       return Array.from(scatterErrorsForCell.values())
+        .map((e) => e.message)
+        .join("; ");
+    }
+    const rasterErrorsForCell = rasterErrors.get(cellId);
+    if (rasterErrorsForCell !== undefined && rasterErrorsForCell.size > 0) {
+      return Array.from(rasterErrorsForCell.values())
         .map((e) => e.message)
         .join("; ");
     }

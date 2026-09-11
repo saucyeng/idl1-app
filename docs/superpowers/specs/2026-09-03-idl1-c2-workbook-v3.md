@@ -1777,7 +1777,9 @@ lap_mark      ::= "Plot." ("barY"|"dot"|"lineY") "(" identifier ","
 
 raster_marks  ::= "[" raster_mark "]"                              (* new 2026-09-11, R217 item 4; exactly one *)
 raster_mark   ::= "Plot.image(" spectrogram_call ", {x:\"x\", y:\"y\","
-                       " width:\"w\", height:\"h\", src:\"src\"})"
+                       " width:\"iw\", height:\"ih\", src:\"src\"})"
+                                                                   (* `iw`/`ih` corrected 2026-09-11: `w` is the
+                                                                      window index `fx:"w"` facets by, below *)
 spectrogram_call ::= "spectrogram(" js_string "," fft_params ")"    (* the same six keys, same fixed order *)
 
 css_color     ::= js_string                (* any valid CSS color literal *)
@@ -2293,14 +2295,24 @@ makes it picker-seedable rather than hand-written code. Rules:
   an FFT cell's x axis has.
 
 **Per window (R127): one raster per window, faceted.** A raster has no `w`
-column — pixels cannot interleave, and a `NaN` break row between two images
-is meaningless. So a spectrogram cell fetches **one raster per selected
-window** and facets them with `fx: "w"`, sharing one `y` (frequency) scale,
+*column* — pixels cannot interleave, and a `NaN` break row between two images
+is meaningless — but each raster record carries a `w` *field*: the index of
+the window that produced it. So a spectrogram cell fetches **one raster per
+selected window** and facets them with `fx: "w"`, sharing one `y` (frequency) scale,
 taking each window's own `x` domain from that window's own `RasterMeta`, and
 stating one `color.domain` in the document as the union of the windows'
 `vmin`/`vmax` rather than letting the host pick per facet — per-facet colour
 scales would make two laps' heatmaps look identical when they are not.
 `fx: "w"` is the one plot option legal only on a spectrogram cell.
+
+**The image's own size fields are `iw`/`ih`, not `w`/`h`** (corrected
+2026-09-11, in the same revision that first wrote this section). A raster
+record's `w` is the window index — the value `fx: "w"` facets by, and the
+name every other payload in the app uses for exactly that — so the image's
+pixel width cannot also be `w`: faceting by a width that is identical across
+every window collapses all of them into one facet, drawing each window's
+heatmap over the last. `iw`/`ih` are the rendered size in CSS pixels, which
+the host requested the raster at, so nothing resamples.
 
 **Budget.** `width`/`height` are the cell's CSS pixel box in device pixels,
 clamped to **2048 × 1024**; a request above the clamp **renders at the

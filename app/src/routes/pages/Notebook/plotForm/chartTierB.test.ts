@@ -151,7 +151,9 @@ describe("the spectrogram cell", () => {
     // Assert — one raster per window, faceted: pixels cannot interleave.
     expect(code).toContain('fx: "w"');
     expect(code).toContain('Plot.image(spectrogram("Fork travel",');
-    expect(code).toContain('{x:"x", y:"y", width:"w", height:"h", src:"src"}');
+    // `iw`/`ih`, not `w`/`h`: the same cell fixes `fx: "w"`, and `w` is the
+    // window index every payload in the app keys by (corrected 2026-09-11).
+    expect(code).toContain('{x:"x", y:"y", width:"iw", height:"ih", src:"src"}');
   });
 
   it("generate — a spectrogram's parameters — are the same six fft_params in the same order as an FFT cell", () => {
