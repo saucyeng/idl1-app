@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
+import { readShowOccasional, writeShowOccasional } from "@/shell/ribbonPrefs";
 import type { PrefsStore } from "./prefsStore";
 import { resolveRegister, themeAttribute, type OutputRegister, type PaperTheme, type ThemeChoice } from "./theme";
 
@@ -59,6 +60,7 @@ export default function ThemeSection({ store }: ThemeSectionProps) {
   const [outputRegister, setOutputRegister] = useState<OutputRegister | null>(null);
   const [paperTheme, setPaperTheme] = useState<PaperTheme>("app");
   const [graphNodeColour, setGraphNodeColour] = useState(false);
+  const [showOccasional, setShowOccasional] = useState(readShowOccasional);
   const prefersLight = usePrefersLight();
   const widthPx = useViewportWidth();
 
@@ -111,6 +113,15 @@ export default function ThemeSection({ store }: ThemeSectionProps) {
   function handleGraphNodeColourChange(next: boolean): void {
     setGraphNodeColour(next);
     void store.get().then((current) => store.set({ ui: { ...current.ui, graph_node_colour: next } }));
+  }
+
+  /** Ruling R225 item 4's ribbon density switch. Renderer-only and per
+   *  machine (`shell/ribbonPrefs.ts`), so unlike its neighbours here it is
+   *  not a `UiPrefs` key: which controls this machine wants on screen is
+   *  not a document value and is never synced. */
+  function handleShowOccasionalChange(next: boolean): void {
+    setShowOccasional(next);
+    writeShowOccasional(next);
   }
 
   function handleRegisterChange(value: string): void {
@@ -193,6 +204,17 @@ export default function ThemeSection({ store }: ThemeSectionProps) {
         <p className="font-mono text-xs text-fg-faint">
           Adds a coloured stripe per node kind on the Notebook&apos;s maths graph. Sources, derived values and charts are already
           told apart by card shape and glyph; this is an extra cue, not the encoding.
+        </p>
+      </div>
+
+      <div className="flex flex-col gap-2">
+        <label htmlFor="idl1-settings-ribbon-occasional" className="font-mono text-xs uppercase tracking-[var(--tracking-label)] text-fg-dim">
+          Show occasional commands as buttons
+        </label>
+        <Switch id="idl1-settings-ribbon-occasional" checked={showOccasional} onCheckedChange={handleShowOccasionalChange} />
+        <p className="font-mono text-xs text-fg-faint">
+          The Notebook ribbon shows the commands you reach for constantly and keeps the rest behind each button&apos;s chevron. Turn
+          this on to put Export report, Rescan library and Rebuild catalog on the row as small buttons too.
         </p>
       </div>
     </div>

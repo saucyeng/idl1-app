@@ -134,6 +134,7 @@ import {
   readNotebookColumnVisibility,
   visibleNotebookColumnIds,
   writeNotebookColumnVisibility,
+  type NotebookColumnId,
   type NotebookColumnVisibility,
 } from "./model/notebookColumns";
 import { readNotebookPrefs, writeNotebookPrefs } from "./model/notebookPrefs";
@@ -3543,10 +3544,10 @@ export default function NotebookPage() {
   const columnsToggleAvailable = !paperActive;
 
   /** The toggle group's next on-id set with `column` flipped — what the
-   *  View menu's two column items hand `applyColumnToggleValue`, so a menu
-   *  pick goes through exactly the same path (and the same R213 "thrown by
-   *  hand" bookkeeping) as the toolbar's own toggles. */
-  function toggledColumnIds(column: "graph" | "properties"): string[] {
+   *  View menu's three column items hand `applyColumnToggleValue`, so a
+   *  menu pick goes through exactly the same path (and the same R213
+   *  "thrown by hand" bookkeeping) as the ribbon's own panel buttons. */
+  function toggledColumnIds(column: NotebookColumnId): string[] {
     return columnVisibility[column] ? visibleColumnIds.filter((id) => id !== column) : [...visibleColumnIds, column];
   }
   // `!graphIsPortalHosted`: when the wide studio's maths column hosts the
@@ -3645,6 +3646,12 @@ export default function NotebookPage() {
   useCommand(MENU_COMMAND_IDS.viewToggleProperties, columnsToggleAvailable, () =>
     applyColumnToggleValue(toggledColumnIds("properties"))
   );
+  // The cells column, under the word R225 item 2 gives it: "Notebook". It
+  // had no command before the tier table named one, so the menu bar's
+  // View menu could toggle two of the three panels and not the third.
+  useCommand(MENU_COMMAND_IDS.viewToggleCells, columnsToggleAvailable, () =>
+    applyColumnToggleValue(toggledColumnIds("cells"))
+  );
 
   const timelineElement = (
     <TimelineStrip
@@ -3664,13 +3671,8 @@ export default function NotebookPage() {
         onColumnToggleValue={applyColumnToggleValue}
         entry={entry}
         rescanning={rescanning}
-        creating={creating}
         dirty={state.dirtyCellIds.size > 0 || state.frontMatterDirty}
-        workbookBarError={workbookBarError}
-        lastRebuild={lastRebuild}
-        onCreate={(name) => void handleCreate(name)}
         onRescan={() => void handleRescan()}
-        onSelect={handleSelect}
         register={register}
         dense={dense}
         onDenseChange={applyDense}
@@ -3742,7 +3744,7 @@ export default function NotebookPage() {
           activity's own panel, which the shell shows when that activity is
           current. Nothing renders here when there is no sidebar at all
           (narrow layouts, R220 item 3): the cells are already on the page
-          and the workbook picker is in the toolbar. */}
+          and the ribbon's Open button opens the workbook-choice dialog. */}
       {notebookSidebarNode !== null &&
         createPortal(
           <NotebookSidebar
@@ -3907,26 +3909,27 @@ export default function NotebookPage() {
         )}
       {/* The sandbox iframe host: fixed to the full viewport so cell
           iframes positioned into it (`sendLayout`) track scroll in real
-          pixels. `zIndex: 0` is explicit, not incidental -- a fixed element
-          with *any* stated z-index stacks above ordinary static in-flow
-          content regardless of DOM order, which is exactly what a chart
-          needs against the cell text around it.
+          pixels.
 
-          What keeps it from reaching the window's chrome is no longer a
-          z-index on each piece of chrome (ruling R221.1 deleted those). It
-          is that this element is a descendant of the shell's single
-          `shell-content` container, whose `isolation: isolate` makes it a
-          stacking context: this `0` is scoped inside it and is measured
-          only against the cell text it is meant to beat, never against the
-          chrome layer outside. Raising it would change nothing, which is
-          the point. `isolation`, not `contain: paint`: containment would
-          make that container the containing block for this fixed element,
-          so `inset: 0` would mean the content box rather than the viewport
+          It states no z-index at all (ruling R221.1: content never carries
+          one). It does not need the `zIndex: 0` it used to carry: a
+          positioned element paints above ordinary static in-flow content in
+          its stacking context whatever its z-index, `auto` included, so a
+          chart still covers the cell text around it. And it cannot reach
+          the window's chrome, because this element is a descendant of the
+          shell's single `shell-content` container, whose `isolation:
+          isolate` makes that container a stacking context -- everything
+          here is painted as part of it, under the chrome layer outside.
+
+          `isolation`, not `contain: paint`: containment would make that
+          container the containing block for this fixed element, so
+          `inset: 0` would mean the content box rather than the viewport,
           and every iframe -- positioned from a viewport-relative
-          `getBoundingClientRect` -- would be offset by the chrome's size. */}
+          `getBoundingClientRect` -- would be offset by the chrome's own
+          size. */}
       <div
         ref={containerRef}
-        style={{ position: "fixed", inset: 0, pointerEvents: "none", zIndex: 0, border: "none" }}
+        style={{ position: "fixed", inset: 0, pointerEvents: "none", border: "none" }}
       />
       {/* Task R2: `styles/report-print.css` hides everything else and
           shows only this root once `window.print()` runs -- the report is

@@ -67,7 +67,7 @@ export default function GlobalErrorBanner() {
   return (
     <NoteBlock
       role="alert"
-      className="border-brand-accent text-brand-accent fixed inset-x-0 top-0 z-[9999] flex items-center justify-between gap-3 bg-bg"
+      className="border-brand-accent text-brand-accent shell-alert fixed inset-x-0 top-0 flex items-center justify-between gap-3 bg-bg"
     >
       <span>
         An unrecoverable error happened outside any tab ({globalError.source}): {globalError.name}: {globalError.message}

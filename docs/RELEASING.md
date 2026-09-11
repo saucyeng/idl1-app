@@ -40,6 +40,68 @@ artifacts, edit notes if needed, then click "Publish release".
 - The window keeps native title-bar decorations on Linux (ruling R216) —
   only Windows uses the custom title bar.
 
+## In-app updates (ruling R231)
+
+The app checks for updates on launch (+30 s) and every 4 h, and from
+`Help ▸ Check for updates…`. It fetches
+`https://github.com/saucyeng/idl1-releases/releases/latest/download/latest.json`
+— `tauri-apps/tauri-action`'s `includeUpdaterJson: true` writes that file
+onto every release automatically.
+
+### Why a second, public repo
+
+This repo is private, and the updater's `latest.json` must be fetchable
+without authentication (the plugin has no way to attach a token to that
+request). Releases therefore publish to a separate **public**
+`saucyeng/idl1-releases` repo instead of here. Only the release job's
+target changes — source, issues and everything else stay in this repo.
+
+### One-time setup (Isaac)
+
+1. **Create the public repo** `saucyeng/idl1-releases` (empty; the
+   workflow creates releases in it, nothing else needs to live there).
+2. **Generate the signing keypair**, from `app/`:
+   ```
+   npm run tauri signer generate -- -w ~/.tauri/idl1.key
+   ```
+   This prints a public key and writes the private key (optionally
+   password-protected) to the path given.
+3. **Put the public key in the app**: replace
+   `"REPLACE_WITH_PUBKEY"` in `app/src-tauri/tauri.conf.json`'s
+   `plugins.updater.pubkey` with the printed public key, commit. Until
+   this is done, the app's own startup guard (`app/src-tauri/src/lib.rs`)
+   never registers the updater plugin, so update checks are silently off
+   — the same guard also fires for dev builds (the `.dev` identifier),
+   so a developer's local build never checks either.
+4. **Store two repo secrets** on *this* repo (`idl1-app`), Settings →
+   Secrets and variables → Actions:
+   - `TAURI_SIGNING_PRIVATE_KEY` — the private key file's contents.
+   - `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` — its password, if one was set
+     (empty string otherwise).
+5. **Create `RELEASES_TOKEN`**: a GitHub fine-grained personal access
+   token scoped to the `saucyeng/idl1-releases` repo only, with
+   **Contents: Read and write** (that's what `tauri-action` needs to
+   create a release and upload assets) and no other repos or
+   permissions. Store it as a secret named `RELEASES_TOKEN` on *this*
+   repo.
+
+Until these exist, `release.yml` still runs: it publishes an **unsigned**
+draft to this repo instead (the `owner`/`repo`/token fall back), same as
+before R231. Nothing breaks — updates just stay off until the pubkey is
+real.
+
+### Release body
+
+The release's body is not written by hand: a step in `release.yml` runs
+`.github/scripts/extract-changelog.sh` against `CHANGELOG.md`, pulling
+the section under `## [<version>]` (the tag with its leading `v`
+stripped) through to the next `##` heading. If that heading does not
+exist yet — the usual case, since entries land under `## [Unreleased]`
+as they're written — it falls back to the `Unreleased` section instead.
+Rename `Unreleased` to the version before tagging if you want the
+CHANGELOG itself to carry a permanent per-version heading; either way the
+release body is correct.
+
 ## Minute budget
 
 The superproject repo is private (2000 Actions minutes/month) — cut

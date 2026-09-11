@@ -4,7 +4,67 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 
 ## [Unreleased]
 
+### Added
+
+- **In-app updates [docs] (2026-09-11, ruling R231).** The app checks
+  `saucyeng/idl1-releases`' `latest.json` on launch (+30 s) and every
+  4 h, and from `Help ▸ Check for updates…`; a status-bar item names the
+  version found and opens a release-notes panel with "Restart to update"
+  (download with progress, install, relaunch) and "Later". `release.yml`
+  now signs updater bundles and publishes to that public repo once Isaac
+  has generated the keypair and stored the secrets — see
+  `docs/RELEASING.md`'s new "In-app updates" section for the one-time
+  setup. Dev builds and a build with no real pubkey never check.
+
+### Changed
+
+- **The Notebook toolbar is a ribbon [docs] (2026-09-11, ruling R225).**
+  Save, Export, New, Create, Rescan, the gesture map and the time/distance
+  axis were loose buttons on one row and overlapped each other at ordinary
+  window widths. They are now tiered. Seven big icon-over-label buttons are
+  always on the row — Notebook, Maths, Code, Open, Save, Import and View —
+  beside the window chip and the playback transport. Everything reached for
+  less often sits behind the chevron half of the button it belongs to: New
+  workbook under Open, Export report under Save, Rescan library and Rebuild
+  catalog under Import, the time/distance axis and the pointer mode under
+  View. Maintenance and view toggles are nested one level further in. The
+  three columns are named in full words at last: the cells column is
+  Notebook, the graph is Maths, the properties column is Code. Settings ▸
+  Theme gains "Show occasional commands as buttons" for anyone who would
+  rather have the second tier on the row as small buttons; it is off by
+  default and remembered per machine. The inline workbook picker and the
+  placeholder "Sheet 1" tab strip go with the old row: Open lists every
+  workbook in its dialog, and the document model still has no worksheet for
+  a second tab to name.
+
+- **Every notebook command is now declared in one place [docs]
+  (2026-09-11, ruling R225).** `shell/commandTiers.ts` holds each command's
+  label, icon, shortcut and action once, and the ribbon, the menu bar and
+  the command palette all render from it, so the three can no longer
+  disagree about what a command is called or which key runs it. The View
+  menu can toggle all three columns as a result; it could previously reach
+  only two of them.
+
 ### Fixed
+
+- **Toolbar buttons no longer paint over one another [docs] (2026-09-11,
+  ruling R225).** The row's groups were laid out against measured widths,
+  but the buttons inside each group were not: they were free to compress
+  below their own text, so the text spilled across the button beside it.
+  Every group now lays its buttons out without wrapping and without
+  shrinking them, and the layout model asserts that no control's contents
+  reach into its neighbour's box — between groups and between sibling
+  buttons alike.
+
+- **The window no longer scrolls as a whole [no-docs] (2026-09-11, ruling
+  R221.1).** The title bar, the activity icons, the side panel and the
+  status bar stayed put only as long as nothing inside the window grew past
+  it; when something did, the entire shell scrolled inside the outer window
+  and took the frame with it. The window is now pinned to its own height,
+  and the editor area is the only thing that scrolls. The two remaining
+  hand-picked stacking numbers went with it: the crash banner states its
+  one layer above the chrome by name, and the chart host states none at
+  all.
 
 - **A chart can no longer paint over the window's own controls
   (2026-09-11, ruling R221.1).** Charts are drawn in a layer that floats

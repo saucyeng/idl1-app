@@ -28,4 +28,6 @@ tauri-plugin-dialog = "2.7.3"
 # in `capabilities/default.json`, so nothing in the frontend can spawn a
 # process -- only that one command, with the program Settings names.
 tauri-plugin-shell = "2.3.1"
+tauri-plugin-updater = "2.11.0"
+tauri-plugin-process = "2.3.1"
 

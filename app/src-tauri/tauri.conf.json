@@ -34,5 +34,13 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ]
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "REPLACE_WITH_PUBKEY",
+      "endpoints": [
+        "https://github.com/saucyeng/idl1-releases/releases/latest/download/latest.json"
+      ]
+    }
   }
 }
