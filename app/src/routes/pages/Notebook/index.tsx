@@ -3849,12 +3849,20 @@ export default function NotebookPage() {
       if (binding === null) continue;
       // Every binding kind decodes through the same `SessionCache`, so every
       // kind gets a ring — they differ only in how they name their channels.
+      // A map is the one kind whose own data channels this side never
+      // names: the engine reads the GPS fix columns itself and hands back a
+      // projected trace (C3 §3.5), so the only channel a map cell decodes
+      // here is the optional colour-by one, and an uncoloured map
+      // contributes no decode ring at all rather than a ring for a channel
+      // nothing is waiting on.
       const channelIds =
         binding.kind === "time"
           ? binding.channels.map((c) => c.channelId)
           : binding.kind === "scatter"
             ? [binding.xChannelId, binding.yChannelId]
-            : [binding.channelId];
+            : binding.kind === "map"
+              ? (binding.colourBy === null ? [] : [binding.colourBy])
+              : [binding.channelId];
       byCell.set(
         cell.id,
         channelIds.flatMap((channelId) => sessionIds.map((sid) => decodeKey(sid, channelId)))
