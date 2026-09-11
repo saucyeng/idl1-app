@@ -97,6 +97,55 @@ describe("tokens.css — the 8 chart series tokens — present in cycle order", 
   });
 });
 
+describe("tokens.css — the Notebook density scale — present with R212's exact values", () => {
+  const density: [string, string][] = [
+    ["--nb-control-h", "22px"],
+    ["--nb-text-label", "11px"],
+    ["--nb-text-body", "12px"],
+    ["--nb-pad", "4px"],
+    ["--nb-gap", "6px"],
+  ];
+
+  it.each(density)("%s is %s", (name, value) => {
+    // Arrange
+    const pattern = new RegExp(`${name}:\\s*${value};`);
+
+    // Act
+    const found = pattern.test(tokensCss);
+
+    // Assert
+    expect(found).toBe(true);
+  });
+});
+
+describe("index.css — the .idl-dense scope — sizes controls from the density tokens only", () => {
+  const indexCss = readFileSync(join(STYLES_DIR, "index.css"), "utf-8");
+
+  it("declares the .idl-dense scope class", () => {
+    // Arrange
+    const pattern = /\.idl-dense\s*\{/;
+
+    // Act
+    const found = pattern.test(indexCss);
+
+    // Assert
+    expect(found).toBe(true);
+  });
+
+  it("every length inside the .idl-dense block is a var(--nb-*), never a px literal (R212: no per-component ad-hoc sizes)", () => {
+    // Arrange
+    const start = indexCss.search(/@layer utilities \{\s*\.idl-dense/);
+    const block = indexCss.slice(start);
+
+    // Act
+    const pxLiterals = block.match(/:\s*-?\d+(?:\.\d+)?px/g) ?? [];
+
+    // Assert
+    expect(start).toBeGreaterThan(-1);
+    expect(pxLiterals).toEqual([]);
+  });
+});
+
 describe("tokens.css — every shadcn variable — resolves to a var(), not a literal", () => {
   const shadcnVariables = [
     "--background",

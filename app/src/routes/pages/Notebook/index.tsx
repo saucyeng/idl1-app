@@ -2860,7 +2860,7 @@ export default function NotebookPage() {
   // cell/column content everywhere *except* this toolbar, and dropping it
   // below zero globally would hide charts behind that content too.
   const toolbarElement = (
-    <div className="relative z-10 flex flex-nowrap items-center gap-2 overflow-x-auto border-b border-rule bg-surface px-2 py-1">
+    <div className="idl-dense relative z-10 flex flex-nowrap items-center gap-2 overflow-x-auto border-b border-rule bg-surface px-2 py-1">
       {columnsToggleAvailable && (
           /* R208 item 2: these three were bare unstyled `<button>`
              elements. Under Tailwind's preflight reset a bare `<button>`

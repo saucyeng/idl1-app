@@ -447,7 +447,7 @@ function GraphCanvasInner({ markdown, outputs, selectedWindows, windows, session
   }
 
   return (
-    <div className="flex h-full w-full flex-col bg-bg">
+    <div className="idl-dense flex h-full w-full flex-col bg-bg">
       <div className="flex items-center gap-3 border-b border-rule px-3 py-2">
         <input
           type="text"

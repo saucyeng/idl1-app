@@ -110,7 +110,7 @@ export default function PropertiesForm({ code, channels, laps, onChange }: Prope
 
   if (view.isCustom || view.props === null) {
     return (
-      <div className="properties-form properties-form-custom" aria-disabled="true">
+      <div className="properties-form idl-dense properties-form-custom" aria-disabled="true">
         <p className="properties-form-custom-label">Custom code</p>
         <p className="properties-form-custom-hint">
           This cell&rsquo;s code is outside the form&rsquo;s supported subset, so it can&rsquo;t be edited here.
@@ -137,7 +137,7 @@ export default function PropertiesForm({ code, channels, laps, onChange }: Prope
   const props = view.props;
 
   return (
-    <div className="properties-form">
+    <div className="properties-form idl-dense">
       <ChartTypeControl chart={props.chart} onChange={(next) => commit(setChartType(props, next, channels))} />
       {props.chart === "fft" ? (
         <FftPropertiesForm props={props} channels={channels} onChange={commit} />
