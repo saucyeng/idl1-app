@@ -57,14 +57,14 @@ export default function ImportStatusChip({ onOpenImportPanel }: ImportStatusChip
       const status = await rebuildStatus();
       if (cancelled) return;
       if (status.running && status.phase !== null) {
-        setRebuild({ done: status.done, total: status.total, phase: status.phase });
+        setRebuild({ done: status.done, total: status.total, phase: status.phase, finished: false });
       }
       setRebuildError(status.last_error);
       const stop = await onRebuildProgress((event) => {
         setRebuild(event);
-        // Only the `workbooks` phase's terminal observation ends a run;
-        // every other phase also finishes at `done === total`.
-        if (event.phase !== "workbooks" || event.done < event.total) {
+        // Only the observation carrying `finished` ends a run: every phase
+        // reaches `done === total`, the last one before the swap.
+        if (!event.finished) {
           setRebuildFinishedAtMs(null);
           return;
         }

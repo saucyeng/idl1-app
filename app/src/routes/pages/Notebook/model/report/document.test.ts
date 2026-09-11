@@ -86,6 +86,7 @@ function payload(overrides: Partial<CombinedChannelPayload> = {}): CombinedChann
     length: 2,
     t: new Float64Array([0, 1]),
     v: new Float64Array([10, 11]),
+    tr: new Float64Array([0, 1]),
     w: new Float64Array([0, 0]),
     windows: [{ sessionId: "sess-1", span: { kind: "session" }, colour: "--chart-1", label: "Session" }],
     spans: [],

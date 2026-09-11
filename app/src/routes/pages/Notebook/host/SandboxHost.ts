@@ -8,7 +8,9 @@
 import {
   channelPayload,
   evalInlineMessage,
+  histogramPayload,
   isHostMessage,
+  scatterPayload,
   layoutMessage,
   spectrumPayload,
   transformMessage,
@@ -252,16 +254,27 @@ export class SandboxHost {
    * windows over the same channel must not collide on this method's `name`
    * (R127 item 1), so a caller with several selected windows combines them
    * first (`host/protocol.ts`'s `combineChannelWindows`) and calls this
-   * once with the combined `{t, v, w}` series and their `windows`
-   * descriptors. The three buffers are moved (not copied) via
-   * `postMessage`'s transfer list (P7); the caller must not read `t`/`v`/`w`
-   * again after this call. `unit` is this channel's three-state unit
+   * once with the combined `{t, v, tr, w}` series and their `windows`
+   * descriptors. The four buffers are moved (not copied) via
+   * `postMessage`'s transfer list (P7); the caller must not read
+   * `t`/`v`/`tr`/`w` again after this call. `tr` is the lap-relative time
+   * column (`combineChannelWindows`, ruling R215 items 4-5) — seconds since
+   * each sample's own window began, so *n* selected laps superimpose. `unit` is this channel's three-state unit
    * (R154/R164) -- small JSON metadata, not transferred -- which
    * `sandbox/main.ts`'s `materializeHostVar` projects onto the bound array
    * as `.unit`/`.unitState`.
    */
-  setChannelHostVar(name: string, length: number, t: ArrayBuffer, v: ArrayBuffer, w: ArrayBuffer, windows: WindowDescriptor[], unit: UnitLabel): void {
-    const { message, transfer } = channelPayload(name, length, t, v, w, windows, unit);
+  setChannelHostVar(
+    name: string,
+    length: number,
+    t: ArrayBuffer,
+    v: ArrayBuffer,
+    tr: ArrayBuffer,
+    w: ArrayBuffer,
+    windows: WindowDescriptor[],
+    unit: UnitLabel
+  ): void {
+    const { message, transfer } = channelPayload(name, length, t, v, tr, w, windows, unit);
     this.postToSandbox(message, transfer);
     this.scheduleRerender();
   }
@@ -302,6 +315,59 @@ export class SandboxHost {
    */
   setSpectrumHostVar(name: string, length: number, f: ArrayBuffer, m: ArrayBuffer, w: ArrayBuffer, windows: WindowDescriptor[]): void {
     const { message, transfer } = spectrumPayload(name, length, f, m, w, windows);
+    this.postToSandbox(message, transfer);
+    this.scheduleRerender();
+  }
+
+  /**
+   * Binds a decoded, possibly multi-window XY cloud as a host variable
+   * (ruling R215 item 3). Same transfer-list mechanics and multi-window
+   * contract as {@link setChannelHostVar} -- one call per (x channel, y
+   * channel, `scatter_params`) triple, never one per window; the three
+   * buffers are moved (not copied) via `postMessage`'s transfer list (P7),
+   * and the caller must not read `x`/`y`/`w` again after this call. Not
+   * cached for rebuild replay, for the same structural reason a spectrum
+   * is not (`rebuildReplay.ts`).
+   */
+  setScatterHostVar(
+    name: string,
+    length: number,
+    x: ArrayBuffer,
+    y: ArrayBuffer,
+    w: ArrayBuffer,
+    windows: WindowDescriptor[],
+    domain: [number, number] | null,
+    unit: UnitLabel,
+    unitY: UnitLabel
+  ): void {
+    const { message, transfer } = scatterPayload(name, length, x, y, w, windows, domain, unit, unitY);
+    this.postToSandbox(message, transfer);
+    this.scheduleRerender();
+  }
+
+  /**
+   * Binds a decoded, possibly multi-window binned distribution as a host
+   * variable (ruling R215 item 2). Same transfer-list mechanics and
+   * multi-window contract as {@link setChannelHostVar}/
+   * {@link setSpectrumHostVar} -- one call per (channel,
+   * `histogram_params`) pair, never one per window; the four buffers are
+   * moved (not copied) via `postMessage`'s transfer list (P7), and the
+   * caller must not read `v0`/`v1`/`n`/`w` again after this call. Not
+   * cached for rebuild replay, for the identical reason a spectrum is not
+   * (`rebuildReplay.ts`): its buffers are detached once transferred, so
+   * the caller retains the fetched distribution and re-pushes it.
+   */
+  setHistogramHostVar(
+    name: string,
+    length: number,
+    v0: ArrayBuffer,
+    v1: ArrayBuffer,
+    n: ArrayBuffer,
+    w: ArrayBuffer,
+    windows: WindowDescriptor[],
+    unit: UnitLabel
+  ): void {
+    const { message, transfer } = histogramPayload(name, length, v0, v1, n, w, windows, unit);
     this.postToSandbox(message, transfer);
     this.scheduleRerender();
   }

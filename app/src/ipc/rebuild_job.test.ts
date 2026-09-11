@@ -50,7 +50,7 @@ describe("rebuildStatus", () => {
 describe("onRebuildProgress", () => {
   it("a rebuild_progress event arrives — the handler gets the payload, not the envelope", async () => {
     const seen: unknown[] = [];
-    const payload = { done: 1, total: 2, phase: "blobs" };
+    const payload = { done: 1, total: 2, phase: "blobs", finished: false };
     listen.mockImplementation((_name: string, handler: (e: unknown) => void) => {
       handler({ payload });
       return Promise.resolve(() => {});
@@ -76,9 +76,9 @@ describe("whenRebuildFinishes — nothing is running — resolves at once with t
   });
 });
 
-describe("whenRebuildFinishes — a run in flight — resolves on the terminal workbooks event", () => {
-  it("a blobs phase ending is ignored, the workbooks terminal event resolves — and the listener is dropped", async () => {
-    const bus: { emit: (payload: { done: number; total: number; phase: string }) => void } = { emit: () => {} };
+describe("whenRebuildFinishes — a run in flight — resolves only on the observation marked finished", () => {
+  it("a phase ending at done === total is ignored, the finished observation resolves — and the listener is dropped", async () => {
+    const bus: { emit: (payload: { done: number; total: number; phase: string; finished: boolean }) => void } = { emit: () => {} };
     const unlisten = vi.fn();
     listen.mockImplementation((_name: string, handler: (e: { payload: unknown }) => void) => {
       bus.emit = (payload) => handler({ payload });
@@ -92,8 +92,11 @@ describe("whenRebuildFinishes — a run in flight — resolves on the terminal w
     const { whenRebuildFinishes } = await import("./rebuild_job");
     const pending = whenRebuildFinishes();
     await new Promise((resolve) => setTimeout(resolve, 0));
-    bus.emit({ done: 159, total: 159, phase: "blobs" });
-    bus.emit({ done: 3, total: 3, phase: "workbooks" });
+    bus.emit({ done: 159, total: 159, phase: "blobs", finished: false });
+    // The workbooks phase's own last item: `done === total`, but the
+    // staging database has not swapped in yet, so this must not resolve.
+    bus.emit({ done: 3, total: 3, phase: "workbooks", finished: false });
+    bus.emit({ done: 3, total: 3, phase: "workbooks", finished: true });
     const got = await pending;
 
     expect(got).toEqual(summary);

@@ -161,11 +161,18 @@ const chartNodeId = (cellId: string): string => `chart:${cellId}`;
 /** The Plot mark one `js` cell's code charts with, when the whole cell
  *  matches `plotForm/parse.ts`'s grammar — a time chart's first mark, or a
  *  spectrum chart's single one. `null` for anything that grammar rejects
- *  (see {@link GraphNode.mark}). */
+ *  (see {@link GraphNode.mark}), and for a chart kind whose mark name is
+ *  fixed by the grammar rather than chosen: a histogram cell is always
+ *  `Plot.rectY` (C2 §5.3, ruling R215 item 2), so reporting `"rectY"` here
+ *  would put the *time* bar mark's pictogram on a card whose picture is a
+ *  distribution — `null` gets the neutral placeholder glyph instead, which
+ *  is the honest answer to "which mark did the author pick". */
 function chartMarkOf(code: string): MarkProps["mark"] | null {
   const props = parsePlotForm(code);
   if (props === null) return null;
-  return props.chart === "time" ? props.marks[0]?.mark ?? null : props.mark.mark;
+  if (props.chart === "time") return props.marks[0]?.mark ?? null;
+  if (props.chart === "fft") return props.mark.mark;
+  return null;
 }
 
 /**

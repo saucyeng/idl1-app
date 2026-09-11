@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { ColourField } from "@/components/ui/colour-field";
 import { Field, FieldGroup } from "@/components/ui/field";
 import { NumberField } from "@/components/ui/number-field";
-import { SELECT_FIELD_UNSET, SelectField, SwitchField, TextField, type SelectFieldOption } from "@/components/ui/select-field";
+import { SelectField, SwitchField, TextField, type SelectFieldOption } from "@/components/ui/select-field";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { NoteBlock } from "@/components/brand/NoteBlock";
 import {
@@ -12,16 +12,24 @@ import {
   FFT_DETRENDS,
   FFT_WINDOW_FUNCTIONS,
   generate,
+  HISTOGRAM_NORMALISATIONS,
   MARK_NAMES,
   SPECTRUM_MARK_NAMES,
-  Y_AXIS_TYPES,
+  CHART_KINDS,
   type FftParams,
   type FftPlotProps,
+  type HistogramParams,
+  type HistogramPlotProps,
   type MarkProps,
   type PlotProps,
+  type ScatterParams,
+  type ScatterPlotProps,
+  type YAxisProps,
   type SpectrumMarkProps,
   type TimePlotProps,
 } from "../plotForm";
+import { MAX_HISTOGRAM_BINS } from "@/ipc/histogram";
+import { MAX_SCATTER_POINTS } from "@/ipc/scatter";
 import {
   addMark,
   advanceFormState,
@@ -33,15 +41,24 @@ import {
   resetToFormCode,
   setChartType,
   setColorLegend,
+  setPlotTitle,
+  setTimeXField,
+  setZeroLine,
   suggestAxisLabel,
   suggestSpectrumAxisLabel,
   updateFftParams,
   updateFftXAxisType,
+  updateHistogramParams,
   updateMark,
+  updateScatterParams,
+  timeXFieldOf,
+  yScaleChoiceOf,
+  yScaleSelectOptions,
   updateXAxis,
   updateYAxis,
   type PropertiesFormState,
 } from "../model/propertiesForm";
+import { TIME_CHART_X_AXIS_OPTIONS } from "../model/xMode";
 import type { PropertiesFormChannelOption, PropertiesFormLapOption, PropertiesFormProps } from "./PropertiesForm.types";
 
 /** The `windowSize`/`hopSize` sample counts the Properties panel's select
@@ -172,18 +189,56 @@ export default function PropertiesForm({ code, channels, laps, onChange }: Prope
   return (
     <div className="properties-form idl-dense flex flex-col gap-[var(--space-4)] p-[var(--nb-gap)]">
       <ChartTypeControl chart={props.chart} onChange={(next) => commit(setChartType(props, next, channels))} />
-      {props.chart === "fft" ? (
-        <FftPropertiesForm props={props} channels={channels} onChange={commit} />
-      ) : (
-        <TimePropertiesForm props={props} channels={channels} laps={laps} onChange={commit} />
-      )}
+      <PlotTitleControl title={props.title} onChange={(next) => commit(setPlotTitle(props, next))} />
+      {props.chart === "fft" && <FftPropertiesForm props={props} channels={channels} onChange={commit} />}
+      {props.chart === "histogram" && <HistogramPropertiesForm props={props} channels={channels} onChange={commit} />}
+      {props.chart === "scatter" && <ScatterPropertiesForm props={props} channels={channels} onChange={commit} />}
+      {props.chart === "time" && <TimePropertiesForm props={props} channels={channels} laps={laps} onChange={commit} />}
     </div>
   );
 }
 
-/** Control 1 (C2 §5.3): the chart-type segmented control, `Time`/`FFT`,
- *  first for both chart types (R79 Q6: switching has no confirmation). */
-function ChartTypeControl({ chart, onChange }: { chart: "time" | "fft"; onChange: (next: "time" | "fft") => void }) {
+/**
+ * The chart's own title (C2 §5.3's `title`, added 2026-09-11), second only
+ * to the chart-type control because it names the picture the rest of the
+ * pane then configures. Shared by every chart kind — `title` sits beside
+ * `x`/`y`/`color` in all four.
+ *
+ * Clearing the field removes the key rather than writing `title: ""`
+ * (`setPlotTitle`), which is what lets the cell's `# label:` line apply
+ * again: a blank title is not a title, and a stored empty one would only
+ * suppress the fallback (`model/chartTitle.ts`).
+ */
+function PlotTitleControl({ title, onChange }: { title: string | undefined; onChange: (next: string) => void }) {
+  return (
+    <div className="properties-form-title">
+      <TextField
+        label="Title"
+        value={title ?? ""}
+        placeholder="the cell's # label: line"
+        onChange={onChange}
+      />
+    </div>
+  );
+}
+
+/** The chart-type control's own labels, one per `CHART_KINDS` entry — the
+ *  segmented control is too narrow for a blurb, so these are short by
+ *  design; the graph card's picker (`graph/chartTypeCatalog.ts`) carries
+ *  the fuller label and one-line description. Kept exhaustive by the
+ *  `Record` type, so a chart kind added to `PlotProps` without a label
+ *  here is a compile error. */
+const CHART_KIND_LABELS: Record<PlotProps["chart"], string> = {
+  time: "Time",
+  fft: "FFT",
+  histogram: "Histogram",
+  scatter: "Scatter",
+};
+
+/** Control 1 (C2 §5.3): the chart-type segmented control, one item per
+ *  `CHART_KINDS` entry (ruling R215 widens it past `Time`/`FFT`), first for
+ *  every chart type (R79 Q6: switching has no confirmation). */
+function ChartTypeControl({ chart, onChange }: { chart: PlotProps["chart"]; onChange: (next: PlotProps["chart"]) => void }) {
   return (
     <div className="properties-form-chart-type">
       <Field label="Chart type">
@@ -193,10 +248,19 @@ function ChartTypeControl({ chart, onChange }: { chart: "time" | "fft"; onChange
             density="tight"
             value={chart}
             aria-label="Chart type"
-            onValueChange={(next) => (next === "time" || next === "fft") && onChange(next)}
+            onValueChange={(next) => {
+              // Radix hands back `""` when the active item is re-clicked
+              // (deselect). A chart always has a type, so that is a no-op
+              // here rather than an unset state -- the same reason
+              // `SelectField`'s unset sentinel is not used for it.
+              if (CHART_KINDS.includes(next as PlotProps["chart"])) onChange(next as PlotProps["chart"]);
+            }}
           >
-            <ToggleGroupItem value="time">Time</ToggleGroupItem>
-            <ToggleGroupItem value="fft">FFT</ToggleGroupItem>
+            {CHART_KINDS.map((kind) => (
+              <ToggleGroupItem key={kind} value={kind}>
+                {CHART_KIND_LABELS[kind]}
+              </ToggleGroupItem>
+            ))}
           </ToggleGroup>
         )}
       </Field>
@@ -269,12 +333,39 @@ function DomainFields({
   );
 }
 
-/** The scale-type options both axis sections share. "(default)" is the
- *  unset state — it carries `SELECT_FIELD_UNSET`, which `SelectField` maps
- *  back to `undefined` for `updateYAxis`, since Radix will not accept an
- *  item whose value is the empty string. */
-function scaleOptions(): SelectFieldOption[] {
-  return [{ value: SELECT_FIELD_UNSET, label: "(default)" }, ...options(Y_AXIS_TYPES, (t) => t)];
+/**
+ * The y-axis scale control, shared by every chart kind (ruling R215 item
+ * 5). Keyed on `model/propertiesForm.ts`'s own picker tokens rather than
+ * on `YAxisProps.type`, because idl0's two signed scales — now Plot `pow`
+ * scales — share the type `"pow"` and differ only by exponent, so a
+ * picker keyed on `type` could not tell them apart.
+ *
+ * `axis` decides whether the signed scales are offered at all: they are
+ * only meaningful where the values can be negative (a channel's own
+ * value), not on a count, a fraction, or a spectrum magnitude.
+ */
+function YScaleControl({
+  y,
+  axis,
+  onChange,
+}: {
+  y: YAxisProps | undefined;
+  axis: "signed" | "non-negative";
+  onChange: (patch: Pick<YAxisProps, "type" | "exponent">) => void;
+}) {
+  const current = yScaleChoiceOf(y);
+  const choices = yScaleSelectOptions(y, axis);
+  return (
+    <SelectField
+      label="Scale"
+      value={current}
+      options={choices.map((c) => ({ value: c.value, label: c.label }))}
+      onChange={(value) => {
+        const choice = choices.find((c) => c.value === value);
+        if (choice !== undefined) onChange(choice.patch);
+      }}
+    />
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -336,6 +427,7 @@ function TimePropertiesForm({
       </FieldGroup>
 
       <FieldGroup title="X axis" className="properties-form-x-axis">
+        <TimeXAxisControl xField={timeXFieldOf(props)} onChange={(next) => onChange(setTimeXField(props, next))} />
         <TextField
           label="Label"
           value={props.x?.label ?? ""}
@@ -353,16 +445,57 @@ function TimePropertiesForm({
           onChange={(value) => onChange(updateYAxis(props, { label: value === "" ? undefined : value }))}
         />
         <DomainFields domain={props.y?.domain} onChange={(domain) => onChange(updateYAxis(props, { domain }))} />
-        <SelectField
-          label="Scale"
-          value={props.y?.type}
-          options={scaleOptions()}
-          onChange={(value) => onChange(updateYAxis(props, { type: value as NonNullable<TimePlotProps["y"]>["type"] | undefined }))}
+        <YScaleControl y={props.y} axis="signed" onChange={(patch) => onChange(updateYAxis(props, patch))} />
+        <SwitchField
+          label="Zero line"
+          checked={props.zeroLine === true}
+          onChange={(checked) => onChange(setZeroLine(props, checked))}
         />
       </FieldGroup>
 
       <LegendControl props={props} onChange={onChange} />
     </>
+  );
+}
+
+/**
+ * A time chart's x-axis mode (ruling R215 items 4-5): which time column
+ * every mark binds. Session time is the default; lap time (`x: "tr"`)
+ * rebases each selected window to its own start so *n* laps superimpose,
+ * which is what makes a lap-pair overlay and a lap variance trace readable.
+ *
+ * **Distance is rendered, disabled, with its reason** (R136,
+ * `model/xMode.ts`'s `DISTANCE_X_MODE_DISABLED_REASON`) rather than hidden:
+ * the control never conceals that the mode exists or why it cannot be
+ * chosen. It has no `MarkProps.xField` spelling to select, so picking it is
+ * not merely refused — it is unrepresentable.
+ *
+ * Plot-level, not per mark, because a plot has one x scale: two marks on
+ * different time columns would draw one against the other's axis. The
+ * grammar stores the binding per mark (it has no plot-level slot for it),
+ * so this control writes every mark at once — see `setTimeXField`.
+ */
+function TimeXAxisControl({ xField, onChange }: { xField: "tr" | undefined; onChange: (next: "tr" | undefined) => void }) {
+  const selected = xField ?? "t";
+  const option = TIME_CHART_X_AXIS_OPTIONS.find((o) => o.value === selected);
+  return (
+    <SelectField
+      label="Axis"
+      value={selected}
+      hint={option?.blurb}
+      options={TIME_CHART_X_AXIS_OPTIONS.map((o) => ({
+        value: o.value,
+        label: o.disabledReason === undefined ? o.label : `${o.label} (unavailable)`,
+        disabled: o.disabledReason !== undefined,
+        title: o.disabledReason,
+      }))}
+      onChange={(value) => {
+        // A disabled option cannot be committed, and `"distance"` has no
+        // `MarkProps.xField` spelling to commit even if it could be.
+        if (value === "t") onChange(undefined);
+        else if (value === "tr") onChange("tr");
+      }}
+    />
   );
 }
 
@@ -627,12 +760,7 @@ function FftPropertiesForm({
           onChange={(value) => onChange(updateYAxis(props, { label: value === "" ? undefined : value }))}
         />
         <DomainFields domain={props.y?.domain} onChange={(domain) => onChange(updateYAxis(props, { domain }))} />
-        <SelectField
-          label="Scale"
-          value={props.y?.type}
-          options={scaleOptions()}
-          onChange={(value) => onChange(updateYAxis(props, { type: value as NonNullable<FftPlotProps["y"]>["type"] | undefined }))}
-        />
+        <YScaleControl y={props.y} axis="non-negative" onChange={(patch) => onChange(updateYAxis(props, patch))} />
       </FieldGroup>
 
       <LegendControl props={props} onChange={onChange} />
@@ -640,9 +768,290 @@ function FftPropertiesForm({
   );
 }
 
-/** Control 12: the colour legend, shared by both chart types (C2 §5.3's
- *  `color_opt` is the same shape for either). A toggle switch since R212
- *  item 5 — the same on/off semantic as the checkbox it replaces. */
+// ---------------------------------------------------------------------------
+// Histogram-cell body (ruling R215 item 2, C2 §5.3, C3 §3.6).
+// ---------------------------------------------------------------------------
+
+/** The bin counts the Properties pane offers directly, each comfortably
+ *  below C3 §3.6's `MAX_HISTOGRAM_BINS`. A stored value outside this list (a
+ *  hand-edit, or a width-mode cell) still displays correctly through the
+ *  accompanying free numeric entry — opening the pane never silently
+ *  changes it, the same rule `FFT_WINDOW_SIZE_OPTIONS` follows. */
+const HISTOGRAM_BIN_COUNT_OPTIONS: readonly number[] = [16, 32, 64, 128, 256];
+
+/** The bin width a `count → width` switch seeds. A width is in the binned
+ *  channel's own unit, which this pane does not know the scale of — there
+ *  is no correct number here, only a starting one the author edits, so it
+ *  is a plainly-round value rather than a conversion of the bin count it
+ *  replaces (see `updateHistogramParams`' doc comment on why no conversion
+ *  is attempted at all). */
+const DEFAULT_BIN_WIDTH = 1;
+
+function HistogramPropertiesForm({
+  props,
+  channels,
+  onChange,
+}: {
+  props: HistogramPlotProps;
+  channels: PropertiesFormChannelOption[];
+  onChange: (next: PlotProps) => void;
+}) {
+  const { mark } = props;
+  const { histogram } = mark;
+  const isCount = histogram.binMode === "count";
+  const channel = channels.find((c) => c.id === mark.channel);
+  const binCountIsStandard = isCount && (HISTOGRAM_BIN_COUNT_OPTIONS as readonly number[]).includes(histogram.binValue);
+
+  /** Channel pick — also seeds the **x** label (the bin-edge axis is in the
+   *  channel's own unit, C1 §4.1) when it is not already set, the same
+   *  one-time R65 seed a time cell's first mark does for `y`. A histogram's
+   *  y axis is a count or a fraction and has no unit to suggest. */
+  function handleChannelChange(channelId: string): void {
+    let next: PlotProps = { ...props, mark: { ...mark, channel: channelId } };
+    if (next.x?.label === undefined) {
+      const suggestion = suggestAxisLabel(channels.find((c) => c.id === channelId));
+      if (suggestion !== undefined) next = updateXAxis(next, { label: suggestion });
+    }
+    onChange(next);
+  }
+
+  function patchHistogram(patch: Partial<HistogramParams>): void {
+    onChange(updateHistogramParams(props, patch));
+  }
+
+  return (
+    <>
+      <FieldGroup title="Distribution" className="properties-form-mark">
+        <SelectField
+          label="Channel"
+          value={mark.channel}
+          options={channels.map((c) => ({ value: c.id, label: c.label }))}
+          onChange={(value) => value !== undefined && handleChannelChange(value)}
+        />
+        <ColourField label="Fill colour" value={mark.fill} onChange={(value) => onChange({ ...props, mark: { ...mark, fill: value } })} />
+        <NumberField
+          label="Fill opacity"
+          min={0}
+          max={1}
+          step={0.1}
+          placeholder="auto"
+          value={mark.fillOpacity ?? null}
+          onChange={(value) => onChange({ ...props, mark: { ...mark, fillOpacity: value ?? undefined } })}
+        />
+      </FieldGroup>
+
+      <FieldGroup title="Binning" className="properties-form-histogram-params">
+        <SelectField
+          label="Bins by"
+          value={histogram.binMode}
+          options={[
+            { value: "count", label: "Count" },
+            { value: "width", label: "Width" },
+          ]}
+          hint="Width is in the channel's own unit; the engine derives the bin count."
+          onChange={(value) => {
+            // A mode switch always carries a fresh `binValue`: a count and
+            // a width are different quantities in different units, and
+            // converting between them needs the data's own range, which
+            // this pane does not have (`updateHistogramParams`).
+            if (value === "count") patchHistogram({ binMode: "count", binValue: 64 });
+            else if (value === "width") patchHistogram({ binMode: "width", binValue: DEFAULT_BIN_WIDTH });
+          }}
+        />
+        {isCount && (
+          <SelectField
+            label="Bin count"
+            value={binCountIsStandard ? String(histogram.binValue) : CUSTOM_WINDOW_SIZE}
+            options={[
+              ...options(HISTOGRAM_BIN_COUNT_OPTIONS, (n) => String(n)),
+              ...(binCountIsStandard ? [] : [{ value: CUSTOM_WINDOW_SIZE, label: "Custom…" }]),
+            ]}
+            onChange={(value) => {
+              if (value !== undefined && value !== CUSTOM_WINDOW_SIZE) patchHistogram({ binValue: Number(value) });
+            }}
+          />
+        )}
+        <NumberField
+          label={isCount ? "Bin count" : "Bin width"}
+          unit={isCount ? "bins" : (channel?.unit ?? undefined)}
+          min={isCount ? 1 : undefined}
+          max={isCount ? MAX_HISTOGRAM_BINS : undefined}
+          step={isCount ? 1 : 0.1}
+          value={histogram.binValue}
+          hint={isCount ? `At most ${MAX_HISTOGRAM_BINS}.` : undefined}
+          onChange={(value) => value !== null && patchHistogram({ binValue: value })}
+        />
+        <SwitchField
+          label="Centre on zero"
+          checked={histogram.symmetric}
+          onChange={(checked) => patchHistogram({ symmetric: checked })}
+        />
+        <SelectField
+          label="Y values"
+          value={histogram.normalise}
+          options={options(HISTOGRAM_NORMALISATIONS, (n) => (n === "counts" ? "Sample count" : "Share of window"))}
+          hint="Share makes two windows of different lengths comparable."
+          onChange={(value) => value !== undefined && patchHistogram({ normalise: value as HistogramParams["normalise"] })}
+        />
+      </FieldGroup>
+
+      <FieldGroup title="Value axis" className="properties-form-x-axis">
+        <TextField
+          label="Label"
+          value={props.x?.label ?? ""}
+          placeholder="auto"
+          onChange={(value) => onChange(updateXAxis(props, { label: value === "" ? undefined : value }))}
+        />
+        <DomainFields domain={props.x?.domain} unit={channel?.unit} onChange={(domain) => onChange(updateXAxis(props, { domain }))} />
+      </FieldGroup>
+
+      <FieldGroup title={histogram.normalise === "counts" ? "Count axis" : "Share axis"} className="properties-form-y-axis">
+        <TextField
+          label="Label"
+          value={props.y?.label ?? ""}
+          placeholder="auto"
+          onChange={(value) => onChange(updateYAxis(props, { label: value === "" ? undefined : value }))}
+        />
+        <DomainFields domain={props.y?.domain} onChange={(domain) => onChange(updateYAxis(props, { domain }))} />
+        <YScaleControl y={props.y} axis="non-negative" onChange={(patch) => onChange(updateYAxis(props, patch))} />
+      </FieldGroup>
+
+      <LegendControl props={props} onChange={onChange} />
+    </>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Scatter-cell body (ruling R215 item 3, C2 §5.3, C3 §3.5).
+// ---------------------------------------------------------------------------
+
+/** The point budgets the Properties pane offers directly, each at or below
+ *  C3 §3.5's `MAX_SCATTER_POINTS`. A stored value outside this list still
+ *  displays through the accompanying free numeric entry — opening the pane
+ *  never silently changes it, the same rule the other two param sections
+ *  follow. */
+const SCATTER_POINT_BUDGET_OPTIONS: readonly number[] = [1024, 4096, 16384, 65536];
+
+function ScatterPropertiesForm({
+  props,
+  channels,
+  onChange,
+}: {
+  props: ScatterPlotProps;
+  channels: PropertiesFormChannelOption[];
+  onChange: (next: PlotProps) => void;
+}) {
+  const { mark } = props;
+  const xChannel = channels.find((c) => c.id === mark.xChannel);
+  const yChannel = channels.find((c) => c.id === mark.yChannel);
+  const budgetIsStandard = (SCATTER_POINT_BUDGET_OPTIONS as readonly number[]).includes(mark.scatter.pointBudget);
+
+  /** An axis's channel pick — also seeds that axis's own label from the
+   *  newly-picked channel's unit (R65) when it is not already set. A
+   *  scatter is the one chart kind where **both** axes carry a channel's
+   *  unit, so both get the same one-time seed. */
+  function handleChannelChange(axis: "x" | "y", channelId: string): void {
+    const nextMark = axis === "x" ? { ...mark, xChannel: channelId } : { ...mark, yChannel: channelId };
+    let next: PlotProps = { ...props, mark: nextMark };
+    const suggestion = suggestAxisLabel(channels.find((c) => c.id === channelId));
+    if (suggestion !== undefined) {
+      if (axis === "x" && next.x?.label === undefined) next = updateXAxis(next, { label: suggestion });
+      if (axis === "y" && next.y?.label === undefined) next = updateYAxis(next, { label: suggestion });
+    }
+    onChange(next);
+  }
+
+  function patchScatter(patch: Partial<ScatterParams>): void {
+    onChange(updateScatterParams(props, patch));
+  }
+
+  return (
+    <>
+      <FieldGroup title="Channels" className="properties-form-mark">
+        <SelectField
+          label="X channel"
+          value={mark.xChannel}
+          options={channels.map((c) => ({ value: c.id, label: c.label }))}
+          onChange={(value) => value !== undefined && handleChannelChange("x", value)}
+        />
+        <SelectField
+          label="Y channel"
+          value={mark.yChannel}
+          options={channels.map((c) => ({ value: c.id, label: c.label }))}
+          hint={mark.xChannel === mark.yChannel ? "Both axes are the same channel, so every point sits on the diagonal." : undefined}
+          onChange={(value) => value !== undefined && handleChannelChange("y", value)}
+        />
+        <ColourField label="Point colour" value={mark.fill} onChange={(value) => onChange({ ...props, mark: { ...mark, fill: value } })} />
+        <NumberField
+          label="Point radius"
+          unit="px"
+          min={0}
+          step={0.5}
+          placeholder="auto"
+          value={mark.r ?? null}
+          onChange={(value) => onChange({ ...props, mark: { ...mark, r: value ?? undefined } })}
+        />
+      </FieldGroup>
+
+      <FieldGroup title="Cloud" className="properties-form-scatter-params">
+        <SelectField
+          label="Point budget"
+          value={budgetIsStandard ? String(mark.scatter.pointBudget) : CUSTOM_WINDOW_SIZE}
+          options={[
+            ...options(SCATTER_POINT_BUDGET_OPTIONS, (n) => String(n)),
+            ...(budgetIsStandard ? [] : [{ value: CUSTOM_WINDOW_SIZE, label: "Custom…" }]),
+          ]}
+          hint="The engine decimates to this by uniform stride."
+          onChange={(value) => {
+            if (value !== undefined && value !== CUSTOM_WINDOW_SIZE) patchScatter({ pointBudget: Number(value) });
+          }}
+        />
+        <NumberField
+          label="Point budget"
+          unit="points"
+          min={1}
+          max={MAX_SCATTER_POINTS}
+          step={512}
+          value={mark.scatter.pointBudget}
+          hint={`At most ${MAX_SCATTER_POINTS}.`}
+          onChange={(value) => value !== null && patchScatter({ pointBudget: value })}
+        />
+        <SwitchField
+          label="Equal aspect"
+          checked={mark.scatter.equalAspect}
+          onChange={(checked) => patchScatter({ equalAspect: checked })}
+        />
+      </FieldGroup>
+
+      <FieldGroup title="X axis" className="properties-form-x-axis">
+        <TextField
+          label="Label"
+          value={props.x?.label ?? ""}
+          placeholder="auto"
+          onChange={(value) => onChange(updateXAxis(props, { label: value === "" ? undefined : value }))}
+        />
+        <DomainFields domain={props.x?.domain} unit={xChannel?.unit} onChange={(domain) => onChange(updateXAxis(props, { domain }))} />
+      </FieldGroup>
+
+      <FieldGroup title="Y axis" className="properties-form-y-axis">
+        <TextField
+          label="Label"
+          value={props.y?.label ?? ""}
+          placeholder="auto"
+          onChange={(value) => onChange(updateYAxis(props, { label: value === "" ? undefined : value }))}
+        />
+        <DomainFields domain={props.y?.domain} unit={yChannel?.unit} onChange={(domain) => onChange(updateYAxis(props, { domain }))} />
+        <YScaleControl y={props.y} axis="signed" onChange={(patch) => onChange(updateYAxis(props, patch))} />
+      </FieldGroup>
+
+      <LegendControl props={props} onChange={onChange} />
+    </>
+  );
+}
+
+/** Control 12: the colour legend, shared by every chart type (C2 §5.3's
+ *  `color_opt` is the same shape for all of them). A toggle switch since
+ *  R212 item 5 — the same on/off semantic as the checkbox it replaces. */
 function LegendControl({ props, onChange }: { props: PlotProps; onChange: (next: PlotProps) => void }) {
   return (
     <FieldGroup title="Legend" className="properties-form-color">

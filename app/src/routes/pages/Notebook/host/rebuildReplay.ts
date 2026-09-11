@@ -26,7 +26,10 @@
  * through the JSON-caching `setHostVar()` this file replays, so there is
  * nothing here for this module to special-case — the exclusion is
  * structural. The caller retains the decoded spectrum itself and re-pushes
- * it after a rebuild (L6 Task 20).
+ * it after a rebuild (L6 Task 20). A `{kind:"histogram"}` payload (ruling
+ * R215 item 2) is excluded on exactly the same structural grounds:
+ * `SandboxHost.setHistogramHostVar()` posts directly and never routes
+ * through the JSON-caching `setHostVar()` this file replays.
  */
 import type { HostToSandboxMessage, SandboxCell } from "./protocol";
 

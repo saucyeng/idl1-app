@@ -45,22 +45,24 @@ describe("isHostMessage", () => {
 });
 
 describe("channelPayload", () => {
-  test("channelPayload — a decoded single-window channel — puts all three buffers in the transfer list exactly once", () => {
+  test("channelPayload — a decoded single-window channel — puts all four buffers in the transfer list exactly once", () => {
     const t = new ArrayBuffer(8);
     const v = new ArrayBuffer(8);
+    const tr = new ArrayBuffer(8);
     const w = new ArrayBuffer(8);
     const windows = [descriptor()];
 
-    const { message, transfer } = channelPayload("fork_velocity", 1, t, v, w, windows, { state: "known", text: "mm" });
+    const { message, transfer } = channelPayload("fork_velocity", 1, t, v, tr, w, windows, { state: "known", text: "mm" });
 
-    expect(transfer).toHaveLength(3);
+    expect(transfer).toHaveLength(4);
     expect(transfer.filter((b) => b === t)).toHaveLength(1);
     expect(transfer.filter((b) => b === v)).toHaveLength(1);
+    expect(transfer.filter((b) => b === tr)).toHaveLength(1);
     expect(transfer.filter((b) => b === w)).toHaveLength(1);
     expect(message).toEqual({
       type: "setHostVar",
       name: "fork_velocity",
-      value: { kind: "channel", length: 1, t, v, w, windows, unit: { state: "known", text: "mm" } },
+      value: { kind: "channel", length: 1, t, v, tr, w, windows, unit: { state: "known", text: "mm" } },
     });
   });
 
@@ -78,7 +80,10 @@ describe("channelPayload", () => {
     const vSource = new Float64Array([10.1, -2.5, NaN]);
     const wSource = new Float64Array([0, 0, 1]);
 
-    const { message } = channelPayload("fork_velocity", 3, tSource.buffer, vSource.buffer, wSource.buffer, [descriptor(), descriptor()], { state: "dimensionless" });
+    const trSource = new Float64Array([0, 1.5, 0]);
+    const { message } = channelPayload("fork_velocity", 3, tSource.buffer, vSource.buffer, trSource.buffer, wSource.buffer, [descriptor(), descriptor()], {
+      state: "dimensionless",
+    });
 
     const payload = message.value as Extract<HostVarPayload, { kind: "channel" }>;
     const tRoundTripped = new Float64Array(payload.t);
@@ -97,7 +102,7 @@ describe("combineChannelWindows", () => {
   test("combineChannelWindows — no windows — returns an all-empty result", () => {
     const combined = combineChannelWindows([]);
 
-    expect(combined).toEqual({ length: 0, t: new Float64Array(0), v: new Float64Array(0), w: new Float64Array(0), windows: [] });
+    expect(combined).toEqual({ length: 0, t: new Float64Array(0), v: new Float64Array(0), tr: new Float64Array(0), w: new Float64Array(0), windows: [] });
   });
 
   test("combineChannelWindows — a single window — is byte-identical to the pre-multi-window shape: no break, w all zero (R127 item 3)", () => {

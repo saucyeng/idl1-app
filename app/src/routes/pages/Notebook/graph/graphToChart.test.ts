@@ -1,7 +1,10 @@
 import { describe, expect, it } from "vitest";
 
+import { generate } from "../plotForm/generate";
 import { parse } from "../plotForm/parse";
-import { chartEligibilityFor, insertChartCell } from "./graphToChart";
+import type { PlotProps } from "../plotForm/types";
+import { CHART_TYPE_IDS } from "./chartTypeCatalog";
+import { chartEligibilityFor, insertChartCell, plotPropsForChartType } from "./graphToChart";
 
 describe("chartEligibilityFor", () => {
   it("chartEligibilityFor — a rank-≤1 shape ([t]) — is chartable", () => {
@@ -68,5 +71,53 @@ describe("insertChartCell", () => {
     // Assert
     expect(markdown.startsWith("```js\n")).toBe(true);
     expect(markdown.endsWith("```\n")).toBe(true);
+  });
+
+  it("insertChartCell — chart type \"fft\" — appends an FFT cell bound to the node (R215 item 1)", () => {
+    // Act
+    const markdown = insertChartCell("", "fork_velocity", "fft");
+
+    // Assert
+    const fence = markdown.slice("```js\n".length, markdown.lastIndexOf("```"));
+    const props = parse(fence);
+    expect(props?.chart).toBe("fft");
+    if (props?.chart === "fft") {
+      expect(props.mark.channel).toBe("fork_velocity");
+    }
+  });
+});
+
+describe("plotPropsForChartType", () => {
+  it("plotPropsForChartType — every CHART_TYPE_IDS value — inserts a cell that parses back in the same chart type", () => {
+    // Assert — `parse` normalises a time mark's omitted `lap` to `null`,
+    // so the round trip is compared on the generated code, not on a deep
+    // equality of the seed props themselves.
+    for (const id of CHART_TYPE_IDS) {
+      const props = plotPropsForChartType(id, "x");
+      const fence = insertChartCell("", "x", id).slice("```js\n".length).replace(/```\n$/, "");
+      const parsed = parse(fence);
+      expect(parsed).not.toBeNull();
+      expect(parsed?.chart).toBe(props.chart);
+      expect(generate(parsed as PlotProps)).toBe(generate(props));
+    }
+  });
+
+  it("plotPropsForChartType — \"fft\" — carries C2 §5.3's parameter-table defaults", () => {
+    // Act
+    const props = plotPropsForChartType("fft", "x");
+
+    // Assert
+    expect(props.chart).toBe("fft");
+    if (props.chart === "fft") {
+      expect(props.mark.fft).toEqual({
+        windowSize: 2048,
+        hopSize: 1024,
+        window: "hann",
+        detrend: "mean",
+        scaling: "raw_magnitude",
+        averaging: "mean",
+      });
+      expect(props.x.type).toBe("log");
+    }
   });
 });

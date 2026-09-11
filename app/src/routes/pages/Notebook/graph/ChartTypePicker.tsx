@@ -1,25 +1,26 @@
 import { useState } from "react";
 
-import type { MarkProps } from "../plotForm/types";
+import type { ChartTypeId } from "./chartTypeCatalog";
 import { CHART_TYPE_CATALOG } from "./chartTypeCatalog";
 import { CHART_TYPE_ICONS } from "./chartTypeIcons";
 
 /** Props for {@link ChartTypePicker}. */
 export interface ChartTypePickerProps {
-  /** Fired once with the chosen mark; the picker closes itself right
+  /** Fired once with the chosen chart type; the picker closes itself right
    *  after (`GraphCanvas.tsx`'s `handleChart` inserts the cell). */
-  onSelect: (mark: MarkProps["mark"]) => void;
+  onSelect: (chartType: ChartTypeId) => void;
 }
 
 /**
  * The card's chart-type picker (decision 83, "idl0 pictograms carry
- * over"): a row of five small pictogram buttons, one per `MARK_NAMES`
- * value (`chartTypeCatalog.ts`), replacing `NodeCard.tsx`'s previous
- * single "Chart" button that always inserted a fixed `lineY` mark. A click
- * opens the row; a click on a pictogram commits that mark and closes it
- * again. Rendering only; not unit-tested (CLAUDE.md §4) — the catalog
- * itself (which marks exist, their labels) is tested on
- * `CHART_TYPE_CATALOG`.
+ * over"): a row of small pictogram buttons, one per `CHART_TYPE_IDS`
+ * entry (`chartTypeCatalog.ts`) — C2 §5.3's five time-cell marks plus one
+ * per whole-cell chart kind the grammar has a production for (ruling
+ * R215) — replacing `NodeCard.tsx`'s previous single "Chart" button that
+ * always inserted a fixed `lineY` mark. A click opens the row; a click on
+ * a pictogram commits that chart type and closes it again. Rendering only;
+ * not unit-tested (CLAUDE.md §4) — the catalog itself (which chart types
+ * exist, their labels) is tested on `CHART_TYPE_CATALOG`.
  */
 export default function ChartTypePicker({ onSelect }: ChartTypePickerProps) {
   const [open, setOpen] = useState(false);
@@ -40,12 +41,16 @@ export default function ChartTypePicker({ onSelect }: ChartTypePickerProps) {
   }
 
   return (
-    <div className="mt-1 flex items-center justify-between gap-1 rounded-[var(--radius-structural)] border border-rule bg-control px-1 py-0.5">
-      {CHART_TYPE_CATALOG.map(({ mark, label, blurb }) => {
-        const Icon = CHART_TYPE_ICONS[mark];
+    // `flex-wrap`: the row grew past the original five marks (ruling R215
+    // adds one entry per whole-cell chart kind), and a graph card is
+    // narrow — wrapping keeps every pictogram reachable instead of
+    // overflowing the card's own box.
+    <div className="mt-1 flex flex-wrap items-center justify-between gap-1 rounded-[var(--radius-structural)] border border-rule bg-control px-1 py-0.5">
+      {CHART_TYPE_CATALOG.map(({ id, label, blurb }) => {
+        const Icon = CHART_TYPE_ICONS[id];
         return (
           <button
-            key={mark}
+            key={id}
             type="button"
             title={blurb}
             aria-label={label}
@@ -53,7 +58,7 @@ export default function ChartTypePicker({ onSelect }: ChartTypePickerProps) {
             onClick={(e) => {
               e.stopPropagation();
               setOpen(false);
-              onSelect(mark);
+              onSelect(id);
             }}
           >
             <Icon />

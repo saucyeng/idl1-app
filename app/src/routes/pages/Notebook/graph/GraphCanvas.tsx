@@ -32,7 +32,6 @@ import { computeNodeStatuses } from "../model/graphStatus";
 import { scanMathExpr, type MathExprCall } from "../model/mathExpr";
 import { rawUnitToLabel } from "../model/unitLabel";
 import type { WindowEvalState } from "../model/workbookState";
-import type { MarkProps } from "../plotForm/types";
 import { subgraphsFor, searchNodeIds, visibleNodeIds } from "../model/graphSubgraph";
 import { collapsedNodePosition, collapsedSubgraphNodesFor, subgraphFramesFor, FRAME_NODE_HEIGHT, FRAME_NODE_WIDTH } from "../model/graphSubgraphFrame";
 import { editLiteralArg, renameDefinition, rewireInput, type UnresolvedRenameRef } from "../model/graphEdits";
@@ -41,6 +40,7 @@ import { buildSourcePalette } from "../model/sourcePalette";
 import { replaceCellBody, scanCells } from "../model/cells";
 import { documentCellDisplayNames, setCellLabelLine } from "./cellDisplayName";
 import { commitDrag, commitTidy } from "./dragCommit";
+import type { ChartTypeId } from "./chartTypeCatalog";
 import { insertChartCell } from "./graphToChart";
 import NodeCard, { type MathNodeData } from "./NodeCard";
 import { shapeOf } from "./portShape";
@@ -186,12 +186,13 @@ export default function GraphCanvas(props: GraphCanvasProps) {
 
 function GraphCanvasInner({ markdown, outputs, selectedWindows, windows, sessionDetails, onCommit, onSelectCell, colourCodeNodes, selectedCellId }: GraphCanvasProps) {
   // Task 5's own chart-type picker (decision 83, "idl0 pictograms carry
-  // over") replaces the old fixed-"lineY" chart button — `mark` now comes
-  // from `NodeCard.tsx`'s `ChartTypePicker`, one of `MARK_NAMES`'s five
-  // values, never guessed here.
+  // over") replaces the old fixed-"lineY" chart button — `chartType` now
+  // comes from `NodeCard.tsx`'s `ChartTypePicker`, one of
+  // `CHART_TYPE_IDS`' values (ruling R215: C2 §5.3's five time-cell marks
+  // plus one per whole-cell chart kind), never guessed here.
   const handleChart = useCallback(
-    (nodeName: string, mark: MarkProps["mark"]) => {
-      const next = insertChartCell(markdown, nodeName, mark);
+    (nodeName: string, chartType: ChartTypeId) => {
+      const next = insertChartCell(markdown, nodeName, chartType);
       if (next !== markdown) onCommit(next);
     },
     [markdown, onCommit]

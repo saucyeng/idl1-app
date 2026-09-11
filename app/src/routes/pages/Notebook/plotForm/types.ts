@@ -5,6 +5,30 @@ export interface MarkProps {
   channel: string;
   mark: "lineY" | "dot" | "areaY" | "rectY" | "ruleY";
   lap?: number | null;
+  /**
+   * Which time column this mark's x axis binds (C2 §5.3's
+   * `x_field_binding`, ruling R215 items 4-5). **Absent means session
+   * time** — `x: "t"`, seconds since the session's first sample, what
+   * every landed document says and what `generate` emits when this field
+   * is omitted. The one other value, `"tr"`, binds the lap-relative
+   * column: seconds since *this sample's own selected window* began
+   * (`host/protocol.ts`'s `combineChannelWindows`), so *n* selected laps
+   * superimpose instead of sitting end to end. That is the axis idl0's
+   * lap-pair overlay and variance trace both drew on.
+   *
+   * Typed as the single value rather than `"t" | "tr"` for the same reason
+   * `lap` is "omitted = session scope": with only `"tr"` expressible, the
+   * absent case has exactly one spelling and `parse(generate(p))` is
+   * deep-equal to `p` with no normalisation step.
+   *
+   * There is deliberately **no distance value.** Wheel/GPS distance on X
+   * is disabled with its reason (ruling R136) — a naive cumulative
+   * distance axis misaligns two laps that took different lines through the
+   * same corner, and a grammar slot for it would be a promise the engine
+   * cannot keep. `model/xMode.ts`'s `DISTANCE_X_MODE_DISABLED_REASON` is
+   * what the Properties pane shows instead.
+   */
+  xField?: "tr";
   stroke?: string;      // any valid CSS colour literal
   strokeWidth?: number; // px
 }
@@ -36,13 +60,31 @@ export interface YAxisProps {
    *  unlike x's fixed seconds-since-session-start (or, for an FFT cell,
    *  Hz). */
   domain?: [number, number];
-  type?: "linear" | "log" | "sqrt";
+  /**
+   * Plot's own scale type. `"pow"` (ruling R215 item 5) is how idl0's
+   * signed-root and signed-square y scales (`worksheet.dart`'s
+   * `sqrtSigned`/`squareSigned`) are expressed: d3's power scale — which
+   * Plot's `"pow"` is — is **symmetric about zero**, so it compresses or
+   * expands compression and rebound equally rather than folding one side
+   * away the way `"sqrt"` does on a signed channel. A `"pow"` axis always
+   * carries {@link exponent}; no other type ever does.
+   */
+  type?: "linear" | "log" | "sqrt" | "pow";
+  /** Plot's `exponent`, required with `type: "pow"` and expressible with no
+   *  other type (C2 §5.3, ruling R215 item 5). `0.5` is the signed root,
+   *  `2` the signed square — but any positive number is legal: the two
+   *  named choices are what the Properties pane *offers*, not what the
+   *  grammar admits. */
+  exponent?: number;
 }
 
-/** The three y-axis scale types `YAxisProps.type`'s union type admits, as a
+/** The four y-axis scale types `YAxisProps.type`'s union type admits, as a
  *  runtime array — same rationale as {@link MARK_NAMES}: a UI control
- *  enumerates this rather than hardcoding a second copy. */
-export const Y_AXIS_TYPES: readonly NonNullable<YAxisProps["type"]>[] = ["linear", "log", "sqrt"];
+ *  enumerates this rather than hardcoding a second copy. Note that a
+ *  *picker* does not offer these verbatim: `"pow"` is meaningless without
+ *  an exponent, so the Properties pane offers the two named signed scales
+ *  instead (`model/propertiesForm.ts`'s `Y_SCALE_CHOICES`). */
+export const Y_AXIS_TYPES: readonly NonNullable<YAxisProps["type"]>[] = ["linear", "log", "sqrt", "pow"];
 
 /** The mark names `SpectrumMarkProps.mark`'s union type admits, as a
  *  runtime array (C2 §5.3's `spectrum_mark_name` — a strict subset of
@@ -126,6 +168,33 @@ export interface TimePlotProps {
   x?: XAxisProps;
   y?: YAxisProps;
   color?: { legend: true };
+  /**
+   * The chart's own title, rendered centred above the plot (R216's chrome,
+   * `components/CellFrame.tsx`'s `title` prop). Optional; absent means the
+   * cell falls back to its `# label:` line, which stays exactly as it was
+   * — an explicit title simply wins (`model/chartTitle.ts`).
+   *
+   * `title` is a real Plot option, so the generated code stays idiomatic
+   * Plot that draws its own title when run anywhere else. It is a
+   * **plot-level** option, not a mark's, which is why it sits beside
+   * `x`/`y`/`color` rather than inside a mark.
+   */
+  title?: string;
+
+  /**
+   * Draw a horizontal reference line at y = 0 (idl0's zero-line toggle,
+   * `worksheet.dart`; ruling R215 item 5). Emitted as a real
+   * `Plot.ruleY([0])` at the head of `marks`, not as a plot option — it
+   * *is* a mark, and writing it as one keeps the generated code idiomatic
+   * Plot that an author can read and hand-edit. `true` or entirely absent;
+   * the grammar admits no other value, exactly like `color.legend`.
+   *
+   * Only a **time** cell has this. A spectrum's magnitude axis has no
+   * meaningful zero crossing, a histogram's bars already sit on their own
+   * baseline, and a scatter's zero line would be the friction circle's
+   * centre, which `equalAspect` already frames.
+   */
+  zeroLine?: true;
 }
 
 /** C2 §5.3's FFT-cell `plot_options` production. `mark` (singular, not
@@ -138,13 +207,173 @@ export interface FftPlotProps {
   x: FftXAxisProps;
   y?: YAxisProps;
   color?: { legend: true };
+  /**
+   * The chart's own title, rendered centred above the plot (R216's chrome,
+   * `components/CellFrame.tsx`'s `title` prop). Optional; absent means the
+   * cell falls back to its `# label:` line, which stays exactly as it was
+   * — an explicit title simply wins (`model/chartTitle.ts`).
+   *
+   * `title` is a real Plot option, so the generated code stays idiomatic
+   * Plot that draws its own title when run anywhere else. It is a
+   * **plot-level** option, not a mark's, which is why it sits beside
+   * `x`/`y`/`color` rather than inside a mark.
+   */
+  title?: string;
+}
+
+/** `HistogramParams.binMode`'s union type, as a runtime array (C2 §5.3's
+ *  `bin_mode`, ruling R215 item 2). */
+export const HISTOGRAM_BIN_MODES: readonly HistogramParams["binMode"][] = ["count", "width"];
+
+/** `HistogramParams.normalise`'s union type, as a runtime array (C2 §5.3's
+ *  `normalise`, ruling R215 item 2). */
+export const HISTOGRAM_NORMALISATIONS: readonly HistogramParams["normalise"][] = ["counts", "fraction"];
+
+/** C2 §5.3's `histogram_params` production — the four parameters of one
+ *  histogram chart, all required in this fixed order, for the same reason
+ *  {@link FftParams}' six are: "a missing key is custom code, not a
+ *  default" (C2 §5.3). Maps one-for-one onto C3 §3.6's
+ *  `HistogramParams` wire shape (`binMode`→`bin_mode`,
+ *  `binValue`→`bin_value`), which is the only place the two spellings
+ *  differ. */
+export interface HistogramParams {
+  /** How {@link binValue} is read: a bin **count**, or a bin **width** in
+   *  the channel's own unit that the engine resolves to a count. */
+  binMode: "count" | "width";
+  /** A bin count (a positive integer, at most C3 §3.6's `MAX_HISTOGRAM_BINS`)
+   *  under `binMode: "count"`; a bin width in the channel's own unit under
+   *  `"width"`. One slot for both so the grammar has one production, not
+   *  two mutually exclusive keys whose "exactly one present" rule the
+   *  parser would have to enforce by hand. */
+  binValue: number;
+  /** Widen the auto range to `[-m, m]` so zero sits on a bin boundary. */
+  symmetric: boolean;
+  /** Whether the bars carry raw counts or each bin's share of the window's
+   *  finite samples. Selects `HistogramResponse.values`; `counts` is
+   *  always the raw count either way (C3 §3.6). */
+  normalise: "counts" | "fraction";
+}
+
+/** One histogram cell's single bar mark (C2 §5.3's `histogram_mark`
+ *  production, ruling R215 item 2). Singular by type, exactly as
+ *  {@link FftPlotProps.mark} is: idl0's translucent multi-channel overlay
+ *  (`chart_workspace.dart:600-606`) is a stated parity gap, not silently
+ *  dropped — one `fetch_histogram` call resolves one distribution, and two
+ *  channels' distributions would need a shared explicit range to be
+ *  comparable at all.
+ *
+ *  The mark name is fixed at `rectY`, not a picked subset the way
+ *  {@link SPECTRUM_MARK_NAMES} is: the mark binds `x1`/`x2` to the bin's
+ *  own edges (`"v0"`/`"v1"`), and `lineY`/`areaY` have no `x2` channel to
+ *  bind — offering them would be a control that silently draws the wrong
+ *  picture. */
+export interface HistogramMarkProps {
+  channel: string;
+  histogram: HistogramParams;
+  /** Any valid CSS colour literal. */
+  fill?: string;
+  /** `0..1`; Plot's own `fillOpacity`. */
+  fillOpacity?: number;
+}
+
+/** C2 §5.3's histogram-cell `plot_options` production (ruling R215 item 2).
+ *  `mark` (singular) for the same reason {@link FftPlotProps}' is — see
+ *  {@link HistogramMarkProps}. `x` is the **value** axis here (the binned
+ *  channel's own unit), not time and not frequency, and carries no `type`:
+ *  a histogram's x axis is always the linear bin axis the engine's own
+ *  `bin_edges` describe. */
+export interface HistogramPlotProps {
+  chart: "histogram";
+  mark: HistogramMarkProps;
+  x?: XAxisProps;
+  y?: YAxisProps;
+  color?: { legend: true };
+  /**
+   * The chart's own title, rendered centred above the plot (R216's chrome,
+   * `components/CellFrame.tsx`'s `title` prop). Optional; absent means the
+   * cell falls back to its `# label:` line, which stays exactly as it was
+   * — an explicit title simply wins (`model/chartTitle.ts`).
+   *
+   * `title` is a real Plot option, so the generated code stays idiomatic
+   * Plot that draws its own title when run anywhere else. It is a
+   * **plot-level** option, not a mark's, which is why it sits beside
+   * `x`/`y`/`color` rather than inside a mark.
+   */
+  title?: string;
+}
+
+/** C2 §5.3's `scatter_params` production — the two parameters of one
+ *  scatter chart, both required in this fixed order, for the same reason
+ *  {@link FftParams}' six and {@link HistogramParams}' four are (C2 §5.3:
+ *  "a missing key is custom code, not a default").
+ *
+ *  There is deliberately **no** density-mode or colour-by-third-channel
+ *  slot. idl0's scatter chart had both (`scatter_chart.dart`) and
+ *  `core/src/scatter.rs` still implements both, but neither is reachable
+ *  from a v3 cell yet — a grammar slot for either would be a promise the
+ *  IPC surface cannot keep (C3 §3.5 records the same gap). */
+export interface ScatterParams {
+  /** Maximum points the engine decimates the cloud to, by uniform stride.
+   *  A positive integer, at most C3 §3.5's `MAX_SCATTER_POINTS`. In the
+   *  document rather than in host state because it changes the picture:
+   *  a budget of 500 and one of 20 000 draw visibly different clouds. */
+  pointBudget: number;
+  /** Square both axes onto one range so a G-G cloud's friction circle is
+   *  round (idl0's own default). A *rendering* choice, but a stated one:
+   *  C2 §5.3's "no renderer-only parameters" rule means the document says
+   *  whether the axes are squared, not the host. */
+  equalAspect: boolean;
+}
+
+/** One scatter cell's single dot mark (C2 §5.3's `scatter_mark`
+ *  production, ruling R215 item 3). Singular by type, like
+ *  {@link FftPlotProps.mark} and {@link HistogramPlotProps.mark}: one
+ *  `fetch_scatter` call resolves one cloud.
+ *
+ *  The mark name is fixed at `dot` — a cloud of paired samples has no
+ *  ordering along either axis, so `lineY`/`areaY` would connect points in
+ *  sample order and draw a scribble that looks like a trajectory. */
+export interface ScatterMarkProps {
+  /** The channel on the x axis (`fetch_scatter`'s `x_channel`). */
+  xChannel: string;
+  /** The channel on the y axis (`fetch_scatter`'s `y_channel`). */
+  yChannel: string;
+  scatter: ScatterParams;
+  /** Any valid CSS colour literal. */
+  fill?: string;
+  /** Dot radius, CSS px; Plot's own `r`. */
+  r?: number;
+}
+
+/** C2 §5.3's scatter-cell `plot_options` production (ruling R215 item 3).
+ *  Both axes carry a channel's own unit rather than time or frequency, so
+ *  both are the plain optional {@link XAxisProps}/{@link YAxisProps}. */
+export interface ScatterPlotProps {
+  chart: "scatter";
+  mark: ScatterMarkProps;
+  x?: XAxisProps;
+  y?: YAxisProps;
+  color?: { legend: true };
+  /**
+   * The chart's own title, rendered centred above the plot (R216's chrome,
+   * `components/CellFrame.tsx`'s `title` prop). Optional; absent means the
+   * cell falls back to its `# label:` line, which stays exactly as it was
+   * — an explicit title simply wins (`model/chartTitle.ts`).
+   *
+   * `title` is a real Plot option, so the generated code stays idiomatic
+   * Plot that draws its own title when run anywhere else. It is a
+   * **plot-level** option, not a mark's, which is why it sits beside
+   * `x`/`y`/`color` rather than inside a mark.
+   */
+  title?: string;
 }
 
 /** C2 §5.3's `plot_options` production — the Properties pane's whole
  *  internal state for one `js` cell in the `plotForm` subset. A
- *  discriminated union on `chart`: a cell is a time cell or an FFT cell,
- *  never both (C2 §5.3, "A cell is a time cell or an FFT cell, never
- *  both"). Every existing time-cell literal in this lane gained the
+ *  discriminated union on `chart`: a cell is exactly one chart kind, never
+ *  two (C2 §5.3, "A cell is a time cell or an FFT cell, never
+ *  both" — widened by ruling R215 to every chart kind the grammar has a
+ *  production for). Every existing time-cell literal in this lane gained the
  *  `chart: "time"` discriminant when this union was introduced (L6 Task
  *  20) — the time branch of `generate`/`parse` is otherwise unchanged, so
  *  every landed document round-trips byte-identically to before.
@@ -154,4 +383,10 @@ export interface FftPlotProps {
  *  grammar's `x_field` allows only the literal `"linear"`, reserved for a
  *  future non-time x-axis, C2 §8-2 — now realised as the FFT cell's own
  *  {@link FftXAxisProps}, a distinct type, not a widened `XAxisProps`). */
-export type PlotProps = TimePlotProps | FftPlotProps;
+export type PlotProps = TimePlotProps | FftPlotProps | HistogramPlotProps | ScatterPlotProps;
+
+/** Every `PlotProps.chart` discriminant, as a runtime array — the single
+ *  list a chart-type control enumerates against, same rationale as
+ *  {@link MARK_NAMES}. In the order the Properties pane's chart-type
+ *  control presents them. */
+export const CHART_KINDS: readonly PlotProps["chart"][] = ["time", "fft", "histogram", "scatter"];

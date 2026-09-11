@@ -42,7 +42,7 @@ import type { SessionSummary } from "../../../../../ipc/catalog";
 import { describeWindow, sessionLabel, type SelectionWindow } from "../../../../../state/selection";
 import type { ScannedCell } from "../cells";
 import { parse } from "../../plotForm/parse";
-import type { TimePlotProps } from "../../plotForm/types";
+import type { PlotProps, TimePlotProps } from "../../plotForm/types";
 import type { ProseBlock as ProseBlockData } from "../proseBlocks";
 import type { CombinedChannelPayload } from "../channelBindDriver";
 import { formatRate, formatUnit, type UnitDisplay } from "../unitText";
@@ -249,10 +249,17 @@ function customCodeReason(cellId: string): string {
   return `Chart \`${cellId}\` is custom code and could not be included in this report.`;
 }
 
-/** An FFT/spectrum chart — `renderChart.ts` (task R5) only renders a time
- *  chart; an FFT cell is parseable (not "custom code") but still out of
- *  this task's scope. */
-const FFT_CHART_ABSENCE_REASON = "FFT/spectrum charts are not yet included in reports — this cell's chart could not be included.";
+/** A chart kind `renderChart.ts` (task R5) does not draw. It only renders
+ *  a **time** chart; an FFT or histogram cell is parseable (not "custom
+ *  code") but still out of that task's scope, so it gets an absence block
+ *  that names which kind it is rather than one generic line. Exhaustive by
+ *  the `Record` type, so a chart kind added to `PlotProps` without a reason
+ *  here is a compile error, never a silent omission from a report. */
+const NON_TIME_CHART_ABSENCE_REASONS: Record<Exclude<PlotProps["chart"], "time">, string> = {
+  fft: "FFT/spectrum charts are not yet included in reports — this cell's chart could not be included.",
+  histogram: "Histogram charts are not yet included in reports — this cell's chart could not be included.",
+  scatter: "Scatter charts are not yet included in reports — this cell's chart could not be included.",
+};
 
 /** This cell parsed and is a time chart, but no channel data was supplied
  *  for it at all (the caller never fetched/retained any, e.g. the cell was
@@ -506,9 +513,10 @@ function buildChartBlocks(
       blocks.push({ kind: "absence", cellId, reason });
       continue;
     }
-    if (props.chart === "fft") {
-      entries.push(`Cell ${cellId}: ${FFT_CHART_ABSENCE_REASON}`);
-      blocks.push({ kind: "absence", cellId, reason: FFT_CHART_ABSENCE_REASON });
+    if (props.chart !== "time") {
+      const reason = NON_TIME_CHART_ABSENCE_REASONS[props.chart];
+      entries.push(`Cell ${cellId}: ${reason}`);
+      blocks.push({ kind: "absence", cellId, reason });
       continue;
     }
 

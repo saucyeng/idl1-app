@@ -19,7 +19,11 @@ import {
   parse,
   type FftParams,
   type FftPlotProps,
+  type HistogramParams,
+  type HistogramPlotProps,
   type MarkProps,
+  type ScatterParams,
+  type ScatterPlotProps,
   type PlotProps,
   type TimePlotProps,
   type XAxisProps,
@@ -112,6 +116,225 @@ export function defaultFftPlotProps(channels: readonly { id: string; label: stri
   return props;
 }
 
+/** The default single-mark `HistogramPlotProps` a chart-type switch (or a
+ *  brand-new histogram cell) seeds (ruling R215 item 2): 64 equal-width
+ *  bins, symmetric about zero, plotted as each bin's share of the window's
+ *  finite samples.
+ *
+ *  **Why these three.** `symmetric: true` is the suspension case the chart
+ *  exists for — a fork-velocity distribution is signed, and a range that
+ *  does not put zero on a bin boundary splits compression from rebound
+ *  across one straddling bin. `normalise: "fraction"` is what makes two
+ *  windows comparable at all when they are different lengths, which is the
+ *  reason to select two windows. 64 bins reads at a graph card's width
+ *  without the author touching anything. All three are ordinary editable
+ *  values, not locked defaults — and all four are written into the
+ *  document, so the picture is fully stated there (C2 §5.3).
+ *
+ *  `channel` is `channels`' first entry when one is available, or the empty
+ *  string otherwise, mirroring {@link defaultPlotProps}. */
+export function defaultHistogramPlotProps(channels: readonly { id: string; label: string; unit?: string }[]): HistogramPlotProps {
+  const props: HistogramPlotProps = {
+    chart: "histogram",
+    mark: {
+      channel: channels[0]?.id ?? "",
+      histogram: { binMode: "count", binValue: 64, symmetric: true, normalise: "fraction" },
+    },
+  };
+  const label = suggestAxisLabel(channels[0]);
+  if (label !== undefined) props.x = { label };
+  return props;
+}
+
+/** The default single-mark `ScatterPlotProps` a chart-type switch (or a
+ *  brand-new scatter cell) seeds (ruling R215 item 3): the first two
+ *  available channels against each other, 4096 points, equal-aspect axes.
+ *
+ *  **Why these three.** Equal aspect on by default is idl0's own G-G
+ *  behaviour and the reason the chart exists — an unsquared friction circle
+ *  is an ellipse, which misreads as a lateral/longitudinal grip asymmetry
+ *  that is not there. 4096 points is a dense cloud that still draws as
+ *  4096 SVG circles without stalling a frame; the author raises it when
+ *  they want the tails and lowers it when they want responsiveness. The
+ *  *second* channel defaults to `channels[1]`, not to `channels[0]` again:
+ *  a cloud of a channel against itself is the identity diagonal, which is
+ *  a correct picture of nothing. With only one channel available it does
+ *  fall back to the same one, because there is no other honest choice.
+ *
+ *  Both axis labels are seeded from each channel's own recorded unit
+ *  (R65), since both axes carry a channel's value rather than time. */
+export function defaultScatterPlotProps(channels: readonly { id: string; label: string; unit?: string }[]): ScatterPlotProps {
+  const xChannel = channels[0]?.id ?? "";
+  const yChannel = channels[1]?.id ?? xChannel;
+  const props: ScatterPlotProps = {
+    chart: "scatter",
+    mark: { xChannel, yChannel, scatter: { pointBudget: 4096, equalAspect: true } },
+  };
+  const xLabel = suggestAxisLabel(channels[0]);
+  if (xLabel !== undefined) props.x = { label: xLabel };
+  const yLabel = suggestAxisLabel(channels.find((c) => c.id === yChannel));
+  if (yLabel !== undefined) props.y = { label: yLabel };
+  return props;
+}
+
+/** The default `TimePlotProps` the **lap variance** chart type seeds
+ *  (ruling R215 item 4): one line mark on the chosen definition, bound to
+ *  the lap-relative time column so every selected lap's trace starts at
+ *  zero and they superimpose.
+ *
+ *  **Why this is a preset over the time cell, not its own chart kind.**
+ *  `lap_delta_time(...)` (C2 §3.8's current name for what R73 shipped as
+ *  `variance_time`) already evaluates as an ordinary `math` definition with
+ *  a time axis, and the app already fetches a definition per selected
+ *  window through `fetch_host_channel_v2`. A variance trace is therefore
+ *  exactly a time cell charting that definition on a lap-relative axis --
+ *  no new engine command, no new grammar production, and no second code
+ *  path that could drift from the one every other definition chart uses.
+ *  The picker offers it because "chart this definition as a lap trace" is a
+ *  real gesture; the Properties pane does not list it as a chart *type*,
+ *  because a cell's `PlotProps.chart` would say `"time"` and a control that
+ *  disagreed with the document would be a lie.
+ *
+ *  **The overlay is the window selection**, not a per-mark `lap`: the app
+ *  fetches one series per selected window and
+ *  `host/protocol.ts`'s `combineChannelWindows` combines them under one
+ *  host variable (R127 item 1). Selecting three laps draws three traces
+ *  from this one mark. `MarkProps.lap` is deliberately left unset -- it is
+ *  plumbed but not applied to narrow a fetch (`jsCellBinding.ts`'s own
+ *  note), so seeding it would promise a narrowing that does not happen. */
+export function defaultVariancePlotProps(channels: readonly { id: string; label: string; unit?: string }[]): TimePlotProps {
+  const props: TimePlotProps = {
+    chart: "time",
+    marks: [{ channel: channels[0]?.id ?? "", mark: "lineY", xField: "tr" }],
+    x: { label: "Lap time (s)" },
+  };
+  const label = suggestAxisLabel(channels[0]);
+  if (label !== undefined) props.y = { label };
+  return props;
+}
+
+/** Sets every mark's x binding (C2 §5.3's `x_field_binding`, ruling R215
+ *  items 4-5): `"tr"` for the lap-relative axis, or `undefined` for
+ *  session time. Applied to **every** mark at once, not per mark: a plot
+ *  has one x scale, and two marks on different time columns would draw one
+ *  against the other's axis. That is why the Properties pane presents this
+ *  as a plot-level control even though the grammar stores it per mark --
+ *  the grammar has no plot-level slot for it, and inventing one would put
+ *  the same fact in two places that could disagree. */
+export function setTimeXField(props: TimePlotProps, xField: "tr" | undefined): TimePlotProps {
+  return {
+    ...props,
+    marks: props.marks.map((m) => {
+      if (xField === undefined) {
+        const { xField: _drop, ...rest } = m;
+        return rest;
+      }
+      return { ...m, xField };
+    }),
+  };
+}
+
+/** The x binding the Properties pane shows for a whole time cell: `"tr"`
+ *  only when **every** mark binds it (a mixed cell is a hand edit, and
+ *  reporting the first mark's choice for all of them would misdescribe the
+ *  others). An empty `marks` array reads as session time, the default. */
+export function timeXFieldOf(props: TimePlotProps): "tr" | undefined {
+  return props.marks.length > 0 && props.marks.every((m) => m.xField === "tr") ? "tr" : undefined;
+}
+
+/** One entry in the Properties pane's y-axis scale picker (ruling R215
+ *  item 5). `value` is the picker's own opaque token — **not** a
+ *  `YAxisProps.type`, because the two signed scales share the type
+ *  `"pow"` and differ only by exponent, so a picker keyed on `type` could
+ *  not tell them apart. `patch` is what committing this choice writes. */
+export interface YScaleChoice {
+  value: string;
+  label: string;
+  /** The `YAxisProps` fields this choice sets. `type: undefined` clears
+   *  both, restoring Plot's own default. */
+  patch: Pick<YAxisProps, "type" | "exponent">;
+  /** True for a choice that only makes sense on an axis whose values can
+   *  be negative — the signed scales, whose whole point is treating
+   *  compression and rebound symmetrically. A count, a fraction or a
+   *  spectrum magnitude is non-negative by construction, so offering these
+   *  there would be noise. */
+  signedOnly?: true;
+}
+
+/** The picker token standing for "no explicit scale — Plot's default". A
+ *  real, selectable choice, not an unset state. */
+export const Y_SCALE_DEFAULT = "default";
+
+/**
+ * Every y-axis scale the Properties pane offers, in display order (ruling
+ * R215 item 5). The two signed scales are idl0's `sqrtSigned` and
+ * `squareSigned` (`worksheet.dart`), expressed as Plot's `pow` scale —
+ * d3's power scale, which is **symmetric about zero**, so it compresses or
+ * expands compression and rebound equally rather than folding one side
+ * away the way `"sqrt"` does on a signed channel.
+ *
+ * `"pow"` is deliberately not offered raw: it is meaningless without an
+ * exponent, and an exponent field beside a scale picker is a control that
+ * only means something for one of its options. The grammar still admits any
+ * positive exponent (a hand edit round-trips), so this list is what the
+ * pane *offers*, never what it accepts — the same "accepted, never offered"
+ * split ruling R168 drew for the retired `"magnitude"` scaling.
+ */
+export const Y_SCALE_CHOICES: readonly YScaleChoice[] = [
+  { value: Y_SCALE_DEFAULT, label: "(default)", patch: { type: undefined, exponent: undefined } },
+  { value: "linear", label: "Linear", patch: { type: "linear", exponent: undefined } },
+  { value: "log", label: "Log", patch: { type: "log", exponent: undefined } },
+  { value: "sqrt", label: "Sqrt", patch: { type: "sqrt", exponent: undefined } },
+  { value: "signed-sqrt", label: "Signed √", patch: { type: "pow", exponent: 0.5 }, signedOnly: true },
+  { value: "signed-square", label: "Signed x²", patch: { type: "pow", exponent: 2 }, signedOnly: true },
+];
+
+/** The choices to offer for one axis: every entry for an axis whose values
+ *  can be negative (a channel's own value), or only the unsigned ones for
+ *  an axis that cannot go below zero (a count, a fraction, a spectrum
+ *  magnitude). */
+export function yScaleChoicesFor(axis: "signed" | "non-negative"): readonly YScaleChoice[] {
+  return axis === "signed" ? Y_SCALE_CHOICES : Y_SCALE_CHOICES.filter((c) => c.signedOnly !== true);
+}
+
+/**
+ * The picker token describing `y`'s current scale — the inverse of
+ * {@link Y_SCALE_CHOICES}' `patch`. A `"pow"` axis whose exponent matches
+ * neither named choice (a hand edit, which the grammar allows) reports its
+ * own `"pow:<exponent>"` token, so the caller can render it as a real
+ * option rather than silently displaying one of the two named scales and
+ * writing that lie back on the next unrelated edit — the same failure
+ * `fftScalingSelectOptions` exists to prevent.
+ */
+export function yScaleChoiceOf(y: YAxisProps | undefined): string {
+  if (y?.type === undefined) return Y_SCALE_DEFAULT;
+  if (y.type !== "pow") return y.type;
+  const named = Y_SCALE_CHOICES.find((c) => c.patch.type === "pow" && c.patch.exponent === y.exponent);
+  return named?.value ?? `pow:${String(y.exponent)}`;
+}
+
+/** The scale options to render for `y`, on an axis of kind `axis`
+ *  (ruling R215 item 5): {@link yScaleChoicesFor}'s list, plus — for this
+ *  render only — an entry for a hand-edited `pow` exponent the list does
+ *  not name. Same mechanism and same reason as
+ *  {@link fftScalingSelectOptions}. */
+export function yScaleSelectOptions(y: YAxisProps | undefined, axis: "signed" | "non-negative"): readonly YScaleChoice[] {
+  const offered = yScaleChoicesFor(axis);
+  const current = yScaleChoiceOf(y);
+  if (offered.some((c) => c.value === current)) return offered;
+  return [...offered, { value: current, label: `Pow ${String(y?.exponent)}`, patch: { type: "pow", exponent: y?.exponent } }];
+}
+
+/** Sets or clears the plot's zero line (C2 §5.3's `zero_rule`, ruling R215
+ *  item 5): `true` or entirely absent, the same shape `setColorLegend`
+ *  writes for `color`. Time cells only — see {@link TimePlotProps.zeroLine}
+ *  for why no other chart kind has one. */
+export function setZeroLine(props: TimePlotProps, enabled: boolean): TimePlotProps {
+  if (enabled) return { ...props, zeroLine: true };
+  const { zeroLine: _drop, ...rest } = props;
+  return rest;
+}
+
 /** The code "Reset to form" writes back: `generate` of `lastKnownProps`
  *  when one exists, or of {@link defaultPlotProps} otherwise (design §6 /
  *  this task's brief — never a no-op, even for a cell that started as
@@ -201,12 +424,15 @@ export function overlapPercent(windowSize: number | "all", hopSize: number | "al
  *  switch that isn't happening. */
 export function setChartType(
   props: PlotProps,
-  next: "time" | "fft",
+  next: PlotProps["chart"],
   channels: readonly { id: string; label: string; unit?: string }[]
 ): PlotProps {
-  if (props.chart === "time" && next === "fft") {
-    const channelId = props.marks[0]?.channel ?? channels[0]?.id ?? "";
-    const channel = channels.find((c) => c.id === channelId);
+  if (props.chart === next) return props;
+
+  const channelId = chartTypeChannel(props, channels);
+  const channel = channels.find((c) => c.id === channelId);
+
+  if (next === "fft") {
     const seed = defaultFftPlotProps(channels);
     const label = suggestSpectrumAxisLabel(channel, seed.mark.fft.scaling);
     const withChannel: FftPlotProps = { ...seed, mark: { ...seed.mark, channel: channelId } };
@@ -215,13 +441,70 @@ export function setChartType(
     return withChannel;
   }
 
-  if (props.chart === "fft" && next === "time") {
-    const channelId = props.mark.channel;
-    const seed = defaultPlotProps(channels) as TimePlotProps;
-    return { ...seed, marks: [{ ...seed.marks[0], channel: channelId }] };
+  if (next === "histogram") {
+    const seed = defaultHistogramPlotProps(channels);
+    const label = suggestAxisLabel(channel);
+    const withChannel: HistogramPlotProps = { ...seed, mark: { ...seed.mark, channel: channelId } };
+    if (label !== undefined) withChannel.x = { label };
+    else delete withChannel.x;
+    return withChannel;
   }
 
-  return props;
+  if (next === "scatter") {
+    // The carried channel takes the **x** axis; y keeps the seed's own
+    // second choice unless that is the same channel, in which case the
+    // seed's first is used instead — switching into a scatter must not
+    // land on the identity diagonal just because the source cell happened
+    // to chart `channels[1]`.
+    const seed = defaultScatterPlotProps(channels);
+    const yChannel = seed.mark.yChannel === channelId ? (seed.mark.xChannel === channelId ? channelId : seed.mark.xChannel) : seed.mark.yChannel;
+    const withChannels: ScatterPlotProps = { ...seed, mark: { ...seed.mark, xChannel: channelId, yChannel } };
+    const xLabel = suggestAxisLabel(channel);
+    if (xLabel !== undefined) withChannels.x = { label: xLabel };
+    else delete withChannels.x;
+    const yLabel = suggestAxisLabel(channels.find((c) => c.id === yChannel));
+    if (yLabel !== undefined) withChannels.y = { label: yLabel };
+    else delete withChannels.y;
+    return withChannels;
+  }
+
+  const seed = defaultPlotProps(channels) as TimePlotProps;
+  return { ...seed, marks: [{ ...seed.marks[0], channel: channelId }] };
+}
+
+/** The channel a chart-type switch carries across (R80 Q6, widened by
+ *  ruling R215 to every chart kind): the **first** mark's channel, whatever
+ *  shape that mark has — `marks[0]` for a time cell, the single `mark` for
+ *  an FFT or histogram cell — falling back to `channels[0]` when the source
+ *  cell has no mark at all. One function rather than a `props.chart` check
+ *  at each switch arm, so "first mark drives it" is stated once. */
+function chartTypeChannel(props: PlotProps, channels: readonly { id: string }[]): string {
+  if (props.chart === "time") return props.marks[0]?.channel ?? channels[0]?.id ?? "";
+  // A scatter cell has two channels; its **x** channel is the one that
+  // carries, matching how the switch *into* a scatter puts the carried
+  // channel on x. The y channel is not preserved across a switch to a
+  // one-channel kind: there is nowhere for it to go, and silently
+  // preferring it over x would be arbitrary.
+  if (props.chart === "scatter") return props.mark.xChannel;
+  return props.mark.channel;
+}
+
+/** Patches the two scatter parameters (ruling R215 item 3). A plain merge:
+ *  neither parameter forces the other. */
+export function updateScatterParams(props: ScatterPlotProps, patch: Partial<ScatterParams>): ScatterPlotProps {
+  return { ...props, mark: { ...props.mark, scatter: { ...props.mark.scatter, ...patch } } };
+}
+
+/** Patches the four histogram parameters (ruling R215 item 2). A plain
+ *  merge: unlike {@link updateFftParams}, no parameter here forces another
+ *  (R76's single-segment rule has no histogram counterpart — every
+ *  combination of the four is a legal request). Switching `binMode` does
+ *  **not** convert `binValue` between a count and a width: the two are
+ *  different quantities in different units, and a conversion would need the
+ *  data's own range, which this pure module does not have. The caller
+ *  supplies a fresh `binValue` alongside the mode instead. */
+export function updateHistogramParams(props: HistogramPlotProps, patch: Partial<HistogramParams>): HistogramPlotProps {
+  return { ...props, mark: { ...props.mark, histogram: { ...props.mark.histogram, ...patch } } };
 }
 
 /** Patches the six FFT parameters. Setting `averaging: "none"` forces
@@ -310,9 +593,13 @@ function isEmptyXAxis(x: XAxisProps): boolean {
   return x.label === undefined && x.domain === undefined;
 }
 
-/** True when every field of `y` is `undefined` (see {@link isEmptyXAxis}). */
+/** True when every field of `y` is `undefined` (see {@link isEmptyXAxis}).
+ *  `exponent` is checked alongside the rest: it can only be set with
+ *  `type: "pow"`, so it can never be the sole surviving field in practice
+ *  — but leaving it out of this check would let a future caller produce a
+ *  `y: { exponent: n }` the generator refuses to emit. */
 function isEmptyYAxis(y: YAxisProps): boolean {
-  return y.label === undefined && y.domain === undefined && y.type === undefined;
+  return y.label === undefined && y.domain === undefined && y.type === undefined && y.exponent === undefined;
 }
 
 /** Shallow-merges `patch` into `props.x` (starting from `{}` if `props.x`
@@ -327,6 +614,10 @@ export function updateXAxis(props: PlotProps, patch: Partial<Pick<XAxisProps, "l
   if (props.chart === "fft") {
     return { ...props, x: { ...props.x, ...patch } };
   }
+  // A histogram or scatter cell's `x` is the same optional `XAxisProps` a
+  // time cell's is (its meaning differs -- a channel's own unit rather than
+  // seconds -- but its shape does not), so it takes the drop-when-empty
+  // path below rather than the FFT arm's always-present one.
   const next: XAxisProps = { ...(props.x ?? {}), ...patch };
   if (isEmptyXAxis(next)) {
     const { x: _drop, ...rest } = props;
@@ -353,6 +644,20 @@ export function updateYAxis(props: PlotProps, patch: Partial<YAxisProps>): PlotP
     return rest;
   }
   return { ...props, y: next };
+}
+
+/** Sets or clears the plot's own title (C2 §5.3's `title` option). An
+ *  empty or whitespace-only string clears it rather than writing
+ *  `title: ""`: a blank title is not a title, and emitting one would put a
+ *  key in the document that draws nothing and only stops the `# label:`
+ *  fallback from applying. Shared by every chart kind — `title` sits
+ *  beside `x`/`y`/`color` in every one of them. */
+export function setPlotTitle<T extends PlotProps>(props: T, title: string): T {
+  if (title.trim().length === 0) {
+    const { title: _drop, ...rest } = props;
+    return rest as T;
+  }
+  return { ...props, title };
 }
 
 /** Sets or clears the plot's colour legend (C2 §5.3's `color_opt`, the
