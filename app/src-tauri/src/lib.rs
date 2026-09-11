@@ -49,6 +49,12 @@ pub fn run() {
             // Every command that serves samples reads through it, so a
             // channel is decoded at most once while it stays resident.
             app.manage(idl_rs_tauri::session_cache::SessionCache::new());
+            // Ruling R221 item 1: every decode past ~200 ms reports itself as
+            // the C3 §3.2 `decode_progress` event. Installed here, after the
+            // cache is managed, because this is the only place an
+            // `AppHandle` and the cache exist together; what the event is and
+            // when it fires both live in `session_cache`.
+            idl_rs_tauri::session_cache::install_progress_sink(&app.handle().clone());
             // The firmware/OTA state machine's current state (C3 §3.8, R198).
             // Managed unconditionally: it holds no data-root-dependent state,
             // and updating firmware is exactly the kind of thing a user may

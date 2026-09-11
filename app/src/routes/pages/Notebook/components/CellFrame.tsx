@@ -51,6 +51,17 @@ export interface CellFrameProps {
    * being recomputed.
    */
   status: CellStatus;
+  /**
+   * How far through its channel decodes this cell is, `[0, 1]`, or `null`
+   * when none of its channels is being decoded (ruling R221 item 1(a);
+   * `Notebook/model/decodeProgress.ts`).
+   *
+   * A non-`null` value replaces the indeterminate spinner with a determinate
+   * ring in both chromes. `null` is the common case and is not the same as
+   * `0`: a decode fast enough to finish inside ~200 ms never reports at all,
+   * and a ring stuck at zero for such a cell would be worse than no ring.
+   */
+  decodeFraction?: number | null;
   /** This cell's error message, shown as an in-place `NoteBlock` whenever
    *  there is one — deliberately not gated on `status === "error"`, so a
    *  failed cell that is now re-evaluating keeps its message on screen
@@ -134,10 +145,58 @@ function useMsSinceSettle(status: CellStatus): number | null {
 /** The 12 px status glyph overlaid on a plot's top-left corner (ruling
  *  R216 item 2). An error's ✕ carries the message: hovering shows it,
  *  clicking pins it open until clicked again. */
-function StatusGlyph({ status, error, msSinceSettle }: { status: CellStatus; error?: string; msSinceSettle: number | null }) {
+/**
+ * The determinate form of the busy glyph (ruling R221 item 1(a)): a 12 px
+ * ring filled clockwise to `fraction` of a turn.
+ *
+ * An SVG circle with a dash pattern rather than a rotating icon — the point
+ * is that it does *not* animate. A decode that has stopped moving shows a
+ * ring that has stopped moving, which is the honest picture and the one a
+ * spinner cannot draw.
+ *
+ * Drawn with `currentColor`, so it inherits whatever the glyph's own span
+ * sets, and rotated so 0 starts at twelve o'clock rather than three.
+ */
+function DecodeRing({ fraction }: { fraction: number }) {
+  const RADIUS = 5;
+  const circumference = 2 * Math.PI * RADIUS;
+  const swept = Math.min(Math.max(fraction, 0), 1) * circumference;
+
+  return (
+    <svg viewBox="0 0 12 12" className="size-full" aria-hidden="true">
+      <circle cx="6" cy="6" r={RADIUS} fill="none" stroke="currentColor" strokeWidth="1.5" opacity="0.25" />
+      <circle
+        cx="6"
+        cy="6"
+        r={RADIUS}
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.5"
+        strokeLinecap="round"
+        strokeDasharray={`${swept} ${circumference}`}
+        transform="rotate(-90 6 6)"
+      />
+    </svg>
+  );
+}
+
+function StatusGlyph({
+  status,
+  error,
+  msSinceSettle,
+  decodeFraction,
+}: {
+  status: CellStatus;
+  error?: string;
+  msSinceSettle: number | null;
+  decodeFraction?: number | null;
+}) {
   const [pinned, setPinned] = useState(false);
   const [hovered, setHovered] = useState(false);
   const glyph = plotStatusGlyph(status, msSinceSettle);
+  // The ring only ever replaces the spinner: a settled or failed cell shows
+  // its tick or its cross whatever a late decode event says.
+  const ring = glyph === "spinner" && decodeFraction !== null && decodeFraction !== undefined ? decodeFraction : null;
 
   if (glyph === "none") return null;
 
@@ -148,7 +207,15 @@ function StatusGlyph({ status, error, msSinceSettle }: { status: CellStatus; err
       <span
         className={`pointer-events-auto flex size-[12px] items-center justify-center ${glyph === "cross" ? "cursor-pointer text-accent" : glyph === "tick" ? "text-good" : "text-fg-faint"}`}
         role={glyph === "cross" ? "button" : "status"}
-        aria-label={glyph === "cross" ? "Evaluation failed" : glyph === "tick" ? "Settled" : "Evaluating"}
+        aria-label={
+          glyph === "cross"
+            ? "Evaluation failed"
+            : glyph === "tick"
+              ? "Settled"
+              : ring !== null
+                ? `Loading channels, ${Math.floor(ring * 100)} %`
+                : "Evaluating"
+        }
         tabIndex={glyph === "cross" ? 0 : undefined}
         onMouseEnter={() => setHovered(true)}
         onMouseLeave={() => setHovered(false)}
@@ -160,7 +227,7 @@ function StatusGlyph({ status, error, msSinceSettle }: { status: CellStatus; err
           setPinned((open) => !open);
         }}
       >
-        {glyph === "spinner" ? <Loader2Icon className="size-[12px] animate-spin" /> : glyph === "tick" ? "✓" : "✕"}
+        {ring !== null ? <DecodeRing fraction={ring} /> : glyph === "spinner" ? <Loader2Icon className="size-[12px] animate-spin" /> : glyph === "tick" ? "✓" : "✕"}
       </span>
       {showError && (
         /* Full message, mono, selectable (R216 item 2). `pointer-events-auto`
@@ -200,6 +267,7 @@ export default function CellFrame({
   selected,
   onSelect,
   status,
+  decodeFraction = null,
   error,
   codeVisible,
   onToggleCode,
@@ -225,7 +293,7 @@ export default function CellFrame({
 
   const output = (
     <div className="relative">
-      {overlay && <StatusGlyph status={status} error={error} msSinceSettle={msSinceSettle} />}
+      {overlay && <StatusGlyph status={status} error={error} msSinceSettle={msSinceSettle} decodeFraction={decodeFraction} />}
       {overlay && title !== undefined && (
         /* Centred in the plot's own top margin (R216 item 2) — absolutely
            positioned rather than a row of its own, so a plot with no label
@@ -246,8 +314,20 @@ export default function CellFrame({
       )}
       {children}
       {isCellBusy(status) && !overlay && (
-        <div className="pointer-events-none absolute inset-0 flex items-center justify-center bg-surface/60" role="status" aria-label="Recomputing">
-          <Loader2Icon className="size-5 animate-spin text-fg-dim" />
+        <div
+          className="pointer-events-none absolute inset-0 flex items-center justify-center bg-surface/60"
+          role="status"
+          aria-label={decodeFraction !== null ? `Loading channels, ${Math.floor(decodeFraction * 100)} %` : "Recomputing"}
+        >
+          {/* Ruling R221 item 1(a): a determinate ring while this cell's own
+              channels are decoding, the indeterminate spinner otherwise. */}
+          {decodeFraction !== null ? (
+            <span className="block size-5 text-fg-dim">
+              <DecodeRing fraction={decodeFraction} />
+            </span>
+          ) : (
+            <Loader2Icon className="size-5 animate-spin text-fg-dim" />
+          )}
         </div>
       )}
     </div>
