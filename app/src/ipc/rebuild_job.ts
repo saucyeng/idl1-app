@@ -14,6 +14,11 @@ export interface RebuildProgressEvent {
   done: number;
   total: number;
   phase: RebuildPhase;
+  /** `true` on the one observation emitted after the staged database has
+   *  swapped in, and on nothing else. `done === total` cannot stand in for
+   *  it: every phase ends that way, and the last workbook of the last phase
+   *  reaches it before the swap. */
+  finished: boolean;
 }
 
 /** A finished rebuild's counts (C3 §3.2). `blobs_carried`/`blobs_hashed`
@@ -78,7 +83,9 @@ export async function onRebuildProgress(
  *  meanwhile).
  *
  *  Implemented on the completion event rather than by polling: the run's
- *  terminal observation is the `workbooks` phase with `done === total`. */
+ *  terminal observation is the one carrying `finished`, emitted after the
+ *  swap and after the status is updated, so the `last_run` read below is
+ *  this run's and not the previous one's. */
 export async function whenRebuildFinishes(): Promise<RebuildRunSummary | null> {
   const initial = await rebuildStatus();
   if (!initial.running) return initial.last_run;
@@ -89,7 +96,7 @@ export async function whenRebuildFinishes(): Promise<RebuildRunSummary | null> {
   });
 
   const unlisten = await onRebuildProgress((event) => {
-    if (event.done < event.total || event.phase !== "workbooks") return;
+    if (!event.finished) return;
     settle();
   });
   // The run can finish between the status read above and this subscription,
