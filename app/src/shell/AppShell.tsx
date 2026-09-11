@@ -286,8 +286,8 @@ export default function AppShell() {
           {/* THE ONE CONTENT CONTAINER (ruling R221.1). Everything a route
               draws lives inside this element, and `shell-content`'s
               `isolation: isolate` makes it a stacking context: the sandbox
-              iframe host's `zIndex: 0`, a sticky table header's `z-10`, a
-              cell's overlay chrome — every z-index inside a route is scoped
+              iframe host's fixed positioning, a sticky table header's
+              `z-10`, a cell's overlay chrome — every z-index inside a route is scoped
               here and cannot reach past the chrome layer, whatever value it
               picks.
 

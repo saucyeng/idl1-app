@@ -365,7 +365,13 @@ export default function Device() {
   );
 
   return (
-    <div className="device-tab mx-auto flex max-w-[480px] flex-col gap-4 p-4">
+    /* `h-full overflow-y-auto`, like every other route's own scroll
+       container (ruling R221.1): the shell's content container clips rather
+       than scrolls, so a route that supplies no scrolling element of its own
+       loses whatever falls past the fold. This tab is a single 480 px column
+       of cards -- hero, WiFi, files, config -- that is easily taller than a
+       short window. */
+    <div className="device-tab mx-auto flex h-full max-w-[480px] flex-col gap-4 overflow-y-auto p-4">
       {sidebarNode === null ? deviceList : createPortal(deviceList, sidebarNode)}
       <section className="device-tab__status flex flex-col gap-2">
         <HeroCard
