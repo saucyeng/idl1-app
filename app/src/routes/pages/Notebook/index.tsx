@@ -90,7 +90,7 @@ import { channelDataKeysForCell, channelDataKeysToEvict } from "./model/channelD
 import { CellRunSequencer } from "./model/cellRunSequencer";
 import { isCodeVisible, toggleCode } from "./model/codeVisibility";
 import { isShowCodeShortcut, plotLegendEntries } from "./model/plotChrome";
-import { cellLabelFromBody } from "./graph/cellDisplayName";
+import { chartTitleFor } from "./model/chartTitle";
 import { denseChromeMode, readDenseMode, sharesXAxisAbove, writeDenseMode } from "./model/denseMode";
 import { createCursorBus, type CursorBus } from "./interaction/cursorBus";
 import { BASIC_MOUSE_PRESET, findInputMapPreset, INPUT_MAP_PRESETS, type InputMapPreset } from "./interaction/inputMap";
@@ -3420,7 +3420,10 @@ export default function NotebookPage() {
           }}
           frame={(cell, output, index) => {
             const cellCode = state.markdown !== null ? decodeByteRange(state.markdown, cell.bodyRange) : undefined;
-            const cellTitle = cellCode !== undefined ? cellLabelFromBody(cellCode) : null;
+            // C2 §5.3's `title` wins over the `# label:` line when the cell
+            // states one; `model/chartTitle.ts` owns that precedence so the
+            // notebook, the graph card and the report cannot disagree.
+            const cellTitle = cellCode !== undefined ? chartTitleFor(cellCode) : null;
             return (
             <CellFrame
               cell={cell}

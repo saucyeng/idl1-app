@@ -259,6 +259,10 @@ export function buildPlotOptions(
     style: theme.style,
     marks,
   };
+  // C2 §5.3's `title` is a real Plot option, so a titled cell keeps its
+  // title on paper too — a report that dropped it would name the chart
+  // differently from the notebook it was printed from.
+  if (props.title !== undefined) options.title = props.title;
   if (props.x !== undefined) options.x = props.x;
   if (props.y !== undefined) options.y = props.y;
   return options;

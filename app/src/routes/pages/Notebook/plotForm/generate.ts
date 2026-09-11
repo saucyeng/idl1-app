@@ -170,6 +170,10 @@ function renderPlotBody(topLines: string[]): string {
  *  block. */
 function generateTime(props: TimePlotProps): string {
   const topLines: string[] = [];
+  // `title` first, so the generated code reads the way the picture does
+  // — the chart's name above its axes. C2 §5.3 fixes this position, and
+  // `parse` requires it for a byte-identical round trip.
+  if (props.title !== undefined) topLines.push(`title: ${jsString(props.title)}`);
   if (props.x !== undefined) {
     const renderedX = renderXAxis(props.x);
     if (renderedX !== null) topLines.push(`x: ${renderedX}`);
@@ -196,7 +200,12 @@ function generateTime(props: TimePlotProps): string {
  *  spectrum mark rendered at column 4, its `fft_params` object on one
  *  line. Same formatting policy as {@link generateTime}. */
 function generateFft(props: FftPlotProps): string {
-  const topLines: string[] = [`x: ${renderFftXAxis(props.x)}`];
+  const topLines: string[] = [];
+  // `title` first, so the generated code reads the way the picture does
+  // — the chart's name above its axes. C2 §5.3 fixes this position, and
+  // `parse` requires it for a byte-identical round trip.
+  if (props.title !== undefined) topLines.push(`title: ${jsString(props.title)}`);
+  topLines.push(`x: ${renderFftXAxis(props.x)}`);
   if (props.y !== undefined) {
     const renderedY = renderYAxis(props.y);
     if (renderedY !== null) topLines.push(`y: ${renderedY}`);
@@ -249,6 +258,10 @@ function renderHistogramMark(m: HistogramMarkProps): string {
  *  `bin_edges` describe, so there is nothing for the document to choose. */
 function generateHistogram(props: HistogramPlotProps): string {
   const topLines: string[] = [];
+  // `title` first, so the generated code reads the way the picture does
+  // — the chart's name above its axes. C2 §5.3 fixes this position, and
+  // `parse` requires it for a byte-identical round trip.
+  if (props.title !== undefined) topLines.push(`title: ${jsString(props.title)}`);
   if (props.x !== undefined) {
     const renderedX = renderXAxis(props.x);
     if (renderedX !== null) topLines.push(`x: ${renderedX}`);
@@ -293,6 +306,10 @@ function renderScatterMark(m: ScatterMarkProps): string {
  *  the single dot mark. */
 function generateScatter(props: ScatterPlotProps): string {
   const topLines: string[] = [];
+  // `title` first, so the generated code reads the way the picture does
+  // — the chart's name above its axes. C2 §5.3 fixes this position, and
+  // `parse` requires it for a byte-identical round trip.
+  if (props.title !== undefined) topLines.push(`title: ${jsString(props.title)}`);
   if (props.x !== undefined) {
     const renderedX = renderXAxis(props.x);
     if (renderedX !== null) topLines.push(`x: ${renderedX}`);
