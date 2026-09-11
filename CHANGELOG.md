@@ -6,6 +6,27 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 
 ### Added
 
+- **Indexing is a background job, and it says what it is doing (2026-09-11,
+  rulings R207 and R208 item 1).** Detecting every session's track visits
+  and laps used to happen on the way to opening a workbook, behind a
+  spinner that said "Looking for workbooks…" for as long as it took.
+  It is now its own job: it starts on launch and after a catalog rebuild,
+  runs on every core but one, commits each session as it finishes, and can
+  be cancelled and resumed — a stopped run loses at most the session it was
+  working on, and the next one skips everything already current. While it
+  runs, the status chip reads "Indexing 12 / 159 · <session>", and when it
+  is done it says so. Opening one session no longer waits for the library:
+  it indexes that one session, which is a file read when it is already
+  current. The notebook's old label now names whatever it is actually
+  waiting on.
+
+- **`idl-rs library index` (2026-09-11, ruling R208 item 1).** The shell
+  runs the same job: `idl-rs library index --data-dir <dir> [session ids]
+  [--force] [--workers N]`, printing a line per session. `library fold-in`
+  and `library rebuild` now finish by running it, so a library folded in
+  from the command line opens ready instead of indexing itself on first
+  launch.
+
 - **The maths graph says what each node is (2026-09-11, ruling R214).**
   Three kinds now read apart at a glance without relying on colour: a
   source is a device channel, square-cornered on its left edge with a small
@@ -106,6 +127,11 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
   the callback, now defers that update to `requestAnimationFrame`.
 
 ### Changed
+
+- **Re-indexing a session no longer re-reads its source file (2026-09-11).**
+  Refreshing a session's catalog rows re-hashed its whole original log to
+  prove the blob was intact, every time. It now does that once, on the
+  insert that first records the blob.
 
 - **The chart properties form is built from real controls (2026-09-11,
   ruling R212).** Number fields carry their unit and can be dragged to

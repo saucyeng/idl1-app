@@ -788,6 +788,80 @@ Errors (`resolve_quarantine`): `not_found` (unknown `entry_id`),
 `invalid_argument` (`"restore"` whose `original_path` is occupied, or an
 `action` that is neither `"restore"` nor `"discard"`), `io`, `internal`.
 
+**`start_index_job() -> boolean`** /
+**`index_status() -> IndexStatus`** /
+**`cancel_index_job() -> boolean`** and the **`index_progress`** event.
+*Added post-sign (2026-09-11, rulings R207/R208 item 1).*
+
+```ts
+type IndexPhase = "tracks" | "laps";
+
+interface IndexProgressEvent {   // the `index_progress` event payload
+  done: number;                  // sessions finished before this one
+  total: number;                 // sessions this run is working through
+  current_session_id: string;    // "" on the terminal observation
+  phase: IndexPhase;
+}
+
+interface IndexRunSummary {
+  indexed: number;
+  skipped_up_to_date: number;
+  failed: number;
+  cancelled: boolean;
+}
+
+interface IndexStatus {
+  running: boolean;
+  done: number;
+  total: number;
+  current_session_id: string | null;   // null when idle
+  phase: IndexPhase | null;            // null when idle
+  last_run: IndexRunSummary | null;    // null before the first run
+  last_error: IpcError | null;         // null when the last run started
+}
+```
+
+Library-wide lap/track indexing — detecting every session's track visits
+and laps and refreshing its `laps`/`lap_summary` rows — is a **background
+job**, never something a command that opens a workbook or a session waits
+on (ruling R207 item 1). Opening one session needs only that session's
+index: `list_laps` indexes that one session first when its stamps are
+stale, which is a `session.json` read in the common case.
+
+`start_index_job` starts the job and returns immediately: `true` when it
+started, `false` when a run was already in flight (a second call is a no-op,
+not an error). It **never rejects** — the job outlives the call, so a
+failure it hits later has no promise left to reject. The app calls it on
+launch; `rebuild_catalog` calls it
+itself after a successful rebuild, since a freshly rebuilt catalog has no
+laps to copy until the job has run. The job runs on a pool of
+`physical cores − 1` workers, each reserving its decode's bytes against the
+same process-wide budget every other command's decode reserves against
+(ruling R211.2), so N workers can never exceed one ceiling; a worker
+**waits** for memory rather than failing.
+
+Progress arrives as `index_progress` as each session enters each phase —
+`"tracks"` (detect visits and laps, write `session.json`) then `"laps"`
+(write that session's catalog rows). `done` counts sessions *finished*, so
+`done + 1` is the one being worked on. A terminal observation with
+`done === total` and an empty `current_session_id` marks the run over.
+`index_status()` reports the same state on demand, so a UI mounting
+mid-run sees the run already in progress.
+
+Each session commits its own work as it finishes (C4 §5), so
+`cancel_index_job` — which sets a flag the job polls between sessions —
+loses nothing already done, and the next run resumes by skipping every
+session whose stamps are current.
+
+Errors: none of these three commands rejects. A run that could not start at
+all — `io` (`<data>/sessions/` or `<data>/tracks/` unreadable) or `internal`
+(`catalog.sqlite` will not open) — surfaces as `IndexStatus.last_error`,
+which is where the status chip reads it; a background job has no promise to
+reject, and silence on a broken data root is the one outcome this must not
+produce (CLAUDE.md §5). A *per-session* failure is not that: it is counted
+in `IndexRunSummary.failed` and the run continues.
+`index_status` and `cancel_index_job` read managed state only.
+
 ### 3.3 Import (L2)
 
 **`import_file(path: string, importer_id: string | null, progress: Channel<Progress>)`**
