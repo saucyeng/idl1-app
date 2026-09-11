@@ -1,6 +1,6 @@
 /**
  * The plot's own `title` option (C2 §5.3, added 2026-09-11) — one field
- * shared by every chart kind, so this file crosses it with all four rather
+ * shared by every chart kind, so this file crosses it with all seven rather
  * than testing it once on the time cell.
  */
 import { describe, expect, it } from "vitest";
@@ -23,6 +23,15 @@ const CELLS: Record<PlotProps["chart"], PlotProps> = {
   },
   histogram: { chart: "histogram", mark: { channel: "x", histogram: { binMode: "count", binValue: 64, symmetric: true, normalise: "fraction" } } },
   scatter: { chart: "scatter", mark: { xChannel: "a", yChannel: "b", scatter: { pointBudget: 4096, equalAspect: true } } },
+  map: { chart: "map", marks: [{ colourBy: null, mark: "line" }] },
+  lap: { chart: "lap", mark: { definition: "lap_time_s", mark: "lineY" } },
+  spectrogram: {
+    chart: "spectrogram",
+    mark: {
+      channel: "x",
+      fft: { windowSize: 2048, hopSize: 1024, window: "hann", detrend: "mean", scaling: "raw_magnitude", averaging: "mean" },
+    },
+  },
 };
 
 const KINDS = Object.keys(CELLS) as PlotProps["chart"][];
@@ -96,7 +105,8 @@ describe("plotForm round trip — the plot title", () => {
         cases++;
       }
     }
-    expect(cases).toBe(8);
+    // Seven chart kinds, each titled and untitled (R217 took this from four).
+    expect(cases).toBe(14);
   });
 
   it("round trip — a title alongside every other top-level option — stays byte-identical", () => {

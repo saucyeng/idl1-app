@@ -136,6 +136,58 @@ function VarianceIcon({ className }: IconProps) {
   );
 }
 
+/** The map cell's pictogram (R217 item 1): a closed loop with a gate line
+ *  across it -- a track, which is what tells it apart from any trace over
+ *  an axis. No basemap in the glyph, because there is none in the chart. */
+function MapIcon({ className }: IconProps) {
+  return (
+    <svg viewBox="0 0 16 16" width="16" height="16" className={className} aria-hidden="true">
+      <path
+        d="M4 12 C1.5 9, 2.5 4, 6 3.2 C9.5 2.4, 13 4, 13.4 7 C13.8 10, 10.5 13.2, 7.5 12.6 C6.3 12.4, 5 12.8, 4 12 Z"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.3"
+        strokeLinecap="round"
+      />
+      <line x1="2.2" y1="10.8" x2="5.4" y2="12.8" stroke="currentColor" strokeWidth="1.1" opacity="0.55" />
+    </svg>
+  );
+}
+
+/** The lap-progression cell's pictogram (R217 item 3): four points falling
+ *  then rising over a baseline -- one value per lap, which is what tells it
+ *  apart from the dense time-series line. */
+function LapIcon({ className }: IconProps) {
+  return (
+    <svg viewBox="0 0 16 16" width="16" height="16" className={className} aria-hidden="true">
+      <line x1="1.5" y1="13" x2="14.5" y2="13" stroke="currentColor" strokeWidth="0.8" opacity="0.4" />
+      <polyline points="3,9 6.5,5.5 10,7 13.5,3.5" fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" />
+      <circle cx="3" cy="9" r="1.2" fill="currentColor" />
+      <circle cx="6.5" cy="5.5" r="1.2" fill="currentColor" />
+      <circle cx="10" cy="7" r="1.2" fill="currentColor" />
+      <circle cx="13.5" cy="3.5" r="1.2" fill="currentColor" />
+    </svg>
+  );
+}
+
+/** The spectrogram cell's pictogram (R217 item 4): a grid of cells at
+ *  varying density -- a heatmap over time and frequency, which is what
+ *  tells it apart from the FFT cell's single spectrum curve. */
+function SpectrogramIcon({ className }: IconProps) {
+  const cells: { x: number; y: number; o: number }[] = [];
+  const opacities = [0.2, 0.45, 0.9, 0.55, 0.3, 0.75, 0.95, 0.4, 0.25, 0.6, 0.35, 0.85];
+  for (let i = 0; i < 12; i++) {
+    cells.push({ x: 2 + (i % 4) * 3.2, y: 2.5 + Math.floor(i / 4) * 3.2, o: opacities[i] });
+  }
+  return (
+    <svg viewBox="0 0 16 16" width="16" height="16" className={className} aria-hidden="true">
+      {cells.map((c) => (
+        <rect key={`${String(c.x)}-${String(c.y)}`} x={c.x} y={c.y} width="2.8" height="2.8" fill="currentColor" opacity={c.o} />
+      ))}
+    </svg>
+  );
+}
+
 /** Maps every {@link ChartTypeId} to its pictogram component — kept
  *  exhaustive by the `Record` type itself (a chart type added to
  *  `chartTypeCatalog.ts` without an entry here is a compile error). */
@@ -148,5 +200,8 @@ export const CHART_TYPE_ICONS: Record<ChartTypeId, (props: IconProps) => React.J
   fft: FftIcon,
   histogram: HistogramIcon,
   scatter: ScatterIcon,
+  map: MapIcon,
+  lap: LapIcon,
+  spectrogram: SpectrogramIcon,
   variance: VarianceIcon,
 };

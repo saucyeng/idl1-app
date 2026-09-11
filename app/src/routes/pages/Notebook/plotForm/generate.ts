@@ -1,15 +1,22 @@
 import type {
+  ColorProps,
   FftParams,
   FftPlotProps,
   FftXAxisProps,
   HistogramMarkProps,
   HistogramParams,
   HistogramPlotProps,
+  LapMarkProps,
+  LapPlotProps,
+  MapMarkProps,
+  MapPlotProps,
   MarkProps,
   PlotProps,
   ScatterMarkProps,
   ScatterParams,
   ScatterPlotProps,
+  SpectrogramMarkProps,
+  SpectrogramPlotProps,
   SpectrumMarkProps,
   TimePlotProps,
   XAxisProps,
@@ -324,6 +331,146 @@ function generateScatter(props: ScatterPlotProps): string {
   return renderPlotBody(topLines);
 }
 
+/** Renders a `color_opt` object inline (C2 §5.3, widened by ruling R217):
+ *  `legend` then `domain`. Returns `null` when both are absent, for the same
+ *  reason `renderXAxis` does. */
+function renderColor(c: ColorProps): string | null {
+  const fields: string[] = [];
+  if (c.legend === true) fields.push(`legend: true`);
+  if (c.domain !== undefined) fields.push(`domain: [${String(c.domain[0])}, ${String(c.domain[1])}]`);
+  return fields.length === 0 ? null : `{ ${fields.join(", ")} }`;
+}
+
+/** C2 §5.3's two `track_mark` productions, verbatim (ruling R217 item 1) —
+ *  the track outline and its gates, both reading `trackGeometry` rather than
+ *  a data call. Constants rather than functions because neither has a
+ *  parameter: the colour is fixed so an underlay can never be mistaken for a
+ *  trace, and a different colour is custom code. */
+const TRACK_POLYLINE_MARK = `Plot.line(trackGeometry.polyline, {x:"x", y:"y", stroke:"var(--chart-underlay)"})`;
+/** See {@link TRACK_POLYLINE_MARK}. */
+const TRACK_GATES_MARK = `Plot.link(trackGeometry.gates, {x1:"x1", y1:"y1", x2:"x2", y2:"y2", stroke:"var(--chart-gate)"})`;
+
+/** Renders a `trace_mark`'s `map_options` (C2 §5.3, ruling R217 item 1): the
+ *  fixed pair `x: "x"`, `y: "y"` — metres east and north, never `"t"`/`"v"`,
+ *  since neither axis is time — then optionally `stroke`, then optionally
+ *  `strokeWidth`. */
+function renderMapOptions(m: MapMarkProps): string {
+  const fields: string[] = [`x: "x"`, `y: "y"`];
+  if (m.stroke !== undefined) fields.push(`stroke: ${jsString(m.stroke)}`);
+  if (m.strokeWidth !== undefined) fields.push(`strokeWidth: ${String(m.strokeWidth)}`);
+  return `{ ${fields.join(", ")} }`;
+}
+
+/** Renders C2 §5.3's `trace_mark` production (ruling R217 item 1):
+ *  `Plot.<line|dot>(gps("<channel>" | null), {map_options})`. The `null`
+ *  argument is the bare identifier, never the string `"null"` — an
+ *  uncoloured trace and a channel literally named "null" are different
+ *  requests. */
+function renderMapMark(m: MapMarkProps): string {
+  const arg = m.colourBy === null ? "null" : jsString(m.colourBy);
+  return `Plot.${m.mark}(gps(${arg}), ${renderMapOptions(m)})`;
+}
+
+/** Emits a map cell's Plot code (C2 §5.3, ruling R217 item 1). `aspectRatio:
+ *  1` is always emitted, immediately before `marks`: equal aspect is a
+ *  property of the projection, so the document states it and the parser
+ *  refuses a map cell without it. The underlay marks come first in the array,
+ *  under the traces, exactly as the zero line does in a time cell. */
+function generateMap(props: MapPlotProps): string {
+  const topLines: string[] = [];
+  if (props.title !== undefined) topLines.push(`title: ${jsString(props.title)}`);
+  if (props.x !== undefined) {
+    const renderedX = renderXAxis(props.x);
+    if (renderedX !== null) topLines.push(`x: ${renderedX}`);
+  }
+  if (props.y !== undefined) {
+    const renderedY = renderYAxis(props.y);
+    if (renderedY !== null) topLines.push(`y: ${renderedY}`);
+  }
+  if (props.color !== undefined) {
+    const renderedColor = renderColor(props.color);
+    if (renderedColor !== null) topLines.push(`color: ${renderedColor}`);
+  }
+  topLines.push(`aspectRatio: 1`);
+
+  const markLines = props.marks.map((m) => `    ${renderMapMark(m)}`);
+  if (props.trackUnderlay === true) {
+    markLines.unshift(`    ${TRACK_GATES_MARK}`);
+    markLines.unshift(`    ${TRACK_POLYLINE_MARK}`);
+  }
+  topLines.push(markLines.length === 0 ? "marks: []" : `marks: [\n${markLines.join(",\n")}\n  ]`);
+
+  return renderPlotBody(topLines);
+}
+
+/** Renders C2 §5.3's `lap_mark` production (ruling R217 item 3):
+ *  `Plot.<barY|dot|lineY>(<identifier>, {x: "lap", y: "v"[, z: "w"]})`. The
+ *  first argument is emitted bare, never quoted — it is a host variable, and
+ *  quoting it would name a channel instead of a definition. */
+function renderLapMark(m: LapMarkProps): string {
+  const fields: string[] = [`x: "lap"`, `y: "v"`];
+  if (m.seriesBy !== undefined) fields.push(`z: ${jsString(m.seriesBy)}`);
+  return `Plot.${m.mark}(${m.definition}, { ${fields.join(", ")} })`;
+}
+
+/** Emits a lap-progression cell's Plot code (C2 §5.3, ruling R217 item 3):
+ *  the same top-level order and formatting policy as {@link generateScatter},
+ *  over the single lap mark. */
+function generateLap(props: LapPlotProps): string {
+  const topLines: string[] = [];
+  if (props.title !== undefined) topLines.push(`title: ${jsString(props.title)}`);
+  if (props.x !== undefined) {
+    const renderedX = renderXAxis(props.x);
+    if (renderedX !== null) topLines.push(`x: ${renderedX}`);
+  }
+  if (props.y !== undefined) {
+    const renderedY = renderYAxis(props.y);
+    if (renderedY !== null) topLines.push(`y: ${renderedY}`);
+  }
+  if (props.color !== undefined) {
+    const renderedColor = renderColor(props.color);
+    if (renderedColor !== null) topLines.push(`color: ${renderedColor}`);
+  }
+  topLines.push(`marks: [\n    ${renderLapMark(props.mark)}\n  ]`);
+
+  return renderPlotBody(topLines);
+}
+
+/** Renders C2 §5.3's `raster_mark` production (ruling R217 item 4):
+ *  `Plot.image(spectrogram("<channel>", {fft_params}), {x:"x", y:"y",
+ *  width:"w", height:"h", src:"src"})`. Both the mark name and the option
+ *  object are fixed — a raster is pixels, and there is nothing to choose
+ *  about how an image binds its own frame. */
+function renderSpectrogramMark(m: SpectrogramMarkProps): string {
+  const call = `spectrogram(${jsString(m.channel)}, ${renderFftParams(m.fft)})`;
+  return `Plot.image(${call}, {x:"x", y:"y", width:"w", height:"h", src:"src"})`;
+}
+
+/** Emits a spectrogram cell's Plot code (C2 §5.3, ruling R217 item 4).
+ *  `fx: "w"` is always emitted, immediately before `marks`: one raster per
+ *  selected window, faceted, because pixels cannot interleave the way a
+ *  channel's samples can. */
+function generateSpectrogram(props: SpectrogramPlotProps): string {
+  const topLines: string[] = [];
+  if (props.title !== undefined) topLines.push(`title: ${jsString(props.title)}`);
+  if (props.x !== undefined) {
+    const renderedX = renderXAxis(props.x);
+    if (renderedX !== null) topLines.push(`x: ${renderedX}`);
+  }
+  if (props.y !== undefined) {
+    const renderedY = renderYAxis(props.y);
+    if (renderedY !== null) topLines.push(`y: ${renderedY}`);
+  }
+  if (props.color !== undefined) {
+    const renderedColor = renderColor(props.color);
+    if (renderedColor !== null) topLines.push(`color: ${renderedColor}`);
+  }
+  topLines.push(`fx: "w"`);
+  topLines.push(`marks: [\n    ${renderSpectrogramMark(props.mark)}\n  ]`);
+
+  return renderPlotBody(topLines);
+}
+
 /** Emits C2 §5.3's Plot subset as JavaScript source code — a string
  *  builder, not a JS-AST printer, over the grammar's closed, small
  *  vocabulary. Branches on `props.chart`: a time cell emits exactly what
@@ -341,6 +488,12 @@ export function generate(props: PlotProps): string {
       return generateHistogram(props);
     case "scatter":
       return generateScatter(props);
+    case "map":
+      return generateMap(props);
+    case "lap":
+      return generateLap(props);
+    case "spectrogram":
+      return generateSpectrogram(props);
     case "time":
       return generateTime(props);
   }

@@ -21,9 +21,12 @@ import {
   type FftPlotProps,
   type HistogramParams,
   type HistogramPlotProps,
+  type LapPlotProps,
+  type MapPlotProps,
   type MarkProps,
   type ScatterParams,
   type ScatterPlotProps,
+  type SpectrogramPlotProps,
   type PlotProps,
   type TimePlotProps,
   type XAxisProps,
@@ -175,6 +178,72 @@ export function defaultScatterPlotProps(channels: readonly { id: string; label: 
   const yLabel = suggestAxisLabel(channels.find((c) => c.id === yChannel));
   if (yLabel !== undefined) props.y = { label: yLabel };
   return props;
+}
+
+/** The default `MapPlotProps` a chart-type switch (or a brand-new map cell)
+ *  seeds (ruling R217 item 1): one line trace, uncoloured, coloured by
+ *  window, with the track underlay on and equal aspect implicit in the
+ *  grammar.
+ *
+ *  **Why `colourBy: null` rather than the first channel.** A map's first
+ *  question is where the rider went, not how fast; colouring by an
+ *  arbitrary first channel would state a colour scale the author never
+ *  chose. `stroke: "w"` instead gives one colour per selected window, which
+ *  is the comparison the selection already expresses (R127).
+ *
+ *  **Why the underlay is on.** A trace without the track outline is a
+ *  squiggle with no reference; when the session has no track, the host
+ *  binds `trackGeometry` to `null` and the marks draw nothing, so the
+ *  default costs nothing in that case. */
+export function defaultMapPlotProps(_channels: readonly { id: string; label: string; unit?: string }[]): MapPlotProps {
+  return {
+    chart: "map",
+    marks: [{ colourBy: null, mark: "line", stroke: "w" }],
+    trackUnderlay: true,
+    x: { label: "East (m)" },
+    y: { label: "North (m)" },
+  };
+}
+
+/** The default `LapPlotProps` a chart-type switch (or a brand-new lap cell)
+ *  seeds (ruling R217 item 3): one line per selected window over the chosen
+ *  definition, against lap number.
+ *
+ *  The data slot is a **definition identifier**, not a channel — a `[lap]`
+ *  value is always a definition — so it seeds from `channels`' first entry
+ *  only because that is the name the graph card knows; the author picks a
+ *  real per-lap definition in the Properties pane. */
+export function defaultLapPlotProps(channels: readonly { id: string; label: string; unit?: string }[]): LapPlotProps {
+  const props: LapPlotProps = {
+    chart: "lap",
+    mark: { definition: channels[0]?.id ?? "", mark: "lineY", seriesBy: "w" },
+    x: { label: "Lap" },
+  };
+  const label = suggestAxisLabel(channels[0]);
+  if (label !== undefined) props.y = { label };
+  return props;
+}
+
+/** The default `SpectrogramPlotProps` a chart-type switch (or a brand-new
+ *  spectrogram cell) seeds (ruling R217 item 4): the same six `fft_params`
+ *  defaults an FFT cell seeds, because they parameterise the same STFT.
+ *
+ *  `averaging` is carried at its FFT default and means nothing here — a
+ *  spectrogram keeps every frame. It is in the object because C2 §5.3 makes
+ *  all six keys required in one fixed order, one parameter table serving
+ *  both kinds; a five-key variant would be a second table to drift. */
+export function defaultSpectrogramPlotProps(
+  channels: readonly { id: string; label: string; unit?: string }[]
+): SpectrogramPlotProps {
+  return {
+    chart: "spectrogram",
+    mark: {
+      channel: channels[0]?.id ?? "",
+      fft: { windowSize: 2048, hopSize: 1024, window: "hann", detrend: "mean", scaling: "raw_magnitude", averaging: "mean" },
+    },
+    x: { label: "Time (s)" },
+    y: { label: "Frequency (Hz)" },
+  };
 }
 
 /** The default `TimePlotProps` the **lap variance** chart type seeds
@@ -486,6 +555,12 @@ function chartTypeChannel(props: PlotProps, channels: readonly { id: string }[])
   // one-channel kind: there is nowhere for it to go, and silently
   // preferring it over x would be arbitrary.
   if (props.chart === "scatter") return props.mark.xChannel;
+  // A map's channel slot is its colour-by, which may legitimately be
+  // `null` (an uncoloured trace); a lap cell's is a definition identifier,
+  // not a channel at all. Both fall back to the picker's first channel
+  // rather than inventing a channel name from a slot that holds neither.
+  if (props.chart === "map") return props.marks[0]?.colourBy ?? channels[0]?.id ?? "";
+  if (props.chart === "lap") return channels[0]?.id ?? "";
   return props.mark.channel;
 }
 

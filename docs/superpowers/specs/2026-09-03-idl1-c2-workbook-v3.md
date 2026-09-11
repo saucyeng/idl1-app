@@ -3,6 +3,16 @@
 **Status:** signed (lead) 2026-09-02 · **Date:** 2026-09-03 · **Owner:** lead
 
 **Revisions:**
+- 2026-09-11: **chart tier B** (ruling R217, spec-first) — §5.3 gains three
+  chart kinds (`map`, `lap`, `spectrogram`) with their productions, rules and
+  parameter tables; §5.1 gains the `gps(...)` and `trackGeometry` host
+  variables; §4 gains `TableModel.rowSource` and `mainRowId`, renames
+  `RowContext.lapIndex` to a 1-based `lapNumber` (old key still read), and
+  states the lap table as this cell kind rather than a chart kind; §3.3 gains
+  `lap_number`, `lap_time` and `sector_time` (the last two shape-polymorphic);
+  §6 migrates all four idl0 types — `gpsMap`, `lapTable`, `lapProgression`
+  and `spectrogram` — that it previously dropped. Nothing landed changes on
+  disk: every addition is optional or a new alternative.
 - 2026-09-08: **§3.7 added — the maths graph view's file mapping** (ruling
   R135, wave-3 lane M, spec-first). A new optional front-matter `graph` key
   stores node canvas positions; §1's front-matter table and its round-trip
@@ -492,6 +502,9 @@ columns could ever disagree, the rule column is the normative one.
 | `lap_start_time` | `lap_start_time(n)` | Lap | s, `NaN` if `n` out of range | `Fixed(s)` — `n` is a lap number, `Dimensionless` | Implemented | yes |
 | `lap_start_distance` | `lap_start_distance(n)` | Lap | m, `NaN` if `n` out of range or no `[Distance]` in session | `Fixed(m)` — `n` is a lap number, `Dimensionless` | Implemented | yes |
 | `sector_number` | `sector_number()` | Lap | 0-based sector index, `NaN` outside any sector (dimensionless) | `Dimensionless` | Implemented | yes |
+| `lap_number` | `lap_number()` | Lap (row context) | the row's own 1-based lap number, `NaN` outside a row context (dimensionless) | `Dimensionless` | Implemented (added 2026-09-11, ruling R217 item 2) | **no** |
+| `lap_time` | `lap_time()` | Lap (row context / `[lap]`) | s — **shape-polymorphic** (R217 item 3): the row's own lap time in a §4 row context, a rank-1 `[lap]` series over the window's laps in a `math` cell | `Fixed(s)` | Implemented (added 2026-09-11, ruling R217 items 2–3) | **no** |
+| `sector_time` | `sector_time(i)` | Lap (row context / `[lap]`) | s, `NaN` when sector `i` (0-based) does not exist — same shape polymorphism as `lap_time` | `Fixed(s)` — `i` is `Dimensionless` | Implemented (added 2026-09-11, ruling R217 item 2) | **no** |
 | `lap_delta_time` | `lap_delta_time(ch)` | Lap delta | same units as `ch` (main − overlay, time-matched; mean across every `overlay_laps` entry when more than one, R73) | `SameAsArg(0)` — a difference of two `[ch]` series, not a time | Implemented | yes |
 | `lap_delta_dist` | `lap_delta_dist(ch)` | Lap delta | same units as `ch` (main − overlay, arc-length-matched; mean across every `overlay_laps` entry when more than one, R73) | `SameAsArg(0)` — a difference of two `[ch]` series, not a distance | Implemented | yes |
 | `attitude` | `attitude("roll"\|"pitch")` | Estimator (diagnostic) | degrees | `Fixed(deg)` | Implemented | yes |
@@ -523,7 +536,14 @@ spelling (net **+1**), and `gradient` added alongside `differentiate` (net
 `sosfilt`, `hilbert`, `correlate`, `convolve`, `resample`. §3.6.3 adds ten
 further names — `argmax`, `argmin`, `argmax_index`, `argmin_index`,
 `at`, `nearest`, `slice`, `axes`, `broadcast`, `align` — documented there
-rather than restated here, taking the grand total to 82. The table's own
+rather than restated here, taking the grand total to 82.
+
+*Revised 2026-09-11 (ruling R217 item 2, chart tier B).* Three lap-row
+scalars are added — `lap_number`, `lap_time`, `sector_time` — taking the
+table to **75 named functions** and the grand total to **85**. They are
+listed in the table above beside the lap functions they sit with rather
+than in a section of their own, because a row-context scalar is an ordinary
+builtin: what makes it new is the context it reads, not its call form. The table's own
 row count was recounted directly by expanding every multi-name row, e.g.
 `floor`/`ceil`/`round` as 3, `vx`/`vy`/`vz` as 3, `vadd`/`vsub` as 2, rather
 than restated from memory.
@@ -1418,9 +1438,11 @@ table_body ::= json_object    (* TableModel — see schema below *)
 | Field | Type | Meaning |
 |---|---|---|
 | `columns` | `Column[]` | `{ id: string, name?: string, template?: string }`. `name` is the `{name}`/`{name[]}` reference target; `template` is a formula applied to every cell in the column lacking its own `formula`. |
-| `rows` | `Row[]` | `{ id: string, context?: RowContext }`. |
-| `context` | `RowContext?` | `{ sessionId: string, lapIndex: number }` — binds the row to a lap window so its `[Channel]` refs resolve there. |
+| `rows` | `Row[]` | `{ id: string, context?: RowContext }`. Ignored under `rowSource: "windowLaps"` (below). |
+| `context` | `RowContext?` | `{ sessionId: string, lapNumber: number }` — binds the row to a lap window so its `[Channel]` refs resolve there. **`lapNumber` is 1-based** (revised 2026-09-11, ruling R217 item 2 — see below). |
 | `cells` | `Cell[][]` | `cells[r][c]`: `{ formula?: string, literal?: number, name?: string }`. `literal` short-circuits evaluation; else `formula` (or the column `template`) evaluates in the row's context; `name` makes the cell a `{name}` target. |
+| `rowSource` | `"authored" \| "windowLaps"?` | *New 2026-09-11 (ruling R217 item 2).* Where the row set comes from. Default `"authored"` — the rows in `rows`, exactly as before. Under `"windowLaps"` the rows are **derived** from the current selection and `rows` is ignored. |
+| `mainRowId` | `string \| null?` | *New 2026-09-11 (ruling R217 item 2).* Names the table's Main row — the row `main({col[]})` compares against (`MathLapContext::baseline_row`). `null` or absent leaves it unset and `main(...)` is `NaN`, exactly as today. The literal `"fastest"` is **reserved** and legal only under `rowSource: "windowLaps"`. |
 
 Cell formulas use the §3.2 expression grammar plus `{cellName}` /
 `{colName[]}` references (`TokenKind::CellRef`) and the table-only
@@ -1435,8 +1457,8 @@ example:
     { "id": "c1", "name": "fork_max", "template": "max([Fork travel])" }
   ],
   "rows": [
-    { "id": "r0", "context": { "sessionId": "s1", "lapIndex": 1 } },
-    { "id": "r1", "context": { "sessionId": "s1", "lapIndex": 2 } }
+    { "id": "r0", "context": { "sessionId": "s1", "lapNumber": 1 } },
+    { "id": "r1", "context": { "sessionId": "s1", "lapNumber": 2 } }
   ],
   "cells": [
     [ { "literal": 1 }, {} ],
@@ -1447,6 +1469,87 @@ example:
 
 (Empty `{}` cells fall back to column `c1`'s `template`, evaluated in each
 row's lap context.)
+
+**The lap table is this cell kind, not a chart kind** (added 2026-09-11,
+ruling R217 item 2). idl0's per-session lap × sector table
+(`chart_workspace.dart:632-633`) needs **no new chart type and no new cell
+kind**: the model above is already rows × columns of §3.2 expressions,
+`Row.context` already says "this row is a lap", a column `template` like
+`max([Fork travel])` is already a per-lap aggregate in that row's window,
+and `main({col[]})` is already idl0's compare-to-fastest column. Four
+things were missing, and only four; each is stated above and explained
+here.
+
+**1. Rows can follow the selection — `rowSource: "windowLaps"`.** Authored
+rows are a snapshot: the table a migration writes lists the laps that
+existed when it was written, and §6 already warns that idl0's live
+`rowSource == "lapSelection"` behaviour is not carried into v3. Under
+`"windowLaps"` the row set is derived instead — **one row per lap of each
+selected `Window`** (C1 §6.1), in window order then lap order, each row's
+context being that window's session and that lap's 1-based number. A
+derived row set belongs in the file for the same reason a chart's data
+does: the **rule** is in the document and the rows are its output, so the
+document still states every parameter of what is shown (CLAUDE.md §3).
+Authored `rows` are ignored while it is set (not merged, not appended — a
+table with two row sets would have two orderings and no rule for
+interleaving them), and cells are addressed **by column**: a derived row
+has no authored `cells` array, so every cell of it evaluates its column's
+`template`. A column with no `template` renders empty in every derived row.
+`"authored"` is the default and the absent value, so **every landed table
+is unchanged**.
+
+**2. A designated Main row — `mainRowId`.** `main({col[]})` reads
+`MathLapContext::baseline_row`, and before this revision no `TableModel`
+field populated it: the function was in the grammar with no way to say
+which row it meant. `mainRowId` is that way. Under `rowSource:
+"windowLaps"` the derived rows have no authored ids to name, so the literal
+`"fastest"` is reserved for them — the row with the smallest `lap_time()`
+among the derived rows, which is idl0's own default Main. `"fastest"` under
+`rowSource: "authored"` is a validation error (§3.5), not a silently unset
+baseline: an authored table's rows are named, so a magic id there would
+shadow a real row id.
+
+**Implementation status, 2026-09-11.** Both fields are in the schema and
+round-trip through `TableModel`; **neither is honoured by the evaluator
+yet**. `evaluate_table` still iterates the authored `rows` whatever
+`rowSource` says, `mainRowId` is not resolved into
+`MathLapContext::baseline_row`, and the `"fastest"`-under-`"authored"`
+validation rule of §3.5 is not enforced. The derivation, the baseline
+resolution and that rule are a follow-up lane; until it lands, a file
+written with `rowSource: "windowLaps"` evaluates as though it said
+`"authored"`. The same is true of the `ChartSlot(lapTable)` migration row
+in §6: the migration writes the field, and the field does not yet change
+what the evaluator does.
+
+**3. Lap time is expressible — `lap_time()`, `sector_time(i)`,
+`lap_number()`.** No channel carries a lap time, and `lap_start_time(n)`
+needs an `n` a row cannot name. The three §3.3 builtins read the row's own
+context and return `NaN` outside one, sourced from C3 `list_laps`
+(`LapSummary.lap_time_ms`, ms → s). `lap_time()` and `sector_time(i)` are
+**shape-polymorphic** (R217 item 3): a scalar in a row context, a rank-1
+`[lap]` value in a `math` cell (§3.6), which is what §5.3's lap chart
+draws. `mean` is already shape-dependent on its argument, and a second
+name for one quantity is worse than one name with two shapes.
+
+**4. `RowContext.lapIndex` is renamed `lapNumber`, 1-based.** The old key
+had no documented base while C3's `LapSummary.lap_number` is 1-based, so a
+reader had no way to know whether row `{lapIndex: 1}` meant the first lap
+or the second. **`lapIndex` is still accepted on read** and means exactly
+what `lapNumber` means — the rename fixes the name, not the numbers, and no
+landed table's rows move. `lapNumber` is what the writer emits, so a table
+rewritten by the app converts once and silently.
+
+**No new wire.** `eval_workbook_v2` (C3 §3.4) already returns one
+`CellOutput[]` per window, which is exactly the shape a derived row set
+needs. **Cost, stated rather than assumed:** `windowLaps` is the O(laps ×
+session length) evaluation shape ruling R125 named when it deferred a
+per-session evaluation cache keyed `(session_id, definition, workbook
+revision)`. **That cache does not exist yet** (verified 2026-09-11 against
+`rust/tauri/src/session_cache.rs`, which is R203/R211's byte-budgeted
+*column decode* cache — a different thing). Until it lands, a 30-lap
+five-column derived table re-evaluates its definitions 150 times over the
+session. This paragraph records the cost where the feature is defined; it
+does not change the contract.
 
 ---
 
@@ -1465,6 +1568,8 @@ feeds results in via `postMessage`):
 |---|---|---|
 | one per `math` definition, by name (§3.1) | `{ length: number, t: Float64Array, v: Float64Array }` for a `[t]` definition — **§3.6.5 extends this by rank**: a rank-0 value binds a bare number, a rank-1 value on a non-time axis binds that axis's key instead of `t`, and a rank ≥ 2 value binds `{ shape, axes, v }`. A **column-oriented** (SoA) table matching Observable Plot's tabular-data protocol, so `Plot.lineY(fork_velocity, {x:"t", y:"v"})` addresses columns by name with zero-copy from the transferred `ArrayBuffer` (design's IPC data path: bytes → `Float32Array`/`Float64Array` view). | The host evaluates the definition (Rust), decimates to the current tile budget, and binds the result under its identifier. |
 | `channel(name, {lap?: number, session?: string})` | `{length, t, v, w}` (**amended 2026-09-08, ruling R127**: gains `w`) plus a `windows: {sessionId, span, colour, label}[]` descriptor, `windows[w[i]]` naming sample `i`'s window — see the note below the table | General lookup — any raw/session/synthesized/math-defined channel by name, optionally windowed to one lap and/or a non-active session (cross-session compare, e.g. an overlay). Definitions already bound as bare identifiers are also reachable this way; `channel` is required when the id needed isn't a valid bare identifier caller-side (rare) or when lap/session scoping is needed. |
+| `gps(colourBy)` | `{length, x, y, c, t, w}` plus a `windows` descriptor | *New 2026-09-11 (ruling R217 item 1).* The selected windows' GPS trace, **already projected in `core`** into one local ENU frame: `x`/`y` are metres east/north of the frame's origin (`f64`), `t` is seconds session-relative, `c` is the colour-by channel resampled onto the fix times (`NaN` where absent) and `w` is R127's window index. The argument is the colour-by channel name or `null`. Geometry's unit is always `m`; `.unit`/`.unitState` describe `c`. Served by C3 §3.5's `fetch_gps_trace_v2`. |
+| `trackGeometry` | `{ origin: {lat, lon}, polyline: {x,y}[], gates: {name, kind, x1, y1, x2, y2}[] }` | *New 2026-09-11 (ruling R217 item 1).* The underlay for a map cell — the track's reference polyline and its gates, **in the same frame and origin** as every `gps(...)` payload in that cell. Resolved once per selection, never per frame, from C3 §3.5's `fetch_gps_trace_meta`. `null` when the selection's session has no track. |
 | `laps` | `{ number: number, startT: number, endT: number }[]` | Active session's lap table. |
 | `session` | `{ id: string, name?: string, timestampUtcMs: number }` | Active session metadata (C1). |
 | `constants` | `{ [name: string]: number }` | Flattened §3.1 constants (front matter + all `const` lines). Keys may contain spaces (`constants["rider mass"]`); no per-name identifier restriction (§3.1). |
@@ -1576,6 +1681,8 @@ option        ::= "title" ":" js_string                            (* new 2026-0
                 | "x" ":" x_scale
                 | "y" ":" y_scale
                 | "color" ":" color_opt
+                | "aspectRatio" ":" "1"                            (* new 2026-09-11 — map cells only, required *)
+                | "fx" ":" "\"w\""                                 (* new 2026-09-11 — spectrogram cells only, required *)
                 | "marks" ":" marks_array
 x_scale       ::= "{" x_field ("," x_field)* "}"
 x_field       ::= "label" ":" js_string
@@ -1586,8 +1693,11 @@ y_field       ::= "label" ":" js_string
                 | "domain" ":" "[" js_number "," js_number "]"
                 | "type" ":" ("\"linear\"" | "\"log\"" | "\"sqrt\"" | "\"pow\"")  (* changed 2026-09-11 *)
                 | "exponent" ":" js_number                        (* new 2026-09-11 — only with type "pow" *)
-color_opt     ::= "{" "legend" ":" "true" "}"
-marks_array   ::= time_marks | fft_marks | histogram_marks | scatter_marks   (* changed 2026-09-11 *)
+color_opt     ::= "{" color_field ("," color_field)* "}"           (* changed 2026-09-11 *)
+color_field   ::= "legend" ":" "true"
+                | "domain" ":" "[" js_number "," js_number "]"     (* new 2026-09-11 — map/spectrogram *)
+marks_array   ::= time_marks | fft_marks | histogram_marks | scatter_marks
+                | map_marks | lap_marks | raster_marks             (* changed 2026-09-11 — R217 *)
 time_marks    ::= "[" (zero_rule ",")? time_mark ("," time_mark)* "]"   (* changed 2026-09-11 *)
                 | "[" zero_rule "]"                               (* new 2026-09-11 — a zero line alone *)
 zero_rule     ::= "Plot.ruleY([0])"                               (* new 2026-09-11 — R215 item 5 *)
@@ -1650,6 +1760,26 @@ scatter_params ::= "{" "pointBudget" ":" js_int ","                (* new 2026-0
 scatter_options ::= "{" "x" ":" "\"x\"" "," "y" ":" "\"y\""          (* new 2026-09-11 *)
                        ("," "fill" ":" css_color)?
                        ("," "r" ":" js_number)? "}"
+
+map_marks     ::= "[" (track_mark ",")* trace_mark ("," trace_mark)* "]"   (* new 2026-09-11, R217 item 1 *)
+track_mark    ::= "Plot.line(trackGeometry.polyline, {x:\"x\", y:\"y\", stroke:" css_color "})"
+                | "Plot.link(trackGeometry.gates, {x1:\"x1\", y1:\"y1\", x2:\"x2\", y2:\"y2\", stroke:" css_color "})"
+trace_mark    ::= "Plot." ("line"|"dot") "(" gps_call "," map_options ")"
+gps_call      ::= "gps(" (js_string | "null") ")"                  (* new 2026-09-11 — colour-by channel, or null *)
+map_options   ::= "{" "x" ":" "\"x\"" "," "y" ":" "\"y\""
+                       ("," "stroke" ":" (css_color | "\"c\"" | "\"w\""))?
+                       ("," "strokeWidth" ":" js_number)? "}"
+
+lap_marks     ::= "[" lap_mark "]"                                 (* new 2026-09-11, R217 item 3; exactly one *)
+lap_mark      ::= "Plot." ("barY"|"dot"|"lineY") "(" identifier ","
+                       "{" "x" ":" "\"lap\"" "," "y" ":" "\"v\""
+                       ("," ("z"|"stroke") ":" "\"w\"")? "}" ")"
+
+raster_marks  ::= "[" raster_mark "]"                              (* new 2026-09-11, R217 item 4; exactly one *)
+raster_mark   ::= "Plot.image(" spectrogram_call ", {x:\"x\", y:\"y\","
+                       " width:\"w\", height:\"h\", src:\"src\"})"
+spectrogram_call ::= "spectrogram(" js_string "," fft_params ")"    (* the same six keys, same fixed order *)
+
 css_color     ::= js_string                (* any valid CSS color literal *)
 ```
 
@@ -1657,14 +1787,19 @@ css_color     ::= js_string                (* any valid CSS color literal *)
 R78 L6 Task 19 Q1–Q2 / R79 L6 Task 20 Q1–Q7):
 
 - **A cell is exactly one chart kind, never two** (R78 Q2, widened to every
-  chart kind by ruling R215). `marks_array` is `time_marks`, `fft_marks` or
-  `histogram_marks`; a `marks` array mixing marks from two of them parses to
+  chart kind by ruling R215, and to all seven by R217). `marks_array` is
+  exactly one of the seven alternatives; a `marks` array mixing marks from
+  two of them parses to
   `null` (custom). This makes "its own cell" structural rather than an author
   convention: four x axes (seconds, Hz, and two different channels' units)
-  cannot share one `Plot.plot`. The **callee name of the first mark's data
-  call** (`channel` / `spectrum` / `histogram` / `scatter`) is the
+  cannot share one `Plot.plot`. The **callee name of the first data-bearing
+  mark's data call** (`channel` / `spectrum` / `histogram` / `scatter` /
+  `gps` / `spectrogram`, or a bare `identifier` for a lap cell) is the
   discriminant a reader routes on, which is why each chart kind's data call
   is a distinct host-variable name rather than an argument to a shared one.
+  A map cell is the one kind whose array may hold more than one *kind* of
+  mark, and its extra marks bind `trackGeometry`, not a data call — see the
+  map cell's own rules below.
 - **An FFT cell has exactly one mark** in v1 (R79 Q7). `fetch_fft` returns
   one spectrum and the host's `fftDriver` keys its `spectrum` action by
   `cellId`, so one cell resolves one spectrum. idl0's overlay of up to ten
@@ -2011,11 +2146,189 @@ which defeats the point of overlaying them.
 `core/src/scatter.rs` implements both; neither has a slot in
 `scatter_params`, because C3 §3.5 does not yet expose either.
 
+**The map cell** (added 2026-09-11, ruling R217 item 1). idl0's `gpsMap`
+(`chart_workspace.dart:607-615`), ported as **a projected 2-D path, not a
+tile layer**: no basemap, no CDN (design's offline-first rule), one local
+ENU frame per cell. Rules that carry the same weight as the EBNF above:
+
+- **Projection is `core`, never the renderer.** `core/src/track_projection.rs`
+  already projects onto a reference path with cumulative arc length, and
+  `core/src/gps.rs` already assembles the fix list. Doing the lat/lon → metres
+  conversion in JS would duplicate that and put a number a lap comparison
+  depends on in the picture layer (CLAUDE.md §2). `gps(...)` therefore returns
+  metres, and the app never sees a latitude.
+- **`gps(colourBy)` is a host var**, a third recognisable data call beside
+  `channel(...)` and `spectrum(...)`. Its one argument is the colour-by
+  channel's name, or the literal `null` for an uncoloured trace — a slot that
+  is always present, so the document states the colour source even when there
+  is none.
+- **`trackGeometry` is a second host var, not a third data call.** It is
+  resolved once per selection, never per frame, and is always in the **same
+  frame and origin** as every `gps(...)` payload in that cell — two origins in
+  one plot would draw the trace beside the track instead of on it. Its marks
+  are optional and, when present, come **first** in the array: a track outline
+  belongs under the trace, for the same reason `zero_rule` does.
+- **`aspectRatio: 1` is required, and is a literal.** Equal aspect is a
+  property of the projection, not a renderer preference: an unsquared map
+  turns a circular berm into an ellipse, so the document states it
+  (CLAUDE.md §3, "no renderer-only parameters"). It is the one plot option
+  legal *only* on a map cell.
+- **`stroke` binds a colour, `"c"`, or `"w"`.** `"c"` colours by the
+  colour-by channel, with `color.domain` stated in the document rather than
+  chosen by the host; `"w"` colours by window, exactly as R127 already
+  defines for channels. `stroke: "c"` with `gps(null)` is custom code — there
+  is no channel to colour by.
+- **Mark options bind `x: "x"`, `y: "y"`**, metres east and north. Neither
+  axis is time, so neither is `"t"`/`"v"`.
+
+**The map host variable.** `gps(colourBy)` returns `{length, x, y, c, t, w}`
+records — the R127 shape with `x`/`y` where a channel has `t`/`v` — plus the
+same `windows` descriptor, and `.unit`/`.unitState` describing **`c`** (the
+geometry's own unit is always `m` and needs no property to say so). The
+lookup key is **`gpsKey(colourBy)`**, tagged `"gps"` and never
+window-qualified, exactly as `histogramKey` and `scatterKey` are. **Per
+window (R127):** one payload covers every selected window, `w` names each
+point's window, and **one `NaN` break row separates adjacent windows** — a
+path is a connected mark, so a cell that ignores `w` draws *n* separate
+paths rather than one leaping from one lap's last fix to the next lap's
+first. This is the channel rule, not the histogram one, because the mark
+connects its points.
+
+**Decimation is by perpendicular distance, not stride.** A path is
+geometric: a uniform stride drops whichever fixes fall between its steps,
+and a hairpin taken at low speed is exactly where the fixes are dense. The
+engine decimates with Douglas–Peucker (`core`), which keeps the points that
+carry the shape and drops the ones on a straight. §4's "2 points per pixel
+column" budget rule does not apply for the same reason — there are no pixel
+columns on a two-dimensional path. The budget is **4 × the map's CSS pixel
+width, clamped to `[1024, 8000]` points per window**, and the fetch is
+settle-bound exactly like `fetch_tile` (C3 §4).
+
+**Map parameter table — type, default, C3 field:**
+
+| Grammar slot | Props field | Type | Default | Maps to |
+|---|---|---|---|---|
+| `gps_call`'s argument | `MapMarkProps.colourBy` | string, or `null` | `null` | `fetch_gps_trace_v2`'s `colour_by` |
+| `trace_mark`'s mark name | `MapMarkProps.mark` | `"line" \| "dot"` | `"line"` | none (Plot mark) |
+| `stroke` | `MapMarkProps.stroke` | CSS colour literal, `"c"` or `"w"` | `"w"` | none |
+| `strokeWidth` | `MapMarkProps.strokeWidth` | number, CSS px | omitted | none |
+| `track_mark` presence | `MapPlotProps.trackUnderlay` | `true`, or absent | `true` when the session has a track | none (marks, drawn client-side) |
+| `aspectRatio` | — | the literal `1`, required | `1` | none |
+| `color.domain` | `ColorProps.domain` | `[number, number]` | the colour-by channel's own extent over the selection | none |
+| — no budget grammar token — | — | — | — | `fetch_gps_trace_v2`'s `budget`, sized from the cell's CSS width |
+
+*Parity gaps, stated rather than inferred:* idl0's map drew over a tile
+basemap and offered a start/finish marker; neither is here. A basemap needs
+a network tile source, which design's offline-first rule forbids outright,
+and a marker is a mark this grammar has no production for yet.
+
+**The lap-progression cell** (added 2026-09-11, ruling R217 item 3). idl0's
+lap-time-per-lap line (`chart_workspace.dart:634-638`), generalised: **any**
+per-lap scalar against lap number, not only lap time. §3.6 already types
+this — a rank-1 value on a `lap` axis — and §3.6.6 already gives the mark.
+Rules:
+
+- **Exactly one mark.** A `[lap]` value is one series per selected window
+  already (`w`), so a second mark would be a second definition on the same
+  ordinal axis with no rule for aligning them.
+- **The first argument is a bare `identifier`, never a data call.** A
+  `[lap]` value is always a math definition — `mean([peak_freq], "t:lap")`,
+  or `lap_time()` — so there is no `gps(...)`-style host form to invent. This
+  is what makes a lap cell recognisable by the same first-callee lookahead
+  every other kind uses: its first mark's data argument is an identifier.
+- **Mark options bind `x: "lap"`, `y: "v"`.** §5.1's rank-1 rule already
+  binds a non-time axis under that axis's own key, and §3.6's axis key for
+  laps is `lap`.
+- **`z`/`stroke` bind `"w"` or nothing.** One series per selected window,
+  from the R127 descriptor's own `--chart-N` token.
+- **Lap numbers repeating across sessions is correct.** X is a lap ordinal,
+  and `w` separates the series — two sessions' lap 3 belong at the same x.
+  **Cross-session comparison itself waits for M5**, which is a selection
+  capability, not a grammar one: nothing in this production changes when it
+  lands.
+- **No decimation and no cap.** Laps per session are tens.
+
+**Lap parameter table — type, default, C3 field:**
+
+| Grammar slot | Props field | Type | Default | Maps to |
+|---|---|---|---|---|
+| `lap_mark`'s `identifier` | `LapMarkProps.definition` | identifier (§3.1) | the first `[lap]`-shaped definition in the workbook | `fetch_host_channel_v2`'s `def_name` |
+| `lap_mark`'s mark name | `LapMarkProps.mark` | `"barY" \| "dot" \| "lineY"` | `"lineY"` | none (Plot mark) |
+| `z`/`stroke` | `LapMarkProps.seriesBy` | `"w"`, or absent | `"w"` | none |
+| `x.label` | `XAxisProps.label` | string | `"Lap"` | none |
+| `y.label` | `YAxisProps.label` | string | seeded from the definition's own unit (R65) | none |
+
+**No new wire for a lap cell.** One evaluation per window already happens
+(C3 §3.4), and the value travels as `IDLH` bytes like every other
+definition — **version 2**, whose `axis_kind` says the payload's axis is
+ordinal lap numbers rather than seconds (C3 §3.4). A layout bump, not a new
+command.
+
+**The spectrogram cell** (added 2026-09-11, ruling R217 item 4). idl0's
+time × frequency heatmap (`chart_workspace.dart:639-645`), drawn through
+the **existing raster path** — §3.6.6 already rules that a `[t,f]`
+definition whose expression is exactly a `spectrogram(ch, …)` call is
+recognised by the host and drawn by `fetch_raster(kind: "spectrogram")`,
+keyed by `rasterKey(channelId, params)`. This section adds the grammar that
+makes it picker-seedable rather than hand-written code. Rules:
+
+- **Exactly one mark**, like an FFT cell: one raster request, one image.
+- **The mark name is fixed at `image`.** A raster is pixels; no other Plot
+  mark consumes them.
+- **`spectrogram_call` takes the same six `fft_params` keys in the same
+  fixed order as `spectrum_call`** — one parameter table serving both,
+  because they parameterise the same STFT. All six required, for the reason
+  `fft_params` gives.
+- **It does not wait on R158's eval binding.** The grammar recognises the
+  call **textually**, exactly as `spectrum_call` does, and the cell never
+  needs a math value: the pixels come from `fetch_raster`. R158's missing
+  binding unlocks §3.6.7's reductions over a spectrogram, which is separate
+  work. (Correcting the survey: `core::spectrogram::spectrogram` exists and
+  `raster.rs` already calls it — what R158 left is the math-eval binding,
+  not the DSP.)
+- **The colour legend is built from `RasterMeta.ramp_stops`** (R177), never
+  reimplemented in the sandbox. `color.domain` is the `vmin`/`vmax` the
+  document states, so a two-window spectrogram pair is comparable.
+- **`y.type` is `"linear"` or `"log"`** — a frequency axis, the same choice
+  an FFT cell's x axis has.
+
+**Per window (R127): one raster per window, faceted.** A raster has no `w`
+column — pixels cannot interleave, and a `NaN` break row between two images
+is meaningless. So a spectrogram cell fetches **one raster per selected
+window** and facets them with `fx: "w"`, sharing one `y` (frequency) scale,
+taking each window's own `x` domain from that window's own `RasterMeta`, and
+stating one `color.domain` in the document as the union of the windows'
+`vmin`/`vmax` rather than letting the host pick per facet — per-facet colour
+scales would make two laps' heatmaps look identical when they are not.
+`fx: "w"` is the one plot option legal only on a spectrogram cell.
+
+**Budget.** `width`/`height` are the cell's CSS pixel box in device pixels,
+clamped to **2048 × 1024**; a request above the clamp **renders at the
+clamp** rather than refusing — a too-large window is a display that is
+slightly coarser than the screen, not an error. Settle-bound under C3 §4's
+density rule.
+
+**Spectrogram parameter table — type, default, C3 field:**
+
+| Grammar slot | Props field | Type | Default | Maps to |
+|---|---|---|---|---|
+| `spectrogram_call`'s `js_string` | `SpectrogramMarkProps.channel` | string | first channel in the session picker | `fetch_raster_v2`'s `channel` |
+| the six `fft_params` | `SpectrogramMarkProps.fft` | as the FFT table above | as the FFT table above | `fetch_raster_v2`'s `params` |
+| `y.type` | `YAxisProps.type` | `"linear" \| "log"` | `"linear"` | none |
+| `y.label` | `YAxisProps.label` | string | `"Frequency (Hz)"` | none |
+| `x.label` | `XAxisProps.label` | string | `"Time (s)"` | none |
+| `color.domain` | `ColorProps.domain` | `[number, number]` | the union of the windows' `RasterMeta.scale.vmin`/`vmax` | none |
+| `fx` | — | the literal `"w"`, required | `"w"` | none |
+| — no size grammar token — | — | — | — | `fetch_raster_v2`'s `width`/`height`, sized from the cell's CSS box |
+
+*Parity gap:* `averaging` has no slot, because a spectrogram keeps every
+frame — averaging them is what makes an FFT cell instead.
+
 **Parameter table — type, default, C3 field** (added 2026-09-06):
 
 | Grammar slot | Props field | Type | Default | Maps to |
 |---|---|---|---|---|
-| chart type (which `marks_array` alternative) | `PlotProps.chart` | closed enum (`"time"`, `"fft"`, `"histogram"`, `"scatter"`) | `"time"` | nothing on the wire; selects which fetch the cell makes |
+| chart type (which `marks_array` alternative) | `PlotProps.chart` | closed enum (`"time"`, `"fft"`, `"histogram"`, `"scatter"`, `"map"`, `"lap"`, `"spectrogram"` — the last three new 2026-09-11, R217) | `"time"` | nothing on the wire; selects which fetch the cell makes |
 | `title` | `PlotProps.title` | string, or absent | absent (the cell's `# label:` line, if any) | none (a Plot option, drawn client-side) |
 | `x_field_binding` (time cell) | `MarkProps.xField` | `"tr"`, or absent for session time | absent (`x: "t"`) | nothing on the wire; selects the `tr` column of the channel payload |
 | `zero_rule` (time cell) | `TimePlotProps.zeroLine` | `true`, or absent | absent | none (a mark, drawn client-side) |
@@ -2039,7 +2352,8 @@ which defeats the point of overlaying them.
 **`PlotProps` shape** (illustrative — L6 Task 20 owns the code):
 
 ```ts
-export type PlotProps = TimePlotProps | FftPlotProps | HistogramPlotProps | ScatterPlotProps;
+export type PlotProps = TimePlotProps | FftPlotProps | HistogramPlotProps | ScatterPlotProps
+                      | MapPlotProps | LapPlotProps | SpectrogramPlotProps;   // widened 2026-09-11, R217
 export interface TimePlotProps { chart: "time"; marks: MarkProps[]; x?: XAxisProps; y?: YAxisProps; color?: { legend: true } }
 export interface FftPlotProps  { chart: "fft";  mark: SpectrumMarkProps; x?: XAxisProps; y?: YAxisProps; color?: { legend: true } }
 export interface HistogramPlotProps { chart: "histogram"; mark: HistogramMarkProps; x?: XAxisProps; y?: YAxisProps; color?: { legend: true } }
@@ -2064,9 +2378,30 @@ export interface ScatterMarkProps {
   fill?: string;
   r?: number;                  // px
 }
+// added 2026-09-11, ruling R217
+export interface MapPlotProps { chart: "map"; marks: MapMarkProps[]; trackUnderlay?: true; x?: XAxisProps; y?: YAxisProps; color?: ColorProps }
+export interface MapMarkProps {
+  colourBy: string | null;     // always present — `null` is an uncoloured trace, not an absent key
+  mark: "line" | "dot";
+  stroke?: string;             // a CSS colour, or the literals "c" / "w"
+  strokeWidth?: number;        // px
+}
+export interface LapPlotProps { chart: "lap"; mark: LapMarkProps; x?: XAxisProps; y?: YAxisProps; color?: ColorProps }
+export interface LapMarkProps {
+  definition: string;          // a bare §3.1 identifier, never a data call
+  mark: "barY" | "dot" | "lineY";
+  seriesBy?: "w";
+}
+export interface SpectrogramPlotProps { chart: "spectrogram"; mark: SpectrogramMarkProps; x?: XAxisProps; y?: YAxisProps; color?: ColorProps }
+export interface SpectrogramMarkProps {
+  channel: string;
+  fft: FftParams;              // the same six fields required, same order
+}
+export interface ColorProps { legend?: true; domain?: [number, number] }
 ```
 
-A discriminated union rather than an optional field: `FftPlotProps` has one
+`PlotProps` is the union of all seven. A discriminated union rather than an
+optional field: `FftPlotProps` has one
 `mark`, not a `marks` array, so "exactly one spectrum mark" is a type error
 rather than a runtime check. Existing props gain `chart: "time"`; `parse`
 supplies it, so no landed cell's code changes and every §5.3 worked example
@@ -2122,6 +2457,19 @@ That happens for **any** of:
   because the host binds through `parse`, it gets **no spectrum host
   variable**: `spectrum(...)` returns `[]` and the cell renders an empty
   plot.
+- **(added 2026-09-11, ruling R217)** A map cell missing `aspectRatio: 1`,
+  carrying an `aspectRatio` other than the literal `1`, binding `stroke:
+  "c"` on a `gps(null)` trace, placing a `track_mark` after a `trace_mark`,
+  or carrying no `trace_mark` at all; an `aspectRatio` on any other chart
+  kind. A lap cell with a second mark, or whose first argument is a call
+  rather than a bare identifier. A spectrogram cell missing `fx: "w"`,
+  carrying an `fx` other than the literal `"w"`, or carrying a second mark;
+  an `fx` on any other chart kind. A `spectrogram_call` missing one of the
+  six `fft_params` keys, or carrying an extra one. `color.domain` on a
+  chart kind other than map or spectrogram. As with every kind above, a
+  hand-written cell calling `gps(...)` or `spectrogram(...)` outside this
+  grammar gets **no host variable**: the call returns `[]` and the cell
+  renders empty.
 
 There is no partial match: a cell either parses fully into `props` or is
 entirely custom. This mirrors design §6's stated rule — "Code outside it
@@ -2323,7 +2671,11 @@ existing error envelope on stderr.
 | `constants[]` | front matter `constants` map | `{name: value}`; `id` (defaulting to `name`) is dropped — v3 constants have no separate id, only a name (§1). A name colliding with a universal constant (`pi`/`tau`/`e`/`g`) is refused (`ReservedName`, §3.5) rather than silently shadowed. |
 | `worksheets[].blocks[].content.kind == "table"` | one `table` cell per `TableModel` | The JSON is already the v3 shape (§4) — copied verbatim into a fence. *Corrected post-sign (2026-09-04, lead ruling R25, wave-1 L3): struck "and legacy `worksheets[].tables[]` if present" — no such array exists; the only legacy flat array is `charts` (migrated by the row below), and a table's content lives only at `blocks[].content.table` (`docs/legacy/idl0-workbook_format.md`).* |
 | `worksheets[].charts[]` / `.blocks[].content.kind == "chart"` (`ChartSlot[]`) | staged for Stage 2 | Written into a **transient** front-matter key `_migrate_charts: [ <ChartSlot JSON>, … ]` (flattened across every worksheet, worksheet name/order dropped — see below) for the app to consume on first open. The CLI does not attempt Plot-code generation itself: `plotForm.generate` is TypeScript, and the CLI is Rust-only (this is the literal "CLI vs. app split" the outline asks for). |
-| `worksheets[].name`, `.xAxisMode`, `.kind` (`sessionSheet`'s pinned `gpsMap`/`lapTable`/`lapProgression`) | *dropped* | No v3 worksheet concept at all (a `.idl1wb` is one flat cell sequence); no v3 chart type covers `gpsMap`/`lapTable`/`lapProgression` (out of the `plotForm` grammar, §5.3) — those three chart slots are simply not carried into `_migrate_charts`. `xAxisMode` (`wheelDistance`/`gpsDistance`) has no v3 analogue either — `plotForm`'s `x` is always `"t"` (§5.1); an author wanting a distance-indexed x-axis writes custom `js` code by hand post-migration. |
+| `worksheets[].name`, `.xAxisMode`, `.kind` (`sessionSheet`'s pinned `gpsMap`/`lapTable`/`lapProgression`) | *dropped* (worksheet structure only) | **Revised 2026-09-11 (ruling R217 item 6).** No v3 worksheet concept at all (a `.idl1wb` is one flat cell sequence), so worksheet name, order and `kind` are still dropped. **The three pinned chart slots are no longer dropped**: §5.3 now has a production for each, and they migrate by the four rows below. `xAxisMode` (`wheelDistance`/`gpsDistance`) has no v3 analogue — ruling R136 refuses a distance x binding outright, so an author wanting one writes custom `js` code by hand post-migration. |
+| `ChartSlot(gpsMap)` | a `chart: "map"` `js` cell | *Added 2026-09-11 (ruling R217 items 1, 6).* `gps("<colourChannel>")` when the slot names a colour-by channel, `gps(null)` when it does not; `color.domain` from the slot's own colour min/max; `aspectRatio: 1`; and the two `trackGeometry` underlay marks ahead of the trace when the session has a track. idl0's basemap tiles and start/finish marker are dropped, with a report line each. |
+| `ChartSlot(lapTable)` | a `table` cell (§4) | *Added 2026-09-11 (ruling R217 items 2, 6).* Replaces the "no v3 chart type covers `lapTable`" row this section previously carried: `rowSource: "windowLaps"`, `mainRowId: "fastest"`, a `lap_time()` column, and one `sector_time(i)` column per sector gate of the slot's track, `i` 0-based in gate order. Not a chart cell — idl0's lap table was a chart type; in v3 it is what §4 always was. |
+| `ChartSlot(lapProgression)` | a `chart: "lap"` `js` cell | *Added 2026-09-11 (ruling R217 items 3, 6).* A `math` cell defining `lap_time_s = lap_time()` is emitted alongside it, and the chart is `Plot.lineY(lap_time_s, {x: "lap", y: "v", stroke: "w"})`. idl0's one-line-per-session becomes one line per selected window, which is the same picture through R127's descriptor. |
+| `ChartSlot(spectrogram)` | a `chart: "spectrogram"` `js` cell | *Added 2026-09-11 (ruling R217 items 4, 6).* Previously not convertible at all. The six `fft_params` are read off the v2 slot's `SpectralParams`; `fx: "w"`; `color.domain` left to the app's first render, since the v2 slot carried no colour range. `averaging` is dropped — a spectrogram keeps every frame — with a report line. |
 | `overlay_layouts[]` | *dropped* | D9 — no CLI or app handling, not even transiently. |
 
 **Migration report and refusal policy** *(added post-sign, 2026-09-04,
@@ -2334,8 +2686,12 @@ in `_migrate_math` (an unresolved chart reference — the migration does not
 refuse for this, it tells the truth about what it could not carry); every
 dropped `WorksheetBlock` field (`id`, `placement`, `overlayTargetId`,
 `overlayOpacity`); and every table block whose `rowSource ==
-"lapSelection"`, migrated as an ordinary authored table with an explicit
-warning that its live N-lap comparison behaviour is not carried into v3.
+"lapSelection"` — *revised 2026-09-11 (ruling R217 item 2)*: now migrated
+to `rowSource: "windowLaps"` (§4), which is v3's own live-row rule (not
+yet honoured by the evaluator — see §4's implementation status), rather
+than to an authored snapshot with a warning that it was lost. The report
+line stays, because the row set it produces follows the reader's own
+selection rather than the laps the v2 file happened to list.
 None of these three report categories ever refuses the migration —
 refusal is reserved for the rules already stated above (an unrecognised
 `workbook_version`, a migrated constant colliding with `pi`/`tau`/`e`/`g`);

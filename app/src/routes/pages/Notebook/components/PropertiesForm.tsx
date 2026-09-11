@@ -233,6 +233,9 @@ const CHART_KIND_LABELS: Record<PlotProps["chart"], string> = {
   fft: "FFT",
   histogram: "Histogram",
   scatter: "Scatter",
+  map: "Map",
+  lap: "Lap",
+  spectrogram: "Spectrogram",
 };
 
 /** Control 1 (C2 §5.3): the chart-type segmented control, one item per

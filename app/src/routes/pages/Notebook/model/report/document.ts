@@ -259,6 +259,9 @@ const NON_TIME_CHART_ABSENCE_REASONS: Record<Exclude<PlotProps["chart"], "time">
   fft: "FFT/spectrum charts are not yet included in reports — this cell's chart could not be included.",
   histogram: "Histogram charts are not yet included in reports — this cell's chart could not be included.",
   scatter: "Scatter charts are not yet included in reports — this cell's chart could not be included.",
+  map: "Map charts are not yet included in reports — this cell's chart could not be included.",
+  lap: "Lap-progression charts are not yet included in reports — this cell's chart could not be included.",
+  spectrogram: "Spectrogram charts are not yet included in reports — this cell's chart could not be included.",
 };
 
 /** This cell parsed and is a time chart, but no channel data was supplied

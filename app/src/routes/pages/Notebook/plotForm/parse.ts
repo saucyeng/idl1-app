@@ -13,11 +13,18 @@ import {
   type HistogramMarkProps,
   type HistogramParams,
   type HistogramPlotProps,
+  type ColorProps,
+  type LapMarkProps,
+  type LapPlotProps,
+  type MapMarkProps,
+  type MapPlotProps,
   type MarkProps,
   type PlotProps,
   type ScatterMarkProps,
   type ScatterParams,
   type ScatterPlotProps,
+  type SpectrogramMarkProps,
+  type SpectrogramPlotProps,
   type SpectrumMarkProps,
   type TimePlotProps,
   type XAxisProps,
@@ -1210,6 +1217,387 @@ function readScatterMarksArray(c: Cursor): ScatterMarkProps | null {
   return mark;
 }
 
+function parseColorPropsField(key: string, c: Cursor): FieldResult {
+  switch (key) {
+    case "legend": {
+      return consumeIdent(c, "true") ? { ok: true, value: true } : { ok: false };
+    }
+    case "domain": {
+      const v = readDomain(c);
+      return v === null ? { ok: false } : { ok: true, value: v };
+    }
+    default:
+      return { ok: false };
+  }
+}
+
+/** Reads a `color_opt` that may also carry `domain` (C2 §5.3, ruling R217) —
+ *  a map's colour-by range and a spectrogram's `vmin`/`vmax` union, both
+ *  stated in the document rather than chosen by the host. Only those two
+ *  chart kinds use this reader; every other kind keeps {@link readColorOpt},
+ *  so a `domain` on a time or FFT cell is still custom code. */
+function readColorProps(c: Cursor): ColorProps | null {
+  const start = c.pos;
+  const fields = readBracedFields(c, parseColorPropsField);
+  if (fields === null || (fields.legend === undefined && fields.domain === undefined)) {
+    c.pos = start;
+    return null;
+  }
+  const props: ColorProps = {};
+  if (fields.legend === true) props.legend = true;
+  if (fields.domain !== undefined) props.domain = fields.domain as [number, number];
+  return props;
+}
+
+/** C2 §5.3's two `track_mark` productions, as the exact token sequences
+ *  {@link readTrackMark} matches — kept beside the generator's own two
+ *  constants in spelling, and matched token by token rather than by string
+ *  compare so whitespace a hand edit introduces still parses. */
+const TRACK_POLYLINE_STROKE = "var(--chart-underlay)";
+/** See {@link TRACK_POLYLINE_STROKE}. */
+const TRACK_GATE_STROKE = "var(--chart-gate)";
+
+/** Reads one `track_mark` — the polyline outline or the gate links, both
+ *  reading `trackGeometry` rather than a data call. Returns `"polyline"` or
+ *  `"gates"` naming which, or `null` when the cursor is not on one. */
+function readTrackMark(c: Cursor): "polyline" | "gates" | null {
+  const start = c.pos;
+  if (!consumeIdent(c, "Plot") || !consumePunct(c, ".")) {
+    c.pos = start;
+    return null;
+  }
+  const markName = consumeAnyIdent(c);
+  if (markName !== "line" && markName !== "link") {
+    c.pos = start;
+    return null;
+  }
+  if (!consumePunct(c, "(") || !consumeIdent(c, "trackGeometry") || !consumePunct(c, ".")) {
+    c.pos = start;
+    return null;
+  }
+  const member = consumeAnyIdent(c);
+  const wantPolyline = markName === "line";
+  if (member !== (wantPolyline ? "polyline" : "gates") || !consumePunct(c, ",")) {
+    c.pos = start;
+    return null;
+  }
+  const fields = readBracedFields(c, wantPolyline ? parseTrackPolylineField : parseTrackGateField);
+  if (fields === null || !consumePunct(c, ")")) {
+    c.pos = start;
+    return null;
+  }
+  const wanted = wantPolyline ? ["x", "y", "stroke"] : ["x1", "y1", "x2", "y2", "stroke"];
+  if (!wanted.every((k) => fields[k] !== undefined)) {
+    c.pos = start;
+    return null;
+  }
+  if (fields.stroke !== (wantPolyline ? TRACK_POLYLINE_STROKE : TRACK_GATE_STROKE)) {
+    c.pos = start;
+    return null;
+  }
+  return wantPolyline ? "polyline" : "gates";
+}
+
+function parseTrackPolylineField(key: string, c: Cursor): FieldResult {
+  const v = consumeString(c);
+  if (v === null) return { ok: false };
+  if (key === "x") return v === "x" ? { ok: true, value: v } : { ok: false };
+  if (key === "y") return v === "y" ? { ok: true, value: v } : { ok: false };
+  if (key === "stroke") return { ok: true, value: v };
+  return { ok: false };
+}
+
+function parseTrackGateField(key: string, c: Cursor): FieldResult {
+  const v = consumeString(c);
+  if (v === null) return { ok: false };
+  if (key === "x1" || key === "y1" || key === "x2" || key === "y2") {
+    return v === key ? { ok: true, value: v } : { ok: false };
+  }
+  if (key === "stroke") return { ok: true, value: v };
+  return { ok: false };
+}
+
+/** Reads a `gps_call`: `gps("channel")` or `gps(null)`. The `null` is the
+ *  bare identifier, never the string — an uncoloured trace and a channel
+ *  named "null" are different requests (C2 §5.3, ruling R217 item 1). */
+export function readGpsCall(c: Cursor): { colourBy: string | null } | null {
+  const start = c.pos;
+  if (!consumeIdent(c, "gps") || !consumePunct(c, "(")) {
+    c.pos = start;
+    return null;
+  }
+  if (consumeIdent(c, "null")) {
+    if (!consumePunct(c, ")")) {
+      c.pos = start;
+      return null;
+    }
+    return { colourBy: null };
+  }
+  const colourBy = consumeString(c);
+  if (colourBy === null || !consumePunct(c, ")")) {
+    c.pos = start;
+    return null;
+  }
+  return { colourBy };
+}
+
+function parseMapOptionField(key: string, c: Cursor): FieldResult {
+  switch (key) {
+    case "x": {
+      const v = consumeString(c);
+      return v === "x" ? { ok: true, value: v } : { ok: false };
+    }
+    case "y": {
+      const v = consumeString(c);
+      return v === "y" ? { ok: true, value: v } : { ok: false };
+    }
+    case "stroke": {
+      const v = consumeString(c);
+      return v === null ? { ok: false } : { ok: true, value: v };
+    }
+    case "strokeWidth": {
+      const v = consumeNumber(c);
+      return v === null ? { ok: false } : { ok: true, value: v };
+    }
+    default:
+      return { ok: false };
+  }
+}
+
+/** Reads one `trace_mark`: `Plot.<line|dot>(gps_call, map_options)`. A
+ *  `stroke: "c"` over a `gps(null)` trace is refused here rather than
+ *  further up, because that pairing is the one thing about a map mark that
+ *  cannot be checked from either half alone (C2 §5.3, ruling R217 item 1). */
+function readMapMark(c: Cursor): MapMarkProps | null {
+  const start = c.pos;
+  if (!consumeIdent(c, "Plot") || !consumePunct(c, ".")) {
+    c.pos = start;
+    return null;
+  }
+  const markName = consumeAnyIdent(c);
+  if (markName !== "line" && markName !== "dot") {
+    c.pos = start;
+    return null;
+  }
+  if (!consumePunct(c, "(")) {
+    c.pos = start;
+    return null;
+  }
+  const call = readGpsCall(c);
+  if (call === null || !consumePunct(c, ",")) {
+    c.pos = start;
+    return null;
+  }
+  const fields = readBracedFields(c, parseMapOptionField);
+  if (fields === null || fields.x !== "x" || fields.y !== "y" || !consumePunct(c, ")")) {
+    c.pos = start;
+    return null;
+  }
+  if (fields.stroke === "c" && call.colourBy === null) {
+    c.pos = start;
+    return null;
+  }
+
+  const mark: MapMarkProps = { colourBy: call.colourBy, mark: markName };
+  if (fields.stroke !== undefined) mark.stroke = fields.stroke as string;
+  if (fields.strokeWidth !== undefined) mark.strokeWidth = fields.strokeWidth as number;
+  return mark;
+}
+
+/** Reads a `map_marks` array: zero or more `track_mark`s (polyline then
+ *  gates, in that order and only at the head), then at least one
+ *  `trace_mark`. A track mark after a trace mark is custom code, not a second
+ *  legal position — an outline drawn over the data is a different picture. */
+function readMapMarksArray(c: Cursor): { marks: MapMarkProps[]; trackUnderlay: boolean } | null {
+  const start = c.pos;
+  if (!consumePunct(c, "[")) {
+    c.pos = start;
+    return null;
+  }
+
+  const underlay: ("polyline" | "gates")[] = [];
+  const marks: MapMarkProps[] = [];
+  for (;;) {
+    if (marks.length === 0) {
+      const track = readTrackMark(c);
+      if (track !== null) {
+        underlay.push(track);
+        if (!consumePunct(c, ",")) {
+          c.pos = start;
+          return null;
+        }
+        continue;
+      }
+    }
+    const mark = readMapMark(c);
+    if (mark === null) {
+      c.pos = start;
+      return null;
+    }
+    marks.push(mark);
+    if (!consumePunct(c, ",")) break;
+  }
+
+  if (!consumePunct(c, "]") || marks.length === 0) {
+    c.pos = start;
+    return null;
+  }
+  // Both underlay marks or neither: half a track outline is a picture the
+  // Properties pane cannot describe, so it is custom code.
+  const trackUnderlay = underlay.length === 2 && underlay[0] === "polyline" && underlay[1] === "gates";
+  if (underlay.length !== 0 && !trackUnderlay) {
+    c.pos = start;
+    return null;
+  }
+  return { marks, trackUnderlay };
+}
+
+function parseLapMarkOptionField(key: string, c: Cursor): FieldResult {
+  switch (key) {
+    case "x": {
+      const v = consumeString(c);
+      return v === "lap" ? { ok: true, value: v } : { ok: false };
+    }
+    case "y": {
+      const v = consumeString(c);
+      return v === "v" ? { ok: true, value: v } : { ok: false };
+    }
+    case "z":
+    case "stroke": {
+      const v = consumeString(c);
+      return v === "w" ? { ok: true, value: v } : { ok: false };
+    }
+    default:
+      return { ok: false };
+  }
+}
+
+/** Reads one `lap_mark`: `Plot.<barY|dot|lineY>(<identifier>, {x: "lap",
+ *  y: "v"[, z|stroke: "w"]})` (C2 §5.3, ruling R217 item 3). */
+function readLapMark(c: Cursor): LapMarkProps | null {
+  const start = c.pos;
+  if (!consumeIdent(c, "Plot") || !consumePunct(c, ".")) {
+    c.pos = start;
+    return null;
+  }
+  const markName = consumeAnyIdent(c);
+  if (markName !== "barY" && markName !== "dot" && markName !== "lineY") {
+    c.pos = start;
+    return null;
+  }
+  if (!consumePunct(c, "(")) {
+    c.pos = start;
+    return null;
+  }
+  const definition = consumeAnyIdent(c);
+  if (definition === null || !consumePunct(c, ",")) {
+    c.pos = start;
+    return null;
+  }
+  const fields = readBracedFields(c, parseLapMarkOptionField);
+  if (fields === null || fields.x !== "lap" || fields.y !== "v" || !consumePunct(c, ")")) {
+    c.pos = start;
+    return null;
+  }
+  // `z` and `stroke` are one slot spelled two ways; both present is two
+  // statements of one fact that could disagree, so it is custom code.
+  if (fields.z !== undefined && fields.stroke !== undefined) {
+    c.pos = start;
+    return null;
+  }
+
+  const mark: LapMarkProps = { definition, mark: markName };
+  if (fields.z !== undefined || fields.stroke !== undefined) mark.seriesBy = "w";
+  return mark;
+}
+
+/** Reads a `lap_marks` array: `[` one `lap_mark` `]`, exactly one. */
+function readLapMarksArray(c: Cursor): LapMarkProps | null {
+  const start = c.pos;
+  if (!consumePunct(c, "[")) {
+    c.pos = start;
+    return null;
+  }
+  const mark = readLapMark(c);
+  if (mark === null || !consumePunct(c, "]")) {
+    c.pos = start;
+    return null;
+  }
+  return mark;
+}
+
+/** Reads a `spectrogram_call`: `spectrogram("channel", {fft_params})` — the
+ *  same six keys in the same fixed order as `spectrum_call`, over one
+ *  parameter reader (C2 §5.3, ruling R217 item 4). Exported alongside
+ *  {@link readSpectrumCall} for the same reuse reason. */
+export function readSpectrogramCall(c: Cursor): { channel: string; fft: FftParams } | null {
+  const start = c.pos;
+  if (!consumeIdent(c, "spectrogram") || !consumePunct(c, "(")) {
+    c.pos = start;
+    return null;
+  }
+  const channel = consumeString(c);
+  if (channel === null || !consumePunct(c, ",")) {
+    c.pos = start;
+    return null;
+  }
+  const fft = readFftParams(c);
+  if (fft === null || !consumePunct(c, ")")) {
+    c.pos = start;
+    return null;
+  }
+  return { channel, fft };
+}
+
+function parseRasterOptionField(key: string, c: Cursor): FieldResult {
+  const expected: Record<string, string> = { x: "x", y: "y", width: "w", height: "h", src: "src" };
+  const want = expected[key];
+  if (want === undefined) return { ok: false };
+  const v = consumeString(c);
+  return v === want ? { ok: true, value: v } : { ok: false };
+}
+
+/** Reads one `raster_mark`: `Plot.image(spectrogram_call, {x:"x", y:"y",
+ *  width:"w", height:"h", src:"src"})`. Every option is a fixed literal —
+ *  there is nothing to choose about how an image binds its own frame. */
+function readRasterMark(c: Cursor): SpectrogramMarkProps | null {
+  const start = c.pos;
+  if (!consumeIdent(c, "Plot") || !consumePunct(c, ".") || !consumeIdent(c, "image") || !consumePunct(c, "(")) {
+    c.pos = start;
+    return null;
+  }
+  const call = readSpectrogramCall(c);
+  if (call === null || !consumePunct(c, ",")) {
+    c.pos = start;
+    return null;
+  }
+  const fields = readBracedFields(c, parseRasterOptionField);
+  if (fields === null || !consumePunct(c, ")")) {
+    c.pos = start;
+    return null;
+  }
+  if (!["x", "y", "width", "height", "src"].every((k) => fields[k] !== undefined)) {
+    c.pos = start;
+    return null;
+  }
+  return { channel: call.channel, fft: call.fft };
+}
+
+/** Reads a `raster_marks` array: `[` one `raster_mark` `]`, exactly one. */
+function readRasterMarksArray(c: Cursor): SpectrogramMarkProps | null {
+  const start = c.pos;
+  if (!consumePunct(c, "[")) {
+    c.pos = start;
+    return null;
+  }
+  const mark = readRasterMark(c);
+  if (mark === null || !consumePunct(c, "]")) {
+    c.pos = start;
+    return null;
+  }
+  return mark;
+}
+
 /**
  * Looks ahead in `tokens` (from `from`, without moving any cursor) for the
  * `marks` key's value and decides whether this cell's `plot_options` is a
@@ -1270,6 +1658,16 @@ function detectChartKind(tokens: Token[], from: number): PlotProps["chart"] {
   if (calleeIdent.value === "spectrum") return "fft";
   if (calleeIdent.value === "histogram") return "histogram";
   if (calleeIdent.value === "scatter") return "scatter";
+  // A map cell's array may open with a `trackGeometry` underlay mark rather
+  // than its own data call, so both spellings route to the map reader
+  // (ruling R217 item 1).
+  if (calleeIdent.value === "gps" || calleeIdent.value === "trackGeometry") return "map";
+  if (calleeIdent.value === "spectrogram") return "spectrogram";
+  // A lap cell's data argument is a **bare identifier**, not a call — which
+  // is exactly what distinguishes it here: every other kind's callee ident is
+  // followed by `(`, a lap definition by `,` (ruling R217 item 3).
+  const afterCallee = tokens[marksIdx + 8];
+  if (afterCallee?.kind === "punct" && afterCallee.value === ",") return "lap";
   return "time";
 }
 
@@ -1487,6 +1885,158 @@ function readScatterPlotOptions(c: Cursor): ScatterPlotProps | null {
   return props;
 }
 
+function parseMapPlotOptionField(key: string, c: Cursor): FieldResult {
+  switch (key) {
+    case "title": {
+      const v = consumeString(c);
+      return v === null ? { ok: false } : { ok: true, value: v };
+    }
+    case "x": {
+      const v = readXScale(c);
+      return v === null ? { ok: false } : { ok: true, value: v };
+    }
+    case "y": {
+      const v = readYScale(c);
+      return v === null ? { ok: false } : { ok: true, value: v };
+    }
+    case "color": {
+      const v = readColorProps(c);
+      return v === null ? { ok: false } : { ok: true, value: v };
+    }
+    case "aspectRatio": {
+      // The literal `1` and nothing else: equal aspect is a property of the
+      // projection, so there is no other value the document may state.
+      const v = consumeNumber(c);
+      return v === 1 ? { ok: true, value: v } : { ok: false };
+    }
+    case "marks": {
+      const v = readMapMarksArray(c);
+      return v === null ? { ok: false } : { ok: true, value: v };
+    }
+    default:
+      return { ok: false };
+  }
+}
+
+/** Reads a map cell's `plot_options` (ruling R217 item 1), requiring both
+ *  `marks` and `aspectRatio: 1` — a map without equal aspect is a different
+ *  picture, not a shorter valid form, so its absence makes the cell custom. */
+function readMapPlotOptions(c: Cursor): MapPlotProps | null {
+  const start = c.pos;
+  const fields = readBracedFields(c, parseMapPlotOptionField);
+  if (fields === null || fields.marks === undefined || fields.aspectRatio !== 1) {
+    c.pos = start;
+    return null;
+  }
+
+  const marks = fields.marks as { marks: MapMarkProps[]; trackUnderlay: boolean };
+  const props: MapPlotProps = { chart: "map", marks: marks.marks };
+  if (fields.title !== undefined) props.title = fields.title as string;
+  if (marks.trackUnderlay) props.trackUnderlay = true;
+  if (fields.x !== undefined && Object.keys(fields.x as XAxisProps).length > 0) props.x = fields.x as XAxisProps;
+  if (fields.y !== undefined && Object.keys(fields.y as YAxisProps).length > 0) props.y = fields.y as YAxisProps;
+  if (fields.color !== undefined) props.color = fields.color as ColorProps;
+  return props;
+}
+
+function parseLapPlotOptionField(key: string, c: Cursor): FieldResult {
+  switch (key) {
+    case "title": {
+      const v = consumeString(c);
+      return v === null ? { ok: false } : { ok: true, value: v };
+    }
+    case "x": {
+      const v = readXScale(c);
+      return v === null ? { ok: false } : { ok: true, value: v };
+    }
+    case "y": {
+      const v = readYScale(c);
+      return v === null ? { ok: false } : { ok: true, value: v };
+    }
+    case "color": {
+      const v = readColorOpt(c);
+      return v === null ? { ok: false } : { ok: true, value: v };
+    }
+    case "marks": {
+      const v = readLapMarksArray(c);
+      return v === null ? { ok: false } : { ok: true, value: v };
+    }
+    default:
+      return { ok: false };
+  }
+}
+
+/** Reads a lap-progression cell's `plot_options` (ruling R217 item 3). Both
+ *  axes reuse the time cell's readers: an ordinal lap axis is a label
+ *  difference, not a grammar one. */
+function readLapPlotOptions(c: Cursor): LapPlotProps | null {
+  const start = c.pos;
+  const fields = readBracedFields(c, parseLapPlotOptionField);
+  if (fields === null || fields.marks === undefined) {
+    c.pos = start;
+    return null;
+  }
+
+  const props: LapPlotProps = { chart: "lap", mark: fields.marks as LapMarkProps };
+  if (fields.title !== undefined) props.title = fields.title as string;
+  if (fields.x !== undefined && Object.keys(fields.x as XAxisProps).length > 0) props.x = fields.x as XAxisProps;
+  if (fields.y !== undefined && Object.keys(fields.y as YAxisProps).length > 0) props.y = fields.y as YAxisProps;
+  if (fields.color !== undefined) props.color = fields.color as ColorProps;
+  return props;
+}
+
+function parseSpectrogramPlotOptionField(key: string, c: Cursor): FieldResult {
+  switch (key) {
+    case "title": {
+      const v = consumeString(c);
+      return v === null ? { ok: false } : { ok: true, value: v };
+    }
+    case "x": {
+      const v = readXScale(c);
+      return v === null ? { ok: false } : { ok: true, value: v };
+    }
+    case "y": {
+      const v = readYScale(c);
+      return v === null ? { ok: false } : { ok: true, value: v };
+    }
+    case "color": {
+      const v = readColorProps(c);
+      return v === null ? { ok: false } : { ok: true, value: v };
+    }
+    case "fx": {
+      // The literal `"w"` and nothing else: a raster has no `w` column, so
+      // faceting by window is the only way several windows share one cell.
+      const v = consumeString(c);
+      return v === "w" ? { ok: true, value: v } : { ok: false };
+    }
+    case "marks": {
+      const v = readRasterMarksArray(c);
+      return v === null ? { ok: false } : { ok: true, value: v };
+    }
+    default:
+      return { ok: false };
+  }
+}
+
+/** Reads a spectrogram cell's `plot_options` (ruling R217 item 4), requiring
+ *  both `marks` and `fx: "w"` — without the facet, several selected windows
+ *  would draw over one another as one image. */
+function readSpectrogramPlotOptions(c: Cursor): SpectrogramPlotProps | null {
+  const start = c.pos;
+  const fields = readBracedFields(c, parseSpectrogramPlotOptionField);
+  if (fields === null || fields.marks === undefined || fields.fx !== "w") {
+    c.pos = start;
+    return null;
+  }
+
+  const props: SpectrogramPlotProps = { chart: "spectrogram", mark: fields.marks as SpectrogramMarkProps };
+  if (fields.title !== undefined) props.title = fields.title as string;
+  if (fields.x !== undefined && Object.keys(fields.x as XAxisProps).length > 0) props.x = fields.x as XAxisProps;
+  if (fields.y !== undefined && Object.keys(fields.y as YAxisProps).length > 0) props.y = fields.y as YAxisProps;
+  if (fields.color !== undefined) props.color = fields.color as ColorProps;
+  return props;
+}
+
 /** Reads `plot_options`, dispatching to the reader for the chart kind
  *  {@link detectChartKind}'s lookahead over the `marks` key's value picked
  *  (C2 §5.3: "A cell is a time cell or an FFT cell, never both", widened by
@@ -1500,6 +2050,12 @@ function readPlotOptions(c: Cursor): PlotProps | null {
       return readHistogramPlotOptions(c);
     case "scatter":
       return readScatterPlotOptions(c);
+    case "map":
+      return readMapPlotOptions(c);
+    case "lap":
+      return readLapPlotOptions(c);
+    case "spectrogram":
+      return readSpectrogramPlotOptions(c);
     case "time":
       return readTimePlotOptions(c);
   }
