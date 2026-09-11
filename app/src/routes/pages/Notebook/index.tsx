@@ -3,7 +3,9 @@ import { createPortal } from "react-dom";
 import { getVersion } from "@tauri-apps/api/app";
 
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@/components/ui/resizable";
-import { setGraphColumnVisible } from "../../../shell/graphColumnVisible";
+import { setStudioColumnVisible } from "../../../shell/studioColumns";
+import { noteColumnsChangedByHand, setActiveLayoutPreset, useActiveLayoutPreset } from "../../../shell/layoutPreset";
+import { presetLayout, type LayoutPresetId } from "../../../shell/layoutPresets";
 import { BrandSheet } from "@/components/brand/BrandSheet";
 import { NoteBlock } from "@/components/brand/NoteBlock";
 import { listSessions, listWorkbooks, getSession, rebuildCatalog, type RebuildReport, type SessionDetail, type SessionSummary } from "../../../ipc/catalog";
@@ -60,6 +62,8 @@ import { PING_INTERVAL_MS } from "./host/watchdog";
 import { NotebookSession } from "./host/NotebookSession";
 import { dropCellHeight, initialCellHeights, recordCellHeight, type CellHeights } from "./model/cellLayout";
 import { replaceCellBody } from "./model/cells";
+import { changedCellIds } from "./model/documentRanges";
+import { displayNameFor, documentCellDisplayNames, setCellLabelLine } from "./graph/cellDisplayName";
 import {
   runChannelBind,
   runChannelSettle,
@@ -429,8 +433,36 @@ export default function NotebookPage() {
   // correct it. This runs before that paint, so the first frame is already
   // right.
   useLayoutEffect(() => {
-    setGraphColumnVisible(columnVisibility.graph);
-  }, [columnVisibility.graph]);
+    setStudioColumnVisible("graph", columnVisibility.graph);
+    setStudioColumnVisible("properties", columnVisibility.properties);
+  }, [columnVisibility.graph, columnVisibility.properties]);
+
+  /** The active layout preset for this machine's current viewport shape
+   *  (ruling R213). The shell owns it (`shell/layoutPreset.ts`, persisted
+   *  per aspect class); this page owns the column visibility a preset
+   *  *writes*, which is why the two meet here. */
+  const activePreset = useActiveLayoutPreset();
+
+  // R213 item 3: "applying a preset writes the column visibility the R161
+  // toggles already read, so the toggles and the preset never disagree".
+  // Runs whenever the active preset changes — including at mount, when the
+  // shell has just recalled this viewport shape's remembered preset, and
+  // including a re-pick of the preset the class left for `"custom"`.
+  // `"custom"` is the one value that writes nothing: it means "whatever the
+  // toggles say", so the stored R161 visibility stands untouched.
+  //
+  // `useLayoutEffect` for the same reason the publish above uses it: the
+  // column frame reads the result through `studioColumns.ts`, and a passive
+  // effect would paint one frame of the previous arrangement first.
+  useLayoutEffect(() => {
+    if (activePreset === "custom") return;
+    const next = presetLayout(activePreset).columns;
+    setColumnVisibility((prev) => {
+      if (prev.graph === next.graph && prev.properties === next.properties && prev.cells === next.cells) return prev;
+      writeNotebookColumnVisibility(next);
+      return next;
+    });
+  }, [activePreset]);
 
   /** Persists the toolbar column toggle group's whole next set of on-ids.
    *  The group reports the full selection rather than the one item that
@@ -442,8 +474,22 @@ export default function NotebookPage() {
     setColumnVisibility((prev) => {
       const next = notebookColumnVisibilityFrom(prev, ids);
       writeNotebookColumnVisibility(next);
+      // R213 item 3: a column thrown by hand moves this viewport shape to
+      // "custom" unless the new set is still the active preset's own — so
+      // the picker never claims an arrangement that is no longer on screen.
+      // The never-all-off guard above runs first, so what is reported here
+      // is what the toggles actually became.
+      noteColumnsChangedByHand(next);
       return next;
     });
+  }
+
+  /** Applies a preset picked from the toolbar's view group (R213 item 3).
+   *  Writes only the shell store; the column visibility follows through the
+   *  `activePreset` effect above, so a preset picked here and one applied by
+   *  `Ctrl+Shift+L` take exactly the same path. */
+  function applyLayoutPreset(id: LayoutPresetId): void {
+    setActiveLayoutPreset(id);
   }
   /** One entry per window this page has resolved a `SessionDetail` for
    *  (`model/sessionSpanDriver.ts`'s `runSessionSpan`, called once per
@@ -868,6 +914,11 @@ export default function NotebookPage() {
    *  `Settings/ThemeSection.tsx`, which stamps `data-theme`; this page only
    *  reads the choice. */
   const [appTheme, setAppTheme] = useState<ThemeChoice>("dark");
+  /** Ruling R214 item 1's optional cue: the Settings toggle "Colour-code
+   *  graph nodes" (`Settings/prefs.ts`'s `ui.graph_node_colour`, off by
+   *  default). Nothing on the canvas depends on it — shape and glyph carry
+   *  the kind — so an unread or failed preference simply means no stripes. */
+  const [colourCodeNodes, setColourCodeNodes] = useState(false);
   // Re-read on every transition into visibility, not only on mount: the
   // Settings tab writes these two through its *own* `PrefsStore` instance
   // over the same backend, so this page's instance never hears that store's
@@ -883,6 +934,7 @@ export default function NotebookPage() {
       setStoredRegister(prefs.ui.output_register);
       setPaperTheme(prefs.ui.paper_theme);
       setAppTheme(prefs.ui.theme);
+      setColourCodeNodes(prefs.ui.graph_node_colour);
     });
     return () => {
       cancelled = true;
@@ -1696,6 +1748,44 @@ export default function NotebookPage() {
    * `cellId` isn't found -- an unresolved-id race with a concurrent watch
    * event, say -- which would otherwise mark a cell dirty for no reason).
    */
+  /**
+   * The whole-workbook code pane's write path (ruling R214 item 3). A
+   * document-level edit may touch any number of cells at once, so the cells
+   * whose bodies actually changed are named by `documentRanges.ts`'s
+   * `changedCellIds` and each marked dirty through the same `editCell`
+   * action a per-cell edit uses — the first carries the new markdown, the
+   * rest only add themselves to `dirtyCellIds`. An edit that changed no
+   * cell body (prose, front matter, whitespace between cells) goes through
+   * `editFrontMatter` instead: the document is dirty for save, but nothing
+   * needs re-evaluating.
+   */
+  function handleDocumentChange(nextMarkdown: string) {
+    if (state.markdown === null || nextMarkdown === state.markdown) return;
+    const changed = changedCellIds(state.markdown, nextMarkdown);
+    if (changed.length === 0) {
+      dispatch({ type: "editFrontMatter", markdown: nextMarkdown });
+      return;
+    }
+    changed.forEach((cellId, index) => {
+      dispatch(index === 0 ? { type: "editCell", cellId, markdown: nextMarkdown } : { type: "editCell", cellId });
+    });
+  }
+
+  /**
+   * Ruling R214 item 2's second rename gesture — the Properties/Code
+   * column's inline "Rename", beside the graph's frame-title double-click.
+   * Both write the same `# label:` first line through the same ordinary
+   * cell-edit path (§3.7.3), so the two can never disagree about what a
+   * rename means. Math cells only: `#` is not a comment in a `js` or
+   * `table` body, and the caller only offers the control for `math`.
+   */
+  function handleRenameCell(cellId: string, label: string) {
+    if (state.markdown === null) return;
+    const cell = state.cells.find((c) => c.id === cellId);
+    if (cell === undefined || cell.kind !== "math") return;
+    handleCellCodeChange(cellId, setCellLabelLine(decodeByteRange(state.markdown, cell.bodyRange), label));
+  }
+
   function handleCellCodeChange(cellId: string, nextCode: string) {
     if (state.markdown === null) return;
     const nextMarkdown = replaceCellBody(state.markdown, cellId, nextCode);
@@ -2170,6 +2260,11 @@ export default function NotebookPage() {
   const openCellId = openCell?.id ?? null;
   const openCellCode = openCell !== null && state.markdown !== null ? decodeByteRange(state.markdown, openCell.bodyRange) : null;
 
+  /** Every cell's display name (R214 item 2) — the same `# label:`-else-
+   *  "Cell N" rule the maths graph's frames use, from the same module, so
+   *  a cell is named identically wherever it appears. */
+  const cellDisplayNameMap = useMemo(() => documentCellDisplayNames(state.markdown ?? ""), [state.markdown]);
+
   // `CodePane` completions (every kind); `plotForm`'s custom-code detection
   // means these are just candidates, never validated against what a cell
   // actually references. Unfiltered by `has_t` -- unlike `definitionsWithAxis`
@@ -2361,17 +2456,30 @@ export default function NotebookPage() {
   // every kind (`js` gets Properties beside Code, everything else gets Code
   // alone), so the sheet now holds the same editor every other placement
   // does, and each branch below decides only *where* it goes.
+  //
+  // Ruling R214 item 3 is why this no longer requires an open cell: the
+  // column's code pane is the whole `.idl1wb` document, which is worth
+  // showing whether or not a cell is selected. A `js` cell still adds its
+  // Properties tab beside it; every other kind, and no selection at all,
+  // is the document alone.
   const editorPanesElement =
-    openCellId !== null && openCell !== null && openCellCode !== null ? (
+    state.markdown !== null ? (
       <EditorPanes
         cellId={openCellId}
-        kind={openCell.kind}
+        kind={openCell?.kind ?? null}
         code={openCellCode}
-        onChange={(nextCode) => handleCellCodeChange(openCellId, nextCode)}
+        onChange={(nextCode) => openCellId !== null && handleCellCodeChange(openCellId, nextCode)}
         channelIds={channelIds}
         definitionNames={definitionNames}
         channels={propertiesChannels}
         laps={propertiesLaps}
+        wholeDocumentCode={placement !== "sheet"}
+        markdown={state.markdown}
+        onMarkdownChange={handleDocumentChange}
+        onSelectCell={setSelectedCellId}
+        displayName={openCellId !== null ? displayNameFor(cellDisplayNameMap, openCellId) : null}
+        renameable={openCell?.kind === "math"}
+        onRenameCell={handleRenameCell}
       />
     ) : null;
 
@@ -2757,13 +2865,15 @@ export default function NotebookPage() {
   const graphCanvasElement =
     state.markdown !== null ? (
       <GraphCanvas
-        markdown={state.markdown}
+        markdown={state.markdown}
         outputs={graphOutputs}
         selectedWindows={windows.map(toWireWindow)}
         windows={state.windows}
         sessionDetails={graphSessionDetails}
         onCommit={(nextMarkdown) => dispatch({ type: "editFrontMatter", markdown: nextMarkdown })}
         onSelectCell={(cellId) => setSelectedCellId(cellId)}
+        colourCodeNodes={colourCodeNodes}
+        selectedCellId={selectedCellId}
       />
     ) : null;
 
@@ -2871,6 +2981,8 @@ export default function NotebookPage() {
         onSelect={handleSelect}
         register={register}
         onRegisterChange={handleRegisterChange}
+        activePreset={activePreset}
+        onPresetChange={applyLayoutPreset}
         windows={windows}
         sessionDetailsByWindow={sessionDetailsByWindow}
         playing={playback.playing}
@@ -3035,7 +3147,7 @@ export default function NotebookPage() {
               the title names what the sheet actually holds: a `js` cell's
               Properties tab beside its Code, or the code editor alone. */}
           <BrandSheet
-            open={!editorIsPortalHosted && editorPanesElement !== null}
+            open={!editorIsPortalHosted && openCellId !== null && editorPanesElement !== null}
             onOpenChange={(open) => {
               if (!open) setSelectedCellId(null);
             }}
@@ -3045,15 +3157,16 @@ export default function NotebookPage() {
           </BrandSheet>
         </>
       )}
+      {/* The properties column's content. The "Properties hidden -- shown
+          via the toolbar's toggle" branch is gone with R213 item 1: the
+          Output preset needs the output column *full* width, so the
+          properties toggle now removes the whole column the way R208 made
+          the Graph toggle remove its own (`shell/studioColumns.ts`).
+          `editorSlotNode` is therefore non-null exactly when the column is
+          showing, and a hidden-state message would have nowhere to render
+          and nothing to say. */}
       {editorSlotNode !== null &&
-        createPortal(
-          !columnVisibility.properties ? (
-            <ColumnPlaceholder>Properties hidden -- shown via the toolbar&apos;s Properties toggle.</ColumnPlaceholder>
-          ) : (
-            editorPanesElement ?? <ColumnPlaceholder>Select a cell to edit its properties and code.</ColumnPlaceholder>
-          ),
-          editorSlotNode
-        )}
+        createPortal(editorPanesElement ?? <ColumnPlaceholder>Select a cell to edit its properties and code.</ColumnPlaceholder>, editorSlotNode)}
       {/* The maths column's content. Unlike the properties column just
           above, there is no "hidden" placeholder branch here: R208 item 2
           made the Graph toggle remove the whole column, so `graphSlotNode`

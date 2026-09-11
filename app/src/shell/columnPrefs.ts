@@ -1,5 +1,7 @@
 import type { RouteId } from "../routes/types";
 import { ROUTES } from "../routes/types";
+import { ASPECT_CLASSES, type AspectClass } from "./aspectClass";
+import { asActivePreset, DEFAULT_PRESET_BY_CLASS, OUTPUT_COLUMN_MIN_WIDTH_PX, type ActivePreset } from "./layoutPresets";
 
 /** The wide-layout column frame's four docked columns, left to right
  *  (UI-DIRECTION "App shell and navigation"): the Data/library filter, the
@@ -24,7 +26,7 @@ const COLUMN_WIDTH_BOUNDS_PX: Record<ColumnId, { min: number; max: number; defau
   library: { min: 200, max: 480, defaultPx: 280 },
   maths: { min: 240, max: 900, defaultPx: 480 },
   properties: { min: 240, max: 480, defaultPx: 320 },
-  output: { min: 320, max: 1200, defaultPx: 480 },
+  output: { min: OUTPUT_COLUMN_MIN_WIDTH_PX, max: 1200, defaultPx: 480 },
 };
 
 /** Per-machine column widths and collapsed flags, plus the remembered
@@ -39,6 +41,14 @@ export interface ColumnPrefs {
   widths: Record<ColumnId, number>;
   collapsed: ColumnId[];
   lastRoute: RouteId | null;
+  /** The layout preset remembered for each viewport shape (ruling R213
+   *  item 2: "stored per class in the existing per-machine prefs store,
+   *  beside `columnPrefs`"). A field here rather than a second
+   *  `localStorage` key, because R93 already ruled this document is "one
+   *  key for all per-machine shell state, not two" — the same reason
+   *  `lastRoute` lives here. `"custom"` is a real stored value: a class
+   *  whose columns were last thrown by hand recalls exactly that. */
+  presets: Record<AspectClass, ActivePreset>;
 }
 
 const STORAGE_KEY = "idl1.shell.columns.v1";
@@ -49,6 +59,7 @@ export const DEFAULT_COLUMN_PREFS: ColumnPrefs = {
   widths: Object.fromEntries(COLUMN_IDS.map((id) => [id, COLUMN_WIDTH_BOUNDS_PX[id].defaultPx])) as Record<ColumnId, number>,
   collapsed: [],
   lastRoute: null,
+  presets: { ...DEFAULT_PRESET_BY_CLASS },
 };
 
 /** Narrows `raw` to a plain JSON object, or `undefined` for anything else
@@ -84,6 +95,19 @@ function sanitizeCollapsed(raw: unknown): ColumnId[] {
   return COLLAPSIBLE_COLUMN_IDS.filter((id) => seen.has(id));
 }
 
+/** Every aspect class gets a preset, independently: an absent, stale or
+ *  hand-edited entry falls back to that class's own default
+ *  (`layoutPresets.ts`'s `DEFAULT_PRESET_BY_CLASS`), never to another
+ *  class's. */
+function sanitizePresets(raw: unknown): Record<AspectClass, ActivePreset> {
+  const record = asRecord(raw);
+  const presets = {} as Record<AspectClass, ActivePreset>;
+  for (const cls of ASPECT_CLASSES) {
+    presets[cls] = asActivePreset(record?.[cls], DEFAULT_PRESET_BY_CLASS[cls]);
+  }
+  return presets;
+}
+
 function sanitizeLastRoute(raw: unknown): RouteId | null {
   if (typeof raw !== "string") return null;
   return ROUTES.some((r) => r.id === raw) ? (raw as RouteId) : null;
@@ -91,7 +115,8 @@ function sanitizeLastRoute(raw: unknown): RouteId | null {
 
 /** Clamps a restored document to a usable shape: every width to its
  *  column's `[min, max]`, drops unknown/uncollapsible column ids from
- *  `collapsed`, and drops an unrecognised `lastRoute` — so a hand-edited or
+ *  `collapsed`, drops an unrecognised `lastRoute`, and falls every
+ *  per-class preset back to that class's default — so a hand-edited or
  *  stale document can never produce an unusable layout. Total over `raw`:
  *  anything that is not a plain object yields {@link DEFAULT_COLUMN_PREFS}. */
 export function sanitizeColumnPrefs(raw: unknown): ColumnPrefs {
@@ -101,6 +126,7 @@ export function sanitizeColumnPrefs(raw: unknown): ColumnPrefs {
     widths: sanitizeWidths(record.widths),
     collapsed: sanitizeCollapsed(record.collapsed),
     lastRoute: sanitizeLastRoute(record.lastRoute),
+    presets: sanitizePresets(record.presets),
   };
 }
 

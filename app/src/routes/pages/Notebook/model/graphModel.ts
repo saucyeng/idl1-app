@@ -23,8 +23,12 @@
 
 import type { CellOutput } from "../../../../ipc/workbook";
 import { scanCells } from "./cells";
+import { extractChannelCalls, extractSpectrumCalls } from "./jsCellCalls";
 import { scanMathExpr } from "./mathExpr";
 import { tokenizeMath } from "./mathMode";
+import { cellLabelFromBody } from "../graph/cellDisplayName";
+import { parse as parsePlotForm } from "../plotForm/parse";
+import type { MarkProps } from "../plotForm/types";
 
 /** One graph node: a math-cell definition, or a source node standing in for
  *  a name referenced but not defined anywhere in the document (§3.7.3's
@@ -37,9 +41,21 @@ export interface GraphNode {
    *  not change (§3.7.3: renaming a definition is the one gesture that
    *  intentionally moves a node's identity, handled by `graphEdits.ts`). */
   id: string;
-  kind: "definition" | "channel";
-  /** The definition's `identifier` (C2 §3.1), or the referenced name for a
-   *  `"channel"` node. */
+  /**
+   * Which of ruling R214 item 1's three kinds this node is, in this
+   * module's own vocabulary: `"channel"` is R214's **source** (a device
+   * channel, or any name referenced but never defined), `"definition"` is
+   * its **derived** (a maths definition), and `"chart"` is its **chart**
+   * (one `js` cell's plotted output). The R214 words are the *display*
+   * vocabulary — `graph/NodeCard.tsx` maps these three values to the shape
+   * and glyph a reader sees; the model keeps the names the rest of this
+   * lane already uses rather than renaming two existing kinds for it.
+   */
+  kind: "definition" | "channel" | "chart";
+  /** The definition's `identifier` (C2 §3.1), the referenced name for a
+   *  `"channel"` node, or the owning cell's id for a `"chart"` node (which
+   *  has no name of its own in the document — what a reader sees is
+   *  `graph/cellDisplayName.ts`'s display name, resolved by the view). */
   name: string;
   /** The `# label:` display name (§3.1), preferring a completed
    *  evaluation's `CellDefResult.label` and falling back to this module's
@@ -47,12 +63,19 @@ export interface GraphNode {
    *  beyond what one of those two sources states. `null` for a `"channel"`
    *  node and for a definition with no `# label:` comment. */
   label: string | null;
-  /** The owning math cell's `hex8` id (C2 §2.2). `null` for a `"channel"`
-   *  node — it has no cell of its own. */
+  /** The owning math cell's `hex8` id (C2 §2.2), or a `"chart"` node's own
+   *  `js` cell. `null` for a `"channel"` node — it has no cell of its own. */
   cellId: string | null;
   /** The `def_line`'s right-hand-side expression text, verbatim. `null` for
-   *  a `"channel"` node. */
+   *  a `"channel"` and a `"chart"` node. */
   exprText: string | null;
+  /** A `"chart"` node's Plot mark (C2 §5.3), when the cell's code matches
+   *  `plotForm/parse.ts`'s closed grammar — the pictogram
+   *  `graph/chartTypeIcons.tsx` draws in its header. `null` for every other
+   *  kind, and for a hand-written `js` cell outside that grammar: R214 asks
+   *  for "a chart-type icon", and a cell whose type cannot be read states
+   *  that rather than being drawn as a line chart on a guess. */
+  mark: MarkProps["mark"] | null;
 }
 
 /** One dependency wire: `source` is referenced by `target`'s expression. */
@@ -129,23 +152,21 @@ function parseDefLines(body: string): DefLine[] {
   return defs;
 }
 
-/** The cell-level display name (§3.7.3): the cell's first non-blank line,
- *  when it is a whole-line `# label: <text>` comment and nothing else. */
-function cellLabel(body: string): string | null {
-  for (const raw of body.split("\n")) {
-    const line = stripCr(raw);
-    if (line.trim().length === 0) continue;
-    const tokens = tokenizeMath(line);
-    if (tokens.length === 1 && tokens[0].kind === "labelComment") {
-      return tokens[0].text.replace(/^#\s*label\s*:\s*/, "").trim();
-    }
-    return null; // first non-blank line is something other than a label comment
-  }
-  return null;
-}
-
 const definitionNodeId = (name: string): string => `def:${name}`;
 const channelNodeId = (name: string): string => `channel:${name}`;
+/** A `"chart"` node's id — keyed by cell, since a `js` cell is the whole
+ *  node (R214 item 1's third kind), not one definition inside one. */
+const chartNodeId = (cellId: string): string => `chart:${cellId}`;
+
+/** The Plot mark one `js` cell's code charts with, when the whole cell
+ *  matches `plotForm/parse.ts`'s grammar — a time chart's first mark, or a
+ *  spectrum chart's single one. `null` for anything that grammar rejects
+ *  (see {@link GraphNode.mark}). */
+function chartMarkOf(code: string): MarkProps["mark"] | null {
+  const props = parsePlotForm(code);
+  if (props === null) return null;
+  return props.chart === "time" ? props.marks[0]?.mark ?? null : props.mark.mark;
+}
 
 /**
  * Every `def_line` identifier declared anywhere in `markdown`'s `math`
@@ -249,6 +270,7 @@ export function buildGraphModel(markdown: string, outputs: CellOutput[]): GraphM
         label: result?.label ?? def.label,
         cellId: cell.id,
         exprText: def.exprText,
+        mark: null,
       });
       nodeIds.push(id);
 
@@ -258,13 +280,39 @@ export function buildGraphModel(markdown: string, outputs: CellOutput[]): GraphM
         const targetId = isDefinition ? definitionNodeId(ref) : channelNodeId(ref);
         if (!isDefinition && !channelNames.has(ref)) {
           channelNames.add(ref);
-          nodes.push({ id: targetId, kind: "channel", name: ref, label: null, cellId: null, exprText: null });
+          nodes.push({ id: targetId, kind: "channel", name: ref, label: null, cellId: null, exprText: null, mark: null });
         }
         edges.push({ id: `${targetId}->${id}`, source: targetId, target: id });
       }
     }
 
-    groups.push({ id: cell.id, label: cellLabel(body), nodeIds });
+    groups.push({ id: cell.id, label: cellLabelFromBody(body), nodeIds });
+  }
+
+  // R214 item 1's third kind: one node per `js` cell — the chart its code
+  // draws. Its inputs are every name the cell's `channel(...)`/
+  // `spectrum(...)` calls read (`jsCellCalls.ts`, which sees them in a
+  // hand-written cell the `plotForm` grammar rejects too), resolved against
+  // the same document-wide definition namespace a math reference is: a name
+  // no math cell declares is a source, exactly as in the loop above. A `js`
+  // cell gets no subgraph frame — frames are math cells' own boundary
+  // boxes (C2 §3.7.3) and a chart cell holds no definitions to enclose.
+  for (const cell of doc.cells) {
+    if (cell.kind !== "js" || cell.id === null) continue;
+    const code = decoder.decode(bytes.subarray(cell.bodyRange[0], cell.bodyRange[1]));
+    const id = chartNodeId(cell.id);
+    nodes.push({ id, kind: "chart", name: cell.id, label: null, cellId: cell.id, exprText: null, mark: chartMarkOf(code) });
+
+    const refs = [...extractChannelCalls(code).map((c) => c.channel), ...extractSpectrumCalls(code).map((c) => c.channel)];
+    for (const ref of new Set(refs)) {
+      const isDefinition = definitionNames.has(ref);
+      const sourceId = isDefinition ? definitionNodeId(ref) : channelNodeId(ref);
+      if (!isDefinition && !channelNames.has(ref)) {
+        channelNames.add(ref);
+        nodes.push({ id: sourceId, kind: "channel", name: ref, label: null, cellId: null, exprText: null, mark: null });
+      }
+      edges.push({ id: `${sourceId}->${id}`, source: sourceId, target: id });
+    }
   }
 
   return { nodes, edges, groups };

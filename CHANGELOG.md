@@ -27,12 +27,48 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
   from the command line opens ready instead of indexing itself on first
   launch.
 
-### Changed
+- **The maths graph says what each node is (2026-09-11, ruling R214).**
+  Three kinds now read apart at a glance without relying on colour: a
+  source is a device channel, square-cornered on its left edge with a small
+  waveform glyph and its name in mono; a derived value is a maths
+  definition, rounded, marked with an f; a chart is a cell's output,
+  carrying that chart's own pictogram and a thin rule along its bottom.
+  Charts are new to the graph entirely — a js cell now appears as a node
+  fed by every channel its code reads. A key to the three sits in the
+  source palette's footer, and Settings gains "Colour-code graph nodes", a
+  switch that adds a coloured stripe per kind. It is off by default and
+  nothing depends on it.
 
-- **Re-indexing a session no longer re-reads its source file (2026-09-11).**
-  Refreshing a session's catalog rows re-hashed its whole original log to
-  prove the blob was intact, every time. It now does that once, on the
-  insert that first records the blob.
+- **Cells are named, not numbered in hex (2026-09-11, ruling R214).** A
+  cell with no "# label:" line used to show its raw id on the graph, like
+  1a000006. It now reads "Cell 3" — its place in the file — with the id
+  kept as a tooltip. Double-clicking a maths cell's frame title renames it,
+  writing the label into the cell itself, so the name travels with the
+  workbook.
+
+- **The code panel is the whole workbook (2026-09-11, ruling R214).** The
+  Properties/Code column used to show one cell's body at a time. It now
+  shows the entire .idl1wb document in one editor, each cell foldable, with
+  the selection tied both ways: click a graph node, a cell frame or a cell
+  in the list and the document scrolls to it with its lines banded in the
+  gutter; put the caret inside a cell and that cell is selected everywhere
+  else. Editing works as before, with the same settle delay. The per-cell
+  editors in the Cells column are unchanged, and a phone-width sheet still
+  opens just the cell it was opened from.
+
+- **Four layout presets, remembered per screen shape (2026-09-11, ruling
+  R213).** Output puts the notebook full width with the graph and
+  properties away; Maths brings both back and squeezes the output to its
+  narrowest, still live; Split is the side-by-side studio; Stacked puts the
+  maths graph in a row above the output, for screens with more height than
+  width to spare. Ctrl+Shift+L walks the four, and a picker in the
+  toolbar's view group names them. The choice is remembered per viewport
+  shape — ultrawide, wide or narrow, re-read 200 ms after a resize settles
+  — so the same laptop comes back to one arrangement on its desk monitor
+  and another on its own screen. Paper and Studio stay an independent
+  switch. Throwing a column toggle by hand leaves the shape on "custom"
+  until a preset is picked again, and the Properties toggle now removes its
+  column outright instead of leaving an empty panel behind.
 
 - **The notebook got compact, and its graph got room (2026-09-11, ruling
   R212).** One density scale now sizes every control inside the notebook —
@@ -91,6 +127,11 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
   the callback, now defers that update to `requestAnimationFrame`.
 
 ### Changed
+
+- **Re-indexing a session no longer re-reads its source file (2026-09-11).**
+  Refreshing a session's catalog rows re-hashed its whole original log to
+  prove the blob was intact, every time. It now does that once, on the
+  insert that first records the blob.
 
 - **The chart properties form is built from real controls (2026-09-11,
   ruling R212).** Number fields carry their unit and can be dragged to

@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Switch } from "@/components/ui/switch";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import type { PrefsStore } from "./prefsStore";
 import { resolveRegister, themeAttribute, type OutputRegister, type PaperTheme, type ThemeChoice } from "./theme";
@@ -57,6 +58,7 @@ export default function ThemeSection({ store }: ThemeSectionProps) {
   const [theme, setTheme] = useState<ThemeChoice>("dark");
   const [outputRegister, setOutputRegister] = useState<OutputRegister | null>(null);
   const [paperTheme, setPaperTheme] = useState<PaperTheme>("app");
+  const [graphNodeColour, setGraphNodeColour] = useState(false);
   const prefersLight = usePrefersLight();
   const widthPx = useViewportWidth();
 
@@ -67,6 +69,7 @@ export default function ThemeSection({ store }: ThemeSectionProps) {
         setTheme(prefs.ui.theme);
         setOutputRegister(prefs.ui.output_register);
         setPaperTheme(prefs.ui.paper_theme);
+        setGraphNodeColour(prefs.ui.graph_node_colour);
       }
     });
     return () => {
@@ -99,6 +102,15 @@ export default function ThemeSection({ store }: ThemeSectionProps) {
     }
     setPaperTheme(value);
     void store.get().then((current) => store.set({ ui: { ...current.ui, paper_theme: value } }));
+  }
+
+  /** Ruling R214 item 1's optional colour cue for the maths graph. Off by
+   *  default and purely additive: the node kinds are already told apart by
+   *  card shape, header glyph and type face, so nothing breaks when this is
+   *  off and nothing new is stated when it is on. */
+  function handleGraphNodeColourChange(next: boolean): void {
+    setGraphNodeColour(next);
+    void store.get().then((current) => store.set({ ui: { ...current.ui, graph_node_colour: next } }));
   }
 
   function handleRegisterChange(value: string): void {
@@ -166,6 +178,21 @@ export default function ThemeSection({ store }: ThemeSectionProps) {
           {outputRegister === null
             ? `No choice made yet — currently defaulting to ${effectiveRegister} for this window's width.`
             : "Also switchable from the worksheet bar in the Notebook."}
+        </p>
+      </div>
+
+      <div className="flex flex-col gap-2">
+        <label htmlFor="idl1-settings-graph-node-colour" className="font-mono text-xs uppercase tracking-[var(--tracking-label)] text-fg-dim">
+          Colour-code graph nodes
+        </label>
+        <Switch
+          id="idl1-settings-graph-node-colour"
+          checked={graphNodeColour}
+          onCheckedChange={handleGraphNodeColourChange}
+        />
+        <p className="font-mono text-xs text-fg-faint">
+          Adds a coloured stripe per node kind on the Notebook&apos;s maths graph. Sources, derived values and charts are already
+          told apart by card shape and glyph; this is an extra cue, not the encoding.
         </p>
       </div>
     </div>
