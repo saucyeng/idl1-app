@@ -5,20 +5,16 @@ import { Button } from "@/components/ui/button";
 import { NoteBlock } from "@/components/brand/NoteBlock";
 import { StatusDot } from "@/components/brand/StatusDot";
 import type { ScannedCell } from "../model/cells";
+import { isCellBusy, type CellStatus } from "../model/cellStatus";
 
-/** This cell's run state, for {@link CellFrame}'s `StatusDot` — `"pending"`
- *  before an `eval_workbook` result has arrived for it, `"error"` when it
- *  has one and it failed, `"ok"` otherwise. `Notebook/index.tsx` derives
- *  this from `state.outputs`/`cellErrors`/`fftErrors`; `CellFrame` only
- *  renders whichever value it is given. */
-export type CellRunStatus = "pending" | "ok" | "error";
-
-/** Tailwind text-colour utility for each {@link CellRunStatus} — pending
- *  reads as inactive (`--fg-faint`), ok as `--good`, error as `--accent`
- *  (the brand alert colour), matching every other status dot in the app. */
-const STATUS_DOT_CLASS: Record<CellRunStatus, string> = {
-  pending: "text-fg-faint",
-  ok: "text-good",
+/** Tailwind text-colour utility for each {@link CellStatus} — the two
+ *  waiting states read as inactive (`--fg-faint`), settled as `--good`,
+ *  error as `--accent` (the brand alert colour), matching every other
+ *  status dot in the app. */
+const STATUS_DOT_CLASS: Record<CellStatus, string> = {
+  queued: "text-fg-faint",
+  evaluating: "text-fg-faint",
+  settled: "text-good",
   error: "text-accent",
 };
 
@@ -43,23 +39,20 @@ export interface CellFrameProps {
    *  see its own call site's doc comment); this component only reports the
    *  gesture. */
   onSelect: () => void;
-  /** This cell's run state (UI-DIRECTION "Notebook": a `StatusDot` per
-   *  cell). */
-  status: CellRunStatus;
   /**
-   * Decision 59 (`runs/2026-09-07/ui/UI-DIRECTION-2.md` §D): `true` when
-   * this cell already has a rendered result on screen (`children`) but a
-   * fresher one is pending re-evaluation after an edit
-   * (`Notebook/index.tsx`'s `cellStale`). Renders a grey overlay with a
-   * spinner *over* `children`, which stay mounted underneath — the result
-   * must never blank while recomputing. Optional; defaults to `false` so a
-   * caller from before this task is unaffected.
+   * This cell's own evaluation state (ruling R210, UI-DIRECTION
+   * "Notebook": a `StatusDot` per cell), from
+   * `Notebook/model/cellStatus.ts`. `"evaluating"` additionally renders a
+   * grey overlay with a spinner *over* `children`, which stay mounted
+   * underneath — decision 59's rule that a result never blanks while it is
+   * being recomputed.
    */
-  stale?: boolean;
-  /** This cell's error message, shown as an in-place `NoteBlock` when
-   *  `status === "error"`. `undefined` renders nothing even if `status` is
-   *  `"error"` (a sandbox `cellError` with no message text is not expected
-   *  in practice, but this component does not assume one exists). */
+  status: CellStatus;
+  /** This cell's error message, shown as an in-place `NoteBlock` whenever
+   *  there is one — deliberately not gated on `status === "error"`, so a
+   *  failed cell that is now re-evaluating keeps its message on screen
+   *  under the spinner instead of flickering away and back (decision 59
+   *  again). `undefined` renders nothing. */
   error?: string;
   /** Whether this cell's source is currently revealed (decision 30) —
    *  `model/codeVisibility.ts`'s `isCodeVisible`; `CellFrame` keeps no
@@ -100,7 +93,6 @@ export default function CellFrame({
   selected,
   onSelect,
   status,
-  stale = false,
   error,
   codeVisible,
   onToggleCode,
@@ -140,7 +132,7 @@ export default function CellFrame({
       )}
       <div className="relative">
         {children}
-        {stale && (
+        {isCellBusy(status) && (
           <div
             className="absolute inset-0 flex items-center justify-center bg-surface/60 pointer-events-none"
             role="status"
@@ -150,7 +142,7 @@ export default function CellFrame({
           </div>
         )}
       </div>
-      {status === "error" && error !== undefined && (
+      {error !== undefined && (
         <NoteBlock className="border-accent text-accent">{error}</NoteBlock>
       )}
     </div>

@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useMemo, useReducer, useRef, useState, type CSSProperties, type ReactNode } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useReducer, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { getVersion } from "@tauri-apps/api/app";
 
@@ -34,7 +34,8 @@ import { useToolbarSlotNode } from "../../../shell/toolbarSlot";
 import { ColumnPlaceholder } from "../../../shell/ColumnFrame";
 import { resolveRegister, type PaperTheme, type ThemeChoice } from "../Settings/theme";
 import { createPrefsStore, localStorageBackend } from "../Settings/prefsStore";
-import CellFrame, { type CellRunStatus } from "./components/CellFrame";
+import CellFrame from "./components/CellFrame";
+import { cellStatus, type CellStatus } from "./model/cellStatus";
 import CellList from "./components/CellList";
 import ReportView from "./components/ReportView";
 import PaperView from "./components/PaperView";
@@ -885,6 +886,29 @@ export default function NotebookPage() {
   const sessionRef = useRef<NotebookSession>(new NotebookSession(new TileCache()));
   const openSeqRef = useRef(0);
   const evalSeqRef = useRef(0);
+  /**
+   * How many `eval_workbook`/`open_workbook` round trips are in flight
+   * right now (ruling R210). A count, not a boolean: a watch event and an
+   * edit debounce can both fire a run, and an older run resolving must not
+   * report the notebook as idle while a newer one is still out.
+   *
+   * Read only by `cellStatusFor` below, to tell a cell that is *waiting*
+   * on a result (`"queued"`) from one whose result is *being computed*
+   * (`"evaluating"`) -- Jupyter's own distinction. The evaluator runs the
+   * whole workbook per call, so this is document-level; what makes the
+   * status per-cell is that only a cell without a current result reads it.
+   */
+  const [evalInFlightCount, setEvalInFlightCount] = useState(0);
+  const evalInFlight = evalInFlightCount > 0;
+
+  /** Counts `run` in and out of {@link evalInFlightCount}, returning
+   *  nothing -- every call site already fires its run with `void`, and
+   *  `finally` re-raises a rejection exactly as the bare promise did, so
+   *  this changes no call's error behaviour. */
+  const trackEvalRun = useCallback((run: Promise<unknown>): void => {
+    setEvalInFlightCount((n) => n + 1);
+    void run.finally(() => setEvalInFlightCount((n) => n - 1));
+  }, []);
   /** One monotonic run-sequence counter per selected window (keyed by
    *  `windowKey`), for `model/sessionSpanDriver.ts`'s `runSessionSpan` --
    *  called once per window (R127's accepted item), so staleness is
@@ -1213,7 +1237,7 @@ export default function NotebookPage() {
       readWorkbook: (idOrPath) => readWorkbook(idOrPath),
       evalWorkbookV2: (id, w) => evalWorkbookV2(id, w),
     };
-    void runOpenAndEval(deps, selectedWorkbookId, windows.map(toWireWindow), dispatch, () => openSeqRef.current !== mySeq, evalGenerationRef.current);
+    trackEvalRun(runOpenAndEval(deps, selectedWorkbookId, windows.map(toWireWindow), dispatch, () => openSeqRef.current !== mySeq, evalGenerationRef.current));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [windowsKeyValue, selectedWorkbookId]);
 
@@ -1404,7 +1428,7 @@ export default function NotebookPage() {
       }
       dispatch({ type: "watchEvent", event });
       const mySeq = ++evalSeqRef.current;
-      void runEval({ evalWorkbookV2 }, workbookId, windowsRef.current, dispatch, () => evalSeqRef.current !== mySeq, evalGenerationRef.current);
+      trackEvalRun(runEval({ evalWorkbookV2 }, workbookId, windowsRef.current, dispatch, () => evalSeqRef.current !== mySeq, evalGenerationRef.current));
     });
 
     return () => {
@@ -1434,7 +1458,7 @@ export default function NotebookPage() {
 
     const timer = setTimeout(() => {
       const mySeq = ++evalSeqRef.current;
-      void runEval({ evalWorkbookV2 }, workbookId, windowsRef.current, dispatch, () => evalSeqRef.current !== mySeq, evalGenerationRef.current);
+      trackEvalRun(runEval({ evalWorkbookV2 }, workbookId, windowsRef.current, dispatch, () => evalSeqRef.current !== mySeq, evalGenerationRef.current));
     }, EDIT_EVAL_DEBOUNCE_MS);
 
     return () => clearTimeout(timer);
@@ -2244,43 +2268,41 @@ export default function NotebookPage() {
     xMode,
   ]);
 
-  /** `CellFrame`'s `StatusDot` (UI-10): `"pending"` before an
-   *  `eval_workbook_v2` result exists for `cellId` in `primaryOutputs`,
-   *  `"error"` when the cell's own output errors, its sandbox `cellError`,
-   *  or any of its per-window FFT fetches failed, `"ok"` otherwise.
-   *  `cellId === null` (an unresolved fence id) always reads as pending --
-   *  it can never have an evaluated `CellOutput` (Rust indexes by id). */
-  function cellStatus(cellId: string | null): CellRunStatus {
-    if (cellId === null) return "pending";
-    if (cellErrors.has(cellId)) return "error";
-    if ((fftErrors.get(cellId)?.size ?? 0) > 0) return "error";
-    const output = primaryOutputs.get(cellId);
-    if (output === undefined) return "pending";
-    return output.errors.length > 0 ? "error" : "ok";
+  /** Whether the current result for `cellId` is an error: its sandbox
+   *  `cellError`, any of its per-window FFT fetch failures, or its own
+   *  `CellOutput` carrying errors -- the same three sources, in the same
+   *  precedence, `cellErrorMessage` builds its text from. */
+  function cellHasError(cellId: string): boolean {
+    if (cellErrors.has(cellId)) return true;
+    if ((fftErrors.get(cellId)?.size ?? 0) > 0) return true;
+    return (primaryOutputs.get(cellId)?.errors.length ?? 0) > 0;
   }
 
   /**
-   * Decision 59: `true` when this cell already has a rendered result
-   * (`primaryOutputs` carries an entry for it) but the primary window's own
-   * `WindowEvalState.generation` is behind the document's current
-   * `evalRequestGeneration` -- an edit landed since that result was
-   * computed and a fresh one has not arrived yet. `CellFrame` renders this
-   * as a grey overlay with a spinner *over* the still-mounted `children`,
-   * never by blanking them (decision 59: "a chart never blanks while
-   * recomputing"). A cell with no output yet at all (`primaryOutputs` has
-   * no entry) is "pending", a distinct state this deliberately excludes --
-   * there is nothing on screen yet to greyed-over.
+   * This cell's own evaluation status for `CellFrame` (ruling R210): each
+   * cell reports queued / evaluating / settled / error for itself and
+   * lands its own result, rather than the page standing in for all of them
+   * with one spinner. `model/cellStatus.ts` holds the rule; this function
+   * only reads the signals out of state.
    *
-   * Scoped to the *primary* window, mirroring every other single-window
-   * reader in this file (`cellStatus`, `cellErrorMessage`) -- a genuinely
-   * per-window greying for a multi-window overlay chart is deferred (see
-   * this task's own report), since it would need per-series staleness
-   * inside the sandbox-rendered picture, not just this frame's chrome.
+   * `cellId === null` (an unresolved fence id) always reads as queued -- it
+   * can never have an evaluated `CellOutput`, since Rust indexes by id, so
+   * it is permanently waiting on a result that cannot arrive.
+   *
+   * Scoped to the *primary* window, like every other single-window reader
+   * in this file (`cellErrorMessage`, and `cellStale` before it).
    */
-  function cellStale(cellId: string | null): boolean {
-    if (cellId === null) return false;
-    if (!primaryOutputs.has(cellId)) return false;
-    return isWindowStale(primaryEval, state.evalRequestGeneration);
+  function cellStatusFor(cellId: string | null): CellStatus {
+    if (cellId === null) {
+      return cellStatus({ hasOutput: false, stale: false, evalInFlight: evalInFlight, hasError: false });
+    }
+
+    return cellStatus({
+      hasOutput: primaryOutputs.has(cellId),
+      stale: isWindowStale(primaryEval, state.evalRequestGeneration),
+      evalInFlight,
+      hasError: cellHasError(cellId),
+    });
   }
 
   /** The message `CellFrame`'s error `NoteBlock` shows, in the same
@@ -2673,8 +2695,7 @@ export default function NotebookPage() {
               onSelect={() => {
                 if (cell.id !== null) setSelectedCellId(cell.id);
               }}
-              status={cellStatus(cell.id)}
-              stale={cellStale(cell.id)}
+              status={cellStatusFor(cell.id)}
               error={cellErrorMessage(cell.id)}
               codeVisible={cell.id !== null && isCodeVisible(revealedCells, cell.id)}
               onToggleCode={() => {

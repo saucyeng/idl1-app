@@ -304,6 +304,14 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 
 ### Fixed
 
+- **Every notebook cell reports its own state (2026-09-11, ruling R210).**
+  A cell now reads queued, evaluating, settled or error for itself, the way
+  a Jupyter cell does, and spins only while its own result is being
+  recomputed. Before, a cell could only say pending, ok or error, so one
+  waiting to start and one actually running looked the same. A cell whose
+  previous run failed keeps that message on screen while the next run
+  works, instead of flickering it away and back.
+
 - **Charts no longer jump back during a pan (2026-09-11, ruling R209 item
   2).** Panning a chart in the short bursts people actually drag in made
   the picture snap backwards every so often. A pan pauses long enough for
