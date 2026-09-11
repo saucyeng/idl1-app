@@ -2906,7 +2906,7 @@ export default function NotebookPage() {
           must never wrap is the wrong home for them (R212 item 4). They
           render here, directly under the row, where they may wrap freely
           and take no height at all when there is nothing to say. */}
-      <WorkbookNotices entry={entry} error={workbookBarError} lastRebuild={lastRebuild} />
+      <WorkbookNotices entry={entry} error={workbookBarError} lastRebuild={lastRebuild} rescanning={rescanning} />
       {saveFlowState.status === "error" && saveNote !== null && (
         <p role="alert" className="border-b border-rule bg-surface-2 px-2 py-1 font-mono text-[length:var(--nb-text-label)] text-accent">
           {saveNote}

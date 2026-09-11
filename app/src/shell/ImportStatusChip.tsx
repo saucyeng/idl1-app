@@ -1,8 +1,10 @@
 import { useEffect, useState } from "react";
 
+import { indexStatus, onIndexProgress, startIndexJob, type IndexProgressEvent } from "../ipc/index_job";
+import type { IpcError } from "../ipc/workbook";
 import { isDrained } from "../routes/pages/Data/importDriver";
 import { useImportQueue } from "../state/ImportQueue";
-import { importChip } from "./importStatus";
+import { importChip, indexChip } from "./importStatus";
 
 /** Props for {@link ImportStatusChip}. */
 export interface ImportStatusChipProps {
@@ -28,7 +30,52 @@ export default function ImportStatusChip({ onOpenImportPanel }: ImportStatusChip
   const [state] = useImportQueue();
   const [drainedAtMs, setDrainedAtMs] = useState<number | null>(null);
   const [nowMs, setNowMs] = useState(() => Date.now());
+  const [index, setIndex] = useState<IndexProgressEvent | null>(null);
+  const [indexFinishedAtMs, setIndexFinishedAtMs] = useState<number | null>(null);
+  const [indexError, setIndexError] = useState<IpcError | null>(null);
   const drained = isDrained(state);
+
+  // The library index job (rulings R207/R208.1): read whatever is already
+  // running, subscribe, then ask for one. `startIndexJob` resolves as soon
+  // as the job is *started*, never when it finishes, so nothing here waits
+  // on indexing — it must never sit between the user and a workbook.
+  useEffect(() => {
+    let cancelled = false;
+    let unlisten: (() => void) | null = null;
+
+    (async () => {
+      const status = await indexStatus();
+      if (cancelled) return;
+      if (status.running && status.current_session_id !== null && status.phase !== null) {
+        setIndex({
+          done: status.done,
+          total: status.total,
+          current_session_id: status.current_session_id,
+          phase: status.phase,
+        });
+      }
+      setIndexError(status.last_error === null ? null : status.last_error);
+      const stop = await onIndexProgress((event) => {
+        setIndex(event);
+        if (event.done < event.total) return;
+        setIndexFinishedAtMs(Date.now());
+        // The terminal observation carries counts, not the reason a run
+        // never started — that only exists in `index_status`.
+        void indexStatus().then((after) => setIndexError(after.last_error));
+      });
+      if (cancelled) {
+        stop();
+        return;
+      }
+      unlisten = stop;
+      await startIndexJob();
+    })();
+
+    return () => {
+      cancelled = true;
+      unlisten?.();
+    };
+  }, []);
 
   // Stamps the moment the queue drained, and clears it the moment more
   // files are enqueued — so a second batch never inherits the first
@@ -43,16 +90,21 @@ export default function ImportStatusChip({ onOpenImportPanel }: ImportStatusChip
     setNowMs(at);
   }, [drained]);
 
-  // Only ticks while a "done" chip is up: a running queue re-renders on its
-  // own `PROGRESS` dispatches, and an idle one renders nothing, so neither
-  // needs a timer (no interval survives an idle app).
+  // Only ticks while a "done" chip is up: a running queue (or a running
+  // index job) re-renders on its own dispatches and events, and an idle app
+  // renders nothing, so neither needs a timer.
+  const indexDone = indexFinishedAtMs !== null;
   useEffect(() => {
-    if (!drained) return;
+    if (!drained && !indexDone) return;
     const id = window.setInterval(() => setNowMs(Date.now()), 1000);
     return () => window.clearInterval(id);
-  }, [drained]);
+  }, [drained, indexDone]);
 
-  const chip = importChip(state, drainedAtMs === null ? null : nowMs - drainedAtMs);
+  // An import in flight outranks indexing: the import is what the user just
+  // asked for, and indexing follows it anyway.
+  const chip =
+    importChip(state, drainedAtMs === null ? null : nowMs - drainedAtMs) ??
+    indexChip(index, indexFinishedAtMs === null ? null : nowMs - indexFinishedAtMs, indexError);
   if (chip === null) return null;
 
   const toneClass =
@@ -62,7 +114,7 @@ export default function ImportStatusChip({ onOpenImportPanel }: ImportStatusChip
     <button
       type="button"
       onClick={onOpenImportPanel}
-      aria-label="Import status — open the import panel"
+      aria-label="Background work status — open the import panel"
       className="flex w-full items-center gap-2 border-b border-rule bg-surface px-2 py-1 text-left font-mono text-sm hover:bg-surface-2"
     >
       <span className={`truncate ${toneClass}`}>{chip.text}</span>

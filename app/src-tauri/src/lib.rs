@@ -54,6 +54,11 @@ pub fn run() {
             // and updating firmware is exactly the kind of thing a user may
             // want to do while the library is unavailable.
             app.manage(idl_rs_tauri::state::Ota::default());
+            // The library-wide lap/track index job's live state (rulings
+            // R207/R208.1). The job itself is started by the frontend
+            // (`start_index_job`) on launch and by `rebuild_catalog`; this
+            // only holds its progress so a chip mounting mid-run can read it.
+            app.manage(idl_rs_tauri::state::IndexJob::default());
 
             // `<data>/inbox` (C4 §2, ruling R191): scanned once now, watched
             // while the app runs. Desktop only — the module does not exist

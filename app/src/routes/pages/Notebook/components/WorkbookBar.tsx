@@ -207,20 +207,25 @@ export function WorkbookActions({ creating, rescanning, onCreate, onRescan, labe
 }
 
 /**
- * The notice strip under the toolbar: "Looking for workbooks…" while the
- * first `list_workbooks` (and the one automatic `rebuild_catalog` an empty
- * result triggers, R81 Q1(a)) is in flight, the empty-library line, the
- * last rescan's counts, and the typed error. Renders `null` when there is
- * nothing to say, so it takes no height in the common case.
+ * The notice strip under the toolbar: the true state of whatever the bar is
+ * waiting on (ruling R207 item 4 — the old label said "Looking for
+ * workbooks…" through a ten-minute catalog rebuild), the empty-library
+ * line, the last rescan's counts, and the typed error. Renders `null` when
+ * there is nothing to say, so it takes no height in the common case.
+ *
+ * Two distinct waits reach `entry === null`: the first `list_workbooks`,
+ * which is a single indexed query, and the one automatic `rebuild_catalog`
+ * an empty result triggers (R81 Q1(a)), which walks the whole tree. Only
+ * the second is slow, and `rescanning` is what tells them apart.
  */
-export function WorkbookNotices({ entry, error, lastRebuild }: Pick<WorkbookBarProps, "entry" | "error" | "lastRebuild">) {
+export function WorkbookNotices({ entry, error, lastRebuild, rescanning }: Pick<WorkbookBarProps, "entry" | "error" | "lastRebuild" | "rescanning">) {
   const looking = entry === null;
   const empty = entry !== null && entry.kind === "empty";
   if (!looking && !empty && error === null && lastRebuild === null) return null;
 
   return (
     <div className="flex flex-wrap items-center gap-[var(--space-4)] border-b border-rule bg-surface-2 px-2 py-1 font-mono text-[length:var(--nb-text-label)] text-fg-dim">
-      {looking && <span>Looking for workbooks…</span>}
+      {looking && <span>{rescanning ? "Rebuilding the catalog…" : "Looking for workbooks…"}</span>}
       {empty && <span>No workbooks yet. Name one and select Create.</span>}
       {lastRebuild !== null && (
         <span>
