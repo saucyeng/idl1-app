@@ -250,7 +250,16 @@ export class SandboxHost {
    *  channels: a JSON host variable resolved by an async IPC round trip
    *  (`trackGeometry`, from `fetch_gps_trace_meta`) always arrives after
    *  `setCells` has already run the cells, so without one a map cell's
-   *  underlay would stay at the runtime's empty default forever. */
+   *  underlay would stay at the runtime's empty default forever.
+   *
+   *  The re-render is scheduled for **every** JSON host var, not only
+   *  `trackGeometry` -- `laps`, `session` and `constants` too. That is
+   *  deliberate rather than incidental: all four have the same "bound after
+   *  the cells already ran" problem, and the alternative (a second setter,
+   *  or a flag argument) would ask every call site to know whether its own
+   *  value can arrive late. {@link rerenderCoalescer}'s trailing debounce
+   *  merges a burst of them into one re-render, which is what it exists
+   *  for. */
   setHostVar(name: string, value: HostVarPayload): void {
     if (value.kind === "json") {
       this.lastJsonHostVars.set(name, value.value);

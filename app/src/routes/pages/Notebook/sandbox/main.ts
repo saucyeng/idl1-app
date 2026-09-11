@@ -178,10 +178,26 @@ interface RasterRecord {
  *
  * Encoding runs once per fetched raster, on receipt, never per rendered
  * frame -- a spectrogram's pixels change only when a settle-bound
- * `fetch_raster_v2` returns new ones (C3 §4), so this never sits on the
- * interaction path (R201). Returns an empty string for a degenerate
- * (zero-area) frame or if the 2D context is unavailable, which renders as
- * no image rather than a broken one.
+ * `fetch_raster_v2` returns new ones (C3 §4), so it is not on a hover or
+ * pan handler.
+ *
+ * **It is still main-thread work, and it is not free.**
+ * `runs/2026-09-10/UI-THREAD-SURVEY.md` item 2 records that this sandbox
+ * document is same-process with the host in Chromium's common case, so
+ * anything synchronous in the `setHostVar` handler contributes to jank felt
+ * on the whole window -- and that survey already names
+ * {@link materializeHostVar} as a cost to move off-thread. A PNG encode of
+ * a raster at C2 §5.3's 2048x1024 clamp, once per selected window, will
+ * exceed one frame's budget. That is accepted here rather than solved: it
+ * happens on a settle (not during a gesture), and the fix -- an
+ * `OffscreenCanvas` encode in a worker, which would make this async and so
+ * change the `setHostVar` handler's shape -- belongs with the survey's own
+ * off-thread lane rather than bolted on here. **This is a known R201
+ * shortfall, not a compliance claim.**
+ *
+ * Returns an empty string for a degenerate (zero-area) frame or if the 2D
+ * context is unavailable, which renders as no image rather than a broken
+ * one.
  */
 function rasterDataUrl(frame: RasterFramePayload): string {
   if (frame.pixelWidth <= 0 || frame.pixelHeight <= 0) return "";

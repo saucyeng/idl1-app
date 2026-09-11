@@ -1566,6 +1566,22 @@ export default function NotebookPage() {
         for (const cellId of retainedScattersRef.current.keys()) {
           pushCombinedScatterFor(cellId);
         }
+        // Ruling R217 items 1 and 4: a trace's and a raster's payloads are
+        // detached on transfer exactly as a spectrum's is, and neither is
+        // cached for replay by `rebuildReplay.ts` (only `kind: "json"` host
+        // vars are), so both are re-pushed from this page's own retained
+        // copies here. Without these two loops a rebuild leaves every map
+        // and spectrogram cell permanently blank: the per-window
+        // `bindingIdentity` refs survive a rebuild untouched, so the two
+        // fetch effects see no change and never refetch either.
+        // `trackGeometry` needs no loop -- it *is* a JSON host var, so
+        // `replayInitAndHostVars` replays it from `lastJsonHostVars`.
+        for (const cellId of retainedGpsRef.current.keys()) {
+          pushCombinedGpsFor(cellId);
+        }
+        for (const cellId of retainedRastersRef.current.keys()) {
+          pushRastersFor(cellId);
+        }
       },
     });
     sandboxHostRef.current = host;
