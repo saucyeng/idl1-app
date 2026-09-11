@@ -6,6 +6,21 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 
 ### Fixed
 
+- **The timeline strip's handles can be dragged again (2026-09-11, ruling
+  R221.3).** Grabbing either end of a window's bar did nothing at all. The
+  strip measured the pointer from the padded box around its lanes while
+  drawing the handles inside the lanes themselves, so a pointer placed
+  exactly on a handle tested as eight pixels away from it — two pixels more
+  than the grab tolerance, which is why it never caught. The pointer is now
+  measured from the lane it is actually on.
+
+- **Charts fill the notebook column (2026-09-11, ruling R221.4).** Every
+  chart was drawn at a fixed 640 pixels wide whatever the window or the
+  column around it, so widening the window left a chart marooned in white
+  space. Charts now measure the column they are in and are fetched and
+  plotted at that width, following the window, the editor layout and every
+  column you show or hide.
+
 - **A chart can no longer paint over the window's own controls
   (2026-09-11, ruling R221.1).** Charts are drawn in a layer that floats
   above the page so they can track scrolling in real pixels, and one piece
@@ -20,6 +35,17 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
   for this reason are gone.
 
 ### Added
+
+- **A session that takes a while to open now says so (2026-09-11, ruling
+  R221.1).** Opening a long recording could sit silent for minutes with
+  nothing on screen to say whether it was working or stuck. Reading one
+  channel out of a three-hour session takes about a second, and a notebook
+  full of charts reads a lot of them. Every read that takes longer than a
+  moment now reports itself: each cell's status mark becomes a ring that
+  fills as its own channels arrive, and the status bar shows how many
+  channels are in and how far through the whole thing is. Reads fast enough
+  not to matter stay silent, so nothing flickers on a chart that was already
+  loaded.
 
 - **[docs] Release pipeline (2026-09-11, ruling R224).** `release.yml`
   builds Windows and Linux installers on a `v*` tag push and opens a draft

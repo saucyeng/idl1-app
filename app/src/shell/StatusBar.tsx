@@ -6,6 +6,8 @@ import { listSessions } from "../ipc/catalog";
 import type { RouteId } from "../routes/types";
 import type { Selection } from "../state/AppState";
 import { sessionLabel, windowsKey } from "../state/selection";
+import { describeDecodeSummary } from "../state/decodeProgress";
+import { useDecodeStatus } from "./decodeStatus";
 import { useDeviceLink } from "./deviceLink";
 import ImportStatusChip from "./ImportStatusChip";
 import { LAYOUT_PRESETS, type ActivePreset } from "./layoutPresets";
@@ -88,6 +90,7 @@ export default function StatusBar({ selection, activePreset, onCyclePreset, onNa
   const [sessionNamesById, setSessionNamesById] = useState<Map<string, string>>(new Map());
   const deviceLink = useDeviceLink();
   const memory = useMemoryUse();
+  const decoding = useDecodeStatus();
 
   // The same fetch `TopBar` used to hold, moved with the chips it feeds
   // (R220 item 1). Chip labels need each window's session name, which
@@ -142,6 +145,24 @@ export default function StatusBar({ selection, activePreset, onCyclePreset, onNa
       )}
 
       <span className="flex-1" />
+
+      {/* Ruling R221 item 1(b): the two minutes of silence Isaac reported
+          while a three-hour session's channels decoded. Present only while
+          something is actually slow — the engine says nothing about a decode
+          that finishes inside ~200 ms. */}
+      {decoding !== null && (
+        <StatusItem title="Reading this session's channels out of its stored data" className="text-fg">
+          <span
+            aria-hidden
+            className="h-1 w-10 bg-surface-2"
+            /* A bar, not a spinner: the numbers are known, so the chip shows
+               how far along it is rather than only that it is busy. */
+          >
+            <span className="block h-full bg-good" style={{ width: `${Math.floor(decoding.fraction * 100)}%` }} />
+          </span>
+          <span className="truncate">{describeDecodeSummary(decoding)}</span>
+        </StatusItem>
+      )}
 
       <ImportStatusChip onOpenImportPanel={() => onNavigate("data")} />
 

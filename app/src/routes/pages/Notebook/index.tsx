@@ -48,15 +48,7 @@ import { createPrefsStore, localStorageBackend } from "../Settings/prefsStore";
 import CellFrame from "./components/CellFrame";
 import { cellStatus, type CellStatus } from "./model/cellStatus";
 import { resolveChartWidthPx } from "./model/chartWidth";
-import {
-  applyDecodeProgress,
-  cellDecodeFraction,
-  decodeKey,
-  decodeSummary,
-  describeDecodeSummary,
-  NO_DECODES,
-  type DecodeProgressState,
-} from "./model/decodeProgress";
+import { applyDecodeProgress, cellDecodeFraction, decodeKey, NO_DECODES, type DecodeProgressState } from "../../../state/decodeProgress";
 import { onDecodeProgress } from "../../../ipc/decode_progress";
 import CellList from "./components/CellList";
 import ReportView from "./components/ReportView";
@@ -973,7 +965,6 @@ export default function NotebookPage() {
       unlisten?.();
     };
   }, []);
-  const loadingSummary = decodeSummary(decodeProgress);
   const placement = editorPlacement(widthPx);
   // Ruling R184: paper *is* the narrow placement, named through
   // `model/paperView.ts` so this page reads intent rather than an enum
@@ -3207,9 +3198,17 @@ export default function NotebookPage() {
       const code = decodeByteRange(state.markdown, cell.bodyRange);
       const binding = bindingFor({ id: cell.id, code }, sessionDetail, sessionSpanUs, definitionsWithAxis, primaryWireWindow, definitionUnitByName);
       if (binding === null) continue;
+      // Every binding kind decodes through the same `SessionCache`, so every
+      // kind gets a ring — they differ only in how they name their channels.
+      const channelIds =
+        binding.kind === "time"
+          ? binding.channels.map((c) => c.channelId)
+          : binding.kind === "scatter"
+            ? [binding.xChannelId, binding.yChannelId]
+            : [binding.channelId];
       byCell.set(
         cell.id,
-        binding.channels.flatMap((c) => sessionIds.map((sid) => decodeKey(sid, c.channelId)))
+        channelIds.flatMap((channelId) => sessionIds.map((sid) => decodeKey(sid, channelId)))
       );
     }
     return byCell;

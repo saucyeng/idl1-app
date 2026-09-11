@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import type { DecodeProgressEvent } from "../../../../ipc/decode_progress";
+import type { DecodeProgressEvent } from "../ipc/decode_progress";
 import {
   applyDecodeProgress,
   cellDecodeFraction,
@@ -116,10 +116,16 @@ describe("decodeSummary / describeDecodeSummary", () => {
   });
 
   it("a burst part-way through — three of nine finished — reads as the chip's own sentence", () => {
+    // Nine channels start decoding, then three of them land — the order a
+    // notebook full of cells actually produces. Finishing the first three
+    // before the rest had started would empty the burst, which is its own
+    // test above.
     let state: DecodeProgressState = NO_DECODES;
     for (let i = 0; i < 9; i += 1) {
-      const done = i < 3;
-      state = applyDecodeProgress(state, event({ channel: `c${i}`, done_rows: done ? 1000 : 100, total_rows: 1000, finished: done }));
+      state = applyDecodeProgress(state, event({ channel: `c${i}`, done_rows: 100, total_rows: 1000 }));
+    }
+    for (let i = 0; i < 3; i += 1) {
+      state = applyDecodeProgress(state, event({ channel: `c${i}`, done_rows: 1000, total_rows: 1000, finished: true }));
     }
 
     const summary = decodeSummary(state);
