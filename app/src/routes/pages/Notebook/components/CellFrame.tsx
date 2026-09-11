@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type KeyboardEvent, type MouseEvent, type ReactNode } from "react";
+import { useEffect, useRef, useState, type MouseEvent, type ReactNode } from "react";
 import { Loader2Icon } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -8,7 +8,7 @@ import { StatusDot } from "@/components/brand/StatusDot";
 import type { ScannedCell } from "../model/cells";
 import { isCellBusy, type CellStatus } from "../model/cellStatus";
 import { denseGeometry } from "../model/denseMode";
-import { isShowCodeShortcut, plotStatusGlyph, SETTLE_FADE_MS, type CellChromeMode, type PlotLegendEntry } from "../model/plotChrome";
+import { plotStatusGlyph, SETTLE_FADE_MS, type CellChromeMode, type PlotLegendEntry } from "../model/plotChrome";
 
 /** Tailwind text-colour utility for each {@link CellStatus} — the two
  *  waiting states read as inactive (`--fg-faint`), settled as `--good`,
@@ -86,8 +86,9 @@ export interface CellFrameProps {
    *  axis of the chart above it (`denseMode.ts`'s `sharesXAxisAbove`).
    *  Purely visual: nothing about either chart's axes changes. */
   sharesXAxisAbove?: boolean;
-  /** The plot's centred title (`model/plotChrome.ts`'s `cellDisplayLabel`),
-   *  or `undefined` for no title row at all. `"overlay"` chrome only. */
+  /** The plot's centred title — the cell's `# label:` line
+   *  (`graph/cellDisplayName.ts`'s `cellLabelFromBody`), or `undefined` for
+   *  no title row at all. `"overlay"` chrome only. */
   title?: string;
   /** This plot's series key (`model/plotChrome.ts`'s `plotLegendEntries`),
    *  already empty for a single-series plot. `"overlay"` chrome only. */
@@ -222,14 +223,6 @@ export default function CellFrame({
     onToggleCode();
   }
 
-  function handleKeyDown(e: KeyboardEvent): void {
-    if (code === undefined) return;
-    if (!isShowCodeShortcut(e)) return;
-    e.preventDefault();
-    e.stopPropagation();
-    onToggleCode();
-  }
-
   const output = (
     <div className="relative">
       {overlay && <StatusGlyph status={status} error={error} msSinceSettle={msSinceSettle} />}
@@ -277,7 +270,6 @@ export default function CellFrame({
       data-register-cell=""
       data-chrome={chrome}
       onClick={onSelect}
-      onKeyDown={handleKeyDown}
     >
       {!overlay && (
         <div className="flex items-center justify-between gap-3">

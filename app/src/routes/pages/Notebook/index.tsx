@@ -77,7 +77,7 @@ import {
 import { channelDataKeysForCell, channelDataKeysToEvict } from "./model/channelDataRetention";
 import { CellRunSequencer } from "./model/cellRunSequencer";
 import { isCodeVisible, toggleCode } from "./model/codeVisibility";
-import { plotLegendEntries } from "./model/plotChrome";
+import { isShowCodeShortcut, plotLegendEntries } from "./model/plotChrome";
 import { cellLabelFromBody } from "./graph/cellDisplayName";
 import { denseChromeMode, readDenseMode, sharesXAxisAbove, writeDenseMode } from "./model/denseMode";
 import { createCursorBus, type CursorBus } from "./interaction/cursorBus";
@@ -2531,6 +2531,25 @@ export default function NotebookPage() {
       : null;
   const versionBannerDismissKey = `${windowsKeyValue}::${currentEngineVersion ?? ""}`;
   const versionBannerVisible = versionBanner !== null && versionBannerDismissedFor !== versionBannerDismissKey;
+
+  // Ruling R216 item 2's keyboard half of "Show code". A window listener
+  // keyed to the selected cell, not a handler on the cell's own element:
+  // a chart cell's frame holds nothing focusable (the plot itself lives in
+  // the sandbox iframe), so a `keydown` on the frame would never fire for
+  // the common case of a settled plot. Ignored while the focus is in a text
+  // field or the editor, where Alt+C is the document's to interpret.
+  useEffect(() => {
+    function onKeyDown(e: KeyboardEvent): void {
+      if (selectedCellId === null) return;
+      if (!isShowCodeShortcut(e)) return;
+      const target = e.target as HTMLElement | null;
+      if (target !== null && (target.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName))) return;
+      e.preventDefault();
+      setRevealedCells((prev) => toggleCode(prev, selectedCellId));
+    }
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [selectedCellId]);
 
   /** Every cell's kind in document order — `denseMode.ts`'s
    *  `sharesXAxisAbove` needs the cell above's kind, which `CellList`'s

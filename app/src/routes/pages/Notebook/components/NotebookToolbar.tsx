@@ -183,13 +183,14 @@ function useGroupWidths(): {
   const [measured, setMeasured] = useState<ReadonlyMap<ToolbarGroupId, MeasuredGroupWidth>>(() => new Map());
   const nodes = useRef(new Map<ToolbarGroupId, HTMLDivElement>());
   const observed = useRef(new Map<Element, ToolbarGroupId>());
-  const pending = useRef(new Map<ToolbarGroupId, number>());
+  const pending = useRef(new Map<ToolbarGroupId, { width: number; labelled: boolean }>());
   const frame = useRef(0);
   const observer = useRef<ResizeObserver | null>(null);
   // Which label state each group was last rendered in. Recorded by the
-  // callback ref at render time and read when the measurement commits, so a
-  // width always lands in the field for the row that produced it — the two
-  // are a frame apart.
+  // callback ref at render time and read in the `ResizeObserver` callback,
+  // where the box being measured is the box that render produced — never at
+  // commit time, a frame later, by when the row may have flipped and the
+  // width would be filed under a label state it was not measured in.
   const labelStates = useRef(new Map<ToolbarGroupId, boolean>());
 
   const groupRef = (id: ToolbarGroupId, labelled: boolean) => (node: HTMLDivElement | null) => {
@@ -215,8 +216,8 @@ function useGroupWidths(): {
         setMeasured((previous) => {
           let changed = false;
           const next = new Map(previous);
-          for (const [id, width] of updates) {
-            const field: keyof MeasuredGroupWidth = labelStates.current.get(id) === true ? "labelledWidth" : "compactWidth";
+          for (const [id, { width, labelled }] of updates) {
+            const field: keyof MeasuredGroupWidth = labelled ? "labelledWidth" : "compactWidth";
             const before = next.get(id) ?? {};
             if (before[field] === width) continue;
             next.set(id, { ...before, [field]: width });
@@ -238,7 +239,7 @@ function useGroupWidths(): {
           // overlap straight back.
           const width = entry.borderBoxSize?.[0]?.inlineSize ?? entry.contentRect.width;
           if (width <= 0) continue;
-          pending.current.set(id, width);
+          pending.current.set(id, { width, labelled: labelStates.current.get(id) === true });
         }
         if (frame.current === 0) frame.current = requestAnimationFrame(commit);
       });

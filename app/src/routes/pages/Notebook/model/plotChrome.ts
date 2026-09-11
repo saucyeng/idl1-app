@@ -123,6 +123,22 @@ export function plotLegendEntries(series: readonly PlotSeries[]): PlotLegendEntr
   });
 }
 
+/*
+ * A plot's title, and where it does *not* come from.
+ *
+ * R216 item 2 gives two sources: the cell's `# label:` (C2 §2.4) or "the
+ * plot form's title field". Only the first exists. C2 §5.3's `plot_options`
+ * grammar — `plotForm/types.ts`'s `TimePlotProps`/`FftPlotProps` — carries
+ * `x`, `y`, `marks` and `color`, and no title of any kind; adding one is a
+ * C2 contract change and belongs to the lead, not to this lane. So the
+ * title is read from the cell body alone, through the graph lane's
+ * `graph/cellDisplayName.ts`'s `cellLabelFromBody` (the single definition
+ * of C2's label rule — this module deliberately does not parse it a second
+ * time), and a cell with no label line shows no title row, which is R216
+ * item 2's own "no label = no title row". Recorded here rather than
+ * silently dropped.
+ */
+
 /** The keyboard-event fields {@link isShowCodeShortcut} reads — a plain
  *  object so the test needs no `KeyboardEvent` constructor. */
 export interface ShortcutEvent {

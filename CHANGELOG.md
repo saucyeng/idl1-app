@@ -24,14 +24,17 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
   open. "Show code" moved to the plot's right-click menu, alongside
   Properties and Tidy in graph, and onto Alt+C. A cell with a "# label:"
   line shows that label centred above its plot, and a plot drawing more
-  than one series gets a compact key in its top-right corner.
+  than one series gets a compact key in its top-right corner. The label
+  line is the only title source today: the Properties form has no title
+  field of its own, and adding one would change the workbook grammar.
 
 - **Dense stacking (2026-09-11, ruling R216).** A "Dense" switch in the
   toolbar's view group stacks cells with no gap, no padding and no chrome
   rows, and lets two charts one above the other read as a single shared
   time axis. Both charts still compute their own axes; nothing about the
-  data changes. The setting is remembered per machine and is off by
-  default.
+  data changes. Maths and table cells lose their status row in this mode
+  too, keeping the same corner mark a chart gets. The setting is remembered
+  per machine and is off by default.
 
 - **The maths graph says what each node is (2026-09-11, ruling R214).**
   Three kinds now read apart at a glance without relying on colour: a
