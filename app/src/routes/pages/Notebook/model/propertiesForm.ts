@@ -646,6 +646,20 @@ export function updateYAxis(props: PlotProps, patch: Partial<YAxisProps>): PlotP
   return { ...props, y: next };
 }
 
+/** Sets or clears the plot's own title (C2 §5.3's `title` option). An
+ *  empty or whitespace-only string clears it rather than writing
+ *  `title: ""`: a blank title is not a title, and emitting one would put a
+ *  key in the document that draws nothing and only stops the `# label:`
+ *  fallback from applying. Shared by every chart kind — `title` sits
+ *  beside `x`/`y`/`color` in every one of them. */
+export function setPlotTitle<T extends PlotProps>(props: T, title: string): T {
+  if (title.trim().length === 0) {
+    const { title: _drop, ...rest } = props;
+    return rest as T;
+  }
+  return { ...props, title };
+}
+
 /** Sets or clears the plot's colour legend (C2 §5.3's `color_opt`, the
  *  form's one checkbox-shaped control: `{ legend: true }` or entirely
  *  absent — the grammar admits no other value). Generic over the

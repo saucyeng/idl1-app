@@ -169,6 +169,19 @@ export interface TimePlotProps {
   y?: YAxisProps;
   color?: { legend: true };
   /**
+   * The chart's own title, rendered centred above the plot (R216's chrome,
+   * `components/CellFrame.tsx`'s `title` prop). Optional; absent means the
+   * cell falls back to its `# label:` line, which stays exactly as it was
+   * — an explicit title simply wins (`model/chartTitle.ts`).
+   *
+   * `title` is a real Plot option, so the generated code stays idiomatic
+   * Plot that draws its own title when run anywhere else. It is a
+   * **plot-level** option, not a mark's, which is why it sits beside
+   * `x`/`y`/`color` rather than inside a mark.
+   */
+  title?: string;
+
+  /**
    * Draw a horizontal reference line at y = 0 (idl0's zero-line toggle,
    * `worksheet.dart`; ruling R215 item 5). Emitted as a real
    * `Plot.ruleY([0])` at the head of `marks`, not as a plot option — it
@@ -194,6 +207,18 @@ export interface FftPlotProps {
   x: FftXAxisProps;
   y?: YAxisProps;
   color?: { legend: true };
+  /**
+   * The chart's own title, rendered centred above the plot (R216's chrome,
+   * `components/CellFrame.tsx`'s `title` prop). Optional; absent means the
+   * cell falls back to its `# label:` line, which stays exactly as it was
+   * — an explicit title simply wins (`model/chartTitle.ts`).
+   *
+   * `title` is a real Plot option, so the generated code stays idiomatic
+   * Plot that draws its own title when run anywhere else. It is a
+   * **plot-level** option, not a mark's, which is why it sits beside
+   * `x`/`y`/`color` rather than inside a mark.
+   */
+  title?: string;
 }
 
 /** `HistogramParams.binMode`'s union type, as a runtime array (C2 §5.3's
@@ -263,6 +288,18 @@ export interface HistogramPlotProps {
   x?: XAxisProps;
   y?: YAxisProps;
   color?: { legend: true };
+  /**
+   * The chart's own title, rendered centred above the plot (R216's chrome,
+   * `components/CellFrame.tsx`'s `title` prop). Optional; absent means the
+   * cell falls back to its `# label:` line, which stays exactly as it was
+   * — an explicit title simply wins (`model/chartTitle.ts`).
+   *
+   * `title` is a real Plot option, so the generated code stays idiomatic
+   * Plot that draws its own title when run anywhere else. It is a
+   * **plot-level** option, not a mark's, which is why it sits beside
+   * `x`/`y`/`color` rather than inside a mark.
+   */
+  title?: string;
 }
 
 /** C2 §5.3's `scatter_params` production — the two parameters of one
@@ -317,6 +354,18 @@ export interface ScatterPlotProps {
   x?: XAxisProps;
   y?: YAxisProps;
   color?: { legend: true };
+  /**
+   * The chart's own title, rendered centred above the plot (R216's chrome,
+   * `components/CellFrame.tsx`'s `title` prop). Optional; absent means the
+   * cell falls back to its `# label:` line, which stays exactly as it was
+   * — an explicit title simply wins (`model/chartTitle.ts`).
+   *
+   * `title` is a real Plot option, so the generated code stays idiomatic
+   * Plot that draws its own title when run anywhere else. It is a
+   * **plot-level** option, not a mark's, which is why it sits beside
+   * `x`/`y`/`color` rather than inside a mark.
+   */
+  title?: string;
 }
 
 /** C2 §5.3's `plot_options` production — the Properties pane's whole

@@ -41,6 +41,7 @@ import {
   resetToFormCode,
   setChartType,
   setColorLegend,
+  setPlotTitle,
   setTimeXField,
   setZeroLine,
   suggestAxisLabel,
@@ -188,10 +189,35 @@ export default function PropertiesForm({ code, channels, laps, onChange }: Prope
   return (
     <div className="properties-form idl-dense flex flex-col gap-[var(--space-4)] p-[var(--nb-gap)]">
       <ChartTypeControl chart={props.chart} onChange={(next) => commit(setChartType(props, next, channels))} />
+      <PlotTitleControl title={props.title} onChange={(next) => commit(setPlotTitle(props, next))} />
       {props.chart === "fft" && <FftPropertiesForm props={props} channels={channels} onChange={commit} />}
       {props.chart === "histogram" && <HistogramPropertiesForm props={props} channels={channels} onChange={commit} />}
       {props.chart === "scatter" && <ScatterPropertiesForm props={props} channels={channels} onChange={commit} />}
       {props.chart === "time" && <TimePropertiesForm props={props} channels={channels} laps={laps} onChange={commit} />}
+    </div>
+  );
+}
+
+/**
+ * The chart's own title (C2 §5.3's `title`, added 2026-09-11), second only
+ * to the chart-type control because it names the picture the rest of the
+ * pane then configures. Shared by every chart kind — `title` sits beside
+ * `x`/`y`/`color` in all four.
+ *
+ * Clearing the field removes the key rather than writing `title: ""`
+ * (`setPlotTitle`), which is what lets the cell's `# label:` line apply
+ * again: a blank title is not a title, and a stored empty one would only
+ * suppress the fallback (`model/chartTitle.ts`).
+ */
+function PlotTitleControl({ title, onChange }: { title: string | undefined; onChange: (next: string) => void }) {
+  return (
+    <div className="properties-form-title">
+      <TextField
+        label="Title"
+        value={title ?? ""}
+        placeholder="the cell's # label: line"
+        onChange={onChange}
+      />
     </div>
   );
 }

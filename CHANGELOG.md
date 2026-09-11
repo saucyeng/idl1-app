@@ -6,6 +6,15 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 
 ### Added
 
+- **A chart can name itself (2026-09-11).** The Properties pane has a
+  **Title** field, and the title is written into the cell's own code as a
+  Plot option — so a chart states its name in the same place it states the
+  rest of its picture, and the generated code still draws its own title if
+  run anywhere else. Every chart type has one. Leaving the field blank
+  removes it, which restores the previous behaviour: the cell's `# label:`
+  line names the chart. An explicit title wins over that line; nothing that
+  had a title loses one.
+
 - **Four chart types idl0 had are back (2026-09-11, ruling R215).** The
   chart-type picker on a graph card is no longer five Plot marks: it now
   offers the **FFT** spectrum (which the grammar and the engine already

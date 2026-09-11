@@ -1275,6 +1275,10 @@ function detectChartKind(tokens: Token[], from: number): PlotProps["chart"] {
 
 function parsePlotOptionField(key: string, c: Cursor): FieldResult {
   switch (key) {
+    case "title": {
+      const v = consumeString(c);
+      return v === null ? { ok: false } : { ok: true, value: v };
+    }
     case "x": {
       const v = readXScale(c);
       return v === null ? { ok: false } : { ok: true, value: v };
@@ -1298,6 +1302,10 @@ function parsePlotOptionField(key: string, c: Cursor): FieldResult {
 
 function parseFftPlotOptionField(key: string, c: Cursor): FieldResult {
   switch (key) {
+    case "title": {
+      const v = consumeString(c);
+      return v === null ? { ok: false } : { ok: true, value: v };
+    }
     case "x": {
       const v = readFftXScale(c);
       return v === null ? { ok: false } : { ok: true, value: v };
@@ -1339,6 +1347,7 @@ function readTimePlotOptions(c: Cursor): TimePlotProps | null {
 
   const marksField = fields.marks as { marks: MarkProps[]; zeroLine: boolean };
   const props: TimePlotProps = { chart: "time", marks: marksField.marks };
+  if (fields.title !== undefined) props.title = fields.title as string;
   if (marksField.zeroLine) props.zeroLine = true;
   if (fields.x !== undefined && Object.keys(fields.x as XAxisProps).length > 0) {
     props.x = fields.x as XAxisProps;
@@ -1366,6 +1375,7 @@ function readFftPlotOptions(c: Cursor): FftPlotProps | null {
     mark: fields.marks as SpectrumMarkProps,
     x: fields.x as FftXAxisProps,
   };
+  if (fields.title !== undefined) props.title = fields.title as string;
   if (fields.y !== undefined && Object.keys(fields.y as YAxisProps).length > 0) {
     props.y = fields.y as YAxisProps;
   }
@@ -1375,6 +1385,10 @@ function readFftPlotOptions(c: Cursor): FftPlotProps | null {
 
 function parseHistogramPlotOptionField(key: string, c: Cursor): FieldResult {
   switch (key) {
+    case "title": {
+      const v = consumeString(c);
+      return v === null ? { ok: false } : { ok: true, value: v };
+    }
     case "x": {
       const v = readXScale(c);
       return v === null ? { ok: false } : { ok: true, value: v };
@@ -1411,6 +1425,7 @@ function readHistogramPlotOptions(c: Cursor): HistogramPlotProps | null {
   }
 
   const props: HistogramPlotProps = { chart: "histogram", mark: fields.marks as HistogramMarkProps };
+  if (fields.title !== undefined) props.title = fields.title as string;
   if (fields.x !== undefined && Object.keys(fields.x as XAxisProps).length > 0) {
     props.x = fields.x as XAxisProps;
   }
@@ -1423,6 +1438,10 @@ function readHistogramPlotOptions(c: Cursor): HistogramPlotProps | null {
 
 function parseScatterPlotOptionField(key: string, c: Cursor): FieldResult {
   switch (key) {
+    case "title": {
+      const v = consumeString(c);
+      return v === null ? { ok: false } : { ok: true, value: v };
+    }
     case "x": {
       const v = readXScale(c);
       return v === null ? { ok: false } : { ok: true, value: v };
@@ -1457,6 +1476,7 @@ function readScatterPlotOptions(c: Cursor): ScatterPlotProps | null {
   }
 
   const props: ScatterPlotProps = { chart: "scatter", mark: fields.marks as ScatterMarkProps };
+  if (fields.title !== undefined) props.title = fields.title as string;
   if (fields.x !== undefined && Object.keys(fields.x as XAxisProps).length > 0) {
     props.x = fields.x as XAxisProps;
   }

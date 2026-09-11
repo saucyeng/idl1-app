@@ -1572,7 +1572,8 @@ Rust math grammar's functions except through the already-evaluated
 ```ebnf
 plot_call     ::= "Plot.plot(" plot_options ")"
 plot_options  ::= "{" option ("," option)* "}"
-option        ::= "x" ":" x_scale
+option        ::= "title" ":" js_string                            (* new 2026-09-11 *)
+                | "x" ":" x_scale
                 | "y" ":" y_scale
                 | "color" ":" color_opt
                 | "marks" ":" marks_array
@@ -1744,6 +1745,26 @@ copy of them). A row's `mark` is `null` exactly when its id names a chart
 kind rather than a mark. Nothing in the grammar changed for this: an FFT
 cell inserted from the picker is byte-identical to one the Properties
 pane's `Time → FFT` switch produces.
+
+**The plot title** (added 2026-09-11, from the shell-polish lane's R216
+finding). Before it, a chart could be named only by its cell's `# label:`
+line — which a `js` body cannot carry at all, since `#` is not a comment
+there. `title` is a plot-level option, shared by **every** chart kind, so a
+chart names itself in the same object that states the rest of its picture:
+
+- **It is a real Plot option**, so generated code still draws its own title
+  when run anywhere else — the same reason `zero_rule` is a real mark
+  rather than a flag.
+- **Emitted first**, above `x`/`y`/`color`/`marks`, because that is the
+  order the picture reads in. `parse` is order-insensitive as everywhere
+  else, but the generator's fixed position is what makes the round trip
+  byte-identical.
+- **Optional, and absent rather than empty.** Clearing the field removes
+  the key; a stored `title: ""` would draw nothing *and* suppress the
+  fallback below, which is a worse state than having no title at all.
+- **An explicit title wins; the `# label:` fallback is unchanged**
+  (`model/chartTitle.ts` owns that one rule, so the notebook, the graph
+  card and the report cannot disagree). Nothing that had a title loses one.
 
 **The zero line** (added 2026-09-11, ruling R215 item 5). idl0's zero-line
 toggle (`worksheet.dart`), expressed as a real `Plot.ruleY([0])` at the
@@ -1995,6 +2016,7 @@ which defeats the point of overlaying them.
 | Grammar slot | Props field | Type | Default | Maps to |
 |---|---|---|---|---|
 | chart type (which `marks_array` alternative) | `PlotProps.chart` | closed enum (`"time"`, `"fft"`, `"histogram"`, `"scatter"`) | `"time"` | nothing on the wire; selects which fetch the cell makes |
+| `title` | `PlotProps.title` | string, or absent | absent (the cell's `# label:` line, if any) | none (a Plot option, drawn client-side) |
 | `x_field_binding` (time cell) | `MarkProps.xField` | `"tr"`, or absent for session time | absent (`x: "t"`) | nothing on the wire; selects the `tr` column of the channel payload |
 | `zero_rule` (time cell) | `TimePlotProps.zeroLine` | `true`, or absent | absent | none (a mark, drawn client-side) |
 | `y.exponent` | `YAxisProps.exponent` | number, required with `type: "pow"` and expressible with no other type | absent | none |
