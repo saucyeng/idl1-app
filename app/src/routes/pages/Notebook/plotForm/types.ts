@@ -60,13 +60,31 @@ export interface YAxisProps {
    *  unlike x's fixed seconds-since-session-start (or, for an FFT cell,
    *  Hz). */
   domain?: [number, number];
-  type?: "linear" | "log" | "sqrt";
+  /**
+   * Plot's own scale type. `"pow"` (ruling R215 item 5) is how idl0's
+   * signed-root and signed-square y scales (`worksheet.dart`'s
+   * `sqrtSigned`/`squareSigned`) are expressed: d3's power scale — which
+   * Plot's `"pow"` is — is **symmetric about zero**, so it compresses or
+   * expands compression and rebound equally rather than folding one side
+   * away the way `"sqrt"` does on a signed channel. A `"pow"` axis always
+   * carries {@link exponent}; no other type ever does.
+   */
+  type?: "linear" | "log" | "sqrt" | "pow";
+  /** Plot's `exponent`, required with `type: "pow"` and expressible with no
+   *  other type (C2 §5.3, ruling R215 item 5). `0.5` is the signed root,
+   *  `2` the signed square — but any positive number is legal: the two
+   *  named choices are what the Properties pane *offers*, not what the
+   *  grammar admits. */
+  exponent?: number;
 }
 
-/** The three y-axis scale types `YAxisProps.type`'s union type admits, as a
+/** The four y-axis scale types `YAxisProps.type`'s union type admits, as a
  *  runtime array — same rationale as {@link MARK_NAMES}: a UI control
- *  enumerates this rather than hardcoding a second copy. */
-export const Y_AXIS_TYPES: readonly NonNullable<YAxisProps["type"]>[] = ["linear", "log", "sqrt"];
+ *  enumerates this rather than hardcoding a second copy. Note that a
+ *  *picker* does not offer these verbatim: `"pow"` is meaningless without
+ *  an exponent, so the Properties pane offers the two named signed scales
+ *  instead (`model/propertiesForm.ts`'s `Y_SCALE_CHOICES`). */
+export const Y_AXIS_TYPES: readonly NonNullable<YAxisProps["type"]>[] = ["linear", "log", "sqrt", "pow"];
 
 /** The mark names `SpectrumMarkProps.mark`'s union type admits, as a
  *  runtime array (C2 §5.3's `spectrum_mark_name` — a strict subset of
@@ -150,6 +168,20 @@ export interface TimePlotProps {
   x?: XAxisProps;
   y?: YAxisProps;
   color?: { legend: true };
+  /**
+   * Draw a horizontal reference line at y = 0 (idl0's zero-line toggle,
+   * `worksheet.dart`; ruling R215 item 5). Emitted as a real
+   * `Plot.ruleY([0])` at the head of `marks`, not as a plot option — it
+   * *is* a mark, and writing it as one keeps the generated code idiomatic
+   * Plot that an author can read and hand-edit. `true` or entirely absent;
+   * the grammar admits no other value, exactly like `color.legend`.
+   *
+   * Only a **time** cell has this. A spectrum's magnitude axis has no
+   * meaningful zero crossing, a histogram's bars already sit on their own
+   * baseline, and a scatter's zero line would be the friction circle's
+   * centre, which `equalAspect` already frames.
+   */
+  zeroLine?: true;
 }
 
 /** C2 §5.3's FFT-cell `plot_options` production. `mark` (singular, not

@@ -59,6 +59,11 @@ function renderYAxis(y: YAxisProps): string | null {
   if (y.label !== undefined) fields.push(`label: ${jsString(y.label)}`);
   if (y.domain !== undefined) fields.push(`domain: [${String(y.domain[0])}, ${String(y.domain[1])}]`);
   if (y.type !== undefined) fields.push(`type: ${jsString(y.type)}`);
+  // `exponent` follows `type` and is emitted only alongside `type: "pow"`,
+  // which it qualifies (ruling R215 item 5). An `exponent` on any other
+  // type is not a shorter valid form — the parser rejects it, so the
+  // generator must never produce one.
+  if (y.type === "pow" && y.exponent !== undefined) fields.push(`exponent: ${String(y.exponent)}`);
   return fields.length === 0 ? null : `{ ${fields.join(", ")} }`;
 }
 
@@ -85,6 +90,12 @@ function renderMarkOptions(m: MarkProps): string {
   if (m.strokeWidth !== undefined) fields.push(`strokeWidth: ${String(m.strokeWidth)}`);
   return `{ ${fields.join(", ")} }`;
 }
+
+/** C2 §5.3's `zero_rule` production, verbatim (ruling R215 item 5) — the
+ *  zero line's whole text, with no parameters of its own. A `const` rather
+ *  than a function because there is nothing to render: `generate` emits
+ *  exactly this string and `parse` matches exactly this token sequence. */
+const ZERO_RULE = "Plot.ruleY([0])";
 
 /** Renders one `mark` production (C2 §5.3): `Plot.<name>(channel(...), {...})`. */
 function renderMark(m: MarkProps): string {
@@ -169,10 +180,12 @@ function generateTime(props: TimePlotProps): string {
   }
   if (props.color !== undefined) topLines.push(`color: { legend: true }`);
 
-  const marksLine =
-    props.marks.length === 0
-      ? "marks: []"
-      : `marks: [\n${props.marks.map((m) => `    ${renderMark(m)}`).join(",\n")}\n  ]`;
+  // The zero line is a real mark, first in the array so it draws *under*
+  // every data trace (Plot draws marks in order) rather than over them
+  // (ruling R215 item 5).
+  const markLines = props.marks.map((m) => `    ${renderMark(m)}`);
+  if (props.zeroLine === true) markLines.unshift(`    ${ZERO_RULE}`);
+  const marksLine = markLines.length === 0 ? "marks: []" : `marks: [\n${markLines.join(",\n")}\n  ]`;
   topLines.push(marksLine);
 
   return renderPlotBody(topLines);

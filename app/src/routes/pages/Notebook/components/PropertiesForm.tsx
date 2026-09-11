@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { ColourField } from "@/components/ui/colour-field";
 import { Field, FieldGroup } from "@/components/ui/field";
 import { NumberField } from "@/components/ui/number-field";
-import { SELECT_FIELD_UNSET, SelectField, SwitchField, TextField, type SelectFieldOption } from "@/components/ui/select-field";
+import { SelectField, SwitchField, TextField, type SelectFieldOption } from "@/components/ui/select-field";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { NoteBlock } from "@/components/brand/NoteBlock";
 import {
@@ -16,7 +16,6 @@ import {
   MARK_NAMES,
   SPECTRUM_MARK_NAMES,
   CHART_KINDS,
-  Y_AXIS_TYPES,
   type FftParams,
   type FftPlotProps,
   type HistogramParams,
@@ -25,6 +24,7 @@ import {
   type PlotProps,
   type ScatterParams,
   type ScatterPlotProps,
+  type YAxisProps,
   type SpectrumMarkProps,
   type TimePlotProps,
 } from "../plotForm";
@@ -42,6 +42,7 @@ import {
   setChartType,
   setColorLegend,
   setTimeXField,
+  setZeroLine,
   suggestAxisLabel,
   suggestSpectrumAxisLabel,
   updateFftParams,
@@ -50,6 +51,8 @@ import {
   updateMark,
   updateScatterParams,
   timeXFieldOf,
+  yScaleChoiceOf,
+  yScaleSelectOptions,
   updateXAxis,
   updateYAxis,
   type PropertiesFormState,
@@ -304,12 +307,39 @@ function DomainFields({
   );
 }
 
-/** The scale-type options both axis sections share. "(default)" is the
- *  unset state — it carries `SELECT_FIELD_UNSET`, which `SelectField` maps
- *  back to `undefined` for `updateYAxis`, since Radix will not accept an
- *  item whose value is the empty string. */
-function scaleOptions(): SelectFieldOption[] {
-  return [{ value: SELECT_FIELD_UNSET, label: "(default)" }, ...options(Y_AXIS_TYPES, (t) => t)];
+/**
+ * The y-axis scale control, shared by every chart kind (ruling R215 item
+ * 5). Keyed on `model/propertiesForm.ts`'s own picker tokens rather than
+ * on `YAxisProps.type`, because idl0's two signed scales — now Plot `pow`
+ * scales — share the type `"pow"` and differ only by exponent, so a
+ * picker keyed on `type` could not tell them apart.
+ *
+ * `axis` decides whether the signed scales are offered at all: they are
+ * only meaningful where the values can be negative (a channel's own
+ * value), not on a count, a fraction, or a spectrum magnitude.
+ */
+function YScaleControl({
+  y,
+  axis,
+  onChange,
+}: {
+  y: YAxisProps | undefined;
+  axis: "signed" | "non-negative";
+  onChange: (patch: Pick<YAxisProps, "type" | "exponent">) => void;
+}) {
+  const current = yScaleChoiceOf(y);
+  const choices = yScaleSelectOptions(y, axis);
+  return (
+    <SelectField
+      label="Scale"
+      value={current}
+      options={choices.map((c) => ({ value: c.value, label: c.label }))}
+      onChange={(value) => {
+        const choice = choices.find((c) => c.value === value);
+        if (choice !== undefined) onChange(choice.patch);
+      }}
+    />
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -389,11 +419,11 @@ function TimePropertiesForm({
           onChange={(value) => onChange(updateYAxis(props, { label: value === "" ? undefined : value }))}
         />
         <DomainFields domain={props.y?.domain} onChange={(domain) => onChange(updateYAxis(props, { domain }))} />
-        <SelectField
-          label="Scale"
-          value={props.y?.type}
-          options={scaleOptions()}
-          onChange={(value) => onChange(updateYAxis(props, { type: value as NonNullable<TimePlotProps["y"]>["type"] | undefined }))}
+        <YScaleControl y={props.y} axis="signed" onChange={(patch) => onChange(updateYAxis(props, patch))} />
+        <SwitchField
+          label="Zero line"
+          checked={props.zeroLine === true}
+          onChange={(checked) => onChange(setZeroLine(props, checked))}
         />
       </FieldGroup>
 
@@ -704,12 +734,7 @@ function FftPropertiesForm({
           onChange={(value) => onChange(updateYAxis(props, { label: value === "" ? undefined : value }))}
         />
         <DomainFields domain={props.y?.domain} onChange={(domain) => onChange(updateYAxis(props, { domain }))} />
-        <SelectField
-          label="Scale"
-          value={props.y?.type}
-          options={scaleOptions()}
-          onChange={(value) => onChange(updateYAxis(props, { type: value as NonNullable<FftPlotProps["y"]>["type"] | undefined }))}
-        />
+        <YScaleControl y={props.y} axis="non-negative" onChange={(patch) => onChange(updateYAxis(props, patch))} />
       </FieldGroup>
 
       <LegendControl props={props} onChange={onChange} />
@@ -862,12 +887,7 @@ function HistogramPropertiesForm({
           onChange={(value) => onChange(updateYAxis(props, { label: value === "" ? undefined : value }))}
         />
         <DomainFields domain={props.y?.domain} onChange={(domain) => onChange(updateYAxis(props, { domain }))} />
-        <SelectField
-          label="Scale"
-          value={props.y?.type}
-          options={scaleOptions()}
-          onChange={(value) => onChange(updateYAxis(props, { type: value as NonNullable<HistogramPlotProps["y"]>["type"] | undefined }))}
-        />
+        <YScaleControl y={props.y} axis="non-negative" onChange={(patch) => onChange(updateYAxis(props, patch))} />
       </FieldGroup>
 
       <LegendControl props={props} onChange={onChange} />
@@ -995,12 +1015,7 @@ function ScatterPropertiesForm({
           onChange={(value) => onChange(updateYAxis(props, { label: value === "" ? undefined : value }))}
         />
         <DomainFields domain={props.y?.domain} unit={yChannel?.unit} onChange={(domain) => onChange(updateYAxis(props, { domain }))} />
-        <SelectField
-          label="Scale"
-          value={props.y?.type}
-          options={scaleOptions()}
-          onChange={(value) => onChange(updateYAxis(props, { type: value as NonNullable<ScatterPlotProps["y"]>["type"] | undefined }))}
-        />
+        <YScaleControl y={props.y} axis="signed" onChange={(patch) => onChange(updateYAxis(props, patch))} />
       </FieldGroup>
 
       <LegendControl props={props} onChange={onChange} />

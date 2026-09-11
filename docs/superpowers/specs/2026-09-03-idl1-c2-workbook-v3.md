@@ -1583,10 +1583,13 @@ x_field       ::= "label" ":" js_string
 y_scale       ::= "{" y_field ("," y_field)* "}"
 y_field       ::= "label" ":" js_string
                 | "domain" ":" "[" js_number "," js_number "]"
-                | "type" ":" ("\"linear\"" | "\"log\"" | "\"sqrt\"")
+                | "type" ":" ("\"linear\"" | "\"log\"" | "\"sqrt\"" | "\"pow\"")  (* changed 2026-09-11 *)
+                | "exponent" ":" js_number                        (* new 2026-09-11 — only with type "pow" *)
 color_opt     ::= "{" "legend" ":" "true" "}"
 marks_array   ::= time_marks | fft_marks | histogram_marks | scatter_marks   (* changed 2026-09-11 *)
-time_marks    ::= "[" time_mark ("," time_mark)* "]"              (* new 2026-09-06 *)
+time_marks    ::= "[" (zero_rule ",")? time_mark ("," time_mark)* "]"   (* changed 2026-09-11 *)
+                | "[" zero_rule "]"                               (* new 2026-09-11 — a zero line alone *)
+zero_rule     ::= "Plot.ruleY([0])"                               (* new 2026-09-11 — R215 item 5 *)
 fft_marks     ::= "[" spectrum_mark "]"                           (* new 2026-09-06, exactly one *)
 
 time_mark     ::= "Plot." mark_name "(" channel_call "," mark_options ")"
@@ -1741,6 +1744,49 @@ copy of them). A row's `mark` is `null` exactly when its id names a chart
 kind rather than a mark. Nothing in the grammar changed for this: an FFT
 cell inserted from the picker is byte-identical to one the Properties
 pane's `Time → FFT` switch produces.
+
+**The zero line** (added 2026-09-11, ruling R215 item 5). idl0's zero-line
+toggle (`worksheet.dart`), expressed as a real `Plot.ruleY([0])` at the
+**head** of a time cell's `marks` array rather than as a plot option:
+
+- It *is* a mark, and writing it as one keeps the generated code idiomatic
+  Plot an author can read and hand-edit.
+- **First in the array**, because Plot draws marks in order — a zero line
+  belongs under the data, not over it. A `zero_rule` anywhere but the head
+  is custom code, not a second legal position.
+- It carries no parameters. `Plot.ruleY([1])` is custom code, never
+  silently a zero line at a different value.
+- `TimePlotProps.zeroLine` is `true` or entirely absent, exactly like
+  `color.legend` — the form's one other boolean-shaped option.
+- **Time cells only.** A spectrum's magnitude axis has no meaningful zero
+  crossing, a histogram's bars already sit on their own baseline, and a
+  scatter's zero line is the friction circle's centre, which `equalAspect`
+  already frames.
+
+**The signed y scales** (added 2026-09-11, ruling R215 item 5). idl0's
+`sqrtSigned` and `squareSigned` (`worksheet.dart`), expressed as Plot's
+`pow` scale with an `exponent` of `0.5` or `2`. Plot's `"pow"` is d3's
+power scale, which is **symmetric about zero**: it compresses or expands
+compression and rebound equally, rather than folding one side away the way
+`"sqrt"` does on a signed channel — which is exactly what made idl0 need a
+*signed* variant in the first place.
+
+`type: "pow"` and `exponent` are required to appear **together**: a `"pow"`
+scale with no exponent has no defined shape, and an `exponent` on any other
+scale type would be silently dropped by the next `generate()` call. Both
+are custom code, not shorter valid forms. The generator emits `exponent`
+immediately after `type`, which it qualifies.
+
+The grammar admits **any** `js_number` exponent, so a hand edit round-trips
+byte-identically; the Properties pane *offers* only the two named signed
+scales, and renders a hand-edited exponent as its own extra option for that
+render — the same "accepted, never offered" split ruling R168 drew for the
+retired `"magnitude"` scaling, and for the same reason (a `<select>` whose
+value matches no option silently displays its first, and the next unrelated
+edit writes that lie back). `"pow"` is never offered raw: it is meaningless
+without an exponent. The two signed scales are offered only on an axis
+whose values can be negative — a channel's own value — never on a count, a
+fraction, or a spectrum magnitude.
 
 **The lap-relative time axis** (added 2026-09-11, ruling R215 items 4-5).
 A time mark's `x` binds one of two time columns, and the choice is in the
@@ -1939,6 +1985,8 @@ which defeats the point of overlaying them.
 |---|---|---|---|---|
 | chart type (which `marks_array` alternative) | `PlotProps.chart` | closed enum (`"time"`, `"fft"`, `"histogram"`, `"scatter"`) | `"time"` | nothing on the wire; selects which fetch the cell makes |
 | `x_field_binding` (time cell) | `MarkProps.xField` | `"tr"`, or absent for session time | absent (`x: "t"`) | nothing on the wire; selects the `tr` column of the channel payload |
+| `zero_rule` (time cell) | `TimePlotProps.zeroLine` | `true`, or absent | absent | none (a mark, drawn client-side) |
+| `y.exponent` | `YAxisProps.exponent` | number, required with `type: "pow"` and expressible with no other type | absent | none |
 | `spectrum_call`'s `js_string` | `SpectrumMarkProps.channel` | string | first channel in the session picker | `fetch_fft`'s `channel` |
 | `spectrum_mark_name` | `SpectrumMarkProps.mark` | `"lineY" \| "dot" \| "areaY"` | `"lineY"` | none (Plot mark) |
 | `windowSize` | `fft.windowSize` | positive integer, samples, or `"all"` | `2048` samples | `params.window_size` |
@@ -1951,7 +1999,7 @@ which defeats the point of overlaying them.
 | `strokeWidth` | `SpectrumMarkProps.strokeWidth` | number, CSS px | omitted | none |
 | `x.type` | `XAxisProps.type` | `"linear" \| "log"` | `"log"` | none |
 | `x.label` | `XAxisProps.label` | string | `"Frequency (Hz)"` | none |
-| `y.type` | `YAxisProps.type` | `"linear" \| "log" \| "sqrt"` | `"linear"` | none |
+| `y.type` | `YAxisProps.type` | `"linear" \| "log" \| "sqrt" \| "pow"` | `"linear"` | none |
 | `y.label` | `YAxisProps.label` | string | `"Magnitude (<unit>)"` (`raw_magnitude`/`magnitude`) / `"PSD (<unit>²/Hz)"` (`density`) / `"Power (<unit>²)"` (`spectrum`) per scaling | none |
 | — no bin/point budget grammar token (R79 Q4) — | — | — | — | a host-side `bin_count` cap; above it the cell shows a note and does not fetch |
 

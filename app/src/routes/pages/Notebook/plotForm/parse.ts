@@ -449,21 +449,38 @@ function parseYField(key: string, c: Cursor): FieldResult {
     }
     case "type": {
       const v = consumeString(c);
-      if (v === "linear" || v === "log" || v === "sqrt") return { ok: true, value: v };
+      if (v === "linear" || v === "log" || v === "sqrt" || v === "pow") return { ok: true, value: v };
       return { ok: false };
+    }
+    case "exponent": {
+      const v = consumeNumber(c);
+      return v === null ? { ok: false } : { ok: true, value: v };
     }
     default:
       return { ok: false };
   }
 }
 
+/** Reads a `y_scale` object. `exponent` and `type: "pow"` are required to
+ *  appear **together** (ruling R215 item 5): a `"pow"` scale with no
+ *  exponent has no defined shape, and an `exponent` on any other scale type
+ *  would be silently dropped by the next `generate()` call — both are
+ *  custom code, not shorter valid forms. That mutual requirement is why
+ *  this reader checks after `readBracedFields` rather than in
+ *  `parseYField`, which sees one key at a time. */
 function readYScale(c: Cursor): YAxisProps | null {
+  const start = c.pos;
   const fields = readBracedFields(c, parseYField);
   if (fields === null) return null;
+  if ((fields.type === "pow") !== (fields.exponent !== undefined)) {
+    c.pos = start;
+    return null;
+  }
   const y: YAxisProps = {};
   if (fields.label !== undefined) y.label = fields.label as string;
   if (fields.domain !== undefined) y.domain = fields.domain as [number, number];
-  if (fields.type !== undefined) y.type = fields.type as "linear" | "log" | "sqrt";
+  if (fields.type !== undefined) y.type = fields.type as NonNullable<YAxisProps["type"]>;
+  if (fields.exponent !== undefined) y.exponent = fields.exponent as number;
   return y;
 }
 
@@ -611,7 +628,36 @@ function readMark(c: Cursor): MarkProps | null {
 /** Reads a `marks_array`: `[]` or a comma-separated list of `mark`
  *  productions. An empty array is legal (mirrors `generate`'s handling of
  *  `marks: []`). */
-function readMarksArray(c: Cursor): MarkProps[] | null {
+/** Reads C2 §5.3's `zero_rule` production — `Plot.ruleY([0])`, exactly
+ *  (ruling R215 item 5). Told apart from a `ruleY` *channel* mark by the
+ *  `[` where that production has `channel(`, so no lookahead is needed
+ *  beyond this reader's own cursor reset. Returns `false` without moving
+ *  the cursor when the next tokens are not this literal call. */
+function readZeroRule(c: Cursor): boolean {
+  const start = c.pos;
+  if (
+    consumeIdent(c, "Plot") &&
+    consumePunct(c, ".") &&
+    consumeIdent(c, "ruleY") &&
+    consumePunct(c, "(") &&
+    consumePunct(c, "[") &&
+    consumeNumber(c) === 0 &&
+    consumePunct(c, "]") &&
+    consumePunct(c, ")")
+  ) {
+    return true;
+  }
+  c.pos = start;
+  return false;
+}
+
+/** Reads a `marks_array`: `[]`, or an optional leading `zero_rule`
+ *  followed by a comma-separated list of `mark` productions. An empty array
+ *  is legal (mirrors `generate`'s handling of `marks: []`). Returns the
+ *  marks plus whether the zero line was present, since `TimePlotProps`
+ *  carries the latter as its own `zeroLine` flag rather than as a mark
+ *  nothing else in the form could edit. */
+function readMarksArray(c: Cursor): { marks: MarkProps[]; zeroLine: boolean } | null {
   const start = c.pos;
   if (!consumePunct(c, "[")) {
     c.pos = start;
@@ -619,7 +665,18 @@ function readMarksArray(c: Cursor): MarkProps[] | null {
   }
 
   const marks: MarkProps[] = [];
-  if (consumePunct(c, "]")) return marks;
+  if (consumePunct(c, "]")) return { marks, zeroLine: false };
+
+  const zeroLine = readZeroRule(c);
+  if (zeroLine) {
+    // `[Plot.ruleY([0])]` alone: a zero line and no data marks. Legal, the
+    // same way `marks: []` is.
+    if (consumePunct(c, "]")) return { marks, zeroLine };
+    if (!consumePunct(c, ",")) {
+      c.pos = start;
+      return null;
+    }
+  }
 
   for (;;) {
     const mark = readMark(c);
@@ -636,7 +693,7 @@ function readMarksArray(c: Cursor): MarkProps[] | null {
     c.pos = start;
     return null;
   }
-  return marks;
+  return { marks, zeroLine };
 }
 
 // ---------------------------------------------------------------------------
@@ -1280,7 +1337,9 @@ function readTimePlotOptions(c: Cursor): TimePlotProps | null {
     return null;
   }
 
-  const props: TimePlotProps = { chart: "time", marks: fields.marks as MarkProps[] };
+  const marksField = fields.marks as { marks: MarkProps[]; zeroLine: boolean };
+  const props: TimePlotProps = { chart: "time", marks: marksField.marks };
+  if (marksField.zeroLine) props.zeroLine = true;
   if (fields.x !== undefined && Object.keys(fields.x as XAxisProps).length > 0) {
     props.x = fields.x as XAxisProps;
   }

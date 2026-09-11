@@ -242,6 +242,99 @@ export function timeXFieldOf(props: TimePlotProps): "tr" | undefined {
   return props.marks.length > 0 && props.marks.every((m) => m.xField === "tr") ? "tr" : undefined;
 }
 
+/** One entry in the Properties pane's y-axis scale picker (ruling R215
+ *  item 5). `value` is the picker's own opaque token — **not** a
+ *  `YAxisProps.type`, because the two signed scales share the type
+ *  `"pow"` and differ only by exponent, so a picker keyed on `type` could
+ *  not tell them apart. `patch` is what committing this choice writes. */
+export interface YScaleChoice {
+  value: string;
+  label: string;
+  /** The `YAxisProps` fields this choice sets. `type: undefined` clears
+   *  both, restoring Plot's own default. */
+  patch: Pick<YAxisProps, "type" | "exponent">;
+  /** True for a choice that only makes sense on an axis whose values can
+   *  be negative — the signed scales, whose whole point is treating
+   *  compression and rebound symmetrically. A count, a fraction or a
+   *  spectrum magnitude is non-negative by construction, so offering these
+   *  there would be noise. */
+  signedOnly?: true;
+}
+
+/** The picker token standing for "no explicit scale — Plot's default". A
+ *  real, selectable choice, not an unset state. */
+export const Y_SCALE_DEFAULT = "default";
+
+/**
+ * Every y-axis scale the Properties pane offers, in display order (ruling
+ * R215 item 5). The two signed scales are idl0's `sqrtSigned` and
+ * `squareSigned` (`worksheet.dart`), expressed as Plot's `pow` scale —
+ * d3's power scale, which is **symmetric about zero**, so it compresses or
+ * expands compression and rebound equally rather than folding one side
+ * away the way `"sqrt"` does on a signed channel.
+ *
+ * `"pow"` is deliberately not offered raw: it is meaningless without an
+ * exponent, and an exponent field beside a scale picker is a control that
+ * only means something for one of its options. The grammar still admits any
+ * positive exponent (a hand edit round-trips), so this list is what the
+ * pane *offers*, never what it accepts — the same "accepted, never offered"
+ * split ruling R168 drew for the retired `"magnitude"` scaling.
+ */
+export const Y_SCALE_CHOICES: readonly YScaleChoice[] = [
+  { value: Y_SCALE_DEFAULT, label: "(default)", patch: { type: undefined, exponent: undefined } },
+  { value: "linear", label: "Linear", patch: { type: "linear", exponent: undefined } },
+  { value: "log", label: "Log", patch: { type: "log", exponent: undefined } },
+  { value: "sqrt", label: "Sqrt", patch: { type: "sqrt", exponent: undefined } },
+  { value: "signed-sqrt", label: "Signed √", patch: { type: "pow", exponent: 0.5 }, signedOnly: true },
+  { value: "signed-square", label: "Signed x²", patch: { type: "pow", exponent: 2 }, signedOnly: true },
+];
+
+/** The choices to offer for one axis: every entry for an axis whose values
+ *  can be negative (a channel's own value), or only the unsigned ones for
+ *  an axis that cannot go below zero (a count, a fraction, a spectrum
+ *  magnitude). */
+export function yScaleChoicesFor(axis: "signed" | "non-negative"): readonly YScaleChoice[] {
+  return axis === "signed" ? Y_SCALE_CHOICES : Y_SCALE_CHOICES.filter((c) => c.signedOnly !== true);
+}
+
+/**
+ * The picker token describing `y`'s current scale — the inverse of
+ * {@link Y_SCALE_CHOICES}' `patch`. A `"pow"` axis whose exponent matches
+ * neither named choice (a hand edit, which the grammar allows) reports its
+ * own `"pow:<exponent>"` token, so the caller can render it as a real
+ * option rather than silently displaying one of the two named scales and
+ * writing that lie back on the next unrelated edit — the same failure
+ * `fftScalingSelectOptions` exists to prevent.
+ */
+export function yScaleChoiceOf(y: YAxisProps | undefined): string {
+  if (y?.type === undefined) return Y_SCALE_DEFAULT;
+  if (y.type !== "pow") return y.type;
+  const named = Y_SCALE_CHOICES.find((c) => c.patch.type === "pow" && c.patch.exponent === y.exponent);
+  return named?.value ?? `pow:${String(y.exponent)}`;
+}
+
+/** The scale options to render for `y`, on an axis of kind `axis`
+ *  (ruling R215 item 5): {@link yScaleChoicesFor}'s list, plus — for this
+ *  render only — an entry for a hand-edited `pow` exponent the list does
+ *  not name. Same mechanism and same reason as
+ *  {@link fftScalingSelectOptions}. */
+export function yScaleSelectOptions(y: YAxisProps | undefined, axis: "signed" | "non-negative"): readonly YScaleChoice[] {
+  const offered = yScaleChoicesFor(axis);
+  const current = yScaleChoiceOf(y);
+  if (offered.some((c) => c.value === current)) return offered;
+  return [...offered, { value: current, label: `Pow ${String(y?.exponent)}`, patch: { type: "pow", exponent: y?.exponent } }];
+}
+
+/** Sets or clears the plot's zero line (C2 §5.3's `zero_rule`, ruling R215
+ *  item 5): `true` or entirely absent, the same shape `setColorLegend`
+ *  writes for `color`. Time cells only — see {@link TimePlotProps.zeroLine}
+ *  for why no other chart kind has one. */
+export function setZeroLine(props: TimePlotProps, enabled: boolean): TimePlotProps {
+  if (enabled) return { ...props, zeroLine: true };
+  const { zeroLine: _drop, ...rest } = props;
+  return rest;
+}
+
 /** The code "Reset to form" writes back: `generate` of `lastKnownProps`
  *  when one exists, or of {@link defaultPlotProps} otherwise (design §6 /
  *  this task's brief — never a no-op, even for a cell that started as
@@ -500,9 +593,13 @@ function isEmptyXAxis(x: XAxisProps): boolean {
   return x.label === undefined && x.domain === undefined;
 }
 
-/** True when every field of `y` is `undefined` (see {@link isEmptyXAxis}). */
+/** True when every field of `y` is `undefined` (see {@link isEmptyXAxis}).
+ *  `exponent` is checked alongside the rest: it can only be set with
+ *  `type: "pow"`, so it can never be the sole surviving field in practice
+ *  — but leaving it out of this check would let a future caller produce a
+ *  `y: { exponent: n }` the generator refuses to emit. */
 function isEmptyYAxis(y: YAxisProps): boolean {
-  return y.label === undefined && y.domain === undefined && y.type === undefined;
+  return y.label === undefined && y.domain === undefined && y.type === undefined && y.exponent === undefined;
 }
 
 /** Shallow-merges `patch` into `props.x` (starting from `{}` if `props.x`
