@@ -1777,7 +1777,9 @@ lap_mark      ::= "Plot." ("barY"|"dot"|"lineY") "(" identifier ","
 
 raster_marks  ::= "[" raster_mark "]"                              (* new 2026-09-11, R217 item 4; exactly one *)
 raster_mark   ::= "Plot.image(" spectrogram_call ", {x:\"x\", y:\"y\","
-                       " width:\"w\", height:\"h\", src:\"src\"})"
+                       " width:\"iw\", height:\"ih\", src:\"src\"})"
+                                                                   (* `iw`/`ih` corrected 2026-09-11: `w` is the
+                                                                      window index `fx:"w"` facets by, below *)
 spectrogram_call ::= "spectrogram(" js_string "," fft_params ")"    (* the same six keys, same fixed order *)
 
 css_color     ::= js_string                (* any valid CSS color literal *)
@@ -2293,14 +2295,24 @@ makes it picker-seedable rather than hand-written code. Rules:
   an FFT cell's x axis has.
 
 **Per window (R127): one raster per window, faceted.** A raster has no `w`
-column — pixels cannot interleave, and a `NaN` break row between two images
-is meaningless. So a spectrogram cell fetches **one raster per selected
-window** and facets them with `fx: "w"`, sharing one `y` (frequency) scale,
+*column* — pixels cannot interleave, and a `NaN` break row between two images
+is meaningless — but each raster record carries a `w` *field*: the index of
+the window that produced it. So a spectrogram cell fetches **one raster per
+selected window** and facets them with `fx: "w"`, sharing one `y` (frequency) scale,
 taking each window's own `x` domain from that window's own `RasterMeta`, and
 stating one `color.domain` in the document as the union of the windows'
 `vmin`/`vmax` rather than letting the host pick per facet — per-facet colour
 scales would make two laps' heatmaps look identical when they are not.
 `fx: "w"` is the one plot option legal only on a spectrogram cell.
+
+**The image's own size fields are `iw`/`ih`, not `w`/`h`** (corrected
+2026-09-11, in the same revision that first wrote this section). A raster
+record's `w` is the window index — the value `fx: "w"` facets by, and the
+name every other payload in the app uses for exactly that — so the image's
+pixel width cannot also be `w`: faceting by a width that is identical across
+every window collapses all of them into one facet, drawing each window's
+heatmap over the last. `iw`/`ih` are the rendered size in CSS pixels, which
+the host requested the raster at, so nothing resamples.
 
 **Budget.** `width`/`height` are the cell's CSS pixel box in device pixels,
 clamped to **2048 × 1024**; a request above the clamp **renders at the
@@ -2673,7 +2685,7 @@ existing error envelope on stderr.
 | `worksheets[].charts[]` / `.blocks[].content.kind == "chart"` (`ChartSlot[]`) | staged for Stage 2 | Written into a **transient** front-matter key `_migrate_charts: [ <ChartSlot JSON>, … ]` (flattened across every worksheet, worksheet name/order dropped — see below) for the app to consume on first open. The CLI does not attempt Plot-code generation itself: `plotForm.generate` is TypeScript, and the CLI is Rust-only (this is the literal "CLI vs. app split" the outline asks for). |
 | `worksheets[].name`, `.xAxisMode`, `.kind` (`sessionSheet`'s pinned `gpsMap`/`lapTable`/`lapProgression`) | *dropped* (worksheet structure only) | **Revised 2026-09-11 (ruling R217 item 6).** No v3 worksheet concept at all (a `.idl1wb` is one flat cell sequence), so worksheet name, order and `kind` are still dropped. **The three pinned chart slots are no longer dropped**: §5.3 now has a production for each, and they migrate by the four rows below. `xAxisMode` (`wheelDistance`/`gpsDistance`) has no v3 analogue — ruling R136 refuses a distance x binding outright, so an author wanting one writes custom `js` code by hand post-migration. |
 | `ChartSlot(gpsMap)` | a `chart: "map"` `js` cell | *Added 2026-09-11 (ruling R217 items 1, 6).* `gps("<colourChannel>")` when the slot names a colour-by channel, `gps(null)` when it does not; `color.domain` from the slot's own colour min/max; `aspectRatio: 1`; and the two `trackGeometry` underlay marks ahead of the trace when the session has a track. idl0's basemap tiles and start/finish marker are dropped, with a report line each. |
-| `ChartSlot(lapTable)` | a `table` cell (§4) | *Added 2026-09-11 (ruling R217 items 2, 6).* Replaces the "no v3 chart type covers `lapTable`" row this section previously carried: `rowSource: "windowLaps"`, `mainRowId: "fastest"`, a `lap_time()` column, and one `sector_time(i)` column per sector gate of the slot's track, `i` 0-based in gate order. Not a chart cell — idl0's lap table was a chart type; in v3 it is what §4 always was. |
+| `ChartSlot(lapTable)` | a `table` cell (§4) | *Added 2026-09-11 (ruling R217 items 2, 6); sector rule corrected 2026-09-11 against real files, below.* Replaces the "no v3 chart type covers `lapTable`" row this section previously carried: `rowSource: "windowLaps"`, `mainRowId: "fastest"`, a `lap_time()` column, and the slot's own `title` as the cell's title. Not a chart cell — idl0's lap table was a chart type; in v3 it is what §4 always was. |
 | `ChartSlot(lapProgression)` | a `chart: "lap"` `js` cell | *Added 2026-09-11 (ruling R217 items 3, 6).* A `math` cell defining `lap_time_s = lap_time()` is emitted alongside it, and the chart is `Plot.lineY(lap_time_s, {x: "lap", y: "v", stroke: "w"})`. idl0's one-line-per-session becomes one line per selected window, which is the same picture through R127's descriptor. |
 | `ChartSlot(spectrogram)` | a `chart: "spectrogram"` `js` cell | *Added 2026-09-11 (ruling R217 items 4, 6).* Previously not convertible at all. The six `fft_params` are read off the v2 slot's `SpectralParams`; `fx: "w"`; `color.domain` left to the app's first render, since the v2 slot carried no colour range. `averaging` is dropped — a spectrogram keeps every frame — with a report line. |
 | `overlay_layouts[]` | *dropped* | D9 — no CLI or app handling, not even transiently. |
@@ -2696,6 +2708,30 @@ None of these three report categories ever refuses the migration —
 refusal is reserved for the rules already stated above (an unrecognised
 `workbook_version`, a migrated constant colliding with `pi`/`tau`/`e`/`g`);
 every other irregularity is reported and migrated through.
+
+**`lapTable` slots carry no track, so sector columns cannot be migrated**
+(verified 2026-09-11 against the three real `.idl0wb` files under
+`IDL0/app/dev`). This section first said the migration writes "one
+`sector_time(i)` column per sector gate of the slot's track". A real
+`lapTable` slot is:
+
+```json
+{"slotId": "slot-session-laptable", "chartType": "lapTable",
+ "channelIds": [], "mathChannelIds": [], "yScaleMode": "auto",
+ "heightFactor": 1.0, "channelColors": {}, "scope": "auto",
+ "title": "Lap times"}
+```
+
+— identical in all three files. It names no track, carries no sector count
+and lists no columns at all; `scope: "auto"` means "whatever session is
+being viewed". So the gate count is a **reader-time** fact about the
+session in front of you, not a migration-time fact about the file, and a
+migration that guessed a column count would write a number the file never
+stated. The migration therefore writes the `lap_time()` column only, and a
+sector column is something the reader adds — which is also the honest
+reading of `scope: "auto"`. The empty `channelIds`/`mathChannelIds`,
+`yScaleMode`, `heightFactor` and `channelColors` are dropped with a report
+line, like every other unused slot field.
 
 ### 6.1 Identifier derivation for migrated definition names
 

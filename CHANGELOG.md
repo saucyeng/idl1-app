@@ -110,6 +110,31 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 
 ### Added
 
+- **[docs] Maps and spectrograms now draw, not just parse (2026-09-11,
+  ruling R217).** The two chart types the previous entry taught a workbook
+  to *describe* now fetch their data and put pixels on the screen. A map
+  cell asks the engine for each selected window's GPS fixes, already
+  projected into one local frame and thinned to the cell's own point
+  budget, and draws them over the track outline and its gates; several
+  selected laps draw as several separate traces rather than one path that
+  jumps between them. Colouring by a channel works, and a map over a
+  session with no fixes draws an empty frame rather than an error. A
+  spectrogram cell asks for one heatmap per selected window and draws them
+  side by side against one shared frequency scale and one shared colour
+  scale, so two laps can actually be compared; the colour ramp and its
+  bounds come from the engine that encoded the pixels, never from a second
+  copy of the ramp in the app. **Still not drawing:** lap-progression
+  charts and lap-sourced tables, both of which need engine work that does
+  not exist yet — see the notes on each below.
+
+  *Correction to the chart grammar.* A spectrogram cell's image mark now
+  spells its size fields `width: "iw"`, `height: "ih"` rather than `"w"`,
+  `"h"`. The same cell also says `fx: "w"`, and `w` is the window index
+  every chart in the app groups by, so the two spellings collided: faceting
+  by an image width that is the same for every window drew every window's
+  heatmap on top of the others. The old spelling only ever existed in an
+  earlier build from the same day, so no saved workbook carries it.
+
 - **A session that takes a while to open now says so (2026-09-11, ruling
   R221.1).** Opening a long recording could sit silent for minutes with
   nothing on screen to say whether it was working or stuck. Reading one

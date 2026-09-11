@@ -1550,7 +1550,7 @@ export function readSpectrogramCall(c: Cursor): { channel: string; fft: FftParam
 }
 
 function parseRasterOptionField(key: string, c: Cursor): FieldResult {
-  const expected: Record<string, string> = { x: "x", y: "y", width: "w", height: "h", src: "src" };
+  const expected: Record<string, string> = { x: "x", y: "y", width: "iw", height: "ih", src: "src" };
   const want = expected[key];
   if (want === undefined) return { ok: false };
   const v = consumeString(c);
@@ -1558,8 +1558,14 @@ function parseRasterOptionField(key: string, c: Cursor): FieldResult {
 }
 
 /** Reads one `raster_mark`: `Plot.image(spectrogram_call, {x:"x", y:"y",
- *  width:"w", height:"h", src:"src"})`. Every option is a fixed literal —
- *  there is nothing to choose about how an image binds its own frame. */
+ *  width:"iw", height:"ih", src:"src"})`. Every option is a fixed literal —
+ *  there is nothing to choose about how an image binds its own frame.
+ *
+ *  `iw`/`ih` rather than `w`/`h` (corrected 2026-09-11, this lane): the
+ *  same cell also fixes `fx: "w"`, and `w` cannot be both the window index
+ *  every payload in the app uses it for and an image's pixel width --
+ *  faceting by a width identical across windows collapses every window's
+ *  raster into one facet, which is the opposite of what `fx: "w"` is for. */
 function readRasterMark(c: Cursor): SpectrogramMarkProps | null {
   const start = c.pos;
   if (!consumeIdent(c, "Plot") || !consumePunct(c, ".") || !consumeIdent(c, "image") || !consumePunct(c, "(")) {

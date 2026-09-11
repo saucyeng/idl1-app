@@ -7,23 +7,39 @@
  * caller (`Notebook/index.tsx`) resolves `SessionDetail` and the session's
  * recorded span (lead pre-ruling 2026-09-05 #1) and passes both in.
  */
+import { gpsKey, rasterKey } from "../plotForm/gpsKey";
 import { histogramKey } from "../plotForm/histogramKey";
 import { parse } from "../plotForm/parse";
 import { scatterKey } from "../plotForm/scatterKey";
 import { spectrumKey } from "../plotForm/spectrumKey";
-import type { FftPlotProps, HistogramParams, HistogramPlotProps, ScatterPlotProps, TimePlotProps } from "../plotForm/types";
+import type {
+  FftParams,
+  FftPlotProps,
+  HistogramParams,
+  HistogramPlotProps,
+  MapPlotProps,
+  ScatterPlotProps,
+  SpectrogramPlotProps,
+  TimePlotProps,
+} from "../plotForm/types";
 import { exceedsBinCap, fftRequestFor, type FftRequest } from "./fftRequest";
 import {
   extractChannelCalls,
+  extractGpsCalls,
   extractHistogramCalls,
   extractScatterCalls,
+  extractSpectrogramCalls,
   extractSpectrumCalls,
   type ChannelCallRef,
+  type GpsCallRef,
   type HistogramCallRef,
   type ScatterCallRef,
+  type SpectrogramCallRef,
   type SpectrumCallRef,
 } from "./jsCellCalls";
+import { gpsBudgetForWidth } from "../../../../ipc/gps";
 import { MAX_HISTOGRAM_BINS, type HistogramParams as WireHistogramParams } from "../../../../ipc/histogram";
+import type { SpectrogramParams as WireSpectrogramParams } from "../../../../ipc/rasters";
 import { MAX_SCATTER_POINTS } from "../../../../ipc/scatter";
 import { rawUnitToLabel, UNIT_NOT_YET_EVALUATED } from "./unitLabel";
 import type { ChannelSummary, SessionDetail } from "../../../../ipc/catalog";
@@ -206,7 +222,81 @@ export interface ScatterCellBinding {
   unrequestable: string | null;
 }
 
-export type JsCellBinding = TimeCellBinding | FftCellBinding | HistogramCellBinding | ScatterCellBinding;
+/**
+ * What a form-generated **map** `js` cell needs to render its projected
+ * trace (ruling R217 item 1, C2 §5.3, C3 §3.5). One optional colour-by
+ * channel, one host-variable name, one point budget -- a map cell may carry
+ * several `trace_mark`s, but every one of them reads the same geometry, so
+ * the colour-by channel of the *first* is what the cell fetches (the others
+ * resolve to the same variable when they name the same channel, and to an
+ * unbound one when they do not, exactly as a second `spectrum(...)` call in
+ * an FFT cell does).
+ *
+ * The track underlay (`trackGeometry`) is deliberately **not** part of this:
+ * it is per *session*, not per cell, so the caller fetches it once for the
+ * selection and binds it under its own bare-identifier name rather than
+ * once per map cell.
+ */
+export interface MapCellBinding {
+  kind: "map";
+  props: MapPlotProps;
+  /** The channel the trace is coloured by, or `null` for an uncoloured
+   *  trace -- passed straight through to `fetch_gps_trace_v2`'s `colourBy`. */
+  colourBy: string | null;
+  /** The colour-by channel's three-state unit (R154/R164), or `null` when
+   *  the trace is uncoloured. Both position axes are metres by construction
+   *  (the engine projects into one local ENU frame), so this is the only
+   *  unit a map has to resolve. */
+  colourUnit: UnitLabel | null;
+  /** `fetch_gps_trace_v2`'s `budget`, in points -- C2 §5.3's four-per-CSS-
+   *  pixel rule via `ipc/gps.ts`'s `gpsBudgetForWidth`, already clamped to
+   *  `MAX_GPS_TRACE_POINTS`. */
+  budget: number;
+  /** `gpsKey(colourBy)` -- the host variable name this trace is published
+   *  under, computed by the one shared function both the host and the
+   *  sandbox call (C2 §5.3). */
+  hostVarName: string;
+  /** Non-null when this cell must not fetch. Reserved for symmetry with the
+   *  other arms; a map cell's only refusable condition (an unresolvable
+   *  colour-by channel) makes {@link bindingFor} return `null` instead, so
+   *  that the caller's existing "names a channel this session doesn't have"
+   *  note applies unchanged. */
+  unrequestable: string | null;
+}
+
+/**
+ * What a form-generated **spectrogram** `js` cell needs to render its
+ * heatmap (ruling R217 item 4, C2 §5.3, C3 §3.6). Exactly one channel and
+ * one set of `fft_params`, the same shape {@link FftCellBinding} has,
+ * because the two parameterise the same STFT -- the difference is entirely
+ * downstream: a spectrum is a line over frequency, a spectrogram is one
+ * already-rendered raster per selected window.
+ */
+export interface SpectrogramCellBinding {
+  kind: "spectrogram";
+  props: SpectrogramPlotProps;
+  channelId: string;
+  /** `fetch_raster_v2`'s `params` for `kind: "spectrogram"`, in C3 §3.6's
+   *  wire spelling, translated from the grammar's camelCase here so nothing
+   *  downstream translates it again. `averaging` has no wire field: a
+   *  spectrogram keeps every frame, which is what makes it one. */
+  params: WireSpectrogramParams;
+  /** `rasterKey(channelId, props.mark.fft)`. */
+  hostVarName: string;
+  /** Non-null when this cell must not fetch: fewer than two samples (a
+   *  channel with nothing to transform), or a `windowSize` over
+   *  `MAX_FFT_BINS` (R79 Q4 -- the same cap a spectrum is held to, since
+   *  the same STFT produces both). */
+  unrequestable: string | null;
+}
+
+export type JsCellBinding =
+  | TimeCellBinding
+  | FftCellBinding
+  | HistogramCellBinding
+  | ScatterCellBinding
+  | MapCellBinding
+  | SpectrogramCellBinding;
 
 /** Looks up one mark's channel in `sessionDetail.channels` by id, or `null`
  *  if it isn't a real channel on this session. Exported so every "does this
@@ -482,6 +572,125 @@ function syntheticScatterProps(call: ScatterCallRef): ScatterPlotProps {
   return { chart: "scatter", mark: { xChannel: call.xChannel, yChannel: call.yChannel, scatter: call.scatter } };
 }
 
+/** The nominal rendered width of a notebook chart cell, CSS pixels -- what
+ *  {@link bindingForMap} sizes its point budget from when the caller does
+ *  not supply a measured width. A module constant rather than a DOM read:
+ *  this module is pure (no React, no DOM), and a budget that changed with
+ *  every resize would refetch the trace on every drag of the window edge,
+ *  which C3 §4's settle rule exists to prevent. */
+export const NOMINAL_CELL_WIDTH_PX = 800;
+
+/**
+ * Builds the `MapCellBinding` for a map cell's first `gps(...)` call, or
+ * `null` when the call names a colour-by channel that is not a real session
+ * channel (C3 §3.5's `fetch_gps_trace_v2` resamples a session channel onto
+ * the fix times; a workbook definition has no column in `data.parquet` to
+ * resample from -- the same restriction {@link bindingForFft} has).
+ * `gps(null)` -- an uncoloured trace -- always binds: there is no channel to
+ * fail to resolve.
+ *
+ * The geometry itself never fails to resolve here: a session with no GPS
+ * fixes is a real answer (an empty trace), which C3 §3.5 returns as a
+ * zero-point payload, not an error.
+ */
+function bindingForMap(
+  call: GpsCallRef,
+  displayProps: MapPlotProps,
+  sessionDetail: SessionDetail,
+  cellWidthPx: number
+): MapCellBinding | null {
+  let colourUnit: UnitLabel | null = null;
+  if (call.colourBy !== null) {
+    const channel = findChannel(sessionDetail.channels, call.colourBy);
+    if (channel === null) return null;
+    colourUnit = rawUnitToLabel(channel.unit);
+  }
+
+  return {
+    kind: "map",
+    props: displayProps,
+    colourBy: call.colourBy,
+    colourUnit,
+    budget: gpsBudgetForWidth(cellWidthPx),
+    hostVarName: gpsKey(call.colourBy),
+    unrequestable: null,
+  };
+}
+
+/** A minimal, synthetic `MapPlotProps` standing in for
+ *  `MapCellBinding.props` when `code` didn't round-trip through
+ *  `plotForm.parse` -- same reasoning as {@link syntheticTimeProps}.
+ *  `trackUnderlay` is omitted (the grammar's "absent means no underlay"),
+ *  since a hand-written cell's own `trackGeometry` marks are its business
+ *  and this module never sees them. */
+function syntheticMapProps(call: GpsCallRef): MapPlotProps {
+  return { chart: "map", marks: [{ mark: "line", colourBy: call.colourBy }] };
+}
+
+/** Translates C2 §5.3's camelCase `fft_params` into C3 §3.6's `snake_case`
+ *  `SpectrogramParams`. `averaging` has no wire field -- a spectrogram keeps
+ *  every frame -- and `windowSize`/`hopSize`'s `"all"` spelling cannot reach
+ *  here: {@link bindingForSpectrogram} resolves it against the channel's own
+ *  sample count first, exactly as {@link bindingForFft} does. */
+function wireSpectrogramParams(fft: FftParams, sampleCount: number): WireSpectrogramParams {
+  return {
+    window_size: fft.windowSize === "all" ? sampleCount : fft.windowSize,
+    hop_size: fft.hopSize === "all" ? sampleCount : fft.hopSize,
+    window: fft.window,
+    detrend: fft.detrend,
+    scaling: fft.scaling,
+  };
+}
+
+/**
+ * Builds the `SpectrogramCellBinding` for a spectrogram cell's one
+ * `spectrogram(...)` call, or `null` if its channel is not a real session
+ * channel (C3 §3.6's `fetch_raster_v2` slices `data.parquet`, which a
+ * workbook definition has no column in).
+ *
+ * `unrequestable` refuses the same two cases {@link bindingForFft} does, and
+ * for the same reasons: fewer than two samples (nothing to transform, R76)
+ * and a resolved `windowSize` over `MAX_FFT_BINS` (R79 Q4) -- both checked
+ * against the *resolved* window, since `"all"` only becomes a number here.
+ * The raster's own **pixel** size is never refused: C3 §3.6 clamps a
+ * too-large request rather than rejecting it (a window wider than the screen
+ * is a coarser picture, not an error).
+ */
+function bindingForSpectrogram(
+  call: SpectrogramCallRef,
+  displayProps: SpectrogramPlotProps,
+  sessionDetail: SessionDetail
+): SpectrogramCellBinding | null {
+  const channel = findChannel(sessionDetail.channels, call.channel);
+  if (channel === null) return null;
+
+  const sampleCount = channel.sample_count;
+  const params = wireSpectrogramParams(call.fft, sampleCount);
+
+  let unrequestable: string | null = null;
+  if (sampleCount < 2) {
+    unrequestable = "This channel has too few samples for a spectrogram.";
+  } else if (exceedsBinCap(params.window_size)) {
+    unrequestable = "This spectrogram has more bins than the chart can draw — reduce the window size.";
+  }
+
+  return {
+    kind: "spectrogram",
+    props: displayProps,
+    channelId: channel.channel_id,
+    params,
+    hostVarName: rasterKey(channel.channel_id, call.fft),
+    unrequestable,
+  };
+}
+
+/** A minimal, synthetic `SpectrogramPlotProps` standing in for
+ *  `SpectrogramCellBinding.props` when `code` didn't round-trip through
+ *  `plotForm.parse` -- same reasoning as {@link syntheticTimeProps}. */
+function syntheticSpectrogramProps(call: SpectrogramCallRef): SpectrogramPlotProps {
+  return { chart: "spectrogram", mark: { channel: call.channel, fft: call.fft } };
+}
+
 /**
  * Extracts `code`'s `channel(...)`/`spectrum(...)`/`histogram(...)`/`scatter(...)` calls (`model/jsCellCalls.ts`,
  * ruling R148 part 2) and binds against them -- **not** by requiring `code`
@@ -548,11 +757,35 @@ export function bindingFor(
    *  defaulting to empty, so every existing caller/test that only cares
    *  about resolvability (not the unit) is unaffected -- a name absent from
    *  this map resolves to {@link UNIT_NOT_YET_EVALUATED}, not a crash. */
-  definitionUnitByName: ReadonlyMap<string, UnitLabel> = new Map()
+  definitionUnitByName: ReadonlyMap<string, UnitLabel> = new Map(),
+  /** The cell's rendered width in CSS pixels, consulted only by the map arm
+   *  ({@link bindingForMap}) to size its point budget. Defaults to
+   *  {@link NOMINAL_CELL_WIDTH_PX} -- see that constant's own doc comment
+   *  for why this is not a live DOM measurement. */
+  cellWidthPx: number = NOMINAL_CELL_WIDTH_PX
 ): JsCellBinding | null {
   if (sessionDetail === null || sessionSpanUs === null) return null;
 
   const parsedProps = parse(cell.code);
+
+  // Dispatched before the `scatter`/`histogram`/`spectrum` arms because a
+  // map or spectrogram cell makes no call any of those arms would match,
+  // and putting the two newest kinds first keeps each arm's "first call
+  // wins" rule a purely local statement.
+  const gpsCalls = extractGpsCalls(cell.code);
+  if (gpsCalls.length > 0) {
+    const call = gpsCalls[0];
+    const displayProps = parsedProps !== null && parsedProps.chart === "map" ? parsedProps : syntheticMapProps(call);
+    return bindingForMap(call, displayProps, sessionDetail, cellWidthPx);
+  }
+
+  const spectrogramCalls = extractSpectrogramCalls(cell.code);
+  if (spectrogramCalls.length > 0) {
+    const call = spectrogramCalls[0];
+    const displayProps =
+      parsedProps !== null && parsedProps.chart === "spectrogram" ? parsedProps : syntheticSpectrogramProps(call);
+    return bindingForSpectrogram(call, displayProps, sessionDetail);
+  }
 
   const scatterCalls = extractScatterCalls(cell.code);
   if (scatterCalls.length > 0) {
@@ -638,6 +871,21 @@ function windowIdentity(window: SelectedWindow | null): string {
  * Pure string formatting, no IPC.
  */
 export function bindingIdentity(binding: JsCellBinding): string {
+  if (binding.kind === "map") {
+    // `hostVarName` encodes the colour-by channel, which is a map's whole
+    // request beyond the budget: the geometry is the same whatever the
+    // colour (`gpsKey`'s own doc comment). Per-cell, not per-window, for
+    // the reason the histogram arm's is -- a trace carries its window
+    // dimension in the payload (`combineGpsWindows`), never in the key.
+    return `map|${binding.hostVarName}|${binding.budget}|${binding.unrequestable ?? ""}`;
+  }
+  if (binding.kind === "spectrogram") {
+    // `hostVarName` encodes the channel and all six `fft_params`
+    // (`rasterKey`). The requested pixel size is deliberately absent: C3
+    // §3.6 clamps rather than refuses, and a raster refetched on every
+    // pixel of resize is exactly what C3 §4's settle rule forbids.
+    return `spectrogram|${binding.hostVarName}|${binding.unrequestable ?? ""}`;
+  }
   if (binding.kind === "scatter") {
     // `hostVarName` encodes both channels and both `scatter_params`
     // (`scatterKey`), so only the refusal state can distinguish two
@@ -689,6 +937,21 @@ export function bindingIdentity(binding: JsCellBinding): string {
  * guarantees as `bindingFor`.
  */
 export function unresolvedChannelId(code: string, sessionDetail: SessionDetail, definitionNames: ReadonlySet<string>): string | null {
+  // Same dispatch order as `bindingFor`. A `gps(null)` call names no
+  // channel at all and so can never be unresolved.
+  const gpsCalls = extractGpsCalls(code);
+  if (gpsCalls.length > 0) {
+    const { colourBy } = gpsCalls[0];
+    if (colourBy === null) return null;
+    return findChannel(sessionDetail.channels, colourBy) === null ? colourBy : null;
+  }
+
+  const spectrogramCalls = extractSpectrogramCalls(code);
+  if (spectrogramCalls.length > 0) {
+    const { channel } = spectrogramCalls[0];
+    return findChannel(sessionDetail.channels, channel) === null ? channel : null;
+  }
+
   const scatterCalls = extractScatterCalls(code);
   if (scatterCalls.length > 0) {
     const { xChannel, yChannel } = scatterCalls[0];

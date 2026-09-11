@@ -94,7 +94,74 @@ export type HostVarPayload =
       /** The **y** channel's three-state unit. A scatter is the one payload
        *  whose two axes carry different units, so it carries two. */
       unitY: UnitLabel;
+    }
+  | {
+      /** One map cell's projected trace (C3 §3.5, ruling R217 item 1) --
+       *  metres east/north in one local ENU frame, never degrees, so the
+       *  sandbox draws a plane and derives nothing. */
+      kind: "gps";
+      length: number;
+      /** Metres east of the ENU origin. */
+      x: ArrayBuffer;
+      /** Metres north. */
+      y: ArrayBuffer;
+      /** Seconds since session start. */
+      t: ArrayBuffer;
+      /** The colour-by channel resampled onto the fix times, all `NaN` when
+       *  {@link hasC} is `false`. Always present as a buffer (never `null`)
+       *  so the transfer list and `materializeHostVar`'s record loop have
+       *  one shape; {@link hasC} says whether its values mean anything. */
+      c: ArrayBuffer;
+      /** Whether the request named a colour-by channel at all. `false` ⇒
+       *  every `c` is `NaN` and a cell must not colour by it. */
+      hasC: boolean;
+      w: ArrayBuffer;
+      windows: WindowDescriptor[];
+    }
+  | {
+      /** One spectrogram cell's rendered rasters, one per selected window
+       *  (C3 §3.6, ruling R217 item 4). Pixels do not interleave, so this
+       *  is the one array payload that is *not* flattened into parallel
+       *  columns with a `w` index per row: it is a short list of frames,
+       *  each with its own pixel buffer, and the cell facets them. */
+      kind: "raster";
+      frames: RasterFramePayload[];
+      windows: WindowDescriptor[];
+      /** The magnitude axis's three-state unit (`RasterMeta.magnitude_unit`,
+       *  derived by the engine from the channel's unit and `scaling`), or
+       *  `null` when the engine reported none. Projected onto the bound
+       *  array as `.unit`/`.unitState` like every other payload's. */
+      magnitudeUnit: UnitLabel | null;
+      /** The colour ramp the engine's own encoder used, as opaque RGBA8
+       *  stops at evenly spaced `t` including both endpoints (C3 §3.6's
+       *  `RasterMeta.ramp_stops`). A legend is built from these and the ramp
+       *  is never reimplemented in this realm (ruling R177). */
+      rampStops: [number, number, number, number][];
+      /** The colour scale's bounds, shared across every frame so two
+       *  windows' heatmaps are comparable (`RasterMeta.scale`). `null` when
+       *  no frame reported one. */
+      scale: { vmin: number; vmax: number } | null;
     };
+
+/** One window's rendered raster as it crosses `postMessage` (ruling R217
+ *  item 4). `pixels` is row-major top-down RGBA8 (`ipc/rasters.ts`'s
+ *  `DecodedRaster.pixels`), transferred rather than copied; the sandbox
+ *  encodes it to a `data:` URL once on receipt, never per rendered frame. */
+export interface RasterFramePayload {
+  /** Index into the payload's own `windows` array -- the value a
+   *  spectrogram cell facets by (`fx: "w"`). */
+  windowIndex: number;
+  /** Raster width, pixels. */
+  pixelWidth: number;
+  /** Raster height, pixels. */
+  pixelHeight: number;
+  /** This frame's x (time) domain, in the units `RasterMeta.x_label` names. */
+  xDomain: [number, number];
+  /** This frame's y (frequency) domain, Hz. */
+  yDomain: [number, number];
+  /** Row-major top-down RGBA8 bytes, `pixelWidth * pixelHeight * 4` long. */
+  pixels: ArrayBuffer;
+}
 
 /** One cell as the host hands it to the sandbox for (re)definition. */
 export interface SandboxCell {
@@ -522,6 +589,160 @@ export function combineHistogramWindows(series: readonly HistogramWindowSeries[]
   });
 
   return { length, v0, v1, n, w, windows };
+}
+
+/** One selected window's own projected trace -- see
+ *  {@link combineGpsWindows}. All of `xs`/`ys`/`ts` are the same length
+ *  (`ipc/gps.ts`'s `DecodedGpsTrace`); `cs` is `null` when the request named
+ *  no colour-by channel. */
+export interface GpsWindowSeries {
+  descriptor: WindowDescriptor;
+  /** Metres east of the ENU origin. */
+  xs: Float64Array;
+  /** Metres north. */
+  ys: Float64Array;
+  /** Seconds since session start. */
+  ts: Float64Array;
+  /** The colour-by channel resampled onto the fix times, or `null` for an
+   *  uncoloured trace. */
+  cs: Float64Array | null;
+}
+
+/** {@link combineGpsWindows}'s return -- ready to pass straight into
+ *  {@link gpsPayload} (via each array's `.buffer`). */
+export interface CombinedGpsSeries {
+  length: number;
+  x: Float64Array;
+  y: Float64Array;
+  t: Float64Array;
+  c: Float64Array;
+  /** `true` when at least one window's trace carried a colour column --
+   *  becomes the payload's own `hasC`. */
+  hasC: boolean;
+  w: Float64Array;
+  windows: WindowDescriptor[];
+}
+
+/**
+ * Combines *n* selected windows' own projected traces into the single flat
+ * `{length, x, y, t, c, w}` layout, the map counterpart of
+ * {@link combineChannelWindows} (ruling R217 item 1, following R127's
+ * shape): one host variable per colour-by channel, never one per (…, window)
+ * pair, because `gps_call`'s grammar (C2 §5.3) has no window token to
+ * address a second key with.
+ *
+ * **A break row *is* inserted between windows**, unlike
+ * {@link combineHistogramWindows}/{@link combineScatterWindows} and exactly
+ * as {@link combinePairedWindows} does (ruling R127 item 4): a trace is
+ * drawn with `Plot.line`, so without one the path would vault from one
+ * lap's last fix straight to the next lap's first, drawing a chord across
+ * the infield that looks like a real line the rider took. The break row is
+ * `NaN` in every column, `w` included, for the reason
+ * {@link combinePairedWindows} gives.
+ *
+ * Written out rather than delegated to {@link combinePairedWindows}: that
+ * helper carries exactly two value columns, and a trace has four.
+ *
+ * A window whose own `cs` is `null` contributes `NaN` colours, so one
+ * window missing its colour channel never shifts another window's points.
+ * `series: []` returns an all-empty result with `hasC: false`.
+ */
+export function combineGpsWindows(series: readonly GpsWindowSeries[]): CombinedGpsSeries {
+  const windows = series.map((s) => s.descriptor);
+  const hasC = series.some((s) => s.cs !== null);
+  const breaks = Math.max(0, series.length - 1);
+  const length = series.reduce((sum, s) => sum + s.xs.length, 0) + breaks;
+  const x = new Float64Array(length);
+  const y = new Float64Array(length);
+  const t = new Float64Array(length);
+  const c = new Float64Array(length);
+  const w = new Float64Array(length);
+
+  let i = 0;
+  series.forEach((s, windowIndex) => {
+    if (windowIndex > 0) {
+      x[i] = NaN;
+      y[i] = NaN;
+      t[i] = NaN;
+      c[i] = NaN;
+      w[i] = NaN;
+      i++;
+    }
+    for (let j = 0; j < s.xs.length; j++) {
+      x[i] = s.xs[j];
+      y[i] = s.ys[j];
+      t[i] = s.ts[j];
+      c[i] = s.cs === null ? NaN : s.cs[j];
+      w[i] = windowIndex;
+      i++;
+    }
+  });
+
+  return { length, x, y, t, c, hasC, w, windows };
+}
+
+/**
+ * Builds a `setHostVar` message for a decoded, possibly multi-window
+ * projected trace (ruling R217 item 1) plus its transfer list, mirroring
+ * {@link channelPayload}. `x`/`y`/`t`/`c`/`w` must not be read again by the
+ * caller after this call -- they are neutered once transferred.
+ *
+ * All five are the raw bytes backing a **`Float64Array`** on each end, the
+ * same unconditional reinterpretation every other array payload gets. The
+ * trace carries no {@link UnitLabel}: both its axes are metres by
+ * construction (the engine projects into one local ENU frame, C2 §5.3), and
+ * the colour column's unit is the colour-by channel's own, which a cell that
+ * wants it reads from that channel rather than from the trace.
+ */
+export function gpsPayload(
+  name: string,
+  length: number,
+  x: ArrayBuffer,
+  y: ArrayBuffer,
+  t: ArrayBuffer,
+  c: ArrayBuffer,
+  hasC: boolean,
+  w: ArrayBuffer,
+  windows: WindowDescriptor[]
+): { message: { type: "setHostVar"; name: string; value: HostVarPayload }; transfer: Transferable[] } {
+  return {
+    message: {
+      type: "setHostVar",
+      name,
+      value: { kind: "gps", length, x, y, t, c, hasC, w, windows },
+    },
+    transfer: [x, y, t, c, w],
+  };
+}
+
+/**
+ * Builds a `setHostVar` message for a spectrogram cell's per-window rasters
+ * (ruling R217 item 4) plus its transfer list. Every frame's `pixels` buffer
+ * is moved (not copied) via `postMessage`'s transfer list (P7) and must not
+ * be read again by the caller after this call.
+ *
+ * Unlike every other array payload this module builds, the frames are *not*
+ * concatenated into flat columns with a `w` index per row: a raster is
+ * pixels, and two windows' pixels cannot interleave the way two windows'
+ * samples can. Each frame keeps its own buffer and its own domains, and
+ * `windowIndex` is what the cell's `fx` facets by.
+ */
+export function rasterPayload(
+  name: string,
+  frames: RasterFramePayload[],
+  windows: WindowDescriptor[],
+  magnitudeUnit: UnitLabel | null,
+  rampStops: [number, number, number, number][],
+  scale: { vmin: number; vmax: number } | null
+): { message: { type: "setHostVar"; name: string; value: HostVarPayload }; transfer: Transferable[] } {
+  return {
+    message: {
+      type: "setHostVar",
+      name,
+      value: { kind: "raster", frames, windows, magnitudeUnit, rampStops, scale },
+    },
+    transfer: frames.map((f) => f.pixels),
+  };
 }
 
 /** One selected window's own paired `{x, y}` cloud -- see
