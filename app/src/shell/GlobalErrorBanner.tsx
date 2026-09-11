@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 
 import { NoteBlock } from "../components/brand/NoteBlock";
 import { describeUnhandledRejection, describeWindowError, type GlobalErrorInfo } from "./globalErrorFallback";
+import { isBenignWindowError } from "./isBenignWindowError";
 
 /**
  * The shell-level banner for a failure {@link "./RouteErrorBoundary"} and
@@ -40,6 +41,13 @@ export default function GlobalErrorBanner() {
 
   useEffect(() => {
     function onWindowError(event: ErrorEvent): void {
+      // The browser's own benign ResizeObserver notice — not a real
+      // failure, never worth the banner (see `isBenignWindowError`'s doc
+      // comment).
+      if (isBenignWindowError(event.message)) {
+        console.debug("[GlobalErrorBanner] ignored benign window error:", event.message);
+        return;
+      }
       setGlobalError(describeWindowError(event));
     }
     function onUnhandledRejection(event: PromiseRejectionEvent): void {
