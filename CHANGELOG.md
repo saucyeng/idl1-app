@@ -6,6 +6,20 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 
 ### Added
 
+- **Four layout presets, remembered per screen shape (2026-09-11, ruling
+  R213).** Output puts the notebook full width with the graph and
+  properties away; Maths brings both back and squeezes the output to its
+  narrowest, still live; Split is the side-by-side studio; Stacked puts the
+  maths graph in a row above the output, for screens with more height than
+  width to spare. Ctrl+Shift+L walks the four, and a picker in the
+  toolbar's view group names them. The choice is remembered per viewport
+  shape — ultrawide, wide or narrow, re-read 200 ms after a resize settles
+  — so the same laptop comes back to one arrangement on its desk monitor
+  and another on its own screen. Paper and Studio stay an independent
+  switch. Throwing a column toggle by hand leaves the shape on "custom"
+  until a preset is picked again, and the Properties toggle now removes its
+  column outright instead of leaving an empty panel behind.
+
 - **The notebook got compact, and its graph got room (2026-09-11, ruling
   R212).** One density scale now sizes every control inside the notebook —
   22 px tall, 11 px labels, 4 px padding — applied to the toolbar, the

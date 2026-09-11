@@ -39,7 +39,12 @@ describe("readColumnPrefs", () => {
 
   it("readColumnPrefs — a written value — round-trips through write then read", () => {
     (globalThis as { window?: unknown }).window = { localStorage: fakeLocalStorage() };
-    const written = { widths: { ...DEFAULT_COLUMN_PREFS.widths, library: 300 }, collapsed: ["properties" as const], lastRoute: "data" as const };
+    const written = {
+      widths: { ...DEFAULT_COLUMN_PREFS.widths, library: 300 },
+      collapsed: ["properties" as const],
+      lastRoute: "data" as const,
+      presets: { ...DEFAULT_COLUMN_PREFS.presets, wide: "custom" as const },
+    };
 
     writeColumnPrefs(written);
     const prefs = readColumnPrefs();
@@ -125,6 +130,20 @@ describe("sanitizeColumnPrefs", () => {
     const sanitized = sanitizeColumnPrefs(raw);
 
     expect(sanitized.collapsed).toEqual([]);
+  });
+
+  it("sanitizeColumnPrefs — a stale preset id for one class — that class falls back to its own default", () => {
+    const raw = { widths: DEFAULT_COLUMN_PREFS.widths, collapsed: [], lastRoute: null, presets: { ultrawide: "studio", wide: "output" } };
+
+    const sanitized = sanitizeColumnPrefs(raw);
+
+    expect(sanitized.presets).toEqual({ ultrawide: DEFAULT_COLUMN_PREFS.presets.ultrawide, wide: "output", narrow: DEFAULT_COLUMN_PREFS.presets.narrow });
+  });
+
+  it("sanitizeColumnPrefs — a class last thrown by hand — keeps the custom state", () => {
+    const raw = { widths: DEFAULT_COLUMN_PREFS.widths, collapsed: [], lastRoute: null, presets: { narrow: "custom" } };
+
+    expect(sanitizeColumnPrefs(raw).presets.narrow).toBe("custom");
   });
 
   it("sanitizeColumnPrefs — an unknown lastRoute value — falls back to null", () => {
