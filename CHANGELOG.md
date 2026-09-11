@@ -6,6 +6,49 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 
 ### Added
 
+- **The notebook got compact, and its graph got room (2026-09-11, ruling
+  R212).** One density scale now sizes every control inside the notebook —
+  22 px tall, 11 px labels, 4 px padding — applied to the toolbar, the
+  maths graph's node cards, the source palette and the properties form. The
+  Data, Device and Settings tabs are untouched; they stay touch-first.
+
+- **The toolbar is one row again (2026-09-11, ruling R212).** It was two
+  rows tall with a "More" button that just made it scroll. It is now a
+  single 32 px row that never wraps and never scrolls: column toggles,
+  workbook, view register, the selected session and laps, playback in the
+  centre, and actions on the right. As the window narrows the labels drop
+  first, then whole groups move into one "⋯" menu that names them — right
+  to left, actions first. The session chip and the play controls always
+  stay put. Playback moved out of the top bar and into this row, so it is
+  reachable at every window width.
+
+- **The maths canvas is infinite (2026-09-11, ruling R212).** Drag empty
+  space (or hold space) to pan, wheel to zoom about the pointer, with no
+  boundary to run into. A corner cluster at the bottom right holds Fit,
+  Reset to 100 %, a zoom pair and the minimap, whose rectangle shows where
+  you are in the whole graph; F, 0, + and − do the same from the keyboard.
+
+- **Nodes lay themselves out, and Tidy re-does it (2026-09-11, ruling
+  R212).** Opening a workbook arranges its graph left to right by
+  dependency — sources first, derived datasets after — with the crossings
+  reduced, 32 px between cards and 96 px between layers. Dragging a card
+  remembers where you put it, and Tidy lays the whole graph out again.
+
+### Changed
+
+- **Where a node sits is no longer part of the workbook file (2026-09-11,
+  ruling R212).** Card positions are remembered per machine, like column
+  widths, instead of being written into the document — so dragging a card
+  no longer marks a workbook unsaved, and two machines can arrange the same
+  synced workbook differently. Positions a workbook already carried are
+  still read as the starting point.
+
+- **The chart properties form is built from real controls (2026-09-11,
+  ruling R212).** Number fields carry their unit and can be dragged to
+  change (hold shift for fine, alt for coarse), colours are picked from the
+  eight chart swatches instead of typed, and each group of settings has a
+  header. What the form edits is unchanged.
+
 - **Long sessions stay open (2026-09-10, ruling R203).** A multi-hour
   recording no longer runs the app out of memory. Charts, the cursor
   readout and rasters now read one channel out of a session instead of the
