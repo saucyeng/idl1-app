@@ -10,6 +10,7 @@ import { BrandSheet } from "@/components/brand/BrandSheet";
 import { NoteBlock } from "@/components/brand/NoteBlock";
 import { listSessions, listWorkbooks, getSession, rebuildCatalog, type RebuildReport, type SessionDetail, type SessionSummary } from "../../../ipc/catalog";
 import { cursorReadout } from "../../../ipc/cursor";
+import { fetchHistogram, type HistogramResponse } from "../../../ipc/histogram";
 import { fetchFftV2, type DecodedFft } from "../../../ipc/rasters";
 import { fetchTile } from "../../../ipc/tiles";
 import {
@@ -56,7 +57,14 @@ import TimelineStrip from "./components/TimelineStrip";
 import NotebookToolbar from "./components/NotebookToolbar";
 import { WorkbookNotices } from "./components/WorkbookBar";
 import GraphCanvas from "./graph/GraphCanvas";
-import { combineSpectrumWindows, type SandboxCell, type SpectrumWindowSeries, type WindowDescriptor } from "./host/protocol";
+import {
+  combineHistogramWindows,
+  combineSpectrumWindows,
+  type HistogramWindowSeries,
+  type SandboxCell,
+  type SpectrumWindowSeries,
+  type WindowDescriptor,
+} from "./host/protocol";
 import { SandboxHost } from "./host/SandboxHost";
 import { PING_INTERVAL_MS } from "./host/watchdog";
 import { NotebookSession } from "./host/NotebookSession";
@@ -89,10 +97,11 @@ import { effectivePaperTheme } from "./model/report/paperPalette";
 import { resolveEditorHost } from "./model/editorHost";
 import { resolveGraphHost } from "./model/graphHost";
 import { runFft, type FftAction, type FftDeps } from "./model/fftDriver";
+import { histogramColumns, runHistogram, type HistogramAction } from "./model/histogramDriver";
 import { exceedsBinCap, frequencyAxisHz } from "./model/fftRequest";
 import { diffFunctionCatalog, type FunctionCatalogMismatch } from "./model/functionCatalog";
 import { primaryWindowOutputs, sessionDetailsBySessionId } from "./model/graphView";
-import { bindingFor, bindingIdentity, unresolvedChannelId, type FftCellBinding } from "./model/jsCellBinding";
+import { bindingFor, bindingIdentity, unresolvedChannelId, type FftCellBinding, type HistogramCellBinding } from "./model/jsCellBinding";
 import { extractChannelCalls, extractSpectrumCalls } from "./model/jsCellCalls";
 import { jsCellNote, primaryWindowNote } from "./model/jsCellNote";
 import { definitionCellIds } from "./model/graphModel";
@@ -218,6 +227,13 @@ function bindWindowsFor(
  *  fence-string cell id. */
 function fftRunKey(cellId: string, windowKeyValue: string): string {
   return `${cellId}|fft|${windowKeyValue}`;
+}
+
+/** {@link fftRunKey}'s histogram counterpart (ruling R215 item 2) — a
+ *  distinct prefix so a cell that switches chart type mid-session cannot
+ *  have one kind's in-flight run supersede the other's. */
+function histogramRunKey(cellId: string, windowKeyValue: string): string {
+  return `${cellId}|histogram|${windowKeyValue}`;
 }
 
 /** C4 §4's stated expected-hash-set TTL (5 s), matched here for the frontend's own independent self-write belt (`saveFlow.ts`'s `isSelfWrite`). */
@@ -560,6 +576,11 @@ export default function NotebookPage() {
    *  as before multi-window FFT existed, just describing more than one
    *  window's failure when more than one fails). */
   const [fftErrors, setFftErrors] = useState<Map<string, Map<string, IpcError>>>(new Map());
+  /** A histogram cell's per-window `fetch_histogram` failures (ruling R215
+   *  item 2), typed -- never a bare string (CLAUDE.md §5) -- keyed
+   *  `cellId` -> `windowKey`, exactly like {@link fftErrors}, and joined
+   *  into one displayed string by `cellErrorMessage` the same way. */
+  const [histogramErrors, setHistogramErrors] = useState<Map<string, Map<string, IpcError>>>(new Map());
   const sessionDetail = primaryWindow !== null ? (sessionDetailsByWindow.get(windowKey(primaryWindow)) ?? null) : null;
   /** Changes exactly when the set of selected windows with a resolved
    *  `SessionDetail` changes -- the readiness dependency the channel-bind
@@ -1043,6 +1064,15 @@ export default function NotebookPage() {
    *  cell is removed from the document, its binding stops being an FFT
    *  cell, or (per window) that window is no longer selected (decision 61). */
   const retainedSpectraRef = useRef<Map<string, { hostVarName: string; byWindow: Map<string, DecodedFft> }>>(new Map());
+  /** {@link retainedSpectraRef}'s histogram counterpart (ruling R215 item
+   *  2), plus the binned channel's own `unit` — a histogram payload carries
+   *  one (its bin edges are in the channel's unit) where a spectrum payload
+   *  does not. Retained for the same reason: a distribution has no
+   *  `TileCache` entry to re-derive from, so a sandbox rebuild is served
+   *  from this page's own copies rather than a re-fetch. */
+  const retainedHistogramsRef = useRef<Map<string, { hostVarName: string; unit: UnitLabel; byWindow: Map<string, HistogramResponse> }>>(new Map());
+  /** {@link fftBoundIdentityRef}'s histogram counterpart. */
+  const histogramBoundIdentityRef = useRef<Map<string, Map<string, string>>>(new Map());
 
   // One `saveFlow` instance for this page's lifetime (Task 14) -- holds
   // its own `SaveFlowState` behind a closure; `saveFlowState` mirrors it
@@ -1124,6 +1154,39 @@ export default function NotebookPage() {
     );
   }
 
+  /**
+   * Rebuilds and pushes `cellId`'s combined multi-window histogram host
+   * variable from `retainedHistogramsRef`'s currently retained per-window
+   * distributions (ruling R215 item 2). The exact shape of
+   * {@link pushCombinedSpectrumFor}, over `combineHistogramWindows` instead
+   * — see that function's own doc comment for why a histogram's combiner
+   * inserts no break rows between windows.
+   */
+  function pushCombinedHistogramFor(cellId: string): void {
+    const retained = retainedHistogramsRef.current.get(cellId);
+    const host = sandboxHostRef.current;
+    if (retained === undefined || host === null) return;
+    const series: HistogramWindowSeries[] = [];
+    for (const w of selectionRef.current) {
+      const wKey = windowKey(w);
+      const response = retained.byWindow.get(wKey);
+      if (response === undefined) continue;
+      const detail = sessionDetailsByWindowRef.current.get(wKey) ?? null;
+      series.push({ descriptor: windowDescriptorFor(w, detail), ...histogramColumns(response) });
+    }
+    const combined = combineHistogramWindows(series);
+    host.setHistogramHostVar(
+      retained.hostVarName,
+      combined.length,
+      combined.v0.buffer as ArrayBuffer,
+      combined.v1.buffer as ArrayBuffer,
+      combined.n.buffer as ArrayBuffer,
+      combined.w.buffer as ArrayBuffer,
+      combined.windows,
+      retained.unit
+    );
+  }
+
   // Callbacks are routed through refs updated on every render so the mount
   // effect below can keep an empty dependency array -- it only constructs
   // and disposes the one `SandboxHost`, it never needs a fresh callback
@@ -1202,6 +1265,12 @@ export default function NotebookPage() {
         // themselves (detached on transfer). No IPC, no refetch.
         for (const cellId of retainedSpectraRef.current.keys()) {
           pushCombinedSpectrumFor(cellId);
+        }
+        // Ruling R215 item 2: a histogram's payload is detached on
+        // transfer exactly as a spectrum's is, so it is re-pushed from
+        // this page's own retained copies here too. No IPC, no refetch.
+        for (const cellId of retainedHistogramsRef.current.keys()) {
+          pushCombinedHistogramFor(cellId);
         }
       },
     });
@@ -1871,7 +1940,24 @@ export default function NotebookPage() {
         retainedSpectraRef.current.delete(cellId);
       }
     }
+    for (const [cellId, perWindow] of histogramBoundIdentityRef.current) {
+      if (!liveIds.has(cellId)) {
+        for (const wKey of perWindow.keys()) cellRunSequencerRef.current.delete(histogramRunKey(cellId, wKey));
+        histogramBoundIdentityRef.current.delete(cellId);
+        retainedHistogramsRef.current.delete(cellId);
+      }
+    }
     setFftErrors((prev) => {
+      let next = prev;
+      for (const cellId of prev.keys()) {
+        if (!liveIds.has(cellId)) {
+          if (next === prev) next = new Map(prev);
+          next.delete(cellId);
+        }
+      }
+      return next;
+    });
+    setHistogramErrors((prev) => {
       let next = prev;
       for (const cellId of prev.keys()) {
         if (!liveIds.has(cellId)) {
@@ -2243,6 +2329,176 @@ export default function NotebookPage() {
     primeState.primeEpoch,
   ]);
 
+  // For each `js` cell whose binding is the histogram arm, once per
+  // **selected window** whose per-window `bindingIdentity` changed (ruling
+  // R215 item 2, C2 §5.3, C3 §3.6). Structurally identical to the FFT
+  // effect above -- same per-window `CellRunSequencer` keying (via
+  // `histogramRunKey`, a distinct prefix so a chart-type switch cannot
+  // cross-supersede), same decision-61 pruning of deselected windows, same
+  // R121 rule that one window's failure never blocks a sibling's. Kept as
+  // its own effect rather than folded into the FFT one: the two fetch
+  // different commands with different arguments and retain different
+  // shapes, and a single effect over both would have to branch at every
+  // step anyway while making each kind's dependency array the union of
+  // both.
+  //
+  // A cell whose `unrequestable` is non-null (a bin count outside C3
+  // §3.6's range, or a non-positive width) never reaches `runHistogram` --
+  // the note it carries is folded into `cellErrorMessage` below, with no
+  // fetch and no host-variable push.
+  useEffect(() => {
+    if (state.markdown === null) return;
+    const markdown = state.markdown;
+    const currentWindowKeys = new Set(windows.map(windowKey));
+
+    for (const cell of state.cells) {
+      if (cell.id === null || cell.kind !== "js") continue;
+      const cellId = cell.id;
+      const code = decodeByteRange(markdown, cell.bodyRange);
+
+      // Whether this cell is histogram-shaped is session-independent
+      // beyond needing *some* non-null `sessionDetail`/`sessionSpanUs` to
+      // reach `bindingFor` -- resolved against the primary window, exactly
+      // as the FFT effect does.
+      const shapeWindow = primaryWindow !== null ? toWireWindow(primaryWindow) : null;
+      const shapeBinding = bindingFor({ id: cellId, code }, sessionDetail, sessionSpanUs, definitionsWithAxis, shapeWindow, definitionUnitByName);
+      if (shapeBinding === null || shapeBinding.kind !== "histogram") {
+        const perWindow = histogramBoundIdentityRef.current.get(cellId);
+        if (perWindow !== undefined) {
+          for (const wKey of perWindow.keys()) cellRunSequencerRef.current.delete(histogramRunKey(cellId, wKey));
+          histogramBoundIdentityRef.current.delete(cellId);
+        }
+        retainedHistogramsRef.current.delete(cellId);
+        setHistogramErrors((prev) => {
+          if (!prev.has(cellId)) return prev;
+          const next = new Map(prev);
+          next.delete(cellId);
+          return next;
+        });
+        continue;
+      }
+
+      // Prune this cell's per-window state to the currently selected
+      // windows (decision 61) before considering which windows to refetch.
+      const perWindowIdentity = histogramBoundIdentityRef.current.get(cellId) ?? new Map<string, string>();
+      for (const wKey of Array.from(perWindowIdentity.keys())) {
+        if (!currentWindowKeys.has(wKey)) {
+          perWindowIdentity.delete(wKey);
+          cellRunSequencerRef.current.delete(histogramRunKey(cellId, wKey));
+        }
+      }
+      histogramBoundIdentityRef.current.set(cellId, perWindowIdentity);
+      const retained = retainedHistogramsRef.current.get(cellId);
+      if (retained !== undefined) {
+        let prunedAny = false;
+        for (const wKey of Array.from(retained.byWindow.keys())) {
+          if (!currentWindowKeys.has(wKey)) {
+            retained.byWindow.delete(wKey);
+            prunedAny = true;
+          }
+        }
+        // Decision 61, same reasoning as the FFT effect's: the sandbox
+        // still holds the combined variable built while that window was
+        // selected, and nothing else in this loop necessarily re-pushes it.
+        if (prunedAny) pushCombinedHistogramFor(cellId);
+      }
+      setHistogramErrors((prev) => {
+        const cellMap = prev.get(cellId);
+        if (cellMap === undefined) return prev;
+        const nextCellMap = new Map(cellMap);
+        let changed = false;
+        for (const wKey of cellMap.keys()) {
+          if (!currentWindowKeys.has(wKey)) {
+            nextCellMap.delete(wKey);
+            changed = true;
+          }
+        }
+        return changed ? new Map(prev).set(cellId, nextCellMap) : prev;
+      });
+
+      for (const w of windows) {
+        const wKey = windowKey(w);
+        const detail = sessionDetailsByWindow.get(wKey) ?? null;
+        if (detail === null) continue; // this window's session is still resolving
+
+        const binding = bindingFor({ id: cellId, code }, detail, sessionSpanUs, definitionsWithAxis, toWireWindow(w), definitionUnitByName);
+        if (binding === null || binding.kind !== "histogram") continue; // e.g. the channel isn't in this window's session
+
+        // A histogram's `bindingIdentity` is per-cell, not per-window (its
+        // host-variable key carries no window), so the window key is added
+        // here -- without it, the first window's fetch would mark every
+        // other window's identity as already current and they would never
+        // be fetched at all.
+        const identity = `${bindingIdentity(binding)}|${wKey}`;
+        if (perWindowIdentity.get(wKey) === identity) continue;
+        perWindowIdentity.set(wKey, identity);
+
+        if (binding.unrequestable !== null) {
+          retainedHistogramsRef.current.get(cellId)?.byWindow.delete(wKey);
+          setHistogramErrors((prev) => {
+            const cellMap = prev.get(cellId);
+            if (cellMap === undefined || !cellMap.has(wKey)) return prev;
+            const nextCellMap = new Map(cellMap);
+            nextCellMap.delete(wKey);
+            return new Map(prev).set(cellId, nextCellMap);
+          });
+          pushCombinedHistogramFor(cellId);
+          continue;
+        }
+
+        const histogramBinding: HistogramCellBinding = binding;
+        const dispatchHistogram = (action: HistogramAction) => {
+          if (action.type === "histogram") {
+            const entry =
+              retainedHistogramsRef.current.get(cellId) ??
+              { hostVarName: histogramBinding.hostVarName, unit: histogramBinding.unit, byWindow: new Map<string, HistogramResponse>() };
+            entry.hostVarName = histogramBinding.hostVarName;
+            entry.unit = histogramBinding.unit;
+            entry.byWindow.set(wKey, action.histogram);
+            retainedHistogramsRef.current.set(cellId, entry);
+            setHistogramErrors((prev) => {
+              const cellMap = prev.get(cellId);
+              if (cellMap === undefined || !cellMap.has(wKey)) return prev;
+              const nextCellMap = new Map(cellMap);
+              nextCellMap.delete(wKey);
+              return new Map(prev).set(cellId, nextCellMap);
+            });
+            pushCombinedHistogramFor(cellId);
+          } else {
+            retainedHistogramsRef.current.get(cellId)?.byWindow.delete(wKey);
+            setHistogramErrors((prev) => {
+              const cellMap = new Map(prev.get(cellId));
+              cellMap.set(wKey, action.error);
+              return new Map(prev).set(cellId, cellMap);
+            });
+            pushCombinedHistogramFor(cellId);
+          }
+        };
+        const seq = cellRunSequencerRef.current.start(histogramRunKey(cellId, wKey));
+        const isStale = () => !cellRunSequencerRef.current.isCurrent(histogramRunKey(cellId, wKey), seq);
+
+        void runHistogram(
+          { fetchHistogram },
+          cellId,
+          toWireWindow(w),
+          histogramBinding.channelId,
+          histogramBinding.params,
+          dispatchHistogram,
+          isStale
+        );
+      }
+    }
+  }, [
+    state.cells,
+    state.markdown,
+    primaryEval,
+    sessionDetail,
+    sessionSpanUs,
+    windowsKeyValue,
+    sessionDetailsReadiness,
+    primeState.primeEpoch,
+  ]);
+
   // Save is unavailable while there is no readable `hash` to base it on
   // (still loading, or a read error) -- see `handleSave`'s doc comment on
   // why `null` cannot stand in for it.
@@ -2437,6 +2693,12 @@ export default function NotebookPage() {
         .map((e) => e.message)
         .join("; ");
     }
+    const histogramErrorsForCell = histogramErrors.get(cellId);
+    if (histogramErrorsForCell !== undefined && histogramErrorsForCell.size > 0) {
+      return Array.from(histogramErrorsForCell.values())
+        .map((e) => e.message)
+        .join("; ");
+    }
     const output = primaryOutputs.get(cellId);
     if (output !== undefined && output.errors.length > 0) return output.errors.map((e) => e.message).join("; ");
     return undefined;
@@ -2599,21 +2861,23 @@ export default function NotebookPage() {
               );
             }
 
-            if (binding.kind === "fft") {
-              // L6 Task 20 (R78 Task 19's Q2 precedent, R78 Task 18's Q2):
-              // an FFT cell has no time viewport, so it mounts the plain
+            if (binding.kind !== "time") {
+              // L6 Task 20 (R78 Task 19's Q2 precedent, R78 Task 18's Q2),
+              // widened to every non-time chart kind by ruling R215: an FFT
+              // or histogram cell has consumed the time axis, so there is
+              // no time viewport to pan and it mounts the plain
               // `JsCellFrame` -- no pan, no zoom, no hover readout, no
               // cursor readout, and no `sendTransform`. `unrequestable`
-              // (too few samples, or over the bin cap, checked against the
-              // primary window) shows its reason in the note slot; a real
-              // per-window fetch failure (S1 Task 11a: full multi-window
-              // overlay) shows `cellErrorMessage`'s joined text instead --
-              // a sibling window's own successful spectrum still renders
+              // (an FFT cell: too few samples or over the bin cap; a
+              // histogram cell: a bin count/width outside C3 §3.6's range)
+              // shows its reason in the note slot; a real per-window fetch
+              // failure shows `cellErrorMessage`'s joined text instead --
+              // a sibling window's own successful series still renders
               // (R121).
               const note = binding.unrequestable ?? cellErrorMessage(cellId);
               // Decision 58: the only fixable location for either cause is
-              // this FFT cell's own properties (its axis config, or the
-              // definition it names) -- opens itself.
+              // this cell's own properties (its axis config, its binning,
+              // or the channel it names) -- opens itself.
               return (
                 <JsCellFrame
                   cellId={cellId}

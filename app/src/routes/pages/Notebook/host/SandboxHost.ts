@@ -8,6 +8,7 @@
 import {
   channelPayload,
   evalInlineMessage,
+  histogramPayload,
   isHostMessage,
   layoutMessage,
   spectrumPayload,
@@ -302,6 +303,33 @@ export class SandboxHost {
    */
   setSpectrumHostVar(name: string, length: number, f: ArrayBuffer, m: ArrayBuffer, w: ArrayBuffer, windows: WindowDescriptor[]): void {
     const { message, transfer } = spectrumPayload(name, length, f, m, w, windows);
+    this.postToSandbox(message, transfer);
+    this.scheduleRerender();
+  }
+
+  /**
+   * Binds a decoded, possibly multi-window binned distribution as a host
+   * variable (ruling R215 item 2). Same transfer-list mechanics and
+   * multi-window contract as {@link setChannelHostVar}/
+   * {@link setSpectrumHostVar} -- one call per (channel,
+   * `histogram_params`) pair, never one per window; the four buffers are
+   * moved (not copied) via `postMessage`'s transfer list (P7), and the
+   * caller must not read `v0`/`v1`/`n`/`w` again after this call. Not
+   * cached for rebuild replay, for the identical reason a spectrum is not
+   * (`rebuildReplay.ts`): its buffers are detached once transferred, so
+   * the caller retains the fetched distribution and re-pushes it.
+   */
+  setHistogramHostVar(
+    name: string,
+    length: number,
+    v0: ArrayBuffer,
+    v1: ArrayBuffer,
+    n: ArrayBuffer,
+    w: ArrayBuffer,
+    windows: WindowDescriptor[],
+    unit: UnitLabel
+  ): void {
+    const { message, transfer } = histogramPayload(name, length, v0, v1, n, w, windows, unit);
     this.postToSandbox(message, transfer);
     this.scheduleRerender();
   }

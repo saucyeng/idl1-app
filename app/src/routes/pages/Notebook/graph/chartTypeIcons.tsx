@@ -87,6 +87,22 @@ function FftIcon({ className }: IconProps) {
   );
 }
 
+/** The histogram cell's pictogram (R215 item 2): a bell-ish run of bars
+ *  over a baseline -- a distribution, told apart from the `rectY` time
+ *  mark's three separated bars by being contiguous and by having no gaps,
+ *  which is exactly what distinguishes the two pictures. */
+function HistogramIcon({ className }: IconProps) {
+  return (
+    <svg viewBox="0 0 16 16" width="16" height="16" className={className} aria-hidden="true">
+      <rect x="1" y="11" width="2.4" height="3" fill="currentColor" />
+      <rect x="3.8" y="7" width="2.4" height="7" fill="currentColor" />
+      <rect x="6.6" y="3" width="2.4" height="11" fill="currentColor" />
+      <rect x="9.4" y="6" width="2.4" height="8" fill="currentColor" />
+      <rect x="12.2" y="10" width="2.4" height="4" fill="currentColor" />
+    </svg>
+  );
+}
+
 /** Maps every {@link ChartTypeId} to its pictogram component — kept
  *  exhaustive by the `Record` type itself (a chart type added to
  *  `chartTypeCatalog.ts` without an entry here is a compile error). */
@@ -97,4 +113,5 @@ export const CHART_TYPE_ICONS: Record<ChartTypeId, (props: IconProps) => React.J
   rectY: BarIcon,
   ruleY: RuleIcon,
   fft: FftIcon,
+  histogram: HistogramIcon,
 };

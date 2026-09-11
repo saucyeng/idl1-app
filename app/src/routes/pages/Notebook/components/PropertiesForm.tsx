@@ -12,16 +12,21 @@ import {
   FFT_DETRENDS,
   FFT_WINDOW_FUNCTIONS,
   generate,
+  HISTOGRAM_NORMALISATIONS,
   MARK_NAMES,
   SPECTRUM_MARK_NAMES,
+  CHART_KINDS,
   Y_AXIS_TYPES,
   type FftParams,
   type FftPlotProps,
+  type HistogramParams,
+  type HistogramPlotProps,
   type MarkProps,
   type PlotProps,
   type SpectrumMarkProps,
   type TimePlotProps,
 } from "../plotForm";
+import { MAX_HISTOGRAM_BINS } from "@/ipc/histogram";
 import {
   addMark,
   advanceFormState,
@@ -37,6 +42,7 @@ import {
   suggestSpectrumAxisLabel,
   updateFftParams,
   updateFftXAxisType,
+  updateHistogramParams,
   updateMark,
   updateXAxis,
   updateYAxis,
@@ -172,18 +178,29 @@ export default function PropertiesForm({ code, channels, laps, onChange }: Prope
   return (
     <div className="properties-form idl-dense flex flex-col gap-[var(--space-4)] p-[var(--nb-gap)]">
       <ChartTypeControl chart={props.chart} onChange={(next) => commit(setChartType(props, next, channels))} />
-      {props.chart === "fft" ? (
-        <FftPropertiesForm props={props} channels={channels} onChange={commit} />
-      ) : (
-        <TimePropertiesForm props={props} channels={channels} laps={laps} onChange={commit} />
-      )}
+      {props.chart === "fft" && <FftPropertiesForm props={props} channels={channels} onChange={commit} />}
+      {props.chart === "histogram" && <HistogramPropertiesForm props={props} channels={channels} onChange={commit} />}
+      {props.chart === "time" && <TimePropertiesForm props={props} channels={channels} laps={laps} onChange={commit} />}
     </div>
   );
 }
 
-/** Control 1 (C2 §5.3): the chart-type segmented control, `Time`/`FFT`,
- *  first for both chart types (R79 Q6: switching has no confirmation). */
-function ChartTypeControl({ chart, onChange }: { chart: "time" | "fft"; onChange: (next: "time" | "fft") => void }) {
+/** The chart-type control's own labels, one per `CHART_KINDS` entry — the
+ *  segmented control is too narrow for a blurb, so these are short by
+ *  design; the graph card's picker (`graph/chartTypeCatalog.ts`) carries
+ *  the fuller label and one-line description. Kept exhaustive by the
+ *  `Record` type, so a chart kind added to `PlotProps` without a label
+ *  here is a compile error. */
+const CHART_KIND_LABELS: Record<PlotProps["chart"], string> = {
+  time: "Time",
+  fft: "FFT",
+  histogram: "Histogram",
+};
+
+/** Control 1 (C2 §5.3): the chart-type segmented control, one item per
+ *  `CHART_KINDS` entry (ruling R215 widens it past `Time`/`FFT`), first for
+ *  every chart type (R79 Q6: switching has no confirmation). */
+function ChartTypeControl({ chart, onChange }: { chart: PlotProps["chart"]; onChange: (next: PlotProps["chart"]) => void }) {
   return (
     <div className="properties-form-chart-type">
       <Field label="Chart type">
@@ -193,10 +210,19 @@ function ChartTypeControl({ chart, onChange }: { chart: "time" | "fft"; onChange
             density="tight"
             value={chart}
             aria-label="Chart type"
-            onValueChange={(next) => (next === "time" || next === "fft") && onChange(next)}
+            onValueChange={(next) => {
+              // Radix hands back `""` when the active item is re-clicked
+              // (deselect). A chart always has a type, so that is a no-op
+              // here rather than an unset state -- the same reason
+              // `SelectField`'s unset sentinel is not used for it.
+              if (CHART_KINDS.includes(next as PlotProps["chart"])) onChange(next as PlotProps["chart"]);
+            }}
           >
-            <ToggleGroupItem value="time">Time</ToggleGroupItem>
-            <ToggleGroupItem value="fft">FFT</ToggleGroupItem>
+            {CHART_KINDS.map((kind) => (
+              <ToggleGroupItem key={kind} value={kind}>
+                {CHART_KIND_LABELS[kind]}
+              </ToggleGroupItem>
+            ))}
           </ToggleGroup>
         )}
       </Field>
@@ -640,9 +666,167 @@ function FftPropertiesForm({
   );
 }
 
-/** Control 12: the colour legend, shared by both chart types (C2 §5.3's
- *  `color_opt` is the same shape for either). A toggle switch since R212
- *  item 5 — the same on/off semantic as the checkbox it replaces. */
+// ---------------------------------------------------------------------------
+// Histogram-cell body (ruling R215 item 2, C2 §5.3, C3 §3.6).
+// ---------------------------------------------------------------------------
+
+/** The bin counts the Properties pane offers directly, each comfortably
+ *  below C3 §3.6's `MAX_HISTOGRAM_BINS`. A stored value outside this list (a
+ *  hand-edit, or a width-mode cell) still displays correctly through the
+ *  accompanying free numeric entry — opening the pane never silently
+ *  changes it, the same rule `FFT_WINDOW_SIZE_OPTIONS` follows. */
+const HISTOGRAM_BIN_COUNT_OPTIONS: readonly number[] = [16, 32, 64, 128, 256];
+
+/** The bin width a `count → width` switch seeds. A width is in the binned
+ *  channel's own unit, which this pane does not know the scale of — there
+ *  is no correct number here, only a starting one the author edits, so it
+ *  is a plainly-round value rather than a conversion of the bin count it
+ *  replaces (see `updateHistogramParams`' doc comment on why no conversion
+ *  is attempted at all). */
+const DEFAULT_BIN_WIDTH = 1;
+
+function HistogramPropertiesForm({
+  props,
+  channels,
+  onChange,
+}: {
+  props: HistogramPlotProps;
+  channels: PropertiesFormChannelOption[];
+  onChange: (next: PlotProps) => void;
+}) {
+  const { mark } = props;
+  const { histogram } = mark;
+  const isCount = histogram.binMode === "count";
+  const channel = channels.find((c) => c.id === mark.channel);
+  const binCountIsStandard = isCount && (HISTOGRAM_BIN_COUNT_OPTIONS as readonly number[]).includes(histogram.binValue);
+
+  /** Channel pick — also seeds the **x** label (the bin-edge axis is in the
+   *  channel's own unit, C1 §4.1) when it is not already set, the same
+   *  one-time R65 seed a time cell's first mark does for `y`. A histogram's
+   *  y axis is a count or a fraction and has no unit to suggest. */
+  function handleChannelChange(channelId: string): void {
+    let next: PlotProps = { ...props, mark: { ...mark, channel: channelId } };
+    if (next.x?.label === undefined) {
+      const suggestion = suggestAxisLabel(channels.find((c) => c.id === channelId));
+      if (suggestion !== undefined) next = updateXAxis(next, { label: suggestion });
+    }
+    onChange(next);
+  }
+
+  function patchHistogram(patch: Partial<HistogramParams>): void {
+    onChange(updateHistogramParams(props, patch));
+  }
+
+  return (
+    <>
+      <FieldGroup title="Distribution" className="properties-form-mark">
+        <SelectField
+          label="Channel"
+          value={mark.channel}
+          options={channels.map((c) => ({ value: c.id, label: c.label }))}
+          onChange={(value) => value !== undefined && handleChannelChange(value)}
+        />
+        <ColourField label="Fill colour" value={mark.fill} onChange={(value) => onChange({ ...props, mark: { ...mark, fill: value } })} />
+        <NumberField
+          label="Fill opacity"
+          min={0}
+          max={1}
+          step={0.1}
+          placeholder="auto"
+          value={mark.fillOpacity ?? null}
+          onChange={(value) => onChange({ ...props, mark: { ...mark, fillOpacity: value ?? undefined } })}
+        />
+      </FieldGroup>
+
+      <FieldGroup title="Binning" className="properties-form-histogram-params">
+        <SelectField
+          label="Bins by"
+          value={histogram.binMode}
+          options={[
+            { value: "count", label: "Count" },
+            { value: "width", label: "Width" },
+          ]}
+          hint="Width is in the channel's own unit; the engine derives the bin count."
+          onChange={(value) => {
+            // A mode switch always carries a fresh `binValue`: a count and
+            // a width are different quantities in different units, and
+            // converting between them needs the data's own range, which
+            // this pane does not have (`updateHistogramParams`).
+            if (value === "count") patchHistogram({ binMode: "count", binValue: 64 });
+            else if (value === "width") patchHistogram({ binMode: "width", binValue: DEFAULT_BIN_WIDTH });
+          }}
+        />
+        {isCount && (
+          <SelectField
+            label="Bin count"
+            value={binCountIsStandard ? String(histogram.binValue) : CUSTOM_WINDOW_SIZE}
+            options={[
+              ...options(HISTOGRAM_BIN_COUNT_OPTIONS, (n) => String(n)),
+              ...(binCountIsStandard ? [] : [{ value: CUSTOM_WINDOW_SIZE, label: "Custom…" }]),
+            ]}
+            onChange={(value) => {
+              if (value !== undefined && value !== CUSTOM_WINDOW_SIZE) patchHistogram({ binValue: Number(value) });
+            }}
+          />
+        )}
+        <NumberField
+          label={isCount ? "Bin count" : "Bin width"}
+          unit={isCount ? "bins" : (channel?.unit ?? undefined)}
+          min={isCount ? 1 : undefined}
+          max={isCount ? MAX_HISTOGRAM_BINS : undefined}
+          step={isCount ? 1 : 0.1}
+          value={histogram.binValue}
+          hint={isCount ? `At most ${MAX_HISTOGRAM_BINS}.` : undefined}
+          onChange={(value) => value !== null && patchHistogram({ binValue: value })}
+        />
+        <SwitchField
+          label="Centre on zero"
+          checked={histogram.symmetric}
+          onChange={(checked) => patchHistogram({ symmetric: checked })}
+        />
+        <SelectField
+          label="Y values"
+          value={histogram.normalise}
+          options={options(HISTOGRAM_NORMALISATIONS, (n) => (n === "counts" ? "Sample count" : "Share of window"))}
+          hint="Share makes two windows of different lengths comparable."
+          onChange={(value) => value !== undefined && patchHistogram({ normalise: value as HistogramParams["normalise"] })}
+        />
+      </FieldGroup>
+
+      <FieldGroup title="Value axis" className="properties-form-x-axis">
+        <TextField
+          label="Label"
+          value={props.x?.label ?? ""}
+          placeholder="auto"
+          onChange={(value) => onChange(updateXAxis(props, { label: value === "" ? undefined : value }))}
+        />
+        <DomainFields domain={props.x?.domain} unit={channel?.unit} onChange={(domain) => onChange(updateXAxis(props, { domain }))} />
+      </FieldGroup>
+
+      <FieldGroup title={histogram.normalise === "counts" ? "Count axis" : "Share axis"} className="properties-form-y-axis">
+        <TextField
+          label="Label"
+          value={props.y?.label ?? ""}
+          placeholder="auto"
+          onChange={(value) => onChange(updateYAxis(props, { label: value === "" ? undefined : value }))}
+        />
+        <DomainFields domain={props.y?.domain} onChange={(domain) => onChange(updateYAxis(props, { domain }))} />
+        <SelectField
+          label="Scale"
+          value={props.y?.type}
+          options={scaleOptions()}
+          onChange={(value) => onChange(updateYAxis(props, { type: value as NonNullable<HistogramPlotProps["y"]>["type"] | undefined }))}
+        />
+      </FieldGroup>
+
+      <LegendControl props={props} onChange={onChange} />
+    </>
+  );
+}
+
+/** Control 12: the colour legend, shared by every chart type (C2 §5.3's
+ *  `color_opt` is the same shape for all of them). A toggle switch since
+ *  R212 item 5 — the same on/off semantic as the checkbox it replaces. */
 function LegendControl({ props, onChange }: { props: PlotProps; onChange: (next: PlotProps) => void }) {
   return (
     <FieldGroup title="Legend" className="properties-form-color">

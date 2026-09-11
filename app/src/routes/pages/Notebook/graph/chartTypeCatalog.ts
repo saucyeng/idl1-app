@@ -13,9 +13,10 @@
  *   C2 §5.3's `time_mark` production), each inserting a `chart: "time"`
  *   cell over a single node's already-computed value; and
  * - one entry per **whole-cell chart kind** C2 §5.3 has a production for
- *   — today the FFT cell (`chart: "fft"`), whose grammar, engine command
+ *   — the FFT cell (`chart: "fft"`), whose grammar, engine command
  *   (`fetch_fft_v2`) and Properties section all already existed but which
- *   no picker row offered (R215 item 1).
+ *   no picker row offered (R215 item 1), and the histogram cell
+ *   (`chart: "histogram"`, `fetch_histogram`, R215 item 2).
  *
  * `graph/chartTypeIcons.tsx` draws a pictogram for each entry inline (no
  * pictogram asset exists in this repo to import — see that module's own
@@ -32,14 +33,14 @@ import { MARK_NAMES } from "../plotForm/types";
  *  live in one union, and one catalog, because the picker presents them as
  *  one row of pictograms — the distinction between "a mark" and "a chart
  *  kind" is C2 §5.3's, not the user's. */
-export type ChartTypeId = MarkProps["mark"] | "fft";
+export type ChartTypeId = MarkProps["mark"] | "fft" | "histogram";
 
 /** Every {@link ChartTypeId}, in the picker's presentation order: the five
  *  marks first (unchanged order), then each whole-cell chart kind. The
  *  single source `CHART_TYPE_CATALOG`, `CHART_TYPE_ICONS` and
  *  `chartTypeCatalog.test.ts` all enumerate against, the same discipline
  *  `MARK_NAMES` already carries for the mark half. */
-export const CHART_TYPE_IDS: readonly ChartTypeId[] = [...MARK_NAMES, "fft"];
+export const CHART_TYPE_IDS: readonly ChartTypeId[] = [...MARK_NAMES, "fft", "histogram"];
 
 /** One chart type's picker-row metadata: what it inserts, a human-facing
  *  label, and a one-line blurb (idl0's own picker convention,
@@ -71,6 +72,7 @@ export const CHART_TYPE_CATALOG: readonly ChartTypeInfo[] = [
   { id: "rectY", mark: "rectY", chart: "time", label: "Bar", blurb: "One bar per sample." },
   { id: "ruleY", mark: "ruleY", chart: "time", label: "Rule", blurb: "A horizontal reference line." },
   { id: "fft", mark: null, chart: "fft", label: "FFT", blurb: "Magnitude spectrum of one channel." },
+  { id: "histogram", mark: null, chart: "histogram", label: "Histogram", blurb: "How often one channel sits at each value." },
 ];
 
 /** Looks up `id`'s {@link ChartTypeInfo}. Every {@link ChartTypeId} has a

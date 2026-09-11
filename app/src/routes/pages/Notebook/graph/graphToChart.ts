@@ -25,7 +25,7 @@
 
 import { generate } from "../plotForm/generate";
 import type { PlotProps } from "../plotForm/types";
-import { defaultFftPlotProps } from "../model/propertiesForm";
+import { defaultFftPlotProps, defaultHistogramPlotProps } from "../model/propertiesForm";
 import type { MathExprCall } from "../model/mathExpr";
 import type { ChartTypeId } from "./chartTypeCatalog";
 import { chartTypeInfo } from "./chartTypeCatalog";
@@ -69,7 +69,19 @@ export function plotPropsForChartType(chartType: ChartTypeId, nodeName: string):
   if (info.mark !== null) {
     return { chart: "time", marks: [{ channel: nodeName, mark: info.mark }] };
   }
-  return defaultFftPlotProps([{ id: nodeName, label: nodeName }]);
+  const channels = [{ id: nodeName, label: nodeName }];
+  switch (info.chart) {
+    case "fft":
+      return defaultFftPlotProps(channels);
+    case "histogram":
+      return defaultHistogramPlotProps(channels);
+    case "time":
+      // Unreachable: every `chart: "time"` catalog entry carries a mark,
+      // which the branch above already returned on. Stated as a thrown
+      // error rather than a silent `lineY` fall-back so a future entry
+      // that breaks the invariant is caught, not quietly mis-seeded.
+      throw new Error(`plotPropsForChartType: catalog entry "${chartType}" charts "time" but has no mark`);
+  }
 }
 
 /**

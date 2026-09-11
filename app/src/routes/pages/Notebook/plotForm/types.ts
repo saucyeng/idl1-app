@@ -140,11 +140,81 @@ export interface FftPlotProps {
   color?: { legend: true };
 }
 
+/** `HistogramParams.binMode`'s union type, as a runtime array (C2 §5.3's
+ *  `bin_mode`, ruling R215 item 2). */
+export const HISTOGRAM_BIN_MODES: readonly HistogramParams["binMode"][] = ["count", "width"];
+
+/** `HistogramParams.normalise`'s union type, as a runtime array (C2 §5.3's
+ *  `normalise`, ruling R215 item 2). */
+export const HISTOGRAM_NORMALISATIONS: readonly HistogramParams["normalise"][] = ["counts", "fraction"];
+
+/** C2 §5.3's `histogram_params` production — the four parameters of one
+ *  histogram chart, all required in this fixed order, for the same reason
+ *  {@link FftParams}' six are: "a missing key is custom code, not a
+ *  default" (C2 §5.3). Maps one-for-one onto C3 §3.6's
+ *  `HistogramParams` wire shape (`binMode`→`bin_mode`,
+ *  `binValue`→`bin_value`), which is the only place the two spellings
+ *  differ. */
+export interface HistogramParams {
+  /** How {@link binValue} is read: a bin **count**, or a bin **width** in
+   *  the channel's own unit that the engine resolves to a count. */
+  binMode: "count" | "width";
+  /** A bin count (a positive integer, at most C3 §3.6's `MAX_HISTOGRAM_BINS`)
+   *  under `binMode: "count"`; a bin width in the channel's own unit under
+   *  `"width"`. One slot for both so the grammar has one production, not
+   *  two mutually exclusive keys whose "exactly one present" rule the
+   *  parser would have to enforce by hand. */
+  binValue: number;
+  /** Widen the auto range to `[-m, m]` so zero sits on a bin boundary. */
+  symmetric: boolean;
+  /** Whether the bars carry raw counts or each bin's share of the window's
+   *  finite samples. Selects `HistogramResponse.values`; `counts` is
+   *  always the raw count either way (C3 §3.6). */
+  normalise: "counts" | "fraction";
+}
+
+/** One histogram cell's single bar mark (C2 §5.3's `histogram_mark`
+ *  production, ruling R215 item 2). Singular by type, exactly as
+ *  {@link FftPlotProps.mark} is: idl0's translucent multi-channel overlay
+ *  (`chart_workspace.dart:600-606`) is a stated parity gap, not silently
+ *  dropped — one `fetch_histogram` call resolves one distribution, and two
+ *  channels' distributions would need a shared explicit range to be
+ *  comparable at all.
+ *
+ *  The mark name is fixed at `rectY`, not a picked subset the way
+ *  {@link SPECTRUM_MARK_NAMES} is: the mark binds `x1`/`x2` to the bin's
+ *  own edges (`"v0"`/`"v1"`), and `lineY`/`areaY` have no `x2` channel to
+ *  bind — offering them would be a control that silently draws the wrong
+ *  picture. */
+export interface HistogramMarkProps {
+  channel: string;
+  histogram: HistogramParams;
+  /** Any valid CSS colour literal. */
+  fill?: string;
+  /** `0..1`; Plot's own `fillOpacity`. */
+  fillOpacity?: number;
+}
+
+/** C2 §5.3's histogram-cell `plot_options` production (ruling R215 item 2).
+ *  `mark` (singular) for the same reason {@link FftPlotProps}' is — see
+ *  {@link HistogramMarkProps}. `x` is the **value** axis here (the binned
+ *  channel's own unit), not time and not frequency, and carries no `type`:
+ *  a histogram's x axis is always the linear bin axis the engine's own
+ *  `bin_edges` describe. */
+export interface HistogramPlotProps {
+  chart: "histogram";
+  mark: HistogramMarkProps;
+  x?: XAxisProps;
+  y?: YAxisProps;
+  color?: { legend: true };
+}
+
 /** C2 §5.3's `plot_options` production — the Properties pane's whole
  *  internal state for one `js` cell in the `plotForm` subset. A
- *  discriminated union on `chart`: a cell is a time cell or an FFT cell,
- *  never both (C2 §5.3, "A cell is a time cell or an FFT cell, never
- *  both"). Every existing time-cell literal in this lane gained the
+ *  discriminated union on `chart`: a cell is exactly one chart kind, never
+ *  two (C2 §5.3, "A cell is a time cell or an FFT cell, never
+ *  both" — widened by ruling R215 to every chart kind the grammar has a
+ *  production for). Every existing time-cell literal in this lane gained the
  *  `chart: "time"` discriminant when this union was introduced (L6 Task
  *  20) — the time branch of `generate`/`parse` is otherwise unchanged, so
  *  every landed document round-trips byte-identically to before.
@@ -154,4 +224,10 @@ export interface FftPlotProps {
  *  grammar's `x_field` allows only the literal `"linear"`, reserved for a
  *  future non-time x-axis, C2 §8-2 — now realised as the FFT cell's own
  *  {@link FftXAxisProps}, a distinct type, not a widened `XAxisProps`). */
-export type PlotProps = TimePlotProps | FftPlotProps;
+export type PlotProps = TimePlotProps | FftPlotProps | HistogramPlotProps;
+
+/** Every `PlotProps.chart` discriminant, as a runtime array — the single
+ *  list a chart-type control enumerates against, same rationale as
+ *  {@link MARK_NAMES}. In the order the Properties pane's chart-type
+ *  control presents them. */
+export const CHART_KINDS: readonly PlotProps["chart"][] = ["time", "fft", "histogram"];

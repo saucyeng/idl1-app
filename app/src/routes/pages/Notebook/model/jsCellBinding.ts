@@ -7,11 +7,13 @@
  * caller (`Notebook/index.tsx`) resolves `SessionDetail` and the session's
  * recorded span (lead pre-ruling 2026-09-05 #1) and passes both in.
  */
+import { histogramKey } from "../plotForm/histogramKey";
 import { parse } from "../plotForm/parse";
 import { spectrumKey } from "../plotForm/spectrumKey";
-import type { FftPlotProps, TimePlotProps } from "../plotForm/types";
+import type { FftPlotProps, HistogramParams, HistogramPlotProps, TimePlotProps } from "../plotForm/types";
 import { exceedsBinCap, fftRequestFor, type FftRequest } from "./fftRequest";
-import { extractChannelCalls, extractSpectrumCalls, type ChannelCallRef, type SpectrumCallRef } from "./jsCellCalls";
+import { extractChannelCalls, extractHistogramCalls, extractSpectrumCalls, type ChannelCallRef, type HistogramCallRef, type SpectrumCallRef } from "./jsCellCalls";
+import { MAX_HISTOGRAM_BINS, type HistogramParams as WireHistogramParams } from "../../../../ipc/histogram";
 import { rawUnitToLabel, UNIT_NOT_YET_EVALUATED } from "./unitLabel";
 import type { ChannelSummary, SessionDetail } from "../../../../ipc/catalog";
 import type { Span, UnitLabel, Window as SelectedWindow } from "../../../../ipc/workbook";
@@ -133,7 +135,38 @@ export interface FftCellBinding {
  * pipeline. A discriminated union on `kind`, mirroring `plotForm.PlotProps`'
  * own `chart` discriminant one level up (L6 Task 20).
  */
-export type JsCellBinding = TimeCellBinding | FftCellBinding;
+/**
+ * What a form-generated **histogram** `js` cell needs to render its binned
+ * distribution (ruling R215 item 2, C2 §5.3, C3 §3.6). Exactly one channel,
+ * one request, one host-variable name -- a histogram cell has exactly one
+ * bar mark by type ({@link HistogramPlotProps.mark}), the same shape
+ * {@link FftCellBinding} has and for the same reason.
+ */
+export interface HistogramCellBinding {
+  kind: "histogram";
+  props: HistogramPlotProps;
+  channelId: string;
+  /** The channel's three-state unit (R154/R164), for the bin-edge axis --
+   *  resolved here, like a time cell's, so nothing downstream re-derives
+   *  it. */
+  unit: UnitLabel;
+  /** `fetch_histogram`'s `params` argument, in C3 §3.6's wire spelling
+   *  (`bin_mode`/`bin_value`), translated from the grammar's camelCase
+   *  here so the driver and the effect never translate it again. */
+  params: WireHistogramParams;
+  /** `histogramKey(channelId, props.mark.histogram)` -- the host variable
+   *  name this distribution is published under, computed by the one shared
+   *  function both the host and the sandbox call (C2 §5.3). */
+  hostVarName: string;
+  /** Non-null when this cell must not fetch: a `binMode: "count"` value
+   *  outside C3 §3.6's `1..=MAX_HISTOGRAM_BINS`, or a non-positive
+   *  `binMode: "width"`. The string is the note the cell shows
+   *  (`JsCellFrame`'s note slot), refused here rather than round-tripped
+   *  as the engine's `invalid_argument`. */
+  unrequestable: string | null;
+}
+
+export type JsCellBinding = TimeCellBinding | FftCellBinding | HistogramCellBinding;
 
 /** Looks up one mark's channel in `sessionDetail.channels` by id, or `null`
  *  if it isn't a real channel on this session. Exported so every "does this
@@ -302,8 +335,71 @@ function syntheticFftProps(call: SpectrumCallRef): FftPlotProps {
   };
 }
 
+/** Translates C2 §5.3's camelCase `histogram_params` into C3 §3.6's
+ *  `snake_case` wire shape. The one place the two spellings meet (ruling
+ *  R215 item 2): `binValue` is passed through verbatim in both modes, never
+ *  rounded here -- a `"count"` value that is not a legal integer is refused
+ *  by {@link bindingForHistogram}'s `unrequestable`, not silently
+ *  corrected. */
+function wireHistogramParams(h: HistogramParams): WireHistogramParams {
+  return { bin_mode: h.binMode, bin_value: h.binValue, symmetric: h.symmetric, normalise: h.normalise };
+}
+
 /**
- * Extracts `code`'s `channel(...)`/`spectrum(...)` calls (`model/jsCellCalls.ts`,
+ * Builds the `HistogramCellBinding` for a histogram cell's one
+ * `histogram(...)` call, or `null` if its channel is not a real session
+ * channel (C3 §3.6's `fetch_histogram` takes a session channel id, never a
+ * workbook definition name -- the same restriction {@link bindingForFft}
+ * has, and for the same reason: the command slices `data.parquet`, which a
+ * definition has no column in).
+ *
+ * `unrequestable` refuses, before any fetch, exactly what C3 §3.6 would
+ * answer `invalid_argument` to under `binMode: "count"` (a non-integer or
+ * out-of-range bin count), plus a non-positive `binMode: "width"`. The
+ * width case is this module's own addition, not a mirror of an engine
+ * error: the engine treats an unresolvable width as the *degenerate empty
+ * result*, which is right for "this data cannot be binned that way" but
+ * wrong as the answer to "you typed a negative width" -- a cell that says
+ * why is better than one that silently draws nothing.
+ */
+function bindingForHistogram(
+  call: HistogramCallRef,
+  displayProps: HistogramPlotProps,
+  sessionDetail: SessionDetail
+): HistogramCellBinding | null {
+  const channel = findChannel(sessionDetail.channels, call.channel);
+  if (channel === null) return null;
+
+  const h = call.histogram;
+  let unrequestable: string | null = null;
+  if (h.binMode === "count") {
+    if (!Number.isInteger(h.binValue) || h.binValue < 1 || h.binValue > MAX_HISTOGRAM_BINS) {
+      unrequestable = `Bin count must be a whole number between 1 and ${MAX_HISTOGRAM_BINS}.`;
+    }
+  } else if (!(h.binValue > 0) || !Number.isFinite(h.binValue)) {
+    unrequestable = "Bin width must be greater than zero.";
+  }
+
+  return {
+    kind: "histogram",
+    props: displayProps,
+    channelId: channel.channel_id,
+    unit: rawUnitToLabel(channel.unit),
+    params: wireHistogramParams(h),
+    hostVarName: histogramKey(channel.channel_id, h),
+    unrequestable,
+  };
+}
+
+/** A minimal, synthetic `HistogramPlotProps` standing in for
+ *  `HistogramCellBinding.props` when `code` didn't round-trip through
+ *  `plotForm.parse` -- same reasoning as {@link syntheticTimeProps}. */
+function syntheticHistogramProps(call: HistogramCallRef): HistogramPlotProps {
+  return { chart: "histogram", mark: { channel: call.channel, histogram: call.histogram } };
+}
+
+/**
+ * Extracts `code`'s `channel(...)`/`spectrum(...)`/`histogram(...)` calls (`model/jsCellCalls.ts`,
  * ruling R148 part 2) and binds against them -- **not** by requiring `code`
  * to round-trip through `plotForm.parse` as one recognised form. A cell
  * with a `spectrum(...)` call is an FFT cell (`fetch_fft` takes exactly one
@@ -373,6 +469,13 @@ export function bindingFor(
   if (sessionDetail === null || sessionSpanUs === null) return null;
 
   const parsedProps = parse(cell.code);
+
+  const histogramCalls = extractHistogramCalls(cell.code);
+  if (histogramCalls.length > 0) {
+    const call = histogramCalls[0];
+    const displayProps = parsedProps !== null && parsedProps.chart === "histogram" ? parsedProps : syntheticHistogramProps(call);
+    return bindingForHistogram(call, displayProps, sessionDetail);
+  }
 
   const spectrumCalls = extractSpectrumCalls(cell.code);
   if (spectrumCalls.length > 0) {
@@ -444,6 +547,17 @@ function windowIdentity(window: SelectedWindow | null): string {
  * Pure string formatting, no IPC.
  */
 export function bindingIdentity(binding: JsCellBinding): string {
+  if (binding.kind === "histogram") {
+    // `hostVarName` already encodes the channel and all four
+    // `histogram_params` (`histogramKey`), so only the refusal state can
+    // distinguish two bindings beyond it. The window is deliberately
+    // **not** part of it: a histogram host variable's window dimension
+    // lives in its payload (`combineHistogramWindows`), never in its key,
+    // so the caller's per-window loop keys its own runs by
+    // `(cellId, windowKey)` and this identity stays per-cell -- exactly
+    // the split ruling R129 settled for spectra.
+    return `histogram|${binding.hostVarName}|${binding.unrequestable ?? ""}`;
+  }
   if (binding.kind === "fft") {
     return `fft|${binding.hostVarName}|${binding.sampleCount}|${binding.unrequestable ?? ""}|${windowIdentity(binding.request.window)}`;
   }
@@ -477,6 +591,12 @@ export function bindingIdentity(binding: JsCellBinding): string {
  * guarantees as `bindingFor`.
  */
 export function unresolvedChannelId(code: string, sessionDetail: SessionDetail, definitionNames: ReadonlySet<string>): string | null {
+  const histogramCalls = extractHistogramCalls(code);
+  if (histogramCalls.length > 0) {
+    const { channel } = histogramCalls[0];
+    return findChannel(sessionDetail.channels, channel) === null ? channel : null;
+  }
+
   const spectrumCalls = extractSpectrumCalls(code);
   if (spectrumCalls.length > 0) {
     const { channel } = spectrumCalls[0];

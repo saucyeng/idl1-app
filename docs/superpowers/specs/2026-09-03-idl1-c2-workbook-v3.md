@@ -1585,7 +1585,7 @@ y_field       ::= "label" ":" js_string
                 | "domain" ":" "[" js_number "," js_number "]"
                 | "type" ":" ("\"linear\"" | "\"log\"" | "\"sqrt\"")
 color_opt     ::= "{" "legend" ":" "true" "}"
-marks_array   ::= time_marks | fft_marks                          (* changed 2026-09-06 *)
+marks_array   ::= time_marks | fft_marks | histogram_marks        (* changed 2026-09-11 *)
 time_marks    ::= "[" time_mark ("," time_mark)* "]"              (* new 2026-09-06 *)
 fft_marks     ::= "[" spectrum_mark "]"                           (* new 2026-09-06, exactly one *)
 
@@ -1623,17 +1623,35 @@ averaging     ::= "\"none\"" | "\"mean\"" | "\"median\"" | "\"max\""   (* new 20
 spectrum_options ::= "{" "x" ":" "\"f\"" "," "y" ":" "\"m\""      (* new 2026-09-06 *)
                        ("," "stroke" ":" css_color)?
                        ("," "strokeWidth" ":" js_number)? "}"
+
+histogram_marks ::= "[" histogram_mark "]"                        (* new 2026-09-11, exactly one *)
+histogram_mark ::= "Plot.rectY(" histogram_call "," histogram_options ")"   (* new 2026-09-11; mark name fixed *)
+histogram_call ::= "histogram(" js_string "," histogram_params ")" (* new 2026-09-11 *)
+histogram_params ::= "{" "binMode" ":" bin_mode ","               (* new 2026-09-11; all four required, fixed order *)
+                         "binValue" ":" js_number ","
+                         "symmetric" ":" js_bool ","
+                         "normalise" ":" normalise "}"
+bin_mode      ::= "\"count\"" | "\"width\""                       (* new 2026-09-11 *)
+normalise     ::= "\"counts\"" | "\"fraction\""                   (* new 2026-09-11 *)
+js_bool       ::= "true" | "false"                                (* new 2026-09-11 *)
+histogram_options ::= "{" "x1" ":" "\"v0\"" "," "x2" ":" "\"v1\"" "," "y" ":" "\"n\""   (* new 2026-09-11 *)
+                       ("," "fill" ":" css_color)?
+                       ("," "fillOpacity" ":" js_number)? "}"
 css_color     ::= js_string                (* any valid CSS color literal *)
 ```
 
 **Rules that carry the same weight as the EBNF** (added 2026-09-06, ruling
 R78 L6 Task 19 Q1–Q2 / R79 L6 Task 20 Q1–Q7):
 
-- **A cell is a time cell or an FFT cell, never both** (R78 Q2). `marks_array`
-  is `time_marks` or `fft_marks`; a `marks` array containing both a
-  `channel_call` mark and a `spectrum_call` mark parses to `null` (custom).
-  This makes "its own cell" structural rather than an author convention: two
-  x axes (seconds and Hz) cannot share one `Plot.plot`.
+- **A cell is exactly one chart kind, never two** (R78 Q2, widened to every
+  chart kind by ruling R215). `marks_array` is `time_marks`, `fft_marks` or
+  `histogram_marks`; a `marks` array mixing marks from two of them parses to
+  `null` (custom). This makes "its own cell" structural rather than an author
+  convention: three x axes (seconds, Hz, and the channel's own unit) cannot
+  share one `Plot.plot`. The **callee name of the first mark's data call**
+  (`channel` / `spectrum` / `histogram`) is the discriminant a reader routes
+  on, which is why each chart kind's data call is a distinct host-variable
+  name rather than an argument to a shared one.
 - **An FFT cell has exactly one mark** in v1 (R79 Q7). `fetch_fft` returns
   one spectrum and the host's `fftDriver` keys its `spectrum` action by
   `cellId`, so one cell resolves one spectrum. idl0's overlay of up to ten
@@ -1715,6 +1733,71 @@ kind rather than a mark. Nothing in the grammar changed for this: an FFT
 cell inserted from the picker is byte-identical to one the Properties
 pane's `Time → FFT` switch produces.
 
+**The histogram cell** (added 2026-09-11, ruling R215 item 2). idl0's
+value-distribution chart (`chart_workspace.dart:600-606`), ported onto the
+engine's existing binner through a new command, `fetch_histogram` (C3 §3.6).
+Rules that carry the same weight as the EBNF above:
+
+- **Exactly one mark**, like an FFT cell and for the same reason: one
+  `fetch_histogram` call resolves one distribution. idl0's translucent
+  multi-channel overlay is a stated parity gap, not silently dropped — two
+  channels' distributions are only comparable at all under a shared explicit
+  range, which this grammar has no slot for.
+- **The mark name is fixed at `rectY`**, not a picked subset the way
+  `spectrum_mark_name` is. The mark binds a bin's *two* edges (`x1`/`x2`);
+  `lineY`/`areaY` have no `x2` channel, so offering them would be a control
+  that silently draws the wrong picture. `Plot.lineY(histogram(…), …)` is
+  custom code, not a second legal spelling.
+- **All four `histogram_params` keys are required**, in the order given —
+  the same rule, for the same reason, as `fft_params`' six.
+- **`binValue` is one slot for two quantities.** Under `binMode: "count"` it
+  is a bin count (an integer, `1..=4096`, C3 §3.6's cap); under `"width"` it
+  is a bin width in the channel's own unit, and the *engine* resolves the
+  count that covers the window's range. One slot rather than two mutually
+  exclusive keys, so the grammar has one production and no "exactly one
+  present" rule for a reader to enforce by hand. Switching mode does **not**
+  convert the value: a count and a width are different quantities in
+  different units, and converting needs the data's own range, which the
+  Properties pane does not have — it writes a fresh starting value instead.
+- **Mark options bind `x1: "v0"`, `x2: "v1"`, `y: "n"`**, never `"t"`/`"v"`.
+  A bar has an extent, not a position; `v0`/`v1` are the bin's own two edges
+  in the channel's unit and `n` is what the chart plots.
+- **`lap` is not expressible on `histogram_call`**, for the reason it is not
+  on `spectrum_call`: the window a distribution is binned over is the
+  caller's own selection, not a token in the document.
+
+**The histogram host variable.** `histogram(name, params)` is the one
+recognisable host form, mirroring `channel(...)`/`spectrum(...)`: in the
+sandbox it is an ambient host variable resolved by lookup, never a fetch and
+never binning, returning `{ v0, v1, n, w }` records (`v0`/`v1` the bin's
+edges, `n` C3 §3.6's already-normalised `values[i]`, `w` the window index per
+bin) or `[]` before the host has pushed anything. The lookup key is derived
+from the request through one shared pure function, **`histogramKey(channelId,
+histogramParams)`** — a `"histogram"` tag, the channel id, and the four
+parameter values in this grammar's fixed order — computed identically on both
+sides so host and sandbox cannot drift. The leading tag makes the histogram
+and spectrum key spaces disjoint by construction. Like a spectrum's, this key
+**never varies by window**: the window dimension travels in the payload
+(`host/protocol.ts`'s `combineHistogramWindows`), because `histogram_call` has
+no window token for cell code to address a second key with. Unlike a channel's
+or a spectrum's, no `NaN` break row is inserted between windows — a `rectY`
+bar is an independent rectangle with its own extent, so there is no connecting
+segment to break, and a break row would only be one more bar to discard.
+
+**Histogram parameter table — type, default, C3 field:**
+
+| Grammar slot | Props field | Type | Default | Maps to |
+|---|---|---|---|---|
+| `histogram_call`'s `js_string` | `HistogramMarkProps.channel` | string | first channel in the session picker | `fetch_histogram`'s `channel` |
+| `binMode` | `histogram.binMode` | `"count" \| "width"` | `"count"` | `params.bin_mode` |
+| `binValue` | `histogram.binValue` | positive number; an integer `1..=4096` under `"count"` | `64` bins | `params.bin_value` |
+| `symmetric` | `histogram.symmetric` | boolean | `true` (a suspension channel is signed; zero belongs on a bin edge) | `params.symmetric` |
+| `normalise` | `histogram.normalise` | `"counts" \| "fraction"` | `"fraction"` (what makes two windows of different lengths comparable) | `params.normalise` |
+| `fill` | `HistogramMarkProps.fill` | CSS colour literal | omitted | none |
+| `fillOpacity` | `HistogramMarkProps.fillOpacity` | number, `0..1` | omitted | none |
+| `x.label` | `XAxisProps.label` | string | seeded from the channel's own unit (R65) | none |
+| `y.label` | `YAxisProps.label` | string | omitted | none |
+
 **Parameter table — type, default, C3 field** (added 2026-09-06):
 
 | Grammar slot | Props field | Type | Default | Maps to |
@@ -1739,15 +1822,22 @@ pane's `Time → FFT` switch produces.
 **`PlotProps` shape** (illustrative — L6 Task 20 owns the code):
 
 ```ts
-export type PlotProps = TimePlotProps | FftPlotProps;
+export type PlotProps = TimePlotProps | FftPlotProps | HistogramPlotProps;
 export interface TimePlotProps { chart: "time"; marks: MarkProps[]; x?: XAxisProps; y?: YAxisProps; color?: { legend: true } }
 export interface FftPlotProps  { chart: "fft";  mark: SpectrumMarkProps; x?: XAxisProps; y?: YAxisProps; color?: { legend: true } }
+export interface HistogramPlotProps { chart: "histogram"; mark: HistogramMarkProps; x?: XAxisProps; y?: YAxisProps; color?: { legend: true } }
 export interface SpectrumMarkProps {
   channel: string;
   mark: "lineY" | "dot" | "areaY";
   fft: FftParams;          // all six fields required
   stroke?: string;
   strokeWidth?: number;    // px
+}
+export interface HistogramMarkProps {
+  channel: string;
+  histogram: HistogramParams;  // all four fields required; no `mark` field — the mark name is fixed
+  fill?: string;
+  fillOpacity?: number;        // 0..1
 }
 ```
 

@@ -1634,6 +1634,68 @@ window too short/degenerate to derive a sample rate), `io`, `internal`.
 as of this revision (§5) and is removed in the next. It stays registered
 and behaves exactly as before.
 
+**`fetch_histogram(window: Window, channel: string, params: HistogramParams)`**
+*Added post-sign (2026-09-11, chart-port lane, ruling R215 item 2.)* One
+channel's value distribution over `window` — idl0's histogram chart
+(`chart_workspace.dart:600-606`), ported onto the engine's existing
+`core/src/histogram.rs` binner.
+```ts
+interface HistogramParams {
+  bin_mode: "count" | "width";  // how `bin_value` is read
+  bin_value: number;            // a bin count (integer, 1..=4096) under "count";
+                                // a bin width in the channel's own unit under "width"
+  symmetric: boolean;           // widen the auto range to [-m, m] so zero sits on a bin edge
+  normalise: "counts" | "fraction";
+}
+```
+Return (JSON, not binary — see below):
+```ts
+interface HistogramResponse {
+  bin_edges: number[];  // ascending, length counts.length + 1; bin i spans [i, i+1), last bin closed on the right
+  counts: number[];     // u32 finite-sample count per bin; sums to `total`
+  values: number[];     // what the chart plots: counts[i] under "counts", counts[i] / total under "fraction"
+  total: number;        // u32 finite samples binned over the window
+  bins: number;         // u32 bin count actually used — under "width" this is what the engine derived
+}
+```
+
+**JSON, not `IDLx` bytes.** §1's binary rule exists for arrays big enough
+that JSON encoding dominates the call. A histogram is a few hundred numbers
+at most (`bins` is capped at **4096**, a bar per bin into a chart a few
+hundred CSS pixels wide), so a binary layout here would buy nothing and cost
+a decoder. `fetch_tile`/`fetch_fft` stay binary for the opposite reason.
+
+**`values` is computed in the engine**, not derived app-side from
+`counts`/`total`: no number the picture depends on is computed in JavaScript
+(CLAUDE.md §2). `counts` is always the raw count regardless of `normalise`,
+so a reader can always recover the sample count behind a bar. A `"fraction"`
+result with `total == 0` is all zeros, never `NaN` — a chart must never be
+handed a `NaN` it would draw as a gap in real data.
+
+**Window resolution is `fetch_fft_v2`'s, unchanged** (rulings R85, R123): the
+span resolves first (an unknown `lap`, or a `range` failing R119/R120, is
+`invalid_argument` before any sample is read), then the channel is sliced to
+it, then the *sliced* window is binned — never the whole channel. A
+histogram consumes the time axis, so it is an aggregation over the window,
+exactly as a single-spectrum FFT is. The channel is read one column at a
+time through the byte-budgeted session cache (R203.1, R211).
+
+**Degenerate data is an empty result, not an error.** A window with no
+finite sample, a constant channel (zero-width range), or a `bin_mode:
+"width"` too wide to resolve a bin all return
+`{ bin_edges: [], counts: [], values: [], total: 0, bins: 0 }` — the chart
+shows an empty state. A bad `bin_value` under `bin_mode: "count"` (not an
+integer, or outside `1..=4096`) *is* `invalid_argument`, with `detail:
+{ bin_value, max_bins }`, never silently rounded or clamped: a
+silently-changed bin count changes the picture without changing the document
+that states it.
+
+Settle-bound only (§4): never a hover/pan/zoom handler.
+
+Errors: `not_found` (unknown `session_id` or `channel`), `invalid_argument`
+(an unresolvable window span, or a `bin_value` failing the `"count"`-mode
+check), `io`, `internal`.
+
 **Unchanged commands, stated so no lane guesses (ruling R117).**
 `fetch_tile` (§3.5) stays session-scoped: tiles are a resolution pyramid
 over the whole session and the host clips by viewport — putting a window

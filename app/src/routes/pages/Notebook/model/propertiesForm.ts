@@ -19,6 +19,8 @@ import {
   parse,
   type FftParams,
   type FftPlotProps,
+  type HistogramParams,
+  type HistogramPlotProps,
   type MarkProps,
   type PlotProps,
   type TimePlotProps,
@@ -112,6 +114,36 @@ export function defaultFftPlotProps(channels: readonly { id: string; label: stri
   return props;
 }
 
+/** The default single-mark `HistogramPlotProps` a chart-type switch (or a
+ *  brand-new histogram cell) seeds (ruling R215 item 2): 64 equal-width
+ *  bins, symmetric about zero, plotted as each bin's share of the window's
+ *  finite samples.
+ *
+ *  **Why these three.** `symmetric: true` is the suspension case the chart
+ *  exists for — a fork-velocity distribution is signed, and a range that
+ *  does not put zero on a bin boundary splits compression from rebound
+ *  across one straddling bin. `normalise: "fraction"` is what makes two
+ *  windows comparable at all when they are different lengths, which is the
+ *  reason to select two windows. 64 bins reads at a graph card's width
+ *  without the author touching anything. All three are ordinary editable
+ *  values, not locked defaults — and all four are written into the
+ *  document, so the picture is fully stated there (C2 §5.3).
+ *
+ *  `channel` is `channels`' first entry when one is available, or the empty
+ *  string otherwise, mirroring {@link defaultPlotProps}. */
+export function defaultHistogramPlotProps(channels: readonly { id: string; label: string; unit?: string }[]): HistogramPlotProps {
+  const props: HistogramPlotProps = {
+    chart: "histogram",
+    mark: {
+      channel: channels[0]?.id ?? "",
+      histogram: { binMode: "count", binValue: 64, symmetric: true, normalise: "fraction" },
+    },
+  };
+  const label = suggestAxisLabel(channels[0]);
+  if (label !== undefined) props.x = { label };
+  return props;
+}
+
 /** The code "Reset to form" writes back: `generate` of `lastKnownProps`
  *  when one exists, or of {@link defaultPlotProps} otherwise (design §6 /
  *  this task's brief — never a no-op, even for a cell that started as
@@ -201,12 +233,15 @@ export function overlapPercent(windowSize: number | "all", hopSize: number | "al
  *  switch that isn't happening. */
 export function setChartType(
   props: PlotProps,
-  next: "time" | "fft",
+  next: PlotProps["chart"],
   channels: readonly { id: string; label: string; unit?: string }[]
 ): PlotProps {
-  if (props.chart === "time" && next === "fft") {
-    const channelId = props.marks[0]?.channel ?? channels[0]?.id ?? "";
-    const channel = channels.find((c) => c.id === channelId);
+  if (props.chart === next) return props;
+
+  const channelId = chartTypeChannel(props, channels);
+  const channel = channels.find((c) => c.id === channelId);
+
+  if (next === "fft") {
     const seed = defaultFftPlotProps(channels);
     const label = suggestSpectrumAxisLabel(channel, seed.mark.fft.scaling);
     const withChannel: FftPlotProps = { ...seed, mark: { ...seed.mark, channel: channelId } };
@@ -215,13 +250,40 @@ export function setChartType(
     return withChannel;
   }
 
-  if (props.chart === "fft" && next === "time") {
-    const channelId = props.mark.channel;
-    const seed = defaultPlotProps(channels) as TimePlotProps;
-    return { ...seed, marks: [{ ...seed.marks[0], channel: channelId }] };
+  if (next === "histogram") {
+    const seed = defaultHistogramPlotProps(channels);
+    const label = suggestAxisLabel(channel);
+    const withChannel: HistogramPlotProps = { ...seed, mark: { ...seed.mark, channel: channelId } };
+    if (label !== undefined) withChannel.x = { label };
+    else delete withChannel.x;
+    return withChannel;
   }
 
-  return props;
+  const seed = defaultPlotProps(channels) as TimePlotProps;
+  return { ...seed, marks: [{ ...seed.marks[0], channel: channelId }] };
+}
+
+/** The channel a chart-type switch carries across (R80 Q6, widened by
+ *  ruling R215 to every chart kind): the **first** mark's channel, whatever
+ *  shape that mark has — `marks[0]` for a time cell, the single `mark` for
+ *  an FFT or histogram cell — falling back to `channels[0]` when the source
+ *  cell has no mark at all. One function rather than a `props.chart` check
+ *  at each switch arm, so "first mark drives it" is stated once. */
+function chartTypeChannel(props: PlotProps, channels: readonly { id: string }[]): string {
+  if (props.chart === "time") return props.marks[0]?.channel ?? channels[0]?.id ?? "";
+  return props.mark.channel;
+}
+
+/** Patches the four histogram parameters (ruling R215 item 2). A plain
+ *  merge: unlike {@link updateFftParams}, no parameter here forces another
+ *  (R76's single-segment rule has no histogram counterpart — every
+ *  combination of the four is a legal request). Switching `binMode` does
+ *  **not** convert `binValue` between a count and a width: the two are
+ *  different quantities in different units, and a conversion would need the
+ *  data's own range, which this pure module does not have. The caller
+ *  supplies a fresh `binValue` alongside the mode instead. */
+export function updateHistogramParams(props: HistogramPlotProps, patch: Partial<HistogramParams>): HistogramPlotProps {
+  return { ...props, mark: { ...props.mark, histogram: { ...props.mark.histogram, ...patch } } };
 }
 
 /** Patches the six FFT parameters. Setting `averaging: "none"` forces
@@ -327,6 +389,10 @@ export function updateXAxis(props: PlotProps, patch: Partial<Pick<XAxisProps, "l
   if (props.chart === "fft") {
     return { ...props, x: { ...props.x, ...patch } };
   }
+  // A histogram cell's `x` is the same optional `XAxisProps` a time cell's
+  // is (its meaning differs -- the binned channel's own unit rather than
+  // seconds -- but its shape does not), so it takes the drop-when-empty
+  // path below rather than the FFT arm's always-present one.
   const next: XAxisProps = { ...(props.x ?? {}), ...patch };
   if (isEmptyXAxis(next)) {
     const { x: _drop, ...rest } = props;

@@ -1,4 +1,17 @@
-import type { FftParams, FftPlotProps, FftXAxisProps, MarkProps, PlotProps, SpectrumMarkProps, TimePlotProps, XAxisProps, YAxisProps } from "./types";
+import type {
+  FftParams,
+  FftPlotProps,
+  FftXAxisProps,
+  HistogramMarkProps,
+  HistogramParams,
+  HistogramPlotProps,
+  MarkProps,
+  PlotProps,
+  SpectrumMarkProps,
+  TimePlotProps,
+  XAxisProps,
+  YAxisProps,
+} from "./types";
 
 /** Serializes a JS string literal for embedding in generated code via
  *  `JSON.stringify`, never manual quote-wrapping, so a label containing a
@@ -173,11 +186,78 @@ function generateFft(props: FftPlotProps): string {
   return renderPlotBody(topLines);
 }
 
+/** Renders a `histogram_call`'s `histogram_params` object (C2 §5.3, ruling
+ *  R215 item 2): all four keys, in the grammar's fixed order, on one line —
+ *  like `fft_params` today. `symmetric` is emitted as the bare identifier
+ *  `true`/`false`, the one place this grammar admits a boolean literal
+ *  outside `color: { legend: true }`. */
+function renderHistogramParams(h: HistogramParams): string {
+  const fields = [
+    `binMode: ${jsString(h.binMode)}`,
+    `binValue: ${String(h.binValue)}`,
+    `symmetric: ${String(h.symmetric)}`,
+    `normalise: ${jsString(h.normalise)}`,
+  ];
+  return `{ ${fields.join(", ")} }`;
+}
+
+/** Renders a `histogram_mark`'s `histogram_options` (C2 §5.3, ruling R215
+ *  item 2): the fixed triple `x1: "v0"`, `x2: "v1"`, `y: "n"` binding the
+ *  bin's own two edges and its plotted value, then optionally `fill`, then
+ *  optionally `fillOpacity`. A bar has an extent, not a position, which is
+ *  why this triple is `x1`/`x2`/`y` rather than `mark_options`' `x`/`y`
+ *  pair. */
+function renderHistogramOptions(m: HistogramMarkProps): string {
+  const fields: string[] = [`x1: "v0"`, `x2: "v1"`, `y: "n"`];
+  if (m.fill !== undefined) fields.push(`fill: ${jsString(m.fill)}`);
+  if (m.fillOpacity !== undefined) fields.push(`fillOpacity: ${String(m.fillOpacity)}`);
+  return `{ ${fields.join(", ")} }`;
+}
+
+/** Renders C2 §5.3's `histogram_mark` production (ruling R215 item 2):
+ *  `Plot.rectY(histogram("<channel>", {histogram_params}), {histogram_options})`.
+ *  The mark name is fixed — see {@link HistogramMarkProps}' doc comment. */
+function renderHistogramMark(m: HistogramMarkProps): string {
+  return `Plot.rectY(histogram(${jsString(m.channel)}, ${renderHistogramParams(m.histogram)}), ${renderHistogramOptions(m)})`;
+}
+
+/** Emits a histogram cell's Plot code (C2 §5.3, ruling R215 item 2): the
+ *  same top-level order and formatting policy as {@link generateFft}, over
+ *  the single bar mark. Unlike the FFT arm, `x` is optional and carries no
+ *  `type` — a histogram's x axis is the linear bin axis the engine's own
+ *  `bin_edges` describe, so there is nothing for the document to choose. */
+function generateHistogram(props: HistogramPlotProps): string {
+  const topLines: string[] = [];
+  if (props.x !== undefined) {
+    const renderedX = renderXAxis(props.x);
+    if (renderedX !== null) topLines.push(`x: ${renderedX}`);
+  }
+  if (props.y !== undefined) {
+    const renderedY = renderYAxis(props.y);
+    if (renderedY !== null) topLines.push(`y: ${renderedY}`);
+  }
+  if (props.color !== undefined) topLines.push(`color: { legend: true }`);
+  topLines.push(`marks: [\n    ${renderHistogramMark(props.mark)}\n  ]`);
+
+  return renderPlotBody(topLines);
+}
+
 /** Emits C2 §5.3's Plot subset as JavaScript source code — a string
  *  builder, not a JS-AST printer, over the grammar's closed, small
  *  vocabulary. Branches on `props.chart`: a time cell emits exactly what
  *  this generator always has ({@link generateTime}); an FFT cell emits
- *  C2 §5.3's `spectrum(...)` production ({@link generateFft}). */
+ *  C2 §5.3's `spectrum(...)` production ({@link generateFft}); a histogram
+ *  cell its `histogram(...)` production ({@link generateHistogram}, ruling
+ *  R215 item 2). Written as a `switch` over the discriminant, not a ternary
+ *  chain, so a chart kind added to `PlotProps` without a branch here is a
+ *  compile error rather than a silent fall-through to the time arm. */
 export function generate(props: PlotProps): string {
-  return props.chart === "fft" ? generateFft(props) : generateTime(props);
+  switch (props.chart) {
+    case "fft":
+      return generateFft(props);
+    case "histogram":
+      return generateHistogram(props);
+    case "time":
+      return generateTime(props);
+  }
 }

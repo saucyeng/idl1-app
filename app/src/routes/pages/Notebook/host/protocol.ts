@@ -74,7 +74,8 @@ export interface WindowDescriptor {
 export type HostVarPayload =
   | { kind: "json"; value: unknown }
   | { kind: "channel"; length: number; t: ArrayBuffer; v: ArrayBuffer; w: ArrayBuffer; windows: WindowDescriptor[]; unit: UnitLabel }
-  | { kind: "spectrum"; length: number; f: ArrayBuffer; m: ArrayBuffer; w: ArrayBuffer; windows: WindowDescriptor[] };
+  | { kind: "spectrum"; length: number; f: ArrayBuffer; m: ArrayBuffer; w: ArrayBuffer; windows: WindowDescriptor[] }
+  | { kind: "histogram"; length: number; v0: ArrayBuffer; v1: ArrayBuffer; n: ArrayBuffer; w: ArrayBuffer; windows: WindowDescriptor[]; unit: UnitLabel };
 
 /** One cell as the host hands it to the sandbox for (re)definition. */
 export interface SandboxCell {
@@ -383,6 +384,116 @@ export interface CombinedSpectrumSeries {
 export function combineSpectrumWindows(series: readonly SpectrumWindowSeries[]): CombinedSpectrumSeries {
   const combined = combinePairedWindows(series.map((s) => ({ descriptor: s.descriptor, a: s.f, b: s.m })));
   return { length: combined.length, f: combined.a, m: combined.b, w: combined.w, windows: combined.windows };
+}
+
+/** One selected window's own binned distribution -- see
+ *  {@link combineHistogramWindows}. All three arrays are the same length
+ *  (one entry per bin): `v0`/`v1` are that bin's own two edges in the
+ *  channel's unit, `n` what the chart plots (C3 §3.6's
+ *  `HistogramResponse.values`, already normalised in the engine). */
+export interface HistogramWindowSeries {
+  descriptor: WindowDescriptor;
+  v0: Float64Array;
+  v1: Float64Array;
+  n: Float64Array;
+}
+
+/** {@link combineHistogramWindows}'s return -- ready to pass straight into
+ *  {@link histogramPayload} (via each array's `.buffer`). */
+export interface CombinedHistogramSeries {
+  length: number;
+  v0: Float64Array;
+  v1: Float64Array;
+  n: Float64Array;
+  w: Float64Array;
+  windows: WindowDescriptor[];
+}
+
+/**
+ * Combines *n* selected windows' own binned distributions into the single
+ * flat `{length, v0, v1, n, w}` layout, the histogram counterpart of
+ * {@link combineChannelWindows}/{@link combineSpectrumWindows} (ruling R215
+ * item 2, following R127/R129's shape): one host variable per (channel,
+ * `histogram_params`), never one per (…, window) pair, with the window
+ * dimension in the payload because `histogram_call`'s grammar has no window
+ * token to address a second key with.
+ *
+ * **No break row is inserted between windows**, unlike
+ * {@link combinePairedWindows}. That rule (ruling R127 item 4) exists so a
+ * *line* mark does not vault from one window's last sample to the next
+ * window's first, drawing a segment that looks like real data. A histogram
+ * draws `rectY` bars: each row is an independent rectangle with its own
+ * `x1`/`x2` extent, so there is no connecting segment to break, and a
+ * `NaN`-valued separator row would instead be one more bar Plot has to
+ * discard. Each window's bars are drawn where its own bin edges put them,
+ * and `w` tells a cell which window each bar came from -- which is also
+ * the honest picture: two windows' bins genuinely do not align unless the
+ * two ranges happen to coincide.
+ *
+ * Windows are concatenated in `series` order; `w[i]` indexes the returned
+ * `windows` array. `series: []` returns an all-empty result. A single
+ * window's `w` is all `0`, exactly as its channel/spectrum counterparts'
+ * is.
+ */
+export function combineHistogramWindows(series: readonly HistogramWindowSeries[]): CombinedHistogramSeries {
+  const windows = series.map((s) => s.descriptor);
+  const length = series.reduce((sum, s) => sum + s.n.length, 0);
+  const v0 = new Float64Array(length);
+  const v1 = new Float64Array(length);
+  const n = new Float64Array(length);
+  const w = new Float64Array(length);
+
+  let i = 0;
+  series.forEach((s, windowIndex) => {
+    for (let j = 0; j < s.n.length; j++) {
+      v0[i] = s.v0[j];
+      v1[i] = s.v1[j];
+      n[i] = s.n[j];
+      w[i] = windowIndex;
+      i++;
+    }
+  });
+
+  return { length, v0, v1, n, w, windows };
+}
+
+/**
+ * Builds a `setHostVar` message for a decoded, possibly multi-window binned
+ * distribution (ruling R215 item 2) plus its transfer list, mirroring
+ * {@link channelPayload} exactly except for the columns: a bin's two edges
+ * and its plotted value rather than one time and one value. `v0`/`v1`/`n`/
+ * `w` must not be read again by the caller after this call -- they are
+ * neutered once transferred.
+ *
+ * All four are the raw bytes backing a **`Float64Array`** on each end, the
+ * same unconditional reinterpretation `sandbox/main.ts`'s
+ * `materializeHostVar` applies to every other array payload -- a narrower
+ * element type on this end would silently corrupt every value.
+ *
+ * `unit` is the binned channel's own three-state {@link UnitLabel}
+ * (R154/R164), carried for the same reason a channel payload carries one:
+ * a histogram's x axis is in the channel's unit, so a cell (or a prose
+ * `${…}`) can label it without a second lookup. It describes `v0`/`v1`;
+ * `n` is a count or a fraction and is dimensionless either way.
+ */
+export function histogramPayload(
+  name: string,
+  length: number,
+  v0: ArrayBuffer,
+  v1: ArrayBuffer,
+  n: ArrayBuffer,
+  w: ArrayBuffer,
+  windows: WindowDescriptor[],
+  unit: UnitLabel
+): { message: { type: "setHostVar"; name: string; value: HostVarPayload }; transfer: Transferable[] } {
+  return {
+    message: {
+      type: "setHostVar",
+      name,
+      value: { kind: "histogram", length, v0, v1, n, w, windows, unit },
+    },
+    transfer: [v0, v1, n, w],
+  };
 }
 
 /**
