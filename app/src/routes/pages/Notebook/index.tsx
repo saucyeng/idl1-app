@@ -3,7 +3,6 @@ import { createPortal } from "react-dom";
 import { getVersion } from "@tauri-apps/api/app";
 
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@/components/ui/resizable";
-import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { setGraphColumnVisible } from "../../../shell/graphColumnVisible";
 import { BrandSheet } from "@/components/brand/BrandSheet";
 import { NoteBlock } from "@/components/brand/NoteBlock";
@@ -52,7 +51,8 @@ import EditorPanes from "./components/EditorPanes";
 import JsCellFrame, { DEFAULT_JS_CELL_HEIGHT_PX } from "./components/JsCellFrame";
 import type { PropertiesFormChannelOption, PropertiesFormLapOption } from "./components/PropertiesForm.types";
 import TimelineStrip from "./components/TimelineStrip";
-import WorkbookBar from "./components/WorkbookBar";
+import NotebookToolbar from "./components/NotebookToolbar";
+import { WorkbookNotices } from "./components/WorkbookBar";
 import GraphCanvas from "./graph/GraphCanvas";
 import { combineSpectrumWindows, type SandboxCell, type SpectrumWindowSeries, type WindowDescriptor } from "./host/protocol";
 import { SandboxHost } from "./host/SandboxHost";
@@ -75,7 +75,6 @@ import { CellRunSequencer } from "./model/cellRunSequencer";
 import { isCodeVisible, toggleCode } from "./model/codeVisibility";
 import { createCursorBus, type CursorBus } from "./interaction/cursorBus";
 import { BASIC_MOUSE_PRESET, findInputMapPreset, INPUT_MAP_PRESETS, type InputMapPreset } from "./interaction/inputMap";
-import PlaybackTransport from "./interaction/PlaybackTransport";
 import { playableSpanUs, setSpeed, tick, togglePlay, type PlaybackState } from "./interaction/playback";
 import type { PlaybackMode } from "./interaction/playbackMode";
 import { editorPlacement } from "./model/editorPlacement";
@@ -95,7 +94,6 @@ import { jsCellNote, primaryWindowNote } from "./model/jsCellNote";
 import { definitionCellIds } from "./model/graphModel";
 import { fixTargetCellId } from "./model/fixTarget";
 import {
-  NOTEBOOK_COLUMN_IDS,
   notebookColumnVisibilityFrom,
   readNotebookColumnVisibility,
   visibleNotebookColumnIds,
@@ -2832,174 +2830,89 @@ export default function NotebookPage() {
       : [{ id: "cells", element: cellListElement }];
   const showPropertiesPane = !editorIsPortalHosted && placement === "panes" && columnVisibility.properties && editorPanesElement !== null;
 
-  // Ruling R161, corrected by a 2026-09-09 bug report: one CAD-style top
-  // toolbar spanning the *window* (not just this tab's own column area --
-  // that correction is what `shell/toolbarSlot.ts` exists for), above the
-  // columns, so the preview beneath it runs full height. Everything that
-  // used to stack above the content in its own row now merges into this one
-  // row -- the leading group is column visibility (item 2), everything else
-  // follows (item 3), and the row never wraps to a second line: the
-  // gesture-preset/X-axis selects (the two purely-configuration controls,
-  // changed rarely once set) sit behind the "More" overflow disclosure
-  // rather than risking a wrap (item 5) -- a static split rather than a
-  // width-measured one, since nothing in this codebase measures toolbar
-  // overflow yet (small, safe judgment call, CLAUDE.md §1).
+  /** The one line the Save button needs to explain itself, or `null`.
+   *  Shown as the button's own `title` and, when it is a real failure, in
+   *  the notice strip under the row — never as a free-floating span inside
+   *  a toolbar that must stay one line tall (ruling R212 item 4). */
+  const saveNote =
+    saveUnavailable
+      ? "Save is not available yet -- the document's text could not be read."
+      : saveFlowState.status === "error"
+        ? `Save failed: ${saveFlowState.error.message}`
+        : null;
+
+  // Ruling R161, corrected by a 2026-09-09 bug report and reshaped by R212
+  // item 4: one CAD-style top toolbar spanning the *window* (not just this
+  // tab's own column area -- that correction is what `shell/toolbarSlot.ts`
+  // exists for), above the columns, so the preview beneath it runs full
+  // height.
   //
-  // Layer order (bug report fixed 2026-09-09): this row needs `relative` +
-  // an explicit `z-index` and an opaque background, or the sandbox iframe
-  // host below (`containerRef`'s `position: fixed` div, further down this
-  // file) paints over it while a chart is scrolled underneath -- a fixed
-  // element with any explicit z-index (even 0) stacks above ordinary static
-  // in-flow content regardless of DOM order. The z-index values touching
-  // this stack are spread across the Notebook feature, not one file:
-  // `graph/GraphCanvas.tsx` sets `-1` on its background subgraph frame
-  // nodes, this toolbar is `10`, and its own "More" popover below is also
-  // `10` but in a nested stacking context (the two never actually compare).
-  // Lowering the sandbox host's z-index instead was rejected (brief,
-  // 2026-09-09): that host already needs to sit above ordinary in-flow
-  // cell/column content everywhere *except* this toolbar, and dropping it
-  // below zero globally would hide charts behind that content too.
+  // The row's own markup, its group order, its collapse behaviour and its
+  // layer-order note all live in `components/NotebookToolbar.tsx` now; this
+  // file keeps only the state those groups read and write. What R161
+  // achieved with a static split (the gesture-preset and X-axis selects
+  // parked behind a "More" disclosure, because "nothing in this codebase
+  // measures toolbar overflow yet") is now an actual measurement --
+  // `shell/toolbarLayout.ts` over a `ResizeObserver` on the row.
   const toolbarElement = (
-    <div className="idl-dense relative z-10 flex flex-nowrap items-center gap-2 overflow-x-auto border-b border-rule bg-surface px-2 py-1">
-      {columnsToggleAvailable && (
-          /* R208 item 2: these three were bare unstyled `<button>`
-             elements. Under Tailwind's preflight reset a bare `<button>`
-             has no background, border or padding, so "Graph" rendered as
-             plain text against the toolbar's own `--surface` -- a caption,
-             not a control -- and `aria-pressed` alone gave its on/off state
-             no visual form at all. Isaac read the maths column's "shown via
-             the toolbar's Graph toggle" placeholder and could not find the
-             toggle it names. They are now a `BrandSegmented` group
-             (`components/ui/toggle-group.tsx`, `type="multiple"` since the
-             three columns are independent, not mutually exclusive), the
-             same labelled-text control the Paper/Studio register switch in
-             this very toolbar already uses: hairline-bordered, `--control`
-             resting and `--control-active` when the column is showing. */
-          <ToggleGroup
-            type="multiple"
-            density="tight"
-            aria-label="Notebook columns"
-            value={NOTEBOOK_COLUMN_IDS.filter((id) => columnVisibility[id])}
-            onValueChange={(next) => applyColumnToggleValue(next)}
-          >
-            <ToggleGroupItem value="graph">Graph</ToggleGroupItem>
-            <ToggleGroupItem value="properties">Properties</ToggleGroupItem>
-            <ToggleGroupItem value="cells">Cells</ToggleGroupItem>
-          </ToggleGroup>
-        )}
-        {(entry === null || entry.kind === "empty") && (
-          <WorkbookBar
-            entry={entry}
-            rescanning={rescanning}
-            creating={creating}
-            dirty={false}
-            error={workbookBarError}
-            lastRebuild={lastRebuild}
-            register={register}
-            onCreate={(name) => void handleCreate(name)}
-            onRescan={() => void handleRescan()}
-            onSelect={handleSelect}
-            onRegisterChange={handleRegisterChange}
-          />
-        )}
-        {state.handle !== null && (
-          <div className="workbook-save-bar flex items-center gap-2">
-            {entry !== null && entry.kind !== "empty" && (
-              <WorkbookBar
-                entry={entry}
-                rescanning={rescanning}
-                creating={creating}
-                dirty={state.dirtyCellIds.size > 0 || state.frontMatterDirty}
-                error={workbookBarError}
-                lastRebuild={lastRebuild}
-                register={register}
-                onCreate={(name) => void handleCreate(name)}
-                onRescan={() => void handleRescan()}
-                onSelect={handleSelect}
-                onRegisterChange={handleRegisterChange}
-              />
-            )}
-            <button type="button" onClick={() => void handleSave()} disabled={saveUnavailable || saveFlowState.status === "saving"}>
-              {saveFlowState.status === "saving" ? "Saving…" : "Save"}
-            </button>
-            {saveUnavailable && <span className="workbook-save-unavailable">save not available yet (the document's text could not be read)</span>}
-            {saveFlowState.status === "error" && <span className="workbook-save-error">save failed: {saveFlowState.error.message}</span>}
-            <button type="button" onClick={() => void handleExportReport()} disabled={exportingReport || state.markdown === null}>
-              {exportingReport ? "Building report…" : "Export report"}
-            </button>
-          </div>
-        )}
-        <PlaybackTransport
-          playing={playback.playing}
-          cursorTUs={sharedCursorTUs}
-          onToggle={handleTogglePlay}
-          disabled={!primeState.running}
-          routeVisible={routeVisible}
-          speed={playback.speed}
-          onSpeedChange={(speed) => setPlayback((prev) => setSpeed(prev, speed))}
-          mode={playbackMode}
-          onModeChange={setPlaybackMode}
-          followingWindowLabel={cellListWindowNote}
-        />
-        {/* The overflow group (item 5): gesture preset and X-axis mode --
-            same controls, same semantics, as their pre-R161 standalone rows
-            below; a native `<details>` disclosure needs no extra state and
-            closes on outside click/Escape for free. */}
-        <details className="relative ml-auto">
-          <summary className="cursor-pointer select-none rounded-[var(--radius-structural)] border border-rule px-2 py-1 font-mono text-label-2 text-fg-dim hover:text-fg">
-            More…
-          </summary>
-          <div className="absolute right-0 z-10 mt-1 flex flex-col gap-2 rounded-[var(--radius-structural)] border border-rule bg-bg-raised p-2 shadow-lg">
-            {/* R137's own point: "a few presets for me to try at runtime" --
-                a plain `<select>`, no dialog, no reload. Changing it updates
-                `inputMapPreset` React state above, which every mounted
-                `ChartCell` receives as a prop on the very next render; the
-                next gesture on any chart reads the new table. */}
-            <label className="flex items-center gap-2 font-mono text-label-2 text-fg-dim">
-              Gesture input map
-              <select
-                value={inputMapPreset.id}
-                onChange={(event) => {
-                  const next = findInputMapPreset(event.target.value);
-                  if (next !== null) setInputMapPreset(next);
-                }}
-                className="rounded-[var(--radius-structural)] border border-rule bg-transparent px-1 py-0.5 text-fg"
-              >
-                {INPUT_MAP_PRESETS.map((preset) => (
-                  <option key={preset.id} value={preset.id}>
-                    {preset.label}
-                  </option>
-                ))}
-              </select>
-            </label>
-            {/* Decision 54's worksheet-level X mode (Task 13). Distance is
-                listed and disabled with its reason as a `title` tooltip
-                (R136) -- never silently omitted, never silently falling
-                back to time without saying why. Changing the (only ever
-                selectable) time option is a no-op today; the field exists
-                so a future core distance axis has somewhere to read from
-                without another prefs-shape change. */}
-            <label className="flex items-center gap-2 font-mono text-label-2 text-fg-dim">
-              X axis
-              <select
-                value={xMode}
-                onChange={(event) => {
-                  const next = event.target.value;
-                  if (next === "time" || next === "distance") setXMode(next);
-                }}
-                className="rounded-[var(--radius-structural)] border border-rule bg-transparent px-1 py-0.5 text-fg"
-              >
-                {X_MODE_OPTIONS.map((option) => (
-                  <option key={option.value} value={option.value} disabled={option.disabledReason !== undefined} title={option.disabledReason}>
-                    {option.label}
-                    {option.disabledReason !== undefined ? " (unavailable)" : ""}
-                  </option>
-                ))}
-              </select>
-            </label>
-          </div>
-        </details>
-      </div>
+    <>
+      <NotebookToolbar
+        columnsToggleAvailable={columnsToggleAvailable}
+        columnVisibility={columnVisibility}
+        onColumnToggleValue={applyColumnToggleValue}
+        entry={entry}
+        rescanning={rescanning}
+        creating={creating}
+        dirty={state.dirtyCellIds.size > 0 || state.frontMatterDirty}
+        workbookBarError={workbookBarError}
+        lastRebuild={lastRebuild}
+        onCreate={(name) => void handleCreate(name)}
+        onRescan={() => void handleRescan()}
+        onSelect={handleSelect}
+        register={register}
+        onRegisterChange={handleRegisterChange}
+        windows={windows}
+        sessionDetailsByWindow={sessionDetailsByWindow}
+        playing={playback.playing}
+        cursorTUs={sharedCursorTUs}
+        onTogglePlay={handleTogglePlay}
+        transportDisabled={!primeState.running}
+        routeVisible={routeVisible}
+        speed={playback.speed}
+        onSpeedChange={(speed) => setPlayback((prev) => setSpeed(prev, speed))}
+        playbackMode={playbackMode}
+        onPlaybackModeChange={setPlaybackMode}
+        followingWindowLabel={cellListWindowNote}
+        documentOpen={state.handle !== null}
+        saveDisabled={saveUnavailable || saveFlowState.status === "saving"}
+        saveLabel={saveFlowState.status === "saving" ? "Saving…" : "Save"}
+        onSave={() => void handleSave()}
+        saveNote={saveNote}
+        exporting={exportingReport}
+        exportDisabled={exportingReport || state.markdown === null}
+        onExportReport={() => void handleExportReport()}
+        inputMapPreset={inputMapPreset}
+        inputMapPresets={INPUT_MAP_PRESETS}
+        onInputMapPresetChange={(id) => {
+          const next = findInputMapPreset(id);
+          if (next !== null) setInputMapPreset(next);
+        }}
+        xMode={xMode}
+        xModeOptions={X_MODE_OPTIONS}
+        onXModeChange={setXMode}
+      />
+      {/* Not a toolbar group: the rescan report, the typed catalog error
+          and a failed save are prose of unbounded length, and a row that
+          must never wrap is the wrong home for them (R212 item 4). They
+          render here, directly under the row, where they may wrap freely
+          and take no height at all when there is nothing to say. */}
+      <WorkbookNotices entry={entry} error={workbookBarError} lastRebuild={lastRebuild} />
+      {saveFlowState.status === "error" && saveNote !== null && (
+        <p role="alert" className="border-b border-rule bg-surface-2 px-2 py-1 font-mono text-[length:var(--nb-text-label)] text-accent">
+          {saveNote}
+        </p>
+      )}
+    </>
   );
 
   return (

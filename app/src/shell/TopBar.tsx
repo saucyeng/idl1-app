@@ -128,11 +128,11 @@ export default function TopBar({ activeRoute, onNavigate, selection, onWindowsCh
         </div>
       )}
 
-      {/* UI-11's PlaybackTransport (play/pause, live-speed cursor) portals
-          into this node by id from `Notebook/interaction/PlaybackTransport.tsx`
-          — `TopBar` itself holds no playback state (R99: that state lives in
-          `Notebook/index.tsx`, the worksheet's own orchestration file). */}
-      <div className="flex flex-1 items-center justify-end pr-2" id="playback-transport-slot" data-slot="playback-transport-placeholder" />
+      {/* The playback transport used to portal into a reserved slot here.
+          Ruling R212 item 4 moves it into the Notebook toolbar's centre
+          group, so the slot is gone and this is now plain spacing pushing
+          the command-palette trigger to the right edge. */}
+      <div className="flex-1" />
 
       <button
         type="button"
