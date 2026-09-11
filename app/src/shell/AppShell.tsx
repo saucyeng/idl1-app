@@ -26,6 +26,9 @@ import { commandForEvent, formatShortcut, MENU_COMMAND_IDS, MENUS, usesCommandGl
 import { DEFAULT_SIDEBAR_STATE, withSidebarState, type SidebarState } from "./sidebarPrefs";
 import { tabSwitchCommands } from "./commands";
 import { Toaster } from "../components/Toaster";
+import { checkForUpdate, downloadAndInstallUpdate, relaunchApp } from "../ipc/updater";
+import { openUpdatePanel, runUpdateCheck, startUpdateChecker } from "./updateState";
+import UpdatePanel from "./UpdatePanel";
 
 /** The current `window.innerWidth`, updated on `resize` (width-dependent
  *  layout is decided by the pure `shell/layout.ts`; this hook is only the
@@ -148,6 +151,17 @@ export default function AppShell() {
     fetchEngineVersion().then((v) => dispatch({ type: "SET_ENGINE_VERSION", version: v }));
   }, [dispatch]);
 
+  // Update checker (ruling R231): launch (+30 s) and every 4 h, timers
+  // only — never on the interaction path (CLAUDE.md §3). Registered
+  // unconditionally; when the updater plugin was never registered on the
+  // Rust side (dev build, placeholder pubkey), `checkForUpdate` rejects
+  // and `runUpdateCheck` treats that as an `error` state the chrome never
+  // shows (`updateChipLabel`), so nothing here needs its own dev guard.
+  const updateIo = useMemo(() => ({ checkForUpdate, downloadAndInstallUpdate, relaunchApp }), []);
+  useEffect(() => {
+    return startUpdateChecker(updateIo);
+  }, [updateIo]);
+
   const onNavigate = useCallback(
     (route: RouteId): void => {
       dispatch({ type: "NAVIGATE", route });
@@ -179,12 +193,19 @@ export default function AppShell() {
       [MENU_COMMAND_IDS.viewCyclePreset, cycleLayoutPreset],
       [MENU_COMMAND_IDS.viewCommandPalette, () => setPaletteOpen((open) => !open)],
       [MENU_COMMAND_IDS.helpAbout, () => setAboutOpen(true)],
+      [
+        MENU_COMMAND_IDS.helpCheckForUpdates,
+        () => {
+          openUpdatePanel();
+          void runUpdateCheck(updateIo);
+        },
+      ],
     ];
     for (const [id, handler] of owned) registerCommand(id, handler);
     return () => {
       for (const [id, handler] of owned) unregisterCommand(id, handler);
     };
-  }, [onNavigate, toggleSidebar]);
+  }, [onNavigate, toggleSidebar, updateIo]);
 
   // The View menu's three toggles (maths graph, properties, dense output)
   // are *not* registered here. They are the Notebook toolbar's own
@@ -317,6 +338,7 @@ export default function AppShell() {
 
       <CommandPalette open={paletteOpen} onOpenChange={setPaletteOpen} commands={commands} />
       <AboutDialog open={aboutOpen} onOpenChange={setAboutOpen} engineVersion={state.engineVersion} />
+      <UpdatePanel />
       <Toaster />
     </div>
   );

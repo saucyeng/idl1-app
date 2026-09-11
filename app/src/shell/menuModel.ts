@@ -100,6 +100,7 @@ export const MENU_COMMAND_IDS = {
   goNotebook: "go.notebook",
   goSettings: "go.settings",
   helpAbout: "help.about",
+  helpCheckForUpdates: "help.checkForUpdates",
 } as const;
 
 /** Every id in {@link MENU_COMMAND_IDS}. */
@@ -177,7 +178,10 @@ export const MENUS: readonly Menu[] = [
   {
     id: "help",
     label: "Help",
-    items: [command(MENU_COMMAND_IDS.helpAbout, "About idl1", null)],
+    items: [
+      command(MENU_COMMAND_IDS.helpCheckForUpdates, "Check for updates…", null),
+      command(MENU_COMMAND_IDS.helpAbout, "About idl1", null),
+    ],
   },
 ];
 
