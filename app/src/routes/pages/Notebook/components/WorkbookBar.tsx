@@ -1,9 +1,3 @@
-import { useState } from "react";
-
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import type { RebuildReport } from "../../../../ipc/catalog";
 import type { IpcError } from "../../../../ipc/workbook";
@@ -21,17 +15,25 @@ import type { WorkbookEntry } from "../model/workbookEntry";
  * a row that must never wrap, so the pieces are now separate exports the
  * toolbar composes:
  *
- * - {@link WorkbookPicker} — the `document` group: which workbook is open,
- *   and its worksheet tabs.
  * - {@link RegisterSwitch} — the `view` group: paper vs studio (decision 31).
- * - {@link WorkbookActions} — part of the `actions` group: create and rescan.
  * - {@link WorkbookNotices} — **not** a toolbar group at all. The rescan
  *   report and the typed error line are prose of unbounded length; they
  *   render in their own strip *under* the row, where they can wrap freely
  *   without ever making the toolbar two rows tall.
  *
- * None of these holds IPC or a layout decision: which workbook opens and
- * what register is in effect live in `model/workbookEntry.ts` and
+ * **Ruling R225 deleted the other two.** `WorkbookPicker` (the inline
+ * workbook `Select` and the worksheet tab strip) and `WorkbookActions` (the
+ * new-workbook name field, Create and Rescan) were the loose controls that
+ * overlapped each other on the row. Opening and creating a workbook are now
+ * the ribbon's Open split button, which runs the `workbook.open` and
+ * `workbook.new` commands the page already registered and which already
+ * open `WorkbookMenuDialogs`' two dialogs; Rescan is one entry in the
+ * Import button's dropdown. The worksheet tab strip went with the picker
+ * and is not replaced: it was a single fixed "Sheet 1" tab beside a
+ * disabled `+`, with no worksheet concept behind it in the document model.
+ *
+ * Neither of the survivors holds IPC or a layout decision: which workbook
+ * opens and what register is in effect live in `model/workbookEntry.ts` and
  * `model/outputRegister.ts`.
  */
 
@@ -89,120 +91,6 @@ export function RegisterSwitch({
         {labelled ? "Studio" : "S"}
       </ToggleGroupItem>
     </ToggleGroup>
-  );
-}
-
-/** The worksheet tabs. This lane's `.idl1wb` document model has no
- *  multi-worksheet concept yet (no IPC command names a "worksheet" distinct
- *  from the workbook document itself) — a single fixed tab stands in for
- *  "this workbook's one sheet", and `+` is present per the direction but
- *  disabled, since there is nothing yet for it to create. Parity gap: idl0
- *  had no worksheet concept either, so this is new UI-DIRECTION chrome with
- *  no backend counterpart, not a regression. */
-function WorksheetTabs() {
-  return (
-    <div className="flex items-center gap-[var(--nb-gap)]">
-      <Tabs value="sheet-1">
-        <TabsList>
-          <TabsTrigger value="sheet-1">Sheet 1</TabsTrigger>
-        </TabsList>
-      </Tabs>
-      <Button type="button" size="icon-sm" emphasis="normal" disabled title="Multiple worksheets are not supported yet">
-        +
-      </Button>
-    </div>
-  );
-}
-
-/**
- * The `document` group: the workbook `Select` (only when more than one
- * workbook is indexed, R81 Q4(a)) and the worksheet tabs.
- *
- * The "Save your edits before switching workbooks" line that used to sit
- * beside the picker as its own paragraph is now the disabled picker's
- * `title` — the same explanation, in the one place a reader looks when a
- * control will not respond, and no extra width in a row that has none.
- */
-export function WorkbookPicker({ entry, dirty, onSelect, labelled = true }: Pick<WorkbookBarProps, "entry" | "dirty" | "onSelect"> & { labelled?: boolean }) {
-  if (entry === null || entry.kind === "empty") return null;
-
-  return (
-    <div className="flex min-w-0 items-center gap-[var(--nb-gap)]">
-      {entry.kind === "choice" && (
-        <Select value={entry.workbookId} disabled={dirty} onValueChange={onSelect}>
-          <SelectTrigger
-            size="sm"
-            className={labelled ? "w-40" : "w-24"}
-            aria-label="Workbook"
-            title={dirty ? "Save your edits before switching workbooks." : "Open workbook"}
-          >
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            {entry.choices.map((choice) => (
-              <SelectItem key={choice.workbook_id} value={choice.workbook_id}>
-                {choice.name}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      )}
-      <WorksheetTabs />
-    </div>
-  );
-}
-
-/**
- * The create-and-rescan half of the `actions` group. Present whether or not
- * any workbook exists yet — a second workbook has to be creatable from a
- * non-empty notebook too — so this is the one control the empty state and
- * the loaded state share.
- *
- * The empty state's "a workbook file copied into the `workbooks` folder
- * appears here after a rescan" hint is Rescan's `title`, for the same
- * reason the dirty-picker explanation moved: prose belongs on the control
- * it explains, not in the row.
- */
-export function WorkbookActions({ creating, rescanning, onCreate, onRescan, labelled = true }: Pick<WorkbookBarProps, "creating" | "rescanning" | "onCreate" | "onRescan"> & { labelled?: boolean }) {
-  const [newName, setNewName] = useState("");
-
-  function submitCreate() {
-    const trimmed = newName.trim();
-    if (trimmed.length === 0) return;
-    onCreate(trimmed);
-    setNewName("");
-  }
-
-  return (
-    <div className="flex items-center gap-[var(--nb-gap)]">
-      <label htmlFor="notebook-new-workbook-name" className="sr-only">
-        New workbook name
-      </label>
-      <Input
-        id="notebook-new-workbook-name"
-        type="text"
-        value={newName}
-        onChange={(e) => setNewName(e.target.value)}
-        onKeyDown={(e) => {
-          if (e.key === "Enter") submitCreate();
-        }}
-        placeholder="New workbook"
-        className={labelled ? "w-32" : "w-20"}
-      />
-      <Button type="button" size="sm" emphasis="normal" onClick={submitCreate} disabled={creating || newName.trim().length === 0}>
-        {creating ? "Creating…" : "Create"}
-      </Button>
-      <Button
-        type="button"
-        size="sm"
-        emphasis="normal"
-        onClick={onRescan}
-        disabled={rescanning}
-        title="A workbook file copied into the workbooks folder appears here after a rescan."
-      >
-        {rescanning ? "Rescanning…" : "Rescan"}
-      </Button>
-    </div>
   );
 }
 

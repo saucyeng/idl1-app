@@ -204,6 +204,7 @@ export function RibbonSplitButton({ icon, label, labelled, onClick, disabled, pr
             onClick={onClick}
             disabled={disabled === true}
             title={title ?? label}
+            aria-pressed={pressed === undefined ? undefined : pressed}
             className={cn(BIG_BASE, "min-w-9 rounded-r-none")}
           >
             <BigFace icon={icon} label={label} labelled={labelled} />
@@ -212,6 +213,7 @@ export function RibbonSplitButton({ icon, label, labelled, onClick, disabled, pr
         <DropdownMenuTrigger
           type="button"
           aria-label={onClick === null ? label : `${label} — more commands`}
+          aria-pressed={onClick === null && pressed !== undefined ? pressed : undefined}
           title={onClick === null ? (title ?? label) : `${label} — more commands`}
           className={cn(
             BIG_BASE,

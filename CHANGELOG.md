@@ -20,7 +20,10 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
   Notebook, the graph is Maths, the properties column is Code. Settings ▸
   Theme gains "Show occasional commands as buttons" for anyone who would
   rather have the second tier on the row as small buttons; it is off by
-  default and remembered per machine.
+  default and remembered per machine. The inline workbook picker and the
+  placeholder "Sheet 1" tab strip go with the old row: Open lists every
+  workbook in its dialog, and the document model still has no worksheet for
+  a second tab to name.
 
 - **Every notebook command is now declared in one place [docs]
   (2026-09-11, ruling R225).** `shell/commandTiers.ts` holds each command's

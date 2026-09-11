@@ -3738,7 +3738,7 @@ export default function NotebookPage() {
           activity's own panel, which the shell shows when that activity is
           current. Nothing renders here when there is no sidebar at all
           (narrow layouts, R220 item 3): the cells are already on the page
-          and the workbook picker is in the toolbar. */}
+          and the ribbon's Open button opens the workbook-choice dialog. */}
       {notebookSidebarNode !== null &&
         createPortal(
           <NotebookSidebar
