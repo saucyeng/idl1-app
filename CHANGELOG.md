@@ -33,6 +33,20 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
   dependency — sources first, derived datasets after — with the crossings
   reduced, 32 px between cards and 96 px between layers. Dragging a card
   remembers where you put it, and Tidy lays the whole graph out again.
+- **A big session opens in the notebook without killing the app
+  (2026-09-11, ruling R211).** Opening the largest recording with a
+  workbook full of chart cells used to crash outright: every cell asked for
+  one channel and got the whole session, several at once, and the sum was
+  more than the app could hold. Each cell now reads only the channels its
+  own expressions name, one at a time, sharing the same decoded copy as the
+  charts and the cursor. The app also has a single memory budget rather
+  than a per-request check: work that does not fit right now waits its turn
+  instead of all of it starting at once and failing together, and only a
+  request too large for the whole budget on its own is refused — with a
+  toast that names what it needed, never a crash. Opening a session from
+  the library reads its summary from the file's index instead of decoding
+  every channel, so the library screen no longer pays for the whole
+  recording to show a channel list.
 
 ### Changed
 
