@@ -6,6 +6,24 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 
 ### Added
 
+- **Rebuilding the catalog no longer re-reads the whole blob store, and
+  nothing waits for it (2026-09-11, ruling R219).** The rebuild's first
+  step used to re-hash every blob under `<data>/blobs/` — on a 159-session
+  library, gigabytes of reading — while the notebook sat behind it on an
+  empty workbook list. It now carries across every blob whose size and
+  modification time still match the catalog it is replacing, and hashes
+  only what is new or has moved; re-hashing everything is what "Verify data
+  directory" is for. On ten sessions and 3.0 GB of blobs a second rebuild
+  with nothing changed reads no blob at all and finishes in about two
+  seconds, against twenty-one for the first; touching one blob re-reads
+  exactly that one. The rebuild is also a background job now
+  (`start_rebuild_job`, `rebuild_status`, `rebuild_progress`): the notebook's
+  empty state, Create, Rescan and the Data tab's maintenance panel all start
+  it and keep rendering from whatever the catalog already holds, refreshing
+  when the new one lands. While it runs the status chip reads "Rebuilding
+  catalog 12 / 159 · sessions". `idl-rs` prints both blob counts at the end
+  of an import and a `library fold-in`.
+
 - **Indexing is a background job, and it says what it is doing (2026-09-11,
   rulings R207 and R208 item 1).** Detecting every session's track visits
   and laps used to happen on the way to opening a workbook, behind a
