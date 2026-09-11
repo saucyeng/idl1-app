@@ -177,6 +177,10 @@ function renameChannelInProps(props: PlotProps, oldName: string, newName: string
     // name — which is precisely what a rename changes.
     return props.mark.definition === oldName ? { ...props, mark: { ...props.mark, definition: newName } } : props;
   }
+  // fft, spectrogram and histogram each name their channel in one
+  // `mark.channel` slot, so the three arms below read alike — they are not
+  // redundant, and collapsing them into the last one does not compile: see
+  // this function's own doc comment on spreading a union member.
   if (props.mark.channel !== oldName) return props;
   if (props.chart === "fft") {
     return { ...props, mark: { ...props.mark, channel: newName } };

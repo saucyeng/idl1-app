@@ -21,9 +21,11 @@ const SEPARATOR = " | ";
 
 /**
  * A `"gps"` tag and the colour-by channel, or the literal `"null"` for an
- * uncoloured trace. Computed identically on the host side
- * (`model/jsCellBinding.ts`) and the sandbox side (`sandbox/main.ts`), so
- * the two cannot drift.
+ * uncoloured trace. Nothing calls this yet: the host-var binding for
+ * `gps(...)` is a follow-up lane, and when it lands the host side
+ * (`model/jsCellBinding.ts`) and the sandbox side (`sandbox/main.ts`) are
+ * each to derive the name from here rather than spell it, so the two
+ * cannot drift.
  *
  * The geometry is the same whatever the colour, so the colour-by channel is
  * the whole key beyond the tag: two map cells over one selection that colour

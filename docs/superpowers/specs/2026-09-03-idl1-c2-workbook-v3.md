@@ -1509,6 +1509,18 @@ among the derived rows, which is idl0's own default Main. `"fastest"` under
 baseline: an authored table's rows are named, so a magic id there would
 shadow a real row id.
 
+**Implementation status, 2026-09-11.** Both fields are in the schema and
+round-trip through `TableModel`; **neither is honoured by the evaluator
+yet**. `evaluate_table` still iterates the authored `rows` whatever
+`rowSource` says, `mainRowId` is not resolved into
+`MathLapContext::baseline_row`, and the `"fastest"`-under-`"authored"`
+validation rule of §3.5 is not enforced. The derivation, the baseline
+resolution and that rule are a follow-up lane; until it lands, a file
+written with `rowSource: "windowLaps"` evaluates as though it said
+`"authored"`. The same is true of the `ChartSlot(lapTable)` migration row
+in §6: the migration writes the field, and the field does not yet change
+what the evaluator does.
+
 **3. Lap time is expressible — `lap_time()`, `sector_time(i)`,
 `lap_number()`.** No channel carries a lap time, and `lap_start_time(n)`
 needs an `n` a row cannot name. The three §3.3 builtins read the row's own
@@ -2675,7 +2687,8 @@ refuse for this, it tells the truth about what it could not carry); every
 dropped `WorksheetBlock` field (`id`, `placement`, `overlayTargetId`,
 `overlayOpacity`); and every table block whose `rowSource ==
 "lapSelection"` — *revised 2026-09-11 (ruling R217 item 2)*: now migrated
-to `rowSource: "windowLaps"` (§4), which **is** the live behaviour, rather
+to `rowSource: "windowLaps"` (§4), which is v3's own live-row rule (not
+yet honoured by the evaluator — see §4's implementation status), rather
 than to an authored snapshot with a warning that it was lost. The report
 line stays, because the row set it produces follows the reader's own
 selection rather than the laps the v2 file happened to list.
