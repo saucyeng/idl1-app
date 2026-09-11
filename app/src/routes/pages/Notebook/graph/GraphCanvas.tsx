@@ -155,12 +155,16 @@ function describeUnresolved(oldName: string, newName: string, unresolved: Unreso
 /**
  * The maths graph canvas (C2 §3.7, decision 40/44, ruling R135): one React
  * Flow node per {@link import("../model/graphModel").GraphNode}, laid out
- * by the document's stored `graph` positions (falling back to
- * `graphAutoLayout.ts`'s deterministic layering), coloured by
- * `graphStatus.ts`'s per-node status. Dragging a node is entirely local
- * (`useNodesState`'s own change handler) — only `onNodeDragStop` calls
- * {@link commitDrag} and hands the caller the updated markdown, matching
- * §3.7.1's "no IPC on the interaction path".
+ * by this machine's stored positions over whatever the document's `graph`
+ * key already carried (`model/graphPositions.ts`), falling back to
+ * `graphAutoLayout.ts`'s deterministic layering for anything neither has,
+ * and coloured by `graphStatus.ts`'s per-node status.
+ *
+ * Dragging a node is entirely local (`useNodesState`'s own change handler)
+ * — only `onNodeDragStop` commits, and since ruling R212 item 3 it commits
+ * to `localStorage` (`commitPositions`), never to the document. The
+ * §3.7.1 rule it used to satisfy ("no IPC on the interaction path") now
+ * holds trivially: a drag reaches no IPC at all.
  */
 export default function GraphCanvas(props: GraphCanvasProps) {
   // `useReactFlow` (search-hit centring, below) only resolves inside a
@@ -274,10 +278,11 @@ function GraphCanvasInner({ markdown, workbookId, outputs, selectedWindows, wind
   // gesture, R160): the drop target is the whole `<ReactFlow>` pane, not a
   // node -- `dropPaletteSource` picks the target cell and the new
   // definition's name (its own doc comment explains both judgment calls);
-  // this handler only decodes the drag payload and folds the resulting
-  // markdown edit with a `commitDrag` at the drop point in one `onCommit`
-  // call, so a fresh node appears roughly where it was dropped rather than
-  // wherever auto-layout would otherwise place it. A document with no math
+  // this handler only decodes the drag payload and then commits the two
+  // halves to the two places they now belong (R212 item 3): the new
+  // definition's markdown through `onCommit`, and the drop point through
+  // `commitPositions`, so a fresh node appears roughly where it was dropped
+  // rather than wherever auto-layout would otherwise place it. A document with no math
   // cell to add to is a no-op `dropPaletteSource` itself reports via a
   // `null` `newDefName` -- surfaced here exactly like `renameNotice`
   // (R153: a drop that does nothing must say so, not look like it worked).
