@@ -1777,6 +1777,17 @@ scale type would be silently dropped by the next `generate()` call. Both
 are custom code, not shorter valid forms. The generator emits `exponent`
 immediately after `type`, which it qualifies.
 
+**`y_scale` is one shared production, so `pow` is expressible on every
+chart kind** — a hand-authored FFT, histogram or scatter cell with
+`y: { type: "pow", exponent: 2 }` parses as recognised code, not custom.
+That is deliberate: `y_scale` has been one production since this section
+was written, and splitting it per chart kind to forbid a scale that merely
+has no *use* on a non-negative axis would add a second y reader for no
+correctness gain. What the Properties pane offers is the narrower thing —
+the two signed scales appear only on an axis whose values can be negative
+(a time cell's or a scatter's value axis), never on a spectrum magnitude, a
+count or a fraction.
+
 The grammar admits **any** `js_number` exponent, so a hand edit round-trips
 byte-identically; the Properties pane *offers* only the two named signed
 scales, and renders a hand-edited exponent as its own extra option for that
