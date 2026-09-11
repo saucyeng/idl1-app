@@ -98,3 +98,13 @@ lane a fixture and gives M6 task 3 its validation data. idl0 firmware is not tou
 ## Order of dispatch
 Release toolchain task 1 first (it multiplies everything after it), then M4a, M6 task 3
 in parallel (hardware-free, core-only), M4c, the C5 draft whenever a spec slot is free, M5 last.
+
+### M7 — Agent (added 2026-09-11, R222/R223/R228; promotes design L12 from optional)
+| # | Task | Layer | Depends on |
+|---|---|---|---|
+| 1 | Generated reference + editor help + "Ask an agent" (terminal) + AGENTS.md at the data root | cli, tauri, app | R222/R223 lane (running) |
+| 2 | One command table → CLI verbs, ribbon/menu/palette (R225), **and agent tool schemas** | core/cli/app | ribbon lane |
+| 3 | Desktop in-app agent: BYOK key in Settings, sidebar chat, tool calls into the engine, workbook edits as previewed, undoable diffs | tauri + app | 1, 2 |
+| 4 | Headless service on the same tool surface: pure-Rust import/eval/template instantiation, Node-side chart render to SVG, HTML report, server-side agent loop under R189 identity/storage | new service repo | 3, C5 |
+| 5 | Web page: upload a Strava activity (API → GPX/streams; harden the GPX importer) → report | web | 4 |
+Order: 1 → 2 → 3 on the desktop first (proves prompts and tools on Isaac's rides), then 4 → 5.

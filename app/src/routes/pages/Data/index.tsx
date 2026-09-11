@@ -1,5 +1,8 @@
 import { ChevronRightIcon, DatabaseIcon, WrenchIcon } from "lucide-react";
 import { useCallback, useEffect, useMemo, useReducer, useState } from "react";
+import { createPortal } from "react-dom";
+
+import { useSidebarSlotNode } from "../../../shell/sidebarSlot";
 
 import { NoteBlock } from "../../../components/brand/NoteBlock";
 import { DenseRow, TableHeader as BrandTableHeader } from "../../../components/brand/DenseRow";
@@ -516,6 +519,20 @@ export default function Data() {
 
   const railContent = <FilterRail filters={filters} counts={counts} dispatch={filterDispatch} />;
 
+  /* The Data activity's sidebar (ruling R220 item 1). What goes there is
+     the library's *tools* -- the filter rail -- and not the session list
+     itself: the list is a seven-column table (time, rider, bike, duration,
+     laps, source) and a 200-480 px strip cannot hold it without being
+     redesigned into a different, much poorer control, which is a change to
+     the Data tab rather than to the shell. Reported as the one place this
+     lane did not move what R220 item 1 names; the list and its detail pane
+     stay in the editor area, side by side, exactly as before.
+
+     Where the shell has no sidebar (narrow widths, R220 item 3) the rail
+     keeps its existing sheet/panel behaviour from `dataLayout.ts`. */
+  const sidebarNode = useSidebarSlotNode("data");
+  const railInSidebar = sidebarNode !== null && filters.view === "sessions";
+
   const maintenanceToolbar = (
     <div role="toolbar" aria-label="Maintenance" className="flex flex-wrap items-center gap-2 border-b border-rule px-3 py-2">
       <Button type="button" size="sm" onClick={handleRebuildCatalog} disabled={maintenanceState.status === "running"}>
@@ -590,17 +607,18 @@ export default function Data() {
 
   return (
     <div className="flex h-full">
-      {filters.view === "sessions" && layout.rail === "docked" && (
+      {railInSidebar && sidebarNode !== null && createPortal(railContent, sidebarNode)}
+      {!railInSidebar && filters.view === "sessions" && layout.rail === "docked" && (
         <div className="shrink-0 border-r border-rule" style={{ width: layout.railWidthPx ?? undefined }}>
           {railContent}
         </div>
       )}
-      {filters.view === "sessions" && layout.rail === "panel" && (
+      {!railInSidebar && filters.view === "sessions" && layout.rail === "panel" && (
         <div className="w-64 shrink-0 border-r border-rule">{railContent}</div>
       )}
 
       <div className="flex min-w-0 flex-1 flex-col">
-        {filters.view === "sessions" && layout.rail === "sheet" && (
+        {!railInSidebar && filters.view === "sessions" && layout.rail === "sheet" && (
           <div role="toolbar" aria-label="Filters" className="flex items-center justify-between gap-2 border-b border-rule px-3 py-2">
             <Button type="button" size="sm" onClick={() => setFilterSheetOpen(true)}>
               Filters {activeCount(filters) > 0 && `(${activeCount(filters)})`}
@@ -680,7 +698,7 @@ export default function Data() {
         <div className="w-72 shrink-0 border-l border-rule">{detailContent}</div>
       )}
 
-      {layout.rail === "sheet" && (
+      {!railInSidebar && layout.rail === "sheet" && (
         <BrandSheet open={filterSheetOpen} onOpenChange={setFilterSheetOpen} title="Filters">
           {railContent}
         </BrandSheet>

@@ -7,7 +7,7 @@ import { setToolbarSlotNode } from "./toolbarSlot";
  * (bug report fixed 2026-09-09, correcting R161). Renders an empty
  * container and publishes its DOM node into {@link setToolbarSlotNode} for
  * as long as this component is mounted — `AppShell.tsx` mounts it
- * unconditionally, directly below `TopBar`, so it publishes for the whole
+ * unconditionally, at the top of the editor area, so it publishes for the whole
  * app's lifetime.
  *
  * Deliberately bare: no padding, border or background classes here. Those
@@ -26,5 +26,5 @@ export function ToolbarSlotRow() {
     return () => setToolbarSlotNode(null);
   }, []);
 
-  return <div ref={ref} />;
+  return <div ref={ref} className="shell-chrome" />;
 }

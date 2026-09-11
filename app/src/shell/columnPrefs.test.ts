@@ -44,6 +44,7 @@ describe("readColumnPrefs", () => {
       collapsed: ["properties" as const],
       lastRoute: "data" as const,
       presets: { ...DEFAULT_COLUMN_PREFS.presets, wide: "custom" as const },
+      sidebar: { ...DEFAULT_COLUMN_PREFS.sidebar, wide: { widthPx: 360, collapsed: true } },
     };
 
     writeColumnPrefs(written);

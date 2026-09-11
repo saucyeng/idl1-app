@@ -4,6 +4,22 @@
 @import "./report-print.css";
 @import "./paper.css";
 
+/* Ruling R221.1: the window is the app's frame, not a page that scrolls.
+ *
+ * Tailwind's preflight zeroes the body margin but leaves `html`, `body` and
+ * `#root` at `height: auto` with `overflow: visible`, so anything taller
+ * than the viewport -- a flex item that failed to shrink, a route that grew
+ * by a pixel -- scrolled the whole shell inside the window, title bar and
+ * status bar with it. Pinning all three to the viewport and forbidding
+ * overflow at the document level leaves the editor area's content container
+ * as the only thing that can scroll, which is what the chrome frames. */
+html,
+body,
+#root {
+  height: 100%;
+  overflow: hidden;
+}
+
 /* UI-4: mount-and-hide (UI-DIRECTION "Persistence", decision 13) renders
  * every route always, hiding the inactive ones with the `hidden` attribute
  * (`shell/RouteHost.tsx`). The UA stylesheet already sets `display: none`
@@ -14,6 +30,46 @@
 @layer utilities {
   .shell-route-panel[hidden] {
     display: none;
+  }
+}
+
+/* Ruling R221.1: one stacking layer for all chrome, one isolated content
+ * container, and no z-index anywhere in between.
+ *
+ * `.shell-chrome` goes on every chrome region -- title bar, activity bar,
+ * sidebar frame, editor toolbar row, timeline strip, status bar. They are
+ * not one DOM element (chrome surrounds the content on four sides, so a
+ * single wrapper would have to position everything absolutely), but they
+ * are one *layer*: one class, one z-index, declared once here.
+ *
+ * `.shell-content` goes on the single container holding `RouteHost`.
+ * `isolation: isolate` makes it a stacking context, so every z-index a
+ * route declares inside it -- a sticky table header, a cell's overlay
+ * chrome, and the sandbox iframe host's own `zIndex: 0` -- is scoped to
+ * that context and cannot reach past chrome. `overflow: hidden` because
+ * this container itself scrolls on neither axis: the panes inside it do.
+ *
+ * See `shell/stackingLayers.ts` for the model and the reason
+ * `isolation: isolate` is used rather than `contain: paint`. */
+@layer utilities {
+  .shell-chrome {
+    position: relative;
+    z-index: var(--z-chrome);
+  }
+
+  .shell-content {
+    position: relative;
+    isolation: isolate;
+    overflow: hidden;
+  }
+
+  /* The one layer above the chrome (ruling R221.1): the global error
+   * banner, which reports a failure that may have taken the app tree with
+   * it and has to be readable over every region. The only element in the
+   * app that states a stacking value other than `--z-chrome`, and it states
+   * it from a token rather than an ad hoc number. */
+  .shell-alert {
+    z-index: var(--z-global-banner);
   }
 }
 

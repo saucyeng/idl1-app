@@ -4,7 +4,93 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 
 ## [Unreleased]
 
+### Changed
+
+- **The Notebook toolbar is a ribbon [docs] (2026-09-11, ruling R225).**
+  Save, Export, New, Create, Rescan, the gesture map and the time/distance
+  axis were loose buttons on one row and overlapped each other at ordinary
+  window widths. They are now tiered. Seven big icon-over-label buttons are
+  always on the row — Notebook, Maths, Code, Open, Save, Import and View —
+  beside the window chip and the playback transport. Everything reached for
+  less often sits behind the chevron half of the button it belongs to: New
+  workbook under Open, Export report under Save, Rescan library and Rebuild
+  catalog under Import, the time/distance axis and the pointer mode under
+  View. Maintenance and view toggles are nested one level further in. The
+  three columns are named in full words at last: the cells column is
+  Notebook, the graph is Maths, the properties column is Code. Settings ▸
+  Theme gains "Show occasional commands as buttons" for anyone who would
+  rather have the second tier on the row as small buttons; it is off by
+  default and remembered per machine. The inline workbook picker and the
+  placeholder "Sheet 1" tab strip go with the old row: Open lists every
+  workbook in its dialog, and the document model still has no worksheet for
+  a second tab to name.
+
+- **Every notebook command is now declared in one place [docs]
+  (2026-09-11, ruling R225).** `shell/commandTiers.ts` holds each command's
+  label, icon, shortcut and action once, and the ribbon, the menu bar and
+  the command palette all render from it, so the three can no longer
+  disagree about what a command is called or which key runs it. The View
+  menu can toggle all three columns as a result; it could previously reach
+  only two of them.
+
+### Fixed
+
+- **Toolbar buttons no longer paint over one another [docs] (2026-09-11,
+  ruling R225).** The row's groups were laid out against measured widths,
+  but the buttons inside each group were not: they were free to compress
+  below their own text, so the text spilled across the button beside it.
+  Every group now lays its buttons out without wrapping and without
+  shrinking them, and the layout model asserts that no control's contents
+  reach into its neighbour's box — between groups and between sibling
+  buttons alike.
+
+- **The window no longer scrolls as a whole [no-docs] (2026-09-11, ruling
+  R221.1).** The title bar, the activity icons, the side panel and the
+  status bar stayed put only as long as nothing inside the window grew past
+  it; when something did, the entire shell scrolled inside the outer window
+  and took the frame with it. The window is now pinned to its own height,
+  and the editor area is the only thing that scrolls. The two remaining
+  hand-picked stacking numbers went with it: the crash banner states its
+  one layer above the chrome by name, and the chart host states none at
+  all.
+
+- **A chart can no longer paint over the window's own controls
+  (2026-09-11, ruling R221.1).** Charts are drawn in a layer that floats
+  above the page so they can track scrolling in real pixels, and one piece
+  of the app's furniture at a time kept turning up underneath it — most
+  recently the timeline strip above the notebook. Every part of the window
+  frame (title bar and menus, the activity icons, the side panel, the
+  toolbar row, the timeline strip and the status bar) now sits in one
+  layer above one container that holds everything a tab draws, so nothing
+  a chart does can reach past it. The timeline strip moved into that frame
+  — same place on screen, same controls. Nothing inside a tab needs to
+  claim a stacking order any more, and the two patches that had been added
+  for this reason are gone.
+
 ### Added
+
+- **[docs] Release pipeline (2026-09-11, ruling R224).** `release.yml`
+  builds Windows and Linux installers on a `v*` tag push and opens a draft
+  GitHub Release; see `docs/RELEASING.md` for how to cut one.
+
+- **The window is laid out like an editor now (2026-09-11, ruling R220).**
+  The destination tabs are gone from the top of the window. In their place:
+  a menu bar (File, Edit, View, Go, Help) beside the app name in the title
+  bar, a 48 px strip of four icons down the left edge for Device, Data,
+  Notebook and Settings, and a resizable panel beside that strip holding
+  whichever activity you are in — the device list, the library's filters,
+  the workbook and cells list, or the settings sections. `Ctrl+1` to
+  `Ctrl+4` switch activities; `Ctrl+B` hides and shows the panel, which
+  remembers its width per screen shape the way the layout presets already
+  do. A 22 px status bar along the bottom now carries the selected
+  sessions, the device link, background import and rebuild progress, the
+  chart cache's share of its memory budget, and the current layout preset
+  (click it to cycle). Every menu entry runs a command that already
+  existed, with its shortcut printed beside it, and greys out when that
+  command cannot run. On a phone-width window there is no icon strip and
+  no side panel: the four activities are a bottom tab bar carrying the
+  status as badges, and the menus collapse into one button in the title
+  strip.
 
 - **A chart can name itself (2026-09-11).** The Properties pane has a
   **Title** field, and the title is written into the cell's own code as a

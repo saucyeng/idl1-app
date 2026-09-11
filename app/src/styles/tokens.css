@@ -94,6 +94,31 @@
   --nb-pad: 4px; /* a control's inner padding */
   --nb-gap: 6px; /* gap between controls, and between toolbar groups' members */
 
+  /* ---- Shell chrome (ruling R220): the four fixed bands of the window,
+   * stated once here rather than as a literal on each component. The
+   * anatomy is VS Code's, at R212's density — the title bar is already
+   * R216's 32 px custom bar, the status bar is exactly one dense control
+   * tall (`--nb-control-h`), and the activity bar is the one band sized
+   * for a touch target rather than a pointer. ---- */
+  --shell-title-bar-h: 32px; /* R216's custom title bar; also the narrow title strip */
+  --shell-activity-bar-w: 48px; /* the four activity icons' column, and the narrow tab bar's height */
+  --shell-status-bar-h: 22px; /* the bottom band: session, jobs, memory, preset */
+  --shell-ribbon-h: 40px; /* R225's Notebook ribbon: one 36 px big button plus its margin */
+  /* The one z-index the shell's layout states (ruling R221.1). Every
+   * chrome region carries it; the content container carries none and
+   * isolates instead, so nothing inside a route -- the sandbox iframe host
+   * included -- can out-stack chrome whatever value it picks. `1`, not a
+   * large number: a value chosen to "win" is how a stack of ad hoc
+   * z-indexes starts. The model lives in `shell/stackingLayers.ts`. */
+  --z-chrome: 1;
+  /* The only layer above the chrome (ruling R221.1): the global error
+   * banner, mounted as its own React root outside `#root` so it survives a
+   * crash that takes the app tree with it (`shell/GlobalErrorBanner.tsx`).
+   * It has to out-stack chrome, or a fatal error would be reported behind
+   * the title bar; `2` states that one relationship, where the `9999` it
+   * replaces stated only "higher than whatever else turns up". */
+  --z-global-banner: 2;
+
   /* ---- Radii ---- */
   --radius-structural: 2px; /* brandControlRadius */
   --radius: 7px; /* brandControlRadiusSoft; shadcn's --radius */

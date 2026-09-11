@@ -10,6 +10,9 @@ import HowTosSection from "./HowTosSection";
 import { MIGRATION_FLAG_KEY, runPrefsMigration, type MigrationOutcome, type SkippedField } from "./prefsMigration";
 import ProfileSection from "./ProfileSection";
 import { createPrefsStore, localStorageBackend } from "./prefsStore";
+import { createPortal } from "react-dom";
+
+import { useSidebarSlotNode } from "../../../shell/sidebarSlot";
 import { SECTIONS, defaultSectionId, sectionById } from "./sections";
 import { settingsBackend } from "./settingsBackend";
 import SyncSection from "./SyncSection";
@@ -143,25 +146,36 @@ export default function Settings() {
 
   const selected = sectionById(selectedId) ?? SECTIONS[0];
   const migrationNotices = describeMigrationNotices(migrationOutcome);
+  const sidebarNode = useSidebarSlotNode("settings");
+
+  /* The section list. Ruling R220 item 1 makes it the Settings activity's
+     sidebar content, so at widths that have a sidebar it is portaled there
+     and this page shows only the selected section. Where there is no
+     sidebar (narrow, R220 item 3) the same list renders inline above the
+     section, which is the stacked layout `settings.css` already
+     described. */
+  const sectionList = (
+    <ul className="flex shrink-0 flex-col gap-1 p-2">
+      {SECTIONS.map((section) => (
+        <li
+          key={section.id}
+          className={cn(
+            "cursor-pointer rounded-[var(--radius-structural)] px-3 py-2 hover:bg-control",
+            section.id === selected.id && "bg-control-active font-medium",
+          )}
+          onClick={() => setSelectedId(section.id)}
+        >
+          <div className="font-mono text-sm text-fg">{section.label}</div>
+          <p className="font-mono text-xs text-fg-dim">{section.description}</p>
+        </li>
+      ))}
+    </ul>
+  );
 
   return (
-    <div className="flex h-full flex-col gap-4 overflow-auto p-4 min-[720px]:flex-row min-[720px]:items-start min-[720px]:overflow-hidden">
-      <ul className="flex shrink-0 flex-col gap-1 min-[720px]:w-64 min-[720px]:overflow-auto">
-        {SECTIONS.map((section) => (
-          <li
-            key={section.id}
-            className={cn(
-              "cursor-pointer rounded-[var(--radius-structural)] px-3 py-2 hover:bg-control",
-              section.id === selected.id && "bg-control-active font-medium",
-            )}
-            onClick={() => setSelectedId(section.id)}
-          >
-            <div className="font-mono text-sm text-fg">{section.label}</div>
-            <p className="font-mono text-xs text-fg-dim">{section.description}</p>
-          </li>
-        ))}
-      </ul>
-      <div className="flex min-w-0 flex-1 flex-col gap-4 border-t border-rule pt-4 min-[720px]:h-full min-[720px]:max-w-[720px] min-[720px]:overflow-auto min-[720px]:border-t-0 min-[720px]:border-l min-[720px]:pt-0 min-[720px]:pl-4">
+    <div className="flex h-full flex-col gap-4 overflow-auto p-4 min-[720px]:items-start min-[720px]:overflow-hidden">
+      {sidebarNode === null ? sectionList : createPortal(sectionList, sidebarNode)}
+      <div className="flex min-w-0 w-full flex-1 flex-col gap-4 min-[720px]:h-full min-[720px]:max-w-[720px] min-[720px]:overflow-auto">
         <SectionHead>{selected.label}</SectionHead>
         <p className="font-mono text-xs text-fg-dim">{selected.description}</p>
         {selected.id === "profile" ? (

@@ -37,6 +37,11 @@ import { useRouteVisible } from "../../../shell/routeVisibility";
 import { useEditorSlotNode } from "../../../shell/editorSlot";
 import { useGraphSlotNode } from "../../../shell/graphSlot";
 import { useToolbarSlotNode } from "../../../shell/toolbarSlot";
+import { useTimelineSlotNode } from "../../../shell/timelineSlot";
+import { useSidebarSlotNode } from "../../../shell/sidebarSlot";
+import { useCommand } from "../../../shell/commandRegistry";
+import { MENU_COMMAND_IDS } from "../../../shell/menuModel";
+import { publishMemoryUse } from "../../../shell/memoryBudget";
 import { ColumnPlaceholder } from "../../../shell/ColumnFrame";
 import { resolveRegister, type PaperTheme, type ThemeChoice } from "../Settings/theme";
 import { createPrefsStore, localStorageBackend } from "../Settings/prefsStore";
@@ -58,6 +63,8 @@ import type { PropertiesFormChannelOption, PropertiesFormLapOption } from "./com
 import TimelineStrip from "./components/TimelineStrip";
 import NotebookToolbar from "./components/NotebookToolbar";
 import { WorkbookNotices } from "./components/WorkbookBar";
+import NotebookSidebar from "./components/NotebookSidebar";
+import { NewWorkbookDialog, OpenWorkbookDialog } from "./components/WorkbookMenuDialogs";
 import GraphCanvas from "./graph/GraphCanvas";
 import {
   combineHistogramWindows,
@@ -126,6 +133,7 @@ import {
   readNotebookColumnVisibility,
   visibleNotebookColumnIds,
   writeNotebookColumnVisibility,
+  type NotebookColumnId,
   type NotebookColumnVisibility,
 } from "./model/notebookColumns";
 import { readNotebookPrefs, writeNotebookPrefs } from "./model/notebookPrefs";
@@ -136,7 +144,7 @@ import { isSelfWrite, saveFlow, type SaveFlowState, type WorkbookEventWithHash }
 import { initialSandboxPrimeState, nextSandboxPrimeState } from "./model/sandboxLifecycle";
 import { runSessionSpan, type SessionSpanAction, type SessionSpanDeps } from "./model/sessionSpanDriver";
 import { commitSharedViewport, viewportForCell, type SharedViewport } from "./model/sharedViewport";
-import { TileCache } from "./model/tileCache";
+import { DEFAULT_CACHE_BYTES, TileCache } from "./model/tileCache";
 import { timelineCommit } from "./model/timelineStrip";
 import { resolvedWindowKeysFor, toWireWindow, windowSpanFor } from "./model/viewportWindows";
 import { chooseWorkbookEntry, type WorkbookEntry } from "./model/workbookEntry";
@@ -956,6 +964,8 @@ export default function NotebookPage() {
   // read further down for `PlaybackTransport`) is the same "is this tab the
   // one currently shown" signal.
   const toolbarSlotNode = useToolbarSlotNode();
+  const notebookSidebarNode = useSidebarSlotNode("notebook");
+  const timelineSlotNode = useTimelineSlotNode();
 
   // The notebook output register (decision 31) -- stored in `UiPrefs`
   // (UI-7 Q1), read/written through `notebookPrefsStore` above. `null`
@@ -1012,7 +1022,14 @@ export default function NotebookPage() {
 
   const containerRef = useRef<HTMLDivElement>(null);
   const sandboxHostRef = useRef<SandboxHost | null>(null);
-  const sessionRef = useRef<NotebookSession>(new NotebookSession(new TileCache()));
+  // The tile cache reports its own bytes to the shell's status-bar memory
+  // meter (ruling R220 item 1). `DEFAULT_CACHE_BYTES` is passed explicitly
+  // because the callback is the second argument; `publishMemoryUse` only
+  // notifies on a whole-percent change, so a pan that puts hundreds of
+  // tiles re-renders the status bar a handful of times, not hundreds.
+  const sessionRef = useRef<NotebookSession>(
+    new NotebookSession(new TileCache(DEFAULT_CACHE_BYTES, publishMemoryUse))
+  );
   const openSeqRef = useRef(0);
   const evalSeqRef = useRef(0);
   /**
@@ -3519,6 +3536,14 @@ export default function NotebookPage() {
   };
   const visibleColumnIds = visibleNotebookColumnIds(columnVisibility, notebookColumnAvailability);
   const columnsToggleAvailable = !paperActive;
+
+  /** The toggle group's next on-id set with `column` flipped — what the
+   *  View menu's three column items hand `applyColumnToggleValue`, so a
+   *  menu pick goes through exactly the same path (and the same R213
+   *  "thrown by hand" bookkeeping) as the ribbon's own panel buttons. */
+  function toggledColumnIds(column: NotebookColumnId): string[] {
+    return columnVisibility[column] ? visibleColumnIds.filter((id) => id !== column) : [...visibleColumnIds, column];
+  }
   // `!graphIsPortalHosted`: when the wide studio's maths column hosts the
   // canvas, this page renders no graph pane of its own -- one
   // `GraphCanvas` instance, in one place, exactly as `editorIsPortalHosted`
@@ -3584,6 +3609,54 @@ export default function NotebookPage() {
   // parked behind a "More" disclosure, because "nothing in this codebase
   // measures toolbar overflow yet") is now an actual measurement --
   // `shell/toolbarLayout.ts` over a `ResizeObserver` on the row.
+  // --- the File and View menus' Notebook commands (ruling R220 item 1) ---
+  //
+  // Registered here, not in the shell: every one of these closes over this
+  // page's own state (the open document, the catalog entry, the column
+  // visibility R213 reads), which is exactly why R109 puts the handler
+  // where the state is. `available` is the second argument, so a command
+  // whose preconditions are not met leaves the registry and greys out in
+  // its menu rather than being a menu item that silently does nothing.
+  const [newWorkbookOpen, setNewWorkbookOpen] = useState(false);
+  const [openWorkbookOpen, setOpenWorkbookOpen] = useState(false);
+
+  useCommand(MENU_COMMAND_IDS.workbookNew, true, () => setNewWorkbookOpen(true));
+  useCommand(MENU_COMMAND_IDS.workbookOpen, true, () => setOpenWorkbookOpen(true));
+  useCommand(MENU_COMMAND_IDS.libraryRescan, !rescanning, () => void handleRescan());
+  useCommand(
+    MENU_COMMAND_IDS.workbookSave,
+    state.handle !== null && !saveUnavailable && saveFlowState.status !== "saving",
+    () => void handleSave()
+  );
+  useCommand(
+    MENU_COMMAND_IDS.workbookExportReport,
+    state.handle !== null && !exportingReport && state.markdown !== null,
+    () => void handleExportReport()
+  );
+  useCommand(MENU_COMMAND_IDS.viewToggleDense, true, () => applyDense(!dense));
+  useCommand(MENU_COMMAND_IDS.viewToggleGraph, columnsToggleAvailable, () =>
+    applyColumnToggleValue(toggledColumnIds("graph"))
+  );
+  useCommand(MENU_COMMAND_IDS.viewToggleProperties, columnsToggleAvailable, () =>
+    applyColumnToggleValue(toggledColumnIds("properties"))
+  );
+  // The cells column, under the word R225 item 2 gives it: "Notebook". It
+  // had no command before the tier table named one, so the menu bar's
+  // View menu could toggle two of the three panels and not the third.
+  useCommand(MENU_COMMAND_IDS.viewToggleCells, columnsToggleAvailable, () =>
+    applyColumnToggleValue(toggledColumnIds("cells"))
+  );
+
+  const timelineElement = (
+    <TimelineStrip
+      windows={windows}
+      detailsByWindow={sessionDetailsByWindow}
+      spanUsByWindow={sessionSpanUsByWindow}
+      viewport={sharedViewport}
+      onCommit={(laneIndex, candidate) => appDispatch({ type: "SET_WINDOWS", windows: timelineCommit(windows, laneIndex, candidate) })}
+    />
+  );
+
   const toolbarElement = (
     <>
       <NotebookToolbar
@@ -3592,13 +3665,8 @@ export default function NotebookPage() {
         onColumnToggleValue={applyColumnToggleValue}
         entry={entry}
         rescanning={rescanning}
-        creating={creating}
         dirty={state.dirtyCellIds.size > 0 || state.frontMatterDirty}
-        workbookBarError={workbookBarError}
-        lastRebuild={lastRebuild}
-        onCreate={(name) => void handleCreate(name)}
         onRescan={() => void handleRescan()}
-        onSelect={handleSelect}
         register={register}
         dense={dense}
         onDenseChange={applyDense}
@@ -3663,21 +3731,51 @@ export default function NotebookPage() {
           leaks onto another tab either. */}
       {routeVisible && toolbarSlotNode !== null && createPortal(toolbarElement, toolbarSlotNode)}
       {routeVisible && toolbarSlotNode === null && toolbarElement}
-      {/* Master timeline strip (decision 52, R115, R134 item 1): one lane
-          per selected window, own draggable boundary handles. Not one of
-          R161's named toolbar controls -- kept as its own full-width strip,
-          same as before, directly under the toolbar. Commits a drag to
-          `AppState.selection` on pointer-up only (`model/timelineStrip.ts`'s
-          own settle-discipline doc comment) -- `timelineCommit` is the same
-          pure function `TimelineStrip.tsx`'s own test suite exercises
-          directly; this call site only wires it to `appDispatch`. */}
-      <TimelineStrip
-        windows={windows}
-        detailsByWindow={sessionDetailsByWindow}
-        spanUsByWindow={sessionSpanUsByWindow}
-        viewport={sharedViewport}
-        onCommit={(laneIndex, candidate) => appDispatch({ type: "SET_WINDOWS", windows: timelineCommit(windows, laneIndex, candidate) })}
+      {/* The Notebook activity's sidebar content (ruling R220 item 1): the
+          workbook list and the cells outline. Unlike the toolbar above,
+          this needs no `routeVisible` gate — `sidebarSlot.ts` keys its
+          nodes by route, so this portal only ever reaches the Notebook
+          activity's own panel, which the shell shows when that activity is
+          current. Nothing renders here when there is no sidebar at all
+          (narrow layouts, R220 item 3): the cells are already on the page
+          and the ribbon's Open button opens the workbook-choice dialog. */}
+      {notebookSidebarNode !== null &&
+        createPortal(
+          <NotebookSidebar
+            entry={entry}
+            onSelectWorkbook={handleSelect}
+            cells={state.cells}
+            displayName={(cellId) => displayNameFor(cellDisplayNameMap, cellId)}
+            selectedCellId={selectedCellId}
+            onSelectCell={setSelectedCellId}
+          />,
+          notebookSidebarNode
+        )}
+      <NewWorkbookDialog
+        open={newWorkbookOpen}
+        onOpenChange={setNewWorkbookOpen}
+        creating={creating}
+        onCreate={(name) => void handleCreate(name)}
       />
+      <OpenWorkbookDialog open={openWorkbookOpen} onOpenChange={setOpenWorkbookOpen} entry={entry} onSelect={handleSelect} />
+      {/* Master timeline strip (decision 52, R115, R134 item 1): one lane
+          per selected window, own draggable boundary handles. Commits a
+          drag to `AppState.selection` on pointer-up only
+          (`model/timelineStrip.ts`'s own settle-discipline doc comment) --
+          `timelineCommit` is the same pure function `TimelineStrip.tsx`'s
+          test suite exercises directly; this call site only wires it to
+          `appDispatch`.
+
+          Ruling R221.1 moves it into the shell's chrome band, directly
+          under the toolbar row it already sat beneath. It is a control over
+          the window selection, not part of the document, and while it lived
+          inside this route's content a chart scrolled up the page painted
+          straight over it (the bug R221.1 was raised for). Same component,
+          same props, same place on screen -- a different layer. Gated on
+          `routeVisible` for the reason the toolbar above is: the slot node
+          exists whether or not this tab is active (R93). */}
+      {routeVisible && timelineSlotNode !== null && createPortal(timelineElement, timelineSlotNode)}
+      {routeVisible && timelineSlotNode === null && timelineElement}
       {/* R161 item 4: banners stay banners -- a statement about the
           document, not a control -- and move under the toolbar, spanning
           the tab, so they never shrink one column. Same conditions, same
@@ -3805,17 +3903,27 @@ export default function NotebookPage() {
         )}
       {/* The sandbox iframe host: fixed to the full viewport so cell
           iframes positioned into it (`sendLayout`) track scroll in real
-          pixels. `zIndex: 0` is explicit, not incidental -- a fixed element
-          with *any* stated z-index stacks above ordinary static in-flow
-          content regardless of DOM order, which is exactly what a chart
-          needs against the cell text around it. See the toolbar's own
-          layer-order comment above (`toolbarElement`) for why this host
-          must stay above in-flow content everywhere except that one row,
-          and why the toolbar's `z-10` -- not lowering this `0` -- is what
-          keeps a scrolled chart from painting over it. */}
+          pixels.
+
+          It states no z-index at all (ruling R221.1: content never carries
+          one). It does not need the `zIndex: 0` it used to carry: a
+          positioned element paints above ordinary static in-flow content in
+          its stacking context whatever its z-index, `auto` included, so a
+          chart still covers the cell text around it. And it cannot reach
+          the window's chrome, because this element is a descendant of the
+          shell's single `shell-content` container, whose `isolation:
+          isolate` makes that container a stacking context -- everything
+          here is painted as part of it, under the chrome layer outside.
+
+          `isolation`, not `contain: paint`: containment would make that
+          container the containing block for this fixed element, so
+          `inset: 0` would mean the content box rather than the viewport,
+          and every iframe -- positioned from a viewport-relative
+          `getBoundingClientRect` -- would be offset by the chrome's own
+          size. */}
       <div
         ref={containerRef}
-        style={{ position: "fixed", inset: 0, pointerEvents: "none", zIndex: 0, border: "none" }}
+        style={{ position: "fixed", inset: 0, pointerEvents: "none", border: "none" }}
       />
       {/* Task R2: `styles/report-print.css` hides everything else and
           shows only this root once `window.print()` runs -- the report is

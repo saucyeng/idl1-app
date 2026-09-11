@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useReducer, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 
 import { SectionHead } from "../../../components/brand/SectionHead";
 import { listProfiles, saveProfile, deleteProfile } from "../../../ipc/app";
@@ -13,9 +14,12 @@ import type { DeviceConfig } from "./config/model";
 import DeviceControls from "./DeviceControls";
 import type { ControlOutcomeView } from "./DeviceControls";
 import DeviceFiles from "./DeviceFiles";
+import DeviceList from "./DeviceList";
 import { describeIpcError } from "./errors";
 import type { DeviceIpcError } from "./errors";
 import HeroCard from "./HeroCard";
+import { setDeviceLink } from "../../../shell/deviceLink";
+import { useSidebarSlotNode } from "../../../shell/sidebarSlot";
 import { localStorageLastDeviceBackend, shouldAutoConnect } from "./lastDevice";
 import ProfileBar from "./ProfileBar";
 import { initialProfilesState, profilesReducer } from "./profiles";
@@ -342,8 +346,33 @@ export default function Device() {
 
   const elapsedMs = recordingStartedAtMs === null ? null : Date.now() - recordingStartedAtMs;
 
+  // Publishes this tab's conclusion about the link for the shell's chrome
+  // to show (ruling R220 item 1's activity-bar dot and status-bar item).
+  // No new work: the 1 Hz `device_status` poll above is the only source,
+  // and `setDeviceLink` ignores a repeat of the value it already holds, so
+  // a steady connection re-renders the chrome once, not once a second.
+  const linkLost = isLinkLost(statusState);
+  useEffect(() => {
+    setDeviceLink(state.activeDeviceId === null ? "disconnected" : linkLost ? "lost" : "connected");
+  }, [state.activeDeviceId, linkLost]);
+
+  // The device list is this activity's sidebar content (R220 item 1). Where
+  // there is no sidebar (narrow widths, R220 item 3) it renders inline at
+  // the top of the page instead, above the hero card it selects for.
+  const sidebarNode = useSidebarSlotNode("device");
+  const deviceList = (
+    <DeviceList state={state} onScan={onScan} onConnect={onConnect} onSwitchActive={onSwitchActive} />
+  );
+
   return (
-    <div className="device-tab mx-auto flex max-w-[480px] flex-col gap-4 p-4">
+    /* `h-full overflow-y-auto`, like every other route's own scroll
+       container (ruling R221.1): the shell's content container clips rather
+       than scrolls, so a route that supplies no scrolling element of its own
+       loses whatever falls past the fold. This tab is a single 480 px column
+       of cards -- hero, WiFi, files, config -- that is easily taller than a
+       short window. */
+    <div className="device-tab mx-auto flex h-full max-w-[480px] flex-col gap-4 overflow-y-auto p-4">
+      {sidebarNode === null ? deviceList : createPortal(deviceList, sidebarNode)}
       <section className="device-tab__status flex flex-col gap-2">
         <HeroCard
           connectionState={state}

@@ -43,6 +43,12 @@ To trigger: GitHub → Actions tab → "Coverage" → Run workflow. Read the
 numbers either from the job summary (Rust) or by downloading the artifacts
 and opening the HTML reports (both crates and app).
 
+## `release.yml`
+
+Tag-triggered (`v*`) or manual dispatch, never on push. Builds Windows and
+Linux installers and opens a draft GitHub Release. See `docs/RELEASING.md`
+for the full process.
+
 ## Minute budget
 
 Superproject repo is private: 2000 Actions minutes/month. `ci.yml` is the
@@ -75,3 +81,7 @@ library is untouchable from a dev build.
 The release identifier in `tauri.conf.json` is unchanged, so `tauri build`
 and every bundle target are unaffected; the overlay is only ever passed on
 the `tauri:dev` path.
+
+## Config overlays replace arrays
+
+`tauri.dev.conf.json` and `tauri.windows.conf.json` both define `app.windows`; JSON merge replaces the array wholesale, so the dev overlay must repeat `"decorations": false` (R216) or the dev build shows the native title bar. Any new window property must be added to both.
