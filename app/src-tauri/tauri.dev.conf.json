@@ -6,7 +6,8 @@
       {
         "title": "idl1 (dev)",
         "width": 800,
-        "height": 600
+        "height": 600,
+        "decorations": false
       }
     ]
   }
