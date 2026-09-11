@@ -4,6 +4,8 @@ import { fetchEngineVersion } from "../ipc/engine";
 import { useAppState } from "../state/AppState";
 import type { RouteId } from "../routes/types";
 import { navPlacement, resolveLayout } from "./layout";
+import { ASPECT_CLASS_DEBOUNCE_MS, resolveAspectClass } from "./aspectClass";
+import { cycleLayoutPreset, setAspectClass } from "./layoutPreset";
 import { readColumnPrefs, writeColumnPrefs } from "./columnPrefs";
 import TopBar from "./TopBar";
 import BottomBar from "./BottomBar";
@@ -31,6 +33,35 @@ function useWindowWidth(): number {
 }
 
 /**
+ * Publishes the viewport's aspect class into `shell/layoutPreset.ts`, so a
+ * window that moves to a differently-shaped monitor recalls that shape's own
+ * layout preset (ruling R213 item 2).
+ *
+ * The debounce is the ruling's own ("re-evaluated on resize with a 200 ms
+ * debounce and never flips during a gesture"): a window dragged between
+ * monitors, or a maximise animation, crosses several ratios on the way, and
+ * only where it comes to rest names the arrangement the user wants back.
+ * Runs once on mount too, un-debounced, so the first frame is already the
+ * right class rather than `layoutPreset.ts`'s pre-measurement default.
+ */
+function useAspectClassWatcher(): void {
+  useEffect(() => {
+    setAspectClass(resolveAspectClass(window.innerWidth, window.innerHeight));
+
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const onResize = () => {
+      clearTimeout(timer);
+      timer = setTimeout(() => setAspectClass(resolveAspectClass(window.innerWidth, window.innerHeight)), ASPECT_CLASS_DEBOUNCE_MS);
+    };
+    window.addEventListener("resize", onResize);
+    return () => {
+      clearTimeout(timer);
+      window.removeEventListener("resize", onResize);
+    };
+  }, []);
+}
+
+/**
  * The app frame: top bar or bottom bar (`shell/layout.ts`'s `navPlacement`),
  * every destination mounted via `RouteHost`, the `Ctrl/⌘-K` command palette,
  * and the `Toaster` (UI-3), mounted once here (UI-DIRECTION "App shell and
@@ -42,6 +73,7 @@ export default function AppShell() {
   const layout = resolveLayout(width);
   const placement = navPlacement(layout);
   const [paletteOpen, setPaletteOpen] = useState(false);
+  useAspectClassWatcher();
 
   // Engine version fetch (C3 §3.1) — carried over unchanged from the
   // previous `Shell` component; a mount-only fetch, not width- or
@@ -56,9 +88,17 @@ export default function AppShell() {
     writeColumnPrefs({ ...prefs, lastRoute: route });
   }
 
-  // `Ctrl/⌘-K` opens the palette from anywhere in the shell.
+  // `Ctrl/⌘-K` opens the palette from anywhere in the shell; `Ctrl/⌘-Shift-L`
+  // walks the layout presets (ruling R213 item 3: Output → Maths → Split →
+  // Stacked → …). One shortcut, not four: the picker in the toolbar's view
+  // group is where a specific arrangement is chosen by name.
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent): void {
+      if (e.shiftKey && e.key.toLowerCase() === "l" && (e.metaKey || e.ctrlKey)) {
+        e.preventDefault();
+        cycleLayoutPreset();
+        return;
+      }
       if (e.key.toLowerCase() === "k" && (e.metaKey || e.ctrlKey)) {
         e.preventDefault();
         setPaletteOpen((open) => !open);

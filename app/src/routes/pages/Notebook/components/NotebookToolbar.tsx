@@ -9,6 +9,7 @@ import type { SessionDetail } from "../../../../ipc/catalog";
 import type { IpcError } from "../../../../ipc/workbook";
 import type { SelectionWindow } from "../../../../state/selection";
 import { toolbarLayout, type ToolbarGroupId } from "../../../../shell/toolbarLayout";
+import { isLayoutPresetId, LAYOUT_PRESETS, type ActivePreset, type LayoutPresetId } from "../../../../shell/layoutPresets";
 import PlaybackTransport from "../interaction/PlaybackTransport";
 import type { PlaybackMode } from "../interaction/playbackMode";
 import type { InputMapPreset } from "../interaction/inputMap";
@@ -56,6 +57,11 @@ export interface NotebookToolbarProps {
   // --- view group ---
   register: OutputRegister;
   onRegisterChange: (register: OutputRegister) => void;
+  /** The layout preset this viewport shape is on, or `"custom"` after a
+   *  column was thrown by hand (R213 item 3) — the picker then shows
+   *  nothing selected rather than lying about which arrangement is live. */
+  activePreset: ActivePreset;
+  onPresetChange: (id: LayoutPresetId) => void;
 
   // --- window chip ---
   windows: readonly SelectionWindow[];
@@ -213,7 +219,35 @@ export default function NotebookToolbar(props: NotebookToolbarProps) {
         return <WorkbookPicker entry={props.entry} dirty={props.dirty} onSelect={props.onSelect} labelled={labelled} />;
 
       case "view":
-        return <RegisterSwitch register={props.register} onRegisterChange={props.onRegisterChange} labelled={labelled} />;
+        return (
+          <div className="flex items-center gap-[var(--nb-gap)]">
+            <RegisterSwitch register={props.register} onRegisterChange={props.onRegisterChange} labelled={labelled} />
+            {/* R213 item 3's compact preset picker. Single-select, and a
+                `"custom"` state selects nothing — `ToggleGroup`'s
+                `type="single"` reports `""` when the pressed item is
+                pressed again, which `isLayoutPresetId` drops, so a preset
+                can be re-applied but never un-applied into a state with no
+                name. Paper · Studio (R184) stays its own switch beside it,
+                never folded into a preset. */}
+            <ToggleGroup
+              type="single"
+              density="tight"
+              aria-label="Layout preset"
+              value={props.activePreset === "custom" ? "" : props.activePreset}
+              onValueChange={(id: string) => {
+                if (isLayoutPresetId(id)) props.onPresetChange(id);
+              }}
+            >
+              {LAYOUT_PRESETS.map((preset) => (
+                <ToggleGroupItem key={preset.id} value={preset.id} title={preset.title}>
+                  <span aria-hidden>{preset.glyph}</span>
+                  {labelled && <span className="ml-[var(--nb-pad)]">{preset.label}</span>}
+                  {!labelled && <span className="sr-only">{preset.label}</span>}
+                </ToggleGroupItem>
+              ))}
+            </ToggleGroup>
+          </div>
+        );
 
       case "window":
         return (

@@ -4,6 +4,12 @@ import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@/componen
 import { readColumnPrefs, writeColumnPrefs, type ColumnId, type ColumnPrefs } from "./columnPrefs";
 import { decideSettledColumnPrefs, type SettledColumnSizes } from "./columnResize";
 import { visibleColumnIds } from "./columnVisibility";
+import type { MathsOrientation } from "./layoutPresets";
+
+/** How tall the stacked maths row opens, in CSS px (R213 item 1) — the row
+ *  is freely draggable from there and its height is not remembered (see
+ *  `outputSlot` below on why not). */
+const MATHS_ROW_DEFAULT_HEIGHT_PX = 300;
 
 /** Props for {@link ColumnFrame}. */
 export interface ColumnFrameProps {
@@ -25,13 +31,35 @@ export interface ColumnFrameProps {
   /** Optional for the same reason `library` is, and through the same
    *  `visibleColumnIds` rule: the Notebook toolbar's Graph toggle turned
    *  off passes `undefined` (R208 item 2, via `shell/
-   *  graphColumnVisible.ts`), and no `maths` panel or divider renders at
+   *  studioColumns.ts`), and no `maths` panel or divider renders at
    *  all. A stored width for the column survives in `columnPrefs.ts`
    *  untouched, so toggling it back restores the width the user last
    *  dragged it to. */
   maths?: ReactNode;
-  properties: ReactNode;
+  /** Optional for the same reason `maths` is, since R213 item 1's Output
+   *  preset ("notebook output full width") has to remove the properties
+   *  column outright — a 320 px panel holding a "hidden" placeholder is not
+   *  full width. */
+  properties?: ReactNode;
   output: ReactNode;
+  /** Where the maths panel sits: `"column"` beside the output (every preset
+   *  but Stacked), or `"row"` above it (R213 item 1's Stacked, for 16:9
+   *  screens where vertical space is the cheap axis). Ignored when `maths`
+   *  is absent. Defaults to `"column"` — the arrangement before R213. */
+  mathsOrientation?: MathsOrientation;
+  /** A width in CSS px to open the output column at, overriding the
+   *  remembered one — R213 item 1's Maths preset ("output narrow (min
+   *  width, still live)"). `null`/absent keeps whatever width the user last
+   *  dragged it to. A drag from here on is persisted as usual, so the
+   *  override is a starting point, not a pin.
+   *
+   *  There is one remembered output width, not one per preset: dragging
+   *  the output wider while Maths is active is the width Split and Stacked
+   *  then open with too. Deliberate — `columnPrefs.ts` stores a column's
+   *  width, and R213 gives presets the *arrangement*, not a private copy of
+   *  every size in it; a user who drags a column has said what they want
+   *  that column to be. */
+  outputWidthPx?: number | null;
 }
 
 /**
@@ -46,7 +74,7 @@ export interface ColumnFrameProps {
  * back; the output column is never collapsible (the frame is empty
  * without it).
  */
-export default function ColumnFrame({ library, maths, properties, output }: ColumnFrameProps) {
+export default function ColumnFrame({ library, maths, properties, output, mathsOrientation = "column", outputWidthPx = null }: ColumnFrameProps) {
   const initialPrefs = useRef<ColumnPrefs>(readColumnPrefs()).current;
   const [prefs, setPrefs] = useState(initialPrefs);
 
@@ -83,14 +111,55 @@ export default function ColumnFrame({ library, maths, properties, output }: Colu
     library: { defaultSize: prefs.widths.library, minSize: 48, maxSize: 480 },
     maths: { defaultSize: prefs.widths.maths, minSize: 48 },
     properties: { defaultSize: prefs.widths.properties, minSize: 48, maxSize: 480 },
-    output: { defaultSize: prefs.widths.output, minSize: 200 },
+    output: { defaultSize: outputWidthPx ?? prefs.widths.output, minSize: 200 },
   };
 
   const content: Partial<Record<ColumnId, ReactNode>> = { library, maths, properties, output };
-  const columns = visibleColumnIds(content);
+  // R213 item 1's Stacked: the maths panel leaves the horizontal row and
+  // becomes a row above the output inside the output column's own slot.
+  // Every other column is unchanged, which is what "properties and cells as
+  // in Split" asks for.
+  const stacked = mathsOrientation === "row" && maths !== undefined;
+  const columns = visibleColumnIds(stacked ? { ...content, maths: undefined } : content);
+
+  /** The output slot's contents: the output itself, or — stacked — a
+   *  vertical group with the maths panel above it.
+   *
+   *  The nested group deliberately persists nothing: `columnPrefs.ts`
+   *  stores *widths*, and these two panels are sized on the vertical axis.
+   *  Writing a height into `widths.maths` would corrupt the column width
+   *  Split and Maths then open with. R213 does not ask for a remembered row
+   *  height, so the row opens at `MATHS_ROW_DEFAULT_HEIGHT_PX` each time
+   *  the preset is applied and is freely draggable from there (lane-local
+   *  call, CLAUDE.md §1). */
+  const outputSlot = stacked ? (
+    <ResizablePanelGroup orientation="vertical" className="h-full w-full">
+      <ResizablePanel id="maths-row" collapsible collapsedSize={0} defaultSize={MATHS_ROW_DEFAULT_HEIGHT_PX} minSize={48} className="overflow-auto">
+        {maths}
+      </ResizablePanel>
+      <ResizableHandle withHandle />
+      <ResizablePanel id="output-body" minSize={120} className="overflow-auto border-t border-rule">
+        {output}
+      </ResizablePanel>
+    </ResizablePanelGroup>
+  ) : (
+    output
+  );
 
   return (
-    <ResizablePanelGroup orientation="horizontal" className="h-full w-full" onLayoutChanged={onLayoutChanged}>
+    // Remounting on a layout change is deliberate: `defaultSize` is read
+    // once per panel instance by `react-resizable-panels`, so an applied
+    // preset's `outputWidthPx` (or a column arriving/leaving) would
+    // otherwise leave every panel at the size the previous arrangement had.
+    // The slot columns republish their DOM nodes on remount
+    // (`GraphSlotColumn`/`EditorSlotColumn`), which is the same lifecycle a
+    // toggled column already goes through.
+    <ResizablePanelGroup
+      key={`${columns.join("-")}|${stacked ? "row" : "column"}|${outputWidthPx ?? "kept"}`}
+      orientation="horizontal"
+      className="h-full w-full"
+      onLayoutChanged={onLayoutChanged}
+    >
       {columns.map((id, index) => (
         <Fragment key={id}>
           {index > 0 && <ResizableHandle withHandle />}
@@ -102,7 +171,7 @@ export default function ColumnFrame({ library, maths, properties, output }: Colu
             onResize={(size) => onColumnResize(id, size.inPixels)}
             className="overflow-auto border-rule [&:not(:first-child)]:border-l"
           >
-            {content[id]}
+            {id === "output" ? outputSlot : content[id]}
           </ResizablePanel>
         </Fragment>
       ))}

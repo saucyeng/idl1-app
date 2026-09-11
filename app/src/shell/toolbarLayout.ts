@@ -78,8 +78,8 @@ export const NOTEBOOK_TOOLBAR_GROUPS: readonly ToolbarGroupSpec[] = [
   { id: "columns", labelledWidth: 168, compactWidth: 72 },
   // Workbook picker + worksheet tabs + "+".
   { id: "document", labelledWidth: 244, compactWidth: 152 },
-  // Paper · Studio.
-  { id: "view", labelledWidth: 104, compactWidth: 52 },
+  // Paper · Studio, then R213's four-way layout preset picker.
+  { id: "view", labelledWidth: 356, compactWidth: 152 },
   // Session + laps. Never collapses; truncates instead.
   { id: "window", labelledWidth: 160, compactWidth: 96 },
   // Play/pause + speed + follow mode. Never collapses.
