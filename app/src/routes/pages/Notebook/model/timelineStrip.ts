@@ -104,6 +104,34 @@ export function timeUsForPx(pixelX: number, sessionSpanUs: number, stripWidthPx:
   return (clampedPx / stripWidthPx) * sessionSpanUs;
 }
 
+/**
+ * A pointer event's position in **lane px** — the coordinate frame
+ * {@link handlePositionsFor}, {@link hitTestHandle} and
+ * {@link dragCandidate} all speak (ruling R221 item 3).
+ *
+ * The frame's origin is the **lane element's** own left edge, not the
+ * strip container's. That distinction is the whole reason this function
+ * exists, and it is what made the handles undraggable: the container the
+ * strip measures its width from is padded (`px-2`), so its
+ * `getBoundingClientRect().left` sits 8 CSS px left of the lanes drawn
+ * inside it, while the width a `ResizeObserver` reports for it is its
+ * *content* width, which the lanes fill exactly. Measuring `clientX` from
+ * the container therefore offset every hit test by the padding — 8 px
+ * against a 6 px tolerance, so a pointer placed exactly on a handle tested
+ * as 8 px away from it and no drag ever started.
+ *
+ * **Invariant:** `laneLeftPx` and the `stripWidthPx` passed alongside it
+ * must describe the same box. Pass the lane element's own
+ * `getBoundingClientRect().left`; the lane is `width: 100%` of the padded
+ * container's content box, which is what the observer measures.
+ *
+ * @param clientX A pointer event's `clientX`, viewport px.
+ * @param laneLeftPx The lane element's `getBoundingClientRect().left`.
+ */
+export function lanePixelX(clientX: number, laneLeftPx: number): number {
+  return clientX - laneLeftPx;
+}
+
 /** A lane's two draggable boundary handles, in strip px. */
 export interface HandlePositions {
   startPx: number;

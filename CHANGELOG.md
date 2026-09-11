@@ -47,6 +47,20 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 
 ### Fixed
 
+- **The timeline strip's handles can be dragged again (2026-09-11, ruling
+  R221.3).** Grabbing either end of a window's bar did nothing at all. The
+  strip measured the pointer from the padded box around its lanes while
+  drawing the handles inside the lanes themselves, so a pointer placed
+  exactly on a handle tested as eight pixels away from it — two pixels more
+  than the grab tolerance, which is why it never caught. The pointer is now
+  measured from the lane it is actually on.
+
+- **Charts fill the notebook column (2026-09-11, ruling R221.4).** Every
+  chart was drawn at a fixed 640 pixels wide whatever the window or the
+  column around it, so widening the window left a chart marooned in white
+  space. Charts now measure the column they are in and are fetched and
+  plotted at that width, following the window, the editor layout and every
+  column you show or hide.
 - **Toolbar buttons no longer paint over one another [docs] (2026-09-11,
   ruling R225).** The row's groups were laid out against measured widths,
   but the buttons inside each group were not: they were free to compress
@@ -81,6 +95,28 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 
 ### Added
 
+- **A session that takes a while to open now says so (2026-09-11, ruling
+  R221.1).** Opening a long recording could sit silent for minutes with
+  nothing on screen to say whether it was working or stuck. Reading one
+  channel out of a three-hour session takes one to three seconds, and a
+  notebook full of charts reads a lot of them. Every read that takes longer than a
+  moment now reports itself: each cell's status mark becomes a ring that
+  fills as its own channels arrive, and the status bar shows how many
+  channels are in and how far through the whole thing is. Reads fast enough
+  not to matter stay silent, so nothing flickers on a chart that was already
+  loaded.
+
+- **[docs] Where a long session open spends its time (2026-09-11, ruling
+  R221.2).** The largest session in the library was timed channel by channel
+  so the cost is a number rather than a guess:
+  `runs/2026-09-11/MEASURE-decode-timing.md`. Twenty-eight channels of a
+  three-hour, 516 MB recording cost 44 s of decoding in a release build, and
+  a repeat with the disk cache warm saved only 13 %, so the cost is
+  decompression rather than reading. Nothing is decoded twice -- a second
+  request for the same channel returns instantly -- but each channel makes
+  its own pass over the whole file, and every channel of one sensor
+  decompresses that sensor's timestamp column again. Recorded for a ruling;
+  no optimisation was made here.
 - **[docs] Four more chart types a workbook can express (2026-09-11,
   ruling R217).** A v3 workbook can now describe a map, a lap-progression
   chart and a spectrogram as plainly as it already described a time chart,

@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import type { SessionDetail } from "../../../../ipc/catalog";
 import type { SelectionWindow } from "../../../../state/selection";
 import type { AbsoluteSpan } from "../model/viewportWindows";
-import { bracketForLane, dragCandidate, handlePositionsFor, hitTestHandle, stripLanesFor, type HandleSide, type StripLane } from "../model/timelineStrip";
+import { bracketForLane, dragCandidate, handlePositionsFor, hitTestHandle, lanePixelX, stripLanesFor, type HandleSide, type StripLane } from "../model/timelineStrip";
 
 /** Fallback strip width (CSS px) before the container's own `ResizeObserver` reports one. */
 const DEFAULT_STRIP_WIDTH_PX = 600;
@@ -73,9 +73,18 @@ export default function TimelineStrip({ windows, detailsByWindow, spanUsByWindow
   const primaryLane = lanes.find((l) => l.windowIndex === 0) ?? null;
   const primaryStartUs = primaryLane?.windowSpan?.startUs ?? 0;
 
+  /**
+   * This event's position in lane px (`model/timelineStrip.ts`'s
+   * {@link lanePixelX}) — measured from the **lane** the pointer is on,
+   * which is `event.currentTarget`, never from this component's padded
+   * container. Ruling R221 item 3: the container's own left edge is a
+   * padding's width left of every lane inside it, while `widthPx` is its
+   * *content* width, so measuring from the container offset every hit test
+   * by more than the handle tolerance and the handles could not be grabbed
+   * at all.
+   */
   function pixelXFromEvent(event: React.PointerEvent): number {
-    const rect = containerRef.current?.getBoundingClientRect();
-    return rect === undefined ? 0 : event.clientX - rect.left;
+    return lanePixelX(event.clientX, event.currentTarget.getBoundingClientRect().left);
   }
 
   function handlePointerDown(lane: StripLane, event: React.PointerEvent) {
