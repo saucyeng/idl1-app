@@ -11,6 +11,7 @@ import { usesColumns, type ShellLayout } from "./layout";
 import ColumnFrame from "./ColumnFrame";
 import { EditorSlotColumn } from "./EditorSlotColumn";
 import { GraphSlotColumn } from "./GraphSlotColumn";
+import { useGraphColumnVisible } from "./graphColumnVisible";
 import { RouteErrorBoundary } from "./RouteErrorBoundary";
 
 /** Every destination's element, built once per render but reconciled by
@@ -61,6 +62,12 @@ const ROUTE_ELEMENTS = {
  */
 export default function RouteHost({ layout }: { layout: ShellLayout }) {
   const [state] = useAppState();
+  // R208 item 2: the Notebook toolbar's Graph toggle reaches the frame
+  // here, so turning it off drops the `maths` panel and its divider
+  // outright (`shell/columnVisibility.ts`'s `undefined` content rule,
+  // R107's) instead of leaving a full-width column holding a placeholder
+  // that explains where the toggle is.
+  const graphColumnVisible = useGraphColumnVisible();
 
   useEffect(() => {
     setActiveRoute(state.route);
@@ -75,7 +82,7 @@ export default function RouteHost({ layout }: { layout: ShellLayout }) {
         const content =
           r.id === "notebook" && notebookInColumns ? (
             <ColumnFrame
-              maths={<GraphSlotColumn />}
+              maths={graphColumnVisible ? <GraphSlotColumn /> : undefined}
               properties={<EditorSlotColumn />}
               output={ROUTE_ELEMENTS.notebook}
             />

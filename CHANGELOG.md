@@ -304,6 +304,18 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 
 ### Fixed
 
+- **The Notebook's column toggles look like buttons, and Graph really
+  hides the column (2026-09-11, ruling R208 item 2).** The maths column
+  said "shown via the toolbar's Graph toggle" while the toggle itself was
+  an unstyled word in the toolbar, with no border, fill or pressed state,
+  so there was nothing on screen to recognise as a control. Graph,
+  Properties and Cells are now a labelled segmented group like the
+  Paper/Studio switch beside them, filled while their column is showing.
+  Turning Graph off now removes the maths column and its divider outright,
+  giving the space back, instead of leaving a full-width column explaining
+  where its own toggle is. The column's width is remembered, so turning it
+  back on restores it.
+
 - **Every notebook cell reports its own state (2026-09-11, ruling R210).**
   A cell now reads queued, evaluating, settled or error for itself, the way
   a Jupyter cell does, and spins only while its own result is being
