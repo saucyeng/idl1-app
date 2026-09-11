@@ -31,7 +31,7 @@ export interface ColumnFrameProps {
   /** Optional for the same reason `library` is, and through the same
    *  `visibleColumnIds` rule: the Notebook toolbar's Graph toggle turned
    *  off passes `undefined` (R208 item 2, via `shell/
-   *  graphColumnVisible.ts`), and no `maths` panel or divider renders at
+   *  studioColumns.ts`), and no `maths` panel or divider renders at
    *  all. A stored width for the column survives in `columnPrefs.ts`
    *  untouched, so toggling it back restores the width the user last
    *  dragged it to. */
@@ -51,7 +51,14 @@ export interface ColumnFrameProps {
    *  remembered one — R213 item 1's Maths preset ("output narrow (min
    *  width, still live)"). `null`/absent keeps whatever width the user last
    *  dragged it to. A drag from here on is persisted as usual, so the
-   *  override is a starting point, not a pin. */
+   *  override is a starting point, not a pin.
+   *
+   *  There is one remembered output width, not one per preset: dragging
+   *  the output wider while Maths is active is the width Split and Stacked
+   *  then open with too. Deliberate — `columnPrefs.ts` stores a column's
+   *  width, and R213 gives presets the *arrangement*, not a private copy of
+   *  every size in it; a user who drags a column has said what they want
+   *  that column to be. */
   outputWidthPx?: number | null;
 }
 
