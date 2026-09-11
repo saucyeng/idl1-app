@@ -6,6 +6,10 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 
 ### Added
 
+- **[docs] Release pipeline (2026-09-11, ruling R224).** `release.yml`
+  builds Windows and Linux installers on a `v*` tag push and opens a draft
+  GitHub Release; see `docs/RELEASING.md` for how to cut one.
+
 - **The window is laid out like an editor now (2026-09-11, ruling R220).**
   The destination tabs are gone from the top of the window. In their place:
   a menu bar (File, Edit, View, Go, Help) beside the app name in the title

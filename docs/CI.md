@@ -43,6 +43,12 @@ To trigger: GitHub → Actions tab → "Coverage" → Run workflow. Read the
 numbers either from the job summary (Rust) or by downloading the artifacts
 and opening the HTML reports (both crates and app).
 
+## `release.yml`
+
+Tag-triggered (`v*`) or manual dispatch, never on push. Builds Windows and
+Linux installers and opens a draft GitHub Release. See `docs/RELEASING.md`
+for the full process.
+
 ## Minute budget
 
 Superproject repo is private: 2000 Actions minutes/month. `ci.yml` is the
