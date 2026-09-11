@@ -411,6 +411,83 @@ are defined in `docs/superpowers/specs/2026-09-02-idl1-rewrite-design.md` §10.
   `channelId` those cache keys are built from, so that residue waits for
   the cell to be removed.
 
+## Session memory 2 (ruling R211)
+
+- [x] memory-2 lane — landed 2026-09-11 on `memory-2` (both repos). The
+  incident: opening session `817a54...` (~490 MB `data.parquet`, a 22.6 M-
+  sample channel) in the notebook with the shakedown workbook killed the app
+  with `memory allocation of 181132664 bytes failed` and
+  `STATUS_STACK_BUFFER_OVERRUN`, with 17 GB of commit free — several
+  host-channel binds each went down the eval path that decoded the *whole*
+  session, each passed the R203 failsafe on its own, and their sum did not
+  fit. Four changes.
+
+  (1) **R211.1, the eval path.** `SessionHandle::lazy` builds a handle over
+  a session's channel index and decodes a channel only when something names
+  it, through a new `session::handle::ChannelSource`.
+  `store::parquet::open_session_lazy` is that handle over a `data.parquet`
+  (source: `read_channel`); `idl-rs-tauri`'s `load_lazy_session_handle`
+  is the same handle with the app's `SessionCache` as the source, and
+  `eval_workbook`, `eval_workbook_v2` and both `fetch_host_channel`
+  commands use it. `full_session_span_us` reads the `t` axis's footer
+  statistics instead of decoding the session, and `catalog_read::get_session`
+  reads per-channel sample counts from row-group statistics. `load_session`
+  and `load_session_handle` are deleted.
+
+  (2) **R211.2, one budget.** The R203 budget is now a byte-counting
+  semaphore inside `SessionCache`: a decode reserves its estimated bytes
+  before allocating and releases them on drop; one that does not fit waits
+  (30 s) rather than failing, and only a request larger than the whole
+  budget on its own is refused. A `SessionCache` clone is the same budget,
+  which is what lets a lazy handle hold one for its lifetime.
+
+  (3) **R211.3, import.** `finish_import` and `reimport_session` drop the
+  parsed `Session` before lap indexing and index from a lazy handle over
+  the `data.parquet` just written; `reindex_laps` does the same, and
+  `build_gps_track` resolves its three channels by name so only those are
+  decoded.
+
+  (4) **R211.4, allocation.** `RawColumn::try_materialize`/
+  `try_materialize_range` go through `Vec::try_reserve_exact`; the
+  infallible wrappers return an empty `Vec` instead of panicking, and
+  `ChannelLookup::lookup` uses the fallible form so a refused allocation
+  reads as an absent channel rather than a present-but-empty one. A channel
+  read that cannot allocate is `ParquetStoreErrorKind::ResourceExhausted`,
+  mapped to C3 §1's `resource_exhausted`.
+
+  Guard: the delete guard's scanner now carries a second allowlist naming
+  every non-test whole-session decode R211.1 permits (import verification,
+  export, rebuild). **That list is empty** — no such call site exists in
+  today's tree, which is the ruling's "exactly three callers" measured
+  rather than assumed; `read_session_parquet` stays `pub` for those three.
+
+  **Where R211.3's measured target was not met, and why.** The ruling asks
+  for the import peak of a ~395 MB log to fall below 2 GB private. Measured
+  with the release CLI on the library's 377 MB blob (copied to a temp data
+  dir), peak private bytes are **3,731 MB before this lane and 3,727 MB
+  after** — the change is real but it does not move the peak, because the
+  peak is not where the ruling assumed. Import's peak is set during the
+  `data.parquet` write, not during lap indexing: the parsed `Session` alone
+  is ~2 GB (measured on the skip path, which parses and indexes but does not
+  write), and the writer adds the union `t` axis, one full-length Arrow
+  column, **every row group's column writers held open at once** (the whole
+  encoded file), and the output `Vec<u8>` (the whole file again). Dropping
+  the `Session` before indexing removes a second, lower peak later in the
+  run. Getting under 2 GB needs the writer to go row-group-major and stream
+  to the temp file rather than to a `Vec<u8>` — an R203.3 follow-up, not
+  something R211.3's change can reach.
+
+  Not done here: that writer rework; the app-side manual proof (opening
+  `817a54...` in the dev app with the shakedown workbook), which needs a
+  person at the dev app. Lane decisions: a lazy handle's `channels()`
+  reports the file's row count as each channel's `length` (an upper bound —
+  the exact count is its non-null rows, which costs a decode) and its
+  `metadata().duration_ms` folds only what has been decoded; `channel_data()`
+  is documented eager-only and returns an empty slice on a lazy handle; the
+  budget semaphore counts decodes **in flight** and leaves residency to the
+  LRU under the same figure, because charging both to one counter makes a
+  large channel's decode evict the entire cache to start.
+
 ## Wave 3
 
 - [ ] L9 mobile plugins · L12 in-app agent (optional)
