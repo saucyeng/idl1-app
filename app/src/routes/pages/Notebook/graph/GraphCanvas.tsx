@@ -27,7 +27,8 @@ import type { CellOutput, UnitLabel, Window as SelectedWindow } from "../../../.
 import { computeAutoLayoutPositions } from "../model/graphAutoLayout";
 import { graphViewportAction, isTextEntry } from "../model/graphViewportKeys";
 import { buildGraphModel, type GraphNode } from "../model/graphModel";
-import { readGraphLayout } from "../model/graphLayout";
+import { EMPTY_GRAPH_LAYOUT, readGraphLayout, type GraphLayout } from "../model/graphLayout";
+import { effectiveGraphLayout, readGraphPositions, setNodePosition, tidiedLayout, writeGraphPositions } from "../model/graphPositions";
 import { computeNodeStatuses } from "../model/graphStatus";
 import { scanMathExpr, type MathExprCall } from "../model/mathExpr";
 import { rawUnitToLabel } from "../model/unitLabel";
@@ -38,7 +39,6 @@ import { collapsedNodePosition, collapsedSubgraphNodesFor, subgraphFramesFor, FR
 import { editLiteralArg, renameDefinition, rewireInput, type UnresolvedRenameRef } from "../model/graphEdits";
 import { dropPaletteSource, type PaletteDragSource } from "../model/graphPaletteDrop";
 import { buildSourcePalette } from "../model/sourcePalette";
-import { commitDrag } from "./dragCommit";
 import { insertChartCell } from "./graphToChart";
 import NodeCard, { type MathNodeData } from "./NodeCard";
 import { shapeOf } from "./portShape";
@@ -79,6 +79,11 @@ export interface GraphCanvasProps {
   /** The open workbook's current markdown — the graph's source of truth
    *  (decision 40). */
   markdown: string;
+  /** The open workbook's catalog id, or `null` when none is open — the key
+   *  this machine's node arrangement is stored under (ruling R212 item 3,
+   *  `model/graphPositions.ts`). With `null` the canvas still draws, from
+   *  auto-layout alone; a drag simply has nowhere to be remembered. */
+  workbookId: string | null;
   /** One representative window's `CellOutput[]` — feeds `buildGraphModel`'s
    *  `# label:` fallback and each definition's port shape. Multi-window
    *  port-shape display is out of this task's scope (§3.7.4 defines one
@@ -94,11 +99,11 @@ export interface GraphCanvasProps {
   /** Each selected window's session's channel catalog, keyed by
    *  `session_id` — decision 44's grey-vs-red split. */
   sessionDetails: Map<string, SessionDetail>;
-  /** Fired once a drag settles with a real position change — the new
-   *  document markdown, ready for the existing debounced save flow
-   *  (§3.7.1: no IPC on the interaction path; this fires only on drag
-   *  stop, never while dragging). Not fired for a `"channel"` node (no
-   *  stored-position home, §3.7.1) or a no-op drag. */
+  /** Fired with new document markdown whenever an edit on the canvas
+   *  changes the *document* — a rename, a rewired input, an edited literal,
+   *  a chart insertion, a palette drop's new definition. **Not** fired for
+   *  a node drag: ruling R212 item 3 makes canvas positions renderer state,
+   *  so moving a card no longer touches the file at all. */
   onCommit: (markdown: string) => void;
   /** Fired when a card is clicked — the caller opens that node's owning
    *  cell in `EditorPanes` (Task 10's own "card click opens EditorPanes in
@@ -170,7 +175,7 @@ export default function GraphCanvas(props: GraphCanvasProps) {
   );
 }
 
-function GraphCanvasInner({ markdown, outputs, selectedWindows, windows, sessionDetails, onCommit, onSelectCell }: GraphCanvasProps) {
+function GraphCanvasInner({ markdown, workbookId, outputs, selectedWindows, windows, sessionDetails, onCommit, onSelectCell }: GraphCanvasProps) {
   // Task 5's own chart-type picker (decision 83, "idl0 pictograms carry
   // over") replaces the old fixed-"lineY" chart button — `mark` now comes
   // from `NodeCard.tsx`'s `ChartTypePicker`, one of `MARK_NAMES`'s five
@@ -218,8 +223,40 @@ function GraphCanvasInner({ markdown, outputs, selectedWindows, windows, session
   const reactFlow = useReactFlow();
 
   const model = useMemo(() => buildGraphModel(markdown, outputs), [markdown, outputs]);
-  const layout = useMemo(() => readGraphLayout(markdown), [markdown]);
+
+  // Ruling R212 item 3: node positions are renderer state, per machine, and
+  // are never written to the workbook file. `storedPositions` is this
+  // machine's arrangement (`model/graphPositions.ts`); the file's own
+  // `graph` key is still *read*, as the shared starting point a workbook
+  // may have shipped with, and `effectiveGraphLayout` lays one over the
+  // other. `positionEpoch` is what a drag or a Tidy bumps to re-read
+  // storage — the alternative, keeping the layout in React state, would
+  // have two sources of truth for the same arrangement.
+  const [positionEpoch, setPositionEpoch] = useState(0);
+  const fileLayout = useMemo(() => readGraphLayout(markdown), [markdown]);
+  const storedPositions = useMemo(() => readGraphPositions(workbookId), [workbookId, positionEpoch]);
+  const layout = useMemo(() => effectiveGraphLayout(fileLayout, storedPositions), [fileLayout, storedPositions]);
   const positions = useMemo(() => computeAutoLayoutPositions(model, layout), [model, layout]);
+
+  /** Persists `next` as this workbook's arrangement and re-reads it. The
+   *  one writer — every gesture that moves a card goes through here, so
+   *  "who wrote this position" has a single answer. */
+  const commitPositions = useCallback(
+    (next: GraphLayout) => {
+      writeGraphPositions(workbookId, next);
+      setPositionEpoch((epoch) => epoch + 1);
+    },
+    [workbookId]
+  );
+
+  /** R212 item 3's "Tidy" button: re-run the layered layout and *record*
+   *  it, so it survives the next render rather than being undone by the
+   *  file's or this machine's older entries. */
+  const handleTidy = useCallback(() => {
+    const fresh = computeAutoLayoutPositions(model, EMPTY_GRAPH_LAYOUT);
+    const names = new Map(model.nodes.filter((node) => node.kind === "definition").map((node) => [node.id, node.name]));
+    commitPositions(tidiedLayout(fresh, names));
+  }, [model, commitPositions]);
   const statuses = useMemo(
     () => computeNodeStatuses({ model, selectedWindows, windows, sessionDetails }),
     [model, selectedWindows, windows, sessionDetails]
@@ -262,10 +299,14 @@ function GraphCanvasInner({ markdown, outputs, selectedWindows, windows, session
         setPaletteNotice(`No math cell to add "${source.name}" to yet -- add one first.`);
         return;
       }
+      // The definition itself is a document edit; where its card lands is
+      // not (R212 item 3), so the two go to two different places -- the
+      // markdown through `onCommit`, the drop point into renderer state.
       const { x, y } = screenToFlowPosition({ x: event.clientX, y: event.clientY });
-      onCommit(commitDrag(result.markdown, { kind: "node", name: result.newDefName }, x, y));
+      onCommit(result.markdown);
+      commitPositions(setNodePosition(storedPositions, result.newDefName, x, y));
     },
-    [markdown, model, onCommit, screenToFlowPosition]
+    [markdown, model, onCommit, screenToFlowPosition, commitPositions, storedPositions]
   );
 
   // Subgraph collapse/expand (decision 42) -- a list of collapsed cell ids
@@ -413,11 +454,14 @@ function GraphCanvasInner({ markdown, outputs, selectedWindows, windows, session
 
   const handleNodeDragStop = useCallback<OnNodeDrag<FlowNode>>(
     (_event, draggedNode) => {
-      if (draggedNode.type !== "mathNode" || draggedNode.data.graphNode.kind !== "definition") return; // no stored-position home, §3.7.1; frame/collapsed nodes never drag
-      const next = commitDrag(markdown, { kind: "node", name: draggedNode.data.graphNode.name }, draggedNode.position.x, draggedNode.position.y);
-      if (next !== markdown) onCommit(next);
+      if (draggedNode.type !== "mathNode" || draggedNode.data.graphNode.kind !== "definition") return; // no stored-position home; frame/collapsed nodes never drag
+      // R212 item 3: "Dragging a node persists its position" -- to this
+      // machine's renderer state, never to the document. A drag therefore
+      // no longer marks the workbook dirty, which is the point: where a
+      // card sits is not a change to the maths.
+      commitPositions(setNodePosition(storedPositions, draggedNode.data.graphNode.name, draggedNode.position.x, draggedNode.position.y));
     },
-    [markdown, onCommit]
+    [commitPositions, storedPositions]
   );
 
   const handleNodeClick = useCallback<NodeMouseHandler<FlowNode>>(
@@ -499,6 +543,9 @@ function GraphCanvasInner({ markdown, outputs, selectedWindows, windows, session
           onChange={(e) => setSearchQuery(e.target.value)}
           className="rounded-[var(--radius-structural)] border border-rule bg-control px-2 py-1 text-label-2 text-fg"
         />
+        <button type="button" onClick={handleTidy} title="Re-run the automatic layered layout (overwrites the arrangement on this machine)" className={CLUSTER_BUTTON_CLASS}>
+          Tidy
+        </button>
         {subgraphs.length > 0 && (
           <div className="flex flex-wrap items-center gap-2">
             {subgraphs.map((sg) => (

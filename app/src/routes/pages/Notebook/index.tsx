@@ -2758,6 +2758,7 @@ export default function NotebookPage() {
     state.markdown !== null ? (
       <GraphCanvas
         markdown={state.markdown}
+        workbookId={state.handle?.id ?? null}
         outputs={graphOutputs}
         selectedWindows={windows.map(toWireWindow)}
         windows={state.windows}

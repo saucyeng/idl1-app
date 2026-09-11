@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { computeAutoLayoutPositions } from "./graphAutoLayout";
+import { computeAutoLayoutPositions, GRAPH_LAYER_DX, GRAPH_ROW_DY } from "./graphAutoLayout";
 import { EMPTY_GRAPH_LAYOUT, type GraphLayout } from "./graphLayout";
 import type { GraphEdge, GraphModel, GraphNode } from "./graphModel";
 
@@ -37,8 +37,8 @@ describe("computeAutoLayoutPositions", () => {
 
     // Assert
     expect(positions["channel:a"][0]).toBe(0);
-    expect(positions["def:b"][0]).toBe(220);
-    expect(positions["def:c"][0]).toBe(440);
+    expect(positions["def:b"][0]).toBe(GRAPH_LAYER_DX);
+    expect(positions["def:c"][0]).toBe(2 * GRAPH_LAYER_DX);
   });
 
   it("computeAutoLayoutPositions — a diamond dependency — the join node sits one column past its deepest input", () => {
@@ -54,9 +54,9 @@ describe("computeAutoLayoutPositions", () => {
 
     // Assert
     expect(positions["def:a"][0]).toBe(0);
-    expect(positions["def:b"][0]).toBe(220);
-    expect(positions["def:c"][0]).toBe(220);
-    expect(positions["def:d"][0]).toBe(440);
+    expect(positions["def:b"][0]).toBe(GRAPH_LAYER_DX);
+    expect(positions["def:c"][0]).toBe(GRAPH_LAYER_DX);
+    expect(positions["def:d"][0]).toBe(2 * GRAPH_LAYER_DX);
   });
 
   it("computeAutoLayoutPositions — two nodes at the same depth — get distinct rows in document order", () => {
@@ -68,7 +68,7 @@ describe("computeAutoLayoutPositions", () => {
 
     // Assert
     expect(positions["def:a"]).toEqual([0, 0]);
-    expect(positions["def:b"]).toEqual([0, 90]);
+    expect(positions["def:b"]).toEqual([0, GRAPH_ROW_DY]);
   });
 
   it("computeAutoLayoutPositions — a definition node with a stored position — keeps it, ignoring computed depth", () => {
@@ -119,6 +119,59 @@ describe("computeAutoLayoutPositions", () => {
     expect(positions["def:b"]).toBeDefined();
     expect(Number.isFinite(positions["def:a"][0])).toBe(true);
     expect(Number.isFinite(positions["def:b"][0])).toBe(true);
+  });
+
+  it("computeAutoLayoutPositions — barycentre ordering — puts a node opposite its dependency, not in document order", () => {
+    // Arrange: two sources in document order a, b; two dependants declared
+    // in the *opposite* order — x depends on b, y depends on a. Pure
+    // document order would cross both edges; the barycentre must not.
+    const model: GraphModel = {
+      nodes: [node("channel:a", "channel"), node("channel:b", "channel"), node("def:x"), node("def:y")],
+      edges: [edge("channel:b", "def:x"), edge("channel:a", "def:y")],
+      groups: [],
+    };
+
+    // Act
+    const positions = computeAutoLayoutPositions(model, EMPTY_GRAPH_LAYOUT);
+
+    // Assert — y (following a, row 0) is above x (following b, row 1).
+    expect(positions["channel:a"]).toEqual([0, 0]);
+    expect(positions["channel:b"]).toEqual([0, GRAPH_ROW_DY]);
+    expect(positions["def:y"]).toEqual([GRAPH_LAYER_DX, 0]);
+    expect(positions["def:x"]).toEqual([GRAPH_LAYER_DX, GRAPH_ROW_DY]);
+  });
+
+  it("computeAutoLayoutPositions — a node with two dependencies — sits between them", () => {
+    // Arrange: three sources, and a join node fed by the first and third.
+    const model: GraphModel = {
+      nodes: [node("channel:a", "channel"), node("channel:b", "channel"), node("channel:c", "channel"), node("def:j"), node("def:k")],
+      edges: [edge("channel:a", "def:j"), edge("channel:c", "def:j"), edge("channel:b", "def:k")],
+      groups: [],
+    };
+
+    // Act
+    const positions = computeAutoLayoutPositions(model, EMPTY_GRAPH_LAYOUT);
+
+    // Assert — k's barycentre is 1, j's is (0 + 2) / 2 = 1; the tie breaks
+    // on document order, so j (declared first) keeps the upper row.
+    expect(positions["def:j"]).toEqual([GRAPH_LAYER_DX, 0]);
+    expect(positions["def:k"]).toEqual([GRAPH_LAYER_DX, GRAPH_ROW_DY]);
+  });
+
+  it("computeAutoLayoutPositions — run twice on the same model — is byte-identical", () => {
+    // Arrange
+    const model: GraphModel = {
+      nodes: [node("channel:a", "channel"), node("channel:b", "channel"), node("def:x"), node("def:y"), node("def:z")],
+      edges: [edge("channel:b", "def:x"), edge("channel:a", "def:y"), edge("def:x", "def:z"), edge("def:y", "def:z")],
+      groups: [],
+    };
+
+    // Act
+    const first = computeAutoLayoutPositions(model, EMPTY_GRAPH_LAYOUT);
+    const second = computeAutoLayoutPositions(model, EMPTY_GRAPH_LAYOUT);
+
+    // Assert
+    expect(second).toEqual(first);
   });
 
   it("computeAutoLayoutPositions — an empty model — returns an empty position map", () => {

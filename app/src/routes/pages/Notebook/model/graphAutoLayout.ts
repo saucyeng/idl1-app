@@ -13,14 +13,27 @@
  * auto-placed exactly when {@link GraphLayout.nodes} has no entry for its
  * name.
  *
- * **Algorithm.** Each node's depth is the length of its longest dependency
+ * **Algorithm** (ruling R212 item 3: "simple longest-path layering plus
+ * barycentre ordering, no new dependency").
+ *
+ * *Layering.* Each node's depth is the length of its longest dependency
  * chain — 0 for a node with no incoming edge, otherwise one more than the
  * deepest of its dependencies (an edge's `source`, C2 §3.7's wire
  * direction: source is referenced by target). Nodes are placed in columns
- * by depth, left to right; within a column, rows follow `model.nodes`'
- * own order (`graphModel.ts`'s document order) — the one ordering this
- * module has that is itself deterministic, so two runs over the same
- * `GraphModel` always agree.
+ * by depth, left to right. Raw session channels have no dependency of their
+ * own, so they land in column 0 and derived datasets fan out to the right —
+ * R212's "sources left, derived middle" falls out of the layering rather
+ * than being a third rule. (Charts are not graph nodes: a chart is a cell,
+ * not a definition, so "charts right" has nothing to place here.)
+ *
+ * *Ordering within a column.* One forward sweep of the barycentre
+ * heuristic: layer 0 keeps `model.nodes`' own document order, and each
+ * later layer sorts its nodes by the mean row of their already-placed
+ * dependencies, so an edge runs roughly straight across instead of crossing
+ * the whole column. A node whose dependencies are all in the same layer (or
+ * has none) keeps its document-order position as its barycentre, and ties
+ * break on document order — so two runs over the same `GraphModel` always
+ * agree, which a randomised or iterated crossing-minimiser would not.
  *
  * **Cycles never hang this module.** `resolve.rs` is cycle-guarded and a
  * real evaluation rejects a dependency cycle, but this is a rendering
@@ -33,10 +46,25 @@
 import type { GraphLayout } from "./graphLayout";
 import type { GraphModel } from "./graphModel";
 
-/** Canvas-unit spacing between depth columns. */
-const LAYER_DX = 220;
-/** Canvas-unit spacing between rows within one depth column. */
-const ROW_DY = 90;
+/** A node card's nominal width in canvas units — `NodeCard.tsx`'s own
+ *  `min-w-[160px]`. A card with a long name is wider; the gap below is a
+ *  minimum, not a guarantee. */
+const NODE_WIDTH = 160;
+/** A node card's nominal height in canvas units: name row, unit row, call
+ *  row and the chart picker, at the `--nb-*` density scale. */
+const NODE_HEIGHT = 64;
+/** Empty canvas between two depth columns (R212 item 3: "96 px layer gaps"). */
+const LAYER_GAP = 96;
+/** Empty canvas between two cards in the same column (R212 item 3: "32 px
+ *  node gaps"). */
+const NODE_GAP = 32;
+
+/** Canvas-unit pitch between depth columns — a card plus the layer gap.
+ *  Exported so a test asserts against the same number the layout uses,
+ *  rather than a literal that rots when R212's gaps are retuned. */
+export const GRAPH_LAYER_DX = NODE_WIDTH + LAYER_GAP;
+/** Canvas-unit pitch between rows within one depth column. */
+export const GRAPH_ROW_DY = NODE_HEIGHT + NODE_GAP;
 
 /** Computes each node's dependency depth (see the module doc comment),
  *  keyed by {@link GraphModel.nodes}' own `id`. */
@@ -88,9 +116,31 @@ export function computeAutoLayoutPositions(model: GraphModel, layout: GraphLayou
     else byDepth.set(depth, [node.id]);
   }
 
-  for (const [depth, ids] of byDepth) {
-    ids.forEach((id, row) => {
-      positions[id] = [depth * LAYER_DX, row * ROW_DY];
+  // Each node's dependencies, for the barycentre sweep below.
+  const incoming = new Map<string, string[]>();
+  for (const node of model.nodes) incoming.set(node.id, []);
+  for (const edge of model.edges) incoming.get(edge.target)?.push(edge.source);
+
+  // One forward sweep, shallowest column first, so every node's
+  // dependencies already have a row by the time it is placed.
+  const rowOf = new Map<string, number>();
+  const orderedDepths = [...byDepth.keys()].sort((a, b) => a - b);
+  for (const depth of orderedDepths) {
+    const ids = byDepth.get(depth) ?? [];
+    const documentOrder = new Map(ids.map((id, index) => [id, index]));
+    const barycentre = (id: string): number => {
+      const placed = (incoming.get(id) ?? []).map((source) => rowOf.get(source)).filter((row): row is number => row !== undefined);
+      // No placed dependency (a source node, or a same-column edge): keep
+      // where document order put it rather than collapsing to row 0.
+      return placed.length === 0 ? (documentOrder.get(id) ?? 0) : placed.reduce((sum, row) => sum + row, 0) / placed.length;
+    };
+    const sorted = [...ids].sort((a, b) => {
+      const delta = barycentre(a) - barycentre(b);
+      return delta !== 0 ? delta : (documentOrder.get(a) ?? 0) - (documentOrder.get(b) ?? 0);
+    });
+    sorted.forEach((id, row) => {
+      rowOf.set(id, row);
+      positions[id] = [depth * GRAPH_LAYER_DX, row * GRAPH_ROW_DY];
     });
   }
 
