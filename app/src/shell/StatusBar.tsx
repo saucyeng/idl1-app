@@ -120,7 +120,7 @@ export default function StatusBar({ selection, activePreset, onCyclePreset, onNa
   return (
     <footer
       aria-label="Status"
-      className="flex h-[var(--shell-status-bar-h)] shrink-0 items-stretch border-t border-rule bg-surface text-fg-dim"
+      className="shell-chrome flex h-[var(--shell-status-bar-h)] shrink-0 items-stretch border-t border-rule bg-surface text-fg-dim"
     >
       {chips.length > 0 && (
         <StatusItem

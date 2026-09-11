@@ -40,7 +40,7 @@ const BADGE_TONE_CLASS = {
 export default function BottomBar({ activeRoute, onNavigate, badges }: BottomBarProps) {
   return (
     <nav
-      className="flex h-[var(--shell-activity-bar-w)] shrink-0 items-stretch border-t border-rule bg-surface"
+      className="shell-chrome flex h-[var(--shell-activity-bar-w)] shrink-0 items-stretch border-t border-rule bg-surface"
       aria-label="Primary"
     >
       {ROUTES.map((route) => {

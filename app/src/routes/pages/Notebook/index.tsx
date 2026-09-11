@@ -37,6 +37,7 @@ import { useRouteVisible } from "../../../shell/routeVisibility";
 import { useEditorSlotNode } from "../../../shell/editorSlot";
 import { useGraphSlotNode } from "../../../shell/graphSlot";
 import { useToolbarSlotNode } from "../../../shell/toolbarSlot";
+import { useTimelineSlotNode } from "../../../shell/timelineSlot";
 import { useSidebarSlotNode } from "../../../shell/sidebarSlot";
 import { useCommand } from "../../../shell/commandRegistry";
 import { MENU_COMMAND_IDS } from "../../../shell/menuModel";
@@ -963,6 +964,7 @@ export default function NotebookPage() {
   // one currently shown" signal.
   const toolbarSlotNode = useToolbarSlotNode();
   const notebookSidebarNode = useSidebarSlotNode("notebook");
+  const timelineSlotNode = useTimelineSlotNode();
 
   // The notebook output register (decision 31) -- stored in `UiPrefs`
   // (UI-7 Q1), read/written through `notebookPrefsStore` above. `null`
@@ -3638,6 +3640,16 @@ export default function NotebookPage() {
     applyColumnToggleValue(toggledColumnIds("properties"))
   );
 
+  const timelineElement = (
+    <TimelineStrip
+      windows={windows}
+      detailsByWindow={sessionDetailsByWindow}
+      spanUsByWindow={sessionSpanUsByWindow}
+      viewport={sharedViewport}
+      onCommit={(laneIndex, candidate) => appDispatch({ type: "SET_WINDOWS", windows: timelineCommit(windows, laneIndex, candidate) })}
+    />
+  );
+
   const toolbarElement = (
     <>
       <NotebookToolbar
@@ -3745,20 +3757,23 @@ export default function NotebookPage() {
       />
       <OpenWorkbookDialog open={openWorkbookOpen} onOpenChange={setOpenWorkbookOpen} entry={entry} onSelect={handleSelect} />
       {/* Master timeline strip (decision 52, R115, R134 item 1): one lane
-          per selected window, own draggable boundary handles. Not one of
-          R161's named toolbar controls -- kept as its own full-width strip,
-          same as before, directly under the toolbar. Commits a drag to
-          `AppState.selection` on pointer-up only (`model/timelineStrip.ts`'s
-          own settle-discipline doc comment) -- `timelineCommit` is the same
-          pure function `TimelineStrip.tsx`'s own test suite exercises
-          directly; this call site only wires it to `appDispatch`. */}
-      <TimelineStrip
-        windows={windows}
-        detailsByWindow={sessionDetailsByWindow}
-        spanUsByWindow={sessionSpanUsByWindow}
-        viewport={sharedViewport}
-        onCommit={(laneIndex, candidate) => appDispatch({ type: "SET_WINDOWS", windows: timelineCommit(windows, laneIndex, candidate) })}
-      />
+          per selected window, own draggable boundary handles. Commits a
+          drag to `AppState.selection` on pointer-up only
+          (`model/timelineStrip.ts`'s own settle-discipline doc comment) --
+          `timelineCommit` is the same pure function `TimelineStrip.tsx`'s
+          test suite exercises directly; this call site only wires it to
+          `appDispatch`.
+
+          Ruling R221.1 moves it into the shell's chrome band, directly
+          under the toolbar row it already sat beneath. It is a control over
+          the window selection, not part of the document, and while it lived
+          inside this route's content a chart scrolled up the page painted
+          straight over it (the bug R221.1 was raised for). Same component,
+          same props, same place on screen -- a different layer. Gated on
+          `routeVisible` for the reason the toolbar above is: the slot node
+          exists whether or not this tab is active (R93). */}
+      {routeVisible && timelineSlotNode !== null && createPortal(timelineElement, timelineSlotNode)}
+      {routeVisible && timelineSlotNode === null && timelineElement}
       {/* R161 item 4: banners stay banners -- a statement about the
           document, not a control -- and move under the toolbar, spanning
           the tab, so they never shrink one column. Same conditions, same

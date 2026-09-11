@@ -507,7 +507,7 @@ export default function NotebookToolbar(props: NotebookToolbarProps) {
   return (
     <div
       ref={rowRef}
-      className="idl-dense relative z-10 flex h-[var(--space-8)] flex-nowrap items-center gap-[var(--nb-gap)] overflow-hidden border-b border-rule bg-surface px-[var(--nb-gap)]"
+      className="idl-dense flex h-[var(--space-8)] flex-nowrap items-center gap-[var(--nb-gap)] overflow-hidden border-b border-rule bg-surface px-[var(--nb-gap)]"
       role="toolbar"
       aria-label="Notebook"
     >

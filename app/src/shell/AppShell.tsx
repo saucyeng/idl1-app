@@ -19,6 +19,7 @@ import TitleBar from "./TitleBar";
 import BottomBar from "./BottomBar";
 import RouteHost from "./RouteHost";
 import { ToolbarSlotRow } from "./ToolbarSlotRow";
+import { TimelineSlotRow } from "./TimelineSlotRow";
 import CommandPalette from "./CommandPalette";
 import { registerCommand, runCommand, unregisterCommand } from "./commandRegistry";
 import { commandForEvent, formatShortcut, MENU_COMMAND_IDS, MENUS, usesCommandGlyph } from "./menuModel";
@@ -263,7 +264,23 @@ export default function AppShell() {
             an empty bar. */}
         <div className="flex min-w-0 min-h-0 flex-1 flex-col">
           <ToolbarSlotRow />
-          <div className="min-h-0 flex-1">
+          <TimelineSlotRow />
+          {/* THE ONE CONTENT CONTAINER (ruling R221.1). Everything a route
+              draws lives inside this element, and `shell-content`'s
+              `isolation: isolate` makes it a stacking context: the sandbox
+              iframe host's `zIndex: 0`, a sticky table header's `z-10`, a
+              cell's overlay chrome — every z-index inside a route is scoped
+              here and cannot reach past the chrome layer, whatever value it
+              picks.
+
+              The invariant, which is what stops the one-patch-per-bug
+              habit: chrome carries `shell-chrome` and nothing else in this
+              file carries a z-index. If a new piece of chrome is found
+              painting under a chart, it is missing that class — it does not
+              need a number. New chrome also belongs in
+              `shell/stackingLayers.ts`'s region table, which
+              `stackingLayers.test.ts` checks this file against. */}
+          <div className="shell-content min-h-0 flex-1">
             <RouteHost layout={layout} />
           </div>
         </div>

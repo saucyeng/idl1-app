@@ -103,6 +103,13 @@
   --shell-title-bar-h: 32px; /* R216's custom title bar; also the narrow title strip */
   --shell-activity-bar-w: 48px; /* the four activity icons' column, and the narrow tab bar's height */
   --shell-status-bar-h: 22px; /* the bottom band: session, jobs, memory, preset */
+  /* The one z-index the shell's layout states (ruling R221.1). Every
+   * chrome region carries it; the content container carries none and
+   * isolates instead, so nothing inside a route -- the sandbox iframe host
+   * included -- can out-stack chrome whatever value it picks. `1`, not a
+   * large number: a value chosen to "win" is how a stack of ad hoc
+   * z-indexes starts. The model lives in `shell/stackingLayers.ts`. */
+  --z-chrome: 1;
 
   /* ---- Radii ---- */
   --radius-structural: 2px; /* brandControlRadius */
