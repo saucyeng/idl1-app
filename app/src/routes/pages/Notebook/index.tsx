@@ -3,7 +3,9 @@ import { createPortal } from "react-dom";
 import { getVersion } from "@tauri-apps/api/app";
 
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@/components/ui/resizable";
-import { setGraphColumnVisible } from "../../../shell/graphColumnVisible";
+import { setStudioColumnVisible } from "../../../shell/studioColumns";
+import { noteColumnsChangedByHand, setActiveLayoutPreset, useActiveLayoutPreset } from "../../../shell/layoutPreset";
+import { presetLayout, type LayoutPresetId } from "../../../shell/layoutPresets";
 import { BrandSheet } from "@/components/brand/BrandSheet";
 import { NoteBlock } from "@/components/brand/NoteBlock";
 import { listSessions, listWorkbooks, getSession, rebuildCatalog, type RebuildReport, type SessionDetail, type SessionSummary } from "../../../ipc/catalog";
@@ -430,8 +432,36 @@ export default function NotebookPage() {
   // correct it. This runs before that paint, so the first frame is already
   // right.
   useLayoutEffect(() => {
-    setGraphColumnVisible(columnVisibility.graph);
-  }, [columnVisibility.graph]);
+    setStudioColumnVisible("graph", columnVisibility.graph);
+    setStudioColumnVisible("properties", columnVisibility.properties);
+  }, [columnVisibility.graph, columnVisibility.properties]);
+
+  /** The active layout preset for this machine's current viewport shape
+   *  (ruling R213). The shell owns it (`shell/layoutPreset.ts`, persisted
+   *  per aspect class); this page owns the column visibility a preset
+   *  *writes*, which is why the two meet here. */
+  const activePreset = useActiveLayoutPreset();
+
+  // R213 item 3: "applying a preset writes the column visibility the R161
+  // toggles already read, so the toggles and the preset never disagree".
+  // Runs whenever the active preset changes — including at mount, when the
+  // shell has just recalled this viewport shape's remembered preset, and
+  // including a re-pick of the preset the class left for `"custom"`.
+  // `"custom"` is the one value that writes nothing: it means "whatever the
+  // toggles say", so the stored R161 visibility stands untouched.
+  //
+  // `useLayoutEffect` for the same reason the publish above uses it: the
+  // column frame reads the result through `studioColumns.ts`, and a passive
+  // effect would paint one frame of the previous arrangement first.
+  useLayoutEffect(() => {
+    if (activePreset === "custom") return;
+    const next = presetLayout(activePreset).columns;
+    setColumnVisibility((prev) => {
+      if (prev.graph === next.graph && prev.properties === next.properties && prev.cells === next.cells) return prev;
+      writeNotebookColumnVisibility(next);
+      return next;
+    });
+  }, [activePreset]);
 
   /** Persists the toolbar column toggle group's whole next set of on-ids.
    *  The group reports the full selection rather than the one item that
@@ -443,8 +473,22 @@ export default function NotebookPage() {
     setColumnVisibility((prev) => {
       const next = notebookColumnVisibilityFrom(prev, ids);
       writeNotebookColumnVisibility(next);
+      // R213 item 3: a column thrown by hand moves this viewport shape to
+      // "custom" unless the new set is still the active preset's own — so
+      // the picker never claims an arrangement that is no longer on screen.
+      // The never-all-off guard above runs first, so what is reported here
+      // is what the toggles actually became.
+      noteColumnsChangedByHand(next);
       return next;
     });
+  }
+
+  /** Applies a preset picked from the toolbar's view group (R213 item 3).
+   *  Writes only the shell store; the column visibility follows through the
+   *  `activePreset` effect above, so a preset picked here and one applied by
+   *  `Ctrl+Shift+L` take exactly the same path. */
+  function applyLayoutPreset(id: LayoutPresetId): void {
+    setActiveLayoutPreset(id);
   }
   /** One entry per window this page has resolved a `SessionDetail` for
    *  (`model/sessionSpanDriver.ts`'s `runSessionSpan`, called once per
@@ -2798,7 +2842,6 @@ export default function NotebookPage() {
     state.markdown !== null ? (
       <GraphCanvas
         markdown={state.markdown}
-
         outputs={graphOutputs}
         selectedWindows={windows.map(toWireWindow)}
         windows={state.windows}
@@ -2914,6 +2957,8 @@ export default function NotebookPage() {
         onSelect={handleSelect}
         register={register}
         onRegisterChange={handleRegisterChange}
+        activePreset={activePreset}
+        onPresetChange={applyLayoutPreset}
         windows={windows}
         sessionDetailsByWindow={sessionDetailsByWindow}
         playing={playback.playing}
@@ -3088,15 +3133,16 @@ export default function NotebookPage() {
           </BrandSheet>
         </>
       )}
+      {/* The properties column's content. The "Properties hidden -- shown
+          via the toolbar's toggle" branch is gone with R213 item 1: the
+          Output preset needs the output column *full* width, so the
+          properties toggle now removes the whole column the way R208 made
+          the Graph toggle remove its own (`shell/studioColumns.ts`).
+          `editorSlotNode` is therefore non-null exactly when the column is
+          showing, and a hidden-state message would have nowhere to render
+          and nothing to say. */}
       {editorSlotNode !== null &&
-        createPortal(
-          !columnVisibility.properties ? (
-            <ColumnPlaceholder>Properties hidden -- shown via the toolbar&apos;s Properties toggle.</ColumnPlaceholder>
-          ) : (
-            editorPanesElement ?? <ColumnPlaceholder>Select a cell to edit its properties and code.</ColumnPlaceholder>
-          ),
-          editorSlotNode
-        )}
+        createPortal(editorPanesElement ?? <ColumnPlaceholder>Select a cell to edit its properties and code.</ColumnPlaceholder>, editorSlotNode)}
       {/* The maths column's content. Unlike the properties column just
           above, there is no "hidden" placeholder branch here: R208 item 2
           made the Graph toggle remove the whole column, so `graphSlotNode`

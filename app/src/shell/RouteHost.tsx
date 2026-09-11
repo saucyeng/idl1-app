@@ -11,7 +11,9 @@ import { usesColumns, type ShellLayout } from "./layout";
 import ColumnFrame from "./ColumnFrame";
 import { EditorSlotColumn } from "./EditorSlotColumn";
 import { GraphSlotColumn } from "./GraphSlotColumn";
-import { useGraphColumnVisible } from "./graphColumnVisible";
+import { useStudioColumnVisible } from "./studioColumns";
+import { useActiveLayoutPreset, useMathsOrientation } from "./layoutPreset";
+import { presetLayout } from "./layoutPresets";
 import { RouteErrorBoundary } from "./RouteErrorBoundary";
 
 /** Every destination's element, built once per render but reconciled by
@@ -67,7 +69,17 @@ export default function RouteHost({ layout }: { layout: ShellLayout }) {
   // outright (`shell/columnVisibility.ts`'s `undefined` content rule,
   // R107's) instead of leaving a full-width column holding a placeholder
   // that explains where the toggle is.
-  const graphColumnVisible = useGraphColumnVisible();
+  const graphColumnVisible = useStudioColumnVisible("graph");
+  // R213 item 1: the Output preset takes the properties column away too —
+  // "notebook output full width" cannot mean a placeholder panel beside it.
+  const propertiesColumnVisible = useStudioColumnVisible("properties");
+  // The frame's geometry half of a preset (the visibility half arrives
+  // through the two toggles above, which the preset writes — R213 item 3:
+  // "the toggles and the preset never disagree"). A `"custom"` class pins
+  // no width; the orientation it kept is the store's, not the preset's.
+  const activePreset = useActiveLayoutPreset();
+  const mathsOrientation = useMathsOrientation();
+  const outputWidthPx = activePreset === "custom" ? null : presetLayout(activePreset).outputWidthPx;
 
   useEffect(() => {
     setActiveRoute(state.route);
@@ -83,8 +95,10 @@ export default function RouteHost({ layout }: { layout: ShellLayout }) {
           r.id === "notebook" && notebookInColumns ? (
             <ColumnFrame
               maths={graphColumnVisible ? <GraphSlotColumn /> : undefined}
-              properties={<EditorSlotColumn />}
+              properties={propertiesColumnVisible ? <EditorSlotColumn /> : undefined}
               output={ROUTE_ELEMENTS.notebook}
+              mathsOrientation={mathsOrientation}
+              outputWidthPx={outputWidthPx}
             />
           ) : (
             ROUTE_ELEMENTS[r.id]
