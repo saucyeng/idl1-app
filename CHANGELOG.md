@@ -86,13 +86,25 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 - **A session that takes a while to open now says so (2026-09-11, ruling
   R221.1).** Opening a long recording could sit silent for minutes with
   nothing on screen to say whether it was working or stuck. Reading one
-  channel out of a three-hour session takes about a second, and a notebook
-  full of charts reads a lot of them. Every read that takes longer than a
+  channel out of a three-hour session takes one to three seconds, and a
+  notebook full of charts reads a lot of them. Every read that takes longer than a
   moment now reports itself: each cell's status mark becomes a ring that
   fills as its own channels arrive, and the status bar shows how many
   channels are in and how far through the whole thing is. Reads fast enough
   not to matter stay silent, so nothing flickers on a chart that was already
   loaded.
+
+- **[docs] Where a long session open spends its time (2026-09-11, ruling
+  R221.2).** The largest session in the library was timed channel by channel
+  so the cost is a number rather than a guess:
+  `runs/2026-09-11/MEASURE-decode-timing.md`. Twenty-eight channels of a
+  three-hour, 516 MB recording cost 44 s of decoding in a release build, and
+  a repeat with the disk cache warm saved only 13 %, so the cost is
+  decompression rather than reading. Nothing is decoded twice -- a second
+  request for the same channel returns instantly -- but each channel makes
+  its own pass over the whole file, and every channel of one sensor
+  decompresses that sensor's timestamp column again. Recorded for a ruling;
+  no optimisation was made here.
 
 - **[docs] Release pipeline (2026-09-11, ruling R224).** `release.yml`
   builds Windows and Linux installers on a `v*` tag push and opens a draft
