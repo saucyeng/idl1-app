@@ -21,11 +21,11 @@ const SEPARATOR = " | ";
 
 /**
  * A `"gps"` tag and the colour-by channel, or the literal `"null"` for an
- * uncoloured trace. Nothing calls this yet: the host-var binding for
- * `gps(...)` is a follow-up lane, and when it lands the host side
- * (`model/jsCellBinding.ts`) and the sandbox side (`sandbox/main.ts`) are
- * each to derive the name from here rather than spell it, so the two
- * cannot drift.
+ * uncoloured trace. Called from both sides of the sandbox boundary and from
+ * neither by spelling it out: the host (`model/jsCellBinding.ts`'s map arm)
+ * names the variable it pushes with this function, and the sandbox
+ * (`sandbox/main.ts`'s `gpsLookup`) recomputes the same name from the
+ * cell's own `gps(...)` argument, so the two cannot drift.
  *
  * The geometry is the same whatever the colour, so the colour-by channel is
  * the whole key beyond the tag: two map cells over one selection that colour
@@ -40,6 +40,11 @@ export function gpsKey(colourBy: string | null): string {
  * A `"raster"` tag, the channel id, then the six `fft_params` values joined
  * in C2 §5.3's fixed grammar order -- the same six, in the same order, a
  * spectrum's key uses, because they parameterise the same STFT.
+ *
+ * Called from both sides, the same way {@link gpsKey} is: the host's
+ * spectrogram binding names the variable it pushes with this function, and
+ * `sandbox/main.ts`'s `rasterLookup` recomputes it from the cell's own
+ * `spectrogram(...)` arguments.
  *
  * `averaging` is in the key even though a spectrogram keeps every frame:
  * dropping it would make this key's derivation differ from `spectrumKey`'s
