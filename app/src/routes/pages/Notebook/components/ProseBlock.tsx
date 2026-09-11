@@ -1,4 +1,5 @@
 import { useEffect, useRef } from "react";
+import type { KeyboardEvent, MouseEvent } from "react";
 
 import type { ProseBlockContent } from "../model/proseBlocks";
 import { proseSpanErrorMarker } from "../model/proseSpanError";
@@ -23,6 +24,24 @@ export interface ProseBlockProps {
    * `null` so a caller from before this task is unaffected.
    */
   windowNote?: string | null;
+  /**
+   * Ruling R226 item 1: opens this block in the prose mini-editor. When
+   * given, the rendered block becomes a click target and a focus stop that
+   * answers Enter; when omitted (print, the report view, any read-only
+   * surface) the block renders exactly as it did before this task, with no
+   * affordance at all.
+   */
+  onEdit?: () => void;
+}
+
+/** Whether a click on a rendered prose block means "edit this". A click
+ *  that finished a text selection, or landed on a link, meant the
+ *  selection or the link — opening an editor would throw either away. */
+function clickMeansEdit(target: EventTarget | null): boolean {
+  if (target instanceof Element && target.closest("a") !== null) return false;
+
+  const selection = typeof window === "undefined" ? null : window.getSelection();
+  return selection === null || selection.isCollapsed;
 }
 
 /**
@@ -44,7 +63,7 @@ export interface ProseBlockProps {
  * re-injecting HTML — from the sandbox's own `evalInline` result
  * (`spanId`/`inlineResult`/`spanError`, unchanged since before this task).
  */
-export default function ProseBlock({ content, inlineResults, spanErrors, windowNote = null }: ProseBlockProps) {
+export default function ProseBlock({ content, inlineResults, spanErrors, windowNote = null, onEdit }: ProseBlockProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
@@ -78,14 +97,37 @@ export default function ProseBlock({ content, inlineResults, spanErrors, windowN
     }
   }, [content, inlineResults, spanErrors, windowNote]);
 
+  const editProps =
+    onEdit === undefined
+      ? {}
+      : {
+          className: "prose-block prose-block-editable cursor-text rounded-sm outline-none hover:bg-control focus-visible:ring-1 focus-visible:ring-accent",
+          role: "button",
+          tabIndex: 0,
+          title: "Click to edit this text",
+          onClick: (event: MouseEvent) => {
+            if (clickMeansEdit(event.target)) onEdit();
+          },
+          onKeyDown: (event: KeyboardEvent) => {
+            if (event.key !== "Enter" || event.target !== event.currentTarget) return;
+            event.preventDefault();
+            onEdit();
+          },
+        };
+
   if (content.kind === "raw") {
-    return <div className="prose-block">{content.text}</div>;
+    return (
+      <div className="prose-block" {...editProps}>
+        {content.text}
+      </div>
+    );
   }
 
   return (
     <div
       ref={containerRef}
       className="prose-block"
+      {...editProps}
       // SAFETY: `content.html` is core's own `prose_before_html`/
       // `prose_after_html` (C3 §3.4, ledger R70/R78) — see this
       // component's doc comment for why this is the one permitted

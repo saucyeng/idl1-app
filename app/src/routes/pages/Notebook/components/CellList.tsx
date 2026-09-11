@@ -62,6 +62,19 @@ export interface CellListProps {
    * selection to `js` cells only.
    */
   frame?: (cell: ScannedCell, output: ReactNode, index: number) => ReactNode;
+  /**
+   * Ruling R226 item 1: the `blockId` of the prose block currently open in
+   * the mini-editor, or `null` when none is. That block renders
+   * {@link CellListProps.proseEditor} in place of its own text; every other
+   * block renders as usual.
+   */
+  editingProseBlockId?: string | null;
+  /** The mini-editor element for {@link CellListProps.editingProseBlockId},
+   *  built by `Notebook/index.tsx` (which owns the edit session). */
+  proseEditor?: ReactNode;
+  /** Opens a prose block for editing. Omitted on a read-only surface, in
+   *  which case no block offers the affordance at all. */
+  onEditProseBlock?: (blockId: string) => void;
 }
 
 /**
@@ -88,7 +101,26 @@ export default function CellList({
   renderJsCell,
   frame = identityFrame,
   windowNote = null,
+  editingProseBlockId = null,
+  proseEditor = null,
+  onEditProseBlock,
 }: CellListProps) {
+  /** One prose block: the open mini-editor when it is the block being
+   *  edited, the rendered text otherwise (ruling R226 item 1). */
+  function renderProse(block: ProseBlockData): ReactNode {
+    if (block.blockId === editingProseBlockId && proseEditor !== null) return proseEditor;
+
+    return (
+      <ProseBlock
+        content={block.content}
+        inlineResults={inlineResults}
+        spanErrors={spanErrors}
+        windowNote={windowNote}
+        onEdit={onEditProseBlock === undefined ? undefined : () => onEditProseBlock(block.blockId)}
+      />
+    );
+  }
+
   return (
     <div className="cell-list">
       {doc.cells.map((cell, index) => {
@@ -109,13 +141,9 @@ export default function CellList({
 
         return (
           <div className="cell-list-item" key={key}>
-            {before !== undefined && (
-              <ProseBlock content={before.content} inlineResults={inlineResults} spanErrors={spanErrors} windowNote={windowNote} />
-            )}
+            {before !== undefined && renderProse(before)}
             {frame(cell, rendered, index)}
-            {after !== undefined && (
-              <ProseBlock content={after.content} inlineResults={inlineResults} spanErrors={spanErrors} windowNote={windowNote} />
-            )}
+            {after !== undefined && renderProse(after)}
           </div>
         );
       })}
