@@ -11,6 +11,7 @@ import { NoteBlock } from "@/components/brand/NoteBlock";
 import { listSessions, listWorkbooks, getSession, type SessionDetail, type SessionSummary } from "../../../ipc/catalog";
 import { startRebuildJob, whenRebuildFinishes, type RebuildRunSummary } from "../../../ipc/rebuild_job";
 import { cursorReadout } from "../../../ipc/cursor";
+import { fetchGpsTrace, fetchGpsTraceMeta, type DecodedGpsTrace } from "../../../ipc/gps";
 import { fetchHistogram, type HistogramResponse } from "../../../ipc/histogram";
 import { equalAspectDomain, fetchScatter, type DecodedScatter } from "../../../ipc/scatter";
 import { fetchFftV2, type DecodedFft } from "../../../ipc/rasters";
@@ -67,9 +68,11 @@ import NotebookSidebar from "./components/NotebookSidebar";
 import { NewWorkbookDialog, OpenWorkbookDialog } from "./components/WorkbookMenuDialogs";
 import GraphCanvas from "./graph/GraphCanvas";
 import {
+  combineGpsWindows,
   combineHistogramWindows,
   combineScatterWindows,
   combineSpectrumWindows,
+  type GpsWindowSeries,
   type HistogramWindowSeries,
   type ScatterWindowSeries,
   type SandboxCell,
@@ -111,6 +114,7 @@ import { effectivePaperTheme } from "./model/report/paperPalette";
 import { resolveEditorHost } from "./model/editorHost";
 import { resolveGraphHost } from "./model/graphHost";
 import { runFft, type FftAction, type FftDeps } from "./model/fftDriver";
+import { gpsColumns, runGpsMeta, runGpsTrace, type GpsAction, type GpsDeps } from "./model/gpsDriver";
 import { histogramColumns, runHistogram, type HistogramAction } from "./model/histogramDriver";
 import { runScatter, unionScatterBounds, type ScatterAction } from "./model/scatterDriver";
 import { exceedsBinCap, frequencyAxisHz } from "./model/fftRequest";
@@ -122,6 +126,7 @@ import {
   unresolvedChannelId,
   type FftCellBinding,
   type HistogramCellBinding,
+  type MapCellBinding,
   type ScatterCellBinding,
 } from "./model/jsCellBinding";
 import { extractChannelCalls, extractSpectrumCalls } from "./model/jsCellCalls";
@@ -262,6 +267,22 @@ function histogramRunKey(cellId: string, windowKeyValue: string): string {
 /** {@link fftRunKey}'s scatter counterpart (ruling R215 item 3). */
 function scatterRunKey(cellId: string, windowKeyValue: string): string {
   return `${cellId}|scatter|${windowKeyValue}`;
+}
+
+/** {@link fftRunKey}'s map counterpart (ruling R217 item 1). */
+function gpsRunKey(cellId: string, windowKeyValue: string): string {
+  return `${cellId}|gps|${windowKeyValue}`;
+}
+
+/** The `cellRunSequencerRef` key for one **session's** `fetch_gps_trace_meta`
+ *  (ruling R217 item 1). Keyed by session rather than by (cell, window)
+ *  because the ENU frame and the track underlay are per session: every map
+ *  cell over one session shares one `trackGeometry`, and fetching it per
+ *  cell would fetch the same answer repeatedly. The `|` delimiter cannot
+ *  collide with a real C2 fence-string cell id, exactly as the per-cell keys
+ *  above cannot. */
+function gpsMetaRunKey(sessionId: string): string {
+  return `session|gpsMeta|${sessionId}`;
 }
 
 /** C4 §4's stated expected-hash-set TTL (5 s), matched here for the frontend's own independent self-write belt (`saveFlow.ts`'s `isSelfWrite`). */
@@ -623,6 +644,12 @@ export default function NotebookPage() {
   /** A scatter cell's per-window `fetch_scatter` failures (ruling R215 item
    *  3), typed and keyed the same way as {@link fftErrors}. */
   const [scatterErrors, setScatterErrors] = useState<Map<string, Map<string, IpcError>>>(new Map());
+  /** A map cell's per-window `fetch_gps_trace_v2` failures (ruling R217 item
+   *  1), typed and keyed the same way as {@link fftErrors}. A failed
+   *  `fetch_gps_trace_meta` is deliberately **not** here: the underlay is
+   *  per session, not per cell, and a missing track is not a reason to put
+   *  an error note on a map that draws its trace perfectly well without one. */
+  const [gpsErrors, setGpsErrors] = useState<Map<string, Map<string, IpcError>>>(new Map());
   const sessionDetail = primaryWindow !== null ? (sessionDetailsByWindow.get(windowKey(primaryWindow)) ?? null) : null;
   /** Changes exactly when the set of selected windows with a resolved
    *  `SessionDetail` changes -- the readiness dependency the channel-bind
@@ -1126,6 +1153,19 @@ export default function NotebookPage() {
   const retainedHistogramsRef = useRef<Map<string, { hostVarName: string; unit: UnitLabel; byWindow: Map<string, HistogramResponse> }>>(new Map());
   /** {@link fftBoundIdentityRef}'s histogram counterpart. */
   const histogramBoundIdentityRef = useRef<Map<string, Map<string, string>>>(new Map());
+  /** {@link retainedSpectraRef}'s map counterpart (ruling R217 item 1).
+   *  Retained for the same reason: a projected trace has no `TileCache`
+   *  entry to re-derive from, so a sandbox rebuild is served from this
+   *  page's own copies rather than a re-fetch. */
+  const retainedGpsRef = useRef<Map<string, { hostVarName: string; byWindow: Map<string, DecodedGpsTrace> }>>(new Map());
+  /** {@link fftBoundIdentityRef}'s map counterpart. */
+  const gpsBoundIdentityRef = useRef<Map<string, Map<string, string>>>(new Map());
+  /** The `(sessionId, trackId)` pair each session's `trackGeometry` was last
+   *  fetched for, so a re-render does not refetch the same underlay -- the
+   *  per-session equivalent of {@link fftBoundIdentityRef}'s per-cell map.
+   *  The underlay is pushed as one JSON host variable per session, so only
+   *  the *primary* window's session ever populates it (see the effect). */
+  const gpsMetaIdentityRef = useRef<Map<string, string>>(new Map());
   /** {@link retainedSpectraRef}'s scatter counterpart (ruling R215 item 3),
    *  plus both axes' units and whether the cell asked for equal-aspect
    *  axes -- the combined push needs all three and none can be re-derived
@@ -1246,6 +1286,40 @@ export default function NotebookPage() {
       combined.w.buffer as ArrayBuffer,
       combined.windows,
       retained.unit
+    );
+  }
+
+  /**
+   * Rebuilds and pushes `cellId`'s combined multi-window GPS trace host
+   * variable from `retainedGpsRef`'s currently retained per-window traces
+   * (ruling R217 item 1). The exact shape of
+   * {@link pushCombinedHistogramFor}, over `combineGpsWindows` instead —
+   * see that function's own doc comment for why a trace's combiner *does*
+   * insert a break row between windows where a histogram's does not.
+   */
+  function pushCombinedGpsFor(cellId: string): void {
+    const retained = retainedGpsRef.current.get(cellId);
+    const host = sandboxHostRef.current;
+    if (retained === undefined || host === null) return;
+    const series: GpsWindowSeries[] = [];
+    for (const w of selectionRef.current) {
+      const wKey = windowKey(w);
+      const trace = retained.byWindow.get(wKey);
+      if (trace === undefined) continue;
+      const detail = sessionDetailsByWindowRef.current.get(wKey) ?? null;
+      series.push({ descriptor: windowDescriptorFor(w, detail), ...gpsColumns(trace) });
+    }
+    const combined = combineGpsWindows(series);
+    host.setGpsHostVar(
+      retained.hostVarName,
+      combined.length,
+      combined.x.buffer as ArrayBuffer,
+      combined.y.buffer as ArrayBuffer,
+      combined.t.buffer as ArrayBuffer,
+      combined.c.buffer as ArrayBuffer,
+      combined.hasC,
+      combined.w.buffer as ArrayBuffer,
+      combined.windows
     );
   }
 
@@ -1633,6 +1707,22 @@ export default function NotebookPage() {
     if (workbookId === null) return Promise.reject(new Error("fetchHostChannel: no workbook open"));
     const window = windowsRef.current[0] ?? null;
     return fetchHostChannelV2(workbookId, window, defName, budget);
+  };
+
+  /** `model/gpsDriver.ts`'s injected IPC (ruling R217 item 1), built here
+   *  for the reason {@link fetchHostChannelDep} is: the driver stays free of
+   *  `ipc/**` imports, and `fetch_gps_trace_v2`'s `workbookId` argument is
+   *  page state the driver has no business knowing. Rejects if no workbook
+   *  is open yet, matching every other `workbookId`-dependent call site in
+   *  this file; `fetch_gps_trace_meta` takes no workbook and is forwarded
+   *  as-is. */
+  const gpsDeps: GpsDeps = {
+    fetchGpsTrace: (window, colourBy, budget) => {
+      const workbookId = workbookIdRef.current;
+      if (workbookId === null) return Promise.reject(new Error("fetchGpsTrace: no workbook open"));
+      return fetchGpsTrace(workbookId, window, colourBy, budget);
+    },
+    fetchGpsTraceMeta,
   };
 
   // R95 item 2: paused the same way the sandbox mount effect above is --
@@ -2787,6 +2877,177 @@ export default function NotebookPage() {
     primeState.primeEpoch,
   ]);
 
+  // For each `js` cell whose binding is the map arm, once per **selected
+  // window** whose per-window `bindingIdentity` changed (ruling R217 item 1,
+  // C2 §5.3, C3 §3.5). Structurally identical to the histogram effect above
+  // -- same per-window `CellRunSequencer` keying (via `gpsRunKey`), same
+  // decision-61 pruning of deselected windows, same R121 rule that one
+  // window's failure never blocks a sibling's.
+  //
+  // The track underlay is **not** fetched here: it is per session, not per
+  // cell, so it has its own effect below.
+  useEffect(() => {
+    if (state.markdown === null) return;
+    const markdown = state.markdown;
+    const currentWindowKeys = new Set(windows.map(windowKey));
+
+    for (const cell of state.cells) {
+      if (cell.id === null || cell.kind !== "js") continue;
+      const cellId = cell.id;
+      const code = decodeByteRange(markdown, cell.bodyRange);
+
+      const shapeWindow = primaryWindow !== null ? toWireWindow(primaryWindow) : null;
+      const shapeBinding = bindingFor({ id: cellId, code }, sessionDetail, sessionSpanUs, definitionsWithAxis, shapeWindow, definitionUnitByName);
+      if (shapeBinding === null || shapeBinding.kind !== "map") {
+        const perWindow = gpsBoundIdentityRef.current.get(cellId);
+        if (perWindow !== undefined) {
+          for (const wKey of perWindow.keys()) cellRunSequencerRef.current.delete(gpsRunKey(cellId, wKey));
+          gpsBoundIdentityRef.current.delete(cellId);
+        }
+        retainedGpsRef.current.delete(cellId);
+        setGpsErrors((prev) => {
+          if (!prev.has(cellId)) return prev;
+          const next = new Map(prev);
+          next.delete(cellId);
+          return next;
+        });
+        continue;
+      }
+
+      // Prune this cell's per-window state to the currently selected
+      // windows (decision 61) before considering which windows to refetch.
+      const perWindowIdentity = gpsBoundIdentityRef.current.get(cellId) ?? new Map<string, string>();
+      for (const wKey of Array.from(perWindowIdentity.keys())) {
+        if (!currentWindowKeys.has(wKey)) {
+          perWindowIdentity.delete(wKey);
+          cellRunSequencerRef.current.delete(gpsRunKey(cellId, wKey));
+        }
+      }
+      gpsBoundIdentityRef.current.set(cellId, perWindowIdentity);
+      const retained = retainedGpsRef.current.get(cellId);
+      if (retained !== undefined) {
+        let prunedAny = false;
+        for (const wKey of Array.from(retained.byWindow.keys())) {
+          if (!currentWindowKeys.has(wKey)) {
+            retained.byWindow.delete(wKey);
+            prunedAny = true;
+          }
+        }
+        if (prunedAny) pushCombinedGpsFor(cellId);
+      }
+      setGpsErrors((prev) => {
+        const cellMap = prev.get(cellId);
+        if (cellMap === undefined) return prev;
+        const nextCellMap = new Map(cellMap);
+        let changed = false;
+        for (const wKey of cellMap.keys()) {
+          if (!currentWindowKeys.has(wKey)) {
+            nextCellMap.delete(wKey);
+            changed = true;
+          }
+        }
+        return changed ? new Map(prev).set(cellId, nextCellMap) : prev;
+      });
+
+      for (const w of windows) {
+        const wKey = windowKey(w);
+        const detail = sessionDetailsByWindow.get(wKey) ?? null;
+        if (detail === null) continue; // this window's session is still resolving
+
+        const binding = bindingFor({ id: cellId, code }, detail, sessionSpanUs, definitionsWithAxis, toWireWindow(w), definitionUnitByName);
+        if (binding === null || binding.kind !== "map") continue; // e.g. the colour-by channel isn't in this window's session
+
+        // A map's `bindingIdentity` is per-cell, not per-window (its
+        // host-variable key carries no window), so the window key is added
+        // here -- see the histogram effect's own comment for why.
+        const identity = `${bindingIdentity(binding)}|${wKey}`;
+        if (perWindowIdentity.get(wKey) === identity) continue;
+        perWindowIdentity.set(wKey, identity);
+
+        const mapBinding: MapCellBinding = binding;
+        const dispatchGps = (action: GpsAction) => {
+          if (action.type === "gpsTrace") {
+            const entry =
+              retainedGpsRef.current.get(cellId) ?? { hostVarName: mapBinding.hostVarName, byWindow: new Map<string, DecodedGpsTrace>() };
+            entry.hostVarName = mapBinding.hostVarName;
+            entry.byWindow.set(wKey, action.trace);
+            retainedGpsRef.current.set(cellId, entry);
+            setGpsErrors((prev) => {
+              const cellMap = prev.get(cellId);
+              if (cellMap === undefined || !cellMap.has(wKey)) return prev;
+              const nextCellMap = new Map(cellMap);
+              nextCellMap.delete(wKey);
+              return new Map(prev).set(cellId, nextCellMap);
+            });
+            pushCombinedGpsFor(cellId);
+          } else if (action.type === "gpsTraceError") {
+            retainedGpsRef.current.get(cellId)?.byWindow.delete(wKey);
+            setGpsErrors((prev) => {
+              const cellMap = new Map(prev.get(cellId));
+              cellMap.set(wKey, action.error);
+              return new Map(prev).set(cellId, cellMap);
+            });
+            pushCombinedGpsFor(cellId);
+          }
+        };
+        const seq = cellRunSequencerRef.current.start(gpsRunKey(cellId, wKey));
+        const isStale = () => !cellRunSequencerRef.current.isCurrent(gpsRunKey(cellId, wKey), seq);
+
+        void runGpsTrace(gpsDeps, cellId, toWireWindow(w), mapBinding.colourBy, mapBinding.budget, dispatchGps, isStale);
+      }
+    }
+  }, [
+    state.cells,
+    state.markdown,
+    primaryEval,
+    sessionDetail,
+    sessionSpanUs,
+    windowsKeyValue,
+    sessionDetailsReadiness,
+    primeState.primeEpoch,
+  ]);
+
+  // The map cell's track underlay (ruling R217 item 1, C3 §3.5): one
+  // `fetch_gps_trace_meta` per **session**, bound under the bare identifier
+  // `trackGeometry` as a plain JSON host variable.
+  //
+  // Per session, not per cell and not per window, because the projection is:
+  // the engine anchors one local ENU frame per session, so every window's
+  // trace and the track outline share one origin, and that is exactly what
+  // lets a cell superimpose them without deriving anything. The *primary*
+  // window's session is the one that wins when several sessions are
+  // selected -- `trackGeometry` is one bare identifier with no argument to
+  // key a second session by, and the primary window is this file's standing
+  // answer to "which session does an unqualified thing mean".
+  //
+  // A failure is swallowed into the console rather than a cell note: a map
+  // with no reference outline is a complete, correct picture of where the
+  // rider went, and `gpsErrors` is reserved for the trace itself.
+  useEffect(() => {
+    const detail = sessionDetail;
+    if (detail === null) return;
+    const trackId = detail.track_visits[0]?.track_id ?? null;
+    const identity = `${detail.session_id}|${trackId ?? ""}`;
+    if (gpsMetaIdentityRef.current.get(detail.session_id) === identity) return;
+    gpsMetaIdentityRef.current.set(detail.session_id, identity);
+
+    const dispatchMeta = (action: GpsAction) => {
+      if (action.type === "gpsMeta") {
+        sandboxHostRef.current?.setHostVar("trackGeometry", {
+          kind: "json",
+          value: { polyline: action.meta.polyline, gates: action.meta.gates, origin: action.meta.origin },
+        });
+      } else if (action.type === "gpsMetaError") {
+        console.warn(`[notebook] fetch_gps_trace_meta for ${action.sessionId} failed: ${action.error.message}`);
+      }
+    };
+    const key = gpsMetaRunKey(detail.session_id);
+    const seq = cellRunSequencerRef.current.start(key);
+    const isStale = () => !cellRunSequencerRef.current.isCurrent(key, seq);
+
+    void runGpsMeta(gpsDeps, detail.session_id, trackId, dispatchMeta, isStale);
+  }, [sessionDetail]);
+
   // Save is unavailable while there is no readable `hash` to base it on
   // (still loading, or a read error) -- see `handleSave`'s doc comment on
   // why `null` cannot stand in for it.
@@ -2990,6 +3251,12 @@ export default function NotebookPage() {
     const scatterErrorsForCell = scatterErrors.get(cellId);
     if (scatterErrorsForCell !== undefined && scatterErrorsForCell.size > 0) {
       return Array.from(scatterErrorsForCell.values())
+        .map((e) => e.message)
+        .join("; ");
+    }
+    const gpsErrorsForCell = gpsErrors.get(cellId);
+    if (gpsErrorsForCell !== undefined && gpsErrorsForCell.size > 0) {
+      return Array.from(gpsErrorsForCell.values())
         .map((e) => e.message)
         .join("; ");
     }

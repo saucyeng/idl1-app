@@ -34,9 +34,11 @@ import { html } from "htl";
 import type {
   HostToSandboxMessage,
   HostVarPayload,
+  RasterFramePayload,
   SandboxCell,
   SandboxToHostMessage,
 } from "../host/protocol";
+import { gpsKey, rasterKey } from "../plotForm/gpsKey";
 import { histogramKey } from "../plotForm/histogramKey";
 import { scatterKey } from "../plotForm/scatterKey";
 import { spectrumKey } from "../plotForm/spectrumKey";
@@ -137,6 +139,64 @@ function renderCellValue(container: HTMLElement, value: unknown): void {
  * FFT cell's `n` spectra arrive combined in one payload, grouped by `w`,
  * exactly like a multi-window channel's samples.
  */
+/**
+ * One rendered raster as a spectrogram cell's own code sees it (ruling R217
+ * item 4). The field names are C2 §5.3's `raster_mark` production: `x`/`y`
+ * place the image's **centre** in data coordinates, `iw`/`ih` are its size
+ * in **CSS pixels** (the host requested the raster at exactly the size the
+ * cell draws it at, so no resampling happens here), `src` is its `data:`
+ * URL, and `w` is the window index the cell facets by.
+ *
+ * `iw`/`ih` rather than C2 §5.3's original `w`/`h`: the same production also
+ * fixes `fx: "w"`, and `w` cannot be both the window index every other
+ * payload in the app uses it for *and* an image's pixel width. Faceting by a
+ * width that is identical across windows collapses every window's raster
+ * into one facet, which is the opposite of what `fx: "w"` is for. See this
+ * lane's report -- the contract text is corrected to match.
+ */
+interface RasterRecord {
+  /** The image's centre, x, in data coordinates (seconds). */
+  x: number;
+  /** The image's centre, y, in data coordinates (Hz). */
+  y: number;
+  /** The image's rendered width, CSS pixels. */
+  iw: number;
+  /** The image's rendered height, CSS pixels. */
+  ih: number;
+  /** A `data:image/png` URL for this window's raster. */
+  src: string;
+  /** The window index -- `fx: "w"`'s facet channel. */
+  w: number;
+}
+
+/**
+ * Encodes one transferred RGBA8 frame as a `data:image/png` URL, the only
+ * form `Plot.image`'s `src` channel accepts that a null-origin realm can
+ * actually load: a `blob:` URL minted in the host realm is scoped to the
+ * host's origin and this document's origin is opaque, so it would never
+ * resolve here.
+ *
+ * Encoding runs once per fetched raster, on receipt, never per rendered
+ * frame -- a spectrogram's pixels change only when a settle-bound
+ * `fetch_raster_v2` returns new ones (C3 §4), so this never sits on the
+ * interaction path (R201). Returns an empty string for a degenerate
+ * (zero-area) frame or if the 2D context is unavailable, which renders as
+ * no image rather than a broken one.
+ */
+function rasterDataUrl(frame: RasterFramePayload): string {
+  if (frame.pixelWidth <= 0 || frame.pixelHeight <= 0) return "";
+  const canvas = document.createElement("canvas");
+  canvas.width = frame.pixelWidth;
+  canvas.height = frame.pixelHeight;
+  const ctx = canvas.getContext("2d");
+  if (ctx === null) return "";
+  const pixels = new Uint8ClampedArray(frame.pixels);
+  const expected = frame.pixelWidth * frame.pixelHeight * 4;
+  if (pixels.length < expected) return "";
+  ctx.putImageData(new ImageData(pixels.subarray(0, expected), frame.pixelWidth, frame.pixelHeight), 0, 0);
+  return canvas.toDataURL("image/png");
+}
+
 function materializeHostVar(payload: HostVarPayload): unknown {
   if (payload.kind === "json") {
     return payload.value;
@@ -184,6 +244,49 @@ function materializeHostVar(payload: HostVarPayload): unknown {
     Object.defineProperty(records, "unitState", { value: payload.unit.state, enumerable: false });
     Object.defineProperty(records, "unitY", { value: payload.unitY.state === "known" ? payload.unitY.text : "", enumerable: false });
     Object.defineProperty(records, "unitYState", { value: payload.unitY.state, enumerable: false });
+    return records;
+  }
+
+  if (payload.kind === "raster") {
+    const records: RasterRecord[] = payload.frames.map((frame) => ({
+      x: (frame.xDomain[0] + frame.xDomain[1]) / 2,
+      y: (frame.yDomain[0] + frame.yDomain[1]) / 2,
+      iw: frame.pixelWidth,
+      ih: frame.pixelHeight,
+      src: rasterDataUrl(frame),
+      w: frame.windowIndex,
+    }));
+    Object.defineProperty(records, "windows", { value: payload.windows, enumerable: false });
+    // The engine's own ramp stops and colour bounds (R177): a cell builds
+    // its legend gradient from these and never reimplements Turbo.
+    Object.defineProperty(records, "rampStops", { value: payload.rampStops, enumerable: false });
+    Object.defineProperty(records, "scale", { value: payload.scale, enumerable: false });
+    // The magnitude axis's unit, projected the same way every other
+    // payload's is, so a cell (or a prose `${…}`) can label the colour
+    // legend without a second lookup.
+    const unit = payload.magnitudeUnit;
+    Object.defineProperty(records, "unit", { value: unit !== null && unit.state === "known" ? unit.text : "", enumerable: false });
+    Object.defineProperty(records, "unitState", { value: unit?.state ?? "unknown", enumerable: false });
+    return records;
+  }
+
+  if (payload.kind === "gps") {
+    const xs = new Float64Array(payload.x);
+    const ys = new Float64Array(payload.y);
+    const ts = new Float64Array(payload.t);
+    const cs = new Float64Array(payload.c);
+    const w = new Float64Array(payload.w);
+    const records = new Array<{ x: number; y: number; t: number; c: number; w: number }>(payload.length);
+    for (let i = 0; i < payload.length; i++) {
+      records[i] = { x: xs[i], y: ys[i], t: ts[i], c: cs[i], w: w[i] };
+    }
+    Object.defineProperty(records, "windows", { value: payload.windows, enumerable: false });
+    // `.hasC` says whether `c` carries a resampled channel at all -- every
+    // `c` is `NaN` when it does not, so a cell can tell "uncoloured trace"
+    // from "coloured trace with no sample near this fix" without scanning.
+    // Non-enumerable, same as `windows`, so Plot's own field access never
+    // sees it.
+    Object.defineProperty(records, "hasC", { value: payload.hasC, enumerable: false });
     return records;
   }
 
@@ -409,6 +512,25 @@ class SandboxRuntime {
     // A lookup, never pairing or decimating -- the engine owns both
     // (CLAUDE.md §2), and this realm draws the points it is handed.
     this.bindHostVar("scatter", (x: string, y: string, params: ScatterParams) => this.scatterLookup(x, y, params));
+    // C2 §5.3's `gps(colour_by | null)` (ruling R217 item 1): the map
+    // cell's trace, already projected into one local ENU frame and
+    // decimated to the cell's own point budget by the engine. A lookup,
+    // never a projection -- no latitude crosses into this realm
+    // (CLAUDE.md §2).
+    this.bindHostVar("gps", (colourBy: string | null) => this.gpsLookup(colourBy));
+    // C2 §5.3's `trackGeometry` (ruling R217 item 1): the map cell's
+    // reference polyline and gates, in the same frame and origin as every
+    // trace for the same session, so the two superimpose without the
+    // sandbox deriving anything. A bare identifier rather than a call --
+    // it takes no argument and there is nothing to key it by. Starts empty
+    // so a map cell that renders before `fetch_gps_trace_meta` resolves
+    // draws its trace with no underlay rather than throwing.
+    this.bindHostVar("trackGeometry", { polyline: [], gates: [] });
+    // C2 §5.3's `spectrogram(channel, fft_params)` (ruling R217 item 4):
+    // one already-rendered raster per selected window, faceted by window.
+    // A lookup, never DSP and never pixel encoding -- `core::colormap`
+    // owns the ramp (R177) and the engine owns every pixel.
+    this.bindHostVar("spectrogram", (name: string, params: FftParams) => this.rasterLookup(name, params));
   }
 
   /** Updates `hostVars` (used by `channelLookup`'s by-name search), the
@@ -542,6 +664,58 @@ class SandboxRuntime {
       return [];
     }
     return value as { x: number; y: number; w: number }[];
+  }
+
+  /**
+   * `gps(colour_by | null)` (C2 §5.3, ruling R217 item 1): looks up the
+   * projected trace the host published for this colour-by channel, by
+   * recomputing {@link gpsKey} from this call's own argument -- the same
+   * shared pure function the host side uses to name the variable it
+   * pushes, so the two cannot drift. Returns the `{x, y, t, c, w}[]`
+   * records `materializeHostVar` built (metres east, metres north, seconds,
+   * the resampled colour channel, and the window index; a `NaN` row
+   * separates each window's own trace so a `Plot.line` breaks rather than
+   * vaulting between laps), or `[]` before the host has pushed anything.
+   * Never fetches, never projects.
+   */
+  private gpsLookup(colourBy: string | null): { x: number; y: number; t: number; c: number; w: number }[] {
+    const key = gpsKey(colourBy);
+    const value = this.hostVars.get(key);
+    if (!Array.isArray(value)) {
+      // R148, same reasoning as the other lookups: an unbound trace returns
+      // an empty array, which Plot renders as axis labels and nothing else.
+      console.warn(
+        `[sandbox] gps(${JSON.stringify(colourBy)}) is not bound under key ${JSON.stringify(key)};` +
+          ` known host vars: ${JSON.stringify([...this.hostVars.keys()])}`
+      );
+      return [];
+    }
+    return value as { x: number; y: number; t: number; c: number; w: number }[];
+  }
+
+  /**
+   * `spectrogram(channel, fft_params)` (C2 §5.3, ruling R217 item 4): looks
+   * up the rasters the host published for this exact (channel,
+   * `fft_params`) combination, by recomputing {@link rasterKey} from this
+   * call's own arguments. Returns **one record per selected window** --
+   * `{x, y, iw, ih, src, w}`, the image's frame in data coordinates, its
+   * `data:` URL, and its window index -- because pixels cannot interleave
+   * the way a channel's samples can, so a spectrogram facets by `w` rather
+   * than concatenating. `[]` before the host has pushed anything. Never
+   * fetches, never does DSP, never encodes a colour ramp.
+   */
+  private rasterLookup(name: string, params: FftParams): RasterRecord[] {
+    const key = rasterKey(name, params);
+    const value = this.hostVars.get(key);
+    if (!Array.isArray(value)) {
+      // R148, same reasoning as the other lookups.
+      console.warn(
+        `[sandbox] spectrogram(${JSON.stringify(name)}) is not bound under key ${JSON.stringify(key)};` +
+          ` known host vars: ${JSON.stringify([...this.hostVars.keys()])}`
+      );
+      return [];
+    }
+    return value as RasterRecord[];
   }
 
   /** Binds or updates one host variable (`setHostVar`). */

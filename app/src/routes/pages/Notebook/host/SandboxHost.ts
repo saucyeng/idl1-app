@@ -8,14 +8,17 @@
 import {
   channelPayload,
   evalInlineMessage,
+  gpsPayload,
   histogramPayload,
   isHostMessage,
+  rasterPayload,
   scatterPayload,
   layoutMessage,
   spectrumPayload,
   transformMessage,
   type HostToSandboxMessage,
   type HostVarPayload,
+  type RasterFramePayload,
   type SandboxCell,
   type WindowDescriptor,
 } from "./protocol";
@@ -239,13 +242,21 @@ export class SandboxHost {
     this.postToSandbox({ type: "setCells", cells });
   }
 
-  /** Binds a plain JSON host variable (`laps`, `session`, `constants`, …);
-   *  cached (when `value.kind === "json"`) so a rebuild can replay it. */
+  /** Binds a plain JSON host variable (`laps`, `session`, `constants`,
+   *  `trackGeometry`, …); cached (when `value.kind === "json"`) so a rebuild
+   *  can replay it.
+   *
+   *  Schedules a re-render for the reason {@link scheduleRerender} gives for
+   *  channels: a JSON host variable resolved by an async IPC round trip
+   *  (`trackGeometry`, from `fetch_gps_trace_meta`) always arrives after
+   *  `setCells` has already run the cells, so without one a map cell's
+   *  underlay would stay at the runtime's empty default forever. */
   setHostVar(name: string, value: HostVarPayload): void {
     if (value.kind === "json") {
       this.lastJsonHostVars.set(name, value.value);
     }
     this.postToSandbox({ type: "setHostVar", name, value });
+    this.scheduleRerender();
   }
 
   /**
@@ -368,6 +379,54 @@ export class SandboxHost {
     unit: UnitLabel
   ): void {
     const { message, transfer } = histogramPayload(name, length, v0, v1, n, w, windows, unit);
+    this.postToSandbox(message, transfer);
+    this.scheduleRerender();
+  }
+
+  /**
+   * Binds a decoded, possibly multi-window projected GPS trace as a host
+   * variable (ruling R217 item 1). Same transfer-list mechanics and
+   * multi-window contract as {@link setChannelHostVar} -- one call per
+   * colour-by channel, never one per window; the five buffers are moved
+   * (not copied) via `postMessage`'s transfer list (P7), and the caller must
+   * not read `x`/`y`/`t`/`c`/`w` again after this call. Not cached for
+   * rebuild replay, for the same structural reason a spectrum is not
+   * (`rebuildReplay.ts`).
+   */
+  setGpsHostVar(
+    name: string,
+    length: number,
+    x: ArrayBuffer,
+    y: ArrayBuffer,
+    t: ArrayBuffer,
+    c: ArrayBuffer,
+    hasC: boolean,
+    w: ArrayBuffer,
+    windows: WindowDescriptor[]
+  ): void {
+    const { message, transfer } = gpsPayload(name, length, x, y, t, c, hasC, w, windows);
+    this.postToSandbox(message, transfer);
+    this.scheduleRerender();
+  }
+
+  /**
+   * Binds a spectrogram cell's per-window rendered rasters as a host
+   * variable (ruling R217 item 4). One call per (channel, `fft_params`)
+   * pair carrying **every** selected window's frame, so a cell's
+   * `fx: "w"` facet has all of them at once; every frame's `pixels` buffer
+   * is moved (not copied) via `postMessage`'s transfer list (P7) and must
+   * not be read again after this call. Not cached for rebuild replay, for
+   * the same reason as every other transferred payload.
+   */
+  setRasterHostVar(
+    name: string,
+    frames: RasterFramePayload[],
+    windows: WindowDescriptor[],
+    magnitudeUnit: UnitLabel | null,
+    rampStops: [number, number, number, number][],
+    scale: { vmin: number; vmax: number } | null
+  ): void {
+    const { message, transfer } = rasterPayload(name, frames, windows, magnitudeUnit, rampStops, scale);
     this.postToSandbox(message, transfer);
     this.scheduleRerender();
   }

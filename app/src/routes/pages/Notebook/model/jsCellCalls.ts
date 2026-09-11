@@ -35,7 +35,16 @@
  * this lane (`mathExpr.ts`'s `extractRefs` skips a malformed `[...]` the
  * same way) — never a guess at what the author meant.
  */
-import { readChannelCall, readHistogramCall, readScatterCall, readSpectrumCall, tokenize, type Cursor } from "../plotForm/parse";
+import {
+  readChannelCall,
+  readGpsCall,
+  readHistogramCall,
+  readScatterCall,
+  readSpectrogramCall,
+  readSpectrumCall,
+  tokenize,
+  type Cursor,
+} from "../plotForm/parse";
 import type { FftParams, HistogramParams, ScatterParams } from "../plotForm/types";
 
 /** One `channel(...)` call this scan found, decoded exactly as
@@ -66,6 +75,23 @@ export interface ScatterCallRef {
   xChannel: string;
   yChannel: string;
   scatter: ScatterParams;
+}
+
+/** One `gps(...)` call this scan found (ruling R217 item 1), decoded exactly
+ *  as `readGpsCall` would from a full parse. `colourBy` is `null` for the
+ *  bare-identifier `gps(null)` form -- an uncoloured trace -- and never the
+ *  string `"null"`, which would name a channel actually called that. */
+export interface GpsCallRef {
+  colourBy: string | null;
+}
+
+/** One `spectrogram(...)` call this scan found (ruling R217 item 4), decoded
+ *  exactly as `readSpectrogramCall` would from a full parse. The same
+ *  `(channel, fft_params)` pair a `spectrum(...)` call carries, because the
+ *  two parameterise the same STFT. */
+export interface SpectrogramCallRef {
+  channel: string;
+  fft: FftParams;
 }
 
 /** One `name(` call site the raw-text scan located: `name` is the
@@ -266,6 +292,41 @@ export function extractHistogramCalls(code: string): HistogramCallRef[] {
     const result = readHistogramCall(cursor);
     if (result === null || cursor.pos !== tokens.length) continue;
     calls.push({ channel: result.channel, histogram: result.histogram });
+  }
+  return calls;
+}
+
+/**
+ * Every `gps(...)` call `code` makes, in source order (ruling R217 item 1) —
+ * same mechanism as {@link extractChannelCalls}, via `readGpsCall`.
+ */
+export function extractGpsCalls(code: string): GpsCallRef[] {
+  const calls: GpsCallRef[] = [];
+  for (const span of findCallSpans(code, "gps")) {
+    const tokens = tokenize(code.slice(span.start, span.end));
+    if (tokens === null) continue;
+    const cursor: Cursor = { tokens, pos: 0 };
+    const result = readGpsCall(cursor);
+    if (result === null || cursor.pos !== tokens.length) continue;
+    calls.push({ colourBy: result.colourBy });
+  }
+  return calls;
+}
+
+/**
+ * Every `spectrogram(...)` call `code` makes, in source order (ruling R217
+ * item 4) — same mechanism as {@link extractChannelCalls}, via
+ * `readSpectrogramCall`.
+ */
+export function extractSpectrogramCalls(code: string): SpectrogramCallRef[] {
+  const calls: SpectrogramCallRef[] = [];
+  for (const span of findCallSpans(code, "spectrogram")) {
+    const tokens = tokenize(code.slice(span.start, span.end));
+    if (tokens === null) continue;
+    const cursor: Cursor = { tokens, pos: 0 };
+    const result = readSpectrogramCall(cursor);
+    if (result === null || cursor.pos !== tokens.length) continue;
+    calls.push({ channel: result.channel, fft: result.fft });
   }
   return calls;
 }
