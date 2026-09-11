@@ -63,8 +63,17 @@ export class TileCache {
 
   /** @param capBytes Maximum total tile bytes retained before the
    *   least-recently-used entries are evicted. Defaults to
-   *   {@link DEFAULT_CACHE_BYTES}. */
-  constructor(private readonly capBytes: number = DEFAULT_CACHE_BYTES) {}
+   *   {@link DEFAULT_CACHE_BYTES}.
+   *  @param onChange Called after every {@link TileCache.put} with the
+   *   cache's total bytes and its cap, for an owner that wants to report
+   *   the number (the shell's status-bar memory meter, ruling R220 item 1,
+   *   through `shell/memoryBudget.ts`). Injected rather than imported: this
+   *   module stays pure in-memory bookkeeping with no store and no React
+   *   dependency, the same way `ensureTiles` takes its `fetcher`. */
+  constructor(
+    private readonly capBytes: number = DEFAULT_CACHE_BYTES,
+    private readonly onChange?: (usedBytes: number, capBytes: number) => void
+  ) {}
 
   /** Reads a cached tile, promoting it to most-recently-used. Returns
    *  `undefined` on a miss — never fetches. */
@@ -105,6 +114,8 @@ export class TileCache {
       this.entries.delete(oldestKey);
       this.totalBytes -= tileByteSize(oldestTile);
     }
+
+    this.onChange?.(this.totalBytes, this.capBytes);
   }
 
   /** Total bytes of all currently cached tiles, per {@link tileByteSize}. */

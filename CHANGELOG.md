@@ -6,6 +6,25 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 
 ### Added
 
+- **The window is laid out like an editor now (2026-09-11, ruling R220).**
+  The destination tabs are gone from the top of the window. In their place:
+  a menu bar (File, Edit, View, Go, Help) beside the app name in the title
+  bar, a 48 px strip of four icons down the left edge for Device, Data,
+  Notebook and Settings, and a resizable panel beside that strip holding
+  whichever activity you are in — the device list, the library's filters,
+  the workbook and cells list, or the settings sections. `Ctrl+1` to
+  `Ctrl+4` switch activities; `Ctrl+B` hides and shows the panel, which
+  remembers its width per screen shape the way the layout presets already
+  do. A 22 px status bar along the bottom now carries the selected
+  sessions, the device link, background import and rebuild progress, the
+  chart cache's share of its memory budget, and the current layout preset
+  (click it to cycle). Every menu entry runs a command that already
+  existed, with its shortcut printed beside it, and greys out when that
+  command cannot run. On a phone-width window there is no icon strip and
+  no side panel: the four activities are a bottom tab bar carrying the
+  status as badges, and the menus collapse into one button in the title
+  strip.
+
 - **The window's title bar is the app's own (2026-09-11, ruling R216).** On
   Windows, idl1 no longer draws a native caption above its own top bar.
   Minimize, maximize and close sit inline on the right of the app's

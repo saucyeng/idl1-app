@@ -17,9 +17,15 @@ export interface ImportStatusChipProps {
 /** The shell's global import status (ruling R201 item 3): "Importing 12 /
  *  193 · ride-03.idl0" with the current file's own progress while the queue
  *  runs, "Import done · 190 ok, 3 failed" for a minute after it drains, and
- *  nothing at all otherwise. Rendered by `AppShell` rather than by `TopBar`
- *  because the top bar is `hidden` at narrow widths (`shell/layout.ts`'s
- *  `navPlacement`) and this has to be visible on every route at every size.
+ *  nothing at all otherwise.
+ *
+ *  Ruling R220 item 1 moves it into the status bar, where a background job's
+ *  progress belongs — it used to be a full-width strip between the top bar
+ *  and the toolbar, which pushed every route's content down a row whenever
+ *  a job ran. It is now one item in the bottom band: same text, same click,
+ *  no layout shift. `StatusBar.tsx` is its only call site, and the status
+ *  bar is present at every width, so "visible on every route at every size"
+ *  still holds.
  *
  *  All the text and the fraction come from `shell/importStatus.ts`'s pure
  *  `importChip`; this component owns only the pixels, the click, and the
@@ -162,11 +168,11 @@ export default function ImportStatusChip({ onOpenImportPanel }: ImportStatusChip
       type="button"
       onClick={onOpenImportPanel}
       aria-label="Background work status — open the import panel"
-      className="flex w-full items-center gap-2 border-b border-rule bg-surface px-2 py-1 text-left font-mono text-sm hover:bg-surface-2"
+      className="flex h-full max-w-[42ch] items-center gap-2 px-2 text-left font-mono text-label-2 hover:bg-surface-2"
     >
       <span className={`truncate ${toneClass}`}>{chip.text}</span>
       {chip.fraction !== null && (
-        <progress className="h-1 w-24 shrink-0 accent-good" value={chip.fraction * 100} max={100} />
+        <progress className="h-1 w-16 shrink-0 accent-good" value={chip.fraction * 100} max={100} />
       )}
     </button>
   );

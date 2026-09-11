@@ -35,6 +35,10 @@ import { useRouteVisible } from "../../../shell/routeVisibility";
 import { useEditorSlotNode } from "../../../shell/editorSlot";
 import { useGraphSlotNode } from "../../../shell/graphSlot";
 import { useToolbarSlotNode } from "../../../shell/toolbarSlot";
+import { useSidebarSlotNode } from "../../../shell/sidebarSlot";
+import { useCommand } from "../../../shell/commandRegistry";
+import { MENU_COMMAND_IDS } from "../../../shell/menuModel";
+import { publishMemoryUse } from "../../../shell/memoryBudget";
 import { ColumnPlaceholder } from "../../../shell/ColumnFrame";
 import { resolveRegister, type PaperTheme, type ThemeChoice } from "../Settings/theme";
 import { createPrefsStore, localStorageBackend } from "../Settings/prefsStore";
@@ -56,6 +60,8 @@ import type { PropertiesFormChannelOption, PropertiesFormLapOption } from "./com
 import TimelineStrip from "./components/TimelineStrip";
 import NotebookToolbar from "./components/NotebookToolbar";
 import { WorkbookNotices } from "./components/WorkbookBar";
+import NotebookSidebar from "./components/NotebookSidebar";
+import { NewWorkbookDialog, OpenWorkbookDialog } from "./components/WorkbookMenuDialogs";
 import GraphCanvas from "./graph/GraphCanvas";
 import { combineSpectrumWindows, type SandboxCell, type SpectrumWindowSeries, type WindowDescriptor } from "./host/protocol";
 import { SandboxHost } from "./host/SandboxHost";
@@ -116,7 +122,7 @@ import { isSelfWrite, saveFlow, type SaveFlowState, type WorkbookEventWithHash }
 import { initialSandboxPrimeState, nextSandboxPrimeState } from "./model/sandboxLifecycle";
 import { runSessionSpan, type SessionSpanAction, type SessionSpanDeps } from "./model/sessionSpanDriver";
 import { commitSharedViewport, viewportForCell, type SharedViewport } from "./model/sharedViewport";
-import { TileCache } from "./model/tileCache";
+import { DEFAULT_CACHE_BYTES, TileCache } from "./model/tileCache";
 import { timelineCommit } from "./model/timelineStrip";
 import { resolvedWindowKeysFor, toWireWindow, windowSpanFor } from "./model/viewportWindows";
 import { chooseWorkbookEntry, type WorkbookEntry } from "./model/workbookEntry";
@@ -916,6 +922,7 @@ export default function NotebookPage() {
   // read further down for `PlaybackTransport`) is the same "is this tab the
   // one currently shown" signal.
   const toolbarSlotNode = useToolbarSlotNode();
+  const notebookSidebarNode = useSidebarSlotNode("notebook");
 
   // The notebook output register (decision 31) -- stored in `UiPrefs`
   // (UI-7 Q1), read/written through `notebookPrefsStore` above. `null`
@@ -972,7 +979,14 @@ export default function NotebookPage() {
 
   const containerRef = useRef<HTMLDivElement>(null);
   const sandboxHostRef = useRef<SandboxHost | null>(null);
-  const sessionRef = useRef<NotebookSession>(new NotebookSession(new TileCache()));
+  // The tile cache reports its own bytes to the shell's status-bar memory
+  // meter (ruling R220 item 1). `DEFAULT_CACHE_BYTES` is passed explicitly
+  // because the callback is the second argument; `publishMemoryUse` only
+  // notifies on a whole-percent change, so a pan that puts hundreds of
+  // tiles re-renders the status bar a handful of times, not hundreds.
+  const sessionRef = useRef<NotebookSession>(
+    new NotebookSession(new TileCache(DEFAULT_CACHE_BYTES, publishMemoryUse))
+  );
   const openSeqRef = useRef(0);
   const evalSeqRef = useRef(0);
   /**
@@ -2995,6 +3009,14 @@ export default function NotebookPage() {
   };
   const visibleColumnIds = visibleNotebookColumnIds(columnVisibility, notebookColumnAvailability);
   const columnsToggleAvailable = !paperActive;
+
+  /** The toggle group's next on-id set with `column` flipped — what the
+   *  View menu's two column items hand `applyColumnToggleValue`, so a menu
+   *  pick goes through exactly the same path (and the same R213 "thrown by
+   *  hand" bookkeeping) as the toolbar's own toggles. */
+  function toggledColumnIds(column: "graph" | "properties"): string[] {
+    return columnVisibility[column] ? visibleColumnIds.filter((id) => id !== column) : [...visibleColumnIds, column];
+  }
   // `!graphIsPortalHosted`: when the wide studio's maths column hosts the
   // canvas, this page renders no graph pane of its own -- one
   // `GraphCanvas` instance, in one place, exactly as `editorIsPortalHosted`
@@ -3060,6 +3082,38 @@ export default function NotebookPage() {
   // parked behind a "More" disclosure, because "nothing in this codebase
   // measures toolbar overflow yet") is now an actual measurement --
   // `shell/toolbarLayout.ts` over a `ResizeObserver` on the row.
+  // --- the File and View menus' Notebook commands (ruling R220 item 1) ---
+  //
+  // Registered here, not in the shell: every one of these closes over this
+  // page's own state (the open document, the catalog entry, the column
+  // visibility R213 reads), which is exactly why R109 puts the handler
+  // where the state is. `available` is the second argument, so a command
+  // whose preconditions are not met leaves the registry and greys out in
+  // its menu rather than being a menu item that silently does nothing.
+  const [newWorkbookOpen, setNewWorkbookOpen] = useState(false);
+  const [openWorkbookOpen, setOpenWorkbookOpen] = useState(false);
+
+  useCommand(MENU_COMMAND_IDS.workbookNew, true, () => setNewWorkbookOpen(true));
+  useCommand(MENU_COMMAND_IDS.workbookOpen, true, () => setOpenWorkbookOpen(true));
+  useCommand(MENU_COMMAND_IDS.libraryRescan, !rescanning, () => void handleRescan());
+  useCommand(
+    MENU_COMMAND_IDS.workbookSave,
+    state.handle !== null && !saveUnavailable && saveFlowState.status !== "saving",
+    () => void handleSave()
+  );
+  useCommand(
+    MENU_COMMAND_IDS.workbookExportReport,
+    state.handle !== null && !exportingReport && state.markdown !== null,
+    () => void handleExportReport()
+  );
+  useCommand(MENU_COMMAND_IDS.viewToggleDense, true, () => applyDense(!dense));
+  useCommand(MENU_COMMAND_IDS.viewToggleGraph, columnsToggleAvailable, () =>
+    applyColumnToggleValue(toggledColumnIds("graph"))
+  );
+  useCommand(MENU_COMMAND_IDS.viewToggleProperties, columnsToggleAvailable, () =>
+    applyColumnToggleValue(toggledColumnIds("properties"))
+  );
+
   const toolbarElement = (
     <>
       <NotebookToolbar
@@ -3139,6 +3193,33 @@ export default function NotebookPage() {
           leaks onto another tab either. */}
       {routeVisible && toolbarSlotNode !== null && createPortal(toolbarElement, toolbarSlotNode)}
       {routeVisible && toolbarSlotNode === null && toolbarElement}
+      {/* The Notebook activity's sidebar content (ruling R220 item 1): the
+          workbook list and the cells outline. Unlike the toolbar above,
+          this needs no `routeVisible` gate — `sidebarSlot.ts` keys its
+          nodes by route, so this portal only ever reaches the Notebook
+          activity's own panel, which the shell shows when that activity is
+          current. Nothing renders here when there is no sidebar at all
+          (narrow layouts, R220 item 3): the cells are already on the page
+          and the workbook picker is in the toolbar. */}
+      {notebookSidebarNode !== null &&
+        createPortal(
+          <NotebookSidebar
+            entry={entry}
+            onSelectWorkbook={handleSelect}
+            cells={state.cells}
+            displayName={(cellId) => displayNameFor(cellDisplayNameMap, cellId)}
+            selectedCellId={selectedCellId}
+            onSelectCell={setSelectedCellId}
+          />,
+          notebookSidebarNode
+        )}
+      <NewWorkbookDialog
+        open={newWorkbookOpen}
+        onOpenChange={setNewWorkbookOpen}
+        creating={creating}
+        onCreate={(name) => void handleCreate(name)}
+      />
+      <OpenWorkbookDialog open={openWorkbookOpen} onOpenChange={setOpenWorkbookOpen} entry={entry} onSelect={handleSelect} />
       {/* Master timeline strip (decision 52, R115, R134 item 1): one lane
           per selected window, own draggable boundary handles. Not one of
           R161's named toolbar controls -- kept as its own full-width strip,
