@@ -1,11 +1,14 @@
-import type { MouseEvent, ReactNode } from "react";
+import { useEffect, useRef, useState, type KeyboardEvent, type MouseEvent, type ReactNode } from "react";
 import { Loader2Icon } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
+import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuSeparator, ContextMenuTrigger } from "@/components/ui/context-menu";
 import { NoteBlock } from "@/components/brand/NoteBlock";
 import { StatusDot } from "@/components/brand/StatusDot";
 import type { ScannedCell } from "../model/cells";
 import { isCellBusy, type CellStatus } from "../model/cellStatus";
+import { denseGeometry } from "../model/denseMode";
+import { isShowCodeShortcut, plotStatusGlyph, SETTLE_FADE_MS, type CellChromeMode, type PlotLegendEntry } from "../model/plotChrome";
 
 /** Tailwind text-colour utility for each {@link CellStatus} — the two
  *  waiting states read as inactive (`--fg-faint`), settled as `--good`,
@@ -52,7 +55,8 @@ export interface CellFrameProps {
    *  there is one — deliberately not gated on `status === "error"`, so a
    *  failed cell that is now re-evaluating keeps its message on screen
    *  under the spinner instead of flickering away and back (decision 59
-   *  again). `undefined` renders nothing. */
+   *  again). `undefined` renders nothing. In `"overlay"` chrome the same
+   *  text is the ✕ glyph's tooltip instead (ruling R216 item 2). */
   error?: string;
   /** Whether this cell's source is currently revealed (decision 30) —
    *  `model/codeVisibility.ts`'s `isCodeVisible`; `CellFrame` keeps no
@@ -67,6 +71,33 @@ export interface CellFrameProps {
    *  body could be decoded) hides the toggle button entirely, since there
    *  would be nothing for it to reveal. */
   code?: string;
+  /**
+   * Which chrome this cell draws (ruling R216 item 2/3,
+   * `model/plotChrome.ts`'s `cellChromeMode`, or `denseMode.ts`'s
+   * `denseChromeMode` when dense stacking is on). Optional, defaulting to
+   * `"band"` — every caller from before R216 keeps exactly the R210 header
+   * row it had.
+   */
+  chrome?: CellChromeMode;
+  /** Whether dense stacking is on (ruling R216 item 3) — removes this
+   *  frame's gap and padding. Optional, defaulting to today's spacing. */
+  dense?: boolean;
+  /** Whether this cell hides its own top margin to read as sharing the x
+   *  axis of the chart above it (`denseMode.ts`'s `sharesXAxisAbove`).
+   *  Purely visual: nothing about either chart's axes changes. */
+  sharesXAxisAbove?: boolean;
+  /** The plot's centred title (`model/plotChrome.ts`'s `cellDisplayLabel`),
+   *  or `undefined` for no title row at all. `"overlay"` chrome only. */
+  title?: string;
+  /** This plot's series key (`model/plotChrome.ts`'s `plotLegendEntries`),
+   *  already empty for a single-series plot. `"overlay"` chrome only. */
+  legend?: readonly PlotLegendEntry[];
+  /** Opens this cell in the Properties form — the context menu's own
+   *  "Properties" item (ruling R216 item 2). `undefined` omits the item. */
+  onOpenProperties?: () => void;
+  /** Frames this cell in the maths graph — the context menu's "Tidy in
+   *  graph" item. `undefined` omits the item. */
+  onTidyInGraph?: () => void;
   /** This cell's already-rendered output — `CellList.tsx`'s per-kind
    *  renderer (`MathCell`/`TableCell`/the injected `renderJsCell`) or its
    *  pending placeholder. `CellFrame` only adds the selection chrome
@@ -74,18 +105,93 @@ export interface CellFrameProps {
   children: ReactNode;
 }
 
+/** Milliseconds since this cell last settled, re-rendering once when the
+ *  ✓ is due to fade (ruling R216 item 2). `null` until the first settle in
+ *  this mount, which `plotStatusGlyph` reads as "just now".
+ *
+ *  One timer, armed on the settle and cleared on any other transition — not
+ *  an interval and not a `requestAnimationFrame` loop: the glyph has
+ *  exactly one thing to do after a settle (disappear, once, 2 s later), so
+ *  it costs one `setTimeout` per settle and nothing at all at rest. */
+function useMsSinceSettle(status: CellStatus): number | null {
+  const settledAt = useRef<number | null>(null);
+  const [, force] = useState(0);
+
+  useEffect(() => {
+    if (status !== "settled") {
+      settledAt.current = null;
+      return;
+    }
+    settledAt.current = Date.now();
+    const timer = setTimeout(() => force((n) => n + 1), SETTLE_FADE_MS);
+    return () => clearTimeout(timer);
+  }, [status]);
+
+  return settledAt.current === null ? null : Date.now() - settledAt.current;
+}
+
+/** The 12 px status glyph overlaid on a plot's top-left corner (ruling
+ *  R216 item 2). An error's ✕ carries the message: hovering shows it,
+ *  clicking pins it open until clicked again. */
+function StatusGlyph({ status, error, msSinceSettle }: { status: CellStatus; error?: string; msSinceSettle: number | null }) {
+  const [pinned, setPinned] = useState(false);
+  const [hovered, setHovered] = useState(false);
+  const glyph = plotStatusGlyph(status, msSinceSettle);
+
+  if (glyph === "none") return null;
+
+  const showError = error !== undefined && glyph === "cross" && (pinned || hovered);
+
+  return (
+    <div className="pointer-events-none absolute top-1 left-1 z-10 flex items-start gap-1">
+      <span
+        className={`pointer-events-auto flex size-[12px] items-center justify-center ${glyph === "cross" ? "cursor-pointer text-accent" : glyph === "tick" ? "text-good" : "text-fg-faint"}`}
+        role={glyph === "cross" ? "button" : "status"}
+        aria-label={glyph === "cross" ? "Evaluation failed" : glyph === "tick" ? "Settled" : "Evaluating"}
+        tabIndex={glyph === "cross" ? 0 : undefined}
+        onMouseEnter={() => setHovered(true)}
+        onMouseLeave={() => setHovered(false)}
+        onFocus={() => setHovered(true)}
+        onBlur={() => setHovered(false)}
+        onClick={(e) => {
+          if (glyph !== "cross") return;
+          e.stopPropagation();
+          setPinned((open) => !open);
+        }}
+      >
+        {glyph === "spinner" ? <Loader2Icon className="size-[12px] animate-spin" /> : glyph === "tick" ? "✓" : "✕"}
+      </span>
+      {showError && (
+        /* Full message, mono, selectable (R216 item 2). `pointer-events-auto`
+           so the text can actually be swept and copied — the wrapper turns
+           them off so the rest of the corner never eats a plot gesture. */
+        <span className="pointer-events-auto max-w-[48ch] rounded-[var(--radius-structural)] border border-accent bg-surface px-[var(--nb-pad)] py-px font-mono text-[length:var(--nb-text-label)] break-words text-accent select-text">
+          {error}
+        </span>
+      )}
+    </div>
+  );
+}
+
 /**
  * The per-cell chrome mounted through `CellList.tsx`'s `frame` hook
- * (Task 15, ruling R74; restyled UI-10): an uppercase tracked kicker, a
- * `StatusDot` for this cell's run state, a code-reveal toggle (decision 30)
- * and a click affordance that opens this cell in the editor shell
- * (`EditorPanes`) — wrapping whatever `CellList` already rendered for this
- * cell so every kind (math/table/js alike) is selectable, not only `js`
- * cells. The selected state shows as a `--surface-2` fill plus the app's
- * reserved 3 px `--good` inset bar (the same selection-bar convention the
- * Data tab's session table uses). An error surfaces as an in-place
- * `NoteBlock`, never a banner or toast (R66/R78 — span errors are a
- * separate, narrower concept this component does not touch).
+ * (Task 15, ruling R74; restyled UI-10; ruling R216 items 2 and 3).
+ *
+ * Two shapes, chosen by `chrome`:
+ *
+ * - **`"band"`** — every non-chart kind, and every kind while dense
+ *   stacking is off: the R210 header row, an uppercase tracked kicker, a
+ *   `StatusDot`, and the "Show code" button, exactly as before.
+ * - **`"overlay"`** — chart cells (R216 item 2). The row stops existing.
+ *   The status becomes a 12 px glyph in the plot's own top-left corner,
+ *   which fades 2 s after a settle and stays put on an error with the
+ *   message on hover. "Show code" moves into the plot's right-click menu
+ *   and onto `Alt`+`C`. A `# label:` becomes a centred title in the plot's
+ *   top margin, and a plot with more than one series gets a compact legend
+ *   in its top-right. "JS 01" is not a title and does not appear.
+ *
+ * The selected state shows as a `--surface-2` fill plus the app's reserved
+ * 3 px `--good` inset bar in both shapes.
  */
 export default function CellFrame({
   cell,
@@ -97,54 +203,122 @@ export default function CellFrame({
   codeVisible,
   onToggleCode,
   code,
+  chrome = "band",
+  dense = false,
+  sharesXAxisAbove = false,
+  title,
+  legend,
+  onOpenProperties,
+  onTidyInGraph,
   children,
 }: CellFrameProps) {
   const kicker = `${cell.kind.toUpperCase()} · ${String(index + 1).padStart(2, "0")}`;
+  const geometry = denseGeometry(dense);
+  const msSinceSettle = useMsSinceSettle(status);
+  const overlay = chrome === "overlay";
 
   function handleToggleCode(e: MouseEvent): void {
     e.stopPropagation();
     onToggleCode();
   }
 
-  return (
+  function handleKeyDown(e: KeyboardEvent): void {
+    if (code === undefined) return;
+    if (!isShowCodeShortcut(e)) return;
+    e.preventDefault();
+    e.stopPropagation();
+    onToggleCode();
+  }
+
+  const output = (
+    <div className="relative">
+      {overlay && <StatusGlyph status={status} error={error} msSinceSettle={msSinceSettle} />}
+      {overlay && title !== undefined && (
+        /* Centred in the plot's own top margin (R216 item 2) — absolutely
+           positioned rather than a row of its own, so a plot with no label
+           is not one line shorter than a plot with one. */
+        <div className="pointer-events-none absolute inset-x-0 top-0 z-10 truncate px-6 text-center font-mono text-[length:var(--nb-text-label)] tracking-[var(--tracking-label)] text-fg">
+          {title}
+        </div>
+      )}
+      {overlay && legend !== undefined && legend.length > 0 && (
+        <div className="pointer-events-none absolute top-0 right-1 z-10 flex max-w-[50%] flex-col items-end gap-px" aria-label="Series">
+          {legend.map((entry) => (
+            <span key={entry.key} className="flex items-center gap-[var(--nb-pad)] font-mono text-[length:var(--nb-text-label)] text-fg-dim">
+              <span aria-hidden className="size-[6px] shrink-0" style={{ background: `var(${entry.colour})` }} />
+              <span className="truncate">{entry.label}</span>
+            </span>
+          ))}
+        </div>
+      )}
+      {children}
+      {isCellBusy(status) && !overlay && (
+        <div className="pointer-events-none absolute inset-0 flex items-center justify-center bg-surface/60" role="status" aria-label="Recomputing">
+          <Loader2Icon className="size-5 animate-spin text-fg-dim" />
+        </div>
+      )}
+    </div>
+  );
+
+  const body = (
     <div
-      className={`flex flex-col gap-2 border-l-[3px] px-4 py-3 ${selected ? "border-good bg-surface-2" : "border-transparent"}`}
+      className={`flex flex-col border-l-[3px] ${selected ? "border-good bg-surface-2" : "border-transparent"}`}
+      style={{
+        gap: geometry.gapPx,
+        paddingInline: geometry.paddingXPx,
+        paddingBlock: geometry.paddingYPx,
+        // R216 item 3: the lower of two stacked time charts hides its own
+        // top margin so the pair reads as one continuous x axis. Negative
+        // margin, not a height change — neither chart is redrawn.
+        marginTop: sharesXAxisAbove ? -1 : undefined,
+      }}
       data-cell-id={cell.id ?? undefined}
       data-selected={selected}
       data-register-cell=""
+      data-chrome={chrome}
       onClick={onSelect}
+      onKeyDown={handleKeyDown}
     >
-      <div className="flex items-center justify-between gap-3">
-        <span className="font-mono text-[11px] font-medium tracking-[var(--tracking-kicker)] text-fg-dim uppercase">{kicker}</span>
-        <div className="flex items-center gap-3">
-          <StatusDot className={STATUS_DOT_CLASS[status]}>{status}</StatusDot>
-          {code !== undefined && (
-            <Button type="button" size="xs" emphasis="normal" onClick={handleToggleCode} aria-pressed={codeVisible}>
-              {codeVisible ? "Hide code" : "Show code"}
-            </Button>
-          )}
-        </div>
-      </div>
-      {codeVisible && code !== undefined && (
-        <pre className="overflow-x-auto rounded-[var(--radius-card)] border border-rule bg-control p-3 font-mono text-xs text-fg">
-          {code}
-        </pre>
-      )}
-      <div className="relative">
-        {children}
-        {isCellBusy(status) && (
-          <div
-            className="absolute inset-0 flex items-center justify-center bg-surface/60 pointer-events-none"
-            role="status"
-            aria-label="Recomputing"
-          >
-            <Loader2Icon className="size-5 animate-spin text-fg-dim" />
+      {!overlay && (
+        <div className="flex items-center justify-between gap-3">
+          <span className="font-mono text-[11px] font-medium tracking-[var(--tracking-kicker)] text-fg-dim uppercase">{kicker}</span>
+          <div className="flex items-center gap-3">
+            <StatusDot className={STATUS_DOT_CLASS[status]}>{status}</StatusDot>
+            {code !== undefined && (
+              <Button type="button" size="xs" emphasis="normal" onClick={handleToggleCode} aria-pressed={codeVisible}>
+                {codeVisible ? "Hide code" : "Show code"}
+              </Button>
+            )}
           </div>
-        )}
-      </div>
-      {error !== undefined && (
-        <NoteBlock className="border-accent text-accent">{error}</NoteBlock>
+        </div>
       )}
+      {codeVisible && code !== undefined && (
+        <pre className="overflow-x-auto rounded-[var(--radius-card)] border border-rule bg-control p-3 font-mono text-xs text-fg">{code}</pre>
+      )}
+      {output}
+      {/* In overlay chrome the message lives in the ✕'s tooltip instead
+          (R216 item 2) — a `NoteBlock` under the plot is the row this
+          ruling removes, in another form. */}
+      {error !== undefined && !overlay && <NoteBlock className="border-accent text-accent">{error}</NoteBlock>}
     </div>
+  );
+
+  if (!overlay) return body;
+
+  return (
+    <ContextMenu>
+      <ContextMenuTrigger asChild>{body}</ContextMenuTrigger>
+      {/* R216 item 2: "Show code" leaves the plot surface for this menu and
+          for Alt+C. "Copy as PNG" is not offered — the plot lives inside
+          the sandbox iframe (R69), so the host has no node to serialise
+          without a new sandbox round trip, which the ruling makes
+          conditional on being cheap. It is not. */}
+      <ContextMenuContent className="idl-dense">
+        {code !== undefined && <ContextMenuItem onSelect={onToggleCode}>{codeVisible ? "Hide code" : "Show code"}</ContextMenuItem>}
+        {(onOpenProperties !== undefined || onTidyInGraph !== undefined) && code !== undefined && <ContextMenuSeparator />}
+        {onOpenProperties !== undefined && <ContextMenuItem onSelect={onOpenProperties}>Properties</ContextMenuItem>}
+        {onTidyInGraph !== undefined && <ContextMenuItem onSelect={onTidyInGraph}>Tidy in graph</ContextMenuItem>}
+      </ContextMenuContent>
+    </ContextMenu>
   );
 }

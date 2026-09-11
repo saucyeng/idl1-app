@@ -63,6 +63,12 @@ export interface NotebookToolbarProps {
   // --- view group ---
   register: OutputRegister;
   onRegisterChange: (register: OutputRegister) => void;
+  /** Ruling R216 item 3's stacking option: 0 px gaps, no cell padding,
+   *  overlay-only chrome, and stacked time charts sharing an x axis. A per
+   *  machine view preference (`model/denseMode.ts`), never a document
+   *  value — so it sits in the `view` group beside the layout presets. */
+  dense: boolean;
+  onDenseChange: (dense: boolean) => void;
   /** The layout preset this viewport shape is on, or `"custom"` after a
    *  column was thrown by hand (R213 item 3) — the picker then shows
    *  nothing selected rather than lying about which arrangement is live. */
@@ -379,6 +385,22 @@ export default function NotebookToolbar(props: NotebookToolbarProps) {
                   {!labelled && <span className="sr-only">{preset.label}</span>}
                 </ToggleGroupItem>
               ))}
+            </ToggleGroup>
+            {/* R216 item 3. A single-item `ToggleGroup` rather than a
+                `Button` with `aria-pressed`, so it reads and styles as one
+                more register in this group instead of an action. */}
+            <ToggleGroup
+              type="multiple"
+              density="tight"
+              aria-label="Stacking"
+              value={props.dense ? ["dense"] : []}
+              onValueChange={(ids: string[]) => props.onDenseChange(ids.includes("dense"))}
+            >
+              <ToggleGroupItem value="dense" title="Stack cells with no gaps, padding or chrome rows">
+                <span aria-hidden>≡</span>
+                {labelled && <span className="ml-[var(--nb-pad)]">Dense</span>}
+                {!labelled && <span className="sr-only">Dense</span>}
+              </ToggleGroupItem>
             </ToggleGroup>
           </div>
         );

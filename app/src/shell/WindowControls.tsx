@@ -1,5 +1,7 @@
 import { useEffect, useState } from "react";
 
+import { getCurrentWindow } from "@tauri-apps/api/window";
+
 import { cn } from "@/lib/utils";
 import { WINDOW_CONTROL_ORDER, windowControlLabel, type WindowControlId } from "./windowChrome";
 
@@ -51,14 +53,15 @@ function ControlGlyph({ id, maximized }: { id: WindowControlId; maximized: boole
  * that gesture belongs to the native caption button we are replacing.
  * Win+arrow and dragging to a screen edge are unaffected.
  *
- * The Tauri window API is imported lazily, per click, for two reasons: the
- * shell must still render in a plain browser tab (`npm run dev` without
- * Tauri, and any future test that mounts it), where the module's top-level
- * IPC probe would throw; and nothing about the title bar should be on the
- * app's startup path. A failed call is swallowed — a window control that
- * cannot reach the window has nothing useful to tell the user, and R201's
- * "never a crash on bad data" applies to a missing host as much as to a
- * malformed payload.
+ * Every call into the Tauri window API is guarded, because the shell must
+ * still render in a plain browser tab (`npm run dev` without Tauri): there
+ * is no host to answer, and a rejected promise here is not news. A failed
+ * call is swallowed — a window control that cannot reach its window has
+ * nothing useful to tell the user, and R201's "never a crash on bad data"
+ * applies to a missing host as much as to a malformed payload. The import
+ * itself is static: `@tauri-apps/api/webview` already pulls this module
+ * into the main chunk, so a dynamic import would buy no code splitting and
+ * only add a promise to the click path.
  */
 export default function WindowControls({ className }: { className?: string }) {
   const [maximized, setMaximized] = useState(false);
@@ -70,8 +73,8 @@ export default function WindowControls({ className }: { className?: string }) {
     let unlisten: (() => void) | undefined;
     let cancelled = false;
 
-    import("@tauri-apps/api/window")
-      .then(async ({ getCurrentWindow }) => {
+    void (async () => {
+      try {
         const appWindow = getCurrentWindow();
         const sync = async () => {
           const now = await appWindow.isMaximized();
@@ -83,10 +86,10 @@ export default function WindowControls({ className }: { className?: string }) {
         });
         if (cancelled) stop();
         else unlisten = stop;
-      })
-      .catch(() => {
+      } catch {
         // Not running under Tauri. The buttons render and do nothing.
-      });
+      }
+    })();
 
     return () => {
       cancelled = true;
@@ -95,17 +98,16 @@ export default function WindowControls({ className }: { className?: string }) {
   }, []);
 
   function activate(id: WindowControlId): void {
-    void import("@tauri-apps/api/window")
-      .then(({ getCurrentWindow }) => {
-        const appWindow = getCurrentWindow();
-        if (id === "minimize") return appWindow.minimize();
-        if (id === "close") return appWindow.close();
-        return appWindow.toggleMaximize();
-      })
-      .catch(() => {
+    try {
+      const appWindow = getCurrentWindow();
+      const done = id === "minimize" ? appWindow.minimize() : id === "close" ? appWindow.close() : appWindow.toggleMaximize();
+      void done.catch(() => {
         // See the doc comment: a control that cannot reach its window is
         // silent, not a banner.
       });
+    } catch {
+      // Same, for a host that is not there at all.
+    }
   }
 
   return (

@@ -75,6 +75,8 @@ import {
 import { channelDataKeysForCell, channelDataKeysToEvict } from "./model/channelDataRetention";
 import { CellRunSequencer } from "./model/cellRunSequencer";
 import { isCodeVisible, toggleCode } from "./model/codeVisibility";
+import { cellDisplayLabel, plotLegendEntries } from "./model/plotChrome";
+import { denseChromeMode, readDenseMode, sharesXAxisAbove, writeDenseMode } from "./model/denseMode";
 import { createCursorBus, type CursorBus } from "./interaction/cursorBus";
 import { BASIC_MOUSE_PRESET, findInputMapPreset, INPUT_MAP_PRESETS, type InputMapPreset } from "./interaction/inputMap";
 import { playableSpanUs, setSpeed, tick, togglePlay, type PlaybackState } from "./interaction/playback";
@@ -417,6 +419,17 @@ export default function NotebookPage() {
    *  the old `graphViewOpen = false` starting state byte-for-byte: cells
    *  on, graph off). */
   const [columnVisibility, setColumnVisibility] = useState(() => readNotebookColumnVisibility());
+
+  /** Ruling R216 item 3's "Dense" stacking option, remembered per machine
+   *  beside `notebookColumns` (`model/denseMode.ts`). A view preference,
+   *  never part of a workbook and never synced: it changes gaps, padding
+   *  and chrome, and nothing a number depends on. */
+  const [dense, setDense] = useState(() => readDenseMode());
+
+  function applyDense(next: boolean): void {
+    setDense(next);
+    writeDenseMode(next);
+  }
 
   // R208 item 2: publishes this page's own Graph toggle to the shell, so
   // `RouteHost.tsx` can drop the studio's maths column entirely when it is
@@ -2454,6 +2467,48 @@ export default function NotebookPage() {
   const versionBannerDismissKey = `${windowsKeyValue}::${currentEngineVersion ?? ""}`;
   const versionBannerVisible = versionBanner !== null && versionBannerDismissedFor !== versionBannerDismissKey;
 
+  /** Every cell's kind in document order — `denseMode.ts`'s
+   *  `sharesXAxisAbove` needs the cell above's kind, which `CellList`'s
+   *  per-cell `frame` callback does not carry. */
+  const cellKinds = state.cells.map((cell) => cell.kind);
+
+  /**
+   * Each `js` cell's legend (ruling R216 item 2), keyed by cell id and
+   * already empty for a single-series plot.
+   *
+   * Built from the cell's own `channel(...)` call sites rather than from
+   * `bindingFor` — the binding resolves one *mounted* channel per cell
+   * (`renderJsCell`'s own TODO), so it cannot say how many series the plot
+   * draws, while the call sites can. Units come from the same
+   * `definitionUnitByName` map the binding uses, so a definition's legend
+   * entry carries the unit the engine inferred rather than one guessed
+   * here; a raw session channel has no entry and shows its name alone.
+   */
+  const cellLegends = new Map(
+    state.cells
+      .filter((cell) => cell.kind === "js" && cell.id !== null && state.markdown !== null)
+      .map((cell) => {
+        const code = decodeByteRange(state.markdown as string, cell.bodyRange);
+        const names = Array.from(new Set(extractChannelCalls(code).map((call) => call.channel)));
+        const series = names.map((name) => {
+          const unit = definitionUnitByName.get(name);
+          return { name, unit: unit !== undefined && unit.state === "known" ? unit.text : null };
+        });
+        return [cell.id as string, plotLegendEntries(series)] as const;
+      }),
+  );
+
+  /** The plot context menu's two navigation items (ruling R216 item 2):
+   *  select the cell and make sure the column that answers the question is
+   *  on. Routed through `applyColumnToggleValue` so R213's "thrown by hand
+   *  moves this shape to custom" rule applies to a menu pick exactly as it
+   *  does to the toolbar's own toggles. */
+  function openCellIn(cellId: string, column: "properties" | "graph"): void {
+    setSelectedCellId(cellId);
+    if (columnVisibility[column]) return;
+    applyColumnToggleValue([...visibleNotebookColumnIds(columnVisibility, notebookColumnAvailability), column]);
+  }
+
   const cellListElement = (
     <CellList
       doc={{ frontMatterRange: null, cells: state.cells }}
@@ -2751,7 +2806,10 @@ export default function NotebookPage() {
               />
             );
           }}
-          frame={(cell, output, index) => (
+          frame={(cell, output, index) => {
+            const cellCode = state.markdown !== null ? decodeByteRange(state.markdown, cell.bodyRange) : undefined;
+            const cellTitle = cellCode !== undefined ? cellDisplayLabel(cellCode) : null;
+            return (
             <CellFrame
               cell={cell}
               index={index}
@@ -2767,7 +2825,17 @@ export default function NotebookPage() {
                 if (cellId === null) return;
                 setRevealedCells((prev) => toggleCode(prev, cellId));
               }}
-              code={state.markdown !== null ? decodeByteRange(state.markdown, cell.bodyRange) : undefined}
+              code={cellCode}
+              /* Ruling R216 items 2 and 3: a chart cell's chrome overlays
+                 its plot instead of sitting in a row above it, and dense
+                 stacking overlays every kind's. */
+              chrome={denseChromeMode(dense, cell.kind)}
+              dense={dense}
+              sharesXAxisAbove={sharesXAxisAbove(cellKinds, index, dense)}
+              title={cellTitle ?? undefined}
+              legend={cell.id !== null ? (cellLegends.get(cell.id) ?? undefined) : undefined}
+              onOpenProperties={cell.id !== null ? () => openCellIn(cell.id as string, "properties") : undefined}
+              onTidyInGraph={cell.id !== null ? () => openCellIn(cell.id as string, "graph") : undefined}
             >
               {output}
               {/* Medium layout (decision 29): the editor sits inline, under
@@ -2775,7 +2843,8 @@ export default function NotebookPage() {
                   the whole document. */}
               {!editorIsPortalHosted && placement === "inline" && columnVisibility.properties && cell.id !== null && cell.id === openCellId && editorPanesElement}
             </CellFrame>
-          )}
+            );
+          }}
         />
   );
 
@@ -2914,6 +2983,8 @@ export default function NotebookPage() {
         onRescan={() => void handleRescan()}
         onSelect={handleSelect}
         register={register}
+        dense={dense}
+        onDenseChange={applyDense}
         onRegisterChange={handleRegisterChange}
         activePreset={activePreset}
         onPresetChange={applyLayoutPreset}
