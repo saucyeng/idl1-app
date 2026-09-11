@@ -75,3 +75,7 @@ library is untouchable from a dev build.
 The release identifier in `tauri.conf.json` is unchanged, so `tauri build`
 and every bundle target are unaffected; the overlay is only ever passed on
 the `tauri:dev` path.
+
+## Config overlays replace arrays
+
+`tauri.dev.conf.json` and `tauri.windows.conf.json` both define `app.windows`; JSON merge replaces the array wholesale, so the dev overlay must repeat `"decorations": false` (R216) or the dev build shows the native title bar. Any new window property must be added to both.
