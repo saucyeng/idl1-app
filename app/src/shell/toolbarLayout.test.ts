@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   inlineGroupSpans,
+  packedSpans,
   NOTEBOOK_TOOLBAR_GROUPS,
   TOOLBAR_COLLAPSE_ORDER,
   TOOLBAR_GROUP_GAP,
@@ -57,7 +58,7 @@ describe("toolbarLayout — a row wide enough for every label — keeps all six 
 });
 
 describe("toolbarLayout — a row too narrow even unlabelled — collapses whole groups right to left", () => {
-  it("the first group to leave the row is actions", () => {
+  it("the first group to leave the row is view", () => {
     // Arrange
     const width = compactRowWidth() - 1;
 
@@ -65,8 +66,8 @@ describe("toolbarLayout — a row too narrow even unlabelled — collapses whole
     const layout = toolbarLayout(width);
 
     // Assert
-    expect(layout.overflow).toEqual(["actions"]);
-    expect(layout.inline).toEqual(["columns", "document", "view", "window", "transport"]);
+    expect(layout.overflow).toEqual(["view"]);
+    expect(layout.inline).toEqual(["panels", "file", "library", "window", "transport"]);
   });
 
   it("groups leave in the declared collapse order as the row keeps narrowing", () => {
@@ -174,13 +175,13 @@ describe("withMeasuredGroupWidths — a measured group — replaces its nominal 
 
   it("ignores a zero measurement, which a hidden or unlaid-out row reports", () => {
     // Arrange
-    const measured = new Map<ToolbarGroupId, MeasuredGroupWidth>([["actions", { labelledWidth: 0, compactWidth: 0 }]]);
+    const measured = new Map<ToolbarGroupId, MeasuredGroupWidth>([["library", { labelledWidth: 0, compactWidth: 0 }]]);
 
     // Act
     const specs = withMeasuredGroupWidths(measured);
 
     // Assert
-    expect(specs.find((s) => s.id === "actions")).toEqual(NOTEBOOK_TOOLBAR_GROUPS.find((s) => s.id === "actions"));
+    expect(specs.find((s) => s.id === "library")).toEqual(NOTEBOOK_TOOLBAR_GROUPS.find((s) => s.id === "library"));
   });
 
   it("leaves a group nobody has measured entirely alone", () => {
@@ -196,18 +197,19 @@ describe("withMeasuredGroupWidths — a measured group — replaces its nominal 
 });
 
 describe("toolbarLayout — groups wider than their nominal footprints — never overlap on the row", () => {
-  /** The reported bug's own numbers (ruling R216 item 4): the presets lane
-   *  grew `view` and the density lane grew `document` well past the nominal
-   *  widths declared in the module, so the old layout kept reporting "it
-   *  fits" and the row's flex shrink compressed each group's box below its
-   *  contents. These are what the row actually measures once it measures. */
+  /** The reported bug's own shape (ruling R216 item 4, carried forward to
+   *  R225's groups): the presets picker and the split buttons grow past the
+   *  nominal widths declared in the module, so a layout decided on the
+   *  nominals keeps reporting "it fits" and the row's flex shrink
+   *  compresses each group's box below its contents. These are what the row
+   *  actually measures once it measures. */
   const MEASURED = new Map<ToolbarGroupId, MeasuredGroupWidth>([
-    ["columns", { labelledWidth: 201, compactWidth: 96 }],
-    ["document", { labelledWidth: 318, compactWidth: 205 }],
-    ["view", { labelledWidth: 447, compactWidth: 214 }],
+    ["panels", { labelledWidth: 236, compactWidth: 144 }],
+    ["file", { labelledWidth: 232, compactWidth: 152 }],
+    ["library", { labelledWidth: 132, compactWidth: 78 }],
+    ["view", { labelledWidth: 520, compactWidth: 250 }],
     ["window", { labelledWidth: 226, compactWidth: 168 }],
     ["transport", { labelledWidth: 268, compactWidth: 160 }],
-    ["actions", { labelledWidth: 430, compactWidth: 214 }],
   ]);
 
   /** Every pair of neighbouring inline groups, as `[left, right]`. */
@@ -234,7 +236,7 @@ describe("toolbarLayout — groups wider than their nominal footprints — never
     // Arrange
     const real = withMeasuredGroupWidths(MEASURED);
     // 1600 px: the nominal footprints say all six groups fit *with labels*
-    // (1559 px), the real ones need 1955 px. That gap is the bug.
+    // (1295 px), the real ones need 1679 px. That gap is the bug.
     const staleDecision = toolbarLayout(1600, NOTEBOOK_TOOLBAR_GROUPS);
 
     // Act
@@ -275,5 +277,75 @@ describe("toolbarLayout — groups wider than their nominal footprints — never
     // Assert
     expect(layout.inline).toEqual(["window", "transport"]);
     expect(spans.some((span) => span.contentEnd > span.end)).toBe(true);
+  });
+});
+
+describe("packedSpans — two sibling buttons inside one group — never overlap (R225 item 3)", () => {
+  /** One group's contents at R225 item 3's geometry: big buttons 36 px
+   *  unlabelled and about 64 px labelled, a split button's chevron adding
+   *  16 px, at the Notebook's 6 px control gap. These are the buttons that
+   *  overlapped: Save, Export, Create, Rescan, the gesture select and the
+   *  X-axis select, which were siblings with the default `flex-shrink: 1`. */
+  const BUTTON_GAP = 6;
+  const BUTTONS = [
+    { id: "open", width: 80 },
+    { id: "save", width: 80 },
+    { id: "import", width: 80 },
+    { id: "view", width: 80 },
+    { id: "presets", width: 140 },
+  ];
+
+  /** The natural total: what a `flex-nowrap` container of `shrink-0`
+   *  children reports to the `ResizeObserver`, and therefore the width the
+   *  group is laid out at from the second frame onwards. */
+  const NATURAL = BUTTONS.reduce((total, button) => total + button.width, 0) + (BUTTONS.length - 1) * BUTTON_GAP;
+
+  it.each([NATURAL, NATURAL + 40, 640, 900, 1400])("at %i px no button's contents reach into the next button's box", (width) => {
+    // Arrange
+    const items = BUTTONS;
+
+    // Act
+    const spans = packedSpans(items, width, BUTTON_GAP);
+    const overlapping = spans.slice(0, -1).filter((left, index) => left.contentEnd > spans[index + 1]!.start + 0.5);
+
+    // Assert
+    expect(spans.length).toBe(items.length);
+    expect(overlapping.map((span) => span.id)).toEqual([]);
+  });
+
+  it("a group given its buttons' real total width compresses none of them", () => {
+    // Arrange
+    const natural = NATURAL;
+
+    // Act
+    const spans = packedSpans(BUTTONS, natural, BUTTON_GAP);
+
+    // Assert
+    expect(spans.every((span) => span.end >= span.contentEnd - 0.5)).toBe(true);
+  });
+
+  it("a group squeezed below its buttons' total does compress them — the bug, and why the markup says shrink-0", () => {
+    // Arrange
+    const natural = NATURAL;
+
+    // Act
+    const spans = packedSpans(BUTTONS, natural - 200, BUTTON_GAP);
+
+    // Assert
+    expect(spans.some((span) => span.contentEnd > span.end)).toBe(true);
+  });
+
+  it("the trigger's reserved width is held back from the last button, not taken out of the row", () => {
+    // Arrange
+    const width = 400;
+
+    // Act
+    const withoutTrigger = packedSpans(BUTTONS, width, BUTTON_GAP, 0);
+    const withTrigger = packedSpans(BUTTONS, width, BUTTON_GAP, TOOLBAR_OVERFLOW_WIDTH);
+
+    // Assert
+    const lastWithout = withoutTrigger[withoutTrigger.length - 1]!;
+    const lastWith = withTrigger[withTrigger.length - 1]!;
+    expect(lastWith.end).toBeLessThan(lastWithout.end);
   });
 });
