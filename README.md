@@ -1,11 +1,8 @@
 # idl1
 
-Trackside race-engineering analysis for the IDL0 data logger — and for a decade
-of FIT/GPX files from anything else. Rust engine (`idl-rs`), Tauri v2 shell,
-Observable Plot/D3 notebook cells, Parquet canonical store, pit-lane LAN sync.
+The IDL App is a cross-platform, open-source trackside race-engineering analysis app for the IDL1 data logger. 
+I includes a Rust data processing engine (`idl-rs`), Tauri v2 shell, Observable Plot/D3 notebook cells, Parquet canonical store, and LAN sync.
 
-**Status:** M0 (foundations). Not yet usable. idl0-app (Flutter) remains the
-shipping app until M2.
 
 - Design: `docs/superpowers/specs/2026-09-02-idl1-rewrite-design.md`
 - Standing orders for contributors and agents: `CLAUDE.md`
