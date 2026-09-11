@@ -1,8 +1,8 @@
-import { useCallback, useEffect, useMemo, useState, type DragEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent, type KeyboardEvent as ReactKeyboardEvent } from "react";
 import {
   Background,
-  Controls,
   MiniMap,
+  Panel,
   ReactFlow,
   ReactFlowProvider,
   useEdgesState,
@@ -25,6 +25,7 @@ import "./graphCanvasTheme.css";
 import type { SessionDetail } from "../../../../ipc/catalog";
 import type { CellOutput, UnitLabel, Window as SelectedWindow } from "../../../../ipc/workbook";
 import { computeAutoLayoutPositions } from "../model/graphAutoLayout";
+import { graphViewportAction, isTextEntry } from "../model/graphViewportKeys";
 import { buildGraphModel, type GraphNode } from "../model/graphModel";
 import { readGraphLayout } from "../model/graphLayout";
 import { computeNodeStatuses } from "../model/graphStatus";
@@ -46,6 +47,21 @@ import SubgraphCollapsedNode, { type SubgraphCollapsedData } from "./SubgraphCol
 import SubgraphFrameNode, { type SubgraphFrameData } from "./SubgraphFrameNode";
 
 const NODE_TYPES: NodeTypes = { mathNode: NodeCard, subgraphFrame: SubgraphFrameNode, subgraphCollapsed: SubgraphCollapsedNode };
+
+/** How far out the canvas zooms — far enough to hold the ~50-definition
+ *  workbook decision 42 plans for, where xyflow's own 0.5 default is not.
+ *  A ruling-free number, chosen from that expected node count. */
+const GRAPH_MIN_ZOOM = 0.05;
+/** How far in the canvas zooms, so one card's arguments stay readable on a
+ *  high-density display. */
+const GRAPH_MAX_ZOOM = 4;
+/** The zoom step Fit/Reset's neighbours apply, and what `+`/`-` do. */
+const ZOOM_STEP_MS = 150;
+/** Every button in the bottom-right corner cluster — one class, so the four
+ *  of them cannot drift apart, sized entirely from the `--nb-*` density
+ *  scale (`tokens.css`, R212 item 1). */
+const CLUSTER_BUTTON_CLASS =
+  "flex h-[var(--nb-control-h)] min-w-[var(--nb-control-h)] items-center justify-center rounded-[var(--radius-structural)] border border-rule bg-control px-[var(--nb-pad)] font-mono text-[length:var(--nb-text-label)] text-fg-dim hover:bg-control-active hover:text-fg";
 
 /** The three node shapes this canvas ever hands xyflow — a math node, an
  *  expanded cell's boundary box, or a collapsed cell's closed subsheet
@@ -437,6 +453,33 @@ function GraphCanvasInner({ markdown, outputs, selectedWindows, windows, session
     [markdown, onCommit, nodesById]
   );
 
+  // The corner cluster and the keyboard reach the viewport through the same
+  // four callbacks, so a key and its button can never mean different things
+  // (R212 item 2's "Fit (F), Reset 100 % (0) … Keyboard: F / 0 / +/-").
+  const { fitView, zoomIn, zoomOut, zoomTo } = reactFlow;
+  const canvasRef = useRef<HTMLDivElement | null>(null);
+  const handleFit = useCallback(() => void fitView({ duration: ZOOM_STEP_MS, padding: 0.15 }), [fitView]);
+  // Reset is "100 %", not "fit": it restores scale 1 and leaves the pan
+  // where it is, which is what a CAD user means by resetting zoom.
+  const handleReset = useCallback(() => void zoomTo(1, { duration: ZOOM_STEP_MS }), [zoomTo]);
+  const handleZoomIn = useCallback(() => void zoomIn({ duration: ZOOM_STEP_MS }), [zoomIn]);
+  const handleZoomOut = useCallback(() => void zoomOut({ duration: ZOOM_STEP_MS }), [zoomOut]);
+
+  const handleKeyDown = useCallback(
+    (event: ReactKeyboardEvent<HTMLDivElement>) => {
+      const action = graphViewportAction({ key: event.key, fromTextField: isTextEntry(event.target) });
+      if (action === null) return;
+      // Only now, once the key is known to be ours: a bare `preventDefault`
+      // on every key would eat typing and tabbing out of the canvas.
+      event.preventDefault();
+      if (action === "fit") handleFit();
+      else if (action === "reset") handleReset();
+      else if (action === "zoom-in") handleZoomIn();
+      else handleZoomOut();
+    },
+    [handleFit, handleReset, handleZoomIn, handleZoomOut]
+  );
+
   function toggleCollapsed(cellId: string): void {
     setCollapsedCellIds((prev) => {
       const next = new Set(prev);
@@ -490,7 +533,19 @@ function GraphCanvasInner({ markdown, outputs, selectedWindows, windows, session
       )}
       <div className="flex min-h-0 flex-1">
         <SourcePaletteRail palette={sourcePalette} />
-        <div className="idl-graph-canvas min-h-0 flex-1" onDragOver={(e) => e.preventDefault()} onDrop={handlePaletteDrop}>
+        {/* Ruling R212 item 2: "the column is a viewport, not the world."
+            `tabIndex` + `onKeyDown` rather than a `window` listener, so
+            F/0/+/- only act while the canvas itself has focus — the
+            Notebook has a cell list and a properties form on screen at the
+            same time, and `f` is a letter in both. */}
+        <div
+          ref={canvasRef}
+          tabIndex={-1}
+          onKeyDown={handleKeyDown}
+          className="idl-graph-canvas relative min-h-0 flex-1 outline-none"
+          onDragOver={(e) => e.preventDefault()}
+          onDrop={handlePaletteDrop}
+        >
           <ReactFlow
             nodes={nodes}
             edges={edges}
@@ -502,10 +557,54 @@ function GraphCanvasInner({ markdown, outputs, selectedWindows, windows, session
             onReconnect={handleReconnect}
             edgesReconnectable
             fitView
+            /* The infinite canvas (R212 item 2). Left-drag on empty space
+               pans and space-drag pans from anywhere (xyflow's
+               `panActivationKeyCode`, default Space); the wheel zooms about
+               the pointer. No `translateExtent` and no `nodeExtent` is set
+               at all — the world has no edge to hit, which is the whole
+               point: "canvas space is cheap if we can reset the zoom
+               easily" (Isaac, 2026-09-11), and Fit/Reset below are how it
+               is reset. `minZoom`/`maxZoom` are widened well past xyflow's
+               own 0.5–2 so a ~50-definition workbook (decision 42) can be
+               seen whole and a single card can still be read close up. */
+            panOnDrag
+            panActivationKeyCode="Space"
+            zoomOnScroll
+            zoomOnPinch
+            minZoom={GRAPH_MIN_ZOOM}
+            maxZoom={GRAPH_MAX_ZOOM}
           >
             <Background />
-            <Controls />
-            <MiniMap />
+            {/* The corner cluster (R212 item 2), bottom-right: Fit, Reset
+                100 %, a zoom step pair, and the minimap — whose mask is the
+                viewport rectangle drawn over the whole node extent. The
+                stock `<Controls />` is gone: it carried a lock/interactivity
+                button this canvas has no use for, and its buttons are not on
+                the Notebook density scale. */}
+            <Panel position="bottom-right" className="idl-dense flex items-end gap-[var(--nb-gap)]">
+              <div className="flex flex-col gap-[var(--nb-pad)]">
+                <button type="button" onClick={handleFit} title="Fit every node in view (F)" className={CLUSTER_BUTTON_CLASS}>
+                  Fit
+                </button>
+                <button type="button" onClick={handleReset} title="Reset zoom to 100 % (0)" className={CLUSTER_BUTTON_CLASS}>
+                  100%
+                </button>
+                <div className="flex gap-[var(--nb-pad)]">
+                  <button type="button" onClick={handleZoomOut} title="Zoom out (-)" aria-label="Zoom out" className={CLUSTER_BUTTON_CLASS}>
+                    −
+                  </button>
+                  <button type="button" onClick={handleZoomIn} title="Zoom in (+)" aria-label="Zoom in" className={CLUSTER_BUTTON_CLASS}>
+                    +
+                  </button>
+                </div>
+              </div>
+              {/* `MiniMap` is itself an xyflow `Panel` (absolutely
+                  positioned against the canvas). Forcing it `static` is
+                  what lets it sit *inside* this cluster as an ordinary flex
+                  item beside the buttons, instead of the two overlapping in
+                  the same corner. */}
+              <MiniMap pannable zoomable className="!static !m-0 !h-[120px] !w-[160px] rounded-[var(--radius-structural)] border border-rule" />
+            </Panel>
           </ReactFlow>
         </div>
       </div>
