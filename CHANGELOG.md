@@ -304,6 +304,12 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 
 ### Fixed
 
+- **Charts no longer paint over the top bar (2026-09-11, ruling R209 item
+  1).** Scrolling the notebook used to push a chart up over the app's
+  wordmark, tabs and selection chips. The notebook's toolbar row was
+  already fixed; the top bar now carries the same opaque background and
+  stacking order, so scrolled charts clip under it too.
+
 - **The studio's maths column shows the real graph, not a "reserved"
   placeholder (2026-09-10).** On the wide layout the leftmost Notebook
   column read "Maths graph — reserved (UI-DIRECTION decision 11)" while the

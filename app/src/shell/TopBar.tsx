@@ -69,7 +69,15 @@ export default function TopBar({ activeRoute, onNavigate, selection, onWindowsCh
   const collapsed = shouldCollapseChips(chips.length);
 
   return (
-    <header className="flex h-11 items-center gap-4 border-b border-rule bg-surface px-4 text-body-small">
+    /* `relative z-10` and the opaque `bg-surface` are the same treatment
+       the Notebook toolbar row carries (`routes/pages/Notebook/index.tsx`'s
+       `toolbarElement`, R161's bug fix): the notebook's sandbox iframe host
+       is `position: fixed` with an explicit `zIndex: 0`, so a chart scrolled
+       up the page paints above every static in-flow element. Only a
+       positioned element with a higher stated z-index clips it, so this bar
+       states one too (R209 item 1 -- charts were painting over the top bar
+       even after the toolbar row was fixed). */
+    <header className="relative z-10 flex h-11 items-center gap-4 border-b border-rule bg-surface px-4 text-body-small">
       <span className="font-mono text-title-2 font-semibold tracking-[var(--tracking-kicker)] text-fg">idl1</span>
 
       <nav className="flex items-center gap-1" aria-label="Primary">
