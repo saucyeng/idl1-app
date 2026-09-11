@@ -21,10 +21,10 @@ import RouteHost from "./RouteHost";
 import { ToolbarSlotRow } from "./ToolbarSlotRow";
 import { TimelineSlotRow } from "./TimelineSlotRow";
 import CommandPalette from "./CommandPalette";
-import { registerCommand, runCommand, unregisterCommand } from "./commandRegistry";
+import { registerCommand, runCommand, unregisterCommand, useRegisteredCommands } from "./commandRegistry";
 import { commandForEvent, formatShortcut, MENU_COMMAND_IDS, MENUS, usesCommandGlyph } from "./menuModel";
 import { DEFAULT_SIDEBAR_STATE, withSidebarState, type SidebarState } from "./sidebarPrefs";
-import { tabSwitchCommands } from "./commands";
+import { tabSwitchCommands, tieredPaletteCommands } from "./commands";
 import { Toaster } from "../components/Toaster";
 import { checkForUpdate, downloadAndInstallUpdate, relaunchApp } from "../ipc/updater";
 import { openUpdatePanel, runUpdateCheck, startUpdateChecker } from "./updateState";
@@ -232,7 +232,15 @@ export default function AppShell() {
     return () => window.removeEventListener("keydown", onKeyDown);
   }, []);
 
-  const commands = useMemo(() => tabSwitchCommands(onNavigate), [onNavigate]);
+  // The palette is the third renderer of the one command-tier table
+  // (ruling R225 item 1), after the ribbon and the menu bar: the four
+  // tab-switch commands, then every notebook command that currently has a
+  // handler, each under its tier's heading.
+  const registeredCommands = useRegisteredCommands();
+  const commands = useMemo(
+    () => [...tabSwitchCommands(onNavigate), ...tieredPaletteCommands(registeredCommands, runCommand)],
+    [onNavigate, registeredCommands],
+  );
 
   const shortcutLabels = useMemo(() => {
     const labels = {} as Record<RouteId, string | null>;

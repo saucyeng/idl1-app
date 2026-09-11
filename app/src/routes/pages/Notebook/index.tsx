@@ -133,6 +133,7 @@ import {
   readNotebookColumnVisibility,
   visibleNotebookColumnIds,
   writeNotebookColumnVisibility,
+  type NotebookColumnId,
   type NotebookColumnVisibility,
 } from "./model/notebookColumns";
 import { readNotebookPrefs, writeNotebookPrefs } from "./model/notebookPrefs";
@@ -3537,10 +3538,10 @@ export default function NotebookPage() {
   const columnsToggleAvailable = !paperActive;
 
   /** The toggle group's next on-id set with `column` flipped — what the
-   *  View menu's two column items hand `applyColumnToggleValue`, so a menu
-   *  pick goes through exactly the same path (and the same R213 "thrown by
-   *  hand" bookkeeping) as the toolbar's own toggles. */
-  function toggledColumnIds(column: "graph" | "properties"): string[] {
+   *  View menu's three column items hand `applyColumnToggleValue`, so a
+   *  menu pick goes through exactly the same path (and the same R213
+   *  "thrown by hand" bookkeeping) as the ribbon's own panel buttons. */
+  function toggledColumnIds(column: NotebookColumnId): string[] {
     return columnVisibility[column] ? visibleColumnIds.filter((id) => id !== column) : [...visibleColumnIds, column];
   }
   // `!graphIsPortalHosted`: when the wide studio's maths column hosts the
@@ -3639,6 +3640,12 @@ export default function NotebookPage() {
   useCommand(MENU_COMMAND_IDS.viewToggleProperties, columnsToggleAvailable, () =>
     applyColumnToggleValue(toggledColumnIds("properties"))
   );
+  // The cells column, under the word R225 item 2 gives it: "Notebook". It
+  // had no command before the tier table named one, so the menu bar's
+  // View menu could toggle two of the three panels and not the third.
+  useCommand(MENU_COMMAND_IDS.viewToggleCells, columnsToggleAvailable, () =>
+    applyColumnToggleValue(toggledColumnIds("cells"))
+  );
 
   const timelineElement = (
     <TimelineStrip
@@ -3658,13 +3665,8 @@ export default function NotebookPage() {
         onColumnToggleValue={applyColumnToggleValue}
         entry={entry}
         rescanning={rescanning}
-        creating={creating}
         dirty={state.dirtyCellIds.size > 0 || state.frontMatterDirty}
-        workbookBarError={workbookBarError}
-        lastRebuild={lastRebuild}
-        onCreate={(name) => void handleCreate(name)}
         onRescan={() => void handleRescan()}
-        onSelect={handleSelect}
         register={register}
         dense={dense}
         onDenseChange={applyDense}
@@ -3736,7 +3738,7 @@ export default function NotebookPage() {
           activity's own panel, which the shell shows when that activity is
           current. Nothing renders here when there is no sidebar at all
           (narrow layouts, R220 item 3): the cells are already on the page
-          and the workbook picker is in the toolbar. */}
+          and the ribbon's Open button opens the workbook-choice dialog. */}
       {notebookSidebarNode !== null &&
         createPortal(
           <NotebookSidebar
