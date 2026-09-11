@@ -878,6 +878,7 @@ interface RebuildProgressEvent {  // the `rebuild_progress` event payload
   done: number;                   // entities finished in this phase
   total: number;                  // entities this phase has to get through
   phase: RebuildPhase;
+  finished: boolean;              // true on the post-swap observation, and on nothing else
 }
 
 interface RebuildRunSummary {
@@ -919,11 +920,16 @@ Progress arrives as `rebuild_progress` as each entity in each C4 §5 phase is
 finished, in scan order — `blobs`, `tracks`, `sessions`, then a single
 `laps` observation carrying the lap count (laps are inserted inside the
 per-session body and have no walk of their own), then `workbooks`. `done`
-counts entities *finished*, so `done + 1` is the one being worked on. Every
-phase ends at `done === total`, so that alone does not mean the run is over:
-the terminal observation is the `workbooks` phase with `done === total`,
-emitted once after the swap. `rebuild_status()` reports the same state on
-demand, so a UI mounting mid-run sees the run already in progress.
+counts entities *finished*, so `done + 1` is the one being worked on.
+
+Every phase ends at `done === total`, including the last workbook of the
+last phase — which is reached **before** the staged database swaps in — so
+that shape cannot mean "the run is over". The one terminal observation is
+the one carrying `finished: true`: emitted once, after the swap and after
+`rebuild_status()` has been updated, so a listener that acts on it reads
+this run's own `last_run` rather than the previous run's. Every other
+observation carries `finished: false`. `rebuild_status()` reports the same
+state on demand, so a UI mounting mid-run sees the run already in progress.
 
 `blobs_carried`/`blobs_hashed` are C4 §5 step 1's incremental split (ruling
 R219 item 1): a blob whose `(sha256, size_bytes, mtime_ms)` still match its
