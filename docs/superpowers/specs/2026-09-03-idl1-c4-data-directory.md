@@ -496,6 +496,25 @@ catalog that doesn't already exist. `rebuild_catalog` remains the sole
 authority for `tracks`, `workbooks`, and the schema itself, and is the
 recovery path if `index_session` and the tree ever disagree.
 
+**Per-session index transactions (rulings R207/R208 item 1).** Library-wide
+lap/track indexing (`store::index_job`) is one unit of work *per session*,
+never one transaction over the library: each session's visit/lap detection
+merges into its own `session.json` and then its `sessions`/`laps`/
+`lap_summary` rows are re-inserted by one `index_session` call, which is
+itself a single `BEGIN IMMEDIATE` … `COMMIT`. So a killed process loses at
+most the session in flight, and rows land as the job goes rather than all
+at the end (contrast `rebuild_catalog`, which stages a whole new database
+and swaps it, and therefore shows nothing until it finishes). A resumed job
+skips a session whose stored `session.json` already stamps the current
+`lap_detector_version` and `track_visits_library_hash` (C1 §6) — the
+staleness check is a `session.json` read, with no `data.parquet` opened.
+Sessions are independent, so the job runs them on a pool of
+`physical cores − 1` workers sharing one `catalog.sqlite` connection behind
+a mutex; the catalog write is microseconds beside the decode. `blobs` rows
+are *not* re-verified on a re-index: `index_session` re-hashes a blob only
+when its row is absent, so an already-catalogued library is not re-read
+from end to end on every pass.
+
 ## 6. Sync scope
 
 **Moves** (LAN sync, design §7): blobs, `sessions/<id>/data.parquet`,
