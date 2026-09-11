@@ -1,0 +1,68 @@
+# idl1
+
+> A desktop application for recording, storing and analysing motorcycle and
+> bicycle suspension telemetry. A Rust engine (`idl-rs`) does every
+> computation; a Tauri + TypeScript front end draws it. The unit of work is a
+> **workbook**: a Markdown file with fenced `math`, `table`, `js` and prose
+> cells, evaluated against a recorded session.
+
+The three ideas worth knowing before reading anything else:
+
+- **The workbook is a file; the app is a live viewer of it.** Editing a
+  workbook in a text editor is a first-class way to use this software.
+- **Rust computes, JavaScript draws.** No number the app depends on is
+  computed in the front end, and no chart is drawn in Rust.
+- **Log files and blobs are immutable.** A session's `data.parquet` is a pure
+  function of its blob and the importer version; the catalog is a disposable
+  index, never a source.
+
+## Writing workbooks
+
+- [Workbook reference](WORKBOOK-REFERENCE.md): every math builtin with its
+  signature, unit rule, value shape and an example; the definition
+  annotations; the JavaScript host variables; and the chart grammar the
+  Properties panel reads and writes. Generated in part from the engine, so it
+  cannot drift from what the engine does.
+
+## Contracts
+
+These are normative. Where a contract and any other document disagree, the
+contract wins.
+
+- [C1 — session schema](superpowers/specs/2026-09-03-idl1-c1-session-schema.md):
+  what a session is on disk, including the unit and timestamp rules.
+- [C2 — workbook v3](superpowers/specs/2026-09-03-idl1-c2-workbook-v3.md): the
+  workbook container, the cell kinds, the maths language, the JavaScript
+  runtime, and the merge semantics.
+- [C3 — IPC surface](superpowers/specs/2026-09-03-idl1-c3-ipc-surface.md):
+  every command the front end may call, its arguments, its return shape and
+  its error rows.
+- [C4 — data directory](superpowers/specs/2026-09-03-idl1-c4-data-directory.md):
+  the layout of a library on disk, the atomic-write primitive, and the
+  verification and repair checks.
+
+## The device and the wire
+
+- [IDL0 specification](IDL0_SPEC.md): the on-device log format and the
+  device/host wire protocol. Parts 1–2 and §3–10 are current.
+- [Signal pipeline](signal_pipeline.md): what happens to a sample between the
+  sensor and a chart.
+
+## Working on the code
+
+- [Architecture](superpowers/specs/2026-09-02-idl1-rewrite-design.md): the
+  layering, and which crate a given change belongs in.
+- [CI](CI.md): what runs on a push, what is manual, and why.
+- [Releasing](RELEASING.md): how an installer is built and published.
+
+## Using the library from a terminal
+
+`AGENTS.md` is written at the root of every idl1 library and describes that
+library's own folders, the CLI verbs with an example each, and the rules about
+what must never be edited. Read it before touching a library's files.
+
+## Optional
+
+- [Design rationale](design_rationale.md): why the engine computes what it
+  computes, for the suspension physics rather than the software.
+- [Hardware setup](HARDWARE_M10_SETUP.md): wiring and sensor placement.
