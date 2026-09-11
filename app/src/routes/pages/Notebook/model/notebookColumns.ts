@@ -93,7 +93,15 @@ export function toggleNotebookColumn(prev: NotebookColumnVisibility, id: Noteboo
  */
 export function notebookColumnVisibilityFrom(prev: NotebookColumnVisibility, ids: readonly string[]): NotebookColumnVisibility {
   const on = new Set(ids);
-  const next = Object.fromEntries(NOTEBOOK_COLUMN_IDS.map((id) => [id, on.has(id)])) as unknown as NotebookColumnVisibility;
+  // Written out per id rather than built from `NOTEBOOK_COLUMN_IDS` with a
+  // cast: this way the compiler checks the record is complete, so adding a
+  // fourth column to `NotebookColumnId` fails here instead of silently
+  // producing a record missing that key.
+  const next: Record<NotebookColumnId, boolean> = {
+    graph: on.has("graph"),
+    properties: on.has("properties"),
+    cells: on.has("cells"),
+  };
   const anyVisible = NOTEBOOK_COLUMN_IDS.some((id) => next[id]);
   return anyVisible ? next : prev;
 }

@@ -1,4 +1,4 @@
-import { Fragment, useCallback, useEffect, useMemo, useReducer, useRef, useState, type CSSProperties, type ReactNode } from "react";
+import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { getVersion } from "@tauri-apps/api/app";
 
@@ -424,7 +424,13 @@ export default function NotebookPage() {
   // names the toggle. Data-only dependency array (a boolean); the store's
   // own setter is module-scope and idempotent, so this is a plain state
   // mirror, not an IPC or subscription effect.
-  useEffect(() => {
+  //
+  // `useLayoutEffect`, not `useEffect`: the store defaults to "visible", so
+  // a machine whose stored preference is graph-off would otherwise paint
+  // one frame with the maths column docked before a passive effect could
+  // correct it. This runs before that paint, so the first frame is already
+  // right.
+  useLayoutEffect(() => {
     setGraphColumnVisible(columnVisibility.graph);
   }, [columnVisibility.graph]);
 
