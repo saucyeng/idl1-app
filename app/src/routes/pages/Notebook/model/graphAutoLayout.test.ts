@@ -5,7 +5,7 @@ import { EMPTY_GRAPH_LAYOUT, type GraphLayout } from "./graphLayout";
 import type { GraphEdge, GraphModel, GraphNode } from "./graphModel";
 
 function node(id: string, kind: GraphNode["kind"] = "definition"): GraphNode {
-  return { id, kind, name: id.split(":")[1] ?? id, label: null, cellId: kind === "definition" ? "a1b2c3d4" : null, exprText: null };
+  return { id, kind, name: id.split(":")[1] ?? id, label: null, cellId: kind === "definition" ? "a1b2c3d4" : null, exprText: null, mark: null };
 }
 
 function edge(source: string, target: string): GraphEdge {

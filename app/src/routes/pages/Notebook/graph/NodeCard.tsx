@@ -8,7 +8,9 @@ import type { NodeStatus } from "../model/graphStatus";
 import type { MarkProps } from "../plotForm/types";
 import type { UnitLabel } from "../../../../ipc/workbook";
 import ChartTypePicker from "./ChartTypePicker";
+import { CHART_TYPE_ICONS } from "./chartTypeIcons";
 import { chartEligibilityFor } from "./graphToChart";
+import { NODE_KIND_CUES, nodeKindOf, type NodeKind } from "./nodeKind";
 import type { PortShape } from "./portShape";
 
 /** Matches `CellFrame.tsx`'s own `STATUS_DOT_CLASS` mapping (pending →
@@ -76,6 +78,44 @@ export interface MathNodeData extends Record<string, unknown> {
    *  §3.3's catalog does, and re-deriving that here would be a second,
    *  drifting copy of the catalog's own signature column. */
   onEditArg?: (argIndex: number, newText: string) => void;
+  /** What the card titles itself with — for a `"chart"` node, its cell's
+   *  display name (`cellDisplayName.ts`'s "Cell N" fallback, R214 item 2),
+   *  which this card has no way to derive on its own. `undefined` for
+   *  every other kind, which name themselves from `graphNode`. */
+  displayName?: string;
+  /** True while the Settings toggle "Colour-code graph nodes" is on (R214
+   *  item 1) — adds this kind's 4 px left stripe. Nothing depends on it:
+   *  shape, glyph and face already carry the kind. */
+  colourCoded: boolean;
+  /** True when this node's own cell is the Notebook's selected cell (R214
+   *  item 3's two-way highlight) — the graph shows the same selection the
+   *  code pane's gutter band and the Cells column do. */
+  selected: boolean;
+}
+
+/** R214 item 1's source glyph — "a small waveform glyph in the header".
+ *  Inline SVG, `currentColor`, same convention as `chartTypeIcons.tsx`. */
+function WaveformGlyph() {
+  return (
+    <svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true" className="shrink-0">
+      <polyline points="1,8 3,4 5,12 7,6 9,10 11,5 13,9 15,8" fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+/** The header glyph for one kind (R214 item 1). A chart node whose code
+ *  falls outside `plotForm`'s grammar has no readable mark, so it shows a
+ *  neutral placeholder rather than a pictogram it cannot justify. */
+function KindGlyph({ kind, mark }: { kind: NodeKind; mark: MarkProps["mark"] | null }) {
+  if (kind === "source") return <WaveformGlyph />;
+  if (kind === "derived") return <span className="shrink-0 text-fg-faint">ƒ</span>;
+  if (mark === null) return <span className="shrink-0 text-fg-faint">▦</span>;
+  const Icon = CHART_TYPE_ICONS[mark];
+  return (
+    <span className="shrink-0 text-fg-faint">
+      <Icon />
+    </span>
+  );
 }
 
 /** C2 §3.1's `identifier` shape — the one this module needs to gate a
@@ -145,9 +185,12 @@ function EditableArg({ value, onCommit }: { value: string; onCommit: (newText: s
  * `model/mathExpr.ts`, and `graph/portShape.ts`.
  */
 export default function NodeCard({ data }: NodeProps<Node<MathNodeData, "mathNode">>) {
-  const { graphNode, status, split, shape, call, unit, onChart, highlighted, onRename, onEditArg } = data;
+  const { graphNode, status, split, shape, call, unit, onChart, highlighted, onRename, onEditArg, colourCoded, selected } = data;
   const isChannel = graphNode.kind === "channel";
-  const displayName = graphNode.label ?? graphNode.name;
+  const isChart = graphNode.kind === "chart";
+  const kind: NodeKind = nodeKindOf(graphNode.kind);
+  const cue = NODE_KIND_CUES[kind];
+  const displayName = isChart ? data.displayName ?? graphNode.name : graphNode.label ?? graphNode.name;
   const hoverText = graphNode.exprText !== null ? `${graphNode.name} = ${graphNode.exprText}` : graphNode.name;
   const eligibility = chartEligibilityFor(shape, call);
   // Decision 45's own row order: "name, unit, the key parameters…". The
@@ -171,7 +214,7 @@ export default function NodeCard({ data }: NodeProps<Node<MathNodeData, "mathNod
   const [draftName, setDraftName] = useState(graphNode.name);
 
   function startRename(e: MouseEvent): void {
-    if (isChannel || onRename === undefined) return;
+    if (isChannel || isChart || onRename === undefined) return; // a chart node's title is its cell's display name, renamed on the frame/properties pane (R214 item 2), not a C2 §3.1 identifier
     e.stopPropagation(); // a double-click here is "rename this node", not "select this node"
     setDraftName(graphNode.name);
     setRenaming(true);
@@ -186,11 +229,17 @@ export default function NodeCard({ data }: NodeProps<Node<MathNodeData, "mathNod
 
   return (
     <div
-      className={`min-w-[160px] rounded-[var(--radius-card)] border px-3 py-2 ${highlighted ? "border-hivis" : "border-rule"} bg-surface ${status === "grey" ? "opacity-50" : ""}`}
+      /* R214 item 1: the kind is carried by the card's own shape and its
+         header glyph. The left stripe is the optional colour cue and is
+         drawn only while the Settings toggle is on — `paddingLeft` moves
+         with it so the card's contents do not shift when it is switched. */
+      style={colourCoded ? { borderLeft: `4px solid ${cue.stripeVar}` } : undefined}
+      className={`relative min-w-[160px] border px-3 py-2 ${cue.cardShapeClass} ${highlighted ? "border-hivis" : "border-rule"} ${selected ? "ring-1 ring-hivis" : ""} bg-surface ${status === "grey" ? "opacity-50" : ""}`}
       title={hoverText}
     >
       {!isChannel && <Handle type="target" position={Position.Left} />}
       <div className="flex items-center justify-between gap-2">
+        <KindGlyph kind={kind} mark={graphNode.mark} />
         {renaming ? (
           <input
             autoFocus
@@ -205,7 +254,7 @@ export default function NodeCard({ data }: NodeProps<Node<MathNodeData, "mathNod
             className="w-full rounded-[var(--radius-structural)] border border-rule bg-control px-1 font-mono text-label-1 text-fg"
           />
         ) : (
-          <span className="truncate font-mono text-label-1 text-fg" onDoubleClick={startRename}>
+          <span className={`flex-1 truncate text-label-1 text-fg ${cue.nameFaceClass}`} onDoubleClick={startRename}>
             {displayName}
           </span>
         )}
@@ -218,7 +267,7 @@ export default function NodeCard({ data }: NodeProps<Node<MathNodeData, "mathNod
           {unitText}
         </div>
       )}
-      {!isChannel && (
+      {graphNode.kind === "definition" && (
         <div className="mt-1 flex items-center justify-between gap-2 text-label-2 text-fg-dim">
           <span className="truncate">
             {call !== null ? (
@@ -239,10 +288,13 @@ export default function NodeCard({ data }: NodeProps<Node<MathNodeData, "mathNod
           <span className="font-mono text-fg-faint">{shape}</span>
         </div>
       )}
-      {!isChannel && eligibility === "chart" && onChart !== undefined && (
+      {graphNode.kind === "definition" && eligibility === "chart" && onChart !== undefined && (
         <ChartTypePicker onSelect={(mark) => onChart(graphNode.name, mark)} />
       )}
-      <Handle type="source" position={Position.Right} />
+      {/* R214 item 1's third chart cue — a thin bottom rule, so a chart
+          card is told from a derived one by more than its glyph. */}
+      {cue.bottomRule && <div className="mt-[var(--nb-pad)] -mb-1 h-px bg-rule" />}
+      {!isChart && <Handle type="source" position={Position.Right} />}
     </div>
   );
 }

@@ -8,7 +8,7 @@ import { wireWindowKey, type WindowEvalState } from "./workbookState";
 
 function node(id: string, kind: GraphNode["kind"], cellId: string | null = "a1b2c3d4"): GraphNode {
   const name = id.split(":")[1] ?? id;
-  return { id, kind, name, label: null, cellId: kind === "definition" ? cellId : null, exprText: null };
+  return { id, kind, name, label: null, cellId: kind === "channel" ? null : cellId, exprText: null, mark: null };
 }
 
 function edge(source: string, target: string): GraphEdge {
@@ -214,5 +214,48 @@ describe("computeNodeStatuses", () => {
 
     // Assert
     expect(banner).toEqual([w2]);
+  });
+});
+
+describe("computeNodeStatuses — chart nodes (R214 item 1)", () => {
+  it("chart status — its js cell evaluated with no errors — is ok", () => {
+    // Arrange
+    const model: GraphModel = { nodes: [node("chart:c1", "chart", "c1")], edges: [], groups: [] };
+    const w = window("s1");
+    const output: CellOutput = { cell_id: "c1", kind: "js", value: null, defs: [], errors: [], prose_before_html: null, prose_after_html: null, prose_spans: [] };
+    const inputs: GraphStatusInputs = { model, selectedWindows: [w], windows: new Map([[wireWindowKey(w), okWindow([output])]]), sessionDetails: new Map() };
+
+    // Act
+    const statuses = computeNodeStatuses(inputs);
+
+    // Assert
+    expect(statuses.get("chart:c1")?.status).toBe("ok");
+  });
+
+  it("chart status — its js cell reported an error — is error", () => {
+    // Arrange
+    const model: GraphModel = { nodes: [node("chart:c1", "chart", "c1")], edges: [], groups: [] };
+    const w = window("s1");
+    const output = { cell_id: "c1", kind: "js", value: null, defs: [], errors: [{ message: "boom" }], prose_before_html: null, prose_after_html: null, prose_spans: [] } as unknown as CellOutput;
+    const inputs: GraphStatusInputs = { model, selectedWindows: [w], windows: new Map([[wireWindowKey(w), okWindow([output])]]), sessionDetails: new Map() };
+
+    // Act
+    const statuses = computeNodeStatuses(inputs);
+
+    // Assert
+    expect(statuses.get("chart:c1")?.status).toBe("error");
+  });
+
+  it("chart status — the only selected window has not evaluated yet — is pending", () => {
+    // Arrange
+    const model: GraphModel = { nodes: [node("chart:c1", "chart", "c1")], edges: [], groups: [] };
+    const w = window("s1");
+    const inputs: GraphStatusInputs = { model, selectedWindows: [w], windows: new Map(), sessionDetails: new Map() };
+
+    // Act
+    const statuses = computeNodeStatuses(inputs);
+
+    // Assert
+    expect(statuses.get("chart:c1")?.status).toBe("pending");
   });
 });

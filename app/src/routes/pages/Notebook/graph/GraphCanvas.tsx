@@ -38,6 +38,8 @@ import { collapsedNodePosition, collapsedSubgraphNodesFor, subgraphFramesFor, FR
 import { editLiteralArg, renameDefinition, rewireInput, type UnresolvedRenameRef } from "../model/graphEdits";
 import { dropPaletteSource, type PaletteDragSource } from "../model/graphPaletteDrop";
 import { buildSourcePalette } from "../model/sourcePalette";
+import { replaceCellBody, scanCells } from "../model/cells";
+import { documentCellDisplayNames, setCellLabelLine } from "./cellDisplayName";
 import { commitDrag, commitTidy } from "./dragCommit";
 import { insertChartCell } from "./graphToChart";
 import NodeCard, { type MathNodeData } from "./NodeCard";
@@ -106,6 +108,15 @@ export interface GraphCanvasProps {
    *  `selectedCellId` mechanism, not a new one). Not fired for a
    *  `"channel"` node (it has no owning cell). */
   onSelectCell: (cellId: string) => void;
+  /** The Settings preference "Colour-code graph nodes" (R214 item 1). Off
+   *  by default; nothing on the canvas depends on it. */
+  colourCodeNodes: boolean;
+  /** The cell currently selected elsewhere in the Notebook (the Cells
+   *  column, the whole-workbook code pane, an output chart) — its cards and
+   *  its subgraph frame draw as selected, so the highlight R214 item 3 asks
+   *  for follows selection both ways rather than only outwards from here.
+   *  `null` when nothing is selected. */
+  selectedCellId: string | null;
 }
 
 /** One node's `CellDefResult.value`, or `null` — looked up from `outputs`
@@ -173,7 +184,7 @@ export default function GraphCanvas(props: GraphCanvasProps) {
   );
 }
 
-function GraphCanvasInner({ markdown, outputs, selectedWindows, windows, sessionDetails, onCommit, onSelectCell }: GraphCanvasProps) {
+function GraphCanvasInner({ markdown, outputs, selectedWindows, windows, sessionDetails, onCommit, onSelectCell, colourCodeNodes, selectedCellId }: GraphCanvasProps) {
   // Task 5's own chart-type picker (decision 83, "idl0 pictograms carry
   // over") replaces the old fixed-"lineY" chart button — `mark` now comes
   // from `NodeCard.tsx`'s `ChartTypePicker`, one of `MARK_NAMES`'s five
@@ -221,6 +232,31 @@ function GraphCanvasInner({ markdown, outputs, selectedWindows, windows, session
   const reactFlow = useReactFlow();
 
   const model = useMemo(() => buildGraphModel(markdown, outputs), [markdown, outputs]);
+
+  // R214 item 2: a cell's display name is its `# label:` (C2 §3.7.3),
+  // falling back to "Cell N" by document order -- never the bare hex id,
+  // which is what Isaac saw ("sub-blocks have weird names 1a000006"). The
+  // id survives as each frame's tooltip. Every cell in the document counts
+  // towards N, so the number matches the cell's place in the file.
+  const scannedCells = useMemo(() => scanCells(markdown).cells, [markdown]);
+  const displayNames = useMemo(() => documentCellDisplayNames(markdown), [markdown]);
+
+  // R214 item 2's rename: writes `# label: <text>` as the cell's first line
+  // through the ordinary cell-edit path (§3.7.3 -- an ordinary body edit,
+  // touching no `graph` key and moving nothing). Math cells only: `#` is
+  // not a comment in a `js` or `table` body, so those keep the "Cell N"
+  // fallback and offer no rename gesture at all.
+  const handleRenameCell = useCallback(
+    (cellId: string, label: string) => {
+      const cell = scannedCells.find((c) => c.id === cellId);
+      if (cell === undefined || cell.kind !== "math") return;
+      const bytes = new TextEncoder().encode(markdown);
+      const body = new TextDecoder().decode(bytes.subarray(cell.bodyRange[0], cell.bodyRange[1]));
+      const next = replaceCellBody(markdown, cellId, setCellLabelLine(body, label));
+      if (next !== markdown) onCommit(next);
+    },
+    [markdown, onCommit, scannedCells]
+  );
 
   // Positions live in the document's own `graph` front-matter key (C2
   // §3.7.1, ruling R135; ruling R212 item 3 as amended 2026-09-11 -- they
@@ -365,10 +401,13 @@ function GraphCanvasInner({ markdown, outputs, selectedWindows, windows, session
                 ? (argIndex: number, newText: string) => handleEditArg(graphNode.cellId as string, graphNode.name, argIndex, newText)
                 : undefined,
             highlighted: matchedIds.has(graphNode.id),
+            displayName: graphNode.cellId !== null ? displayNames.get(graphNode.cellId) : undefined,
+            colourCoded: colourCodeNodes,
+            selected: graphNode.cellId !== null && graphNode.cellId === selectedCellId,
           },
         };
       });
-  }, [model.nodes, positions, statuses, outputs, sessionDetails, handleChart, handleRename, handleEditArg, visibleIds, matchedIds, collapsedCellIdByMemberId]);
+  }, [model.nodes, positions, statuses, outputs, sessionDetails, handleChart, handleRename, handleEditArg, visibleIds, matchedIds, collapsedCellIdByMemberId, displayNames, colourCodeNodes, selectedCellId]);
 
   const frameFlowNodes = useMemo<Node<SubgraphFrameData, "subgraphFrame">[]>(
     () =>
@@ -379,9 +418,17 @@ function GraphCanvasInner({ markdown, outputs, selectedWindows, windows, session
         zIndex: -1,
         draggable: false,
         selectable: false,
-        data: { frame, onCollapse: toggleCollapsed },
+        data: {
+          frame,
+          onCollapse: toggleCollapsed,
+          displayName: displayNames.get(frame.cellId) ?? frame.cellId,
+          renameable: scannedCells.find((c) => c.id === frame.cellId)?.kind === "math",
+          onRename: handleRenameCell,
+          onSelect: onSelectCell,
+          selected: frame.cellId === selectedCellId,
+        },
       })),
-    [subgraphFrames]
+    [subgraphFrames, displayNames, scannedCells, handleRenameCell, onSelectCell, selectedCellId]
   );
 
   const collapsedFlowNodes = useMemo<Node<SubgraphCollapsedData, "subgraphCollapsed">[]>(
@@ -393,10 +440,10 @@ function GraphCanvasInner({ markdown, outputs, selectedWindows, windows, session
           id: `subgraph:${collapsed.cellId}`,
           type: "subgraphCollapsed",
           position: { x, y },
-          data: { collapsed, onExpand: toggleCollapsed },
+          data: { collapsed, onExpand: toggleCollapsed, displayName: displayNames.get(collapsed.cellId) ?? collapsed.cellId },
         };
       }),
-    [collapsedSubgraphNodes, subgraphs, positions]
+    [collapsedSubgraphNodes, subgraphs, positions, displayNames]
   );
 
   const flowNodes = useMemo<FlowNode[]>(() => [...frameFlowNodes, ...mathFlowNodes, ...collapsedFlowNodes], [frameFlowNodes, mathFlowNodes, collapsedFlowNodes]);
@@ -534,7 +581,7 @@ function GraphCanvasInner({ markdown, outputs, selectedWindows, windows, session
                 aria-pressed={collapsedCellIds.has(sg.cellId)}
                 className="rounded-[var(--radius-structural)] border border-rule px-2 py-0.5 text-label-2 text-fg-dim hover:text-fg"
               >
-                {collapsedCellIds.has(sg.cellId) ? "▸" : "▾"} {sg.label ?? sg.cellId}
+                {collapsedCellIds.has(sg.cellId) ? "▸" : "▾"} {displayNames.get(sg.cellId) ?? sg.cellId}
               </button>
             ))}
           </div>
@@ -557,7 +604,7 @@ function GraphCanvasInner({ markdown, outputs, selectedWindows, windows, session
         </div>
       )}
       <div className="flex min-h-0 flex-1">
-        <SourcePaletteRail palette={sourcePalette} />
+        <SourcePaletteRail palette={sourcePalette} colourCoded={colourCodeNodes} />
         {/* Ruling R212 item 2: "the column is a viewport, not the world."
             `tabIndex` + `onKeyDown` rather than a `window` listener, so
             F/0/+/- only act while the canvas itself has focus — the
