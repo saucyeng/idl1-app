@@ -69,6 +69,21 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 
 ### Added
 
+- **[docs] Four more chart types a workbook can express (2026-09-11,
+  ruling R217).** A v3 workbook can now describe a map, a lap-progression
+  chart and a spectrogram as plainly as it already described a time chart,
+  an FFT, a histogram or a scatter, and a table cell can take its rows from
+  the selected windows' laps. The map projects the GPS fixes into one local
+  frame in the engine and draws them over the track outline and its gates,
+  coloured by a channel you choose; no latitude ever reaches the chart, and
+  the path is thinned by shape rather than by stride, so a hairpin stays a
+  hairpin. Lap progression puts one value per lap against lap number.
+  The spectrogram draws one heatmap per selected window rather than one for
+  the whole session. Lap numbers are 1-based everywhere, as a rider counts
+  them; workbooks written with the old 0-based key are still read. Each of
+  the three new types has its own pictogram in the chart picker, its own
+  Properties section and its own migration rule from an idl0 sheet.
+
 - **[docs] Release pipeline (2026-09-11, ruling R224).** `release.yml`
   builds Windows and Linux installers on a `v*` tag push and opens a draft
   GitHub Release; see `docs/RELEASING.md` for how to cut one.
