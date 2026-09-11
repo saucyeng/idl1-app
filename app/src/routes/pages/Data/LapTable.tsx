@@ -1,5 +1,5 @@
 import { Table, TableBody, TableCell, TableHead, TableHeader as BrandTableHeader, TableRow } from "../../../components/ui/table";
-import { ColourPicker } from "./ColourPicker";
+import { ColourPicker } from "@/components/ui/colour-picker";
 import { formatLapTimeMs } from "./format";
 import { formatNeutralZoneVisits, formatSectors } from "./lapDetailFormat";
 import type { DetailView } from "./sessionDetail";

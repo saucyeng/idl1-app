@@ -10,7 +10,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader as BrandTableHeader
 import { listTracks, type SessionDetail, type TrackSummary } from "../../../ipc/catalog";
 import { setSessionStart } from "../../../ipc/library";
 import type { SelectionWindow } from "../../../state/selection";
-import { ColourPicker } from "./ColourPicker";
+import { ColourPicker } from "@/components/ui/colour-picker";
 import { describeIpcError } from "./errors";
 import { lapRowClicked } from "./lapSelection";
 import { parseStartInput, shouldPromptForStart } from "./libraryPanel";
