@@ -27,7 +27,8 @@ the plot so the plot is as big as possible".
    - **Status is a glyph only**, no word: red ✕ (error), spinner (evaluating/queued),
      green ✓ (settled), 12 px, top-left corner overlay of the plot, fading out 2 s after a
      settle and shown persistently for error; the R210 gutter band goes away for chart
-     cells (it stays for non-chart cells). The ✕ is clickable to show the error text.
+     cells (it stays for non-chart cells). **Hovering the ✕ shows the error text** in a
+     tooltip (full message, mono, selectable); clicking pins it open.
    - **"Show code" moves to the right-click context menu** of the plot (with "Properties",
      "Tidy in graph", "Copy as PNG" if cheap; otherwise the first two only), and to a
      keyboard shortcut; no button on the plot.
@@ -44,7 +45,14 @@ the plot so the plot is as big as possible".
    per machine beside `notebookColumns`): cell gap 0 px, cell padding 0, chrome overlay-only,
    and adjacent time-series charts share their x-axis visually (the lower chart hides its
    top margin; axes still computed per chart, no data change). Off = today's spacing.
-4. No spec change needed (say so). Pure modules for the chrome-visibility decision and the
+4. **Toolbar overlap bug (first task, before the rest).** After the presets lane added its
+   picker and the density lane its `document` group, tools on the right of the toolbar
+   overlap: `toolbarLayout.ts` collapses groups using fixed per-group widths that no longer
+   match. Fix: measure each group's rendered width with one ResizeObserver per group
+   (rAF-deferred, per the ResizeObserver rule) and feed real widths to the pure layout
+   function; add a test that a group set whose sum exceeds the row width never yields two
+   inline groups whose spans overlap. Verify at 1100, 1300 and 1600 px.
+5. No spec change needed (say so). Pure modules for the chrome-visibility decision and the
    dense-mode geometry, tested; window-control wiring not unit-tested.
 
 ## Gates
