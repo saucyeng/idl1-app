@@ -44,6 +44,17 @@ if (-not $NoWait) {
         foreach ($c in $cargos) { if ($c.CommandLine -match '\s(build|test|check|clippy|tarpaulin)\b') { return $true } }
         return $false
     }
+    # Memory headroom: a Tauri dev build plus the app needs several GB of
+    # commit. On 2026-09-10 the box sat at its commit limit (crashed editors,
+    # leftover shells) and every "out of memory" that day was this (R206).
+    $os = Get-CimInstance Win32_OperatingSystem
+    $freeCommitGB = [math]::Round($os.FreeVirtualMemory/1MB, 1)
+    if ($freeCommitGB -lt 4) {
+        Write-Host "== only $freeCommitGB GB of memory commit headroom; a build will likely fail."
+        Write-Host "   Close or restart the heavy processes below (or reboot), then rerun:"
+        Get-Process | Group-Object ProcessName | ForEach-Object { [pscustomobject]@{ name=$_.Name; n=$_.Count; MB=[math]::Round(($_.Group | Measure-Object PrivateMemorySize64 -Sum).Sum/1MB) } } | Sort-Object MB -Descending | Select-Object -First 8 | Format-Table -AutoSize | Out-String | Write-Host
+        throw "insufficient memory headroom ($freeCommitGB GB)"
+    }
     $waited = 0
     while (Test-CargoBusy) {
         if ($waited -eq 0) { Write-Host "== another cargo build is running; waiting for the slot (Ctrl+C to stop)" }
