@@ -4,3 +4,4 @@ export { parse } from "./parse";
 export { spectrumKey } from "./spectrumKey";
 export { histogramKey } from "./histogramKey";
 export { scatterKey } from "./scatterKey";
+export { gpsKey, rasterKey } from "./gpsKey";
