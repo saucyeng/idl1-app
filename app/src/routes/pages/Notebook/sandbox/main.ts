@@ -37,8 +37,10 @@ import type {
   SandboxCell,
   SandboxToHostMessage,
 } from "../host/protocol";
+import { histogramKey } from "../plotForm/histogramKey";
+import { scatterKey } from "../plotForm/scatterKey";
 import { spectrumKey } from "../plotForm/spectrumKey";
-import type { FftParams } from "../plotForm/types";
+import type { FftParams, HistogramParams, ScatterParams } from "../plotForm/types";
 import { plotTheme } from "../theme/plotTheme";
 import { documentVars } from "../theme/series";
 import { bindHostVariables, type HostVariableSink } from "./hostVariables";
@@ -143,10 +145,11 @@ function materializeHostVar(payload: HostVarPayload): unknown {
   if (payload.kind === "channel") {
     const t = new Float64Array(payload.t);
     const v = new Float64Array(payload.v);
+    const tr = new Float64Array(payload.tr);
     const w = new Float64Array(payload.w);
-    const records = new Array<{ t: number; v: number; w: number }>(payload.length);
+    const records = new Array<{ t: number; v: number; tr: number; w: number }>(payload.length);
     for (let i = 0; i < payload.length; i++) {
-      records[i] = { t: t[i], v: v[i], w: w[i] };
+      records[i] = { t: t[i], v: v[i], tr: tr[i], w: w[i] };
     }
     Object.defineProperty(records, "windows", { value: payload.windows, enumerable: false });
     // C2 §5.1's `.unit`/`.unitState` host-variable properties (R154/R164):
@@ -156,6 +159,49 @@ function materializeHostVar(payload: HostVarPayload): unknown {
     // code that must tell "no unit" apart from "we don't know" (§3.3.1).
     // Non-enumerable, same as `windows` above, so `for...of`/`Plot`'s own
     // field access by index never sees them.
+    Object.defineProperty(records, "unit", { value: payload.unit.state === "known" ? payload.unit.text : "", enumerable: false });
+    Object.defineProperty(records, "unitState", { value: payload.unit.state, enumerable: false });
+    return records;
+  }
+
+  if (payload.kind === "scatter") {
+    const xs = new Float64Array(payload.x);
+    const ys = new Float64Array(payload.y);
+    const w = new Float64Array(payload.w);
+    const records = new Array<{ x: number; y: number; w: number }>(payload.length);
+    for (let i = 0; i < payload.length; i++) {
+      records[i] = { x: xs[i], y: ys[i], w: w[i] };
+    }
+    Object.defineProperty(records, "windows", { value: payload.windows, enumerable: false });
+    // `.domain` is the equal-aspect square both scales share, or `null`
+    // when the cell did not ask for one -- a cell writes
+    // `x: { domain: scatter(...).domain }` and the same for `y`. Squaring
+    // is the document's choice (`equalAspect`), computed host-side from
+    // the engine's own pre-decimation extent; this realm never derives it.
+    Object.defineProperty(records, "domain", { value: payload.domain, enumerable: false });
+    // Two units, one per axis -- the only payload kind whose axes differ.
+    Object.defineProperty(records, "unit", { value: payload.unit.state === "known" ? payload.unit.text : "", enumerable: false });
+    Object.defineProperty(records, "unitState", { value: payload.unit.state, enumerable: false });
+    Object.defineProperty(records, "unitY", { value: payload.unitY.state === "known" ? payload.unitY.text : "", enumerable: false });
+    Object.defineProperty(records, "unitYState", { value: payload.unitY.state, enumerable: false });
+    return records;
+  }
+
+  if (payload.kind === "histogram") {
+    const v0 = new Float64Array(payload.v0);
+    const v1 = new Float64Array(payload.v1);
+    const n = new Float64Array(payload.n);
+    const w = new Float64Array(payload.w);
+    const records = new Array<{ v0: number; v1: number; n: number; w: number }>(payload.length);
+    for (let i = 0; i < payload.length; i++) {
+      records[i] = { v0: v0[i], v1: v1[i], n: n[i], w: w[i] };
+    }
+    Object.defineProperty(records, "windows", { value: payload.windows, enumerable: false });
+    // `.unit`/`.unitState` describe `v0`/`v1` (the bin edges, in the binned
+    // channel's own unit); `n` is a count or a fraction and is
+    // dimensionless either way. Same non-enumerable projection as a
+    // `channel` payload's, so a cell can label its value axis without a
+    // second lookup.
     Object.defineProperty(records, "unit", { value: payload.unit.state === "known" ? payload.unit.text : "", enumerable: false });
     Object.defineProperty(records, "unitState", { value: payload.unit.state, enumerable: false });
     return records;
@@ -352,6 +398,17 @@ class SandboxRuntime {
     // key derivation (C2 §5.3): the host has already resolved every
     // parameter before the fetch, so this call is a lookup, never DSP.
     this.bindHostVar("spectrum", (name: string, params: FftParams) => this.spectrumLookup(name, params));
+    // C2 §5.3's `histogram(channel, histogram_params)` (ruling R215 item
+    // 2): the same ambient-host-variable shape as `spectrum(...)`, over the
+    // binned distribution the host fetched with `fetch_histogram` (C3
+    // §3.6). A lookup, never binning: the engine owns every bin edge and
+    // every value (CLAUDE.md §2), and this realm only draws them.
+    this.bindHostVar("histogram", (name: string, params: HistogramParams) => this.histogramLookup(name, params));
+    // C2 §5.3's `scatter(xChannel, yChannel, scatter_params)` (ruling R215
+    // item 3): the one data call in this grammar that names two channels.
+    // A lookup, never pairing or decimating -- the engine owns both
+    // (CLAUDE.md §2), and this realm draws the points it is handed.
+    this.bindHostVar("scatter", (x: string, y: string, params: ScatterParams) => this.scatterLookup(x, y, params));
   }
 
   /** Updates `hostVars` (used by `channelLookup`'s by-name search), the
@@ -386,7 +443,7 @@ class SandboxRuntime {
    * // `combineChannelWindows`, both host-side); this is a bare-name lookup
    * // over whatever the host has already sent.
    */
-  private channelLookup(name: string, _opts?: { lap?: number; session?: string }): { t: number; v: number; w: number }[] {
+  private channelLookup(name: string, _opts?: { lap?: number; session?: string }): { t: number; v: number; tr: number; w: number }[] {
     const value = this.hostVars.get(name);
     if (!Array.isArray(value)) {
       // R148: an unbound channel returns an empty array, which Plot renders
@@ -397,7 +454,7 @@ class SandboxRuntime {
       );
       return [];
     }
-    return value as { t: number; v: number; w: number }[];
+    return value as { t: number; v: number; tr: number; w: number }[];
   }
 
   /**
@@ -430,6 +487,61 @@ class SandboxRuntime {
       return [];
     }
     return value as { f: number; m: number; w: number }[];
+  }
+
+  /**
+   * `histogram(channel, histogram_params)` (C2 §5.3, ruling R215 item 2):
+   * looks up the distribution the host published for this exact (channel,
+   * `histogram_params`) combination, by recomputing {@link histogramKey}
+   * from this call's own arguments -- the same shared pure function the
+   * host side uses to name the variable it pushes, so the two cannot
+   * drift. Returns the `{v0, v1, n, w}[]` records `materializeHostVar`
+   * built (one per bin per selected window; `w` is the window index, the
+   * same treatment {@link channelLookup}/{@link spectrumLookup} get), or
+   * `[]` before the host has pushed anything. Never fetches, never bins.
+   */
+  private histogramLookup(name: string, params: HistogramParams): { v0: number; v1: number; n: number; w: number }[] {
+    const key = histogramKey(name, params);
+    const value = this.hostVars.get(key);
+    if (!Array.isArray(value)) {
+      // R148, same reasoning as `channelLookup`/`spectrumLookup`: an
+      // unbound distribution returns an empty array, which Plot renders as
+      // axis labels and nothing else. The key is printed because host and
+      // sandbox each compute it from their own `HistogramParams`, so a
+      // mismatch here is a real failure mode.
+      console.warn(
+        `[sandbox] histogram(${JSON.stringify(name)}) is not bound under key ${JSON.stringify(key)};` +
+          ` known host vars: ${JSON.stringify([...this.hostVars.keys()])}`
+      );
+      return [];
+    }
+    return value as { v0: number; v1: number; n: number; w: number }[];
+  }
+
+  /**
+   * `scatter(xChannel, yChannel, scatter_params)` (C2 §5.3, ruling R215
+   * item 3): looks up the cloud the host published for this exact triple,
+   * by recomputing {@link scatterKey} from this call's own arguments --
+   * the same shared pure function the host side uses to name the variable
+   * it pushes. Returns the `{x, y, w}[]` records `materializeHostVar`
+   * built, carrying a non-enumerable `.domain` (the equal-aspect square,
+   * or `null`) and per-axis `.unit`/`.unitY`, or `[]` before the host has
+   * pushed anything. Never fetches, never pairs, never decimates.
+   */
+  private scatterLookup(xChannel: string, yChannel: string, params: ScatterParams): { x: number; y: number; w: number }[] {
+    const key = scatterKey(xChannel, yChannel, params);
+    const value = this.hostVars.get(key);
+    if (!Array.isArray(value)) {
+      // R148, same reasoning as the other three lookups: an unbound cloud
+      // returns an empty array, which Plot renders as axis labels and
+      // nothing else. Say so rather than fail silently.
+      console.warn(
+        `[sandbox] scatter(${JSON.stringify(xChannel)}, ${JSON.stringify(yChannel)}) is not bound under key ${JSON.stringify(key)};` +
+          ` known host vars: ${JSON.stringify([...this.hostVars.keys()])}`
+      );
+      return [];
+    }
+    return value as { x: number; y: number; w: number }[];
   }
 
   /** Binds or updates one host variable (`setHostVar`). */

@@ -1,4 +1,4 @@
-import type { MarkProps } from "../plotForm/types";
+import type { ChartTypeId } from "./chartTypeCatalog";
 
 /** One pictogram's own props — a small square glyph, coloured by
  *  `currentColor` (the picker button sets `text-*` around it, same
@@ -67,13 +67,86 @@ function RuleIcon({ className }: IconProps) {
   );
 }
 
-/** Maps every {@link MarkProps.mark} value to its pictogram component —
- *  kept exhaustive by the `Record` type itself (a mark added to
- *  `plotForm/types.ts` without an entry here is a compile error). */
-export const CHART_TYPE_ICONS: Record<MarkProps["mark"], (props: IconProps) => React.JSX.Element> = {
+/** The FFT cell's pictogram (R215 item 1): a decaying magnitude spectrum
+ *  with one resonant peak — the shape a suspension channel's spectrum
+ *  actually makes, so the row reads as "frequency, not time" beside the
+ *  five time marks. */
+function FftIcon({ className }: IconProps) {
+  return (
+    <svg viewBox="0 0 16 16" width="16" height="16" className={className} aria-hidden="true">
+      <polyline
+        points="1,13 3,11 4.5,4 6,11 8,12 10,9.5 12,12 15,12.5"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.3"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <line x1="1" y1="14" x2="15" y2="14" stroke="currentColor" strokeWidth="1" opacity="0.4" />
+    </svg>
+  );
+}
+
+/** The histogram cell's pictogram (R215 item 2): a bell-ish run of bars
+ *  over a baseline -- a distribution, told apart from the `rectY` time
+ *  mark's three separated bars by being contiguous and by having no gaps,
+ *  which is exactly what distinguishes the two pictures. */
+function HistogramIcon({ className }: IconProps) {
+  return (
+    <svg viewBox="0 0 16 16" width="16" height="16" className={className} aria-hidden="true">
+      <rect x="1" y="11" width="2.4" height="3" fill="currentColor" />
+      <rect x="3.8" y="7" width="2.4" height="7" fill="currentColor" />
+      <rect x="6.6" y="3" width="2.4" height="11" fill="currentColor" />
+      <rect x="9.4" y="6" width="2.4" height="8" fill="currentColor" />
+      <rect x="12.2" y="10" width="2.4" height="4" fill="currentColor" />
+    </svg>
+  );
+}
+
+/** The scatter cell's pictogram (R215 item 3): a ring of dots around a
+ *  faint circle -- the G-G friction circle, which is what tells this apart
+ *  from the `dot` time mark's four rising points. */
+function ScatterIcon({ className }: IconProps) {
+  return (
+    <svg viewBox="0 0 16 16" width="16" height="16" className={className} aria-hidden="true">
+      <circle cx="8" cy="8" r="6" fill="none" stroke="currentColor" strokeWidth="0.8" opacity="0.4" />
+      <circle cx="8" cy="3" r="1.1" fill="currentColor" />
+      <circle cx="12" cy="6" r="1.1" fill="currentColor" />
+      <circle cx="11" cy="11" r="1.1" fill="currentColor" />
+      <circle cx="5" cy="10.5" r="1.1" fill="currentColor" />
+      <circle cx="4.5" cy="5.5" r="1.1" fill="currentColor" />
+      <circle cx="8" cy="8" r="1.1" fill="currentColor" />
+    </svg>
+  );
+}
+
+/** The lap variance trace's pictogram (R215 item 4): three traces
+ *  diverging from a shared origin at the left -- laps superimposed on one
+ *  lap-relative axis, which is exactly what the lap-relative x binding
+ *  makes the picture do, and what tells it apart from the plain line
+ *  mark's single stroke. */
+function VarianceIcon({ className }: IconProps) {
+  return (
+    <svg viewBox="0 0 16 16" width="16" height="16" className={className} aria-hidden="true">
+      <line x1="1" y1="8" x2="15" y2="8" stroke="currentColor" strokeWidth="0.8" opacity="0.4" />
+      <polyline points="1,8 5,6 9,7 15,4" fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" />
+      <polyline points="1,8 5,10 9,9 15,12" fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" opacity="0.7" />
+      <polyline points="1,8 5,8.5 9,11 15,9" fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" opacity="0.45" />
+    </svg>
+  );
+}
+
+/** Maps every {@link ChartTypeId} to its pictogram component — kept
+ *  exhaustive by the `Record` type itself (a chart type added to
+ *  `chartTypeCatalog.ts` without an entry here is a compile error). */
+export const CHART_TYPE_ICONS: Record<ChartTypeId, (props: IconProps) => React.JSX.Element> = {
   lineY: LineIcon,
   dot: DotIcon,
   areaY: AreaIcon,
   rectY: BarIcon,
   ruleY: RuleIcon,
+  fft: FftIcon,
+  histogram: HistogramIcon,
+  scatter: ScatterIcon,
+  variance: VarianceIcon,
 };

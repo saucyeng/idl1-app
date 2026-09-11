@@ -1583,18 +1583,22 @@ x_field       ::= "label" ":" js_string
 y_scale       ::= "{" y_field ("," y_field)* "}"
 y_field       ::= "label" ":" js_string
                 | "domain" ":" "[" js_number "," js_number "]"
-                | "type" ":" ("\"linear\"" | "\"log\"" | "\"sqrt\"")
+                | "type" ":" ("\"linear\"" | "\"log\"" | "\"sqrt\"" | "\"pow\"")  (* changed 2026-09-11 *)
+                | "exponent" ":" js_number                        (* new 2026-09-11 — only with type "pow" *)
 color_opt     ::= "{" "legend" ":" "true" "}"
-marks_array   ::= time_marks | fft_marks                          (* changed 2026-09-06 *)
-time_marks    ::= "[" time_mark ("," time_mark)* "]"              (* new 2026-09-06 *)
+marks_array   ::= time_marks | fft_marks | histogram_marks | scatter_marks   (* changed 2026-09-11 *)
+time_marks    ::= "[" (zero_rule ",")? time_mark ("," time_mark)* "]"   (* changed 2026-09-11 *)
+                | "[" zero_rule "]"                               (* new 2026-09-11 — a zero line alone *)
+zero_rule     ::= "Plot.ruleY([0])"                               (* new 2026-09-11 — R215 item 5 *)
 fft_marks     ::= "[" spectrum_mark "]"                           (* new 2026-09-06, exactly one *)
 
 time_mark     ::= "Plot." mark_name "(" channel_call "," mark_options ")"
 mark_name     ::= "lineY" | "dot" | "areaY" | "rectY" | "ruleY"
 channel_call  ::= "channel(" js_string ("," "{" "lap" ":" js_int "}")? ")"
-mark_options  ::= "{" "x" ":" "\"t\"" "," "y" ":" "\"v\""
+mark_options  ::= "{" "x" ":" x_field_binding "," "y" ":" "\"v\""   (* changed 2026-09-11 *)
                        ("," "stroke" ":" css_color)?
                        ("," "strokeWidth" ":" js_number)? "}"
+x_field_binding ::= "\"t\"" | "\"tr\""                            (* new 2026-09-11 — R215 items 4-5 *)
 
 spectrum_mark ::= "Plot." spectrum_mark_name "(" spectrum_call "," spectrum_options ")"   (* new 2026-09-06 *)
 spectrum_mark_name ::= "lineY" | "dot" | "areaY"                  (* new 2026-09-06 *)
@@ -1623,17 +1627,43 @@ averaging     ::= "\"none\"" | "\"mean\"" | "\"median\"" | "\"max\""   (* new 20
 spectrum_options ::= "{" "x" ":" "\"f\"" "," "y" ":" "\"m\""      (* new 2026-09-06 *)
                        ("," "stroke" ":" css_color)?
                        ("," "strokeWidth" ":" js_number)? "}"
+
+histogram_marks ::= "[" histogram_mark "]"                        (* new 2026-09-11, exactly one *)
+histogram_mark ::= "Plot.rectY(" histogram_call "," histogram_options ")"   (* new 2026-09-11; mark name fixed *)
+histogram_call ::= "histogram(" js_string "," histogram_params ")" (* new 2026-09-11 *)
+histogram_params ::= "{" "binMode" ":" bin_mode ","               (* new 2026-09-11; all four required, fixed order *)
+                         "binValue" ":" js_number ","
+                         "symmetric" ":" js_bool ","
+                         "normalise" ":" normalise "}"
+bin_mode      ::= "\"count\"" | "\"width\""                       (* new 2026-09-11 *)
+normalise     ::= "\"counts\"" | "\"fraction\""                   (* new 2026-09-11 *)
+js_bool       ::= "true" | "false"                                (* new 2026-09-11 *)
+histogram_options ::= "{" "x1" ":" "\"v0\"" "," "x2" ":" "\"v1\"" "," "y" ":" "\"n\""   (* new 2026-09-11 *)
+                       ("," "fill" ":" css_color)?
+                       ("," "fillOpacity" ":" js_number)? "}"
+scatter_marks ::= "[" scatter_mark "]"                            (* new 2026-09-11, exactly one *)
+scatter_mark  ::= "Plot.dot(" scatter_call "," scatter_options ")" (* new 2026-09-11; mark name fixed *)
+scatter_call  ::= "scatter(" js_string "," js_string "," scatter_params ")"  (* new 2026-09-11; x channel, y channel *)
+scatter_params ::= "{" "pointBudget" ":" js_int ","                (* new 2026-09-11; both required, fixed order *)
+                       "equalAspect" ":" js_bool "}"
+scatter_options ::= "{" "x" ":" "\"x\"" "," "y" ":" "\"y\""          (* new 2026-09-11 *)
+                       ("," "fill" ":" css_color)?
+                       ("," "r" ":" js_number)? "}"
 css_color     ::= js_string                (* any valid CSS color literal *)
 ```
 
 **Rules that carry the same weight as the EBNF** (added 2026-09-06, ruling
 R78 L6 Task 19 Q1–Q2 / R79 L6 Task 20 Q1–Q7):
 
-- **A cell is a time cell or an FFT cell, never both** (R78 Q2). `marks_array`
-  is `time_marks` or `fft_marks`; a `marks` array containing both a
-  `channel_call` mark and a `spectrum_call` mark parses to `null` (custom).
-  This makes "its own cell" structural rather than an author convention: two
-  x axes (seconds and Hz) cannot share one `Plot.plot`.
+- **A cell is exactly one chart kind, never two** (R78 Q2, widened to every
+  chart kind by ruling R215). `marks_array` is `time_marks`, `fft_marks` or
+  `histogram_marks`; a `marks` array mixing marks from two of them parses to
+  `null` (custom). This makes "its own cell" structural rather than an author
+  convention: four x axes (seconds, Hz, and two different channels' units)
+  cannot share one `Plot.plot`. The **callee name of the first mark's data
+  call** (`channel` / `spectrum` / `histogram` / `scatter`) is the
+  discriminant a reader routes on, which is why each chart kind's data call
+  is a distinct host-variable name rather than an argument to a shared one.
 - **An FFT cell has exactly one mark** in v1 (R79 Q7). `fetch_fft` returns
   one spectrum and the host's `fftDriver` keys its `spectrum` action by
   `cellId`, so one cell resolves one spectrum. idl0's overlay of up to ten
@@ -1700,11 +1730,274 @@ grammar change: a cell writes `spectrum("x", {...})` and groups by `w`,
 precisely as it does for `channel("x")` — there is nothing left to
 address, because there is no longer a second key to address.
 
+**The chart-type picker offers the FFT cell** (added 2026-09-11, ruling
+R215 item 1). The graph card's picker (`Notebook/graph/
+chartTypeCatalog.ts`) previously listed only the five `mark_name`s, so a
+chart type this grammar had a full production for — and the engine a full
+command for (`fetch_fft_v2`, C3 §3.6) — could be reached only by hand-editing
+a cell or by switching type in the Properties pane of a cell that already
+existed. The catalog is now keyed by a **chart type**, not a mark:
+`CHART_TYPE_IDS` is the five `mark_name`s plus one id per whole-cell chart
+kind this section defines, and a picker row for a chart kind seeds that
+kind's own defaults from this section's parameter table (never a second
+copy of them). A row's `mark` is `null` exactly when its id names a chart
+kind rather than a mark. Nothing in the grammar changed for this: an FFT
+cell inserted from the picker is byte-identical to one the Properties
+pane's `Time → FFT` switch produces.
+
+**The zero line** (added 2026-09-11, ruling R215 item 5). idl0's zero-line
+toggle (`worksheet.dart`), expressed as a real `Plot.ruleY([0])` at the
+**head** of a time cell's `marks` array rather than as a plot option:
+
+- It *is* a mark, and writing it as one keeps the generated code idiomatic
+  Plot an author can read and hand-edit.
+- **First in the array**, because Plot draws marks in order — a zero line
+  belongs under the data, not over it. A `zero_rule` anywhere but the head
+  is custom code, not a second legal position.
+- It carries no parameters. `Plot.ruleY([1])` is custom code, never
+  silently a zero line at a different value.
+- `TimePlotProps.zeroLine` is `true` or entirely absent, exactly like
+  `color.legend` — the form's one other boolean-shaped option.
+- **Time cells only.** A spectrum's magnitude axis has no meaningful zero
+  crossing, a histogram's bars already sit on their own baseline, and a
+  scatter's zero line is the friction circle's centre, which `equalAspect`
+  already frames.
+
+**The signed y scales** (added 2026-09-11, ruling R215 item 5). idl0's
+`sqrtSigned` and `squareSigned` (`worksheet.dart`), expressed as Plot's
+`pow` scale with an `exponent` of `0.5` or `2`. Plot's `"pow"` is d3's
+power scale, which is **symmetric about zero**: it compresses or expands
+compression and rebound equally, rather than folding one side away the way
+`"sqrt"` does on a signed channel — which is exactly what made idl0 need a
+*signed* variant in the first place.
+
+`type: "pow"` and `exponent` are required to appear **together**: a `"pow"`
+scale with no exponent has no defined shape, and an `exponent` on any other
+scale type would be silently dropped by the next `generate()` call. Both
+are custom code, not shorter valid forms. The generator emits `exponent`
+immediately after `type`, which it qualifies.
+
+**`y_scale` is one shared production, so `pow` is expressible on every
+chart kind** — a hand-authored FFT, histogram or scatter cell with
+`y: { type: "pow", exponent: 2 }` parses as recognised code, not custom.
+That is deliberate: `y_scale` has been one production since this section
+was written, and splitting it per chart kind to forbid a scale that merely
+has no *use* on a non-negative axis would add a second y reader for no
+correctness gain. What the Properties pane offers is the narrower thing —
+the two signed scales appear only on an axis whose values can be negative
+(a time cell's or a scatter's value axis), never on a spectrum magnitude, a
+count or a fraction.
+
+The grammar admits **any** `js_number` exponent, so a hand edit round-trips
+byte-identically; the Properties pane *offers* only the two named signed
+scales, and renders a hand-edited exponent as its own extra option for that
+render — the same "accepted, never offered" split ruling R168 drew for the
+retired `"magnitude"` scaling, and for the same reason (a `<select>` whose
+value matches no option silently displays its first, and the next unrelated
+edit writes that lie back). `"pow"` is never offered raw: it is meaningless
+without an exponent. The two signed scales are offered only on an axis
+whose values can be negative — a channel's own value — never on a count, a
+fraction, or a spectrum magnitude.
+
+**The lap-relative time axis** (added 2026-09-11, ruling R215 items 4-5).
+A time mark's `x` binds one of two time columns, and the choice is in the
+document:
+
+- **`x: "t"`** — seconds since the session's first sample. The default, and
+  what every landed document says; the generator emits it whenever
+  `MarkProps.xField` is absent, so **no landed document changes on disk**.
+- **`x: "tr"`** — seconds since **this sample's own selected window**
+  began. *n* selected laps therefore start at zero together and
+  superimpose, instead of sitting end to end on a session-time axis. This
+  is the axis idl0's lap-pair overlay and its `varianceTrace` both drew on
+  (`worksheet.dart:79-87`'s `VarianceMode.lapTime`).
+
+`tr` is derived host-side, in `host/protocol.ts`'s
+`combineChannelWindows`, alongside the `w` column R127 already added: the
+per-window rebase only exists once *n* windows are combined, which is a
+host-side concept — the engine serves tiles per channel and knows nothing
+about which windows this session has selected. It is an axis offset for one
+picture, not a number the sync model carries. **It is measured from each
+window's own first sample, not its span boundary**: a lap window's first
+recorded sample can fall slightly after the lap boundary, and starting both
+laps at their own first sample is the alignment that answers "how do these
+two laps differ" — two different sub-sample offsets would put a fixed skew
+between the traces.
+
+**The binding is stored per mark but edited per plot.** A plot has one x
+scale, so two marks on different time columns would draw one against the
+other's axis; the Properties pane's axis control writes every mark at once
+and reports `"tr"` only when *every* mark binds it. The grammar has no
+plot-level slot for it, and adding one would put the same fact in two
+places that could disagree.
+
+**There is no distance binding, by design** (ruling R136). Wheel/GPS
+distance on X is offered in the control, **disabled, with its reason**
+(`model/xMode.ts`'s `DISTANCE_X_MODE_DISABLED_REASON`) — a naive cumulative
+distance axis misaligns two laps that took different lines through the same
+corner, so it would look correct and mislead. It has no `x_field_binding`
+spelling at all: a grammar slot would be a promise the engine cannot keep,
+the same rule that keeps `lap` off `spectrum_call`.
+
+**The lap variance trace is a preset over the time cell, not a chart kind**
+(ruling R215 item 4). `lap_delta_time(...)` (§3.8's current name for what
+R73 shipped as `variance_time`) already evaluates as an ordinary `math`
+definition with a time axis, and a definition is already fetched per
+selected window through C3 §3.4's `fetch_host_channel_v2`. A variance trace
+is therefore exactly a time cell charting that definition on the
+lap-relative axis — no new engine command, no new grammar production, and
+no second code path to drift from the one every other definition chart
+uses. The **overlay is the window selection**: one series per selected
+window, combined under one host variable (R127 item 1), so selecting three
+laps draws three traces from one mark. `MarkProps.lap` is deliberately not
+seeded — it is plumbed but not applied to narrow a fetch, so setting it
+would promise a narrowing that does not happen. The graph card's picker
+offers the preset (charting a definition as a lap trace is a real gesture);
+the Properties pane's chart-type control does not list it, because such a
+cell's `PlotProps.chart` says `"time"` and a control that disagreed with the
+document would be a lie.
+
+**The histogram cell** (added 2026-09-11, ruling R215 item 2). idl0's
+value-distribution chart (`chart_workspace.dart:600-606`), ported onto the
+engine's existing binner through a new command, `fetch_histogram` (C3 §3.6).
+Rules that carry the same weight as the EBNF above:
+
+- **Exactly one mark**, like an FFT cell and for the same reason: one
+  `fetch_histogram` call resolves one distribution. idl0's translucent
+  multi-channel overlay is a stated parity gap, not silently dropped — two
+  channels' distributions are only comparable at all under a shared explicit
+  range, which this grammar has no slot for.
+- **The mark name is fixed at `rectY`**, not a picked subset the way
+  `spectrum_mark_name` is. The mark binds a bin's *two* edges (`x1`/`x2`);
+  `lineY`/`areaY` have no `x2` channel, so offering them would be a control
+  that silently draws the wrong picture. `Plot.lineY(histogram(…), …)` is
+  custom code, not a second legal spelling.
+- **All four `histogram_params` keys are required**, in the order given —
+  the same rule, for the same reason, as `fft_params`' six.
+- **`binValue` is one slot for two quantities.** Under `binMode: "count"` it
+  is a bin count (an integer, `1..=4096`, C3 §3.6's cap); under `"width"` it
+  is a bin width in the channel's own unit, and the *engine* resolves the
+  count that covers the window's range. One slot rather than two mutually
+  exclusive keys, so the grammar has one production and no "exactly one
+  present" rule for a reader to enforce by hand. Switching mode does **not**
+  convert the value: a count and a width are different quantities in
+  different units, and converting needs the data's own range, which the
+  Properties pane does not have — it writes a fresh starting value instead.
+- **Mark options bind `x1: "v0"`, `x2: "v1"`, `y: "n"`**, never `"t"`/`"v"`.
+  A bar has an extent, not a position; `v0`/`v1` are the bin's own two edges
+  in the channel's unit and `n` is what the chart plots.
+- **`lap` is not expressible on `histogram_call`**, for the reason it is not
+  on `spectrum_call`: the window a distribution is binned over is the
+  caller's own selection, not a token in the document.
+
+**The histogram host variable.** `histogram(name, params)` is the one
+recognisable host form, mirroring `channel(...)`/`spectrum(...)`: in the
+sandbox it is an ambient host variable resolved by lookup, never a fetch and
+never binning, returning `{ v0, v1, n, w }` records (`v0`/`v1` the bin's
+edges, `n` C3 §3.6's already-normalised `values[i]`, `w` the window index per
+bin) or `[]` before the host has pushed anything. The lookup key is derived
+from the request through one shared pure function, **`histogramKey(channelId,
+histogramParams)`** — a `"histogram"` tag, the channel id, and the four
+parameter values in this grammar's fixed order — computed identically on both
+sides so host and sandbox cannot drift. The leading tag makes the histogram
+and spectrum key spaces disjoint by construction. Like a spectrum's, this key
+**never varies by window**: the window dimension travels in the payload
+(`host/protocol.ts`'s `combineHistogramWindows`), because `histogram_call` has
+no window token for cell code to address a second key with. Unlike a channel's
+or a spectrum's, no `NaN` break row is inserted between windows — a `rectY`
+bar is an independent rectangle with its own extent, so there is no connecting
+segment to break, and a break row would only be one more bar to discard.
+
+**Histogram parameter table — type, default, C3 field:**
+
+| Grammar slot | Props field | Type | Default | Maps to |
+|---|---|---|---|---|
+| `histogram_call`'s `js_string` | `HistogramMarkProps.channel` | string | first channel in the session picker | `fetch_histogram`'s `channel` |
+| `binMode` | `histogram.binMode` | `"count" \| "width"` | `"count"` | `params.bin_mode` |
+| `binValue` | `histogram.binValue` | positive number; an integer `1..=4096` under `"count"` | `64` bins | `params.bin_value` |
+| `symmetric` | `histogram.symmetric` | boolean | `true` (a suspension channel is signed; zero belongs on a bin edge) | `params.symmetric` |
+| `normalise` | `histogram.normalise` | `"counts" \| "fraction"` | `"fraction"` (what makes two windows of different lengths comparable) | `params.normalise` |
+| `fill` | `HistogramMarkProps.fill` | CSS colour literal | omitted | none |
+| `fillOpacity` | `HistogramMarkProps.fillOpacity` | number, `0..1` | omitted | none |
+| `x.label` | `XAxisProps.label` | string | seeded from the channel's own unit (R65) | none |
+| `y.label` | `YAxisProps.label` | string | omitted | none |
+
+**The scatter cell** (added 2026-09-11, ruling R215 item 3). idl0's G-G
+diagram (`scatter_chart.dart`), ported onto the engine's existing
+`core/src/scatter.rs` through a new command, `fetch_scatter` (C3 §3.5).
+Rules that carry the same weight as the EBNF above:
+
+- **Exactly one mark**, like an FFT or histogram cell: one `fetch_scatter`
+  call resolves one cloud.
+- **The mark name is fixed at `dot`.** A cloud of paired samples has no
+  ordering along either axis, so `lineY`/`areaY` would connect points in
+  sample order and draw a scribble that reads as a trajectory.
+  `Plot.lineY(scatter(…), …)` is custom code, not a second legal spelling.
+- **`scatter_call` names two channels**, x then y — the only data call in
+  this grammar that names two, and what makes a scatter cell recognisable
+  by the same first-callee lookahead every other kind uses. A one-argument
+  `scatter(…)` is custom code.
+- **Both `scatter_params` keys are required**, in the order given.
+- **`equalAspect` is in the document, not in host state.** Squaring both
+  axes onto one range is what makes a friction circle round, and an
+  unsquared one reads as a grip asymmetry that is not there — a picture
+  that different is not a renderer-only parameter (CLAUDE.md §3). The host
+  computes the square domain from the engine's own pre-decimation extent
+  (C3 §3.5) and publishes it on the payload; the sandbox hands it to both
+  scales and derives nothing.
+- **`pointBudget` is in the document** for the same reason: 500 points and
+  20 000 points are visibly different clouds of the same data.
+- **Mark options bind `x: "x"`, `y: "y"`**, the cloud's own two columns —
+  never `"t"`/`"v"`, since neither axis is time.
+- **`lap` is not expressible on `scatter_call`**, for the reason it is not
+  on `spectrum_call` or `histogram_call`.
+
+**The scatter host variable.** `scatter(xChannel, yChannel, params)` is the
+one recognisable host form: in the sandbox it is an ambient host variable
+resolved by lookup, never a fetch, never pairing and never decimating,
+returning `{ x, y, w }` records (`w` the window index per point) or `[]`
+before the host has pushed anything. It carries three non-enumerable
+properties rather than the usual two: `.domain` (the equal-aspect square
+both scales share, or `null`), and **two** units — `.unit`/`.unitState` for
+x and `.unitY`/`.unitYState` for y, since a scatter is the one payload whose
+two axes carry different units. The lookup key is
+**`scatterKey(xChannel, yChannel, scatterParams)`**, tagged `"scatter"` and
+never window-qualified, exactly as `histogramKey` is. Swapping the two
+channels is a different key: a G-G cloud is not symmetric. Like a
+histogram's, no `NaN` break row separates windows — a dot is an independent
+point with no connecting segment to break.
+
+**Multi-window clouds share one squared domain.** When several windows are
+selected, the equal-aspect square is computed from the **union** of every
+retained window's own pre-decimation extent, not per window: squaring each
+separately would draw one window's cloud against another window's axes,
+which defeats the point of overlaying them.
+
+**Scatter parameter table — type, default, C3 field:**
+
+| Grammar slot | Props field | Type | Default | Maps to |
+|---|---|---|---|---|
+| `scatter_call`'s first `js_string` | `ScatterMarkProps.xChannel` | string | first channel in the session picker | `fetch_scatter`'s `x_channel` |
+| `scatter_call`'s second `js_string` | `ScatterMarkProps.yChannel` | string | the **second** channel in the picker (a channel against itself is the identity diagonal) | `fetch_scatter`'s `y_channel` |
+| `pointBudget` | `scatter.pointBudget` | integer, `1..=65536` | `4096` | `fetch_scatter`'s `point_budget` |
+| `equalAspect` | `scatter.equalAspect` | boolean | `true` (idl0's G-G default) | nothing on the wire; selects the published `domain` |
+| `fill` | `ScatterMarkProps.fill` | CSS colour literal | omitted | none |
+| `r` | `ScatterMarkProps.r` | number, CSS px | omitted | none |
+| `x.label` / `y.label` | `XAxisProps.label` / `YAxisProps.label` | string | each seeded from its own channel's unit (R65) | none |
+
+*Parity gap, stated rather than inferred:* idl0's scatter chart also had a
+**density** mode and an optional **colour-by-third-channel**.
+`core/src/scatter.rs` implements both; neither has a slot in
+`scatter_params`, because C3 §3.5 does not yet expose either.
+
 **Parameter table — type, default, C3 field** (added 2026-09-06):
 
 | Grammar slot | Props field | Type | Default | Maps to |
 |---|---|---|---|---|
-| chart type (which `marks_array` alternative) | `PlotProps.chart: "time" \| "fft"` | closed enum | `"time"` | nothing on the wire; selects `fetch_fft` vs the tile path |
+| chart type (which `marks_array` alternative) | `PlotProps.chart` | closed enum (`"time"`, `"fft"`, `"histogram"`, `"scatter"`) | `"time"` | nothing on the wire; selects which fetch the cell makes |
+| `x_field_binding` (time cell) | `MarkProps.xField` | `"tr"`, or absent for session time | absent (`x: "t"`) | nothing on the wire; selects the `tr` column of the channel payload |
+| `zero_rule` (time cell) | `TimePlotProps.zeroLine` | `true`, or absent | absent | none (a mark, drawn client-side) |
+| `y.exponent` | `YAxisProps.exponent` | number, required with `type: "pow"` and expressible with no other type | absent | none |
 | `spectrum_call`'s `js_string` | `SpectrumMarkProps.channel` | string | first channel in the session picker | `fetch_fft`'s `channel` |
 | `spectrum_mark_name` | `SpectrumMarkProps.mark` | `"lineY" \| "dot" \| "areaY"` | `"lineY"` | none (Plot mark) |
 | `windowSize` | `fft.windowSize` | positive integer, samples, or `"all"` | `2048` samples | `params.window_size` |
@@ -1717,22 +2010,37 @@ address, because there is no longer a second key to address.
 | `strokeWidth` | `SpectrumMarkProps.strokeWidth` | number, CSS px | omitted | none |
 | `x.type` | `XAxisProps.type` | `"linear" \| "log"` | `"log"` | none |
 | `x.label` | `XAxisProps.label` | string | `"Frequency (Hz)"` | none |
-| `y.type` | `YAxisProps.type` | `"linear" \| "log" \| "sqrt"` | `"linear"` | none |
+| `y.type` | `YAxisProps.type` | `"linear" \| "log" \| "sqrt" \| "pow"` | `"linear"` | none |
 | `y.label` | `YAxisProps.label` | string | `"Magnitude (<unit>)"` (`raw_magnitude`/`magnitude`) / `"PSD (<unit>²/Hz)"` (`density`) / `"Power (<unit>²)"` (`spectrum`) per scaling | none |
 | — no bin/point budget grammar token (R79 Q4) — | — | — | — | a host-side `bin_count` cap; above it the cell shows a note and does not fetch |
 
 **`PlotProps` shape** (illustrative — L6 Task 20 owns the code):
 
 ```ts
-export type PlotProps = TimePlotProps | FftPlotProps;
+export type PlotProps = TimePlotProps | FftPlotProps | HistogramPlotProps | ScatterPlotProps;
 export interface TimePlotProps { chart: "time"; marks: MarkProps[]; x?: XAxisProps; y?: YAxisProps; color?: { legend: true } }
 export interface FftPlotProps  { chart: "fft";  mark: SpectrumMarkProps; x?: XAxisProps; y?: YAxisProps; color?: { legend: true } }
+export interface HistogramPlotProps { chart: "histogram"; mark: HistogramMarkProps; x?: XAxisProps; y?: YAxisProps; color?: { legend: true } }
 export interface SpectrumMarkProps {
   channel: string;
   mark: "lineY" | "dot" | "areaY";
   fft: FftParams;          // all six fields required
   stroke?: string;
   strokeWidth?: number;    // px
+}
+export interface HistogramMarkProps {
+  channel: string;
+  histogram: HistogramParams;  // all four fields required; no `mark` field — the mark name is fixed
+  fill?: string;
+  fillOpacity?: number;        // 0..1
+}
+export interface ScatterPlotProps { chart: "scatter"; mark: ScatterMarkProps; x?: XAxisProps; y?: YAxisProps; color?: { legend: true } }
+export interface ScatterMarkProps {
+  xChannel: string;
+  yChannel: string;
+  scatter: ScatterParams;      // both fields required; no `mark` field — the mark name is fixed
+  fill?: string;
+  r?: number;                  // px
 }
 ```
 

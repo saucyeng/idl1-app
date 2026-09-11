@@ -1,4 +1,20 @@
-import type { FftParams, FftPlotProps, FftXAxisProps, MarkProps, PlotProps, SpectrumMarkProps, TimePlotProps, XAxisProps, YAxisProps } from "./types";
+import type {
+  FftParams,
+  FftPlotProps,
+  FftXAxisProps,
+  HistogramMarkProps,
+  HistogramParams,
+  HistogramPlotProps,
+  MarkProps,
+  PlotProps,
+  ScatterMarkProps,
+  ScatterParams,
+  ScatterPlotProps,
+  SpectrumMarkProps,
+  TimePlotProps,
+  XAxisProps,
+  YAxisProps,
+} from "./types";
 
 /** Serializes a JS string literal for embedding in generated code via
  *  `JSON.stringify`, never manual quote-wrapping, so a label containing a
@@ -43,6 +59,11 @@ function renderYAxis(y: YAxisProps): string | null {
   if (y.label !== undefined) fields.push(`label: ${jsString(y.label)}`);
   if (y.domain !== undefined) fields.push(`domain: [${String(y.domain[0])}, ${String(y.domain[1])}]`);
   if (y.type !== undefined) fields.push(`type: ${jsString(y.type)}`);
+  // `exponent` follows `type` and is emitted only alongside `type: "pow"`,
+  // which it qualifies (ruling R215 item 5). An `exponent` on any other
+  // type is not a shorter valid form — the parser rejects it, so the
+  // generator must never produce one.
+  if (y.type === "pow" && y.exponent !== undefined) fields.push(`exponent: ${String(y.exponent)}`);
   return fields.length === 0 ? null : `{ ${fields.join(", ")} }`;
 }
 
@@ -56,14 +77,25 @@ function renderChannelCall(m: MarkProps): string {
   return `channel(${jsString(m.channel)}${lapArg})`;
 }
 
-/** Renders a mark's `mark_options` (C2 §5.3): the fixed `x`/`y` pair,
- *  then optionally `stroke`, then optionally `strokeWidth`. */
+/** Renders a mark's `mark_options` (C2 §5.3): the `x`/`y` pair — `y`
+ *  always `"v"`, `x` either `"t"` (session time, the default) or `"tr"`
+ *  (lap-relative time, ruling R215 items 4-5) — then optionally `stroke`,
+ *  then optionally `strokeWidth`. */
 function renderMarkOptions(m: MarkProps): string {
-  const fields: string[] = [`x: "t"`, `y: "v"`];
+  // `x` binds the lap-relative column only when the mark asks for it;
+  // omitting `xField` emits `x: "t"` exactly as this generator always has,
+  // so no landed document changes on disk (C2 §5.3).
+  const fields: string[] = [`x: ${jsString(m.xField ?? "t")}`, `y: "v"`];
   if (m.stroke !== undefined) fields.push(`stroke: ${jsString(m.stroke)}`);
   if (m.strokeWidth !== undefined) fields.push(`strokeWidth: ${String(m.strokeWidth)}`);
   return `{ ${fields.join(", ")} }`;
 }
+
+/** C2 §5.3's `zero_rule` production, verbatim (ruling R215 item 5) — the
+ *  zero line's whole text, with no parameters of its own. A `const` rather
+ *  than a function because there is nothing to render: `generate` emits
+ *  exactly this string and `parse` matches exactly this token sequence. */
+const ZERO_RULE = "Plot.ruleY([0])";
 
 /** Renders one `mark` production (C2 §5.3): `Plot.<name>(channel(...), {...})`. */
 function renderMark(m: MarkProps): string {
@@ -148,10 +180,12 @@ function generateTime(props: TimePlotProps): string {
   }
   if (props.color !== undefined) topLines.push(`color: { legend: true }`);
 
-  const marksLine =
-    props.marks.length === 0
-      ? "marks: []"
-      : `marks: [\n${props.marks.map((m) => `    ${renderMark(m)}`).join(",\n")}\n  ]`;
+  // The zero line is a real mark, first in the array so it draws *under*
+  // every data trace (Plot draws marks in order) rather than over them
+  // (ruling R215 item 5).
+  const markLines = props.marks.map((m) => `    ${renderMark(m)}`);
+  if (props.zeroLine === true) markLines.unshift(`    ${ZERO_RULE}`);
+  const marksLine = markLines.length === 0 ? "marks: []" : `marks: [\n${markLines.join(",\n")}\n  ]`;
   topLines.push(marksLine);
 
   return renderPlotBody(topLines);
@@ -173,11 +207,124 @@ function generateFft(props: FftPlotProps): string {
   return renderPlotBody(topLines);
 }
 
+/** Renders a `histogram_call`'s `histogram_params` object (C2 §5.3, ruling
+ *  R215 item 2): all four keys, in the grammar's fixed order, on one line —
+ *  like `fft_params` today. `symmetric` is emitted as the bare identifier
+ *  `true`/`false`, the one place this grammar admits a boolean literal
+ *  outside `color: { legend: true }`. */
+function renderHistogramParams(h: HistogramParams): string {
+  const fields = [
+    `binMode: ${jsString(h.binMode)}`,
+    `binValue: ${String(h.binValue)}`,
+    `symmetric: ${String(h.symmetric)}`,
+    `normalise: ${jsString(h.normalise)}`,
+  ];
+  return `{ ${fields.join(", ")} }`;
+}
+
+/** Renders a `histogram_mark`'s `histogram_options` (C2 §5.3, ruling R215
+ *  item 2): the fixed triple `x1: "v0"`, `x2: "v1"`, `y: "n"` binding the
+ *  bin's own two edges and its plotted value, then optionally `fill`, then
+ *  optionally `fillOpacity`. A bar has an extent, not a position, which is
+ *  why this triple is `x1`/`x2`/`y` rather than `mark_options`' `x`/`y`
+ *  pair. */
+function renderHistogramOptions(m: HistogramMarkProps): string {
+  const fields: string[] = [`x1: "v0"`, `x2: "v1"`, `y: "n"`];
+  if (m.fill !== undefined) fields.push(`fill: ${jsString(m.fill)}`);
+  if (m.fillOpacity !== undefined) fields.push(`fillOpacity: ${String(m.fillOpacity)}`);
+  return `{ ${fields.join(", ")} }`;
+}
+
+/** Renders C2 §5.3's `histogram_mark` production (ruling R215 item 2):
+ *  `Plot.rectY(histogram("<channel>", {histogram_params}), {histogram_options})`.
+ *  The mark name is fixed — see {@link HistogramMarkProps}' doc comment. */
+function renderHistogramMark(m: HistogramMarkProps): string {
+  return `Plot.rectY(histogram(${jsString(m.channel)}, ${renderHistogramParams(m.histogram)}), ${renderHistogramOptions(m)})`;
+}
+
+/** Emits a histogram cell's Plot code (C2 §5.3, ruling R215 item 2): the
+ *  same top-level order and formatting policy as {@link generateFft}, over
+ *  the single bar mark. Unlike the FFT arm, `x` is optional and carries no
+ *  `type` — a histogram's x axis is the linear bin axis the engine's own
+ *  `bin_edges` describe, so there is nothing for the document to choose. */
+function generateHistogram(props: HistogramPlotProps): string {
+  const topLines: string[] = [];
+  if (props.x !== undefined) {
+    const renderedX = renderXAxis(props.x);
+    if (renderedX !== null) topLines.push(`x: ${renderedX}`);
+  }
+  if (props.y !== undefined) {
+    const renderedY = renderYAxis(props.y);
+    if (renderedY !== null) topLines.push(`y: ${renderedY}`);
+  }
+  if (props.color !== undefined) topLines.push(`color: { legend: true }`);
+  topLines.push(`marks: [\n    ${renderHistogramMark(props.mark)}\n  ]`);
+
+  return renderPlotBody(topLines);
+}
+
+/** Renders a `scatter_call`'s `scatter_params` object (C2 §5.3, ruling
+ *  R215 item 3): both keys, in the grammar's fixed order, on one line. */
+function renderScatterParams(s: ScatterParams): string {
+  return `{ pointBudget: ${String(s.pointBudget)}, equalAspect: ${String(s.equalAspect)} }`;
+}
+
+/** Renders a `scatter_mark`'s `scatter_options` (C2 §5.3, ruling R215 item
+ *  3): the fixed pair `x: "x"`, `y: "y"` binding the cloud's own two
+ *  columns, then optionally `fill`, then optionally `r`. The literal names
+ *  are `"x"`/`"y"` rather than `"t"`/`"v"` because neither axis is time —
+ *  the same rule that makes a spectrum bind `"f"`/`"m"`. */
+function renderScatterOptions(m: ScatterMarkProps): string {
+  const fields: string[] = [`x: "x"`, `y: "y"`];
+  if (m.fill !== undefined) fields.push(`fill: ${jsString(m.fill)}`);
+  if (m.r !== undefined) fields.push(`r: ${String(m.r)}`);
+  return `{ ${fields.join(", ")} }`;
+}
+
+/** Renders C2 §5.3's `scatter_mark` production (ruling R215 item 3):
+ *  `Plot.dot(scatter("<x>", "<y>", {scatter_params}), {scatter_options})`.
+ *  The mark name is fixed — see {@link ScatterMarkProps}' doc comment. */
+function renderScatterMark(m: ScatterMarkProps): string {
+  return `Plot.dot(scatter(${jsString(m.xChannel)}, ${jsString(m.yChannel)}, ${renderScatterParams(m.scatter)}), ${renderScatterOptions(m)})`;
+}
+
+/** Emits a scatter cell's Plot code (C2 §5.3, ruling R215 item 3): the same
+ *  top-level order and formatting policy as {@link generateHistogram}, over
+ *  the single dot mark. */
+function generateScatter(props: ScatterPlotProps): string {
+  const topLines: string[] = [];
+  if (props.x !== undefined) {
+    const renderedX = renderXAxis(props.x);
+    if (renderedX !== null) topLines.push(`x: ${renderedX}`);
+  }
+  if (props.y !== undefined) {
+    const renderedY = renderYAxis(props.y);
+    if (renderedY !== null) topLines.push(`y: ${renderedY}`);
+  }
+  if (props.color !== undefined) topLines.push(`color: { legend: true }`);
+  topLines.push(`marks: [\n    ${renderScatterMark(props.mark)}\n  ]`);
+
+  return renderPlotBody(topLines);
+}
+
 /** Emits C2 §5.3's Plot subset as JavaScript source code — a string
  *  builder, not a JS-AST printer, over the grammar's closed, small
  *  vocabulary. Branches on `props.chart`: a time cell emits exactly what
  *  this generator always has ({@link generateTime}); an FFT cell emits
- *  C2 §5.3's `spectrum(...)` production ({@link generateFft}). */
+ *  C2 §5.3's `spectrum(...)` production ({@link generateFft}); a histogram
+ *  cell its `histogram(...)` production ({@link generateHistogram}, ruling
+ *  R215 item 2). Written as a `switch` over the discriminant, not a ternary
+ *  chain, so a chart kind added to `PlotProps` without a branch here is a
+ *  compile error rather than a silent fall-through to the time arm. */
 export function generate(props: PlotProps): string {
-  return props.chart === "fft" ? generateFft(props) : generateTime(props);
+  switch (props.chart) {
+    case "fft":
+      return generateFft(props);
+    case "histogram":
+      return generateHistogram(props);
+    case "scatter":
+      return generateScatter(props);
+    case "time":
+      return generateTime(props);
+  }
 }

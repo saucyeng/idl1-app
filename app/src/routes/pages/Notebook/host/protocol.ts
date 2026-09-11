@@ -73,8 +73,28 @@ export interface WindowDescriptor {
  */
 export type HostVarPayload =
   | { kind: "json"; value: unknown }
-  | { kind: "channel"; length: number; t: ArrayBuffer; v: ArrayBuffer; w: ArrayBuffer; windows: WindowDescriptor[]; unit: UnitLabel }
-  | { kind: "spectrum"; length: number; f: ArrayBuffer; m: ArrayBuffer; w: ArrayBuffer; windows: WindowDescriptor[] };
+  | { kind: "channel"; length: number; t: ArrayBuffer; v: ArrayBuffer; tr: ArrayBuffer; w: ArrayBuffer; windows: WindowDescriptor[]; unit: UnitLabel }
+  | { kind: "spectrum"; length: number; f: ArrayBuffer; m: ArrayBuffer; w: ArrayBuffer; windows: WindowDescriptor[] }
+  | { kind: "histogram"; length: number; v0: ArrayBuffer; v1: ArrayBuffer; n: ArrayBuffer; w: ArrayBuffer; windows: WindowDescriptor[]; unit: UnitLabel }
+  | {
+      kind: "scatter";
+      length: number;
+      x: ArrayBuffer;
+      y: ArrayBuffer;
+      w: ArrayBuffer;
+      windows: WindowDescriptor[];
+      /** The equal-aspect square domain both axes share, or `null` when the
+       *  cell did not ask for one or the cloud has no extent to square
+       *  (`ipc/scatter.ts`'s `equalAspectDomain`). Small JSON, not
+       *  transferred — a cell reads it as `scatter(...).domain` and hands
+       *  it to both of Plot's scales. */
+      domain: [number, number] | null;
+      /** The **x** channel's three-state unit (R154/R164). */
+      unit: UnitLabel;
+      /** The **y** channel's three-state unit. A scatter is the one payload
+       *  whose two axes carry different units, so it carries two. */
+      unitY: UnitLabel;
+    };
 
 /** One cell as the host hands it to the sandbox for (re)definition. */
 export interface SandboxCell {
@@ -220,6 +240,7 @@ export function channelPayload(
   length: number,
   t: ArrayBuffer,
   v: ArrayBuffer,
+  tr: ArrayBuffer,
   w: ArrayBuffer,
   windows: WindowDescriptor[],
   unit: UnitLabel
@@ -228,9 +249,9 @@ export function channelPayload(
     message: {
       type: "setHostVar",
       name,
-      value: { kind: "channel", length, t, v, w, windows, unit },
+      value: { kind: "channel", length, t, v, tr, w, windows, unit },
     },
-    transfer: [t, v, w],
+    transfer: [t, v, tr, w],
   };
 }
 
@@ -340,16 +361,63 @@ export interface CombinedChannelSeries {
   length: number;
   t: Float64Array;
   v: Float64Array;
+  /** Seconds since **this sample's own window** began — see
+   *  {@link combineChannelWindows}. */
+  tr: Float64Array;
   w: Float64Array;
   windows: WindowDescriptor[];
 }
 
-/** Combines one channel's per-window `{t, v}` series -- see
- *  {@link combinePairedWindows} for the shared combining/break rule this
- *  wraps (ruling R127). */
+/**
+ * Combines one channel's per-window `{t, v}` series -- see
+ * {@link combinePairedWindows} for the shared combining/break rule this
+ * wraps (ruling R127) -- and derives the **lap-relative** time column
+ * `tr` alongside it (ruling R215 items 4-5).
+ *
+ * `tr[i]` is `t[i]` minus the **first `t` of that sample's own window**, so
+ * every window's trace starts at zero and *n* selected laps superimpose
+ * instead of sitting end to end. That is what a lap-pair overlay and a lap
+ * variance trace both need, and it is what idl0's `varianceTrace` did with
+ * its "lap-relative time" alignment mode.
+ *
+ * **Measured from each window's own first sample, not from its span
+ * boundary.** A lap window's first recorded sample can fall slightly after
+ * the lap boundary (`session.json`'s `laps[]` is a time span, not a sample
+ * index), and for comparing two laps against each other, starting both at
+ * their own first sample is the alignment that answers the question --
+ * starting them at two different sub-sample offsets from their boundaries
+ * would put a fixed skew between the traces. A break row's `tr` is `NaN`,
+ * matching its `t`.
+ *
+ * Derived here rather than in the engine because the per-window rebase only
+ * exists once *n* windows are combined, which is a host-side concept: Rust
+ * serves tiles per channel and knows nothing about which windows this
+ * session has selected. It is an axis offset for one picture, not a number
+ * the sync model carries (CLAUDE.md §2) -- the same reasoning
+ * `ipc/scatter.ts`'s `equalAspectDomain` is host-side under.
+ */
 export function combineChannelWindows(series: readonly WindowSeries[]): CombinedChannelSeries {
   const combined = combinePairedWindows(series.map((s) => ({ descriptor: s.descriptor, a: s.t, b: s.v })));
-  return { length: combined.length, t: combined.a, v: combined.b, w: combined.w, windows: combined.windows };
+  const t = combined.a;
+  const tr = new Float64Array(combined.length);
+  // One pass, reading the already-combined `w` column so the window
+  // boundaries are exactly the ones the combiner laid down (including its
+  // break rows) rather than a second, independently-derived set.
+  let currentWindow = NaN;
+  let origin = 0;
+  for (let i = 0; i < combined.length; i++) {
+    const w = combined.w[i];
+    if (Number.isNaN(w)) {
+      tr[i] = NaN; // break row
+      continue;
+    }
+    if (w !== currentWindow) {
+      currentWindow = w;
+      origin = t[i];
+    }
+    tr[i] = t[i] - origin;
+  }
+  return { length: combined.length, t, v: combined.b, tr, w: combined.w, windows: combined.windows };
 }
 
 /** One selected window's own `{f, m}` spectrum -- see {@link
@@ -383,6 +451,199 @@ export interface CombinedSpectrumSeries {
 export function combineSpectrumWindows(series: readonly SpectrumWindowSeries[]): CombinedSpectrumSeries {
   const combined = combinePairedWindows(series.map((s) => ({ descriptor: s.descriptor, a: s.f, b: s.m })));
   return { length: combined.length, f: combined.a, m: combined.b, w: combined.w, windows: combined.windows };
+}
+
+/** One selected window's own binned distribution -- see
+ *  {@link combineHistogramWindows}. All three arrays are the same length
+ *  (one entry per bin): `v0`/`v1` are that bin's own two edges in the
+ *  channel's unit, `n` what the chart plots (C3 §3.6's
+ *  `HistogramResponse.values`, already normalised in the engine). */
+export interface HistogramWindowSeries {
+  descriptor: WindowDescriptor;
+  v0: Float64Array;
+  v1: Float64Array;
+  n: Float64Array;
+}
+
+/** {@link combineHistogramWindows}'s return -- ready to pass straight into
+ *  {@link histogramPayload} (via each array's `.buffer`). */
+export interface CombinedHistogramSeries {
+  length: number;
+  v0: Float64Array;
+  v1: Float64Array;
+  n: Float64Array;
+  w: Float64Array;
+  windows: WindowDescriptor[];
+}
+
+/**
+ * Combines *n* selected windows' own binned distributions into the single
+ * flat `{length, v0, v1, n, w}` layout, the histogram counterpart of
+ * {@link combineChannelWindows}/{@link combineSpectrumWindows} (ruling R215
+ * item 2, following R127/R129's shape): one host variable per (channel,
+ * `histogram_params`), never one per (…, window) pair, with the window
+ * dimension in the payload because `histogram_call`'s grammar has no window
+ * token to address a second key with.
+ *
+ * **No break row is inserted between windows**, unlike
+ * {@link combinePairedWindows}. That rule (ruling R127 item 4) exists so a
+ * *line* mark does not vault from one window's last sample to the next
+ * window's first, drawing a segment that looks like real data. A histogram
+ * draws `rectY` bars: each row is an independent rectangle with its own
+ * `x1`/`x2` extent, so there is no connecting segment to break, and a
+ * `NaN`-valued separator row would instead be one more bar Plot has to
+ * discard. Each window's bars are drawn where its own bin edges put them,
+ * and `w` tells a cell which window each bar came from -- which is also
+ * the honest picture: two windows' bins genuinely do not align unless the
+ * two ranges happen to coincide.
+ *
+ * Windows are concatenated in `series` order; `w[i]` indexes the returned
+ * `windows` array. `series: []` returns an all-empty result. A single
+ * window's `w` is all `0`, exactly as its channel/spectrum counterparts'
+ * is.
+ */
+export function combineHistogramWindows(series: readonly HistogramWindowSeries[]): CombinedHistogramSeries {
+  const windows = series.map((s) => s.descriptor);
+  const length = series.reduce((sum, s) => sum + s.n.length, 0);
+  const v0 = new Float64Array(length);
+  const v1 = new Float64Array(length);
+  const n = new Float64Array(length);
+  const w = new Float64Array(length);
+
+  let i = 0;
+  series.forEach((s, windowIndex) => {
+    for (let j = 0; j < s.n.length; j++) {
+      v0[i] = s.v0[j];
+      v1[i] = s.v1[j];
+      n[i] = s.n[j];
+      w[i] = windowIndex;
+      i++;
+    }
+  });
+
+  return { length, v0, v1, n, w, windows };
+}
+
+/** One selected window's own paired `{x, y}` cloud -- see
+ *  {@link combineScatterWindows}. */
+export interface ScatterWindowSeries {
+  descriptor: WindowDescriptor;
+  x: Float64Array;
+  y: Float64Array;
+}
+
+/** {@link combineScatterWindows}'s return -- ready to pass straight into
+ *  {@link scatterPayload} (via each array's `.buffer`). */
+export interface CombinedScatterSeries {
+  length: number;
+  x: Float64Array;
+  y: Float64Array;
+  w: Float64Array;
+  windows: WindowDescriptor[];
+}
+
+/**
+ * Combines *n* selected windows' own clouds into the single flat
+ * `{length, x, y, w}` layout (ruling R215 item 3), the scatter counterpart
+ * of {@link combineChannelWindows}/{@link combineSpectrumWindows}.
+ *
+ * **No break row is inserted between windows**, for the reason
+ * {@link combineHistogramWindows}' doc comment gives: the mark is
+ * `Plot.dot`, so every row is an independent point with no connecting
+ * segment to break, and a `NaN` row would be one more point to discard.
+ * `w` groups the points by window, which is what lets a cell colour each
+ * window's cloud from its own descriptor.
+ */
+export function combineScatterWindows(series: readonly ScatterWindowSeries[]): CombinedScatterSeries {
+  const windows = series.map((s) => s.descriptor);
+  const length = series.reduce((sum, s) => sum + Math.min(s.x.length, s.y.length), 0);
+  const x = new Float64Array(length);
+  const y = new Float64Array(length);
+  const w = new Float64Array(length);
+
+  let i = 0;
+  series.forEach((s, windowIndex) => {
+    const n = Math.min(s.x.length, s.y.length);
+    for (let j = 0; j < n; j++) {
+      x[i] = s.x[j];
+      y[i] = s.y[j];
+      w[i] = windowIndex;
+      i++;
+    }
+  });
+
+  return { length, x, y, w, windows };
+}
+
+/**
+ * Builds a `setHostVar` message for a decoded, possibly multi-window XY
+ * cloud (ruling R215 item 3) plus its transfer list, mirroring
+ * {@link channelPayload}. `x`/`y`/`w` must not be read again by the caller
+ * after this call -- they are neutered once transferred.
+ *
+ * `domain` and the two units are small JSON carried alongside, not
+ * transferred: `domain` is the equal-aspect square both scales share (or
+ * `null`), and a scatter is the one payload kind whose two axes carry
+ * *different* units, so it names both rather than one.
+ */
+export function scatterPayload(
+  name: string,
+  length: number,
+  x: ArrayBuffer,
+  y: ArrayBuffer,
+  w: ArrayBuffer,
+  windows: WindowDescriptor[],
+  domain: [number, number] | null,
+  unit: UnitLabel,
+  unitY: UnitLabel
+): { message: { type: "setHostVar"; name: string; value: HostVarPayload }; transfer: Transferable[] } {
+  return {
+    message: {
+      type: "setHostVar",
+      name,
+      value: { kind: "scatter", length, x, y, w, windows, domain, unit, unitY },
+    },
+    transfer: [x, y, w],
+  };
+}
+
+/**
+ * Builds a `setHostVar` message for a decoded, possibly multi-window binned
+ * distribution (ruling R215 item 2) plus its transfer list, mirroring
+ * {@link channelPayload} exactly except for the columns: a bin's two edges
+ * and its plotted value rather than one time and one value. `v0`/`v1`/`n`/
+ * `w` must not be read again by the caller after this call -- they are
+ * neutered once transferred.
+ *
+ * All four are the raw bytes backing a **`Float64Array`** on each end, the
+ * same unconditional reinterpretation `sandbox/main.ts`'s
+ * `materializeHostVar` applies to every other array payload -- a narrower
+ * element type on this end would silently corrupt every value.
+ *
+ * `unit` is the binned channel's own three-state {@link UnitLabel}
+ * (R154/R164), carried for the same reason a channel payload carries one:
+ * a histogram's x axis is in the channel's unit, so a cell (or a prose
+ * `${…}`) can label it without a second lookup. It describes `v0`/`v1`;
+ * `n` is a count or a fraction and is dimensionless either way.
+ */
+export function histogramPayload(
+  name: string,
+  length: number,
+  v0: ArrayBuffer,
+  v1: ArrayBuffer,
+  n: ArrayBuffer,
+  w: ArrayBuffer,
+  windows: WindowDescriptor[],
+  unit: UnitLabel
+): { message: { type: "setHostVar"; name: string; value: HostVarPayload }; transfer: Transferable[] } {
+  return {
+    message: {
+      type: "setHostVar",
+      name,
+      value: { kind: "histogram", length, v0, v1, n, w, windows, unit },
+    },
+    transfer: [v0, v1, n, w],
+  };
 }
 
 /**

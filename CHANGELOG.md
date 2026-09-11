@@ -6,6 +6,43 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 
 ### Added
 
+- **Four chart types idl0 had are back (2026-09-11, ruling R215).** The
+  chart-type picker on a graph card is no longer five Plot marks: it now
+  offers the **FFT** spectrum (which the grammar and the engine already
+  supported but nothing offered), a **histogram** of one channel's value
+  distribution, a **scatter** of one channel against another — the G-G
+  cloud, with equal-aspect axes on by default so the friction circle is
+  round — and a **lap variance** trace. Each has its own section in the
+  Properties pane and its own row in the picker.
+
+  The histogram and the scatter are new engine commands
+  (`fetch_histogram`, `fetch_scatter`): every sample stays in Rust, which
+  bins, pairs and decimates, and only the reduced result crosses to the
+  chart. A histogram is binned by **count or by width**, centred on zero by
+  default (a suspension channel is signed, so compression and rebound
+  belong either side of a bin edge), and plotted as raw counts or as each
+  bin's share of the window — which is what makes two windows of different
+  lengths comparable. Selecting several laps overlays all of them in one
+  chart, for every one of the four.
+
+- **Lap time as an X axis, and the options the port had dropped
+  (2026-09-11, ruling R215).** A time chart's X axis can now be **lap
+  time** instead of session time: every selected lap's trace starts at
+  zero, so laps superimpose instead of sitting end to end. That is what
+  makes a lap-pair overlay and a lap variance trace readable, and it is
+  what the lap variance chart type charts a `lap_delta_time` definition on.
+  A time chart also gains a **zero line** toggle and idl0's two **signed**
+  Y scales — signed root and signed square — which treat compression and
+  rebound alike where a plain square root folds one side away.
+
+  **Distance on X is offered and disabled, with its reason shown.** A naive
+  cumulative-distance axis is wrong for the one thing it exists to do:
+  comparing two laps that took different lines through the same corner
+  puts their "400 m" at different points on the track. Aligning laps by
+  track position needs a per-venue reference path, which is engine work
+  and its own lane. The control names the mode and says why it cannot be
+  chosen rather than hiding it.
+
 - **The window's title bar is the app's own (2026-09-11, ruling R216).** On
   Windows, idl1 no longer draws a native caption above its own top bar.
   Minimize, maximize and close sit inline on the right of the app's

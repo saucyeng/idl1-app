@@ -46,7 +46,7 @@ function fakeSandbox(): ChannelRebindSandbox & { calls: Array<{ name: string; le
   const calls: Array<{ name: string; length: number; windows: WindowDescriptor[]; unit: UnitLabel }> = [];
   return {
     calls,
-    setChannelHostVar(name, length, _t, _v, _w, windows, unit) {
+    setChannelHostVar(name, length, _t, _v, _tr, _w, windows, unit) {
       calls.push({ name, length, windows, unit });
     },
   };
