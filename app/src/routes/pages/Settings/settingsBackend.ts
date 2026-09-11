@@ -84,6 +84,7 @@ export function settingsBackend(deps: SettingsBackendDeps): PrefsBackend {
         data_dir: lastKnownEngine.data_dir,
         rider_name: prefs.engine.rider_name,
         unit_system: prefs.engine.unit_system,
+        agent_command: prefs.engine.agent_command,
       };
       // Not caught here — a setSettings rejection must propagate out of
       // write() so createPrefsStore.set() is the one place that turns it

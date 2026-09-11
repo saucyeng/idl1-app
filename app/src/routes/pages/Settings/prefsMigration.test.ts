@@ -5,7 +5,7 @@ import { migrationPlan, runPrefsMigration, type PrefsMigrationDeps } from "./pre
 import type { EngineSettings } from "./settingsBackend";
 
 const NON_DEFAULT_LOCAL_DOC = serializePrefs({
-  engine: { data_dir: null, rider_name: "Isaac", unit_system: "metric" },
+  engine: { data_dir: null, rider_name: "Isaac", unit_system: "metric", agent_command: "claude" },
   ui: { last_section: "sync", section_list_width_px: 260, theme: "dark", output_register: null, paper_theme: "app" },
 } as Prefs);
 
@@ -40,12 +40,12 @@ describe("migrationPlan", () => {
 
     // Assert
     expect(plan.action).toBe("import");
-    expect(plan.settings).toEqual({ data_dir: null, rider_name: "Isaac", unit_system: "metric" });
+    expect(plan.settings).toEqual({ data_dir: null, rider_name: "Isaac", unit_system: "metric", agent_command: "claude" });
   });
 
   it("migrationPlan — settings.json wins on conflict — rider_name already non-default on disk is not overwritten", () => {
     // Arrange
-    const engineOnDisk: EngineSettings = { data_dir: null, rider_name: "Already Set", unit_system: "imperial" };
+    const engineOnDisk: EngineSettings = { data_dir: null, rider_name: "Already Set", unit_system: "imperial", agent_command: "claude" };
 
     // Act
     const plan = migrationPlan(NON_DEFAULT_LOCAL_DOC, engineOnDisk, false);
@@ -53,12 +53,12 @@ describe("migrationPlan", () => {
     // Assert: unit_system is still at its default, so it imports; rider_name
     // was deliberately set and is kept.
     expect(plan.action).toBe("import");
-    expect(plan.settings).toEqual({ data_dir: null, rider_name: "Already Set", unit_system: "metric" });
+    expect(plan.settings).toEqual({ data_dir: null, rider_name: "Already Set", unit_system: "metric", agent_command: "claude" });
   });
 
   it("migrationPlan — settings.json wins on conflict — unit_system already non-default on disk is not overwritten", () => {
     // Arrange
-    const engineOnDisk: EngineSettings = { data_dir: null, rider_name: "", unit_system: "metric" };
+    const engineOnDisk: EngineSettings = { data_dir: null, rider_name: "", unit_system: "metric", agent_command: "claude" };
 
     // Act
     const plan = migrationPlan(NON_DEFAULT_LOCAL_DOC, engineOnDisk, false);
@@ -66,12 +66,12 @@ describe("migrationPlan", () => {
     // Assert: rider_name is still at its default, so it imports; unit_system
     // was deliberately set and is kept.
     expect(plan.action).toBe("import");
-    expect(plan.settings).toEqual({ data_dir: null, rider_name: "Isaac", unit_system: "metric" });
+    expect(plan.settings).toEqual({ data_dir: null, rider_name: "Isaac", unit_system: "metric", agent_command: "claude" });
   });
 
   it("migrationPlan — every field already non-default on disk — skip, nothing left to import", () => {
     // Arrange
-    const engineOnDisk: EngineSettings = { data_dir: null, rider_name: "Already Set", unit_system: "metric" };
+    const engineOnDisk: EngineSettings = { data_dir: null, rider_name: "Already Set", unit_system: "metric", agent_command: "claude" };
 
     // Act
     const plan = migrationPlan(NON_DEFAULT_LOCAL_DOC, engineOnDisk, false);
@@ -93,9 +93,9 @@ describe("migrationPlan", () => {
 
   it("migrationPlan — never touches data_dir — echoes the on-disk value even when local holds a different one", () => {
     // Arrange
-    const engineOnDisk: EngineSettings = { data_dir: "D:\\on-disk", rider_name: "", unit_system: "imperial" };
+    const engineOnDisk: EngineSettings = { data_dir: "D:\\on-disk", rider_name: "", unit_system: "imperial", agent_command: "claude" };
     const local = serializePrefs({
-      engine: { data_dir: "D:\\from-local-storage", rider_name: "Isaac", unit_system: "imperial" },
+      engine: { data_dir: "D:\\from-local-storage", rider_name: "Isaac", unit_system: "imperial", agent_command: "claude" },
       ui: DEFAULT_PREFS.ui,
     } as Prefs);
 
@@ -108,7 +108,7 @@ describe("migrationPlan", () => {
 
   it("migrationPlan — skipped because settings.json already held a different value — listed with both values", () => {
     // Arrange
-    const engineOnDisk: EngineSettings = { data_dir: null, rider_name: "Already Set", unit_system: "imperial" };
+    const engineOnDisk: EngineSettings = { data_dir: null, rider_name: "Already Set", unit_system: "imperial", agent_command: "claude" };
 
     // Act
     const plan = migrationPlan(NON_DEFAULT_LOCAL_DOC, engineOnDisk, false);
@@ -120,7 +120,7 @@ describe("migrationPlan", () => {
 
   it("migrationPlan — a field that was imported — not listed as skipped", () => {
     // Arrange
-    const engineOnDisk: EngineSettings = { data_dir: null, rider_name: "Already Set", unit_system: "imperial" };
+    const engineOnDisk: EngineSettings = { data_dir: null, rider_name: "Already Set", unit_system: "imperial", agent_command: "claude" };
 
     // Act
     const plan = migrationPlan(NON_DEFAULT_LOCAL_DOC, engineOnDisk, false);
@@ -133,7 +133,7 @@ describe("migrationPlan", () => {
   it("migrationPlan — on-disk value already equals the local value — not listed as skipped", () => {
     // Arrange: rider_name is non-default on disk but matches local exactly,
     // so nothing was actually discarded.
-    const engineOnDisk: EngineSettings = { data_dir: null, rider_name: "Isaac", unit_system: "imperial" };
+    const engineOnDisk: EngineSettings = { data_dir: null, rider_name: "Isaac", unit_system: "imperial", agent_command: "claude" };
 
     // Act
     const plan = migrationPlan(NON_DEFAULT_LOCAL_DOC, engineOnDisk, false);
@@ -205,6 +205,8 @@ describe("runPrefsMigration", () => {
     const rewritten = JSON.parse(storedLocal);
 
     // Assert
+    // `agent_command` is never in `imported`: it is not an idl0 preference,
+    // so there was nothing to migrate and the on-disk value is kept.
     expect(outcome).toEqual({ kind: "migrated", imported: { rider_name: "Isaac", unit_system: "metric" }, skipped: [] });
     expect(deps.isMigrated()).toBe(true);
     expect(rewritten.engine).toBeUndefined();
@@ -214,7 +216,7 @@ describe("runPrefsMigration", () => {
   it("runPrefsMigration — a document written before paper_theme existed — migrates, and the key reads back as app", async () => {
     // Arrange
     let storedLocal = JSON.stringify({
-      engine: { data_dir: null, rider_name: "Isaac", unit_system: "metric" },
+      engine: { data_dir: null, rider_name: "Isaac", unit_system: "metric", agent_command: "claude" },
       ui: { last_section: "sync", section_list_width_px: 260, theme: "dark", output_register: null },
     });
     const deps = fakeDeps({
@@ -238,7 +240,7 @@ describe("runPrefsMigration", () => {
   it("runPrefsMigration — local document has an unknown key nested inside engine — the local rewrite keeps it, dropping only the imported fields", async () => {
     // Arrange
     const localWithUnknownEngineKey = serializePrefs({
-      engine: { data_dir: null, rider_name: "Isaac", unit_system: "metric", future_engine_field: "kept-through-migration" },
+      engine: { data_dir: null, rider_name: "Isaac", unit_system: "metric", agent_command: "claude", future_engine_field: "kept-through-migration" },
       ui: {
         last_section: "sync",
         section_list_width_px: 260,
@@ -310,7 +312,7 @@ describe("runPrefsMigration", () => {
     // Arrange
     const writeLocal = vi.fn(() => Promise.resolve());
     const deps = fakeDeps({
-      getSettings: () => Promise.resolve({ data_dir: null, rider_name: "Already Set", unit_system: "metric" }),
+      getSettings: () => Promise.resolve({ data_dir: null, rider_name: "Already Set", unit_system: "metric", agent_command: "claude" }),
       writeLocal,
     });
 
