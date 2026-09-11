@@ -18,8 +18,12 @@ interface ColourPickerProps {
 }
 
 /** A row of eight swatch buttons, one per chart token — decision 84's
- *  per-window colour picker, shared by [[DetailPane]] (a session window)
- *  and [[LapTable]] (a lap window). Presentational only (rendering is not
+ *  per-window colour picker, shared by [[DetailPane]] (a session window),
+ *  [[LapTable]] (a lap window) and, since ruling R212 item 5, the Notebook
+ *  Properties form's own [[ColourField]]. It moved here from
+ *  `routes/pages/Data/` when the third caller arrived: a shared primitive
+ *  living inside one route's folder made every other route import across
+ *  the tree. Presentational only (rendering is not
  *  unit-tested, CLAUDE.md §4); the fixed token set is enforced by
  *  `tokenSheet.test.ts`, and this component has no path to a hex value —
  *  every swatch paints `var(--chart-N)`, never a literal colour. */

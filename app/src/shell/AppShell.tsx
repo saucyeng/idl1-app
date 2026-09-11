@@ -73,27 +73,16 @@ export default function AppShell() {
   return (
     <div className="flex h-screen w-screen flex-col bg-bg text-fg">
       {/* Mount-and-hide (R93), not conditional mount/unmount — matching
-          `shell/RouteHost.tsx`'s own pattern for the same reason: `TopBar`
-          owns `#playback-transport-slot`, the DOM node
-          `Notebook/interaction/PlaybackTransport.tsx` portals into for the
-          whole app's lifetime (it is a sibling of `RouteHost`, rendered
-          unconditionally since Notebook is always mounted). Actually
-          unmounting `TopBar` on every breakpoint crossing destroys that
-          node; `PlaybackTransport`'s own `usePlaybackSlot` only re-checks
-          `document.getElementById` on a `resize` event, and because
-          `useWindowWidth`'s listener (registered by this component, higher
-          in the tree) fires *after* `usePlaybackSlot`'s (registered by a
-          deeper component — React commits child effects before parent
-          effects on mount) on the very `resize` that crosses a breakpoint,
-          `TopBar`'s unmount (and the slot div's destruction) happens on a
-          later, unlistened render — `usePlaybackSlot` is left holding a
-          stale, already-detached node with nothing left to tell it to
-          recheck (2026-09-07, shell-unmount task: confirmed by reading the
-          effect registration order and React 18+'s automatic batching of a
-          native-event-triggered `setState`, not reproduced live). Neither
-          bar has any effect of its own (`TopBar.tsx`/`BottomBar.tsx` are
-          both plain presentational components), so keeping both mounted
-          costs nothing. */}
+          `shell/RouteHost.tsx`'s own pattern. This originally existed to
+          protect `TopBar`'s `#playback-transport-slot` from being destroyed
+          on a breakpoint crossing while `PlaybackTransport`'s resize-driven
+          `getElementById` lookup held a stale node (2026-09-07,
+          shell-unmount task). Ruling R212 item 4 removed that slot — the
+          transport is inline in the Notebook toolbar now — so the hazard is
+          gone, but the pattern stays: it matches `RouteHost` and neither bar
+          has any effect of its own (`TopBar.tsx`/`BottomBar.tsx` are both
+          plain presentational components), so keeping both mounted costs
+          nothing. */}
       <div hidden={placement !== "top"}>
         <TopBar
           activeRoute={state.route}

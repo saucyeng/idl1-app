@@ -57,3 +57,69 @@
     outline-offset: 2px;
   }
 }
+
+/* The Notebook density scope (ruling R212 item 1, Isaac 2026-09-11:
+ * "everything needs to be compact on the notebook"). A root carrying
+ * `idl-dense` retunes every shared `components/ui/*` primitive *inside* it
+ * to `tokens.css`'s `--nb-*` scale, so a control gets its compact size from
+ * one place instead of each call site picking its own `h-8`/`px-3`/`text-sm`
+ * — R212's "no per-component ad-hoc sizes".
+ *
+ * Why `@layer utilities` and not `components`: Tailwind's own `h-8`/`px-3`
+ * utilities, which the generated primitives carry, sit in the utilities
+ * layer and would otherwise win by layer order regardless of specificity.
+ * Same layer + a higher-specificity selector (`.idl-dense button` is 0,1,1
+ * against `.h-8`'s 0,1,0) is what makes the scope actually reach them.
+ * Nothing here is `!important`: a call site that genuinely needs a
+ * different size can still say so with a two-class selector of its own.
+ *
+ * Scope, deliberately: the four Notebook surfaces R212 names (toolbar, node
+ * cards, palette rail, Properties form) opt in by carrying the class. The
+ * Data / Device / Settings pages never do — they stay touch-first. */
+@layer utilities {
+  .idl-dense {
+    font-size: var(--nb-text-body);
+  }
+
+  /* Every control surface: the generated primitives all render a real
+   * `<button>`/`<input>`/`<select>`, or carry a `data-slot` xyflow-style
+   * hook, so one selector list covers `button.tsx`, `input.tsx`,
+   * `select.tsx`, `toggle-group.tsx` and any hand-rolled sibling. Checkbox,
+   * radio and colour inputs are excluded: they are square by nature and a
+   * forced 22 px height would stretch them. */
+  .idl-dense button,
+  .idl-dense [data-slot="select-trigger"],
+  .idl-dense [data-slot="toggle-group-item"],
+  .idl-dense input:not([type="checkbox"]):not([type="radio"]):not([type="color"]):not([type="range"]),
+  .idl-dense select {
+    height: var(--nb-control-h);
+    min-height: var(--nb-control-h);
+    padding-block: 0;
+    padding-inline: var(--nb-pad);
+    font-size: var(--nb-text-label);
+    line-height: 1;
+  }
+
+  /* An icon-only button stays square at the control height rather than
+   * inheriting a wider text button's inline padding. */
+  .idl-dense button[data-slot="button"][class*="size-"],
+  .idl-dense button[aria-label]:not([data-slot="select-trigger"]):empty {
+    width: var(--nb-control-h);
+    padding-inline: 0;
+  }
+
+  /* A drag-to-scrub slider's track (Properties form, R212 item 5) — the one
+   * control whose height is its own hit area rather than a text box. */
+  .idl-dense input[type="range"] {
+    height: var(--nb-control-h);
+  }
+
+  /* Labels, captions and the node cards' mono rows all read at the label
+   * size; the scope sets it once instead of every call site writing
+   * `text-label-2`. */
+  .idl-dense label,
+  .idl-dense legend {
+    font-size: var(--nb-text-label);
+    line-height: 1.2;
+  }
+}

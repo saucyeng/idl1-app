@@ -10,7 +10,33 @@ import type { IpcError } from "../../../../ipc/workbook";
 import type { OutputRegister } from "../model/outputRegister";
 import type { WorkbookEntry } from "../model/workbookEntry";
 
-/** Props for {@link WorkbookBar}. */
+/**
+ * The Notebook's workbook chrome (L6 Task 21, R66 item 3), **split into the
+ * three toolbar groups it belongs to** by ruling R212 item 4.
+ *
+ * It used to be one `WorkbookBar` element with its own border, padding and
+ * `flex-wrap`, dropped whole into the toolbar row — which is exactly why
+ * that row was two lines tall (Isaac, 2026-09-11: "two rows tall despite
+ * not having tools all the way across"). A wrapping bar cannot live inside
+ * a row that must never wrap, so the pieces are now separate exports the
+ * toolbar composes:
+ *
+ * - {@link WorkbookPicker} — the `document` group: which workbook is open,
+ *   and its worksheet tabs.
+ * - {@link RegisterSwitch} — the `view` group: paper vs studio (decision 31).
+ * - {@link WorkbookActions} — part of the `actions` group: create and rescan.
+ * - {@link WorkbookNotices} — **not** a toolbar group at all. The rescan
+ *   report and the typed error line are prose of unbounded length; they
+ *   render in their own strip *under* the row, where they can wrap freely
+ *   without ever making the toolbar two rows tall.
+ *
+ * None of these holds IPC or a layout decision: which workbook opens and
+ * what register is in effect live in `model/workbookEntry.ts` and
+ * `model/outputRegister.ts`.
+ */
+
+/** Props shared by every part below — the same fields the single
+ *  `WorkbookBar` took, so `Notebook/index.tsx` passes what it always did. */
 export interface WorkbookBarProps {
   /** `null` while the first list is still in flight. */
   entry: WorkbookEntry | null;
@@ -29,9 +55,9 @@ export interface WorkbookBarProps {
   /** The last rebuild's counts, for the "Rescan found N workbooks" line. */
   lastRebuild: RebuildReport | null;
   /** This window's effective output register (`model/outputRegister.ts`'s
-   *  `defaultRegister`, overridden by the user's stored choice) — shown and
-   *  changeable from the worksheet bar, the same `UiPrefs.output_register`
-   *  Settings' Theme section reads (UI-7 Q1, "not a third storage key"). */
+   *  `defaultRegister`, overridden by the user's stored choice) — the same
+   *  `UiPrefs.output_register` Settings' Theme section reads (UI-7 Q1,
+   *  "not a third storage key"). */
   register: OutputRegister;
   onCreate: (name: string) => void;
   onRescan: () => void;
@@ -39,18 +65,34 @@ export interface WorkbookBarProps {
   onRegisterChange: (register: OutputRegister) => void;
 }
 
-/** The register toggle, shared by every `WorkbookBar` render path below —
- *  paper/studio, wired straight to `onRegisterChange`. */
-function RegisterSwitch({ register, onRegisterChange }: Pick<WorkbookBarProps, "register" | "onRegisterChange">) {
+/** The `view` group (R212 item 4): paper/studio, wired straight to
+ *  `onRegisterChange`. `labelled` drops the two words and leaves the
+ *  segmented control's initials — R212's "at the tightest width labels drop
+ *  before groups do". */
+export function RegisterSwitch({
+  register,
+  onRegisterChange,
+  labelled = true,
+}: Pick<WorkbookBarProps, "register" | "onRegisterChange"> & { labelled?: boolean }) {
   return (
-    <ToggleGroup type="single" value={register} onValueChange={(v) => v && onRegisterChange(v as OutputRegister)} aria-label="Output register">
-      <ToggleGroupItem value="paper">Paper</ToggleGroupItem>
-      <ToggleGroupItem value="studio">Studio</ToggleGroupItem>
+    <ToggleGroup
+      type="single"
+      density="tight"
+      value={register}
+      onValueChange={(v) => v && onRegisterChange(v as OutputRegister)}
+      aria-label="Output register"
+    >
+      <ToggleGroupItem value="paper" title="Paper">
+        {labelled ? "Paper" : "P"}
+      </ToggleGroupItem>
+      <ToggleGroupItem value="studio" title="Studio">
+        {labelled ? "Studio" : "S"}
+      </ToggleGroupItem>
     </ToggleGroup>
   );
 }
 
-/** The worksheet tabs row. This lane's `.idl1wb` document model has no
+/** The worksheet tabs. This lane's `.idl1wb` document model has no
  *  multi-worksheet concept yet (no IPC command names a "worksheet" distinct
  *  from the workbook document itself) — a single fixed tab stands in for
  *  "this workbook's one sheet", and `+` is present per the direction but
@@ -59,7 +101,7 @@ function RegisterSwitch({ register, onRegisterChange }: Pick<WorkbookBarProps, "
  *  no backend counterpart, not a regression. */
 function WorksheetTabs() {
   return (
-    <div className="flex items-center gap-2">
+    <div className="flex items-center gap-[var(--nb-gap)]">
       <Tabs value="sheet-1">
         <TabsList>
           <TabsTrigger value="sheet-1">Sheet 1</TabsTrigger>
@@ -73,108 +115,27 @@ function WorksheetTabs() {
 }
 
 /**
- * The Notebook's workbook-chrome surface (L6 Task 21, R66 item 3; restyled
- * UI-10 as the worksheet bar): the empty state ("New workbook" + "Rescan"),
- * and, once more than one workbook is indexed, a workbook `Select` naming
- * the open document, a worksheet-tabs row, and the output-register switch
- * (decision 31). Holds no IPC and no layout decisions of its own — which
- * workbook opens, whether a picker or the empty state shows, and what
- * register is in effect all live in `model/workbookEntry.ts`/
- * `model/outputRegister.ts`/`Settings/theme.ts`; this component only
- * renders what it is given plus the callbacks its controls invoke.
+ * The `document` group: the workbook `Select` (only when more than one
+ * workbook is indexed, R81 Q4(a)) and the worksheet tabs.
  *
- * "Looking for workbooks…" (a `null` `entry`) covers both the very first
- * `list_workbooks` call and the one automatic `rebuild_catalog` an empty
- * result triggers (R81 Q1(a)), so a genuinely empty install's one-time
- * rebuild cost is not mistaken for a hang.
+ * The "Save your edits before switching workbooks" line that used to sit
+ * beside the picker as its own paragraph is now the disabled picker's
+ * `title` — the same explanation, in the one place a reader looks when a
+ * control will not respond, and no extra width in a row that has none.
  */
-export default function WorkbookBar({
-  entry,
-  rescanning,
-  creating,
-  dirty,
-  error,
-  lastRebuild,
-  register,
-  onCreate,
-  onRescan,
-  onSelect,
-  onRegisterChange,
-}: WorkbookBarProps) {
-  const [newName, setNewName] = useState("");
+export function WorkbookPicker({ entry, dirty, onSelect, labelled = true }: Pick<WorkbookBarProps, "entry" | "dirty" | "onSelect"> & { labelled?: boolean }) {
+  if (entry === null || entry.kind === "empty") return null;
 
-  if (entry === null) {
-    return <p className="font-mono text-sm text-fg-dim">Looking for workbooks…</p>;
-  }
-
-  const rebuildLine =
-    lastRebuild !== null ? (
-      <p className="font-mono text-xs text-fg-dim">
-        Rescan found {lastRebuild.workbooks_indexed} workbook(s) in {lastRebuild.duration_ms} ms. The whole catalog
-        was rebuilt, not only workbooks.
-      </p>
-    ) : null;
-
-  const errorLine = error !== null ? <p role="alert" className="font-mono text-xs text-accent">{error.message}</p> : null;
-
-  function submitCreate() {
-    const trimmed = newName.trim();
-    if (trimmed.length === 0) return;
-    onCreate(trimmed);
-    setNewName("");
-  }
-
-  const createControl = (
-    <div className="flex items-center gap-2">
-      <label htmlFor="notebook-new-workbook-name" className="sr-only">
-        New workbook name
-      </label>
-      <Input
-        id="notebook-new-workbook-name"
-        type="text"
-        value={newName}
-        onChange={(e) => setNewName(e.target.value)}
-        onKeyDown={(e) => {
-          if (e.key === "Enter") submitCreate();
-        }}
-        placeholder="New workbook name"
-        className="h-8 w-48"
-      />
-      <Button type="button" size="sm" emphasis="normal" onClick={submitCreate} disabled={creating || newName.trim().length === 0}>
-        {creating ? "Creating…" : "Create"}
-      </Button>
-    </div>
-  );
-
-  const rescanControl = (
-    <Button type="button" size="sm" emphasis="normal" onClick={onRescan} disabled={rescanning}>
-      {rescanning ? "Rescanning…" : "Rescan"}
-    </Button>
-  );
-
-  if (entry.kind === "empty") {
-    return (
-      <div className="flex flex-wrap items-center gap-4 border-b border-rule px-4 py-2">
-        <p className="font-mono text-sm text-fg-dim">No workbooks yet.</p>
-        {createControl}
-        {rescanControl}
-        <p className="font-mono text-xs text-fg-faint">A workbook file copied into the `workbooks` folder appears here after a rescan.</p>
-        {rebuildLine}
-        {errorLine}
-      </div>
-    );
-  }
-
-  // `entry.kind === "single" | "choice"` — both render the worksheet bar
-  // (workbook picker + worksheet tabs + register switch) plus New workbook +
-  // Rescan in a compact form (a second workbook has to be creatable from a
-  // non-empty notebook too); the workbook `Select` only appears when there
-  // is more than one indexed workbook (R81 Q4(a)).
   return (
-    <div className="flex flex-wrap items-center gap-4 border-b border-rule px-4 py-2">
+    <div className="flex min-w-0 items-center gap-[var(--nb-gap)]">
       {entry.kind === "choice" && (
         <Select value={entry.workbookId} disabled={dirty} onValueChange={onSelect}>
-          <SelectTrigger className="w-56" aria-label="Workbook">
+          <SelectTrigger
+            size="sm"
+            className={labelled ? "w-40" : "w-24"}
+            aria-label="Workbook"
+            title={dirty ? "Save your edits before switching workbooks." : "Open workbook"}
+          >
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
@@ -186,15 +147,91 @@ export default function WorkbookBar({
           </SelectContent>
         </Select>
       )}
-      {entry.kind === "choice" && dirty && (
-        <span className="font-mono text-xs text-fg-faint">Save your edits before switching workbooks.</span>
-      )}
       <WorksheetTabs />
-      <RegisterSwitch register={register} onRegisterChange={onRegisterChange} />
-      {createControl}
-      {rescanControl}
-      {rebuildLine}
-      {errorLine}
+    </div>
+  );
+}
+
+/**
+ * The create-and-rescan half of the `actions` group. Present whether or not
+ * any workbook exists yet — a second workbook has to be creatable from a
+ * non-empty notebook too — so this is the one control the empty state and
+ * the loaded state share.
+ *
+ * The empty state's "a workbook file copied into the `workbooks` folder
+ * appears here after a rescan" hint is Rescan's `title`, for the same
+ * reason the dirty-picker explanation moved: prose belongs on the control
+ * it explains, not in the row.
+ */
+export function WorkbookActions({ creating, rescanning, onCreate, onRescan, labelled = true }: Pick<WorkbookBarProps, "creating" | "rescanning" | "onCreate" | "onRescan"> & { labelled?: boolean }) {
+  const [newName, setNewName] = useState("");
+
+  function submitCreate() {
+    const trimmed = newName.trim();
+    if (trimmed.length === 0) return;
+    onCreate(trimmed);
+    setNewName("");
+  }
+
+  return (
+    <div className="flex items-center gap-[var(--nb-gap)]">
+      <label htmlFor="notebook-new-workbook-name" className="sr-only">
+        New workbook name
+      </label>
+      <Input
+        id="notebook-new-workbook-name"
+        type="text"
+        value={newName}
+        onChange={(e) => setNewName(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") submitCreate();
+        }}
+        placeholder="New workbook"
+        className={labelled ? "w-32" : "w-20"}
+      />
+      <Button type="button" size="sm" emphasis="normal" onClick={submitCreate} disabled={creating || newName.trim().length === 0}>
+        {creating ? "Creating…" : "Create"}
+      </Button>
+      <Button
+        type="button"
+        size="sm"
+        emphasis="normal"
+        onClick={onRescan}
+        disabled={rescanning}
+        title="A workbook file copied into the workbooks folder appears here after a rescan."
+      >
+        {rescanning ? "Rescanning…" : "Rescan"}
+      </Button>
+    </div>
+  );
+}
+
+/**
+ * The notice strip under the toolbar: "Looking for workbooks…" while the
+ * first `list_workbooks` (and the one automatic `rebuild_catalog` an empty
+ * result triggers, R81 Q1(a)) is in flight, the empty-library line, the
+ * last rescan's counts, and the typed error. Renders `null` when there is
+ * nothing to say, so it takes no height in the common case.
+ */
+export function WorkbookNotices({ entry, error, lastRebuild }: Pick<WorkbookBarProps, "entry" | "error" | "lastRebuild">) {
+  const looking = entry === null;
+  const empty = entry !== null && entry.kind === "empty";
+  if (!looking && !empty && error === null && lastRebuild === null) return null;
+
+  return (
+    <div className="flex flex-wrap items-center gap-[var(--space-4)] border-b border-rule bg-surface-2 px-2 py-1 font-mono text-[length:var(--nb-text-label)] text-fg-dim">
+      {looking && <span>Looking for workbooks…</span>}
+      {empty && <span>No workbooks yet. Name one and select Create.</span>}
+      {lastRebuild !== null && (
+        <span>
+          Rescan found {lastRebuild.workbooks_indexed} workbook(s) in {lastRebuild.duration_ms} ms. The whole catalog was rebuilt, not only workbooks.
+        </span>
+      )}
+      {error !== null && (
+        <span role="alert" className="text-accent">
+          {error.message}
+        </span>
+      )}
     </div>
   );
 }

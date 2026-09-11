@@ -1,8 +1,8 @@
-import { useCallback, useEffect, useMemo, useState, type DragEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent, type KeyboardEvent as ReactKeyboardEvent } from "react";
 import {
   Background,
-  Controls,
   MiniMap,
+  Panel,
   ReactFlow,
   ReactFlowProvider,
   useEdgesState,
@@ -25,8 +25,10 @@ import "./graphCanvasTheme.css";
 import type { SessionDetail } from "../../../../ipc/catalog";
 import type { CellOutput, UnitLabel, Window as SelectedWindow } from "../../../../ipc/workbook";
 import { computeAutoLayoutPositions } from "../model/graphAutoLayout";
+import { graphViewportAction, isTextEntry } from "../model/graphViewportKeys";
 import { buildGraphModel, type GraphNode } from "../model/graphModel";
-import { readGraphLayout } from "../model/graphLayout";
+import { EMPTY_GRAPH_LAYOUT, readGraphLayout, type GraphLayout } from "../model/graphLayout";
+import { effectiveGraphLayout, readGraphPositions, setNodePosition, tidiedLayout, writeGraphPositions } from "../model/graphPositions";
 import { computeNodeStatuses } from "../model/graphStatus";
 import { scanMathExpr, type MathExprCall } from "../model/mathExpr";
 import { rawUnitToLabel } from "../model/unitLabel";
@@ -37,7 +39,6 @@ import { collapsedNodePosition, collapsedSubgraphNodesFor, subgraphFramesFor, FR
 import { editLiteralArg, renameDefinition, rewireInput, type UnresolvedRenameRef } from "../model/graphEdits";
 import { dropPaletteSource, type PaletteDragSource } from "../model/graphPaletteDrop";
 import { buildSourcePalette } from "../model/sourcePalette";
-import { commitDrag } from "./dragCommit";
 import { insertChartCell } from "./graphToChart";
 import NodeCard, { type MathNodeData } from "./NodeCard";
 import { shapeOf } from "./portShape";
@@ -46,6 +47,21 @@ import SubgraphCollapsedNode, { type SubgraphCollapsedData } from "./SubgraphCol
 import SubgraphFrameNode, { type SubgraphFrameData } from "./SubgraphFrameNode";
 
 const NODE_TYPES: NodeTypes = { mathNode: NodeCard, subgraphFrame: SubgraphFrameNode, subgraphCollapsed: SubgraphCollapsedNode };
+
+/** How far out the canvas zooms — far enough to hold the ~50-definition
+ *  workbook decision 42 plans for, where xyflow's own 0.5 default is not.
+ *  A ruling-free number, chosen from that expected node count. */
+const GRAPH_MIN_ZOOM = 0.05;
+/** How far in the canvas zooms, so one card's arguments stay readable on a
+ *  high-density display. */
+const GRAPH_MAX_ZOOM = 4;
+/** The zoom step Fit/Reset's neighbours apply, and what `+`/`-` do. */
+const ZOOM_STEP_MS = 150;
+/** Every button in the bottom-right corner cluster — one class, so the four
+ *  of them cannot drift apart, sized entirely from the `--nb-*` density
+ *  scale (`tokens.css`, R212 item 1). */
+const CLUSTER_BUTTON_CLASS =
+  "flex h-[var(--nb-control-h)] min-w-[var(--nb-control-h)] items-center justify-center rounded-[var(--radius-structural)] border border-rule bg-control px-[var(--nb-pad)] font-mono text-[length:var(--nb-text-label)] text-fg-dim hover:bg-control-active hover:text-fg";
 
 /** The three node shapes this canvas ever hands xyflow — a math node, an
  *  expanded cell's boundary box, or a collapsed cell's closed subsheet
@@ -63,6 +79,11 @@ export interface GraphCanvasProps {
   /** The open workbook's current markdown — the graph's source of truth
    *  (decision 40). */
   markdown: string;
+  /** The open workbook's catalog id, or `null` when none is open — the key
+   *  this machine's node arrangement is stored under (ruling R212 item 3,
+   *  `model/graphPositions.ts`). With `null` the canvas still draws, from
+   *  auto-layout alone; a drag simply has nowhere to be remembered. */
+  workbookId: string | null;
   /** One representative window's `CellOutput[]` — feeds `buildGraphModel`'s
    *  `# label:` fallback and each definition's port shape. Multi-window
    *  port-shape display is out of this task's scope (§3.7.4 defines one
@@ -78,11 +99,11 @@ export interface GraphCanvasProps {
   /** Each selected window's session's channel catalog, keyed by
    *  `session_id` — decision 44's grey-vs-red split. */
   sessionDetails: Map<string, SessionDetail>;
-  /** Fired once a drag settles with a real position change — the new
-   *  document markdown, ready for the existing debounced save flow
-   *  (§3.7.1: no IPC on the interaction path; this fires only on drag
-   *  stop, never while dragging). Not fired for a `"channel"` node (no
-   *  stored-position home, §3.7.1) or a no-op drag. */
+  /** Fired with new document markdown whenever an edit on the canvas
+   *  changes the *document* — a rename, a rewired input, an edited literal,
+   *  a chart insertion, a palette drop's new definition. **Not** fired for
+   *  a node drag: ruling R212 item 3 makes canvas positions renderer state,
+   *  so moving a card no longer touches the file at all. */
   onCommit: (markdown: string) => void;
   /** Fired when a card is clicked — the caller opens that node's owning
    *  cell in `EditorPanes` (Task 10's own "card click opens EditorPanes in
@@ -134,12 +155,16 @@ function describeUnresolved(oldName: string, newName: string, unresolved: Unreso
 /**
  * The maths graph canvas (C2 §3.7, decision 40/44, ruling R135): one React
  * Flow node per {@link import("../model/graphModel").GraphNode}, laid out
- * by the document's stored `graph` positions (falling back to
- * `graphAutoLayout.ts`'s deterministic layering), coloured by
- * `graphStatus.ts`'s per-node status. Dragging a node is entirely local
- * (`useNodesState`'s own change handler) — only `onNodeDragStop` calls
- * {@link commitDrag} and hands the caller the updated markdown, matching
- * §3.7.1's "no IPC on the interaction path".
+ * by this machine's stored positions over whatever the document's `graph`
+ * key already carried (`model/graphPositions.ts`), falling back to
+ * `graphAutoLayout.ts`'s deterministic layering for anything neither has,
+ * and coloured by `graphStatus.ts`'s per-node status.
+ *
+ * Dragging a node is entirely local (`useNodesState`'s own change handler)
+ * — only `onNodeDragStop` commits, and since ruling R212 item 3 it commits
+ * to `localStorage` (`commitPositions`), never to the document. The
+ * §3.7.1 rule it used to satisfy ("no IPC on the interaction path") now
+ * holds trivially: a drag reaches no IPC at all.
  */
 export default function GraphCanvas(props: GraphCanvasProps) {
   // `useReactFlow` (search-hit centring, below) only resolves inside a
@@ -154,7 +179,7 @@ export default function GraphCanvas(props: GraphCanvasProps) {
   );
 }
 
-function GraphCanvasInner({ markdown, outputs, selectedWindows, windows, sessionDetails, onCommit, onSelectCell }: GraphCanvasProps) {
+function GraphCanvasInner({ markdown, workbookId, outputs, selectedWindows, windows, sessionDetails, onCommit, onSelectCell }: GraphCanvasProps) {
   // Task 5's own chart-type picker (decision 83, "idl0 pictograms carry
   // over") replaces the old fixed-"lineY" chart button — `mark` now comes
   // from `NodeCard.tsx`'s `ChartTypePicker`, one of `MARK_NAMES`'s five
@@ -202,8 +227,40 @@ function GraphCanvasInner({ markdown, outputs, selectedWindows, windows, session
   const reactFlow = useReactFlow();
 
   const model = useMemo(() => buildGraphModel(markdown, outputs), [markdown, outputs]);
-  const layout = useMemo(() => readGraphLayout(markdown), [markdown]);
+
+  // Ruling R212 item 3: node positions are renderer state, per machine, and
+  // are never written to the workbook file. `storedPositions` is this
+  // machine's arrangement (`model/graphPositions.ts`); the file's own
+  // `graph` key is still *read*, as the shared starting point a workbook
+  // may have shipped with, and `effectiveGraphLayout` lays one over the
+  // other. `positionEpoch` is what a drag or a Tidy bumps to re-read
+  // storage — the alternative, keeping the layout in React state, would
+  // have two sources of truth for the same arrangement.
+  const [positionEpoch, setPositionEpoch] = useState(0);
+  const fileLayout = useMemo(() => readGraphLayout(markdown), [markdown]);
+  const storedPositions = useMemo(() => readGraphPositions(workbookId), [workbookId, positionEpoch]);
+  const layout = useMemo(() => effectiveGraphLayout(fileLayout, storedPositions), [fileLayout, storedPositions]);
   const positions = useMemo(() => computeAutoLayoutPositions(model, layout), [model, layout]);
+
+  /** Persists `next` as this workbook's arrangement and re-reads it. The
+   *  one writer — every gesture that moves a card goes through here, so
+   *  "who wrote this position" has a single answer. */
+  const commitPositions = useCallback(
+    (next: GraphLayout) => {
+      writeGraphPositions(workbookId, next);
+      setPositionEpoch((epoch) => epoch + 1);
+    },
+    [workbookId]
+  );
+
+  /** R212 item 3's "Tidy" button: re-run the layered layout and *record*
+   *  it, so it survives the next render rather than being undone by the
+   *  file's or this machine's older entries. */
+  const handleTidy = useCallback(() => {
+    const fresh = computeAutoLayoutPositions(model, EMPTY_GRAPH_LAYOUT);
+    const names = new Map(model.nodes.filter((node) => node.kind === "definition").map((node) => [node.id, node.name]));
+    commitPositions(tidiedLayout(fresh, names));
+  }, [model, commitPositions]);
   const statuses = useMemo(
     () => computeNodeStatuses({ model, selectedWindows, windows, sessionDetails }),
     [model, selectedWindows, windows, sessionDetails]
@@ -221,10 +278,11 @@ function GraphCanvasInner({ markdown, outputs, selectedWindows, windows, session
   // gesture, R160): the drop target is the whole `<ReactFlow>` pane, not a
   // node -- `dropPaletteSource` picks the target cell and the new
   // definition's name (its own doc comment explains both judgment calls);
-  // this handler only decodes the drag payload and folds the resulting
-  // markdown edit with a `commitDrag` at the drop point in one `onCommit`
-  // call, so a fresh node appears roughly where it was dropped rather than
-  // wherever auto-layout would otherwise place it. A document with no math
+  // this handler only decodes the drag payload and then commits the two
+  // halves to the two places they now belong (R212 item 3): the new
+  // definition's markdown through `onCommit`, and the drop point through
+  // `commitPositions`, so a fresh node appears roughly where it was dropped
+  // rather than wherever auto-layout would otherwise place it. A document with no math
   // cell to add to is a no-op `dropPaletteSource` itself reports via a
   // `null` `newDefName` -- surfaced here exactly like `renameNotice`
   // (R153: a drop that does nothing must say so, not look like it worked).
@@ -246,10 +304,14 @@ function GraphCanvasInner({ markdown, outputs, selectedWindows, windows, session
         setPaletteNotice(`No math cell to add "${source.name}" to yet -- add one first.`);
         return;
       }
+      // The definition itself is a document edit; where its card lands is
+      // not (R212 item 3), so the two go to two different places -- the
+      // markdown through `onCommit`, the drop point into renderer state.
       const { x, y } = screenToFlowPosition({ x: event.clientX, y: event.clientY });
-      onCommit(commitDrag(result.markdown, { kind: "node", name: result.newDefName }, x, y));
+      onCommit(result.markdown);
+      commitPositions(setNodePosition(storedPositions, result.newDefName, x, y));
     },
-    [markdown, model, onCommit, screenToFlowPosition]
+    [markdown, model, onCommit, screenToFlowPosition, commitPositions, storedPositions]
   );
 
   // Subgraph collapse/expand (decision 42) -- a list of collapsed cell ids
@@ -397,11 +459,14 @@ function GraphCanvasInner({ markdown, outputs, selectedWindows, windows, session
 
   const handleNodeDragStop = useCallback<OnNodeDrag<FlowNode>>(
     (_event, draggedNode) => {
-      if (draggedNode.type !== "mathNode" || draggedNode.data.graphNode.kind !== "definition") return; // no stored-position home, §3.7.1; frame/collapsed nodes never drag
-      const next = commitDrag(markdown, { kind: "node", name: draggedNode.data.graphNode.name }, draggedNode.position.x, draggedNode.position.y);
-      if (next !== markdown) onCommit(next);
+      if (draggedNode.type !== "mathNode" || draggedNode.data.graphNode.kind !== "definition") return; // no stored-position home; frame/collapsed nodes never drag
+      // R212 item 3: "Dragging a node persists its position" -- to this
+      // machine's renderer state, never to the document. A drag therefore
+      // no longer marks the workbook dirty, which is the point: where a
+      // card sits is not a change to the maths.
+      commitPositions(setNodePosition(storedPositions, draggedNode.data.graphNode.name, draggedNode.position.x, draggedNode.position.y));
     },
-    [markdown, onCommit]
+    [commitPositions, storedPositions]
   );
 
   const handleNodeClick = useCallback<NodeMouseHandler<FlowNode>>(
@@ -437,6 +502,33 @@ function GraphCanvasInner({ markdown, outputs, selectedWindows, windows, session
     [markdown, onCommit, nodesById]
   );
 
+  // The corner cluster and the keyboard reach the viewport through the same
+  // four callbacks, so a key and its button can never mean different things
+  // (R212 item 2's "Fit (F), Reset 100 % (0) … Keyboard: F / 0 / +/-").
+  const { fitView, zoomIn, zoomOut, zoomTo } = reactFlow;
+  const canvasRef = useRef<HTMLDivElement | null>(null);
+  const handleFit = useCallback(() => void fitView({ duration: ZOOM_STEP_MS, padding: 0.15 }), [fitView]);
+  // Reset is "100 %", not "fit": it restores scale 1 and leaves the pan
+  // where it is, which is what a CAD user means by resetting zoom.
+  const handleReset = useCallback(() => void zoomTo(1, { duration: ZOOM_STEP_MS }), [zoomTo]);
+  const handleZoomIn = useCallback(() => void zoomIn({ duration: ZOOM_STEP_MS }), [zoomIn]);
+  const handleZoomOut = useCallback(() => void zoomOut({ duration: ZOOM_STEP_MS }), [zoomOut]);
+
+  const handleKeyDown = useCallback(
+    (event: ReactKeyboardEvent<HTMLDivElement>) => {
+      const action = graphViewportAction({ key: event.key, fromTextField: isTextEntry(event.target) });
+      if (action === null) return;
+      // Only now, once the key is known to be ours: a bare `preventDefault`
+      // on every key would eat typing and tabbing out of the canvas.
+      event.preventDefault();
+      if (action === "fit") handleFit();
+      else if (action === "reset") handleReset();
+      else if (action === "zoom-in") handleZoomIn();
+      else handleZoomOut();
+    },
+    [handleFit, handleReset, handleZoomIn, handleZoomOut]
+  );
+
   function toggleCollapsed(cellId: string): void {
     setCollapsedCellIds((prev) => {
       const next = new Set(prev);
@@ -447,7 +539,7 @@ function GraphCanvasInner({ markdown, outputs, selectedWindows, windows, session
   }
 
   return (
-    <div className="flex h-full w-full flex-col bg-bg">
+    <div className="idl-dense flex h-full w-full flex-col bg-bg">
       <div className="flex items-center gap-3 border-b border-rule px-3 py-2">
         <input
           type="text"
@@ -456,6 +548,9 @@ function GraphCanvasInner({ markdown, outputs, selectedWindows, windows, session
           onChange={(e) => setSearchQuery(e.target.value)}
           className="rounded-[var(--radius-structural)] border border-rule bg-control px-2 py-1 text-label-2 text-fg"
         />
+        <button type="button" onClick={handleTidy} title="Re-run the automatic layered layout (overwrites the arrangement on this machine)" className={CLUSTER_BUTTON_CLASS}>
+          Tidy
+        </button>
         {subgraphs.length > 0 && (
           <div className="flex flex-wrap items-center gap-2">
             {subgraphs.map((sg) => (
@@ -490,7 +585,19 @@ function GraphCanvasInner({ markdown, outputs, selectedWindows, windows, session
       )}
       <div className="flex min-h-0 flex-1">
         <SourcePaletteRail palette={sourcePalette} />
-        <div className="idl-graph-canvas min-h-0 flex-1" onDragOver={(e) => e.preventDefault()} onDrop={handlePaletteDrop}>
+        {/* Ruling R212 item 2: "the column is a viewport, not the world."
+            `tabIndex` + `onKeyDown` rather than a `window` listener, so
+            F/0/+/- only act while the canvas itself has focus — the
+            Notebook has a cell list and a properties form on screen at the
+            same time, and `f` is a letter in both. */}
+        <div
+          ref={canvasRef}
+          tabIndex={-1}
+          onKeyDown={handleKeyDown}
+          className="idl-graph-canvas relative min-h-0 flex-1 outline-none"
+          onDragOver={(e) => e.preventDefault()}
+          onDrop={handlePaletteDrop}
+        >
           <ReactFlow
             nodes={nodes}
             edges={edges}
@@ -502,10 +609,54 @@ function GraphCanvasInner({ markdown, outputs, selectedWindows, windows, session
             onReconnect={handleReconnect}
             edgesReconnectable
             fitView
+            /* The infinite canvas (R212 item 2). Left-drag on empty space
+               pans and space-drag pans from anywhere (xyflow's
+               `panActivationKeyCode`, default Space); the wheel zooms about
+               the pointer. No `translateExtent` and no `nodeExtent` is set
+               at all — the world has no edge to hit, which is the whole
+               point: "canvas space is cheap if we can reset the zoom
+               easily" (Isaac, 2026-09-11), and Fit/Reset below are how it
+               is reset. `minZoom`/`maxZoom` are widened well past xyflow's
+               own 0.5–2 so a ~50-definition workbook (decision 42) can be
+               seen whole and a single card can still be read close up. */
+            panOnDrag
+            panActivationKeyCode="Space"
+            zoomOnScroll
+            zoomOnPinch
+            minZoom={GRAPH_MIN_ZOOM}
+            maxZoom={GRAPH_MAX_ZOOM}
           >
             <Background />
-            <Controls />
-            <MiniMap />
+            {/* The corner cluster (R212 item 2), bottom-right: Fit, Reset
+                100 %, a zoom step pair, and the minimap — whose mask is the
+                viewport rectangle drawn over the whole node extent. The
+                stock `<Controls />` is gone: it carried a lock/interactivity
+                button this canvas has no use for, and its buttons are not on
+                the Notebook density scale. */}
+            <Panel position="bottom-right" className="idl-dense flex items-end gap-[var(--nb-gap)]">
+              <div className="flex flex-col gap-[var(--nb-pad)]">
+                <button type="button" onClick={handleFit} title="Fit every node in view (F)" className={CLUSTER_BUTTON_CLASS}>
+                  Fit
+                </button>
+                <button type="button" onClick={handleReset} title="Reset zoom to 100 % (0)" className={CLUSTER_BUTTON_CLASS}>
+                  100%
+                </button>
+                <div className="flex gap-[var(--nb-pad)]">
+                  <button type="button" onClick={handleZoomOut} title="Zoom out (-)" aria-label="Zoom out" className={CLUSTER_BUTTON_CLASS}>
+                    −
+                  </button>
+                  <button type="button" onClick={handleZoomIn} title="Zoom in (+)" aria-label="Zoom in" className={CLUSTER_BUTTON_CLASS}>
+                    +
+                  </button>
+                </div>
+              </div>
+              {/* `MiniMap` is itself an xyflow `Panel` (absolutely
+                  positioned against the canvas). Forcing it `static` is
+                  what lets it sit *inside* this cluster as an ordinary flex
+                  item beside the buttons, instead of the two overlapping in
+                  the same corner. */}
+              <MiniMap pannable zoomable className="!static !m-0 !h-[120px] !w-[160px] rounded-[var(--radius-structural)] border border-rule" />
+            </Panel>
           </ReactFlow>
         </div>
       </div>

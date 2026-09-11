@@ -73,6 +73,27 @@
   --row-rhythm: 6px; /* DenseRow vertical rhythm */
   --hit-target: 44px; /* new: touch-first surfaces (Device, notebook output) */
 
+  /* ---- Notebook density scale (ruling R212 item 1) ----
+   * ONE scale for every control that lives inside the Notebook page: the
+   * top toolbar, the maths graph's node cards, the source palette rail,
+   * the Properties form's inputs and its sliders. Isaac, 2026-09-11:
+   * "everything needs to be compact on the notebook".
+   *
+   * Consumed two ways, never re-derived as a per-component literal
+   * (R212's "no per-component ad-hoc sizes"): through `index.css`'s
+   * `.idl-dense` scope class, which retunes the shared `components/ui/*`
+   * primitives for everything inside it, and as arbitrary values
+   * (`h-[var(--nb-control-h)]`) on the few hand-rolled elements the scope
+   * rules deliberately do not reach.
+   *
+   * The Data / Device / Settings pages never carry `.idl-dense` — they are
+   * touch-first (UI-DIRECTION decision 15) and keep `--hit-target`. */
+  --nb-control-h: 22px; /* every button / input / select / toggle inside the Notebook */
+  --nb-text-label: 11px; /* labels, mono data, node-card rows */
+  --nb-text-body: 12px; /* body text on a Notebook control surface */
+  --nb-pad: 4px; /* a control's inner padding */
+  --nb-gap: 6px; /* gap between controls, and between toolbar groups' members */
+
   /* ---- Radii ---- */
   --radius-structural: 2px; /* brandControlRadius */
   --radius: 7px; /* brandControlRadiusSoft; shadcn's --radius */

@@ -1,5 +1,12 @@
 import { useState } from "react";
 
+import { Button } from "@/components/ui/button";
+import { ColourField } from "@/components/ui/colour-field";
+import { Field, FieldGroup } from "@/components/ui/field";
+import { NumberField } from "@/components/ui/number-field";
+import { SELECT_FIELD_UNSET, SelectField, SwitchField, TextField, type SelectFieldOption } from "@/components/ui/select-field";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
+import { NoteBlock } from "@/components/brand/NoteBlock";
 import {
   FFT_AVERAGINGS,
   FFT_DETRENDS,
@@ -37,13 +44,26 @@ import {
 } from "../model/propertiesForm";
 import type { PropertiesFormChannelOption, PropertiesFormLapOption, PropertiesFormProps } from "./PropertiesForm.types";
 
-/** The `windowSize`/`hopSize` sample counts the Properties panel's
- *  `<select>` offers directly (C2 §5.3's twelfth-listed control 5), each
- *  comfortably below `model/fftRequest.ts`'s `MAX_FFT_BINS`. A stored value
- *  outside this list (a hand-edit, or an older workbook) still displays
- *  correctly through the accompanying free numeric entry -- opening the
- *  pane never silently changes it. */
+/** The `windowSize`/`hopSize` sample counts the Properties panel's select
+ *  offers directly (C2 §5.3's twelfth-listed control 5), each comfortably
+ *  below `model/fftRequest.ts`'s `MAX_FFT_BINS`. A stored value outside this
+ *  list (a hand-edit, or an older workbook) still displays correctly through
+ *  the accompanying free numeric entry -- opening the pane never silently
+ *  changes it. */
 const FFT_WINDOW_SIZE_OPTIONS: readonly number[] = [1024, 2048, 4096, 8192, 16384];
+
+/** The select value standing for "Whole record" -- a real option, not an
+ *  unset state, so it does not use `SELECT_FIELD_UNSET`. */
+const WHOLE_RECORD = "all";
+
+/** The select value standing for "a stored window size this list does not
+ *  offer" -- shown, never silently rounded to a neighbour. */
+const CUSTOM_WINDOW_SIZE = "custom";
+
+/** `values` as select options with a display label applied. */
+function options<T extends string | number>(values: readonly T[], label: (value: T) => string): SelectFieldOption[] {
+  return values.map((value) => ({ value: String(value), label: label(value) }));
+}
 
 /**
  * The Properties pane (design §6, D13): a form over `plotForm`'s `PlotProps`
@@ -53,6 +73,15 @@ const FFT_WINDOW_SIZE_OPTIONS: readonly number[] = [1024, 2048, 4096, 8192, 1638
  * component never mutates `code` directly and never calls `parse`/`generate`
  * itself outside that one path (both live in `../model/propertiesForm.ts`,
  * this component's whole logic surface besides DOM wiring).
+ *
+ * **Ruling R212 item 5** replaced this pane's hand-written
+ * `<label>Text <input/></label>` pairs with the shared primitives under
+ * `components/ui/` — `Field`/`FieldGroup`, `NumberField` (unit suffix and
+ * drag-to-scrub), `SelectField`, `TextField`, `SwitchField` and
+ * `ColourField` — all at `tokens.css`'s `--nb-*` density scale. **What the
+ * form edits did not change**: every control commits the same `PlotProps`
+ * patch through the same `model/propertiesForm.ts` function it always did,
+ * and that module's tests are untouched.
  *
  * When `code` falls outside the subset `plotForm.parse` recognises, the
  * pane greys its controls, shows "custom code", and offers "Reset to form",
@@ -110,24 +139,28 @@ export default function PropertiesForm({ code, channels, laps, onChange }: Prope
 
   if (view.isCustom || view.props === null) {
     return (
-      <div className="properties-form properties-form-custom" aria-disabled="true">
-        <p className="properties-form-custom-label">Custom code</p>
-        <p className="properties-form-custom-hint">
-          This cell&rsquo;s code is outside the form&rsquo;s supported subset, so it can&rsquo;t be edited here.
-        </p>
+      <div className="properties-form idl-dense properties-form-custom flex flex-col gap-[var(--nb-gap)] p-[var(--nb-gap)]" aria-disabled="true">
+        <NoteBlock>
+          <p className="properties-form-custom-label font-mono text-[length:var(--nb-text-body)] text-fg">Custom code</p>
+          <p className="properties-form-custom-hint font-mono text-[length:var(--nb-text-label)] text-fg-dim">
+            This cell&rsquo;s code is outside the form&rsquo;s supported subset, so it can&rsquo;t be edited here.
+          </p>
+        </NoteBlock>
         {!confirmingReset ? (
-          <button type="button" onClick={() => setConfirmingReset(true)}>
+          <Button type="button" size="sm" emphasis="normal" onClick={() => setConfirmingReset(true)}>
             Reset to form
-          </button>
+          </Button>
         ) : (
-          <div className="properties-form-reset-confirm">
-            <p>Resetting to form will discard this custom code. This can&rsquo;t be undone.</p>
-            <button type="button" onClick={handleResetConfirmed}>
-              Discard custom code and reset
-            </button>
-            <button type="button" onClick={() => setConfirmingReset(false)}>
-              Cancel
-            </button>
+          <div className="properties-form-reset-confirm flex flex-col gap-[var(--nb-pad)]">
+            <p className="font-mono text-[length:var(--nb-text-label)] text-fg-dim">Resetting to form will discard this custom code. This can&rsquo;t be undone.</p>
+            <div className="flex gap-[var(--nb-gap)]">
+              <Button type="button" size="sm" emphasis="accent" onClick={handleResetConfirmed}>
+                Discard custom code and reset
+              </Button>
+              <Button type="button" size="sm" emphasis="normal" onClick={() => setConfirmingReset(false)}>
+                Cancel
+              </Button>
+            </div>
           </div>
         )}
       </div>
@@ -137,7 +170,7 @@ export default function PropertiesForm({ code, channels, laps, onChange }: Prope
   const props = view.props;
 
   return (
-    <div className="properties-form">
+    <div className="properties-form idl-dense flex flex-col gap-[var(--space-4)] p-[var(--nb-gap)]">
       <ChartTypeControl chart={props.chart} onChange={(next) => commit(setChartType(props, next, channels))} />
       {props.chart === "fft" ? (
         <FftPropertiesForm props={props} channels={channels} onChange={commit} />
@@ -152,13 +185,21 @@ export default function PropertiesForm({ code, channels, laps, onChange }: Prope
  *  first for both chart types (R79 Q6: switching has no confirmation). */
 function ChartTypeControl({ chart, onChange }: { chart: "time" | "fft"; onChange: (next: "time" | "fft") => void }) {
   return (
-    <div className="properties-form-chart-type" role="group" aria-label="Chart type">
-      <button type="button" aria-pressed={chart === "time"} onClick={() => onChange("time")}>
-        Time
-      </button>
-      <button type="button" aria-pressed={chart === "fft"} onClick={() => onChange("fft")}>
-        FFT
-      </button>
+    <div className="properties-form-chart-type">
+      <Field label="Chart type">
+        {() => (
+          <ToggleGroup
+            type="single"
+            density="tight"
+            value={chart}
+            aria-label="Chart type"
+            onValueChange={(next) => (next === "time" || next === "fft") && onChange(next)}
+          >
+            <ToggleGroupItem value="time">Time</ToggleGroupItem>
+            <ToggleGroupItem value="fft">FFT</ToggleGroupItem>
+          </ToggleGroup>
+        )}
+      </Field>
     </div>
   );
 }
@@ -172,9 +213,12 @@ function ChartTypeControl({ chart, onChange }: { chart: "time" | "fft"; onChange
  *  `[number, number]`, never a single bound). */
 function DomainFields({
   domain,
+  unit,
   onChange,
 }: {
   domain: [number, number] | undefined;
+  /** The axis's unit suffix, when the caller knows it. */
+  unit?: string;
   onChange: (domain: [number, number] | undefined) => void;
 }) {
   const [minText, setMinText] = useState(domain === undefined ? "" : String(domain[0]));
@@ -192,27 +236,45 @@ function DomainFields({
     }
   }
 
+  /** One bound's text, or `null` for an empty field — `NumberField`'s own
+   *  "not set". The two bounds stay *text* state here rather than numbers
+   *  so that clearing one field is distinguishable from typing a zero. */
+  const asValue = (text: string): number | null => (text === "" ? null : Number(text));
+
   return (
-    <label>
-      Domain
-      <input
-        type="number"
-        value={minText}
-        onChange={(e) => {
-          setMinText(e.target.value);
-          commit(e.target.value, maxText);
+    <>
+      <NumberField
+        label="Domain min"
+        value={asValue(minText)}
+        unit={unit}
+        placeholder="auto"
+        onChange={(next) => {
+          const text = next === null ? "" : String(next);
+          setMinText(text);
+          commit(text, maxText);
         }}
       />
-      <input
-        type="number"
-        value={maxText}
-        onChange={(e) => {
-          setMaxText(e.target.value);
-          commit(minText, e.target.value);
+      <NumberField
+        label="Domain max"
+        value={asValue(maxText)}
+        unit={unit}
+        placeholder="auto"
+        onChange={(next) => {
+          const text = next === null ? "" : String(next);
+          setMaxText(text);
+          commit(minText, text);
         }}
       />
-    </label>
+    </>
   );
+}
+
+/** The scale-type options both axis sections share. "(default)" is the
+ *  unset state — it carries `SELECT_FIELD_UNSET`, which `SelectField` maps
+ *  back to `undefined` for `updateYAxis`, since Radix will not accept an
+ *  item whose value is the empty string. */
+function scaleOptions(): SelectFieldOption[] {
+  return [{ value: SELECT_FIELD_UNSET, label: "(default)" }, ...options(Y_AXIS_TYPES, (t) => t)];
 }
 
 // ---------------------------------------------------------------------------
@@ -250,8 +312,7 @@ function TimePropertiesForm({
 
   return (
     <>
-      <section className="properties-form-marks">
-        <h3>Marks</h3>
+      <FieldGroup title="Marks" className="properties-form-marks">
         {props.marks.map((mark, index) => (
           <MarkRow
             key={index}
@@ -269,50 +330,36 @@ function TimePropertiesForm({
             onMoveDown={() => onChange(moveMark(props, index, index + 1))}
           />
         ))}
-        <button type="button" onClick={() => onChange(addMark(props, channels[0]?.id ?? ""))}>
+        <Button type="button" size="sm" emphasis="normal" onClick={() => onChange(addMark(props, channels[0]?.id ?? ""))}>
           Add mark
-        </button>
-      </section>
+        </Button>
+      </FieldGroup>
 
-      <section className="properties-form-x-axis">
-        <h3>X axis</h3>
-        <label>
-          Label
-          <input
-            type="text"
-            value={props.x?.label ?? ""}
-            onChange={(e) => onChange(updateXAxis(props, { label: e.target.value === "" ? undefined : e.target.value }))}
-          />
-        </label>
+      <FieldGroup title="X axis" className="properties-form-x-axis">
+        <TextField
+          label="Label"
+          value={props.x?.label ?? ""}
+          placeholder="auto"
+          onChange={(value) => onChange(updateXAxis(props, { label: value === "" ? undefined : value }))}
+        />
         <DomainFields domain={props.x?.domain} onChange={(domain) => onChange(updateXAxis(props, { domain }))} />
-      </section>
+      </FieldGroup>
 
-      <section className="properties-form-y-axis">
-        <h3>Y axis</h3>
-        <label>
-          Label
-          <input
-            type="text"
-            value={props.y?.label ?? ""}
-            onChange={(e) => onChange(updateYAxis(props, { label: e.target.value === "" ? undefined : e.target.value }))}
-          />
-        </label>
+      <FieldGroup title="Y axis" className="properties-form-y-axis">
+        <TextField
+          label="Label"
+          value={props.y?.label ?? ""}
+          placeholder="auto"
+          onChange={(value) => onChange(updateYAxis(props, { label: value === "" ? undefined : value }))}
+        />
         <DomainFields domain={props.y?.domain} onChange={(domain) => onChange(updateYAxis(props, { domain }))} />
-        <label>
-          Scale
-          <select
-            value={props.y?.type ?? ""}
-            onChange={(e) => onChange(updateYAxis(props, { type: e.target.value === "" ? undefined : (e.target.value as NonNullable<TimePlotProps["y"]>["type"]) }))}
-          >
-            <option value="">(default)</option>
-            {Y_AXIS_TYPES.map((t) => (
-              <option key={t} value={t}>
-                {t}
-              </option>
-            ))}
-          </select>
-        </label>
-      </section>
+        <SelectField
+          label="Scale"
+          value={props.y?.type}
+          options={scaleOptions()}
+          onChange={(value) => onChange(updateYAxis(props, { type: value as NonNullable<TimePlotProps["y"]>["type"] | undefined }))}
+        />
+      </FieldGroup>
 
       <LegendControl props={props} onChange={onChange} />
     </>
@@ -352,67 +399,51 @@ function MarkRow({
   onMoveUp: () => void;
   onMoveDown: () => void;
 }) {
+  // "Session" is a real scope, not an unset state, so it is an ordinary
+  // option value rather than `SelectField`'s unset sentinel.
+  const scopeValue = mark.lap === null || mark.lap === undefined ? "session" : String(mark.lap);
+
   return (
-    <div className="properties-form-mark-row">
-      <label>
-        Channel
-        <select value={mark.channel} onChange={(e) => onChannelChange(e.target.value)}>
-          {channels.map((c) => (
-            <option key={c.id} value={c.id}>
-              {c.label}
-            </option>
-          ))}
-        </select>
-      </label>
-      <label>
-        Mark type
-        <select value={mark.mark} onChange={(e) => onPatch({ mark: e.target.value as MarkProps["mark"] })}>
-          {MARK_NAMES.map((name) => (
-            <option key={name} value={name}>
-              {name}
-            </option>
-          ))}
-        </select>
-      </label>
-      <label>
-        Scope
-        <select
-          value={mark.lap === null || mark.lap === undefined ? "session" : String(mark.lap)}
-          onChange={(e) => onPatch({ lap: e.target.value === "session" ? null : Number(e.target.value) })}
-        >
-          <option value="session">Session</option>
-          {laps.map((lap) => (
-            <option key={lap.number} value={lap.number}>
-              Lap {lap.number}
-            </option>
-          ))}
-        </select>
-      </label>
-      <label>
-        Stroke colour
-        <input
-          type="text"
-          value={mark.stroke ?? ""}
-          onChange={(e) => onPatch({ stroke: e.target.value === "" ? undefined : e.target.value })}
-        />
-      </label>
-      <label>
-        Stroke width (px)
-        <input
-          type="number"
-          value={mark.strokeWidth ?? ""}
-          onChange={(e) => onPatch({ strokeWidth: e.target.value === "" ? undefined : Number(e.target.value) })}
-        />
-      </label>
-      <button type="button" onClick={onMoveUp} disabled={!canMoveUp}>
-        Move up
-      </button>
-      <button type="button" onClick={onMoveDown} disabled={!canMoveDown}>
-        Move down
-      </button>
-      <button type="button" onClick={onRemove} disabled={!canRemove}>
-        Remove mark {index + 1}
-      </button>
+    <div className="properties-form-mark-row flex flex-col gap-[var(--nb-pad)] border-l border-rule pl-[var(--nb-gap)]">
+      <SelectField
+        label="Channel"
+        value={mark.channel}
+        options={channels.map((c) => ({ value: c.id, label: c.label }))}
+        onChange={(value) => value !== undefined && onChannelChange(value)}
+      />
+      <SelectField
+        label="Mark type"
+        value={mark.mark}
+        options={options(MARK_NAMES, (name) => name)}
+        onChange={(value) => value !== undefined && onPatch({ mark: value as MarkProps["mark"] })}
+      />
+      <SelectField
+        label="Scope"
+        value={scopeValue}
+        options={[{ value: "session", label: "Session" }, ...laps.map((lap) => ({ value: String(lap.number), label: `Lap ${lap.number}` }))]}
+        onChange={(value) => onPatch({ lap: value === undefined || value === "session" ? null : Number(value) })}
+      />
+      <ColourField label="Stroke colour" value={mark.stroke} onChange={(value) => onPatch({ stroke: value })} />
+      <NumberField
+        label="Stroke width"
+        unit="px"
+        min={0}
+        step={0.5}
+        placeholder="auto"
+        value={mark.strokeWidth ?? null}
+        onChange={(value) => onPatch({ strokeWidth: value ?? undefined })}
+      />
+      <div className="flex justify-end gap-[var(--nb-pad)]">
+        <Button type="button" size="sm" emphasis="normal" onClick={onMoveUp} disabled={!canMoveUp} title="Move up" aria-label={`Move mark ${index + 1} up`}>
+          ↑
+        </Button>
+        <Button type="button" size="sm" emphasis="normal" onClick={onMoveDown} disabled={!canMoveDown} title="Move down" aria-label={`Move mark ${index + 1} down`}>
+          ↓
+        </Button>
+        <Button type="button" size="sm" emphasis="normal" onClick={onRemove} disabled={!canRemove}>
+          Remove mark {index + 1}
+        </Button>
+      </div>
     </div>
   );
 }
@@ -465,197 +496,157 @@ function FftPropertiesForm({
 
   const overlap = overlapPercent(fft.windowSize, fft.hopSize);
   const windowSizeIsStandard = fft.windowSize !== "all" && (FFT_WINDOW_SIZE_OPTIONS as readonly number[]).includes(fft.windowSize);
-  const windowSizeSelectValue = fft.windowSize === "all" ? "all" : windowSizeIsStandard ? String(fft.windowSize) : "custom";
+  const windowSizeSelectValue = fft.windowSize === "all" ? WHOLE_RECORD : windowSizeIsStandard ? String(fft.windowSize) : CUSTOM_WINDOW_SIZE;
 
   return (
     <>
-      <section className="properties-form-mark">
-        <h3>Spectrum</h3>
-        <label>
-          Channel
-          <select value={mark.channel} onChange={(e) => handleChannelChange(e.target.value)}>
-            {channels.map((c) => (
-              <option key={c.id} value={c.id}>
-                {c.label}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label>
-          Mark type
-          <select value={mark.mark} onChange={(e) => onChange({ ...props, mark: { ...mark, mark: e.target.value as SpectrumMarkProps["mark"] } })}>
-            {SPECTRUM_MARK_NAMES.map((name) => (
-              <option key={name} value={name}>
-                {name}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label>
-          Stroke colour
-          <input
-            type="text"
-            value={mark.stroke ?? ""}
-            onChange={(e) => onChange({ ...props, mark: { ...mark, stroke: e.target.value === "" ? undefined : e.target.value } })}
-          />
-        </label>
-        <label>
-          Stroke width (px)
-          <input
-            type="number"
-            value={mark.strokeWidth ?? ""}
-            onChange={(e) => onChange({ ...props, mark: { ...mark, strokeWidth: e.target.value === "" ? undefined : Number(e.target.value) } })}
-          />
-        </label>
-      </section>
+      <FieldGroup title="Spectrum" className="properties-form-mark">
+        <SelectField
+          label="Channel"
+          value={mark.channel}
+          options={channels.map((c) => ({ value: c.id, label: c.label }))}
+          onChange={(value) => value !== undefined && handleChannelChange(value)}
+        />
+        <SelectField
+          label="Mark type"
+          value={mark.mark}
+          options={options(SPECTRUM_MARK_NAMES, (name) => name)}
+          onChange={(value) => value !== undefined && onChange({ ...props, mark: { ...mark, mark: value as SpectrumMarkProps["mark"] } })}
+        />
+        <ColourField label="Stroke colour" value={mark.stroke} onChange={(value) => onChange({ ...props, mark: { ...mark, stroke: value } })} />
+        <NumberField
+          label="Stroke width"
+          unit="px"
+          min={0}
+          step={0.5}
+          placeholder="auto"
+          value={mark.strokeWidth ?? null}
+          onChange={(value) => onChange({ ...props, mark: { ...mark, strokeWidth: value ?? undefined } })}
+        />
+      </FieldGroup>
 
-      <section className="properties-form-fft-params">
-        <h3>FFT parameters</h3>
-        <label>
-          Window function
-          <select value={fft.window} onChange={(e) => patchFft({ window: e.target.value as FftParams["window"] })}>
-            {FFT_WINDOW_FUNCTIONS.map((w) => (
-              <option key={w} value={w}>
-                {w === "rectangular" ? "Rect" : w === "hann" ? "Hann" : "Hamming"}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label>
-          Window size (samples)
-          <select
-            value={windowSizeSelectValue}
+      <FieldGroup title="FFT parameters" className="properties-form-fft-params">
+        <SelectField
+          label="Window function"
+          value={fft.window}
+          options={options(FFT_WINDOW_FUNCTIONS, (w) => (w === "rectangular" ? "Rect" : w === "hann" ? "Hann" : "Hamming"))}
+          onChange={(value) => value !== undefined && patchFft({ window: value as FftParams["window"] })}
+        />
+        <SelectField
+          label="Window size"
+          value={windowSizeSelectValue}
+          disabled={averagingIsNone}
+          options={[
+            ...options(FFT_WINDOW_SIZE_OPTIONS, (n) => String(n)),
+            { value: WHOLE_RECORD, label: "Whole record" },
+            ...(!windowSizeIsStandard && fft.windowSize !== "all" ? [{ value: CUSTOM_WINDOW_SIZE, label: "Custom…" }] : []),
+          ]}
+          onChange={(value) => {
+            if (value === WHOLE_RECORD) patchFft({ windowSize: "all" });
+            else if (value !== undefined && value !== CUSTOM_WINDOW_SIZE) patchFft({ windowSize: Number(value) });
+          }}
+        />
+        {fft.windowSize !== "all" && (
+          <NumberField
+            label="Window size"
+            unit="samples"
+            min={1}
+            step={1024}
             disabled={averagingIsNone}
-            onChange={(e) => {
-              const v = e.target.value;
-              if (v === "all") patchFft({ windowSize: "all" });
-              else if (v !== "custom") patchFft({ windowSize: Number(v) });
-            }}
-          >
-            {FFT_WINDOW_SIZE_OPTIONS.map((n) => (
-              <option key={n} value={n}>
-                {n}
-              </option>
-            ))}
-            <option value="all">Whole record</option>
-            {!windowSizeIsStandard && fft.windowSize !== "all" && <option value="custom">Custom…</option>}
-          </select>
-          {fft.windowSize !== "all" && (
-            <input
-              type="number"
-              value={fft.windowSize}
-              disabled={averagingIsNone}
-              onChange={(e) => patchFft({ windowSize: Number(e.target.value) })}
-            />
-          )}
-        </label>
-        <label>
-          Hop size (samples)
-          {/* Window size disables its editable control with `disabled` (it always renders a
-              select). Hop size has no such control once forced to "all" — under
-              averaging: "none" it renders this read-only span instead, since there is no
-              input to disable. Both mechanisms express the same "not editable" semantic. */}
-          {fft.hopSize !== "all" ? (
-            <input type="number" value={fft.hopSize} disabled={averagingIsNone} onChange={(e) => patchFft({ hopSize: Number(e.target.value) })} />
-          ) : (
-            <span>Whole record</span>
-          )}
-          {overlap !== null && <span className="properties-form-overlap">{`Overlap: ${overlap.toFixed(0)}%`}</span>}
-        </label>
-        <label>
-          Detrend
-          <select value={fft.detrend} onChange={(e) => patchFft({ detrend: e.target.value as FftParams["detrend"] })}>
-            {FFT_DETRENDS.map((d) => (
-              <option key={d} value={d}>
-                {d === "none" ? "None" : d === "mean" ? "Mean" : "Linear"}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label>
-          Averaging
-          <select value={fft.averaging} onChange={(e) => patchFft({ averaging: e.target.value as FftParams["averaging"] })}>
-            {FFT_AVERAGINGS.map((a) => (
-              <option key={a} value={a}>
-                {a === "none" ? "None" : a === "mean" ? "Mean" : a === "median" ? "Median" : "Max"}
-              </option>
-            ))}
-          </select>
-          {averagingIsNone && <p className="properties-form-averaging-note">A single-segment FFT covers the whole record.</p>}
-        </label>
-        <label>
-          Scaling
-          <select value={fft.scaling} onChange={(e) => handleScalingChange(e.target.value as FftParams["scaling"])}>
-            {fftScalingSelectOptions(fft.scaling).map((s) => (
-              <option key={s} value={s}>
-                {s === "density" ? "Density (PSD)" : s === "spectrum" ? "Spectrum" : "Magnitude"}
-              </option>
-            ))}
-          </select>
-        </label>
-      </section>
-
-      <section className="properties-form-x-axis">
-        <h3>Frequency axis</h3>
-        <label>
-          Scale
-          <select value={props.x.type} onChange={(e) => onChange(updateFftXAxisType(props, e.target.value as "linear" | "log"))}>
-            <option value="linear">Lin</option>
-            <option value="log">Log</option>
-          </select>
-        </label>
-        <label>
-          Label
-          <input
-            type="text"
-            value={props.x.label ?? ""}
-            onChange={(e) => onChange(updateXAxis(props, { label: e.target.value === "" ? undefined : e.target.value }))}
+            value={fft.windowSize}
+            onChange={(value) => value !== null && patchFft({ windowSize: value })}
           />
-        </label>
-        <DomainFields domain={props.x.domain} onChange={(domain) => onChange(updateXAxis(props, { domain }))} />
-      </section>
-
-      <section className="properties-form-y-axis">
-        <h3>Magnitude axis</h3>
-        <label>
-          Label
-          <input
-            type="text"
-            value={props.y?.label ?? ""}
-            onChange={(e) => onChange(updateYAxis(props, { label: e.target.value === "" ? undefined : e.target.value }))}
+        )}
+        {/* Window size disables its editable control with `disabled` (it
+            always renders a select). Hop size has no such control once
+            forced to "all" — under averaging: "none" it renders a read-only
+            row instead, since there is no input to disable. Both mechanisms
+            express the same "not editable" semantic. */}
+        {fft.hopSize !== "all" ? (
+          <NumberField
+            label="Hop size"
+            unit="samples"
+            min={1}
+            step={256}
+            disabled={averagingIsNone}
+            value={fft.hopSize}
+            hint={overlap !== null ? `Overlap: ${overlap.toFixed(0)}%` : undefined}
+            onChange={(value) => value !== null && patchFft({ hopSize: value })}
           />
-        </label>
+        ) : (
+          <Field label="Hop size" hint={overlap !== null ? `Overlap: ${overlap.toFixed(0)}%` : undefined}>
+            {() => <span className="font-mono text-[length:var(--nb-text-label)] text-fg-faint">Whole record</span>}
+          </Field>
+        )}
+        <SelectField
+          label="Detrend"
+          value={fft.detrend}
+          options={options(FFT_DETRENDS, (d) => (d === "none" ? "None" : d === "mean" ? "Mean" : "Linear"))}
+          onChange={(value) => value !== undefined && patchFft({ detrend: value as FftParams["detrend"] })}
+        />
+        <SelectField
+          label="Averaging"
+          value={fft.averaging}
+          options={options(FFT_AVERAGINGS, (a) => (a === "none" ? "None" : a === "mean" ? "Mean" : a === "median" ? "Median" : "Max"))}
+          hint={averagingIsNone ? "A single-segment FFT covers the whole record." : undefined}
+          onChange={(value) => value !== undefined && patchFft({ averaging: value as FftParams["averaging"] })}
+        />
+        <SelectField
+          label="Scaling"
+          value={fft.scaling}
+          className="w-36"
+          options={options(fftScalingSelectOptions(fft.scaling), (s) => (s === "density" ? "Density (PSD)" : s === "spectrum" ? "Spectrum" : "Magnitude"))}
+          onChange={(value) => value !== undefined && handleScalingChange(value as FftParams["scaling"])}
+        />
+      </FieldGroup>
+
+      <FieldGroup title="Frequency axis" className="properties-form-x-axis">
+        <SelectField
+          label="Scale"
+          value={props.x.type}
+          options={[
+            { value: "linear", label: "Lin" },
+            { value: "log", label: "Log" },
+          ]}
+          onChange={(value) => value !== undefined && onChange(updateFftXAxisType(props, value as "linear" | "log"))}
+        />
+        <TextField
+          label="Label"
+          value={props.x.label ?? ""}
+          placeholder="auto"
+          onChange={(value) => onChange(updateXAxis(props, { label: value === "" ? undefined : value }))}
+        />
+        <DomainFields domain={props.x.domain} unit="Hz" onChange={(domain) => onChange(updateXAxis(props, { domain }))} />
+      </FieldGroup>
+
+      <FieldGroup title="Magnitude axis" className="properties-form-y-axis">
+        <TextField
+          label="Label"
+          value={props.y?.label ?? ""}
+          placeholder="auto"
+          onChange={(value) => onChange(updateYAxis(props, { label: value === "" ? undefined : value }))}
+        />
         <DomainFields domain={props.y?.domain} onChange={(domain) => onChange(updateYAxis(props, { domain }))} />
-        <label>
-          Scale
-          <select
-            value={props.y?.type ?? ""}
-            onChange={(e) => onChange(updateYAxis(props, { type: e.target.value === "" ? undefined : (e.target.value as NonNullable<FftPlotProps["y"]>["type"]) }))}
-          >
-            <option value="">(default)</option>
-            {Y_AXIS_TYPES.map((t) => (
-              <option key={t} value={t}>
-                {t}
-              </option>
-            ))}
-          </select>
-        </label>
-      </section>
+        <SelectField
+          label="Scale"
+          value={props.y?.type}
+          options={scaleOptions()}
+          onChange={(value) => onChange(updateYAxis(props, { type: value as NonNullable<FftPlotProps["y"]>["type"] | undefined }))}
+        />
+      </FieldGroup>
 
       <LegendControl props={props} onChange={onChange} />
     </>
   );
 }
 
-/** Control 12: the colour-legend checkbox, unchanged and shared by both
- *  chart types (C2 §5.3's `color_opt` is the same shape for either). */
+/** Control 12: the colour legend, shared by both chart types (C2 §5.3's
+ *  `color_opt` is the same shape for either). A toggle switch since R212
+ *  item 5 — the same on/off semantic as the checkbox it replaces. */
 function LegendControl({ props, onChange }: { props: PlotProps; onChange: (next: PlotProps) => void }) {
   return (
-    <section className="properties-form-color">
-      <label>
-        <input type="checkbox" checked={props.color !== undefined} onChange={(e) => onChange(setColorLegend(props, e.target.checked))} />
-        Show colour legend
-      </label>
-    </section>
+    <FieldGroup title="Legend" className="properties-form-color">
+      <SwitchField label="Show colour legend" checked={props.color !== undefined} onChange={(checked) => onChange(setColorLegend(props, checked))} />
+    </FieldGroup>
   );
 }

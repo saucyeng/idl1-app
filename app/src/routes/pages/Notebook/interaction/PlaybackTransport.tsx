@@ -1,39 +1,9 @@
-import { useEffect, useState } from "react";
-import { createPortal } from "react-dom";
 import { Pause, Pin, PinOff, Play } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { formatPlaybackTime, PLAYBACK_SPEEDS, shouldRenderPlaybackTransport } from "./playback";
 import type { PlaybackMode } from "./playbackMode";
-
-/** The `id` `shell/TopBar.tsx` gives its reserved playback-transport slot
- *  (the top bar's only edit for this task). `usePlaybackSlot` looks this
- *  node up by id rather than `TopBar` taking new props, so `App.tsx`/
- *  `shell/AppShell.tsx` (the shell's own lead-owned wiring) need no change
- *  for a per-page feature to reach into the shell's chrome. */
-const PLAYBACK_SLOT_ID = "playback-transport-slot";
-
-/**
- * Finds `shell/TopBar.tsx`'s reserved slot `<div>` by id, re-checked on
- * window resize (the slot only exists in the medium/wide top bar — a
- * narrow-width bottom bar has none — so crossing that breakpoint gains or
- * loses the node; `ChartCell.tsx`'s own resize-triggered re-layout is the
- * precedent for this "recheck on resize" shape). Returns `null` when the
- * slot isn't present (narrow layout, or before the shell has mounted it).
- */
-function usePlaybackSlot(): HTMLElement | null {
-  const [el, setEl] = useState<HTMLElement | null>(null);
-
-  useEffect(() => {
-    const find = () => setEl(document.getElementById(PLAYBACK_SLOT_ID));
-    find();
-    window.addEventListener("resize", find);
-    return () => window.removeEventListener("resize", find);
-  }, []);
-
-  return el;
-}
 
 /** Props for {@link PlaybackTransport}. */
 export interface PlaybackTransportProps {
@@ -87,15 +57,19 @@ export interface PlaybackTransportProps {
 
 /**
  * The play/pause transport for the shared worksheet cursor (decision 18),
- * portaled into `TopBar.tsx`'s reserved slot (see {@link usePlaybackSlot})
- * rather than the top bar itself owning any playback state. Renders
- * nothing when the slot isn't present (narrow layout), `cursorTUs` is
- * `null` (nothing loaded to play, or no cursor ever placed), or the
- * Notebook route isn't the active/visible one (see
- * {@link shouldRenderPlaybackTransport}) — the last case is required
- * because a portal's target lives outside its React parent's DOM subtree,
- * so mount-and-hide's `hidden` attribute on the rest of the Notebook page
- * has no effect on it.
+ * rendered **inline, in the Notebook toolbar's centre group** (ruling R212
+ * item 4 places it there and rules it one of the two groups that never
+ * collapse). It previously portaled into a reserved `TopBar.tsx` slot; that
+ * slot and its `document.getElementById` lookup are gone, along with the
+ * narrow-layout blind spot they carried — the toolbar spans the window at
+ * every width, so the transport is now reachable at every width too.
+ *
+ * Still renders nothing when `cursorTUs` is `null` (nothing loaded to play,
+ * or no cursor ever placed) or the Notebook route isn't the active one
+ * (see {@link shouldRenderPlaybackTransport}). Those are "there is nothing
+ * to play" states, not width states — R212's no-collapse rule is about the
+ * row narrowing, and does not ask for a dead play button over an empty
+ * workbook.
  *
  * @param props See {@link PlaybackTransportProps}.
  */
@@ -111,14 +85,12 @@ export default function PlaybackTransport({
   onModeChange,
   followingWindowLabel,
 }: PlaybackTransportProps) {
-  const slot = usePlaybackSlot();
-
-  if (slot === null || cursorTUs === null || !shouldRenderPlaybackTransport(routeVisible, cursorTUs)) {
+  if (cursorTUs === null || !shouldRenderPlaybackTransport(routeVisible, cursorTUs)) {
     return null;
   }
 
-  return createPortal(
-    <div className="flex items-center gap-2 font-mono text-label-2 text-fg-dim">
+  return (
+    <div className="flex items-center gap-[var(--nb-gap)] font-mono text-fg-dim">
       <Button type="button" size="icon-sm" emphasis="normal" disabled={disabled} onClick={onToggle} aria-pressed={playing} aria-label={playing ? "Pause" : "Play"}>
         {playing ? <Pause /> : <Play />}
       </Button>
@@ -147,8 +119,7 @@ export default function PlaybackTransport({
       >
         {mode === "cursor-fixed" ? <Pin /> : <PinOff />}
       </Button>
-      {followingWindowLabel !== null && <span className="text-fg-faint">· {followingWindowLabel}</span>}
-    </div>,
-    slot
+      {followingWindowLabel !== null && <span className="truncate text-fg-faint">· {followingWindowLabel}</span>}
+    </div>
   );
 }
