@@ -22,7 +22,7 @@ production function, not the grep hit alone).
 - rust/tauri/src/inbox.rs:229 — `import_one`: removes the inbox file only *after* a successful import (R191). A failed import instead moves the file to `inbox/failed/` (line 245, a rename, not a delete) — "the alternative (deleting it) would lose the user's data" (line 237 comment).
 
 ## (d) catalog.sqlite and -wal/-shm sidecars (rebuildable index)
-- rust/core/src/store/catalog.rs:308,313-314 — end of `rebuild_catalog`: after atomically renaming the new sqlite over the old one, removes the leftover staging file and the *old* database's `-wal`/`-shm` sidecars. Never touches `blobs/`, `sessions/`, or anything else under `<data>`.
+- rust/core/src/store/catalog.rs — end of `rebuild_catalog_with_progress` (the body `rebuild_catalog` now delegates to, ruling R219): after atomically renaming the new sqlite over the old one, removes the leftover staging file and the *old* database's `-wal`/`-shm` sidecars. Never touches `blobs/`, `sessions/`, or anything else under `<data>`.
 
 ## (e) blobs/ — must never happen except an explicit, user-confirmed delete
 - Named command that does this: `delete_session` (C3 §3.2), core at rust/tauri/src/commands/catalog.rs:1012-1030 (`delete_session_via`). Only runs when the frontend passes `delete_blob: true`, and only after confirming (by reading every *other* session's `data.parquet` metadata) that no other session still references the same content hash — shared blobs are never removed. This is the one and only blob-deleting code path found in non-test Rust.

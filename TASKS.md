@@ -488,6 +488,79 @@ are defined in `docs/superpowers/specs/2026-09-02-idl1-rewrite-design.md` §10.
   LRU under the same figure, because charging both to one counter makes a
   large channel's decode evict the entire cache to start.
 
+- [x] **rebuild-fast lane (R219) — 2026-09-11.** C4 §5 step 1 is incremental:
+  `rebuild_catalog` opens the previous `catalog.sqlite` read-only and carries
+  every blob whose `(sha256, size_bytes, mtime_ms)` still matches its row,
+  hashing only new or moved paths; `RebuildReport` gained
+  `blobs_carried`/`blobs_hashed`. The scan gained a progress hook
+  (`rebuild_catalog_with_progress`, phases `blobs`/`tracks`/`sessions`/
+  `laps`/`workbooks`), and `idl-rs-tauri` wraps it as a background job —
+  `start_rebuild_job`/`rebuild_status` and the `rebuild_progress` event
+  (C3 §3.2, spec-during), `state::RebuildJob`, a rebuild line in the status
+  chip. No route awaits a rebuild any more: the notebook's empty-state
+  trigger (R81), Create, Rescan and the Data maintenance panel start the job
+  and render from whatever the catalog already has. `rebuild_catalog` the
+  command stays as the synchronous form for the CLI and the tests, with no
+  UI caller. The CLI prints both blob counts.
+
+  **Proof** (release CLI, the 10 largest sessions copied out of
+  `idl1-library` into a temp data dir, 3.0 GB of blobs): first rebuild with
+  no catalog 20.8 s; second with nothing changed `blobs_carried: 10,
+  blobs_hashed: 0` in 2.1 s; after touching one blob's mtime,
+  `blobs_carried: 9, blobs_hashed: 1`. The 2.1 s that remain are steps 3–5
+  (reading each `data.parquet`'s file metadata and `t` span), not hashing —
+  untouched by this lane and the next thing to look at if first open is
+  still slow at 159 sessions.
+
+  Gates: core 1387, cli 64, tauri 405, app 213 files / 2168 tests,
+  `cargo check -p idl-rs-cli --tests`, `cargo check -p app`.
+
+- [x] **indexing lane (R207/R208.1) — 2026-09-11.** `store::index_job`: a
+  resumable, cancellable, per-session-committing lap/track index over a pool
+  of `physical cores − 1` workers, each reserving its decode against the
+  R211 budget (`DecodeBudget`; the app implements it over `SessionCache`,
+  the CLI over the new `ByteBudget`). `start_index_job`/`index_status`/
+  `cancel_index_job` and the `index_progress` event (C3 §3.2); the status
+  chip shows "Indexing 12 / 159 · <session>" then "Index complete".
+  `list_laps` indexes its own session first, so nothing library-wide sits
+  between the user and a workbook. `rebuild_catalog` starts the job.
+  `idl-rs library index`, and `fold-in`/`rebuild` run it at the end.
+  C4 §5 gained the per-session-transaction paragraph. Gates: core 1381,
+  cli 64, tauri 397, app 209 files / 2093, `cargo check -p app`.
+
+  **Finding that outlives the lane: lap indexing was not what took ten
+  minutes.** Isaac's library has **zero tracks** (`<data>/tracks/` is
+  empty), so every session's lap index is an honest no-op and all 159
+  correctly hold 0 laps and 0 visits — the "0 `lap_summary` rows" in R207
+  was right, not a symptom. The first-open cost is `rebuild_catalog`
+  itself, which the notebook triggers automatically on an empty workbook
+  list (R81 Q1(a)) and then awaits: measured at **10.3 s for 10 sessions /
+  3.0 GB of blobs with a warm cache**, because C4 §5 step 1 re-verifies
+  (re-hashes) every blob on every rebuild, and because the rebuild stages a
+  whole new database and swaps it at the end, so nothing lands until it
+  finishes. Scaled to 159 sessions on a cold disk that is the incident.
+  Not fixed here: making step 1 trust `blobs.size_bytes`/`mtime_ms` instead
+  of re-hashing is a C4 §5 contract change, and not starting a full rebuild
+  from the notebook is R81 Q1(a)'s. Both want a lead ruling.
+
+  Manual proof (release CLI, 10 sessions copied out of `idl1-library`,
+  one of them 495 MB, temp data dir, `--force`): 1 worker 2.1 s / 77 MB
+  peak private; the pool (5 workers on 6 physical cores) 1.7 s / 189 MB
+  warm, and 10.8 s → 2.5 s cold. Peak stays two orders of magnitude under
+  the 2 GiB budget because only the three GPS columns are decoded. The
+  resume path was proved on real data: a second run reported "10 already
+  current" in milliseconds.
+
+  Lane decisions: the memory gate is a core trait (`DecodeBudget` +
+  `BudgetGuard`) rather than moving R211's semaphore out of `idl-rs-tauri`,
+  because the budget's *policy* (25 % of RAM) needs `sysinfo` and core is
+  pure; the two `index_progress` phases are `"tracks"` (detect + write
+  `session.json`) and `"laps"` (write the catalog rows), which is what one
+  session's work genuinely divides into; an indexing worker's reservation is
+  clamped to 4/5 of the budget so it waits rather than ever failing; a
+  `rayon` pool that will not build degrades to serial rather than failing
+  the run.
+
 ## Wave 3
 
 - [ ] L9 mobile plugins · L12 in-app agent (optional)

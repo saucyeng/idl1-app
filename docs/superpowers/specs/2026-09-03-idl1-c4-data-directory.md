@@ -444,6 +444,16 @@ for foreign-key insert order:
    encodes its own SHA-256 (§7 #1) and insert `(sha256, size_bytes, mtime_ms)`
    from a `stat`. A path that doesn't match the pattern or fails the hash
    check is skipped and reported, not inserted.
+   **Amended 2026-09-11 (ruling R219): incremental by default.** When a
+   previous `catalog.sqlite` exists, a blob whose `(sha256 path, size_bytes,
+   mtime_ms)` all match its existing row is carried over **without
+   re-hashing**; only new paths and paths whose size or mtime changed are
+   hashed. The full re-hash of every blob is `verify_data_dir`'s job (§7 #1),
+   never the rebuild's: on a 159-session library the hash pass alone took
+   minutes and was the whole of the first-open wait. A rebuild is a
+   **background job with progress** (`index_progress`'s sibling
+   `rebuild_progress`, C3 §3.2) that no route awaits; the app opens on the
+   old catalog and swaps to the new one when it lands.
 2. **`tracks`** — walk `tracks/*.idl0t`; parse each JSON, verify the
    filename's `track_id` matches the JSON's own `track_id` field (§7 #8),
    insert.
@@ -495,6 +505,25 @@ touches `tracks` (step 2, the library's own concern) and never creates a
 catalog that doesn't already exist. `rebuild_catalog` remains the sole
 authority for `tracks`, `workbooks`, and the schema itself, and is the
 recovery path if `index_session` and the tree ever disagree.
+
+**Per-session index transactions (rulings R207/R208 item 1).** Library-wide
+lap/track indexing (`store::index_job`) is one unit of work *per session*,
+never one transaction over the library: each session's visit/lap detection
+merges into its own `session.json` and then its `sessions`/`laps`/
+`lap_summary` rows are re-inserted by one `index_session` call, which is
+itself a single `BEGIN IMMEDIATE` … `COMMIT`. So a killed process loses at
+most the session in flight, and rows land as the job goes rather than all
+at the end (contrast `rebuild_catalog`, which stages a whole new database
+and swaps it, and therefore shows nothing until it finishes). A resumed job
+skips a session whose stored `session.json` already stamps the current
+`lap_detector_version` and `track_visits_library_hash` (C1 §6) — the
+staleness check is a `session.json` read, with no `data.parquet` opened.
+Sessions are independent, so the job runs them on a pool of
+`physical cores − 1` workers sharing one `catalog.sqlite` connection behind
+a mutex; the catalog write is microseconds beside the decode. `blobs` rows
+are *not* re-verified on a re-index: `index_session` re-hashes a blob only
+when its row is absent, so an already-catalogued library is not re-read
+from end to end on every pass.
 
 ## 6. Sync scope
 

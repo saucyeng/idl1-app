@@ -1,4 +1,5 @@
 import type { ImportQueueState } from "../routes/pages/Data/importQueue";
+import type { IndexProgressEvent } from "../ipc/index_job";
 
 /** How long the "Import done" chip stays up after the queue drains, in
  *  milliseconds (ruling R201 item 3: "for a minute afterwards"). Long
@@ -64,6 +65,103 @@ export function importChip(state: ImportQueueState, msSinceDrain: number | null)
   const ok = terminal.length - failed;
   const counts = failed > 0 ? `${ok} ok, ${failed} failed` : `${ok} ok`;
   return { text: `Import done · ${counts}`, fraction: null, tone: failed > 0 ? "failed" : "done" };
+}
+
+/** How long the "Index complete" chip stays up after the index job
+ *  finishes, in milliseconds — the same minute the import chip lingers, for
+ *  the same reason. */
+export const INDEX_DONE_CHIP_LINGER_MS = DONE_CHIP_LINGER_MS;
+
+/** The chip for the library index job (ruling R207 item 4), or `null` for
+ *  "show no chip".
+ *
+ *  `progress` is the last `index_progress` observed, `null` before the first
+ *  one. A run in flight reads "Indexing 12 / 159 · <session>"; a finished
+ *  one reads "Index complete" for `msSinceFinish` up to
+ *  {@link INDEX_DONE_CHIP_LINGER_MS}. A run with nothing to do (`total` 0)
+ *  shows nothing at all — a library that was already indexed should not
+ *  announce itself on every launch.
+ *
+ *  `error` is `IndexStatus.last_error`: a run that could not start at all.
+ *  It outranks everything else and does not expire, because a background
+ *  job has no promise to reject and silence is the one outcome this must
+ *  never produce (CLAUDE.md §5).
+ *
+ *  Counting matches the import chip: the "12" is the session being worked
+ *  on (`done + 1`), not the number finished. */
+export function indexChip(
+  progress: IndexProgressEvent | null,
+  msSinceFinish: number | null,
+  error: { message: string } | null = null,
+): ImportChip | null {
+  if (error !== null) {
+    return { text: `Indexing failed · ${error.message}`, fraction: null, tone: "failed" };
+  }
+  if (progress === null || progress.total === 0) return null;
+
+  const finished = progress.done >= progress.total;
+  if (!finished) {
+    const position = Math.min(progress.done + 1, progress.total);
+    return {
+      text: `Indexing ${position} / ${progress.total} · ${progress.current_session_id}`,
+      fraction: progress.done / progress.total,
+      tone: "running",
+    };
+  }
+
+  if (msSinceFinish === null || msSinceFinish >= INDEX_DONE_CHIP_LINGER_MS) return null;
+  return { text: "Index complete", fraction: null, tone: "done" };
+}
+
+/** How long the "Catalog rebuilt" chip stays up after the rebuild finishes,
+ *  in milliseconds — the same minute the other two chips linger. */
+export const REBUILD_DONE_CHIP_LINGER_MS = DONE_CHIP_LINGER_MS;
+
+/** The chip for the background catalog rebuild (ruling R219 items 2–3), or
+ *  `null` for "show no chip".
+ *
+ *  `progress` is the last `rebuild_progress` observed, `null` before the
+ *  first one. A run in flight reads "Rebuilding catalog 12 / 159 ·
+ *  sessions" — the phase is named because the same counter runs five times
+ *  over five different things, and "12 / 159" alone would look stuck when a
+ *  phase restarts at 1. A finished run reads "Catalog rebuilt" for
+ *  `msSinceFinish` up to {@link REBUILD_DONE_CHIP_LINGER_MS}.
+ *
+ *  A phase with nothing in it (`total` 0) shows nothing, so an empty
+ *  library does not announce five empty passes.
+ *
+ *  `error` is `RebuildStatus.last_error`: a run that failed outright. It
+ *  outranks everything else and does not expire — a background job has no
+ *  promise to reject and silence is the one outcome this must never produce
+ *  (CLAUDE.md §5).
+ *
+ *  Counting matches the other two chips: the "12" is the entity being worked
+ *  on, not the number finished. */
+export function rebuildChip(
+  progress: { done: number; total: number; phase: string } | null,
+  msSinceFinish: number | null,
+  error: { message: string } | null = null,
+): ImportChip | null {
+  if (error !== null) {
+    return { text: `Catalog rebuild failed · ${error.message}`, fraction: null, tone: "failed" };
+  }
+  // A finished run outranks its own last observation: every phase ends with
+  // `done === total`, so "is this phase over" cannot tell "is the run over".
+  // Only the caller knows, from the terminal `workbooks` event, and it says
+  // so by passing a `msSinceFinish`.
+  if (msSinceFinish !== null) {
+    if (msSinceFinish >= REBUILD_DONE_CHIP_LINGER_MS) return null;
+    return { text: "Catalog rebuilt", fraction: null, tone: "done" };
+  }
+
+  if (progress === null || progress.total === 0) return null;
+
+  const position = Math.min(progress.done + 1, progress.total);
+  return {
+    text: `Rebuilding catalog ${position} / ${progress.total} · ${progress.phase}`,
+    fraction: progress.done / progress.total,
+    tone: "running",
+  };
 }
 
 /** The running item's own progress as `0`–`1`, or `null` when there is no

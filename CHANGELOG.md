@@ -6,6 +6,74 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 
 ### Added
 
+- **The window's title bar is the app's own (2026-09-11, ruling R216).** On
+  Windows, idl1 no longer draws a native caption above its own top bar.
+  Minimize, maximize and close sit inline on the right of the app's
+  navigation row, the row itself is 32 px instead of 44, and dragging or
+  double-clicking its empty space moves or maximizes the window. Known
+  cost: hovering the maximize button no longer offers Windows' Snap
+  Layouts flyout. Win+arrow and dragging to a screen edge still work.
+  macOS and Linux keep their native decorations unchanged.
+
+- **A plot's chrome is inside the plot (2026-09-11, ruling R216).** The
+  "JS 01 · Settled · Show code" strip above every chart is gone, and the
+  chart has the space. What it said is now a 12 px mark in the plot's own
+  top-left corner: a spinner while the cell runs, a green tick that fades
+  two seconds after it settles, and a red cross that stays put when it
+  fails — hover the cross for the full error, click it to pin the message
+  open. "Show code" moved to the plot's right-click menu, alongside
+  Properties and Tidy in graph, and onto Alt+C. A cell with a "# label:"
+  line shows that label centred above its plot, and a plot drawing more
+  than one series gets a compact key in its top-right corner. The label
+  line is the only title source today: the Properties form has no title
+  field of its own, and adding one would change the workbook grammar.
+
+- **Dense stacking (2026-09-11, ruling R216).** A "Dense" switch in the
+  toolbar's view group stacks cells with no gap, no padding and no chrome
+  rows, and lets two charts one above the other read as a single shared
+  time axis. Both charts still compute their own axes; nothing about the
+  data changes. Maths and table cells lose their status row in this mode
+  too, keeping the same corner mark a chart gets. The setting is remembered
+  per machine and is off by default.
+- **Rebuilding the catalog no longer re-reads the whole blob store, and
+  nothing waits for it (2026-09-11, ruling R219).** The rebuild's first
+  step used to re-hash every blob under `<data>/blobs/` — on a 159-session
+  library, gigabytes of reading — while the notebook sat behind it on an
+  empty workbook list. It now carries across every blob whose size and
+  modification time still match the catalog it is replacing, and hashes
+  only what is new or has moved; re-hashing everything is what "Verify data
+  directory" is for. On ten sessions and 3.0 GB of blobs a second rebuild
+  with nothing changed reads no blob at all and finishes in about two
+  seconds, against twenty-one for the first; touching one blob re-reads
+  exactly that one. The rebuild is also a background job now
+  (`start_rebuild_job`, `rebuild_status`, `rebuild_progress`): the notebook's
+  empty state, Create, Rescan and the Data tab's maintenance panel all start
+  it and keep rendering from whatever the catalog already holds, refreshing
+  when the new one lands. While it runs the status chip reads "Rebuilding
+  catalog 12 / 159 · sessions". `idl-rs` prints both blob counts at the end
+  of an import and a `library fold-in`.
+
+- **Indexing is a background job, and it says what it is doing (2026-09-11,
+  rulings R207 and R208 item 1).** Detecting every session's track visits
+  and laps used to happen on the way to opening a workbook, behind a
+  spinner that said "Looking for workbooks…" for as long as it took.
+  It is now its own job: it starts on launch and after a catalog rebuild,
+  runs on every core but one, commits each session as it finishes, and can
+  be cancelled and resumed — a stopped run loses at most the session it was
+  working on, and the next one skips everything already current. While it
+  runs, the status chip reads "Indexing 12 / 159 · <session>", and when it
+  is done it says so. Opening one session no longer waits for the library:
+  it indexes that one session, which is a file read when it is already
+  current. The notebook's old label now names whatever it is actually
+  waiting on.
+
+- **`idl-rs library index` (2026-09-11, ruling R208 item 1).** The shell
+  runs the same job: `idl-rs library index --data-dir <dir> [session ids]
+  [--force] [--workers N]`, printing a line per session. `library fold-in`
+  and `library rebuild` now finish by running it, so a library folded in
+  from the command line opens ready instead of indexing itself on first
+  launch.
+
 - **The maths graph says what each node is (2026-09-11, ruling R214).**
   Three kinds now read apart at a glance without relying on colour: a
   source is a device channel, square-cornered on its left edge with a small
@@ -96,6 +164,14 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 
 ### Fixed
 
+- **The toolbar's right-hand tools no longer overlap (2026-09-11, ruling
+  R216).** After the workbook picker and the layout presets were added, the
+  tools on the right of the Notebook toolbar could paint over one another
+  at some window widths: the row decided what fitted from a table of
+  written-down widths that those two additions had outgrown. It measures
+  each group of tools instead, so what it collapses into the "⋯" menu is
+  based on how wide they really are.
+
 - **The ResizeObserver loop notice no longer trips the global error banner
   (2026-09-11).** "ResizeObserver loop completed with undelivered
   notifications" is the browser's own benign notice, not a real failure;
@@ -106,6 +182,11 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
   the callback, now defers that update to `requestAnimationFrame`.
 
 ### Changed
+
+- **Re-indexing a session no longer re-reads its source file (2026-09-11).**
+  Refreshing a session's catalog rows re-hashed its whole original log to
+  prove the blob was intact, every time. It now does that once, on the
+  insert that first records the blob.
 
 - **The chart properties form is built from real controls (2026-09-11,
   ruling R212).** Number fields carry their unit and can be dragged to

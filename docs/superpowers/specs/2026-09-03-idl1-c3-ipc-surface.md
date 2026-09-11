@@ -523,6 +523,11 @@ interface RebuildReport {
 ```
 Errors: `io`, `internal`.
 
+*Amended 2026-09-11 (ruling R219).* Step 1 of the scan is now incremental
+(C4 §5), so this command no longer re-hashes the whole blob store. No UI
+route calls it any more: a rebuild the user can see is
+`start_rebuild_job`/`rebuild_status` (§3.2 below), which nothing waits on.
+
 **`list_workbooks()`**
 Args: none.
 Return: `WorkbookSummary[]` — mirrors the catalog `workbooks` table (C4 §5)
@@ -787,6 +792,164 @@ Errors (`list_quarantine`): `io`, `internal`.
 Errors (`resolve_quarantine`): `not_found` (unknown `entry_id`),
 `invalid_argument` (`"restore"` whose `original_path` is occupied, or an
 `action` that is neither `"restore"` nor `"discard"`), `io`, `internal`.
+
+**`start_index_job() -> boolean`** /
+**`index_status() -> IndexStatus`** /
+**`cancel_index_job() -> boolean`** and the **`index_progress`** event.
+*Added post-sign (2026-09-11, rulings R207/R208 item 1).*
+
+```ts
+type IndexPhase = "tracks" | "laps";
+
+interface IndexProgressEvent {   // the `index_progress` event payload
+  done: number;                  // sessions finished before this one
+  total: number;                 // sessions this run is working through
+  current_session_id: string;    // "" on the terminal observation
+  phase: IndexPhase;
+}
+
+interface IndexRunSummary {
+  indexed: number;
+  skipped_up_to_date: number;
+  failed: number;
+  cancelled: boolean;
+}
+
+interface IndexStatus {
+  running: boolean;
+  done: number;
+  total: number;
+  current_session_id: string | null;   // null when idle
+  phase: IndexPhase | null;            // null when idle
+  last_run: IndexRunSummary | null;    // null before the first run
+  last_error: IpcError | null;         // null when the last run started
+}
+```
+
+Library-wide lap/track indexing — detecting every session's track visits
+and laps and refreshing its `laps`/`lap_summary` rows — is a **background
+job**, never something a command that opens a workbook or a session waits
+on (ruling R207 item 1). Opening one session needs only that session's
+index: `list_laps` indexes that one session first when its stamps are
+stale, which is a `session.json` read in the common case.
+
+`start_index_job` starts the job and returns immediately: `true` when it
+started, `false` when a run was already in flight (a second call is a no-op,
+not an error). It **never rejects** — the job outlives the call, so a
+failure it hits later has no promise left to reject. The app calls it on
+launch; `rebuild_catalog` calls it
+itself after a successful rebuild, since a freshly rebuilt catalog has no
+laps to copy until the job has run. The job runs on a pool of
+`physical cores − 1` workers, each reserving its decode's bytes against the
+same process-wide budget every other command's decode reserves against
+(ruling R211.2), so N workers can never exceed one ceiling; a worker
+**waits** for memory rather than failing.
+
+Progress arrives as `index_progress` as each session enters each phase —
+`"tracks"` (detect visits and laps, write `session.json`) then `"laps"`
+(write that session's catalog rows). `done` counts sessions *finished*, so
+`done + 1` is the one being worked on. A terminal observation with
+`done === total` and an empty `current_session_id` marks the run over.
+`index_status()` reports the same state on demand, so a UI mounting
+mid-run sees the run already in progress.
+
+Each session commits its own work as it finishes (C4 §5), so
+`cancel_index_job` — which sets a flag the job polls between sessions —
+loses nothing already done, and the next run resumes by skipping every
+session whose stamps are current.
+
+Errors: none of these three commands rejects. A run that could not start at
+all — `io` (`<data>/sessions/` or `<data>/tracks/` unreadable) or `internal`
+(`catalog.sqlite` will not open) — surfaces as `IndexStatus.last_error`,
+which is where the status chip reads it; a background job has no promise to
+reject, and silence on a broken data root is the one outcome this must not
+produce (CLAUDE.md §5). A *per-session* failure is not that: it is counted
+in `IndexRunSummary.failed` and the run continues.
+`index_status` and `cancel_index_job` read managed state only.
+
+**`start_rebuild_job() -> boolean`** /
+**`rebuild_status() -> RebuildStatus`** and the **`rebuild_progress`** event.
+*Added post-sign (2026-09-11, ruling R219).*
+
+```ts
+type RebuildPhase = "blobs" | "tracks" | "sessions" | "laps" | "workbooks";
+
+interface RebuildProgressEvent {  // the `rebuild_progress` event payload
+  done: number;                   // entities finished in this phase
+  total: number;                  // entities this phase has to get through
+  phase: RebuildPhase;
+  finished: boolean;              // true on the post-swap observation, and on nothing else
+}
+
+interface RebuildRunSummary {
+  sessions_indexed: number;       // u32
+  workbooks_indexed: number;      // u32
+  tracks_indexed: number;         // u32
+  blobs_carried: number;          // u32 — carried from the previous catalog, not re-hashed
+  blobs_hashed: number;           // u32 — actually read and hashed this run
+  duration_ms: number;            // u64, wall-clock time the run took
+}
+
+interface RebuildStatus {
+  running: boolean;
+  done: number;
+  total: number;
+  phase: RebuildPhase | null;          // null when idle
+  last_run: RebuildRunSummary | null;  // null before the first run
+  last_error: IpcError | null;         // null when the last run finished
+}
+```
+
+Rebuilding `catalog.sqlite` is a **background job**, never something a route
+waits on (ruling R219 item 3). The rebuild's only commit is its final atomic
+swap (C4 §5), so every reader keeps seeing the old catalog until the new one
+lands — which is exactly why nothing has to wait: the notebook's
+empty-state trigger (R81), the Data tab's maintenance panel and the rescan
+button all **start** a rebuild, render whatever the catalog already has, and
+re-list when the run's completion event arrives.
+
+`start_rebuild_job` starts it and returns immediately: `true` when it
+started, `false` when a run was already in flight (a second call is a no-op,
+not an error). It **never rejects** — the job outlives the call, so a failure
+it hits later has no promise left to reject. A successful run starts the
+library-wide index job itself afterwards, for the same reason
+`rebuild_catalog` does: a freshly rebuilt catalog has no laps to copy until
+that job has run.
+
+Progress arrives as `rebuild_progress` as each entity in each C4 §5 phase is
+finished, in scan order — `blobs`, `tracks`, `sessions`, then a single
+`laps` observation carrying the lap count (laps are inserted inside the
+per-session body and have no walk of their own), then `workbooks`. `done`
+counts entities *finished*, so `done + 1` is the one being worked on.
+
+Every phase ends at `done === total`, including the last workbook of the
+last phase — which is reached **before** the staged database swaps in — so
+that shape cannot mean "the run is over". The one terminal observation is
+the one carrying `finished: true`: emitted once, after the swap and after
+`rebuild_status()` has been updated, so a listener that acts on it reads
+this run's own `last_run` rather than the previous run's. Every other
+observation carries `finished: false`. `rebuild_status()` reports the same
+state on demand, so a UI mounting mid-run sees the run already in progress.
+
+`blobs_carried`/`blobs_hashed` are C4 §5 step 1's incremental split (ruling
+R219 item 1): a blob whose `(sha256, size_bytes, mtime_ms)` still match its
+row in the previous catalog is carried across without re-reading its bytes.
+A second rebuild with nothing changed therefore reports `blobs_hashed: 0`.
+Re-hashing every blob is `verify_data_dir`'s job (§3.10, C4 §7 #1), not the
+rebuild's.
+
+There is no cancel: the index job commits per session, so stopping it keeps
+what it has, whereas stopping a rebuild would throw away the whole run.
+
+Errors: neither command rejects. A run that failed outright — `io` (an
+unreadable `<data>`) or `internal` (a staging database that will not open) —
+surfaces as `RebuildStatus.last_error`, where the status chip reads it; a
+background job has no promise to reject, and silence on a broken data root
+is the one outcome this must not produce (CLAUDE.md §5).
+
+`rebuild_catalog()` above remains the synchronous form, unchanged in shape
+and now incremental in step 1 like every other caller. It is what the CLI
+and the tests use; no UI route calls it.
 
 ### 3.3 Import (L2)
 

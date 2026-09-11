@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
-import type { RebuildReport, RescanReport } from "../../../ipc/catalog";
+import type { RescanReport } from "../../../ipc/catalog";
+import type { RebuildRunSummary } from "../../../ipc/rebuild_job";
 import {
   initialMaintenanceState,
   maintenanceReducer,
@@ -21,7 +22,7 @@ import {
 
 describe("summarizeRebuildReport", () => {
   it("summarizeRebuildReport — a report with every count nonzero — summary names every count", () => {
-    const report: RebuildReport = { sessions_indexed: 42, workbooks_indexed: 3, tracks_indexed: 1, duration_ms: 1200 };
+    const report: RebuildRunSummary = { sessions_indexed: 42, workbooks_indexed: 3, tracks_indexed: 1, blobs_carried: 158, blobs_hashed: 1, duration_ms: 1200 };
 
     const summary = summarizeRebuildReport(report);
 
@@ -35,12 +36,11 @@ describe("summarizeRebuildReport", () => {
 describe("maintenance — rebuildCatalog succeeds — summary names every count from the RebuildReport", () => {
   it("startMaintenanceAction with a resolving rebuildCatalog — dispatches START then SUCCEEDED carrying the summary", async () => {
     const actions: MaintenanceAction[] = [];
-    const report: RebuildReport = { sessions_indexed: 42, workbooks_indexed: 3, tracks_indexed: 1, duration_ms: 1200 };
-    const run = runRebuildCatalog(() => Promise.resolve(report));
+    const report: RebuildRunSummary = { sessions_indexed: 42, workbooks_indexed: 3, tracks_indexed: 1, blobs_carried: 158, blobs_hashed: 1, duration_ms: 1200 };
+    const run = runRebuildCatalog(() => Promise.resolve(true), () => Promise.resolve(report));
 
     startMaintenanceAction(initialMaintenanceState, "rebuild_catalog", run, (a) => actions.push(a));
-    await Promise.resolve();
-    await Promise.resolve();
+    await new Promise((resolve) => setTimeout(resolve, 0));
 
     expect(actions[0]).toEqual({ type: "START", action: "rebuild_catalog" });
     expect(actions[1].type).toBe("SUCCEEDED");
@@ -53,7 +53,7 @@ describe("maintenance — rebuildCatalog succeeds — summary names every count 
 
 describe("maintenance — rebuildCatalog with zero of everything — summary says the store is empty, not \"0 0 0\"", () => {
   it("summarizeRebuildReport with every count zero — reads as an empty store, not \"0 sessions, 0 workbooks, 0 tracks\"", () => {
-    const report: RebuildReport = { sessions_indexed: 0, workbooks_indexed: 0, tracks_indexed: 0, duration_ms: 400 };
+    const report: RebuildRunSummary = { sessions_indexed: 0, workbooks_indexed: 0, tracks_indexed: 0, blobs_carried: 0, blobs_hashed: 0, duration_ms: 400 };
 
     const summary = summarizeRebuildReport(report);
 

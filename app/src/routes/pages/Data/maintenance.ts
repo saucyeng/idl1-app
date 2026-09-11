@@ -1,4 +1,5 @@
-import type { RebuildReport, RescanReport } from "../../../ipc/catalog";
+import type { RescanReport } from "../../../ipc/catalog";
+import type { RebuildRunSummary } from "../../../ipc/rebuild_job";
 import { describeIpcError } from "./errors";
 
 /** The toolbar's overflow menu runs one long-running maintenance action at
@@ -52,12 +53,13 @@ function plural(count: number, noun: string): string {
   return `${count} ${noun}${count === 1 ? "" : "s"}`;
 }
 
-/** Turns `rebuild_catalog`'s (C3 §3.2) `RebuildReport` into the toolbar's
- *  summary line, e.g. "Indexed 42 sessions, 3 workbooks, 1 track in 1.2 s."
- *  An all-zero report (an empty store, or a rebuild that found nothing new)
- *  reads as "the store is empty" rather than the misleading, count-shaped
- *  "Indexed 0 sessions, 0 workbooks, 0 tracks" (Step 1's test). */
-export function summarizeRebuildReport(report: RebuildReport): string {
+/** Turns a finished rebuild's counts (C3 §3.2 `RebuildRunSummary`) into the
+ *  toolbar's summary line, e.g. "Indexed 42 sessions, 3 workbooks, 1 track
+ *  in 1.2 s." An all-zero report (an empty store, or a rebuild that found
+ *  nothing new) reads as "the store is empty" rather than the misleading,
+ *  count-shaped "Indexed 0 sessions, 0 workbooks, 0 tracks" (Step 1's
+ *  test). */
+export function summarizeRebuildReport(report: RebuildRunSummary): string {
   const { sessions_indexed, workbooks_indexed, tracks_indexed, duration_ms } = report;
   const seconds = (duration_ms / 1000).toFixed(1);
 
@@ -99,15 +101,29 @@ export function startMaintenanceAction(
     .catch((error: unknown) => dispatch({ type: "FAILED", action: actionName, error: describeMaintenanceError(error) }));
 }
 
-/** Structurally matches `ipc/catalog.ts`'s `rebuildCatalog` — injected so
- *  [[startMaintenanceAction]]'s tests don't need a real Tauri IPC
- *  round-trip. */
-export type RebuildCatalogFn = () => Promise<RebuildReport>;
+/** Structurally matches `ipc/rebuild_job.ts`'s `startRebuildJob` and
+ *  `whenRebuildFinishes` — injected so [[startMaintenanceAction]]'s tests
+ *  don't need a real Tauri IPC round-trip. */
+export type StartRebuildJobFn = () => Promise<boolean>;
+export type WhenRebuildFinishesFn = () => Promise<RebuildRunSummary | null>;
 
-/** Wraps the real `rebuild_catalog` (C3 §3.2) as a `run` function for
- *  [[startMaintenanceAction]], turning its report into the summary line. */
-export function runRebuildCatalog(rebuildCatalog: RebuildCatalogFn): () => Promise<string> {
-  return () => rebuildCatalog().then(summarizeRebuildReport);
+/** Wraps the background catalog rebuild (C3 §3.2, ruling R219) as a `run`
+ *  function for [[startMaintenanceAction]], turning the finished run's
+ *  counts into the summary line.
+ *
+ *  The panel's action stays "running" until the rebuild lands, which is a
+ *  button state, not a blocked route — the Data page renders the whole time
+ *  from whatever the catalog already holds (ruling R219 item 3). A run that
+ *  was already in flight is joined, not started twice. */
+export function runRebuildCatalog(
+  startRebuildJob: StartRebuildJobFn,
+  whenRebuildFinishes: WhenRebuildFinishesFn,
+): () => Promise<string> {
+  return async () => {
+    await startRebuildJob();
+    const summary = await whenRebuildFinishes();
+    return summary === null ? "Catalog rebuilt." : summarizeRebuildReport(summary);
+  };
 }
 
 /** Structurally matches the proposed `delete_session` stub

@@ -11,6 +11,8 @@ import TopBar from "./TopBar";
 import BottomBar from "./BottomBar";
 import RouteHost from "./RouteHost";
 import { ToolbarSlotRow } from "./ToolbarSlotRow";
+import WindowControls from "./WindowControls";
+import { usesCustomTitleBar } from "./windowChrome";
 import CommandPalette from "./CommandPalette";
 import ImportStatusChip from "./ImportStatusChip";
 import { tabSwitchCommands } from "./commands";
@@ -73,6 +75,7 @@ export default function AppShell() {
   const layout = resolveLayout(width);
   const placement = navPlacement(layout);
   const [paletteOpen, setPaletteOpen] = useState(false);
+  const customTitleBar = typeof navigator !== "undefined" && usesCustomTitleBar(navigator.userAgent);
   useAspectClassWatcher();
 
   // Engine version fetch (C3 §3.1) — carried over unchanged from the
@@ -112,6 +115,24 @@ export default function AppShell() {
 
   return (
     <div className="flex h-screen w-screen flex-col bg-bg text-fg">
+      {/* Narrow layouts put navigation at the bottom and hide `TopBar`
+          entirely — which, with `decorations: false`, would leave a window
+          with no way to move, maximize or close it (ruling R216 item 1
+          folds the title bar into the top bar, and at this width there is
+          no top bar to fold it into). So the narrow layout gets the title
+          bar on its own: the same 32 px, the wordmark, the drag region and
+          the same control cluster, and nothing else. Mounted only when
+          both conditions hold, so no platform without custom decorations
+          and no width with a real top bar pays for it. */}
+      {customTitleBar && placement === "bottom" && (
+        <header className="relative z-10 flex h-[var(--space-8)] items-center gap-3 border-b border-rule bg-surface pl-3 text-body-small">
+          <span data-tauri-drag-region="" className="font-mono text-title-2 font-semibold tracking-[var(--tracking-kicker)] text-fg">
+            idl1
+          </span>
+          <div data-tauri-drag-region="" className="h-full flex-1" />
+          <WindowControls />
+        </header>
+      )}
       {/* Mount-and-hide (R93), not conditional mount/unmount — matching
           `shell/RouteHost.tsx`'s own pattern. This originally existed to
           protect `TopBar`'s `#playback-transport-slot` from being destroyed

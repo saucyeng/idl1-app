@@ -1,13 +1,17 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  inlineGroupSpans,
   NOTEBOOK_TOOLBAR_GROUPS,
   TOOLBAR_COLLAPSE_ORDER,
   TOOLBAR_GROUP_GAP,
   TOOLBAR_GROUP_ORDER,
   TOOLBAR_OVERFLOW_WIDTH,
   toolbarLayout,
+  withMeasuredGroupWidths,
+  type MeasuredGroupWidth,
   type ToolbarGroupId,
+  type ToolbarGroupSpec,
 } from "./toolbarLayout";
 
 /** The width at which every group fits with its labels — the widest row
@@ -151,5 +155,125 @@ describe("toolbarLayout — the overflow trigger's own width — is charged only
     // Assert
     expect(layout.overflow.length).toBeGreaterThan(0);
     expect(used).toBeLessThanOrEqual(420);
+  });
+});
+
+describe("withMeasuredGroupWidths — a measured group — replaces its nominal footprint", () => {
+  it("substitutes the measured width for the label state it was measured in, and keeps the other nominal", () => {
+    // Arrange
+    const measured = new Map<ToolbarGroupId, MeasuredGroupWidth>([["view", { labelledWidth: 431 }]]);
+
+    // Act
+    const specs = withMeasuredGroupWidths(measured);
+
+    // Assert
+    const view = specs.find((s) => s.id === "view");
+    expect(view?.labelledWidth).toBe(431);
+    expect(view?.compactWidth).toBe(NOTEBOOK_TOOLBAR_GROUPS.find((s) => s.id === "view")?.compactWidth);
+  });
+
+  it("ignores a zero measurement, which a hidden or unlaid-out row reports", () => {
+    // Arrange
+    const measured = new Map<ToolbarGroupId, MeasuredGroupWidth>([["actions", { labelledWidth: 0, compactWidth: 0 }]]);
+
+    // Act
+    const specs = withMeasuredGroupWidths(measured);
+
+    // Assert
+    expect(specs.find((s) => s.id === "actions")).toEqual(NOTEBOOK_TOOLBAR_GROUPS.find((s) => s.id === "actions"));
+  });
+
+  it("leaves a group nobody has measured entirely alone", () => {
+    // Arrange
+    const measured = new Map<ToolbarGroupId, MeasuredGroupWidth>();
+
+    // Act
+    const specs = withMeasuredGroupWidths(measured);
+
+    // Assert
+    expect(specs).toEqual([...NOTEBOOK_TOOLBAR_GROUPS]);
+  });
+});
+
+describe("toolbarLayout — groups wider than their nominal footprints — never overlap on the row", () => {
+  /** The reported bug's own numbers (ruling R216 item 4): the presets lane
+   *  grew `view` and the density lane grew `document` well past the nominal
+   *  widths declared in the module, so the old layout kept reporting "it
+   *  fits" and the row's flex shrink compressed each group's box below its
+   *  contents. These are what the row actually measures once it measures. */
+  const MEASURED = new Map<ToolbarGroupId, MeasuredGroupWidth>([
+    ["columns", { labelledWidth: 201, compactWidth: 96 }],
+    ["document", { labelledWidth: 318, compactWidth: 205 }],
+    ["view", { labelledWidth: 447, compactWidth: 214 }],
+    ["window", { labelledWidth: 226, compactWidth: 168 }],
+    ["transport", { labelledWidth: 268, compactWidth: 160 }],
+    ["actions", { labelledWidth: 430, compactWidth: 214 }],
+  ]);
+
+  /** Every pair of neighbouring inline groups, as `[left, right]`. */
+  function neighbours(specs: readonly ToolbarGroupSpec[], width: number) {
+    const spans = inlineGroupSpans(toolbarLayout(width, specs), width, specs);
+    return spans.slice(0, -1).map((left, index) => [left, spans[index + 1]!] as const);
+  }
+
+  it.each([1100, 1300, 1600])("at %i px no group's contents reach into the next group's box", (width) => {
+    // Arrange
+    const specs = withMeasuredGroupWidths(MEASURED);
+
+    // Act
+    const pairs = neighbours(specs, width);
+
+    // Assert
+    expect(pairs.length).toBeGreaterThan(0);
+    pairs.forEach(([left, right]) => {
+      expect(left.contentEnd).toBeLessThanOrEqual(right.start);
+    });
+  });
+
+  it("a layout decided on the stale nominal footprints does overlap — the bug this guards against", () => {
+    // Arrange
+    const real = withMeasuredGroupWidths(MEASURED);
+    // 1600 px: the nominal footprints say all six groups fit *with labels*
+    // (1559 px), the real ones need 1955 px. That gap is the bug.
+    const staleDecision = toolbarLayout(1600, NOTEBOOK_TOOLBAR_GROUPS);
+
+    // Act
+    const spans = inlineGroupSpans(staleDecision, 1600, real);
+    const overlapping = spans.slice(0, -1).filter((left, index) => left.contentEnd > spans[index + 1]!.start);
+
+    // Assert
+    expect(overlapping.length).toBeGreaterThan(0);
+  });
+
+  it("no inline group is ever compressed below its own contents, at any width", () => {
+    // Arrange
+    const specs = withMeasuredGroupWidths(MEASURED);
+    // From just above the narrowest row that can hold the two non-collapsing
+    // groups plus the "⋯" trigger (376 px; R212 rule 4's floor is asserted
+    // separately below) upwards.
+    const widths = [400, 480, 700, 900, 1100, 1300, 1600, 2400];
+
+    // Act
+    const compressed = widths.flatMap((width) =>
+      inlineGroupSpans(toolbarLayout(width, specs), width, specs)
+        .filter((span) => span.contentEnd > span.end + 0.5)
+        .map((span) => `${span.id}@${width}`),
+    );
+
+    // Assert
+    expect(compressed).toEqual([]);
+  });
+
+  it("below the floor the two non-collapsing groups stay and the row clips them, per R212 rule 4", () => {
+    // Arrange
+    const specs = withMeasuredGroupWidths(MEASURED);
+
+    // Act
+    const layout = toolbarLayout(320, specs);
+    const spans = inlineGroupSpans(layout, 320, specs);
+
+    // Assert
+    expect(layout.inline).toEqual(["window", "transport"]);
+    expect(spans.some((span) => span.contentEnd > span.end)).toBe(true);
   });
 });
