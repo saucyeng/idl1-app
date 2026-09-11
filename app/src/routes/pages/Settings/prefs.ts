@@ -45,6 +45,11 @@ export interface UiPrefs {
   /** Which release channel the catalog check uses (R198). Default
    *  `"stable"`. Ignored while {@link UiPrefs.firmware_repo} is empty. */
   firmware_channel: FirmwareChannel;
+  /** Ruling R214 item 1's optional cue: colour-code the maths graph's node
+   *  kinds with a 4 px left stripe. Default `false` — the kind is carried
+   *  by each card's shape and glyph, and **nothing depends on this**; it
+   *  only adds a redundant colour cue for a reader who wants one. */
+  graph_node_colour: boolean;
 }
 
 /** The full persisted-prefs document — the engine-mirroring half plus the
@@ -72,6 +77,7 @@ export const DEFAULT_PREFS: Prefs = {
     paper_theme: "app",
     firmware_repo: "",
     firmware_channel: "stable",
+    graph_node_colour: false,
   },
 };
 
@@ -115,6 +121,7 @@ function parseUi(raw: unknown): UiPrefs {
     record.firmware_channel === "stable" || record.firmware_channel === "beta"
       ? record.firmware_channel
       : DEFAULT_PREFS.ui.firmware_channel;
+  const graphNodeColour = typeof record.graph_node_colour === "boolean" ? record.graph_node_colour : DEFAULT_PREFS.ui.graph_node_colour;
   return {
     ...record,
     last_section: lastSection,
@@ -124,6 +131,7 @@ function parseUi(raw: unknown): UiPrefs {
     paper_theme: paperTheme,
     firmware_repo: firmwareRepo,
     firmware_channel: firmwareChannel,
+    graph_node_colour: graphNodeColour,
   } as UiPrefs;
 }
 

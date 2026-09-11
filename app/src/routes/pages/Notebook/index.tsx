@@ -60,6 +60,7 @@ import { PING_INTERVAL_MS } from "./host/watchdog";
 import { NotebookSession } from "./host/NotebookSession";
 import { dropCellHeight, initialCellHeights, recordCellHeight, type CellHeights } from "./model/cellLayout";
 import { replaceCellBody } from "./model/cells";
+import { changedCellIds } from "./model/documentRanges";
 import {
   runChannelBind,
   runChannelSettle,
@@ -868,6 +869,11 @@ export default function NotebookPage() {
    *  `Settings/ThemeSection.tsx`, which stamps `data-theme`; this page only
    *  reads the choice. */
   const [appTheme, setAppTheme] = useState<ThemeChoice>("dark");
+  /** Ruling R214 item 1's optional cue: the Settings toggle "Colour-code
+   *  graph nodes" (`Settings/prefs.ts`'s `ui.graph_node_colour`, off by
+   *  default). Nothing on the canvas depends on it — shape and glyph carry
+   *  the kind — so an unread or failed preference simply means no stripes. */
+  const [colourCodeNodes, setColourCodeNodes] = useState(false);
   // Re-read on every transition into visibility, not only on mount: the
   // Settings tab writes these two through its *own* `PrefsStore` instance
   // over the same backend, so this page's instance never hears that store's
@@ -883,6 +889,7 @@ export default function NotebookPage() {
       setStoredRegister(prefs.ui.output_register);
       setPaperTheme(prefs.ui.paper_theme);
       setAppTheme(prefs.ui.theme);
+      setColourCodeNodes(prefs.ui.graph_node_colour);
     });
     return () => {
       cancelled = true;
@@ -1696,6 +1703,29 @@ export default function NotebookPage() {
    * `cellId` isn't found -- an unresolved-id race with a concurrent watch
    * event, say -- which would otherwise mark a cell dirty for no reason).
    */
+  /**
+   * The whole-workbook code pane's write path (ruling R214 item 3). A
+   * document-level edit may touch any number of cells at once, so the cells
+   * whose bodies actually changed are named by `documentRanges.ts`'s
+   * `changedCellIds` and each marked dirty through the same `editCell`
+   * action a per-cell edit uses — the first carries the new markdown, the
+   * rest only add themselves to `dirtyCellIds`. An edit that changed no
+   * cell body (prose, front matter, whitespace between cells) goes through
+   * `editFrontMatter` instead: the document is dirty for save, but nothing
+   * needs re-evaluating.
+   */
+  function handleDocumentChange(nextMarkdown: string) {
+    if (state.markdown === null || nextMarkdown === state.markdown) return;
+    const changed = changedCellIds(state.markdown, nextMarkdown);
+    if (changed.length === 0) {
+      dispatch({ type: "editFrontMatter", markdown: nextMarkdown });
+      return;
+    }
+    changed.forEach((cellId, index) => {
+      dispatch(index === 0 ? { type: "editCell", cellId, markdown: nextMarkdown } : { type: "editCell", cellId });
+    });
+  }
+
   function handleCellCodeChange(cellId: string, nextCode: string) {
     if (state.markdown === null) return;
     const nextMarkdown = replaceCellBody(state.markdown, cellId, nextCode);
@@ -2361,17 +2391,27 @@ export default function NotebookPage() {
   // every kind (`js` gets Properties beside Code, everything else gets Code
   // alone), so the sheet now holds the same editor every other placement
   // does, and each branch below decides only *where* it goes.
+  //
+  // Ruling R214 item 3 is why this no longer requires an open cell: the
+  // column's code pane is the whole `.idl1wb` document, which is worth
+  // showing whether or not a cell is selected. A `js` cell still adds its
+  // Properties tab beside it; every other kind, and no selection at all,
+  // is the document alone.
   const editorPanesElement =
-    openCellId !== null && openCell !== null && openCellCode !== null ? (
+    state.markdown !== null ? (
       <EditorPanes
         cellId={openCellId}
-        kind={openCell.kind}
+        kind={openCell?.kind ?? null}
         code={openCellCode}
-        onChange={(nextCode) => handleCellCodeChange(openCellId, nextCode)}
+        onChange={(nextCode) => openCellId !== null && handleCellCodeChange(openCellId, nextCode)}
         channelIds={channelIds}
         definitionNames={definitionNames}
         channels={propertiesChannels}
         laps={propertiesLaps}
+        wholeDocumentCode={placement !== "sheet"}
+        markdown={state.markdown}
+        onMarkdownChange={handleDocumentChange}
+        onSelectCell={setSelectedCellId}
       />
     ) : null;
 
@@ -2757,13 +2797,16 @@ export default function NotebookPage() {
   const graphCanvasElement =
     state.markdown !== null ? (
       <GraphCanvas
-        markdown={state.markdown}
+        markdown={state.markdown}
+
         outputs={graphOutputs}
         selectedWindows={windows.map(toWireWindow)}
         windows={state.windows}
         sessionDetails={graphSessionDetails}
         onCommit={(nextMarkdown) => dispatch({ type: "editFrontMatter", markdown: nextMarkdown })}
         onSelectCell={(cellId) => setSelectedCellId(cellId)}
+        colourCodeNodes={colourCodeNodes}
+        selectedCellId={selectedCellId}
       />
     ) : null;
 
@@ -3035,7 +3078,7 @@ export default function NotebookPage() {
               the title names what the sheet actually holds: a `js` cell's
               Properties tab beside its Code, or the code editor alone. */}
           <BrandSheet
-            open={!editorIsPortalHosted && editorPanesElement !== null}
+            open={!editorIsPortalHosted && openCellId !== null && editorPanesElement !== null}
             onOpenChange={(open) => {
               if (!open) setSelectedCellId(null);
             }}

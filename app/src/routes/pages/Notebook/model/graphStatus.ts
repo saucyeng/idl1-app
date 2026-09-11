@@ -205,6 +205,10 @@ export function computeNodeStatuses(inputs: GraphStatusInputs): Map<string, Node
       result.set(node.id, aggregate(channelPerWindow.get(node.id) ?? []));
       continue;
     }
+    if (node.kind === "chart") {
+      result.set(node.id, aggregate(chartPerWindow(node, usableWindows, windows, greyEligible)));
+      continue;
+    }
     result.set(node.id, aggregate(definitionPerWindow(node, usableWindows, windows, greyEligible)));
   }
 
@@ -242,5 +246,32 @@ function definitionPerWindow(
     if (defResult === undefined) return "error";
     if (defResult.error === null) return "ok";
     return eligibleWindowKeys?.has(key) ? "grey" : "error";
+  });
+}
+
+/** One `"chart"` node's per-window status (R214 item 1's third kind). A
+ *  `js` cell declares no definition, so it has no `CellDefResult` to read —
+ *  its whole result is its `CellOutput.errors` list (C3 §3.4), which is
+ *  what the notebook's own per-cell status already shows
+ *  (`model/cellStatus.ts`). Decision 44's grey rule applies unchanged: a
+ *  chart downstream of a channel this window's session simply doesn't carry
+ *  greys out rather than reporting a fault of its own. */
+function chartPerWindow(
+  node: GraphNode,
+  usableWindows: SelectedWindow[],
+  windows: Map<string, WindowEvalState>,
+  greyEligible: Map<string, Set<string>>
+): PerWindowStatus[] {
+  const eligibleWindowKeys = greyEligible.get(node.id);
+
+  return usableWindows.map((w) => {
+    const key = wireWindowKey(w);
+    const state = windows.get(key);
+    if (state === undefined) return "pending"; // this window hasn't evaluated at all yet
+    const output = state.kind === "ok" ? state.outputs.get(node.cellId ?? "") : undefined;
+    if (output === undefined || output.errors.length > 0) {
+      return eligibleWindowKeys?.has(key) ? "grey" : "error";
+    }
+    return "ok";
   });
 }
