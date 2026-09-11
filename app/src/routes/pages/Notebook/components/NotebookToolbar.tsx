@@ -8,7 +8,13 @@ import type { RebuildReport } from "../../../../ipc/catalog";
 import type { SessionDetail } from "../../../../ipc/catalog";
 import type { IpcError } from "../../../../ipc/workbook";
 import type { SelectionWindow } from "../../../../state/selection";
-import { toolbarLayout, type ToolbarGroupId } from "../../../../shell/toolbarLayout";
+import {
+  NOTEBOOK_TOOLBAR_GROUPS,
+  toolbarLayout,
+  withMeasuredGroupWidths,
+  type MeasuredGroupWidth,
+  type ToolbarGroupId,
+} from "../../../../shell/toolbarLayout";
 import { isLayoutPresetId, LAYOUT_PRESETS, type ActivePreset, type LayoutPresetId } from "../../../../shell/layoutPresets";
 import PlaybackTransport from "../interaction/PlaybackTransport";
 import type { PlaybackMode } from "../interaction/playbackMode";
@@ -141,6 +147,123 @@ function useRowWidth(ref: React.RefObject<HTMLDivElement | null>): number {
   return width;
 }
 
+/**
+ * The measured width of every toolbar group the row has rendered so far,
+ * by id and label state (ruling R216 item 4).
+ *
+ * Returns the map and the callback ref each group's wrapper attaches. One
+ * `ResizeObserver` watches every registered group rather than one instance
+ * per group: the number of groups varies with `columnsToggleAvailable` and
+ * with what has collapsed, so a hook per group would be a conditional hook.
+ * The observer's own contract is per target either way — one entry per
+ * group per delivery — and a single instance is the cheaper shape.
+ *
+ * `setState` is deferred to `requestAnimationFrame` for the same reason
+ * {@link useRowWidth} defers its own (the "ResizeObserver loop completed
+ * with undelivered notifications" notice), and batched: one frame absorbs
+ * every group that changed in it.
+ *
+ * Measurements only ever accumulate. A group that has collapsed into the
+ * "⋯" menu is no longer rendered on the row, so it can no longer be
+ * measured; keeping its last known width is what stops the row oscillating
+ * between "it fits at its nominal width" and "it does not fit at its real
+ * one". Nothing is measured inside the overflow popover, whose contents are
+ * laid out by the popover, not by the row.
+ */
+function useGroupWidths(): {
+  measured: ReadonlyMap<ToolbarGroupId, MeasuredGroupWidth>;
+  groupRef: (id: ToolbarGroupId, labelled: boolean) => (node: HTMLDivElement | null) => void;
+} {
+  const [measured, setMeasured] = useState<ReadonlyMap<ToolbarGroupId, MeasuredGroupWidth>>(() => new Map());
+  const nodes = useRef(new Map<ToolbarGroupId, HTMLDivElement>());
+  const observed = useRef(new Map<Element, ToolbarGroupId>());
+  const pending = useRef(new Map<ToolbarGroupId, number>());
+  const frame = useRef(0);
+  const observer = useRef<ResizeObserver | null>(null);
+  // Which label state each group was last rendered in. Recorded by the
+  // callback ref at render time and read when the measurement commits, so a
+  // width always lands in the field for the row that produced it — the two
+  // are a frame apart.
+  const labelStates = useRef(new Map<ToolbarGroupId, boolean>());
+
+  const groupRef = (id: ToolbarGroupId, labelled: boolean) => (node: HTMLDivElement | null) => {
+    labelStates.current.set(id, labelled);
+    if (node === null) nodes.current.delete(id);
+    else nodes.current.set(id, node);
+  };
+
+  // Reconcile after every render rather than on a dependency list: which
+  // groups are on the row is itself derived from these measurements, so
+  // there is no key that is known before the render it describes. The
+  // observer instance is kept — recreating it each pass would re-deliver
+  // every box and re-enter this effect forever.
+  useEffect(() => {
+    if (typeof ResizeObserver === "undefined") return;
+
+    if (observer.current === null) {
+      const commit = () => {
+        frame.current = 0;
+        const updates = pending.current;
+        pending.current = new Map();
+        if (updates.size === 0) return;
+        setMeasured((previous) => {
+          let changed = false;
+          const next = new Map(previous);
+          for (const [id, width] of updates) {
+            const field: keyof MeasuredGroupWidth = labelStates.current.get(id) === true ? "labelledWidth" : "compactWidth";
+            const before = next.get(id) ?? {};
+            if (before[field] === width) continue;
+            next.set(id, { ...before, [field]: width });
+            changed = true;
+          }
+          // Same map back when nothing moved: this is what terminates the
+          // measure → re-layout → measure cycle.
+          return changed ? next : previous;
+        });
+      };
+
+      observer.current = new ResizeObserver((entries) => {
+        for (const entry of entries) {
+          const id = observed.current.get(entry.target);
+          if (id === undefined) continue;
+          // The border box is what the row's flex packing consumes. A zero
+          // — a hidden row, or the frame before first layout — is dropped:
+          // a zero-width group would make every layout "fit" and bring the
+          // overlap straight back.
+          const width = entry.borderBoxSize?.[0]?.inlineSize ?? entry.contentRect.width;
+          if (width <= 0) continue;
+          pending.current.set(id, width);
+        }
+        if (frame.current === 0) frame.current = requestAnimationFrame(commit);
+      });
+    }
+
+    const live = new Set(nodes.current.values());
+    for (const [node, id] of observed.current) {
+      if (live.has(node as HTMLDivElement)) continue;
+      observer.current.unobserve(node);
+      observed.current.delete(node);
+      pending.current.delete(id);
+    }
+    for (const [id, node] of nodes.current) {
+      if (observed.current.has(node)) continue;
+      observed.current.set(node, id);
+      observer.current.observe(node);
+    }
+  });
+
+  useEffect(() => {
+    return () => {
+      cancelAnimationFrame(frame.current);
+      observer.current?.disconnect();
+      observer.current = null;
+      observed.current = new Map();
+    };
+  }, []);
+
+  return { measured, groupRef };
+}
+
 /** A hairline between two groups — the row's only structural device, and
  *  the thing that makes "these controls belong together" readable without a
  *  label (UI-DIRECTION decision 23: depth is a hairline, never a shadow). */
@@ -179,7 +302,18 @@ function GroupDivider() {
 export default function NotebookToolbar(props: NotebookToolbarProps) {
   const rowRef = useRef<HTMLDivElement | null>(null);
   const width = useRowWidth(rowRef);
-  const layout = useMemo(() => toolbarLayout(width), [width]);
+  const { measured, groupRef } = useGroupWidths();
+
+  // The groups that exist at all for this row, at their real widths.
+  // `columns` is absent at paper/narrow widths (decision 29), and reserving
+  // its nominal 168 px for a group that never renders is the same class of
+  // error R216 item 4 is fixing, just in the safe direction.
+  const specs = useMemo(() => {
+    const present = NOTEBOOK_TOOLBAR_GROUPS.filter((spec) => spec.id !== "columns" || props.columnsToggleAvailable);
+    return withMeasuredGroupWidths(measured, present);
+  }, [measured, props.columnsToggleAvailable]);
+
+  const layout = useMemo(() => toolbarLayout(width, specs), [width, specs]);
   const labelled = layout.labelled;
 
   const chipGroups = useMemo(() => windowChipGroups(props.windows, props.sessionDetailsByWindow), [props.windows, props.sessionDetailsByWindow]);
@@ -261,7 +395,12 @@ export default function NotebookToolbar(props: NotebookToolbarProps) {
                   className="flex min-w-0 items-center gap-[var(--nb-pad)] rounded-[var(--radius-structural)] border border-rule bg-control px-[var(--nb-pad)] py-px"
                   title={`${chip.sessionText} — ${chip.spans.map((s) => s.text).join(", ")}`}
                 >
-                  <span className="truncate text-fg">{chip.sessionText}</span>
+                  {/* Bounded, because the group no longer shrinks (R216
+                      item 4): a long session name would otherwise set the
+                      group's measured width and push everything else into
+                      the overflow menu. R212 rule 4's "the row truncates
+                      its own text" is this cap. */}
+                  <span className="max-w-[14ch] truncate text-fg">{chip.sessionText}</span>
                   {chip.spans.map((span) => (
                     <span key={span.key} className="flex shrink-0 items-center gap-px text-fg-dim">
                       <span aria-hidden className="size-[6px] shrink-0" style={{ background: `var(${span.colour})` }} />
@@ -350,9 +489,20 @@ export default function NotebookToolbar(props: NotebookToolbarProps) {
       aria-label="Notebook"
     >
       {inline.map((id, index) => (
-        <div key={id} className={`flex min-w-0 shrink items-center gap-[var(--nb-gap)] ${id === "transport" ? "mx-auto" : ""}`}>
+        /* `shrink-0`, not `shrink` (ruling R216 item 4). A shrinking group
+           box compresses below its contents' natural width and the contents
+           paint over the next group — the reported overlap. Fitting the row
+           is `toolbarLayout`'s job now that it is fed real measurements, so
+           the boxes keep their size and the row's own `overflow-hidden`
+           clips rather than overlaps if a measurement is ever stale.
+           The divider is a sibling of the measured box, not inside it, so a
+           group's recorded width is the group's and not the group's plus a
+           hairline it only carries when it is not first on the row. */
+        <div key={id} className={`flex shrink-0 items-center gap-[var(--nb-gap)] ${id === "transport" ? "mx-auto" : ""}`}>
           {index > 0 && <GroupDivider />}
-          {group(id, labelled)}
+          <div ref={groupRef(id, labelled)} className="flex min-w-0 shrink-0 items-center gap-[var(--nb-gap)]">
+            {group(id, labelled)}
+          </div>
         </div>
       ))}
       {layout.overflow.length > 0 && (
