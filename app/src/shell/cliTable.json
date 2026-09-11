@@ -1,0 +1,1274 @@
+{
+  "commands": [
+    {
+      "args": [],
+      "core_fn": "store::catalog_read::list_sessions + commands::session_ops::filter_sessions",
+      "data_dir": true,
+      "flags": [
+        {
+          "choices": [],
+          "default": null,
+          "help": "Only sessions whose venue matches, case-insensitively",
+          "kind": "text",
+          "long": "venue",
+          "repeatable": false
+        },
+        {
+          "choices": [],
+          "default": null,
+          "help": "Only sessions that visited this track id",
+          "kind": "text",
+          "long": "track",
+          "repeatable": false
+        },
+        {
+          "choices": [],
+          "default": null,
+          "help": "Only sessions starting at or after this Unix epoch millisecond",
+          "kind": "integer",
+          "long": "since",
+          "repeatable": false
+        },
+        {
+          "choices": [],
+          "default": null,
+          "help": "Only sessions starting at or before this Unix epoch millisecond",
+          "kind": "integer",
+          "long": "until",
+          "repeatable": false
+        },
+        {
+          "choices": [],
+          "default": null,
+          "help": "Only sessions carrying this tag, case-insensitively",
+          "kind": "text",
+          "long": "tag",
+          "repeatable": false
+        },
+        {
+          "choices": [],
+          "default": null,
+          "help": "Data directory root (contract C4 §1's <data>); defaults to $IDL1_DATA_DIR",
+          "kind": "path",
+          "long": "data-dir",
+          "repeatable": false
+        },
+        {
+          "choices": [],
+          "default": null,
+          "help": "Emit the result as JSON on stdout (schema_version 1); errors become typed JSON on stderr",
+          "kind": null,
+          "long": "json",
+          "repeatable": false
+        }
+      ],
+      "help": "List catalogued sessions, most recent first",
+      "id": "session.list",
+      "json_shape": "SessionSummary[]",
+      "noun": "session",
+      "status": "current",
+      "tier": "core",
+      "usage": "session list",
+      "verb": "list",
+      "writer": false
+    },
+    {
+      "args": [
+        {
+          "choices": [],
+          "help": "Session id, as `session list` prints it",
+          "kind": "text",
+          "name": "id",
+          "repeatable": false,
+          "required": true
+        }
+      ],
+      "core_fn": "store::catalog_read::get_session",
+      "data_dir": true,
+      "flags": [
+        {
+          "choices": [],
+          "default": null,
+          "help": "Data directory root (contract C4 §1's <data>); defaults to $IDL1_DATA_DIR",
+          "kind": "path",
+          "long": "data-dir",
+          "repeatable": false
+        },
+        {
+          "choices": [],
+          "default": null,
+          "help": "Emit the result as JSON on stdout (schema_version 1); errors become typed JSON on stderr",
+          "kind": null,
+          "long": "json",
+          "repeatable": false
+        }
+      ],
+      "help": "Print one session's metadata, channels and laps",
+      "id": "session.show",
+      "json_shape": "SessionDetail",
+      "noun": "session",
+      "status": "current",
+      "tier": "core",
+      "usage": "session show <id>",
+      "verb": "show",
+      "writer": false
+    },
+    {
+      "args": [
+        {
+          "choices": [],
+          "help": "Session id, as `session list` prints it",
+          "kind": "text",
+          "name": "id",
+          "repeatable": false,
+          "required": true
+        }
+      ],
+      "core_fn": "store::catalog_read::list_laps",
+      "data_dir": true,
+      "flags": [
+        {
+          "choices": [],
+          "default": null,
+          "help": "Data directory root (contract C4 §1's <data>); defaults to $IDL1_DATA_DIR",
+          "kind": "path",
+          "long": "data-dir",
+          "repeatable": false
+        },
+        {
+          "choices": [],
+          "default": null,
+          "help": "Emit the result as JSON on stdout (schema_version 1); errors become typed JSON on stderr",
+          "kind": null,
+          "long": "json",
+          "repeatable": false
+        }
+      ],
+      "help": "Print one session's indexed laps",
+      "id": "session.laps",
+      "json_shape": "LapSummary[]",
+      "noun": "session",
+      "status": "current",
+      "tier": "occasional",
+      "usage": "session laps <id>",
+      "verb": "laps",
+      "writer": false
+    },
+    {
+      "args": [
+        {
+          "choices": [],
+          "help": "Session id, as `session list` prints it",
+          "kind": "text",
+          "name": "id",
+          "repeatable": false,
+          "required": true
+        },
+        {
+          "choices": [],
+          "help": "Recording start, Unix epoch milliseconds; must be greater than zero",
+          "kind": "integer",
+          "name": "utc-ms",
+          "repeatable": false,
+          "required": true
+        }
+      ],
+      "core_fn": "store::session_json::set_session_start",
+      "data_dir": true,
+      "flags": [
+        {
+          "choices": [],
+          "default": null,
+          "help": "Data directory root (contract C4 §1's <data>); defaults to $IDL1_DATA_DIR",
+          "kind": "path",
+          "long": "data-dir",
+          "repeatable": false
+        },
+        {
+          "choices": [],
+          "default": null,
+          "help": "Report what would change and write nothing",
+          "kind": null,
+          "long": "dry-run",
+          "repeatable": false
+        },
+        {
+          "choices": [],
+          "default": null,
+          "help": "Emit the result as JSON on stdout (schema_version 1); errors become typed JSON on stderr",
+          "kind": null,
+          "long": "json",
+          "repeatable": false
+        }
+      ],
+      "help": "Set a session's recording start time by hand",
+      "id": "session.setStart",
+      "json_shape": "SessionJson",
+      "noun": "session",
+      "status": "current",
+      "tier": "occasional",
+      "usage": "session set-start <id> <utc-ms>",
+      "verb": "set-start",
+      "writer": true
+    },
+    {
+      "args": [
+        {
+          "choices": [],
+          "help": "Session id, as `session list` prints it",
+          "kind": "text",
+          "name": "id",
+          "repeatable": false,
+          "required": true
+        }
+      ],
+      "core_fn": "commands::session_ops::apply_session_meta",
+      "data_dir": true,
+      "flags": [
+        {
+          "choices": [],
+          "default": null,
+          "help": "Venue name",
+          "kind": "text",
+          "long": "venue",
+          "repeatable": false
+        },
+        {
+          "choices": [],
+          "default": null,
+          "help": "Rider name",
+          "kind": "text",
+          "long": "rider",
+          "repeatable": false
+        },
+        {
+          "choices": [],
+          "default": null,
+          "help": "Bike name",
+          "kind": "text",
+          "long": "bike",
+          "repeatable": false
+        },
+        {
+          "choices": [],
+          "default": null,
+          "help": "Event name",
+          "kind": "text",
+          "long": "event",
+          "repeatable": false
+        },
+        {
+          "choices": [],
+          "default": null,
+          "help": "Event session, e.g. `Qualifying 2`",
+          "kind": "text",
+          "long": "event-session",
+          "repeatable": false
+        },
+        {
+          "choices": [],
+          "default": null,
+          "help": "Long comment",
+          "kind": "text",
+          "long": "notes",
+          "repeatable": false
+        },
+        {
+          "choices": [],
+          "default": null,
+          "help": "Tag",
+          "kind": "text",
+          "long": "tag",
+          "repeatable": false
+        },
+        {
+          "choices": [],
+          "default": null,
+          "help": "Data directory root (contract C4 §1's <data>); defaults to $IDL1_DATA_DIR",
+          "kind": "path",
+          "long": "data-dir",
+          "repeatable": false
+        },
+        {
+          "choices": [],
+          "default": null,
+          "help": "Report what would change and write nothing",
+          "kind": null,
+          "long": "dry-run",
+          "repeatable": false
+        },
+        {
+          "choices": [],
+          "default": null,
+          "help": "Emit the result as JSON on stdout (schema_version 1); errors become typed JSON on stderr",
+          "kind": null,
+          "long": "json",
+          "repeatable": false
+        }
+      ],
+      "help": "Set a session's descriptive metadata; omitted fields are left alone",
+      "id": "session.setMeta",
+      "json_shape": "SessionJson",
+      "noun": "session",
+      "status": "current",
+      "tier": "occasional",
+      "usage": "session set-meta <id>",
+      "verb": "set-meta",
+      "writer": true
+    },
+    {
+      "args": [
+        {
+          "choices": [],
+          "help": "Log file to import (`.idl0`, `.fit`, `.gpx`, `.csv`)",
+          "kind": "path",
+          "name": "file",
+          "repeatable": false,
+          "required": true
+        }
+      ],
+      "core_fn": "store::import::import_file_path",
+      "data_dir": true,
+      "flags": [
+        {
+          "choices": [],
+          "default": null,
+          "help": "Data directory root (contract C4 §1's <data>); defaults to $IDL1_DATA_DIR",
+          "kind": "path",
+          "long": "data-dir",
+          "repeatable": false
+        },
+        {
+          "choices": [],
+          "default": null,
+          "help": "Report what would change and write nothing",
+          "kind": null,
+          "long": "dry-run",
+          "repeatable": false
+        },
+        {
+          "choices": [],
+          "default": null,
+          "help": "Emit the result as JSON on stdout (schema_version 1); errors become typed JSON on stderr",
+          "kind": null,
+          "long": "json",
+          "repeatable": false
+        }
+      ],
+      "help": "Import one log file into the data directory",
+      "id": "session.import",
+      "json_shape": "ImportReport",
+      "noun": "session",
+      "status": "current",
+      "tier": "core",
+      "usage": "session import <file>",
+      "verb": "import",
+      "writer": true
+    },
+    {
+      "args": [
+        {
+          "choices": [],
+          "help": "Workbook file to create; refuses to overwrite an existing one",
+          "kind": "path",
+          "name": "file",
+          "repeatable": false,
+          "required": true
+        }
+      ],
+      "core_fn": "commands::workbook_ops::new_workbook",
+      "data_dir": false,
+      "flags": [
+        {
+          "choices": [
+            "blank",
+            "session"
+          ],
+          "default": "blank",
+          "help": "Skeleton to write: `blank` is front matter only, `session` adds a math and a table cell",
+          "kind": "choice",
+          "long": "template",
+          "repeatable": false
+        },
+        {
+          "choices": [],
+          "default": null,
+          "help": "Session id to reference from the `session` template",
+          "kind": "text",
+          "long": "session",
+          "repeatable": false
+        },
+        {
+          "choices": [],
+          "default": null,
+          "help": "Report what would change and write nothing",
+          "kind": null,
+          "long": "dry-run",
+          "repeatable": false
+        },
+        {
+          "choices": [],
+          "default": null,
+          "help": "Emit the result as JSON on stdout (schema_version 1); errors become typed JSON on stderr",
+          "kind": null,
+          "long": "json",
+          "repeatable": false
+        }
+      ],
+      "help": "Create a new workbook from a built-in skeleton",
+      "id": "workbook.new",
+      "json_shape": "WorkbookNewReport",
+      "noun": "workbook",
+      "status": "current",
+      "tier": "occasional",
+      "usage": "workbook new <file>",
+      "verb": "new",
+      "writer": true
+    },
+    {
+      "args": [
+        {
+          "choices": [],
+          "help": "Path to an `.idl0wb` workbook",
+          "kind": "path",
+          "name": "file",
+          "repeatable": false,
+          "required": true
+        }
+      ],
+      "core_fn": "workbook::v3::parse_workbook",
+      "data_dir": false,
+      "flags": [
+        {
+          "choices": [],
+          "default": null,
+          "help": "Session to evaluate against: an `.idl0` file, or a session id inside --data-dir",
+          "kind": "path",
+          "long": "session",
+          "repeatable": false
+        },
+        {
+          "choices": [],
+          "default": null,
+          "help": "`.idl0t` track artifact, required only when a cell is lap-bound",
+          "kind": "path",
+          "long": "track",
+          "repeatable": false
+        },
+        {
+          "choices": [],
+          "default": null,
+          "help": "Emit the result as JSON on stdout (schema_version 1); errors become typed JSON on stderr",
+          "kind": null,
+          "long": "json",
+          "repeatable": false
+        }
+      ],
+      "help": "Parse a workbook and report every structural problem",
+      "id": "workbook.check",
+      "json_shape": "WorkbookCheckReport",
+      "noun": "workbook",
+      "status": "current",
+      "tier": "occasional",
+      "usage": "workbook check <file>",
+      "verb": "check",
+      "writer": false
+    },
+    {
+      "args": [
+        {
+          "choices": [],
+          "help": "Path to an `.idl0wb` workbook",
+          "kind": "path",
+          "name": "file",
+          "repeatable": false,
+          "required": true
+        }
+      ],
+      "core_fn": "workbook::v3::parse_workbook",
+      "data_dir": false,
+      "flags": [
+        {
+          "choices": [],
+          "default": null,
+          "help": "Emit the result as JSON on stdout (schema_version 1); errors become typed JSON on stderr",
+          "kind": null,
+          "long": "json",
+          "repeatable": false
+        }
+      ],
+      "help": "List a workbook's cells in document order",
+      "id": "workbook.cells",
+      "json_shape": "WorkbookCellSummary[]",
+      "noun": "workbook",
+      "status": "current",
+      "tier": "occasional",
+      "usage": "workbook cells <file>",
+      "verb": "cells",
+      "writer": false
+    },
+    {
+      "args": [
+        {
+          "choices": [],
+          "help": "Path to an `.idl0wb` workbook",
+          "kind": "path",
+          "name": "file",
+          "repeatable": false,
+          "required": true
+        }
+      ],
+      "core_fn": "workbook::v3::eval_cells",
+      "data_dir": false,
+      "flags": [
+        {
+          "choices": [],
+          "default": null,
+          "help": "Session to evaluate against: an `.idl0` file, or a session id inside --data-dir",
+          "kind": "path",
+          "long": "session",
+          "repeatable": false
+        },
+        {
+          "choices": [],
+          "default": null,
+          "help": "`.idl0t` track artifact, required only when a cell is lap-bound",
+          "kind": "path",
+          "long": "track",
+          "repeatable": false
+        },
+        {
+          "choices": [],
+          "default": null,
+          "help": "Emit the result as JSON on stdout (schema_version 1); errors become typed JSON on stderr",
+          "kind": null,
+          "long": "json",
+          "repeatable": false
+        }
+      ],
+      "help": "Evaluate a workbook's math and table cells against a session",
+      "id": "workbook.eval",
+      "json_shape": "WorkbookEvalReport",
+      "noun": "workbook",
+      "status": "current",
+      "tier": "core",
+      "usage": "workbook eval <file>",
+      "verb": "eval",
+      "writer": false
+    },
+    {
+      "args": [
+        {
+          "choices": [],
+          "help": "Path to an `.idl0wb` workbook",
+          "kind": "path",
+          "name": "file",
+          "repeatable": false,
+          "required": true
+        },
+        {
+          "choices": [],
+          "help": "Cell id, as `workbook cells` prints it",
+          "kind": "text",
+          "name": "cell",
+          "repeatable": false,
+          "required": true
+        }
+      ],
+      "core_fn": "workbook::v3::eval_cells",
+      "data_dir": false,
+      "flags": [
+        {
+          "choices": [],
+          "default": null,
+          "help": "Session to evaluate against: an `.idl0` file, or a session id inside --data-dir",
+          "kind": "path",
+          "long": "session",
+          "repeatable": false
+        },
+        {
+          "choices": [],
+          "default": null,
+          "help": "`.idl0t` track artifact, required only when a cell is lap-bound",
+          "kind": "path",
+          "long": "track",
+          "repeatable": false
+        },
+        {
+          "choices": [],
+          "default": null,
+          "help": "Emit the result as JSON on stdout (schema_version 1); errors become typed JSON on stderr",
+          "kind": null,
+          "long": "json",
+          "repeatable": false
+        }
+      ],
+      "help": "Print one cell's evaluated series or table",
+      "id": "workbook.data",
+      "json_shape": "WorkbookCellData",
+      "noun": "workbook",
+      "status": "current",
+      "tier": "occasional",
+      "usage": "workbook data <file> <cell>",
+      "verb": "data",
+      "writer": false
+    },
+    {
+      "args": [
+        {
+          "choices": [],
+          "help": "Path to an `.idl0wb` workbook",
+          "kind": "path",
+          "name": "file",
+          "repeatable": false,
+          "required": true
+        }
+      ],
+      "core_fn": "workbook::v3::render_workbook",
+      "data_dir": false,
+      "flags": [
+        {
+          "choices": [],
+          "default": null,
+          "help": "File to write; stdout when omitted",
+          "kind": "path",
+          "long": "out",
+          "repeatable": false
+        },
+        {
+          "choices": [
+            "md",
+            "json"
+          ],
+          "default": "md",
+          "help": "`md` re-renders the workbook source, `json` writes its evaluated cells",
+          "kind": "choice",
+          "long": "format",
+          "repeatable": false
+        },
+        {
+          "choices": [],
+          "default": null,
+          "help": "Session to evaluate against: an `.idl0` file, or a session id inside --data-dir",
+          "kind": "path",
+          "long": "session",
+          "repeatable": false
+        },
+        {
+          "choices": [],
+          "default": null,
+          "help": "`.idl0t` track artifact, required only when a cell is lap-bound",
+          "kind": "path",
+          "long": "track",
+          "repeatable": false
+        },
+        {
+          "choices": [],
+          "default": null,
+          "help": "Report what would change and write nothing",
+          "kind": null,
+          "long": "dry-run",
+          "repeatable": false
+        },
+        {
+          "choices": [],
+          "default": null,
+          "help": "Emit the result as JSON on stdout (schema_version 1); errors become typed JSON on stderr",
+          "kind": null,
+          "long": "json",
+          "repeatable": false
+        }
+      ],
+      "help": "Write a workbook out as Markdown or as evaluated JSON",
+      "id": "workbook.export",
+      "json_shape": null,
+      "noun": "workbook",
+      "status": "current",
+      "tier": "occasional",
+      "usage": "workbook export <file>",
+      "verb": "export",
+      "writer": true
+    },
+    {
+      "args": [],
+      "core_fn": "store::catalog_read::list_tracks",
+      "data_dir": true,
+      "flags": [
+        {
+          "choices": [],
+          "default": null,
+          "help": "Data directory root (contract C4 §1's <data>); defaults to $IDL1_DATA_DIR",
+          "kind": "path",
+          "long": "data-dir",
+          "repeatable": false
+        },
+        {
+          "choices": [],
+          "default": null,
+          "help": "Emit the result as JSON on stdout (schema_version 1); errors become typed JSON on stderr",
+          "kind": null,
+          "long": "json",
+          "repeatable": false
+        }
+      ],
+      "help": "List the tracks in the library",
+      "id": "track.list",
+      "json_shape": "TrackSummary[]",
+      "noun": "track",
+      "status": "current",
+      "tier": "occasional",
+      "usage": "track list",
+      "verb": "list",
+      "writer": false
+    },
+    {
+      "args": [
+        {
+          "choices": [],
+          "help": "Session id, as `session list` prints it",
+          "kind": "text",
+          "name": "id",
+          "repeatable": false,
+          "required": true
+        }
+      ],
+      "core_fn": "store::lap_index::index_session_laps",
+      "data_dir": true,
+      "flags": [
+        {
+          "choices": [],
+          "default": null,
+          "help": "Data directory root (contract C4 §1's <data>); defaults to $IDL1_DATA_DIR",
+          "kind": "path",
+          "long": "data-dir",
+          "repeatable": false
+        },
+        {
+          "choices": [],
+          "default": null,
+          "help": "Report what would change and write nothing",
+          "kind": null,
+          "long": "dry-run",
+          "repeatable": false
+        },
+        {
+          "choices": [],
+          "default": null,
+          "help": "Emit the result as JSON on stdout (schema_version 1); errors become typed JSON on stderr",
+          "kind": null,
+          "long": "json",
+          "repeatable": false
+        }
+      ],
+      "help": "Re-detect track visits and laps for one session",
+      "id": "track.detect",
+      "json_shape": "LapIndexReport",
+      "noun": "track",
+      "status": "current",
+      "tier": "occasional",
+      "usage": "track detect <id>",
+      "verb": "detect",
+      "writer": true
+    },
+    {
+      "args": [],
+      "core_fn": "store::verify::verify",
+      "data_dir": true,
+      "flags": [
+        {
+          "choices": [],
+          "default": null,
+          "help": "Data directory root (contract C4 §1's <data>); defaults to $IDL1_DATA_DIR",
+          "kind": "path",
+          "long": "data-dir",
+          "repeatable": false
+        },
+        {
+          "choices": [],
+          "default": null,
+          "help": "Emit the result as JSON on stdout (schema_version 1); errors become typed JSON on stderr",
+          "kind": null,
+          "long": "json",
+          "repeatable": false
+        }
+      ],
+      "help": "Run contract C4 §7's checks against the data directory",
+      "id": "catalog.verify",
+      "json_shape": "Finding[]",
+      "noun": "catalog",
+      "status": "current",
+      "tier": "rare",
+      "usage": "catalog verify",
+      "verb": "verify",
+      "writer": false
+    },
+    {
+      "args": [],
+      "core_fn": "store::catalog::rebuild_catalog",
+      "data_dir": true,
+      "flags": [
+        {
+          "choices": [],
+          "default": null,
+          "help": "Data directory root (contract C4 §1's <data>); defaults to $IDL1_DATA_DIR",
+          "kind": "path",
+          "long": "data-dir",
+          "repeatable": false
+        },
+        {
+          "choices": [],
+          "default": null,
+          "help": "Report what would change and write nothing",
+          "kind": null,
+          "long": "dry-run",
+          "repeatable": false
+        },
+        {
+          "choices": [],
+          "default": null,
+          "help": "Emit the result as JSON on stdout (schema_version 1); errors become typed JSON on stderr",
+          "kind": null,
+          "long": "json",
+          "repeatable": false
+        }
+      ],
+      "help": "Rebuild the catalog index from the canonical files",
+      "id": "catalog.rebuild",
+      "json_shape": "RebuildReport",
+      "noun": "catalog",
+      "status": "current",
+      "tier": "rare",
+      "usage": "catalog rebuild",
+      "verb": "rebuild",
+      "writer": true
+    },
+    {
+      "args": [
+        {
+          "choices": [],
+          "help": "Folder to fold into the library",
+          "kind": "path",
+          "name": "folder",
+          "repeatable": false,
+          "required": true
+        }
+      ],
+      "core_fn": "store::import::import_file_path (per file)",
+      "data_dir": true,
+      "flags": [
+        {
+          "choices": [],
+          "default": null,
+          "help": "Delete each source file once its blob has verified in the store",
+          "kind": null,
+          "long": "move",
+          "repeatable": false
+        },
+        {
+          "choices": [],
+          "default": null,
+          "help": "Descend into sub-directories",
+          "kind": null,
+          "long": "recursive",
+          "repeatable": false
+        },
+        {
+          "choices": [],
+          "default": null,
+          "help": "Data directory root (contract C4 §1's <data>); defaults to $IDL1_DATA_DIR",
+          "kind": "path",
+          "long": "data-dir",
+          "repeatable": false
+        },
+        {
+          "choices": [],
+          "default": null,
+          "help": "Report what would change and write nothing",
+          "kind": null,
+          "long": "dry-run",
+          "repeatable": false
+        },
+        {
+          "choices": [],
+          "default": null,
+          "help": "Emit the result as JSON on stdout (schema_version 1); errors become typed JSON on stderr",
+          "kind": null,
+          "long": "json",
+          "repeatable": false
+        }
+      ],
+      "help": "Import every importable file in a folder",
+      "id": "library.foldIn",
+      "json_shape": "FoldInReport",
+      "noun": "library",
+      "status": "current",
+      "tier": "occasional",
+      "usage": "library fold-in <folder>",
+      "verb": "fold-in",
+      "writer": true
+    },
+    {
+      "args": [
+        {
+          "choices": [],
+          "help": "Folder to scan",
+          "kind": "path",
+          "name": "folder",
+          "repeatable": false,
+          "required": true
+        }
+      ],
+      "core_fn": "store::scan::scan_folder_with_blob_check",
+      "data_dir": true,
+      "flags": [
+        {
+          "choices": [],
+          "default": null,
+          "help": "Descend into sub-directories",
+          "kind": null,
+          "long": "recursive",
+          "repeatable": false
+        },
+        {
+          "choices": [],
+          "default": null,
+          "help": "Data directory root (contract C4 §1's <data>); defaults to $IDL1_DATA_DIR",
+          "kind": "path",
+          "long": "data-dir",
+          "repeatable": false
+        },
+        {
+          "choices": [],
+          "default": null,
+          "help": "Emit the result as JSON on stdout (schema_version 1); errors become typed JSON on stderr",
+          "kind": null,
+          "long": "json",
+          "repeatable": false
+        }
+      ],
+      "help": "Preview what folding a folder in would import",
+      "id": "library.scan",
+      "json_shape": "ScanReport",
+      "noun": "library",
+      "status": "current",
+      "tier": "occasional",
+      "usage": "library scan <folder>",
+      "verb": "scan",
+      "writer": false
+    },
+    {
+      "args": [],
+      "core_fn": "store::catalog_read::list_stale_sessions",
+      "data_dir": true,
+      "flags": [
+        {
+          "choices": [],
+          "default": null,
+          "help": "Data directory root (contract C4 §1's <data>); defaults to $IDL1_DATA_DIR",
+          "kind": "path",
+          "long": "data-dir",
+          "repeatable": false
+        },
+        {
+          "choices": [],
+          "default": null,
+          "help": "Emit the result as JSON on stdout (schema_version 1); errors become typed JSON on stderr",
+          "kind": null,
+          "long": "json",
+          "repeatable": false
+        }
+      ],
+      "help": "List sessions whose data.parquet predates this importer version",
+      "id": "library.stale",
+      "json_shape": "StaleSession[]",
+      "noun": "library",
+      "status": "current",
+      "tier": "rare",
+      "usage": "library stale",
+      "verb": "stale",
+      "writer": false
+    },
+    {
+      "args": [
+        {
+          "choices": [],
+          "help": "Session ids to index; with none, every session whose index is stale",
+          "kind": "text",
+          "name": "sessions",
+          "repeatable": true,
+          "required": false
+        }
+      ],
+      "core_fn": "store::index_job::run_index_job",
+      "data_dir": true,
+      "flags": [
+        {
+          "choices": [],
+          "default": null,
+          "help": "Consider every session, not only the stale ones",
+          "kind": null,
+          "long": "all",
+          "repeatable": false
+        },
+        {
+          "choices": [],
+          "default": null,
+          "help": "Recompute even where the stamps are already current",
+          "kind": null,
+          "long": "force",
+          "repeatable": false
+        },
+        {
+          "choices": [],
+          "default": null,
+          "help": "Pool width; defaults to physical cores minus one",
+          "kind": "integer",
+          "long": "workers",
+          "repeatable": false
+        },
+        {
+          "choices": [],
+          "default": null,
+          "help": "Data directory root (contract C4 §1's <data>); defaults to $IDL1_DATA_DIR",
+          "kind": "path",
+          "long": "data-dir",
+          "repeatable": false
+        },
+        {
+          "choices": [],
+          "default": null,
+          "help": "Report what would change and write nothing",
+          "kind": null,
+          "long": "dry-run",
+          "repeatable": false
+        },
+        {
+          "choices": [],
+          "default": null,
+          "help": "Emit the result as JSON on stdout (schema_version 1); errors become typed JSON on stderr",
+          "kind": null,
+          "long": "json",
+          "repeatable": false
+        }
+      ],
+      "help": "Detect track visits and laps for sessions whose index is missing or stale",
+      "id": "library.index",
+      "json_shape": "IndexJobReport",
+      "noun": "library",
+      "status": "current",
+      "tier": "occasional",
+      "usage": "library index [sessions]",
+      "verb": "index",
+      "writer": true
+    },
+    {
+      "args": [
+        {
+          "choices": [],
+          "help": "Session ids to rebuild; mutually exclusive with --all",
+          "kind": "text",
+          "name": "sessions",
+          "repeatable": true,
+          "required": false
+        }
+      ],
+      "core_fn": "store::import::reimport_session",
+      "data_dir": true,
+      "flags": [
+        {
+          "choices": [],
+          "default": null,
+          "help": "Rebuild every session `library stale` lists",
+          "kind": null,
+          "long": "all",
+          "repeatable": false
+        },
+        {
+          "choices": [],
+          "default": null,
+          "help": "Data directory root (contract C4 §1's <data>); defaults to $IDL1_DATA_DIR",
+          "kind": "path",
+          "long": "data-dir",
+          "repeatable": false
+        },
+        {
+          "choices": [],
+          "default": null,
+          "help": "Report what would change and write nothing",
+          "kind": null,
+          "long": "dry-run",
+          "repeatable": false
+        },
+        {
+          "choices": [],
+          "default": null,
+          "help": "Emit the result as JSON on stdout (schema_version 1); errors become typed JSON on stderr",
+          "kind": null,
+          "long": "json",
+          "repeatable": false
+        }
+      ],
+      "help": "Re-import listed sessions from their own blobs",
+      "id": "library.rebuild",
+      "json_shape": "RebuildSessionsReport",
+      "noun": "library",
+      "status": "current",
+      "tier": "occasional",
+      "usage": "library rebuild [sessions]",
+      "verb": "rebuild",
+      "writer": true
+    },
+    {
+      "args": [],
+      "core_fn": "docs::render_workbook_reference",
+      "data_dir": false,
+      "flags": [
+        {
+          "choices": [],
+          "default": null,
+          "help": "File to write; overwritten wholesale",
+          "kind": "path",
+          "long": "out",
+          "repeatable": false
+        },
+        {
+          "choices": [],
+          "default": null,
+          "help": "Directory of curated Markdown sections",
+          "kind": "path",
+          "long": "src",
+          "repeatable": false
+        },
+        {
+          "choices": [],
+          "default": null,
+          "help": "Report what would change and write nothing",
+          "kind": null,
+          "long": "dry-run",
+          "repeatable": false
+        },
+        {
+          "choices": [],
+          "default": null,
+          "help": "Emit the result as JSON on stdout (schema_version 1); errors become typed JSON on stderr",
+          "kind": null,
+          "long": "json",
+          "repeatable": false
+        }
+      ],
+      "help": "Regenerate the workbook reference from the engine's own catalogs",
+      "id": "docs.workbook",
+      "json_shape": null,
+      "noun": "docs",
+      "status": "current",
+      "tier": "rare",
+      "usage": "docs workbook",
+      "verb": "workbook",
+      "writer": true
+    },
+    {
+      "args": [],
+      "core_fn": "commands::markdown::render_command_reference",
+      "data_dir": false,
+      "flags": [
+        {
+          "choices": [],
+          "default": null,
+          "help": "File to write; stdout when omitted",
+          "kind": "path",
+          "long": "out",
+          "repeatable": false
+        },
+        {
+          "choices": [],
+          "default": null,
+          "help": "Report what would change and write nothing",
+          "kind": null,
+          "long": "dry-run",
+          "repeatable": false
+        },
+        {
+          "choices": [],
+          "default": null,
+          "help": "Emit the result as JSON on stdout (schema_version 1); errors become typed JSON on stderr",
+          "kind": null,
+          "long": "json",
+          "repeatable": false
+        }
+      ],
+      "help": "Emit this command table as Markdown, or as JSON with --json",
+      "id": "docs.cli",
+      "json_shape": "CommandTable",
+      "noun": "docs",
+      "status": "current",
+      "tier": "rare",
+      "usage": "docs cli",
+      "verb": "cli",
+      "writer": true
+    }
+  ],
+  "nouns": [
+    "session",
+    "workbook",
+    "track",
+    "catalog",
+    "library",
+    "device",
+    "docs"
+  ],
+  "schema_version": 1,
+  "verbs": [
+    "list",
+    "show",
+    "new",
+    "check",
+    "eval",
+    "set",
+    "import",
+    "export",
+    "scan",
+    "fold-in",
+    "index",
+    "rebuild",
+    "verify",
+    "delete"
+  ],
+  "verbs_ruled": [
+    {
+      "ruling": "R229",
+      "verb": "set-start"
+    },
+    {
+      "ruling": "R229",
+      "verb": "set-meta"
+    },
+    {
+      "ruling": "R229",
+      "verb": "cells"
+    },
+    {
+      "ruling": "R229",
+      "verb": "data"
+    },
+    {
+      "ruling": "R229",
+      "verb": "detect"
+    },
+    {
+      "ruling": "R229",
+      "verb": "laps"
+    },
+    {
+      "ruling": "R197",
+      "verb": "stale"
+    },
+    {
+      "ruling": "R222",
+      "verb": "workbook"
+    },
+    {
+      "ruling": "R230 item 2",
+      "verb": "cli"
+    }
+  ]
+}

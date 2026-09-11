@@ -6,6 +6,30 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 
 ### Added
 
+- **One command table behind the CLI [docs] (2026-09-11, rulings R229 and
+  R230).** `idl-rs` now speaks `idl-rs <noun> <verb>` over closed
+  vocabularies, and every command is declared exactly once, as a row in
+  `idl_rs::commands::table`. The clap subcommand tree, the generated
+  reference and the app's checked-in copy of the table are all built from
+  those rows, so adding a command is one row plus one core function and
+  there is no CLI-only logic to drift. New verbs: `session list`, `show`,
+  `laps`, `set-start`, `set-meta`, `import`; `workbook new`, `check`,
+  `cells`, `eval`, `data`, `export`; `track list`, `detect`;
+  `catalog verify`, `rebuild`; `docs cli`. `library` and `docs workbook`
+  moved onto the generated tree with their renderers untouched. Every
+  command takes `--json` (one envelope carrying `schema_version: 1`, errors
+  typed on stderr), every command that works against a data directory takes
+  `--data-dir` and honours `IDL1_DATA_DIR`, every writer takes `--dry-run`,
+  and the exit code is 0, 1 or 2. The pre-existing noun-less verbs still
+  run; the seven a new row supersedes print a one-line notice to stderr
+  naming the replacement, so a script's stdout is unchanged. A test in each
+  repo checks that the engine's table and the app's `commandTiers.ts` agree
+  on the ids they both name — it caught the two they disagreed on. Contract
+  C6 (`docs/superpowers/specs/2026-09-11-idl1-c6-cli.md`) and the generated
+  `docs/CLI-REFERENCE.md` are new. `workbook export --report` is not
+  implemented: the HTML report renderer is TypeScript and needs sandbox
+  output, so `md` and `json` are the formats, and C6 §5 records the gap.
+
 - **Prose is edited where it is read [docs] (2026-09-11, ruling R226).**
   A notebook's text could only be changed from the code column. Clicking a
   rendered prose block — or pressing Enter with it focused — now replaces
