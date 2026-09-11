@@ -24,7 +24,7 @@ describe("settingsBackend — read()", () => {
       serializePrefs(parsePrefs({ engine: { rider_name: "stale" }, ui: { last_section: "sync", section_list_width_px: 260 } })),
     );
     const deps = fakeDeps({
-      getSettings: () => Promise.resolve({ data_dir: null, rider_name: "Isaac", unit_system: "metric" }),
+      getSettings: () => Promise.resolve({ data_dir: null, rider_name: "Isaac", unit_system: "metric", agent_command: "claude" }),
       local,
     });
     const backend = settingsBackend(deps);
@@ -113,7 +113,7 @@ describe("settingsBackend — write()", () => {
     // Arrange
     const setSettings = vi.fn((settings: EngineSettings) => Promise.resolve(settings));
     const deps = fakeDeps({
-      getSettings: () => Promise.resolve({ data_dir: "D:\\race-data", rider_name: "", unit_system: "imperial" }),
+      getSettings: () => Promise.resolve({ data_dir: "D:\\race-data", rider_name: "", unit_system: "imperial", agent_command: "claude" }),
       setSettings,
     });
     const backend = settingsBackend(deps);
@@ -121,11 +121,11 @@ describe("settingsBackend — write()", () => {
 
     // Act
     await backend.write(
-      serializePrefs(parsePrefs({ engine: { rider_name: "Isaac", unit_system: "metric" }, ui: DEFAULT_PREFS.ui })),
+      serializePrefs(parsePrefs({ engine: { rider_name: "Isaac", unit_system: "metric", agent_command: "claude" }, ui: DEFAULT_PREFS.ui })),
     );
 
     // Assert
-    expect(setSettings).toHaveBeenCalledWith({ data_dir: "D:\\race-data", rider_name: "Isaac", unit_system: "metric" });
+    expect(setSettings).toHaveBeenCalledWith({ data_dir: "D:\\race-data", rider_name: "Isaac", unit_system: "metric", agent_command: "claude" });
   });
 
   it("write() also persists the whole document locally", async () => {
@@ -139,7 +139,7 @@ describe("settingsBackend — write()", () => {
       serializePrefs(
         parsePrefs({
           future_top_level: "kept",
-          engine: { rider_name: "Isaac", unit_system: "metric" },
+          engine: { rider_name: "Isaac", unit_system: "metric", agent_command: "claude" },
           ui: { last_section: "sync", section_list_width_px: 260 },
         }),
       ),
@@ -166,7 +166,7 @@ describe("settingsBackend — write()", () => {
       }),
     );
     const deps = fakeDeps({
-      getSettings: () => Promise.resolve({ data_dir: null, rider_name: "Isaac", unit_system: "imperial" }),
+      getSettings: () => Promise.resolve({ data_dir: null, rider_name: "Isaac", unit_system: "imperial", agent_command: "claude" }),
       local,
     });
     const backend = settingsBackend(deps);
@@ -210,7 +210,7 @@ describe("settingsBackend — through createPrefsStore", () => {
     const writerStore = createPrefsStore(settingsBackend({ getSettings, setSettings, local }));
 
     // Act
-    await writerStore.set({ engine: { data_dir: null, rider_name: "Isaac", unit_system: "metric" } });
+    await writerStore.set({ engine: { data_dir: null, rider_name: "Isaac", unit_system: "metric", agent_command: "claude" } });
     const readerStore = createPrefsStore(settingsBackend({ getSettings, setSettings, local }));
     const prefs = await readerStore.get();
 

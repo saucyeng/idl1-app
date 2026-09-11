@@ -10,6 +10,10 @@ export interface AppSettings {
   rider_name: string;
   /** Engine default "imperial" */
   unit_system: "imperial" | "metric";
+  /** The command "Ask an agent" spawns in the user's terminal (C3 §3.10,
+   *  ruling R222 item 3). A program name resolved on `PATH`, or an
+   *  absolute path — never a shell line. Engine default `"claude"`. */
+  agent_command: string;
 }
 
 /** Reads persisted app settings (C3 §3.10). Never fails — a missing or
@@ -18,7 +22,7 @@ export async function getSettings(): Promise<AppSettings> {
   return invoke<AppSettings>("get_settings");
 }
 
-/** Persists `rider_name`/`unit_system` (C3 §3.10). `settings.data_dir` is
+/** Persists `rider_name`/`unit_system`/`agent_command` (C3 §3.10). `settings.data_dir` is
  *  present on the wire for symmetry but ignored — `setDataDir` is the sole
  *  writer of that key (ruling R59 Q5). Returns the state actually on disk
  *  after the write. */

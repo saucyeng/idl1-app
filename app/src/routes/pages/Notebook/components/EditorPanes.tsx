@@ -4,6 +4,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import type { CellKindToken } from "../model/cells";
 import { editorContentFor } from "../model/editorContent";
 import { isEditorEcho } from "../model/editorEcho";
+import CodeColumnActions from "./CodeColumnActions";
 import CodePane from "./CodePane";
 import PropertiesForm from "./PropertiesForm";
 import WorkbookCodePane from "./WorkbookCodePane";
@@ -11,6 +12,9 @@ import type { PropertiesFormChannelOption, PropertiesFormLapOption } from "./Pro
 
 /** Props for {@link EditorPanes}. */
 export interface EditorPanesProps {
+  /** The open workbook's id, handed to "Ask an agent" as context (ruling
+   *  R222 item 3). `undefined` while no workbook is chosen. */
+  workbook?: string;
   /** The currently open cell's id (C2 fence-string id), or `null` when no
    *  cell is selected — the whole-workbook code pane (R214 item 3) still
    *  has a document to show, so this component no longer requires an open
@@ -147,6 +151,7 @@ function CellIdentityBar({ cellId, displayName, renameable, onRename }: { cellId
  * back into Code. Both directions should each show exactly one write.
  */
 export default function EditorPanes({
+  workbook,
   cellId,
   kind,
   code,
@@ -204,6 +209,7 @@ export default function EditorPanes({
   if (kind === null || code === null || editorContentFor(kind) === "code") {
     return (
       <div className="editor-panes flex h-full flex-col" data-cell-id={cellId ?? undefined}>
+        <CodeColumnActions workbook={workbook} />
         {identityBar}
         {codeElement}
       </div>
@@ -212,6 +218,7 @@ export default function EditorPanes({
 
   return (
     <Tabs defaultValue="properties" className="editor-panes flex h-full flex-col" data-cell-id={cellId ?? undefined}>
+      <CodeColumnActions workbook={workbook} />
       {identityBar}
       <TabsList>
         <TabsTrigger value="properties">Properties</TabsTrigger>

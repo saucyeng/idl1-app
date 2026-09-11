@@ -5,6 +5,8 @@ import { codeFolding, foldGutter, foldKeymap, foldService, syntaxHighlighting } 
 import { EditorState, StateEffect, StateField } from "@codemirror/state";
 import { Decoration, EditorView, keymap, lineNumbers, type DecorationSet } from "@codemirror/view";
 
+import { openDocs } from "../../../../shell/docsPanelStore";
+import { builtinDocAt, builtinHover } from "../editor/builtinDocs";
 import { brandEditorTheme, brandHighlightStyle } from "../editor/cmTheme";
 import { completionExtension, workbookLanguage } from "../editor/idl1Language";
 import { cellIdAtOffset, documentCellRanges, rangeForCell } from "../model/documentRanges";
@@ -143,7 +145,23 @@ export default function WorkbookCodePane({ markdown, selectedCellId, onSelectCel
         bandTheme,
         syntaxHighlighting(brandHighlightStyle(read)),
         brandEditorTheme(read),
+        // `F1` on a builtin opens its entry in the Docs panel, and hovering
+        // one shows its catalog line (ruling R222 item 2) -- the same two
+        // extensions `CodePane` carries, since this pane is the code column
+        // wherever there is room for the whole document.
+        keymap.of([
+          {
+            key: "F1",
+            preventDefault: true,
+            run: (view) => {
+              const doc = builtinDocAt(view.state.doc.toString(), view.state.selection.main.head);
+              openDocs(doc?.doc_anchor ?? null);
+              return true;
+            },
+          },
+        ]),
         keymap.of([...defaultKeymap, ...historyKeymap, ...foldKeymap]),
+        builtinHover(),
         completionExtension(channelIdsRef, definitionNamesRef),
         workbookLanguage(),
         EditorView.updateListener.of((update) => {

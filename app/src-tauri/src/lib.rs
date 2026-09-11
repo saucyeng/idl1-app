@@ -40,6 +40,7 @@ pub fn run() {
                 }
                 Err(e) => panic!("resolving <data>: {e:?}"),
             };
+            let agents_md_root = data_dir.clone();
             app.manage(idl_rs_tauri::state::DataDir(data_dir.clone()));
             app.manage(idl_rs_tauri::state::Hashes(std::sync::Arc::new(idl_rs_tauri::watcher::ExpectedHashSet::new())));
             app.manage(idl_rs_tauri::state::Watchers(std::sync::Mutex::new(std::collections::HashMap::new())));
@@ -105,6 +106,19 @@ pub fn run() {
                 .unwrap_or_else(|e| panic!("starting sync: {e:?}"));
                 app.manage(sync_state);
             }
+            // `<data>/AGENTS.md` (ruling R222 item 4): written on first
+            // launch and rewritten when the app version changes, so an
+            // agent started by "Ask an agent" always finds a description
+            // of the library it is actually looking at. Not started when
+            // the data root is missing -- writing a file into a folder the
+            // user never chose is exactly what the launch gate exists to
+            // prevent. A failure is logged, never fatal: the library opens
+            // fine without it.
+            if !missing_root {
+                let version = app.package_info().version.to_string();
+                idl_rs_tauri::commands::docs::ensure_agents_md_at_launch(&agents_md_root, &version);
+            }
+
             // Updater (ruling R231): registered only when the app was built
             // with a real signing pubkey and is not the dev identifier. The
             // schema has no `plugins.updater.active` switch (checked against
@@ -138,6 +152,7 @@ pub fn run() {
             Ok(())
         })
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_process::init())
         .invoke_handler(idl_rs_tauri::handler())
         .run(tauri::generate_context!())

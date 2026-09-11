@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -14,13 +14,16 @@ import {
 } from "./moveLibrary";
 import type { PrefsStore } from "./prefsStore";
 
+/** How long typing in the agent-command field pauses before the value is
+ *  written to `store`, matching `ProfileSection`'s own field debounce so no
+ *  keystroke triggers a settings write. */
+const AGENT_COMMAND_DEBOUNCE_MS = 500;
+
 /** Props for {@link DataSection}. Follows {@link ProfileSection}'s
- *  `{ store: PrefsStore }` shape for consistency across sections, even
- *  though this section's main content comes from `getDataDir`/`setDataDir`
- *  rather than `store`. */
+ *  `{ store: PrefsStore }` shape for consistency across sections. */
 export interface DataSectionProps {
-  /** Unused by this section's own content; kept for prop-shape consistency
-   *  with the other sections. */
+  /** The prefs store the agent-command field reads from and writes to; the
+   *  rest of this section comes from `getDataDir`/`setDataDir`. */
   store: PrefsStore;
 }
 
@@ -52,8 +55,6 @@ function describeDataDirError(error: unknown): string {
  *  changing where a user's whole data store lives is not a field that saves
  *  on blur. */
 export default function DataSection({ store }: DataSectionProps) {
-  void store;
-
   const [info, setInfo] = useState<DataDirInfo | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [overrideInput, setOverrideInput] = useState<string>("");
@@ -68,6 +69,36 @@ export default function DataSection({ store }: DataSectionProps) {
   const [moving, setMoving] = useState<boolean>(false);
   const [moveResult, setMoveResult] = useState<string | null>(null);
   const [moveError, setMoveError] = useState<string | null>(null);
+  /** The program "Ask an agent" spawns (ruling R222 item 3). It lives in
+   *  this section rather than Profile because the terminal it opens is
+   *  opened *in the library*, which is what this section is about. */
+  const [agentCommand, setAgentCommand] = useState<string>("");
+  const [agentWriteFailed, setAgentWriteFailed] = useState<boolean>(false);
+  const agentTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+
+  useEffect(() => {
+    let cancelled = false;
+    void store.get().then((prefs) => {
+      if (!cancelled) setAgentCommand(prefs.engine.agent_command);
+    });
+    return () => {
+      cancelled = true;
+      if (agentTimerRef.current !== undefined) clearTimeout(agentTimerRef.current);
+    };
+  }, [store]);
+
+  function handleAgentCommandChange(value: string): void {
+    setAgentCommand(value);
+    setAgentWriteFailed(false);
+    if (agentTimerRef.current !== undefined) clearTimeout(agentTimerRef.current);
+    agentTimerRef.current = setTimeout(() => {
+      void store.get().then((current) =>
+        store.set({ engine: { ...current.engine, agent_command: value } }).then((result) => {
+          if (!result.ok) setAgentWriteFailed(true);
+        })
+      );
+    }, AGENT_COMMAND_DEBOUNCE_MS);
+  }
 
   useEffect(() => {
     let cancelled = false;
@@ -239,6 +270,29 @@ export default function DataSection({ store }: DataSectionProps) {
         ) : null}
         {moveResult ? <p className="font-mono text-xs text-fg">{moveResult}</p> : null}
         {moveError ? <p className="font-mono text-xs text-brand-accent">{moveError}</p> : null}
+      </div>
+
+      <div className="mt-2 flex flex-col gap-2 border-t border-rule pt-3">
+        <label htmlFor="idl1-settings-agent-command" className="font-mono text-xs uppercase tracking-[var(--tracking-label)] text-fg-dim">
+          Agent command
+        </label>
+        <Input
+          id="idl1-settings-agent-command"
+          type="text"
+          className="max-w-sm"
+          value={agentCommand}
+          onChange={(event) => handleAgentCommandChange(event.target.value)}
+          placeholder="claude"
+        />
+        <p className="font-mono text-xs text-fg-faint">
+          The program “Ask an agent” starts in a terminal opened in this library. A program name found on your PATH, or
+          a full path to one — not a command line, and not arguments.
+        </p>
+        {agentWriteFailed ? (
+          <p role="status" className="font-mono text-xs text-brand-accent">
+            The agent command could not be saved.
+          </p>
+        ) : null}
       </div>
     </div>
   );

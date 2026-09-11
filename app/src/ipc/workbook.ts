@@ -226,6 +226,22 @@ export interface MathBuiltinDto {
    *  `["variance_time"]` for `lap_delta_time` — `[]` for every function
    *  nothing was ever renamed from (ledger R157, scipy-alignment lane). */
   renamed_from: string[];
+  /** C2 §3.3's Category column — how the generated reference groups the
+   *  entry (ruling R222 items 1-2). */
+  category: string;
+  /** The call form(s) as a human reads them. */
+  signature: string;
+  /** How the output unit is derived from the arguments' units (C2 §3.3.1). */
+  unit_rule: string;
+  /** The result's value shape in C2 §3.6's vocabulary. */
+  shape: string;
+  /** One line saying what the builtin computes. */
+  description: string;
+  /** One runnable example call. */
+  example: string;
+  /** This builtin's anchor in the bundled `WORKBOOK-REFERENCE.md`, so the
+   *  Docs panel can scroll to it without reimplementing the slug rule. */
+  doc_anchor: string;
 }
 
 /** Opens a workbook by id or path (C3 §3.4). */

@@ -217,6 +217,27 @@ export function brandEditorTheme(read: CssVarReader): Extension {
         backgroundColor: controlActive,
         outline: `1px solid ${rule}`,
       },
+      // The builtin hover (ruling R222 item 2). Themed here with the rest
+      // of the editor's chrome rather than in a stylesheet, so it takes the
+      // same resolved tokens the surrounding editor took.
+      ".cm-tooltip": {
+        backgroundColor: surface2,
+        border: `1px solid ${rule}`,
+        color: fg,
+      },
+      ".cm-builtin-tooltip": {
+        display: "flex",
+        flexDirection: "column",
+        gap: "2px",
+        maxWidth: "42ch",
+        padding: "6px 8px",
+      },
+      ".cm-builtin-tooltip-signature": {
+        fontFamily: fontMono,
+      },
+      ".cm-builtin-tooltip-description, .cm-builtin-tooltip-unit, .cm-builtin-tooltip-hint": {
+        opacity: "0.75",
+      },
     },
     { dark: true },
   );

@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useRef } from "react";
 import type { KeyboardEvent as ReactKeyboardEvent, PointerEvent as ReactPointerEvent } from "react";
-import { PanelLeftClose } from "lucide-react";
+import { BookOpen, PanelLeftClose } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 import { ROUTES, type RouteId } from "../routes/types";
+import DocsPanel from "./DocsPanel";
+import { useDocsPanel } from "./docsPanelStore";
 import { setSidebarSlotNode } from "./sidebarSlot";
 import { clampSidebarWidth, SIDEBAR_MAX_WIDTH_PX, SIDEBAR_MIN_WIDTH_PX } from "./sidebarPrefs";
 
@@ -116,12 +118,21 @@ export default function Sidebar({
   );
 
   const activeLabel = ROUTES.find((route) => route.id === activeRoute)?.label ?? "";
+  // The Docs panel takes the sidebar's content area while it is open
+  // (ruling R222 item 2). The route panels stay mounted and hidden beneath
+  // it, so closing Docs returns each list with its scroll position and
+  // selection intact -- the same reason they are hidden rather than
+  // unmounted on an activity switch.
+  const docs = useDocsPanel();
 
   return (
     <div className="shell-chrome flex shrink-0" style={{ width: `${widthPx}px` }}>
       <div className="flex min-w-0 flex-1 flex-col bg-surface">
         <div className="flex h-[var(--shell-status-bar-h)] shrink-0 items-center justify-between gap-2 pr-1 pl-3">
-          <h2 className="truncate font-mono text-label-2 tracking-[var(--tracking-label)] text-fg-dim uppercase">{activeLabel}</h2>
+          <h2 className="flex min-w-0 items-center gap-1.5 truncate font-mono text-label-2 tracking-[var(--tracking-label)] text-fg-dim uppercase">
+            {docs.open && <BookOpen aria-hidden size={12} strokeWidth={1.5} />}
+            {docs.open ? "Workbook reference" : activeLabel}
+          </h2>
           <button
             type="button"
             onClick={onCollapse}
@@ -134,8 +145,9 @@ export default function Sidebar({
         </div>
         <div className="min-h-0 flex-1">
           {ROUTES.map((route) => (
-            <SidebarPanel key={route.id} route={route.id} active={route.id === activeRoute} />
+            <SidebarPanel key={route.id} route={route.id} active={!docs.open && route.id === activeRoute} />
           ))}
+          {docs.open && <DocsPanel />}
         </div>
       </div>
       <div

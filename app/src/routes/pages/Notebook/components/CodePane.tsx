@@ -7,7 +7,9 @@ import { EditorView, keymap, lineNumbers } from "@codemirror/view";
 
 import { useCommand } from "../../../../shell/commandRegistry";
 import { MENU_COMMAND_IDS } from "../../../../shell/menuModel";
+import { openDocs } from "../../../../shell/docsPanelStore";
 
+import { builtinDocAt, builtinHover } from "../editor/builtinDocs";
 import { brandEditorTheme, brandHighlightStyle } from "../editor/cmTheme";
 import { completionExtension, languageFor } from "../editor/idl1Language";
 import { documentVars } from "../theme/series";
@@ -109,7 +111,27 @@ export default function CodePane({ kind, code, onChange, channelIds, definitionN
         history(),
         syntaxHighlighting(brandHighlightStyle(read)),
         brandEditorTheme(read),
+        // `F1` opens the bundled reference in the sidebar, scrolled to the
+        // builtin under the caret when there is one and to the top of the
+        // document otherwise (ruling R222 item 2). Bound before the default
+        // keymap so nothing downstream claims the key.
+        keymap.of([
+          {
+            key: "F1",
+            preventDefault: true,
+            run: (view) => {
+              const doc = builtinDocAt(view.state.doc.toString(), view.state.selection.main.head);
+              openDocs(doc?.doc_anchor ?? null);
+              return true;
+            },
+          },
+        ]),
         keymap.of([...defaultKeymap, ...historyKeymap]),
+        // Hover help on a builtin's name. Added for every cell kind rather
+        // than only `math`: a `js` cell names the same functions in its
+        // prose and comments, and a hover that only sometimes works is a
+        // worse rule than one that always does.
+        builtinHover(),
         completionExtension(channelIdsRef, definitionNamesRef),
         languageFor(kind),
         EditorView.updateListener.of((update) => {
