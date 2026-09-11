@@ -23,6 +23,11 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 idl-rs-tauri = { path = "../../rust/tauri" }
 tauri-plugin-dialog = "2.7.3"
+# Registered so `idl-rs-tauri`'s `open_agent_terminal` can reach the plugin's
+# Rust API (ruling R222 item 3). The webview is granted no shell permission
+# in `capabilities/default.json`, so nothing in the frontend can spawn a
+# process -- only that one command, with the program Settings names.
+tauri-plugin-shell = "2.3.1"
 tauri-plugin-updater = "2.11.0"
 tauri-plugin-process = "2.3.1"
 

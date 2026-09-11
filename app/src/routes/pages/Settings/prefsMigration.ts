@@ -91,6 +91,9 @@ export function migrationPlan(
       data_dir: engineOnDisk.data_dir,
       rider_name: importRiderName ? localEngine.rider_name : engineOnDisk.rider_name,
       unit_system: importUnitSystem ? localEngine.unit_system : engineOnDisk.unit_system,
+      // Not an idl0 preference — there was no agent command to migrate, so
+      // whatever is on disk is carried through untouched.
+      agent_command: engineOnDisk.agent_command,
     },
     skipped,
     reason: "importing the engine fields still at their default on disk",
@@ -167,7 +170,13 @@ export async function runPrefsMigration(deps: PrefsMigrationDeps): Promise<Migra
   try {
     const parsedLocal = parsePrefs(JSON.parse(localDocument as string));
     const { engine: _engine, ...rest } = parsedLocal;
-    const { data_dir: _dataDir, rider_name: _riderName, unit_system: _unitSystem, ...unknownEngineKeys } =
+    const {
+      data_dir: _dataDir,
+      rider_name: _riderName,
+      unit_system: _unitSystem,
+      agent_command: _agentCommand,
+      ...unknownEngineKeys
+    } =
       parsedLocal.engine as unknown as Record<string, unknown>;
     const rewritten = Object.keys(unknownEngineKeys).length > 0 ? { ...rest, engine: unknownEngineKeys } : rest;
     await deps.writeLocal(JSON.stringify(rewritten));

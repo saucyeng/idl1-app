@@ -58,6 +58,14 @@ jobs:
         working-directory: rust
         run: cargo test -p idl-transport -- --test-threads=4
 
+      - name: Workbook reference is up to date
+        # The reference is generated from the engine's own catalogs (ruling
+        # R222 item 1), so a builtin added or renamed without regenerating it
+        # would ship a reference that lies. Regenerate and fail on any diff.
+        run: |
+          cargo run --manifest-path rust/Cargo.toml -p idl-rs-cli --             docs workbook --out docs/WORKBOOK-REFERENCE.md --src docs/reference-src
+          git diff --exit-code -- docs/WORKBOOK-REFERENCE.md
+
       - name: cargo check app crate (app/src-tauri)
         # The Tauri app crate is compiled by nobody but `tauri dev/build`, so a
         # lane can land a type error here that every crate gate misses (R199).

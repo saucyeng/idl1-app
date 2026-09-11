@@ -11,6 +11,10 @@ export interface EnginePrefs {
   rider_name: string;
   /** Unit system used across the app. Engine default is `"imperial"`. */
   unit_system: "imperial" | "metric";
+  /** The command "Ask an agent" spawns in the user's terminal (ruling R222
+   *  item 3). A program name resolved on `PATH`, or an absolute path —
+   *  never a shell line, and never arguments. Engine default `"claude"`. */
+  agent_command: string;
 }
 
 /** The UI-only half — never leaves this machine, never reaches the engine. */
@@ -68,6 +72,7 @@ export const DEFAULT_PREFS: Prefs = {
     data_dir: null,
     rider_name: "",
     unit_system: "imperial",
+    agent_command: "claude",
   },
   ui: {
     last_section: "profile",
@@ -92,13 +97,14 @@ function asRecord(raw: unknown): Record<string, unknown> | undefined {
 }
 
 /** Parses the `engine` half, keeping any unknown sibling keys the raw object
- *  carries (a newer app version's fields) alongside the three typed ones. */
+ *  carries (a newer app version's fields) alongside the typed ones. */
 function parseEngine(raw: unknown): EnginePrefs {
   const record = asRecord(raw) ?? {};
   const dataDir = typeof record.data_dir === "string" ? record.data_dir : DEFAULT_PREFS.engine.data_dir;
   const riderName = typeof record.rider_name === "string" ? record.rider_name : DEFAULT_PREFS.engine.rider_name;
   const unitSystem = record.unit_system === "metric" ? "metric" : record.unit_system === "imperial" ? "imperial" : DEFAULT_PREFS.engine.unit_system;
-  return { ...record, data_dir: dataDir, rider_name: riderName, unit_system: unitSystem } as EnginePrefs;
+  const agentCommand = typeof record.agent_command === "string" ? record.agent_command : DEFAULT_PREFS.engine.agent_command;
+  return { ...record, data_dir: dataDir, rider_name: riderName, unit_system: unitSystem, agent_command: agentCommand } as EnginePrefs;
 }
 
 /** Parses the `ui` half, keeping any unknown sibling keys. */

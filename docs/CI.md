@@ -8,9 +8,33 @@ Runs on every push to `main` and on manual dispatch. Two jobs, both
 - `rust` — checks out the `rust` submodule, installs Tauri v2's Linux build
   deps, then runs three separate `cargo test` steps (idl-rs + idl-rs-cli,
   idl-rs-tauri, idl-transport), each `--test-threads=4`. Never `--workspace`.
+  It then regenerates `docs/WORKBOOK-REFERENCE.md` with
+  `idl-rs docs workbook` and runs `git diff --exit-code` over it, and
+  finishes with `cargo check -p app`.
 - `app` — `npm ci`, `tsc --noEmit`, `vitest run` in `app/`.
 
 Concurrency: one run per ref, newer pushes cancel in-flight ones.
+
+## The generated workbook reference
+
+`docs/WORKBOOK-REFERENCE.md` is generated in part: its math-builtin sections
+and its retired-name table come from `idl-rs`'s own catalogs
+(`core/src/math/catalog.rs` and `core/src/math/alias.rs`), and the prose
+sections after them are the files in `docs/reference-src/`, appended in
+filename order. Regenerate it with:
+
+    cargo run --manifest-path rust/Cargo.toml -p idl-rs-cli --       docs workbook --out docs/WORKBOOK-REFERENCE.md --src docs/reference-src
+
+CI runs exactly that and then `git diff --exit-code`, so a lane that adds,
+renames or re-documents a builtin and forgets to regenerate fails the build
+rather than shipping a reference that disagrees with the engine (ruling R222
+item 1). The renderer writes LF line endings on every platform and reads the
+curated files with CRLF normalised, so a Windows-generated file and the
+Linux CI run produce identical bytes.
+
+The same file is bundled into the app as a Tauri resource
+(`bundle.resources` in `app/src-tauri/tauri.conf.json`) and read at runtime
+by `read_workbook_reference` for the Docs panel.
 
 ## `android-apk.yml`
 

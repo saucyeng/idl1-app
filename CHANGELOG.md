@@ -171,6 +171,30 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
   the three new types has its own pictogram in the chart picker, its own
   Properties section and its own migration rule from an idl0 sheet.
 
+- **[docs] A reference for the workbook language, in the app and in the
+  repository (2026-09-11, ruling R222).** `docs/WORKBOOK-REFERENCE.md` lists
+  every math function with its signature, unit rule, shape and an example,
+  plus the annotations a definition takes, the variables a `js` cell is
+  given, the chart grammar, and the names that have been retired. The
+  function half is generated from the engine itself by `idl-rs docs
+  workbook`, and a CI job regenerates it and fails the build if the
+  committed file has drifted, so it cannot quietly go out of date. The same
+  file ships inside the app: a Docs button in the code column, or `F1`,
+  opens it in the side panel with a search box, and `F1` on a function name
+  lands on that function's entry. Hovering a function name in the editor
+  shows its signature, unit rule and one-line description without leaving
+  the code.
+
+- **[docs] Ask an agent (2026-09-11, ruling R222).** A button in the code
+  column, in the Data tab's session detail and in the status bar opens a
+  terminal in your library, running the coding agent you name under
+  Settings ▸ Data ▸ Agent command (`claude` by default), already told which
+  session or workbook you were looking at. The library also gains an
+  `AGENTS.md` describing its folders, the command-line verbs and the rules
+  an agent must not break; it is written on first launch and refreshed when
+  the app is updated. Windows is the tested platform; macOS and Linux are
+  written but untested.
+
 - **[docs] Release pipeline (2026-09-11, ruling R224).** `release.yml`
   builds Windows and Linux installers on a `v*` tag push and opens a draft
   GitHub Release; see `docs/RELEASING.md` for how to cut one.

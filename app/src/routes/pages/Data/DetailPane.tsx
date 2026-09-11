@@ -9,6 +9,7 @@ import { Input } from "../../../components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader as BrandTableHeader, TableRow } from "../../../components/ui/table";
 import { listTracks, type SessionDetail, type TrackSummary } from "../../../ipc/catalog";
 import { setSessionStart } from "../../../ipc/library";
+import AskAnAgentButton from "../../../shell/AskAnAgentButton";
 import type { SelectionWindow } from "../../../state/selection";
 import { ColourPicker } from "@/components/ui/colour-picker";
 import { describeIpcError } from "./errors";
@@ -176,6 +177,9 @@ export function DetailPane({ view, detail, lapsErrorText, selection, onWindowsCh
           {view.venue} · {view.eventName === "" ? "—" : view.eventName}
         </h2>
         <div className="flex items-center gap-2">
+          {/* Ruling R222 item 3's second placement: the agent is told which
+              session the user was looking at when they asked. */}
+          <AskAnAgentButton variant="icon" context={{ session_id: detail.session_id }} />
           {sessionWindowIndex !== -1 && (
             <ColourPicker
               label="Session colour"

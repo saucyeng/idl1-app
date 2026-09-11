@@ -23,7 +23,7 @@ describe("setSettings", () => {
   it("set_settings resolves — calls invoke with the settings argument and returns the value unchanged", async () => {
     // Arrange
     const { invoke } = await import("@tauri-apps/api/core");
-    const settings = { data_dir: null, rider_name: "Isaac", unit_system: "metric" as const };
+    const settings = { data_dir: null, rider_name: "Isaac", unit_system: "metric" as const, agent_command: "claude" };
     (invoke as ReturnType<typeof vi.fn>).mockResolvedValue(settings);
     const { setSettings } = await import("./app");
 
