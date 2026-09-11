@@ -22,12 +22,24 @@ the plot so the plot is as big as possible".
    Known cost, accepted: Windows Snap Layouts on hover of the maximize button are lost with
    custom decorations; note it in CHANGELOG. macOS/Linux keep native decorations until a
    platform lane (`#[cfg]`/conf overlay) tests them; do not break them.
-2. **Plot chrome merges into the plot.** A chart cell's frame (the "JS 01 · Settled · Show
-   code" strip) disappears as a row: the cell id and "Show code" become a hover/selection
-   overlay cluster in the top-right corner of the plot (visible on hover, on selection, and
-   always when the cell has an error), and the status (R210) is the existing left gutter
-   band only. The plot's own top margin absorbs the label. The Cells column's per-cell
-   editors are unaffected.
+2. **Plot chrome merges into the plot.** The "JS 01 · Settled · Show code" strip stops
+   existing as a row:
+   - **Status is a glyph only**, no word: red ✕ (error), spinner (evaluating/queued),
+     green ✓ (settled), 12 px, top-left corner overlay of the plot, fading out 2 s after a
+     settle and shown persistently for error; the R210 gutter band goes away for chart
+     cells (it stays for non-chart cells). The ✕ is clickable to show the error text.
+   - **"Show code" moves to the right-click context menu** of the plot (with "Properties",
+     "Tidy in graph", "Copy as PNG" if cheap; otherwise the first two only), and to a
+     keyboard shortcut; no button on the plot.
+   - **Title.** "JS 01" is the cell's ordinal by kind and is not a title; it stays only in
+     the code column gutter and tooltips. The plot shows a **centred title at the top** only
+     when the cell has a `# label:` (C2 §2.4) or the plot form's title field is set; the
+     plot's own top margin absorbs it; no label = no title row.
+   - **Legend.** When a plot has more than one series (channels or windows), a compact
+     legend inside the plot's top-right at the density scale, series named by the channel
+     or definition label with its unit (`CellDefResult.unit`), colours from `--chart-N`
+     tokens; single-series plots show no legend. Plot's own legend facility where it fits
+     the print palette rule (R174).
 3. **Dense stacking option.** A notebook toggle "Dense" (toolbar `view` group, remembered
    per machine beside `notebookColumns`): cell gap 0 px, cell padding 0, chrome overlay-only,
    and adjacent time-series charts share their x-axis visually (the lower chart hides its
