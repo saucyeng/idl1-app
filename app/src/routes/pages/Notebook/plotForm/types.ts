@@ -368,6 +368,140 @@ export interface ScatterPlotProps {
   title?: string;
 }
 
+/** C2 §5.3's `color_opt` production (widened 2026-09-11, ruling R217).
+ *  `domain` is legal only on a map or spectrogram cell, where the document —
+ *  not the host — states the colour range: two windows' heatmaps chosen
+ *  independently would look identical when they are not. */
+export interface ColorProps {
+  legend?: true;
+  domain?: [number, number];
+}
+
+/** The mark names {@link MapMarkProps.mark}'s union admits, as a runtime
+ *  array (C2 §5.3's `trace_mark`, ruling R217 item 1). `line` draws the
+ *  racing line; `dot` draws the fixes themselves, which is what shows where a
+ *  receiver dropped out. */
+export const MAP_MARK_NAMES: readonly MapMarkProps["mark"][] = ["line", "dot"];
+
+/** One trace in a map cell (C2 §5.3's `trace_mark`, ruling R217 item 1).
+ *
+ *  A map cell is the one kind whose `marks` array may hold more than one
+ *  *kind* of mark — the optional `trackGeometry` underlay marks come first,
+ *  under the data, which is why they are a plot-level flag
+ *  ({@link MapPlotProps.trackUnderlay}) rather than entries here. */
+export interface MapMarkProps {
+  /** The colour-by channel's name, or `null` for an uncoloured trace. Always
+   *  present: a slot that is never absent is what makes the document state
+   *  the colour source even when there is none. */
+  colourBy: string | null;
+  mark: "line" | "dot";
+  /** A CSS colour literal, or `"c"` (colour by the colour-by channel) or
+   *  `"w"` (colour by window, as R127 defines for channels). `"c"` with
+   *  `colourBy: null` is custom code — there is no channel to colour by. */
+  stroke?: string;
+  /** px. */
+  strokeWidth?: number;
+}
+
+/** C2 §5.3's map-cell `plot_options` production (ruling R217 item 1).
+ *
+ *  `aspectRatio: 1` is not a field here because it is not a choice: the
+ *  grammar requires the literal on every map cell, so `generate` always emits
+ *  it and `parse` refuses a cell without it. Equal aspect is a property of
+ *  the projection — an unsquared map turns a circular berm into an ellipse —
+ *  so it is stated in the document and nowhere else (C2 §5.3). */
+export interface MapPlotProps {
+  chart: "map";
+  /** At least one; the form always seeds one trace. */
+  marks: MapMarkProps[];
+  /** Draw the track's reference polyline and gates under the traces
+   *  (`trackGeometry`, C2 §5.1). `true` or entirely absent, like
+   *  {@link TimePlotProps.zeroLine} — and, like it, emitted as real marks at
+   *  the **head** of the array rather than as a plot option, because an
+   *  outline belongs under the data. Absent when the session has no track:
+   *  `trackGeometry` is `null` and there is nothing to draw. */
+  trackUnderlay?: true;
+  /** Metres east. Both axes are the projection's own metres, never degrees. */
+  x?: XAxisProps;
+  /** Metres north. */
+  y?: YAxisProps;
+  color?: ColorProps;
+  /** See {@link TimePlotProps.title}. */
+  title?: string;
+}
+
+/** The mark names {@link LapMarkProps.mark}'s union admits, as a runtime
+ *  array (C2 §5.3's `lap_mark`, ruling R217 item 3). */
+export const LAP_MARK_NAMES: readonly LapMarkProps["mark"][] = ["barY", "dot", "lineY"];
+
+/** One lap-progression cell's single mark (C2 §5.3's `lap_mark`, ruling R217
+ *  item 3). Singular by type, like every other non-time kind's.
+ *
+ *  {@link definition} is a bare §3.1 identifier, never a data call: a `[lap]`
+ *  value is always a math definition — `mean([peak_freq], "t:lap")`, or
+ *  `lap_time()` — so there is no `gps(...)`-style host form to invent, and a
+ *  bare identifier in the first mark's data slot is exactly what makes a lap
+ *  cell recognisable to the same first-callee lookahead every other kind
+ *  uses. */
+export interface LapMarkProps {
+  definition: string;
+  mark: "barY" | "dot" | "lineY";
+  /** Bind `z`/`stroke` to `"w"` so each selected window is its own series,
+   *  coloured from R127's descriptor. Absent draws one undifferentiated
+   *  series. */
+  seriesBy?: "w";
+}
+
+/** C2 §5.3's lap-cell `plot_options` production (ruling R217 item 3). The x
+ *  axis is an **ordinal lap number**, not time — lap numbers repeating across
+ *  two sessions is correct here, because `w` separates the series. */
+export interface LapPlotProps {
+  chart: "lap";
+  mark: LapMarkProps;
+  x?: XAxisProps;
+  y?: YAxisProps;
+  color?: ColorProps;
+  /** See {@link TimePlotProps.title}. */
+  title?: string;
+}
+
+/** One spectrogram cell's single image mark (C2 §5.3's `raster_mark`, ruling
+ *  R217 item 4). The mark name is fixed at `image`: a raster is pixels, and
+ *  no other Plot mark consumes them.
+ *
+ *  {@link fft} reuses {@link FftParams} verbatim — the same six keys in the
+ *  same fixed order — because an FFT cell and a spectrogram parameterise the
+ *  same STFT. `averaging` is carried but means nothing here: a spectrogram
+ *  keeps every frame, which is what makes it a spectrogram rather than a
+ *  spectrum. */
+export interface SpectrogramMarkProps {
+  channel: string;
+  fft: FftParams;
+}
+
+/** C2 §5.3's spectrogram-cell `plot_options` production (ruling R217 item 4).
+ *
+ *  `fx: "w"` is not a field, for the reason a map's `aspectRatio` is not: the
+ *  grammar requires the literal. A raster has no `w` column — pixels cannot
+ *  interleave and a `NaN` break row between two images is meaningless — so a
+ *  spectrogram cell fetches **one raster per selected window** and facets
+ *  them, sharing one frequency scale. */
+export interface SpectrogramPlotProps {
+  chart: "spectrogram";
+  mark: SpectrogramMarkProps;
+  /** Time, seconds. Each facet takes its own domain from its own window's
+   *  `RasterMeta`, so this is the label, rarely the domain. */
+  x?: XAxisProps;
+  /** Frequency, Hz. `type` is `"linear"` or `"log"`, the same choice an FFT
+   *  cell's x axis has. */
+  y?: YAxisProps;
+  /** `domain` is the union of the windows' `vmin`/`vmax`, stated in the
+   *  document rather than chosen per facet. */
+  color?: ColorProps;
+  /** See {@link TimePlotProps.title}. */
+  title?: string;
+}
+
 /** C2 §5.3's `plot_options` production — the Properties pane's whole
  *  internal state for one `js` cell in the `plotForm` subset. A
  *  discriminated union on `chart`: a cell is exactly one chart kind, never
@@ -383,10 +517,25 @@ export interface ScatterPlotProps {
  *  grammar's `x_field` allows only the literal `"linear"`, reserved for a
  *  future non-time x-axis, C2 §8-2 — now realised as the FFT cell's own
  *  {@link FftXAxisProps}, a distinct type, not a widened `XAxisProps`). */
-export type PlotProps = TimePlotProps | FftPlotProps | HistogramPlotProps | ScatterPlotProps;
+export type PlotProps =
+  | TimePlotProps
+  | FftPlotProps
+  | HistogramPlotProps
+  | ScatterPlotProps
+  | MapPlotProps
+  | LapPlotProps
+  | SpectrogramPlotProps;
 
 /** Every `PlotProps.chart` discriminant, as a runtime array — the single
  *  list a chart-type control enumerates against, same rationale as
  *  {@link MARK_NAMES}. In the order the Properties pane's chart-type
  *  control presents them. */
-export const CHART_KINDS: readonly PlotProps["chart"][] = ["time", "fft", "histogram", "scatter"];
+export const CHART_KINDS: readonly PlotProps["chart"][] = [
+  "time",
+  "fft",
+  "histogram",
+  "scatter",
+  "map",
+  "lap",
+  "spectrogram",
+];

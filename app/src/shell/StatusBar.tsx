@@ -13,6 +13,7 @@ import ImportStatusChip from "./ImportStatusChip";
 import { LAYOUT_PRESETS, type ActivePreset } from "./layoutPresets";
 import { memoryLabel, useMemoryUse } from "./memoryBudget";
 import { collapsedChipLabel, selectionChips, shouldCollapseChips } from "./topBarSelection";
+import { openUpdatePanel, updateChipLabel, useUpdateState } from "./updateState";
 
 /** Props for {@link StatusBar}. */
 export interface StatusBarProps {
@@ -91,6 +92,7 @@ export default function StatusBar({ selection, activePreset, onCyclePreset, onNa
   const deviceLink = useDeviceLink();
   const memory = useMemoryUse();
   const decoding = useDecodeStatus();
+  const updateLabel = updateChipLabel(useUpdateState());
 
   // The same fetch `TopBar` used to hold, moved with the chips it feeds
   // (R220 item 1). Chip labels need each window's session name, which
@@ -179,6 +181,12 @@ export default function StatusBar({ selection, activePreset, onCyclePreset, onNa
               style={{ width: `${Math.round(memory.fraction * 100)}%` }}
             />
           </span>
+        </StatusItem>
+      )}
+
+      {updateLabel !== null && (
+        <StatusItem onClick={openUpdatePanel} title="Open the release notes panel">
+          {updateLabel}
         </StatusItem>
       )}
 

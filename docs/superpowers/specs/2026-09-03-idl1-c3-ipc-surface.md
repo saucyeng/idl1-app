@@ -57,6 +57,15 @@
   this revision and removed in the next (§5); `fetch_tile`,
   `cursor_readout`, `fetch_raster`/`fetch_raster_meta` and the session-entity
   CRUD commands are unchanged.
+- 2026-09-11: chart tier B lane (ruling R217, spec-first) — §3.5 gains
+  `fetch_gps_trace_v2` (new `IDLG` v1 binary layout) and
+  `fetch_gps_trace_meta`; §3.6 gains `fetch_raster_v2` and
+  `fetch_raster_meta_v2`, deprecating the two `session_id` forms (removal in
+  the next revision); §3.4's `IDLH` layout goes to **version 2**, adding
+  `axis_kind: u16` in two of version 1's reserved bytes — the header length
+  and every payload offset are unchanged, and no command signature moves.
+  `list_math_builtins`' stated catalog size moves from 72 to 75 (69
+  implemented, 6 not) for C2 §3.3's three new lap-row scalars.
 - 2026-09-10: async-cmds lane (ruling R201, spec-during) — §1 gains the
   "nothing blocks the main thread" rule and every command that touches the
   filesystem beyond a stat or computes over a session is now
@@ -1439,11 +1448,29 @@ existence are validated before any byte is produced (§1).
 | Field | Type | Byte offset | Notes |
 |---|---|---|---|
 | `magic` | `[u8; 4]` | 0 | ASCII `"IDLH"` |
-| `version` | `u16` | 4 | `1` |
+| `version` | `u16` | 4 | `2` — was `1` until 2026-09-11 (ruling R217 item 5); see below |
 | `flags` | `u16` | 6 | bit 0 = `has_t`; all other bits reserved, zero |
 | `length` | `u32` | 8 | number of `f64` values in `v` |
 | `t_length` | `u32` | 12 | number of `f64` values in `t`; `0` when the source has no recorded axis |
-| `reserved` | `[u8; 8]` | 16 | zero-filled |
+| `axis_kind` | `u16` | 16 | *New in version 2.* What the `t` array's values **are**: `0` none, `1` time (seconds), `2` frequency (Hz), `3` lap (ordinal lap number). `0` exactly when `t_length == 0`. |
+| `reserved` | `[u8; 6]` | 18 | zero-filled |
+
+**Version 2 — `axis_kind`** *(added 2026-09-11, ruling R217 item 5, chart
+tier B).* Version 1 carried only `flags` bit 0 = `has_t`, which says a
+recorded axis exists but not what it measures. A `[lap]` definition's axis
+is ordinal lap numbers and C2 §5.1 binds it under the key `lap`, not `t`;
+a `[f]` definition's is Hz. A reader that cannot tell them apart binds
+every rank-1 value as time and draws lap 3 at three seconds.
+
+**A layout bump, not a new command.** `axis_kind` occupies the first two of
+version 1's eight reserved bytes, so the header stays 24 bytes, both
+payload arrays stay 8-byte aligned, and every offset below is unchanged —
+a version-1 reader handed version-2 bytes reads the same samples at the
+same offsets. The arguments are unchanged too, and C3 §5 governs command
+signatures, so `fetch_host_channel_v2`'s signature does not move (the tile
+header set this precedent). A reader that needs the axis checks `version >=
+2` before trusting the field; on a version-1 payload it is absent, not
+zero-by-accident, because version 1 wrote zeros there.
 
 Header ends at byte offset **24**, padded so both payload arrays start on an
 8-byte boundary (ruling R59 Q3(a)). Then `t` as `t_length` × `f64` at offset
@@ -1520,7 +1547,9 @@ interface MathBuiltinDto {
   status: "implemented" | "not_implemented";
   renamed_from: string[];  // added 2026-09-09, R151 item 9 — see below
 }
-type MathBuiltins = MathBuiltinDto[];  // 72 entries (66 implemented, 6 not) — revised
+type MathBuiltins = MathBuiltinDto[];  // 75 entries (69 implemented, 6 not) — revised
+                                        // 2026-09-11, chart tier B lane (R217 item 2),
+                                        // from 72: lap_number, lap_time, sector_time; was
                                         // 2026-09-09, scipy-alignment lane, from 69
                                         // (63 implemented, 6 not); see C2 §3.3's own
                                         // count paragraph for the +3 breakdown and a
@@ -1714,6 +1743,102 @@ is reachable from a v3 cell yet, because C2 §5.3's `scatter_call` has no slot
 for either. Stated here as a parity gap rather than left to be inferred from
 the command's argument list.
 
+**`fetch_gps_trace_v2(workbook_id: string, window: Window, colour_by: string | null, budget: number)`**
+*Added 2026-09-11 (chart tier B lane, ruling R217 item 1.)* One window's GPS
+trace, **already projected in `core`** into a local ENU frame — idl0's
+`gpsMap` (`chart_workspace.dart:607-615`) without a tile basemap, which
+design's offline-first rule forbids. `budget`: `u32`, `1..=65536`, the
+caller's own cap on points per window.
+
+Named `_v2` from birth, deliberately: there is no `fetch_gps_trace`. The
+suffix marks the `Window` argument shape every command added after ruling
+R117 carries, so a reader does not have to check whether this one predates
+it.
+
+`workbook_id` is present for the same reason `fetch_host_channel_v2` carries
+it — `colour_by` may name a workbook definition, not only a session channel.
+
+Return: `IDLG` v1 bytes, little-endian throughout.
+```
+offset  0, length  4   magic "IDLG"
+offset  4, length  2   version (u16, always 1)
+offset  6, length  2   flags (u16; bit 0 = has_c, all other bits zero)
+offset  8, length  4   point_count (u32)
+offset 12, length  4   reserved (zero) — pads the f64 block to 8-byte alignment
+offset 16, n*8         x values (f64 × point_count), metres east of the origin
+offset 16+n*8,  n*8    y values (f64 × point_count), metres north of the origin
+offset 16+2n*8, n*8    t values (f64 × point_count), seconds, session-relative
+offset 16+3n*8, n*8    c values (f64 × point_count) — present only when bit 0 is set
+total: 16 + point_count * (24 or 32)
+```
+
+**Projection is this command's whole point.** Latitude and longitude never
+reach the app: `core` converts to metres east/north of one origin (the mean
+of the window's own fixes), so the sandbox draws a plane and computes
+nothing (CLAUDE.md §2). The frame is shared with `fetch_gps_trace_meta`
+below — two origins would draw the trace beside the track rather than on
+it.
+
+**Decimation is perpendicular-distance (Douglas–Peucker), not stride.** A
+path is geometric: a uniform stride drops whichever fixes fall between its
+steps, and a hairpin taken slowly is exactly where fixes are dense. The
+engine raises the tolerance until the retained count is within `budget`,
+so the result is the shape, not a sample of it. §4's "2 points per pixel
+column" rule does not apply — a two-dimensional path has no pixel columns.
+
+**`c` is the colour-by channel resampled onto the fix times**, `NaN` where
+the channel has no sample near a fix; `has_c` is clear when `colour_by` is
+`null`, and the `c` block is then absent rather than a run of `NaN`s.
+
+**One window per call** (unlike `fetch_scatter`): the caller fetches each
+selected window and the host concatenates them with R127's `w` column and a
+`NaN` break row between adjacent windows (C2 §5.1), exactly as
+`combineChannelWindows` does. A path is a connected mark, so the break row
+matters here as it does not for a histogram or a scatter.
+
+Settle-bound only (§4): never a hover/pan/zoom handler.
+
+Errors: `not_found` (unknown `workbook_id`, `session_id`, or a `colour_by`
+naming neither a channel nor a definition), `invalid_argument` (an
+unresolvable window span, or a `budget` outside `1..=65536`),
+`resource_exhausted` (the session cache refused a column), `io`, `internal`.
+
+**A session with no GPS fixes is not an error.** It returns
+`point_count: 0` — a bike ridden indoors has no trace, which is a true
+answer, not a failure.
+
+**`fetch_gps_trace_meta(session_id: string, track_id: string | null)`**
+*Added 2026-09-11 (chart tier B lane, ruling R217 item 1.)* The map cell's
+underlay and axis domains — a sibling JSON command to the binary one above,
+the same split `fetch_raster_meta` makes, so a chart draws axes and a track
+outline without decoding pixel or sample bytes.
+
+Return:
+```ts
+interface GpsTraceMeta {
+  origin: { lat: number; lon: number };   // the ENU frame's origin, decimal degrees
+  x_domain: [number, number];             // metres east, over polyline ∪ trace
+  y_domain: [number, number];             // metres north
+  /** The track's reference polyline, projected into the same frame. Empty
+   *  when `track_id` is null or the track has no polyline. */
+  polyline: { x: number; y: number }[];
+  /** The track's gates, each projected into the same frame as a segment.
+   *  `kind` is `"start_finish" | "sector" | "neutral_zone"`. */
+  gates: { name: string; kind: string; x1: number; y1: number; x2: number; y2: number }[];
+}
+```
+
+**The origin is the session's, not the track's**, and both are projected
+into it. A track outlives any one session and a session may run only part of
+it; anchoring on the session keeps the trace centred and the underlay
+wherever it falls.
+
+**`track_id: null` is the no-track case**, returning empty `polyline` and
+`gates` with domains taken from the trace alone. A map is still a map
+without a track; C2 §5.1's `trackGeometry` is `null` for such a cell.
+
+Errors: `not_found` (unknown `session_id` or `track_id`), `io`, `internal`.
+
 ### 3.6 Rasters (L3)
 
 **`fetch_raster(session_id: string, channel: string, kind: "spectrogram" | "histogram2d", width: number, height: number, params: SpectrogramParams | Histogram2dParams)`**
@@ -1802,6 +1927,38 @@ renderings change (R151).
 
 Errors: `not_found`, `invalid_argument`, `io`, `internal` (same conditions
 as `fetch_raster` above).
+
+**`fetch_raster_v2(window: Window, channel: string, kind: "spectrogram" | "histogram2d", width: number, height: number, params: SpectrogramParams | Histogram2dParams)`**
+**`fetch_raster_meta_v2(window: Window, channel: string, kind: "spectrogram" | "histogram2d", width: number, height: number, params: SpectrogramParams | Histogram2dParams)`**
+*Added 2026-09-11 (chart tier B lane, ruling R217 item 4.)* Replace
+`session_id` with a single `Window` (§3.4's `eval_workbook_v2` shape, C1
+§6.1) — the same gap ruling R117 closed for evaluation and R123 for the
+FFT, reaching the raster path last. Everything else is identical to the two
+commands above: the same `params` shapes, the same `x_bins`/`y_bins`
+constraint, the same `IDLR` pixel layout, the same `RasterMeta`.
+
+**Without them a spectrogram of one lap is unreachable.** C2 §5.3's
+spectrogram cell fetches one raster per *selected window* and facets them;
+a `session_id` argument can only ever ask for the whole session, so two
+selected laps would draw the same whole-session heatmap twice.
+
+**Window resolution is `fetch_fft_v2`'s, unchanged** (rulings R85, R123):
+the span resolves first — an unknown lap, or a range failing R119/R120, is
+`invalid_argument` before any sample is read — then the channel is sliced
+to it.
+
+**`width`/`height` are clamped, not refused** (C2 §5.3's spectrogram
+budget): a request above 2048 × 1024 renders at the clamp. A window wider
+than the screen is a coarser picture, not an error. A `width` or `height`
+of `0` is still `invalid_argument`.
+
+**`fetch_raster(session_id, …)` and `fetch_raster_meta(session_id, …)` are
+deprecated** as of this revision (§5) and are removed in the next. They stay
+registered and behave exactly as before.
+
+Errors: as `fetch_raster`/`fetch_raster_meta` above, plus
+`invalid_argument` for an unresolvable window span and `resource_exhausted`
+when the session cache refuses a column.
 
 **Binary layout.** Little-endian throughout, header then row-major top-down
 pixel data. Unchanged by this batch — pixel layout stays at header

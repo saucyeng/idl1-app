@@ -77,7 +77,10 @@ export interface ResolvedMenu {
 /** The command ids the menu bar names. One namespace, shared with the
  *  ribbon: `shell/commandTiers.ts`'s {@link COMMAND_IDS}, re-exported under
  *  the name the shell and the Notebook page already import (R225 item 1 —
- *  one table, not two that must be kept in step). */
+ *  one table, not two that must be kept in step). `helpCheckForUpdates`
+ *  (ruling R231) lives in that table too, since it is a plain `command()`
+ *  entry rather than a `tiered()` one — the table is the id namespace for
+ *  every command whether or not the ribbon renders it. */
 export const MENU_COMMAND_IDS = COMMAND_IDS;
 
 /** Every id in {@link MENU_COMMAND_IDS}. */
@@ -170,7 +173,10 @@ export const MENUS: readonly Menu[] = [
   {
     id: "help",
     label: "Help",
-    items: [command(MENU_COMMAND_IDS.helpAbout, "About idl1", null)],
+    items: [
+      command(MENU_COMMAND_IDS.helpCheckForUpdates, "Check for updates…", null),
+      command(MENU_COMMAND_IDS.helpAbout, "About idl1", null),
+    ],
   },
 ];
 

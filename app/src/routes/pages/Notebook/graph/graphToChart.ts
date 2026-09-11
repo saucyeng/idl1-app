@@ -25,7 +25,15 @@
 
 import { generate } from "../plotForm/generate";
 import type { PlotProps } from "../plotForm/types";
-import { defaultFftPlotProps, defaultHistogramPlotProps, defaultScatterPlotProps, defaultVariancePlotProps } from "../model/propertiesForm";
+import {
+  defaultFftPlotProps,
+  defaultHistogramPlotProps,
+  defaultLapPlotProps,
+  defaultMapPlotProps,
+  defaultScatterPlotProps,
+  defaultSpectrogramPlotProps,
+  defaultVariancePlotProps,
+} from "../model/propertiesForm";
 import type { MathExprCall } from "../model/mathExpr";
 import type { ChartTypeId } from "./chartTypeCatalog";
 import type { PortShape } from "./portShape";
@@ -85,6 +93,15 @@ export function plotPropsForChartType(chartType: ChartTypeId, nodeName: string):
       // which is honest about there being no second channel to pick yet.
       // The author picks the y channel in the Properties pane.
       return defaultScatterPlotProps(channels);
+    case "map":
+      return defaultMapPlotProps(channels);
+    case "lap":
+      // The graph card knows one node's name, which seeds the definition
+      // slot; a `[lap]` value is always a definition, so there is no
+      // channel to fall back on.
+      return defaultLapPlotProps(channels);
+    case "spectrogram":
+      return defaultSpectrogramPlotProps(channels);
     case "variance":
       return defaultVariancePlotProps(channels);
   }

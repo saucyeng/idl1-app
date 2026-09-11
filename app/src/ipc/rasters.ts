@@ -123,6 +123,46 @@ export async function fetchRasterMeta(
   return invoke<RasterMeta>("fetch_raster_meta", { sessionId, channel, kind, width, height, params });
 }
 
+/** The largest raster a `_v2` request renders (C2 §5.3's spectrogram budget;
+ *  the Rust `MAX_RASTER_WIDTH`/`MAX_RASTER_HEIGHT`). Above it the engine
+ *  **clamps rather than refuses** — a window wider than the screen is a
+ *  slightly coarser picture, not an error — so a caller need not pre-clamp;
+ *  these are mirrored so a caller can size a legend or a note. */
+export const MAX_RASTER_WIDTH = 2048;
+/** See {@link MAX_RASTER_WIDTH}. */
+export const MAX_RASTER_HEIGHT = 1024;
+
+/** One **window's** raster rather than a whole session's (C3 §3.6, ruling
+ *  R217 item 4). C2 §5.3's spectrogram cell fetches one of these per selected
+ *  window and facets them with `fx: "w"`: a `sessionId` argument can only ask
+ *  for the whole session, so two selected laps would draw the same heatmap
+ *  twice. Settle-bound only (C3 §4). */
+export async function fetchRasterV2(
+  window: Window,
+  channel: string,
+  kind: RasterKind,
+  width: number,
+  height: number,
+  params: SpectrogramParams | Histogram2dParams
+): Promise<DecodedRaster> {
+  const buf = await invoke<ArrayBuffer>("fetch_raster_v2", { window, channel, kind, width, height, params });
+  return decodeRaster(buf);
+}
+
+/** One windowed raster's axis domains and colour scale, without its pixel
+ *  bytes (C3 §3.6, ruling R217 item 4). Same arguments and same clamping as
+ *  {@link fetchRasterV2}. */
+export async function fetchRasterMetaV2(
+  window: Window,
+  channel: string,
+  kind: RasterKind,
+  width: number,
+  height: number,
+  params: SpectrogramParams | Histogram2dParams
+): Promise<RasterMeta> {
+  return invoke<RasterMeta>("fetch_raster_meta_v2", { window, channel, kind, width, height, params });
+}
+
 /** `fetchFft`'s `averaging` argument (C3 §3.6, ruling R63 (3), R76). `"none"`
  *  requires the request's segmentation to produce exactly one segment —
  *  more is `invalid_argument` with `detail: { segments: n }`. */

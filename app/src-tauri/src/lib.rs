@@ -105,9 +105,40 @@ pub fn run() {
                 .unwrap_or_else(|e| panic!("starting sync: {e:?}"));
                 app.manage(sync_state);
             }
+            // Updater (ruling R231): registered only when the app was built
+            // with a real signing pubkey and is not the dev identifier. The
+            // schema has no `plugins.updater.active` switch (checked against
+            // the plugin's `Config` deserializer, which has no such field),
+            // so both guards live here instead: `tauri.dev.conf.json` sets
+            // `identifier` to `com.saucyeng.idl1.dev`, and the placeholder
+            // pubkey means no keypair has been generated yet. Either one
+            // disables registration; the frontend checker (`updateState.ts`)
+            // treats a missing plugin as "never available" rather than an
+            // error, so nothing crashes when it isn't registered.
+            let is_dev_identifier = app.config().identifier.ends_with(".dev");
+            let updater_pubkey = app
+                .config()
+                .plugins
+                .0
+                .get("updater")
+                .and_then(|v| v.get("pubkey"))
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
+            let pubkey_is_placeholder = updater_pubkey == "REPLACE_WITH_PUBKEY" || updater_pubkey.is_empty();
+            if is_dev_identifier || pubkey_is_placeholder {
+                eprintln!(
+                    "updater: checks disabled ({})",
+                    if is_dev_identifier { "dev build" } else { "pubkey is a placeholder" }
+                );
+            } else {
+                app.handle().plugin(tauri_plugin_updater::Builder::new().build())?;
+            }
+
             Ok(())
         })
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_process::init())
         .invoke_handler(idl_rs_tauri::handler())
         .run(tauri::generate_context!())
         .expect("error while running idl1");
