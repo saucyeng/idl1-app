@@ -3901,26 +3901,27 @@ export default function NotebookPage() {
         )}
       {/* The sandbox iframe host: fixed to the full viewport so cell
           iframes positioned into it (`sendLayout`) track scroll in real
-          pixels. `zIndex: 0` is explicit, not incidental -- a fixed element
-          with *any* stated z-index stacks above ordinary static in-flow
-          content regardless of DOM order, which is exactly what a chart
-          needs against the cell text around it.
+          pixels.
 
-          What keeps it from reaching the window's chrome is no longer a
-          z-index on each piece of chrome (ruling R221.1 deleted those). It
-          is that this element is a descendant of the shell's single
-          `shell-content` container, whose `isolation: isolate` makes it a
-          stacking context: this `0` is scoped inside it and is measured
-          only against the cell text it is meant to beat, never against the
-          chrome layer outside. Raising it would change nothing, which is
-          the point. `isolation`, not `contain: paint`: containment would
-          make that container the containing block for this fixed element,
-          so `inset: 0` would mean the content box rather than the viewport
+          It states no z-index at all (ruling R221.1: content never carries
+          one). It does not need the `zIndex: 0` it used to carry: a
+          positioned element paints above ordinary static in-flow content in
+          its stacking context whatever its z-index, `auto` included, so a
+          chart still covers the cell text around it. And it cannot reach
+          the window's chrome, because this element is a descendant of the
+          shell's single `shell-content` container, whose `isolation:
+          isolate` makes that container a stacking context -- everything
+          here is painted as part of it, under the chrome layer outside.
+
+          `isolation`, not `contain: paint`: containment would make that
+          container the containing block for this fixed element, so
+          `inset: 0` would mean the content box rather than the viewport,
           and every iframe -- positioned from a viewport-relative
-          `getBoundingClientRect` -- would be offset by the chrome's size. */}
+          `getBoundingClientRect` -- would be offset by the chrome's own
+          size. */}
       <div
         ref={containerRef}
-        style={{ position: "fixed", inset: 0, pointerEvents: "none", zIndex: 0, border: "none" }}
+        style={{ position: "fixed", inset: 0, pointerEvents: "none", border: "none" }}
       />
       {/* Task R2: `styles/report-print.css` hides everything else and
           shows only this root once `window.print()` runs -- the report is

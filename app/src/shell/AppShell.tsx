@@ -232,7 +232,25 @@ export default function AppShell() {
   const sidebarShortcut = formatShortcut({ key: "b", mod: true }, commandGlyph);
 
   return (
-    <div className="flex h-screen w-screen flex-col bg-bg text-fg">
+    /* THE LAYER ROOT (ruling R221.1). Two invariants live here, and
+       `shell/stackingLayers.test.ts` checks both against this file:
+
+       1. **One chrome layer over one content container.** Every chrome
+          region carries `shell-chrome` -- one class, one z-index -- and the
+          single `shell-content` container below isolates everything a route
+          draws. Nothing in this file states a z-index. A new piece of
+          chrome found painting under a chart is missing that class; it does
+          not need a number of its own.
+       2. **Nothing here scrolls.** This root is a fixed viewport-height
+          column with `overflow-hidden`, as are `html`, `body` and `#root`
+          (`styles/index.css`). The title bar, activity bar, sidebar and
+          status bar hold their place by being flex items that neither grow
+          nor shrink; the content container is the only thing that scrolls.
+          `h-[100dvh]`, not `h-screen`: on a webview whose toolbars come and
+          go, `100vh` is the *largest* viewport and overflows the visible
+          one. `w-full`, not `w-screen`: `100vw` counts the scrollbar's
+          width and overflows the window by it. */
+    <div className="flex h-[100dvh] w-full flex-col overflow-hidden bg-bg text-fg">
       {/* One 32 px title bar at every width (R220 items 1 and 3). Narrow
           layouts have no room for five menu titles beside the window
           controls, so the bar collapses its menus into one "⋯" button

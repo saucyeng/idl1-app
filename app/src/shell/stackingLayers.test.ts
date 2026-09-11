@@ -8,7 +8,9 @@ import {
   chromeRegions,
   contentRegions,
   isChrome,
+  scrollingRegions,
   SHELL_REGION_IDS,
+  SHELL_ROOT_SCROLLS,
   zIndexFor,
 } from "./stackingLayers";
 
@@ -67,6 +69,26 @@ describe("the stacking model", () => {
   });
 });
 
+describe("the scroll model", () => {
+  it("scrolling — the window itself — never scrolls", () => {
+    const root = SHELL_ROOT_SCROLLS;
+
+    expect(root).toBe(false);
+  });
+
+  it("scrolling — the content container — is the only region that scrolls", () => {
+    const scrolling = scrollingRegions();
+
+    expect(scrolling).toEqual(contentRegions());
+  });
+
+  it("scrolling — every chrome region — holds its place", () => {
+    const scrollingChrome = chromeRegions().filter((region) => scrollingRegions().includes(region));
+
+    expect(scrollingChrome).toEqual([]);
+  });
+});
+
 describe("the shell's own layout source", () => {
   /** Every file that renders a chrome region. Listed rather than derived,
    *  so a region added to the model without a file to render it is a
@@ -99,6 +121,32 @@ describe("the shell's own layout source", () => {
     const patched = Z_PATCH.test(source);
 
     expect(patched).toBe(false);
+  });
+
+  it("invariant — the app root — is pinned to the viewport and cannot scroll", () => {
+    const source = shellSource("AppShell.tsx");
+
+    const root = source.match(/<div className="flex [^"]*"/)?.[0] ?? "";
+
+    expect(root).toContain("h-[100dvh]");
+    expect(root).toContain("overflow-hidden");
+  });
+
+  it("invariant — the app root — asks for neither 100vh nor 100vw", () => {
+    const source = shellSource("AppShell.tsx");
+
+    const viewportUnits = source.match(/h-screen|w-screen/g) ?? [];
+
+    expect(viewportUnits).toEqual([]);
+  });
+
+  it("invariant — the document — pins html, body and the React root", () => {
+    const css = readFileSync(join(SHELL_DIR, "..", "styles", "index.css"), "utf-8");
+
+    const rule = css.match(/html,\s*body,\s*#root\s*\{[^}]*\}/)?.[0] ?? "";
+
+    expect(rule).toContain("height: 100%");
+    expect(rule).toContain("overflow: hidden");
   });
 
   it("invariant — the content container — is declared exactly once", () => {
