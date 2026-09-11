@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { cellDisplayNames, displayNameFor, setCellLabelLine } from "./cellDisplayName";
+import { cellDisplayNames, cellLabelFromBody, displayNameFor, documentCellDisplayNames, setCellLabelLine } from "./cellDisplayName";
 
 describe("cellDisplayNames", () => {
   it("display name — a cell with a label — uses the label", () => {
@@ -98,5 +98,54 @@ describe("setCellLabelLine", () => {
     const next = setCellLabelLine(body, "Named");
 
     expect(next).toBe("# label: Named\n# just a note\nx = 1\n");
+  });
+});
+
+describe("documentCellDisplayNames", () => {
+  it("document names — a labelled math cell and an unlabelled js cell — label then position", () => {
+    // Arrange
+    const markdown = "```math id=a1b2c3d4\n# label: Fork\nx = 1\n```\n\n```js id=b2c3d4e5\nPlot.plot({})\n```\n";
+
+    // Act
+    const names = documentCellDisplayNames(markdown);
+
+    // Assert
+    expect(names.get("a1b2c3d4")).toBe("Fork");
+    expect(names.get("b2c3d4e5")).toBe("Cell 2");
+  });
+
+  it("document names — a js cell whose body starts with a hash line — is not read as a label", () => {
+    // Arrange
+    const markdown = "```js id=b2c3d4e5\n# label: Not A Label\n```\n";
+
+    // Act
+    const names = documentCellDisplayNames(markdown);
+
+    // Assert
+    expect(names.get("b2c3d4e5")).toBe("Cell 1");
+  });
+});
+
+describe("cellLabelFromBody", () => {
+  it("label scan — a body whose first non-blank line is a whole-line label — returns its text", () => {
+    // Arrange
+    const body = "\n# label: Front travel\nx = 1\n";
+
+    // Act
+    const label = cellLabelFromBody(body);
+
+    // Assert
+    expect(label).toBe("Front travel");
+  });
+
+  it("label scan — a body whose first non-blank line is a definition — returns null", () => {
+    // Arrange
+    const body = "x = 1\n# label: too late\n";
+
+    // Act
+    const label = cellLabelFromBody(body);
+
+    // Assert
+    expect(label).toBeNull();
   });
 });

@@ -19,7 +19,15 @@
  * "Cell N" fallback and are not renameable here.
  */
 
+import { scanCells } from "../model/cells";
 import { tokenizeMath } from "../model/mathMode";
+
+/** Splits a body into lines on either line ending, so a CRLF document is
+ *  read the same as an LF one. */
+const LINE_SPLIT_RE = /\r?\n/;
+
+/** Strips the `# label:` prefix from a whole-line label comment's text. */
+const LABEL_PREFIX_RE = /^#\s*label\s*:\s*/;
 
 /** The minimum a caller must know about a cell to name it: its id and
  *  whatever `# label:` the document (or an evaluation) already states. */
@@ -72,6 +80,47 @@ function isLabelLine(line: string): boolean {
 }
 
 /**
+ * A math cell's own cell-level display name (C2 §3.7.3): its first
+ * non-blank line, when that line is a whole-line `# label: <text>` comment
+ * and nothing else. `null` otherwise — including for a `js` or `table`
+ * body, where `#` is not a comment at all.
+ *
+ * The single definition of that rule: `model/graphModel.ts` reads it for a
+ * subgraph's label and {@link documentCellDisplayNames} reads it for every
+ * cell's name, rather than each scanning the same first line its own way.
+ *
+ * @param body - The cell's body text.
+ */
+export function cellLabelFromBody(body: string): string | null {
+  for (const line of body.split(LINE_SPLIT_RE)) {
+    if (line.trim().length === 0) continue;
+    if (!isLabelLine(line)) return null; // first non-blank line is something other than a label comment
+    return tokenizeMath(line)[0].text.replace(LABEL_PREFIX_RE, "").trim();
+  }
+  return null;
+}
+
+/**
+ * Every identified cell's display name in `markdown`, by cell id — the
+ * whole of R214 item 2's naming rule in one call, so the graph's frames,
+ * the properties pane's identity bar and anything else that names a cell
+ * cannot disagree.
+ *
+ * @param markdown - The whole `.idl1wb` document.
+ */
+export function documentCellDisplayNames(markdown: string): Map<string, string> {
+  const bytes = new TextEncoder().encode(markdown);
+  const decoder = new TextDecoder();
+
+  return cellDisplayNames(
+    scanCells(markdown).cells.map((cell) => ({
+      id: cell.id,
+      label: cell.kind === "math" ? cellLabelFromBody(decoder.decode(bytes.subarray(cell.bodyRange[0], cell.bodyRange[1]))) : null,
+    }))
+  );
+}
+
+/**
  * `body` with its cell-level `# label:` line set to `label`: replacing the
  * existing one when the first non-blank line already is one, otherwise
  * inserting a new first line. A blank `label` **removes** an existing label
@@ -88,7 +137,7 @@ function isLabelLine(line: string): boolean {
 export function setCellLabelLine(body: string, label: string): string {
   const eol = body.includes("\r\n") ? "\r\n" : "\n";
   const trimmedLabel = label.trim();
-  const lines = body.split(/\r?\n/);
+  const lines = body.split(LINE_SPLIT_RE);
 
   const firstContentIndex = lines.findIndex((line) => line.trim().length > 0);
   const hasLabel = firstContentIndex !== -1 && isLabelLine(lines[firstContentIndex]);

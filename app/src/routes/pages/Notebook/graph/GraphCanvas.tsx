@@ -39,7 +39,7 @@ import { editLiteralArg, renameDefinition, rewireInput, type UnresolvedRenameRef
 import { dropPaletteSource, type PaletteDragSource } from "../model/graphPaletteDrop";
 import { buildSourcePalette } from "../model/sourcePalette";
 import { replaceCellBody, scanCells } from "../model/cells";
-import { cellDisplayNames, setCellLabelLine } from "./cellDisplayName";
+import { documentCellDisplayNames, setCellLabelLine } from "./cellDisplayName";
 import { commitDrag, commitTidy } from "./dragCommit";
 import { insertChartCell } from "./graphToChart";
 import NodeCard, { type MathNodeData } from "./NodeCard";
@@ -239,10 +239,7 @@ function GraphCanvasInner({ markdown, outputs, selectedWindows, windows, session
   // id survives as each frame's tooltip. Every cell in the document counts
   // towards N, so the number matches the cell's place in the file.
   const scannedCells = useMemo(() => scanCells(markdown).cells, [markdown]);
-  const displayNames = useMemo(() => {
-    const labels = new Map(model.groups.map((g) => [g.id, g.label]));
-    return cellDisplayNames(scannedCells.map((c) => ({ id: c.id, label: c.id === null ? null : labels.get(c.id) ?? null })));
-  }, [scannedCells, model.groups]);
+  const displayNames = useMemo(() => documentCellDisplayNames(markdown), [markdown]);
 
   // R214 item 2's rename: writes `# label: <text>` as the cell's first line
   // through the ordinary cell-edit path (§3.7.3 -- an ordinary body edit,

@@ -26,6 +26,7 @@ import { scanCells } from "./cells";
 import { extractChannelCalls, extractSpectrumCalls } from "./jsCellCalls";
 import { scanMathExpr } from "./mathExpr";
 import { tokenizeMath } from "./mathMode";
+import { cellLabelFromBody } from "../graph/cellDisplayName";
 import { parse as parsePlotForm } from "../plotForm/parse";
 import type { MarkProps } from "../plotForm/types";
 
@@ -149,21 +150,6 @@ function parseDefLines(body: string): DefLine[] {
   }
 
   return defs;
-}
-
-/** The cell-level display name (§3.7.3): the cell's first non-blank line,
- *  when it is a whole-line `# label: <text>` comment and nothing else. */
-function cellLabel(body: string): string | null {
-  for (const raw of body.split("\n")) {
-    const line = stripCr(raw);
-    if (line.trim().length === 0) continue;
-    const tokens = tokenizeMath(line);
-    if (tokens.length === 1 && tokens[0].kind === "labelComment") {
-      return tokens[0].text.replace(/^#\s*label\s*:\s*/, "").trim();
-    }
-    return null; // first non-blank line is something other than a label comment
-  }
-  return null;
 }
 
 const definitionNodeId = (name: string): string => `def:${name}`;
@@ -300,7 +286,7 @@ export function buildGraphModel(markdown: string, outputs: CellOutput[]): GraphM
       }
     }
 
-    groups.push({ id: cell.id, label: cellLabel(body), nodeIds });
+    groups.push({ id: cell.id, label: cellLabelFromBody(body), nodeIds });
   }
 
   // R214 item 1's third kind: one node per `js` cell — the chart its code

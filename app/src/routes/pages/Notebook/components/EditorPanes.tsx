@@ -1,4 +1,4 @@
-import { useRef } from "react";
+import { useRef, useState } from "react";
 
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import type { CellKindToken } from "../model/cells";
@@ -55,6 +55,59 @@ export interface EditorPanesProps {
   /** Fired when the caret in that pane moves into a different cell (R214
    *  item 3's two-way highlight). */
   onSelectCell: (cellId: string | null) => void;
+  /** The open cell's display name — its `# label:`, else "Cell N" by
+   *  document order (`graph/cellDisplayName.ts`, R214 item 2). `null` when
+   *  no cell is open. */
+  displayName: string | null;
+  /** Whether the open cell can be renamed here — true only for a `math`
+   *  cell, whose body takes a `# label:` comment line. */
+  renameable: boolean;
+  /** Fired with `(cellId, label)` when the identity bar's inline rename
+   *  commits (R214 item 2's second gesture, beside the frame-title
+   *  double-click on the graph). */
+  onRenameCell: (cellId: string, label: string) => void;
+}
+
+/** The open cell's identity, above whichever editor it gets (R214 item 2:
+ *  the `hex8` id belongs "as a tooltip and in the properties pane", never
+ *  as a frame title, and the pane carries the inline "Rename"). */
+function CellIdentityBar({ cellId, displayName, renameable, onRename }: { cellId: string; displayName: string; renameable: boolean; onRename: (cellId: string, label: string) => void }) {
+  const [draft, setDraft] = useState<string | null>(null);
+
+  function commit(): void {
+    const value = draft;
+    setDraft(null);
+    if (value === null || value.trim() === displayName) return;
+    onRename(cellId, value);
+  }
+
+  return (
+    <div className="flex items-center gap-2 border-b border-rule px-[var(--nb-pad)] py-[var(--nb-pad)] text-[length:var(--nb-text-label)]">
+      {draft !== null ? (
+        <input
+          autoFocus
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          onBlur={commit}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") commit();
+            else if (e.key === "Escape") setDraft(null);
+          }}
+          className="min-w-0 flex-1 rounded-[var(--radius-structural)] border border-rule bg-control px-1 text-fg"
+        />
+      ) : (
+        <span className="min-w-0 flex-1 truncate text-fg">{displayName}</span>
+      )}
+      <span className="shrink-0 font-mono text-fg-faint" title="This cell's id in the file">
+        {cellId}
+      </span>
+      {renameable && draft === null && (
+        <button type="button" onClick={() => setDraft(displayName)} className="shrink-0 text-fg-dim hover:text-fg">
+          Rename
+        </button>
+      )}
+    </div>
+  );
 }
 
 /**
@@ -106,6 +159,9 @@ export default function EditorPanes({
   markdown,
   onMarkdownChange,
   onSelectCell,
+  displayName,
+  renameable,
+  onRenameCell,
 }: EditorPanesProps) {
   const openCellIdRef = useRef(cellId);
   const lastAppliedRef = useRef<string | null>(null);
@@ -119,6 +175,11 @@ export default function EditorPanes({
     lastAppliedRef.current = nextCode;
     onChange(nextCode);
   }
+
+  const identityBar =
+    cellId !== null && displayName !== null ? (
+      <CellIdentityBar cellId={cellId} displayName={displayName} renameable={renameable} onRename={onRenameCell} />
+    ) : null;
 
   // The code side: the whole document (R214 item 3) wherever there is room
   // for it, else this cell's own body through the unchanged `CodePane`.
@@ -143,6 +204,7 @@ export default function EditorPanes({
   if (kind === null || code === null || editorContentFor(kind) === "code") {
     return (
       <div className="editor-panes flex h-full flex-col" data-cell-id={cellId ?? undefined}>
+        {identityBar}
         {codeElement}
       </div>
     );
@@ -150,6 +212,7 @@ export default function EditorPanes({
 
   return (
     <Tabs defaultValue="properties" className="editor-panes flex h-full flex-col" data-cell-id={cellId ?? undefined}>
+      {identityBar}
       <TabsList>
         <TabsTrigger value="properties">Properties</TabsTrigger>
         <TabsTrigger value="code">Code</TabsTrigger>

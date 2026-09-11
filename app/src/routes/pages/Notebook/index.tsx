@@ -63,6 +63,7 @@ import { NotebookSession } from "./host/NotebookSession";
 import { dropCellHeight, initialCellHeights, recordCellHeight, type CellHeights } from "./model/cellLayout";
 import { replaceCellBody } from "./model/cells";
 import { changedCellIds } from "./model/documentRanges";
+import { displayNameFor, documentCellDisplayNames, setCellLabelLine } from "./graph/cellDisplayName";
 import {
   runChannelBind,
   runChannelSettle,
@@ -1770,6 +1771,21 @@ export default function NotebookPage() {
     });
   }
 
+  /**
+   * Ruling R214 item 2's second rename gesture — the Properties/Code
+   * column's inline "Rename", beside the graph's frame-title double-click.
+   * Both write the same `# label:` first line through the same ordinary
+   * cell-edit path (§3.7.3), so the two can never disagree about what a
+   * rename means. Math cells only: `#` is not a comment in a `js` or
+   * `table` body, and the caller only offers the control for `math`.
+   */
+  function handleRenameCell(cellId: string, label: string) {
+    if (state.markdown === null) return;
+    const cell = state.cells.find((c) => c.id === cellId);
+    if (cell === undefined || cell.kind !== "math") return;
+    handleCellCodeChange(cellId, setCellLabelLine(decodeByteRange(state.markdown, cell.bodyRange), label));
+  }
+
   function handleCellCodeChange(cellId: string, nextCode: string) {
     if (state.markdown === null) return;
     const nextMarkdown = replaceCellBody(state.markdown, cellId, nextCode);
@@ -2244,6 +2260,11 @@ export default function NotebookPage() {
   const openCellId = openCell?.id ?? null;
   const openCellCode = openCell !== null && state.markdown !== null ? decodeByteRange(state.markdown, openCell.bodyRange) : null;
 
+  /** Every cell's display name (R214 item 2) — the same `# label:`-else-
+   *  "Cell N" rule the maths graph's frames use, from the same module, so
+   *  a cell is named identically wherever it appears. */
+  const cellDisplayNameMap = useMemo(() => documentCellDisplayNames(state.markdown ?? ""), [state.markdown]);
+
   // `CodePane` completions (every kind); `plotForm`'s custom-code detection
   // means these are just candidates, never validated against what a cell
   // actually references. Unfiltered by `has_t` -- unlike `definitionsWithAxis`
@@ -2456,6 +2477,9 @@ export default function NotebookPage() {
         markdown={state.markdown}
         onMarkdownChange={handleDocumentChange}
         onSelectCell={setSelectedCellId}
+        displayName={openCellId !== null ? displayNameFor(cellDisplayNameMap, openCellId) : null}
+        renameable={openCell?.kind === "math"}
+        onRenameCell={handleRenameCell}
       />
     ) : null;
 
