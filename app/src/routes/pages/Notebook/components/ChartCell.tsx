@@ -11,7 +11,7 @@ import { isStaleSettleResult, makeSettle } from "../model/settle";
 import { chooseTier, tileRange } from "../model/tiers";
 import { ensureTiles, type TileCache, type TileCacheKey } from "../model/tileCache";
 import { rawUnitToLabel } from "../model/unitLabel";
-import { clampTo, panBy, transformFor, zoomAt, type Viewport } from "../model/viewport";
+import { clampTo, commitViewport, panBy, transformFor, zoomAt, type Viewport } from "../model/viewport";
 import { cursorTimeInWindow, type AbsoluteSpan } from "../model/viewportWindows";
 import ChartContextMenu from "../interaction/ChartContextMenu";
 import type { ChartAction } from "../interaction/chartActions";
@@ -541,17 +541,32 @@ export default function ChartCell({
   transformDepsRef.current = { cellId, sendTransform, viewport };
 
   // A newly committed `viewport` from the parent (post-settle, or any other
-  // cause) always replaces whatever gesture-local state was live — a stale
-  // in-gesture viewport must never persist across an externally driven change.
-  // The sandbox's own transform resets to identity in lockstep: the parent
-  // only commits a new `viewport` once it has re-derived and re-sent this
-  // channel's data for that exact window (`onViewportSettled` ->
-  // `setBoundChannel`/`setChannelHostVar`), so a leftover non-identity
-  // transform from the gesture that triggered this commit would otherwise
-  // double-apply on top of the freshly re-rendered picture.
+  // cause) replaces whatever gesture-local state was live, and the sandbox's
+  // transform resets to identity in lockstep: the parent only commits a new
+  // `viewport` once it has re-derived and re-sent this channel's data for
+  // that exact window (`onViewportSettled` -> `setBoundChannel`/
+  // `setChannelHostVar`), so a leftover non-identity transform from the
+  // gesture that triggered this commit would otherwise double-apply on top
+  // of the freshly re-rendered picture.
+  //
+  // Except while a gesture is still running (R209 item 2). `settle.ts`
+  // fires `SETTLE_DELAY_MS` after the pointer last moved and the tile fetch
+  // it starts resolves later still, so a commit routinely lands with the
+  // pointer still down and still panning — a person's pan is a drag with
+  // pauses in it, not one uninterrupted sweep. Adopting the committed
+  // window there threw away every pixel panned since that pause, snapping
+  // the picture back to where it was when the settle fired and then
+  // continuing the pan from there: the reported jumping. `commitViewport`
+  // keeps the live window and re-bases the transform against the newly
+  // rendered one instead, so nothing on screen moves at the commit and the
+  // gesture carries on from where it actually is. The pan's own later
+  // settle then commits the window the user actually reached.
   useEffect(() => {
-    setLiveViewport(viewport);
-    transformDepsRef.current.sendTransform(transformDepsRef.current.cellId, 0, 1);
+    setLiveViewport((current) => {
+      const commit = commitViewport(viewport, current, dragStateRef.current !== null);
+      transformDepsRef.current.sendTransform(transformDepsRef.current.cellId, commit.transform.translateXPx, commit.transform.scaleX);
+      return commit.live;
+    });
   }, [viewport]);
 
   useEffect(() => {

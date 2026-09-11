@@ -304,6 +304,14 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 
 ### Fixed
 
+- **Charts no longer jump back during a pan (2026-09-11, ruling R209 item
+  2).** Panning a chart in the short bursts people actually drag in made
+  the picture snap backwards every so often. A pan pauses long enough for
+  the chart to fetch fresh data, and when that data arrived the chart
+  adopted the window it had asked for, discarding every pixel panned in the
+  meantime. It now keeps the window under the pointer and re-bases the
+  freshly drawn picture to it, so nothing moves except with the drag.
+
 - **Charts no longer paint over the top bar (2026-09-11, ruling R209 item
   1).** Scrolling the notebook used to push a chart up over the app's
   wordmark, tabs and selection chips. The notebook's toolbar row was

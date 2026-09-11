@@ -154,3 +154,42 @@ export function transformFor(rendered: Viewport, current: Viewport): { scaleX: n
 
   return { scaleX, translateXPx };
 }
+
+/**
+ * What a chart cell's gesture-local viewport and sandbox transform become
+ * when the parent commits a newly rendered `committed` viewport (R209 item
+ * 2).
+ *
+ * Idle (`gestureActive` false), this is the long-standing behaviour: the
+ * committed viewport replaces whatever gesture-local window was live, and
+ * the transform resets to identity, because the parent only commits once it
+ * has re-rendered the picture for exactly that window — a leftover
+ * non-identity transform would double-apply on top of it.
+ *
+ * Mid-gesture it must not: a settle fires 150 ms after the pointer last
+ * moved and its tile fetch resolves later still, so a commit routinely
+ * lands while the pointer is *still down and still panning*. Replacing the
+ * live window there discards every pixel the user has panned since that
+ * settle fired, and the picture snaps back to where it was when they
+ * paused — the "charts jump around a little during a pan and snap back"
+ * report. So the live window is kept as the user left it, and the transform
+ * is re-based against the freshly rendered `committed` viewport instead:
+ * the same picture stays under the pointer, and the gesture carries on from
+ * where it actually is.
+ *
+ * Pure: the caller applies the returned viewport to its own state and sends
+ * the returned transform to the sandbox.
+ *
+ * @param committed The viewport the parent has just rendered the picture for.
+ * @param live The cell's gesture-local viewport immediately before this commit.
+ * @param gestureActive `true` while a drag/zoom gesture is still in progress.
+ */
+export function commitViewport(
+  committed: Viewport,
+  live: Viewport,
+  gestureActive: boolean
+): { live: Viewport; transform: { scaleX: number; translateXPx: number } } {
+  const next = gestureActive ? live : committed;
+
+  return { live: next, transform: transformFor(committed, next) };
+}
