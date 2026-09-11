@@ -197,6 +197,12 @@ export interface CombinedChannelPayload {
   length: number;
   t: Float64Array;
   v: Float64Array;
+  /** The lap-relative time column (`host/protocol.ts`'s
+   *  `combineChannelWindows`, ruling R215 items 4-5) — seconds since each
+   *  sample's own window began. Retained alongside `t` so a rebuild replay
+   *  re-publishes exactly what was published before, rather than a payload
+   *  missing a column some cell's `x: "tr"` binding reads. */
+  tr: Float64Array;
   w: Float64Array;
   windows: WindowDescriptor[];
   spans: AbsoluteSpan[];
@@ -212,7 +218,7 @@ export interface CombinedChannelPayload {
  *  `setChannelHostVar`'s transfer list; `retained` (a separate, un-
  *  transferred copy) is what a caller keeps for `model/cursorCard.ts`. */
 export type ChannelBindAction =
-  | { type: "channelData"; cellId: string; channelId: string; length: number; t: ArrayBuffer; v: ArrayBuffer; w: ArrayBuffer; windows: WindowDescriptor[]; unit: UnitLabel; retained: CombinedChannelPayload }
+  | { type: "channelData"; cellId: string; channelId: string; length: number; t: ArrayBuffer; v: ArrayBuffer; tr: ArrayBuffer; w: ArrayBuffer; windows: WindowDescriptor[]; unit: UnitLabel; retained: CombinedChannelPayload }
   | { type: "boundChannels"; cellId: string; bound: BoundChannel[] }
   | { type: "chartWindow"; cellId: string; chartWindow: ChartWindow };
 
@@ -377,7 +383,7 @@ async function runChannelBindWindow(
       // to the pre-multi-window shape (R127 item 3), `w` all zero.
       const combined = combineChannelWindows([{ descriptor: primary.descriptor, t: result.t, v: result.v }]);
       // R139: clone each buffer for the sandbox's transfer list -- the
-      // original `combined.t/v/w` typed arrays are kept in `retained`
+      // original `combined.t/v/tr/w` typed arrays are kept in `retained`
       // for `model/cursorCard.ts`, and `postMessage`'s transfer detaches
       // whatever buffer instance it moves, so retaining the same one that
       // gets transferred would leave it unreadable the instant this
@@ -389,10 +395,11 @@ async function runChannelBindWindow(
         length: combined.length,
         t: combined.t.buffer.slice(0) as ArrayBuffer,
         v: combined.v.buffer.slice(0) as ArrayBuffer,
+        tr: combined.tr.buffer.slice(0) as ArrayBuffer,
         w: combined.w.buffer.slice(0) as ArrayBuffer,
         windows: combined.windows,
         unit: channel.unit,
-        retained: { length: combined.length, t: combined.t, v: combined.v, w: combined.w, windows: combined.windows, spans: [primary.span] },
+        retained: { length: combined.length, t: combined.t, v: combined.v, tr: combined.tr, w: combined.w, windows: combined.windows, spans: [primary.span] },
       });
       bounds.push({ source: "definition", name: channel.channelId, budget, unit: channel.unit });
       // No `chartWindow` dispatch: a definition channel is never the
@@ -480,10 +487,11 @@ async function runChannelBindWindow(
       length: combined.length,
       t: combined.t.buffer.slice(0) as ArrayBuffer,
       v: combined.v.buffer.slice(0) as ArrayBuffer,
+      tr: combined.tr.buffer.slice(0) as ArrayBuffer,
       w: combined.w.buffer.slice(0) as ArrayBuffer,
       windows: combined.windows,
       unit: channel.unit,
-      retained: { length: combined.length, t: combined.t, v: combined.v, w: combined.w, windows: combined.windows, spans: contributingSpans },
+      retained: { length: combined.length, t: combined.t, v: combined.v, tr: combined.tr, w: combined.w, windows: combined.windows, spans: contributingSpans },
     });
 
     // The primary window's own fetch is what `BoundChannel`/`chartWindow`

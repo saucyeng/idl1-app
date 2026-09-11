@@ -17,6 +17,37 @@
   }
 }
 
+/* Ruling R221.1: one stacking layer for all chrome, one isolated content
+ * container, and no z-index anywhere in between.
+ *
+ * `.shell-chrome` goes on every chrome region -- title bar, activity bar,
+ * sidebar frame, editor toolbar row, timeline strip, status bar. They are
+ * not one DOM element (chrome surrounds the content on four sides, so a
+ * single wrapper would have to position everything absolutely), but they
+ * are one *layer*: one class, one z-index, declared once here.
+ *
+ * `.shell-content` goes on the single container holding `RouteHost`.
+ * `isolation: isolate` makes it a stacking context, so every z-index a
+ * route declares inside it -- a sticky table header, a cell's overlay
+ * chrome, and the sandbox iframe host's own `zIndex: 0` -- is scoped to
+ * that context and cannot reach past chrome. `overflow: hidden` because
+ * this container itself scrolls on neither axis: the panes inside it do.
+ *
+ * See `shell/stackingLayers.ts` for the model and the reason
+ * `isolation: isolate` is used rather than `contain: paint`. */
+@layer utilities {
+  .shell-chrome {
+    position: relative;
+    z-index: var(--z-chrome);
+  }
+
+  .shell-content {
+    position: relative;
+    isolation: isolate;
+    overflow: hidden;
+  }
+}
+
 /* One of idl0's two permitted animations (UI-DIRECTION decision 18):
  * `PulsingDot`'s ~0.9s opacity pulse, the recording dash light. No colour
  * literal here — the dot's colour is the caller's `currentColor`. */

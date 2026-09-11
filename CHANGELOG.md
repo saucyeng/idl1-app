@@ -4,7 +4,91 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 
 ## [Unreleased]
 
+### Fixed
+
+- **A chart can no longer paint over the window's own controls
+  (2026-09-11, ruling R221.1).** Charts are drawn in a layer that floats
+  above the page so they can track scrolling in real pixels, and one piece
+  of the app's furniture at a time kept turning up underneath it — most
+  recently the timeline strip above the notebook. Every part of the window
+  frame (title bar and menus, the activity icons, the side panel, the
+  toolbar row, the timeline strip and the status bar) now sits in one
+  layer above one container that holds everything a tab draws, so nothing
+  a chart does can reach past it. The timeline strip moved into that frame
+  — same place on screen, same controls. Nothing inside a tab needs to
+  claim a stacking order any more, and the two patches that had been added
+  for this reason are gone.
+
 ### Added
+
+- **[docs] Release pipeline (2026-09-11, ruling R224).** `release.yml`
+  builds Windows and Linux installers on a `v*` tag push and opens a draft
+  GitHub Release; see `docs/RELEASING.md` for how to cut one.
+
+- **The window is laid out like an editor now (2026-09-11, ruling R220).**
+  The destination tabs are gone from the top of the window. In their place:
+  a menu bar (File, Edit, View, Go, Help) beside the app name in the title
+  bar, a 48 px strip of four icons down the left edge for Device, Data,
+  Notebook and Settings, and a resizable panel beside that strip holding
+  whichever activity you are in — the device list, the library's filters,
+  the workbook and cells list, or the settings sections. `Ctrl+1` to
+  `Ctrl+4` switch activities; `Ctrl+B` hides and shows the panel, which
+  remembers its width per screen shape the way the layout presets already
+  do. A 22 px status bar along the bottom now carries the selected
+  sessions, the device link, background import and rebuild progress, the
+  chart cache's share of its memory budget, and the current layout preset
+  (click it to cycle). Every menu entry runs a command that already
+  existed, with its shortcut printed beside it, and greys out when that
+  command cannot run. On a phone-width window there is no icon strip and
+  no side panel: the four activities are a bottom tab bar carrying the
+  status as badges, and the menus collapse into one button in the title
+  strip.
+
+- **A chart can name itself (2026-09-11).** The Properties pane has a
+  **Title** field, and the title is written into the cell's own code as a
+  Plot option — so a chart states its name in the same place it states the
+  rest of its picture, and the generated code still draws its own title if
+  run anywhere else. Every chart type has one. Leaving the field blank
+  removes it, which restores the previous behaviour: the cell's `# label:`
+  line names the chart. An explicit title wins over that line; nothing that
+  had a title loses one.
+
+- **Four chart types idl0 had are back (2026-09-11, ruling R215).** The
+  chart-type picker on a graph card is no longer five Plot marks: it now
+  offers the **FFT** spectrum (which the grammar and the engine already
+  supported but nothing offered), a **histogram** of one channel's value
+  distribution, a **scatter** of one channel against another — the G-G
+  cloud, with equal-aspect axes on by default so the friction circle is
+  round — and a **lap variance** trace. Each has its own section in the
+  Properties pane and its own row in the picker.
+
+  The histogram and the scatter are new engine commands
+  (`fetch_histogram`, `fetch_scatter`): every sample stays in Rust, which
+  bins, pairs and decimates, and only the reduced result crosses to the
+  chart. A histogram is binned by **count or by width**, centred on zero by
+  default (a suspension channel is signed, so compression and rebound
+  belong either side of a bin edge), and plotted as raw counts or as each
+  bin's share of the window — which is what makes two windows of different
+  lengths comparable. Selecting several laps overlays all of them in one
+  chart, for every one of the four.
+
+- **Lap time as an X axis, and the options the port had dropped
+  (2026-09-11, ruling R215).** A time chart's X axis can now be **lap
+  time** instead of session time: every selected lap's trace starts at
+  zero, so laps superimpose instead of sitting end to end. That is what
+  makes a lap-pair overlay and a lap variance trace readable, and it is
+  what the lap variance chart type charts a `lap_delta_time` definition on.
+  A time chart also gains a **zero line** toggle and idl0's two **signed**
+  Y scales — signed root and signed square — which treat compression and
+  rebound alike where a plain square root folds one side away.
+
+  **Distance on X is offered and disabled, with its reason shown.** A naive
+  cumulative-distance axis is wrong for the one thing it exists to do:
+  comparing two laps that took different lines through the same corner
+  puts their "400 m" at different points on the track. Aligning laps by
+  track position needs a per-venue reference path, which is engine work
+  and its own lane. The control names the mode and says why it cannot be
+  chosen rather than hiding it.
 
 - **The window's title bar is the app's own (2026-09-11, ruling R216).** On
   Windows, idl1 no longer draws a native caption above its own top bar.

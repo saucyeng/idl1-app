@@ -3,13 +3,21 @@ import {
   FFT_SCALINGS,
   FFT_WINDOW_FUNCTIONS,
   FFT_AVERAGINGS,
+  HISTOGRAM_BIN_MODES,
+  HISTOGRAM_NORMALISATIONS,
   MARK_NAMES,
   SPECTRUM_MARK_NAMES,
   type FftParams,
   type FftPlotProps,
   type FftXAxisProps,
+  type HistogramMarkProps,
+  type HistogramParams,
+  type HistogramPlotProps,
   type MarkProps,
   type PlotProps,
+  type ScatterMarkProps,
+  type ScatterParams,
+  type ScatterPlotProps,
   type SpectrumMarkProps,
   type TimePlotProps,
   type XAxisProps,
@@ -441,21 +449,38 @@ function parseYField(key: string, c: Cursor): FieldResult {
     }
     case "type": {
       const v = consumeString(c);
-      if (v === "linear" || v === "log" || v === "sqrt") return { ok: true, value: v };
+      if (v === "linear" || v === "log" || v === "sqrt" || v === "pow") return { ok: true, value: v };
       return { ok: false };
+    }
+    case "exponent": {
+      const v = consumeNumber(c);
+      return v === null ? { ok: false } : { ok: true, value: v };
     }
     default:
       return { ok: false };
   }
 }
 
+/** Reads a `y_scale` object. `exponent` and `type: "pow"` are required to
+ *  appear **together** (ruling R215 item 5): a `"pow"` scale with no
+ *  exponent has no defined shape, and an `exponent` on any other scale type
+ *  would be silently dropped by the next `generate()` call — both are
+ *  custom code, not shorter valid forms. That mutual requirement is why
+ *  this reader checks after `readBracedFields` rather than in
+ *  `parseYField`, which sees one key at a time. */
 function readYScale(c: Cursor): YAxisProps | null {
+  const start = c.pos;
   const fields = readBracedFields(c, parseYField);
   if (fields === null) return null;
+  if ((fields.type === "pow") !== (fields.exponent !== undefined)) {
+    c.pos = start;
+    return null;
+  }
   const y: YAxisProps = {};
   if (fields.label !== undefined) y.label = fields.label as string;
   if (fields.domain !== undefined) y.domain = fields.domain as [number, number];
-  if (fields.type !== undefined) y.type = fields.type as "linear" | "log" | "sqrt";
+  if (fields.type !== undefined) y.type = fields.type as NonNullable<YAxisProps["type"]>;
+  if (fields.exponent !== undefined) y.exponent = fields.exponent as number;
   return y;
 }
 
@@ -519,8 +544,10 @@ export function readChannelCall(c: Cursor): { channel: string; lap: number | nul
 function parseMarkOptionField(key: string, c: Cursor): FieldResult {
   switch (key) {
     case "x": {
+      // `"t"` (session time) or `"tr"` (lap-relative time, ruling R215
+      // items 4-5). Any other literal makes the cell custom.
       const v = consumeString(c);
-      return v === "t" ? { ok: true, value: v } : { ok: false };
+      return v === "t" || v === "tr" ? { ok: true, value: v } : { ok: false };
     }
     case "y": {
       const v = consumeString(c);
@@ -539,15 +566,20 @@ function parseMarkOptionField(key: string, c: Cursor): FieldResult {
   }
 }
 
-/** Reads a mark's `mark_options`: the fixed literal pair `x: "t"`,
- *  `y: "v"` (both required, order-insensitive with the optional fields),
- *  plus optional `stroke`/`strokeWidth`. Any other key, or `x`/`y` not
- *  exactly the literal strings `"t"`/`"v"`, makes the cell custom. */
-function readMarkOptions(c: Cursor): { stroke?: string; strokeWidth?: number } | null {
+/** Reads a mark's `mark_options`: `x` (required, `"t"` or `"tr"`) and
+ *  `y` (required, always `"v"`), order-insensitive with the optional
+ *  fields, plus optional `stroke`/`strokeWidth`. Any other key, an `x`
+ *  outside those two literals, or a `y` that is not `"v"`, makes the cell
+ *  custom. */
+function readMarkOptions(c: Cursor): { xField?: "tr"; stroke?: string; strokeWidth?: number } | null {
   const fields = readBracedFields(c, parseMarkOptionField);
-  if (fields === null || fields.x !== "t" || fields.y !== "v") return null;
+  if (fields === null || (fields.x !== "t" && fields.x !== "tr") || fields.y !== "v") return null;
 
-  const options: { stroke?: string; strokeWidth?: number } = {};
+  const options: { xField?: "tr"; stroke?: string; strokeWidth?: number } = {};
+  // `"t"` normalises to the field being absent — `MarkProps.xField`'s one
+  // spelling for "session time" (see its doc comment), which is what keeps
+  // `parse(generate(p))` deep-equal to `p` with no second normalisation.
+  if (fields.x === "tr") options.xField = "tr";
   if (fields.stroke !== undefined) options.stroke = fields.stroke as string;
   if (fields.strokeWidth !== undefined) options.strokeWidth = fields.strokeWidth as number;
   return options;
@@ -587,6 +619,7 @@ function readMark(c: Cursor): MarkProps | null {
     mark: markName as MarkProps["mark"],
     lap: channelResult.lap,
   };
+  if (markOptions.xField !== undefined) mark.xField = markOptions.xField;
   if (markOptions.stroke !== undefined) mark.stroke = markOptions.stroke;
   if (markOptions.strokeWidth !== undefined) mark.strokeWidth = markOptions.strokeWidth;
   return mark;
@@ -595,7 +628,36 @@ function readMark(c: Cursor): MarkProps | null {
 /** Reads a `marks_array`: `[]` or a comma-separated list of `mark`
  *  productions. An empty array is legal (mirrors `generate`'s handling of
  *  `marks: []`). */
-function readMarksArray(c: Cursor): MarkProps[] | null {
+/** Reads C2 §5.3's `zero_rule` production — `Plot.ruleY([0])`, exactly
+ *  (ruling R215 item 5). Told apart from a `ruleY` *channel* mark by the
+ *  `[` where that production has `channel(`, so no lookahead is needed
+ *  beyond this reader's own cursor reset. Returns `false` without moving
+ *  the cursor when the next tokens are not this literal call. */
+function readZeroRule(c: Cursor): boolean {
+  const start = c.pos;
+  if (
+    consumeIdent(c, "Plot") &&
+    consumePunct(c, ".") &&
+    consumeIdent(c, "ruleY") &&
+    consumePunct(c, "(") &&
+    consumePunct(c, "[") &&
+    consumeNumber(c) === 0 &&
+    consumePunct(c, "]") &&
+    consumePunct(c, ")")
+  ) {
+    return true;
+  }
+  c.pos = start;
+  return false;
+}
+
+/** Reads a `marks_array`: `[]`, or an optional leading `zero_rule`
+ *  followed by a comma-separated list of `mark` productions. An empty array
+ *  is legal (mirrors `generate`'s handling of `marks: []`). Returns the
+ *  marks plus whether the zero line was present, since `TimePlotProps`
+ *  carries the latter as its own `zeroLine` flag rather than as a mark
+ *  nothing else in the form could edit. */
+function readMarksArray(c: Cursor): { marks: MarkProps[]; zeroLine: boolean } | null {
   const start = c.pos;
   if (!consumePunct(c, "[")) {
     c.pos = start;
@@ -603,7 +665,18 @@ function readMarksArray(c: Cursor): MarkProps[] | null {
   }
 
   const marks: MarkProps[] = [];
-  if (consumePunct(c, "]")) return marks;
+  if (consumePunct(c, "]")) return { marks, zeroLine: false };
+
+  const zeroLine = readZeroRule(c);
+  if (zeroLine) {
+    // `[Plot.ruleY([0])]` alone: a zero line and no data marks. Legal, the
+    // same way `marks: []` is.
+    if (consumePunct(c, "]")) return { marks, zeroLine };
+    if (!consumePunct(c, ",")) {
+      c.pos = start;
+      return null;
+    }
+  }
 
   for (;;) {
     const mark = readMark(c);
@@ -620,7 +693,7 @@ function readMarksArray(c: Cursor): MarkProps[] | null {
     c.pos = start;
     return null;
   }
-  return marks;
+  return { marks, zeroLine };
 }
 
 // ---------------------------------------------------------------------------
@@ -820,6 +893,323 @@ function readFftMarksArray(c: Cursor): SpectrumMarkProps | null {
   return mark;
 }
 
+// ---------------------------------------------------------------------------
+// Histogram branch: histogram_params, histogram_call, histogram_mark,
+// histogram_marks (C2 §5.3, ruling R215 item 2, added 2026-09-11).
+// ---------------------------------------------------------------------------
+
+/** Reads a bare `true`/`false` identifier as a boolean (C2 §5.3's
+ *  `js_bool`). The tokenizer has no boolean token kind — `true` and
+ *  `false` arrive as plain identifiers, the same way `color_opt`'s
+ *  `legend: true` already does — so this is the one place that mapping
+ *  lives, rather than two call sites each spelling out `consumeIdent`. */
+function readBool(c: Cursor): boolean | null {
+  const start = c.pos;
+  if (consumeIdent(c, "true")) return true;
+  c.pos = start;
+  if (consumeIdent(c, "false")) return false;
+  c.pos = start;
+  return null;
+}
+
+function parseHistogramParamsField(key: string, c: Cursor): FieldResult {
+  switch (key) {
+    case "binMode": {
+      const v = consumeString(c);
+      return v !== null && (HISTOGRAM_BIN_MODES as readonly string[]).includes(v) ? { ok: true, value: v } : { ok: false };
+    }
+    case "binValue": {
+      const v = consumeNumber(c);
+      return v === null ? { ok: false } : { ok: true, value: v };
+    }
+    case "symmetric": {
+      const v = readBool(c);
+      return v === null ? { ok: false } : { ok: true, value: v };
+    }
+    case "normalise": {
+      const v = consumeString(c);
+      return v !== null && (HISTOGRAM_NORMALISATIONS as readonly string[]).includes(v) ? { ok: true, value: v } : { ok: false };
+    }
+    default:
+      return { ok: false };
+  }
+}
+
+/** The four keys `histogram_params` requires, all of them, per C2 §5.3
+ *  ("a missing key is custom code, not a default"). */
+const HISTOGRAM_PARAMS_KEYS = ["binMode", "binValue", "symmetric", "normalise"] as const;
+
+/** Reads a `histogram_call`'s `histogram_params` object, requiring every key
+ *  in {@link HISTOGRAM_PARAMS_KEYS} (an extra key is already rejected by
+ *  `readBracedFields`'s "unrecognised key" path; a missing one here).
+ *  `symmetric` is read through {@link readBool} rather than a truthiness
+ *  check, so a `symmetric: false` cell is recognised rather than falling
+ *  out of the grammar. */
+function readHistogramParams(c: Cursor): HistogramParams | null {
+  const start = c.pos;
+  const fields = readBracedFields(c, parseHistogramParamsField);
+  if (fields === null || !HISTOGRAM_PARAMS_KEYS.every((k) => fields[k] !== undefined)) {
+    c.pos = start;
+    return null;
+  }
+  return {
+    binMode: fields.binMode as HistogramParams["binMode"],
+    binValue: fields.binValue as number,
+    symmetric: fields.symmetric as boolean,
+    normalise: fields.normalise as HistogramParams["normalise"],
+  };
+}
+
+/** Reads a `histogram_call`: `histogram("name", {histogram_params})`.
+ *  `lap` is not expressible here, for the same reason it is not on
+ *  `spectrum_call` (C2 §5.3): the window a histogram is binned over is the
+ *  caller's selection, not a token in the document. Exported for
+ *  `model/jsCellCalls.ts`, which re-tokenizes one extracted call span at a
+ *  time — same reuse rationale as {@link readChannelCall} and
+ *  {@link readSpectrumCall}. */
+export function readHistogramCall(c: Cursor): { channel: string; histogram: HistogramParams } | null {
+  const start = c.pos;
+  if (!consumeIdent(c, "histogram") || !consumePunct(c, "(")) {
+    c.pos = start;
+    return null;
+  }
+  const name = consumeString(c);
+  if (name === null || !consumePunct(c, ",")) {
+    c.pos = start;
+    return null;
+  }
+  const histogram = readHistogramParams(c);
+  if (histogram === null || !consumePunct(c, ")")) {
+    c.pos = start;
+    return null;
+  }
+  return { channel: name, histogram };
+}
+
+function parseHistogramOptionField(key: string, c: Cursor): FieldResult {
+  switch (key) {
+    case "x1": {
+      const v = consumeString(c);
+      return v === "v0" ? { ok: true, value: v } : { ok: false };
+    }
+    case "x2": {
+      const v = consumeString(c);
+      return v === "v1" ? { ok: true, value: v } : { ok: false };
+    }
+    case "y": {
+      const v = consumeString(c);
+      return v === "n" ? { ok: true, value: v } : { ok: false };
+    }
+    case "fill": {
+      const v = consumeString(c);
+      return v === null ? { ok: false } : { ok: true, value: v };
+    }
+    case "fillOpacity": {
+      const v = consumeNumber(c);
+      return v === null ? { ok: false } : { ok: true, value: v };
+    }
+    default:
+      return { ok: false };
+  }
+}
+
+/** Reads a `histogram_mark`'s `histogram_options`: the fixed literal triple
+ *  `x1: "v0"`, `x2: "v1"`, `y: "n"` (all three required, order-insensitive
+ *  with the optional fields), plus optional `fill`/`fillOpacity`. */
+function readHistogramOptions(c: Cursor): { fill?: string; fillOpacity?: number } | null {
+  const fields = readBracedFields(c, parseHistogramOptionField);
+  if (fields === null || fields.x1 !== "v0" || fields.x2 !== "v1" || fields.y !== "n") return null;
+
+  const options: { fill?: string; fillOpacity?: number } = {};
+  if (fields.fill !== undefined) options.fill = fields.fill as string;
+  if (fields.fillOpacity !== undefined) options.fillOpacity = fields.fillOpacity as number;
+  return options;
+}
+
+/** Reads one `histogram_mark` production:
+ *  `Plot.rectY(histogram_call, histogram_options)`. The mark name is fixed
+ *  (C2 §5.3, ruling R215 item 2) — `Plot.lineY(histogram(...), ...)` is
+ *  custom code, not a second legal spelling, because `lineY` has no `x2`
+ *  channel to bind a bin's far edge to. */
+function readHistogramMark(c: Cursor): HistogramMarkProps | null {
+  const start = c.pos;
+  if (!consumeIdent(c, "Plot") || !consumePunct(c, ".") || !consumeIdent(c, "rectY") || !consumePunct(c, "(")) {
+    c.pos = start;
+    return null;
+  }
+  const call = readHistogramCall(c);
+  if (call === null || !consumePunct(c, ",")) {
+    c.pos = start;
+    return null;
+  }
+  const options = readHistogramOptions(c);
+  if (options === null || !consumePunct(c, ")")) {
+    c.pos = start;
+    return null;
+  }
+
+  const mark: HistogramMarkProps = { channel: call.channel, histogram: call.histogram };
+  if (options.fill !== undefined) mark.fill = options.fill;
+  if (options.fillOpacity !== undefined) mark.fillOpacity = options.fillOpacity;
+  return mark;
+}
+
+/** Reads a `histogram_marks` array: `[` one `histogram_mark` `]`, exactly
+ *  one — same "exactly one mark" rule as `fft_marks`, and for the same
+ *  reason (one `fetch_histogram` call resolves one distribution). */
+function readHistogramMarksArray(c: Cursor): HistogramMarkProps | null {
+  const start = c.pos;
+  if (!consumePunct(c, "[")) {
+    c.pos = start;
+    return null;
+  }
+  const mark = readHistogramMark(c);
+  if (mark === null || !consumePunct(c, "]")) {
+    c.pos = start;
+    return null;
+  }
+  return mark;
+}
+
+// ---------------------------------------------------------------------------
+// Scatter branch: scatter_params, scatter_call, scatter_mark, scatter_marks
+// (C2 §5.3, ruling R215 item 3, added 2026-09-11).
+// ---------------------------------------------------------------------------
+
+function parseScatterParamsField(key: string, c: Cursor): FieldResult {
+  switch (key) {
+    case "pointBudget": {
+      const v = consumeNumber(c);
+      return v === null ? { ok: false } : { ok: true, value: v };
+    }
+    case "equalAspect": {
+      const v = readBool(c);
+      return v === null ? { ok: false } : { ok: true, value: v };
+    }
+    default:
+      return { ok: false };
+  }
+}
+
+/** The two keys `scatter_params` requires, both of them, per C2 §5.3. */
+const SCATTER_PARAMS_KEYS = ["pointBudget", "equalAspect"] as const;
+
+/** Reads a `scatter_call`'s `scatter_params` object, requiring both keys. */
+function readScatterParams(c: Cursor): ScatterParams | null {
+  const start = c.pos;
+  const fields = readBracedFields(c, parseScatterParamsField);
+  if (fields === null || !SCATTER_PARAMS_KEYS.every((k) => fields[k] !== undefined)) {
+    c.pos = start;
+    return null;
+  }
+  return { pointBudget: fields.pointBudget as number, equalAspect: fields.equalAspect as boolean };
+}
+
+/** Reads a `scatter_call`: `scatter("x", "y", {scatter_params})`. Two
+ *  channel names, not one — the only data call in this grammar that names
+ *  two, which is also what makes a scatter cell recognisable. Exported for
+ *  `model/jsCellCalls.ts`, same reuse rationale as {@link readChannelCall}. */
+export function readScatterCall(c: Cursor): { xChannel: string; yChannel: string; scatter: ScatterParams } | null {
+  const start = c.pos;
+  if (!consumeIdent(c, "scatter") || !consumePunct(c, "(")) {
+    c.pos = start;
+    return null;
+  }
+  const xChannel = consumeString(c);
+  if (xChannel === null || !consumePunct(c, ",")) {
+    c.pos = start;
+    return null;
+  }
+  const yChannel = consumeString(c);
+  if (yChannel === null || !consumePunct(c, ",")) {
+    c.pos = start;
+    return null;
+  }
+  const scatter = readScatterParams(c);
+  if (scatter === null || !consumePunct(c, ")")) {
+    c.pos = start;
+    return null;
+  }
+  return { xChannel, yChannel, scatter };
+}
+
+function parseScatterOptionField(key: string, c: Cursor): FieldResult {
+  switch (key) {
+    case "x": {
+      const v = consumeString(c);
+      return v === "x" ? { ok: true, value: v } : { ok: false };
+    }
+    case "y": {
+      const v = consumeString(c);
+      return v === "y" ? { ok: true, value: v } : { ok: false };
+    }
+    case "fill": {
+      const v = consumeString(c);
+      return v === null ? { ok: false } : { ok: true, value: v };
+    }
+    case "r": {
+      const v = consumeNumber(c);
+      return v === null ? { ok: false } : { ok: true, value: v };
+    }
+    default:
+      return { ok: false };
+  }
+}
+
+/** Reads a `scatter_mark`'s `scatter_options`: the fixed literal pair
+ *  `x: "x"`, `y: "y"` (both required), plus optional `fill`/`r`. */
+function readScatterOptions(c: Cursor): { fill?: string; r?: number } | null {
+  const fields = readBracedFields(c, parseScatterOptionField);
+  if (fields === null || fields.x !== "x" || fields.y !== "y") return null;
+
+  const options: { fill?: string; r?: number } = {};
+  if (fields.fill !== undefined) options.fill = fields.fill as string;
+  if (fields.r !== undefined) options.r = fields.r as number;
+  return options;
+}
+
+/** Reads one `scatter_mark` production:
+ *  `Plot.dot(scatter_call, scatter_options)`. The mark name is fixed (C2
+ *  §5.3, ruling R215 item 3) — a cloud has no ordering along either axis,
+ *  so a line mark over it would draw a scribble that looks like a path. */
+function readScatterMark(c: Cursor): ScatterMarkProps | null {
+  const start = c.pos;
+  if (!consumeIdent(c, "Plot") || !consumePunct(c, ".") || !consumeIdent(c, "dot") || !consumePunct(c, "(")) {
+    c.pos = start;
+    return null;
+  }
+  const call = readScatterCall(c);
+  if (call === null || !consumePunct(c, ",")) {
+    c.pos = start;
+    return null;
+  }
+  const options = readScatterOptions(c);
+  if (options === null || !consumePunct(c, ")")) {
+    c.pos = start;
+    return null;
+  }
+
+  const mark: ScatterMarkProps = { xChannel: call.xChannel, yChannel: call.yChannel, scatter: call.scatter };
+  if (options.fill !== undefined) mark.fill = options.fill;
+  if (options.r !== undefined) mark.r = options.r;
+  return mark;
+}
+
+/** Reads a `scatter_marks` array: `[` one `scatter_mark` `]`, exactly one. */
+function readScatterMarksArray(c: Cursor): ScatterMarkProps | null {
+  const start = c.pos;
+  if (!consumePunct(c, "[")) {
+    c.pos = start;
+    return null;
+  }
+  const mark = readScatterMark(c);
+  if (mark === null || !consumePunct(c, "]")) {
+    c.pos = start;
+    return null;
+  }
+  return mark;
+}
+
 /**
  * Looks ahead in `tokens` (from `from`, without moving any cursor) for the
  * `marks` key's value and decides whether this cell's `plot_options` is a
@@ -828,12 +1218,19 @@ function readFftMarksArray(c: Cursor): SpectrumMarkProps | null {
  * time `x` forbids it — the two cannot share one reader, C2 §5.3: "A cell
  * is a time cell or an FFT cell, never both").
  *
+ * Widened by **ruling R215** to every chart kind the grammar has a
+ * production for: the callee name after the first mark's `Plot.<name>(` is
+ * the discriminant (`channel` ⇒ time, `spectrum` ⇒ fft, `histogram` ⇒
+ * histogram), which is exactly why each chart kind's data call is a
+ * distinct host-variable name rather than an argument to a shared one.
+ *
  * This is deliberately a heuristic, not a validating parse: `marks` is the
  * one identifier this closed grammar never uses as anything but the
  * top-level key (never a value, never nested), so a plain token scan for
  * the `ident "marks"` token, followed by the fixed `":" "[" …` shape every
  * non-empty `marks_array` alternative shares up to its first mark's callee
- * name (`Plot.<name>(<channel|spectrum>`), is enough to route correctly.
+ * name (`Plot.<name>(<channel|spectrum|histogram>`), is enough to route
+ * correctly.
  * If the surrounding structure is not actually well-formed, the reader this
  * function's answer selects will simply fail on it and `parse` returns
  * `null` regardless of which one was tried — the same end result either
@@ -845,7 +1242,7 @@ function readFftMarksArray(c: Cursor): SpectrumMarkProps | null {
  * chart kinds identically (`marks`/`mark` is the one required key), so
  * routing it to either produces the same `null`.
  */
-function detectChartKind(tokens: Token[], from: number): "time" | "fft" {
+function detectChartKind(tokens: Token[], from: number): PlotProps["chart"] {
   let marksIdx = -1;
   for (let i = from; i < tokens.length; i++) {
     const t = tokens[i];
@@ -869,11 +1266,19 @@ function detectChartKind(tokens: Token[], from: number): "time" | "fft" {
 
   // Plot . <markName> ( <calleeIdent>
   const calleeIdent = tokens[marksIdx + 7];
-  return calleeIdent?.kind === "ident" && calleeIdent.value === "spectrum" ? "fft" : "time";
+  if (calleeIdent?.kind !== "ident") return "time";
+  if (calleeIdent.value === "spectrum") return "fft";
+  if (calleeIdent.value === "histogram") return "histogram";
+  if (calleeIdent.value === "scatter") return "scatter";
+  return "time";
 }
 
 function parsePlotOptionField(key: string, c: Cursor): FieldResult {
   switch (key) {
+    case "title": {
+      const v = consumeString(c);
+      return v === null ? { ok: false } : { ok: true, value: v };
+    }
     case "x": {
       const v = readXScale(c);
       return v === null ? { ok: false } : { ok: true, value: v };
@@ -897,6 +1302,10 @@ function parsePlotOptionField(key: string, c: Cursor): FieldResult {
 
 function parseFftPlotOptionField(key: string, c: Cursor): FieldResult {
   switch (key) {
+    case "title": {
+      const v = consumeString(c);
+      return v === null ? { ok: false } : { ok: true, value: v };
+    }
     case "x": {
       const v = readFftXScale(c);
       return v === null ? { ok: false } : { ok: true, value: v };
@@ -936,7 +1345,10 @@ function readTimePlotOptions(c: Cursor): TimePlotProps | null {
     return null;
   }
 
-  const props: TimePlotProps = { chart: "time", marks: fields.marks as MarkProps[] };
+  const marksField = fields.marks as { marks: MarkProps[]; zeroLine: boolean };
+  const props: TimePlotProps = { chart: "time", marks: marksField.marks };
+  if (fields.title !== undefined) props.title = fields.title as string;
+  if (marksField.zeroLine) props.zeroLine = true;
   if (fields.x !== undefined && Object.keys(fields.x as XAxisProps).length > 0) {
     props.x = fields.x as XAxisProps;
   }
@@ -963,6 +1375,7 @@ function readFftPlotOptions(c: Cursor): FftPlotProps | null {
     mark: fields.marks as SpectrumMarkProps,
     x: fields.x as FftXAxisProps,
   };
+  if (fields.title !== undefined) props.title = fields.title as string;
   if (fields.y !== undefined && Object.keys(fields.y as YAxisProps).length > 0) {
     props.y = fields.y as YAxisProps;
   }
@@ -970,12 +1383,126 @@ function readFftPlotOptions(c: Cursor): FftPlotProps | null {
   return props;
 }
 
-/** Reads `plot_options`, dispatching to the time or FFT reader per
- *  {@link detectChartKind}'s lookahead over the `marks` key's value (C2
- *  §5.3: "A cell is a time cell or an FFT cell, never both"). */
+function parseHistogramPlotOptionField(key: string, c: Cursor): FieldResult {
+  switch (key) {
+    case "title": {
+      const v = consumeString(c);
+      return v === null ? { ok: false } : { ok: true, value: v };
+    }
+    case "x": {
+      const v = readXScale(c);
+      return v === null ? { ok: false } : { ok: true, value: v };
+    }
+    case "y": {
+      const v = readYScale(c);
+      return v === null ? { ok: false } : { ok: true, value: v };
+    }
+    case "color": {
+      const v = readColorOpt(c);
+      return v === null ? { ok: false } : { ok: true, value: v };
+    }
+    case "marks": {
+      const v = readHistogramMarksArray(c);
+      return v === null ? { ok: false } : { ok: true, value: v };
+    }
+    default:
+      return { ok: false }; // any key outside x/y/color/marks -> custom
+  }
+}
+
+/** Reads a histogram cell's `plot_options` (ruling R215 item 2), requiring
+ *  `marks` (the one bar mark). `x` is optional and reuses the *time* cell's
+ *  `x_scale` reader: a histogram's x axis carries `label`/`domain` and no
+ *  `type`, exactly as a time cell's does — the two differ in what the axis
+ *  *means* (the channel's own unit rather than seconds), which is a label,
+ *  not a grammar distinction. */
+function readHistogramPlotOptions(c: Cursor): HistogramPlotProps | null {
+  const start = c.pos;
+  const fields = readBracedFields(c, parseHistogramPlotOptionField);
+  if (fields === null || fields.marks === undefined) {
+    c.pos = start;
+    return null;
+  }
+
+  const props: HistogramPlotProps = { chart: "histogram", mark: fields.marks as HistogramMarkProps };
+  if (fields.title !== undefined) props.title = fields.title as string;
+  if (fields.x !== undefined && Object.keys(fields.x as XAxisProps).length > 0) {
+    props.x = fields.x as XAxisProps;
+  }
+  if (fields.y !== undefined && Object.keys(fields.y as YAxisProps).length > 0) {
+    props.y = fields.y as YAxisProps;
+  }
+  if (fields.color !== undefined) props.color = fields.color as { legend: true };
+  return props;
+}
+
+function parseScatterPlotOptionField(key: string, c: Cursor): FieldResult {
+  switch (key) {
+    case "title": {
+      const v = consumeString(c);
+      return v === null ? { ok: false } : { ok: true, value: v };
+    }
+    case "x": {
+      const v = readXScale(c);
+      return v === null ? { ok: false } : { ok: true, value: v };
+    }
+    case "y": {
+      const v = readYScale(c);
+      return v === null ? { ok: false } : { ok: true, value: v };
+    }
+    case "color": {
+      const v = readColorOpt(c);
+      return v === null ? { ok: false } : { ok: true, value: v };
+    }
+    case "marks": {
+      const v = readScatterMarksArray(c);
+      return v === null ? { ok: false } : { ok: true, value: v };
+    }
+    default:
+      return { ok: false }; // any key outside x/y/color/marks -> custom
+  }
+}
+
+/** Reads a scatter cell's `plot_options` (ruling R215 item 3), requiring
+ *  `marks` (the one dot mark). Both axes reuse the time cell's own
+ *  `x_scale`/`y_scale` readers: each carries a channel's unit rather than
+ *  seconds, which is a label, not a grammar distinction. */
+function readScatterPlotOptions(c: Cursor): ScatterPlotProps | null {
+  const start = c.pos;
+  const fields = readBracedFields(c, parseScatterPlotOptionField);
+  if (fields === null || fields.marks === undefined) {
+    c.pos = start;
+    return null;
+  }
+
+  const props: ScatterPlotProps = { chart: "scatter", mark: fields.marks as ScatterMarkProps };
+  if (fields.title !== undefined) props.title = fields.title as string;
+  if (fields.x !== undefined && Object.keys(fields.x as XAxisProps).length > 0) {
+    props.x = fields.x as XAxisProps;
+  }
+  if (fields.y !== undefined && Object.keys(fields.y as YAxisProps).length > 0) {
+    props.y = fields.y as YAxisProps;
+  }
+  if (fields.color !== undefined) props.color = fields.color as { legend: true };
+  return props;
+}
+
+/** Reads `plot_options`, dispatching to the reader for the chart kind
+ *  {@link detectChartKind}'s lookahead over the `marks` key's value picked
+ *  (C2 §5.3: "A cell is a time cell or an FFT cell, never both", widened by
+ *  ruling R215 to every chart kind). A `switch`, not a ternary chain, for
+ *  the same reason `generate`'s dispatch is one. */
 function readPlotOptions(c: Cursor): PlotProps | null {
-  const kind = detectChartKind(c.tokens, c.pos);
-  return kind === "fft" ? readFftPlotOptions(c) : readTimePlotOptions(c);
+  switch (detectChartKind(c.tokens, c.pos)) {
+    case "fft":
+      return readFftPlotOptions(c);
+    case "histogram":
+      return readHistogramPlotOptions(c);
+    case "scatter":
+      return readScatterPlotOptions(c);
+    case "time":
+      return readTimePlotOptions(c);
+  }
 }
 
 /** Reads a `plot_call`: `Plot.plot(plot_options)`. This must match the

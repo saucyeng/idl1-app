@@ -16,7 +16,7 @@ interface RootErrorBoundaryState {
 
 /**
  * Catches a render/commit throw from anywhere above `shell/RouteHost.tsx`'s
- * per-route boundaries — `AppShell` itself, `TopBar`, `BottomBar`,
+ * per-route boundaries — `AppShell` itself, `TitleBar`, `ActivityBar`,
  * `ColumnFrame`, `RouteHost`'s own body/effects, `CommandPalette`, the
  * `Toaster` — none of which had any boundary of their own (2026-09-07,
  * shell-unmount task: Isaac observed the *nav bar* disappear a few seconds

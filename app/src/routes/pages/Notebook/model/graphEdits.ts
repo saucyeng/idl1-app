@@ -140,13 +140,35 @@ function nameOccursIn(text: string, name: string): boolean {
 }
 
 /** Rewrites `channel` on every mark of a parsed plot cell that equals
- *  `oldName` to `newName`. Handles both the time-cell (`marks[]`) and
- *  FFT-cell (single `mark`) shapes (`plotForm/types.ts`'s `PlotProps`). */
+ *  `oldName` to `newName`. Handles the time-cell (`marks[]`) shape, every
+ *  single-`mark` single-channel chart kind, and the scatter cell's two
+ *  channel slots (`plotForm/types.ts`'s `PlotProps`).
+ *  Written as an explicit per-kind spread rather than one shared
+ *  `{ ...props, mark: { ...props.mark, channel } }`: TypeScript cannot
+ *  narrow a spread of a union member back to that member, so the shared
+ *  form widens `mark` across the union and stops type-checking. */
 function renameChannelInProps(props: PlotProps, oldName: string, newName: string): PlotProps {
   if (props.chart === "time") {
     return { ...props, marks: props.marks.map((m) => (m.channel === oldName ? { ...m, channel: newName } : m)) };
   }
-  return props.mark.channel === oldName ? { ...props, mark: { ...props.mark, channel: newName } } : props;
+  if (props.chart === "scatter") {
+    // Two channel slots, either or both of which may name the definition.
+    const { xChannel, yChannel } = props.mark;
+    if (xChannel !== oldName && yChannel !== oldName) return props;
+    return {
+      ...props,
+      mark: {
+        ...props.mark,
+        xChannel: xChannel === oldName ? newName : xChannel,
+        yChannel: yChannel === oldName ? newName : yChannel,
+      },
+    };
+  }
+  if (props.mark.channel !== oldName) return props;
+  if (props.chart === "fft") {
+    return { ...props, mark: { ...props.mark, channel: newName } };
+  }
+  return { ...props, mark: { ...props.mark, channel: newName } };
 }
 
 export function renameDefinition(markdown: string, oldName: string, newName: string): RenameResult {

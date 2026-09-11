@@ -30,7 +30,16 @@ import type { UnitLabel } from "../../../../ipc/workbook";
  */
 export interface ChannelRebindSandbox {
   /** Binds a decoded channel as a sandbox host variable (`SandboxHost.setChannelHostVar`). */
-  setChannelHostVar(name: string, length: number, t: ArrayBuffer, v: ArrayBuffer, w: ArrayBuffer, windows: WindowDescriptor[], unit: UnitLabel): void;
+  setChannelHostVar(
+    name: string,
+    length: number,
+    t: ArrayBuffer,
+    v: ArrayBuffer,
+    tr: ArrayBuffer,
+    w: ArrayBuffer,
+    windows: WindowDescriptor[],
+    unit: UnitLabel
+  ): void;
 }
 
 /**
@@ -79,7 +88,24 @@ export function makeChannelsInvalidatedHandler(
       // so the narrower cast is asserted here rather than threading a
       // generic parameter through `ChannelData` for one call site.
       const w = new Float64Array(data.length).fill(0);
-      sandboxHost.setChannelHostVar(name, data.length, data.t.buffer as ArrayBuffer, data.v.buffer as ArrayBuffer, w.buffer as ArrayBuffer, [descriptor], unit);
+      // `tr` for a single window is `t` rebased to its own first sample
+      // (`host/protocol.ts`'s `combineChannelWindows`) — derived here
+      // rather than retained, because this rebuild path re-derives `t`
+      // itself from the tile cache and a stored `tr` could not be matched
+      // back to it. One window, one origin: `t[0]`.
+      const origin = data.length > 0 ? data.t[0] : 0;
+      const tr = new Float64Array(data.length);
+      for (let i = 0; i < data.length; i++) tr[i] = data.t[i] - origin;
+      sandboxHost.setChannelHostVar(
+        name,
+        data.length,
+        data.t.buffer as ArrayBuffer,
+        data.v.buffer as ArrayBuffer,
+        tr.buffer as ArrayBuffer,
+        w.buffer as ArrayBuffer,
+        [descriptor],
+        unit
+      );
     });
   };
 }

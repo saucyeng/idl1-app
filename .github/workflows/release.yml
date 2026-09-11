@@ -1,0 +1,95 @@
+# Builds and drafts a GitHub Release for idl1. Unsigned: Windows builds show
+# a SmartScreen warning and Linux .deb/.AppImage are unsigned too. Signing
+# (a Windows code-signing cert, an Android keystore) is a follow-up — see
+# docs/RELEASING.md.
+#
+# Trigger: push a tag matching v* (e.g. `git tag v0.1.0-alpha.1 && git push
+# --tags`), or run manually via workflow_dispatch. Draft release only —
+# publish it by hand once the artifacts look right.
+
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    strategy:
+      fail-fast: false
+      matrix:
+        platform: [windows-latest, ubuntu-22.04]
+    runs-on: ${{ matrix.platform }}
+    timeout-minutes: 90
+    env:
+      # rust/.cargo/config.toml pins target-dir to a Windows path shared
+      # across the dev machine's worktrees; that path isn't valid on a
+      # runner. Override with a workspace-relative path, same as ci.yml.
+      CARGO_TARGET_DIR: ${{ github.workspace }}/rust/target
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install Tauri v2 Linux prerequisites
+        if: matrix.platform == 'ubuntu-22.04'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            build-essential \
+            curl \
+            wget \
+            file \
+            libxdo-dev \
+            libssl-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            patchelf
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            rust
+            app/src-tauri
+
+      - name: Install NASM (Windows, needed by rustls' aws-lc-rs)
+        if: matrix.platform == 'windows-latest'
+        uses: ilammy/setup-nasm@v1
+
+      - name: Ensure cmake is present (needed by rustls' aws-lc-rs)
+        if: matrix.platform == 'windows-latest'
+        run: cmake --version
+
+      - name: Install Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+
+      - name: npm ci
+        working-directory: app
+        run: npm ci
+
+      - name: Build and release
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          projectPath: app
+          tagName: ${{ github.ref_name }}
+          releaseName: "idl1 ${{ github.ref_name }}"
+          releaseDraft: true
+          prerelease: ${{ contains(github.ref_name, '-') }}
+          args: ${{ matrix.platform == 'ubuntu-22.04' && '--bundles appimage,deb' || '--bundles msi,nsis' }}

@@ -22,6 +22,7 @@ function payload(overrides: Partial<CombinedChannelPayload> = {}): CombinedChann
     length: 4,
     t: new Float64Array([0, 1, NaN, 2]),
     v: new Float64Array([10, 11, NaN, 12]),
+    tr: new Float64Array([0, 1, NaN, 0]),
     w: new Float64Array([0, 0, NaN, 1]),
     windows: [
       { sessionId: "s1", span: { kind: "session" }, colour: "--chart-3", label: "Lap 1" },
@@ -66,12 +67,71 @@ describe("buildPlotOptions", () => {
     expect(first.channels.x!.value).toBe("t");
     expect(first.channels.y!.value).toBe("v");
     expect(first.stroke).toBe("#333333");
+    // Every record carries `tr` alongside `t` (ruling R215 items 4-5) —
+    // which of the two a mark binds is the mark's own `xField`, asserted
+    // on `channels.x.value` above.
     expect(first.data).toEqual([
-      { t: 0, v: 10 },
-      { t: 1, v: 11 },
+      { t: 0, v: 10, tr: 0 },
+      { t: 1, v: 11, tr: 1 },
     ]);
     expect(second.stroke).toBe("#555555");
-    expect(second.data).toEqual([{ t: 2, v: 12 }]);
+    expect(second.data).toEqual([{ t: 2, v: 12, tr: 0 }]);
+  });
+
+  it("a mark bound to the lap-relative column — binds x to \"tr\", not silently to session time (R215 items 4-5)", () => {
+    // Arrange — without this, a report of a lap-pair overlay would redraw
+    // the laps end to end instead of superimposed.
+    const channelData = new Map([["speed", payload()]]);
+
+    // Act
+    const options = buildPlotOptions(
+      timeProps([{ channel: "speed", mark: "lineY", lap: null, xField: "tr" }]),
+      channelData,
+      theme,
+      ["#111111", "#222222", "#333333", "#444444", "#555555", "#666666", "#777777", "#888888"],
+      Plot
+    );
+
+    // Assert
+    const [first] = options.marks as unknown as MarkShape[];
+    expect(first.channels.x!.value).toBe("tr");
+    expect(first.channels.y!.value).toBe("v");
+  });
+
+  it("a zeroLine cell — puts Plot.ruleY([0]) first, so it draws under the data (R215 item 5)", () => {
+    // Arrange
+    const channelData = new Map([["speed", payload()]]);
+
+    // Act
+    const options = buildPlotOptions(
+      timeProps([{ channel: "speed", mark: "lineY", lap: null }], { zeroLine: true }),
+      channelData,
+      theme,
+      ["#111111", "#222222", "#333333", "#444444", "#555555", "#666666", "#777777", "#888888"],
+      Plot
+    );
+
+    // Assert — one rule plus one mark per window.
+    expect(options.marks).toHaveLength(3);
+    const [rule] = options.marks as unknown as MarkShape[];
+    expect(rule.data).toEqual([0]);
+  });
+
+  it("no zeroLine — adds no rule, byte-identical to before the option existed", () => {
+    // Arrange
+    const channelData = new Map([["speed", payload()]]);
+
+    // Act
+    const options = buildPlotOptions(
+      timeProps([{ channel: "speed", mark: "lineY", lap: null }]),
+      channelData,
+      theme,
+      ["#111111", "#222222", "#333333", "#444444", "#555555", "#666666", "#777777", "#888888"],
+      Plot
+    );
+
+    // Assert
+    expect(options.marks).toHaveLength(2);
   });
 
   it("a mark with its own fixed stroke — one mark over every window's samples, break rows included", () => {

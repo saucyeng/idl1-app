@@ -2,6 +2,7 @@ import type { RouteId } from "../routes/types";
 import { ROUTES } from "../routes/types";
 import { ASPECT_CLASSES, type AspectClass } from "./aspectClass";
 import { asActivePreset, DEFAULT_PRESET_BY_CLASS, OUTPUT_COLUMN_MIN_WIDTH_PX, type ActivePreset } from "./layoutPresets";
+import { DEFAULT_SIDEBAR_PREFS, sanitizeSidebarPrefs, type SidebarPrefs } from "./sidebarPrefs";
 
 /** The wide-layout column frame's four docked columns, left to right
  *  (UI-DIRECTION "App shell and navigation"): the Data/library filter, the
@@ -49,6 +50,13 @@ export interface ColumnPrefs {
    *  `lastRoute` lives here. `"custom"` is a real stored value: a class
    *  whose columns were last thrown by hand recalls exactly that. */
   presets: Record<AspectClass, ActivePreset>;
+  /** The sidebar's width and collapsed state per viewport shape (ruling
+   *  R220 item 2: "the sidebar's width and collapsed state are per aspect
+   *  class like presets"). Another field in this same document rather than
+   *  a fourth `localStorage` key, for the reason `presets` and `lastRoute`
+   *  already are — R93's "one key for all per-machine shell state". The
+   *  shape and its bounds live in `sidebarPrefs.ts`. */
+  sidebar: SidebarPrefs;
 }
 
 const STORAGE_KEY = "idl1.shell.columns.v1";
@@ -60,6 +68,7 @@ export const DEFAULT_COLUMN_PREFS: ColumnPrefs = {
   collapsed: [],
   lastRoute: null,
   presets: { ...DEFAULT_PRESET_BY_CLASS },
+  sidebar: DEFAULT_SIDEBAR_PREFS,
 };
 
 /** Narrows `raw` to a plain JSON object, or `undefined` for anything else
@@ -127,6 +136,7 @@ export function sanitizeColumnPrefs(raw: unknown): ColumnPrefs {
     collapsed: sanitizeCollapsed(record.collapsed),
     lastRoute: sanitizeLastRoute(record.lastRoute),
     presets: sanitizePresets(record.presets),
+    sidebar: sanitizeSidebarPrefs(record.sidebar),
   };
 }
 

@@ -561,6 +561,45 @@ are defined in `docs/superpowers/specs/2026-09-02-idl1-rewrite-design.md` §10.
   `rayon` pool that will not build degrades to serial rather than failing
   the run.
 
+## Chart port, tier A (ruling R215)
+
+- [x] Four idl0 chart types back, plus the time-series options the port
+  dropped. The graph card's picker is keyed by **chart type** rather than by
+  Plot mark: C2 §5.3's five time marks, plus one row per whole-cell chart
+  kind (FFT, histogram, scatter) and one per preset over the time cell (lap
+  variance). Each has a `plotForm` grammar production, a Properties section,
+  a sandbox host variable, and a per-window fetch effect keyed by
+  `(cellId, windowKey)` so *n* selected laps overlay in one chart.
+
+  Two new engine commands: `fetch_histogram` (C3 §3.6, JSON — a few hundred
+  numbers do not earn a binary decoder; `values` normalised in Rust so no
+  number the picture depends on is computed in JavaScript) and
+  `fetch_scatter` (C3 §3.5, `IDLS` v1 binary at `f64`, because an
+  equal-aspect friction circle reads as visibly non-circular at `f32`).
+  Both resolve their window before reading a sample, R85/R123's order, and
+  read one column at a time through the R211 session cache.
+
+  Lane decisions worth knowing: **lap-relative time is the mark's own `x`
+  binding** (`"t"` vs `"tr"`), not a second plot-level field that could
+  disagree with it; `tr` is derived in `combineChannelWindows` from each
+  window's **first sample**, not its span boundary, because that is the
+  alignment that answers "how do these two laps differ"; the **lap variance
+  trace is a preset over the time cell**, not a chart kind, since
+  `lap_delta_time(...)` already evaluates as a definition and the overlay is
+  the window selection (no new command, no new production); the **zero line
+  is a real `Plot.ruleY([0])`** at the head of `marks`, not a plot option;
+  the two **signed y scales are Plot `pow` scales** (exponent 0.5 and 2),
+  since d3's power scale is symmetric about zero where `sqrt` folds one side
+  away.
+
+  Not in this lane, and stated so it is not assumed done: **distance on X
+  ships present and disabled** with its R136 reason and has no grammar
+  spelling at all; idl0's scatter **density mode** and
+  **colour-by-third-channel** exist in `core/src/scatter.rs` but have no
+  slot in C3 §3.5 or C2 §5.3; spectrogram-as-chart, `gpsMap`, `lapTable` and
+  `lapProgression` are tier B; and reports still draw **time charts only**,
+  with a named absence line per non-time chart kind.
+
 ## Wave 3
 
 - [ ] L9 mobile plugins · L12 in-app agent (optional)

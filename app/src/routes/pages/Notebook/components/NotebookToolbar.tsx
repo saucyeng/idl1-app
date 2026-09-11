@@ -299,12 +299,16 @@ function GroupDivider() {
  *   transport carries `mx-auto` so it centres in whatever space the groups
  *   around it leave.
  *
- * Layer order (bug report fixed 2026-09-09, unchanged here): this row needs
- * `relative` + an explicit `z-index` and an opaque background, or the
- * sandbox iframe host (`Notebook/index.tsx`'s `position: fixed` container)
- * paints over it while a chart is scrolled underneath — a fixed element
- * with any explicit z-index stacks above ordinary static in-flow content
- * regardless of DOM order.
+ * Layer order (ruling R221.1): this row states no z-index of its own. It is
+ * portaled into the shell's toolbar band, which carries `shell-chrome` —
+ * one class and one z-index shared by every chrome region — and everything
+ * a route draws, the sandbox iframe host included, lives inside the single
+ * `shell-content` container whose `isolation: isolate` confines it. The
+ * `relative z-10` this row used to carry (R161, after the 2026-09-09 bug
+ * report) is deleted: it was one of the per-element patches R221.1 exists to
+ * end. The model is `shell/stackingLayers.ts`. The opaque background stays,
+ * because a transparent bar over scrolling content is unreadable whatever
+ * the stacking order.
  */
 export default function NotebookToolbar(props: NotebookToolbarProps) {
   const rowRef = useRef<HTMLDivElement | null>(null);
@@ -507,7 +511,7 @@ export default function NotebookToolbar(props: NotebookToolbarProps) {
   return (
     <div
       ref={rowRef}
-      className="idl-dense relative z-10 flex h-[var(--space-8)] flex-nowrap items-center gap-[var(--nb-gap)] overflow-hidden border-b border-rule bg-surface px-[var(--nb-gap)]"
+      className="idl-dense flex h-[var(--space-8)] flex-nowrap items-center gap-[var(--nb-gap)] overflow-hidden border-b border-rule bg-surface px-[var(--nb-gap)]"
       role="toolbar"
       aria-label="Notebook"
     >
