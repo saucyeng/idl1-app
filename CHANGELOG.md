@@ -31,8 +31,11 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 - **Nodes lay themselves out, and Tidy re-does it (2026-09-11, ruling
   R212).** Opening a workbook arranges its graph left to right by
   dependency — sources first, derived datasets after — with the crossings
-  reduced, 32 px between cards and 96 px between layers. Dragging a card
-  remembers where you put it, and Tidy lays the whole graph out again.
+  reduced, 32 px between cards and 96 px between layers. Only nodes with no
+  saved position are placed this way, so a graph you have arranged stays
+  arranged. Dragging a card saves where you put it into the workbook, and
+  Tidy lays the whole graph out again in one go — positions are part of the
+  schematic and travel with the file.
 - **A big session opens in the notebook without killing the app
   (2026-09-11, ruling R211).** Opening the largest recording with a
   workbook full of chart cells used to crash outright: every cell asked for
@@ -49,13 +52,6 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
   recording to show a channel list.
 
 ### Changed
-
-- **Where a node sits is no longer part of the workbook file (2026-09-11,
-  ruling R212).** Card positions are remembered per machine, like column
-  widths, instead of being written into the document — so dragging a card
-  no longer marks a workbook unsaved, and two machines can arrange the same
-  synced workbook differently. Positions a workbook already carried are
-  still read as the starting point.
 
 - **The chart properties form is built from real controls (2026-09-11,
   ruling R212).** Number fields carry their unit and can be dragged to
