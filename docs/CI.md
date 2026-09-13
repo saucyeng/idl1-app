@@ -43,7 +43,7 @@ by `read_workbook_reference` for the Docs panel.
 IPC format (`IDLH`, `IDLT`, `IDLS`, `IDLG`, `IDLR`, ruling R236): a small
 fixed fixture encoded by the engine's own wire encoders
 (`core/src/wire_golden.rs`), and the decoded expectation a vitest per format
-(`app/src/ipc/*.test.ts`) deep-equals its TS decoder's output against.
+(`app/src/ipc/*.golden.test.ts`) deep-equals its TS decoder's output against.
 Regenerate with:
 
     cargo run --manifest-path rust/Cargo.toml -p idl-rs-cli -- docs wire --out app/src/ipc/golden

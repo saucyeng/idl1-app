@@ -41,7 +41,7 @@ describe("decodeTile — wire golden", () => {
     const n = result.sampleMin.length;
     expect(interleave(result.sampleMin, result.sampleMax, n - 2, 2)).toEqual(json.lastSamplePairs);
 
-    // Assert — column region (column 0 real, 1-3 NaN/sentinel).
+    // Assert — column region (all 4 columns real data, no NaN/sentinel).
     expect(Array.from(result.columnMin)).toEqual(json.columnMin);
     expect(Array.from(result.columnMax)).toEqual(json.columnMax);
     expect(Array.from(result.columnMean)).toEqual(json.columnMean);
