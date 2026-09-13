@@ -34,3 +34,27 @@ describe("resolveJsCellFrameHeightPx", () => {
     expect(resolved).toBe(500);
   });
 });
+
+/** Decision 58: the empty slot is the size the chart would be, so a cell
+ *  whose binding stops resolving does not move everything below it. */
+describe("resolveJsCellFrameHeightPx — decision 58, an empty slot is chart-sized", () => {
+  it("a cell that collapses to a note — reserves the same height an unrendered chart would", () => {
+    const collapsedToANote = resolveJsCellFrameHeightPx(4, true);
+
+    const neverRendered = resolveJsCellFrameHeightPx(null, false);
+
+    expect(collapsedToANote).toBe(neverRendered);
+  });
+
+  it("the note floor — is the chart's own default height, not a smaller text-fitting one", () => {
+    const floor = JS_CELL_FRAME_MIN_HEIGHT_WITH_NOTE_PX;
+
+    expect(floor).toBe(DEFAULT_JS_CELL_HEIGHT_PX);
+  });
+
+  it("a tall chart that gains an error — keeps its own height, never shrinks to the floor", () => {
+    const tall = resolveJsCellFrameHeightPx(600, true);
+
+    expect(tall).toBe(600);
+  });
+});

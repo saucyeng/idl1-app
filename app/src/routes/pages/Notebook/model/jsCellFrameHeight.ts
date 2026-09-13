@@ -5,11 +5,22 @@ import { DEFAULT_JS_CELL_HEIGHT_PX } from "../components/JsCellFrame";
  * when it carries a visible note or error. A cell with no session channel
  * to chart (e.g. no session selected) reports a near-zero `cellRendered`
  * height from its empty Plot, which would otherwise clip the note/error
- * text this frame overlays on top of it. No spec number governs this
- * value — it is a rendering minimum, not a protocol constant — chosen as
- * enough vertical room for a one-line note plus its padding.
+ * text this frame overlays on top of it.
+ *
+ * **Decision 58: this is the height the chart would have been**, not the
+ * smallest height the text fits in. It was 96 px — enough for one line of
+ * note plus padding — which satisfied "never clipped" but not "an empty
+ * slot **the size the chart would be**": a cell that is a 240 px chart
+ * with a session selected and a 96 px note without one moves everything
+ * below it up the page the moment the selection changes, which is the
+ * layout jump decision 58 exists to prevent. `model/plotChrome.ts` already
+ * refuses to let the same cell gain and lose a header row for the same
+ * reason.
+ *
+ * No spec number governs the value; it tracks {@link DEFAULT_JS_CELL_HEIGHT_PX}
+ * so the two can never drift apart.
  */
-export const JS_CELL_FRAME_MIN_HEIGHT_WITH_NOTE_PX = 96;
+export const JS_CELL_FRAME_MIN_HEIGHT_WITH_NOTE_PX = DEFAULT_JS_CELL_HEIGHT_PX;
 
 /**
  * Resolves the height, in pixels, a {@link JsCellFrame} renders at.

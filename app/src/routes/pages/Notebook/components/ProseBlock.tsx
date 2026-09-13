@@ -2,7 +2,7 @@ import { useEffect, useRef } from "react";
 import type { KeyboardEvent, MouseEvent } from "react";
 
 import type { ProseBlockContent } from "../model/proseBlocks";
-import { proseSpanErrorMarker } from "../model/proseSpanError";
+import { proseSpanErrorMarker, proseSpanNoSelectionMarker } from "../model/proseSpanError";
 
 /** Props for {@link ProseBlock}. */
 export interface ProseBlockProps {
@@ -24,6 +24,15 @@ export interface ProseBlockProps {
    * `null` so a caller from before this task is unaffected.
    */
   windowNote?: string | null;
+  /**
+   * Decision 61: `true` when no session/window is selected at all
+   * (`AppState.selection.windows.length === 0`). An unresolved span then
+   * shows the no-selection marker instead of its `${expr}` placeholder,
+   * since no result can arrive for a selection that does not exist.
+   * Optional; defaults to `false`, so a read-only caller (print, the
+   * report view) that never has an empty selection is unaffected.
+   */
+  noSelection?: boolean;
   /**
    * Ruling R226 item 1: opens this block in the prose mini-editor. When
    * given, the rendered block becomes a click target and a focus stop that
@@ -63,7 +72,7 @@ function clickMeansEdit(target: EventTarget | null): boolean {
  * re-injecting HTML — from the sandbox's own `evalInline` result
  * (`spanId`/`inlineResult`/`spanError`, unchanged since before this task).
  */
-export default function ProseBlock({ content, inlineResults, spanErrors, windowNote = null, onEdit }: ProseBlockProps) {
+export default function ProseBlock({ content, inlineResults, spanErrors, windowNote = null, noSelection = false, onEdit }: ProseBlockProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
@@ -90,12 +99,22 @@ export default function ProseBlock({ content, inlineResults, spanErrors, windowN
       el.removeAttribute("title");
       const resolved = inlineResults.get(span.id);
       if (resolved === undefined) {
+        if (noSelection) {
+          // Decision 61: with nothing selected no result can ever arrive,
+          // so the span says so in place rather than showing the raw
+          // template text (or, worse, the number it last resolved to).
+          const marker = proseSpanNoSelectionMarker(span.expr);
+          el.textContent = marker.text;
+          el.setAttribute("title", marker.title);
+          el.classList.add("text-accent");
+          continue;
+        }
         el.textContent = `\${${span.expr}}`;
         continue;
       }
       el.textContent = windowNote !== null ? `${resolved} (${windowNote})` : resolved;
     }
-  }, [content, inlineResults, spanErrors, windowNote]);
+  }, [content, inlineResults, spanErrors, windowNote, noSelection]);
 
   const editProps =
     onEdit === undefined

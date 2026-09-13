@@ -11,13 +11,21 @@
 /**
  * One cell's evaluation state.
  *
- * - `"queued"` — this cell needs a result (it has none, or the one it has
- *   predates the document's latest edit) and no evaluation is running yet.
- * - `"evaluating"` — that evaluation is in flight now.
+ * - `"queued"` — this cell has never produced output and no evaluation is
+ *   running yet.
+ * - `"evaluating"` — this cell has never produced output and the
+ *   evaluation that will give it one is in flight now.
+ * - `"stale"` — this cell *has* a result on screen, and that result
+ *   predates the document's latest edit. Decision 59's own state: the old
+ *   output stays mounted, greyed, under a spinner until the new one
+ *   replaces it. Distinct from `"evaluating"` precisely because there is
+ *   something to grey — an evaluating-from-scratch cell has nothing on
+ *   screen to keep, so greying its empty box would say "this data is old"
+ *   about data that has never existed.
  * - `"settled"` — the result on screen is current and clean.
  * - `"error"` — the current result is an error.
  */
-export type CellStatus = "queued" | "evaluating" | "settled" | "error";
+export type CellStatus = "queued" | "evaluating" | "stale" | "settled" | "error";
 
 /** The signals one cell's {@link cellStatus} is decided from. */
 export interface CellStatusInputs {
@@ -61,31 +69,54 @@ export interface CellStatusInputs {
 /**
  * Decides one cell's {@link CellStatus}.
  *
- * A cell waiting on a result — it has none, or the one it has is stale —
- * is `"evaluating"` while a round trip is in flight and `"queued"`
- * otherwise (the edit-debounce window, or a notebook whose route is hidden
- * so evaluation is suppressed). Waiting outranks `"error"`: a cell whose
- * previous run failed and which is now re-running reports the re-run, not
- * the superseded failure. The error text itself stays on screen underneath
- * either way — `CellFrame` renders it from its own `error` prop, so a
- * recomputing cell greys over its last result rather than blanking it
- * (decision 59).
+ * A cell waiting on a result splits on whether it has one to keep.
+ *
+ * With a previous result (`hasOutput`, made out of date by `stale`) the
+ * answer is `"stale"` whether or not a round trip is in flight yet: the
+ * picture decision 59 asks for — the old output, greyed, under a spinner —
+ * is the same during the edit debounce as it is during the evaluation, and
+ * a cell that flickered between two waiting pictures a few hundred
+ * milliseconds apart would be reporting the evaluator's scheduling rather
+ * than anything the reader can act on.
+ *
+ * With no previous result the cell is `"evaluating"` while a round trip is
+ * in flight and `"queued"` otherwise (the edit-debounce window, or a
+ * notebook whose route is hidden so evaluation is suppressed).
+ *
+ * Waiting outranks `"error"`: a cell whose previous run failed and which is
+ * now re-running reports the re-run, not the superseded failure. The error
+ * text itself stays on screen underneath either way — `CellFrame` renders
+ * it from its own `error` prop, so a recomputing cell greys over its last
+ * result rather than blanking it (decision 59).
  *
  * @param inputs This cell's signals — see {@link CellStatusInputs}.
  */
 export function cellStatus(inputs: CellStatusInputs): CellStatus {
-  const waiting = !inputs.hasOutput || inputs.stale;
-
-  if (waiting) return inputs.evalInFlight ? "evaluating" : "queued";
+  if (!inputs.hasOutput) return inputs.evalInFlight ? "evaluating" : "queued";
+  if (inputs.stale) return "stale";
   if (inputs.hasError) return "error";
 
   return "settled";
 }
 
-/** Whether {@link CellStatus} means this cell's result is being recomputed
- *  right now — the one state `CellFrame` shows a spinner for, over the
- *  still-mounted previous result (decision 59: a result never blanks while
- *  recomputing). */
+/** Whether {@link CellStatus} means this cell is waiting on a result — the
+ *  states `CellFrame` shows a spinner for. Both waiting-with-an-old-result
+ *  (`"stale"`) and waiting-with-nothing (`"evaluating"`) spin; `"queued"`
+ *  does not, since no evaluation is actually running to spin for. */
 export function isCellBusy(status: CellStatus): boolean {
-  return status === "evaluating";
+  return status === "evaluating" || status === "stale";
+}
+
+/**
+ * Whether {@link CellStatus} means there is a previous result on screen
+ * that the pending evaluation will replace — the one state `CellFrame`
+ * washes grey (decision 59: "greyed with a spinner over it"). `false` for
+ * `"evaluating"`, which spins over nothing and so has nothing to grey.
+ *
+ * Separate from {@link isCellBusy} because the two drive different pixels:
+ * `isCellBusy` decides whether the spinner is drawn at all, this decides
+ * whether the wash behind it is drawn.
+ */
+export function isCellStale(status: CellStatus): boolean {
+  return status === "stale";
 }

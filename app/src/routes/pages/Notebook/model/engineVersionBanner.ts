@@ -50,3 +50,110 @@ export function engineVersionBanner(sessions: readonly SessionEngineVersion[], c
   if (outdated.length === 0) return null;
   return { currentEngineVersion, outdated };
 }
+
+/**
+ * The advisory front-matter key recording which build last evaluated this
+ * workbook — the workbook half of decision 62, alongside the per-session
+ * half above.
+ *
+ * **Advisory, exactly like C2 §3.7's `graph`.** Nothing in the parser, the
+ * evaluator or `[Name]` resolution reads it; it cannot change a value, a
+ * wire or an error. It needs no contract amendment to be safe in a file:
+ * ruling R135 (C2 §3.2) requires a v3 parser to preserve every top-level
+ * front-matter key it does not itself define, round-tripping it unmodified
+ * on render, so a key written by a newer build survives an older build
+ * opening and re-saving the workbook.
+ *
+ * **Nothing in this app writes it.** Decision 62's "never auto-rewrite the
+ * file" is taken at its word: the banner never stamps the current version
+ * over the recorded one to make itself go away, and this lane adds no save
+ * path that would. Stamping the key belongs in `core`'s own
+ * `render_front_matter` on an explicit save — a Rust change, which a
+ * TypeScript lane does not make. Until that lands the key appears only in
+ * a workbook that already carries it, and {@link parseEvaluatedWith}
+ * returns `null` for every other file, which is the quiet, correct
+ * behaviour rather than a false alarm.
+ */
+export const EVALUATED_WITH_KEY = "evaluated_with";
+
+/**
+ * Reads the advisory `evaluated_with` value out of a workbook's raw
+ * markdown, or `null` when the file has no front matter, no such key, or
+ * an empty one.
+ *
+ * A deliberately narrow scan rather than a YAML parse: the app bundles no
+ * YAML library, the authoritative parse is `core`'s (C2 §3.2), and this
+ * value drives one advisory banner. It reads only a **top-level, scalar**
+ * `evaluated_with:` line inside the leading `---` fenced block — an
+ * indented line (a sub-key of `graph:` or any other mapping) is ignored,
+ * so a nested key of the same name can never be mistaken for the top-level
+ * one. Surrounding quotes and whitespace are stripped; a `#` comment is
+ * not, since a version string has no comment syntax and stripping one
+ * would corrupt a legitimate value containing `#`.
+ *
+ * @param markdown The workbook file's verbatim text (`readWorkbook`'s
+ *   `markdown`, C3 §3.4), or `null` before a read has landed.
+ */
+export function parseEvaluatedWith(markdown: string | null): string | null {
+  if (markdown === null) return null;
+
+  // Front matter is the leading `---` fenced block and nothing else (C2
+  // §3.1's grammar): a `---` appearing later in the body is a horizontal
+  // rule, never a second front matter, so only the first block is scanned.
+  const lines = markdown.split("\n");
+  if (lines.length === 0 || lines[0].trimEnd() !== "---") return null;
+
+  for (let i = 1; i < lines.length; i++) {
+    const line = lines[i];
+    if (line.trimEnd() === "---") break;
+    // A leading space means this line belongs to some mapping above it,
+    // not to the document's own top level.
+    if (line.startsWith(" ") || line.startsWith("\t")) continue;
+    if (!line.startsWith(`${EVALUATED_WITH_KEY}:`)) continue;
+
+    const raw = line.slice(EVALUATED_WITH_KEY.length + 1).trim();
+    const unquoted = raw.replace(/^["']/, "").replace(/["']$/, "").trim();
+    return unquoted === "" ? null : unquoted;
+  }
+
+  return null;
+}
+
+/** What the workbook-version banner shows, or `null` when nothing needs
+ *  announcing. */
+export interface WorkbookVersionBanner {
+  /** The version recorded in front matter — the build that last evaluated
+   *  this workbook. */
+  evaluatedWith: string;
+  /** The build the reader is on now. */
+  currentVersion: string;
+}
+
+/**
+ * Decides decision 62's workbook banner: `null` when the file records no
+ * version (the common case today, since nothing writes the key yet), when
+ * the live version has not resolved, or when the two already agree.
+ *
+ * Compared as exact strings, never parsed into components and ordered: an
+ * older build opening a workbook a newer one evaluated is worth announcing
+ * in exactly the same way as the reverse, and a build string is not
+ * reliably a comparable semantic version.
+ *
+ * @param markdown The workbook's verbatim text, or `null` before a read.
+ * @param currentVersion The build the reader is on, or `null` before it resolves.
+ */
+export function workbookVersionBanner(markdown: string | null, currentVersion: string | null): WorkbookVersionBanner | null {
+  if (currentVersion === null) return null;
+
+  const evaluatedWith = parseEvaluatedWith(markdown);
+  if (evaluatedWith === null || evaluatedWith === currentVersion) return null;
+
+  return { evaluatedWith, currentVersion };
+}
+
+/** The banner's own sentence, in decision 62's wording. Built here rather
+ *  than in the component so the copy is testable without rendering — the
+ *  same split `theme/slotStates.ts` makes. */
+export function workbookVersionBannerMessage(banner: WorkbookVersionBanner): string {
+  return `Evaluated with idl1 ${banner.evaluatedWith}; you are on ${banner.currentVersion}.`;
+}

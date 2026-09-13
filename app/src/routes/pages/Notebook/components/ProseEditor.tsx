@@ -152,13 +152,17 @@ export default function ProseEditor({ source, status, error, onCommit, onCancel 
   );
 }
 
-/** The status glyph's accessible name — the same four states R210 names. */
+/** The status glyph's accessible name — the five states R210 names as
+ *  amended by decision 59, which split waiting-with-a-previous-result out
+ *  of `"evaluating"`. */
 function statusLabel(status: CellStatus): string {
   switch (status) {
     case "queued":
       return "Queued";
     case "evaluating":
       return "Evaluating";
+    case "stale":
+      return "Recomputing, showing the previous result";
     case "error":
       return "Evaluation failed";
     case "settled":

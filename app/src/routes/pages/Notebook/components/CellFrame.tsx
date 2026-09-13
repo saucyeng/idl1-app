@@ -6,7 +6,7 @@ import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuSeparator,
 import { NoteBlock } from "@/components/brand/NoteBlock";
 import { StatusDot } from "@/components/brand/StatusDot";
 import type { ScannedCell } from "../model/cells";
-import { isCellBusy, type CellStatus } from "../model/cellStatus";
+import { isCellBusy, isCellStale, type CellStatus } from "../model/cellStatus";
 import { denseGeometry } from "../model/denseMode";
 import { plotStatusGlyph, SETTLE_FADE_MS, type CellChromeMode, type PlotLegendEntry } from "../model/plotChrome";
 
@@ -17,6 +17,7 @@ import { plotStatusGlyph, SETTLE_FADE_MS, type CellChromeMode, type PlotLegendEn
 const STATUS_DOT_CLASS: Record<CellStatus, string> = {
   queued: "text-fg-faint",
   evaluating: "text-fg-faint",
+  stale: "text-fg-faint",
   settled: "text-good",
   error: "text-accent",
 };
@@ -313,11 +314,28 @@ export default function CellFrame({
         </div>
       )}
       {children}
+      {overlay && isCellStale(status) && (
+        /* Decision 59 for chart cells: the plot itself greys while it
+           recomputes, keeping its last picture visible underneath. The
+           spinner is already drawn by `StatusGlyph` in the plot's own
+           top-left corner, so this wash carries no spinner of its own. */
+        <div className="pointer-events-none absolute inset-0 z-10 bg-surface/60" aria-hidden="true" />
+      )}
       {isCellBusy(status) && !overlay && (
+        /* Decision 59: the wash is drawn only over a result that exists and
+           is out of date (`isCellStale`). A cell evaluating for the first
+           time spins over its own empty box with no wash — greying nothing
+           would claim the blank space is stale data. */
         <div
-          className="pointer-events-none absolute inset-0 flex items-center justify-center bg-surface/60"
+          className={`pointer-events-none absolute inset-0 flex items-center justify-center ${isCellStale(status) ? "bg-surface/60" : ""}`}
           role="status"
-          aria-label={decodeFraction !== null ? `Loading channels, ${Math.floor(decodeFraction * 100)} %` : "Recomputing"}
+          aria-label={
+            decodeFraction !== null
+              ? `Loading channels, ${Math.floor(decodeFraction * 100)} %`
+              : isCellStale(status)
+                ? "Recomputing, showing the previous result"
+                : "Evaluating"
+          }
         >
           {/* Ruling R221 item 1(a): a determinate ring while this cell's own
               channels are decoding, the indeterminate spinner otherwise. */}

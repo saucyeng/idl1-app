@@ -1,7 +1,14 @@
-import type { EngineVersionBanner } from "../model/engineVersionBanner";
+import {
+  workbookVersionBannerMessage,
+  type EngineVersionBanner,
+  type WorkbookVersionBanner,
+} from "../model/engineVersionBanner";
 
 /** Props for {@link VersionBanner}. */
 export interface VersionBannerProps {
+  /** The sessions whose recorded engine version is behind the live one,
+   *  and that live version (`model/engineVersionBanner.ts`). Never `null`:
+   *  the caller renders nothing at all when there is nothing to announce. */
   banner: EngineVersionBanner;
   /** Dismisses this banner for the current selection -- Isaac: "a banner
    *  for now so it can be temporarily ignored" (decision 62). `Notebook/
@@ -27,6 +34,46 @@ export default function VersionBanner({ banner, onDismiss }: VersionBannerProps)
         (recorded at {Array.from(new Set(banner.outdated.map((s) => s.engineVersion))).join(", ")}). Re-importing will regenerate its
         derived files.
       </p>
+      <button type="button" onClick={onDismiss}>
+        Dismiss
+      </button>
+    </div>
+  );
+}
+
+/** Props for {@link WorkbookVersionBannerView}. */
+export interface WorkbookVersionBannerProps {
+  /** The build recorded in this workbook's front matter and the build the
+   *  reader is on (`model/engineVersionBanner.ts`). Never `null`: the
+   *  caller renders nothing at all when the two agree or nothing is
+   *  recorded. */
+  banner: WorkbookVersionBanner;
+  /** Dismisses this banner until the recorded or live version changes
+   *  again -- decision 62's "so it can be temporarily ignored". */
+  onDismiss: () => void;
+  /** Re-runs the workbook's evaluation now. Explicit, and the only thing
+   *  the banner offers beyond dismissal: decision 62 forbids rewriting the
+   *  file, so this re-evaluates and leaves the recorded version alone. */
+  onReevaluate: () => void;
+}
+
+/**
+ * Decision 62's workbook half: the build that last evaluated this workbook
+ * differs from the one the reader is on. A banner, not a toast and not
+ * silence, and nothing is rewritten -- Re-evaluate re-runs the evaluation
+ * against the current build; it does not stamp the current version into
+ * front matter.
+ *
+ * Kept in the same file and the same plain shape as the per-session banner
+ * above, which announces the neighbouring half of the same decision.
+ */
+export function WorkbookVersionBannerView({ banner, onDismiss, onReevaluate }: WorkbookVersionBannerProps) {
+  return (
+    <div className="workbook-version-banner" role="status">
+      <p>{workbookVersionBannerMessage(banner)}</p>
+      <button type="button" onClick={onReevaluate}>
+        Re-evaluate
+      </button>
       <button type="button" onClick={onDismiss}>
         Dismiss
       </button>

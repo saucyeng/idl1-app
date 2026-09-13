@@ -32,6 +32,37 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
   body is — and that both body frames are gauges rather than parameters. C1 §9.9
   and C6 gain the protocol and the verb.
 
+- **Errors and staleness across the notebook [docs] (2026-09-13, decisions
+  58–63).** Nothing blanks, and no cell shows data for a selection that no
+  longer exists.
+  *Staleness (59)* is now its own cell state rather than a flag folded into
+  "evaluating": a cell whose result the latest edit made out of date keeps
+  that result on screen, washed grey under the spinner, while a cell
+  evaluating for the first time spins over its own empty box with no wash —
+  greying nothing would claim blank space is old data. It reads the same
+  during the edit debounce as during the round trip, so a recomputing cell no
+  longer flickers between two waiting pictures.
+  *Gaps (60)* are hatched: a span the source recorded no samples in draws a
+  faint diagonal band built from the chart's own grid colour. The tile stats
+  already made this cheap — a run of "no sample in this bucket" columns is a
+  recorded gap — so no new IPC field, round trip or engine change was needed.
+  *An empty selection (61)* now outranks every other explanation. It was
+  checked last, which meant that with nothing selected every referenced
+  channel came back unresolved and the cell claimed the channel was "not part
+  of this session", naming a session that did not exist, beside a Fix button
+  that would have opened a perfectly correct definition. Prose `${…}` spans
+  get the same treatment instead of falling back to raw template text.
+  *The empty slot (58)* is now the size the chart would be, so a cell whose
+  binding stops resolving no longer pulls everything below it up the page.
+  *A version change (62)* raises a dismissable banner naming the build that
+  last evaluated the workbook and the build you are on, with a Re-evaluate
+  action. Nothing rewrites the file.
+  **Known gaps, both needing a contract change:** burst-seam corrections are
+  *not* hatched — a corrected seam has samples on both sides, so no tile stat
+  implies one, and C3 would need to carry the seam spans; and nothing yet
+  *writes* the advisory `evaluated_with` front-matter key the version banner
+  reads, which belongs in `core`'s front-matter rendering on an explicit save.
+
 - **Synthetic session generator [docs] (2026-09-13, ruling R187).**
   `idl-rs session synth --out <file>` writes a real schema-3 `.idl0` log — a
   simulated rigid body carrying up to three IMUs with known extrinsics around
