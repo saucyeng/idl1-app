@@ -98,6 +98,13 @@ export interface PlotSeries {
   label?: string | null;
   /** `CellDefResult.unit`, when the definition carries one. */
   unit?: string | null;
+  /** This series' own `--chart-N` token, when the caller already knows it —
+   *  a lap-progression cell draws one series per **selected window**
+   *  (ruling R233), and a window's colour comes from its own R127
+   *  descriptor, which is the colour the selection chips and the plot
+   *  itself already use. Absent for a per-channel legend, whose colours
+   *  are assigned by mark order below. */
+  colour?: string | null;
 }
 
 /**
@@ -113,13 +120,16 @@ export interface PlotSeries {
  * same token set, so a legend that is right on screen is right on paper).
  *
  * @param series The plot's series, in the order their marks are drawn.
+ *   A series may carry its own `colour`; one that does not is assigned the
+ *   `--chart-N` token its position names.
  */
 export function plotLegendEntries(series: readonly PlotSeries[]): PlotLegendEntry[] {
   if (series.length < 2) return [];
   return series.map((one, index) => {
     const name = one.label !== undefined && one.label !== null && one.label !== "" ? one.label : one.name;
     const unit = one.unit !== undefined && one.unit !== null && one.unit !== "" ? ` (${one.unit})` : "";
-    return { key: one.name, label: `${name}${unit}`, colour: `--chart-${(index % CHART_COLOUR_COUNT) + 1}` };
+    const colour = one.colour !== undefined && one.colour !== null && one.colour !== "" ? one.colour : `--chart-${(index % CHART_COLOUR_COUNT) + 1}`;
+    return { key: one.name, label: `${name}${unit}`, colour };
   });
 }
 

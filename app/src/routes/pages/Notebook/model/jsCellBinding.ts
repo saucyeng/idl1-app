@@ -17,6 +17,7 @@ import type {
   FftPlotProps,
   HistogramParams,
   HistogramPlotProps,
+  LapPlotProps,
   MapPlotProps,
   ScatterPlotProps,
   SpectrogramPlotProps,
@@ -290,13 +291,54 @@ export interface SpectrogramCellBinding {
   unrequestable: string | null;
 }
 
+/**
+ * One **lap-progression** cell's binding (C2 §5.3's lap cell, rulings R217
+ * item 3 and R233). The mark's data argument is a bare identifier, never a
+ * data call -- a `[lap]` value is always a math definition (`lap_time()`,
+ * `mean([peak_freq], "t:lap")`) -- so this arm is the one binding that is
+ * recognised from the parsed `plotForm` shape rather than from an extracted
+ * call, and the host variable it publishes under is the definition's own
+ * name, exactly as a `"definition"` time channel's is (R127 item 1: a host
+ * variable is keyed by the definition alone, never by which windows are
+ * selected).
+ *
+ * Unlike every other arm there is no `channelId` to resolve against the
+ * session: a definition is a workbook-level name, and whether it is really
+ * `[lap]`-shaped is not knowable until its `IDLH` header arrives (C3 §3.4's
+ * `axis_kind` is the only place the engine states a value's shape to this
+ * realm). The shape check therefore lives in `model/lapDriver.ts`, after the
+ * fetch, not here.
+ */
+export interface LapCellBinding {
+  kind: "lap";
+  props: LapPlotProps;
+  /** The workbook `math` definition the mark draws -- also the sandbox
+   *  host-variable name it is published under. */
+  definition: string;
+  /** Always equal to {@link definition}; named for symmetry with every
+   *  other arm, so a caller publishing a host variable reads one field
+   *  name whatever kind of cell it holds. */
+  hostVarName: string;
+  /** `fetch_host_channel_v2`'s `budget`. Laps per session are tens and C2
+   *  §5.3 rules a lap cell has "no decimation and no cap", so this is a
+   *  fixed ceiling rather than a width-derived budget: it exists only
+   *  because the command validates `1..=65536`. */
+  budget: number;
+  /** Non-null when this cell must not fetch: the named identifier is not a
+   *  workbook definition at all. A definition that exists but turns out not
+   *  to be `[lap]`-shaped is **not** refused here -- its shape is only
+   *  known once fetched, and `lapDriver.ts` reports the mismatch. */
+  unrequestable: string | null;
+}
+
 export type JsCellBinding =
   | TimeCellBinding
   | FftCellBinding
   | HistogramCellBinding
   | ScatterCellBinding
   | MapCellBinding
-  | SpectrogramCellBinding;
+  | SpectrogramCellBinding
+  | LapCellBinding;
 
 /** Looks up one mark's channel in `sessionDetail.channels` by id, or `null`
  *  if it isn't a real channel on this session. Exported so every "does this
@@ -691,6 +733,38 @@ function syntheticSpectrogramProps(call: SpectrogramCallRef): SpectrogramPlotPro
   return { chart: "spectrogram", mark: { channel: call.channel, fft: call.fft } };
 }
 
+/** The `fetch_host_channel_v2` budget a lap cell asks for (C2 §5.3: "no
+ *  decimation and no cap" -- laps per session are tens). The command
+ *  validates `1..=65536`, so a number is still required; this is the
+ *  ceiling, chosen so no real lap series is ever decimated, not a
+ *  width-derived point budget like a time chart's. */
+export const LAP_SERIES_BUDGET = 65536;
+
+/**
+ * Builds the {@link LapCellBinding} for a lap-progression cell's single
+ * mark (ruling R217 item 3), or `null` when `props.mark.definition` is
+ * empty (a form state with no definition chosen yet -- nothing to fetch and
+ * nothing to say about it).
+ *
+ * `definitionNames` is the caller's set of workbook definitions; a name
+ * absent from it is bound anyway, with {@link LapCellBinding.unrequestable}
+ * set, so the cell can say which name it could not find rather than
+ * rendering an empty plot.
+ */
+function bindingForLap(displayProps: LapPlotProps, definitionNames: ReadonlySet<string>): LapCellBinding | null {
+  const definition = displayProps.mark.definition;
+  if (definition === "") return null;
+
+  return {
+    kind: "lap",
+    props: displayProps,
+    definition,
+    hostVarName: definition,
+    budget: LAP_SERIES_BUDGET,
+    unrequestable: definitionNames.has(definition) ? null : `${definition} is not a definition in this workbook.`,
+  };
+}
+
 /**
  * Extracts `code`'s `channel(...)`/`spectrum(...)`/`histogram(...)`/`scatter(...)` calls (`model/jsCellCalls.ts`,
  * ruling R148 part 2) and binds against them -- **not** by requiring `code`
@@ -787,6 +861,15 @@ export function bindingFor(
     return bindingForSpectrogram(call, displayProps, sessionDetail);
   }
 
+  // The lap arm is the one kind recognised from the parsed form alone: its
+  // mark's data argument is a bare identifier, so there is no call to
+  // extract (C2 §5.3, ruling R217 item 3). Dispatched before the
+  // call-based arms below so the "first data call wins" rule each of those
+  // states stays a purely local statement -- a lap cell makes none of them.
+  if (parsedProps !== null && parsedProps.chart === "lap") {
+    return bindingForLap(parsedProps, definitionNames);
+  }
+
   const scatterCalls = extractScatterCalls(cell.code);
   if (scatterCalls.length > 0) {
     const call = scatterCalls[0];
@@ -871,6 +954,15 @@ function windowIdentity(window: SelectedWindow | null): string {
  * Pure string formatting, no IPC.
  */
 export function bindingIdentity(binding: JsCellBinding): string {
+  if (binding.kind === "lap") {
+    // The definition name is the whole request: `fetch_host_channel_v2`
+    // takes a definition, a window and a budget, the budget is fixed
+    // (`LAP_SERIES_BUDGET`), and the window is added by the caller's own
+    // per-window key exactly as the map and histogram arms' is -- a lap
+    // value's window dimension lives in its payload (`combineChannelWindows`),
+    // never in its host-variable name (R127 item 1).
+    return `lap|${binding.definition}|${binding.unrequestable ?? ""}`;
+  }
   if (binding.kind === "map") {
     // `hostVarName` encodes the colour-by channel, which is a map's whole
     // request beyond the budget: the geometry is the same whatever the

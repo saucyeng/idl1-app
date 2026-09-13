@@ -1,34 +1,21 @@
 import type { CellOutput } from "../../../../ipc/workbook";
-
-/** One grid cell of a table cell's evaluated result — `idl_rs::table::eval::evaluate_table`'s
- *  `CellResult` (C3 §3.4), serialized verbatim: `error` is a plain string here, unlike
- *  `CellOutput.errors`'s `IpcError[]` — the table evaluator's own per-cell error is not one of
- *  the `IpcError` kinds, it is table-specific evaluator text (C2 §4). */
-interface TableCellResult {
-  value: number | null;
-  error: string | null;
-}
-
-/** A `table`-kind `CellOutput.value` on success (C3 §3.4): the parsed `TableModel`
- *  (opaque here — this component never interprets it, only threads it through
- *  for a caller that might) plus the evaluated grid, `results[r][c]`. */
-interface TableCellValue {
-  model: unknown;
-  results: TableCellResult[][];
-}
-
-/** Narrows `value: unknown` to `TableCellValue` — true for anything with a `results` array,
- *  which is the only field this component reads. */
-function isTableCellValue(value: unknown): value is TableCellValue {
-  return typeof value === "object" && value !== null && Array.isArray((value as { results?: unknown }).results);
-}
+import { isTableCellValue, tableView, type LapTimeLookup } from "../model/lapTable";
 
 /**
- * Renders one `table`-kind `CellOutput` (C3 §3.4) as a grid: `value.results[r][c]`,
- * each cell showing its number or its own `error` text in place of a value. A
- * cell-level failure (a single `results[r][c].error`) never blanks the rest of
- * the grid — every other cell still renders (CLAUDE.md §5, C3 §3.4's per-cell
- * failure rule, applied here at the per-grid-cell grain).
+ * Renders one `table`-kind `CellOutput` (C3 §3.4) as a grid — including the
+ * lap table (C2 §4, ruling R233), which is this cell kind and not a chart
+ * kind: one row per lap of the selected window under `rowSource:
+ * "windowLaps"`, the Main row highlighted, columns named and united from the
+ * model.
+ *
+ * Every decision about *what* to draw lives in `model/lapTable.ts`; this
+ * component decides only how it looks. A cell-level failure (a single
+ * `results[r][c].error`) never blanks the rest of the grid — every other cell
+ * still renders (CLAUDE.md §5, C3 §3.4's per-cell failure rule, applied here
+ * at the per-grid-cell grain), and the failing cell shows R210's error state:
+ * a red ✕ whose tooltip carries the evaluator's own text, matching the
+ * per-cell status glyph R216.2 settled on for charts rather than spilling a
+ * paragraph of error text into a numeric column.
  *
  * `output.errors` (the whole cell's own structural/evaluation errors, e.g.
  * `workbook_invalid_table_json`) render above the grid, if any; `output.value`
@@ -39,34 +26,95 @@ function isTableCellValue(value: unknown): value is TableCellValue {
  * today), otherwise the primary window's label (ruling R132: this grid is
  * that window's own evaluated result, R131 Q1, and must say so once a
  * second window is selected).
+ *
+ * `lapTimeSecs` reads a derived row's recorded lap time, which is how the
+ * Main row is resolved under the reserved `"fastest"` — the engine's own
+ * source (`RowBinding.lap_time_secs`), never a `lap_time()` column, so a
+ * derived table without one is still highlighted on the row the engine
+ * actually used. Omitted on a surface that has no session detail resolved,
+ * in which case no row is highlighted rather than the wrong one.
+ *
+ * `dense` is ruling R216 item 3's dense stacking: the same grid at tighter
+ * row padding, nothing removed — a lap table's numbers are the content, so
+ * there is no chrome here to drop.
  */
-export default function TableCell({ output, windowNote = null }: { output: CellOutput; windowNote?: string | null }) {
+export default function TableCell({
+  output,
+  windowNote = null,
+  dense = false,
+  lapTimeSecs,
+}: {
+  output: CellOutput;
+  windowNote?: string | null;
+  dense?: boolean;
+  lapTimeSecs?: LapTimeLookup;
+}) {
   const value = output.value;
+  const view = isTableCellValue(value) ? tableView(value, lapTimeSecs) : null;
+  const cellPadding = dense ? "px-2 py-0.5" : "px-3 py-1.5";
 
   return (
-    <div className="table-cell">
-      {windowNote !== null && <div className="table-cell-window-note">Showing {windowNote}</div>}
+    <div className="table-cell text-sm">
+      {windowNote !== null && <div className="table-cell-window-note text-xs text-muted-foreground">Showing {windowNote}</div>}
       {output.errors.length > 0 && (
-        <ul className="table-cell-errors">
+        <ul className="table-cell-errors text-xs text-destructive">
           {output.errors.map((error, i) => (
-            <li key={i}>{error.kind}: {error.message}</li>
+            <li key={i}>
+              {error.kind}: {error.message}
+            </li>
           ))}
         </ul>
       )}
-      {isTableCellValue(value) && (
-        <table className="table-cell-grid">
-          <tbody>
-            {value.results.map((row, r) => (
-              <tr key={r}>
-                {row.map((cell, c) => (
-                  <td key={c} className={cell.error !== null ? "table-cell-grid-error" : undefined}>
-                    {cell.error !== null ? cell.error : cell.value ?? ""}
-                  </td>
+      {view !== null && (
+        <div className="table-cell-scroll overflow-x-auto">
+          <table className="table-cell-grid w-full border-collapse tabular-nums">
+            <thead>
+              <tr className="border-b border-border">
+                {/* The row label column has no model column behind it: a
+                    derived row's identity is its lap, and a reader needs it
+                    before any number. */}
+                <th className={`table-cell-row-head text-left font-medium text-muted-foreground ${cellPadding}`} scope="col">
+                  {view.derived ? "Lap" : "Row"}
+                </th>
+                {view.headers.map((header) => (
+                  <th key={header.key} className={`text-right font-medium ${cellPadding}`} scope="col">
+                    {header.label}
+                    {header.unit !== null && <span className="table-cell-unit ml-1 font-normal text-muted-foreground">({header.unit})</span>}
+                  </th>
                 ))}
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {view.rows.map((row) => (
+                <tr
+                  key={row.key}
+                  className={
+                    row.isMain
+                      ? "table-cell-row table-cell-row-main border-b border-border bg-accent/40 font-medium"
+                      : "table-cell-row border-b border-border/50"
+                  }
+                >
+                  <th className={`table-cell-row-head text-left font-normal text-muted-foreground ${cellPadding}`} scope="row">
+                    {row.label}
+                  </th>
+                  {row.cells.map((cell) => (
+                    <td
+                      key={cell.key}
+                      className={
+                        cell.status === "error"
+                          ? `table-cell-grid-error text-right text-destructive ${cellPadding}`
+                          : `text-right ${cellPadding}`
+                      }
+                      title={cell.error ?? undefined}
+                    >
+                      {cell.status === "error" ? "✕" : cell.text}
+                    </td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       )}
     </div>
   );

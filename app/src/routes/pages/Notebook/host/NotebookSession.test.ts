@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 
+import { AxisKind, type AxisKindValue } from "../../../../ipc/hostChannel";
 import type { DecodedTile } from "../../../../ipc/tiles";
 import { TileCache, type TileCacheKey } from "../model/tileCache";
 import type { BoundChannel, HostChannelRebindDeps } from "../model/channelRebind";
@@ -42,12 +43,14 @@ function key(overrides: Partial<Omit<TileCacheKey, "tileIndex">> = {}): Omit<Til
 }
 
 /** Records every `setChannelHostVar` call and fails the test if any other method is reached for. */
-function fakeSandbox(): ChannelRebindSandbox & { calls: Array<{ name: string; length: number; windows: WindowDescriptor[]; unit: UnitLabel }> } {
-  const calls: Array<{ name: string; length: number; windows: WindowDescriptor[]; unit: UnitLabel }> = [];
+function fakeSandbox(): ChannelRebindSandbox & {
+  calls: Array<{ name: string; length: number; windows: WindowDescriptor[]; unit: UnitLabel; axisKind: AxisKindValue | undefined; t: Float64Array }>;
+} {
+  const calls: Array<{ name: string; length: number; windows: WindowDescriptor[]; unit: UnitLabel; axisKind: AxisKindValue | undefined; t: Float64Array }> = [];
   return {
     calls,
-    setChannelHostVar(name, length, _t, _v, _tr, _w, windows, unit) {
-      calls.push({ name, length, windows, unit });
+    setChannelHostVar(name, length, t, _v, _tr, _w, windows, unit, axisKind) {
+      calls.push({ name, length, windows, unit, axisKind, t: new Float64Array(t) });
     },
   };
 }
@@ -70,9 +73,9 @@ describe("NotebookSession", () => {
     const onChannelsInvalidated = session.onChannelsInvalidated(sandbox, neverFetchesHostChannel(), () => singleWindow);
     onChannelsInvalidated();
 
-    expect(sandbox.calls).toEqual([
-      { name: "fork", length: 2, windows: [singleWindow], unit: { state: "known", text: "mm" } },
-      { name: "wheel", length: 1, windows: [singleWindow], unit: { state: "known", text: "km/h" } },
+    expect(sandbox.calls.map(({ name, length, windows, unit, axisKind }) => ({ name, length, windows, unit, axisKind }))).toEqual([
+      { name: "fork", length: 2, windows: [singleWindow], unit: { state: "known", text: "mm" }, axisKind: AxisKind.Time },
+      { name: "wheel", length: 1, windows: [singleWindow], unit: { state: "known", text: "km/h" }, axisKind: AxisKind.Time },
     ]);
     expect(cache.bytesUsed()).toBe(bytesBefore);
   });
@@ -119,5 +122,38 @@ describe("NotebookSession", () => {
     session.setBoundChannels("cell-a", [rewheelBound]);
 
     expect(session.allBoundChannels()).toEqual([rewheelBound]);
+  });
+  it("NotebookSession — onChannelsInvalidated with a [lap] definition bound — republishes it as a lap axis, lap numbers intact", async () => {
+    const cache = new TileCache(1_000_000);
+    const session = new NotebookSession(cache);
+    session.setBoundChannels("cell-a", [{ source: "definition", name: "lap_time_s", budget: 256, unit: { state: "known", text: "s" } }]);
+    const sandbox = fakeSandbox();
+    const deps: HostChannelRebindDeps = {
+      fetchHostChannel: () =>
+        Promise.resolve({ hasT: true, axisKind: AxisKind.Lap, t: new Float64Array([1, 2, 3]), v: new Float64Array([92.4, 91.8, 93.1]) }),
+    };
+
+    session.onChannelsInvalidated(sandbox, deps, () => singleWindow)();
+    await Promise.resolve();
+
+    expect(sandbox.calls).toHaveLength(1);
+    expect(sandbox.calls[0].axisKind).toBe(AxisKind.Lap);
+    expect(Array.from(sandbox.calls[0].t)).toEqual([1, 2, 3]);
+  });
+
+  it("NotebookSession — onChannelsInvalidated with a [t] definition bound — republishes it as a time axis", async () => {
+    const cache = new TileCache(1_000_000);
+    const session = new NotebookSession(cache);
+    session.setBoundChannels("cell-a", [{ source: "definition", name: "fork_smooth", budget: 256, unit: { state: "known", text: "mm" } }]);
+    const sandbox = fakeSandbox();
+    const deps: HostChannelRebindDeps = {
+      fetchHostChannel: () =>
+        Promise.resolve({ hasT: true, axisKind: AxisKind.Time, t: new Float64Array([0, 0.5]), v: new Float64Array([10, 11]) }),
+    };
+
+    session.onChannelsInvalidated(sandbox, deps, () => singleWindow)();
+    await Promise.resolve();
+
+    expect(sandbox.calls[0].axisKind).toBe(AxisKind.Time);
   });
 });

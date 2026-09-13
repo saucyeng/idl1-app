@@ -5,6 +5,7 @@ import type { ProseBlock as ProseBlockData } from "../model/proseBlocks";
 import type { ScannedCell, ScannedDoc } from "../model/cells";
 import MathCell from "./MathCell";
 import TableCell from "./TableCell";
+import type { LapTimeLookup } from "../model/lapTable";
 import ProseBlock from "./ProseBlock";
 
 /** {@link CellListProps.frame}'s default — no wrapper, returns `output` unchanged. */
@@ -75,6 +76,15 @@ export interface CellListProps {
   /** Opens a prose block for editing. Omitted on a read-only surface, in
    *  which case no block offers the affordance at all. */
   onEditProseBlock?: (blockId: string) => void;
+  /** Whether dense stacking is on (ruling R216 item 3). Passed to
+   *  `TableCell`, whose grid tightens its row padding; every other kind's
+   *  density is `CellFrame`'s own geometry, which this component does not
+   *  own. */
+  dense?: boolean;
+  /** Reads a derived table row's recorded lap time, for `TableCell`'s Main
+   *  row resolution under C2 §4's reserved `"fastest"` — see that
+   *  component's own doc comment. Omitted leaves no row highlighted. */
+  lapTimeSecs?: LapTimeLookup;
 }
 
 /**
@@ -104,6 +114,8 @@ export default function CellList({
   editingProseBlockId = null,
   proseEditor = null,
   onEditProseBlock,
+  dense = false,
+  lapTimeSecs,
 }: CellListProps) {
   /** One prose block: the open mini-editor when it is the block being
    *  edited, the rendered text otherwise (ruling R226 item 1). */
@@ -134,7 +146,7 @@ export default function CellList({
           ) : output.kind === "math" ? (
             <MathCell output={output} windowNote={windowNote} />
           ) : output.kind === "table" ? (
-            <TableCell output={output} windowNote={windowNote} />
+            <TableCell output={output} windowNote={windowNote} dense={dense} lapTimeSecs={lapTimeSecs} />
           ) : (
             renderJsCell(cell.id as string)
           );

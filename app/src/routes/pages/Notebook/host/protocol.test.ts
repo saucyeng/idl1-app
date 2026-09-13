@@ -1,5 +1,6 @@
 import { describe, expect, test } from "vitest";
 
+import { AxisKind } from "../../../../ipc/hostChannel";
 import {
   channelPayload,
   combineChannelWindows,
@@ -62,7 +63,7 @@ describe("channelPayload", () => {
     expect(message).toEqual({
       type: "setHostVar",
       name: "fork_velocity",
-      value: { kind: "channel", length: 1, t, v, tr, w, windows, unit: { state: "known", text: "mm" } },
+      value: { kind: "channel", length: 1, t, v, tr, w, windows, unit: { state: "known", text: "mm" }, axisKind: AxisKind.Time },
     });
   });
 

@@ -5,6 +5,7 @@
  * realm sends, `SandboxToHostMessage` for what it receives — even though the
  * plan lists both in one table for readability.
  */
+import { AxisKind, type AxisKindValue } from "../../../../ipc/hostChannel";
 import type { Span, UnitLabel } from "../../../../ipc/workbook";
 
 /**
@@ -73,7 +74,25 @@ export interface WindowDescriptor {
  */
 export type HostVarPayload =
   | { kind: "json"; value: unknown }
-  | { kind: "channel"; length: number; t: ArrayBuffer; v: ArrayBuffer; tr: ArrayBuffer; w: ArrayBuffer; windows: WindowDescriptor[]; unit: UnitLabel }
+  | {
+      kind: "channel";
+      length: number;
+      t: ArrayBuffer;
+      v: ArrayBuffer;
+      tr: ArrayBuffer;
+      w: ArrayBuffer;
+      windows: WindowDescriptor[];
+      unit: UnitLabel;
+      /** What the `t` buffer's numbers *are* (C3 §3.4's IDLH v2 `axis_kind`,
+       *  ruling R233): `AxisKind.Time` for every session channel and every
+       *  `[t]` definition — seconds — and `AxisKind.Lap` for a `[lap]`
+       *  definition, whose coordinates are 1-based lap numbers (C2 §3.6.1).
+       *  `sandbox/channelRecords.ts` keys the bound record's axis column off
+       *  this: `t` for `Time`, `lap` for `Lap` (C2 §3.6.5's rank-1 rule).
+       *  Without it the sandbox would have to assume seconds and draw lap 3
+       *  at three seconds. */
+      axisKind: AxisKindValue;
+    }
   | { kind: "spectrum"; length: number; f: ArrayBuffer; m: ArrayBuffer; w: ArrayBuffer; windows: WindowDescriptor[] }
   | { kind: "histogram"; length: number; v0: ArrayBuffer; v1: ArrayBuffer; n: ArrayBuffer; w: ArrayBuffer; windows: WindowDescriptor[]; unit: UnitLabel }
   | {
@@ -310,13 +329,18 @@ export function channelPayload(
   tr: ArrayBuffer,
   w: ArrayBuffer,
   windows: WindowDescriptor[],
-  unit: UnitLabel
+  unit: UnitLabel,
+  /** What `t`'s numbers are (ruling R233) — defaulted to `AxisKind.Time`
+   *  because every caller that existed before `[lap]` values did publishes
+   *  seconds: a session channel's tiles and a `[t]` definition alike. Only
+   *  a `[lap]` definition's publisher passes `AxisKind.Lap`. */
+  axisKind: AxisKindValue = AxisKind.Time
 ): { message: { type: "setHostVar"; name: string; value: HostVarPayload }; transfer: Transferable[] } {
   return {
     message: {
       type: "setHostVar",
       name,
-      value: { kind: "channel", length, t, v, tr, w, windows, unit },
+      value: { kind: "channel", length, t, v, tr, w, windows, unit, axisKind },
     },
     transfer: [t, v, tr, w],
   };

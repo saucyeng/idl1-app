@@ -20,6 +20,7 @@ import type { ChannelData } from "../model/channelData";
 import { rebindChannelsAfterRebuild, type BoundChannel, type HostChannelRebindDeps } from "../model/channelRebind";
 import type { TileCache } from "../model/tileCache";
 import type { WindowDescriptor } from "./protocol";
+import { AxisKind, type AxisKindValue } from "../../../../ipc/hostChannel";
 import type { UnitLabel } from "../../../../ipc/workbook";
 
 /**
@@ -38,7 +39,8 @@ export interface ChannelRebindSandbox {
     tr: ArrayBuffer,
     w: ArrayBuffer,
     windows: WindowDescriptor[],
-    unit: UnitLabel
+    unit: UnitLabel,
+    axisKind?: AxisKindValue
   ): void;
 }
 
@@ -81,7 +83,7 @@ export function makeChannelsInvalidatedHandler(
   return () => {
     const descriptor = getWindowDescriptor();
     if (descriptor === null) return;
-    rebindChannelsAfterRebuild(getBound(), cache, hostChannelDeps, (name, data: ChannelData, unit: UnitLabel) => {
+    rebindChannelsAfterRebuild(getBound(), cache, hostChannelDeps, (name, data: ChannelData, unit: UnitLabel, axisKind: AxisKindValue) => {
       // `Float64Array.buffer` types as `ArrayBufferLike` (covering
       // `SharedArrayBuffer`) unless the array's own construction site lets
       // TS narrow it; `ChannelData.t`/`v` are plain `Float64Array` fields,
@@ -93,9 +95,14 @@ export function makeChannelsInvalidatedHandler(
       // rather than retained, because this rebuild path re-derives `t`
       // itself from the tile cache and a stored `tr` could not be matched
       // back to it. One window, one origin: `t[0]`.
-      const origin = data.length > 0 ? data.t[0] : 0;
+      // A `[lap]` value has no time axis to rebase (its `t` holds lap
+      // numbers, ruling R233), so its `tr` stays all-zero and is never
+      // read: `sandbox/channelRecords.ts` omits `tr` from a lap record.
+      const origin = data.length > 0 && axisKind !== AxisKind.Lap ? data.t[0] : 0;
       const tr = new Float64Array(data.length);
-      for (let i = 0; i < data.length; i++) tr[i] = data.t[i] - origin;
+      if (axisKind !== AxisKind.Lap) {
+        for (let i = 0; i < data.length; i++) tr[i] = data.t[i] - origin;
+      }
       sandboxHost.setChannelHostVar(
         name,
         data.length,
@@ -104,7 +111,8 @@ export function makeChannelsInvalidatedHandler(
         tr.buffer as ArrayBuffer,
         w.buffer as ArrayBuffer,
         [descriptor],
-        unit
+        unit,
+        axisKind
       );
     });
   };

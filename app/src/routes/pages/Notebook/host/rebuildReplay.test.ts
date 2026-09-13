@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 
+import { AxisKind } from "../../../../ipc/hostChannel";
 import type { HostToSandboxMessage } from "./protocol";
 import { replayAfterRebuild, replayInitAndHostVars, replaySetCells } from "./rebuildReplay";
 
@@ -107,6 +108,7 @@ describe("replayInitAndHostVars + onChannelsInvalidated + replaySetCells (Sandbo
           w: new ArrayBuffer(0),
           windows: [],
           unit: { state: "dimensionless" },
+          axisKind: AxisKind.Time,
         },
       });
     };
@@ -132,6 +134,7 @@ describe("replayInitAndHostVars + onChannelsInvalidated + replaySetCells (Sandbo
           w: new ArrayBuffer(0),
           windows: [],
           unit: { state: "dimensionless" },
+          axisKind: AxisKind.Time,
         },
       },
       { type: "setCells", cells },

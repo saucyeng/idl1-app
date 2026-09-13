@@ -45,6 +45,7 @@ import { spectrumKey } from "../plotForm/spectrumKey";
 import type { FftParams, HistogramParams, ScatterParams } from "../plotForm/types";
 import { plotTheme } from "../theme/plotTheme";
 import { documentVars } from "../theme/series";
+import { channelRecords, type ChannelRecord } from "./channelRecords";
 import { bindHostVariables, type HostVariableSink } from "./hostVariables";
 
 /**
@@ -223,10 +224,10 @@ function materializeHostVar(payload: HostVarPayload): unknown {
     const v = new Float64Array(payload.v);
     const tr = new Float64Array(payload.tr);
     const w = new Float64Array(payload.w);
-    const records = new Array<{ t: number; v: number; tr: number; w: number }>(payload.length);
-    for (let i = 0; i < payload.length; i++) {
-      records[i] = { t: t[i], v: v[i], tr: tr[i], w: w[i] };
-    }
+    // `{t, v, tr, w}` for a time axis, `{lap, v, w}` for a `[lap]` value
+    // (ruling R233, C2 §3.6.5) -- see `channelRecords.ts` for why the axis
+    // column is renamed rather than reused.
+    const records = channelRecords(payload.length, t, v, tr, w, payload.axisKind);
     Object.defineProperty(records, "windows", { value: payload.windows, enumerable: false });
     // C2 §5.1's `.unit`/`.unitState` host-variable properties (R154/R164):
     // `.unit` a plain display string so a prose `${…}` splices it directly
@@ -581,7 +582,7 @@ class SandboxRuntime {
    * // `combineChannelWindows`, both host-side); this is a bare-name lookup
    * // over whatever the host has already sent.
    */
-  private channelLookup(name: string, _opts?: { lap?: number; session?: string }): { t: number; v: number; tr: number; w: number }[] {
+  private channelLookup(name: string, _opts?: { lap?: number; session?: string }): ChannelRecord[] {
     const value = this.hostVars.get(name);
     if (!Array.isArray(value)) {
       // R148: an unbound channel returns an empty array, which Plot renders
@@ -592,7 +593,7 @@ class SandboxRuntime {
       );
       return [];
     }
-    return value as { t: number; v: number; tr: number; w: number }[];
+    return value as ChannelRecord[];
   }
 
   /**

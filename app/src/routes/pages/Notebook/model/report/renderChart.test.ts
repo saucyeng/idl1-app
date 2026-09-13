@@ -3,6 +3,7 @@ import * as Plot from "@observablehq/plot";
 
 import type { TimePlotProps } from "../../plotForm/types";
 import type { PlotThemeOptions } from "../../theme/plotTheme";
+import { AxisKind } from "../../../../../ipc/hostChannel";
 import type { CombinedChannelPayload } from "../channelBindDriver";
 import { buildPlotOptions, MissingChannelDataError } from "./renderChart";
 
@@ -29,6 +30,7 @@ function payload(overrides: Partial<CombinedChannelPayload> = {}): CombinedChann
       { sessionId: "s1", span: { kind: "session" }, colour: "--chart-5", label: "Lap 2" },
     ],
     spans: [],
+    axisKind: AxisKind.Time,
     ...overrides,
   };
 }

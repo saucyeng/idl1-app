@@ -6,6 +6,29 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 
 ### Added
 
+- **Lap progressions draw, and lap tables have a grid [docs] (2026-09-13,
+  ruling R233).** The two lap pictures are finished in the app. A per-lap
+  value now reaches a `js` cell as itself: the host-variable record keys its
+  axis column `lap` rather than `t`, which is what closes the gap the
+  entry below recorded as its own lane. A cell bound `x: "t"` finds nothing
+  instead of drawing lap 3 at three seconds, and a definition named in a lap
+  chart that turns out not to be per-lap says so, naming both shapes and the
+  reduction to write.
+
+  A lap chart fetches its definition once per selected window and draws one
+  line per window in that window's own colour, with the windows named in the
+  legend. A lap table renders as a grid: one row per lap, labelled by lap
+  number, the Main row highlighted — including the reserved `"fastest"`, read
+  from the same recorded lap times the engine compares rather than from a
+  `lap_time()` column, so a table that does not show lap time is still
+  highlighted on the row `main({col[]})` used. Column headers carry the column's name and, for `lap_time()` and
+  `sector_time(i)`, its unit; a column computing something else shows no unit
+  rather than a guessed one. A failed cell shows its own error and leaves
+  every other number on the row standing. Dense mode tightens the grid.
+
+  `docs/reference-src/` gains a "Lap tables and progression" page, so the
+  generated workbook reference carries all of it.
+
 - **Lap times, lap-shaped values, and tables whose rows follow the selection
   [docs] (2026-09-13, ruling R233).** A workbook can now ask what a lap took.
   `lap_time()`, `lap_number()` and `sector_time(i)` join the builtin

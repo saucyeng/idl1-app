@@ -5,6 +5,7 @@ import type { SessionSummary } from "../../../../../ipc/catalog";
 import { describeWindow, sessionLabel, type SelectionWindow } from "../../../../../state/selection";
 import type { ScannedCell } from "../cells";
 import type { ProseBlock as ProseBlockData } from "../proseBlocks";
+import { AxisKind } from "../../../../../ipc/hostChannel";
 import type { CombinedChannelPayload } from "../channelBindDriver";
 import { generate } from "../../plotForm/generate";
 import { buildReportDocument, formatChartCaption, type BuildReportDocumentInput } from "./document";
@@ -90,6 +91,7 @@ function payload(overrides: Partial<CombinedChannelPayload> = {}): CombinedChann
     w: new Float64Array([0, 0]),
     windows: [{ sessionId: "sess-1", span: { kind: "session" }, colour: "--chart-1", label: "Session" }],
     spans: [],
+    axisKind: AxisKind.Time,
     ...overrides,
   };
 }
