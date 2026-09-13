@@ -66,6 +66,15 @@ jobs:
           cargo run --manifest-path rust/Cargo.toml -p idl-rs-cli --             docs workbook --out docs/WORKBOOK-REFERENCE.md --src docs/reference-src
           git diff --exit-code -- docs/WORKBOOK-REFERENCE.md
 
+      - name: CLI reference and the app's command-table copy are up to date
+        # C6 (R230): the CLI's command table is the source of truth for the
+        # CLI reference and for app/src/shell/cliTable.json; a row added
+        # without regenerating both would let the UI and CLI disagree.
+        run: |
+          cargo run --manifest-path rust/Cargo.toml -p idl-rs-cli -- docs cli --out docs/CLI-REFERENCE.md
+          cargo run --manifest-path rust/Cargo.toml -p idl-rs-cli -- docs cli --json --out app/src/shell/cliTable.json > /dev/null
+          git diff --exit-code -- docs/CLI-REFERENCE.md app/src/shell/cliTable.json
+
       - name: cargo check app crate (app/src-tauri)
         # The Tauri app crate is compiled by nobody but `tauri dev/build`, so a
         # lane can land a type error here that every crate gate misses (R199).
