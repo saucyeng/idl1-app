@@ -54,7 +54,9 @@ export const SETTLE_FADE_MS = 2000;
  * An error is shown **persistently** — it is the one state a reader must
  * not miss, and it is the one with something to say (the tooltip on hover,
  * R216 item 2). A settle is shown briefly and then gets out of the way. The
- * two waiting states spin for as long as they last.
+ * three waiting states spin for as long as they last — including
+ * `"stale"`, which is decision 59's spinner sitting over the greyed
+ * previous result rather than over an empty box.
  *
  * @param status The cell's evaluation state (`model/cellStatus.ts`).
  * @param msSinceSettle Milliseconds since this cell last settled, or `null`
@@ -63,7 +65,7 @@ export const SETTLE_FADE_MS = 2000;
  */
 export function plotStatusGlyph(status: CellStatus, msSinceSettle: number | null): PlotStatusGlyph {
   if (status === "error") return "cross";
-  if (status === "queued" || status === "evaluating") return "spinner";
+  if (status === "queued" || status === "evaluating" || status === "stale") return "spinner";
   if (msSinceSettle !== null && msSinceSettle >= SETTLE_FADE_MS) return "none";
   return "tick";
 }
