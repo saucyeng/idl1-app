@@ -4162,6 +4162,7 @@ export default function NotebookPage() {
       inlineResults={inlineResults}
       spanErrors={spanErrors}
       windowNote={cellListWindowNote}
+      dense={dense}
       editingProseBlockId={proseEdit?.target.blockId ?? null}
       proseEditor={proseEditorElement}
       onEditProseBlock={paperActive ? undefined : openProseBlockEditor}

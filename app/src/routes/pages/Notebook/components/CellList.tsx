@@ -75,6 +75,11 @@ export interface CellListProps {
   /** Opens a prose block for editing. Omitted on a read-only surface, in
    *  which case no block offers the affordance at all. */
   onEditProseBlock?: (blockId: string) => void;
+  /** Whether dense stacking is on (ruling R216 item 3). Passed to
+   *  `TableCell`, whose grid tightens its row padding; every other kind's
+   *  density is `CellFrame`'s own geometry, which this component does not
+   *  own. */
+  dense?: boolean;
 }
 
 /**
@@ -104,6 +109,7 @@ export default function CellList({
   editingProseBlockId = null,
   proseEditor = null,
   onEditProseBlock,
+  dense = false,
 }: CellListProps) {
   /** One prose block: the open mini-editor when it is the block being
    *  edited, the rendered text otherwise (ruling R226 item 1). */
@@ -134,7 +140,7 @@ export default function CellList({
           ) : output.kind === "math" ? (
             <MathCell output={output} windowNote={windowNote} />
           ) : output.kind === "table" ? (
-            <TableCell output={output} windowNote={windowNote} />
+            <TableCell output={output} windowNote={windowNote} dense={dense} />
           ) : (
             renderJsCell(cell.id as string)
           );
