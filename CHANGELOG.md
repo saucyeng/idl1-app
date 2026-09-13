@@ -6,6 +6,25 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 
 ### Added
 
+- **Synthetic session generator [docs] (2026-09-13, ruling R187).**
+  `idl-rs session synth --out <file>` writes a real schema-3 `.idl0` log — a
+  simulated rigid body carrying up to three IMUs with known extrinsics around
+  a closed elliptical loop, GPS fixes at 1 or 5 Hz, seedable noise — plus a
+  `<out>.truth.json` carrying the extrinsics, lap times, loop geometry and
+  noise settings. Because the output is the real wire format, a generated
+  session goes through the importer, the blob store, the catalog, the parquet
+  cache and every chart path unchanged; because the truth is exact, M6.3's
+  rigid-body calibration can be validated and lap detection scored before the
+  hardware exists. Deterministic across platforms: the generator uses its own
+  polynomial trigonometry and a fixed PCG32 rather than libm and system
+  entropy, so a committed fixture is diffable everywhere. One is committed at
+  `rust/core/tests/fixtures/synth-3lap.idl0` (70 KB, three laps) for other
+  lanes to use. Contract C1 gains §9; C6 records the `synth` verb.
+  **Known gap:** SPEC §5.6's `GPS_FIX` record is a full 32 bytes, so the four
+  M10 fields `docs/HARDWARE_M10_SETUP.md` §3 asks for (`sAcc`, `velD`, and
+  the two NAV-ODO values) are *not* emitted — the legacy record is, and C1
+  §9.5 says what that costs.
+
 - **Cross-language wire golden fixtures [docs] (2026-09-13, ruling R236).**
   Every binary IPC format (`IDLH`, `IDLT`, `IDLS`, `IDLG`, `IDLR`) now has a
   small, deterministic fixture committed under `app/src/ipc/golden/`: bytes

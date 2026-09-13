@@ -13,7 +13,7 @@ idl-rs <noun> <verb> [args] [--flags]
 
 **Verbs.** `list`, `show`, `new`, `check`, `eval`, `set`, `import`, `export`, `scan`, `fold-in`, `index`, `rebuild`, `verify`, `delete`
 
-Verbs added by a later ruling: `set-start` (R229), `set-meta` (R229), `cells` (R229), `data` (R229), `detect` (R229), `laps` (R229), `stale` (R197), `workbook` (R222), `cli` (R230 item 2), `wire` (R236).
+Verbs added by a later ruling: `set-start` (R229), `set-meta` (R229), `cells` (R229), `data` (R229), `detect` (R229), `laps` (R229), `stale` (R197), `workbook` (R222), `cli` (R230 item 2), `wire` (R236), `synth` (R187).
 
 ## Uniform behaviour
 
@@ -125,6 +125,25 @@ Import one log file into the data directory.
 | `--json` | switch | Emit the result as JSON on stdout (schema_version 1); errors become typed JSON on stderr |
 
 Calls `store::import::import_file_path`; `--json` emits `ImportReport`.
+
+### `idl-rs session synth`
+
+Generate a synthetic .idl0 session with a ground-truth JSON beside it (ruling R187).
+
+| Flag | Value | Meaning |
+| --- | --- | --- |
+| `--out` | path | File to write the `.idl0` log to; the truth JSON goes beside it |
+| `--laps` | integer | Complete circuits of the loop (default `3`) |
+| `--lap-length-m` | integer | Loop perimeter in metres (default `400`) |
+| `--rate-hz` | integer | IMU output data rate in Hz (default `800`) |
+| `--gps-hz` | integer | GPS fix rate in Hz (default `5`) |
+| `--seed` | integer | PRNG seed; the same seed and flags give byte-identical output (default `1`) |
+| `--imu-count` | integer | How many of the three sensors to instrument (1-3) (default `3`) |
+| `--noise` | text | Multiplies every sensor noise sigma; 0 gives a noiseless recording (default `1.0`) |
+| `--dry-run` | switch | Report what would change and write nothing |
+| `--json` | switch | Emit the result as JSON on stdout (schema_version 1); errors become typed JSON on stderr |
+
+Calls `synth::generate`; `--json` emits `SynthReport`.
 
 ## `workbook`
 

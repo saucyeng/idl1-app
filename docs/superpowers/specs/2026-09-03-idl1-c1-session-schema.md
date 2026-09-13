@@ -1114,6 +1114,15 @@ a test fixture, consumed by core's own tests and by M6.3's validation.
                "fields_omitted": ["sAcc", "velD", "odo_distance", "odo_distance_std"] }
     }
 
+**Compared as text, not as a struct.** `serde_json`'s float *writer* is exact (it emits the
+shortest string that reads back as the same `f64`), but its *reader* can land one unit in the
+last place away from the value that string names. A consumer that deserialises this file and
+compares it field-for-field against a freshly generated `Truth` will therefore see spurious
+last-digit differences on the `f64` fields. The generator's own fixture test avoids that by
+comparing the *serialised text*, and so should anything else that wants an exactness check.
+The rendered numbers are still correct to ~1e-16 relative, so any tolerance-based comparison is
+unaffected.
+
 **Laps** are by construction, not by detection: lap `k` spans the loop parameter's `k`-th full
 circuit, and `start_s` / `end_s` are the exact times the arc-length table gives at those arc
 lengths. The gate is the line through the loop point at `u = 0`, normal to the tangent there —
@@ -1151,6 +1160,8 @@ and split on another.
 `SynthConfig::fixture()` and committed, for any lane that needs a session with known answers
 without running the generator. It is deliberately small — 3 laps of a 120 m loop with all three
 IMUs at 25 Hz, under 200 KB — which makes it useless for anything spectral and entirely adequate
-for lap detection, importer round-trips and catalog work. A core test regenerates it and asserts
+for lap detection, importer round-trips and catalog work. `rust/.gitattributes` marks the `.idl0` as binary and pins the truth JSON to LF, because this
+checkout has `core.autocrlf` on and a line-ending translation would fail the byte comparison on
+Windows and nowhere else. A core test regenerates it and asserts
 byte equality with the committed file; that test failing means either the generator changed (bump
 `SYNTH_VERSION` and re-commit) or determinism broke, which is a real bug.
