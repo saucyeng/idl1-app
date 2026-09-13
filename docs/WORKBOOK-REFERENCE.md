@@ -12,7 +12,7 @@ curated sources under `docs/reference-src/`, never this file.
 
 ## Math builtins
 
-72 functions a `math` cell's expression can call, grouped by category
+75 functions a `math` cell's expression can call, grouped by category
 (C2 §3.3). A function marked **not implemented** parses and validates —
 it is part of the committed language surface — but evaluating it is an
 error today.
@@ -30,7 +30,7 @@ error today.
 - **Correlation** — [`correlate`](#correlate), [`convolve`](#convolve)
 - **Resampling** — [`resample`](#resample)
 - **Logic** — [`where`](#where)
-- **Lap** — [`current_lap`](#current_lap), [`lap_start_time`](#lap_start_time), [`lap_start_distance`](#lap_start_distance), [`sector_number`](#sector_number)
+- **Lap** — [`current_lap`](#current_lap), [`lap_start_time`](#lap_start_time), [`lap_start_distance`](#lap_start_distance), [`sector_number`](#sector_number), [`lap_number`](#lap_number), [`lap_time`](#lap_time), [`sector_time`](#sector_time)
 - **Lap delta** — [`lap_delta_time`](#lap_delta_time), [`lap_delta_dist`](#lap_delta_dist)
 - **Estimator (diagnostic)** — [`attitude`](#attitude), [`body_accel`](#body_accel)
 - **Estimator** — [`wheel_travel`](#wheel_travel), [`wheel_velocity`](#wheel_velocity)
@@ -1134,6 +1134,69 @@ Example:
 
 ```
 result = sector_number()
+```
+
+#### lap_number
+
+```
+lap_number()
+```
+
+The 1-based lap number: this row's lap in a table cell, every lap in a math cell.
+
+| | |
+|---|---|
+| Shape | `scalar | [lap]` |
+| Unit rule | `Dimensionless` |
+| Status | implemented |
+| Arguments | 0 |
+
+Example:
+
+```
+result = lap_number()
+```
+
+#### lap_time
+
+```
+lap_time()
+```
+
+Lap duration in seconds: this row's lap in a table cell, every lap in a math cell.
+
+| | |
+|---|---|
+| Shape | `scalar | [lap]` |
+| Unit rule | `Fixed(s)` |
+| Status | implemented |
+| Arguments | 0 |
+
+Example:
+
+```
+result = lap_time()
+```
+
+#### sector_time
+
+```
+sector_time(i)
+```
+
+Duration of the lap's `i`-th sector (0-based, as `sector_number()` counts) in seconds; NaN when the lap has no such sector.
+
+| | |
+|---|---|
+| Shape | `scalar | [lap]` |
+| Unit rule | `Fixed(s)` |
+| Status | implemented |
+| Arguments | 1 |
+
+Example:
+
+```
+result = sector_time(1)
 ```
 
 ### Lap delta
