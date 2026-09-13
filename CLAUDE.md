@@ -62,7 +62,7 @@ the C3 IPC error shape) — never `Err(String)`, never a crash on bad data.
 
 Every task declares one of: spec-first (write the SPEC section before code),
 spec-during (SPEC section in the same PR), or "no spec change needed" — said out
-loud. Every task touching shipped behaviour updates `CHANGELOG.md` and/or `TASKS.md`.
+loud. Every task touching shipped behaviour updates `CHANGELOG.md` and/or `TASKS.md`. A task that changes a generated source (the maths builtin catalog, the CLI command table, a wire encoder) regenerates its outputs in the same commit: `idl-rs docs workbook`, `docs cli`, `docs wire`; CI diff-gates all three.
 Every `CHANGELOG.md` entry carries `[docs]` or `[no-docs]` as its first tag,
 saying whether it changed user-facing documentation (R222 item 5).
 
