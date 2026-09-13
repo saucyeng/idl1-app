@@ -458,6 +458,14 @@
         {
           "choices": [],
           "default": null,
+          "help": "1-based lap number that lap-scoped expressions mean; needs --track",
+          "kind": "integer",
+          "long": "main-lap",
+          "repeatable": false
+        },
+        {
+          "choices": [],
+          "default": null,
           "help": "Emit the result as JSON on stdout (schema_version 1); errors become typed JSON on stderr",
           "kind": null,
           "long": "json",
@@ -540,6 +548,14 @@
         {
           "choices": [],
           "default": null,
+          "help": "1-based lap number that lap-scoped expressions mean; needs --track",
+          "kind": "integer",
+          "long": "main-lap",
+          "repeatable": false
+        },
+        {
+          "choices": [],
+          "default": null,
           "help": "Emit the result as JSON on stdout (schema_version 1); errors become typed JSON on stderr",
           "kind": null,
           "long": "json",
@@ -592,6 +608,14 @@
           "help": "`.idl0t` track artifact, required only when a cell is lap-bound",
           "kind": "path",
           "long": "track",
+          "repeatable": false
+        },
+        {
+          "choices": [],
+          "default": null,
+          "help": "1-based lap number that lap-scoped expressions mean; needs --track",
+          "kind": "integer",
+          "long": "main-lap",
           "repeatable": false
         },
         {
@@ -660,6 +684,14 @@
           "help": "`.idl0t` track artifact, required only when a cell is lap-bound",
           "kind": "path",
           "long": "track",
+          "repeatable": false
+        },
+        {
+          "choices": [],
+          "default": null,
+          "help": "1-based lap number that lap-scoped expressions mean; needs --track",
+          "kind": "integer",
+          "long": "main-lap",
           "repeatable": false
         },
         {

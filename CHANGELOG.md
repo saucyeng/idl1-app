@@ -29,6 +29,12 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
   `docs/CLI-REFERENCE.md` are new. `workbook export --report` is not
   implemented: the HTML report renderer is TypeScript and needs sandbox
   output, so `md` and `json` are the formats, and C6 §5 records the gap.
+  The workbook verbs that take `--track` also take `--main-lap <n>`, naming
+  the lap a lap-scoped expression means. There is no default and the
+  absence of one is not harmless: an unset main lap is "no window
+  selected", so a cell scoped to the main lap answers for the whole
+  session. Without the flag the command says that on stderr; with a lap
+  the session does not have, it fails and lists the ones it does.
 
 - **Prose is edited where it is read [docs] (2026-09-11, ruling R226).**
   A notebook's text could only be changed from the code column. Clicking a

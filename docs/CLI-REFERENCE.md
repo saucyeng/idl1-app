@@ -157,6 +157,7 @@ Parse a workbook and report every structural problem.
 | --- | --- | --- |
 | `--session` | path | Session to evaluate against: an `.idl0` file, or a session id inside --data-dir |
 | `--track` | path | `.idl0t` track artifact, required only when a cell is lap-bound |
+| `--main-lap` | integer | 1-based lap number that lap-scoped expressions mean; needs --track |
 | `--json` | switch | Emit the result as JSON on stdout (schema_version 1); errors become typed JSON on stderr |
 
 Calls `workbook::v3::parse_workbook`; `--json` emits `WorkbookCheckReport`.
@@ -187,6 +188,7 @@ Evaluate a workbook's math and table cells against a session.
 | --- | --- | --- |
 | `--session` | path | Session to evaluate against: an `.idl0` file, or a session id inside --data-dir |
 | `--track` | path | `.idl0t` track artifact, required only when a cell is lap-bound |
+| `--main-lap` | integer | 1-based lap number that lap-scoped expressions mean; needs --track |
 | `--json` | switch | Emit the result as JSON on stdout (schema_version 1); errors become typed JSON on stderr |
 
 Calls `workbook::v3::eval_cells`; `--json` emits `WorkbookEvalReport`.
@@ -204,6 +206,7 @@ Print one cell's evaluated series or table.
 | --- | --- | --- |
 | `--session` | path | Session to evaluate against: an `.idl0` file, or a session id inside --data-dir |
 | `--track` | path | `.idl0t` track artifact, required only when a cell is lap-bound |
+| `--main-lap` | integer | 1-based lap number that lap-scoped expressions mean; needs --track |
 | `--json` | switch | Emit the result as JSON on stdout (schema_version 1); errors become typed JSON on stderr |
 
 Calls `workbook::v3::eval_cells`; `--json` emits `WorkbookCellData`.
@@ -222,6 +225,7 @@ Write a workbook out as Markdown or as evaluated JSON.
 | `--format` | `md`, `json` | `md` re-renders the workbook source, `json` writes its evaluated cells (default `md`) |
 | `--session` | path | Session to evaluate against: an `.idl0` file, or a session id inside --data-dir |
 | `--track` | path | `.idl0t` track artifact, required only when a cell is lap-bound |
+| `--main-lap` | integer | 1-based lap number that lap-scoped expressions mean; needs --track |
 | `--dry-run` | switch | Report what would change and write nothing |
 | `--json` | switch | Emit the result as JSON on stdout (schema_version 1); errors become typed JSON on stderr |
 
