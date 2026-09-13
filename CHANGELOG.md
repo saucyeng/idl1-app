@@ -20,7 +20,11 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
   §3.6): adding a per-lap series to a per-sample one is now an error that
   names both shapes, rather than a silent pairing of lap 3 with the third
   sample. A per-lap value crosses to the notebook as itself, carrying lap
-  numbers rather than seconds.
+  numbers rather than seconds. **The lap-progression chart still does not
+  draw**: the host-variable record a `js` cell reads has only `t`, `v`, `tr`
+  and `w`, and that chart plots against `lap`. Adding the column means
+  threading the axis kind through the sandbox protocol, which is an app-side
+  change and its own lane.
 
   A `table` cell can set `rowSource: "windowLaps"` and get one row per lap of
   whatever is selected, evaluated per lap, with `mainRowId: "fastest"`
