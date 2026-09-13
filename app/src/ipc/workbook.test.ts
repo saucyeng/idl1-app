@@ -195,7 +195,7 @@ describe("fetchHostChannelV2", () => {
     const buf = new ArrayBuffer(24);
     const view = new DataView(buf);
     [0x49, 0x44, 0x4c, 0x48].forEach((b, i) => view.setUint8(i, b)); // "IDLH"
-    view.setUint16(4, 1, true); // version
+    view.setUint16(4, 2, true); // version
     view.setUint16(6, 0, true); // flags: no t
     view.setUint32(8, 0, true); // length
     view.setUint32(12, 0, true); // t_length
@@ -220,7 +220,7 @@ describe("fetchHostChannelV2", () => {
     const buf = new ArrayBuffer(24);
     const view = new DataView(buf);
     [0x49, 0x44, 0x4c, 0x48].forEach((b, i) => view.setUint8(i, b)); // "IDLH"
-    view.setUint16(4, 1, true);
+    view.setUint16(4, 2, true);
     view.setUint16(6, 0, true);
     view.setUint32(8, 0, true);
     view.setUint32(12, 0, true);

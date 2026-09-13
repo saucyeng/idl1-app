@@ -1,22 +1,54 @@
 import type { IpcError } from "./workbook";
 
-/** A decoded `IDLH` v1 host channel (C3 §3.4's `fetch_host_channel`): the
+/** What an `IDLH` payload's `t` array measures — C3 §3.4's `axis_kind`
+ *  (version 2). Mirrors `AxisKind` in
+ *  `rust/core/src/workbook/v3/host_channel_wire.rs`, numbering included.
+ *
+ *  Version 1 said only *that* a recorded axis existed, never what it was, so
+ *  a reader had to assume seconds. A `[lap]` definition's axis is ordinal lap
+ *  numbers (C2 §3.6.1) and a reader that cannot tell them apart draws lap 3
+ *  at three seconds. */
+export const AxisKind = {
+  /** No recorded axis; always paired with an empty `t`. */
+  None: 0,
+  /** Seconds since the session's first sample. */
+  Time: 1,
+  /** Hertz. */
+  Frequency: 2,
+  /** Ordinal lap number, 1-based. */
+  Lap: 3,
+} as const;
+
+/** One of {@link AxisKind}'s values. */
+export type AxisKindValue = (typeof AxisKind)[keyof typeof AxisKind];
+
+/** A decoded `IDLH` v2 host channel (C3 §3.4's `fetch_host_channel`): the
  *  decimated `t`/`v` sample arrays for one `math`-cell definition,
  *  `t` empty when the source has no recorded axis (a scalar or
  *  table-column result). Copied out of the response buffer via `DataView`
  *  (ruling R59 Q3(a): decoders copy, they never view the buffer in place),
  *  never a zero-copy view. */
 export interface DecodedHostChannel {
-  /** Whether the source carries a recorded time axis (header `flags` bit 0). */
+  /** Whether the source carries a recorded axis (header `flags` bit 0). */
   hasT: boolean;
-  /** Seconds, one per value in `v`; empty when `hasT` is false. */
+  /** What {@link t} measures. `AxisKind.None` whenever `hasT` is false — the
+   *  encoder refuses to claim a kind for an empty axis. A consumer that plots
+   *  `t` as seconds must check this first. */
+  axisKind: AxisKindValue;
+  /** One coordinate per value in `v`, in {@link axisKind}'s own unit (seconds
+   *  for `Time`, 1-based lap numbers for `Lap`); empty when `hasT` is false. */
   t: Float64Array;
   /** The definition's decimated values. */
   v: Float64Array;
 }
 
 const MAGIC = "IDLH";
-const SUPPORTED_VERSION = 1;
+/** IDLH version 2 (ruling R217 item 5): `axis_kind` occupies two of version
+ *  1's eight reserved bytes, so every payload offset is unchanged. The engine
+ *  emits 2 and nothing emits 1 any more, so 2 is the one accepted version --
+ *  accepting 1 as well would mean reading its zeroed reserved bytes as
+ *  `AxisKind.None` and silently losing the axis of every v1 payload. */
+const SUPPORTED_VERSION = 2;
 const HEADER_LEN = 24;
 const HAS_T_FLAG = 0x1;
 
@@ -34,10 +66,10 @@ export class HostChannelDecodeError extends Error implements IpcError {
   }
 }
 
-/** Decodes a `fetch_host_channel` response per C3 §3.4's `IDLH` v1 layout:
+/** Decodes a `fetch_host_channel` response per C3 §3.4's `IDLH` v2 layout:
  *  a fixed 24-byte little-endian header (`magic`, `version`, `flags`,
- *  `length`, `t_length`, `reserved`), then `t_length` `f64`s (seconds), then
- *  `length` `f64`s. Copies every value out via `DataView` rather than
+ *  `length`, `t_length`, `axis_kind`, `reserved`), then `t_length` `f64`s
+ *  (the axis coordinates), then `length` `f64`s. Copies every value out via `DataView` rather than
  *  constructing a `Float64Array` view directly over `buf` — the header's
  *  24-byte length keeps the payload arrays 8-byte aligned for a real
  *  `fetch_host_channel` response, but a caller that slices `buf` first
@@ -65,6 +97,7 @@ export function decodeHostChannel(buf: ArrayBuffer): DecodedHostChannel {
   const hasT = (flags & HAS_T_FLAG) !== 0;
   const length = view.getUint32(8, true);
   const tLength = view.getUint32(12, true);
+  const axisKind = view.getUint16(16, true) as AxisKindValue;
 
   const total = HEADER_LEN + tLength * 8 + length * 8;
   if (buf.byteLength < total) {
@@ -83,5 +116,5 @@ export function decodeHostChannel(buf: ArrayBuffer): DecodedHostChannel {
     v[i] = view.getFloat64(vOffset + i * 8, true);
   }
 
-  return { hasT, t, v };
+  return { hasT, axisKind, t, v };
 }

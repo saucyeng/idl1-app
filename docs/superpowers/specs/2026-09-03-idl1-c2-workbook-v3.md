@@ -502,9 +502,15 @@ columns could ever disagree, the rule column is the normative one.
 | `lap_start_time` | `lap_start_time(n)` | Lap | s, `NaN` if `n` out of range | `Fixed(s)` — `n` is a lap number, `Dimensionless` | Implemented | yes |
 | `lap_start_distance` | `lap_start_distance(n)` | Lap | m, `NaN` if `n` out of range or no `[Distance]` in session | `Fixed(m)` — `n` is a lap number, `Dimensionless` | Implemented | yes |
 | `sector_number` | `sector_number()` | Lap | 0-based sector index, `NaN` outside any sector (dimensionless) | `Dimensionless` | Implemented | yes |
-| `lap_number` | `lap_number()` | Lap (row context) | the row's own 1-based lap number, `NaN` outside a row context (dimensionless) | `Dimensionless` | Implemented (added 2026-09-11, ruling R217 item 2) | **no** |
-| `lap_time` | `lap_time()` | Lap (row context / `[lap]`) | s — **shape-polymorphic** (R217 item 3): the row's own lap time in a §4 row context, a rank-1 `[lap]` series over the window's laps in a `math` cell | `Fixed(s)` | Implemented (added 2026-09-11, ruling R217 items 2–3) | **no** |
-| `sector_time` | `sector_time(i)` | Lap (row context / `[lap]`) | s, `NaN` when sector `i` (0-based) does not exist — same shape polymorphism as `lap_time` | `Fixed(s)` — `i` is `Dimensionless` | Implemented (added 2026-09-11, ruling R217 item 2) | **no** |
+| `lap_number` | `lap_number()` | Lap (row context / `[lap]`) | the row's own 1-based lap number in a §4 row context, a rank-1 `[lap]` series of the window's lap numbers in a `math` cell — **shape-polymorphic** like the two below (revised 2026-09-13, ruling R233: it was "`NaN` outside a row context", which left the lap axis with no way to name itself) | `Dimensionless` | Implemented (added 2026-09-11, ruling R217 item 2; **landed 2026-09-13**) | **no** |
+| `lap_time` | `lap_time()` | Lap (row context / `[lap]`) | s — **shape-polymorphic** (R217 item 3): the row's own lap time in a §4 row context, a rank-1 `[lap]` series over the window's laps in a `math` cell. The value is `LapSummary.lap_time_ms` converted, **not** the lap's end minus its start: a neutral-zone visit is already subtracted from the recorded time, and the two agree on every lap without one | `Fixed(s)` | Implemented (added 2026-09-11, ruling R217 items 2–3; **landed 2026-09-13**) | **no** |
+| `sector_time` | `sector_time(i)` | Lap (row context / `[lap]`) | s, `NaN` when sector `i` (0-based, counted **within each lap**) does not exist — same shape polymorphism as `lap_time`. A negative or non-finite `i` is a `Runtime` error, not `NaN`: a missing sector is data, a nonsense index is a mistake | `Fixed(s)` — `i` is `Dimensionless` | Implemented (added 2026-09-11, ruling R217 item 2; **landed 2026-09-13**) | **no** |
+
+All three need a lap context: with no detected laps at all they are
+`NoLapContext` (§3.5.B), never an empty series — a chart of no laps and a
+chart of laps nobody detected must not draw the same picture. A row bound to
+a lap the session no longer carries is `NoLapContext` too, never a
+neighbouring lap's answer.
 | `lap_delta_time` | `lap_delta_time(ch)` | Lap delta | same units as `ch` (main − overlay, time-matched; mean across every `overlay_laps` entry when more than one, R73) | `SameAsArg(0)` — a difference of two `[ch]` series, not a time | Implemented | yes |
 | `lap_delta_dist` | `lap_delta_dist(ch)` | Lap delta | same units as `ch` (main − overlay, arc-length-matched; mean across every `overlay_laps` entry when more than one, R73) | `SameAsArg(0)` — a difference of two `[ch]` series, not a distance | Implemented | yes |
 | `attitude` | `attitude("roll"\|"pitch")` | Estimator (diagnostic) | degrees | `Fixed(deg)` | Implemented | yes |
@@ -798,6 +804,44 @@ math value a **shape**, says which operators accept which shapes, how a shape
 is written and checked in a definition, and how a chart draws a value that is
 not 1-D. §3.6.8 states exactly what changes for workbooks written before it
 and why no version bump or migration pass is needed.
+
+**Implementation status, 2026-09-13 (ruling R233): a minimal subset is
+live.** The engine now carries an axis kind on every value, and `[lap]` values
+exist and can be reduced. Everything else in this section is still contract
+text with no code behind it. Precisely what landed:
+
+- A value's shape is an **axis kind alone** — `t` or `lap` — not §3.6.1's
+  full `{kind, len, unit, coords, origin}` axis list. Rank is still 0 or 1.
+  The coordinate vector is the value's existing per-sample array: seconds on a
+  `t` axis, 1-based lap numbers on a `lap` axis.
+- `lap_number()`, `lap_time()` and `sector_time(i)` (§3.3) are the only
+  producers of a `[lap]` value.
+- Elementwise combination follows §3.6.2 rules 1 and 2: a scalar combines with
+  any shape, two equal shapes combine, and `[lap]` with `[t]` is an error
+  naming both shapes. There is no `origin` token, so rule 4's "never an
+  implicit resample" is not yet enforceable between two `t` axes.
+- Reductions behave as §3.6.3's no-axis row already says: `mean(x)` over a
+  `[lap]` value reduces the axis and yields `[]`. The **axis-argument** forms
+  (`mean(x, "f")`, `mean(x, "t:lap")`, `mean(x, "t:win")`), `argmax`/`argmin`,
+  `at`/`nearest`/`slice`/`axes`/`broadcast`/`align`, and every rank ≥ 2 shape
+  are **not implemented**.
+- The error kind is `Type`, not the `ShapeMismatch` that §3.5's R110 extension
+  names. `MathEvalErrorKind` is C3 contract and this subset does not widen it;
+  a shape mismatch is an operand-type mismatch, and the message names both
+  shapes in §3.6.1's written form. When the full section lands, `ShapeMismatch`
+  replaces `Type` here.
+- Shape **annotations** (§3.6.4) are not parsed, so neither
+  `InvalidShapeAnnotation` nor `UnknownAxisSymbol` can occur.
+- A `[lap]` definition is **not** stored back into the session's channel
+  store, so another definition cannot reference it by `[Name]`; it fails
+  visibly as an unknown channel rather than re-entering evaluation with its
+  lap numbers read as microseconds (R129 item b: a shim narrows scope, never
+  widens it).
+
+A `[lap]` value crosses to JS as C3 §3.4's IDLH `axis_kind = 3` with its lap
+numbers in `t` (§3.6.5's binding under the key `lap` is the app side of this
+and is **not** built yet — the host-variable record still has only `t`, `v`,
+`tr` and `w`, so §5.3's lap chart parses and round-trips but does not draw).
 
 #### 3.6.1 The shape type
 
@@ -1509,15 +1553,31 @@ among the derived rows, which is idl0's own default Main. `"fastest"` under
 baseline: an authored table's rows are named, so a magic id there would
 shadow a real row id.
 
-**Implementation status, 2026-09-11.** Both fields are in the schema and
-round-trip through `TableModel`; **neither is honoured by the evaluator
-yet**. `evaluate_table` still iterates the authored `rows` whatever
-`rowSource` says, `mainRowId` is not resolved into
-`MathLapContext::baseline_row`, and the `"fastest"`-under-`"authored"`
-validation rule of §3.5 is not enforced. The derivation, the baseline
-resolution and that rule are a follow-up lane; until it lands, a file
-written with `rowSource: "windowLaps"` evaluates as though it said
-`"authored"`. The same is true of the `ChartSlot(lapTable)` migration row
+**Implementation status, 2026-09-13 (ruling R233): both fields are now
+honoured.** `plan_rows` applies the `rowSource` rule and returns the table as
+evaluated plus one binding per row; `resolve_baseline_row` resolves
+`mainRowId` — including the reserved `"fastest"`, the smallest recorded
+`lap_time()` among the derived rows — into `MathLapContext::baseline_row`; and
+`validate` reports `"fastest"` under `"authored"` as the problem kind
+`invalid_main_row` (a fifth kind alongside `dimension_mismatch`,
+`parse_error`, `unknown_reference` and `cycle`).
+
+A derived row's id is `"<sessionId>#<lapNumber>"` — the session and lap a row
+stands for are exactly what identifies it, and a derived row has no authored
+id to keep. Ties on lap time resolve to the lowest row index, and a lap whose
+recorded time is `NaN` is skipped rather than compared, so `"fastest"` never
+depends on iteration order.
+
+Two things landed alongside, which this section previously assumed. Each row
+is now evaluated **in its own lap window** — wave 1 passed no window at all,
+so an authored row bound to lap 3 aggregated the whole session — and a row
+bound to a lap makes `lap_time()`/`lap_number()`/`sector_time(i)` scalars for
+that row (R217 item 3). The caller declares the row scope; it is never
+inferred from how many laps the context happens to carry, because a one-lap
+session is not a row context.
+
+**Still outstanding:** there is no app-side `TableModel` UI — a derived lap
+table evaluates and crosses the wire, and nothing renders it yet. The same is true of the `ChartSlot(lapTable)` migration row
 in §6: the migration writes the field, and the field does not yet change
 what the evaluator does.
 

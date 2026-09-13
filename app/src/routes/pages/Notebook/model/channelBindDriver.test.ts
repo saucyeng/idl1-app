@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { SessionDetail } from "../../../../ipc/catalog";
-import type { DecodedHostChannel } from "../../../../ipc/hostChannel";
+import { AxisKind, type DecodedHostChannel } from "../../../../ipc/hostChannel";
 import type { DecodedTile } from "../../../../ipc/tiles";
 import type { SelectionWindow } from "../../../../state/selection";
 import type { WindowDescriptor } from "../host/protocol";
@@ -130,7 +130,12 @@ function mixedBinding(entries: Array<{ channelId: string; source: "session" | "d
 }
 
 function fakeHostChannel(v: number[], hasT = true): DecodedHostChannel {
-  return { hasT, t: hasT ? new Float64Array(v.map((_, i) => i)) : new Float64Array(0), v: new Float64Array(v) };
+  return {
+    hasT,
+    axisKind: hasT ? AxisKind.Time : AxisKind.None,
+    t: hasT ? new Float64Array(v.map((_, i) => i)) : new Float64Array(0),
+    v: new Float64Array(v),
+  };
 }
 
 function neverStale(): boolean {

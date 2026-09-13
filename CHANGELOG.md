@@ -6,6 +6,33 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 
 ### Added
 
+- **Lap times, lap-shaped values, and tables whose rows follow the selection
+  [docs] (2026-09-13, ruling R233).** A workbook can now ask what a lap took.
+  `lap_time()`, `lap_number()` and `sector_time(i)` join the builtin
+  catalogue, which C2 §3.3 had listed since the spec was written and the
+  engine had never had. Each answers in the shape its context asks for: one
+  number in a table row bound to a lap, one number **per lap** in a `math`
+  cell — the first values in idl1 that run along something other than time.
+  `lap_time()` reports the recorded lap time, so a lap with a neutral-zone
+  visit still reads the way the timing board did.
+
+  Math values carry an axis kind to make that possible (a minimal slice of C2
+  §3.6): adding a per-lap series to a per-sample one is now an error that
+  names both shapes, rather than a silent pairing of lap 3 with the third
+  sample. A per-lap value crosses to the notebook as itself, carrying lap
+  numbers rather than seconds. **The lap-progression chart still does not
+  draw**: the host-variable record a `js` cell reads has only `t`, `v`, `tr`
+  and `w`, and that chart plots against `lap`. Adding the column means
+  threading the axis kind through the sandbox protocol, which is an app-side
+  change and its own lane.
+
+  A `table` cell can set `rowSource: "windowLaps"` and get one row per lap of
+  whatever is selected, evaluated per lap, with `mainRowId: "fastest"`
+  resolving to the quickest of them — idl0's compare-to-fastest column, in a
+  file that states the rule rather than a snapshot of the laps that existed
+  when it was written. Table rows are also finally evaluated **in their own
+  lap**: a row bound to lap 3 had been aggregating the whole session.
+
 - **One command table behind the CLI [docs] (2026-09-11, rulings R229 and
   R230).** `idl-rs` now speaks `idl-rs <noun> <verb>` over closed
   vocabularies, and every command is declared exactly once, as a row in
@@ -121,6 +148,11 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
   only two of them.
 
 ### Fixed
+
+- **Host channels reached the notebook again [docs] (2026-09-13).** The
+  engine began emitting IDLH version 2 on 2026-09-11 while the app's decoder
+  still required version 1, so every `fetch_host_channel` response was
+  rejected. The decoder now reads version 2, including the axis kind.
 
 - **The timeline strip's handles can be dragged again (2026-09-11, ruling
   R221.3).** Grabbing either end of a window's bar did nothing at all. The
