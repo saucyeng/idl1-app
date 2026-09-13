@@ -366,6 +366,102 @@
       "writer": true
     },
     {
+      "args": [],
+      "core_fn": "synth::generate",
+      "data_dir": false,
+      "flags": [
+        {
+          "choices": [],
+          "default": null,
+          "help": "File to write the `.idl0` log to; the truth JSON goes beside it",
+          "kind": "path",
+          "long": "out",
+          "repeatable": false
+        },
+        {
+          "choices": [],
+          "default": "3",
+          "help": "Complete circuits of the loop",
+          "kind": "integer",
+          "long": "laps",
+          "repeatable": false
+        },
+        {
+          "choices": [],
+          "default": "400",
+          "help": "Loop perimeter in metres",
+          "kind": "integer",
+          "long": "lap-length-m",
+          "repeatable": false
+        },
+        {
+          "choices": [],
+          "default": "800",
+          "help": "IMU output data rate in Hz",
+          "kind": "integer",
+          "long": "rate-hz",
+          "repeatable": false
+        },
+        {
+          "choices": [],
+          "default": "5",
+          "help": "GPS fix rate in Hz",
+          "kind": "integer",
+          "long": "gps-hz",
+          "repeatable": false
+        },
+        {
+          "choices": [],
+          "default": "1",
+          "help": "PRNG seed; the same seed and flags give byte-identical output",
+          "kind": "integer",
+          "long": "seed",
+          "repeatable": false
+        },
+        {
+          "choices": [],
+          "default": "3",
+          "help": "How many of the three sensors to instrument (1-3)",
+          "kind": "integer",
+          "long": "imu-count",
+          "repeatable": false
+        },
+        {
+          "choices": [],
+          "default": "1.0",
+          "help": "Multiplies every sensor noise sigma; 0 gives a noiseless recording",
+          "kind": "text",
+          "long": "noise",
+          "repeatable": false
+        },
+        {
+          "choices": [],
+          "default": null,
+          "help": "Report what would change and write nothing",
+          "kind": null,
+          "long": "dry-run",
+          "repeatable": false
+        },
+        {
+          "choices": [],
+          "default": null,
+          "help": "Emit the result as JSON on stdout (schema_version 1); errors become typed JSON on stderr",
+          "kind": null,
+          "long": "json",
+          "repeatable": false
+        }
+      ],
+      "help": "Generate a synthetic .idl0 session with a ground-truth JSON beside it (ruling R187)",
+      "id": "session.synth",
+      "json_shape": "SynthReport",
+      "noun": "session",
+      "status": "current",
+      "tier": "rare",
+      "usage": "session synth",
+      "verb": "synth",
+      "writer": true
+    },
+    {
       "args": [
         {
           "choices": [],
@@ -1345,6 +1441,10 @@
     {
       "ruling": "R236",
       "verb": "wire"
+    },
+    {
+      "ruling": "R187",
+      "verb": "synth"
     }
   ]
 }
