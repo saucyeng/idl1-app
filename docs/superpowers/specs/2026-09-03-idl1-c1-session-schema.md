@@ -891,3 +891,266 @@ item 1, which is now ruled.
    correction: validate §3.3 on a real `.idl0` session whose true ODR is measured independently
    (GPS-anchored recording duration ÷ IMU sample count gives an independent true-rate estimate to
    compare `effective_period_us` against). **Assigned: L1** — Isaac supplies the session.
+
+---
+
+## 9. Synthetic sessions
+
+**Status:** added 2026-09-13 by the synthetic lane (roadmap "Firmware", M6.3 precondition,
+ruling R187). Spec-first: this section was written before the code.
+
+### 9.1 Why, and what it is not
+
+M6.3's rigid-body calibration (`2026-09-10-idl1-rigid-body-calibration-DRAFT.md` §5) needs a
+recording whose extrinsics are *known*, and lap detection needs a recording whose lap count is
+*known*. No such recording exists: the hardware that would produce one is not built. A synthetic
+generator supplies both, and supplies them before the bench does.
+
+It produces **a real `.idl0` file** — schema-3 bytes valid for `parse::parse` exactly as §5 of
+`docs/IDL0_SPEC.md` defines them — and not a `data.parquet` shortcut. That is the point: a
+synthetic session enters through `import`, gets a CAS blob, a catalog row, a parquet cache, laps
+and charts, on the same code path a device recording would take. Every layer is exercised, and
+nothing in the engine knows the session was generated.
+
+It is **not** a model of a bicycle. It is a rigid body on a planar loop, with rigidly attached
+sensors. There is no suspension travel, no tyre compliance, no rider. Anything that depends on
+those is not testable against it, and a test that pretends otherwise is wrong.
+
+### 9.2 The command
+
+    idl-rs session synth --out <file> [--laps N] [--lap-length-m L] [--rate-hz R]
+                         [--gps-hz G] [--seed S] [--noise SCALE] [--imu-count N]
+
+`synth` is a new verb in R230's closed vocabulary. C6 §1.2's ruling requirement is satisfied by
+the synthetic lane's brief (ruling R187 line), which grants it; it is recorded in
+`commands::table::VERBS_RULED` as `("synth", "R187")`.
+
+The command writes two files:
+
+| Path | Contents |
+|---|---|
+| `<out>` | The `.idl0` log. |
+| `<out>` with its extension replaced by `.truth.json` | The ground truth, §9.6. |
+
+`--dry-run` reports both paths and their byte counts and writes neither (R230 item 3). The
+command takes no `--data-dir`: it writes a log file, it does not touch a data directory. A
+generated file is imported afterwards with `session import`, like any other log.
+
+Flag semantics and defaults:
+
+| Flag | Unit | Default | Meaning |
+|---|---|---|---|
+| `--laps` | count | 3 | Complete circuits of the loop. Lap 1 begins at `t = 0`. |
+| `--lap-length-m` | m | 400 | Loop perimeter. The loop is scaled to hit it exactly. |
+| `--rate-hz` | Hz | 800 | IMU output data rate, every IMU, every axis. |
+| `--gps-hz` | Hz | 5 | GPS fix rate. 1 and 5 are the rates §9.5 documents; any positive integer is accepted. |
+| `--seed` | — | 1 | PRNG seed. The same seed and the same flags give byte-identical output. |
+| `--noise` | — | 1.0 | Scales every noise σ in §9.4 together. `0` gives a noiseless recording. |
+| `--imu-count` | count | 3 | 1, 2 or 3. Sensors are added in the §9.4 order, so `--imu-count 1` is the hardtail-with-one-sensor case the calibration draft's §5 also asks for. |
+
+### 9.3 Track and motion
+
+**Loop.** A planar ellipse in a local east/north metre frame centred on the origin, with a fixed
+axis ratio `b/a = 0.5`, scaled so its perimeter equals `--lap-length-m`. An ellipse, not a
+circle, because a circle's curvature is constant: the yaw rate would never change, and the
+lever-arm term the calibration fit depends on would be a constant the fit could not separate
+from a bias.
+
+Parametric, in the loop parameter `u` over `[0, 2π)`:
+
+    east(u)  = a·cos u        north(u) = b·sin u        (b = a/2)
+
+Arc length `s(u)` is built once as a table over 4096 equal-`u` steps, trapezoid-integrated, and
+inverted by linear interpolation. The table's step count is part of the format: changing it
+changes the bytes.
+
+**Speed.** A lateral-acceleration limit, not a fixed profile:
+
+    v(u) = min(v_max, sqrt(a_lat_max / κ(u)))
+
+with `v_max = 12 m/s` and `a_lat_max = 6 m/s²`, `κ(u)` the ellipse's own curvature. This slows
+the body in the tight ends and lets it run at `v_max` down the flanks, which is what a rider
+does and, more to the point, what makes tangential acceleration non-zero. Time along the loop is
+`t(s)`, the running integral of `ds / v` on the same table.
+
+**Attitude.** Yaw `ψ(u)` is the path tangent's heading. Roll and pitch are *imposed*, not
+derived from a bank model:
+
+    roll(t)  = 0.15 rad · sin(2π · 0.37 Hz · t)
+    pitch(t) = 0.08 rad · sin(2π · 0.23 Hz · t + 1.0 rad)
+
+Two irrational-ratio frequencies so the three body rates stay linearly independent over any
+window — §2.4 of the calibration draft calls the alternative a degeneracy, and a synthetic
+session that reproduces the degeneracy is useless for validating the fit. Sign conventions are
+SPEC §9's ISO 8855 (X forward, Y left, Z up; positive yaw turns left).
+
+**Body rates.** `ω_body(t)` is the body-frame angular velocity of that attitude sequence,
+evaluated analytically from the yaw, pitch and roll rates through the ZYX Euler rate transform.
+`ω̇_body` is a centred finite difference of `ω_body` on the sample grid (forward/backward at the
+two ends).
+
+### 9.4 Sensors
+
+Three IMUs, in this order, with extrinsics fixed in the generator and copied verbatim into the
+truth file. `R_i` rotates a body-frame vector into sensor `i`'s frame; `r_i` is the sensor's
+position in the body frame, in metres.
+
+| i | Role | Euler ZYX (deg, yaw/pitch/roll) | `r_i` (m, X fwd / Y left / Z up) |
+|---|---|---|---|
+| 0 | Frame | 0, 0, 0 | 0.000, 0.000, 0.000 |
+| 1 | Fork (unsprung, front) | 5, −12, 3 | 0.640, 0.000, −0.180 |
+| 2 | Rear (unsprung, rear) | −7, 4, −9 | −0.430, 0.020, −0.260 |
+
+IMU 0 is the body frame by construction, so a fit that recovers `R_1` and `R_2` is recovering a
+*relative* rotation with a known answer, which is what the calibration actually solves.
+
+Per sensor, before quantisation:
+
+    gyro_i(t)  = R_i · ω_body(t) + b_g,i + n_g,i(t)
+    accel_i(t) = R_i · ( f_body(t) + ω̇×r_i + ω×(ω×r_i) ) + b_a,i + n_a,i(t)
+
+`f_body` is **specific force**, not acceleration: the world-frame acceleration plus the upward
+gravity vector, rotated into the body frame, with `g = 9.80665 m/s²`. That is the sign
+convention SPEC §9 states for the LSM6DSO32 (stationary and upright gives `accel_z ≈ +1 g`).
+
+Biases are fixed constants per sensor, listed in the truth file. Noise is white, zero-mean, with
+σ scaled by `--noise`:
+
+| Quantity | σ at `--noise 1.0` |
+|---|---|
+| Gyro, per axis | 0.003 rad/s (≈ 0.172 dps) |
+| Accel, per axis | 0.05 m/s² (≈ 0.0051 g) |
+
+These are the `reference_default()` figures the calibration draft §5 quotes, so the acceptance
+thresholds in its table apply to this generator's output unchanged.
+
+**Quantisation.** Each axis is converted to LSB counts with the registry's own scale and stored
+as `i16`, saturating at ±32767: accel range ±32 g (`scale = 32/32768` g/LSB), gyro range
+±2000 dps (`scale = 2000/32768` dps/LSB). Saturation is a real outcome, not an error — the
+calibration draft asks for a clipping case, and a large enough `--noise` will produce one. The
+truth file counts the clipped samples per sensor so a test can assert on it either way.
+
+### 9.5 Wire encoding
+
+**Header** (SPEC §5.1): magic `IDL0`, schema 3, a session UUID and device id derived from the
+seed and the configuration (so two different configurations never collide, and the same one
+always reproduces), `Session start UTC` = `1767225600000` (2026-01-01T00:00:00Z, a fixed
+literal — never the wall clock), config CRC32 over the generator's own configuration JSON, the
+IMU channel mask `0x3F` / `0xFFF` / `0x3FFFF` for 1 / 2 / 3 IMUs, `--rate-hz`, `--gps-hz`, and
+one 40-byte registry entry per enabled axis in SPEC §5.2's canonical id order.
+
+**Records**, emitted in non-decreasing `timestamp_us` order: `IMU_SAMPLE` (0x01) at `--rate-hz`
+per IMU, `GPS_FIX` (0x02) at `--gps-hz`, a final `SESSION_END` (0xFF). `timestamp_us` starts at
+a fixed non-zero device-boot offset (`4000000 µs`) so the back-fill arithmetic in SPEC §5.6 is
+exercised rather than trivially satisfied by a zero. No `CHANNEL_SAMPLE` records: the generator
+models a rigid body, and wheel-speed and pressure channels would be fiction with no ground truth
+behind them.
+
+**GPS fields — the M10 gap.** `docs/HARDWARE_M10_SETUP.md` §3 asks for four more fields per fix
+(`sAcc`, `velD`, `odo_distance`, `odo_distance_std`). SPEC §5.6's `GPS_FIX` payload is a fixed
+32 bytes with every byte assigned, so **there is no room for them**, and adding them is a wire
+format change (payload length, importer, schema-version bump) that this lane does not own. The
+generator therefore **emits the legacy 32-byte `GPS_FIX` record**, per the lane's ruling 2.
+
+Consequences, stated so no one has to rediscover them:
+
+- The inverse-variance distance weighting that `sAcc` exists to enable **cannot be tested
+  against a synthetic session today.** Distance work validated here is validated against
+  unweighted integration only.
+- `speed` in the record is the body's **2D ground speed** (`km/h × 100`), matching `gSpeed`, and
+  the vertical component is not recorded. The loop is planar, so `velD` would be zero anyway,
+  but a non-planar loop would lose real information.
+- The truth file (§9.6) carries the per-fix speed accuracy and the exact cumulative distance
+  regardless, so the moment §5.6 gains the fields the generator can emit them and its existing
+  ground truth already says what they should be.
+- The alternative — carrying the four fields as registry `CHANNEL_SAMPLE` channels, which SPEC
+  §5.2 permits without a format change — was **not** taken. It would invent four channel names
+  no importer, chart or contract knows, in a lane that owns none of them.
+
+Latitude and longitude are a local flat-earth projection about a fixed origin
+(51.5° N, −1.5° E), `deg = m / 111320` in north and `deg = m / (111320 · cos φ₀)` in east with
+`cos φ₀` a fixed literal. Over a 400 m loop the projection error is far below the `1e-7`-degree
+storage resolution, and the truth file states the origin and both scale factors so a consumer
+can invert it exactly. Altitude is a constant 100.0 m. `fix_quality` is 1 and `satellites` is 12
+on every fix. `gps_epoch_ms` is the header start plus the fix's own session time.
+
+### 9.6 The truth file
+
+`<out>` with its extension replaced by `.truth.json`. UTF-8, `\n` line endings, pretty-printed
+with a trailing newline, keys in a fixed order. Not a contract for any app code to read — it is
+a test fixture, consumed by core's own tests and by M6.3's validation.
+
+    {
+      "schema_version": 1,
+      "generator_version": "<synth::SYNTH_VERSION>",
+      "config": { every flag's resolved value, including the defaults },
+      "session": {
+        "session_id": "<32 hex>", "device_id": "<12 hex>",
+        "start_utc_ms": 1767225600000, "device_t0_us": 4000000,
+        "imu_rate_hz": 800, "gps_rate_hz": 5,
+        "imu_sample_count": <per IMU>, "gps_fix_count": <n>,
+        "duration_s": <f64>
+      },
+      "loop": {
+        "semi_major_m": <f64>, "semi_minor_m": <f64>, "perimeter_m": <f64>,
+        "origin_lat_deg": 51.5, "origin_lon_deg": -1.5,
+        "metres_per_deg_north": <f64>, "metres_per_deg_east": <f64>,
+        "gate": { "east_m": <f64>, "north_m": <f64>,
+                  "normal_east": <f64>, "normal_north": <f64> }
+      },
+      "laps": [ { "index": 1, "start_s": 0.0, "end_s": <f64>,
+                  "start_utc_ms": <i64>, "end_utc_ms": <i64>,
+                  "duration_s": <f64>, "distance_m": <f64> } ],
+      "sensors": [ { "index": 0, "role": "frame",
+                     "euler_zyx_deg": [<yaw>, <pitch>, <roll>],
+                     "rotation_body_to_sensor": [[...],[...],[...]],
+                     "lever_arm_m": [<x>, <y>, <z>],
+                     "gyro_bias_rad_s": [...], "accel_bias_m_s2": [...],
+                     "accel_scale_g_per_lsb": <f64>, "gyro_scale_dps_per_lsb": <f64>,
+                     "clipped_sample_count": <n> } ],
+      "noise": { "scale": 1.0, "gyro_sigma_rad_s": 0.003, "accel_sigma_m_s2": 0.05,
+                 "distribution": "irwin-hall-12" },
+      "gps": { "speed_accuracy_mm_s": <f64>, "total_distance_m": <f64>,
+               "fields_omitted": ["sAcc", "velD", "odo_distance", "odo_distance_std"] }
+    }
+
+**Laps** are by construction, not by detection: lap `k` spans the loop parameter's `k`-th full
+circuit, and `start_s` / `end_s` are the exact times the arc-length table gives at those arc
+lengths. The gate is the line through the loop point at `u = 0`, normal to the tangent there —
+the same gate a lap detector would be handed, so a detector's answer and the truth's answer are
+comparable numbers and the detector can be *scored*, not merely smoke-tested.
+
+### 9.7 Determinism
+
+"Deterministic" here means: **the same flags produce the same bytes on every platform, every
+build and every run.** Consumers commit generated fixtures and diff them; a generator that
+drifted by one LSB between Windows and Linux would make that worthless.
+
+Three rules make it true, and all three are testable:
+
+1. **No libm.** `sin`, `cos` and `atan2` are the generator's own polynomial implementations
+   (`synth::dtrig`), built from add, subtract, multiply, divide and comparisons only. Those
+   operations are exactly-rounded by IEEE-754 and identical on every target; the platform's
+   `sin` is not, since its last-ULP result is unspecified. `sqrt` *is* exactly-rounded by
+   IEEE-754 and is used directly. `dtrig`'s own tests assert agreement with `std` to 1e-12,
+   which bounds the error without inheriting the variability.
+2. **No RNG from the system, and no logarithm.** The PRNG is a fixed-constant PCG32 seeded from
+   `--seed`. Gaussian noise is the Irwin–Hall sum of 12 uniforms, which needs no logarithm and
+   so no libm. It is an approximation to a normal, documented as such in the truth file's
+   `noise.distribution`, and indistinguishable from one at the σ this generator uses.
+3. **No clock, no filesystem, no environment.** Every timestamp is derived from the fixed
+   `start_utc_ms` literal. `synth::generate` is pure: it returns bytes and truth, and the CLI is
+   the only thing that writes.
+
+Rust does not enable floating-point contraction, so a multiply-add is not fused on one target
+and split on another.
+
+### 9.8 The committed fixture
+
+`rust/core/tests/fixtures/synth-3lap.idl0` and `synth-3lap.truth.json`, generated by
+`SynthConfig::fixture()` and committed, for any lane that needs a session with known answers
+without running the generator. It is deliberately small — 3 laps of a 120 m loop with all three
+IMUs at 25 Hz, under 200 KB — which makes it useless for anything spectral and entirely adequate
+for lap detection, importer round-trips and catalog work. A core test regenerates it and asserts
+byte equality with the committed file; that test failing means either the generator changed (bump
+`SYNTH_VERSION` and re-commit) or determinism broke, which is a real bug.
