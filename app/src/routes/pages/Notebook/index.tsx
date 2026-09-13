@@ -62,8 +62,8 @@ import { buildReportDocument, type ReportDocument } from "./model/report/documen
 import ChartCell from "./components/ChartCell";
 import ConflictBanner from "./components/ConflictBanner";
 import MigrationBanner from "./components/MigrationBanner";
-import VersionBanner from "./components/VersionBanner";
-import { engineVersionBanner } from "./model/engineVersionBanner";
+import VersionBanner, { WorkbookVersionBannerView } from "./components/VersionBanner";
+import { engineVersionBanner, workbookVersionBanner } from "./model/engineVersionBanner";
 import { fetchEngineVersion } from "../../../ipc/engine";
 import EditorPanes from "./components/EditorPanes";
 import JsCellFrame, { DEFAULT_JS_CELL_HEIGHT_PX } from "./components/JsCellFrame";
@@ -750,6 +750,12 @@ export default function NotebookPage() {
   /** Bumped by a successful `handleCreate`/`handleRescan` to re-run the
    *  workbook-list effect below -- the only other trigger besides mount. */
   const [reloadSeq, setReloadSeq] = useState(0);
+  /** Bumped by decision 62's Re-evaluate action, the only trigger besides
+   *  a changed selection or workbook for the open->read->eval effect below.
+   *  Re-running the evaluation is all it does: the recorded
+   *  `evaluated_with` front-matter value is left exactly as it is, since
+   *  decision 62 forbids rewriting the file. */
+  const [reevalNonce, setReevalNonce] = useState(0);
   /** True while `rebuild_catalog` is running, whether from the one
    *  first-open-when-empty case or the Rescan button. */
   const [rescanning, setRescanning] = useState(false);
@@ -808,6 +814,9 @@ export default function NotebookPage() {
    *  reappears once the selection (or the live engine version) changes
    *  under it, never remembered permanently. */
   const [versionBannerDismissedFor, setVersionBannerDismissedFor] = useState<string | null>(null);
+  /** Decision 62's workbook banner, dismissed for one recorded/live
+   *  version pair. */
+  const [workbookBannerDismissedFor, setWorkbookBannerDismissedFor] = useState<string | null>(null);
   /** R151 item 9's on-save migration report: the `hash` (`SaveResult.hash`)
    *  it was last dismissed for -- a later save producing a new `hash` (even
    *  one with no migrations, which then renders nothing anyway) un-dismisses
@@ -1762,7 +1771,7 @@ export default function NotebookPage() {
     };
     trackEvalRun(runOpenAndEval(deps, selectedWorkbookId, windows.map(toWireWindow), dispatch, () => openSeqRef.current !== mySeq, evalGenerationRef.current));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [windowsKeyValue, selectedWorkbookId]);
+  }, [windowsKeyValue, selectedWorkbookId, reevalNonce]);
 
   // Task R2/R6: once `reportDoc` is mounted into `#report-print-root`,
   // clear it once the print dialog closes (`afterprint`) -- a stale report
@@ -4001,6 +4010,14 @@ export default function NotebookPage() {
   const versionBannerDismissKey = `${windowsKeyValue}::${currentEngineVersion ?? ""}`;
   const versionBannerVisible = versionBanner !== null && versionBannerDismissedFor !== versionBannerDismissKey;
 
+  // Decision 62's workbook half: the build recorded in front matter
+  // (`evaluated_with`, advisory -- see `model/engineVersionBanner.ts`)
+  // against the build the reader is on. Dismissal is scoped to the exact
+  // pair, so a changed recorded or live version brings the banner back.
+  const workbookBanner = workbookVersionBanner(state.markdown, currentEngineVersion);
+  const workbookBannerDismissKey = workbookBanner === null ? "" : `${workbookBanner.evaluatedWith}::${workbookBanner.currentVersion}`;
+  const workbookBannerVisible = workbookBanner !== null && workbookBannerDismissedFor !== workbookBannerDismissKey;
+
   // Ruling R216 item 2's keyboard half of "Show code". A window listener
   // keyed to the selected cell, not a handler on the cell's own element:
   // a chart cell's frame holds nothing focusable (the plot itself lives in
@@ -4870,6 +4887,13 @@ export default function NotebookPage() {
       {state.conflict && <ConflictBanner onReloadFromDisk={() => void handleReloadFromDisk()} onOverwrite={() => void handleOverwrite()} />}
       {versionBannerVisible && versionBanner !== null && (
         <VersionBanner banner={versionBanner} onDismiss={() => setVersionBannerDismissedFor(versionBannerDismissKey)} />
+      )}
+      {workbookBannerVisible && workbookBanner !== null && (
+        <WorkbookVersionBannerView
+          banner={workbookBanner}
+          onDismiss={() => setWorkbookBannerDismissedFor(workbookBannerDismissKey)}
+          onReevaluate={() => setReevalNonce((n) => n + 1)}
+        />
       )}
       {/* R151 items 9/10 (C2 §3.8): a passive on-open notice, never a rewrite the user didn't ask for. */}
       <MigrationBanner variant="pending" migrations={state.pendingMigrations} />
