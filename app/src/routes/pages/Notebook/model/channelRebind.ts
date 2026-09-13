@@ -1,4 +1,4 @@
-import type { DecodedHostChannel } from "../../../../ipc/hostChannel";
+import { AxisKind, type AxisKindValue, type DecodedHostChannel } from "../../../../ipc/hostChannel";
 import type { DecodedTile } from "../../../../ipc/tiles";
 import type { UnitLabel } from "../../../../ipc/workbook";
 import { tileToChannelData, type ChannelData } from "./channelData";
@@ -92,13 +92,13 @@ export interface HostChannelRebindDeps {
  * @param bound Every channel currently bound in the sandbox.
  * @param cache The tile cache to read decoded `"session"` tiles from (never fetches).
  * @param deps Re-fetches a `"definition"` channel's data (never reads `cache` for one).
- * @param send Called once per `bound` entry that could be restored, with that channel's {@link ChannelData} and its last-known {@link UnitLabel} (`channel.unit`, never re-derived here — see `BoundChannel`'s own doc comment). For a `"session"` entry this call is synchronous with the loop; for a `"definition"` entry it fires later, once its re-fetch resolves.
+ * @param send Called once per `bound` entry that could be restored, with that channel's {@link ChannelData}, its last-known {@link UnitLabel} (`channel.unit`, never re-derived here — see `BoundChannel`'s own doc comment) and the axis its `t` column carries. For a `"session"` entry this call is synchronous with the loop and the axis is always `AxisKind.Time` (tiles are recorded time); for a `"definition"` entry it fires later, once its re-fetch resolves, carrying that fetch's own `axisKind` — so a `[lap]` definition is republished as a lap axis after a rebuild rather than silently reverting to seconds (ruling R233).
  */
 export function rebindChannelsAfterRebuild(
   bound: BoundChannel[],
   cache: TileCache,
   deps: HostChannelRebindDeps,
-  send: (name: string, data: ChannelData, unit: UnitLabel) => void
+  send: (name: string, data: ChannelData, unit: UnitLabel, axisKind: AxisKindValue) => void
 ): void {
   for (const channel of bound) {
     if (channel.source === "definition") {
@@ -106,7 +106,7 @@ export function rebindChannelsAfterRebuild(
         .fetchHostChannel(channel.name, channel.budget)
         .then((result) => {
           if (!result.hasT) return;
-          send(channel.name, { length: result.v.length, t: result.t, v: result.v }, channel.unit);
+          send(channel.name, { length: result.v.length, t: result.t, v: result.v }, channel.unit, result.axisKind);
         })
         .catch((error: unknown) => {
           // A rebuild is not itself a fetch trigger even for a definition
@@ -135,6 +135,6 @@ export function rebindChannelsAfterRebuild(
     }
 
     const data = tileToChannelData(tiles, channel.startUs, channel.endUs, channel.budget);
-    send(channel.name, data, channel.unit);
+    send(channel.name, data, channel.unit, AxisKind.Time);
   }
 }

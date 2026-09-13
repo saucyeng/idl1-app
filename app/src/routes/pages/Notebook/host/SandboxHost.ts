@@ -22,6 +22,7 @@ import {
   type SandboxCell,
   type WindowDescriptor,
 } from "./protocol";
+import { AxisKind, type AxisKindValue } from "../../../../ipc/hostChannel";
 import type { UnitLabel } from "../../../../ipc/workbook";
 import { BOOT_TIMEOUT_MS, createBootTimer, type BootTimer } from "./bootTimer";
 import { OutboundQueue } from "./outboundQueue";
@@ -292,9 +293,13 @@ export class SandboxHost {
     tr: ArrayBuffer,
     w: ArrayBuffer,
     windows: WindowDescriptor[],
-    unit: UnitLabel
+    unit: UnitLabel,
+    /** What `t`'s numbers are (ruling R233): seconds under the default
+     *  `AxisKind.Time`, 1-based lap numbers under `AxisKind.Lap` for a
+     *  `[lap]` definition. See `sandbox/channelRecords.ts`. */
+    axisKind: AxisKindValue = AxisKind.Time
   ): void {
-    const { message, transfer } = channelPayload(name, length, t, v, tr, w, windows, unit);
+    const { message, transfer } = channelPayload(name, length, t, v, tr, w, windows, unit, axisKind);
     this.postToSandbox(message, transfer);
     this.scheduleRerender();
   }

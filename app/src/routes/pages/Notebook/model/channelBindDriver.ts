@@ -42,7 +42,7 @@
  * same `TileCache` `ChartCell`'s own settle-fetch just filled (same key),
  * so it costs no extra `fetchTile` call.
  */
-import type { DecodedHostChannel } from "../../../../ipc/hostChannel";
+import { AxisKind, type AxisKindValue, type DecodedHostChannel } from "../../../../ipc/hostChannel";
 import type { UnitLabel } from "../../../../ipc/workbook";
 import type { DecodedTile } from "../../../../ipc/tiles";
 import { tileToChannelData } from "./channelData";
@@ -206,6 +206,13 @@ export interface CombinedChannelPayload {
   w: Float64Array;
   windows: WindowDescriptor[];
   spans: AbsoluteSpan[];
+  /** What `t`'s numbers are (ruling R233, C3 §3.4's IDLH v2 `axis_kind`):
+   *  `AxisKind.Time` — seconds — for every session channel and every `[t]`
+   *  definition, `AxisKind.Lap` for a `[lap]` definition whose `t` holds
+   *  1-based lap numbers. Retained alongside the columns so a rebuild
+   *  replay re-publishes the axis it published before rather than
+   *  silently falling back to seconds. */
+  axisKind: AxisKindValue;
 }
 
 /** One piece of state a completed (non-stale) run writes. `channelData`
@@ -218,7 +225,23 @@ export interface CombinedChannelPayload {
  *  `setChannelHostVar`'s transfer list; `retained` (a separate, un-
  *  transferred copy) is what a caller keeps for `model/cursorCard.ts`. */
 export type ChannelBindAction =
-  | { type: "channelData"; cellId: string; channelId: string; length: number; t: ArrayBuffer; v: ArrayBuffer; tr: ArrayBuffer; w: ArrayBuffer; windows: WindowDescriptor[]; unit: UnitLabel; retained: CombinedChannelPayload }
+  | {
+      type: "channelData";
+      cellId: string;
+      channelId: string;
+      length: number;
+      t: ArrayBuffer;
+      v: ArrayBuffer;
+      tr: ArrayBuffer;
+      w: ArrayBuffer;
+      windows: WindowDescriptor[];
+      unit: UnitLabel;
+      /** What `t` measures (ruling R233) — passed straight to
+       *  `SandboxHost.setChannelHostVar` so the bound record keys its axis
+       *  column `t` or `lap` accordingly (C2 §3.6.5). */
+      axisKind: AxisKindValue;
+      retained: CombinedChannelPayload;
+    }
   | { type: "boundChannels"; cellId: string; bound: BoundChannel[] }
   | { type: "chartWindow"; cellId: string; chartWindow: ChartWindow };
 
@@ -399,7 +422,20 @@ async function runChannelBindWindow(
         w: combined.w.buffer.slice(0) as ArrayBuffer,
         windows: combined.windows,
         unit: channel.unit,
-        retained: { length: combined.length, t: combined.t, v: combined.v, tr: combined.tr, w: combined.w, windows: combined.windows, spans: [primary.span] },
+        // A definition's axis is whatever the engine recorded on it: a
+        // `[lap]` definition (`lap_time()`, `mean(x, "t:lap")`) reports
+        // `AxisKind.Lap` and its `t` holds lap numbers, C2 §3.6.5.
+        axisKind: result.axisKind,
+        retained: {
+          length: combined.length,
+          t: combined.t,
+          v: combined.v,
+          tr: combined.tr,
+          w: combined.w,
+          windows: combined.windows,
+          spans: [primary.span],
+          axisKind: result.axisKind,
+        },
       });
       bounds.push({ source: "definition", name: channel.channelId, budget, unit: channel.unit });
       // No `chartWindow` dispatch: a definition channel is never the
@@ -491,7 +527,19 @@ async function runChannelBindWindow(
       w: combined.w.buffer.slice(0) as ArrayBuffer,
       windows: combined.windows,
       unit: channel.unit,
-      retained: { length: combined.length, t: combined.t, v: combined.v, tr: combined.tr, w: combined.w, windows: combined.windows, spans: contributingSpans },
+      // A session channel's tiles are always recorded time (C1: every
+      // sample keeps its hardware timestamp) — never a lap ordinal.
+      axisKind: AxisKind.Time,
+      retained: {
+        length: combined.length,
+        t: combined.t,
+        v: combined.v,
+        tr: combined.tr,
+        w: combined.w,
+        windows: combined.windows,
+        spans: contributingSpans,
+        axisKind: AxisKind.Time,
+      },
     });
 
     // The primary window's own fetch is what `BoundChannel`/`chartWindow`
