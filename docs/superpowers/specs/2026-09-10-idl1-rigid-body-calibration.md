@@ -8,7 +8,7 @@ tying a body to the world.
 
 This document supersedes the M6 draft of 2026-09-10. Seven recommendations of
 that draft were adopted by R192; §7 below records how each was settled, and §8
-records the five places where writing the solver proved the draft's own
+records the seven places where writing the solver proved the draft's own
 equations wrong. Where this text and the draft disagree, this text wins.
 
 **Hardware, as stated.** `IDL0_SPEC.md` §3.2 lists **three** IMUs: `IMU0`
@@ -83,9 +83,20 @@ data, never from wall-clock assumptions:
 
 | Segment | Test | Used for |
 |---|---|---|
-| `rest` | longest run with `‖ω_i^s − median‖` under 0.05 rad/s and `‖a_i^s‖` within 0.5 m/s² of 9.80665, ≥ 2 s | `b_g,i` |
-| `datum` | after `rest`, while `‖ω_F − ω_R‖` (bias-corrected, un-rotated magnitudes) stays small — in practice the tumble, bars held straight | `R_i`, `r_i`, `β` |
+| `rest` | the leading run whose smoothed `‖ω_R‖` stays under 0.6 rad/s, ≥ 2 s | `b_g,i` |
+| `datum` | from the end of `rest` to the start of `steer` — in practice the tumble, bars held straight | `R_i`, `r_i`, `β` |
 | `steer` | the remainder, where the two bodies' rates diverge | `s`, `δ(t)` |
+
+The `datum`/`steer` boundary is the **signed** `‖ω_F‖² − ‖ω_R‖²`, smoothed and
+only then taken in magnitude. That quantity is `2δ̇ sᵀω_R + δ̇²` (§2.4), whose
+`δ̇²` term never cancels — a plain norm *difference* vanishes whenever the bar
+rate sits across the body rate, and the bars would look straight. Rectifying
+before smoothing is equally wrong for the opposite reason: it averages `|noise|`
+rather than noise, which at §5's per-sample σ alone clears any usable threshold,
+and the bars look turned from the first sample of the tumble (§8.6). Both
+boundaries are then pulled back by the smoothing half-width, so a window that
+bleeds a later segment's energy backwards cannot put one of its samples in an
+earlier segment.
 
 **2.1 Gyro bias, from rest.** `ω_b ≡ 0` over `rest`, so (2) collapses to
 `ω_i^s = b_g,i + n`: the per-sensor mean over the window *is* the bias, and it
@@ -120,6 +131,14 @@ as a 6×6 normal-equation system rather than a 3N×6 matrix so a 25 000-sample
 window costs 288 bytes instead of 3.6 MB. Take `ω̇_b` by differentiating the (far
 cleaner) gyro stream after a zero-phase low-pass; raw differentiation at 833 Hz
 and ARW 0.003 rad/√s is noise-dominated.
+
+`Ω(t)` is an **estimate** of the body's motion, not data, so the least-squares
+system above is inconsistent: `E[Ω̂ᵀΩ̂] = ΩᵀΩ + N·E[ΔᵀΔ]`, which attenuates the
+lever arm. The dominant error term is the `[ω̇]ₓ` half, with
+`E[[d]ₓᵀ[d]ₓ] = 2σ_d² I`, so `2N σ_d²` is subtracted from the diagonal of the
+`ΩᵀΩ` block; `σ_d` follows from the gyro σ, the smoothing half-width and the
+stencil. The `[ω]ₓ[n]ₓ` cross terms are an order of magnitude smaller and their
+squares two, and are not corrected.
 
 `β_ij`, not the individual `b_a,i`, is the estimated quantity: see §8.3.
 
@@ -163,18 +182,22 @@ from; (7) does not.
 Then **Levenberg–Marquardt** over the joint parameter vector
 
     [ δθ₁, δθ₂ (rotation increments, 3 each) | b_g,0..2 (3 each)
-      | s tangent (2) | r₂ (3) | β₂₀ (3) ]
+      | s tangent (2) ]
 
 on residuals (2) over `rest`, the bias-corrected gyro difference over `datum`,
 (6) over `datum`, and (4) over `steer` with `δ(t)` profiled out by (8) at each
-iteration — 23 parameters, weighted by per-sample σ. LM over Gauss–Newton
+iteration — 17 parameters, weighted by per-sample σ. **`r_i` and `β_ij` are
+deliberately not in the vector** (§8.7): they enter only through `Ω(t)`, and an
+LM free to move them minimises the same inconsistent objective §2.3 corrects,
+undoing the correction. The accelerometer residual stays in the objective, so
+those two still constrain everything LM does move. LM over Gauss–Newton
 because the rotation parameters make the problem mildly non-convex and LM
 degrades gracefully on marginal excitation. Rotations are carried as
 `UnitQuaternion` with a tangent 3-vector increment (`q ⊕ exp(δθ)`), re-linearised
 each iteration, so no norm constraint enters the normal equations. The Jacobian
 is by central differences on that 23-vector: analytic blocks would be ~300 lines
 for a step that starts within a tenth of a degree of the answer. **No new crate:**
-hand-rolled LM is ~80 lines against `nalgebra`'s dense solvers, and a problem
+hand-rolled LM is ~100 lines against `nalgebra`'s dense solvers, and a problem
 this small and dense does not justify a sparse-LM dependency.
 
 ## 3. Excitation adequacy
@@ -232,16 +255,26 @@ sweeping the bars at least ±30° while the machine keeps moving.
 three segments of §5.1, adds body F and the hinge, and propagates (2)–(4) to
 each sensor with **known** `R_i`, `r_i`, `b_g,i`, `b_a,i`, `s` and `δ(t)`; noise
 at the `GYRO_SIGMA_RAD_S` / `ACCEL_SIGMA_M_S2` σ; quantised to the §5.3 LSB grid.
-`truth.hinge` carries `steer_axis`, the datum and steer window bounds, and the
-peak-to-peak `δ`. Acceptance, with the arithmetic behind it (30 s ⇒ N ≈ 25 000):
+`truth.hinge` carries `steer_axis`, the hinge point, the datum and steer window
+bounds, and the peak-to-peak `δ`.
 
-| Quantity | Threshold | Justification |
-|---|---|---|
-| `R_i` | ≤ 0.5° geodesic | per-sample gyro σ = 0.003·√833 ≈ 0.087 rad/s; at ‖ω‖ ≈ 3 rad/s the Kabsch error goes as σ/(‖ω‖√N) ≈ 3·10⁻⁴ rad ≈ 0.02°. 0.5° is ~25× margin for ω̇ and model error. |
-| `r_i` | ≤ 10 mm per axis | accel σ = 0.05·√833 ≈ 1.44 m/s²; ‖Ω‖ ≈ ω² ≈ 9 s⁻²; error ≈ σ/(‖Ω‖√N) ≈ 1 mm. 10 mm is 10× margin and the honest floor: lever arms are quadratically sensitive to hand-held rate. |
-| `s` | ≤ 1.0° | from a rate *difference*, so ~√2 the gyro error, on a shorter segment. |
-| `b_g,i` | ≤ 0.002 rad/s | mean of N samples: 0.087/√8330 ≈ 1·10⁻³ rad/s over a 10 s hold. |
-| `β_ij` | ≤ 0.05 m/s² per axis | separated from `r_i` only through `Ω(t)` variation; weakest of the five. **Not** the individual `b_a,i`: §8.3. |
+**Set the noise to `√ODR`, not 1.** The generator's `GYRO_SIGMA_RAD_S` is a
+per-sample σ in rad/s; the 0.003 in the table below is an angle-random-walk
+coefficient in rad/√s, which at 833 Hz means a per-sample σ of
+`0.003·√833 ≈ 0.087` rad/s — the figure each threshold is justified against. At
+`--noise 1.0` the synthetic body is 29× quieter than the acceptance arithmetic
+assumes and a fit validated there is flattered (§8.7). Every number below was
+measured at `--noise 28.8617`.
+
+Acceptance, with the arithmetic behind it (30 s ⇒ N ≈ 25 000):
+
+| Quantity | Threshold | Achieved | Justification |
+|---|---|---|---|
+| `R_i` | ≤ 0.5° geodesic | 0.07° | per-sample gyro σ = 0.003·√833 ≈ 0.087 rad/s; at ‖ω‖ ≈ 3 rad/s the Kabsch error goes as σ/(‖ω‖√N) ≈ 3·10⁻⁴ rad ≈ 0.02°. 0.5° is ~25× margin for ω̇ and model error. |
+| `r_i` | ≤ 10 mm per axis | 1.0 mm | accel σ = 0.05·√833 ≈ 1.44 m/s²; ‖Ω‖ ≈ ω² ≈ 9 s⁻²; error ≈ σ/(‖Ω‖√N) ≈ 1 mm. 10 mm is 10× margin and the honest floor: lever arms are quadratically sensitive to hand-held rate. |
+| `s` | ≤ 1.0° | 0.11° | from a rate *difference*, so ~√2 the gyro error, on a shorter segment. |
+| `b_g,i` | ≤ 0.002 rad/s | 0.0016 rad/s | mean of N samples: 0.087/√8330 ≈ 1·10⁻³ rad/s over a 10 s hold. |
+| `β_ij` | ≤ 0.05 m/s² per axis | 0.013 m/s² | separated from `r_i` only through `Ω(t)` variation; weakest of the five. **Not** the individual `b_a,i`: §8.3. |
 
 Also tested: the §2.5 degeneracies are **detected**, not silently mis-fitted (a
 single-axis spin must fail the lever-arm gate); a hardtail (no `IMU2`) fits with
@@ -316,3 +349,14 @@ tell a fitted rotation from a declared one.
 5. **The stationary hold is not optional.** The draft treated rest-only as a
    degenerate *alternative*; it is in fact a required *prefix*, because it is the
    only source of individual gyro bias (§8.3).
+6. **A rectified segmentation statistic is not a statistic.** Taking `| · |`
+   before smoothing averages `|noise|`, which at the real per-sample σ is large
+   enough on its own to trip any threshold the signal could. Smooth, then take
+   the magnitude. §2.0.
+7. **`r_i` and `β_ij` do not belong in the LM vector.** The draft put them
+   there. They enter the residual only through `Ω(t)`, which is an estimate, so
+   the objective is inconsistent in exactly those two parameters; an LM free to
+   move them lands on the attenuated answer and undoes §2.3's correction. On the
+   synthetic body, leaving them in cost a factor of four in the lever arm
+   (2.9 mm against 1.1 mm) and six in the bias difference (77 mm/s² against
+   13 mm/s², i.e. through and then under §5's 50 mm/s²). §2.6.

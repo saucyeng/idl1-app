@@ -946,7 +946,8 @@ Flag semantics and defaults:
 | `--gps-hz` | Hz | 5 | GPS fix rate. 1 and 5 are the rates §9.5 documents; any positive integer is accepted. |
 | `--seed` | — | 1 | PRNG seed. The same seed and the same flags give byte-identical output. |
 | `--noise` | — | 1.0 | Scales every noise σ in §9.4 together. `0` gives a noiseless recording. |
-| `--imu-count` | count | 3 | 1, 2 or 3. Sensors are added in the §9.4 order, so `--imu-count 1` is the hardtail-with-one-sensor case the calibration draft's §5 also asks for. |
+| `--imu-count` | count | 3 | 1, 2 or 3. Sensors are added in the §9.4 order, so `--imu-count 2` is the hardtail case (`IMU0` on the frame, `IMU1` on the fork) the calibration spec's §5 also asks for. |
+| `--protocol` | — | `loop` | `loop` rides the §9.3 circuit. `calibration` replaces it with the two-body steering-hinge manoeuvre of §9.9. |
 
 ### 9.3 Track and motion
 
@@ -1128,6 +1129,46 @@ circuit, and `start_s` / `end_s` are the exact times the arc-length table gives 
 lengths. The gate is the line through the loop point at `u = 0`, normal to the tangent there —
 the same gate a lap detector would be handed, so a detector's answer and the truth's answer are
 comparable numbers and the detector can be *scored*, not merely smoke-tested.
+
+### 9.9 The calibration protocol
+
+`--protocol calibration` generates the manoeuvre the rigid-body calibration spec
+(`docs/superpowers/specs/2026-09-10-idl1-rigid-body-calibration.md` §5.1) is written
+against, in place of §9.3's loop. `--laps` and `--lap-length-m` are ignored: the duration is
+fixed at 10 s of stationary hold, 33 s of tumble and 12 s of bar turn, 55 s in all, and the
+lap table in the truth file is **empty** rather than fictional. Every GPS fix sits on the
+projection origin at zero speed — the machine is held in the air and goes nowhere — but the
+records are still written, because a real recording would have them and an importer that only
+ever saw GPS-free synthetic logs would be untested.
+
+**Two bodies.** `IMU1` (the fork sensor, `IDL0_SPEC.md` §3.2) rides body **F**; every other
+sensor rides body **R**. They are joined by a steering hinge whose axis is the reference bike's
+63.5° head angle. Body R's attitude is a sum of two incommensurate sinusoids per Euler axis,
+ramped in from the hold by a `C²` smoothstep, giving a median `‖ω_R‖` near 3 rad/s and a rate
+scatter condition number under 3 — clear of both §3 gates of the calibration spec. The steer
+angle is zero, value **and** rate, through the hold and the tumble, which is what makes the
+datum a datum; over the bar turn it sweeps ±0.75 rad.
+
+Body F's rate is the calibration spec's equation (4) inverted, `ω_F = C(δ)ᵀ(ω_R + δ̇ s)`. The
+specific force at its origin is the full moving-frame transport of body R's — rigid terms plus
+the relative acceleration **and the Coriolis term** — because the F origin moves within the R
+frame whenever the bars turn. `IMU1`'s lever arm within body F is zero by the spec's `r₁ ≡ 0`
+convention, so the front sensor's position appears only as the hinge point and the hinge-to-F-
+origin offset in the truth file.
+
+**Noise.** `GYRO_SIGMA_RAD_S` and `ACCEL_SIGMA_M_S2` are **per-sample** σ, while the
+calibration spec's 0.003 and 0.05 are angle- and velocity-random-walk coefficients. A test
+validating that spec's §5 thresholds must pass `--noise √ODR` (28.8617 at 833 Hz), or the
+synthetic body is 29× quieter than the acceptance arithmetic assumes.
+
+**Truth.** The `hinge` block of §9.6 is present under this protocol and absent under `loop`.
+It carries the sensor-to-body assignment, the steering axis and hinge point in the R frame,
+the hinge-to-F-origin offset in the F frame, `C₀` (the identity gauge), the peak-to-peak steer
+angle, and the three segment windows in seconds — the boundaries a solver is expected to
+rediscover from the data alone. The block is strictly additive, so `schema_version` stands at
+1, and `--protocol` is omitted from the serialised `config` when it is the default, so every
+configuration writable before this protocol existed still produces the same bytes down to the
+session UUID and `SYNTH_VERSION` does not move.
 
 ### 9.7 Determinism
 

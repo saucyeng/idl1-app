@@ -6,6 +6,32 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 
 ### Added
 
+- **Rigid-body IMU calibration [docs] (2026-09-13, M6.3, ruling R192).**
+  `idl-rs session calibrate <file> [--truth <json>]` fits the full extrinsic
+  model to one held-in-the-air session: two bodies joined by a one-DoF steering
+  hinge, per-sensor mount rotation, lever arm and gyro bias, plus the steering
+  axis. Gyro bias comes from the stationary hold, the rotations by Kabsch over
+  the bars-straight tumble, the steering axis in closed form from a quadratic
+  identity that eliminates the steer angle, the lever arms by least squares with
+  an errors-in-variables correction, and Levenberg-Marquardt polishes the
+  rotations, biases and axis. Every excitation gate is measured and reported: a
+  poor motion yields a thinner record and a named shortfall that says what was
+  seen and what was needed, and only a session with nothing fittable at all is
+  an error. Unobserved fields are absent from the `calibration.*` record, never
+  zero (R190). `idl-rs session synth --protocol calibration` generates the
+  matching manoeuvre with ground truth for the hinge, which is what makes the
+  whole thing testable before the hardware exists. Against that truth at the
+  spec's own noise level the fit lands at 0.07° on the mounts (threshold 0.5°),
+  1.0 mm on the lever arm (10 mm), 0.11° on the steering axis (1.0°),
+  0.0016 rad/s on gyro bias (0.002) and 0.013 m/s² on the accelerometer bias
+  difference (0.05). The spec
+  (`docs/superpowers/specs/2026-09-10-idl1-rigid-body-calibration.md`) is out of
+  draft; its §8 records the seven places writing the solver proved the draft's
+  own equations wrong, the two largest being that the individual accelerometer
+  bias is not observable at all — only the difference between two sensors on one
+  body is — and that both body frames are gauges rather than parameters. C1 §9.9
+  and C6 gain the protocol and the verb.
+
 - **Synthetic session generator [docs] (2026-09-13, ruling R187).**
   `idl-rs session synth --out <file>` writes a real schema-3 `.idl0` log — a
   simulated rigid body carrying up to three IMUs with known extrinsics around
