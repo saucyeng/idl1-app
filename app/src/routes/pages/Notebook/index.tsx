@@ -11,6 +11,7 @@ import { NoteBlock } from "@/components/brand/NoteBlock";
 import { listSessions, listWorkbooks, getSession, type SessionDetail, type SessionSummary } from "../../../ipc/catalog";
 import { startRebuildJob, whenRebuildFinishes, type RebuildRunSummary } from "../../../ipc/rebuild_job";
 import { cursorReadout } from "../../../ipc/cursor";
+import { AxisKind } from "../../../ipc/hostChannel";
 import { fetchGpsTrace, fetchGpsTraceMeta, type DecodedGpsTrace } from "../../../ipc/gps";
 import { fetchRasterMetaV2, fetchRasterV2 } from "../../../ipc/rasters";
 import { fetchHistogram, type HistogramResponse } from "../../../ipc/histogram";
@@ -74,11 +75,13 @@ import NotebookSidebar from "./components/NotebookSidebar";
 import { NewWorkbookDialog, OpenWorkbookDialog } from "./components/WorkbookMenuDialogs";
 import GraphCanvas from "./graph/GraphCanvas";
 import {
+  combineChannelWindows,
   combineGpsWindows,
   combineHistogramWindows,
   combineScatterWindows,
   combineSpectrumWindows,
   type GpsWindowSeries,
+  type WindowSeries,
   type HistogramWindowSeries,
   type ScatterWindowSeries,
   type RasterFramePayload,
@@ -123,6 +126,9 @@ import { resolveEditorHost } from "./model/editorHost";
 import { resolveGraphHost } from "./model/graphHost";
 import { runFft, type FftAction, type FftDeps } from "./model/fftDriver";
 import { gpsColumns, runGpsMeta, runGpsTrace, type GpsAction, type GpsDeps } from "./model/gpsDriver";
+import { lapColumns, runLapSeries, type LapAction, type LapDeps } from "./model/lapDriver";
+import { parse as parsePlotForm } from "./plotForm/parse";
+import { UNIT_NOT_YET_EVALUATED } from "./model/unitLabel";
 import {
   rasterFrame,
   rasterWidthForCell,
@@ -143,6 +149,7 @@ import {
   unresolvedChannelId,
   type FftCellBinding,
   type HistogramCellBinding,
+  type LapCellBinding,
   type MapCellBinding,
   type ScatterCellBinding,
   type SpectrogramCellBinding,
@@ -291,6 +298,11 @@ function scatterRunKey(cellId: string, windowKeyValue: string): string {
 /** {@link fftRunKey}'s spectrogram counterpart (ruling R217 item 4). */
 function rasterRunKey(cellId: string, windowKeyValue: string): string {
   return `${cellId}|raster|${windowKeyValue}`;
+}
+
+/** {@link fftRunKey}'s lap-progression counterpart (ruling R233). */
+function lapRunKey(cellId: string, windowKeyValue: string): string {
+  return `${cellId}|lap|${windowKeyValue}`;
 }
 
 /** {@link fftRunKey}'s map counterpart (ruling R217 item 1). */
@@ -683,6 +695,11 @@ export default function NotebookPage() {
    *  per session, not per cell, and a missing track is not a reason to put
    *  an error note on a map that draws its trace perfectly well without one. */
   const [gpsErrors, setGpsErrors] = useState<Map<string, Map<string, IpcError>>>(new Map());
+  /** {@link gpsErrors}'s lap-progression counterpart (ruling R233), keyed
+   *  cell id -> window key: a failed `fetch_host_channel_v2`, or the typed
+   *  shape mismatch `lapDriver.ts` reports for a definition that is not
+   *  `[lap]`-shaped. */
+  const [lapErrors, setLapErrors] = useState<Map<string, Map<string, IpcError>>>(new Map());
   const sessionDetail = primaryWindow !== null ? (sessionDetailsByWindow.get(windowKey(primaryWindow)) ?? null) : null;
   /** Changes exactly when the set of selected windows with a resolved
    *  `SessionDetail` changes -- the readiness dependency the channel-bind
@@ -1229,6 +1246,16 @@ export default function NotebookPage() {
   const retainedGpsRef = useRef<Map<string, { hostVarName: string; byWindow: Map<string, DecodedGpsTrace> }>>(new Map());
   /** {@link fftBoundIdentityRef}'s map counterpart. */
   const gpsBoundIdentityRef = useRef<Map<string, Map<string, string>>>(new Map());
+  /** {@link retainedSpectraRef}'s lap-progression counterpart (ruling
+   *  R233). A `[lap]` value has no `TileCache` entry to re-derive from —
+   *  it is a definition, not a channel — so a sandbox rebuild is served
+   *  from this page's own retained per-window columns rather than a
+   *  re-fetch. */
+  const retainedLapsRef = useRef<Map<string, { hostVarName: string; unit: UnitLabel; byWindow: Map<string, { lap: Float64Array; v: Float64Array }> }>>(
+    new Map()
+  );
+  /** {@link fftBoundIdentityRef}'s lap-progression counterpart. */
+  const lapBoundIdentityRef = useRef<Map<string, Map<string, string>>>(new Map());
   /** {@link retainedSpectraRef}'s spectrogram counterpart (ruling R217 item
    *  4). Retained rather than re-fetched on a sandbox rebuild for the same
    *  reason, with one extra: the decoded pixels here are this page's own
@@ -1402,6 +1429,47 @@ export default function NotebookPage() {
       first?.meta.magnitude_unit ?? null,
       first?.meta.ramp_stops ?? [],
       first === null ? null : { vmin: first.meta.scale.vmin, vmax: first.meta.scale.vmax }
+    );
+  }
+
+  /**
+   * Rebuilds and pushes `cellId`'s combined multi-window `[lap]` host
+   * variable from `retainedLapsRef`'s currently retained per-window columns
+   * (ruling R233, C2 §5.3's lap cell). The exact shape of
+   * {@link pushCombinedGpsFor}, over `combineChannelWindows` instead — a
+   * `[lap]` value rides the same channel payload every definition does, so
+   * the break row between two windows (R127 item 4) comes for free and Plot
+   * draws one line per window rather than one vaulting from the last lap of
+   * a window to the first lap of the next.
+   *
+   * `AxisKind.Lap` is the load-bearing argument: it is what makes the bound
+   * record `{lap, v, w}` rather than `{t, v, tr, w}`
+   * (`sandbox/channelRecords.ts`), which is what the mark's `x: "lap"`
+   * binding reads.
+   */
+  function pushCombinedLapFor(cellId: string): void {
+    const retained = retainedLapsRef.current.get(cellId);
+    const host = sandboxHostRef.current;
+    if (retained === undefined || host === null) return;
+    const series: WindowSeries[] = [];
+    for (const w of selectionRef.current) {
+      const wKey = windowKey(w);
+      const columns = retained.byWindow.get(wKey);
+      if (columns === undefined) continue;
+      const detail = sessionDetailsByWindowRef.current.get(wKey) ?? null;
+      series.push({ descriptor: windowDescriptorFor(w, detail), t: columns.lap, v: columns.v });
+    }
+    const combined = combineChannelWindows(series);
+    host.setChannelHostVar(
+      retained.hostVarName,
+      combined.length,
+      combined.t.buffer as ArrayBuffer,
+      combined.v.buffer as ArrayBuffer,
+      combined.tr.buffer as ArrayBuffer,
+      combined.w.buffer as ArrayBuffer,
+      combined.windows,
+      retained.unit,
+      AxisKind.Lap
     );
   }
 
@@ -1582,6 +1650,14 @@ export default function NotebookPage() {
         }
         for (const cellId of retainedRastersRef.current.keys()) {
           pushRastersFor(cellId);
+        }
+        // Ruling R233, same reasoning as the two loops above: a `[lap]`
+        // value's payload is detached on transfer and is not cached by
+        // `rebuildReplay.ts`, and this cell's per-window `bindingIdentity`
+        // survives the rebuild untouched, so without this loop a rebuild
+        // leaves every lap-progression cell permanently blank.
+        for (const cellId of retainedLapsRef.current.keys()) {
+          pushCombinedLapFor(cellId);
         }
       },
     });
@@ -1852,6 +1928,19 @@ export default function NotebookPage() {
    *  is open yet, matching every other `workbookId`-dependent call site in
    *  this file; `fetch_gps_trace_meta` takes no workbook and is forwarded
    *  as-is. */
+  /** `model/lapDriver.ts`'s injected IPC (ruling R233), built here for the
+   *  reason {@link fetchHostChannelDep} is. Unlike that one it takes the
+   *  window per call rather than reading the primary window at call time: a
+   *  lap cell fetches its definition once per **selected** window and
+   *  combines the results, so each call names its own window. */
+  const lapDeps: LapDeps = {
+    fetchHostChannel: (window, defName, budget) => {
+      const workbookId = workbookIdRef.current;
+      if (workbookId === null) return Promise.reject(new Error("fetchHostChannel: no workbook open"));
+      return fetchHostChannelV2(workbookId, window, defName, budget);
+    },
+  };
+
   const gpsDeps: GpsDeps = {
     fetchGpsTrace: (window, colourBy, budget) => {
       const workbookId = workbookIdRef.current;
@@ -3279,6 +3368,142 @@ export default function NotebookPage() {
     primeState.primeEpoch,
   ]);
 
+  // For each `js` cell whose binding is the lap-progression arm, once per
+  // **selected window** whose per-window `bindingIdentity` changed (ruling
+  // R233, C2 §5.3's lap cell). Structurally identical to the map effect
+  // above -- same per-window `CellRunSequencer` keying (via `lapRunKey`),
+  // same decision-61 pruning of deselected windows, same R121 rule that one
+  // window's failure never blocks a sibling's.
+  //
+  // A lap binding does not vary by window at all (its definition name is
+  // the whole request), so unlike the map effect this one resolves the
+  // binding once per cell rather than once per window: a `[lap]` value is a
+  // workbook definition, not a channel that may or may not exist on a given
+  // window's session.
+  useEffect(() => {
+    if (state.markdown === null) return;
+    const markdown = state.markdown;
+    const currentWindowKeys = new Set(windows.map(windowKey));
+
+    for (const cell of state.cells) {
+      if (cell.id === null || cell.kind !== "js") continue;
+      const cellId = cell.id;
+      const code = decodeByteRange(markdown, cell.bodyRange);
+      const binding = bindingFor({ id: cellId, code }, sessionDetail, sessionSpanUs, definitionsWithAxis, null, definitionUnitByName);
+
+      if (binding === null || binding.kind !== "lap") {
+        const perWindow = lapBoundIdentityRef.current.get(cellId);
+        if (perWindow !== undefined) {
+          for (const wKey of perWindow.keys()) cellRunSequencerRef.current.delete(lapRunKey(cellId, wKey));
+          lapBoundIdentityRef.current.delete(cellId);
+        }
+        retainedLapsRef.current.delete(cellId);
+        setLapErrors((prev) => {
+          if (!prev.has(cellId)) return prev;
+          const next = new Map(prev);
+          next.delete(cellId);
+          return next;
+        });
+        continue;
+      }
+
+      // Prune this cell's per-window state to the currently selected
+      // windows (decision 61) before considering which windows to refetch.
+      const perWindowIdentity = lapBoundIdentityRef.current.get(cellId) ?? new Map<string, string>();
+      for (const wKey of Array.from(perWindowIdentity.keys())) {
+        if (!currentWindowKeys.has(wKey)) {
+          perWindowIdentity.delete(wKey);
+          cellRunSequencerRef.current.delete(lapRunKey(cellId, wKey));
+        }
+      }
+      lapBoundIdentityRef.current.set(cellId, perWindowIdentity);
+      const retained = retainedLapsRef.current.get(cellId);
+      if (retained !== undefined) {
+        let prunedAny = false;
+        for (const wKey of Array.from(retained.byWindow.keys())) {
+          if (!currentWindowKeys.has(wKey)) {
+            retained.byWindow.delete(wKey);
+            prunedAny = true;
+          }
+        }
+        if (prunedAny) pushCombinedLapFor(cellId);
+      }
+      setLapErrors((prev) => {
+        const cellMap = prev.get(cellId);
+        if (cellMap === undefined) return prev;
+        const nextCellMap = new Map(cellMap);
+        let changed = false;
+        for (const wKey of cellMap.keys()) {
+          if (!currentWindowKeys.has(wKey)) {
+            nextCellMap.delete(wKey);
+            changed = true;
+          }
+        }
+        return changed ? new Map(prev).set(cellId, nextCellMap) : prev;
+      });
+
+      // A definition this workbook does not have is stated once, against no
+      // window, rather than fetched n times to fail n times.
+      if (binding.unrequestable !== null) {
+        const message = binding.unrequestable;
+        setLapErrors((prev) => new Map(prev).set(cellId, new Map([["*", { kind: "invalid_argument", message }]])));
+        continue;
+      }
+
+      const lapBinding: LapCellBinding = binding;
+      const unit = definitionUnitByName.get(lapBinding.definition) ?? UNIT_NOT_YET_EVALUATED;
+      for (const w of windows) {
+        const wKey = windowKey(w);
+        // A lap binding's `bindingIdentity` is per-cell (its host-variable
+        // key carries no window, R127 item 1), so the window key is added
+        // here -- see the map effect's own comment for why.
+        const identity = `${bindingIdentity(lapBinding)}|${wKey}`;
+        if (perWindowIdentity.get(wKey) === identity) continue;
+        perWindowIdentity.set(wKey, identity);
+
+        const dispatchLap = (action: LapAction) => {
+          if (action.type === "lapSeries") {
+            const entry =
+              retainedLapsRef.current.get(cellId) ?? { hostVarName: lapBinding.hostVarName, unit, byWindow: new Map<string, { lap: Float64Array; v: Float64Array }>() };
+            entry.hostVarName = lapBinding.hostVarName;
+            entry.unit = unit;
+            entry.byWindow.set(wKey, lapColumns(action.lap, action.v));
+            retainedLapsRef.current.set(cellId, entry);
+            setLapErrors((prev) => {
+              const cellMap = prev.get(cellId);
+              if (cellMap === undefined || !cellMap.has(wKey)) return prev;
+              const nextCellMap = new Map(cellMap);
+              nextCellMap.delete(wKey);
+              return new Map(prev).set(cellId, nextCellMap);
+            });
+            pushCombinedLapFor(cellId);
+          } else {
+            retainedLapsRef.current.get(cellId)?.byWindow.delete(wKey);
+            setLapErrors((prev) => {
+              const cellMap = new Map(prev.get(cellId));
+              cellMap.set(wKey, action.error);
+              return new Map(prev).set(cellId, cellMap);
+            });
+            pushCombinedLapFor(cellId);
+          }
+        };
+        const seq = cellRunSequencerRef.current.start(lapRunKey(cellId, wKey));
+        const isStale = () => !cellRunSequencerRef.current.isCurrent(lapRunKey(cellId, wKey), seq);
+
+        void runLapSeries(lapDeps, cellId, toWireWindow(w), lapBinding.definition, lapBinding.budget, dispatchLap, isStale);
+      }
+    }
+  }, [
+    state.cells,
+    state.markdown,
+    primaryEval,
+    sessionDetail,
+    sessionSpanUs,
+    windowsKeyValue,
+    sessionDetailsReadiness,
+    primeState.primeEpoch,
+  ]);
+
   // For each `js` cell whose binding is the spectrogram arm, once per
   // **selected window** whose per-window `bindingIdentity` changed (ruling
   // R217 item 4, C2 §5.3, C3 §3.6). Structurally identical to the map
@@ -3688,6 +3913,12 @@ export default function NotebookPage() {
         .map((e) => e.message)
         .join("; ");
     }
+    const lapErrorsForCell = lapErrors.get(cellId);
+    if (lapErrorsForCell !== undefined && lapErrorsForCell.size > 0) {
+      return Array.from(lapErrorsForCell.values())
+        .map((e) => e.message)
+        .join("; ");
+    }
     const output = primaryOutputs.get(cellId);
     if (output !== undefined && output.errors.length > 0) return output.errors.map((e) => e.message).join("; ");
     return undefined;
@@ -3811,6 +4042,23 @@ export default function NotebookPage() {
       .filter((cell) => cell.kind === "js" && cell.id !== null && state.markdown !== null)
       .map((cell) => {
         const code = decodeByteRange(state.markdown as string, cell.bodyRange);
+        // A lap-progression cell draws one series per **selected window**,
+        // not one per channel: its single mark names one definition and
+        // separates the windows by `z: "w"` (C2 §5.3, ruling R233). So its
+        // legend names the windows, in their own R127 descriptor colours,
+        // with the definition's unit on each — the same "label + unit" rule
+        // R216.2 states, over the axis this chart actually has.
+        const lapProps = parsePlotForm(code);
+        if (lapProps !== null && lapProps.chart === "lap") {
+          const defUnit = definitionUnitByName.get(lapProps.mark.definition);
+          const unitText = defUnit !== undefined && defUnit.state === "known" ? defUnit.text : null;
+          const series = windows.map((w) => {
+            const detail = sessionDetailsByWindow.get(windowKey(w)) ?? null;
+            const descriptor = windowDescriptorFor(w, detail);
+            return { name: windowKey(w), label: descriptor.label, unit: unitText, colour: descriptor.colour };
+          });
+          return [cell.id as string, plotLegendEntries(series)] as const;
+        }
         const names = Array.from(new Set(extractChannelCalls(code).map((call) => call.channel)));
         const series = names.map((name) => {
           const unit = definitionUnitByName.get(name);
@@ -3884,7 +4132,11 @@ export default function NotebookPage() {
             ? [binding.xChannelId, binding.yChannelId]
             : binding.kind === "map"
               ? (binding.colourBy === null ? [] : [binding.colourBy])
-              : [binding.channelId];
+              // A lap cell names a workbook definition, never a session
+              // channel, so nothing of its own is decoding here.
+              : binding.kind === "lap"
+                ? []
+                : [binding.channelId];
       byCell.set(
         cell.id,
         channelIds.flatMap((channelId) => sessionIds.map((sid) => decodeKey(sid, channelId)))

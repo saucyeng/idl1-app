@@ -139,4 +139,18 @@ describe("isShowCodeShortcut — Alt+C — reveals the code, and nothing else do
     // Assert
     expect(matches).toEqual([false, false, false, false, false]);
   });
+
+  it("plotLegendEntries — series carrying their own colours — uses them instead of mark order", () => {
+    const series = [
+      { name: "session-a|lap:1", label: "Lap 1", unit: "s", colour: "--chart-3" },
+      { name: "session-a|lap:2", label: "Lap 2", unit: "s", colour: "--chart-5" },
+    ];
+
+    const entries = plotLegendEntries(series);
+
+    expect(entries).toEqual([
+      { key: "session-a|lap:1", label: "Lap 1 (s)", colour: "--chart-3" },
+      { key: "session-a|lap:2", label: "Lap 2 (s)", colour: "--chart-5" },
+    ]);
+  });
 });
