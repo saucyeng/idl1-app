@@ -4183,6 +4183,7 @@ export default function NotebookPage() {
       inlineResults={inlineResults}
       spanErrors={spanErrors}
       windowNote={cellListWindowNote}
+      noSelection={windows.length === 0}
       dense={dense}
       lapTimeSecs={lapTimeSecsForRow}
       editingProseBlockId={proseEdit?.target.blockId ?? null}
@@ -4236,10 +4237,17 @@ export default function NotebookPage() {
               // fixable -- a failed declared definition opens its own math
               // cell (`model/fixTarget.ts`), everything else opens this
               // chart's own cell so the user can correct the reference.
-              // "No session selected" (`unresolved === null`) has no
-              // per-cell fix -- no button in that case.
+              //
+              // Whether a note is fixable is now the note's own answer
+              // (`JsCellNote.fixable`), not this call site's re-derivation
+              // from `unresolved`: with nothing selected (decision 61)
+              // `unresolved` is non-null for every referenced channel --
+              // there are no session channels to resolve against -- so
+              // testing it here put a Fix button next to "No session is
+              // selected", pointing at a definition that is very likely
+              // correct.
               const onFix =
-                unresolved !== null
+                note !== null && note.fixable && unresolved !== null
                   ? () =>
                       setSelectedCellId(
                         fixTargetCellId({
@@ -4254,7 +4262,7 @@ export default function NotebookPage() {
                   cellId={cellId}
                   heightPx={heightPx}
                   error={cellErrors.get(cellId)}
-                  note={note ?? undefined}
+                  note={note?.text}
                   onFix={onFix}
                   sendLayout={sendLayout}
                 />
