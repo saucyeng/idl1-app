@@ -1288,6 +1288,30 @@ grid verbatim (`CellResult = { value: number | null, error: string | null
 the gap where a successful table cell and a silently-skipped one
 serialized identically (`value: null` either way).
 
+*Amended 2026-09-13 (ruling R233), implemented.* Two things this note left
+open are now settled.
+
+**`model` is the model as evaluated, not the model as written.** Under C2
+§4's `rowSource: "windowLaps"` the rows are derived from the selection, so
+`model.rows` is the derived row set and `model.cells` is the blank grid those
+rows carry. `results` is indexed against it. Returning the authored model
+instead would hand a reader two halves that disagree about how many rows
+there are. Under the default `rowSource: "authored"` the model is the parsed
+one, byte for byte, as before.
+
+**Each row is evaluated in its own window.** Wave 1 passed
+`row_windows = [None; rows.len()]`, so C2 §4's per-row `context { sessionId,
+lapNumber }` binding was parsed and ignored — every row aggregated the whole
+session. It needed no new argument in the end: the laps of the caller's
+selection already reach the evaluation on its lap context, so a row bound to
+lap 3 now reads lap 3's samples. `mainRowId` resolves to the baseline row
+`main({col[]})` reads, including the reserved `"fastest"`.
+
+**One derived table per selected window.** `eval_workbook_v2` evaluates once
+per window and returns one `CellOutput[]` for each, so a two-window selection
+yields two derived tables, each over its own window's laps. This is C2 §4's
+"No new wire" paragraph, unchanged: no argument is added to any command.
+
 A per-cell failure (`math_*` or `workbook_*` kind) never rejects the
 command — it appears in that cell's `errors` list, or in a specific
 definition's own `defs[i].error` for a per-definition evaluation problem.
@@ -1472,9 +1496,27 @@ header set this precedent). A reader that needs the axis checks `version >=
 2` before trusting the field; on a version-1 payload it is absent, not
 zero-by-accident, because version 1 wrote zeros there.
 
+*Amended 2026-09-13 (ruling R233), engine side implemented.* The kind is no
+longer chosen by the calling command: `HostChannel` carries the axis of the
+value it was built from, `encode_host_channel_idlh` reads it, and both
+`fetch_host_channel` call sites lose their `AxisKind::Time` argument — each
+had answered "time" because time was the only shape that existed, which is
+what a per-call-site question gets you. A `[lap]` definition (C2 §3.6) now
+serialises with `axis_kind = 3` and its lap numbers in `t`.
+
+**Version 1 is no longer accepted.** The engine has emitted version 2 since
+2026-09-11 and nothing emits version 1; the app's decoder still required
+exactly 1 until 2026-09-13, so every `fetch_host_channel` response was in
+fact rejected. The decoder now requires exactly 2. Accepting 1 as well would
+mean reading its zeroed reserved bytes as `axis_kind = 0` ("no axis") for a
+payload that does have one — the failure this field exists to prevent,
+arrived at from the other side.
+
 Header ends at byte offset **24**, padded so both payload arrays start on an
 8-byte boundary (ruling R59 Q3(a)). Then `t` as `t_length` × `f64` at offset
-24 (seconds, matching `to_host_channel`'s µs→s conversion), then `v` as
+24 (in `axis_kind`'s own unit — seconds on a `time` axis, matching
+`to_host_channel`'s µs→s conversion, and 1-based lap numbers on a `lap` axis,
+which that function carries across without converting), then `v` as
 `length` × `f64` at offset `24 + t_length*8`. Total length
 `24 + t_length*8 + length*8`.
 

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import type { DecodedHostChannel } from "../../../../ipc/hostChannel";
+import { AxisKind, type DecodedHostChannel } from "../../../../ipc/hostChannel";
 import type { DecodedTile } from "../../../../ipc/tiles";
 import { rebindChannelsAfterRebuild, type BoundChannel, type HostChannelRebindDeps } from "./channelRebind";
 import { TileCache, type TileCacheKey } from "./tileCache";
@@ -96,7 +96,7 @@ describe("rebindChannelsAfterRebuild", () => {
     const deps: HostChannelRebindDeps = {
       fetchHostChannel: (defName, budget) => {
         fetchCalls.push({ defName, budget });
-        return Promise.resolve<DecodedHostChannel>({ hasT: true, t: new Float64Array([0, 1]), v: new Float64Array([10, 20]) });
+        return Promise.resolve<DecodedHostChannel>({ hasT: true, axisKind: AxisKind.Time, t: new Float64Array([0, 1]), v: new Float64Array([10, 20]) });
       },
     };
     const sent: Array<{ name: string; data: ChannelData }> = [];
@@ -112,7 +112,7 @@ describe("rebindChannelsAfterRebuild", () => {
     const cache = new TileCache(1_000_000);
     const bound: BoundChannel[] = [{ source: "definition", name: "avg_speed", budget: 640, unit: { state: "known", text: "km/h" } }];
     const deps: HostChannelRebindDeps = {
-      fetchHostChannel: () => Promise.resolve<DecodedHostChannel>({ hasT: false, t: new Float64Array(0), v: new Float64Array([42]) }),
+      fetchHostChannel: () => Promise.resolve<DecodedHostChannel>({ hasT: false, axisKind: AxisKind.None, t: new Float64Array(0), v: new Float64Array([42]) }),
     };
     const sent: string[] = [];
 
