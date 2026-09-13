@@ -192,10 +192,14 @@ LM free to move them minimises the same inconsistent objective §2.3 corrects,
 undoing the correction. The accelerometer residual stays in the objective, so
 those two still constrain everything LM does move. LM over Gauss–Newton
 because the rotation parameters make the problem mildly non-convex and LM
-degrades gracefully on marginal excitation. Rotations are carried as
-`UnitQuaternion` with a tangent 3-vector increment (`q ⊕ exp(δθ)`), re-linearised
-each iteration, so no norm constraint enters the normal equations. The Jacobian
-is by central differences on that 23-vector: analytic blocks would be ~300 lines
+degrades gracefully on marginal excitation. Rotations take a tangent
+3-vector increment through the exponential map (`R ← exp([δθ]ₓ) R`), re-linearised
+each iteration, so the increment is unconstrained and no norm constraint enters the
+normal equations. They are carried through the solve as `Matrix3` and converted to
+`UnitQuaternion` only when the record is built: a product of orthogonal matrices
+stays orthogonal over the iteration count this solve takes, and the intermediate
+quantities are all matrix products anyway. The Jacobian
+is by central differences on that 17-vector: analytic blocks would be ~300 lines
 for a step that starts within a tenth of a degree of the answer. **No new crate:**
 hand-rolled LM is ~100 lines against `nalgebra`'s dense solvers, and a problem
 this small and dense does not justify a sparse-LM dependency.
@@ -296,7 +300,8 @@ not free user parameters (§7.1), serialised as JSON:
 | `sensors[i].lever` | 3-vector in the body frame, m; absent when the lever-arm gate failed |
 | `sensors[i].gyro_bias` | 3-vector in the sensor frame, rad/s; absent with no rest hold |
 | `accel_bias_differences[]` | `{ from, to, value }`: `β_ij` in the body frame, m/s² |
-| `steer_axis`, `steer_datum` | unit 3-vector in R frame; `steer_datum` is the identity gauge of §1.2a, present so a future multi-sensor front body can carry a fitted value |
+| `steer_axis` | unit 3-vector in the R frame, dimensionless; absent when the steer gate failed |
+| `steer_datum` | `C₀`, the F→R rotation at `δ = 0`, as a quaternion `(w,x,y,z)`. Always the identity gauge of §1.2a, present so a future multi-sensor front body can carry a fitted value without changing the record's shape |
 | `quality.*`, `quality.shortfalls[]` | the §3 metrics in their own units; the named failures |
 
 Every optional field is **absent** when unobserved, never zero (R190). `mount` +
