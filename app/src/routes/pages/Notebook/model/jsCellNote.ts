@@ -35,16 +35,51 @@
  */
 
 /** Why a `js` cell is plain-mounting with no chart, or `null` when it has a
- *  real binding and nothing needs saying. The string is shown verbatim in
- *  `JsCellFrame`'s note slot. */
-export type JsCellNote = string | null;
+ *  real binding and nothing needs saying. */
+export interface JsCellNote {
+  /** The one-line message, shown verbatim in `JsCellFrame`'s note slot
+   *  (decision 58: "a one-line message naming the missing thing"). */
+  text: string;
+  /**
+   * Whether decision 58's "Fix" button belongs beside this note.
+   *
+   * `true` for every note naming a specific reference the author can
+   * correct — a failed declared definition, an unknown channel, an
+   * axis-less definition. `false` for "no session is selected" (decision
+   * 61): there is nothing wrong with the cell, and the fix is the Data
+   * tab, not a field in this cell's Properties form. A Fix button there
+   * would open a perfectly correct definition and invite the reader to
+   * edit it.
+   */
+  fixable: boolean;
+}
+
+/** The note shown when nothing is selected (decision 61). Exported so the
+ *  caller and its tests name the one string rather than re-typing it. */
+export const NO_SELECTION_NOTE = "No session is selected — choose one in the Data tab.";
 
 /**
  * Decides the note for one `js` cell that did **not** resolve to a chart
  * binding. Pure: every input is a value `Notebook/index.tsx` already holds
- * at render time. Order of causes is fixed and tested — the most specific
- * cause wins, so a cell naming an unknown channel says that rather than
- * the generic no-session line.
+ * at render time.
+ *
+ * **An empty selection is checked first (decision 61.)** It used to be
+ * checked last, on the principle that the most specific cause wins. That
+ * was wrong once the selection was empty: with no session there are no
+ * session channels to resolve against, so `unresolvedName` is set for
+ * *every* referenced channel and the cell claimed `Channel "speed" is not
+ * part of this session` — naming a session that does not exist, about a
+ * reference that is very likely fine, next to a Fix button that would open
+ * a correct definition and invite the reader to edit it. Decision 61's
+ * rule is that clearing the selection empties everything that depended on
+ * it with one honest message; specificity below that point is noise.
+ *
+ * Below that, the order is unchanged and still most-specific-first.
+ *
+ * A cell making no channel call at all still gets no note: it does not
+ * depend on the selection, and decision 61 empties what "depended on it".
+ * Genuinely custom code keeps rendering with nothing selected, as R148
+ * ruled.
  */
 export function jsCellNote(input: {
   /** `false` when the cell makes no `channel(...)`/`spectrum(...)` call at
@@ -68,23 +103,26 @@ export function jsCellNote(input: {
    *  own math cell's definition is malformed or otherwise failed to
    *  evaluate, rather than the name simply not existing (ruling R150). */
   isDeclaredDefinitionFailed: boolean;
-}): JsCellNote {
+}): JsCellNote | null {
   if (!input.hasChannelReference) return null;
 
+  if (input.windowCount === 0) {
+    return { text: NO_SELECTION_NOTE, fixable: false };
+  }
+
   if (input.isAxisLessDefinition) {
-    return `Definition "${input.unresolvedName}" has no recorded axis.`;
+    return { text: `Definition "${input.unresolvedName}" has no recorded axis.`, fixable: true };
   }
 
   if (input.isDeclaredDefinitionFailed) {
-    return `Definition "${input.unresolvedName}" failed to evaluate — check its math cell for an error.`;
+    return {
+      text: `Definition "${input.unresolvedName}" failed to evaluate — check its math cell for an error.`,
+      fixable: true,
+    };
   }
 
   if (input.unresolvedName !== null) {
-    return `Channel "${input.unresolvedName}" is not part of this session.`;
-  }
-
-  if (input.windowCount === 0) {
-    return "No session is selected — choose one in the Data tab.";
+    return { text: `Channel "${input.unresolvedName}" is not part of this session.`, fixable: true };
   }
 
   return null;

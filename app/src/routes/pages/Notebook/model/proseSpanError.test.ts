@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { proseSpanErrorMarker } from "./proseSpanError";
+import { NO_SELECTION_SPAN_MESSAGE, proseSpanErrorMarker, proseSpanNoSelectionMarker } from "./proseSpanError";
 
 describe("proseSpanErrorMarker", () => {
   it("a failed span — builds a warning-glyph marker naming the expression, message on hover only", () => {
@@ -22,5 +22,33 @@ describe("proseSpanErrorMarker", () => {
 
     expect(marker.text).not.toContain("failed");
     expect(marker.text).toBe("⚠ peak_freq");
+  });
+});
+
+/** Decision 61: with nothing selected, an unresolved span says so in place
+ *  rather than falling back to the raw `${expr}` template text. */
+describe("proseSpanNoSelectionMarker", () => {
+  it("an unresolved span with nothing selected — the same marker shape as a failed one", () => {
+    const expr = "peak_freq";
+
+    const marker = proseSpanNoSelectionMarker(expr);
+
+    expect(marker.text).toBe("⚠ peak_freq");
+  });
+
+  it("an unresolved span with nothing selected — names the Data tab on hover, not a failure", () => {
+    const expr = "peak_freq";
+
+    const marker = proseSpanNoSelectionMarker(expr);
+
+    expect(marker.title).toBe(NO_SELECTION_SPAN_MESSAGE);
+  });
+
+  it("an unresolved span with nothing selected — never renders the raw template text", () => {
+    const expr = "peak_freq";
+
+    const marker = proseSpanNoSelectionMarker(expr);
+
+    expect(marker.text).not.toContain("${");
   });
 });

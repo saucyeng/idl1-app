@@ -32,3 +32,27 @@ export interface ProseSpanErrorMarker {
 export function proseSpanErrorMarker(expr: string, message: string): ProseSpanErrorMarker {
   return { text: `⚠ ${expr}`, title: message };
 }
+
+/** The hover text of a span that cannot resolve because nothing is
+ *  selected (decision 61). Exported so the caller and its tests name one
+ *  string, as `model/jsCellNote.ts`'s `NO_SELECTION_NOTE` does for the
+ *  chart-slot half of the same decision. */
+export const NO_SELECTION_SPAN_MESSAGE = "No session is selected — choose one in the Data tab.";
+
+/**
+ * Decision 61 for prose: with nothing selected, a `${…}` span that depends
+ * on the selection gets the same marker an errored span gets, saying so on
+ * hover — never the raw `${expr}` text this module's caller fell back to
+ * before, which reads as a broken template rather than as an empty
+ * selection, and never the number the span last resolved to.
+ *
+ * Deliberately **not** used for a span that is merely waiting on its first
+ * evaluation with a session selected: that state resolves within one round
+ * trip, and marking it would flash a warning across every prose block on
+ * every workbook open. The caller keeps the `${expr}` placeholder for that
+ * case, and uses this one only when there is no selection for a result to
+ * ever arrive from.
+ */
+export function proseSpanNoSelectionMarker(expr: string): ProseSpanErrorMarker {
+  return { text: `⚠ ${expr}`, title: NO_SELECTION_SPAN_MESSAGE };
+}

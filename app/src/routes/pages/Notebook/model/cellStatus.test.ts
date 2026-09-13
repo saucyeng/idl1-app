@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { cellStatus, isCellBusy, type CellStatusInputs } from "./cellStatus";
+import { cellStatus, isCellBusy, isCellStale, type CellStatusInputs } from "./cellStatus";
 
 /** A settled cell — every test below changes exactly the signals it is about. */
 const SETTLED: CellStatusInputs = { hasOutput: true, stale: false, evalInFlight: false, hasError: false };
@@ -30,16 +30,32 @@ describe("cellStatus", () => {
     expect(status).toBe("evaluating");
   });
 
-  it("cellStatus — an edited cell inside the debounce window — queued, not evaluating", () => {
+  it("cellStatus — an edited cell inside the debounce window — stale, not queued", () => {
     const inputs = { ...SETTLED, stale: true };
 
     const status = cellStatus(inputs);
 
-    expect(status).toBe("queued");
+    expect(status).toBe("stale");
   });
 
-  it("cellStatus — a stale result while the re-run is in flight — evaluating", () => {
+  it("cellStatus — a stale result while the re-run is in flight — stale, not evaluating", () => {
     const inputs = { ...SETTLED, stale: true, evalInFlight: true };
+
+    const status = cellStatus(inputs);
+
+    expect(status).toBe("stale");
+  });
+
+  it("cellStatus — stale with and without a run in flight — the same state either way", () => {
+    const debouncing = cellStatus({ ...SETTLED, stale: true, evalInFlight: false });
+
+    const running = cellStatus({ ...SETTLED, stale: true, evalInFlight: true });
+
+    expect(debouncing).toBe(running);
+  });
+
+  it("cellStatus — no output at all while an evaluation runs — evaluating, never stale", () => {
+    const inputs = { ...SETTLED, hasOutput: false, stale: true, evalInFlight: true };
 
     const status = cellStatus(inputs);
 
@@ -59,7 +75,7 @@ describe("cellStatus", () => {
 
     const status = cellStatus(inputs);
 
-    expect(status).toBe("evaluating");
+    expect(status).toBe("stale");
   });
 
   it("cellStatus — a settled cell while another cell's evaluation runs — stays settled", () => {
@@ -72,11 +88,27 @@ describe("cellStatus", () => {
 });
 
 describe("isCellBusy", () => {
-  it("isCellBusy — each status — true only while evaluating", () => {
-    const statuses = ["queued", "evaluating", "settled", "error"] as const;
+  it("isCellBusy — each status — true for both states with an evaluation pending", () => {
+    const statuses = ["queued", "evaluating", "stale", "settled", "error"] as const;
 
     const busy = statuses.filter(isCellBusy);
 
-    expect(busy).toEqual(["evaluating"]);
+    expect(busy).toEqual(["evaluating", "stale"]);
+  });
+});
+
+describe("isCellStale", () => {
+  it("isCellStale — each status — true only for a result waiting to be replaced", () => {
+    const statuses = ["queued", "evaluating", "stale", "settled", "error"] as const;
+
+    const greyed = statuses.filter(isCellStale);
+
+    expect(greyed).toEqual(["stale"]);
+  });
+
+  it("isCellStale — evaluating from scratch — false, so nothing is washed grey", () => {
+    const evaluating = isCellStale("evaluating");
+
+    expect(evaluating).toBe(false);
   });
 });

@@ -39,15 +39,26 @@ describe("plotStatusGlyph — an errored plot — shows its ✕ for as long as t
     expect(glyphs).toEqual(["cross", "cross", "cross", "cross"]);
   });
 
-  it("spins while queued or evaluating, whatever the settle clock says", () => {
+  it("spins while queued, evaluating or stale, whatever the settle clock says", () => {
     // Arrange
-    const states = ["queued", "evaluating"] as const;
+    const states = ["queued", "evaluating", "stale"] as const;
 
     // Act
     const glyphs = states.map((status) => plotStatusGlyph(status, SETTLE_FADE_MS * 10));
 
     // Assert
-    expect(glyphs).toEqual(["spinner", "spinner"]);
+    expect(glyphs).toEqual(["spinner", "spinner", "spinner"]);
+  });
+
+  it("a stale plot long after its last settle — still a spinner, never a faded-out tick", () => {
+    // Arrange
+    const longAfterTheFade = SETTLE_FADE_MS * 10;
+
+    // Act
+    const glyph = plotStatusGlyph("stale", longAfterTheFade);
+
+    // Assert
+    expect(glyph).toBe("spinner");
   });
 });
 

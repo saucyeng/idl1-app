@@ -35,6 +35,13 @@ export interface CellListProps {
    */
   windowNote?: string | null;
   /**
+   * Decision 61: `true` when nothing is selected at all. Passed through to
+   * `ProseBlock`, so an inline `${…}` span says so in place rather than
+   * showing its raw template text while no result can arrive. Optional;
+   * defaults to `false`.
+   */
+  noSelection?: boolean;
+  /**
    * Renders a `js`-kind cell's sandbox-mounted output. Injected rather than
    * built here: a `js` cell's rendering is a `ChartCell` (or similar)
    * carrying its own viewport/tile-cache/cursor-readout state, which
@@ -111,6 +118,7 @@ export default function CellList({
   renderJsCell,
   frame = identityFrame,
   windowNote = null,
+  noSelection = false,
   editingProseBlockId = null,
   proseEditor = null,
   onEditProseBlock,
@@ -128,6 +136,7 @@ export default function CellList({
         inlineResults={inlineResults}
         spanErrors={spanErrors}
         windowNote={windowNote}
+        noSelection={noSelection}
         onEdit={onEditProseBlock === undefined ? undefined : () => onEditProseBlock(block.blockId)}
       />
     );
