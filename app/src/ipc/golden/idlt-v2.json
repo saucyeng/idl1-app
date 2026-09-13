@@ -1,0 +1,44 @@
+{
+  "columnCount": 4,
+  "columnMax": [
+    255.0,
+    511.0,
+    767.0,
+    1023.0
+  ],
+  "columnMean": [
+    127.5,
+    383.5,
+    639.5,
+    895.5
+  ],
+  "columnMin": [
+    0.0,
+    256.0,
+    512.0,
+    768.0
+  ],
+  "columnTUs": [
+    0,
+    256000,
+    512000,
+    768000
+  ],
+  "firstSamplePairs": [
+    0.0,
+    0.0,
+    1.0,
+    1.0
+  ],
+  "format": "IDLT",
+  "lastSamplePairs": [
+    1022.0,
+    1022.0,
+    1023.0,
+    1023.0
+  ],
+  "sampleCount": 1024,
+  "tier": 0,
+  "tileIndex": 0,
+  "version": 2
+}

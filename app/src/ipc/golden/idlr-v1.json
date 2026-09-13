@@ -1,0 +1,27 @@
+{
+  "firstPixels": [
+    35,
+    23,
+    27,
+    255,
+    35,
+    23,
+    27,
+    255
+  ],
+  "format": "IDLR",
+  "formatCode": 0,
+  "height": 3,
+  "lastPixels": [
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0
+  ],
+  "version": 1,
+  "width": 4
+}

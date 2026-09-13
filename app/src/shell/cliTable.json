@@ -1237,6 +1237,46 @@
       "usage": "docs cli",
       "verb": "cli",
       "writer": true
+    },
+    {
+      "args": [],
+      "core_fn": "wire_golden::build_wire_fixtures",
+      "data_dir": false,
+      "flags": [
+        {
+          "choices": [],
+          "default": null,
+          "help": "Directory to write the golden `<format>-v<n>.bin`/`.json` pairs into",
+          "kind": "path",
+          "long": "out",
+          "repeatable": false
+        },
+        {
+          "choices": [],
+          "default": null,
+          "help": "Report what would change and write nothing",
+          "kind": null,
+          "long": "dry-run",
+          "repeatable": false
+        },
+        {
+          "choices": [],
+          "default": null,
+          "help": "Emit the result as JSON on stdout (schema_version 1); errors become typed JSON on stderr",
+          "kind": null,
+          "long": "json",
+          "repeatable": false
+        }
+      ],
+      "help": "Regenerate the cross-language wire golden fixtures (ruling R236)",
+      "id": "docs.wire",
+      "json_shape": null,
+      "noun": "docs",
+      "status": "current",
+      "tier": "rare",
+      "usage": "docs wire",
+      "verb": "wire",
+      "writer": true
     }
   ],
   "nouns": [
@@ -1301,6 +1341,10 @@
     {
       "ruling": "R230 item 2",
       "verb": "cli"
+    },
+    {
+      "ruling": "R236",
+      "verb": "wire"
     }
   ]
 }
