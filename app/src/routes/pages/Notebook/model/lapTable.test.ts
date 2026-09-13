@@ -7,10 +7,20 @@ import {
   mainRowIndex,
   tableHeaders,
   tableView,
+  type LapTimeLookup,
   type TableCellResult,
   type TableCellValue,
   type TableModel,
 } from "./lapTable";
+
+/** The recorded lap times of laps 1-3, seconds — the engine's own source for
+ *  the reserved `"fastest"` (`RowBinding.lap_time_secs`), independent of
+ *  whether the table happens to carry a `lap_time()` column. */
+function recordedLaps(secondsByLap: Record<number, number>): LapTimeLookup {
+  return (context) => secondsByLap[context.lapNumber] ?? null;
+}
+
+const FAST_LAP_2 = recordedLaps({ 1: 92.4, 2: 91.8, 3: 93.1 });
 
 /** A three-lap derived table: lap number, lap time, a fork aggregate. */
 function lapTableModel(overrides: Partial<TableModel> = {}): TableModel {
@@ -75,47 +85,53 @@ describe("tableHeaders", () => {
 });
 
 describe("mainRowIndex", () => {
-  it("main row — mainRowId \"fastest\" over derived rows — is the smallest lap time", () => {
-    const index = mainRowIndex(lapTableModel(), results([92.4, 91.8, 93.1]));
+  it("main row — mainRowId \"fastest\" over derived rows — is the smallest recorded lap time", () => {
+    const index = mainRowIndex(lapTableModel(), FAST_LAP_2);
 
     expect(index).toBe(1);
   });
 
+  it("main row — a table with no lap_time() column — still highlights the row the engine used", () => {
+    // `resolve_baseline_row` reads each row's recorded lap time, never a
+    // column, so a derived table showing only fork travel has a Main row
+    // all the same — and every `main({col[]})` in it already used that row.
+    const model = lapTableModel({ columns: [{ id: "c2", name: "Fork max", template: "max([Fork travel])" }] });
+
+    expect(mainRowIndex(model, FAST_LAP_2)).toBe(1);
+  });
+
   it("main row — a tie on lap time — resolves to the lowest row index", () => {
-    const index = mainRowIndex(lapTableModel(), results([91.8, 91.8, 93.1]));
+    const index = mainRowIndex(lapTableModel(), recordedLaps({ 1: 91.8, 2: 91.8, 3: 93.1 }));
 
     expect(index).toBe(0);
   });
 
   it("main row — a lap with no recorded time — is skipped rather than compared", () => {
-    const grid = results([NaN, 93.1, 92.4]);
+    const index = mainRowIndex(lapTableModel(), recordedLaps({ 1: NaN, 2: 93.1, 3: 92.4 }));
 
-    expect(mainRowIndex(lapTableModel(), grid)).toBe(2);
+    expect(index).toBe(2);
   });
 
-  it("main row — an errored lap-time cell — is skipped too", () => {
-    const grid = results([92.4, 91.8, 93.1]);
-    grid[1][0] = { value: null, error: "no samples in this lap" };
-
-    expect(mainRowIndex(lapTableModel(), grid)).toBe(0);
+  it("main row — no session detail resolved yet — highlights nothing rather than the wrong row", () => {
+    expect(mainRowIndex(lapTableModel(), () => null)).toBeNull();
   });
 
   it("main row — \"fastest\" under rowSource authored — is not resolved here (the engine reports it)", () => {
     const model = lapTableModel({ rowSource: "authored" });
 
-    expect(mainRowIndex(model, results([92.4, 91.8, 93.1]))).toBeNull();
+    expect(mainRowIndex(model, FAST_LAP_2)).toBeNull();
   });
 
   it("main row — a named authored row — is the row with that id", () => {
     const model = lapTableModel({ rowSource: "authored", mainRowId: "s1#3" });
 
-    expect(mainRowIndex(model, results([92.4, 91.8, 93.1]))).toBe(2);
+    expect(mainRowIndex(model, FAST_LAP_2)).toBe(2);
   });
 
   it("main row — no mainRowId — is none", () => {
     const model = lapTableModel({ mainRowId: null });
 
-    expect(mainRowIndex(model, results([92.4, 91.8, 93.1]))).toBeNull();
+    expect(mainRowIndex(model, FAST_LAP_2)).toBeNull();
   });
 });
 
@@ -138,7 +154,7 @@ describe("tableView", () => {
   const value: TableCellValue = { model: lapTableModel(), results: results([92.4, 91.8, 93.1]) };
 
   it("view — a derived lap table — labels each row by its lap and marks the fastest Main", () => {
-    const view = tableView(value);
+    const view = tableView(value, FAST_LAP_2);
 
     expect(view.derived).toBe(true);
     expect(view.rows.map((r) => r.label)).toEqual(["Lap 1", "Lap 2", "Lap 3"]);
@@ -149,7 +165,7 @@ describe("tableView", () => {
     const grid = results([92.4, 91.8, 93.1]);
     grid[0][2] = { value: null, error: "unknown channel Fork travel" };
 
-    const view = tableView({ model: lapTableModel(), results: grid });
+    const view = tableView({ model: lapTableModel(), results: grid }, FAST_LAP_2);
 
     expect(view.rows[0].cells[2]).toEqual({ key: "c2", text: "unknown channel Fork travel", status: "error", error: "unknown channel Fork travel" });
     expect(view.rows[0].cells[0].status).toBe("settled");
@@ -157,7 +173,7 @@ describe("tableView", () => {
   });
 
   it("view — a grid shorter than the model's rows — draws the missing cells as absences", () => {
-    const view = tableView({ model: lapTableModel(), results: [] });
+    const view = tableView({ model: lapTableModel(), results: [] }, FAST_LAP_2);
 
     expect(view.rows).toHaveLength(3);
     expect(view.rows[0].cells.map((c) => c.text)).toEqual(["—", "—", "—"]);

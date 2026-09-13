@@ -1,5 +1,5 @@
 import type { CellOutput } from "../../../../ipc/workbook";
-import { isTableCellValue, tableView } from "../model/lapTable";
+import { isTableCellValue, tableView, type LapTimeLookup } from "../model/lapTable";
 
 /**
  * Renders one `table`-kind `CellOutput` (C3 §3.4) as a grid — including the
@@ -27,6 +27,13 @@ import { isTableCellValue, tableView } from "../model/lapTable";
  * that window's own evaluated result, R131 Q1, and must say so once a
  * second window is selected).
  *
+ * `lapTimeSecs` reads a derived row's recorded lap time, which is how the
+ * Main row is resolved under the reserved `"fastest"` — the engine's own
+ * source (`RowBinding.lap_time_secs`), never a `lap_time()` column, so a
+ * derived table without one is still highlighted on the row the engine
+ * actually used. Omitted on a surface that has no session detail resolved,
+ * in which case no row is highlighted rather than the wrong one.
+ *
  * `dense` is ruling R216 item 3's dense stacking: the same grid at tighter
  * row padding, nothing removed — a lap table's numbers are the content, so
  * there is no chrome here to drop.
@@ -35,13 +42,15 @@ export default function TableCell({
   output,
   windowNote = null,
   dense = false,
+  lapTimeSecs,
 }: {
   output: CellOutput;
   windowNote?: string | null;
   dense?: boolean;
+  lapTimeSecs?: LapTimeLookup;
 }) {
   const value = output.value;
-  const view = isTableCellValue(value) ? tableView(value) : null;
+  const view = isTableCellValue(value) ? tableView(value, lapTimeSecs) : null;
   const cellPadding = dense ? "px-2 py-0.5" : "px-3 py-1.5";
 
   return (

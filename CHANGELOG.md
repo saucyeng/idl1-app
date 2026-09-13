@@ -18,9 +18,10 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
   A lap chart fetches its definition once per selected window and draws one
   line per window in that window's own colour, with the windows named in the
   legend. A lap table renders as a grid: one row per lap, labelled by lap
-  number, the Main row highlighted — including the reserved `"fastest"`,
-  resolved the way the engine resolves it, skipping any lap with no recorded
-  time. Column headers carry the column's name and, for `lap_time()` and
+  number, the Main row highlighted — including the reserved `"fastest"`, read
+  from the same recorded lap times the engine compares rather than from a
+  `lap_time()` column, so a table that does not show lap time is still
+  highlighted on the row `main({col[]})` used. Column headers carry the column's name and, for `lap_time()` and
   `sector_time(i)`, its unit; a column computing something else shows no unit
   rather than a guessed one. A failed cell shows its own error and leaves
   every other number on the row standing. Dense mode tightens the grid.

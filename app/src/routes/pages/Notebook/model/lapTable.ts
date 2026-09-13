@@ -130,6 +130,20 @@ export function tableHeaders(model: TableModel): TableHeader[] {
 }
 
 /**
+ * Looks up the **recorded** lap time, in seconds, of the lap a derived row
+ * stands for — `null` when that session's laps are not resolved yet, or the
+ * row names a lap the session does not have.
+ *
+ * Injected rather than derived here because this module is pure and the lap
+ * table lives in `ipc/catalog.ts`'s `SessionDetail.laps` (C1 §6's
+ * `laps[].lap_time_ms`), which the page owns. It is the same number the
+ * engine's own `resolve_baseline_row` compares (`RowBinding.lap_time_secs`,
+ * sourced from the same recorded field), which is the point: the highlight
+ * has to land on the row the engine actually used.
+ */
+export type LapTimeLookup = (context: TableRowContext) => number | null;
+
+/**
  * The index into `model.rows` of the table's Main row — the row
  * `main({col[]})` compares against — or `null` when none is designated.
  *
@@ -141,13 +155,17 @@ export function tableHeaders(model: TableModel): TableHeader[] {
  * - `mainRowId` absent or `null` → `null`.
  * - The reserved `"fastest"` (legal only under `rowSource: "windowLaps"`;
  *   `"authored"` makes it a validation error the engine reports, so it is
- *   simply not resolved here) → the row with the smallest value in the
- *   `lap_time()` column. A row whose lap time is `NaN`, absent or errored is
- *   **skipped rather than compared**, and ties resolve to the lowest row
- *   index, so the answer never depends on iteration order.
+ *   simply not resolved here) → the row with the smallest **recorded** lap
+ *   time, read through `lapTimeSecs`. This is the engine's own source, not a
+ *   `lap_time()` column: a legal derived table need not have one, and a
+ *   table that does not show lap time still has a Main row the engine
+ *   designated and every `main({col[]})` in it already used. A lap whose
+ *   recorded time is `NaN` or unresolvable is **skipped rather than
+ *   compared**, and ties resolve to the lowest row index, so the answer
+ *   never depends on iteration order.
  * - Anything else → the row whose `id` matches, or `null`.
  */
-export function mainRowIndex(model: TableModel, results: TableCellResult[][]): number | null {
+export function mainRowIndex(model: TableModel, lapTimeSecs: LapTimeLookup): number | null {
   const mainRowId = model.mainRowId;
   if (mainRowId === null || mainRowId === undefined || mainRowId === "") return null;
 
@@ -157,17 +175,16 @@ export function mainRowIndex(model: TableModel, results: TableCellResult[][]): n
   }
 
   if (model.rowSource !== "windowLaps") return null;
-  const lapTimeColumn = model.columns.findIndex((column) => columnUnit(column.template) === "s" && /^lap_time\s*\(/.test((column.template ?? "").trim()));
-  if (lapTimeColumn === -1) return null;
 
   let best: number | null = null;
   let bestIndex: number | null = null;
   for (let r = 0; r < model.rows.length; r++) {
-    const cell = results[r]?.[lapTimeColumn];
-    const value = cell?.value;
-    if (cell === undefined || cell.error !== null || value === null || value === undefined || !Number.isFinite(value)) continue;
-    if (best === null || value < best) {
-      best = value;
+    const context = model.rows[r].context;
+    if (context === null || context === undefined) continue;
+    const seconds = lapTimeSecs(context);
+    if (seconds === null || !Number.isFinite(seconds)) continue;
+    if (best === null || seconds < best) {
+      best = seconds;
       bestIndex = r;
     }
   }
@@ -225,10 +242,17 @@ export function formatCellValue(value: number | null): string {
   return value.toFixed(3);
 }
 
-/** Builds the whole view for one evaluated table (C2 §4). */
-export function tableView(value: TableCellValue): TableView {
+/**
+ * Builds the whole view for one evaluated table (C2 §4).
+ *
+ * @param lapTimeSecs Reads a derived row's recorded lap time — see
+ *   {@link LapTimeLookup}. A lookup that answers `null` for everything (no
+ *   session detail resolved yet) simply leaves the table with no highlighted
+ *   Main row, never a wrongly highlighted one.
+ */
+export function tableView(value: TableCellValue, lapTimeSecs: LapTimeLookup = () => null): TableView {
   const { model, results } = value;
-  const mainIndex = mainRowIndex(model, results);
+  const mainIndex = mainRowIndex(model, lapTimeSecs);
 
   const rows = model.rows.map((row, r) => {
     const context = row.context;

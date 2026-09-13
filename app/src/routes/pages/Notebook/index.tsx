@@ -4154,6 +4154,27 @@ export default function NotebookPage() {
     return keys === undefined ? null : cellDecodeFraction(decodeProgress, keys);
   }
 
+  /**
+   * A derived table row's **recorded** lap time in seconds (C1 §6's
+   * `laps[].lap_time_ms`), or `null` when that session's detail is not
+   * resolved yet or it has no such lap — `model/lapTable.ts`'s
+   * `LapTimeLookup`, which is how a lap table's Main row is resolved under
+   * C2 §4's reserved `"fastest"`.
+   *
+   * Read from the resolved `SessionDetail`s this page already holds, keyed
+   * by session id: the same recorded field the engine's own
+   * `resolve_baseline_row` compares, so the highlighted row is the row
+   * `main({col[]})` actually used rather than a second guess at it.
+   */
+  const lapTimeSecsForRow = (context: { sessionId: string; lapNumber: number }): number | null => {
+    for (const detail of sessionDetailsByWindow.values()) {
+      if (detail === null || detail.session_id !== context.sessionId) continue;
+      const lap = detail.laps.find((l) => l.lap_number === context.lapNumber);
+      return lap === undefined ? null : lap.lap_time_ms / 1000;
+    }
+    return null;
+  };
+
   const cellListElement = (
     <CellList
       doc={{ frontMatterRange: null, cells: state.cells }}
@@ -4163,6 +4184,7 @@ export default function NotebookPage() {
       spanErrors={spanErrors}
       windowNote={cellListWindowNote}
       dense={dense}
+      lapTimeSecs={lapTimeSecsForRow}
       editingProseBlockId={proseEdit?.target.blockId ?? null}
       proseEditor={proseEditorElement}
       onEditProseBlock={paperActive ? undefined : openProseBlockEditor}
