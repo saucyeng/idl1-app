@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, type KeyboardEvent, type PointerEvent, type WheelEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent, type PointerEvent, type WheelEvent } from "react";
 
 import type { CursorReadout } from "../../../../ipc/cursor";
 import type { DecodedRaster, Histogram2dParams, RasterKind, RasterMeta, SpectrogramParams } from "../../../../ipc/rasters";
@@ -6,6 +6,7 @@ import type { DecodedTile } from "../../../../ipc/tiles";
 import { cursorRequestFor, type ReadoutPanelState } from "../model/cursor";
 import { CURSOR_SETTLE_MS, makeCursorReadoutDriver, type CursorReadoutDriverDeps } from "../model/cursorReadoutDriver";
 import { cursorCardRows, type CombinedChannelPayload, type CursorCardRow } from "../model/cursorCard";
+import { gapBandsPx, gapSpansFromTiles } from "../model/gapSpans";
 import { hoverAt, type HoverGeometry } from "../model/hover";
 import { isStaleSettleResult, makeSettle } from "../model/settle";
 import { chooseTier, tileRange } from "../model/tiers";
@@ -463,6 +464,15 @@ export default function ChartCell({
    *  `hover` is not `null`. */
   const [card, setCard] = useState<{ pixelX: number; rows: CursorCardRow[] } | null>(null);
   const [liveViewport, setLiveViewport] = useState<Viewport>(viewport);
+  /**
+   * Decision 60's hatched bands, in this cell's own CSS px. Memoised on
+   * the tiles and the live viewport: the span scan walks every column of
+   * every fetched tile, which is the same order of work `tileToChannelData`
+   * already does once per fetch, and must not be repeated on every
+   * pointer-move render. Recomputing on `liveViewport` (not the committed
+   * one) is what keeps the bands under the picture during a gesture.
+   */
+  const gapBands = useMemo(() => gapBandsPx(gapSpansFromTiles(tiles), liveViewport), [tiles, liveViewport]);
   const [readoutState, setReadoutState] = useState<ReadoutPanelState>(null);
   // The pending drag-rectangle selection (decision 56, wired per-preset by
   // R137/Task 5: whichever drag `inputMapPreset` binds to `"zoom-region"`
@@ -1157,6 +1167,31 @@ export default function ChartCell({
           </div>
         )}
         {card !== null && <CursorCard pixelX={card.pixelX} rows={card.rows} />}
+        {gapBands.map((band, i) => (
+          /* Decision 60: a faint diagonal hatch over every span the source
+             recorded no samples in. Host-side, like the selection rect
+             below — the bands are read off the tiles this cell already
+             fetched (`model/gapSpans.ts`), so no protocol or engine field
+             is involved, and placed against `liveViewport` so they track
+             the picture through a pan/zoom gesture rather than lagging it
+             until the settle. `aria-hidden`: the gap is also stated in the
+             cursor readout, and one hatch per gap would otherwise add a
+             meaningless node per band to the accessibility tree. */
+          <div
+            key={`gap-${i}`}
+            className="chart-cell-gap"
+            aria-hidden="true"
+            style={{
+              position: "absolute",
+              top: 0,
+              bottom: 0,
+              left: band.leftPx,
+              width: band.widthPx,
+              background: "var(--gap-hatch)",
+              pointerEvents: "none",
+            }}
+          />
+        ))}
         {selectionRectPx !== null && (
           <div
             className="chart-cell-selection"

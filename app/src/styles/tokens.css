@@ -26,6 +26,19 @@
   --info: #3b92e8; /* connectivity: BLE/WiFi/pair/connect CTA (brandInfo) */
   --focus: var(--hivis); /* new: idl0 had no keyboard focus ring */
 
+  /* Decision 60: the diagonal hatch drawn over a span with no recorded
+     samples. Built from --rule (the chart's own grid colour) so the band
+     reads as chart chrome rather than as a series, and kept faint enough
+     that the trace either side of the gap stays the loudest thing on the
+     plot -- Isaac's "a faint hatched band". */
+  --gap-hatch: repeating-linear-gradient(
+    45deg,
+    var(--rule) 0,
+    var(--rule) 1px,
+    transparent 1px,
+    transparent 5px
+  );
+
   /* ---- Chart series, cycle order (UI-8 reads these) ---- */
   --chart-1: #5ba6f0; /* azure */
   --chart-2: #35c46e; /* green */
