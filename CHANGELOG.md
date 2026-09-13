@@ -6,6 +6,16 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 
 ### Added
 
+- **Cross-language wire golden fixtures [docs] (2026-09-13, ruling R236).**
+  Every binary IPC format (`IDLH`, `IDLT`, `IDLS`, `IDLG`, `IDLR`) now has a
+  small, deterministic fixture committed under `app/src/ipc/golden/`: bytes
+  encoded by the engine's own wire encoders (`idl-rs docs wire`,
+  `core/src/wire_golden.rs`) alongside the decoded expectation a vitest per
+  format deep-equals its TS decoder's output against. CI regenerates the set
+  and fails the build on any diff, the same pattern as the generated
+  workbook and CLI references. `IDLH`'s two `axis_kind` states (`Time`,
+  `Lap`) are both exercised.
+
 - **Lap progressions draw, and lap tables have a grid [docs] (2026-09-13,
   ruling R233).** The two lap pictures are finished in the app. A per-lap
   value now reaches a `js` cell as itself: the host-variable record keys its

@@ -75,6 +75,15 @@ jobs:
           cargo run --manifest-path rust/Cargo.toml -p idl-rs-cli -- docs cli --json --out app/src/shell/cliTable.json > /dev/null
           git diff --exit-code -- docs/CLI-REFERENCE.md app/src/shell/cliTable.json
 
+      - name: Wire golden fixtures are up to date
+        # The goldens are generated from the engine's own encoders (ruling
+        # R236), so an encoder changed without regenerating them would let
+        # the committed bytes and the TS decoders' expectations silently
+        # drift out of sync with the engine that produced them.
+        run: |
+          cargo run --manifest-path rust/Cargo.toml -p idl-rs-cli -- docs wire --out app/src/ipc/golden
+          git diff --exit-code -- app/src/ipc/golden
+
       - name: cargo check app crate (app/src-tauri)
         # The Tauri app crate is compiled by nobody but `tauri dev/build`, so a
         # lane can land a type error here that every crate gate misses (R199).

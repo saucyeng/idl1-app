@@ -9,8 +9,9 @@ Runs on every push to `main` and on manual dispatch. Two jobs, both
   deps, then runs three separate `cargo test` steps (idl-rs + idl-rs-cli,
   idl-rs-tauri, idl-transport), each `--test-threads=4`. Never `--workspace`.
   It then regenerates `docs/WORKBOOK-REFERENCE.md` with
-  `idl-rs docs workbook` and runs `git diff --exit-code` over it, and
-  finishes with `cargo check -p app`.
+  `idl-rs docs workbook` and runs `git diff --exit-code` over it, does the
+  same for `app/src/ipc/golden` with `idl-rs docs wire`, and finishes with
+  `cargo check -p app`.
 - `app` — `npm ci`, `tsc --noEmit`, `vitest run` in `app/`.
 
 Concurrency: one run per ref, newer pushes cancel in-flight ones.
@@ -35,6 +36,22 @@ Linux CI run produce identical bytes.
 The same file is bundled into the app as a Tauri resource
 (`bundle.resources` in `app/src-tauri/tauri.conf.json`) and read at runtime
 by `read_workbook_reference` for the Docs panel.
+
+## The wire golden fixtures
+
+`app/src/ipc/golden/` holds one `<format>-v<n>.bin`/`.json` pair per binary
+IPC format (`IDLH`, `IDLT`, `IDLS`, `IDLG`, `IDLR`, ruling R236): a small
+fixed fixture encoded by the engine's own wire encoders
+(`core/src/wire_golden.rs`), and the decoded expectation a vitest per format
+(`app/src/ipc/*.test.ts`) deep-equals its TS decoder's output against.
+Regenerate with:
+
+    cargo run --manifest-path rust/Cargo.toml -p idl-rs-cli -- docs wire --out app/src/ipc/golden
+
+CI runs exactly that and then `git diff --exit-code`, so an encoder changed
+without regenerating the goldens fails the build instead of shipping a `.bin`
+the TS decoders were never actually tested against. Deterministic: fixed
+literal inputs, little-endian regardless of host, no RNG and no timestamps.
 
 ## `android-apk.yml`
 
