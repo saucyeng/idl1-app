@@ -13,7 +13,7 @@ idl-rs <noun> <verb> [args] [--flags]
 
 **Verbs.** `list`, `show`, `new`, `check`, `eval`, `set`, `import`, `export`, `scan`, `fold-in`, `index`, `rebuild`, `verify`, `delete`
 
-Verbs added by a later ruling: `set-start` (R229), `set-meta` (R229), `cells` (R229), `data` (R229), `detect` (R229), `laps` (R229), `stale` (R197), `workbook` (R222), `cli` (R230 item 2).
+Verbs added by a later ruling: `set-start` (R229), `set-meta` (R229), `cells` (R229), `data` (R229), `detect` (R229), `laps` (R229), `stale` (R197), `workbook` (R222), `cli` (R230 item 2), `wire` (R236).
 
 ## Uniform behaviour
 
@@ -394,4 +394,16 @@ Emit this command table as Markdown, or as JSON with --json.
 | `--json` | switch | Emit the result as JSON on stdout (schema_version 1); errors become typed JSON on stderr |
 
 Calls `commands::markdown::render_command_reference`; `--json` emits `CommandTable`.
+
+### `idl-rs docs wire`
+
+Regenerate the cross-language wire golden fixtures (ruling R236).
+
+| Flag | Value | Meaning |
+| --- | --- | --- |
+| `--out` | path | Directory to write the golden `<format>-v<n>.bin`/`.json` pairs into |
+| `--dry-run` | switch | Report what would change and write nothing |
+| `--json` | switch | Emit the result as JSON on stdout (schema_version 1); errors become typed JSON on stderr |
+
+Calls `wire_golden::build_wire_fixtures`; writes an artifact rather than a payload.
 
