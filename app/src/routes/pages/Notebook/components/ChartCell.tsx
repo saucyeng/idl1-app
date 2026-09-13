@@ -465,14 +465,25 @@ export default function ChartCell({
   const [card, setCard] = useState<{ pixelX: number; rows: CursorCardRow[] } | null>(null);
   const [liveViewport, setLiveViewport] = useState<Viewport>(viewport);
   /**
-   * Decision 60's hatched bands, in this cell's own CSS px. Memoised on
-   * the tiles and the live viewport: the span scan walks every column of
-   * every fetched tile, which is the same order of work `tileToChannelData`
-   * already does once per fetch, and must not be repeated on every
-   * pointer-move render. Recomputing on `liveViewport` (not the committed
-   * one) is what keeps the bands under the picture during a gesture.
+   * Decision 60's gap spans, in session time. Memoised on `tiles` alone:
+   * the scan walks every column of every fetched tile, which is the same
+   * order of work `tileToChannelData` already does once per fetch, and the
+   * answer does not depend on the viewport at all — a gap is a property of
+   * the data, not of what is currently on screen. Keeping it off
+   * `liveViewport` is what keeps it off the interaction path (CLAUDE.md
+   * §3): tiles change once per settle, `liveViewport` changes every
+   * pointer-move frame.
    */
-  const gapBands = useMemo(() => gapBandsPx(gapSpansFromTiles(tiles), liveViewport), [tiles, liveViewport]);
+  const gapSpans = useMemo(() => gapSpansFromTiles(tiles), [tiles]);
+  /**
+   * The same spans placed in this cell's own CSS px. This half *does*
+   * recompute per gesture frame, and must: placing the bands against
+   * `liveViewport` rather than the committed viewport is what keeps them
+   * under the picture through a pan/zoom instead of lagging until the
+   * settle. It costs one clamp and two multiplications per gap — bounded
+   * by the number of gaps on screen, not by the number of samples.
+   */
+  const gapBands = useMemo(() => gapBandsPx(gapSpans, liveViewport), [gapSpans, liveViewport]);
   const [readoutState, setReadoutState] = useState<ReadoutPanelState>(null);
   // The pending drag-rectangle selection (decision 56, wired per-preset by
   // R137/Task 5: whichever drag `inputMapPreset` binds to `"zoom-region"`

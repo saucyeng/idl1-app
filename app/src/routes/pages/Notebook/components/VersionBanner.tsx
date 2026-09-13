@@ -6,6 +6,9 @@ import {
 
 /** Props for {@link VersionBanner}. */
 export interface VersionBannerProps {
+  /** The sessions whose recorded engine version is behind the live one,
+   *  and that live version (`model/engineVersionBanner.ts`). Never `null`:
+   *  the caller renders nothing at all when there is nothing to announce. */
   banner: EngineVersionBanner;
   /** Dismisses this banner for the current selection -- Isaac: "a banner
    *  for now so it can be temporarily ignored" (decision 62). `Notebook/
@@ -40,6 +43,10 @@ export default function VersionBanner({ banner, onDismiss }: VersionBannerProps)
 
 /** Props for {@link WorkbookVersionBannerView}. */
 export interface WorkbookVersionBannerProps {
+  /** The build recorded in this workbook's front matter and the build the
+   *  reader is on (`model/engineVersionBanner.ts`). Never `null`: the
+   *  caller renders nothing at all when the two agree or nothing is
+   *  recorded. */
   banner: WorkbookVersionBanner;
   /** Dismisses this banner until the recorded or live version changes
    *  again -- decision 62's "so it can be temporarily ignored". */
