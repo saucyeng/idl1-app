@@ -12,7 +12,12 @@ Runs on every push to `main` and on manual dispatch. Two jobs, both
   `idl-rs docs workbook` and runs `git diff --exit-code` over it, does the
   same for `app/src/ipc/golden` with `idl-rs docs wire`, and finishes with
   `cargo check -p app`.
-- `app` — `npm ci`, `tsc --noEmit`, `vitest run` in `app/`.
+- `app` — `npm ci`, `tsc --noEmit`, an import-cycle scan (`madge --circular`
+  over `app/src`; `.madgerc` skips type-only imports, which are erased at
+  runtime), then `vitest run` in `app/`. The cycle scan exists because a
+  value import cycle between a component and its pure model module threw
+  "Cannot access before initialization" on every page load (2026-09-14)
+  while `tsc`, `vitest` and `vite build` all stayed green.
 
 Concurrency: one run per ref, newer pushes cancel in-flight ones.
 

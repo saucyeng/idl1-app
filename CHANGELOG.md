@@ -258,6 +258,13 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 
 ### Fixed
 
+- **Notebook failed to load: "Cannot access 'DEFAULT_JS_CELL_HEIGHT_PX' before
+  initialization" [docs] (2026-09-14).** `model/jsCellFrameHeight.ts` imported
+  the constant from `components/JsCellFrame.tsx`, which imports the model back;
+  under ES-module evaluation order the model ran first and hit the temporal
+  dead zone. The constant now lives in the pure module and the component
+  re-exports it. CI gains a runtime import-cycle scan (`docs/CI.md`).
+
 - **Host channels reached the notebook again [docs] (2026-09-13).** The
   engine began emitting IDLH version 2 on 2026-09-11 while the app's decoder
   still required version 1, so every `fetch_host_channel` response was

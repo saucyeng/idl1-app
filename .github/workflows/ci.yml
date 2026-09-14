@@ -112,6 +112,10 @@ jobs:
         working-directory: app
         run: npx tsc --noEmit
 
+      - name: Import cycles (runtime imports only; .madgerc skips type imports)
+        working-directory: app
+        run: npx --yes madge@8 --no-spinner --circular --extensions ts,tsx --ts-config tsconfig.json src
+
       - name: Unit tests
         working-directory: app
         run: npx vitest run

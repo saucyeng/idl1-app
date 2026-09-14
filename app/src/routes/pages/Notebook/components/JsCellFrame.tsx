@@ -1,24 +1,19 @@
 import { useEffect, useRef } from "react";
 
-import { resolveJsCellFrameHeightPx } from "../model/jsCellFrameHeight";
+import { DEFAULT_JS_CELL_HEIGHT_PX, resolveJsCellFrameHeightPx } from "../model/jsCellFrameHeight";
 
 /** `NoteBlock`'s own recipe (`components/brand/NoteBlock.tsx`), copied as a
  *  literal class string rather than importing that component: `NoteBlock`
  *  pulls in the shadcn `cn`/`@/lib/utils` alias chain, which the bare
  *  `vitest.config.ts` used by this module's own `jsCellFrameHeight.test.ts`
  *  (a `*.test.ts` file, no `@` alias configured there — `vite.config.ts`'s
- *  alias is dev/build-only) cannot resolve; `jsCellFrameHeight.ts` imports
- *  `DEFAULT_JS_CELL_HEIGHT_PX` from this file, so anything this file imports
- *  is on that test's own module graph. */
+ *  alias is dev/build-only) cannot resolve. */
 const NOTE_BLOCK_CLASSES = "border-l pl-3 py-1 font-mono text-sm";
 
-/**
- * Default height reserved for a plain-mount `js` cell before its first
- * `cellRendered` (`ChartCellProps.heightPx`'s doc comment gives
- * `ChartCell`'s own equivalent). No spec number is given; matches the
- * fallback height any bound cell starts at.
- */
-export const DEFAULT_JS_CELL_HEIGHT_PX = 240;
+/** The default frame height lives in the pure model module (see its doc
+ *  comment for why); re-exported here so the notebook keeps importing it
+ *  beside the component. */
+export { DEFAULT_JS_CELL_HEIGHT_PX };
 
 /** Props for {@link JsCellFrame}. */
 export interface JsCellFrameProps {

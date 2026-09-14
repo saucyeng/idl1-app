@@ -1,4 +1,17 @@
-import { DEFAULT_JS_CELL_HEIGHT_PX } from "../components/JsCellFrame";
+/**
+ * Default height reserved for a plain-mount `js` cell before its first
+ * `cellRendered` (`ChartCellProps.heightPx`'s doc comment gives
+ * `ChartCell`'s own equivalent). No spec number is given; matches the
+ * fallback height any bound cell starts at.
+ *
+ * Lives in this pure module, not in `components/JsCellFrame.tsx`: that
+ * component imports {@link resolveJsCellFrameHeightPx} from here, so the
+ * constant living there made an import cycle, and under Vite's ES-module
+ * evaluation order this file ran first and read the constant in its
+ * temporal dead zone ("Cannot access before initialization" on every page
+ * load, 2026-09-14). `JsCellFrame.tsx` re-exports it for its importers.
+ */
+export const DEFAULT_JS_CELL_HEIGHT_PX = 240;
 
 /**
  * Minimum height, in pixels, reserved for a plain-mount `js` cell's frame
