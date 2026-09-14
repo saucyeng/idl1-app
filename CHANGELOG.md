@@ -6,6 +6,24 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 
 ### Added
 
+- **Burst-seam spans on the wire, and `evaluated_with` written by core
+  [docs] (2026-09-14, ruling R237).** `fetch_seams(session_id, channel)`
+  (C3 §3.5) returns each burst-seam boundary's corrected-time extent — a
+  small JSON sibling command, chosen over a `fetch_tile` field because the
+  spans are a channel-wide property, not a per-tile one, and re-detected
+  from the verbatim `t_recorded_us` stamps
+  (`idl_rs::session::seam_correction::seam_spans`, C1 §3.3). The notebook
+  hatches a seam span the same soft way it already hatches a gap, a second
+  tone (`--seam-hatch`, `styles/tokens.css`) so the two are never mistaken
+  for each other. `save_workbook` now stamps the advisory `evaluated_with`
+  front-matter key (C2 §1, R135's `graph`-precedent, exactly like every
+  other unrecognised top-level key) with the engine build writing the
+  file, on every explicit save — the version banner (decision 62,
+  `engineVersionBanner.ts`) already read this key; nothing wrote it until
+  now. A bare semver string, matching the shipped reader and decision 62's
+  own wording, not the `{app, engine}` shape an earlier draft of this task
+  described.
+
 - **Rigid-body IMU calibration [docs] (2026-09-13, M6.3, ruling R192).**
   `idl-rs session calibrate <file> [--truth <json>]` fits the full extrinsic
   model to one held-in-the-air session: two bodies joined by a one-DoF steering

@@ -1887,6 +1887,52 @@ without a track; C2 §5.1's `trackGeometry` is `null` for such a cell.
 
 Errors: `not_found` (unknown `session_id` or `track_id`), `io`, `internal`.
 
+**`fetch_seams(session_id: string, channel: string)`**
+*Added post-sign (2026-09-14, seams lane, ruling R237).* One channel's
+burst-seam boundary spans (C1 §3.3): the correction re-spaces every burst
+onto a monotonic, uniformly-spaced axis and leaves no sentinel behind, so
+the app cannot tell where a seam fell without this command — the same gap
+this section's `fetch_tile` column-time region closes for missing samples,
+but a seam has samples on both sides, so no tile field can carry it.
+
+**A small JSON sibling command, not a `fetch_tile` field — the cheaper of
+the two shapes ruling R237 asked to choose between.** A channel's seam
+spans are the same set regardless of tier or tile index (a property of the
+channel's whole burst structure, not of any one tile's window), so a
+`fetch_tile` field would resend the same handful of pairs on every
+tier/tile/pan/zoom request. Following `fetch_raster_meta`/
+`fetch_gps_trace_meta`'s existing split (a binary per-window/per-tile
+payload beside a small JSON one fetched and cached once), the app calls
+this once per `session_id`/`channel` pair and caches the result, never per
+tile.
+
+Return:
+```ts
+interface SeamsResult {
+  /** `[t0_us, t1_us]` pairs, ascending, one per burst-seam boundary, on the
+   *  channel's corrected time axis (the same axis `fetch_tile`'s column
+   *  time region reports). Empty for a channel never burst-corrected (C1
+   *  §3.3: every non-burst source, or a burst source whose bursts were
+   *  already exactly nominal-spaced) — a true "no seams" answer, not an
+   *  error. */
+  spans: [number, number][];
+}
+```
+
+**`t0_us`/`t1_us` bound one seam**: the corrected time of the last sample
+before the boundary and of the first sample after it — re-detected by
+re-running C1 §3.3's step-1 burst detection against the channel's verbatim
+`t_recorded_us` (never the corrected stamps, whose within-burst spacing is
+now uniform and would hide the seam), then reporting each boundary's extent
+on the corrected axis
+(`idl_rs::session::seam_correction::seam_spans`).
+
+The app hatches a seam span the same soft way it already hatches a gap
+span (`GapSpan`, tile no-sample sentinel), a second tone — a seam is
+corrected data, not missing data.
+
+Errors: `not_found` (unknown `session_id` or `channel`), `io`, `internal`.
+
 ### 3.6 Rasters (L3)
 
 **`fetch_raster(session_id: string, channel: string, kind: "spectrogram" | "histogram2d", width: number, height: number, params: SpectrogramParams | Histogram2dParams)`**
