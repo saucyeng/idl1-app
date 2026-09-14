@@ -18,6 +18,7 @@ import { fetchHistogram, type HistogramResponse } from "../../../ipc/histogram";
 import { equalAspectDomain, fetchScatter, type DecodedScatter } from "../../../ipc/scatter";
 import { fetchFftV2, type DecodedFft } from "../../../ipc/rasters";
 import { fetchTile } from "../../../ipc/tiles";
+import { fetchSeams } from "../../../ipc/seams";
 import {
   createWorkbook,
   evalWorkbookV2,
@@ -4377,6 +4378,7 @@ export default function NotebookPage() {
                 sampleRateHz={channel.sampleRateHz}
                 cache={sessionRef.current.cache}
                 fetchTile={(tier, tileIndex, columnCount) => fetchTile(sid, channel.channelId, tier, tileIndex, columnCount)}
+                fetchSeams={fetchSeams}
                 onViewportSettled={(viewport, _tier, tiles) => {
                   // ChartCell has already committed its own (mounted-channel)
                   // settle-fetch by the time this fires -- paint it

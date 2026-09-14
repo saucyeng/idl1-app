@@ -39,6 +39,19 @@
     transparent 5px
   );
 
+  /* Ruling R237: the same soft hatch as --gap-hatch, a second tone, for a
+     burst-seam span (C1 §3.3) -- corrected data, not missing data, so it
+     must read as visually distinct from --gap-hatch at a glance. Built
+     from --info (a hue no chart series or status colour otherwise borrows
+     for a background band) at the same faint 1px-on-5px duty cycle. */
+  --seam-hatch: repeating-linear-gradient(
+    45deg,
+    var(--info) 0,
+    var(--info) 1px,
+    transparent 1px,
+    transparent 5px
+  );
+
   /* ---- Chart series, cycle order (UI-8 reads these) ---- */
   --chart-1: #5ba6f0; /* azure */
   --chart-2: #35c46e; /* green */

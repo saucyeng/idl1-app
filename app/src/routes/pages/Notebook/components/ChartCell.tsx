@@ -3,10 +3,12 @@ import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent, 
 import type { CursorReadout } from "../../../../ipc/cursor";
 import type { DecodedRaster, Histogram2dParams, RasterKind, RasterMeta, SpectrogramParams } from "../../../../ipc/rasters";
 import type { DecodedTile } from "../../../../ipc/tiles";
+import type { SeamsResult } from "../../../../ipc/seams";
 import { cursorRequestFor, type ReadoutPanelState } from "../model/cursor";
 import { CURSOR_SETTLE_MS, makeCursorReadoutDriver, type CursorReadoutDriverDeps } from "../model/cursorReadoutDriver";
 import { cursorCardRows, type CombinedChannelPayload, type CursorCardRow } from "../model/cursorCard";
 import { gapBandsPx, gapSpansFromTiles } from "../model/gapSpans";
+import { seamBandsPx, seamSpansFromResult, type SeamSpan } from "../model/seamSpans";
 import { hoverAt, type HoverGeometry } from "../model/hover";
 import { isStaleSettleResult, makeSettle } from "../model/settle";
 import { chooseTier, tileRange } from "../model/tiers";
@@ -171,6 +173,14 @@ export interface ChartCellProps {
    *  `ensureTiles` import nothing from `ipc/tiles.ts`; the caller supplies
    *  the real fetch bound to `sessionId`/`channelId`. */
   fetchTile: (tier: number, tileIndex: number, columnCount: number) => Promise<DecodedTile>;
+  /**
+   * Fetches this cell's burst-seam spans (C3 §3.5, ruling R237) — injected
+   * the same way as `fetchTile`, bound to `sessionId`/`channelId` by the
+   * caller. Fetched once per `sessionId`/`channelId` pair (the spans are a
+   * property of the whole channel, not of the current viewport or tier),
+   * never re-fetched on pan/zoom.
+   */
+  fetchSeams: (sessionId: string, channel: string) => Promise<SeamsResult>;
   /**
    * Called once a gesture settle's fetch resolves, with the newly committed
    * viewport, the tier it was fetched at, and the tiles now covering that
@@ -435,6 +445,7 @@ export default function ChartCell({
   sampleRateHz,
   cache,
   fetchTile,
+  fetchSeams,
   onViewportSettled,
   raster,
   fetchCursorReadout,
@@ -484,6 +495,35 @@ export default function ChartCell({
    * by the number of gaps on screen, not by the number of samples.
    */
   const gapBands = useMemo(() => gapBandsPx(gapSpans, liveViewport), [gapSpans, liveViewport]);
+  /**
+   * Ruling R237's burst-seam spans, fetched once per `sessionId`/
+   * `channelId` pair — unlike `tiles`, these are not viewport-dependent at
+   * all (a seam is a property of the channel's whole burst structure, C1
+   * §3.3), so this never re-fetches on pan/zoom or even on a tier change.
+   * `null` while the fetch is in flight or for a fresh channel; a resolved
+   * empty array is the common case (no burst correction on this channel).
+   */
+  const [seamSpans, setSeamSpans] = useState<SeamSpan[] | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    setSeamSpans(null);
+    fetchSeams(sessionId, channelId)
+      .then((result) => {
+        if (!cancelled) setSeamSpans(seamSpansFromResult(result));
+      })
+      .catch(() => {
+        // A failed seam fetch is not fatal to the chart (unlike a tile
+        // fetch) -- it only means no hatching, never a broken plot.
+        if (!cancelled) setSeamSpans([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [fetchSeams, sessionId, channelId]);
+  /** Same clip/place split as `gapBands`: cheap per-gesture-frame work,
+   *  memoised separately from the fetch above so a pan/zoom frame never
+   *  re-fetches. */
+  const seamBands = useMemo(() => seamBandsPx(seamSpans ?? [], liveViewport), [seamSpans, liveViewport]);
   const [readoutState, setReadoutState] = useState<ReadoutPanelState>(null);
   // The pending drag-rectangle selection (decision 56, wired per-preset by
   // R137/Task 5: whichever drag `inputMapPreset` binds to `"zoom-region"`
@@ -1199,6 +1239,27 @@ export default function ChartCell({
               left: band.leftPx,
               width: band.widthPx,
               background: "var(--gap-hatch)",
+              pointerEvents: "none",
+            }}
+          />
+        ))}
+        {seamBands.map((band, i) => (
+          /* Ruling R237: the same soft hatch as the gap band above, a
+             second tone (`--seam-hatch`) -- a seam is corrected data, not
+             missing data (C1 §3.3), so it must read as visually distinct
+             from a gap at a glance. `aria-hidden` for the same reason the
+             gap band is. */
+          <div
+            key={`seam-${i}`}
+            className="chart-cell-seam"
+            aria-hidden="true"
+            style={{
+              position: "absolute",
+              top: 0,
+              bottom: 0,
+              left: band.leftPx,
+              width: band.widthPx,
+              background: "var(--seam-hatch)",
               pointerEvents: "none",
             }}
           />
