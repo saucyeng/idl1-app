@@ -503,7 +503,7 @@
           "repeatable": false
         }
       ],
-      "help": "Fit the rigid-body IMU calibration to a held-in-the-air session (ruling M6.3 brief)",
+      "help": "Fit the rigid-body IMU calibration to a held-in-the-air session (ruling R238)",
       "id": "session.calibrate",
       "json_shape": "CalibrationReport",
       "noun": "session",
@@ -1499,7 +1499,7 @@
       "verb": "synth"
     },
     {
-      "ruling": "M6.3 brief",
+      "ruling": "R238",
       "verb": "calibrate"
     }
   ]

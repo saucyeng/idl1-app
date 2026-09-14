@@ -13,7 +13,7 @@ idl-rs <noun> <verb> [args] [--flags]
 
 **Verbs.** `list`, `show`, `new`, `check`, `eval`, `set`, `import`, `export`, `scan`, `fold-in`, `index`, `rebuild`, `verify`, `delete`
 
-Verbs added by a later ruling: `set-start` (R229), `set-meta` (R229), `cells` (R229), `data` (R229), `detect` (R229), `laps` (R229), `stale` (R197), `workbook` (R222), `cli` (R230 item 2), `wire` (R236), `synth` (R187), `calibrate` (M6.3 brief).
+Verbs added by a later ruling: `set-start` (R229), `set-meta` (R229), `cells` (R229), `data` (R229), `detect` (R229), `laps` (R229), `stale` (R197), `workbook` (R222), `cli` (R230 item 2), `wire` (R236), `synth` (R187), `calibrate` (R238).
 
 ## Uniform behaviour
 
@@ -148,7 +148,7 @@ Calls `synth::generate`; `--json` emits `SynthReport`.
 
 ### `idl-rs session calibrate <file>`
 
-Fit the rigid-body IMU calibration to a held-in-the-air session (ruling M6.3 brief).
+Fit the rigid-body IMU calibration to a held-in-the-air session (ruling R238).
 
 | Argument | Type | Required | Meaning |
 | --- | --- | --- | --- |
