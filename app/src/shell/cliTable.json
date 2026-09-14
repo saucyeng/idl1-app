@@ -435,6 +435,17 @@
           "repeatable": false
         },
         {
+          "choices": [
+            "loop",
+            "calibration"
+          ],
+          "default": "loop",
+          "help": "Motion to simulate: `loop` rides a circuit, `calibration` is the two-body rigid-body manoeuvre",
+          "kind": "choice",
+          "long": "protocol",
+          "repeatable": false
+        },
+        {
           "choices": [],
           "default": null,
           "help": "Report what would change and write nothing",
@@ -460,6 +471,47 @@
       "usage": "session synth",
       "verb": "synth",
       "writer": true
+    },
+    {
+      "args": [
+        {
+          "choices": [],
+          "help": "`.idl0` log of the calibration manoeuvre to fit",
+          "kind": "path",
+          "name": "file",
+          "repeatable": false,
+          "required": true
+        }
+      ],
+      "core_fn": "calibration::rigid::calibrate",
+      "data_dir": false,
+      "flags": [
+        {
+          "choices": [],
+          "default": null,
+          "help": "Ground-truth JSON from `session synth`; adds the error against it to the report",
+          "kind": "path",
+          "long": "truth",
+          "repeatable": false
+        },
+        {
+          "choices": [],
+          "default": null,
+          "help": "Emit the result as JSON on stdout (schema_version 1); errors become typed JSON on stderr",
+          "kind": null,
+          "long": "json",
+          "repeatable": false
+        }
+      ],
+      "help": "Fit the rigid-body IMU calibration to a held-in-the-air session (ruling M6.3 brief)",
+      "id": "session.calibrate",
+      "json_shape": "CalibrationReport",
+      "noun": "session",
+      "status": "current",
+      "tier": "rare",
+      "usage": "session calibrate <file>",
+      "verb": "calibrate",
+      "writer": false
     },
     {
       "args": [
@@ -1445,6 +1497,10 @@
     {
       "ruling": "R187",
       "verb": "synth"
+    },
+    {
+      "ruling": "M6.3 brief",
+      "verb": "calibrate"
     }
   ]
 }
