@@ -148,8 +148,18 @@ body,
    * hook, so one selector list covers `button.tsx`, `input.tsx`,
    * `select.tsx`, `toggle-group.tsx` and any hand-rolled sibling. Checkbox,
    * radio and colour inputs are excluded: they are square by nature and a
-   * forced 22 px height would stretch them. */
-  .idl-dense button,
+   * forced 22 px height would stretch them.
+   *
+   * `.ribbon-big` is excluded for the reason this comment's last paragraph
+   * offers as the escape hatch: R225's ribbon buttons are 44 px
+   * icon-over-label shapes, not control boxes, and the scope was written
+   * before they existed. Squashed to `--nb-control-h` they still lay their
+   * icon over their label — 28 px of content in a 22 px box, centred, so
+   * the label's lower half was clipped by the ribbon row's own
+   * `overflow-hidden` (found by measurement, 2026-09-20). The opt-out is
+   * one class on `RibbonButton.tsx`'s `BIG_BASE`, which is also where the
+   * 44 px lives; naming the height twice is what would drift. */
+  .idl-dense button:not(.ribbon-big),
   .idl-dense [data-slot="select-trigger"],
   .idl-dense [data-slot="toggle-group-item"],
   .idl-dense input:not([type="checkbox"]):not([type="radio"]):not([type="color"]):not([type="range"]),

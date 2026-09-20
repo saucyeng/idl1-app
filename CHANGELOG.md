@@ -353,6 +353,19 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 
 ### Fixed
 
+- **The ribbon's big buttons are 44 px again, so their labels are not
+  clipped [no-docs] (2026-09-20).** `styles/index.css`'s Notebook density
+  scope forces every `button` inside `.idl-dense` to `--nb-control-h`
+  (22 px), and that rule predates R225's ribbon, whose big buttons are
+  44 px icon-over-label shapes rather than control boxes. Same cascade
+  layer and higher specificity meant it won over `h-11`, so Notebook,
+  Maths, Code, Open, Save and Import were drawn in a 22 px box holding
+  28 px of content, centred — and the lower half of every label was cut
+  off by the 48 px ribbon row's own `overflow-hidden` (measured in the
+  running app, 2026-09-20: `getComputedStyle(button).height === "22px"`).
+  The buttons now carry `ribbon-big`, the opt-out that scope's own comment
+  offers, and the 44 px stays named once, in `RibbonButton.tsx`.
+
 - **IMU row time `t` is the recorded stamp again, not a uniform grid
   [no-docs] (2026-09-19, P0-1).** `ImuGridPlan::reconcile` derived every IMU row's `t`
   as `t0 + slot × effective_period_us`, so an IMU whose true cadence drifted

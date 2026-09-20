@@ -98,9 +98,17 @@ export function ribbonIcon(name: string): LucideIcon | undefined {
 /** The shared skin of both big shapes: the focus ring, the hover and
  *  pressed grounds, and the disabled state. Written once here because the
  *  split button's two halves must be indistinguishable from a plain big
- *  button's single surface. */
+ *  button's single surface.
+ *
+ *  `ribbon-big` carries no styling of its own — it is the opt-out
+ *  `styles/index.css`'s Notebook density scope offers ("a call site that
+ *  genuinely needs a different size can still say so"). Without it,
+ *  `.idl-dense button`'s 22 px control height wins over `h-11` on equal
+ *  layer and higher specificity, and a 44 px icon-over-label button is
+ *  squashed to 22 px with its label clipped by the ribbon row's
+ *  `overflow-hidden` (2026-09-20: measured at 22 px against a 48 px row). */
 const BIG_BASE =
-  "flex h-11 shrink-0 flex-col items-center justify-center gap-px rounded-[var(--radius)] px-[var(--nb-pad)] " +
+  "ribbon-big flex h-11 shrink-0 flex-col items-center justify-center gap-px rounded-[var(--radius)] px-[var(--nb-pad)] " +
   "text-fg transition-colors outline-none hover:bg-control focus-visible:outline focus-visible:outline-1 " +
   "focus-visible:outline-offset-1 focus-visible:outline-focus disabled:pointer-events-none disabled:opacity-50";
 
