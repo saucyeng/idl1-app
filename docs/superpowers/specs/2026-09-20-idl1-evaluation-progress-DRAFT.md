@@ -119,28 +119,30 @@ fade, not the state.
 
 Evaluated top-down, first match wins:
 
-1. `blocked` — an upstream cell is in `error`, or names a channel no
-   selected session carries. Outranks everything because a blocked cell's
-   own "queued" is a lie: it is never going to run.
-2. `error` — this cell's own failure.
-3. `stale` — there is a previous result on screen and it predates the latest
-   edit (decision 59, unchanged: `stale` outranks `error` for a cell that has
-   a result and is re-running, so a recomputing cell reports the re-run).
+1. `blocked` — an upstream cell is in `error`. Outranks everything because a
+   blocked cell's own "queued" is a lie: it is never going to run.
+2. `stale` — there is a previous result on screen and it predates the latest
+   edit. Decision 59, unchanged, including that `stale` outranks `error`: a
+   failed cell that is re-running reports the re-run, not the superseded
+   failure. It also outranks `fetching`, so a cell keeping a greyed previous
+   result does not flicker between two waiting shapes mid-decode.
+3. `error` — this cell's own failure. Above `fetching` so a ring can never
+   hide a cross.
 4. `fetching` — this cell has at least one channel with a live decode
-   (`cellDecodeFraction` non-`null`). Outranks `evaluating` because it is the
-   more specific and the only one with a real fraction.
-5. `evaluating` — a round trip is in flight and this cell has no current
-   result.
+   (`cellDecodeFraction` non-`null`). The common case for a chart, and the
+   one with a real fraction: the engine returns in milliseconds and the
+   channel decode is what takes twenty seconds (R221's own measurement).
+5. `evaluating` — a round trip is in flight and this cell has no result.
 6. `rendering` — a `js` cell whose `CellOutput` has landed but whose sandbox
    has not reported `cellRendered`.
-7. `queued` — this cell will run, nothing is out yet.
-8. `idle` — no window selected.
+7. `idle` — no window is selected and this cell has no result.
+8. `queued` — this cell has no result and nothing is out yet.
 9. `done`.
 
-Order 3-before-4 is deliberate: a cell keeping a greyed previous result
-stays `stale` whatever its channels are doing, so the picture does not
-flicker between two waiting shapes mid-decode (decision 59's existing
-argument, preserved).
+With the three new inputs at their resting values (`blockedBy: null`,
+`decodeFraction: null`, `awaitingRender: false`, `hasSelection: true`) this
+reduces exactly to today's five-state function, so no existing behaviour
+changes except by the signals this ruling adds.
 
 ### 2.3 The blocked derivation
 

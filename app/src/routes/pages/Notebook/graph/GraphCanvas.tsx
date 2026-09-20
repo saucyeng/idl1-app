@@ -26,7 +26,7 @@ import type { SessionDetail } from "../../../../ipc/catalog";
 import type { CellOutput, UnitLabel, Window as SelectedWindow } from "../../../../ipc/workbook";
 import { computeAutoLayoutPositions } from "../model/graphAutoLayout";
 import { graphViewportAction, isTextEntry } from "../model/graphViewportKeys";
-import { buildGraphModel, type GraphNode } from "../model/graphModel";
+import { buildGraphModel, type GraphModel, type GraphNode } from "../model/graphModel";
 import { EMPTY_GRAPH_LAYOUT, readGraphLayout } from "../model/graphLayout";
 import { computeNodeStatuses } from "../model/graphStatus";
 import { scanMathExpr, type MathExprCall } from "../model/mathExpr";
@@ -88,6 +88,16 @@ export interface GraphCanvasProps {
    *  window this is (typically the primary selection or `NO_WINDOW_KEY`'s
    *  result). `[]` before any evaluation has landed. */
   outputs: CellOutput[];
+  /**
+   * The graph this document describes, when the caller has already built
+   * it (ruling R250: `Notebook/index.tsx` needs the same model to decide
+   * which cells are blocked, and one build means the card and the cell
+   * frame cannot disagree about which branch is dead).
+   *
+   * `undefined` falls back to building it here from `markdown`/`outputs`,
+   * which is what every caller did before that ruling.
+   */
+  model?: GraphModel;
   /** The current selection, in order — `computeNodeStatuses`'s denominator
    *  (ruling R141 Q2). */
   selectedWindows: SelectedWindow[];
@@ -184,7 +194,7 @@ export default function GraphCanvas(props: GraphCanvasProps) {
   );
 }
 
-function GraphCanvasInner({ markdown, outputs, selectedWindows, windows, sessionDetails, onCommit, onSelectCell, colourCodeNodes, selectedCellId }: GraphCanvasProps) {
+function GraphCanvasInner({ markdown, outputs, model: modelProp, selectedWindows, windows, sessionDetails, onCommit, onSelectCell, colourCodeNodes, selectedCellId }: GraphCanvasProps) {
   // Task 5's own chart-type picker (decision 83, "idl0 pictograms carry
   // over") replaces the old fixed-"lineY" chart button — `chartType` now
   // comes from `NodeCard.tsx`'s `ChartTypePicker`, one of
@@ -232,7 +242,7 @@ function GraphCanvasInner({ markdown, outputs, selectedWindows, windows, session
   // instances of the same handle.
   const reactFlow = useReactFlow();
 
-  const model = useMemo(() => buildGraphModel(markdown, outputs), [markdown, outputs]);
+  const model = useMemo(() => modelProp ?? buildGraphModel(markdown, outputs), [modelProp, markdown, outputs]);
 
   // R214 item 2: a cell's display name is its `# label:` (C2 §3.7.3),
   // falling back to "Cell N" by document order -- never the bare hex id,
