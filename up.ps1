@@ -49,7 +49,7 @@ if (-not $NoWait) {
     # leftover shells) and every "out of memory" that day was this (R206).
     $os = Get-CimInstance Win32_OperatingSystem
     $freeCommitGB = [math]::Round($os.FreeVirtualMemory/1MB, 1)
-    if ($freeCommitGB -lt 4) {
+    if ($freeCommitGB -lt 3) {
         Write-Host "== only $freeCommitGB GB of memory commit headroom; a build will likely fail."
         Write-Host "   Close or restart the heavy processes below (or reboot), then rerun:"
         Get-Process | Group-Object ProcessName | ForEach-Object { [pscustomobject]@{ name=$_.Name; n=$_.Count; MB=[math]::Round(($_.Group | Measure-Object PrivateMemorySize64 -Sum).Sum/1MB) } } | Sort-Object MB -Descending | Select-Object -First 8 | Format-Table -AutoSize | Out-String | Write-Host
