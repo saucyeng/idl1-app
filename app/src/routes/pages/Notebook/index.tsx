@@ -584,8 +584,10 @@ export default function NotebookPage() {
    *  The group reports the full selection rather than the one item that
    *  changed (`type="multiple"`), so this replaced the per-id
    *  `toggleNotebookColumn` call site; that function stays the model's
-   *  single-id entry point for a future keyboard/menu binding. The
-   *  never-all-off guard lives in `model/notebookColumns.ts` either way. */
+   *  single-id entry point for a future keyboard/menu binding. Ruling
+   *  R244 removed the never-all-off guard both of them used to carry: an
+   *  empty selection is now a real state, and `shell/DockFrame.tsx`
+   *  answers it with the Welcome panel. */
   function applyColumnToggleValue(ids: string[]): void {
     setColumnVisibility(() => {
       const next = notebookColumnVisibilityFrom(ids);

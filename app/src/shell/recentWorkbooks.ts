@@ -19,10 +19,16 @@
  * per-machine *shell layout* state" is about the layout, and a list that
  * grows on every open would rewrite the layout document every time.
  *
- * Pure apart from the two storage functions at the bottom, which never
- * throw — a WebView that refuses storage yields an empty list and a
- * dropped write, because a remembered list is a convenience.
+ * The decisions are pure ({@link sanitizeRecentWorkbooks},
+ * {@link withRecentWorkbook}); the storage functions never throw — a
+ * WebView that refuses storage yields an empty list and a dropped write,
+ * because a remembered list is a convenience. The publish/subscribe store
+ * at the bottom is `outputSlot.ts`'s and `dataRootPath.ts`'s shape, for
+ * the same reason: the page that opens a workbook and the panel that
+ * lists recent ones are far apart in the tree.
  */
+
+import { useSyncExternalStore } from "react";
 
 /** One entry: which workbook, what to call it, and when it was last
  *  opened. */
@@ -138,9 +144,58 @@ export function writeRecentWorkbooks(entries: readonly RecentWorkbook[]): void {
   }
 }
 
-/** Records that `opened` was just opened: reads, moves it to the front,
- *  writes back. The one call site is the Notebook page's workbook-select
- *  handler. */
+/**
+ * The live list, cached so `useSyncExternalStore` has a stable reference
+ * to return, and so the Welcome panel is not reading `localStorage` on
+ * every render. `null` until the first read; `noteWorkbookOpened` replaces
+ * it and notifies.
+ */
+let snapshot: RecentWorkbook[] | null = null;
+
+const listeners = new Set<() => void>();
+
+/** The current list, newest first. Stable by reference between changes —
+ *  which is what {@link useRecentWorkbooks} requires and what a bare
+ *  {@link readRecentWorkbooks} (a fresh array per call) cannot give. */
+export function getRecentWorkbooks(): readonly RecentWorkbook[] {
+  snapshot ??= readRecentWorkbooks();
+  return snapshot;
+}
+
+/** Subscribes `handler` to changes of the list. Returns an unsubscribe
+ *  function. */
+export function subscribeRecentWorkbooks(handler: () => void): () => void {
+  listeners.add(handler);
+  return () => {
+    listeners.delete(handler);
+  };
+}
+
+/** React hook: the recent list, re-rendering whenever a workbook is
+ *  opened.
+ *
+ *  A subscription rather than a read on mount, because the Welcome panel
+ *  is not always replaced by what its rows do: `Help ▸ Welcome` opens the
+ *  same panel in a dialog that deliberately **stays open** when a row is
+ *  clicked (`WelcomeDialog.tsx`), so a workbook created from it would
+ *  otherwise never appear in the list beside the button that created it
+ *  (reviewer, 2026-09-20). */
+export function useRecentWorkbooks(): readonly RecentWorkbook[] {
+  return useSyncExternalStore(subscribeRecentWorkbooks, getRecentWorkbooks, getRecentWorkbooks);
+}
+
+/** Records that `opened` was just opened: moves it to the front, writes
+ *  back and republishes. The one call site is the Notebook page's
+ *  workbook-select handler. */
 export function noteWorkbookOpened(opened: RecentWorkbook): void {
-  writeRecentWorkbooks(withRecentWorkbook(readRecentWorkbooks(), opened));
+  snapshot = withRecentWorkbook(getRecentWorkbooks(), opened);
+  writeRecentWorkbooks(snapshot);
+  for (const listener of listeners) listener();
+}
+
+/** Drops the cached snapshot so the next read goes back to storage. For
+ *  tests, which swap `window.localStorage` between cases — nothing in the
+ *  app calls it. */
+export function resetRecentWorkbooksCache(): void {
+  snapshot = null;
 }

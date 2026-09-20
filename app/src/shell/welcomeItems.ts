@@ -31,7 +31,7 @@
  * and busy state, and the panel embeds that component directly.
  */
 
-import { COMMAND_IDS } from "./commandTiers";
+import { COMMAND_IDS, type CommandId } from "./commandTiers";
 import type { RecentWorkbook } from "./recentWorkbooks";
 
 /** The sections R244 names, in the order the panel stacks them. */
@@ -50,9 +50,10 @@ export interface WelcomeItem {
    *  kept a string here so this module stays free of `react`, exactly as
    *  `commandTiers.ts` keeps its own icons. */
   icon: string;
-  /** The `commandRegistry.ts` id this row runs. Always an id that already
-   *  exists (see the module doc). */
-  command: string;
+  /** The `commandRegistry.ts` id this row runs. Typed as {@link CommandId}
+   *  rather than `string` so R244's "an id that already exists" is a
+   *  compile error to break, not only a test failure. */
+  command: CommandId;
   /** False when nothing has registered {@link command} right now; the row
    *  renders disabled with its reason as a tooltip. */
   enabled: boolean;

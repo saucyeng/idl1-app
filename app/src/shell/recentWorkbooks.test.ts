@@ -2,8 +2,12 @@ import { afterEach, describe, expect, it } from "vitest";
 
 import {
   RECENT_WORKBOOK_LIMIT,
+  getRecentWorkbooks,
+  noteWorkbookOpened,
   readRecentWorkbooks,
+  resetRecentWorkbooksCache,
   sanitizeRecentWorkbooks,
+  subscribeRecentWorkbooks,
   withRecentWorkbook,
   writeRecentWorkbooks,
   type RecentWorkbook,
@@ -36,6 +40,9 @@ function entry(overrides: Partial<RecentWorkbook> = {}): RecentWorkbook {
 
 afterEach(() => {
   delete (globalThis as { window?: unknown }).window;
+  // The store caches its snapshot for `useSyncExternalStore`'s sake, and
+  // every case here swaps `window.localStorage` under it.
+  resetRecentWorkbooksCache();
 });
 
 describe("withRecentWorkbook", () => {
@@ -154,5 +161,63 @@ describe("readRecentWorkbooks / writeRecentWorkbooks", () => {
 
   it("readRecentWorkbooks — no window at all — an empty list, no throw", () => {
     expect(readRecentWorkbooks()).toEqual([]);
+  });
+});
+
+describe("the live store", () => {
+  it("getRecentWorkbooks — called twice with nothing opened between — the same array by reference", () => {
+    (globalThis as { window?: unknown }).window = { localStorage: fakeLocalStorage() };
+    resetRecentWorkbooksCache();
+
+    const first = getRecentWorkbooks();
+    const second = getRecentWorkbooks();
+
+    // `useSyncExternalStore` re-renders for ever if the snapshot is a
+    // fresh array each call, which a bare `readRecentWorkbooks` would be.
+    expect(second).toBe(first);
+  });
+
+  it("noteWorkbookOpened — a workbook opened — the snapshot changes and every subscriber is told", () => {
+    (globalThis as { window?: unknown }).window = { localStorage: fakeLocalStorage() };
+    resetRecentWorkbooksCache();
+    let notifications = 0;
+    const unsubscribe = subscribeRecentWorkbooks(() => {
+      notifications += 1;
+    });
+
+    noteWorkbookOpened(entry({ id: "wb-9", name: "Cadwell" }));
+
+    expect(notifications).toBe(1);
+    expect(getRecentWorkbooks().map((item) => item.id)).toEqual(["wb-9"]);
+    unsubscribe();
+  });
+
+  it("noteWorkbookOpened — after unsubscribing — the former subscriber is not called", () => {
+    (globalThis as { window?: unknown }).window = { localStorage: fakeLocalStorage() };
+    resetRecentWorkbooksCache();
+    let notifications = 0;
+    subscribeRecentWorkbooks(() => {
+      notifications += 1;
+    })();
+
+    noteWorkbookOpened(entry());
+
+    expect(notifications).toBe(0);
+  });
+
+  it("noteWorkbookOpened — storage refused — the in-memory snapshot still updates", () => {
+    (globalThis as { window?: unknown }).window = {
+      localStorage: {
+        ...fakeLocalStorage(),
+        setItem: () => {
+          throw new Error("QuotaExceededError");
+        },
+      },
+    };
+    resetRecentWorkbooksCache();
+
+    noteWorkbookOpened(entry({ id: "wb-3" }));
+
+    expect(getRecentWorkbooks().map((item) => item.id)).toEqual(["wb-3"]);
   });
 });

@@ -5,7 +5,7 @@ import { cn } from "@/lib/utils";
 import AskAnAgentButton from "./AskAnAgentButton";
 import { runCommand, useRegisteredCommands } from "./commandRegistry";
 import { useDataRootPath } from "./dataRootPath";
-import { readRecentWorkbooks } from "./recentWorkbooks";
+import { useRecentWorkbooks } from "./recentWorkbooks";
 import { welcomeContent, type WelcomeItem } from "./welcomeItems";
 
 /**
@@ -82,12 +82,11 @@ export default function WelcomePanel({ className }: WelcomePanelProps) {
   const registered = useRegisteredCommands();
   const dataRootPath = useDataRootPath();
 
-  // Read once per registry change rather than subscribed: the list only
-  // grows when a workbook is opened, and opening one replaces this panel
-  // with the notebook it opened. `registered` is in the dependency array
-  // because it changes when the Notebook page (re)registers its commands,
-  // which is the moment a freshly opened workbook would have landed.
-  const recent = useMemo(() => readRecentWorkbooks(), [registered]);
+  // Subscribed, not read on mount: `Help ▸ Welcome` opens this panel in a
+  // dialog that stays open when a row is clicked, so a workbook created
+  // from that dialog has to appear in the list beside the button that
+  // created it (reviewer, 2026-09-20).
+  const recent = useRecentWorkbooks();
 
   // No missing-file check is issued from here: `exists` would be a new
   // filesystem round trip per row on every render of an idle panel, and
