@@ -29,6 +29,7 @@
     "codemirror": "^6.0.2",
     "d3": "^7.9.0",
     "dockview": "8.3.1",
+    "dockview-react": "8.3.1",
     "htl": "^1.0.0",
     "lucide-react": "1.41.0",
     "radix-ui": "1.6.7",
