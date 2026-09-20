@@ -161,7 +161,10 @@ import {
 } from "./model/jsCellBinding";
 import { extractChannelCalls, extractSpectrumCalls } from "./model/jsCellCalls";
 import { jsCellNote, primaryWindowNote } from "./model/jsCellNote";
-import { blockedCells, blockedNodes, failingNodes } from "./model/blockedCells";
+import { blockedCells, blockedEdgeIds, blockedNodes, failingNodes } from "./model/blockedCells";
+import { evalSummaryOf } from "./model/evalSummary";
+import { computeNodeEvalViews } from "./model/graphEvalView";
+import { clearEvalSummary, publishEvalSummary, useOpenMathsRequests } from "../../../shell/evalStatus";
 import { buildGraphModel, definitionCellIds } from "./model/graphModel";
 import { computeNodeStatuses } from "./model/graphStatus";
 import { fixTargetCellId } from "./model/fixTarget";
@@ -4265,6 +4268,97 @@ export default function NotebookPage() {
     return keys === undefined ? null : soleDecodingChannel(decodeProgress, keys);
   }
 
+  /**
+   * Every cell's `CellStatus`, computed once per change rather than once
+   * per reader (ruling R250).
+   *
+   * Memoised for two reasons. It is read three times — by the cell frames,
+   * by the maths map's per-node view, and by the status-bar summary — and a
+   * fresh `Map` on every render would defeat `GraphCanvas`'s own
+   * memoisation of its node array, which this page's existing
+   * `graphOutputs` comment already warns about. This page re-renders on
+   * every cursor tick; none of the inputs below changes on one.
+   */
+  const cellStatusById = useMemo(() => {
+    const byCell = new Map<string, CellStatus>();
+    for (const cell of state.cells) {
+      if (cell.id === null) continue;
+      byCell.set(cell.id, cellStatusFor(cell));
+    }
+    return byCell;
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- `cellStatusFor`
+    // is a plain function declaration re-created every render; its own
+    // inputs are the dependencies listed here.
+  }, [
+    state.cells,
+    primaryOutputs,
+    primaryEval,
+    state.evalRequestGeneration,
+    evalInFlight,
+    decodeProgress,
+    decodeKeysByCell,
+    blockedByCell,
+    cellHeights,
+    windows.length,
+    cellErrors,
+    fftErrors,
+    histogramErrors,
+    scatterErrors,
+    rasterErrors,
+    gpsErrors,
+    lapErrors,
+  ]);
+
+  /** What each node on the maths map is doing (ruling R250,
+   *  `model/graphEvalView.ts`) — the graph's own per-window statuses, the
+   *  blocked subgraph, and each node's owning cell's live state. */
+  const graphEvalViews = useMemo(
+    () =>
+      computeNodeEvalViews({
+        model: graphModel,
+        statuses: graphNodeStatuses,
+        blocked: blockedNodeMap.blocked,
+        failing: new Map(blockedNodeMap.failing.map((f) => [f.nodeId, f])),
+        cellStatusOf: (cellId) => cellStatusById.get(cellId) ?? null,
+        cellFractionOf: (cellId) => {
+          const keys = decodeKeysByCell.get(cellId);
+          return keys === undefined ? null : cellDecodeFraction(decodeProgress, keys);
+        },
+      }),
+    [graphModel, graphNodeStatuses, blockedNodeMap, cellStatusById, decodeKeysByCell, decodeProgress]
+  );
+
+  /** The edges the map dashes — from each failing node down through
+   *  everything it blocks. */
+  const blockedEdges = useMemo(() => blockedEdgeIds(graphModel.edges, blockedNodeMap.blocked), [graphModel.edges, blockedNodeMap]);
+
+  /** The status bar's one-line summary (ruling R250). Published rather than
+   *  rendered here: the bar belongs to the shell, which must not import
+   *  from a page (`shell/evalStatus.ts`, the `shell/memoryBudget.ts`
+   *  pattern). The store drops a publish whose counts are unchanged, so a
+   *  pan or a cursor tick re-renders the bar not at all. */
+  const evalSummary = useMemo(() => evalSummaryOf(cellStatusById.values()), [cellStatusById]);
+  useEffect(() => {
+    publishEvalSummary(evalSummary);
+  }, [evalSummary]);
+  useEffect(() => () => clearEvalSummary(), []);
+
+  /** The status item's "open the maths map" click. Ignored on its first
+   *  observed value — the store's counter starts above zero once any
+   *  previous notebook has raised a request, and opening a panel because a
+   *  workbook was opened would be the map appearing by itself. */
+  const openMathsRequests = useOpenMathsRequests();
+  const seenOpenMathsRef = useRef(openMathsRequests);
+  useEffect(() => {
+    if (openMathsRequests === seenOpenMathsRef.current) return;
+    seenOpenMathsRef.current = openMathsRequests;
+    if (columnVisibility.graph) return;
+    applyColumnToggleValue([...visibleNotebookColumnIds(columnVisibility, notebookColumnAvailability), "graph"]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- `applyColumnToggleValue`
+    // and `notebookColumnAvailability` are re-created every render; the
+    // request counter is the only signal this effect reacts to.
+  }, [openMathsRequests]);
+
   /** The open prose mini-editor, or `null` (ruling R226 item 1). Built
    *  here rather than in `CellList` because the edit session, the owning
    *  cell's R210 status and the `editCell` write path all live in this
@@ -4635,7 +4729,7 @@ export default function NotebookPage() {
               onSelect={() => {
                 if (cell.id !== null) setSelectedCellId(cell.id);
               }}
-              status={cellStatusFor(cell)}
+              status={(cell.id !== null ? cellStatusById.get(cell.id) : undefined) ?? cellStatusFor(cell)}
               /* Ruling R221 item 1(a): while this cell's own channels are
                  being decoded, its status glyph is a determinate ring at
                  this fraction rather than an indeterminate spinner. */
@@ -4705,6 +4799,8 @@ export default function NotebookPage() {
         markdown={state.markdown}
         outputs={graphOutputs}
         model={graphModel}
+        evalViews={graphEvalViews}
+        blockedEdges={blockedEdges}
         selectedWindows={graphSelectedWindows}
         windows={state.windows}
         sessionDetails={graphSessionDetails}

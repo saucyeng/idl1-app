@@ -29,6 +29,7 @@ import { graphViewportAction, isTextEntry } from "../model/graphViewportKeys";
 import { buildGraphModel, type GraphModel, type GraphNode } from "../model/graphModel";
 import { EMPTY_GRAPH_LAYOUT, readGraphLayout } from "../model/graphLayout";
 import { computeNodeStatuses } from "../model/graphStatus";
+import type { NodeEvalView } from "../model/graphEvalView";
 import { scanMathExpr, type MathExprCall } from "../model/mathExpr";
 import { rawUnitToLabel } from "../model/unitLabel";
 import type { WindowEvalState } from "../model/workbookState";
@@ -42,6 +43,7 @@ import { documentCellDisplayNames, setCellLabelLine } from "./cellDisplayName";
 import { commitDrag, commitTidy } from "./dragCommit";
 import type { ChartTypeId } from "./chartTypeCatalog";
 import { insertChartCell } from "./graphToChart";
+import EvalLegend from "./EvalLegend";
 import NodeCard, { type MathNodeData } from "./NodeCard";
 import { shapeOf } from "./portShape";
 import SourcePaletteRail, { PALETTE_DRAG_MIME } from "./SourcePaletteRail";
@@ -98,6 +100,23 @@ export interface GraphCanvasProps {
    * which is what every caller did before that ruling.
    */
   model?: GraphModel;
+  /**
+   * What each node is doing right now, keyed by node id (ruling R250,
+   * `model/graphEvalView.ts`) — the map as the evaluation view. Built by
+   * `Notebook/index.tsx`, which is the only place that knows both the
+   * graph and each cell's live state.
+   *
+   * `undefined` falls back to `computeNodeStatuses`' four states alone,
+   * which is what this canvas drew before that ruling.
+   */
+  evalViews?: ReadonlyMap<string, NodeEvalView>;
+  /**
+   * The edges running from a failing node down through everything it
+   * blocks (`model/blockedCells.ts`'s `blockedEdgeIds`) — drawn dashed, so
+   * one look follows a failure to the branches it kills. `undefined` is
+   * an empty set.
+   */
+  blockedEdges?: ReadonlySet<string>;
   /** The current selection, in order — `computeNodeStatuses`'s denominator
    *  (ruling R141 Q2). */
   selectedWindows: SelectedWindow[];
@@ -194,7 +213,7 @@ export default function GraphCanvas(props: GraphCanvasProps) {
   );
 }
 
-function GraphCanvasInner({ markdown, outputs, model: modelProp, selectedWindows, windows, sessionDetails, onCommit, onSelectCell, colourCodeNodes, selectedCellId }: GraphCanvasProps) {
+function GraphCanvasInner({ markdown, outputs, model: modelProp, evalViews, blockedEdges, selectedWindows, windows, sessionDetails, onCommit, onSelectCell, colourCodeNodes, selectedCellId }: GraphCanvasProps) {
   // Task 5's own chart-type picker (decision 83, "idl0 pictograms carry
   // over") replaces the old fixed-"lineY" chart button — `chartType` now
   // comes from `NodeCard.tsx`'s `ChartTypePicker`, one of
@@ -393,6 +412,15 @@ function GraphCanvasInner({ markdown, outputs, model: modelProp, selectedWindows
       .map((graphNode) => {
         const call: MathExprCall | null = graphNode.exprText !== null ? scanMathExpr(graphNode.exprText).call : null;
         const result = statuses.get(graphNode.id) ?? { status: "pending" as const, split: null };
+        // Ruling R250: the live view when the page supplied one, else the
+        // per-window status alone — the picture this canvas drew before.
+        const evalView: NodeEvalView = evalViews?.get(graphNode.id) ?? {
+          state: result.status,
+          fraction: null,
+          blockedBy: null,
+          error: null,
+          split: result.split,
+        };
         const position = positions[graphNode.id] ?? [0, 0];
         return {
           id: graphNode.id,
@@ -400,8 +428,7 @@ function GraphCanvasInner({ markdown, outputs, model: modelProp, selectedWindows
           position: { x: position[0], y: position[1] },
           data: {
             graphNode,
-            status: result.status,
-            split: result.split,
+            evalView,
             shape: shapeOf(valueFor(graphNode, outputs)),
             call,
             unit: unitFor(graphNode, outputs, sessionDetails),
@@ -418,7 +445,7 @@ function GraphCanvasInner({ markdown, outputs, model: modelProp, selectedWindows
           },
         };
       });
-  }, [model.nodes, positions, statuses, outputs, sessionDetails, handleChart, handleRename, handleEditArg, visibleIds, matchedIds, collapsedCellIdByMemberId, displayNames, colourCodeNodes, selectedCellId]);
+  }, [model.nodes, positions, statuses, evalViews, outputs, sessionDetails, handleChart, handleRename, handleEditArg, visibleIds, matchedIds, collapsedCellIdByMemberId, displayNames, colourCodeNodes, selectedCellId]);
 
   const frameFlowNodes = useMemo<Node<SubgraphFrameData, "subgraphFrame">[]>(
     () =>
@@ -477,10 +504,23 @@ function GraphCanvasInner({ markdown, outputs, model: modelProp, selectedWindows
       .map((edge) => {
         const source = endpoint(edge.source);
         const target = endpoint(edge.target);
-        return { id: edge.id, source: source.node, sourceHandle: source.handle, target: target.node, targetHandle: target.handle };
+        // Ruling R250: an edge into the blocked subgraph is dashed and
+        // faded, so the dead branch is followed from the failing node down
+        // rather than being read node by node. The dash is what tells it
+        // apart from decision 44's grey, which is not a failure.
+        const dashed = blockedEdges?.has(edge.id) === true;
+        return {
+          id: edge.id,
+          source: source.node,
+          sourceHandle: source.handle,
+          target: target.node,
+          targetHandle: target.handle,
+          style: dashed ? { strokeDasharray: "4 3", opacity: 0.5 } : undefined,
+          "aria-label": dashed ? "blocked by an upstream failure" : undefined,
+        };
       })
       .filter((edge) => edge.source !== edge.target);
-  }, [model.edges, visibleIds, collapsedCellIdByMemberId]);
+  }, [model.edges, visibleIds, collapsedCellIdByMemberId, blockedEdges]);
 
   const [nodes, setNodes, onNodesChange] = useNodesState(flowNodes);
   const [edges, setEdges, onEdgesChange] = useEdgesState(flowEdges);
@@ -582,6 +622,9 @@ function GraphCanvasInner({ markdown, outputs, model: modelProp, selectedWindows
         <button type="button" onClick={handleTidy} title="Re-run the automatic layered layout (overwrites the arrangement on this machine)" className={CLUSTER_BUTTON_CLASS}>
           Tidy
         </button>
+        {/* Ruling R250: the key to the node-state grammar this canvas now
+            draws. A chip, not a permanent panel — see its own doc comment. */}
+        <EvalLegend buttonClass={CLUSTER_BUTTON_CLASS} />
         {subgraphs.length > 0 && (
           <div className="flex flex-wrap items-center gap-2">
             {subgraphs.map((sg) => (
