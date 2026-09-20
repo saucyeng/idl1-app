@@ -304,7 +304,6 @@ ${describeNodeEval(evalView, null)}`;
         isNodeWorking(state) ? "animate-pulse motion-reduce:animate-none motion-reduce:border-hivis" : ""
       }`}
       title={hoverText}
-      data-eval-state={state}
       tabIndex={0}
     >
       {!isChannel && <Handle type="target" position={Position.Left} />}

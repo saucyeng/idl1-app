@@ -516,7 +516,12 @@ function GraphCanvasInner({ markdown, outputs, model: modelProp, evalViews, bloc
           target: target.node,
           targetHandle: target.handle,
           style: dashed ? { strokeDasharray: "4 3", opacity: 0.5 } : undefined,
-          "aria-label": dashed ? "blocked by an upstream failure" : undefined,
+          // `ariaLabel`, not a kebab-case `"aria-label"` key: xyflow reads
+          // this field and writes the attribute itself, and its `Edge` type
+          // `Omit`s the kebab-case spelling — which `flowEdges`' inferred
+          // type would not have rejected, so the label would have silently
+          // never reached the DOM.
+          ariaLabel: dashed ? "blocked by an upstream failure" : undefined,
         };
       })
       .filter((edge) => edge.source !== edge.target);

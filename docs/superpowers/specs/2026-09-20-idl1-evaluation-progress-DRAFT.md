@@ -111,9 +111,10 @@ not a second vocabulary beside it). Nine states:
 R250 names the state `done`. The existing spelling is `"settled"`. The two
 are the same state and an alias would be the sentinel shape CLAUDE.md's
 review guidance names as the recurring defect here, so the member is renamed
-and its three readers (`plotChrome.ts`, `CellFrame.tsx`, their tests) are
-updated in the same commit. `SETTLE_FADE_MS` keeps its name — it times the
-fade, not the state.
+and its four readers (`plotChrome.ts`, `CellFrame.tsx`, `ProseEditor.tsx` —
+an inline `${…}` span carries the same status — and their tests) are updated
+in the same commit. `SETTLE_FADE_MS` keeps its name — it times the fade, not
+the state.
 
 ### 2.2 Precedence
 

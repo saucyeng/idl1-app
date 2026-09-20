@@ -57,6 +57,17 @@ describe("blockedNodes", () => {
     expect(blocked.get("leaf")?.cellLabel).toBe("Cell c3");
   });
 
+  it("blockedNodes — two equidistant failures — names the same one whichever order they arrive in", () => {
+    const nodes = [node("zz", "c1"), node("aa", "c2"), node("leaf", "c3")];
+    const edges = [edge("zz", "leaf"), edge("aa", "leaf")];
+
+    const oneWay = blockedNodes({ nodes, edges, failing: [failure("zz", "c1"), failure("aa", "c2")] });
+    const other = blockedNodes({ nodes, edges, failing: [failure("aa", "c2"), failure("zz", "c1")] });
+
+    expect(oneWay.get("leaf")).toEqual(other.get("leaf"));
+    expect(oneWay.get("leaf")?.cellLabel).toBe("Cell c2");
+  });
+
   it("blockedNodes — a cycle in the graph — terminates and blocks each node once", () => {
     const nodes = [node("a", "c1"), node("b", "c2"), node("c", "c3")];
     const edges = [edge("a", "b"), edge("b", "c"), edge("c", "b")];

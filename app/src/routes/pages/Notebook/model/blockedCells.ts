@@ -22,6 +22,13 @@
  * a list of every ancestor is a list to read rather than a place to go.
  * Breadth-first from every failing node at once gives exactly that, since
  * the first walk to reach a node is the one that started nearest to it.
+ *
+ * **Ties are broken by node id, not by argument order.** Two failures the
+ * same distance from one descendant are equally good answers, but a reader
+ * watching a document evaluate must not see the blame move between them
+ * because a caller happened to build its `failing` array in a different
+ * order. The walk sorts its starting frontier once, so the same graph in
+ * the same state always names the same cause.
  */
 import type { CellOutput } from "../../../../ipc/workbook";
 import type { GraphEdge, GraphModel, GraphNode } from "./graphModel";
@@ -159,8 +166,11 @@ export function blockedNodes(input: BlockedNodesInput): Map<string, BlockedBy> {
 
   // One shared frontier over every failure at once — the property that
   // makes the first visit the nearest cause. A per-failure walk would give
-  // whichever failure happened to be listed first.
-  let frontier: { id: string; cause: FailingNode }[] = input.failing.flatMap((cause) =>
+  // whichever failure happened to be listed first. Sorted by node id so a
+  // tie at equal distance always resolves the same way (see the module doc
+  // comment); the sort is over the failures only, not the whole graph.
+  const startOrder = [...input.failing].sort((a, b) => (a.nodeId < b.nodeId ? -1 : a.nodeId > b.nodeId ? 1 : 0));
+  let frontier: { id: string; cause: FailingNode }[] = startOrder.flatMap((cause) =>
     (forward.get(cause.nodeId) ?? []).map((id) => ({ id, cause }))
   );
 

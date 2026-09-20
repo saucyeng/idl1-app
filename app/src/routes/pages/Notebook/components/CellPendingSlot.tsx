@@ -29,7 +29,6 @@ export default function CellPendingSlot({ kind }: CellPendingSlotProps) {
       className="w-full rounded-[var(--radius-card)] border border-rule bg-surface-2/40"
       style={{ height: pendingSlotHeightPx(kind) }}
       aria-hidden="true"
-      data-pending-slot={kind}
     />
   );
 }
