@@ -100,9 +100,10 @@ export const COMMAND_IDS = {
    *  "reachable from Help", which is a command by definition. */
   helpWelcome: "help.welcome",
   /** Ruling R244/R249: opens the Docs panel at the bundled workbook
-   *  reference (`docsPanelStore.ts`). Registered by `CodePane.tsx`'s own
-   *  effect, next to the `F1`/hover paths that already open the same
-   *  panel — one handler, several triggers. */
+   *  reference (`docsPanelStore.ts`'s `openDocs(null, "workbook")`).
+   *  Registered by `AppShell.tsx`, alongside `F1`/the code column's own
+   *  "Docs" button, which open the same panel by calling `openDocs`
+   *  directly rather than through the registry. */
   helpWorkbookReference: "help.workbookReference",
   /** Ruling R244/R249: opens the Docs panel at the bundled CLI reference —
    *  a second document `DocsPanel.tsx` now reads by name, alongside the
