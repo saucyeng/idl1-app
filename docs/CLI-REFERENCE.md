@@ -407,7 +407,7 @@ Calls `store::import::reimport_session`; `--json` emits `RebuildSessionsReport`.
 
 ### `idl-rs docs workbook`
 
-Regenerate the workbook reference from the engine's own catalogs.
+Regenerate the workbook reference from the engine's own catalogs, or its builtin catalog as JSON with --json (ruling R249).
 
 | Flag | Value | Meaning |
 | --- | --- | --- |
