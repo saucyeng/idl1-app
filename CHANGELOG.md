@@ -6,6 +6,20 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 
 ### Added
 
+- **`<source>_t_recorded_us` holds the raw device stamp again [docs]
+  (2026-09-20, ruling R240).** For `.idl0` IMU channels the column was the
+  seam-corrected stamp, which after the corrected-`t` change made it a
+  bit-identical copy of `t` — two columns describing one thing, and no
+  pre-correction stamp left anywhere outside the immutable blob (PR #1 review
+  finding 2). The importer now carries each IMU's verbatim stamp sequence
+  through to the grid and writes it at every real slot; a synthesized slot
+  (leading pad, drop fill) keeps the existing rule of repeating that row's
+  `t` as a documented placeholder, and the gap list — never the content —
+  is what says which rows those are. `fetch_seams` (C3 §3.5) gets a real
+  input from this: burst detection reads recorded deltas, and the corrected
+  array it was being handed reported either no seams or one per sample.
+  C1 §3.2 amended.
+
 - **`resample(x, onto)` [docs] (2026-09-20, ruling R242).** The explicit way
   to put two channels recorded on different clocks onto one time axis, and
   after C1 §3.1's corrected IMU stamps the only way: linear interpolation of

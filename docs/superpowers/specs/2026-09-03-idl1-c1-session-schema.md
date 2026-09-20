@@ -217,6 +217,24 @@ share `imu0_t_recorded_us`. Likewise every `GPS_*` channel shares `gps_t_recorde
 `device_timestamp_us`, SPEC §5.6 — **not** `gps_epoch_ms`, which is a different clock domain used
 only for the `timestamp_utc_ms` anchor in §3.1).
 
+**Synthesized slots (amended 2026-09-20, ruling R240).** A burst source's rows are a
+reconciliation grid (§3.3), and some of its slots hold no recorded sample at all: the leading
+pad, each interior drop fill, and (until R241 removed it) any trailing pad — exactly the slots
+the channel's `GapSpan` list covers. Those slots have no recorded stamp to write, so
+`_t_recorded_us` there repeats that row's `t`, as a documented placeholder. **A reader
+establishes which rows are synthesized from the gap list, never from the content**: a
+placeholder is a plausible timestamp, not a sentinel, and nothing distinguishes it by value.
+
+**Why this column is not a copy of `t` (amended 2026-09-20, ruling R240).** Between the first
+corrected-stamp import and R240 the importer wrote the *seam-corrected* stamp into this column,
+making it bit-identical to `t` for every IMU channel and leaving no pre-correction stamp
+anywhere but the immutable blob. That is a contract violation of this section's own "verbatim"
+rule, and it also breaks §3.3's seam detection: the correction deliberately flattens
+within-burst spacing, so a burst detector run against corrected stamps finds either no seams or
+one per sample. The importer now carries each IMU's raw stamp sequence alongside the corrected
+one and writes the raw value at every real slot — the two columns mean different things again,
+and C3 §3.5's `fetch_seams` has a real input.
+
 `<source>_t_recorded_us` is **not guaranteed sorted** — a burst source's recorded stamps can
 regress slightly at a seam when the true ODR is slower than nominal (design doc: "locally
 non-monotonic time"). Do not `DELTA_BINARY_PACKED`-encode these columns (§4.4); only `t` is
