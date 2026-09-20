@@ -124,7 +124,7 @@ Import one log file into the data directory.
 | `--dry-run` | switch | Report what would change and write nothing |
 | `--json` | switch | Emit the result as JSON on stdout (schema_version 1); errors become typed JSON on stderr |
 
-Calls `store::import::import_file_path`; `--json` emits `ImportReport`.
+Calls `store::import::import_idl0_path (.idl0) or import_file_path (.fit/.gpx/.csv)`; `--json` emits `ImportReport`.
 
 ### `idl-rs session synth`
 

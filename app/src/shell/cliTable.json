@@ -327,7 +327,7 @@
           "required": true
         }
       ],
-      "core_fn": "store::import::import_file_path",
+      "core_fn": "store::import::import_idl0_path (.idl0) or import_file_path (.fit/.gpx/.csv)",
       "data_dir": true,
       "flags": [
         {
