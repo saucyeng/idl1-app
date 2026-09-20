@@ -32,6 +32,35 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
   notebook open) is unchanged — it still guards a stale *installed* app
   against a newer *running* engine, which a build-time generator cannot.
 
+- **Live evaluation state, per cell and on the maths map [docs] (2026-09-20,
+  ruling R250).** Isaac: "right now it's kind of just blank charts and i dont
+  know what's going on ... i'm only seeing it green after it's calculated, not
+  the progress before." A cell with no result yet used to render a one-line
+  grey `…` — so a freshly opened workbook was a column of ellipses that became
+  full-height charts the moment the first evaluation landed, and a chart cell's
+  only indicator was a 12 px unlabelled spinner in the corner of that ellipsis.
+  Now one state model (`idle · queued · fetching · evaluating · rendering ·
+  blocked · stale · done · error`) drives the notebook and the map together.
+  Every cell reserves a slot the size its output will be and says in one line
+  what it is doing — "Fetching IMU0_AccelZ · 40 %", "Blocked by Cell 3:
+  unknown channel" — determinate wherever a real fraction exists, with the
+  elapsed time after 2 s and no layout jump between states. `blocked` is
+  derived from the dependency graph: every descendant of a failing node,
+  naming the nearest cause, with a **Go to Cell 3** button. On the maths map
+  the same states mark the same cards from the existing tokens — a progress
+  arc while fetching, a pulse on only the nodes actually working (a static
+  outline under `prefers-reduced-motion`), and **the blocked subgraph dimmed
+  with its edges dashed from the failing node down**, so one look shows which
+  branches will not calculate. A Legend chip keys the grammar, and the status
+  bar reads "12 done, 2 working, 1 error, 4 blocked" (zeros omitted) and opens
+  the map when clicked. Decision 44's session-gap grey is unchanged and stays
+  distinct from `blocked`: different cause, different fix, different drawing.
+  The map triggers no evaluation and touches no IPC. Per-cell engine progress
+  (a `Channel` on the evaluate command, C3 §3.4) is specified in
+  `docs/superpowers/specs/2026-09-20-idl1-evaluation-progress-DRAFT.md` and
+  not yet implemented; until it lands `queued`/`evaluating` come from the call
+  boundary and `fetching` from the existing decode events.
+
 - **`.idl0` importer version `0.3.0` [no-docs] (2026-09-20, ruling R243).**
   R240 and R241 both change the columns written for an `.idl0` source, so
   every `data.parquet` an earlier build wrote is stale: `idl-rs library stale`

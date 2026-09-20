@@ -114,6 +114,34 @@ export function cellDecodeFraction(state: DecodeProgressState, keys: readonly st
   return total > 0 ? done / total : null;
 }
 
+/**
+ * The name of the one channel this cell is still decoding, or `null` when
+ * that is not a single well-defined answer — the channel `CellFrame`'s state
+ * line names (ruling R250: "fetching IMU0_AccelZ 40 %").
+ *
+ * `null` when none of this cell's channels is being reported, and `null`
+ * again when more than one distinct channel *name* is still unfinished:
+ * with two in flight there is no single honest name, and picking one would
+ * make the line say the work is somewhere it partly is not. The same
+ * channel decoded from two selected sessions is one name and counts once —
+ * the reader is told which signal is being read, not how many copies.
+ *
+ * Finished decodes are excluded: a burst whose last unfinished channel is
+ * `IMU0_AccelZ` names that one, whatever already landed.
+ *
+ * @param keys This cell's channels as {@link decodeKey}s.
+ */
+export function soleDecodingChannel(state: DecodeProgressState, keys: readonly string[]): string | null {
+  const names = new Set<string>();
+  for (const key of keys) {
+    const decode = state.get(key);
+    if (decode === undefined || decode.finished) continue;
+    names.add(decode.channel);
+    if (names.size > 1) return null;
+  }
+  return names.size === 1 ? ([...names][0] as string) : null;
+}
+
 /** What the status chip shows while a session is loading (ruling R221 item 1(b)). */
 export interface DecodeSummary {
   /** Channels whose decode has finished. */

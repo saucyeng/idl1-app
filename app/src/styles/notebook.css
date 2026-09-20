@@ -358,8 +358,6 @@
   padding-block-end: var(--nb-pad);
 }
 
-.cell-list .cell-list-pending {
-  font-family: var(--font-mono);
-  font-size: var(--nb-text-body);
-  color: var(--fg-faint);
-}
+/* Ruling R250: the one-line `…` placeholder is gone — a cell with no output
+   yet renders `components/CellPendingSlot.tsx`, a slot the size the output
+   will be, with `CellFrame`'s state line over it. */

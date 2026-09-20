@@ -7,8 +7,10 @@ import type { RouteId } from "../routes/types";
 import type { Selection } from "../state/AppState";
 import { sessionLabel, windowsKey } from "../state/selection";
 import { describeDecodeSummary } from "../state/decodeProgress";
+import { describeEvalSummary, summaryNeedsAttention } from "../state/evalSummary";
 import AskAnAgentButton from "./AskAnAgentButton";
 import { useDecodeStatus } from "./decodeStatus";
+import { requestOpenMaths, useEvalSummary } from "./evalStatus";
 import { useDeviceLink } from "./deviceLink";
 import ImportStatusChip from "./ImportStatusChip";
 import { LAYOUT_PRESETS, type ActivePreset } from "./layoutPresets";
@@ -93,6 +95,8 @@ export default function StatusBar({ selection, activePreset, onCyclePreset, onNa
   const deviceLink = useDeviceLink();
   const memory = useMemoryUse();
   const decoding = useDecodeStatus();
+  const evalSummary = useEvalSummary();
+  const evalSummaryText = describeEvalSummary(evalSummary);
   const updateLabel = updateChipLabel(useUpdateState());
 
   // The same fetch `TopBar` used to hold, moved with the chips it feeds
@@ -164,6 +168,19 @@ export default function StatusBar({ selection, activePreset, onCyclePreset, onNa
             <span className="block h-full bg-good" style={{ width: `${Math.floor(decoding.fraction * 100)}%` }} />
           </span>
           <span className="truncate">{describeDecodeSummary(decoding)}</span>
+        </StatusItem>
+      )}
+
+      {/* Ruling R250: where this workbook has got to, in one line, and a
+          click that opens the map showing it per node. Absent rather than
+          zeroed when there is nothing to report (`describeEvalSummary`). */}
+      {evalSummaryText !== null && (
+        <StatusItem
+          onClick={requestOpenMaths}
+          title="Open the maths map"
+          className={summaryNeedsAttention(evalSummary) ? "text-accent" : "text-fg-dim"}
+        >
+          {evalSummaryText}
         </StatusItem>
       )}
 

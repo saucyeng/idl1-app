@@ -68,10 +68,36 @@ describe("plotStatusGlyph — a settled plot — flashes its ✓ and then gets o
     const elapsed = [null, 0, SETTLE_FADE_MS - 1, SETTLE_FADE_MS, SETTLE_FADE_MS + 1];
 
     // Act
-    const glyphs = elapsed.map((ms) => plotStatusGlyph("settled", ms));
+    const glyphs = elapsed.map((ms) => plotStatusGlyph("done", ms));
 
     // Assert
     expect(glyphs).toEqual(["tick", "tick", "tick", "none", "none"]);
+  });
+});
+
+describe("plotStatusGlyph — a cell that was never asked to run — draws no glyph at all", () => {
+  it("returns none for idle and blocked, whatever the elapsed time says", () => {
+    // Arrange
+    const states = ["idle", "blocked"] as const;
+
+    // Act
+    const glyphs = states.flatMap((status) => [plotStatusGlyph(status, null), plotStatusGlyph(status, SETTLE_FADE_MS * 10)]);
+
+    // Assert
+    expect(glyphs).toEqual(["none", "none", "none", "none"]);
+  });
+});
+
+describe("plotStatusGlyph — the states added by R250 that are running — spin like the others", () => {
+  it("returns a spinner for fetching and rendering", () => {
+    // Arrange
+    const states = ["fetching", "rendering"] as const;
+
+    // Act
+    const glyphs = states.map((status) => plotStatusGlyph(status, null));
+
+    // Assert
+    expect(glyphs).toEqual(["spinner", "spinner"]);
   });
 });
 

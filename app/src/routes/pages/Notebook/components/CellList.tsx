@@ -3,6 +3,7 @@ import type { ReactNode } from "react";
 import type { CellOutput } from "../../../../ipc/workbook";
 import type { ProseBlock as ProseBlockData } from "../model/proseBlocks";
 import type { ScannedCell, ScannedDoc } from "../model/cells";
+import CellPendingSlot from "./CellPendingSlot";
 import MathCell from "./MathCell";
 import TableCell from "./TableCell";
 import type { LapTimeLookup } from "../model/lapTable";
@@ -103,8 +104,11 @@ export interface CellListProps {
  * prose, then each fenced cell (dispatched to `MathCell`/`TableCell`/the
  * injected `renderJsCell` by `kind`), then trailing prose. A cell not yet
  * present in `outputs` (evaluation still in flight, or never run) renders a
- * pending placeholder rather than nothing, so document order and cell
- * count are stable across a re-render mid-evaluation.
+ * {@link CellPendingSlot} rather than nothing, so document order, cell
+ * count **and cell height** are stable across a re-render mid-evaluation.
+ * Ruling R250: that slot is the size the output will be, and the state line
+ * over it comes from `CellFrame`, not from here — this component renders
+ * the picture, never the status.
  *
  * A cell whose scan found no `id` (`cell.id === null` — a malformed or
  * not-yet-assigned fence, `model/cells.ts` ruling R21) can never have an
@@ -155,7 +159,7 @@ export default function CellList({
         const output = cell.id !== null ? outputs.get(cell.id) : undefined;
         const rendered =
           output === undefined ? (
-            <div className="cell-list-pending">…</div>
+            <CellPendingSlot kind={cell.kind} />
           ) : output.kind === "math" ? (
             <MathCell output={output} windowNote={windowNote} />
           ) : output.kind === "table" ? (
