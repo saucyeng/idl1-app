@@ -137,6 +137,7 @@ export default function DockFrame() {
   // re-add.
   const applyingRef = useRef(false);
   const settleTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const reconcileTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
   /** The panels the page's toggles currently ask for, in reference order. */
   const desiredPanels = useCallback(
@@ -195,6 +196,33 @@ export default function DockFrame() {
     }
   }, [desiredPanels, presentPanels]);
 
+  /**
+   * Runs {@link reconcile} once the current task has finished.
+   *
+   * The safety net for a toggle the page *refuses*. `applyColumnToggleValue`
+   * carries `notebookColumns.ts`'s never-all-off guard, which returns the
+   * previous visibility **by reference** when a change would hide every
+   * panel. Nothing then changes, so `studioColumns.ts` never notifies and
+   * the subscription below never fires — and Dockview has meanwhile closed
+   * the panel anyway. Closing the last panel by its tab used to strand the
+   * dock empty with the ribbon still saying that panel was on, and with
+   * its toggle a no-op for exactly the same reason (reviewer, 2026-09-20).
+   *
+   * Deferred rather than called straight away because the round trip runs
+   * through React: `runCommand` sets page state, which is flushed at the
+   * end of the dispatching event, and only then does the page publish the
+   * new visibility. A reconcile in the same tick would read the *old*
+   * desired set and put back a panel the user genuinely did close. A zero
+   * timeout is a macrotask, so it lands after that flush; asking the model
+   * again beats re-deriving its guard's rule here, which is how the dock
+   * and the toggles came to hold two pictures of the same state in the
+   * first place.
+   */
+  const scheduleReconcile = useCallback(() => {
+    clearTimeout(reconcileTimerRef.current);
+    reconcileTimerRef.current = setTimeout(reconcile, 0);
+  }, [reconcile]);
+
   const onReady = useCallback((event: DockviewReadyEvent) => {
     apiRef.current = event.api;
     // The layout is applied by the effect below rather than here, so
@@ -238,10 +266,17 @@ export default function DockFrame() {
     if (api === null) return;
 
     const persistSettled = () => {
+      // Tested here, at *schedule* time, not inside the callback:
+      // `applyingRef` is back to false within the same tick `fromJSON`
+      // ran in, so a check 200 ms later would always pass and the guard
+      // would guard nothing (reviewer, 2026-09-20). A layout change the
+      // restore itself caused is not a gesture and must not be persisted
+      // back over the document it came from.
+      if (applyingRef.current) return;
       clearTimeout(settleTimerRef.current);
       settleTimerRef.current = setTimeout(() => {
         const live = apiRef.current;
-        if (live === null || applyingRef.current) return;
+        if (live === null) return;
         noteDockLayoutChanged(live.toJSON());
       }, LAYOUT_SETTLE_MS);
     };
@@ -252,20 +287,23 @@ export default function DockFrame() {
         if (applyingRef.current || !isDockPanelId(panel.id)) return;
         // A tab's close button, or a drag that emptied a group. The page
         // owns whether a panel is "on", so tell it rather than recording
-        // it here.
+        // it here — and then ask it again, because it is allowed to say
+        // no (see `scheduleReconcile`).
         requestVisibility(panel.id, false);
+        scheduleReconcile();
       }),
     ];
 
     return () => {
       clearTimeout(settleTimerRef.current);
+      clearTimeout(reconcileTimerRef.current);
       for (const disposable of disposables) disposable.dispose();
     };
     // `apiRef.current` is set in `onReady`, which fires before this effect
     // on the mount that creates the dock; `application` re-runs it after,
     // which is harmless (the listeners are disposed above) and is what
     // gets them attached if `onReady` somehow lands later.
-  }, [application, requestVisibility]);
+  }, [application, requestVisibility, scheduleReconcile]);
 
   return (
     <DockviewReact
