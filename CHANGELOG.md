@@ -6,6 +6,20 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 
 ### Added
 
+- **No shared IMU tail pad [docs] (2026-09-20, ruling R241).** Each IMU's grid
+  now ends at its own last recorded sample instead of being padded out to the
+  longest IMU's length. The old pad extrapolated forward from a stream's last
+  real stamp at its own period, so an IMU that stopped early gained samples
+  that were never recorded — 17 s and 52 s on the two short streams of a real
+  49-minute session (PR #1 review finding 1). Since `duration_ms` is a max
+  over channels and the union `t` axis is the union of every channel's `t_us`,
+  both ran past the end of the recording: a 49-minute session catalogued as
+  ~50 minutes, and that dead time in every default x-range and every window
+  derived from the axis end. The **leading** pad stays — it is bounded by the
+  IMUs' start spread (one FIFO drain) rather than by the longest stream, and
+  the front-of-grid index alignment rests on it. Both pads are still marked in
+  `gaps`. C1 §3.3 amended.
+
 - **`<source>_t_recorded_us` holds the raw device stamp again [docs]
   (2026-09-20, ruling R240).** For `.idl0` IMU channels the column was the
   seam-corrected stamp, which after the corrected-`t` change made it a

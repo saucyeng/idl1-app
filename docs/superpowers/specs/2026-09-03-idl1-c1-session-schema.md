@@ -351,6 +351,27 @@ this is also the session's `t0_us`) gives this channel's final `t_us`:
 `0, 1200, 2400, 3600, 4800, 6000, 7200, 8400, 9600, 10800, 12000, 13200, 14400, 15600, 16800,
 18000`.
 
+**The grid is shared at its start, not at its end (amended 2026-09-20, ruling R241).**
+Reconciliation gives each burst source a slot grid anchored at the session `t0`, so the three
+IMUs stay index-aligned from the front — an IMU that started one FIFO drain later carries that
+many leading pad slots, marked in `gaps`. It does **not** give them a common *length*. Each
+source's grid ends at its own last recorded sample.
+
+Until this amendment every IMU was padded out to the longest stream's occupied length, with a
+tail extrapolated forward from its own last stamp at its own period. On a real 49-minute
+session that put 17 s (IMU1) and 52 s (IMU2) of samples that were never recorded at the end of
+those channels. Because `duration_ms` is a max over channels of each channel's own `t` span,
+and the union `t` axis (§3.5 invariant 2) is the union of every channel's `t_us`, both ran past
+the end of the recording: the library showed a 50-minute session, every chart's default x-range
+included the dead time, and every window derived from the axis end was wrong by up to a minute.
+The pad slots were inside a `GapSpan`, but nothing that derives a *span* from first..last
+consults gaps.
+
+The **leading** pad is kept. It is bounded by the spread of the sources' start instants — one
+drain interval, milliseconds — where the trailing pad was bounded by the longest stream; and it
+is what the index alignment above rests on. Both pads remain `GapSpan`-marked, so no consumer's
+rule changes: a synthesized slot is still one the gap list covers.
+
 **Gaps (`GapSpan`) — ordering, ruled.** Drop reconciliation (rebuilding a channel onto an
 equal-length, time-aligned grid across an IMU's drops — SPEC §15.2,
 `rust/core/src/parse/records.rs` `ImuGridPlan::build`/`reconcile`) runs **after** burst-seam
