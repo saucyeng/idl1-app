@@ -4,7 +4,7 @@ import { getVersion } from "@tauri-apps/api/app";
 
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@/components/ui/resizable";
 import { setStudioColumnVisible } from "../../../shell/studioColumns";
-import { noteColumnsChangedByHand, setActiveLayoutPreset, useActiveLayoutPreset } from "../../../shell/layoutPreset";
+import { setActiveLayoutPreset, useActiveLayoutPreset } from "../../../shell/layoutPreset";
 import { presetLayout, type LayoutPresetId } from "../../../shell/layoutPresets";
 import { BrandSheet } from "@/components/brand/BrandSheet";
 import { NoteBlock } from "@/components/brand/NoteBlock";
@@ -41,13 +41,14 @@ import { describeWindow, sessionDetailsReadinessKey, sessionLabel, venueLabel, w
 import { useRouteVisible } from "../../../shell/routeVisibility";
 import { useEditorSlotNode } from "../../../shell/editorSlot";
 import { useGraphSlotNode } from "../../../shell/graphSlot";
+import { useOutputSlotNode } from "../../../shell/outputSlot";
 import { useToolbarSlotNode } from "../../../shell/toolbarSlot";
 import { useTimelineSlotNode } from "../../../shell/timelineSlot";
 import { useSidebarSlotNode } from "../../../shell/sidebarSlot";
 import { useCommand } from "../../../shell/commandRegistry";
 import { MENU_COMMAND_IDS } from "../../../shell/menuModel";
 import { publishMemoryUse } from "../../../shell/memoryBudget";
-import { ColumnPlaceholder } from "../../../shell/ColumnFrame";
+import { ColumnPlaceholder } from "../../../shell/ColumnPlaceholder";
 import { resolveRegister, type PaperTheme, type ThemeChoice } from "../Settings/theme";
 import { createPrefsStore, localStorageBackend } from "../Settings/prefsStore";
 import CellFrame from "./components/CellFrame";
@@ -551,10 +552,15 @@ export default function NotebookPage() {
   // one frame with the maths column docked before a passive effect could
   // correct it. This runs before that paint, so the first frame is already
   // right.
+  //
+  // `cells` joined the other two with ruling R239: under the dock, the
+  // Notebook output is a panel like the other two and its toggle has to
+  // reach `DockFrame` the same way theirs do.
   useLayoutEffect(() => {
     setStudioColumnVisible("graph", columnVisibility.graph);
     setStudioColumnVisible("properties", columnVisibility.properties);
-  }, [columnVisibility.graph, columnVisibility.properties]);
+    setStudioColumnVisible("cells", columnVisibility.cells);
+  }, [columnVisibility.graph, columnVisibility.properties, columnVisibility.cells]);
 
   /** The active layout preset for this machine's current viewport shape
    *  (ruling R213). The shell owns it (`shell/layoutPreset.ts`, persisted
@@ -593,12 +599,14 @@ export default function NotebookPage() {
     setColumnVisibility((prev) => {
       const next = notebookColumnVisibilityFrom(prev, ids);
       writeNotebookColumnVisibility(next);
-      // R213 item 3: a column thrown by hand moves this viewport shape to
-      // "custom" unless the new set is still the active preset's own — so
-      // the picker never claims an arrangement that is no longer on screen.
-      // The never-all-off guard above runs first, so what is reported here
-      // is what the toggles actually became.
-      noteColumnsChangedByHand(next);
+      // R213 item 3's "thrown by hand" bookkeeping is no longer done here.
+      // Under ruling R239 a toggle reaches the dock through
+      // `shell/studioColumns.ts`, `DockFrame` adds or removes the panel,
+      // and the dock's own report of its new arrangement is what decides
+      // whether the viewport shape is still on a named layout
+      // (`layoutPreset.ts`'s `noteDockLayoutChanged`). Deciding it twice,
+      // from two different pictures of what is on screen, is exactly how
+      // the picker and the toggles used to be able to disagree.
       return next;
     });
   }
@@ -1077,6 +1085,17 @@ export default function NotebookPage() {
   const graphSlotNode = useGraphSlotNode();
   const graphHost = resolveGraphHost(graphSlotNode !== null, placement);
   const graphIsPortalHosted = graphHost === "portal";
+
+  // Ruling R239: the studio's third panel, the Notebook itself. Same
+  // arrangement again, and for the sharper version of the same reason --
+  // a dock panel's contents are unmounted when that panel is closed, and
+  // this page is where the ribbon, the timeline strip, the workbook
+  // session and the sandbox iframe host all live. So the page stays
+  // rendered by `RouteHost.tsx` and the panel takes a portal of its main
+  // content area (`shell/outputSlot.ts`). Slot presence alone decides,
+  // never `placement`, for the reason the graph's does not.
+  const outputSlotNode = useOutputSlotNode();
+  const outputIsPortalHosted = outputSlotNode !== null;
 
   // Bug report fixed 2026-09-09, correcting R161: the toolbar spans the
   // *window*, not just this tab's own column area. `AppShell.tsx` mounts
@@ -4795,7 +4814,12 @@ export default function NotebookPage() {
   );
 
   return (
-    <div className="flex h-full flex-col">
+    // Ruling R239: with the dock hosting the main content area, this page
+    // renders only its banners and must take exactly the height they need
+    // — `h-full` would leave the dock beside it nothing. Without a slot
+    // (every layout but the wide studio) it fills its route panel as
+    // before.
+    <div className={outputIsPortalHosted ? "flex min-h-0 shrink-0 flex-col" : "flex h-full flex-col"}>
       {/* Portal-hosted whenever this tab is the active route (bug report
           fixed 2026-09-09): `toolbarSlotNode` exists whether or not
           Notebook is the active tab (it is always mounted, R93), so
@@ -4907,7 +4931,22 @@ export default function NotebookPage() {
           onDismiss={() => setAppliedMigrationsDismissedFor(state.hash)}
         />
       )}
-      {state.handle !== null && placement === "panes" && (
+      {/* Ruling R239's studio: the Notebook panel holds this page's main
+          content area, portalled. Graph and properties are already
+          portalled to their own panels at this point, so the in-page
+          `ResizablePanelGroup` below would be a one-panel group around
+          exactly this element — the dock's own sashes replace it. */}
+      {state.handle !== null && outputIsPortalHosted && outputSlotNode !== null &&
+        createPortal(
+          // No `overflow-auto` here: the dock panel's own container is the
+          // scroll box (`shell/DockFrame.tsx`), and two nested scrollers
+          // would give the cell list a scrollbar inside a scrollbar.
+          <div className="h-full p-4" data-register={register} style={registerContainerStyle}>
+            {mainContentElement}
+          </div>,
+          outputSlotNode
+        )}
+      {state.handle !== null && !outputIsPortalHosted && placement === "panes" && (
         <ResizablePanelGroup orientation="horizontal" className="min-h-0 flex-1">
           {/* R161 item 2, generalised: `mainPanels` holds graph and/or cells,
               whichever `columnVisibility` currently has on (both, either, or
@@ -4935,12 +4974,12 @@ export default function NotebookPage() {
           )}
         </ResizablePanelGroup>
       )}
-      {state.handle !== null && placement === "inline" && (
+      {state.handle !== null && !outputIsPortalHosted && placement === "inline" && (
         <div className="min-h-0 flex-1 overflow-auto p-4" data-register={register} style={registerContainerStyle}>
           {mainContentElement}
         </div>
       )}
-      {state.handle !== null && placement === "sheet" && (
+      {state.handle !== null && !outputIsPortalHosted && placement === "sheet" && (
         <>
           <div className="min-h-0 flex-1 overflow-auto p-4" data-register={register} style={registerContainerStyle}>
             {mainContentElement}

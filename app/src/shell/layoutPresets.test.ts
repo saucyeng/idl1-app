@@ -9,9 +9,7 @@ import {
   LAYOUT_PRESETS,
   nextPreset,
   OUTPUT_COLUMN_MIN_WIDTH_PX,
-  presetAfterColumnChange,
   presetLayout,
-  presetMatches,
 } from "./layoutPresets";
 
 describe("LAYOUT_PRESETS — the table itself", () => {
@@ -84,52 +82,6 @@ describe("nextPreset — the Ctrl+Shift+L cycle", () => {
     const next = nextPreset("custom");
 
     expect(next).toBe("output");
-  });
-});
-
-describe("presetMatches", () => {
-  it("presetMatches — split's own columns and orientation — true", () => {
-    const matches = presetMatches("split", { graph: true, properties: true, cells: true }, "column");
-
-    expect(matches).toBe(true);
-  });
-
-  it("presetMatches — split's columns but stacked's orientation — false", () => {
-    const matches = presetMatches("split", { graph: true, properties: true, cells: true }, "row");
-
-    expect(matches).toBe(false);
-  });
-
-  it("presetMatches — output with the graph turned back on — false", () => {
-    const matches = presetMatches("output", { graph: true, properties: false, cells: true }, "column");
-
-    expect(matches).toBe(false);
-  });
-
-  it("presetMatches — the output column dragged narrower — still true, width is not compared", () => {
-    const matches = presetMatches("split", presetLayout("split").columns, "column");
-
-    expect(matches).toBe(true);
-  });
-});
-
-describe("presetAfterColumnChange — a hand-thrown toggle", () => {
-  it("presetAfterColumnChange — a toggle that leaves the preset — custom", () => {
-    const active = presetAfterColumnChange("split", { graph: false, properties: true, cells: true }, "column");
-
-    expect(active).toBe("custom");
-  });
-
-  it("presetAfterColumnChange — a toggle that lands back on the same set — keeps the preset", () => {
-    const active = presetAfterColumnChange("maths", { graph: true, properties: true, cells: true }, "column");
-
-    expect(active).toBe("maths");
-  });
-
-  it("presetAfterColumnChange — already custom — stays custom", () => {
-    const active = presetAfterColumnChange("custom", presetLayout("split").columns, "column");
-
-    expect(active).toBe("custom");
   });
 });
 

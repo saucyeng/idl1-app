@@ -33,11 +33,17 @@ import { useSyncExternalStore } from "react";
  * is visible for at most one render.
  */
 
-/** The two studio columns whose content the Notebook page owns and whose
- *  presence its own toolbar toggles decide. */
-export type StudioColumnId = "graph" | "properties";
+/** The studio panels whose content the Notebook page owns and whose
+ *  presence its own ribbon toggles decide.
+ *
+ *  `cells` joined the other two with ruling R239. Under `ColumnFrame` the
+ *  Notebook output was the one column that could not go away — the frame
+ *  was empty without it — so its toggle only ever reached inside the page.
+ *  A dock has no such column: all three are panels, all three close, and
+ *  `DockFrame.tsx` reads this store for all three. */
+export type StudioColumnId = "graph" | "properties" | "cells";
 
-const visible: Record<StudioColumnId, boolean> = { graph: true, properties: true };
+const visible: Record<StudioColumnId, boolean> = { graph: true, properties: true, cells: true };
 
 const listeners = new Set<() => void>();
 

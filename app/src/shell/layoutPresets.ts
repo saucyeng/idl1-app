@@ -177,30 +177,9 @@ export function nextPreset(active: ActivePreset): LayoutPresetId {
   return LAYOUT_PRESET_CYCLE[(index + 1) % LAYOUT_PRESET_CYCLE.length]!;
 }
 
-/** Whether `columns` and `orientation` are still what `id` asked for. The
- *  output column's width is deliberately not compared: dragging a divider
- *  is resizing a preset, not leaving it. */
-export function presetMatches(id: LayoutPresetId, columns: PresetColumnVisibility, orientation: MathsOrientation): boolean {
-  const layout = presetLayout(id);
-  return (
-    layout.mathsOrientation === orientation &&
-    layout.columns.graph === columns.graph &&
-    layout.columns.properties === columns.properties &&
-    layout.columns.cells === columns.cells
-  );
-}
-
-/**
- * The active preset after a hand-thrown column toggle (R213 item 3:
- * "toggling a column by hand moves the class to a 'custom' state until a
- * preset is picked").
- *
- * `active` survives a change that still matches it — three of the four
- * presets share the same pane visibility and differ only in geometry, so a
- * toggle that lands back on the same set is not a departure. Anything else
- * is `"custom"`.
- */
-export function presetAfterColumnChange(active: ActivePreset, columns: PresetColumnVisibility, orientation: MathsOrientation): ActivePreset {
-  if (active === "custom") return "custom";
-  return presetMatches(active, columns, orientation) ? active : "custom";
-}
+/** Where the "thrown by hand" bookkeeping went (ruling R239). `presetMatches`
+ *  and `presetAfterColumnChange` lived here and compared a visibility record
+ *  plus one orientation flag; a dock has neither. `dockLayout.ts`'s
+ *  `matchingNamedLayout` asks the same question of the whole layout
+ *  document instead, and `layoutPreset.ts` applies the same "still active
+ *  unless it left" rule to the answer. */

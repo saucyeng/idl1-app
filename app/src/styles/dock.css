@@ -1,0 +1,90 @@
+/* The Dockview theme, in idl1's own tokens (ruling R239: "styled from the
+ * shell tokens").
+ *
+ * Dockview ships its themes as flat `--dv-*` custom properties on a class,
+ * and a consumer theme is exactly that: one class declaring the same
+ * property names. So this file declares none of the colours it uses --
+ * every value is a `var()` onto `styles/tokens.css`, which is the only
+ * file in the repo allowed a hex literal (`tokenSheet.test.ts`).
+ *
+ * That indirection is also the whole of the light/dark answer. Dark is the
+ * only palette authored today; UI-DIRECTION decision 5's light mode
+ * re-declares the same token NAMES under a `data-theme` selector and
+ * nothing else. Because every rule here forwards a token rather than a
+ * colour, the dock follows that switch the moment it exists, with no
+ * second Dockview theme to keep in step. `color-scheme` is deliberately
+ * absent for the same reason -- it belongs with the palette, on the
+ * document, not on one component inside it.
+ *
+ * Ruling R221 still holds: nothing here states a z-index. The dock lives
+ * inside the single `shell-content` stacking context like every other
+ * piece of route content, and Dockview's own `--dv-overlay-z-index`
+ * (inherited from the bundled base sheet) only ever orders elements
+ * *within* that context. */
+
+.dockview-theme-idl1 {
+  /* ---- Surfaces ---- */
+  --dv-group-view-background-color: var(--bg);
+  --dv-tabs-and-actions-container-background-color: var(--surface-2);
+  --dv-activegroup-visiblepanel-tab-background-color: var(--bg);
+  --dv-activegroup-hiddenpanel-tab-background-color: var(--surface-2);
+  --dv-inactivegroup-visiblepanel-tab-background-color: var(--bg);
+  --dv-inactivegroup-hiddenpanel-tab-background-color: var(--surface-2);
+
+  /* ---- Tab text: the active tab is the only one at full strength, the
+     rest step down through the two dim tones the ribbon already uses ---- */
+  --dv-activegroup-visiblepanel-tab-color: var(--fg);
+  --dv-activegroup-hiddenpanel-tab-color: var(--fg-dim);
+  --dv-inactivegroup-visiblepanel-tab-color: var(--fg-dim);
+  --dv-inactivegroup-hiddenpanel-tab-color: var(--fg-faint);
+
+  /* ---- Hairlines. Every rule in the app is --rule (UI-1), including the
+     ones between dock panels: a splitter that drew itself a different grey
+     would be the only disagreeing line on screen. ---- */
+  --dv-separator-border: var(--rule);
+  --dv-tab-divider-color: var(--rule);
+  --dv-paneview-header-border-color: var(--rule);
+  --dv-paneview-active-outline-color: var(--focus);
+
+  /* ---- Drag affordances. The dock zone lights up in the "go" colour, the
+     one R220's status chips already use for a live/OK state; the sash
+     under the pointer picks up the same. ---- */
+  --dv-drag-over-background-color: color-mix(in srgb, var(--good) 22%, transparent);
+  --dv-drag-over-border-color: var(--good);
+  --dv-edge-dock-indicator-color: var(--good);
+  --dv-sash-color: transparent;
+  --dv-active-sash-color: var(--good);
+  --dv-icon-hover-background-color: var(--control-active);
+  --dv-tabs-container-scrollbar-color: var(--fg-faint);
+
+  /* ---- Geometry. 35px is Dockview's own default and is two pixels off
+     the ribbon's 40px row; 32 lines the tab strip up with the density
+     scale R212 set for every other strip of controls in the shell. ---- */
+  --dv-tabs-and-actions-container-height: 32px;
+  --dv-tabs-and-actions-container-font-size: var(--nb-text-label);
+  --dv-tab-font-size: var(--nb-text-label);
+  --dv-border-radius: var(--radius-structural);
+  --dv-tab-border-radius: 0px;
+  --dv-sash-border-radius: 0px;
+  --dv-dropdown-border-radius: var(--radius-structural);
+  --dv-tab-margin: 0;
+  --dv-spacing-padding: 0px;
+  --dv-tab-close-icon-size: inherit;
+  --dv-overlay-z-index: 1;
+}
+
+/* The tab strip is chrome over the document, so it reads in the mono face
+ * every other strip of shell chrome does (R212's density scale), not in
+ * the body face the notebook's own content uses. */
+.dockview-theme-idl1 .dv-tab {
+  font-family: var(--font-mono);
+}
+
+/* A panel's content fills its group: the slot container inside is what the
+ * Notebook page portals into, and it has to be able to measure a real
+ * height or a chart inside it would lay out against zero
+ * (`chartWidthNeedsRefetch`'s observer reads the container, not the
+ * viewport). */
+.dockview-theme-idl1 .dv-content-container {
+  min-height: 0;
+}

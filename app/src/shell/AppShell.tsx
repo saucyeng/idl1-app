@@ -7,7 +7,7 @@ import type { RouteId } from "../routes/types";
 import { ROUTES } from "../routes/types";
 import { navPlacement, resolveLayout } from "./layout";
 import { ASPECT_CLASS_DEBOUNCE_MS, resolveAspectClass, type AspectClass } from "./aspectClass";
-import { cycleLayoutPreset, setAspectClass, useActiveLayoutPreset } from "./layoutPreset";
+import { cycleLayoutPreset, restoreStoredLayout, setAspectClass, useActiveLayoutPreset } from "./layoutPreset";
 import { readColumnPrefs, writeColumnPrefs } from "./columnPrefs";
 import { activityBadges } from "./activityBadges";
 import { useDeviceLink } from "./deviceLink";
@@ -65,10 +65,22 @@ function useAspectClass(): AspectClass {
   );
 
   useEffect(() => {
+    // The first measurement restores unconditionally, every later one
+    // publishes a *change*. `setAspectClass` is a no-op for the class the
+    // layout store already believes it is in, and that is usually `wide` —
+    // its own pre-measurement default — so without this the commonest
+    // machine of all would open at `wide`'s default layout with its stored
+    // one left on disk (ruling R239: layout is per-machine state).
+    let first = true;
     const publish = () => {
       const next = resolveAspectClass(window.innerWidth, window.innerHeight);
       setCls(next);
-      setAspectClass(next);
+      if (first) {
+        first = false;
+        restoreStoredLayout(next);
+      } else {
+        setAspectClass(next);
+      }
     };
     publish();
 

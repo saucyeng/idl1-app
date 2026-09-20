@@ -8,12 +8,7 @@ import SettingsPage from "../routes/pages/Settings";
 import { useAppState } from "../state/AppState";
 import { setActiveRoute } from "./routeVisibility";
 import { usesColumns, type ShellLayout } from "./layout";
-import ColumnFrame from "./ColumnFrame";
-import { EditorSlotColumn } from "./EditorSlotColumn";
-import { GraphSlotColumn } from "./GraphSlotColumn";
-import { useStudioColumnVisible } from "./studioColumns";
-import { useActiveLayoutPreset, useMathsOrientation } from "./layoutPreset";
-import { presetLayout } from "./layoutPresets";
+import DockFrame from "./DockFrame";
 import { RouteErrorBoundary } from "./RouteErrorBoundary";
 
 /** Every destination's element, built once per render but reconciled by
@@ -64,22 +59,6 @@ const ROUTE_ELEMENTS = {
  */
 export default function RouteHost({ layout }: { layout: ShellLayout }) {
   const [state] = useAppState();
-  // R208 item 2: the Notebook toolbar's Graph toggle reaches the frame
-  // here, so turning it off drops the `maths` panel and its divider
-  // outright (`shell/columnVisibility.ts`'s `undefined` content rule,
-  // R107's) instead of leaving a full-width column holding a placeholder
-  // that explains where the toggle is.
-  const graphColumnVisible = useStudioColumnVisible("graph");
-  // R213 item 1: the Output preset takes the properties column away too —
-  // "notebook output full width" cannot mean a placeholder panel beside it.
-  const propertiesColumnVisible = useStudioColumnVisible("properties");
-  // The frame's geometry half of a preset (the visibility half arrives
-  // through the two toggles above, which the preset writes — R213 item 3:
-  // "the toggles and the preset never disagree"). A `"custom"` class pins
-  // no width; the orientation it kept is the store's, not the preset's.
-  const activePreset = useActiveLayoutPreset();
-  const mathsOrientation = useMathsOrientation();
-  const outputWidthPx = activePreset === "custom" ? null : presetLayout(activePreset).outputWidthPx;
 
   useEffect(() => {
     setActiveRoute(state.route);
@@ -93,13 +72,20 @@ export default function RouteHost({ layout }: { layout: ShellLayout }) {
         const isActive = state.route === r.id;
         const content =
           r.id === "notebook" && notebookInColumns ? (
-            <ColumnFrame
-              maths={graphColumnVisible ? <GraphSlotColumn /> : undefined}
-              properties={propertiesColumnVisible ? <EditorSlotColumn /> : undefined}
-              output={ROUTE_ELEMENTS.notebook}
-              mathsOrientation={mathsOrientation}
-              outputWidthPx={outputWidthPx}
-            />
+            // Ruling R239: the page is still this one element, rendered at
+            // this one position, and the dock beside it holds nothing but
+            // the three containers the page portals into (`outputSlot.ts`).
+            // That is why the page keeps its state through a re-dock and
+            // through a panel being closed — it is never inside a panel.
+            // Its own root is `flex h-full flex-col`, so it takes only the
+            // height its banners need once the main content has left for
+            // the dock, and the dock takes the rest.
+            <div className="flex h-full min-h-0 flex-col">
+              {ROUTE_ELEMENTS.notebook}
+              <div className="min-h-0 flex-1">
+                <DockFrame />
+              </div>
+            </div>
           ) : (
             ROUTE_ELEMENTS[r.id]
           );
