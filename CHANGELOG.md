@@ -6,6 +6,44 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 
 ### Added
 
+- **The studio is a tiling window manager [docs] (2026-09-20, ruling R239,
+  closing R227 and R218).** Notebook, Maths and Code are now **Dockview**
+  panels (`dockview-react` 8.3.1, MIT, zero-dependency, bundled — the
+  offline rule holds, no CDN) in a split tree instead of `ColumnFrame`'s
+  fixed left-to-right columns: drag a tab to split the area or to stack
+  two panels behind tabs, drag a sash to resize, close a panel from its
+  tab or from the ribbon's own Notebook/Maths/Code toggles. Those toggles
+  now report which panels are actually docked, because a tab's close
+  button runs the same command the button does — one path from "this panel
+  should go away" to the page's stored visibility, which is what used to
+  let the picker and the toggles disagree. Floating and pop-out groups are
+  disabled (R218: panels dock, they never overlap), and R221.1's single
+  stacking layer is untouched — the theme sheet states no z-index.
+
+  R213's four presets survive as **named layouts** (`shell/dockLayout.ts`):
+  the same serialised Dockview document a dragged arrangement produces,
+  applied through the same path, so there is one way for an arrangement to
+  reach the screen. The per-aspect-class defaults are unchanged (ultrawide
+  → Split, wide → Stacked, narrow → Output) and `Ctrl+Shift+L` still
+  cycles. The layout is versioned and validated on read — an older
+  version, a hand-edited document or one naming a panel this build no
+  longer has falls back to that class's default and never throws — and is
+  per-machine UI state, stored in `columnPrefs.ts`'s one `localStorage`
+  document, never in the workbook.
+
+  The panels themselves hold nothing: each is an empty container that
+  publishes its DOM node, and the Notebook page — which owns the ribbon,
+  the timeline strip, the workbook session and the sandbox iframe host —
+  stays mounted where `RouteHost` has always rendered it and portals its
+  three regions in (R109's rule, now applied to the Notebook output too,
+  `shell/outputSlot.ts`). Closing a panel therefore cannot take the studio
+  down with it, and a re-dock re-renders nothing at all. Panels are
+  overlay-rendered, which repositions rather than reparents them, so a
+  drag between groups keeps scroll offsets and does not reload a cell's
+  chart iframe. `ColumnFrame.tsx`, `columnVisibility.ts`, `columnResize.ts`
+  and the two slot columns are deleted; `ColumnPlaceholder` moved to a file
+  of its own.
+
 - **Burst-seam spans on the wire, and `evaluated_with` written by core
   [docs] (2026-09-14, ruling R237).** `fetch_seams(session_id, channel)`
   (C3 §3.5) returns each burst-seam boundary's corrected-time extent — a
