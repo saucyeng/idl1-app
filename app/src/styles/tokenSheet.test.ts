@@ -118,6 +118,54 @@ describe("tokens.css — the Notebook density scale — present with R212's exac
   });
 });
 
+describe("notebook.css — the rendered-markdown scale (R247) — is ratios off one stated size", () => {
+  const notebookCss = readFileSync(join(STYLES_DIR, "notebook.css"), "utf-8");
+
+  it("every heading size is a calc() off --nb-prose-body, never its own px value", () => {
+    // Arrange
+    const headings = ["h1", "h2", "h3"];
+
+    // Act / Assert -- each heading's font-size derives from the body token,
+    // which is what makes Dense's single re-declaration below retune the
+    // whole scale instead of only the paragraphs.
+    for (const h of headings) {
+      const block = notebookCss.slice(notebookCss.indexOf(`.prose-block ${h} {`));
+      const rule = block.slice(0, block.indexOf("}"));
+      expect(rule, `${h} should size from --nb-prose-body`).toContain("calc(var(--nb-prose-body)");
+    }
+  });
+
+  it("Dense re-declares the body size and the rhythm, and never a heading ratio (R247: it tightens, it does not vanish)", () => {
+    // Arrange
+    const start = notebookCss.indexOf('.cell-list[data-dense="true"] {');
+    const block = notebookCss.slice(start, notebookCss.indexOf("}", start));
+
+    // Act
+    const ratiosOverridden = ["--nb-prose-scale-h1", "--nb-prose-scale-h2", "--nb-prose-scale-h3"].filter((t) =>
+      block.includes(`${t}:`)
+    );
+
+    // Assert
+    expect(start).toBeGreaterThan(-1);
+    expect(block).toContain("--nb-prose-body:");
+    expect(block).toContain("--nb-prose-rhythm:");
+    expect(ratiosOverridden).toEqual([]);
+  });
+
+  it("the 80ch measure is on the text elements, never on the block (tables and code keep the panel)", () => {
+    // Arrange
+    const blockRuleStart = notebookCss.indexOf(".cell-list .prose-block {");
+    const blockRule = notebookCss.slice(blockRuleStart, notebookCss.indexOf("}", blockRuleStart));
+
+    // Act
+    const measureOnChildren = /\.prose-block > :is\([^)]*\)\s*\{\s*max-width:\s*var\(--nb-prose-measure\)/.test(notebookCss);
+
+    // Assert
+    expect(blockRule).not.toContain("max-width");
+    expect(measureOnChildren).toBe(true);
+  });
+});
+
 describe("index.css — the .idl-dense scope — sizes controls from the density tokens only", () => {
   const indexCss = readFileSync(join(STYLES_DIR, "index.css"), "utf-8");
 

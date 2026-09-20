@@ -353,6 +353,28 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 
 ### Fixed
 
+- **A workbook's prose is typeset [docs] (2026-09-20, ruling R247).** The
+  notebook had semantic class names for everything it renders and no rules
+  behind any of them, so `pulldown-cmark`'s `<h1>`/`<h2>`/`<p>` all arrived
+  at the browser default — 16 px, weight 400, zero margin. A heading read
+  exactly like the sentence under it, consecutive paragraphs ran together,
+  and a math definition's five inline spans concatenated into
+  `km/hmath_unknown_channel: … unit unknown`. `styles/notebook.css` is the
+  scale: one stated body size with the headings as ratios off it (h1 ×1.5,
+  h2 ×1.25, h3 ×1.125, weight 600), an `em`-based rhythm that gives a
+  heading more space above than below, and definitions for lists, inline
+  code, fenced blocks, blockquotes, tables, links and rules in the app's
+  own hairline grammar. Prose is capped at an 80 ch measure while tables,
+  code blocks and chart cells keep the full panel — the cap is on the text
+  elements, not the block. Dense (R216 item 3) re-declares the body size
+  and the four rhythm values and nothing else, so the scale tightens there
+  without the hierarchy vanishing. Reading size is unchanged at both
+  densities: R247 fixes the hierarchy, not the size, so no open workbook
+  reflows. A math definition is now a two-column grid shared by the whole
+  cell — label, then detail — so every definition's value or error starts
+  at the same x and an error is the app's `--accent`, as a table cell's
+  already was. UI-DIRECTION's type section carries the scale.
+
 - **The function reference agrees with the engine again [no-docs]
   (2026-09-20).** Opening a workbook warned "the function reference is out
   of date with the engine (5 mismatches)": `model/functionCatalog.ts`'s

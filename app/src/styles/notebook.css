@@ -1,0 +1,365 @@
+/* The Notebook output's own stylesheet (ruling R247).
+ *
+ * Two things live here, and they are the same bug seen twice: until R247
+ * the notebook had semantic class names for everything it renders --
+ * `prose-block`, `math-cell-def`, `cell-error-text` -- and no rules behind
+ * any of them. `pulldown-cmark`'s `<h1>`/`<h2>`/`<p>` therefore arrived at
+ * the browser default (16px, weight 400, zero margin), so a heading read
+ * exactly like the sentence under it and two paragraphs ran together; and a
+ * math definition's five sibling `<span>`s were laid out by nothing at all,
+ * so a label, its error and its unit concatenated into
+ * `km/hmath_unknown_channel: ... unit unknown`. Both are fixed by layout
+ * and a type scale, not by punctuation.
+ *
+ * Scoped under `.cell-list`, the studio output's own root, exactly as
+ * `paper.css` scopes the same document's mobile rendering under
+ * `.paper-view`. The two are deliberately separate sheets: paper is a
+ * touch-first sans column at a 72ch measure (R184), this is the dense mono
+ * studio, and one sheet trying to be both is how a "notebook" and a
+ * "document" start disagreeing about what a heading is.
+ *
+ * Every value is a `tokens.css` custom property. No colour literal appears
+ * here (`tokenSheet.test.ts`), and no size does either -- the whole scale
+ * is `--nb-prose-*`, so Dense re-declares four token NAMES below and the
+ * hierarchy follows without a second table of numbers.
+ */
+
+/* ---- Dense (ruling R216 item 3) ----
+ * Re-declares the same token names against the same scope, which is the
+ * pattern `dock.css` uses for light mode: the rules below never learn that
+ * Dense exists. The heading RATIOS are not re-declared -- R247: the scale
+ * tightens here, it does not vanish. */
+.cell-list[data-dense="true"] {
+  --nb-prose-body: var(--nb-prose-body-dense);
+  --nb-prose-leading: var(--nb-prose-leading-dense);
+  --nb-prose-rhythm: var(--nb-prose-rhythm-dense);
+  --nb-prose-space-above: var(--nb-prose-space-above-dense);
+  --nb-prose-space-below: var(--nb-prose-space-below-dense);
+}
+
+/* ---- The prose block ---- */
+
+.cell-list .prose-block {
+  font-size: var(--nb-prose-body);
+  line-height: var(--nb-prose-leading);
+  color: var(--fg);
+}
+
+/* The measure is on the text elements, never on the block (R247: "prose
+ * measure capped near 80ch inside wide panels while charts and tables keep
+ * the full panel width"). Capping the block itself would take its tables
+ * and code blocks down to 80ch with it, and a lap table is the one thing in
+ * a workbook that most needs the panel it was given. */
+.cell-list .prose-block > :is(p, h1, h2, h3, h4, h5, h6, ul, ol, blockquote) {
+  max-width: var(--nb-prose-measure);
+}
+
+/* A block butts cleanly against the cell above and below it: the rhythm
+ * between two paragraphs belongs between them, not at the block's edges,
+ * where it would double up with `CellFrame`'s own geometry and with Dense's
+ * claim that there is no space between outputs at all. */
+.cell-list .prose-block > :first-child {
+  margin-block-start: 0;
+}
+
+.cell-list .prose-block > :last-child {
+  margin-block-end: 0;
+}
+
+.cell-list .prose-block p {
+  margin-block: var(--nb-prose-rhythm);
+}
+
+.cell-list .prose-block :is(h1, h2, h3, h4, h5, h6) {
+  font-weight: var(--nb-prose-weight-heading);
+  line-height: 1.25;
+  color: var(--fg);
+  margin-block: var(--nb-prose-space-above) var(--nb-prose-space-below);
+}
+
+.cell-list .prose-block h1 {
+  font-size: calc(var(--nb-prose-body) * var(--nb-prose-scale-h1));
+}
+
+.cell-list .prose-block h2 {
+  font-size: calc(var(--nb-prose-body) * var(--nb-prose-scale-h2));
+}
+
+.cell-list .prose-block h3 {
+  font-size: calc(var(--nb-prose-body) * var(--nb-prose-scale-h3));
+}
+
+/* h4-h6 stop growing and take the label treatment instead: a workbook that
+ * needs six heading levels has a structure problem, and inventing three
+ * more sizes for them would flatten the three that carry the document. */
+.cell-list .prose-block :is(h4, h5, h6) {
+  font-size: var(--nb-prose-body);
+  color: var(--fg-dim);
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+}
+
+/* ---- Lists ---- */
+
+.cell-list .prose-block :is(ul, ol) {
+  margin-block: var(--nb-prose-rhythm);
+  padding-inline-start: var(--nb-prose-indent);
+}
+
+.cell-list .prose-block ul {
+  list-style: disc;
+}
+
+.cell-list .prose-block ol {
+  list-style: decimal;
+}
+
+/* A nested list is part of its parent item, not a new paragraph. */
+.cell-list .prose-block li > :is(ul, ol) {
+  margin-block: 0;
+}
+
+.cell-list .prose-block li {
+  margin-block: calc(var(--nb-prose-rhythm) / 3);
+}
+
+.cell-list .prose-block li::marker {
+  color: var(--fg-faint);
+}
+
+/* ---- Code ---- */
+
+.cell-list .prose-block code {
+  font-family: var(--font-mono);
+  font-size: 0.9em;
+  background: var(--control);
+  border-radius: var(--radius-structural);
+  padding-inline: var(--nb-pad);
+  /* Block padding as a ratio of the inline padding, so an inline code span
+   * never grows the line box it sits in and a paragraph of prose with three
+   * channel names in it keeps one rhythm. */
+  padding-block: 0.1em;
+}
+
+.cell-list .prose-block pre {
+  font-family: var(--font-mono);
+  font-size: 0.9em;
+  line-height: 1.45;
+  background: var(--surface-2);
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-structural);
+  padding: var(--space-3);
+  margin-block: var(--nb-prose-rhythm);
+  overflow-x: auto;
+}
+
+/* A fenced block's own `<code>` is already inside the `<pre>`'s surface --
+ * a second ground and a second padding inside it reads as a box in a box. */
+.cell-list .prose-block pre code {
+  background: none;
+  padding: 0;
+  font-size: inherit;
+}
+
+/* ---- Quotes, rules, links, emphasis ---- */
+
+.cell-list .prose-block blockquote {
+  margin-block: var(--nb-prose-rhythm);
+  margin-inline: 0;
+  padding-inline-start: var(--space-4);
+  border-inline-start: 2px solid var(--rule);
+  color: var(--fg-dim);
+}
+
+.cell-list .prose-block hr {
+  border: 0;
+  border-top: 1px solid var(--rule);
+  margin-block: var(--nb-prose-space-above);
+}
+
+.cell-list .prose-block a {
+  color: var(--info);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.cell-list .prose-block a:hover {
+  text-decoration-thickness: 2px;
+}
+
+.cell-list .prose-block a:focus-visible {
+  outline: 1px solid var(--focus);
+  outline-offset: 2px;
+}
+
+.cell-list .prose-block strong {
+  font-weight: var(--nb-prose-weight-heading);
+  color: var(--fg);
+}
+
+.cell-list .prose-block em {
+  font-style: italic;
+}
+
+.cell-list .prose-block img {
+  max-width: 100%;
+  height: auto;
+}
+
+/* ---- Tables inside prose ----
+ * Not measure-capped (see above). The same hairline grammar the rest of the
+ * app uses: one `--rule` line, no fills, no zebra. */
+
+.cell-list .prose-block table {
+  border-collapse: collapse;
+  width: 100%;
+  margin-block: var(--nb-prose-rhythm);
+  font-size: 0.95em;
+  font-variant-numeric: tabular-nums;
+}
+
+.cell-list .prose-block :is(th, td) {
+  border: 1px solid var(--rule);
+  padding: var(--nb-pad) var(--space-3);
+  text-align: left;
+}
+
+.cell-list .prose-block th {
+  font-weight: var(--nb-prose-weight-heading);
+  color: var(--fg-dim);
+}
+
+/* ---- The prose mini-editor's click target (R226 item 1) ----
+ * `ProseBlock` adds `prose-block-editable` only when an `onEdit` handler
+ * was given, so a read-only surface (print, the report view) keeps no
+ * affordance. The hover ground comes from that component's own Tailwind
+ * classes; what belongs here is the inset that stops the ground hugging the
+ * glyphs. */
+.cell-list .prose-block-editable {
+  padding-inline: var(--nb-pad);
+  margin-inline: calc(-1 * var(--nb-pad));
+}
+
+/* ---- A math cell's definitions (R247 item 2) ----
+ * The run-together bug: `DefRow` renders up to five sibling inline spans --
+ * name, then value OR error, then unit, "unit unknown", rate -- and inline
+ * elements with no separator concatenate. A punctuation separator would
+ * have fixed the symptom and left the reading order unstructured, so this
+ * is a row: a fixed label column, the value or the error beside it, and the
+ * unit and rate trailing as their own items. Definitions down a cell line
+ * up because the label column has a floor width. */
+
+/* The grid is on the CELL, not on each row, and every row is
+ * `display: contents` — so the label column is one track shared by every
+ * definition and the detail column starts at the same x all the way down.
+ * A grid per row (the obvious shape) sizes each row's label track on its
+ * own, and a cell mixing `Braking` with `Speed, smoothed # unit: km/h`
+ * comes out ragged.
+ *
+ * `fit-content(--nb-def-name-max)` shrinks the column to the longest label
+ * but stops it running away when one definition is named a sentence; the
+ * floor is the name's own `min-width` below, which the track honours. */
+.cell-list .math-cell {
+  display: grid;
+  grid-template-columns: fit-content(var(--nb-def-name-max)) minmax(0, 1fr);
+  column-gap: var(--space-4);
+  row-gap: var(--nb-pad);
+  align-items: baseline;
+  font-family: var(--font-mono);
+  font-size: var(--nb-text-body);
+  line-height: 1.4;
+}
+
+/* The cell's own notes and structural errors are not definitions: they span
+ * both tracks rather than sitting in the label column. */
+.cell-list .math-cell-window-note,
+.cell-list .math-cell-errors {
+  grid-column: 1 / -1;
+}
+
+.cell-list .math-cell-def {
+  display: contents;
+}
+
+.cell-list .math-cell-def-name {
+  min-width: var(--nb-def-name-col);
+  color: var(--fg);
+  font-weight: 500;
+}
+
+/* The detail column is its own row of items so a definition with a unit and
+ * a rate reads as one phrase, and a long error wraps inside this column
+ * rather than under the label. `min-width: 0` on the track above is what
+ * lets it wrap at all — a grid item's default `min-width: auto` would size
+ * the column to the longest unbroken error string and push the row wider
+ * than the panel. */
+.cell-list .math-cell-def-detail {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  column-gap: var(--space-4);
+  row-gap: var(--nb-pad);
+  min-width: 0;
+}
+
+/* Shrinks but never grows. Growing looks right until a definition has a
+ * unit: an error that takes the whole remaining column pushes `unit
+ * unknown` against the far edge of a wide panel, where it reads as
+ * belonging to nothing. */
+.cell-list .math-cell-def-value,
+.cell-list .math-cell-def-empty,
+.cell-list .math-cell-def .cell-error-text {
+  flex: 0 1 auto;
+  min-width: 0;
+}
+
+.cell-list .math-cell-def-value {
+  color: var(--fg-dim);
+}
+
+.cell-list .math-cell-def-empty {
+  color: var(--fg-faint);
+}
+
+.cell-list .math-cell-def-unit,
+.cell-list .math-cell-def-rate {
+  flex: 0 0 auto;
+  color: var(--fg-dim);
+}
+
+.cell-list .math-cell-def-unit-unknown {
+  flex: 0 0 auto;
+  color: var(--fg-faint);
+  font-style: italic;
+}
+
+/* Every error the notebook renders in place, in the one token the app
+ * already uses for a failure (`--accent`, UI-1: "alert/error/destructive").
+ * Stated once here rather than per cell kind, which is how `MathCell`'s
+ * came to have no colour at all while `TableCell`'s had `text-destructive`. */
+.cell-list .cell-error-text {
+  color: var(--accent);
+}
+
+.cell-list .math-cell-errors {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--nb-pad);
+  font-family: var(--font-mono);
+  font-size: var(--nb-text-body);
+}
+
+.cell-list .math-cell-window-note {
+  font-size: var(--nb-text-label);
+  color: var(--fg-dim);
+  padding-block-end: var(--nb-pad);
+}
+
+.cell-list .cell-list-pending {
+  font-family: var(--font-mono);
+  font-size: var(--nb-text-body);
+  color: var(--fg-faint);
+}

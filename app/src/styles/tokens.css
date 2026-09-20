@@ -120,6 +120,46 @@
   --nb-pad: 4px; /* a control's inner padding */
   --nb-gap: 6px; /* gap between controls, and between toolbar groups' members */
 
+  /* ---- Notebook rendered-markdown type scale (ruling R247) ----
+   * The scale `styles/notebook.css` draws a prose block with. Until R247
+   * the app had class names for every one of these elements and no rules
+   * behind them, so `pulldown-cmark`'s `<h1>`/`<h2>`/`<p>` all arrived at
+   * the browser default (16px/400/margin 0) and a heading was
+   * indistinguishable from the sentence under it.
+   *
+   * ONE size is stated (`--nb-prose-body`) and the headings are ratios off
+   * it. That is what makes R247's "the scale tightens in Dense, it does not
+   * vanish" true by construction rather than by a second table kept in
+   * step: Dense re-declares the body size and the rhythm, the ratios are
+   * shared, and the hierarchy survives at both densities.
+   *
+   * `--nb-prose-body` is deliberately today's rendered size, not
+   * `--text-body`: R247 keeps the reading size and fixes the hierarchy, so
+   * nobody's open workbook reflows on upgrade. Dense drops to `--text-body`
+   * (14px), which is the app's own body size everywhere else.
+   *
+   * Rhythm is in `em`, not px, so it tracks whichever body size is in
+   * force. A heading takes more space above than below — the space belongs
+   * to the section it opens, which is what makes a document scannable. */
+  --nb-prose-body: 16px; /* rendered markdown's own body size */
+  --nb-prose-body-dense: var(--text-body); /* 14px; Dense mode's (R216 item 3) */
+  --nb-prose-scale-h1: 1.5;
+  --nb-prose-scale-h2: 1.25;
+  --nb-prose-scale-h3: 1.125;
+  --nb-prose-weight-heading: 600;
+  --nb-prose-leading: 1.55;
+  --nb-prose-leading-dense: 1.4;
+  --nb-prose-rhythm: 0.6em; /* between two paragraphs */
+  --nb-prose-rhythm-dense: 0.4em;
+  --nb-prose-space-above: 1.6em; /* above a heading */
+  --nb-prose-space-above-dense: 1em;
+  --nb-prose-space-below: 0.5em; /* below a heading */
+  --nb-prose-space-below-dense: 0.3em;
+  --nb-prose-indent: 1.5em; /* a list's marker gutter */
+  --nb-prose-measure: 80ch; /* prose only; tables, code blocks and charts keep the panel */
+  --nb-def-name-col: 16ch; /* a math definition's label column, so values line up down the list */
+  --nb-def-name-max: 40ch; /* ...and its ceiling, so one sentence-long label cannot eat the row */
+
   /* ---- Shell chrome (ruling R220): the four fixed bands of the window,
    * stated once here rather than as a literal on each component. The
    * anatomy is VS Code's, at R212's density — the title bar is already

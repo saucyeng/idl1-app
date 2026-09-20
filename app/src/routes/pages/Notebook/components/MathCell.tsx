@@ -19,29 +19,38 @@ function DefRow({ def }: { def: CellDefResult }) {
   return (
     <div className="math-cell-def">
       <span className="math-cell-def-name">{def.label ?? def.name}</span>
-      {def.error !== null ? (
-        <ErrorText error={def.error} />
-      ) : def.value !== null ? (
-        <span className="math-cell-def-value">
-          {def.value.length} sample{def.value.length === 1 ? "" : "s"}
-          {def.value.has_t ? " (t)" : ""}
-          {/* IPC need N3 (runs/2026-09-05/lanes/l6/IPC-NEEDS.md) — this
-              `HostChannelRef` is a length/has_t marker only; the actual
-              samples never cross today, so a JS cell that would consume
-              this definition's values (not just see that it succeeded)
-              cannot bind to it yet. Rendering only the marker here, never
-              fabricating sample values from `length` alone. */}
-        </span>
-      ) : (
-        <span className="math-cell-def-empty">—</span>
-      )}
-      {unit.text !== "" && <span className="math-cell-def-unit">{unit.text}</span>}
-      {unit.unknownReason !== null && (
-        <span className="math-cell-def-unit-unknown" title={unit.unknownReason}>
-          unit unknown
-        </span>
-      )}
-      {rate !== null && <span className="math-cell-def-rate">{rate}</span>}
+      {/* Ruling R247 item 2: everything that is not the label goes in one
+          element, so `styles/notebook.css` can lay the row out as two
+          columns — label, then detail — instead of five inline siblings
+          that concatenate (`km/hmath_unknown_channel: …`). The grouping is
+          what makes a long label push its error down *within* the detail
+          column rather than orphan it at the row's left edge; it is also
+          the reading order a screen reader gets, unchanged. */}
+      <span className="math-cell-def-detail">
+        {def.error !== null ? (
+          <ErrorText error={def.error} />
+        ) : def.value !== null ? (
+          <span className="math-cell-def-value">
+            {def.value.length} sample{def.value.length === 1 ? "" : "s"}
+            {def.value.has_t ? " (t)" : ""}
+            {/* IPC need N3 (runs/2026-09-05/lanes/l6/IPC-NEEDS.md) — this
+                `HostChannelRef` is a length/has_t marker only; the actual
+                samples never cross today, so a JS cell that would consume
+                this definition's values (not just see that it succeeded)
+                cannot bind to it yet. Rendering only the marker here, never
+                fabricating sample values from `length` alone. */}
+          </span>
+        ) : (
+          <span className="math-cell-def-empty">—</span>
+        )}
+        {unit.text !== "" && <span className="math-cell-def-unit">{unit.text}</span>}
+        {unit.unknownReason !== null && (
+          <span className="math-cell-def-unit-unknown" title={unit.unknownReason}>
+            unit unknown
+          </span>
+        )}
+        {rate !== null && <span className="math-cell-def-rate">{rate}</span>}
+      </span>
     </div>
   );
 }

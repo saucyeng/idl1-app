@@ -3,6 +3,11 @@
 @import "./tokens.css";
 @import "./report-print.css";
 @import "./paper.css";
+/* Ruling R247: the studio output's own type scale. After `paper.css`, which
+ * is the same document's mobile rendering under a different root class —
+ * the two never match a common element, so the order between them is
+ * documentation, not cascade. */
+@import "./notebook.css";
 /* Ruling R239's tiling frame. The library's own sheet is imported from the
  * installed package, bundled by Vite into the app's one stylesheet —
  * never a CDN (CLAUDE.md §3: "offline-first means bundled"). `./dock.css`

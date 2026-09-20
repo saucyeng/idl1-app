@@ -86,7 +86,11 @@ export interface CellListProps {
   /** Whether dense stacking is on (ruling R216 item 3). Passed to
    *  `TableCell`, whose grid tightens its row padding; every other kind's
    *  density is `CellFrame`'s own geometry, which this component does not
-   *  own. */
+   *  own. Also published on this component's root as `data-dense`, which is
+   *  how `styles/notebook.css` reaches the rendered-markdown type scale
+   *  (ruling R247) — the prose inside a block is `dangerouslySetInnerHTML`
+   *  from core, so there is no React element to hand a class to and the
+   *  scope has to come from an ancestor. */
   dense?: boolean;
   /** Reads a derived table row's recorded lap time, for `TableCell`'s Main
    *  row resolution under C2 §4's reserved `"fastest"` — see that
@@ -143,7 +147,7 @@ export default function CellList({
   }
 
   return (
-    <div className="cell-list">
+    <div className="cell-list" data-dense={dense ? "true" : "false"}>
       {doc.cells.map((cell, index) => {
         const key = cell.id ?? `unresolved-${index}`;
         const before = cell.id !== null ? proseBlocks.get(`${cell.id}::before`) : undefined;
