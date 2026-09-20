@@ -353,6 +353,19 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 
 ### Fixed
 
+- **The function reference agrees with the engine again [no-docs]
+  (2026-09-20).** Opening a workbook warned "the function reference is out
+  of date with the engine (5 mismatches)": `model/functionCatalog.ts`'s
+  hand-transcribed `MATH_FUNCTIONS` had fallen behind C2 §3.3 twice over.
+  `hilbert` was renamed to `envelope` on 2026-09-09 (R151 item 8 / R167)
+  and the table still offered the retired spelling in completion while
+  never offering the new one; the three shape-polymorphic lap scalars
+  `lap_number()`, `lap_time()` and `sector_time(i)` landed on 2026-09-13
+  (R217 item 2, R233) and were never transcribed. 72 → 75 entries, 69
+  implemented and 6 not, matching `math_builtin_catalog()`'s own counts.
+  Neither the contract nor the engine was wrong — only the transcription —
+  so this is app-side alone, and the five names are now pinned by a test.
+
 - **The ribbon's big buttons are 44 px again, so their labels are not
   clipped [no-docs] (2026-09-20).** `styles/index.css`'s Notebook density
   scope forces every `button` inside `.idl-dense` to `--nb-control-h`

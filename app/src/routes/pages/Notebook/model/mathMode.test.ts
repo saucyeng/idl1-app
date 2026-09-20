@@ -93,11 +93,11 @@ describe("tokenizeMath", () => {
 });
 
 describe("MATH_FUNCTIONS", () => {
-  it("MATH_FUNCTIONS — the catalog — contains all 72 of C2 §3.3's names (scipy-alignment lane, was 69)", () => {
-    expect(MATH_FUNCTIONS).toHaveLength(72);
+  it("MATH_FUNCTIONS — the catalog — contains all 75 of C2 §3.3's names (2026-09-20 catch-up, was 72)", () => {
+    expect(MATH_FUNCTIONS).toHaveLength(75);
 
     const names = new Set(MATH_FUNCTIONS.map((f) => f.name));
-    expect(names.size).toBe(72);
+    expect(names.size).toBe(75);
 
     for (const name of ["butter", "spectrogram", "rotate_euler", "vec", "current_lap", "where"]) {
       expect(names.has(name)).toBe(true);
@@ -107,6 +107,6 @@ describe("MATH_FUNCTIONS", () => {
   it("MATH_FUNCTIONS — every NotImplemented entry — is marked so it can be shown greyed", () => {
     const notImplemented = MATH_FUNCTIONS.filter((f) => f.status === "notImplemented").map((f) => f.name).sort();
 
-    expect(notImplemented).toEqual(["convolve", "correlate", "hilbert", "resample", "sosfilt", "spectrogram"].sort());
+    expect(notImplemented).toEqual(["convolve", "correlate", "envelope", "resample", "sosfilt", "spectrogram"].sort());
   });
 });

@@ -1,5 +1,5 @@
 /**
- * The 72-entry builtin function catalog transcribed verbatim, row by row,
+ * The 75-entry builtin function catalog transcribed verbatim, row by row,
  * from C2 §3.3 "Builtin catalog"
  * (`docs/superpowers/specs/2026-09-03-idl1-c2-workbook-v3.md`). C2 §3.3
  * states the contract table's own source of truth is
@@ -20,6 +20,18 @@
  * actually serves and what {@link diffFunctionCatalog} below checks this
  * table against at runtime.
  *
+ * Brought current again 2026-09-20, after the running app reported five
+ * mismatches against the live engine — 72 → 75 entries, all five of them
+ * this table lagging C2 §3.3 rather than any disagreement with it:
+ * `hilbert` became `envelope` on 2026-09-09 (R151 item 8 / R167, C2 §3.3's
+ * own retired-names table; `math/alias.rs` still migrates the old spelling
+ * in saved expressions, but the *catalog* no longer names it, so offering
+ * it in completion taught a name the engine had retired), and the three
+ * shape-polymorphic lap scalars `lap_number()`, `lap_time()` and
+ * `sector_time(i)` landed on 2026-09-13 (R217 item 2, R233) without the
+ * transcription following. Cross-checked row by row against
+ * `rust/core/src/math/catalog.rs` again, as the paragraph above did.
+ *
  * A row naming several functions together (e.g. `floor` `ceil` `round`) is
  * expanded into one {@link CatalogEntry} per name here, each carrying its
  * own single-function signature, so `CodePane`'s completion and
@@ -27,7 +39,7 @@
  * `and`/`or`/`not` are C2 §3.2 grammar operators, not catalog entries —
  * see `mathMode.ts`'s `KEYWORDS` set — and are not listed here. Likewise
  * `main(col[])` (C2 §4) is a table-cell-only function documented in C2 §4,
- * not part of this 72-entry catalog.
+ * not part of this 75-entry catalog.
  */
 
 /** Whether a catalog entry's engine implementation is complete. A
@@ -51,9 +63,9 @@ export interface CatalogEntry {
   status: CatalogStatus;
 }
 
-/** C2 §3.3's 72 named builtin functions, transcribed verbatim from the
- *  contract table. 66 `"implemented"`, 6 `"notImplemented"` (`sosfilt`,
- *  `spectrogram`, `hilbert`, `correlate`, `convolve`, `resample`), per
+/** C2 §3.3's 75 named builtin functions, transcribed verbatim from the
+ *  contract table. 69 `"implemented"`, 6 `"notImplemented"` (`sosfilt`,
+ *  `spectrogram`, `envelope`, `correlate`, `convolve`, `resample`), per
  *  `rust/core/src/math/catalog.rs`'s own counting tests. */
 export const MATH_FUNCTIONS: CatalogEntry[] = [
   { name: "butter", signature: 'butter(order, cutoff_hz, "low"|"lowpass"|"high"|"highpass", ch)', category: "Filter", status: "implemented" },
@@ -109,7 +121,7 @@ export const MATH_FUNCTIONS: CatalogEntry[] = [
     status: "implemented",
   },
   { name: "spectrogram", signature: "spectrogram(ch, window_size, hop_size, window, detrend, scaling)", category: "Frequency", status: "notImplemented" },
-  { name: "hilbert", signature: "hilbert(ch)", category: "Frequency", status: "notImplemented" },
+  { name: "envelope", signature: "envelope(ch)", category: "Frequency", status: "notImplemented" },
   { name: "correlate", signature: "correlate(a, b)", category: "Correlation", status: "notImplemented" },
   { name: "convolve", signature: "convolve(ch, kernel)", category: "Correlation", status: "notImplemented" },
   { name: "resample", signature: "resample(ch, hz)", category: "Resampling", status: "notImplemented" },
@@ -118,6 +130,9 @@ export const MATH_FUNCTIONS: CatalogEntry[] = [
   { name: "lap_start_time", signature: "lap_start_time(n)", category: "Lap", status: "implemented" },
   { name: "lap_start_distance", signature: "lap_start_distance(n)", category: "Lap", status: "implemented" },
   { name: "sector_number", signature: "sector_number()", category: "Lap", status: "implemented" },
+  { name: "lap_number", signature: "lap_number()", category: "Lap", status: "implemented" },
+  { name: "lap_time", signature: "lap_time()", category: "Lap", status: "implemented" },
+  { name: "sector_time", signature: "sector_time(i)", category: "Lap", status: "implemented" },
   { name: "lap_delta_time", signature: "lap_delta_time(ch)", category: "Lap delta", status: "implemented" },
   { name: "lap_delta_dist", signature: "lap_delta_dist(ch)", category: "Lap delta", status: "implemented" },
   { name: "attitude", signature: 'attitude("roll"|"pitch")', category: "Estimator (diagnostic)", status: "implemented" },
@@ -183,7 +198,7 @@ export interface FunctionCatalogMismatch {
  *
  * @param local Defaults to `MATH_FUNCTIONS`; a parameter only so this
  *   function's tests can exercise it against small fixtures instead of the
- *   full 72-entry table.
+ *   full 75-entry table.
  */
 export function diffFunctionCatalog(
   remote: RemoteMathBuiltin[],

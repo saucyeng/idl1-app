@@ -81,7 +81,7 @@ describe("diffFunctionCatalog", () => {
 
   // The self-check above only proves internal consistency -- it would still
   // pass on a stale or truncated table compared against itself. This test
-  // pins MATH_FUNCTIONS to the actual 72-entry ground truth transcribed from
+  // pins MATH_FUNCTIONS to the actual 75-entry ground truth transcribed from
   // `rust/core/src/math/catalog.rs`'s `math_builtin_catalog()`
   // (scipy-alignment lane, ledger R151/R157), so a future edit that drops or
   // mis-spells a name fails here rather than only showing up as a silent
@@ -104,14 +104,29 @@ describe("diffFunctionCatalog", () => {
     }
   });
 
-  it("MATH_FUNCTIONS — total count and implemented/notImplemented split — match the engine catalog's own counts (72 = 66 + 6)", () => {
+  it("MATH_FUNCTIONS — total count and implemented/notImplemented split — match the engine catalog's own counts (75 = 69 + 6)", () => {
     // Arrange
     const implemented = MATH_FUNCTIONS.filter((e) => e.status === "implemented").length;
     const notImplemented = MATH_FUNCTIONS.filter((e) => e.status === "notImplemented").length;
 
     // Act / Assert
-    expect(MATH_FUNCTIONS.length).toBe(72);
-    expect(implemented).toBe(66);
+    expect(MATH_FUNCTIONS.length).toBe(75);
+    expect(implemented).toBe(69);
     expect(notImplemented).toBe(6);
+  });
+
+  // The five mismatches the running app reported on 2026-09-20 (the
+  // "function reference is out of date with the engine" banner): one rename
+  // this table never followed, and the three lap scalars R217 item 2 added.
+  // Pinned by name so the same drift cannot return silently.
+  it("MATH_FUNCTIONS — the 2026-09-20 catch-up — has envelope and the lap scalars, and no longer has hilbert", () => {
+    // Arrange
+    const names = new Set(MATH_FUNCTIONS.map((entry) => entry.name));
+
+    // Act / Assert
+    for (const added of ["envelope", "lap_number", "lap_time", "sector_time"]) {
+      expect(names.has(added), `expected builtin "${added}"`).toBe(true);
+    }
+    expect(names.has("hilbert"), 'retired name "hilbert" should not be a catalog entry').toBe(false);
   });
 });
