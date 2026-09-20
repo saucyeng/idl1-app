@@ -1,6 +1,7 @@
 # DRAFT — What the first real-data workbook asked of the engine, CLI and app
 
-**Status:** draft for the lead to rule on. Nothing here is implemented. Spec-first: each
+**Status:** draft for the lead to rule on. P0-1, P0-3 and P2-1 are implemented (see
+idl-rs PR #1); everything else is unimplemented on purpose. Spec-first: each
 item names the contract it touches and the questions that must be answered before a lane
 is cut (CLAUDE.md §1 — none of the open questions below has been assumed).
 

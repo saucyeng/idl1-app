@@ -276,8 +276,8 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 
 ### Fixed
 
-- **IMU row time `t` is the recorded stamp again, not a uniform grid [docs]
-  (2026-09-19, P0-1).** `ImuGridPlan::reconcile` derived every IMU row's `t`
+- **IMU row time `t` is the recorded stamp again, not a uniform grid
+  [no-docs] (2026-09-19, P0-1).** `ImuGridPlan::reconcile` derived every IMU row's `t`
   as `t0 + slot × effective_period_us`, so an IMU whose true cadence drifted
   from the session median walked away from its own hardware stamps — up to
   7 s (IMU0) and 26 s (IMU1) by the end of a 49-minute session — and a
@@ -293,10 +293,14 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
   band-passed vertical acceleration cross-correlates at r = 0.72, lag
   −27.5 ms (was ≈ 0.03). The `.idl0` importer version is `0.2.0`, so
   `idl-rs library stale` lists every session already imported and
-  `idl-rs library rebuild` re-derives each `data.parquet`.
+  `idl-rs library rebuild` re-derives each `data.parquet`. Each IMU now
+  anchors its grid on its own first corrected stamp rather than a shared
+  `t0`, so an element-wise expression combining two IMUs (`[IMU1_AccelZ] -
+  [IMU2_AccelZ]`) that used to evaluate now needs `resample()` first
+  (ruling R242, not yet implemented).
 
 - **`where()` with operands at different sample rates is a typed error
-  [docs] (2026-09-19, P0-3).** `where(sector_number() == 3, [GPS_SpeedKmh],
+  [no-docs] (2026-09-19, P0-3).** `where(sector_number() == 3, [GPS_SpeedKmh],
   0)` answered "Sample index 160939 out of bounds (length 1576)": a channel
   branch was indexed with the condition's index. It now gets the same
   "different sample rates … use resample()" error the arithmetic operators
