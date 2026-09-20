@@ -56,7 +56,7 @@ import { createPrefsStore, localStorageBackend } from "../Settings/prefsStore";
 import CellFrame from "./components/CellFrame";
 import { cellStatus, type CellStatus } from "./model/cellStatus";
 import { chartWidthNeedsRefetch, resolveChartWidthPx } from "./model/chartWidth";
-import { applyDecodeProgress, cellDecodeFraction, decodeKey, NO_DECODES, type DecodeProgressState } from "../../../state/decodeProgress";
+import { applyDecodeProgress, cellDecodeFraction, decodeKey, NO_DECODES, soleDecodingChannel, type DecodeProgressState } from "../../../state/decodeProgress";
 import { onDecodeProgress } from "../../../ipc/decode_progress";
 import CellList from "./components/CellList";
 import ProseEditor from "./components/ProseEditor";
@@ -161,7 +161,12 @@ import {
 } from "./model/jsCellBinding";
 import { extractChannelCalls, extractSpectrumCalls } from "./model/jsCellCalls";
 import { jsCellNote, primaryWindowNote } from "./model/jsCellNote";
-import { definitionCellIds } from "./model/graphModel";
+import { blockedCells, blockedEdgeIds, blockedNodes, failingNodes } from "./model/blockedCells";
+import { evalSummaryOf } from "./model/evalSummary";
+import { computeNodeEvalViews } from "./model/graphEvalView";
+import { clearEvalSummary, publishEvalSummary, useOpenMathsRequests } from "../../../shell/evalStatus";
+import { buildGraphModel, definitionCellIds } from "./model/graphModel";
+import { computeNodeStatuses } from "./model/graphStatus";
 import { fixTargetCellId } from "./model/fixTarget";
 import {
   notebookColumnVisibilityFrom,
@@ -3782,6 +3787,47 @@ export default function NotebookPage() {
   // must open.
   const declaredDefCellIds = useMemo(() => definitionCellIds(state.markdown ?? ""), [state.markdown]);
 
+  /**
+   * The dependency graph this document describes, and the per-node statuses
+   * the maths map draws from — built **here** rather than only inside
+   * `graph/GraphCanvas.tsx` because ruling R250 makes the same derivation
+   * answer a notebook question: which cells are blocked by somebody else's
+   * failure. One build, passed down as `GraphCanvas`'s `model` prop, so the
+   * card and the cell frame can never disagree about which branch is dead.
+   *
+   * Memoised on the same identities `GraphCanvas` memoised on: the
+   * document, the primary window's outputs, the selection and the resolved
+   * session details. None of them changes on a hover, a pan or a cursor
+   * tick, so nothing here runs on the interaction path (CLAUDE.md §3).
+   *
+   * Memoized on identity, not recomputed every render: `GraphCanvas.tsx`
+   * memoizes its own derivations keyed on these same values' identity, so
+   * a fresh array/map here on every render (this page re-renders often,
+   * e.g. every cursor tick) would silently defeat that memoization.
+   */
+  const graphOutputs = useMemo(() => primaryWindowOutputs(state.windows, primaryWindow), [state.windows, primaryWindow]);
+  const graphSessionDetails = useMemo(() => sessionDetailsBySessionId(windows, sessionDetailsByWindow), [windows, sessionDetailsByWindow]);
+  const graphModel = useMemo(() => buildGraphModel(state.markdown ?? "", graphOutputs), [state.markdown, graphOutputs]);
+  const graphSelectedWindows = useMemo(() => windows.map(toWireWindow), [windows]);
+  const graphNodeStatuses = useMemo(
+    () => computeNodeStatuses({ model: graphModel, selectedWindows: graphSelectedWindows, windows: state.windows, sessionDetails: graphSessionDetails }),
+    [graphModel, graphSelectedWindows, state.windows, graphSessionDetails]
+  );
+
+  /** Every node downstream of a failure, and the nearest failure that
+   *  blocks it (ruling R250, `model/blockedCells.ts`). Feeds the cell
+   *  frames below and the map's dimmed-and-dashed subgraph. */
+  const blockedNodeMap = useMemo(() => {
+    const failing = failingNodes(graphModel, graphNodeStatuses, primaryOutputs, (cellId) => displayNameFor(cellDisplayNameMap, cellId));
+    return { failing, blocked: blockedNodes({ nodes: graphModel.nodes, edges: graphModel.edges, failing }) };
+  }, [graphModel, graphNodeStatuses, primaryOutputs, cellDisplayNameMap]);
+
+  /** Which *cells* are blocked, and by what — `CellFrame`'s `blockedBy`. */
+  const blockedByCell = useMemo(
+    () => blockedCells(graphModel.nodes, blockedNodeMap.blocked, new Set(blockedNodeMap.failing.map((f) => f.nodeId))),
+    [graphModel.nodes, blockedNodeMap]
+  );
+
   // `PropertiesForm`'s channel/lap pickers (`js` cells only -- `EditorPanes`
   // ignores these props for every other kind). `label` has no separate
   // source in `ChannelSummary` (`ipc/catalog.ts`) -- `channel_id` doubles
@@ -3900,17 +3946,41 @@ export default function NotebookPage() {
    *
    * Scoped to the *primary* window, like every other single-window reader
    * in this file (`cellErrorMessage`, and `cellStale` before it).
+   *
+   * Ruling R250 added four signals: the R221 decode fraction (which was
+   * already reaching `CellFrame` as a separate prop and only changed the
+   * glyph's shape), this cell's upstream failure, whether a `js` cell's
+   * sandbox has drawn yet, and whether anything is selected at all.
    */
-  function cellStatusFor(cellId: string | null): CellStatus {
-    if (cellId === null) {
-      return cellStatus({ hasOutput: false, stale: false, evalInFlight: evalInFlight, hasError: false });
-    }
-
-    return cellStatus({
-      hasOutput: primaryOutputs.has(cellId),
-      stale: isWindowStale(primaryEval, state.evalRequestGeneration),
+  function cellStatusFor(cell: { id: string | null; kind: string }): CellStatus {
+    const base = {
+      stale: false,
       evalInFlight,
-      hasError: cellHasError(cellId),
+      hasError: false,
+      decodeFraction: null,
+      blockedBy: null,
+      awaitingRender: false,
+      hasSelection: windows.length > 0,
+    };
+    // An unresolved fence id can never have an evaluated `CellOutput` (Rust
+    // indexes by id), and nothing else about it can be looked up either.
+    if (cell.id === null) return cellStatus({ ...base, hasOutput: false });
+
+    const hasOutput = primaryOutputs.has(cell.id);
+    return cellStatus({
+      ...base,
+      hasOutput,
+      stale: isWindowStale(primaryEval, state.evalRequestGeneration),
+      hasError: cellHasError(cell.id),
+      decodeFraction: decodeFractionFor(cell.id),
+      blockedBy: blockedByCell.get(cell.id) ?? null,
+      // Only a `js` cell has a gap between the engine's answer and the
+      // picture: every other kind renders synchronously in the host. Once
+      // the sandbox has reported a height this cell has drawn at least
+      // once, so a re-evaluation of an already-drawn chart never re-enters
+      // `"rendering"` — the state exists for the first draw, which is the
+      // one the reader is left staring at an empty rectangle through.
+      awaitingRender: cell.kind === "js" && hasOutput && !cellHeights.has(cell.id),
     });
   }
 
@@ -4129,21 +4199,6 @@ export default function NotebookPage() {
     applyColumnToggleValue([...visibleNotebookColumnIds(columnVisibility, notebookColumnAvailability), column]);
   }
 
-  /** The open prose mini-editor, or `null` (ruling R226 item 1). Built
-   *  here rather than in `CellList` because the edit session, the owning
-   *  cell's R210 status and the `editCell` write path all live in this
-   *  file. Never offered at paper widths: there the whole editor opens in
-   *  the narrow sheet instead (R226 item 2, R185). */
-  const proseEditorElement =
-    proseEdit === null || paperActive ? null : (
-      <ProseEditor
-        source={proseEdit.target.source}
-        status={cellStatusFor(proseEdit.target.cellId)}
-        error={proseEdit.error}
-        onCommit={commitProseBlockEdit}
-        onCancel={() => setProseEdit(null)}
-      />
-    );
   /**
    * Each `js` cell's own channels, as `model/decodeProgress.ts` keys
    * (ruling R221 item 1(a)) — what a cell's determinate ring is the fraction
@@ -4203,6 +4258,126 @@ export default function NotebookPage() {
     const keys = decodeKeysByCell.get(cellId);
     return keys === undefined ? null : cellDecodeFraction(decodeProgress, keys);
   }
+
+  /** The one channel this cell is still decoding, when exactly one is —
+   *  what turns "Fetching channels" into "Fetching IMU0_AccelZ" (ruling
+   *  R250). `null` with none or several in flight. */
+  function decodingChannelFor(cellId: string | null): string | null {
+    if (cellId === null) return null;
+    const keys = decodeKeysByCell.get(cellId);
+    return keys === undefined ? null : soleDecodingChannel(decodeProgress, keys);
+  }
+
+  /**
+   * Every cell's `CellStatus`, computed once per change rather than once
+   * per reader (ruling R250).
+   *
+   * Memoised for two reasons. It is read three times — by the cell frames,
+   * by the maths map's per-node view, and by the status-bar summary — and a
+   * fresh `Map` on every render would defeat `GraphCanvas`'s own
+   * memoisation of its node array, which this page's existing
+   * `graphOutputs` comment already warns about. This page re-renders on
+   * every cursor tick; none of the inputs below changes on one.
+   */
+  const cellStatusById = useMemo(() => {
+    const byCell = new Map<string, CellStatus>();
+    for (const cell of state.cells) {
+      if (cell.id === null) continue;
+      byCell.set(cell.id, cellStatusFor(cell));
+    }
+    return byCell;
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- `cellStatusFor`
+    // is a plain function declaration re-created every render; its own
+    // inputs are the dependencies listed here.
+  }, [
+    state.cells,
+    primaryOutputs,
+    primaryEval,
+    state.evalRequestGeneration,
+    evalInFlight,
+    decodeProgress,
+    decodeKeysByCell,
+    blockedByCell,
+    cellHeights,
+    windows.length,
+    cellErrors,
+    fftErrors,
+    histogramErrors,
+    scatterErrors,
+    rasterErrors,
+    gpsErrors,
+    lapErrors,
+  ]);
+
+  /** What each node on the maths map is doing (ruling R250,
+   *  `model/graphEvalView.ts`) — the graph's own per-window statuses, the
+   *  blocked subgraph, and each node's owning cell's live state. */
+  const graphEvalViews = useMemo(
+    () =>
+      computeNodeEvalViews({
+        model: graphModel,
+        statuses: graphNodeStatuses,
+        blocked: blockedNodeMap.blocked,
+        failing: new Map(blockedNodeMap.failing.map((f) => [f.nodeId, f])),
+        cellStatusOf: (cellId) => cellStatusById.get(cellId) ?? null,
+        cellFractionOf: (cellId) => {
+          const keys = decodeKeysByCell.get(cellId);
+          return keys === undefined ? null : cellDecodeFraction(decodeProgress, keys);
+        },
+      }),
+    [graphModel, graphNodeStatuses, blockedNodeMap, cellStatusById, decodeKeysByCell, decodeProgress]
+  );
+
+  /** The edges the map dashes — from each failing node down through
+   *  everything it blocks. */
+  const blockedEdges = useMemo(() => blockedEdgeIds(graphModel.edges, blockedNodeMap.blocked), [graphModel.edges, blockedNodeMap]);
+
+  /** The status bar's one-line summary (ruling R250). Published rather than
+   *  rendered here: the bar belongs to the shell, which must not import
+   *  from a page (`shell/evalStatus.ts`, the `shell/memoryBudget.ts`
+   *  pattern). The store drops a publish whose counts are unchanged, so a
+   *  pan or a cursor tick re-renders the bar not at all. */
+  const evalSummary = useMemo(() => evalSummaryOf(cellStatusById.values()), [cellStatusById]);
+  useEffect(() => {
+    publishEvalSummary(evalSummary);
+  }, [evalSummary]);
+  useEffect(() => () => clearEvalSummary(), []);
+
+  /** The status item's "open the maths map" click. Ignored on its first
+   *  observed value — the store's counter starts above zero once any
+   *  previous notebook has raised a request, and opening a panel because a
+   *  workbook was opened would be the map appearing by itself. */
+  const openMathsRequests = useOpenMathsRequests();
+  const seenOpenMathsRef = useRef(openMathsRequests);
+  useEffect(() => {
+    if (openMathsRequests === seenOpenMathsRef.current) return;
+    seenOpenMathsRef.current = openMathsRequests;
+    if (columnVisibility.graph) return;
+    applyColumnToggleValue([...visibleNotebookColumnIds(columnVisibility, notebookColumnAvailability), "graph"]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- `applyColumnToggleValue`
+    // and `notebookColumnAvailability` are re-created every render; the
+    // request counter is the only signal this effect reacts to.
+  }, [openMathsRequests]);
+
+  /** The open prose mini-editor, or `null` (ruling R226 item 1). Built
+   *  here rather than in `CellList` because the edit session, the owning
+   *  cell's R210 status and the `editCell` write path all live in this
+   *  file. Never offered at paper widths: there the whole editor opens in
+   *  the narrow sheet instead (R226 item 2, R185).
+   *
+   *  Declared after `decodeKeysByCell` because `cellStatusFor` reads it
+   *  (ruling R250) and this call evaluates as the element is built, not
+   *  when React renders it. */
+  const proseEditorElement =
+    proseEdit === null || paperActive ? null : (
+      <ProseEditor
+        source={proseEdit.target.source}
+        status={cellStatusFor({ id: proseEdit.target.cellId, kind: "prose" })}
+        error={proseEdit.error}
+        onCommit={commitProseBlockEdit}
+        onCancel={() => setProseEdit(null)}
+      />
+    );
 
   /**
    * A derived table row's **recorded** lap time in seconds (C1 §6's
@@ -4554,11 +4729,19 @@ export default function NotebookPage() {
               onSelect={() => {
                 if (cell.id !== null) setSelectedCellId(cell.id);
               }}
-              status={cellStatusFor(cell.id)}
+              status={(cell.id !== null ? cellStatusById.get(cell.id) : undefined) ?? cellStatusFor(cell)}
               /* Ruling R221 item 1(a): while this cell's own channels are
                  being decoded, its status glyph is a determinate ring at
                  this fraction rather than an indeterminate spinner. */
               decodeFraction={decodeFractionFor(cell.id)}
+              /* Ruling R250: the state line names what is being read, and
+                 what failed upstream when this cell will never run. */
+              decodingChannel={decodingChannelFor(cell.id)}
+              blockedBy={cell.id !== null ? (blockedByCell.get(cell.id) ?? null) : null}
+              onGoToBlocker={() => {
+                const blocker = cell.id !== null ? blockedByCell.get(cell.id) : undefined;
+                if (blocker?.cellId != null) setSelectedCellId(blocker.cellId);
+              }}
               error={cellErrorMessage(cell.id)}
               codeVisible={cell.id !== null && isCodeVisible(revealedCells, cell.id)}
               onToggleCode={() => {
@@ -4606,14 +4789,19 @@ export default function NotebookPage() {
   // `computeNodeStatuses`, ...) keyed on these same props' identity, so a
   // fresh array/map here on every render (this page re-renders often, e.g.
   // every cursor tick) would silently defeat that memoization.
-  const graphOutputs = useMemo(() => primaryWindowOutputs(state.windows, primaryWindow), [state.windows, primaryWindow]);
-  const graphSessionDetails = useMemo(() => sessionDetailsBySessionId(windows, sessionDetailsByWindow), [windows, sessionDetailsByWindow]);
+  // `graphOutputs`/`graphSessionDetails` are declared further up, beside
+  // `graphModel` — ruling R250 gave the notebook itself a use for the graph
+  // (which cells are blocked), and the cell list that consumes it is built
+  // before this point in the function body.
   const graphCanvasElement =
     state.markdown !== null ? (
       <GraphCanvas
         markdown={state.markdown}
         outputs={graphOutputs}
-        selectedWindows={windows.map(toWireWindow)}
+        model={graphModel}
+        evalViews={graphEvalViews}
+        blockedEdges={blockedEdges}
+        selectedWindows={graphSelectedWindows}
         windows={state.windows}
         sessionDetails={graphSessionDetails}
         onCommit={(nextMarkdown) => dispatch({ type: "editFrontMatter", markdown: nextMarkdown })}

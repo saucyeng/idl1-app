@@ -140,7 +140,7 @@ export default function ProseEditor({ source, status, error, onCommit, onCancel 
       <div className="prose-editor-row flex items-start gap-1 p-1">
         <div className="prose-editor-view min-w-0 flex-1" ref={containerRef} />
         <span className="prose-editor-status mt-[2px] flex size-[12px] shrink-0 items-center justify-center" role="status" aria-label={statusLabel(status)} title={statusLabel(status)}>
-          {status === "settled" ? null : status === "error" ? (
+          {status === "done" || status === "idle" || status === "blocked" ? null : status === "error" ? (
             <span className="text-accent">✕</span>
           ) : (
             <Loader2Icon className="size-[12px] animate-spin text-fg-faint" />
@@ -152,20 +152,29 @@ export default function ProseEditor({ source, status, error, onCommit, onCancel 
   );
 }
 
-/** The status glyph's accessible name — the five states R210 names as
- *  amended by decision 59, which split waiting-with-a-previous-result out
- *  of `"evaluating"`. */
+/** The status glyph's accessible name — R210's states as amended by
+ *  decision 59 (which split waiting-with-a-previous-result out of
+ *  `"evaluating"`) and by ruling R250, which added the four states an
+ *  inline `${…}` span can also be in. */
 function statusLabel(status: CellStatus): string {
   switch (status) {
+    case "idle":
+      return "No session selected";
     case "queued":
       return "Queued";
+    case "fetching":
+      return "Loading channels";
     case "evaluating":
       return "Evaluating";
+    case "rendering":
+      return "Rendering";
+    case "blocked":
+      return "Blocked by an upstream failure";
     case "stale":
       return "Recomputing, showing the previous result";
     case "error":
       return "Evaluation failed";
-    case "settled":
+    case "done":
       return "Settled";
   }
 }

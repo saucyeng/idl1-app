@@ -4,7 +4,7 @@ import { Handle, Position, type Node, type NodeProps } from "@xyflow/react";
 import { StatusDot } from "@/components/brand/StatusDot";
 import type { MathExprCall } from "../model/mathExpr";
 import type { GraphNode } from "../model/graphModel";
-import type { NodeStatus } from "../model/graphStatus";
+import { describeNodeEval, isNodeWorking, type NodeEvalState, type NodeEvalView } from "../model/graphEvalView";
 import type { MarkProps } from "../plotForm/types";
 import type { UnitLabel } from "../../../../ipc/workbook";
 import ChartTypePicker from "./ChartTypePicker";
@@ -14,23 +14,74 @@ import { chartEligibilityFor } from "./graphToChart";
 import { NODE_KIND_CUES, nodeKindOf, type NodeKind } from "./nodeKind";
 import type { PortShape } from "./portShape";
 
-/** Matches `CellFrame.tsx`'s own `STATUS_DOT_CLASS` mapping (pending →
+/** Matches `CellFrame.tsx`'s own `STATUS_DOT_CLASS` mapping (waiting →
  *  `--fg-faint`, ok → `--good`, error → `--accent`) — the same status dot
- *  convention every other run-state indicator in the app uses. `"grey"` has
- *  no entry: decision 44's downstream grey node shows no glyph at all, only
- *  the card's own muted styling (see the `status === "grey"` branch below). */
-const STATUS_DOT_CLASS: Record<Exclude<NodeStatus, "grey">, string> = {
+ *  convention every other run-state indicator in the app uses, and no new
+ *  colour token (ruling R250). `"grey"` and `"blocked"` have no entry:
+ *  neither node was asked to run, so neither carries a glyph at all, only
+ *  the card's own muted styling (see the dimming below). */
+const STATUS_DOT_CLASS: Record<Exclude<NodeEvalState, "grey" | "blocked">, string> = {
   pending: "text-fg-faint",
+  fetching: "text-fg-faint",
+  evaluating: "text-fg-faint",
+  rendering: "text-fg-faint",
   ok: "text-good",
   error: "text-accent",
 };
+
+/** The word each state shows in its status dot. `split` (R132's "2 of 3
+ *  windows") still wins over it when the windows disagree. */
+const STATE_TEXT: Record<Exclude<NodeEvalState, "grey" | "blocked">, string> = {
+  pending: "pending",
+  fetching: "fetching",
+  evaluating: "evaluating",
+  rendering: "rendering",
+  ok: "ok",
+  error: "error",
+};
+
+/**
+ * The progress arc a `"fetching"` node draws (ruling R250, the R221 ring
+ * one size down). An SVG dash sweep rather than an animation: a decode that
+ * has stopped moving shows an arc that has stopped moving, which is the
+ * honest picture and the one a spinner cannot draw.
+ */
+function ProgressArc({ fraction }: { fraction: number }) {
+  const RADIUS = 4;
+  const circumference = 2 * Math.PI * RADIUS;
+  const swept = Math.min(Math.max(fraction, 0), 1) * circumference;
+
+  return (
+    <svg viewBox="0 0 10 10" className="size-[10px] shrink-0 text-fg-dim" aria-hidden="true">
+      <circle cx="5" cy="5" r={RADIUS} fill="none" stroke="currentColor" strokeWidth="1.25" opacity="0.25" />
+      <circle
+        cx="5"
+        cy="5"
+        r={RADIUS}
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.25"
+        strokeLinecap="round"
+        strokeDasharray={`${swept} ${circumference}`}
+        transform="rotate(-90 5 5)"
+      />
+    </svg>
+  );
+}
 
 /** `NodeCard`'s own `data` shape — everything it renders is passed in, it
  *  derives nothing itself (`GraphCanvas.tsx` computes shape/status/call
  *  once per render, not once per node component instance). */
 export interface MathNodeData extends Record<string, unknown> {
   graphNode: GraphNode;
-  status: NodeStatus;
+  /**
+   * What this node is doing right now (ruling R250,
+   * `model/graphEvalView.ts`) — `computeNodeStatuses`' four states plus the
+   * live ones and the blocked subgraph. Carries R132's named split, this
+   * node's error text and its decode fraction, so the card and its hover
+   * card read from one value rather than four parallel props.
+   */
+  evalView: NodeEvalView;
   /** This node's three-state unit (decision 45: "a node draws as a small
    *  card: name, unit, the key parameters…", R154/R164) — a `"channel"`
    *  node's own `ChannelSummary.unit` via `model/unitLabel.ts`'s
@@ -40,8 +91,6 @@ export interface MathNodeData extends Record<string, unknown> {
    *  resolved session) — distinct from `UnitLabel`'s own `unknown` state,
    *  which means "resolved, but no unit could be determined". */
   unit: UnitLabel | null;
-  /** R132's named split ("2 of 3 windows"), or `null`. */
-  split: string | null;
   /** `"unknown"` for a `"channel"` node — a source node has no shape of its
    *  own (C2 §3.7.4 only defines a shape for a definition's evaluated
    *  value). */
@@ -186,13 +235,25 @@ function EditableArg({ value, onCommit }: { value: string; onCommit: (newText: s
  * `model/mathExpr.ts`, and `graph/portShape.ts`.
  */
 export default function NodeCard({ data }: NodeProps<Node<MathNodeData, "mathNode">>) {
-  const { graphNode, status, split, shape, call, unit, onChart, highlighted, onRename, onEditArg, colourCoded, selected } = data;
+  const { graphNode, evalView, shape, call, unit, onChart, highlighted, onRename, onEditArg, colourCoded, selected } = data;
+  const { state, split } = evalView;
+  // Ruling R250: a node that was never asked to run is dimmed and carries
+  // no glyph — decision 44's session gap and an upstream failure alike. The
+  // difference between the two is in the edges (dashed for blocked, in
+  // `GraphCanvas.tsx`) and in the hover text, not in the card's fill.
+  const dimmed = state === "grey" || state === "blocked";
   const isChannel = graphNode.kind === "channel";
   const isChart = graphNode.kind === "chart";
   const kind: NodeKind = nodeKindOf(graphNode.kind);
   const cue = NODE_KIND_CUES[kind];
   const displayName = isChart ? data.displayName ?? graphNode.name : graphNode.label ?? graphNode.name;
-  const hoverText = graphNode.exprText !== null ? `${graphNode.name} = ${graphNode.exprText}` : graphNode.name;
+  // Ruling R250's hover/focus card: what the node is, then what it is
+  // doing, its split, its error and its "blocked by" — `describeNodeEval`
+  // decides the wording. No duration is timed per node (the engine reports
+  // no per-cell boundary until the C3 §3.4 progress channel lands), so
+  // `null` is passed rather than a guess.
+  const hoverText = `${graphNode.exprText !== null ? `${graphNode.name} = ${graphNode.exprText}` : graphNode.name}
+${describeNodeEval(evalView, null)}`;
   const eligibility = chartEligibilityFor(shape, call);
   // Decision 45's own row order: "name, unit, the key parameters…". The
   // three states render distinctly (this task's own rule) — `known` shows
@@ -235,8 +296,15 @@ export default function NodeCard({ data }: NodeProps<Node<MathNodeData, "mathNod
          drawn only while the Settings toggle is on — `paddingLeft` moves
          with it so the card's contents do not shift when it is switched. */
       style={colourCoded ? { borderLeft: `4px solid ${cue.stripeVar}` } : undefined}
-      className={`relative min-w-[160px] border px-3 py-2 ${cue.cardShapeClass} ${highlighted ? "border-hivis" : "border-rule"} ${selected ? "ring-1 ring-hivis" : ""} bg-surface ${status === "grey" ? "opacity-50" : ""}`}
+      className={`relative min-w-[160px] border px-3 py-2 ${cue.cardShapeClass} ${highlighted ? "border-hivis" : "border-rule"} ${selected ? "ring-1 ring-hivis" : ""} bg-surface ${dimmed ? "opacity-50" : ""} ${
+        /* Ruling R250: only the node(s) actually working pulse, and the
+           pulse is a border-opacity animation on the card itself rather
+           than a second element. `motion-reduce` turns it into a static
+           outline, which still marks the node. */
+        isNodeWorking(state) ? "animate-pulse motion-reduce:animate-none motion-reduce:border-hivis" : ""
+      }`}
       title={hoverText}
+      tabIndex={0}
     >
       {!isChannel && <Handle type="target" position={Position.Left} />}
       <div className="flex items-center justify-between gap-2">
@@ -259,9 +327,8 @@ export default function NodeCard({ data }: NodeProps<Node<MathNodeData, "mathNod
             {displayName}
           </span>
         )}
-        {status !== "grey" && (
-          <StatusDot className={STATUS_DOT_CLASS[status]}>{split ?? status}</StatusDot>
-        )}
+        {state === "fetching" && evalView.fraction !== null && <ProgressArc fraction={evalView.fraction} />}
+        {!dimmed && <StatusDot className={STATUS_DOT_CLASS[state]}>{split ?? STATE_TEXT[state]}</StatusDot>}
       </div>
       {unitText !== null && (
         <div className="text-label-2 text-fg-faint" title={unitTitle}>

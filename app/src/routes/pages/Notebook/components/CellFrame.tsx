@@ -5,20 +5,29 @@ import { Button } from "@/components/ui/button";
 import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuSeparator, ContextMenuTrigger } from "@/components/ui/context-menu";
 import { NoteBlock } from "@/components/brand/NoteBlock";
 import { StatusDot } from "@/components/brand/StatusDot";
+import type { BlockedBy } from "../model/blockedCells";
 import type { ScannedCell } from "../model/cells";
-import { isCellBusy, isCellStale, type CellStatus } from "../model/cellStatus";
+import { isCellStale, isCellWaiting, type CellStatus } from "../model/cellStatus";
+import { cellStateLine } from "../model/cellStateLine";
 import { denseGeometry } from "../model/denseMode";
 import { plotStatusGlyph, SETTLE_FADE_MS, type CellChromeMode, type PlotLegendEntry } from "../model/plotChrome";
+import { useElapsedWhile } from "./useElapsedWhile";
 
-/** Tailwind text-colour utility for each {@link CellStatus} — the two
- *  waiting states read as inactive (`--fg-faint`), settled as `--good`,
- *  error as `--accent` (the brand alert colour), matching every other
- *  status dot in the app. */
+/** Tailwind text-colour utility for each {@link CellStatus} — every waiting
+ *  state reads as inactive (`--fg-faint`), done as `--good`, error as
+ *  `--accent` (the brand alert colour), matching every other status dot in
+ *  the app. `"blocked"` is `--fg-faint` too: it is not this cell's fault
+ *  and colouring it like a failure would point the reader at the wrong
+ *  cell (ruling R250). No new colour token is introduced. */
 const STATUS_DOT_CLASS: Record<CellStatus, string> = {
+  idle: "text-fg-faint",
   queued: "text-fg-faint",
+  fetching: "text-fg-faint",
   evaluating: "text-fg-faint",
+  rendering: "text-fg-faint",
+  blocked: "text-fg-faint",
   stale: "text-fg-faint",
-  settled: "text-good",
+  done: "text-good",
   error: "text-accent",
 };
 
@@ -63,6 +72,24 @@ export interface CellFrameProps {
    * and a ring stuck at zero for such a cell would be worse than no ring.
    */
   decodeFraction?: number | null;
+  /**
+   * The one channel this cell is still decoding, when exactly one is
+   * (`state/decodeProgress.ts`'s `soleDecodingChannel`) — what turns
+   * "fetching" into "Fetching IMU0_AccelZ · 40 %" (ruling R250). `null`
+   * with none or several in flight, which reads as "Fetching channels".
+   */
+  decodingChannel?: string | null;
+  /**
+   * The upstream failure that means this cell will never run
+   * (`model/blockedCells.ts`), or `null`. Names the cause in the state
+   * line and, with {@link CellFrameProps.onGoToBlocker}, offers to go
+   * there.
+   */
+  blockedBy?: BlockedBy | null;
+  /** Opens the cell named by {@link CellFrameProps.blockedBy} — the "Go to
+   *  Cell 3" affordance (ruling R250). `undefined` omits the button, which
+   *  is what a `blockedBy` with no `cellId` gets: there is nowhere to go. */
+  onGoToBlocker?: () => void;
   /** This cell's error message, shown as an in-place `NoteBlock` whenever
    *  there is one — deliberately not gated on `status === "error"`, so a
    *  failed cell that is now re-evaluating keeps its message on screen
@@ -131,7 +158,7 @@ function useMsSinceSettle(status: CellStatus): number | null {
   const [, force] = useState(0);
 
   useEffect(() => {
-    if (status !== "settled") {
+    if (status !== "done") {
       settledAt.current = null;
       return;
     }
@@ -186,11 +213,17 @@ function StatusGlyph({
   error,
   msSinceSettle,
   decodeFraction,
+  spinnerShownElsewhere,
 }: {
   status: CellStatus;
   error?: string;
   msSinceSettle: number | null;
   decodeFraction?: number | null;
+  /** Whether {@link CellStateOverlay} is already drawing this cell's
+   *  spinner or ring with a label beside it (ruling R250). The corner glyph
+   *  then omits its own, so a waiting chart shows one spinner and not two;
+   *  the ✓ and the ✕ are unaffected, since neither is repeated there. */
+  spinnerShownElsewhere: boolean;
 }) {
   const [pinned, setPinned] = useState(false);
   const [hovered, setHovered] = useState(false);
@@ -200,6 +233,7 @@ function StatusGlyph({
   const ring = glyph === "spinner" && decodeFraction !== null && decodeFraction !== undefined ? decodeFraction : null;
 
   if (glyph === "none") return null;
+  if (glyph === "spinner" && spinnerShownElsewhere) return null;
 
   const showError = error !== undefined && glyph === "cross" && (pinned || hovered);
 
@@ -243,6 +277,72 @@ function StatusGlyph({
 }
 
 /**
+ * The state line drawn over a cell that is not done (ruling R250): a ring
+ * or spinner where work is actually happening, the one line
+ * `model/cellStateLine.ts` decides, and "Go to …" when an upstream cell is
+ * the reason.
+ *
+ * Drawn in **both** chromes. Before this ruling the equivalent block was
+ * gated `!overlay`, so a chart cell — the one kind whose output is a big
+ * empty rectangle — was the one kind with no labelled state at all, which
+ * is exactly the "blank charts and i dont know what's going on" this
+ * ruling answers.
+ *
+ * `pointer-events-none` on the wrapper, re-enabled on the button alone: the
+ * overlay sits above the plot surface and must not eat a pan or a hover,
+ * but the one affordance it offers has to be clickable.
+ */
+function CellStateOverlay({
+  line,
+  onGoToBlocker,
+  goToLabel,
+  washed,
+}: {
+  line: { text: string; fraction: number | null; busy: boolean };
+  onGoToBlocker?: () => void;
+  goToLabel: string | null;
+  washed: boolean;
+}) {
+  return (
+    <div
+      className={`pointer-events-none absolute inset-0 z-10 flex flex-col items-center justify-center gap-[var(--nb-pad)] ${washed ? "bg-surface/60" : ""}`}
+      role="status"
+      aria-label={line.text}
+    >
+      <div className="flex items-center gap-2 text-fg-dim">
+        {line.busy &&
+          /* Ruling R221 item 1(a), kept: a determinate ring wherever a real
+             fraction exists, the indeterminate spinner only where one
+             genuinely does not. */
+          (line.fraction !== null ? (
+            <span className="block size-4 shrink-0">
+              <DecodeRing fraction={line.fraction} />
+            </span>
+          ) : (
+            <Loader2Icon className="size-4 shrink-0 animate-spin motion-reduce:animate-none" />
+          ))}
+        <span className="max-w-[60ch] truncate font-mono text-[length:var(--nb-text-label)]">{line.text}</span>
+      </div>
+      {onGoToBlocker !== undefined && goToLabel !== null && (
+        <button
+          type="button"
+          className="pointer-events-auto underline font-mono text-[length:var(--nb-text-label)] text-fg"
+          onClick={(e) => {
+            // The frame's own wrapping `onClick` would otherwise re-select
+            // *this* cell right after the blocker is opened — the same race
+            // `JsCellFrame`'s Fix button stops, for the same reason.
+            e.stopPropagation();
+            onGoToBlocker();
+          }}
+        >
+          Go to {goToLabel}
+        </button>
+      )}
+    </div>
+  );
+}
+
+/**
  * The per-cell chrome mounted through `CellList.tsx`'s `frame` hook
  * (Task 15, ruling R74; restyled UI-10; ruling R216 items 2 and 3).
  *
@@ -269,6 +369,9 @@ export default function CellFrame({
   onSelect,
   status,
   decodeFraction = null,
+  decodingChannel = null,
+  blockedBy = null,
+  onGoToBlocker,
   error,
   codeVisible,
   onToggleCode,
@@ -286,6 +389,11 @@ export default function CellFrame({
   const geometry = denseGeometry(dense);
   const msSinceSettle = useMsSinceSettle(status);
   const overlay = chrome === "overlay";
+  // Ruling R250: one state line for every state that has something to say,
+  // in both chromes. The clock lives in the hook; every rule about what the
+  // line reads is in `model/cellStateLine.ts`.
+  const elapsedMs = useElapsedWhile(isCellWaiting(status));
+  const stateLine = cellStateLine({ status, decodeFraction, decodingChannel, blockedBy, elapsedMs });
 
   function handleToggleCode(e: MouseEvent): void {
     e.stopPropagation();
@@ -294,7 +402,15 @@ export default function CellFrame({
 
   const output = (
     <div className="relative">
-      {overlay && <StatusGlyph status={status} error={error} msSinceSettle={msSinceSettle} decodeFraction={decodeFraction} />}
+      {overlay && (
+        <StatusGlyph
+          status={status}
+          error={error}
+          msSinceSettle={msSinceSettle}
+          decodeFraction={decodeFraction}
+          spinnerShownElsewhere={stateLine !== null && stateLine.busy}
+        />
+      )}
       {overlay && title !== undefined && (
         /* Centred in the plot's own top margin (R216 item 2) — absolutely
            positioned rather than a row of its own, so a plot with no label
@@ -314,39 +430,17 @@ export default function CellFrame({
         </div>
       )}
       {children}
-      {overlay && isCellStale(status) && (
-        /* Decision 59 for chart cells: the plot itself greys while it
-           recomputes, keeping its last picture visible underneath. The
-           spinner is already drawn by `StatusGlyph` in the plot's own
-           top-left corner, so this wash carries no spinner of its own. */
-        <div className="pointer-events-none absolute inset-0 z-10 bg-surface/60" aria-hidden="true" />
-      )}
-      {isCellBusy(status) && !overlay && (
+      {stateLine !== null && (
         /* Decision 59: the wash is drawn only over a result that exists and
-           is out of date (`isCellStale`). A cell evaluating for the first
-           time spins over its own empty box with no wash — greying nothing
-           would claim the blank space is stale data. */
-        <div
-          className={`pointer-events-none absolute inset-0 flex items-center justify-center ${isCellStale(status) ? "bg-surface/60" : ""}`}
-          role="status"
-          aria-label={
-            decodeFraction !== null
-              ? `Loading channels, ${Math.floor(decodeFraction * 100)} %`
-              : isCellStale(status)
-                ? "Recomputing, showing the previous result"
-                : "Evaluating"
-          }
-        >
-          {/* Ruling R221 item 1(a): a determinate ring while this cell's own
-              channels are decoding, the indeterminate spinner otherwise. */}
-          {decodeFraction !== null ? (
-            <span className="block size-5 text-fg-dim">
-              <DecodeRing fraction={decodeFraction} />
-            </span>
-          ) : (
-            <Loader2Icon className="size-5 animate-spin text-fg-dim" />
-          )}
-        </div>
+           is out of date (`isCellStale`). A cell running for the first time
+           draws its line over its own reserved slot with no wash — greying
+           nothing would claim the empty space is stale data. */
+        <CellStateOverlay
+          line={stateLine}
+          washed={isCellStale(status)}
+          onGoToBlocker={blockedBy !== null && blockedBy.cellId !== null ? onGoToBlocker : undefined}
+          goToLabel={blockedBy?.cellLabel ?? null}
+        />
       )}
     </div>
   );

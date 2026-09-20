@@ -8,6 +8,7 @@ import {
   decodeSummary,
   describeDecodeSummary,
   NO_DECODES,
+  soleDecodingChannel,
   type DecodeProgressState,
 } from "./decodeProgress";
 
@@ -138,5 +139,45 @@ describe("decodeSummary / describeDecodeSummary", () => {
     const summary = { channelsDone: 0, channelsTotal: 1, fraction: 999 / 1000 };
 
     expect(describeDecodeSummary(summary)).toBe("Loading session · 0 of 1 channels · 99 %");
+  });
+});
+
+describe("soleDecodingChannel", () => {
+  it("one unfinished channel — names it, for the cell's state line", () => {
+    const state = fold(event({ channel: "IMU0_AccelZ" }));
+
+    const name = soleDecodingChannel(state, [decodeKey("s1", "IMU0_AccelZ")]);
+
+    expect(name).toBe("IMU0_AccelZ");
+  });
+
+  it("two unfinished channels — names neither, since there is no single honest answer", () => {
+    const state = fold(event({ channel: "a" }), event({ channel: "b" }));
+
+    const name = soleDecodingChannel(state, [decodeKey("s1", "a"), decodeKey("s1", "b")]);
+
+    expect(name).toBeNull();
+  });
+
+  it("the same channel from two sessions — one name, counted once", () => {
+    const state = fold(event({ session_id: "s1", channel: "speed" }), event({ session_id: "s2", channel: "speed" }));
+
+    const name = soleDecodingChannel(state, [decodeKey("s1", "speed"), decodeKey("s2", "speed")]);
+
+    expect(name).toBe("speed");
+  });
+
+  it("one finished and one still running — names the one still running", () => {
+    const state = fold(event({ channel: "a", done_rows: 1000, finished: true }), event({ channel: "b" }));
+
+    const name = soleDecodingChannel(state, [decodeKey("s1", "a"), decodeKey("s1", "b")]);
+
+    expect(name).toBe("b");
+  });
+
+  it("no decode reported for this cell — null, not an empty string", () => {
+    const name = soleDecodingChannel(NO_DECODES, [decodeKey("s1", "a")]);
+
+    expect(name).toBeNull();
   });
 });
