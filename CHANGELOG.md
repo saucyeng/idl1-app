@@ -33,6 +33,21 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
   the front-of-grid index alignment rests on it. Both pads are still marked in
   `gaps`. C1 §3.3 amended.
 
+- **The session origin is the earliest corrected stamp [docs] (2026-09-20,
+  ruling R248).** `t = 0` was anchored on the minimum **raw** device stamp
+  while `t` itself carries corrected times. Burst-seam correction re-spaces
+  burst 0 backward at the measured period, so an IMU running slower than its
+  configured ODR has a corrected first sample earlier than any raw stamp in
+  the file — and those samples sat at a negative `t`, breaching C1 §3.5's
+  `t_us >= 0` (measured at about -1.3 ms on a real session). The origin is now
+  the minimum corrected stamp across every source, exactly as C1 §3.1 already
+  said, and the leading reconciliation pad floors its slot count so a
+  synthesized slot can never precede the origin either. `timestamp_utc_ms`
+  (the wall clock at `t = 0`) is derived from the same origin. The invariant
+  stands and is not relaxed; the consequence is that the **verbatim**
+  `<source>_t_recorded_us` column may be slightly negative for an IMU whose
+  correction moved it the other way, which C1 §3.2 now states.
+
 - **`<source>_t_recorded_us` holds the raw device stamp again [docs]
   (2026-09-20, ruling R240).** For `.idl0` IMU channels the column was the
   seam-corrected stamp, which after the corrected-`t` change made it a

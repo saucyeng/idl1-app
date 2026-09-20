@@ -235,6 +235,16 @@ one per sample. The importer now carries each IMU's raw stamp sequence alongside
 one and writes the raw value at every real slot — the two columns mean different things again,
 and C3 §3.5's `fetch_seams` has a real input.
 
+**A recorded stamp may be negative (amended 2026-09-20, ruling R248).** `t = 0` is the
+minimum **corrected** stamp across every source (§3.1), and this column is the **raw** stamp
+against that same origin. Burst-seam correction re-spaces burst 0 backward from its own read
+instant at the *measured* period, so an IMU running faster than its configured ODR has a
+corrected first sample **later** than its raw one — and that IMU's first recorded values then
+sit at a small negative offset. §3.5 invariant 1's `t_us >= 0` is a statement about `t`, never
+about this column: a reader must not clamp it, treat a negative as a sentinel, or infer an
+error from one. (The same asymmetry the other way is what R248 fixed: anchoring on the raw
+minimum instead put negative values in `t`.)
+
 `<source>_t_recorded_us` is **not guaranteed sorted** — a burst source's recorded stamps can
 regress slightly at a seam when the true ODR is slower than nominal (design doc: "locally
 non-monotonic time"). Do not `DELTA_BINARY_PACKED`-encode these columns (§4.4); only `t` is
