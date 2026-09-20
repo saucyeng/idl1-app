@@ -600,6 +600,33 @@ are defined in `docs/superpowers/specs/2026-09-02-idl1-rewrite-design.md` §10.
   `lapProgression` are tier B; and reports still draw **time charts only**,
   with a named absence line per non-time chart kind.
 
+## First real workbook — gaps (`docs/superpowers/specs/2026-09-19-idl1-first-real-workbook-gaps-DRAFT.md`)
+
+The 2026-09-19 motocross day, authored end to end as a workbook, is the first
+real-data run. The spec lists every place the engine, CLI or app could not do
+what the analysis needed; this lane took the three that produce wrong numbers
+or a hard stop.
+
+- [x] P0-1 IMU `t` is the recorded stamp, not a uniform grid (C1 §3.1, §3.5;
+      `.idl0` importer version `0.2.0`, so the library must be rebuilt).
+- [x] P0-3 `where(cond, a, b)` at mixed rates is the typed different-rates
+      error, not an out-of-bounds index.
+- [x] P2-1 `session import <file.idl0>` agrees with its own `--dry-run`.
+- [ ] P0-2 estimator builtins without a calibration — **blocked on a ruling**:
+      nothing binds a `CalibrationRecord` to a session today (`session
+      calibrate` computes and prints one; `estimate::run` never reads one), so
+      there is no unambiguous "this session has no calibration" state to
+      report. CLAUDE.md §1 — asked, not guessed.
+- [ ] P1-5 one failing definition blanks its math cell for `js` cells — the
+      engine half is already per-definition; the binding-side cause is written
+      up in the lane's PR.
+- [ ] P1-1 `resample`, P1-2 `"t:lap"` reductions, P1-3 table definitions,
+      P1-4 definitions in histogram/spectrum/scatter/map fetches (a C3
+      change), P1-6 cross-session rows, P1-7 export — all need rulings first.
+- [ ] P3 promotions (`track propose`, distance-domain lap tables, line offset,
+      `airborne()`, import-time gravity alignment, transmissibility,
+      yaw-moment, `fit --merge`).
+
 ## Wave 3
 
 - [ ] L9 mobile plugins · L12 in-app agent (optional)

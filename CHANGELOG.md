@@ -276,6 +276,37 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 
 ### Fixed
 
+- **IMU row time `t` is the recorded stamp again, not a uniform grid [docs]
+  (2026-09-19, P0-1).** `ImuGridPlan::reconcile` derived every IMU row's `t`
+  as `t0 + slot × effective_period_us`, so an IMU whose true cadence drifted
+  from the session median walked away from its own hardware stamps — up to
+  7 s (IMU0) and 26 s (IMU1) by the end of a 49-minute session — and a
+  multi-second FIFO dropout never appeared in `t` at all. Every IMU value
+  windowed by lap, placed on the map or compared between IMUs was wrong late
+  in a session: on the first real motocross day it made landings look
+  simultaneous and front-heavy when they are rear-first by 60–120 ms. `t` is
+  now each slot's burst-seam-corrected stamp, with a gap slot interpolated
+  between the stamps bracketing the drop (C1 §3.1, §3.5). Measured on
+  `2026-09-19_13-17-57.idl0`: `max |t − t_recorded|` over real slots is 0 µs
+  (was seconds), all three IMUs' last real sample now lands within 0.15 s of
+  the last GPS fix (was +30 s for IMU1, +62 s for IMU2), and IMU0 vs IMU1
+  band-passed vertical acceleration cross-correlates at r = 0.72, lag
+  −27.5 ms (was ≈ 0.03). The `.idl0` importer version is `0.2.0`, so
+  `idl-rs library stale` lists every session already imported and
+  `idl-rs library rebuild` re-derives each `data.parquet`.
+
+- **`where()` with operands at different sample rates is a typed error
+  [docs] (2026-09-19, P0-3).** `where(sector_number() == 3, [GPS_SpeedKmh],
+  0)` answered "Sample index 160939 out of bounds (length 1576)": a channel
+  branch was indexed with the condition's index. It now gets the same
+  "different sample rates … use resample()" error the arithmetic operators
+  give.
+
+- **`idl-rs session import <file.idl0>` imports it [docs] (2026-09-19,
+  P2-1).** The verb answered "no importer covers file extension \"idl0\""
+  while its own `--dry-run` said "would import … as idl0"; `.idl0` now
+  routes to the same importer the deprecated top-level `import` uses.
+
 - **Notebook failed to load: "Cannot access 'DEFAULT_JS_CELL_HEIGHT_PX' before
   initialization" [docs] (2026-09-14).** `model/jsCellFrameHeight.ts` imported
   the constant from `components/JsCellFrame.tsx`, which imports the model back;
