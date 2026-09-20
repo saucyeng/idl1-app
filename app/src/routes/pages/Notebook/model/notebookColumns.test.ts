@@ -48,12 +48,18 @@ describe("toggleNotebookColumn", () => {
     expect(next).toEqual({ graph: true, properties: true, cells: false });
   });
 
-  it("toggleNotebookColumn — turning off the only visible pane — no-op, never leaves every pane hidden", () => {
+  // Ruling R244: every panel may close and an empty dock shows Welcome, so
+  // "all off" is a real state. It must be reported as a *changed* record —
+  // the pre-R244 guard returned `prev` by reference, and that identity was
+  // what left the dock empty while the ribbon still claimed the panel was
+  // open (reviewer, 2026-09-20).
+  it("toggleNotebookColumn — turning off the only visible pane — every pane off, a new record", () => {
     const onlyGraph = { graph: true, properties: false, cells: false };
 
     const next = toggleNotebookColumn(onlyGraph, "graph");
 
-    expect(next).toBe(onlyGraph);
+    expect(next).toEqual({ graph: false, properties: false, cells: false });
+    expect(next).not.toBe(onlyGraph);
   });
 });
 
@@ -123,25 +129,19 @@ describe("readNotebookColumnVisibility / writeNotebookColumnVisibility", () => {
 
 describe("notebookColumnVisibilityFrom", () => {
   it("notebookColumnVisibilityFrom — a set naming two columns — turns exactly those on", () => {
-    const prev = { graph: true, properties: false, cells: false } as const;
-
-    const next = notebookColumnVisibilityFrom(prev, ["properties", "cells"]);
+    const next = notebookColumnVisibilityFrom(["properties", "cells"]);
 
     expect(next).toEqual({ graph: false, properties: true, cells: true });
   });
 
-  it("notebookColumnVisibilityFrom — an empty set — keeps the previous visibility rather than blanking the preview", () => {
-    const prev = { graph: false, properties: false, cells: true } as const;
+  it("notebookColumnVisibilityFrom — an empty set — every pane off, the state an empty dock answers with Welcome", () => {
+    const next = notebookColumnVisibilityFrom([]);
 
-    const next = notebookColumnVisibilityFrom(prev, []);
-
-    expect(next).toEqual(prev);
+    expect(next).toEqual({ graph: false, properties: false, cells: false });
   });
 
   it("notebookColumnVisibilityFrom — an unknown id alongside a real one — ignores the unknown id", () => {
-    const prev = DEFAULT_NOTEBOOK_COLUMN_VISIBILITY;
-
-    const next = notebookColumnVisibilityFrom(prev, ["graph", "library"]);
+    const next = notebookColumnVisibilityFrom(["graph", "library"]);
 
     expect(next).toEqual({ graph: true, properties: false, cells: false });
   });

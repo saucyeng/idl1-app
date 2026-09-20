@@ -29,6 +29,18 @@ import { useSyncExternalStore } from "react";
  */
 let slotNode: HTMLDivElement | null = null;
 
+/**
+ * Whether the studio dock is on screen at all.
+ *
+ * Distinct from {@link slotNode}, and ruling R244 is why. A closed
+ * Notebook panel publishes `null` for the node while the dock is very much
+ * still there, showing Welcome; if the page read node-absence as "no dock"
+ * it would put its cell list back in its own body, *above* the dock that
+ * is displaying the Welcome panel in its place. The node answers "where do
+ * I portal my output"; this answers "does someone else own my body".
+ */
+let dockMounted = false;
+
 const listeners = new Set<() => void>();
 
 function notify(): void {
@@ -50,8 +62,27 @@ export function getOutputSlotNode(): HTMLDivElement | null {
   return slotNode;
 }
 
-/** Subscribes `handler` to be called whenever the slot node changes.
- *  Returns an unsubscribe function. */
+/** Called by `DockFrame` on mount and unmount. Publishing the same value
+ *  twice is a no-op (no redundant notify). */
+export function setStudioDockMounted(next: boolean): void {
+  if (dockMounted === next) return;
+  dockMounted = next;
+  notify();
+}
+
+/** Whether the studio dock is on screen, for non-React call sites. */
+export function getStudioDockMounted(): boolean {
+  return dockMounted;
+}
+
+/** React hook: whether the studio dock owns the Notebook page's content
+ *  area, re-rendering whenever that changes. */
+export function useStudioDockMounted(): boolean {
+  return useSyncExternalStore(subscribeOutputSlot, getStudioDockMounted);
+}
+
+/** Subscribes `handler` to be called whenever the slot node or the dock's
+ *  presence changes. Returns an unsubscribe function. */
 export function subscribeOutputSlot(handler: () => void): () => void {
   listeners.add(handler);
   return () => {

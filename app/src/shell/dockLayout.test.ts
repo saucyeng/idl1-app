@@ -17,7 +17,7 @@ import {
   sanitizeDockLayout,
   STACKED_MATHS_ROW_HEIGHT_PX,
 } from "./dockLayout";
-import { LAYOUT_PRESET_CYCLE, OUTPUT_COLUMN_MIN_WIDTH_PX, presetLayout } from "./layoutPresets";
+import { LAYOUT_PRESET_CYCLE, OUTPUT_COLUMN_MIN_WIDTH_PX } from "./layoutPresets";
 
 /** A layout every test can fall back to, distinguishable from any named
  *  one by identity. */
@@ -82,27 +82,6 @@ describe("namedDockLayout", () => {
       const renderers = Object.values(layout.panels).map((panel) => panel.renderer);
 
       expect(renderers.every((renderer) => renderer === "always")).toBe(true);
-    }
-  });
-
-  it("namedDockLayout — every preset — the same panels R213's preset table shows", () => {
-    // Two files decide which panels a named layout has: this one, and
-    // `layoutPresets.ts`'s `columns` record, which the Notebook page still
-    // writes its own visibility from when a preset is picked. They agree
-    // today by hand; this is what keeps them agreeing, because if they
-    // ever stopped, the page's effect and `DockFrame`'s applied-layout
-    // effect would write each other's answer back and forth on every pick
-    // (reviewer, 2026-09-20).
-    for (const id of LAYOUT_PRESET_CYCLE) {
-      const ids = dockLayoutPanelIds(namedDockLayout(id));
-      const columns = presetLayout(id).columns;
-
-      expect(ids).not.toBeNull();
-      expect({
-        graph: ids!.includes("graph"),
-        properties: ids!.includes("properties"),
-        cells: ids!.includes("cells"),
-      }).toEqual(columns);
     }
   });
 

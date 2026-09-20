@@ -35,40 +35,16 @@ export type ActivePreset = LayoutPresetId | "custom";
  *  Stacked → …"). */
 export const LAYOUT_PRESET_CYCLE: readonly LayoutPresetId[] = ["output", "maths", "split", "stacked"];
 
-/** Which of the three R161 panes a preset turns on. Structurally the
- *  Notebook page's own `NotebookColumnVisibility`
- *  (`routes/pages/Notebook/model/notebookColumns.ts`), restated here rather
- *  than imported because `shell/` never imports from `routes/pages/` — the
- *  traffic between the two always runs page → shell (`graphSlot.ts`,
- *  `studioColumns.ts`). The two types are assignable either way. */
-export type PresetColumnVisibility = Readonly<Record<"graph" | "properties" | "cells", boolean>>;
-
-/** Where the maths panel sits in the frame: `"column"` beside the output
- *  (Output/Maths/Split), `"row"` above it (Stacked, R213 item 1). */
-export type MathsOrientation = "column" | "row";
-
 /** The output column's narrowest usable width, in CSS px — the Maths
  *  preset's "output narrow (min width, still live)" (R213 item 1) and, so
  *  the two can never drift apart, `columnPrefs.ts`'s own lower bound for
  *  that column. */
 export const OUTPUT_COLUMN_MIN_WIDTH_PX = 320;
 
-/** Everything one preset decides. */
-export interface PresetLayout {
-  /** The R161 pane toggles this preset writes. */
-  columns: PresetColumnVisibility;
-  /** Where the maths panel goes. */
-  mathsOrientation: MathsOrientation;
-  /** The output column's width in CSS px, or `null` to keep whatever width
-   *  the user last dragged it to (`columnPrefs.ts`). Only the Maths preset
-   *  pins a width. */
-  outputWidthPx: number | null;
-}
-
 /** One preset's picker entry: the id, the word on the button, the mono
  *  glyph shown in its place once the toolbar row drops labels (R212), and
  *  the sentence its tooltip says. */
-export interface LayoutPresetSpec extends PresetLayout {
+export interface LayoutPresetSpec {
   id: LayoutPresetId;
   label: string;
   /** A single mono character — the "icon" of R213 item 3's "four icons with
@@ -82,16 +58,14 @@ export interface LayoutPresetSpec extends PresetLayout {
 /**
  * The four presets, in {@link LAYOUT_PRESET_CYCLE} order.
  *
- * `cells` is on in every one of them, including Output. R213 item 1 words
- * that preset as "notebook output full width; graph, properties, cells
- * collapsed", but in the studio the cell list *is* the notebook output —
- * it is what the `output` column renders (`RouteHost.tsx` docks the whole
- * Notebook page there, and the maths/properties panels are portal slots).
- * Turning `cells` off would either leave the preset with nothing on screen
- * or, through `notebookColumns.ts`'s never-all-off guard, be refused
- * outright and change nothing. Lane-local reading, said out loud rather
- * than assumed (CLAUDE.md §1): Output = the output column alone, full
- * width.
+ * **What a preset no longer holds (ruling R239).** Until the dock, each
+ * entry also carried the arrangement it applied: which panes it turned on,
+ * where the maths panel sat, how wide the output opened. `dockLayout.ts`'s
+ * `namedDockLayout` now says all of that, as one serialised document, and
+ * a fact stated in two files is a fact that can disagree with itself — the
+ * reviewer's second finding, 2026-09-20. So this table keeps only what is
+ * *about the preset rather than the arrangement*: its id, the word on its
+ * button, its glyph and its tooltip.
  */
 export const LAYOUT_PRESETS: readonly LayoutPresetSpec[] = [
   {
@@ -99,36 +73,24 @@ export const LAYOUT_PRESETS: readonly LayoutPresetSpec[] = [
     label: "Output",
     glyph: "▭",
     title: "Output — the notebook full width, maths and properties hidden",
-    columns: { graph: false, properties: false, cells: true },
-    mathsOrientation: "column",
-    outputWidthPx: null,
   },
   {
     id: "maths",
     label: "Maths",
     glyph: "◫",
     title: "Maths — graph, properties and cells, with the output at its narrowest",
-    columns: { graph: true, properties: true, cells: true },
-    mathsOrientation: "column",
-    outputWidthPx: OUTPUT_COLUMN_MIN_WIDTH_PX,
   },
   {
     id: "split",
     label: "Split",
     glyph: "▥",
     title: "Split — the studio's side-by-side columns",
-    columns: { graph: true, properties: true, cells: true },
-    mathsOrientation: "column",
-    outputWidthPx: null,
   },
   {
     id: "stacked",
     label: "Stacked",
     glyph: "▤",
     title: "Stacked — the maths graph as a row above the output",
-    columns: { graph: true, properties: true, cells: true },
-    mathsOrientation: "row",
-    outputWidthPx: null,
   },
 ];
 
@@ -139,18 +101,6 @@ export const DEFAULT_PRESET_BY_CLASS: Readonly<Record<AspectClass, LayoutPresetI
   wide: "stacked",
   narrow: "output",
 };
-
-/** What `id` sets. Total over {@link LayoutPresetId}. */
-export function presetLayout(id: LayoutPresetId): PresetLayout {
-  // Unreachable fallback for a `LayoutPresetId` (the table is exhaustive);
-  // it exists so this function is total for a value that crossed a
-  // `localStorage` boundary and dodged `asActivePreset`.
-  const spec = LAYOUT_PRESETS.find((candidate) => candidate.id === id) ?? LAYOUT_PRESETS[0]!;
-  // Projected rather than returned whole: a preset's picker text is not
-  // part of what it does to the layout, and a caller comparing layouts
-  // should not have to ignore three strings.
-  return { columns: spec.columns, mathsOrientation: spec.mathsOrientation, outputWidthPx: spec.outputWidthPx };
-}
 
 /** Whether `raw` names one of the four presets. */
 export function isLayoutPresetId(raw: unknown): raw is LayoutPresetId {

@@ -61,18 +61,28 @@ export function sanitizeNotebookColumnVisibility(raw: unknown): NotebookColumnVi
   return result;
 }
 
-/** Flips `id`'s visibility, except when doing so would leave every pane
- *  hidden -- then it is a no-op, returning `prev` unchanged. Not something
- *  R161 states explicitly, but an empty preview (every pane off) is a
- *  worse regression than the letterboxing this ruling exists to fix, and
- *  the ruling's own leading example ("show/hide buttons... these replace
- *  the current Graph/Cells toggle") never had an all-off state to begin
- *  with (small, safe judgment call, CLAUDE.md §1 -- noted rather than
- *  silently assumed). */
+/**
+ * Flips `id`'s visibility.
+ *
+ * **The never-all-off guard is gone (ruling R244).** Until the dock, this
+ * function and {@link notebookColumnVisibilityFrom} refused a change that
+ * would hide every pane, because an empty preview was a worse regression
+ * than the letterboxing R161 existed to fix. It refused by returning
+ * `prev` **by reference**, which under R239's dock became a silent
+ * disagreement: Dockview had already closed the panel, nothing changed
+ * here, so `shell/studioColumns.ts` never notified and the dock was left
+ * empty with the ribbon still saying that panel was on (reviewer,
+ * 2026-09-20).
+ *
+ * R244 removes the reason for the guard rather than papering over it:
+ * every panel may close, and an empty dock shows the Welcome panel
+ * (`shell/WelcomePanel.tsx`) through Dockview's watermark slot — never a
+ * blank. So "all off" is now a real, recoverable state with somewhere to
+ * click, and this function is a plain flip whose answer the dock can
+ * always be trusted to match.
+ */
 export function toggleNotebookColumn(prev: NotebookColumnVisibility, id: NotebookColumnId): NotebookColumnVisibility {
-  const next: NotebookColumnVisibility = { ...prev, [id]: !prev[id] };
-  const anyVisible = NOTEBOOK_COLUMN_IDS.some((columnId) => next[columnId]);
-  return anyVisible ? next : prev;
+  return { ...prev, [id]: !prev[id] };
 }
 
 /**
@@ -82,16 +92,20 @@ export function toggleNotebookColumn(prev: NotebookColumnVisibility, id: Noteboo
  * (`components/ui/toggle-group.tsx`'s `type="multiple"` `onValueChange`)
  * rather than the one id that changed.
  *
- * Carries {@link toggleNotebookColumn}'s own no-op guard for the same
- * reason: an empty `ids` would hide every pane and leave the preview blank,
- * so it returns `prev` unchanged instead. Unknown strings are ignored (the
- * toggle group's values are this module's own ids, but nothing in its type
- * says so).
+ * An empty `ids` turns every pane off, which ruling R244 makes a real
+ * state rather than one to refuse — see {@link toggleNotebookColumn} on
+ * why the guard that used to sit here had to go. Unknown strings are
+ * ignored (the toggle group's values are this module's own ids, but
+ * nothing in its type says so).
  *
- * @param prev The visibility before this gesture, returned unchanged if `ids` selects nothing.
+ * The previous visibility is no longer a parameter: `ids` is the whole
+ * next selection, so with the guard gone there is nothing left to carry
+ * over from it. A caller inside a state updater simply stops reading its
+ * `prev`.
+ *
  * @param ids The ids that should now be on, in any order.
  */
-export function notebookColumnVisibilityFrom(prev: NotebookColumnVisibility, ids: readonly string[]): NotebookColumnVisibility {
+export function notebookColumnVisibilityFrom(ids: readonly string[]): NotebookColumnVisibility {
   const on = new Set(ids);
   // Written out per id rather than built from `NOTEBOOK_COLUMN_IDS` with a
   // cast: this way the compiler checks the record is complete, so adding a
@@ -102,8 +116,7 @@ export function notebookColumnVisibilityFrom(prev: NotebookColumnVisibility, ids
     properties: on.has("properties"),
     cells: on.has("cells"),
   };
-  const anyVisible = NOTEBOOK_COLUMN_IDS.some((id) => next[id]);
-  return anyVisible ? next : prev;
+  return next;
 }
 
 /** `NOTEBOOK_COLUMN_IDS` filtered to those both toggled on in `visibility`

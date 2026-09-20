@@ -5,7 +5,7 @@ import { getVersion } from "@tauri-apps/api/app";
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@/components/ui/resizable";
 import { setStudioColumnVisible } from "../../../shell/studioColumns";
 import { setActiveLayoutPreset, useActiveLayoutPreset } from "../../../shell/layoutPreset";
-import { presetLayout, type LayoutPresetId } from "../../../shell/layoutPresets";
+import { type LayoutPresetId } from "../../../shell/layoutPresets";
 import { BrandSheet } from "@/components/brand/BrandSheet";
 import { NoteBlock } from "@/components/brand/NoteBlock";
 import { listSessions, listWorkbooks, getSession, type SessionDetail, type SessionSummary } from "../../../ipc/catalog";
@@ -41,7 +41,9 @@ import { describeWindow, sessionDetailsReadinessKey, sessionLabel, venueLabel, w
 import { useRouteVisible } from "../../../shell/routeVisibility";
 import { useEditorSlotNode } from "../../../shell/editorSlot";
 import { useGraphSlotNode } from "../../../shell/graphSlot";
-import { useOutputSlotNode } from "../../../shell/outputSlot";
+import { useOutputSlotNode, useStudioDockMounted } from "../../../shell/outputSlot";
+import { noteWorkbookOpened } from "../../../shell/recentWorkbooks";
+import WelcomePanel from "../../../shell/WelcomePanel";
 import { useToolbarSlotNode } from "../../../shell/toolbarSlot";
 import { useTimelineSlotNode } from "../../../shell/timelineSlot";
 import { useSidebarSlotNode } from "../../../shell/sidebarSlot";
@@ -568,26 +570,15 @@ export default function NotebookPage() {
    *  *writes*, which is why the two meet here. */
   const activePreset = useActiveLayoutPreset();
 
-  // R213 item 3: "applying a preset writes the column visibility the R161
-  // toggles already read, so the toggles and the preset never disagree".
-  // Runs whenever the active preset changes — including at mount, when the
-  // shell has just recalled this viewport shape's remembered preset, and
-  // including a re-pick of the preset the class left for `"custom"`.
-  // `"custom"` is the one value that writes nothing: it means "whatever the
-  // toggles say", so the stored R161 visibility stands untouched.
-  //
-  // `useLayoutEffect` for the same reason the publish above uses it: the
-  // column frame reads the result through `studioColumns.ts`, and a passive
-  // effect would paint one frame of the previous arrangement first.
-  useLayoutEffect(() => {
-    if (activePreset === "custom") return;
-    const next = presetLayout(activePreset).columns;
-    setColumnVisibility((prev) => {
-      if (prev.graph === next.graph && prev.properties === next.properties && prev.cells === next.cells) return prev;
-      writeNotebookColumnVisibility(next);
-      return next;
-    });
-  }, [activePreset]);
+  // R213 item 3's "applying a preset writes the column visibility the R161
+  // toggles already read" used to be an effect here, reading a second copy
+  // of each preset's pane set out of `layoutPresets.ts`. Ruling R239 took
+  // both away: `shell/DockFrame.tsx` applies the named layout, then tells
+  // this page which panels it ended up with by running the page's own
+  // three toggle commands. One source for what a preset arranges
+  // (`dockLayout.ts`), and one writer of this page's visibility
+  // (`applyColumnToggleValue`), which is what "the toggles and the preset
+  // never disagree" actually required (reviewer, 2026-09-20).
 
   /** Persists the toolbar column toggle group's whole next set of on-ids.
    *  The group reports the full selection rather than the one item that
@@ -596,8 +587,8 @@ export default function NotebookPage() {
    *  single-id entry point for a future keyboard/menu binding. The
    *  never-all-off guard lives in `model/notebookColumns.ts` either way. */
   function applyColumnToggleValue(ids: string[]): void {
-    setColumnVisibility((prev) => {
-      const next = notebookColumnVisibilityFrom(prev, ids);
+    setColumnVisibility(() => {
+      const next = notebookColumnVisibilityFrom(ids);
       writeNotebookColumnVisibility(next);
       // R213 item 3's "thrown by hand" bookkeeping is no longer done here.
       // Under ruling R239 a toggle reaches the dock through
@@ -1096,6 +1087,12 @@ export default function NotebookPage() {
   // never `placement`, for the reason the graph's does not.
   const outputSlotNode = useOutputSlotNode();
   const outputIsPortalHosted = outputSlotNode !== null;
+  // Whether the dock owns this page's content area at all. Distinct from
+  // the slot node, and ruling R244 is why: with the Notebook panel closed
+  // the dock is still there showing Welcome, and a page that read
+  // node-absence as "no dock" would put its cell list back in its own
+  // body, above the panel displaying Welcome in its place.
+  const studioDockMounted = useStudioDockMounted();
 
   // Bug report fixed 2026-09-09, correcting R161: the toolbar spans the
   // *window*, not just this tab's own column area. `AppShell.tsx` mounts
@@ -2131,7 +2128,21 @@ export default function NotebookPage() {
    */
   function handleSelect(workbookId: string) {
     writeNotebookPrefs({ ...readNotebookPrefs(), last_workbook_id: workbookId });
-    setEntry((prev) => (prev !== null && prev.kind !== "empty" ? { ...prev, workbookId } : prev));
+    setEntry((prev) => {
+      if (prev === null || prev.kind === "empty") return prev;
+      // Ruling R244: the Welcome panel's "Recent workbooks" list. Recorded
+      // here because this is the one place a workbook is chosen, and from
+      // the catalog choice rather than from the open document so the entry
+      // exists before the file has finished loading (and still exists if
+      // it fails to). A workbook the catalog has no choice row for — the
+      // `"single"` entry kind — is skipped rather than recorded under a
+      // guessed name.
+      const choice = prev.kind === "choice" ? prev.choices.find((candidate) => candidate.workbook_id === workbookId) : undefined;
+      if (choice !== undefined) {
+        noteWorkbookOpened({ id: choice.workbook_id, name: choice.name, fileName: choice.file_name, openedAtMs: Date.now() });
+      }
+      return { ...prev, workbookId };
+    });
   }
 
   /**
@@ -4819,7 +4830,7 @@ export default function NotebookPage() {
     // — `h-full` would leave the dock beside it nothing. Without a slot
     // (every layout but the wide studio) it fills its route panel as
     // before.
-    <div className={outputIsPortalHosted ? "flex min-h-0 shrink-0 flex-col" : "flex h-full flex-col"}>
+    <div className={studioDockMounted ? "flex min-h-0 shrink-0 flex-col" : "flex h-full flex-col"}>
       {/* Portal-hosted whenever this tab is the active route (bug report
           fixed 2026-09-09): `toolbarSlotNode` exists whether or not
           Notebook is the active tab (it is always mounted, R93), so
@@ -4936,17 +4947,27 @@ export default function NotebookPage() {
           portalled to their own panels at this point, so the in-page
           `ResizablePanelGroup` below would be a one-panel group around
           exactly this element — the dock's own sashes replace it. */}
-      {state.handle !== null && outputIsPortalHosted && outputSlotNode !== null &&
+      {outputIsPortalHosted &&
+        outputSlotNode !== null &&
         createPortal(
-          // No `overflow-auto` here: the dock panel's own container is the
-          // scroll box (`shell/DockFrame.tsx`), and two nested scrollers
-          // would give the cell list a scrollbar inside a scrollbar.
-          <div className="h-full p-4" data-register={register} style={registerContainerStyle}>
-            {mainContentElement}
-          </div>,
+          // Ruling R244: with no workbook open the Notebook panel shows
+          // Welcome rather than nothing at all — the same panel an empty
+          // dock shows, so "there is nothing here yet" always looks the
+          // same and always has the same way out of it.
+          state.handle === null ? (
+            <WelcomePanel />
+          ) : (
+            // No `overflow-auto` here: the dock panel's own container is
+            // the scroll box (`shell/DockFrame.tsx`), and two nested
+            // scrollers would give the cell list a scrollbar inside a
+            // scrollbar.
+            <div className="h-full p-4" data-register={register} style={registerContainerStyle}>
+              {mainContentElement}
+            </div>
+          ),
           outputSlotNode
         )}
-      {state.handle !== null && !outputIsPortalHosted && placement === "panes" && (
+      {state.handle !== null && !studioDockMounted && placement === "panes" && (
         <ResizablePanelGroup orientation="horizontal" className="min-h-0 flex-1">
           {/* R161 item 2, generalised: `mainPanels` holds graph and/or cells,
               whichever `columnVisibility` currently has on (both, either, or
@@ -4974,12 +4995,12 @@ export default function NotebookPage() {
           )}
         </ResizablePanelGroup>
       )}
-      {state.handle !== null && !outputIsPortalHosted && placement === "inline" && (
+      {state.handle !== null && !studioDockMounted && placement === "inline" && (
         <div className="min-h-0 flex-1 overflow-auto p-4" data-register={register} style={registerContainerStyle}>
           {mainContentElement}
         </div>
       )}
-      {state.handle !== null && !outputIsPortalHosted && placement === "sheet" && (
+      {state.handle !== null && !studioDockMounted && placement === "sheet" && (
         <>
           <div className="min-h-0 flex-1 overflow-auto p-4" data-register={register} style={registerContainerStyle}>
             {mainContentElement}

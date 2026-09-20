@@ -16,8 +16,9 @@ import { useDockLayoutApplication, noteDockLayoutChanged } from "./layoutPreset"
 import { MENU_COMMAND_IDS } from "./menuModel";
 import { setEditorSlotNode } from "./editorSlot";
 import { setGraphSlotNode } from "./graphSlot";
-import { setOutputSlotNode } from "./outputSlot";
+import { setOutputSlotNode, setStudioDockMounted } from "./outputSlot";
 import { getStudioColumnVisible, subscribeStudioColumns } from "./studioColumns";
+import WelcomePanel from "./WelcomePanel";
 
 /** The `commandRegistry.ts` id whose handler shows or hides each panel —
  *  the Notebook page's own three ribbon/View-menu toggles. Closing a tab
@@ -92,6 +93,24 @@ function DockPanel(props: IDockviewPanelProps) {
 }
 
 const DOCK_COMPONENTS = { [DOCK_PANEL_COMPONENT]: DockPanel };
+
+/**
+ * What an empty dock shows (ruling R244).
+ *
+ * Dockview calls this its *watermark*: the thing rendered when the grid
+ * holds no panels. R244 makes it the Welcome panel and, with it, makes
+ * closing every panel a recoverable state — which is what let the lane
+ * drop the "last panel is not closable" idea and the never-all-off guard
+ * in `notebookColumns.ts` behind it. Welcome's own Panels section runs the
+ * three toggle commands, so the way back is on the screen you are looking
+ * at.
+ *
+ * It takes `IWatermarkPanelProps` and ignores them: the panel reads the
+ * command registry itself and needs nothing from the group it replaced.
+ */
+function DockWatermark() {
+  return <WelcomePanel />;
+}
 
 /**
  * The studio's tiling frame (ruling R239, closing R227): Notebook, Maths
@@ -260,6 +279,16 @@ export default function DockFrame() {
   // Panel presence in: the page's toggles.
   useEffect(() => subscribeStudioColumns(reconcile), [reconcile]);
 
+  // Tells the Notebook page that its content area belongs to the dock for
+  // as long as this component is mounted — separately from the output
+  // slot's node, which goes `null` whenever the Notebook *panel* is
+  // closed while the dock is still there showing Welcome
+  // (`outputSlot.ts`'s own doc comment).
+  useEffect(() => {
+    setStudioDockMounted(true);
+    return () => setStudioDockMounted(false);
+  }, []);
+
   // Layout out: every settled gesture, and every panel closed by its tab.
   useEffect(() => {
     const api = apiRef.current;
@@ -311,13 +340,17 @@ export default function DockFrame() {
       components={DOCK_COMPONENTS}
       theme={IDL1_THEME}
       onReady={onReady}
+      watermarkComponent={DockWatermark}
       defaultRenderer="always"
       // R218, kept by R239: dock zones, not free windowing. Panels never
       // float, never pop out into their own window and never overlap.
       disableFloatingGroups
       hideBorders
       singleTabMode="fullwidth"
-      noPanelsOverlay="emptyGroup"
+      // R244: an empty dock shows Welcome, never a blank — and never
+      // Dockview's own "empty group" placeholder, which is a tab strip
+      // with nothing under it.
+      noPanelsOverlay="watermark"
     />
   );
 }
