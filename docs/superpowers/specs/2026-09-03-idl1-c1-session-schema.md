@@ -217,6 +217,34 @@ share `imu0_t_recorded_us`. Likewise every `GPS_*` channel shares `gps_t_recorde
 `device_timestamp_us`, SPEC §5.6 — **not** `gps_epoch_ms`, which is a different clock domain used
 only for the `timestamp_utc_ms` anchor in §3.1).
 
+**Synthesized slots (amended 2026-09-20, ruling R240).** A burst source's rows are a
+reconciliation grid (§3.3), and some of its slots hold no recorded sample at all: the leading
+pad, each interior drop fill, and (until R241 removed it) any trailing pad — exactly the slots
+the channel's `GapSpan` list covers. Those slots have no recorded stamp to write, so
+`_t_recorded_us` there repeats that row's `t`, as a documented placeholder. **A reader
+establishes which rows are synthesized from the gap list, never from the content**: a
+placeholder is a plausible timestamp, not a sentinel, and nothing distinguishes it by value.
+
+**Why this column is not a copy of `t` (amended 2026-09-20, ruling R240).** Between the first
+corrected-stamp import and R240 the importer wrote the *seam-corrected* stamp into this column,
+making it bit-identical to `t` for every IMU channel and leaving no pre-correction stamp
+anywhere but the immutable blob. That is a contract violation of this section's own "verbatim"
+rule, and it also breaks §3.3's seam detection: the correction deliberately flattens
+within-burst spacing, so a burst detector run against corrected stamps finds either no seams or
+one per sample. The importer now carries each IMU's raw stamp sequence alongside the corrected
+one and writes the raw value at every real slot — the two columns mean different things again,
+and C3 §3.5's `fetch_seams` has a real input.
+
+**A recorded stamp may be negative (amended 2026-09-20, ruling R248).** `t = 0` is the
+minimum **corrected** stamp across every source (§3.1), and this column is the **raw** stamp
+against that same origin. Burst-seam correction re-spaces burst 0 backward from its own read
+instant at the *measured* period, so an IMU running faster than its configured ODR has a
+corrected first sample **later** than its raw one — and that IMU's first recorded values then
+sit at a small negative offset. §3.5 invariant 1's `t_us >= 0` is a statement about `t`, never
+about this column: a reader must not clamp it, treat a negative as a sentinel, or infer an
+error from one. (The same asymmetry the other way is what R248 fixed: anchoring on the raw
+minimum instead put negative values in `t`.)
+
 `<source>_t_recorded_us` is **not guaranteed sorted** — a burst source's recorded stamps can
 regress slightly at a seam when the true ODR is slower than nominal (design doc: "locally
 non-monotonic time"). Do not `DELTA_BINARY_PACKED`-encode these columns (§4.4); only `t` is
@@ -332,6 +360,27 @@ uniformly spaced, matching the true ODR. Subtracting the source-wide minimum (`9
 this is also the session's `t0_us`) gives this channel's final `t_us`:
 `0, 1200, 2400, 3600, 4800, 6000, 7200, 8400, 9600, 10800, 12000, 13200, 14400, 15600, 16800,
 18000`.
+
+**The grid is shared at its start, not at its end (amended 2026-09-20, ruling R241).**
+Reconciliation gives each burst source a slot grid anchored at the session `t0`, so the three
+IMUs stay index-aligned from the front — an IMU that started one FIFO drain later carries that
+many leading pad slots, marked in `gaps`. It does **not** give them a common *length*. Each
+source's grid ends at its own last recorded sample.
+
+Until this amendment every IMU was padded out to the longest stream's occupied length, with a
+tail extrapolated forward from its own last stamp at its own period. On a real 49-minute
+session that put 17 s (IMU1) and 52 s (IMU2) of samples that were never recorded at the end of
+those channels. Because `duration_ms` is a max over channels of each channel's own `t` span,
+and the union `t` axis (§3.5 invariant 2) is the union of every channel's `t_us`, both ran past
+the end of the recording: the library showed a 50-minute session, every chart's default x-range
+included the dead time, and every window derived from the axis end was wrong by up to a minute.
+The pad slots were inside a `GapSpan`, but nothing that derives a *span* from first..last
+consults gaps.
+
+The **leading** pad is kept. It is bounded by the spread of the sources' start instants — one
+drain interval, milliseconds — where the trailing pad was bounded by the longest stream; and it
+is what the index alignment above rests on. Both pads remain `GapSpan`-marked, so no consumer's
+rule changes: a synthesized slot is still one the gap list covers.
 
 **Gaps (`GapSpan`) — ordering, ruled.** Drop reconciliation (rebuilding a channel onto an
 equal-length, time-aligned grid across an IMU's drops — SPEC §15.2,

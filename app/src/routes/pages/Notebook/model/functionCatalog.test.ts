@@ -104,15 +104,15 @@ describe("diffFunctionCatalog", () => {
     }
   });
 
-  it("MATH_FUNCTIONS — total count and implemented/notImplemented split — match the engine catalog's own counts (75 = 69 + 6)", () => {
+  it("MATH_FUNCTIONS — total count and implemented/notImplemented split — match the engine catalog's own counts (75 = 70 + 5)", () => {
     // Arrange
     const implemented = MATH_FUNCTIONS.filter((e) => e.status === "implemented").length;
     const notImplemented = MATH_FUNCTIONS.filter((e) => e.status === "notImplemented").length;
 
     // Act / Assert
     expect(MATH_FUNCTIONS.length).toBe(75);
-    expect(implemented).toBe(69);
-    expect(notImplemented).toBe(6);
+    expect(implemented).toBe(70);
+    expect(notImplemented).toBe(5);
   });
 
   // The five mismatches the running app reported on 2026-09-20 (the

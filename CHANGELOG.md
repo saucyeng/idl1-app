@@ -6,6 +6,83 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 
 ### Added
 
+- **`.idl0` importer version `0.3.0` [no-docs] (2026-09-20, ruling R243).**
+  R240 and R241 both change the columns written for an `.idl0` source, so
+  every `data.parquet` an earlier build wrote is stale: `idl-rs library stale`
+  lists them and `library rebuild` re-derives them from the immutable blobs.
+  One rebuild covers both changes and the `0.2.0` corrected-`t` change, which
+  is why the library rebuild waited for this lane. Measured before it, on the
+  library's largest `.idl0` session (159 min, 498.7 MB blob, 28 channels):
+  `data.parquet` 554.8 MB → 550.3 MB, union axis 22,221,497 → 21,906,658 rows,
+  73 s to import with the debug CLI, 2.3 GB peak commit. The rebuild costs
+  neither disk nor rows — the feared ~3× growth is not there, because each IMU
+  already had its own slot times, and R241's tail removal nets out slightly
+  ahead.
+
+- **No shared IMU tail pad [docs] (2026-09-20, ruling R241).** Each IMU's grid
+  now ends at its own last recorded sample instead of being padded out to the
+  longest IMU's length. The old pad extrapolated forward from a stream's last
+  real stamp at its own period, so an IMU that stopped early gained samples
+  that were never recorded — 17 s and 52 s on the two short streams of a real
+  49-minute session (PR #1 review finding 1). Since `duration_ms` is a max
+  over channels and the union `t` axis is the union of every channel's `t_us`,
+  both ran past the end of the recording: a 49-minute session catalogued as
+  ~50 minutes, and that dead time in every default x-range and every window
+  derived from the axis end. The **leading** pad stays — it is bounded by the
+  IMUs' start spread (one FIFO drain) rather than by the longest stream, and
+  the front-of-grid index alignment rests on it. Both pads are still marked in
+  `gaps`. C1 §3.3 amended.
+
+- **The session origin is the earliest corrected stamp [docs] (2026-09-20,
+  ruling R248).** `t = 0` was anchored on the minimum **raw** device stamp
+  while `t` itself carries corrected times. Burst-seam correction re-spaces
+  burst 0 backward at the measured period, so an IMU running slower than its
+  configured ODR has a corrected first sample earlier than any raw stamp in
+  the file — and those samples sat at a negative `t`, breaching C1 §3.5's
+  `t_us >= 0` (measured at about -1.3 ms on a real session). The origin is now
+  the minimum corrected stamp across every source, exactly as C1 §3.1 already
+  said, and the leading reconciliation pad floors its slot count so a
+  synthesized slot can never precede the origin either. `timestamp_utc_ms`
+  (the wall clock at `t = 0`) is derived from the same origin. The invariant
+  stands and is not relaxed; the consequence is that the **verbatim**
+  `<source>_t_recorded_us` column may be slightly negative for an IMU whose
+  correction moved it the other way, which C1 §3.2 now states.
+
+- **`<source>_t_recorded_us` holds the raw device stamp again [docs]
+  (2026-09-20, ruling R240).** For `.idl0` IMU channels the column was the
+  seam-corrected stamp, which after the corrected-`t` change made it a
+  bit-identical copy of `t` — two columns describing one thing, and no
+  pre-correction stamp left anywhere outside the immutable blob (PR #1 review
+  finding 2). The importer now carries each IMU's verbatim stamp sequence
+  through to the grid and writes it at every real slot; a synthesized slot
+  (leading pad, drop fill) keeps the existing rule of repeating that row's
+  `t` as a documented placeholder, and the gap list — never the content —
+  is what says which rows those are. `fetch_seams` (C3 §3.5) gets a real
+  input from this: burst detection reads recorded deltas, and the corrected
+  array it was being handed reported either no seams or one per sample.
+  C1 §3.2 amended.
+
+- **`resample(x, onto)` [docs] (2026-09-20, ruling R242).** The explicit way
+  to put two channels recorded on different clocks onto one time axis, and
+  after C1 §3.1's corrected IMU stamps the only way: linear interpolation of
+  `x` onto `onto`'s own per-sample recorded times, the result carrying
+  `onto`'s axis, rate and length. `[IMU1_AccelZ] - resample([IMU2_AccelZ],
+  [IMU1_AccelZ])` — fork against frame, the expression a suspension workbook
+  opens with — evaluates again. An `onto` time outside `x`'s recorded span is
+  `NaN`, never extrapolated to a held edge value; a `NaN` in `x` propagates.
+  `[t]` values only: a `[lap]` operand is the same typed shape error every
+  other pairing gives, because interpolating between lap 3 and lap 4 means
+  nothing. The rate-mismatch and different-time-axis errors now name
+  `resample(x, onto)` as a remedy that exists (it was advertised while
+  unimplemented, PR #1 review findings 3 and 5).
+
+  Superseding the reserved-but-never-implemented `resample(ch, num)` (C2 §3.8):
+  a scalar second argument is a typed `NotImplemented` naming that form rather
+  than an argument-type error. **Known limitation:** an `onto` sample landing
+  inside a `GapSpan` of `x` is interpolated like any other rather than masked
+  — gaps do not reach the math value path at all, and making one read as `NaN`
+  is a decision for every builtin (`mean`, `rms`, …), not for `resample` alone.
+
 - **The studio is a tiling window manager [docs] (2026-09-20, ruling R239,
   closing R227 and R218).** Notebook, Maths and Code are now **Dockview**
   panels (`dockview-react` 8.3.1, MIT, zero-dependency, bundled — the

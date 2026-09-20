@@ -1009,22 +1009,22 @@ result = convolve([Fork], kernel)
 #### resample
 
 ```
-resample(ch, num)
+resample(x, onto)
 ```
 
-Resamples a channel to `num` total samples, as `scipy.signal.resample`. `num` is a count, not a rate. Not implemented.
+Linear interpolation of `x` onto the per-sample recorded times of `onto`; the result carries `onto`'s time axis, rate and length, so the two can then be combined. Times outside `x`'s span are `NaN` -- never extrapolated. The explicit way to combine two channels recorded on different clocks; nothing resamples implicitly.
 
 | | |
 |---|---|
 | Shape | `[t]` |
 | Unit rule | `SameAsArg(0)` |
-| Status | **not implemented** |
+| Status | implemented |
 | Arguments | 2 |
 
 Example:
 
 ```
-result = resample([Fork], 4096)
+result = resample([IMU2_AccelZ], [IMU1_AccelZ])
 ```
 
 ### Logic
@@ -1782,8 +1782,19 @@ The lap functions divide into three groups:
 
 - **Where am I?** `current_lap()` gives the 1-based lap number at each sample
   and `0` outside any lap; `sector_number()` gives the 0-based sector index and
-  NaN outside any sector. Both are per-sample channels, so both are usable as a
-  `where(...)` condition.
+  NaN outside any sector. Both are per-sample channels at the session's base
+  rate, so both are usable as a `where(...)` condition over a channel at that
+  same rate. A slower channel — GPS at 1 Hz, say — has to be brought onto the
+  base rate first, because nothing resamples implicitly:
+
+  ```
+  where(sector_number() == 3, resample([GPS_SpeedKmh], [Time]), 0)
+  ```
+
+  `[Time]` is the synthesized base-rate channel, so the resampled speed lands
+  on the axis `sector_number()` counts along. Written without the `resample`,
+  the same expression is a typed error naming the two rates — never a wrong
+  answer.
 - **Where does a lap start?** `lap_start_time(n)` and `lap_start_distance(n)`
   are scalars, NaN when `n` is out of range (and `lap_start_distance` is also
   NaN when the session has no `[Distance]` channel).

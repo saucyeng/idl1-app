@@ -64,8 +64,8 @@ export interface CatalogEntry {
 }
 
 /** C2 §3.3's 75 named builtin functions, transcribed verbatim from the
- *  contract table. 69 `"implemented"`, 6 `"notImplemented"` (`sosfilt`,
- *  `spectrogram`, `envelope`, `correlate`, `convolve`, `resample`), per
+ *  contract table. 70 `"implemented"`, 5 `"notImplemented"` (`sosfilt`,
+ *  `spectrogram`, `envelope`, `correlate`, `convolve`), per
  *  `rust/core/src/math/catalog.rs`'s own counting tests. */
 export const MATH_FUNCTIONS: CatalogEntry[] = [
   { name: "butter", signature: 'butter(order, cutoff_hz, "low"|"lowpass"|"high"|"highpass", ch)', category: "Filter", status: "implemented" },
@@ -124,7 +124,7 @@ export const MATH_FUNCTIONS: CatalogEntry[] = [
   { name: "envelope", signature: "envelope(ch)", category: "Frequency", status: "notImplemented" },
   { name: "correlate", signature: "correlate(a, b)", category: "Correlation", status: "notImplemented" },
   { name: "convolve", signature: "convolve(ch, kernel)", category: "Correlation", status: "notImplemented" },
-  { name: "resample", signature: "resample(ch, hz)", category: "Resampling", status: "notImplemented" },
+  { name: "resample", signature: "resample(x, onto)", category: "Resampling", status: "implemented" },
   { name: "where", signature: "where(cond, t, f)", category: "Logic", status: "implemented" },
   { name: "current_lap", signature: "current_lap()", category: "Lap", status: "implemented" },
   { name: "lap_start_time", signature: "lap_start_time(n)", category: "Lap", status: "implemented" },
