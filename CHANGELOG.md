@@ -6,6 +6,73 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 
 ### Added
 
+- **The studio is a tiling window manager [docs] (2026-09-20, ruling R239,
+  closing R227 and R218).** Notebook, Maths and Code are now **Dockview**
+  panels (`dockview-react` 8.3.1, MIT, zero-dependency, bundled — the
+  offline rule holds, no CDN) in a split tree instead of `ColumnFrame`'s
+  fixed left-to-right columns: drag a tab to split the area or to stack
+  two panels behind tabs, drag a sash to resize, close a panel from its
+  tab or from the ribbon's own Notebook/Maths/Code toggles. Those toggles
+  now report which panels are actually docked, because a tab's close
+  button runs the same command the button does — one path from "this panel
+  should go away" to the page's stored visibility, which is what used to
+  let the picker and the toggles disagree. Floating and pop-out groups are
+  disabled (R218: panels dock, they never overlap), and R221.1's single
+  stacking layer is untouched — the theme sheet states no z-index.
+
+  R213's four presets survive as **named layouts** (`shell/dockLayout.ts`):
+  the same serialised Dockview document a dragged arrangement produces,
+  applied through the same path, so there is one way for an arrangement to
+  reach the screen. The per-aspect-class defaults are unchanged (ultrawide
+  → Split, wide → Stacked, narrow → Output) and `Ctrl+Shift+L` still
+  cycles. The layout is versioned and validated on read — an older
+  version, a hand-edited document or one naming a panel this build no
+  longer has falls back to that class's default and never throws — and is
+  per-machine UI state, stored in `columnPrefs.ts`'s one `localStorage`
+  document, never in the workbook.
+
+  The panels themselves hold nothing: each is an empty container that
+  publishes its DOM node, and the Notebook page — which owns the ribbon,
+  the timeline strip, the workbook session and the sandbox iframe host —
+  stays mounted where `RouteHost` has always rendered it and portals its
+  three regions in (R109's rule, now applied to the Notebook output too,
+  `shell/outputSlot.ts`). Closing a panel therefore cannot take the studio
+  down with it, and a re-dock re-renders nothing at all. Panels are
+  overlay-rendered, which repositions rather than reparents them, so a
+  drag between groups keeps scroll offsets and does not reload a cell's
+  chart iframe. `ColumnFrame.tsx`, `columnVisibility.ts`, `columnResize.ts`
+  and the two slot columns are deleted; `ColumnPlaceholder` moved to a file
+  of its own.
+
+- **A Welcome panel behind an empty dock [docs] (2026-09-20, ruling
+  R244).** Every dock panel may be closed, including the last one, and
+  what is behind them is the Welcome panel rather than a blank:
+  `shell/WelcomePanel.tsx` renders in Dockview's watermark slot when the
+  dock is empty, in the Notebook panel when no workbook is open, and in a
+  dialog from **Help ▸ Welcome**. Start (New workbook, Open workbook,
+  Import sessions, Import a folder), Recent workbooks (per machine, newest
+  first, eight kept, a missing file greyed), Panels (reopen Notebook,
+  Maths, Code), Learn (Check for updates, About, and the existing
+  Ask-an-agent button), and the resolved `<data>` root at the foot.
+
+  Every row runs a command id **that already existed**; the panel holds no
+  logic of its own and the rows are built by the pure
+  `shell/welcomeItems.ts`, which marks a row disabled when nothing has
+  registered its command rather than changing the panel's shape. The one
+  id added is `help.welcome`, which opens the panel. Recent workbooks are
+  a new per-machine store (`shell/recentWorkbooks.ts`, its own
+  `localStorage` key, never in a workbook, never synced) because nothing
+  kept such a list — the sidebar and the Open dialog both show the whole
+  catalog.
+
+  R244 supersedes the same-day "the last dock panel is not closable", and
+  with it `notebookColumns.ts`' never-all-off guard, which is removed: it
+  refused a change by returning the previous visibility **unchanged**, so
+  under the dock Dockview closed the panel while the model never noticed
+  and the ribbon went on claiming the panel was open. With Welcome behind
+  an empty dock, "every panel closed" is a real state with a way out of it
+  on screen, and the dock and the toggles always agree.
+
 - **Burst-seam spans on the wire, and `evaluated_with` written by core
   [docs] (2026-09-14, ruling R237).** `fetch_seams(session_id, channel)`
   (C3 §3.5) returns each burst-seam boundary's corrected-time extent — a
@@ -216,6 +283,16 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
   setup. Dev builds and a build with no real pubkey never check.
 
 ### Changed
+
+- **One source of truth for what a layout preset arranges [no-docs]
+  (2026-09-20, ruling R239, reviewer finding).** `LAYOUT_PRESETS` no
+  longer carries `columns`, `mathsOrientation` or `outputWidthPx`, and
+  `presetLayout()` is gone: `dockLayout.ts`'s `namedDockLayout` is the only
+  place a preset's arrangement is stated. The Notebook page's effect that
+  wrote its column visibility from the old table is gone too — `DockFrame`
+  applies the layout and then tells the page which panels it ended up with,
+  through the page's own toggle commands. One source for what a preset
+  arranges, one writer of the page's visibility.
 
 - **Sessions open about five times faster [no-docs] (2026-09-11, ruling
   R232).** Opening the largest recording in the library still cost most of

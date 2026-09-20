@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it } from "vitest";
 
 import { DEFAULT_COLUMN_PREFS, readColumnPrefs, sanitizeColumnPrefs, writeColumnPrefs } from "./columnPrefs";
+import { dockLayoutDocument, namedDockLayout } from "./dockLayout";
 
 /** A minimal `Storage`-shaped stub — vitest's `node` test environment has no
  *  real `window.localStorage` (matching `Settings/prefsStore.test.ts` and
@@ -45,6 +46,7 @@ describe("readColumnPrefs", () => {
       lastRoute: "data" as const,
       presets: { ...DEFAULT_COLUMN_PREFS.presets, wide: "custom" as const },
       sidebar: { ...DEFAULT_COLUMN_PREFS.sidebar, wide: { widthPx: 360, collapsed: true } },
+      dock: { wide: dockLayoutDocument(namedDockLayout("split")) },
     };
 
     writeColumnPrefs(written);

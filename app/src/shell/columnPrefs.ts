@@ -1,6 +1,7 @@
 import type { RouteId } from "../routes/types";
 import { ROUTES } from "../routes/types";
 import { ASPECT_CLASSES, type AspectClass } from "./aspectClass";
+import { DOCK_LAYOUT_VERSION, dockLayoutPanelIds, type DockLayoutDocument } from "./dockLayout";
 import { asActivePreset, DEFAULT_PRESET_BY_CLASS, OUTPUT_COLUMN_MIN_WIDTH_PX, type ActivePreset } from "./layoutPresets";
 import { DEFAULT_SIDEBAR_PREFS, sanitizeSidebarPrefs, type SidebarPrefs } from "./sidebarPrefs";
 
@@ -57,6 +58,17 @@ export interface ColumnPrefs {
    *  already are — R93's "one key for all per-machine shell state". The
    *  shape and its bounds live in `sidebarPrefs.ts`. */
   sidebar: SidebarPrefs;
+  /** The tiling layout remembered for each viewport shape (ruling R239:
+   *  "layout is per-machine UI state, not in the workbook"). Another field
+   *  in this same document for the reason `presets` and `sidebar` are —
+   *  R93's "one key for all per-machine shell state". An entry is absent
+   *  until that class's layout has been touched, and {@link sanitizeDock}
+   *  drops one this build cannot apply, so a missing entry and a corrupt
+   *  one are the same thing to a reader: use the class's default
+   *  (`dockLayout.ts`'s `defaultDockLayoutFor`). `presets` stays beside it
+   *  and still names *which* layout is active — the two are written
+   *  together by `layoutPreset.ts`. */
+  dock: Partial<Record<AspectClass, DockLayoutDocument>>;
 }
 
 const STORAGE_KEY = "idl1.shell.columns.v1";
@@ -69,6 +81,7 @@ export const DEFAULT_COLUMN_PREFS: ColumnPrefs = {
   lastRoute: null,
   presets: { ...DEFAULT_PRESET_BY_CLASS },
   sidebar: DEFAULT_SIDEBAR_PREFS,
+  dock: {},
 };
 
 /** Narrows `raw` to a plain JSON object, or `undefined` for anything else
@@ -117,6 +130,25 @@ function sanitizePresets(raw: unknown): Record<AspectClass, ActivePreset> {
   return presets;
 }
 
+/** Keeps every stored dock layout this build can still apply and silently
+ *  drops the rest — a document from another {@link DOCK_LAYOUT_VERSION}, a
+ *  grid naming a panel that no longer exists, or an entry under a key that
+ *  is not an aspect class. A dropped entry reads as "nothing stored for
+ *  that shape", which is the state a fresh machine is in, so the class
+ *  simply opens at its default layout. */
+function sanitizeDock(raw: unknown): Partial<Record<AspectClass, DockLayoutDocument>> {
+  const record = asRecord(raw);
+  const dock: Partial<Record<AspectClass, DockLayoutDocument>> = {};
+  if (record === undefined) return dock;
+  for (const cls of ASPECT_CLASSES) {
+    const entry = asRecord(record[cls]);
+    if (entry === undefined || entry.version !== DOCK_LAYOUT_VERSION) continue;
+    if (dockLayoutPanelIds(entry.layout) === null) continue;
+    dock[cls] = entry as unknown as DockLayoutDocument;
+  }
+  return dock;
+}
+
 function sanitizeLastRoute(raw: unknown): RouteId | null {
   if (typeof raw !== "string") return null;
   return ROUTES.some((r) => r.id === raw) ? (raw as RouteId) : null;
@@ -137,6 +169,7 @@ export function sanitizeColumnPrefs(raw: unknown): ColumnPrefs {
     lastRoute: sanitizeLastRoute(record.lastRoute),
     presets: sanitizePresets(record.presets),
     sidebar: sanitizeSidebarPrefs(record.sidebar),
+    dock: sanitizeDock(record.dock),
   };
 }
 

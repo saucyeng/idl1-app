@@ -82,6 +82,12 @@ export const COMMAND_IDS = {
   goSettings: "go.settings",
   helpAbout: "help.about",
   helpCheckForUpdates: "help.checkForUpdates",
+  /** Ruling R244: opens the Welcome panel from the Help menu. The **one**
+   *  id this ruling adds, and it had to be added — R244's "no new command
+   *  surface" is about the panel's own buttons, every one of which runs an
+   *  id that already existed, and it also asks for the panel to be
+   *  "reachable from Help", which is a command by definition. */
+  helpWelcome: "help.welcome",
 } as const;
 
 /** Every id in {@link COMMAND_IDS}. */

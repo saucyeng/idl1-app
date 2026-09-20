@@ -3,6 +3,12 @@
 @import "./tokens.css";
 @import "./report-print.css";
 @import "./paper.css";
+/* Ruling R239's tiling frame. The library's own sheet is imported from the
+ * installed package, bundled by Vite into the app's one stylesheet —
+ * never a CDN (CLAUDE.md §3: "offline-first means bundled"). `./dock.css`
+ * follows it so idl1's theme class wins on equal specificity. */
+@import "dockview/dist/styles/dockview.css";
+@import "./dock.css";
 
 /* Ruling R221.1: the window is the app's frame, not a page that scrolls.
  *

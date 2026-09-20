@@ -8,10 +8,6 @@ import {
   LAYOUT_PRESET_CYCLE,
   LAYOUT_PRESETS,
   nextPreset,
-  OUTPUT_COLUMN_MIN_WIDTH_PX,
-  presetAfterColumnChange,
-  presetLayout,
-  presetMatches,
 } from "./layoutPresets";
 
 describe("LAYOUT_PRESETS — the table itself", () => {
@@ -21,10 +17,14 @@ describe("LAYOUT_PRESETS — the table itself", () => {
     expect(ids).toEqual([...LAYOUT_PRESET_CYCLE]);
   });
 
-  it("LAYOUT_PRESETS — every preset — keeps the cell list on, since it is the output", () => {
-    const cells = LAYOUT_PRESETS.map((spec) => spec.columns.cells);
+  it("LAYOUT_PRESETS — every preset — says only what it is called, never what it arranges", () => {
+    // Ruling R239 moved the arrangement to `dockLayout.ts`'s
+    // `namedDockLayout`. A `columns`/`mathsOrientation`/`outputWidthPx`
+    // back on this table would be the duplicate source of truth the
+    // reviewer caught on 2026-09-20.
+    const fields = LAYOUT_PRESETS.flatMap((spec) => Object.keys(spec));
 
-    expect(cells).toEqual([true, true, true, true]);
+    expect(new Set(fields)).toEqual(new Set(["id", "label", "glyph", "title"]));
   });
 
   it("LAYOUT_PRESETS — every preset — carries a label and a one-character glyph", () => {
@@ -36,32 +36,6 @@ describe("LAYOUT_PRESETS — the table itself", () => {
       { labelled: true, glyphs: 1 },
       { labelled: true, glyphs: 1 },
     ]);
-  });
-});
-
-describe("presetLayout — what each preset writes", () => {
-  it("presetLayout — output — the notebook alone, graph and properties off", () => {
-    const layout = presetLayout("output");
-
-    expect(layout).toEqual({ columns: { graph: false, properties: false, cells: true }, mathsOrientation: "column", outputWidthPx: null });
-  });
-
-  it("presetLayout — maths — every pane on, output pinned to its minimum width", () => {
-    const layout = presetLayout("maths");
-
-    expect(layout).toEqual({ columns: { graph: true, properties: true, cells: true }, mathsOrientation: "column", outputWidthPx: OUTPUT_COLUMN_MIN_WIDTH_PX });
-  });
-
-  it("presetLayout — split — every pane on, side by side, width left to the user", () => {
-    const layout = presetLayout("split");
-
-    expect(layout).toEqual({ columns: { graph: true, properties: true, cells: true }, mathsOrientation: "column", outputWidthPx: null });
-  });
-
-  it("presetLayout — stacked — the maths panel as a row above the output", () => {
-    const layout = presetLayout("stacked");
-
-    expect(layout).toEqual({ columns: { graph: true, properties: true, cells: true }, mathsOrientation: "row", outputWidthPx: null });
   });
 });
 
@@ -84,52 +58,6 @@ describe("nextPreset — the Ctrl+Shift+L cycle", () => {
     const next = nextPreset("custom");
 
     expect(next).toBe("output");
-  });
-});
-
-describe("presetMatches", () => {
-  it("presetMatches — split's own columns and orientation — true", () => {
-    const matches = presetMatches("split", { graph: true, properties: true, cells: true }, "column");
-
-    expect(matches).toBe(true);
-  });
-
-  it("presetMatches — split's columns but stacked's orientation — false", () => {
-    const matches = presetMatches("split", { graph: true, properties: true, cells: true }, "row");
-
-    expect(matches).toBe(false);
-  });
-
-  it("presetMatches — output with the graph turned back on — false", () => {
-    const matches = presetMatches("output", { graph: true, properties: false, cells: true }, "column");
-
-    expect(matches).toBe(false);
-  });
-
-  it("presetMatches — the output column dragged narrower — still true, width is not compared", () => {
-    const matches = presetMatches("split", presetLayout("split").columns, "column");
-
-    expect(matches).toBe(true);
-  });
-});
-
-describe("presetAfterColumnChange — a hand-thrown toggle", () => {
-  it("presetAfterColumnChange — a toggle that leaves the preset — custom", () => {
-    const active = presetAfterColumnChange("split", { graph: false, properties: true, cells: true }, "column");
-
-    expect(active).toBe("custom");
-  });
-
-  it("presetAfterColumnChange — a toggle that lands back on the same set — keeps the preset", () => {
-    const active = presetAfterColumnChange("maths", { graph: true, properties: true, cells: true }, "column");
-
-    expect(active).toBe("maths");
-  });
-
-  it("presetAfterColumnChange — already custom — stays custom", () => {
-    const active = presetAfterColumnChange("custom", presetLayout("split").columns, "column");
-
-    expect(active).toBe("custom");
   });
 });
 

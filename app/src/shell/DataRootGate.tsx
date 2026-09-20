@@ -2,6 +2,7 @@ import { useEffect, useState, type ReactNode } from "react";
 
 import { Button } from "@/components/ui/button";
 import { getDataDir, setDataDir } from "../ipc/app";
+import { setDataRootPath } from "./dataRootPath";
 import { pickLibraryFolder } from "../routes/pages/Settings/moveLibrary";
 import { describeMissingDataRoot, missingDataRootFrom, type MissingDataRoot } from "./missingDataRoot";
 
@@ -42,8 +43,13 @@ export default function DataRootGate({ children }: DataRootGateProps) {
   useEffect(() => {
     let cancelled = false;
     getDataDir()
-      .then(() => {
+      .then((info) => {
         if (!cancelled) {
+          // Ruling R244: the Welcome panel prints the resolved root. This
+          // call already had to happen before the app could start, so
+          // publishing its answer here is what lets the panel show the
+          // path without a second `get_data_dir` of its own.
+          setDataRootPath(info.resolved_path);
           setState({ status: "open" });
         }
       })
@@ -51,6 +57,9 @@ export default function DataRootGate({ children }: DataRootGateProps) {
         if (cancelled) {
           return;
         }
+        // A root this process could not resolve is not shown at all,
+        // rather than shown stale.
+        setDataRootPath(null);
         const root = missingDataRootFrom(error);
         // Any other rejection is not this condition, and blocking the app on
         // it would hide a working library behind the wrong diagnosis.

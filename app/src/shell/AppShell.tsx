@@ -7,12 +7,13 @@ import type { RouteId } from "../routes/types";
 import { ROUTES } from "../routes/types";
 import { navPlacement, resolveLayout } from "./layout";
 import { ASPECT_CLASS_DEBOUNCE_MS, resolveAspectClass, type AspectClass } from "./aspectClass";
-import { cycleLayoutPreset, setAspectClass, useActiveLayoutPreset } from "./layoutPreset";
+import { cycleLayoutPreset, restoreStoredLayout, setAspectClass, useActiveLayoutPreset } from "./layoutPreset";
 import { readColumnPrefs, writeColumnPrefs } from "./columnPrefs";
 import { activityBadges } from "./activityBadges";
 import { useDeviceLink } from "./deviceLink";
 import ActivityBar from "./ActivityBar";
 import AboutDialog from "./AboutDialog";
+import WelcomeDialog from "./WelcomeDialog";
 import Sidebar from "./Sidebar";
 import StatusBar from "./StatusBar";
 import TitleBar from "./TitleBar";
@@ -65,10 +66,22 @@ function useAspectClass(): AspectClass {
   );
 
   useEffect(() => {
+    // The first measurement restores unconditionally, every later one
+    // publishes a *change*. `setAspectClass` is a no-op for the class the
+    // layout store already believes it is in, and that is usually `wide` —
+    // its own pre-measurement default — so without this the commonest
+    // machine of all would open at `wide`'s default layout with its stored
+    // one left on disk (ruling R239: layout is per-machine state).
+    let first = true;
     const publish = () => {
       const next = resolveAspectClass(window.innerWidth, window.innerHeight);
       setCls(next);
-      setAspectClass(next);
+      if (first) {
+        first = false;
+        restoreStoredLayout(next);
+      } else {
+        setAspectClass(next);
+      }
     };
     publish();
 
@@ -115,6 +128,12 @@ export default function AppShell() {
   const aspectClass = useAspectClass();
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [aboutOpen, setAboutOpen] = useState(false);
+  // Ruling R244: Help ▸ Welcome. The same panel an empty dock and a
+  // workbook-less Notebook panel show, in the shell's own dialog frame
+  // (`AboutDialog.tsx`'s pattern) rather than as a fourth dock panel — a
+  // dock panel would have to join `dockLayout.ts`'s three ids, every named
+  // layout and every stored document, to be shown for a moment and closed.
+  const [welcomeOpen, setWelcomeOpen] = useState(false);
   const commandGlyph = typeof navigator !== "undefined" && usesCommandGlyph(navigator.userAgent);
   const activePreset = useActiveLayoutPreset();
   const deviceLink = useDeviceLink();
@@ -193,6 +212,7 @@ export default function AppShell() {
       [MENU_COMMAND_IDS.viewCyclePreset, cycleLayoutPreset],
       [MENU_COMMAND_IDS.viewCommandPalette, () => setPaletteOpen((open) => !open)],
       [MENU_COMMAND_IDS.helpAbout, () => setAboutOpen(true)],
+      [MENU_COMMAND_IDS.helpWelcome, () => setWelcomeOpen(true)],
       [
         MENU_COMMAND_IDS.helpCheckForUpdates,
         () => {
@@ -346,6 +366,7 @@ export default function AppShell() {
 
       <CommandPalette open={paletteOpen} onOpenChange={setPaletteOpen} commands={commands} />
       <AboutDialog open={aboutOpen} onOpenChange={setAboutOpen} engineVersion={state.engineVersion} />
+      <WelcomeDialog open={welcomeOpen} onOpenChange={setWelcomeOpen} />
       <UpdatePanel />
       <Toaster />
     </div>

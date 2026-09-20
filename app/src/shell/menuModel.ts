@@ -174,6 +174,10 @@ export const MENUS: readonly Menu[] = [
     id: "help",
     label: "Help",
     items: [
+      // Ruling R244: the Welcome panel is also what an empty dock and a
+      // workbook-less Notebook panel show, so this is the way back to it
+      // once something has taken its place.
+      command(MENU_COMMAND_IDS.helpWelcome, "Welcome", null),
       command(MENU_COMMAND_IDS.helpCheckForUpdates, "Check for updates…", null),
       command(MENU_COMMAND_IDS.helpAbout, "About idl1", null),
     ],
