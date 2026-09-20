@@ -1,7 +1,8 @@
 # DRAFT — What the first real-data workbook asked of the engine, CLI and app
 
-**Status:** draft for the lead to rule on. P0-1, P0-3 and P2-1 are implemented (see
-idl-rs PR #1); everything else is unimplemented on purpose. Spec-first: each
+**Status:** draft for the lead to rule on. P0-1, P0-3 and P2-1 are implemented (idl-rs
+PR #1); P1-1 and P0-1's follow-ups are implemented (the `imu-time` lane, 2026-09-20,
+rulings R240-R243 and R246 — see each item); everything else is unimplemented on purpose. Spec-first: each
 item names the contract it touches and the questions that must be answered before a lane
 is cut (CLAUDE.md §1 — none of the open questions below has been assumed).
 
@@ -45,10 +46,19 @@ jumps; on `t_recorded`, landings are rear-first by 60–120 ms and the jumps gre
 the grid value (C1 §3.3, ruled). Importer version bumps; `library rebuild` re-derives.
 
 **Open questions.** (a) Must `t` stay strictly monotone per source when a corrected stamp
-steps back by less than one period? (b) 0.5–0.9 % of rows are pad slots whose
-`t_recorded == t`; should `t_recorded_us` be null there instead of a placeholder that
-looks like a measurement? (c) Are dropouts of seconds expected from the firmware, or is
-that its own bug (SD stalls)? They are 1.5 % of the day.
+steps back by less than one period? **Ruled yes** and already enforced — C1 §3.5
+invariant 1, a slot that does not advance is clamped to `previous + 1 µs`. (b) 0.5–0.9 %
+of rows are pad slots whose `t_recorded == t`; should `t_recorded_us` be null there
+instead of a placeholder that looks like a measurement? **Ruled: placeholder, and the
+gap list is what says so** (R240; C1 §3.2 amended). The column itself is no longer a copy
+of `t` — it holds the raw pre-correction device stamp at every real slot. (c) Are dropouts
+of seconds expected from the firmware, or is that its own bug (SD stalls)? They are 1.5 %
+of the day. **Still open — a firmware question, not an engine one.**
+
+**Also landed here (R241).** The session-wide IMU tail pad is gone: each IMU's grid ends
+at its own last recorded sample. Measured on the library's largest `.idl0` session
+(159 min, 498.7 MB blob): the union `t` axis ran 370.5 s past the last stamp any source
+recorded, and now ends on it. (R243) Importer `0.3.0`; one rebuild covers this and P0-1.
 
 ## P0-2  Estimator builtins answer without a calibration, and answer nonsense
 
@@ -77,6 +87,17 @@ Scalars work; series do not. **Proposed:** implement `resample(ch, onto)` (C2 §
 reserves the name) on recorded time. **Open:** interpolation rule (linear? hold for
 indicator channels?), and whether binary operators should resample implicitly onto the
 left operand — the explicit form is safer and is what the error already suggests.
+
+**Implemented 2026-09-20 (R242, R246).** `resample(x, onto)`: linear interpolation onto
+`onto`'s per-sample recorded times, the result carrying `onto`'s axis, rate and length.
+Ruled on the two open points: **linear only** — a hold rule for indicator channels is a
+second function, not a hidden mode, and an author who wants nearest-neighbour writes
+`round(resample(...))`; and **never implicit** — a binary operator's rate/axis mismatch
+stays a typed error that names `resample(x, onto)`, per C2 §3.6.2 rule 4. Times outside
+`x`'s recorded span are `NaN`, never extrapolated. **Still open, split out (R246):** a
+sample of `onto` landing inside a `GapSpan` of `x` is interpolated like any other, because
+gaps do not reach the maths value path; making "a gap is `NaN`" true belongs to a
+gap-aware-maths lane, since it changes every builtin, not just this one.
 
 ## P1-2  Per-lap reduction `mean(x, "t:lap")` is documented and unimplemented
 

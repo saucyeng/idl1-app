@@ -11,7 +11,13 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
   every `data.parquet` an earlier build wrote is stale: `idl-rs library stale`
   lists them and `library rebuild` re-derives them from the immutable blobs.
   One rebuild covers both changes and the `0.2.0` corrected-`t` change, which
-  is why the library rebuild waited for this lane.
+  is why the library rebuild waited for this lane. Measured before it, on the
+  library's largest `.idl0` session (159 min, 498.7 MB blob, 28 channels):
+  `data.parquet` 554.8 MB → 550.3 MB, union axis 22,221,497 → 21,906,658 rows,
+  73 s to import with the debug CLI, 2.3 GB peak commit. The rebuild costs
+  neither disk nor rows — the feared ~3× growth is not there, because each IMU
+  already had its own slot times, and R241's tail removal nets out slightly
+  ahead.
 
 - **No shared IMU tail pad [docs] (2026-09-20, ruling R241).** Each IMU's grid
   now ends at its own last recorded sample instead of being padded out to the
