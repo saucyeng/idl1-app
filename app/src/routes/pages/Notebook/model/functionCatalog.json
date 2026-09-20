@@ -1,0 +1,605 @@
+{
+  "functions": [
+    {
+      "category": "Elementwise",
+      "description": "Absolute value, sample by sample.",
+      "name": "abs",
+      "signature": "abs(x)",
+      "status": "implemented",
+      "units": null
+    },
+    {
+      "category": "Trig",
+      "description": "Arccosine, in radians; the argument must be dimensionless.",
+      "name": "acos",
+      "signature": "acos(x)",
+      "status": "implemented",
+      "units": "rad"
+    },
+    {
+      "category": "Vector",
+      "description": "Angle between two Vec3s, in radians, in [0, pi]. Retired name: `angle`.",
+      "name": "angle_between",
+      "signature": "angle_between(a, b)",
+      "status": "implemented",
+      "units": "rad"
+    },
+    {
+      "category": "Trig",
+      "description": "Arcsine, in radians; the argument must be dimensionless.",
+      "name": "asin",
+      "signature": "asin(x)",
+      "status": "implemented",
+      "units": "rad"
+    },
+    {
+      "category": "Trig",
+      "description": "Arctangent, in radians; the argument must be dimensionless.",
+      "name": "atan",
+      "signature": "atan(x)",
+      "status": "implemented",
+      "units": "rad"
+    },
+    {
+      "category": "Trig",
+      "description": "Quadrant-correct two-argument arctangent, in radians.",
+      "name": "atan2",
+      "signature": "atan2(y, x)",
+      "status": "implemented",
+      "units": "rad"
+    },
+    {
+      "category": "Estimator (diagnostic)",
+      "description": "Bike attitude estimated by the AHRS filter, in degrees.",
+      "name": "attitude",
+      "signature": "attitude(\"roll\"|\"pitch\")",
+      "status": "implemented",
+      "units": "deg"
+    },
+    {
+      "category": "Estimator (diagnostic)",
+      "description": "Gravity-compensated body-frame acceleration, in g.",
+      "name": "body_accel",
+      "signature": "body_accel(\"long\"|\"lat\")",
+      "status": "implemented",
+      "units": "g"
+    },
+    {
+      "category": "Filter",
+      "description": "Zero-phase Butterworth low- or high-pass filter; designs and applies the filter in one call.",
+      "name": "butter",
+      "signature": "butter(order, cutoff_hz, \"low\"|\"lowpass\"|\"high\"|\"highpass\", ch)",
+      "status": "implemented",
+      "units": null
+    },
+    {
+      "category": "Elementwise",
+      "description": "Rounds each sample up to the nearest integer.",
+      "name": "ceil",
+      "signature": "ceil(x)",
+      "status": "implemented",
+      "units": null
+    },
+    {
+      "category": "Elementwise",
+      "description": "Limits each sample to `lo`..`hi`, both given in the channel's own units. Retired name: `clamp`.",
+      "name": "clip",
+      "signature": "clip(ch, lo, hi)",
+      "status": "implemented",
+      "units": null
+    },
+    {
+      "category": "Correlation",
+      "description": "Convolution of a channel with a kernel. Not implemented.",
+      "name": "convolve",
+      "signature": "convolve(ch, kernel)",
+      "status": "notImplemented",
+      "units": null
+    },
+    {
+      "category": "Correlation",
+      "description": "Cross-correlation of two channels. Not implemented.",
+      "name": "correlate",
+      "signature": "correlate(a, b)",
+      "status": "notImplemented",
+      "units": null
+    },
+    {
+      "category": "Trig",
+      "description": "Cosine of an angle in radians.",
+      "name": "cos",
+      "signature": "cos(x)",
+      "status": "implemented",
+      "units": null
+    },
+    {
+      "category": "Trig",
+      "description": "Hyperbolic cosine.",
+      "name": "cosh",
+      "signature": "cosh(x)",
+      "status": "implemented",
+      "units": null
+    },
+    {
+      "category": "Aggregate",
+      "description": "Number of samples in the window.",
+      "name": "count",
+      "signature": "count(ch) -> scalar",
+      "status": "implemented",
+      "units": null
+    },
+    {
+      "category": "Vector",
+      "description": "Cross product of two Vec3s.",
+      "name": "cross",
+      "signature": "cross(a, b)",
+      "status": "implemented",
+      "units": null
+    },
+    {
+      "category": "Time-domain",
+      "description": "A permanent second spelling of `cumulative_trapezoid`, as scipy itself carries both.",
+      "name": "cumtrapz",
+      "signature": "cumtrapz(ch)",
+      "status": "implemented",
+      "units": null
+    },
+    {
+      "category": "Time-domain",
+      "description": "Cumulative trapezoidal integral of a channel with respect to time.",
+      "name": "cumulative_trapezoid",
+      "signature": "cumulative_trapezoid(ch)",
+      "status": "implemented",
+      "units": null
+    },
+    {
+      "category": "Lap",
+      "description": "1-based lap number at each sample, `0` outside any lap.",
+      "name": "current_lap",
+      "signature": "current_lap()",
+      "status": "implemented",
+      "units": null
+    },
+    {
+      "category": "Reconstruction",
+      "description": "Reconstructs samples lost to clipping; designed for accelerometer data clipped at +/-32 g.",
+      "name": "declip",
+      "signature": "declip(ch)",
+      "status": "implemented",
+      "units": null
+    },
+    {
+      "category": "Trig conversion",
+      "description": "Converts degrees to radians.",
+      "name": "deg2rad",
+      "signature": "deg2rad(x)",
+      "status": "implemented",
+      "units": "rad"
+    },
+    {
+      "category": "Time-domain",
+      "description": "Removes a constant or linear trend from a channel.",
+      "name": "detrend",
+      "signature": "detrend(ch) | detrend(ch, \"linear\"|\"constant\"|\"mean\"|\"none\")",
+      "status": "implemented",
+      "units": null
+    },
+    {
+      "category": "Time-domain",
+      "description": "Backward difference with respect to time, with `result[0] = 0`. Deliberately not `gradient`'s central difference.",
+      "name": "differentiate",
+      "signature": "differentiate(ch)",
+      "status": "implemented",
+      "units": null
+    },
+    {
+      "category": "Vector",
+      "description": "Dot product of two Vec3s.",
+      "name": "dot",
+      "signature": "dot(a, b)",
+      "status": "implemented",
+      "units": null
+    },
+    {
+      "category": "Frequency",
+      "description": "Amplitude envelope -- a magnitude, not scipy's complex analytic signal. Not implemented. Retired name: `hilbert`.",
+      "name": "envelope",
+      "signature": "envelope(ch)",
+      "status": "notImplemented",
+      "units": null
+    },
+    {
+      "category": "Aggregate",
+      "description": "First sample in the window.",
+      "name": "first",
+      "signature": "first(ch) -> scalar",
+      "status": "implemented",
+      "units": null
+    },
+    {
+      "category": "Elementwise",
+      "description": "Rounds each sample down to the nearest integer.",
+      "name": "floor",
+      "signature": "floor(x)",
+      "status": "implemented",
+      "units": null
+    },
+    {
+      "category": "Time-domain",
+      "description": "Central difference with respect to time, `numpy.gradient`'s own formula.",
+      "name": "gradient",
+      "signature": "gradient(ch)",
+      "status": "implemented",
+      "units": null
+    },
+    {
+      "category": "Lap delta",
+      "description": "Main lap minus overlay lap, arc-length-matched. Retired name: `variance_dist`.",
+      "name": "lap_delta_dist",
+      "signature": "lap_delta_dist(ch)",
+      "status": "implemented",
+      "units": null
+    },
+    {
+      "category": "Lap delta",
+      "description": "Main lap minus overlay lap, time-matched; the mean across every overlay when more than one is selected. Retired name: `variance_time`.",
+      "name": "lap_delta_time",
+      "signature": "lap_delta_time(ch)",
+      "status": "implemented",
+      "units": null
+    },
+    {
+      "category": "Lap",
+      "description": "The 1-based lap number: this row's lap in a table cell, every lap in a math cell.",
+      "name": "lap_number",
+      "signature": "lap_number()",
+      "status": "implemented",
+      "units": null
+    },
+    {
+      "category": "Lap",
+      "description": "Distance at which lap `n` starts; NaN when `n` is out of range or the session has no `[Distance]`.",
+      "name": "lap_start_distance",
+      "signature": "lap_start_distance(n)",
+      "status": "implemented",
+      "units": "m"
+    },
+    {
+      "category": "Lap",
+      "description": "Session time at which lap `n` starts; NaN when `n` is out of range.",
+      "name": "lap_start_time",
+      "signature": "lap_start_time(n)",
+      "status": "implemented",
+      "units": "s"
+    },
+    {
+      "category": "Lap",
+      "description": "Lap duration in seconds: this row's lap in a table cell, every lap in a math cell.",
+      "name": "lap_time",
+      "signature": "lap_time()",
+      "status": "implemented",
+      "units": "s"
+    },
+    {
+      "category": "Aggregate",
+      "description": "Last sample in the window.",
+      "name": "last",
+      "signature": "last(ch) -> scalar",
+      "status": "implemented",
+      "units": null
+    },
+    {
+      "category": "Aggregate / elementwise",
+      "description": "Largest sample in the window, or the per-sample larger of two operands.",
+      "name": "max",
+      "signature": "max(ch) -> scalar | max(a, b) -> elementwise",
+      "status": "implemented",
+      "units": null
+    },
+    {
+      "category": "Time-domain / aggregate",
+      "description": "Arithmetic mean over the whole window, or rolling over `w` samples.",
+      "name": "mean",
+      "signature": "mean(ch) -> scalar | mean(ch, w) -> rolling channel",
+      "status": "implemented",
+      "units": null
+    },
+    {
+      "category": "Aggregate",
+      "description": "Median of every sample in the window. The two-argument rolling form is not implemented.",
+      "name": "median",
+      "signature": "median(ch) -> scalar",
+      "status": "implemented",
+      "units": null
+    },
+    {
+      "category": "Aggregate / elementwise",
+      "description": "Smallest sample in the window, or the per-sample smaller of two operands.",
+      "name": "min",
+      "signature": "min(ch) -> scalar | min(a, b) -> elementwise",
+      "status": "implemented",
+      "units": null
+    },
+    {
+      "category": "Vector",
+      "description": "Euclidean length of a Vec3.",
+      "name": "norm",
+      "signature": "norm(v)",
+      "status": "implemented",
+      "units": null
+    },
+    {
+      "category": "Vector",
+      "description": "Unit vector in the same direction as `v`.",
+      "name": "normalize",
+      "signature": "normalize(v)",
+      "status": "implemented",
+      "units": null
+    },
+    {
+      "category": "Aggregate",
+      "description": "Value below which `quantile` percent of the samples fall. Retired name: `p`.",
+      "name": "percentile",
+      "signature": "percentile(ch, quantile) -> scalar, `quantile` in [0, 100]",
+      "status": "implemented",
+      "units": null
+    },
+    {
+      "category": "Frequency",
+      "description": "Single-segment power spectrum, scipy-named and scipy-scaled. Retired name: `fft`.",
+      "name": "periodogram",
+      "signature": "periodogram(ch, window=\"boxcar\", detrend=\"constant\", scaling=\"density\"|\"spectrum\"|\"raw_magnitude\")",
+      "status": "implemented",
+      "units": null
+    },
+    {
+      "category": "Elementwise",
+      "description": "Raises each sample to the power `y`.",
+      "name": "pow",
+      "signature": "pow(x, y)",
+      "status": "implemented",
+      "units": null
+    },
+    {
+      "category": "Trig conversion",
+      "description": "Converts radians to degrees.",
+      "name": "rad2deg",
+      "signature": "rad2deg(x)",
+      "status": "implemented",
+      "units": "deg"
+    },
+    {
+      "category": "Resampling",
+      "description": "Linear interpolation of `x` onto the per-sample recorded times of `onto`; the result carries `onto`'s time axis, rate and length, so the two can then be combined. Times outside `x`'s span are `NaN` -- never extrapolated. The explicit way to combine two channels recorded on different clocks; nothing resamples implicitly.",
+      "name": "resample",
+      "signature": "resample(x, onto)",
+      "status": "implemented",
+      "units": null
+    },
+    {
+      "category": "Time-domain / aggregate",
+      "description": "Root mean square over the whole window, or rolling over `w` samples.",
+      "name": "rms",
+      "signature": "rms(ch) -> scalar | rms(ch, w) -> rolling channel, `w` a window in samples",
+      "status": "implemented",
+      "units": null
+    },
+    {
+      "category": "Rotation",
+      "description": "Rotates a Vec3 about an axis by an angle in radians.",
+      "name": "rotate_axis",
+      "signature": "rotate_axis(v, ax, ay, az, angle) (scalars; `angle` in radians)",
+      "status": "implemented",
+      "units": null
+    },
+    {
+      "category": "Rotation",
+      "description": "Rotates a Vec3 by roll/pitch/yaw in radians; the angles may be channels, giving a per-sample rotation.",
+      "name": "rotate_euler",
+      "signature": "rotate_euler(v, roll, pitch, yaw) (radians; the angles may be channels)",
+      "status": "implemented",
+      "units": null
+    },
+    {
+      "category": "Rotation",
+      "description": "Rotates a Vec3 by a row-major 3x3 matrix.",
+      "name": "rotate_mat",
+      "signature": "rotate_mat(v, m00..m22) (row-major, scalar entries)",
+      "status": "implemented",
+      "units": null
+    },
+    {
+      "category": "Elementwise",
+      "description": "Rounds half away from zero (`2.5` gives `3`), not `numpy.round`'s banker's rounding.",
+      "name": "round",
+      "signature": "round(x)",
+      "status": "implemented",
+      "units": null
+    },
+    {
+      "category": "Lap",
+      "description": "0-based sector index at each sample, NaN outside any sector.",
+      "name": "sector_number",
+      "signature": "sector_number()",
+      "status": "implemented",
+      "units": null
+    },
+    {
+      "category": "Lap",
+      "description": "Duration of the lap's `i`-th sector (0-based, as `sector_number()` counts) in seconds; NaN when the lap has no such sector.",
+      "name": "sector_time",
+      "signature": "sector_time(i)",
+      "status": "implemented",
+      "units": "s"
+    },
+    {
+      "category": "Elementwise",
+      "description": "-1, 0 or 1 by sign; NaN stays NaN.",
+      "name": "sign",
+      "signature": "sign(x)",
+      "status": "implemented",
+      "units": null
+    },
+    {
+      "category": "Trig",
+      "description": "Sine of an angle in radians.",
+      "name": "sin",
+      "signature": "sin(x)",
+      "status": "implemented",
+      "units": null
+    },
+    {
+      "category": "Trig",
+      "description": "Hyperbolic sine.",
+      "name": "sinh",
+      "signature": "sinh(x)",
+      "status": "implemented",
+      "units": null
+    },
+    {
+      "category": "Filter",
+      "description": "Applies a second-order-section filter to a channel. Not implemented.",
+      "name": "sosfilt",
+      "signature": "sosfilt(sos, ch)",
+      "status": "notImplemented",
+      "units": null
+    },
+    {
+      "category": "Frequency",
+      "description": "Time-varying spectrum. Not implemented; the signature and shape are fixed by C2 3.6.3.",
+      "name": "spectrogram",
+      "signature": "spectrogram(ch, window_size, hop_size, window, detrend, scaling)",
+      "status": "notImplemented",
+      "units": null
+    },
+    {
+      "category": "Elementwise",
+      "description": "Square root, sample by sample; every unit exponent is halved.",
+      "name": "sqrt",
+      "signature": "sqrt(x)",
+      "status": "implemented",
+      "units": null
+    },
+    {
+      "category": "Time-domain / aggregate",
+      "description": "Population standard deviation over the whole window, or rolling over `w` samples.",
+      "name": "std",
+      "signature": "std(ch) -> scalar (population sigma) | std(ch, w) -> rolling channel",
+      "status": "implemented",
+      "units": null
+    },
+    {
+      "category": "Aggregate",
+      "description": "Raw sum of every sample in the window, not time-normalised.",
+      "name": "sum",
+      "signature": "sum(ch) -> scalar",
+      "status": "implemented",
+      "units": null
+    },
+    {
+      "category": "Trig",
+      "description": "Tangent of an angle in radians.",
+      "name": "tan",
+      "signature": "tan(x)",
+      "status": "implemented",
+      "units": null
+    },
+    {
+      "category": "Trig",
+      "description": "Hyperbolic tangent.",
+      "name": "tanh",
+      "signature": "tanh(x)",
+      "status": "implemented",
+      "units": null
+    },
+    {
+      "category": "Vector",
+      "description": "Component-wise sum of two Vec3s.",
+      "name": "vadd",
+      "signature": "vadd(a, b)",
+      "status": "implemented",
+      "units": null
+    },
+    {
+      "category": "Vector",
+      "description": "Builds a Vec3 from three components, which must share one unit.",
+      "name": "vec",
+      "signature": "vec(x, y, z)",
+      "status": "implemented",
+      "units": null
+    },
+    {
+      "category": "Vector",
+      "description": "Scales a Vec3 by a scalar.",
+      "name": "vscale",
+      "signature": "vscale(v, s)",
+      "status": "implemented",
+      "units": null
+    },
+    {
+      "category": "Vector",
+      "description": "Component-wise difference of two Vec3s.",
+      "name": "vsub",
+      "signature": "vsub(a, b)",
+      "status": "implemented",
+      "units": null
+    },
+    {
+      "category": "Vector",
+      "description": "The x component of a Vec3.",
+      "name": "vx",
+      "signature": "vx(v)",
+      "status": "implemented",
+      "units": null
+    },
+    {
+      "category": "Vector",
+      "description": "The y component of a Vec3.",
+      "name": "vy",
+      "signature": "vy(v)",
+      "status": "implemented",
+      "units": null
+    },
+    {
+      "category": "Vector",
+      "description": "The z component of a Vec3.",
+      "name": "vz",
+      "signature": "vz(v)",
+      "status": "implemented",
+      "units": null
+    },
+    {
+      "category": "Frequency",
+      "description": "Segmented, averaged power spectrum -- the spectrum the FFT charts compute.",
+      "name": "welch",
+      "signature": "welch(ch, window=\"hann\", nperseg=n, noverlap=n, detrend=\"constant\", average=\"mean\"|\"median\"|\"max\"|\"none\", scaling=\"density\"|\"spectrum\"|\"raw_magnitude\")",
+      "status": "implemented",
+      "units": null
+    },
+    {
+      "category": "Estimator",
+      "description": "Suspension travel at the named wheel, in mm.",
+      "name": "wheel_travel",
+      "signature": "wheel_travel(\"front\"|\"rear\")",
+      "status": "implemented",
+      "units": "mm"
+    },
+    {
+      "category": "Estimator",
+      "description": "Suspension velocity at the named wheel, in mm/s.",
+      "name": "wheel_velocity",
+      "signature": "wheel_velocity(\"front\"|\"rear\")",
+      "status": "implemented",
+      "units": "mm/s"
+    },
+    {
+      "category": "Logic",
+      "description": "Per-sample choice between two branches; `cond` may also be a scalar, selecting a whole branch. Retired name: `if`.",
+      "name": "where",
+      "signature": "where(cond, t, f)",
+      "status": "implemented",
+      "units": null
+    }
+  ],
+  "schema_version": 1
+}

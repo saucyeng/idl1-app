@@ -2,26 +2,34 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Search, X } from "lucide-react";
 
 import { cn } from "@/lib/utils";
-import { readWorkbookReference } from "../ipc/docs";
-import { closeDocs, useDocsPanel } from "./docsPanelStore";
+import { readCliReference, readWorkbookReference } from "../ipc/docs";
+import { closeDocs, useDocsPanel, type DocsPanelDoc } from "./docsPanelStore";
 import { filterBlocks, parseDocsMarkdown, type Block, type Inline } from "./docsMarkdown";
 
 /**
- * The Docs panel: the bundled workbook reference, rendered in the sidebar
- * (ruling R222 item 2).
+ * The Docs panel: the bundled workbook reference or CLI reference, rendered
+ * in the sidebar (ruling R222 item 2, extended to a second document by
+ * ruling R244/R249's `help.cliReference`).
  *
  * It shows in the sidebar rather than in a modal or a new window because
  * the reader is reading it *while* writing a cell — a dialog you must
  * dismiss to type is the wrong shape for a reference. The code column
  * stays visible and editable beside it.
  *
- * The document is fetched once, on first open, and kept. It is a static
- * file inside the bundle; refetching it on every open would be a command
- * round-trip for bytes that cannot have changed.
+ * Each document is fetched once, on its first open, and kept — a small
+ * per-document cache rather than one `markdown` field, since switching from
+ * `help.workbookReference` to `help.cliReference` and back must not refetch
+ * bytes that cannot have changed.
  *
  * Not unit-tested (CLAUDE.md §4: UI rendering is not unit-tested) — its
  * pure pieces are `docsMarkdown.ts` and `docsPanelStore.ts`, both tested.
  */
+
+/** `doc`'s reader, and the words its loading/error states use. */
+const DOC_SOURCES: Record<DocsPanelDoc, { read: () => Promise<string>; label: string }> = {
+  workbook: { read: readWorkbookReference, label: "the workbook reference" },
+  cli: { read: readCliReference, label: "the CLI reference" },
+};
 
 /** Renders one run of inlines. Links are rendered as anchors only for
  *  in-document `#` targets; an external URL is shown as plain text,
@@ -141,32 +149,38 @@ function BlockView({ block }: { block: Block }) {
 /** The panel itself. Mounted by `Sidebar.tsx` whenever the store says it is
  *  open. */
 export default function DocsPanel() {
-  const { anchor, nonce } = useDocsPanel();
-  const [markdown, setMarkdown] = useState<string | null>(null);
+  const { doc, anchor, nonce } = useDocsPanel();
+  // One slot per document rather than one `markdown` field: switching
+  // documents must not blank what the other one already fetched, and must
+  // not refetch it either.
+  const [cache, setCache] = useState<Partial<Record<DocsPanelDoc, string>>>({});
   const [error, setError] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const scrollRef = useRef<HTMLDivElement | null>(null);
+  const markdown = cache[doc] ?? null;
 
   useEffect(() => {
-    if (markdown !== null) return;
+    if (cache[doc] !== undefined) return;
     let cancelled = false;
-    readWorkbookReference()
+    setError(null);
+    DOC_SOURCES[doc]
+      .read()
       .then((text) => {
-        if (!cancelled) setMarkdown(text);
+        if (!cancelled) setCache((prev) => ({ ...prev, [doc]: text }));
       })
       .catch((e: unknown) => {
         if (!cancelled) {
           setError(
             e !== null && typeof e === "object" && "message" in e
               ? String((e as { message: unknown }).message)
-              : "The workbook reference could not be read."
+              : `${DOC_SOURCES[doc].label[0].toUpperCase()}${DOC_SOURCES[doc].label.slice(1)} could not be read.`
           );
         }
       });
     return () => {
       cancelled = true;
     };
-  }, [markdown]);
+  }, [doc, cache]);
 
   const blocks = useMemo(() => (markdown === null ? [] : parseDocsMarkdown(markdown)), [markdown]);
   const shown = useMemo(() => filterBlocks(blocks, query), [blocks, query]);
@@ -195,7 +209,7 @@ export default function DocsPanel() {
           value={query}
           onChange={(event) => setQuery(event.target.value)}
           placeholder="Search the reference"
-          aria-label="Search the workbook reference"
+          aria-label={`Search ${DOC_SOURCES[doc].label}`}
           className="min-w-0 flex-1 bg-transparent text-label-2 text-fg outline-none placeholder:text-fg-faint"
         />
         <button

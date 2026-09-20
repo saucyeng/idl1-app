@@ -63,7 +63,16 @@ function Block({ block }: { block: ReleaseNotesBlock }) {
 export default function UpdatePanel() {
   const state = useUpdateState();
   const panelOpen = useUpdatePanelOpen();
-  const open = panelOpen && (state.kind === "available" || state.kind === "downloading" || state.kind === "ready");
+  // Ruling R244/R249's `help.releaseNotes` calls `openUpdatePanel` on its
+  // own, with no update necessarily found — every other opener
+  // (`helpCheckForUpdates`, the status-bar chip) only ever does that once
+  // the checker has already moved `state` past `idle`. `open` used to gate
+  // on `state.kind` for that reason (the chip that opens the panel exists
+  // only in those three states, so it was never wrong in practice), but
+  // that would hide the panel entirely for a manual open with no known
+  // update: this reads `panelOpen` alone, and the empty body below
+  // ("No release notes.") is what an idle open shows.
+  const open = panelOpen;
 
   // `downloading`/`ready` carry no `version`/`notes` of their own — the
   // panel keeps the last `available` snapshot so the release notes stay on
@@ -84,7 +93,7 @@ export default function UpdatePanel() {
     <Dialog open={open} onOpenChange={(next) => { if (!next) closeUpdatePanel(); }}>
       <DialogContent className="max-w-md">
         <DialogHeader>
-          <DialogTitle>{version !== null ? `Update available — v${version}` : "Update"}</DialogTitle>
+          <DialogTitle>{version !== null ? `Update available — v${version}` : "Release notes"}</DialogTitle>
           <DialogDescription>Release notes</DialogDescription>
         </DialogHeader>
 

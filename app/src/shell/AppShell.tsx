@@ -1,4 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { revealItemInDir } from "@tauri-apps/plugin-opener";
+import { toast } from "sonner";
 
 import { fetchEngineVersion } from "../ipc/engine";
 import { useAppState } from "../state/AppState";
@@ -25,11 +27,13 @@ import CommandPalette from "./CommandPalette";
 import { registerCommand, runCommand, unregisterCommand, useRegisteredCommands } from "./commandRegistry";
 import { commandForEvent, formatShortcut, MENU_COMMAND_IDS, MENUS, usesCommandGlyph } from "./menuModel";
 import { DEFAULT_SIDEBAR_STATE, withSidebarState, type SidebarState } from "./sidebarPrefs";
-import { tabSwitchCommands, tieredPaletteCommands } from "./commands";
+import { helpPaletteCommands, tabSwitchCommands, tieredPaletteCommands } from "./commands";
 import { Toaster } from "../components/Toaster";
 import { checkForUpdate, downloadAndInstallUpdate, relaunchApp } from "../ipc/updater";
 import { openUpdatePanel, runUpdateCheck, startUpdateChecker } from "./updateState";
 import UpdatePanel from "./UpdatePanel";
+import { openDocs } from "./docsPanelStore";
+import { useDataRootPath } from "./dataRootPath";
 
 /** The current `window.innerWidth`, updated on `resize` (width-dependent
  *  layout is decided by the pure `shell/layout.ts`; this hook is only the
@@ -137,6 +141,9 @@ export default function AppShell() {
   const commandGlyph = typeof navigator !== "undefined" && usesCommandGlyph(navigator.userAgent);
   const activePreset = useActiveLayoutPreset();
   const deviceLink = useDeviceLink();
+  // `library.revealFolder` (ruling R244/R249) needs a resolved root before
+  // it can register at all — see the owned-commands effect below.
+  const dataRootPath = useDataRootPath();
 
   // The sidebar's state for *this* viewport shape (R220 item 2). Held in
   // React state and mirrored to `localStorage`, rather than read from
@@ -220,12 +227,34 @@ export default function AppShell() {
           void runUpdateCheck(updateIo);
         },
       ],
+      // Ruling R244/R249: opens the release-notes panel from whatever it
+      // last had to show, without `helpCheckForUpdates`'s own network
+      // round trip — `openUpdatePanel` alone.
+      [MENU_COMMAND_IDS.helpReleaseNotes, () => openUpdatePanel()],
+      // Ruling R244/R249: the Docs panel's two documents.
+      [MENU_COMMAND_IDS.helpWorkbookReference, () => openDocs(null, "workbook")],
+      [MENU_COMMAND_IDS.helpCliReference, () => openDocs(null, "cli")],
     ];
+    // Ruling R244/R249: `library.revealFolder` needs a resolved `<data>`
+    // root to reveal — registered only once `dataRootPath` has one
+    // (R220 item 1: unregistered rather than a no-op button).
+    if (dataRootPath !== null) {
+      owned.push([
+        MENU_COMMAND_IDS.libraryRevealFolder,
+        () => {
+          void revealItemInDir(dataRootPath).catch((e: unknown) => {
+            toast.error("Could not open the library folder", {
+              description: e instanceof Error ? e.message : String(e),
+            });
+          });
+        },
+      ]);
+    }
     for (const [id, handler] of owned) registerCommand(id, handler);
     return () => {
       for (const [id, handler] of owned) unregisterCommand(id, handler);
     };
-  }, [onNavigate, toggleSidebar, updateIo]);
+  }, [onNavigate, toggleSidebar, updateIo, dataRootPath]);
 
   // The View menu's three toggles (maths graph, properties, dense output)
   // are *not* registered here. They are the Notebook toolbar's own
@@ -258,7 +287,11 @@ export default function AppShell() {
   // handler, each under its tier's heading.
   const registeredCommands = useRegisteredCommands();
   const commands = useMemo(
-    () => [...tabSwitchCommands(onNavigate), ...tieredPaletteCommands(registeredCommands, runCommand)],
+    () => [
+      ...tabSwitchCommands(onNavigate),
+      ...tieredPaletteCommands(registeredCommands, runCommand),
+      ...helpPaletteCommands(registeredCommands, runCommand),
+    ],
     [onNavigate, registeredCommands],
   );
 

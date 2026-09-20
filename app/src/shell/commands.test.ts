@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { COMMAND_IDS } from "./commandTiers";
-import { tabSwitchCommands, tieredPaletteCommands } from "./commands";
+import { helpPaletteCommands, tabSwitchCommands, tieredPaletteCommands } from "./commands";
 
 describe("tabSwitchCommands", () => {
   it("tabSwitchCommands — one command per route, in ROUTES order", () => {
@@ -55,5 +55,37 @@ describe("tieredPaletteCommands", () => {
     tieredPaletteCommands(new Set([COMMAND_IDS.workbookSave]), run)[0]?.run();
 
     expect(run).toHaveBeenCalledWith(COMMAND_IDS.workbookSave);
+  });
+});
+
+describe("helpPaletteCommands", () => {
+  it("helpPaletteCommands — the three R249 entries registered — listed under Help, in order", () => {
+    const available = new Set<string>([
+      COMMAND_IDS.helpWorkbookReference,
+      COMMAND_IDS.helpCliReference,
+      COMMAND_IDS.helpReleaseNotes,
+    ]);
+
+    const commands = helpPaletteCommands(available, () => undefined);
+
+    expect(commands.map((command) => [command.label, command.group])).toEqual([
+      ["Workbook reference", "Help"],
+      ["CLI reference", "Help"],
+      ["Release notes", "Help"],
+    ]);
+  });
+
+  it("helpPaletteCommands — nothing registered — no entries", () => {
+    const commands = helpPaletteCommands(new Set(), () => undefined);
+
+    expect(commands).toEqual([]);
+  });
+
+  it("helpPaletteCommands — running an entry — invokes that command's registry id", () => {
+    const run = vi.fn();
+
+    helpPaletteCommands(new Set([COMMAND_IDS.helpCliReference]), run)[0]?.run();
+
+    expect(run).toHaveBeenCalledWith(COMMAND_IDS.helpCliReference);
   });
 });

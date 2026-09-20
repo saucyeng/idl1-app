@@ -129,6 +129,7 @@ export const MENUS: readonly Menu[] = [
       tiered(MENU_COMMAND_IDS.libraryImportFolder),
       tiered(MENU_COMMAND_IDS.libraryRescan),
       tiered(MENU_COMMAND_IDS.libraryRebuild),
+      tiered(MENU_COMMAND_IDS.libraryRevealFolder),
       separator("file-2"),
       tiered(MENU_COMMAND_IDS.workbookSave),
       tiered(MENU_COMMAND_IDS.workbookExportReport),
@@ -178,6 +179,12 @@ export const MENUS: readonly Menu[] = [
       // workbook-less Notebook panel show, so this is the way back to it
       // once something has taken its place.
       command(MENU_COMMAND_IDS.helpWelcome, "Welcome", null),
+      // Ruling R244/R249: not `tiered()` — neither has a ribbon home, the
+      // same reason `helpAbout`/`helpCheckForUpdates` below are plain
+      // `command()` entries rather than `COMMAND_TIERS` rows.
+      command(MENU_COMMAND_IDS.helpWorkbookReference, "Workbook reference", null),
+      command(MENU_COMMAND_IDS.helpCliReference, "CLI reference", null),
+      command(MENU_COMMAND_IDS.helpReleaseNotes, "Release notes", null),
       command(MENU_COMMAND_IDS.helpCheckForUpdates, "Check for updates…", null),
       command(MENU_COMMAND_IDS.helpAbout, "About idl1", null),
     ],

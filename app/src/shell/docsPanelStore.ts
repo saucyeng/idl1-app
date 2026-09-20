@@ -20,10 +20,20 @@ import { useSyncExternalStore } from "react";
  * the session list with its scroll position and selection intact.
  */
 
+/** Which bundled document the panel shows (ruling R244/R249:
+ *  `help.workbookReference` and `help.cliReference` are two Welcome/Help
+ *  entries for two different documents, both read through this one panel
+ *  rather than each growing its own). */
+export type DocsPanelDoc = "workbook" | "cli";
+
 /** What the panel is currently asked to show. */
 export interface DocsPanelState {
   /** Whether the panel is on screen. */
   open: boolean;
+  /** Which document — defaults to the workbook reference, the panel's
+   *  original and still most common target (`F1`, the code column's
+   *  "Docs" button). */
+  doc: DocsPanelDoc;
   /** The anchor to scroll to, or `null` for "wherever it already was".
    *  Carries a `nonce` alongside it so asking for the *same* anchor twice
    *  still scrolls — pressing `F1` on the same word twice is a real
@@ -33,7 +43,7 @@ export interface DocsPanelState {
   nonce: number;
 }
 
-let state: DocsPanelState = { open: false, anchor: null, nonce: 0 };
+let state: DocsPanelState = { open: false, doc: "workbook", anchor: null, nonce: 0 };
 
 const listeners = new Set<() => void>();
 
@@ -42,25 +52,28 @@ function set(next: DocsPanelState): void {
   for (const listener of listeners) listener();
 }
 
-/** Opens the panel, optionally scrolling to `anchor`. */
-export function openDocs(anchor: string | null = null): void {
-  set({ open: true, anchor, nonce: state.nonce + 1 });
+/** Opens the panel at `doc` (the workbook reference by default), optionally
+ *  scrolling to `anchor`. */
+export function openDocs(anchor: string | null = null, doc: DocsPanelDoc = "workbook"): void {
+  set({ open: true, doc, anchor, nonce: state.nonce + 1 });
 }
 
-/** Closes the panel. The anchor is kept, so reopening returns to where the
- *  reader was rather than to the top of a 1900-line document. */
+/** Closes the panel. The document and anchor are kept, so reopening returns
+ *  to where the reader was rather than to the top of a 1900-line document. */
 export function closeDocs(): void {
   set({ ...state, open: false });
 }
 
-/** Opens the panel if it is closed, closes it if it is open — what the
- *  "Docs" button and the menu command do. */
-export function toggleDocs(anchor: string | null = null): void {
-  if (state.open && anchor === null) {
+/** Opens the panel if it is closed on a different document, closes it if it
+ *  is already open on `doc` — what the "Docs" button and the menu command
+ *  do. Switching documents while the panel is already open always opens
+ *  (never toggles closed), the same as asking for a specific anchor. */
+export function toggleDocs(anchor: string | null = null, doc: DocsPanelDoc = "workbook"): void {
+  if (state.open && anchor === null && state.doc === doc) {
     closeDocs();
     return;
   }
-  openDocs(anchor);
+  openDocs(anchor, doc);
 }
 
 /** The current state, for tests and non-React callers. */
@@ -71,7 +84,7 @@ export function getDocsPanelState(): DocsPanelState {
 /** Resets the store. Test-only — every test that opens the panel leaves a
  *  module-level flag set for the next one otherwise. */
 export function resetDocsPanel(): void {
-  set({ open: false, anchor: null, nonce: 0 });
+  set({ open: false, doc: "workbook", anchor: null, nonce: 0 });
 }
 
 /** Subscribes to changes. Returns an unsubscribe. */

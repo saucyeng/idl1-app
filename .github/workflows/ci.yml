@@ -66,6 +66,15 @@ jobs:
           cargo run --manifest-path rust/Cargo.toml -p idl-rs-cli --             docs workbook --out docs/WORKBOOK-REFERENCE.md --src docs/reference-src
           git diff --exit-code -- docs/WORKBOOK-REFERENCE.md
 
+      - name: Function catalog is up to date
+        # `functionCatalog.json` is generated the same way `cliTable.json` is
+        # (ruling R249): a builtin added, renamed or re-documented without
+        # regenerating it would leave the editor's completion disagreeing
+        # with the engine, the drift this ruling exists to make impossible.
+        run: |
+          cargo run --manifest-path rust/Cargo.toml -p idl-rs-cli -- docs workbook --json --out app/src/routes/pages/Notebook/model/functionCatalog.json
+          git diff --exit-code -- app/src/routes/pages/Notebook/model/functionCatalog.json
+
       - name: CLI reference and the app's command-table copy are up to date
         # C6 (R230): the CLI's command table is the source of truth for the
         # CLI reference and for app/src/shell/cliTable.json; a row added

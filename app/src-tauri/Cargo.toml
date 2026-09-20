@@ -30,4 +30,9 @@ tauri-plugin-dialog = "2.7.3"
 tauri-plugin-shell = "2.3.1"
 tauri-plugin-updater = "2.11.0"
 tauri-plugin-process = "2.3.1"
+# `library.revealFolder` (ruling R244/R249): the frontend already depended on
+# `@tauri-apps/plugin-opener` (`app/package.json`) but nothing registered its
+# Rust half or granted it a capability, so `revealItemInDir` had no plugin to
+# call through to. Registered here the same way as `tauri-plugin-shell` above.
+tauri-plugin-opener = "2"
 

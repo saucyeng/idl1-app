@@ -154,6 +154,9 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_process::init())
+        // `library.revealFolder` (ruling R244/R249): `revealItemInDir` from
+        // the frontend's already-declared `@tauri-apps/plugin-opener`.
+        .plugin(tauri_plugin_opener::init())
         .invoke_handler(idl_rs_tauri::handler())
         .run(tauri::generate_context!())
         .expect("error while running idl1");

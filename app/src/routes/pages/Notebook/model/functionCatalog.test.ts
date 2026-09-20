@@ -79,54 +79,48 @@ describe("diffFunctionCatalog", () => {
     expect(result).toEqual([]);
   });
 
-  // The self-check above only proves internal consistency -- it would still
-  // pass on a stale or truncated table compared against itself. This test
-  // pins MATH_FUNCTIONS to the actual 75-entry ground truth transcribed from
-  // `rust/core/src/math/catalog.rs`'s `math_builtin_catalog()`
-  // (scipy-alignment lane, ledger R151/R157), so a future edit that drops or
-  // mis-spells a name fails here rather than only showing up as a silent
-  // completion gap.
-  it("MATH_FUNCTIONS — the scipy-alignment lane's renames and additions — are present with the engine's exact spellings", () => {
-    // Arrange
-    const names = new Set(MATH_FUNCTIONS.map((entry) => entry.name));
+  // `MATH_FUNCTIONS` is generated (ruling R249): there is no longer a
+  // hand-transcribed count or a hand-picked list of names to pin against
+  // drift, because there is nothing left to drift — `functionCatalog.json`
+  // is regenerated from the engine's own catalog and CI diff-gates it, the
+  // same guarantee `cliTable.json` already has. What is still worth
+  // testing here is the *shape* `MATH_FUNCTIONS` and its JSON source
+  // promise the rest of this module's callers.
+  it("MATH_FUNCTIONS — is not empty, and every entry is a complete CatalogEntry", () => {
+    // Arrange / Act
+    const entries = MATH_FUNCTIONS;
 
-    // Act / Assert -- renamed
-    for (const renamed of ["lap_delta_time", "lap_delta_dist", "angle_between", "percentile", "clip", "where", "cumulative_trapezoid"]) {
-      expect(names.has(renamed), `expected renamed builtin "${renamed}"`).toBe(true);
-    }
-    // Act / Assert -- retired, must not appear as callable entries
-    for (const retired of ["variance_time", "variance_dist", "angle", "p", "clamp", "if", "integrate", "fft"]) {
-      expect(names.has(retired), `retired name "${retired}" should not be a catalog entry`).toBe(false);
-    }
-    // Act / Assert -- net-new
-    for (const added of ["periodogram", "welch", "cumtrapz", "gradient"]) {
-      expect(names.has(added), `expected new builtin "${added}"`).toBe(true);
+    // Assert
+    expect(entries.length).toBeGreaterThan(0);
+    for (const entry of entries) {
+      expect(typeof entry.name).toBe("string");
+      expect(entry.name.length).toBeGreaterThan(0);
+      expect(typeof entry.signature).toBe("string");
+      expect(typeof entry.category).toBe("string");
+      expect(["implemented", "notImplemented"]).toContain(entry.status);
     }
   });
 
-  it("MATH_FUNCTIONS — total count and implemented/notImplemented split — match the engine catalog's own counts (75 = 70 + 5)", () => {
+  it("MATH_FUNCTIONS — every name — is unique", () => {
     // Arrange
-    const implemented = MATH_FUNCTIONS.filter((e) => e.status === "implemented").length;
-    const notImplemented = MATH_FUNCTIONS.filter((e) => e.status === "notImplemented").length;
+    const names = MATH_FUNCTIONS.map((entry) => entry.name);
 
-    // Act / Assert
-    expect(MATH_FUNCTIONS.length).toBe(75);
-    expect(implemented).toBe(70);
-    expect(notImplemented).toBe(5);
+    // Act
+    const unique = new Set(names);
+
+    // Assert
+    expect(unique.size).toBe(names.length);
   });
 
-  // The five mismatches the running app reported on 2026-09-20 (the
-  // "function reference is out of date with the engine" banner): one rename
-  // this table never followed, and the three lap scalars R217 item 2 added.
-  // Pinned by name so the same drift cannot return silently.
-  it("MATH_FUNCTIONS — the 2026-09-20 catch-up — has envelope and the lap scalars, and no longer has hilbert", () => {
+  it("MATH_FUNCTIONS — order — matches the generated file's own name order", () => {
     // Arrange
-    const names = new Set(MATH_FUNCTIONS.map((entry) => entry.name));
+    const names = MATH_FUNCTIONS.map((entry) => entry.name);
 
-    // Act / Assert
-    for (const added of ["envelope", "lap_number", "lap_time", "sector_time"]) {
-      expect(names.has(added), `expected builtin "${added}"`).toBe(true);
-    }
-    expect(names.has("hilbert"), 'retired name "hilbert" should not be a catalog entry').toBe(false);
+    // Act
+    const sorted = [...names].sort();
+
+    // Assert — `idl-rs docs workbook --json` sorts by name; this module
+    // must not silently re-sort or reorder what it read.
+    expect(names).toEqual(sorted);
   });
 });

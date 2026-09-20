@@ -19,6 +19,16 @@ export async function readWorkbookReference(): Promise<string> {
   return invoke<string>("read_workbook_reference");
 }
 
+/** Reads the bundled `CLI-REFERENCE.md` (C3 §3.10, ruling R244/R249) — the
+ *  second document the Docs panel can show, alongside
+ *  {@link readWorkbookReference}, for `help.cliReference`.
+ *
+ *  Same failure shape as {@link readWorkbookReference}: `not_found` when
+ *  the reference is missing from the bundle. */
+export async function readCliReference(): Promise<string> {
+  return invoke<string>("read_cli_reference");
+}
+
 /** What the agent is told it is looking at (C3 §3.10). Both fields are
  *  optional: the status-bar button has neither, the session detail has a
  *  session, and the code column has a workbook. */

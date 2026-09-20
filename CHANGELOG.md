@@ -6,6 +6,32 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 
 ### Added
 
+- **Welcome panel commands and the generated function table [docs]
+  (2026-09-20, rulings R244/R249).** The five commands R244 named that the
+  dockview lane left out are wired: `library.revealFolder` reveals `<data>`
+  in the OS file manager (`@tauri-apps/plugin-opener`'s `revealItemInDir`,
+  registered on the Rust side for the first time — it had only ever been a
+  frontend `package.json` dependency); `help.workbookReference` and
+  `help.cliReference` open the Docs panel at one of its now-two bundled
+  documents (`docsPanelStore.ts` gained a `doc` field, and the CLI reference
+  is bundled and read the same way the workbook reference already was);
+  `help.releaseNotes` opens the release-notes dialog without
+  `helpCheckForUpdates`'s network check; and `workbook.openPath` opens a
+  specific workbook by its catalog id, the first argument
+  `commandRegistry.ts`'s `runCommand`/`useCommand` carry through — the
+  Welcome panel's Recent-workbook rows use it instead of reopening the
+  picker dialog. The editor's function table is also generated now:
+  `idl-rs docs workbook --json` emits the builtin catalog (name, signature,
+  category, status, description, units where a rule names one outright) as
+  sorted JSON, checked in as
+  `app/src/routes/pages/Notebook/model/functionCatalog.json` and CI
+  diff-gated like `cliTable.json`; the hand-transcribed `MATH_FUNCTIONS`
+  array and its count-pinning tests are gone (it drifted twice in one week
+  and conflicted between two lanes the same day). The runtime mismatch
+  banner (`diffFunctionCatalog`, checked against `list_math_builtins` at
+  notebook open) is unchanged — it still guards a stale *installed* app
+  against a newer *running* engine, which a build-time generator cannot.
+
 - **`.idl0` importer version `0.3.0` [no-docs] (2026-09-20, ruling R243).**
   R240 and R241 both change the columns written for an `.idl0` source, so
   every `data.parquet` an earlier build wrote is stale: `idl-rs library stale`
