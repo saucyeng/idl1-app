@@ -6,6 +6,13 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 
 ### Added
 
+- **`.idl0` importer version `0.3.0` [no-docs] (2026-09-20, ruling R243).**
+  R240 and R241 both change the columns written for an `.idl0` source, so
+  every `data.parquet` an earlier build wrote is stale: `idl-rs library stale`
+  lists them and `library rebuild` re-derives them from the immutable blobs.
+  One rebuild covers both changes and the `0.2.0` corrected-`t` change, which
+  is why the library rebuild waited for this lane.
+
 - **No shared IMU tail pad [docs] (2026-09-20, ruling R241).** Each IMU's grid
   now ends at its own last recorded sample instead of being padded out to the
   longest IMU's length. The old pad extrapolated forward from a stream's last
