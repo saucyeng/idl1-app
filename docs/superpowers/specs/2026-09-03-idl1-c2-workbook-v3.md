@@ -496,7 +496,7 @@ columns could ever disagree, the rule column is the normative one.
 | `envelope` | `envelope(ch)` | Frequency | same units as `ch` (a magnitude, not scipy's complex analytic signal — §3.8) | `SameAsArg(0)` | NotImplemented — renamed from `hilbert` 2026-09-09 (R151 item 8 / R167) | yes |
 | `correlate` | `correlate(a, b)` | Correlation | `[a]·[b]` | `Product(0, 1)` | NotImplemented | yes |
 | `convolve` | `convolve(ch, kernel)` | Correlation | `[ch]·[kernel]` | `Product(0, 1)` | NotImplemented | yes |
-| `resample` | `resample(ch, num)` | Resampling | same units as `ch` | `SameAsArg(0)` — `num` is a **target sample count**, matching `scipy.signal.resample`; it was a rate until 2026-09-09 (§3.8, R167) | NotImplemented | yes |
+| `resample` | `resample(x, onto)` | Resampling | same units as `x` | `SameAsArg(0)` — `onto` contributes its time axis, never its values, so its own unit is unconstrained | Implemented *(2026-09-20, R242)* — linear interpolation of `x` onto `onto`'s per-sample recorded times; the result carries `onto`'s `t_us`, rate and length. An `onto` time outside `[first, last]` of `x`'s axis is `NaN`, never extrapolated. `[t]` only: a `[lap]` operand is the §3.6.2 shape error. **Superseded signature:** `resample(ch, num)`, the `scipy.signal.resample` target-sample-count form (a rate until 2026-09-09, a count until 2026-09-20, §3.8) — never implemented; a scalar second argument is now a typed `NotImplemented` naming that form. **Known limitation:** samples of `onto` inside a `GapSpan` of `x` interpolate like any other; gaps are not on the math value path (§3.6 has no gap concept) and masking them needs its own ruling, since "a gap is `NaN`" would change every builtin, not just this one. | yes |
 | `where` | `where(cond, t, f)` | Logic | units of `t`/`f` branches (must match) | `AllMatch(1, 2)` — `cond` is a truthiness test and is unconstrained | Implemented (retired from `if` — gratuitous rename, matches `numpy.where`'s name, R143, plan §1 task 10; `cond` now also accepts a scalar, selecting a whole branch — additive, every existing per-sample channel `cond` call is unaffected) | yes |
 | `current_lap` | `current_lap()` | Lap | 1-based lap number, `0` outside any lap (dimensionless) | `Dimensionless` | Implemented | yes |
 | `lap_start_time` | `lap_start_time(n)` | Lap | s, `NaN` if `n` out of range | `Fixed(s)` — `n` is a lap number, `Dimensionless` | Implemented | yes |
@@ -538,8 +538,9 @@ the table above without removing any: `fft` retired and split into
 `periodogram` + `welch` (net **+1** — the row above is gone, two rows
 replace it), `cumtrapz` added as `cumulative_trapezoid`'s permanent second
 spelling (net **+1**), and `gradient` added alongside `differentiate` (net
-**+1**) — 69 + 3 = 72. The five previously-deferred names are unaffected:
-`sosfilt`, `hilbert`, `correlate`, `convolve`, `resample`. §3.6.3 adds ten
+**+1**) — 69 + 3 = 72. The five names deferred at that point were unaffected
+by it: `sosfilt`, `hilbert`, `correlate`, `convolve`, `resample` — of which
+`resample` has since been implemented (2026-09-20, R242), leaving four. §3.6.3 adds ten
 further names — `argmax`, `argmin`, `argmax_index`, `argmin_index`,
 `at`, `nearest`, `slice`, `axes`, `broadcast`, `align` — documented there
 rather than restated here, taking the grand total to 82.
@@ -922,8 +923,10 @@ sample-rate series is a `ShapeMismatch`, not a broadcast and not a truncation.
    values here are large enough (an 800 Hz channel × 1025 bins) that the
    failure is a hang, not a wrong pixel.
 4. **Never an implicit resample.** Two `time` axes with the same kind and
-   length but different origins do not combine; `align(x, ref)` (§3.6.3)
-   resamples explicitly and names the interpolation.
+   length but different origins do not combine; `resample(x, onto)` (§3.3,
+   implemented 2026-09-20 under R242) resamples explicitly, linearly, onto
+   `onto`'s own recorded times. `align(x, ref)` (§3.6.3) remains the
+   general, multi-axis form for when the full shape system exists.
 
 #### 3.6.3 Operators and builtins by shape
 
@@ -1434,6 +1437,7 @@ authoritative list is `rust/core/src/math/alias.rs`'s
 | `variance_dist` | `lap_delta_dist` | The same, arc-length-matched. |
 | `hilbert` | `envelope` | scipy's `hilbert` returns the **analytic signal** — a complex sequence. This language has no complex type, so the function was only ever going to return an envelope (a magnitude). The scipy name was a false friend *before a line of it existed* (R146), and renaming it while it is still `NotImplemented` costs **zero migration** — rename what has no users before it has users (R151 item 8). |
 | `resample(ch, hz)` | `resample(ch, num)` | Not a rename but a **parameter** correction, and the same class of trap: scipy's `resample` takes a target **sample count**, ours took a **rate**. Same name, same shape, different meaning — the parameter-level false friend R146 identified. Corrected while `NotImplemented`, so no workbook is affected. |
+| `resample(ch, num)` | `resample(x, onto)` | Superseded 2026-09-20 (R242) before either count form existed in the engine, so again zero migration. The count form answers "how many samples", which is not the question a session ever asks; after C1 §3.1's corrected IMU stamps the real question is "put this channel on that channel's clock", and the second argument became the channel to land on. A scalar second argument is a typed `NotImplemented` naming the count form rather than an argument-type error. |
 | `fft` | `periodogram` (this migration's target; `welch` is the split's other half — see below) | `fft(ch, window)` was one un-normalised windowed magnitude spectrum, no segmentation, no averaging — not the Welch spectrum the charts already computed under the same word (R146: "the notebook and the charts compute *different* spectra"). Split into `periodogram` (this shape, scipy-named and scipy-scaled) and `welch` (segmented/averaged, what the charts already compute); `fft` itself is retired and reserved for a true complex DFT. The migration is a **rewrite**, not a bare rename — every migrated call is pinned to `scaling="raw_magnitude"` so no existing workbook's spectrum moves under cover of the rename (R151 item 1); a `version: 4` document's `fft(...)` error names both `periodogram` and `welch`, not `periodogram` alone. |
 | `angle` | `angle_between` | `numpy.angle` is complex phase, not the angle between two vectors — a false friend (R143/R151 item 4). |
 | `p` | `percentile` | Gratuitous rename — matches `numpy.percentile`'s name, no behaviour change (R143, plan §1 task 10). |

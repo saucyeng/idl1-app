@@ -107,6 +107,6 @@ describe("MATH_FUNCTIONS", () => {
   it("MATH_FUNCTIONS — every NotImplemented entry — is marked so it can be shown greyed", () => {
     const notImplemented = MATH_FUNCTIONS.filter((f) => f.status === "notImplemented").map((f) => f.name).sort();
 
-    expect(notImplemented).toEqual(["convolve", "correlate", "hilbert", "resample", "sosfilt", "spectrogram"].sort());
+    expect(notImplemented).toEqual(["convolve", "correlate", "hilbert", "sosfilt", "spectrogram"].sort());
   });
 });

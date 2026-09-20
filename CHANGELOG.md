@@ -6,6 +6,27 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 
 ### Added
 
+- **`resample(x, onto)` [docs] (2026-09-20, ruling R242).** The explicit way
+  to put two channels recorded on different clocks onto one time axis, and
+  after C1 §3.1's corrected IMU stamps the only way: linear interpolation of
+  `x` onto `onto`'s own per-sample recorded times, the result carrying
+  `onto`'s axis, rate and length. `[IMU1_AccelZ] - resample([IMU2_AccelZ],
+  [IMU1_AccelZ])` — fork against frame, the expression a suspension workbook
+  opens with — evaluates again. An `onto` time outside `x`'s recorded span is
+  `NaN`, never extrapolated to a held edge value; a `NaN` in `x` propagates.
+  `[t]` values only: a `[lap]` operand is the same typed shape error every
+  other pairing gives, because interpolating between lap 3 and lap 4 means
+  nothing. The rate-mismatch and different-time-axis errors now name
+  `resample(x, onto)` as a remedy that exists (it was advertised while
+  unimplemented, PR #1 review findings 3 and 5).
+
+  Superseding the reserved-but-never-implemented `resample(ch, num)` (C2 §3.8):
+  a scalar second argument is a typed `NotImplemented` naming that form rather
+  than an argument-type error. **Known limitation:** an `onto` sample landing
+  inside a `GapSpan` of `x` is interpolated like any other rather than masked
+  — gaps do not reach the math value path at all, and making one read as `NaN`
+  is a decision for every builtin (`mean`, `rms`, …), not for `resample` alone.
+
 - **The studio is a tiling window manager [docs] (2026-09-20, ruling R239,
   closing R227 and R218).** Notebook, Maths and Code are now **Dockview**
   panels (`dockview-react` 8.3.1, MIT, zero-dependency, bundled — the

@@ -44,8 +44,19 @@ The lap functions divide into three groups:
 
 - **Where am I?** `current_lap()` gives the 1-based lap number at each sample
   and `0` outside any lap; `sector_number()` gives the 0-based sector index and
-  NaN outside any sector. Both are per-sample channels, so both are usable as a
-  `where(...)` condition.
+  NaN outside any sector. Both are per-sample channels at the session's base
+  rate, so both are usable as a `where(...)` condition over a channel at that
+  same rate. A slower channel — GPS at 1 Hz, say — has to be brought onto the
+  base rate first, because nothing resamples implicitly:
+
+  ```
+  where(sector_number() == 3, resample([GPS_SpeedKmh], [Time]), 0)
+  ```
+
+  `[Time]` is the synthesized base-rate channel, so the resampled speed lands
+  on the axis `sector_number()` counts along. Written without the `resample`,
+  the same expression is a typed error naming the two rates — never a wrong
+  answer.
 - **Where does a lap start?** `lap_start_time(n)` and `lap_start_distance(n)`
   are scalars, NaN when `n` is out of range (and `lap_start_distance` is also
   NaN when the session has no `[Distance]` channel).

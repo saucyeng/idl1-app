@@ -104,14 +104,14 @@ describe("diffFunctionCatalog", () => {
     }
   });
 
-  it("MATH_FUNCTIONS — total count and implemented/notImplemented split — match the engine catalog's own counts (72 = 66 + 6)", () => {
+  it("MATH_FUNCTIONS — total count and implemented/notImplemented split — match the engine catalog's own counts (72 = 67 + 5)", () => {
     // Arrange
     const implemented = MATH_FUNCTIONS.filter((e) => e.status === "implemented").length;
     const notImplemented = MATH_FUNCTIONS.filter((e) => e.status === "notImplemented").length;
 
     // Act / Assert
     expect(MATH_FUNCTIONS.length).toBe(72);
-    expect(implemented).toBe(66);
-    expect(notImplemented).toBe(6);
+    expect(implemented).toBe(67);
+    expect(notImplemented).toBe(5);
   });
 });
