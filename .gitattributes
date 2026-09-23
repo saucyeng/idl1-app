@@ -5,3 +5,4 @@ docs/CLI-REFERENCE.md text eol=lf
 docs/WORKBOOK-REFERENCE.md text eol=lf
 app/src/shell/cliTable.json text eol=lf
 app/src/ipc/golden/*.json text eol=lf
+app/src/routes/pages/Notebook/model/functionCatalog.json text eol=lf

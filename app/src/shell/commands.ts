@@ -1,4 +1,4 @@
-import { COMMAND_TIERS, type CommandTier } from "./commandTiers";
+import { COMMAND_IDS, COMMAND_TIERS, type CommandTier } from "./commandTiers";
 import { ROUTES, type RouteId } from "../routes/types";
 
 /**
@@ -63,4 +63,27 @@ export function tieredPaletteCommands(available: ReadonlySet<string>, run: (id: 
     group: groups[entry.tier],
     run: () => run(entry.command as string),
   }));
+}
+
+/** The Help commands `menuModel.ts`'s Help menu names but `commandTiers.ts`
+ *  does not (ruling R244/R249): none of the four has a ribbon group to hang
+ *  a tier off, the reason `tieredPaletteCommands` above cannot reach them —
+ *  exactly the extension point this module's doc comment describes, "a
+ *  later lane registers more commands by building its own `ShellCommand[]`
+ *  and concatenating it with this module's list at the call site."
+ *
+ * @param available The registered command ids.
+ * @param run Invokes one command id; normally `commandRegistry.ts`'s `runCommand`.
+ */
+export function helpPaletteCommands(available: ReadonlySet<string>, run: (id: string) => void): ShellCommand[] {
+  const entries: readonly [string, string][] = [
+    [COMMAND_IDS.helpWorkbookReference, "Workbook reference"],
+    [COMMAND_IDS.helpCliReference, "CLI reference"],
+    [COMMAND_IDS.helpReleaseNotes, "Release notes"],
+    [COMMAND_IDS.helpCheckForUpdates, "Check for updates…"],
+    [COMMAND_IDS.helpAbout, "About idl1"],
+  ];
+  return entries
+    .filter(([id]) => available.has(id))
+    .map(([id, label]) => ({ id, label, group: "Help", run: () => run(id) }));
 }

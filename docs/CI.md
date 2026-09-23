@@ -9,9 +9,11 @@ Runs on every push to `main` and on manual dispatch. Two jobs, both
   deps, then runs three separate `cargo test` steps (idl-rs + idl-rs-cli,
   idl-rs-tauri, idl-transport), each `--test-threads=4`. Never `--workspace`.
   It then regenerates `docs/WORKBOOK-REFERENCE.md` with
-  `idl-rs docs workbook` and runs `git diff --exit-code` over it, does the
-  same for `app/src/ipc/golden` with `idl-rs docs wire`, and finishes with
-  `cargo check -p app`.
+  `idl-rs docs workbook`, `app/src/routes/pages/Notebook/model/functionCatalog.json`
+  with `idl-rs docs workbook --json` and `docs/CLI-REFERENCE.md` +
+  `app/src/shell/cliTable.json` with `idl-rs docs cli`, runs
+  `git diff --exit-code` over each, does the same for `app/src/ipc/golden`
+  with `idl-rs docs wire`, and finishes with `cargo check -p app`.
 - `app` — `npm ci`, `tsc --noEmit`, an import-cycle scan (`madge --circular`
   over `app/src`; `.madgerc` skips type-only imports, which are erased at
   runtime), then `vitest run` in `app/`. The cycle scan exists because a
@@ -40,7 +42,23 @@ Linux CI run produce identical bytes.
 
 The same file is bundled into the app as a Tauri resource
 (`bundle.resources` in `app/src-tauri/tauri.conf.json`) and read at runtime
-by `read_workbook_reference` for the Docs panel.
+by `read_workbook_reference` for the Docs panel. `docs/CLI-REFERENCE.md` is
+bundled the same way, read by `read_cli_reference` for `help.cliReference`
+(ruling R244/R249).
+
+## The generated function catalog
+
+`app/src/routes/pages/Notebook/model/functionCatalog.json` is the same
+`core/src/math/catalog.rs` catalog as above, as sorted JSON rather than
+Markdown (ruling R249): `functionCatalog.ts`'s `MATH_FUNCTIONS` reads it
+directly, so the editor's completion and hover can no longer disagree with
+the engine the way the hand-transcribed array this file replaced twice did.
+Regenerate with:
+
+    cargo run --manifest-path rust/Cargo.toml -p idl-rs-cli -- docs workbook --json --out app/src/routes/pages/Notebook/model/functionCatalog.json
+
+CI runs exactly that and then `git diff --exit-code`, the same gate
+`app/src/shell/cliTable.json` already has (ruling R230 item 2).
 
 ## The wire golden fixtures
 

@@ -17,18 +17,18 @@
  * import, no DOM, no storage. The caller passes the registry snapshot, the
  * recent list and the data root in; nothing is read from the world here.
  *
- * ## Items R244 asks for that do not exist yet
+ * ## The four items R244 named that the dockview lane left out
  *
- * R244 lists "Open library folder", "Workbook reference", "CLI reference"
- * and "Release notes". None of them has a command id today — there is no
- * reveal-in-file-manager command, the docs panel is opened by
- * `docsPanelStore.ts`'s own exported functions rather than through the
- * registry, and the release notes are reachable only as a side effect of
- * `help.checkForUpdates`, which also performs a network check. Inventing
- * four commands is exactly what R244 forbids, so they are left out and
- * reported rather than faked. "Ask an agent" is not in this table either:
- * it is an existing *component* (`AskAnAgentButton.tsx`) with its own IPC
- * and busy state, and the panel embeds that component directly.
+ * "Open library folder", "Workbook reference", "CLI reference" and
+ * "Release notes" had no command id when the dockview lane shipped (see the
+ * dockview lane's completion report) — this lane (Welcome-commands, R249)
+ * adds the four: `library.revealFolder` (`AppShell.tsx`, the opener plugin's
+ * `revealItemInDir`), `help.workbookReference`/`help.cliReference`
+ * (`AppShell.tsx`, `docsPanelStore.ts`'s two documents) and
+ * `help.releaseNotes` (`AppShell.tsx`, `openUpdatePanel` alone — no check).
+ * "Ask an agent" is still not in this table: it is an existing *component*
+ * (`AskAnAgentButton.tsx`) with its own IPC and busy state, and the panel
+ * embeds that component directly.
  */
 
 import { COMMAND_IDS, type CommandId } from "./commandTiers";
@@ -54,6 +54,10 @@ export interface WelcomeItem {
    *  rather than `string` so R244's "an id that already exists" is a
    *  compile error to break, not only a test failure. */
   command: CommandId;
+  /** Passed through `runCommand(command, arg)` — `workbook.openPath`'s one
+   *  use, a Recent row's catalog id. `undefined` for every other row,
+   *  which every other handler ignores. */
+  arg?: string;
   /** False when nothing has registered {@link command} right now; the row
    *  renders disabled with its reason as a tooltip. */
   enabled: boolean;
@@ -111,6 +115,13 @@ const START_ITEMS: readonly Omit<WelcomeItem, "enabled">[] = [
     icon: "FolderDown",
     command: COMMAND_IDS.libraryImportFolder,
   },
+  {
+    id: "start.revealFolder",
+    label: "Open library folder",
+    detail: "Reveal the data root in the file manager.",
+    icon: "FolderSearch2",
+    command: COMMAND_IDS.libraryRevealFolder,
+  },
 ];
 
 /** The rows of the Panels section: R244's "reopen Notebook, Maths, Code",
@@ -142,9 +153,32 @@ const PANEL_ITEMS: readonly Omit<WelcomeItem, "enabled">[] = [
   },
 ];
 
-/** The rows of the Learn section. One row today; see the module doc for
- *  the three R244 names it, that have no command to run. */
+/** The rows of the Learn section: R244's "Workbook reference, CLI
+ *  reference, Ask an agent, Release notes", in that order, plus the two
+ *  that were already here. "Ask an agent" is the embedded component the
+ *  caller renders after this section (see the module doc), not a row. */
 const LEARN_ITEMS: readonly Omit<WelcomeItem, "enabled">[] = [
+  {
+    id: "learn.workbookReference",
+    label: "Workbook reference",
+    detail: "Every math builtin, annotation and host variable.",
+    icon: "BookOpen",
+    command: COMMAND_IDS.helpWorkbookReference,
+  },
+  {
+    id: "learn.cliReference",
+    label: "CLI reference",
+    detail: "The idl-rs command-line grammar.",
+    icon: "Terminal",
+    command: COMMAND_IDS.helpCliReference,
+  },
+  {
+    id: "learn.releaseNotes",
+    label: "Release notes",
+    detail: "What changed in this build.",
+    icon: "FileText",
+    command: COMMAND_IDS.helpReleaseNotes,
+  },
   {
     id: "learn.updates",
     label: "Check for updates",
@@ -170,9 +204,10 @@ function withAvailability(items: readonly Omit<WelcomeItem, "enabled">[], regist
 /**
  * One row per recent workbook, newest first.
  *
- * Each runs `workbook.open` — the same command the Start section's "Open
- * workbook" row runs, because that is the only existing command that opens
- * a workbook and R244 forbids adding one that takes an id. The row's
+ * Each runs `workbook.openPath` with the entry's catalog id (ruling
+ * R244/R249) — the id argument the registry now carries through
+ * `runCommand`, rather than `workbook.open`'s bare picker dialog a Recent
+ * row would otherwise have to reopen and then click through. The row's
  * detail carries the file name so the user can tell two same-named
  * workbooks apart, and a workbook whose file is missing renders disabled
  * with a reason rather than vanishing (R244: "missing files greyed").
@@ -187,13 +222,14 @@ export function recentWorkbookItems(
   missingIds: ReadonlySet<string>,
   registered: ReadonlySet<string>
 ): WelcomeItem[] {
-  const openAvailable = registered.has(COMMAND_IDS.workbookOpen);
+  const openAvailable = registered.has(COMMAND_IDS.workbookOpenPath);
   return entries.map((entry) => ({
     id: `recent.${entry.id}`,
     label: entry.name,
     detail: missingIds.has(entry.id) ? `Missing — ${entry.fileName}` : entry.fileName,
     icon: "NotebookPen",
-    command: COMMAND_IDS.workbookOpen,
+    command: COMMAND_IDS.workbookOpenPath,
+    arg: entry.id,
     enabled: openAvailable && !missingIds.has(entry.id),
   }));
 }

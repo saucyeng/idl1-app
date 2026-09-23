@@ -25,7 +25,11 @@ import { useEffect, useRef, useSyncExternalStore } from "react";
  * that document closes — {@link useCommand}'s `available` argument.
  */
 
-type Handler = () => void;
+/** `arg` is `workbook.openPath`'s one use (ruling R244/R249: a Recent-
+ *  workbook row runs it with the catalog id to open) — every other handler
+ *  in the registry takes none and ignores it. The smallest argument support
+ *  that works: one optional string, not a typed-per-command payload. */
+type Handler = (arg?: string) => void;
 
 const handlers = new Map<string, Handler>();
 
@@ -59,13 +63,14 @@ export function unregisterCommand(id: string, handler: Handler): void {
   notify();
 }
 
-/** Runs `id`'s handler. Returns whether one was registered — a caller that
- *  fired from a keyboard shortcut uses this to decide whether to consume
- *  the key press or let it through to the focused control. */
-export function runCommand(id: string): boolean {
+/** Runs `id`'s handler, passing `arg` through (ignored by every handler but
+ *  `workbook.openPath`'s). Returns whether one was registered — a caller
+ *  that fired from a keyboard shortcut uses this to decide whether to
+ *  consume the key press or let it through to the focused control. */
+export function runCommand(id: string, arg?: string): boolean {
   const handler = handlers.get(id);
   if (handler === undefined) return false;
-  handler();
+  handler(arg);
   return true;
 }
 
@@ -114,7 +119,7 @@ export function useCommand(id: string, available: boolean, handler: Handler): vo
 
   useEffect(() => {
     if (!available) return;
-    const stable = () => latest.current();
+    const stable = (arg?: string) => latest.current(arg);
     registerCommand(id, stable);
     return () => unregisterCommand(id, stable);
   }, [id, available]);

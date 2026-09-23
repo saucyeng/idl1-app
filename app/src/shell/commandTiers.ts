@@ -57,12 +57,23 @@ export interface Shortcut {
 export const COMMAND_IDS = {
   workbookNew: "workbook.new",
   workbookOpen: "workbook.open",
+  /** Ruling R244/R249: opens a specific workbook by its catalog id, the
+   *  argument `runCommand`/`useCommand` now carry through
+   *  (`commandRegistry.ts`). Not in {@link COMMAND_TIERS} — an argument-
+   *  taking command has no sensible no-argument invocation from a ribbon
+   *  button, a menu item or the palette, all three of which call a command
+   *  with none; the Welcome panel's Recent rows are its one caller. */
+  workbookOpenPath: "workbook.openPath",
   workbookSave: "workbook.save",
   workbookExportReport: "workbook.exportReport",
   libraryImportFiles: "library.importFiles",
   libraryImportFolder: "library.importFolder",
   libraryRescan: "library.rescan",
   libraryRebuild: "library.rebuild",
+  /** Ruling R244/R249 (Welcome-commands lane): reveals `<data>` in the OS
+   *  file manager, via the `@tauri-apps/plugin-opener` `revealItemInDir`
+   *  call the shell now registers (`AppShell.tsx`). */
+  libraryRevealFolder: "library.revealFolder",
   editUndo: "edit.undo",
   editRedo: "edit.redo",
   viewMenu: "view.menu",
@@ -88,6 +99,20 @@ export const COMMAND_IDS = {
    *  id that already existed, and it also asks for the panel to be
    *  "reachable from Help", which is a command by definition. */
   helpWelcome: "help.welcome",
+  /** Ruling R244/R249: opens the Docs panel at the bundled workbook
+   *  reference (`docsPanelStore.ts`'s `openDocs(null, "workbook")`).
+   *  Registered by `AppShell.tsx`, alongside `F1`/the code column's own
+   *  "Docs" button, which open the same panel by calling `openDocs`
+   *  directly rather than through the registry. */
+  helpWorkbookReference: "help.workbookReference",
+  /** Ruling R244/R249: opens the Docs panel at the bundled CLI reference —
+   *  a second document `DocsPanel.tsx` now reads by name, alongside the
+   *  workbook reference `help.workbookReference` opens. */
+  helpCliReference: "help.cliReference",
+  /** Ruling R244/R249: opens the release-notes panel `updateState.ts`
+   *  already owns, without the periodic checker's network round trip
+   *  `help.checkForUpdates` performs. */
+  helpReleaseNotes: "help.releaseNotes",
 } as const;
 
 /** Every id in {@link COMMAND_IDS}. */
@@ -268,6 +293,17 @@ export const COMMAND_TIERS: readonly TieredCommand[] = [
     parent: COMMAND_IDS.libraryImportFiles,
     command: COMMAND_IDS.libraryImportFolder,
     shortcut: { key: "i", mod: true, shift: true },
+  },
+  {
+    // Ruling R244/R249: reveal `<data>` in the OS file manager.
+    id: COMMAND_IDS.libraryRevealFolder,
+    label: "Open library folder",
+    icon: "FolderSearch2",
+    tier: "rare",
+    group: "library",
+    parent: COMMAND_IDS.libraryImportFiles,
+    command: COMMAND_IDS.libraryRevealFolder,
+    shortcut: null,
   },
 
   // --- view: how the notebook is drawn ---

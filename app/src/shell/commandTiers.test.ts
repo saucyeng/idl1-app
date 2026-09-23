@@ -103,12 +103,12 @@ describe("the dropdowns", () => {
     expect(occasional).toEqual([COMMAND_IDS.workbookExportReport]);
   });
 
-  it("dropdown — Import — carries Rescan and Rebuild, with Import folder nested below", () => {
+  it("dropdown — Import — carries Rescan and Rebuild, with Import folder and Open library folder nested below", () => {
     const occasional = childrenOf(COMMAND_IDS.libraryImportFiles, "occasional").map((entry) => entry.id);
     const rare = childrenOf(COMMAND_IDS.libraryImportFiles, "rare").map((entry) => entry.id);
 
     expect(occasional).toEqual([COMMAND_IDS.libraryRescan, COMMAND_IDS.libraryRebuild]);
-    expect(rare).toEqual([COMMAND_IDS.libraryImportFolder]);
+    expect(rare).toEqual([COMMAND_IDS.libraryImportFolder, COMMAND_IDS.libraryRevealFolder]);
   });
 
   it("dropdown — View — carries the axis choice and pointer mode, with the toggles nested below", () => {

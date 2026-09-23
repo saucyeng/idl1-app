@@ -4919,6 +4919,13 @@ export default function NotebookPage() {
 
   useCommand(MENU_COMMAND_IDS.workbookNew, true, () => setNewWorkbookOpen(true));
   useCommand(MENU_COMMAND_IDS.workbookOpen, true, () => setOpenWorkbookOpen(true));
+  // Ruling R244/R249: the Welcome panel's Recent-workbook rows, which carry
+  // a catalog id through `runCommand`'s argument rather than reopening the
+  // picker dialog `workbook.open` shows. `handleSelect` is the one place a
+  // workbook is chosen (see its own doc comment) either way.
+  useCommand(MENU_COMMAND_IDS.workbookOpenPath, true, (id?: string) => {
+    if (id !== undefined) handleSelect(id);
+  });
   useCommand(MENU_COMMAND_IDS.libraryRescan, !rescanning, () => void handleRescan());
   useCommand(
     MENU_COMMAND_IDS.workbookSave,

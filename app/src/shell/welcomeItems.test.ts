@@ -55,6 +55,28 @@ describe("welcomeContent", () => {
     ]);
   });
 
+  it("welcomeContent — the Start section — includes Open library folder", () => {
+    const content = welcomeContent(inputs());
+
+    const start = content.sections.find((section) => section.id === "start")!;
+
+    expect(start.items.map((item) => item.command)).toContain(COMMAND_IDS.libraryRevealFolder);
+  });
+
+  it("welcomeContent — the Learn section — R249's three new rows in R244's order, before the existing two", () => {
+    const content = welcomeContent(inputs());
+
+    const learn = content.sections.find((section) => section.id === "learn")!;
+
+    expect(learn.items.map((item) => item.command)).toEqual([
+      COMMAND_IDS.helpWorkbookReference,
+      COMMAND_IDS.helpCliReference,
+      COMMAND_IDS.helpReleaseNotes,
+      COMMAND_IDS.helpCheckForUpdates,
+      COMMAND_IDS.helpAbout,
+    ]);
+  });
+
   it("welcomeContent — a command nothing has registered — the row stays, disabled", () => {
     const registered = new Set([...ALL_REGISTERED].filter((id) => id !== COMMAND_IDS.workbookNew));
 
@@ -107,12 +129,19 @@ describe("recentWorkbookItems", () => {
     expect(items[0]!.detail).toContain("Missing");
   });
 
-  it("recentWorkbookItems — workbook.open unregistered — every row disabled", () => {
-    const registered = new Set([...ALL_REGISTERED].filter((id) => id !== COMMAND_IDS.workbookOpen));
+  it("recentWorkbookItems — workbook.openPath unregistered — every row disabled", () => {
+    const registered = new Set([...ALL_REGISTERED].filter((id) => id !== COMMAND_IDS.workbookOpenPath));
 
     const items = recentWorkbookItems([entry()], new Set(), registered);
 
     expect(items[0]!.enabled).toBe(false);
+  });
+
+  it("recentWorkbookItems — a present workbook — runs workbook.openPath with its catalog id", () => {
+    const items = recentWorkbookItems([entry()], new Set(), ALL_REGISTERED);
+
+    expect(items[0]!.command).toBe(COMMAND_IDS.workbookOpenPath);
+    expect(items[0]!.arg).toBe("wb-1");
   });
 
   it("recentWorkbookItems — an empty list — no rows", () => {
