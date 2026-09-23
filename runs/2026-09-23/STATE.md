@@ -71,13 +71,21 @@ worktree, on a branch already merged; harmless, not the lead's to remove.
    deleting `app/src-tauri/target` (14.1 GB, pure build output, the same
    directory Isaac approved deleting on 2026-09-10) and
    `.cargo-shared-target/debug/incremental` (5.5 GB), leaving **15.3 GB free**.
-   The lead then deliberately did **not** rebuild the app: a cold tauri build
-   takes back ~14 GB and would have left the machine near zero for the week.
-   **Consequence on Isaac's return:** the first `up.ps1` is a cold build, slow
-   (~15-20 min), and will drop C: to ~1 GB again. The build caches alone want
-   ~35 GB. Free real space, or move the target directories to another drive,
-   before building; do not let C: sit under ~15 GB or the pagefile cannot grow
-   and every OOM of 2026-09-10 returns.
+   **Then the already-running `tauri dev` kept going and rebuilt the target
+   the lead had just deleted.** It reached 623 of 631 crates before the
+   harness stopped it because the system was critically low on memory, leaving
+   a ~10 GB partial `app/src-tauri/target` and **C: at 8.1 GB free**. The lead
+   did not restart it (the stop notice says not to, memory may still be
+   short), so **no build of current main has been seen running**.
+   **Final disk state left for the week: 8.1 GB free, with a ~10 GB
+   nearly-complete `app/src-tauri/target` kept** because it saves most of a
+   cold build on return. Delete that directory to reclaim the 10 GB if the
+   machine needs headroom first; it is pure build output.
+   **On Isaac's return:** the build caches want ~35 GB in total and this drive
+   cannot comfortably hold them. Free real space, or move the target
+   directories to another drive. Do not let C: sit under ~15 GB while
+   building, or the pagefile cannot grow and every OOM of 2026-09-10
+   returns.
 4. **Ruling ids in CLI help** — seven rows of the command table put
    "(ruling RNNN)" into user-facing `--help` text. House style, so the lead did
    not change one of seven unilaterally. Strip them all, or keep them?
@@ -102,8 +110,10 @@ worktree, on a branch already merged; harmless, not the lead's to remove.
   running app (capture script: `runs/2026-09-20/capture-app.ps1`). **Still
   outstanding**: the 2026-09-23 attempt died on the full disk before the window
   opened, so no build of main since the welcome-cmds merge has been seen
-  running. Every gate passes and CI is green, but the runtime check is unmade.
-  Do it first on Isaac's return, once there is disk for it.
+  running. Every gate passes and CI is green on `4a87615` (both jobs), but the
+  runtime check is unmade: the first attempt died on the full disk and the
+  second was stopped at 623/631 crates for low memory. Do it first on Isaac's
+  return, once there is disk for it.
 
 ## Process notes for the next lead
 
