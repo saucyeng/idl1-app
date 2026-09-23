@@ -11,8 +11,8 @@
 # `version` job fails the run if the tag disagrees with it.
 #
 # Signing: Android only, from four repo secrets (docs/RELEASING.md). The
-# in-app updater (ruling R231) stays off until the repo is public or
-# `idl1-releases` exists, so desktop bundles are not updater-signed here.
+# in-app updater (ruling R231) is not wired up yet, so desktop bundles are
+# not updater-signed and no `latest.json` is written.
 #
 # workflow_dispatch builds every platform without publishing -- a dry run
 # whose files are left on the run as artifacts.

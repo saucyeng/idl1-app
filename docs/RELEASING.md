@@ -72,11 +72,12 @@ trying an Android change without cutting a release.
 
 ## In-app updates (ruling R231)
 
-**Currently off.** Releases publish to this private repo for now, so
-`release.yml` neither signs updater bundles nor writes `latest.json`. The
-setup below is kept for when the repo goes public or `idl1-releases` is
-created; wiring it back means adding the signing env and a `latest.json`
-step to the `release` job.
+**Currently off.** `release.yml` neither signs updater bundles nor writes
+`latest.json`. This repo went public on 2026-09-23, so the separate
+`idl1-releases` repo described below is no longer needed: the endpoint can
+point at this repo's `releases/latest/download/latest.json`. Wiring it up
+means the keypair and pubkey steps below, plus the signing env and a
+`latest.json` step in the `release` job.
 
 The app checks for updates on launch (+30 s) and every 4 h, and from
 `Help ▸ Check for updates…`. It fetches
@@ -141,7 +142,7 @@ under `Unreleased`.
 
 ## Minute budget
 
-The superproject repo is private (2000 Actions minutes/month, Windows
-minutes counted double) — cut releases only on tags, not on every push.
+This repo is public (since 2026-09-23), so Actions minutes on standard
+runners are free. Releases still run only on tags, not on every push.
 The Windows + Linux release of `v0.1.0-alpha.1` took 31 min wall-clock;
 Android adds a third parallel job. See `docs/CI.md` for the rest of the CI budget.
