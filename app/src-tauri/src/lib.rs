@@ -128,26 +128,10 @@ pub fn run() {
             // pubkey means no keypair has been generated yet. Either one
             // disables registration; the frontend checker (`updateState.ts`)
             // treats a missing plugin as "never available" rather than an
-            // error, so nothing crashes when it isn't registered.
-            let is_dev_identifier = app.config().identifier.ends_with(".dev");
-            let updater_pubkey = app
-                .config()
-                .plugins
-                .0
-                .get("updater")
-                .and_then(|v| v.get("pubkey"))
-                .and_then(|v| v.as_str())
-                .unwrap_or("")
-                .to_string();
-            let pubkey_is_placeholder = updater_pubkey == "REPLACE_WITH_PUBKEY" || updater_pubkey.is_empty();
-            if is_dev_identifier || pubkey_is_placeholder {
-                eprintln!(
-                    "updater: checks disabled ({})",
-                    if is_dev_identifier { "dev build" } else { "pubkey is a placeholder" }
-                );
-            } else {
-                app.handle().plugin(tauri_plugin_updater::Builder::new().build())?;
-            }
+            // error, so nothing crashes when it isn't registered. Desktop
+            // only: the plugin is not a dependency on Android.
+            #[cfg(not(any(target_os = "android", target_os = "ios")))]
+            register_updater(app)?;
 
             Ok(())
         })
@@ -160,4 +144,30 @@ pub fn run() {
         .invoke_handler(idl_rs_tauri::handler())
         .run(tauri::generate_context!())
         .expect("error while running idl1");
+}
+
+/// Registers the updater plugin unless this is a dev build or the pubkey is
+/// still the placeholder (ruling R231; see the call site in `run`).
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
+fn register_updater(app: &mut tauri::App) -> tauri::Result<()> {
+    let is_dev_identifier = app.config().identifier.ends_with(".dev");
+    let updater_pubkey = app
+        .config()
+        .plugins
+        .0
+        .get("updater")
+        .and_then(|v| v.get("pubkey"))
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .to_string();
+    let pubkey_is_placeholder = updater_pubkey == "REPLACE_WITH_PUBKEY" || updater_pubkey.is_empty();
+    if is_dev_identifier || pubkey_is_placeholder {
+        eprintln!(
+            "updater: checks disabled ({})",
+            if is_dev_identifier { "dev build" } else { "pubkey is a placeholder" }
+        );
+    } else {
+        app.handle().plugin(tauri_plugin_updater::Builder::new().build())?;
+    }
+    Ok(())
 }

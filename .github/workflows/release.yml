@@ -1,16 +1,21 @@
-# Builds and drafts a GitHub Release for idl1, publishing to the public
-# saucyeng/idl1-releases repo so the in-app updater (ruling R231) has a
-# `latest.json` it can fetch without auth. Bundles are updater-signed with
-# `TAURI_SIGNING_PRIVATE_KEY`/`_PASSWORD` once Isaac has generated and
-# stored that keypair (docs/RELEASING.md); absent, the build is unsigned —
-# Windows installers show a SmartScreen warning, and the app's own
-# placeholder-pubkey guard keeps update checks off rather than trusting an
-# unsigned `latest.json`. Windows code-signing and an Android keystore
-# remain a separate follow-up.
+# App release pipeline (docs/RELEASING.md), modelled on idl0-app's.
 #
-# Trigger: push a tag matching v* (e.g. `git tag v0.1.0-alpha.1 && git push
-# --tags`), or run manually via workflow_dispatch. Draft release only —
-# publish it by hand once the artifacts look right.
+# On a `v*` tag, three platform jobs build in parallel and each uploads its
+# files as a workflow artifact; a final `release` job collects them all and
+# publishes ONE GitHub Release on this repo. Splitting build from publish
+# avoids the concurrent-upload race idl0 hit when parallel jobs wrote to the
+# same release. A tag containing `-` (e.g. `v0.1.0-alpha.2`) publishes as a
+# prerelease.
+#
+# Version: `app/src-tauri/tauri.conf.json` is the source of truth; the
+# `version` job fails the run if the tag disagrees with it.
+#
+# Signing: Android only, from four repo secrets (docs/RELEASING.md). The
+# in-app updater (ruling R231) stays off until the repo is public or
+# `idl1-releases` exists, so desktop bundles are not updater-signed here.
+#
+# workflow_dispatch builds every platform without publishing -- a dry run
+# whose files are left on the run as artifacts.
 
 name: Release
 
@@ -21,29 +26,55 @@ on:
   workflow_dispatch: {}
 
 permissions:
-  contents: write
+  contents: write # the release job creates the GitHub Release
+
+env:
+  # rust/.cargo/config.toml pins target-dir to a Windows path shared across
+  # the dev machine's worktrees; that path isn't valid on a runner.
+  CARGO_TARGET_DIR: ${{ github.workspace }}/rust/target
 
 jobs:
-  release:
+  version:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.v.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Read version and check it against the tag
+        id: v
+        run: |
+          set -euo pipefail
+          version="$(jq -r .version app/src-tauri/tauri.conf.json)"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          if [ "$GITHUB_REF_TYPE" = "tag" ] && [ "$GITHUB_REF_NAME" != "v$version" ]; then
+            echo "::error::tag $GITHUB_REF_NAME does not match tauri.conf.json version $version -- bump the version first (docs/RELEASING.md)"
+            exit 1
+          fi
+
+  desktop:
+    needs: version
     strategy:
       fail-fast: false
       matrix:
-        platform: [windows-latest, ubuntu-22.04]
+        include:
+          - platform: windows-latest
+            bundles: nsis,msi
+          - platform: ubuntu-22.04
+            bundles: appimage,deb
     runs-on: ${{ matrix.platform }}
     timeout-minutes: 90
+    defaults:
+      run:
+        shell: bash
     env:
-      # rust/.cargo/config.toml pins target-dir to a Windows path shared
-      # across the dev machine's worktrees; that path isn't valid on a
-      # runner. Override with a workspace-relative path, same as ci.yml.
-      CARGO_TARGET_DIR: ${{ github.workspace }}/rust/target
+      VERSION: ${{ needs.version.outputs.version }}
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
         with:
           submodules: recursive
 
       - name: Install Tauri v2 Linux prerequisites
-        if: matrix.platform == 'ubuntu-22.04'
+        if: runner.os == 'Linux'
         run: |
           sudo apt-get update
           sudo apt-get install -y \
@@ -58,26 +89,19 @@ jobs:
             librsvg2-dev \
             patchelf
 
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
+      - name: Install NASM (Windows, needed by rustls' aws-lc-rs)
+        if: runner.os == 'Windows'
+        uses: ilammy/setup-nasm@v1
 
-      - name: Cache cargo
-        uses: Swatinem/rust-cache@v2
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
         with:
           workspaces: |
             rust
             app/src-tauri
 
-      - name: Install NASM (Windows, needed by rustls' aws-lc-rs)
-        if: matrix.platform == 'windows-latest'
-        uses: ilammy/setup-nasm@v1
-
-      - name: Ensure cmake is present (needed by rustls' aws-lc-rs)
-        if: matrix.platform == 'windows-latest'
-        run: cmake --version
-
-      - name: Install Node
-        uses: actions/setup-node@v4
+      - uses: actions/setup-node@v4
         with:
           node-version: 24
           cache: npm
@@ -87,43 +111,169 @@ jobs:
         working-directory: app
         run: npm ci
 
-      - name: Extract release notes from CHANGELOG.md
-        id: notes
-        shell: bash
-        run: |
-          version="${GITHUB_REF_NAME#v}"
-          body="$(.github/scripts/extract-changelog.sh "$version" CHANGELOG.md)"
-          {
-            echo "body<<RELEASE_NOTES_EOF"
-            echo "$body"
-            echo "RELEASE_NOTES_EOF"
-          } >> "$GITHUB_OUTPUT"
+      - name: tauri build
+        working-directory: app
+        run: npm run tauri -- build --bundles ${{ matrix.bundles }}
 
-      - name: Build and release
-        uses: tauri-apps/tauri-action@v0
-        env:
-          # Publishes to the public `saucyeng/idl1-releases` repo (ruling
-          # R231: the app repo is private, and the updater's `latest.json`
-          # endpoint must be fetchable without auth) via a fine-grained
-          # `RELEASES_TOKEN` secret Isaac creates on that repo. Falls back
-          # to the app repo's own `GITHUB_TOKEN` when the secret is absent,
-          # so the workflow keeps working before that secret exists —
-          # `owner`/`repo` below fall back the same way.
-          GITHUB_TOKEN: ${{ secrets.RELEASES_TOKEN || secrets.GITHUB_TOKEN }}
-          # The updater's signing keypair (docs/RELEASING.md: `npm run
-          # tauri signer generate`). Isaac stores these as repo secrets;
-          # absent, `tauri-action` builds unsigned updater artifacts and
-          # the app's own placeholder-pubkey guard keeps checking off.
-          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+      - name: Stage assets
+        run: |
+          set -euo pipefail
+          bundle="$CARGO_TARGET_DIR/release/bundle"
+          mkdir -p dist
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            cp "$bundle"/nsis/*.exe "dist/idl1-app-v${VERSION}-windows-x64-setup.exe"
+            cp "$bundle"/msi/*.msi "dist/idl1-app-v${VERSION}-windows-x64.msi"
+          else
+            cp "$bundle"/appimage/*.AppImage "dist/idl1-app-v${VERSION}-x86_64.AppImage"
+            cp "$bundle"/deb/*.deb "dist/idl1-app-v${VERSION}-amd64.deb"
+          fi
+          cd dist && for f in *; do sha256sum "$f" > "$f.sha256"; done
+
+      - uses: actions/upload-artifact@v4
         with:
-          projectPath: app
-          tagName: ${{ github.ref_name }}
-          releaseName: "idl1 ${{ github.ref_name }}"
-          releaseBody: ${{ steps.notes.outputs.body }}
-          releaseDraft: true
+          name: ${{ runner.os }}
+          path: dist/*
+          if-no-files-found: error
+
+  android:
+    needs: version
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      VERSION: ${{ needs.version.outputs.version }}
+      NDK_VERSION: 28.2.13676358
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - uses: android-actions/setup-android@v3
+
+      - name: Install Android NDK
+        run: |
+          sdkmanager --install "ndk;$NDK_VERSION"
+          echo "NDK_HOME=$ANDROID_HOME/ndk/$NDK_VERSION" >> "$GITHUB_ENV"
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            rust
+            app/src-tauri
+          key: android
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+
+      - name: npm ci
+        working-directory: app
+        run: npm ci
+
+      - name: Restore signing keystore
+        env:
+          ANDROID_KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_B64 }}
+        run: |
+          set -euo pipefail
+          if [ -z "$ANDROID_KEYSTORE_B64" ]; then
+            echo "::error::ANDROID_KEYSTORE_B64 secret is not set -- an unsigned APK cannot be installed (docs/RELEASING.md)"
+            exit 1
+          fi
+          echo "$ANDROID_KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/idl1-release.jks"
+          echo "ANDROID_KEYSTORE_PATH=$RUNNER_TEMP/idl1-release.jks" >> "$GITHUB_ENV"
+
+      - name: tauri android build (arm64)
+        working-directory: app
+        env:
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        # versionCode must increase every release so a new APK installs as an
+        # in-place update; github.run_number is monotonic per workflow (the
+        # same trick idl0 uses). Renaming this workflow file resets it. Passed
+        # as a file, not inline JSON: scripts/tauri.mjs runs the CLI through
+        # a shell, which would strip the JSON's quotes.
+        run: |
+          echo '{"bundle":{"android":{"versionCode":${{ github.run_number }}}}}' > "$RUNNER_TEMP/android-version.json"
+          npm run tauri -- android build --apk --target aarch64 --config "$RUNNER_TEMP/android-version.json"
+
+      - name: Stage assets
+        run: |
+          set -euo pipefail
+          apk="$(find app/src-tauri/gen/android/app/build/outputs/apk -name '*-release.apk' | head -1)"
+          [ -n "$apk" ] || { echo "::error::no release APK produced"; exit 1; }
+          mkdir -p dist
+          cp "$apk" "dist/idl1-app-v${VERSION}-arm64.apk"
+          cd dist && for f in *; do sha256sum "$f" > "$f.sha256"; done
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Android
+          path: dist/*
+          if-no-files-found: error
+
+  release:
+    needs: [version, desktop, android]
+    if: github.ref_type == 'tag'
+    runs-on: ubuntu-latest
+    env:
+      VERSION: ${{ needs.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Compose release notes
+        run: |
+          set -euo pipefail
+          base="https://github.com/${GITHUB_REPOSITORY}/releases/download/${GITHUB_REF_NAME}"
+          link() { echo "[$1](${base}/$1)"; }
+          {
+            echo "## Downloads"
+            echo ""
+            echo "| Platform | File |"
+            echo "|---|---|"
+            echo "| 📱 Android (arm64) | $(link "idl1-app-v${VERSION}-arm64.apk") |"
+            echo "| 🪟 Windows | $(link "idl1-app-v${VERSION}-windows-x64-setup.exe") · $(link "idl1-app-v${VERSION}-windows-x64.msi") |"
+            echo "| 🐧 Linux | $(link "idl1-app-v${VERSION}-x86_64.AppImage") · $(link "idl1-app-v${VERSION}-amd64.deb") |"
+            echo ""
+            echo "**Android** — tap the APK to install (updates over any prior build)."
+            echo "**Windows** — run the setup .exe. It is not code-signed yet: on the SmartScreen prompt choose More info → Run anyway."
+            echo "**Linux** — make the AppImage executable (chmod +x) and run it, or \`sudo apt install ./idl1-app-*.deb\`."
+            echo ""
+            echo "SHA-256 checksums are attached below."
+            echo ""
+            echo "## Changes"
+            echo ""
+            # GitHub rejects a release body over 125,000 characters, and the
+            # Unreleased section can be far longer than that; past a sane
+            # size, link to the changelog at this tag instead.
+            changes="$(bash .github/scripts/extract-changelog.sh "$VERSION" CHANGELOG.md)"
+            if [ "${#changes}" -le 60000 ]; then
+              echo "$changes"
+            else
+              echo "See [CHANGELOG.md](https://github.com/${GITHUB_REPOSITORY}/blob/${GITHUB_REF_NAME}/CHANGELOG.md)."
+            fi
+          } > NOTES.md
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: idl1 ${{ github.ref_name }}
+          files: dist/*
+          body_path: NOTES.md
           prerelease: ${{ contains(github.ref_name, '-') }}
-          includeUpdaterJson: true
-          owner: ${{ secrets.RELEASES_TOKEN && 'saucyeng' || '' }}
-          repo: ${{ secrets.RELEASES_TOKEN && 'idl1-releases' || '' }}
-          args: ${{ matrix.platform == 'ubuntu-22.04' && '--bundles appimage,deb' || '--bundles msi,nsis' }}
+          fail_on_unmatched_files: true

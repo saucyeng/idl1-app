@@ -6,6 +6,25 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 
 ### Added
 
+- **Release pipeline builds Android, Windows and Linux in one release
+  [no-docs] (2026-09-23).** `release.yml` follows idl0-app's shape: on a
+  `v*` tag a `version` job checks the tag against `tauri.conf.json`,
+  three jobs build in parallel (Windows NSIS + MSI, Linux AppImage + deb,
+  Android arm64 APK signed with idl1's own release key from repo
+  secrets), and one `release` job publishes a single, non-draft GitHub
+  Release on this repo with a download table, SHA-256 files and the
+  CHANGELOG section. `workflow_dispatch` is a build-only dry run. The
+  in-app updater stays off until releases have a public home (ruling R231
+  setup deferred). No spec change needed; `docs/RELEASING.md` rewritten
+  to match.
+- **Android project scaffold (L9 task 2, ruling R183) [no-docs]
+  (2026-09-23).** `app/src-tauri/gen/android/` generated and committed:
+  minSdk 26, release signing read from the environment, and cleartext
+  HTTP allowed in release because the logger's WiFi transfer and LAN sync
+  are plain HTTP. `tauri-plugin-updater` is now a desktop-only dependency
+  and its registration desktop-only; the window-control, updater and
+  restart permissions moved to a desktop-only `capabilities/desktop.json`.
+
 - **Welcome panel commands and the generated function table [docs]
   (2026-09-20, rulings R244/R249).** The five commands R244 named that the
   dockview lane left out are wired: `library.revealFolder` reveals `<data>`
