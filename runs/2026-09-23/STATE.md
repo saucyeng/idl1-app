@@ -65,7 +65,19 @@ worktree, on a branch already merged; harmless, not the lead's to remove.
 2. **Git Credential Manager** — its token expired, so a plain `git push` in
    Isaac's own terminal opens a sign-in dialog. The lead pushes with the `gh`
    CLI helper per command. Isaac must re-authenticate GCM himself.
-3. **Disk** — 5.6 GB free on C:. Below the margin the pagefile wants.
+3. **Disk — the machine needs more of it.** On 2026-09-23 a `tauri dev`
+   build filled C: completely: it died with `rustc-LLVM ERROR: IO failure on
+   output stream: no space on device` at 0.1 GB free. The lead freed space by
+   deleting `app/src-tauri/target` (14.1 GB, pure build output, the same
+   directory Isaac approved deleting on 2026-09-10) and
+   `.cargo-shared-target/debug/incremental` (5.5 GB), leaving **15.3 GB free**.
+   The lead then deliberately did **not** rebuild the app: a cold tauri build
+   takes back ~14 GB and would have left the machine near zero for the week.
+   **Consequence on Isaac's return:** the first `up.ps1` is a cold build, slow
+   (~15-20 min), and will drop C: to ~1 GB again. The build caches alone want
+   ~35 GB. Free real space, or move the target directories to another drive,
+   before building; do not let C: sit under ~15 GB or the pagefile cannot grow
+   and every OOM of 2026-09-10 returns.
 4. **Ruling ids in CLI help** — seven rows of the command table put
    "(ruling RNNN)" into user-facing `--help` text. House style, so the lead did
    not change one of seven unilaterally. Strip them all, or keep them?
@@ -87,7 +99,11 @@ worktree, on a branch already merged; harmless, not the lead's to remove.
   because gaps never reach the maths path. Making "a gap is NaN" true is a
   C2 §3.6 value-model change affecting every builtin: its own ruling and lane.
 - **Visual verification** of Dockview, Welcome, the type scale and R250 in one
-  running app (capture script: `runs/2026-09-20/capture-app.ps1`).
+  running app (capture script: `runs/2026-09-20/capture-app.ps1`). **Still
+  outstanding**: the 2026-09-23 attempt died on the full disk before the window
+  opened, so no build of main since the welcome-cmds merge has been seen
+  running. Every gate passes and CI is green, but the runtime check is unmade.
+  Do it first on Isaac's return, once there is disk for it.
 
 ## Process notes for the next lead
 
