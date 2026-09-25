@@ -9,7 +9,7 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 - **Release pipeline builds Android, Windows and Linux in one release
   [no-docs] (2026-09-23).** `release.yml` follows idl0-app's shape: on a
   `v*` tag a `version` job checks the tag against `tauri.conf.json`,
-  three jobs build in parallel (Windows NSIS + MSI, Linux AppImage + deb,
+  three jobs build in parallel (Windows NSIS setup .exe, Linux AppImage + deb,
   Android arm64 APK signed with idl1's own release key from repo
   secrets), and one `release` job publishes a single, non-draft GitHub
   Release on this repo with a download table, SHA-256 files and the

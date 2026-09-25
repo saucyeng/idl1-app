@@ -25,7 +25,8 @@ artifacts, but nothing is published.
 
 - **Android** — `idl1-app-v<version>-arm64.apk`, release-signed (arm64
   only; covers essentially every current phone).
-- **Windows** — `…-windows-x64-setup.exe` (NSIS) and `…-windows-x64.msi`.
+- **Windows** — `…-windows-x64-setup.exe` (NSIS). No MSI: WiX only
+  accepts numeric versions, so `0.1.0-alpha.2` cannot build one.
 - **Linux** — `…-x86_64.AppImage` and `…-amd64.deb`.
 
 Each file has a `.sha256` beside it. The release body is a download table

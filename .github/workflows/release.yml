@@ -10,6 +10,8 @@
 # Version: `app/src-tauri/tauri.conf.json` is the source of truth; the
 # `version` job fails the run if the tag disagrees with it.
 #
+# Windows ships the NSIS setup .exe only (no MSI: see the matrix).
+#
 # Signing: Android only, from four repo secrets (docs/RELEASING.md). The
 # in-app updater (ruling R231) is not wired up yet, so desktop bundles are
 # not updater-signed and no `latest.json` is written.
@@ -58,7 +60,9 @@ jobs:
       matrix:
         include:
           - platform: windows-latest
-            bundles: nsis,msi
+            # NSIS only: WiX/MSI rejects a non-numeric prerelease version
+            # (`0.1.0-alpha.2`), and the setup .exe is what users run.
+            bundles: nsis
           - platform: ubuntu-22.04
             bundles: appimage,deb
     runs-on: ${{ matrix.platform }}
@@ -122,7 +126,6 @@ jobs:
           mkdir -p dist
           if [ "$RUNNER_OS" = "Windows" ]; then
             cp "$bundle"/nsis/*.exe "dist/idl1-app-v${VERSION}-windows-x64-setup.exe"
-            cp "$bundle"/msi/*.msi "dist/idl1-app-v${VERSION}-windows-x64.msi"
           else
             cp "$bundle"/appimage/*.AppImage "dist/idl1-app-v${VERSION}-x86_64.AppImage"
             cp "$bundle"/deb/*.deb "dist/idl1-app-v${VERSION}-amd64.deb"
@@ -251,7 +254,7 @@ jobs:
             echo "| Platform | File |"
             echo "|---|---|"
             echo "| 📱 Android (arm64) | $(link "idl1-app-v${VERSION}-arm64.apk") |"
-            echo "| 🪟 Windows | $(link "idl1-app-v${VERSION}-windows-x64-setup.exe") · $(link "idl1-app-v${VERSION}-windows-x64.msi") |"
+            echo "| 🪟 Windows | $(link "idl1-app-v${VERSION}-windows-x64-setup.exe") |"
             echo "| 🐧 Linux | $(link "idl1-app-v${VERSION}-x86_64.AppImage") · $(link "idl1-app-v${VERSION}-amd64.deb") |"
             echo ""
             echo "**Android** — tap the APK to install (updates over any prior build)."
