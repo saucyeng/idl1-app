@@ -510,7 +510,8 @@ delivered in the `available` event and the app's device base URL becomes
 normally during transfers. On every other platform the app talks to
 `192.168.4.1` directly and the user joins the AP in system settings.
 
-**Link reconciler.** A single-flight state machine in the app owns the
+**Link reconciler.** (idl1 implementation, fixed numbers and platform
+split: §14b.) A single-flight state machine in the app owns the
 link: `unlinked → requesting → verifying → linked`, with failures feeding
 back through bounded backoff (1 s / 2 s / 4 s, then `failed`; `failed`
 re-arms on user Retry, app resume, or WiFi-mode re-entry). Desired state
@@ -1268,6 +1269,157 @@ disagree.
 
 **Timeouts.** BLE scan: caller-supplied (`Duration` argument). BLE connect, GATT read/write,
 and WiFi requests: no default fixed by this lane — see Open question 10.
+
+### 14b. Android Transport and the WiFi Link (idl1, L9)
+
+Added 2026-09-25 (spec-first for L9 tasks 3–7). Fixes how idl1 talks to the
+logger from Android, and moves §6.2's link management from "idl0 app
+behaviour" to idl1's implementation on **every** platform. No firmware
+change: the idl0 firmware already serves `/ping`, `/handoff`, `/wifi_off`
+and `Range` (verified against `idl0-firmware` `main/wifi_server.c`
+@ f4f26c6).
+
+**Why the link must be long-lived.** Today each device command connects
+BLE, sends `CMD_WIFI_ON`, makes its HTTP calls and disconnects. §10.4's
+handoff breaks that shape: after `POST /handoff` the logger drops the phone
+and stops advertising, so a later command cannot reach it over BLE. The
+firmware also leaves WiFi mode on its own after five minutes without an
+HTTP request (§10.4 failsafe), so an idle link needs the 10 s `/ping`
+heartbeat. WiFi mode is therefore a session with a lifetime of its own,
+owned by the link reconciler below, not a per-command side effect.
+
+#### 14b.1 Layer placement
+
+| Piece | Where | Owns |
+|---|---|---|
+| `DevicePlugin` (Kotlin) | `app/src-tauri/gen/android/app/src/main/java/com/saucyeng/idl1/device/` | Android BLE GATT, the §6.2 network request + loopback proxy, the multicast lock, runtime permissions. Sensor/actuator only: no policy, no retries of device answers. |
+| Plugin registration | `app/src-tauri/src/mobile.rs` | `register_android_plugin("com.saucyeng.idl1.device", "DevicePlugin")`; manages the `PluginHandle` as state. |
+| `AndroidBle: BleTransport` | `rust/tauri/src/mobile/ble.rs` (`cfg(target_os = "android")`) | The §14a trait over the plugin. Lives in `idl-rs-tauri` because it needs a Tauri `PluginHandle`; `idl-transport` never depends on Tauri. |
+| `AndroidBinder: NetworkBinder` | `rust/tauri/src/mobile/wifi.rs` (android) | `request`/`release` + events over the plugin. |
+| `DirectBinder: NetworkBinder` | `rust/transport/src/link/` | Desktop: the user joins the AP in OS settings; the binder is always "available" at `http://192.168.4.1`. |
+| Link reconciler | `rust/transport/src/link/` | §6.2's state machine, pure over `NetworkBinder` + `WifiTransport`; transition table, journal, tests. Bytes on the wire → `transport`. |
+| `DeviceSessions` state | `rust/tauri/src/state.rs` | One session per `device_id`: the BLE connection (when up) and the link. |
+| `PlatformBle` | `rust/tauri/src/platform.rs` | `type PlatformBle = BtleplugBle` (desktop) / `AndroidBle` (android). The only place the concrete BLE type is named; replaces the ten `BtleplugBle::new()` call sites and `state::Connections`' hard-coded type. |
+
+#### 14b.2 Plugin surface (Kotlin ⇄ Rust)
+
+Called from Rust with `run_mobile_plugin_async`; argument and result objects
+are JSON with `camelCase` keys; byte payloads are base64. Streams use one
+long-lived `tauri::ipc::Channel` per stream created in Rust (the mobile
+channel registry is never pruned, so never one per call). All BLE calls
+for one device run through a single serialized GATT operation queue in
+Kotlin, one outstanding operation at a time, each bounded by a 10 s
+operation timeout.
+
+**Permissions** — Tauri's built-in `checkPermissions`/`requestPermissions`,
+aliases: `bleLegacy` = `ACCESS_FINE_LOCATION` (API ≤ 30, also needs
+location services on for scans to return results); `ble` =
+`BLUETOOTH_SCAN` (`neverForLocation`) + `BLUETOOTH_CONNECT` (API ≥ 31).
+Rust asks for the alias matching the running API before the first scan. A
+denial is the new IPC kind `permission_denied` (§14b.5). The WiFi request
+needs only install-time permissions (`ACCESS_/CHANGE_NETWORK_STATE`,
+`ACCESS_/CHANGE_WIFI_STATE`).
+
+| Command | Args | Result / events |
+|---|---|---|
+| `bleScan` | `timeoutMs`, `onEvent` | Scans filtered to service `000000ff-…`. Events `{type:"device", id, name, rssiDbm, serviceUuids}` then one `{type:"done"}`. `id` is the MAC address. |
+| `bleConnect` | `id`, `onEvent` | `connectGatt(autoConnect=false)` → `requestMtu(517)` → `discoverServices` → enable FF04 notifications and wait for the CCCD write ack (§7.4). Resolves `{mtu, name}`. Events: `{type:"status", value}` per FF04 notification, `{type:"disconnected", status}` once. Requires FF03 and FF04; FF05/FF06 optional. |
+| `bleRead` | `id`, `uuid` | `{value}`. |
+| `bleWrite` | `id`, `uuid`, `value` | Write **with response**. Resolves `{status}` with the raw ATT/GATT status integer from `onCharacteristicWrite`, **whatever it is**: the device's §7.2 ACK codes arrive here (`0x03`, and `0x80`–`0x82`, of which `0x81` = 129 collides with Android's own `GATT_INTERNAL_ERROR`, so no status is ever retried in Kotlin). Rejects only when the link fails or the operation times out. |
+| `bleDisconnect` | `id` | `disconnect()` + `close()`; idempotent. |
+| `wifiRequest` | `ssid`, `password`, `onEvent` | §6.2 verbatim: releases any live request, then `WifiNetworkSpecifier` (WPA2) with `NET_CAPABILITY_INTERNET` removed. Returns immediately. Events: `{type:"available", port}` (loopback proxy up), `{type:"lost"}`, `{type:"unavailable"}`. API < 29: `{type:"available", port:null}` at once (the user joins in Settings, as on desktop). |
+| `wifiRelease` | — | Unregisters, stops the proxy. Idempotent. |
+| `multicastAcquire` / `multicastRelease` | — | `WifiManager.MulticastLock` (L9 task 7, LAN sync discovery). |
+
+**Loopback proxy** — as §6.2 and idl0's `LoopbackProxy.kt`: listens on an
+ephemeral port bound to IPv4 `127.0.0.1` (never `getLoopbackAddress()`,
+which is `::1` on Android); per accepted connection a
+`network.socketFactory` socket with a bounded 2500 ms connect to
+`192.168.4.1:80`, `tcpNoDelay`, 16 KiB pumps, half-close by
+`shutdownOutput`. `ReqwestWifi::new("http://127.0.0.1:<port>")` needs no
+other change. A fresh `ReqwestWifi` is built per `available` event (never
+reuse a pool across a relink).
+
+#### 14b.3 Link reconciler (all platforms)
+
+§6.2's machine, with the numbers §6.2 leaves open fixed here:
+
+- States `unlinked → requesting → verifying → linked`, plus `backoff(n)`
+  and `failed`. An explicit transition table; every (state, input) pair is
+  covered by a test; the last 100 transitions are kept in a ring journal
+  (`link_journal` command, §14b.5).
+- **Desired state** is `linked` while the device is in WiFi mode (from
+  status: BLE §7.3 before the handoff, `/ping` `mode` after it), else
+  `unlinked`.
+- **requesting** → `binder.request(ssid, password)`; `ssid` = the
+  device's BLE name (§3.6), `password` = §6's current constant. Budget
+  45 s for `available`, else backoff.
+- **verifying** → `GET /ping`, retried every 500 ms for up to 5 s (the
+  route is not usable the instant `available` fires). `device` must equal
+  the expected name, or `release` + `failed` (never talk to the wrong
+  logger). `proto` major ≠ 1 → `failed` with a firmware-update prompt.
+- First verified `/ping` after entering WiFi mode → `POST /handoff`; the
+  BLE disconnect that follows is expected and is not a `connectionLost`.
+- **linked**: `/ping` every 10 s; any successful operation resets the
+  timer; 3 consecutive failures → `requesting`.
+- **Backoff** 1 s / 2 s / 4 s, then `failed`. `failed` re-arms on user
+  Retry, app resume, or WiFi-mode re-entry. Android 10 (API 29) gets one
+  automatic re-request, then waits for Retry (its approval dialog may
+  re-prompt).
+- **Operation gate**: every WiFi operation goes through one serialized
+  facade per device; it waits up to 15 s for `linked`, and fails fast with
+  `wifi` (`detail.link = "failed"` or `"not_wifi_mode"`) otherwise.
+- **Exit**: `POST /wifi_off` when handed off, else BLE `CMD_WIFI_OFF`;
+  then `release`; then BLE reconnects once advertising resumes (first
+  attempt after 1 s, then 2 s apart, 5 attempts).
+- **Status while handed off**: `device_status` is served from `/ping`
+  (same `DeviceStatus` shape; §6.1 says the fields mirror §7.3).
+- **Downloads resume** with `Range` from the bytes already in the temp
+  file after a relink, instead of restarting (§6.1, §14a).
+
+On desktop the binder never fails to "bind", so the machine runs
+`verifying` against whatever network the user joined; a `/ping` that
+cannot connect surfaces as `wifi` with `detail.hint = "join_ap"` and the
+SSID, which the UI turns into "Join IDL0-XXXX in WiFi settings".
+
+#### 14b.4 Out of scope here
+
+iOS (separate lane, needs a Mac). Per-device WiFi passwords (TODO #16).
+Multiple loggers linked over WiFi at once: Android binds one network per
+request, so the reconciler allows one `linked` device at a time; BLE
+sessions to several loggers at once are fine.
+
+#### 14b.5 Contract changes (C3)
+
+Additive only; the C3 doc gains an "Android transport amendment" in the
+same change as the code.
+
+- New cross-cutting kind **`permission_denied`**, `detail: { permission:
+  "ble" | "location" }`. The UI explains and offers the system settings
+  page; not a failure toast.
+- `ConnectionInfo` gains `name: string` (the advertised name; the SSID
+  and the `/ping` identity check both key on it).
+- New `device_link_state(device_id) -> LinkState` and app event
+  `device_link_changed` (payload `LinkState`): `{ device_id, state:
+  "unlinked" | "requesting" | "verifying" | "linked" | "backoff" |
+  "failed", attempt: number, detail: string | null }`.
+- New `device_link_retry(device_id)` (re-arms `failed`) and
+  `link_journal(device_id) -> LinkTransition[]` for diagnosis.
+- `unsupported_platform` stops applying to BLE commands on Android once
+  this lands.
+
+#### 14b.6 Delivery order
+
+1. **Android BLE + WiFi, per-command flow kept** (L9 tasks 3–4): the
+   plugin, `AndroidBle`, `AndroidBinder`, `PlatformBle`, permissions, an
+   identity-checked `/ping` before HTTP, no handoff yet. Scan, connect,
+   status, record, WiFi list/download work on a phone.
+2. **The reconciler and `DeviceSessions`** on all platforms: handoff,
+   heartbeat, `/ping` status, `Range` resume, the C3 link commands, and the
+   Device tab's link-state UI.
+3. **Multicast lock + permission UX + greying** (L9 task 7): LAN sync
+   discovery on the phone; `permission_denied` and `unsupported_platform`
+   presented as states, not errors.
 
 ---
 
