@@ -4,10 +4,17 @@
 
 use tauri::Manager;
 
+#[cfg(target_os = "android")]
+mod mobile;
+
 /// Builds the Tauri app with the engine's commands and runs it.
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    tauri::Builder::default()
+    let builder = tauri::Builder::default();
+    // BLE, the logger's WiFi network and the multicast lock (SPEC §14b).
+    #[cfg(target_os = "android")]
+    let builder = builder.plugin(mobile::device_plugin());
+    builder
         .setup(|app| {
             let app_data_dir = app.path().app_data_dir()?;
             let app_config_dir = app.path().app_config_dir()?;

@@ -48,7 +48,7 @@ describe("connectionReducer", () => {
   it("connectionReducer — CONNECTED — phase connected, active set, the ConnectionInfo's firmware_version retained", () => {
     // Arrange
     const connecting = connectionReducer(initialConnectionState, { type: "CONNECT_START" });
-    const info = { device_id: "d1", firmware_version: "1.4.0", connected: true };
+    const info = { device_id: "d1", name: "IDL0-A3F2", firmware_version: "1.4.0", connected: true };
 
     // Act
     const connected = connectionReducer(connecting, { type: "CONNECTED", info });
@@ -64,13 +64,13 @@ describe("connectionReducer", () => {
     // Arrange
     const first = connectionReducer(initialConnectionState, {
       type: "CONNECTED",
-      info: { device_id: "d1", firmware_version: "1.4.0", connected: true },
+      info: { device_id: "d1", name: "IDL0-A3F2", firmware_version: "1.4.0", connected: true },
     });
 
     // Act
     const second = connectionReducer(first, {
       type: "CONNECTED",
-      info: { device_id: "d2", firmware_version: "1.5.0", connected: true },
+      info: { device_id: "d2", name: "IDL0-A3F2", firmware_version: "1.5.0", connected: true },
     });
 
     // Assert
@@ -82,11 +82,11 @@ describe("connectionReducer", () => {
     // Arrange
     const first = connectionReducer(initialConnectionState, {
       type: "CONNECTED",
-      info: { device_id: "d1", firmware_version: "1.4.0", connected: true },
+      info: { device_id: "d1", name: "IDL0-A3F2", firmware_version: "1.4.0", connected: true },
     });
     const both = connectionReducer(first, {
       type: "CONNECTED",
-      info: { device_id: "d2", firmware_version: "1.5.0", connected: true },
+      info: { device_id: "d2", name: "IDL0-A3F2", firmware_version: "1.5.0", connected: true },
     });
 
     // Act
@@ -101,7 +101,7 @@ describe("connectionReducer", () => {
     // Arrange
     const connected = connectionReducer(initialConnectionState, {
       type: "CONNECTED",
-      info: { device_id: "d1", firmware_version: "1.4.0", connected: true },
+      info: { device_id: "d1", name: "IDL0-A3F2", firmware_version: "1.4.0", connected: true },
     });
 
     // Act
@@ -132,11 +132,11 @@ describe("connectionReducer", () => {
     // Arrange
     const first = connectionReducer(initialConnectionState, {
       type: "CONNECTED",
-      info: { device_id: "d1", firmware_version: "1.4.0", connected: true },
+      info: { device_id: "d1", name: "IDL0-A3F2", firmware_version: "1.4.0", connected: true },
     });
     const both = connectionReducer(first, {
       type: "CONNECTED",
-      info: { device_id: "d2", firmware_version: "1.5.0", connected: true },
+      info: { device_id: "d2", name: "IDL0-A3F2", firmware_version: "1.5.0", connected: true },
     });
     const switchedToD1 = connectionReducer(both, { type: "SWITCH_ACTIVE", deviceId: "d1" });
 
@@ -152,7 +152,7 @@ describe("connectionReducer", () => {
   it("connectionReducer — DISCONNECTED for the only connected device — phase idle, active cleared", () => {
     // Arrange
     const connecting = connectionReducer(initialConnectionState, { type: "CONNECT_START" });
-    const info = { device_id: "d1", firmware_version: "1.4.0", connected: true };
+    const info = { device_id: "d1", name: "IDL0-A3F2", firmware_version: "1.4.0", connected: true };
     const connected = connectionReducer(connecting, { type: "CONNECTED", info });
 
     // Act
@@ -168,11 +168,11 @@ describe("connectionReducer", () => {
     // Arrange
     const first = connectionReducer(initialConnectionState, {
       type: "CONNECTED",
-      info: { device_id: "d1", firmware_version: "1.4.0", connected: true },
+      info: { device_id: "d1", name: "IDL0-A3F2", firmware_version: "1.4.0", connected: true },
     });
     const both = connectionReducer(first, {
       type: "CONNECTED",
-      info: { device_id: "d2", firmware_version: "1.5.0", connected: true },
+      info: { device_id: "d2", name: "IDL0-A3F2", firmware_version: "1.5.0", connected: true },
     });
 
     // Act

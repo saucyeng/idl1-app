@@ -65,4 +65,28 @@ describe("describeIpcError", () => {
     expect(call).not.toThrow();
     expect(describeIpcError(error).length).toBeGreaterThan(0);
   });
+
+  it("describeIpcError — wifi with join_ap hint — names the network to join", () => {
+    // Arrange
+    const error = { kind: "wifi", message: "GET /ping failed", detail: { hint: "join_ap", ssid: "IDL0-A3F2" } };
+
+    // Act
+    const text = describeIpcError(error);
+
+    // Assert
+    expect(text).toContain("IDL0-A3F2");
+    expect(text.toLowerCase()).toContain("join");
+  });
+
+  it("describeIpcError — kind permission_denied — asks for the permission, not a retry", () => {
+    // Arrange
+    const error = { kind: "permission_denied", message: "denied", detail: { permission: "ble" } };
+
+    // Act
+    const text = describeIpcError(error);
+
+    // Assert
+    expect(text.toLowerCase()).toContain("permission");
+    expect(text).not.toContain("denied");
+  });
 });

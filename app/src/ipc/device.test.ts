@@ -11,7 +11,7 @@ describe("bleConnect", () => {
   it("ble_connect resolves — calls invoke with deviceId and returns the value unchanged", async () => {
     // Arrange
     const { invoke } = await import("@tauri-apps/api/core");
-    const info = { device_id: "d1", firmware_version: "1.2.3", connected: true };
+    const info = { device_id: "d1", name: "IDL0-A3F2", firmware_version: "1.2.3", connected: true };
     (invoke as ReturnType<typeof vi.fn>).mockResolvedValue(info);
     const { bleConnect } = await import("./device");
 
@@ -44,7 +44,7 @@ describe("connectDevice", () => {
   it("connect_device resolves — calls invoke with the device id", async () => {
     // Arrange
     const { invoke } = await import("@tauri-apps/api/core");
-    const info = { device_id: "d1", firmware_version: "1.2.3", connected: true };
+    const info = { device_id: "d1", name: "IDL0-A3F2", firmware_version: "1.2.3", connected: true };
     (invoke as ReturnType<typeof vi.fn>).mockResolvedValue(info);
     const { connectDevice } = await import("./device");
 

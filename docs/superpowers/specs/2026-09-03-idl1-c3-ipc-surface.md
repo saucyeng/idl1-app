@@ -3200,3 +3200,27 @@ through:
 No command signature changed — both additions are new fields on existing
 return/stream payload shapes, so no `app/src/ipc/` call-site rewrite is
 required, only new fields becoming available to read.
+
+### Android transport amendment (SPEC §14b, step 1)
+
+*Added post-sign (2026-09-25, L9 tasks 3–4).* Additive only (§5):
+
+- New cross-cutting kind **`permission_denied`** — the OS refused a
+  runtime permission the command needs (Android's Nearby devices /
+  location grants for BLE). `detail` carries `{ permission: "ble" }`. The
+  UI explains and points at the system settings page; never a failure
+  toast. Raised by every BLE command on Android.
+- `ConnectionInfo` (§3.8) gains **`name: string`**, the advertised name
+  (e.g. `"IDL0-A3F2"`): the logger's SSID and the name `/ping` must report
+  (SPEC §14b.3). Empty only if the platform reported none.
+- `wifi` errors from `list_device_files`, `download_file` and
+  `push_firmware` may carry `detail: { hint: "join_ap", ssid }` (the
+  logger's AP never answered `/ping` — on desktop, the user has not joined
+  it) or `{ hint: "firmware_update", proto }` (a WiFi protocol major this
+  app does not speak).
+- `unsupported_platform` no longer applies to BLE commands on Android:
+  they run over the Kotlin `DevicePlugin`.
+
+The link-state commands of SPEC §14b.5 (`device_link_state`,
+`device_link_changed`, `device_link_retry`, `link_journal`) land with step
+2 and are added here then.

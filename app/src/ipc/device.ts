@@ -32,6 +32,8 @@ export interface DeviceDiscovered {
 /** `ble_connect`'s return (C3 §3.8). */
 export interface ConnectionInfo {
   device_id: string;
+  /** Advertised name, e.g. `IDL0-A3F2` (SPEC §14b.5): the logger's SSID. */
+  name: string;
   firmware_version: string;
   connected: boolean;
 }

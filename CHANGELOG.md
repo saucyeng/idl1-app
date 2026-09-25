@@ -6,6 +6,21 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 
 ### Added
 
+- **Android: BLE and WiFi to the logger (SPEC §14b step 1, L9 tasks 3–4)
+  [no-docs] (2026-09-25).** A Kotlin `DevicePlugin`
+  (`app/src-tauri/gen/android/.../device/`) does GATT (one serialized
+  operation queue per link, MTU 517, Status notifications), the SPEC §6.2
+  `WifiNetworkSpecifier` request with idl0's loopback proxy, runtime
+  Bluetooth permissions and the multicast lock. `AndroidBle` implements
+  `BleTransport` over it and reads §7.2's ACK byte directly (never
+  retried, so `0x81` is not mistaken for Android's error 129).
+  `platform::PlatformBle` is the one place the concrete BLE type is named.
+  Every WiFi path now checks the logger's identity and protocol over
+  `/ping` before trusting the link, on every platform; desktop explains
+  "join IDL0-XXXX" when the AP never answers. C3: `permission_denied`,
+  `ConnectionInfo.name`, `wifi` hints (amendment in C3 §6). Spec-first:
+  SPEC §14b.
+
 - **Release pipeline builds Android, Windows and Linux in one release
   [no-docs] (2026-09-23).** `release.yml` follows idl0-app's shape: on a
   `v*` tag a `version` job checks the tag against `tauri.conf.json`,

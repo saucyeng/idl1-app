@@ -244,8 +244,12 @@ are defined in `docs/superpowers/specs/2026-09-02-idl1-rewrite-design.md` §10.
       init`) landed 2026-09-23**, generated without a local SDK, built
       only in CI (`android-apk.yml`, `release.yml`, arm64 only; first CI
       build pending); task 1 (a local SDK/NDK) is still open and only
-      needed for on-device debugging. Tasks 3-7 remain: BLE still
-      constructs `BtleplugBle` on Android, no MulticastLock. **Task 8
+      needed for on-device debugging. **Tasks 3-4 (SPEC §14b step 1)
+      landed 2026-09-25**: Kotlin `DevicePlugin`, `AndroidBle`, the §6.2
+      loopback-proxy WiFi link, `/ping` identity checks; needs its first
+      on-phone run against an idl0. Next: SPEC §14b step 2 (the link
+      reconciler, handoff, heartbeat, `Range` resume, link-state UI), then
+      step 3 (MulticastLock wired into sync, permission/greying UX). **Task 8
       (mobile paper view) landed 2026-09-10** (R184/R185/R186): paper is the narrow `"sheet"`
       placement; viewer and editor alternate; `paperTheme` pref; one
       series-on-white palette shared with print. Open: landscape > 600 px

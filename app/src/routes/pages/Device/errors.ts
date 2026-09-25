@@ -7,6 +7,9 @@ export interface DeviceIpcError {
   /** Human-readable text from the Rust side. Not shown directly — this
    *  module's text is user-facing instead, one step removed from it. */
   message: string;
+  /** Structured detail, shape per kind (C3 §2). The Device tab reads
+   *  `wifi`'s `{ hint, ssid }` (SPEC §14b.3). */
+  detail?: Record<string, unknown>;
 }
 
 /** Fallback text for a kind this tab has no specific copy for. C3 §5: the
@@ -31,6 +34,8 @@ const KIND_TEXT: Record<string, string> = {
   not_found: "The device or file couldn't be found. It may have moved or been removed.",
   invalid_argument: "That value can't be saved as sent — check it's valid before trying again.",
   io: "A local file operation failed. Check disk space and try again.",
+  permission_denied:
+    "idl1 needs the Nearby devices (Bluetooth) permission to talk to the logger. Allow it in the system settings for idl1.",
   internal: GENERIC_TEXT,
 };
 
@@ -49,6 +54,14 @@ export function describeIpcError(error: DeviceIpcError): string {
   if (error.kind === "config") {
     const reason = error.message.trim();
     return reason === "" ? KIND_TEXT.config : `The device rejected the config it was sent: ${reason}`;
+  }
+  // SPEC §14b.3: the logger's AP never answered (desktop: the user hasn't
+  // joined it), or it answered with a protocol this app doesn't speak.
+  if (error.kind === "wifi" && error.detail?.hint === "join_ap" && typeof error.detail.ssid === "string") {
+    return `Couldn't reach ${error.detail.ssid} over WiFi. Join the ${error.detail.ssid} network in your WiFi settings, then try again.`;
+  }
+  if (error.kind === "wifi" && error.detail?.hint === "firmware_update") {
+    return "This logger's firmware speaks a different WiFi protocol. Update its firmware, then try again.";
   }
   return KIND_TEXT[error.kind] ?? GENERIC_TEXT;
 }
