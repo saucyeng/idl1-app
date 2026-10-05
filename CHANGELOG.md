@@ -450,6 +450,16 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 
 ### Changed
 
+- **Device tab fits one phone screen [no-docs] (2026-10-05).** The tab is
+  now a dashboard: the device picker (showing the advertised name, with
+  Disconnect inside its menu), a three-column grid of status tiles, the
+  record button, and two buttons into the Files and Config screens, which
+  used to sit below it on one long scrolling page. The grid gives each IMU
+  its own tile (IMU0 main, IMU1 front, IMU2 rear) and splits the satellite
+  count from the GPS fix state, beside SD free space, battery, heart rate
+  and mode (`statusTiles.ts`). The manual WiFi buttons moved to the Files
+  screen. The device list is no longer drawn inline at narrow widths; the
+  picker covers it.
 - **One source of truth for what a layout preset arranges [no-docs]
   (2026-09-20, ruling R239, reviewer finding).** `LAYOUT_PRESETS` no
   longer carries `columns`, `mathsOrientation` or `outputWidthPx`, and

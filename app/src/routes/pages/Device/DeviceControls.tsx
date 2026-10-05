@@ -39,7 +39,7 @@ const COMMAND_LABEL: Record<DeviceControlCommand, string> = {
 /** Renders `lastOutcome` as one line of text — SPEC/lane-brief rule: a
  *  `"not-observed"` outcome must never read as success (R63 item 1, R71
  *  correction). */
-function outcomeText(outcome: ControlOutcomeView): string {
+export function outcomeText(outcome: ControlOutcomeView): string {
   const label = COMMAND_LABEL[outcome.command];
   switch (outcome.outcome) {
     case "observed":

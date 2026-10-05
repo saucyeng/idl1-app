@@ -1,7 +1,10 @@
 import { useCallback, useEffect, useReducer, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import { ArrowLeft, FolderDown, SlidersHorizontal } from "lucide-react";
 
 import { SectionHead } from "../../../components/brand/SectionHead";
+import { Button } from "../../../components/ui/button";
+import { cn } from "../../../lib/utils";
 import { listProfiles, saveProfile, deleteProfile } from "../../../ipc/app";
 import { listSessions } from "../../../ipc/catalog";
 import { bleScan, connectDevice, deviceControl, deviceStatus, disconnectDevice } from "../../../ipc/device";
@@ -11,7 +14,7 @@ import { transitionObserved } from "./control";
 import { connectionReducer, initialConnectionState } from "./connection";
 import { defaultConfig } from "./config/defaults";
 import type { DeviceConfig } from "./config/model";
-import DeviceControls from "./DeviceControls";
+import DeviceControls, { outcomeText } from "./DeviceControls";
 import type { ControlOutcomeView } from "./DeviceControls";
 import DeviceFiles from "./DeviceFiles";
 import DeviceList from "./DeviceList";
@@ -88,6 +91,24 @@ function profileViewsEqual(a: ProfileView | undefined, b: ProfileView | undefine
   return JSON.stringify(a) === JSON.stringify(b);
 }
 
+/** Which of the tab's screens is showing. `main` is the one-screen
+ *  dashboard; `files` and `config` are the long sections it buries, each
+ *  one tap away and one tap back. */
+type DeviceView = "main" | "files" | "config";
+
+/** A buried screen's top row: a 44 px back button and the screen's name. */
+function SubViewHeader({ title, onBack }: { title: string; onBack: () => void }) {
+  return (
+    <div className="flex items-center gap-2">
+      <Button type="button" size="sm" className="h-11 gap-1" onClick={onBack}>
+        <ArrowLeft className="size-4" aria-hidden />
+        Device
+      </Button>
+      <h2 className="font-mono text-sm text-fg">{title}</h2>
+    </div>
+  );
+}
+
 /**
  * The Device tab (plan Task 1, wired live by L7b Task 10, R77.4). Scans/
  * connects over a managed BLE link (`connectDevice`/`disconnectDevice`),
@@ -122,6 +143,7 @@ export default function Device() {
   const [pendingControl, setPendingControl] = useState<DeviceControlCommand | null>(null);
   const [lastControlOutcome, setLastControlOutcome] = useState<ControlOutcomeView | null>(null);
   const [controlError, setControlError] = useState<string | null>(null);
+  const [view, setView] = useState<DeviceView>("main");
   // Wall-clock timestamp this session first observed `logging: true`, for
   // `HeroCard`'s recording timer (lane brief Open question 2) — reset to
   // null the moment a poll or control read-back reports `logging` false
@@ -357,23 +379,40 @@ export default function Device() {
   }, [state.activeDeviceId, linkLost]);
 
   // The device list is this activity's sidebar content (R220 item 1). Where
-  // there is no sidebar (narrow widths, R220 item 3) it renders inline at
-  // the top of the page instead, above the hero card it selects for.
+  // there is no sidebar (narrow widths, R220 item 3) it is not rendered at
+  // all: the hero card's own picker already scans, connects and switches,
+  // and an inline list would push the dashboard past one phone screen.
   const sidebarNode = useSidebarSlotNode("device");
   const deviceList = (
     <DeviceList state={state} onScan={onScan} onConnect={onConnect} onSwitchActive={onSwitchActive} />
   );
 
+  // Files needs a device; if the link goes away while that screen is open,
+  // fall back to the dashboard rather than showing an empty screen.
+  const shownView: DeviceView = view === "files" && state.activeDeviceId === null ? "main" : view;
+  // A start/stop that the status read-back did not confirm must be said on
+  // the dashboard, where the button that sent it lives. A confirmed one
+  // needs no line — the CTA itself has already changed.
+  const unconfirmedRecording =
+    lastControlOutcome !== null &&
+    lastControlOutcome.outcome !== "observed" &&
+    (lastControlOutcome.command === "start_recording" || lastControlOutcome.command === "stop_recording")
+      ? lastControlOutcome
+      : null;
+
   return (
     /* `h-full overflow-y-auto`, like every other route's own scroll
        container (ruling R221.1): the shell's content container clips rather
-       than scrolls, so a route that supplies no scrolling element of its own
-       loses whatever falls past the fold. This tab is a single 480 px column
-       of cards -- hero, WiFi, files, config -- that is easily taller than a
-       short window. */
-    <div className="device-tab mx-auto flex h-full max-w-[480px] flex-col gap-4 overflow-y-auto p-4">
-      {sidebarNode === null ? deviceList : createPortal(deviceList, sidebarNode)}
-      <section className="device-tab__status flex flex-col gap-2">
+       than scrolls. The dashboard (`main`) is built to fit one phone screen
+       -- hero card, then two 56 px buttons into the long sections -- so the
+       scroll only ever engages on the buried Files and Config screens, or if
+       an error note pushes the dashboard past a very short window. All three
+       screens stay mounted and are hidden with CSS, so a download in flight
+       or an unsaved config edit survives a trip back to the dashboard. */
+    <div className="device-tab mx-auto flex h-full max-w-[480px] flex-col overflow-y-auto p-3">
+      {sidebarNode !== null && createPortal(deviceList, sidebarNode)}
+
+      <div className={cn("device-tab__main flex flex-col gap-3", shownView !== "main" && "hidden")}>
         <HeroCard
           connectionState={state}
           status={statusState.status}
@@ -387,59 +426,76 @@ export default function Device() {
           onControl={onControl}
         />
         {statusState.error && <p role="status" className="font-mono text-sm text-fg-dim">{describeIpcError(statusState.error)}</p>}
-      </section>
+        {unconfirmedRecording && (
+          <p role="status" className="font-mono text-sm text-hivis" data-outcome={unconfirmedRecording.outcome}>
+            {outcomeText(unconfirmedRecording)}
+          </p>
+        )}
+        {controlError && <p role="alert" className="font-mono text-sm text-brand-accent">{controlError}</p>}
+        <div className="grid grid-cols-2 gap-3">
+          <Button type="button" className="h-14 gap-2 text-base" onClick={() => setView("files")} disabled={state.activeDeviceId === null}>
+            <FolderDown className="size-5" aria-hidden />
+            Files
+          </Button>
+          <Button type="button" className="h-14 gap-2 text-base" onClick={() => setView("config")}>
+            <SlidersHorizontal className="size-5" aria-hidden />
+            Config
+          </Button>
+        </div>
+      </div>
 
       {state.activeDeviceId !== null && (
-        <section className="device-tab__controls flex flex-col gap-2">
-          <SectionHead>WiFi</SectionHead>
-          <DeviceControls
-            status={statusState.status}
-            pending={pendingControl}
-            lastOutcome={lastControlOutcome}
-            onControl={onControl}
+        <div className={cn("device-tab__files-view flex flex-col gap-4", shownView !== "files" && "hidden")}>
+          <SubViewHeader title="Files" onBack={() => setView("main")} />
+          <section className="device-tab__files flex flex-col gap-2">
+            <DeviceFiles deviceId={deviceId} knownSessionIds={knownSessionIds} />
+          </section>
+          <section className="device-tab__controls flex flex-col gap-2">
+            <SectionHead>WiFi</SectionHead>
+            <DeviceControls
+              status={statusState.status}
+              pending={pendingControl}
+              lastOutcome={lastControlOutcome}
+              onControl={onControl}
+            />
+            {controlError && <p role="alert" className="font-mono text-sm text-brand-accent">{controlError}</p>}
+          </section>
+        </div>
+      )}
+
+      <div className={cn("device-tab__config-view flex flex-col gap-4", shownView !== "config" && "hidden")}>
+        <SubViewHeader title="Config" onBack={() => setView("main")} />
+        <section className="device-tab__config flex flex-col gap-3 rounded-[var(--radius-card)] border border-rule bg-surface p-4">
+          <ProfileBar
+            state={profilesState}
+            dispatch={dispatchProfiles}
+            deviceId={deviceId}
+            dirty={profileDirty}
+            saving={savingProfile}
+            onSave={onSaveActiveProfile}
+            onDelete={onDeleteProfile}
+            skipped={skippedProfiles}
+            error={profileError}
           />
-          {controlError && <p role="alert" className="font-mono text-sm text-brand-accent">{controlError}</p>}
+          {activeProfile === null && (
+            <p role="status" className="device-tab__config-placeholder-notice font-mono text-sm text-fg-dim">
+              No profile active — create or select one above to edit and push a config.
+            </p>
+          )}
+          {!hasPulledConfig && (
+            <p role="status" className="device-tab__config-placeholder-notice font-mono text-sm text-fg-dim">
+              No device configuration loaded — showing defaults. Pull from device is not available yet.
+            </p>
+          )}
+          <ChannelsTable sources={listSources(config)} config={config} onConfigChange={onConfigChange} />
+          <PushConfigBar
+            deviceId={deviceId}
+            config={activeProfile?.config ?? null}
+            connected={state.activeDeviceId !== null}
+            deviceStatus={statusState.status}
+          />
         </section>
-      )}
-
-      {state.activeDeviceId !== null && (
-        <section className="device-tab__files flex flex-col gap-2">
-          <SectionHead>Files</SectionHead>
-          <DeviceFiles deviceId={deviceId} knownSessionIds={knownSessionIds} />
-        </section>
-      )}
-
-      <section className="device-tab__config flex flex-col gap-3 rounded-[var(--radius-card)] border border-rule bg-surface p-4">
-        <SectionHead>Config</SectionHead>
-        <ProfileBar
-          state={profilesState}
-          dispatch={dispatchProfiles}
-          deviceId={deviceId}
-          dirty={profileDirty}
-          saving={savingProfile}
-          onSave={onSaveActiveProfile}
-          onDelete={onDeleteProfile}
-          skipped={skippedProfiles}
-          error={profileError}
-        />
-        {activeProfile === null && (
-          <p role="status" className="device-tab__config-placeholder-notice font-mono text-sm text-fg-dim">
-            No profile active — create or select one above to edit and push a config.
-          </p>
-        )}
-        {!hasPulledConfig && (
-          <p role="status" className="device-tab__config-placeholder-notice font-mono text-sm text-fg-dim">
-            No device configuration loaded — showing defaults. Pull from device is not available yet.
-          </p>
-        )}
-        <ChannelsTable sources={listSources(config)} config={config} onConfigChange={onConfigChange} />
-        <PushConfigBar
-          deviceId={deviceId}
-          config={activeProfile?.config ?? null}
-          connected={state.activeDeviceId !== null}
-          deviceStatus={statusState.status}
-        />
-      </section>
+      </div>
     </div>
   );
 }
