@@ -9,7 +9,7 @@ import type { DeviceControlCommand, DeviceStatus } from "../../../ipc/device";
 import { imuPartial, setGps, setImuEnabled, setImuRate, setImuSlot } from "./config/edit";
 import type { ImuSlotKey } from "./config/edit";
 import type { DeviceConfig } from "./config/model";
-import { ACCEL_RANGES_G, GPS_DYNAMIC_MODELS, GYRO_RANGES_DPS, IMU_ODR_HIGH_PERF_HZ, IMU_ODR_LOW_POWER_HZ } from "./config/validate";
+import { ACCEL_RANGES_G, GPS_DYNAMIC_MODELS, GYRO_RANGES_DPS, IMU_ODR_HZ } from "./config/validate";
 import AddChannelPicker from "./forms/AddChannelPicker";
 import AnalogForm from "./forms/AnalogForm";
 import DigitalForm from "./forms/DigitalForm";
@@ -133,7 +133,6 @@ function DraftNote() {
 
 function ImuBody({ slotKey, tile, draft, onDraftChange, status }: { slotKey: ImuSlotKey; tile: ModuleTile; draft: DeviceConfig; onDraftChange: (c: DeviceConfig) => void; status: DeviceStatus | null }) {
   const slot = draft.imu[slotKey];
-  const odrs = draft.imu.low_power_mode ? IMU_ODR_LOW_POWER_HZ : IMU_ODR_HIGH_PERF_HZ;
   const live = status?.[slotKey] ?? null;
   return (
     <div className="flex flex-col gap-4">
@@ -154,7 +153,7 @@ function ImuBody({ slotKey, tile, draft, onDraftChange, status }: { slotKey: Imu
       )}
       <Choice label="Accel range" options={ACCEL_RANGES_G} value={slot.accel_range_g} format={(g) => `±${g} g`} disabled={!slot.enabled} onChange={(g) => onDraftChange(setImuSlot(draft, slotKey, { accel_range_g: g }))} />
       <Choice label="Gyro range" options={GYRO_RANGES_DPS} value={slot.gyro_range_dps} format={(d) => `${d}°/s`} disabled={!slot.enabled} onChange={(d) => onDraftChange(setImuSlot(draft, slotKey, { gyro_range_dps: d }))} />
-      <Choice label="Sample rate — shared by all IMUs" options={odrs} value={draft.imu.sample_rate_hz} format={(hz) => `${hz} Hz`} onChange={(hz) => onDraftChange(setImuRate(draft, hz))} />
+      <Choice label="Sample rate — shared by all IMUs" options={IMU_ODR_HZ} value={draft.imu.sample_rate_hz} format={(hz) => `${hz} Hz`} onChange={(hz) => onDraftChange(setImuRate(draft, hz))} />
       <DraftNote />
     </div>
   );

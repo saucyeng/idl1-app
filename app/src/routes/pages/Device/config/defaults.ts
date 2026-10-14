@@ -1,10 +1,12 @@
 import type { AnalogChannel, DeviceConfig, DigitalChannel, GpsBlock, ImuBlock, ImuSlot, WheelSlot } from "./model";
 
-/** SPEC §8 worked example's IMU sample rate — a valid high-performance ODR. Hz. */
-export const DEFAULT_IMU_SAMPLE_RATE_HZ = 833;
-/** SPEC §8 worked example's top-level accel range, inherited by any IMU slot
- *  that does not override it (SPEC §8, "Per-IMU range resolution"). g. */
-export const DEFAULT_IMU_ACCEL_RANGE_G = 32;
+/** The firmware's shipped IMU rate (`imu_ranges.h`
+ *  `IDL1_IMU_DEFAULT_ODR_HZ`: the bus-safe shared rate with both pods on one
+ *  400 kHz I2C bus). Hz. */
+export const DEFAULT_IMU_SAMPLE_RATE_HZ = 480;
+/** The firmware's shipped low-g accel range, inherited by any IMU slot that
+ *  does not override it (SPEC §8, "Per-IMU range resolution"). g. */
+export const DEFAULT_IMU_ACCEL_RANGE_G = 16;
 /** SPEC §8 worked example's top-level gyro range, inherited likewise. dps. */
 export const DEFAULT_IMU_GYRO_RANGE_DPS = 2000;
 

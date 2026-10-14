@@ -16,14 +16,14 @@ const SPEC_WORKED_EXAMPLE = {
     default_rider: "Rider Name",
   },
   imu: {
-    sample_rate_hz: 833,
-    accel_range_g: 32,
+    sample_rate_hz: 480,
+    accel_range_g: 16,
     gyro_range_dps: 2000,
     low_power_mode: false,
     high_performance_mode: true,
     imu0: {
       enabled: true,
-      accel_range_g: 32,
+      accel_range_g: 16,
       gyro_range_dps: 2000,
       channels: { accel_x: true, accel_y: true, accel_z: true, gyro_x: true, gyro_y: true, gyro_z: true },
     },
@@ -104,7 +104,7 @@ describe("validateConfig", () => {
     expect(issues).toEqual([]);
   });
 
-  it("validateConfig — imu.sample_rate_hz 800 in high-performance mode — one error naming the valid ODR set", () => {
+  it("validateConfig — imu.sample_rate_hz 800 (an idl0-era rate) — one error naming the valid ODR set", () => {
     // Arrange
     const config = workedConfig();
     config.imu.sample_rate_hz = 800;
@@ -116,14 +116,13 @@ describe("validateConfig", () => {
     const rateIssues = issues.filter((i) => i.path === "imu.sample_rate_hz");
     expect(rateIssues).toHaveLength(1);
     expect(rateIssues[0].severity).toBe("error");
-    expect(rateIssues[0].message).toMatch(/12\.5.*1666|1666.*12\.5/);
+    expect(rateIssues[0].message).toMatch(/15.*7680/);
   });
 
-  it("validateConfig — imu.sample_rate_hz 1666 with low_power_mode true — an error: 1666 is high-perf only (SPEC §8's two rate tables)", () => {
+  it("validateConfig — imu.sample_rate_hz 1666, the old LSM6DSO32 top rate — an error", () => {
     // Arrange
     const config = workedConfig();
     config.imu.sample_rate_hz = 1666;
-    config.imu.low_power_mode = true;
 
     // Act
     const issues = validateConfig(config);
@@ -166,7 +165,7 @@ describe("validateConfig", () => {
     expect(issues.filter((i) => i.path === "imu.low_power_mode")).toHaveLength(0);
   });
 
-  it("validateConfig — imu0.accel_range_g 20 — an error listing ±4/8/16/32 g", () => {
+  it("validateConfig — imu0.accel_range_g 20 — an error listing ±2/4/8/16 g", () => {
     // Arrange
     const config = workedConfig();
     config.imu.imu0.accel_range_g = 20;
@@ -180,8 +179,8 @@ describe("validateConfig", () => {
     expect(rangeIssues[0].severity).toBe("error");
     expect(rangeIssues[0].message).toContain("4");
     expect(rangeIssues[0].message).toContain("8");
+    expect(rangeIssues[0].message).toContain("2 g");
     expect(rangeIssues[0].message).toContain("16");
-    expect(rangeIssues[0].message).toContain("32");
   });
 
   it("validateConfig — imu0 enabled with every axis false — a warning, not an error: an enabled IMU logging nothing is a mistake, not undefined hardware behaviour", () => {

@@ -1,23 +1,21 @@
 import type { AnalogChannel, DeviceConfig, DigitalChannel, GpsBlock, HrmBlock, ImuSlot, WheelSlot } from "./model";
 
-/** High-performance-mode IMU output data rates (SPEC §8, "Valid
- *  `sample_rate_hz` values" table). Hz. Applies when `imu.low_power_mode`
- *  is `false`. */
-export const IMU_ODR_HIGH_PERF_HZ: readonly number[] = [12.5, 26, 52, 104, 208, 416, 833, 1666];
+/** Valid `imu.sample_rate_hz` for the IDL1's LSM6DSV320X, Hz (SPEC §8;
+ *  idl1-firmware decisions.md P2 and `imu_ranges.h`). The chip's 7.5 Hz step
+ *  is left out because the firmware's integer field can't hold it. One set
+ *  in every power mode, unlike the idl0's LSM6DSO32. */
+export const IMU_ODR_HZ: readonly number[] = [15, 30, 60, 120, 240, 480, 960, 1920, 3840, 7680];
 
-/** Low-power-mode IMU output data rates (SPEC §8, same table). Hz. Applies
- *  when `imu.low_power_mode` is `true`. */
-export const IMU_ODR_LOW_POWER_HZ: readonly number[] = [1.6, 12.5, 26, 52, 104, 208];
+/** Valid low-g accelerometer full-scale ranges for the LSM6DSV320X, g
+ *  (SPEC §8; decisions.md P1). Shared by the top-level default and every
+ *  `imuN.accel_range_g` override. ±32 g and up exist only on the chip's
+ *  separate high-g accelerometer. */
+export const ACCEL_RANGES_G: readonly number[] = [2, 4, 8, 16];
 
-/** Valid accel full-scale ranges for the LSM6DSO32 (SPEC §8, "Configurable
- *  chip options": "accel range (±4/8/16/32g)"). g. Shared by the top-level
- *  default and every `imuN.accel_range_g` override. */
-export const ACCEL_RANGES_G: readonly number[] = [4, 8, 16, 32];
-
-/** Valid gyro full-scale ranges for the LSM6DSO32 (SPEC §8, "Configurable
- *  chip options": "gyro range (±125–2000 dps)"). dps. Shared by the
+/** Valid gyro full-scale ranges for the LSM6DSV320X, dps (SPEC §8;
+ *  decisions.md P3: ±125 dps is gone, ±4000 dps is new). Shared by the
  *  top-level default and every `imuN.gyro_range_dps` override. */
-export const GYRO_RANGES_DPS: readonly number[] = [125, 250, 500, 1000, 2000];
+export const GYRO_RANGES_DPS: readonly number[] = [250, 500, 1000, 2000, 4000];
 
 /** Minimum valid `gps.sample_rate_hz` (SPEC §8: "u-blox MAX-M10S: sample
  *  rate (1–10 Hz)"). Hz. */
@@ -66,17 +64,10 @@ function pushWarning(issues: ValidationIssue[], path: string, message: string): 
   issues.push({ path, severity: "warning", message });
 }
 
-/** Checks `value` against SPEC §8's IMU ODR table for the mode `imu` is
- *  currently in: `low_power_mode` selects `IMU_ODR_LOW_POWER_HZ`, otherwise
- *  `IMU_ODR_HIGH_PERF_HZ` — the two tables are disjoint from each other. */
+/** Checks `imu.sample_rate_hz` against the LSM6DSV320X ODR set. */
 function checkImuSampleRate(imu: DeviceConfig["imu"], issues: ValidationIssue[]): void {
-  const validRates = imu.low_power_mode ? IMU_ODR_LOW_POWER_HZ : IMU_ODR_HIGH_PERF_HZ;
-  if (!validRates.includes(imu.sample_rate_hz)) {
-    pushError(
-      issues,
-      "imu.sample_rate_hz",
-      `${imu.sample_rate_hz} Hz is not a valid ODR for ${imu.low_power_mode ? "low-power" : "high-performance"} mode (SPEC §8); valid values: ${validRates.join(", ")} Hz`,
-    );
+  if (!IMU_ODR_HZ.includes(imu.sample_rate_hz)) {
+    pushError(issues, "imu.sample_rate_hz", `${imu.sample_rate_hz} Hz is not a valid IMU rate (SPEC §8); valid values: ${IMU_ODR_HZ.join(", ")} Hz`);
   }
 }
 

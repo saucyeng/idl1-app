@@ -141,9 +141,9 @@ export interface ParseResult {
   repairs: Repair[];
 }
 
-/** IMU ODRs SPEC §8's valid-value table lists across both power modes
- *  (high-performance: 12.5–1666 Hz; low-power: 1.6–208 Hz). Hz. */
-const VALID_IMU_ODR_HZ = new Set([1.6, 12.5, 26, 52, 104, 208, 416, 833, 1666]);
+/** LSM6DSV320X IMU ODRs, Hz (SPEC §8; same set as `validate.ts`'s
+ *  `IMU_ODR_HZ`). */
+const VALID_IMU_ODR_HZ = new Set([15, 30, 60, 120, 240, 480, 960, 1920, 3840, 7680]);
 
 /** SPEC §8's `gps.dynamic_model` valid-value set. */
 const VALID_GPS_DYNAMIC_MODELS = new Set(["portable", "pedestrian", "automotive", "sea", "airborne"]);

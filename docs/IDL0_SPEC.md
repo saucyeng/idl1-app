@@ -843,7 +843,9 @@ No default entries — users add channels via the Device tab as they wire up sen
 
 **Configurable chip options:**
 
-LSM6DSO32: sample rate (12.5–1666 Hz), accel range (±4/8/16/32g), gyro range (±125–2000 dps), high-performance vs low-power mode, anti-aliasing filter bandwidth.
+LSM6DSV320X (IDL1, all three IMUs; idl1-firmware decisions.md P1–P3, `imu_ranges.h`): sample rate 15–7680 Hz (set below), low-g accel range ±2/4/8/16 g, gyro range ±250/500/1000/2000/4000 dps, operating mode via `high_performance_mode`. The chip's separate high-g accelerometer (±32–320 g) is not yet in this schema; its field names `imu.hg_range_g` / `imu.hg_sample_rate_hz` are reserved (decisions.md Q8) and the app's handling is open as of 2026-10-14.
+
+LSM6DSO32 (IDL0 only, kept for IDL0 units): sample rate (12.5–1666 Hz), accel range (±4/8/16/32g), gyro range (±125–2000 dps), high-performance vs low-power mode.
 
 u-blox MAX-M10S: sample rate (1–10 Hz), dynamic model (portable/pedestrian/automotive/sea/airborne), NMEA sentences (GGA+RMC default), SBAS enable.
 
@@ -851,7 +853,7 @@ u-blox MAX-M10S: sample rate (1–10 Hz), dynamic model (portable/pedestrian/aut
 
 | Config path | Valid values | On invalid value |
 |-------------|-------------|-----------------|
-| `imu.sample_rate_hz` | High-perf: 12.5, 26, 52, 104, 208, 416, 833, 1666 Hz. Low-power: 1.6, 12.5, 26, 52, 104, 208 Hz. | Undefined — firmware maps directly to ODR register; off-list values produce undefined chip behavior. |
+| `imu.sample_rate_hz` | IDL1: 15, 30, 60, 120, 240, 480, 960, 1920, 3840, 7680 Hz in every mode (the chip's 7.5 Hz is not representable in the integer field). Default 480. (IDL0: high-perf 12.5–1666, low-power 1.6–208.) | IDL1 firmware rejects the field and keeps its default; never remapped. |
 | `gps.sample_rate_hz` | Integer 1–10 Hz | Firmware clamps or rejects. |
 | `analog.sample_rate_hz` | **Not yet defined.** ADC chip and valid rate set unspecified — define before implementing analog parsing. | — |
 
@@ -885,12 +887,12 @@ emits, so a reviewer can check the code against this table line by line.
 
 | Path | Severity | Condition | Citation |
 |------|----------|-----------|----------|
-| `imu.sample_rate_hz` | error | not in the high-perf or low-power ODR list for the current `imu.low_power_mode` | §8 "Valid `sample_rate_hz` values" |
+| `imu.sample_rate_hz` | error | not in the IDL1 ODR set | §8 "Valid `sample_rate_hz` values" |
 | `imu.low_power_mode` | warning | `imu.high_performance_mode` also true | SPEC §8 gap — the two flags are framed as one physical toggle but §8 never states which wins when both are set; tracked note 2026-09-05 |
-| `imu.accel_range_g` | error | not one of ±4/8/16/32 g | §8 "Configurable chip options" |
-| `imu.gyro_range_dps` | error | not one of ±125/250/500/1000/2000 dps | §8 "Configurable chip options" |
-| `imuN.accel_range_g` (N=0,1,2) | error | not one of ±4/8/16/32 g | §8 "Per-IMU range resolution" |
-| `imuN.gyro_range_dps` (N=0,1,2) | error | not one of ±125/250/500/1000/2000 dps | §8 "Per-IMU range resolution" |
+| `imu.accel_range_g` | error | not one of ±2/4/8/16 g | §8 "Configurable chip options" |
+| `imu.gyro_range_dps` | error | not one of ±250/500/1000/2000/4000 dps | §8 "Configurable chip options" |
+| `imuN.accel_range_g` (N=0,1,2) | error | not one of ±2/4/8/16 g | §8 "Per-IMU range resolution" |
+| `imuN.gyro_range_dps` (N=0,1,2) | error | not one of ±250/500/1000/2000/4000 dps | §8 "Per-IMU range resolution" |
 | `imuN.channels` (N=0,1,2) | warning | `imuN.enabled` true and every axis channel false | load-bearing invariant: an enabled IMU logging nothing is a mistake |
 | `imuN.channels` (N=0,1,2) | error | `imuN.enabled` true and some but not all six axis channels are true | decision 70 / ruling R155: the app only ever writes an all-or-nothing channel mask; a partial mask stays wire-legal and importer-readable but is no longer something this app sends |
 | `gps.sample_rate_hz` | error | not an integer | §8 "Integer 1-10 Hz" |

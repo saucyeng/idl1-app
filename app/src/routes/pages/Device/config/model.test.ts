@@ -14,14 +14,14 @@ const SPEC_WORKED_EXAMPLE = {
     default_rider: "Rider Name",
   },
   imu: {
-    sample_rate_hz: 833,
-    accel_range_g: 32,
+    sample_rate_hz: 480,
+    accel_range_g: 16,
     gyro_range_dps: 2000,
     low_power_mode: false,
     high_performance_mode: true,
     imu0: {
       enabled: true,
-      accel_range_g: 32,
+      accel_range_g: 16,
       gyro_range_dps: 2000,
       channels: { accel_x: true, accel_y: true, accel_z: true, gyro_x: true, gyro_y: true, gyro_z: true },
     },
@@ -97,7 +97,7 @@ describe("parseConfig", () => {
     expect(result.config.config_version).toBe(1);
     expect(result.config.device_id).toBe("XXXXXXXXXXXX");
     expect(result.config.bike_profile).toEqual({ name: "Trek Session 2024", default_rider: "Rider Name" });
-    expect(result.config.imu.sample_rate_hz).toBe(833);
+    expect(result.config.imu.sample_rate_hz).toBe(480);
     expect(result.config.imu.imu1.accel_range_g).toBe(16);
     expect(result.config.gps).toEqual({ sample_rate_hz: 5, dynamic_model: "automotive", nmea_sentences: ["GGA", "RMC"], sbas_enabled: true });
     expect(result.config.wheel_speed.front.enabled).toBe(false);
@@ -150,7 +150,7 @@ describe("parseConfig", () => {
     // Arrange
     const json = {
       ...SPEC_WORKED_EXAMPLE,
-      imu: { sample_rate_hz: 833, accel_range_g: 8, gyro_range_dps: 250, low_power_mode: false, high_performance_mode: true },
+      imu: { sample_rate_hz: 480, accel_range_g: 8, gyro_range_dps: 250, low_power_mode: false, high_performance_mode: true },
     };
 
     // Act
@@ -236,12 +236,12 @@ describe("parseConfig", () => {
       device_id: 12345,
       bike_profile: "not an object",
       imu: {
-        sample_rate_hz: 833,
+        sample_rate_hz: 480,
         accel_range_g: "not-a-number",
         gyro_range_dps: 2000,
         low_power_mode: "not-a-boolean",
         high_performance_mode: true,
-        imu0: { enabled: "not-a-boolean", accel_range_g: 32, gyro_range_dps: 2000, channels: {} },
+        imu0: { enabled: "not-a-boolean", accel_range_g: 16, gyro_range_dps: 2000, channels: {} },
         imu1: SPEC_WORKED_EXAMPLE.imu.imu1,
         imu2: SPEC_WORKED_EXAMPLE.imu.imu2,
       },
@@ -260,7 +260,7 @@ describe("parseConfig", () => {
     expect(result.config.config_version).toBe(1);
     expect(result.config.device_id).toBe("");
     expect(result.config.bike_profile).toEqual({ name: "", default_rider: "" });
-    expect(result.config.imu.accel_range_g).toBe(32);
+    expect(result.config.imu.accel_range_g).toBe(16);
     expect(result.config.imu.low_power_mode).toBe(false);
     expect(result.config.imu.imu0.enabled).toBe(false);
     expect(result.config.gps.dynamic_model).toBe("automotive");

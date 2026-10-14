@@ -581,6 +581,13 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 
 ### Fixed
 
+- **IMU settings use the IDL1's LSM6DSV320X values [docs] (2026-10-14).**
+  The app still offered the idl0 LSM6DSO32's lists, which the IDL1
+  firmware rejects. New lists: rate 15–7680 Hz (10 steps, one set in every
+  power mode), low-g accel ±2/4/8/16 g, gyro ±250–4000 dps. Defaults now
+  match the firmware's (480 Hz, ±16 g, ±2000 dps). The high-g
+  accelerometer is not in the app yet. Spec-during: SPEC §8.
+
 - **Android: the page stays out from under the system bars [no-docs]
   (2026-10-14).** Edge-to-edge drew the webview beneath the status bar and
   the gesture bar, so the bottom tab labels ran off the screen. The main
