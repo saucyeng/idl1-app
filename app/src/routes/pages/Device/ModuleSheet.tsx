@@ -9,7 +9,8 @@ import type { DeviceControlCommand, DeviceStatus } from "../../../ipc/device";
 import { imuPartial, setGps, setImuEnabled, setImuHg, setImuHgShared, setImuRate, setImuSlot } from "./config/edit";
 import type { ImuSlotKey } from "./config/edit";
 import type { DeviceConfig } from "./config/model";
-import { ACCEL_RANGES_G, GPS_DYNAMIC_MODELS, GYRO_RANGES_DPS, HG_ODR_HZ, HG_RANGES_G, IMU_ODR_HZ } from "./config/validate";
+import { GPS_DYNAMIC_MODELS, HG_ODR_HZ, HG_RANGES_G, imuValueSets } from "./config/validate";
+import type { Hardware } from "./config/validate";
 import AddChannelPicker from "./forms/AddChannelPicker";
 import AnalogForm from "./forms/AnalogForm";
 import DigitalForm from "./forms/DigitalForm";
@@ -34,6 +35,9 @@ export interface ModuleSheetProps {
   onDraftChange: (next: DeviceConfig) => void;
   /** Re-reads the logger's config after a failed read. */
   onRetryRead: () => void;
+  /** The logger's hardware: picks the IMU value sets and whether the pods
+   *  offer high-g (`hardwareFromName`). */
+  hardware: Hardware;
   /** Connected logger's name, id and firmware, for the Bluetooth sheet. */
   logger: { name: string; deviceId: string; firmware: string | null };
   /** Sends a `device_control` command (WiFi on/off). */
@@ -132,8 +136,9 @@ function DraftNote() {
   return <p className="text-xs text-fg-dim">Changes wait on the Logger screen until you tap Send to logger, which restarts the logger.</p>;
 }
 
-function ImuBody({ slotKey, tile, draft, onDraftChange, status }: { slotKey: ImuSlotKey; tile: ModuleTile; draft: DeviceConfig; onDraftChange: (c: DeviceConfig) => void; status: DeviceStatus | null }) {
+function ImuBody({ slotKey, tile, draft, onDraftChange, status, hardware }: { slotKey: ImuSlotKey; tile: ModuleTile; draft: DeviceConfig; onDraftChange: (c: DeviceConfig) => void; status: DeviceStatus | null; hardware: Hardware }) {
   const slot = draft.imu[slotKey];
+  const sets = imuValueSets(hardware, draft.imu.low_power_mode);
   const live = status?.[slotKey] ?? null;
   return (
     <div className="flex flex-col gap-4">
@@ -152,10 +157,10 @@ function ImuBody({ slotKey, tile, draft, onDraftChange, status }: { slotKey: Imu
           </button>
         </NoteBlock>
       )}
-      <Choice label="Accel range" options={ACCEL_RANGES_G} value={slot.accel_range_g} format={(g) => `±${g} g`} disabled={!slot.enabled} onChange={(g) => onDraftChange(setImuSlot(draft, slotKey, { accel_range_g: g }))} />
-      <Choice label="Gyro range" options={GYRO_RANGES_DPS} value={slot.gyro_range_dps} format={(d) => `${d}°/s`} disabled={!slot.enabled} onChange={(d) => onDraftChange(setImuSlot(draft, slotKey, { gyro_range_dps: d }))} />
-      <Choice label="Sample rate — shared by all IMUs" options={IMU_ODR_HZ} value={draft.imu.sample_rate_hz} format={(hz) => `${hz} Hz`} onChange={(hz) => onDraftChange(setImuRate(draft, hz))} />
-      {slotKey !== "imu0" && (
+      <Choice label="Accel range" options={sets.accelRangesG} value={slot.accel_range_g} format={(g) => `±${g} g`} disabled={!slot.enabled} onChange={(g) => onDraftChange(setImuSlot(draft, slotKey, { accel_range_g: g }))} />
+      <Choice label="Gyro range" options={sets.gyroRangesDps} value={slot.gyro_range_dps} format={(d) => `${d}°/s`} disabled={!slot.enabled} onChange={(d) => onDraftChange(setImuSlot(draft, slotKey, { gyro_range_dps: d }))} />
+      <Choice label="Sample rate — shared by all IMUs" options={sets.odrHz} value={draft.imu.sample_rate_hz} format={(hz) => `${hz} Hz`} onChange={(hz) => onDraftChange(setImuRate(draft, hz))} />
+      {slotKey !== "imu0" && sets.highG && (
         <>
           <SwitchRow
             label="Record high-g accel"
@@ -274,7 +279,7 @@ export default function ModuleSheet(props: ModuleSheetProps) {
       case "imu0":
       case "imu1":
       case "imu2":
-        return forms((d) => <ImuBody slotKey={kind} tile={t} draft={d} onDraftChange={onDraftChange} status={status} />);
+        return forms((d) => <ImuBody slotKey={kind} tile={t} draft={d} onDraftChange={onDraftChange} status={status} hardware={props.hardware} />);
       case "hr":
         return forms((d) => <HrmForm config={d} onConfigChange={onDraftChange} onClose={onClose} />);
       case "analog":

@@ -8,6 +8,7 @@ import type { DeviceConfig } from "./config/model";
 import { describeIpcError } from "./errors";
 import type { DeviceIpcError } from "./errors";
 import { changedSections } from "./loggerDraft";
+import type { Hardware } from "./config/validate";
 import { checkPushMode, preparePush } from "./push";
 
 /** Props for {@link SendBar}. */
@@ -18,6 +19,8 @@ export interface SendBarProps {
   /** `base` plus the unsent edits. */
   draft: DeviceConfig;
   status: DeviceStatus | null;
+  /** The logger's hardware, for validation (`hardwareFromName`). */
+  hardware: Hardware;
   /** Called after the logger accepted `draft`; it is restarting. */
   onSent: (sent: DeviceConfig) => void;
   /** Drops every unsent edit. */
@@ -31,11 +34,11 @@ export interface SendBarProps {
  * so the button stays disabled, with the reason, while it records or has
  * WiFi on; a config that fails validation shows its errors instead.
  */
-export default function SendBar({ deviceId, base, draft, status, onSent, onDiscard }: SendBarProps) {
+export default function SendBar({ deviceId, base, draft, hardware, status, onSent, onDiscard }: SendBarProps) {
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const changed = useMemo(() => changedSections(base, draft), [base, draft]);
-  const prepared = useMemo(() => preparePush(draft), [draft]);
+  const prepared = useMemo(() => preparePush(draft, hardware), [draft, hardware]);
   const mode = checkPushMode(status);
   if (changed.length === 0) return null;
 

@@ -6,6 +6,12 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 
 ### Added
 
+- **IDL0 loggers keep working [docs] (2026-10-14).** The app tells IDL0
+  boards (`IDL0-XXXX`) from IDL1 by advertised name and gives each its own
+  IMU value sets: LSM6DSO32 rates, ±4–32 g and ±125–2000 dps on IDL0, no
+  high-g controls; validation before Send follows the same board.
+  Spec-during: SPEC §8.
+
 - **Module settings sheets; the channel table and bike profiles are gone
   [docs] (2026-10-14).** Each tile on the Logger dashboard opens a sheet
   with live readings and that module's settings as big buttons and

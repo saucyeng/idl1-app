@@ -24,6 +24,48 @@ export const HG_ODR_HZ: readonly number[] = [480, 960, 1920, 3840, 7680];
  *  top-level default and every `imuN.gyro_range_dps` override. */
 export const GYRO_RANGES_DPS: readonly number[] = [250, 500, 1000, 2000, 4000];
 
+/** Which logger hardware a config is for. IDL1 has LSM6DSV320X IMUs (with
+ *  high-g on the pods); IDL0 has LSM6DSO32s, still ridden on some bikes
+ *  (Isaac, 2026-10-14), so the app keeps their value sets too. */
+export type Hardware = "idl0" | "idl1";
+
+/** The logger hardware from its advertised name: `IDL0-XXXX` is an IDL0
+ *  board; `IDL1-XXXX` (idl1-firmware F6) and anything else is IDL1. */
+export function hardwareFromName(name: string): Hardware {
+  return /^IDL0-/i.test(name.trim()) ? "idl0" : "idl1";
+}
+
+/** IDL0 LSM6DSO32 rates in high-performance mode, Hz (SPEC §8). */
+export const IDL0_IMU_ODR_HIGH_PERF_HZ: readonly number[] = [12.5, 26, 52, 104, 208, 416, 833, 1666];
+/** IDL0 LSM6DSO32 rates in low-power mode, Hz (SPEC §8). */
+export const IDL0_IMU_ODR_LOW_POWER_HZ: readonly number[] = [1.6, 12.5, 26, 52, 104, 208];
+
+/** One hardware's IMU value sets. */
+export interface ImuValueSets {
+  /** Valid `imu.sample_rate_hz`, Hz, for the config's power mode. */
+  odrHz: readonly number[];
+  /** Valid accel ranges, g. */
+  accelRangesG: readonly number[];
+  /** Valid gyro ranges, dps. */
+  gyroRangesDps: readonly number[];
+  /** True when the pods have a high-g accelerometer. */
+  highG: boolean;
+}
+
+/** The IMU value sets for `hardware`, given the config's `low_power_mode`
+ *  (only IDL0's rate set depends on it). */
+export function imuValueSets(hardware: Hardware, lowPowerMode: boolean): ImuValueSets {
+  if (hardware === "idl0") {
+    return {
+      odrHz: lowPowerMode ? IDL0_IMU_ODR_LOW_POWER_HZ : IDL0_IMU_ODR_HIGH_PERF_HZ,
+      accelRangesG: [4, 8, 16, 32],
+      gyroRangesDps: [125, 250, 500, 1000, 2000],
+      highG: false,
+    };
+  }
+  return { odrHz: IMU_ODR_HZ, accelRangesG: ACCEL_RANGES_G, gyroRangesDps: GYRO_RANGES_DPS, highG: true };
+}
+
 /** Minimum valid `gps.sample_rate_hz` (SPEC §8: "u-blox MAX-M10S: sample
  *  rate (1–10 Hz)"). Hz. */
 export const GPS_RATE_HZ_MIN = 1;
@@ -71,10 +113,10 @@ function pushWarning(issues: ValidationIssue[], path: string, message: string): 
   issues.push({ path, severity: "warning", message });
 }
 
-/** Checks `imu.sample_rate_hz` against the LSM6DSV320X ODR set. */
-function checkImuSampleRate(imu: DeviceConfig["imu"], issues: ValidationIssue[]): void {
-  if (!IMU_ODR_HZ.includes(imu.sample_rate_hz)) {
-    pushError(issues, "imu.sample_rate_hz", `${imu.sample_rate_hz} Hz is not a valid IMU rate (SPEC §8); valid values: ${IMU_ODR_HZ.join(", ")} Hz`);
+/** Checks `imu.sample_rate_hz` against the hardware's ODR set. */
+function checkImuSampleRate(imu: DeviceConfig["imu"], sets: ImuValueSets, issues: ValidationIssue[]): void {
+  if (!sets.odrHz.includes(imu.sample_rate_hz)) {
+    pushError(issues, "imu.sample_rate_hz", `${imu.sample_rate_hz} Hz is not a valid IMU rate (SPEC §8); valid values: ${sets.odrHz.join(", ")} Hz`);
   }
 }
 
@@ -94,9 +136,9 @@ function checkRange(value: number, validValues: readonly number[], path: string,
  *  wire's §5.3 mask is a bitfield and files with one already exist — but
  *  this app refuses to *create* one. Zero channels on is the pre-existing
  *  "logs nothing" mistake and stays a warning, not this new error. */
-function checkImuSlot(slot: ImuSlot, slotPath: string, issues: ValidationIssue[]): void {
-  checkRange(slot.accel_range_g, ACCEL_RANGES_G, `${slotPath}.accel_range_g`, "accel range", "g", issues);
-  checkRange(slot.gyro_range_dps, GYRO_RANGES_DPS, `${slotPath}.gyro_range_dps`, "gyro range", "dps", issues);
+function checkImuSlot(slot: ImuSlot, slotPath: string, sets: ImuValueSets, issues: ValidationIssue[]): void {
+  checkRange(slot.accel_range_g, sets.accelRangesG, `${slotPath}.accel_range_g`, "accel range", "g", issues);
+  checkRange(slot.gyro_range_dps, sets.gyroRangesDps, `${slotPath}.gyro_range_dps`, "gyro range", "dps", issues);
   const channelValues = Object.values(slot.channels);
   const channelsOn = channelValues.filter((on) => on).length;
   if (slot.enabled && channelsOn === 0) {
@@ -127,16 +169,19 @@ function checkImuModeFlags(imu: DeviceConfig["imu"], issues: ValidationIssue[]):
 
 /** Checks the `imu` block: the shared sample rate, the top-level default
  *  ranges, the mode flags, and each of the three per-IMU sub-blocks. */
-function checkImu(imu: DeviceConfig["imu"], issues: ValidationIssue[]): void {
-  checkImuSampleRate(imu, issues);
-  checkRange(imu.accel_range_g, ACCEL_RANGES_G, "imu.accel_range_g", "accel range", "g", issues);
-  checkRange(imu.gyro_range_dps, GYRO_RANGES_DPS, "imu.gyro_range_dps", "gyro range", "dps", issues);
-  checkRange(imu.hg_range_g, HG_RANGES_G, "imu.hg_range_g", "high-g range", "g", issues);
-  checkRange(imu.hg_sample_rate_hz, HG_ODR_HZ, "imu.hg_sample_rate_hz", "high-g rate", "Hz", issues);
+function checkImu(imu: DeviceConfig["imu"], hardware: Hardware, issues: ValidationIssue[]): void {
+  const sets = imuValueSets(hardware, imu.low_power_mode);
+  checkImuSampleRate(imu, sets, issues);
+  checkRange(imu.accel_range_g, sets.accelRangesG, "imu.accel_range_g", "accel range", "g", issues);
+  checkRange(imu.gyro_range_dps, sets.gyroRangesDps, "imu.gyro_range_dps", "gyro range", "dps", issues);
+  if (sets.highG) {
+    checkRange(imu.hg_range_g, HG_RANGES_G, "imu.hg_range_g", "high-g range", "g", issues);
+    checkRange(imu.hg_sample_rate_hz, HG_ODR_HZ, "imu.hg_sample_rate_hz", "high-g rate", "Hz", issues);
+  }
   checkImuModeFlags(imu, issues);
-  checkImuSlot(imu.imu0, "imu0", issues);
-  checkImuSlot(imu.imu1, "imu1", issues);
-  checkImuSlot(imu.imu2, "imu2", issues);
+  checkImuSlot(imu.imu0, "imu0", sets, issues);
+  checkImuSlot(imu.imu1, "imu1", sets, issues);
+  checkImuSlot(imu.imu2, "imu2", sets, issues);
 }
 
 /** Checks the `gps` block: rate integrality and range, dynamic model
@@ -294,10 +339,10 @@ function checkHrm(hrm: HrmBlock | undefined, issues: ValidationIssue[]): void {
  * mutates `config` — a value the user typed is never silently snapped to a
  * nearby valid one; the caller decides what to do with each issue.
  */
-export function validateConfig(config: DeviceConfig): ValidationIssue[] {
+export function validateConfig(config: DeviceConfig, hardware: Hardware = "idl1"): ValidationIssue[] {
   const issues: ValidationIssue[] = [];
 
-  checkImu(config.imu, issues);
+  checkImu(config.imu, hardware, issues);
   checkGps(config.gps, issues);
   checkAnalogChannels(config.analog.channels, issues);
   checkDigitalChannels(config.digital.channels, issues);

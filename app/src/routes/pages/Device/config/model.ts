@@ -154,9 +154,11 @@ export interface ParseResult {
   repairs: Repair[];
 }
 
-/** LSM6DSV320X IMU ODRs, Hz (SPEC §8; same set as `validate.ts`'s
- *  `IMU_ODR_HZ`). */
-const VALID_IMU_ODR_HZ = new Set([15, 30, 60, 120, 240, 480, 960, 1920, 3840, 7680]);
+/** Every IMU ODR either board's chip accepts, Hz (SPEC §8): the IDL1's
+ *  LSM6DSV320X ladder plus the IDL0's LSM6DSO32 rates in both power modes.
+ *  The parser doesn't know which board a config came from; `validateConfig`
+ *  checks the rate against the right board's set. */
+const VALID_IMU_ODR_HZ = new Set([15, 30, 60, 120, 240, 480, 960, 1920, 3840, 7680, 1.6, 12.5, 26, 52, 104, 208, 416, 833, 1666]);
 
 /** SPEC §8's `gps.dynamic_model` valid-value set. */
 const VALID_GPS_DYNAMIC_MODELS = new Set(["portable", "pedestrian", "automotive", "sea", "airborne"]);

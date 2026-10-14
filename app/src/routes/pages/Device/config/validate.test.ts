@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { parseConfig } from "./model";
 import type { DeviceConfig } from "./model";
-import { isPushable, validateConfig } from "./validate";
+import { hardwareFromName, isPushable, validateConfig } from "./validate";
 
 /** SPEC §8's own worked-example `idl0_config.json`, verbatim — the fixture
  *  every zero-issue test below parses. A local copy, not imported from
@@ -661,6 +661,30 @@ describe("validateConfig — high-g", () => {
     expect(config.imu.hg_range_g).toBe(64);
     expect(config.imu.hg_sample_rate_hz).toBe(960);
     expect(repairs).toEqual([]);
+  });
+});
+
+describe("validateConfig — IDL0 hardware", () => {
+  it("hardwareFromName — IDL0 and IDL1 names, blank — idl0 only for the IDL0 prefix", () => {
+    const names = ["IDL0-A3F2", "idl0-0001", "IDL1-A3F2", ""];
+
+    const hardware = names.map(hardwareFromName);
+
+    expect(hardware).toEqual(["idl0", "idl0", "idl1", "idl1"]);
+  });
+
+  it("validateConfig — LSM6DSO32 values on IDL0 — no IMU issue; the same values on IDL1 — errors", () => {
+    const config = workedConfig();
+    config.imu.sample_rate_hz = 833;
+    config.imu.accel_range_g = 32;
+    config.imu.gyro_range_dps = 125;
+    config.imu.hg_range_g = 50;
+
+    const idl0 = validateConfig(config, "idl0").filter((i) => i.path.startsWith("imu."));
+    const idl1 = validateConfig(config, "idl1").filter((i) => i.path.startsWith("imu."));
+
+    expect(idl0).toEqual([]);
+    expect(idl1.map((i) => i.path).sort()).toEqual(["imu.accel_range_g", "imu.gyro_range_dps", "imu.hg_range_g", "imu.sample_rate_hz"]);
   });
 });
 

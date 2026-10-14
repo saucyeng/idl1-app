@@ -11,6 +11,7 @@ import type { DeviceControlCommand } from "../../../ipc/device";
 import { transitionObserved } from "./control";
 import { connectionReducer, initialConnectionState } from "./connection";
 import { parseConfig } from "./config/model";
+import { hardwareFromName } from "./config/validate";
 import type { DeviceConfig } from "./config/model";
 import DeviceControls, { outcomeText } from "./DeviceControls";
 import type { ControlOutcomeView } from "./DeviceControls";
@@ -349,12 +350,14 @@ export default function Device() {
 
   const activeConnection = state.connections.find((c) => c.device_id === state.activeDeviceId) ?? null;
   const tiles = moduleTiles({ status: statusState.status, config: draft, linkLost });
+  const hardware = hardwareFromName(activeConnection?.name ?? "");
   const sendBar =
     activeConnection !== null && loggerConfig !== null && draft !== null ? (
       <SendBar
         deviceId={activeConnection.device_id}
         base={loggerConfig}
         draft={draft}
+        hardware={hardware}
         status={statusState.status}
         onSent={(sent) => {
           setLoggerConfig(sent);
@@ -440,6 +443,7 @@ export default function Device() {
           draft={draft}
           onDraftChange={setDraft}
           onRetryRead={() => readLoggerConfig(activeConnection.device_id)}
+          hardware={hardware}
           logger={{ name: activeConnection.name, deviceId: activeConnection.device_id, firmware: statusState.status?.firmware ?? activeConnection.firmware_version ?? null }}
           onControl={onControl}
           busy={pendingControl !== null}

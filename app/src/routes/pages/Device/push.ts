@@ -1,5 +1,5 @@
 import type { DeviceStatus } from "../../../ipc/device";
-import { isPushable, validateConfig, type ValidationIssue } from "./config/validate";
+import { isPushable, validateConfig, type Hardware, type ValidationIssue } from "./config/validate";
 import { serializeConfig, type DeviceConfig } from "./config/model";
 
 /**
@@ -31,8 +31,8 @@ export interface PushBlocked {
  * only when `result.ok` is `true` — this function does not call IPC itself,
  * keeping it a pure, unit-testable driver.
  */
-export function preparePush(config: DeviceConfig): PushReady | PushBlocked {
-  const issues = validateConfig(config);
+export function preparePush(config: DeviceConfig, hardware: Hardware = "idl1"): PushReady | PushBlocked {
+  const issues = validateConfig(config, hardware);
   if (!isPushable(issues)) {
     return { ok: false, issues };
   }
