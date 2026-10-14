@@ -6,6 +6,22 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 
 ### Added
 
+- **Module settings sheets; the channel table and bike profiles are gone
+  [docs] (2026-10-14).** Each tile on the Logger dashboard opens a sheet
+  with live readings and that module's settings as big buttons and
+  switches. Battery: charge. SD: free space, Sessions on logger.
+  Bluetooth: logger, address, firmware, Disconnect. WiFi: a switch. GPS:
+  fix, satellites, HDOP, rate, dynamic model, SBAS. Each IMU: one switch
+  that records all six channels or none (Isaac), plus accel range, gyro
+  range and the shared rate. The rider and bike chips open a sheet that
+  edits both names. All edits go into a draft of the logger's own config.
+  An **Unsent changes** bar names what changed and has **Send to logger**
+  (validated, idle-only, and the logger restarts) and **Discard**. Logger
+  settings is now the same modules as full-width rows; the table that ran
+  off a phone screen is removed, along with the IMU/GPS forms, the
+  app-side profile bar and the push/pull bar. Spec-during: SPEC §23.3
+  superseded note.
+
 - **Check for new sessions over Bluetooth [docs] (2026-10-14).** SPEC §7.2
   gains `CMD_FILES_READ_BEGIN` (0x0A): the logger lists its ten newest
   session files through the same FF06 read-back as the config, so the

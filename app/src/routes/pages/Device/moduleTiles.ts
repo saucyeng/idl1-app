@@ -14,11 +14,10 @@ import type { DeviceConfig, ImuSlot } from "./config/model";
  * "unknown", never zero. Before the first poll every live tile reads
  * {@link NOT_POLLED}; a poll that omitted the line reads {@link UNREPORTED}.
  *
- * `config` is the active profile's configuration, or `null` when no profile
- * is active. The app does not read the logger's own configuration back yet,
- * so with no profile the grid shows live modules only and never invents a
- * range or rate from defaults (a fabricated reading is worse than a blank
- * one, SPEC §23.10).
+ * `config` is the logger's own configuration (with any unsent edits), or
+ * `null` before the read-back arrives or when it failed; with `null` the grid
+ * shows live modules only and never invents a range or rate from defaults (a
+ * fabricated reading is worse than a blank one, SPEC §23.10).
  */
 
 /** Line text before the first `device_status` poll has returned. */

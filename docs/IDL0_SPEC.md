@@ -2592,6 +2592,18 @@ The active profile id is **not** persisted anywhere — no `SharedPreferences` e
 
 ### 23.3 Channel table
 
+> **Superseded 2026-10-14.** The channel table, the IMU and GPS forms
+> (§23.3.1–.2) and app-side bike profiles are removed. Each module on the
+> Logger dashboard opens its own sheet (`Device/ModuleSheet.tsx`): live
+> readings, then settings as big buttons and switches. An IMU is on or off
+> as a whole: on records all six channels (Isaac: "all 6 channels or
+> nothing"). The sheets, and a rider/bike sheet behind the dashboard chips,
+> edit a draft of the config read back from the logger. **Send to logger**
+> pushes the draft (§23.6 rules: logger idle, config validated, push
+> reboots it). The Logger settings screen lists the same modules as rows.
+> The wheel, analog, digital and HRM forms (§23.3.3–.6) still render, inside
+> the sheets. The text below describes the removed table.
+
 `Device/sources.ts`'s `listSources(config)` builds one `SourceView` row per
 configurable source — `imu0`/`imu1`/`imu2`, `gps`, `wheel_front`/`wheel_rear`,
 one per `analog.channels[]` entry, one per `digital.channels[]` entry, and

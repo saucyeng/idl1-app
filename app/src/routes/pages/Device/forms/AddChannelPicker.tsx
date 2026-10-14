@@ -18,7 +18,7 @@ export interface AddChannelPickerProps {
  * (toggled on, never duplicated as a new entry), Analog channel and Marker
  * button (each creates a new draft entry with an unassigned pin, ruling
  * R58) — and this component commits whichever one the user picks, then
- * closes itself. The new row then appears in `ChannelsTable` like any
+ * closes itself. The new row then appears in the module grid like any
  * other source; the user opens its own gear control to fill in the pin,
  * label and other fields `AnalogForm`/`DigitalForm` edit.
  */

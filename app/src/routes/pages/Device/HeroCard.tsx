@@ -42,11 +42,10 @@ export interface HeroCardProps {
    *  true, or null — the fallback when the device reports no elapsed time
    *  (ruling R113). */
   elapsedMs: number | null;
-  /** The configuration read back from the logger on connect, or null before
-   *  it arrives or when the read failed. Source of the rider and bike chips. */
+  /** The logger's configuration with any unsent edits, or null before the
+   *  read-back arrives or when it failed. Source of the rider and bike chips. */
   loggerConfig: DeviceConfig | null;
-  /** The configuration the module tiles describe: the logger's own when it
-   *  has been read, else the active profile's, else null. */
+  /** The configuration the module tiles describe (the same draft), or null. */
   tileConfig: DeviceConfig | null;
   /** True while the launch auto-connect to the last logger is in flight. */
   autoConnecting: boolean;
@@ -65,6 +64,8 @@ export interface HeroCardProps {
   onOpen: (view: LoggerSubView) => void;
   /** Opens a module tile's settings. */
   onModule: (tile: ModuleTile) => void;
+  /** Opens the rider and bike sheet. */
+  onIdentity: () => void;
 }
 
 /** A connected logger's advertised name, or its id when it advertised none. */
@@ -283,7 +284,7 @@ export default function HeroCard(props: HeroCardProps) {
             </NoteBlock>
           )}
 
-          <IdentityChips config={loggerConfig} onOpen={() => props.onOpen("config")} />
+          <IdentityChips config={loggerConfig} onOpen={props.onIdentity} />
 
           {state !== "recording" && (
             <NewSessionsBanner deviceId={active.device_id} knownSessionIds={props.knownSessionIds} onImported={props.onImported} />

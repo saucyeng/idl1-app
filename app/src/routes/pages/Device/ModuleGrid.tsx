@@ -37,6 +37,38 @@ export interface ModuleGridProps {
 }
 
 /**
+ * The same tiles as full-width rows, for the Logger settings screen: icon,
+ * name and reading on one line, the whole row the tap target. Replaces the
+ * old channels table, which ran off a phone screen.
+ */
+export function ModuleList({ tiles, onOpen }: ModuleGridProps) {
+  return (
+    <ul className="flex flex-col gap-2" aria-label="Logger modules">
+      {tiles.map((tile) => {
+        const Icon = ICONS[tile.icon];
+        const add = tile.icon === "add";
+        return (
+          <li key={tile.key}>
+            <button
+              type="button"
+              onClick={() => onOpen(tile)}
+              data-tone={tile.tone}
+              className="flex min-h-14 w-full items-center gap-3 rounded-[var(--radius-card)] border border-rule bg-surface px-3 text-left"
+            >
+              <span className={cn("grid size-10 shrink-0 place-items-center rounded-[10px] border-2", add ? "border-dashed border-brand-accent text-brand-accent" : TONE_CLASS[tile.tone])}>
+                <Icon className="size-5" aria-hidden />
+              </span>
+              <span className="min-w-0 flex-1 truncate text-base font-medium text-fg">{add ? "Add module" : tile.label}</span>
+              {!add && <span className="shrink-0 truncate font-mono text-xs text-fg-dim">{tile.lines.join(" · ")}</span>}
+            </button>
+          </li>
+        );
+      })}
+    </ul>
+  );
+}
+
+/**
  * The Logger dashboard's home-screen grid: four columns of module tiles,
  * each an icon in a box coloured by health with one or two short lines of
  * reading text under its name. The whole tile is the tap target.

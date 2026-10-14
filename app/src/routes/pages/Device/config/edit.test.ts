@@ -2,11 +2,14 @@ import { describe, expect, it } from "vitest";
 
 import {
   clearHrm,
+  imuPartial,
   removeAnalogChannel,
   removeDigitalChannel,
+  setBikeProfile,
   setGps,
   setHrm,
   setImuAxis,
+  setImuEnabled,
   setImuModeFlags,
   setImuRanges,
   setImuRate,
@@ -292,5 +295,57 @@ describe("every edit function — immutability", () => {
     expect(config.heart_rate_monitor).toEqual(beforeHrm);
     expect(config.analog).toEqual(beforeAnalog);
     expect(config.digital).toEqual(beforeDigital);
+  });
+});
+
+describe("setImuEnabled", () => {
+  it("setImuEnabled — on — enables the slot and all six axes", () => {
+    const config = defaultConfig("aabbccddeeff");
+
+    const next = setImuEnabled(config, "imu1", true);
+
+    expect(next.imu.imu1.enabled).toBe(true);
+    expect(Object.values(next.imu.imu1.channels)).toEqual([true, true, true, true, true, true]);
+    expect(next.imu.imu0).toEqual(config.imu.imu0);
+  });
+
+  it("setImuEnabled — off on a partial slot — clears enabled and every axis", () => {
+    const config = workedExampleConfig();
+
+    const next = setImuEnabled(config, "imu0", false);
+
+    expect(next.imu.imu0.enabled).toBe(false);
+    expect(Object.values(next.imu.imu0.channels).some(Boolean)).toBe(false);
+    expect(next.imu.imu0.accel_range_g).toBe(32);
+  });
+});
+
+describe("imuPartial", () => {
+  it("imuPartial — enabled with one axis — true", () => {
+    const config = workedExampleConfig();
+
+    const partial = imuPartial(config.imu.imu0);
+
+    expect(partial).toBe(true);
+  });
+
+  it("imuPartial — enabled with all six, or disabled — false", () => {
+    const config = setImuEnabled(defaultConfig("aabbccddeeff"), "imu2", true);
+
+    const whole = imuPartial(config.imu.imu2);
+    const off = imuPartial({ ...config.imu.imu2, enabled: false, channels: { ...config.imu.imu2.channels, gyro_z: false } });
+
+    expect(whole).toBe(false);
+    expect(off).toBe(false);
+  });
+});
+
+describe("setBikeProfile", () => {
+  it("setBikeProfile — rider only — keeps the bike name", () => {
+    const config = { ...defaultConfig("aabbccddeeff"), bike_profile: { name: "YZ450F", default_rider: "" } };
+
+    const next = setBikeProfile(config, { default_rider: "Isaac" });
+
+    expect(next.bike_profile).toEqual({ name: "YZ450F", default_rider: "Isaac" });
   });
 });

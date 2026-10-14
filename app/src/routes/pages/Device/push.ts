@@ -27,7 +27,7 @@ export interface PushBlocked {
  * never the reverse** — the lane's load-bearing invariant (L7b lane brief:
  * "a config is never pushed unvalidated"). A warning-only config still
  * serialises; only an error-severity issue blocks the push. The caller
- * (`PushConfigBar`) is expected to call `pushConfig(deviceId, result.json)`
+ * (`SendBar`) is expected to call `pushConfig(deviceId, result.json)`
  * only when `result.ok` is `true` — this function does not call IPC itself,
  * keeping it a pure, unit-testable driver.
  */

@@ -43,6 +43,31 @@ export function setImuAxis(config: DeviceConfig, slot: ImuSlotKey, axis: keyof I
 }
 
 /**
+ * Turns one IMU on or off as a whole: `enabled` and all six axis flags
+ * together. An IMU records all six channels or nothing (Isaac, 2026-10-14),
+ * so the app no longer offers per-axis selection; a slot read from an older
+ * config with only some axes on is made whole the next time it is toggled.
+ */
+export function setImuEnabled(config: DeviceConfig, slot: ImuSlotKey, enabled: boolean): DeviceConfig {
+  const on = enabled;
+  return setImuSlot(config, slot, {
+    enabled,
+    channels: { accel_x: on, accel_y: on, accel_z: on, gyro_x: on, gyro_y: on, gyro_z: on },
+  });
+}
+
+/** True when `slot` is on but records fewer than all six axes — a config
+ *  written before the all-or-nothing rule. */
+export function imuPartial(slot: ImuSlot): boolean {
+  return slot.enabled && !Object.values(slot.channels).every(Boolean);
+}
+
+/** Sets the rider and bike names (`bike_profile`, SPEC §8). */
+export function setBikeProfile(config: DeviceConfig, patch: Partial<DeviceConfig["bike_profile"]>): DeviceConfig {
+  return { ...config, bike_profile: { ...config.bike_profile, ...patch } };
+}
+
+/**
  * Merges `patch` into `config.imu`'s two chip mode flags
  * (`low_power_mode`/`high_performance_mode`), leaving `sample_rate_hz`, both
  * top-level ranges, and all three IMU slots untouched. Never validates the
