@@ -1,18 +1,19 @@
 import { useCallback, useEffect, useReducer, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { ArrowLeft, FolderDown, SlidersHorizontal } from "lucide-react";
+import { ArrowLeft } from "lucide-react";
 
 import { SectionHead } from "../../../components/brand/SectionHead";
 import { Button } from "../../../components/ui/button";
 import { cn } from "../../../lib/utils";
 import { listProfiles, saveProfile, deleteProfile } from "../../../ipc/app";
 import { listSessions } from "../../../ipc/catalog";
-import { bleScan, connectDevice, deviceControl, deviceStatus, disconnectDevice } from "../../../ipc/device";
+import { bleScan, connectDevice, deviceControl, deviceStatus, disconnectDevice, pullConfig } from "../../../ipc/device";
 import type { DeviceControlCommand } from "../../../ipc/device";
 import ChannelsTable from "./ChannelsTable";
 import { transitionObserved } from "./control";
 import { connectionReducer, initialConnectionState } from "./connection";
 import { defaultConfig } from "./config/defaults";
+import { parseConfig } from "./config/model";
 import type { DeviceConfig } from "./config/model";
 import DeviceControls, { outcomeText } from "./DeviceControls";
 import type { ControlOutcomeView } from "./DeviceControls";
@@ -138,6 +139,13 @@ export default function Device() {
   // successful connect (a user action), never by an effect — the standing
   // reviewer brief's IPC-effects rule.
   const [knownSessionIds, setKnownSessionIds] = useState<Set<string>>(new Set());
+  // The active logger's own configuration, read back over BLE on connect
+  // (`pull_config`, C3 §3.8): the source of the rider and bike chips and of
+  // the module tiles' ranges. Null until the read arrives or if it failed.
+  const [loggerConfig, setLoggerConfig] = useState<DeviceConfig | null>(null);
+  // True while the launch auto-connect to the last logger is in flight, so
+  // the dashboard says "Connecting…" instead of looking idle.
+  const [autoConnecting, setAutoConnecting] = useState(false);
 
   const [statusState, dispatchStatus] = useReducer(deviceStatusReducer, initialDeviceStatusState);
   const [pendingControl, setPendingControl] = useState<DeviceControlCommand | null>(null);
@@ -176,6 +184,25 @@ export default function Device() {
     }));
   }
 
+  // Best-effort refresh of the library's session ids, which the
+  // new-sessions banner uses to tell new logger files from old ones. A
+  // failure leaves the previous set in place.
+  const refreshKnownSessions = useCallback(() => {
+    listSessions()
+      .then((sessions) => setKnownSessionIds(new Set(sessions.map((s) => s.session_id))))
+      .catch(() => {});
+  }, []);
+
+  // Reads the logger's configuration back after a connect. Best effort: a
+  // failed or unparsable read leaves the chips saying "…" rather than
+  // blocking the connection.
+  const readLoggerConfig = useCallback((connectedDeviceId: string) => {
+    setLoggerConfig(null);
+    pullConfig(connectedDeviceId)
+      .then((json) => setLoggerConfig(parseConfig(JSON.parse(json)).config))
+      .catch(() => {});
+  }, []);
+
   const onScan = useCallback(() => {
     dispatch({ type: "SCAN_START" });
     bleScan(SCAN_TIMEOUT_MS, (device) => dispatch({ type: "DEVICE_DISCOVERED", device }))
@@ -192,17 +219,14 @@ export default function Device() {
         // best-effort; a failed write here only costs the *next* launch's
         // auto-connect, never this one.
         LAST_DEVICE_BACKEND.write(info.device_id).catch(() => {});
-        // Best-effort refresh of known session ids for the files view's
-        // `isNew` computation; a failure here leaves the previous set in
-        // place rather than blocking the connect result.
-        listSessions()
-          .then((sessions) => setKnownSessionIds(new Set(sessions.map((s) => s.session_id))))
-          .catch(() => {});
+        refreshKnownSessions();
+        readLoggerConfig(info.device_id);
       })
       .catch((err: DeviceIpcError) => dispatch({ type: "FAILED", error: describeIpcError(err) }));
-  }, []);
+  }, [refreshKnownSessions, readLoggerConfig]);
 
   const onDisconnect = useCallback((disconnectingDeviceId: string) => {
+    setLoggerConfig(null);
     disconnectDevice(disconnectingDeviceId)
       .then(() => dispatch({ type: "DISCONNECTED", deviceId: disconnectingDeviceId }))
       .catch((err: DeviceIpcError) => dispatch({ type: "FAILED", error: describeIpcError(err) }));
@@ -215,12 +239,22 @@ export default function Device() {
     dispatch({ type: "SWITCH_ACTIVE", deviceId: switchToDeviceId });
   }, []);
 
+  const wifiOn = statusState.status?.wifi_on === true;
   const onControl = useCallback(
     (command: DeviceControlCommand) => {
       if (deviceId === "" || pendingControl !== null) return;
-      setPendingControl(command);
       setControlError(null);
-      deviceControl(deviceId, command)
+      // The logger refuses a BLE start while its WiFi is up (SPEC §10.4), so
+      // a Record tap leaves WiFi first, then starts.
+      const leaveWifiFirst = command === "start_recording" && wifiOn;
+      setPendingControl(leaveWifiFirst ? "wifi_off" : command);
+      const sent = leaveWifiFirst
+        ? deviceControl(deviceId, "wifi_off").then(() => {
+            setPendingControl(command);
+            return deviceControl(deviceId, command);
+          })
+        : deviceControl(deviceId, command);
+      sent
         .then((status) => {
           dispatchStatus({ type: "status", status });
           setLastControlOutcome({ command, outcome: transitionObserved(command, status) });
@@ -231,7 +265,7 @@ export default function Device() {
           setPendingControl(null);
         });
     },
-    [deviceId, pendingControl],
+    [deviceId, pendingControl, wifiOn],
   );
 
   function onSaveActiveProfile(): void {
@@ -324,11 +358,17 @@ export default function Device() {
         return;
       }
       autoConnectAttempted.current = true;
+      setAutoConnecting(true);
       connectDevice(lastDeviceId)
-        .then((info) => dispatch({ type: "CONNECTED", info }))
-        .catch(() => {});
+        .then((info) => {
+          dispatch({ type: "CONNECTED", info });
+          refreshKnownSessions();
+          readLoggerConfig(info.device_id);
+        })
+        .catch(() => {})
+        .finally(() => setAutoConnecting(false));
     });
-  }, []);
+  }, [refreshKnownSessions, readLoggerConfig]);
 
   // 1 Hz `device_status` poll (wave-2 operating brief §4's effects rule):
   // all decision logic lives in the pure `startStatusPoll` driver. Only
@@ -419,11 +459,18 @@ export default function Device() {
           linkLost={isLinkLost(statusState)}
           pending={pendingControl}
           elapsedMs={elapsedMs}
+          loggerConfig={loggerConfig}
+          tileConfig={loggerConfig ?? activeProfile?.config ?? null}
+          autoConnecting={autoConnecting}
+          knownSessionIds={knownSessionIds}
+          onImported={refreshKnownSessions}
           onScan={onScan}
           onConnect={onConnect}
           onDisconnect={onDisconnect}
           onSwitchActive={onSwitchActive}
           onControl={onControl}
+          onOpen={setView}
+          onModule={() => setView("config")}
         />
         {statusState.error && <p role="status" className="font-mono text-sm text-fg-dim">{describeIpcError(statusState.error)}</p>}
         {unconfirmedRecording && (
@@ -432,16 +479,6 @@ export default function Device() {
           </p>
         )}
         {controlError && <p role="alert" className="font-mono text-sm text-brand-accent">{controlError}</p>}
-        <div className="grid grid-cols-2 gap-3">
-          <Button type="button" className="h-14 gap-2 text-base" onClick={() => setView("files")} disabled={state.activeDeviceId === null}>
-            <FolderDown className="size-5" aria-hidden />
-            Files
-          </Button>
-          <Button type="button" className="h-14 gap-2 text-base" onClick={() => setView("config")}>
-            <SlidersHorizontal className="size-5" aria-hidden />
-            Config
-          </Button>
-        </div>
       </div>
 
       {state.activeDeviceId !== null && (

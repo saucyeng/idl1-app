@@ -1,4 +1,4 @@
-import { ChevronDown } from "lucide-react";
+import { Bluetooth, EllipsisVertical } from "lucide-react";
 
 import { NoteBlock } from "../../../components/brand/NoteBlock";
 import { PulsingDot } from "../../../components/brand/PulsingDot";
@@ -15,11 +15,17 @@ import {
 } from "../../../components/ui/dropdown-menu";
 import { formatDurationMs } from "../Data/format";
 import type { ConnectionInfo, DeviceControlCommand, DeviceStatus } from "../../../ipc/device";
+import type { DeviceConfig } from "./config/model";
 import type { ConnectionState } from "./connection";
 import { heroStateFrom, heroView } from "./hero";
 import { recordingDuration } from "./liveStatus";
-import { NOT_POLLED, statusTiles } from "./statusTiles";
-import type { StatusTile, TileTone } from "./statusTiles";
+import ModuleGrid from "./ModuleGrid";
+import { moduleTiles } from "./moduleTiles";
+import type { ModuleTile } from "./moduleTiles";
+import NewSessionsBanner from "./NewSessionsBanner";
+
+/** The buried screens the ⋮ menu opens. */
+export type LoggerSubView = "files" | "config";
 
 /** Props for {@link HeroCard}. */
 export interface HeroCardProps {
@@ -28,107 +34,115 @@ export interface HeroCardProps {
   /** The last known `device_status` read, or null before the first poll
    *  returns for this connection. */
   status: DeviceStatus | null;
-  /** True once `statusPoll.ts`'s `isLinkLost` has fired (R78 Q2): the poll
-   *  keeps running and `connectionState.connections` is unchanged either way
-   *  — this is purely a "something might be wrong" note, not a state
-   *  transition. */
+  /** True once `statusPoll.ts`'s `isLinkLost` has fired (R78 Q2). */
   linkLost: boolean;
-  /** The `device_control` command currently in flight, or null — the CTA
-   *  and every discovered-device row disable themselves while one is
-   *  pending, same rule as `DeviceControls`. */
+  /** The `device_control` command currently in flight, or null. */
   pending: DeviceControlCommand | null;
   /** Milliseconds since this session first observed `status.logging` go
-   *  true, or null before a recording has started. Wall-clock display state
-   *  only (`index.tsx`'s ticking `setInterval`) — the *fallback* source
-   *  `liveStatus.ts`'s `recordingDuration` uses when `status` carries no
-   *  device-reported `logging_elapsed_s` yet (ruling R113). */
+   *  true, or null — the fallback when the device reports no elapsed time
+   *  (ruling R113). */
   elapsedMs: number | null;
-  /** Starts a BLE scan (`bleScan`, unchanged from the pre-restyle
-   *  `device-tab__hero` section). */
+  /** The configuration read back from the logger on connect, or null before
+   *  it arrives or when the read failed. Source of the rider and bike chips. */
+  loggerConfig: DeviceConfig | null;
+  /** The configuration the module tiles describe: the logger's own when it
+   *  has been read, else the active profile's, else null. */
+  tileConfig: DeviceConfig | null;
+  /** True while the launch auto-connect to the last logger is in flight. */
+  autoConnecting: boolean;
+  /** Session ids already in the library (new-sessions banner). */
+  knownSessionIds: Set<string>;
+  /** Refreshes `knownSessionIds` after an import. */
+  onImported: () => void;
   onScan: () => void;
-  /** Connects to one discovered device. */
   onConnect: (deviceId: string) => void;
-  /** Disconnects the current managed connection. */
   onDisconnect: (deviceId: string) => void;
-  /** Makes an already-connected device the active one (decision 86) — a
-   *  pure state change, no IPC, one tap. */
+  /** Makes an already-connected logger the active one (decision 86). */
   onSwitchActive: (deviceId: string) => void;
-  /** Sends `start_recording`/`stop_recording` (`deviceControl`). */
+  /** Sends a `device_control` command. */
   onControl: (command: DeviceControlCommand) => void;
+  /** Opens a buried screen. */
+  onOpen: (view: LoggerSubView) => void;
+  /** Opens a module tile's settings. */
+  onModule: (tile: ModuleTile) => void;
 }
 
-/** Tailwind text-colour class per {@link TileTone}. Colour is owned here,
- *  at the call site, not by the pure tile logic (FLUTTER-UI-SURVEY §7). */
-const TONE_CLASS: Record<TileTone, string> = {
-  good: "text-good",
-  warn: "text-hivis",
-  bad: "text-brand-accent",
-  dim: "text-fg-dim",
-  plain: "text-fg",
-};
-
-/** A connected device's advertised name, or its id when the device
- *  advertised none. */
+/** A connected logger's advertised name, or its id when it advertised none. */
 function connectionLabel(connection: ConnectionInfo): string {
   return connection.name.trim() === "" ? connection.device_id : connection.name;
 }
 
-/** One cell of the status grid: a small label over the reading. */
-function Tile({ tile }: { tile: StatusTile }) {
+/** Big rider and bike chips, read from the logger's own configuration
+ *  (`bike_profile`). Before the read arrives they say so rather than
+ *  showing a placeholder name. */
+function IdentityChips({ config, onOpen }: { config: DeviceConfig | null; onOpen: () => void }) {
+  const rider = config === null ? "…" : config.bike_profile.default_rider.trim() || "Not set";
+  const bike = config === null ? "…" : config.bike_profile.name.trim() || "Not set";
   return (
-    <div
-      className="flex min-w-0 flex-col gap-0.5 rounded-[var(--radius-structural)] border border-rule px-2 py-1.5 font-mono"
-      title={tile.value === NOT_POLLED ? `${tile.label}: not polled yet` : undefined}
-    >
-      <span className="truncate text-label-2 tracking-[var(--tracking-label)] text-fg-dim uppercase">{tile.label}</span>
-      <span className={`truncate text-sm ${TONE_CLASS[tile.tone]}`}>{tile.value}</span>
+    <div className="grid grid-cols-2 gap-2">
+      {(
+        [
+          ["Rider", rider],
+          ["Bike", bike],
+        ] as const
+      ).map(([label, value]) => (
+        <button
+          key={label}
+          type="button"
+          onClick={onOpen}
+          className="flex min-h-16 min-w-0 flex-col items-start justify-center rounded-[var(--radius-card)] border border-rule bg-surface px-3 text-left"
+        >
+          <span className="text-label-2 tracking-[var(--tracking-label)] text-fg-dim uppercase">{label}</span>
+          <span className="w-full truncate text-lg font-semibold text-fg">{value}</span>
+        </button>
+      ))}
     </div>
   );
 }
 
-/**
- * A real device picker (decision 64/86, wave-3 lane D task 1): the
- * dropdown trigger names the active device (or "Not connected"); its
- * content lists every already-connected device as a one-tap radio switch
- * (decision 86 — no IPC, `onSwitchActive` alone) above a "Discovered"
- * section of devices seen this scan window that aren't connected yet, each
- * with its own Connect action, plus a "Scan for devices" row and — rare
- * enough to live here rather than on the card — Disconnect for the active
- * device.
- */
-function DevicePicker({
+/** The ⋮ menu: everything rare. Switching between connected loggers,
+ *  connecting a discovered one, scanning, the buried screens, manual WiFi
+ *  and disconnect. */
+function LoggerMenu({
   connectionState,
+  status,
   busy,
   onScan,
   onConnect,
   onDisconnect,
   onSwitchActive,
-}: {
-  connectionState: ConnectionState;
+  onControl,
+  onOpen,
+}: Pick<HeroCardProps, "connectionState" | "status" | "onScan" | "onConnect" | "onDisconnect" | "onSwitchActive" | "onControl" | "onOpen"> & {
   busy: boolean;
-  onScan: () => void;
-  onConnect: (deviceId: string) => void;
-  onDisconnect: (deviceId: string) => void;
-  onSwitchActive: (deviceId: string) => void;
 }) {
   const { connections, discovered, activeDeviceId, phase } = connectionState;
   const active = connections.find((c) => c.device_id === activeDeviceId) ?? null;
   const connectedIds = new Set(connections.map((c) => c.device_id));
   const notConnected = discovered.filter((d) => !connectedIds.has(d.device_id));
-  const triggerLabel = active ? connectionLabel(active) : "Not connected";
+  const wifiOn = status?.wifi_on === true;
 
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <Button type="button" emphasis="normal" size="sm" className="h-11 min-w-0 gap-1 font-mono text-sm">
-          <span className="truncate">{triggerLabel}</span>
-          <ChevronDown className="size-3.5 shrink-0" />
+        <Button type="button" size="sm" className="size-11 shrink-0 p-0" aria-label="Logger menu">
+          <EllipsisVertical className="size-5" aria-hidden />
         </Button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="start">
-        {connections.length > 0 && (
+      <DropdownMenuContent align="end">
+        {active && (
           <>
-            <DropdownMenuLabel>Connected</DropdownMenuLabel>
+            <DropdownMenuItem onSelect={() => onOpen("files")}>Sessions on logger</DropdownMenuItem>
+            <DropdownMenuItem onSelect={() => onOpen("config")}>Logger settings</DropdownMenuItem>
+            <DropdownMenuItem disabled={busy || status?.logging === true} onSelect={() => onControl(wifiOn ? "wifi_off" : "wifi_on")}>
+              {wifiOn ? "Turn WiFi off" : "Turn WiFi on"}
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
+          </>
+        )}
+        {connections.length > 1 && (
+          <>
+            <DropdownMenuLabel>Switch logger</DropdownMenuLabel>
             <DropdownMenuRadioGroup value={activeDeviceId ?? undefined} onValueChange={onSwitchActive}>
               {connections.map((c) => (
                 <DropdownMenuRadioItem key={c.device_id} value={c.device_id}>
@@ -139,12 +153,7 @@ function DevicePicker({
             <DropdownMenuSeparator />
           </>
         )}
-        <DropdownMenuLabel>Discovered</DropdownMenuLabel>
-        {notConnected.length === 0 && (
-          <p className="px-2 py-1.5 font-mono text-xs text-fg-dim">
-            {phase === "scanning" ? "Scanning…" : "No other devices found yet."}
-          </p>
-        )}
+        {notConnected.length > 0 && <DropdownMenuLabel>Found nearby</DropdownMenuLabel>}
         {notConnected.map((device) => (
           <DropdownMenuItem
             key={device.device_id}
@@ -157,7 +166,6 @@ function DevicePicker({
             {device.name || device.device_id} ({device.rssi_dbm} dBm)
           </DropdownMenuItem>
         ))}
-        <DropdownMenuSeparator />
         <DropdownMenuItem
           disabled={phase === "scanning"}
           onSelect={(e) => {
@@ -165,7 +173,7 @@ function DevicePicker({
             onScan();
           }}
         >
-          {phase === "scanning" ? "Scanning…" : "Scan for devices"}
+          {phase === "scanning" ? "Scanning…" : "Scan for loggers"}
         </DropdownMenuItem>
         {active && (
           <DropdownMenuItem disabled={busy} onSelect={() => onDisconnect(active.device_id)}>
@@ -177,30 +185,50 @@ function DevicePicker({
   );
 }
 
-/**
- * The Device tab's hero card (plan Task 9, SPEC §23.10, UI-DIRECTION
- * Device, wired live by L7b Task 10, R77.4; N-device picker and auto-connect
- * by wave-3 lane D tasks 1–2). Top to bottom, sized to sit on one phone
- * screen with the rest of the tab: a device picker ({@link DevicePicker},
- * decisions 64/86) naming the active device beside its firmware version; a
- * three-column grid of status tiles (`statusTiles.ts`) with each IMU and
- * the satellite count on their own; and a full-width 64 px CTA driven by
- * {@link heroView}'s three-state machine (Connect / Start recording / Stop
- * with a live timer). A fabricated reading is worse than a blank one (SPEC
- * §23.10) — every tile goes through `statusTiles.ts`'s three-reading rule.
- */
-export default function HeroCard({
+/** Not connected: one big Find button, then every logger the scan found as
+ *  a large row to tap. */
+function FindLogger({
   connectionState,
-  status,
-  linkLost,
-  pending,
-  elapsedMs,
+  autoConnecting,
   onScan,
   onConnect,
-  onDisconnect,
-  onSwitchActive,
-  onControl,
-}: HeroCardProps) {
+}: Pick<HeroCardProps, "connectionState" | "autoConnecting" | "onScan" | "onConnect">) {
+  const { discovered, phase } = connectionState;
+  const scanning = phase === "scanning";
+  const connecting = phase === "connecting" || autoConnecting;
+  const label = connecting ? "Connecting to your logger…" : scanning ? "Looking for loggers…" : "Find logger";
+  return (
+    <div className="flex flex-col gap-3">
+      <Button type="button" emphasis="info" filled onClick={onScan} disabled={scanning || connecting} className="h-20 w-full gap-3 text-xl">
+        {(scanning || connecting) && <PulsingDot className="text-bg" />}
+        <Bluetooth className="size-6" aria-hidden />
+        {label}
+      </Button>
+      {discovered.length > 0 && (
+        <ul className="flex flex-col gap-2" aria-label="Loggers found nearby">
+          {discovered.map((device) => (
+            <li key={device.device_id}>
+              <Button type="button" onClick={() => onConnect(device.device_id)} disabled={connecting} className="h-14 w-full justify-between px-4 text-base">
+                <span className="truncate font-mono">{device.name || device.device_id}</span>
+                <span className="shrink-0 font-mono text-sm text-fg-dim">{device.rssi_dbm} dBm</span>
+              </Button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+/**
+ * The Logger dashboard (navigation map v4, 2026-10-14). Top to bottom: the
+ * logger's name with its ⋮ menu, a full-width rectangular record button with
+ * the live timer, big rider and bike chips read from the logger, the
+ * new-sessions banner, then a four-column grid of module tiles. Built to fit
+ * one phone screen. With no logger connected it shows {@link FindLogger}.
+ */
+export default function HeroCard(props: HeroCardProps) {
+  const { connectionState, status, linkLost, pending, elapsedMs, loggerConfig, tileConfig, onControl } = props;
   const active = connectionState.connections.find((c) => c.device_id === connectionState.activeDeviceId) ?? null;
   const state = heroStateFrom(active !== null, status?.logging === true);
   const view = heroView(state);
@@ -208,73 +236,62 @@ export default function HeroCard({
   const duration = recordingDuration(status, elapsedMs);
   const firmware = status?.firmware ?? active?.firmware_version ?? null;
 
-  function onCta(): void {
-    if (state === "disconnected") {
-      onScan();
-      return;
-    }
-    if (state === "idle") {
-      onControl("start_recording");
-      return;
-    }
-    onControl("stop_recording");
-  }
-
-  const ctaDisabled =
-    busy || (state === "disconnected" && connectionState.phase === "scanning");
-
   return (
-    <section className="device-hero flex flex-col gap-3 rounded-[var(--radius-card)] border border-rule bg-surface p-3">
-      <div className="flex items-center justify-between gap-2 font-mono text-xs text-fg-dim">
-        <DevicePicker
-          connectionState={connectionState}
-          busy={busy}
-          onScan={onScan}
-          onConnect={onConnect}
-          onDisconnect={onDisconnect}
-          onSwitchActive={onSwitchActive}
-        />
-        {active && firmware !== null && firmware !== "" && <span className="shrink-0">FW v{firmware}</span>}
-      </div>
-
-      {active && (
-        // Decision 87: while recording the grid drops to the three IMUs and
-        // the satellite count (`statusTiles`'s `recording` argument).
-        <div className="device-hero__tiles grid grid-cols-3 gap-2">
-          {statusTiles(status, state === "recording").map((tile) => (
-            <Tile key={tile.key} tile={tile} />
-          ))}
-        </div>
-      )}
-
+    <section className="device-hero flex flex-col gap-3">
       {connectionState.phase === "failed" && connectionState.error && (
         <NoteBlock className="border-brand-accent text-brand-accent" role="alert">
           {connectionState.error}
         </NoteBlock>
       )}
 
-      {linkLost && (
-        <NoteBlock className="border-hivis text-hivis" role="status">
-          Link lost? The device hasn&apos;t answered the last few status checks. Still trying.
-        </NoteBlock>
-      )}
+      {active === null ? (
+        <>
+          <div className="flex items-center justify-between gap-2">
+            <h2 className="font-mono text-lg text-fg">Logger</h2>
+            <LoggerMenu {...props} busy={busy} />
+          </div>
+          <FindLogger {...props} />
+        </>
+      ) : (
+        <>
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex min-w-0 items-baseline gap-2">
+              <h2 className="truncate font-mono text-xl font-semibold text-fg">{connectionLabel(active)}</h2>
+              {firmware !== null && firmware !== "" && <span className="shrink-0 font-mono text-xs text-fg-dim">FW {firmware}</span>}
+            </div>
+            <LoggerMenu {...props} busy={busy} />
+          </div>
 
-      <Button
-        type="button"
-        emphasis={view.emphasis}
-        filled
-        onClick={onCta}
-        disabled={ctaDisabled}
-        className="h-16 w-full text-lg"
-      >
-        {view.pulsing && <PulsingDot className="text-bg" />}
-        {connectionState.phase === "scanning" && state === "disconnected" ? "Scanning…" : view.label}
-        {view.showTimer && duration.ms !== null && (
-          <span className={`font-mono tabular-nums${duration.source === "client" ? " text-fg-dim" : ""}`}>
-            {formatDurationMs(duration.ms)}
-          </span>
-        )}
-      </Button>
+          <Button
+            type="button"
+            emphasis={view.emphasis}
+            filled
+            onClick={() => onControl(state === "recording" ? "stop_recording" : "start_recording")}
+            disabled={busy}
+            className="h-20 w-full gap-3 text-xl"
+          >
+            {view.pulsing && <PulsingDot className="text-bg" />}
+            {pending === "wifi_off" && state === "idle" ? "Leaving WiFi…" : view.label}
+            {view.showTimer && duration.ms !== null && (
+              <span className={`font-mono tabular-nums${duration.source === "client" ? " opacity-70" : ""}`}>{formatDurationMs(duration.ms)}</span>
+            )}
+          </Button>
+
+          {linkLost && (
+            <NoteBlock className="border-hivis text-hivis" role="status">
+              Link lost? The logger hasn&apos;t answered the last few status checks. Still trying.
+            </NoteBlock>
+          )}
+
+          <IdentityChips config={loggerConfig} onOpen={() => props.onOpen("config")} />
+
+          {state !== "recording" && (
+            <NewSessionsBanner deviceId={active.device_id} knownSessionIds={props.knownSessionIds} onImported={props.onImported} />
+          )}
+
+          <ModuleGrid tiles={moduleTiles({ status, config: tileConfig, linkLost })} onOpen={props.onModule} />
+        </>
+      )}
     </section>
   );
 }

@@ -6,6 +6,25 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 
 ### Added
 
+- **Logger dashboard: module tiles, one-tap download and import, rider
+  and bike from the logger [no-docs] (2026-10-14).** The Device tab follows
+  the phone navigation map (v4): logger name and a ⋮ menu (sessions on
+  logger, logger settings, WiFi on/off, switch, scan, disconnect); a
+  full-width record button that leaves WiFi first when the logger is in
+  WiFi mode; big rider and bike chips read from the logger's own config
+  (`pull_config` on every connect, including auto-connect); a
+  new-sessions banner (**Check**, then **Download**) that downloads and
+  imports every new session one at a time and turns the logger's WiFi off
+  afterwards, reversing R53's no-import-from-Device rule (Isaac,
+  2026-10-14); and a four-column grid of module tiles (battery, SD,
+  Bluetooth, WiFi, GPS, each IMU, heart rate, enabled channels, Add), each
+  boxed in green, amber, red or grey by health. Not connected, the tab
+  shows a big Find logger button, the loggers found as large rows, and
+  "Connecting to your logger…" during auto-connect. Fixes auto-connect
+  never refreshing the library's session ids. New pure modules
+  `moduleTiles.ts`, `newSessions.ts`. Tiles open Logger settings until
+  per-module sheets exist. Spec: navigation map, no SPEC section yet.
+
 - **Rolling alpha build on every push to `main` [docs] (2026-10-14).**
   `release.yml` now also runs on `main` and publishes one moving
   prerelease, tag `alpha`, with unversioned file names
