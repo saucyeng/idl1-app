@@ -176,6 +176,8 @@ Zero processing. Read sensor registers. Write raw binary to SD. Nothing else.
 
 ### 4.3 Session Triggers
 - Start/stop: button press OR BLE command (`CMD_START_LOGGING` / `CMD_STOP_LOGGING`)
+- A button press while WiFi mode is up stops WiFi mode first, then starts
+  recording (§10.4; firmware decisions.md F7, 2026-10-14)
 - WiFi is on-demand only — enabled via `CMD_WIFI_ON`, disabled via `CMD_WIFI_OFF`
 - BLE stays active continuously (control plane). WiFi is data transfer only.
 
@@ -940,7 +942,12 @@ computed engine-side once the Rust write-amendment lane lands it.
 The firmware enforces a hard mutex between SoftAP and BLE central
 (HRM) via the §7.2 ACK protocol: `CMD_WIFI_ON` returns `0x03` while
 a session is running, and `CMD_START_LOGGING` returns `0x03` while
-SoftAP is up. Coordination between subsystems happens through a
+SoftAP is up. The record button is the one exception (F7, 2026-10-14): a
+press while SoftAP is up stops WiFi mode and then starts the session,
+so getting back to recording never depends on the phone. A `/download`
+in progress ends at its next 8 KB chunk (the app resumes with `Range`,
+§6.1); an `/ota` in progress is aborted, leaving the running image in
+place. BLE `CMD_START_LOGGING` while SoftAP is up is still refused. Coordination between subsystems happens through a
 FreeRTOS event group (`mode_state.{h,c}`) with bits for `WIFI_UP`
 and `LOGGING_ACTIVE`. `wifi_server.c` and `session.c` are the only
 producers; subsystems that need to react (HRM, IMU, GPS) subscribe

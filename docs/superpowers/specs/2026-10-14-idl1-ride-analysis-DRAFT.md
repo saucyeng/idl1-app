@@ -195,11 +195,9 @@ Decided 2026-10-14:
   downloaded session; events anchor to the session's own lap numbers. No
   new day/moto grouping.
 
-Open:
-
-1. **Firmware change for fast return to recording (§10).** Should a press
-   of the logger's record button while it is in WiFi mode drop WiFi and
-   start recording immediately?
+- **Record button pre-empts WiFi** (firmware decisions.md F7): a press in
+  WiFi mode stops WiFi and starts recording. Implemented in
+  `idl1-firmware` (`button.c`, `wifi_server.c`), not yet built or flashed.
 
 ## 10. Background download (prerequisite for the form)
 
@@ -221,7 +219,7 @@ recording, with a setting to turn it off, and back to recording within
   teardown), BLE re-advertising, the phone reconnecting, then
   `CMD_START_LOGGING`. That is likely several seconds and depends on the
   phone. Meeting ~1 s reliably needs the logger's own record button to
-  pre-empt WiFi in firmware (§9 Q2), so starting a recording never waits
+  pre-empt WiFi in firmware (F7, decided), so starting a recording never waits
   on the phone.
 - **Not yet known:** actual transfer throughput and what limits it. Worth
   measuring before tuning.
