@@ -21,7 +21,7 @@ const SECTIONS: readonly Section[] = [
   { label: "Swingarm IMU", read: (c) => c.imu.imu2 },
   {
     label: "IMU rate",
-    read: (c) => [c.imu.sample_rate_hz, c.imu.accel_range_g, c.imu.gyro_range_dps, c.imu.low_power_mode, c.imu.high_performance_mode, c.imu.orientation, c.imu.bias],
+    read: (c) => [c.imu.sample_rate_hz, c.imu.accel_range_g, c.imu.gyro_range_dps, c.imu.low_power_mode, c.imu.high_performance_mode, c.imu.hg_range_g, c.imu.hg_sample_rate_hz, c.imu.orientation, c.imu.bias],
   },
   { label: "GPS", read: (c) => c.gps },
   { label: "Analog", read: (c) => c.analog },

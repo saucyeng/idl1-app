@@ -6,10 +6,10 @@ import { Button } from "../../../components/ui/button";
 import { Switch } from "../../../components/ui/switch";
 import { cn } from "../../../lib/utils";
 import type { DeviceControlCommand, DeviceStatus } from "../../../ipc/device";
-import { imuPartial, setGps, setImuEnabled, setImuRate, setImuSlot } from "./config/edit";
+import { imuPartial, setGps, setImuEnabled, setImuHg, setImuHgShared, setImuRate, setImuSlot } from "./config/edit";
 import type { ImuSlotKey } from "./config/edit";
 import type { DeviceConfig } from "./config/model";
-import { ACCEL_RANGES_G, GPS_DYNAMIC_MODELS, GYRO_RANGES_DPS, IMU_ODR_HZ } from "./config/validate";
+import { ACCEL_RANGES_G, GPS_DYNAMIC_MODELS, GYRO_RANGES_DPS, HG_ODR_HZ, HG_RANGES_G, IMU_ODR_HZ } from "./config/validate";
 import AddChannelPicker from "./forms/AddChannelPicker";
 import AnalogForm from "./forms/AnalogForm";
 import DigitalForm from "./forms/DigitalForm";
@@ -154,6 +154,19 @@ function ImuBody({ slotKey, tile, draft, onDraftChange, status }: { slotKey: Imu
       <Choice label="Accel range" options={ACCEL_RANGES_G} value={slot.accel_range_g} format={(g) => `±${g} g`} disabled={!slot.enabled} onChange={(g) => onDraftChange(setImuSlot(draft, slotKey, { accel_range_g: g }))} />
       <Choice label="Gyro range" options={GYRO_RANGES_DPS} value={slot.gyro_range_dps} format={(d) => `${d}°/s`} disabled={!slot.enabled} onChange={(d) => onDraftChange(setImuSlot(draft, slotKey, { gyro_range_dps: d }))} />
       <Choice label="Sample rate — shared by all IMUs" options={IMU_ODR_HZ} value={draft.imu.sample_rate_hz} format={(hz) => `${hz} Hz`} onChange={(hz) => onDraftChange(setImuRate(draft, hz))} />
+      {slotKey !== "imu0" && (
+        <>
+          <SwitchRow
+            label="Record high-g accel"
+            detail="3 more channels, ±32–320 g, for big impacts"
+            checked={slot.hg_enabled === true}
+            disabled={!slot.enabled}
+            onChange={(on) => onDraftChange(setImuHg(draft, slotKey, on))}
+          />
+          <Choice label="High-g range — shared by both pods" options={HG_RANGES_G} value={draft.imu.hg_range_g} format={(g) => `±${g} g`} disabled={!slot.enabled || slot.hg_enabled !== true} onChange={(g) => onDraftChange(setImuHgShared(draft, { hg_range_g: g }))} />
+          <Choice label="High-g rate — shared by both pods" options={HG_ODR_HZ} value={draft.imu.hg_sample_rate_hz} format={(hz) => `${hz} Hz`} disabled={!slot.enabled || slot.hg_enabled !== true} onChange={(hz) => onDraftChange(setImuHgShared(draft, { hg_sample_rate_hz: hz }))} />
+        </>
+      )}
       <DraftNote />
     </div>
   );

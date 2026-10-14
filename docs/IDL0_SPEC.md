@@ -843,7 +843,10 @@ No default entries — users add channels via the Device tab as they wire up sen
 
 **Configurable chip options:**
 
-LSM6DSV320X (IDL1, all three IMUs; idl1-firmware decisions.md P1–P3, `imu_ranges.h`): sample rate 15–7680 Hz (set below), low-g accel range ±2/4/8/16 g, gyro range ±250/500/1000/2000/4000 dps, operating mode via `high_performance_mode`. The chip's separate high-g accelerometer (±32–320 g) is not yet in this schema; its field names `imu.hg_range_g` / `imu.hg_sample_rate_hz` are reserved (decisions.md Q8) and the app's handling is open as of 2026-10-14.
+LSM6DSV320X (IDL1, all three IMUs; idl1-firmware decisions.md P1–P3, `imu_ranges.h`): sample rate 15–7680 Hz (set below), low-g accel range ±2/4/8/16 g, gyro range ±250/500/1000/2000/4000 dps, operating mode via `high_performance_mode`. The chip's separate high-g accelerometer is recorded on the two pods only (Isaac, 2026-10-14), as registry channels 24–29, raw: any merging with the low-g stream happens in the app at import, never on the logger. Fields:
+- `imu.imu1.hg_enabled`, `imu.imu2.hg_enabled` — bool, absent = `false`. Its own switch per pod, apart from the pod's six-channel `enabled`; `imu0` never carries it.
+- `imu.hg_range_g` — shared by both pods: 32, 64, 128, 256 or 320 g. Default 64 (decisions.md Q8).
+- `imu.hg_sample_rate_hz` — shared by both pods and set apart from `imu.sample_rate_hz`: 480, 960, 1920, 3840 or 7680 Hz (the chip can't run high-g below 480). Default 960, pending a pod I2C bus-capacity test.
 
 LSM6DSO32 (IDL0 only, kept for IDL0 units): sample rate (12.5–1666 Hz), accel range (±4/8/16/32g), gyro range (±125–2000 dps), high-performance vs low-power mode.
 
@@ -891,6 +894,8 @@ emits, so a reviewer can check the code against this table line by line.
 | `imu.low_power_mode` | warning | `imu.high_performance_mode` also true | SPEC §8 gap — the two flags are framed as one physical toggle but §8 never states which wins when both are set; tracked note 2026-09-05 |
 | `imu.accel_range_g` | error | not one of ±2/4/8/16 g | §8 "Configurable chip options" |
 | `imu.gyro_range_dps` | error | not one of ±250/500/1000/2000/4000 dps | §8 "Configurable chip options" |
+| `imu.hg_range_g` | error | not one of 32/64/128/256/320 g | §8 "Configurable chip options" |
+| `imu.hg_sample_rate_hz` | error | not one of 480/960/1920/3840/7680 Hz | §8 "Configurable chip options" |
 | `imuN.accel_range_g` (N=0,1,2) | error | not one of ±2/4/8/16 g | §8 "Per-IMU range resolution" |
 | `imuN.gyro_range_dps` (N=0,1,2) | error | not one of ±250/500/1000/2000/4000 dps | §8 "Per-IMU range resolution" |
 | `imuN.channels` (N=0,1,2) | warning | `imuN.enabled` true and every axis channel false | load-bearing invariant: an enabled IMU logging nothing is a mistake |

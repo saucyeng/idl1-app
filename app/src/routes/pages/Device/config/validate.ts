@@ -12,6 +12,13 @@ export const IMU_ODR_HZ: readonly number[] = [15, 30, 60, 120, 240, 480, 960, 19
  *  separate high-g accelerometer. */
 export const ACCEL_RANGES_G: readonly number[] = [2, 4, 8, 16];
 
+/** Valid high-g accelerometer full-scale ranges, g (SPEC §8; decisions.md Q8). */
+export const HG_RANGES_G: readonly number[] = [32, 64, 128, 256, 320];
+
+/** Valid high-g accelerometer rates, Hz: the chip's high-g ODR ladder, which
+ *  starts at 480 (SPEC §8; decisions.md P1). */
+export const HG_ODR_HZ: readonly number[] = [480, 960, 1920, 3840, 7680];
+
 /** Valid gyro full-scale ranges for the LSM6DSV320X, dps (SPEC §8;
  *  decisions.md P3: ±125 dps is gone, ±4000 dps is new). Shared by the
  *  top-level default and every `imuN.gyro_range_dps` override. */
@@ -124,6 +131,8 @@ function checkImu(imu: DeviceConfig["imu"], issues: ValidationIssue[]): void {
   checkImuSampleRate(imu, issues);
   checkRange(imu.accel_range_g, ACCEL_RANGES_G, "imu.accel_range_g", "accel range", "g", issues);
   checkRange(imu.gyro_range_dps, GYRO_RANGES_DPS, "imu.gyro_range_dps", "gyro range", "dps", issues);
+  checkRange(imu.hg_range_g, HG_RANGES_G, "imu.hg_range_g", "high-g range", "g", issues);
+  checkRange(imu.hg_sample_rate_hz, HG_ODR_HZ, "imu.hg_sample_rate_hz", "high-g rate", "Hz", issues);
   checkImuModeFlags(imu, issues);
   checkImuSlot(imu.imu0, "imu0", issues);
   checkImuSlot(imu.imu1, "imu1", issues);

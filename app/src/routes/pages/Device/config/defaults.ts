@@ -10,6 +10,13 @@ export const DEFAULT_IMU_ACCEL_RANGE_G = 16;
 /** SPEC §8 worked example's top-level gyro range, inherited likewise. dps. */
 export const DEFAULT_IMU_GYRO_RANGE_DPS = 2000;
 
+/** High-g accelerometer full scale when the config doesn't set one
+ *  (idl1-firmware decisions.md Q8). g. */
+export const DEFAULT_IMU_HG_RANGE_G = 64;
+/** High-g rate when the config doesn't set one, Hz. Isaac 2026-10-14:
+ *  "generally follow at 960 Hz", pending a test of the pod I2C bus. */
+export const DEFAULT_IMU_HG_SAMPLE_RATE_HZ = 960;
+
 /** SPEC §8: GPS defaults to a 5 Hz fix rate. Hz. */
 export const DEFAULT_GPS_SAMPLE_RATE_HZ = 5;
 /** SPEC §8 worked example's dynamic model default. */
@@ -61,9 +68,11 @@ function defaultImu(): ImuBlock {
     gyro_range_dps: DEFAULT_IMU_GYRO_RANGE_DPS,
     low_power_mode: false,
     high_performance_mode: true,
+    hg_range_g: DEFAULT_IMU_HG_RANGE_G,
+    hg_sample_rate_hz: DEFAULT_IMU_HG_SAMPLE_RATE_HZ,
     imu0: defaultImuSlot(DEFAULT_IMU_ACCEL_RANGE_G, DEFAULT_IMU_GYRO_RANGE_DPS),
-    imu1: defaultImuSlot(DEFAULT_IMU_ACCEL_RANGE_G, DEFAULT_IMU_GYRO_RANGE_DPS),
-    imu2: defaultImuSlot(DEFAULT_IMU_ACCEL_RANGE_G, DEFAULT_IMU_GYRO_RANGE_DPS),
+    imu1: { ...defaultImuSlot(DEFAULT_IMU_ACCEL_RANGE_G, DEFAULT_IMU_GYRO_RANGE_DPS), hg_enabled: false },
+    imu2: { ...defaultImuSlot(DEFAULT_IMU_ACCEL_RANGE_G, DEFAULT_IMU_GYRO_RANGE_DPS), hg_enabled: false },
   };
 }
 

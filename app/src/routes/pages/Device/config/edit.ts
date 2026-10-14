@@ -62,6 +62,17 @@ export function imuPartial(slot: ImuSlot): boolean {
   return slot.enabled && !Object.values(slot.channels).every(Boolean);
 }
 
+/** Turns a pod's high-g accelerometer on or off (SPEC §8 `imuN.hg_enabled`;
+ *  pods only, Isaac 2026-10-14). */
+export function setImuHg(config: DeviceConfig, slot: "imu1" | "imu2", enabled: boolean): DeviceConfig {
+  return setImuSlot(config, slot, { hg_enabled: enabled });
+}
+
+/** Sets the high-g range and/or rate shared by both pods (SPEC §8). */
+export function setImuHgShared(config: DeviceConfig, patch: Partial<Pick<ImuBlock, "hg_range_g" | "hg_sample_rate_hz">>): DeviceConfig {
+  return { ...config, imu: { ...config.imu, ...patch } };
+}
+
 /** Sets the rider and bike names (`bike_profile`, SPEC §8). */
 export function setBikeProfile(config: DeviceConfig, patch: Partial<DeviceConfig["bike_profile"]>): DeviceConfig {
   return { ...config, bike_profile: { ...config.bike_profile, ...patch } };
