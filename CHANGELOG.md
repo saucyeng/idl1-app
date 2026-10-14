@@ -565,6 +565,13 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 
 ### Fixed
 
+- **Android: the page stays out from under the system bars [no-docs]
+  (2026-10-14).** Edge-to-edge drew the webview beneath the status bar and
+  the gesture bar, so the bottom tab labels ran off the screen. The main
+  activity now pads its content by the system-bar, cutout and keyboard
+  insets, paints the bar areas in the page colour and keeps the bar icons
+  light. No spec change needed.
+
 - **First launch no longer dies with "table blobs already exists"
   [no-docs] (2026-10-14).** Several startup commands opened the brand-new
   `catalog.sqlite` at once; each saw an empty file and ran the schema DDL,
