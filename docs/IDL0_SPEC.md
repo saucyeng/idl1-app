@@ -646,6 +646,7 @@ Logging: RUNNING|STOPPED
 LoggingElapsed: N       (seconds since Logging: RUNNING started; present only then — R113)
 Battery: N%
 BatteryRaw: N            (unscaled battery ADC count; always present — see below)
+BatteryMv: N             (IDL1: calibrated cell voltage after the divider, mV; preferred over BatteryRaw; absent when the read fails)
 SD: OK|FULL|ERROR|ABSENT
 SDFreeMiB: N             (free space on the card, MiB; present for SD: OK|FULL only)
 GPS: FIX|NOFIX|ABSENT

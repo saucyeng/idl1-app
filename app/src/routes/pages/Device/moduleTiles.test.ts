@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import type { DeviceStatus } from "../../../ipc/device";
 import { defaultConfig } from "./config/defaults";
 import type { DeviceConfig } from "./config/model";
-import { moduleTiles, NOT_POLLED, UNREPORTED } from "./moduleTiles";
+import { batteryPctFromMv, moduleTiles, NOT_POLLED, UNREPORTED } from "./moduleTiles";
 import type { ModuleTile } from "./moduleTiles";
 
 /** A `DeviceStatus` with every field `null`/`false`, overridden per test. */
@@ -21,6 +21,7 @@ function statusWith(fields: Partial<DeviceStatus>): DeviceStatus {
     hr_battery_pct: null,
     logging_elapsed_s: null,
     battery_raw: null,
+    battery_mv: null,
     sd_free_mib: null,
     gps_fix_quality: null,
     gps_sats: null,
@@ -174,3 +175,24 @@ describe("moduleTiles", () => {
     expect(hr).toMatchObject({ lines: ["no strap"], tone: "warn" });
   });
 });
+
+describe("batteryPctFromMv", () => {
+  it("batteryPctFromMv — ends and a midpoint — clamped and interpolated", () => {
+    const low = batteryPctFromMv(3000);
+    const mid = batteryPctFromMv(3850);
+    const full = batteryPctFromMv(4210);
+
+    expect(low).toBe(0);
+    expect(mid).toBe(50);
+    expect(full).toBe(100);
+  });
+
+  it("moduleTiles — BatteryMv reported alongside a stale percent — percent from volts, volts shown", () => {
+    const status = statusWith({ battery_pct: 100, battery_mv: 3700 });
+
+    const battery = tileOf(moduleTiles({ status, config: null, linkLost: false }), "battery");
+
+    expect(battery).toMatchObject({ lines: ["15%", "3.70 V"], tone: "warn" });
+  });
+});
+

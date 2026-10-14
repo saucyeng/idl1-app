@@ -19,6 +19,7 @@ function status(logging: boolean | null, wifi_on: boolean | null): DeviceStatus 
     hr_battery_pct: null,
     logging_elapsed_s: null,
     battery_raw: null,
+    battery_mv: null,
     sd_free_mib: null,
     gps_fix_quality: null,
     gps_sats: null,

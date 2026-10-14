@@ -82,7 +82,33 @@ function rangeText(slot: ImuSlot): string {
   return `±${slot.accel_range_g} g · ${slot.gyro_range_dps}°/s`;
 }
 
+/** Resting single-cell Li-ion curve, mV → percent, for the battery tile.
+ *  A display estimate only. */
+const LIION_CURVE: readonly [number, number][] = [
+  [3300, 0], [3600, 5], [3700, 15], [3750, 25], [3800, 40], [3900, 60], [4000, 75], [4100, 90], [4200, 100],
+];
+
+/** Rough charge, percent 0–100, from a cell voltage in mV. A charger holding
+ *  the cell node at its float voltage with no cell fitted reads 100 — the
+ *  board has no charger status line to tell them apart (firmware F9). */
+export function batteryPctFromMv(mv: number): number {
+  if (mv <= LIION_CURVE[0][0]) return 0;
+  for (let i = 1; i < LIION_CURVE.length; i++) {
+    const [mv1, p1] = LIION_CURVE[i];
+    if (mv < mv1) {
+      const [mv0, p0] = LIION_CURVE[i - 1];
+      return Math.round(p0 + ((p1 - p0) * (mv - mv0)) / (mv1 - mv0));
+    }
+  }
+  return 100;
+}
+
 function batteryTile(status: DeviceStatus | null): ModuleTile {
+  const mv = status?.battery_mv ?? null;
+  if (mv !== null) {
+    const pct = batteryPctFromMv(mv);
+    return { key: "battery", icon: "battery", label: "Battery", lines: [`${pct}%`, `${(mv / 1000).toFixed(2)} V`], tone: pct <= BATTERY_LOW_PCT ? "warn" : "good" };
+  }
   const pct = live(status, (s) => s.battery_pct);
   if (typeof pct !== "number") return { key: "battery", icon: "battery", label: "Battery", lines: [pct], tone: "idle" };
   return { key: "battery", icon: "battery", label: "Battery", lines: [`${pct}%`], tone: pct <= BATTERY_LOW_PCT ? "warn" : "good" };

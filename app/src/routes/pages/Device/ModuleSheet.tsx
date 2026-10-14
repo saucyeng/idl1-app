@@ -15,6 +15,7 @@ import AnalogForm from "./forms/AnalogForm";
 import DigitalForm from "./forms/DigitalForm";
 import HrmForm from "./forms/HrmForm";
 import WheelForm from "./forms/WheelForm";
+import { batteryPctFromMv } from "./moduleTiles";
 import type { ModuleTile } from "./moduleTiles";
 
 /** GPS rates offered as buttons, Hz. SPEC §8 allows any integer 1–10; these
@@ -207,7 +208,24 @@ export default function ModuleSheet(props: ModuleSheetProps) {
     const [kind, sub] = t.key.split(":");
     switch (kind) {
       case "battery":
-        return <Readings rows={[["Charge", status?.battery_pct === null || status?.battery_pct === undefined ? "unknown" : `${status.battery_pct}%`]]} />;
+        return (
+          <div className="flex flex-col gap-3">
+            <Readings
+              rows={[
+                ["Voltage", status?.battery_mv === null || status?.battery_mv === undefined ? "unknown" : `${(status.battery_mv / 1000).toFixed(2)} V`],
+                [
+                  "Charge (estimate)",
+                  status?.battery_mv !== null && status?.battery_mv !== undefined
+                    ? `${batteryPctFromMv(status.battery_mv)}%`
+                    : status?.battery_pct === null || status?.battery_pct === undefined
+                      ? "unknown"
+                      : `${status.battery_pct}%`,
+                ],
+              ]}
+            />
+            <p className="text-xs text-fg-dim">With no battery fitted, the charger holds this at about 4.2 V, so it reads full. This board can&apos;t tell the difference.</p>
+          </div>
+        );
       case "sd":
         return (
           <div className="flex flex-col gap-4">

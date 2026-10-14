@@ -168,6 +168,9 @@ export interface DeviceStatus {
    *  wire (SPEC §7.3); the app scales this raw count itself and prefers it
    *  whenever both are present. */
   battery_raw: number | null;
+  /** Battery cell voltage, mV (`BatteryMv` line, idl1-firmware F9).
+   *  Preferred over `battery_raw` and `battery_pct` when present. */
+  battery_mv: number | null;
   /** Free space on the mounted SD card, MiB. Present when `sd` is `"ok"` or
    *  `"full"`; `null` for `"error"`/`"absent"` or when unreported. */
   sd_free_mib: number | null;

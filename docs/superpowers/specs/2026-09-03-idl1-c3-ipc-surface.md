@@ -2371,6 +2371,7 @@ interface DeviceStatus {
   // amendment" (§6), resolving the wave-2 open question below.
   logging_elapsed_s: number | null;                        // u32, seconds; present only while logging === true
   battery_raw: number | null;                              // u32, unscaled ADC count; app scales itself
+  battery_mv: number | null;                               // u32, mV, calibrated cell voltage (BatteryMv, firmware F9); preferred
   sd_free_mib: number | null;                              // u32, MiB; present only when sd is "ok" or "full"
   gps_fix_quality: number | null;                          // u8, raw NMEA GGA fix-quality (0-3); present when gps !== "absent"
   gps_sats: number | null;                                 // u32, satellites used; 0 is a real "searching" reading, distinct from null

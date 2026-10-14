@@ -581,6 +581,15 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 
 ### Fixed
 
+- **Battery shows volts; SD free space and GPS satellites appear [docs]
+  (2026-10-14).** The logger's status line hard-coded `Battery: 100%` and
+  sent SD free space under a name nothing parsed (idl1-firmware F9 fixes
+  both and adds the other §7.3 lines). New status field `battery_mv`
+  (`BatteryMv` line, C3 `DeviceStatus`); the battery tile and sheet show
+  the cell voltage and a charge estimate from it. With no cell fitted the
+  charger holds about 4.2 V, which reads full: the board has no charger
+  status line. Spec-during: SPEC §7.3.
+
 - **IMU settings use the IDL1's LSM6DSV320X values [docs] (2026-10-14).**
   The app still offered the idl0 LSM6DSO32's lists, which the IDL1
   firmware rejects. New lists: rate 15–7680 Hz (10 steps, one set in every
