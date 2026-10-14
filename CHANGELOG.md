@@ -565,6 +565,14 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 
 ### Fixed
 
+- **First launch no longer dies with "table blobs already exists"
+  [no-docs] (2026-10-14).** Several startup commands opened the brand-new
+  `catalog.sqlite` at once; each saw an empty file and ran the schema DDL,
+  and the losers crashed the app (Isaac's phone, fresh install). The
+  bootstrap now runs inside one `BEGIN IMMEDIATE` transaction that
+  re-checks for an empty database, and the WAL switch retries on
+  `SQLITE_BUSY`. No spec change needed.
+
 - **A workbook's prose is typeset [docs] (2026-09-20, ruling R247).** The
   notebook had semantic class names for everything it renders and no rules
   behind any of them, so `pulldown-cmark`'s `<h1>`/`<h2>`/`<p>` all arrived
