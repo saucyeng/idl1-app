@@ -12,6 +12,11 @@ behaviour, a layer placement or a signature is not stated in the design doc, a
 contract (C1–C4), or the lane's SPEC section — stop and ask. Do not infer, do
 not pick "the reasonable one", do not treat silence as approval.
 
+Asking is not stopping (Isaac, 2026-10-13). Plan far enough ahead to find the
+ambiguities before the work reaches them, ask each one as soon as it is seen,
+and keep working on every task that does not depend on the answer. Only the
+blocked task waits.
+
 ## 2. Layers
 
     rust/core/       idl-rs        PURE. Signal processing, parsing, importers, store

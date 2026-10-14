@@ -6,6 +6,15 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 
 ### Added
 
+- **Rolling alpha build on every push to `main` [docs] (2026-10-14).**
+  `release.yml` now also runs on `main` and publishes one moving
+  prerelease, tag `alpha`, with unversioned file names
+  (`idl1-app-alpha-arm64.apk`), so one bookmarked URL always fetches the
+  newest build. The APK is published when the Android job finishes; the
+  desktop files are attached afterwards. A newer push cancels an older
+  run; docs-only pushes build nothing. `docs/RELEASING.md` has the URLs.
+  No spec change needed.
+
 - **Android: BLE and WiFi to the logger (SPEC §14b step 1, L9 tasks 3–4)
   [no-docs] (2026-09-25).** A Kotlin `DevicePlugin`
   (`app/src-tauri/gen/android/.../device/`) does GATT (one serialized

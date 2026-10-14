@@ -16,6 +16,15 @@
 # in-app updater (ruling R231) is not wired up yet, so desktop bundles are
 # not updater-signed and no `latest.json` is written.
 #
+# Rolling alpha: a push to `main` builds the same three platforms and
+# publishes them on ONE moving prerelease, tag `alpha`, replaced each time.
+# The APK goes up as soon as the Android job finishes (`alpha`); the desktop
+# files are added to the same release when they finish (`alpha-desktop`), one
+# job after the other, so the uploads still cannot race. File names carry no
+# version (`idl1-app-alpha-arm64.apk`), so one bookmarked URL always fetches
+# the newest build. A newer push cancels the build still running for an older
+# one. Pushes that touch only docs or Markdown build nothing.
+#
 # workflow_dispatch builds every platform without publishing -- a dry run
 # whose files are left on the run as artifacts.
 
@@ -25,7 +34,18 @@ on:
   push:
     tags:
       - "v*"
+    branches:
+      - main
+    # Evaluated for branch pushes only; a tag always builds.
+    paths-ignore:
+      - "docs/**"
+      - "runs/**"
+      - "**.md"
   workflow_dispatch: {}
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref == 'refs/heads/main' }}
 
 permissions:
   contents: write # the release job creates the GitHub Release
@@ -284,3 +304,83 @@ jobs:
           body_path: NOTES.md
           prerelease: ${{ contains(github.ref_name, '-') }}
           fail_on_unmatched_files: true
+
+  alpha:
+    needs: [version, android]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    env:
+      VERSION: ${{ needs.version.outputs.version }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: Android
+          path: dist
+
+      - name: Rename to the rolling file names
+        run: bash .github/scripts/alpha-rename.sh dist "$VERSION"
+
+      - name: Compose release notes
+        run: |
+          set -euo pipefail
+          base="https://github.com/${GITHUB_REPOSITORY}"
+          {
+            echo "Rolling build of \`main\`, replaced on every push. Base version ${VERSION}, build ${GITHUB_RUN_NUMBER}, commit [${GITHUB_SHA:0:7}](${base}/commit/${GITHUB_SHA})."
+            echo ""
+            echo "**Android** — [idl1-app-alpha-arm64.apk](${base}/releases/download/alpha/idl1-app-alpha-arm64.apk). Tap to install; it updates over any prior build."
+            echo "**Windows / Linux** — attached below about ten minutes after the APK."
+            echo ""
+            echo "## Latest change"
+            echo ""
+            git log -1 --format='%s%n%n%b'
+          } > NOTES.md
+
+      # Delete-then-create moves the `alpha` tag to this commit; the release
+      # page and download URLs stay the same.
+      - name: Publish the rolling prerelease
+        run: |
+          set -euo pipefail
+          gh release delete alpha --cleanup-tag --yes --repo "$GITHUB_REPOSITORY" || true
+          gh release create alpha dist/* \
+            --repo "$GITHUB_REPOSITORY" \
+            --target "$GITHUB_SHA" \
+            --prerelease \
+            --title "idl1 alpha (build ${GITHUB_RUN_NUMBER}, ${GITHUB_SHA:0:7})" \
+            --notes-file NOTES.md
+
+  alpha-desktop:
+    needs: [version, alpha, desktop]
+    # Runs when the APK was published even if one desktop platform failed:
+    # whatever did build is attached.
+    if: ${{ !cancelled() && needs.alpha.result == 'success' }}
+    runs-on: ubuntu-latest
+    env:
+      VERSION: ${{ needs.version.outputs.version }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        continue-on-error: true
+        with:
+          name: Windows
+          path: dist
+
+      - uses: actions/download-artifact@v4
+        continue-on-error: true
+        with:
+          name: Linux
+          path: dist
+
+      - name: Attach desktop files to the rolling prerelease
+        run: |
+          set -euo pipefail
+          if [ -z "$(ls -A dist 2>/dev/null)" ]; then
+            echo "::warning::no desktop build succeeded; the alpha release has the APK only"
+            exit 0
+          fi
+          bash .github/scripts/alpha-rename.sh dist "$VERSION"
+          gh release upload alpha dist/* --clobber --repo "$GITHUB_REPOSITORY"

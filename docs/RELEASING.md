@@ -21,6 +21,28 @@ Running it by hand (Actions → "Release" → Run workflow, any branch) is a
 dry run: every platform builds and its files stay on the run as
 artifacts, but nothing is published.
 
+## Rolling alpha (every push to `main`)
+
+A push to `main` runs the same three builds and publishes them on one
+moving prerelease, tag `alpha`, which is deleted and recreated at the new
+commit each time. Nothing is bumped or tagged by hand. The file names carry
+no version, so these never change:
+
+- release page: `https://github.com/saucyeng/idl1-app/releases/tag/alpha`
+- APK: `https://github.com/saucyeng/idl1-app/releases/download/alpha/idl1-app-alpha-arm64.apk`
+
+The APK is published as soon as the Android job finishes (`alpha` job); the
+Windows and Linux files are attached to the same release when they finish
+(`alpha-desktop` job), also if only one of the two built. The release title
+carries the build number and commit; the app's own version string stays at
+`tauri.conf.json`'s until the next tagged release. A newer push cancels the
+run still building an older one. A push that changes only `docs/`, `runs/`
+or Markdown files builds nothing.
+
+Channels: `alpha` is every push; `vX.Y.Z-beta.N` and `vX.Y.Z` tags are cut
+by hand as above. All share the workflow's run counter as `versionCode`, so
+any later build installs over any earlier one.
+
 ## Artifacts per platform
 
 - **Android** — `idl1-app-v<version>-arm64.apk`, release-signed (arm64
@@ -144,6 +166,7 @@ under `Unreleased`.
 ## Minute budget
 
 This repo is public (since 2026-09-23), so Actions minutes on standard
-runners are free. Releases still run only on tags, not on every push.
+runners are free. Tagged releases run on tags; the rolling alpha runs on
+every push to `main` that changes more than docs.
 The Windows + Linux release of `v0.1.0-alpha.1` took 31 min wall-clock;
 Android adds a third parallel job. See `docs/CI.md` for the rest of the CI budget.
