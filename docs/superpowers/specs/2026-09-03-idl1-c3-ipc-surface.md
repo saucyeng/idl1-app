@@ -2438,6 +2438,24 @@ Errors: `ble`, `not_found`, `config` (the device returned something
 unparseable — this is the §2 `config` kind's own meaning, a config
 document malformed on the wire), `internal`.
 
+**`list_recent_device_files(device_id: string)`**
+*Added 2026-10-14 (Isaac: check for new sessions without WiFi; SPEC §7.2
+`CMD_FILES_READ_BEGIN`).*
+
+```ts
+interface RecentDeviceFiles {
+  total: number;        // u32, every file on the logger
+  files: DeviceFile[];  // at most 10, newest first
+}
+```
+
+Return: `RecentDeviceFiles`. Drives `ControlCommand::FilesReadBegin` (0x0A)
+and the same FF06 read loop as `pull_config`, over the managed link when one
+exists. Never switches the logger to WiFi.
+
+Errors: `ble` (including firmware without the command, which the caller
+treats as "list over WiFi instead"), `not_found`, `internal`.
+
 **`preview_channel_registry(config_json: string)`**
 *Added post-sign (2026-09-05, lead ruling R59, wave-2 write lane, ruling
 R53 Device Q1).* Satisfies wave-2 need L7-12.

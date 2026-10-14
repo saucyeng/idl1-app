@@ -128,7 +128,7 @@ export function bannerView(state: NewSessionsState): BannerView {
     case "idle":
       return { text: "Check the logger for new sessions", detail: null, action: { kind: "check", label: "Check" }, fraction: null, tone: "plain" };
     case "checking":
-      return { text: "Checking the logger…", detail: "Switching it to WiFi", action: null, fraction: null, tone: "plain" };
+      return { text: "Checking the logger…", detail: null, action: null, fraction: null, tone: "plain" };
     case "ready": {
       if (state.files.length === 0) {
         return { text: "Everything on the logger is in your library", detail: null, action: { kind: "dismiss", label: "OK" }, fraction: null, tone: "good" };

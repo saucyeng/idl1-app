@@ -78,6 +78,22 @@ export async function listDeviceFiles(deviceId: string): Promise<DeviceFile[]> {
   return invoke<DeviceFile[]>("list_device_files", { deviceId });
 }
 
+/** `listRecentDeviceFiles`'s return (C3 §3.8). */
+export interface RecentDeviceFiles {
+  /** u32: every file on the logger, listed or not. */
+  total: number;
+  /** At most the ten newest files, newest first. */
+  files: DeviceFile[];
+}
+
+/** Lists the logger's ten newest session files over BLE without switching
+ *  it to WiFi (C3 §3.8, SPEC §7.2 `CMD_FILES_READ_BEGIN`). Rejects with the
+ *  `ble` kind on firmware that lacks the command; callers then fall back to
+ *  `listDeviceFiles`. */
+export async function listRecentDeviceFiles(deviceId: string): Promise<RecentDeviceFiles> {
+  return invoke<RecentDeviceFiles>("list_recent_device_files", { deviceId });
+}
+
 /** Downloads `fileName` from `deviceId` (C3 §3.8). `Progress.done`/`.total`
  *  are bytes transferred/expected. Explicit user action, never a hot path. */
 export async function downloadFile(

@@ -560,6 +560,7 @@ Control characteristic uses **Write with Response** — app waits for GATT ACK b
 | 0x07 | CMD_CONFIG_BEGIN |
 | 0x08 | CMD_CONFIG_COMMIT |
 | 0x09 | CMD_CONFIG_READ_BEGIN |
+| 0x0A | CMD_FILES_READ_BEGIN |
 
 `CMD_OTA_CONFIRM` (0x06) commits the currently-running image after an OTA. After an `/ota` POST and the subsequent reboot, the new image runs in pending-verify state — the status characteristic includes an `OTA: PENDING_VERIFY` line (§7.3). The app must send `CMD_OTA_CONFIRM` to cancel the pending rollback; if the device reboots before the confirmation, the bootloader switches back to the previous slot. Sending the command in any other state is a no-op.
 
@@ -572,6 +573,40 @@ Control characteristic uses **Write with Response** — app waits for GATT ACK b
 On COMMIT the firmware validates the reassembled bytes as JSON and atomically writes them to `idl0_config.json` (temp-file + rename), then reboots ~500 ms later to apply (config is read at boot only, §4.2). The app re-establishes BLE after the reboot and lands back in idle mode. BEGIN/COMMIT and the FF05 writes carry the §7.2 ACK protocol: a chunk that would exceed 8 KB, a COMMIT with no buffered data, malformed JSON, or an SD write error are rejected (`0x80`/`0x81`) and no partial config is persisted. A BLE disconnect mid-transfer discards the buffer. This shares one validate+atomic-write path with the WiFi `POST /config` handler (§6.1), which remains available as a fallback.
 
 **Config read-back over BLE.** `CMD_CONFIG_READ_BEGIN` (0x09) snapshots the live `idl0_config.json` into a device-side buffer and resets a cursor; the app then reads the **Config TX** characteristic (FF06) repeatedly — each read returns the next ≤200-byte chunk and advances the cursor — until an **empty read** signals EOF. The app reassembles and `jsonDecode`s the bytes. READ_BEGIN returns `0x81` if no config file exists. The snapshot is discarded on disconnect. The app uses this to **verify a push**: after the reboot+reconnect it pulls the config back and compares it (compact JSON) to what it sent; a mismatch (or read-back unsupported on older firmware) is surfaced to the user but never silently treated as success.
+
+**Recent sessions over BLE (added 2026-10-14).** `CMD_FILES_READ_BEGIN`
+(0x0A) lets the app see whether the logger holds sessions the library lacks
+without entering WiFi mode. It snapshots a list of the **10 newest** files in
+`/sessions/` into the same read-back buffer `CMD_CONFIG_READ_BEGIN` uses, and
+the app reads it from **Config TX** (FF06) exactly as for the config: next
+≤200-byte chunk per read, empty read = EOF. Whichever `*_READ_BEGIN` came last
+owns the buffer. The payload is compact JSON:
+
+```json
+{"total": 37, "files": [{"name": "2026-10-14_15-02-11.idl0", "size": 48211340, "session_id": "0123456789abcdef0123456789abcdef"}]}
+```
+
+- `total` (u32): every file in `/sessions/`, so the app can say how many
+  older files it did not list.
+- `files`: at most 10 entries, newest first. "Newest" is file names sorted
+  in **descending byte order**: dated names (`YYYY-MM-DD_HH-MM-SS.idl0`,
+  §10.2) sort chronologically, and an undated `tmp_<boot_ms>.idl0` sorts
+  ahead of every dated name. Each entry has the same fields and meaning as
+  one element of WiFi `GET /files` (§6.1); `session_id` is omitted when the
+  header can't be read.
+- Ten is a fixed firmware constant (`IDL0_FILES_READ_MAX`). Anything older
+  than the tenth newest file is assumed to be already imported or
+  deliberately ignored; the full list stays available over WiFi `/files`.
+- Holds the same mutex as the config commands: refused with
+  `IDL0_ACK_MUTEX_REFUSED` (`0x03`) while a session is running, because it
+  reads the SD card. Returns `IDL0_ACK_BUSY` (`0x80`) if the snapshot can't
+  be allocated; an empty `/sessions/` gives `{"total": 0, "files": []}`.
+- Firmware without the command answers `0x82`
+  (`IDL0_ACK_NOT_IMPLEMENTED`) or rejects the byte; the app then falls back
+  to listing over WiFi.
+
+The app's new-sessions check uses this first and switches the logger to WiFi
+only to download.
 
 **ACK protocol.** Every write to the Control characteristic (FF03)
 returns an ATT result code as the GATT write response:

@@ -6,6 +6,14 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 
 ### Added
 
+- **Check for new sessions over Bluetooth [docs] (2026-10-14).** SPEC §7.2
+  gains `CMD_FILES_READ_BEGIN` (0x0A): the logger lists its ten newest
+  session files through the same FF06 read-back as the config, so the
+  dashboard's **Check** no longer switches it to WiFi; WiFi comes on only
+  to download. New command `list_recent_device_files` (C3 §3.8); firmware
+  without the command falls back to the WiFi list. Firmware side:
+  idl1-firmware decisions.md F8. Spec-first: SPEC §7.2.
+
 - **Logger dashboard: module tiles, one-tap download and import, rider
   and bike from the logger [no-docs] (2026-10-14).** The Device tab follows
   the phone navigation map (v4): logger name and a ⋮ menu (sessions on

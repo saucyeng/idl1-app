@@ -4,7 +4,7 @@ import { toast } from "sonner";
 import { Button } from "../../../components/ui/button";
 import { toastFor } from "../../../components/toasts/events";
 import { cn } from "../../../lib/utils";
-import { deviceControl, downloadFile, listDeviceFiles } from "../../../ipc/device";
+import { deviceControl, downloadFile, listDeviceFiles, listRecentDeviceFiles } from "../../../ipc/device";
 import { importFile } from "../../../ipc/import";
 import { describeIpcError } from "./errors";
 import type { DeviceIpcError } from "./errors";
@@ -38,8 +38,8 @@ export interface NewSessionsBannerProps {
 
 /**
  * The Logger dashboard's new-sessions banner. **Check** lists the logger's
- * files (the logger switches to WiFi for it; only ever on this tap, never
- * on its own). **Download** then downloads and imports every new session,
+ * ten newest files over Bluetooth (SPEC §7.2), falling back to WiFi on
+ * older firmware; only ever on this tap, never on its own. **Download** then downloads and imports every new session,
  * one at a time, and switches the logger's WiFi off when it's done so it is
  * ready to record again. Everything it says comes from `newSessions.ts`.
  */
@@ -49,7 +49,11 @@ export default function NewSessionsBanner({ deviceId, knownSessionIds, onImporte
 
   function check(): void {
     dispatch({ type: "CHECK_START" });
-    listDeviceFiles(deviceId)
+    // Over Bluetooth first (the ten newest files, no WiFi); firmware without
+    // that command falls back to the full list over WiFi.
+    listRecentDeviceFiles(deviceId)
+      .then((recent) => recent.files)
+      .catch(() => listDeviceFiles(deviceId))
       .then((files) => dispatch({ type: "CHECK_DONE", files: toFileViews(files, knownSessionIds) }))
       .catch((err: DeviceIpcError) => dispatch({ type: "CHECK_FAILED", error: describeIpcError(err) }));
   }
