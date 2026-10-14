@@ -191,19 +191,13 @@ Decided 2026-10-14:
 - **Exertion:** out of scope for now. The idea to keep is area under the
   HR curve (a training-load style number), when an HR strap is paired.
 - **Quantities:** the model guesses, the rider corrects (§3.3).
+- **Unit: the session**, as it is today. One form and one report per
+  downloaded session; events anchor to the session's own lap numbers. No
+  new day/moto grouping.
 
 Open:
 
-1. **Scope of a "ride".** Proposal: three nested levels, all detected
-   automatically.
-   - **Outing** (the form and report): one day at one venue. One form, one
-     notes box, one report, however many logger sessions it spans.
-   - **Moto:** a continuous stretch of riding, split at stops (speed from
-     GPS). This is what "after 2 laps" and "2 laps from the end" count in.
-   - **Lap:** as today.
-   With the logger left on all day, the pit time between motos is just
-   ignored. Does that match how you think about it?
-2. **Firmware change for fast return to recording (§10).** Should a press
+1. **Firmware change for fast return to recording (§10).** Should a press
    of the logger's record button while it is in WiFi mode drop WiFi and
    start recording immediately?
 
