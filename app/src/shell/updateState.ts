@@ -15,7 +15,16 @@ import { useSyncExternalStore } from "react";
 export type UpdateState =
   | { kind: "idle" }
   | { kind: "checking" }
-  | { kind: "available"; version: string; notes: string; date: string | null }
+  | {
+      kind: "available";
+      version: string;
+      notes: string;
+      date: string | null;
+      /** Set for a release the user fetches themselves (the channel check,
+       *  `ipc/appUpdate.ts`): where "Download" goes. Absent for the desktop
+       *  updater plugin, which downloads and installs in place. */
+      link?: string;
+    }
   | { kind: "downloading"; pct: number }
   | { kind: "ready" }
   | { kind: "error"; message: string };
@@ -69,17 +78,23 @@ export function clampPct(pct: number): number {
  *  needs to see in a 22 px band, and a launch-time check that finds
  *  nothing must not flash a chip that then disappears. */
 export function updateChipLabel(state: UpdateState): string | null {
-  if (state.kind === "available") return `Update available · v${state.version}`;
+  if (state.kind === "available") return `Update available · ${versionLabel(state.version)}`;
   if (state.kind === "downloading") return `Downloading update · ${state.pct}%`;
   if (state.kind === "ready") return "Update ready · restart to apply";
   return null;
+}
+
+/** `version` as the chrome prints it: `v0.2.0` for semver, verbatim
+ *  otherwise (the nightly channel's `build 19`). */
+export function versionLabel(version: string): string {
+  return /^\d/.test(version) ? `v${version}` : version;
 }
 
 /** What {@link startUpdateChecker} and {@link restartToUpdate} call through
  *  to reach the actual plugin — `ipc/updater.ts` in production, a fake in
  *  tests, so this module's orchestration is exercised without Tauri. */
 export interface UpdateIO {
-  checkForUpdate(): Promise<{ version: string; notes: string; date: string | null } | null>;
+  checkForUpdate(): Promise<{ version: string; notes: string; date: string | null; link?: string } | null>;
   downloadAndInstallUpdate(onProgress: (pct: number) => void): Promise<void>;
   relaunchApp(): Promise<void>;
 }
@@ -92,13 +107,31 @@ export const LAUNCH_CHECK_DELAY_MS = 30_000;
 /** Recheck interval once running (the brief's "every 4 h"). */
 export const RECHECK_INTERVAL_MS = 4 * 60 * 60 * 1000;
 
+/** The part of {@link UpdateIO} a check needs. */
+export type UpdateCheckIO = Pick<UpdateIO, "checkForUpdate">;
+
+/** {@link startUpdateChecker}'s tuning; every field optional. */
+export interface UpdateCheckerOptions {
+  /** Delay before the first check; default {@link LAUNCH_CHECK_DELAY_MS}. */
+  launchDelayMs?: number;
+  /** Subscribes to "the app came back to the foreground" (a phone app is
+   *  backgrounded for hours, and its timers with it); returns an
+   *  unsubscribe. With it, a resume rechecks once the last check is at
+   *  least {@link UpdateCheckerOptions.resumeMinAgeMs} old. */
+  onResume?: (handler: () => void) => () => void;
+  /** Minimum age of the last check before a resume rechecks; default 15 min. */
+  resumeMinAgeMs?: number;
+  /** Clock, for tests; default `Date.now`. */
+  now?: () => number;
+}
+
 /**
  * Runs one check against `io` and publishes its outcome. Never runs while
  * a download or install is in progress or already finished — a background
  * recheck must not stomp on a restart the user has already started or
  * completed and is waiting to act on.
  */
-export async function runUpdateCheck(io: UpdateIO): Promise<void> {
+export async function runUpdateCheck(io: UpdateCheckIO): Promise<void> {
   if (state.kind === "downloading" || state.kind === "ready") return;
   publish({ kind: "checking" });
   try {
@@ -115,20 +148,35 @@ export async function runUpdateCheck(io: UpdateIO): Promise<void> {
  * a check never lands on the interaction path (CLAUDE.md §3). Returns a
  * stop function; `AppShell.tsx` calls it from its mount effect's cleanup.
  */
-export function startUpdateChecker(io: UpdateIO): () => void {
+export function startUpdateChecker(io: UpdateCheckIO, options: UpdateCheckerOptions = {}): () => void {
+  const now = options.now ?? Date.now;
+  const resumeMinAgeMs = options.resumeMinAgeMs ?? 15 * 60 * 1000;
   let stopped = false;
   let interval: ReturnType<typeof setInterval> | undefined;
+  let lastCheckAt: number | null = null;
+
+  const check = () => {
+    lastCheckAt = now();
+    void runUpdateCheck(io);
+  };
 
   const launchTimer = setTimeout(() => {
     if (stopped) return;
-    void runUpdateCheck(io);
-    interval = setInterval(() => void runUpdateCheck(io), RECHECK_INTERVAL_MS);
-  }, LAUNCH_CHECK_DELAY_MS);
+    check();
+    interval = setInterval(check, RECHECK_INTERVAL_MS);
+  }, options.launchDelayMs ?? LAUNCH_CHECK_DELAY_MS);
+
+  // Before the launch check has run, a resume leaves it to the timer.
+  const unsubscribeResume = options.onResume?.(() => {
+    if (stopped || lastCheckAt === null || now() - lastCheckAt < resumeMinAgeMs) return;
+    check();
+  });
 
   return () => {
     stopped = true;
     clearTimeout(launchTimer);
     if (interval !== undefined) clearInterval(interval);
+    unsubscribeResume?.();
   };
 }
 

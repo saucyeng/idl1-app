@@ -2576,8 +2576,9 @@ interface FirmwareRelease {
 }
 ```
 The public GitHub Releases API of `firmware_repo` (`"owner/name"`, from
-Settings; empty by default = catalog disabled). **This is the only call the
-app makes to the public internet**, and it runs only on "Check now" or on
+Settings; empty by default = catalog disabled). Besides `check_app_update`
+(§3.10, added 2026-10-15) **this is the only call the app makes to the
+public internet**, and it runs only on "Check now" or on
 opening the Firmware section with the catalog enabled — never on a timer
 (R198). Only releases publishing an `idl1-firmware-<version>.bin` asset are
 listed; drafts, non-semver tags and asset-less releases are omitted rather
@@ -2950,6 +2951,36 @@ route bytes take from "corrupt inside `<data>`" to `tmp/quarantine/`
 what this command filed).
 
 Errors: `io`, `internal`.
+
+**`check_app_update(current: CurrentBuild): AppUpdate | null`**
+*Added 2026-10-15.* Checks the app's own release feed on GitHub
+(`saucyeng/idl1-app`, public API, no token) for a release newer than the
+running build **on the build's own channel**; `null` means up to date.
+Wrapper: `app/src/ipc/appUpdate.ts`; transport: `idl_transport::app_release`.
+
+```ts
+type AppChannel = "stable" | "beta" | "nightly";
+interface CurrentBuild {
+  channel: AppChannel;  // fixed at build time (VITE_RELEASE_CHANNEL)
+  version: string;      // semver, tauri.conf.json's version
+  build: number;        // u64, CI run number (the APK versionCode); 0 = unknown
+}
+interface AppUpdate {
+  channel: AppChannel;
+  label: string;          // "0.2.0", or "build 19" on nightly
+  notes: string;          // release body, markdown as published
+  published_at: string;   // RFC 3339, "" if GitHub reported none
+  page_url: string;       // the release's web page
+  apk_url: string | null; // the arm64 APK, null when the release carries none
+}
+```
+`stable` takes the newest `vX.Y.Z` release; `beta` the newest semver tag
+including prereleases (so a beta build is offered the stable release that
+follows it); both compare by semver. `nightly` reads the moving `alpha`
+release and compares the build number in its title
+(`idl1 alpha (build <n>, <sha7>)`). Drafts and non-semver tags are never
+offered. Errors: `wifi` (unreachable, non-2xx, malformed feed, a
+non-semver `current.version` on stable/beta).
 
 ---
 

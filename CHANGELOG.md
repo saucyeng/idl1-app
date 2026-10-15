@@ -6,6 +6,18 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 
 ### Added
 
+- **Update banner, per release channel [docs] (2026-10-15).** CI builds
+  know their channel: nightly (every push to `main`), beta (`-` tags) or
+  stable (plain tags). They check that channel's GitHub releases 5 s after
+  launch, every 4 h, and on returning to the foreground, and offer only a
+  newer release from the same channel. On a phone a banner above the tab
+  bar names the update. "What's new" shows the release notes, "Download"
+  hands the APK to the browser so a tap installs it, and × hides it for the
+  session. Desktop shows the status-bar chip and opens the release page.
+  New command `check_app_update` (`idl_transport::app_release`). Local
+  builds never check. Spec-during: C3 §3.10, docs/RELEASING.md "Channels
+  and in-app update checks".
+
 - **IDL0 loggers keep working [docs] (2026-10-14).** The app tells IDL0
   boards (`IDL0-XXXX`) from IDL1 by advertised name and gives each its own
   IMU value sets: LSM6DSO32 rates, ±4–32 g and ±125–2000 dps on IDL0, no

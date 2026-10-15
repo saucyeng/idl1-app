@@ -30,8 +30,10 @@ import { DEFAULT_SIDEBAR_STATE, withSidebarState, type SidebarState } from "./si
 import { helpPaletteCommands, tabSwitchCommands, tieredPaletteCommands } from "./commands";
 import { Toaster } from "../components/Toaster";
 import { checkForUpdate, downloadAndInstallUpdate, relaunchApp } from "../ipc/updater";
-import { openUpdatePanel, runUpdateCheck, startUpdateChecker } from "./updateState";
+import { checkAppUpdate, currentBuild, isAndroid, updateLink } from "../ipc/appUpdate";
+import { openUpdatePanel, runUpdateCheck, startUpdateChecker, type UpdateCheckerOptions, type UpdateIO } from "./updateState";
 import UpdatePanel from "./UpdatePanel";
+import UpdateBanner from "./UpdateBanner";
 import { openDocs } from "./docsPanelStore";
 import { useDataRootPath } from "./dataRootPath";
 
@@ -102,6 +104,50 @@ function useAspectClass(): AspectClass {
   }, []);
 
   return cls;
+}
+
+/** What this build was built as (`release.yml` sets the variables); `null`
+ *  for a local build, which keeps the desktop updater path below. */
+const BUILD = currentBuild(import.meta.env);
+
+/** The update check's IO and tuning. A CI build checks its own release
+ *  channel (`ipc/appUpdate.ts`, C3 §3.10) — sooner after launch than the
+ *  desktop updater, and again when a backgrounded phone app comes back,
+ *  since its timers stop while it is away. A local build keeps the updater
+ *  plugin (ruling R231), which is off until it is signed. */
+function updateWiring(): { io: UpdateIO; options: UpdateCheckerOptions } {
+  if (BUILD === null) return { io: { checkForUpdate, downloadAndInstallUpdate, relaunchApp }, options: {} };
+  const build = BUILD;
+  const android = typeof navigator !== "undefined" && isAndroid(navigator.userAgent);
+  const notHere = () => Promise.reject(new Error("this build updates by download, not in place"));
+  return {
+    io: {
+      checkForUpdate: async () => {
+        let update;
+        try {
+          update = await checkAppUpdate(build);
+        } catch (e) {
+          // The C3 IPC error shape is a plain object; keep its message.
+          const message = typeof e === "object" && e !== null && "message" in e ? String(e.message) : String(e);
+          throw new Error(message);
+        }
+        if (update === null) return null;
+        return { version: update.label, notes: update.notes, date: update.published_at || null, link: updateLink(update, android) };
+      },
+      downloadAndInstallUpdate: notHere,
+      relaunchApp: notHere,
+    },
+    options: {
+      launchDelayMs: 5_000,
+      onResume: (handler) => {
+        const onVisibility = () => {
+          if (document.visibilityState === "visible") handler();
+        };
+        document.addEventListener("visibilitychange", onVisibility);
+        return () => document.removeEventListener("visibilitychange", onVisibility);
+      },
+    },
+  };
 }
 
 /**
@@ -177,16 +223,16 @@ export default function AppShell() {
     fetchEngineVersion().then((v) => dispatch({ type: "SET_ENGINE_VERSION", version: v }));
   }, [dispatch]);
 
-  // Update checker (ruling R231): launch (+30 s) and every 4 h, timers
-  // only — never on the interaction path (CLAUDE.md §3). Registered
-  // unconditionally; when the updater plugin was never registered on the
-  // Rust side (dev build, placeholder pubkey), `checkForUpdate` rejects
-  // and `runUpdateCheck` treats that as an `error` state the chrome never
-  // shows (`updateChipLabel`), so nothing here needs its own dev guard.
-  const updateIo = useMemo(() => ({ checkForUpdate, downloadAndInstallUpdate, relaunchApp }), []);
+  // Update checker (ruling R231; channel check 2026-10-15, `updateWiring`):
+  // timers and app-resume only — never on the interaction path (CLAUDE.md
+  // §3). Registered unconditionally; a check that fails (the updater plugin
+  // never registered, the feed unreachable) is an `error` state the chrome
+  // never shows (`updateChipLabel`), so nothing here needs its own guard.
+  const updateWired = useMemo(updateWiring, []);
+  const updateIo = updateWired.io;
   useEffect(() => {
-    return startUpdateChecker(updateIo);
-  }, [updateIo]);
+    return startUpdateChecker(updateWired.io, updateWired.options);
+  }, [updateWired]);
 
   const onNavigate = useCallback(
     (route: RouteId): void => {
@@ -387,7 +433,10 @@ export default function AppShell() {
       </div>
 
       {narrow ? (
-        <BottomBar activeRoute={state.route} onNavigate={onNavigate} badges={badges} />
+        <>
+          <UpdateBanner />
+          <BottomBar activeRoute={state.route} onNavigate={onNavigate} badges={badges} />
+        </>
       ) : (
         <StatusBar
           selection={state.selection}

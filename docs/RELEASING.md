@@ -93,9 +93,35 @@ trying an Android change without cutting a release.
 - The window keeps native title-bar decorations on Linux (ruling R216) —
   only Windows uses the custom title bar.
 
+## Channels and in-app update checks
+
+Every CI build belongs to one release channel, fixed when it is built, and
+only ever offers updates from that channel:
+
+| Channel | Built from | Offered |
+|---|---|---|
+| **stable** | a `vX.Y.Z` tag | the newest `vX.Y.Z` release, if newer by semver |
+| **beta** | a `vX.Y.Z-<pre>` tag (e.g. `v0.2.0-beta.1`; the older `-alpha.N` tags count) | the newest semver tag, prerelease or not, if newer |
+| **nightly** | every push to `main` (the moving `alpha` release) | the moving release, if its build number is higher |
+
+`release.yml` sets `VITE_RELEASE_CHANNEL`, `VITE_APP_VERSION` and
+`VITE_BUILD_NUMBER` on the desktop and Android build steps. A local build
+has no channel and never checks. The check (`check_app_update`, C3 §3.10)
+runs 5 s after launch, every 4 h, and when the app returns to the
+foreground with its last check over 15 min old. A newer release shows as a
+banner above the tab bar on a phone, or as the status-bar chip on desktop.
+"Download" opens the APK on Android, so the browser downloads it and a tap
+installs it over the running build. Desktop gets the release page. The
+check reads the nightly build number from the release title,
+`idl1 alpha (build <n>, <sha7>)`, so keep that title format.
+
+Moving between channels is not supported yet. Every build's `versionCode`
+is the same counter (`github.run_number`), so a nightly build can't be
+replaced by an older stable one.
+
 ## In-app updates (ruling R231)
 
-**Currently off.** `release.yml` neither signs updater bundles nor writes
+**Currently off.** The channel check above is what notifies today. `release.yml` neither signs updater bundles nor writes
 `latest.json`. This repo went public on 2026-09-23, so the separate
 `idl1-releases` repo described below is no longer needed: the endpoint can
 point at this repo's `releases/latest/download/latest.json`. Wiring it up

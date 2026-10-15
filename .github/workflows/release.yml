@@ -92,6 +92,12 @@ jobs:
         shell: bash
     env:
       VERSION: ${{ needs.version.outputs.version }}
+      # The release channel this build checks for updates on (C3 §3.10,
+      # docs/RELEASING.md "Channels"): nightly for a push to main, beta for
+      # a tag with a `-`, stable for any other tag; a manual run has none.
+      VITE_RELEASE_CHANNEL: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && 'nightly' || github.ref_type == 'tag' && (contains(github.ref_name, '-') && 'beta' || 'stable') || '' }}
+      VITE_APP_VERSION: ${{ needs.version.outputs.version }}
+      VITE_BUILD_NUMBER: ${{ github.run_number }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -165,6 +171,10 @@ jobs:
     env:
       VERSION: ${{ needs.version.outputs.version }}
       NDK_VERSION: 28.2.13676358
+      # Same channel variables as the desktop job.
+      VITE_RELEASE_CHANNEL: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && 'nightly' || github.ref_type == 'tag' && (contains(github.ref_name, '-') && 'beta' || 'stable') || '' }}
+      VITE_APP_VERSION: ${{ needs.version.outputs.version }}
+      VITE_BUILD_NUMBER: ${{ github.run_number }}
     steps:
       - uses: actions/checkout@v4
         with:

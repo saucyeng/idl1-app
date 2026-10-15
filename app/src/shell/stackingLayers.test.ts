@@ -101,6 +101,7 @@ describe("the shell's own layout source", () => {
     "TimelineSlotRow.tsx",
     "StatusBar.tsx",
     "BottomBar.tsx",
+    "UpdateBanner.tsx",
   ];
 
   it("invariant — every chrome region's file — joins the layer by class", () => {

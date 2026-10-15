@@ -4,7 +4,8 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { cn } from "@/lib/utils";
 import { checkForUpdate, downloadAndInstallUpdate, relaunchApp } from "../ipc/updater";
 import { parseReleaseNotes, type InlineNode, type ReleaseNotesBlock } from "./releaseNotesMarkdown";
-import { closeUpdatePanel, dismissUpdate, restartToUpdate, useUpdatePanelOpen, useUpdateState } from "./updateState";
+import { openUpdateLink } from "./openUpdateLink";
+import { closeUpdatePanel, dismissUpdate, restartToUpdate, useUpdatePanelOpen, useUpdateState, versionLabel } from "./updateState";
 
 /** Renders one inline run — bold and code spans get their tag, plain text
  *  passes through untouched (never `dangerouslySetInnerHTML`: the source is
@@ -78,9 +79,9 @@ export default function UpdatePanel() {
   // panel keeps the last `available` snapshot so the release notes stay on
   // screen through the download rather than blanking the moment "Restart
   // to update" is clicked.
-  const [snapshot, setSnapshot] = useState<{ version: string; notes: string } | null>(null);
+  const [snapshot, setSnapshot] = useState<{ version: string; notes: string; link?: string } | null>(null);
   useEffect(() => {
-    if (state.kind === "available") setSnapshot({ version: state.version, notes: state.notes });
+    if (state.kind === "available") setSnapshot({ version: state.version, notes: state.notes, link: state.link });
     else if (state.kind === "idle") setSnapshot(null);
   }, [state]);
 
@@ -88,12 +89,13 @@ export default function UpdatePanel() {
 
   const blocks = parseReleaseNotes(snapshot?.notes ?? "");
   const version = snapshot?.version ?? null;
+  const link = snapshot?.link;
 
   return (
     <Dialog open={open} onOpenChange={(next) => { if (!next) closeUpdatePanel(); }}>
       <DialogContent className="max-w-md">
         <DialogHeader>
-          <DialogTitle>{version !== null ? `Update available — v${version}` : "Release notes"}</DialogTitle>
+          <DialogTitle>{version !== null ? `Update available — ${versionLabel(version)}` : "Release notes"}</DialogTitle>
           <DialogDescription>Release notes</DialogDescription>
         </DialogHeader>
 
@@ -126,13 +128,26 @@ export default function UpdatePanel() {
               >
                 Later
               </button>
-              <button
-                type="button"
-                onClick={() => void restartToUpdate({ checkForUpdate, downloadAndInstallUpdate, relaunchApp })}
-                className={cn("rounded-[var(--radius-structural)] bg-fg px-3 py-1.5 text-label-2 text-bg hover:opacity-90")}
-              >
-                Restart to update
-              </button>
+              {link !== undefined ? (
+                // A channel-check release (`ipc/appUpdate.ts`): the system
+                // fetches it — on Android the APK download, then a tap
+                // installs it over this build.
+                <button
+                  type="button"
+                  onClick={() => openUpdateLink(link)}
+                  className={cn("rounded-[var(--radius-structural)] bg-fg px-3 py-1.5 text-label-2 text-bg hover:opacity-90")}
+                >
+                  Download
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => void restartToUpdate({ checkForUpdate, downloadAndInstallUpdate, relaunchApp })}
+                  className={cn("rounded-[var(--radius-structural)] bg-fg px-3 py-1.5 text-label-2 text-bg hover:opacity-90")}
+                >
+                  Restart to update
+                </button>
+              )}
             </>
           )}
         </div>
