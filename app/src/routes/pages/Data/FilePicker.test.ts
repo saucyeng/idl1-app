@@ -78,7 +78,7 @@ describe("pickImportFile", () => {
     expect(openDialog).toHaveBeenNthCalledWith(2, expect.objectContaining({ defaultPath: undefined }));
   });
 
-  it("pickImportFile — filters to the four importer extensions", async () => {
+  it("pickImportFile — filters to the five importer extensions", async () => {
     // Arrange
     const openDialog: OpenDialogFn = vi.fn().mockResolvedValue(null);
 
@@ -87,7 +87,7 @@ describe("pickImportFile", () => {
 
     // Assert
     expect(openDialog).toHaveBeenCalledWith(
-      expect.objectContaining({ filters: [expect.objectContaining({ extensions: ["idl0", "fit", "gpx", "csv"] })] })
+      expect.objectContaining({ filters: [expect.objectContaining({ extensions: ["idl0", "idl1", "fit", "gpx", "csv"] })] })
     );
   });
 });

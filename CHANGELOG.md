@@ -14,8 +14,11 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
   filled and listed as gaps. High-g gets its own time rows (`imu<n>_hg`).
   GPS fixes carry HDOP (`GPS_Hdop`). Logger events and the session summary
   surface as import warnings. Source format `idl1`, importer version 0.1.0.
-  Not yet wired into import, the inbox or device downloads; no firmware
-  writes `.idl1` yet. Spec-first: `docs/superpowers/specs/2026-10-15-idl1-file-format-DRAFT.md`
+  Wired through every import path: Data's file picker and import command
+  (importer `idl1`), the inbox, folder scan (start time read from the
+  `.idl1` header), re-import, the CLI, and logger downloads (the logger
+  entry point tells `.idl0` from `.idl1` by magic). No firmware writes
+  `.idl1` yet. Spec-first: `docs/superpowers/specs/2026-10-15-idl1-file-format-DRAFT.md`
   (approved 2026-10-15).
 
 - **High-g on the frame IMU, and dotted sliders [docs] (2026-10-15).** The

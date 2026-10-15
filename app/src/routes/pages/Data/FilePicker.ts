@@ -29,7 +29,7 @@ export type OpenFolderDialogFn = (options: {
  *  rather than sourced from a `listImporters()` call here — this module
  *  has no session/IPC state to thread that fetch through — so a future
  *  fifth importer needs this list updated too. */
-const IMPORT_EXTENSIONS = ["idl0", "fit", "gpx", "csv"];
+const IMPORT_EXTENSIONS = ["idl0", "idl1", "fit", "gpx", "csv"];
 
 /** The "paste a path → import" contract (lead ruling R55, restated R77.1,
  *  2026-09-06): trims `pastedPath` and resolves to it directly when

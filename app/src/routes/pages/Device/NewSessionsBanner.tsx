@@ -14,6 +14,7 @@ import type { QueuedFile } from "./newSessions";
 
 /** Importer forced for downloaded logger files: a blob in the store has no
  *  `.idl0` extension to detect from (C3 §3.3). */
+// The logger entry point reads `.idl0` and `.idl1` alike, by magic bytes.
 const LOGGER_IMPORTER_ID = "idl0";
 
 /** Edge colour per banner tone. */
