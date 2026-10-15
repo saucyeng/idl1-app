@@ -253,7 +253,7 @@ Three IMUs at 480 Hz, both pods' high-g at 960 Hz:
 1. Rigid-block tap test: all three IMUs on one block. Cross-correlate the
    impulses; target < 50 µs between IMUs.
 2. Max-rate runs (one IMU at 3840/7680 Hz; all three at 1920 Hz with high-g):
-   drops counted from timestamp gaps, writer drops from LOGGER_EVENT. This is
+   drops counted from timestamp gaps, writer drops from SESSION_SUMMARY. This is
    also the samples/s limit for the load meter.
 3. Warm-up run (heat gun or a hot day): the clock map follows the drift.
 4. The timing audit script, run on `.idl1` logs.
