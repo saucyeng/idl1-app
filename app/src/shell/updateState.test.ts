@@ -276,18 +276,6 @@ describe("startUpdateChecker — options", () => {
     vi.useRealTimers();
   });
 
-  /** A resume source the test fires by hand. */
-  function resumeSource() {
-    let fire: () => void = () => {};
-    const onResume = vi.fn((handler: () => void) => {
-      fire = handler;
-      return () => {
-        fire = () => {};
-      };
-    });
-    return { onResume, resume: () => fire() };
-  }
-
   it("launchDelayMs — the first check runs at that delay", async () => {
     // Arrange
     const io = fakeIo();
@@ -300,51 +288,16 @@ describe("startUpdateChecker — options", () => {
     expect(io.checkForUpdate).toHaveBeenCalledOnce();
   });
 
-  it("resume before the launch check — left to the timer", async () => {
+  it("recheckIntervalMs null — checks at launch only", async () => {
     // Arrange
     const io = fakeIo();
-    const { onResume, resume } = resumeSource();
-    startUpdateChecker(io, { onResume });
 
     // Act
-    resume();
-    await Promise.resolve();
+    startUpdateChecker(io, { launchDelayMs: 5_000, recheckIntervalMs: null });
+    await vi.advanceTimersByTimeAsync(5_000 + RECHECK_INTERVAL_MS * 3);
 
     // Assert
-    expect(io.checkForUpdate).not.toHaveBeenCalled();
-  });
-
-  it("resume — rechecks only once the last check is old enough", async () => {
-    // Arrange
-    const io = fakeIo();
-    let clock = 0;
-    const { onResume, resume } = resumeSource();
-    startUpdateChecker(io, { launchDelayMs: 0, onResume, resumeMinAgeMs: 1_000, now: () => clock });
-    await vi.advanceTimersByTimeAsync(0);
-    expect(io.checkForUpdate).toHaveBeenCalledTimes(1);
-
-    // Act
-    clock = 999;
-    resume();
-    const afterEarlyResume = (io.checkForUpdate as ReturnType<typeof vi.fn>).mock.calls.length;
-    clock = 1_000;
-    resume();
-
-    // Assert
-    expect(afterEarlyResume).toBe(1);
-    expect(io.checkForUpdate).toHaveBeenCalledTimes(2);
-  });
-
-  it("stop — unsubscribes from resume", () => {
-    // Arrange
-    let unsubscribed = false;
-    const stop = startUpdateChecker(fakeIo(), { onResume: () => () => (unsubscribed = true) });
-
-    // Act
-    stop();
-
-    // Assert
-    expect(unsubscribed).toBe(true);
+    expect(io.checkForUpdate).toHaveBeenCalledOnce();
   });
 });
 

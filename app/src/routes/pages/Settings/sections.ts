@@ -64,7 +64,7 @@ export const SECTIONS: readonly SettingsSection[] = [
   {
     id: "about",
     label: "About",
-    description: "App and engine version information.",
+    description: "App and engine version information, and app updates.",
   },
 ];
 

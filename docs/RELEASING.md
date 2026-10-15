@@ -21,27 +21,26 @@ Running it by hand (Actions → "Release" → Run workflow, any branch) is a
 dry run: every platform builds and its files stay on the run as
 artifacts, but nothing is published.
 
-## Rolling alpha (every push to `main`)
+## Nightly (every push to `main`)
 
 A push to `main` runs the same three builds and publishes them on one
-moving prerelease, tag `alpha`, which is deleted and recreated at the new
-commit each time. Nothing is bumped or tagged by hand. The file names carry
+moving prerelease, tag `nightly`, which is deleted and recreated at the new
+commit each time. (Until 2026-10-15 this tag was `alpha`, which collided
+with the `-alpha.N` prerelease tags; the workflow now deletes the old
+`alpha` release.) Nothing is bumped or tagged by hand. The file names carry
 no version, so these never change:
 
-- release page: `https://github.com/saucyeng/idl1-app/releases/tag/alpha`
-- APK: `https://github.com/saucyeng/idl1-app/releases/download/alpha/idl1-app-alpha-arm64.apk`
+- release page: `https://github.com/saucyeng/idl1-app/releases/tag/nightly`
+- APK: `https://github.com/saucyeng/idl1-app/releases/download/nightly/idl1-app-nightly-arm64.apk`
 
-The APK is published as soon as the Android job finishes (`alpha` job); the
-Windows and Linux files are attached to the same release when they finish
-(`alpha-desktop` job), also if only one of the two built. The release title
-carries the build number and commit; the app's own version string stays at
-`tauri.conf.json`'s until the next tagged release. A newer push cancels the
-run still building an older one. A push that changes only `docs/`, `runs/`
-or Markdown files builds nothing.
-
-Channels: `alpha` is every push; `vX.Y.Z-beta.N` and `vX.Y.Z` tags are cut
-by hand as above. All share the workflow's run counter as `versionCode`, so
-any later build installs over any earlier one.
+The APK is published as soon as the Android job finishes (`nightly` job);
+the Windows and Linux files are attached to the same release when they
+finish (`nightly-desktop` job), also if only one of the two built. The
+release title, `idl1 nightly (build <n>, <sha7>)`, carries the build number
+and commit; the app's own version string stays at `tauri.conf.json`'s until
+the next tagged release. A newer push cancels the run still building an
+older one. A push that changes only `docs/`, `runs/` or Markdown files
+builds nothing.
 
 ## Artifacts per platform
 
@@ -95,33 +94,33 @@ trying an Android change without cutting a release.
 
 ## Channels and in-app update checks
 
-Every CI build belongs to one release channel, fixed when it is built, and
-only ever offers updates from that channel:
-
-| Channel | Built from | Offered |
+| Channel | Built from | Checks |
 |---|---|---|
-| **stable** | a `vX.Y.Z` tag | the newest `vX.Y.Z` release, if newer by semver |
-| **beta** | a `vX.Y.Z-<pre>` tag (e.g. `v0.2.0-beta.1`; the older `-alpha.N` tags count) | the newest semver tag, prerelease or not, if newer |
-| **nightly** | every push to `main` (the moving `alpha` release) | the moving release, if its build number is higher |
+| **stable** | a `vX.Y.Z` tag | the newest `vX.Y.Z` release |
+| **beta** | a `vX.Y.Z-<pre>` tag (e.g. `v0.2.0-beta.1`; the older `-alpha.N` tags count) | the newest semver tag, prerelease or not |
+| **nightly** | every push to `main` (the moving `nightly` release) | the moving release |
 
 `release.yml` sets `VITE_RELEASE_CHANNEL`, `VITE_APP_VERSION` and
-`VITE_BUILD_NUMBER` on the desktop and Android build steps. A local build
-has no channel and never checks. The check (`check_app_update`, C3 §3.10)
-runs 5 s after launch, every 4 h, and when the app returns to the
-foreground with its last check over 15 min old. A newer release shows as a
-banner above the tab bar on a phone, or as the status-bar chip on desktop.
-"Download" opens the APK on Android, so the browser downloads it and a tap
-installs it over the running build. Desktop gets the release page. The
-check reads the nightly build number from the release title,
-`idl1 alpha (build <n>, <sha7>)`, so keep that title format.
+`VITE_BUILD_NUMBER` on the desktop and Android build steps; a local build
+has no channel and never checks. Settings ▸ About ▸ **App updates** can
+pick a different channel and has **Check for updates**; otherwise a build
+checks its own channel once, 5 s after launch (`check_app_update`, C3
+§3.10). A newer release shows as a banner above the tab bar on a phone, or
+the status-bar chip on desktop. "Download" opens the APK on Android (the
+browser downloads it, a tap installs it over the running build) and the
+release page on desktop.
 
-Moving between channels is not supported yet. Every build's `versionCode`
-is the same counter (`github.run_number`), so a nightly build can't be
-replaced by an older stable one.
+**Newer means a higher build number.** Every build's `versionCode` is the
+workflow's `github.run_number`, and Android refuses a lower one, so the
+check compares build numbers, which also holds across a channel switch: a
+nightly switched to stable is offered the first stable release built after
+it. Release titles carry the number (`(build <n>`); keep that shape. Tagged
+releases from before 2026-10-15 lack it and are compared by semver.
 
 ## In-app updates (ruling R231)
 
-**Currently off.** The channel check above is what notifies today. `release.yml` neither signs updater bundles nor writes
+**Currently off.** The channel check above is what notifies today.
+`release.yml` neither signs updater bundles nor writes
 `latest.json`. This repo went public on 2026-09-23, so the separate
 `idl1-releases` repo described below is no longer needed: the endpoint can
 point at this repo's `releases/latest/download/latest.json`. Wiring it up
@@ -192,7 +191,7 @@ under `Unreleased`.
 ## Minute budget
 
 This repo is public (since 2026-09-23), so Actions minutes on standard
-runners are free. Tagged releases run on tags; the rolling alpha runs on
+runners are free. Tagged releases run on tags; nightly runs on
 every push to `main` that changes more than docs.
 The Windows + Linux release of `v0.1.0-alpha.1` took 31 min wall-clock;
 Android adds a third parallel job. See `docs/CI.md` for the rest of the CI budget.

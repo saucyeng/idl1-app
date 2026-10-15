@@ -6,17 +6,24 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 
 ### Added
 
-- **Update banner, per release channel [docs] (2026-10-15).** CI builds
-  know their channel: nightly (every push to `main`), beta (`-` tags) or
-  stable (plain tags). They check that channel's GitHub releases 5 s after
-  launch, every 4 h, and on returning to the foreground, and offer only a
-  newer release from the same channel. On a phone a banner above the tab
+- **Update banner, release channels, and the rolling build is now
+  `nightly` [docs] (2026-10-15).** CI builds know their channel: nightly
+  (every push to `main`), beta (`-` tags) or stable (plain tags). They check
+  it once, 5 s after launch. Settings ▸ About ▸ App updates can pick
+  another channel and has Check for updates; About also shows the real
+  version and build. Newer means a higher build number, which is the APK
+  versionCode, so a channel switch never offers a build that can't install.
+  Release titles now carry `(build <n>`. On a phone a banner above the tab
   bar names the update. "What's new" shows the release notes, "Download"
   hands the APK to the browser so a tap installs it, and × hides it for the
   session. Desktop shows the status-bar chip and opens the release page.
-  New command `check_app_update` (`idl_transport::app_release`). Local
-  builds never check. Spec-during: C3 §3.10, docs/RELEASING.md "Channels
-  and in-app update checks".
+  The rolling release moved from tag `alpha` to `nightly` (it collided with
+  the `-alpha.N` tags). The new link is
+  `releases/download/nightly/idl1-app-nightly-arm64.apk`, and the old
+  `alpha` release is deleted. New command `check_app_update`
+  (`idl_transport::app_release`). Local builds never check. Spec-during:
+  C3 §3.10, docs/RELEASING.md "Nightly" and "Channels and in-app update
+  checks".
 
 - **IDL0 loggers keep working [docs] (2026-10-14).** The app tells IDL0
   boards (`IDL0-XXXX`) from IDL1 by advertised name and gives each its own

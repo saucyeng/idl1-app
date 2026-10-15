@@ -18,6 +18,9 @@ export interface AppUpdate {
   channel: AppChannel;
   /** `"0.2.0"`, or `"build 19"` on nightly. */
   label: string;
+  /** The release's build number (its title's `(build <n>`), or `null` for
+   *  a tagged release published before titles carried one. */
+  build: number | null;
   /** Release body, markdown as published. */
   notes: string;
   /** RFC 3339; `""` when GitHub reported none. */

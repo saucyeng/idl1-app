@@ -2954,20 +2954,22 @@ Errors: `io`, `internal`.
 
 **`check_app_update(current: CurrentBuild): AppUpdate | null`**
 *Added 2026-10-15.* Checks the app's own release feed on GitHub
-(`saucyeng/idl1-app`, public API, no token) for a release newer than the
-running build **on the build's own channel**; `null` means up to date.
+(`saucyeng/idl1-app`, public API, no token) for a release on
+`current.channel` newer than the running build; `null` means up to date.
+The channel is the build's own unless Settings ▸ About picked another.
 Wrapper: `app/src/ipc/appUpdate.ts`; transport: `idl_transport::app_release`.
 
 ```ts
 type AppChannel = "stable" | "beta" | "nightly";
 interface CurrentBuild {
-  channel: AppChannel;  // fixed at build time (VITE_RELEASE_CHANNEL)
-  version: string;      // semver, tauri.conf.json's version
-  build: number;        // u64, CI run number (the APK versionCode); 0 = unknown
+  channel: AppChannel;  // the channel to check
+  version: string;      // the running build's semver (tauri.conf.json)
+  build: number;        // u64, its CI run number (the APK versionCode); 0 = unknown
 }
 interface AppUpdate {
   channel: AppChannel;
   label: string;          // "0.2.0", or "build 19" on nightly
+  build: number | null;   // u64, from the title's "(build <n>"; null if absent
   notes: string;          // release body, markdown as published
   published_at: string;   // RFC 3339, "" if GitHub reported none
   page_url: string;       // the release's web page
@@ -2975,12 +2977,16 @@ interface AppUpdate {
 }
 ```
 `stable` takes the newest `vX.Y.Z` release; `beta` the newest semver tag
-including prereleases (so a beta build is offered the stable release that
-follows it); both compare by semver. `nightly` reads the moving `alpha`
-release and compares the build number in its title
-(`idl1 alpha (build <n>, <sha7>)`). Drafts and non-semver tags are never
-offered. Errors: `wifi` (unreachable, non-2xx, malformed feed, a
-non-semver `current.version` on stable/beta).
+including prereleases (so beta also sees the stable release after it);
+`nightly` reads the moving `nightly` release. **Newer means a higher build
+number**: every build's number is the workflow run number, also the APK's
+`versionCode`, which Android will not lower — so the comparison holds
+across a channel switch. Release titles carry it as `(build <n>`
+(`idl1 nightly (build 20, abc1234)`, `idl1 v0.2.0 (build 31)`); a tagged
+release without one, or a running build that does not know its number, is
+compared by semver instead. Drafts and non-semver tags are never offered.
+Errors: `wifi` (unreachable, non-2xx, malformed feed, a nightly title with
+no build number).
 
 ---
 

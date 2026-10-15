@@ -114,15 +114,10 @@ export type UpdateCheckIO = Pick<UpdateIO, "checkForUpdate">;
 export interface UpdateCheckerOptions {
   /** Delay before the first check; default {@link LAUNCH_CHECK_DELAY_MS}. */
   launchDelayMs?: number;
-  /** Subscribes to "the app came back to the foreground" (a phone app is
-   *  backgrounded for hours, and its timers with it); returns an
-   *  unsubscribe. With it, a resume rechecks once the last check is at
-   *  least {@link UpdateCheckerOptions.resumeMinAgeMs} old. */
-  onResume?: (handler: () => void) => () => void;
-  /** Minimum age of the last check before a resume rechecks; default 15 min. */
-  resumeMinAgeMs?: number;
-  /** Clock, for tests; default `Date.now`. */
-  now?: () => number;
+  /** Interval between later checks; default {@link RECHECK_INTERVAL_MS}.
+   *  `null` checks at launch only — the channel check (Isaac, 2026-10-15:
+   *  launch plus the Settings button is enough). */
+  recheckIntervalMs?: number | null;
 }
 
 /**
@@ -149,34 +144,20 @@ export async function runUpdateCheck(io: UpdateCheckIO): Promise<void> {
  * stop function; `AppShell.tsx` calls it from its mount effect's cleanup.
  */
 export function startUpdateChecker(io: UpdateCheckIO, options: UpdateCheckerOptions = {}): () => void {
-  const now = options.now ?? Date.now;
-  const resumeMinAgeMs = options.resumeMinAgeMs ?? 15 * 60 * 1000;
+  const recheckMs = options.recheckIntervalMs === undefined ? RECHECK_INTERVAL_MS : options.recheckIntervalMs;
   let stopped = false;
   let interval: ReturnType<typeof setInterval> | undefined;
-  let lastCheckAt: number | null = null;
-
-  const check = () => {
-    lastCheckAt = now();
-    void runUpdateCheck(io);
-  };
 
   const launchTimer = setTimeout(() => {
     if (stopped) return;
-    check();
-    interval = setInterval(check, RECHECK_INTERVAL_MS);
+    void runUpdateCheck(io);
+    if (recheckMs !== null) interval = setInterval(() => void runUpdateCheck(io), recheckMs);
   }, options.launchDelayMs ?? LAUNCH_CHECK_DELAY_MS);
-
-  // Before the launch check has run, a resume leaves it to the timer.
-  const unsubscribeResume = options.onResume?.(() => {
-    if (stopped || lastCheckAt === null || now() - lastCheckAt < resumeMinAgeMs) return;
-    check();
-  });
 
   return () => {
     stopped = true;
     clearTimeout(launchTimer);
     if (interval !== undefined) clearInterval(interval);
-    unsubscribeResume?.();
   };
 }
 

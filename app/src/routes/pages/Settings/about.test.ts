@@ -28,3 +28,19 @@ describe("aboutRows", () => {
     expect(labels).toContain("Build");
   });
 });
+
+describe("aboutRows — build", () => {
+  it("local build — dev and the hand-kept version", () => {
+    const rows = aboutRows("0.4.2");
+
+    expect(rows.find((row) => row.label === "Build")?.value).toBe("dev");
+    expect(rows.find((row) => row.label === "App version")?.value).toBe("0.1.0");
+  });
+
+  it("CI build — its number, channel and version", () => {
+    const rows = aboutRows("0.4.2", { channel: "nightly", version: "0.1.1", build: 20 });
+
+    expect(rows.find((row) => row.label === "Build")?.value).toBe("20 · nightly");
+    expect(rows.find((row) => row.label === "App version")?.value).toBe("0.1.1");
+  });
+});

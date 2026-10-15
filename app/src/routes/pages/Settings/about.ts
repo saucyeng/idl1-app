@@ -1,3 +1,5 @@
+import type { CurrentBuild } from "../../../ipc/appUpdate";
+
 /** A single label/value row in the About section. */
 export interface AboutRow {
   /** Row label, e.g. `"App version"`. */
@@ -6,11 +8,9 @@ export interface AboutRow {
   value: string;
 }
 
-/** The app's own version, from `app/package.json`'s `version` field.
- *  Hardcoded rather than read at build time (no version-injection step is
- *  wired into the Vite build yet) — same treatment idl0 gave its own
- *  `_appVersion` constant, with the same caveat: keep this in sync with
- *  `package.json` by hand until a build step does it. */
+/** The app's version for a local build, which carries no build variables
+ *  (a CI build passes its own through `build`). Keep in sync with
+ *  `tauri.conf.json` by hand. */
 const APP_VERSION = "0.1.0";
 
 /** The session/workbook schema version this build understands, per C1's
@@ -24,9 +24,9 @@ const APP_VERSION = "0.1.0";
  *  (review-task6.md Minor, 2026-09-05). */
 const SCHEMA_VERSION = "session schema v1";
 
-/** The build identifier. `"dev"` outside of a tagged release build, matching
- *  idl0's `_AboutSection` constant of the same name. */
-const BUILD = "dev";
+/** The build identifier of a local build, matching idl0's `_AboutSection`
+ *  constant of the same name. */
+const LOCAL_BUILD = "dev";
 
 /** Builds the About section's label/value rows.
  *
@@ -39,12 +39,16 @@ const BUILD = "dev";
  * @returns Four rows: app version, engine version, schema, build. The
  *  engine version row reads `"…"` (an in-progress ellipsis, never
  *  `"unknown"` — `"unknown"` would imply the call failed rather than
- *  simply not having returned yet) when `engineVersion` is `null`. */
-export function aboutRows(engineVersion: string | null): AboutRow[] {
+ *  simply not having returned yet) when `engineVersion` is `null`.
+ * @param build - What a CI build was built as (`shell/channelUpdate.ts`'s
+ *  `BUILD`), or `null` for a local build: the version and build rows then
+ *  read the hand-kept constants and `"dev"`. */
+export function aboutRows(engineVersion: string | null, build: CurrentBuild | null = null): AboutRow[] {
+  const buildLabel = build === null ? LOCAL_BUILD : `${build.build > 0 ? build.build : "?"} · ${build.channel}`;
   return [
-    { label: "App version", value: APP_VERSION },
+    { label: "App version", value: build?.version ?? APP_VERSION },
     { label: "Engine version", value: engineVersion ?? "…" },
     { label: "Schema", value: SCHEMA_VERSION },
-    { label: "Build", value: BUILD },
+    { label: "Build", value: buildLabel },
   ];
 }

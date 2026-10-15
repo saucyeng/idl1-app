@@ -7,10 +7,11 @@ import { currentBuild, isAndroid, updateLink, type AppUpdate } from "./appUpdate
 const UPDATE: AppUpdate = {
   channel: "nightly",
   label: "build 19",
+  build: 19,
   notes: "",
   published_at: "",
-  page_url: "https://github.com/saucyeng/idl1-app/releases/tag/alpha",
-  apk_url: "https://github.com/saucyeng/idl1-app/releases/download/alpha/idl1-app-alpha-arm64.apk",
+  page_url: "https://github.com/saucyeng/idl1-app/releases/tag/nightly",
+  apk_url: "https://github.com/saucyeng/idl1-app/releases/download/nightly/idl1-app-nightly-arm64.apk",
 };
 
 describe("currentBuild", () => {

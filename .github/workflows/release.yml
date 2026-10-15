@@ -16,12 +16,13 @@
 # in-app updater (ruling R231) is not wired up yet, so desktop bundles are
 # not updater-signed and no `latest.json` is written.
 #
-# Rolling alpha: a push to `main` builds the same three platforms and
-# publishes them on ONE moving prerelease, tag `alpha`, replaced each time.
-# The APK goes up as soon as the Android job finishes (`alpha`); the desktop
-# files are added to the same release when they finish (`alpha-desktop`), one
+# Nightly: a push to `main` builds the same three platforms and publishes
+# them on ONE moving prerelease, tag `nightly`, replaced each time (until
+# 2026-10-15 the tag was `alpha`).
+# The APK goes up as soon as the Android job finishes (`nightly`); the desktop
+# files are added to the same release when they finish (`nightly-desktop`), one
 # job after the other, so the uploads still cannot race. File names carry no
-# version (`idl1-app-alpha-arm64.apk`), so one bookmarked URL always fetches
+# version (`idl1-app-nightly-arm64.apk`), so one bookmarked URL always fetches
 # the newest build. A newer push cancels the build still running for an older
 # one. Pushes that touch only docs or Markdown build nothing.
 #
@@ -309,13 +310,15 @@ jobs:
       - name: Publish GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          name: idl1 ${{ github.ref_name }}
+          # The build number lets the app compare releases across channels
+          # (C3 §3.10): it is the APK's versionCode.
+          name: idl1 ${{ github.ref_name }} (build ${{ github.run_number }})
           files: dist/*
           body_path: NOTES.md
           prerelease: ${{ contains(github.ref_name, '-') }}
           fail_on_unmatched_files: true
 
-  alpha:
+  nightly:
     needs: [version, android]
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
@@ -331,7 +334,7 @@ jobs:
           path: dist
 
       - name: Rename to the rolling file names
-        run: bash .github/scripts/alpha-rename.sh dist "$VERSION"
+        run: bash .github/scripts/nightly-rename.sh dist "$VERSION"
 
       - name: Compose release notes
         run: |
@@ -340,7 +343,7 @@ jobs:
           {
             echo "Rolling build of \`main\`, replaced on every push. Base version ${VERSION}, build ${GITHUB_RUN_NUMBER}, commit [${GITHUB_SHA:0:7}](${base}/commit/${GITHUB_SHA})."
             echo ""
-            echo "**Android** — [idl1-app-alpha-arm64.apk](${base}/releases/download/alpha/idl1-app-alpha-arm64.apk). Tap to install; it updates over any prior build."
+            echo "**Android** — [idl1-app-nightly-arm64.apk](${base}/releases/download/nightly/idl1-app-nightly-arm64.apk). Tap to install; it updates over any prior build."
             echo "**Windows / Linux** — attached below about ten minutes after the APK."
             echo ""
             echo "## Latest change"
@@ -348,24 +351,28 @@ jobs:
             git log -1 --format='%s%n%n%b'
           } > NOTES.md
 
-      # Delete-then-create moves the `alpha` tag to this commit; the release
-      # page and download URLs stay the same.
+      # Delete-then-create moves the `nightly` tag to this commit; the
+      # release page and download URLs stay the same. The old rolling
+      # `alpha` release is removed too, so nothing points at a stale build.
+      # The app reads the build number from the title (C3 §3.10), so keep
+      # its `(build <n>,` shape.
       - name: Publish the rolling prerelease
         run: |
           set -euo pipefail
           gh release delete alpha --cleanup-tag --yes --repo "$GITHUB_REPOSITORY" || true
-          gh release create alpha dist/* \
+          gh release delete nightly --cleanup-tag --yes --repo "$GITHUB_REPOSITORY" || true
+          gh release create nightly dist/* \
             --repo "$GITHUB_REPOSITORY" \
             --target "$GITHUB_SHA" \
             --prerelease \
-            --title "idl1 alpha (build ${GITHUB_RUN_NUMBER}, ${GITHUB_SHA:0:7})" \
+            --title "idl1 nightly (build ${GITHUB_RUN_NUMBER}, ${GITHUB_SHA:0:7})" \
             --notes-file NOTES.md
 
-  alpha-desktop:
-    needs: [version, alpha, desktop]
+  nightly-desktop:
+    needs: [version, nightly, desktop]
     # Runs when the APK was published even if one desktop platform failed:
     # whatever did build is attached.
-    if: ${{ !cancelled() && needs.alpha.result == 'success' }}
+    if: ${{ !cancelled() && needs.nightly.result == 'success' }}
     runs-on: ubuntu-latest
     env:
       VERSION: ${{ needs.version.outputs.version }}
@@ -389,8 +396,8 @@ jobs:
         run: |
           set -euo pipefail
           if [ -z "$(ls -A dist 2>/dev/null)" ]; then
-            echo "::warning::no desktop build succeeded; the alpha release has the APK only"
+            echo "::warning::no desktop build succeeded; the nightly release has the APK only"
             exit 0
           fi
-          bash .github/scripts/alpha-rename.sh dist "$VERSION"
-          gh release upload alpha dist/* --clobber --repo "$GITHUB_REPOSITORY"
+          bash .github/scripts/nightly-rename.sh dist "$VERSION"
+          gh release upload nightly dist/* --clobber --repo "$GITHUB_REPOSITORY"

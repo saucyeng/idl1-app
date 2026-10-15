@@ -195,7 +195,7 @@ export default function Settings() {
         ) : selected.id === "howTos" ? (
           <HowTosSection />
         ) : selected.id === "about" ? (
-          <AboutSection engineVersion={appState.engineVersion} />
+          <AboutSection engineVersion={appState.engineVersion} store={prefsStore} />
         ) : (
           <p>Built in a later task.</p>
         )}
