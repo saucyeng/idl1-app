@@ -11,7 +11,7 @@ export const BUILD: CurrentBuild | null = currentBuild(import.meta.env);
 /** The channel to check: Settings' pick when there is one, else the
  *  build's own. */
 export function effectiveChannel(picked: AppChannel | null, build: CurrentBuild): AppChannel {
-  return picked ?? build.channel;
+  return picked ?? build.build_channel;
 }
 
 /** Settings' channel pick, read straight from the `ui` half's storage (the
@@ -50,7 +50,9 @@ function channelIo(build: CurrentBuild): UpdateIO {
         throw asError(e);
       }
       if (update === null) return null;
-      return { version: update.label, notes: update.notes, date: update.published_at || null, link: updateLink(update, android) };
+      // A switch names the channel: "beta 0.3.0-beta.1".
+      const version = update.switch ? `${update.channel} ${update.label}` : update.label;
+      return { version, notes: update.notes, date: update.published_at || null, link: updateLink(update, android) };
     },
     downloadAndInstallUpdate: notHere,
     relaunchApp: notHere,

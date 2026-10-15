@@ -48,10 +48,11 @@ export default function AboutSection({ engineVersion, store }: AboutSectionProps
 /**
  * App updates (2026-10-15): the release channel the app's own update check
  * uses (C3 §3.10) and "Check for updates". The channel defaults to the one
- * the build was made for; a pick is remembered and takes effect from the
- * next release on that channel (newer means a higher build number, so a
- * nightly switched to stable waits for the first stable built after it).
- * The outcome lands in the same store the banner and the status-bar chip
+ * the build was made for. Picking another is a switch: the check then
+ * offers that channel's latest release whatever its version, so going back
+ * from nightly to beta or stable works at any time (Isaac, 2026-10-15;
+ * `release.yml` rebuilds the beta and stable APKs on every push so Android
+ * accepts them over a newer nightly). The outcome lands in the same store the banner and the status-bar chip
  * read.
  */
 function AppUpdates({ store }: { store: PrefsStore }) {
@@ -83,7 +84,7 @@ function AppUpdates({ store }: { store: PrefsStore }) {
   function choose(value: AppChannel): void {
     // The build's own channel is stored as "follow the build" (null), so a
     // later build made for another channel is not pinned by an old pick.
-    const next = value === build.channel ? null : value;
+    const next = value === build.build_channel ? null : value;
     setPicked(next);
     setChecked(false);
     void store.get().then((current) => store.set({ ui: { ...current.ui, app_channel: next } }));
@@ -112,9 +113,10 @@ function AppUpdates({ store }: { store: PrefsStore }) {
         <ToggleGroupItem value="beta">Beta</ToggleGroupItem>
         <ToggleGroupItem value="nightly">Nightly</ToggleGroupItem>
       </ToggleGroup>
-      {channel !== build.channel && (
+      {channel !== build.build_channel && (
         <p className="font-mono text-xs text-fg-faint">
-          This build is {build.channel}. You&apos;ll be offered the next {channel} release built after it.
+          This build is {build.build_channel}. Check for updates offers the latest {channel} release to install over it. Your
+          sessions stay, but an older version may not open everything a newer one saved.
         </p>
       )}
       <div className="flex flex-wrap items-center gap-2">

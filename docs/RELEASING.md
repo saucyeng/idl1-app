@@ -110,12 +110,20 @@ the status-bar chip on desktop. "Download" opens the APK on Android (the
 browser downloads it, a tap installs it over the running build) and the
 release page on desktop.
 
-**Newer means a higher build number.** Every build's `versionCode` is the
-workflow's `github.run_number`, and Android refuses a lower one, so the
-check compares build numbers, which also holds across a channel switch: a
-nightly switched to stable is offered the first stable release built after
-it. Release titles carry the number (`(build <n>`); keep that shape. Tagged
-releases from before 2026-10-15 lack it and are compared by semver.
+**Switching channels works at any time.** Picking a channel other than
+the build's own is a switch, and the check always offers that channel's
+latest release, whatever its version. Android only installs an APK whose
+`versionCode` (the workflow's `github.run_number`) is at least the
+installed one's. So on every push to `main` the `android-rebuild` job
+rebuilds the latest stable tag and the latest beta tag from their own
+source with that run's number, replaces their APKs, and retitles their
+releases `idl1 <tag> (build <n>)`. All three channels then carry the newest
+build number (`.github/scripts/android-matrix.py` picks the tags). A failed
+rebuild never holds up the nightly. On the build's own channel, nightly is
+newer by build number and beta/stable by semver, because a rebuilt beta has
+the same code. An older version can still fail to open data a newer one
+wrote. Session files are versioned and the catalog rebuilds, so this is
+rare, but the Settings note says so.
 
 ## In-app updates (ruling R231)
 

@@ -38,7 +38,7 @@ describe("aboutRows — build", () => {
   });
 
   it("CI build — its number, channel and version", () => {
-    const rows = aboutRows("0.4.2", { channel: "nightly", version: "0.1.1", build: 20 });
+    const rows = aboutRows("0.4.2", { channel: "nightly", build_channel: "nightly", version: "0.1.1", build: 20 });
 
     expect(rows.find((row) => row.label === "Build")?.value).toBe("20 · nightly");
     expect(rows.find((row) => row.label === "App version")?.value).toBe("0.1.1");

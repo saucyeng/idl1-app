@@ -4,9 +4,14 @@ import { invoke } from "@tauri-apps/api/core";
  *  it is built, and is only offered updates published on it. */
 export type AppChannel = "stable" | "beta" | "nightly";
 
-/** What the running build is (C3 §3.10 `CurrentBuild`). */
+/** What the running build is (C3 §3.10 `CurrentBuild`). As
+ *  {@link currentBuild} returns it, `channel` and `build_channel` are both
+ *  the build's own; a check against another channel sets `channel` only. */
 export interface CurrentBuild {
+  /** The channel to check. */
   channel: AppChannel;
+  /** The channel the running build was made for. */
+  build_channel: AppChannel;
   /** Semver, `tauri.conf.json`'s `version`. */
   version: string;
   /** CI run number (the APK's `versionCode`); 0 when unknown. */
@@ -21,6 +26,9 @@ export interface AppUpdate {
   /** The release's build number (its title's `(build <n>`), or `null` for
    *  a tagged release published before titles carried one. */
   build: number | null;
+  /** True when the check was against another channel: a switch, always
+   *  offered, rather than an update. */
+  switch: boolean;
   /** Release body, markdown as published. */
   notes: string;
   /** RFC 3339; `""` when GitHub reported none. */
@@ -48,7 +56,7 @@ export function currentBuild(env: BuildEnv): CurrentBuild | null {
   const version = env.VITE_APP_VERSION ?? "";
   if (version === "") return null;
   const build = Number.parseInt(env.VITE_BUILD_NUMBER ?? "", 10);
-  return { channel, version, build: Number.isFinite(build) && build > 0 ? build : 0 };
+  return { channel, build_channel: channel, version, build: Number.isFinite(build) && build > 0 ? build : 0 };
 }
 
 /** Where "Download" should go: the APK on Android when the release has one,

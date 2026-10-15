@@ -8,6 +8,7 @@ const UPDATE: AppUpdate = {
   channel: "nightly",
   label: "build 19",
   build: 19,
+  switch: false,
   notes: "",
   published_at: "",
   page_url: "https://github.com/saucyeng/idl1-app/releases/tag/nightly",
@@ -23,7 +24,7 @@ describe("currentBuild", () => {
     const build = currentBuild(env);
 
     // Assert
-    expect(build).toEqual({ channel: "nightly", version: "0.1.0", build: 19 });
+    expect(build).toEqual({ channel: "nightly", build_channel: "nightly", version: "0.1.0", build: 19 });
   });
 
   it("no channel (a local build) — null, so no check runs", () => {
@@ -68,7 +69,7 @@ describe("checkAppUpdate", () => {
     const { invoke } = await import("@tauri-apps/api/core");
     (invoke as ReturnType<typeof vi.fn>).mockResolvedValue(UPDATE);
     const { checkAppUpdate } = await import("./appUpdate");
-    const build = { channel: "nightly" as const, version: "0.1.0", build: 18 };
+    const build = { channel: "nightly" as const, build_channel: "nightly" as const, version: "0.1.0", build: 18 };
 
     // Act
     const update = await checkAppUpdate(build);

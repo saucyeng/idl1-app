@@ -44,7 +44,7 @@ const LOCAL_BUILD = "dev";
  *  `BUILD`), or `null` for a local build: the version and build rows then
  *  read the hand-kept constants and `"dev"`. */
 export function aboutRows(engineVersion: string | null, build: CurrentBuild | null = null): AboutRow[] {
-  const buildLabel = build === null ? LOCAL_BUILD : `${build.build > 0 ? build.build : "?"} · ${build.channel}`;
+  const buildLabel = build === null ? LOCAL_BUILD : `${build.build > 0 ? build.build : "?"} · ${build.build_channel}`;
   return [
     { label: "App version", value: build?.version ?? APP_VERSION },
     { label: "Engine version", value: engineVersion ?? "…" },

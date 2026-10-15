@@ -74,11 +74,13 @@ saying whether it changed user-facing documentation (R222 item 5).
 ## 7. Repo hygiene
 
 - idl-rs is not rustfmt-formatted; never run `cargo fmt`. Match style by hand.
-- No AI attribution trailers in commits, ever. The lead pushes `main` (both repos, submodule first) after each green gate; lanes never push.
+- No AI attribution trailers in commits, ever. The lead pushes `main` (both repos, submodule first); lanes never push. CI on `main` is the gate (§8), and a red push is fixed forward at once: every push to `main` also publishes the nightly build Isaac runs.
 - Lanes touch only their own crate/directory. Cross-lane needs are contract changes, through the lead.
 - After changing an `idl-rs-tauri` command signature, update `app/src/ipc/` and the C3 contract together.
 
 ## 8. Compute rules (the dev machine is memory-bound — ruling R13)
+
+**Cloud first (Isaac, 2026-10-15).** GitHub Actions runs every gate on each push to `main`: the Rust suites (`ci.yml`: idl-rs, cli, tauri, transport), `cargo check -p app`, `tsc`, madge and vitest. Actions minutes are free (public repo). The local machine runs only `tsc` and targeted or full `vitest` before a push, then the lead watches CI and fixes forward. Cargo runs locally only to debug a failure CI has already shown, and then under the rules below. There is no separate test branch: nightly *is* the work-in-progress channel.
 
 - At most **two** cargo processes on the machine at a time (R216; four or more is what crashed it), and a cargo command starts only with ≥ 3 GB of memory commit free (`Get-CimInstance Win32_OperatingSystem | % FreeVirtualMemory`; R245: measured 2026-09-20, the full tauri test build with a warm target dir peaks at 1.7 GB; a cold or release build wants ≥ 6 GB); jobs are capped machine-wide (`~/.cargo/config.toml`), never override with `-j`.
 - Task cycles run only the targeted test filter the dispatch names; each run must report a non-zero `passed` count (a filter matching nothing is a failed gate, not a pass).

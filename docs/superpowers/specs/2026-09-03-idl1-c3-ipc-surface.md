@@ -2962,7 +2962,8 @@ Wrapper: `app/src/ipc/appUpdate.ts`; transport: `idl_transport::app_release`.
 ```ts
 type AppChannel = "stable" | "beta" | "nightly";
 interface CurrentBuild {
-  channel: AppChannel;  // the channel to check
+  channel: AppChannel;        // the channel to check
+  build_channel: AppChannel;  // the channel the running build was made for
   version: string;      // the running build's semver (tauri.conf.json)
   build: number;        // u64, its CI run number (the APK versionCode); 0 = unknown
 }
@@ -2970,6 +2971,7 @@ interface AppUpdate {
   channel: AppChannel;
   label: string;          // "0.2.0", or "build 19" on nightly
   build: number | null;   // u64, from the title's "(build <n>"; null if absent
+  switch: boolean;        // channel != build_channel: a switch, not an update
   notes: string;          // release body, markdown as published
   published_at: string;   // RFC 3339, "" if GitHub reported none
   page_url: string;       // the release's web page
@@ -2978,13 +2980,12 @@ interface AppUpdate {
 ```
 `stable` takes the newest `vX.Y.Z` release; `beta` the newest semver tag
 including prereleases (so beta also sees the stable release after it);
-`nightly` reads the moving `nightly` release. **Newer means a higher build
-number**: every build's number is the workflow run number, also the APK's
-`versionCode`, which Android will not lower — so the comparison holds
-across a channel switch. Release titles carry it as `(build <n>`
-(`idl1 nightly (build 20, abc1234)`, `idl1 v0.2.0 (build 31)`); a tagged
-release without one, or a running build that does not know its number, is
-compared by semver instead. Drafts and non-semver tags are never offered.
+`nightly` reads the moving `nightly` release. A check of another channel
+than `build_channel` is a **switch**, and that channel's latest release is
+always returned, older or not (`release.yml` rebuilds the latest beta and
+stable APKs with each run's number, so Android accepts them over a newer
+nightly). On the build's own channel, nightly is newer by build number,
+the title's `(build <n>`, and beta/stable by semver. Drafts and non-semver tags are never offered.
 Errors: `wifi` (unreachable, non-2xx, malformed feed, a nightly title with
 no build number).
 
