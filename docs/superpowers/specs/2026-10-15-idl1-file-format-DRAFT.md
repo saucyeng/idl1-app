@@ -23,8 +23,10 @@ Each section says what is **decided** (Isaac said so), what is **proposed**
   path a channel is, so the importer can merge them (Isaac, 2026-10-15).
 - The channel-id ranges of §4.2 (Isaac, 2026-10-15: "gotta pick
   something").
-- Logger diagnostics go inside each `.idl1` file (Isaac, 2026-10-15); how,
-  see §4.3.
+- Logger diagnostics go inside each `.idl1` file, written as issues happen
+  (Isaac, 2026-10-15: "willing to sacrifice a little logging effort to
+  accurately capture issues, which should hopefully be rare"). This relaxes
+  the firmware's "raw capture only" rule for these records. See §4.3.
 
 ## 2. Why: what limits `.idl0` timing today
 
@@ -172,17 +174,18 @@ axis order, set the layout of its samples in IMU_BLOCK (§4.4).
 | Type | Name | Payload |
 |---|---|---|
 | 0x10 | IMU_BLOCK | one IMU's drain (§4.4) |
-| 0x02 | GPS_FIX | as `.idl0` §5.6, plus `hdop_x100:u16` if Q2 says yes |
+| 0x02 | GPS_FIX | as `.idl0` §5.6, plus `hdop_x100:u16` if Q1 says yes |
 | 0x03 | CHANNEL_SAMPLE | as `.idl0` §5.7, with a u16 `channel_id` |
-| 0x20 | SESSION_SUMMARY | written just before SESSION_END: per IMU, FIFO overruns, bus errors, samples written; writer-ring drops; slowest poll cycle |
+| 0x20 | LOGGER_EVENT | written when an issue happens: event code, IMU or channel, count since the last event of that code (FIFO overrun, writer-ring drop, bus error, IMU dropped out or recovered) |
+| 0x21 | SESSION_SUMMARY | written just before SESSION_END: per IMU, FIFO overruns, bus errors, samples written; writer-ring drops; slowest poll cycle |
 | 0xFF | SESSION_END | empty, as `.idl0` |
 
-**Diagnostics.** The firmware never writes diagnostics while logging ("raw
-capture only", `imu_task.c`), so nothing competes with sample writes. The
-proposal keeps that rule: each IMU_BLOCK carries a free overrun bit, and the
-counts go in one SESSION_SUMMARY at the end. A hard power loss loses the
-summary but keeps the per-block bits. The alternative, writing diagnostic
-records as they happen, bends the raw-capture rule (Q1).
+**Diagnostics** (decided). Issues are written as they happen, as
+LOGGER_EVENT records, and the totals once more in SESSION_SUMMARY at the
+end. Each IMU_BLOCK also carries a free overrun bit. Events are rate-limited
+per code (at most one per code per second, carrying the count since the
+last), so a burst of trouble can't flood the writer it is reporting on.
+Proposed: the rate limit of one per code per second.
 
 ### 4.4 IMU_BLOCK (0x10)
 
@@ -260,16 +263,12 @@ Three IMUs at 480 Hz, both pods' high-g at 960 Hz:
 
 ## 8. Open questions for Isaac
 
-1. **Diagnostics timing.** Counts in one SESSION_SUMMARY at the end, plus a
-   free overrun bit per IMU block (keeps "raw capture only" while logging)?
-   Or diagnostic records written as things happen (more detail, bends that
-   rule)?
-2. **GPS HDOP.** Add the receiver's own fix-quality rating (HDOP, 2 bytes per
+1. **GPS HDOP.** Add the receiver's own fix-quality rating (HDOP, 2 bytes per
    fix) to GPS_FIX? It's what lets lap timing and the estimator ignore poor
    fixes. The receiver already sends it in GGA and the firmware currently
    drops it. Richer fields (accuracy in metres, vertical speed) need the
    receiver reconfigured, which the broken GPS TX line rules out for now.
-3. **Slow-channel timestamps.** Wheel pulses, HR, analog pressures and
+2. **Slow-channel timestamps.** Wheel pulses, HR, analog pressures and
    markers each carry their own 8-byte time. Unlike the IMU stamps these are
    real measurements (when the firmware read the sensor or saw the pulse),
    and for pulses and markers the time is the data. Proposed: keep
