@@ -27,6 +27,10 @@ Each section says what is **decided** (Isaac said so), what is **proposed**
   (Isaac, 2026-10-15: "willing to sacrifice a little logging effort to
   accurately capture issues, which should hopefully be rare"). This relaxes
   the firmware's "raw capture only" rule for these records. See §4.3.
+- GPS_FIX carries HDOP (Isaac, 2026-10-15).
+- Slow channels (wheel pulses, HR, analog, markers) keep their per-sample
+  timestamps in CHANNEL_SAMPLE: they are real measurements (Isaac,
+  2026-10-15).
 
 ## 2. Why: what limits `.idl0` timing today
 
@@ -53,8 +57,11 @@ newest in each burst are computed. They cost 8 of every 24 bytes written.
 ## 3. Proposed: timing model
 
 **Clocks.** Each LSM6DSV320X has one oscillator that drives both its sample
-rate and its timestamp counter (≈21.75 µs per tick nominal; datasheet to
-confirm). The ESP32's `esp_timer` (crystal, ~±10–20 ppm) is the master clock.
+rate and its timestamp counter. ST's driver confirms it: `INTERNAL_FREQ_FINE`
+is the "difference in percentage of the effective ODR (and timestamp rate)
+with respect to the typical", step 0.13 %. The nominal tick (≈21.75 µs) is
+from memory and isn't in the driver; the parser doesn't need it, because it
+fits chip ticks straight to ESP32 µs. The ESP32's `esp_timer` (crystal, ~±10–20 ppm) is the master clock.
 GPS ties the master clock to UTC, as today (SPEC §5.6).
 
 **What the firmware records, per IMU per drain:**
@@ -92,16 +99,20 @@ reads.
 3. **Sample times** = the clock map applied to the sample chip times.
 4. **High-g samples** sit between timestamp words in FIFO order, at the
    high-g rate (an exact multiple or fraction of the low-g rate on the
-   power-of-two ladder, same oscillator). Datasheet check (Claude): how
-   `DEC_32` counts when high-g is on (high-g has no BDR of its own).
+   power-of-two ladder, same oscillator). Checked in ST's driver
+   (`lsm6dsv320x_reg.h`): timestamp words are written at "the maximum rate
+   between XL and GYRO BDR divided by decimation", so high-g never changes
+   the 32-count, and the high-g samples are placed by FIFO order and the
+   high-g rate.
 
 **High-g is recorded continuously while it is on.** The chip delivers every
 high-g triplet over the bus whether or not the file keeps it, so gating only
 saves SD space. Continuous recording also gives the importer stretches where
 low-g and high-g both read in range, which it needs to match their scales
-before merging. Datasheet check (Claude): whether the chip can gate high-g
-batching on low-g saturation in hardware. P1 already rejected peak tracking
-(needs an FSM program).
+before merging. Checked in ST's driver: the chip has no way to batch
+high-g only while the low-g saturates. Its high-g extras are a wake-up
+threshold interrupt, peak tracking (one peak value into the FIFO; P1
+rejected it) and a batch-count interrupt, none of which gate the stream.
 
 **Expected result:** tens of µs end to end and better between IMUs on one
 board; drops counted exactly; drift followed; no sawtooth.
@@ -174,7 +185,7 @@ axis order, set the layout of its samples in IMU_BLOCK (§4.4).
 | Type | Name | Payload |
 |---|---|---|
 | 0x10 | IMU_BLOCK | one IMU's drain (§4.4) |
-| 0x02 | GPS_FIX | as `.idl0` §5.6, plus `hdop_x100:u16` if Q1 says yes |
+| 0x02 | GPS_FIX | as `.idl0` §5.6, plus `hdop_x100:u16` (decided) |
 | 0x03 | CHANNEL_SAMPLE | as `.idl0` §5.7, with a u16 `channel_id` |
 | 0x20 | LOGGER_EVENT | written when an issue happens: event code, IMU or channel, count since the last event of that code (FIFO overrun, writer-ring drop, bus error, IMU dropped out or recovered) |
 | 0x21 | SESSION_SUMMARY | written just before SESSION_END: per IMU, FIFO overruns, bus errors, samples written; writer-ring drops; slowest poll cycle |
@@ -263,18 +274,10 @@ Three IMUs at 480 Hz, both pods' high-g at 960 Hz:
 
 ## 8. Open questions for Isaac
 
-1. **GPS HDOP.** Add the receiver's own fix-quality rating (HDOP, 2 bytes per
-   fix) to GPS_FIX? It's what lets lap timing and the estimator ignore poor
-   fixes. The receiver already sends it in GGA and the firmware currently
-   drops it. Richer fields (accuracy in metres, vertical speed) need the
-   receiver reconfigured, which the broken GPS TX line rules out for now.
-2. **Slow-channel timestamps.** Wheel pulses, HR, analog pressures and
-   markers each carry their own 8-byte time. Unlike the IMU stamps these are
-   real measurements (when the firmware read the sensor or saw the pulse),
-   and for pulses and markers the time is the data. Proposed: keep
-   per-sample (~15 bytes per analog reading, ~12 KB/s for 8 channels at
-   100 Hz); batch them later only if analog rates climb.
+None left: every question so far is answered (§1). Still Isaac's to read
+and approve before anything is built: the proposed header fields (§4.1),
+the registry entry layout (§4.2), IMU_BLOCK (§4.4) and the diagnostics rate
+limit (§4.3).
 
-**Claude's checks (no decision needed):** the timestamp tick length and
-`FREQ_FINE` formula, how `DEC_32` counts with high-g on, and whether the
-chip can gate high-g batching on low-g saturation.
+**Claude's checks:** done (§3), from ST's driver. The nominal timestamp tick
+stays unconfirmed; nothing depends on it.
