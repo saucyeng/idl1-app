@@ -249,6 +249,23 @@ axes, a few extra instructions per sample.
 read, a pass that sorts FIFO words into samples, high-g and timestamps, and
 one writer submit. No per-sample timestamp arithmetic.
 
+### 4.5 Import: merging low-g and high-g (decided, Isaac 2026-10-15)
+
+For each IMU accel axis that recorded both paths, the importer builds one
+merged channel:
+
+- It **replaces** the low-g name (`IMU1_AccelX`), so workbooks and charts
+  keep working. The raw streams stay: low-g renamed `IMU1_LgAccelX`, high-g
+  as recorded (`IMU1_HgAccelX`).
+- It runs on **whichever stream has the higher rate**, with that stream's
+  times and gaps; the other is read by linear interpolation.
+- It takes the low-g reading unless a low-g sample around that moment is at
+  or above **95 % of the low-g full scale**, where it takes the high-g
+  reading.
+- High-g is taken as **linear and scaled as the registry says**: no
+  per-session calibration against low-g for now. The raw streams are kept so
+  the high-g linearity can be checked later.
+
 ## 5. Write rates, a worked example
 
 Three IMUs at 480 Hz, both pods' high-g at 960 Hz:

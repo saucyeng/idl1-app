@@ -6,6 +6,13 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 
 ### Added
 
+- **High-g merged into the accel channels at import [docs] (2026-10-15).**
+  For an `.idl1` IMU axis with both paths, `IMU1_AccelX` is now the merged
+  channel: low-g, switching to high-g where a low-g sample is at ≥95 % of
+  full scale, at whichever stream's rate is higher. High-g is taken as
+  linear, with no per-session calibration yet. The raw streams stay as
+  `IMU1_LgAccelX` and `IMU1_HgAccelX`. Spec-during: `.idl1` DRAFT spec §4.5.
+
 - **`.idl1` parser and chip-clock IMU timing [no-docs] (2026-10-15).**
   idl-rs reads IDL1 hardware's own session format (`parse::idl1`), picked by
   the `IDL1` magic; `.idl0` is unchanged. IMU samples are timed from the

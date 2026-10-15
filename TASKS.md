@@ -647,15 +647,22 @@ or a hard stop.
       checking for dropped samples. Then set `LOAD_LIMIT_SPS` and
       `LOAD_LIMIT_MEASURED` in `app/src/routes/pages/Device/loggerLoad.ts`.
       The pods share one 400 kHz I2C bus; the frame IMU is on SPI.
-- [ ] **LAN pairing by QR code** (Isaac, 2026-10-15). The desktop's Settings ›
-      Sync shows a QR carrying its peer id, LAN address and port, and a
-      fresh 6-digit pairing code. The phone scans it with the camera and
-      pairs with no typing. Builds on the existing pairing (C3 §3.9). Needs
-      a mobile barcode-scanner plugin.
 - [ ] LAN transfer field test and master-library policy (plan given
       2026-10-15: phone → desktop everything; desktop → phone workbooks and
-      metadata; optional phone pruning once the desktop confirms by checksum).
-- [ ] Notes chip: a notepad per recording, matched to sessions by logger id
-      and recording start (plan given 2026-10-15).
+      metadata). Phone pruning once the desktop confirms a copy by checksum
+      is **a setting** (Isaac, 2026-10-15).
+- QR-code pairing: not needed yet (Isaac, 2026-10-15). If it comes back,
+  the computer shows the code and the phone scans it.
+- Logger on home WiFi (station mode): **skipped for now** (Isaac,
+  2026-10-15). He powers the logger off in the pits as soon as the transfer
+  is done; it isn't left on in the garage.
+- [ ] Bike log and setup sheet (plan given 2026-10-15). Log entries attach
+      to the next ride automatically ("since the last ride on this bike"),
+      and the ride form opens after the ride so more notes can be added
+      (Isaac, 2026-10-15).
 - [ ] Firmware self-heal: rewrite `config.json` with the values actually in
       use when a field is rejected at boot (idl1-firmware).
+- [ ] Wheel pulses and analog reads (firmware phase 3): either interrupt or
+      the hardware pulse counter for wheel pulses (6–12 pickups on a 29er,
+      few pulses); task-polled analog reads are fine for now, tuned once
+      real analog sensors arrive (Isaac, 2026-10-15).
