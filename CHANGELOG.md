@@ -6,6 +6,18 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 
 ### Added
 
+- **Sliders and a logger load meter [docs] (2026-10-15).** IMU rate,
+  accel and gyro range, high-g range and rate, and GPS rate are now sliders
+  that snap to the allowed values instead of grids of boxes. A value read
+  from the logger that isn't allowed (833 Hz from an old `config.json`)
+  shows in red with a note, and the thumb sits on the nearest allowed value.
+  A **Logger load** meter in each IMU sheet and on Logger settings totals
+  the samples per second the config asks for: IMU axes at the shared rate,
+  high-g axes, analog channels and GPS. It rates the total green under 60%
+  of the limit, amber under the limit, red over it. The limit is an
+  unmeasured ~20,000/s estimate until a bench test (`loggerLoad.ts`,
+  TASKS.md). Spec: no change needed.
+
 - **Firmware tile [docs] (2026-10-15).** The Logger dashboard grid has a
   Firmware tile after WiFi showing the logger's version and a dot. Red
   means "update required": the firmware is older than `MIN_FIRMWARE`

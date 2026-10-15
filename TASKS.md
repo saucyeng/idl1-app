@@ -638,3 +638,24 @@ or a hard stop.
 ## Wave 3
 
 - [ ] L9 mobile plugins · L12 in-app agent (optional)
+
+## Mobile lead backlog (2026-10-15)
+
+- [ ] **Bench-measure the logger's sustained samples/s** (Isaac, 2026-10-15).
+      Estimated at about 20,000/s. Test single-channel highs (one IMU at
+      3840/7680 Hz) and wide configs (all three IMUs at 1920 Hz, high-g on),
+      checking for dropped samples. Then set `LOAD_LIMIT_SPS` and
+      `LOAD_LIMIT_MEASURED` in `app/src/routes/pages/Device/loggerLoad.ts`.
+      The pods share one 400 kHz I2C bus; the frame IMU is on SPI.
+- [ ] **LAN pairing by QR code** (Isaac, 2026-10-15). The desktop's Settings ›
+      Sync shows a QR carrying its peer id, LAN address and port, and a
+      fresh 6-digit pairing code. The phone scans it with the camera and
+      pairs with no typing. Builds on the existing pairing (C3 §3.9). Needs
+      a mobile barcode-scanner plugin.
+- [ ] LAN transfer field test and master-library policy (plan given
+      2026-10-15: phone → desktop everything; desktop → phone workbooks and
+      metadata; optional phone pruning once the desktop confirms by checksum).
+- [ ] Notes chip: a notepad per recording, matched to sessions by logger id
+      and recording start (plan given 2026-10-15).
+- [ ] Firmware self-heal: rewrite `config.json` with the values actually in
+      use when a field is rejected at boot (idl1-firmware).

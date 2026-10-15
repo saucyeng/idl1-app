@@ -26,6 +26,7 @@ import ModuleSheet from "./ModuleSheet";
 import { moduleTiles } from "./moduleTiles";
 import type { ModuleTile } from "./moduleTiles";
 import SendBar from "./SendBar";
+import { LoadMeter } from "./StepSlider";
 import { effectiveRepo } from "../Settings/FirmwareSection";
 import { catalogVerdict, type CatalogVerdict } from "../Settings/firmwareCatalog";
 import { prefsStore } from "../Settings/appPrefsStore";
@@ -512,6 +513,7 @@ export default function Device() {
       <div className={cn("device-tab__config-view flex flex-col gap-4", shownView !== "config" && "hidden")}>
         <SubViewHeader title="Logger settings" onBack={() => setView("main")} />
         {configBar}
+        {draft !== null && <LoadMeter config={draft} />}
         <ModuleList tiles={tiles} onOpen={setOpenTile} />
       </div>
 

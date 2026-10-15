@@ -18,6 +18,7 @@ import HrmForm from "./forms/HrmForm";
 import WheelForm from "./forms/WheelForm";
 import { batteryPctFromMv } from "./moduleTiles";
 import type { ModuleTile } from "./moduleTiles";
+import { LoadMeter, StepSlider } from "./StepSlider";
 import FirmwareSection from "../Settings/FirmwareSection";
 import { prefsStore } from "../Settings/appPrefsStore";
 
@@ -159,9 +160,10 @@ function ImuBody({ slotKey, tile, draft, onDraftChange, status, hardware }: { sl
           </button>
         </NoteBlock>
       )}
-      <Choice label="Accel range" options={sets.accelRangesG} value={slot.accel_range_g} format={(g) => `±${g} g`} disabled={!slot.enabled} onChange={(g) => onDraftChange(setImuSlot(draft, slotKey, { accel_range_g: g }))} />
-      <Choice label="Gyro range" options={sets.gyroRangesDps} value={slot.gyro_range_dps} format={(d) => `${d}°/s`} disabled={!slot.enabled} onChange={(d) => onDraftChange(setImuSlot(draft, slotKey, { gyro_range_dps: d }))} />
-      <Choice label="Sample rate — shared by all IMUs" options={sets.odrHz} value={draft.imu.sample_rate_hz} format={(hz) => `${hz} Hz`} onChange={(hz) => onDraftChange(setImuRate(draft, hz))} />
+      <StepSlider label="Accel range" options={sets.accelRangesG} value={slot.accel_range_g} format={(g) => `±${g} g`} disabled={!slot.enabled} onChange={(g) => onDraftChange(setImuSlot(draft, slotKey, { accel_range_g: g }))} />
+      <StepSlider label="Gyro range" options={sets.gyroRangesDps} value={slot.gyro_range_dps} format={(d) => `${d}°/s`} disabled={!slot.enabled} onChange={(d) => onDraftChange(setImuSlot(draft, slotKey, { gyro_range_dps: d }))} />
+      <StepSlider label="Sample rate — shared by all IMUs" options={sets.odrHz} value={draft.imu.sample_rate_hz} format={(hz) => `${hz} Hz`} onChange={(hz) => onDraftChange(setImuRate(draft, hz))} />
+      <LoadMeter config={draft} />
       {slotKey !== "imu0" && sets.highG && (
         <>
           <SwitchRow
@@ -171,8 +173,8 @@ function ImuBody({ slotKey, tile, draft, onDraftChange, status, hardware }: { sl
             disabled={!slot.enabled}
             onChange={(on) => onDraftChange(setImuHg(draft, slotKey, on))}
           />
-          <Choice label="High-g range — shared by both pods" options={HG_RANGES_G} value={draft.imu.hg_range_g} format={(g) => `±${g} g`} disabled={!slot.enabled || slot.hg_enabled !== true} onChange={(g) => onDraftChange(setImuHgShared(draft, { hg_range_g: g }))} />
-          <Choice label="High-g rate — shared by both pods" options={HG_ODR_HZ} value={draft.imu.hg_sample_rate_hz} format={(hz) => `${hz} Hz`} disabled={!slot.enabled || slot.hg_enabled !== true} onChange={(hz) => onDraftChange(setImuHgShared(draft, { hg_sample_rate_hz: hz }))} />
+          <StepSlider label="High-g range — shared by both pods" options={HG_RANGES_G} value={draft.imu.hg_range_g} format={(g) => `±${g} g`} disabled={!slot.enabled || slot.hg_enabled !== true} onChange={(g) => onDraftChange(setImuHgShared(draft, { hg_range_g: g }))} />
+          <StepSlider label="High-g rate — shared by both pods" options={HG_ODR_HZ} value={draft.imu.hg_sample_rate_hz} format={(hz) => `${hz} Hz`} disabled={!slot.enabled || slot.hg_enabled !== true} onChange={(hz) => onDraftChange(setImuHgShared(draft, { hg_sample_rate_hz: hz }))} />
         </>
       )}
       <DraftNote />
@@ -191,7 +193,7 @@ function GpsBody({ draft, onDraftChange, status }: { draft: DeviceConfig; onDraf
           ["HDOP", hdop === null ? "—" : (hdop / 100).toFixed(2)],
         ]}
       />
-      <Choice label="Rate" options={GPS_RATES_HZ as readonly number[]} value={draft.gps.sample_rate_hz} format={(hz) => `${hz} Hz`} onChange={(hz) => onDraftChange(setGps(draft, { sample_rate_hz: hz }))} />
+      <StepSlider label="Rate" options={GPS_RATES_HZ as readonly number[]} value={draft.gps.sample_rate_hz} format={(hz) => `${hz} Hz`} onChange={(hz) => onDraftChange(setGps(draft, { sample_rate_hz: hz }))} />
       <Choice label="Dynamic model" options={GPS_DYNAMIC_MODELS} value={draft.gps.dynamic_model} format={(m) => m} onChange={(m) => onDraftChange(setGps(draft, { dynamic_model: m }))} />
       <SwitchRow label="SBAS corrections" detail="Satellite-based augmentation, where available" checked={draft.gps.sbas_enabled} onChange={(on) => onDraftChange(setGps(draft, { sbas_enabled: on }))} />
       <DraftNote />
