@@ -6,6 +6,18 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 
 ### Added
 
+- **Logger settings: Read, Send and Firmware [docs] (2026-10-15).** Logger
+  settings now always has **Read from logger**, which takes a second tap to
+  drop unsent edits, and **Send to logger**, which also re-sends an
+  unchanged config. A failed read says so and offers Read again. The
+  dashboard bar still appears only for unsent changes. Below the modules, a
+  **Firmware** section shows the logger's version and has Check now, the
+  update button and the `.bin`-from-disk path: the Settings Firmware
+  section, remounted per connection. The firmware catalog now defaults to
+  `saucyeng/idl1-firmware` when the repository field is empty. It finds
+  releases only once that repo publishes them where the app can read them.
+  No spec change needed (C3 §3.8's commands are unchanged).
+
 - **Update banner, release channels, and the rolling build is now
   `nightly` [docs] (2026-10-15).** CI builds know their channel: nightly
   (every push to `main`), beta (`-` tags) or stable (plain tags). They check

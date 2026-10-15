@@ -26,6 +26,8 @@ import ModuleSheet from "./ModuleSheet";
 import { moduleTiles } from "./moduleTiles";
 import type { ModuleTile } from "./moduleTiles";
 import SendBar from "./SendBar";
+import FirmwareSection from "../Settings/FirmwareSection";
+import { prefsStore } from "../Settings/appPrefsStore";
 import { toast } from "sonner";
 import { setDeviceLink } from "../../../shell/deviceLink";
 import { useSidebarSlotNode } from "../../../shell/sidebarSlot";
@@ -125,6 +127,9 @@ export default function Device() {
   // not yet sent. Nothing reaches the logger until Send, since a push
   // reboots it (SPEC §7.2).
   const [draft, setDraft] = useState<DeviceConfig | null>(null);
+  // Where the last config read stands: Logger settings shows Read from
+  // logger with "Reading…" or the failure.
+  const [configRead, setConfigRead] = useState<"idle" | "reading" | "failed">("idle");
   // The module tile whose sheet is open, and whether the rider/bike sheet is.
   const [openTile, setOpenTile] = useState<ModuleTile | null>(null);
   const [identityOpen, setIdentityOpen] = useState(false);
@@ -158,19 +163,25 @@ export default function Device() {
       .catch(() => {});
   }, []);
 
-  // Reads the logger's configuration back after a connect. Best effort: a
-  // failed or unparsable read leaves the chips saying "…" rather than
-  // blocking the connection.
-  const readLoggerConfig = useCallback((connectedDeviceId: string) => {
-    setLoggerConfig(null);
-    setDraft(null);
+  // Reads the logger's configuration: after a connect, and from Logger
+  // settings' Read from logger. A failed or unparsable read leaves the
+  // chips saying "…" rather than blocking the connection, and Logger
+  // settings says it failed. A re-read keeps the old config on screen until
+  // the new one arrives.
+  const readLoggerConfig = useCallback((connectedDeviceId: string, keepShown = false) => {
+    if (!keepShown) {
+      setLoggerConfig(null);
+      setDraft(null);
+    }
+    setConfigRead("reading");
     pullConfig(connectedDeviceId)
       .then((json) => {
         const config = parseConfig(JSON.parse(json)).config;
         setLoggerConfig(config);
         setDraft(config);
+        setConfigRead("idle");
       })
-      .catch(() => {});
+      .catch(() => setConfigRead("failed"));
   }, []);
 
   const onScan = useCallback(() => {
@@ -364,8 +375,44 @@ export default function Device() {
           toast.info("Sent to the logger", { description: "It is restarting to apply the new settings." });
         }}
         onDiscard={() => setDraft(loggerConfig)}
+        onRead={() => readLoggerConfig(activeConnection.device_id, true)}
+        reading={configRead === "reading"}
       />
     ) : null;
+  // Logger settings always offers Read and Send. Before any config has been
+  // read (or after a failed read) only Read applies.
+  const configBar =
+    activeConnection === null ? null : sendBar !== null && loggerConfig !== null && draft !== null ? (
+      <SendBar
+        deviceId={activeConnection.device_id}
+        base={loggerConfig}
+        draft={draft}
+        hardware={hardware}
+        status={statusState.status}
+        onSent={(sent) => {
+          setLoggerConfig(sent);
+          toast.info("Sent to the logger", { description: "It is restarting to apply the new settings." });
+        }}
+        onDiscard={() => setDraft(loggerConfig)}
+        onRead={() => readLoggerConfig(activeConnection.device_id, true)}
+        reading={configRead === "reading"}
+        alwaysShow
+      />
+    ) : (
+      <div className="flex flex-col gap-2 rounded-[var(--radius-card)] border border-rule bg-surface p-3">
+        <span className="text-sm font-medium text-fg">
+          {configRead === "failed" ? "Couldn't read the logger's settings" : configRead === "reading" ? "Reading the logger's settings…" : "Settings not read yet"}
+        </span>
+        <Button
+          type="button"
+          className="h-12 w-full text-base"
+          disabled={configRead === "reading"}
+          onClick={() => readLoggerConfig(activeConnection.device_id)}
+        >
+          {configRead === "reading" ? "Reading…" : "Read from logger"}
+        </Button>
+      </div>
+    );
 
   return (
     /* `h-full overflow-y-auto`, like every other route's own scroll
@@ -431,8 +478,17 @@ export default function Device() {
 
       <div className={cn("device-tab__config-view flex flex-col gap-4", shownView !== "config" && "hidden")}>
         <SubViewHeader title="Logger settings" onBack={() => setView("main")} />
-        {sendBar}
+        {configBar}
         <ModuleList tiles={tiles} onOpen={setOpenTile} />
+        {activeConnection !== null && (
+          <section className="device-tab__firmware flex flex-col gap-2">
+            <SectionHead>Firmware</SectionHead>
+            {/* Keyed by the connection: the section reads the device's
+                version and the catalog once, on mount (R198), so a new
+                connection remounts it. */}
+            <FirmwareSection key={activeConnection.device_id} store={prefsStore} />
+          </section>
+        )}
       </div>
 
       {activeConnection !== null && (

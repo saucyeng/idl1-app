@@ -33,6 +33,17 @@ import {
   type OtaState,
 } from "../../../ipc/device";
 
+/** The repository the catalog reads when the field is empty: idl1's own
+ *  firmware (Isaac, 2026-10-15: the Logger screen gets a working update
+ *  button, so the catalog is on by default rather than off). */
+export const DEFAULT_FIRMWARE_REPO = "saucyeng/idl1-firmware";
+
+/** The repository a check uses: what the field says, else
+ *  {@link DEFAULT_FIRMWARE_REPO}. */
+function effectiveRepo(field: string): string {
+  return field.trim() === "" ? DEFAULT_FIRMWARE_REPO : field.trim();
+}
+
 /** Props for {@link FirmwareSection}. */
 export interface FirmwareSectionProps {
   /** The prefs store the repository and channel live in (`ui` half). */
@@ -92,7 +103,7 @@ export default function FirmwareSection({ store }: FirmwareSectionProps) {
   const generation = useRef<number>(0);
 
   const card = withPushEnabled(flowCard(state, flowError), pickedFile !== null);
-  const verdict: CatalogVerdict = catalogVerdict({ firmwareRepo: repo, channel, deviceVersion, releases });
+  const verdict: CatalogVerdict = catalogVerdict({ firmwareRepo: effectiveRepo(repo), channel, deviceVersion, releases });
   const updateLabel = updateButtonLabel(verdict);
   const blockedReason = pushBlockedReason(deviceId, recording, card.busy);
 
@@ -164,7 +175,7 @@ export default function FirmwareSection({ store }: FirmwareSectionProps) {
         return;
       }
 
-      if (generation.current === mine) await check(prefs.ui.firmware_repo, prefs.ui.firmware_channel);
+      if (generation.current === mine) await check(effectiveRepo(prefs.ui.firmware_repo), prefs.ui.firmware_channel);
     })();
 
     return () => {
@@ -185,7 +196,7 @@ export default function FirmwareSection({ store }: FirmwareSectionProps) {
     setChannel(value);
     generation.current += 1;
     void store.get().then((current) => store.set({ ui: { ...current.ui, firmware_channel: value } }));
-    void check(repo, value);
+    void check(effectiveRepo(repo), value);
   }
 
   async function handlePick(): Promise<void> {
@@ -200,7 +211,7 @@ export default function FirmwareSection({ store }: FirmwareSectionProps) {
     if (deviceId === null) return;
     setFlowError(null);
     try {
-      await pushFirmware(deviceId, source, repo, channel, () => {
+      await pushFirmware(deviceId, source, effectiveRepo(repo), channel, () => {
         // Byte-level progress is already reflected in the state machine's
         // own `pushing`/`downloading` percentages; this channel exists for
         // callers that want finer granularity than the card shows.
@@ -231,7 +242,7 @@ export default function FirmwareSection({ store }: FirmwareSectionProps) {
         Firmware repository
         <Input
           value={repo}
-          placeholder="owner/name — leave empty to disable update checks"
+          placeholder={`owner/name — empty uses ${DEFAULT_FIRMWARE_REPO}`}
           onChange={(event) => handleRepoChange(event.target.value)}
         />
       </label>
@@ -254,7 +265,7 @@ export default function FirmwareSection({ store }: FirmwareSectionProps) {
           </p>
         ) : null}
         <div className="flex flex-wrap gap-2">
-          <Button disabled={card.busy || repo.trim() === ""} onClick={() => void check(repo, channel)}>
+          <Button disabled={card.busy} onClick={() => void check(effectiveRepo(repo), channel)}>
             Check now
           </Button>
           {updateLabel !== null && verdict.kind === "update-available" ? (

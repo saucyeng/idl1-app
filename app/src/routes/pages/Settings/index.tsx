@@ -9,28 +9,16 @@ import FirmwareSection from "./FirmwareSection";
 import HowTosSection from "./HowTosSection";
 import { MIGRATION_FLAG_KEY, runPrefsMigration, type MigrationOutcome, type SkippedField } from "./prefsMigration";
 import ProfileSection from "./ProfileSection";
-import { createPrefsStore, localStorageBackend } from "./prefsStore";
+import { localHalf, prefsStore } from "./appPrefsStore";
+import { getSettings, setSettings } from "../../../ipc/app";
 import { createPortal } from "react-dom";
 
 import { useSidebarSlotNode } from "../../../shell/sidebarSlot";
 import { SECTIONS, defaultSectionId, sectionById } from "./sections";
-import { settingsBackend } from "./settingsBackend";
 import SyncSection from "./SyncSection";
 import ThemeSection from "./ThemeSection";
 import UnitsSection from "./UnitsSection";
-import { getSettings, setSettings } from "../../../ipc/app";
 import { useAppState } from "../../../state/AppState";
-
-/** The `ui` half's own storage. Shared between {@link prefsStore}'s
- *  `settingsBackend` and the one-time migration below so both act on the
- *  same `localStorage` document (R78 L7c Task 8). */
-const localHalf = localStorageBackend();
-
-/** The single {@link PrefsStore} instance every Settings section reads from
- *  and writes to. The `engine` half (`rider_name`, `unit_system`) round-trips
- *  through `get_settings`/`set_settings` (C3 §3.10); the `ui` half stays in
- *  `localStorage` (R78 L7c Task 8, R53 Settings Q1/Q2 — SPEC §27.1). */
-const prefsStore = createPrefsStore(settingsBackend({ getSettings, setSettings, local: localHalf }));
 
 /** Reads whether the one-time `localStorage` → `settings.json` import has
  *  already run on this machine. Wrapped in try/catch — a WebView can refuse
