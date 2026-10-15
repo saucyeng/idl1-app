@@ -2982,9 +2982,8 @@ interface AppUpdate {
 including prereleases (so beta also sees the stable release after it);
 `nightly` reads the moving `nightly` release. A check of another channel
 than `build_channel` is a **switch**, and that channel's latest release is
-always returned, older or not (`release.yml` rebuilds the latest beta and
-stable APKs with each run's number, so Android accepts them over a newer
-nightly). On the build's own channel, nightly is newer by build number,
+always returned, older or not; it installs because every APK carries the
+same `versionCode` (docs/RELEASING.md). On the build's own channel, nightly is newer by build number,
 the title's `(build <n>`, and beta/stable by semver. Drafts and non-semver tags are never offered.
 Errors: `wifi` (unreachable, non-2xx, malformed feed, a nightly title with
 no build number).

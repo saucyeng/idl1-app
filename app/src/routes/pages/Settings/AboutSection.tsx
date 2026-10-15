@@ -51,8 +51,8 @@ export default function AboutSection({ engineVersion, store }: AboutSectionProps
  * the build was made for. Picking another is a switch: the check then
  * offers that channel's latest release whatever its version, so going back
  * from nightly to beta or stable works at any time (Isaac, 2026-10-15;
- * `release.yml` rebuilds the beta and stable APKs on every push so Android
- * accepts them over a newer nightly). The outcome lands in the same store the banner and the status-bar chip
+ * every APK carries the same `versionCode`, so Android accepts any channel
+ * over any other). The outcome lands in the same store the banner and the status-bar chip
  * read.
  */
 function AppUpdates({ store }: { store: PrefsStore }) {

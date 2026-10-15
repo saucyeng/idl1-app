@@ -24,10 +24,10 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
   it once, 5 s after launch. Settings ▸ About ▸ App updates can pick
   another channel and has Check for updates; About also shows the real
   version and build. Picking another channel is a switch, and a switch
-  always offers that channel's latest release. CI rebuilds the latest beta
-  and stable APKs with each run's build number (the APK versionCode), so
-  going back from nightly to beta or stable installs at any time. Release
-  titles now carry `(build <n>`. On a phone a banner above the tab
+  always offers that channel's latest release. Every APK now carries the
+  same versionCode (100000, above every earlier build), so Android installs
+  any channel over any other in both directions. The CI build number is
+  only a label, which release titles carry as `(build <n>`. On a phone a banner above the tab
   bar names the update. "What's new" shows the release notes, "Download"
   hands the APK to the browser so a tap installs it, and × hides it for the
   session. Desktop shows the status-bar chip and opens the release page.

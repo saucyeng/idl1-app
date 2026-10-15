@@ -52,6 +52,8 @@ permissions:
   contents: write # the release job creates the GitHub Release
 
 env:
+  # The one versionCode every APK carries (see the Android build step).
+  ANDROID_VERSION_CODE: 100000
   # rust/.cargo/config.toml pins target-dir to a Windows path shared across
   # the dev machine's worktrees; that path isn't valid on a runner.
   CARGO_TARGET_DIR: ${{ github.workspace }}/rust/target
@@ -61,23 +63,8 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       version: ${{ steps.v.outputs.version }}
-      rebuilds: ${{ steps.r.outputs.rebuilds }}
     steps:
       - uses: actions/checkout@v4
-      # The latest stable and beta tags, rebuilt by `android-rebuild` on a
-      # push to main (.github/scripts/android-matrix.py).
-      - name: Tags to rebuild for Android
-        id: r
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          set -euo pipefail
-          if [ "$GITHUB_EVENT_NAME" = push ] && [ "$GITHUB_REF" = refs/heads/main ]; then
-            rebuilds="$(gh release list --repo "$GITHUB_REPOSITORY" --limit 100 --json tagName,isDraft | python3 .github/scripts/android-matrix.py)"
-          else
-            rebuilds='[]'
-          fi
-          echo "rebuilds=$rebuilds" >> "$GITHUB_OUTPUT"
       - name: Read version and check it against the tag
         id: v
         run: |
@@ -251,13 +238,18 @@ jobs:
           ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
           ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
           ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
-        # versionCode must increase every release so a new APK installs as an
-        # in-place update; github.run_number is monotonic per workflow (the
-        # same trick idl0 uses). Renaming this workflow file resets it. Passed
-        # as a file, not inline JSON: scripts/tauri.mjs runs the CLI through
-        # a shell, which would strip the JSON's quotes.
+        # Every APK, on every channel, carries the SAME versionCode
+        # (ANDROID_VERSION_CODE). Android installs an APK over the installed
+        # app when its versionCode is equal or higher, so with one fixed value
+        # any build installs over any other: nightly, beta and stable switch
+        # freely in both directions (Isaac, 2026-10-15). Which build is newer
+        # is the app's own update check (C3 \§3.10), never Android's. The
+        # value was raised above the run numbers used before (up to 24); never
+        # lower it, or every installed copy refuses the next build. Passed as
+        # a file, not inline JSON: scripts/tauri.mjs runs the CLI through a
+        # shell, which would strip the JSON's quotes.
         run: |
-          echo '{"bundle":{"android":{"versionCode":${{ github.run_number }}}}}' > "$RUNNER_TEMP/android-version.json"
+          echo '{"bundle":{"android":{"versionCode":${{ env.ANDROID_VERSION_CODE }}}}}' > "$RUNNER_TEMP/android-version.json"
           npm run tauri -- android build --apk --target aarch64 --config "$RUNNER_TEMP/android-version.json"
 
       - name: Stage assets
@@ -274,99 +266,6 @@ jobs:
           name: Android
           path: dist/*
           if-no-files-found: error
-
-  # Rebuilds the latest beta and stable tags' APKs with this run's build
-  # number and replaces them on their releases, so the beta and stable
-  # downloads always install over a nightly (Android refuses a lower
-  # versionCode; C3 §3.10, docs/RELEASING.md "Channels"). Source is the
-  # tag's own; only the build number and the release title change. A failed
-  # rebuild never holds up the nightly.
-  android-rebuild:
-    needs: version
-    if: ${{ needs.version.outputs.rebuilds != '[]' && needs.version.outputs.rebuilds != '' }}
-    runs-on: ubuntu-latest
-    timeout-minutes: 60
-    continue-on-error: true
-    strategy:
-      fail-fast: false
-      matrix:
-        include: ${{ fromJSON(needs.version.outputs.rebuilds) }}
-    env:
-      VERSION: ${{ matrix.version }}
-      NDK_VERSION: 28.2.13676358
-      VITE_RELEASE_CHANNEL: ${{ matrix.channel }}
-      VITE_APP_VERSION: ${{ matrix.version }}
-      VITE_BUILD_NUMBER: ${{ github.run_number }}
-      GH_TOKEN: ${{ github.token }}
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          ref: ${{ matrix.ref }}
-          submodules: recursive
-
-      - uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: "17"
-
-      - uses: android-actions/setup-android@v3
-        with:
-          packages: platform-tools
-
-      - name: Install Android NDK
-        run: |
-          sdkmanager --install "ndk;$NDK_VERSION"
-          echo "NDK_HOME=$ANDROID_HOME/ndk/$NDK_VERSION" >> "$GITHUB_ENV"
-
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: aarch64-linux-android
-
-      - uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: |
-            rust
-            app/src-tauri
-          key: android-${{ matrix.ref }}
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 24
-          cache: npm
-          cache-dependency-path: app/package-lock.json
-
-      - name: npm ci
-        working-directory: app
-        run: npm ci
-
-      - name: Restore signing keystore
-        env:
-          ANDROID_KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_B64 }}
-        run: |
-          set -euo pipefail
-          echo "$ANDROID_KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/idl1-release.jks"
-          echo "ANDROID_KEYSTORE_PATH=$RUNNER_TEMP/idl1-release.jks" >> "$GITHUB_ENV"
-
-      - name: tauri android build (arm64)
-        working-directory: app
-        env:
-          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
-          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
-          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
-        run: |
-          echo '{"bundle":{"android":{"versionCode":${{ github.run_number }}}}}' > "$RUNNER_TEMP/android-version.json"
-          npm run tauri -- android build --apk --target aarch64 --config "$RUNNER_TEMP/android-version.json"
-
-      - name: Replace the release's APK and retitle it
-        run: |
-          set -euo pipefail
-          apk="$(find app/src-tauri/gen/android/app/build/outputs/apk -name '*-release.apk' | head -1)"
-          [ -n "$apk" ] || { echo "::error::no release APK produced"; exit 1; }
-          mkdir -p dist
-          cp "$apk" "dist/idl1-app-v${VERSION}-arm64.apk"
-          (cd dist && sha256sum "idl1-app-v${VERSION}-arm64.apk" > "idl1-app-v${VERSION}-arm64.apk.sha256")
-          gh release upload "${{ matrix.ref }}" dist/* --clobber --repo "$GITHUB_REPOSITORY"
-          gh release edit "${{ matrix.ref }}" --title "idl1 ${{ matrix.ref }} (build ${GITHUB_RUN_NUMBER})" --repo "$GITHUB_REPOSITORY"
 
   release:
     needs: [version, desktop, android]
@@ -418,8 +317,8 @@ jobs:
       - name: Publish GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          # The build number lets the app compare releases across channels
-          # (C3 §3.10): it is the APK's versionCode.
+          # The CI build number, a label the release page and the nightly
+          # comparison read (C3 §3.10); not the APK's versionCode.
           name: idl1 ${{ github.ref_name }} (build ${{ github.run_number }})
           files: dist/*
           body_path: NOTES.md

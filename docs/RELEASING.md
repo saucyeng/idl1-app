@@ -75,9 +75,15 @@ build comes out unsigned. **Back the keystore up.** Losing it means no
 release can ever update an installed copy again: every user would have
 to uninstall first.
 
-The APK's `versionCode` is the workflow's `github.run_number`, which only
-increases, so each release installs as an in-place update. Renaming
-`release.yml` resets that counter; if that ever happens, add an offset.
+Every APK carries the **same** `versionCode`, `ANDROID_VERSION_CODE` at
+the top of `release.yml` (100000; 2026-10-15). Android installs an APK over
+the installed app when its `versionCode` is equal or higher, so with one
+fixed value any build installs over any other, and nightly, beta and stable
+switch freely in both directions. Android never decides which build is
+newer; the app's own update check does (C3 §3.10). Builds before
+2026-10-15 used the run number (up to 24), so 100000 sits above them.
+**Never lower it**, or every installed copy refuses the next build. The CI
+run number survives only as the `(build <n>)` label in release titles.
 
 `android-apk.yml` builds a debug APK (arm64) on demand, for
 trying an Android change without cutting a release.
@@ -112,16 +118,10 @@ release page on desktop.
 
 **Switching channels works at any time.** Picking a channel other than
 the build's own is a switch, and the check always offers that channel's
-latest release, whatever its version. Android only installs an APK whose
-`versionCode` (the workflow's `github.run_number`) is at least the
-installed one's. So on every push to `main` the `android-rebuild` job
-rebuilds the latest stable tag and the latest beta tag from their own
-source with that run's number, replaces their APKs, and retitles their
-releases `idl1 <tag> (build <n>)`. All three channels then carry the newest
-build number (`.github/scripts/android-matrix.py` picks the tags). A failed
-rebuild never holds up the nightly. On the build's own channel, nightly is
-newer by build number and beta/stable by semver, because a rebuilt beta has
-the same code. An older version can still fail to open data a newer one
+latest release, whatever its version. It installs because every APK has
+the same `versionCode` (see "Android signing"). On the build's own
+channel, nightly is newer by the build label in its title, and beta and
+stable by semver. An older version can still fail to open data a newer one
 wrote. Session files are versioned and the catalog rebuilds, so this is
 rare, but the Settings note says so.
 
