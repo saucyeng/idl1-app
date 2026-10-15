@@ -17,6 +17,14 @@ Each section says what is **decided** (Isaac said so), what is **proposed**
   facts; the parser does the maths.
 - Logging efficiency is rule one: the firmware does as little per sample as
   possible, so sample rates can go as high as the hardware allows.
+- Any subset of an IMU's axes can be recorded; all six is the default, the
+  realistic case (Isaac, 2026-10-15).
+- Low-g and high-g are the same data type; the registry only says which
+  path a channel is, so the importer can merge them (Isaac, 2026-10-15).
+- The channel-id ranges of §4.2 (Isaac, 2026-10-15: "gotta pick
+  something").
+- Logger diagnostics go inside each `.idl1` file (Isaac, 2026-10-15); how,
+  see §4.3.
 
 ## 2. Why: what limits `.idl0` timing today
 
@@ -57,11 +65,23 @@ GPS ties the master clock to UTC, as today (SPEC §5.6).
 - The samples, in FIFO order, and each FIFO timestamp word with its position
   (which sample it follows).
 
+**Reads don't need to line up with timestamp words.** The firmware drains
+each FIFO every 20 ms (`IMU_POLL_MS`) and takes whatever is there: about 10
+samples per read at 480 Hz, so a timestamp word lands every third read or
+so; ~38 per read at 1920 Hz. Read boundaries play no part in the maths: every
+read brings its own clock pair, and the timestamp words fix which samples
+sit between them wherever the reads fell. Samples after a session's last
+timestamp word are placed with the fitted chip rate. The FIFO holds ~266 ms
+at 480 Hz low-g plus 960 Hz high-g, so there's no reason to wait for fuller
+reads.
+
 **What the parser computes, per IMU:**
 
 1. **Chip → ESP32 clock map:** a robust linear fit (offset and rate) over the
    `(read_chip_ts, read_us)` pairs, in sliding windows so temperature drift is
-   followed. Proposed: Theil–Sen over 10 s windows (open: window length).
+   followed. Starting point: Theil–Sen over 10 s windows. This is a parser
+   setting, tuned from bench data and changeable without touching firmware
+   (the file holds raw facts), so it isn't a format decision.
 2. **Sample chip times:** samples between two timestamp words are evenly
    spaced in chip time (same oscillator). With the expected 32 samples
    between words the spacing is exact; with fewer, the window lost samples
@@ -70,8 +90,16 @@ GPS ties the master clock to UTC, as today (SPEC §5.6).
 3. **Sample times** = the clock map applied to the sample chip times.
 4. **High-g samples** sit between timestamp words in FIFO order, at the
    high-g rate (an exact multiple or fraction of the low-g rate on the
-   power-of-two ladder, same oscillator). Open: confirm in the datasheet how
+   power-of-two ladder, same oscillator). Datasheet check (Claude): how
    `DEC_32` counts when high-g is on (high-g has no BDR of its own).
+
+**High-g is recorded continuously while it is on.** The chip delivers every
+high-g triplet over the bus whether or not the file keeps it, so gating only
+saves SD space. Continuous recording also gives the importer stretches where
+low-g and high-g both read in range, which it needs to match their scales
+before merging. Datasheet check (Claude): whether the chip can gate high-g
+batching on low-g saturation in hardware. P1 already rejected peak tracking
+(needs an FSM program).
 
 **Expected result:** tens of µs end to end and better between IMUs on one
 board; drops counted exactly; drift followed; no sawtooth.
@@ -115,18 +143,22 @@ registry), the `0xDEADBEEF` end marker (`header_len` + CRC replace it).
 | Field | Type | Notes |
 |---|---|---|
 | channel_id | u16 | |
-| data_type | u8 | as `.idl0` (0 = u8 … 7 = f64) |
-| kind | u8 | 0 generic, 1 low-g/gyro axis, 2 high-g axis, 3 GPS |
-| source | u8 | IMU index for kinds 1–2, else 0 |
-| axis | u8 | 0–5 = AccelX … GyroZ (kind 1), 0–2 = X/Y/Z (kind 2) |
+| data_type | u8 | as `.idl0` (0 = u8 … 7 = f64). Every IMU axis, low-g or high-g, is 4 (i16). |
+| kind | u8 | 0 generic, 1 IMU axis, 2 GPS |
+| source | u8 | IMU index for kind 1, else 0 |
+| axis | u8 | kind 1: 0–2 accel X/Y/Z, 3–5 gyro X/Y/Z |
+| path | u8 | kind 1: 0 low-g/gyro, 1 high-g. The importer merges an accel axis's two paths into one channel. |
+| reserved | u8 | 0 |
 | rate_mhz | u32 | sample rate in milli-hertz (0 = event-driven); not limited to integers |
 | scale | f32 | physical = raw × scale + offset |
 | offset | f32 | |
 | name | u8[24] | NUL-terminated. **The same names as today** (`IMU0_AccelX`, `IMU1_HgAccelX`, `WheelFront` …), so workbooks keep working. |
-| units | u8[8] | |
-| reserved | u8[2] | 0 |
+| units | u8[6] | |
 
-**Proposed channel id ranges** (a clean start, since nothing is recorded yet):
+Only recorded axes get an entry, as in `.idl0`. An IMU's recorded axes, in
+axis order, set the layout of its samples in IMU_BLOCK (§4.4).
+
+**Channel id ranges** (decided; a clean start, since nothing is recorded yet):
 
 | Ids | Channels |
 |---|---|
@@ -140,10 +172,17 @@ registry), the `0xDEADBEEF` end marker (`header_len` + CRC replace it).
 | Type | Name | Payload |
 |---|---|---|
 | 0x10 | IMU_BLOCK | one IMU's drain (§4.4) |
-| 0x02 | GPS_FIX | as `.idl0` §5.6, plus `hdop_x100:u16` (open: anything else from the receiver worth keeping) |
+| 0x02 | GPS_FIX | as `.idl0` §5.6, plus `hdop_x100:u16` if Q2 says yes |
 | 0x03 | CHANNEL_SAMPLE | as `.idl0` §5.7, with a u16 `channel_id` |
-| 0x20 | LOGGER_EVENT | a diagnostic counter that changed: writer ring drops, FIFO overrun flags, bus errors (open: which ones) |
+| 0x20 | SESSION_SUMMARY | written just before SESSION_END: per IMU, FIFO overruns, bus errors, samples written; writer-ring drops; slowest poll cycle |
 | 0xFF | SESSION_END | empty, as `.idl0` |
+
+**Diagnostics.** The firmware never writes diagnostics while logging ("raw
+capture only", `imu_task.c`), so nothing competes with sample writes. The
+proposal keeps that rule: each IMU_BLOCK carries a free overrun bit, and the
+counts go in one SESSION_SUMMARY at the end. A hard power loss loses the
+summary but keeps the per-block bits. The alternative, writing diagnostic
+records as they happen, bends the raw-capture rule (Q1).
 
 ### 4.4 IMU_BLOCK (0x10)
 
@@ -158,16 +197,17 @@ One record per IMU per drain, written as the firmware drains:
 | n_samples | u16 | low-g/gyro samples that follow |
 | n_hg | u16 | high-g samples that follow |
 | n_ts | u8 | FIFO timestamp words that follow |
-| samples | n_samples × 12 | accel X/Y/Z, gyro X/Y/Z, raw i16 |
-| hg | n_hg × 6 | high-g X/Y/Z, raw i16 |
+| samples | n_samples × 2 × (recorded low-g/gyro axes) | raw i16, axis order; 12 bytes with all six |
+| hg | n_hg × 2 × (recorded high-g axes) | raw i16, X/Y/Z order; 6 bytes with all three |
 | ts | n_ts × 8 | `after_sample:u16`, `after_hg:u16`, `chip_ts:u32`: the word's FIFO position and value |
 
 Header overhead is 19 bytes per drain. At 480 Hz that's ~10 samples per drain,
 so ~14 bytes per low-g sample against 24 in `.idl0`.
 
-**Proposed: an IMU records all six axes or none.** This matches the app's
-all-or-nothing rule (SPEC §8) and fixes the sample stride at 12 bytes. Open:
-keep partial axes possible on the wire instead.
+**Axes.** The chip delivers whole triplets (accel, gyro, high-g), so a
+skipped axis saves SD space, not bus time. With every axis recorded the
+firmware copies samples straight through; with a subset it packs the chosen
+axes, a few extra instructions per sample.
 
 **Firmware work per drain:** one burst read (as today), one 4-byte register
 read, a pass that sorts FIFO words into samples, high-g and timestamps, and
@@ -218,14 +258,24 @@ Three IMUs at 480 Hz, both pods' high-g at 960 Hz:
 3. Warm-up run (heat gun or a hot day): the clock map follows the drift.
 4. The timing audit script, run on `.idl1` logs.
 
-## 8. Open questions
+## 8. Open questions for Isaac
 
-1. Window length for the clock-map fit (proposed 10 s).
-2. How `DEC_32` counts with high-g on, and the exact timestamp tick
-   (datasheet).
-3. All six axes or none, or partial axes on the wire.
-4. GPS_FIX additions beyond HDOP.
-5. Which diagnostics LOGGER_EVENT carries.
-6. The channel-id ranges in §4.2.
-7. Whether to keep the 8-byte `CHANNEL_SAMPLE` timestamp for slow channels
-   (simple, and they're cheap) or batch those too. Proposed: keep it.
+1. **Diagnostics timing.** Counts in one SESSION_SUMMARY at the end, plus a
+   free overrun bit per IMU block (keeps "raw capture only" while logging)?
+   Or diagnostic records written as things happen (more detail, bends that
+   rule)?
+2. **GPS HDOP.** Add the receiver's own fix-quality rating (HDOP, 2 bytes per
+   fix) to GPS_FIX? It's what lets lap timing and the estimator ignore poor
+   fixes. The receiver already sends it in GGA and the firmware currently
+   drops it. Richer fields (accuracy in metres, vertical speed) need the
+   receiver reconfigured, which the broken GPS TX line rules out for now.
+3. **Slow-channel timestamps.** Wheel pulses, HR, analog pressures and
+   markers each carry their own 8-byte time. Unlike the IMU stamps these are
+   real measurements (when the firmware read the sensor or saw the pulse),
+   and for pulses and markers the time is the data. Proposed: keep
+   per-sample (~15 bytes per analog reading, ~12 KB/s for 8 channels at
+   100 Hz); batch them later only if analog rates climb.
+
+**Claude's checks (no decision needed):** the timestamp tick length and
+`FREQ_FINE` formula, how `DEC_32` counts with high-g on, and whether the
+chip can gate high-g batching on low-g saturation.
