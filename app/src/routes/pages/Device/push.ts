@@ -22,21 +22,38 @@ export interface PushBlocked {
 }
 
 /**
+ * `config` with the top-level `imu.accel_range_g`/`imu.gyro_range_dps` set
+ * from the frame IMU's (`imu0`) own ranges. SPEC §8: the top-level pair only
+ * seeds the three slots before each slot's own value overrides it, so it
+ * carries no setting of its own, and no screen edits it (2026-10-15). A
+ * stale value there, such as ±32 g in a `config.json` written for the old
+ * LSM6DSO32, would otherwise fail validation with nothing on the phone able
+ * to fix it.
+ */
+export function withSeedsFromSlots(config: DeviceConfig): DeviceConfig {
+  const { accel_range_g, gyro_range_dps } = config.imu.imu0;
+  return { ...config, imu: { ...config.imu, accel_range_g, gyro_range_dps } };
+}
+
+/**
  * Gates a `DeviceConfig` on `validateConfig`/`isPushable` before turning it
  * into the JSON string `push_config` accepts. **Validates, then serialises,
  * never the reverse** — the lane's load-bearing invariant (L7b lane brief:
  * "a config is never pushed unvalidated"). A warning-only config still
  * serialises; only an error-severity issue blocks the push. The caller
+ * The top-level IMU ranges are filled from the slots first
+ * ({@link withSeedsFromSlots}). The caller
  * (`SendBar`) is expected to call `pushConfig(deviceId, result.json)`
  * only when `result.ok` is `true` — this function does not call IPC itself,
  * keeping it a pure, unit-testable driver.
  */
 export function preparePush(config: DeviceConfig, hardware: Hardware = "idl1"): PushReady | PushBlocked {
-  const issues = validateConfig(config, hardware);
+  const seeded = withSeedsFromSlots(config);
+  const issues = validateConfig(seeded, hardware);
   if (!isPushable(issues)) {
     return { ok: false, issues };
   }
-  return { ok: true, json: serializeConfig(config) };
+  return { ok: true, json: serializeConfig(seeded) };
 }
 
 /**

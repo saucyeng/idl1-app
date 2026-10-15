@@ -1,4 +1,4 @@
-import { Bluetooth, EllipsisVertical } from "lucide-react";
+import { Bluetooth, EllipsisVertical, Settings } from "lucide-react";
 
 import { NoteBlock } from "../../../components/brand/NoteBlock";
 import { PulsingDot } from "../../../components/brand/PulsingDot";
@@ -260,7 +260,14 @@ export default function HeroCard(props: HeroCardProps) {
               <h2 className="truncate font-mono text-xl font-semibold text-fg">{connectionLabel(active)}</h2>
               {firmware !== null && firmware !== "" && <span className="shrink-0 font-mono text-xs text-fg-dim">FW {firmware}</span>}
             </div>
-            <LoggerMenu {...props} busy={busy} />
+            <div className="flex shrink-0 items-center gap-1.5">
+              {/* Logger settings one tap away (Isaac, 2026-10-15: it was
+                  easy to forget behind the menu). */}
+              <Button type="button" size="sm" className="size-11 shrink-0 p-0" aria-label="Logger settings" onClick={() => props.onOpen("config")}>
+                <Settings className="size-5" aria-hidden />
+              </Button>
+              <LoggerMenu {...props} busy={busy} />
+            </div>
           </div>
 
           <Button

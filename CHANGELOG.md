@@ -6,6 +6,9 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 
 ### Added
 
+- **Logger settings gear [no-docs] (2026-10-15).** A gear button beside
+  the logger menu on the Logger screen opens Logger settings in one tap.
+
 - **Logger settings: Read, Send and Firmware [docs] (2026-10-15).** Logger
   settings now always has **Read from logger**, which takes a second tap to
   drop unsent edits, and **Send to logger**, which also re-sends an
@@ -619,6 +622,14 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
   only two of them.
 
 ### Fixed
+
+- **Send blocked by "32 g is not a valid accel range" [no-docs]
+  (2026-10-15).** A `config.json` written for the old LSM6DSO32 can carry a
+  top-level `imu.accel_range_g`/`gyro_range_dps` (±32 g) that only seeds
+  the three IMU slots and that no screen edits. Validation failed on it, and
+  nothing on the phone could fix it. Send now fills both from the frame
+  IMU's own ranges first (`withSeedsFromSlots`). Spec: no change needed
+  (SPEC §8 already says the pair only seeds the slots).
 
 - **Battery shows volts; SD free space and GPS satellites appear [docs]
   (2026-10-14).** The logger's status line hard-coded `Battery: 100%` and

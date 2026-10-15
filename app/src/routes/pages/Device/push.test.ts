@@ -4,7 +4,7 @@ import type { DeviceStatus } from "../../../ipc/device";
 import { defaultConfig } from "./config/defaults";
 import { parseConfig } from "./config/model";
 import { validateConfig } from "./config/validate";
-import { checkPushMode, describePushResult, initialPushState, preparePush, pushReducer } from "./push";
+import { checkPushMode, describePushResult, initialPushState, preparePush, pushReducer, withSeedsFromSlots } from "./push";
 
 /** A `DeviceStatus` with every field `null`/`false`, overridden per test —
  *  `checkPushMode` only reads `logging`/`wifi_on`, so the rest is filler. */
@@ -81,6 +81,24 @@ describe("preparePush", () => {
     expect(issues.length).toBeGreaterThan(0);
     expect(issues.every((issue) => issue.severity === "warning")).toBe(true);
     expect(result.ok).toBe(true);
+  });
+
+  it("preparePush — a stale top-level accel/gyro range no screen edits — filled from imu0, so the push goes through", () => {
+    // Arrange — a config.json written for the old LSM6DSO32 (±32 g, 125 dps).
+    const config = defaultConfig("aabbccddeeff");
+    config.imu.accel_range_g = 32;
+    config.imu.gyro_range_dps = 125;
+
+    // Act
+    const result = preparePush(config);
+
+    // Assert
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      const pushed = JSON.parse(result.json);
+      expect(pushed.imu.accel_range_g).toBe(config.imu.imu0.accel_range_g);
+      expect(pushed.imu.gyro_range_dps).toBe(config.imu.imu0.gyro_range_dps);
+    }
   });
 
   it("preparePush — a config carrying unknown keys — they survive into the pushed JSON verbatim", () => {
@@ -223,5 +241,24 @@ describe("pushReducer", () => {
     // Assert
     expect(failed.phase).toBe("failed");
     expect(failed.message).toBe("The device rejected the config it was sent.");
+  });
+});
+
+describe("withSeedsFromSlots", () => {
+  it("withSeedsFromSlots — any top-level ranges — copied from imu0, slots untouched", () => {
+    // Arrange
+    const config = defaultConfig("aabbccddeeff");
+    config.imu.imu0.accel_range_g = 8;
+    config.imu.imu0.gyro_range_dps = 500;
+    config.imu.accel_range_g = 32;
+
+    // Act
+    const seeded = withSeedsFromSlots(config);
+
+    // Assert
+    expect(seeded.imu.accel_range_g).toBe(8);
+    expect(seeded.imu.gyro_range_dps).toBe(500);
+    expect(seeded.imu.imu1).toEqual(config.imu.imu1);
+    expect(config.imu.accel_range_g).toBe(32);
   });
 });
