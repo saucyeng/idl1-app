@@ -151,7 +151,7 @@ Removed against `.idl0`: `imu_count` (A8), the IMU channel mask (the
 registry says which IMUs record), the header IMU and GPS rates (in the
 registry), the `0xDEADBEEF` end marker (`header_len` + CRC replace it).
 
-### 4.2 Channel registry entry (48 bytes)
+### 4.2 Channel registry entry (52 bytes)
 
 | Field | Type | Notes |
 |---|---|---|
@@ -191,6 +191,15 @@ axis order, set the layout of its samples in IMU_BLOCK (§4.4).
 | 0x21 | SESSION_SUMMARY | written just before SESSION_END: per IMU, FIFO overruns, bus errors, samples written; writer-ring drops; slowest poll cycle |
 | 0xFF | SESSION_END | empty, as `.idl0` |
 
+**LOGGER_EVENT payload** (15 bytes): `code:u8`, `source:u16` (IMU index or
+channel id), `count:u32` (occurrences since the last event of this code),
+`timestamp_us:i64` (`esp_timer`). Codes: 1 FIFO overrun, 2 writer buffer
+full (data dropped), 3 bus error, 4 IMU stopped answering, 5 IMU recovered.
+
+**SESSION_SUMMARY payload:** `n_imu:u8`, then per IMU `overruns:u32`,
+`bus_errors:u32`, `samples:u32`, then `writer_drops:u32`,
+`slowest_cycle_us:u32`.
+
 **Diagnostics** (decided). Issues are written as they happen, as
 LOGGER_EVENT records, and the totals once more in SESSION_SUMMARY at the
 end. Each IMU_BLOCK also carries a free overrun bit. Events are rate-limited
@@ -214,6 +223,19 @@ One record per IMU per drain, written as the firmware drains:
 | samples | n_samples × 2 × (recorded low-g/gyro axes) | raw i16, axis order; 12 bytes with all six |
 | hg | n_hg × 2 × (recorded high-g axes) | raw i16, X/Y/Z order; 6 bytes with all three |
 | ts | n_ts × 8 | `after_sample:u16`, `after_hg:u16`, `chip_ts:u32`: the word's FIFO position and value |
+
+**Timestamp words.** `after_sample` is how many of this block's low-g
+samples come before the word in the FIFO; the word's `chip_ts` is the time
+of the next low-g sample (index `after_sample`). `after_hg` likewise for the
+high-g stream. Which sample a word stamps (the one after it, or the one
+before) is to be confirmed at bring-up; getting it wrong shifts an IMU by
+one sample period, the same for every IMU, and the tap test would show it.
+
+**Lost samples.** A window between two words that received fewer samples
+than its tick span holds lost the difference. The parser counts them
+exactly, fills them linearly and lists them as a gap, placed at the start of
+the window. A later refinement can place them at the read boundary inside
+the window, since an overrun loses samples between reads.
 
 Header overhead is 19 bytes per drain. At 480 Hz that's ~10 samples per drain,
 so ~14 bytes per low-g sample against 24 in `.idl0`.

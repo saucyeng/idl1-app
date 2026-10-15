@@ -6,6 +6,18 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 
 ### Added
 
+- **`.idl1` parser and chip-clock IMU timing [no-docs] (2026-10-15).**
+  idl-rs reads IDL1 hardware's own session format (`parse::idl1`), picked by
+  the `IDL1` magic; `.idl0` is unchanged. IMU samples are timed from the
+  chips' FIFO timestamp words and a robust chip-to-ESP32 clock fit per
+  10 s window (`parse::idl1_timing`). Lost samples are counted exactly,
+  filled and listed as gaps. High-g gets its own time rows (`imu<n>_hg`).
+  GPS fixes carry HDOP (`GPS_Hdop`). Logger events and the session summary
+  surface as import warnings. Source format `idl1`, importer version 0.1.0.
+  Not yet wired into import, the inbox or device downloads; no firmware
+  writes `.idl1` yet. Spec-first: `docs/superpowers/specs/2026-10-15-idl1-file-format-DRAFT.md`
+  (approved 2026-10-15).
+
 - **High-g on the frame IMU, and dotted sliders [docs] (2026-10-15).** The
   frame IMU's sheet now has the high-g switch too, off by default (SPEC §8:
   `imu0.hg_enabled`). The firmware has no registry channels for it yet, so
