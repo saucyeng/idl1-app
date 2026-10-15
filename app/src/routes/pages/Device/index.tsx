@@ -6,7 +6,7 @@ import { SectionHead } from "../../../components/brand/SectionHead";
 import { Button } from "../../../components/ui/button";
 import { cn } from "../../../lib/utils";
 import { listSessions } from "../../../ipc/catalog";
-import { bleScan, connectDevice, deviceControl, deviceStatus, disconnectDevice, pullConfig } from "../../../ipc/device";
+import { bleScan, connectDevice, deviceControl, deviceStatus, disconnectDevice, firmwareCatalog, pullConfig } from "../../../ipc/device";
 import type { DeviceControlCommand } from "../../../ipc/device";
 import { transitionObserved } from "./control";
 import { connectionReducer, initialConnectionState } from "./connection";
@@ -26,7 +26,8 @@ import ModuleSheet from "./ModuleSheet";
 import { moduleTiles } from "./moduleTiles";
 import type { ModuleTile } from "./moduleTiles";
 import SendBar from "./SendBar";
-import FirmwareSection from "../Settings/FirmwareSection";
+import { effectiveRepo } from "../Settings/FirmwareSection";
+import { catalogVerdict, type CatalogVerdict } from "../Settings/firmwareCatalog";
 import { prefsStore } from "../Settings/appPrefsStore";
 import { toast } from "sonner";
 import { setDeviceLink } from "../../../shell/deviceLink";
@@ -333,6 +334,37 @@ export default function Device() {
   // and `setDeviceLink` ignores a repeat of the value it already holds, so
   // a steady connection re-renders the chrome once, not once a second.
   const linkLost = isLinkLost(statusState);
+
+  // The Firmware tile's dot (2026-10-15): one catalog check per connected
+  // firmware version, and again when the Firmware sheet changes the
+  // channel or repository (both live in the prefs store). A failed check
+  // leaves the tile neutral.
+  const [firmwareVerdict, setFirmwareVerdict] = useState<CatalogVerdict | null>(null);
+  const deviceFirmware = statusState.status?.firmware ?? null;
+  useEffect(() => {
+    if (state.activeDeviceId === null || deviceFirmware === null || deviceFirmware === "") {
+      setFirmwareVerdict(null);
+      return;
+    }
+    let live = true;
+    const run = () =>
+      prefsStore.get().then(async (prefs) => {
+        const repo = effectiveRepo(prefs.ui.firmware_repo);
+        const channel = prefs.ui.firmware_channel;
+        try {
+          const releases = await firmwareCatalog(repo, channel);
+          if (live) setFirmwareVerdict(catalogVerdict({ firmwareRepo: repo, channel, deviceVersion: deviceFirmware, releases }));
+        } catch {
+          if (live) setFirmwareVerdict(null);
+        }
+      });
+    void run();
+    const unsubscribe = prefsStore.subscribe(() => void run());
+    return () => {
+      live = false;
+      unsubscribe();
+    };
+  }, [state.activeDeviceId, deviceFirmware]);
   useEffect(() => {
     setDeviceLink(state.activeDeviceId === null ? "disconnected" : linkLost ? "lost" : "connected");
   }, [state.activeDeviceId, linkLost]);
@@ -360,7 +392,7 @@ export default function Device() {
       : null;
 
   const activeConnection = state.connections.find((c) => c.device_id === state.activeDeviceId) ?? null;
-  const tiles = moduleTiles({ status: statusState.status, config: draft, linkLost });
+  const tiles = moduleTiles({ status: statusState.status, config: draft, linkLost, firmwareVerdict });
   const hardware = hardwareFromName(activeConnection?.name ?? "");
   const sendBar =
     activeConnection !== null && loggerConfig !== null && draft !== null ? (
@@ -435,6 +467,7 @@ export default function Device() {
           elapsedMs={elapsedMs}
           loggerConfig={draft}
           tileConfig={draft}
+          firmwareVerdict={firmwareVerdict}
           autoConnecting={autoConnecting}
           knownSessionIds={knownSessionIds}
           onImported={refreshKnownSessions}
@@ -480,15 +513,6 @@ export default function Device() {
         <SubViewHeader title="Logger settings" onBack={() => setView("main")} />
         {configBar}
         <ModuleList tiles={tiles} onOpen={setOpenTile} />
-        {activeConnection !== null && (
-          <section className="device-tab__firmware flex flex-col gap-2">
-            <SectionHead>Firmware</SectionHead>
-            {/* Keyed by the connection: the section reads the device's
-                version and the catalog once, on mount (R198), so a new
-                connection remounts it. */}
-            <FirmwareSection key={activeConnection.device_id} store={prefsStore} />
-          </section>
-        )}
       </div>
 
       {activeConnection !== null && (

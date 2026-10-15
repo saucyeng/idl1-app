@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import type { DeviceStatus } from "../../../ipc/device";
 import { defaultConfig } from "./config/defaults";
 import type { DeviceConfig } from "./config/model";
-import { batteryPctFromMv, moduleTiles, NOT_POLLED, UNREPORTED } from "./moduleTiles";
+import { batteryPctFromMv, firmwareTile, MIN_FIRMWARE, moduleTiles, NOT_POLLED, UNREPORTED } from "./moduleTiles";
 import type { ModuleTile } from "./moduleTiles";
 
 /** A `DeviceStatus` with every field `null`/`false`, overridden per test. */
@@ -49,7 +49,7 @@ describe("moduleTiles", () => {
     const tiles = moduleTiles(inputs);
 
     // Assert
-    expect(tiles.map((t) => t.key)).toEqual(["battery", "sd", "bluetooth", "wifi", "gps", "imu0", "imu1", "imu2", "hr", "add"]);
+    expect(tiles.map((t) => t.key)).toEqual(["battery", "sd", "bluetooth", "wifi", "firmware", "gps", "imu0", "imu1", "imu2", "hr", "add"]);
     expect(tileOf(tiles, "imu1").lines).toEqual([NOT_POLLED]);
     expect(tileOf(tiles, "bluetooth").lines).toEqual(["connecting"]);
   });
@@ -196,3 +196,62 @@ describe("batteryPctFromMv", () => {
   });
 });
 
+
+describe("firmwareTile", () => {
+  const release = { version: "0.3.0", tag: "v0.3.0", name: "", notes: "", prerelease: false, published_at: "", image_url: "", image_size_bytes: 0, sha256_url: null };
+
+  it("firmware older than MIN_FIRMWARE — red, update required, whatever the catalog says", () => {
+    // Arrange
+    const status = statusWith({ firmware: "0.1.1" });
+
+    // Act
+    const tile = firmwareTile(status, { kind: "up-to-date", latest: release, deviceVersion: "0.1.1" });
+
+    // Assert
+    expect(tile.tone).toBe("bad");
+    expect(tile.lines).toEqual(["v0.1.1", "update required"]);
+  });
+
+  it("a newer release on the channel — amber, names it", () => {
+    // Arrange
+    const status = statusWith({ firmware: MIN_FIRMWARE });
+
+    // Act
+    const tile = firmwareTile(status, { kind: "update-available", latest: release, deviceVersion: MIN_FIRMWARE });
+
+    // Assert
+    expect(tile.tone).toBe("warn");
+    expect(tile.lines[1]).toBe("v0.3.0 out");
+  });
+
+  it("up to date or ahead — green", () => {
+    // Arrange
+    const status = statusWith({ firmware: "0.3.0" });
+
+    // Act
+    const upToDate = firmwareTile(status, { kind: "up-to-date", latest: release, deviceVersion: "0.3.0" });
+    const ahead = firmwareTile(status, { kind: "ahead", latest: release, deviceVersion: "0.3.0", channel: "stable" });
+
+    // Assert
+    expect(upToDate.tone).toBe("good");
+    expect(ahead.tone).toBe("good");
+  });
+
+  it("no check yet, or no status — neutral", () => {
+    // Act
+    const unchecked = firmwareTile(statusWith({ firmware: "0.3.0" }), null);
+    const unpolled = firmwareTile(null, null);
+
+    // Assert
+    expect(unchecked.tone).toBe("idle");
+    expect(unpolled.lines).toEqual([NOT_POLLED]);
+  });
+
+  it("moduleTiles — the firmware tile sits after WiFi", () => {
+    // Act
+    const keys = moduleTiles({ status: null, config: null, linkLost: false }).map((t) => t.key);
+
+    // Assert
+    expect(keys.indexOf("firmware")).toBe(keys.indexOf("wifi") + 1);
+  });
+});

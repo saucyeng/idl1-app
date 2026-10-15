@@ -1,5 +1,6 @@
 import type { DeviceStatus, ImuState } from "../../../ipc/device";
 import type { DeviceConfig, ImuSlot } from "./config/model";
+import { compareVersions, type CatalogVerdict } from "../Settings/firmwareCatalog";
 
 /**
  * Pure decision logic for the Logger dashboard's module grid (navigation map
@@ -40,7 +41,7 @@ const MIB_PER_GIB = 1024;
 export type ModuleTone = "good" | "warn" | "bad" | "off" | "idle";
 
 /** Which drawn icon a tile uses. `ModuleGrid.tsx` maps each to a glyph. */
-export type ModuleIcon = "battery" | "sd" | "bluetooth" | "wifi" | "gps" | "imu" | "heart" | "analog" | "digital" | "wheel" | "add";
+export type ModuleIcon = "battery" | "sd" | "bluetooth" | "wifi" | "firmware" | "gps" | "imu" | "heart" | "analog" | "digital" | "wheel" | "add";
 
 /** One tile of the module grid. */
 export interface ModuleTile {
@@ -62,6 +63,41 @@ export interface ModuleTileInputs {
   config: DeviceConfig | null;
   /** `true` once the status poll has missed several replies in a row. */
   linkLost: boolean;
+  /** What the firmware catalog says about the logger's version, or `null`
+   *  before a check has run (or when it could not). */
+  firmwareVerdict?: CatalogVerdict | null;
+}
+
+/** The oldest firmware this app works with fully (2026-10-15): 0.2.0-beta.1
+ *  is the first release with SPEC §7.3's battery-mV, SD-free, GPS and
+ *  per-IMU status lines. Older firmware turns the Firmware tile red.
+ *  Raise it when the app starts depending on something newer. */
+export const MIN_FIRMWARE = "0.2.0-beta.1";
+
+/**
+ * The Firmware tile (2026-10-15). Red: the logger runs firmware older than
+ * {@link MIN_FIRMWARE}, an update this app needs. Amber: the catalog has a
+ * newer release on the chosen channel. Green: up to date, or ahead of the
+ * channel. Neutral: not checked yet, no releases, or a version that can't
+ * be compared.
+ */
+export function firmwareTile(status: DeviceStatus | null, verdict: CatalogVerdict | null): ModuleTile {
+  const base = { key: "firmware", icon: "firmware" as const, label: "Firmware" };
+  const version = live(status, (s) => (s.firmware === null || s.firmware === "" ? null : s.firmware));
+  if (version === NOT_POLLED || version === UNREPORTED) return { ...base, lines: [version], tone: "idle" };
+  const shown = `v${version.replace(/^v/, "")}`;
+  const belowMinimum = compareVersions(version, MIN_FIRMWARE);
+  if (belowMinimum !== null && belowMinimum < 0) return { ...base, lines: [shown, "update required"], tone: "bad" };
+  if (verdict === null) return { ...base, lines: [shown], tone: "idle" };
+  switch (verdict.kind) {
+    case "update-available":
+      return { ...base, lines: [shown, `v${verdict.latest.version} out`], tone: "warn" };
+    case "up-to-date":
+    case "ahead":
+      return { ...base, lines: [shown, "up to date"], tone: "good" };
+    default:
+      return { ...base, lines: [shown], tone: "idle" };
+  }
 }
 
 /** IMU index → board position (IDL0_SPEC §3.2): IMU0 frame, IMU1 fork, IMU2 swingarm. */
@@ -212,17 +248,18 @@ function channelTiles(config: DeviceConfig | null): ModuleTile[] {
 }
 
 /**
- * The grid's tiles in display order: battery, SD, Bluetooth, WiFi, GPS, the
+ * The grid's tiles in display order: battery, SD, Bluetooth, WiFi, firmware, GPS, the
  * three IMUs, heart rate, every enabled channel, then Add. The radios and
  * the logger's own modules always show; channels show only when the active
  * configuration enables them.
  */
-export function moduleTiles({ status, config, linkLost }: ModuleTileInputs): ModuleTile[] {
+export function moduleTiles({ status, config, linkLost, firmwareVerdict = null }: ModuleTileInputs): ModuleTile[] {
   const tiles: ModuleTile[] = [
     batteryTile(status),
     sdTile(status),
     bluetoothTile(status, linkLost),
     wifiTile(status),
+    firmwareTile(status, firmwareVerdict),
     gpsTile(status),
     imuTile(0, status, config),
     imuTile(1, status, config),

@@ -6,6 +6,17 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 
 ### Added
 
+- **Firmware tile [docs] (2026-10-15).** The Logger dashboard grid has a
+  Firmware tile after WiFi showing the logger's version and a dot. Red
+  means "update required": the firmware is older than `MIN_FIRMWARE`
+  (0.2.0-beta.1), the oldest this app fully works with. Amber means a newer
+  release is on the chosen channel. Green means up to date. The catalog is
+  checked once per connected firmware version, and again when the channel
+  or repository changes. Tapping the tile opens the firmware sheet: channel,
+  Check now, Update, and a `.bin` from disk. The Firmware section at the
+  foot of Logger settings is gone; the Settings one stays. Spec: no change
+  needed.
+
 - **Logger settings gear [no-docs] (2026-10-15).** A gear button beside
   the logger menu on the Logger screen opens Logger settings in one tap.
 

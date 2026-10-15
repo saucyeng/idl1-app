@@ -40,7 +40,7 @@ export const DEFAULT_FIRMWARE_REPO = "saucyeng/idl1-firmware";
 
 /** The repository a check uses: what the field says, else
  *  {@link DEFAULT_FIRMWARE_REPO}. */
-function effectiveRepo(field: string): string {
+export function effectiveRepo(field: string): string {
   return field.trim() === "" ? DEFAULT_FIRMWARE_REPO : field.trim();
 }
 

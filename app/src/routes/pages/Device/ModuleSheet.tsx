@@ -18,6 +18,8 @@ import HrmForm from "./forms/HrmForm";
 import WheelForm from "./forms/WheelForm";
 import { batteryPctFromMv } from "./moduleTiles";
 import type { ModuleTile } from "./moduleTiles";
+import FirmwareSection from "../Settings/FirmwareSection";
+import { prefsStore } from "../Settings/appPrefsStore";
 
 /** GPS rates offered as buttons, Hz. SPEC §8 allows any integer 1–10; these
  *  are the useful ones, and a config holding another value still shows it. */
@@ -274,6 +276,11 @@ export default function ModuleSheet(props: ModuleSheetProps) {
           </div>
         );
       }
+      case "firmware":
+        // The Settings Firmware section: version, channel, Check now,
+        // Update and a .bin from disk. Keyed by the logger, because it
+        // reads the device and the catalog once, on mount.
+        return <FirmwareSection key={props.logger.deviceId} store={prefsStore} />;
       case "gps":
         return forms((d) => <GpsBody draft={d} onDraftChange={onDraftChange} status={status} />);
       case "imu0":

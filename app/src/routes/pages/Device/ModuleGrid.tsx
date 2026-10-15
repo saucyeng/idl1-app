@@ -1,4 +1,4 @@
-import { Activity, Battery, Bluetooth, Disc, HardDrive, HeartPulse, Move3d, Plus, Satellite, ToggleLeft, Wifi } from "lucide-react";
+import { Activity, Battery, Bluetooth, Cpu, Disc, HardDrive, HeartPulse, Move3d, Plus, Satellite, ToggleLeft, Wifi } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 
 import { cn } from "../../../lib/utils";
@@ -10,6 +10,7 @@ const ICONS: Record<ModuleIcon, LucideIcon> = {
   sd: HardDrive,
   bluetooth: Bluetooth,
   wifi: Wifi,
+  firmware: Cpu,
   gps: Satellite,
   imu: Move3d,
   heart: HeartPulse,

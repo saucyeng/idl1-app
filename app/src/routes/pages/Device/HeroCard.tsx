@@ -22,6 +22,7 @@ import { recordingDuration } from "./liveStatus";
 import ModuleGrid from "./ModuleGrid";
 import { moduleTiles } from "./moduleTiles";
 import type { ModuleTile } from "./moduleTiles";
+import type { CatalogVerdict } from "../Settings/firmwareCatalog";
 import NewSessionsBanner from "./NewSessionsBanner";
 
 /** The buried screens the ⋮ menu opens. */
@@ -47,6 +48,8 @@ export interface HeroCardProps {
   loggerConfig: DeviceConfig | null;
   /** The configuration the module tiles describe (the same draft), or null. */
   tileConfig: DeviceConfig | null;
+  /** The firmware catalog's verdict on the logger, for the Firmware tile. */
+  firmwareVerdict: CatalogVerdict | null;
   /** True while the launch auto-connect to the last logger is in flight. */
   autoConnecting: boolean;
   /** Session ids already in the library (new-sessions banner). */
@@ -297,7 +300,7 @@ export default function HeroCard(props: HeroCardProps) {
             <NewSessionsBanner deviceId={active.device_id} knownSessionIds={props.knownSessionIds} onImported={props.onImported} />
           )}
 
-          <ModuleGrid tiles={moduleTiles({ status, config: tileConfig, linkLost })} onOpen={props.onModule} />
+          <ModuleGrid tiles={moduleTiles({ status, config: tileConfig, linkLost, firmwareVerdict: props.firmwareVerdict })} onOpen={props.onModule} />
         </>
       )}
     </section>
