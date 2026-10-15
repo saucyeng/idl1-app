@@ -62,9 +62,9 @@ export function imuPartial(slot: ImuSlot): boolean {
   return slot.enabled && !Object.values(slot.channels).every(Boolean);
 }
 
-/** Turns a pod's high-g accelerometer on or off (SPEC §8 `imuN.hg_enabled`;
- *  pods only, Isaac 2026-10-14). */
-export function setImuHg(config: DeviceConfig, slot: "imu1" | "imu2", enabled: boolean): DeviceConfig {
+/** Turns an IMU's high-g accelerometer on or off (SPEC §8 `imuN.hg_enabled`;
+ *  any IMU, off by default, Isaac 2026-10-14/15). */
+export function setImuHg(config: DeviceConfig, slot: ImuSlotKey, enabled: boolean): DeviceConfig {
   return setImuSlot(config, slot, { hg_enabled: enabled });
 }
 

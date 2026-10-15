@@ -844,10 +844,10 @@ No default entries — users add channels via the Device tab as they wire up sen
 
 **Configurable chip options:**
 
-LSM6DSV320X (IDL1, all three IMUs; idl1-firmware decisions.md P1–P3, `imu_ranges.h`): sample rate 15–7680 Hz (set below), low-g accel range ±2/4/8/16 g, gyro range ±250/500/1000/2000/4000 dps, operating mode via `high_performance_mode`. The chip's separate high-g accelerometer is recorded on the two pods only (Isaac, 2026-10-14), as registry channels 24–29, raw: any merging with the low-g stream happens in the app at import, never on the logger. Fields:
-- `imu.imu1.hg_enabled`, `imu.imu2.hg_enabled` — bool, absent = `false`. Its own switch per pod, apart from the pod's six-channel `enabled`; `imu0` never carries it.
-- `imu.hg_range_g` — shared by both pods: 32, 64, 128, 256 or 320 g. Default 64 (decisions.md Q8).
-- `imu.hg_sample_rate_hz` — shared by both pods and set apart from `imu.sample_rate_hz`: 480, 960, 1920, 3840 or 7680 Hz (the chip can't run high-g below 480). Default 960, pending a pod I2C bus-capacity test.
+LSM6DSV320X (IDL1, all three IMUs; idl1-firmware decisions.md P1–P3, `imu_ranges.h`): sample rate 15–7680 Hz (set below), low-g accel range ±2/4/8/16 g, gyro range ±250/500/1000/2000/4000 dps, operating mode via `high_performance_mode`. The chip's separate high-g accelerometer can be recorded on any IMU: the two pods (Isaac, 2026-10-14) as registry channels 24–29, and the frame (2026-10-15, off by default; its registry channels are not assigned yet, so firmware does not record it until they are). Raw only: any merging with the low-g stream happens in the app at import, never on the logger. Fields:
+- `imu.imu0.hg_enabled`, `imu.imu1.hg_enabled`, `imu.imu2.hg_enabled` — bool, absent = `false`. Its own switch per IMU, apart from the IMU's six-channel `enabled`.
+- `imu.hg_range_g` — shared by every IMU: 32, 64, 128, 256 or 320 g. Default 64 (decisions.md Q8).
+- `imu.hg_sample_rate_hz` — shared by every IMU and set apart from `imu.sample_rate_hz`: 480, 960, 1920, 3840 or 7680 Hz (the chip can't run high-g below 480). Default 960, pending a pod I2C bus-capacity test.
 
 LSM6DSO32 (IDL0 only, kept for IDL0 units): sample rate (12.5–1666 Hz), accel range (±4/8/16/32g), gyro range (±125–2000 dps), high-performance vs low-power mode. The app still supports IDL0 loggers (Isaac, 2026-10-14: some bikes keep the old hardware): it reads the board from the advertised name (`IDL0-XXXX` → IDL0, anything else → IDL1) and offers and validates the matching chip's value sets; IDL0 pods get no high-g controls.
 

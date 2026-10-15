@@ -46,10 +46,10 @@ export interface ImuBlock {
   gyro_range_dps: number;
   low_power_mode: boolean;
   high_performance_mode: boolean;
-  /** g. High-g accelerometer full scale, shared by both pods: 32, 64, 128,
+  /** g. High-g accelerometer full scale, shared by every IMU: 32, 64, 128,
    *  256 or 320 (SPEC §8; idl1-firmware decisions.md Q8). */
   hg_range_g: number;
-  /** Hz. High-g accelerometer rate, shared by both pods and set apart from
+  /** Hz. High-g accelerometer rate, shared by every IMU and set apart from
    *  `sample_rate_hz`: 480, 960, 1920, 3840 or 7680 — the chip can't run
    *  high-g below 480 Hz (SPEC §8; decisions.md P1, Q8). */
   hg_sample_rate_hz: number;
@@ -70,9 +70,10 @@ export interface ImuSlot {
   /** dps. Overrides `ImuBlock.gyro_range_dps` when this slot is present. */
   gyro_range_dps: number;
   channels: { accel_x: boolean; accel_y: boolean; accel_z: boolean; gyro_x: boolean; gyro_y: boolean; gyro_z: boolean };
-  /** Records the high-g accelerometer's three axes as well (registry
-   *  channels 24–29, SPEC §8). Pods only: present on `imu1` and `imu2`,
-   *  never on `imu0` (Isaac, 2026-10-14). Absent in a config means off. */
+  /** Records the high-g accelerometer's three axes as well (SPEC §8;
+   *  registry channels 24–29 for the pods, the frame's not yet assigned).
+   *  Any IMU (pods 2026-10-14, the frame too 2026-10-15, Isaac); off by
+   *  default. Absent in a config means off. */
   hg_enabled?: boolean;
 }
 
@@ -354,11 +355,11 @@ function readImuSampleRate(obj: Record<string, unknown>, path: string, repairs: 
  *  IMUs inherit `defaultAccelRangeG`/`defaultGyroRangeDps`, the resolved
  *  top-level values); a present slot's own range fields override those
  *  defaults per axis. */
-function readImuSlot(value: unknown, defaultAccelRangeG: number, defaultGyroRangeDps: number, path: string, repairs: Repair[], pod = false): ImuSlot {
+function readImuSlot(value: unknown, defaultAccelRangeG: number, defaultGyroRangeDps: number, path: string, repairs: Repair[]): ImuSlot {
   const obj = objectOrDefault(value, path, repairs);
   const channelsObj = objectOrDefault(obj["channels"], `${path}.channels`, repairs);
   return {
-    ...(pod ? { hg_enabled: readBoolean(obj, "hg_enabled", false, `${path}.hg_enabled`, repairs) } : {}),
+    hg_enabled: readBoolean(obj, "hg_enabled", false, `${path}.hg_enabled`, repairs),
     enabled: readBoolean(obj, "enabled", false, `${path}.enabled`, repairs),
     accel_range_g: readNumber(obj, "accel_range_g", defaultAccelRangeG, `${path}.accel_range_g`, repairs),
     gyro_range_dps: readNumber(obj, "gyro_range_dps", defaultGyroRangeDps, `${path}.gyro_range_dps`, repairs),
@@ -414,8 +415,8 @@ function readImu(value: unknown, path: string, repairs: Repair[]): ImuBlock {
     hg_range_g: readNumber(obj, "hg_range_g", DEFAULT_IMU_HG_RANGE_G, `${path}.hg_range_g`, repairs),
     hg_sample_rate_hz: readNumber(obj, "hg_sample_rate_hz", DEFAULT_IMU_HG_SAMPLE_RATE_HZ, `${path}.hg_sample_rate_hz`, repairs),
     imu0: readImuSlot(obj["imu0"], accel_range_g, gyro_range_dps, `${path}.imu0`, repairs),
-    imu1: readImuSlot(obj["imu1"], accel_range_g, gyro_range_dps, `${path}.imu1`, repairs, true),
-    imu2: readImuSlot(obj["imu2"], accel_range_g, gyro_range_dps, `${path}.imu2`, repairs, true),
+    imu1: readImuSlot(obj["imu1"], accel_range_g, gyro_range_dps, `${path}.imu1`, repairs),
+    imu2: readImuSlot(obj["imu2"], accel_range_g, gyro_range_dps, `${path}.imu2`, repairs),
     ...(orientation !== undefined ? { orientation } : {}),
     ...(bias !== undefined ? { bias } : {}),
   };

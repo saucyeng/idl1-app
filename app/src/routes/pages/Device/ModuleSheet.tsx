@@ -164,7 +164,7 @@ function ImuBody({ slotKey, tile, draft, onDraftChange, status, hardware }: { sl
       <StepSlider label="Gyro range" options={sets.gyroRangesDps} value={slot.gyro_range_dps} format={(d) => `${d}°/s`} disabled={!slot.enabled} onChange={(d) => onDraftChange(setImuSlot(draft, slotKey, { gyro_range_dps: d }))} />
       <StepSlider label="Sample rate — shared by all IMUs" options={sets.odrHz} value={draft.imu.sample_rate_hz} format={(hz) => `${hz} Hz`} onChange={(hz) => onDraftChange(setImuRate(draft, hz))} />
       <LoadMeter config={draft} />
-      {slotKey !== "imu0" && sets.highG && (
+      {sets.highG && (
         <>
           <SwitchRow
             label="Record high-g accel"
@@ -173,8 +173,8 @@ function ImuBody({ slotKey, tile, draft, onDraftChange, status, hardware }: { sl
             disabled={!slot.enabled}
             onChange={(on) => onDraftChange(setImuHg(draft, slotKey, on))}
           />
-          <StepSlider label="High-g range — shared by both pods" options={HG_RANGES_G} value={draft.imu.hg_range_g} format={(g) => `±${g} g`} disabled={!slot.enabled || slot.hg_enabled !== true} onChange={(g) => onDraftChange(setImuHgShared(draft, { hg_range_g: g }))} />
-          <StepSlider label="High-g rate — shared by both pods" options={HG_ODR_HZ} value={draft.imu.hg_sample_rate_hz} format={(hz) => `${hz} Hz`} disabled={!slot.enabled || slot.hg_enabled !== true} onChange={(hz) => onDraftChange(setImuHgShared(draft, { hg_sample_rate_hz: hz }))} />
+          <StepSlider label="High-g range — shared by all IMUs" options={HG_RANGES_G} value={draft.imu.hg_range_g} format={(g) => `±${g} g`} disabled={!slot.enabled || slot.hg_enabled !== true} onChange={(g) => onDraftChange(setImuHgShared(draft, { hg_range_g: g }))} />
+          <StepSlider label="High-g rate — shared by all IMUs" options={HG_ODR_HZ} value={draft.imu.hg_sample_rate_hz} format={(hz) => `${hz} Hz`} disabled={!slot.enabled || slot.hg_enabled !== true} onChange={(hz) => onDraftChange(setImuHgShared(draft, { hg_sample_rate_hz: hz }))} />
         </>
       )}
       <DraftNote />
@@ -282,7 +282,7 @@ export default function ModuleSheet(props: ModuleSheetProps) {
         // The Settings Firmware section: version, channel, Check now,
         // Update and a .bin from disk. Keyed by the logger, because it
         // reads the device and the catalog once, on mount.
-        return <FirmwareSection key={props.logger.deviceId} store={prefsStore} />;
+        return <FirmwareSection key={props.logger.deviceId} store={prefsStore} showRepository={false} />;
       case "gps":
         return forms((d) => <GpsBody draft={d} onDraftChange={onDraftChange} status={status} />);
       case "imu0":

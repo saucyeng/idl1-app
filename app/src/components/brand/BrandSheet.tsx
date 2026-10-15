@@ -52,7 +52,14 @@ export function BrandSheet({
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent side={side} className={cn("gap-0 p-0 sm:max-w-md", className)}>
+      {/* No focus jump into the first field on open: on a phone that pops
+          the keyboard over a sheet the user only opened to read (the
+          firmware sheet's repository field, 2026-10-15). */}
+      <SheetContent
+        side={side}
+        className={cn("gap-0 p-0 sm:max-w-md", className)}
+        onOpenAutoFocus={(event) => event.preventDefault()}
+      >
         <SheetHeader className="border-b border-rule">
           <SheetTitle>{title}</SheetTitle>
         </SheetHeader>

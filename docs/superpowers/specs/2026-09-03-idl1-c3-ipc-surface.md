@@ -2326,6 +2326,12 @@ Return: `void` (resolves with no value on success).
 Errors: `config_parse`, `config_unsupported_version` (local validation
 failures, raised before anything is sent), `ble`, `wifi`, `config` (device
 rejected the pushed config, or transport failed mid-push).
+*Amended 2026-10-15:* sent over `device_id`'s managed connection when there
+is one, never a second link (on Android a second link, once disconnected,
+took the managed one down with it). The logger restarts to apply the config
+(SPEC §7.2), so after a successful push the managed connection is removed,
+as `push_firmware` does after an OTA. The app then reconnects with
+`connect_device`. Without a managed connection: connect, push, disconnect.
 
 **`connect_device(device_id: string)` / `disconnect_device(device_id: string)`**
 *Added post-sign (2026-09-05, lead ruling R59, wave-2 write lane, ruling

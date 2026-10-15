@@ -647,7 +647,7 @@ describe("validateConfig — high-g", () => {
     expect(issues.filter((i) => i.path === "imu.hg_sample_rate_hz" && i.severity === "error")).toHaveLength(1);
   });
 
-  it("parseConfig — pods' hg_enabled read, frame slot never carries it — absent means off", () => {
+  it("parseConfig — hg_enabled read on every slot — absent means off", () => {
     // Arrange
     const json = { ...SPEC_WORKED_EXAMPLE, imu: { ...SPEC_WORKED_EXAMPLE.imu, imu1: { ...SPEC_WORKED_EXAMPLE.imu.imu1, hg_enabled: true } } };
 
@@ -657,7 +657,7 @@ describe("validateConfig — high-g", () => {
     // Assert
     expect(config.imu.imu1.hg_enabled).toBe(true);
     expect(config.imu.imu2.hg_enabled).toBe(false);
-    expect("hg_enabled" in config.imu.imu0).toBe(false);
+    expect(config.imu.imu0.hg_enabled).toBe(false);
     expect(config.imu.hg_range_g).toBe(64);
     expect(config.imu.hg_sample_rate_hz).toBe(960);
     expect(repairs).toEqual([]);

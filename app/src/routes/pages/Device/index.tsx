@@ -6,7 +6,7 @@ import { SectionHead } from "../../../components/brand/SectionHead";
 import { Button } from "../../../components/ui/button";
 import { cn } from "../../../lib/utils";
 import { listSessions } from "../../../ipc/catalog";
-import { bleScan, connectDevice, deviceControl, deviceStatus, disconnectDevice, firmwareCatalog, pullConfig } from "../../../ipc/device";
+import { bleScan, connectDevice, deviceControl, deviceStatus, disconnectDevice, firmwareCatalog, onOtaStateChanged, pullConfig } from "../../../ipc/device";
 import type { DeviceControlCommand } from "../../../ipc/device";
 import { transitionObserved } from "./control";
 import { connectionReducer, initialConnectionState } from "./connection";
@@ -38,6 +38,19 @@ import { deviceStatusReducer, initialDeviceStatusState, isLinkLost, startStatusP
 import type { StatusPollDeps } from "./statusPoll";
 import { composeVisibility, getActiveRoute, subscribeRouteVisible } from "../../../shell/routeVisibility";
 
+
+/** Wait after a restart before the first reconnect attempt, ms (the logger
+ *  reboots ~0.5 s after a push and takes a few seconds to advertise). */
+const RESTART_BOOT_MS = 4000;
+/** Gap between reconnect attempts, ms. */
+const RESTART_RETRY_MS = 3000;
+/** Reconnect attempts before giving up (~1 min). */
+const RESTART_ATTEMPTS = 20;
+
+/** Resolves after `ms`. */
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
 /** How often the recording timer's local display state re-renders, in
  *  milliseconds. Wall-clock display only — advancing this never calls IPC,
  *  so it does not fall under the effects rule (lane brief Open question 2). */
@@ -185,6 +198,44 @@ export default function Device() {
       })
       .catch(() => setConfigRead("failed"));
   }, []);
+
+  // Reconnects after the logger restarts itself: after Send to logger (the
+  // push already dropped the link, push_config) and after a firmware update
+  // (disconnect first, so the tile and status come from a fresh link: the
+  // tile stayed red until a manual reconnect, Isaac 2026-10-15). Waits for
+  // the boot, then tries every few seconds for about a minute, and re-reads
+  // the config once back.
+  const [restarting, setRestarting] = useState(false);
+  const reconnectAfterRestart = useCallback(
+    async (restartingDeviceId: string, dropLinkFirst: boolean) => {
+      setRestarting(true);
+      if (dropLinkFirst) await disconnectDevice(restartingDeviceId).catch(() => {});
+      await sleep(RESTART_BOOT_MS);
+      for (let attempt = 0; attempt < RESTART_ATTEMPTS; attempt += 1) {
+        try {
+          const info = await connectDevice(restartingDeviceId);
+          dispatch({ type: "CONNECTED", info });
+          readLoggerConfig(info.device_id, true);
+          setRestarting(false);
+          return;
+        } catch {
+          await sleep(RESTART_RETRY_MS);
+        }
+      }
+      setRestarting(false);
+      toast.error("The logger didn't come back", { description: "Power-cycle it, then connect again." });
+    },
+    [readLoggerConfig],
+  );
+
+  const onSent = useCallback(
+    (sent: DeviceConfig, sentToDeviceId: string) => {
+      setLoggerConfig(sent);
+      toast.info("Sent to the logger", { description: "It is restarting to apply the new settings, then reconnecting." });
+      void reconnectAfterRestart(sentToDeviceId, false);
+    },
+    [reconnectAfterRestart],
+  );
 
   const onScan = useCallback(() => {
     dispatch({ type: "SCAN_START" });
@@ -336,6 +387,32 @@ export default function Device() {
   // a steady connection re-renders the chrome once, not once a second.
   const linkLost = isLinkLost(statusState);
 
+  // A firmware update ends with the logger rebooted: reconnect on a fresh
+  // link once the OTA flow settles.
+  const activeIdForOta = state.activeDeviceId;
+  useEffect(() => {
+    if (activeIdForOta === null) return;
+    let unlisten: (() => void) | null = null;
+    let cancelled = false;
+    // Only a phase reached straight from the reboot means "just restarted";
+    // confirming a pending image later doesn't reboot the logger.
+    let lastPhase: string | null = null;
+    void onOtaStateChanged((next) => {
+      const fromReboot = lastPhase === "rebooting" || lastPhase === "reconnecting";
+      lastPhase = next.phase;
+      if (fromReboot && (next.phase === "confirmed" || next.phase === "rolled_back" || next.phase === "pending_verify")) {
+        void reconnectAfterRestart(activeIdForOta, true);
+      }
+    }).then((stop) => {
+      if (cancelled) stop();
+      else unlisten = stop;
+    });
+    return () => {
+      cancelled = true;
+      if (unlisten !== null) unlisten();
+    };
+  }, [activeIdForOta, reconnectAfterRestart]);
+
   // The Firmware tile's dot (2026-10-15): one catalog check per connected
   // firmware version, and again when the Firmware sheet changes the
   // channel or repository (both live in the prefs store). A failed check
@@ -403,10 +480,7 @@ export default function Device() {
         draft={draft}
         hardware={hardware}
         status={statusState.status}
-        onSent={(sent) => {
-          setLoggerConfig(sent);
-          toast.info("Sent to the logger", { description: "It is restarting to apply the new settings." });
-        }}
+        onSent={(sent) => onSent(sent, activeConnection.device_id)}
         onDiscard={() => setDraft(loggerConfig)}
         onRead={() => readLoggerConfig(activeConnection.device_id, true)}
         reading={configRead === "reading"}
@@ -422,10 +496,7 @@ export default function Device() {
         draft={draft}
         hardware={hardware}
         status={statusState.status}
-        onSent={(sent) => {
-          setLoggerConfig(sent);
-          toast.info("Sent to the logger", { description: "It is restarting to apply the new settings." });
-        }}
+        onSent={(sent) => onSent(sent, activeConnection.device_id)}
         onDiscard={() => setDraft(loggerConfig)}
         onRead={() => readLoggerConfig(activeConnection.device_id, true)}
         reading={configRead === "reading"}
@@ -482,6 +553,11 @@ export default function Device() {
           onIdentity={() => setIdentityOpen(true)}
         />
         {sendBar}
+        {restarting && (
+          <p role="status" className="font-mono text-sm text-hivis">
+            Logger restarting… reconnecting.
+          </p>
+        )}
         {statusState.error && <p role="status" className="font-mono text-sm text-fg-dim">{describeIpcError(statusState.error)}</p>}
         {unconfirmedRecording && (
           <p role="status" className="font-mono text-sm text-hivis" data-outcome={unconfirmedRecording.outcome}>

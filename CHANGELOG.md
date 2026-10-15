@@ -6,6 +6,13 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 
 ### Added
 
+- **High-g on the frame IMU, and dotted sliders [docs] (2026-10-15).** The
+  frame IMU's sheet now has the high-g switch too, off by default (SPEC §8:
+  `imu0.hg_enabled`). The firmware has no registry channels for it yet, so
+  it isn't recorded until they are assigned. The high-g range and rate are
+  shared by every IMU. Sliders show a dot at each allowed value, filled up
+  to the current one, with the values under the dots when five or fewer fit.
+
 - **Sliders and a logger load meter [docs] (2026-10-15).** IMU rate,
   accel and gyro range, high-g range and rate, and GPS rate are now sliders
   that snap to the allowed values instead of grids of boxes. A value read
@@ -645,6 +652,25 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
   only two of them.
 
 ### Fixed
+
+- **Send to logger dropped the connection; no reconnect after a restart
+  [no-docs] (2026-10-15).** `push_config` opened a second BLE link to the
+  logger and disconnected it afterwards, which on Android took down the
+  app's main link. It now sends over the main connection (C3 §3.8 amended).
+  The logger restarts to apply a config, so the app then reconnects by
+  itself: it waits for the boot, retries every 3 s for about a minute, and
+  re-reads the config. It does the same after a firmware update, from a
+  fresh link, so the Firmware tile shows the new version without a manual
+  disconnect and reconnect. "Logger restarting… reconnecting" shows
+  meanwhile.
+- **Filled info buttons had no fill [no-docs] (2026-10-15).** Send to
+  logger drew as black text on nothing. `emphasisClasses` built class names
+  at runtime (`bg-${token}`), and Tailwind generates only names it finds
+  written out, so `bg-info` never existed. The classes are now spelled out.
+- **The firmware sheet opened the keyboard [no-docs] (2026-10-15).** Sheets
+  no longer move focus to their first field on open, and the Logger
+  screen's firmware sheet leaves out the repository field (Settings keeps
+  it).
 
 - **Send blocked by "32 g is not a valid accel range" [no-docs]
   (2026-10-15).** A `config.json` written for the old LSM6DSO32 can carry a

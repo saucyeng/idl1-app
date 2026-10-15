@@ -70,7 +70,7 @@ function defaultImu(): ImuBlock {
     high_performance_mode: true,
     hg_range_g: DEFAULT_IMU_HG_RANGE_G,
     hg_sample_rate_hz: DEFAULT_IMU_HG_SAMPLE_RATE_HZ,
-    imu0: defaultImuSlot(DEFAULT_IMU_ACCEL_RANGE_G, DEFAULT_IMU_GYRO_RANGE_DPS),
+    imu0: { ...defaultImuSlot(DEFAULT_IMU_ACCEL_RANGE_G, DEFAULT_IMU_GYRO_RANGE_DPS), hg_enabled: false },
     imu1: { ...defaultImuSlot(DEFAULT_IMU_ACCEL_RANGE_G, DEFAULT_IMU_GYRO_RANGE_DPS), hg_enabled: false },
     imu2: { ...defaultImuSlot(DEFAULT_IMU_ACCEL_RANGE_G, DEFAULT_IMU_GYRO_RANGE_DPS), hg_enabled: false },
   };

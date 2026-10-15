@@ -48,6 +48,10 @@ export function effectiveRepo(field: string): string {
 export interface FirmwareSectionProps {
   /** The prefs store the repository and channel live in (`ui` half). */
   store: PrefsStore;
+  /** Show the repository field. Settings does; the Logger screen's Firmware
+   *  sheet doesn't, where an always-there text field took focus and opened
+   *  the keyboard (Isaac, 2026-10-15). Default true. */
+  showRepository?: boolean;
 }
 
 /** Narrows a rejected `invoke()` value to C3 §2's error shape. Anything
@@ -84,7 +88,7 @@ const lastDevice = localStorageLastDeviceBackend();
  * sequence is decided here — the app subscribes to `ota_state_changed` and
  * draws whatever arrives.
  */
-export default function FirmwareSection({ store }: FirmwareSectionProps) {
+export default function FirmwareSection({ store, showRepository = true }: FirmwareSectionProps) {
   const [repo, setRepo] = useState<string>("");
   const [channel, setChannel] = useState<FirmwareChannel>("stable");
   const [deviceId, setDeviceId] = useState<string | null>(null);
@@ -238,14 +242,16 @@ export default function FirmwareSection({ store }: FirmwareSectionProps) {
         <SpecRow label="Channel" value={channel} />
       </div>
 
-      <label className="flex flex-col gap-1.5 font-mono text-xs text-fg-dim">
-        Firmware repository
-        <Input
-          value={repo}
-          placeholder={`owner/name — empty uses ${DEFAULT_FIRMWARE_REPO}`}
-          onChange={(event) => handleRepoChange(event.target.value)}
-        />
-      </label>
+      {showRepository && (
+        <label className="flex flex-col gap-1.5 font-mono text-xs text-fg-dim">
+          Firmware repository
+          <Input
+            value={repo}
+            placeholder={`owner/name — empty uses ${DEFAULT_FIRMWARE_REPO}`}
+            onChange={(event) => handleRepoChange(event.target.value)}
+          />
+        </label>
+      )}
 
       <ToggleGroup
         type="single"
