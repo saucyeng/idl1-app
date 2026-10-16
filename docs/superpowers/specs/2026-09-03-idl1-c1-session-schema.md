@@ -245,6 +245,15 @@ about this column: a reader must not clamp it, treat a negative as a sentinel, o
 error from one. (The same asymmetry the other way is what R248 fixed: anchoring on the raw
 minimum instead put negative values in `t`.)
 
+**`.idl1` IMU sources (amended 2026-10-16, Isaac).** An `.idl1` IMU records no
+per-sample stamp: the chip writes a timestamp word every 32 samples and the
+ESP32 notes its own time once per FIFO read (`.idl1` DRAFT spec §4.4). Each
+sample's `t` comes from the chip-to-ESP32 clock fit (`parse::idl1_timing`),
+and §3.3's burst-seam correction does not apply. `imuN_t_recorded_us` for these
+sources therefore repeats `t` row for row, the same as the non-burst sources;
+the raw timestamp words stay in the immutable blob, from which `t` can always be
+re-derived. Lost-sample slots are marked by the channel's gap list, as above.
+
 `<source>_t_recorded_us` is **not guaranteed sorted** — a burst source's recorded stamps can
 regress slightly at a seam when the true ODR is slower than nominal (design doc: "locally
 non-monotonic time"). Do not `DELTA_BINARY_PACKED`-encode these columns (§4.4); only `t` is
