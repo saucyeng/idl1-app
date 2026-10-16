@@ -16,6 +16,12 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
   the logger is back (a few seconds; the logger's own button is instant).
   If WiFi drops mid-download the logger comes back on Bluetooth within five
   minutes and the app waits for it. Spec-during: C3 section 3.8.
+  Fixed the same day after the first field run, where the logger sat in
+  WiFi mode transferring nothing: the app waited to close the dropped
+  Bluetooth link behind a status read still holding it. The screen is now
+  told first, the link is closed in the background, a download with no
+  bytes for 20 s fails as a dropped link (so WiFi mode is ended or the
+  failsafe runs), and Record can cancel from the start of the batch.
 
 - **Pair a phone with a QR code [docs] (2026-10-16).** Settings, Sync on
   the computer has **Show pairing QR code**. Scanning it with the phone's
