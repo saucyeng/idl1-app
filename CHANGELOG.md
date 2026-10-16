@@ -11,7 +11,9 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
   stamped with the time and the logger's bike, and the next ride on that
   bike takes it. The sheet lists the log newest first (delete a note, or
   pick between two versions when it was changed on two devices) and shows
-  the running setup sheet. Confirming a full setup sheet comes next.
+  the running setup sheet. **Confirm setup** opens the full sheet (your
+  sample sheet's fields, prefilled from the running sheet) to check and save
+  as the new baseline.
   Spec-during: bike-log DRAFT.
 
 - **Downloaded rides take their bike's notes [no-docs] (2026-10-16).** Each
