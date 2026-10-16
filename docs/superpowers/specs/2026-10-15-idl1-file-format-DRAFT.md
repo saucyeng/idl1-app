@@ -205,7 +205,10 @@ LOGGER_EVENT records, and the totals once more in SESSION_SUMMARY at the
 end. Each IMU_BLOCK also carries a free overrun bit. Events are rate-limited
 per code (at most one per code per second, carrying the count since the
 last), so a burst of trouble can't flood the writer it is reporting on.
-Proposed: the rate limit of one per code per second.
+Proposed: the rate limit of one per code per second. On import, all the
+LOGGER_EVENTs of one (code, source) fold into one warning carrying the
+total count, the number of reports and the first and last device time; the
+file keeps every record.
 
 ### 4.4 IMU_BLOCK (0x10)
 
