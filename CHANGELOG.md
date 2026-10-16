@@ -4,6 +4,22 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 
 ## [Unreleased]
 
+### Added
+
+- **Ride form [docs] (2026-10-16).** When a single ride starts downloading,
+  the ride form slides up over the bottom half of whatever tab is open:
+  title and notes first, so typing a few lines (or talking through the
+  keyboard mic) is the whole routine. Notes typed before the ride has
+  finished downloading are kept on the phone and written into the ride the
+  moment it imports. **Open the full form** adds the ride's facts, its
+  bike (change it, and optionally make it the logger's default), the setup
+  it started with ("was" marks what notes changed) and the setup changes
+  it took from the bike log, each placed at its lap. Downloads now show in
+  the Data tab under "New from the logger", each with its status and
+  **Add notes**; the Logger screen keeps a one-line status. Any ride's form
+  opens from its detail pane. Spec-during: ride-form mockup, C3 section
+  3.11.
+
 ### Changed
 
 - **One file per bike [no-docs] (2026-10-16).** A bike's name, sheet

@@ -10,6 +10,7 @@ import { importFile } from "../../../ipc/import";
 import { describeIpcError } from "./errors";
 import type { DeviceIpcError } from "./errors";
 import { toFileViews } from "./files";
+import { dispatchRideFlow } from "../../../shell/rideFlow";
 import { prefsStore } from "../Settings/appPrefsStore";
 import { autoStep, bannerView, initialNewSessionsState, newSessionsReducer } from "./newSessions";
 import type { QueuedFile } from "./newSessions";
@@ -103,12 +104,18 @@ export default function NewSessionsBanner({ deviceId, knownSessionIds, onImporte
 
   async function transfer(files: QueuedFile[]): Promise<void> {
     dispatch({ type: "TRANSFER_START" });
+    // The Data tab lists these and the ride form slides up for a single one.
+    dispatchRideFlow({ type: "BATCH_START", files: files.map((f) => ({ name: f.name, sizeBytes: f.sizeBytes })) });
     let imported = 0;
     for (const file of files) {
       if (stopped.current) return;
       try {
-        const result = await downloadFile(deviceId, file.name, (progress) => dispatch({ type: "PROGRESS", progress }));
+        const result = await downloadFile(deviceId, file.name, (progress) => {
+          dispatch({ type: "PROGRESS", progress });
+          dispatchRideFlow({ type: "PROGRESS", name: file.name, doneBytes: progress.done });
+        });
         dispatch({ type: "IMPORT_START" });
+        dispatchRideFlow({ type: "IMPORTING", name: file.name });
         const outcome = await importFile(result.path, LOGGER_IMPORTER_ID, () => {});
         imported += 1;
         const warnings = outcome.warnings.map((w) => `${file.name}: ${w}`);
@@ -123,10 +130,13 @@ export default function NewSessionsBanner({ deviceId, knownSessionIds, onImporte
             warnings.push(`${file.name}: bike log not attached: ${describeIpcError(err as DeviceIpcError)}`);
           }
         }
+        dispatchRideFlow({ type: "IMPORTED", name: file.name, sessionId: outcome.session.session_id });
         dispatch({ type: "FILE_IMPORTED", warnings });
       } catch (err) {
         if (stopped.current) return;
-        dispatch({ type: "FILE_FAILED", error: describeIpcError(err as DeviceIpcError) });
+        const error = describeIpcError(err as DeviceIpcError);
+        dispatchRideFlow({ type: "FAILED", name: file.name, error });
+        dispatch({ type: "FILE_FAILED", error });
       }
     }
     if (stopped.current) return;
@@ -159,7 +169,7 @@ export default function NewSessionsBanner({ deviceId, knownSessionIds, onImporte
 
   return (
     <section
-      className={cn("new-sessions flex flex-col gap-2 rounded-[var(--radius-card)] border-2 bg-surface px-3 py-2", TONE_CLASS[view.tone])}
+      className={cn("new-sessions flex flex-col gap-1.5 rounded-[var(--radius-card)] border bg-surface px-3 py-1.5", TONE_CLASS[view.tone])}
       role="status"
       aria-live="polite"
     >

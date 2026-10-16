@@ -18,6 +18,7 @@ import { startRebuildJob, whenRebuildFinishes } from "../../../ipc/rebuild_job";
 import { useAppState } from "../../../state/AppState";
 import type { SelectionWindow } from "../../../state/selection";
 import { ActiveChips } from "./ActiveChips";
+import { NewRidesSection } from "./NewRidesSection";
 import { DetailPane } from "./DetailPane";
 import { dataLayout } from "./layout";
 import { formatLapTimeMs } from "./format";
@@ -625,6 +626,8 @@ export default function Data() {
             </Button>
           </div>
         )}
+
+        <NewRidesSection />
 
         <div role="toolbar" aria-label="Import" className="border-b border-rule px-3 py-2">
           <ImportPanel onImported={handleImported} />

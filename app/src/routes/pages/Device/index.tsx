@@ -21,6 +21,8 @@ import { describeIpcError } from "./errors";
 import type { DeviceIpcError } from "./errors";
 import HeroCard from "./HeroCard";
 import IdentitySheet from "./IdentitySheet";
+import { setBikeProfile } from "./config/edit";
+import { dispatchRideFlow, useRideFlow } from "../../../shell/rideFlow";
 import NotesSheet from "./NotesSheet";
 import { ModuleList } from "./ModuleGrid";
 import ModuleSheet from "./ModuleSheet";
@@ -143,6 +145,15 @@ export default function Device() {
   // not yet sent. Nothing reaches the logger until Send, since a push
   // reboots it (SPEC §7.2).
   const [draft, setDraft] = useState<DeviceConfig | null>(null);
+  const pendingLoggerBike = useRideFlow().pendingLoggerBike;
+
+  // The ride form asked to make a bike this logger's default: it joins the
+  // settings draft and goes with the next Send to logger.
+  useEffect(() => {
+    if (pendingLoggerBike === null || draft === null) return;
+    setDraft(setBikeProfile(draft, { name: pendingLoggerBike }));
+    dispatchRideFlow({ type: "LOGGER_BIKE", name: null });
+  }, [pendingLoggerBike, draft]);
   // Where the last config read stands: Logger settings shows Read from
   // logger with "Reading…" or the failure.
   const [configRead, setConfigRead] = useState<"idle" | "reading" | "failed">("idle");

@@ -60,7 +60,7 @@ describe("newSessionsReducer", () => {
 
     // Assert
     expect(state).toEqual({ phase: "done", imported: 2, failed: [], warnings: ["a.idl0 was truncated"] });
-    expect(bannerView(state)).toMatchObject({ text: "2 sessions added to your library", tone: "warn" });
+    expect(bannerView(state)).toMatchObject({ text: "2 rides added · notes in the Data tab", tone: "warn" });
   });
 
   it("transfer — first file fails — the next still runs and the failure is named", () => {

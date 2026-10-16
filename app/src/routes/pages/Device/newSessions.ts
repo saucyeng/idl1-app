@@ -172,7 +172,7 @@ export function bannerView(state: NewSessionsState): BannerView {
       const failedText = state.failed.length === 0 ? null : `${plural(state.failed.length, "file", "files")} failed: ${state.failed.map((f) => `${f.name} (${f.error})`).join("; ")}`;
       const warnText = state.warnings.length === 0 ? null : state.warnings.join("; ");
       return {
-        text: `${plural(state.imported, "session", "sessions")} added to your library`,
+        text: `${plural(state.imported, "ride", "rides")} added · notes in the Data tab`,
         detail: [failedText, warnText].filter((t) => t !== null).join(" · ") || null,
         action: { kind: "dismiss", label: "OK" },
         fraction: null,

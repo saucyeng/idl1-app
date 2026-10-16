@@ -17,6 +17,7 @@ import { lapRowClicked } from "./lapSelection";
 import { parseStartInput, shouldPromptForStart } from "./libraryPanel";
 import { LapTable } from "./LapTable";
 import { MetadataForm } from "./MetadataForm";
+import { dispatchRideFlow, sessionKey } from "../../../shell/rideFlow";
 import type { DetailView } from "./sessionDetail";
 import { modifierFromClick } from "./sessionRow";
 
@@ -192,6 +193,10 @@ export function DetailPane({ view, detail, lapsErrorText, selection, onWindowsCh
       </div>
 
       {shouldPromptForStart(detail) && <UnknownStartPrompt detail={detail} onSaved={onMetadataSaved} />}
+
+      <Button type="button" className="h-11" onClick={() => dispatchRideFlow({ type: "OPEN", key: sessionKey(detail.session_id), expanded: true })}>
+        Ride notes and setup
+      </Button>
 
       <div className="flex flex-col gap-2">
         <SectionHead>Metadata</SectionHead>

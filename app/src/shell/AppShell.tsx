@@ -33,6 +33,7 @@ import { updateWiring } from "./channelUpdate";
 import { openUpdatePanel, runUpdateCheck, startUpdateChecker } from "./updateState";
 import UpdatePanel from "./UpdatePanel";
 import UpdateBanner from "./UpdateBanner";
+import RideFormSheet from "./RideFormSheet";
 import { openDocs } from "./docsPanelStore";
 import { useDataRootPath } from "./dataRootPath";
 
@@ -405,6 +406,7 @@ export default function AppShell() {
       <AboutDialog open={aboutOpen} onOpenChange={setAboutOpen} engineVersion={state.engineVersion} />
       <WelcomeDialog open={welcomeOpen} onOpenChange={setWelcomeOpen} />
       <UpdatePanel />
+      <RideFormSheet />
       <Toaster />
     </div>
   );
