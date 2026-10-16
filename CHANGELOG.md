@@ -36,6 +36,8 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
   - Smaller bottom tab labels.
   - A WiFi failure now names the step that failed (the file list, the
     download, the network request) instead of only the generic sentence.
+  - A failed download also carries the logger's own error text (for
+    example "fopen failed: Too many open files").
   - A firmware push at 100% now says the logger is checking and saving the
     image, which can take up to a minute, instead of sitting on "Pushing
     firmware… 100%".
