@@ -221,5 +221,12 @@ recording, with a setting to turn it off, and back to recording within
   phone. Meeting ~1 s reliably needs the logger's own record button to
   pre-empt WiFi in firmware (F7, decided), so starting a recording never waits
   on the phone.
+- **Built 2026-10-16:** `download_file` resumes from a `.part` and uses the
+  managed BLE link (C3 section 3.8). The Logger screen's new-sessions banner
+  checks and downloads by itself once per mount (on connect, and after each
+  recording, since it is hidden while recording), with Settings'
+  `auto_download` switch (default on). No time budget: pressing record (app
+  or logger button) is the stop, and resume makes stopping free. It runs
+  only while the Logger screen is open, not app-wide.
 - **Not yet known:** actual transfer throughput and what limits it. Worth
   measuring before tuning.

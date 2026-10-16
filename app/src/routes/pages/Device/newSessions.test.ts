@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { DeviceFileView } from "./files";
-import { bannerView, initialNewSessionsState, newSessionsReducer } from "./newSessions";
+import { autoStep, bannerView, initialNewSessionsState, newSessionsReducer } from "./newSessions";
 import type { NewSessionsAction, NewSessionsState } from "./newSessions";
 
 function file(name: string, sizeBytes: number, isNew: boolean): DeviceFileView {
@@ -95,5 +95,41 @@ describe("newSessionsReducer", () => {
 
     // Assert
     expect(state).toBe(transferring);
+  });
+});
+
+describe("autoStep", () => {
+  it("autoStep — idle and not yet checked — checks", () => {
+    // Arrange
+    const state = initialNewSessionsState;
+
+    // Act
+    const step = autoStep(state, false, false);
+
+    // Assert
+    expect(step).toBe("check");
+  });
+
+  it("autoStep — new files found and no transfer yet — downloads", () => {
+    // Arrange
+    const state = run(CHECKED);
+
+    // Act
+    const step = autoStep(state, true, false);
+
+    // Assert
+    expect(step).toBe("download");
+  });
+
+  it("autoStep — already checked, already transferred, or nothing new — does nothing", () => {
+    // Arrange
+    const empty = run([{ type: "CHECK_START" }, { type: "CHECK_DONE", files: [file("old.idl0", 9, false)] }]);
+    const failed = run([{ type: "CHECK_START" }, { type: "CHECK_FAILED", error: "no" }]);
+
+    // Act
+    const steps = [autoStep(initialNewSessionsState, true, false), autoStep(run(CHECKED), true, true), autoStep(empty, true, false), autoStep(failed, true, false)];
+
+    // Assert
+    expect(steps).toEqual([null, null, null, null]);
   });
 });

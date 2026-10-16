@@ -4,6 +4,15 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 
 ## [Unreleased]
 
+### Added
+
+- **New rides download by themselves [docs] (2026-10-16).** With the Logger
+  screen open and the logger connected and not recording, new sessions are
+  checked, downloaded and imported without a tap: once on connect and again
+  each time a recording stops. Pressing record ends it at once; the file in
+  flight resumes next time. A switch in Settings, Data directory, turns it
+  off (on by default). Spec-during: ride-analysis DRAFT section 10.
+
 ### Fixed
 
 - **Logger downloads resume and keep the Bluetooth link [no-docs]

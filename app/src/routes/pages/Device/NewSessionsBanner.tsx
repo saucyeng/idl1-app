@@ -1,4 +1,4 @@
-import { useReducer } from "react";
+import { useEffect, useReducer, useRef } from "react";
 import { toast } from "sonner";
 
 import { Button } from "../../../components/ui/button";
@@ -9,7 +9,8 @@ import { importFile } from "../../../ipc/import";
 import { describeIpcError } from "./errors";
 import type { DeviceIpcError } from "./errors";
 import { toFileViews } from "./files";
-import { bannerView, initialNewSessionsState, newSessionsReducer } from "./newSessions";
+import { prefsStore } from "../Settings/appPrefsStore";
+import { autoStep, bannerView, initialNewSessionsState, newSessionsReducer } from "./newSessions";
 import type { QueuedFile } from "./newSessions";
 
 /** Importer forced for downloaded logger files: a blob in the store has no
@@ -43,10 +44,46 @@ export interface NewSessionsBannerProps {
  * older firmware; only ever on this tap, never on its own. **Download** then downloads and imports every new session,
  * one at a time, and switches the logger's WiFi off when it's done so it is
  * ready to record again. Everything it says comes from `newSessions.ts`.
+ *
+ * With Settings' `auto_download` on (the default) it checks and downloads
+ * by itself, once per mount. It is unmounted while recording, so pressing
+ * record ends a transfer: the file in flight keeps its partial download
+ * (`download_file` resumes it), and no further file is started.
  */
 export default function NewSessionsBanner({ deviceId, knownSessionIds, onImported }: NewSessionsBannerProps) {
   const [state, dispatch] = useReducer(newSessionsReducer, initialNewSessionsState);
   const view = bannerView(state);
+  const auto = useRef<boolean | null>(null);
+  const autoChecked = useRef(false);
+  const autoTransferred = useRef(false);
+  const stopped = useRef(false);
+
+  useEffect(() => {
+    stopped.current = false;
+    let live = true;
+    void prefsStore.get().then((prefs) => {
+      if (live) auto.current = prefs.ui.auto_download;
+      if (live && prefs.ui.auto_download && autoStep(state, autoChecked.current, autoTransferred.current) === "check") {
+        autoChecked.current = true;
+        check();
+      }
+    });
+    return () => {
+      live = false;
+      stopped.current = true;
+    };
+    // Once per mount: the mount is the trigger (see the doc comment).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    if (auto.current !== true || state.phase !== "ready") return;
+    if (autoStep(state, autoChecked.current, autoTransferred.current) === "download") {
+      autoTransferred.current = true;
+      void transfer(state.files);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [state]);
 
   function check(): void {
     dispatch({ type: "CHECK_START" });
@@ -63,6 +100,7 @@ export default function NewSessionsBanner({ deviceId, knownSessionIds, onImporte
     dispatch({ type: "TRANSFER_START" });
     let imported = 0;
     for (const file of files) {
+      if (stopped.current) return;
       try {
         const result = await downloadFile(deviceId, file.name, (progress) => dispatch({ type: "PROGRESS", progress }));
         dispatch({ type: "IMPORT_START" });
@@ -70,9 +108,11 @@ export default function NewSessionsBanner({ deviceId, knownSessionIds, onImporte
         imported += 1;
         dispatch({ type: "FILE_IMPORTED", warnings: outcome.warnings.map((w) => `${file.name}: ${w}`) });
       } catch (err) {
+        if (stopped.current) return;
         dispatch({ type: "FILE_FAILED", error: describeIpcError(err as DeviceIpcError) });
       }
     }
+    if (stopped.current) return;
     // Back to recording-ready. Best effort: if this fails the logger leaves
     // WiFi mode on its own after five idle minutes (SPEC §10.4), and its
     // record button drops WiFi anyway (firmware F7).

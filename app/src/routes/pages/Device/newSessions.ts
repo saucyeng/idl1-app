@@ -95,6 +95,17 @@ export function newSessionsReducer(state: NewSessionsState, action: NewSessionsA
   }
 }
 
+/** What automatic download (Settings' `auto_download`) should do next in
+ *  `state`, given whether it has already checked and already started a
+ *  transfer since the banner mounted. Each happens at most once per mount:
+ *  the banner mounts on connect and again each time a recording stops, so
+ *  that is when a check runs, and a failure never loops. */
+export function autoStep(state: NewSessionsState, checked: boolean, transferred: boolean): "check" | "download" | null {
+  if (state.phase === "idle" && !checked) return "check";
+  if (state.phase === "ready" && state.files.length > 0 && !transferred) return "download";
+  return null;
+}
+
 /** What the banner's button does. */
 export type BannerAction = "check" | "download" | "retry" | "dismiss";
 

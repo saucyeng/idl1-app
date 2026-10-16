@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Switch } from "@/components/ui/switch";
 import { getDataDir, moveDataDir, setDataDir, type DataDirInfo, type MoveProgress } from "../../../ipc/app";
 import { describeOverrideChange, validateDataDir, type ValidationIssue } from "./dataDir";
 import { describeIpcError, type IpcErrorLike } from "./errors";
@@ -74,18 +75,27 @@ export default function DataSection({ store }: DataSectionProps) {
    *  opened *in the library*, which is what this section is about. */
   const [agentCommand, setAgentCommand] = useState<string>("");
   const [agentWriteFailed, setAgentWriteFailed] = useState<boolean>(false);
+  const [autoDownload, setAutoDownload] = useState<boolean>(true);
   const agentTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
   useEffect(() => {
     let cancelled = false;
     void store.get().then((prefs) => {
-      if (!cancelled) setAgentCommand(prefs.engine.agent_command);
+      if (!cancelled) {
+        setAgentCommand(prefs.engine.agent_command);
+        setAutoDownload(prefs.ui.auto_download);
+      }
     });
     return () => {
       cancelled = true;
       if (agentTimerRef.current !== undefined) clearTimeout(agentTimerRef.current);
     };
   }, [store]);
+
+  function handleAutoDownloadChange(next: boolean): void {
+    setAutoDownload(next);
+    void store.get().then((current) => store.set({ ui: { ...current.ui, auto_download: next } }));
+  }
 
   function handleAgentCommandChange(value: string): void {
     setAgentCommand(value);
@@ -189,6 +199,16 @@ export default function DataSection({ store }: DataSectionProps) {
 
   return (
     <div className="flex flex-col gap-3">
+      <div className="flex flex-col gap-2 pb-2">
+        <label htmlFor="idl1-settings-auto-download" className="font-mono text-xs uppercase tracking-[var(--tracking-label)] text-fg-dim">
+          Download new rides automatically
+        </label>
+        <Switch id="idl1-settings-auto-download" checked={autoDownload} onCheckedChange={handleAutoDownloadChange} />
+        <p className="font-mono text-xs text-fg-faint">
+          While the Logger screen is open and the logger isn&apos;t recording, new sessions download and import by themselves. Pressing
+          record stops the download at once, and it picks up where it stopped next time.
+        </p>
+      </div>
       <p className="font-mono text-sm text-fg">
         <span className="text-fg-dim">Current location: </span>
         {info ? info.resolved_path : (loadError ?? "Loading…")}
