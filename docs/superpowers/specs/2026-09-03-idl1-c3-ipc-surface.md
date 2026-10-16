@@ -2328,6 +2328,25 @@ interrupted download leaves the part, and the next call for the same file
 continues it with a `Range` request. `Progress.done` counts the whole file,
 resumed bytes included.
 
+**`download_files(device_id: string, files: {name, size_bytes}[], events: Channel<TransferEvent>)`** *(added 2026-10-16)*
+Downloads a batch over WiFi with SPEC §10.4's radio handoff: WiFi mode on
+over Bluetooth (the managed connection; `not_found` without one), the WiFi
+link verified, `POST /handoff` (the logger drops Bluetooth, and the managed
+connection is retired), each file in turn by name (resumable `.part`, as
+`download_file`), then `POST /wifi_off` over WiFi. A logger that refuses the
+handoff is downloaded from with Bluetooth up and switched back over it.
+`TransferEvent`, tagged by `kind`: `handed_off` | `started {name}` |
+`progress {name, done, total}` | `done {name, result: DownloadResult}` |
+`failed {name, error}` (a WiFi/Bluetooth failure fails the rest too).
+Return: `{ handed_off, wifi_closed, cancelled }` — after a handoff the app
+reconnects over Bluetooth; `wifi_closed: false` means the WiFi link went and
+the logger leaves WiFi mode by itself within five minutes. Errors (before
+any file): `ble`, `wifi`, `not_found`.
+
+**`cancel_wifi_transfer(device_id: string)`** *(added 2026-10-16)* → `boolean`:
+stops a running `download_files` (the file in flight keeps its `.part`);
+`true` when one was running.
+
 **`push_config(device_id: string, config_json: string)`**
 `config_json`: the config document as a JSON string (SPEC §8 fixes its
 schema; this command validates it locally before transmission via the same

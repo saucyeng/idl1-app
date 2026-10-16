@@ -37,6 +37,9 @@ export interface HeroCardProps {
   status: DeviceStatus | null;
   /** True once `statusPoll.ts`'s `isLinkLost` has fired (R78 Q2). */
   linkLost: boolean;
+  /** The logger dropped Bluetooth for a WiFi transfer (SPEC §10.4): its
+   *  status is paused, not lost, and Record stops the transfer first. */
+  handedOff?: boolean;
   /** The `device_control` command currently in flight, or null. */
   pending: DeviceControlCommand | null;
   /** Milliseconds since this session first observed `status.logging` go
@@ -295,6 +298,11 @@ export default function HeroCard(props: HeroCardProps) {
           {linkLost && (
             <NoteBlock className="border-hivis text-hivis" role="status">
               Link lost? The logger hasn&apos;t answered the last few status checks. Still trying.
+            </NoteBlock>
+          )}
+          {props.handedOff === true && (
+            <NoteBlock className="border-rule text-fg-dim" role="status">
+              Downloading over WiFi · Bluetooth paused. Record stops the download and starts once the logger is back.
             </NoteBlock>
           )}
 

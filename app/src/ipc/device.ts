@@ -109,6 +109,43 @@ export async function downloadFile(
   return invoke<DownloadResult>("download_file", { deviceId, fileName, progress, sizeBytes: sizeBytes ?? null });
 }
 
+/** What `downloadFiles` reports as it goes (C3 §3.8, added 2026-10-16). */
+export type TransferEvent =
+  | { kind: "handed_off" }
+  | { kind: "started"; name: string }
+  | { kind: "progress"; name: string; done: number; total: number | null }
+  | { kind: "done"; name: string; result: DownloadResult }
+  | { kind: "failed"; name: string; error: { kind: string; message: string; detail?: Record<string, unknown> } };
+
+/** `downloadFiles`'s return. */
+export interface TransferSummary {
+  /** The logger dropped Bluetooth for the transfer: reconnect afterwards. */
+  handed_off: boolean;
+  /** WiFi mode ended cleanly; `false` after a handoff means the logger
+   *  leaves WiFi mode by itself within five minutes. */
+  wifi_closed: boolean;
+  /** Stopped by `cancelWifiTransfer`. */
+  cancelled: boolean;
+}
+
+/** Downloads a batch over WiFi with the radio handoff (C3 §3.8, SPEC
+ *  §10.4): the logger drops Bluetooth for the transfer and WiFi mode ends
+ *  over WiFi. Sizes come from the Bluetooth file list. */
+export async function downloadFiles(
+  deviceId: string,
+  files: { name: string; size_bytes: number }[],
+  onEvent: (e: TransferEvent) => void
+): Promise<TransferSummary> {
+  const events = new Channel<TransferEvent>();
+  events.onmessage = onEvent;
+  return invoke<TransferSummary>("download_files", { deviceId, files, events });
+}
+
+/** Stops a running `downloadFiles` after the file in flight (C3 §3.8). */
+export async function cancelWifiTransfer(deviceId: string): Promise<boolean> {
+  return invoke<boolean>("cancel_wifi_transfer", { deviceId });
+}
+
 /** Validates and pushes `configJson` (SPEC §8's schema) to a connected
  *  device (C3 §3.8). Local validation happens before anything is
  *  transmitted. Resolves with no value on success. */

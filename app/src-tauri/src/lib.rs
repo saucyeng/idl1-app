@@ -52,6 +52,7 @@ pub fn run() {
             app.manage(idl_rs_tauri::state::Hashes(std::sync::Arc::new(idl_rs_tauri::watcher::ExpectedHashSet::new())));
             app.manage(idl_rs_tauri::state::Watchers(std::sync::Mutex::new(std::collections::HashMap::new())));
             app.manage(idl_rs_tauri::state::Connections(std::sync::Mutex::new(std::collections::HashMap::new())));
+            app.manage(idl_rs_tauri::state::WifiTransfers::default());
             // Decoded per-channel samples, LRU by bytes against a budget of
             // min(2 GiB, 25 % of physical RAM) read once here (ruling R203.2).
             // Every command that serves samples reads through it, so a

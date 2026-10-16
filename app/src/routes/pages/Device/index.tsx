@@ -6,7 +6,7 @@ import { SectionHead } from "../../../components/brand/SectionHead";
 import { Button } from "../../../components/ui/button";
 import { cn } from "../../../lib/utils";
 import { listSessions } from "../../../ipc/catalog";
-import { bleScan, connectDevice, deviceControl, deviceStatus, disconnectDevice, firmwareCatalog, onOtaStateChanged, pullConfig } from "../../../ipc/device";
+import { bleScan, cancelWifiTransfer, connectDevice, deviceControl, deviceStatus, disconnectDevice, firmwareCatalog, onOtaStateChanged, pullConfig } from "../../../ipc/device";
 import type { DeviceControlCommand } from "../../../ipc/device";
 import { transitionObserved } from "./control";
 import { connectionReducer, initialConnectionState } from "./connection";
@@ -23,6 +23,7 @@ import HeroCard from "./HeroCard";
 import IdentitySheet from "./IdentitySheet";
 import { setBikeProfile } from "./config/edit";
 import { dispatchRideFlow, useRideFlow } from "../../../shell/rideFlow";
+import { dispatchLoggerLink, useLoggerLink } from "../../../shell/loggerLink";
 import NotesSheet from "./NotesSheet";
 import { ModuleList } from "./ModuleGrid";
 import ModuleSheet from "./ModuleSheet";
@@ -49,6 +50,10 @@ const RESTART_BOOT_MS = 4000;
 const RESTART_RETRY_MS = 3000;
 /** Reconnect attempts before giving up (~1 min). */
 const RESTART_ATTEMPTS = 20;
+/** Reconnect attempts after a WiFi transfer whose link dropped (~6 min):
+ *  the logger's no-activity failsafe takes up to five minutes to leave WiFi
+ *  mode and advertise again (SPEC §10.4). */
+const FAILSAFE_ATTEMPTS = 120;
 
 /** Resolves after `ms`. */
 function sleep(ms: number): Promise<void> {
@@ -146,6 +151,9 @@ export default function Device() {
   // reboots it (SPEC §7.2).
   const [draft, setDraft] = useState<DeviceConfig | null>(null);
   const pendingLoggerBike = useRideFlow().pendingLoggerBike;
+  const link = useLoggerLink();
+  /** The logger dropped Bluetooth for a WiFi transfer (SPEC §10.4). */
+  const handedOff = link.handedOff !== null && link.handedOff === state.activeDeviceId;
 
   // The ride form asked to make a bike this logger's default: it joins the
   // settings draft and goes with the next Send to logger.
@@ -218,25 +226,26 @@ export default function Device() {
   // tile stayed red until a manual reconnect, Isaac 2026-10-15). Waits for
   // the boot, then tries every few seconds for about a minute, and re-reads
   // the config once back.
-  const [restarting, setRestarting] = useState(false);
+  const [restarting, setRestarting] = useState<string | null>(null);
   const reconnectAfterRestart = useCallback(
-    async (restartingDeviceId: string, dropLinkFirst: boolean) => {
-      setRestarting(true);
+    async (restartingDeviceId: string, dropLinkFirst: boolean, attempts: number = RESTART_ATTEMPTS, label: string = "Logger restarting… reconnecting."): Promise<boolean> => {
+      setRestarting(label);
       if (dropLinkFirst) await disconnectDevice(restartingDeviceId).catch(() => {});
       await sleep(RESTART_BOOT_MS);
-      for (let attempt = 0; attempt < RESTART_ATTEMPTS; attempt += 1) {
+      for (let attempt = 0; attempt < attempts; attempt += 1) {
         try {
           const info = await connectDevice(restartingDeviceId);
           dispatch({ type: "CONNECTED", info });
           readLoggerConfig(info.device_id, true);
-          setRestarting(false);
-          return;
+          setRestarting(null);
+          return true;
         } catch {
           await sleep(RESTART_RETRY_MS);
         }
       }
-      setRestarting(false);
+      setRestarting(null);
       toast.error("The logger didn't come back", { description: "Power-cycle it, then connect again." });
+      return false;
     },
     [readLoggerConfig],
   );
@@ -291,6 +300,17 @@ export default function Device() {
   const onControl = useCallback(
     (command: DeviceControlCommand) => {
       if (deviceId === "" || pendingControl !== null) return;
+      // Bluetooth is off during a handed-off WiFi transfer: Record stops the
+      // transfer, and recording starts once the logger is back (a few
+      // seconds; the logger's own button is instant, firmware F7).
+      if (handedOff) {
+        if (command === "start_recording") {
+          dispatchLoggerLink({ type: "RECORD_WHEN_BACK" });
+          void cancelWifiTransfer(deviceId);
+          toast.info("Stopping the download to record", { description: "Recording starts as soon as the logger is back on Bluetooth." });
+        }
+        return;
+      }
       setControlError(null);
       // The logger refuses a BLE start while its WiFi is up (SPEC §10.4), so
       // a Record tap leaves WiFi first, then starts.
@@ -313,7 +333,7 @@ export default function Device() {
           setPendingControl(null);
         });
     },
-    [deviceId, pendingControl, wifiOn],
+    [deviceId, pendingControl, wifiOn, handedOff],
   );
 
   // Mirrors `state` for the auto-connect effect below to read at the
@@ -364,11 +384,33 @@ export default function Device() {
   // active device (decision 86) — the other connected devices' recordings
   // are unaffected by the app's poll either way, so switching which one is
   // active is enough to redirect it.
+  // Paused while the logger has dropped Bluetooth for a WiFi transfer
+  // (SPEC §10.4 handoff): there is no link to poll until it is back.
   useEffect(() => {
-    if (state.activeDeviceId === null) return;
+    if (state.activeDeviceId === null || handedOff) return;
     const stop = startStatusPoll(STATUS_POLL_DEPS, state.activeDeviceId, dispatchStatus);
     return stop;
-  }, [state.activeDeviceId]);
+  }, [state.activeDeviceId, handedOff]);
+
+  // A WiFi transfer that handed off ends here: reconnect over Bluetooth,
+  // waiting out the logger's failsafe when the WiFi link dropped, then start
+  // recording if Record was pressed meanwhile.
+  const startRecordingRef = useRef<(() => void) | null>(null);
+  startRecordingRef.current = () => onControl("start_recording");
+  useEffect(() => {
+    const request = link.reconnect;
+    if (request === null) return;
+    dispatchLoggerLink({ type: "RECONNECT_TAKEN" });
+    void (async () => {
+      const back = await reconnectAfterRestart(
+        request.deviceId,
+        false,
+        request.longWait ? FAILSAFE_ATTEMPTS : RESTART_ATTEMPTS,
+        request.longWait ? "Waiting for the logger to come back on Bluetooth (up to 5 minutes)…" : "Back from the WiFi transfer… reconnecting.",
+      );
+      if (back && request.thenRecord) startRecordingRef.current?.();
+    })();
+  }, [link.reconnect, reconnectAfterRestart]);
 
   // Tracks when this session first saw `logging: true` (local display state
   // only — no IPC, lane brief Open question 2). Cleared on disconnect and
@@ -547,7 +589,8 @@ export default function Device() {
         <HeroCard
           connectionState={state}
           status={statusState.status}
-          linkLost={isLinkLost(statusState)}
+          linkLost={!handedOff && isLinkLost(statusState)}
+          handedOff={handedOff}
           pending={pendingControl}
           elapsedMs={elapsedMs}
           loggerConfig={draft}
@@ -567,9 +610,9 @@ export default function Device() {
           onNotes={() => setNotesOpen(true)}
         />
         {sendBar}
-        {restarting && (
+        {restarting !== null && (
           <p role="status" className="font-mono text-sm text-hivis">
-            Logger restarting… reconnecting.
+            {restarting}
           </p>
         )}
         {statusState.error && <p role="status" className="font-mono text-sm text-fg-dim">{describeIpcError(statusState.error)}</p>}

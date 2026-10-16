@@ -6,6 +6,17 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 
 ### Added
 
+- **Downloads hand the radio to WiFi [docs] (2026-10-16).** A batch of
+  rides now downloads in one WiFi session with the spec's radio handoff:
+  once WiFi is linked the logger drops Bluetooth, so WiFi has the radio to
+  itself, every ride comes in (each imported as it lands), and WiFi mode
+  ends over WiFi; the app then reconnects over Bluetooth. Meanwhile the
+  Logger screen says "Downloading over WiFi · Bluetooth paused" instead of
+  "Link lost". Record during a download stops it and starts recording once
+  the logger is back (a few seconds; the logger's own button is instant).
+  If WiFi drops mid-download the logger comes back on Bluetooth within five
+  minutes and the app waits for it. Spec-during: C3 section 3.8.
+
 - **Pair a phone with a QR code [docs] (2026-10-16).** Settings, Sync on
   the computer has **Show pairing QR code**. Scanning it with the phone's
   camera opens idl1 through an `idl1://pair` link, which pairs with the

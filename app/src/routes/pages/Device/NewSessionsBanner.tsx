@@ -4,13 +4,15 @@ import { toast } from "sonner";
 import { Button } from "../../../components/ui/button";
 import { toastFor } from "../../../components/toasts/events";
 import { cn } from "../../../lib/utils";
-import { deviceControl, downloadFile, listDeviceFiles, listRecentDeviceFiles } from "../../../ipc/device";
+import { downloadFiles, listDeviceFiles, listRecentDeviceFiles } from "../../../ipc/device";
+import type { TransferEvent } from "../../../ipc/device";
 import { attachBikeLog, bikeForName } from "../../../ipc/bikelog";
 import { importFile } from "../../../ipc/import";
 import { describeIpcError } from "./errors";
 import type { DeviceIpcError } from "./errors";
 import { toFileViews } from "./files";
 import { dispatchRideFlow } from "../../../shell/rideFlow";
+import { dispatchLoggerLink } from "../../../shell/loggerLink";
 import { prefsStore } from "../Settings/appPrefsStore";
 import { autoStep, bannerView, initialNewSessionsState, newSessionsReducer } from "./newSessions";
 import type { QueuedFile } from "./newSessions";
@@ -102,59 +104,101 @@ export default function NewSessionsBanner({ deviceId, knownSessionIds, onImporte
       .catch((err: DeviceIpcError) => dispatch({ type: "CHECK_FAILED", error: describeIpcError(err) }));
   }
 
+  /** Imports one downloaded ride and attaches it to the logger's bike;
+   *  reports into both reducers. */
+  async function importOne(file: QueuedFile, path: string): Promise<boolean> {
+    try {
+      dispatch({ type: "IMPORT_START" });
+      dispatchRideFlow({ type: "IMPORTING", name: file.name });
+      const outcome = await importFile(path, LOGGER_IMPORTER_ID, () => {});
+      const warnings = outcome.warnings.map((w) => `${file.name}: ${w}`);
+      // The ride takes its bike's notes and starting setup sheet. A failure
+      // here leaves the import standing; the ride form can attach later.
+      const bike = bikeName?.trim();
+      if (bike) {
+        try {
+          const found = await bikeForName(bike);
+          await attachBikeLog(outcome.session.session_id, found.bike_id);
+        } catch (err) {
+          warnings.push(`${file.name}: bike log not attached: ${describeIpcError(err as DeviceIpcError)}`);
+        }
+      }
+      dispatchRideFlow({ type: "IMPORTED", name: file.name, sessionId: outcome.session.session_id });
+      dispatch({ type: "FILE_IMPORTED", warnings });
+      return true;
+    } catch (err) {
+      const error = describeIpcError(err as DeviceIpcError);
+      dispatchRideFlow({ type: "FAILED", name: file.name, error });
+      dispatch({ type: "FILE_FAILED", error });
+      return false;
+    }
+  }
+
+  /** Downloads the batch in one WiFi session with the radio handoff (SPEC
+   *  §10.4, C3 §3.8 `download_files`): the logger drops Bluetooth while
+   *  the rides come in, each is imported as it lands, and WiFi mode ends
+   *  over WiFi. The Logger screen pauses its Bluetooth poll meanwhile and
+   *  reconnects afterwards (`shell/loggerLink.ts`). */
   async function transfer(files: QueuedFile[]): Promise<void> {
     dispatch({ type: "TRANSFER_START" });
     // The Data tab lists these and the ride form slides up for a single one.
     dispatchRideFlow({ type: "BATCH_START", files: files.map((f) => ({ name: f.name, sizeBytes: f.sizeBytes })) });
+    const byName = new Map(files.map((f) => [f.name, f]));
     let imported = 0;
-    for (const [index, file] of files.entries()) {
-      if (stopped.current) return;
-      try {
-        const result = await downloadFile(
-          deviceId,
-          file.name,
-          (progress) => {
-            dispatch({ type: "PROGRESS", progress });
-            dispatchRideFlow({ type: "PROGRESS", name: file.name, doneBytes: progress.done });
-          },
-          file.sizeBytes,
-        );
-        dispatch({ type: "IMPORT_START" });
-        dispatchRideFlow({ type: "IMPORTING", name: file.name });
-        const outcome = await importFile(result.path, LOGGER_IMPORTER_ID, () => {});
-        imported += 1;
-        const warnings = outcome.warnings.map((w) => `${file.name}: ${w}`);
-        // The ride takes its bike's notes and starting setup sheet. A failure
-        // here leaves the import standing; the ride form can attach later.
-        const bike = bikeName?.trim();
-        if (bike) {
-          try {
-            const found = await bikeForName(bike);
-            await attachBikeLog(outcome.session.session_id, found.bike_id);
-          } catch (err) {
-            warnings.push(`${file.name}: bike log not attached: ${describeIpcError(err as DeviceIpcError)}`);
-          }
+    // Imports run one after another in arrival order, while the next ride
+    // downloads.
+    let imports: Promise<void> = Promise.resolve();
+    const failOne = (name: string, error: string) => {
+      dispatchRideFlow({ type: "FAILED", name, error });
+      dispatch({ type: "FILE_FAILED", error });
+    };
+    const onEvent = (e: TransferEvent) => {
+      switch (e.kind) {
+        case "handed_off":
+          dispatchLoggerLink({ type: "HANDED_OFF", deviceId });
+          return;
+        case "progress":
+          dispatch({ type: "PROGRESS", progress: { done: e.done, total: e.total, phase: "download" } });
+          dispatchRideFlow({ type: "PROGRESS", name: e.name, doneBytes: e.done });
+          return;
+        case "done": {
+          const file = byName.get(e.name);
+          if (file === undefined) return;
+          imports = imports.then(async () => {
+            if (await importOne(file, e.result.path)) imported += 1;
+          });
+          return;
         }
-        dispatchRideFlow({ type: "IMPORTED", name: file.name, sessionId: outcome.session.session_id });
-        dispatch({ type: "FILE_IMPORTED", warnings });
-      } catch (err) {
-        if (stopped.current) return;
-        const error = describeIpcError(err as DeviceIpcError);
-        // A WiFi or Bluetooth failure fails the rest of the batch the same
-        // way: say it once and stop, rather than retrying every file.
-        const link = (err as DeviceIpcError).kind === "wifi" || (err as DeviceIpcError).kind === "ble";
-        for (const failed of link ? files.slice(index) : [file]) {
-          dispatchRideFlow({ type: "FAILED", name: failed.name, error });
-          dispatch({ type: "FILE_FAILED", error });
+        case "failed": {
+          const error = describeIpcError(e.error as DeviceIpcError);
+          imports = imports.then(() => failOne(e.name, error));
+          return;
         }
-        if (link) break;
+        default:
+          return;
       }
+    };
+
+    try {
+      const summary = await downloadFiles(
+        deviceId,
+        files.map((f) => ({ name: f.name, size_bytes: f.sizeBytes })),
+        onEvent,
+      );
+      await imports;
+      dispatchLoggerLink({ type: "TRANSFER_ENDED", deviceId, handedOff: summary.handed_off, wifiClosed: summary.wifi_closed });
+      if (summary.handed_off && !summary.wifi_closed) {
+        toast.info("WiFi to the logger dropped", { description: "It comes back on Bluetooth within five minutes, or press its button. The rest resumes next time." });
+      }
+    } catch (err) {
+      // Failed before any ride came in (WiFi never linked, or the logger
+      // was not connected): Bluetooth is still up, so nothing to reconnect.
+      await imports;
+      const error = describeIpcError(err as DeviceIpcError);
+      for (const file of files) failOne(file.name, error);
+      dispatchLoggerLink({ type: "TRANSFER_ENDED", deviceId, handedOff: false, wifiClosed: true });
     }
     if (stopped.current) return;
-    // Back to recording-ready. Best effort: if this fails the logger leaves
-    // WiFi mode on its own after five idle minutes (SPEC §10.4), and its
-    // record button drops WiFi anyway (firmware F7).
-    deviceControl(deviceId, "wifi_off").catch(() => {});
     if (imported > 0) {
       onImported();
       const descriptor = toastFor({ kind: "transferComplete", fileCount: imported });
