@@ -37,7 +37,7 @@ tauri-plugin-opener = "2"
 # QR pairing (2026-10-16): the phone camera opens the app with an
 # `idl1://pair?...` link; this plugin delivers it to the frontend and, on
 # Android, adds the intent filter for the scheme at build time.
-tauri-plugin-deep-link = "2"
+tauri-plugin-deep-link = "~2.4"
 
 # Desktop only: the updater plugin has no mobile backend (Android updates come
 # from a new APK), so it is neither built nor registered there.
