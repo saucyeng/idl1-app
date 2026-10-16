@@ -17,7 +17,7 @@ export interface Progress {
    *  unit as `done`. */
   total: number | null;
   /** Short machine-readable phase name: "manifest" | "blobs" | "sessions" |
-   *  "workbooks" | "tracks" | "profiles" for `syncNow`. Not localized. */
+   *  "workbooks" | "tracks" | "profiles" | "bike_log" for `syncNow`. Not localized. */
   phase: string;
 }
 
@@ -116,6 +116,9 @@ export interface SyncResult {
   /** u32, successful `Profile` transfers this run, pull and push
    *  combined. */
   profiles_updated: number;
+  /** u32, bikes and bike-log entries transferred this run, pull and push
+   *  combined (added 2026-10-16). */
+  bike_log_updated: number;
 }
 
 /** `start_pairing`'s return (C3 §3.9's `PairingCode`). */
@@ -134,7 +137,7 @@ export async function syncStatus(): Promise<SyncStatus> {
 
 /** Syncs with `peerId` (C3 §3.9). `Progress.done`/`.total` are a mixed
  *  blobs+cells count; `phase` disambiguates ("manifest", "blobs",
- *  "sessions", "workbooks", "tracks", "profiles"). */
+ *  "sessions", "workbooks", "tracks", "profiles", "bike_log"). */
 export async function syncNow(
   peerId: string,
   onProgress: (p: Progress) => void

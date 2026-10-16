@@ -44,7 +44,8 @@ function announceSyncFinished(result: SyncResult): void {
     result.workbooks_merged +
     result.sessions_updated +
     result.tracks_updated +
-    result.profiles_updated;
+    result.profiles_updated +
+    result.bike_log_updated;
   const descriptor = toastFor({ kind: "syncFinished", changed });
   const raise = descriptor.tone === "good" ? toast.success : descriptor.tone === "info" ? toast.info : toast.error;
   raise(descriptor.title, { description: descriptor.detail });

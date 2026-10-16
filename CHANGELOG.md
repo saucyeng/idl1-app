@@ -6,6 +6,13 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 
 ### Added
 
+- **Bike log syncs over LAN [no-docs] (2026-10-16).** Bikes and bike-log
+  entries (notes and confirmed sheets) sync between paired devices. A note
+  edited on both before they sync keeps both versions, shown as a conflict
+  to pick from; nothing is lost. Older app builds still sync everything
+  else. No bike-log screens yet. Spec-during: C4 section 6, C3 section 3.9,
+  bike-log DRAFT section 4.
+
 - **New rides download by themselves [docs] (2026-10-16).** With the Logger
   screen open and the logger connected and not recording, new sessions are
   checked, downloaded and imported without a tap: once on connect and again

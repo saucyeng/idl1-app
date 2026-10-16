@@ -24,7 +24,7 @@ function syncResult(overrides: Partial<SyncResult> = {}): SyncResult {
     conflicts: 0,
     sessions_updated: 0,
     tracks_updated: 0,
-    profiles_updated: 0,
+    profiles_updated: 0, bike_log_updated: 0,
     ...overrides,
   };
 }
@@ -165,7 +165,7 @@ describe("syncStateReducer", () => {
       workbooks_merged: 0,
       sessions_updated: 2,
       tracks_updated: 1,
-      profiles_updated: 1,
+      profiles_updated: 1, bike_log_updated: 0,
     });
 
     // Act

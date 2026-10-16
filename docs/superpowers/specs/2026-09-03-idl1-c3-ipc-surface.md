@@ -2720,6 +2720,10 @@ interface SyncResult {
                                  // run, pull and push combined (added
                                  // post-sign 2026-09-07, lead ruling R102,
                                  // L11 Task 10 review)
+  bike_log_updated: number;     // u32, bikes and bike-log entries
+                                 // transferred, pull and push combined
+                                 // (added 2026-10-16; progress phase
+                                 // "bike_log" follows "profiles")
 }
 ```
 Errors: `sync`, `not_found` (unknown/unpaired `peer_id`).

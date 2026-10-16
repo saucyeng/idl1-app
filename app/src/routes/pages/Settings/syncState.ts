@@ -206,6 +206,9 @@ export function describeSyncResult(result: SyncResult): string {
   if (result.profiles_updated > 0) {
     parts.push(`${result.profiles_updated} profile${result.profiles_updated === 1 ? "" : "s"} updated`);
   }
+  if (result.bike_log_updated > 0) {
+    parts.push(`${result.bike_log_updated} bike log ${result.bike_log_updated === 1 ? "entry" : "entries"} updated`);
+  }
 
   if (result.conflicts === 0) {
     return `${parts.join(", ")} cleanly.`;
