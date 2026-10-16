@@ -21,6 +21,7 @@ import { describeIpcError } from "./errors";
 import type { DeviceIpcError } from "./errors";
 import HeroCard from "./HeroCard";
 import IdentitySheet from "./IdentitySheet";
+import NotesSheet from "./NotesSheet";
 import { ModuleList } from "./ModuleGrid";
 import ModuleSheet from "./ModuleSheet";
 import { moduleTiles } from "./moduleTiles";
@@ -148,6 +149,7 @@ export default function Device() {
   // The module tile whose sheet is open, and whether the rider/bike sheet is.
   const [openTile, setOpenTile] = useState<ModuleTile | null>(null);
   const [identityOpen, setIdentityOpen] = useState(false);
+  const [notesOpen, setNotesOpen] = useState(false);
   // True while the launch auto-connect to the last logger is in flight, so
   // the dashboard says "Connecting…" instead of looking idle.
   const [autoConnecting, setAutoConnecting] = useState(false);
@@ -551,6 +553,7 @@ export default function Device() {
           onOpen={setView}
           onModule={setOpenTile}
           onIdentity={() => setIdentityOpen(true)}
+          onNotes={() => setNotesOpen(true)}
         />
         {sendBar}
         {restarting && (
@@ -616,6 +619,7 @@ export default function Device() {
         />
       )}
       <IdentitySheet open={identityOpen} onClose={() => setIdentityOpen(false)} draft={draft} onDraftChange={setDraft} />
+      <NotesSheet open={notesOpen} onClose={() => setNotesOpen(false)} bikeName={draft?.bike_profile.name ?? null} />
     </div>
   );
 }

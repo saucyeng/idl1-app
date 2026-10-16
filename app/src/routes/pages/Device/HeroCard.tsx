@@ -69,6 +69,8 @@ export interface HeroCardProps {
   onModule: (tile: ModuleTile) => void;
   /** Opens the rider and bike sheet. */
   onIdentity: () => void;
+  /** Opens the bike log's Notes sheet. */
+  onNotes: () => void;
 }
 
 /** A connected logger's advertised name, or its id when it advertised none. */
@@ -77,23 +79,25 @@ function connectionLabel(connection: ConnectionInfo): string {
 }
 
 /** Big rider and bike chips, read from the logger's own configuration
- *  (`bike_profile`). Before the read arrives they say so rather than
- *  showing a placeholder name. */
-function IdentityChips({ config, onOpen }: { config: DeviceConfig | null; onOpen: () => void }) {
+ *  (`bike_profile`), and the Notes chip beside them (bike-log spec §1).
+ *  Before the read arrives they say so rather than showing a placeholder
+ *  name. */
+function IdentityChips({ config, onOpen, onNotes }: { config: DeviceConfig | null; onOpen: () => void; onNotes: () => void }) {
   const rider = config === null ? "…" : config.bike_profile.default_rider.trim() || "Not set";
   const bike = config === null ? "…" : config.bike_profile.name.trim() || "Not set";
   return (
-    <div className="grid grid-cols-2 gap-2">
+    <div className="grid grid-cols-3 gap-2">
       {(
         [
-          ["Rider", rider],
-          ["Bike", bike],
+          ["Rider", rider, onOpen],
+          ["Bike", bike, onOpen],
+          ["Notes", "Add", onNotes],
         ] as const
-      ).map(([label, value]) => (
+      ).map(([label, value, onClick]) => (
         <button
           key={label}
           type="button"
-          onClick={onOpen}
+          onClick={onClick}
           className="flex min-h-16 min-w-0 flex-col items-start justify-center rounded-[var(--radius-card)] border border-rule bg-surface px-3 text-left"
         >
           <span className="text-label-2 tracking-[var(--tracking-label)] text-fg-dim uppercase">{label}</span>
@@ -294,7 +298,7 @@ export default function HeroCard(props: HeroCardProps) {
             </NoteBlock>
           )}
 
-          <IdentityChips config={loggerConfig} onOpen={props.onIdentity} />
+          <IdentityChips config={loggerConfig} onOpen={props.onIdentity} onNotes={props.onNotes} />
 
           {state !== "recording" && (
             <NewSessionsBanner

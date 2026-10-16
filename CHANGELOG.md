@@ -6,6 +6,14 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 
 ### Added
 
+- **Notes button on the Logger screen [docs] (2026-10-16).** A third big
+  chip beside Rider and Bike opens the bike's notepad: type a note and it is
+  stamped with the time and the logger's bike, and the next ride on that
+  bike takes it. The sheet lists the log newest first (delete a note, or
+  pick between two versions when it was changed on two devices) and shows
+  the running setup sheet. Confirming a full setup sheet comes next.
+  Spec-during: bike-log DRAFT.
+
 - **Downloaded rides take their bike's notes [no-docs] (2026-10-16).** Each
   ride the Logger screen downloads is attached to the logger's bike (by
   name, created if new): it records the bike, the bike-log notes since that
