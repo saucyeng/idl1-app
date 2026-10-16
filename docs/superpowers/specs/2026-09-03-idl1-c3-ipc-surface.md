@@ -3038,6 +3038,12 @@ the bike and its log. Types are core's
 Errors: `invalid_argument` (an id that isn't a safe file name, or no such
 bike), `not_found` (session), `io`.
 
+**`ride_summary(session_id: string)`** (§3.2, added 2026-10-16, `async`) →
+`{ avg_hr_bpm, max_hr_bpm, distance_m }`, each `number | null`: the ride
+form's totals, worked out in core (`session::summary`). Heart rate ignores
+zero samples; distance leaves out GPS steps made below 2 km/h. Errors:
+`not_found`, `io`.
+
 `get_session`'s `SessionDetail` (§3.2) gains `bike_id: string` (`""` = not
 attached) and `bike_log: SessionBikeLog | null` (amended 2026-10-16), read
 from `session.json` (C1 §6).

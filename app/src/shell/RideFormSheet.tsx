@@ -6,8 +6,8 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle } from "../components/ui/s
 import { sheetSideFor, type SheetSide } from "../components/overlays/sheetSide";
 import { attachBikeLog, bikeForName, getBikeLog, listBikes } from "../ipc/bikelog";
 import type { Bike, BikeLogView } from "../ipc/bikelog";
-import { getSession, listSessions, saveSessionMetadata } from "../ipc/catalog";
-import type { SessionDetail } from "../ipc/catalog";
+import { getSession, listSessions, rideSummary, saveSessionMetadata } from "../ipc/catalog";
+import type { RideSummary, SessionDetail } from "../ipc/catalog";
 import { formatDateMs, formatDurationMs, formatLapTimeMs, formatTimeMs } from "../routes/pages/Data/format";
 import { formatWhen } from "../routes/pages/Device/notesModel";
 import { dispatchRideFlow, draftsToSave, sessionIdFor, useRideFlow } from "./rideFlow";
@@ -84,6 +84,7 @@ export default function RideFormSheet() {
   const sessionId = key === null ? null : sessionIdFor(flow, key);
   const [detail, setDetail] = useState<SessionDetail | null>(null);
   const [durationMs, setDurationMs] = useState<number | null>(null);
+  const [summary, setSummary] = useState<RideSummary | null>(null);
   const [log, setLog] = useState<BikeLogView | null>(null);
   const [reload, setReload] = useState(0);
   const [picking, setPicking] = useState(false);
@@ -96,6 +97,7 @@ export default function RideFormSheet() {
     setDetail(null);
     setLog(null);
     setDurationMs(null);
+    setSummary(null);
     setPicking(false);
     setOfferDefault(null);
     if (sessionId === null) return;
@@ -107,6 +109,8 @@ export default function RideFormSheet() {
         setDetail(d);
         const row = (await listSessions()).find((s) => s.session_id === sessionId);
         if (live) setDurationMs(row?.duration_ms ?? null);
+        // Totals read the channels: they arrive a moment later.
+        void rideSummary(sessionId).then((s) => live && setSummary(s)).catch(() => {});
         if (d.bike_id) {
           const l = await getBikeLog(d.bike_id);
           if (live) setLog(l);
@@ -128,7 +132,7 @@ export default function RideFormSheet() {
   const expanded = flow.expanded || side === "right";
   const heading = detail && detail.timestamp_utc_ms > 0 ? `${formatDateMs(detail.timestamp_utc_ms)} ride` : "This ride";
   const titleHint = `${detail?.venue_name || "Ride"} · ${detail && detail.timestamp_utc_ms > 0 ? formatDateMs(detail.timestamp_utc_ms) : "today"}`;
-  const facts = detail === null ? [] : rideFacts(detail, durationMs, { duration: formatDurationMs, lap: formatLapTimeMs, time: formatTimeMs });
+  const facts = detail === null ? [] : rideFacts(detail, durationMs, summary, { duration: formatDurationMs, lap: formatLapTimeMs, time: formatTimeMs });
   const setup = detail?.bike_log ? setupRows(detail.bike_log.setup_sheet, log) : [];
   const changes = detail === null ? [] : attachedNotes(detail, log);
 

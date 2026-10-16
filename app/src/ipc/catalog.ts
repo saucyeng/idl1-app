@@ -326,6 +326,23 @@ export async function listSessions(): Promise<SessionSummary[]> {
 
 /** Reads one session's canonical files directly, not the catalog cache
  *  (C3 §3.2). Settle-bound, e.g. explicit session-detail open. */
+/** A ride's totals (C3 §3.2 `ride_summary`, added 2026-10-16); each null
+ *  when the session has no data for it. */
+export interface RideSummary {
+  /** bpm */
+  avg_hr_bpm: number | null;
+  /** bpm */
+  max_hr_bpm: number | null;
+  /** metres */
+  distance_m: number | null;
+}
+
+/** C3 §3.2 `ride_summary`: average and max heart rate and GPS distance,
+ *  worked out in Rust. */
+export async function rideSummary(sessionId: string): Promise<RideSummary> {
+  return invoke<RideSummary>("ride_summary", { sessionId });
+}
+
 export async function getSession(sessionId: string): Promise<SessionDetail> {
   return invoke<SessionDetail>("get_session", { sessionId });
 }

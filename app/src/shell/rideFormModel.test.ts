@@ -47,13 +47,13 @@ describe("notesPatch", () => {
 });
 
 describe("rideFacts", () => {
-  it("rideFacts — laps with one ignored — best lap skips the ignored one", () => {
+  it("rideFacts — laps with one ignored, and totals — best lap skips the ignored one, heart rate and distance appended", () => {
     // Arrange
     const d = detail({ ignored_lap_numbers: [2] });
     const fmt = { duration: (ms: number) => `${ms}d`, lap: (ms: number) => `${ms}l`, time: (ms: number) => `${ms}t` };
 
     // Act
-    const facts = rideFacts(d, 3_000, fmt);
+    const facts = rideFacts(d, 3_000, { avg_hr_bpm: 151.6, max_hr_bpm: 180, distance_m: 24_640 }, fmt);
 
     // Assert
     expect(facts).toEqual([
@@ -61,6 +61,8 @@ describe("rideFacts", () => {
       { label: "Duration", value: "3000d" },
       { label: "Laps", value: "3" },
       { label: "Best lap", value: "1000l" },
+      { label: "Avg HR", value: "152 bpm" },
+      { label: "Distance", value: "24.6 km" },
     ]);
   });
 });

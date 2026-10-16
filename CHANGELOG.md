@@ -15,7 +15,8 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
   moment it imports. **Open the full form** adds the ride's facts, its
   bike (change it, and optionally make it the logger's default), the setup
   it started with ("was" marks what notes changed) and the setup changes
-  it took from the bike log, each placed at its lap. Downloads now show in
+  it took from the bike log, each placed at its lap. The facts strip shows
+  average heart rate and distance, worked out in Rust (`ride_summary`). Downloads now show in
   the Data tab under "New from the logger", each with its status and
   **Add notes**; the Logger screen keeps a one-line status. Any ride's form
   opens from its detail pane. Spec-during: ride-form mockup, C3 section

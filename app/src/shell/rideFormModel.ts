@@ -1,5 +1,5 @@
 import type { BikeLogView, RunningSheet } from "../ipc/bikelog";
-import type { SessionDetail, SessionMetadataPatch } from "../ipc/catalog";
+import type { RideSummary, SessionDetail, SessionMetadataPatch } from "../ipc/catalog";
 import { SHEET_SECTIONS } from "../routes/pages/Device/sheetFields";
 
 /** Pure helpers for the ride form sheet (ride-form mockup, 2026-10-16). */
@@ -27,8 +27,14 @@ export interface Fact {
 }
 
 /** Laps, best lap and start time from the session; duration when the
- *  catalog knows it. Formatting only: every number comes from Rust. */
-export function rideFacts(detail: SessionDetail, durationMs: number | null, fmt: { duration: (ms: number) => string; lap: (ms: number) => string; time: (ms: number) => string }): Fact[] {
+ *  catalog knows it; average heart rate and distance from `ride_summary`.
+ *  Formatting only: every number comes from Rust. */
+export function rideFacts(
+  detail: SessionDetail,
+  durationMs: number | null,
+  summary: RideSummary | null,
+  fmt: { duration: (ms: number) => string; lap: (ms: number) => string; time: (ms: number) => string },
+): Fact[] {
   const counted = detail.laps.filter((l) => !detail.ignored_lap_numbers.includes(l.lap_number));
   const best = counted.length === 0 ? null : Math.min(...counted.map((l) => l.lap_time_ms));
   const facts: Fact[] = [];
@@ -36,6 +42,8 @@ export function rideFacts(detail: SessionDetail, durationMs: number | null, fmt:
   if (durationMs !== null) facts.push({ label: "Duration", value: fmt.duration(durationMs) });
   facts.push({ label: "Laps", value: String(detail.laps.length) });
   if (best !== null) facts.push({ label: "Best lap", value: fmt.lap(best) });
+  if (summary?.avg_hr_bpm != null) facts.push({ label: "Avg HR", value: `${Math.round(summary.avg_hr_bpm)} bpm` });
+  if (summary?.distance_m != null) facts.push({ label: "Distance", value: `${(summary.distance_m / 1000).toFixed(1)} km` });
   return facts;
 }
 
