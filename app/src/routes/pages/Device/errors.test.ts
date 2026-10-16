@@ -66,6 +66,17 @@ describe("describeIpcError", () => {
     expect(describeIpcError(error).length).toBeGreaterThan(0);
   });
 
+  it("describeIpcError — wifi failure after the link came up — keeps the step that failed", () => {
+    // Arrange
+    const error = { kind: "wifi", message: "GET /files failed: operation timed out" };
+
+    // Act
+    const text = describeIpcError(error);
+
+    // Assert
+    expect(text).toBe("Couldn't reach the device over WiFi. Check the device's WiFi mode and try again. (GET /files failed: operation timed out)");
+  });
+
   it("describeIpcError — wifi with join_ap hint — names the network to join", () => {
     // Arrange
     const error = { kind: "wifi", message: "GET /ping failed", detail: { hint: "join_ap", ssid: "IDL0-A3F2" } };

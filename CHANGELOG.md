@@ -19,6 +19,13 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
     channel's release to go back to (SPEC §27.7's no-downgrade rule
     amended, Isaac).
   - Smaller bottom tab labels.
+  - A WiFi failure now names the step that failed (the file list, the
+    download, the network request) instead of only the generic sentence.
+  - A firmware push at 100% now says the logger is checking and saving the
+    image, which can take up to a minute, instead of sitting on "Pushing
+    firmware… 100%".
+  - After a firmware update the card shows the version the logger reports
+    after its restart, without closing and reopening it.
 
 ### Added
 

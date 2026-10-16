@@ -61,6 +61,19 @@ describe("flowCard", () => {
     expect(card.actions).toEqual({ choose: false, push: false, confirm: false, rollBack: false });
   });
 
+  it("flowCard — pushing at 100% — says the logger is checking the image, with no percentage", () => {
+    // Arrange
+    const state: OtaState = { phase: "pushing", done_bytes: 100, total_bytes: 100, pct: 100 };
+
+    // Act
+    const card = flowCard(state);
+
+    // Assert
+    expect(card.title).toBe("Logger is checking and saving the firmware…");
+    expect(card.progress?.pct).toBeNull();
+    expect(card.busy).toBe(true);
+  });
+
   it("flowCard — rebooting — carries both Flutter lines", () => {
     // Arrange
     const state: OtaState = { phase: "rebooting" };

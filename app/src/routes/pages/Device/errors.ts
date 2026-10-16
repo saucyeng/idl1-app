@@ -63,5 +63,11 @@ export function describeIpcError(error: DeviceIpcError): string {
   if (error.kind === "wifi" && error.detail?.hint === "firmware_update") {
     return "This logger's firmware speaks a different WiFi protocol. Update its firmware, then try again.";
   }
+  // Any other WiFi failure carries the step that failed (the list, the
+  // download, the network request) so a report says where it broke
+  // (2026-10-16: downloads failed with only the generic sentence).
+  if (error.kind === "wifi" && error.message.trim() !== "") {
+    return `${KIND_TEXT.wifi} (${error.message.trim()})`;
+  }
   return KIND_TEXT[error.kind] ?? GENERIC_TEXT;
 }

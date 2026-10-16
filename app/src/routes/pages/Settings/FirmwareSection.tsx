@@ -215,11 +215,14 @@ export default function FirmwareSection({ store, showRepository = true }: Firmwa
     if (deviceId === null) return;
     setFlowError(null);
     try {
-      await pushFirmware(deviceId, source, effectiveRepo(repo), channel, () => {
+      const outcome = await pushFirmware(deviceId, source, effectiveRepo(repo), channel, () => {
         // Byte-level progress is already reflected in the state machine's
         // own `pushing`/`downloading` percentages; this channel exists for
         // callers that want finer granularity than the card shows.
       });
+      // The logger rebooted into the new image: show the version it now
+      // reports rather than the one read when the card opened (2026-10-16).
+      if (outcome.device_version !== null) setDeviceVersion(outcome.device_version);
     } catch (error) {
       setFlowError(describeFirmwareError(error));
     }

@@ -104,6 +104,18 @@ export function flowCard(state: OtaState, errorText: string | null = null): Flow
       };
 
     case "pushing":
+      // Every byte sent: the logger now checks and saves the image before it
+      // answers, which can take a while at 100% (2026-10-16).
+      if (state.pct >= 100) {
+        return {
+          title: "Logger is checking and saving the firmware…",
+          detail: "This can take up to a minute. Keep the device powered and close by.",
+          progress: { pct: null, label: "Logger is checking the firmware image" },
+          actions: NO_ACTIONS,
+          busy: true,
+          tone: "neutral",
+        };
+      }
       return {
         // Verbatim (Flutter `:532`).
         title: `Pushing firmware… ${pctText(state.pct)}`,
