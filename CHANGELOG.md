@@ -4,6 +4,15 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 
 ## [Unreleased]
 
+### Fixed
+
+- **Logger downloads resume and keep the Bluetooth link [no-docs]
+  (2026-10-16).** A download that drops part-way now continues from where
+  it stopped next time, instead of starting again from byte 0. Downloading
+  and listing files no longer open a second Bluetooth link to the logger
+  (the same cause as the config-push drop), so the dashboard stays
+  connected through a download. Spec-during: C3 §3.8.
+
 ### Added
 
 - **High-g merged into the accel channels at import [docs] (2026-10-15).**

@@ -2317,6 +2317,14 @@ interface DownloadResult {
 }
 ```
 Errors: `ble`, `wifi`, `not_found` (file no longer on the device), `io`.
+*Amended 2026-10-16:* `list_device_files` and `download_file` switch the
+logger to WiFi over `device_id`'s managed connection when there is one,
+held only for the switch and never disconnected (the same Android second-link
+drop as `push_config`). `download_file` is resumable: bytes go to
+`<data>/tmp/download-<device>-<session id or name>-<size>.part`, a failed or
+interrupted download leaves the part, and the next call for the same file
+continues it with a `Range` request. `Progress.done` counts the whole file,
+resumed bytes included.
 
 **`push_config(device_id: string, config_json: string)`**
 `config_json`: the config document as a JSON string (SPEC §8 fixes its
