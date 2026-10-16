@@ -67,20 +67,48 @@ Proposed C4 additions:
     bikes/<bike_id>.json                  name, sheet template (§5)
     bikelog/<bike_id>/<entry_id>.json     one file per log entry
 
+**What holds what:**
+
+```
+bikes/gt-force.json            the bike: name, which sheet fields it has
+bikelog/gt-force/01J…A.json    a note: "fork service"           ┐
+bikelog/gt-force/01J…B.json    a note: "+1 LSC fork", at lap 2  ├ the bike's log
+bikelog/gt-force/01J…C.json    a confirmed sheet (full values)  ┘
+sessions/<id>/session.json     a ride: bike_id, the entry ids it took,
+                               and a copy of the sheet at its start
+```
+
+The running setup sheet is not a file. It is worked out from the log: the
+newest confirmed sheet, plus the changes in the notes after it.
+
 **Why one file per entry.** The phone and the desktop both add notes, often
 while apart. With one file per entry, two devices never write the same
-file, so sync is a union with no merge rule. The only conflicts are edits
-to the same entry, and those use last-write-wins by `updated_at_ms`, as
-Track and Profile already do. A delete is a `deleted: true` edit (a
-tombstone), so it syncs like any other edit and a deleted note can't come
-back from the other device.
+file, so new notes from both sides simply add up.
+
+**Edits to the same note on two devices (revised 2026-10-16, Isaac asked
+for smarter than last-write-wins).** An entry file keeps every version of
+itself, never overwriting one: `versions: [{text, changes, at_ms,
+device, updated_at_ms, parent}]`, where `parent` is the version it was
+edited from. Sync merges two copies of an entry by taking the union of
+their versions, so no edit is ever lost. The current text is the newest
+version. When two versions share the same parent, the note was edited on
+both devices before they synced: it shows both texts with a "changed on
+phone and desktop" marker until the rider picks one or writes a merged
+version (itself a new version with both as parents). A delete is a version
+with `deleted: true`; it syncs like any other edit, so a deleted note can't
+come back from the other device. Entries are a few hundred bytes, so the
+history costs nothing worth counting.
+
+The bike file is edited rarely and field by field (renaming, adding a sheet
+field), so it merges per field, newest `updated_at_ms` per field, as
+`session.json` metadata already does (C4 §6).
 
 Sync manifest classes:
 
 | Class | Path | Identity | Conflict rule |
 |---|---|---|---|
-| Bike | `bikes/<id>.json` | `bike_id` | last-write-wins by `updated_at_ms` |
-| Bike log entry | `bikelog/<bike>/<entry>.json` | `entry_id` | union; edits last-write-wins by `updated_at_ms` |
+| Bike | `bikes/<id>.json` | `bike_id` | per-field merge, newest `updated_at_ms` per field |
+| Bike log entry | `bikelog/<bike>/<entry>.json` | `entry_id` | union of files; within a file, union of versions |
 
 **`session.json` (C1 §6), additive:**
 
@@ -136,16 +164,29 @@ form is an ordinary log entry with `at_ms` at the session's end.
 - `app/src`: the Notes button and notepad, the sheet view, the ride form's
   log section.
 
-## 8. Decisions needed
+## 8. Decisions
 
-1. **Storage (§4):** one file per entry plus a `bikes/` file per bike, with
-   the two sync classes. Yes, or change it?
-2. **One log per bike** (recommended: setup belongs to a bike) **or one log
-   for everything**, with each note tagged by bike?
-3. **Which bike a session belongs to:** the logger's chosen bike at
-   recording time (recommended, since one logger usually means one bike),
-   or picked in the ride form?
-4. **Clicks:** counted from fully closed (recommended, the usual
-   convention), or from fully open? Asked under R190 and still open.
-5. **Deleting a note:** allowed (it disappears, a tombstone syncs), or only
-   struck through so the history stays visible?
+Decided 2026-10-16 (Isaac):
+
+1. **Storage:** yes, one file per entry and one per bike, with the smarter
+   edit merge above (versions kept, both shown when edited on two devices).
+2. **One log per bike** (see the diagram in §4: the log is the folder of
+   notes for one bike; the setup sheet is worked out from it).
+3. **Which bike:** the logger's chosen bike at recording time, changeable
+   in the ride form. Changing it there offers to make that bike the
+   logger's new default.
+4. **Clicks are counted from fully closed.** Adjustments are written the
+   way Isaac writes them, as signed changes from the baseline (sign
+   convention: see open question below).
+5. **Delete:** the note disappears (a `deleted` version, synced). Simplest.
+
+Open:
+
+- **Sign of an adjustment.** Isaac, 2026-10-16: "+ is open, - is closed"
+  and "+1 LSC is closing the LSC by 1 click". These disagree, so the sign
+  is not yet settled. The stored value stays the absolute click count from
+  closed either way; the sign only decides how "+1 LSC" in a note is read.
+
+Later (not this spec): parts of the Logger screen should work with no
+logger connected, such as preparing a config to send later (Isaac,
+2026-10-16).

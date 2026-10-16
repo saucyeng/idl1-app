@@ -656,7 +656,12 @@ or a hard stop.
 - Logger on home WiFi (station mode): **skipped for now** (Isaac,
   2026-10-15). He powers the logger off in the pits as soon as the transfer
   is done; it isn't left on in the garage.
-- [ ] Bike log and setup sheet (plan given 2026-10-15). Log entries attach
+- [ ] Logger screen without a logger (Isaac, 2026-10-16): parts of it
+      should still work offline, such as preparing a config to send later.
+      Something to design for, not yet planned.
+- [ ] Bike log and setup sheet (plan given 2026-10-15; spec
+      `2026-10-16-idl1-bike-log-DRAFT.md`, decisions 1–5 taken 2026-10-16,
+      adjustment sign convention open). Log entries attach
       to the next ride automatically ("since the last ride on this bike"),
       and the ride form opens after the ride so more notes can be added
       (Isaac, 2026-10-15).
