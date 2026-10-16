@@ -6,6 +6,13 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 
 ### Added
 
+- **Downloaded rides take their bike's notes [no-docs] (2026-10-16).** Each
+  ride the Logger screen downloads is attached to the logger's bike (by
+  name, created if new): it records the bike, the bike-log notes since that
+  bike's previous ride, and the setup sheet as it stood at the start.
+  Backed by the new bike-log commands (C3 section 3.11); the Notes and
+  setup-sheet screens are next. Spec-during: C1 section 6, C3 section 3.11.
+
 - **Bike log syncs over LAN [no-docs] (2026-10-16).** Bikes and bike-log
   entries (notes and confirmed sheets) sync between paired devices. A note
   edited on both before they sync keeps both versions, shown as a conflict

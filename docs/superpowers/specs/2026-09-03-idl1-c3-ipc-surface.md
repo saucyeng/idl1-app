@@ -3008,6 +3008,35 @@ no build number).
 
 ---
 
+### 3.11 Bike log (added 2026-10-16)
+
+Bike-log spec `2026-10-16-idl1-bike-log-DRAFT.md`. Types are core's
+`idl_rs::store::bikelog` serialised as is (`Bike`, `Entry`,
+`EntryVersion`, `RunningSheet`, `SessionBikeLog`; `kind` is `"note"` or
+`"sheet"`). All are `async`.
+
+- **`list_bikes()`** → `Bike[]`, sorted by name.
+- **`bike_for_name(name: string)`** → `Bike`: the bike with that name
+  (trimmed, case ignored), created with a slug id when there is none. The
+  logger's bike name goes through this.
+- **`save_bike(bike: Bike)`** → `Bike`: merged with the copy on disk, per
+  part.
+- **`get_bike_log(bike_id: string)`** → `{ entries: { entry, current,
+  in_conflict, heads, deleted }[], running_sheet, skipped: string[] }`. The
+  running sheet is as of now; `heads` (newest first) are the texts to pick
+  from when `in_conflict`.
+- **`save_bike_log_entry(entry: Entry)`** → `Entry`: a new entry or new
+  versions of one (an edit is a new version naming its parent; a delete is
+  a version with `deleted: true`). Merged with the copy on disk, so no
+  version is lost.
+- **`attach_bike_log(session_id: string, bike_id: string)`** →
+  `SessionBikeLog`: sets the session's `bike_id`, `bike` and `bike_log`
+  (C1 §6) from the bike's log, using the catalog's start and duration.
+  Running it again re-attaches (the ride form, after a bike change).
+
+Errors: `invalid_argument` (an id that isn't a safe file name, or no such
+bike), `not_found` (session), `io`.
+
 ## 4. Interaction budget
 
 From the principle "no IPC on the interaction path" (design §3, §6):

@@ -5,6 +5,7 @@ import { Button } from "../../../components/ui/button";
 import { toastFor } from "../../../components/toasts/events";
 import { cn } from "../../../lib/utils";
 import { deviceControl, downloadFile, listDeviceFiles, listRecentDeviceFiles } from "../../../ipc/device";
+import { attachBikeLog, bikeForName } from "../../../ipc/bikelog";
 import { importFile } from "../../../ipc/import";
 import { describeIpcError } from "./errors";
 import type { DeviceIpcError } from "./errors";
@@ -36,6 +37,10 @@ export interface NewSessionsBannerProps {
   /** Called after a transfer imported at least one session, so the caller
    *  can refresh `knownSessionIds`. */
   onImported: () => void;
+  /** The logger's bike name (its config's `bike_profile.name`), or null
+   *  when unknown. Each imported session is attached to that bike's log
+   *  (bike-log spec §6). */
+  bikeName: string | null;
 }
 
 /**
@@ -50,7 +55,7 @@ export interface NewSessionsBannerProps {
  * record ends a transfer: the file in flight keeps its partial download
  * (`download_file` resumes it), and no further file is started.
  */
-export default function NewSessionsBanner({ deviceId, knownSessionIds, onImported }: NewSessionsBannerProps) {
+export default function NewSessionsBanner({ deviceId, knownSessionIds, onImported, bikeName }: NewSessionsBannerProps) {
   const [state, dispatch] = useReducer(newSessionsReducer, initialNewSessionsState);
   const view = bannerView(state);
   const auto = useRef<boolean | null>(null);
@@ -106,7 +111,19 @@ export default function NewSessionsBanner({ deviceId, knownSessionIds, onImporte
         dispatch({ type: "IMPORT_START" });
         const outcome = await importFile(result.path, LOGGER_IMPORTER_ID, () => {});
         imported += 1;
-        dispatch({ type: "FILE_IMPORTED", warnings: outcome.warnings.map((w) => `${file.name}: ${w}`) });
+        const warnings = outcome.warnings.map((w) => `${file.name}: ${w}`);
+        // The ride takes its bike's notes and starting setup sheet. A failure
+        // here leaves the import standing; the ride form can attach later.
+        const bike = bikeName?.trim();
+        if (bike) {
+          try {
+            const found = await bikeForName(bike);
+            await attachBikeLog(outcome.session.session_id, found.bike_id);
+          } catch (err) {
+            warnings.push(`${file.name}: bike log not attached: ${describeIpcError(err as DeviceIpcError)}`);
+          }
+        }
+        dispatch({ type: "FILE_IMPORTED", warnings });
       } catch (err) {
         if (stopped.current) return;
         dispatch({ type: "FILE_FAILED", error: describeIpcError(err as DeviceIpcError) });

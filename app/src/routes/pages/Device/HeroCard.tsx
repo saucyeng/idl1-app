@@ -297,7 +297,12 @@ export default function HeroCard(props: HeroCardProps) {
           <IdentityChips config={loggerConfig} onOpen={props.onIdentity} />
 
           {state !== "recording" && (
-            <NewSessionsBanner deviceId={active.device_id} knownSessionIds={props.knownSessionIds} onImported={props.onImported} />
+            <NewSessionsBanner
+              deviceId={active.device_id}
+              knownSessionIds={props.knownSessionIds}
+              onImported={props.onImported}
+              bikeName={loggerConfig?.bike_profile.name ?? null}
+            />
           )}
 
           <ModuleGrid tiles={moduleTiles({ status, config: tileConfig, linkLost, firmwareVerdict: props.firmwareVerdict })} onOpen={props.onModule} />
