@@ -130,9 +130,16 @@ of this tree, on any platform.
   workbooks/<file_name>.idl1wb
   tracks/<track_id>.idl0t
   profiles/<profile_id>.idl0p                       rider/bike profile snapshots (port of profile_store.dart)
+  bikes/<bike_id>.json                              a bike: name, its setup-sheet fields (bike-log spec §4)
+  bikelog/<bike_id>/<entry_id>.json                 one bike-log entry, every version kept (bike-log spec §4)
   catalog.sqlite                                    + catalog.sqlite-wal, catalog.sqlite-shm (WAL sidecars)
   tmp/                                               atomic-write staging (§4); tmp/quarantine/ for repair (§7)
 ```
+
+**Bike log (added 2026-10-16, Isaac).** `bikes/` and `bikelog/` hold the
+bike log and setup sheet (`2026-10-16-idl1-bike-log-DRAFT.md`). An entry
+file is never rewritten to drop a version: saving merges with the copy on
+disk. Their sync classes (§6) land with the sync wiring.
 
 **Inbox (added 2026-09-10, ruling R191, desktop only).** `<data>/inbox/` is
 a drop folder: a `.idl0`/`.fit`/`.gpx`/`.csv` file placed there is imported
