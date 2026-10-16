@@ -130,16 +130,16 @@ of this tree, on any platform.
   workbooks/<file_name>.idl1wb
   tracks/<track_id>.idl0t
   profiles/<profile_id>.idl0p                       rider/bike profile snapshots (port of profile_store.dart)
-  bikes/<bike_id>.json                              a bike: name, its setup-sheet fields (bike-log spec §4)
-  bikelog/<bike_id>/{note,sheet}-<entry_id>.json   one bike-log entry, every version kept (bike-log spec §4)
+  bikes/<bike_id>.json                              a bike and its whole log, every version kept (bike-log spec §3)
   catalog.sqlite                                    + catalog.sqlite-wal, catalog.sqlite-shm (WAL sidecars)
   tmp/                                               atomic-write staging (§4); tmp/quarantine/ for repair (§7)
 ```
 
-**Bike log (added 2026-10-16, Isaac).** `bikes/` and `bikelog/` hold the
-bike log and setup sheet (`2026-10-16-idl1-bike-log-DRAFT.md`). An entry
-file is never rewritten to drop a version: saving merges with the copy on
-disk. Their sync classes are in §6.
+**Bike log (added 2026-10-16, Isaac).** `bikes/<bike_id>.json` holds a
+bike, its setup-sheet fields and its whole log
+(`2026-10-16-idl1-bike-log-DRAFT.md`). It is never rewritten to drop an
+entry or a version: saving merges with the copy on disk. Its sync class is
+in §6.
 
 **Inbox (added 2026-09-10, ruling R191, desktop only).** `<data>/inbox/` is
 a drop folder: a `.idl0`/`.fit`/`.gpx`/`.csv` file placed there is imported
@@ -586,12 +586,11 @@ conflict rule):
 | Workbook | `workbooks/<name>.idl1wb` | `workbook_id` (front matter, C2 — **not** `file_name`; a rename is not a new workbook) | `workbook_id`, `file_name`, `sha256`, `size_bytes`, `updated_at_ms` | Per-cell merge against the last-synced base (design §7, D6) — computed after both full files are fetched, not from the manifest alone. A `file_name` mismatch for a known `workbook_id` is a rename to reconcile locally, id wins. |
 | Track | `tracks/<id>.idl0t` | `track_id` | `track_id`, `sha256`, `size_bytes`, `updated_at_ms` | **Last-write-wins by `updated_at_ms`** (SPEC §16.5, unchanged). |
 | Profile | `profiles/<id>.idl0p` | `profile_id` | `profile_id`, `sha256`, `size_bytes`, `updated_at_ms` | **Last-write-wins by `updated_at_ms`**, same class as Track (ruling R6). *Added post-sign, 2026-09-06, lead ruling R88, L11 Task 1.* |
-| Bike | `bikes/<id>.json` | `bike_id` | `bike_id`, `sha256`, `size_bytes` | One side only: copy across. Both, bytes differ: the receiver fetches the peer's copy and merges per part (name, fields), newer `*_updated_at_ms` wins. Route `/idl1/v1/bike/{id}`. Manifest key `bikes`. *Added 2026-10-16, Isaac (bike-log spec §4).* |
-| Bike log entry | `bikelog/<bike>/<note\|sheet>-<id>.json` | `key` = `<bike>/<note\|sheet>-<id>` | `key`, `sha256`, `size_bytes` | One side only: copy across. Both, bytes differ: the receiver fetches the peer's copy and keeps the union of versions, so no edit is lost and the two sides converge. Route `/idl1/v1/bikelog/{bike}/{file}`. Manifest key `bike_log`. *Added 2026-10-16, Isaac (bike-log spec §4).* |
+| Bike | `bikes/<id>.json` | `bike_id` | `bike_id`, `sha256`, `size_bytes` | A bike and its whole log. One side only: copy across. Both, bytes differ: the receiver fetches the peer's copy and merges it: name and fields part by part (newer `*_updated_at_ms` wins), the log as a union of entries and, within each, of versions, so no note is lost and the sides converge. Route `/idl1/v1/bike/{id}`. Manifest key `bikes`. *Added 2026-10-16, Isaac (bike-log spec §4).* |
 
-*Added 2026-10-16:* `bikes` and `bike_log` are `#[serde(default)]`: an older
-peer's manifest lacks them and reads as empty, and an older peer ignores
-them, so mixed versions still sync everything else.
+*Added 2026-10-16:* `bikes` is `#[serde(default)]`: an older
+peer's manifest lacks it and reads as empty, and an older peer ignores
+it, so mixed versions still sync everything else.
 
 `data.parquet` is path-identified by `session_id` (not content-addressed) and
 regenerated as a pure function of `(blob, importer_version,

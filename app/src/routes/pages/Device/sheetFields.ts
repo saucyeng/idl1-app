@@ -98,7 +98,7 @@ export function newSheet(bikeId: string, values: Record<string, unknown>, commen
     bike_id: bikeId,
     kind: "sheet",
     versions: [
-      { version_id: newId(nowMs, random), parents: [], at_ms: nowMs, updated_at_ms: nowMs, device, text: comment.trim(), changes: [], sheet: values, deleted: false },
+      { version_id: newId(nowMs, random), parents: [], at_ms: nowMs, updated_at_ms: nowMs, device, text: comment.trim(), changes: {}, sheet: values, deleted: false },
     ],
   };
 }

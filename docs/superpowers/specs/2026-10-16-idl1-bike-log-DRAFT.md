@@ -32,87 +32,59 @@ entry since that bike's previous session, and keeps a copy of the running
 sheet as it stood at the session's start. That copy is R190's per-session
 snapshot.
 
-## 3. Entries
+## 3. One file per bike
+
+Decided 2026-10-16 (Isaac): each bike is one file, `bikes/<bike_id>.json`,
+holding the bike and its whole log, oldest entry first: one readable
+history. A confirmed sheet stores the full setup; a note stores the
+rider's words plus only the values it changed.
 
 ```jsonc
 {
-  "entry_id": "01J…",              // ULID: unique, sorts by creation time
-  "bike_id": "gt-force",
-  "at_ms": 1760000000000,          // when it happened, UTC ms (editable)
-  "created_at_ms": …, "updated_at_ms": …,
-  "device": "phone",               // where it was written
-  "kind": "note",                  // "note" | "sheet"
-  "text": "bled fork bleeders after 2 laps",
-  "changes": [                     // optional structured edits, see §5
-    { "field": "fork.lsc", "value": 12 }
-  ],
-  "sheet": null,                   // kind "sheet" only: the full sheet
-  "deleted": false
+  "bike_id": "gt-force", "name": "GT Force",
+  "name_updated_at_ms": …, "fields": [], "fields_updated_at_ms": …,
+  "entries": [
+    { "entry_id": "0mgq…", "kind": "sheet", "version_id": "…",
+      "at_ms": 1760173200000, "updated_at_ms": …, "device": "phone",
+      "text": "after fork service",
+      "sheet": { "fork.psi": 70, "fork.lsc": 10, "rear_tyre.psi": 28 } },
+    { "entry_id": "0mgr…", "kind": "note", "version_id": "…",
+      "at_ms": 1760577600000, "updated_at_ms": …, "device": "phone",
+      "text": "Rear 26 psi", "changes": { "rear_tyre.psi": 26 },
+      "history": [ { "version_id": "…", "text": "rear 26", … } ] },
+    { "entry_id": "0mgs…", "kind": "note", …, "text": "bled the fork bleeders" }
+  ]
 }
 ```
 
 - **The text is the main record.** `changes` are optional. They come from
-  editing the running sheet directly, or from the analysis turning a note
-  into a field change and the rider accepting it (ride-analysis draft
-  §3.3). A note with no `changes` still shows on the sheet as "changed
-  since: bled fork bleeders".
+  editing the sheet directly, or from the analysis turning a note into a
+  field change the rider accepts (ride-analysis draft §3.3). A note without
+  `changes` still shows on the sheet as "changed since baseline".
+- **The full setup at any moment** is the newest confirmed sheet before
+  it, with the later notes' changes applied in order (`running_sheet`). It
+  is worked out, never stored.
 - A note written during a recording falls inside the session's time span,
   so the session places it at a lap (as the McLaren sheet's change column
   does).
 
-## 4. Storage and sync (the part that needs a yes)
+## 4. Edits, deletes and sync
 
-Proposed C4 additions:
-
-    bikes/<bike_id>.json                  name, sheet template (§5)
-    bikelog/<bike_id>/note-<entry_id>.json    one file per note
-    bikelog/<bike_id>/sheet-<entry_id>.json   one file per confirmed sheet
-
-The kind is in the file name (Isaac, 2026-10-16), so the folder reads at a
-glance and the sheets load without opening any note.
-
-**What holds what:**
-
-```
-bikes/gt-force.json            the bike: name, which sheet fields it has
-bikelog/gt-force/note-01J…A.json    a note: "fork service"           ┐
-bikelog/gt-force/note-01J…B.json    a note: "+1 LSC fork", at lap 2  ├ the bike's log
-bikelog/gt-force/sheet-01J…C.json   a confirmed sheet (full values)  ┘
-sessions/<id>/session.json     a ride: bike_id, the entry ids it took,
-                               and a copy of the sheet at its start
-```
-
-The running setup sheet is not a file. It is worked out from the log: the
-newest confirmed sheet, plus the changes in the notes after it.
-
-**Why one file per entry.** The phone and the desktop both add notes, often
-while apart. With one file per entry, two devices never write the same
-file, so new notes from both sides simply add up.
-
-**Edits to the same note on two devices (revised 2026-10-16, Isaac asked
-for smarter than last-write-wins).** An entry file keeps every version of
-itself, never overwriting one: `versions: [{text, changes, at_ms,
-device, updated_at_ms, parent}]`, where `parent` is the version it was
-edited from. Sync merges two copies of an entry by taking the union of
-their versions, so no edit is ever lost. The current text is the newest
-version. When two versions share the same parent, the note was edited on
-both devices before they synced: it shows both texts with a "changed on
-phone and desktop" marker until the rider picks one or writes a merged
-version (itself a new version with both as parents). A delete is a version
-with `deleted: true`; it syncs like any other edit, so a deleted note can't
-come back from the other device. Entries are a few hundred bytes, so the
-history costs nothing worth counting.
-
-The bike file is edited rarely and field by field (renaming, adding a sheet
-field), so it merges per field, newest `updated_at_ms` per field, as
-`session.json` metadata already does (C4 §6).
-
-Sync manifest classes:
-
-| Class | Path | Identity | Conflict rule |
-|---|---|---|---|
-| Bike | `bikes/<id>.json` | `bike_id` | per-field merge, newest `updated_at_ms` per field |
-| Bike log entry | `bikelog/<bike>/<entry>.json` | `entry_id` | union of files; within a file, union of versions |
+- **Versions.** An entry keeps every version of itself. The current one's
+  fields sit at the top of the entry; older versions are in its `history`,
+  each naming the version(s) it was edited from (`parents`). A delete is a
+  version with `deleted: true`.
+- **Edited on two devices.** Two versions with the same parent mean the
+  note was changed on the phone and the desktop before they synced. It
+  shows both texts, "changed on phone and desktop", until the rider picks
+  one (a new version naming both as parents).
+- **Sync.** One manifest class, Bike (`bikes/<id>.json`, key `bike_id`).
+  Copies that differ are merged by the receiver: the bike's name and
+  fields part by part (newer `*_updated_at_ms` wins), the log as a union
+  of entries and, within each, of versions. The merge is symmetric, so the
+  two sides converge once each has synced, and nothing is ever lost.
+- **Size.** A busy year is a few hundred entries, about 100–300 KB with
+  history: trivial to rewrite and sync whole.
 
 **`session.json` (C1 §6), additive:**
 
@@ -123,8 +95,6 @@ Sync manifest classes:
   fills R190's snapshot (C1 §6 as amended 2026-10-16). The existing `bike_profile_snapshot` is the logger
   config and stays as it is.
 
-The catalog indexes entries for search (C4 §5). It is still only an index
-and can be rebuilt.
 
 ## 5. The sheet
 
@@ -173,8 +143,9 @@ form is an ordinary log entry with `at_ms` at the session's end.
 
 Decided 2026-10-16 (Isaac):
 
-1. **Storage:** yes, one file per entry and one per bike, with the smarter
-   edit merge above (versions kept, both shown when edited on two devices).
+1. **Storage:** one file per bike holding its whole log (revised
+   2026-10-16 from one file per entry, Isaac: one readable history), with
+   the versioned edit merge (§4).
 2. **One log per bike** (see the diagram in §4: the log is the folder of
    notes for one bike; the setup sheet is worked out from it).
 3. **Which bike:** the logger's chosen bike at recording time, changeable

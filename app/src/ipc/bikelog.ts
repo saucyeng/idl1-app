@@ -15,28 +15,24 @@ export interface Bike {
 /** A note, or a confirmed sheet. */
 export type EntryKind = "note" | "sheet";
 
-/** One exact field change carried by a note. */
-export interface FieldChange {
-  field: string;
-  /** The new absolute value: clicks from fully closed, psi, mm, text. */
-  value: unknown;
-}
-
 /** One version of an entry; versions are never edited. */
 export interface EntryVersion {
   version_id: string;
-  /** The version(s) this one was edited from. */
-  parents: string[];
+  /** The version(s) this one was edited from; omitted for a first version. */
+  parents?: string[];
   /** When the noted thing happened, UTC ms. */
   at_ms: number;
   /** When this version was written, UTC ms. */
   updated_at_ms: number;
   device: string;
   text: string;
-  changes: FieldChange[];
-  /** A sheet's values by dotted key; empty for a note. */
-  sheet: Record<string, unknown>;
-  deleted: boolean;
+  /** Only the values this note set, by dotted key: clicks from fully
+   *  closed, psi, mm, text. Omitted when none. */
+  changes?: Record<string, unknown>;
+  /** A sheet's values by dotted key; omitted for a note. */
+  sheet?: Record<string, unknown>;
+  /** Omitted when false. */
+  deleted?: boolean;
 }
 
 /** One log entry with every version. */

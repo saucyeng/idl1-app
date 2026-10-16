@@ -3010,7 +3010,8 @@ no build number).
 
 ### 3.11 Bike log (added 2026-10-16)
 
-Bike-log spec `2026-10-16-idl1-bike-log-DRAFT.md`. Types are core's
+Bike-log spec `2026-10-16-idl1-bike-log-DRAFT.md`; one file per bike holds
+the bike and its log. Types are core's
 `idl_rs::store::bikelog` serialised as is (`Bike`, `Entry`,
 `EntryVersion`, `RunningSheet`, `SessionBikeLog`; `kind` is `"note"` or
 `"sheet"`). All are `async`.
@@ -3026,7 +3027,7 @@ Bike-log spec `2026-10-16-idl1-bike-log-DRAFT.md`. Types are core's
   running sheet is as of now; `heads` (newest first) are the texts to pick
   from when `in_conflict`.
 - **`save_bike_log_entry(entry: Entry)`** → `Entry`: a new entry or new
-  versions of one (an edit is a new version naming its parent; a delete is
+  versions of one, into its bike's file (the bike must exist) (an edit is a new version naming its parent; a delete is
   a version with `deleted: true`). Merged with the copy on disk, so no
   version is lost.
 - **`attach_bike_log(session_id: string, bike_id: string)`** →

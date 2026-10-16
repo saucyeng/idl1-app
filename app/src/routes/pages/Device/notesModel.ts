@@ -34,7 +34,7 @@ function version(nowMs: number, device: string, random: Random, fields: Partial<
     updated_at_ms: nowMs,
     device,
     text: "",
-    changes: [],
+    changes: {},
     sheet: {},
     deleted: false,
     ...fields,
@@ -48,7 +48,7 @@ export function newNote(bikeId: string, text: string, nowMs: number, device: str
 
 /** The ids of `entry`'s heads: the versions nothing was edited from. */
 export function headIds(entry: Entry): string[] {
-  const parents = new Set(entry.versions.flatMap((v) => v.parents));
+  const parents = new Set(entry.versions.flatMap((v) => v.parents ?? []));
   return entry.versions.filter((v) => !parents.has(v.version_id)).map((v) => v.version_id);
 }
 

@@ -4,6 +4,16 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 
 ## [Unreleased]
 
+### Changed
+
+- **One file per bike [no-docs] (2026-10-16).** A bike's name, sheet
+  fields and whole log (notes and confirmed sheets, oldest first) now live
+  in one readable file, `bikes/<id>.json`, instead of a file per note
+  (Isaac). A note stores only the values it changed; edits keep the older
+  wording in the entry's history. Sync merges two copies as a union of
+  entries and versions. Nothing had used the old layout yet. Spec-during:
+  C4 sections 2 and 6, bike-log DRAFT sections 3 and 4.
+
 ### Added
 
 - **Notes button on the Logger screen [docs] (2026-10-16).** A third big

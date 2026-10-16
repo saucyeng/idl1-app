@@ -71,7 +71,7 @@ describe("noteRows", () => {
   it("noteRows — live, deleted and conflicted entries — newest first, deleted left out, choices for conflicts", () => {
     // Arrange
     const v = (id: string, at: number, text: string): EntryVersion => ({
-      version_id: id, parents: [], at_ms: at, updated_at_ms: at, device: "", text, changes: [], sheet: {}, deleted: false,
+      version_id: id, parents: [], at_ms: at, updated_at_ms: at, device: "", text, changes: {}, sheet: {}, deleted: false,
     });
     const view: BikeLogView = {
       entries: [
