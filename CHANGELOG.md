@@ -6,6 +6,11 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 
 ### Added
 
+- **Bike notes without a logger [docs] (2026-10-16).** The Data tab has a
+  **Bike notes** button, and the Notes sheet picks the bike itself when no
+  logger is connected (the only bike there is, or a list, or a new one).
+  On the Logger screen it starts on the logger's bike, with **Change bike**.
+
 - **Ride form [docs] (2026-10-16).** When a single ride, or rides all from
   one day (read from the logger's timestamped file names), starts downloading,
   the ride form slides up over the bottom half of whatever tab is open:

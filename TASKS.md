@@ -663,9 +663,8 @@ or a hard stop.
       `2026-10-16-idl1-bike-log-DRAFT.md`, decisions 1–5 taken 2026-10-16,
       sign convention settled: + closes). Built 2026-10-16: store, LAN
       sync, attach on download, Notes chip and sheet, confirm setup.
-      Remaining: ride form (change bike, re-attach, offer as logger
-      default), notes without a logger, reading "+1 LSC" notes into field
-      changes. Log entries attach
+      Ride form and notes without a logger built 2026-10-16. Remaining:
+      reading "+1 LSC" notes into field changes (with the analysis agent). Log entries attach
       to the next ride automatically ("since the last ride on this bike"),
       and the ride form opens after the ride so more notes can be added
       (Isaac, 2026-10-15).

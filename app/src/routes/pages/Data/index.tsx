@@ -19,6 +19,7 @@ import { useAppState } from "../../../state/AppState";
 import type { SelectionWindow } from "../../../state/selection";
 import { ActiveChips } from "./ActiveChips";
 import { NewRidesSection } from "./NewRidesSection";
+import NotesSheet from "../Device/NotesSheet";
 import { DetailPane } from "./DetailPane";
 import { dataLayout } from "./layout";
 import { formatLapTimeMs } from "./format";
@@ -253,6 +254,7 @@ export default function Data() {
   const [maintenanceState, maintenanceDispatch] = useReducer(maintenanceReducer, initialMaintenanceState);
   const [maintenancePanelOpen, setMaintenancePanelOpen] = useState(false);
   const [filterSheetOpen, setFilterSheetOpen] = useState(false);
+  const [bikeNotesOpen, setBikeNotesOpen] = useState(false);
   const [detailSheetOpen, setDetailSheetOpen] = useState(false);
   const [appState, appDispatch] = useAppState();
   const selection = appState.selection;
@@ -629,9 +631,13 @@ export default function Data() {
 
         <NewRidesSection />
 
-        <div role="toolbar" aria-label="Import" className="border-b border-rule px-3 py-2">
+        <div role="toolbar" aria-label="Import" className="flex flex-wrap items-center justify-between gap-2 border-b border-rule px-3 py-2">
           <ImportPanel onImported={handleImported} />
+          <Button type="button" size="sm" onClick={() => setBikeNotesOpen(true)}>
+            Bike notes
+          </Button>
         </div>
+        <NotesSheet open={bikeNotesOpen} onClose={() => setBikeNotesOpen(false)} bikeName={null} />
 
         {deletedSessionNotice !== null && (
           <div role="status" className="flex items-center justify-between gap-2 border-b border-rule bg-surface-2 px-3 py-1.5">

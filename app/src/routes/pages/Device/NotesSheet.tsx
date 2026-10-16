@@ -3,7 +3,7 @@ import { useEffect, useState } from "react";
 import { BrandSheet } from "../../../components/brand/BrandSheet";
 import { Button } from "../../../components/ui/button";
 import { Input } from "../../../components/ui/input";
-import { bikeForName, getBikeLog, saveBikeLogEntry } from "../../../ipc/bikelog";
+import { bikeForName, getBikeLog, listBikes, saveBikeLogEntry } from "../../../ipc/bikelog";
 import type { Bike, BikeLogView } from "../../../ipc/bikelog";
 import { describeIpcError } from "./errors";
 import type { DeviceIpcError } from "./errors";
@@ -19,7 +19,8 @@ const FIELD_LABELS: Record<string, string> = Object.fromEntries(
 export interface NotesSheetProps {
   open: boolean;
   onClose: () => void;
-  /** The logger's bike name; the log belongs to that bike. */
+  /** The logger's bike name, which picks the bike; null or empty with no
+   *  logger (the Data tab), when the sheet offers a bike picker. */
   bikeName: string | null;
 }
 
@@ -30,7 +31,9 @@ function showValue(value: unknown): string {
 
 /**
  * The bike log notepad the dashboard's Notes chip opens (bike-log spec
- * §1). Type a note and it is stamped with the time and the logger's bike;
+ * §1), and the Data tab's Bike notes with no logger connected. Type a note
+ * and it is stamped with the time and the bike (the logger's, or the one
+ * picked here);
  * the next ride on that bike takes it. Below: the log, newest first, and
  * the running setup sheet. Notes edited on two devices show both texts to
  * pick from.
@@ -46,14 +49,33 @@ export default function NotesSheet({ open, onClose, bikeName }: NotesSheetProps)
   const [comment, setComment] = useState("");
   const device = typeof navigator === "undefined" ? "desktop" : deviceName(navigator.userAgent);
   const name = bikeName?.trim() ?? "";
+  /** A bike picked in the sheet, over the logger's. */
+  const [picked, setPicked] = useState<Bike | null>(null);
+  const [bikes, setBikes] = useState<Bike[] | null>(null);
+  const [picking, setPicking] = useState(false);
+  const [newBike, setNewBike] = useState("");
 
   useEffect(() => {
-    if (!open || name === "") return;
+    if (!open) return;
+    let live = true;
+    listBikes()
+      .then((b) => live && setBikes(b))
+      .catch(() => live && setBikes([]));
+    return () => {
+      live = false;
+    };
+  }, [open]);
+
+  useEffect(() => {
+    if (!open) return;
     let live = true;
     setError(null);
-    bikeForName(name)
+    // The picked bike, else the logger's, else the only bike there is.
+    const target: Promise<Bike | null> =
+      picked !== null ? Promise.resolve(picked) : name !== "" ? bikeForName(name) : Promise.resolve(bikes?.length === 1 ? bikes[0] : null);
+    target
       .then(async (b) => {
-        const view = await getBikeLog(b.bike_id);
+        const view = b === null ? null : await getBikeLog(b.bike_id);
         if (live) {
           setBike(b);
           setLog(view);
@@ -63,7 +85,43 @@ export default function NotesSheet({ open, onClose, bikeName }: NotesSheetProps)
     return () => {
       live = false;
     };
-  }, [open, name]);
+  }, [open, name, picked, bikes]);
+
+  async function addBike(): Promise<void> {
+    try {
+      const b = await bikeForName(newBike);
+      setNewBike("");
+      setBikes(await listBikes());
+      setPicked(b);
+      setPicking(false);
+    } catch (e) {
+      setError(describeIpcError(e as DeviceIpcError));
+    }
+  }
+
+  const picker = (
+    <div className="flex flex-col gap-px border border-rule bg-rule">
+      {(bikes ?? []).map((b) => (
+        <button
+          key={b.bike_id}
+          type="button"
+          className="min-h-12 bg-bg px-3 text-left text-base text-fg"
+          onClick={() => {
+            setPicked(b);
+            setPicking(false);
+          }}
+        >
+          {b.name || b.bike_id}
+        </button>
+      ))}
+      <div className="flex gap-2 bg-bg p-2">
+        <Input className="h-10 text-base" placeholder="New bike name" value={newBike} onChange={(e) => setNewBike(e.target.value)} />
+        <Button type="button" className="h-10" disabled={newBike.trim() === ""} onClick={() => void addBike()}>
+          Add
+        </Button>
+      </div>
+    </div>
+  );
 
   async function save(entry: Parameters<typeof saveBikeLogEntry>[0]): Promise<void> {
     if (bike === null) return;
@@ -106,11 +164,22 @@ export default function NotesSheet({ open, onClose, bikeName }: NotesSheetProps)
   const runningValues = log === null ? [] : Object.entries(log.running_sheet.values);
 
   return (
-    <BrandSheet open={open} onOpenChange={(o) => !o && onClose()} title={name === "" ? "Notes" : `Notes · ${name}`}>
-      {name === "" ? (
-        <p className="text-sm text-fg-dim">Name this logger&apos;s bike first (the Bike chip), so notes know which bike they belong to.</p>
+    <BrandSheet open={open} onOpenChange={(o) => !o && onClose()} title={bike === null ? "Bike notes" : `Notes · ${bike.name || bike.bike_id}`}>
+      {bike === null ? (
+        <div className="flex flex-col gap-3">
+          <p className="text-sm text-fg-dim">Which bike are these notes for?</p>
+          {picker}
+          {error !== null && <p className="text-sm text-brand-accent">{error}</p>}
+        </div>
       ) : (
         <div className="flex flex-col gap-4">
+          <div className="flex items-center justify-between gap-2">
+            <span className="text-sm text-fg-dim">{picked === null && name !== "" ? "The logger's bike" : "Bike"}</span>
+            <button type="button" className="text-sm text-fg-dim underline" onClick={() => setPicking(!picking)}>
+              {picking ? "Cancel" : "Change bike"}
+            </button>
+          </div>
+          {picking && picker}
           <div className="flex flex-col gap-2">
             <textarea
               className="min-h-24 w-full rounded-[var(--radius-card)] border border-rule bg-surface p-3 text-base text-fg"
