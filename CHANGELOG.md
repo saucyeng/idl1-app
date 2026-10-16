@@ -6,6 +6,16 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 
 ### Added
 
+- **Analysis primer for the desktop agent [no-docs] (2026-10-16).** The
+  data folder's `AGENTS.md` now tells an agent opened by "Ask an agent" how
+  to analyse a ride: where the notes, bike and starting setup are, which
+  sensor is where, how to measure against lap-to-lap noise, to write the
+  report as a workbook, to log engine gaps in `agent-gaps.md`, and to keep
+  the setup sheet current by adding bike-log entries from the ride notes
+  (marked as the agent's). `AGENTS.md` is now rewritten whenever its text
+  changes, not only on a version change, so each nightly brings the newest
+  primer. Spec-during: analysis-agent DRAFT.
+
 - **Bike notes without a logger [docs] (2026-10-16).** The Data tab has a
   **Bike notes** button, and the Notes sheet picks the bike itself when no
   logger is connected (the only bike there is, or a list, or a new one).
