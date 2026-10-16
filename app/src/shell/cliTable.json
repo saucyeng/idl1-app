@@ -952,6 +952,168 @@
     },
     {
       "args": [],
+      "core_fn": "store::bikelog::load_bikes",
+      "data_dir": true,
+      "flags": [
+        {
+          "choices": [],
+          "default": null,
+          "help": "Data directory root (contract C4 §1's <data>); defaults to $IDL1_DATA_DIR",
+          "kind": "path",
+          "long": "data-dir",
+          "repeatable": false
+        },
+        {
+          "choices": [],
+          "default": null,
+          "help": "Emit the result as JSON on stdout (schema_version 1); errors become typed JSON on stderr",
+          "kind": null,
+          "long": "json",
+          "repeatable": false
+        }
+      ],
+      "help": "List the bikes in the library",
+      "id": "bike.list",
+      "json_shape": "Bike[]",
+      "noun": "bike",
+      "status": "current",
+      "tier": "occasional",
+      "usage": "bike list",
+      "verb": "list",
+      "writer": false
+    },
+    {
+      "args": [
+        {
+          "choices": [],
+          "help": "Bike id, as `bike list` prints it",
+          "kind": "text",
+          "name": "bike_id",
+          "repeatable": false,
+          "required": true
+        }
+      ],
+      "core_fn": "store::bikelog::running_sheet",
+      "data_dir": true,
+      "flags": [
+        {
+          "choices": [],
+          "default": null,
+          "help": "Work the setup sheet out as of this Unix epoch millisecond; default now",
+          "kind": "integer",
+          "long": "at",
+          "repeatable": false
+        },
+        {
+          "choices": [],
+          "default": null,
+          "help": "Data directory root (contract C4 §1's <data>); defaults to $IDL1_DATA_DIR",
+          "kind": "path",
+          "long": "data-dir",
+          "repeatable": false
+        },
+        {
+          "choices": [],
+          "default": null,
+          "help": "Emit the result as JSON on stdout (schema_version 1); errors become typed JSON on stderr",
+          "kind": null,
+          "long": "json",
+          "repeatable": false
+        }
+      ],
+      "help": "Show a bike's log and its setup sheet",
+      "id": "bike.show",
+      "json_shape": "BikeShow",
+      "noun": "bike",
+      "status": "current",
+      "tier": "occasional",
+      "usage": "bike show <bike_id>",
+      "verb": "show",
+      "writer": false
+    },
+    {
+      "args": [
+        {
+          "choices": [],
+          "help": "Bike id, as `bike list` prints it",
+          "kind": "text",
+          "name": "bike_id",
+          "repeatable": false,
+          "required": true
+        }
+      ],
+      "core_fn": "store::bikelog::save_entry",
+      "data_dir": true,
+      "flags": [
+        {
+          "choices": [],
+          "default": null,
+          "help": "The note, in the rider's words",
+          "kind": "text",
+          "long": "text",
+          "repeatable": false
+        },
+        {
+          "choices": [],
+          "default": null,
+          "help": "A changed setup value as `key=value`, e.g. `fork.lsc=9`; repeat for several",
+          "kind": "text",
+          "long": "change",
+          "repeatable": true
+        },
+        {
+          "choices": [],
+          "default": null,
+          "help": "When it happened, Unix epoch milliseconds; default now",
+          "kind": "integer",
+          "long": "at",
+          "repeatable": false
+        },
+        {
+          "choices": [],
+          "default": null,
+          "help": "Who wrote it, e.g. `agent`; default `cli`",
+          "kind": "text",
+          "long": "device",
+          "repeatable": false
+        },
+        {
+          "choices": [],
+          "default": null,
+          "help": "Data directory root (contract C4 §1's <data>); defaults to $IDL1_DATA_DIR",
+          "kind": "path",
+          "long": "data-dir",
+          "repeatable": false
+        },
+        {
+          "choices": [],
+          "default": null,
+          "help": "Report what would change and write nothing",
+          "kind": null,
+          "long": "dry-run",
+          "repeatable": false
+        },
+        {
+          "choices": [],
+          "default": null,
+          "help": "Emit the result as JSON on stdout (schema_version 1); errors become typed JSON on stderr",
+          "kind": null,
+          "long": "json",
+          "repeatable": false
+        }
+      ],
+      "help": "Add a note to a bike's log; its changes update the setup sheet",
+      "id": "bike.note",
+      "json_shape": "Entry",
+      "noun": "bike",
+      "status": "current",
+      "tier": "occasional",
+      "usage": "bike note <bike_id>",
+      "verb": "note",
+      "writer": true
+    },
+    {
+      "args": [],
       "core_fn": "store::verify::verify",
       "data_dir": true,
       "flags": [
@@ -1431,6 +1593,7 @@
     "session",
     "workbook",
     "track",
+    "bike",
     "catalog",
     "library",
     "device",
@@ -1501,6 +1664,10 @@
     {
       "ruling": "R238",
       "verb": "calibrate"
+    },
+    {
+      "ruling": "R251",
+      "verb": "note"
     }
   ]
 }

@@ -9,11 +9,11 @@ Do not edit by hand: run `idl-rs docs cli --out <file>`.
 idl-rs <noun> <verb> [args] [--flags]
 ```
 
-**Nouns.** `session`, `workbook`, `track`, `catalog`, `library`, `device`, `docs`
+**Nouns.** `session`, `workbook`, `track`, `bike`, `catalog`, `library`, `device`, `docs`
 
 **Verbs.** `list`, `show`, `new`, `check`, `eval`, `set`, `import`, `export`, `scan`, `fold-in`, `index`, `rebuild`, `verify`, `delete`
 
-Verbs added by a later ruling: `set-start` (R229), `set-meta` (R229), `cells` (R229), `data` (R229), `detect` (R229), `laps` (R229), `stale` (R197), `workbook` (R222), `cli` (R230 item 2), `wire` (R236), `synth` (R187), `calibrate` (R238).
+Verbs added by a later ruling: `set-start` (R229), `set-meta` (R229), `cells` (R229), `data` (R229), `detect` (R229), `laps` (R229), `stale` (R197), `workbook` (R222), `cli` (R230 item 2), `wire` (R236), `synth` (R187), `calibrate` (R238), `note` (R251).
 
 ## Uniform behaviour
 
@@ -294,6 +294,55 @@ Re-detect track visits and laps for one session.
 | `--json` | switch | Emit the result as JSON on stdout (schema_version 1); errors become typed JSON on stderr |
 
 Calls `store::lap_index::index_session_laps`; `--json` emits `LapIndexReport`.
+
+## `bike`
+
+### `idl-rs bike list`
+
+List the bikes in the library.
+
+| Flag | Value | Meaning |
+| --- | --- | --- |
+| `--data-dir` | path | Data directory root (contract C4 §1's <data>); defaults to $IDL1_DATA_DIR |
+| `--json` | switch | Emit the result as JSON on stdout (schema_version 1); errors become typed JSON on stderr |
+
+Calls `store::bikelog::load_bikes`; `--json` emits `Bike[]`.
+
+### `idl-rs bike show <bike_id>`
+
+Show a bike's log and its setup sheet.
+
+| Argument | Type | Required | Meaning |
+| --- | --- | --- | --- |
+| `bike_id` | text | yes | Bike id, as `bike list` prints it |
+
+| Flag | Value | Meaning |
+| --- | --- | --- |
+| `--at` | integer | Work the setup sheet out as of this Unix epoch millisecond; default now |
+| `--data-dir` | path | Data directory root (contract C4 §1's <data>); defaults to $IDL1_DATA_DIR |
+| `--json` | switch | Emit the result as JSON on stdout (schema_version 1); errors become typed JSON on stderr |
+
+Calls `store::bikelog::running_sheet`; `--json` emits `BikeShow`.
+
+### `idl-rs bike note <bike_id>`
+
+Add a note to a bike's log; its changes update the setup sheet.
+
+| Argument | Type | Required | Meaning |
+| --- | --- | --- | --- |
+| `bike_id` | text | yes | Bike id, as `bike list` prints it |
+
+| Flag | Value | Meaning |
+| --- | --- | --- |
+| `--text` | text | The note, in the rider's words |
+| `--change` | text | A changed setup value as `key=value`, e.g. `fork.lsc=9`; repeat for several |
+| `--at` | integer | When it happened, Unix epoch milliseconds; default now |
+| `--device` | text | Who wrote it, e.g. `agent`; default `cli` |
+| `--data-dir` | path | Data directory root (contract C4 §1's <data>); defaults to $IDL1_DATA_DIR |
+| `--dry-run` | switch | Report what would change and write nothing |
+| `--json` | switch | Emit the result as JSON on stdout (schema_version 1); errors become typed JSON on stderr |
+
+Calls `store::bikelog::save_entry`; `--json` emits `Entry`.
 
 ## `catalog`
 

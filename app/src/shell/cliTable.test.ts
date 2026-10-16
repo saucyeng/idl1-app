@@ -30,7 +30,7 @@ describe("cliTable — the checked-in copy — is the shape the engine emits", (
   it("cliTable — nouns — are R230's closed vocabulary", () => {
     const nouns = CLI_TABLE.nouns;
 
-    expect(nouns).toEqual(["session", "workbook", "track", "catalog", "library", "device", "docs"]);
+    expect(nouns).toEqual(["session", "workbook", "track", "bike", "catalog", "library", "device", "docs"]);
   });
 
   it("cliTable — verbs — are R230's closed vocabulary", () => {

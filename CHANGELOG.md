@@ -6,6 +6,14 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 
 ### Added
 
+- **`idl-rs bike` commands [docs] (2026-10-16, R251).** `bike list`,
+  `bike show <bike_id> [--at MS]` (a bike's log and its setup sheet at a
+  moment) and `bike note <bike_id> --text T --change key=value --at MS
+  --device D` (add an entry through the bike log's merge). The analysis
+  primer now has the agent record setup changes with `bike note --device
+  agent` instead of editing the bike's file by hand. Spec-during: C6 §1.1
+  and §1.2, CLI reference regenerated.
+
 - **Analysis primer for the desktop agent [no-docs] (2026-10-16).** The
   data folder's `AGENTS.md` now tells an agent opened by "Ask an agent" how
   to analyse a ride: where the notes, bike and starting setup are, which
