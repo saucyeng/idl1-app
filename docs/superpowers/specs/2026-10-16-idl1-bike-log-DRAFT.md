@@ -65,15 +65,19 @@ snapshot.
 Proposed C4 additions:
 
     bikes/<bike_id>.json                  name, sheet template (§5)
-    bikelog/<bike_id>/<entry_id>.json     one file per log entry
+    bikelog/<bike_id>/note-<entry_id>.json    one file per note
+    bikelog/<bike_id>/sheet-<entry_id>.json   one file per confirmed sheet
+
+The kind is in the file name (Isaac, 2026-10-16), so the folder reads at a
+glance and the sheets load without opening any note.
 
 **What holds what:**
 
 ```
 bikes/gt-force.json            the bike: name, which sheet fields it has
-bikelog/gt-force/01J…A.json    a note: "fork service"           ┐
-bikelog/gt-force/01J…B.json    a note: "+1 LSC fork", at lap 2  ├ the bike's log
-bikelog/gt-force/01J…C.json    a confirmed sheet (full values)  ┘
+bikelog/gt-force/note-01J…A.json    a note: "fork service"           ┐
+bikelog/gt-force/note-01J…B.json    a note: "+1 LSC fork", at lap 2  ├ the bike's log
+bikelog/gt-force/sheet-01J…C.json   a confirmed sheet (full values)  ┘
 sessions/<id>/session.json     a ride: bike_id, the entry ids it took,
                                and a copy of the sheet at its start
 ```

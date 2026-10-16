@@ -131,7 +131,7 @@ of this tree, on any platform.
   tracks/<track_id>.idl0t
   profiles/<profile_id>.idl0p                       rider/bike profile snapshots (port of profile_store.dart)
   bikes/<bike_id>.json                              a bike: name, its setup-sheet fields (bike-log spec §4)
-  bikelog/<bike_id>/<entry_id>.json                 one bike-log entry, every version kept (bike-log spec §4)
+  bikelog/<bike_id>/{note,sheet}-<entry_id>.json   one bike-log entry, every version kept (bike-log spec §4)
   catalog.sqlite                                    + catalog.sqlite-wal, catalog.sqlite-shm (WAL sidecars)
   tmp/                                               atomic-write staging (§4); tmp/quarantine/ for repair (§7)
 ```
