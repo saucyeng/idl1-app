@@ -37,6 +37,9 @@
     ]
   },
   "plugins": {
+    "deep-link": {
+      "mobile": [{ "scheme": ["idl1"], "host": "pair", "appLink": false }]
+    },
     "updater": {
       "pubkey": "REPLACE_WITH_PUBKEY",
       "endpoints": [

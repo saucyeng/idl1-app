@@ -34,6 +34,7 @@ import { openUpdatePanel, runUpdateCheck, startUpdateChecker } from "./updateSta
 import UpdatePanel from "./UpdatePanel";
 import UpdateBanner from "./UpdateBanner";
 import RideFormSheet from "./RideFormSheet";
+import { useDeepLinkPairing } from "./deepLinkPairing";
 import { openDocs } from "./docsPanelStore";
 import { useDataRootPath } from "./dataRootPath";
 
@@ -125,6 +126,7 @@ function useAspectClass(): AspectClass {
  * thing behind it can actually run.
  */
 export default function AppShell() {
+  useDeepLinkPairing();
   const [state, dispatch] = useAppState();
   const [importQueue] = useImportQueue();
   const width = useWindowWidth();

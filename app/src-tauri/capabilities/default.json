@@ -7,6 +7,7 @@
     "core:default",
     "dialog:default",
     "opener:allow-reveal-item-in-dir",
+    "deep-link:default",
     {
       "identifier": "opener:allow-open-url",
       "allow": [{ "url": "https://github.com/saucyeng/idl1-app/*" }]

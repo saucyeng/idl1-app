@@ -150,6 +150,29 @@ export async function syncNow(
 /** Mints a single-use, short-lived pairing code on this side so the other
  *  side can call `pairPeer(peerId, code)` against it (C3 §3.9). Pairing is
  *  symmetric: either side presses "Show code", the other types it. */
+/** `pairingLink`'s return (C3 §3.9, added 2026-10-16). */
+export interface PairingLink {
+  /** `idl1://pair?…`: the QR code's text. */
+  link: string;
+  /** Six decimal digits, for typing by hand. */
+  code: string;
+  /** i64, ms since epoch after which the code no longer redeems. */
+  expires_at_ms: number;
+  /** The `ip:port` addresses the link carries. */
+  addrs: string[];
+}
+
+/** Starts a pairing offer and returns it as a QR link (C3 §3.9). */
+export async function pairingLink(): Promise<PairingLink> {
+  return invoke<PairingLink>("pairing_link");
+}
+
+/** Pairs using a QR pairing link (C3 §3.9): tries each address it carries,
+ *  stores the peer and remembers its address for `syncNow`. */
+export async function pairWithLink(link: string): Promise<PeerStatus> {
+  return invoke<PeerStatus>("pair_with_link", { link });
+}
+
 export async function startPairing(): Promise<PairingCode> {
   return invoke<PairingCode>("start_pairing");
 }

@@ -32,6 +32,7 @@ import {
   type PairingCode,
   type SyncResult,
 } from "../../../ipc/sync";
+import { QrPairPanel } from "./QrPairPanel";
 
 /** Raises the "sync finished" toast (UI-DIRECTION decision 21) for a
  *  completed `sync_now` transfer — the lane's one toast call site. `changed`
@@ -303,6 +304,8 @@ export default function SyncSection({ store }: SyncSectionProps) {
 
   return (
     <div className="flex flex-col gap-4">
+      <QrPairPanel />
+
       <div className="flex flex-col gap-2">
         <h3 className="font-mono text-xs uppercase tracking-[var(--tracking-label)] text-fg-dim">This device</h3>
         {thisDevice === null ? (

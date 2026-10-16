@@ -4,6 +4,16 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 
 ## [Unreleased]
 
+### Added
+
+- **Pair a phone with a QR code [docs] (2026-10-16).** Settings, Sync on
+  the computer has **Show pairing QR code**. Scanning it with the phone's
+  camera opens idl1 through an `idl1://pair` link, which pairs with the
+  computer and syncs straight away, with toasts saying what happened. The
+  link carries the computer's LAN addresses, so pairing works even where
+  the phone can't discover the computer on the network. The six digits are
+  shown too, for pairing by hand. Spec-during: C3 section 3.9.
+
 ### Fixed
 
 - **Phone fixes from the first run [no-docs] (2026-10-16).**

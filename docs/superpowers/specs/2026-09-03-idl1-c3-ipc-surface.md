@@ -2758,6 +2758,21 @@ checked before `peer_id` is even resolved, so a malformed code never sends
 a request), `not_found` (`peer_id` not currently visible on the LAN, or the
 code that peer is offering does not recognise/has expired).
 
+**`pairing_link()`** *Added 2026-10-16 (Isaac: QR pairing).* Starts a
+pairing offer as `start_pairing` does and returns it as a QR link:
+`{ link: string, code: string, expires_at_ms: number, addrs: string[] }`.
+`link` is `idl1://pair?v=1&peer=<id>&name=<name>&code=<6 digits>&addr=<ip:port>…`
+(`idl_transport::sync::pairing_link`), carrying this device's private
+IPv4 LAN addresses and its sync server's port. Errors: `sync` (no LAN
+address).
+
+**`pair_with_link(link: string)`** *Added 2026-10-16.* Pairs using a QR
+pairing link (the phone receives it from the camera through the
+`idl1` deep-link scheme): tries each address in turn (5 s each) with the
+same `POST /pair` as `pair_peer`, stores the peer, and remembers its
+address as if discovered so `sync_now` reaches it without mDNS. Return:
+`PeerStatus`. Errors: `sync` (bad link, no address answered, code refused).
+
 **`start_pairing()`** *Added post-sign (2026-09-06, lead ruling R88, L11
 Task 1).* Mints a single-use, short-lived pairing code on this side so the
 other side can call `pair_peer(peer_id, code)` against it — pairing is
