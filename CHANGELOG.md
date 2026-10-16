@@ -12,7 +12,8 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
   computer and syncs straight away, with toasts saying what happened. The
   link carries the computer's LAN addresses, so pairing works even where
   the phone can't discover the computer on the network. The six digits are
-  shown too, for pairing by hand. Spec-during: C3 section 3.9.
+  shown too, for pairing by hand. On the computer a prominent **Sync**
+  button in the Data tab opens the same panel. Spec-during: C3 section 3.9.
 
 ### Fixed
 

@@ -20,6 +20,8 @@ import type { SelectionWindow } from "../../../state/selection";
 import { ActiveChips } from "./ActiveChips";
 import { NewRidesSection } from "./NewRidesSection";
 import NotesSheet from "../Device/NotesSheet";
+import SyncSection from "../Settings/SyncSection";
+import { prefsStore } from "../Settings/appPrefsStore";
 import { DetailPane } from "./DetailPane";
 import { dataLayout } from "./layout";
 import { formatLapTimeMs } from "./format";
@@ -255,6 +257,7 @@ export default function Data() {
   const [maintenancePanelOpen, setMaintenancePanelOpen] = useState(false);
   const [filterSheetOpen, setFilterSheetOpen] = useState(false);
   const [bikeNotesOpen, setBikeNotesOpen] = useState(false);
+  const [syncOpen, setSyncOpen] = useState(false);
   const [detailSheetOpen, setDetailSheetOpen] = useState(false);
   const [appState, appDispatch] = useAppState();
   const selection = appState.selection;
@@ -633,11 +636,21 @@ export default function Data() {
 
         <div role="toolbar" aria-label="Import" className="flex flex-wrap items-center justify-between gap-2 border-b border-rule px-3 py-2">
           <ImportPanel onImported={handleImported} />
-          <Button type="button" size="sm" onClick={() => setBikeNotesOpen(true)}>
-            Bike notes
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button type="button" size="sm" onClick={() => setBikeNotesOpen(true)}>
+              Bike notes
+            </Button>
+            {/* The core routine's sync step, one tap from the library
+                (Isaac, 2026-10-16): pair a phone by QR, or sync a paired one. */}
+            <Button type="button" emphasis="accent" filled className="h-9 px-4" onClick={() => setSyncOpen(true)}>
+              Sync
+            </Button>
+          </div>
         </div>
         <NotesSheet open={bikeNotesOpen} onClose={() => setBikeNotesOpen(false)} bikeName={null} />
+        <BrandSheet open={syncOpen} onOpenChange={setSyncOpen} title="Sync">
+          {syncOpen && <SyncSection store={prefsStore} />}
+        </BrandSheet>
 
         {deletedSessionNotice !== null && (
           <div role="status" className="flex items-center justify-between gap-2 border-b border-rule bg-surface-2 px-3 py-1.5">
