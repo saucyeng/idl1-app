@@ -82,7 +82,7 @@
   --text-body-small: 12px; /* --fg-dim */
   --text-label-1: 12px; /* weight 500 */
   --text-label-2: 11px; /* weight 500, --fg-dim */
-  --text-nav: 10px; /* uppercase, --tracking-label */
+  --text-nav: 8.5px; /* uppercase, tighter tracking (Isaac, 2026-10-16: smaller tab labels) */
 
   --tracking-label: 0.1em; /* uppercase labels (brandLabelTracking 1.6px @ 12px) */
   --tracking-kicker: 0.14em; /* kickers (brandKickerTracking 2.0) */

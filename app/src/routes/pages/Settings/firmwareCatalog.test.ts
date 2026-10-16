@@ -199,7 +199,7 @@ describe("catalogVerdict", () => {
     expect(updateButtonLabel(verdict)).toBeNull();
   });
 
-  it("catalogVerdict — device ahead of the channel — says so rather than offering a downgrade", () => {
+  it("catalogVerdict — device ahead of the channel — says so and offers the channel release to go back to", () => {
     // Arrange
     const inputs = {
       firmwareRepo: "o/n",
@@ -214,9 +214,9 @@ describe("catalogVerdict", () => {
     // Assert
     expect(verdict.kind).toBe("ahead");
     expect(describeVerdict(verdict)).toBe(
-      "Device firmware v1.7.0 is ahead of the stable channel (latest v1.6.0); no action needed.",
+      "Device firmware v1.7.0 is ahead of the stable channel (latest v1.6.0). Nothing to do, unless it is a temporary build you want to replace.",
     );
-    expect(updateButtonLabel(verdict)).toBeNull();
+    expect(updateButtonLabel(verdict)).toMatch(/^Install v/);
   });
 
   it("catalogVerdict — device version that is not semver — offers nothing and says why", () => {

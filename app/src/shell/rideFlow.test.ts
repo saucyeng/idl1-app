@@ -8,17 +8,31 @@ function run(actions: RideFlowAction[], from: RideFlowState = initialRideFlow): 
 }
 
 describe("rideFlowReducer", () => {
-  it("BATCH_START — one ride — rows queued and the form opens on it, half height", () => {
+  it("BATCH_START — one ride — rows queued; the form opens on it, half height, once its first bytes arrive", () => {
     // Arrange
-    const actions: RideFlowAction[] = [{ type: "BATCH_START", files: [{ name: "s1.idl1", sizeBytes: 100 }] }];
+    const started = run([{ type: "BATCH_START", files: [{ name: "s1.idl1", sizeBytes: 100 }] }]);
 
     // Act
-    const s = run(actions);
+    const receiving = rideFlowReducer(started, { type: "PROGRESS", name: "s1.idl1", doneBytes: 10 });
 
     // Assert
-    expect(s.rows.map((r) => [r.name, r.status])).toEqual([["s1.idl1", "queued"]]);
-    expect(s.open).toBe("s1.idl1");
-    expect(s.expanded).toBe(false);
+    expect(started.rows.map((r) => [r.name, r.status])).toEqual([["s1.idl1", "queued"]]);
+    expect(started.open).toBeNull();
+    expect(receiving.open).toBe("s1.idl1");
+    expect(receiving.expanded).toBe(false);
+  });
+
+  it("BATCH_START — one ride that fails before any bytes — the form never opens", () => {
+    // Arrange
+    const started = run([{ type: "BATCH_START", files: [{ name: "s1.idl1", sizeBytes: 100 }] }]);
+
+    // Act
+    const failed = rideFlowReducer(started, { type: "FAILED", name: "s1.idl1", error: "did not answer over WiFi" });
+    const later = rideFlowReducer(failed, { type: "PROGRESS", name: "s1.idl1", doneBytes: 10 });
+
+    // Assert
+    expect(failed.open).toBeNull();
+    expect(later.open).toBeNull();
   });
 
   it("BATCH_START — several rides — the form stays closed", () => {
@@ -41,7 +55,7 @@ describe("rideFlowReducer", () => {
     const untimed = [{ name: "tmp_12345.idl1", sizeBytes: 1 }, { name: "2026-10-16_14-05-12.idl1", sizeBytes: 1 }];
 
     // Act
-    const s = run([{ type: "BATCH_START", files: sameDay }]);
+    const s = run([{ type: "BATCH_START", files: sameDay }, { type: "PROGRESS", name: "2026-10-16_14-05-12.idl1", doneBytes: 1 }]);
 
     // Assert
     expect(fileStartMs("2026-10-16_14-05-12.idl1")).toBe(Date.UTC(2026, 9, 16, 14, 5, 12));
@@ -75,6 +89,7 @@ describe("rideFlowReducer", () => {
     // Arrange
     const typed = run([
       { type: "BATCH_START", files: [{ name: "a", sizeBytes: 1 }] },
+      { type: "PROGRESS", name: "a", doneBytes: 1 },
       { type: "DRAFT", key: "a", notes: "dry and dusty" },
     ]);
     const imported = rideFlowReducer(typed, { type: "IMPORTED", name: "a", sessionId: "S" });

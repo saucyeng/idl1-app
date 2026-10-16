@@ -54,7 +54,7 @@ export default function BottomBar({ activeRoute, onNavigate, badges }: BottomBar
             aria-current={active ? "page" : undefined}
             onClick={() => onNavigate(route.id)}
             className={cn(
-              "relative flex min-h-[var(--hit-target)] flex-1 flex-col items-center justify-center gap-0.5 text-nav font-medium uppercase tracking-[var(--tracking-label)]",
+              "relative flex min-h-[var(--hit-target)] flex-1 flex-col items-center justify-center gap-0.5 text-nav font-medium uppercase tracking-[0.05em]",
               active ? "text-fg" : "text-fg-dim",
             )}
           >

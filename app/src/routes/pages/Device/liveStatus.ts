@@ -70,20 +70,21 @@ export interface RecordingDuration {
 }
 
 /**
- * Resolves the recording duration to show (ruling R113): prefers the
- * device-reported `status.logging_elapsed_s` whenever present, and falls
- * back to `clientElapsedMs` — this session's own `Date.now()`-based clock,
- * started the moment it first observed `status.logging === true`
- * (`index.tsx`) — as `source: "client"`, which the caller renders dimmed
- * per SPEC §7.3's staleness rule: it is not the device's own account of the
- * session, only a local stand-in for firmware that hasn't sent
- * `LoggingElapsed` yet (or hasn't been updated to). Neither source present
- * yields `source: "none"`, `ms: null` — nothing to show, not a `0:00` that
- * would misreport an unknown duration as a just-started one.
+ * Resolves the recording duration to show (ruling R113, amended 2026-10-16):
+ * the larger of the device-reported `status.logging_elapsed_s` and
+ * `clientElapsedMs` — this session's own `Date.now()`-based clock, started
+ * the moment it first observed `status.logging === true` (`index.tsx`).
+ * The device's count wins after an app restart (the client clock restarts
+ * at 0); the client's wins when the device's value is stale or stuck at 0,
+ * which froze the timer at 0:00 on 2026-10-16. `source: "client"` is
+ * rendered dimmed per SPEC §7.3's staleness rule. Neither present yields
+ * `source: "none"`, `ms: null` — nothing to show, not a `0:00` that would
+ * misreport an unknown duration as a just-started one.
  */
 export function recordingDuration(status: DeviceStatus | null, clientElapsedMs: number | null): RecordingDuration {
   const deviceS = status?.logging_elapsed_s ?? null;
-  if (deviceS !== null) return { ms: deviceS * 1000, source: "device" };
+  const deviceMs = deviceS === null ? null : deviceS * 1000;
+  if (deviceMs !== null && (clientElapsedMs === null || deviceMs >= clientElapsedMs)) return { ms: deviceMs, source: "device" };
   if (clientElapsedMs !== null) return { ms: clientElapsedMs, source: "client" };
   return { ms: null, source: "none" };
 }

@@ -117,9 +117,9 @@ describe("recordingDuration", () => {
     const status = statusWith({ logging_elapsed_s: 305 });
 
     // Act
-    const result = recordingDuration(status, 999_000);
+    const result = recordingDuration(status, 12_000);
 
-    // Assert
+    // Assert — the app restarted mid-recording: the device's count is the longer.
     expect(result).toEqual({ ms: 305_000, source: "device" });
   });
 
@@ -155,9 +155,20 @@ describe("recordingDuration", () => {
     const status = statusWith({ logging_elapsed_s: 0 });
 
     // Act
-    const result = recordingDuration(status, 30_000);
+    const result = recordingDuration(status, 0);
 
     // Assert
     expect(result).toEqual({ ms: 0, source: "device" });
+  });
+
+  it("recordingDuration — device stuck at 0 while the client clock runs — client source, so the timer advances", () => {
+    // Arrange
+    const status = statusWith({ logging_elapsed_s: 0 });
+
+    // Act
+    const result = recordingDuration(status, 30_000);
+
+    // Assert
+    expect(result).toEqual({ ms: 30_000, source: "client" });
   });
 });

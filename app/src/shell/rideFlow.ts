@@ -46,9 +46,12 @@ export interface RideFlowState {
   /** A bike name the form asked to make the logger's default; the Logger
    *  screen puts it in its settings draft and clears it. */
   pendingLoggerBike: string | null;
+  /** The ride the form will slide up for once its first bytes arrive: a
+   *  download that fails before then opens nothing (2026-10-16). */
+  autoOpen: string | null;
 }
 
-export const initialRideFlow: RideFlowState = { rows: [], drafts: {}, open: null, expanded: false, pendingLoggerBike: null };
+export const initialRideFlow: RideFlowState = { rows: [], drafts: {}, open: null, expanded: false, pendingLoggerBike: null, autoOpen: null };
 
 /** Actions. */
 export type RideFlowAction =
@@ -132,11 +135,14 @@ export function rideFlowReducer(state: RideFlowState, action: RideFlowAction): R
         ...kept,
         ...action.files.map((f): DownloadRow => ({ name: f.name, sizeBytes: f.sizeBytes, status: "queued", doneBytes: 0, sessionId: null, error: null })),
       ];
-      const open = autoOpens(action.files) && state.open === null ? autoOpenTarget(action.files) : state.open;
-      return { ...state, rows, open, expanded: open === state.open ? state.expanded : false };
+      const autoOpen = autoOpens(action.files) && state.open === null ? autoOpenTarget(action.files) : null;
+      return { ...state, rows, autoOpen };
     }
-    case "PROGRESS":
-      return setRow(state, action.name, { status: "downloading", doneBytes: action.doneBytes });
+    case "PROGRESS": {
+      const next = setRow(state, action.name, { status: "downloading", doneBytes: action.doneBytes });
+      if (action.name !== state.autoOpen || action.doneBytes <= 0 || state.open !== null) return next;
+      return { ...next, open: action.name, expanded: false, autoOpen: null };
+    }
     case "IMPORTING":
       return setRow(state, action.name, { status: "importing" });
     case "IMPORTED": {
@@ -148,8 +154,10 @@ export function rideFlowReducer(state: RideFlowState, action: RideFlowAction): R
       const drafts = draft === undefined ? next.drafts : { ...rest, [key]: draft };
       return { ...next, drafts, open: next.open === action.name ? key : next.open };
     }
-    case "FAILED":
-      return setRow(state, action.name, { status: "failed", error: action.error });
+    case "FAILED": {
+      const next = setRow(state, action.name, { status: "failed", error: action.error });
+      return action.name === state.autoOpen ? { ...next, autoOpen: null } : next;
+    }
     case "OPEN":
       return { ...state, open: action.key, expanded: action.expanded };
     case "CLOSE":

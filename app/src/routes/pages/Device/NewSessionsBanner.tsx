@@ -107,7 +107,7 @@ export default function NewSessionsBanner({ deviceId, knownSessionIds, onImporte
     // The Data tab lists these and the ride form slides up for a single one.
     dispatchRideFlow({ type: "BATCH_START", files: files.map((f) => ({ name: f.name, sizeBytes: f.sizeBytes })) });
     let imported = 0;
-    for (const file of files) {
+    for (const [index, file] of files.entries()) {
       if (stopped.current) return;
       try {
         const result = await downloadFile(deviceId, file.name, (progress) => {
@@ -135,8 +135,14 @@ export default function NewSessionsBanner({ deviceId, knownSessionIds, onImporte
       } catch (err) {
         if (stopped.current) return;
         const error = describeIpcError(err as DeviceIpcError);
-        dispatchRideFlow({ type: "FAILED", name: file.name, error });
-        dispatch({ type: "FILE_FAILED", error });
+        // A WiFi or Bluetooth failure fails the rest of the batch the same
+        // way: say it once and stop, rather than retrying every file.
+        const link = (err as DeviceIpcError).kind === "wifi" || (err as DeviceIpcError).kind === "ble";
+        for (const failed of link ? files.slice(index) : [file]) {
+          dispatchRideFlow({ type: "FAILED", name: failed.name, error });
+          dispatch({ type: "FILE_FAILED", error });
+        }
+        if (link) break;
       }
     }
     if (stopped.current) return;

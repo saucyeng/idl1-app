@@ -274,7 +274,7 @@ export default function FirmwareSection({ store, showRepository = true }: Firmwa
           <Button disabled={card.busy} onClick={() => void check(effectiveRepo(repo), channel)}>
             Check now
           </Button>
-          {updateLabel !== null && verdict.kind === "update-available" ? (
+          {updateLabel !== null && (verdict.kind === "update-available" || verdict.kind === "ahead") ? (
             <Button
               disabled={card.busy || blockedReason !== null}
               onClick={() => void runPush({ kind: "catalog", version: verdict.latest.version })}

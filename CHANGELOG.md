@@ -4,6 +4,22 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 
 ## [Unreleased]
 
+### Fixed
+
+- **Phone fixes from the first run [no-docs] (2026-10-16).**
+  - The ride form no longer slides up when a download fails before any
+    bytes arrive: it waits for the ride's first bytes.
+  - A WiFi or Bluetooth failure now fails the rest of a download batch with
+    one message instead of retrying (and repeating the error for) every
+    ride.
+  - The record button's timer shows the longer of the logger's elapsed
+    time and the phone's own count, so a logger reporting 0 no longer
+    freezes it at 0:00.
+  - Firmware ahead of its channel (a development build) is now offered the
+    channel's release to go back to (SPEC §27.7's no-downgrade rule
+    amended, Isaac).
+  - Smaller bottom tab labels.
+
 ### Added
 
 - **`idl-rs bike` commands [docs] (2026-10-16, R251).** `bike list`,

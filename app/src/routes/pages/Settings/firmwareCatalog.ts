@@ -170,15 +170,24 @@ export function describeVerdict(verdict: CatalogVerdict): string {
     case "up-to-date":
       return `Device firmware v${verdict.deviceVersion} is up to date.`;
     case "ahead":
-      return `Device firmware v${verdict.deviceVersion} is ahead of the ${verdict.channel} channel (latest v${verdict.latest.version}); no action needed.`;
+      return `Device firmware v${verdict.deviceVersion} is ahead of the ${verdict.channel} channel (latest v${verdict.latest.version}). Nothing to do, unless it is a temporary build you want to replace.`;
     case "update-available":
       return `Update available — v${verdict.deviceVersion} → v${verdict.latest.version}`;
   }
 }
 
 /** The label of the button that starts a catalog push, or `null` when the
- *  verdict offers nothing to install. A device that is behind is the only
- *  case that offers one — this is never a downgrade prompt (SPEC §27.7). */
+ *  verdict offers nothing to install. A device that is behind is offered
+ *  the update; one ahead of the channel (a development build) is offered
+ *  the channel's release, so a temporary build can be rolled back (Isaac,
+ *  2026-10-16, amending SPEC §27.7's no-downgrade rule). */
 export function updateButtonLabel(verdict: CatalogVerdict): string | null {
-  return verdict.kind === "update-available" ? `Update to v${verdict.latest.version}` : null;
+  switch (verdict.kind) {
+    case "update-available":
+      return `Update to v${verdict.latest.version}`;
+    case "ahead":
+      return `Install v${verdict.latest.version} (go back to the ${verdict.channel} release)`;
+    default:
+      return null;
+  }
 }
