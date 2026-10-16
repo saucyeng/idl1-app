@@ -117,9 +117,10 @@ Sync manifest classes:
 **`session.json` (C1 §6), additive:**
 
 - `bike_id`: which bike. Today's `bike` string stays as the display name.
-- `bike_log`: the `entry_id`s attached to this session.
-- `setup_sheet`: the running sheet at session start, copied in. This fills
-  R190's snapshot. The existing `bike_profile_snapshot` is the logger
+- `bike_log`: `{entry_ids, after_ms, until_ms, setup_sheet}`: the entries
+  attached, the time window they came from (so the next session knows
+  where to start), and the running sheet at session start, copied in. This
+  fills R190's snapshot (C1 §6 as amended 2026-10-16). The existing `bike_profile_snapshot` is the logger
   config and stays as it is.
 
 The catalog indexes entries for search (C4 §5). It is still only an index

@@ -776,6 +776,15 @@ under one key due to last-ulp CPU differences, and either is valid).
                                           // mismatch against the running build's constant (including
                                           // an omitted value) is stale exactly like a changed
                                           // "track_visits_library_hash"; does not bump schema_version
+  "bike_id": "gt-force",                 // string | omitted — added 2026-10-16 (bike-log spec §4), additive:
+                                          // the bikes/<id>.json this session was ridden on; `bike` stays the name
+  "bike_log": {                          // object | omitted — added 2026-10-16 (bike-log spec §6), additive:
+    "entry_ids": ["01J…"],               //   the log entries this session took, in time order
+    "after_ms": 1760000000000,           //   window: after the bike's previous session's until_ms (null = first)
+    "until_ms": 1760003600000,           //   …up to and including this session's end
+    "setup_sheet": { "baseline": "01J…", "values": { "fork.lsc": 10 }, "since": [] }
+  }                                       //   the running sheet at session start (R190's snapshot).
+                                          // Sync merges bike_id and bike_log together, newer side wins.
 }
 ```
 
