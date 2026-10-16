@@ -1,4 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
+import type { SessionBikeLog } from "./bikelog";
 
 /** Catalog `sessions` table row (C3 §3.2, C4 §5), column for column. */
 export interface SessionSummary {
@@ -161,6 +162,10 @@ export interface SessionDetail {
   starred_lap_number: number | null;
   /** opaque, do not parse (C1 §6) */
   track_visits_library_hash: string | null;
+  /** The bike this session was ridden on; "" = not attached (C3 §3.11). */
+  bike_id?: string;
+  /** What the session took from its bike's log, or null (C1 §6). */
+  bike_log?: SessionBikeLog | null;
 }
 
 /** One `lap_summary` row for a (session, lap, channel) — C4 §5. */

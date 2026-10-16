@@ -3038,6 +3038,10 @@ the bike and its log. Types are core's
 Errors: `invalid_argument` (an id that isn't a safe file name, or no such
 bike), `not_found` (session), `io`.
 
+`get_session`'s `SessionDetail` (§3.2) gains `bike_id: string` (`""` = not
+attached) and `bike_log: SessionBikeLog | null` (amended 2026-10-16), read
+from `session.json` (C1 §6).
+
 ## 4. Interaction budget
 
 From the principle "no IPC on the interaction path" (design §3, §6):
