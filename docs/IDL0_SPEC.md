@@ -448,8 +448,8 @@ ESP32 runs as AP. Phone connects directly, no router.
 | `/handoff` | POST | 200 | App acknowledges the HTTP link is up; firmware then drops BLE (disconnects + stops advertising). Idempotent. See §10.4. |
 | `/wifi_off` | POST | 200 | Exits WiFi mode. Response flushes (~500 ms delay), then AP tears down and BLE advertising resumes. The normal WiFi-exit path once BLE is off. |
 | `/files` | GET | JSON array | `[{"name":"...", "size":N, "session_id":"<32-hex>"}]` — `session_id` is the 16-byte header UUID as 32 lowercase hex chars (no dashes), read from each file; omitted only if the header is unreadable. The app diffs it against the library to mark files NEW vs in-library (§24). |
-| `/download?file=N` | GET | binary stream | `Range: bytes=START[-END]` supported (`206` + `Content-Range`). The app resumes interrupted downloads from the received offset — safe because session files are immutable after recording. |
-| `/delete?file=N` | GET | 200/error | |
+| `/download?file=<name>` | GET | binary stream | `<name>` is the file's name exactly as `/files` lists it, percent-encoded (clarified 2026-10-16: the firmware has always looked files up by name; the app had sent the list position and every download failed with 404). `Range: bytes=START[-END]` supported (`206` + `Content-Range`). The app resumes interrupted downloads from the received offset — safe because session files are immutable after recording. |
+| `/delete?file=<name>` | GET | 200/error | `<name>` as for `/download`. |
 | `/config` | POST | 200/error | Push `idl0_config.json`. **On success the device reboots** (`esp_restart`, ~500 ms after the `200`) to apply the new config in full — it is read at boot only (HRM enable/address, IMU ODR/ranges). The GPS module is UART-only with no power-enable GPIO, so its fix survives the SoC reset. The app re-establishes the BLE link after the push; the device boots back into idle mode. |
 | `/ota` | POST | 200/error | OTA firmware update — see below |
 

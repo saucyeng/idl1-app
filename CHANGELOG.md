@@ -7,6 +7,10 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 ### Fixed
 
 - **Phone fixes from the first run [no-docs] (2026-10-16).**
+  - **Downloads from the logger work.** The app asked for a file by its
+    position in the list (`/download?file=3`) while the firmware looks
+    files up by name, so every download got "no such file". The app now
+    asks by name (as does delete). SPEC §6.1 clarified.
   - The ride form no longer slides up when a download fails before any
     bytes arrive: it waits for the ride's first bytes.
   - A WiFi or Bluetooth failure now fails the rest of a download batch with
