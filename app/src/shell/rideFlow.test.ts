@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { autoOpens, draftsToKeep, draftsToSave, initialRideFlow, rideFlowReducer, sessionIdFor, sessionKey } from "./rideFlow";
+import { autoOpens, draftsToKeep, fileStartMs, draftsToSave, initialRideFlow, rideFlowReducer, sessionIdFor, sessionKey } from "./rideFlow";
 import type { RideFlowAction, RideFlowState } from "./rideFlow";
 
 function run(actions: RideFlowAction[], from: RideFlowState = initialRideFlow): RideFlowState {
@@ -32,6 +32,23 @@ describe("rideFlowReducer", () => {
     expect(autoOpens(files)).toBe(false);
     expect(s.open).toBeNull();
     expect(s.rows).toHaveLength(2);
+  });
+
+  it("autoOpens — rides all from one day — opens on the latest; across days or without times — stays closed", () => {
+    // Arrange
+    const sameDay = [{ name: "2026-10-16_10-20-00.idl1", sizeBytes: 1 }, { name: "2026-10-16_14-05-12.idl1", sizeBytes: 1 }];
+    const twoDays = [{ name: "2026-10-12_10-00-00.idl1", sizeBytes: 1 }, { name: "2026-10-16_14-05-12.idl1", sizeBytes: 1 }];
+    const untimed = [{ name: "tmp_12345.idl1", sizeBytes: 1 }, { name: "2026-10-16_14-05-12.idl1", sizeBytes: 1 }];
+
+    // Act
+    const s = run([{ type: "BATCH_START", files: sameDay }]);
+
+    // Assert
+    expect(fileStartMs("2026-10-16_14-05-12.idl1")).toBe(Date.UTC(2026, 9, 16, 14, 5, 12));
+    expect(fileStartMs("tmp_12345.idl1")).toBeNull();
+    expect(s.open).toBe("2026-10-16_14-05-12.idl1");
+    expect(autoOpens(twoDays)).toBe(false);
+    expect(autoOpens(untimed)).toBe(false);
   });
 
   it("row lifecycle — progress, import — status and session id follow, imported rows leave on the next batch", () => {

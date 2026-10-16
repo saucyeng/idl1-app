@@ -6,7 +6,8 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 
 ### Added
 
-- **Ride form [docs] (2026-10-16).** When a single ride starts downloading,
+- **Ride form [docs] (2026-10-16).** When a single ride, or rides all from
+  one day (read from the logger's timestamped file names), starts downloading,
   the ride form slides up over the bottom half of whatever tab is open:
   title and notes first, so typing a few lines (or talking through the
   keyboard mic) is the whole routine. Notes typed before the ride has

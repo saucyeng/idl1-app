@@ -75,10 +75,37 @@ export function sessionIdFor(state: RideFlowState, key: string): string | null {
   return state.rows.find((r) => r.name === key)?.sessionId ?? null;
 }
 
-/** The form slides up by itself only for a single ride: a batch of several
- *  waits in the Data tab (Isaac, 2026-10-16). */
+/** A logger file's start, UTC ms, from its name: the firmware renames each
+ *  file to its UTC start (`2026-10-16_14-05-12.idl1`) once GPS gives the
+ *  time. `null` for a file still named `tmp_…` (no GPS fix). */
+export function fileStartMs(name: string): number | null {
+  const m = /^(\d{4})-(\d{2})-(\d{2})_(\d{2})-(\d{2})-(\d{2})\./.exec(name);
+  if (m === null) return null;
+  const [, y, mo, d, h, mi, s] = m.map(Number);
+  return Date.UTC(y, mo - 1, d, h, mi, s);
+}
+
+/** Local calendar day of a UTC-ms instant, as `YYYY-M-D`. */
+function localDay(ms: number): string {
+  const t = new Date(ms);
+  return `${t.getFullYear()}-${t.getMonth() + 1}-${t.getDate()}`;
+}
+
+/** The form slides up by itself for a single ride, or for rides all from
+ *  the same local day; anything else waits in the Data tab (Isaac,
+ *  2026-10-16). */
 export function autoOpens(files: { name: string }[]): boolean {
-  return files.length === 1;
+  if (files.length === 1) return true;
+  const starts = files.map((f) => fileStartMs(f.name));
+  if (files.length === 0 || starts.some((t) => t === null)) return false;
+  return new Set(starts.map((t) => localDay(t as number))).size === 1;
+}
+
+/** Which ride the form opens on: the latest by start time (the one just
+ *  ridden), else the last listed. */
+function autoOpenTarget(files: { name: string }[]): string {
+  const timed = files.map((f) => ({ name: f.name, t: fileStartMs(f.name) ?? -Infinity }));
+  return timed.reduce((a, b) => (b.t >= a.t ? b : a)).name;
 }
 
 /** Drafts with unsaved edits whose session exists, ready to write. */
@@ -105,7 +132,7 @@ export function rideFlowReducer(state: RideFlowState, action: RideFlowAction): R
         ...kept,
         ...action.files.map((f): DownloadRow => ({ name: f.name, sizeBytes: f.sizeBytes, status: "queued", doneBytes: 0, sessionId: null, error: null })),
       ];
-      const open = autoOpens(action.files) && state.open === null ? action.files[0].name : state.open;
+      const open = autoOpens(action.files) && state.open === null ? autoOpenTarget(action.files) : state.open;
       return { ...state, rows, open, expanded: open === state.open ? state.expanded : false };
     }
     case "PROGRESS":
