@@ -6,12 +6,6 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 
 ### Added
 
-- **Repeated logger events fold into one warning [no-docs] (2026-10-16).**
-  A problem that lasts (an IMU overrunning all session) used to give one
-  import warning per second; now each (event, source) gives one warning
-  with the total count, the number of reports and the first and last
-  device time. Spec-during: `.idl1` DRAFT spec, Diagnostics.
-
 - **High-g merged into the accel channels at import [docs] (2026-10-15).**
   For an `.idl1` IMU axis with both paths, `IMU1_AccelX` is now the merged
   channel: low-g, switching to high-g where a low-g sample is at ≥95 % of
