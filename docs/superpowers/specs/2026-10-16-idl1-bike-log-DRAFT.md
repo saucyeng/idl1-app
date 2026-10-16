@@ -176,16 +176,13 @@ Decided 2026-10-16 (Isaac):
    in the ride form. Changing it there offers to make that bike the
    logger's new default.
 4. **Clicks are counted from fully closed.** Adjustments are written the
-   way Isaac writes them, as signed changes from the baseline (sign
-   convention: see open question below).
+   way Isaac writes them, as signed changes from the baseline (item 6).
 5. **Delete:** the note disappears (a `deleted` version, synced). Simplest.
 
-Open:
-
-- **Sign of an adjustment.** Isaac, 2026-10-16: "+ is open, - is closed"
-  and "+1 LSC is closing the LSC by 1 click". These disagree, so the sign
-  is not yet settled. The stored value stays the absolute click count from
-  closed either way; the sign only decides how "+1 LSC" in a note is read.
+6. **Sign of an adjustment:** `+` is more damping, `-` is less (Isaac,
+   2026-10-16: "+1 is closing by a click"). Since clicks are counted from
+   fully closed, "+1 LSC" from 10 clicks out makes it 9 out. The sheet
+   stores the absolute count; the sign only decides how a note is read.
 
 Later (not this spec): parts of the Logger screen should work with no
 logger connected, such as preparing a config to send later (Isaac,
