@@ -110,10 +110,15 @@ export default function NewSessionsBanner({ deviceId, knownSessionIds, onImporte
     for (const [index, file] of files.entries()) {
       if (stopped.current) return;
       try {
-        const result = await downloadFile(deviceId, file.name, (progress) => {
-          dispatch({ type: "PROGRESS", progress });
-          dispatchRideFlow({ type: "PROGRESS", name: file.name, doneBytes: progress.done });
-        });
+        const result = await downloadFile(
+          deviceId,
+          file.name,
+          (progress) => {
+            dispatch({ type: "PROGRESS", progress });
+            dispatchRideFlow({ type: "PROGRESS", name: file.name, doneBytes: progress.done });
+          },
+          file.sizeBytes,
+        );
         dispatch({ type: "IMPORT_START" });
         dispatchRideFlow({ type: "IMPORTING", name: file.name });
         const outcome = await importFile(result.path, LOGGER_IMPORTER_ID, () => {});

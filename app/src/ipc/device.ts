@@ -99,11 +99,14 @@ export async function listRecentDeviceFiles(deviceId: string): Promise<RecentDev
 export async function downloadFile(
   deviceId: string,
   fileName: string,
-  onProgress: (p: Progress) => void
+  onProgress: (p: Progress) => void,
+  sizeBytes?: number
 ): Promise<DownloadResult> {
   const progress = new Channel<Progress>();
   progress.onmessage = onProgress;
-  return invoke<DownloadResult>("download_file", { deviceId, fileName, progress });
+  // With the size known (the Bluetooth file list has it), the logger's WiFi
+  // file list is skipped (C3 §3.8, 2026-10-16).
+  return invoke<DownloadResult>("download_file", { deviceId, fileName, progress, sizeBytes: sizeBytes ?? null });
 }
 
 /** Validates and pushes `configJson` (SPEC §8's schema) to a connected

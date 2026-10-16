@@ -2306,7 +2306,9 @@ interface DeviceFile {
 ```
 Errors: `ble`, `wifi`.
 
-**`download_file(device_id: string, file_name: string, progress: Channel<Progress>)`**
+**`download_file(device_id: string, file_name: string, progress: Channel<Progress>, size_bytes?: number)`**
+*Amended 2026-10-16:* with `size_bytes` (from the BLE file list) the WiFi `/files` list is skipped; the logger could fail to build it (500) on a card with many sessions.
+
 `Progress.done`/`.total` are bytes transferred/expected.
 Return:
 ```ts

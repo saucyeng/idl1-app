@@ -18,6 +18,9 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 ### Fixed
 
 - **Phone fixes from the first run [no-docs] (2026-10-16).**
+  - Downloads no longer ask the logger for its WiFi file list, which
+    failed with a 500 on a card holding many sessions; the size comes from
+    the Bluetooth list. (Firmware also now streams that list.)
   - **Downloads from the logger work.** The app asked for a file by its
     position in the list (`/download?file=3`) while the firmware looks
     files up by name, so every download got "no such file". The app now
