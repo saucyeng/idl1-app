@@ -58,6 +58,17 @@ export interface NewSessionsBannerProps {
  * record ends a transfer: the file in flight keeps its partial download
  * (`download_file` resumes it), and no further file is started.
  */
+/** Loggers whose automatic transfer failed this app session. Automatic
+ *  download stays off for them until a download succeeds or the app
+ *  restarts: the banner remounts on every reconnect, and a transfer that
+ *  fails each time must not put the logger back in WiFi mode each time
+ *  (2026-10-16 field run: the logger looked stuck in WiFi mode). */
+const autoHeld = new Set<string>();
+
+/** Loggers with a transfer running. A remount mid-transfer (leaving the
+ *  Logger screen and coming back) must not start a second one. */
+const running = new Set<string>();
+
 export default function NewSessionsBanner({ deviceId, knownSessionIds, onImported, bikeName }: NewSessionsBannerProps) {
   const [state, dispatch] = useReducer(newSessionsReducer, initialNewSessionsState);
   const view = bannerView(state);
@@ -70,10 +81,11 @@ export default function NewSessionsBanner({ deviceId, knownSessionIds, onImporte
     stopped.current = false;
     let live = true;
     void prefsStore.get().then((prefs) => {
-      if (live) auto.current = prefs.ui.auto_download;
-      if (live && prefs.ui.auto_download && autoStep(state, autoChecked.current, autoTransferred.current) === "check") {
+      const on = prefs.ui.auto_download && !autoHeld.has(deviceId) && !running.has(deviceId);
+      if (live) auto.current = on;
+      if (live && on && autoStep(state, autoChecked.current, autoTransferred.current) === "check") {
         autoChecked.current = true;
-        check();
+        check(true);
       }
     });
     return () => {
@@ -88,18 +100,19 @@ export default function NewSessionsBanner({ deviceId, knownSessionIds, onImporte
     if (auto.current !== true || state.phase !== "ready") return;
     if (autoStep(state, autoChecked.current, autoTransferred.current) === "download") {
       autoTransferred.current = true;
-      void transfer(state.files);
+      void transfer(state.files, true);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state]);
 
-  function check(): void {
+  function check(automatic: boolean = false): void {
     dispatch({ type: "CHECK_START" });
     // Over Bluetooth first (the ten newest files, no WiFi); firmware without
-    // that command falls back to the full list over WiFi.
+    // that command falls back to the full list over WiFi — never on its own,
+    // since that puts the logger in WiFi mode.
     listRecentDeviceFiles(deviceId)
       .then((recent) => recent.files)
-      .catch(() => listDeviceFiles(deviceId))
+      .catch((err: unknown) => (automatic ? Promise.reject(err) : listDeviceFiles(deviceId)))
       .then((files) => dispatch({ type: "CHECK_DONE", files: toFileViews(files, knownSessionIds) }))
       .catch((err: DeviceIpcError) => dispatch({ type: "CHECK_FAILED", error: describeIpcError(err) }));
   }
@@ -139,7 +152,20 @@ export default function NewSessionsBanner({ deviceId, knownSessionIds, onImporte
    *  the rides come in, each is imported as it lands, and WiFi mode ends
    *  over WiFi. The Logger screen pauses its Bluetooth poll meanwhile and
    *  reconnects afterwards (`shell/loggerLink.ts`). */
-  async function transfer(files: QueuedFile[]): Promise<void> {
+  async function transfer(files: QueuedFile[], automatic: boolean = false): Promise<void> {
+    if (running.has(deviceId)) return;
+    running.add(deviceId);
+    try {
+      const clean = await transferBatch(files);
+      if (clean) autoHeld.delete(deviceId);
+      else if (automatic) autoHeld.add(deviceId);
+    } finally {
+      running.delete(deviceId);
+    }
+  }
+
+  /** One batch; true when every file came in and imported. */
+  async function transferBatch(files: QueuedFile[]): Promise<boolean> {
     dispatch({ type: "TRANSFER_START" });
     // The Data tab lists these and the ride form slides up for a single one.
     dispatchRideFlow({ type: "BATCH_START", files: files.map((f) => ({ name: f.name, sizeBytes: f.sizeBytes })) });
@@ -148,7 +174,10 @@ export default function NewSessionsBanner({ deviceId, knownSessionIds, onImporte
     // Imports run one after another in arrival order, while the next ride
     // downloads.
     let imports: Promise<void> = Promise.resolve();
+    let failed = 0;
+    let cancelled = false;
     const failOne = (name: string, error: string) => {
+      failed += 1;
       dispatchRideFlow({ type: "FAILED", name, error });
       dispatch({ type: "FILE_FAILED", error });
     };
@@ -186,6 +215,7 @@ export default function NewSessionsBanner({ deviceId, knownSessionIds, onImporte
         onEvent,
       );
       await imports;
+      cancelled = summary.cancelled;
       dispatchLoggerLink({ type: "TRANSFER_ENDED", deviceId, handedOff: summary.handed_off, wifiClosed: summary.wifi_closed });
       if (summary.handed_off && !summary.wifi_closed) {
         toast.info("WiFi to the logger dropped", { description: "It comes back on Bluetooth within five minutes, or press its button. The rest resumes next time." });
@@ -198,12 +228,14 @@ export default function NewSessionsBanner({ deviceId, knownSessionIds, onImporte
       for (const file of files) failOne(file.name, error);
       dispatchLoggerLink({ type: "TRANSFER_ENDED", deviceId, handedOff: false, wifiClosed: true });
     }
-    if (stopped.current) return;
+    const clean = failed === 0 && !cancelled && imported === files.length;
+    if (stopped.current) return clean;
     if (imported > 0) {
       onImported();
       const descriptor = toastFor({ kind: "transferComplete", fileCount: imported });
       toast.success(descriptor.title, { description: descriptor.detail });
     }
+    return clean;
   }
 
   function onAction(): void {

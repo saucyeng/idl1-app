@@ -22,6 +22,11 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
   told first, the link is closed in the background, a download with no
   bytes for 20 s fails as a dropped link (so WiFi mode is ended or the
   failsafe runs), and Record can cancel from the start of the batch.
+  Automatic download no longer retries a failed transfer on every
+  reconnect (each retry put the logger back in WiFi mode, so it looked
+  stuck there): after a failure it waits for a manual Download or an app
+  restart, never starts while a transfer is already running, and never
+  falls back to the WiFi file list on its own.
 
 - **Pair a phone with a QR code [docs] (2026-10-16).** Settings, Sync on
   the computer has **Show pairing QR code**. Scanning it with the phone's
