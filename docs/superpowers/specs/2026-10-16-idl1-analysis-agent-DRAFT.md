@@ -1,7 +1,6 @@
 # DRAFT — How the analysis agent works
 
-Status: for Isaac's review, 2026-10-16. Nothing is built from this until he
-has read it. It turns the ride-analysis draft (2026-10-14, §2–7) into the
+Status: reviewed by Isaac, 2026-10-16 (decisions in §9). It turns the ride-analysis draft (2026-10-14, §2–7) into the
 agent's working rules, now that the ride form and the bike log exist.
 
 ## 1. The role in one line
@@ -16,7 +15,7 @@ how sure it is, and when the data can't tell.
 |---|---|---|
 | **Primer** (fixed, versioned in the repo, written into the data folder) | The data model and units, the sensors and where they are mounted (frame, fork lower, swingarm) with their ranges and clipping, the workbook language, a short chassis-dynamics reference, and these rules | — |
 | **This ride** | Facts (laps, times, heart rate, distance), your title and notes, the bike-log entries the ride took, the setup sheet it started with | Raw sample arrays in the prompt: it measures through tools |
-| **History** (bounded) | Earlier rides on the same bike, summarised: their notes, setup, and the conclusions of earlier conversations | Everything at once: only what is relevant to the questions |
+| **History** (bounded) | Earlier rides on the same bike, and rides on other bikes at the same track, summarised: their notes, setup, and the conclusions of earlier conversations | Everything at once: only what is relevant to the questions |
 
 ## 3. What it may do
 
@@ -25,12 +24,12 @@ how sure it is, and when the data can't tell.
   can't, it adds a line to a **gaps list**. Recurring gaps become engine
   features; that is how the phone, which runs only workbook cells, catches
   up.
-- **Write** only two kinds of thing:
+- **Write** two kinds of thing:
   - the ride **report**, which is a workbook: prose around numbers, every
     number produced by a cell you can open;
-  - **proposals** for the bike log, which you accept with a tap (§5).
-- **Never** edits a session, a log file, the bike log or the setup sheet
-  directly.
+  - **bike-log entries** from your notes, which update the setup sheet
+    (§5).
+- **Never** edits a session or a log file.
 
 ## 4. The loop
 
@@ -47,11 +46,15 @@ how sure it is, and when the data can't tell.
 
 ## 5. Setup changes from your notes
 
-When your ride note mentions a setup change, the agent proposes a bike-log
-entry: "bled the fork after lap 2" becomes a note placed at lap 2; "+1 LSC
-fork" becomes a change of fork LSC from 10 to 9 clicks (`+` closes one
-click, counted from fully closed). You see each proposal and tap to accept
-or dismiss. Nothing reaches the sheet without your tap.
+The agent keeps the setup sheet up to date from your notes (Isaac,
+2026-10-16: "that's kind of the idea"). When a ride note mentions a setup
+change, it writes a bike-log entry: "bled the fork after lap 2" becomes a
+note placed at lap 2; "+1 LSC fork" becomes a change of fork LSC from 10 to
+9 clicks (`+` closes one click, counted from fully closed). Each entry is
+marked as written by the agent (`device: "agent"`) and quotes the note it
+came from, so the Notes sheet shows what it did and why; a wrong one is
+deleted or edited like any other note, and the version history keeps a
+record of both.
 
 ## 6. Honesty rules (in the primer, checked in review)
 
@@ -78,11 +81,11 @@ or dismiss. Nothing reaches the sheet without your tap.
 2. Then the same primer wired into the app on the desktop.
 3. Then the phone, with an API key.
 
-## 9. Questions for Isaac
+## 9. Decisions (Isaac, 2026-10-16)
 
-1. **History scope:** earlier rides on the same bike only, or also other
-   bikes at the same track?
-2. **Gaps list:** a file in the data folder (`agent-gaps.md`) that I read
-   when planning engine work, or somewhere else?
-3. **Proposals (§5):** tap to accept each one (as drawn), or accept all at
-   once with a review list?
+1. **History:** the same bike, and other bikes at the same track.
+2. **Gaps list:** the agent's own to-do list for the engine, not where
+   your feedback goes (that is the conversations and the bike log): a file
+   in the data folder, `agent-gaps.md`, read when planning engine work.
+3. **Setup changes:** the agent writes them to the bike log itself (§5);
+   no accept step.
