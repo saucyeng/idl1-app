@@ -29,6 +29,8 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
   falls back to the WiFi file list on its own.
   A firmware update's reconnect attempts are now capped at 15 s each, so
   the screen can no longer hang on "attempt 1" with no way out.
+  A download shorter than the size the logger listed is now an error (the
+  partial file is kept to resume) instead of being imported as a ride.
 
 - **Pair a phone with a QR code [docs] (2026-10-16).** Settings, Sync on
   the computer has **Show pairing QR code**. Scanning it with the phone's
