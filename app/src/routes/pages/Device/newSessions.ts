@@ -129,8 +129,24 @@ function plural(n: number, one: string, many: string): string {
 }
 
 /** Bytes as MB with one decimal, for the transfer line. */
-function mb(bytes: number): string {
+export function mb(bytes: number): string {
   return `${(bytes / 1_000_000).toFixed(1)} MB`;
+}
+
+/** When a ride was recorded, from its logger file name: the firmware names
+ *  a session `YYYY-MM-DD_HH-MM-SS.idl1` in UTC at its first GPS fix, so this
+ *  is that instant in `timeZone` (the device's own when omitted). A file
+ *  that never got a fix keeps its boot-time name and reads "No GPS time". */
+export function rideWhen(name: string, timeZone?: string): string {
+  const m = /^(\d{4})-(\d{2})-(\d{2})_(\d{2})-(\d{2})-(\d{2})/.exec(name);
+  if (m === null) return "No GPS time";
+  const utc = new Date(Date.UTC(+m[1], +m[2] - 1, +m[3], +m[4], +m[5], +m[6]));
+  return utc.toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short", timeZone });
+}
+
+/** The files a selection keeps, in the logger's order. */
+export function pickFiles(files: QueuedFile[], picked: ReadonlySet<string>): QueuedFile[] {
+  return files.filter((f) => picked.has(f.name));
 }
 
 /** The banner's text and button for `state`. */

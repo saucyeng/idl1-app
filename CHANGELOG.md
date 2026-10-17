@@ -6,6 +6,12 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 
 ### Added
 
+- **Choose which rides to download [docs] (2026-10-16).** Tapping the
+  "new rides" banner itself (not its Download button) lists the rides on
+  the logger with when each was recorded and its size, all ticked; untick
+  any, then Download. For a card that holds an old history. No spec change
+  needed.
+
 - **Downloads hand the radio to WiFi [docs] (2026-10-16).** A batch of
   rides now downloads in one WiFi session with the spec's radio handoff:
   once WiFi is linked the logger drops Bluetooth, so WiFi has the radio to

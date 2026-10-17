@@ -1,7 +1,9 @@
-import { useEffect, useReducer, useRef } from "react";
+import { useEffect, useReducer, useRef, useState } from "react";
 import { toast } from "sonner";
 
 import { Button } from "../../../components/ui/button";
+import { Checkbox } from "../../../components/ui/checkbox";
+import { BrandSheet } from "../../../components/brand/BrandSheet";
 import { toastFor } from "../../../components/toasts/events";
 import { cn } from "../../../lib/utils";
 import { downloadFiles, listDeviceFiles, listRecentDeviceFiles } from "../../../ipc/device";
@@ -14,7 +16,7 @@ import { toFileViews } from "./files";
 import { dispatchRideFlow } from "../../../shell/rideFlow";
 import { dispatchLoggerLink } from "../../../shell/loggerLink";
 import { prefsStore } from "../Settings/appPrefsStore";
-import { autoStep, bannerView, initialNewSessionsState, newSessionsReducer } from "./newSessions";
+import { autoStep, bannerView, initialNewSessionsState, mb, newSessionsReducer, pickFiles, rideWhen } from "./newSessions";
 import type { QueuedFile } from "./newSessions";
 
 /** Importer forced for downloaded logger files: a blob in the store has no
@@ -76,6 +78,29 @@ export default function NewSessionsBanner({ deviceId, knownSessionIds, onImporte
   const autoChecked = useRef(false);
   const autoTransferred = useRef(false);
   const stopped = useRef(false);
+  // The ride picker: tapping the banner (not its button) when rides are
+  // waiting lists them to choose from — an old card holds a whole history.
+  const [picking, setPicking] = useState(false);
+  const [picked, setPicked] = useState<ReadonlySet<string>>(new Set());
+  const readyFiles = state.phase === "ready" ? state.files : [];
+  function openPicker(): void {
+    if (readyFiles.length === 0) return;
+    setPicked(new Set(readyFiles.map((f) => f.name)));
+    setPicking(true);
+  }
+  function togglePicked(name: string): void {
+    setPicked((current) => {
+      const next = new Set(current);
+      if (next.has(name)) next.delete(name);
+      else next.add(name);
+      return next;
+    });
+  }
+  function downloadPicked(): void {
+    setPicking(false);
+    const files = pickFiles(readyFiles, picked);
+    if (files.length > 0) void transfer(files);
+  }
 
   useEffect(() => {
     stopped.current = false;
@@ -261,10 +286,17 @@ export default function NewSessionsBanner({ deviceId, knownSessionIds, onImporte
       aria-live="polite"
     >
       <div className="flex min-h-11 items-center justify-between gap-3">
-        <div className="flex min-w-0 flex-col">
-          <span className="text-sm font-medium text-fg">{view.text}</span>
-          {view.detail !== null && <span className="break-words font-mono text-xs text-fg-dim">{view.detail}</span>}
-        </div>
+        {readyFiles.length > 0 ? (
+          <button type="button" className="flex min-w-0 flex-col text-left" onClick={openPicker} aria-label="Choose which rides to download">
+            <span className="text-sm font-medium text-fg">{view.text}</span>
+            <span className="break-words font-mono text-xs text-fg-dim">{view.detail ?? "Tap to choose"}</span>
+          </button>
+        ) : (
+          <div className="flex min-w-0 flex-col">
+            <span className="text-sm font-medium text-fg">{view.text}</span>
+            {view.detail !== null && <span className="break-words font-mono text-xs text-fg-dim">{view.detail}</span>}
+          </div>
+        )}
         {view.action !== null && (
           <Button
             type="button"
@@ -282,6 +314,40 @@ export default function NewSessionsBanner({ deviceId, knownSessionIds, onImporte
           <div className="h-full bg-brand-accent transition-[width]" style={{ width: `${Math.round(view.fraction * 100)}%` }} />
         </div>
       )}
+      <BrandSheet
+        open={picking}
+        onOpenChange={setPicking}
+        title="Choose rides"
+        footer={
+          <div className="flex items-center justify-between gap-2 p-3">
+            <Button
+              type="button"
+              onClick={() => setPicked(picked.size === readyFiles.length ? new Set() : new Set(readyFiles.map((f) => f.name)))}
+            >
+              {picked.size === readyFiles.length ? "Select none" : "Select all"}
+            </Button>
+            <Button type="button" emphasis="accent" filled disabled={picked.size === 0} className="h-11 px-4" onClick={downloadPicked}>
+              Download {picked.size}
+            </Button>
+          </div>
+        }
+      >
+        <ul className="flex flex-col">
+          {readyFiles.map((f) => (
+            <li key={f.name} className="border-b border-rule">
+              <label className="flex min-h-12 cursor-pointer items-center gap-3 px-3 py-2">
+                <Checkbox checked={picked.has(f.name)} onCheckedChange={() => togglePicked(f.name)} />
+                <span className="flex min-w-0 flex-col">
+                  <span className="text-sm text-fg">{rideWhen(f.name)}</span>
+                  <span className="truncate font-mono text-xs text-fg-dim">
+                    {f.name} · {mb(f.sizeBytes)}
+                  </span>
+                </span>
+              </label>
+            </li>
+          ))}
+        </ul>
+      </BrandSheet>
     </section>
   );
 }

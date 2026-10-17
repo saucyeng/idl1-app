@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { DeviceFileView } from "./files";
-import { autoStep, bannerView, initialNewSessionsState, newSessionsReducer } from "./newSessions";
+import { autoStep, bannerView, initialNewSessionsState, newSessionsReducer, pickFiles, rideWhen } from "./newSessions";
 import type { NewSessionsAction, NewSessionsState } from "./newSessions";
 
 function file(name: string, sizeBytes: number, isNew: boolean): DeviceFileView {
@@ -131,5 +131,47 @@ describe("autoStep", () => {
 
     // Assert
     expect(steps).toEqual([null, null, null, null]);
+  });
+});
+
+describe("rideWhen", () => {
+  it("rideWhen — a first-fix name — the UTC instant in the given zone", () => {
+    // Arrange
+    const name = "2026-10-17_00-29-11.idl1";
+
+    // Act
+    const when = rideWhen(name, "America/Los_Angeles");
+
+    // Assert
+    expect(when).toContain("Oct 16, 2026");
+    expect(when).toContain("5:29");
+  });
+
+  it("rideWhen — a boot-time name — No GPS time", () => {
+    // Arrange
+    const name = "tmp_156962.idl1";
+
+    // Act
+    const when = rideWhen(name);
+
+    // Assert
+    expect(when).toBe("No GPS time");
+  });
+});
+
+describe("pickFiles", () => {
+  it("pickFiles — a selection — only the picked files, in the logger's order", () => {
+    // Arrange
+    const files = [
+      { name: "a.idl1", sizeBytes: 1 },
+      { name: "b.idl1", sizeBytes: 2 },
+      { name: "c.idl1", sizeBytes: 3 },
+    ];
+
+    // Act
+    const picked = pickFiles(files, new Set(["c.idl1", "a.idl1"]));
+
+    // Assert
+    expect(picked.map((f) => f.name)).toEqual(["a.idl1", "c.idl1"]);
   });
 });
