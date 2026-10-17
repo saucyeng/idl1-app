@@ -46,6 +46,9 @@ import { composeVisibility, getActiveRoute, subscribeRouteVisible } from "../../
 /** Wait after a restart before the first reconnect attempt, ms (the logger
  *  reboots ~0.5 s after a push and takes a few seconds to advertise). */
 const RESTART_BOOT_MS = 4000;
+/** Wait before reconnecting after a WiFi transfer (ms): the logger is back
+ *  on Bluetooth about half a second after WiFi mode ends, no boot. */
+const AFTER_TRANSFER_MS = 750;
 /** Gap between reconnect attempts, ms. */
 const RESTART_RETRY_MS = 3000;
 /** Reconnect attempts before giving up (~1 min). */
@@ -228,10 +231,10 @@ export default function Device() {
   // the config once back.
   const [restarting, setRestarting] = useState<string | null>(null);
   const reconnectAfterRestart = useCallback(
-    async (restartingDeviceId: string, dropLinkFirst: boolean, attempts: number = RESTART_ATTEMPTS, label: string = "Logger restarting… reconnecting."): Promise<boolean> => {
+    async (restartingDeviceId: string, dropLinkFirst: boolean, attempts: number = RESTART_ATTEMPTS, label: string = "Logger restarting… reconnecting.", firstWaitMs: number = RESTART_BOOT_MS): Promise<boolean> => {
       setRestarting(label);
       if (dropLinkFirst) await disconnectDevice(restartingDeviceId).catch(() => {});
-      await sleep(RESTART_BOOT_MS);
+      await sleep(firstWaitMs);
       for (let attempt = 0; attempt < attempts; attempt += 1) {
         try {
           const info = await connectDevice(restartingDeviceId);
@@ -387,10 +390,14 @@ export default function Device() {
   // Paused while the logger has dropped Bluetooth for a WiFi transfer
   // (SPEC §10.4 handoff): there is no link to poll until it is back.
   useEffect(() => {
-    if (state.activeDeviceId === null || handedOff) return;
+    // Also paused while reconnecting: with no managed link, each status read
+    // opens and closes a link of its own, and on Android closing it can tear
+    // down the link the reconnect is building (the 35 s reconnects of
+    // 2026-10-16).
+    if (state.activeDeviceId === null || handedOff || restarting !== null) return;
     const stop = startStatusPoll(STATUS_POLL_DEPS, state.activeDeviceId, dispatchStatus);
     return stop;
-  }, [state.activeDeviceId, handedOff]);
+  }, [state.activeDeviceId, handedOff, restarting]);
 
   // A WiFi transfer that handed off ends here: reconnect over Bluetooth,
   // waiting out the logger's failsafe when the WiFi link dropped, then start
@@ -407,6 +414,7 @@ export default function Device() {
         false,
         request.longWait ? FAILSAFE_ATTEMPTS : RESTART_ATTEMPTS,
         request.longWait ? "Waiting for the logger to come back on Bluetooth (up to 5 minutes)…" : "Back from the WiFi transfer… reconnecting.",
+        request.longWait ? RESTART_BOOT_MS : AFTER_TRANSFER_MS,
       );
       if (back && request.thenRecord) startRecordingRef.current?.();
     })();

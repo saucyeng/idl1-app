@@ -239,9 +239,11 @@ export default function NewSessionsBanner({ deviceId, knownSessionIds, onImporte
         files.map((f) => ({ name: f.name, size_bytes: f.sizeBytes })),
         onEvent,
       );
-      await imports;
+      // Reconnect first: imports can take a while, and Record during a
+      // download is waiting on Bluetooth.
       cancelled = summary.cancelled;
       dispatchLoggerLink({ type: "TRANSFER_ENDED", deviceId, handedOff: summary.handed_off, wifiClosed: summary.wifi_closed });
+      await imports;
       if (summary.handed_off && !summary.wifi_closed) {
         toast.info("WiFi to the logger dropped", { description: "It comes back on Bluetooth within five minutes, or press its button. The rest resumes next time." });
       }

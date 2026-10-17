@@ -37,6 +37,11 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
   the screen can no longer hang on "attempt 1" with no way out.
   A download shorter than the size the logger listed is now an error (the
   partial file is kept to resume) instead of being imported as a ride.
+  Reconnecting after a WiFi download is quick again (was up to ~35 s):
+  the status check no longer runs while reconnecting (each check opened and
+  closed a Bluetooth link of its own, which on Android could tear down the
+  one being rebuilt), the first attempt waits under a second instead of 4 s,
+  and the reconnect no longer waits for the downloaded rides to import.
 
 - **Pair a phone with a QR code [docs] (2026-10-16).** Settings, Sync on
   the computer has **Show pairing QR code**. Scanning it with the phone's
