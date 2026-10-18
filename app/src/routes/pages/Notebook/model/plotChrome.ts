@@ -34,7 +34,7 @@ export type CellChromeMode =
  * would otherwise grow and lose a header row as the selection changes,
  * moving everything below it on the page.
  *
- * @param kind A `ScannedCell.kind` — `"js"`, `"math"` or `"table"`.
+ * @param kind A `ScannedCell.kind` — `"js"`, `"math"`, `"table"` or `"video"`.
  */
 export function cellChromeMode(kind: string): CellChromeMode {
   return kind === "js" ? "overlay" : "band";

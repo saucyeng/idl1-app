@@ -60,10 +60,12 @@ export function sameClockSource(a: ClockSource, b: ClockSource): boolean {
 /**
  * A presented frame's media time (s) as the session-relative µs the cursor
  * counts in: `session_time_s = video_time_s + offset_s` (C1 §6), rounded to
- * whole µs.
+ * whole µs. `null` when the sum is not finite (a bad `mediaTime`), so the
+ * loop skips that frame instead of throwing on `BigInt(NaN)`.
  */
-export function mediaTimeToSessionUs(mediaTimeS: number, offsetS: number): bigint {
-  return BigInt(Math.round((mediaTimeS + offsetS) * 1e6));
+export function mediaTimeToSessionUs(mediaTimeS: number, offsetS: number): bigint | null {
+  const us = Math.round((mediaTimeS + offsetS) * 1e6);
+  return Number.isFinite(us) ? BigInt(us) : null;
 }
 
 /** A session-relative µs instant as session time, s. */

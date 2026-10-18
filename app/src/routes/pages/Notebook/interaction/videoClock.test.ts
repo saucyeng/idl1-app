@@ -108,6 +108,17 @@ describe("time conversions", () => {
     expect(us).toBe(15_033_300n);
   });
 
+  it("mediaTimeToSessionUs — NaN or infinite media time — null, never a throw", () => {
+    // Arrange
+    const bad = [Number.NaN, Number.POSITIVE_INFINITY];
+
+    // Act
+    const results = bad.map((t) => mediaTimeToSessionUs(t, 10));
+
+    // Assert
+    expect(results).toEqual([null, null]);
+  });
+
   it("sessionUsToS — bigint and number µs — seconds", () => {
     // Arrange
     const tUs = 15_500_000n;

@@ -90,7 +90,7 @@ export function languageFor(kind: CellKindToken | "prose"): Extension {
  * The whole-document language: markdown, with each fenced cell's own body
  * highlighted in its fence language (C2 §2.1's four tokens). `lang-markdown`
  * resolves a fence's info string against these descriptions itself — this is
- * the same three languages {@link languageFor} hands a single-cell editor,
+ * the same languages {@link languageFor} hands a single-cell editor,
  * nested rather than chosen.
  */
 export function workbookLanguage(): Extension {

@@ -34,7 +34,7 @@ export const DEFAULT_TEXT_CELL_HEIGHT_PX = 48;
  * cell is one height from the first frame to the last and never moves.
  * Every other kind gets {@link DEFAULT_TEXT_CELL_HEIGHT_PX}.
  *
- * @param kind A `ScannedCell.kind` — `"js"`, `"math"` or `"table"`.
+ * @param kind A `ScannedCell.kind` — `"js"`, `"math"`, `"table"` or `"video"`.
  */
 export function pendingSlotHeightPx(kind: string): number {
   return kind === "js" ? DEFAULT_JS_CELL_HEIGHT_PX : DEFAULT_TEXT_CELL_HEIGHT_PX;
