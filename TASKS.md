@@ -674,3 +674,6 @@ or a hard stop.
       the hardware pulse counter for wheel pulses (6–12 pickups on a 29er,
       few pulses); task-polled analog reads are fine for now, tuned once
       real analog sensors arrive (Isaac, 2026-10-15).
+- [x] Video §8, letting Claude drive the app (2026-10-18): `tools/drive/drive.mjs`
+      plus the `run` skill. Launch, screenshot, click, type, eval, console and close all
+      verified against nightly build 72. Android (adb forwarding) comes later.
