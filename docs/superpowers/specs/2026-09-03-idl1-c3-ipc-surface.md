@@ -3130,9 +3130,14 @@ No video bytes cross IPC.
 
 New error kinds (§2's vocabulary, prefix `video_` from core's
 `VideoError`): `video_parse` (not an MP4 we can read; `detail.reason`),
-`video_no_overlap` (`detail`: the video's and session's spans as UTC ms),
-`video_ambiguous` (`detail.session_ids`; from the inbox only). Plus
-`not_found` (session or entry) and `io`.
+`video_no_overlap` (`detail`: `{ video_start_utc_ms, video_end_utc_ms,
+session_start_utc_ms, session_end_utc_ms }`, all i64 UTC ms),
+`video_ambiguous` (`detail.session_ids`; from the inbox only),
+`video_no_time` (no GPMF GPS time and no container creation time, so there
+is nothing to match by; no detail. `match_videos` returns `session_ids: []`
+with it and the inbox moves the file to `failed/`; `link_video` never
+raises it, linking as `manual` at offset 0 instead. Added 2026-10-18,
+lead ruling). Plus `not_found` (session or entry) and `io`.
 
 `get_session`'s `SessionDetail` (§3.2) gains `videos: VideoLink[]`: live
 entries only, in `session.json` order, each with `on_device: boolean`
