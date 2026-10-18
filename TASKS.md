@@ -680,6 +680,9 @@ or a hard stop.
   - [x] Video §8, letting Claude drive the app (2026-10-18): `tools/drive/drive.mjs`
         plus the `run` skill. Launch, screenshot, click, type, eval, console and close all
         verified against nightly build 72. Android (adb forwarding) comes later.
+- [ ] "+ Add" button at the bottom of every notebook (Isaac, 2026-10-18; as in
+      idl0's worksheets): offers Chart, Video and Text and appends that cell.
+      Separate from the video work, which adds "Insert video cell" to the Edit menu.
 - [ ] Firmware self-heal: rewrite `config.json` with the values actually in
       use when a field is rejected at boot (idl1-firmware).
 - [ ] Wheel pulses and analog reads (firmware phase 3): either interrupt or
