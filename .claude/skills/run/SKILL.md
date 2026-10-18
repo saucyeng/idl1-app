@@ -14,7 +14,7 @@ cargo on this machine) with WebView2's DevTools port open, then attaches with
     cd tools/drive && npm install        # playwright-core only, ~8 MB, no browser download
 
 The nightly installs per-user to `%LOCALAPPDATA%\idl1\app.exe` (uninstall entry "idl1").
-If it's missing, ask Isaac before installing it: `gh release download nightly -R saucyeng/idl1-app
+If it's missing or stale, install it (Isaac approved installing and updating the nightly, 2026-10-18): `gh release download nightly -R saucyeng/idl1-app
 -p "*windows-x64-setup.exe*"`, check the `.sha256`, run it with `/S`, then delete the installer.
 
 ## Commands

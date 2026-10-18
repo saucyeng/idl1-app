@@ -677,12 +677,12 @@ or a hard stop.
       same chart cells, then export from the app. Video is stored as a
       blob beside the log and syncs with it. Letting Claude drive the app
       (§8) can go first. GoPro ↔ logger link is later (§9).
+  - [x] Video §8, letting Claude drive the app (2026-10-18): `tools/drive/drive.mjs`
+        plus the `run` skill. Launch, screenshot, click, type, eval, console and close all
+        verified against nightly build 72. Android (adb forwarding) comes later.
 - [ ] Firmware self-heal: rewrite `config.json` with the values actually in
       use when a field is rejected at boot (idl1-firmware).
 - [ ] Wheel pulses and analog reads (firmware phase 3): either interrupt or
       the hardware pulse counter for wheel pulses (6–12 pickups on a 29er,
       few pulses); task-polled analog reads are fine for now, tuned once
       real analog sensors arrive (Isaac, 2026-10-15).
-- [x] Video §8, letting Claude drive the app (2026-10-18): `tools/drive/drive.mjs`
-      plus the `run` skill. Launch, screenshot, click, type, eval, console and close all
-      verified against nightly build 72. Android (adb forwarding) comes later.
