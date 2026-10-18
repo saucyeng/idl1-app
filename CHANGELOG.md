@@ -6,6 +6,25 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 
 ### Added
 
+- **Video in the app, groundwork [no-docs] (2026-10-18).** Video step 1's
+  app side, minus the cell's on-screen UI, which waits on Isaac's input:
+  `ipc/video.ts` wraps the C3 §3.12 commands (`link_video` with progress,
+  `match_videos`, `set_video_offset`, `reestimate_video_offset`,
+  `unlink_video`), with `videoUrl` on the `idl1-video` URI scheme, which
+  the app now registers. `SessionDetail` gains `videos`. Notebooks read
+  `video` cells (C2 §2.1). The playback clock takes an injected source, so
+  the first video cell can drive the cursor while playing, and pure modules
+  pick the video at the cursor and do the align, nudge and step arithmetic.
+  The Data tab's sync accepts the new last phase, `"videos"`. Spec-first:
+  the video spec and C1–C4, 2026-10-16. Lead rulings 2026-10-18 (E1, E2,
+  E4, E6 and E7 provisional pending Isaac's UI input): the cell sits in
+  document order, sized by the video's aspect (16:9 fallback, 60vh cap);
+  Edit → "Insert video cell" appends one; dragging the cursor seeks with
+  `fastSeek` once a drag gesture exists, and a pin seeks exactly; while
+  paused, −1 s/−1 frame/+1 frame/+1 s buttons move only the video for
+  Align; eval emits a `video` `CellOutput`; the transport is unchanged;
+  reports leave video cells out.
+
 - **Choose which rides to download [docs] (2026-10-16).** Tapping the
   "new rides" banner itself (not its Download button) lists the rides on
   the logger with when each was recorded and its size, all ticked; untick

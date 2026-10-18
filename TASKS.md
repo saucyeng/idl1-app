@@ -677,6 +677,13 @@ or a hard stop.
       same chart cells, then export from the app. Video is stored as a
       blob beside the log and syncs with it. Letting Claude drive the app
       (§8) can go first. GoPro ↔ logger link is later (§9).
+      App side of step 1 (2026-10-18, lane-video-app): IPC, URI scheme
+      registration, `video` cell kind, injected clock, and span, offset and
+      seek maths are done. Waiting on Isaac's UI input: the video cell
+      component, its layout, the Insert menu, step, Align and nudge
+      buttons, the unlink prompt, and wiring the clock into
+      `Notebook/index.tsx`. Open: the unlink prompt's "delete file" default
+      needs a count of other sessions linking the blob (E8).
 - [ ] Firmware self-heal: rewrite `config.json` with the values actually in
       use when a field is rejected at boot (idl1-firmware).
 - [ ] Wheel pulses and analog reads (firmware phase 3): either interrupt or
