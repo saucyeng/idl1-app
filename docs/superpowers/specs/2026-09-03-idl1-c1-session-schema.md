@@ -785,8 +785,33 @@ under one key due to last-ulp CPU differences, and either is valid).
     "setup_sheet": { "baseline": "01J…", "values": { "fork.lsc": 10 }, "since": [] }
   }                                       //   the running sheet at session start (R190's snapshot).
                                           // Sync merges bike_id and bike_log together, newer side wins.
+  "videos": [                            // array, omitted when empty — added 2026-10-16 (video spec §3.2), additive
+    {
+      "blob_sha256": "…",                //   string, 64 hex: the MP4's blob (C4 §2); the entry's identity
+      "size_bytes": 0,                   //   u64, bytes
+      "file_name": "GX010123.MP4",       //   string, the name it was linked from; display only
+      "video_codec": "h264",             //   string: "h264" | "hevc" | the stsd fourcc as text otherwise
+      "width_px": 0,                     //   u32, px
+      "height_px": 0,                    //   u32, px
+      "fps": 0.0,                        //   f64, frames/s, nominal
+      "duration_s": 0.0,                 //   f64, s
+      "offset_s": 0.0,                   //   f64, s: session_time_s = video_time_s + offset_s,
+                                          //   session_time_s on the *_time_secs clock below (t = 0 anchored)
+      "sync_method": "gpmf",             //   "gpmf" | "creation_time" | "manual"
+      "unlinked": false,                 //   bool, omitted when false: a tombstone (C4 §6), never removed
+      "updated_at_ms": 0                 //   i64, UTC ms: when this entry last changed; the merge tiebreak
+    }
+  ]                                       // One entry per file (each GoPro chapter is its own entry).
 }
 ```
+
+**`videos` (added 2026-10-16, video spec `2026-10-16-idl1-video-DRAFT.md`
+§3).** Supersedes the "dropped, not migrated" note below for idl1-linked
+videos only: idl0's `.idl0w` `videos[]` are still not migrated (they hold
+absolute paths, not blobs). Sync merges this field by entry, not as one
+value (C4 §6). A `blob_sha256` with no file under `blobs/` is a normal
+state, not damage: the file was deleted on this device, or is a video a
+mobile device does not hold (C4 §6). The player says "not on this device".
 
 **What is dropped from `.idl0w`** (design doc §5's migration note, verbatim): `workbook_layout`
 (dead since workspace_version 6 — math channels and chart layout now live on the `.idl1wb`

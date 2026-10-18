@@ -80,11 +80,25 @@ Four kinds: **prose** (plain Markdown, no fence, no id — §2.4), **math**
 fenced block (math/table/js); prose is a *span*, not a cell — see §2.4 for
 why and how it still participates in merge.
 
+**`video` (added 2026-10-16, video spec `2026-10-16-idl1-video-DRAFT.md`
+§5, §10 item 8).** A fifth fenced kind. It shows the video linked to the
+primary window's session (C1 `videos`) at the shared cursor, and while
+playing it drives the cursor. Body: one JSON object, `{}` in this version.
+No keys are defined yet, and unknown keys are preserved and ignored
+(the same rule as §2.2's unknown attributes). Ids, ordering and merge are
+exactly as for every other cell (§2.2, §7). If a notebook holds more than
+one `video` cell, the first in document order drives the clock and the
+others follow. A `video` cell has no host variable and no output that
+other cells can read. A build that predates this kind reads the fence as
+an ordinary code block inside prose (`v3/cell.rs` returns no cell kind),
+so the text survives a round trip but the block has no id-level merge on
+that build.
+
 ### 2.2 Cell id
 
 ```ebnf
 fence_open   ::= "```" cell_kind (" " attr)* "\n"
-cell_kind    ::= "math" | "table" | "js"
+cell_kind    ::= "math" | "table" | "js" | "video"   (* "video" added 2026-10-16 *)
 attr         ::= "id=" hex8
 hex8         ::= /[0-9a-f]{8}/
 fence_body   ::= /.*/                    (* kind-specific grammar, §3/§4/§5 *)

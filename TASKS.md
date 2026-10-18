@@ -668,6 +668,15 @@ or a hard stop.
       to the next ride automatically ("since the last ride on this bike"),
       and the ride form opens after the ride so more notes can be added
       (Isaac, 2026-10-15).
+- [ ] Video (plan given 2026-10-15/16; spec
+      `2026-10-16-idl1-video-DRAFT.md`; all decided 2026-10-16; step 1
+      written into C1 §6, C2 §2.1, C3 §3.12, C4 §2/§6; sync is idl0's
+      estimator as is). Later: probe a raw SD-card clip from the HERO11
+      Mini for IMU and time streams.
+      Steps in order: synced playback, then overlays in the app using the
+      same chart cells, then export from the app. Video is stored as a
+      blob beside the log and syncs with it. Letting Claude drive the app
+      (§8) can go first. GoPro ↔ logger link is later (§9).
 - [ ] Firmware self-heal: rewrite `config.json` with the values actually in
       use when a field is rejected at boot (idl1-firmware).
 - [ ] Wheel pulses and analog reads (firmware phase 3): either interrupt or

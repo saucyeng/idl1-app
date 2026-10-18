@@ -153,6 +153,14 @@ yet). The inbox is scanned at launch and watched while the app runs; it is
 not synced, not catalogued, and absent on mobile, where there is no
 user-browsable directory to drop into. Repair (§7) ignores it.
 
+*Added 2026-10-16 (video spec §4.1):* an `.mp4` in the inbox is linked,
+not imported. It is matched to sessions by time (C3 §3.12
+`match_videos`). Exactly one overlapping session links it, then deletes it
+from the inbox like any import. None, or more than one, moves it to
+`inbox/failed/` with the typed error (`video_no_overlap` or
+`video_ambiguous`, listing the candidate session ids), for the user to link
+by hand.
+
 **Added post-sign (2026-09-03, lead ruling R6, wave-1 L1):** `profiles/` was
 missing from this layout even though design §10's L1 row names "profile/
 settings persistence" in scope with no other location given. Rooted inside
@@ -623,6 +631,29 @@ these four fields, re-derived locally from its own `data.parquet` rather
 than reconciled from a peer's. Whole-file last-write-wins was rejected
 (the alternative this row previously carried) because it would silently
 discard a rider's note in favour of a peer's unrelated lap re-index.
+
+**`session.json` `videos` (added 2026-10-16, Isaac; video spec §3.3).**
+Merged by entry, keyed by `blob_sha256`, not as one field: an entry on
+one side only is kept; an entry on both sides takes the side with the
+newer entry-level `updated_at_ms` as a whole, and an exact tie keeps
+local. Unlinking sets `"unlinked": true` (a tombstone) instead of removing
+the entry, so the union cannot bring it back.
+
+**Video blobs.** A video's MP4 is an ordinary blob. Blob entries in the
+manifest gain an optional `"kind": "video"` (`#[serde(default)]`, omitted
+for logs; an older peer ignores it). Three rules on top of the Blob row:
+
+- **Not pulled when unlinked.** A blob referenced only by unlinked
+  `videos` entries, on the receiving side's merged `session.json`, is not
+  pulled. Deleting a video file is per device (video spec §10 item 2), and
+  this is what stops the next sync bringing it back.
+- **Mobile does not hold video by default.** A mobile device neither pulls
+  `kind: "video"` blobs nor accepts them by `PUT`: it answers
+  `409` with `{"skipped": "video"}`, which the pushing side counts as
+  skipped, not failed. Asking for one video on the phone is allowed
+  later and not designed yet (video spec §10 item 3).
+- **Missing is normal.** Repair (§7) does not warn about a `videos` blob
+  with no file. Only a session's own log blob is checked.
 
 **Per-field "changed" and tie rule.** *Added post-sign (2026-09-07, lead
 ruling R91, L11 Task 6/12.)* A user-owned field is "changed" from its base

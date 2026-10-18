@@ -3084,6 +3084,52 @@ zero samples; distance leaves out GPS steps made below 2 km/h. Errors:
 attached) and `bike_log: SessionBikeLog | null` (amended 2026-10-16), read
 from `session.json` (C1 §6).
 
+### 3.12 Video (added 2026-10-16)
+
+Video spec `2026-10-16-idl1-video-DRAFT.md`, step 1. Types are core's
+`idl_rs::video` serialised as is. `VideoLink` is one C1 `videos` entry.
+Wrapper module `app/src/ipc/video.ts`. All are `async`.
+
+- **`link_video(session_id: string, path: string, on_progress:
+  Channel<Progress>)`** → `VideoLink`. Streams the file into `blobs/`
+  (phase `"copying"`, bytes; skipped when the blob already exists), reads
+  the container (phase `"probing"`), estimates the offset (GPMF GPS time,
+  else container creation time, else `manual` at the session start;
+  idl0's estimator, IDL0_SPEC §33.3) and appends the entry. Linking a
+  file that is already linked, even if unlinked, returns that entry
+  re-linked with its offset kept.
+- **`match_videos(paths: string[])`** → `{ path, session_ids: string[],
+  error: IpcError | null }[]`: the sessions each file's time span overlaps,
+  for the drop and inbox flows. Reads only the container header.
+- **`set_video_offset(session_id: string, blob_sha256: string, offset_s:
+  number)`** → `VideoLink` with `sync_method: "manual"`.
+- **`reestimate_video_offset(session_id: string, blob_sha256: string)`** →
+  `VideoLink`. The only way a manual offset is replaced.
+- **`unlink_video(session_id: string, blob_sha256: string, delete_file:
+  boolean)`** → `VideoLink` (the tombstone). `delete_file` removes the
+  blob on this device only, and only when no other session's live entry
+  references it; otherwise it is ignored and the blob is kept.
+
+**Playback bytes are not a command.** The app registers the URI scheme
+`idl1-video`, which serves `GET <sha256>` with single-range `Range`
+support and `Content-Type: video/mp4`. It serves only blobs referenced by
+a live (not unlinked) `videos` entry, and answers `404` otherwise. The
+request logic is a function in `idl-rs-tauri`, registered on the builder
+in `app/src-tauri` (video spec §10 item 5). `ipc/video.ts` builds the URL
+with `convertFileSrc(sha256, "idl1-video")`, which gives the right form
+per platform (`http://idl1-video.localhost/…` on Windows and Android).
+No video bytes cross IPC.
+
+New error kinds (§2's vocabulary, prefix `video_` from core's
+`VideoError`): `video_parse` (not an MP4 we can read; `detail.reason`),
+`video_no_overlap` (`detail`: the video's and session's spans as UTC ms),
+`video_ambiguous` (`detail.session_ids`; from the inbox only). Plus
+`not_found` (session or entry) and `io`.
+
+`get_session`'s `SessionDetail` (§3.2) gains `videos: VideoLink[]`: live
+entries only, in `session.json` order, each with `on_device: boolean`
+(its blob is present here).
+
 ## 4. Interaction budget
 
 From the principle "no IPC on the interaction path" (design §3, §6):
