@@ -67,12 +67,13 @@ describe("video IPC", () => {
     const results = [
       isVideoIpcError({ kind: "video_parse", message: "no moov" }),
       isVideoIpcError({ kind: "video_no_overlap", message: "x", detail: {} }),
+      isVideoIpcError({ kind: "video_no_time", message: "x" }),
       isVideoIpcError({ kind: "math_parse", message: "x" }),
       isVideoIpcError({ kind: "io" }),
       isVideoIpcError(null),
     ];
 
     // Assert
-    expect(results).toEqual([true, true, false, false, false]);
+    expect(results).toEqual([true, true, true, false, false, false]);
   });
 });

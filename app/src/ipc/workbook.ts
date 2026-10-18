@@ -106,7 +106,7 @@ export interface CellOutput {
   cell_id: string;
   /** "prose" removed (ledger R21) — prose has no fence id and never gets its
    *  own `CellOutput` entry. */
-  kind: "math" | "table" | "js";
+  kind: "math" | "table" | "js" | "video";
   /** present when evaluation succeeded; `null` for `math`/`js` (their
    *  results live in `defs`); `{ model, results }` for a successfully
    *  evaluated `table` cell (ledger R21). */

@@ -30,7 +30,7 @@
  *   fence's backtick count and applies the same "close needs ≥N backticks
  *   and nothing else on the line" rule by hand — it does not otherwise
  *   implement CommonMark (no indented fences, no tilde fences, no fence
- *   language beyond exact `math`/`table`/`js`). That subset is what C2 §2.2
+ *   language beyond exact `math`/`table`/`js`/`video`). That subset is what C2 §2.2
  *   defines and all this app authors or generates; note this is a genuine
  *   behavioural divergence, not just an unimplemented corner — Rust's
  *   `scan_cells` (via `pulldown-cmark`'s generic `CodeBlockKind::Fenced`)
@@ -51,7 +51,7 @@
  */
 
 /** A cell's fence-language token (C2 §2.1). */
-export type CellKindToken = "math" | "table" | "js";
+export type CellKindToken = "math" | "table" | "js" | "video";
 
 /**
  * One fenced cell as this scan sees it (C2 §2.2/§2.4). Non-authoritative —
@@ -62,7 +62,7 @@ export interface ScannedCell {
   id: string | null;
   /** The raw `id=` attribute value verbatim, even when invalid — `null` only when no `id=` attribute was present at all (ruling R21). */
   idRaw: string | null;
-  /** `math` / `table` / `js` (C2 §2.1). */
+  /** `math` / `table` / `js` / `video` (C2 §2.1; `video` added 2026-10-16). */
   kind: CellKindToken;
   /** The fence-open line's info string verbatim (everything after the opening backticks, up to the line's newline) — round-tripped, not interpreted (C2 §2.2's "reserved attribute namespace"). */
   infoLine: string;
@@ -139,14 +139,14 @@ interface ParsedCellOpen {
   idRaw: string | null;
 }
 
-/** Parses a fence-open line's info string against C2 §2.2's grammar: `cell_kind (" " attr)*`, `attr ::= "id=" hex8`. Returns `null` when `info`'s first token is not `math`/`table`/`js` — that fence is inert (C2 §2.1) and must not be reported as a cell. */
+/** Parses a fence-open line's info string against C2 §2.2's grammar: `cell_kind (" " attr)*`, `attr ::= "id=" hex8`. Returns `null` when `info`'s first token is not `math`/`table`/`js`/`video` — that fence is inert (C2 §2.1) and must not be reported as a cell. */
 function parseCellOpen(info: string): ParsedCellOpen | null {
   const trimmed = info.trim();
   if (trimmed.length === 0) return null;
 
   const tokens = trimmed.split(/\s+/);
   const kind = tokens[0];
-  if (kind !== "math" && kind !== "table" && kind !== "js") return null;
+  if (kind !== "math" && kind !== "table" && kind !== "js" && kind !== "video") return null;
 
   let id: string | null = null;
   let idRaw: string | null = null;
@@ -309,4 +309,19 @@ export function replaceCellBody(markdown: string, cellId: string, newBody: strin
   result.set(bytes.subarray(end), start + newBodyBytes.length);
 
   return new TextDecoder().decode(result);
+}
+
+/**
+ * Appends an empty `video` cell (C2 §2.1: body `{}`) at the end of
+ * `markdown`, for the "Insert video cell" command (lead ruling 2026-10-18,
+ * lane-video-app E2). Follows `graph/graphToChart.ts`'s `insertChartCell`:
+ * no `id=` is minted here, because Rust assigns one on the next save (C2 §2.2).
+ * A blank line separates it from preceding text, so it is not read as part
+ * of a paragraph.
+ *
+ * @param markdown The whole document.
+ */
+export function insertVideoCell(markdown: string): string {
+  const separator = markdown.length === 0 || markdown.endsWith("\n\n") ? "" : markdown.endsWith("\n") ? "\n" : "\n\n";
+  return `${markdown}${separator}\`\`\`video\n{}\n\`\`\`\n`;
 }

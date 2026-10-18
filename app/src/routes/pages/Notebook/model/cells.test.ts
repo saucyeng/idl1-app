@@ -1,6 +1,45 @@
 import { describe, expect, it } from "vitest";
 
-import { replaceCellBody, scanCells } from "./cells";
+import { insertVideoCell, replaceCellBody, scanCells } from "./cells";
+
+describe("video cells", () => {
+  it("scanCells — a video fence with an id — reported as a video cell with its {} body", () => {
+    // Arrange
+    const markdown = "Footage:\n\n```video id=0a0b0c0d\n{}\n```\n";
+
+    // Act
+    const doc = scanCells(markdown);
+
+    // Assert
+    expect(doc.cells).toHaveLength(1);
+    expect(doc.cells[0].kind).toBe("video");
+    expect(doc.cells[0].id).toBe("0a0b0c0d");
+    expect(new TextDecoder().decode(new TextEncoder().encode(markdown).subarray(...doc.cells[0].bodyRange))).toBe("{}\n");
+  });
+
+  it("insertVideoCell — a document ending in text without a newline — appends a blank line then an id-less video fence", () => {
+    // Arrange
+    const markdown = "Intro";
+
+    // Act
+    const updated = insertVideoCell(markdown);
+
+    // Assert
+    expect(updated).toBe("Intro\n\n```video\n{}\n```\n");
+    expect(scanCells(updated).cells.map((c) => c.kind)).toEqual(["video"]);
+  });
+
+  it("insertVideoCell — empty and newline-terminated documents — no stray separator", () => {
+    // Arrange
+    const inputs = ["", "x\n", "x\n\n"];
+
+    // Act
+    const outputs = inputs.map(insertVideoCell);
+
+    // Assert
+    expect(outputs).toEqual(["```video\n{}\n```\n", "x\n\n```video\n{}\n```\n", "x\n\n```video\n{}\n```\n"]);
+  });
+});
 
 /** Decodes a `[start, end)` UTF-8 byte range of `markdown` back to text, for assertions. */
 function sliceBytes(markdown: string, range: [number, number]): string {

@@ -252,6 +252,26 @@ describe("buildReportDocument", () => {
     expect(doc.blocks[proseIndex]).toMatchObject({ text: "Lap notes" });
   });
 
+  it("a video cell, evaluated or not — left out of the report, prose around it kept (lead ruling E7)", () => {
+    // Arrange
+    const video: ScannedCell = { id: "cell-v", idRaw: "cell-v", kind: "video", infoLine: "video id=cell-v", bodyRange: [0, 0], proseBeforeRange: null, proseAfterRange: null };
+    const proseBlocks: ReadonlyMap<string, ProseBlockData> = new Map([
+      ["cell-v::before", { blockId: "cell-v::before", cellId: "cell-v", position: "before" as const, content: { kind: "raw" as const, text: "Footage" } }],
+    ]);
+    const withOutput = [mathOutput("cell-v", { kind: "video" })];
+
+    // Act
+    const docs = [[], withOutput].map((outputs) =>
+      buildReportDocument(input({ cells: [video], proseBlocks, evals: [{ ok: outputs }], windows: [window()], sessions: [session()] }))
+    );
+
+    // Assert
+    for (const doc of docs) {
+      expect(doc.blocks.some((b) => "cellId" in b && b.cellId === "cell-v" && b.kind !== "prose")).toBe(false);
+      expect(doc.blocks.find((b) => b.kind === "prose")).toMatchObject({ text: "Footage" });
+    }
+  });
+
   it("the primary window's own eval failed — the failure is recorded, not thrown or dropped", () => {
     const doc = buildReportDocument(
       input({

@@ -53,6 +53,14 @@ export interface CellListProps {
    */
   renderJsCell: (cellId: string) => ReactNode;
   /**
+   * Renders a `video`-kind cell (C2 §2.1, video spec §5.2). Injected like
+   * {@link CellListProps.renderJsCell}: the player follows the shared
+   * cursor and the primary window's session, which `Notebook/index.tsx`
+   * owns. Optional; omitted renders nothing in the cell's place, and never
+   * a sandbox chart.
+   */
+  renderVideoCell?: (cellId: string) => ReactNode;
+  /**
    * Wraps each cell's own rendered output (the pending placeholder,
    * `MathCell`, `TableCell`, or `renderJsCell`'s result) — never the
    * attached prose spans, which belong to the surrounding document flow
@@ -124,6 +132,7 @@ export default function CellList({
   inlineResults,
   spanErrors,
   renderJsCell,
+  renderVideoCell,
   frame = identityFrame,
   windowNote = null,
   noSelection = false,
@@ -162,6 +171,8 @@ export default function CellList({
             <CellPendingSlot kind={cell.kind} />
           ) : output.kind === "math" ? (
             <MathCell output={output} windowNote={windowNote} />
+          ) : output.kind === "video" ? (
+            (renderVideoCell?.(cell.id as string) ?? null)
           ) : output.kind === "table" ? (
             <TableCell output={output} windowNote={windowNote} dense={dense} lapTimeSecs={lapTimeSecs} />
           ) : (

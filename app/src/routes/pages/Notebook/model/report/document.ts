@@ -407,7 +407,9 @@ function buildContentBlocks(
     const before = proseBlocks.get(`${cell.id}::before`);
     if (before !== undefined) blocks.push(proseToBlock(before));
 
-    if (cell.kind !== "js") {
+    // A video cell has no output to print and is left out (lead ruling
+    // 2026-10-18, lane-video-app E7), like a js cell here.
+    if (cell.kind !== "js" && cell.kind !== "video") {
       const output = byId.get(cell.id);
       if (output === undefined) {
         entries.push(`Cell ${cell.id}: not evaluated for this window.`);

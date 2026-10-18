@@ -51,16 +51,27 @@ export interface SessionVideo extends VideoLink {
 
 /** The error kinds §3.12 adds to C3 §2's vocabulary (core's `VideoError`),
  *  plus the two shared kinds these commands also return. */
-export type VideoErrorKind = "video_parse" | "video_no_overlap" | "video_ambiguous" | "not_found" | "io";
+export type VideoErrorKind = "video_parse" | "video_no_overlap" | "video_ambiguous" | "video_no_time" | "not_found" | "io";
 
 /** An `IpcError` whose `kind` is one of {@link VideoErrorKind}. `detail`:
- *  `video_parse` → `{ reason }`; `video_no_overlap` → the video's and the
- *  session's spans as UTC ms; `video_ambiguous` → `{ session_ids }`. */
+ *  `video_parse` → `{ reason }`; `video_no_overlap` →
+ *  {@link VideoNoOverlapDetail}; `video_ambiguous` → `{ session_ids }`;
+ *  `video_no_time` (a file with no recording time; `matchVideos` and the
+ *  inbox only, lead C3 addition 2026-10-18) → none. */
 export interface VideoIpcError extends IpcError {
   kind: VideoErrorKind;
 }
 
-const VIDEO_ERROR_KINDS: ReadonlySet<string> = new Set<VideoErrorKind>(["video_parse", "video_no_overlap", "video_ambiguous", "not_found", "io"]);
+/** `video_no_overlap`'s `detail` (lead C3 addition 2026-10-18): both spans,
+ *  i64 UTC ms. */
+export interface VideoNoOverlapDetail {
+  video_start_utc_ms: number;
+  video_end_utc_ms: number;
+  session_start_utc_ms: number;
+  session_end_utc_ms: number;
+}
+
+const VIDEO_ERROR_KINDS: ReadonlySet<string> = new Set<VideoErrorKind>(["video_parse", "video_no_overlap", "video_ambiguous", "video_no_time", "not_found", "io"]);
 
 /** True when `error` is a C3 §2 error shape with a {@link VideoErrorKind}. */
 export function isVideoIpcError(error: unknown): error is VideoIpcError {
