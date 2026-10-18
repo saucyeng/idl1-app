@@ -39,7 +39,8 @@ const HELP = `idl1 drive — launch and drive the installed idl1 desktop app (de
 
 A <target> that starts with css= text= role= xpath= # . [ or contains >> is a Playwright
 selector. Anything else is visible text: an exact button/tab/link/menuitem name first,
-then exact text, then a substring. The first visible match is used.
+then exact text, then a name substring (icon buttons: "Data" matches "Data (Ctrl+2)"),
+then a text substring. The first visible match is used.
 
 Exe lookup: --exe, then $IDL1_EXE, then the uninstall registry entry, then the usual
 install folders. State file: ${STATE_FILE}`;
@@ -235,6 +236,7 @@ async function attach() {
   return { browser, page, state };
 }
 
+/** A target in Playwright selector syntax; anything else is matched as visible text. */
 const SELECTOR_RE = /^(css|text|role|xpath|id|data-testid|internal:[\w-]+)=|^[#.[]|^\/\/|>>/;
 
 async function resolveTarget(page, target) {
@@ -243,6 +245,8 @@ async function resolveTarget(page, target) {
     : [
         ...["button", "tab", "link", "menuitem"].map((role) => page.getByRole(role, { name: target, exact: true })),
         page.getByText(target, { exact: true }),
+        // Icon buttons carry their name in aria-label, e.g. "Data (Ctrl+2)".
+        ...["button", "tab", "link", "menuitem"].map((role) => page.getByRole(role, { name: target })),
         page.getByText(target),
       ];
   for (const loc of tries) {
@@ -375,7 +379,9 @@ async function cmdClose() {
   }
   const kill = (force) => {
     try {
-      execFileSync("taskkill", ["/PID", String(state.pid), "/T", ...(force ? ["/F"] : [])], { stdio: "ignore" });
+      // Graceful = WM_CLOSE to the app window only; with /T taskkill also targets the
+      // windowless WebView2 children and the app never closes (seen 2026-10-18).
+      execFileSync("taskkill", ["/PID", String(state.pid), ...(force ? ["/T", "/F"] : [])], { stdio: "ignore" });
     } catch {}
   };
   kill(false);
