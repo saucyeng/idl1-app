@@ -1,0 +1,10 @@
+{
+  "name": "idl1-drive",
+  "private": true,
+  "version": "0.0.0",
+  "description": "Dev-only: launch the installed idl1 desktop app and drive its WebView2 over CDP. Never shipped.",
+  "type": "module",
+  "dependencies": {
+    "playwright-core": "1.48.2"
+  }
+}

@@ -6,6 +6,13 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 
 ### Added
 
+- **Claude can drive the running app [no-docs] (2026-10-18).** Dev-only
+  tooling, not shipped: `tools/drive/drive.mjs` launches the installed
+  idl1 with WebView2's DevTools port on 127.0.0.1 (env var on that one
+  process only) and attaches with playwright-core to click, type, run JS,
+  read the console, take screenshots and close it; project skill `run`
+  documents it. Video spec §8; no spec change needed.
+
 - **Choose which rides to download [docs] (2026-10-16).** Tapping the
   "new rides" banner itself (not its Download button) lists the rides on
   the logger with when each was recorded and its size, all ticked; untick
