@@ -166,14 +166,17 @@ export default function CellList({
         const before = cell.id !== null ? proseBlocks.get(`${cell.id}::before`) : undefined;
         const after = cell.id !== null ? proseBlocks.get(`${cell.id}::after`) : undefined;
         const output = cell.id !== null ? outputs.get(cell.id) : undefined;
+        // A video cell has nothing to evaluate (C2 §2.1: no host variable,
+        // no output): it renders from the scan as soon as it has an id,
+        // rather than waiting on a `CellOutput`.
         const rendered =
-          output === undefined ? (
+          cell.kind === "video" && cell.id !== null && renderVideoCell !== undefined ? (
+            renderVideoCell(cell.id)
+          ) : output === undefined ? (
             <CellPendingSlot kind={cell.kind} />
           ) : output.kind === "math" ? (
             <MathCell output={output} windowNote={windowNote} />
-          ) : output.kind === "video" ? (
-            (renderVideoCell?.(cell.id as string) ?? null)
-          ) : output.kind === "table" ? (
+          ) : output.kind === "video" ? null : output.kind === "table" ? (
             <TableCell output={output} windowNote={windowNote} dense={dense} lapTimeSecs={lapTimeSecs} />
           ) : (
             renderJsCell(cell.id as string)

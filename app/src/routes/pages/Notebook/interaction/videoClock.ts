@@ -44,9 +44,12 @@ export function masterVideoCellId(cells: readonly ScannedCell[]): string | null 
  * @param playing Whether playback is running.
  * @param masterCellId {@link masterVideoCellId}'s result.
  * @param at What the primary window's session's videos show at the cursor.
+ * @param unplayable Blobs the master cell reported it cannot play (a codec
+ *   the webview lacks, spec §5.5): the rAF clock runs over them instead,
+ *   so playback never stalls on a picture that will not come.
  */
-export function clockSourceFor(playing: boolean, masterCellId: string | null, at: VideoAtTime): ClockSource {
-  if (!playing || masterCellId === null || at.kind !== "video") return { kind: "raf" };
+export function clockSourceFor(playing: boolean, masterCellId: string | null, at: VideoAtTime, unplayable: ReadonlySet<string> = new Set()): ClockSource {
+  if (!playing || masterCellId === null || at.kind !== "video" || unplayable.has(at.link.blob_sha256)) return { kind: "raf" };
   return { kind: "video", cellId: masterCellId, blobSha256: at.link.blob_sha256 };
 }
 

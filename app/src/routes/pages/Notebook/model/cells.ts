@@ -314,14 +314,23 @@ export function replaceCellBody(markdown: string, cellId: string, newBody: strin
 /**
  * Appends an empty `video` cell (C2 §2.1: body `{}`) at the end of
  * `markdown`, for the "Insert video cell" command (lead ruling 2026-10-18,
- * lane-video-app E2). Follows `graph/graphToChart.ts`'s `insertChartCell`:
- * no `id=` is minted here, because Rust assigns one on the next save (C2 §2.2).
- * A blank line separates it from preceding text, so it is not read as part
- * of a paragraph.
+ * lane-video-app E2), the way `graph/graphToChart.ts`'s `insertChartCell`
+ * appends a chart. Unlike a chart, the caller passes a fresh `id`: a video
+ * cell has nothing to evaluate, so it can show as soon as it has an id,
+ * and C2 §2.2's Assignment rule lets any writer, the app included, mint
+ * one (4 random bytes as lowercase hex). A blank line separates it from
+ * preceding text, so it is not read as part of a paragraph.
  *
  * @param markdown The whole document.
+ * @param id A fresh hex8 cell id (see {@link hex8FromBytes}).
  */
-export function insertVideoCell(markdown: string): string {
+export function insertVideoCell(markdown: string, id: string): string {
   const separator = markdown.length === 0 || markdown.endsWith("\n\n") ? "" : markdown.endsWith("\n") ? "\n" : "\n\n";
-  return `${markdown}${separator}\`\`\`video\n{}\n\`\`\`\n`;
+  return `${markdown}${separator}\`\`\`video id=${id}\n{}\n\`\`\`\n`;
+}
+
+/** Four bytes as a C2 §2.2 cell id: lowercase hex, 8 characters. The
+ *  caller supplies the random bytes (`crypto.getRandomValues`). */
+export function hex8FromBytes(bytes: Uint8Array): string {
+  return Array.from(bytes.subarray(0, 4), (b) => b.toString(16).padStart(2, "0")).join("");
 }

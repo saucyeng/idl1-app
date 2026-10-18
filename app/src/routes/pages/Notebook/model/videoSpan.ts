@@ -9,7 +9,8 @@
  * the Notebook's session-relative µs (`AbsoluteSpan`, `PlaybackState.tUs`)
  * counts in. Each GoPro chapter is its own entry with its own offset.
  */
-import type { SessionVideo, VideoLink } from "../../../../ipc/video";
+import type { Progress } from "../../../../ipc/import";
+import { isVideoIpcError, type SessionVideo, type VideoLink, type VideoNoOverlapDetail } from "../../../../ipc/video";
 
 /** One entry's footage on the session clock: `[startS, endS)`, s. */
 export interface VideoSessionSpan {
@@ -152,6 +153,42 @@ function codecName(codec: string): string {
  */
 export function playbackErrorText(link: Pick<VideoLink, "file_name" | "video_codec">): string {
   return `${link.file_name} can't be played here: it is ${codecName(link.video_codec)}. Set the GoPro to "Most Compatible" (H.264) for footage this app can play.`;
+}
+
+/**
+ * One failed `linkVideo` as the "Add video" flow shows it, routed on the C3
+ * §2 `kind` and never on `message` (C3 §3.12). `video_no_overlap` names both
+ * spans with `formatTime` (UTC ms → text; injected so tests do not depend on
+ * the machine's time zone). An error that is not the C3 shape is still
+ * reported with the file's name, never dropped.
+ */
+export function linkErrorText(fileName: string, error: unknown, formatTime: (utcMs: number) => string): string {
+  if (!isVideoIpcError(error)) return `${fileName}: could not be linked.`;
+  const detail = error.detail ?? {};
+  switch (error.kind) {
+    case "video_parse":
+      return `${fileName} isn't an MP4 this app can read${typeof detail.reason === "string" ? ` (${detail.reason})` : ""}.`;
+    case "video_no_overlap": {
+      const d = detail as Partial<VideoNoOverlapDetail>;
+      const span = (a?: number, b?: number) => (typeof a === "number" && typeof b === "number" ? `${formatTime(a)}–${formatTime(b)}` : "unknown");
+      return `${fileName} was recorded at ${span(d.video_start_utc_ms, d.video_end_utc_ms)}, outside this session (${span(d.session_start_utc_ms, d.session_end_utc_ms)}).`;
+    }
+    case "video_no_time":
+      return `${fileName} has no recording time, so it can't be matched to a session.`;
+    default:
+      return `${fileName}: ${error.message}`;
+  }
+}
+
+/** The "Add video" progress line for one file (C3 §3.12 phases `copying`,
+ *  bytes; then `probing`). */
+export function linkProgressText(fileName: string, progress: Progress): string {
+  if (progress.phase === "copying") {
+    const pct = progress.total !== null && progress.total > 0 ? ` ${Math.floor((progress.done / progress.total) * 100)}%` : "";
+    return `Copying ${fileName}${pct}`;
+  }
+  if (progress.phase === "probing") return `Reading ${fileName}`;
+  return `${fileName}: ${progress.phase}`;
 }
 
 /** `bytes` as the unlink prompt's size text, e.g. "4.1 GB" (spec §10 item 2),

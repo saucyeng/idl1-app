@@ -5,6 +5,8 @@ import {
   alignedOffsetS,
   deleteFileByDefault,
   formatVideoSize,
+  linkErrorText,
+  linkProgressText,
   nudgedOffsetS,
   playbackErrorText,
   sessionTimeOf,
@@ -221,6 +223,57 @@ describe("playbackErrorText", () => {
 
     // Assert
     expect(text).toContain("av01");
+  });
+});
+
+describe("linkErrorText", () => {
+  const formatTime = (ms: number) => `T${ms}`;
+
+  it("each video error kind — routed on kind, naming the file", () => {
+    // Arrange
+    const errors = [
+      { kind: "video_parse", message: "x", detail: { reason: "no moov box" } },
+      { kind: "video_no_overlap", message: "x", detail: { video_start_utc_ms: 1, video_end_utc_ms: 2, session_start_utc_ms: 3, session_end_utc_ms: 4 } },
+      { kind: "video_no_time", message: "x" },
+      { kind: "io", message: "disk full" },
+    ];
+
+    // Act
+    const texts = errors.map((e) => linkErrorText("GX01.MP4", e, formatTime));
+
+    // Assert
+    expect(texts[0]).toBe("GX01.MP4 isn't an MP4 this app can read (no moov box).");
+    expect(texts[1]).toBe("GX01.MP4 was recorded at T1–T2, outside this session (T3–T4).");
+    expect(texts[2]).toContain("no recording time");
+    expect(texts[3]).toBe("GX01.MP4: disk full");
+  });
+
+  it("a rejection that is not the C3 error shape — still reported with the file name", () => {
+    // Arrange
+    const error = new Error("boom");
+
+    // Act
+    const text = linkErrorText("a.mp4", error, formatTime);
+
+    // Assert
+    expect(text).toBe("a.mp4: could not be linked.");
+  });
+});
+
+describe("linkProgressText", () => {
+  it("copying with a total, copying without, probing — percent, no percent, reading", () => {
+    // Arrange
+    const progress = [
+      { done: 421, total: 1000, phase: "copying" },
+      { done: 5, total: null, phase: "copying" },
+      { done: 0, total: null, phase: "probing" },
+    ];
+
+    // Act
+    const texts = progress.map((p) => linkProgressText("GX01.MP4", p));
+
+    // Assert
+    expect(texts).toEqual(["Copying GX01.MP4 42%", "Copying GX01.MP4", "Reading GX01.MP4"]);
   });
 });
 

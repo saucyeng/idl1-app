@@ -80,6 +80,17 @@ describe("clockSourceFor", () => {
     expect(kinds).toEqual(["raf", "raf", "raf", "raf", "raf"]);
   });
 
+  it("playing over a blob the master reported unplayable — the rAF clock", () => {
+    // Arrange
+    const unplayable = new Set([link.blob_sha256]);
+
+    // Act
+    const source = clockSourceFor(true, "22222222", atVideo, unplayable);
+
+    // Assert
+    expect(source).toEqual({ kind: "raf" });
+  });
+
   it("sameClockSource — raf/raf, same video, another chapter, raf/video — true, true, false, false", () => {
     // Arrange
     const video = { kind: "video" as const, cellId: "c", blobSha256: "a" };
