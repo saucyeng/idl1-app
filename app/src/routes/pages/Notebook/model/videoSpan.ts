@@ -132,11 +132,10 @@ export function videoAspect(link: Pick<VideoLink, "width_px" | "height_px"> | nu
 /**
  * Whether deleting `blobSha256`'s file should be ticked by default in the
  * unlink prompt (video spec §10 item 2): only when no other session links
- * it. `otherSessionsLinking` is the count of *other* sessions with a live
- * entry for this blob.
+ * it (`SessionVideo.other_links === 0`, lead ruling E8).
  */
-export function deleteFileByDefault(otherSessionsLinking: number): boolean {
-  return otherSessionsLinking === 0;
+export function deleteFileByDefault(link: Pick<SessionVideo, "other_links">): boolean {
+  return link.other_links === 0;
 }
 
 /** A codec token (C1 §6 `video_codec`) as a reader knows it. */

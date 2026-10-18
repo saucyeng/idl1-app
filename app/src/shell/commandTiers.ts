@@ -76,6 +76,11 @@ export const COMMAND_IDS = {
   libraryRevealFolder: "library.revealFolder",
   editUndo: "edit.undo",
   editRedo: "edit.redo",
+  /** Appends an empty `video` cell to the open notebook (lead ruling
+   *  2026-10-18, lane-video-app E2; Isaac: "the same way regular charts
+   *  are added"). Edit menu only, like undo/redo: not in
+   *  {@link COMMAND_TIERS}. Registered by `Notebook/index.tsx`. */
+  editInsertVideoCell: "edit.insertVideoCell",
   viewMenu: "view.menu",
   viewToggleSidebar: "view.toggleSidebar",
   viewToggleGraph: "view.toggleGraph",

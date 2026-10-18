@@ -22,6 +22,7 @@ const link: SessionVideo = {
   sync_method: "gpmf",
   updated_at_ms: 0,
   on_device: true,
+  other_links: 0,
 };
 
 const atVideo: VideoAtTime = { kind: "video", link, videoTimeS: 5 };

@@ -47,6 +47,10 @@ export interface VideoLink {
  *  says "not on this device". */
 export interface SessionVideo extends VideoLink {
   on_device: boolean;
+  /** u32: how many *other* sessions hold a live entry for this
+   *  `blob_sha256` (C3 §3.12, lead ruling E8 2026-10-18). The unlink
+   *  prompt ticks "also delete the video file" by default only at `0`. */
+  other_links: number;
 }
 
 /** The error kinds §3.12 adds to C3 §2's vocabulary (core's `VideoError`),

@@ -97,7 +97,7 @@ import { SandboxHost } from "./host/SandboxHost";
 import { PING_INTERVAL_MS } from "./host/watchdog";
 import { NotebookSession } from "./host/NotebookSession";
 import { dropCellHeight, initialCellHeights, recordCellHeight, type CellHeights } from "./model/cellLayout";
-import { replaceCellBody } from "./model/cells";
+import { insertVideoCell, replaceCellBody } from "./model/cells";
 import { changedCellIds } from "./model/documentRanges";
 import { displayNameFor, documentCellDisplayNames, setCellLabelLine } from "./graph/cellDisplayName";
 import {
@@ -4937,6 +4937,13 @@ export default function NotebookPage() {
     state.handle !== null && !exportingReport && state.markdown !== null,
     () => void handleExportReport()
   );
+  // Edit → "Insert video cell" (lead ruling 2026-10-18, E2): appends an
+  // id-less `video` fence the same way `GraphCanvas`'s chart insert appends
+  // a `js` one, through the same whole-document edit.
+  useCommand(MENU_COMMAND_IDS.editInsertVideoCell, state.markdown !== null, () => {
+    if (state.markdown === null) return;
+    dispatch({ type: "editFrontMatter", markdown: insertVideoCell(state.markdown) });
+  });
   useCommand(MENU_COMMAND_IDS.viewToggleDense, true, () => applyDense(!dense));
   useCommand(MENU_COMMAND_IDS.viewToggleGraph, columnsToggleAvailable, () =>
     applyColumnToggleValue(toggledColumnIds("graph"))

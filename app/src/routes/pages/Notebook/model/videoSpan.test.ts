@@ -29,6 +29,7 @@ function video(overrides: Partial<SessionVideo> = {}): SessionVideo {
     sync_method: "gpmf",
     updated_at_ms: 0,
     on_device: true,
+    other_links: 0,
     ...overrides,
   };
 }
@@ -224,12 +225,12 @@ describe("playbackErrorText", () => {
 });
 
 describe("unlink prompt", () => {
-  it("deleteFileByDefault — no other session links it / one does — ticked / unticked", () => {
+  it("deleteFileByDefault — other_links 0 / 1 — ticked / unticked", () => {
     // Arrange
-    const counts = [0, 1];
+    const links = [{ other_links: 0 }, { other_links: 1 }];
 
     // Act
-    const results = counts.map(deleteFileByDefault);
+    const results = links.map(deleteFileByDefault);
 
     // Assert
     expect(results).toEqual([true, false]);
