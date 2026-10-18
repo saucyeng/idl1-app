@@ -70,6 +70,38 @@ export function tick(state: PlaybackState, elapsedMs: number, spanUs: [bigint, b
 }
 
 /**
+ * One reading from playback's injected clock source (video spec §5.3). The
+ * caller's loop owns the source; this module only folds a reading into
+ * {@link PlaybackState}:
+ * - `elapsed` — the `requestAnimationFrame` clock: wall-clock ms since the
+ *   previous frame, advanced at `state.speed` by {@link tick};
+ * - `media` — the video clock: a presented frame's media time already
+ *   mapped to session µs (`interaction/videoClock.ts`'s
+ *   `mediaTimeToSessionUs`). The video was played at `playbackRate =
+ *   speed`, so the reading is the cursor as is; speed is not applied again.
+ */
+export type ClockReading = { kind: "elapsed"; elapsedMs: number } | { kind: "media"; sessionUs: bigint };
+
+/**
+ * Advances `state` by one clock reading, with {@link tick}'s rules for both
+ * sources: a no-op (same reference) while paused; reaching or passing
+ * `spanUs[1]` clamps to it and stops; before `spanUs[0]` clamps to it.
+ *
+ * @param state Playback state before this reading.
+ * @param reading The clock source's reading — see {@link ClockReading}.
+ * @param spanUs `[start, end]` of the playable span, in µs since session start.
+ */
+export function advance(state: PlaybackState, reading: ClockReading, spanUs: [bigint, bigint]): PlaybackState {
+  if (reading.kind === "elapsed") return tick(state, reading.elapsedMs, spanUs);
+  if (!state.playing) return state;
+
+  const [startUs, endUs] = spanUs;
+  if (reading.sessionUs >= endUs) return { tUs: endUs, playing: false, speed: state.speed };
+  const tUs = reading.sessionUs < startUs ? startUs : reading.sessionUs;
+  return { tUs, playing: true, speed: state.speed };
+}
+
+/**
  * Flips `state.playing`. Deliberately does **not** reset `tUs` to the
  * start of the span when toggling play on from the span's end (decided,
  * per the brief's "decide, document, test"): this function's given

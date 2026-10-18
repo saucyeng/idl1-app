@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  advance,
   formatPlaybackTime,
   PLAYBACK_SPEEDS,
   playableSpanUs,
@@ -141,5 +142,64 @@ describe("formatPlaybackTime", () => {
 
   it("formatPlaybackTime — a time over a minute — minutes carry", () => {
     expect(formatPlaybackTime(65_500_000n)).toBe("01:05.500");
+  });
+});
+
+describe("advance (injected clock source, video spec §5.3)", () => {
+  const span: [bigint, bigint] = [1_000_000n, 10_000_000n];
+
+  it("advance — elapsed reading — the same result as tick", () => {
+    // Arrange
+    const state = { tUs: 2_000_000n, playing: true, speed: 2 };
+
+    // Act
+    const result = advance(state, { kind: "elapsed", elapsedMs: 100 }, span);
+
+    // Assert
+    expect(result).toEqual(tick(state, 100, span));
+  });
+
+  it("advance — media reading while playing — the cursor is the frame's session time, speed not applied again", () => {
+    // Arrange
+    const state = { tUs: 2_000_000n, playing: true, speed: 4 };
+
+    // Act
+    const result = advance(state, { kind: "media", sessionUs: 2_040_000n }, span);
+
+    // Assert
+    expect(result).toEqual({ tUs: 2_040_000n, playing: true, speed: 4 });
+  });
+
+  it("advance — media reading at or past the span's end — clamps to the end and stops", () => {
+    // Arrange
+    const state = { tUs: 9_990_000n, playing: true, speed: 1 };
+
+    // Act
+    const result = advance(state, { kind: "media", sessionUs: 10_020_000n }, span);
+
+    // Assert
+    expect(result).toEqual({ tUs: 10_000_000n, playing: false, speed: 1 });
+  });
+
+  it("advance — media reading before the span's start — clamps to the start, still playing", () => {
+    // Arrange
+    const state = { tUs: 1_000_000n, playing: true, speed: 1 };
+
+    // Act
+    const result = advance(state, { kind: "media", sessionUs: 500_000n }, span);
+
+    // Assert
+    expect(result).toEqual({ tUs: 1_000_000n, playing: true, speed: 1 });
+  });
+
+  it("advance — media reading while paused — the same state by reference", () => {
+    // Arrange
+    const state = { tUs: 2_000_000n, playing: false, speed: 1 };
+
+    // Act
+    const result = advance(state, { kind: "media", sessionUs: 3_000_000n }, span);
+
+    // Assert
+    expect(result).toBe(state);
   });
 });

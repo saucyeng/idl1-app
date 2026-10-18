@@ -139,6 +139,22 @@ export function deleteFileByDefault(otherSessionsLinking: number): boolean {
   return otherSessionsLinking === 0;
 }
 
+/** A codec token (C1 §6 `video_codec`) as a reader knows it. */
+function codecName(codec: string): string {
+  if (codec === "h264") return "H.264";
+  if (codec === "hevc") return "HEVC (H.265)";
+  return codec === "" ? "an unknown codec" : codec;
+}
+
+/**
+ * The cell's text when the webview fails to play an entry (video spec
+ * §5.5): names the codec and suggests the GoPro "Most Compatible" (H.264)
+ * setting. Transcoding is out of scope (§3.4), so nothing else is offered.
+ */
+export function playbackErrorText(link: Pick<VideoLink, "file_name" | "video_codec">): string {
+  return `${link.file_name} can't be played here: it is ${codecName(link.video_codec)}. Set the GoPro to "Most Compatible" (H.264) for footage this app can play.`;
+}
+
 /** `bytes` as the unlink prompt's size text, e.g. "4.1 GB" (spec §10 item 2),
  *  in decimal units, one decimal place from GB down to MB, whole KB below. */
 export function formatVideoSize(bytes: number): string {

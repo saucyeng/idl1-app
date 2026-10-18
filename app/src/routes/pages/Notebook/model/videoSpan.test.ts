@@ -6,6 +6,7 @@ import {
   deleteFileByDefault,
   formatVideoSize,
   nudgedOffsetS,
+  playbackErrorText,
   sessionTimeOf,
   steppedVideoTimeS,
   videoAspect,
@@ -193,6 +194,32 @@ describe("videoAspect", () => {
 
     // Assert
     expect(results).toEqual([9 / 16, 16 / 9, 9 / 16, 9 / 16]);
+  });
+});
+
+describe("playbackErrorText", () => {
+  it("an HEVC file — names the codec and the Most Compatible setting", () => {
+    // Arrange
+    const link = { file_name: "GX010001.MP4", video_codec: "hevc" };
+
+    // Act
+    const text = playbackErrorText(link);
+
+    // Assert
+    expect(text).toContain("GX010001.MP4");
+    expect(text).toContain("HEVC");
+    expect(text).toContain("Most Compatible");
+  });
+
+  it("an unrecognised fourcc — names it verbatim", () => {
+    // Arrange
+    const link = { file_name: "a.mp4", video_codec: "av01" };
+
+    // Act
+    const text = playbackErrorText(link);
+
+    // Assert
+    expect(text).toContain("av01");
   });
 });
 
