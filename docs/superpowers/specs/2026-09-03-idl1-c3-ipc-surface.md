@@ -3099,9 +3099,11 @@ Video spec `2026-10-16-idl1-video-DRAFT.md`, step 1. Types are core's
 Wrapper module `app/src/ipc/video.ts`. All are `async`.
 
 - **`link_video(session_id: string, path: string, on_progress:
-  Channel<Progress>)`** → `VideoLink`. Streams the file into `blobs/`
-  (phase `"copying"`, bytes; skipped when the blob already exists), reads
-  the container (phase `"probing"`), estimates the offset (GPMF GPS time,
+  Channel<Progress>)`** → `VideoLink`. Reads the container first (phase
+  `"probing"`), so a file that isn't a readable MP4 or misses the session
+  is refused before anything is copied; then streams the file into
+  `blobs/` (phase `"copying"`, bytes; skipped when the blob already
+  exists). Order amended 2026-10-18 (video lane self-ruling). Estimates the offset (GPMF GPS time,
   else container creation time, else `manual` at the session start;
   idl0's estimator, IDL0_SPEC §33.3) and appends the entry. Linking a
   file that is already linked, even if unlinked, returns that entry
