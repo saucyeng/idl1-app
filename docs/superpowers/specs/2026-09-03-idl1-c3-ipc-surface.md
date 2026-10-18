@@ -3141,7 +3141,10 @@ lead ruling). Plus `not_found` (session or entry) and `io`.
 
 `get_session`'s `SessionDetail` (§3.2) gains `videos: VideoLink[]`: live
 entries only, in `session.json` order, each with `on_device: boolean`
-(its blob is present here).
+(its blob is present here) and `other_links: number` (u32, how many other
+sessions hold a live entry for the same `blob_sha256`; the unlink prompt
+ticks "also delete the video file" only when it is 0. Added 2026-10-18,
+lead ruling).
 
 ## 4. Interaction budget
 
