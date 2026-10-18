@@ -11,6 +11,8 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
   the logger with when each was recorded and its size, all ticked; untick
   any, then Download. For a card that holds an old history. No spec change
   needed.
+  A running download now has a Cancel button: the ride in flight keeps its
+  partial bytes, the rest stay on the logger, and Bluetooth comes back.
 
 - **Downloads hand the radio to WiFi [docs] (2026-10-16).** A batch of
   rides now downloads in one WiFi session with the spec's radio handoff:

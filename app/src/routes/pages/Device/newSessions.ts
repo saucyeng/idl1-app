@@ -56,7 +56,13 @@ export type NewSessionsAction =
   | { type: "IMPORT_START" }
   | { type: "FILE_IMPORTED"; warnings: string[] }
   | { type: "FILE_FAILED"; error: string }
+  /** The user stopped the batch: what came in stays, the rest stay on the
+   *  logger for next time. */
+  | { type: "TRANSFER_CANCELLED" }
   | { type: "DISMISS" };
+
+/** The note a stopped batch ends with. */
+export const STOPPED_NOTE = "Download stopped; the rest stay on the logger for next time";
 
 /** Moves a transfer to its next file, or to `done` after the last one. */
 function advance(state: Extract<NewSessionsState, { phase: "transferring" }>, imported: number, failed: FailedFile[], warnings: string[]): NewSessionsState {
@@ -88,6 +94,9 @@ export function newSessionsReducer(state: NewSessionsState, action: NewSessionsA
     case "FILE_FAILED":
       if (state.phase !== "transferring") return state;
       return advance(state, state.imported, [...state.failed, { name: state.files[state.index].name, error: action.error }], state.warnings);
+    case "TRANSFER_CANCELLED":
+      if (state.phase !== "transferring") return state;
+      return { phase: "done", imported: state.imported, failed: state.failed, warnings: [...state.warnings, STOPPED_NOTE] };
     case "DISMISS":
       return state.phase === "done" || state.phase === "failed" || (state.phase === "ready" && state.files.length === 0) ? { phase: "idle" } : state;
     default:
@@ -107,7 +116,7 @@ export function autoStep(state: NewSessionsState, checked: boolean, transferred:
 }
 
 /** What the banner's button does. */
-export type BannerAction = "check" | "download" | "retry" | "dismiss";
+export type BannerAction = "check" | "download" | "retry" | "dismiss" | "cancel";
 
 /** What the banner shows. */
 export interface BannerView {
@@ -179,7 +188,7 @@ export function bannerView(state: NewSessionsState): BannerView {
       return {
         text: `${verb} ${state.index + 1} of ${state.files.length}`,
         detail: state.step === "import" ? current.name : `${current.name} · ${mb(doneInFile)} of ${mb(current.sizeBytes)}`,
-        action: null,
+        action: { kind: "cancel", label: "Cancel" },
         fraction,
         tone: "plain",
       };

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { DeviceFileView } from "./files";
-import { autoStep, bannerView, initialNewSessionsState, newSessionsReducer, pickFiles, rideWhen } from "./newSessions";
+import { STOPPED_NOTE, autoStep, bannerView, initialNewSessionsState, newSessionsReducer, pickFiles, rideWhen } from "./newSessions";
 import type { NewSessionsAction, NewSessionsState } from "./newSessions";
 
 function file(name: string, sizeBytes: number, isNew: boolean): DeviceFileView {
@@ -44,7 +44,7 @@ describe("newSessionsReducer", () => {
     const view = bannerView(state);
     expect(view.text).toBe("Downloading 1 of 2");
     expect(view.fraction).toBeCloseTo(1 / 3);
-    expect(view.action).toBeNull();
+    expect(view.action).toEqual({ kind: "cancel", label: "Cancel" });
   });
 
   it("transfer — both files imported — done, counts and warnings carried", () => {
@@ -173,5 +173,29 @@ describe("pickFiles", () => {
 
     // Assert
     expect(picked.map((f) => f.name)).toEqual(["a.idl1", "c.idl1"]);
+  });
+});
+
+describe("TRANSFER_CANCELLED", () => {
+  it("newSessionsReducer — cancelled mid-batch — done with what came in and a stopped note", () => {
+    // Arrange
+    const transferring = run([...CHECKED, { type: "TRANSFER_START" }, { type: "IMPORT_START" }, { type: "FILE_IMPORTED", warnings: [] }]);
+
+    // Act
+    const state = newSessionsReducer(transferring, { type: "TRANSFER_CANCELLED" });
+
+    // Assert
+    expect(state).toEqual({ phase: "done", imported: 1, failed: [], warnings: [STOPPED_NOTE] });
+  });
+
+  it("bannerView — transferring — offers Cancel", () => {
+    // Arrange
+    const transferring = run([...CHECKED, { type: "TRANSFER_START" }]);
+
+    // Act
+    const view = bannerView(transferring);
+
+    // Assert
+    expect(view.action).toEqual({ kind: "cancel", label: "Cancel" });
   });
 });

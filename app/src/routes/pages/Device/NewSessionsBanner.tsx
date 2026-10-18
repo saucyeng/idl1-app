@@ -6,7 +6,7 @@ import { Checkbox } from "../../../components/ui/checkbox";
 import { BrandSheet } from "../../../components/brand/BrandSheet";
 import { toastFor } from "../../../components/toasts/events";
 import { cn } from "../../../lib/utils";
-import { downloadFiles, listDeviceFiles, listRecentDeviceFiles } from "../../../ipc/device";
+import { cancelWifiTransfer, downloadFiles, listDeviceFiles, listRecentDeviceFiles } from "../../../ipc/device";
 import type { TransferEvent } from "../../../ipc/device";
 import { attachBikeLog, bikeForName } from "../../../ipc/bikelog";
 import { importFile } from "../../../ipc/import";
@@ -255,6 +255,7 @@ export default function NewSessionsBanner({ deviceId, knownSessionIds, onImporte
       for (const file of files) failOne(file.name, error);
       dispatchLoggerLink({ type: "TRANSFER_ENDED", deviceId, handedOff: false, wifiClosed: true });
     }
+    if (cancelled) dispatch({ type: "TRANSFER_CANCELLED" });
     const clean = failed === 0 && !cancelled && imported === files.length;
     if (stopped.current) return clean;
     if (imported > 0) {
@@ -277,6 +278,9 @@ export default function NewSessionsBanner({ deviceId, knownSessionIds, onImporte
         return;
       case "dismiss":
         dispatch({ type: "DISMISS" });
+        return;
+      case "cancel":
+        void cancelWifiTransfer(deviceId);
         return;
     }
   }
