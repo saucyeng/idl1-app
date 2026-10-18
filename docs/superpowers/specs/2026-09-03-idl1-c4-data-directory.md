@@ -654,6 +654,12 @@ for logs; an older peer ignores it). Three rules on top of the Blob row:
   later and not designed yet (video spec §10 item 3).
 - **Missing is normal.** Repair (§7) does not warn about a `videos` blob
   with no file. Only a session's own log blob is checked.
+- **Order (lead ruling 2026-10-18, video lane E2).** Video blobs sync in
+  their own last phase, after `session.json` files have merged (C3
+  `sync_now` phase `"videos"`). The rules above are decided against the
+  merged files. A mobile server recognises a pushed video blob because its
+  own merged `session.json` names that hash in `videos`, so the wire is
+  unchanged.
 
 **Per-field "changed" and tie rule.** *Added post-sign (2026-09-07, lead
 ruling R91, L11 Task 6/12.)* A user-owned field is "changed" from its base

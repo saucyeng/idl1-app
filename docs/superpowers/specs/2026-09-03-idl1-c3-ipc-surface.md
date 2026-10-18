@@ -2747,6 +2747,14 @@ interface SyncResult {
                                  // "bike_log" follows "profiles")
 }
 ```
+**Phase `"videos"` (added 2026-10-18, lead ruling on the video lane's E2).**
+A new last phase after `"bike_log"`. Video blobs (`kind: "video"`, C4 §6)
+move only there, after every `session.json` has merged, so the
+"not pulled when unlinked" and mobile rules can be decided against the
+merged files. `done`/`total` are bytes in this phase. Video blob transfers
+count in `blobs_transferred`. Blob transfers stream from and to disk (no
+whole-file buffering). Video blobs have no size cap; other files keep
+transport's 512 MiB cap.
 Errors: `sync`, `not_found` (unknown/unpaired `peer_id`).
 
 **Added post-sign (2026-09-07, lead ruling R102, L11 Task 10 review).**
