@@ -229,7 +229,7 @@ describe("playbackErrorText", () => {
 describe("linkErrorText", () => {
   const formatTime = (ms: number) => `T${ms}`;
 
-  it("each video error kind — routed on kind, naming the file", () => {
+  it("linkErrorText — each video error kind — a message routed on kind that names the file", () => {
     // Arrange
     const errors = [
       { kind: "video_parse", message: "x", detail: { reason: "no moov box" } },
@@ -248,7 +248,7 @@ describe("linkErrorText", () => {
     expect(texts[3]).toBe("GX01.MP4: disk full");
   });
 
-  it("a rejection that is not the C3 error shape — still reported with the file name", () => {
+  it("linkErrorText — a rejection that is not the C3 error shape — still a message naming the file", () => {
     // Arrange
     const error = new Error("boom");
 
@@ -261,19 +261,21 @@ describe("linkErrorText", () => {
 });
 
 describe("linkProgressText", () => {
-  it("copying with a total, copying without, probing — percent, no percent, reading", () => {
+  it("linkProgressText — copying with a total, copying without, total 0, probing, an unknown phase — percent only when known", () => {
     // Arrange
     const progress = [
       { done: 421, total: 1000, phase: "copying" },
       { done: 5, total: null, phase: "copying" },
+      { done: 0, total: 0, phase: "copying" },
       { done: 0, total: null, phase: "probing" },
+      { done: 0, total: null, phase: "hashing" },
     ];
 
     // Act
     const texts = progress.map((p) => linkProgressText("GX01.MP4", p));
 
     // Assert
-    expect(texts).toEqual(["Copying GX01.MP4 42%", "Copying GX01.MP4", "Reading GX01.MP4"]);
+    expect(texts).toEqual(["Copying GX01.MP4 42%", "Copying GX01.MP4", "Copying GX01.MP4", "Reading GX01.MP4", "GX01.MP4: hashing"]);
   });
 });
 

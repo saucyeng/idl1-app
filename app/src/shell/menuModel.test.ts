@@ -31,6 +31,17 @@ describe("MENUS", () => {
     expect(unknown).toEqual([]);
   });
 
+  it("menu bar — the Edit menu — offers Insert video cell (lead ruling E2)", () => {
+    // Arrange
+    const edit = MENUS.find((menu) => menu.id === "edit");
+
+    // Act
+    const item = edit?.items.find((i) => i.kind === "command" && i.id === MENU_COMMAND_IDS.editInsertVideoCell);
+
+    // Assert
+    expect(item).toMatchObject({ kind: "command", label: "Insert video cell" });
+  });
+
   it("menu bar — the five top-level menus — are File, Edit, View, Go, Help in that order", () => {
     const labels = MENUS.map((menu) => menu.label);
 

@@ -37,8 +37,9 @@ export interface VideoCellProps {
   playing: boolean;
   /** Playback speed, a multiple of real time: the element's `playbackRate`. */
   speed: number;
-  /** Whether this is the first video cell in document order: the clock
-   *  master while playing (C2 §2.1, spec §5.3). */
+  /** Whether this cell owns playback's clock right now: the first video
+   *  cell in document order (C2 §2.1, spec §5.3) while the page's clock
+   *  source is the video. Only then does it report frames. */
   isMaster: boolean;
   /** Master only: each presented frame's time, session-relative µs. */
   onMasterFrame: (sessionUs: bigint) => void;
@@ -134,16 +135,19 @@ export default function VideoCell({
   atVideoSRef.current = atVideoS;
 
   // Paused: the pinned cursor seeks the video exactly (spec §5.3). Re-runs
-  // on a new pin or a new source, which is also how a step's video-only
-  // position gives way to the next pin (lead ruling E4).
+  // on a new pin, a new source, or a new offset (a nudge, Align or
+  // Re-estimate, so the frame shows the result). A step changes none of
+  // these, so its video-only position holds until the next pin (lead
+  // ruling E4).
+  const offsetS = link?.offset_s ?? null;
   useEffect(() => {
     const el = videoRef.current;
     if (playing || el === null || atVideoS === null) return;
     el.pause();
     el.currentTime = atVideoS;
     setPausedVideoS(atVideoS);
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- `atVideoS` changes with the cursor, which is the trigger
-  }, [playing, src, cursorUs]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- `atVideoS` is a function of exactly these inputs
+  }, [playing, src, cursorUs, offsetS]);
 
   // Playing: start the element at the cursor's frame and the transport's
   // speed; pause when playback stops. A new chapter is a new `src`.
@@ -156,9 +160,13 @@ export default function VideoCell({
     }
     if (atVideoSRef.current !== null) el.currentTime = atVideoSRef.current;
     el.playbackRate = speed;
-    el.play().catch(() => {
-      // A rejected play() is either a pause racing it (harmless) or a
-      // decode failure, which also fires the element's `error` event.
+    el.play().catch((error: unknown) => {
+      // A pause or a new source racing play() rejects with AbortError,
+      // which is harmless. Any other rejection means no frames will come,
+      // so it is treated like a playback error: the master hands the clock
+      // back to rAF instead of freezing the cursor.
+      if (error instanceof DOMException && error.name === "AbortError") return;
+      handleErrorRef.current();
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps -- speed is applied by its own effect below
   }, [playing, src, failed]);
@@ -218,6 +226,8 @@ export default function VideoCell({
     setFailedBlob(blob);
     if (isMaster) onUnplayable(blob);
   }
+  const handleErrorRef = useRef(handleError);
+  handleErrorRef.current = handleError;
 
   async function run(label: string, fileName: string, action: () => Promise<unknown>): Promise<void> {
     if (sessionId === null) return;
@@ -235,7 +245,13 @@ export default function VideoCell({
 
   async function handleAddVideo(): Promise<void> {
     if (sessionId === null) return;
-    const picked = await open({ multiple: true, filters: [{ name: "Video", extensions: ["mp4", "MP4"] }] });
+    let picked: string | string[] | null;
+    try {
+      picked = await open({ multiple: true, filters: [{ name: "Video", extensions: ["mp4", "MP4"] }] });
+    } catch {
+      setMessages(["The file picker could not be opened."]);
+      return;
+    }
     if (picked === null) return;
     const paths = Array.isArray(picked) ? picked : [picked];
     const errors: string[] = [];
@@ -353,8 +369,8 @@ export default function VideoCell({
       )}
 
       {busy !== null && <p className="text-fg-dim">{busy}</p>}
-      {messages.map((m) => (
-        <p key={m} className="text-accent">
+      {messages.map((m, i) => (
+        <p key={i} className="text-accent">
           {m}
         </p>
       ))}

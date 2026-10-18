@@ -4487,7 +4487,10 @@ export default function NotebookPage() {
           pinnedCursorUs={manualCursorTUs === null ? null : Number(manualCursorTUs)}
           playing={playback.playing}
           speed={playback.speed}
-          isMaster={cellId === masterCellId}
+          // Reports frames only while it actually owns the clock, so a
+          // remounted master over a blob already marked unplayable never
+          // drives the cursor alongside the rAF loop.
+          isMaster={cellId === masterCellId && clockSource.kind === "video"}
           onMasterFrame={handleMasterFrame}
           onUnplayable={handleUnplayable}
           onVideosChanged={refreshSessionDetail}
