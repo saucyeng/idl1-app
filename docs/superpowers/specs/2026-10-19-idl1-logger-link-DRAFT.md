@@ -1,7 +1,7 @@
 # idl1 — Logger link: one owner, intent, events (DRAFT)
 
-Status: DRAFT for Isaac's review, 2026-10-19. Spec-first: nothing below is
-built until the open decisions (§9) are answered. Replaces the app's current
+Status: DRAFT, decisions 1–3 taken 2026-10-19 (§9). Spec-first: building
+in the order of §10. Replaces the app's current
 connection handling (Logger screen reducer, status poll, `reconnectAfterRestart`,
 `shell/loggerLink.ts`, the OTA reconnect loop, `device_status`'s ad-hoc link)
 and amends SPEC §6, §7.2, §10.4 and C3 §3.8 when built.
@@ -182,22 +182,28 @@ Changes:
 - Per-screen guards added on 2026-10-16 (`autoHeld`, `running`, poll pausing):
   the actor serialises jobs, so they are unnecessary.
 
-## 9. Open decisions (Isaac)
+## 9. Decisions (Isaac, 2026-10-19)
 
-1. **Background.** Should the app stay connected with the phone locked in a
-   pocket during a ride (live status, Record from the lock screen later)?
-   Android needs a visible notification for that (foreground service).
-   - (a) Connected only while the app is open; reconnects instantly on open.
-   - (b) Stay connected in the background, with a small "idl1 · logger
-     connected" notification. Also keeps a download going if you switch apps,
-     which you asked for earlier.
-2. **Which loggers.** You have more than one. Does the phone auto-connect
-   (a) to the last logger used, (b) to every logger it has paired, or (c) to
-   loggers you mark "mine"?
-3. **`POST /record` and `POST /power_off`** over WiFi (§7.3–4) — new wire
-   endpoints. OK?
-4. **Advertising cadence** (§7.1) — 20 ms for 30 s, then 152.5 ms. OK, or do
-   you want a slower idle rate for battery?
+1. **Background: stay connected.** The app keeps its loggers connected with
+   the phone locked, through an Android foreground service with a small
+   "idl1 · logger connected" notification. The same service keeps a WiFi
+   download going when another app is in front.
+2. **Every paired logger.** The app wants every logger it has paired, and
+   connects each one that is in range; each has its own link actor. The
+   logger name at the top left of the Logger screen (left of the gear and
+   the ⋯ menu) is a dropdown of paired loggers: picking one makes it the
+   active logger instantly, since its link is already up. One phone runs
+   several loggers by hopping through that dropdown.
+3. **`POST /record` and `POST /power_off`: yes.**
+4. **Advertising cadence:** asked what it is for (explained 2026-10-19);
+   recommendation stands at 20 ms for 30 s after any link break, then
+   152.5 ms. Not yet answered.
+
+Not yet explained: a report on 2026-10-19 that pressing the app's firmware
+Update button started a recording. Nothing on the update path sends
+`CMD_START_LOGGING`; candidates are a late press of the logger's own button
+(it "wasn't working" at the time) or a tap passing through the closing sheet
+to the Record button beneath. Next occurrence gets a USB log.
 
 ## 10. Build order
 
