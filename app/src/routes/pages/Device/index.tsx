@@ -6,7 +6,7 @@ import { SectionHead } from "../../../components/brand/SectionHead";
 import { Button } from "../../../components/ui/button";
 import { cn } from "../../../lib/utils";
 import { listSessions } from "../../../ipc/catalog";
-import { bleScan, bluetoothState, cancelWifiTransfer, connectDevice, powerOffDevice, requestBluetoothOn, deviceControl, deviceStatus, disconnectDevice, firmwareCatalog, onOtaStateChanged, pullConfig } from "../../../ipc/device";
+import { bleScan, bluetoothState, connectDevice, powerOffDevice, requestBluetoothOn, deviceControl, disconnectDevice, firmwareCatalog, onOtaStateChanged, pullConfig } from "../../../ipc/device";
 import type { DeviceControlCommand } from "../../../ipc/device";
 import { transitionObserved } from "./control";
 import { connectionReducer, initialConnectionState } from "./connection";
@@ -24,6 +24,8 @@ import IdentitySheet from "./IdentitySheet";
 import { setBikeProfile } from "./config/edit";
 import { dispatchRideFlow, useRideFlow } from "../../../shell/rideFlow";
 import { dispatchLoggerLink, useLoggerLink } from "../../../shell/loggerLink";
+import { pairLogger, unpairLogger, useLinks, waitForReady } from "../../../shell/links";
+import { linkKick, linkRecord } from "../../../ipc/link";
 import NotesSheet from "./NotesSheet";
 import { ModuleList } from "./ModuleGrid";
 import ModuleSheet from "./ModuleSheet";
@@ -38,9 +40,7 @@ import { toast } from "sonner";
 import { setDeviceLink } from "../../../shell/deviceLink";
 import { useSidebarSlotNode } from "../../../shell/sidebarSlot";
 import { localStorageLastDeviceBackend, shouldAutoConnect } from "./lastDevice";
-import { deviceStatusReducer, initialDeviceStatusState, isLinkLost, startStatusPoll } from "./statusPoll";
-import type { StatusPollDeps } from "./statusPoll";
-import { composeVisibility, getActiveRoute, subscribeRouteVisible } from "../../../shell/routeVisibility";
+import { deviceStatusReducer, initialDeviceStatusState, isLinkLost } from "./statusPoll";
 
 
 /** Wait after a restart before the first reconnect attempt, ms (the logger
@@ -71,29 +71,6 @@ const TIMER_TICK_MS = 1_000;
  *  user-configurable in wave 2. */
 const SCAN_TIMEOUT_MS = 10_000;
 
-/** Real `StatusPollDeps` for `startStatusPoll` (`statusPoll.ts`): the actual
- *  `device_status` command plus the real timer and visibility APIs. Built
- *  once at module scope — every field is a stable, side-effect-free
- *  function reference, so passing this object into an effect never
- *  violates the "no function props in a dependency array" rule (the object
- *  itself is not part of any dependency array; the effect below reads it
- *  directly from this module).
- *
- *  `isVisible`/`onVisibilityChange` compose the window's own visibility with
- *  whether Device is the shell's active route (`shell/routeVisibility.tsx`'s
- *  `composeVisibility`/`subscribeRouteVisible`, UI-4 brief "Mount-and-hide vs.
- *  the Device poll", R78): under mount-and-hide every page stays mounted, so
- *  `document.visibilityState` alone no longer means "on screen" — a hidden
- *  Device tab would otherwise keep the BLE link polled at 1 Hz forever. The
- *  poll's own pause/resume logic in `statusPoll.ts` is unchanged; only what
- *  "visible" means to it has. */
-const STATUS_POLL_DEPS: StatusPollDeps = {
-  deviceStatus,
-  setTimeout: (fn, ms) => window.setTimeout(fn, ms),
-  clearTimeout: (handle) => window.clearTimeout(handle),
-  isVisible: () => composeVisibility(document.visibilityState === "visible", getActiveRoute() === "device"),
-  onVisibilityChange: (handler) => subscribeRouteVisible("device", handler),
-};
 
 /** The last-used device id backend (Task 2, decision 64) — `localStorage`
  *  until a real `AppSettings` field exists (`lastDevice.ts`'s doc). Built
@@ -155,6 +132,8 @@ export default function Device() {
   const [draft, setDraft] = useState<DeviceConfig | null>(null);
   const pendingLoggerBike = useRideFlow().pendingLoggerBike;
   const link = useLoggerLink();
+  const links = useLinks();
+  const activeLink = state.activeDeviceId === null ? undefined : links.get(state.activeDeviceId);
   /** The logger dropped Bluetooth for a WiFi transfer (SPEC §10.4). */
   const handedOff = link.handedOff !== null && link.handedOff === state.activeDeviceId;
 
@@ -232,19 +211,18 @@ export default function Device() {
   const [restarting, setRestarting] = useState<string | null>(null);
   const reconnectAfterRestart = useCallback(
     async (restartingDeviceId: string, dropLinkFirst: boolean, attempts: number = RESTART_ATTEMPTS, label: string = "Logger restarting… reconnecting.", firstWaitMs: number = RESTART_BOOT_MS): Promise<boolean> => {
+      // The link actor reconnects by itself (logger link design §6); this
+      // only says so and waits for it, then re-reads the config.
       setRestarting(label);
-      if (dropLinkFirst) await disconnectDevice(restartingDeviceId).catch(() => {});
-      await sleep(firstWaitMs);
-      for (let attempt = 0; attempt < attempts; attempt += 1) {
-        try {
-          const info = await connectDevice(restartingDeviceId);
-          dispatch({ type: "CONNECTED", info });
-          readLoggerConfig(info.device_id, true);
-          setRestarting(null);
-          return true;
-        } catch {
-          await sleep(RESTART_RETRY_MS);
-        }
+      void dropLinkFirst;
+      await sleep(Math.min(firstWaitMs, 500));
+      void linkKick().catch(() => {});
+      const back = await waitForReady(restartingDeviceId, attempts * RESTART_RETRY_MS + firstWaitMs);
+      if (back !== null && back.info !== null) {
+        dispatch({ type: "LINK_READY", info: back.info });
+        readLoggerConfig(back.device_id, true);
+        setRestarting(null);
+        return true;
       }
       setRestarting(null);
       toast.error("The logger didn't come back", { description: "Power-cycle it, then connect again." });
@@ -290,6 +268,7 @@ export default function Device() {
 
   const onConnect = useCallback((deviceId: string) => {
     dispatch({ type: "CONNECT_START" });
+    pairLogger(deviceId);
     connectDevice(deviceId)
       .then((info) => {
         dispatch({ type: "CONNECTED", info });
@@ -320,6 +299,7 @@ export default function Device() {
   const onDisconnect = useCallback((disconnectingDeviceId: string) => {
     setLoggerConfig(null);
     setDraft(null);
+    unpairLogger(disconnectingDeviceId);
     disconnectDevice(disconnectingDeviceId)
       .then(() => dispatch({ type: "DISCONNECTED", deviceId: disconnectingDeviceId }))
       .catch((err: DeviceIpcError) => dispatch({ type: "FAILED", error: describeIpcError(err) }));
@@ -339,11 +319,12 @@ export default function Device() {
       // Bluetooth is off during a handed-off WiFi transfer: Record stops the
       // transfer, and recording starts once the logger is back (a few
       // seconds; the logger's own button is instant, firmware F7).
-      if (handedOff) {
-        if (command === "start_recording") {
-          dispatchLoggerLink({ type: "RECORD_WHEN_BACK" });
-          void cancelWifiTransfer(deviceId);
-          toast.info("Stopping the download to record", { description: "Recording starts as soon as the logger is back on Bluetooth." });
+      if (handedOff || (activeLink !== undefined && activeLink.phase !== "ready")) {
+        if (command === "start_recording" || command === "stop_recording") {
+          const start = command === "start_recording";
+          void linkRecord(deviceId, start).catch((err: DeviceIpcError) => toast.error("Couldn't change recording", { description: describeIpcError(err) }));
+          if (start && handedOff) toast.info("Stopping the download to record", { description: "The logger leaves WiFi and starts recording." });
+          else if (start) toast.info("Recording as soon as the logger is back");
         }
         return;
       }
@@ -450,10 +431,20 @@ export default function Device() {
     // opens and closes a link of its own, and on Android closing it can tear
     // down the link the reconnect is building (the 35 s reconnects of
     // 2026-10-16).
-    if (state.activeDeviceId === null || handedOff || restarting !== null) return;
-    const stop = startStatusPoll(STATUS_POLL_DEPS, state.activeDeviceId, dispatchStatus);
-    return stop;
-  }, [state.activeDeviceId, handedOff, restarting]);
+    // Status now arrives from the link actor's stream (logger link design
+    // §3 P3): no reads on a timer.
+  }, []);
+  useEffect(() => {
+    if (activeLink?.status != null) dispatchStatus({ type: "status", status: activeLink.status });
+  }, [activeLink?.status_at_ms, activeLink?.status]);
+  // Paired loggers the actor connected show up on their own.
+  useEffect(() => {
+    for (const view of links.values()) {
+      if (view.phase !== "ready" || view.info === null) continue;
+      if (connectionStateRef.current.connections.some((c) => c.device_id === view.device_id)) continue;
+      dispatch({ type: "LINK_READY", info: view.info });
+    }
+  }, [links]);
 
   // A WiFi transfer that handed off ends here: reconnect over Bluetooth,
   // waiting out the logger's failsafe when the WiFi link dropped, then start
@@ -472,7 +463,7 @@ export default function Device() {
         request.longWait ? "Waiting for the logger to come back on Bluetooth (up to 5 minutes)…" : "Back from the WiFi transfer… reconnecting.",
         request.longWait ? RESTART_BOOT_MS : AFTER_TRANSFER_MS,
       );
-      if (back && request.thenRecord) startRecordingRef.current?.();
+      void back;
     })();
   }, [link.reconnect, reconnectAfterRestart]);
 
@@ -504,7 +495,7 @@ export default function Device() {
   // No new work: the 1 Hz `device_status` poll above is the only source,
   // and `setDeviceLink` ignores a repeat of the value it already holds, so
   // a steady connection re-renders the chrome once, not once a second.
-  const linkLost = isLinkLost(statusState);
+  const linkLost = activeLink !== undefined ? activeLink.phase === "seeking" || activeLink.phase === "connecting" : isLinkLost(statusState);
 
   // A firmware update ends with the logger rebooted: reconnect on a fresh
   // link once the OTA flow settles.
@@ -671,7 +662,7 @@ export default function Device() {
         <HeroCard
           connectionState={state}
           status={statusState.status}
-          linkLost={!handedOff && isLinkLost(statusState)}
+          linkLost={!handedOff && linkLost}
           handedOff={handedOff}
           pending={pendingControl}
           elapsedMs={elapsedMs}
@@ -698,7 +689,11 @@ export default function Device() {
             {restarting}
           </p>
         )}
-        {statusState.error && <p role="status" className="font-mono text-sm text-fg-dim">{describeIpcError(statusState.error)}</p>}
+        {activeLink !== undefined && (activeLink.phase === "seeking" || activeLink.phase === "connecting" || activeLink.phase === "returning") && restarting === null && (
+          <p role="status" className="font-mono text-sm text-fg-dim">
+            {activeLink.phase === "returning" ? "Back from WiFi… reconnecting." : "Reconnecting to the logger…"}
+          </p>
+        )}
         {unconfirmedRecording && (
           <p role="status" className="font-mono text-sm text-hivis" data-outcome={unconfirmedRecording.outcome}>
             {outcomeText(unconfirmedRecording)}

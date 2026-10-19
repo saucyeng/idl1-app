@@ -73,6 +73,9 @@ export type ConnectionAction =
   | { type: "CONNECTED"; info: ConnectionInfo }
   | { type: "DISCONNECTED"; deviceId: string }
   | { type: "SWITCH_ACTIVE"; deviceId: string }
+  /** A paired logger's link actor connected it (logger link design): add
+   *  it without taking the screen away from the logger already shown. */
+  | { type: "LINK_READY"; info: ConnectionInfo }
   | { type: "FAILED"; error: string };
 
 /** Inserts or updates `device` in `discovered`, keeping the list sorted by
@@ -124,6 +127,10 @@ export function connectionReducer(state: ConnectionState, action: ConnectionActi
       const activeDeviceId =
         state.activeDeviceId === action.deviceId ? (connections[0]?.device_id ?? null) : state.activeDeviceId;
       return { ...state, phase: connections.length > 0 ? "connected" : "idle", connections, activeDeviceId };
+    }
+    case "LINK_READY": {
+      const connections = upsertConnection(state.connections, action.info);
+      return { ...state, phase: "connected", connections, activeDeviceId: state.activeDeviceId ?? action.info.device_id, error: null };
     }
     case "SWITCH_ACTIVE":
       if (!state.connections.some((c) => c.device_id === action.deviceId)) return state;

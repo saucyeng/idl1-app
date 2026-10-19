@@ -6,6 +6,16 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 
 ### Added
 
+- **The app keeps its loggers connected [docs] (2026-10-19).** One owner
+  per logger now holds its Bluetooth link: it connects every paired logger,
+  streams the logger's status instead of asking once a second, notices a
+  dead link within 6 s, and reconnects by itself — at once after a download
+  or firmware update, then every few seconds. WiFi downloads and firmware
+  pushes borrow the link and give it back, so nothing races the reconnect.
+  Record works in any state: during a download the logger leaves WiFi and
+  starts recording itself (firmware 0.3.0-beta.11). Spec-first: logger link
+  design draft; C3 section 3.8 `link_*`.
+
 - **Bluetooth-off check [docs] (2026-10-19).** Before scanning and before
   the launch auto-connect, the app checks the phone's Bluetooth; when it is
   off it shows Android's own "turn on?" prompt, and the Logger screen says

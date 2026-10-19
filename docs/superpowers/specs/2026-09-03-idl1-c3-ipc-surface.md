@@ -2343,6 +2343,28 @@ reconnects over Bluetooth; `wifi_closed: false` means the WiFi link went and
 the logger leaves WiFi mode by itself within five minutes. Errors (before
 any file): `ble`, `wifi`, `not_found`.
 
+**Logger links** *(added 2026-10-19, logger link design
+`2026-10-19-idl1-logger-link-DRAFT.md`)*. One Rust actor per paired logger
+owns its Bluetooth link: connects, streams status, reconnects. Other
+commands borrow its link through the managed connection map as before.
+
+- **`link_watch(on_view: Channel<LinkView>)`** — every logger's current
+  `LinkView` (`{device_id, info, phase, status, status_at_ms,
+  pending_record, error}`; `phase`: `seeking | connecting | ready | wifi |
+  handed_off | returning | forgotten`), then each change.
+- **`link_pair(device_id)`** — the app wants this logger; its actor starts.
+- **`link_forget(device_id)`** — stops wanting it; the actor disconnects and
+  sends `forgotten`.
+- **`link_kick()`** — every actor not connected tries now.
+- **`link_record(device_id, start: boolean)`** — start/stop recording in any
+  phase: sent now when `ready`; during a handed-off download the session
+  ends with `POST /record`; otherwise sent when the link is back. Errors:
+  `not_found` (not paired), `ble`.
+- **`connect_device`** now pairs and waits (≤ 20 s) for the actor's first
+  connection; **`disconnect_device`** forgets. **`device_status`** reads the
+  managed link only — `not_found` without one (the connect-read-close
+  fallback is gone).
+
 **`bluetooth_state()`** *(added 2026-10-19)* → `{ present, on, can_request }`:
 whether the phone has Bluetooth and whether it is switched on; `can_request`
 when the app can show the system's turn-on prompt (Android). Desktop reports
