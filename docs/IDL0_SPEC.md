@@ -447,6 +447,8 @@ ESP32 runs as AP. Phone connects directly, no router.
 | `/ping` | GET | JSON object | Status + identity. See below. Handler is allocation-light and never touches the SD card. |
 | `/handoff` | POST | 200 | App acknowledges the HTTP link is up; firmware then drops BLE (disconnects + stops advertising). Idempotent. See §10.4. |
 | `/wifi_off` | POST | 200 | Exits WiFi mode. Response flushes (~500 ms delay), then AP tears down and BLE advertising resumes. The normal WiFi-exit path once BLE is off. |
+| `/record` | POST | 200 | *(added 2026-10-19)* Exits WiFi mode and starts a session, as the button does in WiFi mode (F7): Record for a handed-off app. Body `ok`, or `already recording`. |
+| `/power_off` | POST | 200 | *(added 2026-10-19)* The `CMD_POWER_OFF` shutdown (§7.2) for a handed-off app; runs ~300 ms after the response. |
 | `/files` | GET | JSON array | `[{"name":"...", "size":N, "session_id":"<32-hex>"}]` — `session_id` is the 16-byte header UUID as 32 lowercase hex chars (no dashes), read from each file; omitted only if the header is unreadable. The app diffs it against the library to mark files NEW vs in-library (§24). |
 | `/download?file=<name>` | GET | binary stream | `<name>` is the file's name exactly as `/files` lists it, percent-encoded (clarified 2026-10-16: the firmware has always looked files up by name; the app had sent the list position and every download failed with 404). `Range: bytes=START[-END]` supported (`206` + `Content-Range`). The app resumes interrupted downloads from the received offset — safe because session files are immutable after recording. |
 | `/delete?file=<name>` | GET | 200/error | `<name>` as for `/download`. |
@@ -1031,6 +1033,13 @@ connected station, or five minutes with no HTTP request, exits WiFi
 mode autonomously and resumes BLE advertising — the device can never
 be stranded in AP mode draining battery. The app's 10 s `/ping`
 heartbeat keeps an active link alive indefinitely.
+
+Tighter once the phone has joined (added 2026-10-19, logger link design
+§7.2), so the logger is back on Bluetooth within seconds when the phone
+walks away or the app dies: a station that joined and then left with
+none back within **5 s**, or **60 s** with no HTTP request while BLE is
+handed off, also exits WiFi mode. Before any station joins, the five
+minutes stand.
 
 ---
 
