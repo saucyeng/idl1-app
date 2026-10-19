@@ -677,6 +677,15 @@ or a hard stop.
       same chart cells, then export from the app. Video is stored as a
       blob beside the log and syncs with it. Letting Claude drive the app
       (§8) can go first. GoPro ↔ logger link is later (§9).
+  - [ ] **Parked 2026-10-19 (Isaac, gathering footage).** Step 1 is built and green but not
+        merged. To resume:
+        1. Merge idl-rs `lane/video` (head 2fe9857; CI green, run 39173181525; it also fixes
+           idl-rs's `rust.yml`) into idl-rs main, and bump the `rust` submodule.
+        2. Merge idl1-app `lane/video-app` (head 071e6f0; tsc clean, vitest 3099 passed; based
+           on 8013686). CHANGELOG and TASKS may conflict.
+        3. Push. `cargo check -p app` in CI confirms `idl_rs_tauri::video::video_protocol`.
+        Then test with a raw HERO11 Mini clip. Not built yet: "Add video" on the Data tab,
+        drop-to-link in the app, dragging the pinned cursor.
   - [x] Video §8, letting Claude drive the app (2026-10-18): `tools/drive/drive.mjs`
         plus the `run` skill. Launch, screenshot, click, type, eval, console and close all
         verified against nightly build 72. Android (adb forwarding) comes later.
