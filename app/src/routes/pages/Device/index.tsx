@@ -6,7 +6,7 @@ import { SectionHead } from "../../../components/brand/SectionHead";
 import { Button } from "../../../components/ui/button";
 import { cn } from "../../../lib/utils";
 import { listSessions } from "../../../ipc/catalog";
-import { bleScan, cancelWifiTransfer, connectDevice, deviceControl, deviceStatus, disconnectDevice, firmwareCatalog, onOtaStateChanged, pullConfig } from "../../../ipc/device";
+import { bleScan, cancelWifiTransfer, connectDevice, powerOffDevice, deviceControl, deviceStatus, disconnectDevice, firmwareCatalog, onOtaStateChanged, pullConfig } from "../../../ipc/device";
 import type { DeviceControlCommand } from "../../../ipc/device";
 import { transitionObserved } from "./control";
 import { connectionReducer, initialConnectionState } from "./connection";
@@ -283,6 +283,20 @@ export default function Device() {
       })
       .catch((err: DeviceIpcError) => dispatch({ type: "FAILED", error: describeIpcError(err) }));
   }, [refreshKnownSessions, readLoggerConfig]);
+
+  // The app's power button (Isaac, 2026-10-19): the logger's long-press
+  // shutdown over Bluetooth. The link drops with it, so the screen goes
+  // straight back to finding a logger.
+  const onPowerOff = useCallback((offDeviceId: string) => {
+    powerOffDevice(offDeviceId)
+      .then(() => {
+        setLoggerConfig(null);
+        setDraft(null);
+        dispatch({ type: "DISCONNECTED", deviceId: offDeviceId });
+        toast.info("Logger powered off", { description: "Press its button to turn it back on." });
+      })
+      .catch((err: DeviceIpcError) => toast.error("Couldn't power off the logger", { description: describeIpcError(err) }));
+  }, []);
 
   const onDisconnect = useCallback((disconnectingDeviceId: string) => {
     setLoggerConfig(null);
@@ -610,6 +624,7 @@ export default function Device() {
           onScan={onScan}
           onConnect={onConnect}
           onDisconnect={onDisconnect}
+          onPowerOff={onPowerOff}
           onSwitchActive={onSwitchActive}
           onControl={onControl}
           onOpen={setView}

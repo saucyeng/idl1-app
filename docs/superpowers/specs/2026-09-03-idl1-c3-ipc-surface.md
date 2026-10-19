@@ -2343,6 +2343,11 @@ reconnects over Bluetooth; `wifi_closed: false` means the WiFi link went and
 the logger leaves WiFi mode by itself within five minutes. Errors (before
 any file): `ble`, `wifi`, `not_found`.
 
+**`power_off_device(device_id: string)`** *(added 2026-10-19)* → `void`:
+sends `CMD_POWER_OFF` (SPEC §7.2) over the managed connection and drops it.
+The logger stops any session first; its button turns it back on. Errors:
+`not_found` without a connection, `ble`.
+
 **`cancel_wifi_transfer(device_id: string)`** *(added 2026-10-16)* → `boolean`:
 stops a running `download_files` (the file in flight keeps its `.part`);
 `true` when one was running.

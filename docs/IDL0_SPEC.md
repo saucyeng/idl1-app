@@ -561,6 +561,9 @@ Control characteristic uses **Write with Response** — app waits for GATT ACK b
 | 0x08 | CMD_CONFIG_COMMIT |
 | 0x09 | CMD_CONFIG_READ_BEGIN |
 | 0x0A | CMD_FILES_READ_BEGIN |
+| 0x0B | CMD_POWER_OFF |
+
+`CMD_POWER_OFF` (0x0B, added 2026-10-19) is the long-press shutdown from the app: the logger acks, then stops and closes any session, turns the switched rail off and deep-sleeps until its button is pressed. The link drops as it goes; there is no status transition to wait for.
 
 `CMD_OTA_CONFIRM` (0x06) commits the currently-running image after an OTA. After an `/ota` POST and the subsequent reboot, the new image runs in pending-verify state — the status characteristic includes an `OTA: PENDING_VERIFY` line (§7.3). The app must send `CMD_OTA_CONFIRM` to cancel the pending rollback; if the device reboots before the confirmation, the bootloader switches back to the previous slot. Sending the command in any other state is a no-op.
 

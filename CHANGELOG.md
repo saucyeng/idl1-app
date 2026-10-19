@@ -6,6 +6,12 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 
 ### Added
 
+- **Power off from the app [docs] (2026-10-19).** A small power button on
+  the Logger screen, with a confirmation, turns the logger off the same way
+  holding its button does (a recording is saved first); its button turns it
+  back on. Needs firmware 0.3.0-beta.8. Spec-during: SPEC §7.2
+  `CMD_POWER_OFF` (0x0B), C3 §3.8 `power_off_device`.
+
 - **Claude can drive the running app [no-docs] (2026-10-18).** Dev-only
   tooling, not shipped: `tools/drive/drive.mjs` launches the installed
   idl1 with WebView2's DevTools port on 127.0.0.1 (env var on that one

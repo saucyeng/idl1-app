@@ -254,6 +254,13 @@ export async function deviceControl(deviceId: string, command: DeviceControlComm
   return invoke<DeviceStatus>("device_control", { deviceId, command });
 }
 
+/** Powers the logger off (C3 §3.8 `power_off_device`, added 2026-10-19):
+ *  the long-press shutdown, over the managed Bluetooth link, which is then
+ *  dropped. The logger's button turns it back on. */
+export async function powerOffDevice(deviceId: string): Promise<void> {
+  return invoke<void>("power_off_device", { deviceId });
+}
+
 /** Reads `deviceId`'s live `idl0_config.json` back over BLE (C3 §3.8,
  *  ruling R59), symmetric with `pushConfig`'s `configJson` argument. */
 export async function pullConfig(deviceId: string): Promise<string> {

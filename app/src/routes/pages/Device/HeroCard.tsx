@@ -1,4 +1,6 @@
-import { Bluetooth, EllipsisVertical, Settings } from "lucide-react";
+import { useState } from "react";
+import { Bluetooth, EllipsisVertical, Power, Settings } from "lucide-react";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "../../../components/ui/dialog";
 
 import { NoteBlock } from "../../../components/brand/NoteBlock";
 import { PulsingDot } from "../../../components/brand/PulsingDot";
@@ -62,6 +64,9 @@ export interface HeroCardProps {
   onScan: () => void;
   onConnect: (deviceId: string) => void;
   onDisconnect: (deviceId: string) => void;
+  /** Powers the logger off (its long-press shutdown), after the user
+   *  confirms. */
+  onPowerOff?: (deviceId: string) => void;
   /** Makes an already-connected logger the active one (decision 86). */
   onSwitchActive: (deviceId: string) => void;
   /** Sends a `device_control` command. */
@@ -276,6 +281,13 @@ export default function HeroCard(props: HeroCardProps) {
               <Button type="button" size="sm" className="size-11 shrink-0 p-0" aria-label="Logger settings" onClick={() => props.onOpen("config")}>
                 <Settings className="size-5" aria-hidden />
               </Button>
+              {props.onPowerOff !== undefined && (
+                <PowerOffButton
+                  recording={state === "recording"}
+                  disabled={busy}
+                  onConfirm={() => props.onPowerOff?.(active.device_id)}
+                />
+              )}
               <LoggerMenu {...props} busy={busy} />
             </div>
           </div>
@@ -321,5 +333,45 @@ export default function HeroCard(props: HeroCardProps) {
         </>
       )}
     </section>
+  );
+}
+
+/** A small power button and its confirmation, like a phone's power menu
+ *  (Isaac, 2026-10-19). A recording in progress is saved before the logger
+ *  turns off. */
+function PowerOffButton({ recording, disabled, onConfirm }: { recording: boolean; disabled: boolean; onConfirm: () => void }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <>
+      <Button type="button" size="sm" className="size-11 shrink-0 p-0" aria-label="Power off the logger" disabled={disabled} onClick={() => setOpen(true)}>
+        <Power className="size-5" aria-hidden />
+      </Button>
+      <Dialog open={open} onOpenChange={setOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Power off the logger?</DialogTitle>
+            <DialogDescription>
+              {recording ? "The recording is stopped and saved first. " : ""}Press the logger's button to turn it back on.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button type="button" onClick={() => setOpen(false)}>
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              emphasis="accent"
+              filled
+              onClick={() => {
+                setOpen(false);
+                onConfirm();
+              }}
+            >
+              Power off
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
   );
 }
