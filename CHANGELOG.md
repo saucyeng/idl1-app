@@ -6,6 +6,13 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 
 ### Added
 
+- **Bluetooth-off check [docs] (2026-10-19).** Before scanning and before
+  the launch auto-connect, the app checks the phone's Bluetooth; when it is
+  off it shows Android's own "turn on?" prompt, and the Logger screen says
+  "Bluetooth is off on this phone" with a Turn on button. Coming back to the
+  app after switching it on reconnects by itself. Spec-during: C3 section
+  3.8 `bluetooth_state`, `request_bluetooth_on`.
+
 - **Power off from the app [docs] (2026-10-19).** A small power button on
   the Logger screen, with a confirmation, turns the logger off the same way
   holding its button does (a recording is saved first); its button turns it

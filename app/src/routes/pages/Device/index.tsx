@@ -6,7 +6,7 @@ import { SectionHead } from "../../../components/brand/SectionHead";
 import { Button } from "../../../components/ui/button";
 import { cn } from "../../../lib/utils";
 import { listSessions } from "../../../ipc/catalog";
-import { bleScan, cancelWifiTransfer, connectDevice, powerOffDevice, deviceControl, deviceStatus, disconnectDevice, firmwareCatalog, onOtaStateChanged, pullConfig } from "../../../ipc/device";
+import { bleScan, bluetoothState, cancelWifiTransfer, connectDevice, powerOffDevice, requestBluetoothOn, deviceControl, deviceStatus, disconnectDevice, firmwareCatalog, onOtaStateChanged, pullConfig } from "../../../ipc/device";
 import type { DeviceControlCommand } from "../../../ipc/device";
 import { transitionObserved } from "./control";
 import { connectionReducer, initialConnectionState } from "./connection";
@@ -262,12 +262,31 @@ export default function Device() {
     [reconnectAfterRestart],
   );
 
-  const onScan = useCallback(() => {
-    dispatch({ type: "SCAN_START" });
-    bleScan(SCAN_TIMEOUT_MS, (device) => dispatch({ type: "DEVICE_DISCOVERED", device }))
-      .then(() => dispatch({ type: "SCAN_END" }))
-      .catch((err: DeviceIpcError) => dispatch({ type: "FAILED", error: describeIpcError(err) }));
+  // Phone Bluetooth switched off (Isaac, 2026-10-19: a reconnect that
+  // "didn't work" was the system toggle). Checked before every scan and the
+  // launch auto-connect; when off, Android's own prompt is shown once, and
+  // the screen says so with a button for the system prompt again.
+  const [bluetoothOff, setBluetoothOff] = useState(false);
+  const ensureBluetooth = useCallback(async (prompt: boolean): Promise<boolean> => {
+    try {
+      let bt = await bluetoothState();
+      if (!bt.on && prompt && bt.can_request) bt = await requestBluetoothOn();
+      setBluetoothOff(!bt.on);
+      return bt.on;
+    } catch {
+      return true; // can't tell: let the scan or connect report what it finds
+    }
   }, []);
+
+  const onScan = useCallback(() => {
+    void ensureBluetooth(true).then((on) => {
+      if (!on) return;
+      dispatch({ type: "SCAN_START" });
+      bleScan(SCAN_TIMEOUT_MS, (device) => dispatch({ type: "DEVICE_DISCOVERED", device }))
+        .then(() => dispatch({ type: "SCAN_END" }))
+        .catch((err: DeviceIpcError) => dispatch({ type: "FAILED", error: describeIpcError(err) }));
+    });
+  }, [ensureBluetooth]);
 
   const onConnect = useCallback((deviceId: string) => {
     dispatch({ type: "CONNECT_START" });
@@ -372,14 +391,20 @@ export default function Device() {
   // it drives no render) guards against a second attempt if the read
   // resolves after the user has already started their own scan/connect.
   const autoConnectAttempted = useRef(false);
-  useEffect(() => {
-    LAST_DEVICE_BACKEND.read().then((lastDeviceId) => {
+  const autoConnect = useCallback(() => {
+    void LAST_DEVICE_BACKEND.read().then(async (lastDeviceId) => {
       const current = connectionStateRef.current;
       if (lastDeviceId === null) return;
       if (!shouldAutoConnect(lastDeviceId, autoConnectAttempted.current, current.connections.length, current.phase)) {
         return;
       }
       autoConnectAttempted.current = true;
+      if (!(await ensureBluetooth(true))) {
+        // Retried when Bluetooth comes on (the banner's button, or the
+        // app coming back to the front).
+        autoConnectAttempted.current = false;
+        return;
+      }
       setAutoConnecting(true);
       connectDevice(lastDeviceId)
         .then((info) => {
@@ -390,7 +415,24 @@ export default function Device() {
         .catch(() => {})
         .finally(() => setAutoConnecting(false));
     });
-  }, [refreshKnownSessions, readLoggerConfig]);
+  }, [refreshKnownSessions, readLoggerConfig, ensureBluetooth]);
+  useEffect(() => {
+    autoConnect();
+    // Once on mount; again below when Bluetooth turns back on.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  // Back to the front: Bluetooth may have been switched on meanwhile.
+  useEffect(() => {
+    if (!bluetoothOff) return;
+    const onVisible = () => {
+      if (document.visibilityState !== "visible") return;
+      void ensureBluetooth(false).then((on) => {
+        if (on) autoConnect();
+      });
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => document.removeEventListener("visibilitychange", onVisible);
+  }, [bluetoothOff, ensureBluetooth, autoConnect]);
 
   // 1 Hz `device_status` poll (wave-2 operating brief §4's effects rule):
   // all decision logic lives in the pure `startStatusPoll` driver. Only
@@ -608,6 +650,24 @@ export default function Device() {
       {sidebarNode !== null && createPortal(deviceList, sidebarNode)}
 
       <div className={cn("device-tab__main flex flex-col gap-3", shownView !== "main" && "hidden")}>
+        {bluetoothOff && (
+          <div role="status" className="flex items-center justify-between gap-3 rounded-[var(--radius-card)] border border-hivis bg-surface px-3 py-2">
+            <span className="text-sm text-hivis">Bluetooth is off on this phone.</span>
+            <Button
+              type="button"
+              emphasis="accent"
+              filled
+              className="h-11 shrink-0 px-4"
+              onClick={() => {
+                void ensureBluetooth(true).then((on) => {
+                  if (on) autoConnect();
+                });
+              }}
+            >
+              Turn on
+            </Button>
+          </div>
+        )}
         <HeroCard
           connectionState={state}
           status={statusState.status}

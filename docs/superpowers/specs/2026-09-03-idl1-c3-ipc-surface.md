@@ -2343,6 +2343,15 @@ reconnects over Bluetooth; `wifi_closed: false` means the WiFi link went and
 the logger leaves WiFi mode by itself within five minutes. Errors (before
 any file): `ble`, `wifi`, `not_found`.
 
+**`bluetooth_state()`** *(added 2026-10-19)* → `{ present, on, can_request }`:
+whether the phone has Bluetooth and whether it is switched on; `can_request`
+when the app can show the system's turn-on prompt (Android). Desktop reports
+`on: true`.
+
+**`request_bluetooth_on()`** *(added 2026-10-19)* → the same shape, after
+Android's own "turn Bluetooth on?" prompt (asks for the Nearby devices
+permission first). Errors: `permission_denied`, `ble`.
+
 **`power_off_device(device_id: string)`** *(added 2026-10-19)* → `void`:
 sends `CMD_POWER_OFF` (SPEC §7.2) over the managed connection and drops it.
 The logger stops any session first; its button turns it back on. Errors:

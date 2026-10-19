@@ -2,12 +2,16 @@ package com.saucyeng.idl1.device
 
 import android.Manifest
 import android.app.Activity
+import android.bluetooth.BluetoothAdapter
 import android.bluetooth.BluetoothManager
 import android.bluetooth.le.ScanCallback
 import android.bluetooth.le.ScanFilter
 import android.bluetooth.le.ScanResult
 import android.bluetooth.le.ScanSettings
 import android.content.Context
+import android.content.Intent
+import androidx.activity.result.ActivityResult
+import app.tauri.annotation.ActivityCallback
 import android.net.wifi.WifiManager
 import android.os.Build
 import android.os.Handler
@@ -112,6 +116,38 @@ class DevicePlugin(private val activity: Activity) : Plugin(activity) {
     @PermissionCallback
     private fun onBlePermissions(invoke: Invoke) {
         invoke.resolve(JSObject().put("granted", getPermissionState(bleAlias()) == PermissionState.GRANTED))
+    }
+
+    // ---- adapter on/off (2026-10-19) ----------------------------------
+
+    private fun adapterState(): JSObject {
+        val adapter = bluetoothManager().adapter
+        return JSObject().put("present", adapter != null).put("on", adapter?.isEnabled == true)
+    }
+
+    /** Resolves `{present, on}`: whether the phone has Bluetooth, and whether it is on. */
+    @Command
+    fun bleAdapterState(invoke: Invoke) {
+        invoke.resolve(adapterState())
+    }
+
+    /** Shows Android's own "turn Bluetooth on?" prompt when it is off, then
+     *  resolves `{present, on}` as it stands after the prompt. Needs the
+     *  Nearby devices permission (API 31+), which the caller asks for first. */
+    @Command
+    @Suppress("MissingPermission")
+    fun bleRequestEnable(invoke: Invoke) {
+        val adapter = bluetoothManager().adapter
+        if (adapter == null || adapter.isEnabled) {
+            invoke.resolve(adapterState())
+            return
+        }
+        startActivityForResult(invoke, Intent(BluetoothAdapter.ACTION_REQUEST_ENABLE), "onBleEnable")
+    }
+
+    @ActivityCallback
+    fun onBleEnable(invoke: Invoke, result: ActivityResult) {
+        invoke.resolve(adapterState())
     }
 
     // ---- BLE ------------------------------------------------------------

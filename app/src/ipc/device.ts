@@ -254,6 +254,25 @@ export async function deviceControl(deviceId: string, command: DeviceControlComm
   return invoke<DeviceStatus>("device_control", { deviceId, command });
 }
 
+/** Whether the phone's Bluetooth is present and on (C3 §3.8, added
+ *  2026-10-19). `can_request`: the app can show the system's turn-on prompt. */
+export interface BluetoothState {
+  present: boolean;
+  on: boolean;
+  can_request: boolean;
+}
+
+/** The adapter's state now, without prompting. */
+export async function bluetoothState(): Promise<BluetoothState> {
+  return invoke<BluetoothState>("bluetooth_state");
+}
+
+/** Shows the system's "turn Bluetooth on?" prompt (Android) and returns the
+ *  state after it. */
+export async function requestBluetoothOn(): Promise<BluetoothState> {
+  return invoke<BluetoothState>("request_bluetooth_on");
+}
+
 /** Powers the logger off (C3 §3.8 `power_off_device`, added 2026-10-19):
  *  the long-press shutdown, over the managed Bluetooth link, which is then
  *  dropped. The logger's button turns it back on. */
