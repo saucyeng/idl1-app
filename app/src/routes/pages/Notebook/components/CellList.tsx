@@ -53,6 +53,14 @@ export interface CellListProps {
    */
   renderJsCell: (cellId: string) => ReactNode;
   /**
+   * Renders a `video`-kind cell (C2 §2.1, video spec §5.2). Injected like
+   * {@link CellListProps.renderJsCell}: the player follows the shared
+   * cursor and the primary window's session, which `Notebook/index.tsx`
+   * owns. Optional; omitted renders nothing in the cell's place, and never
+   * a sandbox chart.
+   */
+  renderVideoCell?: (cellId: string) => ReactNode;
+  /**
    * Wraps each cell's own rendered output (the pending placeholder,
    * `MathCell`, `TableCell`, or `renderJsCell`'s result) — never the
    * attached prose spans, which belong to the surrounding document flow
@@ -124,6 +132,7 @@ export default function CellList({
   inlineResults,
   spanErrors,
   renderJsCell,
+  renderVideoCell,
   frame = identityFrame,
   windowNote = null,
   noSelection = false,
@@ -157,12 +166,17 @@ export default function CellList({
         const before = cell.id !== null ? proseBlocks.get(`${cell.id}::before`) : undefined;
         const after = cell.id !== null ? proseBlocks.get(`${cell.id}::after`) : undefined;
         const output = cell.id !== null ? outputs.get(cell.id) : undefined;
+        // A video cell has nothing to evaluate (C2 §2.1: no host variable,
+        // no output): it renders from the scan as soon as it has an id,
+        // rather than waiting on a `CellOutput`.
         const rendered =
-          output === undefined ? (
+          cell.kind === "video" && cell.id !== null && renderVideoCell !== undefined ? (
+            renderVideoCell(cell.id)
+          ) : output === undefined ? (
             <CellPendingSlot kind={cell.kind} />
           ) : output.kind === "math" ? (
             <MathCell output={output} windowNote={windowNote} />
-          ) : output.kind === "table" ? (
+          ) : output.kind === "video" ? null : output.kind === "table" ? (
             <TableCell output={output} windowNote={windowNote} dense={dense} lapTimeSecs={lapTimeSecs} />
           ) : (
             renderJsCell(cell.id as string)

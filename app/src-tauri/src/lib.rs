@@ -150,6 +150,12 @@ pub fn run() {
         // the frontend's already-declared `@tauri-apps/plugin-opener`.
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_deep_link::init())
+        // Linked video playback (C3 §3.12, video spec §10 item 5): `<video src>`
+        // loads `idl1-video://<sha256>` (built by `ipc/video.ts` `videoUrl`); the
+        // handler in `idl-rs-tauri` serves the blob with `Range` support, off the
+        // main thread (R201). No video bytes cross IPC. `csp` is null in
+        // `tauri.conf.json`, so `media-src` needs no entry.
+        .register_asynchronous_uri_scheme_protocol("idl1-video", idl_rs_tauri::video::video_protocol)
         .invoke_handler(idl_rs_tauri::handler())
         .run(tauri::generate_context!())
         .expect("error while running idl1");

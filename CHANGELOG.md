@@ -12,6 +12,47 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
   process only) and attaches with playwright-core to click, type, run JS,
   read the console, take screenshots and close it; project skill `run`
   documents it. Video spec §8; no spec change needed.
+- **Video cells in notebooks [no-docs] (2026-10-18).** Edit → "Insert
+  video cell" adds a player that shows the selected session's video at the
+  cursor. It says when there is no video at that time, when the file is
+  not on this device, or when the webview can't play the codec (with the
+  GoPro "Most Compatible" hint). "Add video" links MP4s with progress and
+  readable errors. While playing, the first video cell drives the cursor,
+  so every chart follows the footage; with no footage at the cursor, the
+  usual clock runs. Paused, a pin seeks the video; ±1 s and ±1 frame
+  buttons move only the video, Align lines the frame up with the pinned
+  cursor, and ±1 frame/±10 ms nudges, Re-estimate and Unlink (with "also
+  delete the video file", ticked when no other session links it) adjust
+  each linked file. New cells get their id when inserted (C2 §2.2 lets any
+  writer mint it), so the player shows before the first save.
+  Groundwork: `ipc/video.ts` wraps the C3 §3.12 commands (`link_video` with progress,
+  `match_videos`, `set_video_offset`, `reestimate_video_offset`,
+  `unlink_video`), with `videoUrl` on the `idl1-video` URI scheme, which
+  the app now registers. `SessionDetail` gains `videos`. Notebooks read
+  `video` cells (C2 §2.1). The playback clock takes an injected source, so
+  the first video cell can drive the cursor while playing, and pure modules
+  pick the video at the cursor and do the align, nudge and step arithmetic.
+  The Data tab's sync accepts the new last phase, `"videos"`. Spec-first:
+  the video spec and C1–C4, 2026-10-16. Lead rulings 2026-10-18 (confirmed
+  by Isaac the same day; E8 adds `other_links`): the cell sits in
+  document order, sized by the video's aspect (16:9 fallback, 60vh cap);
+  Edit → "Insert video cell" appends one; dragging the cursor seeks with
+  `fastSeek` once a drag gesture exists, and a pin seeks exactly; while
+  paused, −1 s/−1 frame/+1 frame/+1 s buttons move only the video for
+  Align; eval emits a `video` `CellOutput`; the transport is unchanged;
+  reports leave video cells out.
+- **Video engine and streamed sync [no-docs] (2026-10-19).** idl-rs gains
+  `core/src/video` (idl0's MP4, GPMF and sync code, ported with its tests;
+  reads only the header and telemetry, never the whole file), `session.json`
+  `videos`, link/unlink/offset/match in `store/video.rs`, the five C3 §3.12
+  commands and the `idl1-video` scheme handler (ranged reads, 8 MiB per
+  response), and `.mp4` in the inbox. The session clock maps GoPro time
+  through each GPS sample's recorded time; zero, outlier (median offset
+  ± 2 s) and non-increasing GPS epochs are dropped. LAN sync now streams
+  every blob to and from disk; video blobs are uncapped and move in a new
+  last `"videos"` phase, phones skip them, and an unlinked video is not
+  pulled back. idl-rs `rust.yml` now runs the per-crate suites with the
+  Linux Tauri prerequisites (it had been red on main).
 
 - **Choose which rides to download [docs] (2026-10-16).** Tapping the
   "new rides" banner itself (not its Download button) lists the rides on

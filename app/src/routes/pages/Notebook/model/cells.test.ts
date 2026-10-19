@@ -1,6 +1,56 @@
 import { describe, expect, it } from "vitest";
 
-import { replaceCellBody, scanCells } from "./cells";
+import { hex8FromBytes, insertVideoCell, replaceCellBody, scanCells } from "./cells";
+
+describe("video cells", () => {
+  it("scanCells — a video fence with an id — reported as a video cell with its {} body", () => {
+    // Arrange
+    const markdown = "Footage:\n\n```video id=0a0b0c0d\n{}\n```\n";
+
+    // Act
+    const doc = scanCells(markdown);
+
+    // Assert
+    expect(doc.cells).toHaveLength(1);
+    expect(doc.cells[0].kind).toBe("video");
+    expect(doc.cells[0].id).toBe("0a0b0c0d");
+    expect(new TextDecoder().decode(new TextEncoder().encode(markdown).subarray(...doc.cells[0].bodyRange))).toBe("{}\n");
+  });
+
+  it("insertVideoCell — a document ending in text without a newline — appends a blank line then a video fence with the given id", () => {
+    // Arrange
+    const markdown = "Intro";
+
+    // Act
+    const updated = insertVideoCell(markdown, "0a0b0c0d");
+
+    // Assert
+    expect(updated).toBe("Intro\n\n```video id=0a0b0c0d\n{}\n```\n");
+    expect(scanCells(updated).cells.map((c) => [c.kind, c.id])).toEqual([["video", "0a0b0c0d"]]);
+  });
+
+  it("insertVideoCell — empty and newline-terminated documents — no stray separator", () => {
+    // Arrange
+    const inputs = ["", "x\n", "x\n\n"];
+
+    // Act
+    const outputs = inputs.map((m) => insertVideoCell(m, "00000001"));
+
+    // Assert
+    expect(outputs).toEqual(["```video id=00000001\n{}\n```\n", "x\n\n```video id=00000001\n{}\n```\n", "x\n\n```video id=00000001\n{}\n```\n"]);
+  });
+
+  it("hex8FromBytes — four bytes including small ones — 8 lowercase hex characters, zero-padded", () => {
+    // Arrange
+    const bytes = new Uint8Array([0x0a, 0xff, 0x00, 0x7b]);
+
+    // Act
+    const id = hex8FromBytes(bytes);
+
+    // Assert
+    expect(id).toBe("0aff007b");
+  });
+});
 
 /** Decodes a `[start, end)` UTF-8 byte range of `markdown` back to text, for assertions. */
 function sliceBytes(markdown: string, range: [number, number]): string {

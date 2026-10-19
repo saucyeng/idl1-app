@@ -75,9 +75,11 @@ export function languageFor(kind: CellKindToken | "prose"): Extension {
       return markdown();
     case "table":
     case "js":
+    case "video":
       // C2 §4: a table cell's fence body is one JSON object, so the JS
       // language mode's tokenizer (a superset of JSON) is reused rather
-      // than adding a JSON-only language.
+      // than adding a JSON-only language. A video cell's body is one JSON
+      // object too (C2 §2.1, `{}` in this version).
       return javascript();
     case "math":
       return new LanguageSupport(mathLanguage);
@@ -86,9 +88,9 @@ export function languageFor(kind: CellKindToken | "prose"): Extension {
 
 /**
  * The whole-document language: markdown, with each fenced cell's own body
- * highlighted in its fence language (C2 §2.1's three tokens). `lang-markdown`
+ * highlighted in its fence language (C2 §2.1's four tokens). `lang-markdown`
  * resolves a fence's info string against these descriptions itself — this is
- * the same three languages {@link languageFor} hands a single-cell editor,
+ * the same languages {@link languageFor} hands a single-cell editor,
  * nested rather than chosen.
  */
 export function workbookLanguage(): Extension {
@@ -97,6 +99,7 @@ export function workbookLanguage(): Extension {
       LanguageDescription.of({ name: "math", support: new LanguageSupport(mathLanguage) }),
       LanguageDescription.of({ name: "js", alias: ["javascript"], support: javascript() }),
       LanguageDescription.of({ name: "table", support: javascript() }),
+      LanguageDescription.of({ name: "video", support: javascript() }),
     ],
   });
 }

@@ -26,7 +26,7 @@ export const CODE_CHANGE_DEBOUNCE_MS = 400;
 /** Props for {@link CodePane}. */
 export interface CodePaneProps {
   /** The fence's cell kind (C2 §2.1); selects the language mode. */
-  kind: "prose" | "math" | "table" | "js";
+  kind: "prose" | "math" | "table" | "js" | "video";
   /** The cell's current source text (one cell's body, not the whole
    *  document — addressed by `model/cells.ts`'s byte ranges one layer up). */
   code: string;

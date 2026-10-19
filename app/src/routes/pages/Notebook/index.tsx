@@ -9,6 +9,7 @@ import { type LayoutPresetId } from "../../../shell/layoutPresets";
 import { BrandSheet } from "@/components/brand/BrandSheet";
 import { NoteBlock } from "@/components/brand/NoteBlock";
 import { listSessions, listWorkbooks, getSession, type SessionDetail, type SessionSummary } from "../../../ipc/catalog";
+import type { SessionVideo } from "../../../ipc/video";
 import { startRebuildJob, whenRebuildFinishes, type RebuildRunSummary } from "../../../ipc/rebuild_job";
 import { cursorReadout } from "../../../ipc/cursor";
 import { AxisKind } from "../../../ipc/hostChannel";
@@ -97,7 +98,7 @@ import { SandboxHost } from "./host/SandboxHost";
 import { PING_INTERVAL_MS } from "./host/watchdog";
 import { NotebookSession } from "./host/NotebookSession";
 import { dropCellHeight, initialCellHeights, recordCellHeight, type CellHeights } from "./model/cellLayout";
-import { replaceCellBody } from "./model/cells";
+import { hex8FromBytes, insertVideoCell, replaceCellBody } from "./model/cells";
 import { changedCellIds } from "./model/documentRanges";
 import { displayNameFor, documentCellDisplayNames, setCellLabelLine } from "./graph/cellDisplayName";
 import {
@@ -118,7 +119,10 @@ import { chartTitleFor } from "./model/chartTitle";
 import { denseChromeMode, readDenseMode, sharesXAxisAbove, writeDenseMode } from "./model/denseMode";
 import { createCursorBus, type CursorBus } from "./interaction/cursorBus";
 import { BASIC_MOUSE_PRESET, findInputMapPreset, INPUT_MAP_PRESETS, type InputMapPreset } from "./interaction/inputMap";
-import { playableSpanUs, setSpeed, tick, togglePlay, type PlaybackState } from "./interaction/playback";
+import { advance, playableSpanUs, setSpeed, togglePlay, type PlaybackState } from "./interaction/playback";
+import { clockSourceFor, masterVideoCellId, sessionUsToS } from "./interaction/videoClock";
+import { videoAtSessionTime } from "./model/videoSpan";
+import VideoCell from "./components/VideoCell";
 import type { PlaybackMode } from "./interaction/playbackMode";
 import { editorPlacement } from "./model/editorPlacement";
 import { paperViewActive } from "./model/paperView";
@@ -959,8 +963,63 @@ export default function NotebookPage() {
   // change doesn't tear down and restart the RAF loop itself.
   const primaryWindowSpanRef = useRef(primaryWindowSpan);
   primaryWindowSpanRef.current = primaryWindowSpan;
+
+  // Video spec §5.3: playback's injected clock source. While playing with
+  // playable footage at the cursor, the first `video` cell in document
+  // order (C2 §2.1) drives the cursor from its presented frames
+  // (`handleMasterFrame`); otherwise the rAF loop below does. The master
+  // must be mounted to report frames, and a blob it could not play falls
+  // back to the rAF clock, so playback never waits on a picture that will
+  // not come.
+  const masterCellId = useMemo(() => masterVideoCellId(state.cells), [state.cells]);
+  const [mountedVideoCellIds, setMountedVideoCellIds] = useState<ReadonlySet<string>>(() => new Set());
+  const [unplayableBlobs, setUnplayableBlobs] = useState<ReadonlySet<string>>(() => new Set());
+  const primaryVideos: SessionVideo[] | null = sessionDetail === null ? null : (sessionDetail.videos ?? []);
+  const clockSource = clockSourceFor(
+    playback.playing,
+    masterCellId !== null && mountedVideoCellIds.has(masterCellId) ? masterCellId : null,
+    videoAtSessionTime(primaryVideos ?? [], sessionUsToS(playback.tUs)),
+    unplayableBlobs
+  );
+  const handleMasterFrame = useCallback((sessionUs: bigint) => {
+    const spanUs = playableSpanUs(primaryWindowSpanRef.current);
+    if (spanUs !== null) setPlayback((prev) => advance(prev, { kind: "media", sessionUs }, spanUs));
+  }, []);
+  /** Re-reads `sessionId`'s `SessionDetail` after a video cell wrote a
+   *  link, unlink or offset (C3 §3.12), into every selected window on that
+   *  session. A failed read leaves the old detail in place; the cell has
+   *  already reported its own error. */
+  const videoRefreshWindowsRef = useRef(windows);
+  videoRefreshWindowsRef.current = windows;
+  const refreshSessionDetail = useCallback((sessionId: string) => {
+    getSession(sessionId).then(
+      (detail) => {
+        setSessionDetailsByWindow((prev) => {
+          const next = new Map(prev);
+          for (const w of videoRefreshWindowsRef.current) {
+            if (w.sessionId === sessionId) next.set(windowKey(w), detail);
+          }
+          return next;
+        });
+      },
+      () => undefined
+    );
+  }, []);
+  const handleUnplayable = useCallback((blobSha256: string) => {
+    setUnplayableBlobs((prev) => (prev.has(blobSha256) ? prev : new Set(prev).add(blobSha256)));
+  }, []);
+  const handleVideoCellMounted = useCallback((cellId: string, mounted: boolean) => {
+    setMountedVideoCellIds((prev) => {
+      if (prev.has(cellId) === mounted) return prev;
+      const next = new Set(prev);
+      if (mounted) next.add(cellId);
+      else next.delete(cellId);
+      return next;
+    });
+  }, []);
+
   useEffect(() => {
-    if (!playback.playing || !primeState.running) return;
+    if (!playback.playing || !primeState.running || clockSource.kind !== "raf") return;
 
     let raf = 0;
     let last = performance.now();
@@ -969,13 +1028,13 @@ export default function NotebookPage() {
       last = now;
       const spanUs = playableSpanUs(primaryWindowSpanRef.current);
       if (spanUs !== null) {
-        setPlayback((prev) => tick(prev, elapsedMs, spanUs));
+        setPlayback((prev) => advance(prev, { kind: "elapsed", elapsedMs }, spanUs));
       }
       raf = requestAnimationFrame(loop);
     };
     raf = requestAnimationFrame(loop);
     return () => cancelAnimationFrame(raf);
-  }, [playback.playing, primeState.running]);
+  }, [playback.playing, primeState.running, clockSource.kind]);
 
   // R95's own rule ("pause ... while hidden") applied to playback: a
   // hidden -> still-playing route pauses rather than silently continuing
@@ -3966,7 +4025,9 @@ export default function NotebookPage() {
     // indexes by id), and nothing else about it can be looked up either.
     if (cell.id === null) return cellStatus({ ...base, hasOutput: false });
 
-    const hasOutput = primaryOutputs.has(cell.id);
+    // A video cell has nothing to evaluate (C2 §2.1): it is ready as soon
+    // as it has an id, never waiting on a `CellOutput`.
+    const hasOutput = cell.kind === "video" || primaryOutputs.has(cell.id);
     return cellStatus({
       ...base,
       hasOutput,
@@ -4414,6 +4475,28 @@ export default function NotebookPage() {
       editingProseBlockId={proseEdit?.target.blockId ?? null}
       proseEditor={proseEditorElement}
       onEditProseBlock={paperActive ? undefined : openProseBlockEditor}
+      renderVideoCell={(cellId) => (
+        // Video spec §5.2: the primary window's session's video at the
+        // shared cursor. `sharedCursorTUs`/`manualCursorTUs` are already
+        // session-relative µs (ChartCell's `onSetCursor` contract), so no
+        // window re-basing is needed here.
+        <VideoCell
+          sessionId={primaryWindow?.sessionId ?? null}
+          videos={primaryVideos}
+          cursorUs={sharedCursorTUs === null ? null : Number(sharedCursorTUs)}
+          pinnedCursorUs={manualCursorTUs === null ? null : Number(manualCursorTUs)}
+          playing={playback.playing}
+          speed={playback.speed}
+          // Reports frames only while it actually owns the clock, so a
+          // remounted master over a blob already marked unplayable never
+          // drives the cursor alongside the rAF loop.
+          isMaster={cellId === masterCellId && clockSource.kind === "video"}
+          onMasterFrame={handleMasterFrame}
+          onUnplayable={handleUnplayable}
+          onVideosChanged={refreshSessionDetail}
+          onMountedChange={(mounted) => handleVideoCellMounted(cellId, mounted)}
+        />
+      )}
       renderJsCell={(cellId) => {
             const cell = state.cells.find((c) => c.id === cellId);
             const code = cell !== undefined && state.markdown !== null ? decodeByteRange(state.markdown, cell.bodyRange) : "";
@@ -4937,6 +5020,13 @@ export default function NotebookPage() {
     state.handle !== null && !exportingReport && state.markdown !== null,
     () => void handleExportReport()
   );
+  // Edit → "Insert video cell" (lead ruling 2026-10-18, E2): appends a
+  // `video` fence with a freshly minted id, the way `GraphCanvas`'s chart insert appends
+  // a `js` one, through the same whole-document edit.
+  useCommand(MENU_COMMAND_IDS.editInsertVideoCell, state.markdown !== null, () => {
+    if (state.markdown === null) return;
+    dispatch({ type: "editFrontMatter", markdown: insertVideoCell(state.markdown, hex8FromBytes(crypto.getRandomValues(new Uint8Array(4)))) });
+  });
   useCommand(MENU_COMMAND_IDS.viewToggleDense, true, () => applyDense(!dense));
   useCommand(MENU_COMMAND_IDS.viewToggleGraph, columnsToggleAvailable, () =>
     applyColumnToggleValue(toggledColumnIds("graph"))

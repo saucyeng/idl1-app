@@ -110,7 +110,9 @@ function separator(id: string): MenuSeparatorItem {
  * Notebook toolbar's document and actions groups plus the Data tab's
  * import buttons, View's are the toolbar's view group plus the sidebar and
  * the palette, Go's four are the activity bar's own destinations, and
- * Edit's two are the code editor's own undo history. Nothing here is a
+ * Edit's are the code editor's own undo history plus "Insert video cell"
+ * (lead ruling 2026-10-18, E2: added here first, since a notebook has no
+ * other insert control yet). Otherwise nothing here is a
  * feature this menu introduces.
  *
  * `Ctrl+1..4` for Go matches R220 item 1's activity-bar keys; `Ctrl+B` for
@@ -141,6 +143,8 @@ export const MENUS: readonly Menu[] = [
     items: [
       command(MENU_COMMAND_IDS.editUndo, "Undo", { key: "z", mod: true }),
       command(MENU_COMMAND_IDS.editRedo, "Redo", { key: "z", mod: true, shift: true }),
+      separator("edit-1"),
+      command(MENU_COMMAND_IDS.editInsertVideoCell, "Insert video cell", null),
     ],
   },
   {

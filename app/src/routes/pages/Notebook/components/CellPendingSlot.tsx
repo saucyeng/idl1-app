@@ -27,7 +27,9 @@ export default function CellPendingSlot({ kind }: CellPendingSlotProps) {
   return (
     <div
       className="w-full rounded-[var(--radius-card)] border border-rule bg-surface-2/40"
-      style={{ height: pendingSlotHeightPx(kind) }}
+      // A video cell's slot is the player's own 16:9 fallback box (lead
+      // ruling E1), so it does not jump when the player mounts.
+      style={kind === "video" ? { aspectRatio: "16 / 9", maxHeight: "60vh" } : { height: pendingSlotHeightPx(kind) }}
       aria-hidden="true"
     />
   );

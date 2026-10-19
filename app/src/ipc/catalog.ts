@@ -1,5 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import type { SessionBikeLog } from "./bikelog";
+import type { SessionVideo } from "./video";
 
 /** Catalog `sessions` table row (C3 §3.2, C4 §5), column for column. */
 export interface SessionSummary {
@@ -166,6 +167,10 @@ export interface SessionDetail {
   bike_id?: string;
   /** What the session took from its bike's log, or null (C1 §6). */
   bike_log?: SessionBikeLog | null;
+  /** Live (not unlinked) linked videos, in `session.json` order, each with
+   *  `on_device` (C3 §3.12, C1 §6). Optional: absent means none, so a
+   *  build whose `get_session` predates §3.12 reads as "no videos". */
+  videos?: SessionVideo[];
 }
 
 /** One `lap_summary` row for a (session, lap, channel) — C4 §5. */
