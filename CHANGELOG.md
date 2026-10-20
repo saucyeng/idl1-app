@@ -6,6 +6,14 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 
 ### Added
 
+- **A pod that drops out mid-ride comes back [no-docs] (2026-10-19).**
+  Firmware 0.3.0-beta.15 re-initialises a lost IMU during a recording
+  (every 1 s, then every 5 s) and marks the restart with an "IMU recovered"
+  event; the `.idl1` importer times the samples after it on the restarted
+  chip's own clock and joins them to the same channel. Before, one bus error
+  left the pod reading nothing until the next recording. Spec-during:
+  `.idl1` format draft, LOGGER_EVENT code 5.
+
 - **The app keeps its loggers connected [docs] (2026-10-19).** One owner
   per logger now holds its Bluetooth link: it connects every paired logger,
   streams the logger's status instead of asking once a second, notices a

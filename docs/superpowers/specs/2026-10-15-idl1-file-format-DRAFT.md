@@ -196,6 +196,15 @@ channel id), `count:u32` (occurrences since the last event of this code),
 `timestamp_us:i64` (`esp_timer`). Codes: 1 FIFO overrun, 2 writer buffer
 full (data dropped), 3 bus error, 4 IMU stopped answering, 5 IMU recovered.
 
+**IMU recovered starts a new clock segment** (Isaac, 2026-10-19: restarting
+a pod mid-recording is "better than having it be bricked"). An IMU lost
+during a session is re-initialised by the firmware (retried every 1 s, then
+every 5 s after ten tries); the re-init restarts the chip's FIFO and its
+TIMESTAMP counter. The firmware writes code 5 for that IMU unthrottled and
+before any IMU_BLOCK from the restarted chip. The parser times each segment
+on its own chip→ESP32 clock fit and joins the segments into one channel; the
+time between them is simply absent (no samples, no gap fill).
+
 **SESSION_SUMMARY payload:** `n_imu:u8`, then per IMU `overruns:u32`,
 `bus_errors:u32`, `samples:u32`, then `writer_drops:u32`,
 `slowest_cycle_us:u32`.
