@@ -135,6 +135,14 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 
 ### Fixed
 
+- **The phone app no longer crashes ~10 s into finding a logger [no-docs] (2026-10-21).**
+  A connect attempt that gave up at 10 s dropped its pending Android
+  plugin call; Kotlin's own 10 s timeout then answered it, and Tauri's
+  response handler panicked on the closed channel inside a JNI callback,
+  aborting the app (10 crashes in one morning's phone log). Plugin calls
+  now run on their own task, so a late answer always has somewhere to go.
+  No spec change needed.
+
 - **The logger's button starts a recording again [no-docs] (2026-10-21).**
   Firmware 0.3.0-beta.16. A short press hung for good at session start:
   the button task waited on the SD writer's lock, which the higher-priority
