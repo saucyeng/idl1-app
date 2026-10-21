@@ -564,6 +564,34 @@ Control characteristic uses **Write with Response** — app waits for GATT ACK b
 | 0x09 | CMD_CONFIG_READ_BEGIN |
 | 0x0A | CMD_FILES_READ_BEGIN |
 | 0x0B | CMD_POWER_OFF |
+| 0x0C | CMD_KEEPALIVE |
+
+**Link liveness (added 2026-10-21, Isaac).** A phone whose app has died can
+keep the Bluetooth link up at the radio level indefinitely (seen 2026-10-21:
+the logger held a dead phone's link and stopped advertising, so nothing else
+could find it). So the app proves it is there:
+
+- The app writes `CMD_KEEPALIVE` (0x0C) to Control every **5 s** while its
+  link is in use. The logger acks `0x00` and does nothing else.
+- A connection that has sent at least one `CMD_KEEPALIVE` is **armed**. An
+  armed connection that sends nothing at all — no write, no read, on any
+  characteristic — for **15 s** is dropped by the logger
+  (`BLE_ERR_REM_USER_CONN_TERM`), which then advertises again.
+- A connection that never sends `CMD_KEEPALIVE` (an app from before
+  2026-10-21) is never dropped this way, so old apps keep working.
+- While WiFi mode is on, every connection counts as alive: the app lends its
+  link to the transfer and sends no keepalives, and the §10.4 handoff ends
+  the link anyway.
+- Firmware from before 2026-10-21 rejects the byte (an ATT error); the app
+  ignores the result of every keepalive write.
+
+**Two phones (added 2026-10-21, Isaac).** The logger accepts **two** phone
+connections at once (plus its heart-rate monitor as central), so one stuck
+link can't lock everyone out. While a phone slot is free it keeps
+advertising (slow, §7.1 cadence), and fast again after any disconnect.
+Status notifies go to every connected phone; commands are accepted from
+either. The config RX/TX buffers stay single: a disconnect of either phone
+discards them, as before.
 
 `CMD_POWER_OFF` (0x0B, added 2026-10-19) is the long-press shutdown from the app: the logger acks, then stops and closes any session, turns the switched rail off and deep-sleeps until its button is pressed. The link drops as it goes; there is no status transition to wait for.
 

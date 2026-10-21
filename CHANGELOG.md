@@ -6,6 +6,14 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 
 ### Added
 
+- **A dead phone can't lock the logger out any more [no-docs] (2026-10-21).**
+  The app sends "still here" (`CMD_KEEPALIVE`) every 5 s; firmware
+  0.3.0-beta.17 drops a phone that has sent one and then goes silent for
+  15 s, and advertises again. The logger also takes two phones at once.
+  Old apps (no keepalive) are never dropped; old firmware rejects the byte
+  and the app ignores that. The link actor's silence timer now restarts
+  only on a status, not on every wake-up. Spec-first: SPEC §7.2.
+
 - **Local crash reports [no-docs] (2026-10-21).** When the app dies — a
   Rust panic anywhere, an uncaught Kotlin exception, or (Android 11+) any
   other crash or ANR Android recorded — the next launch shows "idl1 closed
