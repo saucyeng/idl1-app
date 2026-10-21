@@ -135,6 +135,14 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 
 ### Fixed
 
+- **The logger's button starts a recording again [no-docs] (2026-10-21).**
+  Firmware 0.3.0-beta.16. A short press hung for good at session start:
+  the button task waited on the SD writer's lock, which the higher-priority
+  writer task gave and took straight back, so the press never got it (seen
+  in a JTAG backtrace). Record over Bluetooth was unaffected. The writer now
+  steps aside for a waiter; nothing changes while recording. No spec change
+  needed. Firmware CI now keeps each build's ELF, and releases attach it.
+
 - **Phone fixes from the first run [no-docs] (2026-10-16).**
   - Downloads no longer ask the logger for its WiFi file list, which
     failed with a 500 on a card holding many sessions; the size comes from
