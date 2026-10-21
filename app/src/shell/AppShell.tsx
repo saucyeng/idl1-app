@@ -32,6 +32,7 @@ import { Toaster } from "../components/Toaster";
 import { updateWiring } from "./channelUpdate";
 import { openUpdatePanel, runUpdateCheck, startUpdateChecker } from "./updateState";
 import UpdatePanel from "./UpdatePanel";
+import CrashBanner from "./CrashBanner";
 import UpdateBanner from "./UpdateBanner";
 import RideFormSheet from "./RideFormSheet";
 import { useDeepLinkPairing } from "./deepLinkPairing";
@@ -390,6 +391,7 @@ export default function AppShell() {
         </div>
       </div>
 
+      <CrashBanner />
       {narrow ? (
         <>
           <UpdateBanner />

@@ -5,6 +5,7 @@ import { Badge } from "../../../components/ui/badge";
 import { Button } from "../../../components/ui/button";
 import { toastFor } from "../../../components/toasts/events";
 import { downloadFile, listDeviceFiles } from "../../../ipc/device";
+import { importFile } from "../../../ipc/import";
 import type { DeviceIpcError } from "./errors";
 import { describeIpcError } from "./errors";
 import {
@@ -28,6 +29,10 @@ export interface DeviceFilesProps {
   knownSessionIds: Set<string>;
 }
 
+/** The logger importer, as `NewSessionsBanner` uses it (it reads `.idl0`
+ *  and `.idl1`). */
+const LOGGER_IMPORTER_ID = "idl0";
+
 /** Lifecycle of the file-list fetch, separate from the download queue
  *  (`FilesState`) — listing and downloading fail independently. */
 type ListPhase = "idle" | "loading" | "loaded" | "failed";
@@ -37,7 +42,7 @@ function DownloadRow({ item, elapsedMs }: { item: DownloadItem; elapsedMs: numbe
   if (item.status === "done") {
     return (
       <li className="font-mono text-sm text-fg-dim">
-        {item.name}: downloaded ({item.sha256?.slice(0, 12)}…) — import it from the Data tab.
+        {item.name}: downloaded and imported ({item.sha256?.slice(0, 12)}…).
       </li>
     );
   }
@@ -66,10 +71,8 @@ function DownloadRow({ item, elapsedMs }: { item: DownloadItem; elapsedMs: numbe
  * `isDownloadActive(queue)` holds.
  *
  * A completed download lands a blob under `<data>/blobs/sha256/`
- * (`DownloadResult`, C3 §3.8) — this component never imports it itself.
- * R53 Device Q3: there is no cross-tab handoff in wave 2, so the row's
- * text tells the rider the file is downloaded and to import it from the
- * Data tab.
+ * (`DownloadResult`, C3 §3.8) and is imported at once (Isaac, 2026-10-21;
+ * this replaces R53 Device Q3's "import it from the Data tab").
  */
 export default function DeviceFiles({ deviceId, knownSessionIds }: DeviceFilesProps) {
   const [listPhase, setListPhase] = useState<ListPhase>("idle");
@@ -103,7 +106,17 @@ export default function DeviceFiles({ deviceId, knownSessionIds }: DeviceFilesPr
       dispatch({ type: "PROGRESS", name, progress });
       forceTick((n) => n + 1); // re-render so the elapsed-time-derived rate updates
     })
-      .then((result) => {
+      .then(async (result) => {
+        // Every download is imported straight away (Isaac, 2026-10-21:
+        // "they should always just get directly imported, no matter what").
+        // The blob is safe either way; an import failure is reported on
+        // the row instead of the download succeeding.
+        try {
+          await importFile(result.path, LOGGER_IMPORTER_ID, () => {});
+        } catch (err) {
+          dispatch({ type: "FAILED", name, error: `downloaded, but the import failed: ${describeIpcError(err as DeviceIpcError)}` });
+          return;
+        }
         dispatch({ type: "SUCCEEDED", name, result });
         // Toast call site 2/2 (UI-DIRECTION decision 21): transfer complete.
         // One file per download (this queue is strictly one-at-a-time, SPEC

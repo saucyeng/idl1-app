@@ -66,6 +66,17 @@ internal class WriteArgs {
 }
 
 @InvokeArg
+internal class CrashSetupArgs {
+    lateinit var dir: String
+}
+
+@InvokeArg
+internal class ShareArgs {
+    lateinit var title: String
+    lateinit var text: String
+}
+
+@InvokeArg
 internal class WifiRequestArgs {
     lateinit var ssid: String
     lateinit var password: String
@@ -95,6 +106,37 @@ class DevicePlugin(private val activity: Activity) : Plugin(activity) {
     private val wifi = WifiLink(activity)
     private var multicastLock: WifiManager.MulticastLock? = null
     private var scanCallback: ScanCallback? = null
+
+    init {
+        CrashReports.installHandler()
+    }
+
+    // ---- crash reports (C3 §3.13, 2026-10-21) ---------------------------
+
+    /** Records the crash directory and collects the last run's exit records. */
+    @Command
+    fun crashSetup(invoke: Invoke) {
+        val args = invoke.parseArgs(CrashSetupArgs::class.java)
+        runCatching { CrashReports.setup(activity, args.dir) }
+            .onSuccess { invoke.resolve() }
+            .onFailure { invoke.reject("crash setup failed: ${it.message}", "io") }
+    }
+
+    /** Opens the share sheet with plain text. */
+    @Command
+    fun shareText(invoke: Invoke) {
+        val args = invoke.parseArgs(ShareArgs::class.java)
+        val send = Intent(Intent.ACTION_SEND).apply {
+            type = "text/plain"
+            putExtra(Intent.EXTRA_SUBJECT, args.title)
+            putExtra(Intent.EXTRA_TEXT, args.text)
+        }
+        main.post {
+            runCatching { activity.startActivity(Intent.createChooser(send, args.title)) }
+                .onSuccess { invoke.resolve() }
+                .onFailure { invoke.reject("could not open the share sheet: ${it.message}", "io") }
+        }
+    }
 
     private fun bleAlias(): String = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) "ble" else "bleLegacy"
 

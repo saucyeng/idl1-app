@@ -3184,6 +3184,25 @@ sessions hold a live entry for the same `blob_sha256`; the unlink prompt
 ticks "also delete the video file" only when it is 0. Added 2026-10-18,
 lead ruling).
 
+### 3.13 Crash reports (added 2026-10-21)
+
+Local only; nothing leaves the device unless the user shares it
+(`docs/superpowers/specs/2026-10-21-idl1-crash-reports.md`). Reports live
+in `<app data dir>/crash/`, not `<data>`.
+
+**`crash_reports() -> CrashReport[]`** (async). Pending reports, newest
+first, at most 10. `CrashReport = { id: string, at_ms: number, text: string }`:
+`id` is the report's file name, `at_ms` when it was written (ms since the
+Unix epoch), `text` the report (at most 64 KiB). On Android it first collects
+the last run's exit reasons into reports. Errors: `io`.
+
+**`dismiss_crash_reports(ids: string[])`** (async). Moves those reports to
+`crash/seen/`. Errors: `invalid_argument` (an id that is not a plain file
+name), `io`. An id already gone is not an error.
+
+**`share_crash_report(text: string)`** (async). Android: opens the share
+sheet with `text`. Errors: `unsupported_platform` off Android, `io`.
+
 ## 4. Interaction budget
 
 From the principle "no IPC on the interaction path" (design §3, §6):

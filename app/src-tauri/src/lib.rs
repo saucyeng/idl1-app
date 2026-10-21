@@ -18,6 +18,19 @@ pub fn run() {
         .setup(|app| {
             let app_data_dir = app.path().app_data_dir()?;
             let app_config_dir = app.path().app_config_dir()?;
+            // Crash reports first, so a panic anywhere after this point is
+            // kept (C3 §3.13). Under the app-data dir, not <data>: a missing
+            // data root must not lose them.
+            let crash_dir = idl_rs_tauri::crash::dir_for(&app_data_dir);
+            idl_rs_tauri::crash::install(crash_dir.clone(), app.package_info().version.to_string());
+            // The Kotlin uncaught-exception handler writes nowhere until it
+            // knows the directory, so tell it now rather than when the UI asks.
+            #[cfg(target_os = "android")]
+            {
+                let dir = crash_dir.clone();
+                tauri::async_runtime::spawn(async move { idl_rs_tauri::mobile::crash_setup(&dir).await });
+            }
+            app.manage(idl_rs_tauri::crash::CrashDir(crash_dir));
             // Two failure shapes, deliberately handled differently (C4 §1
             // "Missing root", ruling R196).
             //

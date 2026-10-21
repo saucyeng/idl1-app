@@ -6,6 +6,19 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 
 ### Added
 
+- **Local crash reports [no-docs] (2026-10-21).** When the app dies — a
+  Rust panic anywhere, an uncaught Kotlin exception, or (Android 11+) any
+  other crash or ANR Android recorded — the next launch shows "idl1 closed
+  unexpectedly last time" with Share (Android's share sheet) or Copy
+  (desktop). Reports stay on the device in the app-data `crash/` folder;
+  nothing is sent unless you share it. Spec-first:
+  `docs/superpowers/specs/2026-10-21-idl1-crash-reports.md`, C3 §3.13.
+
+- **Every download imports itself [no-docs] (2026-10-21).** A file
+  downloaded from the logger's file list goes straight into the library,
+  like the new-sessions banner; no more "import it from the Data tab". No
+  spec change needed.
+
 - **A pod that drops out mid-ride comes back [no-docs] (2026-10-19).**
   Firmware 0.3.0-beta.15 re-initialises a lost IMU during a recording
   (every 1 s, then every 5 s) and marks the restart with an "IMU recovered"
