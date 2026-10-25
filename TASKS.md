@@ -635,6 +635,63 @@ or a hard stop.
       `airborne()`, import-time gravity alignment, transmissibility,
       yaw-moment, `fit --merge`).
 
+## Broome-Tioga day — gaps (2026-10-24)
+
+Claude analysed four sessions from the IDL0 logger with the app's own tools
+(workbook `broome-tioga-2026-10-24.idl1wb` and `agent-gaps.md` in Isaac's
+library; the Python it fell back on is kept beside the logs). It worked, but
+these got in the way. Not started (Isaac, 2026-10-24: "we can fix them, just
+not now").
+
+Bugs and doc mismatches:
+
+- [ ] `workbook eval/data --session <id>` rejects a session id ("No such file
+      or directory"). The help text and AGENTS.md both promise one, and neither
+      verb takes `--data-dir`. Workaround: pass `blobs/sha256/xx/…`.
+- [ ] Out-laps are counted as lap 1, and two paths disagree about where lap 1
+      starts: with `--track` it runs from recording start (S4: 98.0 s), and
+      indexed laps start at visit start (S4: 15.0 s). A `"fastest"` lap table
+      picks the 15 s out-lap. Flag out-laps and in-laps, and give the CLI a way
+      to set `ignored_lap_numbers` (`session set-meta` has none).
+- [ ] Headless `workbook eval/data` never evaluates a v3 `table` cell
+      (`eval_cells` skips tables), so `rowSource: "windowLaps"` prints zero
+      rows. The deprecated `table eval` only reads old JSON workbooks.
+- [ ] A cell id that isn't 8-hex (`id=gps`) passes `workbook check` but is
+      re-randomised on every parse, so `workbook data <cell>` can't reach it.
+      `check` should report it.
+- [ ] `track list` reads the catalog, so a new `.idl0t` stays invisible until
+      `catalog rebuild`.
+- [ ] `rust/.cargo/config.toml` has a Windows `target-dir`; cargo on Linux fails
+      ("failed to join paths from `$LD_LIBRARY_PATH`") and leaves a `C:/` tree
+      in `rust/`. Built with `CARGO_TARGET_DIR=$PWD/target`.
+- [ ] `rust/Cargo.lock` is stale: a local build adds `if-addrs` to
+      `idl-transport`'s dependencies.
+- [ ] `"t:lap"` reductions are documented in WORKBOOK-REFERENCE but rejected
+      by the engine (`mean: expected scalar argument, got string`; same for
+      `max`, `sum`) — already P1-2 above; until it lands, fix the doc.
+
+Missing capability (each needed Python):
+
+- [ ] Creating a track with gates: no gate editor (R54) and no CLI verb (`track`
+      has only `list`/`detect`). Claude found a start/finish line in the GPS and
+      wrote the `.idl0t` by hand. See P3 `track propose`.
+- [ ] Sector gates: same gap, plus a check that warns when a gate is crossed more
+      than once a lap (a 14 m gate cut a neighbouring lane on this track).
+- [ ] Events from a 0/1 channel (`runs(cond)` → t0, t1, duration, with a minimum
+      duration). Airtime was debounced with `butter` on the flag. See P3 `airborne()`.
+- [ ] Along-track position: project GPS onto the reference polyline ("metres
+      along the lap") so jumps and laps can be compared by place.
+- [ ] Per-sector windows headless (`--sector`, or lap×sector table rows);
+      `--main-lap` only windows a whole lap.
+- [ ] Per-lap tables headless (covered by the table-cell bug above): per-lap
+      values took 43 `workbook data --main-lap n` calls.
+
+Unverified:
+
+- [ ] Charts: the workbook has a lap-time progression `js` cell and a lap
+      table with sector columns, but they only render in the app, and nobody
+      has opened them there yet. Check that both draw against these sessions.
+
 ## Wave 3
 
 - [ ] L9 mobile plugins · L12 in-app agent (optional)
