@@ -6,6 +6,13 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 
 ### Added
 
+- **Lap functions see the session's real laps under any window [no-docs] (2026-10-27).**
+  `current_lap`, `sector_number` and `lap_start_*` now read the session's
+  own laps and sectors even when a cell evaluates over a lap window, and a
+  session with no laps reads lap 0 as the CLI does. Chart cells'
+  `channel(name, {lap: n})` and `laps` use real lap numbers, not window
+  positions (Q1 ruling: whole session, then the window). No spec change needed.
+
 - **Notebook charts render in the installed app [no-docs] (2026-10-27).** The
   opaque-origin sandbox iframe (R69) could not fetch its `/assets/*` script and
   stylesheet (CORS `null` origin), so every js cell sat on "Rendering". The
