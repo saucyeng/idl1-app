@@ -1,9 +1,12 @@
 import { useEffect, useReducer, useState } from "react";
-import { LinkIcon, UnlinkIcon } from "lucide-react";
+import { EllipsisIcon, LinkIcon } from "lucide-react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { BrandSheet } from "@/components/brand/BrandSheet";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { StatusDot } from "@/components/brand/StatusDot";
 import { toastFor } from "@/components/toasts/events";
 import { composeVisibility, getActiveRoute, subscribeRouteVisible } from "../../../shell/routeVisibility";
@@ -25,15 +28,19 @@ import { describeSyncResult, syncStateReducer, type SyncState } from "./syncStat
 import {
   onPeerAppeared,
   pairPeer,
+  setPeerAutoSync,
   setSyncDeviceName,
   startPairing,
   syncNow,
   syncStatus,
   unpairPeer,
+  type AutoSync,
   type PairingCode,
   type SyncResult,
 } from "../../../ipc/sync";
 import { QrPairPanel } from "./QrPairPanel";
+import { PeerLibraryPanel } from "./PeerLibraryPanel";
+import { AUTO_SYNC_OPTIONS } from "./peerLibraryState";
 
 /** Raises the "sync finished" toast (UI-DIRECTION decision 21) for a
  *  completed `sync_now` transfer — the lane's one toast call site. `changed`
@@ -108,7 +115,7 @@ function buildDeps(routeId: RouteId): SyncSectionDeps {
  *  shape `Device/index.tsx`'s `STATUS_POLL_DEPS` follows. */
 const DEPS_BY_ROUTE = new Map<RouteId, SyncSectionDeps>();
 
-function depsFor(routeId: RouteId): SyncSectionDeps {
+export function depsFor(routeId: RouteId): SyncSectionDeps {
   let deps = DEPS_BY_ROUTE.get(routeId);
   if (deps === undefined) {
     deps = buildDeps(routeId);
@@ -168,6 +175,8 @@ export default function SyncSection({ store, routeId = "settings" }: SyncSection
    *  cannot silently overwrite what the user is typing. */
   const [nameDraft, setNameDraft] = useState<string | null>(null);
   const [renaming, setRenaming] = useState<boolean>(false);
+  /** The paired peer whose library the Browse sheet shows, or `null` when closed. */
+  const [browsePeerId, setBrowsePeerId] = useState<string | null>(null);
 
   // The `sync_status` poll (wave-2 operating brief §4's effects rule: all
   // decision logic lives in the pure `startSyncStatusPoll` driver, gated on
@@ -278,6 +287,16 @@ export default function SyncSection({ store, routeId = "settings" }: SyncSection
       });
   }
 
+  function handleAutoSync(peerId: string, rule: AutoSync): void {
+    void setPeerAutoSync(peerId, rule)
+      .then((peer) => {
+        dispatch({ type: "paired", peer });
+      })
+      .catch((error: unknown) => {
+        dispatch({ type: "failure", message: describeSyncError(error) });
+      });
+  }
+
   function handleSyncNow(peerId: string): void {
     setLastResultSummary(null);
     void syncNow(peerId, (progress) => {
@@ -376,28 +395,47 @@ export default function SyncSection({ store, routeId = "settings" }: SyncSection
         ) : (
           <ul className="flex flex-col gap-1.5">
             {state.peers.map((peer) => (
-              <li key={peer.peer_id} className="flex items-center gap-3">
+              <li key={peer.peer_id} className="flex flex-wrap items-center gap-3">
                 <span className="font-mono text-sm text-fg">{peer.name}</span>
                 <StatusDot className={peer.online ? "text-good" : "text-fg-faint"}>
                   {peer.online ? "Online" : "Offline"}
                 </StatusDot>
-                <Button
-                  type="button"
-                  size="sm"
-                  onClick={() => handleSyncNow(peer.peer_id)}
-                  disabled={isSyncNowDisabled(runningPeerId)}
-                >
-                  {syncNowButtonLabel(peer.peer_id, runningPeerId)}
-                </Button>
-                <Button
-                  type="button"
-                  size="icon-sm"
-                  emphasis="accent"
-                  aria-label={`Unpair ${peer.name}`}
-                  onClick={() => handleUnpair(peer.peer_id)}
-                >
-                  <UnlinkIcon aria-hidden />
-                </Button>
+                <Select value={peer.auto_sync} onValueChange={(v) => handleAutoSync(peer.peer_id, v as AutoSync)}>
+                  <SelectTrigger size="sm" aria-label={`Automatic sync with ${peer.name}`}>
+                    <span className="text-fg-faint">Auto</span>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {AUTO_SYNC_OPTIONS.map((o) => (
+                      <SelectItem key={o.value} value={o.value}>
+                        {o.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                {peer.online && (
+                  <Button type="button" size="sm" emphasis="info" filled onClick={() => setBrowsePeerId(peer.peer_id)}>
+                    Browse
+                  </Button>
+                )}
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button type="button" size="icon-sm" aria-label={`More actions for ${peer.name}`}>
+                      <EllipsisIcon aria-hidden />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end">
+                    <DropdownMenuItem
+                      disabled={isSyncNowDisabled(runningPeerId)}
+                      onSelect={() => handleSyncNow(peer.peer_id)}
+                    >
+                      {syncNowButtonLabel(peer.peer_id, runningPeerId)}
+                    </DropdownMenuItem>
+                    <DropdownMenuItem variant="destructive" onSelect={() => handleUnpair(peer.peer_id)}>
+                      Unpair
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
               </li>
             ))}
           </ul>
@@ -497,6 +535,18 @@ export default function SyncSection({ store, routeId = "settings" }: SyncSection
           {pairButtonLabel(pairing)}
         </Button>
       </div>
+      {browsePeerId !== null && (
+        <BrandSheet
+          open
+          onOpenChange={(open) => {
+            if (!open) setBrowsePeerId(null);
+          }}
+          title={`Browse ${state.peers.find((p) => p.peer_id === browsePeerId)?.name ?? "device"}`}
+          className="sm:max-w-2xl"
+        >
+          <PeerLibraryPanel peerId={browsePeerId} peerName={state.peers.find((p) => p.peer_id === browsePeerId)?.name ?? "device"} />
+        </BrandSheet>
+      )}
     </div>
   );
 }

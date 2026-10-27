@@ -45,6 +45,9 @@ import { toDetailView } from "./sessionDetail";
 import { dropDeletedSessionWindows, groupKeyOf, modifierFromClick, sessionRowClicked, toSessionRow, type SessionRow } from "./sessionRow";
 import { compareSessions, sortFieldsForView, type SortField } from "./sort";
 import { TrackResults } from "./TrackResults";
+import { PushMenu } from "./PushMenu";
+import { useSessionPush } from "./useSessionPush";
+import type { PeerStatus } from "../../../ipc/sync";
 
 /** The session detail pane's own fetch state — separate from the sessions
  *  list's `State` above, and from `AppState.selection` (which only tracks
@@ -169,6 +172,9 @@ function SessionRowView({
   onSelect,
   laps,
   lapsErrorText,
+  pushTargets,
+  pushBusy,
+  onPush,
 }: {
   row: SessionRow;
   /** Whether this session's own `{ kind: "session" }` window is currently
@@ -182,6 +188,12 @@ function SessionRowView({
    *  resolved with laps. */
   laps: ReturnType<typeof toDetailView>["laps"] | null;
   lapsErrorText: string | null;
+  /** Online paired devices a push can go to; empty hides the push icon. */
+  pushTargets: readonly PeerStatus[];
+  /** True while a push is running. */
+  pushBusy: boolean;
+  /** Pushes this row's session to the chosen device. */
+  onPush: (peerId: string) => void;
 }) {
   return (
     <div className="flex flex-col">
@@ -211,6 +223,7 @@ function SessionRowView({
         <span className="w-20 shrink-0 font-mono text-sm text-fg-dim">{row.durationText}</span>
         <span className="w-14 shrink-0 font-mono text-sm text-fg-dim">{row.lapCountText}</span>
         <Badge className="shrink-0">.{row.sourceFormat}</Badge>
+        <PushMenu targets={pushTargets} busy={pushBusy} variant="icon" onPush={onPush} />
       </DenseRow>
       {expanded && laps !== null && (
         <div className="flex flex-col bg-surface-2 pl-9">
@@ -261,6 +274,13 @@ export default function Data() {
   const [detailSheetOpen, setDetailSheetOpen] = useState(false);
   const [appState, appDispatch] = useAppState();
   const selection = appState.selection;
+  const sessionPush = useSessionPush();
+  /** The sessions ticked in the list (their whole-session windows), for the
+   *  toolbar's multi-push. */
+  const selectedSessionIds = useMemo(
+    () => [...new Set(selection.filter((w) => w.span.kind === "session").map((w) => w.sessionId))],
+    [selection],
+  );
   /** The session whose detail pane is open on the right — separate from
    *  `AppState.selection` (S1 Task 12, R111/R115): selection is now a
    *  multi-window list, but only one row's detail is shown at a time
@@ -647,6 +667,17 @@ export default function Data() {
             </Button>
           </div>
         </div>
+        {filters.view === "sessions" && selectedSessionIds.length >= 2 && sessionPush.targets.length > 0 && (
+          <div role="toolbar" aria-label="Push" className="flex items-center gap-2 border-b border-rule px-3 py-2">
+            <PushMenu
+              targets={sessionPush.targets}
+              busy={sessionPush.busy}
+              variant="toolbar"
+              label={`Push ${selectedSessionIds.length} sessions to`}
+              onPush={(peerId) => sessionPush.push(peerId, selectedSessionIds)}
+            />
+          </div>
+        )}
         <NotesSheet open={bikeNotesOpen} onClose={() => setBikeNotesOpen(false)} bikeName={null} />
         <BrandSheet open={syncOpen} onOpenChange={setSyncOpen} title="Sync">
           {syncOpen && <SyncSection store={prefsStore} routeId="data" />}
@@ -699,6 +730,9 @@ export default function Data() {
                         checked={selection.some((w) => w.sessionId === row.sessionId && w.span.kind === "session")}
                         expanded={row.sessionId === focusedSessionId}
                         onSelect={(e) => selectSession(row.sessionId, e)}
+                        pushTargets={sessionPush.targets}
+                        pushBusy={sessionPush.busy}
+                        onPush={(peerId) => sessionPush.push(peerId, [row.sessionId])}
                         laps={row.sessionId === focusedSessionId && detailView !== null ? detailView.laps : null}
                         lapsErrorText={row.sessionId === focusedSessionId ? detailState.status === "ready" ? detailState.lapsErrorText : null : null}
                       />
