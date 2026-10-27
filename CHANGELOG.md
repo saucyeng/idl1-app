@@ -171,6 +171,13 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 
 ### Fixed
 
+- **Laptops find each other for sync [no-docs] (2026-10-27).** No device
+  ever announced itself on the network (the mDNS advertisement was never
+  started), so "Nearby devices" stayed empty everywhere and pairing could
+  only fail. The app now announces itself when sync starts, never lists
+  itself, and re-announces on a rename so nearby devices see the new name
+  at once. No spec change needed: IDL0_SPEC §28a already required it.
+
 - **The Data tab's Sync panel shows this device's ID [no-docs] (2026-10-26).**
   Opened from the Data tab, the panel sat on "Reading this device's
   identity…" forever (so no ID to pair with and no rename): it only polled
