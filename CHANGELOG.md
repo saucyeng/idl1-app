@@ -171,6 +171,13 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 
 ### Fixed
 
+- **Pairing reaches the other laptop [no-docs] (2026-10-27).** A device
+  announcing several addresses was reached on whichever came first; an
+  IPv6 link-local one (`fe80::…%4`) can't go into a URL, so Pair failed
+  with "builder error" before sending anything. The LAN IPv4 address is
+  now preferred. Sync errors also show the backend's reason in brackets,
+  and Nearby devices are full-size buttons. No spec change needed.
+
 - **Laptops find each other for sync [no-docs] (2026-10-27).** No device
   ever announced itself on the network (the mDNS advertisement was never
   started), so "Nearby devices" stayed empty everywhere and pairing could

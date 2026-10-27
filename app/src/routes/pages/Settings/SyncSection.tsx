@@ -442,16 +442,21 @@ export default function SyncSection({ store, routeId = "settings" }: SyncSection
           {discoveredList.length === 0 ? (
             <p className="font-mono text-xs text-fg-faint">No unpaired devices visible</p>
           ) : (
-            <ul className="flex flex-col gap-1">
+            // Full-size buttons, not a text link: picking the other device is
+            // the step pairing starts with (Isaac 2026-10-27: "the smallest
+            // thing on the screen").
+            <ul className="flex flex-col gap-1.5">
               {discoveredList.map((peer) => (
                 <li key={peer.peer_id}>
-                  <button
+                  <Button
                     type="button"
-                    className="font-mono text-xs text-fg-dim hover:text-fg"
+                    size="sm"
+                    emphasis={peerIdInput === peer.peer_id ? "info" : undefined}
+                    filled={peerIdInput === peer.peer_id}
                     onClick={() => handlePickDiscovered(peer.peer_id)}
                   >
                     {peer.name || peer.peer_id} <span className="text-fg-faint">(v{peer.protocol_version})</span>
-                  </button>
+                  </Button>
                 </li>
               ))}
             </ul>

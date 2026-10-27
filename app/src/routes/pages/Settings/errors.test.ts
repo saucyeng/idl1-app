@@ -3,11 +3,11 @@ import { describe, expect, it } from "vitest";
 import { describeIpcError } from "./errors";
 
 describe("describeIpcError", () => {
-  it("describeIpcError — kind sync — text says LAN sync, not \"error 3\"", () => {
-    const text = describeIpcError({ kind: "sync", message: "error 3" });
+  it("describeIpcError — kind sync — leads with LAN sync and carries the backend's reason", () => {
+    const text = describeIpcError({ kind: "sync", message: "POST /pair failed: builder error" });
 
-    expect(text).toMatch(/LAN sync/i);
-    expect(text).not.toMatch(/error 3/i);
+    expect(text).toMatch(/^LAN sync ran into a problem/);
+    expect(text).toContain("(POST /pair failed: builder error)");
   });
 
   it("describeIpcError — kind invalid_argument from pair_peer — text points at the pairing code", () => {

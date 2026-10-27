@@ -6,9 +6,10 @@
 export interface IpcErrorLike {
   /** Machine-readable failure class (C3 §2). Never localized text. */
   kind: string;
-  /** Human-readable text from the backend. Not shown directly — this
-   *  module's job is to replace it with copy that names what the user was
-   *  doing. */
+  /** Human-readable text from the backend. This module's job is to lead
+   *  with copy that names what the user was doing; only a `sync` failure
+   *  also shows it, in brackets (2026-10-27: "LAN sync ran into a problem"
+   *  alone hid a failure that was one line of backend text from obvious). */
   message: string;
 }
 
@@ -24,7 +25,7 @@ export interface IpcErrorLike {
 export function describeIpcError(error: IpcErrorLike): string {
   switch (error.kind) {
     case "sync":
-      return "LAN sync ran into a problem. Check that both devices are on the same network and try again.";
+      return `LAN sync ran into a problem (${error.message}). Check that both devices are on the same network and try again.`;
     case "invalid_argument":
       return "That value isn't valid. If you were entering a pairing code, double-check it and try again.";
     case "not_found":
