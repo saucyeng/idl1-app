@@ -6,6 +6,9 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 
 ### Added
 
+- **The app opens maximised [no-docs] (2026-10-27).** The desktop window
+  starts maximised instead of 800 × 600. No spec change needed.
+
 - **Pick what to sync [no-docs] (2026-10-27).** Each paired device in the
   Sync panel now has an **Auto** setting (Off, Send new, Mirror; every
   pairing starts Off), a **Browse** button and a "⋯" menu holding Sync all
