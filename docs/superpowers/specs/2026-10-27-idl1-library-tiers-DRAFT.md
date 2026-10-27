@@ -120,6 +120,95 @@ phone keeps only their rides), cloud storage as another Main library.
   a local folder peer (same plan/apply code, no HTTP). Paired devices keep
   pairing as today.
 
+## 4a. Phase 1 contract (lead, 2026-10-27; build to this)
+
+**Scope cut.** "Processed data only" moves to Phase 2: the catalog's
+`sessions.blob_sha256 REFERENCES blobs` and `ensure_blob_row` refuse a
+session whose blob is absent, which is the same content-absent machinery
+Phase 2 needs. Phase 1 pulls and pushes sessions whole.
+
+**Small classes always travel.** Tracks, profiles and the bike log are
+small and are what makes a session useful (laps need the track). Whatever
+the selection, they move in the run's direction(s) under today's rules.
+
+**C4 §6 manifest, additive.** Each `sessions[].data_parquet` entry gains
+`blob_sha256` (64 hex): the session's source blob, read from the same
+`data.parquet` file metadata key the catalog uses
+(`read_data_parquet_session_fields`). `#[serde(default)]` on read so an
+older peer's manifest still parses (field absent → that session's blob is
+not part of its closure; logged).
+
+**Selection (transport, `idl_transport::sync`).**
+
+```rust
+pub enum SyncDirection { Both, Pull, Push }
+pub struct SyncSelection {
+    pub direction: SyncDirection,
+    /// None = every session. Some(ids) = only these sessions' closures.
+    pub sessions: Option<BTreeSet<String>>,
+    /// None = every workbook. Some(ids) = only these workbook ids.
+    pub workbooks: Option<BTreeSet<String>>,
+    /// Push only items the peer does not have at all (never an update or a
+    /// merge). The "Send new" rule.
+    pub absent_only: bool,
+}
+```
+
+`SyncSelection::everything()` = `{Both, None, None, false}` = today's sync.
+A session's closure: its `data.parquet`, `derived/*`, `session.json`, and
+the blob named by `blob_sha256` (from whichever manifest holds the
+session). Video blobs keep today's rule (`drop_video_pulls`,
+`keep_live_videos`). The filter is a pure function over
+`(plan, selection, local manifest, remote manifest)` with unit tests;
+`sync_with_peer` takes `&SyncSelection`.
+
+**New endpoint `GET /idl1/v1/library`** (bearer token as today):
+
+```json
+{ "schema_version": 1,
+  "sessions": [ { "session_id": "…", "timestamp_utc_ms": 0, "duration_ms": 0,
+                  "venue_name": "…", "event_name": "…", "rider": "…", "bike": "…",
+                  "tag": "…", "source_format": "idl0", "lap_count": 0,
+                  "size_bytes": 0 } ],
+  "workbooks": [ { "workbook_id": "…", "file_name": "…", "size_bytes": 0,
+                   "updated_at_ms": 0 } ] }
+```
+
+Built from the serving library's catalog, read-only (`size_bytes` = blob +
+`data.parquet` + derived). Catalog unavailable → `503` and the client
+shows "the other device is still indexing". Nullable text fields are
+`null`, never `""`.
+
+**Per-peer automatic rule.** `Peer` gains
+`auto_sync: "off" | "send_new" | "mirror"`, `#[serde(default = off)]`, so
+every existing pairing reads as Off after the update (Isaac: off by
+default). `should_auto_sync` fires only for `send_new` (selection
+`{Push, None, None, absent_only: true}`) and `mirror`
+(`SyncSelection::everything()`).
+
+**C3 §3.9 commands (idl-rs-tauri, all `async`, progress on a `Channel`):**
+
+- `peer_library(peer_id) -> PeerLibraryDto`: the endpoint above, plus
+  per-row `here: "absent" | "same" | "differs"` against the local
+  manifest. Peer not visible → `not_found`.
+- `sync_selection(peer_id, selection, on_progress) -> SyncResult`:
+  `selection` = `{ direction, sessions?, workbooks?, absent_only }`.
+  `sync_now` stays (= everything).
+- `set_peer_auto_sync(peer_id, rule) -> PeerStatusDto`; `PeerStatusDto`
+  gains `auto_sync`.
+
+**Speed (§5) in the same run.** `SyncRunResult` gains per-class
+`bytes` and `elapsed_ms` so every sync reports its own throughput; the
+receive path writes through a 1 MiB buffer and emits byte progress at most
+10 times a second.
+
+**UI (app/src).** Sync panel: per paired device, an automatic-rule select
+(Off / Send new / Mirror) and **Browse**, which opens the device's library:
+sessions (date, venue, rider, size, here-status, checkbox; Data-tab
+filters) and workbooks as a second list; footer "N selected · X GB ·
+Pull". Data tab: a push icon on each session row and **Push to →
+[device]** for a multi-selection (online paired devices only).
+
 ## 5. Sync speed (~1 MB/s in-app vs ~10 MB/s plain download)
 
 To investigate before Phase 1 lands. Observed 2026-10-27: Ubuntu pulling
