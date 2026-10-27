@@ -6,6 +6,12 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 
 ### Added
 
+- **Notebook charts render in the installed app [no-docs] (2026-10-27).** The
+  opaque-origin sandbox iframe (R69) could not fetch its `/assets/*` script and
+  stylesheet (CORS `null` origin), so every js cell sat on "Rendering". The
+  production build now emits the sandbox as one self-contained HTML file (inline
+  IIFE + CSS), guarded by `scripts/checkSandboxSelfContained.mjs` in
+  `npm run build` and CI. No spec change needed.
 - **The app opens maximised [no-docs] (2026-10-27).** The desktop window
   starts maximised instead of 800 × 600. On Windows the setting lives in
   `tauri.windows.conf.json` too: a platform config replaces the window

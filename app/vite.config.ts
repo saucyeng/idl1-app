@@ -1,6 +1,6 @@
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { defaultAllowedOrigins, defineConfig, type IndexHtmlTransformHook, type Plugin, type PluginOption } from "vite";
+import { build as viteBuild, defaultAllowedOrigins, defineConfig, type IndexHtmlTransformHook, type Plugin, type PluginOption } from "vite";
 import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
 
@@ -84,9 +84,77 @@ function reactWithoutSandboxPreamble(): PluginOption[] {
   return plugins;
 }
 
+/** Where the production sandbox document is emitted, relative to `dist/`
+ *  (`SandboxHost.SANDBOX_PATH` loads exactly this path). */
+const SANDBOX_DIST_PATH = SANDBOX_HTML_SUFFIX;
+
+/** Escapes text for inlining inside a `<script>`/`<style>` element: a literal
+ *  `</script` or `</style` (or `<!--`) in the bundle would end the element. */
+function escapeInline(text: string, tag: "script" | "style"): string {
+  return text
+    .replace(new RegExp(`</(${tag})`, "gi"), "<\\/$1")
+    .replace(/<!--/g, "<\\!--");
+}
+
+/**
+ * Production only: emits the Notebook sandbox document as ONE self-contained
+ * HTML file (inline classic `<script>` + inline `<style>`, no `src`/`href`).
+ * The sandbox iframe has an opaque `null` origin (R69, no `allow-same-origin`),
+ * so any `/assets/*.js` or `.css` it fetches is a cross-origin request that
+ * Tauri's asset protocol answers with `Access-Control-Allow-Origin:
+ * http://tauri.localhost` — a mismatch, so the browser blocks every one (the
+ * packaged app's "cell runtime failed to start", measured 2026-10-27). With
+ * nothing to fetch there is nothing to block, and the isolation is untouched.
+ *
+ * The sandbox is therefore not a Rollup input of the main build (it would be
+ * split into shared chunks with the app); this plugin runs a second, nested
+ * Vite build of `sandbox/main.ts` as a single IIFE with every import inlined
+ * and emits the HTML into the main bundle at the same path the dev server
+ * serves. `scripts/checkSandboxSelfContained.mjs` guards the result.
+ */
+function selfContainedSandbox(): Plugin {
+  return {
+    name: "idl1:self-contained-sandbox",
+    apply: "build",
+    async generateBundle() {
+      const result = await viteBuild({
+        configFile: false,
+        logLevel: "warn",
+        plugins: [tailwindcss()],
+        resolve: { alias: { "@": srcDir } },
+        build: {
+          write: false,
+          cssCodeSplit: false,
+          emptyOutDir: false,
+          lib: {
+            entry: path.resolve(srcDir, "routes/pages/Notebook/sandbox/main.ts"),
+            formats: ["iife"],
+            name: "idl1NotebookSandbox",
+          },
+          rollupOptions: { output: { inlineDynamicImports: true } },
+        },
+      });
+      const outputs = (Array.isArray(result) ? result : [result as { output: unknown[] }]).flatMap(
+        (r) => ("output" in r ? (r.output as { type: string; fileName: string; code?: string; source?: string | Uint8Array }[]) : [])
+      );
+      const js = outputs.find((o) => o.type === "chunk");
+      if (js?.code === undefined) throw new Error("selfContainedSandbox: nested build produced no JS chunk");
+      const css = outputs
+        .filter((o) => o.type === "asset" && o.fileName.endsWith(".css"))
+        .map((o) => String(o.source))
+        .join("\n");
+      const html =
+        '<!doctype html>\n<html>\n<head>\n<meta charset="utf-8" />\n<title>idl1 notebook sandbox</title>\n' +
+        `<style>${escapeInline(css, "style")}</style>\n</head>\n<body>\n` +
+        `<script>${escapeInline(js.code, "script")}</script>\n</body>\n</html>\n`;
+      this.emitFile({ type: "asset", fileName: SANDBOX_DIST_PATH, source: html });
+    },
+  };
+}
+
 // https://vite.dev/config/
 export default defineConfig(async () => ({
-  plugins: [reactWithoutSandboxPreamble(), tailwindcss()],
+  plugins: [reactWithoutSandboxPreamble(), tailwindcss(), selfContainedSandbox()],
 
   // shadcn's `@/*` import alias (docs/vendor/shadcn/vite.mdx, existing-project path)
   resolve: {
@@ -104,8 +172,9 @@ export default defineConfig(async () => ({
   build: {
     rollupOptions: {
       input: {
+        // The sandbox is built separately and self-contained
+        // (`selfContainedSandbox`), not as a chunk-sharing entry.
         main: "index.html",
-        notebookSandbox: "src/routes/pages/Notebook/sandbox/index.html",
       },
     },
   },

@@ -128,3 +128,7 @@ jobs:
       - name: Unit tests
         working-directory: app
         run: npx vitest run
+
+      - name: Production build; Notebook sandbox is self-contained (R69 opaque origin)
+        working-directory: app
+        run: npm run build
