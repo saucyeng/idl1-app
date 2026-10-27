@@ -202,6 +202,14 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 
 ### Fixed
 
+- **The app opens again (blank window in build 95) [no-docs] (2026-10-27).**
+  A background status check on the Data tab re-subscribed to "is this tab
+  visible" while it was being notified, and the notifier kept calling it
+  forever, freezing the window before anything drew. The notifier now
+  calls the listeners subscribed when the change happened. Build 95 can't
+  update itself (the update check never runs): install the next nightly by
+  hand. No spec change needed.
+
 - **"Check for updates" says what it's doing [no-docs] (2026-10-27).**
   Once it found an in-place update, the Settings ▸ About button showed
   nothing while it downloaded or once it was ready, so it looked broken.

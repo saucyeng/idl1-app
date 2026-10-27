@@ -25,8 +25,14 @@ let windowVisible = typeof document === "undefined" ? true : document.visibility
 
 const listeners = new Set<() => void>();
 
+/** Calls every listener subscribed when the change happened. Iterates a
+ *  snapshot: a `Set` visits entries added during iteration, so a listener
+ *  that unsubscribes and re-subscribes while handling the change (the
+ *  `syncPoll.ts` drivers do exactly that while their route stays hidden)
+ *  would be called again forever, freezing the webview at startup
+ *  (2026-10-27, nightly build 95). */
 function notify(): void {
-  for (const listener of listeners) listener();
+  for (const listener of [...listeners]) listener();
 }
 
 /** Called by the shell (`RouteHost`) whenever the active route changes. A
