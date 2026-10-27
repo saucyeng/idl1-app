@@ -566,7 +566,7 @@ nested by session where the file lives under a session directory:
   "sessions": [
     {
       "session_id": "…",
-      "data_parquet":  { "sha256": "…", "size_bytes": 98765, "importer_version": "0.3.0", "seam_correction_version": "v1", "engine_version": "0.7.2" },
+      "data_parquet":  { "sha256": "…", "size_bytes": 98765, "importer_version": "0.3.0", "seam_correction_version": "v1", "engine_version": "0.7.2", "blob_sha256": "…" },
       "derived":       [ { "sha256": "…", "size_bytes": 4321 } ],
       "session_json":  { "sha256": "…", "size_bytes": 512, "updated_at_ms": 1756857600000 }
     }
@@ -576,6 +576,13 @@ nested by session where the file lives under a session directory:
   "profiles":  [ { "profile_id": "…", "sha256": "…", "size_bytes": 640, "updated_at_ms": 1756857600000 } ]
 }
 ```
+
+**Added 2026-10-27 (library tiers Phase 1, spec `2026-10-27-idl1-library-tiers-DRAFT.md` §4a).**
+`data_parquet.blob_sha256` names the session's source blob, read from the
+same `data.parquet` file metadata key the catalog uses. Optional on read
+(an older peer omits it; that session's blob is then not part of a
+selective sync's closure). Lets a client pull or push one session's
+complete set of files.
 
 **Added post-sign (2026-09-06, lead ruling R88, L11 Task 1).** `profiles` is
 new in the manifest document above — the class was already named in the

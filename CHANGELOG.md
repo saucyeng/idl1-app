@@ -6,6 +6,17 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 
 ### Added
 
+- **Sync can move a selection, one way [no-docs] (2026-10-27).** The sync
+  engine now takes a selection: which sessions and workbooks, and pull,
+  push or both. A session brings its raw log, processed data and videos;
+  tracks, profiles and the bike log always travel. Each paired device has
+  an automatic rule (off, send new, mirror) and **every pairing now starts
+  Off**, so automatic sync stops until the rule shows in the Sync panel
+  (next step). Every sync reports bytes and time per kind of file, and the
+  receive path writes through a 1 MiB buffer with throttled progress.
+  Spec-first: `2026-10-27-idl1-library-tiers-DRAFT.md` §4a; C4 §6 manifest
+  gains `blob_sha256`.
+
 - **Desktop updates itself [docs] (2026-10-26, ruling R231).** A Windows
   or Linux nightly (and stable) build checks for a newer version 5 s
   after launch and every 4 h, downloads it in the background, and shows
