@@ -694,3 +694,23 @@ or a hard stop.
       the hardware pulse counter for wheel pulses (6–12 pickups on a 29er,
       few pulses); task-polled analog reads are fine for now, tuned once
       real analog sensors arrive (Isaac, 2026-10-15).
+
+## MX day 2 report and engine performance (2026-10-27)
+
+Goal: the Broome-Tioga 2026-10-24 ride report (`workbooks/mx-compare-2026-09-19-vs-2026-10-24.idl1wb`),
+building what it needs along the way.
+
+- [ ] Evaluation memory Phase 1: shared evaluation, no copies, abnormal-exit marker
+      (`docs/superpowers/specs/2026-10-27-idl1-evaluation-memory-DRAFT.md` §6) — in progress
+- [ ] `current_lap()` inside an app window reads 1, so `[on_t]`-weighted results are 0/NaN in the app
+      (memory spec §8; engine gaps N3/N5); evaluate whole session, then window (Q1)
+- [ ] Visual pass of the comparison workbook in the app (every chart and table renders, labels, scales)
+- [ ] Jump events (engine gaps N10): per-flight start/end, position on track, takeoff speed, airtime,
+      landing g, so jumps can be identified and typed
+- [ ] Evaluation memory Phases 2–6 (planner and liveness, machine-aware budget per Isaac's Q3 answer,
+      cache shape, fusion and O(N) rolling, persisted reductions with optional sync)
+- [ ] Rust-vs-Python benchmark gate: the day-1 Python analysis as the reference, time and peak memory in CI
+- [ ] Global allocator (mimalloc/jemalloc), measured, after Phase 1
+- [ ] Report formatting suitable for PDF export (the notebook style for now; PDF later)
+- [ ] Notebook sidebar does not refresh its workbook list after Rebuild catalog
+- [ ] Library tiers Phase 2 (`docs/superpowers/specs/2026-10-27-idl1-library-tiers-DRAFT.md`)
