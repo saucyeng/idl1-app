@@ -6,6 +6,10 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 
 ### Added
 
+- **The nightly page shows the Ubuntu update command [docs] (2026-10-26).**
+  One copy-paste line that downloads the nightly `.deb` and installs it
+  over the old version. No spec change needed.
+
 - **A dead phone can't lock the logger out any more [no-docs] (2026-10-21).**
   The app sends "still here" (`CMD_KEEPALIVE`) every 5 s; firmware
   0.3.0-beta.17 drops a phone that has sent one and then goes silent for

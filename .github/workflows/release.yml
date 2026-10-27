@@ -353,6 +353,12 @@ jobs:
             echo "**Android** — [idl1-app-nightly-arm64.apk](${base}/releases/download/nightly/idl1-app-nightly-arm64.apk). Tap to install; it updates over any prior build."
             echo "**Windows / Linux** — attached below about ten minutes after the APK."
             echo ""
+            echo "**Update on Ubuntu** — paste into a terminal (installs over the old version):"
+            echo ""
+            echo '```sh'
+            echo "curl -fL -o /tmp/idl1.deb ${base}/releases/download/nightly/idl1-app-nightly-amd64.deb && sudo apt install -y /tmp/idl1.deb"
+            echo '```'
+            echo ""
             echo "## Latest change"
             echo ""
             git log -1 --format='%s%n%n%b'
