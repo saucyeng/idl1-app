@@ -1,8 +1,8 @@
 import { checkAppUpdate, currentBuild, isAndroid, updateLink, type AppChannel, type CurrentBuild } from "../ipc/appUpdate";
-import { checkForUpdate, downloadAndInstallUpdate, relaunchApp } from "../ipc/updater";
+import { checkForUpdate, downloadUpdate, installUpdate, relaunchApp } from "../ipc/updater";
 import { parsePrefs } from "../routes/pages/Settings/prefs";
 import { localStorageBackend } from "../routes/pages/Settings/prefsStore";
-import { runUpdateCheck, type UpdateCheckerOptions, type UpdateIO } from "./updateState";
+import { RECHECK_INTERVAL_MS, runUpdateCheck, type UpdateCheckerOptions, type UpdateIO } from "./updateState";
 
 /** What this build was built as (`release.yml` sets the variables); `null`
  *  for a local build, which keeps the desktop updater path. */
@@ -34,11 +34,17 @@ function asError(e: unknown): Error {
   return new Error(message);
 }
 
+/** True on an Android webview — no updater plugin there; an APK is always
+ *  a download. */
+function onAndroid(): boolean {
+  return typeof navigator !== "undefined" && isAndroid(navigator.userAgent);
+}
+
 /** {@link UpdateIO} over the channel check for `build`. Only
- *  `checkForUpdate` is real: these releases update by download, never in
- *  place, so `restartToUpdate` is never reached for them. */
+ *  `checkForUpdate` is real: every release it finds carries a `link`, so
+ *  nothing downloads or installs in place. */
 function channelIo(build: CurrentBuild): UpdateIO {
-  const android = typeof navigator !== "undefined" && isAndroid(navigator.userAgent);
+  const android = onAndroid();
   const notHere = () => Promise.reject(new Error("this build updates by download, not in place"));
   return {
     checkForUpdate: async () => {
@@ -54,17 +60,55 @@ function channelIo(build: CurrentBuild): UpdateIO {
       const version = update.switch ? `${update.channel} ${update.label}` : update.label;
       return { version, notes: update.notes, date: update.published_at || null, link: updateLink(update, android) };
     },
-    downloadAndInstallUpdate: notHere,
+    downloadUpdate: notHere,
+    installUpdate: notHere,
     relaunchApp: notHere,
   };
 }
 
-/** The update check's IO and tuning (2026-10-15). A CI build checks its
- *  channel once, 5 s after launch; Settings ▸ About has the manual check.
- *  A local build keeps the updater plugin (ruling R231), which is off until
- *  it is signed. */
+/** True when `build` updates in place (2026-10-26): a desktop nightly or
+ *  stable build, whose `release.yml` manifest the updater plugin reads.
+ *  Android and beta builds keep the channel check's download link. */
+export function updatesInPlace(build: CurrentBuild, android: boolean): boolean {
+  return !android && (build.build_channel === "nightly" || build.build_channel === "stable");
+}
+
+/** The updater plugin's version as the chrome names it: a nightly's
+ *  `…nightly.31` reads `build 31`, the same label the channel check uses;
+ *  any other version passes through. */
+export function inPlaceVersionLabel(version: string): string {
+  const nightly = /[.-]nightly\.(\d+)$/.exec(version);
+  return nightly === null ? version : `build ${nightly[1]}`;
+}
+
+/** {@link UpdateIO} for a build that {@link updatesInPlace}: the updater
+ *  plugin on the build's own channel, or the channel check (a download)
+ *  when Settings picks another channel — a switch is always a download. */
+function inPlaceIo(build: CurrentBuild): UpdateIO {
+  const channel = channelIo(build);
+  return {
+    checkForUpdate: async () => {
+      if (effectiveChannel(await pickedChannel(), build) !== build.build_channel) return channel.checkForUpdate();
+      const update = await checkForUpdate();
+      return update === null ? null : { ...update, version: inPlaceVersionLabel(update.version) };
+    },
+    downloadUpdate,
+    installUpdate,
+    relaunchApp,
+  };
+}
+
+/** The update check's IO and tuning. A desktop nightly or stable build
+ *  updates in place: checked 5 s after launch and every 4 h, downloaded in
+ *  the background, installed on "Restart to update" (2026-10-26). Any other
+ *  CI build checks its channel once, 5 s after launch (2026-10-15).
+ *  Settings ▸ About has the manual check. A local build keeps the bare
+ *  updater plugin (ruling R231), which its dev identifier keeps off. */
 export function updateWiring(): { io: UpdateIO; options: UpdateCheckerOptions } {
-  if (BUILD === null) return { io: { checkForUpdate, downloadAndInstallUpdate, relaunchApp }, options: {} };
+  if (BUILD === null) return { io: { checkForUpdate, downloadUpdate, installUpdate, relaunchApp }, options: {} };
+  if (updatesInPlace(BUILD, onAndroid())) {
+    return { io: inPlaceIo(BUILD), options: { launchDelayMs: 5_000, recheckIntervalMs: RECHECK_INTERVAL_MS } };
+  }
   return { io: channelIo(BUILD), options: { launchDelayMs: 5_000, recheckIntervalMs: null } };
 }
 
@@ -72,5 +116,5 @@ export function updateWiring(): { io: UpdateIO; options: UpdateCheckerOptions } 
  *  the same store the banner and chip read. A no-op on a local build. */
 export async function checkForUpdatesNow(): Promise<void> {
   if (BUILD === null) return;
-  await runUpdateCheck(channelIo(BUILD));
+  await runUpdateCheck(updateWiring().io);
 }

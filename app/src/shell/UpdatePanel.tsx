@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
-import { checkForUpdate, downloadAndInstallUpdate, relaunchApp } from "../ipc/updater";
+import { installUpdate, relaunchApp } from "../ipc/updater";
 import { parseReleaseNotes, type InlineNode, type ReleaseNotesBlock } from "./releaseNotesMarkdown";
 import { openUpdateLink } from "./openUpdateLink";
 import { closeUpdatePanel, dismissUpdate, restartToUpdate, useUpdatePanelOpen, useUpdateState, versionLabel } from "./updateState";
@@ -52,8 +52,9 @@ function Block({ block }: { block: ReleaseNotesBlock }) {
 /**
  * The release-notes panel the status bar's "Update available · vX" item
  * opens (ruling R231, item 2 of the brief): the release body rendered as
- * Markdown, "Restart to update" (download with progress, install, relaunch)
- * and "Later".
+ * Markdown, the background download's progress, "Restart to update" once
+ * it is downloaded (install, relaunch) or "Download" for a release the
+ * user fetches, and "Later".
  *
  * Built on the app's existing `Dialog` primitive rather than the R220
  * sidebar (whose panels are one per activity, published through
@@ -116,39 +117,39 @@ export default function UpdatePanel() {
           </div>
         )}
 
-        {state.kind === "ready" && <p className="text-label-2 text-good">Installed — relaunching…</p>}
+        {state.kind === "ready" && <p className="text-label-2 text-good">Downloaded — restart to apply.</p>}
+        {state.kind === "installing" && <p className="text-label-2 text-fg-dim">Installing — the app restarts when it's done…</p>}
 
         <div className="flex justify-end gap-2">
-          {state.kind === "available" && (
-            <>
-              <button
-                type="button"
-                onClick={dismissUpdate}
-                className={cn("rounded-[var(--radius-structural)] px-3 py-1.5 text-label-2 text-fg-dim hover:bg-surface-2")}
-              >
-                Later
-              </button>
-              {link !== undefined ? (
-                // A channel-check release (`ipc/appUpdate.ts`): the system
-                // fetches it — on Android the APK download, then a tap
-                // installs it over this build.
-                <button
-                  type="button"
-                  onClick={() => openUpdateLink(link)}
-                  className={cn("rounded-[var(--radius-structural)] bg-fg px-3 py-1.5 text-label-2 text-bg hover:opacity-90")}
-                >
-                  Download
-                </button>
-              ) : (
-                <button
-                  type="button"
-                  onClick={() => void restartToUpdate({ checkForUpdate, downloadAndInstallUpdate, relaunchApp })}
-                  className={cn("rounded-[var(--radius-structural)] bg-fg px-3 py-1.5 text-label-2 text-bg hover:opacity-90")}
-                >
-                  Restart to update
-                </button>
-              )}
-            </>
+          {(state.kind === "ready" || (state.kind === "available" && link !== undefined)) && (
+            <button
+              type="button"
+              onClick={dismissUpdate}
+              className={cn("rounded-[var(--radius-structural)] px-3 py-1.5 text-label-2 text-fg-dim hover:bg-surface-2")}
+            >
+              Later
+            </button>
+          )}
+          {state.kind === "available" && link !== undefined && (
+            // A channel-check release (`ipc/appUpdate.ts`): the system
+            // fetches it — on Android the APK download, then a tap
+            // installs it over this build.
+            <button
+              type="button"
+              onClick={() => openUpdateLink(link)}
+              className={cn("rounded-[var(--radius-structural)] bg-fg px-3 py-1.5 text-label-2 text-bg hover:opacity-90")}
+            >
+              Download
+            </button>
+          )}
+          {state.kind === "ready" && (
+            <button
+              type="button"
+              onClick={() => void restartToUpdate({ installUpdate, relaunchApp })}
+              className={cn("rounded-[var(--radius-structural)] bg-fg px-3 py-1.5 text-label-2 text-bg hover:opacity-90")}
+            >
+              Restart to update
+            </button>
           )}
         </div>
       </DialogContent>

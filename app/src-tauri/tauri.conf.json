@@ -41,9 +41,9 @@
       "mobile": [{ "scheme": ["idl1"], "host": "pair", "appLink": false }]
     },
     "updater": {
-      "pubkey": "REPLACE_WITH_PUBKEY",
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDIzODM2RUE1QkUzNjczMDAKUldRQWN6YStwVzZESTc0YXlOTWoyRUIxcGh6QjhTdWpzR2kwYXVZYjlCcEFpVTBaWS9vYXErK1EK",
       "endpoints": [
-        "https://github.com/saucyeng/idl1-releases/releases/latest/download/latest.json"
+        "https://github.com/saucyeng/idl1-app/releases/latest/download/latest.json"
       ]
     }
   }

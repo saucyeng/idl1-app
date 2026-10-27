@@ -12,9 +12,9 @@
 #
 # Windows ships the NSIS setup .exe only (no MSI: see the matrix).
 #
-# Signing: Android only, from four repo secrets (docs/RELEASING.md). The
-# in-app updater (ruling R231) is not wired up yet, so desktop bundles are
-# not updater-signed and no `latest.json` is written.
+# Signing: Android from four repo secrets; desktop installers are signed for
+# the in-app updater (ruling R231) from TAURI_SIGNING_PRIVATE_KEY, and each
+# release carries a `latest.json` naming them (docs/RELEASING.md).
 #
 # Nightly: a push to `main` builds the same three platforms and publishes
 # them on ONE moving prerelease, tag `nightly`, replaced each time (until
@@ -63,6 +63,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       version: ${{ steps.v.outputs.version }}
+      app_version: ${{ steps.v.outputs.app_version }}
     steps:
       - uses: actions/checkout@v4
       - name: Read version and check it against the tag
@@ -71,6 +72,18 @@ jobs:
           set -euo pipefail
           version="$(jq -r .version app/src-tauri/tauri.conf.json)"
           echo "version=$version" >> "$GITHUB_OUTPUT"
+          # The version the desktop build carries, which the in-app updater
+          # compares (docs/RELEASING.md "In-app updates"). A nightly appends
+          # its run number so each one is newer than the last:
+          # 0.1.0-beta.3 -> 0.1.0-beta.3.nightly.31, 0.2.0 -> 0.2.0-nightly.31.
+          app_version="$version"
+          if [ "$GITHUB_EVENT_NAME" = "push" ] && [ "$GITHUB_REF" = "refs/heads/main" ]; then
+            case "$version" in
+              *-*) app_version="$version.nightly.$GITHUB_RUN_NUMBER" ;;
+              *) app_version="$version-nightly.$GITHUB_RUN_NUMBER" ;;
+            esac
+          fi
+          echo "app_version=$app_version" >> "$GITHUB_OUTPUT"
           if [ "$GITHUB_REF_TYPE" = "tag" ] && [ "$GITHUB_REF_NAME" != "v$version" ]; then
             echo "::error::tag $GITHUB_REF_NAME does not match tauri.conf.json version $version -- bump the version first (docs/RELEASING.md)"
             exit 1
@@ -144,20 +157,57 @@ jobs:
         working-directory: app
         run: npm ci
 
+      # Updater signing (docs/RELEASING.md "In-app updates"): with the
+      # TAURI_SIGNING_PRIVATE_KEY secret set, each installer gets a `.sig`
+      # beside it and a nightly checks the nightly feed. Without the secret
+      # the build still succeeds, unsigned, and no build updates in place.
+      # Passed as a file, not inline JSON (see the Android build step).
       - name: tauri build
         working-directory: app
-        run: npm run tauri -- build --bundles ${{ matrix.bundles }}
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ""
+          APP_VERSION: ${{ needs.version.outputs.app_version }}
+        run: |
+          set -euo pipefail
+          sign=true
+          if [ -z "$TAURI_SIGNING_PRIVATE_KEY" ]; then
+            echo "::warning::TAURI_SIGNING_PRIVATE_KEY is not set -- desktop installers are unsigned and will not update in place"
+            sign=false
+          fi
+          endpoints='[]'
+          if [ "$VITE_RELEASE_CHANNEL" = "nightly" ]; then
+            endpoints="[\"https://github.com/${GITHUB_REPOSITORY}/releases/download/nightly/latest.json\"]"
+          fi
+          {
+            echo "{\"version\":\"${APP_VERSION}\",\"bundle\":{\"createUpdaterArtifacts\":${sign}}"
+            [ "$endpoints" != '[]' ] && echo ",\"plugins\":{\"updater\":{\"endpoints\":${endpoints}}}"
+            echo "}"
+          } > "$RUNNER_TEMP/desktop-build.json"
+          cat "$RUNNER_TEMP/desktop-build.json"
+          npm run tauri -- build --bundles ${{ matrix.bundles }} --config "$RUNNER_TEMP/desktop-build.json"
 
       - name: Stage assets
         run: |
           set -euo pipefail
+          shopt -s nullglob
           bundle="$CARGO_TARGET_DIR/release/bundle"
           mkdir -p dist
+          # Copies the file in folder $1 matching $2 to dist/$3, and its
+          # updater signature (if the build made one) to dist/$3.sig. The
+          # folder stays quoted: on Windows it is a backslash path.
+          stage() {
+            local src
+            for src in "$1"/$2; do
+              cp "$src" "dist/$3"
+              if [ -f "$src.sig" ]; then cp "$src.sig" "dist/$3.sig"; fi
+            done
+          }
           if [ "$RUNNER_OS" = "Windows" ]; then
-            cp "$bundle"/nsis/*.exe "dist/idl1-app-v${VERSION}-windows-x64-setup.exe"
+            stage "$bundle/nsis" "*.exe" "idl1-app-v${VERSION}-windows-x64-setup.exe"
           else
-            cp "$bundle"/appimage/*.AppImage "dist/idl1-app-v${VERSION}-x86_64.AppImage"
-            cp "$bundle"/deb/*.deb "dist/idl1-app-v${VERSION}-amd64.deb"
+            stage "$bundle/appimage" "*.AppImage" "idl1-app-v${VERSION}-x86_64.AppImage"
+            stage "$bundle/deb" "*.deb" "idl1-app-v${VERSION}-amd64.deb"
           fi
           cd dist && for f in *; do sha256sum "$f" > "$f.sha256"; done
 
@@ -314,6 +364,15 @@ jobs:
             fi
           } > NOTES.md
 
+      # Stable builds check `releases/latest/download/latest.json`, which
+      # GitHub serves from the newest non-prerelease, so only a stable tag's
+      # manifest is ever read; a beta's is written anyway, for the record.
+      - name: Write the updater manifest
+        run: |
+          bash .github/scripts/updater-manifest.sh dist "$VERSION" \
+            "https://github.com/${GITHUB_REPOSITORY}/releases/download/${GITHUB_REF_NAME}" "idl1-app-v${VERSION}" \
+            "See https://github.com/${GITHUB_REPOSITORY}/releases/tag/${GITHUB_REF_NAME}"
+
       - name: Publish GitHub Release
         uses: softprops/action-gh-release@v2
         with:
@@ -389,6 +448,7 @@ jobs:
     runs-on: ubuntu-latest
     env:
       VERSION: ${{ needs.version.outputs.version }}
+      APP_VERSION: ${{ needs.version.outputs.app_version }}
       GH_TOKEN: ${{ github.token }}
     steps:
       - uses: actions/checkout@v4
@@ -413,4 +473,7 @@ jobs:
             exit 0
           fi
           bash .github/scripts/nightly-rename.sh dist "$VERSION"
+          bash .github/scripts/updater-manifest.sh dist "$APP_VERSION" \
+            "https://github.com/${GITHUB_REPOSITORY}/releases/download/nightly" idl1-app-nightly \
+            "$(git log -1 --format='%s%n%n%b')"
           gh release upload nightly dist/* --clobber --repo "$GITHUB_REPOSITORY"

@@ -6,6 +6,17 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 
 ### Added
 
+- **Desktop updates itself [docs] (2026-10-26, ruling R231).** A Windows
+  or Linux nightly (and stable) build checks for a newer version 5 s
+  after launch and every 4 h, downloads it in the background, and shows
+  "Update ready · restart to apply". Restart installs it: on Windows a
+  small installer window, on Ubuntu the system password prompt. Each
+  nightly now carries a rising version (`0.1.0-beta.3.nightly.<run>`,
+  shown as "build <run>") so the updater can tell which is newer.
+  Installers are signed and every release carries a `latest.json`. Beta
+  builds, Android and channel switches still download. Spec-during:
+  docs/RELEASING.md "In-app updates".
+
 - **The nightly page shows the Ubuntu update command [docs] (2026-10-26).**
   One copy-paste line that downloads the nightly `.deb` and installs it
   over the old version. No spec change needed.

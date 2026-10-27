@@ -2,10 +2,12 @@ import { useSyncExternalStore } from "react";
 
 /**
  * The app-update state machine (ruling R231): `idle` while nothing has
- * been found, `checking` while a request is in flight, `available` once
- * `latest.json` names a newer version, `downloading` while its bundle is
- * being fetched, `ready` once installed and waiting to relaunch, and
- * `error` for a check or install that failed.
+ * been found, `checking` while a request is in flight, `available` once a
+ * newer version is found, `downloading` while an in-place update's bundle
+ * is fetched in the background (2026-10-26: no click needed), `ready` once
+ * it is downloaded and waits for "Restart to update", `installing` while
+ * that runs, and `error` for a check, download or install that failed. A
+ * release with a `link` (one the user downloads) stays `available`.
  *
  * A store, the same publish/subscribe shape as `shell/deviceLink.ts` and
  * `shell/memoryBudget.ts`: the checker in {@link startUpdateChecker} runs
@@ -27,6 +29,7 @@ export type UpdateState =
     }
   | { kind: "downloading"; pct: number }
   | { kind: "ready" }
+  | { kind: "installing" }
   | { kind: "error"; message: string };
 
 const IDLE: UpdateState = { kind: "idle" };
@@ -76,11 +79,13 @@ export function clampPct(pct: number): number {
  *  vX"`), or `null` when the bar should show nothing — `idle`, `checking`
  *  and `error` are silent; a check failing is not something the user
  *  needs to see in a 22 px band, and a launch-time check that finds
- *  nothing must not flash a chip that then disappears. */
+ *  nothing must not flash a chip that then disappears. `downloading` is
+ *  silent too: it happens in the background, and the chip appears once
+ *  there is something to do (`ready`). */
 export function updateChipLabel(state: UpdateState): string | null {
   if (state.kind === "available") return `Update available · ${versionLabel(state.version)}`;
-  if (state.kind === "downloading") return `Downloading update · ${state.pct}%`;
   if (state.kind === "ready") return "Update ready · restart to apply";
+  if (state.kind === "installing") return "Installing update…";
   return null;
 }
 
@@ -95,7 +100,10 @@ export function versionLabel(version: string): string {
  *  tests, so this module's orchestration is exercised without Tauri. */
 export interface UpdateIO {
   checkForUpdate(): Promise<{ version: string; notes: string; date: string | null; link?: string } | null>;
-  downloadAndInstallUpdate(onProgress: (pct: number) => void): Promise<void>;
+  /** Fetches the update the last check found, reporting whole percents. */
+  downloadUpdate(onProgress: (pct: number) => void): Promise<void>;
+  /** Installs what {@link downloadUpdate} fetched. */
+  installUpdate(): Promise<void>;
   relaunchApp(): Promise<void>;
 }
 
@@ -107,8 +115,9 @@ export const LAUNCH_CHECK_DELAY_MS = 30_000;
 /** Recheck interval once running (the brief's "every 4 h"). */
 export const RECHECK_INTERVAL_MS = 4 * 60 * 60 * 1000;
 
-/** The part of {@link UpdateIO} a check needs. */
-export type UpdateCheckIO = Pick<UpdateIO, "checkForUpdate">;
+/** The part of {@link UpdateIO} a check needs: the check, and the
+ *  background download that follows one finding an in-place update. */
+export type UpdateCheckIO = Pick<UpdateIO, "checkForUpdate" | "downloadUpdate">;
 
 /** {@link startUpdateChecker}'s tuning; every field optional. */
 export interface UpdateCheckerOptions {
@@ -121,17 +130,27 @@ export interface UpdateCheckerOptions {
 }
 
 /**
- * Runs one check against `io` and publishes its outcome. Never runs while
- * a download or install is in progress or already finished — a background
- * recheck must not stomp on a restart the user has already started or
- * completed and is waiting to act on.
+ * Runs one check against `io` and publishes its outcome. An in-place
+ * update (no `link`) is then downloaded straight away, in the background,
+ * ending `ready`; a release the user downloads stays `available`. Never
+ * runs while a download or install is in progress or already finished — a
+ * background recheck must not stomp on an update waiting for its restart.
  */
 export async function runUpdateCheck(io: UpdateCheckIO): Promise<void> {
-  if (state.kind === "downloading" || state.kind === "ready") return;
+  if (state.kind === "downloading" || state.kind === "ready" || state.kind === "installing") return;
   publish({ kind: "checking" });
   try {
     const result = await io.checkForUpdate();
-    publish(result === null ? IDLE : { kind: "available", ...result });
+    if (result === null) {
+      publish(IDLE);
+      return;
+    }
+    publish({ kind: "available", ...result });
+    if (result.link !== undefined) return;
+
+    publish({ kind: "downloading", pct: 0 });
+    await io.downloadUpdate((pct) => publish({ kind: "downloading", pct: clampPct(pct) }));
+    publish({ kind: "ready" });
   } catch (e) {
     publish({ kind: "error", message: e instanceof Error ? e.message : String(e) });
   }
@@ -162,21 +181,19 @@ export function startUpdateChecker(io: UpdateCheckIO, options: UpdateCheckerOpti
 }
 
 /**
- * "Restart to update" (item 2 of the brief): downloads the pending update
- * with progress, installs it, then relaunches. Only acts from `available`
- * — a stray call from any other state (a double click on a chip that has
- * already moved on) is a silent no-op rather than restarting a download
- * that was never found.
+ * "Restart to update" (item 2 of the brief): installs the update the
+ * background download fetched, then relaunches. Only acts from `ready` —
+ * a stray call from any other state (a double click on a chip that has
+ * already moved on) is a silent no-op.
  */
-export async function restartToUpdate(io: UpdateIO): Promise<void> {
-  if (state.kind !== "available") return;
-  publish({ kind: "downloading", pct: 0 });
+export async function restartToUpdate(io: Pick<UpdateIO, "installUpdate" | "relaunchApp">): Promise<void> {
+  if (state.kind !== "ready") return;
+  publish({ kind: "installing" });
   try {
-    await io.downloadAndInstallUpdate((pct) => publish({ kind: "downloading", pct: clampPct(pct) }));
-    publish({ kind: "ready" });
+    await io.installUpdate();
     // Windows: the install above already exited the process, so this never
-    // runs. macOS/Linux: this is what actually relaunches into the new
-    // version (`ipc/updater.ts`'s doc comment).
+    // runs. Linux: this is what actually relaunches into the new version
+    // (`ipc/updater.ts`'s doc comment).
     await io.relaunchApp();
   } catch (e) {
     publish({ kind: "error", message: e instanceof Error ? e.message : String(e) });
@@ -196,11 +213,9 @@ export function dismissUpdate(): void {
 // --- Release notes panel visibility -----------------------------------
 //
 // Separate from `UpdateState` itself: the panel is a UI concern (has the
-// user clicked the status-bar chip yet?), not a fact about the update. A
-// download or install started from the open panel keeps it open through
-// `downloading`/`ready` even though nothing here re-asserts that — those
-// states are only reachable by clicking "Restart to update" from inside
-// the open panel in the first place.
+// user clicked the status-bar chip yet?), not a fact about the update. The
+// update moving on (a background download finishing, an install starting)
+// never opens or closes it.
 
 let panelOpen = false;
 const panelListeners = new Set<() => void>();

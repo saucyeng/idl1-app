@@ -125,61 +125,65 @@ stable by semver. An older version can still fail to open data a newer one
 wrote. Session files are versioned and the catalog rebuilds, so this is
 rare, but the Settings note says so.
 
-## In-app updates (ruling R231)
+## In-app updates (ruling R231; on since 2026-10-26)
 
-**Currently off.** The channel check above is what notifies today.
-`release.yml` neither signs updater bundles nor writes
-`latest.json`. This repo went public on 2026-09-23, so the separate
-`idl1-releases` repo described below is no longer needed: the endpoint can
-point at this repo's `releases/latest/download/latest.json`. Wiring it up
-means the keypair and pubkey steps below, plus the signing env and a
-`latest.json` step in the `release` job.
+A desktop **nightly** or **stable** build updates itself. Five seconds
+after launch, and every 4 h after that, it reads its channel's
+`latest.json`. A newer version is downloaded in the background without
+asking. Once it is downloaded, the status bar shows "Update ready ·
+restart to apply" (in the narrow layout, a banner with Restart). Clicking
+Restart installs it:
 
-The app checks for updates on launch (+30 s) and every 4 h, and from
-`Help ▸ Check for updates…`. It fetches
-`https://github.com/saucyeng/idl1-releases/releases/latest/download/latest.json`
-— `tauri-apps/tauri-action`'s `includeUpdaterJson: true` writes that file
-onto every release automatically.
+- **Windows:** the NSIS installer runs with a small progress window, then
+  starts the new version.
+- **Ubuntu (`.deb`):** the system password prompt (`pkexec`) appears, then
+  the app relaunches. Cancelling the prompt leaves the old version running.
+- **AppImage:** the file is replaced in place and the app relaunches.
 
-### Why a second, public repo
+**Beta builds, Android, and channel switches** keep the channel check above:
+"Update available" with a Download link. A switch is always a download,
+because the updater only knows its own build's feed.
 
-This repo is private, and the updater's `latest.json` must be fetchable
-without authentication (the plugin has no way to attach a token to that
-request). Releases therefore publish to a separate **public**
-`saucyeng/idl1-releases` repo instead of here. Only the release job's
-target changes — source, issues and everything else stay in this repo.
+| Build | Feed |
+|---|---|
+| nightly | `releases/download/nightly/latest.json` (set at build time) |
+| stable | `releases/latest/download/latest.json` (`tauri.conf.json`); GitHub serves it from the newest non-prerelease |
 
-### One-time setup (Isaac)
+**Versions.** The updater installs a version newer than the running one.
+Every nightly used to carry `tauri.conf.json`'s version, so the `version`
+job now gives the desktop build a rising one: `0.1.0-beta.3` becomes
+`0.1.0-beta.3.nightly.<run>`, and `0.2.0` becomes `0.2.0-nightly.<run>`. The
+chrome shows it as "build <run>". File names and the channel check still
+use the base version.
 
-1. **Create the public repo** `saucyeng/idl1-releases` (empty; the
-   workflow creates releases in it, nothing else needs to live there).
-2. **Generate the signing keypair**, from `app/`:
-   ```
-   npm run tauri signer generate -- -w ~/.tauri/idl1.key
-   ```
-   This prints a public key and writes the private key (optionally
-   password-protected) to the path given.
-3. **Put the public key in the app**: replace
-   `"REPLACE_WITH_PUBKEY"` in `app/src-tauri/tauri.conf.json`'s
-   `plugins.updater.pubkey` with the printed public key, commit. Until
-   this is done, the app's own startup guard (`app/src-tauri/src/lib.rs`)
-   never registers the updater plugin, so update checks are silently off
-   — the same guard also fires for dev builds (the `.dev` identifier),
-   so a developer's local build never checks either.
-4. **Store two repo secrets** on *this* repo (`idl1-app`), Settings →
-   Secrets and variables → Actions:
-   - `TAURI_SIGNING_PRIVATE_KEY` — the private key file's contents.
-   - `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` — its password, if one was set
-     (empty string otherwise).
-5. **Create `RELEASES_TOKEN`**: a GitHub fine-grained personal access
-   token scoped to the `saucyeng/idl1-releases` repo only, with
-   **Contents: Read and write** (that's what `tauri-action` needs to
-   create a release and upload assets) and no other repos or
-   permissions. Store it as a secret named `RELEASES_TOKEN` on *this*
-   repo.
+**Signing.** The `tauri build` step turns on `createUpdaterArtifacts` when
+the `TAURI_SIGNING_PRIVATE_KEY` secret is set, so every installer gets a
+`.sig`. `.github/scripts/updater-manifest.sh` writes `latest.json` from
+the signed files: it runs in `nightly-desktop` after the rename, and in
+`release` for a tag. Without the secret the build still passes, unsigned,
+with a warning. No manifest is written, and no build updates in place.
 
-Until the pubkey is real, the app's startup guard keeps update checks
-off, so nothing breaks.
+**Gaps.** For about ten minutes after each push the nightly release holds
+only the APK, while the desktop files are still building. A check in that
+window fails silently, and the next check, 4 h later, finds the update. A
+build installed before signing was switched on never updates itself;
+install one signed nightly by hand.
+
+### Keys (Isaac)
+
+- **Private key:** `~/.tauri/idl1-updater.key` on the dev machine. It has
+  no password; the file is the secret. **Back it up.** If it is lost, every
+  installed copy refuses updates signed with a new key, and each machine
+  has to reinstall by hand once.
+- **Public key:** `plugins.updater.pubkey` in `app/src-tauri/tauri.conf.json`.
+- **Repo secret:** `TAURI_SIGNING_PRIVATE_KEY` holds the private key file's
+  contents. Set it with
+  `gh secret set TAURI_SIGNING_PRIVATE_KEY -R saucyeng/idl1-app < ~/.tauri/idl1-updater.key`.
+  The password variable is set to empty in the workflow, so it needs no
+  secret.
+
+The app's startup guard (`app/src-tauri/src/lib.rs`) still never registers
+the updater for a dev build (the `.dev` identifier).
 
 ### Release body
 

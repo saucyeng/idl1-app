@@ -18,7 +18,8 @@ import {
 function fakeIo(overrides: Partial<UpdateIO> = {}): UpdateIO {
   return {
     checkForUpdate: vi.fn().mockResolvedValue(null),
-    downloadAndInstallUpdate: vi.fn().mockResolvedValue(undefined),
+    downloadUpdate: vi.fn().mockResolvedValue(undefined),
+    installUpdate: vi.fn().mockResolvedValue(undefined),
     relaunchApp: vi.fn().mockResolvedValue(undefined),
     ...overrides,
   };
@@ -61,12 +62,16 @@ describe("updateChipLabel", () => {
     );
   });
 
-  it("downloading — names the percent", () => {
-    expect(updateChipLabel({ kind: "downloading", pct: 40 })).toBe("Downloading update · 40%");
+  it("downloading — null (the download runs in the background)", () => {
+    expect(updateChipLabel({ kind: "downloading", pct: 40 })).toBeNull();
   });
 
   it("ready — says restart to apply", () => {
     expect(updateChipLabel({ kind: "ready" })).toBe("Update ready · restart to apply");
+  });
+
+  it("installing — says so", () => {
+    expect(updateChipLabel({ kind: "installing" })).toBe("Installing update…");
   });
 
   it("error — null (a failed check is silent in the status bar)", () => {
@@ -86,17 +91,39 @@ describe("runUpdateCheck", () => {
     expect(getUpdateState()).toEqual({ kind: "idle" });
   });
 
-  it("an update found — available with its fields", async () => {
+  it("an in-place update found — downloaded in the background with progress, ends ready", async () => {
     // Arrange
+    const seen: unknown[] = [];
     const io = fakeIo({
       checkForUpdate: vi.fn().mockResolvedValue({ version: "0.2.0", notes: "### Added", date: "2026-09-11" }),
+      downloadUpdate: vi.fn(async (onProgress: (pct: number) => void) => {
+        seen.push(getUpdateState());
+        onProgress(50);
+        seen.push(getUpdateState());
+      }),
     });
 
     // Act
     await runUpdateCheck(io);
 
     // Assert
-    expect(getUpdateState()).toEqual({ kind: "available", version: "0.2.0", notes: "### Added", date: "2026-09-11" });
+    expect(seen).toEqual([{ kind: "downloading", pct: 0 }, { kind: "downloading", pct: 50 }]);
+    expect(io.installUpdate).not.toHaveBeenCalled();
+    expect(getUpdateState()).toEqual({ kind: "ready" });
+  });
+
+  it("the background download rejects — error with the message", async () => {
+    // Arrange
+    const io = fakeIo({
+      checkForUpdate: vi.fn().mockResolvedValue({ version: "0.2.0", notes: "", date: null }),
+      downloadUpdate: vi.fn().mockRejectedValue(new Error("disk full")),
+    });
+
+    // Act
+    await runUpdateCheck(io);
+
+    // Assert
+    expect(getUpdateState()).toEqual({ kind: "error", message: "disk full" });
   });
 
   it("the check rejects — error with the message, never throws", async () => {
@@ -110,16 +137,14 @@ describe("runUpdateCheck", () => {
     expect(getUpdateState()).toEqual({ kind: "error", message: "network down" });
   });
 
-  it("state is downloading — does not run (never interrupts an in-flight install)", async () => {
+  it("state is downloading — does not run (never interrupts an in-flight download)", async () => {
     // Arrange
-    const availableIo = fakeIo({
+    const firstIo = fakeIo({
       checkForUpdate: vi.fn().mockResolvedValue({ version: "0.2.0", notes: "", date: null }),
-      downloadAndInstallUpdate: vi.fn(() => new Promise<void>(() => {})), // never resolves — stays "downloading"
+      downloadUpdate: vi.fn(() => new Promise<void>(() => {})), // never resolves — stays "downloading"
     });
-    await runUpdateCheck(availableIo);
-    void restartToUpdate(availableIo);
-    await Promise.resolve();
-    expect(getUpdateState().kind).toBe("downloading");
+    void runUpdateCheck(firstIo);
+    await vi.waitFor(() => expect(getUpdateState().kind).toBe("downloading"));
     const recheckIo = fakeIo({ checkForUpdate: vi.fn().mockResolvedValue({ version: "0.3.0", notes: "", date: null }) });
 
     // Act
@@ -129,10 +154,23 @@ describe("runUpdateCheck", () => {
     expect(getUpdateState().kind).toBe("downloading");
     expect(recheckIo.checkForUpdate).not.toHaveBeenCalled();
   });
+
+  it("state is ready — does not run (the download waits for its restart)", async () => {
+    // Arrange
+    await runUpdateCheck(fakeIo({ checkForUpdate: vi.fn().mockResolvedValue({ version: "0.2.0", notes: "", date: null }) }));
+    const recheckIo = fakeIo({ checkForUpdate: vi.fn().mockResolvedValue({ version: "0.3.0", notes: "", date: null }) });
+
+    // Act
+    await runUpdateCheck(recheckIo);
+
+    // Assert
+    expect(getUpdateState()).toEqual({ kind: "ready" });
+    expect(recheckIo.checkForUpdate).not.toHaveBeenCalled();
+  });
 });
 
 describe("restartToUpdate", () => {
-  it("not available — no-op", async () => {
+  it("not ready — no-op", async () => {
     // Arrange
     const io = fakeIo();
 
@@ -141,20 +179,16 @@ describe("restartToUpdate", () => {
 
     // Assert
     expect(getUpdateState()).toEqual({ kind: "idle" });
-    expect(io.downloadAndInstallUpdate).not.toHaveBeenCalled();
+    expect(io.installUpdate).not.toHaveBeenCalled();
   });
 
-  it("available — downloads with progress, installs, relaunches, ends ready", async () => {
+  it("ready — installs then relaunches, installing meanwhile", async () => {
     // Arrange
-    const checkIo = fakeIo({ checkForUpdate: vi.fn().mockResolvedValue({ version: "0.2.0", notes: "", date: null }) });
-    await runUpdateCheck(checkIo);
-    const progressSeen: number[] = [];
+    await runUpdateCheck(fakeIo({ checkForUpdate: vi.fn().mockResolvedValue({ version: "0.2.0", notes: "", date: null }) }));
+    let stateDuringInstall = "";
     const io = fakeIo({
-      downloadAndInstallUpdate: vi.fn(async (onProgress: (pct: number) => void) => {
-        onProgress(50);
-        progressSeen.push(50);
-        onProgress(100);
-        progressSeen.push(100);
+      installUpdate: vi.fn(async () => {
+        stateDuringInstall = getUpdateState().kind;
       }),
     });
 
@@ -162,22 +196,20 @@ describe("restartToUpdate", () => {
     await restartToUpdate(io);
 
     // Assert
-    expect(progressSeen).toEqual([50, 100]);
+    expect(stateDuringInstall).toBe("installing");
     expect(io.relaunchApp).toHaveBeenCalledOnce();
-    expect(getUpdateState()).toEqual({ kind: "ready" });
   });
 
-  it("the download rejects — error with the message", async () => {
+  it("the install rejects — error with the message, no relaunch", async () => {
     // Arrange
-    const checkIo = fakeIo({ checkForUpdate: vi.fn().mockResolvedValue({ version: "0.2.0", notes: "", date: null }) });
-    await runUpdateCheck(checkIo);
-    const io = fakeIo({ downloadAndInstallUpdate: vi.fn().mockRejectedValue(new Error("disk full")) });
+    await runUpdateCheck(fakeIo({ checkForUpdate: vi.fn().mockResolvedValue({ version: "0.2.0", notes: "", date: null }) }));
+    const io = fakeIo({ installUpdate: vi.fn().mockRejectedValue(new Error("password prompt dismissed")) });
 
     // Act
     await restartToUpdate(io);
 
     // Assert
-    expect(getUpdateState()).toEqual({ kind: "error", message: "disk full" });
+    expect(getUpdateState()).toEqual({ kind: "error", message: "password prompt dismissed" });
     expect(io.relaunchApp).not.toHaveBeenCalled();
   });
 });
@@ -185,7 +217,7 @@ describe("restartToUpdate", () => {
 describe("dismissUpdate", () => {
   it("available — drops to idle", async () => {
     // Arrange
-    const io = fakeIo({ checkForUpdate: vi.fn().mockResolvedValue({ version: "0.2.0", notes: "", date: null }) });
+    const io = fakeIo({ checkForUpdate: vi.fn().mockResolvedValue({ version: "0.2.0", notes: "", date: null, link: "https://example.invalid/a" }) });
     await runUpdateCheck(io);
 
     // Act
@@ -193,6 +225,17 @@ describe("dismissUpdate", () => {
 
     // Assert
     expect(getUpdateState()).toEqual({ kind: "idle" });
+  });
+
+  it("ready — stays ready (the download is kept)", async () => {
+    // Arrange
+    await runUpdateCheck(fakeIo({ checkForUpdate: vi.fn().mockResolvedValue({ version: "0.2.0", notes: "", date: null }) }));
+
+    // Act
+    dismissUpdate();
+
+    // Assert
+    expect(getUpdateState()).toEqual({ kind: "ready" });
   });
 
   it("idle — no-op", () => {
@@ -313,6 +356,7 @@ describe("channel-check releases", () => {
 
     // Assert
     expect(getUpdateState()).toEqual({ kind: "available", version: "build 19", notes: "", date: null, link: "https://example.invalid/a.apk" });
+    expect(io.downloadUpdate).not.toHaveBeenCalled();
   });
 
   it("versionLabel — semver gets a v, a build label does not", () => {
