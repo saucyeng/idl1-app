@@ -649,7 +649,7 @@ export default function Data() {
         </div>
         <NotesSheet open={bikeNotesOpen} onClose={() => setBikeNotesOpen(false)} bikeName={null} />
         <BrandSheet open={syncOpen} onOpenChange={setSyncOpen} title="Sync">
-          {syncOpen && <SyncSection store={prefsStore} />}
+          {syncOpen && <SyncSection store={prefsStore} routeId="data" />}
         </BrandSheet>
 
         {deletedSessionNotice !== null && (

@@ -156,6 +156,12 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 
 ### Fixed
 
+- **The Data tab's Sync panel shows this device's ID [no-docs] (2026-10-26).**
+  Opened from the Data tab, the panel sat on "Reading this device's
+  identity…" forever (so no ID to pair with and no rename): it only polled
+  while Settings was the active tab. It now polls on whichever tab it is
+  shown on. Settings → Sync was never affected. No spec change needed.
+
 - **The phone app no longer crashes ~10 s into finding a logger [no-docs] (2026-10-21).**
   A connect attempt that gave up at 10 s dropped its pending Android
   plugin call; Kotlin's own 10 s timeout then answered it, and Tauri's

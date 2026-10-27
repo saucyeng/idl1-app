@@ -19,6 +19,7 @@ import {
 } from "./pairForm";
 import { normalizePairCode } from "./pairCode";
 import type { PrefsStore } from "./prefsStore";
+import type { RouteId } from "../../types";
 import { startPeerAppearedWatch, startSyncStatusPoll, type PeerAppearedWatchDeps, type SyncStatusPollDeps } from "./syncPoll";
 import { describeSyncResult, syncStateReducer, type SyncState } from "./syncState";
 import {
@@ -60,6 +61,11 @@ export interface SyncSectionProps {
   /** Unused by this section's own content; kept for prop-shape consistency
    *  with the other sections. */
   store: PrefsStore;
+  /** The route this section is shown on, which gates its poll and
+   *  subscription (R95). Settings by default; the Data tab's Sync sheet
+   *  passes `"data"` — gating that sheet on Settings left it waiting
+   *  forever on "Reading this device's identity…". */
+  routeId?: RouteId;
 }
 
 const INITIAL_STATE: SyncState = {
@@ -71,28 +77,45 @@ const INITIAL_STATE: SyncState = {
 };
 
 /** Real deps for {@link startSyncStatusPoll}/{@link startPeerAppearedWatch}
- *  (wave-2 operating brief §4's effects rule): `isVisible` composes the
- *  window's own visibility with whether Settings is the shell's active
- *  route (R95's route-visibility context, `shell/routeVisibility.tsx`) —
- *  under mount-and-hide every page stays mounted, so a hidden Settings tab
- *  would otherwise keep polling `sync_status` and holding a live
- *  `peer_appeared` subscription forever. Built once at module scope, the
- *  same shape `Device/index.tsx`'s `STATUS_POLL_DEPS` follows. */
-const SYNC_STATUS_POLL_DEPS: SyncStatusPollDeps = {
-  syncStatus,
-  setTimeout: (fn, ms) => window.setTimeout(fn, ms),
-  clearTimeout: (handle) => window.clearTimeout(handle),
-  isVisible: () => composeVisibility(document.visibilityState === "visible", getActiveRoute() === "settings"),
-  onVisibilityChange: (handler) => subscribeRouteVisible("settings", handler),
-};
+ *  on one route (wave-2 operating brief §4's effects rule): `isVisible`
+ *  composes the window's own visibility with whether `routeId` is the
+ *  shell's active route (R95's route-visibility context,
+ *  `shell/routeVisibility.tsx`) — under mount-and-hide every page stays
+ *  mounted, so a hidden tab would otherwise keep polling `sync_status` and
+ *  holding a live `peer_appeared` subscription forever. */
+interface SyncSectionDeps {
+  poll: SyncStatusPollDeps;
+  watch: PeerAppearedWatchDeps;
+}
 
-/** Real deps for {@link startPeerAppearedWatch} — same composed visibility
- *  signal as {@link SYNC_STATUS_POLL_DEPS}. */
-const PEER_APPEARED_WATCH_DEPS: PeerAppearedWatchDeps = {
-  onPeerAppeared,
-  isVisible: SYNC_STATUS_POLL_DEPS.isVisible,
-  onVisibilityChange: SYNC_STATUS_POLL_DEPS.onVisibilityChange,
-};
+function buildDeps(routeId: RouteId): SyncSectionDeps {
+  const isVisible = () => composeVisibility(document.visibilityState === "visible", getActiveRoute() === routeId);
+  const onVisibilityChange = (handler: () => void) => subscribeRouteVisible(routeId, handler);
+  return {
+    poll: {
+      syncStatus,
+      setTimeout: (fn, ms) => window.setTimeout(fn, ms),
+      clearTimeout: (handle) => window.clearTimeout(handle),
+      isVisible,
+      onVisibilityChange,
+    },
+    watch: { onPeerAppeared, isVisible, onVisibilityChange },
+  };
+}
+
+/** One {@link SyncSectionDeps} per route, built on first use and kept at
+ *  module scope so the effects below see a stable reference — the same
+ *  shape `Device/index.tsx`'s `STATUS_POLL_DEPS` follows. */
+const DEPS_BY_ROUTE = new Map<RouteId, SyncSectionDeps>();
+
+function depsFor(routeId: RouteId): SyncSectionDeps {
+  let deps = DEPS_BY_ROUTE.get(routeId);
+  if (deps === undefined) {
+    deps = buildDeps(routeId);
+    DEPS_BY_ROUTE.set(routeId, deps);
+  }
+  return deps;
+}
 
 /** Narrows an unknown rejection reason to C3 §2's `IpcError` shape, as this
  *  tab sees it (`errors.ts`'s {@link IpcErrorLike}). Same check
@@ -127,8 +150,10 @@ function describeSyncError(error: unknown): string {
  *  paired peer comes back online (the Rust auto-trigger, `commands::sync::
  *  should_auto_sync`); `peer_appeared` refreshes that peer's row here
  *  without waiting for the next poll. */
-export default function SyncSection({ store }: SyncSectionProps) {
+export default function SyncSection({ store, routeId = "settings" }: SyncSectionProps) {
   void store;
+
+  const deps = depsFor(routeId);
 
   const [state, dispatch] = useReducer(syncStateReducer, INITIAL_STATE);
   const [peerIdInput, setPeerIdInput] = useState<string>("");
@@ -146,25 +171,25 @@ export default function SyncSection({ store }: SyncSectionProps) {
 
   // The `sync_status` poll (wave-2 operating brief §4's effects rule: all
   // decision logic lives in the pure `startSyncStatusPoll` driver, gated on
-  // R95's route-visibility signal). Data-only dependency array (empty —
-  // `SYNC_STATUS_POLL_DEPS` and `dispatch` are both stable references).
+  // R95's route-visibility signal). `deps` is stable per route (`depsFor`)
+  // and `dispatch` is stable, so this reruns only if the host route changes.
   useEffect(() => {
-    return startSyncStatusPoll(SYNC_STATUS_POLL_DEPS, (action) => {
+    return startSyncStatusPoll(deps.poll, (action) => {
       if (action.type === "status") {
         dispatch({ type: "status", status: action.status });
       } else {
         dispatch({ type: "failure", message: describeSyncError(action.error) });
       }
     });
-  }, []);
+  }, [deps]);
 
   // The `peer_appeared` subscription (R95 item 2's pattern: torn down while
   // this route is hidden, re-primed on show).
   useEffect(() => {
-    return startPeerAppearedWatch(PEER_APPEARED_WATCH_DEPS, (sighting) => {
+    return startPeerAppearedWatch(deps.watch, (sighting) => {
       dispatch({ type: "peerAppeared", sighting });
     });
-  }, []);
+  }, [deps]);
 
   // The pairing-code expiry ticker: a local 1 Hz display timer, not an IPC
   // driver, so it does not need `syncPoll.ts`'s full pure-driver shape —
@@ -192,7 +217,7 @@ export default function SyncSection({ store }: SyncSectionProps) {
     }
 
     function sync(): void {
-      if (SYNC_STATUS_POLL_DEPS.isVisible()) {
+      if (deps.poll.isVisible()) {
         startTicking();
       } else {
         stopTicking();
@@ -200,13 +225,13 @@ export default function SyncSection({ store }: SyncSectionProps) {
     }
 
     sync();
-    const unsubscribeVisibility = SYNC_STATUS_POLL_DEPS.onVisibilityChange(sync);
+    const unsubscribeVisibility = deps.poll.onVisibilityChange(sync);
 
     return () => {
       stopTicking();
       unsubscribeVisibility();
     };
-  }, [showingCode, myCode]);
+  }, [showingCode, myCode, deps]);
 
   function handleShowCode(): void {
     setShowingCode(true);
