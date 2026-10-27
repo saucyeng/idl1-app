@@ -95,3 +95,18 @@ export function describeBackendReason(error: unknown): string {
   }
   return "Something unexpected happened. Please try again.";
 }
+
+/** The `SyncSelection` for pushing `sessionIds`: duplicates removed and
+ *  `workbooks` sent as an empty list, because an omitted list means "all of
+ *  them" and a session push must not carry workbooks. */
+export function buildPushSelection(sessionIds: readonly string[]): SyncSelection {
+  return { direction: "push", sessions: [...new Set(sessionIds)], workbooks: [] };
+}
+
+/** The ticked session ids that are also in `visibleIds` (after filters and
+ *  search), in tick order and without duplicates. Ticks hidden by a filter
+ *  stay ticked elsewhere but are not pushed. */
+export function visibleSelectedIds(selectedIds: readonly string[], visibleIds: readonly string[]): string[] {
+  const visible = new Set(visibleIds);
+  return [...new Set(selectedIds)].filter((id) => visible.has(id));
+}

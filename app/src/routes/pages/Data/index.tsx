@@ -47,6 +47,7 @@ import { compareSessions, sortFieldsForView, type SortField } from "./sort";
 import { TrackResults } from "./TrackResults";
 import { PushMenu } from "./PushMenu";
 import { useSessionPush } from "./useSessionPush";
+import { visibleSelectedIds } from "../Settings/peerLibraryState";
 import type { PeerStatus } from "../../../ipc/sync";
 
 /** The session detail pane's own fetch state — separate from the sessions
@@ -277,8 +278,8 @@ export default function Data() {
   const sessionPush = useSessionPush();
   /** The sessions ticked in the list (their whole-session windows), for the
    *  toolbar's multi-push. */
-  const selectedSessionIds = useMemo(
-    () => [...new Set(selection.filter((w) => w.span.kind === "session").map((w) => w.sessionId))],
+  const tickedSessionIds = useMemo(
+    () => selection.filter((w) => w.span.kind === "session").map((w) => w.sessionId),
     [selection],
   );
   /** The session whose detail pane is open on the right — separate from
@@ -486,6 +487,13 @@ export default function Data() {
   );
 
   const groups = useMemo(() => groupSessionRows(rows), [rows]);
+
+  /** Ticked sessions that pass the current filters and search; hidden ticks
+   *  stay ticked but are not pushed. */
+  const selectedSessionIds = useMemo(
+    () => visibleSelectedIds(tickedSessionIds, rows.map((r) => r.sessionId)),
+    [tickedSessionIds, rows],
+  );
 
   const detailView = useMemo(
     () => (detailState.status === "ready" ? toDetailView(detailState.detail, detailState.laps) : null),

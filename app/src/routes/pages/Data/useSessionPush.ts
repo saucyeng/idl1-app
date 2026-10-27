@@ -1,8 +1,8 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 
 import { syncSelection, type PeerStatus } from "../../../ipc/sync";
-import { describeBackendReason, describeTransferred, onlinePeers, runSelectionSync } from "../Settings/peerLibraryState";
+import { buildPushSelection, describeBackendReason, describeTransferred, onlinePeers, runSelectionSync } from "../Settings/peerLibraryState";
 import { depsFor } from "../Settings/SyncSection";
 import { startSyncStatusPoll } from "../Settings/syncPoll";
 
@@ -23,6 +23,16 @@ export interface SessionPush {
 export function useSessionPush(): SessionPush {
   const [peers, setPeers] = useState<PeerStatus[]>([]);
   const [busy, setBusy] = useState(false);
+  /** Synchronous guard: two fast clicks land before `busy` re-renders. */
+  const runningRef = useRef(false);
+  const mountedRef = useRef(true);
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
 
   useEffect(() => {
     return startSyncStatusPoll(depsFor("data").poll, (action) => {
@@ -32,26 +42,28 @@ export function useSessionPush(): SessionPush {
 
   const push = useCallback(
     (peerId: string, sessionIds: string[]) => {
-      if (busy || sessionIds.length === 0) return;
+      if (runningRef.current || sessionIds.length === 0) return;
+      runningRef.current = true;
       const name = peers.find((p) => p.peer_id === peerId)?.name ?? "device";
       setBusy(true);
       const toastId = toast.loading(`Pushing to ${name}…`);
       void runSelectionSync(
         { syncSelection, describeError: describeBackendReason },
         peerId,
-        { direction: "push", sessions: sessionIds },
+        buildPushSelection(sessionIds),
         (p) =>
           toast.loading(`Pushing to ${name}…`, {
             id: toastId,
             description: `${p.phase}${p.total !== null ? ` (${p.done}/${p.total})` : ""}`,
           }),
       ).then((outcome) => {
-        setBusy(false);
+        runningRef.current = false;
+        if (mountedRef.current) setBusy(false);
         if (outcome.ok) toast.success(`Pushed to ${name}`, { id: toastId, description: describeTransferred(outcome.result) });
         else toast.error(`Push to ${name} failed`, { id: toastId, description: outcome.message });
       });
     },
-    [busy, peers],
+    [peers],
   );
 
   return { targets: onlinePeers(peers), busy, push };

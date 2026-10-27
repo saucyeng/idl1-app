@@ -4,6 +4,8 @@ import type { PeerLibrary, PeerStatus, Progress, SyncResult, SyncSelection } fro
 import {
   AUTO_SYNC_OPTIONS,
   autoSyncLabel,
+  buildPushSelection,
+  visibleSelectedIds,
   describeBackendReason,
   describeTransferred,
   libraryLoadReducer,
@@ -153,5 +155,33 @@ describe("describeBackendReason", () => {
     const texts = [describeBackendReason(null), describeBackendReason({ kind: "x", message: " " }), describeBackendReason("boom")];
 
     expect(texts).toEqual(Array(3).fill("Something unexpected happened. Please try again."));
+  });
+});
+
+describe("buildPushSelection", () => {
+  it("buildPushSelection — duplicate ids — sends each once with an explicit empty workbooks list", () => {
+    const built = buildPushSelection(["a", "b", "a"]);
+
+    expect(built).toEqual({ direction: "push", sessions: ["a", "b"], workbooks: [] });
+  });
+
+  it("buildPushSelection — no ids — sends empty lists, never an omitted one", () => {
+    const built = buildPushSelection([]);
+
+    expect(built).toEqual({ direction: "push", sessions: [], workbooks: [] });
+  });
+});
+
+describe("visibleSelectedIds", () => {
+  it("visibleSelectedIds — some ticks hidden by a filter — keeps only the visible ones", () => {
+    const ids = visibleSelectedIds(["a", "b", "c", "a"], ["c", "a", "z"]);
+
+    expect(ids).toEqual(["a", "c"]);
+  });
+
+  it("visibleSelectedIds — nothing visible — is empty", () => {
+    const ids = visibleSelectedIds(["a"], []);
+
+    expect(ids).toEqual([]);
   });
 });

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useReducer, useState } from "react";
+import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
@@ -52,6 +52,16 @@ export function PeerLibraryPanel({ peerId, peerName }: PeerLibraryPanelProps) {
   const [selection, setSelection] = useState<PeerSelection>(emptySelection);
   const [progress, setProgress] = useState<Progress | null>(null);
   const [pullError, setPullError] = useState<string | null>(null);
+  /** Synchronous guard: two fast clicks land before `progress` re-renders. */
+  const pullingRef = useRef(false);
+  const mountedRef = useRef(true);
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
 
   const fetchLibrary = useCallback(
     (isCancelled: () => boolean) => {
@@ -86,21 +96,26 @@ export function PeerLibraryPanel({ peerId, peerName }: PeerLibraryPanelProps) {
   const count = selectionCount(selection);
 
   function handlePull(): void {
-    if (library === null || count === 0 || pulling) return;
+    if (library === null || count === 0 || pullingRef.current) return;
+    pullingRef.current = true;
     setPullError(null);
     setProgress({ done: 0, total: null, phase: "manifest" });
     void runSelectionSync(
       { syncSelection, describeError: describeBackendReason },
       peerId,
       buildPullSelection(library, selection),
-      setProgress,
+      (p) => {
+        if (mountedRef.current) setProgress(p);
+      },
     ).then((outcome) => {
-      setProgress(null);
+      pullingRef.current = false;
+      const alive = mountedRef.current;
+      if (alive) setProgress(null);
       if (outcome.ok) {
         toast.success(`Pulled from ${peerName}`, { description: describeTransferred(outcome.result) });
-        fetchLibrary(() => false);
+        if (alive) fetchLibrary(() => !mountedRef.current);
       } else {
-        setPullError(outcome.message);
+        if (alive) setPullError(outcome.message);
         toast.error(`Pull from ${peerName} failed`, { description: outcome.message });
       }
     });
