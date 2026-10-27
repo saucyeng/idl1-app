@@ -171,8 +171,20 @@ pub fn run() {
         // `tauri.conf.json`, so `media-src` needs no entry.
         .register_asynchronous_uri_scheme_protocol("idl1-video", idl_rs_tauri::video::video_protocol)
         .invoke_handler(idl_rs_tauri::handler())
-        .run(tauri::generate_context!())
-        .expect("error while running idl1");
+        .build(tauri::generate_context!())
+        .expect("error while building idl1")
+        .run(|app, event| {
+            // A normal exit removes the "running" marker, so the next launch
+            // reports only a run that died: an out-of-memory abort leaves no
+            // panic to hook (evaluation memory spec §4.2). Exits through an
+            // update or restart skip this event; the next launch recognises
+            // those by the version change and reports nothing.
+            if let tauri::RunEvent::Exit = event {
+                if let Some(dir) = app.try_state::<idl_rs_tauri::crash::CrashDir>() {
+                    idl_rs_tauri::crash::mark_clean_exit(&dir.0);
+                }
+            }
+        });
 }
 
 /// Registers the updater plugin unless this is a dev build or the pubkey is

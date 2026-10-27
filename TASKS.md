@@ -700,8 +700,8 @@ or a hard stop.
 Goal: the Broome-Tioga 2026-10-24 ride report (`workbooks/mx-compare-2026-09-19-vs-2026-10-24.idl1wb`),
 building what it needs along the way.
 
-- [ ] Evaluation memory Phase 1: shared evaluation, no copies, abnormal-exit marker
-      (`docs/superpowers/specs/2026-10-27-idl1-evaluation-memory-DRAFT.md` §6) — in progress
+- [x] Evaluation memory Phase 1: shared evaluation, no copies, abnormal-exit marker
+      (`docs/superpowers/specs/2026-10-27-idl1-evaluation-memory-DRAFT.md` §6)
 - [ ] `current_lap()` inside an app window reads 1, so `[on_t]`-weighted results are 0/NaN in the app
       (memory spec §8; engine gaps N3/N5); evaluate whole session, then window (Q1)
 - [ ] Visual pass of the comparison workbook in the app (every chart and table renders, labels, scales)

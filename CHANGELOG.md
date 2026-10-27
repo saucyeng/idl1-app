@@ -204,6 +204,16 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 
 ### Fixed
 
+- **Heavy workbooks no longer run the app out of memory [no-docs]
+  (2026-10-27).** Each chart re-ran the whole workbook, and every result was
+  held two to four times, so opening the MX comparison workbook on one
+  session climbed past 4.8 GB and killed the app. Now one evaluation per
+  workbook, session and window is shared by every chart and table, and each
+  result is held once. An app that dies without a panic (e.g. out of
+  memory) is reported on the next launch as "closed unexpectedly"; an
+  update or restart is not. Spec: `2026-10-27-idl1-evaluation-memory-DRAFT.md`
+  Phase 1.
+
 - **The app opens again (blank window in build 95) [no-docs] (2026-10-27).**
   A background status check on the Data tab re-subscribed to "is this tab
   visible" while it was being notified, and the notifier kept calling it
