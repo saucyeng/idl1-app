@@ -171,6 +171,12 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 
 ### Fixed
 
+- **"Check for updates" says what it's doing [no-docs] (2026-10-27).**
+  Once it found an in-place update, the Settings ▸ About button showed
+  nothing while it downloaded or once it was ready, so it looked broken.
+  It now shows the download's progress, then "Update downloaded" with a
+  Restart to update button. No spec change needed.
+
 - **Pairing reaches the other laptop [no-docs] (2026-10-27).** A device
   announcing several addresses was reached on whichever came first; an
   IPv6 link-local one (`fe80::…%4`) can't go into a URL, so Pair failed

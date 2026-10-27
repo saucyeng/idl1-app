@@ -6,7 +6,8 @@ import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import type { AppChannel } from "../../../ipc/appUpdate";
 import { BUILD, checkForUpdatesNow, effectiveChannel } from "../../../shell/channelUpdate";
 import { openUpdateLink } from "../../../shell/openUpdateLink";
-import { openUpdatePanel, useUpdateState, versionLabel } from "../../../shell/updateState";
+import { openUpdatePanel, restartToUpdate, useUpdateState, versionLabel } from "../../../shell/updateState";
+import { installUpdate, relaunchApp } from "../../../ipc/updater";
 import { aboutRows } from "./about";
 import type { PrefsStore } from "./prefsStore";
 
@@ -95,10 +96,17 @@ function AppUpdates({ store }: { store: PrefsStore }) {
     void checkForUpdatesNow();
   }
 
+  // Every state says something (2026-10-27): an in-place update goes
+  // checking → downloading → ready in the background, and with only
+  // checking/error/idle covered the button looked dead once it found one.
   let result: string | null = null;
   if (update.kind === "checking") result = "Checking…";
+  else if (update.kind === "downloading") result = `Downloading the update… ${update.pct}%`;
+  else if (update.kind === "ready") result = "Update downloaded. Restart to apply it.";
+  else if (update.kind === "installing") result = "Installing — the app restarts when it's done…";
   else if (update.kind === "error" && checked) result = `Couldn't check: ${update.message}`;
   else if (update.kind === "idle" && checked) result = "Up to date.";
+  const busy = update.kind === "checking" || update.kind === "downloading" || update.kind === "installing";
 
   return (
     <div className="flex flex-col gap-2 border-t border-rule pt-4">
@@ -120,9 +128,15 @@ function AppUpdates({ store }: { store: PrefsStore }) {
         </p>
       )}
       <div className="flex flex-wrap items-center gap-2">
-        <Button disabled={update.kind === "checking"} onClick={check}>
-          Check for updates
-        </Button>
+        {update.kind === "ready" ? (
+          <Button emphasis="info" filled onClick={() => void restartToUpdate({ installUpdate, relaunchApp })}>
+            Restart to update
+          </Button>
+        ) : (
+          <Button disabled={busy} onClick={check}>
+            Check for updates
+          </Button>
+        )}
         {update.kind === "available" && (
           <>
             <button type="button" className="font-mono text-sm text-fg underline" onClick={openUpdatePanel}>
