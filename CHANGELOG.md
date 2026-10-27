@@ -6,6 +6,14 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 
 ### Added
 
+- **Browse another device's library, pull or push a selection [no-docs]
+  (2026-10-27).** Behind the scenes for the Sync screens (next): each
+  device's sync server now lists its sessions and workbooks (bearer
+  token, read-only), the app can mark each against its own library (here /
+  differs / not here), sync just a selection, and set a paired device's
+  automatic rule. Two syncs with the same device can no longer overlap.
+  C3 §3.9 gains `peer_library`, `sync_selection`, `set_peer_auto_sync`.
+
 - **Sync can move a selection, one way [no-docs] (2026-10-27).** The sync
   engine now takes a selection: which sessions and workbooks, and pull,
   push or both. A session brings its raw log, processed data and videos;

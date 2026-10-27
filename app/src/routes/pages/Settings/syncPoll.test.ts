@@ -17,7 +17,7 @@ const EMPTY_STATUS: SyncStatus = {
 };
 
 function fakePeer(id: string): PeerStatus {
-  return { peer_id: id, name: "Pit Tablet", online: true, protocol_version: 1, paired_at_ms: 1000 };
+  return { peer_id: id, name: "Pit Tablet", online: true, protocol_version: 1, paired_at_ms: 1000, auto_sync: "off" };
 }
 
 function fakeSighting(id: string): PeerSighting {

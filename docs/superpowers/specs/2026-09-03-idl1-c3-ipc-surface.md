@@ -2919,6 +2919,33 @@ visible. A consumer must not treat the absence of events as presence.
 No error channel — a discovery-layer failure is not user-actionable per
 event; it surfaces the next time `sync_status()` is polled.
 
+**Library tiers Phase 1 (added 2026-10-27; spec
+`2026-10-27-idl1-library-tiers-DRAFT.md` §4a).** `PeerStatus` gains
+`auto_sync: "off" | "send_new" | "mirror"` (every pairing starts `"off"`);
+`SyncResult` gains `blob_bytes`, `session_bytes`, `workbook_bytes`,
+`track_bytes`, `profile_bytes`, `bike_log_bytes` (bytes moved per class) and
+`elapsed_ms`. A second sync with a peer already syncing rejects `sync`
+("a sync with <name> is already running"), for `sync_now`, `sync_selection`
+and the automatic path alike.
+
+**`peer_library(peer_id)`** (async). Return `PeerLibrary { schema_version,
+sessions: PeerLibrarySession[], workbooks: PeerLibraryWorkbook[] }`; each
+row carries the peer's summary fields (§4a) plus `here: "absent" | "same" |
+"differs"` against this library (a local session without `data.parquet`
+is `"differs"`). `not_found` if the peer isn't visible; `sync` with "the
+other device is still indexing its library" on the peer's 503.
+
+**`sync_selection(peer_id, selection, on_progress: Channel<Progress>)`**
+(async). `selection = { direction: "both" | "pull" | "push", sessions?:
+string[], workbooks?: string[], absent_only?: boolean }`; omitted lists
+mean all. Returns `SyncResult`. `invalid_argument` names a bad direction or
+a malformed id.
+
+**`set_peer_auto_sync(peer_id, rule)`** (async). `rule: "off" | "send_new"
+| "mirror"`; returns the updated `PeerStatus`, persisted atomically to
+`peers.json`. `invalid_argument` for an unknown rule, `not_found` for an
+unknown peer.
+
 ### 3.10 App
 
 **`move_data_dir(new_root: string, progress: Channel<Progress>): DataDirInfo`**

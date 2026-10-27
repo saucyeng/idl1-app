@@ -34,6 +34,67 @@ export interface PeerStatus {
   protocol_version: number;
   /** i64, ms since epoch when pairing completed. */
   paired_at_ms: number;
+  /** What happens automatically when this peer is seen (library tiers
+   *  §4a). Every pairing starts "off". */
+  auto_sync: AutoSync;
+}
+
+/** A paired peer's automatic rule (library tiers §4a): nothing, push what
+ *  the peer lacks, or today's full two-way sync. */
+export type AutoSync = "off" | "send_new" | "mirror";
+
+/** How a row of a peer's library compares with this library: not here,
+ *  identical, or present on both with different content. */
+export type Here = "absent" | "same" | "differs";
+
+/** What one selective sync moves (library tiers §4a). Omitting `sessions`
+ *  or `workbooks` means all of them. A selected session brings its raw log,
+ *  processed data and videos; tracks, profiles and the bike log always
+ *  travel in the chosen direction(s). */
+export interface SyncSelection {
+  direction: "both" | "pull" | "push";
+  sessions?: string[];
+  workbooks?: string[];
+  /** Push only items the peer lacks entirely; never an update. Pushes only. */
+  absent_only?: boolean;
+}
+
+/** One session in a peer's library (`peer_library`). */
+export interface PeerLibrarySession {
+  session_id: string;
+  /** i64, recording start, ms since the Unix epoch, UTC. */
+  timestamp_utc_ms: number;
+  /** i64, ms; null when the peer's catalog has no value. */
+  duration_ms: number | null;
+  venue_name: string | null;
+  event_name: string | null;
+  rider: string | null;
+  bike: string | null;
+  tag: string | null;
+  source_format: string;
+  lap_count: number | null;
+  /** Bytes on the peer: raw log + processed data + derived channels. */
+  size_bytes: number;
+  here: Here;
+}
+
+/** One workbook in a peer's library (`peer_library`). */
+export interface PeerLibraryWorkbook {
+  workbook_id: string;
+  file_name: string;
+  /** Bytes. */
+  size_bytes: number;
+  /** i64, ms since the Unix epoch. */
+  updated_at_ms: number;
+  here: Here;
+}
+
+/** `peer_library`'s return: the peer's sessions and workbooks, each marked
+ *  against this library. */
+export interface PeerLibrary {
+  schema_version: number;
+  sessions: PeerLibrarySession[];
+  workbooks: PeerLibraryWorkbook[];
 }
 
 /** This device's own sync identity, as peers see it (C3 §3.9, ruling
@@ -120,6 +181,16 @@ export interface SyncResult {
   /** u32, bikes and bike-log entries transferred this run, pull and push
    *  combined (added 2026-10-16). */
   bike_log_updated: number;
+  /** Bytes moved this run per kind of file, pull and push combined
+   *  (library tiers §4a). */
+  blob_bytes: number;
+  session_bytes: number;
+  workbook_bytes: number;
+  track_bytes: number;
+  profile_bytes: number;
+  bike_log_bytes: number;
+  /** Wall-clock length of the run, ms. */
+  elapsed_ms: number;
 }
 
 /** `start_pairing`'s return (C3 §3.9's `PairingCode`). */
@@ -146,6 +217,30 @@ export async function syncNow(
   const progress = new Channel<Progress>();
   progress.onmessage = onProgress;
   return invoke<SyncResult>("sync_now", { peerId, progress });
+}
+
+/** Reads `peerId`'s library: its sessions and workbooks, each marked
+ *  against this library (library tiers §4a). Rejects `not_found` when the
+ *  peer isn't visible, `sync` while it is still indexing. */
+export async function peerLibrary(peerId: string): Promise<PeerLibrary> {
+  return invoke<PeerLibrary>("peer_library", { peerId });
+}
+
+/** Syncs only `selection` with `peerId` (library tiers §4a); progress as
+ *  {@link syncNow}. */
+export async function syncSelection(
+  peerId: string,
+  selection: SyncSelection,
+  onProgress: (p: Progress) => void
+): Promise<SyncResult> {
+  const channel = new Channel<Progress>();
+  channel.onmessage = onProgress;
+  return invoke<SyncResult>("sync_selection", { peerId, selection, onProgress: channel });
+}
+
+/** Sets `peerId`'s automatic rule and returns its updated status. */
+export async function setPeerAutoSync(peerId: string, rule: AutoSync): Promise<PeerStatus> {
+  return invoke<PeerStatus>("set_peer_auto_sync", { peerId, rule });
 }
 
 /** Mints a single-use, short-lived pairing code on this side so the other

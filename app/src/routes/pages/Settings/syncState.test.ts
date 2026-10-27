@@ -25,13 +25,15 @@ function syncResult(overrides: Partial<SyncResult> = {}): SyncResult {
     sessions_updated: 0,
     tracks_updated: 0,
     profiles_updated: 0, bike_log_updated: 0,
+    blob_bytes: 0, session_bytes: 0, workbook_bytes: 0, track_bytes: 0, profile_bytes: 0, bike_log_bytes: 0,
+    elapsed_ms: 0,
     ...overrides,
   };
 }
 
 /** A full `PeerStatus` (C3 §3.9) with every field overridable. */
 function peer(overrides: Partial<PeerStatus> & { peer_id: string; name: string }): PeerStatus {
-  return { online: true, protocol_version: 1, paired_at_ms: 1_700_000_000_000, ...overrides };
+  return { online: true, protocol_version: 1, paired_at_ms: 1_700_000_000_000, auto_sync: "off", ...overrides };
 }
 
 /** A full `DiscoveredPeer` (C3 §3.9, L11 Task 14) with every field
