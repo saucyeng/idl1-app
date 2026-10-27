@@ -39,10 +39,10 @@ present it: the library always looks complete, and data is where you need it.
   | Role | Wants content for | Drops |
   |---|---|---|
   | **Main** | Everything | Never |
-  | **Working** | Sessions inside its window (default 60 days) + pinned + anything fetched by hand | Content outside the window, unpinned, only when a Main holds a verified copy |
-  | **Field** | Sessions inside its window (default 7 days) + pinned | Same rule as Working; also sends every new session to a Main automatically |
+  | **Working** | Whatever it has: everything it imported, pulled or was pushed, kept until the user removes it | Only when the user removes content, and only when a Main holds a verified copy |
+  | **Field** | Sessions inside its window (default 60 days, adjustable) + pinned | Content outside the window, unpinned, only when a Main holds a verified copy; also sends every new session to the Main libraries the user picked |
 
-- **Pin** ("keep on this device") overrides the window. **Push to → device**
+- **Pin** ("keep on this device") overrides a Field library's window. **Push to → device**
   is a pin set on that device.
 - **Safety rule:** content is dropped only if the where-is log shows at
   least `min_main_copies` (default 1, team setting) Main libraries holding a
@@ -63,9 +63,11 @@ present it: the library always looks complete, and data is where you need it.
   **Push to → [device]**.
 - **Sync tab:** per paired device, its library as a list with the Data
   tab's filters, each row marked here / not here / differs, and **Pull** for
-  the ticked rows. Workbooks are a separate category. Pulling a session
-  offers "+ workbooks that use it"; pulling a workbook offers "+ its
-  sessions"; both ticked by default.
+  the ticked rows. Workbooks are a separate category in the same view;
+  sessions and workbooks are independent (Isaac 2026-10-27), so neither
+  drags the other along: sending them as a pair is ticking both in one
+  pull or push. A pulled session brings its raw log and its processed data
+  by default; "processed data only" is an option on the pull.
 - **Automatic rule per paired device:** Off (default) / Send new / Mirror
   (today's full two-way sync, kept, off by default).
 
@@ -74,8 +76,8 @@ The laptop with and without its drive:
 | | Drive connected | Drive away |
 |---|---|---|
 | New sessions | Copied to the drive, hash-checked | Wait on the laptop |
-| Old sessions | Laptop (Working) may drop out-of-window content | Nothing dropped; shown "on Backup drive" |
-| Analysis | Everything reachable | Recent + pinned |
+| Old sessions | Laptop (Working) can remove content you choose to remove, since the drive holds it | Removal refused for anything the drive doesn't hold; removed sessions shown "on Backup drive" |
+| Analysis | Everything reachable | Everything still on the laptop |
 
 Changing a library's role from Main to Working never drops anything by
 itself: drops happen only once another Main holds verified copies.
@@ -85,13 +87,15 @@ itself: drops happen only once another Main holds verified copies.
 **Phase 1 (build next).** Library IDs; the where-is log (written on every
 import, pull and push); browse a paired device's library and pull a
 selection; push from the Data tab; the per-device automatic rule (Off / Send
-new / Mirror, Off by default); workbooks as a separate category with
-session ↔ workbook pairing; the sync speed fix (§5). Single-library
+new / Mirror, Off by default); workbooks as a separate, independent
+category; raw log + processed data by default with a "processed only"
+option; the sync speed fix (§5). Single-library
 behaviour unchanged. Roles exist in `library.json` but every library is
 Main.
 
-**Phase 2.** Working and Field roles, windows and pins, greyed placeholders
-with Get, safe dropping, backup drives, `min_main_copies`.
+**Phase 2.** Working and Field roles, the Field window and pins, the Field
+device's choice of Main libraries to send to, greyed placeholders with Get,
+user removal with the safety rule, backup drives, `min_main_copies`.
 
 **Later, fits without redesign:** per-rider preferred content (a rider's
 phone keeps only their rides), cloud storage as another Main library.
@@ -100,8 +104,8 @@ phone keeps only their rides), cloud storage as another Main library.
 
 - **Selective pull and push need no wire change.** The client filters the
   existing `plan_sync` actions to the selected items' closure (session →
-  its blob, `data.parquet`, derived, `session.json`, its tracks; optionally
-  its workbooks).
+  its blob unless "processed only", `data.parquet`, derived,
+  `session.json`, its tracks). Workbooks are selected on their own.
 - **New read-only endpoint `GET /idl1/v1/library`:** session summaries for
   the browse list (`session_id`, start time, venue, rider, bike, duration,
   content size, held-here flags), workbook summaries (id, name, session ids
@@ -109,6 +113,8 @@ phone keeps only their rides), cloud storage as another Main library.
 - **New synced class `whereis`.** Manifest entry plus `GET`/`PUT`, union merge.
 - **`library.json`** syncs as metadata but `role` is local-only (each
   library decides its own role).
+- **`library.json` also holds** the Field window (days) and, for a Field
+  library, the Main library IDs it sends new sessions to (user-selected).
 - **The sync identity question:** today pairing binds two app installs. A
   backup drive has no app, so the computer it's plugged into syncs to it as
   a local folder peer (same plan/apply code, no HTTP). Paired devices keep
@@ -123,18 +129,16 @@ buffers each item whole in memory (`download_item` returns `Vec<u8>`), the
 server's `serve_file` chunk size, per-item serial requests with no
 pipelining, or the Windows server side. Measure each direction first.
 
-## 6. Open questions for Isaac
+## 6. Decisions (Isaac, 2026-10-27)
 
-1. Window defaults: Working 60 days, Field 7 days. Right numbers? Count by
-   days or by number of sessions?
-2. Should a pulled session bring its raw log by default (yes, as drafted),
-   or processed data only, with the raw log on request?
-3. Workbook → session link: workbooks name sessions inside cells, not in
-   front matter. Phase 1 can derive "sessions this workbook uses" by
-   evaluating it, or the workbook could record it in its front matter. Which?
-4. Team setting `min_main_copies`: default 1, or 2 for teams?
-5. Field devices: send new sessions to *every* reachable Main, or to one
-   chosen Main?
+1. Working keeps everything until the user removes it (no window). Field
+   keeps a window: default 60 days, adjustable.
+2. A pulled session brings both its raw log and its processed data by
+   default; "processed only" is an option.
+3. Sessions and workbooks are independent: no automatic pairing; a pair is
+   both ticked in one pull or push.
+4. `min_main_copies` = 1 for now.
+5. A Field device sends new sessions to the Main libraries the user picks.
 
 ## 7. Points to settle in the spec before code
 
