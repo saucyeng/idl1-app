@@ -4,6 +4,12 @@
 
 use tauri::Manager;
 
+/// The process's allocator: the system's, counting live heap bytes for the
+/// memory budget and leaving a breadcrumb in the crash directory when an
+/// allocation fails (evaluation-memory spec §4.2.H).
+#[global_allocator]
+static ALLOCATOR: idl_rs_tauri::crash::BreadcrumbAllocator = idl_rs_tauri::crash::BreadcrumbAllocator;
+
 #[cfg(target_os = "android")]
 mod mobile;
 

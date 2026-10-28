@@ -548,11 +548,72 @@ first time and seconds after that. A 64 GB, 16-core machine runs `P` = 15 with n
 | Phase | Change | Layer | Effect here (estimate) | Effort | The test that proves it |
 |---|---|---|---|---|---|
 | **1** | **(a)** Single-flight shared evaluation keyed by `EvalKey`. `fetch_host_channel_v2` reads from it, and an LRU of evaluations is byte-accounted. **(b)** Remove the copies: one `Arc` pair per value shared by `EvalOutput`, the overlay and the result; no `HostChannel` materialisation (encode from a view); the lazy handle holds the cache's `Arc`s; no `Vec`-then-`Arc` copy in `elemwise`/`channel`. **(c)** Abnormal-exit marker. No C3 change. | core + tauri | 7 evaluations → 1. Per evaluation 2.4 → ≈ 0.6 GB (all 37 values kept once: 8 B × 62.2 M = 0.50 GB + ≈ 0.1 GB transient). App peak ≈ 1.0 + 0.63 + 0.6 ≈ **2.2 GB**, down from more than 12 GB requested. | M | tauri: `fetch_host_channel_v2_via — seven concurrent fetches on one key after eval_workbook_v2 — one evaluation runs` (registry counter, like `axis_decodes`, `session_cache.rs:660`). tauri: `… — workbook bytes change between calls — second call re-evaluates`. core, counting allocator: `eval_cells — ten chained full-rate defs over a 1e6-sample channel — peak under 8 B × N × 12 + 1 MB`; today it is ≈ 32 B × N × 10. Existing `fetch_host_channel_v2_via_a_lap_window_agrees_with_eval_workbook_v2_via…` stays byte-identical. tauri: `crash marker — left by a dead pid — reported once as an abnormal exit`. |
-| **2** | Planner: static shapes and counts from the footer, schedule, liveness release, demand and retain set, estimate `E`. | core | Per evaluation ≈ 0.6 → **≈ 0.3–0.35 GB**. Retained results 0.50 GB → 0.054 GB. | M | core: `plan — mx-compare-shaped fixture — estimate within ±25 % of the counted peak`. core: `liveness — a full-rate def with no dependents and not demanded — buffer released, metadata kept`. core: fixture peak ≤ `(I + F + T) × 1.1`. |
-| **3** | Machine-aware budget and admission: `MemoryBudget` trait, `B = min(RAM × f, live commit − headroom)`, one ledger for cache, decode and evaluation, waiting before refusing, `resource_exhausted` when `E > B_max`, cancellation at zero subscribers. Allocator breadcrumb. | core trait + tauri + cli | No abort is possible from evaluation. Parallelism follows the machine. | M | tauri: `admission — two evaluations whose estimates sum past B — second waits, both succeed`. tauri: `admission — estimate past B_max — resource_exhausted before any decode`. tauri: `budget — fake probe with 64 GB physical — B_max scales, no 2 GiB ceiling`. tauri: `cancel — last subscriber drops — evaluation stops at the next definition boundary`. |
+| **2** (built, `rust` branch `mem-p23`) | Planner: static shapes and counts from the footer, schedule, liveness release, demand and retain set, estimate `E`. | core | Per evaluation ≈ 0.6 → **≈ 0.3–0.35 GB**. Retained results 0.50 GB → 0.054 GB. | M | core: `plan — mx-compare-shaped fixture — estimate within ±25 % of the counted peak`. core: `liveness — a full-rate def with no dependents and not demanded — buffer released, metadata kept`. core: fixture peak ≤ `(I + F + T) × 1.1`. |
+| **3** (built, `rust` branch `mem-p23`; CLI side not built) | Machine-aware budget and admission: `MemoryBudget` trait, `B = min(RAM × f, live commit − headroom)`, one ledger for cache, decode and evaluation, waiting before refusing, `resource_exhausted` when `E > B_max`, cancellation at zero subscribers. Allocator breadcrumb. | core trait + tauri + cli | No abort is possible from evaluation. Parallelism follows the machine. | M | tauri: `admission — two evaluations whose estimates sum past B — second waits, both succeed`. tauri: `admission — estimate past B_max — resource_exhausted before any decode`. tauri: `budget — fake probe with 64 GB physical — B_max scales, no 2 GiB ceiling`. tauri: `cancel — last subscriber drops — evaluation stops at the next definition boundary`. |
 | **4** | Cache shape (one `t_us` per source, recorded axis on demand, drop 5 M-row axes, footer parsed once, row-group-wise gather) and window pruning when the halo is finite. | core store + tauri cache | Cache 0.63 → **≈ 0.13 GB**. Decode transient halved. A lap window on point-wise closures uses ≈ 1/12 of the I/O. | M | tauri: `SessionCache — six channels of one source — one t_us allocation` (`Arc::ptr_eq`). core: `read — pointwise closure, one-lap window — only overlapping row groups read` (reader hook counts them). core: `pruned and whole-session evaluation — same window — identical values`. |
 | **5** | Fused element-wise kernels and streaming reductions; O(N) rolling `mean`/`std`; min/max host-channel decimation; `fetch_tile` without materialising. | core | `T` ≈ 95 → ≈ 14 MB. Reductions of chains allocate 0. Evaluation CPU drops by most of 3.4 × 10⁹ additions. Charts stop aliasing. | M–L | core, counting allocator: `fused chain ending in sum — allocations of N-sized buffers == 0`. core: `rolling_mean O(N) — matches the windowed sum within 1e-12 relative`. core: `host channel encode — 800 Hz sine burst — min/max survive decimation`. |
 | **6** | Persisted reduction cache (Q2), per-closure keys, season evaluate-then-reduce with budget-derived workers, and the cross-session combine (with engine-gaps P1-6, P1-2, N3). | core + tauri + cli | Reopen: 0 decodes. S sessions in `P × E_s` memory. | L | core: `reopen — every requested reduction cached — zero Parquet decodes` (decode counter). cli/core: `50 synthetic sessions, budget fits 2 — peak ≤ 2 × E + 10 %, results equal to serial`. |
+
+### 6.1 Phases 2 and 3 as built (2026-10-28, spec-during)
+
+**Phase 2 (core `workbook::v3::plan`).**
+
+- `ChannelColumnInfo::sample_count`: Σ over row groups of `num_values − null_count`, from the footer.
+- `EvalPlan::new(defs, constants, PlanInputs, Demand)` gives the schedule (Kahn, lowest document index
+  first; cycle members last), consumer counts, static shapes, the retain set and a `MemoryEstimate`.
+- `Demand::document(doc)` retains the names found by the identifier scan of `js` and `table` bodies and
+  `${…}` spans (the app bind pass's own rule). `Demand::closure(names)` evaluates only the closure.
+  `Demand::reductions(names)` evaluates the closure and retains no full-rate value (for session-set
+  members). `Demand::everything()` is what `eval_cells` still does.
+- `resolve_planned` and `eval_cells_planned` run in schedule order. A full-rate `[t]` value outside the
+  retain set is released after its last consumer, or at once if nothing reads it. The released value
+  keeps `length`, `has_t`, rate, unit and axis: `HostChannelView::released`.
+- **Deviation:** `E` uses the simulated step peak `P = max_k(live_before_k + transient_k)` in place of
+  `F + T`. `P ≤ F + T`; `F` and `T` are still reported. `E = (I_missing + P) × 1.25`.
+- `I` uses today's cache shape: raw bytes plus 16 B per sample. Phase 4 lowers it.
+- Per-operator costs are measured against the per-thread counting allocator: every family is within
+  0.1 % (`plan_cost_model_each_builtin_family_…`).
+- **Measured** on the mx-compare-shaped fixture (the workbook's `c0000003`–`c0000007` definitions without
+  lap functions; IMU0 120,000 samples):
+  - estimate 14.32 MB against 14.35 MB counted, −0.2 %;
+  - keep-everything peak 36.3 MB, planned peak 14.35 MB (−60 %);
+  - scaled by sample count to session `103bc2bf…`, about 0.51 → 0.20 GB for these definitions (estimate).
+- A fetch of a released definition (one the scan missed) evaluates that definition's closure under its
+  own key.
+
+**Phase 3.**
+
+- Core `store::index_job`: `MemoryBudget` (`acquire`, `try_acquire`, `ceiling_bytes`) and `NeverFits`,
+  implemented by `ByteBudget`.
+- Tauri `memory.rs`:
+  - `B_max = 50 % RAM`, no cap.
+  - `MachineBudget::budget_now(accounted) = min(B_max, min(own, accounted) + available − headroom)`.
+    Crediting own commit only up to what the ledger holds is a contained decision. It stops the app's
+    baseline from counting as budget, and stops a granted-but-unallocated reservation from being
+    granted twice.
+  - Available commit is `free_swap` (commit limit − commit total on Windows) plus page-file growth,
+    read from the `PagingFiles` registry value. Growth is not bounded by free disk yet (`TODO(idl0)`).
+  - Own commit is the counting allocator's live heap.
+- `SessionCache` is the ledger:
+  - `admit_evaluation(bytes, hint, cancelled)` counts resident channels, kept evaluations, decodes in
+    flight and running evaluations against `B`. It evicts cold channels, then kept evaluations, then
+    waits; it re-reads the machine every 250 ms. It refuses at once only when `bytes > B_max`.
+  - **Deviation:** decode reservations still do not charge residency (ruling R211.2's reason). They
+    share the in-flight half with running evaluations, against `B` now.
+- `evaluate_planned` (the two v2 commands) refuses before any decode when `E` (missing inputs included)
+  is above `B_max`, with a hint naming the workbook and its largest definition. It then prefetches,
+  admits its step peak and runs.
+- `EvalRegistry`:
+  - Every attached caller is a subscriber. `subscribe(key, f)` runs the flight on its own thread, and
+    dropping the last `Subscription` cancels it at the next definition boundary.
+  - `get_or_evaluate` keeps its caller subscribed, so it never cancels. The app has no cancel trigger
+    until a C3 change gives it one.
+  - Kept evaluations count in the ledger. The separate `eval_cache_cap_bytes` is gone.
+- Allocator breadcrumb:
+  - `crash::BreadcrumbAllocator` (the `static` is in `app/src-tauri`) counts live bytes.
+  - On a null return it writes `alloc of N bytes failed, live=M` to `crash/alloc-<pid>.log`, with no
+    allocation. The next launch folds it into the abnormal-exit report.
+  - The marker's `in_flight` field (§4.2.H) is not written yet.
 
 **Phase-1 recommendation.** Do 1(a) and 1(b) together. Section 2.5 shows that 1(a) alone still
 peaks at ≈ 4.0 GB on this machine, within ≈ 0.8 GB of the abort. Section 2.4 shows that 1(b)
