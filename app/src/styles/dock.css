@@ -24,7 +24,6 @@
 
 .dockview-theme-idl1 {
   /* ---- Surfaces ---- */
-  --dv-group-view-background-color: var(--bg);
   --dv-tabs-and-actions-container-background-color: var(--surface-2);
   --dv-activegroup-visiblepanel-tab-background-color: var(--bg);
   --dv-activegroup-hiddenpanel-tab-background-color: var(--surface-2);
@@ -87,4 +86,20 @@
  * viewport). */
 .dockview-theme-idl1 .dv-content-container {
   min-height: 0;
+}
+
+/* Groups are see-through, and every panel but the Notebook's paints its
+ * own --bg. Chart pixels are drawn by the sandbox iframe (R69), a fixed
+ * layer *under* the dock that the cell frames leave transparent; an opaque
+ * group background painted over every chart. Dockview renders panel
+ * content in an overlay beside its group, not inside it, so the group
+ * itself has to be clear, and a panel's own background stands in for it.
+ * The shell behind is the same --bg. `Notebook/index.tsx` clips the
+ * sandbox to the Notebook panel's rect, so no other panel shows charts. */
+.dockview-theme-idl1 {
+  --dv-group-view-background-color: transparent;
+}
+
+.dockview-theme-idl1 [data-dock-panel]:not([data-dock-panel="cells"]) {
+  background-color: var(--bg);
 }

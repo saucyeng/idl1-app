@@ -1227,6 +1227,32 @@ export default function NotebookPage() {
 
   const containerRef = useRef<HTMLDivElement>(null);
   const sandboxHostRef = useRef<SandboxHost | null>(null);
+
+  // The sandbox layer spans the whole viewport (so `sendLayout`'s rects line
+  // up 1:1) but may only show inside the Notebook dock panel: unclipped, a
+  // chart scrolled out of the panel paints over the toolbar, the timeline
+  // and any panel docked beside it. Re-measured on a panel resize, a window
+  // resize and any scroll (a rect read and a style write, no IPC).
+  useEffect(() => {
+    const container = containerRef.current;
+    if (container === null || outputSlotNode === null) return;
+    const apply = (): void => {
+      const r = outputSlotNode.getBoundingClientRect();
+      container.style.clipPath =
+        `inset(${r.top}px ${window.innerWidth - r.right}px ${window.innerHeight - r.bottom}px ${r.left}px)`;
+    };
+    apply();
+    const observer = new ResizeObserver(apply);
+    observer.observe(outputSlotNode);
+    window.addEventListener("resize", apply);
+    document.addEventListener("scroll", apply, { capture: true, passive: true });
+    return () => {
+      observer.disconnect();
+      window.removeEventListener("resize", apply);
+      document.removeEventListener("scroll", apply, { capture: true });
+      container.style.clipPath = "";
+    };
+  }, [outputSlotNode]);
   // The tile cache reports its own bytes to the shell's status-bar memory
   // meter (ruling R220 item 1). `DEFAULT_CACHE_BYTES` is passed explicitly
   // because the callback is the second argument; `publishMemoryUse` only

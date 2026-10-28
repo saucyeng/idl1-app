@@ -6,6 +6,15 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 
 ### Added
 
+- **Notebook charts show inside the dock [no-docs] (2026-10-28).** The
+  sandbox draws chart pixels in a fixed layer under the page (R69); the dock
+  painted every group an opaque `--bg` on top, so charts were hidden except
+  for slivers leaking over the timeline strip. Dock groups are now clear
+  (the graph and properties panels paint their own `--bg`), and the sandbox
+  layer is clipped to the Notebook panel's rect, so charts scrolled out of
+  the panel no longer paint over the toolbar or neighbouring panels. No spec
+  change needed.
+
 - **Lap functions see the session's real laps under any window [no-docs] (2026-10-27).**
   `current_lap`, `sector_number` and `lap_start_*` now read the session's
   own laps and sectors even when a cell evaluates over a lap window, and a
