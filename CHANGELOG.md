@@ -6,6 +6,18 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 
 ### Added
 
+- **Session sets, phase 1: a workbook computes its own N-session tables [docs] (2026-10-28).** A
+  workbook can name its sessions in a new front-matter key, `sessions:` (ordered, named groups, C2 §1).
+  A table with `rowSource: "sessions"` (optional `rowGroup`) has one row per member, each column
+  template evaluated in that member's whole session; the new `eval_session_set` command (C3 §3.4)
+  evaluates members one at a time, each admitted against the memory budget and planned so full-rate values are released as it goes, keeps only reduced results and caches them under
+  `<data>/cache/eval/` (local only, never synced). The Notebook draws these tables with group headers,
+  a status chip per member, and a warning naming members not on this device (column totals are over
+  the members present). Table cells everywhere now read workbook definitions before channels (C2 §4;
+  the original design, lost when v3 stopped writing definitions into the session store). CLI:
+  `--data-dir` on every `workbook` verb, session ids resolved through it, `workbook eval --values`,
+  `--no-cache`, set tables from `workbook eval`/`data` (engine gaps N6, N7). `CellDefResult.value`
+  gains `scalar` for rank-0 values. Spec-during: C2 §1/§4/§7.1, C3 §3.4, C4 §2/§6, C6.
 - **Workbook evaluations are planned, budgeted by the machine, and released as they go [no-docs] (2026-10-28).** Evaluation-memory phases 2 and 3. An evaluation is planned from the session's footer before it runs. Full-rate values that no chart, `${…}` span or table names are dropped after their last use; the mx-compare-shaped fixture peaks 60 % lower, and its estimate is within 1 % of the measured peak. The memory budget is half of physical RAM with no 2 GiB cap. Each evaluation is admitted against one ledger that counts cached channels, kept evaluations, decodes and running evaluations, and leaves commit headroom (counting page-file growth). An evaluation that does not fit waits, and is refused with `resource_exhausted` only if it could never fit. A failed allocation now leaves a breadcrumb that the next launch's abnormal-exit report includes. Spec-during: `2026-10-27-idl1-evaluation-memory-DRAFT.md` §6.1.
 
 - **Charts stay in their slots when a cell above changes height [no-docs] (2026-10-28).** A chart frame re-sent its position only when it resized, scrolled or the window resized, so a cell above it growing (an error turning into a chart) left every chart below drawn at its old place, over the text. Frames also watch the cell list now. The sandbox also drops the chart containers of cells no longer in the document (e.g. after switching workbooks), which kept painting at their last positions. No spec change needed.

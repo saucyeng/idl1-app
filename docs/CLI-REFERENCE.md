@@ -175,6 +175,7 @@ Create a new workbook from a built-in skeleton.
 | --- | --- | --- |
 | `--template` | `blank`, `session` | Skeleton to write: `blank` is front matter only, `session` adds a math and a table cell (default `blank`) |
 | `--session` | text | Session id to reference from the `session` template |
+| `--data-dir` | path | Data directory root (contract C4 §1's <data>); defaults to $IDL1_DATA_DIR |
 | `--dry-run` | switch | Report what would change and write nothing |
 | `--json` | switch | Emit the result as JSON on stdout (schema_version 1); errors become typed JSON on stderr |
 
@@ -190,9 +191,10 @@ Parse a workbook and report every structural problem.
 
 | Flag | Value | Meaning |
 | --- | --- | --- |
-| `--session` | path | Session to evaluate against: an `.idl0` file, or a session id inside --data-dir |
+| `--session` | path | Session to evaluate against: an `.idl0` file, or a session id inside --data-dir (its data.parquet, laps from session.json); repeat it to evaluate the workbook's session tables over those sessions |
 | `--track` | path | `.idl0t` track artifact, required only when a cell is lap-bound |
 | `--main-lap` | integer | 1-based lap number that lap-scoped expressions mean; needs --track |
+| `--data-dir` | path | Data directory root (contract C4 §1's <data>); defaults to $IDL1_DATA_DIR |
 | `--json` | switch | Emit the result as JSON on stdout (schema_version 1); errors become typed JSON on stderr |
 
 Calls `workbook::v3::parse_workbook`; `--json` emits `WorkbookCheckReport`.
@@ -207,13 +209,14 @@ List a workbook's cells in document order.
 
 | Flag | Value | Meaning |
 | --- | --- | --- |
+| `--data-dir` | path | Data directory root (contract C4 §1's <data>); defaults to $IDL1_DATA_DIR |
 | `--json` | switch | Emit the result as JSON on stdout (schema_version 1); errors become typed JSON on stderr |
 
 Calls `workbook::v3::parse_workbook`; `--json` emits `WorkbookCellSummary[]`.
 
 ### `idl-rs workbook eval <file>`
 
-Evaluate a workbook's math and table cells against a session.
+Evaluate a workbook against a session, or its session tables over its `sessions` set.
 
 | Argument | Type | Required | Meaning |
 | --- | --- | --- | --- |
@@ -221,9 +224,12 @@ Evaluate a workbook's math and table cells against a session.
 
 | Flag | Value | Meaning |
 | --- | --- | --- |
-| `--session` | path | Session to evaluate against: an `.idl0` file, or a session id inside --data-dir |
+| `--session` | path | Session to evaluate against: an `.idl0` file, or a session id inside --data-dir (its data.parquet, laps from session.json); repeat it to evaluate the workbook's session tables over those sessions |
 | `--track` | path | `.idl0t` track artifact, required only when a cell is lap-bound |
 | `--main-lap` | integer | 1-based lap number that lap-scoped expressions mean; needs --track |
+| `--values` | switch | Print every reduced (rank-0) and per-lap result as `name  value  unit` |
+| `--no-cache` | switch | Do not read or write the session-set result cache (writes nothing to the data directory) |
+| `--data-dir` | path | Data directory root (contract C4 §1's <data>); defaults to $IDL1_DATA_DIR |
 | `--json` | switch | Emit the result as JSON on stdout (schema_version 1); errors become typed JSON on stderr |
 
 Calls `workbook::v3::eval_cells`; `--json` emits `WorkbookEvalReport`.
@@ -239,9 +245,10 @@ Print one cell's evaluated series or table.
 
 | Flag | Value | Meaning |
 | --- | --- | --- |
-| `--session` | path | Session to evaluate against: an `.idl0` file, or a session id inside --data-dir |
+| `--session` | path | Session to evaluate against: an `.idl0` file, or a session id inside --data-dir (its data.parquet, laps from session.json); repeat it to evaluate the workbook's session tables over those sessions |
 | `--track` | path | `.idl0t` track artifact, required only when a cell is lap-bound |
 | `--main-lap` | integer | 1-based lap number that lap-scoped expressions mean; needs --track |
+| `--data-dir` | path | Data directory root (contract C4 §1's <data>); defaults to $IDL1_DATA_DIR |
 | `--json` | switch | Emit the result as JSON on stdout (schema_version 1); errors become typed JSON on stderr |
 
 Calls `workbook::v3::eval_cells`; `--json` emits `WorkbookCellData`.
@@ -258,9 +265,10 @@ Write a workbook out as Markdown or as evaluated JSON.
 | --- | --- | --- |
 | `--out` | path | File to write; stdout when omitted |
 | `--format` | `md`, `json` | `md` re-renders the workbook source, `json` writes its evaluated cells (default `md`) |
-| `--session` | path | Session to evaluate against: an `.idl0` file, or a session id inside --data-dir |
+| `--session` | path | Session to evaluate against: an `.idl0` file, or a session id inside --data-dir (its data.parquet, laps from session.json); repeat it to evaluate the workbook's session tables over those sessions |
 | `--track` | path | `.idl0t` track artifact, required only when a cell is lap-bound |
 | `--main-lap` | integer | 1-based lap number that lap-scoped expressions mean; needs --track |
+| `--data-dir` | path | Data directory root (contract C4 §1's <data>); defaults to $IDL1_DATA_DIR |
 | `--dry-run` | switch | Report what would change and write nothing |
 | `--json` | switch | Emit the result as JSON on stdout (schema_version 1); errors become typed JSON on stderr |
 

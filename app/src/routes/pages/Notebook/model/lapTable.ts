@@ -28,10 +28,11 @@ export interface TableColumn {
 }
 
 /** `idl_rs::table::RowContext` — which lap of which session a row stands
- *  for. `lapNumber` is **1-based** (C2 §4.4, ruling R217 item 2.4). */
+ *  for. `lapNumber` is **1-based** (C2 §4.4, ruling R217 item 2.4), and
+ *  absent on a whole-session row (`rowSource: "sessions"`). */
 export interface TableRowContext {
   sessionId: string;
-  lapNumber: number;
+  lapNumber?: number;
 }
 
 /** One row of `idl_rs::table::Row`. Under `rowSource: "windowLaps"` the id
@@ -49,7 +50,7 @@ export interface TableCellSource {
 }
 
 /** C2 §4's `rowSource`. Absent means `"authored"`. */
-export type TableRowSource = "authored" | "windowLaps";
+export type TableRowSource = "authored" | "windowLaps" | "sessions";
 
 /** `idl_rs::table::TableModel` as it crosses C3 §3.4 — the model **as
  *  evaluated**, so under `"windowLaps"` its `rows` are the derived ones. */
@@ -256,7 +257,7 @@ export function tableView(value: TableCellValue, lapTimeSecs: LapTimeLookup = ()
 
   const rows = model.rows.map((row, r) => {
     const context = row.context;
-    const label = context !== null && context !== undefined ? `Lap ${context.lapNumber}` : row.id;
+    const label = context?.lapNumber !== undefined ? `Lap ${context.lapNumber}` : row.id;
     const cells = model.columns.map((column, c) => {
       const result = results[r]?.[c];
       if (result === undefined) {

@@ -715,7 +715,10 @@ building what it needs along the way.
 - [ ] Notebook sidebar does not refresh its workbook list after Rebuild catalog
 - [ ] Library tiers Phase 2 (`docs/superpowers/specs/2026-10-27-idl1-library-tiers-DRAFT.md`)
 - [x] Notebook charts visible inside the dock; maths definitions bound by name; `laps`/`session` host vars; inline values persist
-- [ ] Session sets (N-to-N analysis): spec draft `docs/superpowers/specs/2026-10-28-idl1-session-sets-DRAFT.md`, awaiting Isaac on Q1-Q8
+- [x] Session sets phase 1: `sessions:` front matter, session-row tables, `eval_session_set`, result cache, tables read definitions (Q6), CLI N6/N7
+- [ ] Session sets phase 2 (`ses`/`group` axes, `per_session`, parallel members via the memory budget) — after memory phases 2-3
+- [ ] Bind rank-0 definitions from `CellDefResult.value.scalar` instead of a `fetch_host_channel_v2` per definition
+- [ ] Data tab "use selection as set"; offer-to-fetch for missing set members (library tiers phase 2)
 - [ ] `idl_rs::VERSION` is `0.1.0` and never changes, so `EvalKey` and derived-file hashes never see engine changes;
       fix before anything derived is persisted or synced (session-sets spec Q4, section 10)
       Approved (Isaac, 2026-10-28): engine identity = version + git commit embedded at build; per-importer versions bumped

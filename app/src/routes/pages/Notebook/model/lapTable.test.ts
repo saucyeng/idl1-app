@@ -17,7 +17,7 @@ import {
  *  the reserved `"fastest"` (`RowBinding.lap_time_secs`), independent of
  *  whether the table happens to carry a `lap_time()` column. */
 function recordedLaps(secondsByLap: Record<number, number>): LapTimeLookup {
-  return (context) => secondsByLap[context.lapNumber] ?? null;
+  return (context) => (context.lapNumber === undefined ? null : (secondsByLap[context.lapNumber] ?? null));
 }
 
 const FAST_LAP_2 = recordedLaps({ 1: 92.4, 2: 91.8, 3: 93.1 });
