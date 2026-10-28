@@ -1635,9 +1635,13 @@ table (C2 §4), each member **one at a time** in set order, each through its
 own channel source (never the session cache the per-window commands share, so
 a set run never evicts the session on screen), keeping only reduced results.
 Results are cached locally under `<data>/cache/eval/` (C4 §2), keyed by the
-maths text, the member's data identity (catalog row, else the `data.parquet`
-footer), its laps and the engine's build commit; a member whose results are
-all cached opens no `data.parquet`. The result is a function of the file and
+maths text, the member's data identity (the `data.parquet` footer whenever
+the file is here; the catalog row only for a member whose data is
+elsewhere), its laps and the engine identity (C4 §2.x); a member whose cache
+rows hold every definition the run asks for opens no `data.parquet`, and a
+partial hit is evaluated again. Each member is admitted against the memory
+budget before it decodes and evaluated with the planner, keeping no
+full-rate value. The result is a function of the file and
 the library, never of the selection.
 ```ts
 interface SetProgress { done: number; total: number; session_id: string; phase: "cached" | "decoding" | "evaluating" }
@@ -1656,8 +1660,9 @@ interface SessionSetResult {
 ```
 A member whose data is not on this device and has nothing cached is
 `"missing"` and its rows say so; a `{col[]}` aggregate is computed over the
-members present and a warning names each missing member (ruling Q3,
-2026-10-28) so the UI can offer to fetch it. A member whose demanded
+rows that have a value and a warning names every row it left out, with the
+reason (ruling Q3, 2026-10-28). A warning's `missing` lists only the members
+not on this device, for the UI's offer to fetch them. A member whose demanded
 definitions read no channel (lap and sector statistics) is computed from
 `session.json` alone. A newer call for the same workbook supersedes the
 running one at its next member boundary; the superseded call resolves with

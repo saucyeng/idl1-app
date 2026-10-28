@@ -1640,9 +1640,11 @@ session** (its laps from `session.json`), compiled as an anonymous
 definition: it must reduce to a single number, else the cell is an error
 "reduce to a single number". A template that reads other cells (`{…}`) is
 evaluated once every row exists, over the members' reduced results, so a
-`{col[]}` aggregate is a set-level reduction; with a member not on this
-device it is computed over the members present and the table carries a
-warning naming the missing ones (ruling Q3). A sessions table is evaluated by
+`{col[]}` aggregate is a set-level reduction, computed over the rows that
+have a value; the table then carries a warning naming **every** row left out
+and why — a member not on this device, not found, whose evaluation failed
+(`resource_exhausted` included), or whose own definition errored (ruling Q3).
+A `rowGroup` naming no group plans no rows and carries a warning. A sessions table is evaluated by
 `eval_session_set` (C3 §3.4), never per window: on the per-window path its
 `value` is `null`. Authored cells are ignored, as under `"windowLaps"`.
 
@@ -1651,7 +1653,11 @@ source (ruling Q6, 2026-10-28).** A table cell resolves `[name]` exactly as a
 math cell does: a workbook definition of that name wins over a stored channel
 (L3-R18a). Under a lap or range row a `[t]` definition is sliced to the row's
 window by its recorded times (inclusive bounds, as a channel is); a reduced or
-`[lap]` definition reads as it is. *This was the original design and was
+`[lap]` definition reads as it is. A definition that **failed** still
+shadows the channel: a cell reading it is that definition's error
+(`[name] failed: …`), never the raw channel. A name defined twice resolves to
+its first definition in document order whatever that one's outcome (R49).
+*This was the original design and was
 lost:* idl0 evaluated every math channel into the session's math store
 (`SessionHandle::store_math`) before a table read the same handle, so tables
 saw math channels as channels. v3 resolves definitions in their own overlay

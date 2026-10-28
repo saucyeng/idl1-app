@@ -218,7 +218,12 @@ never referenced by the catalog, never read as a source of truth.
 
 `<data>/cache/eval/results.sqlite` holds session-set results: one row per
 (member, result name), `key` = SHA-256 of the member key (maths text ‖ data
-identity ‖ laps identity ‖ engine build commit) and the name. Values and
+identity ‖ laps identity ‖ engine identity) and the name. The data identity
+is read from `data.parquet`'s footer whenever the file is present (the
+catalog row can lag a re-import), and from the catalog only for a member
+whose data is elsewhere. The engine identity is the build's git commit, or
+`<commit>-dirty-<hash of the uncommitted diff>` for a build with uncommitted
+engine changes, so a dev build never reuses another build's numbers. Values and
 deterministic `math_*` errors only; a refused or failed decode is never
 stored. Pruned least-recently-used above 256 MiB. **An index, like the
 catalog**: deletable at any time, rebuilt by evaluating again, and **never
