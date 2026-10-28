@@ -702,7 +702,7 @@ building what it needs along the way.
 
 - [x] Evaluation memory Phase 1: shared evaluation, no copies, abnormal-exit marker
       (`docs/superpowers/specs/2026-10-27-idl1-evaluation-memory-DRAFT.md` §6)
-- [ ] `current_lap()` inside an app window reads 1, so `[on_t]`-weighted results are 0/NaN in the app
+- [x] `current_lap()` inside an app window reads 1, so `[on_t]`-weighted results are 0/NaN in the app
       (memory spec §8; engine gaps N3/N5); evaluate whole session, then window (Q1)
 - [ ] Visual pass of the comparison workbook in the app (every chart and table renders, labels, scales)
 - [ ] Jump events (engine gaps N10): per-flight start/end, position on track, takeoff speed, airtime,
@@ -714,3 +714,12 @@ building what it needs along the way.
 - [ ] Report formatting suitable for PDF export (the notebook style for now; PDF later)
 - [ ] Notebook sidebar does not refresh its workbook list after Rebuild catalog
 - [ ] Library tiers Phase 2 (`docs/superpowers/specs/2026-10-27-idl1-library-tiers-DRAFT.md`)
+- [x] Notebook charts visible inside the dock; maths definitions bound by name; `laps`/`session` host vars; inline values persist
+- [ ] Session sets (N-to-N analysis): spec draft `docs/superpowers/specs/2026-10-28-idl1-session-sets-DRAFT.md`, awaiting Isaac on Q1-Q8
+- [ ] `idl_rs::VERSION` is `0.1.0` and never changes, so `EvalKey` and derived-file hashes never see engine changes;
+      fix before anything derived is persisted or synced (session-sets spec Q4, section 10)
+- [ ] Lap labels (flying / out / in / invalid) from the engine; lap charts fit the y axis to flying laps; m:ss on
+      seconds axes over 60 s (awaiting Isaac's yes). Check the 15 s "lap 1" on 2026-10-24 S4 (false gate crossing?)
+- [ ] IMU mount calibration per session: full orientation per IMU (gravity, frame forward from GPS accel,
+      unsprung from the frame IMU), stored with the session (engine gap N16; awaiting Isaac's yes)
+- [ ] Spectrum axis unit shows `gÂ,Â²/Hz` (mojibake) in the app
