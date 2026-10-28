@@ -6,6 +6,12 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 
 ### Added
 
+- **Inline `${…}` values stay filled in [no-docs] (2026-10-28).** React 19
+  rewrites a `dangerouslySetInnerHTML` block whenever its `{__html}` object
+  changes identity, so every re-render of a prose block wiped the span values
+  already written into it. `ProseBlock` now keeps one object per HTML string.
+  No spec change needed.
+
 - **Notebook binds every maths definition by name, plus `laps` and `session` [no-docs] (2026-10-28).**
   C2 §5.1's first row was only half delivered: a definition was reachable
   as `channel("name")` and only with a time axis. Now each `math`
