@@ -6,6 +6,8 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 
 ### Added
 
+- **Definition binding fetches only what is used, one at a time [no-docs] (2026-10-28).** The bare-identifier pass fetched every `math` definition over every selected window at once: about 100 definitions x 9 sessions on the comparison workbook, each able to evaluate a whole session. It now fetches only definitions a js cell or `${…}` span names, sequentially per definition and per window. No spec change needed.
+
 - **Inline `${…}` values stay filled in [no-docs] (2026-10-28).** React 19
   rewrites a `dangerouslySetInnerHTML` block whenever its `{__html}` object
   changes identity, so every re-render of a prose block wiped the span values
