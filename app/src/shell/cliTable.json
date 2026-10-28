@@ -525,7 +525,7 @@
         }
       ],
       "core_fn": "commands::workbook_ops::new_workbook",
-      "data_dir": false,
+      "data_dir": true,
       "flags": [
         {
           "choices": [
@@ -544,6 +544,14 @@
           "help": "Session id to reference from the `session` template",
           "kind": "text",
           "long": "session",
+          "repeatable": false
+        },
+        {
+          "choices": [],
+          "default": null,
+          "help": "Data directory root (contract C4 §1's <data>); defaults to $IDL1_DATA_DIR",
+          "kind": "path",
+          "long": "data-dir",
           "repeatable": false
         },
         {
@@ -585,15 +593,15 @@
         }
       ],
       "core_fn": "workbook::v3::parse_workbook",
-      "data_dir": false,
+      "data_dir": true,
       "flags": [
         {
           "choices": [],
           "default": null,
-          "help": "Session to evaluate against: an `.idl0` file, or a session id inside --data-dir",
+          "help": "Session to evaluate against: an `.idl0` file, or a session id inside --data-dir (its data.parquet, laps from session.json); repeat it to evaluate the workbook's session tables over those sessions",
           "kind": "path",
           "long": "session",
-          "repeatable": false
+          "repeatable": true
         },
         {
           "choices": [],
@@ -609,6 +617,14 @@
           "help": "1-based lap number that lap-scoped expressions mean; needs --track",
           "kind": "integer",
           "long": "main-lap",
+          "repeatable": false
+        },
+        {
+          "choices": [],
+          "default": null,
+          "help": "Data directory root (contract C4 §1's <data>); defaults to $IDL1_DATA_DIR",
+          "kind": "path",
+          "long": "data-dir",
           "repeatable": false
         },
         {
@@ -642,8 +658,16 @@
         }
       ],
       "core_fn": "workbook::v3::parse_workbook",
-      "data_dir": false,
+      "data_dir": true,
       "flags": [
+        {
+          "choices": [],
+          "default": null,
+          "help": "Data directory root (contract C4 §1's <data>); defaults to $IDL1_DATA_DIR",
+          "kind": "path",
+          "long": "data-dir",
+          "repeatable": false
+        },
         {
           "choices": [],
           "default": null,
@@ -675,15 +699,15 @@
         }
       ],
       "core_fn": "workbook::v3::eval_cells",
-      "data_dir": false,
+      "data_dir": true,
       "flags": [
         {
           "choices": [],
           "default": null,
-          "help": "Session to evaluate against: an `.idl0` file, or a session id inside --data-dir",
+          "help": "Session to evaluate against: an `.idl0` file, or a session id inside --data-dir (its data.parquet, laps from session.json); repeat it to evaluate the workbook's session tables over those sessions",
           "kind": "path",
           "long": "session",
-          "repeatable": false
+          "repeatable": true
         },
         {
           "choices": [],
@@ -704,13 +728,37 @@
         {
           "choices": [],
           "default": null,
+          "help": "Print every reduced (rank-0) and per-lap result as `name  value  unit`",
+          "kind": null,
+          "long": "values",
+          "repeatable": false
+        },
+        {
+          "choices": [],
+          "default": null,
+          "help": "Do not read or write the session-set result cache (writes nothing to the data directory)",
+          "kind": null,
+          "long": "no-cache",
+          "repeatable": false
+        },
+        {
+          "choices": [],
+          "default": null,
+          "help": "Data directory root (contract C4 §1's <data>); defaults to $IDL1_DATA_DIR",
+          "kind": "path",
+          "long": "data-dir",
+          "repeatable": false
+        },
+        {
+          "choices": [],
+          "default": null,
           "help": "Emit the result as JSON on stdout (schema_version 1); errors become typed JSON on stderr",
           "kind": null,
           "long": "json",
           "repeatable": false
         }
       ],
-      "help": "Evaluate a workbook's math and table cells against a session",
+      "help": "Evaluate a workbook against a session, or its session tables over its `sessions` set",
       "id": "workbook.eval",
       "json_shape": "WorkbookEvalReport",
       "noun": "workbook",
@@ -740,15 +788,15 @@
         }
       ],
       "core_fn": "workbook::v3::eval_cells",
-      "data_dir": false,
+      "data_dir": true,
       "flags": [
         {
           "choices": [],
           "default": null,
-          "help": "Session to evaluate against: an `.idl0` file, or a session id inside --data-dir",
+          "help": "Session to evaluate against: an `.idl0` file, or a session id inside --data-dir (its data.parquet, laps from session.json); repeat it to evaluate the workbook's session tables over those sessions",
           "kind": "path",
           "long": "session",
-          "repeatable": false
+          "repeatable": true
         },
         {
           "choices": [],
@@ -764,6 +812,14 @@
           "help": "1-based lap number that lap-scoped expressions mean; needs --track",
           "kind": "integer",
           "long": "main-lap",
+          "repeatable": false
+        },
+        {
+          "choices": [],
+          "default": null,
+          "help": "Data directory root (contract C4 §1's <data>); defaults to $IDL1_DATA_DIR",
+          "kind": "path",
+          "long": "data-dir",
           "repeatable": false
         },
         {
@@ -797,7 +853,7 @@
         }
       ],
       "core_fn": "workbook::v3::render_workbook",
-      "data_dir": false,
+      "data_dir": true,
       "flags": [
         {
           "choices": [],
@@ -821,10 +877,10 @@
         {
           "choices": [],
           "default": null,
-          "help": "Session to evaluate against: an `.idl0` file, or a session id inside --data-dir",
+          "help": "Session to evaluate against: an `.idl0` file, or a session id inside --data-dir (its data.parquet, laps from session.json); repeat it to evaluate the workbook's session tables over those sessions",
           "kind": "path",
           "long": "session",
-          "repeatable": false
+          "repeatable": true
         },
         {
           "choices": [],
@@ -840,6 +896,14 @@
           "help": "1-based lap number that lap-scoped expressions mean; needs --track",
           "kind": "integer",
           "long": "main-lap",
+          "repeatable": false
+        },
+        {
+          "choices": [],
+          "default": null,
+          "help": "Data directory root (contract C4 §1's <data>); defaults to $IDL1_DATA_DIR",
+          "kind": "path",
+          "long": "data-dir",
           "repeatable": false
         },
         {

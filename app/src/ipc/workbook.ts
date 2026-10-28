@@ -36,6 +36,10 @@ export interface HostChannelRef {
   /** u32 */
   length: number;
   has_t: boolean;
+  /** The value itself when the definition is rank 0 (one value on no axis),
+   *  so it binds without a `fetch_host_channel_v2` call (session-sets spec
+   *  §5.2). Absent for every other shape. */
+  scalar?: number;
 }
 
 /** The unit as it crosses IPC (C2 §3.3.1's unit model, rulings R154/R162),

@@ -95,6 +95,9 @@ pub fn run() {
             // only holds its progress so a chip mounting mid-run can read it.
             app.manage(idl_rs_tauri::state::IndexJob::default());
             app.manage(idl_rs_tauri::state::RebuildJob::default());
+            // The running `eval_session_set` call per workbook, so a newer
+            // call supersedes it at a member boundary (session-sets spec §5.2).
+            app.manage(idl_rs_tauri::commands::session_set::SetRuns::default());
 
             // `<data>/inbox` (C4 §2, ruling R191): scanned once now, watched
             // while the app runs. Desktop only — the module does not exist

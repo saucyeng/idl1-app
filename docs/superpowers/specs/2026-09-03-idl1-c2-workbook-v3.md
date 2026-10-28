@@ -66,6 +66,7 @@ segment       ::= prose_span | cell
 | `units` | `"si"` \| `"imperial"` | no (default `"si"`) | Workbook-level unit-system *preference*. Consumed only by the editor UI (L6) when it suggests an axis label / number format from a channel's C1 column `unit` metadata (e.g. defaulting a new mark's `y.label`). It has **no effect on parsing, evaluation, or the `plotForm` grammar** — no v3 construct performs unit conversion. This is a deliberate narrowing from idl0, where `MathQuantity.defaultUnit` picked a per-channel display unit (§3.4 records the same table for L6 to reuse); v3 has no per-math-definition unit field to apply it to (§3.1). |
 | `version` | integer | no (default `3`) | Fixed at `3` for this contract; **omitting the key defaults to `3`**, mirroring idl0's own rule ("Omitting `workbook_version` defaults to 1, the current max" — `docs/legacy/idl0-workbook_format.md` §3). A parser encountering an explicit `version` ≠ `3` refuses the file (`UnsupportedWorkbookVersionException`) rather than guessing at compatibility; only *absence* defaults, a wrong value never does. |
 | `graph` | mapping, optional `nodes`/`cells` sub-keys | no (default absent) | Maths graph view canvas positions — §3.7. Advisory only: never read by the parser, the evaluator, or `[Name]`/`# label:` resolution; nothing in it can change a value, a wire, or an error. |
+| `sessions` | list of groups `{ group?: string, members: { id: string, label?: string }[] }`, or a list of bare members | no (default absent) | *New 2026-10-28 (session-sets spec, phase 1; ruling Q1).* The workbook's **session set**: ordered, named groups of whole sessions ("Day 1", "Day 2"). Part of the file, independent of the selection, so a table over it is a function of the file and the library only. A list of bare members is one unnamed group. Group names are unique (`workbook_invalid_session_set` otherwise); a session id appears at most once in the whole set (`workbook_duplicate_set_member`). Both are front-matter-scoped structural errors: they never stop the per-session cells, and `eval_session_set` (C3 §3.4) rejects with them. `label` defaults to `session.json`'s `event_session` when non-empty, else the id's first 8 hex digits. One set per workbook. Read by `rowSource: "sessions"` tables (§4); merged per §7.1. Older builds preserve it untouched (R135). |
 
 No other top-level front-matter keys are defined by this contract. §6 defines two **transient, migration-only** keys (`_migrate_charts`, `_migrate_math` — *the latter added post-sign, 2026-09-04, lead ruling R25, wave-1 L3*) that a v3 parser must tolerate (round-trip them unmodified) but never itself produces except via `migrate-workbook`. This is one case of a general rule (ruling R135, 2026-09-08): **a v3 parser preserves every top-level front-matter key it does not itself define**, round-tripping it unmodified on render — including a key a future contract adds, opened by this build, and `graph` itself, opened by a build predating §3.7. An unrecognised key is inert: parsed as opaque YAML, never interpreted, never dropped. (Before this ruling, `render_front_matter` emitted only the five keys above and silently deleted everything else on save — a workbook written by a newer build, or synced from a peer running one, lost data when an older build opened and re-saved it. That was already a violation of this section's own requirement for `_migrate_charts`/`_migrate_math`; §3.7's Task 2 is the fix, and it is a `core` durability fix independent of the graph feature.)
 
@@ -1501,10 +1502,11 @@ table_body ::= json_object    (* TableModel — see schema below *)
 |---|---|---|
 | `columns` | `Column[]` | `{ id: string, name?: string, template?: string }`. `name` is the `{name}`/`{name[]}` reference target; `template` is a formula applied to every cell in the column lacking its own `formula`. |
 | `rows` | `Row[]` | `{ id: string, context?: RowContext }`. Ignored under `rowSource: "windowLaps"` (below). |
-| `context` | `RowContext?` | `{ sessionId: string, lapNumber: number }` — binds the row to a lap window so its `[Channel]` refs resolve there. **`lapNumber` is 1-based** (revised 2026-09-11, ruling R217 item 2 — see below). |
+| `context` | `RowContext?` | `{ sessionId: string, lapNumber?: number }` — binds the row to a lap window so its `[name]` refs resolve there. `lapNumber` is absent on a whole-session row (`rowSource: "sessions"`, 2026-10-28) and on an authored row bound to no lap. **`lapNumber` is 1-based** (revised 2026-09-11, ruling R217 item 2 — see below). |
 | `cells` | `Cell[][]` | `cells[r][c]`: `{ formula?: string, literal?: number, name?: string }`. `literal` short-circuits evaluation; else `formula` (or the column `template`) evaluates in the row's context; `name` makes the cell a `{name}` target. |
-| `rowSource` | `"authored" \| "windowLaps"?` | *New 2026-09-11 (ruling R217 item 2).* Where the row set comes from. Default `"authored"` — the rows in `rows`, exactly as before. Under `"windowLaps"` the rows are **derived** from the current selection and `rows` is ignored. |
+| `rowSource` | `"authored" \| "windowLaps" \| "sessions"?` | *New 2026-09-11 (ruling R217 item 2).* Where the row set comes from. Default `"authored"` — the rows in `rows`, exactly as before. Under `"windowLaps"` the rows are **derived** from the current selection and `rows` is ignored. |
 | `mainRowId` | `string \| null?` | *New 2026-09-11 (ruling R217 item 2).* Names the table's Main row — the row `main({col[]})` compares against (`MathLapContext::baseline_row`). `null` or absent leaves it unset and `main(...)` is `NaN`, exactly as today. The literal `"fastest"` is **reserved** and legal only under `rowSource: "windowLaps"`. |
+| `rowGroup` | `string?` | *New 2026-10-28 (session-sets spec §5.1).* Under `rowSource: "sessions"`, the name of the one `sessions` group whose members are the rows; absent means every member. A name matching no group plans no rows. Ignored under the other row sources. |
 
 Cell formulas use the §3.2 expression grammar plus `{cellName}` /
 `{colName[]}` references (`TokenKind::CellRef`) and the table-only
@@ -1628,6 +1630,42 @@ revision)`. **That cache does not exist yet** (verified 2026-09-11 against
 five-column derived table re-evaluates its definitions 150 times over the
 session. This paragraph records the cost where the feature is defined; it
 does not change the contract.
+
+**5. Session rows — `rowSource: "sessions"` (added 2026-10-28, session-sets
+spec §5.1, phase 1).** One row per member of the front-matter `sessions` set
+(§1), in set order, optionally restricted to one group by `rowGroup`. The row
+id is the session id and the context is `{ sessionId }`. Each column
+`template` is a **session-level expression evaluated in that row's whole
+session** (its laps from `session.json`), compiled as an anonymous
+definition: it must reduce to a single number, else the cell is an error
+"reduce to a single number". A template that reads other cells (`{…}`) is
+evaluated once every row exists, over the members' reduced results, so a
+`{col[]}` aggregate is a set-level reduction, computed over the rows that
+have a value; the table then carries a warning naming **every** row left out
+and why — a member not on this device, not found, whose evaluation failed
+(`resource_exhausted` included), or whose own definition errored (ruling Q3).
+A `rowGroup` naming no group plans no rows and carries a warning. A sessions table is evaluated by
+`eval_session_set` (C3 §3.4), never per window: on the per-window path its
+`value` is `null`. Authored cells are ignored, as under `"windowLaps"`.
+
+**6. `[name]` resolves to a definition first, then a channel — every row
+source (ruling Q6, 2026-10-28).** A table cell resolves `[name]` exactly as a
+math cell does: a workbook definition of that name wins over a stored channel
+(L3-R18a). Under a lap or range row a `[t]` definition is sliced to the row's
+window by its recorded times (inclusive bounds, as a channel is); a reduced or
+`[lap]` definition reads as it is. A definition that **failed** still
+shadows the channel: a cell reading it is that definition's error
+(`[name] failed: …`), never the raw channel. A name defined twice resolves to
+its first definition in document order whatever that one's outcome (R49).
+*This was the original design and was
+lost:* idl0 evaluated every math channel into the session's math store
+(`SessionHandle::store_math`) before a table read the same handle, so tables
+saw math channels as channels. v3 resolves definitions in their own overlay
+and never writes them to the handle, and the first v3 table wiring
+(`idl-rs-tauri` `table_cell_value`, 2026-09-04, rust `8d737fe`) evaluated
+tables against the bare handle. This section kept idl0's "`[Channel]` refs"
+wording, which read as channels-only from then on. Restored by
+`workbook::v3::table_value` (app and CLI share it).
 
 ---
 
@@ -2932,6 +2970,14 @@ Merged **per top-level key**, independently of the cell table below:
   constant value. An entry naming a definition or cell id absent from the
   merged result is kept, not pruned (§3.7.1) — deletion by merge is §7.2's
   job, not this key's. Full rule and rationale: §3.7.2.
+- `sessions` — *added 2026-10-28 (session-sets spec §2.2).* Merged **per
+  group by name**, and within a kept group **per member** as a three-way set
+  against the last-synced base: a group or member added on one side carries,
+  one removed on one side carries; a label changed on both sides keeps
+  local's; order is local's, with what only the peer added appended in the
+  peer's order. No conflict note, as for `graph`. A session left in two
+  groups by the merge stays only in the first. A side whose value does not
+  parse falls back to the whole-value rule for unknown keys.
 
 ### 7.2 Cell decision table
 

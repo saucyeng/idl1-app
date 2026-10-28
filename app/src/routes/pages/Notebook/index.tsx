@@ -37,6 +37,7 @@ import {
   type WindowEval,
 } from "../../../ipc/workbook";
 import { setBuiltinDocs } from "./editor/builtinDocs";
+import { evalSessionSet, type SessionSetResult } from "../../../ipc/sessionSet";
 import { useAppState } from "../../../state/AppState";
 import { describeWindow, sessionDetailsReadinessKey, sessionLabel, venueLabel, windowKey, windowsKey, type SelectionWindow } from "../../../state/selection";
 import { useRouteVisible } from "../../../shell/routeVisibility";
@@ -60,6 +61,7 @@ import { chartWidthNeedsRefetch, resolveChartWidthPx } from "./model/chartWidth"
 import { applyDecodeProgress, cellDecodeFraction, decodeKey, NO_DECODES, soleDecodingChannel, type DecodeProgressState } from "../../../state/decodeProgress";
 import { onDecodeProgress } from "../../../ipc/decode_progress";
 import CellList from "./components/CellList";
+import SessionTableCell from "./components/SessionTableCell";
 import ProseEditor from "./components/ProseEditor";
 import ReportView from "./components/ReportView";
 import PaperView from "./components/PaperView";
@@ -190,6 +192,7 @@ import { initialSandboxPrimeState, nextSandboxPrimeState } from "./model/sandbox
 import { runSessionSpan, type SessionSpanAction, type SessionSpanDeps } from "./model/sessionSpanDriver";
 import { commitSharedViewport, viewportForCell, type SharedViewport } from "./model/sharedViewport";
 import { DEFAULT_CACHE_BYTES, TileCache } from "./model/tileCache";
+import { declaresSessionSet, sessionTableView } from "./model/sessionTable";
 import { timelineCommit } from "./model/timelineStrip";
 import { resolvedWindowKeysFor, toWireWindow, windowSpanFor } from "./model/viewportWindows";
 import { chooseWorkbookEntry, type WorkbookEntry } from "./model/workbookEntry";
@@ -531,6 +534,43 @@ export default function NotebookPage() {
   const primaryKey = primaryWindow !== null ? windowKey(primaryWindow) : NO_WINDOW_KEY;
 
   const [state, dispatch] = useReducer(workbookReducer, initialWorkbookState);
+  /** The workbook's session-set result (`eval_session_set`, session-sets
+   *  spec §5.2): its `rowSource: "sessions"` tables, independent of the
+   *  selection. `null` until the first run returns, and for a workbook that
+   *  declares no `sessions`. Re-run whenever the file's bytes change (its
+   *  hash); a run a newer one superseded is dropped. A failed run keeps the
+   *  last good result and is logged. */
+  const [sessionSet, setSessionSet] = useState<SessionSetResult | null>(null);
+  const sessionSetWorkbookId = state.handle?.id ?? null;
+  const hasSessionSet = state.markdown !== null && declaresSessionSet(state.markdown);
+  useEffect(() => {
+    if (sessionSetWorkbookId === null || !hasSessionSet) {
+      setSessionSet(null);
+      return;
+    }
+    let stale = false;
+    evalSessionSet(sessionSetWorkbookId)
+      .then((result) => {
+        if (!stale && !result.cancelled) setSessionSet(result);
+      })
+      .catch((error: unknown) => {
+        if (!stale) console.error("eval_session_set failed", error);
+      });
+    return () => {
+      stale = true;
+    };
+  }, [sessionSetWorkbookId, hasSessionSet, state.hash]);
+  /** Spec §2.3: a set declared and nothing selected selects the set's first
+   *  member (whole session), once per set, so the per-session cells have
+   *  something to show. A selection the user clears afterwards stays clear. */
+  const sessionSetAutoSelectedRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (sessionSet === null || sessionSet.members.length === 0) return;
+    if (sessionSetAutoSelectedRef.current === sessionSet.set_key) return;
+    sessionSetAutoSelectedRef.current = sessionSet.set_key;
+    if (windows.length > 0) return;
+    appDispatch({ type: "SET_WINDOWS", windows: [{ sessionId: sessionSet.members[0].session_id, span: { kind: "session" }, colour: "--chart-1" }] });
+  }, [sessionSet, windows.length, appDispatch]);
   const [cellErrors, setCellErrors] = useState<Map<string, string>>(new Map());
   const [cellHeights, setCellHeights] = useState<CellHeights>(initialCellHeights);
   const [inlineResults, setInlineResults] = useState<Map<string, string>>(new Map());
@@ -4628,7 +4668,7 @@ export default function NotebookPage() {
    * `resolve_baseline_row` compares, so the highlighted row is the row
    * `main({col[]})` actually used rather than a second guess at it.
    */
-  const lapTimeSecsForRow = (context: { sessionId: string; lapNumber: number }): number | null => {
+  const lapTimeSecsForRow = (context: { sessionId: string; lapNumber?: number }): number | null => {
     for (const detail of sessionDetailsByWindow.values()) {
       if (detail === null || detail.session_id !== context.sessionId) continue;
       const lap = detail.laps.find((l) => l.lap_number === context.lapNumber);
@@ -4648,6 +4688,21 @@ export default function NotebookPage() {
       noSelection={windows.length === 0}
       dense={dense}
       lapTimeSecs={lapTimeSecsForRow}
+      renderSessionTable={(cellId) => {
+        if (sessionSet === null) return null;
+        const view = sessionTableView(sessionSet, cellId);
+        if (view === null) return null;
+        return (
+          <SessionTableCell
+            view={view}
+            dense={dense}
+            focusedSessionId={primaryWindow?.sessionId ?? null}
+            onFocusSession={(sessionId) =>
+              appDispatch({ type: "SET_WINDOWS", windows: [{ sessionId, span: { kind: "session" }, colour: "--chart-1" }] })
+            }
+          />
+        );
+      }}
       editingProseBlockId={proseEdit?.target.blockId ?? null}
       proseEditor={proseEditorElement}
       onEditProseBlock={paperActive ? undefined : openProseBlockEditor}

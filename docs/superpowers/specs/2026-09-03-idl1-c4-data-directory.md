@@ -214,6 +214,22 @@ filename, so C3 §3.2's `list_quarantine` can pair the two without parsing
 the display-name portion. Same rule as everything else under `tmp/`:
 never referenced by the catalog, never read as a source of truth.
 
+### 2.x `cache/eval/` (added 2026-10-28, session-sets spec §4.3)
+
+`<data>/cache/eval/results.sqlite` holds session-set results: one row per
+(member, result name), `key` = SHA-256 of the member key (maths text ‖ data
+identity ‖ laps identity ‖ engine identity) and the name. The data identity
+is read from `data.parquet`'s footer whenever the file is present (the
+catalog row can lag a re-import), and from the catalog only for a member
+whose data is elsewhere. The engine identity is the build's git commit, or
+`<commit>-dirty-<hash of the uncommitted diff>` for a build with uncommitted
+engine changes, so a dev build never reuses another build's numbers. Values and
+deterministic `math_*` errors only; a refused or failed decode is never
+stored. Pruned least-recently-used above 256 MiB. **An index, like the
+catalog**: deletable at any time, rebuilt by evaluating again, and **never
+synced** (ruling Q5, 2026-10-28; §6). A build without a git commit, and the
+CLI's `--no-cache`, neither read nor write it.
+
 ## 3. Identity
 
 **Blob hash.** SHA-256 over the raw source file's bytes exactly as received
@@ -726,6 +742,9 @@ content-addressed class above (blob, derived channel): the file is written
 via the §4 atomic-write primitive to a path *derived from the verified
 hash*, so a hash mismatch simply produces the wrong path, never corrupts
 an existing entry.
+
+`cache/eval/` (§2.x) is **never** in the sync manifest, on any device class
+(ruling Q5, 2026-10-28).
 
 ## 7. Retention and repair
 

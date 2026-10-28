@@ -291,6 +291,8 @@ is applied uniformly, not case-by-case:
 | `workbook_invalid_front_matter` | `WorkbookErrorKind::InvalidFrontMatter` | Workbook: `open_workbook`, `eval_workbook` (fatal — the front-matter block is not valid YAML, C2 §3.5.A) |
 | `workbook_invalid_cell_id` | `WorkbookErrorKind::InvalidCellId` | Workbook: `open_workbook`, `eval_workbook` (fatal — a fence's `id=` value doesn't match `hex8`, C2 §2.2/§3.5.A) |
 | `workbook_invalid_table_json` | `WorkbookErrorKind::InvalidTableJson` | Workbook: `eval_workbook` — surfaced **per cell** in `CellOutput.error`, not as the command's own rejection (same per-cell rule as `math_*` above, C2 §3.5.A) |
+| `workbook_duplicate_set_member` | `WorkbookErrorKind::DuplicateSetMember` | Workbook: `eval_session_set` — a session listed twice in the front-matter `sessions` set (C2 §1). *Added 2026-10-28.* |
+| `workbook_invalid_session_set` | `WorkbookErrorKind::InvalidSessionSet` | Workbook: `eval_session_set` — a malformed `sessions` key (C2 §1). *Added 2026-10-28.* |
 | `workbook_duplicate_cell_id`, `workbook_duplicate_definition`, `workbook_duplicate_constant`, `workbook_invalid_identifier`, `workbook_reserved_name` | `WorkbookErrorKind::{DuplicateCellId, DuplicateDefinition, DuplicateConstant, InvalidIdentifier, ReservedName}` | Workbook: `eval_workbook` — **per cell only**, in `CellOutput.errors`; never a command rejection (C2 §3.5.A, R7/R22) |
 | `math_parse` | `MathEvalErrorKind::Parse` | Workbook: `eval_workbook` — surfaced **per cell** in `CellOutput.error`, not as the command's own rejection (CLAUDE.md §5: "missing math channel reference → inline validation error, don't block other channels") |
 | `math_unknown_function` | `MathEvalErrorKind::UnknownFunction` | Workbook: `eval_workbook` (per cell) |
@@ -1283,7 +1285,7 @@ interface CellDefResult {
   sample_rate_hz: number | null;  // added post-sign (2026-09-08, lead ruling R144, amended R152) — this definition's sample rate, Hz, on success; null means genuinely not applicable (a scalar reduction has no rate), never "unknown", and is also null on failure. R144 originally asked for a `unit` field alongside this one; ruling R152 drops that half — no unit is tracked anywhere in the engine's math value type today, C2 §3.3 states output units only for named functions (not for `+ - * /` between two differently-unitted channels), and shipping a partial/guessed unit would be worse than shipping none (a reader stops checking a labelled-but-wrong number). A `unit` field is deferred to its own spec-first task.
   error: IpcError | null;      // math_* kind only — a structural problem on this definition (e.g. ReservedName) keeps it out of `defs` entirely and is reported, if anywhere, on the cell's own `error` above (R22)
 }
-interface HostChannelRef { length: number; has_t: boolean; }
+interface HostChannelRef { length: number; has_t: boolean; scalar?: number; }  // scalar: added 2026-10-28 (session-sets spec §5.2) — the value of a rank-0 definition, absent for every other shape
 ```
 A `table` cell's `value` on success is
 `{ model: TableModel, results: CellResult[][] }` (added post-sign,
@@ -1625,6 +1627,53 @@ dispatch) — the same three exclusions L6's `functionCatalog.ts`
 transcription already made.
 
 Errors: none (see above).
+
+**`eval_session_set(workbook_id: string, on_progress: Channel<SetProgress>) -> SessionSetResult`**
+*Added 2026-10-28 (session-sets spec §5.2, phase 1).* Async. Evaluates the
+workbook's front-matter `sessions` set (C2 §1): every `rowSource: "sessions"`
+table (C2 §4), each member **one at a time** in set order, each through its
+own channel source (never the session cache the per-window commands share, so
+a set run never evicts the session on screen), keeping only reduced results.
+Results are cached locally under `<data>/cache/eval/` (C4 §2), keyed by the
+maths text, the member's data identity (the `data.parquet` footer whenever
+the file is here; the catalog row only for a member whose data is
+elsewhere), its laps and the engine identity (C4 §2.x); a member whose cache
+rows hold every definition the run asks for opens no `data.parquet`, and a
+partial hit is evaluated again. Each member is admitted against the memory
+budget before it decodes and evaluated with the planner, keeping no
+full-rate value. The result is a function of the file and
+the library, never of the selection.
+```ts
+interface SetProgress { done: number; total: number; session_id: string; phase: "cached" | "decoding" | "evaluating" }
+interface SessionSetResult {
+  set_key: string;                                   // sha256 hex of the resolved set + maths text
+  groups: { name: string | null }[];                 // null: the one unnamed group
+  members: {
+    session_id: string; label: string; group: number; start_utc_ms: number | null;
+    status: "computed" | "cached" | "cached_data_elsewhere" | "missing" | "not_found" | "error";
+    error?: IpcError;                                // status "error": io | resource_exhausted for this member
+  }[];
+  tables: { cell_id: string; model: TableModel; results: CellResult[][]; row_members: number[] }[];
+  warnings: { cell_id: string | null; missing: string[]; message: string }[];  // ruling Q3
+  cancelled: boolean;
+}
+```
+A member whose data is not on this device and has nothing cached is
+`"missing"` and its rows say so; a `{col[]}` aggregate is computed over the
+rows that have a value and a warning names every row it left out, with the
+reason (ruling Q3, 2026-10-28). A warning's `missing` lists only the members
+not on this device, for the UI's offer to fetch them. A member whose demanded
+definitions read no channel (lap and sector statistics) is computed from
+`session.json` alone. A newer call for the same workbook supersedes the
+running one at its next member boundary; the superseded call resolves with
+`cancelled: true`. Errors (command-level): `not_found`, `io`, the fatal
+workbook kinds, `workbook_duplicate_set_member`,
+`workbook_invalid_session_set`, and `invalid_argument` for a workbook that
+declares no `sessions`. Everything per member is in `members`.
+
+A `rowSource: "sessions"` table's `CellOutput.value` from `eval_workbook_v2`
+is `null`: it is served here. Every other table's `[name]` now resolves to a
+definition first (C2 §4 item 6).
 
 ### 3.5 Tiles (L3)
 

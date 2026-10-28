@@ -105,6 +105,10 @@ export interface CellListProps {
    *  row resolution under C2 §4's reserved `"fastest"` — see that
    *  component's own doc comment. Omitted leaves no row highlighted. */
   lapTimeSecs?: LapTimeLookup;
+  /** Renders a `rowSource: "sessions"` table cell from the workbook's
+   *  session-set result (C2 §4), or returns `null` when `cellId` is no such
+   *  table — the per-window `TableCell` then renders it as before. */
+  renderSessionTable?: (cellId: string) => ReactNode | null;
 }
 
 /**
@@ -141,6 +145,7 @@ export default function CellList({
   onEditProseBlock,
   dense = false,
   lapTimeSecs,
+  renderSessionTable,
 }: CellListProps) {
   /** One prose block: the open mini-editor when it is the block being
    *  edited, the rendered text otherwise (ruling R226 item 1). */
@@ -166,11 +171,15 @@ export default function CellList({
         const before = cell.id !== null ? proseBlocks.get(`${cell.id}::before`) : undefined;
         const after = cell.id !== null ? proseBlocks.get(`${cell.id}::after`) : undefined;
         const output = cell.id !== null ? outputs.get(cell.id) : undefined;
+        const sessionTable =
+          cell.kind === "table" && cell.id !== null && renderSessionTable !== undefined ? renderSessionTable(cell.id) : null;
         // A video cell has nothing to evaluate (C2 §2.1: no host variable,
         // no output): it renders from the scan as soon as it has an id,
         // rather than waiting on a `CellOutput`.
         const rendered =
-          cell.kind === "video" && cell.id !== null && renderVideoCell !== undefined ? (
+          sessionTable !== null ? (
+            sessionTable
+          ) : cell.kind === "video" && cell.id !== null && renderVideoCell !== undefined ? (
             renderVideoCell(cell.id)
           ) : output === undefined ? (
             <CellPendingSlot kind={cell.kind} />
