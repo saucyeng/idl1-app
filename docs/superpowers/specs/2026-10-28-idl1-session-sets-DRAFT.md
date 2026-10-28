@@ -721,6 +721,27 @@ distance). They need two members' `[t]` values aligned on distance, at `2 × E` 
 
 ## 9. Open questions for Isaac
 
+### Rulings (Isaac, 2026-10-28)
+
+These supersede the recommendations below wherever they differ.
+
+- **Q1:** front-matter key ("probably the header").
+- **Q2:** new `ses` and `group` axes; `win` stays reserved and unimplemented.
+- **Q3:** **partial, flagged** (overrides the recommendation): a set-level reduction is computed over the
+  members present on this device, and the result carries a warning naming each missing member with an
+  offer to fetch it. Reason: a missing member may be unfetchable, or the user may mean to import a different
+  session in its place.
+- **Q4:** the recommendation ("whatever works"). Separately, the `idl_rs::VERSION` / importer-version hole
+  (§10) is to be fixed now, ahead of this work, under its own proposal.
+- **Q5:** **no** (overrides the recommendation): set results do not sync, on any device class, for now.
+  Phones show "on <library>" for members they lack. Revisit later; not in any phase here.
+- **Q6:** yes. Isaac: this was the original design (tables see definitions) and was lost somewhere; find
+  where, and restore it.
+- **Q7:** run in parallel. Memory phases 2–3 proceed as their own lane; session-set phase 1 proceeds now on
+  the parts that do not depend on them (front matter, `rowSource: "sessions"`, Q6, the results cache, the
+  CLI gaps N6/N7), runs members serially, and adopts memory phase 2's budget/admission API when it lands.
+- **Q8:** core, like `index_job`.
+
 Each changes the design. Recommendations are what the draft proceeds on.
 
 **Q1 — Where does a session set live: a front-matter key or a `sessions` cell?**
