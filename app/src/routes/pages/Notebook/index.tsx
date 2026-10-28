@@ -135,7 +135,7 @@ import { resolveGraphHost } from "./model/graphHost";
 import { runFft, type FftAction, type FftDeps } from "./model/fftDriver";
 import { gpsColumns, runGpsMeta, runGpsTrace, type GpsAction, type GpsDeps } from "./model/gpsDriver";
 import { lapColumns, runLapSeries, type LapAction, type LapDeps } from "./model/lapDriver";
-import { hostLaps, hostSession, runDefinitionBind, type DefinitionBinding } from "./model/definitionBind";
+import { hostLaps, hostSession, referencedDefinitionNames, runDefinitionBind, type DefinitionBinding } from "./model/definitionBind";
 import { parse as parsePlotForm } from "./plotForm/parse";
 import { UNIT_NOT_YET_EVALUATED } from "./model/unitLabel";
 import {
@@ -3915,10 +3915,13 @@ export default function NotebookPage() {
     if (state.markdown === null || primaryEval?.kind !== "ok" || windows.length === 0) return;
     const markdown = state.markdown;
     const chartBound = new Set<string>();
+    const referenceSources: string[] = spansToEvaluate(proseBlocksFor(state.cells, markdown, primaryOutputs)).map((s) => s.expr);
     for (const cell of state.cells) {
       if (cell.id === null || cell.kind !== "js") continue;
+      const code = decodeByteRange(markdown, cell.bodyRange);
+      referenceSources.push(code);
       const binding = bindingFor(
-        { id: cell.id, code: decodeByteRange(markdown, cell.bodyRange) },
+        { id: cell.id, code },
         sessionDetail,
         sessionSpanUs,
         definitionsWithAxis,
@@ -3928,11 +3931,14 @@ export default function NotebookPage() {
       if (binding === null || binding.kind !== "time") continue;
       for (const c of binding.channels) if (c.source === "definition") chartBound.add(c.channelId);
     }
-    const names = Array.from(primaryOutputs.values())
-      .filter((o) => o.kind === "math")
-      .flatMap((o) => o.defs)
-      .filter((d) => d.value !== null && !chartBound.has(d.name))
-      .map((d) => d.name);
+    const names = referencedDefinitionNames(
+      Array.from(primaryOutputs.values())
+        .filter((o) => o.kind === "math")
+        .flatMap((o) => o.defs)
+        .filter((d) => d.value !== null && !chartBound.has(d.name))
+        .map((d) => d.name),
+      referenceSources
+    );
     if (names.length === 0) return;
     const bindWindows = windows.map((w) => ({
       window: toWireWindow(w),
@@ -3947,9 +3953,11 @@ export default function NotebookPage() {
         return fetchHostChannelV2(workbookId, window, defName, budget);
       },
     };
-    void Promise.all(
-      names.map((name) =>
-        runDefinitionBind(
+    // One definition at a time (and one window at a time inside
+    // `runDefinitionBind`): each fetch may evaluate a whole session.
+    void (async () => {
+      for (const name of names) {
+        await runDefinitionBind(
           deps,
           bindWindows,
           name,
@@ -3962,11 +3970,11 @@ export default function NotebookPage() {
             pushDefinitionFor(action.name);
           },
           isStale
-        )
-      )
-    ).then(() => {
-      if (!isStale()) reevalSpansRef.current();
-    });
+        );
+        if (isStale()) return;
+      }
+      reevalSpansRef.current();
+    })();
   }, [state.cells, state.markdown, primaryEval, sessionDetail, sessionSpanUs, windowsKeyValue, sessionDetailsReadiness, primeState.primeEpoch]);
 
   // Save is unavailable while there is no readable `hash` to base it on

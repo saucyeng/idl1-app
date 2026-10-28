@@ -99,12 +99,31 @@ export interface DefinitionBindAction {
 }
 
 /**
- * Fetches `defName` over every window in `windows` (in parallel) and
- * dispatches the {@link DefinitionBinding} they plan to. A window whose fetch
- * rejects (a definition that fails to evaluate over that window, an unknown
- * name) simply contributes nothing; if none answer, nothing is dispatched and
- * the name stays unbound. `isStale()` is checked once after the awaits: `true`
- * means a newer run superseded this one and nothing is dispatched.
+ * The subset of `names` that appear as whole identifiers in any of `sources`
+ * (js cell code, inline `${…}` expressions). Only these are worth fetching:
+ * a workbook may define a hundred definitions that only tables read, and
+ * each fetch can cost a whole-session evaluation per window. A false
+ * positive (a name inside a string or comment) costs one extra fetch; a
+ * false negative cannot occur, since a bare identifier reference must spell
+ * the name.
+ */
+export function referencedDefinitionNames(names: readonly string[], sources: readonly string[]): string[] {
+  const identifiers = new Set<string>();
+  for (const source of sources) {
+    for (const match of source.matchAll(/[A-Za-z_$][\w$]*/g)) identifiers.add(match[0]);
+  }
+  return names.filter((name) => identifiers.has(name));
+}
+
+/**
+ * Fetches `defName` over every window in `windows`, one window at a time,
+ * and dispatches the {@link DefinitionBinding} they plan to. Sequential on
+ * purpose: each fetch may evaluate a whole session, so a fan-out multiplies
+ * peak memory by the window count. A window whose fetch rejects (a
+ * definition that fails to evaluate over that window, an unknown name)
+ * simply contributes nothing; if none answer, nothing is dispatched and the
+ * name stays unbound. `isStale()` is checked after every await: `true` means
+ * a newer run superseded this one, and nothing more is fetched or dispatched.
  *
  * @param budget Largest number of points per window (C3 §3.4, `1..=65536`).
  */
@@ -116,17 +135,15 @@ export async function runDefinitionBind(
   dispatch: (action: DefinitionBindAction) => void,
   isStale: () => boolean
 ): Promise<void> {
-  const settled = await Promise.all(
-    windows.map(async (w): Promise<DefinitionWindowResult | null> => {
-      try {
-        return { descriptor: w.descriptor, decoded: await deps.fetchHostChannel(w.window, defName, budget) };
-      } catch {
-        return null;
-      }
-    })
-  );
-  if (isStale()) return;
-  const results = settled.filter((r): r is DefinitionWindowResult => r !== null);
+  const results: DefinitionWindowResult[] = [];
+  for (const w of windows) {
+    try {
+      results.push({ descriptor: w.descriptor, decoded: await deps.fetchHostChannel(w.window, defName, budget) });
+    } catch {
+      // This window contributes nothing.
+    }
+    if (isStale()) return;
+  }
   const binding = planDefinitionBinding(results);
   if (binding.kind === "unbound") return;
   dispatch({ name: defName, binding });

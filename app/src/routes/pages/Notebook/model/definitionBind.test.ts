@@ -8,7 +8,7 @@ import type { SessionDetail } from "../../../../ipc/catalog";
 import { AxisKind, type DecodedHostChannel } from "../../../../ipc/hostChannel";
 import type { Window as SelectedWindow } from "../../../../ipc/workbook";
 import type { WindowDescriptor } from "../host/protocol";
-import { hostLaps, hostSession, planDefinitionBinding, runDefinitionBind, type DefinitionBindAction } from "./definitionBind";
+import { hostLaps, hostSession, planDefinitionBinding, referencedDefinitionNames, runDefinitionBind, type DefinitionBindAction } from "./definitionBind";
 
 const window1: SelectedWindow = { session_id: "session-a", span: { kind: "session" }, colour: "--chart-1" };
 const window2: SelectedWindow = { session_id: "session-b", span: { kind: "session" }, colour: "--chart-2" };
@@ -128,6 +128,54 @@ describe("runDefinitionBind", () => {
     await runDefinitionBind(deps, windows, "med", 512, (a) => actions.push(a), () => true);
 
     expect(actions).toEqual([]);
+  });
+
+  it("run — two windows — fetches them one at a time", async () => {
+    let inFlight = 0;
+    let peak = 0;
+    const deps = {
+      fetchHostChannel: async () => {
+        inFlight += 1;
+        peak = Math.max(peak, inFlight);
+        await Promise.resolve();
+        inFlight -= 1;
+        return scalar(1);
+      },
+    };
+
+    await runDefinitionBind(deps, windows, "med", 512, () => {}, () => false);
+
+    expect(peak).toBe(1);
+  });
+
+  it("run — stale after the first window — never fetches the second", async () => {
+    const fetched: (string | undefined)[] = [];
+    const deps = {
+      fetchHostChannel: async (w: SelectedWindow | null) => {
+        fetched.push(w?.session_id);
+        return scalar(1);
+      },
+    };
+
+    await runDefinitionBind(deps, windows, "med", 512, () => {}, () => true);
+
+    expect(fetched).toEqual(["session-a"]);
+  });
+});
+
+describe("referencedDefinitionNames", () => {
+  it("names — some referenced in code or spans — keeps only those, in order", () => {
+    const names = ["lt", "med", "unused", "best"];
+
+    const kept = referencedDefinitionNames(names, ["Plot.lineY(lt, {x: 'lap'})", "best.toFixed(2)", "med"]);
+
+    expect(kept).toEqual(["lt", "med", "best"]);
+  });
+
+  it("names — only a longer identifier contains the name — not referenced", () => {
+    const kept = referencedDefinitionNames(["lt"], ["const lt_f = 1; filter(x)"]);
+
+    expect(kept).toEqual([]);
   });
 });
 
