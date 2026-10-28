@@ -381,6 +381,18 @@ class CellContainers {
     container.style.transform = `translateX(${translateXPx}px) scaleX(${scaleX})`;
   }
 
+  /** Removes every container whose cell id is not in `cellIds` -- a cell
+   *  deleted from the document, or every cell of a workbook just switched
+   *  away from. A leftover container keeps its last position and content, so
+   *  it would paint over whatever now occupies that place on screen. */
+  retainOnly(cellIds: ReadonlySet<string>): void {
+    for (const [cellId, container] of this.byId) {
+      if (cellIds.has(cellId)) continue;
+      container.remove();
+      this.byId.delete(cellId);
+    }
+  }
+
   /** Removes every container -- called on `teardown`, ahead of the whole iframe being discarded. */
   clear(): void {
     for (const container of this.byId.values()) {
@@ -791,6 +803,7 @@ class SandboxRuntime {
       variable.delete();
     }
     this.cellVariables.clear();
+    cellContainers.retainOnly(new Set(cells.map((cell) => cell.id)));
 
     const inputNames = [...this.boundNames];
     for (const cell of cells) {

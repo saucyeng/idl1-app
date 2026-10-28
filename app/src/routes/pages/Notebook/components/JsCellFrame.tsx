@@ -94,6 +94,10 @@ export default function JsCellFrame({ cellId, heightPx, error, note, onFix, send
     scheduleSend();
     const resizeObserver = new ResizeObserver(scheduleSend);
     resizeObserver.observe(frame);
+    // A cell above this one growing moves this frame without resizing it;
+    // the list's own height changes then, so watching it re-sends the rect.
+    const list = frame.closest(".cell-list");
+    if (list !== null) resizeObserver.observe(list);
     window.addEventListener("resize", scheduleSend);
     window.addEventListener("scroll", scheduleSend, true);
 

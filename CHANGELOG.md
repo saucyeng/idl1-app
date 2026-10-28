@@ -6,6 +6,8 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 
 ### Added
 
+- **Charts stay in their slots when a cell above changes height [no-docs] (2026-10-28).** A chart frame re-sent its position only when it resized, scrolled or the window resized, so a cell above it growing (an error turning into a chart) left every chart below drawn at its old place, over the text. Frames also watch the cell list now. The sandbox also drops the chart containers of cells no longer in the document (e.g. after switching workbooks), which kept painting at their last positions. No spec change needed.
+
 - **Definition binding fetches only what is used, one at a time [no-docs] (2026-10-28).** The bare-identifier pass fetched every `math` definition over every selected window at once: about 100 definitions x 9 sessions on the comparison workbook, each able to evaluate a whole session. It now fetches only definitions a js cell or `${…}` span names, sequentially per definition and per window. No spec change needed.
 
 - **Inline `${…}` values stay filled in [no-docs] (2026-10-28).** React 19
