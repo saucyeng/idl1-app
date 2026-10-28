@@ -45,8 +45,19 @@ export interface LapChannelRecord {
   w: number;
 }
 
+/** One entry of a `[f]` value (C2 §3.6.5): one number per frequency bin,
+ *  keyed `f` (hertz), never `t`. */
+export interface FrequencyChannelRecord {
+  /** Frequency, Hz. `NaN` on a window break row. */
+  f: number;
+  /** The per-bin value in its own unit. */
+  v: number;
+  /** Index into the payload's `windows` descriptor array; `NaN` on a break row. */
+  w: number;
+}
+
 /** What {@link channelRecords} returns — one record per sample, in payload order. */
-export type ChannelRecord = TimeChannelRecord | LapChannelRecord;
+export type ChannelRecord = TimeChannelRecord | LapChannelRecord | FrequencyChannelRecord;
 
 /**
  * Builds the record array for one decoded channel payload: `{t, v, tr, w}`
@@ -71,6 +82,12 @@ export function channelRecords(
   axisKind: AxisKindValue
 ): ChannelRecord[] {
   const records = new Array<ChannelRecord>(length);
+  if (axisKind === AxisKind.Frequency) {
+    for (let i = 0; i < length; i++) {
+      records[i] = { f: t[i], v: v[i], w: w[i] };
+    }
+    return records;
+  }
   if (axisKind === AxisKind.Lap) {
     for (let i = 0; i < length; i++) {
       records[i] = { lap: t[i], v: v[i], w: w[i] };

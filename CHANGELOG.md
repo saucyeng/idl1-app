@@ -6,6 +6,17 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 
 ### Added
 
+- **Notebook binds every maths definition by name, plus `laps` and `session` [no-docs] (2026-10-28).**
+  C2 §5.1's first row was only half delivered: a definition was reachable
+  as `channel("name")` and only with a time axis. Now each `math`
+  definition is a host variable by name, by rank (§3.6.5): rank 0 the bare
+  number (so `${med.toFixed(2)}` and `${n_fly}` work), a `[lap]` series
+  `{lap, v, w}`, a `[t]` series `{t, v, tr, w}`, a `[f]` series `{f, v, w}`;
+  inline spans are re-evaluated once the values arrive. `laps`
+  (`{number, startT, endT}[]`, seconds) and `session` (`{id, name?,
+  timestampUtcMs}`) are now set from the primary window's session instead of
+  staying `[]`/`null`. Rank >= 2 and `win` axes stay unbound (the `IDLH`
+  wire carries neither).
 - **Notebook charts show inside the dock [no-docs] (2026-10-28).** The
   sandbox draws chart pixels in a fixed layer under the page (R69); the dock
   painted every group an opaque `--bg` on top, so charts were hidden except

@@ -135,6 +135,7 @@ import { resolveGraphHost } from "./model/graphHost";
 import { runFft, type FftAction, type FftDeps } from "./model/fftDriver";
 import { gpsColumns, runGpsMeta, runGpsTrace, type GpsAction, type GpsDeps } from "./model/gpsDriver";
 import { lapColumns, runLapSeries, type LapAction, type LapDeps } from "./model/lapDriver";
+import { hostLaps, hostSession, runDefinitionBind, type DefinitionBinding } from "./model/definitionBind";
 import { parse as parsePlotForm } from "./plotForm/parse";
 import { UNIT_NOT_YET_EVALUATED } from "./model/unitLabel";
 import {
@@ -333,6 +334,15 @@ function gpsRunKey(cellId: string, windowKeyValue: string): string {
 function gpsMetaRunKey(sessionId: string): string {
   return `session|gpsMeta|${sessionId}`;
 }
+
+/** The `cellRunSequencerRef` key for the one workbook-wide pass that binds
+ *  every `math` definition by name (C2 §5.1). No cell id can contain `|`. */
+const DEFINITION_BIND_RUN_KEY = "workbook|definitionBind";
+
+/** Points per window requested for a bare-bound definition (C3 §3.4 budget,
+ *  `1..=65536`). A rank-0 or `[lap]` value is far smaller; a `[t]` series is
+ *  decimated to this, the same trade a full-session chart makes. */
+const DEFINITION_BIND_BUDGET = 4096;
 
 /** C4 §4's stated expected-hash-set TTL (5 s), matched here for the frontend's own independent self-write belt (`saveFlow.ts`'s `isSelfWrite`). */
 const SELF_WRITE_TTL_MS = 5000;
@@ -1372,6 +1382,14 @@ export default function NotebookPage() {
   const retainedLapsRef = useRef<Map<string, { hostVarName: string; unit: UnitLabel; byWindow: Map<string, { lap: Float64Array; v: Float64Array }> }>>(
     new Map()
   );
+  /** Every bare-bound `math` definition's current binding and unit (C2 §5.1),
+   *  by name. A series' buffers are detached once transferred, so a sandbox
+   *  rebuild re-pushes fresh copies made from these (no IPC), exactly like
+   *  {@link retainedLapsRef}. */
+  const retainedDefinitionsRef = useRef<Map<string, { binding: DefinitionBinding; unit: UnitLabel }>>(new Map());
+  /** Re-sends every `${…}` prose span for evaluation against the sandbox's
+   *  current host variables; reassigned each render so it reads fresh state. */
+  const reevalSpansRef = useRef<() => void>(() => {});
   /** {@link fftBoundIdentityRef}'s lap-progression counterpart. */
   const lapBoundIdentityRef = useRef<Map<string, Map<string, string>>>(new Map());
   /** {@link retainedSpectraRef}'s spectrogram counterpart (ruling R217 item
@@ -1592,6 +1610,36 @@ export default function NotebookPage() {
   }
 
   /**
+   * Pushes the retained binding of `math` definition `name` as the bare host
+   * variable `name` (C2 §5.1, §3.6.5): rank 0 as the number itself (a JSON
+   * host var, so a sandbox rebuild replays it), rank 1 as a channel payload
+   * keyed by its axis (`t`, `lap` or `f`). A series is sent as fresh copies:
+   * the transferred buffers are detached, the retained arrays must survive
+   * for the next rebuild.
+   */
+  function pushDefinitionFor(name: string): void {
+    const entry = retainedDefinitionsRef.current.get(name);
+    const host = sandboxHostRef.current;
+    if (entry === undefined || host === null) return;
+    const b = entry.binding;
+    if (b.kind === "scalar") {
+      host.setHostVar(name, { kind: "json", value: b.value });
+    } else if (b.kind === "series") {
+      host.setChannelHostVar(
+        name,
+        b.length,
+        b.t.slice().buffer as ArrayBuffer,
+        b.v.slice().buffer as ArrayBuffer,
+        b.tr.slice().buffer as ArrayBuffer,
+        b.w.slice().buffer as ArrayBuffer,
+        b.windows,
+        entry.unit,
+        b.axisKind
+      );
+    }
+  }
+
+  /**
    * Rebuilds and pushes `cellId`'s combined multi-window GPS trace host
    * variable from `retainedGpsRef`'s currently retained per-window traces
    * (ruling R217 item 1). The exact shape of
@@ -1776,6 +1824,12 @@ export default function NotebookPage() {
         // leaves every lap-progression cell permanently blank.
         for (const cellId of retainedLapsRef.current.keys()) {
           pushCombinedLapFor(cellId);
+        }
+        // C2 §5.1 bare-bound definitions: same reasoning (series buffers
+        // detach on transfer; scalars are replayed as JSON but re-pushed
+        // here too, which is harmless).
+        for (const name of retainedDefinitionsRef.current.keys()) {
+          pushDefinitionFor(name);
         }
       },
     });
@@ -2477,6 +2531,14 @@ export default function NotebookPage() {
   // `sandbox/main.ts`'s own TODO defers -- this is a coarser trigger:
   // every span is re-sent on every `setCells`, which is this effect's
   // only firing condition.
+  reevalSpansRef.current = () => {
+    const host = sandboxHostRef.current;
+    if (host === null || state.markdown === null) return;
+    for (const span of spansToEvaluate(proseBlocksFor(state.cells, state.markdown, primaryOutputs))) {
+      host.evalInline(span.id, span.expr);
+    }
+  };
+
   useEffect(() => {
     const host = sandboxHostRef.current;
     if (host === null || state.markdown === null) return;
@@ -3826,6 +3888,86 @@ export default function NotebookPage() {
 
     void runGpsMeta(gpsDeps, detail.session_id, trackId, dispatchMeta, isStale);
   }, [sessionDetail]);
+
+  // C2 §5.1's `laps` and `session` ambient host variables: the primary
+  // window's session, pushed as plain JSON host vars (so a sandbox rebuild
+  // replays them). The sandbox starts them at `[]` / `null` and nothing else
+  // sets them. Seconds are session-relative, straight from `session.json`.
+  useEffect(() => {
+    const host = sandboxHostRef.current;
+    if (host === null) return;
+    host.setHostVar("laps", { kind: "json", value: hostLaps(sessionDetail) });
+    host.setHostVar("session", { kind: "json", value: hostSession(sessionDetail, sessionDetail === null ? "" : sessionLabel(sessionDetail)) });
+  }, [sessionDetail, primeState.primeEpoch]);
+
+  // C2 §5.1 / §3.6.5: one host variable per `math` definition, by name, bound
+  // by rank -- rank 0 the bare number, rank 1 a record array keyed by its
+  // axis (`t`, `lap`, `f`). `channel("name")` reaches the same value (the
+  // sandbox looks host vars up by name). One `fetch_host_channel_v2` per
+  // (definition, selected window) when an evaluation result arrives -- never
+  // on hover/pan. A definition a time-chart cell already binds through the
+  // viewport pipeline is skipped, so a zoomed chart's tiles are not
+  // overwritten by this full-span copy. Rank >= 2 and `win` axes are not
+  // carried by `IDLH` (see `model/definitionBind.ts`) and stay unbound.
+  // After the pass, every `${…}` span is re-evaluated, since spans run once
+  // at evaluation time, before these variables exist.
+  useEffect(() => {
+    if (state.markdown === null || primaryEval?.kind !== "ok" || windows.length === 0) return;
+    const markdown = state.markdown;
+    const chartBound = new Set<string>();
+    for (const cell of state.cells) {
+      if (cell.id === null || cell.kind !== "js") continue;
+      const binding = bindingFor(
+        { id: cell.id, code: decodeByteRange(markdown, cell.bodyRange) },
+        sessionDetail,
+        sessionSpanUs,
+        definitionsWithAxis,
+        null,
+        definitionUnitByName
+      );
+      if (binding === null || binding.kind !== "time") continue;
+      for (const c of binding.channels) if (c.source === "definition") chartBound.add(c.channelId);
+    }
+    const names = Array.from(primaryOutputs.values())
+      .filter((o) => o.kind === "math")
+      .flatMap((o) => o.defs)
+      .filter((d) => d.value !== null && !chartBound.has(d.name))
+      .map((d) => d.name);
+    if (names.length === 0) return;
+    const bindWindows = windows.map((w) => ({
+      window: toWireWindow(w),
+      descriptor: windowDescriptorFor(w, sessionDetailsByWindow.get(windowKey(w)) ?? null),
+    }));
+    const seq = cellRunSequencerRef.current.start(DEFINITION_BIND_RUN_KEY);
+    const isStale = () => !cellRunSequencerRef.current.isCurrent(DEFINITION_BIND_RUN_KEY, seq);
+    const deps = {
+      fetchHostChannel: (window: WireWindow | null, defName: string, budget: number) => {
+        const workbookId = workbookIdRef.current;
+        if (workbookId === null) return Promise.reject(new Error("fetchHostChannel: no workbook open"));
+        return fetchHostChannelV2(workbookId, window, defName, budget);
+      },
+    };
+    void Promise.all(
+      names.map((name) =>
+        runDefinitionBind(
+          deps,
+          bindWindows,
+          name,
+          DEFINITION_BIND_BUDGET,
+          (action) => {
+            retainedDefinitionsRef.current.set(action.name, {
+              binding: action.binding,
+              unit: definitionUnitByName.get(action.name) ?? UNIT_NOT_YET_EVALUATED,
+            });
+            pushDefinitionFor(action.name);
+          },
+          isStale
+        )
+      )
+    ).then(() => {
+      if (!isStale()) reevalSpansRef.current();
+    });
+  }, [state.cells, state.markdown, primaryEval, sessionDetail, sessionSpanUs, windowsKeyValue, sessionDetailsReadiness, primeState.primeEpoch]);
 
   // Save is unavailable while there is no readable `hash` to base it on
   // (still loading, or a read error) -- see `handleSave`'s doc comment on

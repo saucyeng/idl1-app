@@ -33,6 +33,19 @@ describe("channelRecords", () => {
     ]);
   });
 
+  it("channel records — a Frequency axis — keys the axis column f and drops tr", () => {
+    const f = new Float64Array([10, 20]);
+    const v = new Float64Array([0.5, 0.25]);
+    const z = new Float64Array([0, 0]);
+
+    const records = channelRecords(2, f, v, z, z, AxisKind.Frequency);
+
+    expect(records).toEqual([
+      { f: 10, v: 0.5, w: 0 },
+      { f: 20, v: 0.25, w: 0 },
+    ]);
+  });
+
   it("channel records — a Lap axis — carries no t key at all", () => {
     const records = channelRecords(1, new Float64Array([1]), new Float64Array([5]), new Float64Array([0]), new Float64Array([0]), AxisKind.Lap);
 
