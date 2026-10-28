@@ -718,6 +718,13 @@ building what it needs along the way.
 - [ ] Session sets (N-to-N analysis): spec draft `docs/superpowers/specs/2026-10-28-idl1-session-sets-DRAFT.md`, awaiting Isaac on Q1-Q8
 - [ ] `idl_rs::VERSION` is `0.1.0` and never changes, so `EvalKey` and derived-file hashes never see engine changes;
       fix before anything derived is persisted or synced (session-sets spec Q4, section 10)
+      Approved (Isaac, 2026-10-28): engine identity = version + git commit embedded at build; per-importer versions bumped
+      whenever output can change, enforced by a CI gate; derived-file keys include the version. Stale sessions are
+      NOT rebuilt automatically (a whole library could take an hour): flag them, show a count, and rebuild on request
+      ("Rebuild N sessions" with an estimate; per-session rebuild from the session itself). Not started.
+- [ ] RAM budget control in Settings? Isaac asked 2026-10-28; recommendation: not until memory phase 3 lands and
+      we see real behaviour, then at most a three-step "conservative / balanced / aggressive" share of RAM, never the
+      commit guard
 - [ ] Lap labels (flying / out / in / invalid) from the engine; lap charts fit the y axis to flying laps; m:ss on
       seconds axes over 60 s (awaiting Isaac's yes). Check the 15 s "lap 1" on 2026-10-24 S4 (false gate crossing?)
 - [ ] IMU mount calibration per session: full orientation per IMU (gravity, frame forward from GPS accel,
