@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import type { KeyboardEvent, MouseEvent } from "react";
 
 import type { ProseBlockContent } from "../model/proseBlocks";
@@ -74,6 +74,12 @@ function clickMeansEdit(target: EventTarget | null): boolean {
  */
 export default function ProseBlock({ content, inlineResults, spanErrors, windowNote = null, noSelection = false, onEdit }: ProseBlockProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
+  // One object per distinct HTML string. React 19 compares this prop by
+  // identity and rewrites `innerHTML` whenever it changes, so a fresh
+  // `{__html}` on every render wiped the span values the effect below had
+  // filled in, on any re-render that did not also re-run that effect.
+  const html = content.kind === "html" ? content.html : "";
+  const innerHtml = useMemo(() => ({ __html: html }), [html]);
 
   useEffect(() => {
     if (content.kind !== "html") return;
@@ -151,7 +157,7 @@ export default function ProseBlock({ content, inlineResults, spanErrors, windowN
       // `prose_after_html` (C3 §3.4, ledger R70/R78) — see this
       // component's doc comment for why this is the one permitted
       // `dangerouslySetInnerHTML` in the app.
-      dangerouslySetInnerHTML={{ __html: content.html }}
+      dangerouslySetInnerHTML={innerHtml}
     />
   );
 }
