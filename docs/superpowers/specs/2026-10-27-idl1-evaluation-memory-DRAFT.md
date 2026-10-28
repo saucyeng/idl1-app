@@ -615,6 +615,25 @@ first time and seconds after that. A 64 GB, 16-core machine runs `P` = 15 with n
     allocation. The next launch folds it into the abnormal-exit report.
   - The marker's `in_flight` field (§4.2.H) is not written yet.
 
+**Review fixes (2026-10-28).**
+
+- **Admission waits a bounded time.** If no decode or evaluation of ours is running and room still
+  cannot be made, the wait ends after 30 s with `resource_exhausted` (`detail.waited_ms`, the live `B`).
+- **The never-fits check uses `I + P`.** The evaluation's input channels are pinned (`pin_inputs`)
+  before they are decoded, and they are never evicted, by the LRU or by another admission, while it
+  runs. Only the plan's inputs are prefetched.
+- **Admission is first come, first served.** Tickets stop a later small request from overtaking a
+  waiting large one.
+- **A released-definition fetch decodes only its closure.** Its unit inference covers only that
+  closure: a lazy `unit_of` decodes. It pins the document evaluation so its admission cannot evict
+  it.
+- **Heap counting is per thread.** Each thread folds its count into the shared one every 1 MiB, so
+  the total is accurate to 1 MiB per thread.
+  - Measured on release builds, best of 6: a 4-thread small-allocation churn takes 0.168 s plain,
+    0.250 s with one shared atomic per allocation (+49 %) and 0.168 s batched (+0.2 %).
+  - An evaluator-shaped run over 120,000-sample buffers stays within run-to-run noise (0.387–0.40 s
+    for all three).
+
 **Phase-1 recommendation.** Do 1(a) and 1(b) together. Section 2.5 shows that 1(a) alone still
 peaks at ≈ 4.0 GB on this machine, within ≈ 0.8 GB of the abort. Section 2.4 shows that 1(b)
 alone still multiplies by the number of charts. Add 1(c) because it is about 50 lines and the next
