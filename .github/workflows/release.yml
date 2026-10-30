@@ -27,7 +27,9 @@
 # one. Pushes that touch only docs or Markdown build nothing.
 #
 # workflow_dispatch builds every platform without publishing -- a dry run
-# whose files are left on the run as artifacts.
+# whose files are left on the run as artifacts. It cannot replace a nightly
+# whose push event GitHub dropped (seen 2026-10-30 during a server-error spell):
+# only another push to main publishes.
 
 name: Release
 
