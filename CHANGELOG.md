@@ -6,6 +6,16 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 
 ### Added
 
+- **Whole-session evaluation is faster: one footer and time axis per session, rolling windows in O(N) [no-docs] (2026-10-30).**
+  Session-set members read through a new `SessionColumnReader`: the Parquet footer is parsed once
+  per session and the time axes are decoded once and shared, charged once to the memory budget. Lap
+  indexing and rescans parse the footer once but keep no axes between reads. `rolling_mean`,
+  `rolling_rms` and `rolling_std` now use compensated running sums, so their cost no longer grows with
+  the window; gaps (NaN, inf) are counted, a window holding one costs no more than any other, and a
+  huge sample leaving the window forces a rebuild so it cannot damage later results. Results match the
+  old per-window code to rounding (about the last digit), not bit for bit; `rolling_std` degrades
+  only when sigma is within a few thousand ulp of the data's own magnitude.
+
 - **Session sets, phase 1: a workbook computes its own N-session tables [docs] (2026-10-28).** A
   workbook can name its sessions in a new front-matter key, `sessions:` (ordered, named groups, C2 §1).
   A table with `rowSource: "sessions"` (optional `rowGroup`) has one row per member, each column

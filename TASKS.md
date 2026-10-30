@@ -729,7 +729,15 @@ building what it needs along the way.
       we see real behaviour, then at most a three-step "conservative / balanced / aggressive" share of RAM, never the
       commit guard
 - [ ] Lap labels (flying / out / in / invalid) from the engine; lap charts fit the y axis to flying laps; m:ss on
-      seconds axes over 60 s (awaiting Isaac's yes). Check the 15 s "lap 1" on 2026-10-24 S4 (false gate crossing?)
+      seconds axes over 60 s. Approved (Isaac, 2026-10-30): normal / anomalous (< 60 % or > 150 % of the session
+      median); every lap can be overridden either way (include an anomalous lap, exclude a normal one).
+      Check the 15 s "lap 1" on 2026-10-24 S4 (false gate crossing?)
 - [ ] IMU mount calibration per session: full orientation per IMU (gravity, frame forward from GPS accel,
       unsprung from the frame IMU), stored with the session (engine gap N16; awaiting Isaac's yes)
-- [ ] Spectrum axis unit shows `gÂ,Â²/Hz` (mojibake) in the app
+- [x] Spectrum axis unit shows `gÂ,Â²/Hz` (mojibake) in the app: not an app bug; three chart labels in the library's
+      `mx-day-2026-09-19.idl1wb` were triple-encoded by an earlier script. Fixed in the file 2026-10-30
+- [ ] Per-lap definitions in lap rows behave like a spreadsheet (Isaac, 2026-10-30): a `[lap]` definition such as
+      `lt` in a row bound to lap n gives lap n's value, no index written. C2 §4 `RowContext` rule + engine
+- [x] Speed lane (2026-10-30): footer and time axis once per session in the set eval path; O(N) rolling mean/rms/std.
+      pitch_air = 0 and air25_mean = 0.25 were a workbook bug (`rate0` divided by a difference of sample values), fixed in
+      both comparison workbooks; `Time`/`Distance` still read by path. Before/after timing to measure on the nightly
