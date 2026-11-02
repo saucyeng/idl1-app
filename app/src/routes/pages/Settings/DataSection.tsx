@@ -75,7 +75,7 @@ export default function DataSection({ store }: DataSectionProps) {
    *  opened *in the library*, which is what this section is about. */
   const [agentCommand, setAgentCommand] = useState<string>("");
   const [agentWriteFailed, setAgentWriteFailed] = useState<boolean>(false);
-  const [autoDownload, setAutoDownload] = useState<boolean>(true);
+  const [autoDownload, setAutoDownload] = useState<boolean>(false);
   const agentTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
   useEffect(() => {

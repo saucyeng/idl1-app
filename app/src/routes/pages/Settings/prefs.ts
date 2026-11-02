@@ -54,8 +54,10 @@ export interface UiPrefs {
    *  `null` — the default — follows the channel the build was made for. */
   app_channel: AppChannel | null;
   /** Download new logger sessions by themselves whenever the logger is
-   *  connected and not recording (ride-analysis DRAFT §10). Default `true`;
-   *  the switch is in Settings › Data directory. */
+   *  connected and not recording (ride-analysis DRAFT §10). Default `false`
+   *  (Isaac, 2026-11-02: "it's supposed to be off by default"); a document
+   *  that already stores the key keeps its value. The switch is in
+   *  Settings › Data directory. */
   auto_download: boolean;
   /** Ruling R214 item 1's optional cue: colour-code the maths graph's node
    *  kinds with a 4 px left stripe. Default `false` — the kind is carried
@@ -91,7 +93,7 @@ export const DEFAULT_PREFS: Prefs = {
     firmware_repo: "",
     firmware_channel: "stable",
     app_channel: null,
-    auto_download: true,
+    auto_download: false,
     graph_node_colour: false,
   },
 };

@@ -4,8 +4,11 @@
 export interface DeviceIpcError {
   /** Machine-readable failure class. Never routed on `message` (C3 §2). */
   kind: string;
-  /** Human-readable text from the Rust side. Not shown directly — this
-   *  module's text is user-facing instead, one step removed from it. */
+  /** Human-readable text from the Rust side: one short sentence, never a
+   *  stack trace. Shown only in brackets after this module's own text, for
+   *  the kinds that text can't say anything specific about (`wifi`, and the
+   *  generic fallback), so a report says where it broke; otherwise not
+   *  shown. */
   message: string;
   /** Structured detail, shape per kind (C3 §2). The Device tab reads
    *  `wifi`'s `{ hint, ssid }` (SPEC §14b.3). */
@@ -42,7 +45,9 @@ const KIND_TEXT: Record<string, string> = {
 /** Turns an `IpcError`-shaped rejection into text a rider can act on.
  *  Never throws, including for a kind not in the table above (C3 §5: kinds
  *  are additive, so an unrecognised one falls back to generic text rather
- *  than crashing the tab).
+ *  than crashing the tab). A kind that only gets the generic sentence
+ *  carries the backend's `message` after it in brackets, as a WiFi failure
+ *  does.
  *
  *  `kind: "config"` is a special case: C3 §2 defines that kind's `message`
  *  as the device's own rejection reason (e.g. "unsupported config_version"),
@@ -69,5 +74,29 @@ export function describeIpcError(error: DeviceIpcError): string {
   if (error.kind === "wifi" && error.message.trim() !== "") {
     return `${KIND_TEXT.wifi} (${error.message.trim()})`;
   }
-  return KIND_TEXT[error.kind] ?? GENERIC_TEXT;
+  // A kind with no copy of its own (`internal`, or one this tab never
+  // sees, like `conflict` or `sync`) keeps the backend's sentence too: the
+  // generic line alone hid an import failure's cause (2026-11-02).
+  const text = KIND_TEXT[error.kind] ?? GENERIC_TEXT;
+  return text === GENERIC_TEXT ? withMessage(GENERIC_TEXT, error) : text;
+}
+
+/** {@link describeImportError}'s text when the backend gave no reason. */
+const IMPORT_FALLBACK_TEXT = "the file couldn't be read as a ride";
+
+/** `text`, then the rejection's `message` in brackets when it has one. */
+function withMessage(text: string, error: DeviceIpcError): string {
+  const message = typeof error?.message === "string" ? error.message.trim() : "";
+  return message === "" ? text : `${text} (${message})`;
+}
+
+/** The reason a downloaded ride's import failed: the backend's own
+ *  sentence (an `IpcError` message is one short line from the Rust side,
+ *  never a stack trace), or a fallback when it gave none. Callers label it
+ *  as an import failure ("Import failed: …"), never a download one
+ *  (2026-11-02: an import failure read as "Something went wrong talking to
+ *  the device"). */
+export function describeImportError(error: DeviceIpcError): string {
+  const message = typeof error?.message === "string" ? error.message.trim() : "";
+  return message === "" ? IMPORT_FALLBACK_TEXT : message;
 }

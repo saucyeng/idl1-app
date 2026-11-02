@@ -10,7 +10,7 @@ import { cancelWifiTransfer, downloadFiles, listDeviceFiles, listRecentDeviceFil
 import type { TransferEvent } from "../../../ipc/device";
 import { attachBikeLog, bikeForName } from "../../../ipc/bikelog";
 import { importFile } from "../../../ipc/import";
-import { describeIpcError } from "./errors";
+import { describeImportError, describeIpcError } from "./errors";
 import type { DeviceIpcError } from "./errors";
 import { toFileViews } from "./files";
 import { dispatchRideFlow } from "../../../shell/rideFlow";
@@ -55,7 +55,7 @@ export interface NewSessionsBannerProps {
  * one at a time, and switches the logger's WiFi off when it's done so it is
  * ready to record again. Everything it says comes from `newSessions.ts`.
  *
- * With Settings' `auto_download` on (the default) it checks and downloads
+ * With Settings' `auto_download` on (off by default) it checks and downloads
  * by itself, once per mount. It is unmounted while recording, so pressing
  * record ends a transfer: the file in flight keeps its partial download
  * (`download_file` resumes it), and no further file is started.
@@ -165,9 +165,10 @@ export default function NewSessionsBanner({ deviceId, knownSessionIds, onImporte
       dispatch({ type: "FILE_IMPORTED", warnings });
       return true;
     } catch (err) {
-      const error = describeIpcError(err as DeviceIpcError);
-      dispatchRideFlow({ type: "FAILED", name: file.name, error });
-      dispatch({ type: "FILE_FAILED", error });
+      // The file downloaded; it's the import that failed, and it says so.
+      const error = describeImportError(err as DeviceIpcError);
+      dispatchRideFlow({ type: "FAILED", name: file.name, error, step: "import" });
+      dispatch({ type: "FILE_FAILED", name: file.name, error, step: "import" });
       return false;
     }
   }
@@ -191,7 +192,8 @@ export default function NewSessionsBanner({ deviceId, knownSessionIds, onImporte
 
   /** One batch; true when every file came in and imported. */
   async function transferBatch(files: QueuedFile[]): Promise<boolean> {
-    dispatch({ type: "TRANSFER_START" });
+    // The banner tracks exactly this batch, not everything the check found.
+    dispatch({ type: "TRANSFER_START", files });
     // The Data tab lists these and the ride form slides up for a single one.
     dispatchRideFlow({ type: "BATCH_START", files: files.map((f) => ({ name: f.name, sizeBytes: f.sizeBytes })) });
     const byName = new Map(files.map((f) => [f.name, f]));
@@ -203,8 +205,8 @@ export default function NewSessionsBanner({ deviceId, knownSessionIds, onImporte
     let cancelled = false;
     const failOne = (name: string, error: string) => {
       failed += 1;
-      dispatchRideFlow({ type: "FAILED", name, error });
-      dispatch({ type: "FILE_FAILED", error });
+      dispatchRideFlow({ type: "FAILED", name, error, step: "download" });
+      dispatch({ type: "FILE_FAILED", name, error, step: "download" });
     };
     const onEvent = (e: TransferEvent) => {
       switch (e.kind) {
@@ -256,6 +258,9 @@ export default function NewSessionsBanner({ deviceId, knownSessionIds, onImporte
       dispatchLoggerLink({ type: "TRANSFER_ENDED", deviceId, handedOff: false, wifiClosed: true });
     }
     if (cancelled) dispatch({ type: "TRANSFER_CANCELLED" });
+    // However the events and counts came out, the batch is over: the banner
+    // must not keep showing a download nothing is running.
+    dispatch({ type: "TRANSFER_ENDED" });
     const clean = failed === 0 && !cancelled && imported === files.length;
     if (stopped.current) return clean;
     if (imported > 0) {

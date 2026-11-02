@@ -225,7 +225,8 @@ recording, with a setting to turn it off, and back to recording within
   managed BLE link (C3 section 3.8). The Logger screen's new-sessions banner
   checks and downloads by itself once per mount (on connect, and after each
   recording, since it is hidden while recording), with Settings'
-  `auto_download` switch (default on). No time budget: pressing record (app
+  `auto_download` switch (default off, Isaac 2026-11-02; a saved setting
+  keeps its value). No time budget: pressing record (app
   or logger button) is the stop, and resume makes stopping free. It runs
   only while the Logger screen is open, not app-wide.
 - **Not yet known:** actual transfer throughput and what limits it. Worth

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { describeIpcError } from "./errors";
+import { describeImportError, describeIpcError } from "./errors";
 
 describe("describeIpcError", () => {
   it("describeIpcError — kind ble — text names Bluetooth, not a stack trace", () => {
@@ -64,6 +64,35 @@ describe("describeIpcError", () => {
     // Assert
     expect(call).not.toThrow();
     expect(describeIpcError(error).length).toBeGreaterThan(0);
+  });
+
+  it("describeIpcError — kind internal or one without copy — generic text, then the backend's sentence in brackets", () => {
+    // Arrange
+    const internal = { kind: "internal", message: "catalog row missing for blob" };
+    const conflict = { kind: "conflict", message: "session changed on disk" };
+    const bare = { kind: "internal", message: "  " };
+
+    // Act
+    const texts = [describeIpcError(internal), describeIpcError(conflict), describeIpcError(bare)];
+
+    // Assert
+    expect(texts).toEqual([
+      "Something went wrong talking to the device. Try again. (catalog row missing for blob)",
+      "Something went wrong talking to the device. Try again. (session changed on disk)",
+      "Something went wrong talking to the device. Try again.",
+    ]);
+  });
+
+  it("describeImportError — a backend sentence — that sentence; none — a fallback, never empty", () => {
+    // Arrange
+    const withReason = { kind: "parse_truncated_record", message: " truncated record at byte 4096 " };
+    const without = { kind: "internal", message: "" };
+
+    // Act
+    const texts = [describeImportError(withReason), describeImportError(without)];
+
+    // Assert
+    expect(texts).toEqual(["truncated record at byte 4096", "the file couldn't be read as a ride"]);
   });
 
   it("describeIpcError — wifi failure after the link came up — keeps the step that failed", () => {

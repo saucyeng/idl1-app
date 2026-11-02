@@ -18,7 +18,7 @@ export function rowStatusText(row: DownloadRow, flow: RideFlowState): string {
     case "imported":
       return `Downloaded${noted}`;
     case "failed":
-      return `Failed: ${row.error ?? "unknown error"}`;
+      return `${row.failedStep === "import" ? "Import failed" : "Failed"}: ${row.error ?? "unknown error"}`;
   }
 }
 

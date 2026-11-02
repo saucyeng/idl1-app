@@ -5,9 +5,10 @@ import type { DeviceFileView } from "./files";
  * Pure state for the Logger dashboard's new-sessions banner (navigation map
  * v4, 2026-10-14; R53's "no import from the Device tab" reversed by Isaac the
  * same day). One tap checks the logger for sessions the library doesn't
- * have; a second downloads and imports every one of them, in order, one at a
- * time (SPEC §24.17). The component runs the IPC; this module only decides
- * what the banner says and which button it offers.
+ * have; a second downloads and imports every one of them (or the ones picked
+ * from the list), in order, one at a time (SPEC §24.17). The component runs
+ * the IPC; this module only decides what the banner says and which button it
+ * offers.
  */
 
 /** One file queued for transfer: its device name and size in bytes. */
@@ -21,6 +22,10 @@ export interface QueuedFile {
 export interface FailedFile {
   name: string;
   error: string;
+  /** Which step failed: the download from the logger, or the import of a
+   *  file that downloaded (2026-11-02: an import failure read as a
+   *  download one). */
+  step: "download" | "import";
 }
 
 /** The banner's lifecycle. */
@@ -51,18 +56,32 @@ export type NewSessionsAction =
   | { type: "CHECK_START" }
   | { type: "CHECK_DONE"; files: DeviceFileView[] }
   | { type: "CHECK_FAILED"; error: string }
-  | { type: "TRANSFER_START" }
+  /** A batch starts with exactly these files — every new one, or the
+   *  picker's selection. The banner counts and names only them (2026-11-02:
+   *  one picked ride read "Downloading 1 of 6"). */
+  | { type: "TRANSFER_START"; files: QueuedFile[] }
   | { type: "PROGRESS"; progress: Progress }
   | { type: "IMPORT_START" }
   | { type: "FILE_IMPORTED"; warnings: string[] }
-  | { type: "FILE_FAILED"; error: string }
+  | { type: "FILE_FAILED"; name: string; error: string; step: "download" | "import" }
   /** The user stopped the batch: what came in stays, the rest stay on the
    *  logger for next time. */
   | { type: "TRANSFER_CANCELLED" }
+  /** The batch is over, whatever its events said: the banner leaves
+   *  `transferring` even when fewer files reported than it queued, so it
+   *  never shows a download nothing is running (2026-11-02). */
+  | { type: "TRANSFER_ENDED" }
   | { type: "DISMISS" };
 
 /** The note a stopped batch ends with. */
 export const STOPPED_NOTE = "Download stopped; the rest stay on the logger for next time";
+
+/** The note a batch ends with when `count` of its files never reported
+ *  in: they were neither downloaded nor failed, so they are still on the
+ *  logger. */
+export function unreportedNote(count: number): string {
+  return `${plural(count, "file wasn't", "files weren't")} downloaded; ${count === 1 ? "it stays" : "they stay"} on the logger for next time`;
+}
 
 /** Moves a transfer to its next file, or to `done` after the last one. */
 function advance(state: Extract<NewSessionsState, { phase: "transferring" }>, imported: number, failed: FailedFile[], warnings: string[]): NewSessionsState {
@@ -82,8 +101,8 @@ export function newSessionsReducer(state: NewSessionsState, action: NewSessionsA
     case "CHECK_FAILED":
       return state.phase === "checking" ? { phase: "failed", error: action.error } : state;
     case "TRANSFER_START":
-      if (state.phase !== "ready" || state.files.length === 0) return state;
-      return { phase: "transferring", files: state.files, index: 0, step: "download", doneBytes: 0, imported: 0, failed: [], warnings: [] };
+      if (state.phase !== "ready" || action.files.length === 0) return state;
+      return { phase: "transferring", files: action.files, index: 0, step: "download", doneBytes: 0, imported: 0, failed: [], warnings: [] };
     case "PROGRESS":
       return state.phase === "transferring" && state.step === "download" ? { ...state, doneBytes: action.progress.done } : state;
     case "IMPORT_START":
@@ -93,10 +112,15 @@ export function newSessionsReducer(state: NewSessionsState, action: NewSessionsA
       return advance(state, state.imported + 1, state.failed, [...state.warnings, ...action.warnings]);
     case "FILE_FAILED":
       if (state.phase !== "transferring") return state;
-      return advance(state, state.imported, [...state.failed, { name: state.files[state.index].name, error: action.error }], state.warnings);
+      return advance(state, state.imported, [...state.failed, { name: action.name, error: action.error, step: action.step }], state.warnings);
     case "TRANSFER_CANCELLED":
       if (state.phase !== "transferring") return state;
       return { phase: "done", imported: state.imported, failed: state.failed, warnings: [...state.warnings, STOPPED_NOTE] };
+    case "TRANSFER_ENDED": {
+      if (state.phase !== "transferring") return state;
+      const unreported = state.files.length - state.index;
+      return { phase: "done", imported: state.imported, failed: state.failed, warnings: unreported > 0 ? [...state.warnings, unreportedNote(unreported)] : state.warnings };
+    }
     case "DISMISS":
       return state.phase === "done" || state.phase === "failed" || (state.phase === "ready" && state.files.length === 0) ? { phase: "idle" } : state;
     default:
@@ -194,7 +218,7 @@ export function bannerView(state: NewSessionsState): BannerView {
       };
     }
     case "done": {
-      const failedText = state.failed.length === 0 ? null : `${plural(state.failed.length, "file", "files")} failed: ${state.failed.map((f) => `${f.name} (${f.error})`).join("; ")}`;
+      const failedText = state.failed.length === 0 ? null : `${plural(state.failed.length, "file", "files")} failed: ${state.failed.map((f) => (f.step === "import" ? `${f.name} (import failed: ${f.error})` : `${f.name} (${f.error})`)).join("; ")}`;
       const warnText = state.warnings.length === 0 ? null : state.warnings.join("; ");
       return {
         text: `${plural(state.imported, "ride", "rides")} added · notes in the Data tab`,

@@ -68,6 +68,19 @@ describe("parsePrefs", () => {
     expect(prefs.engine.data_dir).toBeNull();
   });
 
+  it("parsePrefs — auto_download absent — off (Isaac, 2026-11-02); stored true or false — kept", () => {
+    // Arrange
+    const absent = { ui: {} };
+    const storedOn = { ui: { auto_download: true } };
+    const storedOff = { ui: { auto_download: false } };
+
+    // Act
+    const values = [absent, storedOn, storedOff].map((raw) => parsePrefs(raw).ui.auto_download);
+
+    // Assert
+    expect(values).toEqual([false, true, false]);
+  });
+
   it("parsePrefs — a key from a newer version — preserved through serializePrefs, not dropped", () => {
     // Arrange
     const raw = { engine: { rider_name: "Isaac", future_field: "kept" }, future_top_level: true };

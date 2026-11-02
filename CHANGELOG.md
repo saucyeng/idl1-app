@@ -273,6 +273,39 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 
 ### Fixed
 
+- **A long IDL1 ride no longer kills the app on import [no-docs] (2026-11-02).** Firmware through
+  0.3.0-beta.16 wrote each IMU block's `read_chip_ts` shifted left a byte (ST's vendored
+  `lsm6dsv320x_timestamp_raw_get` shifts once too often; idl1-firmware now assembles the register
+  itself). The importer unwrapped every read→mark step as a 2^32-tick counter wrap and filled ~89 M
+  "lost" samples per 32-sample window: one 3.2 GB allocation, and a phone past 10 GB, on a 120 MB
+  ride. The parser now recognises the shifted reads (all low bytes zero, upper bytes matching the
+  marks) and rebuilds them, so those rides stay chip-timed; and `place_samples` counts its slots
+  before allocating and rejects chip timing that implies more than 3 lost samples per received one
+  (read-instant timing, with a `TimingFallback` warning that says why). The 120 MB ride now imports
+  chip-timed, no warnings, peak 1.28 GB. No spec change needed (§4.4's `read_chip_ts` is unchanged;
+  this reads old files written against it wrongly).
+
+- **Linux: one shared Bluetooth manager [no-docs] (2026-11-02).** Every btleplug `Manager::new()`
+  left a system D-Bus connection open for the life of the app (btleplug drops the task that owns
+  it), and the logger link retries every 0.5–5 s while the logger is away, so after ~14 minutes the
+  app held dbus-daemon's 256-per-user cap and Bluetooth stopped working for the whole desktop. One
+  manager is now built once and shared; overlapping scans are counted so one ending doesn't stop
+  another. No spec change needed.
+
+- **Logger downloads: the banner follows the rides picked, and import failures say why [no-docs]
+  (2026-11-02).** Downloading one ride picked from the list showed "Downloading 1 of 6", then sat on
+  "Downloading 2 of 6 · 0.0 MB of 0.0 MB" for a file nothing was downloading, with Cancel doing
+  nothing. The banner now counts and names only the batch it started, and always finishes when the
+  batch ends; files that never reported in are named as still on the logger. A downloaded ride whose
+  import fails reads "Import failed: <reason>" (the Data tab's new rides, the ride form and the
+  banner), with the backend's one-line reason instead of "Something went wrong talking to the
+  device"; any Logger-screen failure with no specific text now keeps that reason in brackets, as WiFi
+  failures already did. No spec change needed.
+
+- **Automatic download is off by default [no-docs] (2026-11-02).** Settings' "Download new rides
+  automatically" now starts off (Isaac, 2026-11-02); a saved setting keeps its value. Ride-analysis
+  DRAFT §10's note corrected to match.
+
 - **Heavy workbooks no longer run the app out of memory [no-docs]
   (2026-10-27).** Each chart re-ran the whole workbook, and every result was
   held two to four times, so opening the MX comparison workbook on one

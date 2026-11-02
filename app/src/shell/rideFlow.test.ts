@@ -27,7 +27,7 @@ describe("rideFlowReducer", () => {
     const started = run([{ type: "BATCH_START", files: [{ name: "s1.idl1", sizeBytes: 100 }] }]);
 
     // Act
-    const failed = rideFlowReducer(started, { type: "FAILED", name: "s1.idl1", error: "did not answer over WiFi" });
+    const failed = rideFlowReducer(started, { type: "FAILED", name: "s1.idl1", error: "did not answer over WiFi", step: "download" });
     const later = rideFlowReducer(failed, { type: "PROGRESS", name: "s1.idl1", doneBytes: 10 });
 
     // Assert
@@ -72,7 +72,7 @@ describe("rideFlowReducer", () => {
       { type: "PROGRESS", name: "a", doneBytes: 4 },
       { type: "IMPORTING", name: "a" },
       { type: "IMPORTED", name: "a", sessionId: "S" },
-      { type: "FAILED", name: "b", error: "wifi" },
+      { type: "FAILED", name: "b", error: "wifi", step: "download" },
     ];
 
     // Act

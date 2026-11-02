@@ -23,6 +23,10 @@ export interface DownloadRow {
   sessionId: string | null;
   /** Set when it failed. */
   error: string | null;
+  /** Which step failed, set with `error`: the download from the logger, or
+   *  the import of a file that downloaded (2026-11-02: an import failure
+   *  read "Download failed"). */
+  failedStep: "download" | "import" | null;
 }
 
 /** What the rider has typed for one ride. */
@@ -59,7 +63,7 @@ export type RideFlowAction =
   | { type: "PROGRESS"; name: string; doneBytes: number }
   | { type: "IMPORTING"; name: string }
   | { type: "IMPORTED"; name: string; sessionId: string }
-  | { type: "FAILED"; name: string; error: string }
+  | { type: "FAILED"; name: string; error: string; step: "download" | "import" }
   | { type: "OPEN"; key: string; expanded: boolean }
   | { type: "CLOSE" }
   | { type: "EXPAND"; expanded: boolean }
@@ -133,7 +137,7 @@ export function rideFlowReducer(state: RideFlowState, action: RideFlowAction): R
       const kept = state.rows.filter((r) => r.status !== "imported" && r.status !== "failed" && !action.files.some((f) => f.name === r.name));
       const rows = [
         ...kept,
-        ...action.files.map((f): DownloadRow => ({ name: f.name, sizeBytes: f.sizeBytes, status: "queued", doneBytes: 0, sessionId: null, error: null })),
+        ...action.files.map((f): DownloadRow => ({ name: f.name, sizeBytes: f.sizeBytes, status: "queued", doneBytes: 0, sessionId: null, error: null, failedStep: null })),
       ];
       const autoOpen = autoOpens(action.files) && state.open === null ? autoOpenTarget(action.files) : null;
       return { ...state, rows, autoOpen };
@@ -155,7 +159,7 @@ export function rideFlowReducer(state: RideFlowState, action: RideFlowAction): R
       return { ...next, drafts, open: next.open === action.name ? key : next.open };
     }
     case "FAILED": {
-      const next = setRow(state, action.name, { status: "failed", error: action.error });
+      const next = setRow(state, action.name, { status: "failed", error: action.error, failedStep: action.step });
       return action.name === state.autoOpen ? { ...next, autoOpen: null } : next;
     }
     case "OPEN":

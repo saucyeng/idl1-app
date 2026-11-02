@@ -62,7 +62,7 @@ function rowStatus(flow: RideFlowState, key: string): string | null {
     case "importing":
       return "Importing";
     case "failed":
-      return `Download failed: ${row.error ?? ""}`;
+      return `${row.failedStep === "import" ? "Import failed" : "Download failed"}: ${row.error ?? ""}`;
     default:
       return null;
   }
