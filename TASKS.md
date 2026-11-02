@@ -698,6 +698,16 @@ Unverified:
 
 ## Mobile lead backlog (2026-10-15)
 
+- [ ] **A logger with no config can't be given one from the app** (Isaac,
+      2026-10-31). A fresh SD card has no `idl0_config.json`, so
+      `CONFIG_READ_BEGIN` gets SPEC §7.2's `0x81` "no config file" ack and the
+      Device screen shows "Couldn't read the logger's settings". `configBar`
+      needs a read config before it shows `SendBar`, so only "Read from logger"
+      is offered and nothing can ever be sent. Treat `0x81` as "no config yet"
+      (today `read_config` tags it `TransportErrorKind::Ble`, so the screen
+      can't tell it from a failed link) and start the draft from
+      `defaultConfig`. Found bringing up a new IDL1 on firmware 0.3.0-beta.16;
+      that board's config was pushed from a laptop over BLE instead.
 - [ ] **Bench-measure the logger's sustained samples/s** (Isaac, 2026-10-15).
       Estimated at about 20,000/s. Test single-channel highs (one IMU at
       3840/7680 Hz) and wide configs (all three IMUs at 1920 Hz, high-g on),
