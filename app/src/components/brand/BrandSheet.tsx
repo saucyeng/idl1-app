@@ -3,7 +3,7 @@
 import * as React from "react"
 import { cn } from "@/lib/utils"
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet"
-import { sheetSideFor, type SheetSide } from "@/components/overlays/sheetSide"
+import { sheetHeightClassFor, sheetSideFor, type SheetSide } from "@/components/overlays/sheetSide"
 
 /** Tracks which edge the sheet should dock to as the window is resized.
  *  Width-dependent layout lives in the pure `sheetSideFor`; this hook is
@@ -57,13 +57,15 @@ export function BrandSheet({
           firmware sheet's repository field, 2026-10-15). */}
       <SheetContent
         side={side}
-        className={cn("gap-0 p-0 sm:max-w-md", className)}
+        className={cn("gap-0 p-0 sm:max-w-md", sheetHeightClassFor(side), className)}
         onOpenAutoFocus={(event) => event.preventDefault()}
       >
         <SheetHeader className="border-b border-rule">
           <SheetTitle>{title}</SheetTitle>
         </SheetHeader>
-        <div className="flex-1 overflow-y-auto p-4">{children}</div>
+        {/* min-h-0: a flex child's minimum height is its content's, so
+            without it the body would not shrink to the cap and scroll. */}
+        <div className="min-h-0 flex-1 overflow-y-auto p-4">{children}</div>
         {footer && <div className="border-t border-rule p-4">{footer}</div>}
       </SheetContent>
     </Sheet>

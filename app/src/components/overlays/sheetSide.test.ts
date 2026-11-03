@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { sheetSideFor } from "./sheetSide";
+import { sheetHeightClassFor, sheetSideFor } from "./sheetSide";
 
 describe("sheetSideFor — 599 px — bottom", () => {
   it("returns bottom just below the breakpoint", () => {
@@ -25,5 +25,31 @@ describe("sheetSideFor — 600 px — right", () => {
 
     // Assert
     expect(side).toBe("right");
+  });
+});
+
+describe("sheetHeightClassFor — bottom — capped at the viewport", () => {
+  it("caps a bottom sheet so its body scrolls instead of running off the top", () => {
+    // Arrange
+    const side = "bottom" as const;
+
+    // Act
+    const cls = sheetHeightClassFor(side);
+
+    // Assert
+    expect(cls).toBe("max-h-dvh");
+  });
+});
+
+describe("sheetHeightClassFor — right — no cap", () => {
+  it("adds nothing to a right-docked sheet, which is already full height", () => {
+    // Arrange
+    const side = "right" as const;
+
+    // Act
+    const cls = sheetHeightClassFor(side);
+
+    // Assert
+    expect(cls).toBe("");
   });
 });

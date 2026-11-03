@@ -273,6 +273,13 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 
 ### Fixed
 
+- **A tall sheet on a phone no longer freezes the screen [no-docs] (2026-11-03).** A bottom sheet
+  (`BrandSheet` below 600 px) had no height cap, so content taller than the screen (a session
+  detail with IMU1/IMU2 and both wheels, ~40 channels) pushed the title row and × off the top, the
+  body never scrolled, and the modal blocked every other scroll: the Data tab looked frozen after
+  selecting a session. Bottom sheets are now capped at the viewport and their body scrolls. Applies
+  to every bottom sheet (Sync, Filters, Bike notes too). No spec change needed.
+
 - **IDL1 sessions are catalogued again: every `.idl1` import failed with "missing from the catalog
   immediately after import" [no-docs] (2026-11-02).** The catalog's `sessions.source_format` CHECK
   listed `idl0`, `fit`, `gpx` and `csv` but never `idl1` (added 2026-10-15), and the rebuild's

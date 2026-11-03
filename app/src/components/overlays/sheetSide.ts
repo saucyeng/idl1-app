@@ -9,3 +9,13 @@ export type SheetSide = "bottom" | "right";
 export function sheetSideFor(widthPx: number): SheetSide {
   return widthPx < 600 ? "bottom" : "right";
 }
+
+/** The height cap a sheet on `side` needs so its body scrolls. A bottom
+ *  sheet is `h-auto`: without a cap, content taller than the screen pushed
+ *  the title row and close control off the top, the body never overflowed,
+ *  and the modal blocked every other scroll, so the screen looked frozen
+ *  (a session detail with ~40 channels on a phone, 2026-11-03). A
+ *  right-docked sheet is already `h-full`. */
+export function sheetHeightClassFor(side: SheetSide): string {
+  return side === "bottom" ? "max-h-dvh" : "";
+}
