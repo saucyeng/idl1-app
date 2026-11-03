@@ -408,7 +408,7 @@ CREATE INDEX idx_tracks_venue ON tracks(venue_name);
 CREATE TABLE sessions (
   session_id        TEXT PRIMARY KEY,       -- lowercase hex, 16-64 chars; see §3
   blob_sha256       TEXT NOT NULL REFERENCES blobs(sha256) ON DELETE RESTRICT,
-  source_format     TEXT NOT NULL CHECK (source_format IN ('idl0','fit','gpx','csv')),
+  source_format     TEXT NOT NULL CHECK (source_format IN ('idl0','idl1','fit','gpx','csv')),
   device_id         TEXT,                   -- NULL for fit/gpx/csv (C1)
   config_checksum   TEXT,                   -- NULL for fit/gpx/csv (C1)
   importer_version  TEXT NOT NULL,

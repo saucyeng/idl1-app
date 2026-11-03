@@ -273,6 +273,14 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 
 ### Fixed
 
+- **IDL1 sessions are catalogued again: every `.idl1` import failed with "missing from the catalog
+  immediately after import" [no-docs] (2026-11-02).** The catalog's `sessions.source_format` CHECK
+  listed `idl0`, `fit`, `gpx` and `csv` but never `idl1` (added 2026-10-15), and the rebuild's
+  `INSERT OR IGNORE` dropped each IDL1 row without reporting it. The CHECK now includes `idl1`. Every
+  import rebuilds the catalog from this DDL, so existing libraries need no migration, and IDL1
+  sessions already on disk reappear on the next import or rebuild. Spec-during: C4 §5 DDL updated
+  to match C1's `SourceFormat`.
+
 - **A long IDL1 ride no longer kills the app on import [no-docs] (2026-11-02).** Firmware through
   0.3.0-beta.16 wrote each IMU block's `read_chip_ts` shifted left a byte (ST's vendored
   `lsm6dsv320x_timestamp_raw_get` shifts once too often; idl1-firmware now assembles the register
