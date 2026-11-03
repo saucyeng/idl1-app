@@ -708,6 +708,15 @@ Unverified:
       can't tell it from a failed link) and start the draft from
       `defaultConfig`. Found bringing up a new IDL1 on firmware 0.3.0-beta.16;
       that board's config was pushed from a laptop over BLE instead.
+- [ ] **A sync started on the phone never delivers `data.parquet`** (Isaac,
+      2026-11-02). The pushing side PUTs it, but `handle_data_parquet_put`
+      (`transport/src/sync/server.rs`) installs with an empty
+      `InstallContext`, so `install` refuses it for want of the claimed
+      importer/seam versions. Blobs and `session.json` land, and the receiver
+      catalogs nothing until it runs a sync itself (a pull carries the
+      versions from the manifest). Thread the versions through the PUT, or
+      have the pusher ask the receiver to pull; and tell the user when items
+      are refused, which today the phone does not.
 - [ ] **Bench-measure the logger's sustained samples/s** (Isaac, 2026-10-15).
       Estimated at about 20,000/s. Test single-channel highs (one IMU at
       3840/7680 Hz) and wide configs (all three IMUs at 1920 Hz, high-g on),

@@ -378,7 +378,7 @@ PRAGMA foreign_keys = ON;
 PRAGMA busy_timeout = 5000;    -- ms
 ```
 
-**Schema version.** `PRAGMA user_version = 1;` set at creation. On open, if
+**Schema version.** `PRAGMA user_version = 2;` set at creation (2: `source_format` admits `idl1`, 2026-11-02). On open, if
 `user_version` does not match the version the running binary expects, the
 catalog is **not** migrated in place — the file is deleted and rebuilt
 (§5's rebuild procedure below) — because the catalog holds no data that

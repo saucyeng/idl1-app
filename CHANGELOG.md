@@ -276,10 +276,12 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 - **IDL1 sessions are catalogued again: every `.idl1` import failed with "missing from the catalog
   immediately after import" [no-docs] (2026-11-02).** The catalog's `sessions.source_format` CHECK
   listed `idl0`, `fit`, `gpx` and `csv` but never `idl1` (added 2026-10-15), and the rebuild's
-  `INSERT OR IGNORE` dropped each IDL1 row without reporting it. The CHECK now includes `idl1`. Every
-  import rebuilds the catalog from this DDL, so existing libraries need no migration, and IDL1
-  sessions already on disk reappear on the next import or rebuild. Spec-during: C4 §5 DDL updated
-  to match C1's `SourceFormat`.
+  `INSERT OR IGNORE` dropped each IDL1 row without reporting it. The CHECK now includes `idl1`, and
+  the catalog schema is version 2. Opening a catalog of another version now rebuilds it from
+  `<data>`, as C4 §5 always said it should (`open_catalog` used to keep it): incremental indexing,
+  such as a sync install, otherwise kept the old CHECK and went on dropping IDL1 sessions. The first
+  open after updating rehashes every blob once. IDL1 sessions already on disk reappear then.
+  Spec-during: C4 §5 DDL and schema version updated to match C1's `SourceFormat`.
 
 - **A long IDL1 ride no longer kills the app on import [no-docs] (2026-11-02).** Firmware through
   0.3.0-beta.16 wrote each IMU block's `read_chip_ts` shifted left a byte (ST's vendored
