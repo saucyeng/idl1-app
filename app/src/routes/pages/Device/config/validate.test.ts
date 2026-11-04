@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { parseConfig } from "./model";
 import type { DeviceConfig } from "./model";
-import { hardwareFromName, isPushable, validateConfig } from "./validate";
+import { gpsRateLimitHz, hardwareFromName, isPushable, validateConfig } from "./validate";
 
 /** SPEC §8's own worked-example `idl0_config.json`, verbatim — the fixture
  *  every zero-issue test below parses. A local copy, not imported from
@@ -63,7 +63,7 @@ const SPEC_WORKED_EXAMPLE = {
     },
   },
   gps: {
-    sample_rate_hz: 5,
+    sample_rate_hz: 4,
     dynamic_model: "automotive",
     nmea_sentences: ["GGA", "RMC"],
     sbas_enabled: true,
@@ -268,7 +268,7 @@ describe("validateConfig", () => {
     expect(issues).toEqual([]);
   });
 
-  it("validateConfig — gps.sample_rate_hz 0 and 11 — an error each, naming the 1..10 Hz range", () => {
+  it("validateConfig — IDL0, gps.sample_rate_hz 0 and 11 — an error each, naming the 1..10 Hz range", () => {
     // Arrange
     const configLow = workedConfig();
     configLow.gps.sample_rate_hz = 0;
@@ -276,8 +276,8 @@ describe("validateConfig", () => {
     configHigh.gps.sample_rate_hz = 11;
 
     // Act
-    const issuesLow = validateConfig(configLow).filter((i) => i.path === "gps.sample_rate_hz");
-    const issuesHigh = validateConfig(configHigh).filter((i) => i.path === "gps.sample_rate_hz");
+    const issuesLow = validateConfig(configLow, "idl0").filter((i) => i.path === "gps.sample_rate_hz");
+    const issuesHigh = validateConfig(configHigh, "idl0").filter((i) => i.path === "gps.sample_rate_hz");
 
     // Assert
     expect(issuesLow).toHaveLength(1);
@@ -286,6 +286,59 @@ describe("validateConfig", () => {
     expect(issuesLow[0].message).toContain("10");
     expect(issuesHigh).toHaveLength(1);
     expect(issuesHigh[0].severity).toBe("error");
+  });
+
+  it("gpsRateLimitHz — the data sheet's sets, and any other set at the four-constellation figure", () => {
+    expect(gpsRateLimitHz(undefined)).toBe(4);
+    expect(gpsRateLimitHz(["GPS", "GALILEO", "BEIDOU", "GLONASS"])).toBe(4);
+    expect(gpsRateLimitHz(["GPS", "GALILEO", "GLONASS"])).toBe(6);
+    expect(gpsRateLimitHz(["GPS", "GALILEO", "BEIDOU"])).toBe(8);
+    expect(gpsRateLimitHz(["GALILEO", "GPS"])).toBe(10);
+    expect(gpsRateLimitHz(["BEIDOU"])).toBe(18);
+    expect(gpsRateLimitHz(["GPS", "GLONASS"])).toBe(4);
+  });
+
+  it("validateConfig — IDL1, 5 Hz with all four constellations — an error naming the 4 Hz limit; 8 Hz on GPS+Galileo+BeiDou passes", () => {
+    // Arrange
+    const tooFast = workedConfig();
+    tooFast.gps.sample_rate_hz = 5;
+    const fewer = workedConfig();
+    fewer.gps.sample_rate_hz = 8;
+    fewer.gps.constellations = ["GPS", "GALILEO", "BEIDOU"];
+
+    // Act
+    const tooFastIssues = validateConfig(tooFast, "idl1").filter((i) => i.path === "gps.sample_rate_hz");
+    const fewerIssues = validateConfig(fewer, "idl1").filter((i) => i.path.startsWith("gps."));
+
+    // Assert
+    expect(tooFastIssues).toHaveLength(1);
+    expect(tooFastIssues[0].severity).toBe("error");
+    expect(tooFastIssues[0].message).toContain("4 Hz");
+    expect(fewerIssues).toEqual([]);
+    expect(validateConfig(tooFast, "idl0").filter((i) => i.path === "gps.sample_rate_hz")).toEqual([]);
+  });
+
+  it("validateConfig — IDL1 advanced gps fields — off-range and min > max are errors, tighter-than-default a warning, unset nothing", () => {
+    // Arrange
+    const config = workedConfig();
+    config.gps.min_elevation_deg = 70;
+    config.gps.pdop_mask = 2.55;
+    config.gps.min_satellites = 10;
+    config.gps.max_satellites = 8;
+    config.gps.position_accuracy_mask_m = 10;
+    config.gps.constellations = [];
+
+    // Act
+    const issues = validateConfig(config, "idl1").filter((i) => i.path.startsWith("gps."));
+    const at = (path: string) => issues.filter((i) => i.path === path).map((i) => i.severity);
+
+    // Assert
+    expect(at("gps.min_elevation_deg")).toEqual(["error"]);
+    expect(at("gps.pdop_mask")).toEqual(["error"]);
+    expect(at("gps.min_satellites")).toEqual(["error"]);
+    expect(at("gps.position_accuracy_mask_m")).toEqual(["warning"]);
+    expect(at("gps.constellations")).toEqual(["error"]);
+    expect(validateConfig(workedConfig(), "idl1").filter((i) => i.path.startsWith("gps."))).toEqual([]);
   });
 
   it("validateConfig — gps.sample_rate_hz 5.5 — an error: the spec says integer", () => {

@@ -1,4 +1,5 @@
-import type { AnalogChannel, DeviceConfig, DigitalChannel, GpsBlock, HrmBlock, ImuBlock, ImuSlot, WheelSlot } from "./model";
+import type { AnalogChannel, DeviceConfig, DigitalChannel, GpsBlock, GpsConstellation, HrmBlock, ImuBlock, ImuSlot, WheelSlot } from "./model";
+import { GPS_ADVANCED_FIELDS, GPS_CONSTELLATIONS, gpsRateLimitHz } from "./validate";
 
 /** The three `ImuBlock` sub-block keys (SPEC §8's per-IMU sub-blocks),
  *  shared by every IMU edit operation's `slot` parameter. */
@@ -107,7 +108,41 @@ export function setImuRanges(config: DeviceConfig, patch: Partial<Pick<ImuBlock,
  * `nmea_sentences` and `sbas_enabled` exactly as they were).
  */
 export function setGps(config: DeviceConfig, patch: Partial<GpsBlock>): DeviceConfig {
-  return { ...config, gps: { ...config.gps, ...patch } };
+  const gps: GpsBlock = { ...config.gps, ...patch };
+  // An optional field patched to `undefined` is unset (the module's
+  // factory value): drop the key rather than carry `undefined` around.
+  for (const key of Object.keys(patch) as (keyof GpsBlock)[]) {
+    if (patch[key] === undefined) delete gps[key];
+  }
+  return { ...config, gps };
+}
+
+/**
+ * Turns one GPS constellation on or off (SPEC §8 "SAM-M10Q (IDL1)"). All
+ * four on is written as absent (the factory set). When the new set holds a
+ * lower rate than the config asks for, the rate comes down to that limit —
+ * the slider shows it — rather than leaving a config that can't be sent.
+ */
+export function setGpsConstellation(config: DeviceConfig, constellation: GpsConstellation, on: boolean): DeviceConfig {
+  const current = new Set(config.gps.constellations ?? GPS_CONSTELLATIONS);
+  if (on) current.add(constellation);
+  else current.delete(constellation);
+  const next = GPS_CONSTELLATIONS.filter((c) => current.has(c));
+  const constellations = next.length === GPS_CONSTELLATIONS.length ? undefined : next;
+  const limit = gpsRateLimitHz(constellations);
+  return setGps(config, {
+    constellations,
+    sample_rate_hz: Math.min(config.gps.sample_rate_hz, limit),
+  });
+}
+
+/** Clears every IDL1 advanced GPS field back to the module's factory value
+ *  (the "Reset to defaults" control). Rate, model, constellations, SBAS and
+ *  QZSS are left alone. */
+export function resetGpsAdvanced(config: DeviceConfig): DeviceConfig {
+  const patch: Partial<GpsBlock> = { high_precision_nmea: undefined };
+  for (const field of GPS_ADVANCED_FIELDS) patch[field.key] = undefined;
+  return setGps(config, patch);
 }
 
 /**

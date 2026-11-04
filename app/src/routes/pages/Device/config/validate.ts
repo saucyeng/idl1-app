@@ -1,4 +1,4 @@
-import type { AnalogChannel, DeviceConfig, DigitalChannel, GpsBlock, HrmBlock, ImuSlot, WheelSlot } from "./model";
+import type { AnalogChannel, DeviceConfig, DigitalChannel, GpsBlock, GpsConstellation, HrmBlock, ImuSlot, WheelSlot } from "./model";
 
 /** Valid `imu.sample_rate_hz` for the IDL1's LSM6DSV320X, Hz (SPEC §8;
  *  idl1-firmware decisions.md P2 and `imu_ranges.h`). The chip's 7.5 Hz step
@@ -70,12 +70,72 @@ export function imuValueSets(hardware: Hardware, lowPowerMode: boolean): ImuValu
  *  rate (1–10 Hz)"). Hz. */
 export const GPS_RATE_HZ_MIN = 1;
 
-/** Maximum valid `gps.sample_rate_hz` (SPEC §8, same line). Hz. */
+/** Maximum valid `gps.sample_rate_hz` on IDL0 (SPEC §8, same line). Hz. */
 export const GPS_RATE_HZ_MAX = 10;
 
-/** Valid `gps.dynamic_model` values (SPEC §8, "Configurable chip options":
- *  "dynamic model (portable/pedestrian/automotive/sea/airborne)"). */
-export const GPS_DYNAMIC_MODELS: readonly GpsBlock["dynamic_model"][] = ["portable", "pedestrian", "automotive", "sea", "airborne"];
+/** Maximum valid `gps.sample_rate_hz` on IDL1, any constellation set (SPEC
+ *  §8 "SAM-M10Q (IDL1)"); {@link gpsRateLimitHz} narrows it. Hz. */
+export const GPS_RATE_HZ_MAX_IDL1 = 18;
+
+/** Valid `gps.dynamic_model` values on IDL0 (SPEC §8, "Configurable chip
+ *  options": "dynamic model (portable/pedestrian/automotive/sea/airborne)"). */
+export const GPS_DYNAMIC_MODELS_IDL0: readonly GpsBlock["dynamic_model"][] = ["portable", "pedestrian", "automotive", "sea", "airborne"];
+
+/** Valid `gps.dynamic_model` values on IDL1 (SPEC §8 "SAM-M10Q (IDL1)"):
+ *  IDL0's plus stationary and the 2 g / 4 g airborne models. */
+export const GPS_DYNAMIC_MODELS: readonly GpsBlock["dynamic_model"][] = ["portable", "stationary", "pedestrian", "automotive", "sea", "airborne", "airborne_2g", "airborne_4g"];
+
+/** The dynamic models `hardware`'s GPS module takes. */
+export function gpsDynamicModels(hardware: Hardware): readonly GpsBlock["dynamic_model"][] {
+  return hardware === "idl0" ? GPS_DYNAMIC_MODELS_IDL0 : GPS_DYNAMIC_MODELS;
+}
+
+/** Valid `gps.constellations` entries (SPEC §8 "SAM-M10Q (IDL1)"). */
+export const GPS_CONSTELLATIONS: readonly GpsConstellation[] = ["GPS", "GALILEO", "BEIDOU", "GLONASS"];
+
+/**
+ * The highest `gps.sample_rate_hz` the SAM-M10Q holds for a constellation
+ * set (SPEC §8 "Rate limit by constellations", from the data sheet's ≥98 %
+ * fix-rate table), Hz. `undefined` means all four. A set the data sheet
+ * doesn't list gets the four-constellation figure: turning one off never
+ * lowers the limit.
+ */
+export function gpsRateLimitHz(constellations: readonly string[] | undefined): number {
+  const on = new Set(constellations ?? GPS_CONSTELLATIONS);
+  const has = (c: GpsConstellation) => on.has(c);
+  if (on.size === 1) return 18;
+  if (on.size === 2 && has("GPS") && has("GALILEO")) return 10;
+  if (on.size === 3 && has("GPS") && has("GALILEO") && has("BEIDOU")) return 8;
+  if (on.size === 3 && has("GPS") && has("GALILEO") && has("GLONASS")) return 6;
+  return 4;
+}
+
+/** One IDL1 advanced `gps` number field (SPEC §8 "SAM-M10Q (IDL1)"): its
+ *  range, factory default, step, and which way is "tighter" (fewer fixes),
+ *  for the SPEC's warning on a tighter-than-default value. */
+export interface GpsAdvancedField {
+  key: "min_elevation_deg" | "min_cno_dbhz" | "min_satellites" | "max_satellites" | "fix_gate_satellites" | "fix_gate_cno_dbhz" | "pdop_mask" | "position_accuracy_mask_m";
+  label: string;
+  detail: string;
+  unit: string;
+  min: number;
+  max: number;
+  step: number;
+  defaultValue: number;
+  /** `"higher"`: a value above the default can stop fixes; `"lower"`: below; `null`: no warning. */
+  tighter: "higher" | "lower" | null;
+}
+
+export const GPS_ADVANCED_FIELDS: readonly GpsAdvancedField[] = [
+  { key: "min_elevation_deg", label: "Minimum elevation", detail: "Ignore satellites lower than this above the horizon", unit: "°", min: 0, max: 60, step: 1, defaultValue: 5, tighter: "higher" },
+  { key: "min_cno_dbhz", label: "Minimum signal", detail: "Ignore satellites weaker than this", unit: "dBHz", min: 0, max: 50, step: 1, defaultValue: 6, tighter: "higher" },
+  { key: "min_satellites", label: "Minimum satellites", detail: "Fewest satellites a fix may use", unit: "", min: 1, max: 32, step: 1, defaultValue: 3, tighter: null },
+  { key: "max_satellites", label: "Maximum satellites", detail: "Most satellites a fix may use", unit: "", min: 1, max: 32, step: 1, defaultValue: 32, tighter: null },
+  { key: "fix_gate_satellites", label: "Fix gate: satellites", detail: "Only try a fix with this many above the gate signal; 0 = off", unit: "", min: 0, max: 32, step: 1, defaultValue: 0, tighter: "higher" },
+  { key: "fix_gate_cno_dbhz", label: "Fix gate: signal", detail: "The signal the fix gate counts satellites above", unit: "dBHz", min: 0, max: 50, step: 1, defaultValue: 0, tighter: null },
+  { key: "pdop_mask", label: "PDOP mask", detail: "Drop fixes with worse position DOP", unit: "", min: 1, max: 25, step: 0.1, defaultValue: 25, tighter: "lower" },
+  { key: "position_accuracy_mask_m", label: "Accuracy mask", detail: "Drop fixes estimated worse than this", unit: "m", min: 1, max: 100, step: 1, defaultValue: 100, tighter: "lower" },
+];
 
 /** NMEA sentences the app's parser is written against (SPEC §8: "NMEA
  *  sentences (GGA+RMC default)" plus the GSA/GSV/GLL/VTG the u-blox module
@@ -184,21 +244,65 @@ function checkImu(imu: DeviceConfig["imu"], hardware: Hardware, issues: Validati
   checkImuSlot(imu.imu2, "imu2", sets, issues);
 }
 
-/** Checks the `gps` block: rate integrality and range, dynamic model
- *  membership, and NMEA sentence presence. */
-function checkGps(gps: GpsBlock, issues: ValidationIssue[]): void {
+/** Checks the `gps` block: rate integrality and range (and on IDL1 the
+ *  constellation limit), dynamic model membership, NMEA sentence presence,
+ *  and IDL1's advanced fields. */
+function checkGps(gps: GpsBlock, hardware: Hardware, issues: ValidationIssue[]): void {
+  const rateMax = hardware === "idl0" ? GPS_RATE_HZ_MAX : GPS_RATE_HZ_MAX_IDL1;
   if (!Number.isInteger(gps.sample_rate_hz)) {
     pushError(issues, "gps.sample_rate_hz", `${gps.sample_rate_hz} Hz is not an integer (SPEC §8: "Integer 1-10 Hz")`);
-  } else if (gps.sample_rate_hz < GPS_RATE_HZ_MIN || gps.sample_rate_hz > GPS_RATE_HZ_MAX) {
-    pushError(issues, "gps.sample_rate_hz", `${gps.sample_rate_hz} Hz is outside the ${GPS_RATE_HZ_MIN}..${GPS_RATE_HZ_MAX} Hz range (SPEC §8)`);
+  } else if (gps.sample_rate_hz < GPS_RATE_HZ_MIN || gps.sample_rate_hz > rateMax) {
+    pushError(issues, "gps.sample_rate_hz", `${gps.sample_rate_hz} Hz is outside the ${GPS_RATE_HZ_MIN}..${rateMax} Hz range (SPEC §8)`);
+  } else if (hardware === "idl1" && gps.sample_rate_hz > gpsRateLimitHz(gps.constellations)) {
+    pushError(
+      issues,
+      "gps.sample_rate_hz",
+      `${gps.sample_rate_hz} Hz is above the ${gpsRateLimitHz(gps.constellations)} Hz the GPS holds with these constellations; turn some off or lower the rate (SPEC §8 "Rate limit by constellations")`,
+    );
   }
 
-  if (!GPS_DYNAMIC_MODELS.includes(gps.dynamic_model)) {
-    pushError(issues, "gps.dynamic_model", `"${gps.dynamic_model}" is not a valid dynamic model (SPEC §8); valid values: ${GPS_DYNAMIC_MODELS.join(", ")}`);
+  const models = gpsDynamicModels(hardware);
+  if (!models.includes(gps.dynamic_model)) {
+    pushError(issues, "gps.dynamic_model", `"${gps.dynamic_model}" is not a valid dynamic model (SPEC §8); valid values: ${models.join(", ")}`);
+  } else if (hardware === "idl1" && gps.dynamic_model === "stationary") {
+    pushWarning(issues, "gps.dynamic_model", "stationary assumes the logger is not moving; fixes while riding may be poor or missing");
   }
+
+  if (hardware === "idl1") checkGpsAdvanced(gps, issues);
 
   if (gps.nmea_sentences.length === 0) {
     pushWarning(issues, "gps.nmea_sentences", "no NMEA sentences selected; the app's GPS parser needs at least GGA and RMC");
+  }
+}
+
+/** IDL1's advanced `gps` fields (SPEC §8 "SAM-M10Q (IDL1)"): an unset
+ *  field is the module's factory value and is not checked. */
+function checkGpsAdvanced(gps: GpsBlock, issues: ValidationIssue[]): void {
+  if (gps.constellations !== undefined) {
+    const bad = gps.constellations.filter((c) => !(GPS_CONSTELLATIONS as readonly string[]).includes(c));
+    if (gps.constellations.length === 0) {
+      pushError(issues, "gps.constellations", "at least one constellation must be on (SPEC §8)");
+    } else if (bad.length > 0) {
+      pushError(issues, "gps.constellations", `${bad.join(", ")} is not a constellation; valid: ${GPS_CONSTELLATIONS.join(", ")} (SPEC §8)`);
+    }
+  }
+  for (const field of GPS_ADVANCED_FIELDS) {
+    const value = gps[field.key];
+    if (value === undefined) continue;
+    const onStep = field.step === 1 ? Number.isInteger(value) : Math.abs(value * 10 - Math.round(value * 10)) < 1e-9;
+    if (!onStep || value < field.min || value > field.max) {
+      pushError(issues, `gps.${field.key}`, `${value} is not ${field.min}..${field.max}${field.step === 1 ? "" : ` in steps of ${field.step}`} (SPEC §8)`);
+      continue;
+    }
+    const tighter = field.tighter === "higher" ? value > field.defaultValue : field.tighter === "lower" ? value < field.defaultValue : false;
+    if (tighter) {
+      pushWarning(issues, `gps.${field.key}`, `${field.label} is tighter than the module's default (${field.defaultValue}); the GPS may report fewer fixes, or none`);
+    }
+  }
+  const minSats = gps.min_satellites ?? 3;
+  const maxSats = gps.max_satellites ?? 32;
+  if (minSats > maxSats) {
+    pushError(issues, "gps.min_satellites", `minimum satellites ${minSats} is more than the maximum ${maxSats} (SPEC §8)`);
   }
 }
 
@@ -343,7 +447,7 @@ export function validateConfig(config: DeviceConfig, hardware: Hardware = "idl1"
   const issues: ValidationIssue[] = [];
 
   checkImu(config.imu, hardware, issues);
-  checkGps(config.gps, issues);
+  checkGps(config.gps, hardware, issues);
   checkAnalogChannels(config.analog.channels, issues);
   checkDigitalChannels(config.digital.channels, issues);
   checkPinCollisions(config.analog.channels, config.digital.channels, issues);

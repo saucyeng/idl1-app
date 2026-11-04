@@ -6,6 +6,21 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 
 ### Added
 
+- **IDL1 GPS settings: constellations, filters and up to 18 Hz, limited to what the module can hold [docs] (2026-11-03).**
+  The logger now configures its SAM-M10Q GPS at boot (idl1-firmware); before, it ran at factory
+  1 Hz whatever the config said. The Device tab's GPS sheet adds a switch per constellation (GPS,
+  Galileo, BeiDou, GLONASS), QZSS, the full set of dynamic models, and an Advanced section: minimum
+  elevation and signal, minimum and maximum satellites, the fix gate, PDOP and accuracy masks and
+  high-precision NMEA, each left blank for the module's default and reset with one button. The
+  rate offered stops at what the chosen constellations hold (data sheet: 4 Hz with all four, 6, 8
+  or 10 Hz with fewer, 18 Hz on one); a config above it can't be sent, and turning a constellation
+  back on lowers the rate to the new limit. **The GPS default is now 4 Hz, not 5:** a logger
+  config at 5 Hz with all four constellations shows an error until a rate or constellation is
+  changed. The sheet shows the rate the GPS is actually running at and says when it refused its
+  settings. Each `.idl1` file records its GPS settings (a GPS_CONFIG record); `idl-rs info` prints
+  them, and a session whose GPS setup failed imports with a warning naming it (SPEC §3.3, §7.3, §8;
+  `.idl1` DRAFT §4.3).
+
 - **Whole-session evaluation is faster: one footer and time axis per session, rolling windows in O(N) [no-docs] (2026-10-30).**
   Session-set members read through a new `SessionColumnReader`: the Parquet footer is parsed once
   per session and the time axes are decoded once and shared, charged once to the memory budget. Lap

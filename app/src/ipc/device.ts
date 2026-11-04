@@ -225,6 +225,14 @@ export interface DeviceStatus {
   /** HDOP × 100 (e.g. 0.9 → 90). Optional even when a fix is present, so
    *  `null` is always "unknown", never a health judgement. */
   gps_hdop_x100: number | null;
+  /** IDL1 GPS module setup result as sent (SPEC §7.3 `GPSConfig`): `"OK"`,
+   *  `"NO_RESPONSE"`, `"BAUD_FAILED"`, `"NAK"`, `"NO_ACK"` or `"NOT_RUN"`.
+   *  Anything but `"OK"` means the module runs on earlier settings. `null`
+   *  when unreported (IDL0, older firmware). */
+  gps_config: string | null;
+  /** Navigation rate the GPS module acknowledged, Hz (`GPSRate`); `null`
+   *  when unreported. */
+  gps_rate_hz: number | null;
   /** Per-IMU state for IMU index 0. `null` if unreported. */
   imu0: ImuState | null;
   /** Per-IMU state for IMU index 1. `null` if unreported. */

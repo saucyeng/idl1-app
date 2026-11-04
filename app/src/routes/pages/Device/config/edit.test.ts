@@ -15,6 +15,8 @@ import {
   setImuRate,
   setImuSlot,
   setWheelSlot,
+  resetGpsAdvanced,
+  setGpsConstellation,
   upsertAnalogChannel,
   upsertDigitalChannel,
 } from "./edit";
@@ -120,6 +122,50 @@ describe("setImuRanges", () => {
     expect(result.imu.gyro_range_dps).toBe(config.imu.gyro_range_dps);
     expect(result.imu.imu0.accel_range_g).toBe(config.imu.imu0.accel_range_g);
     expect(result.imu.imu1.gyro_range_dps).toBe(config.imu.imu1.gyro_range_dps);
+  });
+});
+
+describe("setGpsConstellation / resetGpsAdvanced", () => {
+  it("setGpsConstellation — GLONASS off at 4 Hz, then BeiDou off — the set narrows; back to all four is written as absent", () => {
+    // Arrange
+    const config = workedExampleConfig();
+
+    // Act
+    const three = setGpsConstellation(config, "GLONASS", false);
+    const two = setGpsConstellation(three, "BEIDOU", false);
+    const four = setGpsConstellation(setGpsConstellation(two, "BEIDOU", true), "GLONASS", true);
+
+    // Assert
+    expect(three.gps.constellations).toEqual(["GPS", "GALILEO", "BEIDOU"]);
+    expect(two.gps.constellations).toEqual(["GPS", "GALILEO"]);
+    expect("constellations" in four.gps).toBe(false);
+  });
+
+  it("setGpsConstellation — 10 Hz on GPS+Galileo, GLONASS back on — the rate comes down to the new 6 Hz limit", () => {
+    // Arrange
+    const config = setGps(workedExampleConfig(), { constellations: ["GPS", "GALILEO"], sample_rate_hz: 10 });
+
+    // Act
+    const result = setGpsConstellation(config, "GLONASS", true);
+
+    // Assert
+    expect(result.gps.constellations).toEqual(["GPS", "GALILEO", "GLONASS"]);
+    expect(result.gps.sample_rate_hz).toBe(6);
+  });
+
+  it("resetGpsAdvanced — filters set — every advanced key removed, rate and constellations kept", () => {
+    // Arrange
+    const config = setGps(workedExampleConfig(), { min_elevation_deg: 15, pdop_mask: 5, high_precision_nmea: true, constellations: ["GPS"], sample_rate_hz: 18 });
+
+    // Act
+    const result = resetGpsAdvanced(config);
+
+    // Assert
+    expect("min_elevation_deg" in result.gps).toBe(false);
+    expect("pdop_mask" in result.gps).toBe(false);
+    expect("high_precision_nmea" in result.gps).toBe(false);
+    expect(result.gps.constellations).toEqual(["GPS"]);
+    expect(result.gps.sample_rate_hz).toBe(18);
   });
 });
 

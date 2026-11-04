@@ -17,8 +17,10 @@ export const DEFAULT_IMU_HG_RANGE_G = 64;
  *  "generally follow at 960 Hz", pending a test of the pod I2C bus. */
 export const DEFAULT_IMU_HG_SAMPLE_RATE_HZ = 960;
 
-/** SPEC §8: GPS defaults to a 5 Hz fix rate. Hz. */
-export const DEFAULT_GPS_SAMPLE_RATE_HZ = 5;
+/** SPEC §8: GPS defaults to a 4 Hz fix rate, the most the IDL1 SAM-M10Q
+ *  holds with its factory four constellations ("Rate limit by
+ *  constellations"; 5 Hz before 2026-11-03). Hz. */
+export const DEFAULT_GPS_SAMPLE_RATE_HZ = 4;
 /** SPEC §8 worked example's dynamic model default. */
 export const DEFAULT_GPS_DYNAMIC_MODEL: GpsBlock["dynamic_model"] = "automotive";
 /** SPEC §8: "NMEA sentences (GGA+RMC default)". */
@@ -76,7 +78,7 @@ function defaultImu(): ImuBlock {
   };
 }
 
-/** The GPS block for a fresh config: SPEC §8's stated 5 Hz automotive
+/** The GPS block for a fresh config: SPEC §8's stated 4 Hz automotive
  *  default with the stated GGA+RMC NMEA default, SBAS on. */
 function defaultGps(): GpsBlock {
   return {
@@ -99,7 +101,7 @@ function defaultWheelSlot(): WheelSlot {
 /**
  * A fresh `DeviceConfig` for `deviceId`, using only the defaults SPEC §8
  * states in prose or shows in its worked example: wheel-speed slots
- * disabled, GPS at 5 Hz automotive with GGA+RMC, analog at 100 Hz with no
+ * disabled, GPS at 4 Hz automotive with GGA+RMC, analog at 100 Hz with no
  * channels configured ("No default entries — users add channels via the
  * Device tab"), digital likewise empty, and the IMU seeded from the worked
  * example's ODR/range values with every slot disabled until the user turns

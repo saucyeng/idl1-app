@@ -61,7 +61,7 @@ const SPEC_WORKED_EXAMPLE = {
     },
   },
   gps: {
-    sample_rate_hz: 5,
+    sample_rate_hz: 4,
     dynamic_model: "automotive",
     nmea_sentences: ["GGA", "RMC"],
     sbas_enabled: true,
@@ -99,7 +99,7 @@ describe("parseConfig", () => {
     expect(result.config.bike_profile).toEqual({ name: "Trek Session 2024", default_rider: "Rider Name" });
     expect(result.config.imu.sample_rate_hz).toBe(480);
     expect(result.config.imu.imu1.accel_range_g).toBe(16);
-    expect(result.config.gps).toEqual({ sample_rate_hz: 5, dynamic_model: "automotive", nmea_sentences: ["GGA", "RMC"], sbas_enabled: true });
+    expect(result.config.gps).toEqual({ sample_rate_hz: 4, dynamic_model: "automotive", nmea_sentences: ["GGA", "RMC"], sbas_enabled: true });
     expect(result.config.wheel_speed.front.enabled).toBe(false);
     expect(result.config.heart_rate_monitor).toEqual({
       enabled: true,
@@ -314,6 +314,24 @@ describe("parseConfig", () => {
   });
 });
 
+describe("parseConfig / serializeConfig — IDL1 advanced gps fields", () => {
+  it("advanced gps fields set — round-trip unchanged; unset ones stay absent; a wrong type is repaired to absent", () => {
+    // Arrange
+    const json = {
+      gps: { sample_rate_hz: 8, dynamic_model: "airborne_2g", nmea_sentences: ["GGA", "RMC"], sbas_enabled: true, constellations: ["GPS", "GALILEO", "BEIDOU"], min_elevation_deg: 10, pdop_mask: 4.5, high_precision_nmea: true, min_cno_dbhz: "high" },
+    };
+
+    // Act
+    const parsed = parseConfig(json);
+    const reparsed = JSON.parse(serializeConfig(parsed.config));
+
+    // Assert
+    expect(parsed.config.gps.dynamic_model).toBe("airborne_2g");
+    expect(reparsed.gps).toEqual({ sample_rate_hz: 8, dynamic_model: "airborne_2g", nmea_sentences: ["GGA", "RMC"], sbas_enabled: true, constellations: ["GPS", "GALILEO", "BEIDOU"], min_elevation_deg: 10, pdop_mask: 4.5, high_precision_nmea: true });
+    expect(parsed.repairs.some((r) => r.path === "gps.min_cno_dbhz")).toBe(true);
+  });
+});
+
 describe("serializeConfig", () => {
   it("serializeConfig — a config with no HRM block — omits the key rather than emitting enabled:false (SPEC §8's equivalence, kept minimal)", () => {
     // Arrange
@@ -366,7 +384,7 @@ describe("defaultConfig", () => {
     expect(config.config_version).toBe(1);
     expect(config.wheel_speed.front.enabled).toBe(false);
     expect(config.wheel_speed.rear.enabled).toBe(false);
-    expect(config.gps).toEqual({ sample_rate_hz: 5, dynamic_model: "automotive", nmea_sentences: ["GGA", "RMC"], sbas_enabled: true });
+    expect(config.gps).toEqual({ sample_rate_hz: 4, dynamic_model: "automotive", nmea_sentences: ["GGA", "RMC"], sbas_enabled: true });
     expect(config.analog).toEqual({ sample_rate_hz: 100, channels: [] });
     expect(config.digital).toEqual({ channels: [] });
     expect(config.heart_rate_monitor).toBeUndefined();

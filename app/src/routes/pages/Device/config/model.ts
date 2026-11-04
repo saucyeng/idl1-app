@@ -77,13 +77,41 @@ export interface ImuSlot {
   hg_enabled?: boolean;
 }
 
-/** SPEC §8's `gps` block, the u-blox MAX-M10S settings. */
+/** A SPEC §8 `gps.constellations` entry (IDL1). */
+export type GpsConstellation = "GPS" | "GALILEO" | "BEIDOU" | "GLONASS";
+
+/** SPEC §8's `gps` block: the u-blox MAX-M10S (IDL0) or SAM-M10Q (IDL1)
+ *  settings. The optional fields are IDL1's advanced settings (SPEC §8
+ *  "SAM-M10Q (IDL1)"): absent means the module's factory value, and an
+ *  absent field is not written back, so the logger keeps that value. */
 export interface GpsBlock {
-  /** Hz, integer 1..10 (SPEC §8's valid-value table). */
+  /** Hz, integer 1..10 (IDL0) or 1..18 (IDL1, capped by `constellations`). */
   sample_rate_hz: number;
-  dynamic_model: "portable" | "pedestrian" | "automotive" | "sea" | "airborne";
+  dynamic_model: "portable" | "stationary" | "pedestrian" | "automotive" | "sea" | "airborne" | "airborne_2g" | "airborne_4g";
   nmea_sentences: string[];
   sbas_enabled: boolean;
+  /** Absent = all four. */
+  constellations?: string[];
+  /** Absent = on. */
+  qzss_enabled?: boolean;
+  /** Degrees, 0..60. Absent = 5. */
+  min_elevation_deg?: number;
+  /** dBHz, 0..50. Absent = 6. */
+  min_cno_dbhz?: number;
+  /** 1..32, at most `max_satellites`. Absent = 3. */
+  min_satellites?: number;
+  /** 1..32. Absent = 32. */
+  max_satellites?: number;
+  /** 0..32, 0 = off. Absent = 0. */
+  fix_gate_satellites?: number;
+  /** dBHz, 0..50. Absent = 0. */
+  fix_gate_cno_dbhz?: number;
+  /** 1.0..25.0 in steps of 0.1. Absent = 25.0. */
+  pdop_mask?: number;
+  /** Metres, 1..100. Absent = 100. */
+  position_accuracy_mask_m?: number;
+  /** Absent = off. */
+  high_precision_nmea?: boolean;
 }
 
 /** One entry of `analog.channels` (SPEC §8). */
@@ -162,7 +190,7 @@ export interface ParseResult {
 const VALID_IMU_ODR_HZ = new Set([15, 30, 60, 120, 240, 480, 960, 1920, 3840, 7680, 1.6, 12.5, 26, 52, 104, 208, 416, 833, 1666]);
 
 /** SPEC §8's `gps.dynamic_model` valid-value set. */
-const VALID_GPS_DYNAMIC_MODELS = new Set(["portable", "pedestrian", "automotive", "sea", "airborne"]);
+const VALID_GPS_DYNAMIC_MODELS = new Set(["portable", "stationary", "pedestrian", "automotive", "sea", "airborne", "airborne_2g", "airborne_4g"]);
 
 /** SPEC §8's `digital.channels[].kind` valid-value set (`level`/`pwm` are
  *  reserved in the schema but not yet exposed in the app's picker). */
@@ -431,20 +459,58 @@ function readDynamicModel(obj: Record<string, unknown>, path: string, repairs: R
   }
   repairs.push({
     path,
-    reason: `expected one of portable/pedestrian/automotive/sea/airborne, got ${describeType(value)}; using default ${DEFAULT_GPS_DYNAMIC_MODEL}`,
+    reason: `expected one of ${[...VALID_GPS_DYNAMIC_MODELS].join("/")}, got ${describeType(value)}; using default ${DEFAULT_GPS_DYNAMIC_MODEL}`,
   });
   return DEFAULT_GPS_DYNAMIC_MODEL;
 }
 
+/** Reads an optional `gps` field: absent stays absent (the module's
+ *  factory value, never written back); a value of the wrong type is
+ *  repaired to absent. */
+function readOptional<T>(obj: Record<string, unknown>, key: string, ok: (v: unknown) => v is T, expected: string, path: string, repairs: Repair[]): T | undefined {
+  const value = obj[key];
+  if (value === undefined) return undefined;
+  if (ok(value)) return value;
+  repairs.push({ path, reason: `expected ${expected}, got ${describeType(value)}; left unset (the module's factory value)` });
+  return undefined;
+}
+
+const isNumber = (v: unknown): v is number => typeof v === "number" && Number.isFinite(v);
+const isBoolean = (v: unknown): v is boolean => typeof v === "boolean";
+const isStringArray = (v: unknown): v is string[] => Array.isArray(v) && v.every((s) => typeof s === "string");
+
+/** The IDL1 advanced `gps` fields that are numbers. */
+const GPS_OPTIONAL_NUMBERS = [
+  "min_elevation_deg",
+  "min_cno_dbhz",
+  "min_satellites",
+  "max_satellites",
+  "fix_gate_satellites",
+  "fix_gate_cno_dbhz",
+  "pdop_mask",
+  "position_accuracy_mask_m",
+] as const;
+
 /** Reads the `gps` block. */
 function readGps(value: unknown, path: string, repairs: Repair[]): GpsBlock {
   const obj = objectOrDefault(value, path, repairs);
-  return {
+  const gps: GpsBlock = {
     sample_rate_hz: readNumber(obj, "sample_rate_hz", DEFAULT_GPS_SAMPLE_RATE_HZ, `${path}.sample_rate_hz`, repairs),
     dynamic_model: readDynamicModel(obj, `${path}.dynamic_model`, repairs),
     nmea_sentences: readStringArray(obj, "nmea_sentences", [...DEFAULT_GPS_NMEA_SENTENCES], `${path}.nmea_sentences`, repairs),
     sbas_enabled: readBoolean(obj, "sbas_enabled", true, `${path}.sbas_enabled`, repairs),
   };
+  const constellations = readOptional(obj, "constellations", isStringArray, "an array of strings", `${path}.constellations`, repairs);
+  if (constellations !== undefined) gps.constellations = constellations;
+  for (const key of ["qzss_enabled", "high_precision_nmea"] as const) {
+    const v = readOptional(obj, key, isBoolean, "a boolean", `${path}.${key}`, repairs);
+    if (v !== undefined) gps[key] = v;
+  }
+  for (const key of GPS_OPTIONAL_NUMBERS) {
+    const v = readOptional(obj, key, isNumber, "a number", `${path}.${key}`, repairs);
+    if (v !== undefined) gps[key] = v;
+  }
+  return gps;
 }
 
 /** Reads `obj[key]` as a physical pin number (`adc_pin`/`gpio_pin`): absence

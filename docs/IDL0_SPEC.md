@@ -848,7 +848,7 @@ The firmware never *applies* calibration — it writes raw int16 LSB values into
     }
   },
   "gps": {
-    "sample_rate_hz": 5,
+    "sample_rate_hz": 4,
     "dynamic_model": "automotive",
     "nmea_sentences": ["GGA", "RMC"],
     "sbas_enabled": true
@@ -914,7 +914,8 @@ u-blox MAX-M10S: sample rate (1–10 Hz), dynamic model (portable/pedestrian/aut
 
 **SAM-M10Q (IDL1).** Every field is optional; an absent field leaves the
 module's factory value, so a config written before these fields existed
-records exactly as before (except the rate, now honoured). The firmware
+records exactly as before (except the rate, now honoured; a 5 Hz config
+from before needs a lower rate or fewer constellations to pass the app). The firmware
 rejects an off-range value, logs it, and keeps the default for that field —
 never remapped (as the IMU fields, decisions.md P2/P3). The app is the gate
 for the rate limit below; the firmware applies the rate it is given and
@@ -922,7 +923,7 @@ records what the module accepted.
 
 | Field | Type, range | Default (= factory) | Module key |
 |---|---|---|---|
-| `gps.sample_rate_hz` | integer 1–18 Hz, and at most the limit for `constellations` (table below) | 5 | CFG-RATE-MEAS = round(1000 / rate) ms, CFG-RATE-NAV = 1 |
+| `gps.sample_rate_hz` | integer 1–18 Hz, and at most the limit for `constellations` (table below) | 4 (the limit for the factory constellations; was 5 before 2026-11-03, above that limit) | CFG-RATE-MEAS = round(1000 / rate) ms, CFG-RATE-NAV = 1 |
 | `gps.constellations` | array, a non-empty subset of `"GPS"`, `"GALILEO"`, `"BEIDOU"`, `"GLONASS"` | all four | CFG-SIGNAL-GPS_ENA / GAL_ENA / BDS_ENA / GLO_ENA |
 | `gps.qzss_enabled` | bool | true | CFG-SIGNAL-QZSS_ENA |
 | `gps.sbas_enabled` | bool | true | CFG-SIGNAL-SBAS_ENA |

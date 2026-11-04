@@ -3,13 +3,15 @@ import type { ReactNode } from "react";
 import { BrandSheet } from "../../../components/brand/BrandSheet";
 import { NoteBlock } from "../../../components/brand/NoteBlock";
 import { Button } from "../../../components/ui/button";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "../../../components/ui/collapsible";
+import { NumberField } from "../../../components/ui/number-field";
 import { Switch } from "../../../components/ui/switch";
 import { cn } from "../../../lib/utils";
 import type { DeviceControlCommand, DeviceStatus } from "../../../ipc/device";
-import { imuPartial, setGps, setImuEnabled, setImuHg, setImuHgShared, setImuRate, setImuSlot } from "./config/edit";
+import { imuPartial, resetGpsAdvanced, setGps, setGpsConstellation, setImuEnabled, setImuHg, setImuHgShared, setImuRate, setImuSlot } from "./config/edit";
 import type { ImuSlotKey } from "./config/edit";
 import type { DeviceConfig } from "./config/model";
-import { GPS_DYNAMIC_MODELS, HG_ODR_HZ, HG_RANGES_G, imuValueSets } from "./config/validate";
+import { GPS_ADVANCED_FIELDS, GPS_CONSTELLATIONS, gpsDynamicModels, gpsRateLimitHz, HG_ODR_HZ, HG_RANGES_G, imuValueSets } from "./config/validate";
 import type { Hardware } from "./config/validate";
 import AddChannelPicker from "./forms/AddChannelPicker";
 import AnalogForm from "./forms/AnalogForm";
@@ -22,9 +24,19 @@ import { LoadMeter, StepSlider } from "./StepSlider";
 import FirmwareSection from "../Settings/FirmwareSection";
 import { prefsStore } from "../Settings/appPrefsStore";
 
-/** GPS rates offered as buttons, Hz. SPEC §8 allows any integer 1–10; these
+/** GPS rates offered on IDL0, Hz. SPEC §8 allows any integer 1–10; these
  *  are the useful ones, and a config holding another value still shows it. */
-const GPS_RATES_HZ = [1, 2, 5, 10] as const;
+const GPS_RATES_HZ_IDL0 = [1, 2, 5, 10] as const;
+
+/** GPS rates offered on IDL1, Hz: every integer up to the limit for the
+ *  chosen constellations (SPEC §8 "Rate limit by constellations"). */
+function gpsRatesHz(hardware: Hardware, constellations: readonly string[] | undefined): readonly number[] {
+  if (hardware === "idl0") return GPS_RATES_HZ_IDL0;
+  return Array.from({ length: gpsRateLimitHz(constellations) }, (_, i) => i + 1);
+}
+
+/** Display names for SPEC §8 `gps.constellations` entries. */
+const CONSTELLATION_LABEL: Record<string, string> = { GPS: "GPS", GALILEO: "Galileo", BEIDOU: "BeiDou", GLONASS: "GLONASS" };
 
 /** Props for {@link ModuleSheet}. */
 export interface ModuleSheetProps {
@@ -182,8 +194,13 @@ function ImuBody({ slotKey, tile, draft, onDraftChange, status, hardware }: { sl
   );
 }
 
-function GpsBody({ draft, onDraftChange, status }: { draft: DeviceConfig; onDraftChange: (c: DeviceConfig) => void; status: DeviceStatus | null }) {
+function GpsBody({ draft, onDraftChange, status, hardware }: { draft: DeviceConfig; onDraftChange: (c: DeviceConfig) => void; status: DeviceStatus | null; hardware: Hardware }) {
   const hdop = status?.gps_hdop_x100 ?? null;
+  const gps = draft.gps;
+  const idl1 = hardware === "idl1";
+  const on = new Set(gps.constellations ?? GPS_CONSTELLATIONS);
+  const limit = gpsRateLimitHz(gps.constellations);
+  const setupFailed = status?.gps_config !== null && status?.gps_config !== undefined && status.gps_config !== "OK";
   return (
     <div className="flex flex-col gap-4">
       <Readings
@@ -191,11 +208,74 @@ function GpsBody({ draft, onDraftChange, status }: { draft: DeviceConfig; onDraf
           ["Fix", status?.gps ?? "unknown"],
           ["Satellites", status?.gps_sats === null || status?.gps_sats === undefined ? "—" : String(status.gps_sats)],
           ["HDOP", hdop === null ? "—" : (hdop / 100).toFixed(2)],
+          ...(status?.gps_rate_hz !== null && status?.gps_rate_hz !== undefined ? ([["Running at", `${status.gps_rate_hz} Hz`]] as [string, string][]) : []),
         ]}
       />
-      <StepSlider label="Rate" options={GPS_RATES_HZ as readonly number[]} value={draft.gps.sample_rate_hz} format={(hz) => `${hz} Hz`} onChange={(hz) => onDraftChange(setGps(draft, { sample_rate_hz: hz }))} />
-      <Choice label="Dynamic model" options={GPS_DYNAMIC_MODELS} value={draft.gps.dynamic_model} format={(m) => m} onChange={(m) => onDraftChange(setGps(draft, { dynamic_model: m }))} />
-      <SwitchRow label="SBAS corrections" detail="Satellite-based augmentation, where available" checked={draft.gps.sbas_enabled} onChange={(on) => onDraftChange(setGps(draft, { sbas_enabled: on }))} />
+      {setupFailed && (
+        <NoteBlock className="border-hivis text-hivis">
+          The GPS didn&apos;t take its settings ({status?.gps_config}). It&apos;s recording on earlier settings
+          {status?.gps_rate_hz ? ` at ${status.gps_rate_hz} Hz` : ""}. Sending again restarts the logger and retries.
+        </NoteBlock>
+      )}
+      <StepSlider label="Rate" options={gpsRatesHz(hardware, gps.constellations)} value={gps.sample_rate_hz} format={(hz) => `${hz} Hz`} onChange={(hz) => onDraftChange(setGps(draft, { sample_rate_hz: hz }))} />
+      {idl1 && (
+        <div className="flex flex-col gap-1.5">
+          <span className="text-label-2 tracking-[var(--tracking-label)] text-fg-dim uppercase">Constellations</span>
+          <p className="text-xs text-fg-dim">
+            Up to {limit} Hz with these on. Fewer constellations allow a higher rate; more give more satellites.
+          </p>
+          {GPS_CONSTELLATIONS.map((c) => (
+            <SwitchRow
+              key={c}
+              label={CONSTELLATION_LABEL[c] ?? c}
+              checked={on.has(c)}
+              disabled={on.has(c) && on.size === 1}
+              onChange={(v) => onDraftChange(setGpsConstellation(draft, c, v))}
+            />
+          ))}
+        </div>
+      )}
+      <Choice label="Dynamic model" options={gpsDynamicModels(hardware)} value={gps.dynamic_model} format={(m) => m.replace("_", " ")} onChange={(m) => onDraftChange(setGps(draft, { dynamic_model: m }))} />
+      <SwitchRow label="SBAS corrections" detail="Satellite-based augmentation, where available" checked={gps.sbas_enabled} onChange={(v) => onDraftChange(setGps(draft, { sbas_enabled: v }))} />
+      {idl1 && (
+        <SwitchRow
+          label="QZSS"
+          detail="Japan's GPS-compatible satellites; harmless elsewhere"
+          checked={gps.qzss_enabled !== false}
+          onChange={(v) => onDraftChange(setGps(draft, { qzss_enabled: v ? undefined : false }))}
+        />
+      )}
+      {idl1 && (
+        <Collapsible className="flex flex-col gap-3 rounded-[var(--radius-card)] border border-rule p-3">
+          <CollapsibleTrigger className="text-left text-base font-medium text-fg">Advanced</CollapsibleTrigger>
+          <CollapsibleContent className="flex flex-col gap-3">
+            <p className="text-xs text-fg-dim">Empty fields keep the GPS module&apos;s own default, shown greyed. Tight filters can stop fixes altogether.</p>
+            {GPS_ADVANCED_FIELDS.map((field) => (
+              <NumberField
+                key={field.key}
+                label={field.label}
+                hint={field.detail}
+                unit={field.unit || undefined}
+                min={field.min}
+                max={field.max}
+                step={field.step}
+                value={gps[field.key] ?? null}
+                placeholder={String(field.defaultValue)}
+                onChange={(v) => onDraftChange(setGps(draft, { [field.key]: v ?? undefined }))}
+              />
+            ))}
+            <SwitchRow
+              label="High-precision NMEA"
+              detail="More decimal places in position and altitude"
+              checked={gps.high_precision_nmea === true}
+              onChange={(v) => onDraftChange(setGps(draft, { high_precision_nmea: v ? true : undefined }))}
+            />
+            <Button type="button" className="h-11" onClick={() => onDraftChange(resetGpsAdvanced(draft))}>
+              Reset advanced to defaults
+            </Button>
+          </CollapsibleContent>
+        </Collapsible>
+      )}
       <DraftNote />
     </div>
   );
@@ -284,7 +364,7 @@ export default function ModuleSheet(props: ModuleSheetProps) {
         // reads the device and the catalog once, on mount.
         return <FirmwareSection key={props.logger.deviceId} store={prefsStore} showRepository={false} />;
       case "gps":
-        return forms((d) => <GpsBody draft={d} onDraftChange={onDraftChange} status={status} />);
+        return forms((d) => <GpsBody draft={d} onDraftChange={onDraftChange} status={status} hardware={props.hardware} />);
       case "imu0":
       case "imu1":
       case "imu2":

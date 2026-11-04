@@ -35,6 +35,8 @@ function fakeStatus(sd: "ok" | "full"): DeviceStatus {
     gps_fix_quality: null,
     gps_sats: null,
     gps_hdop_x100: null,
+    gps_config: null,
+    gps_rate_hz: null,
     imu0: null,
     imu1: null,
     imu2: null,
