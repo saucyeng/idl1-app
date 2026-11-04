@@ -188,6 +188,7 @@ axis order, set the layout of its samples in IMU_BLOCK (§4.4).
 | 0x02 | GPS_FIX | as `.idl0` §5.6, plus `hdop_x100:u16` (decided) |
 | 0x03 | CHANNEL_SAMPLE | as `.idl0` §5.7, with a u16 `channel_id` |
 | 0x20 | LOGGER_EVENT | written when an issue happens: event code, IMU or channel, count since the last event of that code (FIFO overrun, writer-ring drop, bus error, IMU dropped out or recovered) |
+| 0x22 | GPS_CONFIG | written once, after the header and before any data record: the GPS settings this session recorded with and whether the module accepted them |
 | 0x21 | SESSION_SUMMARY | written just before SESSION_END: per IMU, FIFO overruns, bus errors, samples written; writer-ring drops; slowest poll cycle |
 | 0xFF | SESSION_END | empty, as `.idl0` |
 
@@ -204,6 +205,25 @@ TIMESTAMP counter. The firmware writes code 5 for that IMU unthrottled and
 before any IMU_BLOCK from the restarted chip. The parser times each segment
 on its own chip→ESP32 clock fit and joins the segments into one channel; the
 time between them is simply absent (no samples, no gap fill).
+
+**GPS_CONFIG payload** (48 bytes, decided 2026-11-03, Isaac: GPS settings
+are tested against each other, so each file says which it used). The values
+are the §8 `gps` settings the firmware loaded (field defaults filled in),
+whether or not the module took them; `result` says which.
+`version:u8` (1), `result:u8` (0 not run, 1 OK, 2 no response, 3 baud
+change failed, 4 refused (NAK), 5 no acknowledgement, 6 firmware encode
+error — the §7.3 `GPSConfig` tokens), `requested_rate_hz:u8`,
+`applied_rate_hz:u8` (what the module acknowledged; 1 = factory when setup
+failed first), `signals:u8` (bit 0 GPS, 1 Galileo, 2 BeiDou, 3 GLONASS,
+4 QZSS, 5 SBAS), `dynamic_model:u8` (the u-blox CFG-NAVSPG-DYNMODEL value),
+`min_elevation_deg:i8`, `min_cno_dbhz:u8`, `min_satellites:u8`,
+`max_satellites:u8`, `fix_gate_satellites:u8`, `fix_gate_cno_dbhz:u8`,
+`pdop_mask_x10:u16`, `position_accuracy_mask_m:u16`, `nmea_flags:u8` (bit 0
+high-precision NMEA), `nmea_extra:u8` (bit 0 GLL, 1 GSA, 2 GSV, 3 VTG,
+4 ZDA), `module_version:u8[30]` (UBX-MON-VER swVersion, NUL-padded; empty
+when the module did not answer). A parser that doesn't know 0x22 skips it
+by length. A file without one predates the record (factory settings,
+1 Hz).
 
 **SESSION_SUMMARY payload:** `n_imu:u8`, then per IMU `overruns:u32`,
 `bus_errors:u32`, `samples:u32`, then `writer_drops:u32`,

@@ -696,6 +696,20 @@ Unverified:
 
 - [ ] L9 mobile plugins · L12 in-app agent (optional)
 
+## Spec housekeeping
+
+- [ ] **Split the IDL1 hardware's spec out into `docs/IDL1_SPEC.md`**
+      (Isaac, 2026-11-03). IDL1-only text has been accreting inside
+      `docs/IDL0_SPEC.md` as "IDL1:" asides: the LSM6DSV320X ranges and
+      high-g fields (§8), the SAM-M10Q GPS block (§3.3, §8), the `.idl1`
+      status lines (§7.3), with the file format in a separate DRAFT
+      (`docs/superpowers/specs/2026-10-15-idl1-file-format-DRAFT.md`).
+      Gather the IDL1 board, firmware contract and `.idl1` format into one
+      file, leave `IDL0_SPEC.md` describing IDL0 units, and point
+      idl1-firmware's `docs/README.md` at it. That README still names
+      idl0-app's copy as canonical, though decisions.md's later rulings
+      already send IDL1 spec changes here.
+
 ## Mobile lead backlog (2026-10-15)
 
 - [ ] **A logger with no config can't be given one from the app** (Isaac,

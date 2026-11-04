@@ -105,10 +105,26 @@ This document is the contract for the IDL0 system. It describes WHAT the system 
 - **IMU2:** Rear unsprung (swingarm, remote via harness) — absent on hardtails
 - Index = fixed physical location, never sequential enumeration
 
-### 3.3 GPS — u-blox MAX-M10S
+### 3.3 GPS — u-blox MAX-M10S (IDL0) / SAM-M10Q (IDL1)
 - Antenna: Linx ANT-GNSSCP-TH25L1 ceramic patch (50mm ground plane, 50Ω RF trace)
 - Interface: UART. 1–10 Hz configurable.
 - Role: absolute time anchor + GPS track for mapping/sectors
+
+**IDL1:** a u-blox SAM-M10Q (M10 SPG 5.10 firmware, protocol 34.10), antenna
+on the module. Both UART directions are wired (GPIO16 host TX → module RXD,
+module TXD → GPIO17); RESET_N, SAFEBOOT_N, EXTINT and TIMEPULSE are not. IDL0's
+MAX-M10S had an open TX trace and ran at factory defaults (9600 bit/s, 1 Hz).
+At every boot the IDL1 firmware finds the module at 9600 or 115200 bit/s
+(a UBX-MON-VER poll), moves it to 115200 bit/s, and applies the §8 `gps`
+block with UBX-CFG-VALSET to the **RAM layer only**, waiting for each
+UBX-ACK. Nothing is saved to the module's flash: with no reset or safe-boot
+pin, a bad saved setting could not be undone. A config push reboots the
+logger (§8 "Push transport"), so the settings change only at boot. A
+failure is reported (§7.3 `GPSConfig`, the GPS_CONFIG record) and leaves
+the module streaming NMEA on whatever it last ran. The logger reads RMC and
+GGA only. References: u-blox M10 SPG 5.10 Interface Description
+(UBX-21035062 R03) for the keys; SAM-M10Q data sheet (UBX-22013293) for the
+rate limits below.
 
 ### 3.4 Analog Inputs
 - **PRESSURE_FRONT, PRESSURE_REAR** — ESP32-C6 ADC, 12-bit, **0–3.3V max**
@@ -686,6 +702,8 @@ GPS: FIX|NOFIX|ABSENT
 GPSFix: 0|1|2|3          (NMEA GGA fix quality, raw; present when GPS is not ABSENT)
 GPSSats: N               (satellites used, GGA field 7; present when GPS is not ABSENT)
 GPSHDOP: N               (HDOP × 100, GGA field 8 scaled; present when GPSFix ≥ 1; optional)
+GPSConfig: OK|NO_RESPONSE|BAUD_FAILED|NAK|NO_ACK|NOT_RUN   (IDL1: boot-time module setup result; present when GPS is not ABSENT)
+GPSRate: N               (IDL1: navigation rate the module acknowledged, Hz; present when GPS is not ABSENT)
 IMU: OK|PARTIAL|ERROR|ABSENT
 IMU0: OK|ERROR|ABSENT|OFF
 IMU1: OK|ERROR|ABSENT|OFF
@@ -724,6 +742,14 @@ whenever `GPS` is not `ABSENT`. `GPSSats` is satellites used in the solution
 (GGA field 7), present under the same condition, `0` while searching.
 `GPSHDOP` is HDOP × 100 (GGA field 8 scaled — e.g. 0.9 → 90), present when
 `GPSFix` ≥ 1; optional if the GPS driver does not expose it cheaply.
+`GPSConfig` (IDL1) is the outcome of applying the §8 `gps` block at boot
+(§3.3): `OK` every setting acknowledged; `NO_RESPONSE` the module answered
+at neither 9600 nor 115200 bit/s; `BAUD_FAILED` it was lost while changing
+rate; `NAK` it refused a setting; `NO_ACK` it did not acknowledge within
+1.1 s; `NOT_RUN` setup has not reached the module. Anything but `OK` means
+the module is running on earlier settings, and the app says so on the
+Device screen. `GPSRate` is the rate the module acknowledged (1, the
+factory rate, when setup failed before setting it).
 `IMU0`/`IMU1`/`IMU2` report per-IMU state — `OFF` disabled in the loaded
 config, `ABSENT` enabled but not detected on the bus, `ERROR` detected but
 failing reads/FIFO — and the aggregate `IMU` line above stays derived from
@@ -886,12 +912,66 @@ LSM6DSO32 (IDL0 only, kept for IDL0 units): sample rate (12.5–1666 Hz), accel 
 
 u-blox MAX-M10S: sample rate (1–10 Hz), dynamic model (portable/pedestrian/automotive/sea/airborne), NMEA sentences (GGA+RMC default), SBAS enable.
 
+**SAM-M10Q (IDL1).** Every field is optional; an absent field leaves the
+module's factory value, so a config written before these fields existed
+records exactly as before (except the rate, now honoured). The firmware
+rejects an off-range value, logs it, and keeps the default for that field —
+never remapped (as the IMU fields, decisions.md P2/P3). The app is the gate
+for the rate limit below; the firmware applies the rate it is given and
+records what the module accepted.
+
+| Field | Type, range | Default (= factory) | Module key |
+|---|---|---|---|
+| `gps.sample_rate_hz` | integer 1–18 Hz, and at most the limit for `constellations` (table below) | 5 | CFG-RATE-MEAS = round(1000 / rate) ms, CFG-RATE-NAV = 1 |
+| `gps.constellations` | array, a non-empty subset of `"GPS"`, `"GALILEO"`, `"BEIDOU"`, `"GLONASS"` | all four | CFG-SIGNAL-GPS_ENA / GAL_ENA / BDS_ENA / GLO_ENA |
+| `gps.qzss_enabled` | bool | true | CFG-SIGNAL-QZSS_ENA |
+| `gps.sbas_enabled` | bool | true | CFG-SIGNAL-SBAS_ENA |
+| `gps.dynamic_model` | `portable`, `stationary`, `pedestrian`, `automotive`, `sea`, `airborne` (<1 g), `airborne_2g`, `airborne_4g` | `portable` | CFG-NAVSPG-DYNMODEL 0, 2, 3, 4, 5, 6, 7, 8 |
+| `gps.min_elevation_deg` | integer 0–60 °, satellites lower than this are not used | 5 | CFG-NAVSPG-INFIL_MINELEV |
+| `gps.min_cno_dbhz` | integer 0–50 dBHz, weaker signals are not used | 6 | CFG-NAVSPG-INFIL_MINCNO |
+| `gps.min_satellites` | integer 1–32, and ≤ `max_satellites` | 3 | CFG-NAVSPG-INFIL_MINSVS |
+| `gps.max_satellites` | integer 1–32 | 32 | CFG-NAVSPG-INFIL_MAXSVS |
+| `gps.fix_gate_satellites` | integer 0–32; a fix is attempted only when this many satellites are above `fix_gate_cno_dbhz`; 0 = off | 0 | CFG-NAVSPG-INFIL_NCNOTHRS |
+| `gps.fix_gate_cno_dbhz` | integer 0–50 dBHz | 0 | CFG-NAVSPG-INFIL_CNOTHRS |
+| `gps.pdop_mask` | number 1.0–25.0, one decimal; fixes with a worse position DOP are not output | 25.0 | CFG-NAVSPG-OUTFIL_PDOP (× 10) |
+| `gps.position_accuracy_mask_m` | integer 1–100 m; fixes estimated worse than this are not output | 100 | CFG-NAVSPG-OUTFIL_PACC |
+| `gps.high_precision_nmea` | bool; more decimal places in NMEA latitude, longitude and altitude (lines may pass NMEA's 82-character limit) | false | CFG-NMEA-HIGHPREC |
+| `gps.nmea_sentences` | array of `GGA`, `RMC`, `GLL`, `GSA`, `GSV`, `VTG`, `ZDA`. RMC and GGA are always output (the fix is built from them); the rest reach the UART only and are never logged | `["GGA","RMC"]` | CFG-MSGOUT-NMEA_ID_*_UART1 |
+
+The masks, filters and `stationary` model can stop fixes altogether when
+set tight, which looks like a dead GPS; the app keeps them in an advanced
+section with a reset-to-defaults control.
+
+**Rate limit by constellations** (data sheet UBX-22013293 Table 1, "Default"
+column: ≥98 % fix rate). The app offers rates up to the limit for the chosen
+set and refuses a push above it. Turning a constellation off never lowers
+the limit, so a set the data sheet does not list gets the four-constellation
+figure.
+
+| `constellations` | Max `sample_rate_hz` |
+|---|---|
+| GPS, GALILEO, BEIDOU, GLONASS | 4 |
+| GPS, GALILEO, GLONASS | 6 |
+| GPS, GALILEO, BEIDOU | 8 |
+| GPS, GALILEO | 10 |
+| any single one | 18 |
+| any other set | 4 |
+
+Left out on purpose (Isaac, 2026-11-03): static hold (CFG-MOT-*), the
+odometer and its low-pass speed/heading (CFG-ODO-*) — all alter the data
+before the logger sees it, and static hold freezes position in slow
+technical sections — and power-save modes (CFG-PM-*), which cut the rate
+and accuracy. Interference detection (CFG-ITFM-*) is left out until the
+logger reads the UBX message that reports it. The data sheet's "high
+performance" rates need a setting the Interface Description does not
+document; not offered.
+
 **Valid `sample_rate_hz` values — app UI must expose these discrete options:**
 
 | Config path | Valid values | On invalid value |
 |-------------|-------------|-----------------|
 | `imu.sample_rate_hz` | IDL1: 15, 30, 60, 120, 240, 480, 960, 1920, 3840, 7680 Hz in every mode (the chip's 7.5 Hz is not representable in the integer field). Default 480. (IDL0: high-perf 12.5–1666, low-power 1.6–208.) | IDL1 firmware rejects the field and keeps its default; never remapped. |
-| `gps.sample_rate_hz` | Integer 1–10 Hz | Firmware clamps or rejects. |
+| `gps.sample_rate_hz` | IDL0: integer 1–10 Hz. IDL1: integer 1–18 Hz, at most the SAM-M10Q constellation limit above. | IDL0 firmware clamps. IDL1 firmware rejects off-range and keeps the default; it does not enforce the constellation limit (the app does). |
 | `analog.sample_rate_hz` | **Not yet defined.** ADC chip and valid rate set unspecified — define before implementing analog parsing. | — |
 
 **Read-only fields — app preserves on push, never user-edited:**
@@ -935,8 +1015,13 @@ emits, so a reviewer can check the code against this table line by line.
 | `imuN.channels` (N=0,1,2) | warning | `imuN.enabled` true and every axis channel false | load-bearing invariant: an enabled IMU logging nothing is a mistake |
 | `imuN.channels` (N=0,1,2) | error | `imuN.enabled` true and some but not all six axis channels are true | decision 70 / ruling R155: the app only ever writes an all-or-nothing channel mask; a partial mask stays wire-legal and importer-readable but is no longer something this app sends |
 | `gps.sample_rate_hz` | error | not an integer | §8 "Integer 1-10 Hz" |
-| `gps.sample_rate_hz` | error | integer but outside 1..10 | §8 "Integer 1-10 Hz" |
-| `gps.dynamic_model` | error | not one of portable/pedestrian/automotive/sea/airborne | §8 "Configurable chip options" |
+| `gps.sample_rate_hz` | error | integer but outside 1..10 (IDL0) or 1..18 (IDL1) | §8 "Integer 1-10 Hz"; §8 "SAM-M10Q (IDL1)" |
+| `gps.sample_rate_hz` | error | IDL1, above the limit for `gps.constellations` | §8 "Rate limit by constellations" |
+| `gps.dynamic_model` | error | not one of portable/pedestrian/automotive/sea/airborne (IDL0); IDL1 also stationary/airborne_2g/airborne_4g | §8 "Configurable chip options"; §8 "SAM-M10Q (IDL1)" |
+| `gps.constellations` | error | IDL1, empty, or an entry not one of GPS/GALILEO/BEIDOU/GLONASS | §8 "SAM-M10Q (IDL1)" |
+| `gps.min_elevation_deg`, `gps.min_cno_dbhz`, `gps.min_satellites`, `gps.max_satellites`, `gps.fix_gate_satellites`, `gps.fix_gate_cno_dbhz`, `gps.pdop_mask`, `gps.position_accuracy_mask_m` | error | IDL1, outside the field's range | §8 "SAM-M10Q (IDL1)" |
+| `gps.min_satellites` | error | IDL1, greater than `gps.max_satellites` | §8 "SAM-M10Q (IDL1)" |
+| `gps.min_elevation_deg`, `gps.min_cno_dbhz`, `gps.fix_gate_satellites`, `gps.pdop_mask`, `gps.position_accuracy_mask_m`, `gps.dynamic_model` | warning | IDL1, `stationary` or a value tighter than the default | §8 "SAM-M10Q (IDL1)" (can stop fixes; the user should know it is set) |
 | `gps.nmea_sentences` | warning | empty array | §8 "NMEA sentences (GGA+RMC default)" |
 | `analog.channels[i].key` | error | empty string | §8 "Analog channels" (the key addresses the entry) |
 | `analog.channels[i].key` | error | shares its value with an earlier channel's key | §8 "Analog channels" (one physical sensor per key) |
