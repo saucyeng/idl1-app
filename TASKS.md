@@ -709,6 +709,13 @@ Unverified:
       idl1-firmware's `docs/README.md` at it. That README still names
       idl0-app's copy as canonical, though decisions.md's later rulings
       already send IDL1 spec changes here.
+- [ ] **Show a session's GPS settings in the app** (2026-11-03). `.idl1`
+      files carry a GPS_CONFIG record (DRAFT §4.3) and idl-rs reads it
+      (`read_idl1_gps_config`, printed by `idl-rs info`), but `Session` has
+      no place for it, so the Data tab can't show which constellations and
+      rate a session used. Needed to compare GPS test rides side by side
+      without the CLI. Likely a field on the session's catalog row or
+      `session.json`; touches C1/C4.
 
 ## Mobile lead backlog (2026-10-15)
 
