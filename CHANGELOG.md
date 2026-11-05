@@ -322,6 +322,15 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 
 ### Fixed
 
+- **Browsing and pulling from a paired phone no longer stalls for a minute or more [no-docs]
+  (2026-11-05).** Every sync read and fingerprinted every ride file in the library before doing
+  anything, 8.1 GB and about 55 s on the desktop, and the phone did the same to answer, so "List
+  files" took about a minute and a pull sat at "manifest" for minutes. That fingerprint decided
+  nothing (sync already compares each ride by its source log and importer version), so it is no
+  longer computed (C4 §6 amendment). The desktop also reads its own library while it waits for the
+  phone's, and the phone keeps answering while it reads its own. Both devices need this build for
+  the full speed-up; a mixed pair still syncs.
+
 - **Charts of GPS and other event channels show the whole ride [no-docs] (2026-11-05).** A chart
   of `GPS_SpeedKmh` stopped after about 5½ minutes: the app found chart tiles through the channel's
   nominal rate, which is 0 for an event channel, so it only ever fetched the first 1024 samples. An

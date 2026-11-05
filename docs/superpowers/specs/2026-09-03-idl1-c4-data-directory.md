@@ -629,6 +629,19 @@ seam_correction_version)` (C1 §4.3, design D6) — the concrete form of D6 for
 this file class, so sync compares that version pair rather than a content
 hash.
 
+**`data_parquet.sha256` is no longer computed.** *Amended 2026-11-05, Isaac.*
+Since the version pair above (with `blob_sha256`) already identifies a
+`data.parquet`, a manifest no longer reads the file to hash it: building one
+read the whole library each time (8.1 GB, 55 s on the desktop), on both a
+library browse and a pull, and on the serving side too. The key is still
+sent, as `""`, so a reader that requires it still parses the manifest, and a
+reader treats it as optional. Nothing decides on it: equal version pairs are
+equal (no `EquivalentDataParquet` note when either side sent `""`), and a
+library browse calls a session the same here when its `blob_sha256`, version
+pair and `session.json` hash all match. An older peer that still sends a
+hash is compared the same way. The entry table's `sha256` field and its
+"`sha256` differs" clause describe builds before this date.
+
 **`data.parquet` version-pair ordering.** *Added post-sign (2026-09-06,
 lead ruling R89, L11 Task 3/12).* "The side with the newer pair is
 authoritative" (the row above) orders lexicographically on the pair:

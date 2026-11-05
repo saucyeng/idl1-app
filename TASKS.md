@@ -700,16 +700,21 @@ start a workbook by hand. Not started.
 
 Phone → desktop transfer:
 
-- [ ] **"List files" took about a minute to show the phone's files**, and
-      the connection was slow to show as up. Measure where the time goes
-      (discovery, pairing link, the listing request) before changing anything.
-- [ ] **The picked-files progress sat at "manifest" for minutes**, yet the
-      files arrived: blobs landed 19:17, `data.parquet` 19:18, `session.json`
-      19:19–19:20 (desktop clock). Isaac closed the window and reopened Browse
-      files, and the sessions appeared while the new list was still loading.
-      So the transfer ran and the progress UI never left its first stage.
-      Check what drives the stage label, and whether reopening Browse re-ran
-      or re-reported the same transfer.
+- [x] **"List files" took about a minute, and a pull sat at "manifest" for
+      minutes** (fixed 2026-11-05, Isaac approved the C4 change). Measured:
+      every manifest read and hashed every `data.parquet` (8.13 GB, 172
+      sessions, 54.8 s on the desktop; `session.json` 0.2 s). "List files"
+      builds the local one, and a pull built it again, after the phone's
+      arrived, before its first progress tick; the phone hashed its own
+      library to answer. The hash decided nothing (sync compares the version
+      pair), so it is no longer computed (C4 §6 amendment); the browse's
+      "here" uses blob + versions. The local walk now overlaps the peer's
+      round trip, and the phone's server walks off its async workers. The
+      transfer itself ran fine: the UI only looked stuck because nothing
+      ticked until both manifests were built.
+- [ ] **The phone was slow to show as connected** (2026-11-04). Not
+      measured: discovery and the pairing link, separate from the manifest.
+      Time it on the next transfer with the new build.
 
 Workbook authoring from empty (the canvas has no way in):
 
