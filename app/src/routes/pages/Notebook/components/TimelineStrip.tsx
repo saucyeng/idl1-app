@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 
 import type { SessionDetail } from "../../../../ipc/catalog";
 import type { SelectionWindow } from "../../../../state/selection";
@@ -51,20 +51,28 @@ interface DragState {
  * component only wires pointer events to them and paints the result.
  */
 export default function TimelineStrip({ windows, detailsByWindow, spanUsByWindow, viewport, onCommit }: TimelineStripProps) {
-  const containerRef = useRef<HTMLDivElement | null>(null);
   const [widthPx, setWidthPx] = useState(DEFAULT_STRIP_WIDTH_PX);
   const [drag, setDrag] = useState<DragState | null>(null);
   const [dragCandidateUs, setDragCandidateUs] = useState<AbsoluteSpan | null>(null);
 
-  useEffect(() => {
-    const el = containerRef.current;
+  // Measured through a ref callback, not a mount effect: the strip renders
+  // nothing until a window's session has loaded (`lanes.length === 0`
+  // below), so on mount there is no element to observe. A mount-only effect
+  // never observed it at all, and every handle was drawn, and every drag
+  // mapped, against DEFAULT_STRIP_WIDTH_PX instead of the real lane
+  // (2026-11-05: the Beacon ride's whole-session window filled half the
+  // strip, and dragging a handle landed at the wrong time).
+  const observerRef = useRef<ResizeObserver | null>(null);
+  const containerRef = useCallback((el: HTMLDivElement | null) => {
+    observerRef.current?.disconnect();
+    observerRef.current = null;
     if (el === null) return;
     const observer = new ResizeObserver((entries) => {
       const width = entries[0]?.contentRect.width;
       if (width !== undefined && width > 0) setWidthPx(width);
     });
     observer.observe(el);
-    return () => observer.disconnect();
+    observerRef.current = observer;
   }, []);
 
   const lanes = stripLanesFor(windows, detailsByWindow, spanUsByWindow);

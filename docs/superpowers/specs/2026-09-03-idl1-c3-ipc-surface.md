@@ -3298,6 +3298,37 @@ name), `io`. An id already gone is not an error.
 **`share_crash_report(text: string)`** (async). Android: opens the share
 sheet with `text`. Errors: `unsupported_platform` off Android, `io`.
 
+### 3.14 Track editor (added 2026-11-05)
+
+The gate editor over a satellite map
+(`docs/superpowers/specs/2026-11-05-idl1-track-editor.md`). Saving is
+`save_track` (§3.2). Unlike the map cell (§3.5, C2 §5.3), these commands
+carry latitude and longitude: the basemap is Web Mercator and gates are
+stored in degrees.
+
+**`fetch_session_fixes(window: Window, colour_by: string | null, budget: number)`**
+(async) → raw bytes, `IDLL` v1: the `IDLG` v1 layout of §3.5 under magic
+`"IDLL"`, with `x` the longitude and `y` the latitude (decimal degrees, `f64`),
+`t` session seconds, `c` the colour-by channel at each fix when asked for.
+Decimated exactly as `fetch_gps_trace_v2` is, so both maps keep the same
+points. Errors as `fetch_gps_trace_v2`: `not_found` (session, colour channel),
+`invalid_argument` (budget outside `1..=65536`, unresolvable window).
+
+**`preview_track_runs(session_id: string, lap_timing: LapTiming | null, sector_gates: SectorGate[])`**
+(async) → `{ runs: { start_secs, end_secs, duration_secs }[], reference_polyline: GpsFix[] }`.
+The runs lap detection finds on the whole session with these gates (seconds
+on the session clock; `duration_secs` is the lap time), and the reference
+run's fixes, every one: point-to-point, the first run; circuit, the first lap
+that starts on a crossing (lap 2), else lap 1. Empty when nothing is caught
+or `lap_timing` is `null`. Errors: `not_found` (session).
+
+**`fetch_map_tile(source: string, z: number, x: number, y: number)`** (async)
+→ raw image bytes. `source` is `"esri_world_imagery"`. Served from
+`<app cache>/map-tiles/` when cached, else fetched by `idl-transport` and
+cached. Errors: `invalid_argument` (unknown source, `z > 19`, `x`/`y` outside
+`0..2^z`), `not_found` (neither cached nor fetchable: offline, or no such
+tile; the map draws it blank).
+
 ## 4. Interaction budget
 
 From the principle "no IPC on the interaction path" (design §3, §6):

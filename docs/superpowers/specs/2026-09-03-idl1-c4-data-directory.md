@@ -128,7 +128,7 @@ of this tree, on any platform.
     data.parquet                                    canonical channels, f(blob, importer version)
     derived/<64 hex>.parquet                        materialised channels, f(inputs, config, engine version)
   workbooks/<file_name>.idl1wb
-  tracks/<track_id>.idl0t
+  tracks/<track_id>.idl1t        (formerly .idl0t, still read; §2)
   profiles/<profile_id>.idl0p                       rider/bike profile snapshots (port of profile_store.dart)
   bikes/<bike_id>.json                              a bike and its whole log, every version kept (bike-log spec §3)
   catalog.sqlite                                    + catalog.sqlite-wal, catalog.sqlite-shm (WAL sidecars)
@@ -193,8 +193,17 @@ Path patterns, fixed:
   identity (§6) — the workbook's stable id lives in its front matter (C2).
   A `file_name` collision on create follows the existing `session_filename.dart`
   convention (SPEC §15.1): append `-2`, `-3`, … .
-- **Track:** `tracks/<track_id>.idl0t`, `track_id` a UUID (SPEC §16.2,
-  §16.3 — unchanged from idl0, canonical 36-char lowercase-with-dashes form).
+- **Track:** `tracks/<track_id>.idl1t`, `track_id` a UUID (SPEC §16.2,
+  §16.3, canonical 36-char lowercase-with-dashes form). *Amended 2026-11-05
+  (track editor spec §5):* the file was `.idl0t`; the format is unchanged.
+  idl1 writes `.idl1t` and removes a same-id `.idl0t` when it does; every
+  reader takes `.idl1t` and falls back to `.idl0t`, and when both exist for
+  one id the `.idl1t` wins. Opening a data directory (app or CLI) renames
+  each `.idl0t` with no `.idl1t` beside it, once. Wherever this contract
+  says `tracks/*.idl0t` below, read both extensions under that rule.
+- **Not in the data directory:** the map's satellite tiles live under the OS
+  cache directory (`<app cache>/map-tiles/`), never synced, deletable at any
+  time (track editor spec §4).
 - **Catalog:** `catalog.sqlite` at the root, plus its WAL sidecars
   (`catalog.sqlite-wal`, `catalog.sqlite-shm`) when WAL mode is active (§5).
   Sidecars are part of "the catalog" for every rule in this contract
@@ -615,7 +624,7 @@ conflict rule):
 | Derived channel | `sessions/<id>/derived/<64hex>.parquet` | `sha256` (= filename) | `sha256`, `size_bytes` | None possible — content-addressed; set difference by hash per session. Never overwritten (name is content). |
 | `session.json` | `sessions/<id>/session.json` | `session_id` | `sha256`, `size_bytes`, `updated_at_ms` | **Per-field merge** — closed post-sign, 2026-09-06, lead ruling R88, L11 Task 1, per §8 item 3 (superseding the whole-file last-write-wins text this row previously carried). See below. |
 | Workbook | `workbooks/<name>.idl1wb` | `workbook_id` (front matter, C2 — **not** `file_name`; a rename is not a new workbook) | `workbook_id`, `file_name`, `sha256`, `size_bytes`, `updated_at_ms` | Per-cell merge against the last-synced base (design §7, D6) — computed after both full files are fetched, not from the manifest alone. A `file_name` mismatch for a known `workbook_id` is a rename to reconcile locally, id wins. |
-| Track | `tracks/<id>.idl0t` | `track_id` | `track_id`, `sha256`, `size_bytes`, `updated_at_ms` | **Last-write-wins by `updated_at_ms`** (SPEC §16.5, unchanged). |
+| Track | `tracks/<id>.idl1t` (or legacy `.idl0t`) | `track_id` | `track_id`, `sha256`, `size_bytes`, `updated_at_ms` | **Last-write-wins by `updated_at_ms`** (SPEC §16.5, unchanged). |
 | Profile | `profiles/<id>.idl0p` | `profile_id` | `profile_id`, `sha256`, `size_bytes`, `updated_at_ms` | **Last-write-wins by `updated_at_ms`**, same class as Track (ruling R6). *Added post-sign, 2026-09-06, lead ruling R88, L11 Task 1.* |
 | Bike | `bikes/<id>.json` | `bike_id` | `bike_id`, `sha256`, `size_bytes` | A bike and its whole log. One side only: copy across. Both, bytes differ: the receiver fetches the peer's copy and merges it: name and fields part by part (newer `*_updated_at_ms` wins), the log as a union of entries and, within each, of versions, so no note is lost and the sides converge. Route `/idl1/v1/bike/{id}`. Manifest key `bikes`. *Added 2026-10-16, Isaac (bike-log spec §4).* |
 

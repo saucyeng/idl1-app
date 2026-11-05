@@ -16,6 +16,8 @@ interface TrackResultsProps {
    *  maintenance-action state of its own, so this delegates to the shared
    *  toolbar driver `index.tsx` owns. */
   onRescanSessions: (sessionIds: string[]) => void;
+  /** Forwarded to [[TrackDetailPane]]'s "Edit gates on map". */
+  onEditGates: (trackId: string) => void;
 }
 
 type State =
@@ -41,7 +43,7 @@ function reducer(_state: State, action: Action): State {
  *  C3 §4) — never on hover. Sorting is local recomputation over the
  *  already-fetched list, driven by `sortField`/`sortAscending` from the
  *  shared sort control in `index.tsx` (`sortFieldsForView("tracks")`). */
-export function TrackResults({ sortField, sortAscending, onRescanSessions }: TrackResultsProps) {
+export function TrackResults({ sortField, sortAscending, onRescanSessions, onEditGates }: TrackResultsProps) {
   const [state, dispatch] = useReducer(reducer, { status: "loading" });
   const [selectedTrackId, setSelectedTrackId] = useState<string | null>(null);
 
@@ -125,6 +127,7 @@ export function TrackResults({ sortField, sortAscending, onRescanSessions }: Tra
           onClose={() => setSelectedTrackId(null)}
           onChanged={() => loadTracks(() => false)}
           onRescanSessions={onRescanSessions}
+          onEditGates={onEditGates}
         />
       )}
     </div>

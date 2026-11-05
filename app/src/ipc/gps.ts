@@ -66,13 +66,24 @@ const FLAG_HAS_C = 1;
  *  for the header or its declared `point_count`.
  */
 export function decodeGpsTrace(buf: ArrayBuffer): DecodedGpsTrace {
+  return decodeTraceLayout(buf, GPS_MAGIC);
+}
+
+/**
+ * The `IDLG` v1 layout under any magic: `IDLG` (metres, C3 §3.5) or
+ * `IDLL` (degrees, the track editor's `fetch_session_fixes`). Same header,
+ * same blocks; only what `x`/`y` mean differs, which the magic says.
+ *
+ * @throws Error as {@link decodeGpsTrace}.
+ */
+export function decodeTraceLayout(buf: ArrayBuffer, expectedMagic: string): DecodedGpsTrace {
   if (buf.byteLength < GPS_HEADER_LEN) {
     throw new Error(`gps trace buffer ${buf.byteLength} bytes, header needs ${GPS_HEADER_LEN} bytes`);
   }
   const view = new DataView(buf);
   const magic = String.fromCharCode(view.getUint8(0), view.getUint8(1), view.getUint8(2), view.getUint8(3));
-  if (magic !== GPS_MAGIC) {
-    throw new Error(`gps trace magic bytes "${magic}" != "${GPS_MAGIC}"`);
+  if (magic !== expectedMagic) {
+    throw new Error(`gps trace magic bytes "${magic}" != "${expectedMagic}"`);
   }
   const version = view.getUint16(4, true);
   if (version !== GPS_SUPPORTED_VERSION) {

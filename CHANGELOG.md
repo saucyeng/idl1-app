@@ -6,6 +6,21 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 
 ### Added
 
+- **Track editor: gates on a satellite map [docs] (2026-11-05).** In the Data tab, **Create track
+  from this ride** (any session with GPS) or a track's **Edit gates on map** opens a satellite map
+  with the ride's GPS line, coloured by speed. Click the two ends of a gate across the trail:
+  a start and a finish make a downhill (point to point), a start alone a loop, and sector gates
+  go in the same way. The sidebar lists the runs the gates catch on the ride as you place them;
+  click one to show only that run, or narrow the line with the time range. A new track's line is
+  its first run, start gate to finish gate. Save, then **Rescan N sessions** gives every ride its
+  laps on the track. The imagery (Esri World Imagery, as idl0 had) is fetched by the app and
+  cached on disk, so a trail seen once stays visible offline; with no network the map shows the
+  line alone. IDL0_SPEC §24.12, C3 §3.14, track editor spec.
+
+- **Tracks are `.idl1t` files [docs] (2026-11-05).** Same format as `.idl0t`. Existing `.idl0t`
+  tracks are renamed once when the library opens, `.idl0t` files are still read (and import from
+  idl0 as before), and sync matches tracks by id, so a phone on an older build still agrees. C4 §2.
+
 - **`deglitch_pulses` for wheel-pulse channels [docs] (2026-11-05).** The front wheel sensor adds
   an extra edge a few milliseconds after about 1.6 % of real pulses (tied to wheel position, same
   on road and trail). `deglitch_pulses([WheelFront])` drops a pulse whose gap is under 0.35 of both
@@ -339,6 +354,12 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
   button in the Data tab opens the same panel. Spec-during: C3 section 3.9.
 
 ### Fixed
+
+- **The notebook's timeline strip windows at the right times [no-docs] (2026-11-05).** The strip
+  measured its own width only when it first mounted, before a session had loaded and while it
+  drew nothing, so it never measured at all: every handle was drawn, and every drag mapped,
+  against a 600 px default. On a wide window the whole-ride window filled half the strip and a
+  dragged handle landed at the wrong time. It now measures whenever it appears.
 
 - **A notebook cell that reads `[Time]` no longer shows as blocked [no-docs] (2026-11-05).**
   `Time` (and `Distance`, with fixed-rate GPS speed) is built by the engine, not recorded, so the

@@ -672,9 +672,9 @@ Bugs and doc mismatches:
 
 Missing capability (each needed Python):
 
-- [ ] Creating a track with gates: no gate editor (R54) and no CLI verb (`track`
-      has only `list`/`detect`). Claude found a start/finish line in the GPS and
-      wrote the `.idl0t` by hand. See P3 `track propose`.
+- [x] Creating a track with gates: the gate editor landed 2026-11-05 (Data tab,
+      satellite map, track editor spec). Still no CLI verb (`track` has only
+      `list`/`detect`); see P3 `track propose`.
 - [ ] Sector gates: same gap, plus a check that warns when a gate is crossed more
       than once a lap (a 14 m gate cut a neighbouring lane on this track).
 - [ ] Events from a 0/1 channel (`runs(cond)` → t0, t1, duration, with a minimum
@@ -819,6 +819,12 @@ Analysis gaps from `173461a2` (Python was needed for each; `agent-gaps.md`):
 - [ ] Windows without laps: a trail ride has no track, so there is no way to
       name "descent 1 … 4" or "before/after the fork change" in a workbook.
       Needs time-range windows (or windows from a speed/altitude condition).
+      *2026-11-05:* descents are now tracks made in the gate editor (each run
+      a lap); "before/after a change" still has no name.
+- [ ] Track editor follow-ups (spec 2026-11-05): GPX import as a track (idl0
+      §16.6); a size cap on the map-tile cache; neutral-zone editing; the
+      satellite basemap in the notebook's map cell; a CLI `track` verb that
+      writes gates.
 - [ ] Cross-spectral transfer: `csd`/coherence between two channels (fork
       lower → frame), resampled onto a common grid. `welch` alone can't.
 - [ ] Stops: find stationary intervals from GPS speed (same family as

@@ -29,6 +29,8 @@ interface TrackDetailPaneProps {
    *  ruling R86) through the caller's own maintenance-action driver — this
    *  pane holds no maintenance-action state of its own. */
   onRescanSessions: (sessionIds: string[]) => void;
+  /** Opens the track editor on this track (track editor spec §1). */
+  onEditGates: (trackId: string) => void;
 }
 
 type FetchState =
@@ -48,7 +50,7 @@ type SaveState = { status: "idle" } | { status: "editing"; draft: TrackNameVenue
  *  placement editor stays wave 3 (ruling R54), so lap timing/sectors/
  *  neutral zones/reference polyline are read-only text here. Both write
  *  paths surface `stale_session_ids` as a "Rescan N sessions" action. */
-export function TrackDetailPane({ trackId, onClose, onChanged, onRescanSessions }: TrackDetailPaneProps) {
+export function TrackDetailPane({ trackId, onClose, onChanged, onRescanSessions, onEditGates }: TrackDetailPaneProps) {
   const [state, setState] = useState<FetchState>({ status: "loading" });
   const [saveState, setSaveState] = useState<SaveState>({ status: "idle" });
 
@@ -191,6 +193,9 @@ export function TrackDetailPane({ trackId, onClose, onChanged, onRescanSessions 
         <div role="toolbar" aria-label="Track actions" className="flex gap-2">
           <Button type="button" size="sm" onClick={startEdit}>
             Edit
+          </Button>
+          <Button type="button" size="sm" onClick={() => onEditGates(detail.track_id)}>
+            Edit gates on map
           </Button>
           <Button type="button" size="sm" emphasis="accent" onClick={handleDelete}>
             Delete

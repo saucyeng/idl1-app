@@ -14,6 +14,7 @@ import type { SelectionWindow } from "../../../state/selection";
 import { ColourPicker } from "@/components/ui/colour-picker";
 import { describeIpcError } from "./errors";
 import { FitExportButton } from "./FitExportButton";
+import { canExportFit } from "./fitExport";
 import { lapRowClicked } from "./lapSelection";
 import { parseStartInput, shouldPromptForStart } from "./libraryPanel";
 import { LapTable } from "./LapTable";
@@ -48,6 +49,9 @@ interface DetailPaneProps {
   /** Passed straight through to `MetadataForm`'s `onSaved` — the owning
    *  page redraws `detail` from `save_session_metadata`'s re-read result. */
   onMetadataSaved: (detail: SessionDetail) => void;
+  /** Opens the track editor on this ride (track editor spec §1). Offered
+   *  only when the session has GPS. */
+  onCreateTrack: () => void;
   onClose: () => void;
 }
 
@@ -133,7 +137,7 @@ function UnknownStartPrompt({ detail, onSaved }: { detail: SessionDetail; onSave
  *  a colour picker for this session's own `{ kind: "session" }` window when
  *  one is selected, and [[LapTable]]'s rows are clickable and each carry
  *  their own picker when selected as a `{ kind: "lap" }` window. */
-export function DetailPane({ view, detail, lapsErrorText, selection, onWindowsChange, onSetColour, onMetadataSaved, onClose }: DetailPaneProps) {
+export function DetailPane({ view, detail, lapsErrorText, selection, onWindowsChange, onSetColour, onMetadataSaved, onCreateTrack, onClose }: DetailPaneProps) {
   const [tracksState, tracksDispatch] = useReducer(tracksReducer, { status: "loading" });
 
   // This session's own windows only — a colour picker or a lap-row click
@@ -200,6 +204,12 @@ export function DetailPane({ view, detail, lapsErrorText, selection, onWindowsCh
       </Button>
 
       <FitExportButton detail={detail} />
+
+      {canExportFit(detail) && (
+        <Button type="button" size="sm" className="self-start" onClick={onCreateTrack}>
+          Create track from this ride
+        </Button>
+      )}
 
       <div className="flex flex-col gap-2">
         <SectionHead>Metadata</SectionHead>

@@ -2379,7 +2379,10 @@ dropped and never a refusal.
 
 ---
 
-## 17b. Track Artifact (`.idl0t`)
+## 17b. Track Artifact (`.idl1t`, formerly `.idl0t`)
+
+*idl1, 2026-11-05:* the file is `.idl1t`, format unchanged; `.idl0t` is still
+read (C4 §2, track editor spec §5).
 
 A **portable Track file** — one Track's analysis config (gates, timing,
 reference polyline), independent of any session. The GUI authors Tracks (§16)
@@ -3289,6 +3292,18 @@ A `save_track`/`delete_track` call returns `stale_session_ids` rather than
 rescanning anything itself, and the card offers a "Rescan N sessions"
 action over the existing `rescan_tracks` command (C3 §3.2) rather than the
 edit silently re-running lap detection over the whole track library.
+
+**idl1, 2026-11-05: the gate editor is real** (`TrackEditor.tsx`, track
+editor spec, C3 §3.14); R54's deferral is closed. **Create track from this
+ride** (session detail pane, any session with GPS) and **Edit gates on map**
+(this card) open it over the Data tab: a satellite map (Esri World Imagery,
+cached on disk) with the ride's GPS line coloured by speed, a time range that
+dims all but one stretch of the ride, and gates placed by clicking their two
+ends. Start + finish is point-to-point, a start alone a circuit; sectors are
+added in order. The sidebar lists the runs the gates catch on the ride, and
+clicking one shows just that run. A new track's reference line is the first
+run's GPS, start gate to finish gate, not the whole ride. Save is
+`save_track`, then **Rescan N sessions**. Neutral zones stay read-only.
 
 ### 24.13 Sort Options
 

@@ -44,6 +44,7 @@ import {
 import { toDetailView } from "./sessionDetail";
 import { dropDeletedSessionWindows, groupKeyOf, modifierFromClick, sessionRowClicked, toSessionRow, type SessionRow } from "./sessionRow";
 import { compareSessions, sortFieldsForView, type SortField } from "./sort";
+import { TrackEditor } from "./TrackEditor";
 import { TrackResults } from "./TrackResults";
 import { PushMenu } from "./PushMenu";
 import { useSessionPush } from "./useSessionPush";
@@ -269,6 +270,10 @@ export default function Data() {
   const [detailState, detailDispatch] = useReducer(detailReducer, { status: "idle" });
   const [maintenanceState, maintenanceDispatch] = useReducer(maintenanceReducer, initialMaintenanceState);
   const [maintenancePanelOpen, setMaintenancePanelOpen] = useState(false);
+  /** The track editor (track editor spec §1), open over the whole tab: on
+   *  a ride ("Create track from this ride") or on a track ("Edit gates on
+   *  map"); `null` when closed. */
+  const [trackEditor, setTrackEditor] = useState<{ sessionId: string | null; trackId: string | null; hasSpeed: boolean } | null>(null);
   const [filterSheetOpen, setFilterSheetOpen] = useState(false);
   const [bikeNotesOpen, setBikeNotesOpen] = useState(false);
   const [syncOpen, setSyncOpen] = useState(false);
@@ -547,6 +552,13 @@ export default function Data() {
         onWindowsChange={(windows: SelectionWindow[]) => appDispatch({ type: "SET_WINDOWS", windows })}
         onSetColour={(index: number, colour: string) => appDispatch({ type: "SET_WINDOW_COLOUR", index, colour })}
         onMetadataSaved={handleMetadataSaved}
+        onCreateTrack={() =>
+          setTrackEditor({
+            sessionId: detailState.detail.session_id,
+            trackId: null,
+            hasSpeed: detailState.detail.channels.some((c) => c.channel_id === "GPS_SpeedKmh" && c.sample_count > 0),
+          })
+        }
         onClose={closeDetail}
       />
     ) : null;
@@ -639,6 +651,19 @@ export default function Data() {
     );
   }
 
+  if (trackEditor !== null) {
+    return (
+      <TrackEditor
+        sessionId={trackEditor.sessionId}
+        trackId={trackEditor.trackId}
+        hasSpeed={trackEditor.hasSpeed}
+        onClose={() => setTrackEditor(null)}
+        onSaved={() => undefined}
+        onRescanSessions={handleRescanSessions}
+      />
+    );
+  }
+
   return (
     <div className="flex h-full">
       {railInSidebar && sidebarNode !== null && createPortal(railContent, sidebarNode)}
@@ -707,7 +732,12 @@ export default function Data() {
 
         <div className="min-h-0 flex-1 overflow-y-auto">
           {filters.view === "tracks" ? (
-            <TrackResults sortField={filters.sortField} sortAscending={filters.sortAscending} onRescanSessions={handleRescanSessions} />
+            <TrackResults
+              sortField={filters.sortField}
+              sortAscending={filters.sortAscending}
+              onRescanSessions={handleRescanSessions}
+              onEditGates={(trackId) => setTrackEditor({ sessionId: null, trackId, hasSpeed: false })}
+            />
           ) : rows.length === 0 ? (
             <p className="p-4 font-mono text-sm text-fg-dim">
               {sessions.length === 0 ? "No sessions yet — import a file." : "No matches. Try clearing filters."}

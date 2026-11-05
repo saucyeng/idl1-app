@@ -51,6 +51,11 @@ Named rules the lanes design against. Each is a sentence an implementer can quot
 - **Log files are immutable after download** (carried from idl0). Blobs never change; they are addressed by SHA-256.
 - **No renderer-only parameters** (carried). Anything the renderer honours is expressible in the cell.
 - **Offline-first means bundled.** Every JS library ships inside the app. No CDN, ever.
+  *Ruling (Isaac, 2026-11-05; closes R52 Q8):* the rule governs code. Map
+  imagery is data that cannot ship, so the track editor's satellite basemap
+  is fetched by Rust, cached under the OS cache directory, and the map works
+  without it (the GPS line on a blank background). Nothing else in the app
+  reaches the network for content. Track editor spec §4.
 
 ## 4. Target architecture
 
