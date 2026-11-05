@@ -157,6 +157,11 @@ Fit the rigid-body IMU calibration to a held-in-the-air session (ruling R238).
 | Flag | Value | Meaning |
 | --- | --- | --- |
 | `--truth` | path | Ground-truth JSON from `session synth`; adds the error against it to the report |
+| `--imu` | integer | Fit only these IMU indices (repeat for several); default every complete one |
+| `--rigid` | integer | Treat this IMU as rigid with the frame (a fork pod over a window with the bars still) |
+| `--from-ms` | integer | Start of the window to fit, ms from the first common sample |
+| `--to-ms` | integer | End of the window to fit, ms from the first common sample |
+| `--min-rate-mrad-s` | integer | Lower the tumble-rate gate (default 2000 mrad/s) to study a slower tumble |
 | `--json` | switch | Emit the result as JSON on stdout (schema_version 1); errors become typed JSON on stderr |
 
 Calls `calibration::rigid::calibrate`; `--json` emits `CalibrationReport`.

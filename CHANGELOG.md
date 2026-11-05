@@ -6,6 +6,16 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 
 ### Added
 
+- **`session calibrate` runs on real logs [docs] (2026-11-05).** It had only ever run on synthetic
+  sessions, where every IMU shares one clock; a real log samples each IMU on its own, so it refused
+  ("every stream must share one grid"). Each axis is now read at a common grid by its own recorded
+  times, and the accelerometer is the low-g stream where a high-g one was merged in. New flags:
+  `--imu` (fit only these), `--rigid` (a fork pod over a stretch with the bars still is fitted as part
+  of the frame), `--from-ms`/`--to-ms` (a window), `--min-rate-mrad-s` (study a tumble slower than
+  the 2 rad/s gate; a hand tumble of a whole bike runs near 1.2). First fit, the Beacon calibration
+  of 2026-11-04: fork pod 0.83 m ahead of and 0.25 m below the frame IMU, swingarm pod 0.35 m behind
+  and 0.42 m below, 1.19 m apart (the wheelbase).
+
 - **Export a ride to FIT from the Data tab [no-docs] (2026-11-05).** A session with GPS has an
   **Export .fit** button in its detail pane, as idl0 had: pick where to save (suggested
   `2026-11-04_Beacon.fit`), and the ride is written with its GPS track, heart rate and laps, ready

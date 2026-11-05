@@ -497,6 +497,46 @@
         {
           "choices": [],
           "default": null,
+          "help": "Fit only these IMU indices (repeat for several); default every complete one",
+          "kind": "integer",
+          "long": "imu",
+          "repeatable": true
+        },
+        {
+          "choices": [],
+          "default": null,
+          "help": "Treat this IMU as rigid with the frame (a fork pod over a window with the bars still)",
+          "kind": "integer",
+          "long": "rigid",
+          "repeatable": true
+        },
+        {
+          "choices": [],
+          "default": null,
+          "help": "Start of the window to fit, ms from the first common sample",
+          "kind": "integer",
+          "long": "from-ms",
+          "repeatable": false
+        },
+        {
+          "choices": [],
+          "default": null,
+          "help": "End of the window to fit, ms from the first common sample",
+          "kind": "integer",
+          "long": "to-ms",
+          "repeatable": false
+        },
+        {
+          "choices": [],
+          "default": null,
+          "help": "Lower the tumble-rate gate (default 2000 mrad/s) to study a slower tumble",
+          "kind": "integer",
+          "long": "min-rate-mrad-s",
+          "repeatable": false
+        },
+        {
+          "choices": [],
+          "default": null,
           "help": "Emit the result as JSON on stdout (schema_version 1); errors become typed JSON on stderr",
           "kind": null,
           "long": "json",
