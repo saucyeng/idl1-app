@@ -322,6 +322,13 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 
 ### Fixed
 
+- **Pairing with a QR code no longer syncs anything [no-docs] (2026-11-05).** Scanning the
+  computer's pairing QR with the phone paired the two and then at once ran a full two-way sync,
+  everything each side lacked, which for a new device can mean whole libraries. It now only pairs
+  and says "Nothing was transferred"; choose what to copy in Settings → Sync → Browse. New devices
+  were already stored with automatic sync off on both sides, and pairing by the six-digit code
+  never synced.
+
 - **Browsing and pulling from a paired phone no longer stalls for a minute or more [no-docs]
   (2026-11-05).** Every sync read and fingerprinted every ride file in the library before doing
   anything, 8.1 GB and about 55 s on the desktop, and the phone did the same to answer, so "List

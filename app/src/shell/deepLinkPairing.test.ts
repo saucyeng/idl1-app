@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
-import { linkName, pairLinkFrom } from "./deepLinkPairing";
+import type { PeerStatus } from "../ipc/sync";
+import { linkName, pairFromLink, pairLinkFrom } from "./deepLinkPairing";
 import { secondsLeft } from "../routes/pages/Settings/qrPair";
 
 describe("pairLinkFrom", () => {
@@ -39,5 +40,27 @@ describe("secondsLeft", () => {
 
     // Assert
     expect(values).toEqual([2, 0]);
+  });
+});
+
+describe("pairFromLink", () => {
+  it("pairFromLink — a valid link — pairs, says nothing was transferred, and has no way to sync", async () => {
+    // Arrange — the deps carry only the pairing call; there is no sync to call.
+    const paired: string[] = [];
+    const deps = {
+      pairWithLink: async (link: string): Promise<PeerStatus> => {
+        paired.push(link);
+        return { peer_id: "p1", name: "DESKTOP", online: true, protocol_version: 1, paired_at_ms: 0, auto_sync: "off" } as PeerStatus;
+      },
+    };
+
+    // Act
+    const message = await pairFromLink("idl1://pair?name=DESKTOP", deps);
+
+    // Assert
+    expect(paired).toEqual(["idl1://pair?name=DESKTOP"]);
+    expect(message.title).toBe("Paired with DESKTOP");
+    expect(message.description).toMatch(/Nothing was transferred/);
+    expect(Object.keys(deps)).toEqual(["pairWithLink"]);
   });
 });

@@ -10,7 +10,8 @@ import { secondsLeft } from "./qrPair";
  * "Pair a phone" with a QR code (2026-10-16, Isaac: click sync on the
  * computer, snap the QR with the phone). The code carries this computer's
  * id, name, LAN addresses and a one-time pairing code; the phone's camera
- * opens the app with it and the app pairs and syncs by itself. The six
+ * opens the app with it and the app pairs by itself; nothing is synced
+ * until the user picks what to copy (2026-11-05, Isaac). The six
  * digits are shown too, for typing by hand.
  */
 export function QrPairPanel() {

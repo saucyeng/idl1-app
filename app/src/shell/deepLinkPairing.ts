@@ -1,8 +1,7 @@
 import { useEffect } from "react";
 import { toast } from "sonner";
 
-import { pairWithLink, syncNow } from "../ipc/sync";
-import { describeSyncResult } from "../routes/pages/Settings/syncState";
+import { pairWithLink, type PeerStatus } from "../ipc/sync";
 
 /** The first QR pairing link (`idl1://pair?…`) among `urls`, else null. */
 export function pairLinkFrom(urls: readonly string[] | null | undefined): string | null {
@@ -21,18 +20,38 @@ export function linkName(link: string): string | null {
  *  both from `getCurrent` and from an `onOpenUrl` event. */
 const handled = new Set<string>();
 
-/** Pairs with the computer a QR link names, then syncs with it, saying
- *  what happens in toasts. */
-async function pairAndSync(link: string): Promise<void> {
+/** What pairing from a QR link needs: only the pairing call, so nothing
+ *  here can start a transfer. */
+export interface PairFromLinkDeps {
+  pairWithLink: (link: string) => Promise<PeerStatus>;
+}
+
+/**
+ * Pairs with the computer a QR link names, and nothing else: no sync.
+ * Until 2026-11-05 it synced everything both ways at once, which on a new
+ * device can mean whole libraries (Isaac: "that should be off by default,
+ * particularly for new devices"). The new device is stored with automatic
+ * sync off on both sides; what moves is chosen in Settings → Sync → Browse.
+ * Returns the toast's title and description.
+ */
+export async function pairFromLink(link: string, deps: PairFromLinkDeps): Promise<{ title: string; description: string }> {
+  const who = linkName(link) ?? "the computer";
+  const peer = await deps.pairWithLink(link);
+  return {
+    title: `Paired with ${peer.name || who}`,
+    description: "Nothing was transferred. Choose what to copy in Settings → Sync → Browse.",
+  };
+}
+
+/** {@link pairFromLink} once per link, said in toasts. */
+async function pairOnce(link: string): Promise<void> {
   if (handled.has(link)) return;
   handled.add(link);
   const who = linkName(link) ?? "the computer";
   const id = toast.loading(`Pairing with ${who}…`);
   try {
-    const peer = await pairWithLink(link);
-    toast.loading(`Paired with ${peer.name || who}. Syncing…`, { id });
-    const result = await syncNow(peer.peer_id, () => {});
-    toast.success(`Synced with ${peer.name || who}`, { id, description: describeSyncResult(result) });
+    const { title, description } = await pairFromLink(link, { pairWithLink });
+    toast.success(title, { id, description });
   } catch (e) {
     toast.error(`Couldn't pair with ${who}`, { id, description: String((e as { message?: string }).message ?? e) });
   }
@@ -40,7 +59,8 @@ async function pairAndSync(link: string): Promise<void> {
 
 /**
  * Handles QR pairing links (2026-10-16): the phone's camera opens the app
- * with `idl1://pair?…`, and the app pairs and syncs at once. Covers both
+ * with `idl1://pair?…`, and the app pairs (and, since 2026-11-05, does not
+ * sync: see {@link pairFromLink}). Covers both
  * an app launched by the link and one already running. A no-op where the
  * deep-link plugin isn't available (tests, a browser).
  */
@@ -52,10 +72,10 @@ export function useDeepLinkPairing(): void {
       try {
         const plugin = await import("@tauri-apps/plugin-deep-link");
         const first = pairLinkFrom(await plugin.getCurrent());
-        if (live && first !== null) void pairAndSync(first);
+        if (live && first !== null) void pairOnce(first);
         const stop = await plugin.onOpenUrl((urls) => {
           const link = pairLinkFrom(urls);
-          if (link !== null) void pairAndSync(link);
+          if (link !== null) void pairOnce(link);
         });
         if (live) unlisten = stop;
         else stop();
