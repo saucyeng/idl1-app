@@ -499,6 +499,15 @@ interface ChannelSummary {
   sample_count: number;            // u64
 }
 ```
+`channels` lists the recorded channels in file order, then the engine's base
+channels a workbook can also reference: `Time` (unit `s`), and `Distance`
+(unit `m`) when the session has a fixed-rate `GPS_SpeedKmh`. Those two carry
+`source_kind: "synthesized"` and the rate and sample count of the channel
+`Time` is built on. Core decides them from the file's metadata by the same
+rule the engine builds them by (`session::synthesis::plan_base_channels`), so
+nothing is decoded. A name the file records itself is not listed twice.
+Amended 2026-11-05: before this, `Time` was missing and the notebook blocked
+every cell that read `[Time]`.
 Errors: `not_found`, `io`, `internal`.
 
 **`list_laps(session_id: string)`** — NEW (round 2). Catalog-backed (lane

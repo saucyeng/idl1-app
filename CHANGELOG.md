@@ -340,6 +340,13 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 
 ### Fixed
 
+- **A notebook cell that reads `[Time]` no longer shows as blocked [no-docs] (2026-11-05).**
+  `Time` (and `Distance`, with fixed-rate GPS speed) is built by the engine, not recorded, so the
+  session's channel list left it out. The notebook took it for an unknown channel and blocked
+  every cell downstream: the braking notebook's charts showed "Blocked by Time" and stopped
+  following the window, although the CLI evaluated them fine. The list now includes them,
+  marked "synthesized", and they also appear in Sources. C3 §3.2.
+
 - **Workbook maths handles GPS and wheel-pulse channels properly [docs] (2026-11-05).** The
   engine stepped every time-based builtin by the channel's rate, which is 0 for an event channel,
   so `differentiate`, `gradient` and `cumulative_trapezoid` on GPS speed or wheel pulses returned
