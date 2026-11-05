@@ -821,6 +821,16 @@ Analysis gaps from `173461a2` (Python was needed for each; `agent-gaps.md`):
       Needs time-range windows (or windows from a speed/altitude condition).
       *2026-11-05:* descents are now tracks made in the gate editor (each run
       a lap); "before/after a change" still has no name.
+- [ ] Notebook stuck on "Recomputing" after the open workbook changed on disk
+      (2026-11-05, build 128): the braking workbook was edited outside the
+      app while open; the cells showed "Recomputing · 7 min" with the app at
+      0 % CPU and nothing in the console. Reopening the workbook cleared it.
+- [ ] Unit inference: `[GPS_SpeedKmh] / 3.6` keeps the unit `km/h` (the
+      braking chart's legend says "gps_v (km/h)" over m/s values). Division by
+      a bare number should not keep a unit the number converts away from, or
+      the cell needs `# unit:`.
+- [ ] A single-value result in a math cell shows "1 sample, unit unknown"
+      instead of its value (`cruise_bias_rev` in the braking workbook).
 - [ ] Track editor follow-ups (spec 2026-11-05): GPX import as a track (idl0
       §16.6); a size cap on the map-tile cache; neutral-zone editing; the
       satellite basemap in the notebook's map cell; a CLI `track` verb that
