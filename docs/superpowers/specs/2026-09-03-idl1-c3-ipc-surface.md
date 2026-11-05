@@ -3200,6 +3200,16 @@ form's totals, worked out in core (`session::summary`). Heart rate ignores
 zero samples; distance leaves out GPS steps made below 2 km/h. Errors:
 `not_found`, `io`.
 
+**`export_session_fit(session_id: string, path: string)`** (§3.2, added
+2026-11-05, `async`) → `{ path: string, bytes: number, laps: number }`.
+Writes the session as a Garmin FIT activity to `path` (the app takes it
+from a save dialog): sport cycling, GPS track, heart rate when present, and
+the session's `laps[]` as splits using each lap's effective `lap_time_ms`
+(`laps: 0` means none, written as one whole-ride lap). Writes
+`<path>.fit.part` and renames, so a failure leaves no file under `path`.
+idl0's "Export .fit". Errors: `not_found`, `invalid_argument` (no GPS
+fixes), `io`.
+
 `get_session`'s `SessionDetail` (§3.2) gains `bike_id: string` (`""` = not
 attached) and `bike_log: SessionBikeLog | null` (amended 2026-10-16), read
 from `session.json` (C1 §6).

@@ -348,6 +348,23 @@ export async function rideSummary(sessionId: string): Promise<RideSummary> {
   return invoke<RideSummary>("ride_summary", { sessionId });
 }
 
+/** What `export_session_fit` wrote (C3 §3.2, added 2026-11-05). */
+export interface FitExportReport {
+  /** The file written, as named. */
+  path: string;
+  /** File size, bytes. */
+  bytes: number;
+  /** Lap messages; 0 = one whole-ride lap. */
+  laps: number;
+}
+
+/** C3 §3.2 `export_session_fit`: writes the session as a FIT activity
+ *  (cycling, its laps as splits) to `path`. Rejects `invalid_argument` when
+ *  the session has no GPS fixes. */
+export async function exportSessionFit(sessionId: string, path: string): Promise<FitExportReport> {
+  return invoke<FitExportReport>("export_session_fit", { sessionId, path });
+}
+
 export async function getSession(sessionId: string): Promise<SessionDetail> {
   return invoke<SessionDetail>("get_session", { sessionId });
 }

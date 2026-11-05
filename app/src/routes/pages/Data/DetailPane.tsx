@@ -13,6 +13,7 @@ import AskAnAgentButton from "../../../shell/AskAnAgentButton";
 import type { SelectionWindow } from "../../../state/selection";
 import { ColourPicker } from "@/components/ui/colour-picker";
 import { describeIpcError } from "./errors";
+import { FitExportButton } from "./FitExportButton";
 import { lapRowClicked } from "./lapSelection";
 import { parseStartInput, shouldPromptForStart } from "./libraryPanel";
 import { LapTable } from "./LapTable";
@@ -197,6 +198,8 @@ export function DetailPane({ view, detail, lapsErrorText, selection, onWindowsCh
       <Button type="button" className="h-11" onClick={() => dispatchRideFlow({ type: "OPEN", key: sessionKey(detail.session_id), expanded: true })}>
         Ride notes and setup
       </Button>
+
+      <FitExportButton detail={detail} />
 
       <div className="flex flex-col gap-2">
         <SectionHead>Metadata</SectionHead>

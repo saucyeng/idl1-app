@@ -6,6 +6,12 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 
 ### Added
 
+- **Export a ride to FIT from the Data tab [no-docs] (2026-11-05).** A session with GPS has an
+  **Export .fit** button in its detail pane, as idl0 had: pick where to save (suggested
+  `2026-11-04_Beacon.fit`), and the ride is written with its GPS track, heart rate and laps, ready
+  for Strava or Garmin. **Show in folder** opens the file's folder afterwards. Desktop only for now.
+  New command `export_session_fit` (C3 §3.2).
+
 - **Workbooks save themselves [no-docs] (2026-11-05).** An edit in a cell, the code pane or the canvas
   is saved 400 ms after it lands and evaluated straight away, so there is no need to press Save to
   see a result. Save (Ctrl+S) still works. A conflict with a change made outside the app still

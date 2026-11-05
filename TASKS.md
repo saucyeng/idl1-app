@@ -759,11 +759,15 @@ Analysis gaps from `173461a2` (Python was needed for each; `agent-gaps.md`):
       now autosaves 400 ms after an edit (cell, code pane or canvas) and
       evaluates what it saved. Never over a conflict, never for a change that
       only came from the watcher.
-- [ ] **Export buttons back in the UI** (Isaac, 2026-11-04). idl0 had
-      per-session export; idl1 only has the CLI (`idl-rs fit <blob> -o x.fit`,
-      `export` for CSV/JSON). Wanted at least FIT (Strava/Garmin) and CSV
-      from a session in the Data tab. The command must be async with
-      progress (R201). Today's FIT was made by hand from the blob path.
+- [x] **Export buttons back in the UI** (Isaac, 2026-11-04; FIT done
+      2026-11-05). idl0's only session export was "Export .fit" in the detail
+      card, and that is what was ported: the Data tab's detail pane, GPS
+      sessions only, save dialog, then "Show in folder" (C3 §3.2
+      `export_session_fit`). Under a second for a ride, so no progress
+      channel. Not done: CSV of a session (the CLI's `export` writes every
+      sample of every channel; a 100-min ride at 923 Hz is gigabytes, so it
+      needs a channel/rate choice first), and export on Android (the save
+      dialog returns a content URI).
 - [ ] Fork and swingarm low-g clip at 16 g on 0.18 % of samples on this ride;
       the pods have no high-g channel here, so the biggest hits are flat-topped.
 
