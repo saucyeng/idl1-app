@@ -692,6 +692,30 @@ Unverified:
       table with sector columns, but they only render in the app, and nobody
       has opened them there yet. Check that both draw against these sessions.
 
+## Front wheel speed vs GPS, braking slip (Isaac, 2026-11-05)
+
+Workbook `braking-front-wheel-vs-gps.idl1wb` (library). Scale fitted on the
+road cruise 96.6–99.4 min: 0.182 m/pulse, 2.18 m rollout; there the
+per-revolution speed is within 0.61 m/s RMS of GPS at 8 m/s.
+
+- [ ] **Front wheel double triggers** (firmware or hardware). 1.5 % of
+      pulses at every speed (2–20 m/s), on road and trail alike, always
+      ~0.156 of the way to the next pickup (2.3 ms at 9+ m/s, 11.5 ms at
+      2–4 m/s): tied to wheel position, not time, so not bounce (the 200 us
+      glitch guard) and not vibration. A marginal magnetic signal: air gap or
+      target profile, with too little input hysteresis. Fix in firmware with
+      a lockout as a fraction of the last interval (reject an edge under
+      ~0.35 of it), or in hardware (smaller gap, Schmitt input). The pulse
+      after each double reads ~18 % fast; nothing downstream can repair it.
+- [ ] Wheel vs GPS distance by 5-min block: 1–6 % on road and fast
+      sections, 13–29 % more on slow climbs (10–40 min). GPS under-reads
+      slow switchbacks; the wheel is the better distance there.
+- [ ] Slip ratio: limited by the GPS reference, not by the 12 pickups (~36
+      speed samples/s at 6 m/s). A ground-speed reference from GPS fused with
+      IMU0 (the estimator lane) is what makes braking slip measurable.
+- [ ] Engine: `lag(x, n)` (previous-sample reads), dropping samples / `NaN`
+      for subset percentiles; see the library's `agent-gaps.md`.
+
 ## Frame acceleration at the axles, from calibration data (Isaac, 2026-11-05)
 
 Isaac: stop reading the frame's vertical acceleration at one point; pitch from
