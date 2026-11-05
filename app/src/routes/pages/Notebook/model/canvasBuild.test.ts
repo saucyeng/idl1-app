@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { SessionDetail } from "../../../../ipc/catalog";
-import { appendMathCell, appendNote, appendTableCell, applyFunction, FUNCTION_TEMPLATES, starterChartChannel, type FunctionTemplate } from "./canvasBuild";
+import { appendMathCell, appendNote, appendTableCell, applyFunction, FUNCTION_TEMPLATES, starterChartChannel, templatesFor, type FunctionTemplate } from "./canvasBuild";
 import { MATH_FUNCTIONS } from "./functionCatalog";
 import { buildGraphModel } from "./graphModel";
 import { scanCells } from "./cells";
@@ -125,5 +125,24 @@ describe("starterChartChannel", () => {
 
     // Assert
     expect(result).toBeNull();
+  });
+});
+
+describe("templatesFor", () => {
+  it("templatesFor — an event channel — no fixed-rate-only templates (butter, spectra)", () => {
+    // Act
+    const offered = templatesFor("GPS_SpeedKmh", new Set(["GPS_SpeedKmh"]));
+
+    // Assert
+    expect(offered.some((t) => t.fn === "butter" || t.fn === "welch" || t.fn === "periodogram")).toBe(false);
+    expect(offered.some((t) => t.fn === "abs")).toBe(true);
+  });
+
+  it("templatesFor — a fixed-rate channel — every template", () => {
+    // Act
+    const offered = templatesFor("IMU0_AccelZ", new Set(["GPS_SpeedKmh"]));
+
+    // Assert
+    expect(offered).toHaveLength(FUNCTION_TEMPLATES.length);
   });
 });

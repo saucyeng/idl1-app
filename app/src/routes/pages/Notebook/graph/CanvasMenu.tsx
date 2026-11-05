@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState, type CSSProperties, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 
-import { FUNCTION_TEMPLATES, type FunctionTemplate } from "../model/canvasBuild";
+import { FUNCTION_TEMPLATES, templatesFor, type FunctionTemplate } from "../model/canvasBuild";
 import { CHART_TYPE_CATALOG, type ChartTypeId } from "./chartTypeCatalog";
 import { CHART_TYPE_ICONS } from "./chartTypeIcons";
 
@@ -29,6 +30,9 @@ export interface CanvasMenuProps {
   /** Channels of the selected sessions plus the document's definitions —
    *  what "Add channel" and "Add math" offer. */
   inputs: CanvasMenuInput[];
+  /** Event channels (C1 §4.2, rate 0) of the selected sessions — the
+   *  fixed-rate-only functions are not offered for them. */
+  eventChannels: ReadonlySet<string>;
   onPlaceChannel: (name: string) => void;
   onApply: (inputName: string, template: FunctionTemplate) => void;
   onChart: (name: string, chartType: ChartTypeId) => void;
@@ -76,7 +80,14 @@ export default function CanvasMenu(props: CanvasMenuProps) {
   const q = query.trim().toLowerCase();
   const channelRows = useMemo(() => inputs.filter((i) => i.kind === "channel" && i.name.toLowerCase().includes(q)), [inputs, q]);
   const inputRows = useMemo(() => inputs.filter((i) => i.name.toLowerCase().includes(q)), [inputs, q]);
-  const functionRows = useMemo(() => FUNCTION_TEMPLATES.filter((t) => t.label.toLowerCase().includes(q) || t.group.toLowerCase().includes(q)), [q]);
+  const functionInput = view.kind === "functions" ? view.input : null;
+  const functionRows = useMemo(
+    () =>
+      (functionInput === null ? FUNCTION_TEMPLATES : templatesFor(functionInput, props.eventChannels)).filter(
+        (t) => t.label.toLowerCase().includes(q) || t.group.toLowerCase().includes(q)
+      ),
+    [q, functionInput, props.eventChannels]
+  );
 
   // Keep the panel on screen: open up/left when near the right or bottom edge.
   const style: CSSProperties = {
@@ -215,7 +226,11 @@ export default function CanvasMenu(props: CanvasMenuProps) {
     );
   }
 
-  return (
+  // Portalled to `document.body`: the canvas sits inside a dockview panel
+  // whose wrapper has a transform and `contain: paint`, which makes
+  // `position: fixed` relative to the panel and clips the menu out of sight
+  // (seen on the 2026-11-04 nightly).
+  return createPortal(
     <>
       {/* A transparent backdrop: a click (or another right-click) anywhere
           else closes the menu instead of reaching the canvas. */}
@@ -230,6 +245,7 @@ export default function CanvasMenu(props: CanvasMenuProps) {
       <div style={style} role="menu" className="idl-dense w-[260px] rounded-[var(--radius-structural)] border border-rule bg-surface py-1 shadow-lg">
         {content}
       </div>
-    </>
+    </>,
+    document.body
   );
 }

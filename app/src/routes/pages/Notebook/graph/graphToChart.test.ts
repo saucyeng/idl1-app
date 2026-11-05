@@ -28,6 +28,16 @@ describe("chartEligibilityFor", () => {
   });
 });
 
+describe("insertChartCell — with a minted id", () => {
+  it("insertChartCell — an id given — written on the fence", () => {
+    // Act
+    const doc = insertChartCell("", "GPS_SpeedKmh", "lineY", "0badf00d");
+
+    // Assert
+    expect(doc.startsWith("```js id=0badf00d\n")).toBe(true);
+  });
+});
+
 describe("insertChartCell", () => {
   it("insertChartCell — appends a new js cell whose code parses back to the same mark and channel", () => {
     // Act

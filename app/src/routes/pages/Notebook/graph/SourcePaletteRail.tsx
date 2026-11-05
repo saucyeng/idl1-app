@@ -48,6 +48,14 @@ function unitBadge(unit: UnitLabel): { text: string; title?: string } | null {
   return null;
 }
 
+/** A rate badge: whole hertz (an IMU's measured 922.657… Hz reads as
+ *  `923 Hz`, so the channel name keeps the row's width), one decimal below
+ *  10 Hz, and `event` for an event channel (rate 0, C1 §4.2). */
+function formatRate(hz: number): string {
+  if (hz === 0) return "event";
+  return hz < 10 ? `${hz.toFixed(1)} Hz` : `${Math.round(hz)} Hz`;
+}
+
 /** One draggable row — name, and a `Rate: … Hz` badge for a channel or a
  *  `= value` badge for a constant (decision: "each row shows name and
  *  rate"; a constant has no rate, so it shows its own value instead — the
@@ -59,7 +67,13 @@ function unitBadge(unit: UnitLabel): { text: string; title?: string } | null {
  *  badge already says everything this row needs to say). */
 function PaletteRowView({ row }: { row: PaletteRow }) {
   const badge =
-    row.kind === "channel" ? `${row.rateHz} Hz` : row.kind === "constant" ? `= ${row.value}` : row.kind === "definition" && row.sampleRateHz !== null ? `${row.sampleRateHz} Hz` : null;
+    row.kind === "channel"
+      ? formatRate(row.rateHz)
+      : row.kind === "constant"
+        ? `= ${row.value}`
+        : row.kind === "definition" && row.sampleRateHz !== null
+          ? formatRate(row.sampleRateHz)
+          : null;
   const unit = row.kind === "channel" || row.kind === "definition" ? unitBadge(row.unit) : null;
 
   return (

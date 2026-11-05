@@ -31,6 +31,10 @@ export interface FunctionTemplate {
   suffix: string;
   /** The right-hand side, given the input's bracket reference `[name]`. */
   rhs: (ref: string) => string;
+  /** Needs a fixed sample rate: not offered for an event channel (GPS, wheel
+   *  pulses — C1 §4.2 rate 0), where it can only fail (`butter`'s Nyquist
+   *  check, a spectrum's bin spacing). */
+  fixedRateOnly?: boolean;
 }
 
 const unary = (fn: string, group: string, label = fn): FunctionTemplate => ({ fn, label, group, suffix: fn, rhs: (ref) => `${fn}(${ref})` });
@@ -39,8 +43,8 @@ const unary = (fn: string, group: string, label = fn): FunctionTemplate => ({ fn
  *  input builtins (`atan2`, `resample`, the vector family) need a second
  *  operand the canvas can't guess and are written in the code view. */
 export const FUNCTION_TEMPLATES: readonly FunctionTemplate[] = [
-  { fn: "butter", label: "butter — low-pass 10 Hz", group: "Filter", suffix: "lowpass", rhs: (ref) => `butter(4, 10, "low", ${ref})` },
-  { fn: "butter", label: "butter — high-pass 1 Hz", group: "Filter", suffix: "highpass", rhs: (ref) => `butter(4, 1, "high", ${ref})` },
+  { fn: "butter", label: "butter — low-pass 10 Hz", group: "Filter", suffix: "lowpass", fixedRateOnly: true, rhs: (ref) => `butter(4, 10, "low", ${ref})` },
+  { fn: "butter", label: "butter — high-pass 1 Hz", group: "Filter", suffix: "highpass", fixedRateOnly: true, rhs: (ref) => `butter(4, 1, "high", ${ref})` },
   unary("differentiate", "Time-domain"),
   unary("gradient", "Time-domain"),
   unary("cumulative_trapezoid", "Time-domain", "cumulative_trapezoid (integrate)"),
@@ -56,8 +60,8 @@ export const FUNCTION_TEMPLATES: readonly FunctionTemplate[] = [
   unary("median", "Aggregate"),
   { fn: "percentile", label: "percentile — 95th", group: "Aggregate", suffix: "p95", rhs: (ref) => `percentile(${ref}, 95)` },
   unary("count", "Aggregate"),
-  unary("welch", "Frequency", "welch (spectrum)"),
-  unary("periodogram", "Frequency"),
+  { ...unary("welch", "Frequency", "welch (spectrum)"), fixedRateOnly: true },
+  { ...unary("periodogram", "Frequency"), fixedRateOnly: true },
   unary("abs", "Elementwise"),
   unary("sqrt", "Elementwise"),
   { fn: "pow", label: "pow — squared", group: "Elementwise", suffix: "sq", rhs: (ref) => `pow(${ref}, 2)` },
@@ -66,6 +70,12 @@ export const FUNCTION_TEMPLATES: readonly FunctionTemplate[] = [
   unary("deg2rad", "Elementwise"),
   unary("rad2deg", "Elementwise"),
 ];
+
+/** The templates offered for `inputName`: all of them, less the
+ *  fixed-rate-only ones when it is an event channel. */
+export function templatesFor(inputName: string, eventChannels: ReadonlySet<string>): readonly FunctionTemplate[] {
+  return eventChannels.has(inputName) ? FUNCTION_TEMPLATES.filter((t) => t.fixedRateOnly !== true) : FUNCTION_TEMPLATES;
+}
 
 /** Not a valid C2 §3.1 identifier character. */
 const INVALID_IDENTIFIER_CHAR_RE = /[^A-Za-z0-9_]/g;

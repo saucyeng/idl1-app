@@ -239,7 +239,7 @@ function GraphCanvasInner({ markdown, outputs, model: modelProp, evalViews, bloc
   // plus one per whole-cell chart kind), never guessed here.
   const handleChart = useCallback(
     (nodeName: string, chartType: ChartTypeId) => {
-      const next = insertChartCell(markdown, nodeName, chartType);
+      const next = insertChartCell(markdown, nodeName, chartType, freshCellId());
       if (next !== markdown) onCommit(next);
     },
     [markdown, onCommit]
@@ -402,6 +402,12 @@ function GraphCanvasInner({ markdown, outputs, model: modelProp, evalViews, bloc
     const defs = model.nodes.filter((n) => n.kind === "definition").map((n) => n.name);
     return [...[...channels].sort().map((name) => ({ name, kind: "channel" as const })), ...defs.sort().map((name) => ({ name, kind: "definition" as const }))];
   }, [sessionDetails, model.nodes]);
+
+  const eventChannels = useMemo(() => {
+    const set = new Set<string>();
+    for (const detail of sessionDetails.values()) for (const c of detail.channels) if (c.channel_kind === "event") set.add(c.channel_id);
+    return set;
+  }, [sessionDetails]);
 
   const handlePlaceChannel = useCallback(
     (name: string) => {
@@ -853,8 +859,8 @@ function GraphCanvasInner({ markdown, outputs, model: modelProp, evalViews, bloc
                 even see how i would place a math channel or chart"). */}
             {model.nodes.length === 0 && (
               <Panel position="top-center" className="pointer-events-none mt-16 max-w-sm text-center text-label-1 text-fg-dim">
-                Drag a channel here from the list on the left, or right-click the canvas to add a channel, math, a chart, a table or a note.
-                Right-click a node, or drag from its right edge, to chart it or build on it.
+                Pick a session (Data tab), then open Sources on the left and drag a channel here, or right-click the canvas to add a channel,
+                math, a chart, a table or a note. Right-click a node, or drag from its right edge, to chart it or build on it.
               </Panel>
             )}
             {/* The corner cluster (R212 item 2), bottom-right: Fit, Reset
@@ -894,6 +900,7 @@ function GraphCanvasInner({ markdown, outputs, model: modelProp, evalViews, bloc
               clientY={menu.clientY}
               target={menu.target}
               inputs={menuInputs}
+              eventChannels={eventChannels}
               onPlaceChannel={handlePlaceChannel}
               onApply={handleApply}
               onChart={handleChart}

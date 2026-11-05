@@ -716,8 +716,11 @@ Workbook authoring from empty (the canvas has no way in):
 - [x] **A new workbook can't be started on the canvas** — done 2026-11-04:
       a dropped channel is its own node (`graph.channels`, C2 §3.7.1, Isaac's
       yes), pane/node right-click menus, wire-drop menu, empty-canvas hint,
-      starter chart on `GPS_SpeedKmh`. Not smoke-tested in the app before
-      push (no local build); check on the nightly. Was: Dragging a channel
+      starter chart on `GPS_SpeedKmh`. Driven on nightly 1297c72: drop,
+      Chart, apply function all worked; found and fixed the menu clipped by
+      dockview's transform, canvas edits never re-evaluating, and saves
+      rewriting `graph` into an unreadable shape (idl-rs). Re-drive on the
+      next nightly. Was: Dragging a channel
       from the source palette onto an empty workbook only shows "No math cell
       to add … to yet — add one first" (`GraphCanvas.tsx` `handlePaletteDrop`),
       the canvas has no right-click menu, and a chart can only be made from a

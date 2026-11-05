@@ -19,6 +19,13 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
   card. The first function applied in an empty workbook creates its math cell. Channel nodes now
   carry the Chart button too, keep their place when dragged, and can be removed from the canvas. An
   empty canvas says how to start. Renaming a definition no longer drops other stored positions.
+  *Fixed the same day, after driving the nightly:* the menu drew outside the graph panel and was
+  clipped out of sight (now rendered over the whole window); canvas edits never re-evaluated —
+  this predates the menu: a chart, new definition, rename or edited argument sat "Queued" until
+  the workbook was reopened; saving rewrote `graph` positions in a YAML shape the canvas can't
+  read, so every stored position (and now every placed channel) was lost on reopen (idl-rs renders
+  `graph` canonically); filters and spectra are no longer offered for event channels like GPS
+  speed, where they can only fail; source rates read `923 Hz`, not `922.6577878784004 Hz`.
 
 - **IDL1 GPS settings: constellations, filters and up to 18 Hz, limited to what the module can hold [docs] (2026-11-03).**
   The logger now configures its SAM-M10Q GPS at boot (idl1-firmware); before, it ran at factory

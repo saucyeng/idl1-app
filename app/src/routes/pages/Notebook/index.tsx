@@ -5094,9 +5094,12 @@ export default function NotebookPage() {
    * the derivation itself stays unit-tested rather than living inline
    * here. A card click opens the node's owning cell in `EditorPanes`
    * through the existing `selectedCellId` mechanism -- no new editor path.
-   * `onCommit` dispatches `editFrontMatter`, which marks the document
-   * dirty for save without touching `dirtyCellIds` (no re-evaluation for a
-   * move, §3.7.1's advisory guarantee).
+   * `onCommit` goes through {@link handleDocumentChange}: a move or a
+   * placed channel changes only front matter (`editFrontMatter`, no
+   * re-evaluation, §3.7.1's advisory guarantee), while a new definition,
+   * chart or rename marks its cells dirty and re-evaluates (2026-11-04:
+   * before, every canvas edit went through `editFrontMatter`, so cells
+   * added on the canvas sat "Queued" until the workbook was reopened).
    */
   // Memoized on identity, not recomputed every render: `GraphCanvas.tsx`
   // itself `useMemo`s its heavy derivations (`buildGraphModel`,
@@ -5118,7 +5121,7 @@ export default function NotebookPage() {
         selectedWindows={graphSelectedWindows}
         windows={state.windows}
         sessionDetails={graphSessionDetails}
-        onCommit={(nextMarkdown) => dispatch({ type: "editFrontMatter", markdown: nextMarkdown })}
+        onCommit={handleDocumentChange}
         onSelectCell={(cellId) => setSelectedCellId(cellId)}
         colourCodeNodes={colourCodeNodes}
         selectedCellId={selectedCellId}

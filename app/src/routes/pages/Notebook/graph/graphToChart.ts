@@ -123,8 +123,12 @@ export function plotPropsForChartType(chartType: ChartTypeId, nodeName: string):
  * index.tsx`'s to decide (it already knows cursor/scroll position; this
  * module does not), and is flagged as unimplemented rather than guessed.
  */
-export function insertChartCell(markdown: string, nodeName: string, chartType: ChartTypeId): string {
+export function insertChartCell(markdown: string, nodeName: string, chartType: ChartTypeId, id?: string): string {
   const code = generate(plotPropsForChartType(chartType, nodeName));
   const separator = markdown.length === 0 || markdown.endsWith("\n") ? "" : "\n";
-  return `${markdown}${separator}\`\`\`js\n${code}\n\`\`\`\n`;
+  // `id`, when given, is minted by the caller (C2 §2.2 lets the app): the
+  // canvas passes one so the new cell is marked dirty and evaluates at once,
+  // rather than waiting for a save to give it an id (2026-11-04).
+  const info = id === undefined ? "js" : `js id=${id}`;
+  return `${markdown}${separator}\`\`\`${info}\n${code}\n\`\`\`\n`;
 }
