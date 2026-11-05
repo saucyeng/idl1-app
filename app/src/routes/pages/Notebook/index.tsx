@@ -2350,6 +2350,19 @@ export default function NotebookPage() {
     sandboxHostRef.current?.retry();
   }
 
+  /**
+   * Evaluates the workbook as just saved. `eval_workbook_v2` reads the file
+   * from disk, and the watch effect drops the app's own write
+   * (`isSelfWrite`), so without this nothing edited in the app — a typed
+   * cell or a canvas edit — evaluated until the workbook was reopened
+   * (found 2026-11-04 driving the canvas). Evaluate-only, no re-read, so an
+   * edit typed right after the save is not overwritten.
+   */
+  function evaluateSaved(workbookId: string) {
+    const mySeq = ++evalSeqRef.current;
+    trackEvalRun(runEval({ evalWorkbookV2 }, workbookId, windowsRef.current, dispatch, () => evalSeqRef.current !== mySeq, evalGenerationRef.current));
+  }
+
   async function handleSave() {
     if (state.handle === null || state.markdown === null || state.hash === null) return;
     const result = await saveFlowRef.current.save(state.handle.id, state.markdown, state.hash);
@@ -2358,6 +2371,7 @@ export default function NotebookPage() {
       lastSavedHashRef.current = result.hash;
       lastSavedAtMsRef.current = result.savedAtMs;
       dispatch({ type: "saveResult", hash: result.hash, migrations: result.migrations });
+      evaluateSaved(state.handle.id);
     } else if (result.status === "conflict") {
       dispatch({ type: "saveConflict" });
     }
@@ -2459,6 +2473,7 @@ export default function NotebookPage() {
         lastSavedHashRef.current = result.hash;
         lastSavedAtMsRef.current = result.savedAtMs;
         dispatch({ type: "saveResult", hash: result.hash, migrations: result.migrations });
+        evaluateSaved(state.handle.id);
       } else if (result.status === "conflict") {
         dispatch({ type: "saveConflict" });
       }

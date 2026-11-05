@@ -20,9 +20,11 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
   carry the Chart button too, keep their place when dragged, and can be removed from the canvas. An
   empty canvas says how to start. Renaming a definition no longer drops other stored positions.
   *Fixed the same day, after driving the nightly:* the menu drew outside the graph panel and was
-  clipped out of sight (now rendered over the whole window); canvas edits never re-evaluated —
-  this predates the menu: a chart, new definition, rename or edited argument sat "Queued" until
-  the workbook was reopened; saving rewrote `graph` positions in a YAML shape the canvas can't
+  clipped out of sight (now rendered over the whole window); nothing edited in the app evaluated
+  until the workbook was reopened — this predates the menu and covers typed cells too: evaluation
+  reads the saved file and the app ignores its own save, so a chart, new definition or edit sat
+  "Queued"; a save now evaluates the workbook (unsaved edits still show as queued until saved);
+  saving rewrote `graph` positions in a YAML shape the canvas can't
   read, so every stored position (and now every placed channel) was lost on reopen (idl-rs renders
   `graph` canonically); filters and spectra are no longer offered for event channels like GPS
   speed, where they can only fail; source rates read `923 Hz`, not `922.6577878784004 Hz`.
