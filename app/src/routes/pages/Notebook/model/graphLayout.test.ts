@@ -54,6 +54,7 @@ describe("readGraphLayout", () => {
     expect(layout).toEqual({
       nodes: { fork_spec: [120, 80], peak_freq: [320, 80] },
       cells: { "7f3c9a12": [80, 40] },
+      channels: {},
     });
   });
 
@@ -65,7 +66,7 @@ describe("readGraphLayout", () => {
     const layout = readGraphLayout(markdown);
 
     // Assert
-    expect(layout).toEqual({ nodes: { a: [1, 2] }, cells: {} });
+    expect(layout).toEqual({ nodes: { a: [1, 2] }, cells: {}, channels: {} });
   });
 
   it("readGraphLayout — a flow-style graph key on its own start line — reads as absent", () => {
@@ -101,14 +102,14 @@ describe("readGraphLayout", () => {
     const layout = readGraphLayout(markdown);
 
     // Assert
-    expect(layout).toEqual({ nodes: { ghost_name: [1, 2] }, cells: {} });
+    expect(layout).toEqual({ nodes: { ghost_name: [1, 2] }, cells: {}, channels: {} });
   });
 });
 
 describe("writeGraphLayout", () => {
   it("writeGraphLayout — writing then reading back — round-trips exactly", () => {
     // Arrange
-    const layout: GraphLayout = { nodes: { fork_spec: [120, 80], peak_freq: [320, 80] }, cells: { "7f3c9a12": [80, 40] } };
+    const layout: GraphLayout = { nodes: { fork_spec: [120, 80], peak_freq: [320, 80] }, cells: { "7f3c9a12": [80, 40] }, channels: {} };
 
     // Act
     const written = writeGraphLayout(BASE_DOC, layout);
@@ -120,7 +121,7 @@ describe("writeGraphLayout", () => {
 
   it("writeGraphLayout — every byte outside the graph block is untouched", () => {
     // Arrange
-    const layout: GraphLayout = { nodes: { fork_velocity: [10, 20] }, cells: {} };
+    const layout: GraphLayout = { nodes: { fork_velocity: [10, 20] }, cells: {}, channels: {} };
 
     // Act
     const written = writeGraphLayout(BASE_DOC, layout);
@@ -141,7 +142,7 @@ describe("writeGraphLayout", () => {
 
   it("writeGraphLayout — an empty layout on a document that has a graph key — removes the key entirely", () => {
     // Arrange
-    const withLayout = writeGraphLayout(BASE_DOC, { nodes: { a: [1, 2] }, cells: {} });
+    const withLayout = writeGraphLayout(BASE_DOC, { nodes: { a: [1, 2] }, cells: {}, channels: {} });
 
     // Act
     const written = writeGraphLayout(withLayout, EMPTY_GRAPH_LAYOUT);
@@ -152,13 +153,13 @@ describe("writeGraphLayout", () => {
 
   it("writeGraphLayout — replacing an existing well-formed block — overwrites it wholesale, not merged", () => {
     // Arrange
-    const withOld = writeGraphLayout(BASE_DOC, { nodes: { a: [1, 2], b: [3, 4] }, cells: {} });
+    const withOld = writeGraphLayout(BASE_DOC, { nodes: { a: [1, 2], b: [3, 4] }, cells: {}, channels: {} });
 
     // Act
-    const written = writeGraphLayout(withOld, { nodes: { a: [9, 9] }, cells: {} });
+    const written = writeGraphLayout(withOld, { nodes: { a: [9, 9] }, cells: {}, channels: {} });
 
     // Assert
-    expect(readGraphLayout(written)).toEqual({ nodes: { a: [9, 9] }, cells: {} });
+    expect(readGraphLayout(written)).toEqual({ nodes: { a: [9, 9] }, cells: {}, channels: {} });
   });
 
   it("writeGraphLayout — replacing a malformed existing block — replaces it wholesale rather than duplicating the key", () => {
@@ -166,11 +167,11 @@ describe("writeGraphLayout", () => {
     const malformed = "---\nid: x\nname: y\ngraph:\n  nodes:\n    a: [1, 2]\n  extra: weird\n---\n```math id=a1b2c3d4\nx = 1\n```\n";
 
     // Act
-    const written = writeGraphLayout(malformed, { nodes: { b: [5, 6] }, cells: {} });
+    const written = writeGraphLayout(malformed, { nodes: { b: [5, 6] }, cells: {}, channels: {} });
 
     // Assert
     expect(written.split("\n").filter((l) => l === "graph:")).toHaveLength(1);
-    expect(readGraphLayout(written)).toEqual({ nodes: { b: [5, 6] }, cells: {} });
+    expect(readGraphLayout(written)).toEqual({ nodes: { b: [5, 6] }, cells: {}, channels: {} });
   });
 
   it("writeGraphLayout — a hand-edited flow-style graph key on its own start line — is found and replaced wholesale, not duplicated", () => {
@@ -179,11 +180,11 @@ describe("writeGraphLayout", () => {
     const malformed = "---\nid: x\nname: y\ngraph: {nodes: {a: [1, 2]}}\n---\n```math id=a1b2c3d4\nx = 1\n```\n";
 
     // Act
-    const written = writeGraphLayout(malformed, { nodes: { b: [5, 6] }, cells: {} });
+    const written = writeGraphLayout(malformed, { nodes: { b: [5, 6] }, cells: {}, channels: {} });
 
     // Assert
     expect(written.split("\n").filter((l) => /^graph:/.test(l))).toHaveLength(1);
-    expect(readGraphLayout(written)).toEqual({ nodes: { b: [5, 6] }, cells: {} });
+    expect(readGraphLayout(written)).toEqual({ nodes: { b: [5, 6] }, cells: {}, channels: {} });
   });
 
   it("writeGraphLayout — a document with no front matter — returns the markdown unchanged", () => {
@@ -191,7 +192,7 @@ describe("writeGraphLayout", () => {
     const markdown = "```math id=a1b2c3d4\nx = 1\n```\n";
 
     // Act
-    const written = writeGraphLayout(markdown, { nodes: { a: [1, 2] }, cells: {} });
+    const written = writeGraphLayout(markdown, { nodes: { a: [1, 2] }, cells: {}, channels: {} });
 
     // Assert
     expect(written).toBe(markdown);
@@ -199,12 +200,34 @@ describe("writeGraphLayout", () => {
 
   it("writeGraphLayout — a key naming neither a valid identifier nor a hex8 — is dropped, never written unrecognisably", () => {
     // Arrange
-    const layout: GraphLayout = { nodes: { "not an identifier": [1, 2], ok_name: [3, 4] }, cells: {} };
+    const layout: GraphLayout = { nodes: { "not an identifier": [1, 2], ok_name: [3, 4] }, cells: {}, channels: {} };
 
     // Act
     const written = writeGraphLayout(BASE_DOC, layout);
 
     // Assert
-    expect(readGraphLayout(written)).toEqual({ nodes: { ok_name: [3, 4] }, cells: {} });
+    expect(readGraphLayout(written)).toEqual({ nodes: { ok_name: [3, 4] }, cells: {}, channels: {} });
+  });
+});
+
+describe("graphLayout — channels sub-key (C2 §3.7.1, 2026-11-04)", () => {
+  it("writeGraphLayout then readGraphLayout — all three sub-keys — round-trip, channels last", () => {
+    // Arrange
+    const layout: GraphLayout = { nodes: { a: [1, 2] }, cells: { "7f3c9a12": [3, 4] }, channels: { GPS_SpeedKmh: [5, 6] } };
+
+    // Act
+    const written = writeGraphLayout(BASE_DOC, layout);
+
+    // Assert
+    expect(written).toContain("graph:\n  nodes:\n    a: [1, 2]\n  cells:\n    7f3c9a12: [3, 4]\n  channels:\n    GPS_SpeedKmh: [5, 6]\n");
+    expect(readGraphLayout(written)).toEqual(layout);
+  });
+
+  it("writeGraphLayout — channels only — writes just the channels sub-key", () => {
+    // Act
+    const written = writeGraphLayout(BASE_DOC, { nodes: {}, cells: {}, channels: { IMU1_AccelZ: [0, 0] } });
+
+    // Assert
+    expect(readGraphLayout(written)).toEqual({ nodes: {}, cells: {}, channels: { IMU1_AccelZ: [0, 0] } });
   });
 });

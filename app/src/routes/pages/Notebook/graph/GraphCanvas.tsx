@@ -12,6 +12,7 @@ import {
   type Node,
   type NodeMouseHandler,
   type NodeTypes,
+  type OnConnectEnd,
   type OnNodeDrag,
   type OnReconnect,
 } from "@xyflow/react";
@@ -35,12 +36,14 @@ import { rawUnitToLabel } from "../model/unitLabel";
 import type { WindowEvalState } from "../model/workbookState";
 import { subgraphsFor, searchNodeIds, visibleNodeIds } from "../model/graphSubgraph";
 import { collapsedNodePosition, collapsedSubgraphNodesFor, subgraphFramesFor, FRAME_NODE_HEIGHT, FRAME_NODE_WIDTH } from "../model/graphSubgraphFrame";
-import { editLiteralArg, renameDefinition, rewireInput, type UnresolvedRenameRef } from "../model/graphEdits";
+import { deleteNode, editLiteralArg, renameDefinition, rewireInput, type UnresolvedRenameRef } from "../model/graphEdits";
 import { dropPaletteSource, type PaletteDragSource } from "../model/graphPaletteDrop";
 import { buildSourcePalette } from "../model/sourcePalette";
-import { replaceCellBody, scanCells } from "../model/cells";
+import { hex8FromBytes, insertVideoCell, replaceCellBody, scanCells } from "../model/cells";
+import { appendNote, appendTableCell, applyFunction, starterChartChannel, type FunctionTemplate } from "../model/canvasBuild";
 import { documentCellDisplayNames, setCellLabelLine } from "./cellDisplayName";
-import { commitDrag, commitTidy } from "./dragCommit";
+import CanvasMenu, { type CanvasMenuInput, type CanvasMenuTarget } from "./CanvasMenu";
+import { commitDrag, commitTidy, removePlacedChannel } from "./dragCommit";
 import type { ChartTypeId } from "./chartTypeCatalog";
 import { insertChartCell } from "./graphToChart";
 import EvalLegend from "./EvalLegend";
@@ -180,6 +183,21 @@ function unitFor(node: GraphNode, outputs: CellOutput[], sessionDetails: Map<str
   return output?.defs.find((d) => d.name === node.name)?.unit ?? null;
 }
 
+/** A fresh C2 §2.2 cell id: 4 random bytes as lowercase hex. */
+function freshCellId(): string {
+  return hex8FromBytes(crypto.getRandomValues(new Uint8Array(4)));
+}
+
+/** The open context menu: where it was opened (viewport and canvas
+ *  coordinates — a node it creates lands at the canvas point) and on what. */
+interface OpenMenu {
+  clientX: number;
+  clientY: number;
+  flowX: number;
+  flowY: number;
+  target: CanvasMenuTarget;
+}
+
 /** R145's "renamed; N reference(s) in cell(s) X were not updated" line —
  *  named cells, not a bare count, so the note is enough to go find them. */
 function describeUnresolved(oldName: string, newName: string, unresolved: UnresolvedRenameRef[]): string {
@@ -304,7 +322,8 @@ function GraphCanvasInner({ markdown, outputs, model: modelProp, evalViews, bloc
   const handleTidy = useCallback(() => {
     const fresh = computeAutoLayoutPositions(model, EMPTY_GRAPH_LAYOUT);
     const names = new Map(model.nodes.filter((node) => node.kind === "definition").map((node) => [node.id, node.name]));
-    const next = commitTidy(markdown, fresh, names);
+    const channelNames = new Map(model.nodes.filter((node) => node.kind === "channel").map((node) => [node.id, node.name]));
+    const next = commitTidy(markdown, fresh, names, channelNames);
     if (next !== markdown) onCommit(next);
   }, [model, markdown, onCommit]);
   const statuses = useMemo(
@@ -345,15 +364,99 @@ function GraphCanvasInner({ markdown, outputs, model: modelProp, evalViews, bloc
       } catch {
         return; // not our own drag payload
       }
-      const result = dropPaletteSource(markdown, model, source);
-      if (result.newDefName === null) {
-        setPaletteNotice(`No math cell to add "${source.name}" to yet -- add one first.`);
+      const result = dropPaletteSource(markdown, model, source, freshCellId());
+      if (result.placed === null) {
+        setPaletteNotice(`No math cell to add "${source.name}" to yet -- right-click the canvas to add one.`);
         return;
       }
       const { x, y } = screenToFlowPosition({ x: event.clientX, y: event.clientY });
-      onCommit(commitDrag(result.markdown, { kind: "node", name: result.newDefName }, x, y));
+      onCommit(commitDrag(result.markdown, result.placed, x, y));
     },
     [markdown, model, onCommit, screenToFlowPosition]
+  );
+
+  // The context menu (Isaac, 2026-11-04): right-click empty canvas to add
+  // things, right-click a channel/definition node (or drop a wire dragged
+  // from one on empty canvas) to chart it or apply a function to it.
+  const [menu, setMenu] = useState<OpenMenu | null>(null);
+  const closeMenu = useCallback(() => setMenu(null), []);
+  const openMenuAt = useCallback(
+    (clientX: number, clientY: number, target: CanvasMenuTarget) => {
+      const { x, y } = screenToFlowPosition({ x: clientX, y: clientY });
+      setMenu({ clientX, clientY, flowX: x, flowY: y, target });
+    },
+    [screenToFlowPosition]
+  );
+  const placedChannels = useMemo(() => new Set(Object.keys(layout.channels)), [layout]);
+  const sourceTarget = useCallback(
+    (node: GraphNode): CanvasMenuTarget | null =>
+      node.kind === "chart" ? null : { kind: "source", name: node.name, nodeKind: node.kind, placed: placedChannels.has(node.name), cellId: node.cellId },
+    [placedChannels]
+  );
+
+  // "Add channel" / "Add math" offer the selected sessions' channels and the
+  // document's own definitions, each once, sorted.
+  const menuInputs = useMemo<CanvasMenuInput[]>(() => {
+    const channels = new Set<string>();
+    for (const detail of sessionDetails.values()) for (const c of detail.channels) channels.add(c.channel_id);
+    const defs = model.nodes.filter((n) => n.kind === "definition").map((n) => n.name);
+    return [...[...channels].sort().map((name) => ({ name, kind: "channel" as const })), ...defs.sort().map((name) => ({ name, kind: "definition" as const }))];
+  }, [sessionDetails, model.nodes]);
+
+  const handlePlaceChannel = useCallback(
+    (name: string) => {
+      if (menu === null) return;
+      onCommit(commitDrag(markdown, { kind: "channel", name }, menu.flowX, menu.flowY));
+    },
+    [menu, markdown, onCommit]
+  );
+  const handleApply = useCallback(
+    (inputName: string, template: FunctionTemplate) => {
+      if (menu === null) return;
+      const result = applyFunction(markdown, model, inputName, template, freshCellId());
+      // From the pane the new node goes where the menu opened; from a node,
+      // just right of it, so it reads as built from that node.
+      const fromNode = menu.target.kind === "source";
+      onCommit(commitDrag(result.markdown, { kind: "node", name: result.newDefName }, fromNode ? menu.flowX + 220 : menu.flowX, menu.flowY));
+      onSelectCell(result.cellId);
+    },
+    [menu, markdown, model, onCommit, onSelectCell]
+  );
+  const handleAddChart = useCallback(() => {
+    const channel = starterChartChannel(sessionDetails);
+    if (channel === null) {
+      setPaletteNotice("Select a session first -- a new chart starts from one of its channels.");
+      return;
+    }
+    handleChart(channel, "lineY");
+  }, [sessionDetails, handleChart]);
+  const handleAddTable = useCallback(() => {
+    const id = freshCellId();
+    onCommit(appendTableCell(markdown, id));
+    onSelectCell(id);
+  }, [markdown, onCommit, onSelectCell]);
+  const handleAddNote = useCallback(() => {
+    onCommit(appendNote(markdown));
+    setPaletteNotice("Note added at the end of the workbook -- edit it in the document view.");
+  }, [markdown, onCommit]);
+  const handleAddVideo = useCallback(() => {
+    const id = freshCellId();
+    onCommit(insertVideoCell(markdown, id));
+    onSelectCell(id);
+  }, [markdown, onCommit, onSelectCell]);
+  const handleRemoveChannel = useCallback(
+    (name: string) => {
+      const next = removePlacedChannel(markdown, name);
+      if (next !== markdown) onCommit(next);
+    },
+    [markdown, onCommit]
+  );
+  const handleDeleteDefinition = useCallback(
+    (cellId: string, name: string) => {
+      const next = deleteNode(markdown, cellId, name);
+      if (next !== markdown) onCommit(next);
+    },
+    [markdown, onCommit]
   );
 
   // Subgraph collapse/expand (decision 42) -- a list of collapsed cell ids
@@ -538,11 +641,48 @@ function GraphCanvasInner({ markdown, outputs, model: modelProp, evalViews, bloc
 
   const handleNodeDragStop = useCallback<OnNodeDrag<FlowNode>>(
     (_event, draggedNode) => {
-      if (draggedNode.type !== "mathNode" || draggedNode.data.graphNode.kind !== "definition") return; // no stored-position home, §3.7.1; frame/collapsed nodes never drag
-      const next = commitDrag(markdown, { kind: "node", name: draggedNode.data.graphNode.name }, draggedNode.position.x, draggedNode.position.y);
+      if (draggedNode.type !== "mathNode" || draggedNode.data.graphNode.kind === "chart") return; // no stored-position home, §3.7.1; frame/collapsed nodes never drag
+      const { kind, name } = draggedNode.data.graphNode;
+      // A dragged channel is stored in `graph.channels` (C2 §3.7.1): moving it
+      // places it, so it stays where it was put.
+      const next = commitDrag(markdown, kind === "channel" ? { kind: "channel", name } : { kind: "node", name }, draggedNode.position.x, draggedNode.position.y);
       if (next !== markdown) onCommit(next);
     },
     [markdown, onCommit]
+  );
+
+  const handlePaneContextMenu = useCallback(
+    (event: { preventDefault: () => void; clientX: number; clientY: number }) => {
+      event.preventDefault();
+      openMenuAt(event.clientX, event.clientY, { kind: "pane" });
+    },
+    [openMenuAt]
+  );
+  const handleNodeContextMenu = useCallback<NodeMouseHandler<FlowNode>>(
+    (event, node) => {
+      if (node.type !== "mathNode") return;
+      const target = sourceTarget(node.data.graphNode);
+      if (target === null) return;
+      event.preventDefault();
+      openMenuAt(event.clientX, event.clientY, target);
+    },
+    [openMenuAt, sourceTarget]
+  );
+  // A wire dragged out of a node's output and dropped on empty canvas opens
+  // that node's menu at the drop point (decision: "or drag for either").
+  // A drop onto another node does nothing new: edges are derived from the
+  // document's references, and rewiring is the reconnect gesture.
+  const handleConnectEnd = useCallback<OnConnectEnd>(
+    (event, connectionState) => {
+      if (connectionState.toNode !== null || connectionState.fromNode === null) return;
+      const fromId = connectionState.fromNode.id;
+      const graphNode = model.nodes.find((n) => n.id === fromId);
+      const target = graphNode !== undefined ? sourceTarget(graphNode) : null;
+      if (target === null) return;
+      const point = "changedTouches" in event ? event.changedTouches[0] : event;
+      openMenuAt(point.clientX, point.clientY, target);
+    },
+    [openMenuAt, sourceTarget, model.nodes]
   );
 
   const handleNodeClick = useCallback<NodeMouseHandler<FlowNode>>(
@@ -686,6 +826,9 @@ function GraphCanvasInner({ markdown, outputs, model: modelProp, evalViews, bloc
             onNodeDragStop={handleNodeDragStop}
             onNodeClick={handleNodeClick}
             onReconnect={handleReconnect}
+            onPaneContextMenu={handlePaneContextMenu}
+            onNodeContextMenu={handleNodeContextMenu}
+            onConnectEnd={handleConnectEnd}
             edgesReconnectable
             fitView
             /* The infinite canvas (R212 item 2). Left-drag on empty space
@@ -706,6 +849,14 @@ function GraphCanvasInner({ markdown, outputs, model: modelProp, evalViews, bloc
             maxZoom={GRAPH_MAX_ZOOM}
           >
             <Background />
+            {/* An empty workbook says how to start (Isaac, 2026-11-04: "i dont
+                even see how i would place a math channel or chart"). */}
+            {model.nodes.length === 0 && (
+              <Panel position="top-center" className="pointer-events-none mt-16 max-w-sm text-center text-label-1 text-fg-dim">
+                Drag a channel here from the list on the left, or right-click the canvas to add a channel, math, a chart, a table or a note.
+                Right-click a node, or drag from its right edge, to chart it or build on it.
+              </Panel>
+            )}
             {/* The corner cluster (R212 item 2), bottom-right: Fit, Reset
                 100 %, a zoom step pair, and the minimap — whose mask is the
                 viewport rectangle drawn over the whole node extent. The
@@ -737,6 +888,24 @@ function GraphCanvasInner({ markdown, outputs, model: modelProp, evalViews, bloc
               <MiniMap pannable zoomable className="!static !m-0 !h-[120px] !w-[160px] rounded-[var(--radius-structural)] border border-rule" />
             </Panel>
           </ReactFlow>
+          {menu !== null && (
+            <CanvasMenu
+              clientX={menu.clientX}
+              clientY={menu.clientY}
+              target={menu.target}
+              inputs={menuInputs}
+              onPlaceChannel={handlePlaceChannel}
+              onApply={handleApply}
+              onChart={handleChart}
+              onAddChart={handleAddChart}
+              onAddTable={handleAddTable}
+              onAddNote={handleAddNote}
+              onAddVideo={handleAddVideo}
+              onRemoveChannel={handleRemoveChannel}
+              onDeleteDefinition={handleDeleteDefinition}
+              onClose={closeMenu}
+            />
+          )}
         </div>
       </div>
     </div>

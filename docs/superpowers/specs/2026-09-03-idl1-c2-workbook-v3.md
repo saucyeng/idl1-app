@@ -1326,11 +1326,27 @@ never opens the graph view.
 #### 3.7.1 Front-matter `graph` key
 
 ```ebnf
-graph_key      ::= "graph:" "\n" nodes_key? cells_key?
+graph_key      ::= "graph:" "\n" nodes_key? cells_key? channels_key?
 nodes_key      ::= "  nodes:" "\n" position_entry*
 cells_key      ::= "  cells:" "\n" position_entry*
+channels_key   ::= "  channels:" "\n" position_entry*
 position_entry ::= "    " (identifier | hex8) ": [" int "," int "]" "\n"
 ```
+
+**`channels` (Isaac, 2026-11-04).** `channels` maps a session **channel id**
+to the canvas position of that channel's source node. An entry does two
+things: it places the node, and it puts the node on the canvas even when no
+definition or chart references the channel yet. That is how a workbook is
+started on the canvas: drop a channel, then chart it or build math on it. A
+channel stays **one node per id** whether it has an entry or not; a channel
+some definition references but that has no entry still appears, auto-placed,
+as before this amendment. Only a channel id that is a valid `identifier`
+can be stored (every logger channel is); any other id is auto-placed and
+cannot be placed alone. An entry naming a channel no selected session has
+draws as a greyed node (decision 44), not an error. Removing a channel node
+from the canvas deletes its entry; if a definition still references the
+channel, the node stays, auto-placed. Like the other two sub-keys, `channels`
+is advisory: the evaluator never reads it.
 
 An optional top-level front-matter key (§1). `nodes` maps a math-cell
 definition **name** (§3.1's `identifier`) to an `[x, y]` integer canvas
@@ -1371,7 +1387,7 @@ degrades to layout, never to data or an error:
 
 #### 3.7.2 Merge rule (amends §7.1)
 
-`graph` is merged **per entry**, within each of `nodes`/`cells`
+`graph` is merged **per entry**, within each of `nodes`/`cells`/`channels`
 independently, on the same three-way rule as `constants` (§7.1) — except
 with **no conflict note**. An entry (one node's or one cell's position)
 changed on both sides since `base` keeps local's value silently; an entry

@@ -39,24 +39,24 @@ describe("renameDefinition", () => {
 
   it("renameDefinition — a stored graph.nodes position — moves to the new key in the same edit", () => {
     // Arrange
-    const withPosition = writeGraphLayout(DOC, { nodes: { fork_velocity: [120, 80] }, cells: {} });
+    const withPosition = writeGraphLayout(DOC, { nodes: { fork_velocity: [120, 80] }, cells: {}, channels: {} });
 
     // Act
     const result = renameDefinition(withPosition, "fork_velocity", "fork_v");
 
     // Assert
-    expect(readGraphLayout(result.markdown)).toEqual({ nodes: { fork_v: [120, 80] }, cells: {} });
+    expect(readGraphLayout(result.markdown)).toEqual({ nodes: { fork_v: [120, 80] }, cells: {}, channels: {} });
   });
 
   it("renameDefinition — no stored position for the renamed name — leaves graph.nodes untouched", () => {
     // Arrange
-    const withOther = writeGraphLayout(DOC, { nodes: { shock_velocity: [1, 2] }, cells: {} });
+    const withOther = writeGraphLayout(DOC, { nodes: { shock_velocity: [1, 2] }, cells: {}, channels: {} });
 
     // Act
     const result = renameDefinition(withOther, "fork_velocity", "fork_v");
 
     // Assert
-    expect(readGraphLayout(result.markdown)).toEqual({ nodes: { shock_velocity: [1, 2] }, cells: {} });
+    expect(readGraphLayout(result.markdown)).toEqual({ nodes: { shock_velocity: [1, 2] }, cells: {}, channels: {} });
   });
 
   it("renameDefinition — a substring collision (fork_velocity vs a hypothetical fork_velocity_2) — renames only the exact reference", () => {
@@ -235,13 +235,13 @@ describe("deleteNode", () => {
 
   it("deleteNode — does not touch a stored graph.nodes entry for the deleted name (orphan, not pruned)", () => {
     // Arrange
-    const withPosition = writeGraphLayout(DOC, { nodes: { fork_bottom_out: [10, 20] }, cells: {} });
+    const withPosition = writeGraphLayout(DOC, { nodes: { fork_bottom_out: [10, 20] }, cells: {}, channels: {} });
 
     // Act
     const deleted = deleteNode(withPosition, "a1b2c3d4", "fork_bottom_out");
 
     // Assert
-    expect(readGraphLayout(deleted)).toEqual({ nodes: { fork_bottom_out: [10, 20] }, cells: {} });
+    expect(readGraphLayout(deleted)).toEqual({ nodes: { fork_bottom_out: [10, 20] }, cells: {}, channels: {} });
   });
 
   it("deleteNode — an unknown defName — is a no-op", () => {

@@ -6,6 +6,20 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 
 ### Added
 
+- **A workbook can be started on the canvas: drop a channel, right-click to add, drag a wire to build [no-docs] (2026-11-04).**
+  Before, a new workbook had no way in from the maths graph: a dropped channel was refused with
+  "No math cell to add … to yet", there was no context menu, and a chart could only be made from a
+  node that already existed. Now a channel dropped from the source list becomes its own node, stored
+  with its position in the workbook's new `graph.channels` front-matter key (C2 §3.7.1, advisory like
+  `graph.nodes`; still one node per channel). Right-click empty canvas to add a channel, a math
+  channel (pick an input, then a function), a chart (starts on `GPS_SpeedKmh` when the session has
+  it), a table, a note or a video. Right-click a channel or definition node, or drag a wire from its
+  right edge onto empty canvas, to chart it or apply a function: 26 starter calls (filters, rolling
+  and whole-window aggregates, spectra, elementwise), each valid as inserted and editable on the
+  card. The first function applied in an empty workbook creates its math cell. Channel nodes now
+  carry the Chart button too, keep their place when dragged, and can be removed from the canvas. An
+  empty canvas says how to start. Renaming a definition no longer drops other stored positions.
+
 - **IDL1 GPS settings: constellations, filters and up to 18 Hz, limited to what the module can hold [docs] (2026-11-03).**
   The logger now configures its SAM-M10Q GPS at boot (idl1-firmware); before, it ran at factory
   1 Hz whatever the config said. The Device tab's GPS sheet adds a switch per constellation (GPS,

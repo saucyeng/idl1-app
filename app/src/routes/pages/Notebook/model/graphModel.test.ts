@@ -236,3 +236,27 @@ describe("buildGraphModel — chart nodes (R214 item 1)", () => {
     expect(model.nodes.filter((n) => n.kind === "chart")).toEqual([]);
   });
 });
+
+describe("buildGraphModel — placed channels (C2 §3.7.1 channels)", () => {
+  const FRONT_WITH_PLACED = "---\nid: 9f3c1e2d-4b6a-4f1c-9c3d-2a7e8f9b0c1d\nname: T\ngraph:\n  channels:\n    GPS_SpeedKmh: [10, 20]\n    fork_travel: [0, 0]\n---\n";
+
+  it("buildGraphModel — a placed channel nothing references — one channel node, no edges", () => {
+    // Act
+    const model = buildGraphModel(FRONT_WITH_PLACED, []);
+
+    // Assert
+    expect(model.nodes.filter((n) => n.kind === "channel").map((n) => n.name)).toEqual(["GPS_SpeedKmh", "fork_travel"]);
+    expect(model.edges).toEqual([]);
+  });
+
+  it("buildGraphModel — a placed channel that is also referenced — still one node", () => {
+    // Arrange
+    const doc = FRONT_WITH_PLACED + "```math id=a1b2c3d4\nfv = differentiate([fork_travel])\n```\n";
+
+    // Act
+    const model = buildGraphModel(doc, []);
+
+    // Assert
+    expect(model.nodes.filter((n) => n.name === "fork_travel")).toHaveLength(1);
+  });
+});

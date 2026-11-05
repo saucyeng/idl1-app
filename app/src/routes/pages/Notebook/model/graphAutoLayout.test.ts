@@ -78,7 +78,7 @@ describe("computeAutoLayoutPositions", () => {
       edges: [edge("channel:a", "def:b")],
       groups: [],
     };
-    const layout: GraphLayout = { nodes: { b: [999, 999] }, cells: {} };
+    const layout: GraphLayout = { nodes: { b: [999, 999] }, cells: {}, channels: {} };
 
     // Act
     const positions = computeAutoLayoutPositions(model, layout);
@@ -93,7 +93,7 @@ describe("computeAutoLayoutPositions", () => {
     // leak onto a channel node: C2 §3.7.1's `nodes` key is definition-name
     // keyed, and this module must not accidentally match a channel by name.
     const model: GraphModel = { nodes: [node("channel:x", "channel")], edges: [], groups: [] };
-    const layout: GraphLayout = { nodes: { x: [123, 456] }, cells: {} };
+    const layout: GraphLayout = { nodes: { x: [123, 456] }, cells: {}, channels: {} };
 
     // Act
     const positions = computeAutoLayoutPositions(model, layout);

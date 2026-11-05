@@ -692,6 +692,64 @@ Unverified:
       table with sector columns, but they only render in the app, and nobody
       has opened them there yet. Check that both draw against these sessions.
 
+## Beacon ride — phone transfer, new workbook, analysis gaps (2026-11-04)
+
+Isaac pulled three IDL1 sessions from the phone to the desktop (one 100 min
+trail ride, `173461a2`, and two short calibration recordings) and tried to
+start a workbook by hand. Not started.
+
+Phone → desktop transfer:
+
+- [ ] **"List files" took about a minute to show the phone's files**, and
+      the connection was slow to show as up. Measure where the time goes
+      (discovery, pairing link, the listing request) before changing anything.
+- [ ] **The picked-files progress sat at "manifest" for minutes**, yet the
+      files arrived: blobs landed 19:17, `data.parquet` 19:18, `session.json`
+      19:19–19:20 (desktop clock). Isaac closed the window and reopened Browse
+      files, and the sessions appeared while the new list was still loading.
+      So the transfer ran and the progress UI never left its first stage.
+      Check what drives the stage label, and whether reopening Browse re-ran
+      or re-reported the same transfer.
+
+Workbook authoring from empty (the canvas has no way in):
+
+- [x] **A new workbook can't be started on the canvas** — done 2026-11-04:
+      a dropped channel is its own node (`graph.channels`, C2 §3.7.1, Isaac's
+      yes), pane/node right-click menus, wire-drop menu, empty-canvas hint,
+      starter chart on `GPS_SpeedKmh`. Not smoke-tested in the app before
+      push (no local build); check on the nightly. Was: Dragging a channel
+      from the source palette onto an empty workbook only shows "No math cell
+      to add … to yet — add one first" (`GraphCanvas.tsx` `handlePaletteDrop`),
+      the canvas has no right-click menu, and a chart can only be made from a
+      node that already exists (`ChartTypePicker`). The only way to add a math
+      cell is typing the fence in the code view. Wanted: a drop on an empty
+      canvas creates the first math cell, a pane right-click menu (add math
+      channel / chart / table / note / video at the click point), and an
+      empty-canvas hint. Behaviour of a dropped channel needs Isaac's call
+      (a bare source node, or a definition in a new math cell).
+
+Analysis gaps from `173461a2` (Python was needed for each; `agent-gaps.md`):
+
+- [ ] Windows without laps: a trail ride has no track, so there is no way to
+      name "descent 1 … 4" or "before/after the fork change" in a workbook.
+      Needs time-range windows (or windows from a speed/altitude condition).
+- [ ] Cross-spectral transfer: `csd`/coherence between two channels (fork
+      lower → frame), resampled onto a common grid. `welch` alone can't.
+- [ ] Stops: find stationary intervals from GPS speed (same family as
+      `runs(cond)` in the Broome-Tioga list).
+- [ ] The rear wheel sensor counts ≈ 7.4 pulses per rev against 12 pickups
+      (front reads 12/rev, matching GPS at 0.18 m/pulse); the shortfall grows
+      with speed (front/rear 1.6–1.7 climbing, 1.8–1.9 descending). Missed
+      pickups, not a pairing artefact: interval histograms show no
+      short-long pair structure. Firmware/hardware check on the rear pickup.
+- [ ] **Export buttons back in the UI** (Isaac, 2026-11-04). idl0 had
+      per-session export; idl1 only has the CLI (`idl-rs fit <blob> -o x.fit`,
+      `export` for CSV/JSON). Wanted at least FIT (Strava/Garmin) and CSV
+      from a session in the Data tab. The command must be async with
+      progress (R201). Today's FIT was made by hand from the blob path.
+- [ ] Fork and swingarm low-g clip at 16 g on 0.18 % of samples on this ride;
+      the pods have no high-g channel here, so the biggest hits are flat-topped.
+
 ## Wave 3
 
 - [ ] L9 mobile plugins · L12 in-app agent (optional)

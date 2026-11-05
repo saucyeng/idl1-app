@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { readGraphLayout } from "../model/graphLayout";
-import { commitDrag, commitTidy } from "./dragCommit";
+import { commitDrag, commitTidy, removePlacedChannel } from "./dragCommit";
 
 const BASE_DOC =
   "---\n" +
@@ -19,7 +19,7 @@ describe("commitDrag", () => {
     const written = commitDrag(BASE_DOC, { kind: "node", name: "fork_velocity" }, 120, 80);
 
     // Assert
-    expect(readGraphLayout(written)).toEqual({ nodes: { fork_velocity: [120, 80] }, cells: {} });
+    expect(readGraphLayout(written)).toEqual({ nodes: { fork_velocity: [120, 80] }, cells: {}, channels: {} });
   });
 
   it("commitDrag — a cell group — writes its position under graph.cells, keyed by hex8 id", () => {
@@ -27,7 +27,7 @@ describe("commitDrag", () => {
     const written = commitDrag(BASE_DOC, { kind: "group", cellId: "a1b2c3d4" }, 40, 60);
 
     // Assert
-    expect(readGraphLayout(written)).toEqual({ nodes: {}, cells: { a1b2c3d4: [40, 60] } });
+    expect(readGraphLayout(written)).toEqual({ nodes: {}, cells: { a1b2c3d4: [40, 60] }, channels: {} });
   });
 
   it("commitDrag — a fractional canvas position — rounds to the nearest integer before writing", () => {
@@ -36,7 +36,7 @@ describe("commitDrag", () => {
 
     // Assert — and the round-trip through readGraphLayout must not degrade
     // to EMPTY_GRAPH_LAYOUT, which is what a stray decimal point would do.
-    expect(readGraphLayout(written)).toEqual({ nodes: { fork_velocity: [121, 79] }, cells: {} });
+    expect(readGraphLayout(written)).toEqual({ nodes: { fork_velocity: [121, 79] }, cells: {}, channels: {} });
   });
 
   it("commitDrag — moving a node again — overwrites its own entry, not a second one", () => {
@@ -47,7 +47,7 @@ describe("commitDrag", () => {
     const movedAgain = commitDrag(oncePlaced, { kind: "node", name: "fork_velocity" }, 200, 200);
 
     // Assert
-    expect(readGraphLayout(movedAgain)).toEqual({ nodes: { fork_velocity: [200, 200] }, cells: {} });
+    expect(readGraphLayout(movedAgain)).toEqual({ nodes: { fork_velocity: [200, 200] }, cells: {}, channels: {} });
   });
 
   it("commitDrag — moving one node — leaves an existing sibling entry and every other front-matter byte untouched", () => {
@@ -58,7 +58,7 @@ describe("commitDrag", () => {
     const withBoth = commitDrag(withOne, { kind: "group", cellId: "a1b2c3d4" }, 300, 400);
 
     // Assert
-    expect(readGraphLayout(withBoth)).toEqual({ nodes: { fork_velocity: [10, 10] }, cells: { a1b2c3d4: [300, 400] } });
+    expect(readGraphLayout(withBoth)).toEqual({ nodes: { fork_velocity: [10, 10] }, cells: { a1b2c3d4: [300, 400] }, channels: {} });
     expect(withBoth).toContain("constants: { rider_mass_kg: 82 }");
   });
 });
@@ -75,7 +75,7 @@ describe("commitTidy", () => {
     const written = commitTidy(BASE_DOC, FRESH, NAMES);
 
     // Assert
-    expect(readGraphLayout(written)).toEqual({ nodes: { fork_velocity: [0, 0], shock_velocity: [256, 96] }, cells: {} });
+    expect(readGraphLayout(written)).toEqual({ nodes: { fork_velocity: [0, 0], shock_velocity: [256, 96] }, cells: {}, channels: {} });
   });
 
   it("commitTidy — a channel node — is skipped, having no stored-position home", () => {
@@ -110,6 +110,7 @@ describe("commitTidy", () => {
     expect(readGraphLayout(written)).toEqual({
       nodes: { deleted_definition: [10, 20], fork_velocity: [0, 0], shock_velocity: [256, 96] },
       cells: { a1b2c3d4: [30, 40] },
+      channels: {},
     });
   });
 
@@ -119,5 +120,51 @@ describe("commitTidy", () => {
 
     // Assert
     expect(readGraphLayout(written).nodes.fork_velocity).toEqual([121, 79]);
+  });
+});
+
+describe("channel placement (C2 §3.7.1 channels)", () => {
+  it("commitDrag — a channel target — writes graph.channels, leaves nodes alone", () => {
+    // Act
+    const written = commitDrag(BASE_DOC, { kind: "channel", name: "GPS_SpeedKmh" }, 10.4, 20.6);
+
+    // Assert
+    expect(readGraphLayout(written).channels).toEqual({ GPS_SpeedKmh: [10, 21] });
+    expect(readGraphLayout(written).nodes).toEqual({});
+  });
+
+  it("removePlacedChannel — a placed channel — entry removed", () => {
+    // Arrange
+    const placed = commitDrag(BASE_DOC, { kind: "channel", name: "GPS_SpeedKmh" }, 1, 2);
+
+    // Act
+    const removed = removePlacedChannel(placed, "GPS_SpeedKmh");
+
+    // Assert
+    expect(readGraphLayout(removed).channels).toEqual({});
+  });
+
+  it("removePlacedChannel — not placed — document unchanged", () => {
+    // Act
+    const result = removePlacedChannel(BASE_DOC, "GPS_SpeedKmh");
+
+    // Assert
+    expect(result).toBe(BASE_DOC);
+  });
+
+  it("commitTidy — placed and unplaced channels — moves the placed one, does not place the other", () => {
+    // Arrange
+    const placed = commitDrag(BASE_DOC, { kind: "channel", name: "fork_travel" }, 999, 999);
+    const positions: Record<string, [number, number]> = { "channel:fork_travel": [0, 0], "channel:shock_travel": [0, 96] };
+    const channels = new Map([
+      ["channel:fork_travel", "fork_travel"],
+      ["channel:shock_travel", "shock_travel"],
+    ]);
+
+    // Act
+    const written = commitTidy(placed, positions, new Map(), channels);
+
+    // Assert
+    expect(readGraphLayout(written).channels).toEqual({ fork_travel: [0, 0] });
   });
 });

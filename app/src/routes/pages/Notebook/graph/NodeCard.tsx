@@ -356,7 +356,10 @@ ${describeNodeEval(evalView, null)}`;
           <span className="font-mono text-fg-faint">{shape}</span>
         </div>
       )}
-      {graphNode.kind === "definition" && eligibility === "chart" && onChart !== undefined && (
+      {/* A session channel is always a time series, so it can always be
+          charted straight from its node (Isaac, 2026-11-04: start a
+          workbook from a channel). */}
+      {((graphNode.kind === "definition" && eligibility === "chart") || isChannel) && onChart !== undefined && (
         <ChartTypePicker onSelect={(chartType) => onChart(graphNode.name, chartType)} />
       )}
       {/* R214 item 1's third chart cue — a thin bottom rule, so a chart

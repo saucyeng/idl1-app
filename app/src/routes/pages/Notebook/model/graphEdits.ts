@@ -231,7 +231,7 @@ export function renameDefinition(markdown: string, oldName: string, newName: str
   const layout = readGraphLayout(next);
   if (Object.prototype.hasOwnProperty.call(layout.nodes, oldName)) {
     const { [oldName]: position, ...rest } = layout.nodes;
-    next = writeGraphLayout(next, { nodes: { ...rest, [newName]: position }, cells: layout.cells });
+    next = writeGraphLayout(next, { ...layout, nodes: { ...rest, [newName]: position } });
   }
 
   return { markdown: next, unresolved };
@@ -381,6 +381,15 @@ function appendDefLine(markdown: string, cellId: string, newDefName: string, rhs
   const separator = body.length === 0 || body.endsWith("\n") ? "" : "\n";
   const newBody = `${body}${separator}${newDefName} = ${rhs}\n`;
   return replaceCellBody(markdown, cellId, newBody);
+}
+
+/**
+ * Appends `${newDefName} = ${rhs}` to cell `cellId` — {@link appendDefLine},
+ * exported for `canvasBuild.ts`'s "apply a function" gesture so the canvas
+ * has one insertion path, not two.
+ */
+export function addDefinition(markdown: string, cellId: string, newDefName: string, rhs: string): string {
+  return appendDefLine(markdown, cellId, newDefName, rhs);
 }
 
 /**

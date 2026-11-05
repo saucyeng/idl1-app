@@ -23,6 +23,7 @@
 
 import type { CellOutput } from "../../../../ipc/workbook";
 import { scanCells } from "./cells";
+import { readGraphLayout } from "./graphLayout";
 import { extractChannelCalls, extractSpectrumCalls } from "./jsCellCalls";
 import { scanMathExpr } from "./mathExpr";
 import { tokenizeMath } from "./mathMode";
@@ -231,7 +232,8 @@ export function definitionCellIds(markdown: string): ReadonlyMap<string, string>
  * Builds the graph's nodes, edges, and groups from `markdown`'s math cells
  * and (optionally) the latest `CellOutput[]` for display labels. One node
  * per `def_line`; one additional `"channel"` node per name referenced but
- * not defined anywhere in the document; one edge per reference; one group
+ * not defined anywhere in the document, or placed on the canvas through
+ * `graph.channels` (C2 §3.7.1); one edge per reference; one group
  * per math cell, in document order.
  */
 export function buildGraphModel(markdown: string, outputs: CellOutput[]): GraphModel {
@@ -320,6 +322,16 @@ export function buildGraphModel(markdown: string, outputs: CellOutput[]): GraphM
       }
       edges.push({ id: `${sourceId}->${id}`, source: sourceId, target: id });
     }
+  }
+
+  // C2 §3.7.1 `channels` (Isaac, 2026-11-04): a channel placed on the canvas
+  // is a node even when nothing references it yet — still one node per id,
+  // so a placed channel that is also referenced is not drawn twice. A name a
+  // definition already declares is that definition, not a channel.
+  for (const name of Object.keys(readGraphLayout(markdown).channels).sort()) {
+    if (channelNames.has(name) || definitionNames.has(name)) continue;
+    channelNames.add(name);
+    nodes.push({ id: channelNodeId(name), kind: "channel", name, label: null, cellId: null, exprText: null, mark: null });
   }
 
   return { nodes, edges, groups };

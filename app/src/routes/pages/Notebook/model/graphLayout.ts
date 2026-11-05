@@ -33,11 +33,16 @@ export interface GraphLayout {
   /** Math cell `hex8` id → `[x, y]` integer canvas position for that cell's
    *  subgraph frame (§3.7.3). */
   cells: Record<string, [number, number]>;
+  /** Session channel id → `[x, y]` integer canvas position for that
+   *  channel's source node (C2 §3.7.1 `channels`, Isaac 2026-11-04). An
+   *  entry also puts the node on the canvas when nothing references the
+   *  channel yet — the canvas's way to start a workbook. */
+  channels: Record<string, [number, number]>;
 }
 
 /** The layout of a document with no stored `graph` key — see the module
  *  doc comment's "empty means auto-place", not "positioned at the origin". */
-export const EMPTY_GRAPH_LAYOUT: GraphLayout = { nodes: {}, cells: {} };
+export const EMPTY_GRAPH_LAYOUT: GraphLayout = { nodes: {}, cells: {}, channels: {} };
 
 const IDENTIFIER_RE = "[A-Za-z_][A-Za-z0-9_]*";
 const HEX8_RE = "[0-9a-f]{8}";
@@ -161,6 +166,13 @@ export function readGraphLayout(markdown: string): GraphLayout {
     cursor = parsed.next;
   }
 
+  let channels: Record<string, [number, number]> = {};
+  if (cursor < block.end && body[cursor] === "  channels:") {
+    const parsed = parseEntries(body, cursor + 1, block.end);
+    channels = parsed.entries;
+    cursor = parsed.next;
+  }
+
   // Anything left over inside the block's span that isn't blank is content
   // this module's strict grammar doesn't recognise — §3.7.1's "malformed
   // YAML" case: the whole key reads as absent.
@@ -168,7 +180,7 @@ export function readGraphLayout(markdown: string): GraphLayout {
     if (body[i].trim().length !== 0) return EMPTY_GRAPH_LAYOUT;
   }
 
-  return { nodes, cells };
+  return { nodes, cells, channels };
 }
 
 /** Serialises `layout` in the one canonical ASCII shape §3.7.1 specifies —
@@ -181,7 +193,8 @@ export function readGraphLayout(markdown: string): GraphLayout {
 function serialiseGraphLayout(layout: GraphLayout): string[] {
   const nodeKeys = Object.keys(layout.nodes).filter((k) => KEY_RE.test(k)).sort();
   const cellKeys = Object.keys(layout.cells).filter((k) => KEY_RE.test(k)).sort();
-  if (nodeKeys.length === 0 && cellKeys.length === 0) return [];
+  const channelKeys = Object.keys(layout.channels).filter((k) => KEY_RE.test(k)).sort();
+  if (nodeKeys.length === 0 && cellKeys.length === 0 && channelKeys.length === 0) return [];
 
   const lines: string[] = ["graph:"];
   if (nodeKeys.length > 0) {
@@ -195,6 +208,13 @@ function serialiseGraphLayout(layout: GraphLayout): string[] {
     lines.push("  cells:");
     for (const key of cellKeys) {
       const [x, y] = layout.cells[key];
+      lines.push(`    ${key}: [${x}, ${y}]`);
+    }
+  }
+  if (channelKeys.length > 0) {
+    lines.push("  channels:");
+    for (const key of channelKeys) {
+      const [x, y] = layout.channels[key];
       lines.push(`    ${key}: [${x}, ${y}]`);
     }
   }

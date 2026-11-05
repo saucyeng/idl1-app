@@ -6,12 +6,10 @@
  * never an input to a value (C2 §3.7.1's advisory guarantee), so a bug
  * here can only misplace a node on screen.
  *
- * **Only definition nodes can have a stored position** (C2 §3.7.1: `graph.
- * nodes` is keyed by math-cell definition *name*; there is no stored-
- * position home for a `"channel"` source node at all) — so every
- * `"channel"` node is always auto-placed, and a `"definition"` node is
- * auto-placed exactly when {@link GraphLayout.nodes} has no entry for its
- * name.
+ * **Definition and channel nodes can have a stored position** (C2 §3.7.1:
+ * `graph.nodes` keyed by definition *name*, `graph.channels` by channel id,
+ * the latter since 2026-11-04). A node is auto-placed exactly when its map
+ * has no entry for its name; a chart node is always auto-placed.
  *
  * **Algorithm** (ruling R212 item 3: "simple longest-path layering plus
  * barycentre ordering, no new dependency").
@@ -98,10 +96,9 @@ function computeDepths(model: GraphModel): Map<string, number> {
 
 /**
  * Computes a canvas position for every node in `model`: `layout`'s stored
- * position for a `"definition"` node that has one, and a deterministic
- * layered placement (see the module doc comment) for every other node —
- * including every `"channel"` node, which never has a stored position at
- * all (C2 §3.7.1). Keyed by {@link GraphModel.nodes}' own `id`, so the
+ * position for a `"definition"` or `"channel"` node that has one, and a
+ * deterministic layered placement (see the module doc comment) for every
+ * other node. Keyed by {@link GraphModel.nodes}' own `id`, so the
  * result is ready to hand to the canvas with no further lookup.
  */
 export function computeAutoLayoutPositions(model: GraphModel, layout: GraphLayout): Record<string, [number, number]> {
@@ -145,7 +142,7 @@ export function computeAutoLayoutPositions(model: GraphModel, layout: GraphLayou
   }
 
   for (const node of model.nodes) {
-    const stored = node.kind === "definition" ? layout.nodes[node.name] : undefined;
+    const stored = node.kind === "definition" ? layout.nodes[node.name] : node.kind === "channel" ? layout.channels[node.name] : undefined;
     if (stored !== undefined) positions[node.id] = stored;
   }
 
