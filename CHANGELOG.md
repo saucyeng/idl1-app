@@ -332,6 +332,14 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 
 ### Fixed
 
+- **Workbook maths handles GPS and wheel-pulse channels properly [docs] (2026-11-05).** The
+  engine stepped every time-based builtin by the channel's rate, which is 0 for an event channel,
+  so `differentiate`, `gradient` and `cumulative_trapezoid` on GPS speed or wheel pulses returned
+  zeros, and a lap window read the whole session. Event channels now step and window by their
+  recorded sample times; filters and spectra refuse them with an error that says to `resample`
+  first. A definition that reduces to one number (`m = last([x]) / 4`) now scales a channel when
+  referenced, instead of failing on lengths. C2 §3.6.10.
+
 - **Pairing with a QR code no longer syncs anything [no-docs] (2026-11-05).** Scanning the
   computer's pairing QR with the phone paired the two and then at once ran a full two-way sync,
   everything each side lacked, which for a new device can mean whole libraries. It now only pairs

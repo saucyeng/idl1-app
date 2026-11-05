@@ -1312,6 +1312,39 @@ The original wording of all five, with the recommendations that were made:
    when it is specified, as `c{…}`; `at(x, "c", i)` works either way, so
    nothing here blocks on it.
 
+#### 3.6.10 How samples are spaced in time (added 2026-11-05)
+
+A `[t]` value is spaced one of three ways, decided by its rate and its
+recorded times (`ChannelValue::spacing`):
+
+| Spacing | When | Steps by |
+|---|---|---|
+| **Uniform** | rate > 0: an IMU axis and everything derived from it | `1 / rate`. Its `t_us` are this grid rounded to the microsecond, so the rate is the more exact of the two. |
+| **Recorded** | rate 0, one recorded time per sample: an event channel (C1 §4.2: GPS, wheel pulses, RR) and everything derived from one | The recorded times. |
+| **Untimed** | neither: a scalar-as-channel, a table column, spectrum bins | Nothing. |
+
+Every builtin that steps through time follows it:
+
+- `differentiate`, `gradient` and `cumulative_trapezoid` step by the rate or
+  by the recorded times. An untimed value is a typed error ("has no time
+  axis"). Before this, all three stepped by the rate alone, so on an event
+  channel they returned zeros.
+- The selected lap or time window (R115) narrows a uniform channel by its
+  rate and an event channel by its recorded times, so a lap-scoped
+  `mean([GPS_SpeedKmh])` is the lap's mean. Before, an event channel was read
+  whole whatever the window.
+- `butter`, `welch`, `periodogram` and `declip` need a uniform grid. An event
+  channel is a typed error that names the fix, `resample(x, [Time])`.
+- Pairing is unchanged (§3.6.2 rule 4): two values whose recorded times differ
+  never combine elementwise, event or uniform.
+
+**A scalar where a channel is expected.** A definition that reduces to one
+number is stored as a scalar-as-channel (rate 0, one sample, no recorded
+time) and read back as that number, so `m = last([x]) / 4` then `[m] * [y]`
+broadcasts (rule 1). A builtin that takes a channel accepts a scalar as its
+one-sample untimed form: `max([m])` is `m`, and `differentiate([m])` is the
+"no time axis" error.
+
 ---
 
 ### 3.7 The maths graph view's file mapping
