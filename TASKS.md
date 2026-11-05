@@ -835,6 +835,14 @@ Analysis gaps from `173461a2` (Python was needed for each; `agent-gaps.md`):
       helper another cell calls, so the Lower Broken Bomber workbook repeats its zoom chart four
       times. Needs free-variable analysis in the sandbox compiler (`sandbox/main.ts`'s
       `compileCell` TODO). Not blocking.
+- [ ] A `js` cell that declares a local with a definition's name (`const breaks = …` when the
+      workbook defines `breaks`) shows the bare text "undefined", no error: every host variable
+      is a `new Function` parameter (`sandbox/main.ts`'s `compileCell`), so the redeclaration is a
+      SyntaxError, and the error is swallowed. Either surface the SyntaxError or wrap the body so a
+      local may shadow a host variable. (2026-11-05, Lower Broken Bomber workbook.)
+- [ ] Custom `js` cells get the app's own channel legend drawn over them (every name the code
+      passes to `channel()`, `breaks` and `break_g` included, with `gps_v` labelled km/h). It
+      overlaps a cell that draws its own panels; a custom cell should get none, or its own.
 - [ ] `channel()` options are literals only, so a zone's range is written twice (once as a
       `const` for the maths, once as numbers in each call). Resolving `constants.x` in a scope
       would need the host to evaluate it before the cell runs.
