@@ -712,9 +712,24 @@ Phone → desktop transfer:
       round trip, and the phone's server walks off its async workers. The
       transfer itself ran fine: the UI only looked stuck because nothing
       ticked until both manifests were built.
-- [ ] **The phone was slow to show as connected** (2026-11-04). Not
-      measured: discovery and the pairing link, separate from the manifest.
-      Time it on the next transfer with the new build.
+      Measured after, nightly cc03ed1 on both (2026-11-05, Pixel 10 Pro,
+      6 sessions): Browse 2.3 s first, 1.3 s again.
+- [ ] **The phone was slow to show as connected** (2026-11-04). Found
+      2026-11-05: while the phone is locked it dozes, its sync server
+      answers nothing (5 s timeouts on every port) and it drops out of
+      discovery; it reappears only once unlocked with idl1 open. Options: say
+      so on the desktop ("unlock the phone and open idl1"), and/or keep the
+      server reachable while a pairing or browse is expected.
+- [ ] **Browse says "differs" for sessions just pulled.** The three Beacon
+      sessions pulled 2026-11-04, unchanged since on the desktop, list as
+      `differs`: \"here\" compares `session.json` by bytes, but a pull merges
+      per field and each side keeps its own lap cache (C4 §6), so the bytes
+      never match after a pull. Compare the user-owned fields instead, or
+      call it "same" when a pull would change nothing here.
+- [ ] **Updating the phone app over USB shows "idl1 closed unexpectedly
+      last time"** (2026-11-05, `adb install -r` stopping the running app).
+      Probably the crash marker treating a stop for an update as a crash;
+      check before trusting the banner.
 
 Workbook authoring from empty (the canvas has no way in):
 
