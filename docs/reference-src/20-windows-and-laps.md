@@ -19,14 +19,14 @@ clicked.
 When more than one window is selected, `channel(name)` returns *every* selected
 window's samples in one payload rather than one payload per window:
 
-- `t` and `v` are the concatenation of each window's own samples, in window
+- the records are each window's own samples, window after window, in window
   order.
 - `w[i]` is the index into `windows` naming which window produced sample `i`.
 - `windows[j]` is that window's `{ sessionId, span, colour, label }`. The
   `colour` is a `--chart-1`…`--chart-8` token, which is how a per-window colour
   reaches a mark.
 
-Exactly one `NaN` row (`t = v = w = NaN`) is inserted between each adjacent
+Exactly one `NaN` record (`t = v = w = NaN`) is inserted between each adjacent
 pair of windows. Observable Plot breaks a line mark at a `NaN`, so a cell that
 destructures only `{t, v}` and knows nothing about `w` still draws *n* separate
 segments instead of one line vaulting from one window's last sample to the
@@ -66,9 +66,10 @@ The lap functions divide into three groups:
   more than one is selected. Both carry `ch`'s own units: they are a difference
   of two `[ch]` series, not a time or a distance.
 
-`channel(name, { lap: n })` windows a lookup to one lap, and
-`channel(name, { session: id })` reaches a different session — that is how a
-cross-session overlay is written by hand rather than through the selection UI.
+`channel(name, { lap: n })` fixes a lookup to one lap, and
+`channel(name, { from: a, to: b })` to a stretch of session seconds; see
+[The data a chart gets](#the-data-a-chart-gets). A different session is
+reached by selecting its window, not from cell code.
 
 ### The lap-relative time axis
 

@@ -273,3 +273,26 @@ describe("plotForm round trip", () => {
     }
   });
 });
+
+describe("generate/parse round trip — channel scope", () => {
+  it("round trip — a mark scoped to a time range — keeps the range exactly", () => {
+    // Arrange
+    const props: PlotProps = {
+      chart: "time",
+      marks: [{ channel: "front_v", mark: "lineY", range: { from: 5827.27, to: 5829.77 } }],
+    };
+
+    // Act
+    const code = generate(props);
+    const parsed = parse(code);
+
+    // Assert
+    expect(code).toContain('channel("front_v", { from: 5827.27, to: 5829.77 })');
+    expect(parsed !== null && parsed.chart === "time" ? parsed.marks[0].range : null).toEqual({ from: 5827.27, to: 5829.77 });
+    expect(parsed === null ? null : generate(parsed)).toBe(code);
+  });
+
+  it("parse — a range that ends before it starts — not the form's grammar, so the cell stays custom", () => {
+    expect(parse('Plot.plot({ marks: [Plot.lineY(channel("x", { from: 9, to: 3 }), { x: "t", y: "v" })] })')).toBeNull();
+  });
+});

@@ -8,7 +8,7 @@ describe("extractChannelCalls", () => {
     const calls = extractChannelCalls('const data = channel("fork_velocity");');
 
     // Assert
-    expect(calls).toEqual([{ channel: "fork_velocity", lap: null }]);
+    expect(calls).toEqual([{ channel: "fork_velocity", lap: null, range: null }]);
   });
 
   it("extractChannelCalls — a channel() call with a { lap } option — extracts the lap number", () => {
@@ -16,7 +16,7 @@ describe("extractChannelCalls", () => {
     const calls = extractChannelCalls('channel("fork_velocity", { lap: 3 })');
 
     // Assert
-    expect(calls).toEqual([{ channel: "fork_velocity", lap: 3 }]);
+    expect(calls).toEqual([{ channel: "fork_velocity", lap: 3, range: null }]);
   });
 
   it("extractChannelCalls — two distinct calls anywhere in the source — extracts both, in order", () => {
@@ -25,8 +25,8 @@ describe("extractChannelCalls", () => {
 
     // Assert
     expect(calls).toEqual([
-      { channel: "fork_velocity", lap: null },
-      { channel: "rear_wheel_speed", lap: null },
+      { channel: "fork_velocity", lap: null, range: null },
+      { channel: "rear_wheel_speed", lap: null, range: null },
     ]);
   });
 

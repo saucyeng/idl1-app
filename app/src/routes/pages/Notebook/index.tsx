@@ -31,6 +31,7 @@ import {
   unwatchWorkbook,
   watchWorkbook,
   type CellOutput,
+  type HostChannelView,
   type IpcError,
   type UnitLabel,
   type Window as WireWindow,
@@ -57,6 +58,7 @@ import { resolveRegister, type PaperTheme, type ThemeChoice } from "../Settings/
 import { createPrefsStore, localStorageBackend } from "../Settings/prefsStore";
 import CellFrame from "./components/CellFrame";
 import { cellStatus, type CellStatus } from "./model/cellStatus";
+import { workbookConstants } from "./model/sourcePalette";
 import { chartWidthNeedsRefetch, resolveChartWidthPx } from "./model/chartWidth";
 import { applyDecodeProgress, cellDecodeFraction, decodeKey, NO_DECODES, soleDecodingChannel, type DecodeProgressState } from "../../../state/decodeProgress";
 import { onDecodeProgress } from "../../../ipc/decode_progress";
@@ -2129,11 +2131,11 @@ export default function NotebookPage() {
    *  `fetchHostChannelV2`'s own "old session-less behaviour" default.
    *  Rejects if no workbook is open yet, matching every other
    *  `workbookId`-dependent call site in this file. */
-  const fetchHostChannelDep = (defName: string, budget: number) => {
+  const fetchHostChannelDep = (defName: string, budget: number, view: HostChannelView | null) => {
     const workbookId = workbookIdRef.current;
     if (workbookId === null) return Promise.reject(new Error("fetchHostChannel: no workbook open"));
     const window = windowsRef.current[0] ?? null;
-    return fetchHostChannelV2(workbookId, window, defName, budget);
+    return fetchHostChannelV2(workbookId, window, defName, budget, view);
   };
 
   /** `model/gpsDriver.ts`'s injected IPC (ruling R217 item 1), built here
@@ -2842,14 +2844,14 @@ export default function NotebookPage() {
 
       const deps: ChannelBindDeps = {
         fetchTile: (sessId, channelId, tier, tileIndex, columnCount) => fetchTile(sessId, channelId, tier, tileIndex, columnCount),
-        fetchHostChannel: (defName, budget) => fetchHostChannelDep(defName, budget),
+        fetchHostChannel: (defName, budget, view) => fetchHostChannelDep(defName, budget, view),
       };
       const onAction = (action: ChannelBindAction) => {
         if (action.type === "channelData") {
-          sandboxHostRef.current?.setChannelHostVar(action.channelId, action.length, action.t, action.v, action.tr, action.w, action.windows, action.unit, action.axisKind);
+          sandboxHostRef.current?.setChannelHostVar(action.hostKey, action.length, action.t, action.v, action.tr, action.w, action.windows, action.unit, action.axisKind);
           // R139: retain the same combined arrays the sandbox just got a
           // transfer clone of -- `model/cursorCard.ts` reads this back.
-          combinedChannelDataRef.current.set(`${action.cellId}::${action.channelId}`, action.retained);
+          combinedChannelDataRef.current.set(`${action.cellId}::${action.hostKey}`, action.retained);
           setChannelDataEpoch((n) => n + 1);
         } else if (action.type === "boundChannels") {
           sessionRef.current.setBoundChannels(action.cellId, action.bound);
@@ -2911,12 +2913,12 @@ export default function NotebookPage() {
 
     const deps: ChannelBindDeps = {
       fetchTile: (sessId, channelId, tier, tileIndex, columnCount) => fetchTile(sessId, channelId, tier, tileIndex, columnCount),
-      fetchHostChannel: (defName, budget) => fetchHostChannelDep(defName, budget),
+      fetchHostChannel: (defName, budget, view) => fetchHostChannelDep(defName, budget, view),
     };
     const onAction = (action: ChannelBindAction) => {
       if (action.type === "channelData") {
-        sandboxHostRef.current?.setChannelHostVar(action.channelId, action.length, action.t, action.v, action.tr, action.w, action.windows, action.unit, action.axisKind);
-        combinedChannelDataRef.current.set(`${action.cellId}::${action.channelId}`, action.retained);
+        sandboxHostRef.current?.setChannelHostVar(action.hostKey, action.length, action.t, action.v, action.tr, action.w, action.windows, action.unit, action.axisKind);
+        combinedChannelDataRef.current.set(`${action.cellId}::${action.hostKey}`, action.retained);
         setChannelDataEpoch((n) => n + 1);
       } else if (action.type === "boundChannels") {
         sessionRef.current.setBoundChannels(action.cellId, action.bound);
@@ -3967,6 +3969,16 @@ export default function NotebookPage() {
     host.setHostVar("session", { kind: "json", value: hostSession(sessionDetail, sessionDetail === null ? "" : sessionLabel(sessionDetail)) });
   }, [sessionDetail, primeState.primeEpoch]);
 
+  // C2 §5.1's `constants` ambient host variable: front-matter constants and
+  // every `const` line, by name. It was bound to `{}` at sandbox start and
+  // never set, so every cell reading `constants.x` got `undefined`
+  // (2026-11-05). A JSON host var, so a sandbox rebuild replays it.
+  useEffect(() => {
+    const host = sandboxHostRef.current;
+    if (host === null) return;
+    host.setHostVar("constants", { kind: "json", value: state.markdown === null ? {} : workbookConstants(state.markdown) });
+  }, [state.markdown, primeState.primeEpoch]);
+
   // C2 §5.1 / §3.6.5: one host variable per `math` definition, by name, bound
   // by rank -- rank 0 the bare number, rank 1 a record array keyed by its
   // axis (`t`, `lap`, `f`). `channel("name")` reaches the same value (the
@@ -4959,15 +4971,15 @@ export default function NotebookPage() {
                   const isStale = () => !cellRunSequencerRef.current.isCurrent(cellId, seq);
                   const deps: ChannelBindDeps = {
                     fetchTile: (sessId, chId, chTier, tileIndex, columnCount) => fetchTile(sessId, chId, chTier, tileIndex, columnCount),
-                    fetchHostChannel: (defName, budget) => fetchHostChannelDep(defName, budget),
+                    fetchHostChannel: (defName, budget, view) => fetchHostChannelDep(defName, budget, view),
                   };
                   const onAction = (action: ChannelBindAction) => {
                     if (action.type === "channelData") {
-                      sandboxHostRef.current?.setChannelHostVar(action.channelId, action.length, action.t, action.v, action.tr, action.w, action.windows, action.unit, action.axisKind);
+                      sandboxHostRef.current?.setChannelHostVar(action.hostKey, action.length, action.t, action.v, action.tr, action.w, action.windows, action.unit, action.axisKind);
                       // R139: retain the same combined arrays the sandbox
                       // just got a transfer clone of -- `model/cursorCard.ts`
                       // reads this back.
-                      combinedChannelDataRef.current.set(`${action.cellId}::${action.channelId}`, action.retained);
+                      combinedChannelDataRef.current.set(`${action.cellId}::${action.hostKey}`, action.retained);
                       setChannelDataEpoch((n) => n + 1);
                     } else if (action.type === "boundChannels") {
                       sessionRef.current.setBoundChannels(action.cellId, action.bound);

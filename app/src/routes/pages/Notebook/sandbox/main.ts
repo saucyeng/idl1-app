@@ -38,6 +38,7 @@ import type {
   SandboxCell,
   SandboxToHostMessage,
 } from "../host/protocol";
+import { channelKey, scopeFromOptions } from "../plotForm/channelKey";
 import { gpsKey, rasterKey } from "../plotForm/gpsKey";
 import { histogramKey } from "../plotForm/histogramKey";
 import { scatterKey } from "../plotForm/scatterKey";
@@ -519,7 +520,7 @@ class SandboxRuntime {
     this.bindHostVar("laps", []);
     this.bindHostVar("session", null);
     this.bindHostVar("constants", {});
-    this.bindHostVar("channel", (name: string, opts?: { lap?: number; session?: string }) =>
+    this.bindHostVar("channel", (name: string, opts?: { lap?: number; from?: number; to?: number }) =>
       this.channelLookup(name, opts)
     );
     // C2 §5.3's `spectrum(channel, fft_params)` (L6 Task 20): the same
@@ -594,14 +595,23 @@ class SandboxRuntime {
    * // `combineChannelWindows`, both host-side); this is a bare-name lookup
    * // over whatever the host has already sent.
    */
-  private channelLookup(name: string, _opts?: { lap?: number; session?: string }): ChannelRecord[] {
-    const value = this.hostVars.get(name);
+  /**
+   * `channel(name, opts?)` (C2 §5.3): the records the host published for this
+   * call. `opts` is the call's channel scope (`{ lap }` or `{ from, to }`,
+   * 2026-11-05); the host published a scoped call under `channelKey(name,
+   * scope)`, recomputed here from the same literals, so a scoped call reads its
+   * own fixed range and never another cell's view of the channel. Before
+   * scopes, `opts` was ignored and every call read the bare name.
+   */
+  private channelLookup(name: string, opts?: { lap?: number; from?: number; to?: number }): ChannelRecord[] {
+    const key = channelKey(name, scopeFromOptions(opts));
+    const value = this.hostVars.get(key);
     if (!Array.isArray(value)) {
       // R148: an unbound channel returns an empty array, which Plot renders
       // as axis labels and nothing else -- indistinguishable from a working
       // chart with no data. Say so rather than fail silently.
       console.warn(
-        `[sandbox] channel(${JSON.stringify(name)}) is not bound; known host vars: ${JSON.stringify([...this.hostVars.keys()])}`
+        `[sandbox] channel(${JSON.stringify(name)}) is not bound (key ${JSON.stringify(key)}); known host vars: ${JSON.stringify([...this.hostVars.keys()])}`
       );
       return [];
     }

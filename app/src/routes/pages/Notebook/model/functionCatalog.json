@@ -241,6 +241,14 @@
       "units": null
     },
     {
+      "category": "Logic",
+      "description": "Only the samples of `x` where `cond` is true (non-zero), each at its own recorded time: an event list, such as every pulse gap over a threshold, comes out as a short channel instead of a full-length one with zeros. `cond` pairs with `x` sample for sample (put it on `x`'s axis with `resample` first if it is not); a number keeps all or nothing. Nothing kept is an empty channel. Over a `[lap]` value it keeps laps.",
+      "name": "keep",
+      "signature": "keep(x, cond)",
+      "status": "implemented",
+      "units": null
+    },
+    {
       "category": "Lap delta",
       "description": "Main lap minus overlay lap, arc-length-matched. Retired name: `variance_dist`.",
       "name": "lap_delta_dist",

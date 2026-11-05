@@ -831,6 +831,13 @@ Analysis gaps from `173461a2` (Python was needed for each; `agent-gaps.md`):
       the cell needs `# unit:`.
 - [ ] A single-value result in a math cell shows "1 sample, unit unknown"
       instead of its value (`cruise_bias_rev` in the braking workbook).
+- [ ] Cells referencing each other (Isaac asked 2026-11-05): a `js` cell can't define a
+      helper another cell calls, so the Lower Broken Bomber workbook repeats its zoom chart four
+      times. Needs free-variable analysis in the sandbox compiler (`sandbox/main.ts`'s
+      `compileCell` TODO). Not blocking.
+- [ ] `channel()` options are literals only, so a zone's range is written twice (once as a
+      `const` for the maths, once as numbers in each call). Resolving `constants.x` in a scope
+      would need the host to evaluate it before the cell runs.
 - [ ] Track editor follow-ups (spec 2026-11-05): GPX import as a track (idl0
       §16.6); a size cap on the map-tile cache; neutral-zone editing; the
       satellite basemap in the notebook's map cell; a CLI `track` verb that

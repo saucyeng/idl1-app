@@ -513,6 +513,7 @@ columns could ever disagree, the rule column is the normative one.
 | `convolve` | `convolve(ch, kernel)` | Correlation | `[ch]·[kernel]` | `Product(0, 1)` | NotImplemented | yes |
 | `resample` | `resample(x, onto)` | Resampling | same units as `x` | `SameAsArg(0)` — `onto` contributes its time axis, never its values, so its own unit is unconstrained | Implemented *(2026-09-20, R242)* — linear interpolation of `x` onto `onto`'s per-sample recorded times; the result carries `onto`'s `t_us`, rate and length. An `onto` time outside `[first, last]` of `x`'s axis is `NaN`, never extrapolated. `[t]` only: a `[lap]` operand is the §3.6.2 shape error. **Superseded signature:** `resample(ch, num)`, the `scipy.signal.resample` target-sample-count form (a rate until 2026-09-09, a count until 2026-09-20, §3.8) — never implemented; a scalar second argument is now a typed `NotImplemented` naming that form. **Known limitation:** samples of `onto` inside a `GapSpan` of `x` interpolate like any other; gaps are not on the math value path (§3.6 has no gap concept) and masking them needs its own ruling, since "a gap is `NaN`" would change every builtin, not just this one. | yes |
 | `deglitch_pulses` | `deglitch_pulses(pulses, max_fraction=0.35)` | Resampling | same units as `pulses` | `SameAsArg(0)` | Implemented *(2026-11-05)* — a wheel-pulse event channel with the extra edges a marginal sensor adds removed: a pulse is dropped when the gap ending at it is under `max_fraction` of both the gap before and the gap after. Both sides, so the first pulses after a locked wheel spins up and the growing gaps of hard braking are kept. Result: the kept pulses at their recorded times, renumbered from the first. An argument that is not an event channel is a typed runtime error (§3.6.10). | yes |
+| `keep` | `keep(x, cond)` | Logic | same units as `x` | `SameAsArg(0)` | Implemented *(2026-11-05)* — only the samples of `x` where `cond` is non-zero (and not NaN), at `x`'s own recorded coordinates, as an event channel (rate 0): an event list (pulse gaps over a threshold, stops) comes out of the engine as a short series, exact whatever a chart decimates. `cond` pairs with `x` sample for sample (same length, same axis per §3.6.10; otherwise a typed runtime error naming `resample`); a scalar keeps all or nothing. `x` must carry its coordinates. Nothing kept is an empty channel. Over a `[lap]` value it keeps laps. | yes |
 | `where` | `where(cond, t, f)` | Logic | units of `t`/`f` branches (must match) | `AllMatch(1, 2)` — `cond` is a truthiness test and is unconstrained | Implemented (retired from `if` — gratuitous rename, matches `numpy.where`'s name, R143, plan §1 task 10; `cond` now also accepts a scalar, selecting a whole branch — additive, every existing per-sample channel `cond` call is unaffected) | yes |
 | `current_lap` | `current_lap()` | Lap | 1-based lap number, `0` outside any lap (dimensionless) | `Dimensionless` | Implemented | yes |
 | `lap_start_time` | `lap_start_time(n)` | Lap | s, `NaN` if `n` out of range | `Fixed(s)` — `n` is a lap number, `Dimensionless` | Implemented | yes |
@@ -1871,7 +1872,9 @@ fft_marks     ::= "[" spectrum_mark "]"                           (* new 2026-09
 
 time_mark     ::= "Plot." mark_name "(" channel_call "," mark_options ")"
 mark_name     ::= "lineY" | "dot" | "areaY" | "rectY" | "ruleY"
-channel_call  ::= "channel(" js_string ("," "{" "lap" ":" js_int "}")? ")"
+channel_call  ::= "channel(" js_string ("," channel_scope)? ")"
+channel_scope ::= "{" "lap" ":" js_int "}"
+                | "{" "from" ":" js_number "," "to" ":" js_number "}"   (* new 2026-11-05 *)
 mark_options  ::= "{" "x" ":" x_field_binding "," "y" ":" "\"v\""   (* changed 2026-09-11 *)
                        ("," "stroke" ":" css_color)?
                        ("," "strokeWidth" ":" js_number)? "}"
@@ -1950,6 +1953,35 @@ spectrogram_call ::= "spectrogram(" js_string "," fft_params ")"    (* the same 
 
 css_color     ::= js_string                (* any valid CSS color literal *)
 ```
+
+**Channel scope (added 2026-11-05).** A `channel_call` without a scope follows
+the chart: its data covers the cell's viewport (the selected window, then
+whatever pan/zoom the user commits) and is decimated for the chart's width,
+tiles for a session channel and the view-sliced host channel for a definition
+(C3 §3.4 `fetch_host_channel_v2`'s `view`). A scope fixes that call's range
+instead, and gestures never move it:
+
+- `{ lap: n }` covers lap `n` of the primary window's session (its
+  `start_time_secs`..`end_time_secs`); a lap the session doesn't have leaves
+  the cell unbound, like an unknown channel.
+- `{ from: a, to: b }` covers session seconds `a`..`b` (`a < b`, numeric
+  literals only: the host reads them from the source text before the cell
+  runs). Other selected windows are re-based onto the same offsets from their
+  own start, exactly as a shared viewport is.
+
+A scoped range is planned like any viewport: the tier (or, for a definition,
+the view slice) that suits that span at the chart's width. A narrow range
+therefore arrives at full detail without anything bypassing decimation. The
+data is published under `channelKey(name, scope)` (`plotForm/channelKey.ts`),
+which `channel(name, opts)` in the sandbox recomputes, so two cells, or two
+calls in one cell, over different ranges of one channel never overwrite each
+other. Before this, `{lap}` was parsed and then ignored, and every
+`channel("x")` in the notebook shared one published value.
+
+Definitions are always **evaluated** over the selected window; a scope only
+chooses which part of the result is sent. A definition that reads data outside
+the scoped range (a calibration window elsewhere in the ride, say) is
+unaffected.
 
 **Rules that carry the same weight as the EBNF** (added 2026-09-06, ruling
 R78 L6 Task 19 Q1–Q2 / R79 L6 Task 20 Q1–Q7):
@@ -2614,8 +2646,8 @@ That happens for **any** of:
 - A mark whose `mark_name` is not one of the five listed, or whose
   `mark_options` supply anything beyond `x`/`y`/`stroke`/`strokeWidth`, or
   whose `x`/`y` are not the literal strings `"t"`/`"v"`.
-- A `channel_call` with more than a `name` and an optional `{lap}` object
-  (no `session`, no extra keys — `session`-scoped marks are not
+- A `channel_call` with more than a `name` and an optional `channel_scope`
+  (`{lap}` or `{from, to}`; no `session`, no extra keys — `session`-scoped marks are not
   representable in the form in v1; author them as custom code).
 - Any non-literal value where the grammar requires a literal (a computed
   `stroke` from a variable, a spread, a template literal used for

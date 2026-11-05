@@ -6,6 +6,19 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 
 ### Added
 
+- **Charts can zoom to a fixed stretch of the ride [docs] (2026-11-05).** In a chart cell,
+  `channel("front_v", { from: 5827.3, to: 5829.8 })` covers just those session seconds, and
+  `channel("front_v", { lap: 6 })` covers lap 6. Each is planned for its own span at the chart's
+  width, the same way zooming the chart is, so a short stretch arrives at full detail and stays
+  put when the chart is panned. Several zoomed charts of one channel no longer overwrite each
+  other's data. (`{ lap }` was accepted before but did nothing.) C2 §5.3.
+
+- **`keep(x, cond)` for event lists [docs] (2026-11-05).** Keeps only the samples of `x` where
+  `cond` is true, at their own times: `keep([gap_ratio], [gap_ratio] > 1.8)` is the list of
+  every long pulse gap, a handful of samples rather than a full-length channel of zeros. A table
+  built from it is exact, because it comes from the engine rather than from a chart's decimated
+  data. C2 §3.3.
+
 - **Track editor: gates on a satellite map [docs] (2026-11-05).** In the Data tab, **Create track
   from this ride** (any session with GPS) or a track's **Edit gates on map** opens a satellite map
   with the ride's GPS line, coloured by speed. Click the two ends of a gate across the trail:
@@ -354,6 +367,16 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
   button in the Data tab opens the same panel. Spec-during: C3 section 3.9.
 
 ### Fixed
+
+- **Workbook values in charts keep their spikes, and zooming refines them [docs] (2026-11-05).**
+  A maths result drawn in a chart was thinned by keeping every Nth point, so a short spike
+  between kept points vanished (a 50 ms traction break on a 100-minute ride, say), and zooming
+  the chart never fetched more detail. It is now sliced to what the chart shows and thinned by
+  keeping each slice's highest and lowest point, as recorded channels always were. C3 §3.4.
+
+- **`constants` in a chart cell holds the workbook's constants [docs] (2026-11-05).** It was
+  always empty, so a cell reading `constants.x` got nothing. The reference also said `channel()`
+  returns columns; it returns one record per sample, and now says so.
 
 - **The notebook's timeline strip windows at the right times [no-docs] (2026-11-05).** The strip
   measured its own width only when it first mounted, before a session had loaded and while it

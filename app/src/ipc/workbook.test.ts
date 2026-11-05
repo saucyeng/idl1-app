@@ -210,7 +210,26 @@ describe("fetchHostChannelV2", () => {
     expect(result.hasT).toBe(false);
     expect(result.v.length).toBe(0);
     expect(invoke).toHaveBeenCalledWith("fetch_host_channel_v2", {
-      workbookId: "w1", window, defName: "avg_speed", budget: 1000,
+      workbookId: "w1", window, defName: "avg_speed", budget: 1000, view: null,
+    });
+  });
+
+  it("fetch_host_channel_v2 with a view — passes the view through untouched", async () => {
+    // Arrange
+    const { invoke } = await import("@tauri-apps/api/core");
+    const buf = new ArrayBuffer(24);
+    const dv = new DataView(buf);
+    [0x49, 0x44, 0x4c, 0x48].forEach((b, i) => dv.setUint8(i, b)); // "IDLH"
+    dv.setUint16(4, 2, true);
+    (invoke as ReturnType<typeof vi.fn>).mockResolvedValue(buf);
+    const { fetchHostChannelV2 } = await import("./workbook");
+
+    // Act
+    await fetchHostChannelV2("w1", null, "avg_speed", 1000, { t0_us: 5, t1_us: 9 });
+
+    // Assert
+    expect(invoke).toHaveBeenCalledWith("fetch_host_channel_v2", {
+      workbookId: "w1", window: null, defName: "avg_speed", budget: 1000, view: { t0_us: 5, t1_us: 9 },
     });
   });
 
@@ -232,7 +251,7 @@ describe("fetchHostChannelV2", () => {
 
     // Assert
     expect(invoke).toHaveBeenCalledWith("fetch_host_channel_v2", {
-      workbookId: "w1", window: null, defName: "avg_speed", budget: 1000,
+      workbookId: "w1", window: null, defName: "avg_speed", budget: 1000, view: null,
     });
   });
 });

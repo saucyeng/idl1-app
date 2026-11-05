@@ -1553,6 +1553,20 @@ shape, C1 §6.1); `null` reproduces today's session-less behaviour. Same
 binary layout, `budget` validation and error set as `fetch_host_channel`
 above.
 
+*Amended 2026-11-05: `view` and envelope decimation.* An optional fifth
+argument `view: { t0_us: number, t1_us: number } | null` (µs on the window's
+session clock, `t0_us < t1_us`) slices the evaluated definition to
+`t0_us <= t < t1_us` before decimating; `null` or absent sends the whole
+value, as before. The definition is still **evaluated** over `window`: `view`
+chooses what is sent, never what is computed, so a definition that reads data
+outside the view is unchanged. A value with no time axis (rank 0, a `[lap]`
+value) ignores `view`. Decimation, when the sliced value has more than
+`budget` points, is now a min/max envelope over `budget / 2` equal time
+buckets (each bucket's lowest and highest sample, in time order), the same
+rule a tile follows, replacing the earlier every-Nth stride, which dropped
+any spike that fell between kept samples. A value within budget is sent
+whole, unchanged. `invalid_argument` for `t0_us >= t1_us`.
+
 This closes a live gap: `fetch_host_channel`'s backend
 (`fetch_host_channel_via`) passes `None` for the lap selection today, so a
 host channel is evaluated session-wide while the matching `eval_workbook`

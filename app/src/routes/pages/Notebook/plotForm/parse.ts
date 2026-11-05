@@ -515,7 +515,7 @@ function readColorOpt(c: Cursor): { legend: true } | null {
  *  (ruling R148 part 2), which tokenizes one extracted `channel(...)` call
  *  span at a time and runs this same reader over it, rather than requiring
  *  the whole cell to match {@link readPlotCall}'s grammar. */
-export function readChannelCall(c: Cursor): { channel: string; lap: number | null } | null {
+export function readChannelCall(c: Cursor): { channel: string; lap: number | null; range: { from: number; to: number } | null } | null {
   const start = c.pos;
   if (!consumeIdent(c, "channel") || !consumePunct(c, "(")) {
     c.pos = start;
@@ -527,25 +527,45 @@ export function readChannelCall(c: Cursor): { channel: string; lap: number | nul
     return null;
   }
 
+  // C2 §5.3's `channel_scope`: `{ lap: n }`, or `{ from: a, to: b }` in
+  // session seconds with `a < b` (added 2026-11-05). Literals only.
   let lap: number | null = null;
+  let range: { from: number; to: number } | null = null;
   if (consumePunct(c, ",")) {
-    if (!consumePunct(c, "{") || !consumeIdent(c, "lap") || !consumePunct(c, ":")) {
+    if (!consumePunct(c, "{")) {
       c.pos = start;
       return null;
     }
-    const lapValue = consumeNumber(c);
-    if (lapValue === null || !Number.isInteger(lapValue) || !consumePunct(c, "}")) {
+    if (consumeIdent(c, "lap")) {
+      const lapValue = consumePunct(c, ":") ? consumeNumber(c) : null;
+      if (lapValue === null || !Number.isInteger(lapValue)) {
+        c.pos = start;
+        return null;
+      }
+      lap = lapValue;
+    } else if (consumeIdent(c, "from")) {
+      const from = consumePunct(c, ":") ? consumeNumber(c) : null;
+      const to = from !== null && consumePunct(c, ",") && consumeIdent(c, "to") && consumePunct(c, ":") ? consumeNumber(c) : null;
+      if (from === null || to === null || !(from < to)) {
+        c.pos = start;
+        return null;
+      }
+      range = { from, to };
+    } else {
       c.pos = start;
       return null;
     }
-    lap = lapValue;
+    if (!consumePunct(c, "}")) {
+      c.pos = start;
+      return null;
+    }
   }
 
   if (!consumePunct(c, ")")) {
     c.pos = start;
     return null;
   }
-  return { channel: name, lap };
+  return { channel: name, lap, range };
 }
 
 function parseMarkOptionField(key: string, c: Cursor): FieldResult {
@@ -626,6 +646,7 @@ function readMark(c: Cursor): MarkProps | null {
     mark: markName as MarkProps["mark"],
     lap: channelResult.lap,
   };
+  if (channelResult.range !== null) mark.range = channelResult.range;
   if (markOptions.xField !== undefined) mark.xField = markOptions.xField;
   if (markOptions.stroke !== undefined) mark.stroke = markOptions.stroke;
   if (markOptions.strokeWidth !== undefined) mark.strokeWidth = markOptions.strokeWidth;

@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import type { SessionDetail } from "../../../../ipc/catalog";
 import type { CellOutput, Window as SelectedWindow } from "../../../../ipc/workbook";
 import { buildGraphModel } from "./graphModel";
-import { buildSourcePalette, filterSourcePalette } from "./sourcePalette";
+import { buildSourcePalette, filterSourcePalette, workbookConstants } from "./sourcePalette";
 
 function window(sessionId: string): SelectedWindow {
   return { session_id: sessionId, span: { kind: "session" }, colour: "--chart-1" };
@@ -191,6 +191,27 @@ describe("buildSourcePalette — constants", () => {
 
     // Assert
     expect(palette.constants).toEqual([]);
+  });
+});
+
+describe("workbookConstants", () => {
+  it("workbookConstants — front-matter constants and a const line — one flat name-to-number map", () => {
+    // Arrange
+    const doc = DOC.replace("fork_velocity = differentiate([fork_travel])", "const stroke_mm = 195\nfork_velocity = differentiate([fork_travel])");
+
+    // Act
+    const constants = workbookConstants(doc);
+
+    // Assert
+    expect(constants).toEqual({ g: 9.80665, rider_mass_kg: 82, stroke_mm: 195 });
+  });
+
+  it("workbookConstants — no constants anywhere — an empty object", () => {
+    // Act
+    const constants = workbookConstants("---\nid: 9f3c1e2d-4b6a-4f1c-9c3d-2a7e8f9b0c1d\nname: x\n---\n```math id=a1b2c3d4\nx = 1\n```\n");
+
+    // Assert
+    expect(constants).toEqual({});
   });
 });
 

@@ -52,6 +52,8 @@ import type { FftParams, HistogramParams, ScatterParams } from "../plotForm/type
 export interface ChannelCallRef {
   channel: string;
   lap: number | null;
+  /** `{ from, to }` (session seconds), C2 §5.3 channel scope (2026-11-05); `null` when the call has none. */
+  range: { from: number; to: number } | null;
 }
 
 /** One `spectrum(...)` call this scan found, decoded exactly as
@@ -256,7 +258,7 @@ export function extractChannelCalls(code: string): ChannelCallRef[] {
     const cursor: Cursor = { tokens, pos: 0 };
     const result = readChannelCall(cursor);
     if (result === null || cursor.pos !== tokens.length) continue;
-    calls.push({ channel: result.channel, lap: result.lap });
+    calls.push({ channel: result.channel, lap: result.lap, range: result.range });
   }
   return calls;
 }

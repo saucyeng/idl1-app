@@ -1,6 +1,6 @@
 import { AxisKind, type AxisKindValue, type DecodedHostChannel } from "../../../../ipc/hostChannel";
 import type { DecodedTile } from "../../../../ipc/tiles";
-import type { UnitLabel } from "../../../../ipc/workbook";
+import type { HostChannelView, UnitLabel } from "../../../../ipc/workbook";
 import { tileToChannelData, type ChannelData } from "./channelData";
 import type { TileCache, TileCacheKey } from "./tileCache";
 
@@ -17,8 +17,10 @@ import type { TileCache, TileCacheKey } from "./tileCache";
 export type BoundChannel =
   | {
       source: "session";
-      /** The sandbox host-variable name this channel is bound under (`setHostVar`'s `name`). */
+      /** The session channel's id. */
       name: string;
+      /** The sandbox host-variable name this channel is bound under (`setHostVar`'s `name`): `plotForm/channelKey.ts`'s key for its scope. */
+      hostKey: string;
       /** The cache key fields shared by every tile in `range` (`tileIndex` excluded — see {@link TileCacheKey}). */
       key: Omit<TileCacheKey, "tileIndex">;
       /** Inclusive tile-index range covering this channel's current visible window. */
@@ -38,8 +40,12 @@ export type BoundChannel =
     }
   | {
       source: "definition";
-      /** The sandbox host-variable name this channel is bound under — the workbook `math` definition's name. */
+      /** The workbook `math` definition's name, as fetched. */
       name: string;
+      /** The sandbox host-variable name this channel is bound under (`plotForm/channelKey.ts`). */
+      hostKey: string;
+      /** The `view` last fetched (C3 §3.4, 2026-11-05) — re-sent verbatim on a rebuild's re-fetch. */
+      view: HostChannelView | null;
       /** The `fetch_host_channel` budget last used for this definition (`clampHostChannelBudget`'s result) — re-sent verbatim on a rebuild's re-fetch. */
       budget: number;
       /** This channel's unit as it was last known when bound (R154/R165) —
@@ -56,7 +62,7 @@ export type BoundChannel =
  *  `ChannelBindDeps.fetchHostChannel`). */
 export interface HostChannelRebindDeps {
   /** Re-fetches one definition's decimated data by name and budget (`ipc/workbook.ts`'s `fetchHostChannel`). */
-  fetchHostChannel(defName: string, budget: number): Promise<DecodedHostChannel>;
+  fetchHostChannel(defName: string, budget: number, view: HostChannelView | null): Promise<DecodedHostChannel>;
 }
 
 /**
@@ -103,10 +109,10 @@ export function rebindChannelsAfterRebuild(
   for (const channel of bound) {
     if (channel.source === "definition") {
       void deps
-        .fetchHostChannel(channel.name, channel.budget)
+        .fetchHostChannel(channel.name, channel.budget, channel.view)
         .then((result) => {
           if (!result.hasT) return;
-          send(channel.name, { length: result.v.length, t: result.t, v: result.v }, channel.unit, result.axisKind);
+          send(channel.hostKey, { length: result.v.length, t: result.t, v: result.v }, channel.unit, result.axisKind);
         })
         .catch((error: unknown) => {
           // A rebuild is not itself a fetch trigger even for a definition
@@ -135,6 +141,6 @@ export function rebindChannelsAfterRebuild(
     }
 
     const data = tileToChannelData(tiles, channel.startUs, channel.endUs, channel.budget);
-    send(channel.name, data, channel.unit, AxisKind.Time);
+    send(channel.hostKey, data, channel.unit, AxisKind.Time);
   }
 }

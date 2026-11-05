@@ -80,8 +80,13 @@ function renderYAxis(y: YAxisProps): string | null {
  *  is omitted entirely — the grammar marks it fully optional, not
  *  "present with a null value." */
 function renderChannelCall(m: MarkProps): string {
-  const lapArg = m.lap === null || m.lap === undefined ? "" : `, { lap: ${String(m.lap)} }`;
-  return `channel(${jsString(m.channel)}${lapArg})`;
+  const scopeArg =
+    m.range !== null && m.range !== undefined
+      ? `, { from: ${String(m.range.from)}, to: ${String(m.range.to)} }`
+      : m.lap === null || m.lap === undefined
+        ? ""
+        : `, { lap: ${String(m.lap)} }`;
+  return `channel(${jsString(m.channel)}${scopeArg})`;
 }
 
 /** Renders a mark's `mark_options` (C2 §5.3): the `x`/`y` pair — `y`

@@ -304,6 +304,15 @@ export async function evalWorkbookV2(id: string, windows: Window[]): Promise<Win
  *  definition's actual decimated sample data. */
 export type HostChannel = DecodedHostChannel;
 
+/** `fetchHostChannelV2`'s `view` (C3 §3.4, amended 2026-11-05): the part of
+ *  the evaluated definition to send, µs on the window's session clock,
+ *  `t0_us <= t < t1_us`. The definition is still evaluated over `window`;
+ *  this only chooses what is sliced, envelope-decimated and sent. */
+export interface HostChannelView {
+  t0_us: number;
+  t1_us: number;
+}
+
 /** Evaluates the named `math` definition and fetches its sample data,
  *  decimated to `budget` points (C3 §3.4, ruling R117 — replaces
  *  `fetchHostChannel`'s `sessionId`). `window: null` reproduces the old
@@ -317,9 +326,10 @@ export async function fetchHostChannelV2(
   workbookId: string,
   window: Window | null,
   defName: string,
-  budget: number
+  budget: number,
+  view: HostChannelView | null = null
 ): Promise<HostChannel> {
-  const buf = await invoke<ArrayBuffer>("fetch_host_channel_v2", { workbookId, window, defName, budget });
+  const buf = await invoke<ArrayBuffer>("fetch_host_channel_v2", { workbookId, window, defName, budget, view });
   return decodeHostChannel(buf);
 }
 

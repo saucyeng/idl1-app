@@ -314,6 +314,19 @@ function scanFrontMatterConstants(markdown: string): PaletteConstantRow[] {
  *  doesn't adjudicate the collision Rust itself rejects as `ReservedName`/
  *  a duplicate (C3 is the source of truth for whether the document is
  *  actually valid; this is a display list, not a validator). */
+/**
+ * C2 §5.1's `constants` host variable: every front-matter constant and every
+ * `const` line, flattened to `{ name: number }`. A `const` line's value is a
+ * literal number by grammar (C2 §3.1 `const_line`), so this reads text and
+ * computes nothing. A name declared twice keeps its last value here; the
+ * engine reports the duplicate on its own.
+ */
+export function workbookConstants(markdown: string): Record<string, number> {
+  const out: Record<string, number> = {};
+  for (const row of [...scanFrontMatterConstants(markdown), ...scanConstLines(markdown)]) out[row.name] = row.value;
+  return out;
+}
+
 function buildConstantGroups(markdown: string): PaletteGroup<PaletteConstantRow>[] {
   const rows = [...scanFrontMatterConstants(markdown), ...scanConstLines(markdown)];
   if (rows.length === 0) return [];

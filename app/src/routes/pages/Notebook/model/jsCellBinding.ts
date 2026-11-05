@@ -39,6 +39,7 @@ import {
   type SpectrumCallRef,
 } from "./jsCellCalls";
 import { gpsBudgetForWidth } from "../../../../ipc/gps";
+import { channelKey, type ChannelScope } from "../plotForm/channelKey";
 import { MAX_HISTOGRAM_BINS, type HistogramParams as WireHistogramParams } from "../../../../ipc/histogram";
 import type { SpectrogramParams as WireSpectrogramParams } from "../../../../ipc/rasters";
 import { MAX_SCATTER_POINTS } from "../../../../ipc/scatter";
@@ -80,6 +81,22 @@ export interface JsCellBindingChannel {
    * all today.
    */
   lap: number | null;
+  /**
+   * The sandbox host-variable name this channel's data is published under:
+   * `plotForm/channelKey.ts`'s `channelKey(channelId, scope)` -- the bare
+   * `channelId` for a call that follows the chart, a scoped key for
+   * `{ lap }` / `{ from, to }` (C2 §5.3 channel scope, 2026-11-05). Also
+   * this channel's identity within the cell: one channel may be bound twice
+   * at two ranges.
+   */
+  hostKey: string;
+  /**
+   * The fixed range a scoped call covers, µs on the primary window's session
+   * clock, or `null` when the channel follows the chart's viewport. Gestures
+   * never move a fixed range, and a fixed-range channel is never the mounted
+   * one (`ChartCell` pans and zooms the mounted channel).
+   */
+  fixedSpan: { startUs: number; endUs: number } | null;
   /** This channel's three-state unit (R154/R164) — `source === "session"`:
    *  `ChannelSummary.unit` (C1 §4.1) via `model/unitLabel.ts`'s
    *  `rawUnitToLabel`; `source === "definition"`: the owning workbook
@@ -390,8 +407,23 @@ function bindingForTime(
   const channels: JsCellBindingChannel[] = [];
   const seen = new Set<string>();
   for (const call of calls) {
-    if (seen.has(call.channel)) continue;
-    seen.add(call.channel);
+    // C2 §5.3 channel scope: a range wins over a lap (the grammar admits one
+    // or the other, never both); a lap resolves to its own recorded span, and
+    // a lap this session doesn't have leaves the cell unbound, as an unknown
+    // channel does.
+    const scope: ChannelScope =
+      call.range !== null ? { kind: "range", from: call.range.from, to: call.range.to } : call.lap !== null ? { kind: "lap", lap: call.lap } : { kind: "view" };
+    let fixedSpan: { startUs: number; endUs: number } | null = null;
+    if (scope.kind === "range") {
+      fixedSpan = { startUs: scope.from * 1e6, endUs: scope.to * 1e6 };
+    } else if (scope.kind === "lap") {
+      const lap = sessionDetail.laps.find((l) => l.lap_number === scope.lap);
+      if (lap === undefined) return null;
+      fixedSpan = { startUs: lap.start_time_secs * 1e6, endUs: lap.end_time_secs * 1e6 };
+    }
+    const hostKey = channelKey(call.channel, scope);
+    if (seen.has(hostKey)) continue;
+    seen.add(hostKey);
 
     const channel = findChannel(sessionDetail.channels, call.channel);
     if (channel !== null) {
@@ -401,6 +433,8 @@ function bindingForTime(
         sampleRateHz: channel.nominal_rate_hz,
         sampleCount: channel.sample_count,
         lap: call.lap,
+        hostKey,
+        fixedSpan,
         unit: rawUnitToLabel(channel.unit),
       });
       continue;
@@ -413,6 +447,8 @@ function bindingForTime(
         sampleRateHz: 0,
         sampleCount: 0,
         lap: call.lap,
+        hostKey,
+        fixedSpan,
         unit: definitionUnitByName.get(call.channel) ?? UNIT_NOT_YET_EVALUATED,
       });
       continue;
@@ -421,7 +457,9 @@ function bindingForTime(
     return null;
   }
 
-  const mountedChannelId = channels.find((c) => c.source === "session")?.channelId ?? null;
+  // Only a channel that follows the chart can be the one `ChartCell` mounts
+  // and pans; a fixed-range channel stays where its call put it.
+  const mountedChannelId = channels.find((c) => c.source === "session" && c.fixedSpan === null)?.channelId ?? null;
 
   return {
     kind: "time",
@@ -1006,7 +1044,9 @@ export function bindingIdentity(binding: JsCellBinding): string {
     return `fft|${binding.hostVarName}|${binding.sampleCount}|${binding.unrequestable ?? ""}|${windowIdentity(binding.request.window)}`;
   }
   if (binding.channels.length === 0) return "no-channel";
-  const parts = binding.channels.map((c) => `${c.channelId}|${c.source}|${c.lap ?? "session"}`);
+  // `hostKey` names the scope and `fixedSpan` its resolved range, so a lap
+  // whose recorded span changed (a rescan) is a new identity too.
+  const parts = binding.channels.map((c) => `${c.hostKey}|${c.source}|${c.fixedSpan === null ? "view" : `${c.fixedSpan.startUs}..${c.fixedSpan.endUs}`}`);
   return `${parts.join(",")}|${binding.initialSpan.startUs}|${binding.initialSpan.endUs}`;
 }
 

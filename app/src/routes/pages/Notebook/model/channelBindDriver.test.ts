@@ -101,6 +101,8 @@ function binding(channelIds: string[]): TimeCellBinding {
     sampleRateHz: 50 + i * 25,
     sampleCount: 0,
     lap: null,
+    hostKey: channelId,
+    fixedSpan: null,
     unit: { state: "known", text: "mm" },
   }));
   return {
@@ -120,6 +122,8 @@ function mixedBinding(entries: Array<{ channelId: string; source: "session" | "d
     sampleRateHz: entry.source === "session" ? 50 + i * 25 : 0,
     sampleCount: 0,
     lap: null,
+    hostKey: entry.channelId,
+    fixedSpan: null,
     unit: entry.source === "session" ? { state: "known" as const, text: "mm" } : { state: "known" as const, text: "km/h" },
   }));
   return {
@@ -383,11 +387,11 @@ describe("runChannelBind", () => {
 
   it("runChannelBind — a definition-only cell — dispatches one channelData and one boundChannels, no chartWindow", async () => {
     const cache = new TileCache();
-    const hostChannelCalls: Array<{ defName: string; budget: number }> = [];
+    const hostChannelCalls: Array<{ defName: string; budget: number; view: unknown }> = [];
     const deps: ChannelBindDeps = {
       fetchTile: () => Promise.reject(new Error("fetchTile not expected for a definition-only cell")),
-      fetchHostChannel: (defName, budget) => {
-        hostChannelCalls.push({ defName, budget });
+      fetchHostChannel: (defName, budget, view) => {
+        hostChannelCalls.push({ defName, budget, view });
         return Promise.resolve(fakeHostChannel([1, 2, 3]));
       },
     };
@@ -396,12 +400,13 @@ describe("runChannelBind", () => {
 
     await runChannelBind(deps, cache, oneWindow(), "cell-a", cellBinding, 640, (a) => actions.push(a), neverStale);
 
-    expect(hostChannelCalls).toEqual([{ defName: "avg_speed", budget: 1280 }]);
+    // The chart's initial span is the view: the definition is sent for what the chart shows (C3 §3.4).
+    expect(hostChannelCalls).toEqual([{ defName: "avg_speed", budget: 1280, view: { t0_us: 0, t1_us: 2_000_000 } }]);
     expect(actions.filter((a) => a.type === "channelData")).toHaveLength(1);
     expect(actions.filter((a) => a.type === "boundChannels")).toHaveLength(1);
     expect(actions.filter((a) => a.type === "chartWindow")).toHaveLength(0);
     const bound = (actions.find((a) => a.type === "boundChannels") as Extract<ChannelBindAction, { type: "boundChannels" }>).bound;
-    expect(bound).toEqual([{ source: "definition", name: "avg_speed", budget: 1280, unit: { state: "known", text: "km/h" } }]);
+    expect(bound).toEqual([{ source: "definition", name: "avg_speed", hostKey: "avg_speed", view: { t0_us: 0, t1_us: 2_000_000 }, budget: 1280, unit: { state: "known", text: "km/h" } }]);
   });
 
   it("runChannelBind — the same width on mobile — a strictly lower budget than on desktop", async () => {
@@ -713,16 +718,65 @@ describe("runChannelSettle", () => {
       { channelId: "fork_velocity", source: "session" },
       { channelId: "avg_speed", source: "definition" },
     ]).channels;
-    const previousBound: BoundChannel[] = [{ source: "definition", name: "avg_speed", budget: 64, unit: { state: "known", text: "km/h" } }];
+    const previousBound: BoundChannel[] = [{ source: "definition", name: "avg_speed", hostKey: "avg_speed", view: { t0_us: 0, t1_us: 1_000_000 }, budget: 64, unit: { state: "known", text: "km/h" } }];
     const actions: ChannelBindAction[] = [];
 
     // pointBudget(32, false) = 64 (DESKTOP_POINTS_PER_PIXEL_COLUMN = 2),
-    // matching `previousBound`'s recorded budget exactly.
+    // matching `previousBound`'s recorded budget exactly, over the same view.
     await runChannelSettle(deps, cache, oneWindow(), "cell-a", channels, "fork_velocity", 0, 1_000_000, 32, (a) => actions.push(a), neverStale, previousBound);
 
     expect(hostChannelCalls).toBe(0);
     const bound = (actions.find((a) => a.type === "boundChannels") as Extract<ChannelBindAction, { type: "boundChannels" }>).bound;
-    expect(bound.find((b) => b.source === "definition")).toEqual({ source: "definition", name: "avg_speed", budget: 64, unit: { state: "known", text: "km/h" } });
+    expect(bound.find((b) => b.source === "definition")).toEqual({ source: "definition", name: "avg_speed", hostKey: "avg_speed", view: { t0_us: 0, t1_us: 1_000_000 }, budget: 64, unit: { state: "known", text: "km/h" } });
+  });
+
+  it("runChannelSettle — a definition channel's budget unchanged but the view moved — refetches for the new view", async () => {
+    // Arrange — the chart was zoomed from 0–1 s to 0.4–0.6 s at the same width.
+    const cache = new TileCache();
+    const views: unknown[] = [];
+    const deps: ChannelBindDeps = {
+      fetchTile: () => Promise.resolve(fakeTile([0n], [1])),
+      fetchHostChannel: (_defName, _budget, view) => {
+        views.push(view);
+        return Promise.resolve(fakeHostChannel([1]));
+      },
+    };
+    const channels = mixedBinding([
+      { channelId: "fork_velocity", source: "session" },
+      { channelId: "avg_speed", source: "definition" },
+    ]).channels;
+    const previousBound: BoundChannel[] = [{ source: "definition", name: "avg_speed", hostKey: "avg_speed", view: { t0_us: 0, t1_us: 1_000_000 }, budget: 64, unit: { state: "known", text: "km/h" } }];
+
+    // Act
+    await runChannelSettle(deps, cache, oneWindow(), "cell-a", channels, "fork_velocity", 400_000, 600_000, 32, () => undefined, neverStale, previousBound);
+
+    // Assert — zooming refines a definition now, as it always did a session channel.
+    expect(views).toEqual([{ t0_us: 400_000, t1_us: 600_000 }]);
+  });
+
+  it("runChannelBind — a definition scoped to a fixed range — fetched for that range, published under its scoped key, whatever the viewport", async () => {
+    // Arrange
+    const cache = new TileCache();
+    const views: unknown[] = [];
+    const deps: ChannelBindDeps = {
+      fetchTile: () => Promise.reject(new Error("no session channel in this cell")),
+      fetchHostChannel: (_defName, _budget, view) => {
+        views.push(view);
+        return Promise.resolve(fakeHostChannel([1, 2]));
+      },
+    };
+    const cellBinding = mixedBinding([{ channelId: "avg_speed", source: "definition" }]);
+    cellBinding.channels[0] = { ...cellBinding.channels[0], hostKey: "avg_speed@0.5..0.75", fixedSpan: { startUs: 500_000, endUs: 750_000 } };
+    const actions: ChannelBindAction[] = [];
+
+    // Act
+    await runChannelBind(deps, cache, oneWindow(), "cell-a", cellBinding, 640, (a) => actions.push(a), neverStale);
+
+    // Assert
+    expect(views).toEqual([{ t0_us: 500_000, t1_us: 750_000 }]);
+    const data = actions.find((a) => a.type === "channelData") as Extract<ChannelBindAction, { type: "channelData" }>;
+    expect(data.hostKey).toBe("avg_speed@0.5..0.75");
+    expect(data.channelId).toBe("avg_speed");
   });
 
   it("runChannelSettle — a definition channel's budget changed from previousBound — refetches with the new budget", async () => {
@@ -736,7 +790,7 @@ describe("runChannelSettle", () => {
       },
     };
     const channels = mixedBinding([{ channelId: "avg_speed", source: "definition" }]).channels;
-    const previousBound: BoundChannel[] = [{ source: "definition", name: "avg_speed", budget: 64, unit: { state: "known", text: "km/h" } }];
+    const previousBound: BoundChannel[] = [{ source: "definition", name: "avg_speed", hostKey: "avg_speed", view: null, budget: 64, unit: { state: "known", text: "km/h" } }];
     const actions: ChannelBindAction[] = [];
 
     await runChannelSettle(deps, cache, oneWindow(), "cell-a", channels, "avg_speed", 0, 1_000_000, 640, (a) => actions.push(a), neverStale, previousBound);

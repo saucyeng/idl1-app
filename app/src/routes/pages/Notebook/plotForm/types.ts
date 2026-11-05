@@ -5,6 +5,10 @@ export interface MarkProps {
   channel: string;
   mark: "lineY" | "dot" | "areaY" | "rectY" | "ruleY";
   lap?: number | null;
+  /** C2 §5.3's `{ from, to }` channel scope (2026-11-05): session seconds
+   *  this mark's data covers, fixed, whatever the chart's pan/zoom. Absent
+   *  means the mark follows the chart (or its `lap`). */
+  range?: { from: number; to: number } | null;
   /**
    * Which time column this mark's x axis binds (C2 §5.3's
    * `x_field_binding`, ruling R215 items 4-5). **Absent means session

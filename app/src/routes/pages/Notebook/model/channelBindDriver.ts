@@ -43,7 +43,7 @@
  * so it costs no extra `fetchTile` call.
  */
 import { AxisKind, type AxisKindValue, type DecodedHostChannel } from "../../../../ipc/hostChannel";
-import type { UnitLabel } from "../../../../ipc/workbook";
+import type { HostChannelView, UnitLabel } from "../../../../ipc/workbook";
 import type { DecodedTile } from "../../../../ipc/tiles";
 import { tileToChannelData } from "./channelData";
 import type { BoundChannel } from "./channelRebind";
@@ -94,8 +94,10 @@ export function clampHostChannelBudget(n: number): number {
  * data; this decides "skip the call" for that case. `prevBudget` is `null`
  * when this channel has never been fetched (always refetch then). Pure.
  */
-export function shouldRefetchHostChannel(prevBudget: number | null, nextBudget: number): boolean {
-  return prevBudget !== nextBudget;
+export function shouldRefetchHostChannel(prevBudget: number | null, nextBudget: number, prevView: HostChannelView | null = null, nextView: HostChannelView | null = null): boolean {
+  if (prevBudget !== nextBudget) return true;
+  if (prevView === null || nextView === null) return prevView !== nextView;
+  return prevView.t0_us !== nextView.t0_us || prevView.t1_us !== nextView.t1_us;
 }
 
 /**
@@ -169,7 +171,7 @@ export interface ChannelBindDeps {
    *  (L6 Task 18, R77.3) -- injected already bound to a `workbookId` and
    *  `sessionId` by the caller (`Notebook/index.tsx`); this module never
    *  learns a workbook id. Mirrors `ipc/workbook.ts`'s `fetchHostChannel`. */
-  fetchHostChannel: (defName: string, budget: number) => Promise<DecodedHostChannel>;
+  fetchHostChannel: (defName: string, budget: number, view: HostChannelView | null) => Promise<DecodedHostChannel>;
 }
 
 /**
@@ -229,6 +231,8 @@ export type ChannelBindAction =
       type: "channelData";
       cellId: string;
       channelId: string;
+      /** The sandbox host-variable name to publish under (`JsCellBindingChannel.hostKey`). */
+      hostKey: string;
       length: number;
       t: ArrayBuffer;
       v: ArrayBuffer;
@@ -358,10 +362,22 @@ async function runChannelBindWindow(
   }
 
   for (const channel of channels) {
+    // C2 §5.3 channel scope: a scoped channel covers its own fixed range at
+    // this chart's width, whatever the chart's viewport; every other channel
+    // follows the viewport. Either way the range is planned like any other
+    // (tiers for a session channel, a view slice for a definition).
+    const channelViewport: AbsoluteSpan = channel.fixedSpan ?? viewport;
+
     if (channel.source === "definition") {
       const budget = clampHostChannelBudget(pointBudget(chartWidthPx, isMobile));
-      const previous = previousBound.find((b) => b.source === "definition" && b.name === channel.channelId);
-      if (previous !== undefined && !shouldRefetchHostChannel(previous.budget, budget)) {
+      // The definition is evaluated over the selected window as always; the
+      // view only chooses which part is sent (C3 §3.4). Expressed on the
+      // primary window's own session clock.
+      const primaryView = mapViewportToWindow(channelViewport, primary.span.startUs, primary.span);
+      if (primaryView === null) continue;
+      const view: HostChannelView = { t0_us: Math.floor(primaryView.startUs), t1_us: Math.ceil(primaryView.endUs) };
+      const previous = previousBound.find((b) => b.source === "definition" && b.hostKey === channel.hostKey);
+      if (previous !== undefined && previous.source === "definition" && !shouldRefetchHostChannel(previous.budget, budget, previous.view, view)) {
         // The consequence of `fetch_host_channel` having no time window
         // (L6 Task 18 brief, "the consequence you must design around"): a
         // settle whose budget (this chart's pixel width) is unchanged would
@@ -374,7 +390,7 @@ async function runChannelBindWindow(
 
       let result: DecodedHostChannel | null;
       try {
-        result = await deps.fetchHostChannel(channel.channelId, budget);
+        result = await deps.fetchHostChannel(channel.channelId, budget, view);
       } catch (error) {
         // Never throws out of the driver -- a `fetch_host_channel`
         // rejection drops only this channel's bind, exactly as an evicted
@@ -414,6 +430,7 @@ async function runChannelBindWindow(
         type: "channelData",
         cellId,
         channelId: channel.channelId,
+        hostKey: channel.hostKey,
         length: combined.length,
         t: combined.t.buffer.slice(0) as ArrayBuffer,
         v: combined.v.buffer.slice(0) as ArrayBuffer,
@@ -436,7 +453,7 @@ async function runChannelBindWindow(
           axisKind: result.axisKind,
         },
       });
-      bounds.push({ source: "definition", name: channel.channelId, budget, unit: channel.unit });
+      bounds.push({ source: "definition", name: channel.channelId, hostKey: channel.hostKey, budget, view, unit: channel.unit });
       // No `chartWindow` dispatch: a definition channel is never the
       // mounted channel (`bindingFor`'s `mountedChannelId` is always a
       // `"session"` channel or `null`).
@@ -461,7 +478,7 @@ async function runChannelBindWindow(
     let primaryMapped: AbsoluteSpan | null = null;
 
     for (const w of windows) {
-      const mapped = mapViewportToWindow(viewport, primary.span.startUs, w.span);
+      const mapped = mapViewportToWindow(channelViewport, primary.span.startUs, w.span);
       // No overlap at all -- this window has no data in the current
       // viewport (requirement 2: a window shorter than the viewport has
       // no data past its end). Skip the fetch entirely; the window is
@@ -519,6 +536,7 @@ async function runChannelBindWindow(
       type: "channelData",
       cellId,
       channelId: channel.channelId,
+      hostKey: channel.hostKey,
       length: combined.length,
       t: combined.t.buffer.slice(0) as ArrayBuffer,
       v: combined.v.buffer.slice(0) as ArrayBuffer,
@@ -553,6 +571,7 @@ async function runChannelBindWindow(
       bounds.push({
         source: "session",
         name: channel.channelId,
+        hostKey: channel.hostKey,
         key,
         range: primaryResult.range,
         startUs: primaryMapped.startUs,

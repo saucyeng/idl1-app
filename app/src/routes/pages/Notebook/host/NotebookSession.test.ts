@@ -63,8 +63,8 @@ describe("NotebookSession", () => {
     cache.put({ ...forkKey, tileIndex: 0 }, fakeTile([0n, 1_000_000n], [1, 2], 0));
     cache.put({ ...wheelKey, tileIndex: 0 }, fakeTile([0n], [5], 0));
     const session = new NotebookSession(cache);
-    const forkBound: BoundChannel = { source: "session", name: "fork", key: forkKey, range: { first: 0, last: 0 }, startUs: 0, endUs: 2_000_000, budget: 100, unit: { state: "known", text: "mm" } };
-    const wheelBound: BoundChannel = { source: "session", name: "wheel", key: wheelKey, range: { first: 0, last: 0 }, startUs: 0, endUs: 1_000_000, budget: 100, unit: { state: "known", text: "km/h" } };
+    const forkBound: BoundChannel = { source: "session", name: "fork", hostKey: "fork", key: forkKey, range: { first: 0, last: 0 }, startUs: 0, endUs: 2_000_000, budget: 100, unit: { state: "known", text: "mm" } };
+    const wheelBound: BoundChannel = { source: "session", name: "wheel", hostKey: "wheel", key: wheelKey, range: { first: 0, last: 0 }, startUs: 0, endUs: 1_000_000, budget: 100, unit: { state: "known", text: "km/h" } };
     session.setBoundChannels("cell-a", [forkBound]);
     session.setBoundChannels("cell-b", [wheelBound]);
     const sandbox = fakeSandbox();
@@ -85,7 +85,7 @@ describe("NotebookSession", () => {
     const forkKey = key({ channelId: "front-fork" });
     cache.put({ ...forkKey, tileIndex: 0 }, fakeTile([0n], [1], 0));
     const session = new NotebookSession(cache);
-    session.setBoundChannels("cell-a", [{ source: "session", name: "fork", key: forkKey, range: { first: 0, last: 0 }, startUs: 0, endUs: 1_000_000, budget: 100, unit: { state: "known", text: "mm" } }]);
+    session.setBoundChannels("cell-a", [{ source: "session", name: "fork", hostKey: "fork", key: forkKey, range: { first: 0, last: 0 }, startUs: 0, endUs: 1_000_000, budget: 100, unit: { state: "known", text: "mm" } }]);
     const sandbox = fakeSandbox();
 
     const onChannelsInvalidated = session.onChannelsInvalidated(sandbox, neverFetchesHostChannel(), () => null);
@@ -99,7 +99,7 @@ describe("NotebookSession", () => {
     const forkKey = key();
     cache.put({ ...forkKey, tileIndex: 0 }, fakeTile([0n], [1], 0));
     const session = new NotebookSession(cache);
-    session.setBoundChannels("cell-a", [{ source: "session", name: "fork", key: forkKey, range: { first: 0, last: 0 }, startUs: 0, endUs: 1_000_000, budget: 100, unit: { state: "known", text: "mm" } }]);
+    session.setBoundChannels("cell-a", [{ source: "session", name: "fork", hostKey: "fork", key: forkKey, range: { first: 0, last: 0 }, startUs: 0, endUs: 1_000_000, budget: 100, unit: { state: "known", text: "mm" } }]);
 
     session.removeBoundChannel("cell-a");
 
@@ -111,8 +111,8 @@ describe("NotebookSession", () => {
     const forkKey = key({ channelId: "front-fork" });
     const wheelKey = key({ channelId: "rear-wheel-speed" });
     const session = new NotebookSession(cache);
-    const forkBound: BoundChannel = { source: "session", name: "fork", key: forkKey, range: { first: 0, last: 0 }, startUs: 0, endUs: 1_000_000, budget: 100, unit: { state: "known", text: "mm" } };
-    const wheelBound: BoundChannel = { source: "session", name: "wheel", key: wheelKey, range: { first: 0, last: 0 }, startUs: 0, endUs: 1_000_000, budget: 100, unit: { state: "known", text: "km/h" } };
+    const forkBound: BoundChannel = { source: "session", name: "fork", hostKey: "fork", key: forkKey, range: { first: 0, last: 0 }, startUs: 0, endUs: 1_000_000, budget: 100, unit: { state: "known", text: "mm" } };
+    const wheelBound: BoundChannel = { source: "session", name: "wheel", hostKey: "wheel", key: wheelKey, range: { first: 0, last: 0 }, startUs: 0, endUs: 1_000_000, budget: 100, unit: { state: "known", text: "km/h" } };
 
     session.setBoundChannels("cell-a", [forkBound, wheelBound]);
 
@@ -126,7 +126,7 @@ describe("NotebookSession", () => {
   it("NotebookSession — onChannelsInvalidated with a [lap] definition bound — republishes it as a lap axis, lap numbers intact", async () => {
     const cache = new TileCache(1_000_000);
     const session = new NotebookSession(cache);
-    session.setBoundChannels("cell-a", [{ source: "definition", name: "lap_time_s", budget: 256, unit: { state: "known", text: "s" } }]);
+    session.setBoundChannels("cell-a", [{ source: "definition", name: "lap_time_s", hostKey: "lap_time_s", view: null, budget: 256, unit: { state: "known", text: "s" } }]);
     const sandbox = fakeSandbox();
     const deps: HostChannelRebindDeps = {
       fetchHostChannel: () =>
@@ -144,7 +144,7 @@ describe("NotebookSession", () => {
   it("NotebookSession — onChannelsInvalidated with a [t] definition bound — republishes it as a time axis", async () => {
     const cache = new TileCache(1_000_000);
     const session = new NotebookSession(cache);
-    session.setBoundChannels("cell-a", [{ source: "definition", name: "fork_smooth", budget: 256, unit: { state: "known", text: "mm" } }]);
+    session.setBoundChannels("cell-a", [{ source: "definition", name: "fork_smooth", hostKey: "fork_smooth", view: null, budget: 256, unit: { state: "known", text: "mm" } }]);
     const sandbox = fakeSandbox();
     const deps: HostChannelRebindDeps = {
       fetchHostChannel: () =>
