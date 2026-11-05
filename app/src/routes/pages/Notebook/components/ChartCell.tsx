@@ -11,7 +11,7 @@ import { gapBandsPx, gapSpansFromTiles } from "../model/gapSpans";
 import { seamBandsPx, seamSpansFromResult, type SeamSpan } from "../model/seamSpans";
 import { hoverAt, type HoverGeometry } from "../model/hover";
 import { isStaleSettleResult, makeSettle } from "../model/settle";
-import { chooseTier, tileRange } from "../model/tiers";
+import { planTiles } from "../model/tiers";
 import { ensureTiles, type TileCache, type TileCacheKey } from "../model/tileCache";
 import { rawUnitToLabel } from "../model/unitLabel";
 import { clampTo, commitViewport, panBy, transformFor, zoomAt, type Viewport } from "../model/viewport";
@@ -163,6 +163,8 @@ export interface ChartCellProps {
   channelId: string;
   /** The channel's nominal sample rate, in Hz (C1 §2) — feeds `chooseTier`/`tileRange`. */
   sampleRateHz: number;
+  /** The channel's total sample count; plans an event channel's tiles (`planTiles`). */
+  sampleCount: number;
   /** The tile cache this cell's settle-triggered fetch reads/fills. Shared
    *  with anything else in the notebook rendering the same channel, so two
    *  cells (or a rebuild replay, `model/channelRebind.ts`) never re-fetch
@@ -443,6 +445,7 @@ export default function ChartCell({
   sessionId,
   channelId,
   sampleRateHz,
+  sampleCount,
   cache,
   fetchTile,
   fetchSeams,
@@ -728,8 +731,7 @@ export default function ChartCell({
     // the newer settle's own (possibly still-pending) result
     // (review-task8.md: "no stale-settle guard").
     const seqAtDispatch = settleRef.current.latestSeq();
-    const tier = chooseTier(next.endUs - next.startUs, next.pixelWidth, sampleRateHz);
-    const range = tileRange(next.startUs, next.endUs, tier, sampleRateHz);
+    const { tier, range } = planTiles(next.startUs, next.endUs, next.pixelWidth, sampleRateHz, sampleCount);
     const key: Omit<TileCacheKey, "tileIndex"> = { sessionId, channelId, tier, columnCount: width };
 
     ensureTiles(cache, key, range, (tileIndex) => fetchTile(tier, tileIndex, width))

@@ -1463,6 +1463,9 @@ export default function NotebookPage() {
   // the watch effect's `isSelfWrite` check below (C4 §4's second belt).
   const saveFlowRef = useRef(saveFlow({ save: saveWorkbook, now: () => Date.now() }));
   const [saveFlowState, setSaveFlowState] = useState<SaveFlowState>({ status: "idle" });
+  /** True while a save is awaiting `save_workbook` — autosave and the Save
+   *  button share it, so two saves never race on the same `based_on_hash`. */
+  const saveInFlightRef = useRef(false);
   const lastSavedHashRef = useRef<string | null>(null);
   const lastSavedAtMsRef = useRef<number | null>(null);
 
@@ -2212,32 +2215,30 @@ export default function NotebookPage() {
     };
   }, [state.handle?.id, primeState.running]);
 
-  // Re-runs `evalWorkbook` some time after a local edit (`handleCellCodeChange`
-  // below, dispatched as `workbookReducer`'s `editCell`), debounced by
-  // `EDIT_EVAL_DEBOUNCE_MS` (Task 15). Depends only on data
-  // (`state.dirtyCellIds`'s identity, which `editCell` refreshes on every
-  // edit, and `state.handle?.id`) -- the tightened IPC-effects rule. The
-  // cleanup here only clears a *pending timer*, never an in-flight
-  // `evalWorkbook` call -- the same distinction `CodePane.tsx`'s own
-  // debounce relies on -- so this is not the cancelling-cleanup pattern
-  // reviewers grade Critical.
-  // R95 item 3: a hidden notebook must not call `eval_workbook` -- gated on
-  // `primeState.running` the same way as the two effects above. Going
-  // hidden mid-debounce runs this effect's cleanup (`clearTimeout`), so a
-  // pending edit's eval is dropped rather than firing into the background;
-  // the edit itself is not lost (`state.dirtyCellIds` is untouched), so
-  // becoming visible again with a still-dirty cell re-arms the same timer.
+  // The timer is debounced by `EDIT_EVAL_DEBOUNCE_MS`; the cleanup clears only a
+  // pending timer, never an in-flight save. R95 item 3: a hidden notebook
+  // neither saves nor evaluates (`primeState.running`); the edit is kept and
+  // the timer re-arms when the notebook is shown again.
+  // Autosave (Isaac, 2026-11-05: "it should be instant instead of requiring
+  // a save"). `eval_workbook_v2` reads the file, so a local edit is saved
+  // first and evaluated from what was saved (`handleSave` → `evaluateSaved`).
+  // Saves only when `markdown` differs from what was last read or written:
+  // a watcher event marks cells dirty without changing `markdown`, and must
+  // never be saved over. Never during a conflict (the banner owns that),
+  // and one save at a time: a save in flight when the timer fires is left
+  // to finish, and its `saveResult` (a new `hash`) re-runs this effect if
+  // the text moved on meanwhile.
   useEffect(() => {
-    if (state.handle === null || state.dirtyCellIds.size === 0 || !primeState.running) return;
-    const workbookId = state.handle.id;
+    if (state.handle === null || state.markdown === null || state.hash === null || state.conflict || !primeState.running) return;
+    if (state.markdown === state.savedMarkdown) return;
 
     const timer = setTimeout(() => {
-      const mySeq = ++evalSeqRef.current;
-      trackEvalRun(runEval({ evalWorkbookV2 }, workbookId, windowsRef.current, dispatch, () => evalSeqRef.current !== mySeq, evalGenerationRef.current));
+      if (saveInFlightRef.current) return;
+      void handleSave();
     }, EDIT_EVAL_DEBOUNCE_MS);
 
     return () => clearTimeout(timer);
-  }, [state.dirtyCellIds, state.handle?.id, primeState.running]);
+  }, [state.markdown, state.savedMarkdown, state.hash, state.conflict, state.handle?.id, primeState.running]);
 
   /**
    * `WorkbookBar`'s "Create" (L6 Task 21) -- explicit user action, never
@@ -2365,15 +2366,26 @@ export default function NotebookPage() {
 
   async function handleSave() {
     if (state.handle === null || state.markdown === null || state.hash === null) return;
-    const result = await saveFlowRef.current.save(state.handle.id, state.markdown, state.hash);
-    setSaveFlowState(result);
-    if (result.status === "saved") {
-      lastSavedHashRef.current = result.hash;
-      lastSavedAtMsRef.current = result.savedAtMs;
-      dispatch({ type: "saveResult", hash: result.hash, migrations: result.migrations });
-      evaluateSaved(state.handle.id);
-    } else if (result.status === "conflict") {
-      dispatch({ type: "saveConflict" });
+    if (saveInFlightRef.current) return;
+    const workbookId = state.handle.id;
+    const markdown = state.markdown;
+    const needsEval = state.dirtyCellIds.size > 0;
+    saveInFlightRef.current = true;
+    try {
+      const result = await saveFlowRef.current.save(workbookId, markdown, state.hash);
+      setSaveFlowState(result);
+      if (result.status === "saved") {
+        lastSavedHashRef.current = result.hash;
+        lastSavedAtMsRef.current = result.savedAtMs;
+        dispatch({ type: "saveResult", hash: result.hash, migrations: result.migrations, markdown });
+        // A drag or a moved node changes only `graph` (front matter):
+        // nothing to evaluate.
+        if (needsEval) evaluateSaved(workbookId);
+      } else if (result.status === "conflict") {
+        dispatch({ type: "saveConflict" });
+      }
+    } finally {
+      saveInFlightRef.current = false;
     }
   }
 
@@ -4912,6 +4924,7 @@ export default function NotebookPage() {
                 sessionId={sid}
                 channelId={channel.channelId}
                 sampleRateHz={channel.sampleRateHz}
+                sampleCount={channel.sampleCount}
                 cache={sessionRef.current.cache}
                 fetchTile={(tier, tileIndex, columnCount) => fetchTile(sid, channel.channelId, tier, tileIndex, columnCount)}
                 fetchSeams={fetchSeams}

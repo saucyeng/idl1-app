@@ -159,6 +159,41 @@ describe("workbookReducer", () => {
     expect(next.hash).toBe("abc123");
   });
 
+  it("workbookReducer — a save of the current text — records it as savedMarkdown and clears dirty", () => {
+    // Arrange
+    const dirty = workbookReducer(initialWorkbookState, { type: "editCell", cellId: "aaaaaaaa", markdown: "a" });
+
+    // Act
+    const next = workbookReducer(dirty, { type: "saveResult", hash: "h2", markdown: "a" });
+
+    // Assert
+    expect(next.savedMarkdown).toBe("a");
+    expect(next.dirtyCellIds.size).toBe(0);
+  });
+
+  it("workbookReducer — a save landing after a newer edit — stays dirty so the newer text saves next", () => {
+    // Arrange
+    const first = workbookReducer(initialWorkbookState, { type: "editCell", cellId: "aaaaaaaa", markdown: "a" });
+    const newer = workbookReducer(first, { type: "editCell", cellId: "aaaaaaaa", markdown: "ab" });
+
+    // Act
+    const next = workbookReducer(newer, { type: "saveResult", hash: "h2", markdown: "a" });
+
+    // Assert
+    expect(next.hash).toBe("h2");
+    expect(next.savedMarkdown).toBe("a");
+    expect(next.markdown).toBe("ab");
+    expect(Array.from(next.dirtyCellIds)).toEqual(["aaaaaaaa"]);
+  });
+
+  it("workbookReducer — a fresh read — the read text is savedMarkdown, so nothing autosaves", () => {
+    // Act
+    const next = workbookReducer(initialWorkbookState, { type: "markdownReady", markdown: "prose\n", hash: "h1" });
+
+    // Assert
+    expect(next.savedMarkdown).toBe(next.markdown);
+  });
+
   it("workbookReducer — a front-matter-only edit — updates the markdown/cells and sets frontMatterDirty, touching no dirtyCellIds", () => {
     const markdown = "---\nid: x\nname: y\ngraph:\n  nodes:\n    a: [1, 2]\n---\n```js id=aaaaaaaa\n1\n```\n";
 

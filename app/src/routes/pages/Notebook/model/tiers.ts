@@ -102,6 +102,48 @@ export function tileRange(
   return { first, last };
 }
 
+/** Most tiles an event channel is fetched as (see {@link planTiles}). */
+export const EVENT_CHANNEL_MAX_TILES = 64;
+
+/**
+ * The tier and tile range a chart fetches for `[startUs, endUs)`.
+ *
+ * A fixed-rate channel maps time to sample index through its nominal rate:
+ * {@link chooseTier} and {@link tileRange}. An event channel
+ * (`sampleRateHz === 0`, C1 §4.2) has no such map: its samples land when
+ * they land, so tiles (indexed by sample, not time) cannot be found from a
+ * time. Dividing by its zero rate used to give an infinite tile span, so
+ * only tile 0 at tier 0 was fetched: the first 1024 samples, about the
+ * first 5½ minutes of a 3 Hz GPS track (2026-11-04 Beacon ride). It is
+ * fetched whole instead, at the finest tier that fits in
+ * {@link EVENT_CHANNEL_MAX_TILES} tiles. `tileToChannelData` trims the
+ * result to the window by each column's own timestamp. Event channels are
+ * small (a ride's GPS is about 18 tiles at tier 0), so this costs a few
+ * cached tile fetches.
+ *
+ * @param startUs Start of the visible window, in µs (inclusive).
+ * @param endUs End of the visible window, in µs (exclusive).
+ * @param pixelWidth Width of the chart's plotting area, in CSS px.
+ * @param sampleRateHz The channel's nominal rate, in Hz; `0` for an event channel.
+ * @param sampleCount The channel's total sample count (`ChannelSummary.sample_count`); read only for an event channel.
+ */
+export function planTiles(
+  startUs: number,
+  endUs: number,
+  pixelWidth: number,
+  sampleRateHz: number,
+  sampleCount: number
+): { tier: number; range: { first: number; last: number } } {
+  if (sampleRateHz > 0) {
+    const tier = chooseTier(endUs - startUs, pixelWidth, sampleRateHz);
+    return { tier, range: tileRange(startUs, endUs, tier, sampleRateHz) };
+  }
+  let tier = 0;
+  while (tier < MAX_TIER && Math.ceil(sampleCount / (TILE_SIZE_BUCKETS * TIER_BASE ** tier)) > EVENT_CHANNEL_MAX_TILES) tier++;
+  const tiles = Math.ceil(sampleCount / (TILE_SIZE_BUCKETS * TIER_BASE ** tier));
+  return { tier, range: { first: 0, last: Math.max(0, tiles - 1) } };
+}
+
 /** Maximum points a line mark may render per series (design §6, "the host
  *  caps line marks at ~2 points per pixel column per series and lower on
  *  mobile" — performance-budget statement P5).

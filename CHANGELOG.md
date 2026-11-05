@@ -6,6 +6,11 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 
 ### Added
 
+- **Workbooks save themselves [no-docs] (2026-11-05).** An edit in a cell, the code pane or the canvas
+  is saved 400 ms after it lands and evaluated straight away, so there is no need to press Save to
+  see a result. Save (Ctrl+S) still works. A conflict with a change made outside the app still
+  stops and asks, and a change that arrived from outside is never saved over.
+
 - **A workbook can be started on the canvas: drop a channel, right-click to add, drag a wire to build [no-docs] (2026-11-04).**
   Before, a new workbook had no way in from the maths graph: a dropped channel was refused with
   "No math cell to add … to yet", there was no context menu, and a chart could only be made from a
@@ -310,6 +315,11 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
   button in the Data tab opens the same panel. Spec-during: C3 section 3.9.
 
 ### Fixed
+
+- **Charts of GPS and other event channels show the whole ride [no-docs] (2026-11-05).** A chart
+  of `GPS_SpeedKmh` stopped after about 5½ minutes: the app found chart tiles through the channel's
+  nominal rate, which is 0 for an event channel, so it only ever fetched the first 1024 samples. An
+  event channel is now fetched whole (at most 64 tiles) and trimmed to the visible window.
 
 - **A tall sheet on a phone no longer freezes the screen [no-docs] (2026-11-03).** A bottom sheet
   (`BrandSheet` below 600 px) had no height cap, so content taller than the screen (a session

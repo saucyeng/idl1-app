@@ -49,7 +49,7 @@ import { tileToChannelData } from "./channelData";
 import type { BoundChannel } from "./channelRebind";
 import { combineChannelWindows, type WindowDescriptor, type WindowSeries } from "../host/protocol";
 import type { JsCellBindingChannel, TimeCellBinding } from "./jsCellBinding";
-import { chooseTier, pointBudget, tileRange } from "./tiers";
+import { planTiles, pointBudget } from "./tiers";
 import { ensureTiles, type TileCache, type TileCacheKey } from "./tileCache";
 import type { Viewport } from "./viewport";
 import { mapViewportToWindow, type AbsoluteSpan } from "./viewportWindows";
@@ -267,8 +267,7 @@ export async function fetchChannelWindow(
   endUs: number,
   chartWidthPx: number
 ): Promise<{ tiles: DecodedTile[]; tier: number; range: { first: number; last: number } } | null> {
-  const tier = chooseTier(endUs - startUs, chartWidthPx, channel.sampleRateHz);
-  const range = tileRange(startUs, endUs, tier, channel.sampleRateHz);
+  const { tier, range } = planTiles(startUs, endUs, chartWidthPx, channel.sampleRateHz, channel.sampleCount);
   const key: Omit<TileCacheKey, "tileIndex"> = { sessionId, channelId: channel.channelId, tier, columnCount: chartWidthPx };
 
   await ensureTiles(cache, key, range, (tileIndex) => deps.fetchTile(sessionId, channel.channelId, tier, tileIndex, chartWidthPx));

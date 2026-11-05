@@ -747,20 +747,18 @@ Analysis gaps from `173461a2` (Python was needed for each; `agent-gaps.md`):
       with speed (front/rear 1.6–1.7 climbing, 1.8–1.9 descending). Missed
       pickups, not a pairing artefact: interval histograms show no
       short-long pair structure. Firmware/hardware check on the rear pickup.
-- [ ] **A chart of an event channel shows only its first ~1000 samples**
-      (2026-11-04, seen driving the canvas). `lineY` of `GPS_SpeedKmh` on
-      `173461a2` (17,968 points at 3 Hz, 100 min) draws t ≈ 0–330 s and tops
-      out at 13 km/h; the ride's peaks are ~50 km/h. 330 s × 3 Hz ≈ 1000, so
-      the channel fetch looks truncated to its point budget instead of
-      decimated over the window. `HR_BPM` (fixed-rate 1 Hz) in `shakedown`
-      spans the whole ride. The engine has every sample (`abs([GPS_SpeedKmh])`
-      reports 17,968), so the cut is in the chart's channel fetch: check
-      `fetch_host_channel_v2`'s budget handling for event channels.
-- [ ] **In-app edits evaluate only on save** (2026-11-04). Evaluation reads
-      the saved file, so an unsaved cell or canvas edit shows "Queued" until
-      saved (fixed: a save now evaluates; before, nothing did until reopen).
-      Open: should canvas edits autosave, or should evaluation take the
-      in-memory text? Isaac's call.
+- [x] **A chart of an event channel shows only its first ~1000 samples**
+      (2026-11-04, fixed 2026-11-05). `lineY` of `GPS_SpeedKmh` on `173461a2`
+      drew t ≈ 0–330 s. Cause: chart tiles are indexed by sample and the app
+      found them from a time through the nominal rate, which is 0 for an
+      event channel, so only tile 0 (1024 raw samples) was ever fetched. Now
+      `tiers.ts`'s `planTiles` fetches an event channel whole, at the finest
+      tier within 64 tiles, and trims by timestamp.
+- [x] **In-app edits evaluate only on save** (2026-11-04, fixed 2026-11-05).
+      Isaac: "it should be instant instead of requiring a save". The notebook
+      now autosaves 400 ms after an edit (cell, code pane or canvas) and
+      evaluates what it saved. Never over a conflict, never for a change that
+      only came from the watcher.
 - [ ] **Export buttons back in the UI** (Isaac, 2026-11-04). idl0 had
       per-session export; idl1 only has the CLI (`idl-rs fit <blob> -o x.fit`,
       `export` for CSV/JSON). Wanted at least FIT (Strava/Garmin) and CSV

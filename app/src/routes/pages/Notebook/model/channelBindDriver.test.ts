@@ -99,6 +99,7 @@ function binding(channelIds: string[]): TimeCellBinding {
     channelId,
     source: "session",
     sampleRateHz: 50 + i * 25,
+    sampleCount: 0,
     lap: null,
     unit: { state: "known", text: "mm" },
   }));
@@ -117,6 +118,7 @@ function mixedBinding(entries: Array<{ channelId: string; source: "session" | "d
     channelId: entry.channelId,
     source: entry.source,
     sampleRateHz: entry.source === "session" ? 50 + i * 25 : 0,
+    sampleCount: 0,
     lap: null,
     unit: entry.source === "session" ? { state: "known" as const, text: "mm" } : { state: "known" as const, text: "km/h" },
   }));

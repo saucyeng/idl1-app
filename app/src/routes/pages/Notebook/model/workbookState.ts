@@ -139,6 +139,8 @@ export interface WorkbookState {
    *  not "nothing to save"). Cleared on a successful save, same as
    *  `dirtyCellIds`. */
   frontMatterDirty: boolean;
+  /** The text last read from or written to disk (`markdownReady`, `saveResult`), or `null` before the first read. Autosave (2026-11-05) saves whenever `markdown` differs from it, so a change that only arrives from the watcher — which marks cells dirty without touching `markdown` — never triggers a save over it. */
+  savedMarkdown: string | null;
   /** True while `saveFlow.ts`'s state is `"conflict"` (Task 14, R44) -- `Notebook/index.tsx` renders `ConflictBanner` while this is true. Cleared by a fresh read (`markdownReady`, i.e. "Reload from disk") or a subsequent successful save (`saveResult`, i.e. "Overwrite" landing). */
   conflict: boolean;
   /** Retired function names the last `markdownReady` read found still
@@ -166,6 +168,7 @@ export const initialWorkbookState: WorkbookState = {
   dirtyCellIds: new Set(),
   evalRequestGeneration: 0,
   frontMatterDirty: false,
+  savedMarkdown: null,
   conflict: false,
   pendingMigrations: [],
   appliedMigrations: [],
@@ -228,8 +231,12 @@ export type WorkbookAction =
    *  `dirty` prop watches both). */
   | { type: "editFrontMatter"; markdown: string }
   /** `migrations` is `SaveResult.migrations` (R151 item 9) -- defaults to
-   *  `[]` for the same reason `markdownReady`'s `pendingMigrations` does. */
-  | { type: "saveResult"; hash: string; migrations?: RenamedFunction[] }
+   *  `[]` for the same reason `markdownReady`'s `pendingMigrations` does.
+   *  `markdown` is the text that save wrote. When the document has changed
+   *  since (an edit typed while an autosave was in flight), the dirty flags
+   *  stay set so the newer text is saved next; omitted, the save is taken to
+   *  cover the current text. */
+  | { type: "saveResult"; hash: string; migrations?: RenamedFunction[]; markdown?: string }
   /** `saveFlow.ts`'s state reached `"conflict"` (Task 14, R44) -- `Notebook/index.tsx` should now render `ConflictBanner`. */
   | { type: "saveConflict" }
   | { type: "watchEvent"; event: WorkbookEvent };
@@ -255,6 +262,7 @@ export function workbookReducer(state: WorkbookState, action: WorkbookAction): W
         ...state,
         markdownStatus: "ready",
         markdown: action.markdown,
+        savedMarkdown: action.markdown,
         hash: action.hash,
         markdownError: null,
         cells: scanCells(action.markdown).cells,
@@ -327,12 +335,15 @@ export function workbookReducer(state: WorkbookState, action: WorkbookAction): W
     case "editFrontMatter":
       return { ...state, markdown: action.markdown, cells: scanCells(action.markdown).cells, frontMatterDirty: true };
 
-    case "saveResult":
+    case "saveResult": {
+      const saved = action.markdown ?? state.markdown;
+      const stillDirty = saved !== state.markdown;
       return {
         ...state,
         hash: action.hash,
-        dirtyCellIds: new Set(),
-        frontMatterDirty: false,
+        savedMarkdown: saved,
+        dirtyCellIds: stillDirty ? state.dirtyCellIds : new Set(),
+        frontMatterDirty: stillDirty ? state.frontMatterDirty : false,
         conflict: false,
         // A completed save rewrote every retired name `pendingMigrations`
         // named (R151 item 9) -- both fields are the same save's two
@@ -340,6 +351,7 @@ export function workbookReducer(state: WorkbookState, action: WorkbookAction): W
         pendingMigrations: [],
         appliedMigrations: action.migrations ?? [],
       };
+    }
 
     case "saveConflict":
       return { ...state, conflict: true };

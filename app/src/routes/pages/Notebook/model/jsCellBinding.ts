@@ -65,6 +65,10 @@ export interface JsCellBindingChannel {
    *  nominal rate; `0` for `source === "definition"`, and never fed to
    *  `chooseTier`/`tileRange` for one. */
   sampleRateHz: number;
+  /** The channel's total sample count (`ChannelSummary.sample_count`), which
+   *  plans an event channel's tiles (`tiers.ts`'s `planTiles`). `0` for
+   *  `source === "definition"`. */
+  sampleCount: number;
   /**
    * The mark(s)' lap scope for this channel occurrence (`MarkProps.lap`):
    * a 1-based lap number, or `null` for session scope. Plumbed through to
@@ -395,6 +399,7 @@ function bindingForTime(
         channelId: channel.channel_id,
         source: "session",
         sampleRateHz: channel.nominal_rate_hz,
+        sampleCount: channel.sample_count,
         lap: call.lap,
         unit: rawUnitToLabel(channel.unit),
       });
@@ -406,6 +411,7 @@ function bindingForTime(
         channelId: call.channel,
         source: "definition",
         sampleRateHz: 0,
+        sampleCount: 0,
         lap: call.lap,
         unit: definitionUnitByName.get(call.channel) ?? UNIT_NOT_YET_EVALUATED,
       });

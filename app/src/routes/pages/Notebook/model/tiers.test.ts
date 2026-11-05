@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { chooseTier, MAX_TIER, pointBudget, tileRange } from "./tiers";
+import { chooseTier, EVENT_CHANNEL_MAX_TILES, MAX_TIER, planTiles, pointBudget, TILE_SIZE_BUCKETS, TIER_BASE, tileRange } from "./tiers";
 
 describe("chooseTier", () => {
   it("chooseTier — a whole 30-minute session at 800 Hz across 1200 px — picks the tier whose bucket count is nearest the pixel width", () => {
@@ -73,5 +73,45 @@ describe("pointBudget", () => {
     const mobileBudget = pointBudget(1200, true);
 
     expect(mobileBudget).toBeLessThan(desktopBudget);
+  });
+});
+
+describe("planTiles", () => {
+  it("planTiles — an event channel (rate 0) over a whole ride — every tile of the channel at tier 0, not just tile 0", () => {
+    // Act — the 2026-11-04 Beacon ride's GPS: 17,968 samples over 99.7 min.
+    const plan = planTiles(0, 5_982_000_000, 800, 0, 17_968);
+
+    // Assert
+    expect(plan.tier).toBe(0);
+    expect(plan.range).toEqual({ first: 0, last: 17 });
+  });
+
+  it("planTiles — an event channel too large for the tile cap at tier 0 — the finest tier that fits", () => {
+    // Arrange
+    const sampleCount = TILE_SIZE_BUCKETS * EVENT_CHANNEL_MAX_TILES + 1;
+
+    // Act
+    const plan = planTiles(0, 1_000_000, 800, 0, sampleCount);
+
+    // Assert
+    expect(plan.tier).toBe(1);
+    expect(plan.range.last + 1).toBe(Math.ceil(sampleCount / (TILE_SIZE_BUCKETS * TIER_BASE)));
+  });
+
+  it("planTiles — an event channel with no samples — tile 0 alone", () => {
+    // Act
+    const plan = planTiles(0, 1_000_000, 800, 0, 0);
+
+    // Assert
+    expect(plan).toEqual({ tier: 0, range: { first: 0, last: 0 } });
+  });
+
+  it("planTiles — a fixed-rate channel — chooseTier and tileRange unchanged", () => {
+    // Act
+    const plan = planTiles(10_000_000, 20_000_000, 800, 923, 5_000_000);
+
+    // Assert
+    const tier = chooseTier(10_000_000, 800, 923);
+    expect(plan).toEqual({ tier, range: tileRange(10_000_000, 20_000_000, tier, 923) });
   });
 });
