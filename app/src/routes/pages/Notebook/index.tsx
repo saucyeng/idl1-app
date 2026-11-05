@@ -118,7 +118,7 @@ import {
 import { channelDataKeysForCell, channelDataKeysToEvict } from "./model/channelDataRetention";
 import { CellRunSequencer } from "./model/cellRunSequencer";
 import { isCodeVisible, toggleCode } from "./model/codeVisibility";
-import { isShowCodeShortcut, plotLegendEntries } from "./model/plotChrome";
+import { isShowCodeShortcut, markColour, plotLegendEntries, type PlotLegendEntry } from "./model/plotChrome";
 import { chartTitleFor } from "./model/chartTitle";
 import { denseChromeMode, readDenseMode, sharesXAxisAbove, writeDenseMode } from "./model/denseMode";
 import { createCursorBus, type CursorBus } from "./interaction/cursorBus";
@@ -4495,10 +4495,20 @@ export default function NotebookPage() {
           });
           return [cell.id as string, plotLegendEntries(series)] as const;
         }
-        const names = Array.from(new Set(extractChannelCalls(code).map((call) => call.channel)));
-        const series = names.map((name) => {
-          const unit = definitionUnitByName.get(name);
-          return { name, unit: unit !== undefined && unit.state === "known" ? unit.text : null };
+        // Only a form chart gets a legend, coloured as each mark is actually
+        // drawn (`markColour`). Custom code colours its own marks however it
+        // likes, which the host cannot know, so it gets none rather than
+        // swatches that name the wrong colours (2026-11-05); a custom cell
+        // that wants a key draws its own (`color: { legend: true }`).
+        if (lapProps === null || lapProps.chart !== "time") return [cell.id as string, [] as PlotLegendEntry[]] as const;
+        const seen = new Set<string>();
+        const series = lapProps.marks.flatMap((mark) => {
+          const colour = markColour(mark.stroke);
+          const key = `${mark.channel}|${colour}`;
+          if (seen.has(key)) return [];
+          seen.add(key);
+          const unit = definitionUnitByName.get(mark.channel);
+          return [{ name: key, label: mark.channel, unit: unit !== undefined && unit.state === "known" ? unit.text : null, colour }];
         });
         return [cell.id as string, plotLegendEntries(series)] as const;
       }),

@@ -87,10 +87,35 @@ export interface PlotLegendEntry {
   /** What the reader sees: the channel or definition label, with its unit
    *  in parentheses when there is one. */
   label: string;
-  /** The CSS custom property holding this series' colour, e.g.
-   *  `"--chart-3"` — a token name, never a resolved colour, so the legend
-   *  re-themes with everything else. */
+  /** This series' colour: a CSS custom property name such as
+   *  `"--chart-3"` (preferred — it re-themes with everything else), or a
+   *  literal CSS colour when that is what the mark was given (`"#e07a3f"`).
+   *  See {@link legendColourCss}. */
   colour: string;
+}
+
+/** The CSS for a {@link PlotLegendEntry.colour}: `var(--x)` for a token
+ *  name, the colour itself otherwise. */
+export function legendColourCss(colour: string): string {
+  return colour.startsWith("--") ? `var(${colour})` : colour;
+}
+
+/** The token Plot draws an unstroked mark in: `currentColor`, which the
+ *  notebook's plot theme sets to `--fg-dim` (`theme/plotTheme.ts`). */
+export const DEFAULT_MARK_COLOUR = "--fg-dim";
+
+/**
+ * The colour a form mark is actually drawn in, for its legend swatch: its
+ * own `stroke` (a `var(--token)` becomes the token name, any other colour
+ * is passed through), or {@link DEFAULT_MARK_COLOUR} when it has none.
+ * Never guessed from the mark's position: a legend that names a colour the
+ * line isn't drawn in is worse than no legend (2026-11-05: every swatch was
+ * `--chart-N` by order while the lines were grey or stroked otherwise).
+ */
+export function markColour(stroke: string | undefined | null): string {
+  if (stroke === undefined || stroke === null || stroke.trim() === "") return DEFAULT_MARK_COLOUR;
+  const token = /^var\(\s*(--[\w-]+)\s*\)$/.exec(stroke.trim());
+  return token !== null ? token[1] : stroke.trim();
 }
 
 /** How many `--chart-N` tokens `tokens.css` defines. Series past the eighth

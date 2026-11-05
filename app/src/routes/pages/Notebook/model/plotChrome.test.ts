@@ -7,6 +7,9 @@ import {
   plotStatusGlyph,
   SETTLE_FADE_MS,
   type ShortcutEvent,
+  DEFAULT_MARK_COLOUR,
+  legendColourCss,
+  markColour,
 } from "./plotChrome";
 
 /** A `ShortcutEvent` with no modifier held, for the tests to vary. */
@@ -189,5 +192,25 @@ describe("isShowCodeShortcut — Alt+C — reveals the code, and nothing else do
       { key: "session-a|lap:1", label: "Lap 1 (s)", colour: "--chart-3" },
       { key: "session-a|lap:2", label: "Lap 2 (s)", colour: "--chart-5" },
     ]);
+  });
+});
+
+describe("markColour — a form mark's legend swatch — the colour the line is drawn in", () => {
+  it("markColour — a var(--chart-N) stroke — that token", () => {
+    expect(markColour("var(--chart-6)")).toBe("--chart-6");
+  });
+
+  it("markColour — no stroke — the plot theme's default line colour, never a palette guess", () => {
+    expect(markColour(undefined)).toBe(DEFAULT_MARK_COLOUR);
+  });
+
+  it("markColour — a literal colour — passed through, and drawn as itself", () => {
+    // Act
+    const colour = markColour("#e07a3f");
+
+    // Assert
+    expect(colour).toBe("#e07a3f");
+    expect(legendColourCss(colour)).toBe("#e07a3f");
+    expect(legendColourCss("--chart-2")).toBe("var(--chart-2)");
   });
 });

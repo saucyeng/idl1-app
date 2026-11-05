@@ -368,6 +368,13 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 
 ### Fixed
 
+- **A chart's legend shows the colours its lines are drawn in [no-docs] (2026-11-05).** The
+  legend coloured each series `--chart-1`, `--chart-2`, … by the order the names appeared, which
+  matched nothing: an unstroked line is drawn grey, and a hand-written cell picks its own colours.
+  A form chart's legend now takes each mark's own colour (grey when it has none); a hand-written
+  cell gets no automatic legend, since the app can't know how it colours its marks, and draws its
+  own key if it wants one.
+
 - **Workbook values in charts keep their spikes, and zooming refines them [docs] (2026-11-05).**
   A maths result drawn in a chart was thinned by keeping every Nth point, so a short spike
   between kept points vanished (a 50 ms traction break on a 100-minute ride, say), and zooming

@@ -10,7 +10,7 @@ import type { ScannedCell } from "../model/cells";
 import { isCellStale, isCellWaiting, type CellStatus } from "../model/cellStatus";
 import { cellStateLine } from "../model/cellStateLine";
 import { denseGeometry } from "../model/denseMode";
-import { plotStatusGlyph, SETTLE_FADE_MS, type CellChromeMode, type PlotLegendEntry } from "../model/plotChrome";
+import { legendColourCss, plotStatusGlyph, SETTLE_FADE_MS, type CellChromeMode, type PlotLegendEntry } from "../model/plotChrome";
 import { useElapsedWhile } from "./useElapsedWhile";
 
 /** Tailwind text-colour utility for each {@link CellStatus} — every waiting
@@ -423,7 +423,7 @@ export default function CellFrame({
         <div className="pointer-events-none absolute top-0 right-1 z-10 flex max-w-[50%] flex-col items-end gap-px" aria-label="Series">
           {legend.map((entry) => (
             <span key={entry.key} className="flex items-center gap-[var(--nb-pad)] font-mono text-[length:var(--nb-text-label)] text-fg-dim">
-              <span aria-hidden className="size-[6px] shrink-0" style={{ background: `var(${entry.colour})` }} />
+              <span aria-hidden className="size-[6px] shrink-0" style={{ background: legendColourCss(entry.colour) }} />
               <span className="truncate">{entry.label}</span>
             </span>
           ))}
