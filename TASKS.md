@@ -692,6 +692,41 @@ Unverified:
       table with sector columns, but they only render in the app, and nobody
       has opened them there yet. Check that both draw against these sessions.
 
+## Frame acceleration at the axles, from calibration data (Isaac, 2026-11-05)
+
+Isaac: stop reading the frame's vertical acceleration at one point; pitch from
+bumps matters as much. Put virtual frame points at the axles, fit their
+offsets from the calibration recording so a user never measures, ship it as a
+default math channel. Decisions: points = front and rear axle (the brake-post
+pods); offsets live in the bike's file; the fit runs at runtime in the app;
+local cargo allowed for this lane.
+
+- [x] `session calibrate` on real logs (timestamp-aligned grid, low-g accel,
+      `--imu/--rigid/--from-ms/--to-ms/--min-rate-mrad-s`), 2026-11-05.
+- [x] First fit, Beacon calibration `e75f5f92` (still 0–8 s, steer 9–15 s,
+      roll/pitch/yaw 16–34 s, bars-free figure-8s 35–46 s, found from
+      ‖ω_fork‖ − ‖ω_frame‖): in IMU0 axes (x rearward, y right, z up), fork
+      pod [−0.834, −0.043, −0.245] m (window 15.5–34.5 s, spread ~1/2/3 cm),
+      swingarm pod [0.35, −0.087, −0.42] m (whole tumble, spread ~2/0.5/3 cm).
+      **Awaiting Isaac's tape measure.**
+- [x] Pitch matters, on the Beacon ride: rotation term at the front axle RMS
+      1.10 g, 99.9th pct 10.2 g, against IMU0's own vertical RMS 1.22 g /
+      7.7 g; rear 0.46 / 4.3 g. Differentiation noise floor 0.006 g.
+- [ ] Segment the real protocol automatically: still → steer → rigid
+      rotations → bars-free figure-8s, from ‖ω_fork‖ − ‖ω_frame‖; fit the
+      rear over every rigid sample and the fork pod over bars-still windows;
+      fit the steering axis from the steer segment. The rate gate (2 rad/s)
+      fails every hand tumble seen so far (1.0–1.3); lever richness is the
+      measure that matters. Spec change to the 2026-09-10 calibration spec.
+- [ ] Store the fit in the bike's file (bike-log schema; contract change,
+      propose first) and run it from the app ("Calibrate from this
+      session", async with progress).
+- [ ] Template math channel `frame_az_front` / `frame_az_rear`:
+      `a_z + α_x r_y − α_y r_x + ω_z(ω·r) − r_z|ω|²`, gyro 40 Hz low-pass
+      before differentiating, accel resampled onto the gyro grid; lever arms
+      from the bike's calibration. Scratch version evaluated with
+      `workbook data` (no Python).
+
 ## Beacon ride — phone transfer, new workbook, analysis gaps (2026-11-04)
 
 Isaac pulled three IDL1 sessions from the phone to the desktop (one 100 min
