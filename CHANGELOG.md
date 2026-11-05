@@ -6,6 +6,14 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 
 ### Added
 
+- **`deglitch_pulses` for wheel-pulse channels [docs] (2026-11-05).** The front wheel sensor adds
+  an extra edge a few milliseconds after about 1.6 % of real pulses (tied to wheel position, same
+  on road and trail). `deglitch_pulses([WheelFront])` drops a pulse whose gap is under 0.35 of both
+  neighbouring gaps, so it never touches the first pulses after a locked wheel spins up, which a
+  firmware lockout on the previous gap would. On the Beacon ride it removes 997 pulses and takes
+  the wheel's revolution speed to within 0.03 m/s of GPS on average. The recorded pulses are left
+  as they are. C2 §3.3.
+
 - **`session calibrate` runs on real logs [docs] (2026-11-05).** It had only ever run on synthetic
   sessions, where every IMU shares one clock; a real log samples each IMU on its own, so it refused
   ("every stream must share one grid"). Each axis is now read at a common grid by its own recorded

@@ -12,7 +12,7 @@ curated sources under `docs/reference-src/`, never this file.
 
 ## Math builtins
 
-75 functions a `math` cell's expression can call, grouped by category
+76 functions a `math` cell's expression can call, grouped by category
 (C2 §3.3). A function marked **not implemented** parses and validates —
 it is part of the committed language surface — but evaluating it is an
 error today.
@@ -28,7 +28,7 @@ error today.
 - **Trig conversion** — [`deg2rad`](#deg2rad), [`rad2deg`](#rad2deg)
 - **Frequency** — [`periodogram`](#periodogram), [`welch`](#welch), [`spectrogram`](#spectrogram), [`envelope`](#envelope)
 - **Correlation** — [`correlate`](#correlate), [`convolve`](#convolve)
-- **Resampling** — [`resample`](#resample)
+- **Resampling** — [`resample`](#resample), [`deglitch_pulses`](#deglitch_pulses)
 - **Logic** — [`where`](#where)
 - **Lap** — [`current_lap`](#current_lap), [`lap_start_time`](#lap_start_time), [`lap_start_distance`](#lap_start_distance), [`sector_number`](#sector_number), [`lap_number`](#lap_number), [`lap_time`](#lap_time), [`sector_time`](#sector_time)
 - **Lap delta** — [`lap_delta_time`](#lap_delta_time), [`lap_delta_dist`](#lap_delta_dist)
@@ -1025,6 +1025,27 @@ Example:
 
 ```
 result = resample([IMU2_AccelZ], [IMU1_AccelZ])
+```
+
+#### deglitch_pulses
+
+```
+deglitch_pulses(pulses, max_fraction=0.35)
+```
+
+A wheel-pulse event channel without the extra edges a marginal sensor adds: a pulse is dropped when the gap ending at it is under `max_fraction` of both the gap before and the gap after, so it reads as an extra edge inside one ordinary gap. Comparing both sides means the first pulses after a locked wheel spins up, and the growing gaps of hard braking, are never dropped. The result is renumbered 1, 2, 3, ... from the first kept pulse, at the kept pulses' recorded times.
+
+| | |
+|---|---|
+| Shape | `[t]` |
+| Unit rule | `SameAsArg(0)` |
+| Status | implemented |
+| Arguments | 1 |
+
+Example:
+
+```
+result = deglitch_pulses([WheelFront])
 ```
 
 ### Logic

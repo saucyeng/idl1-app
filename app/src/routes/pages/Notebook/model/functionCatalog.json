@@ -177,6 +177,14 @@
       "units": "rad"
     },
     {
+      "category": "Resampling",
+      "description": "A wheel-pulse event channel without the extra edges a marginal sensor adds: a pulse is dropped when the gap ending at it is under `max_fraction` of both the gap before and the gap after, so it reads as an extra edge inside one ordinary gap. Comparing both sides means the first pulses after a locked wheel spins up, and the growing gaps of hard braking, are never dropped. The result is renumbered 1, 2, 3, ... from the first kept pulse, at the kept pulses' recorded times.",
+      "name": "deglitch_pulses",
+      "signature": "deglitch_pulses(pulses, max_fraction=0.35)",
+      "status": "implemented",
+      "units": null
+    },
+    {
       "category": "Time-domain",
       "description": "Removes a constant or linear trend from a channel.",
       "name": "detrend",

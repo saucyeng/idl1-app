@@ -698,15 +698,17 @@ Workbook `braking-front-wheel-vs-gps.idl1wb` (library). Scale fitted on the
 road cruise 96.6–99.4 min: 0.182 m/pulse, 2.18 m rollout; there the
 per-revolution speed is within 0.61 m/s RMS of GPS at 8 m/s.
 
-- [ ] **Front wheel double triggers** (firmware or hardware). 1.5 % of
-      pulses at every speed (2–20 m/s), on road and trail alike, always
-      ~0.156 of the way to the next pickup (2.3 ms at 9+ m/s, 11.5 ms at
-      2–4 m/s): tied to wheel position, not time, so not bounce (the 200 us
-      glitch guard) and not vibration. A marginal magnetic signal: air gap or
-      target profile, with too little input hysteresis. Fix in firmware with
-      a lockout as a fraction of the last interval (reject an edge under
-      ~0.35 of it), or in hardware (smaller gap, Schmitt input). The pulse
-      after each double reads ~18 % fast; nothing downstream can repair it.
+- [x] **Front wheel double triggers**: post-processed, not in firmware
+      (Isaac: a lockout on the last gap would drop real pulses after a locked
+      wheel spins up). `deglitch_pulses` drops a pulse whose gap is under
+      0.35 of both neighbours: 997 on the Beacon ride (1.6 %), revolution
+      speed bias vs GPS 0.12 → −0.03 m/s on the road. The cause is still a
+      marginal magnetic signal (air gap / hysteresis) worth checking on the bike.
+- [ ] Front pickups alternate in spacing by about ±4.5 % (pairs), and the
+      pattern's phase flips between parts of the ride (missed pulses shift the
+      index), so a fixed per-pickup table cannot correct single-pulse speed.
+      Revolution averages are unaffected. Check whether the front magnets are
+      paired or alternate in polarity.
 - [ ] Wheel vs GPS distance by 5-min block: 1–6 % on road and fast
       sections, 13–29 % more on slow climbs (10–40 min). GPS under-reads
       slow switchbacks; the wheel is the better distance there.
