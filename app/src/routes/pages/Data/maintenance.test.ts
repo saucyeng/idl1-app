@@ -268,6 +268,23 @@ describe("runRescanSessions — the real command's success path, run per session
     expect(result).toBe("Rescanned 2 sessions: indexed 2 track visits, 2 laps total.");
   });
 
+  it("runRescanSessions with three ids — never has two rescans in flight at once (each opens a whole session)", async () => {
+    let inFlight = 0;
+    let most = 0;
+    const rescanTracks = async (sessionId: string): Promise<RescanReport> => {
+      inFlight += 1;
+      most = Math.max(most, inFlight);
+      await new Promise((resolve) => setTimeout(resolve, 5));
+      inFlight -= 1;
+      return { session_id: sessionId, visits_indexed: 1, laps_indexed: 1, flags_cleared: [], warnings: [], elapsed_ms: 1 };
+    };
+    const run = runRescanSessions(rescanTracks, ["s1", "s2", "s3"]);
+
+    await run();
+
+    expect(most).toBe(1);
+  });
+
   it("runRescanSessions with three ids and one rejecting — the two successes are still reported, not discarded", async () => {
     const rescanTracks = (sessionId: string): Promise<RescanReport> => {
       if (sessionId === "s2") return Promise.reject({ kind: "io", message: "disk full" });

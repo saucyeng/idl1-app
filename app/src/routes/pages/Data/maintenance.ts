@@ -239,27 +239,24 @@ export function summarizeRescanSessionsOutcomes(outcomes: RescanSessionOutcome[]
 /** Wraps `rescanTracks` (C3 §3.2, ruling R83) as a `run` function that
  *  rescans every id in `sessionIds` — the "Rescan N sessions" action
  *  `save_track`/`delete_track`'s `stale_session_ids` offers (C3 §3.2,
- *  ruling R86). Runs every rescan concurrently (each is independent, keyed
- *  by its own session id) via `Promise.allSettled` rather than
- *  `Promise.all`, so one session's failure (e.g. its directory vanished
- *  meanwhile) never discards the other sessions' already-succeeded
- *  `RescanReport`s (review `review-shell-data-writes.md` Important) — the
+ *  ruling R86). Runs the rescans ONE AT A TIME: each opens its session, and
+ *  firing them all at once ran every session in parallel with no memory
+ *  budget (out of memory on 2026-11-08, 3.5 GB live). One session's failure
+ *  (e.g. its directory vanished meanwhile) never discards the others'
+ *  `RescanReport`s (review `review-shell-data-writes.md` Important): the
  *  batch resolves honestly through [[summarizeRescanSessionsOutcomes]] even
  *  when some, or all, sessions failed; [[startMaintenanceAction]]'s
- *  one-in-flight rule (a second `START` while this batch's promise is
- *  still settling is refused, its own settle silently dropped rather than
- *  overwriting the newer run) is untouched by this change. */
+ *  one-in-flight rule is untouched. */
 export function runRescanSessions(rescanTracks: RescanTracksFn, sessionIds: string[]): () => Promise<string> {
-  return () =>
-    Promise.allSettled(sessionIds.map((id) => rescanTracks(id))).then((settled) =>
-      summarizeRescanSessionsOutcomes(
-        settled.map((outcome, i) => ({
-          sessionId: sessionIds[i],
-          result:
-            outcome.status === "fulfilled"
-              ? { status: "succeeded" as const, report: outcome.value }
-              : { status: "failed" as const, error: describeMaintenanceError(outcome.reason) },
-        })),
-      ),
-    );
+  return async () => {
+    const outcomes = [];
+    for (const sessionId of sessionIds) {
+      try {
+        outcomes.push({ sessionId, result: { status: "succeeded" as const, report: await rescanTracks(sessionId) } });
+      } catch (e) {
+        outcomes.push({ sessionId, result: { status: "failed" as const, error: describeMaintenanceError(e) } });
+      }
+    }
+    return summarizeRescanSessionsOutcomes(outcomes);
+  };
 }

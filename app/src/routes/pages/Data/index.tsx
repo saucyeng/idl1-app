@@ -15,6 +15,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from ".
 import { Tabs, TabsList, TabsTrigger } from "../../../components/ui/tabs";
 import { deleteSession, getSession, listLaps, listSessions, rescanTracks, type LapSummary, type SessionDetail, type SessionSummary } from "../../../ipc/catalog";
 import { startRebuildJob, whenRebuildFinishes } from "../../../ipc/rebuild_job";
+import { onIndexProgress } from "../../../ipc/index_job";
 import { useAppState } from "../../../state/AppState";
 import { lapKindMark } from "../../../state/lapKind";
 import type { SelectionWindow } from "../../../state/selection";
@@ -326,6 +327,24 @@ export default function Data() {
     loadSessions(() => cancelled);
     return () => {
       cancelled = true;
+    };
+  }, [loadSessions]);
+
+  // The library index job (the one every launch starts after an engine
+  // update) rewrites lap counts in the catalog: reload the list when a run
+  // finishes, or it keeps the counts it loaded before the run.
+  useEffect(() => {
+    let unlisten: (() => void) | null = null;
+    let cancelled = false;
+    void onIndexProgress((event) => {
+      if (event.done >= event.total) loadSessions(() => cancelled);
+    }).then((stop) => {
+      if (cancelled) stop();
+      else unlisten = stop;
+    });
+    return () => {
+      cancelled = true;
+      unlisten?.();
     };
   }, [loadSessions]);
 
