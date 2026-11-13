@@ -115,14 +115,14 @@ mod tests {
         // `unlink_video` with `delete_file: true` (C3 §3.12): one video's
         // MP4 blob, only when no session's live `videos` entry still
         // references it. Per device; the tombstone stops sync restoring it.
-        ("rust/core/src/store/video.rs", "unlink_video"),
+        ("rust/library/src/video.rs", "unlink_video"),
         // `link_video`: removes the MP4 blob this same call copied in when
         // the link then fails and nothing links that blob (never a blob it
         // found already present).
-        ("rust/core/src/store/video.rs", "link_video"),
+        ("rust/library/src/video.rs", "link_video"),
         // `copy_into_blobs`: its own `tmp/video-<uuid>.part` on a failed or
         // cancelled copy, or when the blob turns out to exist already.
-        ("rust/core/src/store/video.rs", "copy_into_blobs"),
+        ("rust/library/src/video.rs", "copy_into_blobs"),
         // `export_session_fit_via` (C3 §3.2, 2026-11-05): its own
         // `<chosen>.fit.part` beside a user-chosen export path, outside
         // `<data>`, when the rename onto the chosen name fails. Never the
