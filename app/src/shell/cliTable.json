@@ -284,6 +284,22 @@
         {
           "choices": [],
           "default": null,
+          "help": "Ignore this lap number: still listed, left out of the fastest lap and averages; repeat for several",
+          "kind": "integer",
+          "long": "ignore-lap",
+          "repeatable": true
+        },
+        {
+          "choices": [],
+          "default": null,
+          "help": "Count this lap number again; repeat for several",
+          "kind": "integer",
+          "long": "unignore-lap",
+          "repeatable": true
+        },
+        {
+          "choices": [],
+          "default": null,
           "help": "Data directory root (contract C4 §1's <data>); defaults to $IDL1_DATA_DIR",
           "kind": "path",
           "long": "data-dir",
