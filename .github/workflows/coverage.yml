@@ -42,7 +42,11 @@ jobs:
       - name: Cache cargo
         uses: Swatinem/rust-cache@v2
         with:
-          workspaces: rust
+          # Two workspaces (idl-rs in rust/, the app side at the repo root);
+          # CARGO_TARGET_DIR above points both at rust/target.
+          workspaces: |
+            rust -> target
+            . -> rust/target
 
       - name: Install cargo-tarpaulin
         uses: taiki-e/install-action@v2
@@ -53,8 +57,16 @@ jobs:
         working-directory: rust
         run: |
           cargo tarpaulin \
-            -p idl-rs -p idl-rs-cli -p idl-transport -p idl-rs-tauri \
+            -p idl-rs -p idl-rs-cli \
             --out Xml --out Html --output-dir target/coverage \
+            --timeout 600 \
+            -- --test-threads=4
+
+      - name: cargo tarpaulin (app-side crates, repo root)
+        run: |
+          cargo tarpaulin \
+            -p idl1-bridge -p idl1-transport \
+            --out Xml --out Html --output-dir rust/target/coverage-app \
             --timeout 600 \
             -- --test-threads=4
 
@@ -62,7 +74,9 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: rust-coverage
-          path: rust/target/coverage
+          path: |
+            rust/target/coverage
+            rust/target/coverage-app
           if-no-files-found: error
 
       - name: Summarize line coverage

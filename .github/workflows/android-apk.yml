@@ -48,7 +48,7 @@ jobs:
         with:
           workspaces: |
             rust
-            app/src-tauri
+            .
           key: android
 
       - uses: actions/setup-node@v4

@@ -19,16 +19,25 @@ blocked task waits.
 
 ## 2. Layers
 
-    rust/core/       idl-rs        PURE. Signal processing, parsing, importers, store
-                                   (Parquet/CAS/catalog), workbook evaluation. No Tauri,
-                                   no async runtime, no network. std::fs only.
-    rust/transport/  idl-transport I/O: BLE, WiFi transfer, config push, LAN sync.
-                                   Never depends on Tauri. Never does DSP.
-    rust/tauri/      idl-rs-tauri  #[tauri::command] glue over core + transport. The only
-                                   crate the frontend sees. Thin.
-    rust/cli/        idl-rs-cli    The idl-rs binary. Depends on core (and transport when needed).
-    app/src-tauri/                 Tauri app crate: builder, plugin registration, mobile plugins.
-    app/src/                       TypeScript UI. Talks only to idl-rs-tauri commands.
+  The idl-rs submodule (`rust/`) is the engine product; it never knows the app exists.
+
+    rust/core/            idl-rs          PURE. Signal processing, parsing, importers, store
+                                          (Parquet/CAS/catalog), workbook evaluation. No Tauri,
+                                          no async runtime, no network. std::fs only.
+    rust/cli/             idl-rs-cli      The idl-rs binary. Depends on core only.
+
+  The app side lives in this repo, in one Cargo workspace (root `Cargo.toml`):
+
+    crates/idl1-transport/ idl1-transport I/O: BLE, WiFi transfer, config push, LAN sync.
+                                          Never depends on Tauri. Never does DSP.
+    crates/idl1-bridge/    idl1-bridge    #[tauri::command] glue over core + transport. The
+                                          only crate the frontend sees. Thin.
+    app/src-tauri/                        Tauri app crate: builder, plugin registration, mobile plugins.
+    app/src/                              TypeScript UI. Talks only to idl1-bridge commands.
+
+  Split in progress (Isaac, 2026-11-12; plan in TASKS.md "idl-rs as a standalone engine"):
+  UI prep and pixels leave core for idl1-bridge, and `store/` (minus Parquet) becomes the
+  crate `idl-library` inside the idl-rs repo.
 
 **Rust = numbers, JS = pictures.** No number the sync model depends on is
 computed in JavaScript; no chart is drawn in Rust. Heavy arrays cross IPC as raw
@@ -36,7 +45,9 @@ bytes (`tauri::ipc::Response`), never JSON. No IPC on the interaction path
 (hover/pan/zoom are local; IPC on gesture settle).
 
 **Decision rule:** physics of the bike or bytes on disk → `core`. Bytes on the
-wire → `transport`. Pixels or clicks → `app/src`.
+wire → `transport`. Pixels or clicks → `app/src`. And before anything lands in
+the idl-rs repo: would someone using the CLI, with no app, need it? If not, it
+belongs on the app side (`idl1-bridge`), however pure it is.
 
 ## 3. Principles (quote these in reviews)
 
@@ -76,16 +87,17 @@ saying whether it changed user-facing documentation (R222 item 5).
 - idl-rs is not rustfmt-formatted; never run `cargo fmt`. Match style by hand.
 - No AI attribution trailers in commits, ever. The lead pushes `main` (both repos, submodule first); lanes never push. CI on `main` is the gate (§8), and a red push is fixed forward at once: every push to `main` also publishes the nightly build Isaac runs.
 - Lanes touch only their own crate/directory. Cross-lane needs are contract changes, through the lead.
-- After changing an `idl-rs-tauri` command signature, update `app/src/ipc/` and the C3 contract together.
+- After changing an `idl1-bridge` command signature, update `app/src/ipc/` and the C3 contract together.
 
 ## 8. Compute rules (the dev machine is memory-bound — ruling R13)
 
-**Cloud first (Isaac, 2026-10-15).** GitHub Actions runs every gate on each push to `main`: the Rust suites (`ci.yml`: idl-rs, cli, tauri, transport), `cargo check -p app`, `tsc`, madge and vitest. Actions minutes are free (public repo). The local machine runs only `tsc` and targeted or full `vitest` before a push, then the lead watches CI and fixes forward. Cargo runs locally only to debug a failure CI has already shown, and then under the rules below. There is no separate test branch: nightly *is* the work-in-progress channel.
+**Cloud first (Isaac, 2026-10-15).** GitHub Actions runs every gate on each push to `main`: the Rust suites (`ci.yml`: idl-rs, cli, idl1-bridge, idl1-transport), `cargo check -p app`, `tsc`, madge and vitest. Actions minutes are free (public repo). The local machine runs only `tsc` and targeted or full `vitest` before a push, then the lead watches CI and fixes forward. Cargo runs locally only to debug a failure CI has already shown, and then under the rules below. There is no separate test branch: nightly *is* the work-in-progress channel.
 
 - At most **two** cargo processes on the machine at a time (R216; four or more is what crashed it), and a cargo command starts only with ≥ 3 GB of memory commit free (`Get-CimInstance Win32_OperatingSystem | % FreeVirtualMemory`; R245: measured 2026-09-20, the full tauri test build with a warm target dir peaks at 1.7 GB; a cold or release build wants ≥ 6 GB); jobs are capped machine-wide (`~/.cargo/config.toml`), never override with `-j`.
 - Task cycles run only the targeted test filter the dispatch names; each run must report a non-zero `passed` count (a filter matching nothing is a failed gate, not a pass).
 - The full suite runs once per lane at its merge gate: `cargo test -p idl-rs -p idl-rs-cli -- --test-threads=4`. Never `--workspace`.
 - No reruns to hunt flakiness unless the lead asks; a known-flaky test is rerun alone by name, once.
 - A task that changes a `pub` signature in `core` adds `cargo check -p idl-rs-cli --tests`.
-- A lane that touches `idl-rs-tauri` or `app/src-tauri` adds `cargo check -p app` run from `app/src-tauri` at its merge gate: nothing else compiles the app crate (R199).
+- App-side crates (`crates/*`, `app/src-tauri`) build in the root workspace; the idl-rs crates build in `rust/`. A local cargo command from the root needs `CARGO_TARGET_DIR` pointed at the shared target dir (`rust/.cargo/config.toml` only applies inside `rust/`).
+- A lane that touches `idl1-bridge` or `app/src-tauri` adds `cargo check -p app` run from `app/src-tauri` at its merge gate: nothing else compiles the app crate (R199).
 - Never `cargo fmt`, `cargo tarpaulin`, or `cargo doc` inside a task. Readers (reviewers, adjudicators) never build.

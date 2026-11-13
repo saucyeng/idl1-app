@@ -10,7 +10,7 @@
  *
  * **Accuracy note (2026-09-05, Task 6 review fix).** `listDeviceFiles`
  * already drives the device into WiFi mode itself (`ControlCommand::WifiOn`,
- * `rust/tauri/src/commands/device.rs`) — there is no separate "turn WiFi on"
+ * `crates/idl1-bridge/src/commands/device.rs`) — there is no separate "turn WiFi on"
  * button in the app, unlike idl0. This article no longer describes one. */
 import { HOWTO_ARTICLE_CLASSES } from "./proseClasses";
 

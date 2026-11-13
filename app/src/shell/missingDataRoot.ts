@@ -15,7 +15,7 @@ export interface MissingDataRoot {
  *
  *  `kind` alone is not enough: C3 §2 folds every filesystem failure to
  *  `"io"`, so the discriminant is `detail.reason === "missing_root"`, which
- *  `idl-rs-tauri`'s `paths::ResolveError` sets deliberately for exactly this
+ *  `idl1-bridge`'s `paths::ResolveError` sets deliberately for exactly this
  *  consumer. Anything else — a different `kind`, a different `reason`, a
  *  rejection that is not even `IpcError`-shaped — is not this condition and
  *  must not be shown as it; a genuine disk error dressed up as "your drive

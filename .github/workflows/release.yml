@@ -147,7 +147,7 @@ jobs:
         with:
           workspaces: |
             rust
-            app/src-tauri
+            .
 
       - uses: actions/setup-node@v4
         with:
@@ -259,7 +259,7 @@ jobs:
         with:
           workspaces: |
             rust
-            app/src-tauri
+            .
           key: android
 
       - uses: actions/setup-node@v4

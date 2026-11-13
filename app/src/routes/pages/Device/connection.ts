@@ -9,7 +9,7 @@ export type ConnectionPhase = "idle" | "scanning" | "connecting" | "connected" |
  * As of `connect_device`/`disconnect_device` (R59, wired by this task,
  * R77.4): each entry in {@link ConnectionState.connections} reflects a
  * managed connection held open server-side
- * (`rust/tauri/src/commands/device.rs`'s `connect_device`), not the old
+ * (`crates/idl1-bridge/src/commands/device.rs`'s `connect_device`), not the old
  * connect-act-disconnect-per-call `ble_connect`. R53 Device Q4's original
  * warning — "the last attempt succeeded, never a live link" — no longer
  * holds for the happy path: a link stays open until `disconnectDevice` is

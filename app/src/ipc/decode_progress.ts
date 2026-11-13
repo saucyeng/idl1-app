@@ -4,7 +4,7 @@ import { listen, type UnlistenFn } from "@tauri-apps/api/event";
  * `decode_progress`'s payload (C3 §3.2, ruling R221 item 1) — one
  * observation of one channel's decode out of `data.parquet`.
  *
- * Mirrors `idl-rs-tauri`'s `session_cache::DecodeProgressEvent` field for
+ * Mirrors `idl1-bridge`'s `session_cache::DecodeProgressEvent` field for
  * field. Rows, not bytes and not seconds: the engine knows how many rows the
  * file has and how many it has read, and nothing else about the decode is
  * knowable in advance.

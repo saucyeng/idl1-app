@@ -250,7 +250,7 @@ export async function deviceStatus(deviceId: string): Promise<DeviceStatus> {
 }
 
 /** `deviceControl`'s `command` argument (C3 §3.8, ruling R59): maps onto
- *  `idl_transport::ble_control::ControlCommand`'s four exposed variants. */
+ *  `idl1_transport::ble_control::ControlCommand`'s four exposed variants. */
 export type DeviceControlCommand = "start_recording" | "stop_recording" | "wifi_on" | "wifi_off";
 
 /** Sends `command` to `deviceId`'s Control characteristic and polls status
@@ -317,7 +317,7 @@ export async function previewChannelRegistry(configJson: string): Promise<Regist
 
 // ---------------------------------------------------------------------------
 // Firmware / OTA (C3 §3.8, rulings R197/R198). Field names below are
-// byte-exact to `rust/tauri/src/commands/firmware.rs`'s serde output.
+// byte-exact to `crates/idl1-bridge/src/commands/firmware.rs`'s serde output.
 // ---------------------------------------------------------------------------
 
 /** Which release channel a catalog check is against (C3 §3.8). `stable` is

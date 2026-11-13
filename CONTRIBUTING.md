@@ -27,13 +27,13 @@ Every public class, method, and field requires a `///` doc comment. Comments mus
 rust/core/       idl-rs        PURE. Signal processing, parsing, importers, store
                                 (Parquet/CAS/catalog), workbook evaluation. No Tauri,
                                 no async runtime, no network. std::fs only.
-rust/transport/  idl-transport I/O: BLE, WiFi transfer, config push, LAN sync.
+crates/idl1-transport/  idl1-transport I/O: BLE, WiFi transfer, config push, LAN sync.
                                 Never depends on Tauri. Never does DSP.
-rust/tauri/      idl-rs-tauri  #[tauri::command] glue over core + transport. The only
+crates/idl1-bridge/      idl1-bridge  #[tauri::command] glue over core + transport. The only
                                 crate the frontend sees. Thin.
 rust/cli/        idl-rs-cli    The idl-rs binary. Depends on core (and transport when needed).
 app/src-tauri/                 Tauri app crate: builder, plugin registration, mobile plugins.
-app/src/                       TypeScript UI. Talks only to idl-rs-tauri commands.
+app/src/                       TypeScript UI. Talks only to idl1-bridge commands.
 ```
 
 **Rust = numbers, JS = pictures.** No number the sync model depends on is

@@ -5,7 +5,7 @@
  * persists across app restarts rather than living only in a session.
  *
  * There is no `AppSettings`/C3 field for this yet (`app/src/ipc/app.ts`) —
- * adding one is a Rust `idl-rs`/`idl-rs-tauri` change this TS-only lane may
+ * adding one is a Rust `idl-rs`/`idl1-bridge` change this TS-only lane may
  * not make (CLAUDE.md §2, dispatch: "TypeScript only — never run cargo").
  * `localStorage` is the seam until one lands, the same pattern
  * `Settings/prefsStore.ts` already uses for a setting not yet backed by

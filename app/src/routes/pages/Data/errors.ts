@@ -102,7 +102,7 @@ const UNKNOWN_KIND_FALLBACK = {
 };
 
 /** `invalid_argument`'s `detail.field` (`save_track`'s validation failures
- *  attach `{ field: string }`, `rust/tauri/src/commands/catalog.rs`) names
+ *  attach `{ field: string }`, `crates/idl1-bridge/src/commands/catalog.rs`) names
  *  which submitted field was rejected — read structurally, never trusted
  *  to be present or a string, since `detail`'s shape isn't part of the
  *  kind contract (review `review-shell-data-writes.md` Minor: previously

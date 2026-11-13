@@ -8,7 +8,7 @@ use tauri::Manager;
 /// memory budget and leaving a breadcrumb in the crash directory when an
 /// allocation fails (evaluation-memory spec §4.2.H).
 #[global_allocator]
-static ALLOCATOR: idl_rs_tauri::crash::BreadcrumbAllocator = idl_rs_tauri::crash::BreadcrumbAllocator;
+static ALLOCATOR: idl1_bridge::crash::BreadcrumbAllocator = idl1_bridge::crash::BreadcrumbAllocator;
 
 #[cfg(target_os = "android")]
 mod mobile;
@@ -27,16 +27,16 @@ pub fn run() {
             // Crash reports first, so a panic anywhere after this point is
             // kept (C3 §3.13). Under the app-data dir, not <data>: a missing
             // data root must not lose them.
-            let crash_dir = idl_rs_tauri::crash::dir_for(&app_data_dir);
-            idl_rs_tauri::crash::install(crash_dir.clone(), app.package_info().version.to_string());
+            let crash_dir = idl1_bridge::crash::dir_for(&app_data_dir);
+            idl1_bridge::crash::install(crash_dir.clone(), app.package_info().version.to_string());
             // The Kotlin uncaught-exception handler writes nowhere until it
             // knows the directory, so tell it now rather than when the UI asks.
             #[cfg(target_os = "android")]
             {
                 let dir = crash_dir.clone();
-                tauri::async_runtime::spawn(async move { idl_rs_tauri::mobile::crash_setup(&dir).await });
+                tauri::async_runtime::spawn(async move { idl1_bridge::mobile::crash_setup(&dir).await });
             }
-            app.manage(idl_rs_tauri::crash::CrashDir(crash_dir));
+            app.manage(idl1_bridge::crash::CrashDir(crash_dir));
             // Two failure shapes, deliberately handled differently (C4 §1
             // "Missing root", ruling R196).
             //
@@ -53,11 +53,11 @@ pub fn run() {
             //
             // Anything else is a genuine filesystem failure under the
             // platform default, with nothing to recover to: still a panic.
-            let resolved = idl_rs_tauri::paths::resolve_data_dir(&app_data_dir, &app_config_dir);
-            let missing_root = matches!(resolved, Err(idl_rs_tauri::paths::ResolveError::DataDirMissing { .. }));
+            let resolved = idl1_bridge::paths::resolve_data_dir(&app_data_dir, &app_config_dir);
+            let missing_root = matches!(resolved, Err(idl1_bridge::paths::ResolveError::DataDirMissing { .. }));
             let data_dir = match resolved {
                 Ok(dir) => dir,
-                Err(idl_rs_tauri::paths::ResolveError::DataDirMissing { ref path, .. }) => {
+                Err(idl1_bridge::paths::ResolveError::DataDirMissing { ref path, .. }) => {
                     eprintln!("data folder unavailable: {}", path.display());
                     // Managed so `get_data_dir` is callable at all — it is
                     // the very command the gate asks. It re-resolves and
@@ -67,37 +67,37 @@ pub fn run() {
                 Err(e) => panic!("resolving <data>: {e:?}"),
             };
             let agents_md_root = data_dir.clone();
-            app.manage(idl_rs_tauri::state::DataDir(data_dir.clone()));
-            app.manage(idl_rs_tauri::state::Hashes(std::sync::Arc::new(idl_rs_tauri::watcher::ExpectedHashSet::new())));
-            app.manage(idl_rs_tauri::state::Watchers(std::sync::Mutex::new(std::collections::HashMap::new())));
-            app.manage(idl_rs_tauri::state::Connections(std::sync::Mutex::new(std::collections::HashMap::new())));
-            app.manage(idl_rs_tauri::state::WifiTransfers::default());
-            app.manage(idl_rs_tauri::link::Links::default());
+            app.manage(idl1_bridge::state::DataDir(data_dir.clone()));
+            app.manage(idl1_bridge::state::Hashes(std::sync::Arc::new(idl1_bridge::watcher::ExpectedHashSet::new())));
+            app.manage(idl1_bridge::state::Watchers(std::sync::Mutex::new(std::collections::HashMap::new())));
+            app.manage(idl1_bridge::state::Connections(std::sync::Mutex::new(std::collections::HashMap::new())));
+            app.manage(idl1_bridge::state::WifiTransfers::default());
+            app.manage(idl1_bridge::link::Links::default());
             // Decoded per-channel samples, LRU by bytes against a budget of
             // min(2 GiB, 25 % of physical RAM) read once here (ruling R203.2).
             // Every command that serves samples reads through it, so a
             // channel is decoded at most once while it stays resident.
-            app.manage(idl_rs_tauri::session_cache::SessionCache::new());
+            app.manage(idl1_bridge::session_cache::SessionCache::new());
             // Ruling R221 item 1: every decode past ~200 ms reports itself as
             // the C3 §3.2 `decode_progress` event. Installed here, after the
             // cache is managed, because this is the only place an
             // `AppHandle` and the cache exist together; what the event is and
             // when it fires both live in `session_cache`.
-            idl_rs_tauri::session_cache::install_progress_sink(&app.handle().clone());
+            idl1_bridge::session_cache::install_progress_sink(&app.handle().clone());
             // The firmware/OTA state machine's current state (C3 §3.8, R198).
             // Managed unconditionally: it holds no data-root-dependent state,
             // and updating firmware is exactly the kind of thing a user may
             // want to do while the library is unavailable.
-            app.manage(idl_rs_tauri::state::Ota::default());
+            app.manage(idl1_bridge::state::Ota::default());
             // The library-wide lap/track index job's live state (rulings
             // R207/R208.1). The job itself is started by the frontend
             // (`start_index_job`) on launch and by `rebuild_catalog`; this
             // only holds its progress so a chip mounting mid-run can read it.
-            app.manage(idl_rs_tauri::state::IndexJob::default());
-            app.manage(idl_rs_tauri::state::RebuildJob::default());
+            app.manage(idl1_bridge::state::IndexJob::default());
+            app.manage(idl1_bridge::state::RebuildJob::default());
             // The running `eval_session_set` call per workbook, so a newer
             // call supersedes it at a member boundary (session-sets spec §5.2).
-            app.manage(idl_rs_tauri::commands::session_set::SetRuns::default());
+            app.manage(idl1_bridge::commands::session_set::SetRuns::default());
 
             // `<data>/inbox` (C4 §2, ruling R191): scanned once now, watched
             // while the app runs. Desktop only — the module does not exist
@@ -108,7 +108,7 @@ pub fn run() {
             // panicking the launch.
             #[cfg(not(any(target_os = "android", target_os = "ios")))]
             if !missing_root {
-                match idl_rs_tauri::inbox::InboxState::start(&data_dir) {
+                match idl1_bridge::inbox::InboxState::start(&data_dir) {
                     Ok(inbox) => {
                         app.manage(inbox);
                     }
@@ -128,7 +128,7 @@ pub fn run() {
             if !missing_root {
                 let peers_path = app_config_dir.join("peers.json");
                 let identity_path = app_config_dir.join("identity.json");
-                let sync_state = tauri::async_runtime::block_on(idl_rs_tauri::state::SyncState::start(
+                let sync_state = tauri::async_runtime::block_on(idl1_bridge::state::SyncState::start(
                     app.handle().clone(),
                     data_dir,
                     peers_path,
@@ -147,7 +147,7 @@ pub fn run() {
             // fine without it.
             if !missing_root {
                 let version = app.package_info().version.to_string();
-                idl_rs_tauri::commands::docs::ensure_agents_md_at_launch(&agents_md_root, &version);
+                idl1_bridge::commands::docs::ensure_agents_md_at_launch(&agents_md_root, &version);
             }
 
             // Updater (ruling R231): registered only when the app was built
@@ -175,11 +175,11 @@ pub fn run() {
         .plugin(tauri_plugin_deep_link::init())
         // Linked video playback (C3 §3.12, video spec §10 item 5): `<video src>`
         // loads `idl1-video://<sha256>` (built by `ipc/video.ts` `videoUrl`); the
-        // handler in `idl-rs-tauri` serves the blob with `Range` support, off the
+        // handler in `idl1-bridge` serves the blob with `Range` support, off the
         // main thread (R201). No video bytes cross IPC. `csp` is null in
         // `tauri.conf.json`, so `media-src` needs no entry.
-        .register_asynchronous_uri_scheme_protocol("idl1-video", idl_rs_tauri::video::video_protocol)
-        .invoke_handler(idl_rs_tauri::handler())
+        .register_asynchronous_uri_scheme_protocol("idl1-video", idl1_bridge::video::video_protocol)
+        .invoke_handler(idl1_bridge::handler())
         .build(tauri::generate_context!())
         .expect("error while building idl1")
         .run(|app, event| {
@@ -189,8 +189,8 @@ pub fn run() {
             // update or restart skip this event; the next launch recognises
             // those by the version change and reports nothing.
             if let tauri::RunEvent::Exit = event {
-                if let Some(dir) = app.try_state::<idl_rs_tauri::crash::CrashDir>() {
-                    idl_rs_tauri::crash::mark_clean_exit(&dir.0);
+                if let Some(dir) = app.try_state::<idl1_bridge::crash::CrashDir>() {
+                    idl1_bridge::crash::mark_clean_exit(&dir.0);
                 }
             }
         });

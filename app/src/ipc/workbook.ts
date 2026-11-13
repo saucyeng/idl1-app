@@ -43,8 +43,8 @@ export interface HostChannelRef {
 }
 
 /** The unit as it crosses IPC (C2 §3.3.1's unit model, rulings R154/R162),
- *  mirroring `idl_rs::math::units::UnitLabel` (via its `idl-rs-tauri` mirror,
- *  `rust/tauri/src/commands/workbook.rs`) exactly — `#[serde(tag = "state",
+ *  mirroring `idl_rs::math::units::UnitLabel` (via its `idl1-bridge` mirror,
+ *  `crates/idl1-bridge/src/commands/workbook.rs`) exactly — `#[serde(tag = "state",
  *  rename_all = "snake_case")]` on the Rust side, so this is a discriminated
  *  union keyed by `state`, never `unit: string | null` (R154: `null` cannot
  *  mean both "not applicable" and "we could not work it out" — the
@@ -137,7 +137,7 @@ export interface CellOutput {
 /** One retired math-builtin name a migration rewrote (C2 §3.8, ledger
  *  R151 item 9/10) — `SaveResult.migrations` and `WorkbookSource.
  *  pending_migrations`'s element shape, mirroring `idl_rs::math::
- *  DocumentRename` (`rust/tauri/src/commands/workbook.rs`'s
+ *  DocumentRename` (`crates/idl1-bridge/src/commands/workbook.rs`'s
  *  `RenamedFunction`). */
 export interface RenamedFunction {
   /** The `math`/`table` cell this rename occurred in. */

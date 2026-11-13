@@ -1171,11 +1171,11 @@ minutes stand.
 
 The authoritative layer table and decision rule live in `CLAUDE.md` §2 —
 this section does not repeat them. In one line: `rust/core` is the pure
-engine (no Tauri, no async runtime, no network); `rust/transport` is device
-and LAN I/O; `rust/tauri` (`idl-rs-tauri`) is thin `#[tauri::command]` glue
+engine (no Tauri, no async runtime, no network); `crates/idl1-transport` is device
+and LAN I/O; `crates/idl1-bridge` (`idl1-bridge`) is thin `#[tauri::command]` glue
 over both and the only crate the frontend sees; `app/src-tauri` is the Tauri
 app crate (builder, plugin registration, mobile plugins); `app/src` is the
-TypeScript UI, which talks only to `idl-rs-tauri` commands.
+TypeScript UI, which talks only to `idl1-bridge` commands.
 
 This replaces idl0's Dart/Rust split (`flutter_rust_bridge`, Riverpod
 providers, `sqflite`) in full — Flutter is not part of idl1 (design doc D1).
@@ -1192,7 +1192,7 @@ place `app/src` is allowed to import `@tauri-apps/api/core` (C3 §1).
 ### 11.3 Platform targets
 
 Desktop (Windows/macOS/Linux) and mobile (Android/iOS) both run the same
-Tauri v2 shell and the same `idl-rs-tauri` command set — there is no separate
+Tauri v2 shell and the same `idl1-bridge` command set — there is no separate
 web/PWA target (unlike idl0's Flutter web lane, which idl1 does not carry
 forward). Mobile BLE and WiFi-network binding are Tauri mobile plugins over
 the same Rust transport traits desktop uses (design §7; lane L9, wave 2–3).
@@ -1221,7 +1221,7 @@ those blobs; `session.json` replaces `.idl0w`; `.idl1wb` (C2) replaces
 
 `notify` on `<data>/workbooks` only, self-write suppression via an
 expected-hash set, ~100 ms debounce (C4 §4, design §7). Built in
-`rust/tauri/src/watcher.rs` (lane L5); wired to per-cell diffing once L3's
+`crates/idl1-bridge/src/watcher.rs` (lane L5); wired to per-cell diffing once L3's
 workbook parser lands (C3 §3.4 `watch_workbook`).
 
 ---
@@ -1388,12 +1388,12 @@ Hard crashes in response to bad data are never acceptable. Debug log ring buffer
 
 ### 14a. Transport Trait Architecture (idl1)
 
-Added by idl1 lane L4 (`rust/transport`, crate `idl-transport`). Fixes the app-side facts §6–8
+Added by idl1 lane L4 (`crates/idl1-transport`, crate `idl1-transport`). Fixes the app-side facts §6–8
 leave to the implementation: the Rust trait shapes every platform's device connection code
 implements, and the timeout/retry/chunking defaults this lane chose where §6–8 leave them to
 the client.
 
-**Traits.** `BleTransport` and `WifiTransport` (`rust/transport/src/ble_transport.rs`,
+**Traits.** `BleTransport` and `WifiTransport` (`crates/idl1-transport/src/ble_transport.rs`,
 `wifi_transport.rs`) — one method per §6.1/§7 operation the app needs. Desktop implements both
 with `btleplug`/`reqwest` in this crate; a Tauri mobile plugin (L9) implements the same two
 traits against the platform BLE stack and WiFi-network-binding proxy (§6.2). Because desktop
@@ -1409,7 +1409,7 @@ byte: `Peripheral::write` returns only `Result<()>`, and internally `write_value
 (`Success`/`Unreachable`/`ProtocolError`/`AccessDenied`) — the device's actual application error
 code is never read off the WinRT `GattWriteResult` and so never reaches this crate (verified
 against `btleplug` 0.13.0's own pinned source, `winrtble/ble/characteristic.rs::write_value`).
-Consequently `BtleplugBle::send_command` (`rust/transport/src/ble_transport.rs`) can only
+Consequently `BtleplugBle::send_command` (`crates/idl1-transport/src/ble_transport.rs`) can only
 observe `Ok(())` for `AckCode::Success`, or a `TransportErrorKind::Ble` carrying `btleplug`'s own
 coarse error text for every other case — including §7.2's mutex refusals. The specific ACK code
 (`0x03` vs `0x80` vs `0x81` vs `0x82`) is not recoverable from a real write on this platform.
@@ -1470,12 +1470,12 @@ owned by the link reconciler below, not a per-command side effect.
 |---|---|---|
 | `DevicePlugin` (Kotlin) | `app/src-tauri/gen/android/app/src/main/java/com/saucyeng/idl1/device/` | Android BLE GATT, the §6.2 network request + loopback proxy, the multicast lock, runtime permissions. Sensor/actuator only: no policy, no retries of device answers. |
 | Plugin registration | `app/src-tauri/src/mobile.rs` | `register_android_plugin("com.saucyeng.idl1.device", "DevicePlugin")`; manages the `PluginHandle` as state. |
-| `AndroidBle: BleTransport` | `rust/tauri/src/mobile/ble.rs` (`cfg(target_os = "android")`) | The §14a trait over the plugin. Lives in `idl-rs-tauri` because it needs a Tauri `PluginHandle`; `idl-transport` never depends on Tauri. |
-| `AndroidBinder: NetworkBinder` | `rust/tauri/src/mobile/wifi.rs` (android) | `request`/`release` + events over the plugin. |
-| `DirectBinder: NetworkBinder` | `rust/transport/src/link/` | Desktop: the user joins the AP in OS settings; the binder is always "available" at `http://192.168.4.1`. |
-| Link reconciler | `rust/transport/src/link/` | §6.2's state machine, pure over `NetworkBinder` + `WifiTransport`; transition table, journal, tests. Bytes on the wire → `transport`. |
-| `DeviceSessions` state | `rust/tauri/src/state.rs` | One session per `device_id`: the BLE connection (when up) and the link. |
-| `PlatformBle` | `rust/tauri/src/platform.rs` | `type PlatformBle = BtleplugBle` (desktop) / `AndroidBle` (android). The only place the concrete BLE type is named; replaces the ten `BtleplugBle::new()` call sites and `state::Connections`' hard-coded type. |
+| `AndroidBle: BleTransport` | `crates/idl1-bridge/src/mobile/ble.rs` (`cfg(target_os = "android")`) | The §14a trait over the plugin. Lives in `idl1-bridge` because it needs a Tauri `PluginHandle`; `idl1-transport` never depends on Tauri. |
+| `AndroidBinder: NetworkBinder` | `crates/idl1-bridge/src/mobile/wifi.rs` (android) | `request`/`release` + events over the plugin. |
+| `DirectBinder: NetworkBinder` | `crates/idl1-transport/src/link/` | Desktop: the user joins the AP in OS settings; the binder is always "available" at `http://192.168.4.1`. |
+| Link reconciler | `crates/idl1-transport/src/link/` | §6.2's state machine, pure over `NetworkBinder` + `WifiTransport`; transition table, journal, tests. Bytes on the wire → `transport`. |
+| `DeviceSessions` state | `crates/idl1-bridge/src/state.rs` | One session per `device_id`: the BLE connection (when up) and the link. |
+| `PlatformBle` | `crates/idl1-bridge/src/platform.rs` | `type PlatformBle = BtleplugBle` (desktop) / `AndroidBle` (android). The only place the concrete BLE type is named; replaces the ten `BtleplugBle::new()` call sites and `state::Connections`' hard-coded type. |
 
 #### 14b.2 Plugin surface (Kotlin ⇄ Rust)
 
@@ -1605,7 +1605,7 @@ same change as the code.
 
 The `.idl0` binary parser and the parser-output data model live in the
 pure-Rust **`idl-rs`** engine (`rust/core`). The app consumes them through
-`idl-rs-tauri` `#[tauri::command]` handlers (contract C3) rather than
+`idl1-bridge` `#[tauri::command]` handlers (contract C3) rather than
 FlutterRustBridge: a session opens into an in-process `SessionHandle` the
 Rust side owns, and the frontend pulls output-shaped views on demand — a
 compact metadata summary, the channel list, per-channel samples over IPC as
@@ -3386,7 +3386,7 @@ Entries are sorted newest-first (filename descending, per the `YYYY-MM-DD_HH-MM-
 full-screen `SyncScreen` above is not built; the Device tab has a plain
 **List files** button and an inline list instead. Listing calls
 `listDeviceFiles(deviceId)` (C3 §3.8, real and landed) only on that click
-— never on connect or on a timer — and `rust/tauri/src/commands/device.rs`
+— never on connect or on a timer — and `crates/idl1-bridge/src/commands/device.rs`
 drives the device's own `ControlCommand::WifiOn` transition internally, so
 this list has no separate "switch to WiFi mode" prompt to show.
 **Classification** matches idl0's rule exactly: `toFileViews` marks a file
@@ -4015,9 +4015,9 @@ compiled-in `kFirmwareRepoSlug`. (3) **No auto-check on a timer or on
 connect**: the catalog is fetched only on "Check now" or on opening the
 Firmware section with a repo configured, and it is the only call idl1 makes
 to the public internet. (4) **The state machine is Rust's**, in
-`idl-rs-tauri` (`push_firmware`/`confirm_firmware`/`firmware_catalog`/
+`idl1-bridge` (`push_firmware`/`confirm_firmware`/`firmware_catalog`/
 `ota_state` plus the `ota_state_changed` event, C3 §3.8) rather than the
-app's, and the catalog client itself is `idl-transport`'s
+app's, and the catalog client itself is `idl1-transport`'s
 (`firmware_catalog`). The idl0 workarounds this section describes — the
 pre-`isConnected` handshake-frame skip in particular — are **not** ported.
 
@@ -4056,7 +4056,7 @@ UTF-8 BOM parses as absent and silently falls back to the platform default,
 which can make a data-directory override set from this section appear to do
 nothing (`runs/2026-09-03/decisions.md`, 2026-09-05 ledger entry;
 `runs/2026-09-05/lanes/l7/IPC-NEEDS.md` need 7). The fix
-(`rust/tauri/src/paths.rs`) rides with the Rust write-amendment lane, not
+(`crates/idl1-bridge/src/paths.rs`) rides with the Rust write-amendment lane, not
 this one.
 
 ### 27.9 Sync (idl1, replaces Drive Sync — §27.4 row 3)

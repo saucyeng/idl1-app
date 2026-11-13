@@ -2,7 +2,7 @@ import { Channel, invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 
 // C3 §3.9, brought up to the L11-landed Rust commands
-// (`rust/tauri/src/commands/sync.rs`): `startPairing`, `pairPeer`,
+// (`crates/idl1-bridge/src/commands/sync.rs`): `startPairing`, `pairPeer`,
 // `unpairPeer`, `syncNow`, `syncStatus`, `PeerStatus` and the six-field
 // `SyncResult`. Field names below are byte-exact to the Rust serde output —
 // checked against `sync.rs`'s `PeerStatusDto`/`SyncStatusDto`/
@@ -113,7 +113,7 @@ export interface ThisDevice {
 /** One peer visible on the LAN via mDNS that this device has not paired
  *  with (C3 §3.9, L11 Task 14). Lets a Settings pane prefill `peerId` for
  *  {@link pairPeer} (ruling R104) instead of Isaac typing a 32-character id
- *  read off another screen. Byte-exact to `rust/tauri/src/commands/sync.rs`'s
+ *  read off another screen. Byte-exact to `crates/idl1-bridge/src/commands/sync.rs`'s
  *  `DiscoveredPeerDto`. */
 export interface DiscoveredPeer {
   peer_id: string;
@@ -150,7 +150,7 @@ export interface SyncStatus {
  *  either an already-paired peer or one this device has not paired with,
  *  distinguished by `status` so a listener never needs a second
  *  `sync_status` call to tell the two apart. Byte-exact to
- *  `rust/tauri/src/commands/sync.rs`'s `PeerSightingDto`. Emits on
+ *  `crates/idl1-bridge/src/commands/sync.rs`'s `PeerSightingDto`. Emits on
  *  appearance or field change, never on an identical re-resolve (R176);
  *  offline emits nothing. */
 export type PeerSighting =

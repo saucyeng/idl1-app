@@ -44,19 +44,21 @@ jobs:
       - name: Cache cargo
         uses: Swatinem/rust-cache@v2
         with:
-          workspaces: rust
+          # Two workspaces (idl-rs in rust/, the app side at the repo root);
+          # CARGO_TARGET_DIR above points both at rust/target.
+          workspaces: |
+            rust -> target
+            . -> rust/target
 
       - name: cargo test -p idl-rs -p idl-rs-cli
         working-directory: rust
         run: cargo test -p idl-rs -p idl-rs-cli -- --test-threads=4
 
-      - name: cargo test -p idl-rs-tauri
-        working-directory: rust
-        run: cargo test -p idl-rs-tauri -- --test-threads=4
+      - name: cargo test -p idl1-bridge
+        run: cargo test -p idl1-bridge -- --test-threads=4
 
-      - name: cargo test -p idl-transport
-        working-directory: rust
-        run: cargo test -p idl-transport -- --test-threads=4
+      - name: cargo test -p idl1-transport
+        run: cargo test -p idl1-transport -- --test-threads=4
 
       - name: Workbook reference is up to date
         # The reference is generated from the engine's own catalogs (ruling
