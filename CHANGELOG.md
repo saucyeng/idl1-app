@@ -4,6 +4,16 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 
 ## [Unreleased]
 
+### Changed
+
+- **The engine no longer carries the app's chart plumbing [docs] (2026-11-12).** The `idl-rs`
+  engine is being made usable on its own, without the app. The app-side Rust crates moved into
+  this repo (`crates/idl1-bridge`, formerly `rust/tauri`; `crates/idl1-transport`, formerly
+  `rust/transport`), and the code that only prepares data for the app's charts (wire encoders,
+  tiles, decimation, raster colouring, the cursor readout, map tiles) moved out of the engine
+  with them. Nothing the app does changes. For CLI users, `idl-rs docs wire` is gone: the wire
+  fixtures are now written by `cargo run -p idl1-bridge --bin wire-golden -- --out <dir>`.
+
 ### Added
 
 - **Charts can zoom to a fixed stretch of the ride [docs] (2026-11-05).** In a chart cell,

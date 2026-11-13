@@ -1,6 +1,6 @@
 //! Channel-vs-channel scatter command (C3 §3.5, ruling R215 item 3):
-//! `fetch_scatter` over L3's [`idl_rs::scatter::scatter_points`] pairing and
-//! decimation, encoded by [`idl_rs::scatter_wire::encode_scatter_idls`].
+//! `fetch_scatter` over L3's [`crate::scatter::scatter_points`] pairing and
+//! decimation, encoded by [`crate::scatter_wire::encode_scatter_idls`].
 //!
 //! **Binary, unlike `fetch_histogram`.** A G-G cloud is up to `point_budget`
 //! points — thousands, each two `f64`s — so this belongs with `fetch_tile`
@@ -16,8 +16,8 @@
 
 use std::path::Path;
 
-use idl_rs::scatter::scatter_points;
-use idl_rs::scatter_wire::encode_scatter_idls;
+use crate::scatter::scatter_points;
+use crate::scatter_wire::encode_scatter_idls;
 
 use crate::error::{IpcError, IpcErrorKind};
 use crate::session_cache::SessionCache;
@@ -120,7 +120,7 @@ mod tests {
     use super::*;
 
     use crate::session_source::SpanDto;
-    use idl_rs::scatter_wire::HEADER_LEN;
+    use crate::scatter_wire::HEADER_LEN;
     use idl_rs::session::{Channel, RawColumn, Session, SourceFormat, TimestampSource};
     use idl_rs::store::parquet::write_session_parquet;
     use uuid::Uuid;

@@ -819,7 +819,7 @@ fn fetch_host_channel_via(
     // definition reaches here carrying `AxisKind::Lap` and serialises its lap
     // numbers as its `t`. This call site no longer chooses — choosing is what
     // made every definition claim seconds regardless of its shape.
-    Ok(idl_rs::workbook::v3::encode_host_channel_view_idlh(hc, budget))
+    Ok(crate::host_channel_wire::encode_host_channel_view_idlh(hc, budget))
 }
 
 /// Transport-agnostic core of `fetch_host_channel_v2` (C3 §3.4, R117.7).
@@ -841,7 +841,7 @@ fn fetch_host_channel_via(
 /// validation-before-bytes rule, same whole-document [`idl_rs::workbook::v3::
 /// eval_cells`] evaluation with `def_name` picked out of the results, same
 /// reject-on-the-named-definition's-own-failure behaviour, same `IDLH` v1
-/// encoding via [`idl_rs::workbook::v3::encode_host_channel_idlh`].
+/// encoding via [`crate::host_channel_wire::encode_host_channel_idlh`].
 /// [`fetch_host_channel_via`] itself is untouched — deprecated for one
 /// revision (R117.3), not rewritten in terms of this function.
 ///
@@ -938,7 +938,7 @@ fn fetch_host_channel_v2_via(
     // from the kept value in place: only the emitted points are converted.
     // `view` slices what is sent, never what was evaluated (C3 §3.4,
     // 2026-11-05).
-    Ok(idl_rs::workbook::v3::encode_host_channel_view_idlh_in(hc, budget, view.map(|r| (r.t0_us, r.t1_us))))
+    Ok(crate::host_channel_wire::encode_host_channel_view_idlh_in(hc, budget, view.map(|r| (r.t0_us, r.t1_us))))
 }
 
 /// `fetch_host_channel_v2`'s optional `view` (C3 §3.4, 2026-11-05): the part
@@ -1432,7 +1432,7 @@ pub fn eval_workbook_v2(
 
 /// C3 §3.4 `fetch_host_channel(workbook_id, session_id, def_name, budget)` —
 /// evaluates the named `math` definition and returns its sample data as
-/// `IDLH` v1 raw bytes (see [`idl_rs::workbook::v3::encode_host_channel_idlh`]),
+/// `IDLH` v1 raw bytes (see [`crate::host_channel_wire::encode_host_channel_idlh`]),
 /// not JSON — the binary counterpart to `eval_workbook`'s `HostChannelRef`
 /// marker. See [`fetch_host_channel_via`] for the full resolution and error
 /// mapping.

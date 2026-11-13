@@ -1,6 +1,6 @@
 //! GPS trace commands for the map cell (C3 §3.5, ruling R217 item 1):
 //! `fetch_gps_trace_v2` over L3's projection and path decimation, encoded by
-//! [`idl_rs::gps_wire::encode_gps_trace_idlg`], and its JSON sibling
+//! [`crate::gps_wire::encode_gps_trace_idlg`], and its JSON sibling
 //! `fetch_gps_trace_meta` carrying the track underlay and axis domains.
 //!
 //! **Binary and JSON, split the way `fetch_raster`/`fetch_raster_meta` split**
@@ -9,7 +9,7 @@
 //! before it can draw an axis.
 //!
 //! **Latitude never reaches the app.** Both commands return metres in one
-//! local ENU frame ([`idl_rs::gps_projection::EnuFrame`]), and both anchor on
+//! local ENU frame ([`crate::gps_projection::EnuFrame`]), and both anchor on
 //! the **session's** own fixes, so the trace and the underlay are in the same
 //! frame and origin (C2 §5.3). The sandbox draws a plane and computes nothing
 //! (CLAUDE.md §2).
@@ -21,8 +21,8 @@
 use std::path::Path;
 
 use idl_rs::gps::{build_gps_track, GpsFix};
-use idl_rs::gps_projection::{decimate_path, EnuFrame};
-use idl_rs::gps_wire::encode_gps_trace_idlg;
+use crate::gps_projection::{decimate_path, EnuFrame};
+use crate::gps_wire::encode_gps_trace_idlg;
 
 use crate::error::{IpcError, IpcErrorKind};
 use crate::session_cache::SessionCache;
@@ -326,7 +326,7 @@ mod tests {
     use super::*;
 
     use crate::session_source::SpanDto;
-    use idl_rs::gps_wire::{FLAG_HAS_C, HEADER_LEN};
+    use crate::gps_wire::{FLAG_HAS_C, HEADER_LEN};
     use idl_rs::session::{Channel, RawColumn, Session, SourceFormat, TimestampSource};
     use idl_rs::store::parquet::write_session_parquet;
     use uuid::Uuid;

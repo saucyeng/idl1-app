@@ -2,7 +2,7 @@
  *  stops (C3 §3.6 `RasterMeta.ramp_stops`, ruling R177).
  *
  *  This module reads stops; it never computes a colour. The ramp is
- *  `idl_rs::colormap`'s Turbo and lives only there — a second Turbo in
+ *  `idl1_bridge::colormap`'s Turbo and lives only there — a second Turbo in
  *  TypeScript could drift from the pixels the legend describes, and no test
  *  would catch it. Sampling colours back out of a fetched raster is equally
  *  out: that makes the legend depend on whatever data is on screen.

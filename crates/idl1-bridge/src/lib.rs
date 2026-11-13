@@ -8,7 +8,14 @@
 //! tauri::Builder::default().invoke_handler(idl1_bridge::handler())
 //! ```
 
+pub mod chart_decimation;
+pub mod colormap;
 pub mod commands;
+pub mod cursor;
+pub mod fft_wire;
+pub mod gps_projection;
+pub mod gps_wire;
+pub mod host_channel_wire;
 /// Local crash reports (C3 §3.13, 2026-10-21).
 pub mod crash;
 /// Build-time guard over the engine's delete sites (ruling R196). Test-only
@@ -30,13 +37,18 @@ pub mod memory;
 pub mod mobile;
 pub mod paths;
 pub mod platform;
+pub mod raster;
+pub mod scatter;
+pub mod scatter_wire;
 pub mod session_cache;
 pub mod session_source;
 pub mod state;
+pub mod tile;
 /// The `idl1-video` URI scheme's request logic (C3 §3.12): playback bytes
 /// for linked videos, registered on the builder in `app/src-tauri`.
 pub mod video;
 pub mod watcher;
+pub mod wire_golden;
 pub use error::{IpcError, IpcErrorKind};
 
 /// The invoke handler covering every command in this crate. The app crate

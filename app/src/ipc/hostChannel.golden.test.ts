@@ -1,7 +1,7 @@
 /** Cross-language wire golden check (ruling R236): `decodeHostChannel`
  *  against `IDLH` v2 bytes the engine itself encoded, covering both
  *  `axis_kind` values a recorded axis can carry. See `golden/loadFixture.ts`
- *  and `core/src/wire_golden.rs`. */
+ *  and `crates/idl1-bridge/src/wire_golden.rs`. */
 import { describe, expect, it } from "vitest";
 
 import { loadFixture } from "./golden/loadFixture";

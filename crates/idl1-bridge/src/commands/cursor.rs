@@ -1,5 +1,5 @@
 //! Cursor command (C3 §3.7): the atomic cross-channel readout at one
-//! instant, over L3's `idl_rs::cursor::cursor_readout`.
+//! instant, over L3's `crate::cursor::cursor_readout`.
 //!
 //! Same idiom as `commands/workbook.rs`/`commands/device.rs`: the
 //! `#[tauri::command]` is a one-line wrapper over a `_via`-suffixed plain
@@ -33,7 +33,7 @@ pub struct CursorReadout {
 /// answer is one atomic instant, not per-cell math-tolerant like
 /// `eval_workbook`). Requested channels are then materialized
 /// (`Channel::materialize`/`Channel::t_us`) in request order and handed to
-/// [`idl_rs::cursor::cursor_readout`], which owns the nearest-sample/`null`-
+/// [`crate::cursor::cursor_readout`], which owns the nearest-sample/`null`-
 /// outside-span rule (ledger R31) — this function does not re-derive or
 /// second-guess it, only folds the `(id, value)` pairs into C3's map.
 pub fn cursor_readout_via(
@@ -92,7 +92,7 @@ pub fn cursor_readout_via(
         .map(|((id, channel), samples)| (id.as_str(), channel.t_us.as_ref(), samples.as_slice()))
         .collect();
 
-    let values = idl_rs::cursor::cursor_readout(&triples, t_us).into_iter().collect();
+    let values = crate::cursor::cursor_readout(&triples, t_us).into_iter().collect();
     Ok(CursorReadout { t_us, values })
 }
 

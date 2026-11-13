@@ -47,6 +47,9 @@ base64 = "0.22"
 
 [dev-dependencies]
 tempfile = "3.27.0"
+# The moved `fft_wire` tests compare spectra to a tolerance. Same version as
+# `idl-rs`, so one copy is built.
+approx = "0.5"
 tokio = { version = "1.53.1", features = ["test-util"] }
 # `test_buffers` (Task 9's own `.idl0` fixture builders) is gated behind
 # this feature (core/Cargo.toml) — enabled for test builds only, unified by

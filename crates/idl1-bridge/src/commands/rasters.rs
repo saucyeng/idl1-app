@@ -1,6 +1,6 @@
 //! Raster commands (C3 §3.6): `fetch_raster` (binary pixels) and
 //! `fetch_raster_meta` (axis domains + colour scale, JSON) over L3's
-//! `idl_rs::raster` spectrogram/histogram2d encoders.
+//! `crate::raster` spectrogram/histogram2d encoders.
 //!
 //! Same idiom as `commands/device.rs`/`commands/workbook.rs`: each
 //! `#[tauri::command]` is a one-line wrapper over a `_via`-suffixed plain
@@ -11,7 +11,7 @@
 use std::path::Path;
 
 use idl_rs::fft::{Averaging, Detrend, FftWindow, Scaling};
-use idl_rs::raster::{
+use crate::raster::{
     build_histogram2d_raster_bytes, build_spectrogram_raster_bytes, histogram2d_raster_meta,
     spectrogram_raster_meta, RasterMeta as CoreRasterMeta,
 };
@@ -306,8 +306,8 @@ pub struct RasterMetaOut {
     /// stop `i` of `n` is the ramp at `t = i / (n - 1)`. Each stop is opaque
     /// RGBA8 `[r, g, b, a]`; the ramp's transparent non-finite case is not a
     /// stop (see `transparent_zero`). Both raster kinds encode with the same
-    /// Turbo ramp (`idl_rs::colormap`), so this is
-    /// [`idl_rs::colormap::turbo_stops`] at [`RAMP_STOP_COUNT`] for either.
+    /// Turbo ramp (`crate::colormap`), so this is
+    /// [`crate::colormap::turbo_stops`] at [`RAMP_STOP_COUNT`] for either.
     ///
     /// Carried per raster rather than by a one-time command so a legend can
     /// only ever describe the encoder that produced the pixels beside it: the
@@ -336,7 +336,7 @@ impl RasterMetaOut {
             scale: RasterMetaScale { vmin: meta.vmin, vmax: meta.vmax, kind: "linear".to_string() },
             transparent_zero: meta.transparent_zero,
             magnitude_unit,
-            ramp_stops: idl_rs::colormap::turbo_stops(RAMP_STOP_COUNT),
+            ramp_stops: crate::colormap::turbo_stops(RAMP_STOP_COUNT),
         }
     }
 }
@@ -666,7 +666,7 @@ pub fn fetch_fft_via(
     let rate_t_us = window_t_us.as_deref().unwrap_or(ch.t_us.as_ref());
     let sample_rate_hz = idl_rs::fft::effective_rate_hz_from_t_us(rate_t_us).map_err(map_fft_error)?;
     let result = idl_rs::fft::welch(samples, sample_rate_hz, window, window_size, noverlap, detrend, averaging, scaling);
-    Ok(idl_rs::fft_wire::encode_fft_idlf(&result.values, sample_rate_hz))
+    Ok(crate::fft_wire::encode_fft_idlf(&result.values, sample_rate_hz))
 }
 
 /// Returns the `t_us` entries whose sample time falls in `[t0_secs,
@@ -741,7 +741,7 @@ pub fn fetch_fft_v2_via(
         .map_err(map_fft_error)?;
     let sample_rate_hz = idl_rs::fft::effective_rate_hz_from_t_us(&window_t_us).map_err(map_fft_error)?;
     let result = idl_rs::fft::welch(samples, sample_rate_hz, fft_window, window_size, noverlap, detrend, averaging, scaling);
-    Ok(idl_rs::fft_wire::encode_fft_idlf(&result.values, sample_rate_hz))
+    Ok(crate::fft_wire::encode_fft_idlf(&result.values, sample_rate_hz))
 }
 
 /// Fetches one channel's FFT spectrum as `IDLF` v1 bytes, resolving its span
@@ -1215,10 +1215,10 @@ mod tests {
 
         // Assert — C3 §3.6: n >= 16, endpoints included, every stop opaque,
         // and the stops are core's ramp, never a second table here.
-        assert_eq!(meta.ramp_stops, idl_rs::colormap::turbo_stops(16));
+        assert_eq!(meta.ramp_stops, crate::colormap::turbo_stops(16));
         assert!(meta.ramp_stops.len() >= 16);
-        assert_eq!(meta.ramp_stops[0], idl_rs::colormap::turbo_rgba8(0.0));
-        assert_eq!(*meta.ramp_stops.last().unwrap(), idl_rs::colormap::turbo_rgba8(1.0));
+        assert_eq!(meta.ramp_stops[0], crate::colormap::turbo_rgba8(0.0));
+        assert_eq!(*meta.ramp_stops.last().unwrap(), crate::colormap::turbo_rgba8(1.0));
         assert!(meta.ramp_stops.iter().all(|s| s[3] == 255));
 
         let _ = std::fs::remove_dir_all(&root);
@@ -1266,7 +1266,7 @@ mod tests {
         // every opaque pixel the encoder emits must be a colour on it.
         let root = temp_root();
         seed_session(&root);
-        let ramp: Vec<[u8; 4]> = (0..=4096).map(|i| idl_rs::colormap::turbo_rgba8(i as f64 / 4096.0)).collect();
+        let ramp: Vec<[u8; 4]> = (0..=4096).map(|i| crate::colormap::turbo_rgba8(i as f64 / 4096.0)).collect();
 
         // Act
         let bytes = fetch_raster_via(&SessionCache::new(), &root, "s1", None, "Speed", "spectrogram", 64, 32, &spectrogram_params_json()).unwrap();
@@ -1498,7 +1498,7 @@ mod tests {
         let want = idl_rs::fft::welch(
             window_samples, want_rate_hz, FftWindow::Hann, 32, 16, Detrend::Mean, Averaging::Mean, Scaling::Density,
         );
-        let want_bytes = idl_rs::fft_wire::encode_fft_idlf(&want.values, want_rate_hz);
+        let want_bytes = crate::fft_wire::encode_fft_idlf(&want.values, want_rate_hz);
 
         // Assert
         assert_eq!(got, want_bytes);

@@ -9,10 +9,10 @@
 
 use std::path::Path;
 
-use idl_rs::gps_projection::{decimate_path, EnuFrame};
-use idl_rs::gps_wire::encode_gps_trace_idll;
+use crate::gps_projection::{decimate_path, EnuFrame};
+use crate::gps_wire::encode_gps_trace_idll;
 use idl_rs::laps::{preview_runs, LapTiming, SectorGate};
-use idl_rs::map_tiles::{read_cached, write_cached, MapTileError, TileId, TileSource};
+use idl1_transport::map_tiles::{read_cached, write_cached, MapTileError, TileId, TileSource};
 
 use crate::commands::catalog::{GpsFixWire, LapTimingWire, SectorGateWire};
 use crate::commands::gps::{window_fixes, MAX_GPS_TRACE_POINTS};

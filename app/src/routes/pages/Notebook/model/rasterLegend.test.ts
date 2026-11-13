@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { buildLegendGradient, type RampStop } from "./rasterLegend";
 
-// The engine's own Turbo endpoints (`idl_rs::colormap::turbo_rgba8` at
+// The engine's own Turbo endpoints (`idl1_bridge::colormap::turbo_rgba8` at
 // t = 0.0 and t = 1.0, pinned by its tests) — used here as realistic stop
 // values, never as a colour this module is expected to produce on its own.
 const TURBO_MIN: RampStop = [35, 23, 27, 255];

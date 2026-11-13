@@ -3,7 +3,7 @@
  *  (one bucket per sample) split across a 4-column tile, so every bucket
  *  and every column carries real data (no NaN/sentinel — `serde_json` has
  *  no JSON spelling for `NaN`, so the golden JSON sticks to finite values).
- *  See `golden/loadFixture.ts` and `core/src/wire_golden.rs`. */
+ *  See `golden/loadFixture.ts` and `crates/idl1-bridge/src/wire_golden.rs`. */
 import { describe, expect, it } from "vitest";
 
 import { loadFixture } from "./golden/loadFixture";

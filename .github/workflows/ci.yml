@@ -92,7 +92,7 @@ jobs:
         # the committed bytes and the TS decoders' expectations silently
         # drift out of sync with the engine that produced them.
         run: |
-          cargo run --manifest-path rust/Cargo.toml -p idl-rs-cli -- docs wire --out app/src/ipc/golden
+          cargo run -p idl1-bridge --bin wire-golden -- --out app/src/ipc/golden
           git diff --exit-code -- app/src/ipc/golden
 
       - name: cargo check app crate (app/src-tauri)

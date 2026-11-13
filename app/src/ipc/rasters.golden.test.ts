@@ -1,6 +1,6 @@
 /** Cross-language wire golden check (ruling R236): `decodeRaster` against
  *  `IDLR` v1 bytes the engine itself encoded (a `histogram2d` raster). See
- *  `golden/loadFixture.ts` and `core/src/wire_golden.rs`. */
+ *  `golden/loadFixture.ts` and `crates/idl1-bridge/src/wire_golden.rs`. */
 import { describe, expect, it } from "vitest";
 
 import { loadFixture } from "./golden/loadFixture";

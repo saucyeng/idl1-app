@@ -1,6 +1,6 @@
 /** Cross-language wire golden check (ruling R236): `decodeScatter` against
  *  `IDLS` v1 bytes the engine itself encoded. See `golden/loadFixture.ts`
- *  and `core/src/wire_golden.rs`. */
+ *  and `crates/idl1-bridge/src/wire_golden.rs`. */
 import { describe, expect, it } from "vitest";
 
 import { loadFixture } from "./golden/loadFixture";

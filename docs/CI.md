@@ -13,7 +13,7 @@ Runs on every push to `main` and on manual dispatch. Two jobs, both
   with `idl-rs docs workbook --json` and `docs/CLI-REFERENCE.md` +
   `app/src/shell/cliTable.json` with `idl-rs docs cli`, runs
   `git diff --exit-code` over each, does the same for `app/src/ipc/golden`
-  with `idl-rs docs wire`, and finishes with `cargo check -p app`.
+  with the `wire-golden` binary (`idl1-bridge`), and finishes with `cargo check -p app`.
 - `app` — `npm ci`, `tsc --noEmit`, an import-cycle scan (`madge --circular`
   over `app/src`; `.madgerc` skips type-only imports, which are erased at
   runtime), then `vitest run` in `app/`. The cycle scan exists because a
@@ -65,11 +65,11 @@ CI runs exactly that and then `git diff --exit-code`, the same gate
 `app/src/ipc/golden/` holds one `<format>-v<n>.bin`/`.json` pair per binary
 IPC format (`IDLH`, `IDLT`, `IDLS`, `IDLG`, `IDLR`, ruling R236): a small
 fixed fixture encoded by the engine's own wire encoders
-(`core/src/wire_golden.rs`), and the decoded expectation a vitest per format
+(`crates/idl1-bridge/src/wire_golden.rs`), and the decoded expectation a vitest per format
 (`app/src/ipc/*.golden.test.ts`) deep-equals its TS decoder's output against.
 Regenerate with:
 
-    cargo run --manifest-path rust/Cargo.toml -p idl-rs-cli -- docs wire --out app/src/ipc/golden
+    cargo run -p idl1-bridge --bin wire-golden -- --out app/src/ipc/golden
 
 CI runs exactly that and then `git diff --exit-code`, so an encoder changed
 without regenerating the goldens fails the build instead of shipping a `.bin`

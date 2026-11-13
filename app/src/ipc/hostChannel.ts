@@ -2,7 +2,7 @@ import type { IpcError } from "./workbook";
 
 /** What an `IDLH` payload's `t` array measures — C3 §3.4's `axis_kind`
  *  (version 2). Mirrors `AxisKind` in
- *  `rust/core/src/workbook/v3/host_channel_wire.rs`, numbering included.
+ *  `crates/idl1-bridge/src/host_channel_wire.rs`, numbering included.
  *
  *  Version 1 said only *that* a recorded axis existed, never what it was, so
  *  a reader had to assume seconds. A `[lap]` definition's axis is ordinal lap

@@ -1,5 +1,5 @@
 //! Chart tile command (C3 §3.5): `fetch_tile` over L3's
-//! `idl_rs::tile::build_tile_bytes` v2 encoder (ledger R25, R43).
+//! `crate::tile::build_tile_bytes` v2 encoder (ledger R25, R43).
 //!
 //! Same idiom as `commands/rasters.rs`: the `#[tauri::command]` is a
 //! one-line wrapper over a `_via`-suffixed plain function taking
@@ -9,8 +9,8 @@
 
 use std::path::Path;
 
-use idl_rs::chart_decimation::MAX_TIER;
-use idl_rs::tile::build_tile_bytes;
+use crate::chart_decimation::MAX_TIER;
+use crate::tile::build_tile_bytes;
 
 use crate::error::{IpcError, IpcErrorKind};
 use crate::session_cache::SessionCache;
@@ -28,7 +28,7 @@ const MAX_COLUMN_COUNT: u32 = 4096;
 /// plausible-looking all-NaN tile rather than an error); `column_count`
 /// outside `1..=4096` → `invalid_argument`; unknown `session_id`/`channel`
 /// → `not_found`. Only then does it call
-/// [`idl_rs::tile::build_tile_bytes`], which owns decimation, column
+/// [`crate::tile::build_tile_bytes`], which owns decimation, column
 /// stats and the header — this function re-implements none of it.
 pub fn fetch_tile_via(
     cache: &SessionCache,
