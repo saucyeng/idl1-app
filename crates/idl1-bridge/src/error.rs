@@ -38,23 +38,23 @@ pub enum IpcErrorKind {
     /// differently ("this file changed elsewhere — reload?"). Raised by
     /// Workbook: `save_workbook`.
     Conflict,
-    /// `WorkbookErrorKind::DuplicateCellId` — workbook: `eval_workbook` (per cell only, C2 §3.5.A).
+    /// `WorkbookErrorKind::DuplicateCellId` — workbook: `eval_workbook_v2` (per cell only, C2 §3.5.A).
     WorkbookDuplicateCellId,
-    /// `WorkbookErrorKind::DuplicateDefinition` — workbook: `eval_workbook` (per cell only).
+    /// `WorkbookErrorKind::DuplicateDefinition` — workbook: `eval_workbook_v2` (per cell only).
     WorkbookDuplicateDefinition,
-    /// `WorkbookErrorKind::DuplicateConstant` — workbook: `eval_workbook` (per cell only).
+    /// `WorkbookErrorKind::DuplicateConstant` — workbook: `eval_workbook_v2` (per cell only).
     WorkbookDuplicateConstant,
-    /// `WorkbookErrorKind::InvalidIdentifier` — workbook: `eval_workbook` (per cell only).
+    /// `WorkbookErrorKind::InvalidIdentifier` — workbook: `eval_workbook_v2` (per cell only).
     WorkbookInvalidIdentifier,
-    /// `WorkbookErrorKind::ReservedName` — workbook: `eval_workbook` (per cell only).
+    /// `WorkbookErrorKind::ReservedName` — workbook: `eval_workbook_v2` (per cell only).
     WorkbookReservedName,
-    /// `WorkbookErrorKind::MissingFrontMatterId` — workbook: `open_workbook`, `eval_workbook`
+    /// `WorkbookErrorKind::MissingFrontMatterId` — workbook: `open_workbook`, `eval_workbook_v2`
     /// (fatal — no `WorkbookDoc` is constructable without a valid `id`, C2 §3.5.A).
     WorkbookMissingFrontMatterId,
-    /// `WorkbookErrorKind::UnsupportedWorkbookVersion` — workbook: `open_workbook`, `eval_workbook`
+    /// `WorkbookErrorKind::UnsupportedWorkbookVersion` — workbook: `open_workbook`, `eval_workbook_v2`
     /// (fatal — explicit `version` != 3, C2 §1).
     WorkbookUnsupportedVersion,
-    /// `WorkbookErrorKind::InvalidTableJson` — workbook: `eval_workbook` (per cell only, C2 §4).
+    /// `WorkbookErrorKind::InvalidTableJson` — workbook: `eval_workbook_v2` (per cell only, C2 §4).
     WorkbookInvalidTableJson,
     /// `WorkbookErrorKind::DuplicateSetMember` — workbook: `eval_session_set`
     /// (a session listed twice in the front-matter `sessions` set, C2 §1).
@@ -62,23 +62,23 @@ pub enum IpcErrorKind {
     /// `WorkbookErrorKind::InvalidSessionSet` — workbook: `eval_session_set`
     /// (a malformed front-matter `sessions` key, C2 §1).
     WorkbookInvalidSessionSet,
-    /// `MathEvalErrorKind::Parse` — workbook: `eval_workbook` (per definition).
+    /// `MathEvalErrorKind::Parse` — workbook: `eval_workbook_v2` (per definition).
     MathParse,
-    /// `MathEvalErrorKind::UnknownFunction` — workbook: `eval_workbook` (per definition).
+    /// `MathEvalErrorKind::UnknownFunction` — workbook: `eval_workbook_v2` (per definition).
     MathUnknownFunction,
-    /// `MathEvalErrorKind::UnknownChannel` — workbook: `eval_workbook` (per definition).
+    /// `MathEvalErrorKind::UnknownChannel` — workbook: `eval_workbook_v2` (per definition).
     MathUnknownChannel,
-    /// `MathEvalErrorKind::ArgCount` — workbook: `eval_workbook` (per definition).
+    /// `MathEvalErrorKind::ArgCount` — workbook: `eval_workbook_v2` (per definition).
     MathArgCount,
-    /// `MathEvalErrorKind::Type` — workbook: `eval_workbook` (per definition).
+    /// `MathEvalErrorKind::Type` — workbook: `eval_workbook_v2` (per definition).
     MathType,
-    /// `MathEvalErrorKind::DivisionByZero` — workbook: `eval_workbook` (per definition).
+    /// `MathEvalErrorKind::DivisionByZero` — workbook: `eval_workbook_v2` (per definition).
     MathDivisionByZero,
-    /// `MathEvalErrorKind::NoLapContext` — workbook: `eval_workbook` (per definition).
+    /// `MathEvalErrorKind::NoLapContext` — workbook: `eval_workbook_v2` (per definition).
     MathNoLapContext,
-    /// `MathEvalErrorKind::NotImplemented` — workbook: `eval_workbook` (per definition).
+    /// `MathEvalErrorKind::NotImplemented` — workbook: `eval_workbook_v2` (per definition).
     MathNotImplemented,
-    /// `MathEvalErrorKind::Runtime` — workbook: `eval_workbook` (per definition).
+    /// `MathEvalErrorKind::Runtime` — workbook: `eval_workbook_v2` (per definition).
     MathRuntime,
     /// `idl_library::import::ImportErrorKind::ParseInvalidMagicBytes`
     /// (mirrors `ParseError::InvalidMagicBytes`) — Import: `import_file`
@@ -311,7 +311,7 @@ impl From<idl_rs::math::MathEvalError> for IpcError {
 /// `workbook_invalid_cell_id` rows have no source variant here; see this
 /// lane's report). Takes `&WorkbookError` (rather than by value) so a
 /// caller holding a `&WorkbookError` borrowed from a `Vec` (e.g.
-/// `eval_workbook`'s per-cell `errors` routing) does not need to clone
+/// `eval_workbook_v2`'s per-cell `errors` routing) does not need to clone
 /// first.
 impl From<&idl_rs::workbook::v3::WorkbookError> for IpcError {
     fn from(e: &idl_rs::workbook::v3::WorkbookError) -> Self {

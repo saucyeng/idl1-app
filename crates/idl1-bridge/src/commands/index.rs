@@ -1,5 +1,5 @@
 //! C3 §3.2 library indexing: `start_index_job`, `index_status`,
-//! `cancel_index_job`, and the `index_progress` event (rulings R207 and
+//! and the `index_progress` event (rulings R207 and
 //! R208 item 1).
 //!
 //! The job itself is `idl_library::index_job` — the same core function the
@@ -13,7 +13,6 @@
 //! `idl_library::index_job::index_one_session`, called from
 //! `commands::catalog::list_laps`.
 
-use std::sync::atomic::Ordering;
 use std::sync::Arc;
 
 use tauri::{Emitter, Manager};
@@ -106,17 +105,6 @@ impl From<&IndexJobReport> for IndexRunSummary {
 #[tauri::command]
 pub fn index_status(job: tauri::State<'_, IndexJob>) -> IndexStatus {
     job.snapshot()
-}
-
-/// C3 §3.2 `cancel_index_job()`. Sets the flag the job polls between
-/// sessions; every session already committed stays committed, and the next
-/// run resumes from what is left (ruling R208.1 item 2). Returns whether a
-/// run was actually in flight.
-#[tauri::command]
-pub fn cancel_index_job(job: tauri::State<'_, IndexJob>) -> bool {
-    let was_running = job.snapshot().running;
-    job.cancel.store(true, Ordering::Relaxed);
-    was_running
 }
 
 /// C3 §3.2 `start_index_job()`. Starts the library-wide lap/track index in

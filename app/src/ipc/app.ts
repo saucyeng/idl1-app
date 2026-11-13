@@ -111,17 +111,3 @@ export interface ProfileLoadReport {
 export async function listProfiles(): Promise<ProfileLoadReport> {
   return invoke<ProfileLoadReport>("list_profiles");
 }
-
-/** Persists `profile` (create or whole-document replace, last-write-wins)
- *  (C3 §3.10). Rejects with `invalid_argument` when `config` is not a JSON
- *  object. Returns the profile as written. */
-export async function saveProfile(profile: BikeProfile): Promise<BikeProfile> {
-  return invoke<BikeProfile>("save_profile", { profile });
-}
-
-/** Deletes the profile named `profileId` (C3 §3.10). Rejects with
- *  `not_found` if it doesn't exist — a delete of a stale id never silently
- *  succeeds. */
-export async function deleteProfile(profileId: string): Promise<void> {
-  return invoke<void>("delete_profile", { profileId });
-}

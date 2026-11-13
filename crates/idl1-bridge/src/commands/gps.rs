@@ -3,7 +3,7 @@
 //! [`crate::gps_wire::encode_gps_trace_idlg`], and its JSON sibling
 //! `fetch_gps_trace_meta` carrying the track underlay and axis domains.
 //!
-//! **Binary and JSON, split the way `fetch_raster`/`fetch_raster_meta` split**
+//! **Binary and JSON, split the way `fetch_raster_v2`/`fetch_raster_meta_v2` split**
 //! — a trace is thousands of `f64` pairs and belongs on C3 §1's binary side; a
 //! track outline and two domains are a handful of JSON numbers a chart needs
 //! before it can draw an axis.

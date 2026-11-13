@@ -1,6 +1,6 @@
 //! Binary raster encoder for the spectrogram/histogram2d IPC endpoint (C3
 //! §3.6): a 16-byte header, then row-major top-down RGBA8 pixel data — plus
-//! the `*_raster_meta` sibling functions (C3's `fetch_raster_meta`, added
+//! the `*_raster_meta` sibling functions (C3's `fetch_raster_meta_v2`, added
 //! post-sign, ledger R25/L3-R33) that expose the axis domains and colour
 //! scale without decoding pixel bytes.
 //!
@@ -21,7 +21,7 @@ const FORMAT_RGBA8: u16 = 0;
 const RASTER_VERSION: u16 = 1;
 
 /// Axis domains and colour-scale bounds for a raster, without its pixel
-/// bytes — mirrors `fetch_raster`'s own `width`/`height`/`params`, so L5 can
+/// bytes — mirrors `fetch_raster_v2`'s own `width`/`height`/`params`, so L5 can
 /// call the meta function with exactly the arguments it already has for the
 /// byte fetch.
 ///

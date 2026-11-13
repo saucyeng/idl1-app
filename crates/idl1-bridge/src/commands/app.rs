@@ -705,11 +705,9 @@ pub fn move_data_dir(new_root: String) -> Result<DataDirInfo, IpcError> {
 }
 
 /// C3 §3.10 `BikeProfile` — mirrors `idl_library::profile::BikeProfile`
-/// field for field. One struct serves both `list_profiles`/`save_profile`'s
-/// return and `save_profile`'s argument, matching C3's single TS interface
-/// used both ways (unlike this file's `AppSettingsDto`/`AppSettingsArg`
-/// split, which exists only because `set_settings` intentionally ignores
-/// one field on input).
+/// field for field. `list_profiles` returns it (unlike this file's
+/// `AppSettingsDto`/`AppSettingsArg` split, which exists only because
+/// `set_settings` intentionally ignores one field on input).
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct BikeProfileDto {
     pub profile_id: String,
@@ -789,55 +787,11 @@ fn list_profiles_via(data_root: &Path) -> ProfileLoadReport {
     }
 }
 
-/// `save_profile`'s transport-agnostic core. Rejects a non-object `config`
-/// as `invalid_argument` before writing anything, then delegates to
-/// `store::profile::save` (last-write-wins via `write_atomic_with_retry`).
-fn save_profile_via(data_root: &Path, profile: BikeProfileDto) -> Result<BikeProfileDto, IpcError> {
-    if !profile.config.is_object() {
-        return Err(IpcError::new(IpcErrorKind::InvalidArgument, "profile.config must be a JSON object"));
-    }
-    let core_profile: idl_library::profile::BikeProfile = profile.into();
-    idl_library::profile::save(data_root, &core_profile).map_err(map_profile_error)?;
-    Ok(core_profile.into())
-}
-
-/// `delete_profile`'s transport-agnostic core. Checks the file exists
-/// *before* calling core's idempotent `delete` (which no-ops on a missing
-/// file) so a delete of a stale id raises `not_found` instead of silently
-/// succeeding (ruling R59 F2) — this check is the command layer's
-/// responsibility, not core's.
-fn delete_profile_via(data_root: &Path, profile_id: &str) -> Result<(), IpcError> {
-    let path = data_root.join("profiles").join(format!("{profile_id}.idl0p"));
-    if !path.is_file() {
-        return Err(IpcError::new(IpcErrorKind::NotFound, format!("profile '{profile_id}' not found")));
-    }
-    idl_library::profile::delete(data_root, profile_id).map_err(map_profile_error)?;
-    Ok(())
-}
-
 /// C3 §3.10 `list_profiles()`. Thin over `store::profile::load_all` against
 /// `<data>/profiles/*.idl0p` (C4 §2).
 #[tauri::command(async)]
 pub fn list_profiles(data_dir: tauri::State<'_, DataDir>) -> Result<ProfileLoadReport, IpcError> {
     Ok(list_profiles_via(&data_dir.0))
-}
-
-/// C3 §3.10 `save_profile(profile)`. Thin over `store::profile::save`;
-/// rejects a non-object `config` as `invalid_argument`.
-#[tauri::command(async)]
-pub fn save_profile(
-    data_dir: tauri::State<'_, DataDir>,
-    profile: BikeProfileDto,
-) -> Result<BikeProfileDto, IpcError> {
-    save_profile_via(&data_dir.0, profile)
-}
-
-/// C3 §3.10 `delete_profile(profile_id)`. Raises `not_found` when the
-/// file is absent (ruling R59 F2) before delegating to core's idempotent
-/// `store::profile::delete`.
-#[tauri::command(async)]
-pub fn delete_profile(data_dir: tauri::State<'_, DataDir>, profile_id: String) -> Result<(), IpcError> {
-    delete_profile_via(&data_dir.0, &profile_id)
 }
 
 #[cfg(test)]
@@ -863,12 +817,18 @@ mod tests {
         }
     }
 
+    /// Writes `dto` as a profile file, as a past save would have.
+    fn seed_profile(root: &Path, dto: BikeProfileDto) {
+        let profile: idl_library::profile::BikeProfile = dto.into();
+        idl_library::profile::save(root, &profile).unwrap();
+    }
+
     #[test]
     fn list_profiles_via_two_saved_profiles_returns_both_sorted_by_name_ascending() {
         // Arrange
         let root = temp_root();
-        save_profile_via(&root, sample_dto("p2", "Zebra")).unwrap();
-        save_profile_via(&root, sample_dto("p1", "Alpha")).unwrap();
+        seed_profile(&root, sample_dto("p2", "Zebra"));
+        seed_profile(&root, sample_dto("p1", "Alpha"));
 
         // Act
         let report = list_profiles_via(&root);
@@ -884,7 +844,7 @@ mod tests {
     fn list_profiles_via_a_malformed_file_lands_in_skipped_and_the_good_profile_still_loads() {
         // Arrange
         let root = temp_root();
-        save_profile_via(&root, sample_dto("p1", "Good")).unwrap();
+        seed_profile(&root, sample_dto("p1", "Good"));
         std::fs::create_dir_all(root.join("profiles")).unwrap();
         std::fs::write(root.join("profiles").join("bad.idl0p"), b"not json").unwrap();
 
@@ -897,65 +857,6 @@ mod tests {
         assert_eq!(report.skipped.len(), 1);
         assert!(report.skipped[0].path.ends_with("bad.idl0p"));
         assert!(!report.skipped[0].reason.is_empty());
-    }
-
-    #[test]
-    fn save_profile_via_a_non_object_config_is_rejected_and_nothing_is_written() {
-        // Arrange
-        let root = temp_root();
-        let mut dto = sample_dto("p1", "Bad Config");
-        dto.config = serde_json::json!([1, 2, 3]);
-
-        // Act
-        let result = save_profile_via(&root, dto);
-
-        // Assert
-        assert!(matches!(result, Err(e) if e.kind == IpcErrorKind::InvalidArgument));
-        assert!(list_profiles_via(&root).profiles.is_empty());
-    }
-
-    #[test]
-    fn save_profile_via_a_valid_object_config_succeeds_and_round_trips_through_load_all() {
-        // Arrange
-        let root = temp_root();
-        let dto = sample_dto("p1", "Trek Session 2024");
-
-        // Act
-        let written = save_profile_via(&root, dto.clone()).unwrap();
-
-        // Assert
-        assert_eq!(written.profile_id, dto.profile_id);
-        assert_eq!(written.config, dto.config);
-        let loaded = idl_library::profile::load_all(&root);
-        assert_eq!(loaded.profiles.len(), 1);
-        assert_eq!(loaded.profiles[0].profile_id, "p1");
-    }
-
-    #[test]
-    fn delete_profile_via_an_existing_profile_removes_its_file_and_it_no_longer_loads() {
-        // Arrange
-        let root = temp_root();
-        save_profile_via(&root, sample_dto("p1", "Gone Soon")).unwrap();
-
-        // Act
-        delete_profile_via(&root, "p1").unwrap();
-
-        // Assert
-        assert!(idl_library::profile::load_all(&root).profiles.is_empty());
-    }
-
-    #[test]
-    fn delete_profile_via_an_unknown_id_returns_not_found_and_does_not_touch_other_files() {
-        // Arrange
-        let root = temp_root();
-        save_profile_via(&root, sample_dto("p1", "Untouched")).unwrap();
-
-        // Act
-        let result = delete_profile_via(&root, "does-not-exist");
-
-        // Assert
-        assert!(matches!(result, Err(e) if e.kind == IpcErrorKind::NotFound));
-        assert_eq!(idl_library::profile::load_all(&root).profiles.len(), 1);
     }
 
     #[test]

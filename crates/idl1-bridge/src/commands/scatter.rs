@@ -4,7 +4,7 @@
 //!
 //! **Binary, unlike `fetch_histogram`.** A G-G cloud is up to `point_budget`
 //! points — thousands, each two `f64`s — so this belongs with `fetch_tile`
-//! and `fetch_fft` on C3 §1's binary side, not with the histogram's few
+//! and `fetch_fft_v2` on C3 §1's binary side, not with the histogram's few
 //! hundred JSON numbers. The engine owns the pairing, the finite filtering,
 //! the extent and the decimation; the sandbox draws and nothing else (design
 //! §4, CLAUDE.md §2).

@@ -7,7 +7,7 @@
 //! keeping samples in the engine (CLAUDE.md §2: physics of the bike → `core`;
 //! design §4's "heavy arrays never cross IPC"). The result is small (one
 //! `f64` edge per bin plus one count per bin, a few hundred numbers), so
-//! unlike `fetch_tile`/`fetch_fft` this one returns **JSON**, not
+//! unlike `fetch_tile`/`fetch_fft_v2` this one returns **JSON**, not
 //! `tauri::ipc::Response` bytes: there is no array here big enough for a
 //! binary encoder to earn its own decoder on the app side.
 //!

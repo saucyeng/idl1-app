@@ -44,18 +44,6 @@ describe("indexStatus", () => {
   });
 });
 
-describe("cancelIndexJob", () => {
-  it("cancel_index_job resolves — returns whether a run was stopped", async () => {
-    invoke.mockResolvedValue(false);
-
-    const { cancelIndexJob } = await import("./index_job");
-    const stopped = await cancelIndexJob();
-
-    expect(invoke).toHaveBeenCalledWith("cancel_index_job");
-    expect(stopped).toBe(false);
-  });
-});
-
 describe("onIndexProgress", () => {
   it("an index_progress event arrives — the handler gets the payload, not the envelope", async () => {
     const seen: unknown[] = [];

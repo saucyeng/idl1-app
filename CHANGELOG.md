@@ -6,6 +6,11 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 
 ### Changed
 
+- **Retired v1 commands and five unused commands removed [no-docs] (2026-11-13).** The app's old
+  `eval_workbook`, `fetch_host_channel`, `fetch_fft`, `fetch_raster` and `fetch_raster_meta`
+  commands (the app has called the `_v2` forms for a while) and five commands nothing called
+  (`save_profile`, `delete_profile`, `link_forget`, `cancel_index_job`, `save_bike`) were removed.
+  Nothing the app does changes.
 - **A nightly is published only after CI passes [no-docs] (2026-11-13).** CI's Rust tests now run as
   three parallel jobs (engine, bridge, transport) and finish before Release's builds do, so
   Release waits for that commit's CI run before publishing, at no cost in time. Nightly 133 had

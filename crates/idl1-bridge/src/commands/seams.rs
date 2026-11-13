@@ -9,7 +9,7 @@
 //! whole channel's burst structure, C1 §3.3, not of any one tile's window —
 //! so folding them into every `fetch_tile` response would resend the same
 //! handful of `(i64, i64)` pairs on every tier/tile/pan/zoom request instead
-//! of once per channel. `fetch_raster_meta`/`fetch_gps_trace_meta` already
+//! of once per channel. `fetch_raster_meta_v2`/`fetch_gps_trace_meta` already
 //! establish this split (a binary per-window/per-tile payload beside a small
 //! JSON one the app fetches once and caches) — this is that same idiom.
 //!

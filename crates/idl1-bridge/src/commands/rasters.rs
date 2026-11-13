@@ -1,5 +1,5 @@
-//! Raster commands (C3 §3.6): `fetch_raster` (binary pixels) and
-//! `fetch_raster_meta` (axis domains + colour scale, JSON) over L3's
+//! Raster commands (C3 §3.6): `fetch_raster_v2` (binary pixels) and
+//! `fetch_raster_meta_v2` (axis domains + colour scale, JSON) over L3's
 //! `crate::raster` spectrogram/histogram2d encoders.
 //!
 //! Same idiom as `commands/device.rs`/`commands/workbook.rs`: each
@@ -19,7 +19,7 @@ use idl_rs::session::ChannelSamples;
 
 use crate::error::{IpcError, IpcErrorKind};
 use crate::session_cache::SessionCache;
-use crate::session_source::{resolve_lap_window, resolve_window, session_dir, WindowDto};
+use crate::session_source::{resolve_window, session_dir, WindowDto};
 use crate::state::DataDir;
 
 /// `SpectrogramParams.window` (C3 §3.6) — `idl_rs::fft::FftWindow`'s three
@@ -106,7 +106,7 @@ fn scaling_token_wire_str(t: ScalingToken) -> &'static str {
     }
 }
 
-/// `fetch_fft`'s `averaging` argument (C3 §3.6) — `idl_rs::fft::Averaging`'s
+/// `fetch_fft_v2`'s `averaging` argument (C3 §3.6) — `idl_rs::fft::Averaging`'s
 /// four tokens, snake_case on the wire. Ruling R63 (3): the enum was
 /// extended with `None`/`Max` to close the gap C3's own text used to call
 /// out (a two-variant engine enum against a four-token wire union) — every
@@ -131,7 +131,7 @@ impl From<AveragingToken> for Averaging {
     }
 }
 
-/// `fetch_raster`/`fetch_raster_meta`'s `params` when `kind == "spectrogram"`
+/// `fetch_raster_v2`/`fetch_raster_meta_v2`'s `params` when `kind == "spectrogram"`
 /// (C3 §3.6). `window_size`/`hop_size` are in **samples**.
 #[derive(Debug, Clone, serde::Deserialize)]
 pub struct SpectrogramParams {
@@ -146,7 +146,7 @@ pub struct SpectrogramParams {
     pub scaling: ScalingToken,
 }
 
-/// `fetch_raster`/`fetch_raster_meta`'s `params` when `kind == "histogram2d"`
+/// `fetch_raster_v2`/`fetch_raster_meta_v2`'s `params` when `kind == "histogram2d"`
 /// (C3 §3.6, amended by ruling R42). `x_bins`/`y_bins` must equal the
 /// command's own `width`/`height` in wave 1 — see [`fetch_raster_via`]'s doc
 /// comment for why the fields are kept anyway.
@@ -253,7 +253,7 @@ fn check_bins_match_pixels(p: &Histogram2dParams, width: u16, height: u16) -> Re
     Ok(())
 }
 
-/// Spectrogram axis labels (C3 §3.6's `fetch_raster_meta`) — fixed strings,
+/// Spectrogram axis labels (C3 §3.6's `fetch_raster_meta_v2`) — fixed strings,
 /// not derived from any channel: a spectrogram's axes are always time and
 /// frequency regardless of the source channel's own unit (the engine's own
 /// axes, `SpectrogramResult.times_secs`/`freqs_hz`, `core/src/spectrogram.rs`).
@@ -281,7 +281,7 @@ pub struct RasterMetaScale {
     pub kind: String,
 }
 
-/// `fetch_raster_meta`'s return (C3 §3.6). Nests core's flat `vmin`/`vmax`
+/// `fetch_raster_meta_v2`'s return (C3 §3.6). Nests core's flat `vmin`/`vmax`
 /// inside `scale`, and fills `x_label`/`y_label` here — core has no
 /// session/catalog context to derive them from (`core/src/raster.rs`
 /// module doc).
@@ -298,7 +298,7 @@ pub struct RasterMetaOut {
     /// source channel's own unit and the request's scaling, so this and a
     /// `math`-cell definition's inferred unit can never drift apart (R163:
     /// no second table). `None` for a histogram2d, whose colour scale is a
-    /// bin count and has no unit. Metadata only — R165 stands, `fetch_fft`'s
+    /// bin count and has no unit. Metadata only — R165 stands, `fetch_fft_v2`'s
     /// byte payload stays samples and framing.
     pub magnitude_unit: Option<crate::commands::workbook::UnitLabel>,
     /// The colour ramp this raster's pixels were encoded with, sampled at
@@ -341,7 +341,7 @@ impl RasterMetaOut {
     }
 }
 
-/// Transport-agnostic core of `fetch_raster`. Every validation happens
+/// Transport-agnostic core of `fetch_raster_v2`. Every validation happens
 /// before any bytes are built (C3 §1's binary-transport rule): unknown
 /// session/channel(s) → `not_found`; `width == 0 || height == 0`, unknown
 /// `kind`, bad `params`, an event-driven channel requested for a
@@ -429,7 +429,7 @@ pub fn fetch_raster_via(
     }
 }
 
-/// Transport-agnostic core of `fetch_raster_meta`. Same argument validation
+/// Transport-agnostic core of `fetch_raster_meta_v2`. Same argument validation
 /// as [`fetch_raster_via`] — see its doc comment. `vmin`/`vmax` come from
 /// the meta functions, never from encoded pixel bytes (ledger R38); `width`/
 /// `height` are never passed into the meta functions (they take none,
@@ -515,40 +515,6 @@ pub fn fetch_raster_meta_via(
     }
 }
 
-/// Fetches and encodes one raster (C3 §3.6). `params` is
-/// [`SpectrogramParams`] or [`Histogram2dParams`] JSON, matching `kind`.
-#[tauri::command(async)]
-pub fn fetch_raster(
-    session_id: String,
-    channel: String,
-    kind: String,
-    width: u16,
-    height: u16,
-    params: serde_json::Value,
-    data_dir: tauri::State<'_, DataDir>,
-    cache: tauri::State<'_, SessionCache>,
-) -> Result<tauri::ipc::Response, IpcError> {
-    let bytes = fetch_raster_via(&cache, &data_dir.0, &session_id, None, &channel, &kind, width, height, &params)?;
-    Ok(tauri::ipc::Response::new(bytes))
-}
-
-/// Fetches one raster's axis domains and colour scale without decoding
-/// pixel bytes (C3 §3.6, added post-sign, ledger R25). Same arguments as
-/// `fetch_raster`.
-#[tauri::command(async)]
-pub fn fetch_raster_meta(
-    session_id: String,
-    channel: String,
-    kind: String,
-    width: u16,
-    height: u16,
-    params: serde_json::Value,
-    data_dir: tauri::State<'_, DataDir>,
-    cache: tauri::State<'_, SessionCache>,
-) -> Result<RasterMetaOut, IpcError> {
-    fetch_raster_meta_via(&cache, &data_dir.0, &session_id, None, &channel, &kind, width, height, &params)
-}
-
 /// Largest raster a `_v2` request renders (C2 §5.3's spectrogram budget).
 /// Above it the request is **clamped, not refused**: a window wider than the
 /// screen is a picture slightly coarser than the screen, not an error. A
@@ -616,89 +582,10 @@ fn map_fft_error(e: idl_rs::fft::FftError) -> IpcError {
     }
 }
 
-/// Transport-agnostic core of `fetch_fft` (C3 §3.6, ruling R63 (3), R76,
-/// R83). Loads the channel via [`raster_channel`], i.e. that one column
-/// and the session cache, never the whole `data.parquet` (ruling R203.1).
-/// `lap: None` takes the whole channel (`Channel::materialize`); `lap:
-/// Some(n)` resolves `n`'s recording-time window via
-/// [`crate::session_source::resolve_lap_window`] and takes only
-/// `idl_rs::session::handle::SessionHandle::slice_by_time`'s samples in that
-/// window — an unknown `n` surfaces `resolve_lap_window`'s own
-/// `invalid_argument`/`detail: { "lap": n }` before any FFT runs. Either way,
-/// both of R76's core guards run against the *resulting* window, never the
-/// whole channel: `averaging: none` is validated against the sliced sample
-/// count (see `idl_rs::fft::check_none_averaging_segments`), and
-/// `sample_rate_hz` is derived from the sliced window's own `t_us` (see
-/// `idl_rs::fft::effective_rate_hz_from_t_us`) using the same
-/// inclusive-window boundary as `slice_by_time` itself (ruling R85) — a
-/// 1–2-sample lap window (a degenerate lap boundary) fails this guard
-/// instead of silently clamping to a one-segment, possibly-`NaN` spectrum.
-/// The whole-channel path (`lap: None`) is unaffected: its window *is* the
-/// whole channel, so both guards already ran against the same `t_us` before
-/// this ruling. Both core validations run before any FFT executes.
-/// `not_found`: unknown `session_id` or `channel`. `invalid_argument`: an
-/// unknown `lap`, `params` that fail [`resolve_spectrogram_params`]'s
-/// validation, `averaging: none` with more than one segment (`detail: {
-/// "segments": n }`), or a window with too few samples/duplicate timestamps
-/// to derive a sample rate.
-pub fn fetch_fft_via(
-    cache: &SessionCache,
-    data_dir: &Path,
-    session_id: &str,
-    channel: &str,
-    lap: Option<u32>,
-    params: &SpectrogramParams,
-    averaging: Averaging,
-) -> Result<Vec<u8>, IpcError> {
-    let ch = raster_channel(cache, data_dir, session_id, channel)?;
-    let (window, detrend, scaling, window_size, noverlap) = resolve_spectrogram_params(params)?;
-    let (samples, window_t_us) = match lap {
-        None => (ch.materialize(), None),
-        Some(n) => {
-            let (t0_secs, t1_secs) = resolve_lap_window(data_dir, session_id, n)?;
-            let sliced = ch.slice_by_time(t0_secs, t1_secs);
-            let t_us = ch.slice_t_us_by_time(t0_secs, t1_secs);
-            (sliced, Some(t_us))
-        }
-    };
-    idl_rs::fft::check_none_averaging_segments(&averaging, window_size, noverlap, samples.len())
-        .map_err(map_fft_error)?;
-    let rate_t_us = window_t_us.as_deref().unwrap_or(ch.t_us.as_ref());
-    let sample_rate_hz = idl_rs::fft::effective_rate_hz_from_t_us(rate_t_us).map_err(map_fft_error)?;
-    let result = idl_rs::fft::welch(samples, sample_rate_hz, window, window_size, noverlap, detrend, averaging, scaling);
-    Ok(crate::fft_wire::encode_fft_idlf(&result.values, sample_rate_hz))
-}
-
-/// Returns the `t_us` entries whose sample time falls in `[t0_secs,
-/// t1_secs]` (ruling R85), via core's `time_window_index_range` (the same
-/// boundary math `SessionHandle::slice_by_time` used to slice `samples`
-/// from) so `check_none_averaging_segments`/`effective_rate_hz_from_t_us`
-/// see the identical window.
-
-/// Fetches one channel's FFT spectrum as `IDLF` v1 bytes (C3 §3.6, ruling
-/// R63 (3), R76, R83). `lap: null` is the whole channel; `lap: n` is that
-/// lap's recording-time window, resolved from `session.json`'s `laps[]` (see
-/// [`fetch_fft_via`]).
-#[tauri::command(async)]
-pub fn fetch_fft(
-    session_id: String,
-    channel: String,
-    lap: Option<u32>,
-    params: SpectrogramParams,
-    averaging: AveragingToken,
-    data_dir: tauri::State<'_, DataDir>,
-    cache: tauri::State<'_, SessionCache>,
-) -> Result<tauri::ipc::Response, IpcError> {
-    let bytes = fetch_fft_via(&cache, &data_dir.0, &session_id, &channel, lap, &params, averaging.into())?;
-    Ok(tauri::ipc::Response::new(bytes))
-}
-
 /// Transport-agnostic core of `fetch_fft_v2` (C3 §3.6, R117.3, R117.7,
-/// R123). Same shape as [`fetch_fft_via`], but resolves its span through
-/// [`resolve_window`] instead of `lap: Option<u32>` — [`WindowDto`]'s three
-/// span kinds (`session`, `lap`, `range`) replace the old command's
-/// whole-channel/lap-only split, so there is no `None` arm: `SpanDto::
-/// Session` already names "the whole recording". Ruling R123: a
+/// R123). Resolves its span through [`resolve_window`]: [`WindowDto`]'s three
+/// span kinds (`session`, `lap`, `range`), where `SpanDto::Session` names
+/// "the whole recording". Ruling R123: a
 /// single-spectrum FFT consumes the time axis, so it is an *aggregation*
 /// over the window — the window is correctly this function's slicing
 /// domain, unlike a `[t]`-series definition (which stays session-wide,
@@ -711,8 +598,8 @@ pub fn fetch_fft(
 /// then `ChannelSamples::slice_by_time`/`slice_t_us_by_time` slice the channel and
 /// its `t_us` to that window, then `check_none_averaging_segments` and
 /// `effective_rate_hz_from_t_us` run against the *sliced* window, never the
-/// whole channel — the same ordering [`fetch_fft_via`]'s doc comment
-/// explains. A `lap` span's own degenerate-window cases (a one-sample or
+/// whole channel — so a window of one or two samples
+/// fails the rate guard instead of reaching `welch()`. A `lap` span's own degenerate-window cases (a one-sample or
 /// duplicate-timestamp lap boundary) are unaffected by R119/R120: those
 /// rulings only added checks to the `range` arm, so a bad `lap` window
 /// still reaches this slice-then-guard path exactly as before, and still
@@ -745,10 +632,8 @@ pub fn fetch_fft_v2_via(
 }
 
 /// Fetches one channel's FFT spectrum as `IDLF` v1 bytes, resolving its span
-/// through a [`WindowDto`] rather than `lap: Option<u32>` (C3 §3.6, R117.3,
-/// R117.7). The `_v1` `fetch_fft` stays registered, deprecated for one
-/// revision (R117.3); see [`fetch_fft_v2_via`] for resolution and error
-/// mapping.
+/// through a [`WindowDto`] (C3 §3.6, R117.3, R117.7); see
+/// [`fetch_fft_v2_via`] for resolution and error mapping.
 #[tauri::command(async)]
 pub fn fetch_fft_v2(
     window: WindowDto,
@@ -1285,6 +1170,18 @@ mod tests {
         SpectrogramParams { window_size: 32, hop_size: 16, window: WindowToken::Hann, detrend: DetrendToken::Mean, scaling: ScalingToken::Density }
     }
 
+    /// `fetch_fft_v2_via` over the whole recording of `session_id`.
+    fn fft_whole(root: &std::path::Path, session_id: &str, channel: &str, params: &SpectrogramParams, averaging: Averaging) -> Result<Vec<u8>, IpcError> {
+        let window = WindowDto { session_id: session_id.to_string(), span: SpanDto::Session, colour: "--chart-1".to_string() };
+        fetch_fft_v2_via(&SessionCache::new(), root, &window, channel, params, averaging)
+    }
+
+    /// `fetch_fft_v2_via` over lap `lap` of `session_id`.
+    fn fft_lap(root: &std::path::Path, session_id: &str, channel: &str, lap: u32, params: &SpectrogramParams, averaging: Averaging) -> Result<Vec<u8>, IpcError> {
+        let window = WindowDto { session_id: session_id.to_string(), span: SpanDto::Lap { lap_number: lap }, colour: "--chart-1".to_string() };
+        fetch_fft_v2_via(&SessionCache::new(), root, &window, channel, params, averaging)
+    }
+
     /// Writes `s1`'s `session.json` with three contiguous, non-overlapping
     /// laps over the 128-sample/64 Hz `Speed` channel `seed_session` writes:
     /// lap 1 is samples 0..=63, lap 2 is samples 64..=73 (10 samples —
@@ -1309,7 +1206,7 @@ mod tests {
     }
 
     #[test]
-    fn fetch_fft_via_lap_some_known_lap_bin_count_differs_from_whole_channel() {
+    fn fetch_fft_v2_via_lap_some_known_lap_bin_count_differs_from_whole_channel() {
         // Arrange — averaging: mean sidesteps R76's one-segment rule; lap 2's
         // 10 samples are fewer than fft_params()'s window_size: 32, so
         // idl_rs::fft::resolve_seg clamps its segment to the slice's own
@@ -1320,8 +1217,8 @@ mod tests {
         seed_laps_for_s1(&root);
 
         // Act
-        let whole = fetch_fft_via(&SessionCache::new(), &root, "s1", "Speed", None, &fft_params(), Averaging::Mean).unwrap();
-        let lap2 = fetch_fft_via(&SessionCache::new(), &root, "s1", "Speed", Some(2), &fft_params(), Averaging::Mean).unwrap();
+        let whole = fft_whole(&root, "s1", "Speed", &fft_params(), Averaging::Mean).unwrap();
+        let lap2 = fft_lap(&root, "s1", "Speed", 2, &fft_params(), Averaging::Mean).unwrap();
 
         // Assert
         let bin_count = |bytes: &[u8]| u32::from_le_bytes(bytes[8..12].try_into().unwrap());
@@ -1333,14 +1230,14 @@ mod tests {
     }
 
     #[test]
-    fn fetch_fft_via_lap_unknown_number_invalid_argument_with_detail_lap() {
+    fn fetch_fft_v2_via_lap_unknown_number_invalid_argument_with_detail_lap() {
         // Arrange
         let root = temp_root();
         seed_session(&root);
         seed_laps_for_s1(&root);
 
         // Act
-        let err = fetch_fft_via(&SessionCache::new(), &root, "s1", "Speed", Some(99), &fft_params(), Averaging::Mean).unwrap_err();
+        let err = fft_lap(&root, "s1", "Speed", 99, &fft_params(), Averaging::Mean).unwrap_err();
 
         // Assert
         assert_eq!(err.kind, IpcErrorKind::InvalidArgument);
@@ -1350,7 +1247,7 @@ mod tests {
     }
 
     #[test]
-    fn fetch_fft_via_lap_none_byte_identical_whether_or_not_session_json_has_laps() {
+    fn fetch_fft_v2_via_lap_none_byte_identical_whether_or_not_session_json_has_laps() {
         // Arrange — `lap: None` must ignore `session.json` entirely: the
         // pre-R83 behaviour (no `session.json` at all) and the post-R83
         // behaviour (one with real `laps[]`) must produce identical bytes.
@@ -1358,9 +1255,9 @@ mod tests {
         seed_session(&root);
 
         // Act
-        let before = fetch_fft_via(&SessionCache::new(), &root, "s1", "Speed", None, &fft_params(), Averaging::Mean).unwrap();
+        let before = fft_whole(&root, "s1", "Speed", &fft_params(), Averaging::Mean).unwrap();
         seed_laps_for_s1(&root);
-        let after = fetch_fft_via(&SessionCache::new(), &root, "s1", "Speed", None, &fft_params(), Averaging::Mean).unwrap();
+        let after = fft_whole(&root, "s1", "Speed", &fft_params(), Averaging::Mean).unwrap();
 
         // Assert
         assert_eq!(before, after);
@@ -1369,7 +1266,7 @@ mod tests {
     }
 
     #[test]
-    fn fetch_fft_via_lap_window_multi_segment_under_none_averaging_invalid_argument_with_sliced_segment_count() {
+    fn fetch_fft_v2_via_lap_window_multi_segment_under_none_averaging_invalid_argument_with_sliced_segment_count() {
         // Arrange — lap 3 is samples 74..=127 (54 samples). Under
         // `fft_params()`'s window_size: 32/hop_size: 16 (noverlap 16), that
         // slice segments into 2 windows (segment_count(32, 16, 54) == 2) —
@@ -1382,7 +1279,7 @@ mod tests {
         seed_laps_for_s1(&root);
 
         // Act
-        let err = fetch_fft_via(&SessionCache::new(), &root, "s1", "Speed", Some(3), &fft_params(), Averaging::None).unwrap_err();
+        let err = fft_lap(&root, "s1", "Speed", 3, &fft_params(), Averaging::None).unwrap_err();
 
         // Assert
         assert_eq!(err.kind, IpcErrorKind::InvalidArgument);
@@ -1391,108 +1288,24 @@ mod tests {
         let _ = std::fs::remove_dir_all(&root);
     }
 
-    /// Seeds `s1` with an event-driven `Dup` channel whose `t_us` is `[0,
-    /// 100_000, 100_000, 200_000, 300_000]` — a duplicate pair at indices
-    /// 1–2 — plus one `session.json` lap per degenerate window a lap
-    /// boundary could produce (ruling R85): lap 1 is `[0.0, 0.0]` s
-    /// (index 0 only, 1 sample); lap 2 is `[0.1, 0.1]` s (indices 1–2, the
-    /// duplicate-timestamp pair, 2 samples with a single zero-length gap).
-    fn seed_degenerate_lap_windows_for_s1(root: &std::path::Path) {
-        let session = Session {
-            session_id: "s1".to_string(),
-            device_id: None,
-            timestamp_utc_ms: 0,
-            timestamp_source: TimestampSource::SourceFile,
-            config_checksum: None,
-            source_format: SourceFormat::Fit,
-            blob_sha256: "b".repeat(64),
-            channels: vec![Channel {
-                channel_id: "Dup".to_string(),
-                t_us: vec![0, 100_000, 100_000, 200_000, 300_000],
-                t_recorded_us: None,
-                nominal_rate_hz: 0.0,
-                column: RawColumn::F64(vec![0.0, 1.0, 2.0, 3.0, 4.0]),
-                source_kind: "wheel".to_string(),
-                unit: "m/s".to_string(),
-                gaps: Vec::new(),
-            }],
-        };
-        write_session_parquet(root, &session, "0.1.0").unwrap();
-
-        let lap = |n: u32, t: f64| LapJson {
-            lap_number: n,
-            start_timestamp_ms: (t * 1000.0).round() as i64,
-            end_timestamp_ms: (t * 1000.0).round() as i64,
-            raw_elapsed_ms: 0,
-            lap_time_ms: 0,
-            start_time_secs: t,
-            end_time_secs: t,
-            sectors: Vec::new(),
-            neutral_zone_visits: Vec::new(),
-        };
-        let mut doc = empty_session_json("s1");
-        doc.laps = vec![lap(1, 0.0), lap(2, 0.1)];
-        write_session_json(root, "s1", &doc, None).unwrap();
-    }
-
     #[test]
-    fn fetch_fft_via_lap_window_single_sample_invalid_argument() {
-        // Arrange — lap 1 slices to exactly one sample (index 0); R85: the
-        // rate guard must run on the window's own `t_us`, not the whole
-        // (5-sample, `len() >= 2`) channel's, so this must fail instead of
-        // reaching `welch()`'s Hann weights (which would divide by
-        // `n - 1 == 0`).
-        let root = temp_root();
-        seed_degenerate_lap_windows_for_s1(&root);
-        let params = SpectrogramParams { window_size: 0, hop_size: 0, window: WindowToken::Hann, detrend: DetrendToken::Mean, scaling: ScalingToken::Density };
-
-        // Act
-        let err = fetch_fft_via(&SessionCache::new(), &root, "s1", "Dup", Some(1), &params, Averaging::Mean).unwrap_err();
-
-        // Assert
-        assert_eq!(err.kind, IpcErrorKind::InvalidArgument);
-
-        let _ = std::fs::remove_dir_all(&root);
-    }
-
-    #[test]
-    fn fetch_fft_via_lap_window_two_duplicate_timestamp_samples_invalid_argument() {
-        // Arrange — lap 2 slices to the duplicate-timestamp pair (indices
-        // 1–2, both `t_us == 100_000`): the window's single gap is zero, so
-        // `effective_rate_hz_from_t_us` on the *window's* `t_us` must reject
-        // it, the same way it already rejects a whole duplicate-timestamp
-        // channel.
-        let root = temp_root();
-        seed_degenerate_lap_windows_for_s1(&root);
-        let params = SpectrogramParams { window_size: 0, hop_size: 0, window: WindowToken::Hann, detrend: DetrendToken::Mean, scaling: ScalingToken::Density };
-
-        // Act
-        let err = fetch_fft_via(&SessionCache::new(), &root, "s1", "Dup", Some(2), &params, Averaging::Mean).unwrap_err();
-
-        // Assert
-        assert_eq!(err.kind, IpcErrorKind::InvalidArgument);
-
-        let _ = std::fs::remove_dir_all(&root);
-    }
-
-    #[test]
-    fn fetch_fft_via_lap_window_healthy_multi_sample_output_unchanged_by_r85() {
+    fn fetch_fft_v2_via_lap_window_healthy_multi_sample_output_unchanged_by_r85() {
         // Arrange — lap 2 of `seed_laps_for_s1` (10 samples, 64 Hz uniform
         // spacing): its own `t_us` yields the same 64 Hz rate as the whole
         // channel's, so slicing the rate guard's input (R85) must not move
         // this healthy window's bytes at all. Cross-checked against a
         // manual `welch()` call built directly from the handle's own slice
         // and the window's own derived rate, not just re-run through
-        // `fetch_fft_via` (which would not catch a rate regression).
+        // `fetch_fft_v2_via` (which would not catch a rate regression).
         let root = temp_root();
         seed_session(&root);
         seed_laps_for_s1(&root);
 
         // Act
-        let got = fetch_fft_via(&SessionCache::new(), &root, "s1", "Speed", Some(2), &fft_params(), Averaging::Mean).unwrap();
+        let got = fft_lap(&root, "s1", "Speed", 2, &fft_params(), Averaging::Mean).unwrap();
 
         let handle = load_lazy_session_handle(&root, "s1", &SessionCache::new()).unwrap().0;
-        let (t0, t1) = resolve_lap_window(&root, "s1", 2).unwrap();
+        let (t0, t1) = resolve_window(&root, &WindowDto { session_id: "s1".to_string(), span: SpanDto::Lap { lap_number: 2 }, colour: String::new() }).unwrap();
         let window_samples = handle.slice_by_time("Speed", t0, t1);
         let want_rate_hz = 64.0;
         let want = idl_rs::fft::welch(
@@ -1507,12 +1320,12 @@ mod tests {
     }
 
     #[test]
-    fn fetch_fft_via_unknown_session_not_found() {
+    fn fetch_fft_v2_via_unknown_session_not_found() {
         // Arrange
         let root = temp_root();
 
         // Act
-        let err = fetch_fft_via(&SessionCache::new(), &root, "nope", "Speed", None, &fft_params(), Averaging::Mean).unwrap_err();
+        let err = fft_whole(&root, "nope", "Speed", &fft_params(), Averaging::Mean).unwrap_err();
 
         // Assert
         assert_eq!(err.kind, IpcErrorKind::NotFound);
@@ -1521,13 +1334,13 @@ mod tests {
     }
 
     #[test]
-    fn fetch_fft_via_unknown_channel_not_found() {
+    fn fetch_fft_v2_via_unknown_channel_not_found() {
         // Arrange
         let root = temp_root();
         seed_session(&root);
 
         // Act
-        let err = fetch_fft_via(&SessionCache::new(), &root, "s1", "NopeChannel", None, &fft_params(), Averaging::Mean).unwrap_err();
+        let err = fft_whole(&root, "s1", "NopeChannel", &fft_params(), Averaging::Mean).unwrap_err();
 
         // Assert
         assert_eq!(err.kind, IpcErrorKind::NotFound);
@@ -1536,7 +1349,7 @@ mod tests {
     }
 
     #[test]
-    fn fetch_fft_via_averaging_none_full_record_window_and_max_succeed_and_produce_well_formed_idlf_bytes() {
+    fn fetch_fft_v2_via_averaging_none_full_record_window_and_max_succeed_and_produce_well_formed_idlf_bytes() {
         // Arrange — "Speed" has 128 samples; None needs a window covering
         // the whole record (ruling R76) so window_size/hop_size = 128 here,
         // distinct from Max's window_size: 32 (Max has no segment-count limit).
@@ -1545,8 +1358,8 @@ mod tests {
         let none_params = SpectrogramParams { window_size: 128, hop_size: 128, window: WindowToken::Hann, detrend: DetrendToken::Mean, scaling: ScalingToken::Density };
 
         // Act
-        let none_bytes = fetch_fft_via(&SessionCache::new(), &root, "s1", "Speed", None, &none_params, Averaging::None).unwrap();
-        let max_bytes = fetch_fft_via(&SessionCache::new(), &root, "s1", "Speed", None, &fft_params(), Averaging::Max).unwrap();
+        let none_bytes = fft_whole(&root, "s1", "Speed", &none_params, Averaging::None).unwrap();
+        let max_bytes = fft_whole(&root, "s1", "Speed", &fft_params(), Averaging::Max).unwrap();
 
         // Assert — well-formed IDLF header on both; the whole point of R63 (3)
         // is that these no longer reject.
@@ -1561,7 +1374,7 @@ mod tests {
     }
 
     #[test]
-    fn fetch_fft_via_averaging_none_with_multi_segment_window_invalid_argument_with_segment_count() {
+    fn fetch_fft_v2_via_averaging_none_with_multi_segment_window_invalid_argument_with_segment_count() {
         // Arrange — "Speed" has 128 samples; fft_params()'s window_size: 32,
         // hop_size: 16 (noverlap 16) segments it into 7 windows, so
         // averaging: none must be rejected rather than silently keeping
@@ -1570,7 +1383,7 @@ mod tests {
         seed_session(&root);
 
         // Act
-        let err = fetch_fft_via(&SessionCache::new(), &root, "s1", "Speed", None, &fft_params(), Averaging::None).unwrap_err();
+        let err = fft_whole(&root, "s1", "Speed", &fft_params(), Averaging::None).unwrap_err();
 
         // Assert
         assert_eq!(err.kind, IpcErrorKind::InvalidArgument);
@@ -1580,7 +1393,7 @@ mod tests {
     }
 
     #[test]
-    fn fetch_fft_via_channel_with_one_sample_invalid_argument() {
+    fn fetch_fft_v2_via_channel_with_one_sample_invalid_argument() {
         // Arrange — a single-sample channel has no gap to derive a rate from
         let root = temp_root();
         let session = Session {
@@ -1605,7 +1418,7 @@ mod tests {
         write_session_parquet(&root, &session, "0.1.0").unwrap();
 
         // Act
-        let err = fetch_fft_via(&SessionCache::new(), &root, "s2", "Speed", None, &fft_params(), Averaging::Mean).unwrap_err();
+        let err = fft_whole(&root, "s2", "Speed", &fft_params(), Averaging::Mean).unwrap_err();
 
         // Assert
         assert_eq!(err.kind, IpcErrorKind::InvalidArgument);
@@ -1614,7 +1427,7 @@ mod tests {
     }
 
     #[test]
-    fn fetch_fft_via_channel_with_duplicate_timestamps_invalid_argument() {
+    fn fetch_fft_v2_via_channel_with_duplicate_timestamps_invalid_argument() {
         // Arrange — every sample stamped at the same t_us => every gap is 0
         let root = temp_root();
         let n = 4usize;
@@ -1640,7 +1453,7 @@ mod tests {
         write_session_parquet(&root, &session, "0.1.0").unwrap();
 
         // Act
-        let err = fetch_fft_via(&SessionCache::new(), &root, "s3", "Speed", None, &fft_params(), Averaging::Mean).unwrap_err();
+        let err = fft_whole(&root, "s3", "Speed", &fft_params(), Averaging::Mean).unwrap_err();
 
         // Assert
         assert_eq!(err.kind, IpcErrorKind::InvalidArgument);
@@ -1649,14 +1462,14 @@ mod tests {
     }
 
     #[test]
-    fn fetch_fft_via_malformed_params_zero_window_size_invalid_argument() {
+    fn fetch_fft_v2_via_malformed_params_zero_window_size_invalid_argument() {
         // Arrange
         let root = temp_root();
         seed_session(&root);
         let bad_params = SpectrogramParams { window_size: 0, hop_size: 0, window: WindowToken::Hann, detrend: DetrendToken::Mean, scaling: ScalingToken::Density };
 
         // Act
-        let err = fetch_fft_via(&SessionCache::new(), &root, "s1", "Speed", None, &bad_params, Averaging::Mean).unwrap_err();
+        let err = fft_whole(&root, "s1", "Speed", &bad_params, Averaging::Mean).unwrap_err();
 
         // Assert
         assert_eq!(err.kind, IpcErrorKind::InvalidArgument);
@@ -1685,25 +1498,6 @@ mod tests {
 
         // Assert
         assert_eq!(lap_bytes, range_bytes);
-
-        let _ = std::fs::remove_dir_all(&root);
-    }
-
-    #[test]
-    fn fetch_fft_v2_via_session_span_matches_v1_lap_none_whole_channel() {
-        // Arrange — `SpanDto::Session` is `_v2`'s replacement for `_v1`'s
-        // `lap: None`; both must select the whole channel and derive the
-        // same rate, so their bytes must agree.
-        let root = temp_root();
-        seed_session(&root);
-        let window = WindowDto { session_id: "s1".to_string(), span: SpanDto::Session, colour: "--chart-1".to_string() };
-
-        // Act
-        let v1_bytes = fetch_fft_via(&SessionCache::new(), &root, "s1", "Speed", None, &fft_params(), Averaging::Mean).unwrap();
-        let v2_bytes = fetch_fft_v2_via(&SessionCache::new(), &root, &window, "Speed", &fft_params(), Averaging::Mean).unwrap();
-
-        // Assert
-        assert_eq!(v1_bytes, v2_bytes);
 
         let _ = std::fs::remove_dir_all(&root);
     }

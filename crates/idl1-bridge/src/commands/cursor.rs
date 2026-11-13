@@ -31,7 +31,7 @@ pub struct CursorReadout {
 /// call with [`IpcErrorKind::InvalidArgument`] and `detail.channel` naming
 /// it, never a partial readout (C3 §3.7, spec 746-750: this command's
 /// answer is one atomic instant, not per-cell math-tolerant like
-/// `eval_workbook`). Requested channels are then materialized
+/// `eval_workbook_v2`). Requested channels are then materialized
 /// (`Channel::materialize`/`Channel::t_us`) in request order and handed to
 /// [`crate::cursor::cursor_readout`], which owns the nearest-sample/`null`-
 /// outside-span rule (ledger R31) — this function does not re-derive or

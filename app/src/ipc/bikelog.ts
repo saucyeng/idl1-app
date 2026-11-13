@@ -89,11 +89,6 @@ export async function bikeForName(name: string): Promise<Bike> {
   return invoke<Bike>("bike_for_name", { name });
 }
 
-/** C3 §3.11 `save_bike`. */
-export async function saveBike(bike: Bike): Promise<Bike> {
-  return invoke<Bike>("save_bike", { bike });
-}
-
 /** C3 §3.11 `get_bike_log`. */
 export async function getBikeLog(bikeId: string): Promise<BikeLogView> {
   return invoke<BikeLogView>("get_bike_log", { bikeId });

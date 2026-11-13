@@ -85,13 +85,6 @@ pub fn bike_for_name(name: String, data_dir: tauri::State<'_, DataDir>) -> Resul
     Ok(bikelog::bike_for_name(&data_dir.0, &name, now_ms())?)
 }
 
-/// C3 §3.11 `save_bike(bike)`: saves a bike, merged with the copy on disk;
-/// returns what was written.
-#[tauri::command(async)]
-pub fn save_bike(bike: Bike, data_dir: tauri::State<'_, DataDir>) -> Result<Bike, IpcError> {
-    Ok(bikelog::save_bike(&data_dir.0, &bike)?)
-}
-
 /// C3 §3.11 `get_bike_log(bike_id)`: the bike's log and its running sheet
 /// now.
 #[tauri::command(async)]

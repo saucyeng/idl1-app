@@ -43,20 +43,22 @@ describe("decodeRaster", () => {
   });
 });
 
-describe("fetchRaster", () => {
-  it("spectrogram params — resolves — calls invoke with the typed SpectrogramParams shape", async () => {
+describe("fetchRasterV2", () => {
+  const window = { session_id: "s1", span: { kind: "session" as const }, colour: "--chart-1" };
+
+  it("spectrogram params — resolves — calls invoke with the window and the typed SpectrogramParams shape", async () => {
     // Arrange
     const { invoke } = await import("@tauri-apps/api/core");
     (invoke as ReturnType<typeof vi.fn>).mockResolvedValue(buildWorkedExampleRaster());
-    const { fetchRaster } = await import("./rasters");
+    const { fetchRasterV2 } = await import("./rasters");
     const params = { window_size: 64, hop_size: 32, window: "hann", detrend: "mean", scaling: "density" } as const;
 
     // Act
-    await fetchRaster("s1", "fork_travel", "spectrogram", 64, 32, params);
+    await fetchRasterV2(window, "fork_travel", "spectrogram", 64, 32, params);
 
     // Assert
-    expect(invoke).toHaveBeenCalledWith("fetch_raster", {
-      sessionId: "s1",
+    expect(invoke).toHaveBeenCalledWith("fetch_raster_v2", {
+      window,
       channel: "fork_travel",
       kind: "spectrogram",
       width: 64,
@@ -65,19 +67,19 @@ describe("fetchRaster", () => {
     });
   });
 
-  it("histogram2d params — resolves — calls invoke with the typed Histogram2dParams shape", async () => {
+  it("histogram2d params — resolves — calls invoke with the window and the typed Histogram2dParams shape", async () => {
     // Arrange
     const { invoke } = await import("@tauri-apps/api/core");
     (invoke as ReturnType<typeof vi.fn>).mockResolvedValue(buildWorkedExampleRaster());
-    const { fetchRaster } = await import("./rasters");
+    const { fetchRasterV2 } = await import("./rasters");
     const params = { y_channel: "brake_pressure", x_bins: 16, y_bins: 8 };
 
     // Act
-    await fetchRaster("s1", "fork_travel", "histogram2d", 16, 8, params);
+    await fetchRasterV2(window, "fork_travel", "histogram2d", 16, 8, params);
 
     // Assert
-    expect(invoke).toHaveBeenCalledWith("fetch_raster", {
-      sessionId: "s1",
+    expect(invoke).toHaveBeenCalledWith("fetch_raster_v2", {
+      window,
       channel: "fork_travel",
       kind: "histogram2d",
       width: 16,
@@ -87,8 +89,8 @@ describe("fetchRaster", () => {
   });
 });
 
-describe("fetchRasterMeta", () => {
-  it("resolves — calls invoke with the same argument shape as fetchRaster and returns its RasterMeta", async () => {
+describe("fetchRasterMetaV2", () => {
+  it("resolves — calls invoke with the same argument shape as fetchRasterV2 and returns its RasterMeta", async () => {
     // Arrange
     const { invoke } = await import("@tauri-apps/api/core");
     const meta = {
@@ -101,16 +103,17 @@ describe("fetchRasterMeta", () => {
       ramp_stops: [[35, 23, 27, 255], [144, 13, 0, 255]] as [number, number, number, number][],
     };
     (invoke as ReturnType<typeof vi.fn>).mockResolvedValue(meta);
-    const { fetchRasterMeta } = await import("./rasters");
+    const { fetchRasterMetaV2 } = await import("./rasters");
     const params = { window_size: 64, hop_size: 32, window: "hann", detrend: "mean", scaling: "density" } as const;
+    const window = { session_id: "s1", span: { kind: "session" as const }, colour: "--chart-1" };
 
     // Act
-    const result = await fetchRasterMeta("s1", "fork_travel", "spectrogram", 64, 32, params);
+    const result = await fetchRasterMetaV2(window, "fork_travel", "spectrogram", 64, 32, params);
 
     // Assert
     expect(result).toBe(meta);
-    expect(invoke).toHaveBeenCalledWith("fetch_raster_meta", {
-      sessionId: "s1",
+    expect(invoke).toHaveBeenCalledWith("fetch_raster_meta_v2", {
+      window,
       channel: "fork_travel",
       kind: "spectrogram",
       width: 64,

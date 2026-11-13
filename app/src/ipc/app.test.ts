@@ -99,35 +99,3 @@ describe("listProfiles", () => {
     expect(invoke).toHaveBeenCalledWith("list_profiles");
   });
 });
-
-describe("saveProfile", () => {
-  it("save_profile resolves — calls invoke with the profile argument and returns the value unchanged", async () => {
-    // Arrange
-    const { invoke } = await import("@tauri-apps/api/core");
-    const profile = { profile_id: "p1", profile_name: "Trek", created_at_ms: 1, updated_at_ms: 2, config: {} };
-    (invoke as ReturnType<typeof vi.fn>).mockResolvedValue(profile);
-    const { saveProfile } = await import("./app");
-
-    // Act
-    const result = await saveProfile(profile);
-
-    // Assert
-    expect(result).toBe(profile);
-    expect(invoke).toHaveBeenCalledWith("save_profile", { profile });
-  });
-});
-
-describe("deleteProfile", () => {
-  it("delete_profile resolves — calls invoke with the profile id", async () => {
-    // Arrange
-    const { invoke } = await import("@tauri-apps/api/core");
-    (invoke as ReturnType<typeof vi.fn>).mockResolvedValue(undefined);
-    const { deleteProfile } = await import("./app");
-
-    // Act
-    await deleteProfile("p1");
-
-    // Assert
-    expect(invoke).toHaveBeenCalledWith("delete_profile", { profileId: "p1" });
-  });
-});

@@ -1,4 +1,4 @@
-//! Workbook commands (C3 §3.4): `open_workbook`, `eval_workbook`,
+//! Workbook commands (C3 §3.4): `open_workbook`, `eval_workbook_v2`,
 //! `save_workbook`, `watch_workbook` — thin wrappers over L3's v3 parser/
 //! evaluator (`idl_rs::workbook::v3`) and Task 3's file watcher
 //! (`crate::watcher`).
@@ -26,8 +26,7 @@ use idl_rs::workbook::v3::{
 use crate::error::{IpcError, IpcErrorKind};
 use crate::session_cache::SessionCache;
 use crate::session_source::{
-    load_lap_context, load_lazy_session_handle, load_window_context, load_window_context_from, read_session_json_once,
-    session_dir, WindowDto,
+    load_lazy_session_handle, load_window_context_from, read_session_json_once, session_dir, WindowDto,
 };
 use crate::state::{DataDir, Hashes, Watchers};
 use crate::watcher::{ExpectedHashSet, WorkbookWatcher};
@@ -155,7 +154,7 @@ pub struct ProseSpan {
 }
 
 /// One cell's evaluation result (C3 §3.4's `CellOutput`). A per-cell failure
-/// never rejects `eval_workbook` — it appears here, in `errors` or in a
+/// never rejects `eval_workbook_v2` — it appears here, in `errors` or in a
 /// specific `defs[i].error`; other cells still evaluate.
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct CellOutput {
@@ -205,36 +204,13 @@ pub struct CellOutput {
 #[serde(untagged)]
 pub enum WindowEval {
     /// This window resolved; `ok` is this window's [`CellOutput`] vec, same
-    /// as a single-window `eval_workbook` result.
+    /// as a single-window evaluation result.
     Ok { ok: Vec<CellOutput> },
     /// This window failed to resolve (R121: unresolvable `session_id`,
     /// unknown lap number, or either R119/R120 range failure) — siblings
     /// are unaffected and still evaluate. `error.detail` carries `"window":
     /// i` via [`with_window_index`].
     Error { error: IpcError },
-}
-
-/// C3 §3.4 `LapContext` (ruling R52 Q5, added post-sign 2026-09-05, ruling
-/// R59; same-session-only `overlay_laps` per lead ruling R64.1) — a per-call
-/// UI selection (ledger R41: not a property of the file), passed unchanged
-/// from `state/AppState.tsx`'s `selection.lapContext`. 1-based lap numbers,
-/// matching `LapSummary.lap_number`. `main_lap`/`overlay_laps` both `None`/
-/// empty is a valid "no selection" object, distinct from the argument's own
-/// absence at the command boundary but producing the same
-/// [`idl_rs::math::MathLapContext::empty`]-equivalent result (see
-/// `eval_workbook_via`'s doc comment).
-#[derive(Debug, Clone, serde::Deserialize)]
-pub struct LapContext {
-    /// The lap the workbook's lap-aware functions (`current_lap()`,
-    /// `sector_number()`, `lap_start_time(n)`, `lap_start_distance(n)`)
-    /// read. `None` designates no main lap.
-    pub main_lap: Option<u32>,
-    /// Laps `variance_time(ch)`/`variance_dist(ch)` compare the main lap
-    /// against — every entry drives its own comparison, folded into one
-    /// result by their elementwise mean (R73). Same session only in wave 2
-    /// (R64.1); a future amendment carries a `{ session_id, lap }[]` shape
-    /// for cross-session overlay.
-    pub overlay_laps: Vec<u32>,
 }
 
 /// One retired function name rewritten by [`save_workbook_via`] (applied) or
@@ -317,7 +293,7 @@ pub(crate) fn fatal_parse_error(errs: Vec<WorkbookError>) -> IpcError {
 }
 
 /// Resolves C3 §3.4's `id_or_path` argument to a filesystem path, used by
-/// `open_workbook`/`eval_workbook`/`watch_workbook`: (1) if the string is an
+/// `open_workbook`/`eval_workbook_v2`/`watch_workbook`: (1) if the string is an
 /// existing file path, use it; (2) otherwise scan `<data>/workbooks/
 /// *.idl1wb`, parsing each file's front matter and matching `id`; (3)
 /// otherwise `not_found`. Never consults the catalog (C4 §5 — it is an
@@ -445,99 +421,10 @@ fn empty_session_handle() -> SessionHandle {
     )
 }
 
-/// Transport-agnostic core of `eval_workbook`. `session_id = None` evaluates
-/// against [`empty_session_handle`] and [`MathLapContext::empty`] (ledger
-/// R41), and `lap_context` is ignored — there is no session to validate a
-/// lap selection against; `session_id = Some(id)` for an id that does not
-/// exist is a caller error (`not_found`), not a per-cell one.
-///
-/// `lap_context = None` reproduces today's behaviour exactly (byte-identical
-/// `CellOutput`s, see this module's `eval_workbook_via_lap_context_none_...`
-/// regression test): `MathLapContext` is built from `session_id`'s
-/// `session.json` own stored `laps[]`/`main_lap_number`, with no per-call
-/// override. `lap_context = Some(lc)` is a per-call UI selection (R41) that
-/// must resolve against that same `laps[]` — `lc.main_lap`/
-/// `lc.overlay_laps` naming a lap absent from `laps[]` rejects
-/// `invalid_argument` with `detail: { lap }` (C3 §3.4) — see
-/// [`crate::session_source::load_lap_context`]'s doc comment for the full
-/// resolution, including the same-session `overlay` construction (R64.1)
-/// and its multi-overlay fold (R73).
-fn eval_workbook_via(
-    cache: &SessionCache,
-    data_dir: &Path,
-    id: &str,
-    session_id: Option<&str>,
-    lap_context: Option<&LapContext>,
-) -> Result<Vec<CellOutput>, IpcError> {
-    let path = resolve_workbook_path(data_dir, id)?;
-    let markdown = std::fs::read_to_string(&path)
-        .map_err(|e| IpcError::new(IpcErrorKind::Io, format!("reading {}: {e}", path.display())))?;
-    let (doc, structural) = parse_workbook(&markdown).map_err(fatal_parse_error)?;
-
-    let (handle, source, lap_ctx) = match session_id {
-        Some(sid) => {
-            let (handle, source) = load_lazy_session_handle(data_dir, sid, cache)?;
-            prefetch_document_channels(cache, data_dir, sid, &doc, &handle);
-            let lap_ctx = load_lap_context(data_dir, sid, &handle, lap_context)?;
-            (handle, Some(source), lap_ctx)
-        }
-        None => (empty_session_handle(), None, MathLapContext::empty()),
-    };
-
-    let outputs = build_cell_outputs(&doc, &structural, &handle, &lap_ctx, session_id.is_some());
-    // A channel the app could not decode (out of budget, unreadable file)
-    // must not read back as a per-cell "unknown channel" — the document is
-    // fine, the machine is busy. R211.2's typed refusal is raised here, once
-    // the evaluation that provoked it has finished.
-    if let Some(err) = source.and_then(|s| s.take_first_error()) {
-        return Err(err);
-    }
-    Ok(outputs)
-}
-
-/// Decodes every stored channel `doc` names, in parallel, before the
-/// evaluator starts asking for them one at a time (ruling R232.2).
-///
-/// This is the request the ruling is about: a notebook binding nine channels
-/// used to pay for nine decodes back to back, each a full pass over
-/// `data.parquet`, with nothing to show for the wait. The names come from
-/// the `[Name]` references in every definition in the document
-/// ([`idl_rs::math::channel_refs`]), filtered to the channels this session
-/// actually stores — a `[Name]` that resolves to a math definition, an alias
-/// or nothing at all is simply not prefetched, and the lazy lookup that
-/// needs it still runs exactly as before.
-///
-/// Best-effort by construction: nothing here reports a failure, because the
-/// evaluation that follows reaches the same channel through
-/// `CachedChannelSource` and reports it properly there.
-fn prefetch_document_channels(
-    cache: &SessionCache,
-    data_dir: &Path,
-    session_id: &str,
-    doc: &idl_rs::workbook::v3::WorkbookDoc,
-    handle: &SessionHandle,
-) {
-    let listed = handle.channels();
-    let stored: std::collections::HashSet<&str> = listed.iter().map(|c| c.channel_id.as_str()).collect();
-    let mut wanted: Vec<String> = Vec::new();
-    for def in &doc.defs {
-        for name in idl_rs::math::channel_refs(&def.expr_text) {
-            if stored.contains(name.as_str()) && !wanted.contains(&name) {
-                wanted.push(name);
-            }
-        }
-    }
-    if wanted.len() < 2 {
-        return;
-    }
-    let refs: Vec<&str> = wanted.iter().map(|s| s.as_str()).collect();
-    cache.prefetch(&session_dir(data_dir, session_id), session_id, &refs);
-}
-
 /// Evaluates `doc`/`structural` against `handle`/`lap_ctx` and builds this
 /// module's `CellOutput` wire shape — the cell-output half of
-/// [`eval_workbook_via`], factored out so [`eval_workbook_v2_via`] can share
-/// it across its per-window loop without re-deriving it. `session_bound` is
+/// [`eval_workbook_v2_via`]'s empty-`windows` path, shared with its
+/// per-window loop so neither re-derives it. `session_bound` is
 /// [`table_cell_value`]'s "was a session actually bound" flag, since `handle`
 /// alone cannot distinguish a real session from [`empty_session_handle`].
 fn build_cell_outputs(
@@ -657,13 +544,13 @@ fn with_window_index(mut err: IpcError, i: usize) -> IpcError {
 /// `windows: []` evaluates once against no session — [`empty_session_handle`]
 /// and [`MathLapContext::empty`] (ledger R41) — and returns a one-element
 /// outer `Vec` so a caller always has a result array to render; its single
-/// entry's `ok` is byte-identical to [`eval_workbook_via`]`(id, None, None)`.
+/// entry's `ok` is the evaluation against that empty context.
 ///
 /// A repeated `session_id` across `windows` is legal and never deduplicated
 /// (R117.2 — two windows over one session with different laps is the common
 /// case, lap-to-lap comparison); each window resolves its own
 /// [`SessionHandle`]/[`MathLapContext`] independently via
-/// [`load_session_handle`]/[`load_window_context`].
+/// [`load_lazy_session_handle`]/[`load_window_context_from`].
 ///
 /// # Errors
 /// Split by attribution (C3 §3.4, ruling R121). **Per-window** — an
@@ -737,117 +624,31 @@ fn eval_workbook_v2_via(
         .collect())
 }
 
-/// Transport-agnostic core of `fetch_host_channel` (C3 §3.4). Validates
-/// `budget` in `1..=65536` before touching the workbook/session at all (C3
-/// §3.4's binary-command validation-before-bytes rule) — a rejection here
-/// never opens the file or reads a session. Resolves the workbook + session
-/// via the same [`resolve_workbook_path`]/[`load_session_handle`]/
-/// [`load_lap_context`] path [`eval_workbook_via`] uses (not a fresh
-/// reimplementation), then evaluates the **whole** document via
-/// [`idl_rs::workbook::v3::eval_cells`] and picks `def_name` out of the
-/// resulting defs — no single-definition evaluation entry point exists in
-/// `idl_rs::workbook::v3::eval`/`resolve` today, and at wave-2 scale a
-/// document has at most a few dozen cells, so evaluating all of them is the
-/// correct scope for this task (a new single-definition entry point in
-/// `core` "for efficiency" is out of scope here).
+/// Transport-agnostic core of `fetch_host_channel_v2` (C3 §3.4, R117.7).
+/// Takes a single `window: Option<&WindowDto>`, resolved via
+/// [`load_lazy_session_handle`]/[`load_window_context_from`] — the same
+/// per-window path [`eval_workbook_v2_via`] uses, so a host channel agrees
+/// with the evaluated cell whenever a lap is selected (R117 item 7). A
+/// single window, not a list (unlike `eval_workbook_v2`'s `windows`) —
+/// per-window evaluation (R117.4) means a host-channel fetch is always for
+/// one window; `window: None` evaluates against no session
+/// ([`empty_session_handle`] / [`MathLapContext::empty`]).
 ///
-/// Unlike [`eval_workbook_via`] (which never rejects the whole command for
-/// one cell's failure), this command **does** reject on `def_name`'s own
-/// evaluation failure — there is no partial result to return for the one
-/// channel actually requested. `lap_context` is not a `fetch_host_channel`
-/// argument (C3 §3.4's signature has none), so lap resolution always uses
-/// the session's own stored `laps[]`/`main_lap_number` (same as
-/// `eval_workbook`'s `lap_context = None` behaviour).
+/// `budget` is validated in `1..=65536` before the workbook or session is
+/// touched (C3 §3.4's validation-before-bytes rule). The whole document is
+/// evaluated (shared by key through the evaluation registry) and `def_name`
+/// picked out of the result; the command rejects on the named definition's
+/// own failure, since there is no partial result for the one channel
+/// requested. The value is encoded as `IDLH` via
+/// [`crate::host_channel_wire::encode_host_channel_view_idlh_in`].
 ///
 /// # Errors
 /// [`IpcErrorKind::InvalidArgument`] for `budget` outside `1..=65536`;
-/// [`IpcErrorKind::NotFound`] for an unknown `workbook_id` or a `def_name`
-/// that names no definition in the document; the `math_*` kinds
-/// ([`From<idl_rs::math::MathEvalError>`]) when `def_name`'s own definition
-/// fails to evaluate; [`IpcErrorKind::Io`] for a file-read failure;
-/// [`IpcErrorKind::Internal`] for the (unreachable in practice) case of a
-/// def with neither a value nor an error.
-fn fetch_host_channel_via(
-    cache: &SessionCache,
-    data_dir: &Path,
-    id: &str,
-    session_id: Option<&str>,
-    def_name: &str,
-    budget: u32,
-) -> Result<Vec<u8>, IpcError> {
-    if !(1..=65536).contains(&budget) {
-        return Err(IpcError::new(IpcErrorKind::InvalidArgument, format!("budget {budget} outside 1..=65536")));
-    }
-
-    let path = resolve_workbook_path(data_dir, id)?;
-    let markdown = std::fs::read_to_string(&path)
-        .map_err(|e| IpcError::new(IpcErrorKind::Io, format!("reading {}: {e}", path.display())))?;
-    let (doc, structural) = parse_workbook(&markdown).map_err(fatal_parse_error)?;
-
-    let (handle, source, lap_ctx) = match session_id {
-        Some(sid) => {
-            let (handle, source) = load_lazy_session_handle(data_dir, sid, cache)?;
-            let lap_ctx = load_lap_context(data_dir, sid, &handle, None)?;
-            (handle, Some(source), lap_ctx)
-        }
-        None => (empty_session_handle(), None, MathLapContext::empty()),
-    };
-
-    let cell_results = idl_rs::workbook::v3::eval_cells(&doc, &structural, &handle, &lap_ctx);
-
-    // Checked before the definition is picked out: a channel the app could
-    // not decode makes every definition that reads it wrong, and "no such
-    // channel" is the wrong thing to tell the caller about a busy machine
-    // (R211.2).
-    if let Some(err) = source.and_then(|s| s.take_first_error()) {
-        return Err(err);
-    }
-
-    let def = cell_results.iter().flat_map(|c| c.defs.iter()).find(|d| d.name == def_name).ok_or_else(|| {
-        IpcError::new(IpcErrorKind::NotFound, format!("no definition named '{def_name}' in workbook '{id}'"))
-    })?;
-
-    if let Some(err) = &def.error {
-        return Err(IpcError::from(err.clone()));
-    }
-
-    let hc = def.value.as_ref().ok_or_else(|| {
-        IpcError::new(IpcErrorKind::Internal, format!("definition '{def_name}' has neither a value nor an error"))
-    })?;
-
-    // The axis kind rides on the value (C2 §3.6, ruling R233): a `[lap]`
-    // definition reaches here carrying `AxisKind::Lap` and serialises its lap
-    // numbers as its `t`. This call site no longer chooses — choosing is what
-    // made every definition claim seconds regardless of its shape.
-    Ok(crate::host_channel_wire::encode_host_channel_view_idlh(hc, budget))
-}
-
-/// Transport-agnostic core of `fetch_host_channel_v2` (C3 §3.4, R117.7).
-/// Replaces [`fetch_host_channel_via`]'s `session_id: Option<&str>` with a
-/// single `window: Option<&WindowDto>`, resolved via [`load_session_handle`]/
-/// [`load_window_context`] — the same per-window path
-/// [`eval_workbook_v2_via`] uses — instead of [`load_lap_context`]'s
-/// session-wide `laps[]`/`main_lap_number`. This is the fix for the gap
-/// `fetch_host_channel_via` leaves open (R117 item 7): that function ignores
-/// whatever lap the caller selected and always evaluates the whole session,
-/// so it disagrees with `eval_workbook_v2` whenever a lap window is in
-/// effect. A single window, not a list (unlike `eval_workbook_v2`'s
-/// `windows`) — per-window evaluation (R117.4) means a host-channel fetch is
-/// always for one window; `window: None` reproduces `fetch_host_channel`'s
-/// own `session_id: None` behaviour ([`empty_session_handle`] /
-/// [`MathLapContext::empty`]).
-///
-/// Otherwise identical to [`fetch_host_channel_via`]: same `budget`
-/// validation-before-bytes rule, same whole-document [`idl_rs::workbook::v3::
-/// eval_cells`] evaluation with `def_name` picked out of the results, same
-/// reject-on-the-named-definition's-own-failure behaviour, same `IDLH` v1
-/// encoding via [`crate::host_channel_wire::encode_host_channel_idlh`].
-/// [`fetch_host_channel_via`] itself is untouched — deprecated for one
-/// revision (R117.3), not rewritten in terms of this function.
-///
-/// # Errors
-/// Same set as [`fetch_host_channel_via`] plus [`load_window_context`]'s own
-/// (`not_found` for an unresolvable `window.session_id`, `invalid_argument`
+/// [`IpcErrorKind::NotFound`] for an unknown `id` or a `def_name` that names
+/// no definition; the `math_*` kinds when `def_name`'s own definition fails
+/// to evaluate; [`IpcErrorKind::Io`] for a file-read failure;
+/// [`IpcErrorKind::Internal`] for a def with neither a value nor an error;
+/// plus the window's own (`not_found` for an unresolvable `window.session_id`, `invalid_argument`
 /// with `detail: { "lap": n }` for an unknown lap number on a `Lap` window,
 /// or `invalid_argument` with `detail: { session_id, t0_us, t1_us,
 /// session_span_us }` for a non-overlapping or misordered `Range` window).
@@ -962,8 +763,7 @@ pub struct HostChannelViewRange {
 ///
 /// `session_id` is the window's session, `None` for no session (`handle` is
 /// then [`empty_session_handle`]).
-/// Like [`eval_workbook_via`], it surfaces the first decode failure `source`
-/// recorded ahead of the cells: the document is fine, the machine is busy,
+/// It surfaces the first decode failure `source` recorded ahead of the cells: the document is fine, the machine is busy,
 /// and per-cell `math_unknown_channel` would say otherwise (R211.2).
 ///
 /// # Errors
@@ -1399,25 +1199,8 @@ pub fn read_workbook(id_or_path: String, data_dir: tauri::State<'_, DataDir>) ->
     read_workbook_via(&data_dir.0, &id_or_path)
 }
 
-/// C3 §3.4 `eval_workbook(id, session_id, lap_context)`. `lap_context` added
-/// post-sign (2026-09-05, ledger R59, R64.1) as an additive trailing
-/// argument — absent (`null` on the wire) reproduces today's behaviour
-/// exactly (C3 §5, no `_v2`).
-#[tauri::command(async)]
-pub fn eval_workbook(
-    id: String,
-    session_id: Option<String>,
-    lap_context: Option<LapContext>,
-    data_dir: tauri::State<'_, DataDir>,
-    cache: tauri::State<'_, SessionCache>,
-) -> Result<Vec<CellOutput>, IpcError> {
-    eval_workbook_via(&cache, &data_dir.0, &id, session_id.as_deref(), lap_context.as_ref())
-}
-
 /// C3 §3.4 `eval_workbook_v2(id, windows)` (R117.3/.4, R121). Replaces
-/// `eval_workbook`'s `session_id`/`lap_context` pair with an ordered list of
-/// [`WindowDto`]s; `eval_workbook` stays registered, deprecated for one
-/// revision (R117.3). Returns one [`WindowEval`] per window — a window that
+/// an ordered list of [`WindowDto`]s. Returns one [`WindowEval`] per window — a window that
 /// fails to resolve fails only its own entry (R121); see
 /// [`eval_workbook_v2_via`] for the full resolution.
 #[tauri::command(async)]
@@ -1430,31 +1213,10 @@ pub fn eval_workbook_v2(
     eval_workbook_v2_via(&cache, &data_dir.0, &id, &windows)
 }
 
-/// C3 §3.4 `fetch_host_channel(workbook_id, session_id, def_name, budget)` —
-/// evaluates the named `math` definition and returns its sample data as
-/// `IDLH` v1 raw bytes (see [`crate::host_channel_wire::encode_host_channel_idlh`]),
-/// not JSON — the binary counterpart to `eval_workbook`'s `HostChannelRef`
-/// marker. See [`fetch_host_channel_via`] for the full resolution and error
-/// mapping.
-#[tauri::command(async)]
-pub fn fetch_host_channel(
-    data_dir: tauri::State<'_, DataDir>,
-    cache: tauri::State<'_, SessionCache>,
-    workbook_id: String,
-    session_id: Option<String>,
-    def_name: String,
-    budget: u32,
-) -> Result<tauri::ipc::Response, IpcError> {
-    let bytes = fetch_host_channel_via(&cache, &data_dir.0, &workbook_id, session_id.as_deref(), &def_name, budget)?;
-    Ok(tauri::ipc::Response::new(bytes))
-}
-
 /// C3 §3.4 `fetch_host_channel_v2(workbook_id, window, def_name, budget)`
-/// (R117.7). Replaces `fetch_host_channel`'s `session_id` with a single
-/// `Window | null`, resolved the same lap-aware way `eval_workbook_v2` is —
-/// closing the gap where a host channel disagreed with the evaluated cell
-/// whenever a lap was selected (R117 item 7). `fetch_host_channel` stays
-/// registered, deprecated for one revision (R117.3). See
+/// (R117.7). A single `Window | null`, resolved the same lap-aware way
+/// `eval_workbook_v2` is, so a host channel agrees with the evaluated cell
+/// whenever a lap was selected (R117 item 7). See
 /// [`fetch_host_channel_v2_via`] for the full resolution and error mapping.
 #[tauri::command(async)]
 pub fn fetch_host_channel_v2(
@@ -1623,6 +1385,7 @@ mod tests {
     use idl_rs::session::{Channel, RawColumn, Session, SourceFormat, TimestampSource};
     use idl_rs::store::parquet::write_session_parquet;
     use idl_rs::store::session_json::{empty_session_json, write_session_json, LapJson, SessionJson};
+    use crate::session_source::load_window_context;
     use uuid::Uuid;
 
     /// A 4-lap `session.json`, laps 1..=4 each 1 s long — mirrors
@@ -2325,6 +2088,33 @@ mod tests {
         let _ = std::fs::remove_dir_all(&root);
     }
 
+    /// One window over the whole of `session_id`, as `eval_workbook_v2` takes it.
+    fn session_window(session_id: &str) -> WindowDto {
+        WindowDto {
+            session_id: session_id.to_string(),
+            span: crate::session_source::SpanDto::Session,
+            colour: "--chart-1".to_string(),
+        }
+    }
+
+    /// `eval_workbook_v2_via` over one whole-session window, unwrapped to its cells.
+    fn eval_session(cache: &SessionCache, root: &Path, session_id: &str) -> Vec<CellOutput> {
+        let mut out = eval_workbook_v2_via(cache, root, WB_ID, &[session_window(session_id)]).unwrap();
+        match out.remove(0) {
+            WindowEval::Ok { ok } => ok,
+            WindowEval::Error { error } => panic!("expected the window to resolve, got {error:?}"),
+        }
+    }
+
+    /// `eval_workbook_v2_via` with no windows (no session bound), unwrapped to its cells.
+    fn eval_no_session(root: &Path) -> Vec<CellOutput> {
+        let mut out = eval_workbook_v2_via(&SessionCache::new(), root, WB_ID, &[]).unwrap();
+        match out.remove(0) {
+            WindowEval::Ok { ok } => ok,
+            WindowEval::Error { error } => panic!("expected the evaluation to resolve, got {error:?}"),
+        }
+    }
+
     /// Seeds a session with several stored channels, all of one source, so
     /// the prefetch tests have something to fan out over.
     fn seed_multi_channel_session(root: &Path, session_id: &str, channel_ids: &[&str]) {
@@ -2366,7 +2156,7 @@ mod tests {
         let cache = SessionCache::new();
 
         // Act
-        let out = eval_workbook_via(&cache, &root, WB_ID, Some("s1"), None).unwrap();
+        let out = eval_session(&cache, &root, "s1");
 
         // Assert — every named channel resident, the union axis decoded once
         // for all four (R232.1), and the values unchanged.
@@ -2390,7 +2180,7 @@ mod tests {
         let cache = SessionCache::new();
 
         // Act
-        let out = eval_workbook_via(&cache, &root, WB_ID, Some("s1"), None).unwrap();
+        let out = eval_session(&cache, &root, "s1");
 
         // Assert — only the two real channels became resident, and the
         // unknown reference is still the evaluator's error to report.
@@ -2401,7 +2191,7 @@ mod tests {
         let _ = std::fs::remove_dir_all(&root);
     }
 
-    // ---- Step 3: eval_workbook ----
+    // ---- Step 3: eval_workbook_v2 ----
 
     #[test]
     fn eval_workbook_a_math_cell_over_a_bound_session_def_value_is_a_host_channel_ref_with_the_channels_length() {
@@ -2414,7 +2204,7 @@ mod tests {
         write_workbook(&root, "test.idl1wb", &markdown);
 
         // Act
-        let out = eval_workbook_via(&SessionCache::new(), &root, WB_ID, Some("s1"), None).unwrap();
+        let out = eval_session(&SessionCache::new(), &root, "s1");
 
         // Assert
         assert_eq!(out.len(), 1);
@@ -2427,15 +2217,11 @@ mod tests {
     }
 
     #[test]
-    fn eval_workbook_via_lap_context_none_output_byte_identical_to_the_pre_task9_fixture() {
-        // Arrange — literal JSON captured from this exact seeded
-        // session+workbook by running this test's body against the
-        // pre-Task-9 `eval_workbook_via(&SessionCache::new(), &root, WB_ID, Some("s1"))` (two
-        // trailing args, no `lap_context`), before the `lap_context`
-        // parameter was added. `None` here must reproduce it exactly,
-        // updated for `unit`/`unit_notes` (ruling R154/R162): `ChanA` has
-        // no C1 unit recorded (seed_session's `unit: String::new()`), so
-        // `x`'s inferred unit is `unknown`.
+    fn eval_workbook_v2_via_a_whole_session_window_output_matches_the_literal_wire_fixture() {
+        // Arrange — literal JSON captured from this exact seeded session+
+        // workbook. `ChanA` has no C1 unit recorded (seed_session's
+        // `unit: String::new()`), so `x`'s inferred unit is `unknown`
+        // (ruling R154/R162).
         let root = temp_root();
         seed_session(&root, "s1", "ChanA", vec![1.0, 2.0, 3.0], vec![0, 100_000, 200_000]);
         let markdown = format!(
@@ -2444,7 +2230,7 @@ mod tests {
         write_workbook(&root, "test.idl1wb", &markdown);
 
         // Act
-        let out = eval_workbook_via(&SessionCache::new(), &root, WB_ID, Some("s1"), None).unwrap();
+        let out = eval_session(&SessionCache::new(), &root, "s1");
 
         // Assert
         let json = serde_json::to_string(&out).unwrap();
@@ -2457,12 +2243,10 @@ mod tests {
     }
 
     #[test]
-    fn eval_workbook_v2_via_empty_windows_byte_identical_to_eval_workbook_via_no_session() {
-        // Arrange — same fixture as the `eval_workbook` "no session bound"
-        // test, `windows: []`. C3 §3.4: the one entry's `ok` must be
-        // byte-identical to `eval_workbook_via(id, None, None)`, wrapped in
-        // a one-element outer `Vec` so a caller always has a result array to
-        // render.
+    fn eval_workbook_v2_via_empty_windows_one_ok_entry_evaluated_against_no_session() {
+        // Arrange — `windows: []`. C3 §3.4: a one-element outer `Vec` so a
+        // caller always has a result array to render, its single entry the
+        // no-session evaluation (every channel ref unknown).
         let root = temp_root();
         let markdown = format!(
             "---\nid: {WB_ID}\nname: Test\nversion: 3\n---\n\n```math id=aaaaaaaa\nx = [ChanA]\n```\n"
@@ -2470,14 +2254,13 @@ mod tests {
         write_workbook(&root, "test.idl1wb", &markdown);
 
         // Act
-        let via = eval_workbook_via(&SessionCache::new(), &root, WB_ID, None, None).unwrap();
-        let v2 = eval_workbook_v2_via(&SessionCache::new(), &root, WB_ID, &[]).unwrap();
+        let out = eval_workbook_v2_via(&SessionCache::new(), &root, WB_ID, &[]).unwrap();
 
-        // Assert — byte-identical via JSON, `CellOutput` has no `PartialEq`.
-        assert_eq!(
-            serde_json::to_string(&v2).unwrap(),
-            serde_json::to_string(&vec![WindowEval::Ok { ok: via }]).unwrap()
-        );
+        // Assert
+        assert_eq!(out.len(), 1);
+        let WindowEval::Ok { ok } = &out[0] else { panic!("expected the evaluation to resolve, got {:?}", out[0]) };
+        assert_eq!(ok.len(), 1);
+        assert_eq!(ok[0].defs[0].error.as_ref().unwrap().kind, IpcErrorKind::MathUnknownChannel);
 
         let _ = std::fs::remove_dir_all(&root);
     }
@@ -2775,14 +2558,14 @@ version: 3
     ) {
         // Arrange
         let root = temp_root();
-        seed_session(&root, "s1", "ChanA", vec![1.0], vec![0]);
+        seed_session(&root, "s1", "ChanA", vec![1.0, 2.0], vec![0, 100_000]);
         let markdown = format!(
             "---\nid: {WB_ID}\nname: Test\nversion: 3\n---\n\n```math id=aaaaaaaa\nx = [NopeChannel]\n```\n"
         );
         write_workbook(&root, "test.idl1wb", &markdown);
 
         // Act
-        let out = eval_workbook_via(&SessionCache::new(), &root, WB_ID, Some("s1"), None).unwrap();
+        let out = eval_session(&SessionCache::new(), &root, "s1");
 
         // Assert
         let x = &out[0].defs[0];
@@ -2807,7 +2590,7 @@ version: 3
         write_workbook(&root, "test.idl1wb", &markdown);
 
         // Act
-        let out = eval_workbook_via(&SessionCache::new(), &root, WB_ID, None, None).unwrap();
+        let out = eval_no_session(&root);
 
         // Assert
         assert_eq!(out.len(), 2);
@@ -2830,7 +2613,7 @@ version: 3
         write_workbook(&root, "test.idl1wb", &markdown);
 
         // Act
-        let out = eval_workbook_via(&SessionCache::new(), &root, WB_ID, None, None).unwrap();
+        let out = eval_no_session(&root);
 
         // Assert
         let x = &out[0].defs[0];
@@ -2847,7 +2630,7 @@ version: 3
         write_workbook(&root, "test.idl1wb", &markdown);
 
         // Act
-        let err = eval_workbook_via(&SessionCache::new(), &root, WB_ID, None, None).unwrap_err();
+        let err = eval_workbook_v2_via(&SessionCache::new(), &root, WB_ID, &[]).unwrap_err();
 
         // Assert
         assert_eq!(err.kind, IpcErrorKind::WorkbookUnsupportedVersion);
@@ -2865,7 +2648,7 @@ version: 3
         write_workbook(&root, "test.idl1wb", &markdown);
 
         // Act
-        let out = eval_workbook_via(&SessionCache::new(), &root, WB_ID, Some("s1"), None).unwrap();
+        let out = eval_session(&SessionCache::new(), &root, "s1");
 
         // Assert
         let value = out[0].value.as_ref().unwrap();
@@ -2877,74 +2660,7 @@ version: 3
     }
 
     #[test]
-    fn eval_workbook_via_lap_context_main_lap_absent_from_session_json_laps_command_level_invalid_argument() {
-        // Arrange — this session's own session.json has an empty laps[], so
-        // any non-null `main_lap` is unresolvable.
-        let root = temp_root();
-        seed_session(&root, "s1", "ChanA", vec![1.0], vec![0]);
-        write_session_json(&root, "s1", &empty_session_json("s1"), None).unwrap();
-        let markdown = format!("---\nid: {WB_ID}\nname: Test\nversion: 3\n---\n\n```math id=aaaaaaaa\nx = 1\n```\n");
-        write_workbook(&root, "test.idl1wb", &markdown);
-        let lap_context = LapContext { main_lap: Some(1), overlay_laps: Vec::new() };
-
-        // Act
-        let err = eval_workbook_via(&SessionCache::new(), &root, WB_ID, Some("s1"), Some(&lap_context)).unwrap_err();
-
-        // Assert
-        assert_eq!(err.kind, IpcErrorKind::InvalidArgument);
-        assert_eq!(err.detail, Some(serde_json::json!({ "lap": 1 })));
-
-        let _ = std::fs::remove_dir_all(&root);
-    }
-
-    #[test]
-    fn eval_workbook_via_lap_context_overlay_laps_absent_from_session_json_laps_command_level_invalid_argument_names_the_first_offender(
-    ) {
-        // Arrange
-        let root = temp_root();
-        seed_session(&root, "s1", "ChanA", vec![1.0], vec![0]);
-        write_session_json(&root, "s1", &empty_session_json("s1"), None).unwrap();
-        let markdown = format!("---\nid: {WB_ID}\nname: Test\nversion: 3\n---\n\n```math id=aaaaaaaa\nx = 1\n```\n");
-        write_workbook(&root, "test.idl1wb", &markdown);
-        let lap_context = LapContext { main_lap: None, overlay_laps: vec![2, 3] };
-
-        // Act
-        let err = eval_workbook_via(&SessionCache::new(), &root, WB_ID, Some("s1"), Some(&lap_context)).unwrap_err();
-
-        // Assert
-        assert_eq!(err.kind, IpcErrorKind::InvalidArgument);
-        assert_eq!(err.detail, Some(serde_json::json!({ "lap": 2 })));
-
-        let _ = std::fs::remove_dir_all(&root);
-    }
-
-    #[test]
-    fn eval_workbook_via_lap_context_none_and_explicit_empty_selection_produce_the_same_cell_output() {
-        // Arrange — `lap_context: None` (absent at the wire) and an
-        // explicit `Some(LapContext { main_lap: None, overlay_laps: [] })`
-        // ("no selection" object) are distinct wire values (C3 §3.4) but
-        // must behave identically here: neither names a lap, so both reach
-        // `MathLapContext::empty()`-equivalent bounds.
-        let root = temp_root();
-        seed_session(&root, "s1", "ChanA", vec![1.0, 2.0, 3.0], vec![0, 100_000, 200_000]);
-        let markdown = format!(
-            "---\nid: {WB_ID}\nname: Test\nversion: 3\n---\n\n```math id=aaaaaaaa\nx = [ChanA]\n```\n"
-        );
-        write_workbook(&root, "test.idl1wb", &markdown);
-        let empty_selection = LapContext { main_lap: None, overlay_laps: Vec::new() };
-
-        // Act
-        let none_out = eval_workbook_via(&SessionCache::new(), &root, WB_ID, Some("s1"), None).unwrap();
-        let empty_out = eval_workbook_via(&SessionCache::new(), &root, WB_ID, Some("s1"), Some(&empty_selection)).unwrap();
-
-        // Assert
-        assert_eq!(serde_json::to_string(&none_out).unwrap(), serde_json::to_string(&empty_out).unwrap());
-
-        let _ = std::fs::remove_dir_all(&root);
-    }
-
-    #[test]
-    fn eval_workbook_via_first_cells_prose_before_renders_to_html_matching_render_prose_html_prose_after_none_on_non_last_cell(
+    fn eval_workbook_v2_via_first_cells_prose_before_renders_to_html_matching_render_prose_html_prose_after_none_on_non_last_cell(
     ) {
         // Arrange -- prose_before on the first (non-last) of two cells; C2
         // §2.4 gives prose_after only to the document's last cell.
@@ -2956,7 +2672,7 @@ version: 3
         write_workbook(&root, "test.idl1wb", &markdown);
 
         // Act
-        let out = eval_workbook_via(&SessionCache::new(), &root, WB_ID, None, None).unwrap();
+        let out = eval_no_session(&root);
 
         // Assert -- expected HTML is built by calling render_prose_html
         // directly, not hand-written a second time.
@@ -3169,15 +2885,15 @@ version: 3
         let _ = std::fs::remove_dir_all(&root);
     }
 
-    // ---- Step 4: fetch_host_channel ----
+    // ---- Step 4: fetch_host_channel_v2 ----
 
     #[test]
-    fn fetch_host_channel_via_budget_zero_invalid_argument() {
+    fn fetch_host_channel_v2_via_budget_over_65536_invalid_argument() {
         // Arrange
         let root = temp_root();
 
         // Act
-        let err = fetch_host_channel_via(&SessionCache::new(), &root, WB_ID, None, "x", 0).unwrap_err();
+        let err = fetch_host_channel_v2_via(&SessionCache::new(), &root, WB_ID, None, "x", 65537, None).unwrap_err();
 
         // Assert
         assert_eq!(err.kind, IpcErrorKind::InvalidArgument);
@@ -3186,26 +2902,12 @@ version: 3
     }
 
     #[test]
-    fn fetch_host_channel_via_budget_over_65536_invalid_argument() {
+    fn fetch_host_channel_v2_via_unknown_workbook_id_not_found() {
         // Arrange
         let root = temp_root();
 
         // Act
-        let err = fetch_host_channel_via(&SessionCache::new(), &root, WB_ID, None, "x", 65537).unwrap_err();
-
-        // Assert
-        assert_eq!(err.kind, IpcErrorKind::InvalidArgument);
-
-        let _ = std::fs::remove_dir_all(&root);
-    }
-
-    #[test]
-    fn fetch_host_channel_via_unknown_workbook_id_not_found() {
-        // Arrange
-        let root = temp_root();
-
-        // Act
-        let err = fetch_host_channel_via(&SessionCache::new(), &root, "nope", None, "x", 100).unwrap_err();
+        let err = fetch_host_channel_v2_via(&SessionCache::new(), &root, "nope", None, "x", 100, None).unwrap_err();
 
         // Assert
         assert_eq!(err.kind, IpcErrorKind::NotFound);
@@ -3214,7 +2916,7 @@ version: 3
     }
 
     #[test]
-    fn fetch_host_channel_via_unknown_def_name_on_a_real_workbook_not_found() {
+    fn fetch_host_channel_v2_via_unknown_def_name_on_a_real_workbook_not_found() {
         // Arrange
         let root = temp_root();
         seed_session(&root, "s1", "ChanA", vec![1.0, 2.0, 3.0], vec![0, 100_000, 200_000]);
@@ -3223,7 +2925,7 @@ version: 3
         write_workbook(&root, "test.idl1wb", &markdown);
 
         // Act
-        let err = fetch_host_channel_via(&SessionCache::new(), &root, WB_ID, Some("s1"), "nope", 100).unwrap_err();
+        let err = fetch_host_channel_v2_via(&SessionCache::new(), &root, WB_ID, Some(&session_window("s1")), "nope", 100, None).unwrap_err();
 
         // Assert
         assert_eq!(err.kind, IpcErrorKind::NotFound);
@@ -3232,18 +2934,18 @@ version: 3
     }
 
     #[test]
-    fn fetch_host_channel_via_a_definition_that_fails_to_evaluate_rejects_with_its_math_kind_not_a_partial_response()
+    fn fetch_host_channel_v2_via_a_definition_that_fails_to_evaluate_rejects_with_its_math_kind_not_a_partial_response()
     {
         // Arrange
         let root = temp_root();
-        seed_session(&root, "s1", "ChanA", vec![1.0], vec![0]);
+        seed_session(&root, "s1", "ChanA", vec![1.0, 2.0], vec![0, 100_000]);
         let markdown = format!(
             "---\nid: {WB_ID}\nname: Test\nversion: 3\n---\n\n```math id=aaaaaaaa\nx = [NopeChannel]\n```\n"
         );
         write_workbook(&root, "test.idl1wb", &markdown);
 
         // Act
-        let err = fetch_host_channel_via(&SessionCache::new(), &root, WB_ID, Some("s1"), "x", 100).unwrap_err();
+        let err = fetch_host_channel_v2_via(&SessionCache::new(), &root, WB_ID, Some(&session_window("s1")), "x", 100, None).unwrap_err();
 
         // Assert
         assert_eq!(err.kind, IpcErrorKind::MathUnknownChannel);
@@ -3252,7 +2954,7 @@ version: 3
     }
 
     #[test]
-    fn fetch_host_channel_via_a_successful_fetch_returns_idlh_bytes_matching_the_named_defs_channel() {
+    fn fetch_host_channel_v2_via_a_successful_fetch_returns_idlh_bytes_matching_the_named_defs_channel() {
         // Arrange
         let root = temp_root();
         seed_session(&root, "s1", "ChanA", vec![1.0, 2.0, 3.0], vec![0, 100_000, 200_000]);
@@ -3261,7 +2963,7 @@ version: 3
         write_workbook(&root, "test.idl1wb", &markdown);
 
         // Act
-        let bytes = fetch_host_channel_via(&SessionCache::new(), &root, WB_ID, Some("s1"), "x", 65536).unwrap();
+        let bytes = fetch_host_channel_v2_via(&SessionCache::new(), &root, WB_ID, Some(&session_window("s1")), "x", 65536, None).unwrap();
 
         // Assert — decode the header manually at the documented offsets.
         assert_eq!(&bytes[0..4], b"IDLH");
@@ -3428,21 +3130,20 @@ version: 3
     }
 
     #[test]
-    fn fetch_host_channel_v2_via_window_none_reproduces_fetch_host_channel_via_session_none() {
-        // Arrange — same fixture as `fetch_host_channel_via`'s own no-session
-        // test: `window: None` must reproduce `session_id: None`'s bytes
-        // exactly, byte for byte.
+    fn fetch_host_channel_v2_via_window_none_evaluates_against_no_session_and_returns_idlh_bytes() {
+        // Arrange — `window: None` evaluates with no session bound.
         let root = temp_root();
         let markdown =
             format!("---\nid: {WB_ID}\nname: Test\nversion: 3\n---\n\n```math id=aaaaaaaa\nx = 1 + 1\n```\n");
         write_workbook(&root, "test.idl1wb", &markdown);
 
         // Act
-        let via = fetch_host_channel_via(&SessionCache::new(), &root, WB_ID, None, "x", 100).unwrap();
-        let v2 = fetch_host_channel_v2_via(&SessionCache::new(), &root, WB_ID, None, "x", 100, None).unwrap();
+        let bytes = fetch_host_channel_v2_via(&SessionCache::new(), &root, WB_ID, None, "x", 100, None).unwrap();
 
-        // Assert
-        assert_eq!(via, v2);
+        // Assert — an `IDLH` payload of one sample, the value 2.0 last.
+        assert_eq!(&bytes[0..4], b"IDLH");
+        assert_eq!(u32::from_le_bytes(bytes[8..12].try_into().unwrap()), 1);
+        assert_eq!(f64::from_le_bytes(bytes[bytes.len() - 8..].try_into().unwrap()), 2.0);
 
         let _ = std::fs::remove_dir_all(&root);
     }

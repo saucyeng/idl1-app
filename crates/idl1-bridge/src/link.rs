@@ -74,7 +74,9 @@ impl LinkView {
 
 /// What the rest of the app asks of a link actor.
 pub(crate) enum Intent {
-    /// Unpair: disconnect and end the actor.
+    /// Unpair: disconnect and end the actor. Nothing sends it outside tests
+    /// since `link_forget` was removed (2026-11-13); the actor still ends on it.
+    #[cfg_attr(not(test), allow(dead_code))]
     Stop,
     /// Start (`true`) or stop recording, whatever the link is doing.
     Record { start: bool, done: oneshot::Sender<Result<(), IpcError>> },
@@ -492,13 +494,6 @@ pub fn link_watch(links: tauri::State<'_, Links>, on_view: tauri::ipc::Channel<L
 #[tauri::command]
 pub fn link_pair<R: tauri::Runtime>(app: tauri::AppHandle<R>, device_id: String) {
     ensure_actor(&app, &device_id);
-}
-
-/// C3 §3.8 `link_forget(device_id)` (added 2026-10-19): the app no longer
-/// wants this logger; its actor disconnects and stops.
-#[tauri::command]
-pub fn link_forget(links: tauri::State<'_, Links>, device_id: String) {
-    links.send(&device_id, Intent::Stop);
 }
 
 /// C3 §3.8 `link_kick()` (added 2026-10-19): every actor that isn't

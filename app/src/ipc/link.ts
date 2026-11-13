@@ -35,11 +35,6 @@ export async function linkPair(deviceId: string): Promise<void> {
   return invoke<void>("link_pair", { deviceId });
 }
 
-/** The app no longer wants this logger (`link_forget`). */
-export async function linkForget(deviceId: string): Promise<void> {
-  return invoke<void>("link_forget", { deviceId });
-}
-
 /** Every logger that isn't connected tries now (`link_kick`). */
 export async function linkKick(): Promise<void> {
   return invoke<void>("link_kick");

@@ -56,13 +56,6 @@ export async function indexStatus(): Promise<IndexStatus> {
   return invoke<IndexStatus>("index_status");
 }
 
-/** Asks the running index job to stop after the session in flight (C3
- *  §3.2). Every session already indexed stays indexed; the next run resumes
- *  from what is left. Resolves with whether a run was actually stopped. */
-export async function cancelIndexJob(): Promise<boolean> {
-  return invoke<boolean>("cancel_index_job");
-}
-
 /** Subscribes to `index_progress` (C3 §3.2). Resolves with an unlisten
  *  function; call it on unmount. */
 export async function onIndexProgress(

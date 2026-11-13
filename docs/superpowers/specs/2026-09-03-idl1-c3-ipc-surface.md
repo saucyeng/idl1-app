@@ -53,10 +53,10 @@
   window, def_name, budget)`; §3.6 gains `fetch_fft_v2(window, channel,
   params, averaging)`. All three take C1 §6.1's `Window` (`{ session_id,
   span, colour }`) in place of a `session_id`/`lap`/`lap_context` pair.
-  `eval_workbook`, `fetch_host_channel` and `fetch_fft` are deprecated as of
-  this revision and removed in the next (§5); `fetch_tile`,
-  `cursor_readout`, `fetch_raster`/`fetch_raster_meta` and the session-entity
-  CRUD commands are unchanged.
+  `eval_workbook`, `fetch_host_channel`, `fetch_fft`, `fetch_raster` and
+  `fetch_raster_meta` were deprecated then and removed on 2026-11-13 (§5);
+  `fetch_tile`, `cursor_readout` and the session-entity CRUD commands are
+  unchanged.
 - 2026-09-11: chart tier B lane (ruling R217, spec-first) — §3.5 gains
   `fetch_gps_trace_v2` (new `IDLG` v1 binary layout) and
   `fetch_gps_trace_meta`; §3.6 gains `fetch_raster_v2` and
@@ -821,7 +821,7 @@ Errors (`resolve_quarantine`): `not_found` (unknown `entry_id`),
 
 **`start_index_job() -> boolean`** /
 **`index_status() -> IndexStatus`** /
-**`cancel_index_job() -> boolean`** and the **`index_progress`** event.
+**`cancel_index_job() -> boolean`** (removed 2026-11-13: nothing called it) and the **`index_progress`** event.
 *Added post-sign (2026-09-11, rulings R207/R208 item 1).*
 
 ```ts
@@ -1219,6 +1219,7 @@ unreachable with the landed shared sanitiser, which falls back to
 defence against a future sanitiser change, per Task 10's implementer note.
 
 **`eval_workbook(id: string, session_id: string | null, lap_context: LapContext | null)`**
+*Removed 2026-11-13; use `eval_workbook_v2`.*
 *`session_id` added post-sign (2026-09-04, lead ruling R41).* `eval_cells`
 requires a channel lookup and a lap context; the original signature supplied
 neither, and C2 deliberately has no front-matter session binding — the active
@@ -1398,9 +1399,7 @@ Per-cell evaluation errors keep their existing home in
 > Blanking every selected window's charts because one range is degenerate
 > contradicts decision 61 and section D's in-place error presentation.
 
-**`eval_workbook(id, session_id, lap_context)` is deprecated** as of this
-revision (§5) and is removed in the next. It stays registered and behaves
-exactly as before. No TypeScript caller uses it after this revision.
+**`eval_workbook(id, session_id, lap_context)` was removed on 2026-11-13.**
 
 **`save_workbook(id: string, markdown: string, based_on_hash: string | null)`**
 *`based_on_hash` added post-sign (2026-09-04, lead ruling R44).* C4 §4 steps
@@ -1476,6 +1475,7 @@ code log spurious failures. The absence of `not_found` in this command's
 error list is therefore deliberate, not an omission.
 
 **`fetch_host_channel(workbook_id: string, session_id: string | null, def_name: string, budget: number)`**
+*Removed 2026-11-13; use `fetch_host_channel_v2`.*
 *Added post-sign (2026-09-05, lead ruling R59, wave-2 write lane, ruling
 R52 Q6).* Satisfies wave-2 need L6-N3; closes the "host-channel byte path"
 open item below, which R45 deferred to wave 2.
@@ -1574,9 +1574,8 @@ result is evaluated lap-aware — the two disagree whenever a lap is
 selected (ruling R117 item 7). `fetch_host_channel_v2` uses the same
 per-window resolution `eval_workbook_v2` uses, so the two always agree.
 
-**`fetch_host_channel(workbook_id, session_id, def_name, budget)` is
-deprecated** as of this revision (§5) and is removed in the next. It stays
-registered and behaves exactly as before, missing lap context and all.
+**`fetch_host_channel(workbook_id, session_id, def_name, budget)` was
+removed on 2026-11-13.**
 
 **Host-channel byte path — open item, owner L5 (added post-sign,
 2026-09-04, lead ruling R21).** `CellDefResult.value` above and C2 §5.1's
@@ -2008,6 +2007,7 @@ Errors: `not_found` (unknown `session_id` or `channel`), `io`, `internal`.
 ### 3.6 Rasters (L3)
 
 **`fetch_raster(session_id: string, channel: string, kind: "spectrogram" | "histogram2d", width: number, height: number, params: SpectrogramParams | Histogram2dParams)`**
+*Removed 2026-11-13; use `fetch_raster_v2`.*
 `width`/`height`: `u16`, output pixel dimensions. `params` is one of the
 two typed shapes below, matching `kind` — *replaces the interim
 `Record<string, number>` bag, added post-sign 2026-09-04, lead ruling R25,
@@ -2042,6 +2042,7 @@ Return: raw bytes via `tauri::ipc::Response`.
 Errors: `not_found`, `invalid_argument` (bad `width`/`height`/`kind`/`params`), `io`, `internal`.
 
 **`fetch_raster_meta(session_id: string, channel: string, kind: "spectrogram" | "histogram2d", width: number, height: number, params: SpectrogramParams | Histogram2dParams)`**
+*Removed 2026-11-13; use `fetch_raster_meta_v2`.*
 *Added post-sign (2026-09-04, lead ruling R25, wave-1 L3).* Same arguments
 as `fetch_raster` above — a sibling JSON command, not a variant of the
 binary path — so the chart can draw axes and a legend without decoding
@@ -2118,9 +2119,8 @@ budget): a request above 2048 × 1024 renders at the clamp. A window wider
 than the screen is a coarser picture, not an error. A `width` or `height`
 of `0` is still `invalid_argument`.
 
-**`fetch_raster(session_id, …)` and `fetch_raster_meta(session_id, …)` are
-deprecated** as of this revision (§5) and are removed in the next. They stay
-registered and behave exactly as before.
+**`fetch_raster(session_id, …)` and `fetch_raster_meta(session_id, …)` were
+removed on 2026-11-13.**
 
 Errors: as `fetch_raster`/`fetch_raster_meta` above, plus
 `invalid_argument` for an unresolvable window span and `resource_exhausted`
@@ -2148,6 +2148,7 @@ rows), row 0 first (top), each row left-to-right.
 bytes → pixel region `[16, 8208)`, total raster length `16 + 8192 = 8208` bytes.
 
 **`fetch_fft(session_id: string, channel: string, lap: number | null, params: SpectrogramParams, averaging: "none" | "mean" | "max" | "median")`**
+*Removed 2026-11-13; use `fetch_fft_v2`.*
 *Added post-sign (2026-09-05, lead ruling R59, wave-2 write lane, ruling
 R52 Q7).* Satisfies wave-2 need L6-N5.
 
@@ -2226,9 +2227,8 @@ Errors: `not_found`, `invalid_argument` (bad `params`, an unresolvable
 window span, a window that fails the `"none"`-averaging segment check, or a
 window too short/degenerate to derive a sample rate), `io`, `internal`.
 
-**`fetch_fft(session_id, channel, lap, params, averaging)` is deprecated**
-as of this revision (§5) and is removed in the next. It stays registered
-and behaves exactly as before.
+**`fetch_fft(session_id, channel, lap, params, averaging)` was removed on
+2026-11-13.**
 
 **`fetch_histogram(window: Window, channel: string, params: HistogramParams)`**
 *Added post-sign (2026-09-11, chart-port lane, ruling R215 item 2.)* One
@@ -2425,7 +2425,7 @@ commands borrow its link through the managed connection map as before.
   pending_record, error}`; `phase`: `seeking | connecting | ready | wifi |
   handed_off | returning | forgotten`), then each change.
 - **`link_pair(device_id)`** — the app wants this logger; its actor starts.
-- **`link_forget(device_id)`** — stops wanting it; the actor disconnects and
+- **`link_forget(device_id)`** (removed 2026-11-13: nothing called it) — stops wanting it; the actor disconnects and
   sends `forgotten`.
 - **`link_kick()`** — every actor not connected tries now.
 - **`link_record(device_id, start: boolean)`** — start/stop recording in any
@@ -3092,6 +3092,7 @@ Errors: `invalid_argument` (a relative path, or one the app cannot
 create), `io`, `internal`.
 
 **`list_profiles()` / `save_profile(profile: BikeProfile)` / `delete_profile(profile_id: string)`**
+*`save_profile` and `delete_profile` were removed on 2026-11-13: nothing called them.*
 Satisfies wave-2 need L7-11.
 
 ```ts
@@ -3199,7 +3200,7 @@ the bike and its log. Types are core's
 - **`bike_for_name(name: string)`** → `Bike`: the bike with that name
   (trimmed, case ignored), created with a slug id when there is none. The
   logger's bike name goes through this.
-- **`save_bike(bike: Bike)`** → `Bike`: merged with the copy on disk, per
+- **`save_bike(bike: Bike)`** (removed 2026-11-13: nothing called it) → `Bike`: merged with the copy on disk, per
   part.
 - **`get_bike_log(bike_id: string)`** → `{ entries: { entry, current,
   in_conflict, heads, deleted }[], running_sheet, skipped: string[] }`. The

@@ -12,7 +12,7 @@ export interface DecodedRaster {
 const MAGIC = "IDLR";
 const FORMAT_RGBA8 = 0;
 
-/** Decodes a `fetch_raster` response per C3 §3.6's fixed 16-byte header.
+/** Decodes a `fetch_raster_v2` response per C3 §3.6's fixed 16-byte header.
  *  @throws Error on bad magic, an unsupported `format` value, or a buffer
  *  too short for `width * height * 4` pixel bytes. */
 export function decodeRaster(buf: ArrayBuffer): DecodedRaster {
@@ -40,7 +40,7 @@ export function decodeRaster(buf: ArrayBuffer): DecodedRaster {
 /** Raster kind (C3 §3.6). */
 export type RasterKind = "spectrogram" | "histogram2d";
 
-/** `fetch_raster`/`fetch_raster_meta`'s `params` when `kind === "spectrogram"`
+/** `fetch_raster_v2`/`fetch_raster_meta_v2`'s `params` when `kind === "spectrogram"`
  *  (C3 §3.6, closes open question 6.4 per ledger R25). */
 export interface SpectrogramParams {
   /** `nperseg`, samples per FFT segment. */
@@ -58,7 +58,7 @@ export interface SpectrogramParams {
   scaling: "density" | "spectrum" | "raw_magnitude" | "magnitude";
 }
 
-/** `fetch_raster`/`fetch_raster_meta`'s `params` when `kind === "histogram2d"`
+/** `fetch_raster_v2`/`fetch_raster_meta_v2`'s `params` when `kind === "histogram2d"`
  *  (C3 §3.6, amended by ruling R42). `x_bins`/`y_bins` must equal the
  *  command's own `width`/`height` in wave 1 — the fields are kept rather
  *  than removed because bins < pixels is the intended future extension. */
@@ -69,20 +69,7 @@ export interface Histogram2dParams {
   y_bins: number;
 }
 
-/** Fetches and decodes one raster. Settle-bound only, same rule as `fetchTile` (C3 §4). */
-export async function fetchRaster(
-  sessionId: string,
-  channel: string,
-  kind: RasterKind,
-  width: number,
-  height: number,
-  params: SpectrogramParams | Histogram2dParams
-): Promise<DecodedRaster> {
-  const buf = await invoke<ArrayBuffer>("fetch_raster", { sessionId, channel, kind, width, height, params });
-  return decodeRaster(buf);
-}
-
-/** C3 §3.6's `fetch_raster_meta` return: axis domains and colour-scale
+/** C3 §3.6's `fetch_raster_meta_v2` return: axis domains and colour-scale
  *  bounds without decoding pixel bytes. `scale.vmin`/`scale.vmax` are
  *  resolution-independent (ruling R38) — the same channel at two chart
  *  sizes reports the same legend. */
@@ -108,19 +95,6 @@ export interface RasterMeta {
    *  than by a one-time command so a legend can only ever describe the
    *  encoder that produced the pixels beside it. */
   ramp_stops: [number, number, number, number][];
-}
-
-/** Fetches one raster's axis domains and colour scale, without its pixel
- *  bytes. Same arguments as `fetchRaster`; settle-bound only (C3 §4). */
-export async function fetchRasterMeta(
-  sessionId: string,
-  channel: string,
-  kind: RasterKind,
-  width: number,
-  height: number,
-  params: SpectrogramParams | Histogram2dParams
-): Promise<RasterMeta> {
-  return invoke<RasterMeta>("fetch_raster_meta", { sessionId, channel, kind, width, height, params });
 }
 
 /** The largest raster a `_v2` request renders (C2 §5.3's spectrogram budget;
@@ -163,12 +137,12 @@ export async function fetchRasterMetaV2(
   return invoke<RasterMeta>("fetch_raster_meta_v2", { window, channel, kind, width, height, params });
 }
 
-/** `fetchFft`'s `averaging` argument (C3 §3.6, ruling R63 (3), R76). `"none"`
+/** `fetchFftV2`'s `averaging` argument (C3 §3.6, ruling R63 (3), R76). `"none"`
  *  requires the request's segmentation to produce exactly one segment —
  *  more is `invalid_argument` with `detail: { segments: n }`. */
 export type FftAveraging = "none" | "mean" | "median" | "max";
 
-/** Decoded `fetch_fft` response (C3 §3.6): one channel's FFT spectrum. Bin
+/** Decoded `fetch_fft_v2` response (C3 §3.6): one channel's FFT spectrum. Bin
  *  `k`'s frequency is `k * sampleRateHz / (2 * magnitudes.length)`, derived
  *  from `sampleRateHz` rather than crossing as a second array. */
 export interface DecodedFft {
@@ -181,7 +155,7 @@ const FFT_MAGIC = "IDLF";
 const FFT_SUPPORTED_VERSION = 1;
 const FFT_HEADER_LEN = 16;
 
-/** Decodes a `fetch_fft` response per C3 §3.6's `IDLF` v1 layout: a fixed
+/** Decodes a `fetch_fft_v2` response per C3 §3.6's `IDLF` v1 layout: a fixed
  *  16-byte little-endian header (`magic`, `version`, `reserved`,
  *  `bin_count`, `sample_rate_hz`), then `bin_count` `f32` magnitudes.
  *
@@ -214,7 +188,7 @@ export function decodeFft(buf: ArrayBuffer): DecodedFft {
 }
 
 /** Fetches and decodes one channel's FFT spectrum over `window` (C3 §3.6,
- *  ruling R117 — replaces `fetchFft`'s `sessionId` + `lap`). `window`'s
+ *  ruling R117). `window`'s
  *  span resolves the same way `evalWorkbookV2` resolves one: `{ kind:
  *  "session" }` takes the whole channel, `{ kind: "lap", lap_number: n }`
  *  selects that lap's recording-time window from `session.json`'s
@@ -223,7 +197,7 @@ export function decodeFft(buf: ArrayBuffer): DecodedFft {
  *  stands: slice to the window first, then apply R76's guards
  *  (`"none"`-averaging exactly-one-segment; a window too short/degenerate
  *  to derive a sample rate) to the window's own samples. Settle-bound
- *  only, same rule as `fetchRaster`. */
+ *  only, same rule as `fetchRasterV2`. */
 export async function fetchFftV2(
   window: Window,
   channel: string,

@@ -1,4 +1,4 @@
-//! Binary encoder for the `fetch_fft` IPC endpoint (C3 §3.6): a 16-byte
+//! Binary encoder for the `fetch_fft_v2` IPC endpoint (C3 §3.6): a 16-byte
 //! header, then a flat `f32` magnitude array — the FFT-specific sibling of
 //! `raster.rs`'s `IDLR` encoder (same "fixed header + raw array" idiom, a
 //! different magic/field set since a spectrum is one 1-D array, not a
