@@ -1,5 +1,3 @@
-import { useSyncExternalStore } from "react";
-
 /**
  * Which of the wide-layout studio's two slot columns — the maths graph and
  * the properties/code panes — should be docked at all (ruling R208 item 2,
@@ -72,10 +70,4 @@ export function subscribeStudioColumns(handler: () => void): () => void {
   return () => {
     listeners.delete(handler);
   };
-}
-
-/** React hook: whether the studio should dock `id`'s column, re-rendering
- *  whenever that changes. */
-export function useStudioColumnVisible(id: StudioColumnId): boolean {
-  return useSyncExternalStore(subscribeStudioColumns, () => getStudioColumnVisible(id));
 }

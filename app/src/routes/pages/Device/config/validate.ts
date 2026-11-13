@@ -137,16 +137,6 @@ export const GPS_ADVANCED_FIELDS: readonly GpsAdvancedField[] = [
   { key: "position_accuracy_mask_m", label: "Accuracy mask", detail: "Drop fixes estimated worse than this", unit: "m", min: 1, max: 100, step: 1, defaultValue: 100, tighter: "lower" },
 ];
 
-/** NMEA sentences the app's parser is written against (SPEC §8: "NMEA
- *  sentences (GGA+RMC default)" plus the GSA/GSV/GLL/VTG the u-blox module
- *  can also emit). Used only in `validateConfig`'s message text — the
- *  schema does not constrain `gps.nmea_sentences` to this set. */
-export const NMEA_SENTENCES: readonly string[] = ["GGA", "RMC", "GSA", "GSV", "GLL", "VTG"];
-
-/** Valid `digital.channels[].kind` values (SPEC §8). Only `"marker"` ships
- *  in Spec 1 firmware's app picker; `"level"` and `"pwm"` are reserved. */
-export const DIGITAL_KINDS: readonly DigitalChannel["kind"][] = ["marker", "level", "pwm"];
-
 /** The 6-byte BLE public address format SPEC §8 states for
  *  `heart_rate_monitor.device_address`: colon-separated uppercase hex,
  *  e.g. `"AA:BB:CC:DD:EE:FF"`. */

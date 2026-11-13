@@ -63,8 +63,6 @@ export interface RootCollapsedReport extends RootObserverReportBase {
   bodyClassName: string;
 }
 
-export type RootObserverReport = RootEmptiedReport | NavigationReport | RootCollapsedReport;
-
 /**
  * Whether a `MutationObserver` batch on `#root`/`document.body` should be
  * treated as "the root emptied": the watched element's current child count

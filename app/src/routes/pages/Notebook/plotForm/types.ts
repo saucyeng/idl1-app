@@ -82,14 +82,6 @@ export interface YAxisProps {
   exponent?: number;
 }
 
-/** The four y-axis scale types `YAxisProps.type`'s union type admits, as a
- *  runtime array — same rationale as {@link MARK_NAMES}: a UI control
- *  enumerates this rather than hardcoding a second copy. Note that a
- *  *picker* does not offer these verbatim: `"pow"` is meaningless without
- *  an exponent, so the Properties pane offers the two named signed scales
- *  instead (`model/propertiesForm.ts`'s `Y_SCALE_CHOICES`). */
-export const Y_AXIS_TYPES: readonly NonNullable<YAxisProps["type"]>[] = ["linear", "log", "sqrt", "pow"];
-
 /** The mark names `SpectrumMarkProps.mark`'s union type admits, as a
  *  runtime array (C2 §5.3's `spectrum_mark_name` — a strict subset of
  *  {@link MARK_NAMES}, no `rectY`/`ruleY`), same rationale. */
@@ -381,12 +373,6 @@ export interface ColorProps {
   domain?: [number, number];
 }
 
-/** The mark names {@link MapMarkProps.mark}'s union admits, as a runtime
- *  array (C2 §5.3's `trace_mark`, ruling R217 item 1). `line` draws the
- *  racing line; `dot` draws the fixes themselves, which is what shows where a
- *  receiver dropped out. */
-export const MAP_MARK_NAMES: readonly MapMarkProps["mark"][] = ["line", "dot"];
-
 /** One trace in a map cell (C2 §5.3's `trace_mark`, ruling R217 item 1).
  *
  *  A map cell is the one kind whose `marks` array may hold more than one
@@ -433,10 +419,6 @@ export interface MapPlotProps {
   /** See {@link TimePlotProps.title}. */
   title?: string;
 }
-
-/** The mark names {@link LapMarkProps.mark}'s union admits, as a runtime
- *  array (C2 §5.3's `lap_mark`, ruling R217 item 3). */
-export const LAP_MARK_NAMES: readonly LapMarkProps["mark"][] = ["barY", "dot", "lineY"];
 
 /** One lap-progression cell's single mark (C2 §5.3's `lap_mark`, ruling R217
  *  item 3). Singular by type, like every other non-time kind's.
