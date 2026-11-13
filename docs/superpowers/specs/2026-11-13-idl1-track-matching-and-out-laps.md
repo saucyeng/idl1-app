@@ -121,10 +121,7 @@ End to end, on a read-only copy of Isaac's library:
   each difference explained in the before/after table
 - `workbook data --track` and the index agree on lap 1's start for Broome-Tioga S4
 
-## Open questions (Isaac)
+## Decided (Isaac, 2026-11-13)
 
-1. **Exclusive or overlapping visits?** The design above gives each moment to at most one track,
-   which keeps session-wide lap numbers simple. Strava matches each segment independently, so one
-   stretch of a ride can count for several overlapping segments (a whole trail and its lower half).
-   Do you want that for point-to-point tracks? It means a lap can belong to two tracks at once,
-   and the session lap list needs a rule for that.
+- Overlapping tracks: each moment goes to at most one track, the one that fits closer over the
+  stretch. A moment can belong to no track. Strava-style double counting is not wanted.
