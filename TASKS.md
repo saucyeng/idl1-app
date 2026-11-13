@@ -1044,6 +1044,10 @@ building what it needs along the way.
       point-to-point out-lap track (finish gate on the Walden S/F line) and a Walden visit holding only lap 2
 - [ ] Missed S/F crossing makes a double lap (11/7 14:25 lap 6, 273 s at normal speed); the anomalous-lap
       label above should catch it
+- [ ] The Data page's session list keeps the lap counts it loaded at launch: after the launch re-index
+      finished (nightly 147, 2026-11-13) it still showed 0 laps for the Walden motos until a reload
+- [x] Tracks matched by their gates, out-lap/in-lap gates, Out laps marked and left out of fastest
+      (2026-11-13, nightly 147); Walden '26 carries the pit-exit out-lap gate, Walden Out Lap '26 deleted
 
 ## idl-rs as a standalone engine (Isaac, 2026-11-12)
 
