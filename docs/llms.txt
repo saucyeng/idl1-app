@@ -18,7 +18,7 @@ The three ideas worth knowing before reading anything else:
 
 ## Writing workbooks
 
-- [Workbook reference](WORKBOOK-REFERENCE.md): every math builtin with its
+- [Workbook reference](../rust/docs/WORKBOOK-REFERENCE.md): every math builtin with its
   signature, unit rule, value shape and an example; the definition
   annotations; the JavaScript host variables; and the chart grammar the
   Properties panel reads and writes. Generated in part from the engine, so it
@@ -45,7 +45,7 @@ contract wins.
 
 - [IDL0 specification](IDL0_SPEC.md): the on-device log format and the
   device/host wire protocol. Parts 1–2 and §3–10 are current.
-- [Signal pipeline](signal_pipeline.md): what happens to a sample between the
+- [Signal pipeline](../rust/docs/signal_pipeline.md): what happens to a sample between the
   sensor and a chart.
 
 ## Working on the code

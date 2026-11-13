@@ -15,6 +15,9 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
   fixtures are now written by `cargo run -p idl1-bridge --bin wire-golden -- --out <dir>`.
   The ride library (catalog, blob store, import and index jobs, bike log, sync model) is now its
   own crate, `idl-library`, beside the engine, so the engine itself no longer needs SQLite.
+  The workbook and CLI references now live in the idl-rs repo (`rust/docs/`), beside two
+  runnable examples (`cargo run -p idl-rs --example parse_to_parquet`, `--example math_channel`);
+  the app still bundles the same two references.
 
 ### Added
 

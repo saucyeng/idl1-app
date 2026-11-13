@@ -65,8 +65,8 @@ jobs:
         # R222 item 1), so a builtin added or renamed without regenerating it
         # would ship a reference that lies. Regenerate and fail on any diff.
         run: |
-          cargo run --manifest-path rust/Cargo.toml -p idl-rs-cli --             docs workbook --out docs/WORKBOOK-REFERENCE.md --src docs/reference-src
-          git diff --exit-code -- docs/WORKBOOK-REFERENCE.md
+          cargo run --manifest-path rust/Cargo.toml -p idl-rs-cli -- docs workbook --out rust/docs/WORKBOOK-REFERENCE.md --src rust/docs/reference-src
+          git -C rust diff --exit-code -- docs/WORKBOOK-REFERENCE.md
 
       - name: Function catalog is up to date
         # `functionCatalog.json` is generated the same way `cliTable.json` is
@@ -82,9 +82,10 @@ jobs:
         # CLI reference and for app/src/shell/cliTable.json; a row added
         # without regenerating both would let the UI and CLI disagree.
         run: |
-          cargo run --manifest-path rust/Cargo.toml -p idl-rs-cli -- docs cli --out docs/CLI-REFERENCE.md
+          cargo run --manifest-path rust/Cargo.toml -p idl-rs-cli -- docs cli --out rust/docs/CLI-REFERENCE.md
           cargo run --manifest-path rust/Cargo.toml -p idl-rs-cli -- docs cli --json --out app/src/shell/cliTable.json > /dev/null
-          git diff --exit-code -- docs/CLI-REFERENCE.md app/src/shell/cliTable.json
+          git -C rust diff --exit-code -- docs/CLI-REFERENCE.md
+          git diff --exit-code -- app/src/shell/cliTable.json
 
       - name: Wire golden fixtures are up to date
         # The goldens are generated from the engine's own encoders (ruling

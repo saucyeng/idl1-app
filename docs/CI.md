@@ -8,11 +8,11 @@ Runs on every push to `main` and on manual dispatch. Two jobs, both
 - `rust` — checks out the `rust` submodule, installs Tauri v2's Linux build
   deps, then runs three separate `cargo test` steps (idl-rs + idl-library + idl-rs-cli from
   `rust/`; idl1-bridge and idl1-transport from the repo root), each `--test-threads=4`. Never `--workspace`.
-  It then regenerates `docs/WORKBOOK-REFERENCE.md` with
+  It then regenerates `rust/docs/WORKBOOK-REFERENCE.md` with
   `idl-rs docs workbook`, `app/src/routes/pages/Notebook/model/functionCatalog.json`
-  with `idl-rs docs workbook --json` and `docs/CLI-REFERENCE.md` +
+  with `idl-rs docs workbook --json` and `rust/docs/CLI-REFERENCE.md` +
   `app/src/shell/cliTable.json` with `idl-rs docs cli`, runs
-  `git diff --exit-code` over each, does the same for `app/src/ipc/golden`
+  `git diff --exit-code` over each (`git -C rust diff` for the two files inside the `rust` submodule), does the same for `app/src/ipc/golden`
   with the `wire-golden` binary (`idl1-bridge`), and finishes with `cargo check -p app`.
 - `app` — `npm ci`, `tsc --noEmit`, an import-cycle scan (`madge --circular`
   over `app/src`; `.madgerc` skips type-only imports, which are erased at
@@ -25,13 +25,13 @@ Concurrency: one run per ref, newer pushes cancel in-flight ones.
 
 ## The generated workbook reference
 
-`docs/WORKBOOK-REFERENCE.md` is generated in part: its math-builtin sections
+`rust/docs/WORKBOOK-REFERENCE.md` (in the idl-rs repository) is generated in part: its math-builtin sections
 and its retired-name table come from `idl-rs`'s own catalogs
 (`core/src/math/catalog.rs` and `core/src/math/alias.rs`), and the prose
-sections after them are the files in `docs/reference-src/`, appended in
+sections after them are the files in `rust/docs/reference-src/`, appended in
 filename order. Regenerate it with:
 
-    cargo run --manifest-path rust/Cargo.toml -p idl-rs-cli --       docs workbook --out docs/WORKBOOK-REFERENCE.md --src docs/reference-src
+    cargo run --manifest-path rust/Cargo.toml -p idl-rs-cli -- docs workbook --out rust/docs/WORKBOOK-REFERENCE.md --src rust/docs/reference-src
 
 CI runs exactly that and then `git diff --exit-code`, so a lane that adds,
 renames or re-documents a builtin and forgets to regenerate fails the build
@@ -42,7 +42,7 @@ Linux CI run produce identical bytes.
 
 The same file is bundled into the app as a Tauri resource
 (`bundle.resources` in `app/src-tauri/tauri.conf.json`) and read at runtime
-by `read_workbook_reference` for the Docs panel. `docs/CLI-REFERENCE.md` is
+by `read_workbook_reference` for the Docs panel. `rust/docs/CLI-REFERENCE.md` is
 bundled the same way, read by `read_cli_reference` for `help.cliReference`
 (ruling R244/R249).
 
