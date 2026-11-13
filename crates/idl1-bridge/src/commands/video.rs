@@ -5,6 +5,7 @@
 //!
 //! Playback bytes are not a command: see [`crate::video::video_protocol`].
 
+use idl_rs::time::now_ms;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicBool;
 
@@ -14,11 +15,6 @@ use idl_rs::video::VideoLink;
 use crate::commands::device::Progress;
 use crate::error::IpcError;
 use crate::state::DataDir;
-
-/// UTC milliseconds now.
-fn now_ms() -> i64 {
-    std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_millis() as i64).unwrap_or(0)
-}
 
 /// One file's answer from `match_videos` (C3 §3.12).
 #[derive(Debug, Clone, PartialEq, serde::Serialize)]

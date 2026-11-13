@@ -22,6 +22,7 @@
 //!   real, current file name is looked up from the manifest and this
 //!   fallback never triggers).
 
+use idl_rs::time::now_ms;
 use std::collections::BTreeSet;
 use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
@@ -228,12 +229,6 @@ fn constant_time_eq(a: &str, b: &str) -> bool {
         diff |= x ^ y;
     }
     diff == 0
-}
-
-/// Milliseconds since the Unix epoch, read once per call — this server
-/// owns no clock beyond this (this task's brief, "Key logic").
-fn now_ms() -> i64 {
-    std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_millis() as i64).unwrap_or(0)
 }
 
 async fn handle_pair(State(state): State<ServerState>, body: axum::body::Bytes) -> Response {

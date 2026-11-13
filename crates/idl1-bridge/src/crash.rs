@@ -15,7 +15,6 @@ use std::path::{Path, PathBuf};
 use std::cell::Cell;
 use std::sync::atomic::{AtomicI64, Ordering};
 use std::sync::OnceLock;
-use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::error::{IpcError, IpcErrorKind};
 
@@ -67,10 +66,6 @@ pub fn dir_for(app_data_dir: &Path) -> PathBuf {
     app_data_dir.join("crash")
 }
 
-fn now_ms() -> u64 {
-    SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_millis() as u64).unwrap_or(0)
-}
-
 /// The text of a panic report.
 pub fn format_panic_report(version: &str, at_ms: u64, thread: &str, message: &str, location: &str, backtrace: &str) -> String {
     format!(
@@ -112,7 +107,7 @@ pub fn install(dir: PathBuf, version: String) {
     open_breadcrumb(&dir);
     let previous = std::panic::take_hook();
     std::panic::set_hook(Box::new(move |info| {
-        let at_ms = now_ms();
+        let at_ms = idl_rs::time::now_ms() as u64;
         let thread = std::thread::current().name().unwrap_or("unnamed").to_string();
         let location = info.location().map(|l| format!("{}:{}", l.file(), l.line())).unwrap_or_default();
         let backtrace = std::backtrace::Backtrace::force_capture().to_string();
@@ -356,7 +351,7 @@ fn marker_path(dir: &Path, pid: u32) -> PathBuf {
 /// The new marker is written to a temporary file and renamed into place, so a
 /// kill mid-write cannot leave a half-written marker.
 pub fn begin_run(dir: &Path, version: &str) {
-    let now = now_ms();
+    let now = idl_rs::time::now_ms() as u64;
     let own_pid = std::process::id();
     if let Ok(entries) = std::fs::read_dir(dir) {
         for entry in entries.flatten() {

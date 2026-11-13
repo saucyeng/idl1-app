@@ -4,6 +4,7 @@
 //! sheet, which version is current, which notes are in conflict) is worked
 //! out here, never in JavaScript.
 
+use idl_rs::time::now_ms;
 use std::path::Path;
 
 use idl_library::bikelog::{self, Bike, BikeLogError, BikeLogErrorKind, Entry, EntryVersion, RunningSheet, SessionBikeLog};
@@ -21,11 +22,6 @@ impl From<BikeLogError> for IpcError {
         };
         IpcError::new(kind, e.message)
     }
-}
-
-/// UTC milliseconds now.
-fn now_ms() -> i64 {
-    std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_millis() as i64).unwrap_or(0)
 }
 
 /// One log entry as the screens need it: the stored entry plus what core

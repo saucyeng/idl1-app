@@ -15,6 +15,7 @@
 //! code, and never fans a pairing secret out to every unpaired peer on the
 //! LAN.
 
+use idl_rs::time::now_ms;
 use std::collections::{HashMap, HashSet};
 use std::net::SocketAddr;
 
@@ -169,12 +170,6 @@ impl From<PairingOffer> for PairingOfferDto {
     fn from(o: PairingOffer) -> Self {
         Self { code: o.code, expires_at_ms: o.expires_at_ms }
     }
-}
-
-/// Milliseconds since the Unix epoch — this module owns no clock beyond
-/// this (mirrors `idl1_transport::sync::server`'s own `now_ms`).
-fn now_ms() -> i64 {
-    std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_millis() as i64).unwrap_or(0)
 }
 
 /// The widened `peer_appeared` event's payload (C3 §3.9, L11 Task 14, lead

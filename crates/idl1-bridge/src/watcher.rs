@@ -10,6 +10,7 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
+use idl_rs::store::atomic::sha256_hex;
 use notify::{RecursiveMode, Watcher};
 
 const EXPECTED_HASH_TTL: Duration = Duration::from_secs(5);
@@ -51,15 +52,6 @@ impl ExpectedHashSet {
         }
         expected == actual_sha256_hex
     }
-}
-
-/// Hex-encoded SHA-256 of `bytes`, used to compare a just-written file's
-/// content against a pre-registered expected hash (C4 §4 step 3).
-fn sha256_hex(bytes: &[u8]) -> String {
-    use sha2::{Digest, Sha256};
-    let mut hasher = Sha256::new();
-    hasher.update(bytes);
-    hex::encode(hasher.finalize())
 }
 
 /// Watches `workbooks_dir` (non-recursive — C4 §2's `workbooks/` is flat) for

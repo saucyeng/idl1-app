@@ -32,6 +32,7 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex as StdMutex};
 use std::time::Duration;
 
+use idl_rs::store::atomic::sha256_hex;
 use idl1_transport::ble_control::ControlCommand;
 use idl1_transport::ble_transport::BleTransport;
 use idl1_transport::wifi_transport::WifiTransport;
@@ -300,14 +301,6 @@ pub struct DownloadResult {
 /// (`ble_transport.rs::sequencing`) uses against its stub.
 const WIFI_ON_POLL_ATTEMPTS: u32 = 10;
 const WIFI_ON_POLL_INTERVAL: Duration = Duration::from_millis(200);
-
-/// Hashes `bytes` as lowercase hex SHA-256 (C4 §3's blob-identity hash).
-fn sha256_hex(bytes: &[u8]) -> String {
-    use sha2::{Digest, Sha256};
-    let mut hasher = Sha256::new();
-    hasher.update(bytes);
-    hex::encode(hasher.finalize())
-}
 
 /// Sends `ControlCommand::WifiOn` and polls `read_status` until the device
 /// reports `wifi_on == Some(true)` (SPEC §14a's composed BLE→WiFi hand-off

@@ -134,10 +134,6 @@ impl Default for LinkTiming {
     }
 }
 
-fn now_ms() -> u64 {
-    std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_millis() as u64).unwrap_or(0)
-}
-
 /// What the actor does when Record arrives while the link is lent: ask the
 /// WiFi session to end with Record (`POST /record`) instead of WiFi off.
 pub(crate) type OnRecordWhileLent<'a> = &'a (dyn Fn() + Send + Sync);
@@ -235,7 +231,7 @@ pub(crate) async fn run_link<B, F, Fut>(
         };
         if let Ok(status) = link.lock().await.read_status().await {
             view.status = Some(status.into());
-            view.status_at_ms = Some(now_ms());
+            view.status_at_ms = Some(idl_rs::time::now_ms() as u64);
         }
         view.phase = LinkPhase::Ready;
         view.error = None;
@@ -265,7 +261,7 @@ pub(crate) async fn run_link<B, F, Fut>(
                     Some(status) => {
                         silent_at = Instant::now() + timing.status_silence;
                         view.status = Some(status.into());
-                        view.status_at_ms = Some(now_ms());
+                        view.status_at_ms = Some(idl_rs::time::now_ms() as u64);
                         publish(view.clone());
                     }
                     None => {
