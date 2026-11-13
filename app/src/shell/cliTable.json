@@ -1614,7 +1614,7 @@
     },
     {
       "args": [],
-      "core_fn": "commands::markdown::render_command_reference",
+      "core_fn": "idl_rs_cli::markdown::render_command_reference",
       "data_dir": false,
       "flags": [
         {

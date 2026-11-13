@@ -11,6 +11,12 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
   commands (the app has called the `_v2` forms for a while) and five commands nothing called
   (`save_profile`, `delete_profile`, `link_forget`, `cancel_index_job`, `save_bike`) were removed.
   Nothing the app does changes.
+- **The deprecated CLI verbs are gone [docs] (2026-11-13).** `idl-rs import`, `idl-rs sessions`,
+  `idl-rs verify`, `idl-rs rescan` and the `idl-rs table` group (`eval`, `list`, `check`) no longer
+  exist. Use `idl-rs session import`, `idl-rs session list`, `idl-rs catalog verify`,
+  `idl-rs track detect`, `idl-rs workbook eval`, `idl-rs workbook cells` and
+  `idl-rs workbook check`. The generated CLI reference is unchanged, because those verbs were never
+  rows in the command table.
 - **A nightly is published only after CI passes [no-docs] (2026-11-13).** CI's Rust tests now run as
   three parallel jobs (engine, bridge, transport) and finish before Release's builds do, so
   Release waits for that commit's CI run before publishing, at no cost in time. Nightly 133 had
