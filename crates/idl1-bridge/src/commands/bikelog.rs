@@ -1,12 +1,12 @@
 //! Bike log and setup sheet commands (C3 §3.11, bike-log spec
 //! `2026-10-16-idl1-bike-log-DRAFT.md`): thin glue over
-//! `idl_rs::store::bikelog`. Every number the screens show (the running
+//! `idl_library::bikelog`. Every number the screens show (the running
 //! sheet, which version is current, which notes are in conflict) is worked
 //! out here, never in JavaScript.
 
 use std::path::Path;
 
-use idl_rs::store::bikelog::{self, Bike, BikeLogError, BikeLogErrorKind, Entry, EntryVersion, RunningSheet, SessionBikeLog};
+use idl_library::bikelog::{self, Bike, BikeLogError, BikeLogErrorKind, Entry, EntryVersion, RunningSheet, SessionBikeLog};
 
 use crate::error::{IpcError, IpcErrorKind};
 use crate::state::DataDir;
@@ -117,7 +117,7 @@ pub fn save_bike_log_entry(entry: Entry, data_dir: tauri::State<'_, DataDir>) ->
 /// session's start and end come from the catalog.
 #[tauri::command(async)]
 pub fn attach_bike_log(session_id: String, bike_id: String, data_dir: tauri::State<'_, DataDir>) -> Result<SessionBikeLog, IpcError> {
-    let summary = idl_rs::store::catalog_read::list_sessions(&data_dir.0)?
+    let summary = idl_library::catalog_read::list_sessions(&data_dir.0)?
         .into_iter()
         .find(|s| s.session_id == session_id)
         .ok_or_else(|| IpcError::new(IpcErrorKind::NotFound, format!("session {session_id} not found")))?;
@@ -130,7 +130,7 @@ pub fn attach_bike_log(session_id: String, bike_id: String, data_dir: tauri::Sta
 #[cfg(test)]
 mod tests {
     use super::*;
-    use idl_rs::store::bikelog::EntryKind;
+    use idl_library::bikelog::EntryKind;
 
     fn version(id: &str, parents: &[&str], updated_at_ms: i64, text: &str) -> EntryVersion {
         EntryVersion {

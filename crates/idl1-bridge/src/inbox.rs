@@ -224,9 +224,9 @@ fn import_one(data_dir: &Path, file: &Path) -> Result<(), IpcError> {
     let bytes = std::fs::read(file)
         .map_err(|e| IpcError::new(IpcErrorKind::Io, format!("reading {}: {e}", file.display())))?;
     if logger_file {
-        idl_rs::store::import::import_idl0(data_dir, &bytes)
+        idl_library::import::import_idl0(data_dir, &bytes)
     } else {
-        idl_rs::store::import::import_file(data_dir, &ext, &bytes)
+        idl_library::import::import_file(data_dir, &ext, &bytes)
     }
     .map_err(IpcError::from)?;
 
@@ -243,7 +243,7 @@ fn import_one(data_dir: &Path, file: &Path) -> Result<(), IpcError> {
 /// `failed/` for the user to link by hand.
 fn link_one_video(data_dir: &Path, file: &Path) -> Result<(), IpcError> {
     use idl_rs::video::{OverlapSpans, VideoError};
-    let matched = idl_rs::store::video::match_videos(data_dir, &[file.to_path_buf()])
+    let matched = idl_library::video::match_videos(data_dir, &[file.to_path_buf()])
         .pop()
         .ok_or_else(|| IpcError::new(IpcErrorKind::Internal, "match_videos answered no file"))?;
     if let Some(e) = matched.error {
@@ -253,7 +253,7 @@ fn link_one_video(data_dir: &Path, file: &Path) -> Result<(), IpcError> {
         [session_id] => {
             let now_ms = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_millis() as i64).unwrap_or(0);
             let never = std::sync::atomic::AtomicBool::new(false);
-            idl_rs::store::video::link_video(data_dir, session_id, file, now_ms, &never, &mut |_| {})?;
+            idl_library::video::link_video(data_dir, session_id, file, now_ms, &never, &mut |_| {})?;
         }
         [] => {
             let (video_start_utc_ms, video_end_utc_ms) = matched.video_span_utc_ms.unwrap_or((0, 0));
@@ -367,7 +367,7 @@ mod tests {
         // in `blobs/`), and the counter moved.
         assert!(!dropped.exists());
         assert_eq!(state.status().imported_since_launch, 1);
-        assert_eq!(idl_rs::store::catalog_read::rebuild_catalog_report(&root).unwrap().sessions_indexed, 1);
+        assert_eq!(idl_library::catalog_read::rebuild_catalog_report(&root).unwrap().sessions_indexed, 1);
 
         let _ = std::fs::remove_dir_all(&root);
     }

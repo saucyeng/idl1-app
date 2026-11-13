@@ -1228,7 +1228,7 @@ fn save_workbook_via(
 
 /// After writing `target` (a `.idl1wb` file, from `create_workbook_via` or
 /// `save_workbook_via`), upserts its `workbooks` catalog row
-/// (`idl_rs::store::catalog::upsert_workbook`, ruling R87) — mirrors
+/// (`idl_library::catalog::upsert_workbook`, ruling R87) — mirrors
 /// `commands/catalog.rs`'s `save_track_via`, which does the same
 /// after-write upsert for `tracks`. Never touches a `catalog.sqlite` that
 /// doesn't already exist (C4 §5's incremental-indexing rule: these
@@ -1243,7 +1243,7 @@ fn index_workbook_after_write(data_dir: &Path, target: &Path, workbook_id: &str,
     }
     let file_name = target.file_stem().and_then(|s| s.to_str()).unwrap_or("").to_string();
     let result: Result<(), String> = std::fs::metadata(target).map_err(|e| e.to_string()).and_then(|meta| {
-        let row = idl_rs::store::catalog_read::WorkbookSummary {
+        let row = idl_library::catalog_read::WorkbookSummary {
             workbook_id: workbook_id.to_string(),
             file_name,
             name: name.to_string(),
@@ -1255,9 +1255,9 @@ fn index_workbook_after_write(data_dir: &Path, target: &Path, workbook_id: &str,
                 .unwrap_or(0),
             size_bytes: meta.len(),
         };
-        idl_rs::store::catalog::open_catalog(&catalog_path)
+        idl_library::catalog::open_catalog(&catalog_path)
             .map_err(|e| e.to_string())
-            .and_then(|conn| idl_rs::store::catalog::upsert_workbook(&conn, &row).map_err(|e| e.to_string()))
+            .and_then(|conn| idl_library::catalog::upsert_workbook(&conn, &row).map_err(|e| e.to_string()))
     });
     if let Err(e) = result {
         eprintln!("workbook catalog index failed (non-fatal, the workbook save already succeeded): {e}");
@@ -2045,13 +2045,13 @@ mod tests {
         // right after the write, so `list_workbooks` shows it with no
         // rebuild.
         let root = temp_root();
-        idl_rs::store::catalog::rebuild_catalog(&root).unwrap();
+        idl_library::catalog::rebuild_catalog(&root).unwrap();
 
         // Act
         let handle = create_workbook_via(&root, "Fork tuning").unwrap();
 
         // Assert
-        let rows = idl_rs::store::catalog_read::list_workbooks(&root).unwrap();
+        let rows = idl_library::catalog_read::list_workbooks(&root).unwrap();
         assert_eq!(rows.len(), 1);
         assert_eq!(rows[0].workbook_id, handle.id);
         assert_eq!(rows[0].name, "Fork tuning");
@@ -2080,7 +2080,7 @@ mod tests {
     fn save_workbook_via_upserts_a_workbooks_row_when_a_catalog_already_exists() {
         // Arrange
         let root = temp_root();
-        idl_rs::store::catalog::rebuild_catalog(&root).unwrap();
+        idl_library::catalog::rebuild_catalog(&root).unwrap();
         let hashes = ExpectedHashSet::new();
         let markdown = two_cell_markdown();
 
@@ -2088,7 +2088,7 @@ mod tests {
         save_workbook_via(&root, &hashes, WB_ID, &markdown, None).unwrap();
 
         // Assert
-        let rows = idl_rs::store::catalog_read::list_workbooks(&root).unwrap();
+        let rows = idl_library::catalog_read::list_workbooks(&root).unwrap();
         assert_eq!(rows.len(), 1);
         assert_eq!(rows[0].workbook_id, WB_ID);
         assert_eq!(rows[0].name, "Fork tuning");
@@ -2108,7 +2108,7 @@ mod tests {
         // `idl-rs`'s own `store::catalog::tests::upsert_workbook_a_rename_
         // keeps_the_id`).
         let root = temp_root();
-        idl_rs::store::catalog::rebuild_catalog(&root).unwrap();
+        idl_library::catalog::rebuild_catalog(&root).unwrap();
         let hashes = ExpectedHashSet::new();
         let first = two_cell_markdown();
         let first_save = save_workbook_via(&root, &hashes, WB_ID, &first, None).unwrap();
@@ -2118,7 +2118,7 @@ mod tests {
         save_workbook_via(&root, &hashes, WB_ID, &renamed, Some(&first_save.hash)).unwrap();
 
         // Assert
-        let rows = idl_rs::store::catalog_read::list_workbooks(&root).unwrap();
+        let rows = idl_library::catalog_read::list_workbooks(&root).unwrap();
         assert_eq!(rows.len(), 1);
         assert_eq!(rows[0].workbook_id, WB_ID);
         assert_eq!(rows[0].name, "Fork tuning v2");

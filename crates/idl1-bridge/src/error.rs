@@ -80,7 +80,7 @@ pub enum IpcErrorKind {
     MathNotImplemented,
     /// `MathEvalErrorKind::Runtime` — workbook: `eval_workbook` (per definition).
     MathRuntime,
-    /// `idl_rs::store::import::ImportErrorKind::ParseInvalidMagicBytes`
+    /// `idl_library::import::ImportErrorKind::ParseInvalidMagicBytes`
     /// (mirrors `ParseError::InvalidMagicBytes`) — Import: `import_file`
     /// (`.idl0` source, C3 §2 `parse_invalid_magic_bytes`).
     ParseInvalidMagicBytes,
@@ -226,7 +226,7 @@ impl From<idl1_transport::TransportError> for IpcError {
     }
 }
 
-/// C3 §3.2 (Catalog). `idl_rs::store::catalog::CatalogError` folds three
+/// C3 §3.2 (Catalog). `idl_library::catalog::CatalogError` folds three
 /// ways (ruling R46): `NotFound` (the requested entity does not exist) maps
 /// to `IpcErrorKind::NotFound`; `Sql` (a genuine SQLite failure — e.g. a
 /// corrupt `catalog.sqlite`) maps to `IpcErrorKind::Internal`, pointing the
@@ -234,9 +234,9 @@ impl From<idl1_transport::TransportError> for IpcError {
 /// missing; `Io` maps to `IpcErrorKind::Io`. C3 §2's catalog rows are
 /// `not_found`/`io`/`internal` only — no new `IpcErrorKind` variant is
 /// added here.
-impl From<idl_rs::store::catalog::CatalogError> for IpcError {
-    fn from(e: idl_rs::store::catalog::CatalogError) -> Self {
-        use idl_rs::store::catalog::CatalogErrorKind;
+impl From<idl_library::catalog::CatalogError> for IpcError {
+    fn from(e: idl_library::catalog::CatalogError) -> Self {
+        use idl_library::catalog::CatalogErrorKind;
         let kind = match e.kind {
             CatalogErrorKind::NotFound => IpcErrorKind::NotFound,
             CatalogErrorKind::Sql => IpcErrorKind::Internal,
@@ -246,7 +246,7 @@ impl From<idl_rs::store::catalog::CatalogError> for IpcError {
     }
 }
 
-/// C3 §3.2 `rescan_tracks`. `idl_rs::store::lap_index::LapIndexError` — `Io`
+/// C3 §3.2 `rescan_tracks`. `idl_library::lap_index::LapIndexError` — `Io`
 /// (a filesystem failure reading `tracks/` or `data.parquet`) maps to
 /// `IpcErrorKind::Io`; `Track` (a track artifact malformed badly enough to
 /// stop the whole library load, currently unreached — see the variant's own
@@ -254,9 +254,9 @@ impl From<idl_rs::store::catalog::CatalogError> for IpcError {
 /// `CatalogErrorKind::Sql` uses for "a genuine failure, not the caller's
 /// fault, not merely missing data" (ruling R46 precedent) — not a dedicated
 /// C3 §2 row, since no code path constructs it today.
-impl From<idl_rs::store::lap_index::LapIndexError> for IpcError {
-    fn from(e: idl_rs::store::lap_index::LapIndexError) -> Self {
-        use idl_rs::store::lap_index::LapIndexErrorKind;
+impl From<idl_library::lap_index::LapIndexError> for IpcError {
+    fn from(e: idl_library::lap_index::LapIndexError) -> Self {
+        use idl_library::lap_index::LapIndexErrorKind;
         let kind = match e.kind {
             LapIndexErrorKind::Io => IpcErrorKind::Io,
             LapIndexErrorKind::Track => IpcErrorKind::Internal,
@@ -266,15 +266,15 @@ impl From<idl_rs::store::lap_index::LapIndexError> for IpcError {
 }
 
 /// C3 §3.2 `index_status`/`start_index_job`.
-/// `idl_rs::store::index_job::IndexJobError` — `Io` (reading
+/// `idl_library::index_job::IndexJobError` — `Io` (reading
 /// `<data>/sessions/` or `<data>/tracks/`) maps to `IpcErrorKind::Io`;
 /// `Catalog` (`catalog.sqlite` will not open) folds into `Internal`, the
 /// same bucket `CatalogErrorKind::Sql` uses (ruling R46 precedent). Note
 /// that a *per-session* indexing failure never reaches here: it lands in
 /// `IndexJobReport::failed` and the run continues (ruling R208.1 item 2).
-impl From<idl_rs::store::index_job::IndexJobError> for IpcError {
-    fn from(e: idl_rs::store::index_job::IndexJobError) -> Self {
-        use idl_rs::store::index_job::IndexJobErrorKind;
+impl From<idl_library::index_job::IndexJobError> for IpcError {
+    fn from(e: idl_library::index_job::IndexJobError) -> Self {
+        use idl_library::index_job::IndexJobErrorKind;
         let kind = match e.kind {
             IndexJobErrorKind::Io => IpcErrorKind::Io,
             IndexJobErrorKind::Catalog => IpcErrorKind::Internal,
@@ -332,7 +332,7 @@ impl From<&idl_rs::workbook::v3::WorkbookError> for IpcError {
     }
 }
 
-/// C3 §3.3 (Import). `idl_rs::store::import::ImportError` — the boundary
+/// C3 §3.3 (Import). `idl_library::import::ImportError` — the boundary
 /// type both `import_idl0` and `import_file` return (L2-R13); it already
 /// wraps `ParseError`/`ImporterError` internally, so this is the one `From`
 /// impl this task adds (**not** `From<idl_rs::session::ParseError>`, which
@@ -340,9 +340,9 @@ impl From<&idl_rs::workbook::v3::WorkbookError> for IpcError {
 /// the cross-cutting `InvalidArgument` (no dedicated C3 §2 row — L2's own
 /// brief-task6 anticipated this mapping); every other variant gets its own
 /// `IpcErrorKind`, matching C3 §2's `import_*`/`parse_*` rows one for one.
-impl From<idl_rs::store::import::ImportError> for IpcError {
-    fn from(e: idl_rs::store::import::ImportError) -> Self {
-        use idl_rs::store::import::ImportErrorKind;
+impl From<idl_library::import::ImportError> for IpcError {
+    fn from(e: idl_library::import::ImportError) -> Self {
+        use idl_library::import::ImportErrorKind;
         let kind = match e.kind {
             ImportErrorKind::Io => IpcErrorKind::Io,
             ImportErrorKind::ParseInvalidMagicBytes => IpcErrorKind::ParseInvalidMagicBytes,
@@ -363,7 +363,7 @@ impl From<idl_rs::store::import::ImportError> for IpcError {
 }
 
 /// C3 §3.2 (`list_quarantine`/`resolve_quarantine`), C3 §3.10
-/// (`verify_data_dir`). `idl_rs::store::quarantine::QuarantineError` folds
+/// (`verify_data_dir`). `idl_library::quarantine::QuarantineError` folds
 /// four ways (ruling R86): `NotFound` (unknown `entry_id`, or nowhere to
 /// restore) maps to `IpcErrorKind::NotFound`; `Occupied` (a `"restore"`
 /// destination already exists) maps to `IpcErrorKind::InvalidArgument` —
@@ -372,9 +372,9 @@ impl From<idl_rs::store::import::ImportError> for IpcError {
 /// encoded/decoded) folds into the cross-cutting `Internal`, the same
 /// bucket `CatalogErrorKind::Sql` uses (R46 precedent) — no new
 /// `IpcErrorKind` variant is added here.
-impl From<idl_rs::store::quarantine::QuarantineError> for IpcError {
-    fn from(e: idl_rs::store::quarantine::QuarantineError) -> Self {
-        use idl_rs::store::quarantine::QuarantineErrorKind;
+impl From<idl_library::quarantine::QuarantineError> for IpcError {
+    fn from(e: idl_library::quarantine::QuarantineError) -> Self {
+        use idl_library::quarantine::QuarantineErrorKind;
         let kind = match e.kind {
             QuarantineErrorKind::NotFound => IpcErrorKind::NotFound,
             QuarantineErrorKind::Occupied => IpcErrorKind::InvalidArgument,
@@ -389,9 +389,9 @@ impl From<idl_rs::store::quarantine::QuarantineError> for IpcError {
 /// error folds two ways — `NotFound` (the folder is gone, or is not a
 /// directory) and `Io` (the directory listing failed). `internal` is never
 /// produced by core here.
-impl From<idl_rs::store::scan::ScanError> for IpcError {
-    fn from(e: idl_rs::store::scan::ScanError) -> Self {
-        use idl_rs::store::scan::ScanErrorKind;
+impl From<idl_library::scan::ScanError> for IpcError {
+    fn from(e: idl_library::scan::ScanError) -> Self {
+        use idl_library::scan::ScanErrorKind;
         let kind = match e.kind {
             ScanErrorKind::NotFound => IpcErrorKind::NotFound,
             ScanErrorKind::Io => IpcErrorKind::Io,
@@ -524,8 +524,8 @@ mod tests {
         // Arrange — R46: a genuine SQLite failure (corrupt catalog.sqlite)
         // must surface as `internal`, pointing at `rebuild_catalog`, not
         // `not_found`, which would wrongly suggest the data is missing.
-        let ce = idl_rs::store::catalog::CatalogError {
-            kind: idl_rs::store::catalog::CatalogErrorKind::Sql,
+        let ce = idl_library::catalog::CatalogError {
+            kind: idl_library::catalog::CatalogErrorKind::Sql,
             message: "file is not a database".to_string(),
         };
 
@@ -539,8 +539,8 @@ mod tests {
     #[test]
     fn catalog_error_not_found_kind_converts_to_not_found() {
         // Arrange
-        let ce = idl_rs::store::catalog::CatalogError {
-            kind: idl_rs::store::catalog::CatalogErrorKind::NotFound,
+        let ce = idl_library::catalog::CatalogError {
+            kind: idl_library::catalog::CatalogErrorKind::NotFound,
             message: "session nope not found".to_string(),
         };
 
@@ -573,8 +573,8 @@ mod tests {
     #[test]
     fn lap_index_error_io_kind_converts_to_io() {
         // Arrange
-        let e = idl_rs::store::lap_index::LapIndexError {
-            kind: idl_rs::store::lap_index::LapIndexErrorKind::Io,
+        let e = idl_library::lap_index::LapIndexError {
+            kind: idl_library::lap_index::LapIndexErrorKind::Io,
             message: "reading data.parquet: not found".to_string(),
         };
 
@@ -590,8 +590,8 @@ mod tests {
     fn lap_index_error_track_kind_folds_into_internal() {
         // Arrange — currently unreached in practice (see the variant's own
         // doc comment); the conversion still must be total.
-        let e = idl_rs::store::lap_index::LapIndexError {
-            kind: idl_rs::store::lap_index::LapIndexErrorKind::Track,
+        let e = idl_library::lap_index::LapIndexError {
+            kind: idl_library::lap_index::LapIndexErrorKind::Track,
             message: "malformed track artifact".to_string(),
         };
 
@@ -605,8 +605,8 @@ mod tests {
     #[test]
     fn quarantine_error_not_found_kind_converts_to_not_found() {
         // Arrange
-        let e = idl_rs::store::quarantine::QuarantineError {
-            kind: idl_rs::store::quarantine::QuarantineErrorKind::NotFound,
+        let e = idl_library::quarantine::QuarantineError {
+            kind: idl_library::quarantine::QuarantineErrorKind::NotFound,
             message: "no quarantine entry".to_string(),
         };
 
@@ -621,8 +621,8 @@ mod tests {
     fn quarantine_error_occupied_kind_converts_to_invalid_argument_not_io() {
         // Arrange — the caller can free the path and retry; this is not an
         // I/O failure (ruling R86).
-        let e = idl_rs::store::quarantine::QuarantineError {
-            kind: idl_rs::store::quarantine::QuarantineErrorKind::Occupied,
+        let e = idl_library::quarantine::QuarantineError {
+            kind: idl_library::quarantine::QuarantineErrorKind::Occupied,
             message: "destination already exists".to_string(),
         };
 
@@ -636,8 +636,8 @@ mod tests {
     #[test]
     fn quarantine_error_encode_kind_folds_into_internal() {
         // Arrange — same bucket CatalogErrorKind::Sql uses (R46 precedent).
-        let e = idl_rs::store::quarantine::QuarantineError {
-            kind: idl_rs::store::quarantine::QuarantineErrorKind::Encode,
+        let e = idl_library::quarantine::QuarantineError {
+            kind: idl_library::quarantine::QuarantineErrorKind::Encode,
             message: "bad sidecar json".to_string(),
         };
 
@@ -687,7 +687,7 @@ mod tests {
         assert_eq!(ie.message, "timeout");
     }
 
-    /// `From<idl_rs::store::import::ImportError> for IpcError` conversion
+    /// `From<idl_library::import::ImportError> for IpcError` conversion
     /// tests — nested under `import` (rather than flat in `tests`) so the
     /// crate's own `import::` test filter (Task 9's compute rule) picks
     /// these up alongside `commands::import`'s tests.
@@ -696,16 +696,16 @@ mod tests {
 
         /// Builds a core `ImportError` for `kind` — `ImportError`'s fields
         /// are `pub` (its own constructor is crate-private), so a test
-        /// outside `idl_rs::store::import` still builds one directly via
+        /// outside `idl_library::import` still builds one directly via
         /// struct literal.
-        fn import_error(kind: idl_rs::store::import::ImportErrorKind, message: &str) -> idl_rs::store::import::ImportError {
-            idl_rs::store::import::ImportError { kind, message: message.to_string() }
+        fn import_error(kind: idl_library::import::ImportErrorKind, message: &str) -> idl_library::import::ImportError {
+            idl_library::import::ImportError { kind, message: message.to_string() }
         }
 
         #[test]
         fn import_error_io_kind_converts_to_io() {
             // Arrange
-            let e = import_error(idl_rs::store::import::ImportErrorKind::Io, "disk full");
+            let e = import_error(idl_library::import::ImportErrorKind::Io, "disk full");
 
             // Act
             let ie: IpcError = e.into();
@@ -718,7 +718,7 @@ mod tests {
         #[test]
         fn import_error_parse_invalid_magic_bytes_converts_to_parse_invalid_magic_bytes() {
             // Arrange
-            let e = import_error(idl_rs::store::import::ImportErrorKind::ParseInvalidMagicBytes, "not IDL0");
+            let e = import_error(idl_library::import::ImportErrorKind::ParseInvalidMagicBytes, "not IDL0");
 
             // Act
             let ie: IpcError = e.into();
@@ -730,7 +730,7 @@ mod tests {
         #[test]
         fn import_error_parse_unsupported_schema_version_converts() {
             // Arrange
-            let e = import_error(idl_rs::store::import::ImportErrorKind::ParseUnsupportedSchemaVersion, "schema 9");
+            let e = import_error(idl_library::import::ImportErrorKind::ParseUnsupportedSchemaVersion, "schema 9");
 
             // Act
             let ie: IpcError = e.into();
@@ -742,7 +742,7 @@ mod tests {
         #[test]
         fn import_error_parse_truncated_record_converts() {
             // Arrange
-            let e = import_error(idl_rs::store::import::ImportErrorKind::ParseTruncatedRecord, "too short");
+            let e = import_error(idl_library::import::ImportErrorKind::ParseTruncatedRecord, "too short");
 
             // Act
             let ie: IpcError = e.into();
@@ -755,7 +755,7 @@ mod tests {
         fn import_error_collision_converts_to_import_collision_not_conflict() {
             // Arrange — R60: kept distinct from the cross-cutting `Conflict`
             // kind (same precedent R44 set for `Conflict` itself).
-            let e = import_error(idl_rs::store::import::ImportErrorKind::Collision, "blob mismatch");
+            let e = import_error(idl_library::import::ImportErrorKind::Collision, "blob mismatch");
 
             // Act
             let ie: IpcError = e.into();
@@ -767,7 +767,7 @@ mod tests {
         #[test]
         fn import_error_import_fit_malformed_converts() {
             // Arrange
-            let e = import_error(idl_rs::store::import::ImportErrorKind::ImportFitMalformed, "bad crc");
+            let e = import_error(idl_library::import::ImportErrorKind::ImportFitMalformed, "bad crc");
 
             // Act
             let ie: IpcError = e.into();
@@ -779,7 +779,7 @@ mod tests {
         #[test]
         fn import_error_import_gpx_malformed_xml_converts() {
             // Arrange
-            let e = import_error(idl_rs::store::import::ImportErrorKind::ImportGpxMalformedXml, "bad xml");
+            let e = import_error(idl_library::import::ImportErrorKind::ImportGpxMalformedXml, "bad xml");
 
             // Act
             let ie: IpcError = e.into();
@@ -791,7 +791,7 @@ mod tests {
         #[test]
         fn import_error_import_gpx_no_trackpoints_converts() {
             // Arrange
-            let e = import_error(idl_rs::store::import::ImportErrorKind::ImportGpxNoTrackpoints, "no trkpt");
+            let e = import_error(idl_library::import::ImportErrorKind::ImportGpxNoTrackpoints, "no trkpt");
 
             // Act
             let ie: IpcError = e.into();
@@ -803,7 +803,7 @@ mod tests {
         #[test]
         fn import_error_import_gpx_missing_lat_lon_converts() {
             // Arrange
-            let e = import_error(idl_rs::store::import::ImportErrorKind::ImportGpxMissingLatLon, "missing lat");
+            let e = import_error(idl_library::import::ImportErrorKind::ImportGpxMissingLatLon, "missing lat");
 
             // Act
             let ie: IpcError = e.into();
@@ -815,7 +815,7 @@ mod tests {
         #[test]
         fn import_error_import_gpx_unparseable_lat_lon_converts() {
             // Arrange
-            let e = import_error(idl_rs::store::import::ImportErrorKind::ImportGpxUnparseableLatLon, "not a number");
+            let e = import_error(idl_library::import::ImportErrorKind::ImportGpxUnparseableLatLon, "not a number");
 
             // Act
             let ie: IpcError = e.into();
@@ -827,7 +827,7 @@ mod tests {
         #[test]
         fn import_error_import_csv_malformed_converts() {
             // Arrange
-            let e = import_error(idl_rs::store::import::ImportErrorKind::ImportCsvMalformed, "bad header");
+            let e = import_error(idl_library::import::ImportErrorKind::ImportCsvMalformed, "bad header");
 
             // Act
             let ie: IpcError = e.into();
@@ -839,7 +839,7 @@ mod tests {
         #[test]
         fn import_error_import_not_utf8_converts() {
             // Arrange
-            let e = import_error(idl_rs::store::import::ImportErrorKind::ImportNotUtf8, "invalid utf8");
+            let e = import_error(idl_library::import::ImportErrorKind::ImportNotUtf8, "invalid utf8");
 
             // Act
             let ie: IpcError = e.into();
@@ -851,7 +851,7 @@ mod tests {
         #[test]
         fn import_error_unknown_extension_folds_into_invalid_argument() {
             // Arrange — no dedicated C3 §2 row for this core-internal condition.
-            let e = import_error(idl_rs::store::import::ImportErrorKind::UnknownExtension, "no importer for .xyz");
+            let e = import_error(idl_library::import::ImportErrorKind::UnknownExtension, "no importer for .xyz");
 
             // Act
             let ie: IpcError = e.into();

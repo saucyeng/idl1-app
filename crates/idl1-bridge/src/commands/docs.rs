@@ -90,8 +90,8 @@ fn read_bundled_doc(path: &Path, label: &str) -> Result<String, IpcError> {
 /// Never fatal — the library opens perfectly well without the file, and a
 /// read-only or full disk must not stop the app starting.
 pub fn ensure_agents_md_at_launch(data_root: &Path, app_version: &str) {
-    match idl_rs::store::agents_md::ensure_agents_md(data_root, app_version) {
-        Ok(idl_rs::store::agents_md::AgentsMdOutcome::Unchanged) => {}
+    match idl_library::agents_md::ensure_agents_md(data_root, app_version) {
+        Ok(idl_library::agents_md::AgentsMdOutcome::Unchanged) => {}
         Ok(outcome) => eprintln!("AGENTS.md: {outcome:?}"),
         Err(e) => eprintln!("AGENTS.md unavailable: {e}"),
     }
@@ -343,7 +343,7 @@ pub fn open_agent_terminal<R: tauri::Runtime>(
         .path()
         .app_config_dir()
         .map_err(|e| IpcError::new(IpcErrorKind::Io, format!("resolving the config directory: {e}")))?;
-    let settings = idl_rs::store::settings::load(&config_dir.join("settings.json"));
+    let settings = idl_library::settings::load(&config_dir.join("settings.json"));
     let context = context.unwrap_or_default();
     let invocation = plan_agent_terminal(&data_dir.0, &settings.agent_command, &context)?;
 

@@ -6,7 +6,7 @@ Runs on every push to `main` and on manual dispatch. Two jobs, both
 `ubuntu-latest`, 45 min timeout each:
 
 - `rust` — checks out the `rust` submodule, installs Tauri v2's Linux build
-  deps, then runs three separate `cargo test` steps (idl-rs + idl-rs-cli from
+  deps, then runs three separate `cargo test` steps (idl-rs + idl-library + idl-rs-cli from
   `rust/`; idl1-bridge and idl1-transport from the repo root), each `--test-threads=4`. Never `--workspace`.
   It then regenerates `docs/WORKBOOK-REFERENCE.md` with
   `idl-rs docs workbook`, `app/src/routes/pages/Notebook/model/functionCatalog.json`
@@ -93,7 +93,7 @@ every test binary and is much slower than a plain `cargo test` run. Two
 
 - `rust-coverage` — same checkout/prereqs/toolchain/cache as `ci.yml`'s
   `rust` job, then installs `cargo-tarpaulin` via `taiki-e/install-action`
-  and runs it twice: in `rust/` over `idl-rs` and `idl-rs-cli`, and from the
+  and runs it twice: in `rust/` over `idl-rs`, `idl-library` and `idl-rs-cli`, and from the
   repo root over `idl1-bridge` and `idl1-transport`, each `--test-threads=4`,
   writing Cobertura XML and an HTML report to `rust/target/coverage` and
   `rust/target/coverage-app`. Uploads both directories as

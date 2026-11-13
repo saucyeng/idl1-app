@@ -15,7 +15,7 @@ use crate::error::{IpcError, IpcErrorKind};
 use crate::state::DataDir;
 
 /// C3 §3.3 `ScanEntry` — one file `scan_folder` found. Mirrors
-/// `idl_rs::store::scan::ScanEntry` with `path` as a wire string.
+/// `idl_library::scan::ScanEntry` with `path` as a wire string.
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct ScanEntry {
     /// Absolute path, the value the app hands back to `import_file`.
@@ -37,8 +37,8 @@ pub struct ScanEntry {
     pub session_start_utc_ms: Option<i64>,
 }
 
-impl From<idl_rs::store::scan::ScanEntry> for ScanEntry {
-    fn from(e: idl_rs::store::scan::ScanEntry) -> Self {
+impl From<idl_library::scan::ScanEntry> for ScanEntry {
+    fn from(e: idl_library::scan::ScanEntry) -> Self {
         Self {
             path: e.path.to_string_lossy().into_owned(),
             file_name: e.file_name,
@@ -63,8 +63,8 @@ pub struct StaleSession {
     pub current_version: String,
 }
 
-impl From<idl_rs::store::catalog_read::StaleSession> for StaleSession {
-    fn from(s: idl_rs::store::catalog_read::StaleSession) -> Self {
+impl From<idl_library::catalog_read::StaleSession> for StaleSession {
+    fn from(s: idl_library::catalog_read::StaleSession) -> Self {
         Self {
             session_id: s.session_id,
             importer_id: s.importer_id,
@@ -117,11 +117,11 @@ fn set_session_start_via(data_dir: &Path, session_id: &str, timestamp_utc_ms: i6
 
     let catalog_path = data_dir.join("catalog.sqlite");
     if catalog_path.is_file() {
-        let conn = idl_rs::store::catalog::open_catalog(&catalog_path)?;
-        idl_rs::store::catalog::update_session_timestamp(&conn, session_id, timestamp_utc_ms)?;
+        let conn = idl_library::catalog::open_catalog(&catalog_path)?;
+        idl_library::catalog::update_session_timestamp(&conn, session_id, timestamp_utc_ms)?;
     }
 
-    Ok(idl_rs::store::catalog_read::get_session(data_dir, session_id)?.into())
+    Ok(idl_library::catalog_read::get_session(data_dir, session_id)?.into())
 }
 
 /// `SessionJsonError` → C3 §2, matching `commands::catalog`'s own mapping:
@@ -151,7 +151,7 @@ fn map_session_json_error(e: idl_rs::store::session_json::SessionJsonError) -> I
 /// metadata alone however large the folder is (ruling R201 item 2) —
 /// hence no `data_dir` argument: there is no blob store to consult.
 fn scan_folder_via(path: &str) -> Result<Vec<ScanEntry>, IpcError> {
-    let entries = idl_rs::store::scan::scan_folder(Path::new(path))?;
+    let entries = idl_library::scan::scan_folder(Path::new(path))?;
     Ok(entries.into_iter().map(ScanEntry::from).collect())
 }
 
@@ -163,8 +163,8 @@ fn list_stale_sessions_via(data_dir: &Path) -> Result<Vec<StaleSession>, IpcErro
     if !catalog_path.is_file() {
         return Ok(Vec::new());
     }
-    let conn = idl_rs::store::catalog::open_catalog(&catalog_path)?;
-    let rows = idl_rs::store::catalog_read::list_stale_sessions(&conn)?;
+    let conn = idl_library::catalog::open_catalog(&catalog_path)?;
+    let rows = idl_library::catalog_read::list_stale_sessions(&conn)?;
     Ok(rows.into_iter().map(StaleSession::from).collect())
 }
 
@@ -182,7 +182,7 @@ fn reimport_sessions_via(
     let total = session_ids.len() as u64;
     let mut report = ReimportReport { rebuilt: Vec::new(), failed: Vec::new() };
     for (i, session_id) in session_ids.iter().enumerate() {
-        match idl_rs::store::import::reimport_session(data_dir, session_id) {
+        match idl_library::import::reimport_session(data_dir, session_id) {
             Ok(_) => report.rebuilt.push(session_id.clone()),
             Err(e) => report.failed.push(ReimportFailure { session_id: session_id.clone(), error: e.into() }),
         }
@@ -280,8 +280,8 @@ mod tests {
     /// catalog. Returns `(data_dir, session_id)`.
     fn imported_root() -> (PathBuf, String) {
         let root = temp_root();
-        let report = idl_rs::store::import::import_idl0(&root, &idl0_bytes()).unwrap();
-        idl_rs::store::catalog_read::rebuild_catalog_report(&root).unwrap();
+        let report = idl_library::import::import_idl0(&root, &idl0_bytes()).unwrap();
+        idl_library::catalog_read::rebuild_catalog_report(&root).unwrap();
         (root, report.session_id)
     }
 
@@ -301,7 +301,7 @@ mod tests {
                 .unwrap();
         assert_eq!(doc.timestamp_utc_ms, Some(1_700_000_000_000));
         assert_eq!(doc.timestamp_source, Some(idl_rs::session::TimestampSource::User));
-        let listed = idl_rs::store::catalog_read::list_sessions(&root).unwrap();
+        let listed = idl_library::catalog_read::list_sessions(&root).unwrap();
         assert_eq!(listed[0].timestamp_utc_ms, 1_700_000_000_000);
 
         let _ = std::fs::remove_dir_all(&root);
@@ -382,7 +382,7 @@ mod tests {
         // Arrange — age the catalogued version, as a previous build's import
         // would have left it.
         let (root, session_id) = imported_root();
-        let conn = idl_rs::store::catalog::open_catalog(&root.join("catalog.sqlite")).unwrap();
+        let conn = idl_library::catalog::open_catalog(&root.join("catalog.sqlite")).unwrap();
         conn.execute("UPDATE sessions SET importer_version = '0.0.1'", []).unwrap();
         drop(conn);
 

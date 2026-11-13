@@ -58,7 +58,7 @@ use std::sync::{Arc, Condvar, Mutex, OnceLock};
 use std::time::{Duration, Instant};
 
 use idl_rs::session::ChannelSamples;
-use idl_rs::store::index_job::worker_count;
+use idl_library::index_job::worker_count;
 use idl_rs::store::parquet::{
     estimate_channel_bytes, read_channel_index, read_channel_sharing_axes, read_channel_with_progress,
     recorded_axis_column, AxisColumn, BorrowedAxes, ParquetStoreErrorKind,
@@ -1155,21 +1155,21 @@ impl Drop for EvalAdmission<'_> {
     }
 }
 
-impl idl_rs::store::index_job::BudgetGuard for EvalAdmission<'_> {}
+impl idl_library::index_job::BudgetGuard for EvalAdmission<'_> {}
 
-/// The core-level [`idl_rs::store::index_job::MemoryBudget`] over this
+/// The core-level [`idl_library::index_job::MemoryBudget`] over this
 /// cache's ledger, for a runner in core (a session set's members) to admit
 /// each unit of work against the same budget the app's own evaluations,
 /// decodes and cache use. `acquire` waits and never cancels; a runner that
 /// can be cancelled polls `try_acquire` instead.
-impl idl_rs::store::index_job::MemoryBudget for SessionCache {
+impl idl_library::index_job::MemoryBudget for SessionCache {
     fn acquire<'a>(
         &'a self,
         bytes: u64,
         hint: &str,
-    ) -> Result<Box<dyn idl_rs::store::index_job::BudgetGuard + 'a>, idl_rs::store::index_job::NeverFits> {
+    ) -> Result<Box<dyn idl_library::index_job::BudgetGuard + 'a>, idl_library::index_job::NeverFits> {
         self.admit_evaluation(bytes, hint, &|| false)
-            .map(|a| Box::new(a) as Box<dyn idl_rs::store::index_job::BudgetGuard + 'a>)
+            .map(|a| Box::new(a) as Box<dyn idl_library::index_job::BudgetGuard + 'a>)
             .map_err(|_| self.never_fits(bytes, hint))
     }
 
@@ -1177,9 +1177,9 @@ impl idl_rs::store::index_job::MemoryBudget for SessionCache {
         &'a self,
         bytes: u64,
         hint: &str,
-    ) -> Result<Option<Box<dyn idl_rs::store::index_job::BudgetGuard + 'a>>, idl_rs::store::index_job::NeverFits> {
+    ) -> Result<Option<Box<dyn idl_library::index_job::BudgetGuard + 'a>>, idl_library::index_job::NeverFits> {
         self.try_admit_evaluation(bytes, hint)
-            .map(|a| a.map(|a| Box::new(a) as Box<dyn idl_rs::store::index_job::BudgetGuard + 'a>))
+            .map(|a| a.map(|a| Box::new(a) as Box<dyn idl_library::index_job::BudgetGuard + 'a>))
             .map_err(|_| self.never_fits(bytes, hint))
     }
 
@@ -1189,8 +1189,8 @@ impl idl_rs::store::index_job::MemoryBudget for SessionCache {
 }
 
 impl SessionCache {
-    fn never_fits(&self, bytes: u64, hint: &str) -> idl_rs::store::index_job::NeverFits {
-        idl_rs::store::index_job::NeverFits { needed_bytes: bytes, ceiling_bytes: self.budget_bytes(), hint: hint.to_string() }
+    fn never_fits(&self, bytes: u64, hint: &str) -> idl_library::index_job::NeverFits {
+        idl_library::index_job::NeverFits { needed_bytes: bytes, ceiling_bytes: self.budget_bytes(), hint: hint.to_string() }
     }
 }
 
@@ -1227,8 +1227,8 @@ const INDEX_RESERVATION_CAP: (u64, u64) = (4, 5);
 /// A clamped reservation under-charges a genuinely enormous session, but
 /// such a session can only run when nothing else holds the budget — which
 /// is the same guarantee an unclamped wait would have given.
-impl idl_rs::store::index_job::DecodeBudget for SessionCache {
-    fn acquire<'a>(&'a self, bytes: u64, hint: &str) -> Box<dyn idl_rs::store::index_job::BudgetGuard + 'a> {
+impl idl_library::index_job::DecodeBudget for SessionCache {
+    fn acquire<'a>(&'a self, bytes: u64, hint: &str) -> Box<dyn idl_library::index_job::BudgetGuard + 'a> {
         let (num, den) = INDEX_RESERVATION_CAP;
         let capped = bytes.min(self.budget_bytes() / den * num).max(1);
         loop {
@@ -1239,7 +1239,7 @@ impl idl_rs::store::index_job::DecodeBudget for SessionCache {
     }
 }
 
-impl idl_rs::store::index_job::BudgetGuard for Reservation<'_> {}
+impl idl_library::index_job::BudgetGuard for Reservation<'_> {}
 
 /// The C3 §1 `resource_exhausted` error for a decode that waited
 /// [`RESERVE_TIMEOUT`] for the budget and never got it (ruling R211.2).

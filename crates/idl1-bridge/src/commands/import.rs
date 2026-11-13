@@ -1,5 +1,5 @@
 //! Import commands (C3 §3.3): `import_file`, `list_importers`. Bridges C3's
-//! `importer_id` vocabulary to `idl_rs::store::import`'s extension-keyed
+//! `importer_id` vocabulary to `idl_library::import`'s extension-keyed
 //! `import_idl0`/`import_file` entry points (L2 Task 6, L2-R13) and
 //! `idl_rs::import::importers()`'s FIT/GPX/CSV registry (L2 Task 7, R51 Q2).
 //!
@@ -10,7 +10,7 @@
 
 use std::path::Path;
 
-use idl_rs::store::import as core_import;
+use idl_library::import as core_import;
 
 use crate::commands::catalog::SessionSummary;
 use crate::commands::device::Progress;
@@ -79,7 +79,7 @@ pub fn list_importers() -> Vec<ImporterInfo> {
 }
 
 /// Resolves `path`/`importer_id` to the lowercase, dot-free extension string
-/// `idl_rs::store::import::{import_idl0, import_file}` dispatch on (C3 §3.3:
+/// `idl_library::import::{import_idl0, import_file}` dispatch on (C3 §3.3:
 /// `importer_id` is `null` for extension-based auto-detection, or one of the
 /// ids `list_importers` returns to "force a specific importer"). Every id in
 /// this vocabulary (`"idl0"` plus every `idl_rs::import::importers()` id —
@@ -155,8 +155,8 @@ fn import_file_via(
 
     on_progress("materializing");
     let session_id = report.session_id.clone();
-    idl_rs::store::catalog_read::rebuild_catalog_report(data_dir)?;
-    let session = idl_rs::store::catalog_read::list_sessions(data_dir)?
+    idl_library::catalog_read::rebuild_catalog_report(data_dir)?;
+    let session = idl_library::catalog_read::list_sessions(data_dir)?
         .into_iter()
         .find(|s| s.session_id == session_id)
         .ok_or_else(|| {
@@ -221,7 +221,7 @@ mod tests {
     /// test. Two calls with different `axis_value`s share the same header
     /// (hence the same `session_id`, taken from the header's own UUID field
     /// — see `parse::v3`) but hash to different `blob_sha256`s, exercising
-    /// [`idl_rs::store::import::ImportPlan::Collision`].
+    /// [`idl_library::import::ImportPlan::Collision`].
     fn minimal_idl0_buffer(axis_value: i16) -> Vec<u8> {
         let accel_scale: f32 = 32.0 / 32768.0;
         let mut buf = Header { schema_version: 3, imu_mask: 0x01, ..Default::default() }
@@ -269,7 +269,7 @@ mod tests {
         // Assert
         assert_eq!(outcome.session.source_format, "gpx");
         assert_eq!(phases, vec!["reading", "decoding", "materializing"]);
-        let sessions = idl_rs::store::catalog_read::list_sessions(&data_root).unwrap();
+        let sessions = idl_library::catalog_read::list_sessions(&data_root).unwrap();
         assert_eq!(sessions.len(), 1);
 
         let _ = std::fs::remove_dir_all(&data_root);

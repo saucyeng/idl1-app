@@ -1,18 +1,18 @@
 //! Maintenance group: quarantine review (C3 §3.2) and whole-`<data>`
 //! verify/repair (C3 §3.10) — thin wrappers over the landed
-//! `idl_rs::store::quarantine`/`idl_rs::store::verify` modules (Task 6, C4
+//! `idl_library::quarantine`/`idl_library::verify` modules (Task 6, C4
 //! §7, ruling R86).
 
 use std::path::Path;
 
-use idl_rs::store::quarantine::ResolveAction;
-use idl_rs::store::verify::Severity;
+use idl_library::quarantine::ResolveAction;
+use idl_library::verify::Severity;
 
 use crate::error::{IpcError, IpcErrorKind};
 use crate::state::DataDir;
 
 /// C3 §3.2 `QuarantineEntry` — mirrors
-/// `idl_rs::store::quarantine::QuarantineEntry` field for field. Named the
+/// `idl_library::quarantine::QuarantineEntry` field for field. Named the
 /// same as the core type; call sites disambiguate with the full core path
 /// (this module never `use`s the core type unqualified).
 #[derive(Debug, Clone, serde::Serialize)]
@@ -24,8 +24,8 @@ pub struct QuarantineEntry {
     pub quarantined_at_ms: i64,
 }
 
-impl From<idl_rs::store::quarantine::QuarantineEntry> for QuarantineEntry {
-    fn from(e: idl_rs::store::quarantine::QuarantineEntry) -> Self {
+impl From<idl_library::quarantine::QuarantineEntry> for QuarantineEntry {
+    fn from(e: idl_library::quarantine::QuarantineEntry) -> Self {
         Self {
             entry_id: e.entry_id,
             path: e.path,
@@ -47,7 +47,7 @@ fn severity_str(s: Severity) -> &'static str {
     }
 }
 
-/// One C4 §7 [`idl_rs::store::verify::Finding`] as it crosses the wire.
+/// One C4 §7 [`idl_library::verify::Finding`] as it crosses the wire.
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct VerifyFinding {
     /// `"info" | "warning" | "error"` (C3 §3.10).
@@ -56,8 +56,8 @@ pub struct VerifyFinding {
     pub message: String,
 }
 
-impl From<idl_rs::store::verify::Finding> for VerifyFinding {
-    fn from(f: idl_rs::store::verify::Finding) -> Self {
+impl From<idl_library::verify::Finding> for VerifyFinding {
+    fn from(f: idl_library::verify::Finding) -> Self {
         Self { severity: severity_str(f.severity).to_string(), path: f.path.display().to_string(), message: f.message }
     }
 }
@@ -73,7 +73,7 @@ pub struct VerifyReport {
 
 /// `list_quarantine`'s transport-agnostic core.
 fn list_quarantine_via(data_dir: &Path) -> Result<Vec<QuarantineEntry>, IpcError> {
-    Ok(idl_rs::store::quarantine::list_quarantine(data_dir)?.into_iter().map(Into::into).collect())
+    Ok(idl_library::quarantine::list_quarantine(data_dir)?.into_iter().map(Into::into).collect())
 }
 
 /// `resolve_quarantine`'s transport-agnostic core. `action` maps
@@ -92,7 +92,7 @@ fn resolve_quarantine_via(data_dir: &Path, entry_id: &str, action: &str) -> Resu
             ))
         }
     };
-    idl_rs::store::quarantine::resolve_quarantine(data_dir, entry_id, action)?;
+    idl_library::quarantine::resolve_quarantine(data_dir, entry_id, action)?;
     Ok(())
 }
 
@@ -109,9 +109,9 @@ fn verify_data_dir_via(
 ) -> Result<VerifyReport, IpcError> {
     let start = std::time::Instant::now();
     let (findings, quarantined) = if repair {
-        idl_rs::store::verify::verify_and_repair(data_dir, ids, now_ms)
+        idl_library::verify::verify_and_repair(data_dir, ids, now_ms)
     } else {
-        (idl_rs::store::verify::verify(data_dir), Vec::new())
+        (idl_library::verify::verify(data_dir), Vec::new())
     };
     Ok(VerifyReport {
         findings: findings.into_iter().map(Into::into).collect(),
@@ -155,8 +155,8 @@ pub fn verify_data_dir(repair: bool, data_dir: tauri::State<'_, DataDir>) -> Res
 #[cfg(test)]
 mod tests {
     use super::*;
-    use idl_rs::store::blob::{blob_exists, blob_path, write_blob};
-    use idl_rs::store::quarantine::quarantine_file;
+    use idl_library::blob::{blob_exists, blob_path, write_blob};
+    use idl_library::quarantine::quarantine_file;
     use uuid::Uuid;
 
     fn temp_root() -> std::path::PathBuf {

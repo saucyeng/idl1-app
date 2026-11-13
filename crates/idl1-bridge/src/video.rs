@@ -89,10 +89,10 @@ pub fn serve(data_dir: &Path, request: &Request<Vec<u8>>) -> Response<Vec<u8>> {
         return status_only(StatusCode::METHOD_NOT_ALLOWED);
     }
     let Some(sha) = sha_of_path(request.uri().path()) else { return status_only(StatusCode::NOT_FOUND) };
-    if !idl_rs::store::video::live_video_blobs(data_dir).contains(sha) {
+    if !idl_library::video::live_video_blobs(data_dir).contains(sha) {
         return status_only(StatusCode::NOT_FOUND);
     }
-    let path = idl_rs::store::blob::blob_path(data_dir, sha);
+    let path = idl_library::blob::blob_path(data_dir, sha);
     let Ok(mut file) = std::fs::File::open(&path) else { return status_only(StatusCode::NOT_FOUND) };
     let Ok(len) = file.metadata().map(|m| m.len()) else { return status_only(StatusCode::INTERNAL_SERVER_ERROR) };
 
@@ -197,7 +197,7 @@ mod tests {
     fn data_dir_with_video(bytes: &[u8], unlinked: bool) -> (tempfile::TempDir, String) {
         use idl_rs::store::session_json::{empty_session_json, write_session_json};
         let root = tempfile::tempdir().unwrap();
-        let sha = idl_rs::store::blob::write_blob(root.path(), bytes).unwrap();
+        let sha = idl_library::blob::write_blob(root.path(), bytes).unwrap();
         let session_id = "00112233445566778899aabbccddeeff";
         let mut doc = empty_session_json(session_id);
         doc.videos.push(idl_rs::video::VideoLink {

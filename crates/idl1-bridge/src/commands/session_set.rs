@@ -1,7 +1,7 @@
 //! C3 §3.4 `eval_session_set` (session-sets spec §5.2, phase 1): evaluates a
 //! workbook's session set and returns its session-row tables.
 //!
-//! Glue only: the runner is `idl_rs::store::set_job`, the same core function
+//! Glue only: the runner is `idl_library::set_job`, the same core function
 //! the CLI's `workbook eval --data-dir` runs. It decodes each member through
 //! its own source, never the app's `SessionCache`, so evaluating a set never
 //! evicts the session the user is looking at (spec §6.2).
@@ -17,7 +17,7 @@ use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
-use idl_rs::store::set_job::{engine_identity, run_session_set, SetJobOptions, SetJobReport, SetMemberErrorKind, SetProgress};
+use idl_library::set_job::{engine_identity, run_session_set, SetJobOptions, SetJobReport, SetMemberErrorKind, SetProgress};
 use idl_rs::table::{CellResult, TableModel};
 use idl_rs::workbook::v3::parse_workbook;
 use idl_rs::workbook::v3::session_set::parse_session_set;
@@ -188,7 +188,7 @@ fn result_from(report: SetJobReport, groups: Vec<SetGroupDto>) -> SessionSetResu
 /// no session set. Everything per member is in `members`.
 pub fn eval_session_set_via(
     data_dir: &Path,
-    budget: &dyn idl_rs::store::index_job::MemoryBudget,
+    budget: &dyn idl_library::index_job::MemoryBudget,
     runs: &SetRuns,
     workbook_id: &str,
     progress: &mut dyn FnMut(&SetProgress),

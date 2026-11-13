@@ -2,7 +2,7 @@
 //! `cancel_index_job`, and the `index_progress` event (rulings R207 and
 //! R208 item 1).
 //!
-//! The job itself is `idl_rs::store::index_job` — the same core function the
+//! The job itself is `idl_library::index_job` — the same core function the
 //! CLI runs at the end of a fold-in, on the same pool. This module is the
 //! glue: it owns the background thread, the managed state a UI mounting
 //! mid-flight reads, the cancel flag, and the event.
@@ -10,7 +10,7 @@
 //! **Indexing never sits between the user and a workbook** (ruling R207
 //! item 1): nothing here is awaited by a command that opens something. The
 //! per-session path a session open needs is
-//! `idl_rs::store::index_job::index_one_session`, called from
+//! `idl_library::index_job::index_one_session`, called from
 //! `commands::catalog::list_laps`.
 
 use std::sync::atomic::Ordering;
@@ -18,7 +18,7 @@ use std::sync::Arc;
 
 use tauri::{Emitter, Manager};
 
-use idl_rs::store::index_job::{
+use idl_library::index_job::{
     self, DecodeBudget, IndexJobOptions, IndexJobReport, IndexPhase, IndexProgress,
 };
 
@@ -233,7 +233,7 @@ mod tests {
             total: 3,
             indexed: 1,
             skipped_up_to_date: 1,
-            failed: vec![idl_rs::store::index_job::IndexFailure {
+            failed: vec![idl_library::index_job::IndexFailure {
                 session_id: "ghost".to_string(),
                 message: "no data.parquet".to_string(),
             }],

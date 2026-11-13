@@ -4,12 +4,12 @@
 //! [`super::sync_with_peer`] right after planning. It narrows a plan; it never
 //! adds an action, so every conflict rule stays core's.
 //!
-//! [`plan_sync`]: idl_rs::store::sync::diff::plan_sync
+//! [`plan_sync`]: idl_library::sync::diff::plan_sync
 
 use std::collections::BTreeSet;
 
-use idl_rs::store::sync::diff::{SyncAction, SyncClass, SyncItem, SyncPlan};
-use idl_rs::store::sync::manifest::{Manifest, BLOB_KIND_VIDEO};
+use idl_library::sync::diff::{SyncAction, SyncClass, SyncItem, SyncPlan};
+use idl_library::sync::manifest::{Manifest, BLOB_KIND_VIDEO};
 use serde::{Deserialize, Serialize};
 
 /// Which side's actions a run keeps.
@@ -162,7 +162,7 @@ pub fn filter_plan(plan: SyncPlan, selection: &SyncSelection, local: &Manifest, 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use idl_rs::store::sync::manifest::{BikeEntry, BlobEntry, DataParquetEntry, DerivedEntry, ProfileEntry, SessionEntry, SessionJsonEntry, TrackEntry, WorkbookEntry};
+    use idl_library::sync::manifest::{BikeEntry, BlobEntry, DataParquetEntry, DerivedEntry, ProfileEntry, SessionEntry, SessionJsonEntry, TrackEntry, WorkbookEntry};
 
     fn empty() -> Manifest {
         Manifest { schema_version: 1, generated_at_ms: 0, blobs: vec![], sessions: vec![], workbooks: vec![], tracks: vec![], profiles: vec![], bikes: vec![] }
@@ -486,10 +486,10 @@ mod tests {
     #[test]
     fn filter_plan_notes_are_left_untouched() {
         // Arrange
-        let note = idl_rs::store::sync::diff::SyncNote {
+        let note = idl_library::sync::diff::SyncNote {
             class: SyncClass::DataParquet,
             key: "k".into(),
-            reason: idl_rs::store::sync::diff::SyncNoteReason::EquivalentDataParquet,
+            reason: idl_library::sync::diff::SyncNoteReason::EquivalentDataParquet,
         };
         let plan = SyncPlan { actions: vec![], notes: vec![note.clone()] };
 

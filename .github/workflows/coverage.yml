@@ -57,7 +57,7 @@ jobs:
         working-directory: rust
         run: |
           cargo tarpaulin \
-            -p idl-rs -p idl-rs-cli \
+            -p idl-rs -p idl-library -p idl-rs-cli \
             --out Xml --out Html --output-dir target/coverage \
             --timeout 600 \
             -- --test-threads=4

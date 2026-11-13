@@ -54,6 +54,7 @@ reqwest = { version = "0.13.4", default-features = false, features = ["stream", 
 # dependency; `idl-rs` never depends back on this crate). No merge logic
 # lives here (PLAN §2) — the server only calls `build_manifest`/`install`.
 idl-rs = { path = "../../rust/core" }
+idl-library = { path = "../../rust/library" }
 # Pinned 2026-09-03 (M0 ecosystem report, `docs/superpowers/specs/
 # 2026-09-02-idl1-m0-ecosystem.md`), ruling R88: the sync server, hand-
 # parsing `Range` itself rather than taking `tower-http` (PLAN §8 Q2).

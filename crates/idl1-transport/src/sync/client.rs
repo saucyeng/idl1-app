@@ -6,7 +6,7 @@
 //! it never parses a workbook, a `session.json` or a Parquet file itself
 //! (that is core's `install`'s job, PLAN §2).
 
-use idl_rs::store::bikelog;
+use idl_library::bikelog;
 use std::collections::BTreeSet;
 use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
@@ -15,12 +15,12 @@ use futures::StreamExt;
 use tokio::io::AsyncWriteExt;
 
 use idl_rs::store::atomic::sha256_hex;
-use idl_rs::store::blob::blob_path;
-use idl_rs::store::library_summary::LibrarySummary;
-use idl_rs::store::sync::apply::{install, install_blob_file, InstallContext, InstallOutcome};
-use idl_rs::store::sync::diff::{plan_sync, SyncAction, SyncClass, SyncItem};
-use idl_rs::store::sync::ids::{is_valid_id, safe_join, IdClass};
-use idl_rs::store::sync::manifest::{build_manifest, Manifest, BLOB_KIND_VIDEO};
+use idl_library::blob::blob_path;
+use idl_library::library_summary::LibrarySummary;
+use idl_library::sync::apply::{install, install_blob_file, InstallContext, InstallOutcome};
+use idl_library::sync::diff::{plan_sync, SyncAction, SyncClass, SyncItem};
+use idl_library::sync::ids::{is_valid_id, safe_join, IdClass};
+use idl_library::sync::manifest::{build_manifest, Manifest, BLOB_KIND_VIDEO};
 
 use crate::error::{TransportError, TransportErrorKind};
 use crate::wifi_transport::{parse_content_range, range_header};
@@ -56,7 +56,7 @@ pub struct SyncRunResult {
     pub sessions_updated: u32,
     /// The session ids counted by [`Self::sessions_updated`], sorted. A
     /// Rust-side detail only (lead ruling R104 addendum): the tauri command
-    /// layer walks this to call `idl_rs::store::catalog::index_session` per
+    /// layer walks this to call `idl_library::catalog::index_session` per
     /// id (mirroring `rescan_tracks_via`'s own per-session, non-rebuild
     /// re-index) — it is never forwarded to the frontend; C3 §3.9's
     /// `SyncResult` wire shape is unchanged by this field.
@@ -366,7 +366,7 @@ pub async fn sync_with_peer(
             // Decided now, against the session.json files the "sessions"
             // phase just merged (lead ruling E2).
             let root = data_root.to_path_buf();
-            let live = tokio::task::spawn_blocking(move || idl_rs::store::video::live_video_blobs(&root))
+            let live = tokio::task::spawn_blocking(move || idl_library::video::live_video_blobs(&root))
                 .await
                 .map_err(|e| sync_error(format!("reading linked videos: {e}")))?;
             let live = match &selection.sessions {
@@ -991,7 +991,7 @@ mod tests {
 
     fn no_progress(_p: SyncProgress) {}
 
-    fn manifest_with_blobs(blobs: Vec<idl_rs::store::sync::manifest::BlobEntry>) -> Manifest {
+    fn manifest_with_blobs(blobs: Vec<idl_library::sync::manifest::BlobEntry>) -> Manifest {
         Manifest { schema_version: 1, generated_at_ms: 0, blobs, sessions: Vec::new(), workbooks: Vec::new(), tracks: Vec::new(), profiles: Vec::new(), bikes: Vec::new() }
     }
 
@@ -1002,7 +1002,7 @@ mod tests {
     #[test]
     fn drop_video_pulls_a_device_without_video_drops_only_video_blob_pulls() {
         // Arrange
-        use idl_rs::store::sync::manifest::BlobEntry;
+        use idl_library::sync::manifest::BlobEntry;
         let video = "a".repeat(64);
         let log = "b".repeat(64);
         let remote = manifest_with_blobs(vec![
@@ -1226,7 +1226,7 @@ mod tests {
     /// `session.json` links it as a video, live or tombstoned.
     fn write_linked_video(root: &Path, content: &[u8], unlinked: bool, updated_at_ms: i64) -> String {
         use idl_rs::store::session_json::{empty_session_json, write_session_json};
-        let sha = idl_rs::store::blob::write_blob(root, content).unwrap();
+        let sha = idl_library::blob::write_blob(root, content).unwrap();
         let session_id = "00112233445566778899aabbccddeeff";
         let mut doc = empty_session_json(session_id);
         doc.videos.push(idl_rs::video::VideoLink {
@@ -1250,7 +1250,7 @@ mod tests {
     /// Writes a second session `session_id` linking its own video `content`.
     fn write_linked_video_in(root: &Path, session_id: &str, content: &[u8]) -> String {
         use idl_rs::store::session_json::{empty_session_json, write_session_json};
-        let sha = idl_rs::store::blob::write_blob(root, content).unwrap();
+        let sha = idl_library::blob::write_blob(root, content).unwrap();
         let mut doc = empty_session_json(session_id);
         doc.videos.push(idl_rs::video::VideoLink {
             blob_sha256: sha.clone(),

@@ -2,7 +2,7 @@
 //! `rebuild_status`, and the `rebuild_progress` event (ruling R219 items
 //! 2–3).
 //!
-//! The work itself is `idl_rs::store::catalog::rebuild_catalog_with_progress`
+//! The work itself is `idl_library::catalog::rebuild_catalog_with_progress`
 //! — the same incremental C4 §5 scan the CLI runs. This module is the glue:
 //! the background thread, the managed state a UI mounting mid-flight reads,
 //! and the event.
@@ -15,7 +15,7 @@
 
 use tauri::{Emitter, Manager};
 
-use idl_rs::store::catalog::{rebuild_catalog_with_progress, RebuildProgress, RebuildReport as CoreRebuildReport};
+use idl_library::catalog::{rebuild_catalog_with_progress, RebuildProgress, RebuildReport as CoreRebuildReport};
 
 use crate::error::IpcError;
 use crate::state::{DataDir, RebuildJob};
@@ -168,7 +168,7 @@ pub fn spawn_rebuild_job<R: tauri::Runtime>(app: tauri::AppHandle<R>) -> bool {
             RebuildProgressEvent {
                 done: workbooks,
                 total: workbooks,
-                phase: idl_rs::store::catalog::RebuildPhase::Workbooks.as_str(),
+                phase: idl_library::catalog::RebuildPhase::Workbooks.as_str(),
                 finished: true,
             },
         );
@@ -185,7 +185,7 @@ pub fn spawn_rebuild_job<R: tauri::Runtime>(app: tauri::AppHandle<R>) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use idl_rs::store::catalog::RebuildPhase;
+    use idl_library::catalog::RebuildPhase;
 
     #[test]
     fn rebuild_progress_event_carries_the_c3_phase_spellings_verbatim() {

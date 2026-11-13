@@ -1,19 +1,19 @@
 //! Catalog commands (C3 §3.2): `list_sessions`, `get_session`, `list_laps`,
 //! `rebuild_catalog`, `list_workbooks`, `list_tracks`, `get_track` — thin
-//! wrappers over the new core read layer `idl_rs::store::catalog_read`
+//! wrappers over the new core read layer `idl_library::catalog_read`
 //! (ledger R40; L1 landed the catalog writer/rebuilder only).
 //!
 //! Same idiom as `device.rs`: each `#[tauri::command]` is a one-line
 //! wrapper over a `_via`-suffixed plain function taking `data_dir: &Path`
 //! (this module's own tests exercise the `_via` functions — `tauri::State`
 //! cannot be constructed outside a running app). Response structs mirror
-//! C3 §3.2 field for field with `From<idl_rs::store::catalog_read::X>`
+//! C3 §3.2 field for field with `From<idl_library::catalog_read::X>`
 //! impls; core's types are not `Serialize`, so they never cross the IPC
 //! boundary directly.
 
 use std::path::{Path, PathBuf};
 
-use idl_rs::store::catalog_read;
+use idl_library::catalog_read;
 
 use crate::error::{IpcError, IpcErrorKind};
 use crate::state::DataDir;
@@ -233,7 +233,7 @@ pub struct SessionDetail {
     /// The bike this session was ridden on; `""` = not attached (C3 §3.11).
     pub bike_id: String,
     /// What the session took from its bike's log (C1 §6, C3 §3.11).
-    pub bike_log: Option<idl_rs::store::bikelog::SessionBikeLog>,
+    pub bike_log: Option<idl_library::bikelog::SessionBikeLog>,
     /// Live linked videos, in `session.json` order, each with `on_device`
     /// (C3 §3.12).
     pub videos: Vec<idl_rs::video::SessionVideo>,
@@ -312,7 +312,7 @@ impl From<catalog_read::LapSummary> for LapSummary {
 }
 
 /// C3 §3.2 `RebuildReport` — four fields only. Core's own `RebuildReport`
-/// (`idl_rs::store::catalog::RebuildReport`) also carries `blobs_indexed`,
+/// (`idl_library::catalog::RebuildReport`) also carries `blobs_indexed`,
 /// `laps_indexed`, `lap_summary_indexed` and `skipped`; those are dropped
 /// at this boundary, not forwarded, since C3 §3.2 fixes this shape.
 // TODO(idl0): core's `skipped` (non-fatal per-entity rebuild problems) has
@@ -580,7 +580,7 @@ pub fn list_laps(
     data_dir: tauri::State<'_, DataDir>,
     cache: tauri::State<'_, crate::session_cache::SessionCache>,
 ) -> Result<Vec<LapSummary>, IpcError> {
-    let _ = idl_rs::store::index_job::index_one_session(&data_dir.0, &session_id, cache.inner());
+    let _ = idl_library::index_job::index_one_session(&data_dir.0, &session_id, cache.inner());
     list_laps_via(&data_dir.0, &session_id)
 }
 
@@ -749,17 +749,17 @@ fn save_track_via(data_dir: &Path, draft: TrackDraft, now_ms: i64, new_id: &str)
         let upserted = std::fs::read_to_string(&written_path)
             .map_err(|e| e.to_string())
             .and_then(|full_json| {
-                idl_rs::store::catalog::open_catalog(&catalog_path)
+                idl_library::catalog::open_catalog(&catalog_path)
                     .map_err(|e| e.to_string())
-                    .and_then(|conn| idl_rs::store::catalog::upsert_track(&conn, &track, &full_json).map_err(|e| e.to_string()))
+                    .and_then(|conn| idl_library::catalog::upsert_track(&conn, &track, &full_json).map_err(|e| e.to_string()))
             });
         if let Err(e) = upserted {
             warnings.push(e);
         }
     }
 
-    let (library, _library_warnings) = idl_rs::store::lap_index::load_track_library(data_dir)?;
-    let current_hash = idl_rs::store::lap_index::track_library_hash(&library);
+    let (library, _library_warnings) = idl_library::lap_index::load_track_library(data_dir)?;
+    let current_hash = idl_library::lap_index::track_library_hash(&library);
     let stale = stale_session_ids(data_dir, &current_hash, &mut warnings);
 
     Ok(SaveTrackResult { track: catalog_read::get_track(data_dir, &id)?.into(), stale_session_ids: stale, warnings })
@@ -816,16 +816,16 @@ fn delete_track_via(data_dir: &Path, track_id: &str) -> Result<DeleteTrackReport
     let mut warnings = Vec::new();
     let catalog_path = data_dir.join("catalog.sqlite");
     if catalog_path.is_file() {
-        let deleted = idl_rs::store::catalog::open_catalog(&catalog_path)
+        let deleted = idl_library::catalog::open_catalog(&catalog_path)
             .map_err(|e| e.to_string())
-            .and_then(|conn| idl_rs::store::catalog::delete_track(&conn, track_id).map_err(|e| e.to_string()));
+            .and_then(|conn| idl_library::catalog::delete_track(&conn, track_id).map_err(|e| e.to_string()));
         if let Err(e) = deleted {
             warnings.push(e);
         }
     }
 
-    let (library, _library_warnings) = idl_rs::store::lap_index::load_track_library(data_dir)?;
-    let current_hash = idl_rs::store::lap_index::track_library_hash(&library);
+    let (library, _library_warnings) = idl_library::lap_index::load_track_library(data_dir)?;
+    let current_hash = idl_library::lap_index::track_library_hash(&library);
     let stale = stale_session_ids(data_dir, &current_hash, &mut warnings);
 
     Ok(DeleteTrackReport { track_id: track_id.to_string(), stale_session_ids: stale, warnings })
@@ -853,9 +853,9 @@ pub struct RescanReport {
 
 /// Transport-agnostic core of `rescan_tracks`: re-runs visit/lap detection
 /// for one session against the current track library
-/// (`idl_rs::store::lap_index::reindex_laps`, which always recomputes) and,
+/// (`idl_library::lap_index::reindex_laps`, which always recomputes) and,
 /// when `catalog.sqlite` already exists, re-indexes that session's catalog
-/// rows (`idl_rs::store::catalog::index_session`) — mirroring
+/// rows (`idl_library::catalog::index_session`) — mirroring
 /// `store::import::finish_import`'s own catalog rule (Task 4): a bare data
 /// root that has never had `rebuild_catalog` run against it stays
 /// catalog-less, and this call is not the thing that creates one. A
@@ -874,13 +874,13 @@ fn rescan_tracks_via(data_dir: &Path, session_id: &str) -> Result<RescanReport, 
         return Err(IpcError::new(IpcErrorKind::NotFound, format!("session {session_id} not found")));
     }
 
-    let report = idl_rs::store::lap_index::reindex_laps(data_dir, session_id)?;
+    let report = idl_library::lap_index::reindex_laps(data_dir, session_id)?;
 
     let mut warnings = report.warnings;
     let catalog_path = data_dir.join("catalog.sqlite");
     if catalog_path.is_file() {
-        let indexed = idl_rs::store::catalog::open_catalog(&catalog_path)
-            .and_then(|conn| idl_rs::store::catalog::index_session(&conn, data_dir, session_id));
+        let indexed = idl_library::catalog::open_catalog(&catalog_path)
+            .and_then(|conn| idl_library::catalog::index_session(&conn, data_dir, session_id));
         if let Err(e) = indexed {
             warnings.push(e.to_string());
         }
@@ -1024,7 +1024,7 @@ fn other_session_dirs(data_dir: &Path, exclude_session_id: &str) -> impl Iterato
 
 /// Transport-agnostic core of `delete_session` (C3 §3.2). Removes
 /// `<data>/sessions/<session_id>/` recursively, then the catalog's rows for
-/// this session via `idl_rs::store::catalog::delete_session` — the raw SQL
+/// this session via `idl_library::catalog::delete_session` — the raw SQL
 /// and the `laps`/`lap_summary` `ON DELETE CASCADE` reasoning live in
 /// `core` (ruling R68: bytes-on-disk stays in `core`, this crate stays
 /// thin), not a full `rebuild_catalog` (needlessly expensive per delete; an
@@ -1058,7 +1058,7 @@ fn delete_session_via(data_dir: &Path, session_id: &str, delete_blob: bool) -> R
             .filter_map(|dir| idl_rs::store::parquet::read_session_metadata(&dir.join("data.parquet")).ok())
             .any(|m| m.blob_sha256 == blob_sha256);
         if !still_referenced {
-            let blob_path = idl_rs::store::blob::blob_path(data_dir, &blob_sha256);
+            let blob_path = idl_library::blob::blob_path(data_dir, &blob_sha256);
             if blob_path.is_file() {
                 std::fs::remove_file(&blob_path)
                     .map_err(|e| IpcError::new(IpcErrorKind::Io, format!("remove {}: {e}", blob_path.display())))?;
@@ -1066,8 +1066,8 @@ fn delete_session_via(data_dir: &Path, session_id: &str, delete_blob: bool) -> R
         }
     }
 
-    let conn = idl_rs::store::catalog::open_catalog(&data_dir.join("catalog.sqlite"))?;
-    idl_rs::store::catalog::delete_session(&conn, session_id)?;
+    let conn = idl_library::catalog::open_catalog(&data_dir.join("catalog.sqlite"))?;
+    idl_library::catalog::delete_session(&conn, session_id)?;
 
     Ok(())
 }
@@ -1206,8 +1206,8 @@ pub fn delete_session(
 mod tests {
     use super::*;
     use idl_rs::session::{Channel, RawColumn, Session, SourceFormat, TimestampSource};
-    use idl_rs::store::blob::write_blob;
-    use idl_rs::store::catalog::rebuild_catalog as core_rebuild_catalog;
+    use idl_library::blob::write_blob;
+    use idl_library::catalog::rebuild_catalog as core_rebuild_catalog;
     use idl_rs::store::parquet::write_session_parquet;
     use idl_rs::store::session_json::{
         empty_session_json, write_session_json, LapJson, NeutralZoneVisitJson, OverlayLapKeyJson, SectorJson,
@@ -1857,7 +1857,7 @@ mod tests {
         // Assert
         assert!(!root.join("sessions").join(session_id).is_dir());
         assert!(list_sessions_via(&root).unwrap().is_empty());
-        assert!(idl_rs::store::blob::blob_path(&root, &blob_sha256).is_file());
+        assert!(idl_library::blob::blob_path(&root, &blob_sha256).is_file());
 
         let _ = std::fs::remove_dir_all(&root);
     }
@@ -1874,7 +1874,7 @@ mod tests {
 
         // Assert
         assert!(!root.join("sessions").join(session_id).is_dir());
-        assert!(!idl_rs::store::blob::blob_path(&root, &blob_sha256).is_file());
+        assert!(!idl_library::blob::blob_path(&root, &blob_sha256).is_file());
 
         let _ = std::fs::remove_dir_all(&root);
     }
@@ -1894,7 +1894,7 @@ mod tests {
         // Assert
         assert!(!root.join("sessions").join("s1").is_dir());
         assert!(root.join("sessions").join("s2").is_dir());
-        assert!(idl_rs::store::blob::blob_path(&root, &blob_sha256).is_file());
+        assert!(idl_library::blob::blob_path(&root, &blob_sha256).is_file());
 
         let _ = std::fs::remove_dir_all(&root);
     }
@@ -1911,7 +1911,7 @@ mod tests {
         // Assert
         assert_eq!(err.kind, crate::error::IpcErrorKind::NotFound);
         assert!(root.join("sessions").join("s1").is_dir());
-        assert!(idl_rs::store::blob::blob_path(&root, &blob_sha256).is_file());
+        assert!(idl_library::blob::blob_path(&root, &blob_sha256).is_file());
         assert_eq!(list_sessions_via(&root).unwrap().len(), 1);
 
         let _ = std::fs::remove_dir_all(&root);
@@ -2099,7 +2099,7 @@ mod tests {
             core_rebuild_catalog(&root).unwrap();
             save_track_via(&root, empty_draft("A-Line"), 1_000, "t-1").unwrap();
             {
-                let conn = idl_rs::store::catalog::open_catalog(&root.join("catalog.sqlite")).unwrap();
+                let conn = idl_library::catalog::open_catalog(&root.join("catalog.sqlite")).unwrap();
                 let count: i64 = conn.query_row("SELECT COUNT(*) FROM tracks", [], |r| r.get(0)).unwrap();
                 assert_eq!(count, 1);
                 let name: String =
@@ -2113,7 +2113,7 @@ mod tests {
             save_track_via(&root, edit, 2_000, "unused").unwrap();
 
             // Assert — updated in place, not duplicated.
-            let conn = idl_rs::store::catalog::open_catalog(&root.join("catalog.sqlite")).unwrap();
+            let conn = idl_library::catalog::open_catalog(&root.join("catalog.sqlite")).unwrap();
             let count: i64 = conn.query_row("SELECT COUNT(*) FROM tracks", [], |r| r.get(0)).unwrap();
             assert_eq!(count, 1);
             let name: String = conn.query_row("SELECT name FROM tracks WHERE track_id = 't-1'", [], |r| r.get(0)).unwrap();
@@ -2127,7 +2127,7 @@ mod tests {
             // Arrange — a session already stamped against the *empty*
             // library, before this track existed.
             let root = temp_root();
-            let empty_hash = idl_rs::store::lap_index::track_library_hash(&[]);
+            let empty_hash = idl_library::lap_index::track_library_hash(&[]);
             let mut doc = empty_session_json("s-old");
             doc.track_visits_library_hash = Some(empty_hash);
             write_session_json(&root, "s-old", &doc, None).unwrap();
@@ -2158,7 +2158,7 @@ mod tests {
                 created_at_ms: 1_000,
                 updated_at_ms: 1_000,
             };
-            let post_write_hash = idl_rs::store::lap_index::track_library_hash(std::slice::from_ref(&track));
+            let post_write_hash = idl_library::lap_index::track_library_hash(std::slice::from_ref(&track));
             let mut doc = empty_session_json("s-fresh");
             doc.track_visits_library_hash = Some(post_write_hash);
             write_session_json(&root, "s-fresh", &doc, None).unwrap();
@@ -2274,7 +2274,7 @@ mod tests {
             }];
             write_full_session_seeded(&root, session_id, b"raw bytes for sess-visit", &doc);
             {
-                let conn = idl_rs::store::catalog::open_catalog(&root.join("catalog.sqlite")).unwrap();
+                let conn = idl_library::catalog::open_catalog(&root.join("catalog.sqlite")).unwrap();
                 let track_id: Option<String> = conn
                     .query_row("SELECT track_id FROM laps WHERE session_id = ?1 AND lap_number = 1", [session_id], |r| {
                         r.get(0)
@@ -2287,7 +2287,7 @@ mod tests {
             delete_track_via(&root, "t-1").unwrap();
 
             // Assert — the `tracks` row is gone…
-            let conn = idl_rs::store::catalog::open_catalog(&root.join("catalog.sqlite")).unwrap();
+            let conn = idl_library::catalog::open_catalog(&root.join("catalog.sqlite")).unwrap();
             let track_count: i64 = conn.query_row("SELECT COUNT(*) FROM tracks WHERE track_id = 't-1'", [], |r| r.get(0)).unwrap();
             assert_eq!(track_count, 0);
             // …but the lap row survives, with `track_id` nulled by the FK cascade.
@@ -2327,7 +2327,7 @@ mod tests {
             let root = temp_root();
             let track = minimal_track("t-1", "A-Line");
             write_track(&root, &track).unwrap();
-            let with_track_hash = idl_rs::store::lap_index::track_library_hash(std::slice::from_ref(&track));
+            let with_track_hash = idl_library::lap_index::track_library_hash(std::slice::from_ref(&track));
             let mut doc = empty_session_json("s-stamped");
             doc.track_visits_library_hash = Some(with_track_hash);
             write_session_json(&root, "s-stamped", &doc, None).unwrap();
@@ -2438,7 +2438,7 @@ mod tests {
                     gaps: Vec::new(),
                 }
             };
-            let blob_sha256 = idl_rs::store::blob::write_blob(root, format!("raw bytes for {session_id}").as_bytes()).unwrap();
+            let blob_sha256 = idl_library::blob::write_blob(root, format!("raw bytes for {session_id}").as_bytes()).unwrap();
             let session = Session {
                 session_id: session_id.to_string(),
                 device_id: None,

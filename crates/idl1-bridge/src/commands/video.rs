@@ -1,5 +1,5 @@
 //! Video commands (C3 §3.12, video spec `2026-10-16-idl1-video-DRAFT.md`
-//! step 1): thin glue over `idl_rs::store::video`. Every command is `async`
+//! step 1): thin glue over `idl_library::video`. Every command is `async`
 //! (R201): linking streams gigabytes, and even the small ones read every
 //! session's `session.json` to decide what a blob is still linked by.
 //!
@@ -8,7 +8,7 @@
 use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicBool;
 
-use idl_rs::store::video as store;
+use idl_library::video as store;
 use idl_rs::video::VideoLink;
 
 use crate::commands::device::Progress;

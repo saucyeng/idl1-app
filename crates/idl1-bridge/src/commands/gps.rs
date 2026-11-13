@@ -223,7 +223,7 @@ pub fn fetch_gps_trace_meta_via(
     let mut polyline = Vec::new();
     let mut gates = Vec::new();
     if let Some(id) = track_id {
-        let track = idl_rs::store::catalog_read::get_track(data_dir, id)?;
+        let track = idl_library::catalog_read::get_track(data_dir, id)?;
         polyline = track
             .reference_polyline
             .iter()

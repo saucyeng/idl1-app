@@ -20,10 +20,10 @@ use std::sync::{Arc, Mutex};
 
 use idl_rs::session::{Channel, RawColumn, Session, SourceFormat, TimestampSource};
 use idl_rs::store::atomic::{sha256_hex, write_atomic};
-use idl_rs::store::blob::{blob_path, write_blob};
+use idl_library::blob::{blob_path, write_blob};
 use idl_rs::store::parquet::write_session_parquet;
 use idl_rs::store::session_json::{empty_session_json, read_session_json, write_session_json, SessionJson};
-use idl_rs::store::sync::base_cache;
+use idl_library::sync::base_cache;
 use idl_rs::track_artifact::model::Track;
 use idl_rs::track_artifact::read::read_track;
 use idl_rs::track_artifact::write::write_track;
@@ -683,7 +683,7 @@ async fn two_peers_fetch_library_returns_the_servers_catalogued_sessions() {
     pair(&a, &b).await;
     let session_id = "0123456789abcdef";
     seed_session(&a.data_root, session_id);
-    idl_rs::store::catalog::rebuild_catalog(&a.data_root).unwrap();
+    idl_library::catalog::rebuild_catalog(&a.data_root).unwrap();
     let peer = peer_of(&b, &a.peer_id);
 
     // Act

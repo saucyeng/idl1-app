@@ -21,23 +21,25 @@ blocked task waits.
 
   The idl-rs submodule (`rust/`) is the engine product; it never knows the app exists.
 
-    rust/core/            idl-rs          PURE. Signal processing, parsing, importers, store
-                                          (Parquet/CAS/catalog), workbook evaluation. No Tauri,
-                                          no async runtime, no network. std::fs only.
-    rust/cli/             idl-rs-cli      The idl-rs binary. Depends on core only.
+    rust/core/            idl-rs          PURE engine. Signal processing, parsing, importers,
+                                          workbook evaluation, and the on-disk formats
+                                          (data.parquet, session.json, atomic writes). No Tauri,
+                                          no async runtime, no network, no SQLite. std::fs only.
+    rust/library/         idl-library     The ride library over the engine: catalog (SQLite),
+                                          CAS blobs, import/index/set jobs, bike log, sync model.
+    rust/cli/             idl-rs-cli      The idl-rs binary. Depends on core and library.
 
   The app side lives in this repo, in one Cargo workspace (root `Cargo.toml`):
 
     crates/idl1-transport/ idl1-transport I/O: BLE, WiFi transfer, config push, LAN sync.
                                           Never depends on Tauri. Never does DSP.
-    crates/idl1-bridge/    idl1-bridge    #[tauri::command] glue over core + transport. The
+    crates/idl1-bridge/    idl1-bridge    #[tauri::command] glue over core, library and transport.
                                           only crate the frontend sees. Thin.
     app/src-tauri/                        Tauri app crate: builder, plugin registration, mobile plugins.
     app/src/                              TypeScript UI. Talks only to idl1-bridge commands.
 
-  Split in progress (Isaac, 2026-11-12; plan in TASKS.md "idl-rs as a standalone engine"):
-  UI prep and pixels leave core for idl1-bridge, and `store/` (minus Parquet) becomes the
-  crate `idl-library` inside the idl-rs repo.
+  Split done 2026-11-12 (Isaac; TASKS.md "idl-rs as a standalone engine"): UI prep and
+  pixels live in idl1-bridge, the library manager in idl-library. Never move them back.
 
 **Rust = numbers, JS = pictures.** No number the sync model depends on is
 computed in JavaScript; no chart is drawn in Rust. Heavy arrays cross IPC as raw
@@ -95,7 +97,7 @@ saying whether it changed user-facing documentation (R222 item 5).
 
 - At most **two** cargo processes on the machine at a time (R216; four or more is what crashed it), and a cargo command starts only with ≥ 3 GB of memory commit free (`Get-CimInstance Win32_OperatingSystem | % FreeVirtualMemory`; R245: measured 2026-09-20, the full tauri test build with a warm target dir peaks at 1.7 GB; a cold or release build wants ≥ 6 GB); jobs are capped machine-wide (`~/.cargo/config.toml`), never override with `-j`.
 - Task cycles run only the targeted test filter the dispatch names; each run must report a non-zero `passed` count (a filter matching nothing is a failed gate, not a pass).
-- The full suite runs once per lane at its merge gate: `cargo test -p idl-rs -p idl-rs-cli -- --test-threads=4`. Never `--workspace`.
+- The full suite runs once per lane at its merge gate: `cargo test -p idl-rs -p idl-library -p idl-rs-cli -- --test-threads=4`. Never `--workspace`.
 - No reruns to hunt flakiness unless the lead asks; a known-flaky test is rerun alone by name, once.
 - A task that changes a `pub` signature in `core` adds `cargo check -p idl-rs-cli --tests`.
 - App-side crates (`crates/*`, `app/src-tauri`) build in the root workspace; the idl-rs crates build in `rust/`. A local cargo command from the root needs `CARGO_TARGET_DIR` pointed at the shared target dir (`rust/.cargo/config.toml` only applies inside `rust/`).

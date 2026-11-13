@@ -2452,21 +2452,35 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b9e0384b61958566e926dc50660321d12159025e767c18e043daf26b70104c39"
 
 [[package]]
+name = "idl-library"
+version = "0.1.0"
+dependencies = [
+ "arrow",
+ "idl-rs",
+ "memmap2",
+ "num_cpus",
+ "parquet",
+ "rayon",
+ "rusqlite",
+ "serde",
+ "serde_json",
+ "serde_yaml_ng",
+ "sha2",
+ "uuid",
+]
+
+[[package]]
 name = "idl-rs"
 version = "0.1.0"
 dependencies = [
  "approx",
  "arrow",
  "fitparser",
- "memmap2",
  "nalgebra",
- "num_cpus",
  "parquet",
  "pulldown-cmark",
  "quick-xml",
- "rayon",
  "realfft",
- "rusqlite",
  "rustfft",
  "sci-rs",
  "serde",
@@ -2480,8 +2494,10 @@ dependencies = [
 name = "idl1-bridge"
 version = "0.1.0"
 dependencies = [
+ "approx",
  "base64 0.22.1",
  "hex",
+ "idl-library",
  "idl-rs",
  "idl1-transport",
  "notify",
@@ -2507,6 +2523,7 @@ dependencies = [
  "btleplug",
  "flume",
  "futures",
+ "idl-library",
  "idl-rs",
  "if-addrs",
  "mdns-sd",

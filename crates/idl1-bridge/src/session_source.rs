@@ -433,7 +433,7 @@ pub fn resolve_lap_window(data_root: &Path, session_id: &str, lap: u32) -> Resul
     )
 }
 
-use idl_rs::store::session_context::lap_span;
+use idl_library::session_context::lap_span;
 
 /// Builds a [`MathLapContext`] scoped to a single resolved [`WindowDto`]
 /// (C1 §6.1, R115) — the per-window replacement for [`load_lap_context`]'s
@@ -491,7 +491,7 @@ pub fn load_window_context_from(
     let bounds = resolve_window_with(data_dir, window, session_json.doc.as_ref())?;
     // The context itself is core's (session-sets spec §6.2), so the CLI and
     // the session-set runner build the same one for the same window.
-    Ok(idl_rs::store::session_context::window_lap_context(session_json.doc.as_ref(), bounds))
+    Ok(idl_library::session_context::window_lap_context(session_json.doc.as_ref(), bounds))
 }
 
 /// Builds a [`MathLapContext`] from `session_id`'s `session.json` `laps[]`,

@@ -8,6 +8,7 @@ description = "Tauri command glue between the idl1 app and the idl-rs engine"
 
 [dependencies]
 idl-rs = { path = "../../rust/core" }
+idl-library = { path = "../../rust/library" }
 idl1-transport = { path = "../idl1-transport" }
 tauri = "2.11.5"
 # "Ask an agent" (ruling R222 item 3) spawns the configured agent command
@@ -23,7 +24,7 @@ serde_yaml_ng = "0.10.0"
 notify = "8.2.0"
 # The decode pool several channels of one request fan out over (ruling
 # R232.2) — the same library, and the same width rule, as the indexing
-# job's pool in `idl-rs`.
+# job's pool in `idl-library`.
 rayon = "1"
 sha2 = "0.10"
 hex = "0.4"

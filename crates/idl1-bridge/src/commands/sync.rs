@@ -511,7 +511,7 @@ fn resolve_peer_and_addr(peer_id: &str, peers: &[Peer], discovered: &HashMap<Str
 /// is (the check and the mark are one atomic step), and records the completion time in `last_sync` on success.
 ///
 /// Catalog re-index is per touched session id
-/// (`idl_rs::store::catalog::index_session`, mirroring `rescan_tracks_via`
+/// (`idl_library::catalog::index_session`, mirroring `rescan_tracks_via`
 /// — never a whole `rebuild_catalog`, R104 addendum) and only when
 /// `catalog.sqlite` already exists; a re-index failure is swallowed for
 /// the same reason `rescan_tracks_via` documents: the sync itself already
@@ -535,9 +535,9 @@ pub(crate) async fn run_one_sync(
 
     let catalog_path = data_root.join("catalog.sqlite");
     if catalog_path.is_file() {
-        if let Ok(conn) = idl_rs::store::catalog::open_catalog(&catalog_path) {
+        if let Ok(conn) = idl_library::catalog::open_catalog(&catalog_path) {
             for session_id in &result.sessions_touched {
-                let _ = idl_rs::store::catalog::index_session(&conn, data_root, session_id);
+                let _ = idl_library::catalog::index_session(&conn, data_root, session_id);
             }
         }
     }
@@ -597,7 +597,7 @@ fn invalid_argument(message: String) -> IpcError {
 /// session-id shaped or a workbook id that is not a UUID is
 /// `invalid_argument`, with the message naming the bad value.
 fn parse_selection(raw: serde_json::Value) -> Result<idl1_transport::sync::SyncSelection, IpcError> {
-    use idl_rs::store::sync::ids::{is_valid_id, IdClass};
+    use idl_library::sync::ids::{is_valid_id, IdClass};
     use idl1_transport::sync::{SyncDirection, SyncSelection};
     let arg: SyncSelectionArg = serde_json::from_value(raw).map_err(|e| invalid_argument(format!("malformed selection: {e}")))?;
     let direction = match arg.direction.as_str() {
@@ -685,7 +685,7 @@ pub enum HereStatus {
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub struct PeerLibrarySessionDto {
     #[serde(flatten)]
-    pub session: idl_rs::store::library_summary::LibrarySession,
+    pub session: idl_library::library_summary::LibrarySession,
     /// Against this device's copy: `data.parquet` and `session.json` hashes
     /// both equal is `same`.
     pub here: HereStatus,
@@ -696,7 +696,7 @@ pub struct PeerLibrarySessionDto {
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub struct PeerLibraryWorkbookDto {
     #[serde(flatten)]
-    pub workbook: idl_rs::store::library_summary::LibraryWorkbook,
+    pub workbook: idl_library::library_summary::LibraryWorkbook,
     /// Against this device's copy, compared by sha256.
     pub here: HereStatus,
 }
@@ -722,11 +722,11 @@ pub struct PeerLibraryDto {
 /// both sides counts as equal); `Differs` otherwise. A workbook is compared
 /// by sha256 the same way.
 pub(crate) fn peer_library_dto(
-    summary: idl_rs::store::library_summary::LibrarySummary,
-    remote: &idl_rs::store::sync::manifest::Manifest,
-    local: &idl_rs::store::sync::manifest::Manifest,
+    summary: idl_library::library_summary::LibrarySummary,
+    remote: &idl_library::sync::manifest::Manifest,
+    local: &idl_library::sync::manifest::Manifest,
 ) -> PeerLibraryDto {
-    use idl_rs::store::sync::manifest::SessionEntry;
+    use idl_library::sync::manifest::SessionEntry;
     let local_sessions: HashMap<&str, &SessionEntry> = local.sessions.iter().map(|s| (s.session_id.as_str(), s)).collect();
     let remote_sessions: HashMap<&str, &SessionEntry> = remote.sessions.iter().map(|s| (s.session_id.as_str(), s)).collect();
     let local_workbooks: HashMap<&str, &str> = local.workbooks.iter().map(|w| (w.workbook_id.as_str(), w.sha256.as_str())).collect();
@@ -790,7 +790,7 @@ pub async fn peer_library(
     // The local manifest hashes every file: start it before the network round
     // trips so the two overlap.
     let root = data_dir.0.clone();
-    let local = tauri::async_runtime::spawn_blocking(move || idl_rs::store::sync::manifest::build_manifest(&root, now_ms()));
+    let local = tauri::async_runtime::spawn_blocking(move || idl_library::sync::manifest::build_manifest(&root, now_ms()));
     let summary = idl1_transport::sync::fetch_library(addr, &peer).await.map_err(IpcError::from)?;
     let remote = idl1_transport::sync::fetch_peer_manifest(addr, &peer).await.map_err(IpcError::from)?;
     let local = local
@@ -1448,8 +1448,8 @@ mod tests {
 
     // -- library tiers: peer_library, sync_selection, set_peer_auto_sync ----
 
-    use idl_rs::store::library_summary::{LibrarySession, LibrarySummary, LibraryWorkbook};
-    use idl_rs::store::sync::manifest::{DataParquetEntry, Manifest, SessionEntry, SessionJsonEntry, WorkbookEntry};
+    use idl_library::library_summary::{LibrarySession, LibrarySummary, LibraryWorkbook};
+    use idl_library::sync::manifest::{DataParquetEntry, Manifest, SessionEntry, SessionJsonEntry, WorkbookEntry};
 
     fn manifest(sessions: Vec<SessionEntry>, workbooks: Vec<WorkbookEntry>) -> Manifest {
         Manifest { schema_version: 1, generated_at_ms: 0, blobs: Vec::new(), sessions, workbooks, tracks: Vec::new(), profiles: Vec::new(), bikes: Vec::new() }

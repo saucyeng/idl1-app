@@ -21,3 +21,6 @@ opt-level = 3
 
 [profile.dev.package.idl-rs]
 opt-level = 3
+
+[profile.dev.package.idl-library]
+opt-level = 3

@@ -51,13 +51,13 @@ mod tests {
         // `resolve_quarantine`/`move_file`: the explicit, user-triggered
         // resolution of an existing quarantine entry (C4 §2) — Discard
         // removes the quarantined payload, Restore moves it out.
-        ("rust/core/src/store/quarantine.rs", "move_file"),
-        ("rust/core/src/store/quarantine.rs", "resolve_quarantine"),
+        ("rust/library/src/quarantine.rs", "move_file"),
+        ("rust/library/src/quarantine.rs", "resolve_quarantine"),
         // Sync verify: writes then removes a `tmp/sync-verify-<uuid>` file.
-        ("rust/core/src/store/sync/apply.rs", "read_data_parquet_versions_from_bytes"),
+        ("rust/library/src/sync/apply.rs", "read_data_parquet_versions_from_bytes"),
         // Workbook merge install: removes the *old*-named `.idl1wb` only when
         // a peer's `workbook_id` wins the rename (C4 §6).
-        ("rust/core/src/store/sync/apply.rs", "install_workbook"),
+        ("rust/library/src/sync/apply.rs", "install_workbook"),
         // `download_with`: removes/renames only its `tmp/download-*.part`
         // file on its way into `blobs/`.
         ("crates/idl1-bridge/src/commands/device.rs", "download_with"),
@@ -76,10 +76,10 @@ mod tests {
         // (b) one session's derived/ or data.parquet during a rebuild.
         // `remove_session_derived`: `sessions/<id>/derived/` only, after a
         // `data.parquet` rebuild invalidates the cached derived files.
-        ("rust/core/src/store/derived.rs", "remove_session_derived"),
+        ("rust/library/src/derived.rs", "remove_session_derived"),
         // `ImportPlan::Regenerate`: deletes `sessions/<id>/data.parquet`
         // immediately before rewriting it (C1 §4.3).
-        ("rust/core/src/store/import.rs", "finish_import"),
+        ("rust/library/src/import.rs", "finish_import"),
         // (c) the inbox: removes the dropped file only *after* a successful
         // import (R191); a failed import renames it into `inbox/failed/`.
         ("crates/idl1-bridge/src/inbox.rs", "import_one"),
@@ -88,9 +88,9 @@ mod tests {
         ("crates/idl1-bridge/src/inbox.rs", "link_one_video"),
         // (d) catalog.sqlite and its -wal/-shm sidecars — a rebuildable
         // index, never `blobs/` or `sessions/`.
-        ("rust/core/src/store/catalog.rs", "rebuild_catalog_with_progress"),
+        ("rust/library/src/catalog.rs", "rebuild_catalog_with_progress"),
         // (g) an explicit single-profile delete, no-op if absent.
-        ("rust/core/src/store/profile.rs", "delete"),
+        ("rust/library/src/profile.rs", "delete"),
         // `remove_if_present`: one track file, `tracks/<id>.idl1t` or the
         // legacy `.idl0t`, path-validated first. Called by `delete_track`
         // (the explicit "delete track" action; added to the audit on
@@ -347,7 +347,7 @@ mod tests {
         // Arrange
         let root = workspace_root();
         let mut files = Vec::new();
-        for crate_dir in ["rust/core/src", "crates/idl1-transport/src", "crates/idl1-bridge/src"] {
+        for crate_dir in ["rust/core/src", "rust/library/src", "crates/idl1-transport/src", "crates/idl1-bridge/src"] {
             rust_files(&root.join(crate_dir), &mut files);
         }
         assert!(files.len() > 20, "the scanner found almost no source files — it is looking in the wrong place");
@@ -402,7 +402,7 @@ mod tests {
         // Arrange
         let root = workspace_root();
         let mut files = Vec::new();
-        for crate_dir in ["rust/core/src", "crates/idl1-transport/src", "crates/idl1-bridge/src"] {
+        for crate_dir in ["rust/core/src", "rust/library/src", "crates/idl1-transport/src", "crates/idl1-bridge/src"] {
             rust_files(&root.join(crate_dir), &mut files);
         }
         assert!(files.len() > 20, "the scanner found almost no source files — it is looking in the wrong place");

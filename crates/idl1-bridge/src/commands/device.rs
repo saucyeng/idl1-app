@@ -524,7 +524,7 @@ where
 /// written), which stays L1's to build generally for
 /// `session.json`/`data.parquet`/workbooks.
 // TODO(idl0): this duplicates the sharded blob-path formula L1's
-// `idl_rs::store::blob` module already implements correctly (not yet merged
+// `idl_library::blob` module already implements correctly (not yet merged
 // to `main` as of this task) — once L1 lands, replace this hand-rolled
 // `data_dir.join(...)` split with a real call into that module's writer
 // instead of reimplementing C4 §2's path convention here.

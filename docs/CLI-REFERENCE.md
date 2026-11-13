@@ -38,7 +38,7 @@ List catalogued sessions, most recent first.
 | `--data-dir` | path | Data directory root (contract C4 §1's <data>); defaults to $IDL1_DATA_DIR |
 | `--json` | switch | Emit the result as JSON on stdout (schema_version 1); errors become typed JSON on stderr |
 
-Calls `store::catalog_read::list_sessions + commands::session_ops::filter_sessions`; `--json` emits `SessionSummary[]`.
+Calls `idl_library::catalog_read::list_sessions + idl_library::session_ops::filter_sessions`; `--json` emits `SessionSummary[]`.
 
 ### `idl-rs session show <id>`
 
@@ -53,7 +53,7 @@ Print one session's metadata, channels and laps.
 | `--data-dir` | path | Data directory root (contract C4 §1's <data>); defaults to $IDL1_DATA_DIR |
 | `--json` | switch | Emit the result as JSON on stdout (schema_version 1); errors become typed JSON on stderr |
 
-Calls `store::catalog_read::get_session`; `--json` emits `SessionDetail`.
+Calls `idl_library::catalog_read::get_session`; `--json` emits `SessionDetail`.
 
 ### `idl-rs session laps <id>`
 
@@ -68,7 +68,7 @@ Print one session's indexed laps.
 | `--data-dir` | path | Data directory root (contract C4 §1's <data>); defaults to $IDL1_DATA_DIR |
 | `--json` | switch | Emit the result as JSON on stdout (schema_version 1); errors become typed JSON on stderr |
 
-Calls `store::catalog_read::list_laps`; `--json` emits `LapSummary[]`.
+Calls `idl_library::catalog_read::list_laps`; `--json` emits `LapSummary[]`.
 
 ### `idl-rs session set-start <id> <utc-ms>`
 
@@ -108,7 +108,7 @@ Set a session's descriptive metadata; omitted fields are left alone.
 | `--dry-run` | switch | Report what would change and write nothing |
 | `--json` | switch | Emit the result as JSON on stdout (schema_version 1); errors become typed JSON on stderr |
 
-Calls `commands::session_ops::apply_session_meta`; `--json` emits `SessionJson`.
+Calls `idl_library::session_ops::apply_session_meta`; `--json` emits `SessionJson`.
 
 ### `idl-rs session import <file>`
 
@@ -124,7 +124,7 @@ Import one log file into the data directory.
 | `--dry-run` | switch | Report what would change and write nothing |
 | `--json` | switch | Emit the result as JSON on stdout (schema_version 1); errors become typed JSON on stderr |
 
-Calls `store::import::import_idl0_path (.idl0) or import_file_path (.fit/.gpx/.csv)`; `--json` emits `ImportReport`.
+Calls `idl_library::import::import_idl0_path (.idl0) or import_file_path (.fit/.gpx/.csv)`; `--json` emits `ImportReport`.
 
 ### `idl-rs session synth`
 
@@ -290,7 +290,7 @@ List the tracks in the library.
 | `--data-dir` | path | Data directory root (contract C4 §1's <data>); defaults to $IDL1_DATA_DIR |
 | `--json` | switch | Emit the result as JSON on stdout (schema_version 1); errors become typed JSON on stderr |
 
-Calls `store::catalog_read::list_tracks`; `--json` emits `TrackSummary[]`.
+Calls `idl_library::catalog_read::list_tracks`; `--json` emits `TrackSummary[]`.
 
 ### `idl-rs track detect <id>`
 
@@ -306,7 +306,7 @@ Re-detect track visits and laps for one session.
 | `--dry-run` | switch | Report what would change and write nothing |
 | `--json` | switch | Emit the result as JSON on stdout (schema_version 1); errors become typed JSON on stderr |
 
-Calls `store::lap_index::index_session_laps`; `--json` emits `LapIndexReport`.
+Calls `idl_library::lap_index::index_session_laps`; `--json` emits `LapIndexReport`.
 
 ## `bike`
 
@@ -319,7 +319,7 @@ List the bikes in the library.
 | `--data-dir` | path | Data directory root (contract C4 §1's <data>); defaults to $IDL1_DATA_DIR |
 | `--json` | switch | Emit the result as JSON on stdout (schema_version 1); errors become typed JSON on stderr |
 
-Calls `store::bikelog::load_bikes`; `--json` emits `Bike[]`.
+Calls `idl_library::bikelog::load_bikes`; `--json` emits `Bike[]`.
 
 ### `idl-rs bike show <bike_id>`
 
@@ -335,7 +335,7 @@ Show a bike's log and its setup sheet.
 | `--data-dir` | path | Data directory root (contract C4 §1's <data>); defaults to $IDL1_DATA_DIR |
 | `--json` | switch | Emit the result as JSON on stdout (schema_version 1); errors become typed JSON on stderr |
 
-Calls `store::bikelog::running_sheet`; `--json` emits `BikeShow`.
+Calls `idl_library::bikelog::running_sheet`; `--json` emits `BikeShow`.
 
 ### `idl-rs bike note <bike_id>`
 
@@ -355,7 +355,7 @@ Add a note to a bike's log; its changes update the setup sheet.
 | `--dry-run` | switch | Report what would change and write nothing |
 | `--json` | switch | Emit the result as JSON on stdout (schema_version 1); errors become typed JSON on stderr |
 
-Calls `store::bikelog::save_entry`; `--json` emits `Entry`.
+Calls `idl_library::bikelog::save_entry`; `--json` emits `Entry`.
 
 ## `catalog`
 
@@ -368,7 +368,7 @@ Run contract C4 §7's checks against the data directory.
 | `--data-dir` | path | Data directory root (contract C4 §1's <data>); defaults to $IDL1_DATA_DIR |
 | `--json` | switch | Emit the result as JSON on stdout (schema_version 1); errors become typed JSON on stderr |
 
-Calls `store::verify::verify`; `--json` emits `Finding[]`.
+Calls `idl_library::verify::verify`; `--json` emits `Finding[]`.
 
 ### `idl-rs catalog rebuild`
 
@@ -380,7 +380,7 @@ Rebuild the catalog index from the canonical files.
 | `--dry-run` | switch | Report what would change and write nothing |
 | `--json` | switch | Emit the result as JSON on stdout (schema_version 1); errors become typed JSON on stderr |
 
-Calls `store::catalog::rebuild_catalog`; `--json` emits `RebuildReport`.
+Calls `idl_library::catalog::rebuild_catalog`; `--json` emits `RebuildReport`.
 
 ## `library`
 
@@ -400,7 +400,7 @@ Import every importable file in a folder.
 | `--dry-run` | switch | Report what would change and write nothing |
 | `--json` | switch | Emit the result as JSON on stdout (schema_version 1); errors become typed JSON on stderr |
 
-Calls `store::import::import_file_path (per file)`; `--json` emits `FoldInReport`.
+Calls `idl_library::import::import_file_path (per file)`; `--json` emits `FoldInReport`.
 
 ### `idl-rs library scan <folder>`
 
@@ -416,7 +416,7 @@ Preview what folding a folder in would import.
 | `--data-dir` | path | Data directory root (contract C4 §1's <data>); defaults to $IDL1_DATA_DIR |
 | `--json` | switch | Emit the result as JSON on stdout (schema_version 1); errors become typed JSON on stderr |
 
-Calls `store::scan::scan_folder_with_blob_check`; `--json` emits `ScanReport`.
+Calls `idl_library::scan::scan_folder_with_blob_check`; `--json` emits `ScanReport`.
 
 ### `idl-rs library stale`
 
@@ -427,7 +427,7 @@ List sessions whose data.parquet predates this importer version.
 | `--data-dir` | path | Data directory root (contract C4 §1's <data>); defaults to $IDL1_DATA_DIR |
 | `--json` | switch | Emit the result as JSON on stdout (schema_version 1); errors become typed JSON on stderr |
 
-Calls `store::catalog_read::list_stale_sessions`; `--json` emits `StaleSession[]`.
+Calls `idl_library::catalog_read::list_stale_sessions`; `--json` emits `StaleSession[]`.
 
 ### `idl-rs library index [sessions]`
 
@@ -446,7 +446,7 @@ Detect track visits and laps for sessions whose index is missing or stale.
 | `--dry-run` | switch | Report what would change and write nothing |
 | `--json` | switch | Emit the result as JSON on stdout (schema_version 1); errors become typed JSON on stderr |
 
-Calls `store::index_job::run_index_job`; `--json` emits `IndexJobReport`.
+Calls `idl_library::index_job::run_index_job`; `--json` emits `IndexJobReport`.
 
 ### `idl-rs library rebuild [sessions]`
 
@@ -463,7 +463,7 @@ Re-import listed sessions from their own blobs.
 | `--dry-run` | switch | Report what would change and write nothing |
 | `--json` | switch | Emit the result as JSON on stdout (schema_version 1); errors become typed JSON on stderr |
 
-Calls `store::import::reimport_session`; `--json` emits `RebuildSessionsReport`.
+Calls `idl_library::import::reimport_session`; `--json` emits `RebuildSessionsReport`.
 
 ## `docs`
 

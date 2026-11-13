@@ -1,6 +1,6 @@
 //! App group (C3 §3.10): `get_settings`, `set_settings`, `get_data_dir`,
 //! `set_data_dir` — thin wrappers over the already-landed
-//! `idl_rs::store::settings` module and `crate::paths::resolve_data_dir`.
+//! `idl_library::settings` module and `crate::paths::resolve_data_dir`.
 //! Satisfies wave-2 needs L7-6/L7-7 (ruling R53 Settings Q1/Q4).
 //!
 //! Same `_via`-suffixed idiom as `commands/catalog.rs`: each
@@ -11,7 +11,7 @@
 //!
 //! Deviation from the plan's own interface sketch (documented, not a wire
 //! shape change): `unit_system` is typed as
-//! `idl_rs::store::settings::UnitSystem` directly rather than a plain
+//! `idl_library::settings::UnitSystem` directly rather than a plain
 //! `String` with hand-written mapping functions. `UnitSystem` already
 //! derives `Serialize`/`Deserialize` with `#[serde(rename_all =
 //! "snake_case")]`, so it already serialises to exactly `"imperial"` /
@@ -24,7 +24,7 @@ use std::path::{Path, PathBuf};
 
 use tauri::Manager;
 
-use idl_rs::store::settings::{AppSettings, SettingsError, SettingsErrorKind, UnitSystem};
+use idl_library::settings::{AppSettings, SettingsError, SettingsErrorKind, UnitSystem};
 
 use crate::error::{IpcError, IpcErrorKind};
 use crate::state::DataDir;
@@ -117,7 +117,7 @@ fn map_settings_error(e: SettingsError) -> IpcError {
 /// `get_settings`'s transport-agnostic core. `load` never fails (C4 §1) —
 /// a missing or malformed file yields defaults.
 fn get_settings_via(settings_path: &Path) -> AppSettingsDto {
-    idl_rs::store::settings::load(settings_path).into()
+    idl_library::settings::load(settings_path).into()
 }
 
 /// `set_settings`'s transport-agnostic core: a whole-document replace of
@@ -126,12 +126,12 @@ fn get_settings_via(settings_path: &Path) -> AppSettingsDto {
 /// Q5). Re-reads after the write so the response reflects what is actually
 /// on disk, not merely echoed from the argument.
 fn set_settings_via(settings_path: &Path, arg: AppSettingsArg) -> Result<AppSettingsDto, IpcError> {
-    let mut current = idl_rs::store::settings::load(settings_path);
+    let mut current = idl_library::settings::load(settings_path);
     current.rider_name = arg.rider_name;
     current.unit_system = arg.unit_system;
     current.agent_command = arg.agent_command;
-    idl_rs::store::settings::save(settings_path, &current).map_err(map_settings_error)?;
-    Ok(idl_rs::store::settings::load(settings_path).into())
+    idl_library::settings::save(settings_path, &current).map_err(map_settings_error)?;
+    Ok(idl_library::settings::load(settings_path).into())
 }
 
 /// `get_data_dir`'s transport-agnostic core. `resolved_data_dir` is always
@@ -144,7 +144,7 @@ fn get_data_dir_via(
     app_config_dir: &Path,
     resolved_data_dir: &Path,
 ) -> Result<DataDirInfo, IpcError> {
-    let settings = idl_rs::store::settings::load(settings_path);
+    let settings = idl_library::settings::load(settings_path);
     let fresh = crate::paths::resolve_data_dir(app_data_dir, app_config_dir)?;
     Ok(DataDirInfo {
         resolved_path: resolved_data_dir.display().to_string(),
@@ -183,9 +183,9 @@ fn set_data_dir_via(
         std::fs::create_dir_all(Path::new(p).join("data"))
             .map_err(|e| IpcError::new(IpcErrorKind::InvalidArgument, format!("cannot create '{p}': {e}")))?;
     }
-    let mut current = idl_rs::store::settings::load(settings_path);
+    let mut current = idl_library::settings::load(settings_path);
     current.data_dir = path.clone();
-    idl_rs::store::settings::save(settings_path, &current).map_err(map_settings_error)?;
+    idl_library::settings::save(settings_path, &current).map_err(map_settings_error)?;
     let fresh = crate::paths::resolve_data_dir(app_data_dir, app_config_dir)?;
     Ok(DataDirInfo {
         resolved_path: resolved_data_dir.display().to_string(),
@@ -594,7 +594,7 @@ fn move_data_dir_with(
     prune_emptied_dirs(resolved_data_dir);
 
     progress("catalog", 0, total);
-    idl_rs::store::catalog_read::rebuild_catalog_report(&new_data)?;
+    idl_library::catalog_read::rebuild_catalog_report(&new_data)?;
     progress("catalog", total, total);
 
     // Last, and only now: the override. Until this line the app still opens
@@ -704,7 +704,7 @@ pub fn move_data_dir(new_root: String) -> Result<DataDirInfo, IpcError> {
     ))
 }
 
-/// C3 §3.10 `BikeProfile` — mirrors `idl_rs::store::profile::BikeProfile`
+/// C3 §3.10 `BikeProfile` — mirrors `idl_library::profile::BikeProfile`
 /// field for field. One struct serves both `list_profiles`/`save_profile`'s
 /// return and `save_profile`'s argument, matching C3's single TS interface
 /// used both ways (unlike this file's `AppSettingsDto`/`AppSettingsArg`
@@ -722,8 +722,8 @@ pub struct BikeProfileDto {
     pub config: serde_json::Value,
 }
 
-impl From<idl_rs::store::profile::BikeProfile> for BikeProfileDto {
-    fn from(p: idl_rs::store::profile::BikeProfile) -> Self {
+impl From<idl_library::profile::BikeProfile> for BikeProfileDto {
+    fn from(p: idl_library::profile::BikeProfile) -> Self {
         Self {
             profile_id: p.profile_id,
             profile_name: p.profile_name,
@@ -734,7 +734,7 @@ impl From<idl_rs::store::profile::BikeProfile> for BikeProfileDto {
     }
 }
 
-impl From<BikeProfileDto> for idl_rs::store::profile::BikeProfile {
+impl From<BikeProfileDto> for idl_library::profile::BikeProfile {
     fn from(p: BikeProfileDto) -> Self {
         Self {
             profile_id: p.profile_id,
@@ -763,11 +763,11 @@ pub struct ProfileLoadReport {
     pub skipped: Vec<SkippedFile>,
 }
 
-/// Maps [`idl_rs::store::profile::ProfileError`] to the C3 §3.10 error rows
+/// Maps [`idl_library::profile::ProfileError`] to the C3 §3.10 error rows
 /// (`io`, `internal`). `ProfileErrorKind::Encode` folds to `internal` per
 /// C3 §2's folding rule.
-fn map_profile_error(e: idl_rs::store::profile::ProfileError) -> IpcError {
-    use idl_rs::store::profile::ProfileErrorKind;
+fn map_profile_error(e: idl_library::profile::ProfileError) -> IpcError {
+    use idl_library::profile::ProfileErrorKind;
     match e.kind {
         ProfileErrorKind::Io => IpcError::new(IpcErrorKind::Io, e.message),
         ProfileErrorKind::Encode => IpcError::new(IpcErrorKind::Internal, e.message),
@@ -778,7 +778,7 @@ fn map_profile_error(e: idl_rs::store::profile::ProfileError) -> IpcError {
 /// malformed file is reported in [`ProfileLoadReport::skipped`], never
 /// printed and never aborting the load.
 fn list_profiles_via(data_root: &Path) -> ProfileLoadReport {
-    let loaded = idl_rs::store::profile::load_all(data_root);
+    let loaded = idl_library::profile::load_all(data_root);
     ProfileLoadReport {
         profiles: loaded.profiles.into_iter().map(BikeProfileDto::from).collect(),
         skipped: loaded
@@ -796,8 +796,8 @@ fn save_profile_via(data_root: &Path, profile: BikeProfileDto) -> Result<BikePro
     if !profile.config.is_object() {
         return Err(IpcError::new(IpcErrorKind::InvalidArgument, "profile.config must be a JSON object"));
     }
-    let core_profile: idl_rs::store::profile::BikeProfile = profile.into();
-    idl_rs::store::profile::save(data_root, &core_profile).map_err(map_profile_error)?;
+    let core_profile: idl_library::profile::BikeProfile = profile.into();
+    idl_library::profile::save(data_root, &core_profile).map_err(map_profile_error)?;
     Ok(core_profile.into())
 }
 
@@ -811,7 +811,7 @@ fn delete_profile_via(data_root: &Path, profile_id: &str) -> Result<(), IpcError
     if !path.is_file() {
         return Err(IpcError::new(IpcErrorKind::NotFound, format!("profile '{profile_id}' not found")));
     }
-    idl_rs::store::profile::delete(data_root, profile_id).map_err(map_profile_error)?;
+    idl_library::profile::delete(data_root, profile_id).map_err(map_profile_error)?;
     Ok(())
 }
 
@@ -926,7 +926,7 @@ mod tests {
         // Assert
         assert_eq!(written.profile_id, dto.profile_id);
         assert_eq!(written.config, dto.config);
-        let loaded = idl_rs::store::profile::load_all(&root);
+        let loaded = idl_library::profile::load_all(&root);
         assert_eq!(loaded.profiles.len(), 1);
         assert_eq!(loaded.profiles[0].profile_id, "p1");
     }
@@ -941,7 +941,7 @@ mod tests {
         delete_profile_via(&root, "p1").unwrap();
 
         // Assert
-        assert!(idl_rs::store::profile::load_all(&root).profiles.is_empty());
+        assert!(idl_library::profile::load_all(&root).profiles.is_empty());
     }
 
     #[test]
@@ -955,7 +955,7 @@ mod tests {
 
         // Assert
         assert!(matches!(result, Err(e) if e.kind == IpcErrorKind::NotFound));
-        assert_eq!(idl_rs::store::profile::load_all(&root).profiles.len(), 1);
+        assert_eq!(idl_library::profile::load_all(&root).profiles.len(), 1);
     }
 
     #[test]
@@ -984,7 +984,7 @@ mod tests {
             unit_system: UnitSystem::Metric,
             agent_command: "claude".to_string(),
         };
-        idl_rs::store::settings::save(&path, &written).unwrap();
+        idl_library::settings::save(&path, &written).unwrap();
 
         // Act
         let dto = get_settings_via(&path);
@@ -1024,7 +1024,7 @@ mod tests {
             unit_system: UnitSystem::Imperial,
             agent_command: "claude".to_string(),
         };
-        idl_rs::store::settings::save(&path, &existing).unwrap();
+        idl_library::settings::save(&path, &existing).unwrap();
         let arg = AppSettingsArg {
             data_dir: Some("D:\\attempted-override".to_string()),
             rider_name: "Isaac".to_string(),
@@ -1053,7 +1053,7 @@ mod tests {
         // Assert
         assert_eq!(dto.rider_name, "Isaac");
         assert_eq!(dto.unit_system, UnitSystem::Metric);
-        let reread = idl_rs::store::settings::load(&path);
+        let reread = idl_library::settings::load(&path);
         assert_eq!(reread.rider_name, "Isaac");
         assert_eq!(reread.unit_system, UnitSystem::Metric);
     }
@@ -1086,7 +1086,7 @@ mod tests {
         // "Changed on disk, app not yet restarted": a new override root is
         // written directly to settings.json after that snapshot.
         let override_root = temp_root();
-        idl_rs::store::settings::save(
+        idl_library::settings::save(
             &path,
             &AppSettings {
                 data_dir: Some(override_root.display().to_string()),
@@ -1211,7 +1211,7 @@ mod tests {
             assert_ne!(std::fs::read(new_data.join("catalog.sqlite")).unwrap(), b"stale index".to_vec());
         }
         assert_eq!(info.override_path, Some(new_root.display().to_string()));
-        assert_eq!(idl_rs::store::settings::load(&settings).data_dir, Some(new_root.display().to_string()));
+        assert_eq!(idl_library::settings::load(&settings).data_dir, Some(new_root.display().to_string()));
         // Moved, not copied (R197): the sources are gone and the emptied
         // directories with them, while everything not in the five trees stays.
         assert!(!old_data.join(&blob_rel).exists());
@@ -1281,7 +1281,7 @@ mod tests {
 
         // Assert
         assert!(matches!(result, Err(e) if e.kind == IpcErrorKind::InvalidArgument));
-        assert_eq!(idl_rs::store::settings::load(&settings).data_dir, None);
+        assert_eq!(idl_library::settings::load(&settings).data_dir, None);
         assert!(old_data.join("sessions").join("s1").join("session.json").is_file());
     }
 
@@ -1337,7 +1337,7 @@ mod tests {
         let err = result.expect_err("a blob that does not hash to its own name must stop the move");
         assert_eq!(err.kind, IpcErrorKind::Io);
         assert_eq!(err.detail.unwrap()["reason"], serde_json::json!("blob_hash_mismatch"));
-        assert_eq!(idl_rs::store::settings::load(&settings).data_dir, None);
+        assert_eq!(idl_library::settings::load(&settings).data_dir, None);
         assert_eq!(std::fs::read(old_data.join(&blob_rel)).unwrap(), b"tampered bytes");
     }
 
@@ -1420,7 +1420,7 @@ mod tests {
         // Assert
         assert!(matches!(result, Err(e) if e.kind == IpcErrorKind::InvalidArgument));
         assert!(!new_root.join("data").exists());
-        assert_eq!(idl_rs::store::settings::load(&settings).data_dir, None);
+        assert_eq!(idl_library::settings::load(&settings).data_dir, None);
     }
 
     #[test]
@@ -1439,7 +1439,7 @@ mod tests {
 
         // Assert
         assert!(matches!(result, Err(e) if e.kind == IpcErrorKind::InvalidArgument));
-        assert_eq!(idl_rs::store::settings::load(&settings).data_dir, None);
+        assert_eq!(idl_library::settings::load(&settings).data_dir, None);
     }
 
     #[test]
@@ -1485,7 +1485,7 @@ mod tests {
         let app_config = temp_root();
         let path = settings_path(&app_config);
         let override_root = temp_root();
-        idl_rs::store::settings::save(
+        idl_library::settings::save(
             &path,
             &AppSettings {
                 data_dir: Some(override_root.display().to_string()),
@@ -1502,7 +1502,7 @@ mod tests {
 
         // Assert
         assert_eq!(info.override_path, None);
-        let reread = idl_rs::store::settings::load(&path);
+        let reread = idl_library::settings::load(&path);
         assert_eq!(reread.data_dir, None);
     }
 }

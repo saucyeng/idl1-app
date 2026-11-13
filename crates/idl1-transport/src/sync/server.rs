@@ -35,11 +35,11 @@ use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
 use axum::Router;
 
-use idl_rs::store::blob::blob_path;
-use idl_rs::store::sync::apply::{install, install_blob_file, InstallContext};
-use idl_rs::store::sync::diff::{SyncClass, SyncItem};
-use idl_rs::store::sync::ids::{is_valid_id, safe_join, IdClass};
-use idl_rs::store::sync::manifest::build_manifest;
+use idl_library::blob::blob_path;
+use idl_library::sync::apply::{install, install_blob_file, InstallContext};
+use idl_library::sync::diff::{SyncClass, SyncItem};
+use idl_library::sync::ids::{is_valid_id, safe_join, IdClass};
+use idl_library::sync::manifest::build_manifest;
 
 use crate::error::{TransportError, TransportErrorKind};
 
@@ -298,7 +298,7 @@ pub struct LibraryUnavailableBody {
 /// [`LibraryUnavailableBody`] when the catalog is not ready.
 async fn handle_library(State(state): State<ServerState>) -> Response {
     let root = state.data_root.clone();
-    match tokio::task::spawn_blocking(move || idl_rs::store::library_summary::library_summary(&root)).await {
+    match tokio::task::spawn_blocking(move || idl_library::library_summary::library_summary(&root)).await {
         Ok(Ok(summary)) => axum::Json(summary).into_response(),
         Ok(Err(e)) => {
             let body = LibraryUnavailableBody { error: "catalog_unavailable".to_string(), message: e.message };
@@ -430,7 +430,7 @@ async fn read_body(body: Body, max_bytes: usize) -> Result<Vec<u8>, Response> {
 }
 
 /// Runs `install` and turns its outcome/error into a response: `200` on
-/// any [`idl_rs::store::sync::apply::InstallOutcome`], the typed error's
+/// any [`idl_library::sync::apply::InstallOutcome`], the typed error's
 /// message with `422` otherwise (never a panic on malformed input, this
 /// task's brief).
 fn install_response(
@@ -510,7 +510,7 @@ async fn handle_blob_put(State(state): State<ServerState>, AxumPath(hash): AxumP
         return StatusCode::NOT_FOUND.into_response();
     }
     let root = state.data_root.clone();
-    let linked = tokio::task::spawn_blocking(move || (idl_rs::store::video::video_blobs(&root), idl_rs::store::video::live_video_blobs(&root))).await;
+    let linked = tokio::task::spawn_blocking(move || (idl_library::video::video_blobs(&root), idl_library::video::live_video_blobs(&root))).await;
     let Ok((videos, live)) = linked else {
         return StatusCode::INTERNAL_SERVER_ERROR.into_response();
     };
@@ -711,7 +711,7 @@ async fn handle_profile_put(State(state): State<ServerState>, AxumPath(id): Axum
 }
 
 async fn handle_bike_get(State(state): State<ServerState>, AxumPath(id): AxumPath<String>, headers: HeaderMap) -> Response {
-    if !idl_rs::store::bikelog::is_valid_id(&id) {
+    if !idl_library::bikelog::is_valid_id(&id) {
         return StatusCode::NOT_FOUND.into_response();
     }
     let Some(path) = safe_join(&state.data_root, &["bikes", &format!("{id}.json")]) else {
@@ -721,7 +721,7 @@ async fn handle_bike_get(State(state): State<ServerState>, AxumPath(id): AxumPat
 }
 
 async fn handle_bike_put(State(state): State<ServerState>, AxumPath(id): AxumPath<String>, request: Request) -> Response {
-    if !idl_rs::store::bikelog::is_valid_id(&id) {
+    if !idl_library::bikelog::is_valid_id(&id) {
         return StatusCode::NOT_FOUND.into_response();
     }
     let bytes = match read_body(request.into_body(), MAX_DOCUMENT_BODY_BYTES).await {
@@ -735,7 +735,7 @@ async fn handle_bike_put(State(state): State<ServerState>, AxumPath(id): AxumPat
 #[cfg(test)]
 mod tests {
     use super::*;
-    use idl_rs::store::sync::manifest::Manifest;
+    use idl_library::sync::manifest::Manifest;
     use std::net::Ipv4Addr;
 
     async fn start_test_server(data_root: PathBuf, peers: Vec<Peer>) -> (SyncServer, Arc<Mutex<Vec<Peer>>>) {

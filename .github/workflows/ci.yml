@@ -50,9 +50,9 @@ jobs:
             rust -> target
             . -> rust/target
 
-      - name: cargo test -p idl-rs -p idl-rs-cli
+      - name: cargo test -p idl-rs -p idl-library -p idl-rs-cli
         working-directory: rust
-        run: cargo test -p idl-rs -p idl-rs-cli -- --test-threads=4
+        run: cargo test -p idl-rs -p idl-library -p idl-rs-cli -- --test-threads=4
 
       - name: cargo test -p idl1-bridge
         run: cargo test -p idl1-bridge -- --test-threads=4

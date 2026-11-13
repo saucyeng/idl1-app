@@ -14,7 +14,7 @@ deny() {
 m() { printf '%s' "$input" | grep -Eq "$SEG$1"; }
 
 m 'cargo[[:space:]]+test[^"\\;&|]*--workspace' \
-  && deny "CLAUDE.md §8: never cargo test --workspace (builds the Tauri graph); use -p idl-rs -p idl-rs-cli"
+  && deny "CLAUDE.md §8: never cargo test --workspace (builds the Tauri graph); use -p idl-rs -p idl-library -p idl-rs-cli"
 m 'cargo[[:space:]]+fmt\b' \
   && deny "CLAUDE.md §7/§8: never cargo fmt (idl-rs is not rustfmt-formatted)"
 m 'cargo[[:space:]]+tarpaulin\b' \

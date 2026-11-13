@@ -13,6 +13,8 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
   tiles, decimation, raster colouring, the cursor readout, map tiles) moved out of the engine
   with them. Nothing the app does changes. For CLI users, `idl-rs docs wire` is gone: the wire
   fixtures are now written by `cargo run -p idl1-bridge --bin wire-golden -- --out <dir>`.
+  The ride library (catalog, blob store, import and index jobs, bike log, sync model) is now its
+  own crate, `idl-library`, beside the engine, so the engine itself no longer needs SQLite.
 
 ### Added
 

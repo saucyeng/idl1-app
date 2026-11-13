@@ -95,7 +95,7 @@ impl IndexJob {
     }
 
     /// Records one `index_progress` observation from a worker thread.
-    pub fn observe(&self, p: &idl_rs::store::index_job::IndexProgress) {
+    pub fn observe(&self, p: &idl_library::index_job::IndexProgress) {
         let mut progress = self.lock();
         progress.done = p.done;
         progress.total = p.total;
@@ -113,7 +113,7 @@ impl IndexJob {
     /// (CLAUDE.md §5).
     pub fn finish(
         &self,
-        report: Option<&idl_rs::store::index_job::IndexJobReport>,
+        report: Option<&idl_library::index_job::IndexJobReport>,
         error: Option<&crate::error::IpcError>,
     ) {
         let mut progress = self.lock();
@@ -193,7 +193,7 @@ impl RebuildJob {
     }
 
     /// Records one `rebuild_progress` observation from the job thread.
-    pub fn observe(&self, p: &idl_rs::store::catalog::RebuildProgress) {
+    pub fn observe(&self, p: &idl_library::catalog::RebuildProgress) {
         let mut progress = self.lock();
         progress.done = p.done;
         progress.total = p.total;
