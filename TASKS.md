@@ -645,7 +645,7 @@ not now").
 
 Bugs and doc mismatches:
 
-- [ ] `workbook eval/data --session <id>` rejects a session id ("No such file
+- [x] (already fixed in code by 2026-11-13; unknown id now names the data dir) `workbook eval/data --session <id>` rejects a session id ("No such file
       or directory"). The help text and AGENTS.md both promise one, and neither
       verb takes `--data-dir`. Workaround: pass `blobs/sha256/xx/…`.
 - [ ] Out-laps are counted as lap 1, and two paths disagree about where lap 1
@@ -656,17 +656,17 @@ Bugs and doc mismatches:
 - [ ] Headless `workbook eval/data` never evaluates a v3 `table` cell
       (`eval_cells` skips tables), so `rowSource: "windowLaps"` prints zero
       rows. The deprecated `table eval` only reads old JSON workbooks.
-- [ ] A cell id that isn't 8-hex (`id=gps`) passes `workbook check` but is
+- [x] (2026-11-13: `check` reports InvalidCellId) A cell id that isn't 8-hex (`id=gps`) passes `workbook check` but is
       re-randomised on every parse, so `workbook data <cell>` can't reach it.
       `check` should report it.
-- [ ] `track list` reads the catalog, so a new `.idl0t` stays invisible until
+- [x] (2026-11-13: reads track files) `track list` reads the catalog, so a new `.idl0t` stays invisible until
       `catalog rebuild`.
-- [ ] `rust/.cargo/config.toml` has a Windows `target-dir`; cargo on Linux fails
+- [x] (2026-11-13: moved to machine-local saucyeng/.cargo) `rust/.cargo/config.toml` has a Windows `target-dir`; cargo on Linux fails
       ("failed to join paths from `$LD_LIBRARY_PATH`") and leaves a `C:/` tree
       in `rust/`. Built with `CARGO_TARGET_DIR=$PWD/target`.
-- [ ] `rust/Cargo.lock` is stale: a local build adds `if-addrs` to
+- [x] (obsolete 2026-11-13: lockfiles pass --locked) `rust/Cargo.lock` is stale: a local build adds `if-addrs` to
       `idl-transport`'s dependencies.
-- [ ] `"t:lap"` reductions are documented in WORKBOOK-REFERENCE but rejected
+- [ ] (doc fixed 2026-11-13; engine support still P1-2) `"t:lap"` reductions are documented in WORKBOOK-REFERENCE but rejected
       by the engine (`mean: expected scalar argument, got string`; same for
       `max`, `sum`) — already P1-2 above; until it lands, fix the doc.
 
@@ -1030,3 +1030,32 @@ building what it needs along the way.
 - [x] Speed lane (2026-10-30): footer and time axis once per session in the set eval path; O(N) rolling mean/rms/std.
       pitch_air = 0 and air25_mean = 0.25 were a workbook bug (`rate0` divided by a difference of sample values), fixed in
       both comparison workbooks; `Time`/`Distance` still read by path. Before/after timing to measure on the nightly
+
+## Walden 2026-11-07 ride (2026-11-08)
+
+- [ ] FIT export of several sessions merged into one activity (Isaac, 2026-11-08): records and laps
+      concatenated in time order, one `session` message over all of them, distance re-accumulated across
+      files. Done by hand for 11/7 (`sessions/strava-2026-11-07/2026-11-07_mx-day.fit`, fitdecode + fit-tool)
+- [ ] Track form: venue is a combobox over the library's venues (Isaac, 2026-11-08): typing a few letters
+      lists the matching venues, plus a "Create '<text>'" entry when none matches exactly
+- [ ] Rescan sessions crashed the app, out of memory (nightly.131, 2026-11-08, after adding an out-lap
+      track): `crash/alloc-26196.log` "alloc of 1048576 bytes failed, live=3508478932". Rescan should hold
+      one session at a time, not GBs. It also cut 11/7 moto 2 (043c7d22) to one lap: a 533 s visit to the new
+      point-to-point out-lap track (finish gate on the Walden S/F line) and a Walden visit holding only lap 2
+- [ ] Missed S/F crossing makes a double lap (11/7 14:25 lap 6, 273 s at normal speed); the anomalous-lap
+      label above should catch it
+
+## idl-rs as a standalone engine (Isaac, 2026-11-12)
+
+- [x] Split: `rust/tauri` -> idl1-app `crates/idl1-bridge`, `rust/transport` -> `crates/idl1-transport`;
+      UI prep and raster colouring out of core into idl1-bridge; `store/` (minus Parquet) -> crate `idl-library`
+- [ ] Builtin registry: one entry per builtin (name, arity, doc, eval fn) replaces the `call_function` match
+      and the hand-transcribed `math/catalog.rs`; outsiders can register functions
+- [ ] Parity against scipy: reference vectors generated once by a `tools/` script (butter/filtfilt, welch,
+      detrend, gradient, cumulative_trapezoid), Rust tests compare within tolerance (later)
+- [ ] `resample` anti-aliasing: low-pass before interpolating when the target rate is lower (later)
+- [ ] Import measures each channel's sampling regularity; jittery host-timed channels (generic CSV) become
+      event channels, not fixed-rate (later). Also check whether fixed-rate math steps across lost-sample gaps
+- [ ] Season-wide analysis on moving data only: filter and estimate over the continuous session, materialise
+      to `derived/<hash>.parquet` (C1 §5), then window by speed/moving; row groups small enough to skip stops
+      (`ROW_GROUP_SIZE` is 1,000,000 rows, ~17 min at 1 kHz) (needs a spec)
