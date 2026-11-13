@@ -1,6 +1,6 @@
-# Track matching by stretch, and out-lap / in-lap gates
+# Track matching by gates, and out-lap / in-lap gates
 
-Status: DRAFT for Isaac's yes (2026-11-13). Spec-first: no code until approved.
+Status: approved by Isaac in chat, 2026-11-13 ("seems like we're good to continue").
 Touches two on-disk formats (the track file `.idl1t` and `session.json` laps, C1), so it is an
 architecture change.
 
@@ -22,29 +22,31 @@ the track.
 
 ## Design
 
-### 1. Matching scores stretches, not fixes
+### 1. Gates decide; the polyline confirms (Isaac, 2026-11-13)
 
-Replace steps 2-4 of `detect_visits` (nearest track per fix, coalesce, drop short) with the
-cheapest sequence of states over the session's fixes, found by dynamic programming (Viterbi).
-The states are each candidate track (after the existing bounding-box filter) plus `off`.
+"The gates are generally the real check for tracks. The polyline either goes through the gates
+or it doesn't." Visit detection stops assigning GPS fixes to the nearest track. Instead:
 
-- **Cost of a fix on track k:** `(min(d_k, T) / T)^p × dt`, where `d_k` is the distance to k's
-  reference polyline, `T` the on-track threshold (30 m today), and `dt` the time since the
-  previous fix, so the cost is per second and independent of the GPS rate. Capping at `T` stops
-  one multipath spike from deciding a visit. `p` = 2 (3 if tuning shows 2 isn't enough).
-- **Cost of a fix off-track:** `c_off × dt`, with `c_off` < 1, so a fix far from every track is
-  cheaper off than on.
-- **Cost of a switch** between any two states: `S` (in seconds-equivalent). It's what makes GPS
-  noise between two near-identical tracks never flip the answer, while a real divergence (≥ S
-  seconds of capped cost) does.
-- Runs of one track become visits. The existing gap tolerance and minimum visit length still
-  apply to the result.
+1. **Candidate runs come from gate crossings only.** On a circuit, from one start/finish crossing
+   to the next (plus the out-lap and in-lap runs of section 2). On a point-to-point track, from a
+   start-gate crossing to the next finish-gate crossing.
+2. **The polyline confirms the run.** A run counts for that track only if at least 80 % of its
+   fixes (time-weighted) lie within the on-track threshold (30 m) of the track's polyline. That
+   rejects a run that happens to cross both gates on a different route.
+3. **Overlaps go to the closer track.** When confirmed runs of two tracks overlap in time, the one
+   with the smaller mean squared distance to its polyline over the overlap keeps it; the other
+   run is dropped. Squaring weights real divergence (the pit exit, a new jump line) over GPS
+   noise. A moment that no confirmed run covers belongs to no track.
+4. **Visits are consecutive confirmed runs on one track**, from the first run's start to the last
+   run's end.
 
-Cost is O(fixes × tracks²) on top of today's per-fix distance work; tracks per session after
-the bbox filter are a handful.
+The 80 % and the threshold live in `VisitParams`, the one source of truth as today, and are
+checked against Isaac's library (Acceptance). The bounding-box pre-filter stays.
 
-Defaults for `p`, `c_off` and `S` are tuned on Isaac's library (see Acceptance) and live in
-`VisitParams`, the one source of truth as today.
+Behaviour change: on a circuit with no out-lap gate, the stretch before the first start/finish
+crossing is no longer a lap (today it is lap 1). It has no start crossing, so it can't be timed;
+this is what made a "fastest" lap table pick a 15 s out-lap at Broome-Tioga. Adding an out-lap
+gate makes it a timed, marked lap.
 
 ### 2. Out-lap and in-lap gates on a circuit track
 
@@ -62,11 +64,9 @@ Rules:
 - Every out-lap gate crossing starts an out-lap, so a session with several stints has several
   out-laps. Lap numbers count through the whole session and don't restart per stint (today's
   session-wide renumbering, `laps/renumber.rs`, unchanged).
-- The pit lane may lie outside the track's 30 m threshold, so the out-lap gate crossing is
-  searched from a lookback before the visit starts (the shorter of 60 s and the time since the
-  previous visit ended) up to the first S/F crossing.
-- A track with no out-lap gate behaves as today: lap 1 runs from the visit start to the first
-  S/F crossing, unmarked. Without the gate there's no way to know the first lap was an out-lap.
+- An out-lap run is confirmed like any run (section 1, 80 % within 30 m). The pit lane being off
+  the polyline doesn't sink it: at Walden it is ~65 m of a ~1.5 km lap.
+- A track with no out-lap gate has no out-lap: laps start at the first S/F crossing (section 1).
 - Out- and in-laps are excluded from `"fastest"` and from averages, and still listed (lap tables
   show the mark). Out is lap 1 when the session starts with one, as today.
 
@@ -102,14 +102,14 @@ rides. Isaac: tracks change several times a year at some venues; not urgent.
 
 Unit tests (inline, `tracks/detect.rs` and `laps/detect.rs`):
 
-- two tracks sharing 95 % of their ground, GPS noise of ±10 m: no flip-flopping; the ride goes to
-  the track whose distinct section it actually rode
-- the distinct section decides even when it is short (65 m at 8 m/s)
+- two tracks sharing 95 % of their ground, each with its own gates: every run goes to the track
+  whose gates it crossed; where both tracks' runs overlap, the closer fit keeps it
+- a run that crosses both gates on a different route (under 80 % near the polyline) is rejected
 - a multipath spike of 80 m for 1 s changes nothing
 - the same ride at 1 Hz and at 10 Hz GPS gives the same visits
 - two point-to-point trails ridden once each, sharing a stretch: one visit each
-- out-lap gate: out-lap timed from the gate to S/F and marked; gate outside the 30 m threshold is
-  still found; two stints give two out-laps; no gate gives today's lap 1
+- out-lap gate: out-lap timed from the gate to S/F and marked; two stints give two out-laps; no
+  gate gives no out-lap and laps from the first S/F crossing
 - in-lap gate: last lap ending at the pit entry is marked `in`; with no gate, it isn't
 - `"fastest"` and averages skip out/in/ignored laps
 
