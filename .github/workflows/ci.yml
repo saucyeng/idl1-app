@@ -9,14 +9,16 @@ concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
+# Three Rust jobs run in parallel (2026-11-13): most of the time is compiling,
+# and one job ran the engine, bridge and transport builds back to back. CI now
+# finishes before Release's builds do, so Release waits for it before
+# publishing (release.yml `ci`) at no cost in time. The app crate itself is
+# compiled by Release's desktop and Android builds, so CI does not check it.
 jobs:
-  rust:
+  engine:
     runs-on: ubuntu-latest
     timeout-minutes: 45
     env:
-      # rust/.cargo/config.toml pins target-dir to a Windows path shared across
-      # the dev machine's worktrees; on Linux that path cannot be joined into
-      # LD_LIBRARY_PATH. The env var overrides it.
       CARGO_TARGET_DIR: ${{ github.workspace }}/rust/target
     steps:
       - name: Checkout
@@ -24,41 +26,17 @@ jobs:
         with:
           submodules: recursive
 
-      - name: Install Tauri v2 Linux prerequisites
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            libwebkit2gtk-4.1-dev \
-            build-essential \
-            curl \
-            wget \
-            file \
-            libxdo-dev \
-            libssl-dev \
-            libayatana-appindicator3-dev \
-            librsvg2-dev
-
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
 
       - name: Cache cargo
         uses: Swatinem/rust-cache@v2
         with:
-          # Two workspaces (idl-rs in rust/, the app side at the repo root);
-          # CARGO_TARGET_DIR above points both at rust/target.
-          workspaces: |
-            rust -> target
-            . -> rust/target
+          workspaces: rust -> target
 
       - name: cargo test -p idl-rs -p idl-library -p idl-rs-cli
         working-directory: rust
         run: cargo test -p idl-rs -p idl-library -p idl-rs-cli -- --test-threads=4
-
-      - name: cargo test -p idl1-bridge
-        run: cargo test -p idl1-bridge -- --test-threads=4
-
-      - name: cargo test -p idl1-transport
-        run: cargo test -p idl1-transport -- --test-threads=4
 
       - name: Workbook reference is up to date
         # The reference is generated from the engine's own catalogs (ruling
@@ -87,20 +65,67 @@ jobs:
           git -C rust diff --exit-code -- docs/CLI-REFERENCE.md
           git diff --exit-code -- app/src/shell/cliTable.json
 
+  bridge:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      CARGO_TARGET_DIR: ${{ github.workspace }}/target
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install Tauri v2 Linux prerequisites
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y             libwebkit2gtk-4.1-dev             build-essential             curl             wget             file             libxdo-dev             libssl-dev             libayatana-appindicator3-dev             librsvg2-dev
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: . -> target
+
+      - name: cargo test -p idl1-bridge
+        run: cargo test -p idl1-bridge -- --test-threads=4
+
       - name: Wire golden fixtures are up to date
-        # The goldens are generated from the engine's own encoders (ruling
-        # R236), so an encoder changed without regenerating them would let
-        # the committed bytes and the TS decoders' expectations silently
-        # drift out of sync with the engine that produced them.
+        # The goldens are generated from the bridge's encoders (ruling R236),
+        # so an encoder changed without regenerating them would let the
+        # committed bytes and the TS decoders' expectations silently drift.
         run: |
           cargo run -p idl1-bridge --bin wire-golden -- --out app/src/ipc/golden
           git diff --exit-code -- app/src/ipc/golden
 
-      - name: cargo check app crate (app/src-tauri)
-        # The Tauri app crate is compiled by nobody but `tauri dev/build`, so a
-        # lane can land a type error here that every crate gate misses (R199).
-        working-directory: app/src-tauri
-        run: cargo check -p app
+  transport:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      CARGO_TARGET_DIR: ${{ github.workspace }}/target
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install the BLE stack's build prerequisites (btleplug needs D-Bus)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libdbus-1-dev pkg-config
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: . -> target
+
+      - name: cargo test -p idl1-transport
+        run: cargo test -p idl1-transport -- --test-threads=4
 
   app:
     runs-on: ubuntu-latest

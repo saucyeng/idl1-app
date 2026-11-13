@@ -93,7 +93,7 @@ saying whether it changed user-facing documentation (R222 item 5).
 
 ## 8. Compute rules (the dev machine is memory-bound — ruling R13)
 
-**Cloud first (Isaac, 2026-10-15).** GitHub Actions runs every gate on each push to `main`: the Rust suites (`ci.yml`: idl-rs, cli, idl1-bridge, idl1-transport), `cargo check -p app`, `tsc`, madge and vitest. Actions minutes are free (public repo). The local machine runs only `tsc` and targeted or full `vitest` before a push, then the lead watches CI and fixes forward. Cargo runs locally only to debug a failure CI has already shown, and then under the rules below. There is no separate test branch: nightly *is* the work-in-progress channel.
+**Cloud first (Isaac, 2026-10-15).** GitHub Actions runs every gate on each push to `main`: the Rust suites (`ci.yml`, three parallel jobs: engine, idl1-bridge, idl1-transport), `tsc`, madge and vitest; Release's builds compile the app crate, and Release publishes only after CI passes for that commit. Actions minutes are free (public repo). The local machine runs only `tsc` and targeted or full `vitest` before a push, then the lead watches CI and fixes forward. Cargo runs locally only to debug a failure CI has already shown, and then under the rules below. There is no separate test branch: nightly *is* the work-in-progress channel.
 
 - At most **two** cargo processes on the machine at a time (R216; four or more is what crashed it), and a cargo command starts only with ≥ 3 GB of memory commit free (`Get-CimInstance Win32_OperatingSystem | % FreeVirtualMemory`; R245: measured 2026-09-20, the full tauri test build with a warm target dir peaks at 1.7 GB; a cold or release build wants ≥ 6 GB); jobs are capped machine-wide (`~/.cargo/config.toml`), never override with `-j`.
 - Task cycles run only the targeted test filter the dispatch names; each run must report a non-zero `passed` count (a filter matching nothing is a failed gate, not a pass).
@@ -101,5 +101,5 @@ saying whether it changed user-facing documentation (R222 item 5).
 - No reruns to hunt flakiness unless the lead asks; a known-flaky test is rerun alone by name, once.
 - A task that changes a `pub` signature in `core` adds `cargo check -p idl-rs-cli --tests`.
 - App-side crates (`crates/*`, `app/src-tauri`) build in the root workspace; the idl-rs crates build in `rust/`. Both use the shared target dir from the machine-local `saucyeng/.cargo/config.toml` (outside every repo; the public idl-rs repo carries no machine paths).
-- A lane that touches `idl1-bridge` or `app/src-tauri` adds `cargo check -p app` run from `app/src-tauri` at its merge gate: nothing else compiles the app crate (R199).
+- A lane that touches `idl1-bridge` or `app/src-tauri` adds `cargo check -p app` run from `app/src-tauri` at its merge gate: CI does not compile the app crate, only Release's builds do (R199).
 - Never `cargo fmt`, `cargo tarpaulin`, or `cargo doc` inside a task. Readers (reviewers, adjudicators) never build.

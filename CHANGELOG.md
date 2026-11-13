@@ -6,6 +6,12 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 
 ### Changed
 
+- **A nightly is published only after CI passes [no-docs] (2026-11-13).** CI's Rust tests now run as
+  three parallel jobs (engine, bridge, transport) and finish before Release's builds do, so
+  Release waits for that commit's CI run before publishing, at no cost in time. Nightly 133 had
+  shipped from a commit whose CI was red. CI no longer compiles the app crate separately:
+  Release's desktop and Android builds compile it.
+
 - **The engine no longer carries the app's chart plumbing [docs] (2026-11-12).** The `idl-rs`
   engine is being made usable on its own, without the app. The app-side Rust crates moved into
   this repo (`crates/idl1-bridge`, formerly `rust/tauri`; `crates/idl1-transport`, formerly
