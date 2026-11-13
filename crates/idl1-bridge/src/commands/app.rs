@@ -761,17 +761,6 @@ pub struct ProfileLoadReport {
     pub skipped: Vec<SkippedFile>,
 }
 
-/// Maps [`idl_library::profile::ProfileError`] to the C3 §3.10 error rows
-/// (`io`, `internal`). `ProfileErrorKind::Encode` folds to `internal` per
-/// C3 §2's folding rule.
-fn map_profile_error(e: idl_library::profile::ProfileError) -> IpcError {
-    use idl_library::profile::ProfileErrorKind;
-    match e.kind {
-        ProfileErrorKind::Io => IpcError::new(IpcErrorKind::Io, e.message),
-        ProfileErrorKind::Encode => IpcError::new(IpcErrorKind::Internal, e.message),
-    }
-}
-
 /// `list_profiles`'s transport-agnostic core. `load_all` never fails — a
 /// malformed file is reported in [`ProfileLoadReport::skipped`], never
 /// printed and never aborting the load.

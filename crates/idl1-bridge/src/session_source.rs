@@ -538,7 +538,7 @@ mod tests {
         // Assert — identity from the footer, samples and unit through the
         // cache one channel at a time (ruling R211.1).
         assert_eq!(handle.channel_samples("Speed"), vec![1.0, 2.0]);
-        assert_eq!(handle.unit_of("Speed").as_deref(), Some("m/s"));
+        assert_eq!(idl_rs::math::ChannelLookup::unit_of(&handle, "Speed").as_deref(), Some("m/s"));
         assert!(handle.channels().iter().any(|c| c.channel_id == "Speed"));
 
         let _ = std::fs::remove_dir_all(&root);
