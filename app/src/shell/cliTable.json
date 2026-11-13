@@ -975,7 +975,7 @@
     },
     {
       "args": [],
-      "core_fn": "idl_library::catalog_read::list_tracks",
+      "core_fn": "idl_rs::track_artifact::path::list_track_files + idl_rs::track_artifact::read::read_track",
       "data_dir": true,
       "flags": [
         {

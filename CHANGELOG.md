@@ -383,6 +383,15 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 
 ### Fixed
 
+- **`idl-rs track list` shows a track as soon as its file exists [docs] (2026-11-13).** It read the
+  catalog, so a newly written track stayed invisible until `catalog rebuild`; it now reads
+  `<data>/tracks/` directly (`.idl1t`, else legacy `.idl0t`). Output is unchanged.
+
+- **`idl-rs workbook check` reports cell ids that can't be addressed [no-docs] (2026-11-13).** An id
+  that isn't 8 lowercase hex (`id=gps`) is re-randomised on every parse, so `workbook data <cell>`
+  could never reach it; `check` now lists it as an `InvalidCellId` problem with its line. An
+  unknown `--session` id is a not-found error naming the id and the data directory.
+
 - **The workbook reference no longer shows `mean([x], "t:lap")` as working [docs] (2026-11-13).**
   Per-lap reduction of a time series is planned but the engine rejects it today; the reference
   now says so and shows the headless alternative (`workbook data --track ... --main-lap n`).
