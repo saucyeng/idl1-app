@@ -6,6 +6,16 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 
 ### Changed
 
+- **Tracks are matched by their gates; out laps and in laps [docs] (2026-11-13).** A ride is
+  matched to a track when it crosses that track's gates and stays on its line, not by which track
+  each GPS point happens to sit nearest, so two tracks that share most of their ground (Walden '26
+  and its out-lap track) no longer steal each other's laps. A circuit track can now have an
+  "Out-lap gate (pit exit)" and an "In-lap gate (pit entry)", placed in the track editor like a
+  sector gate. The lap from pit exit to the line is marked Out, the lap from the line to pit entry
+  is marked In; both are still listed but are never the fastest lap and don't count in averages.
+  Without an out-lap gate, the ride before the first start/finish crossing is no longer a lap.
+  `idl-rs session set-meta --ignore-lap <n>` (and `--unignore-lap <n>`) ignores a lap from the
+  command line. Every session's laps are found again on the next launch.
 - **Retired v1 commands and five unused commands removed [no-docs] (2026-11-13).** The app's old
   `eval_workbook`, `fetch_host_channel`, `fetch_fft`, `fetch_raster` and `fetch_raster_meta`
   commands (the app has called the `_v2` forms for a while) and five commands nothing called
