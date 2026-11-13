@@ -1,6 +1,6 @@
 # idl-rs builtin registry, v2: a builtin is a typed Rust function
 
-Status: DRAFT for Isaac's yes (2026-11-13). Supersedes the phase-1 design in
+Status: approved by Isaac in chat, 2026-11-13 ("registry change sounds good"). Supersedes the phase-1 design in
 `2026-11-12-idl-rs-builtin-registry.md`; branch `registry-phase1` stays as the fallback until the
 prototype below is measured. Isaac (2026-11-13): "yes on the registry … since it's critical
 infrastructure, can we think through it properly and ensure this is the most elegant solution?"
