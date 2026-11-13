@@ -100,6 +100,6 @@ saying whether it changed user-facing documentation (R222 item 5).
 - The full suite runs once per lane at its merge gate: `cargo test -p idl-rs -p idl-library -p idl-rs-cli -- --test-threads=4`. Never `--workspace`.
 - No reruns to hunt flakiness unless the lead asks; a known-flaky test is rerun alone by name, once.
 - A task that changes a `pub` signature in `core` adds `cargo check -p idl-rs-cli --tests`.
-- App-side crates (`crates/*`, `app/src-tauri`) build in the root workspace; the idl-rs crates build in `rust/`. A local cargo command from the root needs `CARGO_TARGET_DIR` pointed at the shared target dir (`rust/.cargo/config.toml` only applies inside `rust/`).
+- App-side crates (`crates/*`, `app/src-tauri`) build in the root workspace; the idl-rs crates build in `rust/`. Both use the shared target dir from the machine-local `saucyeng/.cargo/config.toml` (outside every repo; the public idl-rs repo carries no machine paths).
 - A lane that touches `idl1-bridge` or `app/src-tauri` adds `cargo check -p app` run from `app/src-tauri` at its merge gate: nothing else compiles the app crate (R199).
 - Never `cargo fmt`, `cargo tarpaulin`, or `cargo doc` inside a task. Readers (reviewers, adjudicators) never build.

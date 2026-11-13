@@ -383,6 +383,10 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 
 ### Fixed
 
+- **`deglitch_pulses(pulses, max_fraction=...)` accepts its keyword [no-docs] (2026-11-13).** The
+  reference documented it, but the evaluator rejected every keyword for this function before it
+  could read one, so only the default fraction (0.35) ever applied.
+
 - **A chart's legend shows the colours its lines are drawn in [no-docs] (2026-11-05).** The
   legend coloured each series `--chart-1`, `--chart-2`, … by the order the names appeared, which
   matched nothing: an unstroked line is drawn grey, and a hand-written cell picks its own colours.
