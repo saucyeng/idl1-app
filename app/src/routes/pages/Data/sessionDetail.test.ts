@@ -40,6 +40,7 @@ function baseDetail(overrides: Partial<SessionDetail> = {}): SessionDetail {
 function lapDetail(overrides: Partial<LapDetail> = {}): LapDetail {
   return {
     lap_number: 1,
+    kind: "normal",
     start_timestamp_ms: 0,
     end_timestamp_ms: 60_000,
     raw_elapsed_ms: 60_000,
@@ -145,6 +146,29 @@ describe("toDetailView", () => {
     expect(lap2?.isReference).toBe(true);
     expect(lap1?.isReference).toBe(false);
     expect(lap3?.isReference).toBe(false);
+  });
+
+  it("toDetailView — the quickest laps are an out lap and an in lap — the reference is the quickest ordinary lap, and each row carries its kind", () => {
+    const detail = baseDetail({
+      laps: [
+        lapDetail({ lap_number: 1, kind: "out", lap_time_ms: 30_000 }),
+        lapDetail({ lap_number: 2, lap_time_ms: 50_000 }),
+        lapDetail({ lap_number: 3, kind: "in", lap_time_ms: 35_000 }),
+      ],
+      reference_lap_number: null,
+    });
+
+    const view = toDetailView(detail, []);
+
+    expect(view.laps.map((l) => l.kind)).toEqual(["out", "normal", "in"]);
+    expect(view.laps.map((l) => l.isReference)).toEqual([false, true, false]);
+    expect(bestLapMs(view.laps)).toBe(50_000);
+  });
+
+  it("toDetailView — a catalog-only lap — kind reads normal", () => {
+    const view = toDetailView(baseDetail({ laps: [] }), [lapSummary({ lap_number: 4 })]);
+
+    expect(view.laps[0].kind).toBe("normal");
   });
 
   it("bestLapMs — every lap ignored — returns null, not Infinity", () => {

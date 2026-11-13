@@ -141,6 +141,9 @@ impl From<idl_rs::store::session_json::NeutralZoneVisitJson> for LapNeutralZoneV
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct LapDetail {
     pub lap_number: u32,
+    /// `"normal"`, `"out"` or `"in"` (C1 §6 `laps[].kind`, 2026-11-13). Out
+    /// and in laps are listed but skipped by "fastest" and by averages.
+    pub kind: idl_rs::laps::LapKind,
     pub start_timestamp_ms: i64,
     pub end_timestamp_ms: i64,
     pub raw_elapsed_ms: i64,
@@ -155,6 +158,7 @@ impl From<catalog_read::LapDetail> for LapDetail {
     fn from(l: catalog_read::LapDetail) -> Self {
         Self {
             lap_number: l.lap_number,
+            kind: l.kind,
             start_timestamp_ms: l.start_timestamp_ms,
             end_timestamp_ms: l.end_timestamp_ms,
             raw_elapsed_ms: l.raw_elapsed_ms,
@@ -450,16 +454,27 @@ impl From<&GpsFixWire> for idl_rs::gps::GpsFix {
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum LapTimingWire {
-    Circuit { start_finish: GateWire },
+    /// One start/finish gate. `out_lap_gate` (pit exit) and `in_lap_gate`
+    /// (pit entry) are optional (2026-11-13): `null` or absent = no such
+    /// gate, so a draft from an older frontend still saves.
+    Circuit {
+        start_finish: GateWire,
+        #[serde(default)]
+        out_lap_gate: Option<GateWire>,
+        #[serde(default)]
+        in_lap_gate: Option<GateWire>,
+    },
     PointToPoint { start: GateWire, finish: GateWire },
 }
 
 impl From<&idl_rs::laps::model::LapTiming> for LapTimingWire {
     fn from(t: &idl_rs::laps::model::LapTiming) -> Self {
         match t {
-            idl_rs::laps::model::LapTiming::Circuit { start_finish } => {
-                LapTimingWire::Circuit { start_finish: start_finish.into() }
-            }
+            idl_rs::laps::model::LapTiming::Circuit { start_finish, out_lap_gate, in_lap_gate } => LapTimingWire::Circuit {
+                start_finish: start_finish.into(),
+                out_lap_gate: out_lap_gate.as_ref().map(Into::into),
+                in_lap_gate: in_lap_gate.as_ref().map(Into::into),
+            },
             idl_rs::laps::model::LapTiming::PointToPoint { start, finish } => {
                 LapTimingWire::PointToPoint { start: start.into(), finish: finish.into() }
             }
@@ -470,7 +485,11 @@ impl From<&idl_rs::laps::model::LapTiming> for LapTimingWire {
 impl From<&LapTimingWire> for idl_rs::laps::model::LapTiming {
     fn from(t: &LapTimingWire) -> Self {
         match t {
-            LapTimingWire::Circuit { start_finish } => Self::Circuit { start_finish: start_finish.into() },
+            LapTimingWire::Circuit { start_finish, out_lap_gate, in_lap_gate } => Self::Circuit {
+                start_finish: start_finish.into(),
+                out_lap_gate: out_lap_gate.as_ref().map(Into::into),
+                in_lap_gate: in_lap_gate.as_ref().map(Into::into),
+            },
             LapTimingWire::PointToPoint { start, finish } => Self::PointToPoint { start: start.into(), finish: finish.into() },
         }
     }
@@ -1350,6 +1369,7 @@ mod tests {
         doc.bike_profile_snapshot = Some(serde_json::json!({ "snapshot_marker": "snapshot-J" }));
         doc.laps = vec![LapJson {
             lap_number: 1,
+            kind: Default::default(),
             start_timestamp_ms: 1_000,
             end_timestamp_ms: 2_000,
             raw_elapsed_ms: 1_001,
@@ -1372,6 +1392,7 @@ mod tests {
             end_timestamp_ms: 4_000,
             laps: vec![LapJson {
                 lap_number: 20,
+                kind: Default::default(),
                 start_timestamp_ms: 3_100,
                 end_timestamp_ms: 3_200,
                 raw_elapsed_ms: 3_101,
@@ -1640,6 +1661,7 @@ mod tests {
         doc.bike_profile_snapshot = Some(serde_json::json!({ "marker": "untouched-snapshot" }));
         doc.laps = vec![LapJson {
             lap_number: 7,
+            kind: Default::default(),
             start_timestamp_ms: 100,
             end_timestamp_ms: 200,
             raw_elapsed_ms: 100,
@@ -1763,6 +1785,7 @@ mod tests {
     fn lap(lap_number: u32, start_ms: i64, end_ms: i64, lap_time_ms: i64) -> LapJson {
         LapJson {
             lap_number,
+            kind: Default::default(),
             start_timestamp_ms: start_ms,
             end_timestamp_ms: end_ms,
             raw_elapsed_ms: end_ms - start_ms,
@@ -1925,6 +1948,7 @@ mod tests {
         // `serde_json::Value` introduced.
         let detail = LapDetail {
             lap_number: 1,
+            kind: idl_rs::laps::LapKind::Normal,
             start_timestamp_ms: 1_000,
             end_timestamp_ms: 2_000,
             raw_elapsed_ms: 1_000,
@@ -1946,6 +1970,7 @@ mod tests {
             value,
             serde_json::json!({
                 "lap_number": 1,
+                "kind": "normal",
                 "start_timestamp_ms": 1_000,
                 "end_timestamp_ms": 2_000,
                 "raw_elapsed_ms": 1_000,
@@ -1968,6 +1993,7 @@ mod tests {
         // Arrange
         let detail = LapDetail {
             lap_number: 1,
+            kind: idl_rs::laps::LapKind::Normal,
             start_timestamp_ms: 0,
             end_timestamp_ms: 0,
             raw_elapsed_ms: 0,
@@ -1984,6 +2010,64 @@ mod tests {
         // Assert
         assert_eq!(value["sectors"], serde_json::json!([]));
         assert_eq!(value["neutral_zone_visits"], serde_json::json!([]));
+    }
+
+    #[test]
+    fn lap_detail_kind_serialises_lowercase() {
+        // Arrange
+        let detail = LapDetail {
+            lap_number: 1,
+            kind: idl_rs::laps::LapKind::Out,
+            start_timestamp_ms: 0,
+            end_timestamp_ms: 0,
+            raw_elapsed_ms: 0,
+            lap_time_ms: 0,
+            start_time_secs: 0.0,
+            end_time_secs: 0.0,
+            sectors: Vec::new(),
+            neutral_zone_visits: Vec::new(),
+        };
+
+        // Act
+        let value = serde_json::to_value(&detail).unwrap();
+
+        // Assert
+        assert_eq!(value["kind"], serde_json::json!("out"));
+    }
+
+    #[test]
+    fn lap_timing_wire_circuit_with_out_and_in_gates_survives_wire_to_model_to_wire() {
+        // Arrange
+        let json = serde_json::json!({
+            "kind": "circuit",
+            "start_finish": { "lat1": 1.0, "lon1": 2.0, "lat2": 3.0, "lon2": 4.0 },
+            "out_lap_gate": { "lat1": 5.0, "lon1": 6.0, "lat2": 7.0, "lon2": 8.0 },
+            "in_lap_gate": { "lat1": 9.0, "lon1": 10.0, "lat2": 11.0, "lon2": 12.0 },
+        });
+
+        // Act
+        let wire: LapTimingWire = serde_json::from_value(json.clone()).unwrap();
+        let model: idl_rs::laps::model::LapTiming = (&wire).into();
+        let back = serde_json::to_value(LapTimingWire::from(&model)).unwrap();
+
+        // Assert
+        assert_eq!(back, json);
+    }
+
+    #[test]
+    fn lap_timing_wire_circuit_without_out_or_in_gates_reads_as_none_and_writes_null() {
+        // Arrange — a draft from a frontend that predates the two gates.
+        let json = serde_json::json!({ "kind": "circuit", "start_finish": { "lat1": 1.0, "lon1": 2.0, "lat2": 3.0, "lon2": 4.0 } });
+
+        // Act
+        let wire: LapTimingWire = serde_json::from_value(json).unwrap();
+        let model: idl_rs::laps::model::LapTiming = (&wire).into();
+        let back = serde_json::to_value(LapTimingWire::from(&model)).unwrap();
+
+        // Assert
+        assert!(matches!(model, idl_rs::laps::model::LapTiming::Circuit { out_lap_gate: None, in_lap_gate: None, .. }));
+        assert_eq!(back["out_lap_gate"], serde_json::Value::Null);
+        assert_eq!(back["in_lap_gate"], serde_json::Value::Null);
     }
 
     // ---- save_track (Task 4, L8x) -----------------------------------------
@@ -2020,6 +2104,35 @@ mod tests {
             let on_disk = read_track(&root.join("tracks").join("new-id-1.idl1t")).unwrap();
             assert_eq!(on_disk.created_at_ms, 1_000);
             assert_eq!(on_disk.updated_at_ms, 1_000);
+
+            let _ = std::fs::remove_dir_all(&root);
+        }
+
+        #[test]
+        fn save_track_via_a_circuit_with_out_and_in_lap_gates_writes_both_to_the_artifact() {
+            // Arrange
+            let root = temp_root();
+            let gate = |v: f64| GateWire { lat1: v, lon1: v, lat2: v + 0.001, lon2: v + 0.001 };
+            let mut draft = empty_draft("Walden");
+            draft.lap_timing =
+                Some(LapTimingWire::Circuit { start_finish: gate(41.0), out_lap_gate: Some(gate(41.1)), in_lap_gate: Some(gate(41.2)) });
+
+            // Act
+            let result = save_track_via(&root, draft, 1_000, "t-out").unwrap();
+
+            // Assert — on disk and in the returned detail.
+            let on_disk = read_track(&root.join("tracks").join("t-out.idl1t")).unwrap();
+            match on_disk.timing {
+                Some(idl_rs::laps::model::LapTiming::Circuit { out_lap_gate: Some(out), in_lap_gate: Some(inn), .. }) => {
+                    assert_eq!(out.lat1, 41.1);
+                    assert_eq!(inn.lat1, 41.2);
+                }
+                other => panic!("expected a circuit with both gates, got {other:?}"),
+            }
+            assert!(matches!(
+                result.track.lap_timing,
+                Some(LapTimingWire::Circuit { out_lap_gate: Some(_), in_lap_gate: Some(_), .. })
+            ));
 
             let _ = std::fs::remove_dir_all(&root);
         }
@@ -2256,6 +2369,7 @@ mod tests {
             let mut doc = empty_session_json(session_id);
             doc.laps = vec![LapJson {
                 lap_number: 1,
+                kind: Default::default(),
                 start_timestamp_ms: 1_000,
                 end_timestamp_ms: 1_500,
                 raw_elapsed_ms: 500,
@@ -2407,7 +2521,7 @@ mod tests {
                 id: id.to_string(),
                 name: "Loop".to_string(),
                 venue: String::new(),
-                timing: Some(LapTiming::Circuit { start_finish: Gate { lat1: 0.05, lon1: -0.001, lat2: 0.05, lon2: 0.001 } }),
+                timing: Some(LapTiming::Circuit { start_finish: Gate { lat1: 0.05, lon1: -0.001, lat2: 0.05, lon2: 0.001 }, out_lap_gate: None, in_lap_gate: None }),
                 sector_gates: Vec::new(),
                 neutral_zones: Vec::new(),
                 reference_polyline: polyline,

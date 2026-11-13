@@ -6,7 +6,9 @@
  * A gate is placed with two clicks, one at each end, across the trail. A
  * start and a finish make the track point-to-point (a downhill); a start
  * alone makes it a circuit, the start being the start/finish line (IDL0_SPEC
- * §16.2.a). Sector gates are placed the same way, in order.
+ * §16.2.a). Sector gates are placed the same way, in order. A circuit can
+ * also have an out-lap gate (pit exit) and an in-lap gate (pit entry), placed
+ * the same way; a point-to-point track has neither.
  */
 import type { Gate, GpsFix, LapTiming, SectorGate, TrackDetail, TrackDraft } from "../../../ipc/catalog";
 
@@ -17,12 +19,25 @@ export interface LatLon {
 }
 
 /** Which gate a placement fills. */
-export type GateTarget = { kind: "start" } | { kind: "finish" } | { kind: "sector"; index: number } | { kind: "new-sector" };
+export type GateTarget =
+  | { kind: "start" }
+  | { kind: "finish" }
+  | { kind: "out-lap" }
+  | { kind: "in-lap" }
+  | { kind: "sector"; index: number }
+  | { kind: "new-sector" };
 
 /** The editor's state. */
 export interface TrackEditorState {
   start: Gate | null;
   finish: Gate | null;
+  /** A circuit's out-lap gate (pit exit): a lap from it to the next
+   *  start/finish crossing is an out lap. Kept while a finish is placed,
+   *  but only a circuit saves it ({@link lapTimingOf}). */
+  outLap: Gate | null;
+  /** A circuit's in-lap gate (pit entry): a lap from a start/finish
+   *  crossing to it is an in lap. Circuit only, as {@link outLap}. */
+  inLap: Gate | null;
   sectors: SectorGate[];
   /** The gate being placed, and its first end once clicked; `null` when
    *  no placement is under way. */
@@ -48,6 +63,8 @@ export function initialEditorState(track: TrackDetail | null): TrackEditorState 
   return {
     start: timing === null ? null : timing.kind === "circuit" ? timing.start_finish : timing.start,
     finish: timing !== null && timing.kind === "point_to_point" ? timing.finish : null,
+    outLap: timing !== null && timing.kind === "circuit" ? timing.out_lap_gate : null,
+    inLap: timing !== null && timing.kind === "circuit" ? timing.in_lap_gate : null,
     sectors: track?.sector_gates ?? [],
     placing: null,
     name: track?.name ?? "",
@@ -74,6 +91,10 @@ function withGate(state: TrackEditorState, target: GateTarget, gate: Gate | null
       return { ...state, start: gate };
     case "finish":
       return { ...state, finish: gate };
+    case "out-lap":
+      return { ...state, outLap: gate };
+    case "in-lap":
+      return { ...state, inLap: gate };
     case "sector":
       if (gate === null) return { ...state, sectors: state.sectors.filter((_, i) => i !== target.index) };
       return { ...state, sectors: state.sectors.map((s, i) => (i === target.index ? { ...s, gate } : s)) };
@@ -108,10 +129,11 @@ export function trackEditorReducer(state: TrackEditorState, action: TrackEditorA
 }
 
 /** The track's timing from the gates placed: start and finish make it
- *  point-to-point, a start alone a circuit, anything else no timing. */
-export function lapTimingOf(state: Pick<TrackEditorState, "start" | "finish">): LapTiming | null {
+ *  point-to-point, a start alone a circuit (with its out-lap and in-lap
+ *  gates, when placed), anything else no timing. */
+export function lapTimingOf(state: Pick<TrackEditorState, "start" | "finish" | "outLap" | "inLap">): LapTiming | null {
   if (state.start === null) return null;
-  if (state.finish === null) return { kind: "circuit", start_finish: state.start };
+  if (state.finish === null) return { kind: "circuit", start_finish: state.start, out_lap_gate: state.outLap, in_lap_gate: state.inLap };
   return { kind: "point_to_point", start: state.start, finish: state.finish };
 }
 

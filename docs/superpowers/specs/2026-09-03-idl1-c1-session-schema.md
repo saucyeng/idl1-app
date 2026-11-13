@@ -726,6 +726,12 @@ under one key due to last-ulp CPU differences, and either is valid).
   "laps": [
     {
       "lap_number": 1,                   // int, 1-based
+      "kind": "out",                     // "normal" | "out" | "in" — additive (2026-11-13): omitted
+                                          //   for a normal lap, absent reads as "normal". "out" runs
+                                          //   from the track's out-lap gate (pit exit) to the next
+                                          //   start/finish; "in" from start/finish to the in-lap gate
+                                          //   (pit entry). Out and in laps are listed but left out of
+                                          //   "fastest" and averages, like an ignored lap
       "start_timestamp_ms": 0,           // i64, UTC ms
       "end_timestamp_ms": 0,             // i64, UTC ms
       "raw_elapsed_ms": 0,               // i64, ms — end - start

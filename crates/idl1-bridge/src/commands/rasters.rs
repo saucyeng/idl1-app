@@ -1191,6 +1191,7 @@ mod tests {
         let dt = 1.0 / 64.0;
         let lap = |n: u32, start_idx: usize, end_idx: usize| LapJson {
             lap_number: n,
+            kind: Default::default(),
             start_timestamp_ms: (start_idx as f64 * dt * 1000.0).round() as i64,
             end_timestamp_ms: (end_idx as f64 * dt * 1000.0).round() as i64,
             raw_elapsed_ms: ((end_idx - start_idx) as f64 * dt * 1000.0).round() as i64,

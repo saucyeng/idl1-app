@@ -11,7 +11,7 @@
  */
 import { invoke } from "@tauri-apps/api/core";
 
-import type { GpsFix, LapTiming, SectorGate } from "./catalog";
+import type { GpsFix, LapKind, LapTiming, SectorGate } from "./catalog";
 import { decodeTraceLayout } from "./gps";
 import type { Window } from "./workbook";
 
@@ -50,6 +50,8 @@ export interface TrackRun {
   end_secs: number;
   /** The run's time, seconds. */
   duration_secs: number;
+  /** An ordinary run, an out lap or an in lap. */
+  kind: LapKind;
 }
 
 /** `preview_track_runs`' return (spec §3). */

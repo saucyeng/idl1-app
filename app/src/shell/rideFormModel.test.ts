@@ -5,7 +5,7 @@ import type { LapDetail, SessionDetail } from "../ipc/catalog";
 import { attachedNotes, notesPatch, rideFacts, setupRows } from "./rideFormModel";
 
 function lap(n: number, start: number, end: number): LapDetail {
-  return { lap_number: n, start_timestamp_ms: start, end_timestamp_ms: end, raw_elapsed_ms: end - start, lap_time_ms: end - start, start_time_secs: 0, end_time_secs: 0, sectors: [], neutral_zone_visits: [] } as unknown as LapDetail;
+  return { lap_number: n, kind: "normal", start_timestamp_ms: start, end_timestamp_ms: end, raw_elapsed_ms: end - start, lap_time_ms: end - start, start_time_secs: 0, end_time_secs: 0, sectors: [], neutral_zone_visits: [] } as unknown as LapDetail;
 }
 
 function detail(over: Partial<SessionDetail> = {}): SessionDetail {
@@ -47,6 +47,19 @@ describe("notesPatch", () => {
 });
 
 describe("rideFacts", () => {
+  it("rideFacts — the quickest lap is an out lap — best lap is the quickest ordinary lap", () => {
+    // Arrange
+    const d = detail({ laps: [{ ...lap(1, 1_000, 1_500), kind: "out" }, lap(2, 1_500, 2_400), lap(3, 2_400, 4_000)] });
+    const fmt = { duration: (ms: number) => `${ms}d`, lap: (ms: number) => `${ms}l`, time: (ms: number) => `${ms}t` };
+
+    // Act
+    const facts = rideFacts(d, null, null, fmt);
+
+    // Assert
+    expect(facts).toContainEqual({ label: "Laps", value: "3" });
+    expect(facts).toContainEqual({ label: "Best lap", value: "900l" });
+  });
+
   it("rideFacts — laps with one ignored, and totals — best lap skips the ignored one, heart rate and distance appended", () => {
     // Arrange
     const d = detail({ ignored_lap_numbers: [2] });

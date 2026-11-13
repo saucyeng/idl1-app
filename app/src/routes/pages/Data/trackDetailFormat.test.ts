@@ -27,11 +27,19 @@ describe("formatLapTiming", () => {
   });
 
   it("formatLapTiming — circuit — names the kind and the one gate", () => {
-    const timing: LapTiming = { kind: "circuit", start_finish: gate1 };
+    const timing: LapTiming = { kind: "circuit", start_finish: gate1, out_lap_gate: null, in_lap_gate: null };
 
     const text = formatLapTiming(timing);
 
     expect(text).toBe(`Circuit — start/finish ${formatGate(gate1)}`);
+  });
+
+  it("formatLapTiming — circuit with an out-lap gate — names it after the start/finish", () => {
+    const timing: LapTiming = { kind: "circuit", start_finish: gate1, out_lap_gate: gate2, in_lap_gate: null };
+
+    const text = formatLapTiming(timing);
+
+    expect(text).toBe(`Circuit — start/finish ${formatGate(gate1)}, out-lap gate ${formatGate(gate2)}`);
   });
 
   it("formatLapTiming — point_to_point — names both gates", () => {

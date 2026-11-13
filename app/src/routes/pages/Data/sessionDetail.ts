@@ -1,4 +1,5 @@
-import type { ChannelSummary, LapChannelStat, LapNeutralZoneVisit, LapSector, LapSummary, SessionDetail } from "../../../ipc/catalog";
+import type { ChannelSummary, LapChannelStat, LapKind, LapNeutralZoneVisit, LapSector, LapSummary, SessionDetail } from "../../../ipc/catalog";
+import { countsForFastest } from "../../../state/lapKind";
 import { venueLabel } from "../../../state/selection";
 
 /** One row of the session detail pane's channel table — a pure projection
@@ -25,6 +26,10 @@ export interface DetailLapRow {
   /** int, 1-based (C1 §6 laps[].lap_number). */
   lapNumber: number;
   presence: "both" | "session-only" | "catalog-only";
+  /** `session.json`'s `laps[].kind` (C1 §6): an out or in lap is listed but
+   *  never the fastest. `"normal"` for a catalog-only lap: the catalog
+   *  carries no kind. */
+  kind: LapKind;
   /** ms — from whichever source carries this lap; null only if a future
    *  source omits `lap_time_ms` entirely, which neither current source does
    *  for a lap it reports. */
@@ -46,7 +51,7 @@ export interface DetailLapRow {
   ignored: boolean;
   /** `true` for the session's reference lap: `SessionDetail
    *  .reference_lap_number` when set, otherwise (C1 §6: null means "use
-   *  fastest lap") the fastest non-ignored lap by `lapTimeMs`. */
+   *  fastest lap") the fastest ordinary, non-ignored lap by `lapTimeMs`. */
   isReference: boolean;
 }
 
@@ -77,17 +82,18 @@ export interface DetailView {
  *  on the full `DetailLapRow` shape. */
 interface TimedLap {
   lapNumber: number;
+  kind: LapKind;
   lapTimeMs: number | null;
 }
 
-/** The fastest non-ignored lap's number, or null when no lap qualifies
- *  (every lap ignored, or none has a known time). C1 §6: a null
- *  `reference_lap_number` means "use fastest lap". */
+/** The fastest ordinary, non-ignored lap's number, or null when no lap
+ *  qualifies (every lap ignored, out or in, or none has a known time).
+ *  C1 §6: a null `reference_lap_number` means "use fastest lap". */
 function fastestNonIgnoredLapNumber(laps: readonly TimedLap[], ignored: ReadonlySet<number>): number | null {
   let bestLapNumber: number | null = null;
   let bestTimeMs = Number.POSITIVE_INFINITY;
   for (const lap of laps) {
-    if (ignored.has(lap.lapNumber) || lap.lapTimeMs === null) continue;
+    if (!countsForFastest(lap.kind, ignored.has(lap.lapNumber)) || lap.lapTimeMs === null) continue;
     if (lap.lapTimeMs < bestTimeMs) {
       bestTimeMs = lap.lapTimeMs;
       bestLapNumber = lap.lapNumber;
@@ -115,6 +121,7 @@ export function toDetailView(detail: SessionDetail, laps: LapSummary[]): DetailV
     return {
       lapNumber,
       presence,
+      kind: sessionLap?.kind ?? "normal",
       lapTimeMs: sessionLap?.lap_time_ms ?? catalogLap?.lap_time_ms ?? null,
       sectors: sessionLap === null ? null : sessionLap.sectors,
       neutralZoneVisits: sessionLap === null ? null : sessionLap.neutral_zone_visits,
@@ -155,12 +162,13 @@ export function toDetailView(detail: SessionDetail, laps: LapSummary[]): DetailV
   };
 }
 
-/** The fastest non-ignored lap's time, in ms — null when every lap is
- *  ignored or none has a known `lapTimeMs` (never `Infinity`). */
+/** The fastest ordinary, non-ignored lap's time, in ms — null when every
+ *  lap is ignored, out or in, or none has a known `lapTimeMs` (never
+ *  `Infinity`). */
 export function bestLapMs(laps: DetailView["laps"]): number | null {
   let best: number | null = null;
   for (const lap of laps) {
-    if (lap.ignored || lap.lapTimeMs === null) continue;
+    if (!countsForFastest(lap.kind, lap.ignored) || lap.lapTimeMs === null) continue;
     if (best === null || lap.lapTimeMs < best) best = lap.lapTimeMs;
   }
   return best;

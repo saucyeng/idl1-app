@@ -9,7 +9,7 @@ const detail: TrackDetail = {
   venue_name: "Original Venue",
   created_at_ms: 100,
   updated_at_ms: 200,
-  lap_timing: { kind: "circuit", start_finish: { lat1: 1, lon1: 2, lat2: 3, lon2: 4 } },
+  lap_timing: { kind: "circuit", start_finish: { lat1: 1, lon1: 2, lat2: 3, lon2: 4 }, out_lap_gate: { lat1: 5, lon1: 6, lat2: 7, lon2: 8 }, in_lap_gate: null },
   neutral_zones: [{ name: "Pit", enter: { lat1: 1, lon1: 2, lat2: 3, lon2: 4 }, exit: { lat1: 5, lon1: 6, lat2: 7, lon2: 8 } }],
   sector_gates: [{ name: "S1", gate: { lat1: 1, lon1: 2, lat2: 3, lon2: 4 } }],
   reference_polyline: [{ timestamp_ms: 1, lat: 1, lon: 2 }],

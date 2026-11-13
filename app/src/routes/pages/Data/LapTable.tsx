@@ -2,6 +2,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader as BrandTableHeader
 import { ColourPicker } from "@/components/ui/colour-picker";
 import { formatLapTimeMs } from "./format";
 import { formatNeutralZoneVisits, formatSectors } from "./lapDetailFormat";
+import { lapKindMark } from "../../../state/lapKind";
 import type { DetailView } from "./sessionDetail";
 
 /** Props for [[LapTable]]. */
@@ -73,6 +74,7 @@ export function LapTable({ laps, selectedLapNumbers, onLapClick, colourFor, onCo
             .join(", ");
           const selected = selectedLapNumbers.has(lap.lapNumber);
           const colour = colourFor(lap.lapNumber);
+          const mark = lapKindMark(lap.kind);
 
           return (
             <TableRow
@@ -82,7 +84,10 @@ export function LapTable({ laps, selectedLapNumbers, onLapClick, colourFor, onCo
               className="cursor-pointer"
               onClick={(e) => onLapClick(lap.lapNumber, { shiftKey: e.shiftKey, ctrlKey: e.ctrlKey, metaKey: e.metaKey })}
             >
-              <TableCell>{lap.lapNumber}</TableCell>
+              <TableCell>
+                {lap.lapNumber}
+                {mark !== null && <span className="ml-1.5 text-xs text-fg-dim">{mark}</span>}
+              </TableCell>
               <TableCell>{lap.lapTimeMs === null ? "—" : formatLapTimeMs(lap.lapTimeMs)}</TableCell>
               <TableCell>{formatSectors(lap.sectors)}</TableCell>
               <TableCell>{formatNeutralZoneVisits(lap.neutralZoneVisits)}</TableCell>

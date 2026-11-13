@@ -23,7 +23,7 @@ function detailWithLaps(laps: Array<{ lap_number: number; start_time_secs: numbe
     long_comment: "",
     tag: "",
     bike_profile_snapshot: null,
-    laps: laps.map((l) => ({ ...l, sectors: [], neutral_zone_visits: [], start_timestamp_ms: 0, end_timestamp_ms: 0, raw_elapsed_ms: 0, lap_time_ms: 0 })),
+    laps: laps.map((l) => ({ ...l, kind: "normal" as const, sectors: [], neutral_zone_visits: [], start_timestamp_ms: 0, end_timestamp_ms: 0, raw_elapsed_ms: 0, lap_time_ms: 0 })),
     track_visits: [],
     reference_lap_number: null,
     ignored_lap_numbers: [],

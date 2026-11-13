@@ -29,6 +29,9 @@ pub struct RunDto {
     pub end_secs: f64,
     /// The run's time, seconds.
     pub duration_secs: f64,
+    /// `"normal"`, `"out"` (from the out-lap gate) or `"in"` (to the in-lap
+    /// gate), so the editor marks the out and in laps it catches.
+    pub kind: idl_rs::laps::LapKind,
 }
 
 /// `preview_track_runs`' return (track editor spec §3).
@@ -126,6 +129,7 @@ pub fn preview_track_runs_via(
                 start_secs: r.start_time_secs,
                 end_secs: r.end_time_secs,
                 duration_secs: r.lap_time_ms as f64 / 1000.0,
+                kind: r.kind,
             })
             .collect(),
         reference_polyline: preview.reference_polyline.iter().map(GpsFixWire::from).collect(),

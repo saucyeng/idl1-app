@@ -570,6 +570,7 @@ mod tests {
         doc.laps = (1..=4u32)
             .map(|n| LapJson {
                 lap_number: n,
+                kind: Default::default(),
                 start_timestamp_ms: (n as i64 - 1) * 1_000,
                 end_timestamp_ms: n as i64 * 1_000,
                 raw_elapsed_ms: 1_000,
@@ -671,6 +672,7 @@ mod tests {
         let mut doc = empty_session_json("s1");
         doc.laps = vec![LapJson {
             lap_number: 1,
+            kind: Default::default(),
             start_timestamp_ms: 0,
             end_timestamp_ms: 0,
             raw_elapsed_ms: 0,
@@ -1064,6 +1066,7 @@ mod tests {
             .iter()
             .map(|l| idl_rs::laps::model::Lap {
                 lap_number: l.lap_number,
+                kind: l.kind,
                 start_ms: l.start_timestamp_ms,
                 end_ms: l.end_timestamp_ms,
                 start_time_secs: l.start_time_secs,

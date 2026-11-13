@@ -11,6 +11,7 @@ import { Input } from "../../../components/ui/input";
 import { getTrack, saveTrack, type Gate, type SaveTrackResult, type TrackDetail } from "../../../ipc/catalog";
 import { fetchMapTile, fetchSessionFixes, MAP_MAX_ZOOM, previewTrackRuns, type LatLonTrace, type TrackRunsPreview } from "../../../ipc/trackEditor";
 import { describeIpcError } from "./errors";
+import { lapKindMark } from "../../../state/lapKind";
 import { formatRescanSessionsLabel } from "./trackDetailFormat";
 import {
   formatRunDuration,
@@ -264,6 +265,9 @@ export function TrackEditor({ sessionId, trackId, hasSpeed, onClose, onSaved, on
     };
     if (state.start !== null) draw(state.start, token("--good"), state.finish === null ? "Start/finish" : "Start");
     if (state.finish !== null) draw(state.finish, token("--accent"), "Finish");
+    // Out-lap and in-lap gates belong to a circuit only (lapTimingOf).
+    if (state.finish === null && state.outLap !== null) draw(state.outLap, token("--chart-5"), "Out-lap (pit exit)");
+    if (state.finish === null && state.inLap !== null) draw(state.inLap, token("--chart-4"), "In-lap (pit entry)");
     state.sectors.forEach((s) => draw(s.gate, token("--hivis"), s.name));
     if (state.placing?.first != null) {
       L.circleMarker([state.placing.first.lat, state.placing.first.lon], { radius: 6, color: token("--hivis"), weight: 2, interactive: false }).addTo(layer);
@@ -272,7 +276,7 @@ export function TrackEditor({ sessionId, trackId, hasSpeed, onClose, onSaved, on
       map.fitBounds(L.latLngBounds(gateLatLngs(state.start)), { padding: [80, 80], maxZoom: 17 });
       fitted.current = true;
     }
-  }, [state.start, state.finish, state.sectors, state.placing, trace]);
+  }, [state.start, state.finish, state.outLap, state.inLap, state.sectors, state.placing, trace]);
 
   // What the gates catch on the ride.
   const timing = lapTimingOf(state);
@@ -293,9 +297,9 @@ export function TrackEditor({ sessionId, trackId, hasSpeed, onClose, onSaved, on
       cancelled = true;
       clearTimeout(id);
     };
-    // `timing` is derived from start/finish, listed instead.
+    // `timing` is derived from the start, finish, out-lap and in-lap gates, listed instead.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sessionId, state.start, state.finish, state.sectors, state.placing]);
+  }, [sessionId, state.start, state.finish, state.outLap, state.inLap, state.sectors, state.placing]);
 
   const previewPending = sessionId !== null && preview === null && previewError === null && timing !== null;
   const blocker = previewPending ? "Checking the gates against the ride…" : saveBlocker(state, sessionId === null || timing === null ? null : (preview?.runs.length ?? null));
@@ -316,20 +320,22 @@ export function TrackEditor({ sessionId, trackId, hasSpeed, onClose, onSaved, on
   const placingHint =
     state.placing === null ? null : state.placing.first === null ? "Click one end of the gate, across the trail." : "Click the other end. Esc cancels.";
 
-  const gateRow = (label: string, target: GateTarget, placed: boolean) => (
+  // `small`: a config-tier row, one size down from the start and finish
+  // (the out-lap and in-lap gates most tracks never need).
+  const gateRow = (label: string, target: GateTarget, placed: boolean, small = false) => (
     <div key={label} className="flex items-center justify-between gap-2">
-      <span className="font-mono text-sm text-fg">{label}</span>
+      <span className={small ? "font-mono text-xs text-fg-dim" : "font-mono text-sm text-fg"}>{label}</span>
       <div className="flex gap-1">
         <Button
           type="button"
-          size="sm"
+          size={small ? "xs" : "sm"}
           emphasis={sameTarget(state.placing?.target, target) ? "good" : "normal"}
           onClick={() => dispatch({ type: "PLACE", target })}
         >
           {placed ? "Move" : "Place"}
         </Button>
         {placed && (
-          <Button type="button" size="sm" emphasis="accent" onClick={() => dispatch({ type: "DELETE", target })}>
+          <Button type="button" size={small ? "xs" : "sm"} emphasis="accent" onClick={() => dispatch({ type: "DELETE", target })}>
             Delete
           </Button>
         )}
@@ -376,6 +382,8 @@ export function TrackEditor({ sessionId, trackId, hasSpeed, onClose, onSaved, on
           <SectionHead>Gates</SectionHead>
           {gateRow(state.finish === null ? "Start (or start/finish)" : "Start", { kind: "start" }, state.start !== null)}
           {gateRow("Finish", { kind: "finish" }, state.finish !== null)}
+          {state.finish === null && gateRow("Out-lap gate (pit exit)", { kind: "out-lap" }, state.outLap !== null, true)}
+          {state.finish === null && gateRow("In-lap gate (pit entry)", { kind: "in-lap" }, state.inLap !== null, true)}
           {state.sectors.map((s, i) => gateRow(s.name, { kind: "sector", index: i }, true))}
           <Button
             type="button"
@@ -442,6 +450,7 @@ export function TrackEditor({ sessionId, trackId, hasSpeed, onClose, onSaved, on
               >
                 <span>
                   {i + 1}. at {formatSessionTime(r.start_secs)}
+                  {lapKindMark(r.kind) !== null && <span className="ml-1.5 text-xs text-fg-dim">{lapKindMark(r.kind)}</span>}
                 </span>
                 <span>{formatRunDuration(r.duration_secs)}</span>
               </button>

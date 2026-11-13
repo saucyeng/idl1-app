@@ -16,6 +16,7 @@ import { Tabs, TabsList, TabsTrigger } from "../../../components/ui/tabs";
 import { deleteSession, getSession, listLaps, listSessions, rescanTracks, type LapSummary, type SessionDetail, type SessionSummary } from "../../../ipc/catalog";
 import { startRebuildJob, whenRebuildFinishes } from "../../../ipc/rebuild_job";
 import { useAppState } from "../../../state/AppState";
+import { lapKindMark } from "../../../state/lapKind";
 import type { SelectionWindow } from "../../../state/selection";
 import { ActiveChips } from "./ActiveChips";
 import { NewRidesSection } from "./NewRidesSection";
@@ -240,6 +241,7 @@ function SessionRowView({
               <div key={lap.lapNumber} className="flex items-center gap-2 border-l-[3px] border-l-transparent px-3 py-1 font-mono text-xs text-fg-dim">
                 <span className="w-10 shrink-0">Lap {lap.lapNumber}</span>
                 <span className="w-16 shrink-0">{lap.lapTimeMs === null ? "—" : formatLapTimeMs(lap.lapTimeMs)}</span>
+                {lapKindMark(lap.kind) !== null && <Badge className="shrink-0">{lapKindMark(lap.kind)}</Badge>}
                 {lap.isReference && <Badge className="shrink-0">best</Badge>}
                 {lap.ignored && <Badge className="shrink-0">ignored</Badge>}
               </div>

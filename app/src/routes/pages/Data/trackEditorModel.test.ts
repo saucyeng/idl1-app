@@ -100,7 +100,47 @@ describe("trackEditorReducer", () => {
     const after = trackEditorReducer(s, { type: "DELETE", target: { kind: "finish" } });
 
     // Assert
-    expect(lapTimingOf(after)).toEqual({ kind: "circuit", start_finish: gateA });
+    expect(lapTimingOf(after)).toEqual({ kind: "circuit", start_finish: gateA, out_lap_gate: null, in_lap_gate: null });
+  });
+
+  it("placing an out-lap and an in-lap gate — circuit — both in its timing", () => {
+    // Arrange
+    let s = place(initialEditorState(null), { type: "PLACE", target: { kind: "start" } }, [1, 1], [2, 2]);
+
+    // Act
+    s = place(s, { type: "PLACE", target: { kind: "out-lap" } }, [3, 3], [4, 4]);
+    s = place(s, { type: "PLACE", target: { kind: "in-lap" } }, [5, 5], [6, 6]);
+
+    // Assert
+    expect(lapTimingOf(s)).toEqual({
+      kind: "circuit",
+      start_finish: { lat1: 1, lon1: 1, lat2: 2, lon2: 2 },
+      out_lap_gate: { lat1: 3, lon1: 3, lat2: 4, lon2: 4 },
+      in_lap_gate: { lat1: 5, lon1: 5, lat2: 6, lon2: 6 },
+    });
+  });
+
+  it("delete the out-lap gate — circuit with both — only the in-lap gate left", () => {
+    // Arrange
+    const s = initialEditorState(track({ lap_timing: { kind: "circuit", start_finish: gateA, out_lap_gate: gateB, in_lap_gate: gateA } }));
+
+    // Act
+    const after = trackEditorReducer(s, { type: "DELETE", target: { kind: "out-lap" } });
+
+    // Assert
+    expect(after.outLap).toBeNull();
+    expect(after.inLap).toEqual(gateA);
+  });
+
+  it("placing a finish — circuit with an out-lap gate — point-to-point, the out-lap gate left out", () => {
+    // Arrange
+    const s = initialEditorState(track({ lap_timing: { kind: "circuit", start_finish: gateA, out_lap_gate: gateB, in_lap_gate: null } }));
+
+    // Act
+    const after = place(s, { type: "PLACE", target: { kind: "finish" } }, [7, 7], [8, 8]);
+
+    // Assert
+    expect(lapTimingOf(after)).toEqual({ kind: "point_to_point", start: gateA, finish: { lat1: 7, lon1: 7, lat2: 8, lon2: 8 } });
   });
 
   it("cancel placing — half-placed gate — nothing placed", () => {
@@ -127,11 +167,11 @@ describe("nextSectorName", () => {
 
 describe("lapTimingOf", () => {
   it("lapTimingOf — finish without a start — no timing", () => {
-    expect(lapTimingOf({ start: null, finish: gateB })).toBeNull();
+    expect(lapTimingOf({ start: null, finish: gateB, outLap: null, inLap: null })).toBeNull();
   });
 
   it("lapTimingOf — start and finish — point-to-point", () => {
-    expect(lapTimingOf({ start: gateA, finish: gateB })).toEqual({ kind: "point_to_point", start: gateA, finish: gateB });
+    expect(lapTimingOf({ start: gateA, finish: gateB, outLap: null, inLap: null })).toEqual({ kind: "point_to_point", start: gateA, finish: gateB });
   });
 });
 
@@ -187,6 +227,18 @@ describe("toTrackDraft", () => {
 
     // Assert
     expect(draft.reference_polyline).toEqual(line);
+  });
+
+  it("toTrackDraft — circuit edit renaming only — keeps its out-lap and in-lap gates", () => {
+    // Arrange
+    const base = track({ lap_timing: { kind: "circuit", start_finish: gateA, out_lap_gate: gateB, in_lap_gate: gateA } });
+    const s = trackEditorReducer(initialEditorState(base), { type: "SET_NAME", name: "Walden" });
+
+    // Act
+    const draft = toTrackDraft(s, base, line);
+
+    // Assert
+    expect(draft.lap_timing).toEqual(base.lap_timing);
   });
 
   it("toTrackDraft — edit with the finish moved but no session — keeps the old line", () => {

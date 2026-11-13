@@ -1,6 +1,7 @@
 import type { BikeLogView, RunningSheet } from "../ipc/bikelog";
 import type { RideSummary, SessionDetail, SessionMetadataPatch } from "../ipc/catalog";
 import { SHEET_SECTIONS } from "../routes/pages/Device/sheetFields";
+import { countsForFastest } from "../state/lapKind";
 
 /** Pure helpers for the ride form sheet (ride-form mockup, 2026-10-16). */
 
@@ -35,7 +36,7 @@ export function rideFacts(
   summary: RideSummary | null,
   fmt: { duration: (ms: number) => string; lap: (ms: number) => string; time: (ms: number) => string },
 ): Fact[] {
-  const counted = detail.laps.filter((l) => !detail.ignored_lap_numbers.includes(l.lap_number));
+  const counted = detail.laps.filter((l) => countsForFastest(l.kind, detail.ignored_lap_numbers.includes(l.lap_number)));
   const best = counted.length === 0 ? null : Math.min(...counted.map((l) => l.lap_time_ms));
   const facts: Fact[] = [];
   if (detail.timestamp_utc_ms > 0) facts.push({ label: "Started", value: fmt.time(detail.timestamp_utc_ms) });

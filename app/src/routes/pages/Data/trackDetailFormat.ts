@@ -22,10 +22,15 @@ export function formatGate(gate: Gate): string {
 }
 
 /** A track's lap-timing geometry. `null` (no geometry set yet) reads as
- *  "Not configured", never a blank cell. */
+ *  "Not configured", never a blank cell. A circuit's out-lap and in-lap
+ *  gates follow its start/finish when it has them. */
 export function formatLapTiming(timing: LapTiming | null): string {
   if (timing === null) return "Not configured";
-  if (timing.kind === "circuit") return `Circuit — start/finish ${formatGate(timing.start_finish)}`;
+  if (timing.kind === "circuit") {
+    const out = timing.out_lap_gate === null ? "" : `, out-lap gate ${formatGate(timing.out_lap_gate)}`;
+    const inn = timing.in_lap_gate === null ? "" : `, in-lap gate ${formatGate(timing.in_lap_gate)}`;
+    return `Circuit — start/finish ${formatGate(timing.start_finish)}${out}${inn}`;
+  }
   return `Point to point — start ${formatGate(timing.start)}, finish ${formatGate(timing.finish)}`;
 }
 

@@ -239,7 +239,7 @@ pub fn fetch_gps_trace_meta_via(
             gates.push(GateSegmentDto { name, kind: kind.to_string(), x1, y1, x2, y2 });
         };
         match track.lap_timing.as_ref() {
-            Some(idl_rs::laps::model::LapTiming::Circuit { start_finish }) => {
+            Some(idl_rs::laps::model::LapTiming::Circuit { start_finish, .. }) => {
                 push_gate("Start/finish".to_string(), "start_finish", start_finish);
             }
             Some(idl_rs::laps::model::LapTiming::PointToPoint { start, finish }) => {

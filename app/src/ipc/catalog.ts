@@ -64,11 +64,19 @@ export interface LapNeutralZoneVisit {
   exit_ms: number;
 }
 
+/** What kind of lap a lap is (C1 §6 `laps[].kind`, the engine's
+ *  `laps::LapKind`). */
+export type LapKind = "normal" | "out" | "in";
+
 /** `session.json`'s file-native `laps[]` shape (C1 §6) — distinct from the
  *  catalog-cached `LapSummary` (returned only by `listLaps`). */
 export interface LapDetail {
   /** int, 1-based (C1 §6 laps[].lap_number) */
   lap_number: number;
+  /** C1 §6 laps[].kind (2026-11-13): an out lap (pit exit to start/finish)
+   *  or an in lap (start/finish to pit entry) is listed but left out of the
+   *  fastest lap and averages, like an ignored lap. */
+  kind: LapKind;
   /** i64, UTC ms */
   start_timestamp_ms: number;
   /** i64, UTC ms */
@@ -270,9 +278,10 @@ export interface GpsFix {
 
 /** A track's lap-timing geometry: a single start/finish gate, or a
  *  separate start and finish gate (C3 §3.2). Sealed union tagged by
- *  `kind`. */
+ *  `kind`. A circuit's `out_lap_gate` (pit exit) and `in_lap_gate` (pit
+ *  entry) are optional gates (2026-11-13); `null` = no such gate. */
 export type LapTiming =
-  | { kind: "circuit"; start_finish: Gate }
+  | { kind: "circuit"; start_finish: Gate; out_lap_gate: Gate | null; in_lap_gate: Gate | null }
   | { kind: "point_to_point"; start: Gate; finish: Gate };
 
 /** The full `.idl0t` artifact content — the engine's

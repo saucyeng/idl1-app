@@ -1396,6 +1396,7 @@ mod tests {
         doc.laps = (1..=4u32)
             .map(|n| LapJson {
                 lap_number: n,
+                kind: Default::default(),
                 start_timestamp_ms: (n as i64 - 1) * 1_000,
                 end_timestamp_ms: n as i64 * 1_000,
                 raw_elapsed_ms: 1_000,

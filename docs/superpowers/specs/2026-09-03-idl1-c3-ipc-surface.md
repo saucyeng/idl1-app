@@ -453,6 +453,8 @@ interface SessionDetail {
  *  file-native lap shape, distinct from `LapSummary`'s catalog shape. */
 interface LapDetail {
   lap_number: number;              // int, 1-based (C1 §6 laps[].lap_number)
+  kind: "normal" | "out" | "in";   // C1 §6 laps[].kind (2026-11-13); always present here, "normal"
+                                    // when session.json omits it. Out/in laps: listed, never "fastest"
   start_timestamp_ms: number;      // i64, UTC ms
   end_timestamp_ms: number;        // i64, UTC ms
   raw_elapsed_ms: number;          // i64, ms — end_timestamp_ms - start_timestamp_ms
@@ -715,8 +717,11 @@ interface Gate { lat1: number; lon1: number; lat2: number; lon2: number; }
 interface SectorGate { name: string; gate: Gate; }
 interface NeutralZone { name: string; enter: Gate; exit: Gate; }
 interface GpsFix { timestamp_ms: number; lat: number; lon: number; }
+/** A circuit's `out_lap_gate` (pit exit) and `in_lap_gate` (pit entry),
+ *  2026-11-13: optional gates, `null` = none. Always present in a
+ *  `TrackDetail`; `save_track` also accepts them absent (read as `null`). */
 type LapTiming =
-  | { kind: "circuit"; start_finish: Gate }
+  | { kind: "circuit"; start_finish: Gate; out_lap_gate: Gate | null; in_lap_gate: Gate | null }
   | { kind: "point_to_point"; start: Gate; finish: Gate };
 
 /** REVISED — the four fields §6 item 10 left `unknown` are now typed. */
@@ -3330,12 +3335,12 @@ points. Errors as `fetch_gps_trace_v2`: `not_found` (session, colour channel),
 `invalid_argument` (budget outside `1..=65536`, unresolvable window).
 
 **`preview_track_runs(session_id: string, lap_timing: LapTiming | null, sector_gates: SectorGate[])`**
-(async) → `{ runs: { start_secs, end_secs, duration_secs }[], reference_polyline: GpsFix[] }`.
+(async) → `{ runs: { start_secs, end_secs, duration_secs, kind }[], reference_polyline: GpsFix[] }`.
 The runs lap detection finds on the whole session with these gates (seconds
-on the session clock; `duration_secs` is the lap time), and the reference
-run's fixes, every one: point-to-point, the first run; circuit, the first lap
-that starts on a crossing (lap 2), else lap 1. Empty when nothing is caught
-or `lap_timing` is `null`. Errors: `not_found` (session).
+on the session clock; `duration_secs` is the lap time; `kind` is `"normal"`,
+`"out"` or `"in"`, as `LapDetail.kind`), and the reference run's fixes, every
+one: the first normal run, else the first run of any kind. Empty when nothing
+is caught or `lap_timing` is `null`. Errors: `not_found` (session).
 
 **`fetch_map_tile(source: string, z: number, x: number, y: number)`** (async)
 → raw image bytes. `source` is `"esri_world_imagery"`. Served from

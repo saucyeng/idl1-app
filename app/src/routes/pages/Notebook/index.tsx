@@ -40,6 +40,7 @@ import {
 import { setBuiltinDocs } from "./editor/builtinDocs";
 import { evalSessionSet, type SessionSetResult } from "../../../ipc/sessionSet";
 import { useAppState } from "../../../state/AppState";
+import { countsForFastest } from "../../../state/lapKind";
 import { describeWindow, sessionDetailsReadinessKey, sessionLabel, venueLabel, windowKey, windowsKey, type SelectionWindow } from "../../../state/selection";
 import { useRouteVisible } from "../../../shell/routeVisibility";
 import { useEditorSlotNode } from "../../../shell/editorSlot";
@@ -4716,12 +4717,16 @@ export default function NotebookPage() {
    * by session id: the same recorded field the engine's own
    * `resolve_baseline_row` compares, so the highlighted row is the row
    * `main({col[]})` actually used rather than a second guess at it.
+   *
+   * An out, in or ignored lap answers `null`, so the Main row skips it as
+   * the engine's `resolve_baseline_row` does (its `LapSpan.excluded`).
    */
   const lapTimeSecsForRow = (context: { sessionId: string; lapNumber?: number }): number | null => {
     for (const detail of sessionDetailsByWindow.values()) {
       if (detail === null || detail.session_id !== context.sessionId) continue;
       const lap = detail.laps.find((l) => l.lap_number === context.lapNumber);
-      return lap === undefined ? null : lap.lap_time_ms / 1000;
+      if (lap === undefined || !countsForFastest(lap.kind, detail.ignored_lap_numbers.includes(lap.lap_number))) return null;
+      return lap.lap_time_ms / 1000;
     }
     return null;
   };
