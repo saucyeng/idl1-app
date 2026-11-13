@@ -383,6 +383,10 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 
 ### Fixed
 
+- **The workbook reference no longer shows `mean([x], "t:lap")` as working [docs] (2026-11-13).**
+  Per-lap reduction of a time series is planned but the engine rejects it today; the reference
+  now says so and shows the headless alternative (`workbook data --track ... --main-lap n`).
+
 - **`deglitch_pulses(pulses, max_fraction=...)` accepts its keyword [no-docs] (2026-11-13).** The
   reference documented it, but the evaluator rejected every keyword for this function before it
   could read one, so only the default fraction (0.35) ever applied.
