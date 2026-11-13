@@ -47,57 +47,57 @@ mod tests {
         // (a) tmp/ scratch — staging, never a final path.
         // `write_atomic`: drops its own `tmp/<uuid>` scratch file when a
         // rename loses a race, before returning the error.
-        ("core/src/store/atomic.rs", "write_atomic"),
+        ("rust/core/src/store/atomic.rs", "write_atomic"),
         // `resolve_quarantine`/`move_file`: the explicit, user-triggered
         // resolution of an existing quarantine entry (C4 §2) — Discard
         // removes the quarantined payload, Restore moves it out.
-        ("core/src/store/quarantine.rs", "move_file"),
-        ("core/src/store/quarantine.rs", "resolve_quarantine"),
+        ("rust/core/src/store/quarantine.rs", "move_file"),
+        ("rust/core/src/store/quarantine.rs", "resolve_quarantine"),
         // Sync verify: writes then removes a `tmp/sync-verify-<uuid>` file.
-        ("core/src/store/sync/apply.rs", "read_data_parquet_versions_from_bytes"),
+        ("rust/core/src/store/sync/apply.rs", "read_data_parquet_versions_from_bytes"),
         // Workbook merge install: removes the *old*-named `.idl1wb` only when
         // a peer's `workbook_id` wins the rename (C4 §6).
-        ("core/src/store/sync/apply.rs", "install_workbook"),
+        ("rust/core/src/store/sync/apply.rs", "install_workbook"),
         // `download_with`: removes/renames only its `tmp/download-*.part`
         // file on its way into `blobs/`.
-        ("tauri/src/commands/device.rs", "download_with"),
+        ("crates/idl1-bridge/src/commands/device.rs", "download_with"),
         // Resumable download `.part` files under `tmp/`, dropped on a cap
         // breach and again once the bytes are complete (R102).
-        ("transport/src/sync/client.rs", "download_to_part"),
-        ("transport/src/sync/client.rs", "pull_and_install"),
+        ("crates/idl1-transport/src/sync/client.rs", "download_to_part"),
+        ("crates/idl1-transport/src/sync/client.rs", "pull_and_install"),
         // The sync server's streamed blob `PUT` (lead ruling E1): its own
         // `tmp/put-<uuid>.part`, dropped on a cap breach or broken stream,
         // and again once installed (renamed away) or refused.
-        ("transport/src/sync/server.rs", "receive_body_to_part"),
-        ("transport/src/sync/server.rs", "handle_blob_put"),
+        ("crates/idl1-transport/src/sync/server.rs", "receive_body_to_part"),
+        ("crates/idl1-transport/src/sync/server.rs", "handle_blob_put"),
         // `write_json_atomic`: tmp-file write/rename/cleanup for
         // peers.json/identity.json, which live outside `<data>`.
-        ("transport/src/sync/pairing.rs", "write_json_atomic"),
+        ("crates/idl1-transport/src/sync/pairing.rs", "write_json_atomic"),
         // (b) one session's derived/ or data.parquet during a rebuild.
         // `remove_session_derived`: `sessions/<id>/derived/` only, after a
         // `data.parquet` rebuild invalidates the cached derived files.
-        ("core/src/store/derived.rs", "remove_session_derived"),
+        ("rust/core/src/store/derived.rs", "remove_session_derived"),
         // `ImportPlan::Regenerate`: deletes `sessions/<id>/data.parquet`
         // immediately before rewriting it (C1 §4.3).
-        ("core/src/store/import.rs", "finish_import"),
+        ("rust/core/src/store/import.rs", "finish_import"),
         // (c) the inbox: removes the dropped file only *after* a successful
         // import (R191); a failed import renames it into `inbox/failed/`.
-        ("tauri/src/inbox.rs", "import_one"),
+        ("crates/idl1-bridge/src/inbox.rs", "import_one"),
         // An inbox `.mp4` is removed only after it linked to exactly one
         // session, its bytes then being in `blobs/` (C4 §2, 2026-10-16).
-        ("tauri/src/inbox.rs", "link_one_video"),
+        ("crates/idl1-bridge/src/inbox.rs", "link_one_video"),
         // (d) catalog.sqlite and its -wal/-shm sidecars — a rebuildable
         // index, never `blobs/` or `sessions/`.
-        ("core/src/store/catalog.rs", "rebuild_catalog_with_progress"),
+        ("rust/core/src/store/catalog.rs", "rebuild_catalog_with_progress"),
         // (g) an explicit single-profile delete, no-op if absent.
-        ("core/src/store/profile.rs", "delete"),
+        ("rust/core/src/store/profile.rs", "delete"),
         // `remove_if_present`: one track file, `tracks/<id>.idl1t` or the
         // legacy `.idl0t`, path-validated first. Called by `delete_track`
         // (the explicit "delete track" action; added to the audit on
         // 2026-09-10, this scan is what found it missing) and by
         // `write_track`, which removes a same-id `.idl0t` only after the
         // `.idl1t` replacing it is written (2026-11-05).
-        ("core/src/track_artifact/write.rs", "remove_if_present"),
+        ("rust/core/src/track_artifact/write.rs", "remove_if_present"),
         // (h) `move_data_dir` (C3 §3.10 as amended by R197: move, not copy).
         // `copy_verify_delete` removes a source file only after its copy has
         // verified at the destination; `move_data_dir_with` removes a source
@@ -105,47 +105,52 @@ mod tests {
         // run; `prune_emptied_dirs` uses `remove_dir`, which fails on a
         // non-empty directory by construction, so it can only remove what the
         // move itself emptied.
-        ("tauri/src/commands/app.rs", "copy_verify_delete"),
-        ("tauri/src/commands/app.rs", "move_data_dir_with"),
-        ("tauri/src/commands/app.rs", "prune_emptied_dirs"),
+        ("crates/idl1-bridge/src/commands/app.rs", "copy_verify_delete"),
+        ("crates/idl1-bridge/src/commands/app.rs", "move_data_dir_with"),
+        ("crates/idl1-bridge/src/commands/app.rs", "prune_emptied_dirs"),
         // (e) the blob-deleting paths: `delete_session` with
         // `delete_blob: true`, after confirming no other session references
         // the same content hash.
-        ("tauri/src/commands/catalog.rs", "delete_session_via"),
+        ("crates/idl1-bridge/src/commands/catalog.rs", "delete_session_via"),
         // `unlink_video` with `delete_file: true` (C3 §3.12): one video's
         // MP4 blob, only when no session's live `videos` entry still
         // references it. Per device; the tombstone stops sync restoring it.
-        ("core/src/store/video.rs", "unlink_video"),
+        ("rust/core/src/store/video.rs", "unlink_video"),
         // `link_video`: removes the MP4 blob this same call copied in when
         // the link then fails and nothing links that blob (never a blob it
         // found already present).
-        ("core/src/store/video.rs", "link_video"),
+        ("rust/core/src/store/video.rs", "link_video"),
         // `copy_into_blobs`: its own `tmp/video-<uuid>.part` on a failed or
         // cancelled copy, or when the blob turns out to exist already.
-        ("core/src/store/video.rs", "copy_into_blobs"),
+        ("rust/core/src/store/video.rs", "copy_into_blobs"),
         // `export_session_fit_via` (C3 §3.2, 2026-11-05): its own
         // `<chosen>.fit.part` beside a user-chosen export path, outside
         // `<data>`, when the rename onto the chosen name fails. Never the
         // chosen file itself, never anything in the library.
-        ("tauri/src/commands/catalog.rs", "export_session_fit_via"),
+        ("crates/idl1-bridge/src/commands/catalog.rs", "export_session_fit_via"),
         // (f) crash markers, outside `<data>` (app data dir `crash/`,
         // evaluation memory spec Phase 1, 2026-10-27). `begin_run`: removes
         // its own `running-<pid>.json.tmp` after a failed rename, and stale
         // `running-<pid>.json` markers once reported or recognised as an
         // update. `mark_clean_exit`: this process's own marker on a clean
         // exit. Never touches a crash report or anything in the library.
-        ("tauri/src/crash.rs", "begin_run"),
-        ("tauri/src/crash.rs", "mark_clean_exit"),
+        ("crates/idl1-bridge/src/crash.rs", "begin_run"),
+        ("crates/idl1-bridge/src/crash.rs", "mark_clean_exit"),
         // `sweep_orphan_breadcrumbs` (memory phase 3, 2026-10-28): only
         // `alloc-<pid>.log` allocation breadcrumbs in the same `crash/` dir,
         // only for a pid that is not this process, is not alive, and has no
         // run marker left to report it. Never a crash report, never `<data>`.
-        ("tauri/src/crash.rs", "sweep_orphan_breadcrumbs"),
+        ("crates/idl1-bridge/src/crash.rs", "sweep_orphan_breadcrumbs"),
     ];
 
-    /// The idl-rs workspace root (`tauri/`'s parent).
+    /// The idl1-app repo root (`crates/idl1-bridge/`'s grandparent): the app-side
+    /// crates live under `crates/`, the engine under the `rust/` submodule.
     fn workspace_root() -> PathBuf {
-        Path::new(env!("CARGO_MANIFEST_DIR")).parent().expect("tauri/ has a parent").to_path_buf()
+        Path::new(env!("CARGO_MANIFEST_DIR"))
+            .ancestors()
+            .nth(2)
+            .expect("crates/idl1-bridge/ has a grandparent")
+            .to_path_buf()
     }
 
     /// Every `.rs` file under `dir`, recursively, sorted.
@@ -311,14 +316,14 @@ mod tests {
                       #[cfg(test)]\nmod more_tests {\n    fn other() {\n        std::fs::remove_file(&q);\n    }\n}\n";
 
         // Act
-        let hits = scan(Path::new("/repo"), Path::new("/repo/core/src/thing.rs"), source, &is_delete_call);
+        let hits = scan(Path::new("/repo"), Path::new("/repo/rust/core/src/thing.rs"), source, &is_delete_call);
 
         // Assert — both production sites, neither test site.
         assert_eq!(
             hits,
             vec![
-                ("core/src/thing.rs".to_string(), "early".to_string()),
-                ("core/src/thing.rs".to_string(), "between".to_string()),
+                ("rust/core/src/thing.rs".to_string(), "early".to_string()),
+                ("rust/core/src/thing.rs".to_string(), "between".to_string()),
             ]
         );
     }
@@ -331,10 +336,10 @@ mod tests {
                       fn after() {\n    std::fs::remove_file(&p);\n}\n";
 
         // Act
-        let hits = scan(Path::new("/repo"), Path::new("/repo/transport/src/sync/mod.rs"), source, &is_delete_call);
+        let hits = scan(Path::new("/repo"), Path::new("/repo/crates/idl1-transport/src/sync/mod.rs"), source, &is_delete_call);
 
         // Assert
-        assert_eq!(hits, vec![("transport/src/sync/mod.rs".to_string(), "after".to_string())]);
+        assert_eq!(hits, vec![("crates/idl1-transport/src/sync/mod.rs".to_string(), "after".to_string())]);
     }
 
     #[test]
@@ -342,7 +347,7 @@ mod tests {
         // Arrange
         let root = workspace_root();
         let mut files = Vec::new();
-        for crate_dir in ["core/src", "transport/src", "tauri/src"] {
+        for crate_dir in ["rust/core/src", "crates/idl1-transport/src", "crates/idl1-bridge/src"] {
             rust_files(&root.join(crate_dir), &mut files);
         }
         assert!(files.len() > 20, "the scanner found almost no source files — it is looking in the wrong place");
@@ -397,7 +402,7 @@ mod tests {
         // Arrange
         let root = workspace_root();
         let mut files = Vec::new();
-        for crate_dir in ["core/src", "transport/src", "tauri/src"] {
+        for crate_dir in ["rust/core/src", "crates/idl1-transport/src", "crates/idl1-bridge/src"] {
             rust_files(&root.join(crate_dir), &mut files);
         }
         assert!(files.len() > 20, "the scanner found almost no source files — it is looking in the wrong place");
