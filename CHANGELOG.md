@@ -6,6 +6,12 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 
 ### Changed
 
+- **Every maths function is declared once [docs] (2026-11-13).** Each workbook function is now one
+  typed Rust function in the engine's builtin registry, which supplies its argument checks, its
+  keyword list and its reference entry, so the three can no longer disagree. Nothing a workbook
+  computes changes. The reference now says `spectrogram` takes 1 to 6 arguments (it said 1).
+  Programs built on `idl-rs` can add their own functions with `Registry::add`.
+
 - **Tracks are matched by their gates; out laps and in laps [docs] (2026-11-13).** A ride is
   matched to a track when it crosses that track's gates and stays on its line, not by which track
   each GPS point happens to sit nearest, so two tracks that share most of their ground (Walden '26
