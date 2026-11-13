@@ -2513,7 +2513,8 @@ mod tests {
 
         /// A track whose reference polyline covers the same lat range/
         /// longitude as [`three_lap_fixes`], with a circuit start/finish
-        /// gate at lat 0.05.
+        /// gate at lat 0.05: three crossings, so two laps (the stretch before the
+        /// first crossing is not a lap, track-matching spec 2026-11-13).
         fn circuit_track(id: &str) -> Track {
             let polyline: Vec<GpsFix> =
                 (0..=100).map(|i| GpsFix { timestamp_ms: i * 1000, lat: i as f64 * 0.001, lon: 0.0005 }).collect();
@@ -2592,12 +2593,12 @@ mod tests {
             // Assert
             assert_eq!(report.session_id, session_id);
             assert_eq!(report.visits_indexed, 1);
-            assert_eq!(report.laps_indexed, 3);
+            assert_eq!(report.laps_indexed, 2);
             assert!(report.flags_cleared.is_empty());
             assert!(report.warnings.is_empty());
 
             let laps = list_laps_via(&root, session_id).unwrap();
-            assert_eq!(laps.len(), 3);
+            assert_eq!(laps.len(), 2);
 
             let _ = std::fs::remove_dir_all(&root);
         }
@@ -2616,10 +2617,10 @@ mod tests {
             let second = rescan_tracks_via(&root, session_id).unwrap();
 
             // Assert -- same counts both times, and only one row per lap.
-            assert_eq!(first.laps_indexed, 3);
-            assert_eq!(second.laps_indexed, 3);
+            assert_eq!(first.laps_indexed, 2);
+            assert_eq!(second.laps_indexed, 2);
             let laps = list_laps_via(&root, session_id).unwrap();
-            assert_eq!(laps.len(), 3);
+            assert_eq!(laps.len(), 2);
 
             let _ = std::fs::remove_dir_all(&root);
         }
@@ -2650,7 +2651,7 @@ mod tests {
             let report = rescan_tracks_via(&root, session_id).unwrap();
 
             // Assert
-            assert_eq!(report.laps_indexed, 3);
+            assert_eq!(report.laps_indexed, 2);
             assert!(!root.join("catalog.sqlite").is_file());
 
             let _ = std::fs::remove_dir_all(&root);
