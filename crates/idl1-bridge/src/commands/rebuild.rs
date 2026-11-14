@@ -149,7 +149,9 @@ pub fn spawn_rebuild_job<R: tauri::Runtime>(app: tauri::AppHandle<R>) -> bool {
             job.observe(&p);
             let _ = app.emit("rebuild_progress", RebuildProgressEvent::from(&p));
         };
-        let outcome = rebuild_catalog_with_progress(&data_root, &on_progress).map_err(IpcError::from);
+        let outcome = crate::error::caught("The catalog rebuild", || {
+            rebuild_catalog_with_progress(&data_root, &on_progress).map_err(IpcError::from)
+        });
         let duration_ms = started.elapsed().as_millis() as u64;
         let summary = outcome.as_ref().ok().map(|r| RebuildRunSummary::from_report(r, duration_ms));
 

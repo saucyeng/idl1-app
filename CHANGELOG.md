@@ -6,6 +6,12 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 
 ### Changed
 
+- **A crash inside a background job no longer leaves it stuck [no-docs] (2026-11-14).** If
+  indexing, a catalog rebuild or an inbox import hits an internal error, the job now ends with
+  that error (and the crash report) instead of its progress chip spinning until the app is
+  restarted; a logger's Bluetooth link whose task dies is started fresh on the next attempt
+  instead of never reconnecting.
+
 - **idl-rs 0.1.0 is on crates.io [docs] (2026-11-14).** `cargo install idl-rs-cli` installs the
   `idl-rs` command; `idl-rs`, `idl-library` and `idl-rs-cli` are published, with the README in
   the author's own words. 0.1.1 of the library and the command fixes a fresh folder listing no

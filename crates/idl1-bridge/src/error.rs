@@ -207,6 +207,15 @@ impl IpcError {
     }
 }
 
+/// Runs a background job's body, turning a panic into an `Internal` error so
+/// the job still reports its end (releases its claim, emits its last event)
+/// instead of its thread dying with the UI waiting forever. The panic hook
+/// has already written the crash report by the time this returns.
+pub(crate) fn caught<T>(what: &str, body: impl FnOnce() -> Result<T, IpcError>) -> Result<T, IpcError> {
+    std::panic::catch_unwind(std::panic::AssertUnwindSafe(body))
+        .unwrap_or_else(|_| Err(IpcError::new(IpcErrorKind::Internal, format!("{what} stopped on an internal error (a crash report was saved)"))))
+}
+
 impl From<idl1_transport::TransportError> for IpcError {
     fn from(e: idl1_transport::TransportError) -> Self {
         let kind = match e.kind {
@@ -859,5 +868,31 @@ mod tests {
             // Assert
             assert_eq!(ie.kind, IpcErrorKind::InvalidArgument);
         }
+    }
+
+    #[test]
+    fn caught_a_panicking_job_body_returns_an_internal_error_naming_the_job() {
+        // Arrange
+        let body = || -> Result<(), IpcError> { panic!("bad bytes") };
+
+        // Act
+        let out = caught("Indexing", body);
+
+        // Assert
+        let e = out.unwrap_err();
+        assert_eq!(e.kind, IpcErrorKind::Internal);
+        assert!(e.message.starts_with("Indexing stopped"));
+    }
+
+    #[test]
+    fn caught_a_job_body_that_returns_passes_its_result_through() {
+        // Arrange
+        let body = || -> Result<u32, IpcError> { Ok(7) };
+
+        // Act
+        let out = caught("Indexing", body);
+
+        // Assert
+        assert_eq!(out.unwrap(), 7);
     }
 }

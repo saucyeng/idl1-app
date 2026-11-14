@@ -457,6 +457,7 @@ pub(crate) fn ensure_actor<R: tauri::Runtime>(app: &tauri::AppHandle<R>, device_
     tauri::async_runtime::spawn(async move {
         let connections = app.state::<crate::state::Connections>();
         let links = app.state::<Links>();
+        let _deregister = Deregister(&links, device_id.clone());
         let transfers = app.state::<crate::state::WifiTransfers>();
         let publish = |view: LinkView| links.publish(view);
         let on_record = || {
@@ -475,8 +476,18 @@ pub(crate) fn ensure_actor<R: tauri::Runtime>(app: &tauri::AppHandle<R>, device_
             LinkTiming::default(),
         )
         .await;
-        links.actors.lock().unwrap().remove(&device_id);
     });
+}
+
+/// Removes a link actor's entry when its task ends, normally or by a panic,
+/// so the next `ensure_actor` starts a fresh one instead of finding a dead
+/// actor that never reconnects.
+struct Deregister<'a>(&'a Links, String);
+
+impl Drop for Deregister<'_> {
+    fn drop(&mut self) {
+        self.0.actors.lock().unwrap_or_else(|e| e.into_inner()).remove(&self.1);
+    }
 }
 
 /// C3 §3.8 `link_watch(on_view)` (added 2026-10-19): every logger's current
@@ -707,5 +718,22 @@ mod tests {
 
         // Assert
         assert!(asked.load(Ordering::SeqCst));
+    }
+
+    #[test]
+    fn deregister_an_actor_task_that_panics_leaves_no_entry_behind() {
+        // Arrange
+        let links = Links::default();
+        let (tx, _rx) = mpsc::unbounded_channel();
+        links.actors.lock().unwrap().insert("L1".to_string(), tx);
+
+        // Act
+        let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let _deregister = Deregister(&links, "L1".to_string());
+            panic!("actor died");
+        }));
+
+        // Assert
+        assert!(!links.has("L1"));
     }
 }

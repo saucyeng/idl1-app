@@ -141,7 +141,7 @@ pub fn spawn_index_job<R: tauri::Runtime>(app: tauri::AppHandle<R>) -> bool {
     // `std::thread`, not `tauri::async_runtime::spawn`: this is minutes of
     // blocking CPU work and would starve the runtime's worker threads.
     std::thread::spawn(move || {
-        let report = run_index_job(&app, &data_root);
+        let report = crate::error::caught("Indexing", || run_index_job(&app, &data_root));
         let job = app.state::<IndexJob>();
         job.finish(report.as_ref().ok(), report.as_ref().err());
         // The terminal observation, in the same shape as every other one

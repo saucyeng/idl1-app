@@ -167,7 +167,7 @@ fn spawn_handler(
     let flight = Arc::clone(in_flight);
     std::thread::spawn(move || {
         if wait_until_stable(&file, settle) {
-            match import_one(&data_dir, &file) {
+            match crate::error::caught("The import", || import_one(&data_dir, &file)) {
                 Ok(()) => *counter.lock().unwrap() += 1,
                 Err(e) => move_to_failed(&data_dir.join("inbox"), &file, &e),
             }
