@@ -6,6 +6,12 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 
 ### Changed
 
+- **Security updates; `--venue` searches [docs] (2026-11-14).** Tauri 2.12 with updater plugin
+  2.14 (its zip extraction had a critical advisory), rustls 0.23.46, vite 8.3, vitest 4.1.12 and
+  source-map-js 1.2.2 clear every open Dependabot alert but one: glib 0.18, a Linux-only GTK
+  dependency Tauri itself pins. `session list --venue broome` now finds "Broome-Tioga Sports
+  Center": the venue filter matches any venue containing the text.
+
 - **Long laps are marked and left out of fastest [docs] (2026-11-14).** When the GPS misses
   the start/finish line, two laps merge into one. A circuit lap more than 1.6x the session's
   median lap is now marked "Long" and, like an out lap, left out of the fastest lap and averages.

@@ -8,7 +8,7 @@
         {
           "choices": [],
           "default": null,
-          "help": "Only sessions whose venue matches, case-insensitively",
+          "help": "Only sessions whose venue contains this text, case-insensitively",
           "kind": "text",
           "long": "venue",
           "repeatable": false
