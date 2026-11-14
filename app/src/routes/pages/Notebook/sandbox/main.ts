@@ -46,6 +46,7 @@ import { spectrumKey } from "../plotForm/spectrumKey";
 import type { FftParams, HistogramParams, ScatterParams } from "../plotForm/types";
 import { plotTheme } from "../theme/plotTheme";
 import { documentVars } from "../theme/series";
+import { cellInputNames } from "./cellInputs";
 import { channelRecords, type ChannelRecord } from "./channelRecords";
 import { bindHostVariables, type HostVariableSink } from "./hostVariables";
 
@@ -815,8 +816,11 @@ class SandboxRuntime {
     this.cellVariables.clear();
     cellContainers.retainOnly(new Set(cells.map((cell) => cell.id)));
 
-    const inputNames = [...this.boundNames];
+    const boundNames = [...this.boundNames];
     for (const cell of cells) {
+      // A frame-rate name (`cursor`) only reaches a cell that names it, so
+      // a readout re-draws per frame and a chart does not (`cellInputs.ts`).
+      const inputNames = cellInputNames(cell.code, boundNames);
       const fn = compileCell(inputNames, cell.code);
       const variable = this.module.variable(makeObserver(cell.id)).define(inputNames, fn);
       this.cellVariables.set(cell.id, variable);

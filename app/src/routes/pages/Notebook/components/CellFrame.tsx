@@ -359,8 +359,12 @@ function CellStateOverlay({
  *   top margin, and a plot with more than one series gets a compact legend
  *   in its top-right. "JS 01" is not a title and does not appear.
  *
- * The selected state shows as a `--surface-2` fill plus the app's reserved
- * 3 px `--good` inset bar in both shapes.
+ * The selected state shows as the app's reserved 3 px `--good` inset bar in
+ * both shapes, plus a `--surface-2` fill for every kind but `js`. A `js`
+ * cell's picture is drawn by the sandbox iframe underneath this frame
+ * (R69), so an opaque fill here paints over it: a selected chart went
+ * blank, and a click on a chart both pins the cursor and selects the cell
+ * (found 2026-11-14 on real footage).
  */
 export default function CellFrame({
   cell,
@@ -447,7 +451,7 @@ export default function CellFrame({
 
   const body = (
     <div
-      className={`flex flex-col border-l-[3px] ${selected ? "border-good bg-surface-2" : "border-transparent"}`}
+      className={`flex flex-col border-l-[3px] ${selected ? (cell.kind === "js" ? "border-good" : "border-good bg-surface-2") : "border-transparent"}`}
       style={{
         gap: geometry.gapPx,
         paddingInline: geometry.paddingXPx,

@@ -981,6 +981,13 @@ Analysis gaps from `173461a2` (Python was needed for each; `agent-gaps.md`):
   - [ ] Sync from the camera's IMU (spec §4.3): the HERO11 Mini records `ACCL`/`GYRO` at
         202 Hz, and cross-correlating them with the logger's IMUs gave a consistent offset on
         the first clip. Needs a GPMF IMU reader in `core`. Not started.
+  - [ ] Step 2, the overlay workbook: spec `2026-11-14-idl1-video-overlay-DRAFT.md`. Direction
+        agreed 2026-11-14; the `canvas` front matter, the `cursor` host variable and the
+        `Readout` chart types wait on a yes to their shapes. Built so far: the sandbox gives a
+        frame-rate name only to cells that mention it (`sandbox/cellInputs.ts`).
+  - [ ] The in-app update reports a crash: closing for the update panics in tao ("cannot move
+        state from Destroyed", build 154 to 155, 2026-11-14), so the next launch shows "idl1
+        closed unexpectedly". Harmless, but it should not be reported as a crash.
   - [ ] A workbook written outside the app is missing from the Notebook sidebar until
         "Rebuild catalog" runs (`list_workbooks` reads the catalog only; found 2026-11-14).
   - [x] Video §8, letting Claude drive the app (2026-10-18): `tools/drive/drive.mjs`

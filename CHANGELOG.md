@@ -15,7 +15,9 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
   jumping back to where it was pinned before. A pinned cursor has a small grab handle at the top
   of its line on every chart: drag it to scrub, and the video follows. The video cell's step,
   Align, nudge, Re-estimate, Unlink and Add video controls moved from under the picture to the
-  cell's Properties tab (right-click the video, Properties).
+  cell's Properties tab (right-click the video, Properties). A selected chart no longer goes
+  blank: the selection highlight was painted over the chart's picture, so clicking a chart to
+  pin the cursor (which also selects it) emptied it.
 
 - **Security updates; `--venue` searches [docs] (2026-11-14).** Tauri 2.12 with updater plugin
   2.14 (its zip extraction had a critical advisory), rustls 0.23.46, vite 8.3, vitest 4.1.12 and
