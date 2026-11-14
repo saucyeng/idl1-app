@@ -36,6 +36,9 @@ const HELP = `idl1 drive — launch and drive the installed idl1 desktop app (de
   press <key>                                    press a key on the page (e.g. Escape, Control+2)
   console [--ms <n>] [--clear]                   print console messages captured since attach
   close                                          close the app (WM_CLOSE, then force after 5 s)
+  drag <target> <from> <to> [--y <f>] [--steps <n>]  drag with the mouse across the target, between two fractions of its width
+  serve [<dist dir>]                           serve a local frontend build (default app/dist) in place of the
+                                                 bundled one, until this process is stopped
 
 A <target> that starts with css= text= role= xpath= # . [ or contains >> is a Playwright
 selector. Anything else is visible text: an exact button/tab/link/menuitem name first,
@@ -58,7 +61,7 @@ function parseArgs(argv) {
     if (a.startsWith("--")) {
       const key = a.slice(2);
       const next = argv[i + 1];
-      if (next !== undefined && !next.startsWith("--") && ["exe", "port", "ms"].includes(key)) {
+      if (next !== undefined && !next.startsWith("--") && ["exe", "port", "ms", "y", "steps"].includes(key)) {
         flags[key] = next;
         i++;
       } else {
@@ -392,6 +395,85 @@ async function cmdClose() {
   console.log(`closed pid ${state.pid}${forced ? " (forced)" : ""}`);
 }
 
+/**
+ * Drags with the real mouse across `target`, from `fromFrac` to `toFrac` of its width
+ * (0 = left edge, 1 = right edge) at mid-height, in `steps` moves.
+ */
+async function cmdDrag(target, fromFrac, toFrac, flags) {
+  const from = Number(fromFrac);
+  const to = Number(toFrac);
+  if (!target || !Number.isFinite(from) || !Number.isFinite(to)) throw new DriveError("drag needs a target and two fractions of its width, e.g. drag css=.chart-cell 0.4 0.6");
+  const { browser, page } = await attach();
+  const box = await (await resolveTarget(page, target)).boundingBox();
+  if (box === null) throw new DriveError("the target has no box on screen");
+  const y = box.y + box.height * Number(flags.y ?? 0.5);
+  await page.mouse.move(box.x + box.width * from, y);
+  await page.mouse.down();
+  await page.mouse.move(box.x + box.width * to, y, { steps: Number(flags.steps ?? 12) });
+  await page.mouse.up();
+  console.log(`dragged ${JSON.stringify(target)} ${from} -> ${to}`);
+  await browser.close();
+}
+
+/** Content types for the files a Vite build emits. */
+const MIME = {
+  ".html": "text/html; charset=utf-8",
+  ".js": "text/javascript; charset=utf-8",
+  ".mjs": "text/javascript; charset=utf-8",
+  ".css": "text/css; charset=utf-8",
+  ".json": "application/json",
+  ".svg": "image/svg+xml",
+  ".png": "image/png",
+  ".jpg": "image/jpeg",
+  ".ico": "image/x-icon",
+  ".woff": "font/woff",
+  ".woff2": "font/woff2",
+  ".wasm": "application/wasm",
+  ".map": "application/json",
+};
+
+/**
+ * Serves a local frontend build in place of the installed app's bundled one, so a UI
+ * change can be tried against the nightly's Rust side without a new build. Runs until
+ * killed; when it stops, the next reload shows the bundled frontend again. Only the
+ * page's own origin is intercepted: IPC and the idl1-video scheme pass through.
+ */
+async function cmdServe(dir) {
+  const root = path.resolve(dir ?? "app/dist");
+  if (!fs.existsSync(path.join(root, "index.html"))) throw new DriveError(`no index.html in ${root}: run \`npm run build\` in app/ first.`);
+  const { browser, page } = await attach();
+  const origin = new URL(page.url()).origin;
+  let served = 0;
+  for (const context of browser.contexts()) {
+    await context.route(`${origin}/**`, async (route) => {
+      const rel = decodeURIComponent(new URL(route.request().url()).pathname);
+      let file = path.join(root, rel);
+      if (!file.startsWith(root)) return route.abort();
+      if (!fs.existsSync(file) || fs.statSync(file).isDirectory()) {
+        // A route path, not a file: the single-page app's own index.
+        if (path.extname(rel) !== "") return route.fulfill({ status: 404, body: "not found" });
+        file = path.join(root, "index.html");
+      }
+      served++;
+      await route.fulfill({
+        status: 200,
+        body: fs.readFileSync(file),
+        headers: { "content-type": MIME[path.extname(file).toLowerCase()] ?? "application/octet-stream", "cache-control": "no-store" },
+      });
+    });
+  }
+  await page.reload();
+  await page.waitForLoadState("load").catch(() => {});
+  console.log(`serving ${root} at ${origin} (reloaded). Stop this process to go back to the bundled frontend.`);
+  for (;;) {
+    await sleep(5000);
+    if (!pidAlive(readState()?.pid ?? -1)) {
+      console.log(`idl1 exited; served ${served} files.`);
+      return;
+    }
+  }
+}
+
 // ---- main -----------------------------------------------------------------
 
 const { positional, flags } = parseArgs(process.argv.slice(2));
@@ -406,6 +488,8 @@ const commands = {
   press: () => cmdPress(rest[0]),
   console: () => cmdConsole(flags),
   close: () => cmdClose(),
+  serve: () => cmdServe(rest[0]),
+  drag: () => cmdDrag(rest[0], rest[1], rest[2], flags),
 };
 
 if (!command || command === "help" || !commands[command]) {

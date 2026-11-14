@@ -340,6 +340,49 @@ span misses the session. Item 7's probe no longer blocks anything. It
 informs a later refinement (IMU sync, camera IMU as channels) once Isaac
 copies a raw SD-card clip into the repo.
 
+**First real clip, 2026-11-14 (item 7 and item 9 answered).** A raw HERO11
+Mini file (`GX010117.MP4`, firmware H22.03.02.50.00, HEVC 2704×2028 at
+59.94 frames/s, 115.0 s, 1.43 GB) linked to ride `edb96102` (2026-07-15)
+on nightly build 154:
+
+- `match_videos` found the one overlapping ride. `link_video` copied and
+  hashed the file in 7.8 s.
+- The GPMF track has **no GPS** (`GPSU`, `GPS5`, `GPS9` all absent), so the
+  estimate fell to `creation_time`: offset −4.984 s.
+- The track **does** hold `ACCL` and `GYRO` at 202 Hz, and `GRAV` and `CORI`
+  at 60 Hz. Cross-correlating the camera's accelerometer and gyro
+  magnitudes against each of the logger's three IMUs gives −5.04 s on all
+  six pairs (range −4.88 to −5.12 s; accelerometer peaks 0.56 to 0.58). So
+  creation time was about 0.06 s (three to four frames) off on this clip,
+  which fits item 9's "within a couple of frames", and IMU sync (§4.3) is
+  feasible on this camera. The check was a throwaway script, logged in the
+  library's `agent-gaps.md`; nothing is built.
+- WebView2 (Edge 157) decodes the HEVC stream with no extension installed
+  on this machine. Pinning seeks, and six seconds of playback presented
+  386 frames with none dropped, the cursor following the video. The
+  ±10 ms nudge and Re-estimate both work.
+
+**Decided 2026-11-14 (Isaac, after watching the clip):**
+
+- Step, Align, nudge, Re-estimate, Unlink and Add video live in the video
+  cell's Properties tab, not under the picture (changes §5.4's placement).
+- A pinned cursor has a grab handle at the top of its line on every chart.
+  Dragging it moves the pin and seeks the video (§5.3). WebView2 has no
+  `fastSeek`, so "fast" there is one exact seek at a time, the newest
+  position waiting for the one in flight.
+- During playback the cursor holds still and the charts pan under it
+  (cursor-fixed is the default; scroll-at-edge stays as the toggle). Charts
+  redraw every 200 ms while playing. Pausing leaves the cursor where
+  playback stopped.
+- Step 2 as proposed: an overlay is a workbook with a canvas; cells get a
+  `cursor` value at video frame rate; the overlay look is a theme. Readouts
+  should look good: a speedometer for speed, heart rate with a heart icon
+  (possibly tach-like), a configurable g-g plot whose dot has a
+  configurable tail. First set: speed, heart rate, g-g, one scrolling
+  trace. A spectrogram later. Screen-record first, export after.
+- Sync stays on timestamps. The camera's IMU is wanted as data channels
+  (§4.3's second note), its own spec.
+
 **Step 1 contract edits, written 2026-10-16:** C1 §6 `videos`; C2 §2.1
 `video` cell; C3 §3.12 commands, URI scheme and error kinds; C4 §2 inbox
 and §6 merge, video blobs, mobile and repair rules. These replace §5.2's

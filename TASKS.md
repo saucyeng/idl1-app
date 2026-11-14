@@ -970,8 +970,19 @@ Analysis gaps from `173461a2` (Python was needed for each; `agent-gaps.md`):
         Isaac's test with a raw HERO11 Mini clip. Check a normal phone→desktop sync
         first (blob transfer now streams). Rollback: v0.1.0-beta.3. "Add video" on the
         Data tab built 2026-11-14. Drop-to-link (an MP4 dropped on the
-        Data tab links to the ride it overlaps, or asks which) built 2026-11-14. Not built yet:
-        dragging the pinned cursor.
+        Data tab links to the ride it overlaps, or asks which) built 2026-11-14. Dragging the
+        pinned cursor built 2026-11-14 (a grab handle at the top of the line; the video seeks one
+        frame at a time while dragging, exactly on release). Charts now redraw during playback
+        and cursor-fixed is the default; alignment controls live in the cell's Properties tab.
+        Tested on a raw HERO11 Mini clip 2026-11-14 (build 154, ride `edb96102`): link, HEVC
+        playback, nudge and Re-estimate work; the offset came from creation time (the clip has
+        no GPS) and is about 0.06 s off by the camera's own IMU (spec §10). Still wanted:
+        Isaac's own look at it, and a phone→desktop sync check.
+  - [ ] Sync from the camera's IMU (spec §4.3): the HERO11 Mini records `ACCL`/`GYRO` at
+        202 Hz, and cross-correlating them with the logger's IMUs gave a consistent offset on
+        the first clip. Needs a GPMF IMU reader in `core`. Not started.
+  - [ ] A workbook written outside the app is missing from the Notebook sidebar until
+        "Rebuild catalog" runs (`list_workbooks` reads the catalog only; found 2026-11-14).
   - [x] Video §8, letting Claude drive the app (2026-10-18): `tools/drive/drive.mjs`
         plus the `run` skill. Launch, screenshot, click, type, eval, console and close all
         verified against nightly build 72. Android (adb forwarding) comes later.

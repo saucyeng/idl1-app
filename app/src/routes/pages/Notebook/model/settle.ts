@@ -19,6 +19,10 @@ export interface SettleTimer {
   setTimeout(callback: () => void, delayMs: number): number;
   /** Cancels a pending `handle` from `setTimeout`; a no-op if it already fired or was cleared. */
   clearTimeout(handle: number): void;
+  /** The current time, in ms, on the same clock `setTimeout` counts on.
+   *  Only {@link makeSettle}'s `notifyThrottled` reads it; `Date.now` when
+   *  absent. */
+  now?(): number;
 }
 
 /** The real browser/Node global timer, for production callers that don't
@@ -41,6 +45,7 @@ const REAL_TIMER: SettleTimer = {
   // `Timeout` while the browser's is a `number`.
   setTimeout: (fn, ms) => globalThis.setTimeout(fn, ms) as unknown as number,
   clearTimeout: (handle) => globalThis.clearTimeout(handle),
+  now: () => Date.now(),
 };
 
 /**
@@ -63,6 +68,15 @@ const REAL_TIMER: SettleTimer = {
  * older, already-superseded one). See {@link isStaleSettleResult}, the pure
  * comparison this check reduces to.
  *
+ * `notifyThrottled(value, minIntervalMs)` is for a source that never stops
+ * producing frames, which a debounce would starve: playback pans every
+ * chart on every frame, so `notify` alone would hold the settle off until
+ * the pause. It records `value` as the latest and fires `onSettle` no more
+ * often than once per `minIntervalMs`: at once (on the next timer turn) when
+ * that long has passed since the last firing, otherwise when it has. A timer
+ * already pending, from either method, is left to fire with the latest
+ * value. Both methods share one sequence counter.
+ *
  * @param delayMs Debounce delay, in ms.
  * @param onSettle Called with the latest `notify`-ed value once the gesture has settled.
  * @param timer Injected `setTimeout`/`clearTimeout`-shaped scheduler; defaults to the real global timer.
@@ -71,10 +85,19 @@ export function makeSettle<T>(
   delayMs: number,
   onSettle: (value: T) => void,
   timer: SettleTimer = REAL_TIMER
-): { notify(value: T): void; cancel(): void; latestSeq(): number } {
+): { notify(value: T): void; notifyThrottled(value: T, minIntervalMs: number): void; cancel(): void; latestSeq(): number } {
   let handle: number | null = null;
   let latest: T;
   let seq = 0;
+  let lastFiredAtMs: number | null = null;
+  const now = (): number => (timer.now !== undefined ? timer.now() : Date.now());
+
+  function fire(): void {
+    handle = null;
+    seq += 1;
+    lastFiredAtMs = now();
+    onSettle(latest);
+  }
 
   return {
     notify(value: T): void {
@@ -82,11 +105,15 @@ export function makeSettle<T>(
       if (handle !== null) {
         timer.clearTimeout(handle);
       }
-      handle = timer.setTimeout(() => {
-        handle = null;
-        seq += 1;
-        onSettle(latest);
-      }, delayMs);
+      handle = timer.setTimeout(fire, delayMs);
+    },
+    notifyThrottled(value: T, minIntervalMs: number): void {
+      latest = value;
+      if (handle !== null) {
+        return;
+      }
+      const sinceLastMs = lastFiredAtMs === null ? minIntervalMs : now() - lastFiredAtMs;
+      handle = timer.setTimeout(fire, Math.max(0, minIntervalMs - sinceLastMs));
     },
     cancel(): void {
       if (handle !== null) {

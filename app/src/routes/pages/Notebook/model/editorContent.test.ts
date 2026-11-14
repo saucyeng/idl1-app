@@ -5,7 +5,7 @@ import { editorContentFor, sheetTitleFor } from "./editorContent";
 
 /** Every fence-language token a cell can carry (`model/cells.ts`), so a new
  *  kind is a compile error here until it is given sheet content. */
-const ALL_KINDS: readonly CellKindToken[] = ["math", "table", "js"];
+const ALL_KINDS: readonly CellKindToken[] = ["math", "table", "js", "video"];
 
 describe("editorContentFor", () => {
   it("editorContentFor — a js cell — the Properties form", () => {
@@ -32,10 +32,16 @@ describe("editorContentFor", () => {
     expect(opened.every((content) => content === "properties" || content === "code")).toBe(true);
   });
 
-  it("editorContentFor — every cell kind — properties only for js", () => {
+  it("editorContentFor — a video cell — a Properties tab for its alignment controls", () => {
+    const content = editorContentFor("video");
+
+    expect(content).toBe("properties");
+  });
+
+  it("editorContentFor — every cell kind — properties only for js and video", () => {
     const withProperties = ALL_KINDS.filter((kind) => editorContentFor(kind) === "properties");
 
-    expect(withProperties).toEqual(["js"]);
+    expect(withProperties).toEqual(["js", "video"]);
   });
 });
 

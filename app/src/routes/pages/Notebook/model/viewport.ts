@@ -193,3 +193,28 @@ export function commitViewport(
 
   return { live: next, transform: transformFor(committed, next) };
 }
+
+/**
+ * Whether a commit that lands during playback is only the picture catching
+ * up with a chart that has kept panning: the same visible span, started
+ * less than a quarter of that span away from where the chart now is.
+ *
+ * While playing, the chart pans on every frame and a commit is always for
+ * where it was a few frames ago. Adopting such a commit would step the
+ * picture (and the cursor on it) back by the fetch latency several times a
+ * second, so the caller keeps its live window and re-bases the transform
+ * instead, as it does mid-gesture (see {@link commitViewport}). Anything
+ * else (another chart's zoom, a reset, a pan well away) is a real change of
+ * window and is adopted.
+ *
+ * @param committed The viewport the parent has just rendered the picture for.
+ * @param live The cell's own viewport immediately before this commit.
+ */
+export function isPlaybackLag(committed: Viewport, live: Viewport): boolean {
+  const committedSpanUs = committed.endUs - committed.startUs;
+  const liveSpanUs = live.endUs - live.startUs;
+  if (liveSpanUs <= 0 || Math.abs(committedSpanUs - liveSpanUs) > 1) {
+    return false;
+  }
+  return Math.abs(live.startUs - committed.startUs) < liveSpanUs / 4;
+}

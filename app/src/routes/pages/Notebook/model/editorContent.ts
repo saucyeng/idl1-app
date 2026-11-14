@@ -21,8 +21,9 @@ import type { CellKindToken } from "./cells";
 
 /** What an open cell's editor holds.
  *
- *  - `properties` — the Properties form (and the code editor beside it, as
- *    `EditorPanes` tabs): a `js` cell, the only kind `plotForm` covers.
+ *  - `properties` — a Properties tab (and the code editor beside it, as
+ *    `EditorPanes` tabs): a `js` cell's form, the only kind `plotForm`
+ *    covers, or a `video` cell's alignment and file controls.
  *  - `code` — the code editor alone. */
 export type EditorContent = "properties" | "code";
 
@@ -32,7 +33,7 @@ export type EditorContent = "properties" | "code";
  * @param kind - The open cell's fence-language token (C2 §2.1).
  */
 export function editorContentFor(kind: CellKindToken): EditorContent {
-  return kind === "js" ? "properties" : "code";
+  return kind === "js" || kind === "video" ? "properties" : "code";
 }
 
 /**

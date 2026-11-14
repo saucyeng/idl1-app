@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { clampTo, commitViewport, panBy, transformFor, zoomAt, type Viewport } from "./viewport";
+import { clampTo, commitViewport, isPlaybackLag, panBy, transformFor, zoomAt, type Viewport } from "./viewport";
 
 describe("panBy", () => {
   it("panBy — a drag of 100 px on a 1000 px wide 10 s window — moves the window by exactly 1 s", () => {
@@ -181,5 +181,43 @@ describe("commitViewport", () => {
 
     expect(afterSettle.live).toEqual(live);
     expect(afterSettle.transform.translateXPx).toBe(0);
+  });
+});
+
+describe("isPlaybackLag", () => {
+  it("isPlaybackLag — same span, the chart 0.3 s ahead of a 20 s window — is lag", () => {
+    const committed: Viewport = { startUs: 10_000_000, endUs: 30_000_000, pixelWidth: 1000 };
+    const live: Viewport = { startUs: 10_300_000, endUs: 30_300_000, pixelWidth: 1000 };
+
+    const lag = isPlaybackLag(committed, live);
+
+    expect(lag).toBe(true);
+  });
+
+  it("isPlaybackLag — a different span (another chart zoomed) — is a real change", () => {
+    const committed: Viewport = { startUs: 10_000_000, endUs: 20_000_000, pixelWidth: 1000 };
+    const live: Viewport = { startUs: 10_300_000, endUs: 30_300_000, pixelWidth: 1000 };
+
+    const lag = isPlaybackLag(committed, live);
+
+    expect(lag).toBe(false);
+  });
+
+  it("isPlaybackLag — same span a whole page away — is a real change", () => {
+    const committed: Viewport = { startUs: 10_000_000, endUs: 30_000_000, pixelWidth: 1000 };
+    const live: Viewport = { startUs: 30_000_000, endUs: 50_000_000, pixelWidth: 1000 };
+
+    const lag = isPlaybackLag(committed, live);
+
+    expect(lag).toBe(false);
+  });
+
+  it("isPlaybackLag — an empty live window — is never lag", () => {
+    const committed: Viewport = { startUs: 0, endUs: 0, pixelWidth: 1000 };
+    const live: Viewport = { startUs: 0, endUs: 0, pixelWidth: 1000 };
+
+    const lag = isPlaybackLag(committed, live);
+
+    expect(lag).toBe(false);
   });
 });

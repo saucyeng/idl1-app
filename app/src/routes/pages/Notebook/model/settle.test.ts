@@ -20,6 +20,7 @@ function makeFakeTimer(): { timer: SettleTimer; advance(ms: number): void } {
     clearTimeout(handle: number): void {
       pending.delete(handle);
     },
+    now: () => now,
   };
 
   function advance(ms: number): void {
@@ -92,6 +93,48 @@ describe("makeSettle", () => {
 
     expect(seqSeenInsideOnSettle).toEqual([1, 2]);
     expect(settle.latestSeq()).toBe(2);
+  });
+
+  it("notifyThrottled — a call every 10 ms for 500 ms at a 200 ms interval — fires at 0, 200 and 400 ms, never starved", () => {
+    const { timer, advance } = makeFakeTimer();
+    const fired: number[] = [];
+    const settle = makeSettle<number>(100, (value) => fired.push(value), timer);
+
+    for (let t = 0; t <= 500; t += 10) {
+      settle.notifyThrottled(t, 200);
+      advance(10);
+    }
+
+    expect(fired).toEqual([0, 200, 400]);
+  });
+
+  it("notifyThrottled — one call after a long quiet spell — fires on the next timer turn with that value", () => {
+    const { timer, advance } = makeFakeTimer();
+    const onSettle = vi.fn();
+    const settle = makeSettle<number>(100, onSettle, timer);
+    settle.notifyThrottled(1, 200);
+    advance(0);
+    advance(1000);
+
+    settle.notifyThrottled(2, 200);
+    advance(0);
+
+    expect(onSettle).toHaveBeenCalledTimes(2);
+    expect(onSettle).toHaveBeenLastCalledWith(2);
+  });
+
+  it("notifyThrottled — called while a debounce is pending — leaves that timer and it fires with the newer value", () => {
+    const { timer, advance } = makeFakeTimer();
+    const onSettle = vi.fn();
+    const settle = makeSettle<number>(100, onSettle, timer);
+    settle.notify(1);
+    advance(50);
+
+    settle.notifyThrottled(2, 200);
+    advance(50);
+
+    expect(onSettle).toHaveBeenCalledTimes(1);
+    expect(onSettle).toHaveBeenCalledWith(2);
   });
 });
 

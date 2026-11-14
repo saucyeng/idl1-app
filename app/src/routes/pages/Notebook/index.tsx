@@ -69,7 +69,7 @@ import ProseEditor from "./components/ProseEditor";
 import ReportView from "./components/ReportView";
 import PaperView from "./components/PaperView";
 import { buildReportDocument, type ReportDocument } from "./model/report/document";
-import ChartCell from "./components/ChartCell";
+import ChartCell, { PLAYBACK_SETTLE_MS } from "./components/ChartCell";
 import ConflictBanner from "./components/ConflictBanner";
 import MigrationBanner from "./components/MigrationBanner";
 import VersionBanner, { WorkbookVersionBannerView } from "./components/VersionBanner";
@@ -915,13 +915,25 @@ export default function NotebookPage() {
   const [playback, setPlayback] = useState<PlaybackState>({ tUs: 0n, playing: false, speed: 1 });
   const sharedCursorTUs = playback.playing ? playback.tUs : manualCursorTUs;
   /** Decision 57's playback mode (Task 11), beside `playback` itself since
-   *  it is the same kind of worksheet-scoped playback state; `"scroll-at-
-   *  edge"` (the picture holds still, the cursor moves) is the default --
-   *  decision 57 states it first ("stop at the end of the lap; yes on
-   *  scroll") and names cursor-fixed as the *second*, opt-in mode ("I kind
-   *  of want the *option* to..."). `PlaybackTransport`'s mode toggle (Task
-   *  12) is the only writer. */
-  const [playbackMode, setPlaybackMode] = useState<PlaybackMode>("scroll-at-edge");
+   *  it is the same kind of worksheet-scoped playback state. `"cursor-
+   *  fixed"` (the cursor holds still, the charts pan under it) is the
+   *  default since 2026-11-14 (Isaac, watching real footage: "we ideally
+   *  want them to just pan and the cursor stays still"); decision 57 had
+   *  `"scroll-at-edge"` first. `PlaybackTransport`'s mode toggle (Task 12)
+   *  is the only writer. */
+  const [playbackMode, setPlaybackMode] = useState<PlaybackMode>("cursor-fixed");
+  /** Whether a pinned cursor's grab handle is being dragged (video spec
+   *  §5.3): the video follows with quick seeks until it is released. */
+  const [scrubbing, setScrubbing] = useState(false);
+  /** When playback last committed a panned window, `performance.now()` ms.
+   *  Every chart reports the same pan within a frame of each other; the
+   *  first one commits it for all of them and the rest are dropped. */
+  const lastPlaybackCommitMsRef = useRef(Number.NEGATIVE_INFINITY);
+  /** The properties column's slot for the open `video` cell's controls
+   *  (Isaac, 2026-11-14: alignment "should be in the video cell's
+   *  properties, not out in the open in the workbook"). The cell itself
+   *  portals them in, since they act on its own `<video>` element. */
+  const [videoPropertiesSlot, setVideoPropertiesSlot] = useState<HTMLDivElement | null>(null);
 
   // One worksheet-shared cursor bus (Task 1/2) -- created once and handed
   // down to every `ChartCell` as a stable reference, never React state, so
@@ -1098,6 +1110,22 @@ export default function NotebookPage() {
       setPlayback((prev) => togglePlay(prev));
     }
   }, [primeState.running, playback.playing]);
+
+  // Playback stopping (a pause, or the end of the playing window) leaves the
+  // cursor pinned where it stopped. Before 2026-11-14 the cursor went back
+  // to wherever it was pinned before play, so pausing on something seen in
+  // the video threw the moment away. A layout effect, so the frame after
+  // the pause never paints the old pin.
+  const wasPlayingRef = useRef(false);
+  useLayoutEffect(() => {
+    if (wasPlayingRef.current && !playback.playing) {
+      setManualCursorTUs(playback.tUs);
+      const span = primaryWindowSpanRef.current;
+      if (span !== null) cursorBus.pin(Number(playback.tUs) - span.startUs);
+    }
+    wasPlayingRef.current = playback.playing;
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- reacts to playback stopping only; `playback.tUs` is read as of that render
+  }, [playback.playing]);
 
   /** Play/pause toggle for `PlaybackTransport`. Starting play from a
    *  manually-set cursor seeds the clock's `tUs` from it (a judgment call:
@@ -4392,6 +4420,7 @@ export default function NotebookPage() {
         displayName={openCellId !== null ? displayNameFor(cellDisplayNameMap, openCellId) : null}
         renameable={openCell?.kind === "math"}
         onRenameCell={handleRenameCell}
+        onVideoPropertiesSlot={setVideoPropertiesSlot}
       />
     ) : null;
 
@@ -4771,6 +4800,8 @@ export default function NotebookPage() {
           cursorUs={sharedCursorTUs === null ? null : Number(sharedCursorTUs)}
           pinnedCursorUs={manualCursorTUs === null ? null : Number(manualCursorTUs)}
           playing={playback.playing}
+          scrubbing={scrubbing}
+          controlsSlot={cellId === openCellId ? videoPropertiesSlot : null}
           speed={playback.speed}
           // Reports frames only while it actually owns the clock, so a
           // remounted master over a blob already marked unplayable never
@@ -4955,7 +4986,18 @@ export default function NotebookPage() {
                 cache={sessionRef.current.cache}
                 fetchTile={(tier, tileIndex, columnCount) => fetchTile(sid, channel.channelId, tier, tileIndex, columnCount)}
                 fetchSeams={fetchSeams}
-                onViewportSettled={(viewport, _tier, tiles) => {
+                onViewportSettled={(viewport, _tier, tiles, origin) => {
+                  // Playback pans every chart together, so each of them
+                  // reports the same window within a frame. The first
+                  // commits it, and its own "every other chart" pass below
+                  // redraws the rest; committing each would redraw every
+                  // chart once per chart, several times a second.
+                  if (origin === "playback") {
+                    const nowMs = performance.now();
+                    if (nowMs - lastPlaybackCommitMsRef.current < PLAYBACK_SETTLE_MS / 2) return;
+                    lastPlaybackCommitMsRef.current = nowMs;
+                  }
+
                   // ChartCell has already committed its own (mounted-channel)
                   // settle-fetch by the time this fires -- paint it
                   // immediately rather than waiting on the multi-channel
@@ -5078,6 +5120,7 @@ export default function NotebookPage() {
                 primaryWindowSpan={primaryWindowSpanForCell}
                 onSetCursor={(tUs) => setManualCursorTUs(BigInt(Math.round(tUs)))}
                 onClearCursor={() => setManualCursorTUs(null)}
+                onScrubbingChange={setScrubbing}
                 cursorBus={cursorBus}
                 inputMapPreset={inputMapPreset}
                 onToggleCode={() => setRevealedCells((prev) => toggleCode(prev, cellId))}

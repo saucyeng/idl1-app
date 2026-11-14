@@ -14,7 +14,7 @@ import { isStaleSettleResult, makeSettle } from "../model/settle";
 import { planTiles } from "../model/tiers";
 import { ensureTiles, type TileCache, type TileCacheKey } from "../model/tileCache";
 import { rawUnitToLabel } from "../model/unitLabel";
-import { clampTo, commitViewport, panBy, transformFor, zoomAt, type Viewport } from "../model/viewport";
+import { clampTo, commitViewport, isPlaybackLag, panBy, transformFor, zoomAt, type Viewport } from "../model/viewport";
 import { cursorTimeInWindow, type AbsoluteSpan } from "../model/viewportWindows";
 import ChartContextMenu from "../interaction/ChartContextMenu";
 import type { ChartAction } from "../interaction/chartActions";
@@ -78,6 +78,25 @@ interface HoverReading {
  *  short enough to feel responsive once a gesture actually stops, long
  *  enough that no individual frame of a scroll/drag/pinch ever reaches it. */
 const SETTLE_DELAY_MS = 150;
+
+/** How often, in ms, a chart that playback is panning asks for a fresh
+ *  picture. Playback moves the window on every frame, so the gesture
+ *  debounce above would never fire until the pause and the picture would
+ *  run off the drawn window (Isaac, 2026-11-14: "they don't always pick up
+ *  the next window of pixels"). No spec number is given; 200 ms keeps the
+ *  undrawn strip at the leading edge to a fifth of a second of travel while
+ *  leaving most frames free of a redraw. */
+export const PLAYBACK_SETTLE_MS = 200;
+
+/** Width of the pinned cursor's grab handle, in CSS px: wide enough to hit
+ *  with a mouse without hiding much of the trace under it. */
+const CURSOR_HANDLE_WIDTH_PX = 15;
+/** Height of the grab handle, in CSS px. */
+const CURSOR_HANDLE_HEIGHT_PX = 12;
+
+/** What moved a chart's window to the viewport a settle reports: a person's
+ *  gesture (drag, wheel, key, menu), or playback panning it. */
+export type SettleOrigin = "gesture" | "playback";
 
 /** Wheel-to-zoom sensitivity (there is no pinch-gesture DOM API on desktop;
  *  the mouse wheel's `deltaY` drives zoom instead). No spec number is given;
@@ -194,8 +213,10 @@ export interface ChartCellProps {
    * `// TODO(idl0)` about a mid-window hole: the tiles a caller then feeds
    * back into this cell's `tiles` prop (and to `hoverAt`/`tileToChannelData`)
    * are guaranteed contiguous by construction, not by hover's own checking.
+   * `origin` says what moved the window: during playback every chart
+   * reports the same pan a few ms apart, and the parent commits it once.
    */
-  onViewportSettled: (viewport: Viewport, tier: number, tiles: DecodedTile[]) => void;
+  onViewportSettled: (viewport: Viewport, tier: number, tiles: DecodedTile[], origin: SettleOrigin) => void;
   /**
    * Present only for a raster-kind cell (Task 9: spectrogram or 2-D
    * histogram density under this cell's Plot axes). When set,
@@ -316,12 +337,13 @@ export interface ChartCellProps {
    * {@link cursorTUs}. When `true`, a change in `cursorTUs` pans this
    * cell's own live viewport by the elapsed time (via
    * `interaction/cursorFollow.ts`'s `advanceViewportByTime`) through the
-   * *existing* settle/debounce pipeline (`settleRef`'s `notify`, exactly as
-   * a drag/wheel gesture does) — a continuously-advancing cursor therefore
-   * never fires a tile re-fetch or a cursor-readout IPC call per animation
-   * frame, only once playback stops advancing for `SETTLE_DELAY_MS`/
-   * `CURSOR_SETTLE_MS` (R99: "ship playback as pan-visually-then-refetch-
-   * once-when-playback-stops"). When `false`, a `cursorTUs` change (a
+   * settle pipeline's throttle (`settleRef`'s `notifyThrottled`): the
+   * picture is moved by the transform on every frame and redrawn for the
+   * new window every `PLAYBACK_SETTLE_MS`, never per animation frame. The
+   * cursor readout still waits for playback to stop (`CURSOR_SETTLE_MS`).
+   * This replaces R99's "refetch once when playback stops", which left a
+   * zoomed chart blank once it had panned past the drawn window (Isaac,
+   * 2026-11-14). When `false`, a `cursorTUs` change (a
    * manual `setCursor`/`clearCursor` from any chart's own action menu or
    * click) only redraws this cell's cursor line and refreshes its own
    * readout — it never pans.
@@ -347,6 +369,14 @@ export interface ChartCellProps {
   onSetCursor: (tUs: number) => void;
   /** Clears the shared cursor ("Clear cursor" menu action). */
   onClearCursor: () => void;
+  /**
+   * Called with `true` when a drag of the pinned cursor's grab handle
+   * starts and `false` when it ends (video spec §5.3). While it is `true`
+   * every {@link onSetCursor} call is a scrub step, which the video follows
+   * with quick seeks; the last one before `false` is where it settles and
+   * the video seeks exactly.
+   */
+  onScrubbingChange: (scrubbing: boolean) => void;
   /**
    * The worksheet's one shared {@link CursorBus} (Task 1), passed down by
    * `Notebook/index.tsx` as a stable ref -- every mounted `ChartCell`
@@ -465,6 +495,7 @@ export default function ChartCell({
   playbackMode,
   onSetCursor,
   onClearCursor,
+  onScrubbingChange,
   cursorBus,
   inputMapPreset,
   onToggleCode,
@@ -559,6 +590,17 @@ export default function ChartCell({
   // dependency array data-only (`[cursorTUs, playing, sessionSpanUs]`).
   const liveViewportRef = useRef(liveViewport);
   liveViewportRef.current = liveViewport;
+  // `playing`, for the commit effect below, whose dependency array stays
+  // `[viewport]`: a commit must be judged by whether playback is running
+  // when it lands, and must not re-run because playback started or stopped.
+  const playingRef = useRef(playing);
+  playingRef.current = playing;
+  // What moved the window since the last settle fired. A gesture outranks
+  // playback: a person's zoom during playback must be committed even though
+  // playback's own frames keep arriving before the settle fires.
+  const settleOriginRef = useRef<SettleOrigin | null>(null);
+  // The grab handle's drag (video spec §5.3), `null` when none is running.
+  const scrubPointerIdRef = useRef<number | null>(null);
   // The hover-follow cursor line (decision 51's first half, Task 2) --
   // positioned imperatively from `cursorBus` subscriptions, never via
   // `setState`, since a hover fires at pointer rate. Distinct from the
@@ -645,9 +687,16 @@ export default function ChartCell({
   // rendered one instead, so nothing on screen moves at the commit and the
   // gesture carries on from where it actually is. The pan's own later
   // settle then commits the window the user actually reached.
+  //
+  // Playback is the same case without a pointer: the chart pans on every
+  // frame, so a commit is always for where it was a few frames ago, and
+  // adopting it would step the picture and its cursor back at every redraw.
+  // `isPlaybackLag` tells that apart from a real change of window (another
+  // chart's zoom, a reset), which is still adopted.
   useEffect(() => {
     setLiveViewport((current) => {
-      const commit = commitViewport(viewport, current, dragStateRef.current !== null);
+      const keepLive = dragStateRef.current !== null || (playingRef.current && isPlaybackLag(viewport, current));
+      const commit = commitViewport(viewport, current, keepLive);
       transformDepsRef.current.sendTransform(transformDepsRef.current.cellId, commit.transform.translateXPx, commit.transform.scaleX);
       return commit.live;
     });
@@ -731,6 +780,8 @@ export default function ChartCell({
     // the newer settle's own (possibly still-pending) result
     // (review-task8.md: "no stale-settle guard").
     const seqAtDispatch = settleRef.current.latestSeq();
+    const origin: SettleOrigin = settleOriginRef.current ?? "gesture";
+    settleOriginRef.current = null;
     const { tier, range } = planTiles(next.startUs, next.endUs, next.pixelWidth, sampleRateHz, sampleCount);
     const key: Omit<TileCacheKey, "tileIndex"> = { sessionId, channelId, tier, columnCount: width };
 
@@ -753,7 +804,7 @@ export default function ChartCell({
           }
           covered.push(tile);
         }
-        onViewportSettled(next, tier, covered);
+        onViewportSettled(next, tier, covered, origin);
       })
       .catch(() => {
         // TODO(idl0): a fetch failure here is swallowed — the picture stays
@@ -785,11 +836,21 @@ export default function ChartCell({
   // live sandbox transform) — factored out so the wheel/drag gestures
   // below, the new keyboard/menu actions, and the playback-pan effect all
   // go through one path rather than three copies of it.
+  //
+  // `origin` picks the settle: a gesture debounces (it fires once the
+  // gesture stops), playback throttles (it never stops, so a debounce would
+  // starve until the pause).
   const applyViewport = useCallback(
-    (compute: (current: Viewport) => Viewport) => {
+    (compute: (current: Viewport) => Viewport, origin: SettleOrigin = "gesture") => {
       setLiveViewport((current) => {
         const next = clampTo(compute(current), sessionSpanUs);
-        settleRef.current.notify(next);
+        if (origin === "playback") {
+          settleOriginRef.current = settleOriginRef.current ?? "playback";
+          settleRef.current.notifyThrottled(next, PLAYBACK_SETTLE_MS);
+        } else {
+          settleOriginRef.current = "gesture";
+          settleRef.current.notify(next);
+        }
         const { cellId: id, sendTransform: send, viewport: settled } = transformDepsRef.current;
         const frameTransform = transformFor(settled, next);
         send(id, frameTransform.translateXPx, frameTransform.scaleX);
@@ -828,8 +889,14 @@ export default function ChartCell({
     // comment on `ChartCellProps`).
     if (playing && prevApplied !== null) {
       const deltaUs = tUsNum - prevApplied;
-      atViewport = clampTo(advanceForMode(atViewport, tUsNum, deltaUs, playbackMode), sessionSpanUs);
-      applyViewport(() => atViewport);
+      const advanced = clampTo(advanceForMode(atViewport, tUsNum, deltaUs, playbackMode), sessionSpanUs);
+      // Only a window that actually moved goes through the settle pipeline:
+      // scroll-at-edge holds still between pages, and a chart showing the
+      // whole session cannot pan at all.
+      if (advanced.startUs !== atViewport.startUs || advanced.endUs !== atViewport.endUs) {
+        atViewport = advanced;
+        applyViewport(() => advanced, "playback");
+      }
     }
 
     const pixelX = pixelXForTUs(atViewport, tUsNum);
@@ -1149,6 +1216,44 @@ export default function ChartCell({
     }
   }
 
+  // The pinned cursor's grab handle (video spec §5.3; Isaac, 2026-11-14: "a
+  // small grab handle at the top of each cursor line"). A drag re-pins the
+  // cursor under the pointer on every move, exactly as a click would, so
+  // every chart's line and the video follow it. Its events never reach the
+  // frame's own handlers: a drag that starts on the handle is not a zoom.
+  function scrubTo(clientX: number): void {
+    const frame = frameRef.current;
+    if (frame === null) return;
+    const pixelX = Math.min(Math.max(clientX - frame.getBoundingClientRect().left, 0), liveViewport.pixelWidth);
+    const request = cursorRequestFor(liveViewport, pixelX, []);
+    if (request === null) return;
+    onSetCursor(request.tUs);
+    if (primaryWindowSpan !== null) cursorBus.pin(request.tUs - primaryWindowSpan.startUs);
+  }
+
+  function handleScrubDown(event: PointerEvent<HTMLDivElement>): void {
+    if (event.button !== 0) return;
+    event.stopPropagation();
+    event.preventDefault();
+    scrubPointerIdRef.current = event.pointerId;
+    event.currentTarget.setPointerCapture(event.pointerId);
+    onScrubbingChange(true);
+  }
+
+  function handleScrubMove(event: PointerEvent<HTMLDivElement>): void {
+    event.stopPropagation();
+    if (scrubPointerIdRef.current !== event.pointerId) return;
+    scrubTo(event.clientX);
+  }
+
+  function handleScrubEnd(event: PointerEvent<HTMLDivElement>): void {
+    event.stopPropagation();
+    if (scrubPointerIdRef.current !== event.pointerId) return;
+    scrubPointerIdRef.current = null;
+    if (event.type === "pointerup") scrubTo(event.clientX);
+    onScrubbingChange(false);
+  }
+
   const transform = transformFor(viewport, liveViewport);
   // R69 item (a): once the sandbox has rendered this cell at least once,
   // its own reported height is authoritative — `height` is only the
@@ -1297,6 +1402,38 @@ export default function ChartCell({
               background: "var(--fg-dim)",
               pointerEvents: "none",
             }}
+          />
+        )}
+        {cursorLinePx !== null && !playing && (
+          /* The grab handle: a tab hanging from the top of the pinned
+             line, wide enough to hit, the only part of the cursor that
+             takes the pointer. Hidden while playing, when the video (or
+             the playback clock) owns the cursor. */
+          <div
+            className="chart-cell-cursor-handle"
+            role="slider"
+            aria-label="Cursor"
+            aria-orientation="horizontal"
+            aria-valuemin={0}
+            aria-valuemax={Math.round(sessionSpanUs / 1e6)}
+            aria-valuenow={Math.round(Number(cursorTUs) / 1e6)}
+            title="Drag to move the cursor"
+            style={{
+              position: "absolute",
+              top: 0,
+              left: cursorLinePx - CURSOR_HANDLE_WIDTH_PX / 2,
+              width: CURSOR_HANDLE_WIDTH_PX,
+              height: CURSOR_HANDLE_HEIGHT_PX,
+              borderRadius: "0 0 4px 4px",
+              background: "var(--fg-dim)",
+              cursor: "ew-resize",
+              touchAction: "none",
+            }}
+            onPointerDown={handleScrubDown}
+            onPointerMove={handleScrubMove}
+            onPointerUp={handleScrubEnd}
+            onPointerCancel={handleScrubEnd}
+            onPointerLeave={(event) => event.stopPropagation()}
           />
         )}
         {

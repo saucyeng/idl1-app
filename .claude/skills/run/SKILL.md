@@ -31,6 +31,8 @@ Before `launch`: `(Get-CimInstance Win32_OperatingSystem).FreeVirtualMemory/1MB`
     node tools/drive/drive.mjs press Control+2
     node tools/drive/drive.mjs eval "document.title"  # JSON result; promises are awaited
     node tools/drive/drive.mjs console [--ms 1000] [--clear]
+    node tools/drive/drive.mjs drag "css=.chart-cell >> nth=0" 0.3 0.5   # real mouse drag between two fractions of the width
+    node tools/drive/drive.mjs serve app/dist        # serve a local `npx vite build` in place of the bundled frontend; runs until stopped
     node tools/drive/drive.mjs close                 # WM_CLOSE, forced after 5 s
 
 - Read a screenshot back with the Read tool to see it.

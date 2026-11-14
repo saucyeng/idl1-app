@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -6,7 +7,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { reestimateVideoOffset, setVideoOffset, unlinkVideo, videoUrl, type SessionVideo } from "../../../../ipc/video";
 import { formatLocalTime, pickAndLinkVideos } from "../../../../state/addVideos";
 import { formatPlaybackTime } from "../interaction/playback";
-import { mediaTimeToSessionUs } from "../interaction/videoClock";
+import { mediaTimeToSessionUs, seekFor } from "../interaction/videoClock";
 import {
   alignedOffsetS,
   deleteFileByDefault,
@@ -34,6 +35,14 @@ export interface VideoCellProps {
   pinnedCursorUs: number | null;
   /** Whether playback is running. */
   playing: boolean;
+  /** Whether the pinned cursor is being dragged by its grab handle (spec
+   *  §5.3): the video follows with quick seeks, then seeks exactly once
+   *  this goes back to `false`. */
+  scrubbing: boolean;
+  /** Where this cell's alignment and file controls go: the properties
+   *  column's slot while this cell is open there, else `null` and they are
+   *  not shown (Isaac, 2026-11-14). The picture stays in the workbook. */
+  controlsSlot: HTMLElement | null;
   /** Playback speed, a multiple of real time: the element's `playbackRate`. */
   speed: number;
   /** Whether this cell owns playback's clock right now: the first video
@@ -81,7 +90,10 @@ function formatSeconds(s: number): string {
  * E1). While paused, a pin seeks it exactly; hover never does (§10 item 6).
  * While playing, the master cell's presented frames drive the cursor
  * (§5.3). Paused, step buttons move the video alone so Align can match it
- * to the pinned cursor (E4). No native controls.
+ * to the pinned cursor (E4). No native controls. The workbook shows the
+ * picture only: the step, Align, nudge and file controls are portalled
+ * into the properties column while this cell is open there (Isaac,
+ * 2026-11-14), since they act on this component's `<video>` element.
  *
  * Not unit-tested (CLAUDE.md §4): its decisions live in `model/videoSpan.ts`
  * and `interaction/videoClock.ts`.
@@ -92,6 +104,8 @@ export default function VideoCell({
   cursorUs,
   pinnedCursorUs,
   playing,
+  scrubbing,
+  controlsSlot,
   speed,
   isMaster,
   onMasterFrame,
@@ -133,15 +147,37 @@ export default function VideoCell({
   // Re-estimate, so the frame shows the result). A step changes none of
   // these, so its video-only position holds until the next pin (lead
   // ruling E4).
+  //
+  // A drag of the cursor's grab handle seeks quickly instead (`seekFor`'s
+  // `fast`): `fastSeek` where the webview has it, and otherwise one exact
+  // seek at a time, the newest position waiting for the one in flight
+  // (WebView2 has no `fastSeek`, and a 4K stream cannot finish a seek per
+  // pointer move). `scrubbing` going back to `false` re-runs this as an
+  // exact seek to where the drag ended.
   const offsetS = link?.offset_s ?? null;
+  const pendingSeekSRef = useRef<number | null>(null);
   useEffect(() => {
     const el = videoRef.current;
-    if (playing || el === null || atVideoS === null) return;
+    if (el === null) return;
+    const command = seekFor(scrubbing ? "drag" : "pin", playing, at);
+    if (command === null) {
+      pendingSeekSRef.current = null;
+      return;
+    }
     el.pause();
-    el.currentTime = atVideoS;
-    setPausedVideoS(atVideoS);
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- `atVideoS` is a function of exactly these inputs
-  }, [playing, src, cursorUs, offsetS]);
+    if (command.mode === "exact") {
+      pendingSeekSRef.current = null;
+      el.currentTime = command.videoTimeS;
+    } else if (typeof el.fastSeek === "function") {
+      el.fastSeek(command.videoTimeS);
+    } else if (el.seeking) {
+      pendingSeekSRef.current = command.videoTimeS;
+    } else {
+      el.currentTime = command.videoTimeS;
+    }
+    setPausedVideoS(command.videoTimeS);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- `at` is a function of exactly these inputs
+  }, [playing, src, cursorUs, offsetS, scrubbing]);
 
   // Playing: start the element at the cursor's frame and the transport's
   // speed; pause when playback stops. A new chapter is a new `src`.
@@ -307,6 +343,13 @@ export default function VideoCell({
           onEnded={handleEnded}
           onError={handleError}
           onSeeked={(e) => {
+            const pendingS = pendingSeekSRef.current;
+            if (pendingS !== null && paused) {
+              // The scrub moved on while this seek was in flight.
+              pendingSeekSRef.current = null;
+              e.currentTarget.currentTime = pendingS;
+              return;
+            }
             if (paused) setPausedVideoS(e.currentTarget.currentTime);
           }}
         />
@@ -318,32 +361,6 @@ export default function VideoCell({
         )}
       </div>
 
-      {link !== null && !failed && paused && (
-        <div className="flex flex-wrap items-center gap-1">
-          {STEPS.map((s) => (
-            <Button key={s.label} size="xs" title={s.title} onClick={() => handleStep(s.step)}>
-              {s.label}
-            </Button>
-          ))}
-          <span className="px-1 text-fg-dim">video {pausedVideoS === null ? "–" : formatSeconds(pausedVideoS)}</span>
-          <Button
-            size="xs"
-            filled
-            disabled={!canEdit || pinnedCursorUs === null}
-            title={pinnedCursorUs === null ? "Pin the cursor on the event first" : "Line the paused frame up with the pinned cursor"}
-            onClick={handleAlign}
-          >
-            Align
-          </Button>
-          <span className="px-1 text-fg-dim">offset</span>
-          {NUDGES.map((n) => (
-            <Button key={n.label} size="xs" title={n.title} disabled={!canEdit} onClick={() => handleNudge(n.nudge)}>
-              {n.label}
-            </Button>
-          ))}
-        </div>
-      )}
-
       {busy !== null && <p className="text-fg-dim">{busy}</p>}
       {messages.map((m, i) => (
         <p key={i} className="text-accent">
@@ -351,30 +368,69 @@ export default function VideoCell({
         </p>
       ))}
 
-      {live.length > 0 && (
-        <ul className="flex flex-col gap-0.5">
-          {live.map((v) => (
-            <li key={v.blob_sha256} className={`flex flex-wrap items-center gap-2 ${v.blob_sha256 === blob ? "text-fg" : "text-fg-dim"}`}>
-              <span className="truncate">{v.file_name}</span>
-              <span>
-                offset {v.offset_s.toFixed(3)} s · {v.sync_method}
-                {v.on_device ? "" : " · not on this device"}
-              </span>
-              <Button size="xs" disabled={!canEdit} title="Estimate the offset again from the file (replaces a manual one)" onClick={() => void run("Re-estimating", v.file_name, () => reestimateVideoOffset(sessionId as string, v.blob_sha256))}>
-                Re-estimate
-              </Button>
-              <Button size="xs" emphasis="accent" disabled={!canEdit} onClick={() => openUnlink(v)}>
-                Unlink
-              </Button>
-            </li>
-          ))}
-          <li>
-            <Button size="xs" disabled={!canEdit} onClick={() => void handleAddVideo()}>
-              Add video
-            </Button>
-          </li>
-        </ul>
-      )}
+      {controlsSlot !== null &&
+        createPortal(
+          <div className="flex flex-col gap-3 font-mono text-xs">
+            {link !== null && !failed && (
+              <section className="flex flex-col gap-1">
+                <h3 className="text-fg-dim">Line the video up with the data</h3>
+                <p className="text-fg-faint">Pause, step the video to an event, pin the cursor on the same event in a chart, then Align.</p>
+                <div className="flex flex-wrap items-center gap-1">
+                  {STEPS.map((s) => (
+                    <Button key={s.label} size="xs" title={s.title} disabled={!paused} onClick={() => handleStep(s.step)}>
+                      {s.label}
+                    </Button>
+                  ))}
+                  <span className="px-1 text-fg-dim">video {pausedVideoS === null ? "–" : formatSeconds(pausedVideoS)}</span>
+                </div>
+                <div className="flex flex-wrap items-center gap-1">
+                  <Button
+                    size="xs"
+                    filled
+                    disabled={!canEdit || !paused || pinnedCursorUs === null}
+                    title={pinnedCursorUs === null ? "Pin the cursor on the event first" : "Line the paused frame up with the pinned cursor"}
+                    onClick={handleAlign}
+                  >
+                    Align
+                  </Button>
+                  <span className="px-1 text-fg-dim">nudge</span>
+                  {NUDGES.map((n) => (
+                    <Button key={n.label} size="xs" title={n.title} disabled={!canEdit} onClick={() => handleNudge(n.nudge)}>
+                      {n.label}
+                    </Button>
+                  ))}
+                </div>
+              </section>
+            )}
+            <section className="flex flex-col gap-1">
+              <h3 className="text-fg-dim">Linked videos</h3>
+              {live.length === 0 && <p className="text-fg-faint">None.</p>}
+              <ul className="flex flex-col gap-1">
+                {live.map((v) => (
+                  <li key={v.blob_sha256} className={`flex flex-wrap items-center gap-2 ${v.blob_sha256 === blob ? "text-fg" : "text-fg-dim"}`}>
+                    <span className="truncate">{v.file_name}</span>
+                    <span>
+                      offset {v.offset_s.toFixed(3)} s · {v.sync_method}
+                      {v.on_device ? "" : " · not on this device"}
+                    </span>
+                    <Button size="xs" disabled={!canEdit} title="Estimate the offset again from the file (replaces a manual one)" onClick={() => void run("Re-estimating", v.file_name, () => reestimateVideoOffset(sessionId as string, v.blob_sha256))}>
+                      Re-estimate
+                    </Button>
+                    <Button size="xs" emphasis="accent" disabled={!canEdit} onClick={() => openUnlink(v)}>
+                      Unlink
+                    </Button>
+                  </li>
+                ))}
+              </ul>
+              <div>
+                <Button size="xs" disabled={!canEdit} onClick={() => void handleAddVideo()}>
+                  Add video
+                </Button>
+              </div>
+            </section>
+          </div>,
+          controlsSlot
+        )}
 
       <Dialog open={unlinkTarget !== null} onOpenChange={(o) => (o ? undefined : setUnlinkTarget(null))}>
         <DialogContent className="max-w-sm">

@@ -70,6 +70,11 @@ export interface EditorPanesProps {
    *  commits (R214 item 2's second gesture, beside the frame-title
    *  double-click on the graph). */
   onRenameCell: (cellId: string, label: string) => void;
+  /** Called with the Properties tab's slot element while a `video` cell is
+   *  open and that tab is mounted, and with `null` when it goes away. The
+   *  cell's own component portals its alignment and file controls into it,
+   *  because they act on that cell's `<video>` element. */
+  onVideoPropertiesSlot: (slot: HTMLDivElement | null) => void;
 }
 
 /** The open cell's identity, above whichever editor it gets (R214 item 2:
@@ -167,6 +172,7 @@ export default function EditorPanes({
   displayName,
   renameable,
   onRenameCell,
+  onVideoPropertiesSlot,
 }: EditorPanesProps) {
   const openCellIdRef = useRef(cellId);
   const lastAppliedRef = useRef<string | null>(null);
@@ -225,7 +231,11 @@ export default function EditorPanes({
         <TabsTrigger value="code">Code</TabsTrigger>
       </TabsList>
       <TabsContent value="properties" className="overflow-auto">
-        <PropertiesForm code={code} channels={channels} laps={laps} unitsPreference="si" onChange={handleChange} />
+        {kind === "video" ? (
+          <div ref={onVideoPropertiesSlot} className="video-cell-properties p-[var(--nb-pad)]" />
+        ) : (
+          <PropertiesForm code={code} channels={channels} laps={laps} unitsPreference="si" onChange={handleChange} />
+        )}
       </TabsContent>
       <TabsContent value="code" className="flex min-h-0 overflow-auto">
         {codeElement}

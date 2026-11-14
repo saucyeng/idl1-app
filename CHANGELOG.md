@@ -6,6 +6,17 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 
 ### Changed
 
+- **Charts keep up during playback; drag the cursor to scrub [no-docs] (2026-11-14).** A zoomed
+  chart went blank during playback once it had panned past the drawn window, and stayed blank
+  until the pause: playback restarted the "gesture finished" timer on every frame, so the redraw
+  never ran. Charts now redraw about five times a second while playing. The default is now
+  "cursor fixed": the cursor holds still and the charts pan under it (the toolbar's pin button
+  still switches to scroll-at-edge). Pausing leaves the cursor where playback stopped instead of
+  jumping back to where it was pinned before. A pinned cursor has a small grab handle at the top
+  of its line on every chart: drag it to scrub, and the video follows. The video cell's step,
+  Align, nudge, Re-estimate, Unlink and Add video controls moved from under the picture to the
+  cell's Properties tab (right-click the video, Properties).
+
 - **Security updates; `--venue` searches [docs] (2026-11-14).** Tauri 2.12 with updater plugin
   2.14 (its zip extraction had a critical advisory), rustls 0.23.46, vite 8.3, vitest 4.1.12 and
   source-map-js 1.2.2 clear every open Dependabot alert but one: glib 0.18, a Linux-only GTK
