@@ -1472,8 +1472,8 @@ owned by the link reconciler below, not a per-command side effect.
 | Plugin registration | `app/src-tauri/src/mobile.rs` | `register_android_plugin("com.saucyeng.idl1.device", "DevicePlugin")`; manages the `PluginHandle` as state. |
 | `AndroidBle: BleTransport` | `crates/idl1-bridge/src/mobile/ble.rs` (`cfg(target_os = "android")`) | The §14a trait over the plugin. Lives in `idl1-bridge` because it needs a Tauri `PluginHandle`; `idl1-transport` never depends on Tauri. |
 | `AndroidBinder: NetworkBinder` | `crates/idl1-bridge/src/mobile/wifi.rs` (android) | `request`/`release` + events over the plugin. |
-| `DirectBinder: NetworkBinder` | `crates/idl1-transport/src/link/` | Desktop: the user joins the AP in OS settings; the binder is always "available" at `http://192.168.4.1`. |
-| Link reconciler | `crates/idl1-transport/src/link/` | §6.2's state machine, pure over `NetworkBinder` + `WifiTransport`; transition table, journal, tests. Bytes on the wire → `transport`. |
+| `DirectBinder: NetworkBinder` | not built (see §14b.3) | Desktop: the user joins the AP in OS settings; the binder is always "available" at `http://192.168.4.1`. |
+| Link reconciler | not built (see §14b.3) | §6.2's state machine, pure over `NetworkBinder` + `WifiTransport`; transition table, journal, tests. Bytes on the wire → `transport`. |
 | `DeviceSessions` state | `crates/idl1-bridge/src/state.rs` | One session per `device_id`: the BLE connection (when up) and the link. |
 | `PlatformBle` | `crates/idl1-bridge/src/platform.rs` | `type PlatformBle = BtleplugBle` (desktop) / `AndroidBle` (android). The only place the concrete BLE type is named; replaces the ten `BtleplugBle::new()` call sites and `state::Connections`' hard-coded type. |
 
@@ -1517,6 +1517,8 @@ other change. A fresh `ReqwestWifi` is built per `available` event (never
 reuse a pool across a relink).
 
 #### 14b.3 Link reconciler (all platforms)
+
+Not built. The pure `LinkMachine` written for it (2026-09) was never wired up and was removed 2026-11-14. Today a WiFi session runs from the device commands, and the Bluetooth link actor (`crates/idl1-bridge/src/link.rs`) lends it the link for its length.
 
 §6.2's machine, with the numbers §6.2 leaves open fixed here:
 
