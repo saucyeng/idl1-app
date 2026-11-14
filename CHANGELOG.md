@@ -6,6 +6,12 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 
 ### Changed
 
+- **idl-rs 0.1.0 is on crates.io [docs] (2026-11-14).** `cargo install idl-rs-cli` installs the
+  `idl-rs` command; `idl-rs`, `idl-library` and `idl-rs-cli` are published, with the README in
+  the author's own words. 0.1.1 of the library and the command fixes a fresh folder listing no
+  sessions after an import: a missing `catalog.sqlite` is now rebuilt from the rides on disk.
+  The unused `LinkMachine` is gone from the transport crate (the link actor replaced it).
+
 - **Every maths function is declared once [docs] (2026-11-13).** Each workbook function is now one
   typed Rust function in the engine's builtin registry, which supplies its argument checks, its
   keyword list and its reference entry, so the three can no longer disagree. Nothing a workbook
