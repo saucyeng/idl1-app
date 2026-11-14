@@ -1,10 +1,10 @@
-import { open } from "@tauri-apps/plugin-dialog";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { linkVideo, reestimateVideoOffset, setVideoOffset, unlinkVideo, videoUrl, type SessionVideo } from "../../../../ipc/video";
+import { reestimateVideoOffset, setVideoOffset, unlinkVideo, videoUrl, type SessionVideo } from "../../../../ipc/video";
+import { formatLocalTime, pickAndLinkVideos } from "../../../../state/addVideos";
 import { formatPlaybackTime } from "../interaction/playback";
 import { mediaTimeToSessionUs } from "../interaction/videoClock";
 import {
@@ -12,7 +12,6 @@ import {
   deleteFileByDefault,
   formatVideoSize,
   linkErrorText,
-  linkProgressText,
   nudgedOffsetS,
   playbackErrorText,
   steppedVideoTimeS,
@@ -69,11 +68,6 @@ const NUDGES: { label: string; title: string; nudge: OffsetNudge }[] = [
   { label: "+10 ms", title: "Video 10 ms later on the data", nudge: { kind: "ms", ms: 10 } },
   { label: "+1 f", title: "Video one frame later on the data", nudge: { kind: "frames", frames: 1 } },
 ];
-
-/** A local wall-clock time for the no-overlap message. */
-function formatLocalTime(utcMs: number): string {
-  return new Date(utcMs).toLocaleString();
-}
 
 /** Seconds as `mm:ss.mmm`, through the transport's own formatter. */
 function formatSeconds(s: number): string {
@@ -245,27 +239,9 @@ export default function VideoCell({
 
   async function handleAddVideo(): Promise<void> {
     if (sessionId === null) return;
-    let picked: string | string[] | null;
-    try {
-      picked = await open({ multiple: true, filters: [{ name: "Video", extensions: ["mp4", "MP4"] }] });
-    } catch {
-      setMessages(["The file picker could not be opened."]);
-      return;
-    }
-    if (picked === null) return;
-    const paths = Array.isArray(picked) ? picked : [picked];
-    const errors: string[] = [];
-    for (const path of paths) {
-      const fileName = path.split(/[\\/]/).pop() ?? path;
-      setBusy(`Linking ${fileName}`);
-      try {
-        await linkVideo(sessionId, path, (p) => setBusy(linkProgressText(fileName, p)));
-      } catch (error) {
-        errors.push(linkErrorText(fileName, error, formatLocalTime));
-      }
-    }
-    setBusy(null);
-    setMessages(errors);
+    const outcome = await pickAndLinkVideos(sessionId, setBusy);
+    if (outcome === null) return;
+    setMessages(outcome.errors);
     onVideosChanged(sessionId);
   }
 

@@ -141,8 +141,8 @@ impl From<idl_rs::store::session_json::NeutralZoneVisitJson> for LapNeutralZoneV
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct LapDetail {
     pub lap_number: u32,
-    /// `"normal"`, `"out"` or `"in"` (C1 §6 `laps[].kind`, 2026-11-13). Out
-    /// and in laps are listed but skipped by "fastest" and by averages.
+    /// `"normal"`, `"out"`, `"in"` or `"long"` (C1 §6 `laps[].kind`). Out, in
+    /// and long laps are listed but skipped by "fastest" and by averages.
     pub kind: idl_rs::laps::LapKind,
     pub start_timestamp_ms: i64,
     pub end_timestamp_ms: i64,

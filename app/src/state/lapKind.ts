@@ -11,11 +11,13 @@ import type { LapKind } from "../ipc/catalog";
  * module never works it out.
  */
 
-/** The mark a lap list shows next to the lap number: `"Out"`, `"In"`, or
+/** The mark a lap list shows next to the lap number: `"Out"`, `"In"`,
+ *  `"Long"` (likely two laps merged by a missed start/finish crossing), or
  *  `null` for an ordinary lap. */
-export function lapKindMark(kind: LapKind): "Out" | "In" | null {
+export function lapKindMark(kind: LapKind): "Out" | "In" | "Long" | null {
   if (kind === "out") return "Out";
   if (kind === "in") return "In";
+  if (kind === "long") return "Long";
   return null;
 }
 

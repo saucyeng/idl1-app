@@ -6,6 +6,13 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 
 ### Changed
 
+- **Long laps are marked and left out of fastest [docs] (2026-11-14).** When the GPS misses
+  the start/finish line, two laps merge into one. A circuit lap more than 1.6x the session's
+  median lap is now marked "Long" and, like an out lap, left out of the fastest lap and averages.
+  Sessions re-index on the next launch (lap detector 3). `workbook eval` now prints each lap
+  table as a grid, rows labelled "Lap N", and the workbook reference shows the definition
+  lines its examples need (`accel = vec(…)`), so every example runs as written.
+
 - **A crash inside a background job no longer leaves it stuck [no-docs] (2026-11-14).** If
   indexing, a catalog rebuild or an inbox import hits an internal error, the job now ends with
   that error (and the crash report) instead of its progress chip spinning until the app is

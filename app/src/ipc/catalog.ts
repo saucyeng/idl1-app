@@ -66,7 +66,7 @@ export interface LapNeutralZoneVisit {
 
 /** What kind of lap a lap is (C1 §6 `laps[].kind`, the engine's
  *  `laps::LapKind`). */
-export type LapKind = "normal" | "out" | "in";
+export type LapKind = "normal" | "out" | "in" | "long";
 
 /** `session.json`'s file-native `laps[]` shape (C1 §6) — distinct from the
  *  catalog-cached `LapSummary` (returned only by `listLaps`). */
@@ -75,7 +75,8 @@ export interface LapDetail {
   lap_number: number;
   /** C1 §6 laps[].kind (2026-11-13): an out lap (pit exit to start/finish)
    *  or an in lap (start/finish to pit entry) is listed but left out of the
-   *  fastest lap and averages, like an ignored lap. */
+   *  fastest lap and averages, like an ignored lap; so is a long lap (over
+   *  1.6x the median, most likely a missed start/finish crossing). */
   kind: LapKind;
   /** i64, UTC ms */
   start_timestamp_ms: number;

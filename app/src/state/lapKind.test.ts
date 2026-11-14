@@ -8,6 +8,10 @@ describe("lapKindMark", () => {
     expect(lapKindMark("in")).toBe("In");
   });
 
+  it("lapKindMark — long lap — Long", () => {
+    expect(lapKindMark("long")).toBe("Long");
+  });
+
   it("lapKindMark — ordinary lap — no mark", () => {
     expect(lapKindMark("normal")).toBeNull();
   });
@@ -21,6 +25,7 @@ describe("countsForFastest", () => {
   it("countsForFastest — out, in or ignored lap — does not count", () => {
     expect(countsForFastest("out", false)).toBe(false);
     expect(countsForFastest("in", false)).toBe(false);
+    expect(countsForFastest("long", false)).toBe(false);
     expect(countsForFastest("normal", true)).toBe(false);
   });
 });

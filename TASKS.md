@@ -653,7 +653,7 @@ Bugs and doc mismatches:
       indexed laps start at visit start (S4: 15.0 s). A `"fastest"` lap table
       picks the 15 s out-lap. Flag out-laps and in-laps, and give the CLI a way
       to set `ignored_lap_numbers` (`session set-meta` has none).
-- [ ] Headless `workbook eval/data` never evaluates a v3 `table` cell
+- [x] (2026-11-14: `eval` prints each table's grid, `data` its rows, lap rows "Lap N") Headless `workbook eval/data` never evaluates a v3 `table` cell
       (`eval_cells` skips tables), so `rowSource: "windowLaps"` prints zero
       rows. The deprecated `table eval` only reads old JSON workbooks.
 - [x] (2026-11-13: `check` reports InvalidCellId) A cell id that isn't 8-hex (`id=gps`) passes `workbook check` but is
@@ -968,9 +968,9 @@ Analysis gaps from `173461a2` (Python was needed for each; `agent-gaps.md`):
       (§8) can go first. GoPro ↔ logger link is later (§9).
   - [ ] Step 1 merged 2026-10-19 (idl-rs 2fe9857, app lane/video-app 071e6f0), awaiting
         Isaac's test with a raw HERO11 Mini clip. Check a normal phone→desktop sync
-        first (blob transfer now streams). Rollback: v0.1.0-beta.3. Not built yet:
-        "Add video" on the Data tab, drop-to-link in the app (match_videos), dragging
-        the pinned cursor.
+        first (blob transfer now streams). Rollback: v0.1.0-beta.3. "Add video" on the
+        Data tab built 2026-11-14. Not built yet: drop-to-link in the app (match_videos),
+        dragging the pinned cursor.
   - [x] Video §8, letting Claude drive the app (2026-10-18): `tools/drive/drive.mjs`
         plus the `run` skill. Launch, screenshot, click, type, eval, console and close all
         verified against nightly build 72. Android (adb forwarding) comes later.

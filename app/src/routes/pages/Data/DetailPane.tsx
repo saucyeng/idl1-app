@@ -13,6 +13,7 @@ import AskAnAgentButton from "../../../shell/AskAnAgentButton";
 import type { SelectionWindow } from "../../../state/selection";
 import { ColourPicker } from "@/components/ui/colour-picker";
 import { describeIpcError } from "./errors";
+import { AddVideoButton } from "./AddVideoButton";
 import { FitExportButton } from "./FitExportButton";
 import { canExportFit } from "./fitExport";
 import { lapRowClicked } from "./lapSelection";
@@ -204,6 +205,8 @@ export function DetailPane({ view, detail, lapsErrorText, selection, onWindowsCh
       </Button>
 
       <FitExportButton detail={detail} />
+
+      <AddVideoButton detail={detail} onLinked={onMetadataSaved} />
 
       {canExportFit(detail) && (
         <Button type="button" size="sm" className="self-start" onClick={onCreateTrack}>
