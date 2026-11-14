@@ -28,6 +28,8 @@ import {
 import { isDrained, nextItemToStart, runImport } from "./importDriver";
 import { canStopAfterCurrent, overallPercent, type ImportItem, type ImportQueueAction } from "./importQueue";
 import { useImportQueue } from "../../../state/ImportQueue";
+import { useVideoDrop, VideoRideChooser } from "./VideoRideChooser";
+import { isVideoPath } from "./videoDrop";
 
 /** @param onImported Called once every time the queue drains (every item
  *  reaches `"done"`/`"failed"`) after having had at least one active item —
@@ -151,6 +153,10 @@ export function ImportPanel({ onImported }: ImportPanelProps) {
   const drainedAtLengthRef = useRef(0);
   const importerIdRef = useRef(importerId);
   importerIdRef.current = importerId;
+  // Dropped MP4s are linked to the ride they overlap, not imported as logs.
+  const videoDrop = useVideoDrop(onImported);
+  const handleVideosRef = useRef(videoDrop.handleVideos);
+  handleVideosRef.current = videoDrop.handleVideos;
 
   // Populates the forced-importer override menu. A rejection here (e.g.
   // `list_importers` not yet landed) only disables the override, never the
@@ -191,9 +197,11 @@ export function ImportPanel({ onImported }: ImportPanelProps) {
           setDragActive(false);
         } else if (event.payload.type === "drop") {
           setDragActive(false);
-          for (const path of event.payload.paths) {
+          const videos = event.payload.paths.filter(isVideoPath);
+          for (const path of event.payload.paths.filter((p) => !isVideoPath(p))) {
             dispatch({ type: "ENQUEUE", path, importerId: importerIdRef.current });
           }
+          if (videos.length > 0) void handleVideosRef.current(videos);
         }
       })
       .then((fn) => {
@@ -328,6 +336,7 @@ export function ImportPanel({ onImported }: ImportPanelProps) {
 
   return (
     <div className="relative flex flex-col gap-2">
+      <VideoRideChooser choice={videoDrop.choices[0]} onChoose={(path, sessionId) => void videoDrop.choose(path, sessionId)} />
       {dragActive && (
         <div
           aria-hidden
