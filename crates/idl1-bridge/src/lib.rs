@@ -38,6 +38,7 @@ pub mod mobile;
 pub mod paths;
 pub mod platform;
 pub mod raster;
+pub mod readout;
 pub mod scatter;
 pub mod scatter_wire;
 pub mod session_cache;
@@ -117,6 +118,9 @@ pub fn handler<R: tauri::Runtime>() -> impl Fn(tauri::ipc::Invoke<R>) -> bool + 
         commands::workbook::watch_workbook,
         commands::workbook::unwatch_workbook,
         commands::cursor::cursor_readout,
+        commands::readout::open_readout,
+        commands::readout::read_readout,
+        commands::readout::close_readout,
         commands::rasters::fetch_raster_v2,
         commands::rasters::fetch_raster_meta_v2,
         commands::rasters::fetch_fft_v2,

@@ -984,9 +984,14 @@ Analysis gaps from `173461a2` (Python was needed for each; `agent-gaps.md`):
   - [ ] Step 2, the overlay workbook: spec `2026-11-14-idl1-video-overlay-DRAFT.md`. Direction
         agreed 2026-11-14; shapes agreed 2026-11-15 (spec §7a: 4:3 footage fitted into 9:16
         reels, common frame shapes, per-measurement display units). Built: `cursor` host
-        variable (C2 §5.1), given only to cells that name it and never forcing a re-render.
-        Next: `Readout` (gauge, number, g-g) and their `plotForm` types; then the units
-        preference split (C3 §3.10); then `canvas` and the canvas view.
+        variable (C2 §5.1), given only to cells that name it and never forcing a re-render;
+        readout drawing (`Notebook/readout/`: speedo, tach, number, g-g with tail) and
+        display-unit conversion; prepared readout commands `open_readout` / `read_readout` /
+        `close_readout` (C3 §3.7.1, `crates/idl1-bridge/src/readout.rs`).
+        Next: the notebook side (scan `Readout.*` names, open on settle, read per frame
+        newest-wins, rebind `Readout`), the C2 §5.3 grammar and `plotForm` types; then the
+        units preference split (C3 §3.10); then `canvas` and the canvas view. Later: the
+        hover readout card moves to the prepared readouts so it reads math definitions.
   - [ ] The in-app update reports a crash: closing for the update panics in tao ("cannot move
         state from Destroyed", build 154 to 155, 2026-11-14), so the next launch shows "idl1
         closed unexpectedly". Harmless, but it should not be reported as a crash.

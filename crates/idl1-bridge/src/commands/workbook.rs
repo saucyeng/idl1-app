@@ -674,6 +674,37 @@ fn fetch_host_channel_v2_via(
         }
     }
 
+    let view_value = definition_view_via(cache, data_dir, id, window, def_name)?.ok_or_else(|| {
+        IpcError::new(IpcErrorKind::NotFound, format!("no definition named '{def_name}' in workbook '{id}'"))
+    })?;
+    let hc = &view_value;
+
+    // The axis kind rides on the value (C2 §3.6, ruling R233): a `[lap]`
+    // definition reaches here carrying `AxisKind::Lap` and serialises its lap
+    // numbers as its `t`. This call site no longer chooses — choosing is what
+    // made every definition claim seconds regardless of its shape. Encoded
+    // from the kept value in place: only the emitted points are converted.
+    // `view` slices what is sent, never what was evaluated (C3 §3.4,
+    // 2026-11-05).
+    Ok(crate::host_channel_wire::encode_host_channel_view_idlh_in(hc, budget, view.map(|r| (r.t0_us, r.t1_us))))
+}
+
+/// The kept value of `def_name` in workbook `id` evaluated over `window`:
+/// the shared evaluation's buffers (an `Arc` pair, not a copy), re-evaluating
+/// only its closure when the shared run released them. `Ok(None)` when the
+/// workbook has no definition by that name. Shared by
+/// [`fetch_host_channel_v2_via`] and the prepared readouts (C3 §3.7.1).
+///
+/// # Errors
+/// As [`fetch_host_channel_v2_via`], less the `budget` and `view` checks and
+/// the missing-definition `not_found`.
+pub(crate) fn definition_view_via(
+    cache: &SessionCache,
+    data_dir: &Path,
+    id: &str,
+    window: Option<&crate::session_source::WindowDto>,
+    def_name: &str,
+) -> Result<Option<idl_rs::workbook::v3::HostChannelView>, IpcError> {
     let path = resolve_workbook_path(data_dir, id)?;
     let markdown = std::fs::read_to_string(&path)
         .map_err(|e| IpcError::new(IpcErrorKind::Io, format!("reading {}: {e}", path.display())))?;
@@ -701,9 +732,9 @@ fn fetch_host_channel_v2_via(
     };
     let evaluation = cache.evals().get_or_evaluate(&key, |observer| evaluate_window(Demand::document(&doc), None, observer))?;
 
-    let def = evaluation.def(def_name).ok_or_else(|| {
-        IpcError::new(IpcErrorKind::NotFound, format!("no definition named '{def_name}' in workbook '{id}'"))
-    })?;
+    let Some(def) = evaluation.def(def_name) else {
+        return Ok(None);
+    };
 
     // The shared evaluation kept only the values the document's consumers
     // name (evaluation-memory spec §4.2.B). A definition it released — asked
@@ -731,15 +762,7 @@ fn fetch_host_channel_v2_via(
     let hc = def.value.as_ref().ok_or_else(|| {
         IpcError::new(IpcErrorKind::Internal, format!("definition '{def_name}' has neither a value nor an error"))
     })?;
-
-    // The axis kind rides on the value (C2 §3.6, ruling R233): a `[lap]`
-    // definition reaches here carrying `AxisKind::Lap` and serialises its lap
-    // numbers as its `t`. This call site no longer chooses — choosing is what
-    // made every definition claim seconds regardless of its shape. Encoded
-    // from the kept value in place: only the emitted points are converted.
-    // `view` slices what is sent, never what was evaluated (C3 §3.4,
-    // 2026-11-05).
-    Ok(crate::host_channel_wire::encode_host_channel_view_idlh_in(hc, budget, view.map(|r| (r.t0_us, r.t1_us))))
+    Ok(Some(hc.clone()))
 }
 
 /// `fetch_host_channel_v2`'s optional `view` (C3 §3.4, 2026-11-05): the part

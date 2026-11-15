@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { applyConversion, displayConversion, type DisplayUnits } from "./units";
+import { applyConversion, displayConversion, displayUnitsFor, type DisplayUnits } from "./units";
 
 const IMPERIAL: DisplayUnits = { distance: "mi", temperature: "F" };
 const METRIC: DisplayUnits = { distance: "km", temperature: "C" };
@@ -55,5 +55,15 @@ describe("displayConversion", () => {
     const v = applyConversion(null, c);
 
     expect(v).toBeNull();
+  });
+});
+
+describe("displayUnitsFor", () => {
+  it("displayUnitsFor — imperial and metric — miles with F, km with C", () => {
+    const systems = ["imperial", "metric"] as const;
+
+    const out = systems.map(displayUnitsFor);
+
+    expect(out).toEqual([IMPERIAL, METRIC]);
   });
 });

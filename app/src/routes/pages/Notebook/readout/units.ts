@@ -47,3 +47,9 @@ export function displayConversion(unit: string | null, prefs: DisplayUnits): Dis
 export function applyConversion(value: number | null, c: DisplayConversion): number | null {
   return value === null ? null : value * c.scale + c.offset;
 }
+
+/** The display units for today's single imperial/metric setting (C3
+ *  §3.10), until it splits into the two choices (overlay spec §7a). */
+export function displayUnitsFor(unitSystem: "imperial" | "metric"): DisplayUnits {
+  return unitSystem === "imperial" ? { distance: "mi", temperature: "F" } : { distance: "km", temperature: "C" };
+}

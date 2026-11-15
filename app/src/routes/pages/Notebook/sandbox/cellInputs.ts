@@ -21,7 +21,7 @@
  */
 
 /** Host variables that change at display rate. */
-export const FRAME_RATE_NAMES: ReadonlySet<string> = new Set(["cursor"]);
+export const FRAME_RATE_NAMES: ReadonlySet<string> = new Set(["cursor", "Readout"]);
 
 /** Characters that may continue a JS identifier, for the whole-word test. */
 const WORD_CHAR_RE = /[A-Za-z0-9_$]/;

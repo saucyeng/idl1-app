@@ -47,6 +47,8 @@ import type { FftParams, HistogramParams, ScatterParams } from "../plotForm/type
 import { plotTheme } from "../theme/plotTheme";
 import { documentVars } from "../theme/series";
 import { cellInputNames } from "./cellInputs";
+import { EMPTY_READOUT_FRAME, type ReadoutFrame } from "../readout/frame";
+import { readoutModule } from "../readout/module";
 import { channelRecords, type ChannelRecord } from "./channelRecords";
 import { bindHostVariables, type HostVariableSink } from "./hostVariables";
 
@@ -524,6 +526,9 @@ class SandboxRuntime {
     // The overlay's `cursor` (C2 §5.1, video overlay spec §3): no cursor
     // until the host sends one. Frame-rate, so only a cell naming it takes it.
     this.bindHostVar("cursor", { t: null, playing: false });
+    // The overlay readouts (video overlay spec §7c): rebuilt from each
+    // frame's `read_readout` answer in `setHostVar`. Frame-rate, like `cursor`.
+    this.bindHostVar("Readout", readoutModule(EMPTY_READOUT_FRAME));
     this.bindHostVar("channel", (name: string, opts?: { lap?: number; from?: number; to?: number }) =>
       this.channelLookup(name, opts)
     );
@@ -763,7 +768,10 @@ class SandboxRuntime {
 
   /** Binds or updates one host variable (`setHostVar`). */
   setHostVar(name: string, payload: HostVarPayload): void {
-    this.bindHostVar(name, materializeHostVar(payload));
+    const value = materializeHostVar(payload);
+    // `Readout` arrives as its frame's data and is bound as the functions
+    // a cell calls over it.
+    this.bindHostVar(name, name === "Readout" ? readoutModule(value as ReadoutFrame) : value);
   }
 
   /**

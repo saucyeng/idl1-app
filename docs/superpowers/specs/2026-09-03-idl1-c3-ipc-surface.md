@@ -2364,8 +2364,10 @@ here. The notebook calls this after its own `eval_workbook_v2` for the
 window has finished, so in practice it is a cache hit, and it carries no
 progress channel. The handle holds a reference to every resolved array, so
 eviction cannot drop data under it.
-`window` is the **primary** window only: the cursor runs on its session
-clock (C2 §5.1 `cursor`).
+`window` names the **primary** window's session (the cursor runs on its
+clock, C2 §5.1 `cursor`) with `span: { kind: "session" }`, whatever span
+is selected: a readout reads anywhere on the ride, and "whole ride"
+(overlay spec §7a) means the ride, so `extent` is over the session.
 Return:
 ```ts
 interface ReadoutHandle {

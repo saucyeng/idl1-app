@@ -16,6 +16,7 @@ pub mod index;
 pub mod library;
 pub mod maintenance;
 pub mod rasters;
+pub mod readout;
 pub mod rebuild;
 pub mod gps;
 pub mod scatter;

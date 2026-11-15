@@ -6,6 +6,16 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 
 ### Added
 
+- **Overlay readouts in notebook cells [docs] (2026-11-15).** A `js` cell can draw a speedometer,
+  a big number or a g-g plot that follows the cursor and the video, frame by frame:
+  `Readout.gauge("GPS_SpeedKmh", { min: 0, max: 65, label: "Speed" })`,
+  `Readout.gauge("HR_BPM", { range: "ride", style: "tach", icon: "heart" })`,
+  `Readout.number("HR_BPM", { label: "Heart rate" })`,
+  `Readout.gg("lat_g", "lon_g", { limit: 1.5, rings: 0.5, tail_s: 2 })`. Each reads the logged
+  sample at the cursor (no averaging), from a channel or a maths definition; `range: "ride"` scales
+  the dial to the whole ride. With Settings → Units on Imperial, km/h shows as mph and °C as °F;
+  metres stay metres. The Properties form does not offer them yet.
+
 - **`cursor` in notebook cells [docs] (2026-11-15).** A `js` cell can read `cursor`: `{ t, playing }`,
   the shared cursor in session seconds (`null` with none) and whether playback is running. It
   follows every video frame while playing, and pins and scrubs while paused; hover does not move

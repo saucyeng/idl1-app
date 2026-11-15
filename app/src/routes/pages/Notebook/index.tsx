@@ -141,6 +141,7 @@ import { runFft, type FftAction, type FftDeps } from "./model/fftDriver";
 import { gpsColumns, runGpsMeta, runGpsTrace, type GpsAction, type GpsDeps } from "./model/gpsDriver";
 import { lapColumns, runLapSeries, type LapAction, type LapDeps } from "./model/lapDriver";
 import { hostCursor, hostLaps, hostSession, referencedDefinitionNames, runDefinitionBind, type DefinitionBinding } from "./model/definitionBind";
+import { useReadoutHost } from "./readout/useReadoutHost";
 import { parse as parsePlotForm } from "./plotForm/parse";
 import { UNIT_NOT_YET_EVALUATED } from "./model/unitLabel";
 import {
@@ -4007,6 +4008,27 @@ export default function NotebookPage() {
     if (host === null) return;
     host.setHostVar("cursor", { kind: "json", value: hostCursor(sharedCursorTUs, playback.playing) });
   }, [sharedCursorTUs, playback.playing, primeState.primeEpoch]);
+
+  // The overlay readouts (video overlay spec §7b, §7c): a prepared readout
+  // over the primary window's session, read at every shared-cursor change,
+  // bound as `Readout`. Never awaited by a draw (CLAUDE.md §2).
+  const readoutJsCodes = useMemo(
+    () =>
+      state.markdown === null
+        ? []
+        : state.cells.filter((cell) => cell.kind === "js").map((cell) => decodeByteRange(state.markdown as string, cell.bodyRange)),
+    [state.cells, state.markdown]
+  );
+  useReadoutHost({
+    hostRef: sandboxHostRef,
+    workbookId: state.handle?.id ?? null,
+    sessionId: primaryWindow?.sessionId ?? null,
+    markdown: state.markdown,
+    jsCodes: readoutJsCodes,
+    cursorTUs: sharedCursorTUs,
+    fps: primaryVideos?.find((v) => v.unlinked !== true)?.fps ?? 60,
+    primeEpoch: primeState.primeEpoch,
+  });
 
   // C2 §5.1's `constants` ambient host variable: front-matter constants and
   // every `const` line, by name. It was bound to `{}` at sandbox start and
