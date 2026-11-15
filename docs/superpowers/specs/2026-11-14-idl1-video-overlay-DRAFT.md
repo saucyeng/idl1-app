@@ -208,6 +208,34 @@ Options are fixed-order object literals, like `fft_params`; their keys are
 §4's (`range: "ride"` in place of `min`/`max` for the whole-ride gauge;
 `mph`-style conversion comes from the units preference, not an option).
 
+## 7c. Readout call shape (2026-11-15, follows from §7b)
+
+With values read per frame by the host (§7b), a readout no longer takes a
+`channel(...)` binding and `cursor`: the host must know the names to open
+before any cell runs, and the values arrive already at the cursor. So §4's
+calls become:
+
+```js
+Readout.gauge("GPS_SpeedKmh", { min: 0, max: 65, label: "Speed", style: "speedo" })
+Readout.gauge("GPS_SpeedKmh", { range: "ride", label: "Speed" })
+Readout.number("HR_BPM", { label: "Heart rate", digits: 0 })
+Readout.gg("lat_g", "lon_g", { limit: 1.5, rings: 0.5, tail_s: 2 })
+```
+
+- Names are string literals, read from the source by the host (as
+  `channel(...)` scopes are), so `open_readout` can name them.
+- `Readout` itself is the frame-rate host variable: the host rebinds it
+  each frame with the latest `read_readout` answer, and only cells naming
+  `Readout` re-run (`sandbox/cellInputs.ts`). `cursor` stays for
+  hand-written cells.
+- `range: "ride"` uses `open_readout`'s exact `extent`.
+- `tail_s` is a numeric literal; the host turns it into `count` at the
+  video's frame spacing.
+- Units: values arrive in the engine's units; the readout converts for
+  display only, per the person's unit preference (§7a).
+
+What Isaac sees (the Properties form) is unchanged.
+
 ## 8. Open
 
 - Speed in mph: the readout shows the channel's own unit, so mph is a math

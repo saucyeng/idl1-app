@@ -3,6 +3,10 @@
 **Status:** signed (lead) 2026-09-02 · **Date:** 2026-09-03 · **Owner:** lead
 
 **Revisions:**
+- 2026-11-15: video overlay step 2 (spec-first) — §3.7.1 adds
+  `open_readout`, `read_readout`, `close_readout` (prepared per-frame
+  readouts); §4's principle reworded to "nothing on the interaction path
+  waits on IPC". No existing command changes shape.
 - 2026-09-05: wave-2 write amendment (lead ruling R59) — 17 commands added
   (Catalog: `save_session_metadata`, `delete_session`; Workbook: `read_workbook`,
   `create_workbook`, `fetch_host_channel`; Rasters and DSP: `fetch_fft`;
@@ -2343,6 +2347,66 @@ the rest of the readout is not partially returned; CLAUDE.md's
 "don't block other channels" rule is about math cells, not this: a cursor
 readout is one atomic answer for one instant), `io`, `internal`.
 
+#### 3.7.1 Prepared readouts (new 2026-11-15, video overlay spec §7b, Isaac)
+
+A readout (C2 §5.3 `Readout.*`) reads the nearest recorded sample at the
+cursor on every presented frame. Rather than re-reading and re-parsing the
+workbook per call, the notebook **opens** a handle once and **reads** it per
+frame. Both commands are `#[tauri::command(async)]`.
+
+**`open_readout(workbook_id: string, window: Window, names: string[])`**
+Resolves each name in `names` once, by the same rule `channel(name)` uses
+(C2 §5.1): a `math` definition of the workbook, else a channel of the
+window's session. A definition reads the window's cached evaluation (the one
+`eval_workbook_v2` and `fetch_host_channel_v2` share, keyed by the
+workbook's contents and the window); if none is resident it is evaluated
+here. The notebook calls this after its own `eval_workbook_v2` for the
+window has finished, so in practice it is a cache hit, and it carries no
+progress channel. The handle holds a reference to every resolved array, so
+eviction cannot drop data under it.
+`window` is the **primary** window only: the cursor runs on its session
+clock (C2 §5.1 `cursor`).
+Return:
+```ts
+interface ReadoutHandle {
+  handle: number;                        // u32, opaque; valid until closed or replaced
+  units: Record<string, string | null>;  // name -> unit label (C2 §3.3.1), null when unknown
+  extent: Record<string, [number, number] | null>; // name -> exact [min, max] over the window, null with no finite sample
+}
+```
+The bridge keeps at most 16 open handles; opening a 17th closes the oldest
+(a reloaded webview cannot leak them).
+Errors: `not_found` (unknown workbook or session), `invalid_argument` (a name
+that resolves to nothing, or to a value with no time axis: a rank-0 scalar or
+a lap or frequency axis; `detail.name`), the `workbook_*` parse kinds `fetch_host_channel_v2` raises (§2), `io`, `internal`.
+
+**`read_readout(handle: number, t_us: number, tail?: { count: number, step_us: number })`**
+`t_us`: `i64`, a point on the primary window's session clock.
+Return:
+```ts
+interface ReadoutValues {
+  t_us: number;                                // echoes the request
+  values: Record<string, number | null>;       // name -> nearest recorded sample at t_us
+  tail?: Record<string, (number | null)[]>;    // name -> [k-1] is the sample at t_us - k*step_us, k = 1..count
+}
+```
+Each value follows §3.7's rule exactly: nearest recorded sample, a tie to
+the earlier, `null` outside that name's recorded span. `tail` is present
+only when asked for; `count` is `1..=1024` and `step_us` `> 0` (the overlay
+asks for one video frame's spacing, so 2 s at 59.94 frames/s is 120). Pure
+lookups on resident arrays: no file read, no parse, no evaluation.
+Errors: `not_found` (a handle that was closed or replaced), `invalid_argument`
+(`count` or `step_us` out of range).
+
+**`close_readout(handle: number)`** Releases the handle. Closing an unknown
+handle is not an error.
+
+Call pattern (§4): `open_readout` on settle, when the notebook's readout
+names, the primary window or the workbook's evaluation change.
+`read_readout` per presented frame while playing and per pin or scrub step
+while paused, under the reworded rule: never awaited by the drawing, at
+most one call in flight, newest wins.
+
 ### 3.8 Device (L4)
 
 **`ble_scan(timeout_ms: number, progress: Channel<DeviceDiscovered>)`**
@@ -3351,7 +3415,10 @@ tile; the map draws it blank).
 
 ## 4. Interaction budget
 
-From the principle "no IPC on the interaction path" (design §3, §6):
+From the principle "nothing on the interaction path waits on IPC" (design
+§3, §6; reworded 2026-11-15 from "no IPC on the interaction path"). The one
+command called per frame is `read_readout` (§3.7.1), never awaited by the
+drawing, one call in flight, newest wins:
 
 **Never called on a hot path** (every render frame, every pointer-move
 event): `fetch_tile`, `fetch_raster`, `cursor_readout`, `eval_workbook`.
