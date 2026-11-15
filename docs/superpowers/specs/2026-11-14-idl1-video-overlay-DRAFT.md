@@ -116,7 +116,10 @@ parameters"). The document view never uses it.
   the common shapes (proposed: 16:9, 9:16, 4:3, 1:1, 4:5).
 - §3 `cursor`: yes, under that name.
 - §4 `Readout`: yes, as a starting point. A checkbox chooses between the
-  typed min/max and an automatic range from the ride's data.
+  typed min/max and an automatic range over the **whole ride** (not the
+  playing window or lap, so the dial's scale never moves between laps).
+  Unticked, the typed min/max starts at a default (Isaac: "like 0-40 mph").
+  Proposed defaults: speed 0–40 mph (0–65 km/h), heart rate 60–200 bpm.
 - Units (yes, 2026-11-15): the engine stays metric. Display conversion,
   done lazily: only the values being drawn are converted, at draw time
   (a readout's one number, a chart's plotted points), never a whole
@@ -127,6 +130,83 @@ parameters"). The document view never uses it.
   becomes two (`distance_unit: "km" | "mi"`, `temperature_unit: "C" | "F"`),
   migrated imperial → mi + F, metric → km + C. The workbook's `units` key
   (C2 §1) is unchanged and still unread.
+
+## 7b. Readout data (2026-11-15, agreed with Isaac)
+
+§3's "the ordinary `channel(...)` binding for the shared view" is wrong for
+a readout: an unscoped binding is envelope-decimated to the cell's width,
+so "the row nearest `cursor.t`" can be a bucket's min or max, not the
+sample.
+
+Isaac (2026-11-15): extend the one-sample lookup (C3 §3.7
+`cursor_readout`, nearest recorded sample, no interpolation) to math
+definitions, which hover wants too, and have readouts use it directly;
+no client-side buffer of data that is already in memory in the engine.
+
+Proposed:
+
+- C3 §3.7 gains a definition-aware form: a workbook and window instead of
+  a bare session, so any name a cell can bind (session channel or `math`
+  definition) reads its nearest recorded sample at `t_us`. It reads the
+  window's cached evaluation (`get_or_evaluate`, the one charts use);
+  nothing is evaluated again. The hover readout card moves to it.
+- An optional tail for g-g (Isaac, 2026-11-15): `tail_us` and `step_us`
+  return the nearest recorded sample at `t_us - k * step_us` for
+  `k = 1..=tail_us / step_us`; `step_us` is one video frame (one
+  animation frame with no video), so 2 s at 59.94 frames/s is 120 points.
+  Asked for every frame, never collected from past frames, so the tail is
+  right after a pin, a jump, a scrub backwards, while paused, and in
+  export (step 3).
+- Timed 2026-11-15 on ride `edb96102`, nightly build 155, app idle, 300
+  sequential round trips each: `cursor_readout` over four session channels
+  (GPS speed, HR, two IMU0 axes) p50 2.1 ms, p99 4.7 ms, max 7.6 ms; a
+  `math` definition (`accel_mag`, Shakedown workbook) read through
+  `fetch_host_channel_v2` with a 20 ms view, the path a definition-aware
+  lookup takes (workbook read, evaluation key, cached evaluation, slice),
+  p50 4.7 ms, p99 7.5 ms, max 8.5 ms, after a 38.7 ms first evaluation.
+  Both fit in a 16.7 ms frame, so per frame it is; no buffer. Not yet
+  measured under playback load.
+- **Prepare once, read per frame** (Isaac, 2026-11-15: "it should just
+  know what charts we're looking at and pull the next one from memory").
+  Rather than one stateless command that re-reads, re-parses and re-keys
+  on every call, two steps:
+  - `open_readout(workbook, window, names, tail?) -> handle`, called when
+    the notebook's set of readout names, the selected window or the
+    workbook's evaluation changes. It resolves each name once, to the
+    session column or the cached evaluation's array, and holds a
+    reference to it, so the data cannot be dropped under it.
+  - `read_readout(handle, t_us) -> values (+ tail)`, per frame: a search
+    on arrays already resident, no file read, no parse, no key.
+  - The handle is replaced on the next `open_readout` and released on
+    close. The hover readout card uses the same pair.
+  The IPC crossing itself (about 1 to 2 ms, the floor of the
+  `cursor_readout` timing) stays; going under it would mean holding data
+  on the JS side, which is the buffer this replaces.
+- **One request per frame for the whole notebook**, naming every readout's
+  channels, not one per readout (the command already takes a list).
+- A readout asks once per presented frame while playing, and on each pin
+  or scrub step while paused. **At most one request in flight; the
+  newest wins** (the video seek rule, §5.3 of the video
+  spec), so requests never back up. Until an answer arrives the readout
+  keeps its last value. This is a stated exception to "no IPC on the
+  interaction path"; superseded the same day by rewording the rule itself
+  (Isaac chose this): "nothing on the interaction path waits on IPC", in
+  CLAUDE.md §2, design §3 and IDL0_SPEC §26.3. Hover is unchanged for
+  now, though the reworded rule would allow a live hover readout.
+- "Whole ride": the gauge's extent is read once per (channel, window),
+  not per frame, from the engine (exact min and max over the window).
+
+Grammar (C2 §5.3, one chart kind per cell):
+
+```ebnf
+readout_marks ::= readout_call                     (* the cell's whole return value, no Plot.plot *)
+readout_call  ::= "Readout." ("gauge" | "number") "(" channel_call "," "cursor" "," readout_opts ")"
+                | "Readout.gg(" channel_call "," channel_call "," "cursor" "," gg_opts ")"
+```
+
+Options are fixed-order object literals, like `fft_params`; their keys are
+§4's (`range: "ride"` in place of `min`/`max` for the whole-ride gauge;
+`mph`-style conversion comes from the units preference, not an option).
 
 ## 8. Open
 

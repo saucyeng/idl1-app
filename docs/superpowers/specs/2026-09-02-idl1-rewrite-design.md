@@ -46,7 +46,7 @@ Named rules the lanes design against. Each is a sentence an implementer can quot
 - **The workbook is a file; the app is a live viewer of it.** Any editor — the app, Claude Code, `vim` — writes the file; the app watches it and re-evaluates.
 - **Sync sources; outputs only when content-addressed.** A derived file's name is the hash of `(inputs, config, engine version)`. If the hash matches, the bytes are interchangeable. Stale files are orphans, not bugs.
 - **The catalog is an index.** It can be deleted and rebuilt by scanning the data directory. It is never synced.
-- **No IPC on the interaction path.** Hover, pan and pinch never wait on Rust. IPC happens on gesture *settle*.
+- **Nothing on the interaction path waits on IPC.** Hover, pan, pinch and playback never wait on Rust. Data fetches happen on gesture *settle*. *Reworded 2026-11-15 (Isaac; video overlay spec §7b), was "No IPC on the interaction path":* a small call made during a gesture or playback (an overlay readout's per-frame lookup) is allowed when the drawing never awaits it and at most one is in flight per consumer, the newest winning.
 - **Canonicalise on ingest.** Format-specific code runs once, at import. Everything downstream reads Parquet.
 - **Log files are immutable after download** (carried from idl0). Blobs never change; they are addressed by SHA-256.
 - **No renderer-only parameters** (carried). Anything the renderer honours is expressible in the cell.

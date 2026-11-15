@@ -3590,9 +3590,13 @@ Restated from the plan's Performance budget as spec text — every rule below
 is grep-checkable in the diff and is a blocking review finding if violated
 (no IPC on the interaction path, CLAUDE.md §2):
 
-- **No IPC from a gesture handler.** No `invoke` call is reachable from a
-  pointer, wheel, touch or animation-frame handler. IPC runs only from a
-  settle callback, an explicit user action, or a mount effect.
+- **Nothing waits on IPC from a gesture handler** (reworded 2026-11-15,
+  Isaac; video overlay spec §7b). Data fetches run only from a settle
+  callback, an explicit user action, or a mount effect. A pointer, wheel,
+  touch or animation-frame handler may make a call only if the drawing
+  never awaits it (it keeps its last value until the answer lands) and at
+  most one call per consumer is in flight, newest wins. Each such call
+  site names this rule in a comment; a reviewer checks both conditions.
 - **Hover reads the tile.** The hover readout reads the already-fetched
   tile's per-pixel-column stats (`columnMin`/`columnMax`/`columnMean`/
   `columnTUs`) out of the shared `TileCache`; the cursor readout IPC

@@ -43,8 +43,10 @@ blocked task waits.
 
 **Rust = numbers, JS = pictures.** No number the sync model depends on is
 computed in JavaScript; no chart is drawn in Rust. Heavy arrays cross IPC as raw
-bytes (`tauri::ipc::Response`), never JSON. No IPC on the interaction path
-(hover/pan/zoom are local; IPC on gesture settle).
+bytes (`tauri::ipc::Response`), never JSON. Nothing on the interaction path
+waits on IPC (Isaac, 2026-11-15): a call made during a gesture or playback is
+never awaited by the drawing, and at most one is in flight per consumer, newest
+wins. Fetches that move data stay on gesture settle.
 
 **Decision rule:** physics of the bike or bytes on disk → `core`. Bytes on the
 wire → `transport`. Pixels or clicks → `app/src`. And before anything lands in
