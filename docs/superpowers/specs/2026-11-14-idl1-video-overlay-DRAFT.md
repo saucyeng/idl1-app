@@ -129,7 +129,9 @@ parameters"). The document view never uses it.
   the person's, not the workbook's: C3 §3.10's `unit_system` preference
   becomes two (`distance_unit: "km" | "mi"`, `temperature_unit: "C" | "F"`),
   migrated imperial → mi + F, metric → km + C. The workbook's `units` key
-  (C2 §1) is unchanged and still unread.
+  (C2 §1) is unchanged and still unread. Metres never convert (Isaac,
+  2026-11-15: default to metres in more places, so a zoomed distance axis
+  scales cleanly); only km, km/h, m/s and °C do.
 
 ## 7b. Readout data (2026-11-15, agreed with Isaac)
 

@@ -27,8 +27,8 @@ const KM_PER_MI = 1.609344;
 
 /** The conversion from the recorded `unit` to what `prefs` shows. A unit
  *  outside the two choices, or already in the chosen system, is shown as
- *  recorded (`scale` 1, `offset` 0). Metres stay metres: whether a
- *  distance in m means a ride (miles) or a travel (no change) is open. */
+ *  recorded (`scale` 1, `offset` 0). Metres never convert (Isaac,
+ *  2026-11-15), so a zoomed distance axis scales cleanly. */
 export function displayConversion(unit: string | null, prefs: DisplayUnits): DisplayConversion {
   const same: DisplayConversion = { unit, scale: 1, offset: 0 };
   if (unit === null) return same;
