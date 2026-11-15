@@ -4,6 +4,14 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 
 ## [Unreleased]
 
+### Added
+
+- **`cursor` in notebook cells [docs] (2026-11-15).** A `js` cell can read `cursor`: `{ t, playing }`,
+  the shared cursor in session seconds (`null` with none) and whether playback is running. It
+  follows every video frame while playing, and pins and scrubs while paused; hover does not move
+  it. Only cells that name `cursor` re-run as it moves, so the rest of the notebook is not
+  re-drawn per frame. First piece of the video overlay (step 2).
+
 ### Changed
 
 - **Charts keep up during playback; drag the cursor to scrub [no-docs] (2026-11-14).** A zoomed

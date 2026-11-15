@@ -1740,6 +1740,7 @@ feeds results in via `postMessage`):
 | `laps` | `{ number: number, startT: number, endT: number }[]` | Active session's lap table. |
 | `session` | `{ id: string, name?: string, timestampUtcMs: number }` | Active session metadata (C1). |
 | `constants` | `{ [name: string]: number }` | Flattened §3.1 constants (front matter + all `const` lines). Keys may contain spaces (`constants["rider mass"]`); no per-name identifier restriction (§3.1). |
+| `cursor` | `{ t: number \| null, playing: boolean }` | *New 2026-11-15 (video overlay spec §3, Isaac).* The shared cursor: `t` is seconds on the primary window's session clock (the same `t` a `channel(...)` row carries), `null` with no cursor. While playing it changes on every presented video frame (or animation frame with no video); paused, on a pin and on each step of a scrub. Hover never changes it. **Frame-rate:** only a cell whose source names `cursor` (whole word) takes it as an input, so other cells do not re-run per frame. |
 | `Plot` | module namespace | `@observablehq/plot` 0.6.17 (bundled). |
 | `d3` | module namespace | `d3` 7.9.0 (bundled). |
 | `Inputs` | module namespace | `@observablehq/inputs` 0.12.0 (bundled). |

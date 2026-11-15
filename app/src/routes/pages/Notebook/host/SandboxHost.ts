@@ -28,6 +28,7 @@ import { BOOT_TIMEOUT_MS, createBootTimer, type BootTimer } from "./bootTimer";
 import { OutboundQueue } from "./outboundQueue";
 import { replayInitAndHostVars, replaySetCells } from "./rebuildReplay";
 import { makeRerenderCoalescer, type RerenderCoalescer } from "./rerenderCoalescer";
+import { FRAME_RATE_NAMES } from "../sandbox/cellInputs";
 import { createWatchdog, type Watchdog } from "./watchdog";
 
 /** How long a coalesced re-render waits for the burst of publishes it's
@@ -266,7 +267,10 @@ export class SandboxHost {
       this.lastJsonHostVars.set(name, value.value);
     }
     this.postToSandbox({ type: "setHostVar", name, value });
-    this.scheduleRerender();
+    // A frame-rate name (`cursor`) is bound at sandbox start, so every cell
+    // naming it already takes it and re-runs on its own; a re-render per
+    // frame would re-draw every cell, which is what it exists to avoid.
+    if (!FRAME_RATE_NAMES.has(name)) this.scheduleRerender();
   }
 
   /**

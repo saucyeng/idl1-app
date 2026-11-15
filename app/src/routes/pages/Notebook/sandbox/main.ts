@@ -514,13 +514,16 @@ class SandboxRuntime {
     for (const name of ["Plot", "d3", "Inputs", "html"]) {
       this.boundNames.add(name);
     }
-    // C2 §5.1's three ambient host variables, plus `channel`, start with
+    // C2 §5.1's ambient host variables, plus `channel`, start with
     // their documented defaults and are bound through `bindHostVariables`
     // (never `module.builtin()`) so a later `setHostVar` reaches every cell
     // that already resolved them — see that function's doc comment for why.
     this.bindHostVar("laps", []);
     this.bindHostVar("session", null);
     this.bindHostVar("constants", {});
+    // The overlay's `cursor` (C2 §5.1, video overlay spec §3): no cursor
+    // until the host sends one. Frame-rate, so only a cell naming it takes it.
+    this.bindHostVar("cursor", { t: null, playing: false });
     this.bindHostVar("channel", (name: string, opts?: { lap?: number; from?: number; to?: number }) =>
       this.channelLookup(name, opts)
     );

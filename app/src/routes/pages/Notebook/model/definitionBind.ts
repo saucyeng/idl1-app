@@ -185,3 +185,18 @@ export function hostSession(detail: SessionDetail | null, name: string): HostSes
     ? { id: detail.session_id, timestampUtcMs: detail.timestamp_utc_ms }
     : { id: detail.session_id, name, timestampUtcMs: detail.timestamp_utc_ms };
 }
+
+/** The `cursor` host variable's value (C2 §5.1, video overlay spec §3). */
+export interface HostCursor {
+  /** The shared cursor, seconds on the primary window's session clock (the
+   *  same `t` a `channel(...)` row carries); `null` with no cursor. */
+  t: number | null;
+  /** Whether playback is running. */
+  playing: boolean;
+}
+
+/** The `cursor` host variable's value for the shared cursor `tUs`
+ *  (session-relative µs, `null` with none) and playback's `playing` flag. */
+export function hostCursor(tUs: bigint | null, playing: boolean): HostCursor {
+  return { t: tUs === null ? null : Number(tUs) / 1e6, playing };
+}

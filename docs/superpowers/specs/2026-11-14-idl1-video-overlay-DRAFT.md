@@ -108,6 +108,26 @@ parameters"). The document view never uses it.
 4. First overlay on ride `edb96102` (2026-07-15): speed, heart rate, g-g,
    one IMU trace. Screen-record it.
 
+## 7a. Decided 2026-11-15 (Isaac)
+
+- §2 `canvas`: yes. Isaac commonly records 4:3 and wants 9:16 reels with
+  readouts filling the space the 4:3 picture leaves. The video **fits** its
+  box (whole picture, its own shape); adjustable crop later. `size` gains
+  the common shapes (proposed: 16:9, 9:16, 4:3, 1:1, 4:5).
+- §3 `cursor`: yes, under that name.
+- §4 `Readout`: yes, as a starting point. A checkbox chooses between the
+  typed min/max and an automatic range from the ride's data.
+- Units (yes, 2026-11-15): the engine stays metric. Display conversion,
+  done lazily: only the values being drawn are converted, at draw time
+  (a readout's one number, a chart's plotted points), never a whole
+  channel and never stored. The unit table is per measurement, not one
+  imperial/metric switch: **distance and speed** (km, km/h ↔ mi, mph) and
+  **temperature** (°C ↔ °F); everything else stays metric. The choice is
+  the person's, not the workbook's: C3 §3.10's `unit_system` preference
+  becomes two (`distance_unit: "km" | "mi"`, `temperature_unit: "C" | "F"`),
+  migrated imperial → mi + F, metric → km + C. The workbook's `units` key
+  (C2 §1) is unchanged and still unread.
+
 ## 8. Open
 
 - Speed in mph: the readout shows the channel's own unit, so mph is a math

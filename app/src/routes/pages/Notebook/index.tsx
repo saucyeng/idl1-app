@@ -140,7 +140,7 @@ import { resolveGraphHost } from "./model/graphHost";
 import { runFft, type FftAction, type FftDeps } from "./model/fftDriver";
 import { gpsColumns, runGpsMeta, runGpsTrace, type GpsAction, type GpsDeps } from "./model/gpsDriver";
 import { lapColumns, runLapSeries, type LapAction, type LapDeps } from "./model/lapDriver";
-import { hostLaps, hostSession, referencedDefinitionNames, runDefinitionBind, type DefinitionBinding } from "./model/definitionBind";
+import { hostCursor, hostLaps, hostSession, referencedDefinitionNames, runDefinitionBind, type DefinitionBinding } from "./model/definitionBind";
 import { parse as parsePlotForm } from "./plotForm/parse";
 import { UNIT_NOT_YET_EVALUATED } from "./model/unitLabel";
 import {
@@ -3997,6 +3997,16 @@ export default function NotebookPage() {
     host.setHostVar("laps", { kind: "json", value: hostLaps(sessionDetail) });
     host.setHostVar("session", { kind: "json", value: hostSession(sessionDetail, sessionDetail === null ? "" : sessionLabel(sessionDetail)) });
   }, [sessionDetail, primeState.primeEpoch]);
+
+  // C2 §5.1's `cursor` ambient host variable (video overlay spec §3): the
+  // shared cursor in session seconds, sent on every change. While playing
+  // that is every presented frame; only cells that name `cursor` re-run
+  // (`sandbox/cellInputs.ts`). Hover never reaches `sharedCursorTUs`.
+  useEffect(() => {
+    const host = sandboxHostRef.current;
+    if (host === null) return;
+    host.setHostVar("cursor", { kind: "json", value: hostCursor(sharedCursorTUs, playback.playing) });
+  }, [sharedCursorTUs, playback.playing, primeState.primeEpoch]);
 
   // C2 §5.1's `constants` ambient host variable: front-matter constants and
   // every `const` line, by name. It was bound to `{}` at sandbox start and
