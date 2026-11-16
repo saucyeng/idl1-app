@@ -547,7 +547,7 @@ export function setChartType(
  *  an FFT or histogram cell — falling back to `channels[0]` when the source
  *  cell has no mark at all. One function rather than a `props.chart` check
  *  at each switch arm, so "first mark drives it" is stated once. */
-function chartTypeChannel(props: PlotProps, channels: readonly { id: string }[]): string {
+export function chartTypeChannel(props: PlotProps, channels: readonly { id: string }[]): string {
   if (props.chart === "time") return props.marks[0]?.channel ?? channels[0]?.id ?? "";
   // A scatter cell has two channels; its **x** channel is the one that
   // carries, matching how the switch *into* a scatter puts the carried

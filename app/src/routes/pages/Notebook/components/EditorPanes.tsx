@@ -7,6 +7,7 @@ import { isEditorEcho } from "../model/editorEcho";
 import CodeColumnActions from "./CodeColumnActions";
 import CodePane from "./CodePane";
 import PropertiesForm from "./PropertiesForm";
+import { useDisplayUnits } from "../readout/useDisplayUnits";
 import WorkbookCodePane from "./WorkbookCodePane";
 import type { PropertiesFormChannelOption, PropertiesFormLapOption } from "./PropertiesForm.types";
 
@@ -174,6 +175,7 @@ export default function EditorPanes({
   onRenameCell,
   onVideoPropertiesSlot,
 }: EditorPanesProps) {
+  const displayUnits = useDisplayUnits();
   const openCellIdRef = useRef(cellId);
   const lastAppliedRef = useRef<string | null>(null);
   if (openCellIdRef.current !== cellId) {
@@ -234,7 +236,7 @@ export default function EditorPanes({
         {kind === "video" ? (
           <div ref={onVideoPropertiesSlot} className="video-cell-properties p-[var(--nb-pad)]" />
         ) : (
-          <PropertiesForm code={code} channels={channels} laps={laps} unitsPreference="si" onChange={handleChange} />
+          <PropertiesForm code={code} channels={channels} laps={laps} unitsPreference="si" displayUnits={displayUnits} onChange={handleChange} />
         )}
       </TabsContent>
       <TabsContent value="code" className="flex min-h-0 overflow-auto">

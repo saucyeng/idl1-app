@@ -6,15 +6,14 @@
  * as the sandbox's `Readout`. React glue over the tested `scan.ts`,
  * `driver.ts` and `frame.ts`.
  */
-import { useEffect, useMemo, useRef, useState, type MutableRefObject } from "react";
+import { useEffect, useMemo, useRef, type MutableRefObject } from "react";
 
-import { getSettings } from "../../../../ipc/app";
 import { closeReadout, openReadout, readReadout, type ReadoutTail } from "../../../../ipc/readout";
 import type { SandboxHost } from "../host/SandboxHost";
 import { makeReadoutDriver } from "./driver";
 import { EMPTY_READOUT_FRAME, type ReadoutFrame } from "./frame";
 import { scanReadouts, tailCount } from "./scan";
-import { displayUnitsFor, type DisplayUnits } from "./units";
+import { useDisplayUnits } from "./useDisplayUnits";
 
 /** What {@link useReadoutHost} reads from the notebook page. */
 export interface ReadoutHostInputs {
@@ -43,13 +42,7 @@ export function useReadoutHost(inputs: ReadoutHostInputs): void {
   const namesKey = scan.names.join("\u0000");
   const count = tailCount(scan.tailS, fps);
 
-  const [display, setDisplay] = useState<DisplayUnits>(EMPTY_READOUT_FRAME.display);
-  useEffect(() => {
-    getSettings().then(
-      (s) => setDisplay(displayUnitsFor(s.unit_system)),
-      () => undefined
-    );
-  }, []);
+  const display = useDisplayUnits();
 
   const metaRef = useRef<Pick<ReadoutFrame, "units" | "extent">>({ units: {}, extent: {} });
   const displayRef = useRef(display);

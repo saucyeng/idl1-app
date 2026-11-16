@@ -10,7 +10,8 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
   cell changed from outside the app (an agent editing the file, a sync from another device), the
   notebook evaluated it but labelled the answer as one edit behind, so every cell showed
   "Recomputing" until the workbook was reopened. A cell that redraws with the same height (an
-  overlay readout, every frame) no longer re-renders the whole notebook page.
+  overlay readout, every frame) no longer re-renders the whole notebook page. A change made in the
+  Properties form can no longer glue the cell's closing fence onto its last line.
 
 - **Overlay readouts in notebook cells [docs] (2026-11-15).** A `js` cell can draw a speedometer,
   a big number or a g-g plot that follows the cursor and the video, frame by frame:
@@ -20,7 +21,9 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
   `Readout.gg("lat_g", "lon_g", { limit: 1.5, rings: 0.5, tail_s: 2 })`. Each reads the logged
   sample at the cursor (no averaging), from a channel or a maths definition; `range: "ride"` scales
   the dial to the whole ride. With Settings → Units on Imperial, km/h shows as mph and °C as °F;
-  metres stay metres. The Properties form does not offer them yet.
+  metres stay metres. The Properties form offers them on a second row under Chart type (Gauge,
+  Number, g-g): channel, label, style, heart icon, decimals, and the gauge range, shown and typed in
+  your units (mph) and stored in the channel's own (km/h), or "Whole ride".
 
 - **`cursor` in notebook cells [docs] (2026-11-15).** A `js` cell can read `cursor`: `{ t, playing }`,
   the shared cursor in session seconds (`null` with none) and whether playback is running. It

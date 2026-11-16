@@ -1968,6 +1968,11 @@ number_opts   ::= "{" ("label" ":" js_string)?
                       ("," "icon" ":" "\"heart\"")? "}"
 gg_opts       ::= "{" "limit" ":" js_number "," "rings" ":" js_number "," "tail_s" ":" js_number
                       ("," "label" ":" js_string)? "}"              (* limit and rings in g; tail_s seconds, 0 = no tail *)
+                                                                   (* As for every object here, keys may appear in any order and
+                                                                      the reader accepts that; the generator writes the order above,
+                                                                      comma-separated, `{}` when empty. A gauge has exactly one of
+                                                                      min+max (min < max) or range. Read and written by
+                                                                      `plotForm/readout.ts`, beside `parse`/`generate`. *)
 
 css_color     ::= js_string                (* any valid CSS color literal *)
 ```

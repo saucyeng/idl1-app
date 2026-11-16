@@ -1,3 +1,5 @@
+import type { DisplayUnits } from "../readout/units";
+
 /**
  * Prop types for {@link PropertiesForm} (design §6, D13). A fully
  * self-contained prop surface — no React context, no store, no IPC, no
@@ -48,6 +50,10 @@ export interface PropertiesFormProps {
    *  compatibility with a future quantity table, not read by this
    *  component's current logic. */
   unitsPreference: "si" | "imperial";
+  /** The person's display units (overlay spec §7a): a readout's gauge range
+   *  is shown and typed in these and stored in the channel's recorded unit.
+   *  Absent = metric. */
+  displayUnits?: DisplayUnits;
   /** Called with `generate`'s output every time a control changes the
    *  form's `PlotProps`, and by "Reset to form" once the discard warning
    *  is confirmed. Never called with a hand-typed string. */

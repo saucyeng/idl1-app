@@ -28,11 +28,17 @@ import {
   type SpectrumMarkProps,
   type TimePlotProps,
 } from "../plotForm";
+import { generateReadout, parseReadout, READOUT_KINDS, type ReadoutProps } from "../plotForm/readout";
+import { defaultReadout, readoutChannel } from "../model/readoutForm";
+import { METRIC_DISPLAY_UNITS } from "../readout/useDisplayUnits";
+import { ReadoutPropertiesForm } from "./ReadoutPropertiesForm";
 import { MAX_HISTOGRAM_BINS } from "@/ipc/histogram";
 import { MAX_SCATTER_POINTS } from "@/ipc/scatter";
 import {
   addMark,
   advanceFormState,
+  chartTypeChannel,
+  defaultPlotProps,
   fftScalingSelectOptions,
   INITIAL_FORM_STATE,
   moveMark,
@@ -129,7 +135,7 @@ function options<T extends string | number>(values: readonly T[], label: (value:
  * No prop beyond `PropertiesFormProps`' five fields is read: no context, no
  * IPC, no DOM global beyond the JSX this component itself renders.
  */
-export default function PropertiesForm({ code, channels, laps, onChange }: PropertiesFormProps) {
+export default function PropertiesForm({ code, channels, laps, displayUnits, onChange }: PropertiesFormProps) {
   const [prevCode, setPrevCode] = useState(code);
   const [state, setState] = useState<PropertiesFormState>(() => advanceFormState(INITIAL_FORM_STATE, code));
   const [confirmingReset, setConfirmingReset] = useState(false);
@@ -152,6 +158,34 @@ export default function PropertiesForm({ code, channels, laps, onChange }: Prope
   function handleResetConfirmed(): void {
     setConfirmingReset(false);
     onChange(resetToFormCode(lastKnownProps, channels));
+  }
+
+  // An overlay readout (C2 §5.3 `readout_cell`) is its own grammar: a cell
+  // that is one isn't custom code, just not a chart.
+  const readout = view.isCustom ? parseReadout(code) : null;
+  if (readout !== null) {
+    const toKind = (next: AnyKind) => {
+      if (next === readout.readout) return;
+      const carried = readoutChannel(readout);
+      if (isReadoutKind(next)) {
+        onChange(generateReadout(defaultReadout(next, carried, channels)));
+        return;
+      }
+      const seed = defaultPlotProps(channels) as TimePlotProps;
+      const time: TimePlotProps = { ...seed, marks: [{ ...seed.marks[0], channel: carried }] };
+      commit(setChartType(time, next, channels));
+    };
+    return (
+      <div className="properties-form idl-dense flex flex-col gap-[var(--space-4)] p-[var(--nb-gap)]">
+        <ChartTypeControl chart={readout.readout} onChange={toKind} />
+        <ReadoutPropertiesForm
+          props={readout}
+          channels={channels}
+          display={displayUnits ?? METRIC_DISPLAY_UNITS}
+          onChange={(next) => onChange(generateReadout(next))}
+        />
+      </div>
+    );
   }
 
   if (view.isCustom || view.props === null) {
@@ -188,7 +222,14 @@ export default function PropertiesForm({ code, channels, laps, onChange }: Prope
 
   return (
     <div className="properties-form idl-dense flex flex-col gap-[var(--space-4)] p-[var(--nb-gap)]">
-      <ChartTypeControl chart={props.chart} onChange={(next) => commit(setChartType(props, next, channels))} />
+      <ChartTypeControl
+        chart={props.chart}
+        onChange={(next) =>
+          isReadoutKind(next)
+            ? onChange(generateReadout(defaultReadout(next, chartTypeChannel(props, channels), channels)))
+            : commit(setChartType(props, next, channels))
+        }
+      />
       <PlotTitleControl title={props.title} onChange={(next) => commit(setPlotTitle(props, next))} />
       {props.chart === "fft" && <FftPropertiesForm props={props} channels={channels} onChange={commit} />}
       {props.chart === "histogram" && <HistogramPropertiesForm props={props} channels={channels} onChange={commit} />}
@@ -228,7 +269,7 @@ function PlotTitleControl({ title, onChange }: { title: string | undefined; onCh
  *  the fuller label and one-line description. Kept exhaustive by the
  *  `Record` type, so a chart kind added to `PlotProps` without a label
  *  here is a compile error. */
-const CHART_KIND_LABELS: Record<PlotProps["chart"], string> = {
+const CHART_KIND_LABELS: Record<AnyKind, string> = {
   time: "Time",
   fft: "FFT",
   histogram: "Histogram",
@@ -236,37 +277,56 @@ const CHART_KIND_LABELS: Record<PlotProps["chart"], string> = {
   map: "Map",
   lap: "Lap",
   spectrogram: "Spectrogram",
+  gauge: "Gauge",
+  number: "Number",
+  gg: "g-g",
 };
+
+/** A chart kind or a readout kind: the one picker covers both (overlay spec §7c). */
+type AnyKind = PlotProps["chart"] | ReadoutProps["readout"];
+
+/** Every kind the picker offers: the charts, then the readouts. */
+const ANY_KINDS: readonly AnyKind[] = [...CHART_KINDS, ...READOUT_KINDS];
+
+function isReadoutKind(kind: AnyKind): kind is ReadoutProps["readout"] {
+  return (READOUT_KINDS as readonly string[]).includes(kind);
+}
 
 /** Control 1 (C2 §5.3): the chart-type segmented control, one item per
  *  `CHART_KINDS` entry (ruling R215 widens it past `Time`/`FFT`), first for
  *  every chart type (R79 Q6: switching has no confirmation). */
-function ChartTypeControl({ chart, onChange }: { chart: PlotProps["chart"]; onChange: (next: PlotProps["chart"]) => void }) {
+function ChartTypeControl({ chart, onChange }: { chart: AnyKind; onChange: (next: AnyKind) => void }) {
+  // Two segmented rows: the charts, then the overlay readouts (spec §7c).
+  // Each row wraps rather than clipping in a narrow pane.
+  const row = (label: string, kinds: readonly AnyKind[]) => (
+    <Field label={label}>
+      {() => (
+        <ToggleGroup
+          type="single"
+          density="tight"
+          className="w-auto max-w-full flex-wrap"
+          value={kinds.includes(chart) ? chart : ""}
+          aria-label={label}
+          onValueChange={(next) => {
+            // Radix hands back `""` when the active item is re-clicked
+            // (deselect). A cell always has a kind, so that is a no-op
+            // here rather than an unset state.
+            if (ANY_KINDS.includes(next as AnyKind)) onChange(next as AnyKind);
+          }}
+        >
+          {kinds.map((kind) => (
+            <ToggleGroupItem key={kind} value={kind}>
+              {CHART_KIND_LABELS[kind]}
+            </ToggleGroupItem>
+          ))}
+        </ToggleGroup>
+      )}
+    </Field>
+  );
   return (
-    <div className="properties-form-chart-type">
-      <Field label="Chart type">
-        {() => (
-          <ToggleGroup
-            type="single"
-            density="tight"
-            value={chart}
-            aria-label="Chart type"
-            onValueChange={(next) => {
-              // Radix hands back `""` when the active item is re-clicked
-              // (deselect). A chart always has a type, so that is a no-op
-              // here rather than an unset state -- the same reason
-              // `SelectField`'s unset sentinel is not used for it.
-              if (CHART_KINDS.includes(next as PlotProps["chart"])) onChange(next as PlotProps["chart"]);
-            }}
-          >
-            {CHART_KINDS.map((kind) => (
-              <ToggleGroupItem key={kind} value={kind}>
-                {CHART_KIND_LABELS[kind]}
-              </ToggleGroupItem>
-            ))}
-          </ToggleGroup>
-        )}
-      </Field>
+    <div className="properties-form-chart-type flex flex-col gap-[var(--nb-pad)]">
+      {row("Chart type", CHART_KINDS)}
+      {row("Readout", READOUT_KINDS)}
     </div>
   );
 }

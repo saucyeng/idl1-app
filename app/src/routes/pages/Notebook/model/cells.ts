@@ -293,10 +293,17 @@ export function scanCells(markdown: string): ScannedDoc {
  * with `cellId` is found (per the brief: this is the correct outcome, not
  * an error — the caller is expected to have just read `cellId` from this
  * same document's `scanCells` result).
+ *
+ * A non-empty `newBody` without a final newline gets one: a body runs up
+ * to the fence-close line, so without it the closing fence would land on
+ * the code's last line and end nothing. The Properties form's generators
+ * (`generate`, `generateReadout`) return code with no final newline; found
+ * 2026-11-15 when a readout switched kind from the form.
  */
 export function replaceCellBody(markdown: string, cellId: string, newBody: string): string {
   const target = scanCells(markdown).cells.find((cell) => cell.id === cellId);
   if (target === undefined) return markdown;
+  if (newBody !== "" && !newBody.endsWith("\n")) newBody += "\n";
 
   const encoder = new TextEncoder();
   const bytes = encoder.encode(markdown);

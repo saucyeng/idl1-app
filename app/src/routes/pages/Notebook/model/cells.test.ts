@@ -223,6 +223,18 @@ describe("replaceCellBody", () => {
     expect(updated.endsWith("\n```\n\nAfter — ünïcode tail.\n")).toBe(true);
   });
 
+  it("replaceCellBody — a body with no final newline — gets one, so the closing fence stays on its own line", () => {
+    // Arrange
+    const markdown = "```js id=cafebabe\nold\n```\n";
+
+    // Act
+    const updated = replaceCellBody(markdown, "cafebabe", "Plot.plot({})");
+
+    // Assert
+    expect(updated).toBe("```js id=cafebabe\nPlot.plot({})\n```\n");
+    expect(scanCells(updated).cells).toHaveLength(1);
+  });
+
   it("replaceCellBody — an unknown cell id — returns the document unchanged", () => {
     // Arrange
     const markdown = "```js id=cafebabe\nold body\n```\n";

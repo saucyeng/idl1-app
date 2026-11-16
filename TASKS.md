@@ -988,9 +988,8 @@ Analysis gaps from `173461a2` (Python was needed for each; `agent-gaps.md`):
         readout drawing (`Notebook/readout/`: speedo, tach, number, g-g with tail) and
         display-unit conversion; prepared readout commands `open_readout` / `read_readout` /
         `close_readout` (C3 §3.7.1, `crates/idl1-bridge/src/readout.rs`).
-        Next: the notebook side (scan `Readout.*` names, open on settle, read per frame
-        newest-wins, rebind `Readout`), the C2 §5.3 grammar and `plotForm` types; then the
-        units preference split (C3 §3.10); then `canvas` and the canvas view. Later: the
+        Notebook side and the Properties form (Gauge / Number / g-g row) done.
+        Next: the units preference split (C3 §3.10); then `canvas` and the canvas view. Later: the
         hover readout card moves to the prepared readouts so it reads math definitions.
   - [ ] Playback floods the console with "ResizeObserver loop completed with undelivered
         notifications" (about 160 a second on `edb96102`'s video workbook, with or without
