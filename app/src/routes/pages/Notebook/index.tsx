@@ -201,7 +201,7 @@ import { timelineCommit } from "./model/timelineStrip";
 import { resolvedWindowKeysFor, toWireWindow, windowSpanFor } from "./model/viewportWindows";
 import { chooseWorkbookEntry, type WorkbookEntry } from "./model/workbookEntry";
 import { resolveXMode, X_MODE_OPTIONS, type XMode } from "./model/xMode";
-import { initialWorkbookState, isWindowStale, NO_WINDOW_KEY, workbookReducer } from "./model/workbookState";
+import { generationAfterWatchEvent, initialWorkbookState, isWindowStale, NO_WINDOW_KEY, workbookReducer } from "./model/workbookState";
 
 /** `true` when `value` has the shape of a typed `IpcError` (C3 §2). Local
  *  copy of the same helper `openEvalDriver.ts`/`fftDriver.ts` each keep --
@@ -2237,8 +2237,13 @@ export default function NotebookPage() {
         return;
       }
       dispatch({ type: "watchEvent", event });
+      // The generation the reducer is storing for this event, not the ref's
+      // pre-dispatch value: a result labelled one behind reads as stale for
+      // good (`generationAfterWatchEvent`'s doc comment).
+      const generation = generationAfterWatchEvent(evalGenerationRef.current, event);
+      evalGenerationRef.current = generation;
       const mySeq = ++evalSeqRef.current;
-      trackEvalRun(runEval({ evalWorkbookV2 }, workbookId, windowsRef.current, dispatch, () => evalSeqRef.current !== mySeq, evalGenerationRef.current));
+      trackEvalRun(runEval({ evalWorkbookV2 }, workbookId, windowsRef.current, dispatch, () => evalSeqRef.current !== mySeq, generation));
     });
 
     return () => {

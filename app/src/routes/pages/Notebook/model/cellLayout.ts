@@ -17,9 +17,14 @@ export const initialCellHeights: CellHeights = new Map();
  * Records `heightPx` for `cellId`, replacing any prior value for that
  * cell and leaving every other cell's recorded height untouched. Returns
  * a new map (`state` is never mutated) so a caller can use it directly as
- * `useState`'s setter argument.
+ * `useState`'s setter argument — or `state` itself when the height is
+ * unchanged, so React skips the render. A readout redraws every frame and
+ * reports the same height each time; a new map per report re-rendered the
+ * whole notebook page about 180 times a second with three readouts
+ * playing (2026-11-15).
  */
 export function recordCellHeight(state: CellHeights, cellId: string, heightPx: number): CellHeights {
+  if (state.get(cellId) === heightPx) return state;
   const next = new Map(state);
   next.set(cellId, heightPx);
   return next;

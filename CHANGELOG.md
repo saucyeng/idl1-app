@@ -6,6 +6,12 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 
 ### Added
 
+- **An outside edit no longer leaves the notebook on "Recomputing" [no-docs] (2026-11-15).** When a
+  cell changed from outside the app (an agent editing the file, a sync from another device), the
+  notebook evaluated it but labelled the answer as one edit behind, so every cell showed
+  "Recomputing" until the workbook was reopened. A cell that redraws with the same height (an
+  overlay readout, every frame) no longer re-renders the whole notebook page.
+
 - **Overlay readouts in notebook cells [docs] (2026-11-15).** A `js` cell can draw a speedometer,
   a big number or a g-g plot that follows the cursor and the video, frame by frame:
   `Readout.gauge("GPS_SpeedKmh", { min: 0, max: 65, label: "Speed" })`,

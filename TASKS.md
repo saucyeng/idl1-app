@@ -992,6 +992,13 @@ Analysis gaps from `173461a2` (Python was needed for each; `agent-gaps.md`):
         newest-wins, rebind `Readout`), the C2 §5.3 grammar and `plotForm` types; then the
         units preference split (C3 §3.10); then `canvas` and the canvas view. Later: the
         hover readout card moves to the prepared readouts so it reads math definitions.
+  - [ ] Playback floods the console with "ResizeObserver loop completed with undelivered
+        notifications" (about 160 a second on `edb96102`'s video workbook, with or without
+        readouts; found 2026-11-15), and the Maths graph pane goes blank while playing and comes
+        back on pause. Both predate the readouts. Find which observer loops (`JsCellFrame`,
+        `ChartCell`, the toolbar) and why the graph unmounts.
+  - [ ] Opening the overlay readouts in the notebook makes them very large (full column width);
+        the canvas view (step 2) sizes them, the notebook may want a smaller default.
   - [ ] The in-app update reports a crash: closing for the update panics in tao ("cannot move
         state from Destroyed", build 154 to 155, 2026-11-14), so the next launch shows "idl1
         closed unexpectedly". Harmless, but it should not be reported as a crash.

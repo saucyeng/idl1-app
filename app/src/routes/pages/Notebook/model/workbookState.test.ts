@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { CellOutput, Window as SelectedWindow } from "../../../../ipc/workbook";
-import { initialWorkbookState, isWindowStale, NO_WINDOW_KEY, workbookReducer, wireWindowKey } from "./workbookState";
+import { generationAfterWatchEvent, initialWorkbookState, isWindowStale, NO_WINDOW_KEY, workbookReducer, wireWindowKey } from "./workbookState";
 
 /** Builds a minimal, otherwise-empty `CellOutput` for one cell id. */
 function output(cellId: string, overrides: Partial<CellOutput> = {}): CellOutput {
@@ -314,6 +314,24 @@ describe("workbookReducer", () => {
     const saved = workbookReducer(edited, { type: "saveResult", hash: "abc" });
 
     expect(saved.evalRequestGeneration).toBe(1);
+  });
+});
+
+describe("generationAfterWatchEvent", () => {
+  it("generationAfterWatchEvent — an event naming cells — one more", () => {
+    const event = { cell_ids: ["7e570005"] };
+
+    const next = generationAfterWatchEvent(4, event);
+
+    expect(next).toBe(5);
+  });
+
+  it("generationAfterWatchEvent — an event naming no cell — unchanged", () => {
+    const event = { cell_ids: [] };
+
+    const next = generationAfterWatchEvent(4, event);
+
+    expect(next).toBe(4);
   });
 });
 

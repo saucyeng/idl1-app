@@ -3,6 +3,14 @@ import { describe, expect, it } from "vitest";
 import { dropCellHeight, initialCellHeights, recordCellHeight } from "./cellLayout";
 
 describe("recordCellHeight", () => {
+  it("recordCellHeight — the same height again — the same map, so React skips the render", () => {
+    const state = recordCellHeight(initialCellHeights, "c1", 240);
+
+    const next = recordCellHeight(state, "c1", 240);
+
+    expect(next).toBe(state);
+  });
+
   it("recordCellHeight — a new cell id — adds it without disturbing other entries", () => {
     const state = recordCellHeight(initialCellHeights, "cell-a", 240);
 

@@ -231,6 +231,13 @@ Readout.gg("lat_g", "lon_g", { limit: 1.5, rings: 0.5, tail_s: 2 })
   `Readout` re-run (`sandbox/cellInputs.ts`). `cursor` stays for
   hand-written cells.
 - `range: "ride"` uses `open_readout`'s exact `extent`.
+- A typed `min`/`max` is stored in the channel's recorded unit (Isaac,
+  2026-11-15), so a workbook means the same on every machine; the
+  Properties form shows and accepts display units and converts.
+- Measured 2026-11-15 on nightly (build after `0a35ba8`), ride `edb96102`:
+  `open_readout` over two channels and a definition 77 ms (evaluation
+  included); `read_readout` with a 120-point tail on all three, p50 1.8 ms,
+  p99 2.8 ms, max 3.9 ms over 300 reads.
 - `tail_s` is a numeric literal; the host turns it into `count` at the
   video's frame spacing.
 - Units: values arrive in the engine's units; the readout converts for

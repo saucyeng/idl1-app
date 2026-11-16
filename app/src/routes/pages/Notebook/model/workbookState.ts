@@ -364,13 +364,27 @@ export function workbookReducer(state: WorkbookState, action: WorkbookAction): W
       // A change landing from outside this session (another sync peer, a
       // device transfer) is exactly as staleness-causing as a local edit —
       // decision 59 makes no distinction by source.
-      const evalRequestGeneration = action.event.cell_ids.length > 0 ? state.evalRequestGeneration + 1 : state.evalRequestGeneration;
+      const evalRequestGeneration = generationAfterWatchEvent(state.evalRequestGeneration, action.event);
       return { ...state, dirtyCellIds, evalRequestGeneration };
     }
 
     default:
       return state;
   }
+}
+
+/**
+ * The eval-request generation after a watch event (decision 59): one more
+ * when the event names any cell, unchanged otherwise. The reducer's
+ * `watchEvent` case and the watch callback's own `runEval` both use it, so
+ * the evaluation the callback starts carries the generation the reducer is
+ * about to store. Before 2026-11-15 the callback passed the generation from
+ * before the bump (its ref updates only on the next render), so every
+ * outside edit to a cell left the notebook on "Recomputing" until the
+ * workbook was reopened.
+ */
+export function generationAfterWatchEvent(generation: number, event: { cell_ids: readonly string[] }): number {
+  return event.cell_ids.length > 0 ? generation + 1 : generation;
 }
 
 /**
