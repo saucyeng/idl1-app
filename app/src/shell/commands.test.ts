@@ -6,7 +6,7 @@ describe("tabSwitchCommands", () => {
   it("tabSwitchCommands — one command per route, in ROUTES order", () => {
     const commands = tabSwitchCommands(() => {});
 
-    expect(commands.map((c) => c.id)).toEqual(["nav:device", "nav:data", "nav:notebook", "nav:settings"]);
+    expect(commands.map((c) => c.id)).toEqual(["nav:device", "nav:data", "nav:notebook", "nav:simulate", "nav:settings"]);
     expect(commands.every((c) => c.group === "Navigate")).toBe(true);
   });
 

@@ -1,4 +1,4 @@
-import { Database, FileText, Radio, SlidersHorizontal } from "lucide-react";
+import { Bike, Database, FileText, Radio, SlidersHorizontal } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 
 import type { RouteId } from "../routes/types";
@@ -9,7 +9,7 @@ import type { RouteId } from "../routes/types";
  *
  * Concrete over abstract: a radio for the thing that talks to a bike over
  * the air, a database for the session library on disk, a document for the
- * workbook, and a slider rack for settings — none of them the generic
+ * workbook, a bike for the drivetrain simulator, and a slider rack for settings — none of them the generic
  * gear/grid/box set that would sit equally well over any four tabs.
  *
  * One table, two call sites: the wide layout's `ActivityBar.tsx` and the
@@ -20,5 +20,6 @@ export const ACTIVITY_ICONS: Readonly<Record<RouteId, LucideIcon>> = {
   device: Radio,
   data: Database,
   notebook: FileText,
+  simulate: Bike,
   settings: SlidersHorizontal,
 };

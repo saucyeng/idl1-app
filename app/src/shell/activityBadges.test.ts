@@ -6,7 +6,7 @@ describe("activityBadges", () => {
   it("badges — an idle app — shows none at all", () => {
     const badges = activityBadges({ pendingImports: 0, deviceLink: "disconnected" });
 
-    expect(badges).toEqual({ device: null, data: null, notebook: null, settings: null });
+    expect(badges).toEqual({ device: null, data: null, notebook: null, simulate: null, settings: null });
   });
 
   it("badges — files waiting to import — puts the count on Data", () => {

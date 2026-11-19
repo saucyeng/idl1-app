@@ -82,6 +82,7 @@ export function activityBadges(input: ActivityBadgeInput): ActivityBadges {
             title: `${pending} file${pending === 1 ? "" : "s"} waiting to import`,
           },
     notebook: null,
+    simulate: null,
     settings: null,
   };
 }

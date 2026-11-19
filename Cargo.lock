@@ -2511,7 +2511,7 @@ checksum = "b9e0384b61958566e926dc50660321d12159025e767c18e043daf26b70104c39"
 
 [[package]]
 name = "idl-library"
-version = "0.1.1"
+version = "0.2.0"
 dependencies = [
  "arrow",
  "idl-rs",
@@ -2529,12 +2529,13 @@ dependencies = [
 
 [[package]]
 name = "idl-rs"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "approx",
  "arrow",
  "fitparser",
  "nalgebra",
+ "num-dual",
  "parquet",
  "pulldown-cmark",
  "quick-xml",
@@ -3492,6 +3493,15 @@ name = "num-conv"
 version = "0.2.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "521739c6d2bac4aa25192232afe6841231376b2b26d4d9fae5ecf8ca5772e441"
+
+[[package]]
+name = "num-dual"
+version = "0.16.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d3277bc2cc02ea62cff7a33b0a0498e4d1a0745b2e448456c9cdb382848655f9"
+dependencies = [
+ "num-traits",
+]
 
 [[package]]
 name = "num-integer"

@@ -1095,3 +1095,24 @@ building what it needs along the way.
 - [ ] Season-wide analysis on moving data only: filter and estimate over the continuous session, materialise
       to `derived/<hash>.parquet` (C1 §5), then window by speed/moving; row groups small enough to skip stops
       (`ROW_GROUP_SIZE` is 1,000,000 rows, ~17 min at 1 kHz) (needs a spec)
+
+## Drivetrain simulator (Isaac, 2026-11-19; `docs/superpowers/specs/2026-11-19-idl1-drivetrain-sim-DRAFT.md`)
+
+Spec-first; Isaac approved S0 on 2026-11-19 ("yes ... wake up to the sim working in the app"). The engine
+work sits on idl-rs `claude/chain-derailleur-physics-4a23f3`, built on `physics-estimator`.
+
+- [x] idl-rs `core::sim`: chain path (tangents, wraps, rollers the chain would cross, cage closure),
+      growth / kickback / cage angle / loop change / clearance per gear, `chain_fit`; full-loop dynamics
+      (a node per link, XPBD) with locked chainring, cassette inertia, freehub drag and ratchet, jockeys,
+      rollers, cage spring / clutch / mass, surface contact; bump-train excitation
+- [x] `calibration::linkage` 4-bar pose public (`fourbar` uses it) and `PhotoFrame`; bike file `drivetrain`
+      section (newer wins) and photo beside it (`bikes/<id>.photo.<ext>`)
+- [x] Bridge C3 §3.15 (`get_sim_setup`, `save_sim_setup`, `set_bike_photo`, `get_bike_photo`, `sim_kinematics`,
+      `run_drivetrain_sim` → `IDLS` v1); Simulate tab (setup on the photo, kinematics, playback, A/B totals)
+- [ ] Isaac's measurements (spec §11) in the bike file; check chain-to-protector gap and slack-span tension
+      against the model
+- [ ] Replay a recorded ride (IMU0 + physics rear travel + GPS speed) instead of a bump train (spec §5, S2)
+- [ ] `idl-rs sim kinematics` / `sim run` CLI verbs (spec §3) and their CLI reference
+- [ ] Video validation (spec S3); ride video beside the playback (later, Isaac 2026-11-19)
+- [ ] Wire golden for `IDLS` v1 (`wire-golden`) once the layout settles
+

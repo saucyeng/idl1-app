@@ -95,6 +95,7 @@ export const COMMAND_IDS = {
   goDevice: "go.device",
   goData: "go.data",
   goNotebook: "go.notebook",
+  goSimulate: "go.simulate",
   goSettings: "go.settings",
   helpAbout: "help.about",
   helpCheckForUpdates: "help.checkForUpdates",

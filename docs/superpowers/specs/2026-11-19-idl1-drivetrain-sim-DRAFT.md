@@ -1,7 +1,7 @@
 # DRAFT — Drivetrain simulation: chain growth and chain slap
 
-Status: proposal for Isaac, 2026-11-19, revised the same day with his
-answers (§1). Spec-first. Nothing is built until §10 is answered. Adds a
+Status: approved by Isaac 2026-11-19 (§10 Q5: "yes"); S0 and the synthetic-input
+half of S1/S2 built the same day (§12). Adds a
 module to idl-rs core, a `drivetrain` section to the bike file, a derived
 kind to the derived store, and a top-level **Simulate** tab after Notebook.
 
@@ -347,26 +347,16 @@ Answered 2026-11-19: crank locked; 2-D; GPS wheel speed; IMU0 good to
 100 Hz; rollers on any body at runtime; placement in the tab; idl-rs work
 on `physics-estimator`.
 
-Still open:
+Third round (2026-11-19):
 
-1. **The pivot roller**: which span does it guide, top or lower? Toothed
-   (how many teeth) or smooth (diameter)? Does it sit concentric with the
-   main pivot? If it does, its centre doesn't move through travel, which
-   makes it a frame-fixed guide for growth purposes.
-2. **"Keep in physics-estimator"**: commit straight to `physics-estimator`,
-   or to this session's branch `claude/chain-derailleur-physics-4a23f3`
-   based on it, for you to merge? (The session can push to its own branch
-   without asking.) idl1-app's `rust/` pin would point at that commit for
-   the tab.
-3. **The photo in the tab**: store it as a blob (CAS, sha256) referenced
-   from the bike file, so the setup reopens on any synced device? Today
-   `linkage.source_image` is only a file name. That's a C4 addition. And
-   does the tab's placement retire `ml/tools/linkage.html` for linkage
-   points too?
-4. **Ride video beside the sim**: wanted in S2, or later?
-5. **Go-ahead**: with these answered, is this spec approved so S0 can start
-   (spec-first, CLAUDE.md §6)? S0 doesn't need tomorrow's measurements:
-   kinematics is geometry only.
+1. The pivot roller guides the **top** span, toothed (about 16T, to be
+   checked), concentric with the main pivot.
+2. Work goes on this session's idl-rs branch built on `physics-estimator`
+   (`claude/chain-derailleur-physics-4a23f3`), for Isaac to merge.
+3. The photo lives beside the bike file: `bikes/<bike_id>.photo.<ext>`,
+   named with its frame in `drivetrain.photo`.
+4. Ride video beside the sim: later. The sim plays on its own for now.
+5. Approved; S0 starts.
 
 ## 11. Measurement list for 2026-11-20
 
@@ -384,3 +374,27 @@ Still open:
 | Protector top edge | Mark 4–6 points on the side photo | contact polyline |
 | Chain-to-protector gap at sag | Feeler / ruler in 3 gears | checks the clearance output |
 | Video (later) | Phone at 240 fps, mounted on the frame looking at the lower span: about 8–16 frames per slap cycle at 15–30 Hz | S3 |
+
+## 12. What was built (2026-11-19)
+
+- **Engine** (`rust/core/src/sim/`): `bike` (the 4-bar and drivetrain
+  placed at a travel, gear and cage angle; the parallelogram moves the cage
+  along the axle-to-upper-jockey line by the change in cog radius, keeping
+  the drawn B-gap), `path` (§2.2 tangents and wraps, unilateral rollers,
+  cage closure, `chain_fit`), `kinematics` (per-gear curves, snapshots),
+  `excite` (bump trains), `dynamics` (§2.4, XPBD at 25 µs, 2 passes; link
+  axial stiffness 1e7 N/m; surfaces only stop links that were on their
+  side; impact speed relative to the moving surface). Wrapped chain length
+  uses teeth × pitch / 2π per radian, the pin line the pitch radius.
+- **Bike file**: `calibration::drivetrain::Drivetrain` beside `linkage`,
+  newer wins; the 4-bar pose is public in `calibration::linkage` and
+  `estimate::physics::fourbar` uses it (its golden test holds).
+- **App**: C3 §3.15; the Simulate tab (setup on the photo or a blank canvas
+  for a bike with a linkage but no photo, kinematics, playback down to
+  1/64×, A/B totals of the last four runs).
+- **Not built yet**: replay of a recorded ride (§5), the CLI verbs (§3), a
+  wire golden for `IDLS`, Isaac's measured numbers (§11). The defaults are
+  placeholders: the typical derailleur geometry needs a 17 cm cage to fit a
+  10–52 cassette on the GT Force linkage, so the drawn points, not the
+  defaults, are what to trust.
+

@@ -172,7 +172,8 @@ export const MENUS: readonly Menu[] = [
       command(MENU_COMMAND_IDS.goDevice, "Device", { key: "1", mod: true }),
       command(MENU_COMMAND_IDS.goData, "Data", { key: "2", mod: true }),
       command(MENU_COMMAND_IDS.goNotebook, "Notebook", { key: "3", mod: true }),
-      command(MENU_COMMAND_IDS.goSettings, "Settings", { key: "4", mod: true }),
+      command(MENU_COMMAND_IDS.goSimulate, "Simulate", { key: "4", mod: true }),
+      command(MENU_COMMAND_IDS.goSettings, "Settings", { key: "5", mod: true }),
     ],
   },
   {
