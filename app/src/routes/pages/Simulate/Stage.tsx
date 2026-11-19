@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState, type PointerEvent as ReactPoi
 
 import { toPx, type P2, type PhotoFrame, type SetupPx, type Snapshot } from "@/ipc/simulate";
 
-import { CAGE_LINKS, groupColour, hitPoint, LINKS, POINTS, polyPoints, type RunFrame } from "./model";
+import { CAGE_LINKS, groupColour, hitPoint, hitSegment, LINKS, POINTS, polyPoints, type RunFrame } from "./model";
 
 /** What a drag is moving. */
 type DragTarget = { kind: "point"; key: string } | { kind: "roller"; index: number } | { kind: "surface"; index: number; vertex: number } | { kind: "pan"; from: P2; view: View };
@@ -38,6 +38,10 @@ export interface StageProps {
   onMovePoint: (key: string, at: P2) => void;
   onMoveRoller: (index: number, at: P2) => void;
   onMoveSurfaceVertex: (index: number, vertex: number, at: P2) => void;
+  /** A click on a surface's line: insert a vertex after `segment` at `at` (it is then dragged). */
+  onInsertSurfaceVertex: (index: number, segment: number, at: P2) => void;
+  /** A right-click on a surface's vertex: remove it. */
+  onDeleteSurfaceVertex: (index: number, vertex: number) => void;
   /** A drag ended: the moment to recompute. */
   onDragEnd: () => void;
   /** Region to fit the view to (photo pixels); the view refits when `fitKey` changes. */
@@ -110,6 +114,18 @@ export function Stage(props: StageProps) {
 
   function onPointerDown(e: ReactPointerEvent<SVGSVGElement>): void {
     const at = toUser(e.clientX, e.clientY);
+    if (e.button === 2 && mode === "setup" && setup !== null) {
+      // right-click a surface's vertex to remove it; anywhere else pans
+      const grab = 10 * u;
+      for (let si = 0; si < setup.surfaces.length; si++) {
+        const vi = setup.surfaces[si].polyline_px.findIndex((p) => Math.hypot(p[0] - at[0], p[1] - at[1]) <= grab);
+        if (vi >= 0) {
+          props.onDeleteSurfaceVertex(si, vi);
+          props.onDragEnd();
+          return;
+        }
+      }
+    }
     if (e.button === 2 || e.button === 1 || e.shiftKey || mode !== "setup" || setup === null) {
       drag.current = { kind: "pan", from: [e.clientX, e.clientY], view };
       (e.target as Element).setPointerCapture?.(e.pointerId);
@@ -136,6 +152,16 @@ export function Stage(props: StageProps) {
             if (found === null && Math.hypot(p[0] - at[0], p[1] - at[1]) <= grab) found = { kind: "surface", index: si, vertex: vi };
           })
         );
+        if (found === null) {
+          // a click on a surface's line puts a vertex there, and drags it
+          for (let si = 0; si < setup.surfaces.length && found === null; si++) {
+            const hit = hitSegment(setup.surfaces[si].polyline_px, at, grab);
+            if (hit !== null) {
+              props.onInsertSurfaceVertex(si, hit.segment, hit.point);
+              found = { kind: "surface", index: si, vertex: hit.segment + 1 };
+            }
+          }
+        }
         drag.current = found ?? { kind: "pan", from: [e.clientX, e.clientY], view };
       }
     }
@@ -203,7 +229,10 @@ function SetupLayer({ setup, snapshot, m2px, u, stroke, selected, labels, placin
       {CAGE_LINKS.map(([a, b]) => line(a, b, "var(--info)", 3))}
       {setup.surfaces.map((s, i) => (
         <g key={`s${i}`}>
-          <polyline points={polyPoints(s.polyline_px, (p) => p)} fill="none" stroke="var(--good)" strokeWidth={stroke(selected?.kind === "surface" && selected.index === i ? 5 : 3)} />
+          <polyline points={polyPoints(s.polyline_px, (p) => p)} fill="none" stroke="var(--good)" strokeOpacity={0.22} strokeWidth={stroke(14)} strokeLinejoin="round" strokeLinecap="round">
+            <title>{`${s.name}: click the line to add a point, right-click a point to remove it`}</title>
+          </polyline>
+          <polyline points={polyPoints(s.polyline_px, (p) => p)} fill="none" stroke="var(--good)" strokeWidth={stroke(selected?.kind === "surface" && selected.index === i ? 4 : 2.5)} strokeLinejoin="round" />
           {s.polyline_px.map((p, k) => (
             <rect key={k} x={p[0] - 4 * u} y={p[1] - 4 * u} width={8 * u} height={8 * u} fill="var(--good)" />
           ))}
@@ -288,7 +317,10 @@ function RunLayer({ f, m2px, stroke }: { f: RunFrame; m2px: (m: P2) => P2; strok
       {LINKS.map(([a, b]) => (pts[a] && pts[b] ? <line key={`${a}-${b}`} x1={pts[a][0]} y1={pts[a][1]} x2={pts[b][0]} y2={pts[b][1]} stroke="var(--accent)" strokeWidth={stroke(4)} strokeLinecap="round" /> : null))}
       <polyline points={polyPoints(cage, (p) => p)} fill="none" stroke={slipping ? "var(--hivis)" : "var(--info)"} strokeWidth={stroke(slipping ? 6 : 4)} strokeLinecap="round" />
       {f.surfaces.map((s, i) => (
-        <polyline key={i} points={polyPoints(s, m2px)} fill="none" stroke={impact ? "var(--accent)" : touching ? "var(--hivis)" : "var(--good)"} strokeWidth={stroke(impact ? 7 : 4)} />
+        <g key={i}>
+          <polyline points={polyPoints(s, m2px)} fill="none" stroke="var(--good)" strokeOpacity={0.18} strokeWidth={stroke(14)} strokeLinejoin="round" strokeLinecap="round" />
+          <polyline points={polyPoints(s, m2px)} fill="none" stroke={impact ? "var(--accent)" : touching ? "var(--hivis)" : "var(--good)"} strokeWidth={stroke(impact ? 6 : 3)} strokeLinejoin="round" />
+        </g>
       ))}
       {f.wheels.map((w) => {
         const c = m2px(w.centre);

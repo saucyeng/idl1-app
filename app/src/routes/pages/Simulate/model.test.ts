@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import type { SetupPx, SimRun } from "@/ipc/simulate";
 
-import { groupColour, hitPoint, movePoint, newRoller, newSurface, nextMissing, parseCassette, playbackFrame, polyPoints, POINTS, runFrame } from "./model";
+import { deleteVertex, groupColour, hitPoint, hitSegment, insertVertex, movePoint, newRoller, newSurface, nextMissing, parseCassette, playbackFrame, polyPoints, POINTS, runFrame } from "./model";
 
 function run(): SimRun {
   // 3 frames, 2 nodes, 2 points (a wheel centre and a surface point), 1 wheel, 1 channel
@@ -108,5 +108,29 @@ describe("Simulate model", () => {
     // Arrange / Act / Assert
     expect(polyPoints([[1, 2], [3, 4]], (p) => [p[0] * 2, p[1]])).toBe("2.0,2.0 6.0,4.0");
     for (const p of POINTS) expect(groupColour(p.group)).toMatch(/^var\(--/);
+  });
+
+  it("hitSegment — a click on a line between vertices — finds the segment and the point on it", () => {
+    // Arrange
+    const poly: [number, number][] = [[0, 0], [100, 0], [100, 100]];
+
+    // Act / Assert
+    expect(hitSegment(poly, [50, 3], 5)).toEqual({ segment: 0, point: [50, 0] });
+    expect(hitSegment(poly, [102, 60], 5)).toEqual({ segment: 1, point: [100, 60] });
+    expect(hitSegment(poly, [2, 1], 5)).toBeNull();
+    expect(hitSegment(poly, [50, 40], 5)).toBeNull();
+  });
+
+  it("insertVertex and deleteVertex — editing — insert after the segment's start and never go below two", () => {
+    // Arrange
+    const poly: [number, number][] = [[0, 0], [100, 0]];
+
+    // Act
+    const three = insertVertex(poly, 0, [50, 5]);
+
+    // Assert
+    expect(three).toEqual([[0, 0], [50, 5], [100, 0]]);
+    expect(deleteVertex(three, 1)).toEqual(poly);
+    expect(deleteVertex(poly, 0)).toEqual(poly);
   });
 });
