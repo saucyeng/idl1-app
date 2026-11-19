@@ -1,6 +1,6 @@
 //! Cross-language wire golden fixtures (ruling R236): one small deterministic
 //! fixture per binary format a Tauri command emits over IPC (`IDLH`, `IDLT`,
-//! `IDLS`, `IDLG`, `IDLR`), each paired with the JSON a TypeScript decoder
+//! `IDLS`, `IDLG`, `IDLR`, `IDLM`), each paired with the JSON a TypeScript decoder
 //! test deep-equals against.
 //!
 //! Every fixture is built from fixed, hand-written inputs — no RNG, no
@@ -40,7 +40,40 @@ pub struct WireFixture {
 /// and every platform: every input is a fixed literal, every encoder writes
 /// little-endian regardless of host, and nothing here reads the clock.
 pub fn build_wire_fixtures() -> Vec<WireFixture> {
-    vec![idlh_time(), idlh_lap(), idlt_v2(), idls_v1(), idlg_v1(), idlr_v1()]
+    vec![idlh_time(), idlh_lap(), idlt_v2(), idls_v1(), idlg_v1(), idlr_v1(), idlm_v1()]
+}
+
+/// `IDLM` v1 (a sim result): two frames, one component, one track of each
+/// shape the drivetrain sends (an unlabelled `xy` run, a labelled `angle`
+/// set, a `scalar` channel), so the decoder's per-kind sizes and the
+/// optional `labels` are both covered.
+fn idlm_v1() -> WireFixture {
+    use crate::sim_result_wire::{encode_sim_result, SimResult, Track, TrackKind};
+    let mut components = serde_json::Map::new();
+    components.insert("drivetrain".into(), json!({"gear": 2, "nodes": 2}));
+    let tracks = vec![
+        Track { name: "chain".into(), component: "drivetrain".into(), kind: TrackKind::Xy, count: 2, unit: "m".into(), labels: None, values: vec![0.0, 0.5, 1.0, 1.5, 0.25, 0.75, 1.25, 1.75] },
+        Track { name: "wheel_angle".into(), component: "drivetrain".into(), kind: TrackKind::Angle, count: 2, unit: "rad".into(), labels: Some(vec!["cog".into(), "ring".into()]), values: vec![0.0, 0.0, -0.5, 0.25] },
+        Track { name: "Cage angle".into(), component: "drivetrain".into(), kind: TrackKind::Scalar, count: 1, unit: "deg".into(), labels: None, values: vec![3.5, -2.0] },
+    ];
+    let r = SimResult { frame_t_s: vec![0.0, 0.5], components: components.clone(), tracks };
+    let bin = encode_sim_result(&r);
+    let json = json!({
+        "format": "IDLM",
+        "version": 1,
+        "headerFormat": "sim-result",
+        "frames": 2,
+        "components": components,
+        "frameT": r.frame_t_s,
+        "tracks": r.tracks.iter().map(|t| {
+            let mut o = json!({"name": t.name, "component": t.component, "kind": t.kind, "count": t.count, "unit": t.unit, "values": t.values});
+            if let Some(l) = &t.labels {
+                o["labels"] = json!(l);
+            }
+            o
+        }).collect::<Vec<_>>(),
+    });
+    WireFixture { name: "idlm-v1", bin, json }
 }
 
 /// `IDLH` v2, a recorded time axis (`axis_kind == Time`) — one of the two

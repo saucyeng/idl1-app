@@ -43,6 +43,7 @@ pub mod scatter;
 pub mod scatter_wire;
 pub mod session_cache;
 pub mod session_source;
+pub mod sim_result_wire;
 pub mod state;
 pub mod tile;
 /// The `idl1-video` URI scheme's request logic (C3 §3.12): playback bytes

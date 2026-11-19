@@ -6,7 +6,7 @@
 //! metre conversion happens here, from the two axle centres clicked on the
 //! photo and the wheelbase (`PhotoFrame`), so the metres the bike file keeps
 //! are never computed in JavaScript. A dynamic run comes back as raw bytes
-//! (`IDLS` v1, [`encode_run`]).
+//! (`IDLM` v1, a sim result: [`encode_run`], [`crate::sim_result_wire`]).
 
 use std::collections::BTreeMap;
 use std::path::Path;
@@ -24,6 +24,7 @@ use idl_rs::time::now_ms;
 
 use crate::commands::device::Progress;
 use crate::error::{IpcError, IpcErrorKind};
+use crate::sim_result_wire::{encode_sim_result, SimResult, Track, TrackKind};
 use crate::state::DataDir;
 
 impl From<SimError> for IpcError {
@@ -482,50 +483,40 @@ pub fn sim_kinematics(setup: SetupPx, gear: usize, samples: usize) -> Result<Kin
     sim_kinematics_via(&setup, gear, samples)
 }
 
-/// Magic of a run's bytes.
-pub const RUN_MAGIC: &[u8; 4] = b"IDLS";
-/// Version of a run's bytes.
-pub const RUN_VERSION: u32 = 1;
-
-/// A run's bytes, `IDLS` v1: `"IDLS"`, `u32` version, `u32` header length,
-/// the header (UTF-8 JSON), zero padding to a multiple of 4, then `f32`
-/// little-endian arrays in this order: node xy `[frame][node][2]`, point xy
-/// `[frame][point][2]`, wheel angles `[frame][wheel]`, each channel's values
-/// `[frame]` in header order, and frame times `[frame]` (seconds).
-pub fn encode_run(r: &DynResult, frame: &PhotoFrame, input: &BumpTrain) -> Vec<u8> {
-    let header = serde_json::json!({
-        "frames": r.frame_t_s.len(),
-        "nodes": r.nodes,
-        "gear": r.gear,
-        "points": r.point_names,
-        "wheels": r.wheels.iter().map(|(role, radius, teeth)| serde_json::json!({"role": role, "radius_m": radius, "teeth": teeth})).collect::<Vec<_>>(),
-        "channels": r.channels.iter().map(|c| serde_json::json!({"name": c.name, "unit": c.unit})).collect::<Vec<_>>(),
-        "summary": r.summary,
-        "frame": frame,
-        "input": input,
-    });
-    let head = serde_json::to_vec(&header).expect("a run header serializes");
-    let mut out = Vec::with_capacity(16 + head.len() + 4 * (r.node_xy.len() + r.point_xy.len() + r.wheel_angle.len() + r.frame_t_s.len() * (r.channels.len() + 1)));
-    out.extend_from_slice(RUN_MAGIC);
-    out.extend_from_slice(&RUN_VERSION.to_le_bytes());
-    out.extend_from_slice(&(head.len() as u32).to_le_bytes());
-    out.extend_from_slice(&head);
-    while out.len() % 4 != 0 {
-        out.push(0);
-    }
-    let mut put = |v: &[f32]| {
-        for x in v {
-            out.extend_from_slice(&x.to_le_bytes());
-        }
-    };
-    put(&r.node_xy);
-    put(&r.point_xy);
-    put(&r.wheel_angle);
+/// A drivetrain run as a sim result's `drivetrain` component and its tracks:
+/// `chain` (xy, one per link, m), `points` (xy, labelled with the moving
+/// points' names, m), `wheel_angle` (angle, labelled with the wheels' roles,
+/// rad), then one scalar track per channel under the channel's name and unit.
+/// The component carries the gear, link count, wheels, totals, the bumps and
+/// the photo frame the app draws over.
+pub fn run_result(r: &DynResult, frame: &PhotoFrame, input: &BumpTrain) -> SimResult {
+    let dt = "drivetrain".to_string();
+    let mut components = serde_json::Map::new();
+    components.insert(
+        dt.clone(),
+        serde_json::json!({
+            "gear": r.gear,
+            "nodes": r.nodes,
+            "wheels": r.wheels.iter().map(|(role, radius, teeth)| serde_json::json!({"role": role, "radius_m": radius, "teeth": teeth})).collect::<Vec<_>>(),
+            "summary": r.summary,
+            "frame": frame,
+            "input": input,
+        }),
+    );
+    let mut tracks = vec![
+        Track { name: "chain".into(), component: dt.clone(), kind: TrackKind::Xy, count: r.nodes, unit: "m".into(), labels: None, values: r.node_xy.clone() },
+        Track { name: "points".into(), component: dt.clone(), kind: TrackKind::Xy, count: r.point_names.len(), unit: "m".into(), labels: Some(r.point_names.clone()), values: r.point_xy.clone() },
+        Track { name: "wheel_angle".into(), component: dt.clone(), kind: TrackKind::Angle, count: r.wheels.len(), unit: "rad".into(), labels: Some(r.wheels.iter().map(|w| w.0.clone()).collect()), values: r.wheel_angle.clone() },
+    ];
     for c in &r.channels {
-        put(&c.values);
+        tracks.push(Track { name: c.name.clone(), component: dt.clone(), kind: TrackKind::Scalar, count: 1, unit: c.unit.clone(), labels: None, values: c.values.clone() });
     }
-    put(&r.frame_t_s.iter().map(|&t| t as f32).collect::<Vec<_>>());
-    out
+    SimResult { frame_t_s: r.frame_t_s.iter().map(|&t| t as f32).collect(), components, tracks }
+}
+
+/// A run's bytes: `IDLM` v1 ([`crate::sim_result_wire`]) of [`run_result`].
+pub fn encode_run(r: &DynResult, frame: &PhotoFrame, input: &BumpTrain) -> Vec<u8> {
+    encode_sim_result(&run_result(r, frame, input))
 }
 
 /// Runs the dynamics for an (unsaved) setup and encodes it.
@@ -551,7 +542,7 @@ pub fn run_drivetrain_sim_via(setup: &SetupPx, gear: usize, input: &BumpTrain, p
 }
 
 /// C3 §3.15 `run_drivetrain_sim(setup, gear, input, progress)` (async):
-/// the chain loop through a bump train, frame by frame, as `IDLS` v1 bytes
+/// the chain loop through a bump train, frame by frame, as `IDLM` v1 bytes
 /// ([`encode_run`]). Progress: `phase` `"simulating"`, `done` of `total` = 1000.
 /// Errors: `invalid_argument` (the setup or the bumps), as `sim_kinematics`.
 #[tauri::command(async)]
@@ -639,7 +630,7 @@ mod tests {
     }
 
     #[test]
-    fn run_drivetrain_sim_encodes_idls_v1_with_every_array() {
+    fn run_drivetrain_sim_encodes_idlm_v1_with_every_track() {
         // Arrange
         let root = temp_root();
         let mut setup = gt_setup(&root);
@@ -651,15 +642,18 @@ mod tests {
         let bytes = run_drivetrain_sim_via(&setup, 5, &input, &mut |_| {}).unwrap();
 
         // Assert
-        assert_eq!(&bytes[0..4], b"IDLS");
+        assert_eq!(&bytes[0..4], b"IDLM");
         let hl = u32::from_le_bytes(bytes[8..12].try_into().unwrap()) as usize;
         let head: serde_json::Value = serde_json::from_slice(&bytes[12..12 + hl]).unwrap();
-        let (frames, nodes) = (head["frames"].as_u64().unwrap() as usize, head["nodes"].as_u64().unwrap() as usize);
-        let points = head["points"].as_array().unwrap().len();
-        let wheels = head["wheels"].as_array().unwrap().len();
-        let channels = head["channels"].as_array().unwrap().len();
+        let frames = head["frames"].as_u64().unwrap() as usize;
+        let nodes = head["components"]["drivetrain"]["nodes"].as_u64().unwrap() as usize;
+        let tracks = head["tracks"].as_array().unwrap();
+        assert_eq!(tracks[0]["name"], "chain");
+        assert_eq!(tracks[0]["count"].as_u64().unwrap() as usize, nodes);
+        assert!(tracks.iter().any(|t| t["name"] == "Cage angle" && t["kind"] == "scalar"));
+        let per_frame: usize = 1 + tracks.iter().map(|t| t["count"].as_u64().unwrap() as usize * if t["kind"] == "xy" { 2 } else { 1 }).sum::<usize>();
         let body = (12 + hl + 3) / 4 * 4;
-        assert_eq!(bytes.len() - body, 4 * frames * (2 * nodes + 2 * points + wheels + channels + 1));
+        assert_eq!(bytes.len() - body, 4 * frames * per_frame);
         let _ = std::fs::remove_dir_all(&root);
     }
 }

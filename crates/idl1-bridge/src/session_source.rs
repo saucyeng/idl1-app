@@ -608,6 +608,7 @@ mod tests {
                 imu0_gyro_bias_rad_s: [0.0; 3],
                 imus: vec![pod(1, &g.imu1), pod(2, g.imu2.as_ref().unwrap())],
             },
+            physics: None,
         }
     }
 

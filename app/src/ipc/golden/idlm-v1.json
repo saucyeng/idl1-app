@@ -1,0 +1,63 @@
+{
+  "components": {
+    "drivetrain": {
+      "gear": 2,
+      "nodes": 2
+    }
+  },
+  "format": "IDLM",
+  "frameT": [
+    0.0,
+    0.5
+  ],
+  "frames": 2,
+  "headerFormat": "sim-result",
+  "tracks": [
+    {
+      "component": "drivetrain",
+      "count": 2,
+      "kind": "xy",
+      "name": "chain",
+      "unit": "m",
+      "values": [
+        0.0,
+        0.5,
+        1.0,
+        1.5,
+        0.25,
+        0.75,
+        1.25,
+        1.75
+      ]
+    },
+    {
+      "component": "drivetrain",
+      "count": 2,
+      "kind": "angle",
+      "labels": [
+        "cog",
+        "ring"
+      ],
+      "name": "wheel_angle",
+      "unit": "rad",
+      "values": [
+        0.0,
+        0.0,
+        -0.5,
+        0.25
+      ]
+    },
+    {
+      "component": "drivetrain",
+      "count": 1,
+      "kind": "scalar",
+      "name": "Cage angle",
+      "unit": "deg",
+      "values": [
+        3.5,
+        -2.0
+      ]
+    }
+  ],
+  "version": 1
+}

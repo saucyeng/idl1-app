@@ -3467,14 +3467,30 @@ linkage points, surfaces, metres). `chain_fit`: the chain lengths (links)
 that close the loop in every gear through travel.
 
 **`run_drivetrain_sim(setup: SetupPx, gear: number, input: BumpTrain,
-progress: Channel<Progress>)`** (async) → raw bytes, `IDLS` v1: `"IDLS"`,
-`u32` version, `u32` header length, the header (UTF-8 JSON: `frames`,
-`nodes`, `gear`, `points` (names), `wheels` (`{ role, radius_m, teeth }`),
-`channels` (`{ name, unit }`), `summary`, `frame`, `input`), zero padding
-to a multiple of 4, then `f32` little-endian arrays: node xy
-`[frame][node][2]` (m), point xy `[frame][point][2]` (m), wheel angles
-`[frame][wheel]` (rad), each channel's values `[frame]` in header order,
-frame times `[frame]` (s). `BumpTrain`: `{ speed_mps, depth_m, sag_m,
+progress: Channel<Progress>)`** (async) → raw bytes, a **sim result**,
+`IDLM` v1 (Isaac, 2026-11-19, whole-bike sim loop spec D1; replaces the
+`IDLS` v1 run layout, whose magic collided with `fetch_scatter`'s).
+
+```
+"IDLM", u32 version (1), u32 header length, header (UTF-8 JSON),
+zero padding to a multiple of 4, then f32 little-endian:
+  frame times [frame] (s)
+  each track's values [frame][count][dims], in header order
+  (dims: xy 2, xyz 3, angle 1, scalar 1)
+header: { "format": "sim-result", "frames": n,
+          "components": { <name>: { ...the component's own metadata } },
+          "tracks": [ { "name", "component", "kind": "xy"|"xyz"|"angle"|"scalar",
+                        "count", "unit", "labels"? } ] }
+```
+
+A new component adds tracks, not a version. A drivetrain run has one
+component, `drivetrain`: `{ gear, nodes, wheels: [{ role, radius_m, teeth }],
+summary, frame, input }`, and the tracks `chain` (xy × nodes, m), `points`
+(xy, labelled with the moving points' names, m), `wheel_angle` (angle,
+labelled with the wheels' roles, rad), then one `scalar` track per channel
+under its name and unit ("Cage angle", deg; "Top span tension", N; …).
+Encoder `idl1-bridge::sim_result_wire`, decoder `app/src/ipc/simResult.ts`;
+wire golden `idlm-v1`. `BumpTrain`: `{ speed_mps, depth_m, sag_m,
 compress_s, rebound_s, chassis_g, count, spacing_s, lead_s }`. Progress:
 `phase` `"simulating"`, `done` of `total` 1000. Runs are at most 120 s of
 simulated time.

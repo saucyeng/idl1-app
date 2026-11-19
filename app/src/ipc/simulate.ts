@@ -12,6 +12,7 @@
 import { Channel, invoke } from "@tauri-apps/api/core";
 
 import type { Progress } from "./import";
+import { decodeSimResult, track } from "./simResult";
 
 /** A point, `[x, y]`. Pixels (image y down) or metres (y up), as named. */
 export type P2 = [number, number];
@@ -189,7 +190,8 @@ export interface RunSummary {
   max_link_error_mm: number;
 }
 
-/** A decoded run (`IDLS` v1). Arrays are views on the response's bytes. */
+/** A decoded drivetrain run (the `drivetrain` component of an `IDLM` v1 sim
+ *  result). Arrays are views on the response's bytes. */
 export interface SimRun {
   frames: number;
   nodes: number;
@@ -211,46 +213,40 @@ export interface SimRun {
   frameT: Float32Array;
 }
 
-const RUN_MAGIC = "IDLS";
+/** The tracks a drivetrain run lays out before its channels. */
+const RUN_FIXED_TRACKS = new Set(["chain", "points", "wheel_angle"]);
 
-/** Decodes `run_drivetrain_sim`'s bytes (`IDLS` v1, C3 §3.15).
+/** Decodes `run_drivetrain_sim`'s bytes (`IDLM` v1, C3 §3.15) into the
+ *  drivetrain's view: `chain`, `points` and `wheel_angle` tracks, and every
+ *  other drivetrain scalar track as a channel, in order.
  *
- *  @throws Error on bad magic, version or a short buffer. */
+ *  @throws Error on bad bytes (see `decodeSimResult`) or a result with no
+ *  drivetrain component or one of its tracks. */
 export function decodeSimRun(buf: ArrayBuffer): SimRun {
-  const bytes = new Uint8Array(buf);
-  if (bytes.length < 12 || String.fromCharCode(bytes[0], bytes[1], bytes[2], bytes[3]) !== RUN_MAGIC) {
-    throw new Error("not a drivetrain run (bad magic)");
-  }
-  const view = new DataView(buf);
-  const version = view.getUint32(4, true);
-  if (version !== 1) throw new Error(`drivetrain run version ${version} is not supported`);
-  const headLen = view.getUint32(8, true);
-  if (12 + headLen > bytes.length) throw new Error("drivetrain run is shorter than its header");
-  const head = JSON.parse(new TextDecoder().decode(bytes.subarray(12, 12 + headLen))) as {
-    frames: number;
-    nodes: number;
-    gear: number;
-    points: string[];
-    wheels: { role: string; radius_m: number; teeth: number }[];
-    channels: { name: string; unit: string }[];
-    summary: RunSummary;
-    frame: PhotoFrame;
-    input: BumpTrain;
+  const r = decodeSimResult(buf);
+  const meta = r.components.drivetrain as
+    | { gear: number; nodes: number; wheels: SimRun["wheels"]; summary: RunSummary; frame: PhotoFrame; input: BumpTrain }
+    | undefined;
+  if (!meta) throw new Error("sim result has no drivetrain");
+  const points = track(r, "points");
+  const channels = r.tracks
+    .filter((t) => t.component === "drivetrain" && t.kind === "scalar" && !RUN_FIXED_TRACKS.has(t.name))
+    .map((t) => ({ name: t.name, unit: t.unit, values: t.values }));
+  return {
+    frames: r.frames,
+    nodes: meta.nodes,
+    gear: meta.gear,
+    points: points.labels ?? [],
+    wheels: meta.wheels,
+    channels,
+    summary: meta.summary,
+    frame: meta.frame,
+    input: meta.input,
+    nodeXy: track(r, "chain").values,
+    pointXy: points.values,
+    wheelAngle: track(r, "wheel_angle").values,
+    frameT: r.frameT,
   };
-  let off = Math.ceil((12 + headLen) / 4) * 4;
-  const take = (n: number): Float32Array => {
-    if (off + 4 * n > bytes.length) throw new Error("drivetrain run is shorter than its header says");
-    const a = new Float32Array(buf, off, n);
-    off += 4 * n;
-    return a;
-  };
-  const f = head.frames;
-  const nodeXy = take(f * head.nodes * 2);
-  const pointXy = take(f * head.points.length * 2);
-  const wheelAngle = take(f * head.wheels.length);
-  const channels = head.channels.map((c) => ({ name: c.name, unit: c.unit, values: take(f) }));
-  const frameT = take(f);
-  return { ...head, channels, nodeXy, pointXy, wheelAngle, frameT };
 }
 
 /** Metres in the bike's side plane to photo pixels: the inverse of Rust's

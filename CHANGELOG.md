@@ -18,7 +18,11 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
   the clutch, then plays it back down to 1/64 speed with the tensions, deflections, clutch slip and
   hits on the protector; two runs compare side by side. Saving writes the points as metres to the
   bike file (`linkage` and a new `drivetrain` section), the photo beside it. The derailleur's
-  spring, clutch and inertias are typical numbers until measured.
+  spring, clutch and inertias are typical numbers until measured. A run comes back as a sim
+  result (`IDLM` v1: components and named tracks, so suspension and tyres can be added later
+  without a new format; C3 §3.15). A light idler held by several teeth (a 16T on the main pivot)
+  no longer spins up on its own and throws the chain through itself: each wheel's spin is
+  stepped implicitly in the teeth holding it.
 
 - **Workbooks in the app use the bike's calibration [no-docs] (2026-11-16).** A session opened in
   the app now gives the estimator builtins (`attitude`, `body_accel`, `wheel_travel`,
