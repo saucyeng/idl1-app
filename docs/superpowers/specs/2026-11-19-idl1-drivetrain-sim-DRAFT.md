@@ -457,3 +457,23 @@ into link-scale kinks; the chain's own pin-joint friction is not modelled.
   25 and 50 µs steps, and even with a change in rounding. Compare setups by
   statistics over several hits or runs, not by one run's peak.
 
+## 15. Teeth hold without slip (2026-11-19, Isaac's review)
+
+Isaac: the chain slid round the held cranks; a finite friction coefficient
+was a complication that made it worse. Right: §13's grip was capped at
+`tooth_grip` × the normal force, and a slack chain barely presses on the
+chainring, so the cap went to nothing and links crept round it (73° in a
+bump train). A roller in a tooth gap cannot move round the sprocket however
+lightly it presses. `tooth_grip` is gone: a link pressing into a sprocket is
+held where it touched down with no slip, and is free the moment it stops
+pressing in. The tangent bench still passes.
+
+A held link can still end up somewhere else on the ring if the chain is
+thrown clear of the teeth and lands again, which the default bump train does
+to the top of the wrap (lifts of 6–25 mm, landing about 1.5 teeth along) on
+the placeholder bike with no guide. That is a dropped or nearly dropped
+chain, not sliding. The test therefore allows a move round the ring only
+after a lift of more than a tooth's height (4 mm); the capped grip fails it,
+the no-slip hold passes. A "chain lift off the chainring" output would show
+this risk directly (not built).
+
