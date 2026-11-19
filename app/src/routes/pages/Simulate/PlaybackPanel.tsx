@@ -64,7 +64,8 @@ export function PlaybackPanel(props: PlaybackPanelProps) {
   const [channel, setChannel] = useState("Lower span deflection");
   const set = (patch: Partial<BumpTrain>) => onBumps({ ...bumps, ...patch });
   const n = (v: number | null, f: number) => (v === null || !Number.isFinite(v) ? f : v);
-  const t = run ? run.frameT[Math.min(run.frames - 1, Math.floor(frame))] : 0;
+  const at = run ? Math.max(0, Math.min(run.frames - 1, Math.floor(frame) || 0)) : 0;
+  const t = run ? run.frameT[at] : 0;
   const series = run?.channels.find((c) => c.name === channel) ?? null;
 
   return (
@@ -110,7 +111,7 @@ export function PlaybackPanel(props: PlaybackPanelProps) {
                 <div key={c.name} className="contents">
                   <span className="text-[var(--fg-dim)]">{c.name}</span>
                   <span className="tabular-nums">
-                    {c.values[Math.min(run.frames - 1, Math.floor(frame))].toFixed(1)} {c.unit}
+                    {c.values[at].toFixed(1)} {c.unit}
                   </span>
                 </div>
               ))}
