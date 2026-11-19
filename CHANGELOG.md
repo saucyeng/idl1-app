@@ -6,6 +6,15 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 
 ### Added
 
+- **Workbooks in the app use the bike's calibration [no-docs] (2026-11-16).** A session opened in
+  the app now gives the estimator builtins (`attitude`, `body_accel`, `wheel_travel`,
+  `wheel_velocity`) its bike's calibration, as `idl-rs workbook eval` does: the newest one
+  captured at or before the ride, else the oldest after it (`idl-rs bike calibrate`). With one
+  that has a steering axis, `attitude("steer")`, `"steer_needed"` and `"understeer"` have values;
+  without one they are blank. A new or changed calibration re-evaluates the workbook instead of
+  serving the old result. Bumps rust to idl-rs 0.2.0 (heading, travel direction, slide angle,
+  steering and understeer outputs).
+
 - **An outside edit no longer leaves the notebook on "Recomputing" [no-docs] (2026-11-15).** When a
   cell changed from outside the app (an agent editing the file, a sync from another device), the
   notebook evaluated it but labelled the answer as one edit behind, so every cell showed

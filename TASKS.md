@@ -620,11 +620,25 @@ or a hard stop.
 - [x] P0-3 `where(cond, a, b)` at mixed rates is the typed different-rates
       error, not an out-of-bounds index.
 - [x] P2-1 `session import <file.idl0>` agrees with its own `--dry-run`.
-- [ ] P0-2 estimator builtins without a calibration — **blocked on a ruling**:
-      nothing binds a `CalibrationRecord` to a session today (`session
-      calibrate` computes and prints one; `estimate::run` never reads one), so
-      there is no unambiguous "this session has no calibration" state to
-      report. CLAUDE.md §1 — asked, not guessed.
+- [x] P0-2 estimator builtins without a calibration — answered by the bike
+      calibration (idl-rs 0.2.0, branch `estimator-align-chassis`). Where it
+      lives: in the bike's file, `bikes/<bike_id>.json`, written by `idl-rs
+      bike calibrate` (still window, hand-protocol windows, `--forward-from
+      <ride>`, `--wheelbase-mm`). What "bound" means: a session uses the
+      newest live calibration of its bike captured at or before its start,
+      else the oldest one captured after it (`calibration_for`). The one call
+      an opener makes is `idl_library::bikelog::apply_session_calibration`;
+      the CLI's `workbook eval` and the bridge's `load_lazy_session_handle`
+      both make it, and the bridge's evaluation key carries the calibration's
+      id and last change. "No calibration" is unambiguous: the session names no
+      bike, or its bike has none. The DRAFT's proposed typed error was not
+      built: with no calibration the estimator fits IMU0's mount from the
+      ride's straight-line riding (uncalibrated moto ride `4f3f3032`: roll
+      against GPS lean, slope 0.97, correlation 0.97; the 2026-09-19 ride
+      itself not rerun), and the
+      steering selectors (`steer`, `steer_sigma`, `steer_needed`,
+      `understeer`) read blank. Trust and limits:
+      `rust/core/src/estimate/README.md`.
 - [ ] P1-5 one failing definition blanks its math cell for `js` cells — the
       engine half is already per-definition; the binding-side cause is written
       up in the lane's PR.
@@ -1095,3 +1109,19 @@ building what it needs along the way.
 - [ ] Season-wide analysis on moving data only: filter and estimate over the continuous session, materialise
       to `derived/<hash>.parquet` (C1 §5), then window by speed/moving; row groups small enough to skip stops
       (`ROW_GROUP_SIZE` is 1,000,000 rows, ~17 min at 1 kHz) (needs a spec)
+
+## Linkage photo tool (Isaac, 2026-11-17)
+
+Prototype: idl-rs `ml/tools/linkage.html` (standalone page). Click axles, pivots, shock eyes and IMU pods on a
+side photo; it sweeps the 4-bar and checks the pods against the bike calibration's lever arms. Isaac: "way
+easier than the other linkage software", and more accurate than tape-measuring the offsets.
+
+- [ ] Linkage tool in the app, phone first: photograph someone's bike at the trailside and analyse it there
+      (touch to place points, pinch to zoom)
+- [ ] BB as a point; register the photo to the manufacturer geometry table (stack, reach, head angle,
+      chainstay / rear centre, BB drop) with a perspective fit, not one scale from the wheelbase. The first
+      GT Force photo read 6.6% small (shock eye-to-eye 215.8 mm vs 230 mm), from perspective
+- [ ] Motion ratio / leverage curve, anti-squat (needs BB, chainring, cog, CoM height), anti-rise, axle path,
+      instant centre; check the shock stroke against the shock's spec (GT Force 230x65)
+- [ ] Linkage saved with the bike (alongside its calibration in `bikes/<id>.json`) so the estimator's 4-bar
+      rear model reads it directly (idl-rs `ml/idlml/bike/fourbar.py` consumes the tool's JSON today)
