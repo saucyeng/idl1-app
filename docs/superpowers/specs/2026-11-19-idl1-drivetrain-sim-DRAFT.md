@@ -398,3 +398,36 @@ Third round (2026-11-19):
   10–52 cassette on the GT Force linkage, so the drawn points, not the
   defaults, are what to trust.
 
+## 13. Contact model, revised (2026-11-19, Isaac's review of the first clip)
+
+Isaac saw the chain carried round every wheel past the tangent: "it looks
+like the chain stays fixed to the pulleys". Root cause: the first contact
+model pinned a link that touched a toothed wheel to a fixed angle on it, and
+decided by distance tolerances where links joined and left. Lifting off
+means pivoting about the seated link behind, which changes that angle, so
+the lock made it impossible. Three rule-based patches (a lock only while
+pressed in, sloped frictionless flanks, a geometric lift rule) each failed:
+the flanks let a slack chain climb off the ring and diverge.
+
+Decided with Isaac: force-based contact, **wheels as circles** at the pitch
+radius (no tooth profiles), because a little over- and under-wrap in motion
+is expected and should come out of the dynamics.
+
+- **Normal**: a stiff, damped penalty force (2e5 N/m, 20 N·s/m) pushing a
+  link's pin out of a wheel it presses into.
+- **Teeth as grip**: elastic stick-slip friction anchored where the link
+  touched down, capped at `tooth_grip` × the normal force (default 1.5; by
+  the capstan relation a wrap θ holds a tension ratio e^(μθ), about 110 over
+  180°). Smooth rollers have none.
+- **Reactions** turn the wheel, and a jockey's axle carries them to the cage.
+- **Stays** use the same penalty contact with rubber friction (μ 0.5), felt
+  only by links within 6 mm on the surface's side.
+- Links, the ratchet and the clutch are unchanged.
+
+Proof: a bench with no gravity or bumps, the cranks driven (new
+`crank_rate_rad_s`, the start of pedalling) and the hub overrunning, checks
+every frame that each wheel holds the exact tangent path's links within one.
+The old model fails it (its cage is driven to an impossible angle); the new
+one passes. Known remainder: a slack top span lying on the protector bunches
+into link-scale kinks; the chain's own pin-joint friction is not modelled.
+
