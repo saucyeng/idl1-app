@@ -573,6 +573,103 @@
       "args": [
         {
           "choices": [],
+          "help": "Session id, as `session list` prints it",
+          "kind": "text",
+          "name": "id",
+          "repeatable": false,
+          "required": true
+        }
+      ],
+      "core_fn": "idl_library::physics::estimate_physics",
+      "data_dir": true,
+      "flags": [
+        {
+          "choices": [],
+          "default": null,
+          "help": "Fit the bike's geometry from this session again, even if its calibration has a current fit",
+          "kind": null,
+          "long": "refit",
+          "repeatable": false
+        },
+        {
+          "choices": [],
+          "default": null,
+          "help": "Fork travel, mm; default the bike's (`bike set --front-travel-mm`)",
+          "kind": "integer",
+          "long": "front-travel-mm",
+          "repeatable": false
+        },
+        {
+          "choices": [],
+          "default": null,
+          "help": "Rear travel, mm; default the bike's linkage",
+          "kind": "integer",
+          "long": "rear-travel-mm",
+          "repeatable": false
+        },
+        {
+          "choices": [],
+          "default": null,
+          "help": "Worker threads; default up to 4",
+          "kind": "integer",
+          "long": "threads",
+          "repeatable": false
+        },
+        {
+          "choices": [],
+          "default": null,
+          "help": "Only from here, ms from the session's first sample (with `--to-ms`): less memory, and a first fit uses windows inside it",
+          "kind": "integer",
+          "long": "from-ms",
+          "repeatable": false
+        },
+        {
+          "choices": [],
+          "default": null,
+          "help": "Only to here, ms from the session's first sample",
+          "kind": "integer",
+          "long": "to-ms",
+          "repeatable": false
+        },
+        {
+          "choices": [],
+          "default": null,
+          "help": "Data directory root (contract C4 §1's <data>); defaults to $IDL1_DATA_DIR",
+          "kind": "path",
+          "long": "data-dir",
+          "repeatable": false
+        },
+        {
+          "choices": [],
+          "default": null,
+          "help": "Report what would change and write nothing",
+          "kind": null,
+          "long": "dry-run",
+          "repeatable": false
+        },
+        {
+          "choices": [],
+          "default": null,
+          "help": "Emit the result as JSON on stdout (schema_version 1); errors become typed JSON on stderr",
+          "kind": null,
+          "long": "json",
+          "repeatable": false
+        }
+      ],
+      "help": "Estimate travel, steer, fork bending and flex with the physics model (no drift: travel is seen through the pods' lever arms); fits the bike's geometry the first time and writes the channels to the session's derived files",
+      "id": "session.estimatePhysics",
+      "json_shape": "PhysicsReport",
+      "noun": "session",
+      "status": "current",
+      "tier": "occasional",
+      "usage": "session estimate-physics <id>",
+      "verb": "estimate-physics",
+      "writer": true
+    },
+    {
+      "args": [
+        {
+          "choices": [],
           "help": "Workbook file to create; refuses to overwrite an existing one",
           "kind": "path",
           "name": "file",
@@ -1394,6 +1491,79 @@
       "writer": true
     },
     {
+      "args": [
+        {
+          "choices": [],
+          "help": "Bike id, as `bike list` prints it",
+          "kind": "text",
+          "name": "bike_id",
+          "repeatable": false,
+          "required": true
+        }
+      ],
+      "core_fn": "idl_library::bikelog::save_linkage",
+      "data_dir": true,
+      "flags": [
+        {
+          "choices": [],
+          "default": null,
+          "help": "The linkage photo tool's JSON export (`ml/tools/linkage.html`): the rear 4-bar and rear travel",
+          "kind": "path",
+          "long": "linkage",
+          "repeatable": false
+        },
+        {
+          "choices": [],
+          "default": null,
+          "help": "The shock's specified eye-to-eye length, mm: checks the photo's scale",
+          "kind": "integer",
+          "long": "shock-mm",
+          "repeatable": false
+        },
+        {
+          "choices": [],
+          "default": null,
+          "help": "The fork's travel, mm",
+          "kind": "integer",
+          "long": "front-travel-mm",
+          "repeatable": false
+        },
+        {
+          "choices": [],
+          "default": null,
+          "help": "Data directory root (contract C4 §1's <data>); defaults to $IDL1_DATA_DIR",
+          "kind": "path",
+          "long": "data-dir",
+          "repeatable": false
+        },
+        {
+          "choices": [],
+          "default": null,
+          "help": "Report what would change and write nothing",
+          "kind": null,
+          "long": "dry-run",
+          "repeatable": false
+        },
+        {
+          "choices": [],
+          "default": null,
+          "help": "Emit the result as JSON on stdout (schema_version 1); errors become typed JSON on stderr",
+          "kind": null,
+          "long": "json",
+          "repeatable": false
+        }
+      ],
+      "help": "Set a bike's suspension geometry for the physics estimator: its rear linkage (from the photo tool) and travel",
+      "id": "bike.set",
+      "json_shape": "Linkage",
+      "noun": "bike",
+      "status": "current",
+      "tier": "occasional",
+      "usage": "bike set <bike_id>",
+      "verb": "set",
+      "writer": true
+    },
+    {
       "args": [],
       "core_fn": "idl_library::verify::verify",
       "data_dir": true,
@@ -1905,6 +2075,10 @@
     {
       "ruling": "R251",
       "verb": "note"
+    },
+    {
+      "ruling": "R252",
+      "verb": "estimate-physics"
     }
   ]
 }

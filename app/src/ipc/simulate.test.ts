@@ -15,7 +15,7 @@ function encode(head: object, arrays: number[][]): ArrayBuffer {
   const count = arrays.reduce((n, a) => n + a.length, 0);
   const buf = new ArrayBuffer(bodyStart + 4 * count);
   const bytes = new Uint8Array(buf);
-  bytes.set([73, 68, 76, 83]);
+  bytes.set([73, 68, 76, 77]); // "IDLM"
   const view = new DataView(buf);
   view.setUint32(4, 1, true);
   view.setUint32(8, json.length, true);
@@ -31,45 +31,59 @@ function encode(head: object, arrays: number[][]): ArrayBuffer {
 }
 
 describe("drivetrain sim IPC", () => {
-  it("decodeSimRun — an IDLS v1 buffer — gives every array at its length and in order", () => {
+  it("decodeSimRun — an IDLM v1 drivetrain result — gives every array at its length and in order", () => {
     // Arrange
+    const dt = "drivetrain";
     const head = {
+      format: "sim-result",
       frames: 2,
-      nodes: 2,
-      gear: 3,
-      points: ["rear_axle"],
-      wheels: [{ role: "cog", radius_m: 0.04, teeth: 21 }],
-      channels: [{ name: "Cage angle", unit: "deg" }],
-      summary: {},
-      frame: { rear_axle_px: [0, 0], front_axle_px: [100, 0], wheelbase_m: 1 },
-      input: {},
+      components: {
+        drivetrain: {
+          nodes: 2,
+          gear: 3,
+          wheels: [{ role: "cog", radius_m: 0.04, teeth: 21 }],
+          summary: {},
+          frame: { rear_axle_px: [0, 0], front_axle_px: [100, 0], wheelbase_m: 1 },
+          input: {},
+        },
+      },
+      tracks: [
+        { name: "chain", component: dt, kind: "xy", count: 2, unit: "m" },
+        { name: "points", component: dt, kind: "xy", count: 1, unit: "m", labels: ["rear_axle"] },
+        { name: "wheel_angle", component: dt, kind: "angle", count: 1, unit: "rad", labels: ["cog"] },
+        { name: "Cage angle", component: dt, kind: "scalar", count: 1, unit: "deg" },
+      ],
     };
+    const t = [0, 0.002];
     const nodes = [1, 2, 3, 4, 5, 6, 7, 8];
     const points = [10, 11, 12, 13];
     const angles = [0.5, 0.25];
     const cage = [-1, 2];
-    const t = [0, 0.002];
 
     // Act
-    const run = decodeSimRun(encode(head, [nodes, points, angles, cage, t]));
+    const run = decodeSimRun(encode(head, [t, nodes, points, angles, cage]));
 
     // Assert
+    expect(run.gear).toBe(3);
+    expect(run.points).toEqual(["rear_axle"]);
     expect(Array.from(run.nodeXy)).toEqual(nodes);
     expect(Array.from(run.pointXy)).toEqual(points);
     expect(Array.from(run.wheelAngle)).toEqual(angles);
-    expect(run.channels[0].name).toBe("Cage angle");
+    expect(run.channels.map((c) => c.name)).toEqual(["Cage angle"]);
     expect(Array.from(run.channels[0].values)).toEqual(cage);
     expect(run.frameT[1]).toBeCloseTo(0.002);
   });
 
-  it("decodeSimRun — bad magic or a short body — throws", () => {
+  it("decodeSimRun — bad magic, a short body, or no drivetrain — throws", () => {
     // Arrange
-    const short = encode({ frames: 5, nodes: 2, points: [], wheels: [], channels: [] }, [[1, 2]]);
+    const short = encode({ frames: 5, components: {}, tracks: [{ name: "x", component: "drivetrain", kind: "xy", count: 2, unit: "m" }] }, [[1, 2]]);
+    const none = encode({ frames: 1, components: {}, tracks: [] }, [[0]]);
     const bad = new ArrayBuffer(16);
 
     // Act / Assert
     expect(() => decodeSimRun(bad)).toThrow(/magic/);
     expect(() => decodeSimRun(short)).toThrow(/shorter/);
+    expect(() => decodeSimRun(none)).toThrow(/no drivetrain/);
   });
 
   it("toPx — a level photo — puts metres up as pixels up the image", () => {

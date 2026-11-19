@@ -1128,7 +1128,14 @@ work sits on idl-rs `claude/chain-derailleur-physics-4a23f3`, built on `physics-
 - [ ] Replay a recorded ride (IMU0 + physics rear travel + GPS speed) instead of a bump train (spec §5, S2)
 - [ ] `idl-rs sim kinematics` / `sim run` CLI verbs (spec §3) and their CLI reference
 - [ ] Video validation (spec S3); ride video beside the playback (later, Isaac 2026-11-19)
-- [ ] Wire golden for `IDLS` v1 (`wire-golden`) once the layout settles
+- [x] Run bytes as a sim result, `IDLM` v1 (components and tracks; whole-bike sim loop spec D1), with the
+      `idlm-v1` wire golden (2026-11-19)
+- [x] A light idler held by several teeth no longer spins up from rest (wheel spin stepped implicitly in the
+      held teeth); tests: no link inside any wheel in any gear with the top idler (2026-11-19)
+- [ ] Clutch free play: the cage turns a little before the clutch engages (`clutch_free_play_deg`, Isaac to
+      measure with the clutch torque)
+- [ ] Lower idler design: the clutch work through travel per cog, in the Simulate tab, for a roller dragged
+      round the BB (from `rust/core/examples/lower_idler_search.rs`)
 
 
 ## Linkage photo tool (Isaac, 2026-11-17)
