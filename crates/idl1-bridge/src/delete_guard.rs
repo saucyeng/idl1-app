@@ -58,6 +58,12 @@ mod tests {
         // Workbook merge install: removes the *old*-named `.idl1wb` only when
         // a peer's `workbook_id` wins the rename (C4 §6).
         ("rust/library/src/sync/apply.rs", "install_workbook"),
+        // `save_bike_photo` (2026-11-19, Simulate tab): the user setting a
+        // new photo for a bike removes that bike's previous photo when it had
+        // another extension (`bikes/<id>.photo.{jpg,png,webp}`), only after
+        // the new one is written. A replace the user asked for; never a ride,
+        // a session or another bike's file.
+        ("rust/library/src/bikelog.rs", "save_bike_photo"),
         // `download_with`: removes/renames only its `tmp/download-*.part`
         // file on its way into `blobs/`.
         ("crates/idl1-bridge/src/commands/device.rs", "download_with"),
