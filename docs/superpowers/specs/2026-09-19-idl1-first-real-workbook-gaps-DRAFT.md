@@ -226,6 +226,17 @@ with a CLI verb, per the decision rule.
    against GPS heading rate), lateral g = v·ψ̇, yaw acceleration = dψ̇/dt; scatter of the
    two is a measured Milliken diagram. Wants `unwrap` (absent) for the GPS check, P1-1,
    and scatter over definitions (P1-4).
+   *Added 2026-09-20.* The fork-lower and swingarm lateral accelerometers, differenced,
+   measure yaw acceleration independently of the gyro: r = 0.77–0.88 against the
+   differentiated frame gyro (0.3–3 Hz), fitted separation 1.38–1.67 m against a 1.48 m
+   wheelbase. Because a leaning bike carries ≈ 0 body-lateral specific force at its CG,
+   regressing each wheel's lateral signal on yaw acceleration gives that sensor's lever arm
+   about the CG (front +0.64…0.69 m, rear −0.69…−1.02 m) — a fore-aft CG estimate for
+   free, and the inputs for Milliken's per-axle quantities: `A_F = A_Y + ψ̈·a/g`,
+   `A_R = A_Y − ψ̈·b/g`, `C_N = a·b·ψ̈/(g·ℓ)` (k² = a·b). Candidate builtins:
+   `yaw_accel("gyro"|"accel")`, `axle_lateral("front"|"rear")`, `yaw_moment_coeff()`;
+   they need bike geometry (ℓ, a) in the bike profile. **Open:** sensor-to-axle offsets
+   are not recorded anywhere today.
 8. **`idl-rs fit --merge <sessions…>`** — one activity for a day, timer stop/start events
    at the gaps so pit time is paused. Done here with `fit_tool` from the per-session files.
 

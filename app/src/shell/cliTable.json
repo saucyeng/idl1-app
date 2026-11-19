@@ -1233,6 +1233,167 @@
       "writer": true
     },
     {
+      "args": [
+        {
+          "choices": [],
+          "help": "Bike id, as `bike list` prints it",
+          "kind": "text",
+          "name": "bike_id",
+          "repeatable": false,
+          "required": true
+        }
+      ],
+      "core_fn": "idl_rs::commands::calibration_ops::fit_bike_calibration",
+      "data_dir": true,
+      "flags": [
+        {
+          "choices": [],
+          "default": null,
+          "help": "Session id (or its first characters) of a recording with the bike still and level",
+          "kind": "text",
+          "long": "still",
+          "repeatable": false
+        },
+        {
+          "choices": [],
+          "default": null,
+          "help": "Start of the still window, ms from the recording's first common sample; default 1000",
+          "kind": "integer",
+          "long": "still-from-ms",
+          "repeatable": false
+        },
+        {
+          "choices": [],
+          "default": null,
+          "help": "End of the still window; default the end of the recording",
+          "kind": "integer",
+          "long": "still-to-ms",
+          "repeatable": false
+        },
+        {
+          "choices": [],
+          "default": null,
+          "help": "Session id of the hand-protocol recording (bars swung, bike turned about); default the `--still` session when any window below is given",
+          "kind": "text",
+          "long": "protocol",
+          "repeatable": false
+        },
+        {
+          "choices": [],
+          "default": null,
+          "help": "Start of the window where the bike was turned about as one body",
+          "kind": "integer",
+          "long": "rigid-from-ms",
+          "repeatable": false
+        },
+        {
+          "choices": [],
+          "default": null,
+          "help": "End of that window",
+          "kind": "integer",
+          "long": "rigid-to-ms",
+          "repeatable": false
+        },
+        {
+          "choices": [],
+          "default": null,
+          "help": "Start of the part of it where the bars did not turn; default the rigid window",
+          "kind": "integer",
+          "long": "fork-from-ms",
+          "repeatable": false
+        },
+        {
+          "choices": [],
+          "default": null,
+          "help": "End of that part",
+          "kind": "integer",
+          "long": "fork-to-ms",
+          "repeatable": false
+        },
+        {
+          "choices": [],
+          "default": null,
+          "help": "Start of the window with the frame still and the bars swung",
+          "kind": "integer",
+          "long": "steer-from-ms",
+          "repeatable": false
+        },
+        {
+          "choices": [],
+          "default": null,
+          "help": "End of that window",
+          "kind": "integer",
+          "long": "steer-to-ms",
+          "repeatable": false
+        },
+        {
+          "choices": [],
+          "default": null,
+          "help": "Session id of a ride: set the newest calibration's forward and steering zero so that ride's straight-line riding reads zero slip and zero steer, instead of fitting a new calibration",
+          "kind": "text",
+          "long": "forward-from",
+          "repeatable": false
+        },
+        {
+          "choices": [],
+          "default": null,
+          "help": "Set the newest calibration's wheelbase (suspension topped out), mm, instead of fitting a new calibration; the understeer outputs need it",
+          "kind": "integer",
+          "long": "wheelbase-mm",
+          "repeatable": false
+        },
+        {
+          "choices": [],
+          "default": null,
+          "help": "Free text kept with the calibration",
+          "kind": "text",
+          "long": "note",
+          "repeatable": false
+        },
+        {
+          "choices": [],
+          "default": null,
+          "help": "Remove this calibration id instead of fitting one",
+          "kind": "text",
+          "long": "delete",
+          "repeatable": false
+        },
+        {
+          "choices": [],
+          "default": null,
+          "help": "Data directory root (contract C4 §1's <data>); defaults to $IDL1_DATA_DIR",
+          "kind": "path",
+          "long": "data-dir",
+          "repeatable": false
+        },
+        {
+          "choices": [],
+          "default": null,
+          "help": "Report what would change and write nothing",
+          "kind": null,
+          "long": "dry-run",
+          "repeatable": false
+        },
+        {
+          "choices": [],
+          "default": null,
+          "help": "Emit the result as JSON on stdout (schema_version 1); errors become typed JSON on stderr",
+          "kind": null,
+          "long": "json",
+          "repeatable": false
+        }
+      ],
+      "help": "Fit a bike's IMU calibration from its recordings and save it in the bike's file; sessions on that bike then use it",
+      "id": "bike.calibrate",
+      "json_shape": "BikeCalibration",
+      "noun": "bike",
+      "status": "current",
+      "tier": "occasional",
+      "usage": "bike calibrate <bike_id>",
+      "verb": "calibrate",
+      "writer": true
+    },
+    {
       "args": [],
       "core_fn": "idl_library::verify::verify",
       "data_dir": true,

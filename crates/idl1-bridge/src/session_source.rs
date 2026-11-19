@@ -108,6 +108,13 @@ impl ChannelSource for CachedChannelSource {
 /// through; the caller keeps it to call
 /// [`CachedChannelSource::take_first_error`] after evaluating.
 ///
+/// The handle's estimator builtins (`attitude`, `wheel_travel`, …) get the
+/// calibration of the session's bike that the session uses, through
+/// [`idl_library::bikelog::apply_session_calibration`]: the call the CLI's
+/// opener makes, so the app and `idl-rs workbook eval` read the same numbers.
+/// A session with no readable `session.json`, no bike, or a bike with no
+/// calibration runs the estimator uncalibrated.
+///
 /// A missing session directory or `data.parquet` is
 /// [`IpcErrorKind::NotFound`] (the id is named in the message); an
 /// unreadable or malformed file is [`IpcErrorKind::Io`].
@@ -124,7 +131,26 @@ pub fn load_lazy_session_handle(
     let source = Arc::new(CachedChannelSource::new(cache, data_dir, session_id));
     let handle = open_session_lazy_with(&dir, source.clone() as Arc<dyn ChannelSource>)
         .map_err(|e| IpcError::new(IpcErrorKind::Io, format!("reading {}: {}", parquet_path.display(), e.message)))?;
+    if let Some(doc) = read_session_json_once(data_dir, session_id).doc {
+        idl_library::bikelog::apply_session_calibration(data_dir, &doc, &handle);
+    }
     Ok((handle, source))
+}
+
+/// The bike calibration `session_id` uses, as the part of an evaluation key
+/// that changes when it does: `calibration:<id>:<updated_at_ms>`, or empty when
+/// the session uses none. The same choice
+/// [`load_lazy_session_handle`] hands the estimator, and the same form
+/// `idl_library::set_job` keys a session set with. `session_json` is the
+/// session's `session.json` as read for the rest of the key, and
+/// `parquet_timestamp_utc_ms` its `data.parquet`'s start, UTC ms.
+pub fn calibration_key_part(data_dir: &Path, session_json: &[u8], parquet_timestamp_utc_ms: i64) -> String {
+    let Ok(doc) = idl_rs::store::session_json::parse_session_json(session_json) else {
+        return String::new();
+    };
+    let start_ms = idl_rs::store::session_json::effective_start_ms(&doc, parquet_timestamp_utc_ms);
+    idl_library::bikelog::calibration_for_session(data_dir, &doc, start_ms)
+        .map_or(String::new(), |(c, _)| format!("calibration:{}:{}", c.calibration_id, c.updated_at_ms))
 }
 
 /// Builds an [`IpcErrorKind::InvalidArgument`] naming the unresolvable lap
@@ -540,6 +566,137 @@ mod tests {
         assert_eq!(handle.channel_samples("Speed"), vec![1.0, 2.0]);
         assert_eq!(idl_rs::math::ChannelLookup::unit_of(&handle, "Speed").as_deref(), Some("m/s"));
         assert!(handle.channels().iter().any(|c| c.channel_id == "Speed"));
+
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// A calibration whose IMU mounts, lever arms and steering axis are the
+    /// reference bike's, stated in IMU0's axes as a fitted one is, with a
+    /// wheelbase: everything the steering outputs need.
+    fn steering_calibration(updated_at_ms: i64) -> idl_rs::calibration::bike::BikeCalibration {
+        use idl_rs::calibration::bike::{BikeCalibration, CalibrationFit, ImuFit, SourceWindow, BIKE_CALIBRATION_VERSION};
+        let g = idl_rs::estimate::geometry::BikeGeometry::reference_bike();
+        let to_imu0 = g.imu0.mount.inverse();
+        // Row k of IMU0's mount is chassis axis k in IMU0's axes.
+        let m0 = g.imu0.mount.to_rotation_matrix().into_inner();
+        let row = |k: usize| [m0[(k, 0)], m0[(k, 1)], m0[(k, 2)]];
+        let pod = |index: u8, pose: &idl_rs::estimate::geometry::ImuPose| {
+            let (q, lever) = (to_imu0 * pose.mount, to_imu0 * pose.lever);
+            ImuFit { imu_index: index, mount: [q.w, q.i, q.j, q.k], lever_m: [lever.x, lever.y, lever.z], rate_residual_rad_s: None, up_disagreement_deg: 0.0 }
+        };
+        let axis = to_imu0 * g.steer_axis;
+        BikeCalibration {
+            calibration_id: "cal".into(),
+            captured_at_ms: 0,
+            updated_at_ms,
+            deleted: false,
+            note: String::new(),
+            still: SourceWindow { session_id: "still".into(), from_s: 1.0, to_s: None },
+            rigid: None,
+            fork_rigid: None,
+            steer: None,
+            forward_ride: None,
+            fit: CalibrationFit {
+                version: BIKE_CALIBRATION_VERSION,
+                up: row(2),
+                forward: Some(row(0)),
+                forward_from: None,
+                forward_trim_deg: None,
+                steer_axis: Some([axis.x, axis.y, axis.z]),
+                steer_zero_deg: None,
+                wheelbase_m: Some(1.48),
+                imu0_gyro_bias_rad_s: [0.0; 3],
+                imus: vec![pod(1, &g.imu1), pod(2, g.imu2.as_ref().unwrap())],
+            },
+        }
+    }
+
+    /// The committed synthetic ride (three IMUs, GPS at 6–12 m/s round a
+    /// lapped track) as library session `ride`, its `session.json` naming `bike_id`.
+    fn seed_ride(root: &Path, bike_id: &str) {
+        let path = concat!(env!("CARGO_MANIFEST_DIR"), "/../../rust/core/tests/fixtures/synth-3lap.idl0");
+        let mut session = idl_rs::parse::parse(&std::fs::read(path).unwrap()).unwrap().session;
+        session.session_id = "ride".to_string();
+        write_session_parquet(root, &session, "0.1.0").unwrap();
+        let mut json = empty_session_json("ride");
+        json.bike_id = bike_id.to_string();
+        write_session_json(root, "ride", &json, None).unwrap();
+    }
+
+    /// How many samples of `attitude(selector)` are known (not blank).
+    fn known_samples(handle: &SessionHandle, selector: &str) -> f64 {
+        let expr = format!("sum(where(attitude(\"{selector}\") > -1000, 1, 0))");
+        idl_rs::math::eval::evaluate(&expr, handle, &MathLapContext::empty()).unwrap().samples[0]
+    }
+
+    #[test]
+    fn load_lazy_session_handle_session_on_a_calibrated_bike_estimates_steering() {
+        // Arrange — the bike's calibration has a steering axis and a wheelbase.
+        let root = temp_root();
+        let bike = idl_library::bikelog::bike_for_name(&root, "Test Moto", 1).unwrap();
+        idl_library::bikelog::save_calibration(&root, &bike.bike_id, &steering_calibration(1)).unwrap();
+        seed_ride(&root, &bike.bike_id);
+
+        // Act
+        let (handle, _source) = load_lazy_session_handle(&root, "ride", &SessionCache::new()).unwrap();
+
+        // Assert — steering is estimated only with the bike's calibration.
+        assert!(known_samples(&handle, "steer") > 0.0);
+        assert!(known_samples(&handle, "steer_needed") > 0.0);
+
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn load_lazy_session_handle_session_on_a_bike_with_no_calibration_leaves_steering_blank() {
+        // Arrange
+        let root = temp_root();
+        let bike = idl_library::bikelog::bike_for_name(&root, "Test Moto", 1).unwrap();
+        seed_ride(&root, &bike.bike_id);
+
+        // Act
+        let (handle, _source) = load_lazy_session_handle(&root, "ride", &SessionCache::new()).unwrap();
+
+        // Assert — the estimator ran (the heading is known) but has no steering.
+        assert!(known_samples(&handle, "heading") > 0.0);
+        assert_eq!(known_samples(&handle, "steer"), 0.0);
+
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn calibration_key_part_calibrated_bike_names_the_calibration_and_changes_with_it() {
+        // Arrange
+        let root = temp_root();
+        let bike = idl_library::bikelog::bike_for_name(&root, "Test Moto", 1).unwrap();
+        idl_library::bikelog::save_calibration(&root, &bike.bike_id, &steering_calibration(1)).unwrap();
+        let mut json = empty_session_json("ride");
+        json.bike_id = bike.bike_id.clone();
+        let bytes = serde_json::to_vec(&json).unwrap();
+        let before = calibration_key_part(&root, &bytes, 1_000);
+
+        // Act — the calibration is changed (a new wheelbase, a new forward, …).
+        idl_library::bikelog::save_calibration(&root, &bike.bike_id, &steering_calibration(2)).unwrap();
+        let after = calibration_key_part(&root, &bytes, 1_000);
+
+        // Assert
+        assert_eq!(before, "calibration:cal:1");
+        assert_eq!(after, "calibration:cal:2");
+
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn calibration_key_part_session_naming_no_bike_is_empty() {
+        // Arrange
+        let root = temp_root();
+        let bytes = serde_json::to_vec(&empty_session_json("ride")).unwrap();
+
+        // Act
+        let part = calibration_key_part(&root, &bytes, 1_000);
+
+        // Assert
+        assert_eq!(part, "");
 
         let _ = std::fs::remove_dir_all(&root);
     }
