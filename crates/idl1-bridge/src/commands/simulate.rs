@@ -489,7 +489,14 @@ pub fn sim_kinematics(setup: SetupPx, gear: usize, samples: usize) -> Result<Kin
 /// rad), then one scalar track per channel under the channel's name and unit.
 /// The component carries the gear, link count, wheels, totals, the bumps and
 /// the photo frame the app draws over.
-pub fn run_result(r: &DynResult, frame: &PhotoFrame, input: &BumpTrain) -> SimResult {
+///
+/// A second component, `terrain`, is the ground the rear wheel follows
+/// ([`BumpTrain::ground_height`]: a rigid tyre on a level frame) for drawing
+/// the wheel rolling over it: `{ wheel_radius_m, window_m }` and the tracks
+/// `ground` (xy × [`GROUND_POINTS`], m: the ground under a window of
+/// `window_m` centred on the rear axle, in the bike's frame, so it scrolls
+/// past as the bike moves) and `distance` (scalar, m travelled).
+pub fn run_result(r: &DynResult, bike: &SimBike, frame: &PhotoFrame, input: &BumpTrain) -> SimResult {
     let dt = "drivetrain".to_string();
     let mut components = serde_json::Map::new();
     components.insert(
@@ -511,12 +518,39 @@ pub fn run_result(r: &DynResult, frame: &PhotoFrame, input: &BumpTrain) -> SimRe
     for c in &r.channels {
         tracks.push(Track { name: c.name.clone(), component: dt.clone(), kind: TrackKind::Scalar, count: 1, unit: c.unit.clone(), labels: None, values: c.values.clone() });
     }
+
+    // the ground, in the bike's frame: flat at the tyre's bottom at sag
+    let tr = "terrain".to_string();
+    let wheel_r = bike.drivetrain.wheel_radius_m;
+    let axle_i = r.point_names.iter().position(|n| n == "rear_axle");
+    let base_y = bike.pose(input.sag_m).seatstay_point(bike.points.rear_axle)[1] - wheel_r;
+    let np = r.point_names.len();
+    let mut ground = Vec::with_capacity(r.frame_t_s.len() * GROUND_POINTS * 2);
+    let mut distance = Vec::with_capacity(r.frame_t_s.len());
+    for (f, &t) in r.frame_t_s.iter().enumerate() {
+        let d = input.speed_mps * t;
+        let axle_x = axle_i.map_or(0.0, |i| r.point_xy[(f * np + i) * 2] as f64);
+        for k in 0..GROUND_POINTS {
+            let dx = GROUND_WINDOW_M * (k as f64 / (GROUND_POINTS - 1) as f64 - 0.5);
+            ground.push((axle_x + dx) as f32);
+            ground.push((base_y + input.ground_height(d + dx)) as f32);
+        }
+        distance.push(d as f32);
+    }
+    components.insert(tr.clone(), serde_json::json!({"wheel_radius_m": wheel_r, "window_m": GROUND_WINDOW_M}));
+    tracks.push(Track { name: "ground".into(), component: tr.clone(), kind: TrackKind::Xy, count: GROUND_POINTS, unit: "m".into(), labels: None, values: ground });
+    tracks.push(Track { name: "distance".into(), component: tr, kind: TrackKind::Scalar, count: 1, unit: "m".into(), labels: None, values: distance });
     SimResult { frame_t_s: r.frame_t_s.iter().map(|&t| t as f32).collect(), components, tracks }
 }
 
+/// Points along the drawn ground (a 10 mm step over [`GROUND_WINDOW_M`]).
+pub const GROUND_POINTS: usize = 301;
+/// Length of ground drawn round the rear axle, metres.
+pub const GROUND_WINDOW_M: f64 = 3.0;
+
 /// A run's bytes: `IDLM` v1 ([`crate::sim_result_wire`]) of [`run_result`].
-pub fn encode_run(r: &DynResult, frame: &PhotoFrame, input: &BumpTrain) -> Vec<u8> {
-    encode_sim_result(&run_result(r, frame, input))
+pub fn encode_run(r: &DynResult, bike: &SimBike, frame: &PhotoFrame, input: &BumpTrain) -> Vec<u8> {
+    encode_sim_result(&run_result(r, bike, frame, input))
 }
 
 /// Runs the dynamics for an (unsaved) setup and encodes it.
@@ -538,7 +572,7 @@ pub fn run_drivetrain_sim_via(setup: &SetupPx, gear: usize, input: &BumpTrain, p
         progress(f);
         true
     })?;
-    Ok(encode_run(&r, &frame, input))
+    Ok(encode_run(&r, &bike, &frame, input))
 }
 
 /// C3 §3.15 `run_drivetrain_sim(setup, gear, input, progress)` (async):
@@ -654,6 +688,37 @@ mod tests {
         let per_frame: usize = 1 + tracks.iter().map(|t| t["count"].as_u64().unwrap() as usize * if t["kind"] == "xy" { 2 } else { 1 }).sum::<usize>();
         let body = (12 + hl + 3) / 4 * 4;
         assert_eq!(bytes.len() - body, 4 * frames * per_frame);
+        assert!(head["components"]["terrain"]["wheel_radius_m"].as_f64().unwrap() > 0.2);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn run_result_terrain_ground_under_the_rear_axle_is_one_wheel_radius_below_it_every_frame() {
+        // Arrange
+        let root = temp_root();
+        let mut setup = gt_setup(&root);
+        let fit = sim_kinematics_via(&setup, 5, 3).unwrap().chain_fit.unwrap();
+        setup.params.chain_links = (((fit.0 + fit.1) / 4.0).round() * 2.0) as u32;
+        let input = BumpTrain { count: 1, lead_s: 0.05, ..BumpTrain::default() };
+        let (linkage, drivetrain) = from_px(&setup, None, 0).unwrap();
+        let bike = SimBike::new(&linkage, &drivetrain).unwrap();
+        let r = simulate(&bike, 5, &|i| drivetrain.rollers[i].enabled, &input.excitation(1000.0), &DynConfig::default(), &mut |_| true).unwrap();
+
+        // Act
+        let res = run_result(&r, &bike, &frame(), &input);
+
+        // Assert: the middle ground point is under the axle, a wheel radius down
+        let ground = res.tracks.iter().find(|t| t.name == "ground").unwrap();
+        let (np, ai) = (r.point_names.len(), r.point_names.iter().position(|n| n == "rear_axle").unwrap());
+        let mid = GROUND_POINTS / 2;
+        let mut worst = 0.0f64;
+        for f in 0..r.frame_t_s.len() {
+            let g = [ground.values[(f * GROUND_POINTS + mid) * 2] as f64, ground.values[(f * GROUND_POINTS + mid) * 2 + 1] as f64];
+            let a = [r.point_xy[(f * np + ai) * 2] as f64, r.point_xy[(f * np + ai) * 2 + 1] as f64];
+            assert!((g[0] - a[0]).abs() < 1e-6);
+            worst = worst.max((a[1] - g[1] - drivetrain.wheel_radius_m).abs());
+        }
+        assert!(worst < 1e-3, "the tyre is {:.2} mm off the ground", worst * 1000.0);
         let _ = std::fs::remove_dir_all(&root);
     }
 }

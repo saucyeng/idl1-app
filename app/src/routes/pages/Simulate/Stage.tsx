@@ -312,8 +312,11 @@ function RunLayer({ f, m2px, stroke }: { f: RunFrame; m2px: (m: P2) => P2; strok
   const touching = (f.values["Links on surfaces"] ?? 0) > 0;
   const slipping = (f.values["Clutch slipping"] ?? 0) > 0;
   const cage: P2[] = [pts.cage_pivot, pts["wheel:upper_jockey"], pts["wheel:lower_jockey"]].filter((p): p is P2 => p !== undefined);
+  const tyre = f.tyre ? { c: m2px(f.tyre.centre), r: f.tyre.radius * scale } : null;
   return (
     <g>
+      {f.ground ? <polyline points={polyPoints(f.ground, m2px)} fill="none" stroke="var(--fg-dim)" strokeWidth={stroke(3)} strokeLinejoin="round" /> : null}
+      {tyre ? <circle cx={tyre.c[0]} cy={tyre.c[1]} r={tyre.r} fill="none" stroke="var(--fg-faint)" strokeWidth={stroke(6)} /> : null}
       {LINKS.map(([a, b]) => (pts[a] && pts[b] ? <line key={`${a}-${b}`} x1={pts[a][0]} y1={pts[a][1]} x2={pts[b][0]} y2={pts[b][1]} stroke="var(--accent)" strokeWidth={stroke(4)} strokeLinecap="round" /> : null))}
       <polyline points={polyPoints(cage, (p) => p)} fill="none" stroke={slipping ? "var(--hivis)" : "var(--info)"} strokeWidth={stroke(slipping ? 6 : 4)} strokeLinecap="round" />
       {f.surfaces.map((s, i) => (

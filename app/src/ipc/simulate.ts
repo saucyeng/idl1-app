@@ -211,6 +211,10 @@ export interface SimRun {
   wheelAngle: Float32Array;
   /** Seconds, one per frame. */
   frameT: Float32Array;
+  /** The ground the rear wheel follows (the `terrain` component), when the
+   *  run has one: `ground` is `[frame][point][x, y]` metres in the bike's
+   *  frame, a window round the rear axle that scrolls as the bike moves. */
+  terrain: { wheelRadiusM: number; groundPoints: number; ground: Float32Array } | null;
 }
 
 /** The tracks a drivetrain run lays out before its channels. */
@@ -229,6 +233,9 @@ export function decodeSimRun(buf: ArrayBuffer): SimRun {
     | undefined;
   if (!meta) throw new Error("sim result has no drivetrain");
   const points = track(r, "points");
+  const terrainMeta = r.components.terrain as { wheel_radius_m: number } | undefined;
+  const ground = r.tracks.find((t) => t.component === "terrain" && t.name === "ground");
+  const terrain = terrainMeta && ground ? { wheelRadiusM: terrainMeta.wheel_radius_m, groundPoints: ground.count, ground: ground.values } : null;
   const channels = r.tracks
     .filter((t) => t.component === "drivetrain" && t.kind === "scalar" && !RUN_FIXED_TRACKS.has(t.name))
     .map((t) => ({ name: t.name, unit: t.unit, values: t.values }));
@@ -246,6 +253,7 @@ export function decodeSimRun(buf: ArrayBuffer): SimRun {
     pointXy: points.values,
     wheelAngle: track(r, "wheel_angle").values,
     frameT: r.frameT,
+    terrain,
   };
 }
 
