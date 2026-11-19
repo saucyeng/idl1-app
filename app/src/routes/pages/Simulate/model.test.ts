@@ -58,15 +58,15 @@ describe("Simulate model", () => {
     expect(setup.points.a).toEqual([0, 0]);
   });
 
-  it("newRoller and newSurface — defaults — a 16T top roller on the chainstay and a lifted three-point surface", () => {
+  it("newRoller and newSurface — defaults — a 16T top idler the chain runs over and a lifted three-point surface", () => {
     // Arrange / Act
     const top = newRoller([1, 2], "top", 0);
     const lower = newRoller([1, 2], "lower", 1);
     const s = newSurface([0, 100], [100, 100], 10, "chainstay");
 
     // Assert
-    expect(top).toMatchObject({ teeth: 16, body: "chainstay", span: "top", side: "under", name: "Top roller" });
-    expect(lower).toMatchObject({ teeth: null, span: "lower", side: "over", name: "Lower guide 2" });
+    expect(top).toMatchObject({ teeth: 16, body: "chainstay", span: "top", side: "over", name: "Top roller", threaded: true });
+    expect(lower).toMatchObject({ teeth: null, span: "lower", side: "over", name: "Lower guide 2", threaded: false });
     expect(s.polyline_px).toEqual([[0, 90], [50, 90], [100, 90]]);
   });
 

@@ -431,3 +431,29 @@ The old model fails it (its cage is driven to an impossible angle); the new
 one passes. Known remainder: a slack top span lying on the protector bunches
 into link-scale kinks; the chain's own pin-joint friction is not modelled.
 
+## 14. Idlers, speed, and reading the results (2026-11-19, Isaac's review)
+
+- **The chain runs over Isaac's idler**, not under it: on the main pivot it
+  sits above the cog-to-chainring line, high-pivot style. Rollers now say
+  whether the chain is **threaded** round them (an idler: always in the
+  path, in order along its span, at every travel) or they are **guides**
+  (an ISCG roller, a chain guide: only where the chain reaches them). New
+  top rollers default to threaded, chain over. Treating every roller as a
+  guide had left an idler 2 mm clear of the straight line out of the path at
+  top-out and in it a few millimetres later, a 60 mm step in "growth".
+  Threaded on the GT Force's main pivot, growth is 0–1 mm over 160 mm of
+  travel (about 25 mm without it), which is why idlers go on the pivot.
+- **Speed**: Isaac: about 1:1 ride time to compute is too slow. Measured in
+  release: 2.4× real time at a 25 µs step. The step was the lever: the
+  contact springs are stable to about 200 µs, the spans' waves need under
+  about 800 µs, and the tangent bench holds to 100 µs and fails at 200 µs.
+  Default now 50 µs: about 5.5× real time (a 2-minute lap in about 22 s; a
+  bump train in well under a second). Per-step work is spread through the
+  loop (no hotspot in a profile), so more speed needs an implicit
+  integrator, not micro-optimisation or a GPU. Many runs (setups, A/Bs)
+  parallelise across cores.
+- **Peaks are chaotic.** A slack, flailing chain is sensitive to tiny
+  changes: peak deflection and clutch slip move by tens of percent between
+  25 and 50 µs steps, and even with a change in rounding. Compare setups by
+  statistics over several hits or runs, not by one run's peak.
+

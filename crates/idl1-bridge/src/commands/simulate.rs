@@ -61,6 +61,10 @@ pub struct RollerPx {
     pub inertia_kgm2: f64,
     /// Fitted.
     pub enabled: bool,
+    /// An idler the chain is threaded round (always on that side of it), not a
+    /// guide that acts only when the chain reaches it. Absent: a guide.
+    #[serde(default)]
+    pub threaded: bool,
 }
 
 /// A contact surface as the tab edits it.
@@ -243,7 +247,18 @@ fn to_px(linkage: &Linkage, d: &Drivetrain, frame: &PhotoFrame, photo_file: Opti
         rollers: d
             .rollers
             .iter()
-            .map(|r| RollerPx { name: r.name.clone(), body: r.body, centre_px: px(r.centre_m), teeth: r.teeth, radius_mm: r.radius_m * 1000.0, span: r.span, side: r.side, inertia_kgm2: r.inertia_kgm2, enabled: r.enabled })
+            .map(|r| RollerPx {
+                name: r.name.clone(),
+                body: r.body,
+                centre_px: px(r.centre_m),
+                teeth: r.teeth,
+                radius_mm: r.radius_m * 1000.0,
+                span: r.span,
+                side: r.side,
+                inertia_kgm2: r.inertia_kgm2,
+                enabled: r.enabled,
+                threaded: r.threaded,
+            })
             .collect(),
         surfaces: d.contacts.iter().map(|s| SurfacePx { name: s.name.clone(), body: s.body, polyline_px: s.polyline_m.iter().map(|&q| px(q)).collect(), side: s.side }).collect(),
         params: params_of(d),
@@ -323,6 +338,7 @@ pub fn from_px(setup: &SetupPx, base: Option<&Linkage>, now: i64) -> Result<(Lin
                 side: r.side,
                 inertia_kgm2: r.inertia_kgm2,
                 enabled: r.enabled,
+                threaded: r.threaded,
             })
             .collect(),
         contacts: setup.surfaces.iter().map(|s| ContactSurface { name: s.name.clone(), body: s.body, polyline_m: s.polyline_px.iter().map(|&q| frame.to_bike(q)).collect(), side: s.side }).collect(),
