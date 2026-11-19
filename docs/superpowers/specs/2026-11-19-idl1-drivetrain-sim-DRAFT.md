@@ -1,273 +1,308 @@
 # DRAFT — Drivetrain simulation: chain growth and chain slap
 
-Status: proposal for Isaac, 2026-11-19. Spec-first. Nothing is built until
-Isaac answers §10. Adds a module to idl-rs core, a file type to the data
-directory (C4) and a top-level **Simulate** tab after Notebook.
+Status: proposal for Isaac, 2026-11-19, revised the same day with his
+answers (§1). Spec-first. Nothing is built until §10 is answered. Adds a
+module to idl-rs core, a `drivetrain` section to the bike file, a derived
+kind to the derived store, and a top-level **Simulate** tab after Notebook.
 
 Long-term frame: a full-bike simulator ("how does this theoretical setup
-ride a known track"). This draft covers the first part, the drivetrain,
-and is meant to set the bike model and replay plumbing that later parts reuse.
+ride a known track"). This draft is the drivetrain, and sets the bike model
+and replay plumbing the later parts reuse.
 
-## 1. What Isaac asked for
+Builds on idl-rs branch `physics-estimator` (not yet on `main`): the linkage
+photo tool (`ml/tools/linkage.html`), `calibration::linkage::{Linkage,
+LinkagePoints}`, the 4-bar solver `estimate::physics::fourbar`, the bike
+file's `linkage` section, and the physics estimator's derived channels.
+
+## 1. What Isaac asked for, and his answers (2026-11-19)
 
 - A chain and derailleur physics simulator: how the chain slaps over bumps,
-  and chain growth through travel (Isaac, 2026-11-19).
-- It builds on the rear-suspension import tool (points dropped on a side
-  photo of the frame).
-- It lives in idl1-app in a **Simulate** tab after workbooks.
+  and chain growth through travel. It lives in a **Simulate** tab after
+  Notebook (Device · Data · Notebook · Simulate · Settings).
+- Growth is *through travel* (length, not lateral chainline). Anti-squat
+  later.
+- 1× drivetrains, with optional **top and/or lower rollers**.
+- Dynamics are the **full system**: the whole chain loop, plus the inertia
+  of the cassette and every other rotating part, not just the slack span.
+- Isaac measures the drivetrain parameters on 2026-11-20 (§11) and will
+  validate with video later.
+- The sim lives in idl-rs core.
+- Sim outputs next to a session's channels: "maybe, that's the idea to
+  test theoretical suspension response" (see §6 for what replay can and
+  can't answer).
 
-## 2. The physics in one page
+## 2. Physics
 
-Two separate problems with different maths. Both are worth having, and the
-first is a prerequisite of the second.
+### 2.1 Bodies on a Horst-link bike
 
-### 2.1 Kinematic (quasi-static): chain growth
+The photo tool's linkage is a Horst 4-bar (GT Force). That puts the
+drivetrain on **three moving bodies**, not two:
 
-Pure geometry, in the frame's side plane. Inputs: BB, rear axle path
-`P_axle(s)` over travel `s`, chainring radius `r_ring`, cog radius `r_cog`
-for the gear, derailleur pivot (B-knuckle) and cage geometry, any idler or
-upper guide. The chain path is a closed loop of tangent segments and wrap
-arcs. At each `s`:
+| Body | Carries | Motion |
+|---|---|---|
+| Front triangle | BB / chainring, frame-mounted rollers or guide | Prescribed from IMU0 (§5) |
+| Chainstay (main pivot → Horst) | the chainstay protector the lower span hits | Rotates `θ_cs(s)` about the main pivot |
+| Seatstay (Horst → axle, → rocker) | rear axle, cassette, **derailleur hanger** | 4-bar pose at travel `s` |
 
-- **Top (drive) span** = outer tangent ring → cog (or ring → idler → cog).
-  Its length change through travel is the **chain growth** `G(s)`, in mm.
-- **Lower (slack) span** goes ring → lower jockey → upper jockey → cog. The
-  derailleur cage rotates to keep the total loop length constant: solve
-  cage angle `θ_cage(s)` so that `L_loop(s, θ_cage) = L_chain`.
-- **Pedal kickback** (wheel held fixed to the axle-carrying link, Linkage-
-  style convention): `θ_kick(s) = (G(s) + r_cog · Δφ_link(s)) / r_ring`,
-  where `Δφ_link` is that link's rotation relative to the front triangle.
-  The real kickback is speed-dependent: when the wheel spins faster than the
-  cog, the freehub is disengaged and absorbs growth until it catches up, so
-  kickback is gated by speed and the freehub's engagement angle. This is a
-  dynamic output (§2.2), not a geometric one.
-- **Chain force line**: the top span's line of action. With the instant
-  centre and a centre of mass this gives anti-squat. Anti-squat is in scope
-  only if the suspension tool already gives the IC (§10 Q2).
+So the derailleur turns with the seatstay, the surface it slaps sits on the
+chainstay, and the chain is anchored on the front triangle. Through travel
+all three move relative to each other. The existing `fourbar()` gives the
+chainstay angle from travel. The sim also needs the seatstay pose, which the
+private `axle()` already computes. §3 proposes making both public.
 
-Per gear, these are curves vs travel: `G(s)`, `θ_cage(s)`, `θ_kick(s)`,
-lower-span length and its clearance to the chainstay.
+### 2.2 Kinematic (quasi-static): chain growth
 
-### 2.2 Dynamic: chain slap
+Pure geometry in the side plane. The loop: chainring → (top roller) → cog →
+upper jockey → lower jockey → (lower roller) → chainring, as tangent segments
+and wrap arcs. At each travel `s` and gear:
 
-In the frame's (accelerating) reference, a vertical chassis acceleration `a`
-loads the slack span as a distributed force `μ·a` (μ = chain mass per
-length). For a taut string of length `L` under tension `T`:
+- **Chain growth** `G(s)`: the change in the top (drive) span's path length
+  from a chainring tooth to a cog tooth, wrap changes included.
+- **Cage angle** `θ_cage(s)`: the angle that closes the loop at the real
+  chain length (a 1-D root find).
+- **Kickback** (wheel locked to the seatstay, the Linkage convention):
+  `θ_kick(s) = (G(s) + r_cog · Δφ_ss(s)) / r_ring`, with `Δφ_ss` the
+  seatstay's rotation relative to the front triangle. The tool's own sweep
+  already prints the seatstay rotation over the stroke.
+- **Clearance**: the lower span's distance to the chainstay protector,
+  through travel.
 
-```
-static deflection  δ = μ·a·L² / (8·T)        dynamic peak ≈ 2δ for a sharp hit
-wave speed         c = √(T/μ)                 first mode  f₁ = c / (2L)
-```
+These are milliseconds of work and are computed on demand, never stored.
 
-Back-of-envelope with a 126-link 12-speed chain (μ ≈ 0.17 kg/m):
+### 2.3 Dynamic: why slap happens (scaling)
 
-| T (N) | L (m) | f₁ (Hz) | δ at 10 g | δ at 20 g |
-|---|---|---|---|---|
-| 15 | 0.40 | 12 | 22 mm | 44 mm |
-| 25 | 0.40 | 15 | 13 mm | 26 mm |
-| 25 | 0.25 | 24 | 5 mm | 10 mm |
-| 40 | 0.40 | 19 | 8 mm | 17 mm |
-
-What this tells us before writing any code:
-
-- Slap amplitude ∝ `μ·a·L²/T`. Span length is squared, which is why a
-  chain guide or a high-pivot idler (shorter `L`) works better than more
-  clutch. Clutch tension enters linearly.
-- `f₁` sits at 12–30 Hz, inside the band a rock garden puts in (5–10 m/s
-  over bumps spaced 0.3–0.6 m). Slap is a **resonance** problem, not only a
-  peak-g problem, so a time-domain sim driven by real bump spectra earns its
-  keep over the static formula.
-- `T` is not constant. It is set by the derailleur spring torque on the cage
-  arm, plus clutch friction, which is **Coulomb**: below the breakaway torque
-  the cage is locked and the span is a string with both ends fixed; above it
-  the cage swings and the span goes slack. That stick-slip is the
-  non-linearity worth simulating, and it is why tensions are given as ranges
-  above: they need measuring (§10 Q5).
-- Through travel, the chain growth from §2.1 changes the span length and the
-  cage angle, so `L`, `T` and the clearance to the chainstay all depend on
-  `s(t)`. The kinematic solver feeds the dynamic one at each step.
-
-### 2.3 Proposed dynamic model
-
-Reduced-order, chosen to resolve slap without solving full chain-sprocket
-contact:
-
-- **Slack span** = N lumped masses (N ≈ 20–30), joined by stiff axial links
-  enforced as distance constraints (inextensible chain), with no bending
-  stiffness (a roller chain has none until it locks laterally, which is
-  ignored). The end points are the tangent points on the ring and the lower
-  jockey, moving with the kinematics.
-- **Derailleur cage** = 1 rotational DOF: inertia `J_cage`, spring torque
-  `τ_s(θ)`, clutch friction `±τ_c` (stick-slip), viscous damping `c_cage`.
-  Coupled to the span through the chain tension at the jockey.
-- **Top span**: under pedalling it is taut and treated as kinematic. When
-  coasting, the same lumped model as the slack span (§10 Q4).
-- **Chainstay** = polyline in the axle-link frame. Contact is a penalty
-  spring-damper. Outputs: contact events, impact speed, impulse, position
-  along the stay.
-- **Excitation** is prescribed, never simulated: front-triangle motion and
-  rear travel come in as time series (§5).
-- **Integrator**: fixed step, semi-implicit Euler with constraint projection
-  (position-based). CFL with node spacing ~15 mm and `c` ≤ 20 m/s gives
-  `dt` < 0.75 ms. Use 0.1 ms; this is cheap at N ≈ 30.
-
-Rejected for v1: a full multibody chain (every link, sprocket tooth
-engagement). It is closer to reality but 100× the cost and needs data we
-won't have. The reduced model is the right first step if its predictions
-can be checked against measurement (§10 Q6).
-
-## 3. Layers (CLAUDE.md §2 decision rule)
-
-Physics of the bike → `core`. Would a CLI user with no app want it? Yes:
-`idl-rs sim drivetrain --bike … --session … --lap 3` producing a results
-file is useful on its own. So:
+Seen from the front triangle, each bit of chain feels a body force equal to
+minus the **specific force** at that point (what an accelerometer there
+would read). Gravity is already inside it, so the IMU gives exactly the term
+that's needed, without separating gravity out. For a span of length `L`,
+tension `T` and mass per length `μ`:
 
 ```
-rust/core/src/sim/              idl-rs   NEW. Pure. std only.
-    geometry.rs     planar linkage solve → axle path, IC, link angles (if the
-                    import tool doesn't already provide them, §10 Q1)
-    chain_path.rs   §2.1 tangent/wrap solver, cage-angle closure, growth, kickback
-    chain_dyn.rs    §2.3 lumped span + cage + contact, fixed-step integrator
-    excite.rs       §5 excitation from a session or a synthetic profile
-    bike_model.rs   the bike model file (§4) read/write, atomic
-rust/cli/                       `idl-rs sim …` subcommands
-crates/idl1-bridge/             #[tauri::command(async)] run_sim, Channel progress;
-                                frames out as raw bytes (tauri::ipc::Response)
-app/src/routes/pages/Simulate/  UI: geometry view, curves, animation (JS = pictures)
+static deflection  δ = μ·f·L² / (8·T)        sharp hit ≈ 2δ
+first mode         f₁ = √(T/μ) / (2L)
 ```
 
-`core::estimate::geometry::AxlePath` already carries a sampled rear axle
-path, and its doc comment says the linkage solver "is an authoring-time
-concern and is deferred". `sim/geometry.rs` would be that solver, and the
-estimator could consume its output. That reuse is a decision for Isaac
-(§10 Q1).
+With a 126-link 12-speed chain (μ ≈ 0.17 kg/m): T = 25 N and L = 0.40 m
+give f₁ ≈ 15 Hz, with δ ≈ 13 mm at 10 g and 26 mm at 20 g. A lower roller
+that shortens L to 0.25 m cuts δ to about 5 mm at 10 g. **Span length
+counts squared, tension only linearly.** f₁ falls at 12–30 Hz, inside what
+a rock garden puts in, so slap is a resonance problem and a time-domain sim
+earns its keep.
 
-## 4. The bike model file
+The non-linearities that make it worth simulating, not just evaluating:
 
-A simulated bike is a file, like a workbook. It is synced as a source (D6)
-and readable by the CLI. Proposed `<data>/bikes/<bike_id>.model.json` or a
-new `<data>/models/` directory (§10 Q8). Contents, all lengths in mm in the
-frame side plane, origin at BB, +x forward, +y up:
+- **Clutch stick-slip** (Coulomb). Below breakaway the cage is locked; above
+  it, the cage swings and the span goes slack.
+- **Freehub ratchet.** The cassette is coupled to the wheel only in the
+  drive direction, after the engagement angle's backlash. When the wheel
+  overruns the cog (coasting at speed), top-span growth spins the cassette
+  forward and never reaches the cranks. That makes *real* kickback depend on
+  speed, and the cassette's inertia governs how the top span snaps when it
+  catches.
+- **Chain lift-off** from the chainring and cog when the span tension goes
+  slack. Lift-off on the ring is the derailment-risk output.
 
-- `frame`: points from the import tool (BB, pivots, link points, shock
-  eyes, rear axle at topout), link topology, shock stroke.
-- `drivetrain`: chainring teeth, cassette teeth list, chain links, chain
-  mass (g), derailleur geometry (B-knuckle position on the hanger, cage
-  length, jockey teeth and positions), spring torque curve (N·m vs θ),
-  clutch friction torque (N·m), cage inertia (kg·m²), optional idler and
-  guide positions, freehub engagement angle (°).
-- `chainstay`: clearance polyline in the axle-link frame.
-- `source`: the photo blob hash and pixel→mm scale, so the points stay
-  traceable to the image (blobs are immutable, D3).
+### 2.4 The dynamic model (full system)
 
-## 5. Excitation: what drives the dynamic sim
+- **Chain**: one node per link (126 nodes for 126 links, pitch 12.7 mm, mass
+  = chain mass / links). Links are rigid distance constraints (a steel chain
+  has no useful axial compliance), joints have no bending stiffness. The
+  constraints are solved by projection (XPBD) each step.
+- **Sprockets, jockeys and rollers**: a node on the wrap arc seats on the
+  pitch circle (unilateral radially, toothed tangentially while seated) and
+  lifts off when its contact force would go negative. Engagement and
+  departure points emerge from that; they are not prescribed.
+- **Rotating DOFs**, each with its inertia:
+  - crank + chainring (+ rider's feet, §10 Q1);
+  - cassette + freehub body, coupled to the wheel by the ratchet and its
+    engagement angle;
+  - upper and lower jockey, with bearing drag;
+  - each roller.
+- **Cage**: one rotational DOF with inertia `J_cage`, spring torque
+  `τ_s(θ)`, clutch friction `±τ_c`, and bearing damping.
+- **Wheel**: angular speed prescribed (§5), not simulated.
+- **Contact surfaces**: polylines on any body (chainstay protector,
+  seatstay, frame near the ring) as penalty spring-dampers. They give
+  contact events, impact speed, impulse and the position along the
+  protector.
+- **Frame**: the integration runs in the front triangle's (non-inertial)
+  frame, so the inertial terms (specific force, Euler and centrifugal from
+  pitch rate, Coriolis) act on each node. Chainstay and seatstay motion
+  comes in through the 4-bar at the given travel.
+- **Planar** in v1 (§10 Q2).
+- **Step**: fixed at 0.05–0.1 ms (transverse waves at ≤ 20 m/s across a
+  12.7 mm link need < 0.6 ms). 126 nodes × 10–20 k steps/s is cheap: a
+  60 s lap should run in seconds on one core.
 
-Two sources, in order of value:
+Not modelled: tooth profile, link side-plates, lateral bending, the rider's
+reaction to kickback.
 
-1. **Replay a recorded ride.** Front-triangle linear acceleration and
-   angular rate from IMU0 (chassis frame), rear travel `s(t)` from the
-   estimator's materialised output, all on recorded time (principle: time
-   is recorded, not assumed). Each sample is interpolated onto the sim's
-   fixed step. This answers "what did my chain do on lap 3 at Windrock",
-   and a different drivetrain model can be run on the same ride.
-2. **Synthetic**: a step, a sine sweep, or a bump train at a speed. Used for
-   frequency response and comparing setups on a common input.
+## 3. Layers
 
-Replaying a recorded ride with a *different* suspension setup does not hold
-up: the measured travel belongs to the bike that was ridden. Doing that
-properly needs the full-bike simulator (tyre, suspension, rider), so it is
-out of scope here. It is the place the long-term goal starts.
+Physics of the bike → `core`; a CLI user wants it (Isaac, 2026-11-19).
 
-## 6. Outputs and storage
+```
+rust/core/src/calibration/linkage.rs   + pub 4-bar pose: travel -> chainstay angle,
+                                         seatstay pose (lifted from estimate::physics::fourbar,
+                                         which keeps using it)
+rust/core/src/calibration/drivetrain.rs  NEW. The bike file's drivetrain section (§4)
+rust/core/src/sim/                       NEW. Pure, std only.
+    chain_path.rs   §2.2 tangent/wrap solver, cage closure, growth, kickback
+    chain_dyn.rs    §2.4 nodes, sprockets, cage, ratchet, contact, integrator
+    excite.rs       §5 a session's channels -> the sim's prescribed inputs
+rust/library/src/sim.rs                  NEW. Runs a sim over a session, writes the
+                                         derived file (as physics.rs does)
+rust/cli/                                `idl-rs sim kinematics` / `idl-rs sim run`
+crates/idl1-bridge/                      #[tauri::command(async)] sim commands, Channel
+                                         progress, frames as raw bytes
+app/src/routes/pages/Simulate/           the tab (§7)
+```
 
-A sim run is a deterministic function of `(bike model, excitation, solver
-config, engine version)`. Under D6 it is a **derived output**,
-content-addressed by those inputs. Proposed: results are written as a
-Parquet file of channels on its own `t` axis (`chain_cage_angle`,
-`chain_tension_slack`, `chain_span_max_deflection`, `chain_stay_contact`,
-`chain_kickback`, …). When the excitation was a session, the file sits next
-to that session's derived files, so **notebook cells can chart sim channels
-beside measured ones** with no new cell API. Node positions for animation
-are a separate frames array (f32, `[frame][node][x,y]`) sent to the UI as
-raw bytes.
+## 4. The bike file: a `drivetrain` section
 
-Kinematic curves (§2.1) are cheap (milliseconds), so they are computed on
-demand and never stored.
+Beside `linkage` in `bikes/<bike_id>.json`, with the same rules: optional,
+`updated_at_ms`, and the newer copy wins a merge. It uses the same frame as
+`LinkagePoints` (origin at the rear axle, x toward the front axle, y up,
+metres, topped out), and each point is tagged with the body it rides on.
 
-## 7. Simulate tab (UI sketch)
+```jsonc
+"drivetrain": {
+  "updated_at_ms": …,
+  "bb_m": [0.43, 0.02],                         // front triangle
+  "chainring_teeth": 32,
+  "cassette_teeth": [10,12,14,16,18,21,24,28,32,36,42,52],
+  "chain": { "links": 126, "mass_kg": 0.270 },
+  "derailleur": {
+    "b_knuckle_m": [-0.01, -0.03],              // seatstay (hanger)
+    "cage_pivot_to_upper_m": 0.0, "cage_length_m": 0.095,
+    "jockey_teeth": [12, 12],
+    "spring_torque_nm": [[0.0, 0.35], [0.6, 0.55]],   // [cage rad from free, N·m]
+    "clutch_torque_nm": 0.4, "cage_inertia_kgm2": 2.0e-5, "jockey_inertia_kgm2": 1.0e-6
+  },
+  "rollers": [ { "body": "front_triangle", "centre_m": […], "teeth": 14, "span": "top" } ],
+  "inertia_kgm2": { "crank": …, "cassette_freehub": … },
+  "freehub_engagement_deg": 6.7,
+  "wheel_rolling_radius_m": 0.37,
+  "contact": [ { "body": "chainstay", "polyline_m": [[…], […]] } ]
+}
+```
 
-- **Left**: the frame photo with the imported points, drivetrain drawn on
-  top, a travel slider and a gear picker. Moving the slider redraws the chain
-  path from a precomputed curve table, so the gesture makes no IPC call
-  (CLAUDE.md §2).
-- **Right, Kinematics**: `G(s)`, `θ_kick(s)`, `θ_cage(s)`, plus chainstay
-  clearance vs travel, one line per gear.
-- **Right, Dynamics**: pick a session and lap (or a synthetic input), Run
-  (async, progress over a Channel), then a timeline with the animated chain,
-  contact markers on the stay, and the result channels. Scrubbing reads the
-  frames array already in memory.
-- An "Open in notebook" action for the result channels.
+Points enter the same way the linkage did: clicked on the side photo.
+Additions to the photo tool: BB, B-knuckle, roller centres, and the
+protector's top edge as a polyline. Masses, torques and teeth are typed.
 
-## 8. Testing (what we own)
+## 5. Excitation: what drives a replay
 
-- Path solver: two concentric sprockets give a growth of 0. A single pivot
-  at the top-span tangent line gives near-zero growth (closed form). The
-  cage closure holds the loop length to < 1 µm over the travel range.
-- Dynamics: with the cage locked and no contact, the span's first mode
-  matches `f₁ = c/2L` within 2 %. A constant `a` settles to `δ = μaL²/8T`.
-  With no damping or friction, energy is conserved within tolerance.
-  Clutch stick-slip: no cage motion below `τ_c`.
-- Round-trips: bike model file write → read; sim results Parquet.
-- Excitation: resampling a recorded channel preserves its timestamps' order
-  and ends.
+All on recorded time:
+
+- **Front-triangle motion**: IMU0 specific force (x, z) and pitch rate, moved
+  from the pod to the BB by the rigid-body transfer (`α×r + ω×(ω×r)`, with
+  α from the differentiated, filtered gyro). The low-pass cut-off is a
+  parameter: chain slap needs content to ~100 Hz, while the physics
+  estimator low-passes at 0.4× its grid rate because of 60–230 Hz pod-mount
+  vibration (§10 Q4).
+- **Rear travel `s(t)`**: `Physics rear travel (mm)` from the physics
+  derived file, the estimator's best channel for fast hits.
+- **Wheel speed**: GPS speed / rolling radius (§10 Q3).
+- **Synthetic**: step, sine sweep, or a bump train at a speed, as a
+  frequency response and a common input to compare setups.
+
+## 6. Outputs and what replay can and can't answer
+
+A run is derived output (D6): `sessions/<id>/derived/<hash>.parquet` with
+`derived_kind` `"drivetrain"`, content-addressed by the input channel hashes,
+the drivetrain + linkage sections, solver config and engine version, through
+the existing `write_derived_parquet`. Its channels then chart in a notebook
+next to measured ones, e.g. `Sim cage angle (deg)`, `Sim slack span tension
+(N)`, `Sim top span tension (N)`, `Sim span deflection max (mm)`, `Sim stay
+contact`, `Sim kickback (deg)`, `Sim ring lift-off (links)`. Node positions
+for animation are a separate frames array (f32 `[frame][node][x,y]`), sent
+as raw bytes and not stored.
+
+**Replay answers drivetrain questions exactly where it's valid**: chain
+forces are tiny next to suspension forces, so changing the chain, the clutch,
+a roller or the chainring doesn't change how the bike moved. Running a
+different drivetrain over a recorded lap is therefore honest.
+
+**Replay cannot test a different suspension.** The recorded travel belongs
+to the shock that was fitted. A theoretical shock or linkage needs the
+dynamics layer (tyre, shock, rider loads) that the ml README lists as not
+started. That's the full-bike sim, and its outputs would land in this same
+derived-channel slot. So the storage shape here is the one that goal needs;
+the physics to fill it for suspension is a later spec.
+
+## 7. Simulate tab
+
+- **Left**: the side photo with the linkage and drivetrain drawn over it, a
+  travel slider and a gear picker. The slider redraws from a precomputed
+  curve table, so the gesture never waits on IPC.
+- **Kinematics**: `G(s)`, `θ_kick(s)`, `θ_cage(s)` and clearance vs travel,
+  one line per gear.
+- **Dynamics**: pick a session and lap (or a synthetic input) → Run (async,
+  progress) → a timeline with the animated loop, contact markers on the
+  protector and the result channels. Scrubbing reads the frames already in
+  memory. "Open in notebook" for the channels.
+
+## 8. Testing
+
+- Path solver: concentric ring and cog → growth 0; a single-pivot case
+  against a closed form; the cage closure holds loop length to < 1 µm.
+- Dynamics, analytic cases: cage locked, no contact → first mode of a span
+  within 2 % of `c/2L`; constant `f` → `δ = μfL²/8T`; no friction and no
+  damping → energy conserved within tolerance; clutch below `τ_c` → no cage
+  motion; wheel overrunning the cog → the cranks feel no growth until the
+  cassette catches.
+- 4-bar pose: the lifted function reproduces `fourbar()`'s existing GT Force
+  golden.
+- Round-trips: the drivetrain section through the bike file (merge,
+  newer-wins); the derived file's channels.
 
 ## 9. Phases
 
 | Phase | Scope | Done when |
 |---|---|---|
-| S0 | Bike model file; geometry from the import tool; chain path solver; Simulate tab kinematics view | Growth/kickback curves for Isaac's bike match Linkage (or a hand calc) within 2 % |
-| S1 | Dynamic slack span + cage + chainstay contact, synthetic excitation; CLI `idl-rs sim` | Analytic tests pass; frequency response plot per setup |
-| S2 | Replay from a recorded session; results as derived channels; animation | Lap replay on a real ride, slap events chartable in a notebook |
-| S3 | Validation against measurement (§10 Q6) and parameter fitting | Predicted vs measured cage angle / contact timing agree |
-| Later | Full-bike sim (tyre, suspension, rider) on a known track | Separate spec |
+| S0 | Drivetrain section; photo-tool points; chain path solver; `idl-rs sim kinematics`; Simulate tab kinematics view | GT Force growth/kickback curves agree with a hand calc or Linkage within 2 % |
+| S1 | Full-loop dynamics with synthetic input; analytic tests | Frequency response per setup; a step gives the predicted slap |
+| S2 | Replay from a session (IMU0 + physics travel + GPS); derived channels; animation | A Beacon lap replays, slap events chart in a notebook |
+| S3 | Video validation (§11) and parameter fitting | Predicted and filmed span deflection and contact timing agree |
+| Later | Full-bike dynamics → theoretical suspension | Separate spec |
 
-## 10. Questions for Isaac
+## 10. Open questions for Isaac
 
-Blocking S0:
+1. **Cranks while coasting**: are feet on the pedals free to turn (crank DOF
+   plus a foot/leg inertia and damping), or is the crank held by the rider
+   (locked, which is the worst kickback)? Pedalling torque as an input later?
+2. **Planar for v1?** Lateral chain whip and rear flex roll/yaw (which the
+   estimator outputs) are left out until the planar model is validated.
+3. **Wheel speed**: is GPS speed / rolling radius good enough, or is there a
+   wheel-speed source?
+4. **Excitation bandwidth**: is IMU0 mounted stiffly enough that 30–100 Hz
+   content is frame motion, not pod-mount resonance? Its 60–230 Hz
+   vibration is why the estimator low-passes.
+5. **Rollers**: which body is each on? A top guide is usually on the front
+   triangle (ISCG), but a lower roller can be on the chainstay. Is each a
+   toothed pulley or a smooth roller?
+6. **Point entry for S0**: add the drivetrain points to
+   `ml/tools/linkage.html` now (fast, same export), and move the photo tool
+   into the Simulate tab later? Or build placement into the tab from the
+   start?
+7. **Base branch**: this work needs `physics-estimator` (linkage, 4-bar,
+   bike file). Branch from it before it merges to `main`, or wait for the
+   merge?
 
-1. **Where is the suspension import tool?** It isn't in idl1-app or idl-rs
-   on `main` or this branch. Which repo/branch, and what does it output:
-   which points, in what units/frame, and does it already solve the linkage
-   (axle path, IC, link angles) or only store points?
-2. **"Chain line growth"**: do you mean chain *length* growth through
-   travel (§2.1), the *lateral* chainline per gear (plan view, chain
-   angle), or both? Anti-squat in S0 or later?
-3. **Bike scope**: 1× only? Idler / high-pivot bikes and upper chain guides
-   in v1, or later? (Each adds a node to the path topology.)
+## 11. Measurement list for 2026-11-20
 
-Blocking S1:
-
-4. **Top span when coasting**: model it dynamically too (it can slap on
-   the top of the stay), or treat it as taut always?
-5. **Derailleur numbers**: do you have, or can you measure, spring torque
-   vs cage angle, clutch breakaway torque, cage inertia? Otherwise I'd start
-   from catalogue estimates per model (SRAM Eagle/Transmission, Shimano)
-   marked as estimates.
-6. **Validation**: is there a way to measure slap? E.g. high-speed video,
-   or an IMU (or a piezo) on the cage or the chainstay protector? A sim we
-   can't check against anything isn't worth much, and S3 depends on it.
-
-Placement and product:
-
-7. **Layer**: confirm the sim lives in idl-rs core (`core/src/sim/`), with
-   the CLI subcommand. If it should stay app-only for now, it would go in
-   `idl1-bridge`.
-8. **Bike model file**: extend `bikes/<bike_id>.json` (bike log) with a
-   `model` section, or a separate file? A sheet's setup (shock psi etc.)
-   and a geometry model change at different rates, so I lean separate,
-   linked by `bike_id`.
-9. **Simulate tab**: Device · Data · Notebook · **Simulate** · Settings,
-   with Ctrl+4 → Simulate and Settings moving to Ctrl+5. OK?
-10. **Results as derived session channels** (§6): OK to put sim channels
-    next to a session so notebooks can chart them, or keep sim results
-    separate from ride data?
+| What | How | Why |
+|---|---|---|
+| Chain mass, links | Weigh it off the bike; count links | μ (node mass) |
+| Chainring, cassette teeth | Read them | radii |
+| Cage length, upper jockey offset | Calipers: cage pivot → each jockey centre | cage geometry |
+| B-knuckle position | Mark it on the side photo | where the cage hangs |
+| Spring torque vs cage angle | Chain off, clutch **off**. Hook a luggage scale on the lower jockey axle, pull at 90° to the cage, read force at 4–5 cage angles (phone inclinometer on the cage). Torque = force × cage length | `τ_s(θ)` |
+| Clutch torque | Same with clutch **on**: pull forward (cage swings toward the front), then let it return slowly. Clutch ≈ (forward − return) / 2 | `τ_c` |
+| Slack-span tension (cross-check) | Chain on, in a mid gear. Hang a known weight W at mid lower span, measure the extra sag δ and span length L: `T ≈ W·L / (4δ)` | checks spring + geometry model |
+| Freehub engagement | Hub spec, or count clicks per turn of the cassette: 360° / POE | ratchet backlash |
+| Cassette and cage mass | Weigh if they come off; otherwise catalogue | inertias (estimated from mass and size) |
+| Protector top edge | Mark 4–6 points on the side photo | contact polyline |
+| Chain-to-protector gap at sag | Feeler / ruler in 3 gears | checks the clearance output |
+| Video (later) | Phone at 240 fps, mounted on the frame looking at the lower span: about 8–16 frames per slap cycle at 15–30 Hz | S3 |
