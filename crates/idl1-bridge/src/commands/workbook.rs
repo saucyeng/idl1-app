@@ -852,8 +852,10 @@ fn evaluate_planned(
 /// seam-correction versions, read from `data.parquet`'s footer), the bytes of
 /// the session's `session.json` bytes, passed in with the window so the key and
 /// the lap context come from one read (its laps and sectors reach the
-/// evaluator as the lap context), and the engine version. A change in any of them is a new
-/// key, so the next call evaluates again.
+/// evaluator as the lap context), the bike calibration the session uses (it
+/// feeds the estimator builtins, [`crate::session_source::calibration_key_part`]),
+/// and the engine version. A change in any of them is a new key, so the next
+/// call evaluates again.
 ///
 /// Never fails: an unreadable footer or a missing `session.json` is hashed as
 /// such, and the evaluation that follows reports the real error (an error is
@@ -867,16 +869,19 @@ fn evaluation_key(
         Some((w, _)) => (w.session_id.clone(), format!("{:?}", w.span)),
         None => (String::new(), "no session".to_string()),
     };
-    let (identity, session_json) = match window {
+    let (identity, session_json, calibration) = match window {
         Some((w, json)) => {
             let dir = session_dir(data_dir, &w.session_id);
-            let identity = match idl_rs::store::parquet::read_session_metadata(&dir.join("data.parquet")) {
-                Ok(m) => format!("{}|{}|{}", m.blob_sha256, m.importer_version, m.seam_correction_version),
-                Err(e) => format!("unreadable: {e:?}"),
+            let (identity, calibration) = match idl_rs::store::parquet::read_session_metadata(&dir.join("data.parquet")) {
+                Ok(m) => (
+                    format!("{}|{}|{}", m.blob_sha256, m.importer_version, m.seam_correction_version),
+                    crate::session_source::calibration_key_part(data_dir, json, m.timestamp_utc_ms),
+                ),
+                Err(e) => (format!("unreadable: {e:?}"), String::new()),
             };
-            (identity, json)
+            (identity, json, calibration)
         }
-        None => (String::new(), &[][..]),
+        None => (String::new(), &[][..], String::new()),
     };
     crate::eval_registry::EvalKey::from_parts(&[
         markdown.as_bytes(),
@@ -884,6 +889,7 @@ fn evaluation_key(
         span.as_bytes(),
         identity.as_bytes(),
         session_json,
+        calibration.as_bytes(),
         idl_rs::VERSION.as_bytes(),
     ])
 }
