@@ -5,6 +5,7 @@ import DevicePage from "../routes/pages/Device";
 import DataPage from "../routes/pages/Data";
 import NotebookPage from "../routes/pages/Notebook";
 import SettingsPage from "../routes/pages/Settings";
+import SimulatePage from "../routes/pages/Simulate";
 import { useAppState } from "../state/AppState";
 import { setActiveRoute } from "./routeVisibility";
 import { usesColumns, type ShellLayout } from "./layout";
@@ -19,6 +20,7 @@ const ROUTE_ELEMENTS = {
   device: <DevicePage />,
   data: <DataPage />,
   notebook: <NotebookPage />,
+  simulate: <SimulatePage />,
   settings: <SettingsPage />,
 } as const;
 

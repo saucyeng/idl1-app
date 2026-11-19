@@ -9,7 +9,7 @@ export interface ActivityBarProps {
   onNavigate: (route: RouteId) => void;
   badges: ActivityBadges;
   /** The shortcut printed in each icon's tooltip, by route — `Ctrl+1`
-   *  through `Ctrl+4`, resolved for this platform by `menuModel.ts` so the
+   *  through `Ctrl+5`, resolved for this platform by `menuModel.ts` so the
    *  strip and the Go menu can never print different keys. */
   shortcutLabels: Readonly<Record<RouteId, string | null>>;
 }

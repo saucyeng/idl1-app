@@ -3415,6 +3415,70 @@ cached. Errors: `invalid_argument` (unknown source, `z > 19`, `x`/`y` outside
 `0..2^z`), `not_found` (neither cached nor fetchable: offline, or no such
 tile; the map draws it blank).
 
+### 3.15 Drivetrain simulator (added 2026-11-19)
+
+The Simulate tab (`docs/superpowers/specs/2026-11-19-idl1-drivetrain-sim-DRAFT.md`).
+The tab edits points on the bike's photo in **pixels**; every pixel ↔ metre
+conversion is Rust's (`PhotoFrame`: the two axle centres clicked and the
+wheelbase), so the metres the bike file keeps are never computed in
+JavaScript. Results come back in metres with the frame, and the tab maps
+them onto the photo to draw. Sim errors fold into `invalid_argument`
+(a point missing, a linkage that locks before full travel, a chain that
+can't close the loop, bumps out of range) and `not_found` / `io` (the bike
+or its photo).
+
+`SetupPx`: `{ photo_file: string | null, wheelbase_m, rear_travel_m, points:
+{ [name]: [x, y] }, rollers: RollerPx[], surfaces: SurfacePx[], params:
+DrivetrainParams }`. Point names: `rear_axle`, `front_axle`, `main_pivot`,
+`horst`, `ss_rocker`, `rocker_frame`, `shock_frame`?, `shock_rocker`?,
+`imu0`, `bb`, `cage_pivot`, `upper_jockey`, `lower_jockey`. `RollerPx`:
+`{ name, body, centre_px, teeth: number | null, radius_mm, span: "top" |
+"lower", side: "over" | "under", inertia_kgm2, enabled }`. `SurfacePx`:
+`{ name, body, polyline_px, side: "above" | "below" }`. `body` is
+`"front_triangle" | "chainstay" | "seatstay"`. `DrivetrainParams` carries
+the drivetrain's numbers with their units in their names (Rust
+`idl1_bridge::commands::simulate::DrivetrainParams`).
+
+**`get_sim_setup(bike_id: string, frame: PhotoFrame | null)`** (async) →
+`{ bike_id, has_linkage, has_drivetrain, frame, setup: SetupPx | null,
+params, wheelbase_m, rear_travel_m, photo_file }`. The bike file's
+`linkage` and `drivetrain` (a GT Force-shaped linkage and a typical
+drivetrain when absent) in pixels of `frame`, or of the frame saved with
+the photo when `frame` is null; `setup` is null with neither.
+
+**`save_sim_setup(bike_id: string, setup: SetupPx)`** (async) → as
+`get_sim_setup`. Converts to metres and saves the bike file's `linkage`
+(keeping its fork travel and shock length) and `drivetrain` (with the photo
+and its frame), each newer-wins.
+
+**`set_bike_photo(bike_id: string, path: string)`** (async) → `string`,
+the file name: the photo copied to `bikes/<bike_id>.photo.<ext>` (JPEG, PNG
+or WebP), replacing an earlier one.
+
+**`get_bike_photo(bike_id: string, file: string)`** (async) → raw bytes.
+
+**`sim_kinematics(setup: SetupPx, gear: number, samples: number)`** (async)
+→ `{ gears: GearCurves[], failed: [gear, why][], snapshots: Snapshot[],
+chain_fit: [lo, hi] | null, frame }`. Every gear's growth (mm), kickback
+(° of crank), cage angle (° forward), loop change at a held cage (mm), top
+span (mm), clearance to each surface (mm) and roller contact at `samples`
+travels (2–81), and gear `gear` drawn at each (chain pin line, wheels,
+linkage points, surfaces, metres). `chain_fit`: the chain lengths (links)
+that close the loop in every gear through travel.
+
+**`run_drivetrain_sim(setup: SetupPx, gear: number, input: BumpTrain,
+progress: Channel<Progress>)`** (async) → raw bytes, `IDLS` v1: `"IDLS"`,
+`u32` version, `u32` header length, the header (UTF-8 JSON: `frames`,
+`nodes`, `gear`, `points` (names), `wheels` (`{ role, radius_m, teeth }`),
+`channels` (`{ name, unit }`), `summary`, `frame`, `input`), zero padding
+to a multiple of 4, then `f32` little-endian arrays: node xy
+`[frame][node][2]` (m), point xy `[frame][point][2]` (m), wheel angles
+`[frame][wheel]` (rad), each channel's values `[frame]` in header order,
+frame times `[frame]` (s). `BumpTrain`: `{ speed_mps, depth_m, sag_m,
+compress_s, rebound_s, chassis_g, count, spacing_s, lead_s }`. Progress:
+`phase` `"simulating"`, `done` of `total` 1000. Runs are at most 120 s of
+simulated time.
+
 ## 4. Interaction budget
 
 From the principle "nothing on the interaction path waits on IPC" (design

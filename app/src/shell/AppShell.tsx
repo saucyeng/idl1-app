@@ -219,6 +219,7 @@ export default function AppShell() {
       [MENU_COMMAND_IDS.goDevice, () => onNavigate("device")],
       [MENU_COMMAND_IDS.goData, () => onNavigate("data")],
       [MENU_COMMAND_IDS.goNotebook, () => onNavigate("notebook")],
+      [MENU_COMMAND_IDS.goSimulate, () => onNavigate("simulate")],
       [MENU_COMMAND_IDS.goSettings, () => onNavigate("settings")],
       [MENU_COMMAND_IDS.viewToggleSidebar, toggleSidebar],
       [MENU_COMMAND_IDS.viewCyclePreset, cycleLayoutPreset],
@@ -306,6 +307,7 @@ export default function AppShell() {
       device: MENU_COMMAND_IDS.goDevice,
       data: MENU_COMMAND_IDS.goData,
       notebook: MENU_COMMAND_IDS.goNotebook,
+      simulate: MENU_COMMAND_IDS.goSimulate,
       settings: MENU_COMMAND_IDS.goSettings,
     };
     const items = MENUS.flatMap((menu) => menu.items);

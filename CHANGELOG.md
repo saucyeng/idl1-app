@@ -6,6 +6,20 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 
 ### Added
 
+- **Simulate tab: chain growth and chain slap [no-docs] (2026-11-19).** A new tab after Notebook
+  (Ctrl+4; Settings moves to Ctrl+5) simulates the drivetrain of a bike's rear end. Add a side-on
+  photo of the bike, click the two axles and give the wheelbase, then drag the linkage pivots,
+  bottom bracket and derailleur (cage pivot, both jockeys) onto it; add rollers (top or lower, on
+  any of the front triangle, chainstay or seatstay, toothed or smooth) and the chainstay protector's
+  edge. Kinematics shows chain growth, kickback, the cage angle and how much chain the cage has to
+  take up through travel for every gear, and which chain lengths fit all of them. Playback runs the
+  whole chain loop, link by link, through a train of hits (speed, sag, depth, compression and
+  rebound times, frame jolt) with the cranks held, the cassette's inertia and freehub ratchet, and
+  the clutch, then plays it back down to 1/64 speed with the tensions, deflections, clutch slip and
+  hits on the protector; two runs compare side by side. Saving writes the points as metres to the
+  bike file (`linkage` and a new `drivetrain` section), the photo beside it. The derailleur's
+  spring, clutch and inertias are typical numbers until measured.
+
 - **An outside edit no longer leaves the notebook on "Recomputing" [no-docs] (2026-11-15).** When a
   cell changed from outside the app (an agent editing the file, a sync from another device), the
   notebook evaluated it but labelled the answer as one edit behind, so every cell showed

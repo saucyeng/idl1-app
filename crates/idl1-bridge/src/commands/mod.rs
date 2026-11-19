@@ -22,6 +22,8 @@ pub mod gps;
 pub mod scatter;
 pub mod seams;
 pub mod session_set;
+/// Drivetrain simulator (C3 §3.15).
+pub mod simulate;
 pub mod sync;
 pub mod tiles;
 pub mod track_editor;
