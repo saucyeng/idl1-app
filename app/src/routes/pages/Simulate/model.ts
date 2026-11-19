@@ -176,3 +176,33 @@ export function playbackFrame(run: SimRun, startFrame: number, elapsed: number, 
 export function polyPoints(pts: readonly P2[], map: (p: P2) => P2): string {
   return pts.map((p) => map(p)).map((q) => `${q[0].toFixed(1)},${q[1].toFixed(1)}`).join(" ");
 }
+
+/** Where a click at `at` lands on a polyline's segments, within `radius` px:
+ *  the segment index (from vertex `segment` to `segment + 1`) and the point on
+ *  it. Null when nowhere near, or nearer an end than `radius` (that is the
+ *  vertex's own handle). */
+export function hitSegment(poly: readonly P2[], at: P2, radius: number): { segment: number; point: P2 } | null {
+  let best: { segment: number; point: P2; d: number } | null = null;
+  for (let k = 0; k + 1 < poly.length; k++) {
+    const [a, b] = [poly[k], poly[k + 1]];
+    const d: P2 = [b[0] - a[0], b[1] - a[1]];
+    const l2 = d[0] * d[0] + d[1] * d[1];
+    if (l2 === 0) continue;
+    const t = Math.max(0, Math.min(1, ((at[0] - a[0]) * d[0] + (at[1] - a[1]) * d[1]) / l2));
+    const q: P2 = [a[0] + t * d[0], a[1] + t * d[1]];
+    const dist = Math.hypot(q[0] - at[0], q[1] - at[1]);
+    const nearEnd = Math.min(Math.hypot(q[0] - a[0], q[1] - a[1]), Math.hypot(q[0] - b[0], q[1] - b[1])) < radius;
+    if (dist <= radius && !nearEnd && (best === null || dist < best.d)) best = { segment: k, point: q, d: dist };
+  }
+  return best === null ? null : { segment: best.segment, point: best.point };
+}
+
+/** `poly` with a vertex at `at` inserted after vertex `segment`. */
+export function insertVertex(poly: readonly P2[], segment: number, at: P2): P2[] {
+  return [...poly.slice(0, segment + 1), at, ...poly.slice(segment + 1)];
+}
+
+/** `poly` without vertex `k`; unchanged when that would leave fewer than two. */
+export function deleteVertex(poly: readonly P2[], k: number): P2[] {
+  return poly.length <= 2 ? [...poly] : poly.filter((_, i) => i !== k);
+}

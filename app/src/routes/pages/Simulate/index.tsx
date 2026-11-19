@@ -22,7 +22,7 @@ import {
 } from "@/ipc/simulate";
 
 import { KinematicsPanel } from "./KinematicsPanel";
-import { movePoint, playbackFrame, runFrame } from "./model";
+import { deleteVertex, insertVertex, movePoint, playbackFrame, runFrame } from "./model";
 import { PlaybackPanel, type LabelledRun } from "./PlaybackPanel";
 import { SetupPanel } from "./SetupPanel";
 import { Stage } from "./Stage";
@@ -395,6 +395,12 @@ export default function SimulatePage() {
               onMoveRoller={(i, at) => setup && (setSetup({ ...setup, rollers: setup.rollers.map((r, k) => (k === i ? { ...r, centre_px: at } : r)) }), setDirty(true))}
               onMoveSurfaceVertex={(i, v, at) =>
                 setup && (setSetup({ ...setup, surfaces: setup.surfaces.map((s, k) => (k === i ? { ...s, polyline_px: s.polyline_px.map((p, j) => (j === v ? at : p)) } : s)) }), setDirty(true))
+              }
+              onInsertSurfaceVertex={(i, seg, at) =>
+                setup && (setSetup({ ...setup, surfaces: setup.surfaces.map((sf, k) => (k === i ? { ...sf, polyline_px: insertVertex(sf.polyline_px, seg, at) } : sf)) }), setDirty(true))
+              }
+              onDeleteSurfaceVertex={(i, v) =>
+                setup && (setSetup({ ...setup, surfaces: setup.surfaces.map((sf, k) => (k === i ? { ...sf, polyline_px: deleteVertex(sf.polyline_px, v) } : sf)) }), setDirty(true))
               }
               onDragEnd={() => requestKin()}
               fit={fit}

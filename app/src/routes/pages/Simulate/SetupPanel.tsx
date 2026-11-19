@@ -139,7 +139,7 @@ export function SetupPanel({ setup, placing, onPlacing, onChange, selected, onSe
 
       <FieldGroup title="Contact surfaces">
         <Button size="xs" onClick={addSurface}>Add a surface</Button>
-        <p className="text-xs text-[var(--fg-dim)]">Drag its squares onto the protector's edge.</p>
+        <p className="text-xs text-[var(--fg-dim)]">Drag its squares onto the protector's edge. Click the line to add a point there; right-click a point to remove it.</p>
         {setup.surfaces.map((s, i) => (
           <div key={i} className={`flex flex-col gap-1 rounded-[var(--radius)] border p-2 ${selected?.kind === "surface" && selected.index === i ? "border-[var(--good)]" : "border-[var(--rule)]"}`} onClick={() => onSelect({ kind: "surface", index: i })}>
             <TextField label="Name" value={s.name} className="w-40" onChange={(t) => setSurface(i, { name: t })} />
