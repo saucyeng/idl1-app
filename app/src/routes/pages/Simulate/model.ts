@@ -135,6 +135,10 @@ export interface RunFrame {
   surfaces: P2[][];
   /** Channel values at this frame, by name. */
   values: Record<string, number>;
+  /** The ground under the rear wheel at this frame, metres; null without a terrain. */
+  ground: P2[] | null;
+  /** The rear tyre (centre on the rear axle), metres; null without a terrain. */
+  tyre: { centre: P2; radius: number } | null;
 }
 
 /** Frame `k` of `run` (clamped). */
@@ -164,7 +168,15 @@ export function runFrame(run: SimRun, k: number): RunFrame {
   }
   const values: Record<string, number> = {};
   for (const c of run.channels) values[c.name] = c.values[f];
-  return { t: run.frameT[f], nodes, points, wheels, surfaces, values };
+  let ground: P2[] | null = null;
+  let tyre: RunFrame["tyre"] = null;
+  if (run.terrain !== null) {
+    const { groundPoints: n, ground: g } = run.terrain;
+    ground = [];
+    for (let i = 0; i < n; i++) ground.push([g[(f * n + i) * 2], g[(f * n + i) * 2 + 1]]);
+    if (points.rear_axle) tyre = { centre: points.rear_axle, radius: run.terrain.wheelRadiusM };
+  }
+  return { t: run.frameT[f], nodes, points, wheels, surfaces, values, ground, tyre };
 }
 
 /** The frame to show `elapsed` seconds of real time after `startFrame`, at `speed` (1 = real time). Wraps at the end. */

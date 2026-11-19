@@ -3489,6 +3489,13 @@ summary, frame, input }`, and the tracks `chain` (xy × nodes, m), `points`
 (xy, labelled with the moving points' names, m), `wheel_angle` (angle,
 labelled with the wheels' roles, rad), then one `scalar` track per channel
 under its name and unit ("Cage angle", deg; "Top span tension", N; …).
+A second component, `terrain` (2026-11-19), is the ground the rear wheel
+follows, for drawing it rolling over: `{ wheel_radius_m, window_m }` and the
+tracks `ground` (xy × 301, m: the ground under a 3 m window centred on the
+rear axle, in the bike's frame, so it scrolls past) and `distance` (scalar,
+m travelled). The ground is the bump train's travel above sag laid out at
+its speed (a rigid tyre on a level frame), not a terrain model; the tyre's
+bottom touches it in every frame.
 Encoder `idl1-bridge::sim_result_wire`, decoder `app/src/ipc/simResult.ts`;
 wire golden `idlm-v1`. `BumpTrain`: `{ speed_mps, depth_m, sag_m,
 compress_s, rebound_s, chassis_g, count, spacing_s, lead_s }`. Progress:

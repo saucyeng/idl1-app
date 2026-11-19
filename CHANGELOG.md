@@ -22,7 +22,8 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
   result (`IDLM` v1: components and named tracks, so suspension and tyres can be added later
   without a new format; C3 §3.15). A light idler held by several teeth (a 16T on the main pivot)
   no longer spins up on its own and throws the chain through itself: each wheel's spin is
-  stepped implicitly in the teeth holding it.
+  stepped implicitly in the teeth holding it. Playback draws the rear tyre and the ground
+  scrolling under it: the ground the bump train's travel implies (rigid tyre, level frame).
 
 - **Workbooks in the app use the bike's calibration [no-docs] (2026-11-16).** A session opened in
   the app now gives the estimator builtins (`attitude`, `body_accel`, `wheel_travel`,

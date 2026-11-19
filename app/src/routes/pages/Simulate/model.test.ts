@@ -20,6 +20,7 @@ function run(): SimRun {
     pointXy: new Float32Array([0, 0, 9, 9, 1, 1, 8, 8, 2, 2, 7, 7]),
     wheelAngle: new Float32Array([0.1, 0.2, 0.3]),
     frameT: new Float32Array([0, 0.5, 1]),
+    terrain: null,
   };
 }
 
@@ -92,6 +93,24 @@ describe("Simulate model", () => {
     expect(f.surfaces).toEqual([[[8, 8]]]);
     expect(f.values["Cage angle"]).toBe(2);
     expect(runFrame(r, 99).t).toBe(1);
+    expect(f.ground).toBeNull();
+    expect(f.tyre).toBeNull();
+  });
+
+  it("runFrame — a run with a terrain — unpacks that frame's ground and puts the tyre on the rear axle", () => {
+    // Arrange: 2 ground points per frame; the rear axle is the run's second point
+    const r: SimRun = {
+      ...run(),
+      points: ["wheel:cog", "rear_axle"],
+      terrain: { wheelRadiusM: 0.37, groundPoints: 2, ground: new Float32Array([0, 0, 1, 0, 0, 1, 1, 1, 0, 2, 1, 2]) },
+    };
+
+    // Act
+    const f = runFrame(r, 1);
+
+    // Assert
+    expect(f.ground).toEqual([[0, 1], [1, 1]]);
+    expect(f.tyre).toEqual({ centre: [8, 8], radius: 0.37 });
   });
 
   it("playbackFrame — real time and slow motion — advances by the frame rate and wraps", () => {
