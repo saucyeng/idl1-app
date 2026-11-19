@@ -87,7 +87,9 @@ export function hitPoint(points: Record<string, P2>, at: P2, radius: number): st
   return best;
 }
 
-/** A new roller placed at `centre` (pixels). Isaac's case is the default: a 16T top roller on the chainstay pivot. */
+/** A new roller placed at `centre` (pixels). Isaac's case is the default: a 16T
+ *  top idler on the main pivot with the chain running over it (high-pivot style),
+ *  and a smooth lower guide under the chainring the chain runs over. */
 export function newRoller(centre: P2, span: "top" | "lower", count: number): RollerPx {
   return {
     name: span === "top" ? `Top roller${count > 0 ? ` ${count + 1}` : ""}` : `Lower guide${count > 0 ? ` ${count + 1}` : ""}`,
@@ -96,9 +98,10 @@ export function newRoller(centre: P2, span: "top" | "lower", count: number): Rol
     teeth: span === "top" ? 16 : null,
     radius_mm: 14,
     span,
-    side: span === "top" ? "under" : "over",
+    side: "over",
     inertia_kgm2: 2e-6,
     enabled: true,
+    threaded: span === "top",
   };
 }
 

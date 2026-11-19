@@ -46,6 +46,9 @@ export interface RollerPx {
   /** kg·m². */
   inertia_kgm2: number;
   enabled: boolean;
+  /** An idler the chain is threaded round (always on that side), not a guide
+   *  that acts only when the chain reaches it. */
+  threaded: boolean;
 }
 
 /** A contact surface as the tab edits it. */

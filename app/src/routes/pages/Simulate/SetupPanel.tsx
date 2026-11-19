@@ -125,6 +125,7 @@ export function SetupPanel({ setup, placing, onPlacing, onChange, selected, onSe
           <div key={i} className={`flex flex-col gap-1 rounded-[var(--radius)] border p-2 ${selected?.kind === "roller" && selected.index === i ? "border-[var(--hivis)]" : "border-[var(--rule)]"}`} onClick={() => onSelect({ kind: "roller", index: i })}>
             <TextField label="Name" value={r.name} className="w-40" onChange={(t) => setRoller(i, { name: t })} />
             <SwitchField label="Fitted" checked={r.enabled} onChange={(c) => setRoller(i, { enabled: c })} />
+            <SwitchField label="Chain threaded round it" checked={r.threaded} onChange={(c) => setRoller(i, { threaded: c })} hint={r.threaded ? "An idler: the chain stays on it at every travel" : "A guide: it acts only when the chain reaches it"} />
             <SelectField label="Mounted on" value={r.body} options={BODIES} onChange={(v) => setRoller(i, { body: (v ?? "front_triangle") as Body })} />
             <SelectField label="Span" value={r.span} options={[{ value: "top", label: "Top" }, { value: "lower", label: "Lower" }]} onChange={(v) => setRoller(i, { span: v === "lower" ? "lower" : "top" })} />
             <SelectField label="Chain runs" value={r.side} options={[{ value: "over", label: "Over it" }, { value: "under", label: "Under it" }]} onChange={(v) => setRoller(i, { side: v === "over" ? "over" : "under" })} />
