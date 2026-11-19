@@ -268,18 +268,68 @@ The drivetrain merge (idler fix, `IDLM`) happens before phase 0 and is compatibl
 ## 10. Decisions for Isaac
 
 - **D1** Sim result format: `IDLM` v1 with components and tracks, named "sim result";
-  becomes the on-disk format too when the CLI verbs land.
-- **D2** General planar linkage (bodies, revolute joints, shock element, Newton loop
-  closure, exact derivatives) replaces the Horst named points, with an exact migration.
-- **D3** Mass table rows with `measured` / `estimated` / `fitted` sources and derived
-  lumps computed, never typed.
-- **D4** Spring and damper models: which data exist (dyno sheets? spec curves only?).
-- **D5** Tyre: in-plane radial + enveloping footprint first; numbers from bench tests.
-- **D6** The "learned only as a residual" rule.
-- **D7** Rider: passive model + active input; riders as their own files.
-- **D8** Chain co-simulated inside the bike step (two-way).
-- **D9** A rider pod (hardware): wanted, or not for now?
-- **D10** Phase order (§9), and that phase 0 starts after the drivetrain merge.
+  becomes the on-disk format too when the CLI verbs land. **Accepted by Isaac
+  2026-11-19** (`IDLM` over `IDLX`; the 4-byte `IDL`+letter convention kept; `IDLS` stays
+  the scatter plot's).
+Isaac's answers, 2026-11-19:
+
+- **D2** Yes, but "not too generic: there's only so many types". Revised: a fixed set
+  of templates, not a free-form body/joint graph. Every common design except the
+  6-bar is a 4-bar differing only in which link carries the axle (single pivot is
+  the degenerate case: axle on the chainstay, one moving body). So: one 4-bar solver
+  with an `axle_on` choice (chainstay = linkage-driven single pivot, seatstay = Horst,
+  coupler/pivot = split pivot, short links = VPP/DW), single pivot, and a 6-bar
+  template later. Exact derivatives as before.
+- **D3** Yes, with **no fitting**: masses are measured or estimated, never adjusted
+  by identification. Start simple and refine: each link's mass split between its
+  two end pivots (the share at the axle end is unsprung, reduced through the motion
+  ratio, so stays are part sprung, part unsprung); a wheel as rim + tyre ring, hub
+  disc, spokes as rods. Simplifications listed in the table, each replaceable.
+- **D4** Data: Fox 38 at ~75 psi, Float X2 at ~220 psi, ~25 % sag, clicker
+  positions unknown, no damper curves. Air springs modelled from pressure, piston
+  area and chamber volume (token count) with a gas law; sag checks the result.
+  Damping: generic force–velocity shape from the shelf (Dixon ch. 7), its scale
+  identified from a drop test and rides (damping is fitted; masses are not).
+- **D5** Isaac asks for a real tyre model. Answer: Magic Formula for slip forces
+  (Cossalter ch. 2), plus a rigid-ring / enveloping model for the vertical
+  path over short bumps. Coefficients for MTB tyres need measuring or a source; a
+  Pacejka text is a shelf gap.
+- **D6** Yes.
+- **D7** Yes. Rider stiffness and damping vary with how stiffly Isaac rides: a
+  slowly varying signal estimated per window, separated by frequency from
+  pumping. A goal: sweep rider stiffness in the sim to say how rigid to ride
+  (metric: tyre load variation, i.e. grip; to confirm with Isaac).
+- **D8** Yes. Isaac thinks the clutch makes the suspension much more sensitive and
+  plans a lower idler so the clutch does not slip through travel; the sim should
+  estimate how much it helps. Quasi-static answer first (clutch slip and chain
+  force on the swingarm against travel, with and without the idler), from the
+  existing kinematics.
+- **D9** Plan for it. Source: the helmet GoPro's 200 Hz IMU (GPMF), time-synced to
+  the pods. Head, not torso: the neck isolates it. Isaac will try for data on the
+  weekend of 2026-11-21.
+- **D10** Not answered yet; the order now pulls D8's quasi-static clutch answer forward.
+
+Second round, 2026-11-19:
+
+- **D2** Templates agreed.
+- **D3** Spokes as a disc is fine ("in all reality").
+- **D4** Fork: Fox 38, 170 mm, ~75 psi, ~1 token. Shock: Float X2, 65 mm stroke,
+  ~220 psi, no tokens. Rider 175 lb (79.4 kg) in kit. The negative chambers matter
+  (self-equalising: they change the curve's start and its shape). Isaac suggests
+  interpolating someone else's measured spring curves before building a gas model.
+- **D5** Pacejka added to the shelf (`pacejka-tyre-vehicle-dynamics-2006`): Magic
+  Formula §4.3 (PDF 187), rigid ring §9.3 (PDF 467), enveloping and effective road
+  inputs §10.1 (PDF 498).
+- **D7** "Better" is not defined yet; grip (tyre load variation) and comfort are each
+  better in isolation. Report both.
+- **D8** The clutch has free play: a little cage rotation before it engages. Model it
+  (`clutch_free_play_deg`, Isaac to measure, with the clutch torque). The lower idler's
+  position is not fixed: the simulator is to **design its mount**. Goal: zero clutch
+  engagement through travel in the mid to tall gears; a 12T roller, as close to the
+  chainring as possible, as far from the ground as possible. First tool:
+  `rust/core/examples/lower_idler_search.rs` (grid search on the front triangle,
+  keep-outs: chainring, chainring bottom, chainstay bar through travel).
+- **D9** Lower-back IMU one day, not yet; plan for the helmet GoPro first.
 
 ## 11. Shelf gaps
 
