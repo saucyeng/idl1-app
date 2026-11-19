@@ -31,6 +31,22 @@ file's `linkage` section, and the physics estimator's derived channels.
   test theoretical suspension response" (see §6 for what replay can and
   can't answer).
 
+Second round (2026-11-19):
+
+- Cranks while coasting: **locked** (the rider holds them).
+- **2-D.** The primary output is a **video-like playback** of the simulated
+  bike in the Simulate tab (§7).
+- Wheel speed from **GPS**.
+- IMU0's 30–100 Hz content is real frame motion, so the excitation filter
+  can stay open to ~100 Hz.
+- Rollers: any body, chosen at runtime. Isaac's bike has one mounted on the
+  chainstay (main) pivot, and he is considering adding an ISCG lower guide.
+  He wants to know how much it helps in theory by taking up chain growth so
+  the clutch doesn't slip (§2.5).
+- Point placement is **built into the Simulate tab** now, not added to
+  `ml/tools/linkage.html`.
+- The work stays on idl-rs **`physics-estimator`**.
+
 ## 2. Physics
 
 ### 2.1 Bodies on a Horst-link bike
@@ -113,7 +129,10 @@ The non-linearities that make it worth simulating, not just evaluating:
   lifts off when its contact force would go negative. Engagement and
   departure points emerge from that; they are not prescribed.
 - **Rotating DOFs**, each with its inertia:
-  - crank + chainring (+ rider's feet, §10 Q1);
+  - crank + chainring: **locked to the front triangle** while coasting
+    (Isaac, 2026-11-19), so kickback shows up as a top-span tension and a
+    pedal-force spike, not as a crank angle. The DOF stays in the model for
+    pedalling later;
   - cassette + freehub body, coupled to the wheel by the ratchet and its
     engagement angle;
   - upper and lower jockey, with bearing drag;
@@ -129,13 +148,46 @@ The non-linearities that make it worth simulating, not just evaluating:
   frame, so the inertial terms (specific force, Euler and centrifugal from
   pitch rate, Coriolis) act on each node. Chainstay and seatstay motion
   comes in through the 4-bar at the given travel.
-- **Planar** in v1 (§10 Q2).
+- **Planar** (Isaac, 2026-11-19).
 - **Step**: fixed at 0.05–0.1 ms (transverse waves at ≤ 20 m/s across a
   12.7 mm link need < 0.6 ms). 126 nodes × 10–20 k steps/s is cheap: a
   60 s lap should run in seconds on one core.
 
 Not modelled: tooth profile, link side-plates, lateral bending, the rider's
 reaction to kickback.
+
+### 2.5 What a lower guide can and can't do (Isaac's ISCG question)
+
+A fixed roller doesn't absorb chain: it only reroutes it. Total loop length
+is fixed, so whatever the path loses or gains through travel, the cage has
+to make up. A guide changes two things:
+
+1. **The loop's length change through travel**, `ΔL_loop(s)`. The cage
+   turns by about `ΔL_loop / (2·cage length)` (the lower loop doubles back
+   over both jockeys). The guide helps only if routing the slack span over
+   it makes the lower path's change offset the top span's growth `G(s)`.
+   How much depends on where the guide sits relative to the main pivot,
+   Horst pivot and the B-knuckle, which is exactly what the kinematic
+   solver answers.
+2. **The free span length** `L`. Slap deflection goes as `L²`, so a guide
+   near the ring that cuts `L` from 0.40 m to 0.25 m cuts deflection about
+   2.5×, whatever it does to growth.
+
+The clutch slips when the chain's torque on the cage, `T·(cage lever)`,
+beats `τ_c`. On a fast compression, the cage has to turn at
+`dθ_cage/dt ≈ (dΔL_loop/ds)·(ds/dt) / (2·cage length)`. If it can't follow
+without slipping, the top-span tension spikes instead, and with locked
+cranks that spike is the kickback the rider feels. So the A/B the sim should
+report for "with vs without the ISCG lower":
+
+- `ΔL_loop(s)` and cage swing through travel (kinematic, per gear);
+- clutch slip, total degrees and number of events per lap (replay);
+- peak top-span tension / pedal force on hits (replay);
+- slap: peak span deflection, number of protector contacts and impact speed
+  (replay).
+
+The tab gets an **A/B mode**: two drivetrain variants on the same replay,
+played side by side, with these numbers as a table.
 
 ## 3. Layers
 
@@ -179,7 +231,11 @@ metres, topped out), and each point is tagged with the body it rides on.
     "spring_torque_nm": [[0.0, 0.35], [0.6, 0.55]],   // [cage rad from free, N·m]
     "clutch_torque_nm": 0.4, "cage_inertia_kgm2": 2.0e-5, "jockey_inertia_kgm2": 1.0e-6
   },
-  "rollers": [ { "body": "front_triangle", "centre_m": […], "teeth": 14, "span": "top" } ],
+  "rollers": [ { "body": "chainstay", "centre_m": […], "teeth": 14, "span": "top" },
+               { "body": "front_triangle", "centre_m": […], "teeth": 0, "radius_m": 0.02, "span": "lower" } ],
+                                                // body: front_triangle | chainstay | seatstay;
+                                                // teeth 0 = smooth roller (radius_m)
+  "variants": { "iscg_lower": { "rollers": […] } },   // §2.5 A/B: named overrides
   "inertia_kgm2": { "crank": …, "cassette_freehub": … },
   "freehub_engagement_deg": 6.7,
   "wheel_rolling_radius_m": 0.37,
@@ -187,9 +243,11 @@ metres, topped out), and each point is tagged with the body it rides on.
 }
 ```
 
-Points enter the same way the linkage did: clicked on the side photo.
-Additions to the photo tool: BB, B-knuckle, roller centres, and the
-protector's top edge as a polyline. Masses, torques and teeth are typed.
+Points are clicked on the side photo **in the Simulate tab** (Isaac,
+2026-11-19): the linkage points the photo tool takes today, plus BB,
+B-knuckle, roller centres, and the protector's top edge as a polyline.
+Masses, torques and teeth are typed. The tab writes both `linkage` and
+`drivetrain`, so it takes over from `ml/tools/linkage.html` (§10 Q3).
 
 ## 5. Excitation: what drives a replay
 
@@ -198,12 +256,12 @@ All on recorded time:
 - **Front-triangle motion**: IMU0 specific force (x, z) and pitch rate, moved
   from the pod to the BB by the rigid-body transfer (`α×r + ω×(ω×r)`, with
   α from the differentiated, filtered gyro). The low-pass cut-off is a
-  parameter: chain slap needs content to ~100 Hz, while the physics
-  estimator low-passes at 0.4× its grid rate because of 60–230 Hz pod-mount
-  vibration (§10 Q4).
+  parameter, defaulting to 100 Hz. Isaac confirms IMU0's content up to there
+  is real frame motion. (The physics estimator low-passes harder, at 0.4×
+  its grid rate, for its own reasons.)
 - **Rear travel `s(t)`**: `Physics rear travel (mm)` from the physics
   derived file, the estimator's best channel for fast hits.
-- **Wheel speed**: GPS speed / rolling radius (§10 Q3).
+- **Wheel speed**: GPS speed / rolling radius (Isaac, 2026-11-19).
 - **Synthetic**: step, sine sweep, or a bump train at a speed, as a
   frequency response and a common input to compare setups.
 
@@ -233,15 +291,31 @@ the physics to fill it for suspension is a later spec.
 
 ## 7. Simulate tab
 
-- **Left**: the side photo with the linkage and drivetrain drawn over it, a
-  travel slider and a gear picker. The slider redraws from a precomputed
-  curve table, so the gesture never waits on IPC.
-- **Kinematics**: `G(s)`, `θ_kick(s)`, `θ_cage(s)` and clearance vs travel,
-  one line per gear.
-- **Dynamics**: pick a session and lap (or a synthetic input) → Run (async,
-  progress) → a timeline with the animated loop, contact markers on the
-  protector and the result channels. Scrubbing reads the frames already in
-  memory. "Open in notebook" for the channels.
+The **primary output is playback**: the simulated bike, side-on, moving
+like a video (Isaac, 2026-11-19).
+
+- **Stage** (most of the tab): the side photo with the linkage and the
+  whole chain loop drawn over it as vectors. In playback, the 4-bar moves
+  with recorded travel, the chain is drawn from the frames array, contacts
+  flash on the protector, and the cage and clutch-slip state are shown.
+  Transport controls: play/pause, speed (1×, ¼×, 1/16× slow motion), frame
+  step, scrub. Playback runs entirely from memory, so no IPC is ever awaited
+  (CLAUDE.md §2). A **view toggle** fixes the camera to the front triangle
+  (the default: slap is clearest there) or lets the frame move with IMU0's
+  motion, exaggerated.
+- **Timeline** under the stage: rear travel plus the result channels
+  (tension, deflection, contacts, clutch slip), cursor locked to the
+  playhead. Pick a session and lap, or a synthetic input. Run is async with
+  progress.
+- **A/B** (§2.5): two variants side by side on one timeline, with a summary
+  table.
+- **Setup mode**: place points on the photo, type masses and torques, and a
+  travel slider plus gear picker that redraws from a precomputed curve
+  table. The kinematic curves (`G(s)`, cage angle, `ΔL_loop(s)`, clearance,
+  per gear) are drawn beside it.
+- If the session has a linked ride video, it can play beside the sim, synced
+  on session time (§10 Q4).
+- "Open in notebook" for the result channels.
 
 ## 8. Testing
 
@@ -261,34 +335,38 @@ the physics to fill it for suspension is a later spec.
 
 | Phase | Scope | Done when |
 |---|---|---|
-| S0 | Drivetrain section; photo-tool points; chain path solver; `idl-rs sim kinematics`; Simulate tab kinematics view | GT Force growth/kickback curves agree with a hand calc or Linkage within 2 % |
-| S1 | Full-loop dynamics with synthetic input; analytic tests | Frequency response per setup; a step gives the predicted slap |
-| S2 | Replay from a session (IMU0 + physics travel + GPS); derived channels; animation | A Beacon lap replays, slap events chart in a notebook |
+| S0 | Drivetrain section; Simulate tab with setup mode (photo, point placement, kinematic curves); chain path solver; `idl-rs sim kinematics` | GT Force growth/cage curves agree with a hand calc within 2 %; with vs without ISCG lower `ΔL_loop(s)` compared |
+| S1 | Full-loop dynamics with synthetic input; analytic tests; playback stage | A step plays back with the predicted slap; frequency response per setup |
+| S2 | Replay from a session (IMU0 + physics travel + GPS); derived channels; A/B | A Beacon lap plays back for both variants with the §2.5 table |
 | S3 | Video validation (§11) and parameter fitting | Predicted and filmed span deflection and contact timing agree |
 | Later | Full-bike dynamics → theoretical suspension | Separate spec |
 
 ## 10. Open questions for Isaac
 
-1. **Cranks while coasting**: are feet on the pedals free to turn (crank DOF
-   plus a foot/leg inertia and damping), or is the crank held by the rider
-   (locked, which is the worst kickback)? Pedalling torque as an input later?
-2. **Planar for v1?** Lateral chain whip and rear flex roll/yaw (which the
-   estimator outputs) are left out until the planar model is validated.
-3. **Wheel speed**: is GPS speed / rolling radius good enough, or is there a
-   wheel-speed source?
-4. **Excitation bandwidth**: is IMU0 mounted stiffly enough that 30–100 Hz
-   content is frame motion, not pod-mount resonance? Its 60–230 Hz
-   vibration is why the estimator low-passes.
-5. **Rollers**: which body is each on? A top guide is usually on the front
-   triangle (ISCG), but a lower roller can be on the chainstay. Is each a
-   toothed pulley or a smooth roller?
-6. **Point entry for S0**: add the drivetrain points to
-   `ml/tools/linkage.html` now (fast, same export), and move the photo tool
-   into the Simulate tab later? Or build placement into the tab from the
-   start?
-7. **Base branch**: this work needs `physics-estimator` (linkage, 4-bar,
-   bike file). Branch from it before it merges to `main`, or wait for the
-   merge?
+Answered 2026-11-19: crank locked; 2-D; GPS wheel speed; IMU0 good to
+100 Hz; rollers on any body at runtime; placement in the tab; idl-rs work
+on `physics-estimator`.
+
+Still open:
+
+1. **The pivot roller**: which span does it guide, top or lower? Toothed
+   (how many teeth) or smooth (diameter)? Does it sit concentric with the
+   main pivot? If it does, its centre doesn't move through travel, which
+   makes it a frame-fixed guide for growth purposes.
+2. **"Keep in physics-estimator"**: commit straight to `physics-estimator`,
+   or to this session's branch `claude/chain-derailleur-physics-4a23f3`
+   based on it, for you to merge? (The session can push to its own branch
+   without asking.) idl1-app's `rust/` pin would point at that commit for
+   the tab.
+3. **The photo in the tab**: store it as a blob (CAS, sha256) referenced
+   from the bike file, so the setup reopens on any synced device? Today
+   `linkage.source_image` is only a file name. That's a C4 addition. And
+   does the tab's placement retire `ml/tools/linkage.html` for linkage
+   points too?
+4. **Ride video beside the sim**: wanted in S2, or later?
+5. **Go-ahead**: with these answered, is this spec approved so S0 can start
+   (spec-first, CLAUDE.md §6)? S0 doesn't need tomorrow's measurements:
+   kinematics is geometry only.
 
 ## 11. Measurement list for 2026-11-20
 
