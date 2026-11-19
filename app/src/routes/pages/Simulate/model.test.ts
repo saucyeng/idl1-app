@@ -113,6 +113,19 @@ describe("Simulate model", () => {
     expect(f.tyre).toEqual({ centre: [8, 8], radius: 0.37 });
   });
 
+  it("playbackFrame — a timestamp before the start — stays on the start frame, never negative", () => {
+    // Arrange
+    const r = run();
+
+    // Act
+    const early = playbackFrame(r, 0, -0.004, 1);
+    const later = playbackFrame(r, 1, -0.004, 1);
+
+    // Assert
+    expect(early).toBe(0);
+    expect(later).toBe(1);
+  });
+
   it("playbackFrame — real time and slow motion — advances by the frame rate and wraps", () => {
     // Arrange: 3 frames over 1 s is 2 frames per second
     const r = run();

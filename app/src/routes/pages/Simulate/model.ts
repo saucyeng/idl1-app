@@ -179,11 +179,12 @@ export function runFrame(run: SimRun, k: number): RunFrame {
   return { t: run.frameT[f], nodes, points, wheels, surfaces, values, ground, tyre };
 }
 
-/** The frame to show `elapsed` seconds of real time after `startFrame`, at `speed` (1 = real time). Wraps at the end. */
+/** The frame to show `elapsed` seconds of real time after `startFrame`, at `speed` (1 = real time). Wraps at the end.
+ *  A negative `elapsed` (an animation frame's timestamp can precede the clock read that started playback) is 0. */
 export function playbackFrame(run: SimRun, startFrame: number, elapsed: number, speed: number): number {
   if (run.frames < 2) return 0;
   const rate = (run.frames - 1) / Math.max(1e-9, run.frameT[run.frames - 1] - run.frameT[0]);
-  const k = startFrame + elapsed * speed * rate;
+  const k = Math.max(0, startFrame + Math.max(0, elapsed) * speed * rate);
   return k % run.frames;
 }
 
