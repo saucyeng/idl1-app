@@ -3284,6 +3284,15 @@ the bike and its log. Types are core's
   model, year?, size? }` and `model_updated_at_ms?`. Saving a bike whose
   `uid` differs from the file on disk is refused (`conflict`); sync keeps
   such an arrival alongside as `<id>-2`.
+- **`get_bike_parameters(bike_id)`** → `{ specs: ParamSpec[], own, effective,
+  masses: MassTable, variant }` (2026-11-20). `ParamSpec`: `{ key, label,
+  unit, family, kind: "number" | "text", logged }`, the shared vocabulary
+  (core `calibration::params`; the setup sheet's keys are among them).
+  `own`: the bike file's `parameters`; `effective`: those with the log's
+  running sheet now on top; `masses`: core `mass_table` of `effective`.
+- **`set_bike_parameters(bike_id, values, note)`** → the same view. `null`
+  clears a value. On a real bike the `logged` keys become one log note with
+  `note` as its text; the rest, and every key on a variant, set `parameters`.
 - **`save_bike(bike: Bike)`** (removed 2026-11-13: nothing called it) → `Bike`: merged with the copy on disk, per
   part.
 - **`get_bike_log(bike_id: string)`** → `{ entries: { entry, current,

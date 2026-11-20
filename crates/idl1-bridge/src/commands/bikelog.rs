@@ -7,6 +7,7 @@
 use idl_rs::time::now_ms;
 use std::path::Path;
 
+use idl_rs::calibration::params;
 use idl_library::bikelog::{self, Bike, BikeLogError, BikeLogErrorKind, Entry, EntryVersion, RunningSheet, SessionBikeLog};
 
 use crate::error::{IpcError, IpcErrorKind};
@@ -171,6 +172,45 @@ pub fn copy_bike(from_id: String, naming: BikeNaming, kind: CopyKindWire, data_d
     copy_bike_via(&data_dir.0, &from_id, &naming, kind, now_ms())
 }
 
+/// `get_bike_parameters`'s return.
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+pub struct BikeParametersView {
+    /// Every parameter there is, in display order.
+    pub specs: &'static [params::ParamSpec],
+    /// The bike's own values (masses, sizes; a variant's whole setup).
+    pub own: params::Params,
+    /// What applies now: its own values with its log on top.
+    pub effective: params::Params,
+    /// The mass table from the effective values.
+    pub masses: params::MassTable,
+    /// Whether the bike is a variant (its setup changes aren't logged).
+    pub variant: bool,
+}
+
+fn get_bike_parameters_via(data_dir: &Path, bike_id: &str, now: i64) -> Result<BikeParametersView, IpcError> {
+    let file = bikelog::read_bike_file(data_dir, bike_id)?;
+    let effective = bikelog::effective_parameters(&file, now);
+    Ok(BikeParametersView { specs: params::PARAMS, masses: params::mass_table(&effective), own: file.parameters, effective, variant: file.bike.variant_of.is_some() })
+}
+
+/// C3 §3.11 `get_bike_parameters(bike_id)`: the parameter vocabulary, the
+/// bike's own values, what applies now (its log on top) and the mass table.
+#[tauri::command(async)]
+pub fn get_bike_parameters(bike_id: String, data_dir: tauri::State<'_, DataDir>) -> Result<BikeParametersView, IpcError> {
+    get_bike_parameters_via(&data_dir.0, &bike_id, now_ms())
+}
+
+/// C3 §3.11 `set_bike_parameters(bike_id, values, note)`: sets values (null
+/// clears one). On a real bike the logged ones (pressures, clicks) become
+/// one log note with `note` as its text; the rest, and everything on a
+/// variant, change the bike's own values. Returns the new view.
+#[tauri::command(async)]
+pub fn set_bike_parameters(bike_id: String, values: params::Params, note: String, data_dir: tauri::State<'_, DataDir>) -> Result<BikeParametersView, IpcError> {
+    let now = now_ms();
+    bikelog::set_parameters(&data_dir.0, &bike_id, &values, &note, "app", now)?;
+    get_bike_parameters_via(&data_dir.0, &bike_id, now)
+}
+
 /// C3 §3.11 `get_bike_log(bike_id)`: the bike's log and its running sheet
 /// now.
 #[tauri::command(async)]
@@ -276,6 +316,25 @@ mod tests {
         assert_eq!(v.variant_of.as_deref(), Some("IA-23-GT-Force"));
         assert_eq!(again.bike_id, "IA-23-GT-Force-2");
         assert_eq!(bike.model.unwrap().size.as_deref(), Some("LG"));
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn bike_parameters_set_then_get_gives_the_log_on_top_and_the_mass_table() {
+        // Arrange
+        let root = std::env::temp_dir().join(format!("idl1-bridge-params-{}", uuid::Uuid::new_v4()));
+        let bike = bikelog::create_bike(&root, "gt", "GT", None, 1).unwrap();
+        let values: params::Params = [("fork.psi".to_string(), serde_json::json!(80)), ("rider.mass_kg".to_string(), serde_json::json!(79.4))].into();
+
+        // Act
+        bikelog::set_parameters(&root, &bike.bike_id, &values, "", "app", 5).unwrap();
+        let v = get_bike_parameters_via(&root, &bike.bike_id, 6).unwrap();
+
+        // Assert
+        assert_eq!(params::number(&v.effective, "fork.psi"), Some(80.0));
+        assert!(!v.own.contains_key("fork.psi"));
+        assert_eq!(v.masses.rider_kg, Some(79.4));
+        assert!(!v.specs.is_empty() && !v.variant);
         let _ = std::fs::remove_dir_all(&root);
     }
 }
