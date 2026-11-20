@@ -28,6 +28,7 @@ import {
 import { BikeTree } from "./BikeTree";
 import { KinematicsPanel } from "./KinematicsPanel";
 import { deleteVertex, insertVertex, isPhotoPath, movePoint, PHOTO_EXTENSIONS, playbackFrame, runFrame } from "./model";
+import { ParamFamilies } from "./ParamFamilies";
 import { PlaybackPanel, type LabelledRun } from "./PlaybackPanel";
 import { SetupPanel } from "./SetupPanel";
 import { Stage, type Overlays } from "./Stage";
@@ -585,7 +586,12 @@ export default function SimulatePage() {
             onToggleCompare={(id) => setCompare((c) => { const n = new Set(c); if (n.has(id)) n.delete(id); else n.add(id); return n; })}
             onCreate={makeBike}
             onCopy={copyFrom}
-            families={setup !== null ? <SetupPanel setup={setup} placing={placing} onPlacing={setPlacing} onChange={edit} selected={selected} onSelect={setSelected} photoLinks={kin?.photo_links ?? null} /> : <p className="text-xs text-[var(--fg-dim)]">{photo !== null || blank ? "Click both axles on the stage first." : "Add a photo, or start on a blank canvas."}</p>}
+            families={
+              <>
+                {setup !== null ? <SetupPanel setup={setup} placing={placing} onPlacing={setPlacing} onChange={edit} selected={selected} onSelect={setSelected} photoLinks={kin?.photo_links ?? null} /> : <p className="text-xs text-[var(--fg-dim)]">{photo !== null || blank ? "Click both axles on the stage first." : "Add a photo, or start on a blank canvas."}</p>}
+                {bikeId !== null && <ParamFamilies bikeId={bikeId} />}
+              </>
+            }
           />,
           sidebar
         )}

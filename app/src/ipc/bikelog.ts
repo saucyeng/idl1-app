@@ -141,3 +141,54 @@ export async function saveBikeLogEntry(entry: Entry): Promise<Entry> {
 export async function attachBikeLog(sessionId: string, bikeId: string): Promise<SessionBikeLog> {
   return invoke<SessionBikeLog>("attach_bike_log", { sessionId, bikeId });
 }
+
+/** A parameter group, as screens fold them. */
+export type ParamFamily = "tyres" | "wheels" | "fork" | "shock" | "frame" | "cockpit" | "masses" | "rider";
+
+/** One parameter of the shared vocabulary (core `calibration::params`). */
+export interface ParamSpec {
+  key: string;
+  label: string;
+  unit: string;
+  family: ParamFamily;
+  kind: "number" | "text";
+  /** A setup change the rider logs: on a real bike, setting it adds a log note. */
+  logged: boolean;
+}
+
+/** One wheel as it rolls. */
+export interface WheelMass {
+  mass_kg: number;
+  inertia_kgm2: number;
+  complete: boolean;
+}
+
+/** What the simulator needs from the masses. */
+export interface MassTable {
+  front: WheelMass;
+  rear: WheelMass;
+  front_unsprung_kg: number;
+  rear_unsprung_kg: number;
+  bike_sprung_kg: number | null;
+  rest_kg: number | null;
+  rider_kg: number | null;
+}
+
+/** `get_bike_parameters`'s return. */
+export interface BikeParametersView {
+  specs: ParamSpec[];
+  own: Record<string, unknown>;
+  effective: Record<string, unknown>;
+  masses: MassTable;
+  variant: boolean;
+}
+
+/** C3 §3.11 `get_bike_parameters`: the vocabulary, the bike's values and the mass table. */
+export async function getBikeParameters(bikeId: string): Promise<BikeParametersView> {
+  return invoke<BikeParametersView>("get_bike_parameters", { bikeId });
+}
+
+/** C3 §3.11 `set_bike_parameters`: sets values (null clears one); a real bike's logged ones become one note. */
+export async function setBikeParameters(bikeId: string, values: Record<string, unknown>, note: string): Promise<BikeParametersView> {
+  return invoke<BikeParametersView>("set_bike_parameters", { bikeId, values, note });
+}

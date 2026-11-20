@@ -17,6 +17,11 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
   Creating or copying never overwrites a bike, and sync keeps a different bike that arrives with
   the same id alongside (each bike now carries a random tag). `idl-rs bike copy <bike>
   --variant <name>` (or `--initials <owner>`) does the same from the command line.
+  Every bike also has parameters in families (tyres, wheels, fork, shock, frame, cockpit, masses,
+  rider) under one set of names shared with the setup sheet: on a real bike a pressure or click
+  change is added to its log, a mass is part of the bike; a variant keeps its own. Masses gives
+  the mass table: each wheel's rolling mass and spin inertia, unsprung front and rear, the
+  sprung bike, and what's left of the weighed bike.
 
 - **Simulate tab: chain growth and chain slap [no-docs] (2026-11-19).** A new tab after Notebook
   (Ctrl+4; Settings moves to Ctrl+5) simulates the drivetrain of a bike's rear end. Add a side-on

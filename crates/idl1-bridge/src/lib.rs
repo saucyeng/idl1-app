@@ -101,6 +101,8 @@ pub fn handler<R: tauri::Runtime>() -> impl Fn(tauri::ipc::Invoke<R>) -> bool + 
         commands::bikelog::bike_for_name,
         commands::bikelog::create_bike,
         commands::bikelog::copy_bike,
+        commands::bikelog::get_bike_parameters,
+        commands::bikelog::set_bike_parameters,
         commands::bikelog::get_bike_log,
         commands::bikelog::save_bike_log_entry,
         commands::bikelog::attach_bike_log,
