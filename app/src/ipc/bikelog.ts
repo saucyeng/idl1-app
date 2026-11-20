@@ -10,6 +10,34 @@ export interface Bike {
   fields: string[];
   /** UTC ms. */
   fields_updated_at_ms: number;
+  /** Random tag telling two bikes with the same id apart; omitted on bikes made before it. */
+  uid?: string;
+  /** The real bike this is a variant (an idea) of; omitted for a real bike. */
+  variant_of?: string;
+  /** The bike this one's numbers were copied from. */
+  copied_from?: string;
+  /** Make, model, year and size. */
+  model?: BikeModel;
+  model_updated_at_ms?: number;
+}
+
+/** What a bike is, as its maker names it. */
+export interface BikeModel {
+  make: string;
+  model: string;
+  year?: number;
+  size?: string;
+}
+
+/** The parts of a new bike's id and name (whole-bike sim spec §12). */
+export interface BikeNaming {
+  initials: string;
+  year: number | null;
+  make: string;
+  model: string;
+  size: string | null;
+  /** The variant's name, for a variant. */
+  variant: string | null;
 }
 
 /** A note, or a confirmed sheet. */
@@ -87,6 +115,16 @@ export async function listBikes(): Promise<Bike[]> {
 /** C3 §3.11 `bike_for_name`: the bike with that name, created if new. */
 export async function bikeForName(name: string): Promise<Bike> {
   return invoke<Bike>("bike_for_name", { name });
+}
+
+/** C3 §3.11 `create_bike`: a new bike, id and name from `naming`, never overwriting one. */
+export async function createBike(naming: BikeNaming): Promise<Bike> {
+  return invoke<Bike>("create_bike", { naming });
+}
+
+/** C3 §3.11 `copy_bike`: a variant of a bike, or a new real bike from its numbers. */
+export async function copyBike(fromId: string, naming: BikeNaming, kind: "variant" | "copy"): Promise<Bike> {
+  return invoke<Bike>("copy_bike", { fromId, naming, kind });
 }
 
 /** C3 §3.11 `get_bike_log`. */

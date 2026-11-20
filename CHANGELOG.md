@@ -6,6 +6,18 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 
 ### Added
 
+- **Bikes and variants side by side in the Simulate tab [no-docs] (2026-11-20).** The sidebar
+  lists every bike with its variants under it; the open bike's parameters fold out beneath its
+  name in families (points, scale and travel, drivetrain, derailleur, hub and wheel, rollers,
+  surfaces). New bike names the file from the owner's initials, model year, make and model
+  ("IA 23 GT Force"); a variant is a copy that is an idea for the same bike ("IA 23 GT Force -
+  lower idler"), with no log or calibrations of its own; a copy starts another owner's bike from
+  your numbers. Tick bikes to run them together over the same bumps: playback overlays them on
+  the chart, can show each one's difference from the first, and the totals show each difference.
+  Creating or copying never overwrites a bike, and sync keeps a different bike that arrives with
+  the same id alongside (each bike now carries a random tag). `idl-rs bike copy <bike>
+  --variant <name>` (or `--initials <owner>`) does the same from the command line.
+
 - **Simulate tab: chain growth and chain slap [no-docs] (2026-11-19).** A new tab after Notebook
   (Ctrl+4; Settings moves to Ctrl+5) simulates the drivetrain of a bike's rear end. Add a side-on
   photo of the bike, click the two axles and give the wheelbase, then drag the linkage pivots,

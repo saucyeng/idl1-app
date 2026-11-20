@@ -1340,6 +1340,79 @@
           "required": true
         }
       ],
+      "core_fn": "idl_library::bikelog::copy_bike",
+      "data_dir": true,
+      "flags": [
+        {
+          "choices": [],
+          "default": null,
+          "help": "Make a variant (an idea for this bike) with this name, e.g. `lower idler`",
+          "kind": "text",
+          "long": "variant",
+          "repeatable": false
+        },
+        {
+          "choices": [],
+          "default": null,
+          "help": "Make a new real bike for this owner instead (their initials)",
+          "kind": "text",
+          "long": "initials",
+          "repeatable": false
+        },
+        {
+          "choices": [],
+          "default": null,
+          "help": "The new bike's model year; default the source's",
+          "kind": "integer",
+          "long": "year",
+          "repeatable": false
+        },
+        {
+          "choices": [],
+          "default": null,
+          "help": "Data directory root (contract C4 §1's <data>); defaults to $IDL1_DATA_DIR",
+          "kind": "path",
+          "long": "data-dir",
+          "repeatable": false
+        },
+        {
+          "choices": [],
+          "default": null,
+          "help": "Report what would change and write nothing",
+          "kind": null,
+          "long": "dry-run",
+          "repeatable": false
+        },
+        {
+          "choices": [],
+          "default": null,
+          "help": "Emit the result as JSON on stdout (schema_version 1); errors become typed JSON on stderr",
+          "kind": null,
+          "long": "json",
+          "repeatable": false
+        }
+      ],
+      "help": "Copy a bike's parameters into a variant of it, or into a new bike for another owner",
+      "id": "bike.copy",
+      "json_shape": "BikeFile",
+      "noun": "bike",
+      "status": "current",
+      "tier": "occasional",
+      "usage": "bike copy <bike_id>",
+      "verb": "copy",
+      "writer": true
+    },
+    {
+      "args": [
+        {
+          "choices": [],
+          "help": "Bike id, as `bike list` prints it",
+          "kind": "text",
+          "name": "bike_id",
+          "repeatable": false,
+          "required": true
+        }
+      ],
       "core_fn": "idl_rs::commands::calibration_ops::fit_bike_calibration",
       "data_dir": true,
       "flags": [
@@ -2079,6 +2152,10 @@
     {
       "ruling": "R252",
       "verb": "estimate-physics"
+    },
+    {
+      "ruling": "R253",
+      "verb": "copy"
     }
   ]
 }

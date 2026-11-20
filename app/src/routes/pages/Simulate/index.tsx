@@ -1,11 +1,13 @@
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { open } from "@tauri-apps/plugin-dialog";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 
 import { Button } from "@/components/ui/button";
 import { NumberField } from "@/components/ui/number-field";
-import { SelectField, TextField } from "@/components/ui/select-field";
-import { bikeForName, listBikes, type Bike } from "@/ipc/bikelog";
+import { SelectField } from "@/components/ui/select-field";
+import { copyBike, createBike, listBikes, type Bike, type BikeNaming } from "@/ipc/bikelog";
+import { useSidebarSlotNode } from "@/shell/sidebarSlot";
 import { getActiveRoute } from "@/shell/routeVisibility";
 import {
   DEFAULT_BUMPS,
@@ -23,6 +25,7 @@ import {
   type SimSetupView,
 } from "@/ipc/simulate";
 
+import { BikeTree } from "./BikeTree";
 import { KinematicsPanel } from "./KinematicsPanel";
 import { deleteVertex, insertVertex, isPhotoPath, movePoint, PHOTO_EXTENSIONS, playbackFrame, runFrame } from "./model";
 import { PlaybackPanel, type LabelledRun } from "./PlaybackPanel";
@@ -69,7 +72,8 @@ function message(e: unknown): string {
 export default function SimulatePage() {
   const [bikes, setBikes] = useState<Bike[]>([]);
   const [bikeId, setBikeId] = useState<string | null>(null);
-  const [newBike, setNewBike] = useState("");
+  const [compare, setCompare] = useState<ReadonlySet<string>>(new Set());
+  const sidebar = useSidebarSlotNode("simulate");
   const [view, setView] = useState<SimSetupView | null>(null);
   const [setup, setSetup] = useState<SetupPx | null>(null);
   const [axles, setAxles] = useState<Record<string, P2>>({});
@@ -297,24 +301,65 @@ export default function SimulatePage() {
     }
   }
 
+  // --- bikes in the sidebar ---
+  async function openBike(id: string): Promise<void> {
+    if (id === bikeId) return;
+    // the open bike's edits are kept: saved before another opens
+    if (dirty && setup !== null && bikeId !== null) await save();
+    setBikeId(id);
+  }
+
+  async function makeBike(naming: BikeNaming): Promise<void> {
+    const b = await createBike(naming);
+    await refreshBikes();
+    await openBike(b.bike_id);
+  }
+
+  async function copyFrom(fromId: string, naming: BikeNaming, kind: "variant" | "copy"): Promise<void> {
+    if (fromId === bikeId && dirty) await save();
+    const b = await copyBike(fromId, naming, kind);
+    await refreshBikes();
+    setCompare((c) => new Set([...c, fromId, b.bike_id]));
+    await openBike(b.bike_id);
+  }
+
   // --- run ---
+  const groupSeq = useRef(0);
   async function run(): Promise<void> {
-    if (setup === null) return;
+    if (setup === null || bikeId === null) return;
     setRunning(true);
     setRunError(null);
     setProgress(0);
+    const group = ++groupSeq.current;
+    // the open bike first (as edited), then every other ticked bike as saved
+    const others = bikes.filter((b) => compare.has(b.bike_id) && b.bike_id !== bikeId);
+    const total = 1 + others.length;
+    const nameOf = (id: string) => bikes.find((b) => b.bike_id === id)?.name ?? id;
+    const teeth = setup.params.cassette_teeth[Math.min(gear, setup.params.cassette_teeth.length - 1)];
+    const made: LabelledRun[] = [];
+    const skipped: string[] = [];
     try {
-      const r = await runDrivetrainSim(setup, gear, bumps, (p) => setProgress(p.total ? p.done / p.total : 0));
-      const teeth = setup.params.cassette_teeth[Math.min(gear, setup.params.cassette_teeth.length - 1)];
-      const fitted = setup.rollers.filter((x) => x.enabled).map((x) => x.name);
-      const label = `${runs.length + 1}: ${teeth}T${fitted.length ? `, ${fitted.join(", ")}` : ", no rollers"}`;
+      const jobs: { id: string; setup: SetupPx | null }[] = [{ id: bikeId, setup }];
+      for (const b of others) {
+        const v = await getSimSetup(b.bike_id, null);
+        jobs.push({ id: b.bike_id, setup: v.setup });
+      }
+      for (const [k, job] of jobs.entries()) {
+        if (job.setup === null) {
+          skipped.push(nameOf(job.id));
+          continue;
+        }
+        const r = await runDrivetrainSim(job.setup, gear, bumps, (p) => setProgress((k + (p.total ? p.done / p.total : 0)) / total));
+        made.push({ label: `${nameOf(job.id)} · ${teeth}T`, run: r, group });
+      }
       setRuns((rs) => {
-        const next = [...rs, { label, run: r }].slice(-4);
-        setShown(next.length - 1);
+        const next = [...rs.filter((r) => r.group !== group), ...made].slice(-8);
+        setShown(next.length - made.length);
         return next;
       });
       setFrame(0);
       setPlaying(true);
+      if (skipped.length > 0) setRunError(`Not run (no points placed yet): ${skipped.join(", ")}`);
     } catch (e) {
       setRunError(message(e));
     } finally {
@@ -368,15 +413,7 @@ export default function SimulatePage() {
   return (
     <div className="flex h-full min-h-0 flex-col">
       <div className="flex flex-wrap items-end gap-3 border-b border-[var(--rule)] px-3 py-2">
-        <SelectField label="Bike" value={bikeId ?? undefined} options={bikes.map((b) => ({ value: b.bike_id, label: b.name }))} onChange={(v) => v && setBikeId(v)} className="w-44" />
-        {bikes.length === 0 && (
-          <>
-            <TextField label="New bike" value={newBike} placeholder="GT Force" onChange={setNewBike} />
-            <Button size="sm" disabled={newBike.trim() === ""} onClick={async () => { const b = await bikeForName(newBike.trim()); await refreshBikes(); setBikeId(b.bike_id); }}>
-              Add
-            </Button>
-          </>
-        )}
+        <span className="self-center text-sm font-medium">{bikes.find((b) => b.bike_id === bikeId)?.name ?? "No bike open"}{dirty ? " •" : ""}</span>
         <div className="flex gap-1" role="tablist" aria-label="Simulate view">
           {(["setup", "kinematics", "playback"] as const).map((m) => (
             <Button key={m} size="sm" role="tab" aria-selected={mode === m} filled={mode === m} emphasis={mode === m ? "good" : "normal"} disabled={m !== "setup" && setup === null} onClick={() => setMode(m)}>
@@ -505,8 +542,7 @@ export default function SimulatePage() {
         </div>
 
         <aside className="max-h-[50vh] w-full overflow-y-auto border-t border-[var(--rule)] p-3 lg:max-h-none lg:w-[380px] lg:border-l lg:border-t-0">
-          {mode === "setup" && setup !== null && <SetupPanel setup={setup} placing={placing} onPlacing={setPlacing} onChange={edit} selected={selected} onSelect={setSelected} photoLinks={kin?.photo_links ?? null} />}
-          {mode === "setup" && setup === null && <p className="text-sm text-[var(--fg-dim)]">{bikeId === null ? "Pick or add a bike." : "Set the photo's scale first: click both axles."}</p>}
+          {mode === "setup" && <p className="text-sm text-[var(--fg-dim)]">{bikeId === null ? "Make a bike in the sidebar." : setup === null ? "Set the photo's scale first: click both axles." : "The open bike's parameters are in the sidebar, under its name."}</p>}
           {mode === "kinematics" && (
             <KinematicsPanel
               kin={kin}
@@ -539,6 +575,20 @@ export default function SimulatePage() {
           )}
         </aside>
       </div>
+      {sidebar !== null &&
+        createPortal(
+          <BikeTree
+            bikes={bikes}
+            activeId={bikeId}
+            compare={compare}
+            onOpen={(id) => void openBike(id)}
+            onToggleCompare={(id) => setCompare((c) => { const n = new Set(c); if (n.has(id)) n.delete(id); else n.add(id); return n; })}
+            onCreate={makeBike}
+            onCopy={copyFrom}
+            families={setup !== null ? <SetupPanel setup={setup} placing={placing} onPlacing={setPlacing} onChange={edit} selected={selected} onSelect={setSelected} photoLinks={kin?.photo_links ?? null} /> : <p className="text-xs text-[var(--fg-dim)]">{photo !== null || blank ? "Click both axles on the stage first." : "Add a photo, or start on a blank canvas."}</p>}
+          />,
+          sidebar
+        )}
     </div>
   );
 }

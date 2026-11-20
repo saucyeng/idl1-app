@@ -14,6 +14,8 @@ import { PLOT_STYLE, PlotBox } from "./PlotBox";
 export interface LabelledRun {
   label: string;
   run: SimRun;
+  /** Runs made by one press of Run (the ticked bikes over the same bumps) share a group. */
+  group: number;
 }
 
 /** Props for {@link PlaybackPanel}. */
@@ -67,6 +69,9 @@ export function PlaybackPanel(props: PlaybackPanelProps) {
   const at = run ? Math.max(0, Math.min(run.frames - 1, Math.floor(frame) || 0)) : 0;
   const t = run ? run.frameT[at] : 0;
   const series = run?.channels.find((c) => c.name === channel) ?? null;
+  // the runs made with this one (the ticked bikes over the same bumps), the first as the reference
+  const groupRuns = run ? runs.filter((r) => r.group === runs[shown].group) : [];
+  const [delta, setDelta] = useState(false);
 
   return (
     <div className="flex flex-col gap-5 text-sm">
@@ -103,7 +108,13 @@ export function PlaybackPanel(props: PlaybackPanelProps) {
           <SelectField label="Speed" value={String(props.speed)} options={SPEEDS} onChange={(v) => props.onSpeed(Number(v ?? 1))} />
           <input type="range" min={0} max={run.frames - 1} step={1} value={Math.floor(frame)} onChange={(e) => props.onFrame(Number(e.target.value))} className="w-full accent-[var(--good)]" aria-label="Playhead" />
           <SelectField label="Chart" value={channel} options={run.channels.map((c) => ({ value: c.name, label: c.unit ? `${c.name} (${c.unit})` : c.name }))} onChange={(v) => setChannel(v ?? channel)} className="w-56" />
-          {series !== null && <Timeline run={run} values={series.values} name={channel} t={t} />}
+          {groupRuns.length > 1 && (
+            <label className="flex items-center gap-2 text-xs">
+              <input type="checkbox" checked={delta} onChange={(e) => setDelta(e.target.checked)} />
+              {`Difference from ${groupRuns[0].label}`}
+            </label>
+          )}
+          {series !== null && <Timeline run={run} values={series.values} name={channel} t={t} group={groupRuns} delta={delta} />}
           <div className="grid grid-cols-2 gap-x-3 gap-y-0.5 text-xs">
             {run.channels
               .filter((c) => ["Rear travel", "Cage angle", "Top span tension", "Lower span tension", "Top span deflection", "Lower span deflection", "Clutch slip total", "Links on chainring"].includes(c.name))
@@ -136,11 +147,16 @@ export function PlaybackPanel(props: PlaybackPanelProps) {
               {SUMMARY.map((s) => (
                 <tr key={s.key}>
                   <td className="text-[var(--fg-dim)]">{s.label}</td>
-                  {runs.map((r, i) => (
-                    <td key={i} className="text-right tabular-nums">
-                      {r.run.summary[s.key].toFixed(s.digits)} {s.unit}
-                    </td>
-                  ))}
+                  {runs.map((r, i) => {
+                    const ref = runs.find((x) => x.group === r.group);
+                    const d = ref !== undefined && ref !== r ? r.run.summary[s.key] - ref.run.summary[s.key] : null;
+                    return (
+                      <td key={i} className="text-right tabular-nums">
+                        {r.run.summary[s.key].toFixed(s.digits)} {s.unit}
+                        {d !== null && <span className={`block text-[10px] ${d === 0 ? "text-[var(--fg-faint)]" : "text-[var(--info)]"}`}>{`${d > 0 ? "+" : ""}${d.toFixed(s.digits)}`}</span>}
+                      </td>
+                    );
+                  })}
                 </tr>
               ))}
             </tbody>
@@ -151,27 +167,40 @@ export function PlaybackPanel(props: PlaybackPanelProps) {
   );
 }
 
-/** The run's travel and one channel over time, with the playhead drawn over the chart (the chart itself is built once per run and channel). */
-function Timeline({ run, values, name, t }: { run: SimRun; values: Float32Array; name: string; t: number }) {
+/** The run's travel and one channel over time, every run made with it overlaid (or each one's difference from the first), with the playhead drawn over the chart (the chart itself is built once per run and channel). */
+function Timeline({ run, values, name, t, group, delta }: { run: SimRun; values: Float32Array; name: string; t: number; group: LabelledRun[]; delta: boolean }) {
   const [chart, setChart] = useState<Plot.Plot | null>(null);
   const travel = run.channels.find((c) => c.name === "Rear travel")?.values ?? null;
   const rows = Array.from(run.frameT, (time, i) => ({ t: time, v: values[i], s: travel ? travel[i] : 0 }));
+  const ref = group[0]?.run.channels.find((c) => c.name === name)?.values ?? null;
+  const others =
+    group.length > 1
+      ? group.flatMap((g) => {
+          const v = g.run.channels.find((c) => c.name === name)?.values;
+          if (v === undefined) return [];
+          return Array.from(g.run.frameT, (time, i) => ({ t: time, v: delta && ref !== null && i < ref.length ? v[i] - ref[i] : v[i], run: g.label }));
+        })
+      : [];
   const x = chart?.scale("x");
   const left = x?.apply !== undefined ? (x.apply(t) as number) : null;
   return (
     <div className="relative">
       <PlotBox
-        deps={[run, name]}
+        deps={[run, name, group, delta]}
         onChart={setChart}
         make={(width) =>
           Plot.plot({
             width,
-            height: 160,
+            height: 180,
             style: PLOT_STYLE,
             marginLeft: 44,
             x: { label: "Time (s)" },
             y: { label: null, grid: true },
-            marks: [Plot.areaY(rows, { x: "t", y: "s", fill: "var(--fg-faint)", fillOpacity: 0.25 }), Plot.line(rows, { x: "t", y: "v", stroke: "var(--hivis)", strokeWidth: 1.5 })],
+            color: others.length > 0 ? { legend: true } : undefined,
+            marks:
+              others.length > 0
+                ? [Plot.ruleY([0], { stroke: "var(--rule)" }), Plot.line(others, { x: "t", y: "v", stroke: "run", strokeWidth: 1.5 })]
+                : [Plot.areaY(rows, { x: "t", y: "s", fill: "var(--fg-faint)", fillOpacity: 0.25 }), Plot.line(rows, { x: "t", y: "v", stroke: "var(--hivis)", strokeWidth: 1.5 })],
           })
         }
       />

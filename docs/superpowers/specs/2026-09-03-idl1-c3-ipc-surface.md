@@ -3271,6 +3271,19 @@ the bike and its log. Types are core's
 - **`bike_for_name(name: string)`** → `Bike`: the bike with that name
   (trimmed, case ignored), created with a slug id when there is none. The
   logger's bike name goes through this.
+- **`create_bike(naming: BikeNaming)`** → `Bike` (2026-11-20, whole-bike sim
+  spec §12). `BikeNaming`: `{ initials, year: number | null, make, model,
+  size: string | null, variant: string | null }`. Id `IA-23-GT-Force`, name
+  "IA 23 GT Force"; a taken id gets `-2` (never overwrites); a new `uid`.
+- **`copy_bike(from_id, naming: BikeNaming, kind: "variant" | "copy")`** →
+  `Bike`: the source's linkage, drivetrain, photo and model under a new id
+  (a variant adds ` - <variant>` / `--<variant>`), no log or calibrations.
+  A variant sets `variant_of` (a variant of a variant points at the real
+  bike); a copy sets `copied_from`.
+- `Bike` gains `uid?`, `variant_of?`, `copied_from?`, `model?: { make,
+  model, year?, size? }` and `model_updated_at_ms?`. Saving a bike whose
+  `uid` differs from the file on disk is refused (`conflict`); sync keeps
+  such an arrival alongside as `<id>-2`.
 - **`save_bike(bike: Bike)`** (removed 2026-11-13: nothing called it) → `Bike`: merged with the copy on disk, per
   part.
 - **`get_bike_log(bike_id: string)`** → `{ entries: { entry, current,

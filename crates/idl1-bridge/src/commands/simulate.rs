@@ -709,7 +709,7 @@ mod tests {
     }
 
     fn gt_setup(root: &Path) -> SetupPx {
-        bikelog::save_bike(root, &bikelog::Bike { bike_id: "gt".into(), name: "GT".into(), name_updated_at_ms: 1, fields: Vec::new(), fields_updated_at_ms: 0 }).unwrap();
+        bikelog::save_bike(root, &bikelog::Bike { bike_id: "gt".into(), name: "GT".into(), name_updated_at_ms: 1, fields: Vec::new(), fields_updated_at_ms: 0, ..Default::default() }).unwrap();
         let mut setup = get_sim_setup_via(root, "gt", Some(frame())).unwrap().setup.unwrap();
         setup.rear_travel_m = 0.16;
         setup
