@@ -29,6 +29,7 @@ import { isDrained, nextItemToStart, runImport } from "./importDriver";
 import { canStopAfterCurrent, overallPercent, type ImportItem, type ImportQueueAction } from "./importQueue";
 import { useImportQueue } from "../../../state/ImportQueue";
 import { useVideoDrop, VideoRideChooser } from "./VideoRideChooser";
+import { isPhotoPath } from "@/routes/pages/Simulate/model";
 import { isVideoPath } from "./videoDrop";
 
 /** @param onImported Called once every time the queue drains (every item
@@ -198,7 +199,8 @@ export function ImportPanel({ onImported }: ImportPanelProps) {
         } else if (event.payload.type === "drop") {
           setDragActive(false);
           const videos = event.payload.paths.filter(isVideoPath);
-          for (const path of event.payload.paths.filter((p) => !isVideoPath(p))) {
+          // a photo is the Simulate tab's (a bike's side view), never a log
+          for (const path of event.payload.paths.filter((p) => !isVideoPath(p) && !isPhotoPath(p))) {
             dispatch({ type: "ENQUEUE", path, importerId: importerIdRef.current });
           }
           if (videos.length > 0) void handleVideosRef.current(videos);

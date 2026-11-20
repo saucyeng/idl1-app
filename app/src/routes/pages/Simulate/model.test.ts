@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import type { SetupPx, SimRun } from "@/ipc/simulate";
 
-import { deleteVertex, groupColour, hitPoint, hitSegment, insertVertex, movePoint, newRoller, newSurface, nextMissing, parseCassette, playbackFrame, polyPoints, POINTS, runFrame } from "./model";
+import { deleteVertex, groupColour, hitPoint, hitSegment, insertVertex, isPhotoPath, movePoint, newRoller, newSurface, nextMissing, parseCassette, playbackFrame, polyPoints, POINTS, runFrame } from "./model";
 
 function run(): SimRun {
   // 3 frames, 2 nodes, 2 points (a wheel centre and a surface point), 1 wheel, 1 channel
@@ -164,5 +164,13 @@ describe("Simulate model", () => {
     expect(three).toEqual([[0, 0], [50, 5], [100, 0]]);
     expect(deleteVertex(three, 1)).toEqual(poly);
     expect(deleteVertex(poly, 0)).toEqual(poly);
+  });
+
+  it("isPhotoPath — dropped files — takes photos by extension in any case and nothing else", () => {
+    // Arrange / Act / Assert
+    expect(isPhotoPath("C:\bikes\force.JPG")).toBe(true);
+    expect(isPhotoPath("/tmp/side.webp")).toBe(true);
+    expect(isPhotoPath("ride.idl0")).toBe(false);
+    expect(isPhotoPath("jpg")).toBe(false);
   });
 });

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { scrubValue, snapToRange, SCRUB_PIXELS_PER_STEP } from "./numberScrub";
+import { displayValue, scrubValue, snapToRange, SCRUB_PIXELS_PER_STEP } from "./numberScrub";
 
 describe("scrubValue — a horizontal drag — moves one step every few pixels", () => {
   it("dragging right raises the value and dragging left lowers it, symmetrically", () => {
@@ -111,5 +111,16 @@ describe("snapToRange — bounds and granularity — are respected by every scru
 
     // Assert
     expect([noStep, zeroStep, negativeStep]).toEqual([6, 6, 6]);
+  });
+});
+
+describe("displayValue — a converted value — hides float noise and keeps typed digits", () => {
+  it("rounds noise away, leaves real digits and non-finite values alone", () => {
+    // Arrange / Act / Assert
+    expect(displayValue(1.5e-4 * 1e7)).toBe(1500);
+    expect(displayValue(12.000000000000002)).toBe(12);
+    expect(displayValue(1287.5)).toBe(1287.5);
+    expect(displayValue(0.0123456)).toBe(0.0123456);
+    expect(displayValue(Number.NaN)).toBeNaN();
   });
 });

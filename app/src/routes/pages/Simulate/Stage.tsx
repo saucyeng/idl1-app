@@ -14,6 +14,16 @@ interface View {
   h: number;
 }
 
+/** What the kinematics view draws over the bike. */
+export interface Overlays {
+  /** The rear axle's path through travel. */
+  axlePath: boolean;
+  /** The seatstay's instant centre's path through travel. */
+  icPath: boolean;
+  /** The squat line and the load transfer line at this travel. */
+  squat: boolean;
+}
+
 /** Props for {@link Stage}. */
 export interface StageProps {
   /** Photo size in pixels (the drawing's user units). */
@@ -30,6 +40,11 @@ export interface StageProps {
   snapshot: Snapshot | null;
   /** The run's frame being played. */
   runFrame: RunFrame | null;
+  /** Kinematics overlays, and every travel sample's snapshot for the paths. */
+  overlays: Overlays;
+  snapshots: Snapshot[];
+  /** Centre of mass height above the ground, m (the load transfer line). */
+  cogHeightM: number;
   /** The point the next click places, or null. */
   placing: string | null;
   /** The selected roller or surface, for highlighting. */
@@ -213,6 +228,7 @@ export function Stage(props: StageProps) {
 
       {mode === "setup" && setup !== null && <SetupLayer setup={setup} snapshot={snapshot} m2px={m2px} u={u} stroke={stroke} selected={selected} labels={pxPerUser >= 0.55} placing={placing} />}
       {mode === "kinematics" && snapshot !== null && <SnapshotLayer snapshot={snapshot} m2px={m2px} stroke={stroke} />}
+      {mode === "kinematics" && snapshot !== null && <OverlayLayer snapshot={snapshot} snapshots={props.snapshots} overlays={props.overlays} cogHeightM={props.cogHeightM} m2px={m2px} stroke={stroke} />}
       {mode === "playback" && runFrame !== null && <RunLayer f={runFrame} m2px={m2px} stroke={stroke} />}
     </svg>
   );
@@ -224,6 +240,11 @@ function SetupLayer({ setup, snapshot, m2px, u, stroke, selected, labels, placin
     pts[a] !== undefined && pts[b] !== undefined ? <line key={`${a}-${b}`} x1={pts[a][0]} y1={pts[a][1]} x2={pts[b][0]} y2={pts[b][1]} stroke={colour} strokeWidth={stroke(w)} strokeLinecap="round" /> : null;
   return (
     <g>
+      {snapshot !== null &&
+        snapshot.wheels.map((w) => {
+          const c = m2px(w.centre);
+          return <circle key={w.role} cx={c[0]} cy={c[1]} r={w.radius * scaleOf(m2px)} fill="none" stroke="var(--fg-faint)" strokeWidth={stroke(1.5)} />;
+        })}
       {snapshot !== null && <polygon points={polyPoints(snapshot.chain, m2px)} fill="none" stroke="var(--fg)" strokeOpacity={0.7} strokeWidth={stroke(2)} strokeDasharray={`${stroke(6)} ${stroke(4)}`} />}
       {LINKS.map(([a, b]) => line(a, b, "var(--accent)", 3))}
       {CAGE_LINKS.map(([a, b]) => line(a, b, "var(--info)", 3))}
@@ -294,6 +315,59 @@ function SnapshotLayer({ snapshot, m2px, stroke }: { snapshot: Snapshot; m2px: (
         return <circle key={w.role} cx={c[0]} cy={c[1]} r={w.radius * scale} fill="none" stroke={w.touching ? "var(--fg-dim)" : "var(--fg-faint)"} strokeWidth={stroke(1.5)} strokeDasharray={w.touching ? undefined : `${stroke(4)} ${stroke(4)}`} />;
       })}
       <polygon points={polyPoints(snapshot.chain, m2px)} fill="none" stroke="var(--fg)" strokeWidth={stroke(3)} strokeLinejoin="round" />
+      <Pins pins={snapshot.pins} m2px={m2px} stroke={stroke} />
+    </g>
+  );
+}
+
+/** A dot on every chain pin. */
+function Pins({ pins, m2px, stroke }: { pins: P2[]; m2px: (m: P2) => P2; stroke: (w: number) => number }) {
+  return (
+    <g>
+      {pins.map((n, i) => {
+        const p = m2px(n);
+        return <circle key={i} cx={p[0]} cy={p[1]} r={stroke(2.2)} fill="var(--bg)" stroke="var(--fg)" strokeWidth={stroke(1)} />;
+      })}
+    </g>
+  );
+}
+
+/**
+ * The axle's and instant centre's paths through travel and the squat
+ * construction at this travel (engine `Squat`: Cossalter §6.1.3). The lines
+ * run on to the front axle, where their heights compare: the squat line
+ * through A, the load transfer line to the centre of mass's height.
+ */
+function OverlayLayer({ snapshot, snapshots, overlays, cogHeightM, m2px, stroke }: { snapshot: Snapshot; snapshots: Snapshot[]; overlays: Overlays; cogHeightM: number; m2px: (m: P2) => P2; stroke: (w: number) => number }) {
+  const q = snapshot.squat;
+  const ics = snapshots.map((s) => s.squat.ic).filter((p): p is P2 => p !== null);
+  const dot = (m: P2, colour: string, r: number, key: string) => {
+    const p = m2px(m);
+    return <circle key={key} cx={p[0]} cy={p[1]} r={stroke(r)} fill={colour} />;
+  };
+  // a line from the contact through `through`, on to the front axle's x
+  const toFront = (through: P2): P2 => {
+    const dx = through[0] - q.contact[0];
+    const t = Math.abs(dx) < 1e-9 ? 1 : (q.front_contact[0] - q.contact[0]) / dx;
+    return [q.contact[0] + t * dx, q.contact[1] + t * (through[1] - q.contact[1])];
+  };
+  const cog: P2 = [q.front_contact[0], q.front_contact[1] + cogHeightM];
+  return (
+    <g>
+      {overlays.axlePath && <polyline points={polyPoints(snapshots.map((s) => s.squat.axle), m2px)} fill="none" stroke="var(--info)" strokeWidth={stroke(2)} />}
+      {overlays.axlePath && dot(q.axle, "var(--info)", 4, "axle")}
+      {overlays.icPath && ics.length > 1 && <polyline points={polyPoints(ics, m2px)} fill="none" stroke="var(--hivis)" strokeWidth={stroke(2)} />}
+      {overlays.icPath && q.ic !== null && dot(q.ic, "var(--hivis)", 5, "ic")}
+      {overlays.squat && (
+        <g>
+          <polyline points={polyPoints([q.contact, q.front_contact], m2px)} fill="none" stroke="var(--fg-faint)" strokeWidth={stroke(1.5)} />
+          <polyline points={polyPoints([q.contact, cog], m2px)} fill="none" stroke="var(--fg-dim)" strokeWidth={stroke(1.5)} strokeDasharray={`${stroke(6)} ${stroke(4)}`} />
+          {q.point !== null && q.ic !== null && <polyline points={polyPoints([q.axle, q.ic], m2px)} fill="none" stroke="var(--hivis)" strokeOpacity={0.6} strokeWidth={stroke(1.5)} strokeDasharray={`${stroke(3)} ${stroke(3)}`} />}
+          {q.point !== null && <polyline points={polyPoints([q.contact, toFront(q.point)], m2px)} fill="none" stroke="var(--good)" strokeWidth={stroke(2.5)} />}
+          {q.point !== null && dot(q.point, "var(--good)", 4, "a")}
+          {dot(cog, "var(--fg-dim)", 4, "cog")}
+        </g>
+      )}
     </g>
   );
 }

@@ -27,6 +27,14 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
   The derailleur is entered as measured at the lower jockey's centre, pulled along the chain:
   the force it returns with (the spring), the force to pull it forward (spring and clutch), and
   the clutch's free play in mm; the clutch is one-way and takes hold only after its play.
+  Setup draws the chain as photographed (the photo's gear, through the jockeys where they were
+  clicked); it had drawn the 6th cog with the cage turned to close the loop, so the chain left the
+  jockey dots and jumped when the photo's gear changed. Kinematics: the cage angle follows one
+  solution through travel instead of jumping between them; chain pins drawn as dots; overlays for
+  the axle path, the instant centre's path and the anti-squat lines, and an anti-squat chart for
+  every gear (a centre of mass height to set; Cossalter §6.1.3). Drop a photo on the tab to use
+  it. Number fields hide float noise (1500, not 1499.9999). The typical derailleur is the one
+  measured on the GT Force: 12 N spring (constant moment), 27 N pull, 1 mm play.
 
 - **Workbooks in the app use the bike's calibration [no-docs] (2026-11-16).** A session opened in
   the app now gives the estimator builtins (`attitude`, `body_accel`, `wheel_travel`,

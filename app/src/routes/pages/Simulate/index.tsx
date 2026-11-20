@@ -1,3 +1,4 @@
+import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { open } from "@tauri-apps/plugin-dialog";
 import { useCallback, useEffect, useRef, useState } from "react";
 
@@ -5,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { NumberField } from "@/components/ui/number-field";
 import { SelectField, TextField } from "@/components/ui/select-field";
 import { bikeForName, listBikes, type Bike } from "@/ipc/bikelog";
+import { getActiveRoute } from "@/shell/routeVisibility";
 import {
   DEFAULT_BUMPS,
   getBikePhoto,
@@ -22,10 +24,10 @@ import {
 } from "@/ipc/simulate";
 
 import { KinematicsPanel } from "./KinematicsPanel";
-import { deleteVertex, insertVertex, movePoint, playbackFrame, runFrame } from "./model";
+import { deleteVertex, insertVertex, isPhotoPath, movePoint, PHOTO_EXTENSIONS, playbackFrame, runFrame } from "./model";
 import { PlaybackPanel, type LabelledRun } from "./PlaybackPanel";
 import { SetupPanel } from "./SetupPanel";
-import { Stage } from "./Stage";
+import { Stage, type Overlays } from "./Stage";
 
 type Mode = "setup" | "kinematics" | "playback";
 
@@ -81,6 +83,7 @@ export default function SimulatePage() {
   const [kinError, setKinError] = useState<string | null>(null);
   const [gear, setGear] = useState(5);
   const [travelIndex, setTravelIndex] = useState(0);
+  const [overlays, setOverlays] = useState<Overlays>({ axlePath: true, icPath: false, squat: false });
   const [bumps, setBumps] = useState<BumpTrain>(DEFAULT_BUMPS);
   const [runs, setRuns] = useState<LabelledRun[]>([]);
   const [shown, setShown] = useState(0);
@@ -204,8 +207,45 @@ export default function SimulatePage() {
   async function addPhoto(): Promise<void> {
     if (bikeId === null) return;
     try {
-      const path = await open({ multiple: false, filters: [{ name: "Photo", extensions: ["jpg", "jpeg", "png", "webp"] }] });
+      const path = await open({ multiple: false, filters: [{ name: "Photo", extensions: [...PHOTO_EXTENSIONS] }] });
       if (path === null) return;
+      await takePhoto(path);
+    } catch (e) {
+      setStatus(message(e));
+    }
+  }
+
+  // a photo dropped on the window while this tab is showing
+  const takePhotoRef = useRef<(path: string) => Promise<void>>(async () => undefined);
+  takePhotoRef.current = async (path: string) => {
+    try {
+      await takePhoto(path);
+    } catch (e) {
+      setStatus(message(e));
+    }
+  };
+  useEffect(() => {
+    let unlisten: (() => void) | undefined;
+    let cancelled = false;
+    getCurrentWebview()
+      .onDragDropEvent((event) => {
+        if (event.payload.type !== "drop" || getActiveRoute() !== "simulate") return;
+        const photo = event.payload.paths.find(isPhotoPath);
+        if (photo !== undefined) void takePhotoRef.current(photo);
+      })
+      .then((fn) => (cancelled ? fn() : (unlisten = fn)))
+      .catch(() => {
+        // not inside Tauri: no drops, Add photo still works
+      });
+    return () => {
+      cancelled = true;
+      unlisten?.();
+    };
+  }, []);
+
+  async function takePhoto(path: string): Promise<void> {
+    if (bikeId === null) return;
+    {
       const file = await setBikePhoto(bikeId, path);
       await loadPhoto(bikeId, file);
       setView((v) => (v ? { ...v, photo_file: file } : v));
@@ -215,8 +255,6 @@ export default function SimulatePage() {
       setAxles({});
       setPlacing("rear_axle");
       setMode("setup");
-    } catch (e) {
-      setStatus(message(e));
     }
   }
 
@@ -307,7 +345,8 @@ export default function SimulatePage() {
     setup !== null && setup.points.rear_axle && setup.points.front_axle ? { rear_axle_px: setup.points.rear_axle, front_axle_px: setup.points.front_axle, wheelbase_m: setup.wheelbase_m } : null;
   const axleStep = setup === null && (photo !== null || blank);
   const stageSetup: SetupPx | null = setup ?? (axleStep && view ? { photo_file: null, wheelbase_m: wheelbaseMm / 1000, rear_travel_m: view.rear_travel_m, points: axles, rollers: [], surfaces: [], params: view.params } : null);
-  const snapshot = kin?.snapshots[mode === "kinematics" ? Math.min(travelIndex, (kin?.snapshots.length ?? 1) - 1) : 0] ?? null;
+  // setup shows the bike as photographed; kinematics the chosen gear at the chosen travel
+  const snapshot = mode === "setup" ? (kin?.drawn ?? null) : (kin?.snapshots[Math.min(travelIndex, (kin?.snapshots.length ?? 1) - 1)] ?? null);
   const rf = mode === "playback" && shownRun !== null ? runFrame(shownRun, frame) : null;
   // fit the view to the rear of the bike (everything but the front axle), with room around it
   const placed = setup?.points ?? axles;
@@ -373,6 +412,9 @@ export default function SimulatePage() {
               frame={frameOf ?? kin?.frame ?? null}
               snapshot={snapshot}
               runFrame={rf}
+              overlays={overlays}
+              snapshots={kin?.snapshots ?? []}
+              cogHeightM={setup?.params.cog_height_m ?? 1.1}
               placing={placing}
               selected={selected}
               onPlace={(key, at) => {
@@ -445,12 +487,36 @@ export default function SimulatePage() {
               <span className="w-24 tabular-nums">Cage {kin.snapshots[Math.min(travelIndex, kin.snapshots.length - 1)].cage_deg.toFixed(1)}°</span>
             </div>
           )}
+          {mode === "kinematics" && kin !== null && (
+            <div className="absolute left-3 top-3 flex gap-1 rounded-[var(--radius)] bg-[var(--surface)]/90 p-1 text-xs">
+              {(
+                [
+                  ["axlePath", "Axle path"],
+                  ["icPath", "Instant centre"],
+                  ["squat", "Anti-squat lines"],
+                ] as const
+              ).map(([k, label]) => (
+                <Button key={k} size="sm" filled={overlays[k]} emphasis={overlays[k] ? "good" : undefined} aria-pressed={overlays[k]} onClick={() => setOverlays((o) => ({ ...o, [k]: !o[k] }))}>
+                  {label}
+                </Button>
+              ))}
+            </div>
+          )}
         </div>
 
         <aside className="max-h-[50vh] w-full overflow-y-auto border-t border-[var(--rule)] p-3 lg:max-h-none lg:w-[380px] lg:border-l lg:border-t-0">
           {mode === "setup" && setup !== null && <SetupPanel setup={setup} placing={placing} onPlacing={setPlacing} onChange={edit} selected={selected} onSelect={setSelected} />}
           {mode === "setup" && setup === null && <p className="text-sm text-[var(--fg-dim)]">{bikeId === null ? "Pick or add a bike." : "Set the photo's scale first: click both axles."}</p>}
-          {mode === "kinematics" && <KinematicsPanel kin={kin} gear={gear} travelIndex={travelIndex} surfaceNames={setup?.surfaces.map((s) => s.name) ?? []} />}
+          {mode === "kinematics" && (
+            <KinematicsPanel
+              kin={kin}
+              gear={gear}
+              travelIndex={travelIndex}
+              surfaceNames={setup?.surfaces.map((s) => s.name) ?? []}
+              cogHeightM={setup?.params.cog_height_m ?? 1.1}
+              onCogHeight={(h) => setup && edit({ ...setup, params: { ...setup.params, cog_height_m: h } })}
+            />
+          )}
           {mode === "playback" && (
             <PlaybackPanel
               bumps={bumps}
