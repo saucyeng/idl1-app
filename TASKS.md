@@ -1132,8 +1132,8 @@ work sits on idl-rs `claude/chain-derailleur-physics-4a23f3`, built on `physics-
       `idlm-v1` wire golden (2026-11-19)
 - [x] A light idler held by several teeth no longer spins up from rest (wheel spin stepped implicitly in the
       held teeth); tests: no link inside any wheel in any gear with the top idler (2026-11-19)
-- [ ] Clutch free play: the cage turns a little before the clutch engages (`clutch_free_play_deg`, Isaac to
-      measure with the clutch torque)
+- [x] Clutch free play: the cage turns a little before the clutch engages (`clutch_free_play_deg`); the
+      Simulate tab takes the derailleur as measured at the lower jockey (release, pull, free play) (2026-11-20)
 - [ ] Lower idler design: the clutch work through travel per cog, in the Simulate tab, for a roller dragged
       round the BB (from `rust/core/examples/lower_idler_search.rs`)
 

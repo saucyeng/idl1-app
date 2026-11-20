@@ -67,9 +67,12 @@ export interface DrivetrainParams {
   chain_links: number;
   chain_mass_kg: number;
   jockey_teeth: [number, number];
-  /** `[[deg forward from drawn, N·m toward tension], …]`. */
-  spring_torque_nm: P2[];
-  clutch_torque_nm: number;
+  /** The spring's force at the lower jockey, along the chain: `[[deg forward from drawn, N], …]`. */
+  spring_force_n: P2[];
+  /** The force to pull the lower jockey forward at the drawn angle (spring and clutch), N. */
+  pull_force_n: number;
+  /** How far the lower jockey moves forward along the chain before the clutch holds, mm. */
+  clutch_free_play_mm: number;
   bearing_torque_nm: number;
   cage_inertia_kgm2: number;
   cage_mass_kg: number;

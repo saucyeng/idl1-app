@@ -94,10 +94,16 @@ pub struct DrivetrainParams {
     pub chain_mass_kg: f64,
     /// Upper and lower jockey teeth.
     pub jockey_teeth: [u32; 2],
-    /// Spring torque toward tension vs cage angle forward from drawn: `[[deg, N·m], …]`.
-    pub spring_torque_nm: Vec<[f64; 2]>,
-    /// Clutch torque, N·m.
-    pub clutch_torque_nm: f64,
+    /// The spring's force at the lower jockey's centre, pulled along the
+    /// chain (square to the cage), vs cage angle forward from drawn:
+    /// `[[deg, N], …]`. What the cage pushes back with as it is let return.
+    pub spring_force_n: Vec<[f64; 2]>,
+    /// The force to pull the cage forward at the drawn angle, the same way, N:
+    /// the spring plus the clutch.
+    pub pull_force_n: f64,
+    /// How far the lower jockey moves forward along the chain before the
+    /// clutch takes hold, mm.
+    pub clutch_free_play_mm: f64,
     /// Cage bearing friction, N·m.
     pub bearing_torque_nm: f64,
     /// Cage inertia about its pivot, kg·m².
@@ -162,16 +168,21 @@ pub struct SimSetupView {
     pub photo_file: Option<String>,
 }
 
+/// The shortest cage (pivot to lower jockey) the forces convert on, m.
+const MIN_CAGE_ARM_M: f64 = 0.01;
+
 fn params_of(d: &Drivetrain) -> DrivetrainParams {
     let r = &d.derailleur;
+    let arm = r.lower_jockey_arm_m().max(MIN_CAGE_ARM_M);
     DrivetrainParams {
         chainring_teeth: d.chainring_teeth,
         cassette_teeth: d.cassette_teeth.clone(),
         chain_links: d.chain_links,
         chain_mass_kg: d.chain_mass_kg,
         jockey_teeth: r.jockey_teeth,
-        spring_torque_nm: r.spring_torque_nm.clone(),
-        clutch_torque_nm: r.clutch_torque_nm,
+        spring_force_n: r.spring_torque_nm.iter().map(|&[deg, nm]| [deg, nm / arm]).collect(),
+        pull_force_n: (r.spring_torque(0.0) + r.clutch_torque_nm) / arm,
+        clutch_free_play_mm: r.clutch_free_play_deg.to_radians() * arm * 1000.0,
         bearing_torque_nm: r.bearing_torque_nm,
         cage_inertia_kgm2: r.cage_inertia_kgm2,
         cage_mass_kg: r.cage_mass_kg,
@@ -306,6 +317,27 @@ pub fn from_px(setup: &SetupPx, base: Option<&Linkage>, now: i64) -> Result<(Lin
     if p.cassette_teeth.is_empty() {
         return Err(bad("the cassette needs at least one cog".into()));
     }
+    let (pivot, lower) = (m("cage_pivot")?, m("lower_jockey")?);
+    let arm = ((lower[0] - pivot[0]).powi(2) + (lower[1] - pivot[1]).powi(2)).sqrt();
+    if arm < MIN_CAGE_ARM_M {
+        return Err(bad("the lower jockey is on the cage pivot: drag it to the jockey's centre".into()));
+    }
+    let mut derailleur = Derailleur {
+        cage_pivot_m: pivot,
+        upper_jockey_m: m("upper_jockey")?,
+        lower_jockey_m: lower,
+        jockey_teeth: p.jockey_teeth,
+        spring_torque_nm: p.spring_force_n.iter().map(|&[deg, n]| [deg, n * arm]).collect(),
+        clutch_torque_nm: 0.0,
+        clutch_free_play_deg: (p.clutch_free_play_mm.max(0.0) / 1000.0 / arm).to_degrees(),
+        bearing_torque_nm: p.bearing_torque_nm,
+        cage_inertia_kgm2: p.cage_inertia_kgm2,
+        jockey_inertia_kgm2: p.jockey_inertia_kgm2,
+        cage_mass_kg: p.cage_mass_kg,
+        photo_gear: p.photo_gear.min(p.cassette_teeth.len() - 1),
+    };
+    // the pull is the spring and the clutch together
+    derailleur.clutch_torque_nm = (p.pull_force_n * arm - derailleur.spring_torque(0.0)).max(0.0);
     let drivetrain = Drivetrain {
         updated_at_ms: now,
         bb_m: m("bb")?,
@@ -313,19 +345,7 @@ pub fn from_px(setup: &SetupPx, base: Option<&Linkage>, now: i64) -> Result<(Lin
         cassette_teeth: p.cassette_teeth.clone(),
         chain_links: p.chain_links,
         chain_mass_kg: p.chain_mass_kg,
-        derailleur: Derailleur {
-            cage_pivot_m: m("cage_pivot")?,
-            upper_jockey_m: m("upper_jockey")?,
-            lower_jockey_m: m("lower_jockey")?,
-            jockey_teeth: p.jockey_teeth,
-            spring_torque_nm: p.spring_torque_nm.clone(),
-            clutch_torque_nm: p.clutch_torque_nm,
-            bearing_torque_nm: p.bearing_torque_nm,
-            cage_inertia_kgm2: p.cage_inertia_kgm2,
-            jockey_inertia_kgm2: p.jockey_inertia_kgm2,
-            cage_mass_kg: p.cage_mass_kg,
-            photo_gear: p.photo_gear.min(p.cassette_teeth.len() - 1),
-        },
+        derailleur,
         rollers: setup
             .rollers
             .iter()
@@ -628,9 +648,12 @@ mod tests {
 
     #[test]
     fn save_sim_setup_round_trips_the_pixels_through_metres() {
-        // Arrange
+        // Arrange: the derailleur measured at the lower jockey, 12 N back, 27 N to pull, 1 mm of play
         let root = temp_root();
-        let setup = gt_setup(&root);
+        let mut setup = gt_setup(&root);
+        setup.params.spring_force_n = vec![[0.0, 12.0], [60.0, 18.0]];
+        setup.params.pull_force_n = 27.0;
+        setup.params.clutch_free_play_mm = 1.0;
 
         // Act
         save_sim_setup_via(&root, "gt", &SetupPx { photo_file: Some("gt.photo.jpg".into()), ..setup.clone() }).unwrap();
@@ -643,6 +666,11 @@ mod tests {
             let w = b.points[k];
             assert!((v[0] - w[0]).abs() < 1e-6 && (v[1] - w[1]).abs() < 1e-6, "{k}");
         }
+        let file = bikelog::read_bike_file(&root, "gt").unwrap();
+        let (q, dr) = (&b.params, &file.drivetrain.as_ref().unwrap().derailleur);
+        assert!((q.pull_force_n - 27.0).abs() < 1e-9 && (q.spring_force_n[1][1] - 18.0).abs() < 1e-9 && (q.clutch_free_play_mm - 1.0).abs() < 1e-9, "{q:?}");
+        let arm = dr.lower_jockey_arm_m();
+        assert!((dr.clutch_torque_nm - 15.0 * arm).abs() < 1e-9 && (dr.spring_torque(0.0) - 12.0 * arm).abs() < 1e-9);
         let _ = std::fs::remove_dir_all(&root);
     }
 

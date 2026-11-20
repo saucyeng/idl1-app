@@ -3437,7 +3437,11 @@ DrivetrainParams }`. Point names: `rear_axle`, `front_axle`, `main_pivot`,
 `{ name, body, polyline_px, side: "above" | "below" }`. `body` is
 `"front_triangle" | "chainstay" | "seatstay"`. `DrivetrainParams` carries
 the drivetrain's numbers with their units in their names (Rust
-`idl1_bridge::commands::simulate::DrivetrainParams`).
+`idl1_bridge::commands::simulate::DrivetrainParams`). The derailleur's
+spring, pull and clutch free play are as measured at the lower jockey's
+centre along the chain (`spring_force_n: [[deg, N], …]`, `pull_force_n`,
+`clutch_free_play_mm`); the bridge turns them into the cage's torques and
+play angle with the drawn cage (pivot to lower jockey) as the lever arm.
 
 **`get_sim_setup(bike_id: string, frame: PhotoFrame | null)`** (async) →
 `{ bike_id, has_linkage, has_drivetrain, frame, setup: SetupPx | null,

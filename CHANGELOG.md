@@ -24,6 +24,9 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
   no longer spins up on its own and throws the chain through itself: each wheel's spin is
   stepped implicitly in the teeth holding it. Playback draws the rear tyre and the ground
   scrolling under it: the ground the bump train's travel implies (rigid tyre, level frame).
+  The derailleur is entered as measured at the lower jockey's centre, pulled along the chain:
+  the force it returns with (the spring), the force to pull it forward (spring and clutch), and
+  the clutch's free play in mm; the clutch is one-way and takes hold only after its play.
 
 - **Workbooks in the app use the bike's calibration [no-docs] (2026-11-16).** A session opened in
   the app now gives the estimator builtins (`attitude`, `body_accel`, `wheel_travel`,
