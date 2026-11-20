@@ -65,6 +65,8 @@ export interface DrivetrainParams {
   chainring_teeth: number;
   cassette_teeth: number[];
   chain_links: number;
+  /** Take the chain's length from the photo (nearest even link count) instead of `chain_links`. */
+  chain_from_photo: boolean;
   chain_mass_kg: number;
   jockey_teeth: [number, number];
   /** The spring's force at the lower jockey, along the chain: `[[deg forward from drawn, N], …]`. */
@@ -170,7 +172,15 @@ export interface KinematicsView {
   failed: [number, string][];
   /** Anti-squat, percent, per gear (as `gears`) and travel sample; null where undefined. */
   anti_squat_pct: (number | null)[][];
+  /** The centre of mass height anti-squat used, m: the placed point's, else the params'. */
+  cog_height_m: number;
   snapshots: Snapshot[];
+  /** Travels (mm) where the chosen gear's loop doesn't close, with why. */
+  unclosed: [number, string][];
+  /** The chain's links used. */
+  chain_links: number;
+  /** The chain the photo implies, links (fractional), or null. */
+  photo_links: number | null;
   /** The bike as photographed (topped out, the photo's gear, the cage as drawn), or null. */
   drawn: Snapshot | null;
   /** Chain lengths (links) that fit every gear through travel, or null. */

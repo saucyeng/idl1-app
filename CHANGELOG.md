@@ -35,6 +35,10 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
   every gear (a centre of mass height to set; Cossalter §6.1.3). Drop a photo on the tab to use
   it. Number fields hide float noise (1500, not 1499.9999). The typical derailleur is the one
   measured on the GT Force: 12 N spring (constant moment), 27 N pull, 1 mm play.
+  The chain's length comes from the photo by default (the loop round the points as photographed,
+  to the nearest even link). A centre of mass point (rider and bike) sets the anti-squat height.
+  Kinematics says which travels the chain can't close the loop at instead of starting the travel
+  slider part-way in.
 
 - **Workbooks in the app use the bike's calibration [no-docs] (2026-11-16).** A session opened in
   the app now gives the estimator builtins (`attitude`, `body_accel`, `wheel_travel`,
