@@ -36,8 +36,8 @@ export function SetupPanel({ setup, placing, onPlacing, onChange, selected, onSe
   const [cassette, setCassette] = useState(p.cassette_teeth.join(", "));
   useEffect(() => setCassette(p.cassette_teeth.join(", ")), [p.cassette_teeth]);
   const cassetteOk = parseCassette(cassette) !== null;
-  const spring0 = p.spring_torque_nm[0]?.[1] ?? 0.45;
-  const spring60 = p.spring_torque_nm[1]?.[1] ?? 0.9;
+  const spring0 = p.spring_force_n[0]?.[1] ?? 12;
+  const spring60 = p.spring_force_n[1]?.[1] ?? 18;
 
   const setRoller = (i: number, patch: Partial<RollerPx>) => onChange({ ...setup, rollers: setup.rollers.map((r, k) => (k === i ? { ...r, ...patch } : r)) });
   const setSurface = (i: number, patch: Partial<SurfacePx>) => onChange({ ...setup, surfaces: setup.surfaces.map((s, k) => (k === i ? { ...s, ...patch } : s)) });
@@ -99,9 +99,10 @@ export function SetupPanel({ setup, placing, onPlacing, onChange, selected, onSe
       </FieldGroup>
 
       <FieldGroup title="Derailleur (measure these)">
-        <NumberField label="Spring at drawn" unit="N·m" value={spring0} step={0.01} min={0} max={5} onChange={(v) => setParams({ spring_torque_nm: [[0, num(v, spring0)], [60, spring60]] })} hint="Toward tension, at the cage angle in the photo" />
-        <NumberField label="Spring 60° forward" unit="N·m" value={spring60} step={0.01} min={0} max={5} onChange={(v) => setParams({ spring_torque_nm: [[0, spring0], [60, num(v, spring60)]] })} />
-        <NumberField label="Clutch" unit="N·m" value={p.clutch_torque_nm} step={0.05} min={0} max={10} onChange={(v) => setParams({ clutch_torque_nm: num(v, p.clutch_torque_nm) })} hint="Friction against the cage swinging forward" />
+        <NumberField label="Release" unit="N" value={spring0} step={0.5} min={0} max={100} onChange={(v) => setParams({ spring_force_n: [[0, num(v, spring0)], [60, spring60]] })} hint="At the lower jockey's centre, along the chain, at the cage angle in the photo: what it pushes back with as you let it return" />
+        <NumberField label="Release 60° forward" unit="N" value={spring60} step={0.5} min={0} max={100} onChange={(v) => setParams({ spring_force_n: [[0, spring0], [60, num(v, spring60)]] })} />
+        <NumberField label="Pull" unit="N" value={p.pull_force_n} step={0.5} min={0} max={200} onChange={(v) => setParams({ pull_force_n: num(v, p.pull_force_n) })} hint="To pull the lower jockey forward, the same way and angle: the spring and the clutch" />
+        <NumberField label="Clutch free play" unit="mm" value={p.clutch_free_play_mm} step={0.1} min={0} max={20} onChange={(v) => setParams({ clutch_free_play_mm: num(v, p.clutch_free_play_mm) })} hint="How far the lower jockey moves forward before the clutch holds" />
         <NumberField label="Cage bearing" unit="N·m" value={p.bearing_torque_nm} step={0.005} min={0} max={1} onChange={(v) => setParams({ bearing_torque_nm: num(v, p.bearing_torque_nm) })} />
         <NumberField label="Cage mass" unit="g" value={p.cage_mass_kg * 1000} step={1} min={5} max={300} onChange={(v) => setParams({ cage_mass_kg: num(v, p.cage_mass_kg * 1000) / 1000 })} />
         <NumberField label="Cage inertia" unit="g·cm²" value={p.cage_inertia_kgm2 * 1e7} step={10} min={10} max={20000} onChange={(v) => setParams({ cage_inertia_kgm2: num(v, p.cage_inertia_kgm2 * 1e7) / 1e7 })} />
