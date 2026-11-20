@@ -84,6 +84,8 @@ export interface DrivetrainParams {
   freehub_drag_nm: number;
   wheel_radius_m: number;
   crank_length_m: number;
+  /** Rider and bike's centre of mass above the ground, m, for anti-squat (not saved). */
+  cog_height_m: number;
 }
 
 /** The whole setup in photo pixels. */
@@ -125,6 +127,20 @@ export interface GearCurves {
   clearance_mm: number[][];
   /** One series per roller. */
   roller_touching: boolean[][];
+  /** The squat line's angle above the ground, degrees; null where undefined. */
+  squat_angle_deg: (number | null)[];
+}
+
+/** The squat construction at one travel (Rust `Squat`, metres). */
+export interface Squat {
+  axle: P2;
+  /** The seatstay's instant centre about the frame; null when the links are parallel. */
+  ic: P2 | null;
+  /** Where the chain's top span meets the line from the axle through the instant centre. */
+  point: P2 | null;
+  contact: P2;
+  front_contact: P2;
+  angle_deg: number | null;
 }
 
 /** A wheel to draw (metres). */
@@ -140,16 +156,23 @@ export interface Snapshot {
   travel_mm: number;
   cage_deg: number;
   chain: P2[];
+  /** The chain's pins, one per link. */
+  pins: P2[];
   wheels: WheelView[];
   linkage: [string, P2][];
   surfaces: P2[][];
+  squat: Squat;
 }
 
 /** `sim_kinematics`'s return. */
 export interface KinematicsView {
   gears: GearCurves[];
   failed: [number, string][];
+  /** Anti-squat, percent, per gear (as `gears`) and travel sample; null where undefined. */
+  anti_squat_pct: (number | null)[][];
   snapshots: Snapshot[];
+  /** The bike as photographed (topped out, the photo's gear, the cage as drawn), or null. */
+  drawn: Snapshot | null;
   /** Chain lengths (links) that fit every gear through travel, or null. */
   chain_fit: [number, number] | null;
   frame: PhotoFrame;

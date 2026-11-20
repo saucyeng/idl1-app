@@ -3462,13 +3462,20 @@ or WebP), replacing an earlier one.
 **`get_bike_photo(bike_id: string, file: string)`** (async) → raw bytes.
 
 **`sim_kinematics(setup: SetupPx, gear: number, samples: number)`** (async)
-→ `{ gears: GearCurves[], failed: [gear, why][], snapshots: Snapshot[],
+→ `{ gears: GearCurves[], failed: [gear, why][], anti_squat_pct:
+(number | null)[][], snapshots: Snapshot[], drawn: Snapshot | null,
 chain_fit: [lo, hi] | null, frame }`. Every gear's growth (mm), kickback
-(° of crank), cage angle (° forward), loop change at a held cage (mm), top
-span (mm), clearance to each surface (mm) and roller contact at `samples`
-travels (2–81), and gear `gear` drawn at each (chain pin line, wheels,
-linkage points, surfaces, metres). `chain_fit`: the chain lengths (links)
-that close the loop in every gear through travel.
+(° of crank), cage angle (° forward; through travel it follows one branch
+from the previous sample), loop change at a held cage (mm), top span (mm),
+clearance to each surface (mm), roller contact and squat angle (° above the
+ground, null where undefined) at `samples` travels (2–81), and gear `gear`
+drawn at each (chain pin line, `pins` one per link, wheels, linkage points,
+surfaces, and `squat`: `{ axle, ic, point, contact, front_contact,
+angle_deg }`, metres; Cossalter §6.1.3). `anti_squat_pct` per gear and
+sample, at `params.cog_height_m` (default 1.1 m, not saved). `drawn`: the
+bike as photographed (topped out, the photo's gear, the cage at its drawn
+angle, whatever the chain's length), for the setup view. `chain_fit`: the
+chain lengths (links) that close the loop in every gear through travel.
 
 **`run_drivetrain_sim(setup: SetupPx, gear: number, input: BumpTrain,
 progress: Channel<Progress>)`** (async) → raw bytes, a **sim result**,

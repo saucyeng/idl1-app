@@ -222,3 +222,12 @@ export function insertVertex(poly: readonly P2[], segment: number, at: P2): P2[]
 export function deleteVertex(poly: readonly P2[], k: number): P2[] {
   return poly.length <= 2 ? [...poly] : poly.filter((_, i) => i !== k);
 }
+
+/** Photo file extensions the Simulate tab takes, lower case. */
+export const PHOTO_EXTENSIONS = ["jpg", "jpeg", "png", "webp"] as const;
+
+/** Whether `path` names a photo the Simulate tab takes (by extension). */
+export function isPhotoPath(path: string): boolean {
+  const ext = path.split(".").pop()?.toLowerCase() ?? "";
+  return path.includes(".") && (PHOTO_EXTENSIONS as readonly string[]).includes(ext);
+}

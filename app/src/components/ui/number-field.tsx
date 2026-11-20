@@ -1,7 +1,7 @@
 import { useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 
 import { Field } from "@/components/ui/field";
-import { scrubValue, type ScrubRange } from "@/components/ui/numberScrub";
+import { displayValue, scrubValue, type ScrubRange } from "@/components/ui/numberScrub";
 import { cn } from "@/lib/utils";
 
 /** Props for {@link NumberField}. */
@@ -89,7 +89,7 @@ export function NumberField({ label, value, unit, disabled = false, placeholder,
               id={id}
               type="number"
               inputMode="decimal"
-              value={value ?? ""}
+              value={value === null ? "" : displayValue(value)}
               step={step}
               min={min}
               max={max}

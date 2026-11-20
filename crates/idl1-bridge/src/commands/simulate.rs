@@ -17,7 +17,7 @@ use idl_rs::calibration::linkage::{Linkage, LinkagePoints, PhotoFrame, P2};
 use idl_rs::sim::bike::SimBike;
 use idl_rs::sim::dynamics::{simulate, DynConfig, DynResult};
 use idl_rs::sim::excite::BumpTrain;
-use idl_rs::sim::kinematics::{gear_curves, snapshot, GearCurves, Snapshot};
+use idl_rs::sim::kinematics::{anti_squat_pct, drawn_snapshot, gear_curves, snapshot_near, GearCurves, Snapshot};
 use idl_rs::sim::path::chain_fit;
 use idl_rs::sim::{SimError, SimErrorKind};
 use idl_rs::time::now_ms;
@@ -122,6 +122,10 @@ pub struct DrivetrainParams {
     pub freehub_drag_nm: f64,
     /// Rear wheel rolling radius, m.
     pub wheel_radius_m: f64,
+    /// Height of the rider and bike's centre of mass above the ground, m,
+    /// for anti-squat. Not saved: a placeholder until the mass table.
+    #[serde(default = "default_cog_height_m")]
+    pub cog_height_m: f64,
     /// Crank length, m.
     pub crank_length_m: f64,
 }
@@ -168,6 +172,14 @@ pub struct SimSetupView {
     pub photo_file: Option<String>,
 }
 
+fn default_cog_height_m() -> f64 {
+    DEFAULT_COG_HEIGHT_M
+}
+
+/// A rider and trail bike's centre of mass above the ground, m: a typical
+/// figure until the mass table gives one.
+const DEFAULT_COG_HEIGHT_M: f64 = 1.1;
+
 /// The shortest cage (pivot to lower jockey) the forces convert on, m.
 const MIN_CAGE_ARM_M: f64 = 0.01;
 
@@ -193,6 +205,7 @@ fn params_of(d: &Drivetrain) -> DrivetrainParams {
         freehub_drag_nm: d.freehub_drag_nm,
         wheel_radius_m: d.wheel_radius_m,
         crank_length_m: d.crank_length_m,
+        cog_height_m: DEFAULT_COG_HEIGHT_M,
     }
 }
 
@@ -455,8 +468,14 @@ pub struct KinematicsView {
     pub gears: Vec<GearCurves>,
     /// Gears that don't close the loop, with why.
     pub failed: Vec<(usize, String)>,
+    /// Anti-squat, percent, per gear (as `gears`) and travel sample, at the
+    /// params' centre of mass height; null where the squat line is undefined.
+    pub anti_squat_pct: Vec<Vec<Option<f64>>>,
     /// The chosen gear drawn at each travel sample, in metres.
     pub snapshots: Vec<Snapshot>,
+    /// The bike as photographed (topped out, the photo's gear, the cage at
+    /// its drawn angle), for the setup view; null when it can't be drawn.
+    pub drawn: Option<Snapshot>,
     /// Chain lengths (links) that fit every gear through travel.
     pub chain_fit: Option<(f64, f64)>,
     /// The photo frame the metres are in (to draw them on the photo).
@@ -483,14 +502,17 @@ pub fn sim_kinematics_via(setup: &SetupPx, gear: usize, samples: usize) -> Resul
         }
     }
     let gear = gear.min(drivetrain.cassette_teeth.len() - 1);
-    let mut snapshots = Vec::with_capacity(samples);
+    let mut snapshots: Vec<Snapshot> = Vec::with_capacity(samples);
     for k in 0..samples {
         let s = bike.travel_max_m * k as f64 / (samples - 1) as f64;
-        if let Ok(snap) = snapshot(&bike, s, gear, &enabled) {
+        let near = snapshots.last().map(|p| p.cage_deg.to_radians()).unwrap_or(0.0);
+        if let Ok(snap) = snapshot_near(&bike, s, gear, near, &enabled) {
             snapshots.push(snap);
         }
     }
-    Ok(KinematicsView { gears, failed, snapshots, chain_fit: chain_fit(&bike, &enabled), frame })
+    let drawn = drawn_snapshot(&bike, &enabled).ok();
+    let anti_squat_pct = gears.iter().map(|g| g.squat_angle_deg.iter().map(|a| a.map(|a| anti_squat_pct(a, setup.params.cog_height_m, setup.wheelbase_m))).collect()).collect();
+    Ok(KinematicsView { gears, failed, anti_squat_pct, snapshots, drawn, chain_fit: chain_fit(&bike, &enabled), frame })
 }
 
 /// C3 §3.15 `sim_kinematics(setup, gear, samples)` (async): every gear's
@@ -688,6 +710,11 @@ mod tests {
         // Assert
         assert_eq!(k.gears.len() + k.failed.len(), 12);
         assert_eq!(k.snapshots.len(), 5);
+        assert_eq!(k.anti_squat_pct.len(), k.gears.len());
+        assert!(k.anti_squat_pct.iter().all(|g| g.len() == 5 && g.iter().all(|v| v.is_some_and(f64::is_finite))));
+        let drawn = k.drawn.unwrap();
+        assert_eq!(drawn.cage_deg, 0.0);
+        assert!(k.snapshots[0].pins.len() as u32 + 1 >= setup.params.chain_links, "{} pins", k.snapshots[0].pins.len());
         let _ = std::fs::remove_dir_all(&root);
     }
 

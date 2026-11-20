@@ -101,3 +101,13 @@ export function scrubValue(startValue: number, dx: number, range: ScrubRange, mo
   const effectiveStep = step * factor;
   return clamp(tidy(startValue + steps * effectiveStep, effectiveStep), range);
 }
+
+/** Significant figures a field shows: enough for any value typed by hand,
+ *  few enough to hide floating-point noise from a unit conversion
+ *  (1.5e-4 kg·m² × 1e7 shows 1500, not 1499.9999999999998). */
+export const DISPLAY_SIG_FIGS = 6;
+
+/** A value as a field shows it: rounded to {@link DISPLAY_SIG_FIGS}. */
+export function displayValue(value: number): number {
+  return Number.isFinite(value) ? Number(value.toPrecision(DISPLAY_SIG_FIGS)) : value;
+}
