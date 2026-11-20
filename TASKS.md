@@ -1134,6 +1134,19 @@ work sits on idl-rs `claude/chain-derailleur-physics-4a23f3`, built on `physics-
       held teeth); tests: no link inside any wheel in any gear with the top idler (2026-11-19)
 - [x] Clutch free play: the cage turns a little before the clutch engages (`clutch_free_play_deg`); the
       Simulate tab takes the derailleur as measured at the lower jockey (release, pull, free play) (2026-11-20)
+- [x] Derailleur parallelogram: horizontal (SRAM Eagle, the default for a bike file) or slant; the slant model
+      had the GT Force's upper jockey hitting the 10T, so kinematics started at 47 mm (2026-11-20)
+- [x] Springs and sag (whole-bike spec §9 stride 3): leverage ratio, air springs with negative chambers for
+      shock and fork, static loads from the centre of mass, predicted sag; sag tests logged as notes and the
+      springs fitted to them (`sim_suspension`, Suspension view) (2026-11-20)
+- [x] Geometry table import (stride 2): screenshot → Windows OCR → `geometry_table::parse` → Geometry family;
+      stack, reach and head angle drawn on the photo with the fork-offset check (2026-11-20)
+- [ ] Isaac's sag tests: 220 / 75 psi, then with ~10 kg; then use the fit
+- [x] Ride over bumps: a two-mass rear end (sprung share, unsprung, tyre) on the air spring and a damper
+      through the leverage drives the chain's run (`sim::ride`; Playback "Travel: ride over them") (2026-11-20)
+- [ ] Damping from clicks is a placeholder curve (8 % a click): identify it from a ride (stride 4)
+- [ ] The chain's force back on the suspension (anti-squat while pedalling); frame pitch and the front end
+- [ ] Linkage templates (single pivot, high pivot with idler, linkage-driven single pivot, VPP / DW-link)
 - [ ] Lower idler design: the clutch work through travel per cog, in the Simulate tab, for a roller dragged
       round the BB (from `rust/core/examples/lower_idler_search.rs`)
 

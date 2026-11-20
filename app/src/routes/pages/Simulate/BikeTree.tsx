@@ -52,30 +52,65 @@ type Making = { kind: "new" } | { kind: "variant"; from: Bike } | { kind: "copy"
  */
 export function BikeTree({ bikes, activeId, compare, onOpen, onToggleCompare, onCreate, onCopy, families }: BikeTreeProps) {
   const [making, setMaking] = useState<Making>(null);
+  // rows folded shut: a bike's variants and families, or a variant's families
+  const [folded, setFolded] = useState<ReadonlySet<string>>(new Set());
   const tree = bikeTree(bikes);
+  const toggleFold = (id: string) =>
+    setFolded((f) => {
+      const next = new Set(f);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
 
-  const row = (b: Bike, depth: number) => {
+  const row = (b: Bike, depth: number, variants: Bike[]) => {
     const open = b.bike_id === activeId;
+    const hasContent = open || variants.length > 0;
+    const shut = folded.has(b.bike_id);
     return (
       <div key={b.bike_id} className="flex flex-col">
-        <div className={`group flex items-center gap-1.5 rounded-[var(--radius)] py-1 pr-1 ${open ? "bg-[var(--control-active)]" : "hover:bg-[var(--control)]"}`} style={{ paddingLeft: 4 + depth * 14 }}>
+        <div className={`group flex h-8 items-center gap-1 rounded-[var(--radius)] pr-1 ${open ? "bg-[var(--control-active)]" : "hover:bg-[var(--control)]"}`} style={{ paddingLeft: 4 + depth * 14 }}>
           <Checkbox checked={compare.has(b.bike_id)} onCheckedChange={() => onToggleCompare(b.bike_id)} aria-label={`Run ${b.name || b.bike_id} with the others`} title="Run with the others" />
-          <button type="button" onClick={() => onOpen(b.bike_id)} className="flex min-w-0 flex-1 items-center gap-1 text-left text-sm">
-            {open ? <ChevronDown className="size-3.5 shrink-0" /> : <ChevronRight className="size-3.5 shrink-0 text-[var(--fg-faint)]" />}
-            <span className="truncate">{b.name || b.bike_id}</span>
+          <button
+            type="button"
+            onClick={() => hasContent && toggleFold(b.bike_id)}
+            className={`flex size-5 shrink-0 items-center justify-center ${hasContent ? "" : "invisible"}`}
+            aria-label={shut ? "Unfold" : "Fold"}
+            aria-expanded={!shut}
+          >
+            {shut ? <ChevronRight className="size-3.5 text-[var(--fg-faint)]" /> : <ChevronDown className="size-3.5" />}
           </button>
-          <span className="hidden gap-0.5 group-hover:flex">
-            <Button size="icon-sm" aria-label="New variant" title="New variant: an idea for this bike" onClick={() => setMaking({ kind: "variant", from: b })}>
+          <button
+            type="button"
+            onClick={() => {
+              if (open) toggleFold(b.bike_id);
+              else {
+                onOpen(b.bike_id);
+                setFolded((f) => {
+                  const next = new Set(f);
+                  next.delete(b.bike_id);
+                  return next;
+                });
+              }
+            }}
+            className="min-w-0 flex-1 truncate text-left text-sm"
+            title={b.variant_of !== undefined ? `A variant: a change to try on ${b.variant_of}` : undefined}
+          >
+            {b.name || b.bike_id}
+          </button>
+          <span className="invisible flex gap-0.5 group-hover:visible group-focus-within:visible">
+            <Button size="icon-sm" aria-label="New variant" title="Try a change: a variant of this bike, compared side by side before you fit anything" onClick={() => setMaking({ kind: "variant", from: b })}>
               <GitBranch />
             </Button>
             {b.variant_of === undefined && (
-              <Button size="icon-sm" aria-label="Copy as a new bike" title="Copy as a new bike (someone else's of the same model)" onClick={() => setMaking({ kind: "copy", from: b })}>
+              <Button size="icon-sm" aria-label="Copy as someone else's bike" title="Someone else's bike of the same model: a new bike with its own name and log, starting from these points" onClick={() => setMaking({ kind: "copy", from: b })}>
                 <Copy />
               </Button>
             )}
           </span>
         </div>
-        {open && <div className="flex flex-col gap-3 py-2 pr-1" style={{ paddingLeft: 10 + depth * 14 }}>{families}</div>}
+        {!shut && open && <div className="flex flex-col gap-3 py-2 pr-1" style={{ paddingLeft: 10 + depth * 14 }}>{families}</div>}
+        {!shut && variants.map((v) => row(v, depth + 1, []))}
       </div>
     );
   };
@@ -93,12 +128,7 @@ export function BikeTree({ bikes, activeId, compare, onOpen, onToggleCompare, on
         else await onCopy(making.from.bike_id, n, making.kind);
         setMaking(null);
       }} />}
-      {tree.map((node) => (
-        <div key={node.bike.bike_id} className="flex flex-col">
-          {row(node.bike, 0)}
-          {node.variants.map((v) => row(v, 1))}
-        </div>
-      ))}
+      {tree.map((node) => row(node.bike, 0, node.variants))}
       {tree.length === 0 && <p className="px-1 text-xs text-[var(--fg-dim)]">No bikes yet. Make one with New bike.</p>}
     </div>
   );
@@ -120,7 +150,13 @@ function NamingForm({ making, onCancel, onDone }: { making: Exclude<Making, null
   const yearN = year.trim() === "" ? null : Number(year);
   const yearOk = yearN === null || (Number.isInteger(yearN) && yearN > 1900 && yearN < 2200);
   const ok = making.kind === "variant" ? variant.trim() !== "" : initials.trim() !== "" && (make.trim() !== "" || model.trim() !== "") && yearOk;
-  const title = making.kind === "new" ? "New bike" : making.kind === "variant" ? `Variant of ${from?.name}` : `New bike from ${from?.name}`;
+  const title = making.kind === "new" ? "New bike" : making.kind === "variant" ? `Try a change on ${from?.name}` : `Someone else's ${from?.name}`;
+  const explain =
+    making.kind === "new"
+      ? "A bike you'll photograph and place points on."
+      : making.kind === "variant"
+        ? "A variant is the same bike with one idea changed: a lower idler, another shock, a different chainring. It starts as a copy of this bike, sits under it, and has no log of its own. Run it beside the bike to see the difference before you fit anything. If you fit it for real, the bike's log records the change."
+        : "A copy is a different physical bike: a teammate's of the same model and size. It starts from these points and parameters to save placing them again, then gets its own name, owner and log. Use a variant instead for an idea on this bike.";
   return (
     <form
       className="mb-2 flex flex-col gap-2 rounded-[var(--radius)] border border-[var(--rule)] p-2"
@@ -140,6 +176,7 @@ function NamingForm({ making, onCancel, onDone }: { making: Exclude<Making, null
       }}
     >
       <div className="text-xs font-medium">{title}</div>
+      <p className="text-xs text-[var(--fg-dim)]">{explain}</p>
       {making.kind === "variant" ? (
         <TextField label="Variant" value={variant} onChange={setVariant} placeholder="lower idler" />
       ) : (

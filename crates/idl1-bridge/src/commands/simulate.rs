@@ -119,6 +119,11 @@ pub struct DrivetrainParams {
     pub jockey_inertia_kgm2: f64,
     /// The gear the photo was taken in (0 = smallest cog).
     pub photo_gear: usize,
+    /// How far the parallelogram drops the cage pivot toward the axle as it
+    /// shifts, as a fraction of the change in cog radius: 0 for a horizontal
+    /// parallelogram (SRAM Eagle), 1 for a slant one. Absent: 0.
+    #[serde(default)]
+    pub slant: f64,
     /// Cassette and freehub inertia, kg·m².
     pub cassette_inertia_kgm2: f64,
     /// Freehub engagement, degrees.
@@ -210,6 +215,7 @@ fn params_of(d: &Drivetrain) -> DrivetrainParams {
         cage_mass_kg: r.cage_mass_kg,
         jockey_inertia_kgm2: r.jockey_inertia_kgm2,
         photo_gear: r.photo_gear,
+        slant: r.slant,
         cassette_inertia_kgm2: d.cassette_inertia_kgm2,
         freehub_engagement_deg: d.freehub_engagement_deg,
         freehub_drag_nm: d.freehub_drag_nm,
@@ -361,6 +367,7 @@ pub fn from_px(setup: &SetupPx, base: Option<&Linkage>, now: i64) -> Result<(Lin
         jockey_inertia_kgm2: p.jockey_inertia_kgm2,
         cage_mass_kg: p.cage_mass_kg,
         photo_gear: p.photo_gear.min(p.cassette_teeth.len() - 1),
+        slant: p.slant.clamp(0.0, 1.0),
     };
     // the pull is the spring and the clutch together
     derailleur.clutch_torque_nm = (p.pull_force_n * arm - derailleur.spring_torque(0.0)).max(0.0);
@@ -603,7 +610,7 @@ pub fn sim_kinematics(setup: SetupPx, gear: usize, samples: usize) -> Result<Kin
 /// `ground` (xy × [`GROUND_POINTS`], m: the ground under a window of
 /// `window_m` centred on the rear axle, in the bike's frame, so it scrolls
 /// past as the bike moves) and `distance` (scalar, m travelled).
-pub fn run_result(r: &DynResult, bike: &SimBike, frame: &PhotoFrame, input: &BumpTrain) -> SimResult {
+pub fn run_result(r: &DynResult, bike: &SimBike, frame: &PhotoFrame, input: &BumpTrain, ground_at: &dyn Fn(f64) -> f64, sag_m: f64) -> SimResult {
     let dt = "drivetrain".to_string();
     let mut components = serde_json::Map::new();
     components.insert(
@@ -630,7 +637,7 @@ pub fn run_result(r: &DynResult, bike: &SimBike, frame: &PhotoFrame, input: &Bum
     let tr = "terrain".to_string();
     let wheel_r = bike.drivetrain.wheel_radius_m;
     let axle_i = r.point_names.iter().position(|n| n == "rear_axle");
-    let base_y = bike.pose(input.sag_m).seatstay_point(bike.points.rear_axle)[1] - wheel_r;
+    let base_y = bike.pose(sag_m).seatstay_point(bike.points.rear_axle)[1] - wheel_r;
     let np = r.point_names.len();
     let mut ground = Vec::with_capacity(r.frame_t_s.len() * GROUND_POINTS * 2);
     let mut distance = Vec::with_capacity(r.frame_t_s.len());
@@ -640,7 +647,7 @@ pub fn run_result(r: &DynResult, bike: &SimBike, frame: &PhotoFrame, input: &Bum
         for k in 0..GROUND_POINTS {
             let dx = GROUND_WINDOW_M * (k as f64 / (GROUND_POINTS - 1) as f64 - 0.5);
             ground.push((axle_x + dx) as f32);
-            ground.push((base_y + input.ground_height(d + dx)) as f32);
+            ground.push((base_y + ground_at(d + dx)) as f32);
         }
         distance.push(d as f32);
     }
@@ -657,11 +664,62 @@ pub const GROUND_WINDOW_M: f64 = 3.0;
 
 /// A run's bytes: `IDLM` v1 ([`crate::sim_result_wire`]) of [`run_result`].
 pub fn encode_run(r: &DynResult, bike: &SimBike, frame: &PhotoFrame, input: &BumpTrain) -> Vec<u8> {
-    encode_sim_result(&run_result(r, bike, frame, input))
+    encode_sim_result(&run_result(r, bike, frame, input, &|d| input.ground_height(d), input.sag_m))
+}
+
+/// Riding over bumps instead of prescribing the travel (whole-bike sim spec
+/// §9, stride 3): the bike whose springs ride, and the bumps' shape. The
+/// bump train gives the speed, count, spacing and lead.
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct RideRequest {
+    /// The bike whose parameters (masses, shock, pressures, clicks, tyre) ride.
+    pub bike_id: String,
+    /// Each bump's height, m (negative: a step down).
+    pub bump_height_m: f64,
+    /// Each bump's length along the trail, m.
+    pub bump_length_m: f64,
+}
+
+/// The rear end from a bike's parameters and the drawing, with the
+/// defaults that stood in for missing ones, in words.
+pub fn rear_end_of(p: &idl_rs::calibration::params::Params, bike: &SimBike, cog_x_m: f64, wheelbase_m: f64) -> Result<(idl_rs::sim::ride::RearEnd, Vec<String>), IpcError> {
+    use idl_rs::calibration::params::{mass_table, number};
+    use idl_rs::sim::ride::{tyre_stiffness_n_m, Damper, RearEnd};
+    use idl_rs::sim::suspension::{air_spring, shock_stroke, wheel_loads_n, End, G, PSI_PA};
+    let mut assumed = Vec::new();
+    let mut or = |key: &str, default: f64, what: &str| {
+        number(p, key).unwrap_or_else(|| {
+            assumed.push(format!("{what}: {default}"));
+            default
+        })
+    };
+    let st = shock_stroke(bike, bike.travel_max_m).filter(|s| *s > 1e-3).ok_or_else(|| IpcError::new(IpcErrorKind::InvalidArgument, "riding needs the shock: place both shock eyes"))?;
+    let mass = or("mass.bike_kg", 16.0, "bike mass (kg)") + or("rider.mass_kg", 75.0, "rider mass in kit (kg)");
+    let m = mass_table(p);
+    let unsprung = if m.rear_unsprung_kg > 0.5 { m.rear_unsprung_kg } else { or("", 4.5, "rear unsprung mass (kg)") };
+    let (_, rear_n) = wheel_loads_n(mass, cog_x_m, wheelbase_m);
+    let psi = or("shock.psi", 200.0, "shock pressure (psi)");
+    let tyre_psi = or("rear_tyre.psi", 25.0, "rear tyre (psi)");
+    // clicks from closed open the damper about 8 % each from twice the
+    // default when closed: a placeholder curve until the shock is identified
+    let scale = |key: &str| number(p, key).map_or(1.0, |c| 2.0 * 0.92_f64.powf(c.max(0.0)) / (2.0 * 0.92_f64.powf(8.0)));
+    let d = Damper::default();
+    let damper = Damper { lsc_ns_m: d.lsc_ns_m * scale("shock.lsc"), hsc_ns_m: d.hsc_ns_m * scale("shock.hsc"), lsr_ns_m: d.lsr_ns_m * scale("shock.lsr"), hsr_ns_m: d.hsr_ns_m * scale("shock.hsr"), knee_mps: d.knee_mps };
+    assumed.push("damping from clicks: a placeholder curve (8 % per click, 8 clicks = typical)".into());
+    let rear = RearEnd {
+        sprung_kg: (rear_n / G - unsprung).max(1.0),
+        unsprung_kg: unsprung,
+        spring: air_spring(p, End::Shock, st),
+        gauge_pa: psi * PSI_PA,
+        damper,
+        tyre_k_n_m: tyre_stiffness_n_m(tyre_psi),
+        tyre_c_ns_m: 100.0,
+    };
+    Ok((rear, assumed))
 }
 
 /// Runs the dynamics for an (unsaved) setup and encodes it.
-pub fn run_drivetrain_sim_via(setup: &SetupPx, gear: usize, input: &BumpTrain, progress: &mut dyn FnMut(f64)) -> Result<Vec<u8>, IpcError> {
+pub fn run_drivetrain_sim_via(setup: &SetupPx, gear: usize, input: &BumpTrain, ride: Option<(&RideRequest, &Path)>, progress: &mut dyn FnMut(f64)) -> Result<Vec<u8>, IpcError> {
     let (linkage, drivetrain, _) = resolve(setup, None, 0)?;
     let frame = PhotoFrame { rear_axle_px: setup.points["rear_axle"], front_axle_px: setup.points["front_axle"], wheelbase_m: setup.wheelbase_m };
     let bike = SimBike::new(&linkage, &drivetrain)?;
@@ -670,28 +728,323 @@ pub fn run_drivetrain_sim_via(setup: &SetupPx, gear: usize, input: &BumpTrain, p
     if !(input.count >= 1 && input.count <= 200 && input.spacing_s > 0.0 && input.compress_s > 0.0 && input.rebound_s > 0.0 && input.depth_m <= linkage.rear_travel_m + 1e-9 && input.sag_m >= 0.0) {
         return Err(bad("the bumps need 1-200 hits, positive times, and a depth within the travel"));
     }
-    let exc = input.excitation(1000.0);
-    if exc.t_s.last().copied().unwrap_or(0.0) > 120.0 {
+    if input.duration_s() > 120.0 {
         return Err(bad("a run is at most 120 s"));
     }
     let gear = gear.min(drivetrain.cassette_teeth.len() - 1);
-    let r = simulate(&bike, gear, &enabled, &exc, &DynConfig::default(), &mut |f| {
+    let Some((req, root)) = ride else {
+        let exc = input.excitation(1000.0);
+        let r = simulate(&bike, gear, &enabled, &exc, &DynConfig::default(), &mut |f| {
+            progress(f);
+            true
+        })?;
+        return Ok(encode_run(&r, &bike, &frame, input));
+    };
+    // ride the rear end over the bumps; the chain runs on the travel that gives
+    use idl_rs::sim::ride::{ride as ride_over, Terrain};
+    if !(req.bump_length_m > 0.05 && req.bump_height_m.abs() <= 1.0) {
+        return Err(bad("a bump needs a length over 5 cm and a height within a metre"));
+    }
+    let file = bikelog::read_bike_file(root, &req.bike_id)?;
+    let p = bikelog::effective_parameters(&file, now_ms());
+    let cog_x = linkage.points_m.centre_of_mass.map_or(0.4 * linkage.wheelbase_m, |c| c[0]);
+    let (rear, _) = rear_end_of(&p, &bike, cog_x, linkage.wheelbase_m)?;
+    let terrain = Terrain::bumps(input.count, req.bump_height_m, req.bump_length_m, input.spacing_s * input.speed_mps, input.lead_s * input.speed_mps);
+    let out = ride_over(&bike, &rear, &terrain, input.speed_mps, input.duration_s() + 0.3, 1000.0)?;
+    let r = simulate(&bike, gear, &enabled, &out.excitation, &DynConfig::default(), &mut |f| {
         progress(f);
         true
     })?;
-    Ok(encode_run(&r, &bike, &frame, input))
+    let mut result = run_result(&r, &bike, &frame, &BumpTrain { sag_m: out.sag_m, ..*input }, &|d| terrain.height(d), out.sag_m);
+    // the ride's own channels, at the run's frames
+    let at = |v: &[f64], t: f64| {
+        let i = ((t * 1000.0).round() as usize).min(v.len() - 1);
+        v[i] as f32
+    };
+    let ride_tracks = [("Tyre force", &out.tyre_n), ("Shock force", &out.shock_n)];
+    for (name, v) in ride_tracks {
+        let values = result.frame_t_s.iter().map(|&t| at(v, t as f64)).collect();
+        result.tracks.push(Track { name: name.into(), component: "drivetrain".into(), kind: TrackKind::Scalar, count: 1, unit: "N".into(), labels: None, values });
+    }
+    Ok(encode_sim_result(&result))
 }
 
 /// C3 §3.15 `run_drivetrain_sim(setup, gear, input, progress)` (async):
 /// the chain loop through a bump train, frame by frame, as `IDLM` v1 bytes
-/// ([`encode_run`]). Progress: `phase` `"simulating"`, `done` of `total` = 1000.
+/// ([`encode_run`]). With `ride`, the bike's rear end rides over bumps of
+/// that shape at the train's speed, count and spacing, and the chain runs on
+/// the travel that gives (adding the "Tyre force" and "Shock force" tracks). Progress: `phase` `"simulating"`, `done` of `total` = 1000.
 /// Errors: `invalid_argument` (the setup or the bumps), as `sim_kinematics`.
 #[tauri::command(async)]
-pub fn run_drivetrain_sim(setup: SetupPx, gear: usize, input: BumpTrain, progress: tauri::ipc::Channel<Progress>) -> Result<tauri::ipc::Response, IpcError> {
-    let bytes = run_drivetrain_sim_via(&setup, gear, &input, &mut |f| {
+pub fn run_drivetrain_sim(setup: SetupPx, gear: usize, input: BumpTrain, ride: Option<RideRequest>, progress: tauri::ipc::Channel<Progress>, data_dir: tauri::State<'_, DataDir>) -> Result<tauri::ipc::Response, IpcError> {
+    let bytes = run_drivetrain_sim_via(&setup, gear, &input, ride.as_ref().map(|r| (r, data_dir.0.as_path())), &mut |f| {
         let _ = progress.send(Progress { done: (f * 1000.0) as u64, total: Some(1000), phase: "simulating".into() });
     })?;
     Ok(tauri::ipc::Response::new(bytes))
+}
+
+/// One end's spring as fitted to the logged sag measurements.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct SpringFitView {
+    /// Air piston area, cm².
+    pub piston_area_cm2: f64,
+    /// Positive chamber at top-out with no spacers, cc.
+    pub positive_volume_cc: f64,
+    /// Negative chamber at top-out, cc.
+    pub negative_volume_cc: f64,
+    /// Root-mean-square miss between measured and predicted sag, mm.
+    pub rms_mm: f64,
+    /// 1: the area only (one measurement); 2: area and positive volume.
+    pub unknowns: usize,
+    /// The fitted values as parameters, ready for `set_bike_parameters`.
+    pub values: idl_rs::calibration::params::Params,
+}
+
+/// One logged sag measurement beside what the springs predict for it now.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct SagTestView {
+    /// When it was measured, UTC ms.
+    pub at_ms: i64,
+    /// "fork" or "shock".
+    pub end: &'static str,
+    /// Pressure then, psi.
+    pub psi: f64,
+    /// Carried mass then, kg.
+    pub carried_kg: f64,
+    /// Measured sag (stroke), mm.
+    pub measured_mm: f64,
+    /// Predicted by the current parameters, mm.
+    pub predicted_mm: f64,
+    /// Predicted by the fit, mm.
+    pub fitted_mm: Option<f64>,
+}
+
+/// One end's predicted sag.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct SagView {
+    /// Stroke at sag, mm (the shaft or the stanchion, what a rider measures).
+    pub stroke_mm: f64,
+    /// As a share of the stroke, %.
+    pub pct: f64,
+    /// Rear only: the wheel's travel at sag, mm.
+    pub wheel_mm: Option<f64>,
+}
+
+/// C3 §3.15 `sim_suspension` result: the springs, the static loads and the
+/// sag they give, and the springs fitted to the logged sag measurements.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct SuspensionView {
+    /// Rear wheel travel samples, mm.
+    pub travel_mm: Vec<f64>,
+    /// Shock stroke at each travel, mm; empty without both shock eyes.
+    pub shock_stroke_mm: Vec<f64>,
+    /// Leverage ratio at each travel.
+    pub leverage: Vec<f64>,
+    /// Rear wheel force at each travel, N, static (slow).
+    pub rear_force_n: Vec<f64>,
+    /// The same over a bump (fast, adiabatic), N.
+    pub rear_force_fast_n: Vec<f64>,
+    /// Fork stroke samples, mm.
+    pub fork_mm: Vec<f64>,
+    /// Fork force along its legs at each stroke, N, static.
+    pub fork_force_n: Vec<f64>,
+    /// The same over a bump, N.
+    pub fork_force_fast_n: Vec<f64>,
+    /// Rider and bike, kg (no pack: a sag test's pack stays out of the bike as ridden).
+    pub mass_kg: f64,
+    /// Static load on each wheel less its unsprung weight, N (front, rear).
+    pub sprung_load_n: [f64; 2],
+    /// The share of the weight on the rear wheel, %.
+    pub rear_pct: f64,
+    /// Rear sag at the current shock pressure.
+    pub rear_sag: Option<SagView>,
+    /// Fork sag at the current fork pressure.
+    pub fork_sag: Option<SagView>,
+    /// Every logged sag measurement.
+    pub tests: Vec<SagTestView>,
+    /// The fork's spring fitted to its measurements.
+    pub fork_fit: Option<SpringFitView>,
+    /// The shock's.
+    pub shock_fit: Option<SpringFitView>,
+    /// Assumptions standing in for missing parameters, in words.
+    pub assumed: Vec<String>,
+}
+
+/// A logged measurement turned into a fit input, with its psi and carried mass.
+type LoggedSag = (i64, idl_rs::sim::suspension::SagTest, f64, f64);
+
+/// The suspension at the drawing `setup` with bike `bike_id`'s parameters
+/// and log (see [`sim_suspension`]).
+pub fn sim_suspension_via(data_root: &Path, bike_id: &str, setup: &SetupPx, now: i64) -> Result<SuspensionView, IpcError> {
+    use idl_rs::calibration::params::{mass_table, number, Params};
+    use idl_rs::sim::suspension::{air_spring, fit, fork_axial_share, leverage_ratio, rear_sag_travel_m, rear_wheel_force_n, shock_stroke, wheel_loads_n, AirSpring, End, SagTest, G, N_DYNAMIC, N_STATIC, PSI_PA};
+
+    let file = bikelog::read_bike_file(data_root, bike_id)?;
+    let (linkage, drivetrain, _) = resolve(setup, None, now)?;
+    let bike = SimBike::new(&linkage, &Drivetrain { chain_links: drivetrain.chain_links.max(100), ..drivetrain })?;
+    let p = bikelog::effective_parameters(&file, now);
+    let assumed: std::cell::RefCell<Vec<String>> = std::cell::RefCell::new(Vec::new());
+    let note = |what: String| {
+        let mut a = assumed.borrow_mut();
+        if !a.contains(&what) {
+            a.push(what);
+        }
+    };
+    let or = |p: &Params, key: &str, default: f64, what: &str| {
+        number(p, key).unwrap_or_else(|| {
+            note(format!("{what}: {default}"));
+            default
+        })
+    };
+    let wb = linkage.wheelbase_m;
+    let cog_x = match linkage.points_m.centre_of_mass {
+        Some(c) => c[0],
+        None => {
+            note("centre of mass 40 % of the wheelbase ahead of the rear axle (place the centre of mass point)".into());
+            0.4 * wb
+        }
+    };
+    let hta = or(&p, "geometry.head_angle_deg", 64.0, "head angle (°)");
+    let fork_stroke = or(&p, "fork.travel_mm", 160.0, "fork travel (mm)") / 1000.0;
+    let rear_stroke = shock_stroke(&bike, bike.travel_max_m).filter(|s| *s > 1e-3);
+    // the sprung load on each wheel from the parameters of a day, with what
+    // the rider carried for a sag test (the log keeps the last test's pack,
+    // so the bike as ridden now leaves it out)
+    let loads = |p: &Params, carried: bool| {
+        let m = mass_table(p);
+        let pack = if carried { number(p, "rider.carried_kg").unwrap_or(0.0) } else { 0.0 };
+        let mass = or(p, "mass.bike_kg", 16.0, "bike mass (kg)") + or(p, "rider.mass_kg", 75.0, "rider mass in kit (kg)") + pack;
+        let (f, r) = wheel_loads_n(mass, cog_x, wb);
+        (mass, (f - m.front_unsprung_kg * G).max(0.0), (r - m.rear_unsprung_kg * G).max(0.0))
+    };
+    let (mass_kg, front_n, rear_n) = loads(&p, false);
+    let shock_psi = or(&p, "shock.psi", 200.0, "shock pressure (psi)");
+    let fork_psi = or(&p, "fork.psi", 80.0, "fork pressure (psi)");
+    let fork = air_spring(&p, End::Fork, fork_stroke);
+    let axial = fork_axial_share(hta);
+
+    let n = 41;
+    let travel: Vec<f64> = (0..n).map(|i| bike.travel_max_m * i as f64 / (n - 1) as f64).collect();
+    let fork_x: Vec<f64> = (0..n).map(|i| fork_stroke * i as f64 / (n - 1) as f64).collect();
+    let fx = fork.stroke_under(fork_psi * PSI_PA, front_n * axial);
+    let mut view = SuspensionView {
+        travel_mm: travel.iter().map(|t| t * 1000.0).collect(),
+        shock_stroke_mm: Vec::new(),
+        leverage: Vec::new(),
+        rear_force_n: Vec::new(),
+        rear_force_fast_n: Vec::new(),
+        fork_mm: fork_x.iter().map(|x| x * 1000.0).collect(),
+        fork_force_n: fork_x.iter().map(|&x| fork.force_n(fork_psi * PSI_PA, x, N_STATIC)).collect(),
+        fork_force_fast_n: fork_x.iter().map(|&x| fork.force_n(fork_psi * PSI_PA, x, N_DYNAMIC)).collect(),
+        mass_kg,
+        sprung_load_n: [front_n, rear_n],
+        rear_pct: 100.0 * (1.0 - cog_x / wb).clamp(0.0, 1.0),
+        rear_sag: None,
+        fork_sag: Some(SagView { stroke_mm: fx * 1000.0, pct: 100.0 * fx / fork_stroke, wheel_mm: None }),
+        tests: Vec::new(),
+        fork_fit: None,
+        shock_fit: None,
+        assumed: Vec::new(),
+    };
+
+    let shock = rear_stroke.map(|st| air_spring(&p, End::Shock, st));
+    if let (Some(shock), Some(st)) = (shock, rear_stroke) {
+        for &t in &travel {
+            view.shock_stroke_mm.push(shock_stroke(&bike, t).unwrap_or(0.0) * 1000.0);
+            view.leverage.push(leverage_ratio(&bike, t).unwrap_or(f64::NAN));
+            view.rear_force_n.push(rear_wheel_force_n(&bike, &shock, shock_psi * PSI_PA, t, N_STATIC).unwrap_or(f64::NAN));
+            view.rear_force_fast_n.push(rear_wheel_force_n(&bike, &shock, shock_psi * PSI_PA, t, N_DYNAMIC).unwrap_or(f64::NAN));
+        }
+        if let Some(t) = rear_sag_travel_m(&bike, &shock, shock_psi * PSI_PA, rear_n) {
+            let x = shock_stroke(&bike, t).unwrap_or(0.0);
+            view.rear_sag = Some(SagView { stroke_mm: x * 1000.0, pct: 100.0 * x / st, wheel_mm: Some(t * 1000.0) });
+        }
+    }
+
+    // the logged measurements, each with the parameters of its day
+    let mut fork_tests: Vec<LoggedSag> = Vec::new();
+    let mut shock_tests: Vec<LoggedSag> = Vec::new();
+    for m in bikelog::sag_measurements(&file) {
+        let (_, f_n, r_n) = loads(&m.params, true);
+        let carried = number(&m.params, "rider.carried_kg").unwrap_or(0.0);
+        if let (true, Some(sag), Some(psi)) = (m.fork, number(&m.params, "fork.sag_mm"), number(&m.params, "fork.psi")) {
+            let spacers = number(&m.params, "fork.volume_reducers").unwrap_or(0.0);
+            fork_tests.push((m.at_ms, SagTest { gauge_pa: psi * PSI_PA, load_n: f_n * axial, stroke_m: sag / 1000.0, spacers }, psi, carried));
+        }
+        if let (true, Some(sag), Some(psi), Some(st)) = (m.shock, number(&m.params, "shock.sag_mm"), number(&m.params, "shock.psi"), rear_stroke) {
+            // the wheel's travel at the measured stroke, then the shock's force there through the leverage
+            let x = (sag / 1000.0).min(st);
+            let (mut a, mut b) = (0.0, bike.travel_max_m);
+            for _ in 0..60 {
+                let mid = 0.5 * (a + b);
+                if shock_stroke(&bike, mid).unwrap_or(0.0) < x {
+                    a = mid;
+                } else {
+                    b = mid;
+                }
+            }
+            let lr = leverage_ratio(&bike, 0.5 * (a + b)).unwrap_or(1.0);
+            let spacers = number(&m.params, "shock.volume_spacers").unwrap_or(0.0);
+            shock_tests.push((m.at_ms, SagTest { gauge_pa: psi * PSI_PA, load_n: r_n * lr, stroke_m: x, spacers }, psi, carried));
+        }
+    }
+
+    // fit each end, and set each measurement beside the current and fitted predictions
+    let spacer_m3 = |key: &str, default_cc: f64| number(&p, key).unwrap_or(default_cc) * 1e-6;
+    let ends: [(End, Option<AirSpring>, &Vec<LoggedSag>, f64, &str); 2] = [
+        (End::Fork, Some(fork), &fork_tests, spacer_m3("fork.reducer_cc", 10.0), "fork.volume_reducers"),
+        (End::Shock, shock, &shock_tests, spacer_m3("shock.spacer_cc", 3.0), "shock.volume_spacers"),
+    ];
+    for (end, spring, tests, per, spacers_key) in ends {
+        let Some(spring) = spring else { continue };
+        let ts: Vec<SagTest> = tests.iter().map(|t| t.1).collect();
+        let fitted = fit(&spring, &ts, per);
+        let now_spacers = number(&p, spacers_key).unwrap_or(0.0);
+        for (at_ms, t, psi, carried) in tests {
+            let at = |s: &AirSpring, base: f64| AirSpring { positive_m3: s.positive_m3 - (t.spacers - base) * per, ..*s }.stroke_under(t.gauge_pa, t.load_n) * 1000.0;
+            view.tests.push(SagTestView {
+                at_ms: *at_ms,
+                end: end.prefix(),
+                psi: *psi,
+                carried_kg: *carried,
+                measured_mm: t.stroke_m * 1000.0,
+                predicted_mm: at(&spring, now_spacers),
+                fitted_mm: fitted.map(|f| at(&f.spring, ts[0].spacers)),
+            });
+        }
+        let Some(f) = fitted else { continue };
+        let k = end.prefix();
+        let positive = f.spring.positive_m3 + ts[0].spacers * per;
+        let round = |v: f64, places: i32| (v * 10f64.powi(places)).round() / 10f64.powi(places);
+        let values: Params = [
+            (format!("{k}.piston_area_cm2"), serde_json::json!(round(f.spring.area_m2 * 1e4, 2))),
+            (format!("{k}.positive_volume_cc"), serde_json::json!(round(positive * 1e6, 1))),
+            (format!("{k}.negative_volume_cc"), serde_json::json!(round(f.spring.negative_m3 * 1e6, 1))),
+        ]
+        .into();
+        let v = SpringFitView { piston_area_cm2: f.spring.area_m2 * 1e4, positive_volume_cc: positive * 1e6, negative_volume_cc: f.spring.negative_m3 * 1e6, rms_mm: f.rms_m * 1000.0, unknowns: f.unknowns, values };
+        match end {
+            End::Fork => view.fork_fit = Some(v),
+            End::Shock => view.shock_fit = Some(v),
+        }
+    }
+    if rear_stroke.is_none() {
+        note("no rear spring: place both shock eyes".into());
+    }
+    view.assumed = assumed.into_inner();
+    Ok(view)
+}
+
+/// C3 §3.15 `sim_suspension(bike_id, setup)` (async): the shock's stroke
+/// and leverage through travel from the drawing `setup`, the air springs
+/// from bike `bike_id`'s parameters (assumed values listed where one is
+/// missing), the static loads from the centre of mass point, the sag those
+/// give, and the springs fitted to every sag measurement in the bike's log
+/// (`fork.sag_mm`, `shock.sag_mm` notes). Errors: `NotFound` for an
+/// unknown bike, `InvalidArgument` for a drawing that isn't a linkage.
+#[tauri::command(async)]
+pub fn sim_suspension(bike_id: String, setup: SetupPx, data_dir: tauri::State<'_, DataDir>) -> Result<SuspensionView, IpcError> {
+    sim_suspension_via(&data_dir.0, &bike_id, &setup, now_ms())
 }
 
 #[cfg(test)]
@@ -833,7 +1186,7 @@ mod tests {
         let input = BumpTrain { count: 1, lead_s: 0.05, ..BumpTrain::default() };
 
         // Act
-        let bytes = run_drivetrain_sim_via(&setup, 5, &input, &mut |_| {}).unwrap();
+        let bytes = run_drivetrain_sim_via(&setup, 5, &input, None, &mut |_| {}).unwrap();
 
         // Assert
         assert_eq!(&bytes[0..4], b"IDLM");
@@ -866,7 +1219,7 @@ mod tests {
         let r = simulate(&bike, 5, &|i| drivetrain.rollers[i].enabled, &input.excitation(1000.0), &DynConfig::default(), &mut |_| true).unwrap();
 
         // Act
-        let res = run_result(&r, &bike, &frame(), &input);
+        let res = run_result(&r, &bike, &frame(), &input, &|d| input.ground_height(d), input.sag_m);
 
         // Assert: the middle ground point is under the axle, a wheel radius down
         let ground = res.tracks.iter().find(|t| t.name == "ground").unwrap();
@@ -880,6 +1233,51 @@ mod tests {
             worst = worst.max((a[1] - g[1] - drivetrain.wheel_radius_m).abs());
         }
         assert!(worst < 1e-3, "the tyre is {:.2} mm off the ground", worst * 1000.0);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+    #[test]
+    fn sim_suspension_logged_sag_is_fitted_and_the_fit_predicts_it() {
+        // Arrange: a sag test at 220 / 75 psi, then again with a 10 kg pack
+        let root = temp_root();
+        let setup = gt_setup(&root);
+        let set = |v: &[(&str, serde_json::Value)], t: i64| {
+            let values = v.iter().map(|(k, v)| (k.to_string(), v.clone())).collect();
+            bikelog::set_parameters(&root, "gt", &values, "", "pc", t).unwrap();
+        };
+        set(&[("mass.bike_kg", serde_json::json!(18.1)), ("rider.mass_kg", serde_json::json!(79.4))], 1);
+        set(&[("shock.psi", serde_json::json!(220)), ("fork.psi", serde_json::json!(75))], 2);
+        set(&[("shock.sag_mm", serde_json::json!(18.0)), ("fork.sag_mm", serde_json::json!(42.0))], 3);
+        set(&[("rider.carried_kg", serde_json::json!(10.0)), ("shock.sag_mm", serde_json::json!(20.5)), ("fork.sag_mm", serde_json::json!(47.0))], 4);
+
+        // Act
+        let v = sim_suspension_via(&root, "gt", &setup, 10).unwrap();
+
+        // Assert
+        assert_eq!(v.tests.len(), 4);
+        let (f, s) = (v.fork_fit.unwrap(), v.shock_fit.unwrap());
+        assert_eq!((f.unknowns, s.unknowns), (2, 2));
+        assert!(f.rms_mm < 1.0 && s.rms_mm < 1.0, "{} {}", f.rms_mm, s.rms_mm);
+        assert!(v.tests.iter().all(|t| (t.fitted_mm.unwrap() - t.measured_mm).abs() < 1.5), "{:?}", v.tests);
+        assert!(v.leverage.iter().all(|l| *l > 1.5 && *l < 4.5), "{:?}", v.leverage);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+    #[test]
+    fn run_drivetrain_sim_riding_over_bumps_adds_the_ride_tracks() {
+        // Arrange
+        let root = temp_root();
+        let setup = gt_setup(&root);
+        let values = [("shock.psi".to_string(), serde_json::json!(220)), ("mass.bike_kg".to_string(), serde_json::json!(18.1)), ("rider.mass_kg".to_string(), serde_json::json!(79.4))].into();
+        bikelog::set_parameters(&root, "gt", &values, "", "pc", 1).unwrap();
+        let input = BumpTrain { count: 2, lead_s: 0.1, speed_mps: 5.0, ..BumpTrain::default() };
+        let ride = RideRequest { bike_id: "gt".into(), bump_height_m: 0.08, bump_length_m: 0.6 };
+
+        // Act
+        let bytes = run_drivetrain_sim_via(&setup, 5, &input, Some((&ride, root.as_path())), &mut |_| {}).unwrap();
+
+        // Assert
+        let header_len = u32::from_le_bytes(bytes[8..12].try_into().unwrap()) as usize;
+        let header = std::str::from_utf8(&bytes[12..12 + header_len]).unwrap();
+        assert!(header.contains(r#""Tyre force""#) && header.contains(r#""Shock force""#), "{header}");
         let _ = std::fs::remove_dir_all(&root);
     }
 }

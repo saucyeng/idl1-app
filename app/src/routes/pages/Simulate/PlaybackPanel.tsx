@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { FieldGroup } from "@/components/ui/field";
 import { NumberField } from "@/components/ui/number-field";
 import { SelectField } from "@/components/ui/select-field";
-import type { BumpTrain, SimRun } from "@/ipc/simulate";
+import type { BumpTrain, RideShape, SimRun } from "@/ipc/simulate";
 
 import { PLOT_STYLE, PlotBox } from "./PlotBox";
 
@@ -22,6 +22,9 @@ export interface LabelledRun {
 export interface PlaybackPanelProps {
   bumps: BumpTrain;
   onBumps: (b: BumpTrain) => void;
+  /** Ride the springs over bumps of this shape; null prescribes the travel. */
+  ride: RideShape | null;
+  onRide: (r: RideShape | null) => void;
   running: boolean;
   progress: number;
   onRun: () => void;
@@ -76,12 +79,31 @@ export function PlaybackPanel(props: PlaybackPanelProps) {
   return (
     <div className="flex flex-col gap-5 text-sm">
       <FieldGroup title="Bumps">
+        <SelectField
+          label="Travel"
+          value={props.ride === null ? "prescribed" : "ride"}
+          options={[
+            { value: "ride", label: "Ride over them (springs, damper, tyre)" },
+            { value: "prescribed", label: "Prescribed (a shape you set)" },
+          ]}
+          onChange={(v) => props.onRide(v === "ride" ? (props.ride ?? { bump_height_m: 0.08, bump_length_m: 0.6 }) : null)}
+          hint="Riding: each ticked bike's own shock, pressure, clicks, masses and tyre decide its travel. Prescribed: every bike gets the same travel."
+        />
         <NumberField label="Speed" unit="m/s" value={bumps.speed_mps} step={0.5} min={0} max={25} onChange={(v) => set({ speed_mps: n(v, bumps.speed_mps) })} />
-        <NumberField label="Sag" unit="mm" value={bumps.sag_m * 1000} step={1} min={0} max={200} onChange={(v) => set({ sag_m: n(v, bumps.sag_m * 1000) / 1000 })} />
-        <NumberField label="Hit depth" unit="mm" value={bumps.depth_m * 1000} step={1} min={0} max={300} onChange={(v) => set({ depth_m: n(v, bumps.depth_m * 1000) / 1000 })} />
-        <NumberField label="Compression" unit="ms" value={bumps.compress_s * 1000} step={5} min={5} max={1000} onChange={(v) => set({ compress_s: n(v, bumps.compress_s * 1000) / 1000 })} />
-        <NumberField label="Rebound" unit="ms" value={bumps.rebound_s * 1000} step={5} min={5} max={2000} onChange={(v) => set({ rebound_s: n(v, bumps.rebound_s * 1000) / 1000 })} />
-        <NumberField label="Frame jolt" unit="g" value={bumps.chassis_g} step={0.5} min={0} max={30} onChange={(v) => set({ chassis_g: n(v, bumps.chassis_g) })} hint="Front triangle's extra upward acceleration at each hit" />
+        {props.ride !== null ? (
+          <>
+            <NumberField label="Bump height" unit="mm" value={props.ride.bump_height_m * 1000} step={5} min={-500} max={500} onChange={(v) => props.ride && props.onRide({ ...props.ride, bump_height_m: n(v, props.ride.bump_height_m * 1000) / 1000 })} hint="Negative for a step down" />
+            <NumberField label="Bump length" unit="mm" value={props.ride.bump_length_m * 1000} step={50} min={60} max={5000} onChange={(v) => props.ride && props.onRide({ ...props.ride, bump_length_m: n(v, props.ride.bump_length_m * 1000) / 1000 })} />
+          </>
+        ) : (
+          <>
+            <NumberField label="Sag" unit="mm" value={bumps.sag_m * 1000} step={1} min={0} max={200} onChange={(v) => set({ sag_m: n(v, bumps.sag_m * 1000) / 1000 })} />
+            <NumberField label="Hit depth" unit="mm" value={bumps.depth_m * 1000} step={1} min={0} max={300} onChange={(v) => set({ depth_m: n(v, bumps.depth_m * 1000) / 1000 })} />
+            <NumberField label="Compression" unit="ms" value={bumps.compress_s * 1000} step={5} min={5} max={1000} onChange={(v) => set({ compress_s: n(v, bumps.compress_s * 1000) / 1000 })} />
+            <NumberField label="Rebound" unit="ms" value={bumps.rebound_s * 1000} step={5} min={5} max={2000} onChange={(v) => set({ rebound_s: n(v, bumps.rebound_s * 1000) / 1000 })} />
+            <NumberField label="Frame jolt" unit="g" value={bumps.chassis_g} step={0.5} min={0} max={30} onChange={(v) => set({ chassis_g: n(v, bumps.chassis_g) })} hint="Front triangle's extra upward acceleration at each hit" />
+          </>
+        )}
         <NumberField label="Hits" value={bumps.count} step={1} min={1} max={50} onChange={(v) => set({ count: Math.round(n(v, bumps.count)) })} />
         <NumberField label="Spacing" unit="ms" value={bumps.spacing_s * 1000} step={10} min={20} max={5000} onChange={(v) => set({ spacing_s: n(v, bumps.spacing_s * 1000) / 1000 })} />
         <Button filled emphasis="good" disabled={props.running} onClick={props.onRun}>

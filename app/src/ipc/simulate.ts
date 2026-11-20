@@ -81,6 +81,8 @@ export interface DrivetrainParams {
   jockey_inertia_kgm2: number;
   /** The gear the photo shows, 0 = smallest cog. */
   photo_gear: number;
+  /** How far the parallelogram drops the cage pivot toward the axle as it shifts, a fraction of the change in cog radius: 0 horizontal (SRAM Eagle), 1 slant. */
+  slant?: number;
   cassette_inertia_kgm2: number;
   freehub_engagement_deg: number;
   freehub_drag_nm: number;
@@ -307,6 +309,20 @@ export function toPx(frame: PhotoFrame, m: P2): P2 {
   return [rx + (m[0] * ex[0] + m[1] * ey[0]) * ppm, ry + (m[0] * ex[1] + m[1] * ey[1]) * ppm];
 }
 
+/** Photo pixels to metres in the bike's side plane: {@link toPx} inverted, for drawing only. */
+export function toM(frame: PhotoFrame, px: P2): P2 {
+  const [rx, ry] = frame.rear_axle_px;
+  const dx = frame.front_axle_px[0] - rx;
+  const dy = frame.front_axle_px[1] - ry;
+  const len = Math.hypot(dx, dy) || 1e-9;
+  const ex: P2 = [dx / len, dy / len];
+  let ey: P2 = [ex[1], -ex[0]];
+  if (ey[1] > 0) ey = [-ey[0], -ey[1]];
+  const ppm = len / (frame.wheelbase_m || 1e-9);
+  const v: P2 = [(px[0] - rx) / ppm, (px[1] - ry) / ppm];
+  return [v[0] * ex[0] + v[1] * ex[1], v[0] * ey[0] + v[1] * ey[1]];
+}
+
 /** C3 §3.15 `get_sim_setup`: the bike's setup, in the frame just clicked or the saved one. */
 export async function getSimSetup(bikeId: string, frame: PhotoFrame | null): Promise<SimSetupView> {
   return invoke<SimSetupView>("get_sim_setup", { bikeId, frame });
@@ -332,10 +348,101 @@ export async function simKinematics(setup: SetupPx, gear: number, samples: numbe
   return invoke<KinematicsView>("sim_kinematics", { setup, gear, samples });
 }
 
+/** The bumps' shape when the bike rides over them (C3 §3.15 `run_drivetrain_sim`'s `ride`). */
+export interface RideShape {
+  /** Each bump's height, m (negative: a step down). */
+  bump_height_m: number;
+  /** Each bump's length along the trail, m. */
+  bump_length_m: number;
+}
+
+/** Ride a bike's springs over the bumps instead of prescribing the travel. */
+export interface RideRequest extends RideShape {
+  bike_id: string;
+}
+
 /** C3 §3.15 `run_drivetrain_sim`: the chain loop through a bump train. */
-export async function runDrivetrainSim(setup: SetupPx, gear: number, input: BumpTrain, onProgress: (p: Progress) => void): Promise<SimRun> {
+export async function runDrivetrainSim(setup: SetupPx, gear: number, input: BumpTrain, onProgress: (p: Progress) => void, ride: RideRequest | null = null): Promise<SimRun> {
   const progress = new Channel<Progress>();
   progress.onmessage = onProgress;
-  const buf = await invoke<ArrayBuffer>("run_drivetrain_sim", { setup, gear, input, progress });
+  const buf = await invoke<ArrayBuffer>("run_drivetrain_sim", { setup, gear, input, ride, progress });
   return decodeSimRun(buf);
+}
+
+/** One end's spring fitted to the logged sag measurements (C3 §3.15). */
+export interface SpringFitView {
+  piston_area_cm2: number;
+  positive_volume_cc: number;
+  negative_volume_cc: number;
+  /** Root-mean-square miss, mm. */
+  rms_mm: number;
+  /** 1: the area only; 2: area and positive volume. */
+  unknowns: number;
+  /** The fitted values as parameters, for `setBikeParameters`. */
+  values: Record<string, unknown>;
+}
+
+/** A logged sag measurement beside the predictions. */
+export interface SagTestView {
+  at_ms: number;
+  end: "fork" | "shock";
+  psi: number;
+  carried_kg: number;
+  measured_mm: number;
+  predicted_mm: number;
+  fitted_mm: number | null;
+}
+
+/** One end's predicted sag. */
+export interface SagView {
+  stroke_mm: number;
+  pct: number;
+  wheel_mm: number | null;
+}
+
+/** C3 §3.15 `sim_suspension` result. */
+export interface SuspensionView {
+  travel_mm: number[];
+  shock_stroke_mm: number[];
+  leverage: number[];
+  rear_force_n: number[];
+  rear_force_fast_n: number[];
+  fork_mm: number[];
+  fork_force_n: number[];
+  fork_force_fast_n: number[];
+  mass_kg: number;
+  /** Front, rear: static load less unsprung weight, N. */
+  sprung_load_n: [number, number];
+  rear_pct: number;
+  rear_sag: SagView | null;
+  fork_sag: SagView | null;
+  tests: SagTestView[];
+  fork_fit: SpringFitView | null;
+  shock_fit: SpringFitView | null;
+  assumed: string[];
+}
+
+/** C3 §3.15 `sim_suspension`: springs, loads, sag and the fit to logged sag tests. */
+export async function simSuspension(bikeId: string, setup: SetupPx): Promise<SuspensionView> {
+  return invoke<SuspensionView>("sim_suspension", { bikeId, setup });
+}
+
+/** One row of a maker's geometry table. */
+export interface GeometryRow {
+  label: string;
+  /** The parameter key (`geometry.reach_mm`), or null when the label wasn't recognised. */
+  key: string | null;
+  /** Per size: the values printed in that cell (more than one for an adjustable setting). */
+  values: number[][];
+}
+
+/** A maker's geometry table read from a screenshot. */
+export interface GeometryTable {
+  sizes: string[];
+  rows: GeometryRow[];
+}
+
+/** C3 §3.15 `read_geometry_table`: OCR a screenshot (its encoded bytes, or a file) and read the table. */
+export async function readGeometryTable(from: { image: Uint8Array } | { path: string }): Promise<GeometryTable> {
+  return invoke<GeometryTable>("read_geometry_table", "image" in from ? { image: Array.from(from.image), path: null } : { image: null, path: from.path });
 }

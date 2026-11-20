@@ -3506,8 +3506,36 @@ bike as photographed (topped out, the photo's gear, the cage at its drawn
 angle, whatever the chain's length), for the setup view. `chain_fit`: the
 chain lengths (links) that close the loop in every gear through travel.
 
+**`sim_suspension(bike_id: string, setup: SetupPx)`** (async) →
+`SuspensionView` (added 2026-11-20). The springs at the drawing `setup` with
+the bike's parameters: `travel_mm[41]` and at each `shock_stroke_mm`,
+`leverage` (wheel travel per shock stroke), `rear_force_n` and
+`rear_force_fast_n` (the shock's force at the wheel, isothermal and
+adiabatic); `fork_mm[41]` with `fork_force_n`, `fork_force_fast_n` (along the
+legs); `mass_kg` (rider and bike, no pack), `sprung_load_n: [front, rear]`
+(static, less unsprung weight, from the centre of mass point), `rear_pct`;
+`rear_sag`, `fork_sag`: `{ stroke_mm, pct, wheel_mm | null } | null`;
+`tests`: every log note that set `fork.sag_mm` or `shock.sag_mm`, as
+`{ at_ms, end: "fork"|"shock", psi, carried_kg, measured_mm, predicted_mm,
+fitted_mm | null }`, each with the parameters of its day; `fork_fit`,
+`shock_fit`: `{ piston_area_cm2, positive_volume_cc, negative_volume_cc,
+rms_mm, unknowns: 1|2, values }` (`values` ready for
+`set_bike_parameters`) or null; `assumed`: the defaults standing in for
+missing parameters, in words. Rear arrays are empty without both shock eyes.
+Errors: `NotFound` (bike), `InvalidArgument` (drawing).
+
+**`read_geometry_table(image: number[] | null, path: string | null)`**
+(async) → `GeometryTable` (added 2026-11-20): a maker's geometry table in a
+screenshot, given as encoded bytes (pasted) or a file (dropped). The
+platform's OCR finds the words (Windows.Media.Ocr; elsewhere `Internal`),
+`idl_rs::calibration::geometry_table::parse` reads them: `{ sizes: string[],
+rows: [{ label, key: string | null, values: number[][] }] }`, `key` a
+`geometry.*` parameter, `values` per size in mm or degrees, several where
+the cell lists settings ("435 / 445"). Errors: `InvalidArgument` (no image,
+not an image, no header of size names), `Io` (file).
+
 **`run_drivetrain_sim(setup: SetupPx, gear: number, input: BumpTrain,
-progress: Channel<Progress>)`** (async) → raw bytes, a **sim result**,
+ride: RideRequest | null, progress: Channel<Progress>)`** (async) → raw bytes, a **sim result**,
 `IDLM` v1 (Isaac, 2026-11-19, whole-bike sim loop spec D1; replaces the
 `IDLS` v1 run layout, whose magic collided with `fetch_scatter`'s).
 
@@ -3522,6 +3550,16 @@ header: { "format": "sim-result", "frames": n,
           "tracks": [ { "name", "component", "kind": "xy"|"xyz"|"angle"|"scalar",
                         "count", "unit", "labels"? } ] }
 ```
+
+`ride` (added 2026-11-20): `{ bike_id, bump_height_m, bump_length_m }`.
+Given, the bike's rear end (its masses, shock spring and pressure, clicks,
+rear tyre pressure; `idl_rs::sim::ride`) rides over `count` bumps of that
+shape at the train's speed, spacing and lead, and the chain runs on the
+travel that gives; the train's sag, depth, times and jolt are unused, the
+terrain track draws those bumps, and the drivetrain component gains the
+scalar tracks "Tyre force" and "Shock force" (N). Errors as below, plus
+`NotFound` (bike) and `InvalidArgument` without shock eyes or for a bump
+under 5 cm long.
 
 A new component adds tracks, not a version. A drivetrain run has one
 component, `drivetrain`: `{ gear, nodes, wheels: [{ role, radius_m, teeth }],

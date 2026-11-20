@@ -112,6 +112,8 @@ pub fn handler<R: tauri::Runtime>() -> impl Fn(tauri::ipc::Invoke<R>) -> bool + 
         commands::simulate::get_bike_photo,
         commands::simulate::sim_kinematics,
         commands::simulate::run_drivetrain_sim,
+        commands::simulate::sim_suspension,
+        commands::geometry::read_geometry_table,
         commands::catalog::delete_session,
         commands::catalog::rescan_tracks,
         commands::index::start_index_job,

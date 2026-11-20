@@ -10,6 +10,8 @@ pub mod device;
 /// ruling R222 items 1-3).
 pub mod docs;
 pub mod firmware;
+/// A maker's geometry table from a screenshot (C3 §3.15).
+pub mod geometry;
 pub mod histogram;
 pub mod import;
 pub mod index;
