@@ -338,3 +338,37 @@ squat) and Dixon (dampers, vibration theory, installation). It has nothing on: p
 mechanism kinematics and loop closure, multibody dynamics and integrators, system
 identification and input estimation, MTB-specific tyres at low pressure, standing-rider
 biomechanics. Before any of those drives a number, add a book or cite the web and say so.
+
+## 12. Bike files, variants and identity (Isaac, 2026-11-20)
+
+No new file type: a bike file (`bikes/<id>.json`, library `bikelog`) is the
+whole description of one bike, physical or imagined.
+
+- **Contents.** Name and photo; parameters in families (geometry, linkage
+  points, drivetrain and derailleur, fork and shock, wheels and tyres, masses,
+  rider); the log (dated changes); sensor calibrations. Parameter keys are one
+  vocabulary shared by the simulator and the log's setup sheet (`fork.psi`
+  is the same key in both).
+- **Variant.** A copy of a bike file with `variant_of: <bike id>`, edited
+  parameters, no log and no calibrations. An idea, freely edited.
+- **Copied from.** A new real bike started from another's numbers records
+  `copied_from: <bike id>`; it has its own owner, log and calibrations.
+- **Model.** Make, model, year and size are a label in the file (filled by
+  the geometry-table import), for grouping like with like.
+- **Rides** belong to a real bike. Their parameters are the bike's with every
+  log change up to the ride applied. Fitting a variant for real is a log
+  entry that stores a copy of the variant's parameters (so later edits to the
+  variant don't rewrite history); later entries apply on top; removing it is
+  another entry. Changing a real bike's parameters goes through its log.
+- **Names.** New ids are descriptive and fixed at creation:
+  `<owner initials> <model year> <make> <model>`, plus ` - <variant>` for a
+  variant ("IA 23 GT Force", "IA 23 GT Force - lower idler"). Letters,
+  digits, spaces and hyphens only. Renaming changes the display name, never
+  the id. Existing ids (`gt-force`) stay.
+- **Overwrite protection.** Creating or copying never replaces a file: a
+  taken id gets ` (2)`. Each file carries a random `uid`; sync merges two
+  files only when id and uid both match, and saves a same-id, different-uid
+  arrival alongside as ` (2)`.
+- **Comparing.** The simulator runs any set of bike files (bikes, variants,
+  other people's bikes, or a bike as it was on a ride's day) over the same
+  terrain, with deltas.
