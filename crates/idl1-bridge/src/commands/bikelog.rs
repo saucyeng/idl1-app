@@ -19,6 +19,7 @@ impl From<BikeLogError> for IpcError {
             BikeLogErrorKind::Encode => IpcErrorKind::Internal,
             BikeLogErrorKind::Parse => IpcErrorKind::Io,
             BikeLogErrorKind::InvalidId => IpcErrorKind::InvalidArgument,
+            BikeLogErrorKind::Conflict => IpcErrorKind::Conflict,
         };
         IpcError::new(kind, e.message)
     }
@@ -85,6 +86,91 @@ pub fn bike_for_name(name: String, data_dir: tauri::State<'_, DataDir>) -> Resul
     Ok(bikelog::bike_for_name(&data_dir.0, &name, now_ms())?)
 }
 
+/// `create_bike`'s and `copy_bike`'s naming: the parts of a bike's id and
+/// name (whole-bike sim spec §12).
+#[derive(Debug, Clone, PartialEq, serde::Deserialize)]
+pub struct BikeNaming {
+    /// The owner's initials ("IA").
+    pub initials: String,
+    /// Model year (2023).
+    pub year: Option<u32>,
+    /// Make ("GT").
+    pub make: String,
+    /// Model ("Force").
+    pub model: String,
+    /// Frame size ("LG").
+    pub size: Option<String>,
+    /// The variant's name ("lower idler"), for a variant.
+    pub variant: Option<String>,
+}
+
+impl BikeNaming {
+    fn id(&self) -> String {
+        bikelog::bike_id_for(&self.initials, self.year, &self.make, &self.model, self.variant.as_deref())
+    }
+
+    fn name(&self) -> String {
+        let mut parts: Vec<String> = vec![self.initials.trim().to_string()];
+        if let Some(y) = self.year {
+            parts.push(format!("{:02}", y % 100));
+        }
+        parts.push(self.make.trim().to_string());
+        parts.push(self.model.trim().to_string());
+        let mut name = parts.into_iter().filter(|p| !p.is_empty()).collect::<Vec<_>>().join(" ");
+        if let Some(v) = self.variant.as_deref().map(str::trim).filter(|v| !v.is_empty()) {
+            name = format!("{name} - {v}");
+        }
+        name
+    }
+
+    fn model(&self) -> Option<bikelog::BikeModel> {
+        (!self.make.trim().is_empty() || !self.model.trim().is_empty()).then(|| bikelog::BikeModel {
+            make: self.make.trim().to_string(),
+            model: self.model.trim().to_string(),
+            year: self.year,
+            size: self.size.clone().filter(|s| !s.trim().is_empty()),
+        })
+    }
+}
+
+/// How `copy_bike` copies.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CopyKindWire {
+    /// An idea for the same bike.
+    Variant,
+    /// Another real bike from these numbers.
+    Copy,
+}
+
+fn create_bike_via(data_dir: &Path, naming: &BikeNaming, now: i64) -> Result<Bike, IpcError> {
+    Ok(bikelog::create_bike(data_dir, &naming.id(), &naming.name(), naming.model(), now)?)
+}
+
+fn copy_bike_via(data_dir: &Path, from_id: &str, naming: &BikeNaming, kind: CopyKindWire, now: i64) -> Result<Bike, IpcError> {
+    let kind = match kind {
+        CopyKindWire::Variant => bikelog::CopyKind::Variant,
+        CopyKindWire::Copy => bikelog::CopyKind::Copy,
+    };
+    Ok(bikelog::copy_bike(data_dir, from_id, &naming.id(), &naming.name(), kind, now)?.bike)
+}
+
+/// C3 §3.11 `create_bike(naming)`: a new bike named and id'd from its
+/// owner's initials, year, make and model ("IA 23 GT Force",
+/// `IA-23-GT-Force`), never overwriting one (a taken id gets `-2`).
+#[tauri::command(async)]
+pub fn create_bike(naming: BikeNaming, data_dir: tauri::State<'_, DataDir>) -> Result<Bike, IpcError> {
+    create_bike_via(&data_dir.0, &naming, now_ms())
+}
+
+/// C3 §3.11 `copy_bike(from_id, naming, kind)`: a variant of the bike, or a
+/// new real bike started from its numbers: its linkage, drivetrain, photo
+/// and model, no log or calibrations.
+#[tauri::command(async)]
+pub fn copy_bike(from_id: String, naming: BikeNaming, kind: CopyKindWire, data_dir: tauri::State<'_, DataDir>) -> Result<Bike, IpcError> {
+    copy_bike_via(&data_dir.0, &from_id, &naming, kind, now_ms())
+}
+
 /// C3 §3.11 `get_bike_log(bike_id)`: the bike's log and its running sheet
 /// now.
 #[tauri::command(async)]
@@ -146,7 +232,7 @@ mod tests {
             kind: EntryKind::Note,
             versions: vec![version("v1", &[], 1, "a"), version("p", &["v1"], 2, "phone"), version("d", &["v1"], 3, "desk")],
         };
-        bikelog::save_bike(&root, &bikelog::Bike { bike_id: "gt".into(), name: "GT".into(), name_updated_at_ms: 1, fields: Vec::new(), fields_updated_at_ms: 0 }).unwrap();
+        bikelog::save_bike(&root, &bikelog::Bike { bike_id: "gt".into(), name: "GT".into(), name_updated_at_ms: 1, fields: Vec::new(), fields_updated_at_ms: 0, ..Default::default() }).unwrap();
         bikelog::save_entry(&root, &entry).unwrap();
 
         // Act
@@ -171,5 +257,25 @@ mod tests {
 
         // Assert
         assert_eq!(err.kind, IpcErrorKind::InvalidArgument);
+    }
+
+    #[test]
+    fn create_and_copy_bike_name_ids_and_variants_from_the_naming() {
+        // Arrange
+        let root = std::env::temp_dir().join(format!("idl1-bridge-bikes-{}", uuid::Uuid::new_v4()));
+        let naming = BikeNaming { initials: "IA".into(), year: Some(2023), make: "GT".into(), model: "Force".into(), size: Some("LG".into()), variant: None };
+
+        // Act
+        let bike = create_bike_via(&root, &naming, 1).unwrap();
+        let v = copy_bike_via(&root, &bike.bike_id, &BikeNaming { variant: Some("lower idler".into()), ..naming.clone() }, CopyKindWire::Variant, 2).unwrap();
+        let again = create_bike_via(&root, &naming, 3).unwrap();
+
+        // Assert
+        assert_eq!((bike.bike_id.as_str(), bike.name.as_str()), ("IA-23-GT-Force", "IA 23 GT Force"));
+        assert_eq!((v.bike_id.as_str(), v.name.as_str()), ("IA-23-GT-Force--lower-idler", "IA 23 GT Force - lower idler"));
+        assert_eq!(v.variant_of.as_deref(), Some("IA-23-GT-Force"));
+        assert_eq!(again.bike_id, "IA-23-GT-Force-2");
+        assert_eq!(bike.model.unwrap().size.as_deref(), Some("LG"));
+        let _ = std::fs::remove_dir_all(&root);
     }
 }

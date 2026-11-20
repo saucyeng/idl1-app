@@ -234,3 +234,20 @@ export function isPhotoPath(path: string): boolean {
   const ext = path.split(".").pop()?.toLowerCase() ?? "";
   return path.includes(".") && (PHOTO_EXTENSIONS as readonly string[]).includes(ext);
 }
+
+/** One real bike in the tree, with its variants. */
+export interface BikeNode<B> {
+  bike: B;
+  variants: B[];
+}
+
+/**
+ * The bike tree (whole-bike sim spec §12): real bikes by name, each with its
+ * variants by name. A variant whose bike isn't here stands on its own.
+ */
+export function bikeTree<B extends { bike_id: string; name: string; variant_of?: string }>(bikes: B[]): BikeNode<B>[] {
+  const byName = (a: B, b: B) => (a.name || a.bike_id).localeCompare(b.name || b.bike_id);
+  const ids = new Set(bikes.map((b) => b.bike_id));
+  const roots = bikes.filter((b) => b.variant_of === undefined || !ids.has(b.variant_of)).sort(byName);
+  return roots.map((bike) => ({ bike, variants: bikes.filter((v) => v.variant_of === bike.bike_id).sort(byName) }));
+}
