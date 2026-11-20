@@ -15,7 +15,7 @@ export interface PointSpec {
   /** Optional points can be left off. */
   optional: boolean;
   /** Group for colour: linkage, drivetrain, frame. */
-  group: "axle" | "linkage" | "drivetrain" | "pod";
+  group: "axle" | "linkage" | "drivetrain" | "pod" | "rider";
 }
 
 /** Every point, in the order the tab asks for them. Axles first: they set the photo's scale. */
@@ -33,6 +33,7 @@ export const POINTS: readonly PointSpec[] = [
   { key: "upper_jockey", label: "Upper jockey", optional: false, group: "drivetrain" },
   { key: "lower_jockey", label: "Lower jockey", optional: false, group: "drivetrain" },
   { key: "imu0", label: "Frame pod", optional: false, group: "pod" },
+  { key: "centre_of_mass", label: "Centre of mass (rider and bike)", optional: true, group: "rider" },
 ];
 
 /** Colour token for a point group. */
@@ -46,6 +47,8 @@ export function groupColour(group: PointSpec["group"]): string {
       return "var(--info)";
     case "pod":
       return "var(--fg-dim)";
+    case "rider":
+      return "var(--good)";
   }
 }
 

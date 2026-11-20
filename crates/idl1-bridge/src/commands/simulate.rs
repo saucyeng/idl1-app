@@ -12,13 +12,13 @@ use std::collections::BTreeMap;
 use std::path::Path;
 
 use idl_library::bikelog;
-use idl_rs::calibration::drivetrain::{Body, ChainSide, ContactSurface, Derailleur, Drivetrain, DrivetrainPhoto, Roller, Span, SurfaceSide};
+use idl_rs::calibration::drivetrain::{Body, ChainSide, ContactSurface, Derailleur, Drivetrain, DrivetrainPhoto, Roller, Span, SurfaceSide, CHAIN_PITCH_M};
 use idl_rs::calibration::linkage::{Linkage, LinkagePoints, PhotoFrame, P2};
 use idl_rs::sim::bike::SimBike;
 use idl_rs::sim::dynamics::{simulate, DynConfig, DynResult};
 use idl_rs::sim::excite::BumpTrain;
 use idl_rs::sim::kinematics::{anti_squat_pct, drawn_snapshot, gear_curves, snapshot_near, GearCurves, Snapshot};
-use idl_rs::sim::path::chain_fit;
+use idl_rs::sim::path::{chain_fit, chain_path};
 use idl_rs::sim::{SimError, SimErrorKind};
 use idl_rs::time::now_ms;
 
@@ -90,6 +90,11 @@ pub struct DrivetrainParams {
     pub cassette_teeth: Vec<u32>,
     /// Chain links.
     pub chain_links: u32,
+    /// Take the chain's length from the photo (the loop round the clicked
+    /// points in the photo's gear, the cage as drawn), to the nearest even
+    /// link count, instead of `chain_links`. Not saved: on unless turned off.
+    #[serde(default = "yes")]
+    pub chain_from_photo: bool,
     /// Chain mass, kg.
     pub chain_mass_kg: f64,
     /// Upper and lower jockey teeth.
@@ -172,6 +177,10 @@ pub struct SimSetupView {
     pub photo_file: Option<String>,
 }
 
+fn yes() -> bool {
+    true
+}
+
 fn default_cog_height_m() -> f64 {
     DEFAULT_COG_HEIGHT_M
 }
@@ -190,6 +199,7 @@ fn params_of(d: &Drivetrain) -> DrivetrainParams {
         chainring_teeth: d.chainring_teeth,
         cassette_teeth: d.cassette_teeth.clone(),
         chain_links: d.chain_links,
+        chain_from_photo: true,
         chain_mass_kg: d.chain_mass_kg,
         jockey_teeth: r.jockey_teeth,
         spring_force_n: r.spring_torque_nm.iter().map(|&[deg, nm]| [deg, nm / arm]).collect(),
@@ -228,6 +238,7 @@ fn starter_linkage(wheelbase_m: f64, travel_m: f64) -> Linkage {
             imu0: s([0.47677, 0.36738]),
             fork_pod: None,
             rear_pod: None,
+            centre_of_mass: None,
         },
         wheelbase_m,
         rear_travel_m: travel_m,
@@ -252,6 +263,7 @@ fn to_px(linkage: &Linkage, d: &Drivetrain, frame: &PhotoFrame, photo_file: Opti
         ("shock_frame", p.shock_frame),
         ("shock_rocker", p.shock_rocker),
         ("imu0", Some(p.imu0)),
+        ("centre_of_mass", p.centre_of_mass),
         ("bb", Some(d.bb_m)),
         ("cage_pivot", Some(d.derailleur.cage_pivot_m)),
         ("upper_jockey", Some(d.derailleur.upper_jockey_m)),
@@ -316,6 +328,7 @@ pub fn from_px(setup: &SetupPx, base: Option<&Linkage>, now: i64) -> Result<(Lin
         imu0: m("imu0")?,
         fork_pod: base.and_then(|b| b.points_m.fork_pod),
         rear_pod: base.and_then(|b| b.points_m.rear_pod),
+        centre_of_mass: opt("centre_of_mass"),
     };
     let linkage = Linkage {
         updated_at_ms: now,
@@ -386,6 +399,35 @@ pub fn from_px(setup: &SetupPx, base: Option<&Linkage>, now: i64) -> Result<(Lin
     Ok((linkage, drivetrain))
 }
 
+/// [`from_px`], with the chain's length taken from the photo when the
+/// params say so, and the photo's implied length in links (fractional),
+/// when the chain can be drawn round the points as photographed.
+pub fn resolve(setup: &SetupPx, base: Option<&Linkage>, now: i64) -> Result<(Linkage, Drivetrain, Option<f64>), IpcError> {
+    let (linkage, mut drivetrain) = from_px(setup, base, now)?;
+    let photo_links = {
+        // the loop as drawn doesn't depend on the chain's length: any valid count builds the bike
+        let probe = Drivetrain { chain_links: drivetrain.chain_links.max(100), ..drivetrain.clone() };
+        let bike = SimBike::new(&linkage, &probe)?;
+        let pose = bike.pose(0.0);
+        let enabled = |i: usize| drivetrain.rollers[i].enabled;
+        chain_path(&bike, &pose, drivetrain.derailleur.photo_gear, bike.cage_abs(&pose, 0.0), &enabled).ok().map(|p| p.length / CHAIN_PITCH_M)
+    };
+    if let (true, Some(l)) = (setup.params.chain_from_photo, photo_links) {
+        drivetrain.chain_links = ((l / 2.0).round() * 2.0).max(2.0) as u32;
+    }
+    Ok((linkage, drivetrain, photo_links))
+}
+
+/// The centre of mass's height above the ground line (rear to front tyre
+/// contact, a wheel radius under each axle, topped out), m, when placed.
+fn centre_of_mass_height_m(linkage: &Linkage, r: f64) -> Option<f64> {
+    let p = &linkage.points_m;
+    let c = p.centre_of_mass?;
+    let (a, b) = ([p.rear_axle[0], p.rear_axle[1] - r], [p.front_axle[0], p.front_axle[1] - r]);
+    let (dx, dy) = (b[0] - a[0], b[1] - a[1]);
+    Some((dx * (c[1] - a[1]) - dy * (c[0] - a[0])) / dx.hypot(dy).max(1e-9))
+}
+
 fn check_bike(bike_id: &str) -> Result<(), IpcError> {
     if bikelog::is_valid_id(bike_id) {
         Ok(())
@@ -433,7 +475,7 @@ pub fn save_sim_setup_via(data_dir: &Path, bike_id: &str, setup: &SetupPx) -> Re
     check_bike(bike_id)?;
     let file = bikelog::read_bike_file(data_dir, bike_id)?;
     let now = now_ms();
-    let (linkage, drivetrain) = from_px(setup, file.linkage.as_ref(), now)?;
+    let (linkage, drivetrain, _) = resolve(setup, file.linkage.as_ref(), now)?;
     bikelog::save_linkage(data_dir, bike_id, &linkage)?;
     bikelog::save_drivetrain(data_dir, bike_id, &drivetrain)?;
     get_sim_setup_via(data_dir, bike_id, None)
@@ -471,8 +513,16 @@ pub struct KinematicsView {
     /// Anti-squat, percent, per gear (as `gears`) and travel sample, at the
     /// params' centre of mass height; null where the squat line is undefined.
     pub anti_squat_pct: Vec<Vec<Option<f64>>>,
-    /// The chosen gear drawn at each travel sample, in metres.
+    /// The centre of mass height anti-squat used, m: the placed point's, else the params'.
+    pub cog_height_m: f64,
+    /// The chosen gear drawn at each travel sample where the loop closes, in metres.
     pub snapshots: Vec<Snapshot>,
+    /// The travels (mm) where the chosen gear's loop doesn't close, with why.
+    pub unclosed: Vec<(f64, String)>,
+    /// The chain's links used: the photo's when `chain_from_photo`.
+    pub chain_links: u32,
+    /// The chain the photo implies, links (fractional), when it can be drawn.
+    pub photo_links: Option<f64>,
     /// The bike as photographed (topped out, the photo's gear, the cage at
     /// its drawn angle), for the setup view; null when it can't be drawn.
     pub drawn: Option<Snapshot>,
@@ -484,7 +534,7 @@ pub struct KinematicsView {
 
 /// The kinematics of an (unsaved) setup.
 pub fn sim_kinematics_via(setup: &SetupPx, gear: usize, samples: usize) -> Result<KinematicsView, IpcError> {
-    let (linkage, drivetrain) = from_px(setup, None, 0)?;
+    let (linkage, drivetrain, photo_links) = resolve(setup, None, 0)?;
     let frame = drivetrain.photo.as_ref().map(|p| p.frame).unwrap_or(PhotoFrame {
         rear_axle_px: setup.points["rear_axle"],
         front_axle_px: setup.points["front_axle"],
@@ -503,16 +553,31 @@ pub fn sim_kinematics_via(setup: &SetupPx, gear: usize, samples: usize) -> Resul
     }
     let gear = gear.min(drivetrain.cassette_teeth.len() - 1);
     let mut snapshots: Vec<Snapshot> = Vec::with_capacity(samples);
+    let mut unclosed = Vec::new();
     for k in 0..samples {
         let s = bike.travel_max_m * k as f64 / (samples - 1) as f64;
         let near = snapshots.last().map(|p| p.cage_deg.to_radians()).unwrap_or(0.0);
-        if let Ok(snap) = snapshot_near(&bike, s, gear, near, &enabled) {
-            snapshots.push(snap);
+        match snapshot_near(&bike, s, gear, near, &enabled) {
+            Ok(snap) => snapshots.push(snap),
+            Err(e) => unclosed.push((s * 1000.0, e.message)),
         }
     }
     let drawn = drawn_snapshot(&bike, &enabled).ok();
-    let anti_squat_pct = gears.iter().map(|g| g.squat_angle_deg.iter().map(|a| a.map(|a| anti_squat_pct(a, setup.params.cog_height_m, setup.wheelbase_m))).collect()).collect();
-    Ok(KinematicsView { gears, failed, anti_squat_pct, snapshots, drawn, chain_fit: chain_fit(&bike, &enabled), frame })
+    let cog_height_m = centre_of_mass_height_m(&linkage, drivetrain.wheel_radius_m).unwrap_or(setup.params.cog_height_m);
+    let anti_squat_pct = gears.iter().map(|g| g.squat_angle_deg.iter().map(|a| a.map(|a| anti_squat_pct(a, cog_height_m, setup.wheelbase_m))).collect()).collect();
+    Ok(KinematicsView {
+        gears,
+        failed,
+        anti_squat_pct,
+        cog_height_m,
+        snapshots,
+        unclosed,
+        drawn,
+        chain_links: drivetrain.chain_links,
+        photo_links,
+        chain_fit: chain_fit(&bike, &enabled),
+        frame,
+    })
 }
 
 /// C3 §3.15 `sim_kinematics(setup, gear, samples)` (async): every gear's
@@ -597,7 +662,7 @@ pub fn encode_run(r: &DynResult, bike: &SimBike, frame: &PhotoFrame, input: &Bum
 
 /// Runs the dynamics for an (unsaved) setup and encodes it.
 pub fn run_drivetrain_sim_via(setup: &SetupPx, gear: usize, input: &BumpTrain, progress: &mut dyn FnMut(f64)) -> Result<Vec<u8>, IpcError> {
-    let (linkage, drivetrain) = from_px(setup, None, 0)?;
+    let (linkage, drivetrain, _) = resolve(setup, None, 0)?;
     let frame = PhotoFrame { rear_axle_px: setup.points["rear_axle"], front_axle_px: setup.points["front_axle"], wheelbase_m: setup.wheelbase_m };
     let bike = SimBike::new(&linkage, &drivetrain)?;
     let enabled = |i: usize| drivetrain.rollers[i].enabled;
@@ -697,12 +762,51 @@ mod tests {
     }
 
     #[test]
+    fn sim_kinematics_chain_from_photo_takes_the_photos_loop_to_the_nearest_even_link() {
+        // Arrange
+        let root = temp_root();
+        let mut setup = gt_setup(&root);
+        setup.params.chain_from_photo = true;
+        setup.params.chain_links = 2;
+
+        // Act
+        let k = sim_kinematics_via(&setup, 5, 3).unwrap();
+
+        // Assert
+        let l = k.photo_links.unwrap();
+        assert_eq!(k.chain_links, ((l / 2.0).round() * 2.0) as u32, "{l}");
+        assert!(k.unclosed.len() + k.snapshots.len() == 3);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn sim_kinematics_centre_of_mass_point_sets_the_anti_squat_height() {
+        // Arrange: a centre of mass 1.0 m over the ground line
+        let root = temp_root();
+        let mut setup = gt_setup(&root);
+        let fit = sim_kinematics_via(&setup, 5, 3).unwrap().chain_fit.unwrap();
+        setup.params.chain_links = (((fit.0 + fit.1) / 4.0).round() * 2.0) as u32;
+        setup.params.chain_from_photo = false;
+        let f = frame();
+        let r = setup.params.wheel_radius_m;
+        setup.points.insert("centre_of_mass".into(), f.to_px([0.6, 1.0 - r]));
+
+        // Act
+        let k = sim_kinematics_via(&setup, 5, 3).unwrap();
+
+        // Assert
+        assert!((k.cog_height_m - 1.0).abs() < 1e-6, "{}", k.cog_height_m);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
     fn sim_kinematics_gives_every_gear_and_a_snapshot_per_sample() {
         // Arrange
         let root = temp_root();
         let mut setup = gt_setup(&root);
         let fit = sim_kinematics_via(&setup, 5, 3).unwrap().chain_fit.unwrap();
         setup.params.chain_links = (((fit.0 + fit.1) / 4.0).round() * 2.0) as u32;
+        setup.params.chain_from_photo = false;
 
         // Act
         let k = sim_kinematics_via(&setup, 5, 5).unwrap();
@@ -725,6 +829,7 @@ mod tests {
         let mut setup = gt_setup(&root);
         let fit = sim_kinematics_via(&setup, 5, 3).unwrap().chain_fit.unwrap();
         setup.params.chain_links = (((fit.0 + fit.1) / 4.0).round() * 2.0) as u32;
+        setup.params.chain_from_photo = false;
         let input = BumpTrain { count: 1, lead_s: 0.05, ..BumpTrain::default() };
 
         // Act
@@ -754,6 +859,7 @@ mod tests {
         let mut setup = gt_setup(&root);
         let fit = sim_kinematics_via(&setup, 5, 3).unwrap().chain_fit.unwrap();
         setup.params.chain_links = (((fit.0 + fit.1) / 4.0).round() * 2.0) as u32;
+        setup.params.chain_from_photo = false;
         let input = BumpTrain { count: 1, lead_s: 0.05, ..BumpTrain::default() };
         let (linkage, drivetrain) = from_px(&setup, None, 0).unwrap();
         let bike = SimBike::new(&linkage, &drivetrain).unwrap();

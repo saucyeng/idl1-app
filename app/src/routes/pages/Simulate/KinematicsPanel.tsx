@@ -22,6 +22,8 @@ export interface KinematicsPanelProps {
   surfaceNames: string[];
   /** Centre of mass height above the ground, m (anti-squat). */
   cogHeightM: number;
+  /** Whether the height comes from the placed centre of mass point. */
+  cogFromPoint: boolean;
   onCogHeight: (m: number) => void;
 }
 
@@ -30,7 +32,7 @@ export interface KinematicsPanelProps {
  * gear (drivetrain sim spec §2.2), the chosen gear on top, and the travel
  * the stage shows as a rule. Clearance to each contact surface below.
  */
-export function KinematicsPanel({ kin, gear, travelIndex, surfaceNames, cogHeightM, onCogHeight }: KinematicsPanelProps) {
+export function KinematicsPanel({ kin, gear, travelIndex, surfaceNames, cogHeightM, cogFromPoint, onCogHeight }: KinematicsPanelProps) {
   if (kin === null) return <p className="text-sm text-[var(--fg-dim)]">Place the points to see the kinematics.</p>;
   const rows = kin.gears.flatMap((g, gi) =>
     g.travel_mm.map((t, i) => ({
@@ -53,7 +55,12 @@ export function KinematicsPanel({ kin, gear, travelIndex, surfaceNames, cogHeigh
         {kin.chain_fit ? `A chain of ${Math.ceil(kin.chain_fit[0])}–${Math.floor(kin.chain_fit[1])} links closes the loop in every gear through travel.` : "No chain length closes the loop in every gear through travel: check the derailleur points."}
         {kin.failed.length > 0 && ` Gears that don't close: ${kin.failed.map(([g]) => g + 1).join(", ")}.`}
       </p>
-      <NumberField label="Centre of mass height" unit="mm" value={cogHeightM * 1000} step={10} min={500} max={2000} onChange={(v) => v !== null && Number.isFinite(v) && v > 0 && onCogHeight(v / 1000)} hint="Rider and bike, above the ground, for anti-squat. A typical figure until the mass table." />
+      <NumberField label="Centre of mass height" unit="mm" value={Math.round(cogHeightM * 1000)} disabled={cogFromPoint} step={10} min={500} max={2000} onChange={(v) => v !== null && Number.isFinite(v) && v > 0 && onCogHeight(v / 1000)} hint={cogFromPoint ? "From the centre of mass point in Setup, above the ground line" : "Rider and bike, above the ground, for anti-squat. Or place the centre of mass point in Setup."} />
+      {kin.unclosed.length > 0 && (
+        <p className="text-xs text-[var(--accent)]">
+          {`The chain doesn't close the loop in this gear at ${kin.unclosed.map(([t]) => `${t.toFixed(0)}`).join(", ")} mm of travel, so those travels are left out: ${kin.unclosed[0][1]}`}
+        </p>
+      )}
       {CURVES.map((c) => (
         <div key={c.key} title={c.hint}>
           <div className="text-xs font-medium text-[var(--fg-dim)]">{c.label}</div>

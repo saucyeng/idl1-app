@@ -22,6 +22,8 @@ export interface SetupPanelProps {
   onChange: (setup: SetupPx) => void;
   selected: { kind: "roller" | "surface"; index: number } | null;
   onSelect: (s: { kind: "roller" | "surface"; index: number } | null) => void;
+  /** The chain the photo implies (links, fractional), from the last kinematics, or null. */
+  photoLinks: number | null;
 }
 
 /**
@@ -29,7 +31,7 @@ export interface SetupPanelProps {
  * scale and travel, the drivetrain's numbers, and the rollers and contact
  * surfaces. Every number is typed here and converted in Rust.
  */
-export function SetupPanel({ setup, placing, onPlacing, onChange, selected, onSelect }: SetupPanelProps) {
+export function SetupPanel({ setup, placing, onPlacing, onChange, selected, onSelect, photoLinks }: SetupPanelProps) {
   const p = setup.params;
   const setParams = (patch: Partial<DrivetrainParams>) => onChange({ ...setup, params: { ...p, ...patch } });
   const num = (v: number | null, fallback: number) => (v === null || !Number.isFinite(v) ? fallback : v);
@@ -92,7 +94,8 @@ export function SetupPanel({ setup, placing, onPlacing, onChange, selected, onSe
         <NumberField label="Chainring" unit="T" value={p.chainring_teeth} step={1} min={20} max={60} onChange={(v) => setParams({ chainring_teeth: Math.round(num(v, p.chainring_teeth)) })} />
         <TextField label="Cassette" value={cassette} className="w-56" hint={cassetteOk ? undefined : "Teeth separated by commas, 9 to 60"} onChange={(t) => { setCassette(t); const c = parseCassette(t); if (c) setParams({ cassette_teeth: c, photo_gear: Math.min(p.photo_gear, c.length - 1) }); }} />
         <SelectField label="Photo's gear" value={String(p.photo_gear)} options={p.cassette_teeth.map((t, i) => ({ value: String(i), label: `${t}T` }))} onChange={(v) => setParams({ photo_gear: Number(v ?? 0) })} hint="The cog the chain is on in the photo" />
-        <NumberField label="Chain" unit="links" value={p.chain_links} step={2} min={80} max={160} onChange={(v) => setParams({ chain_links: Math.round(num(v, p.chain_links)) })} />
+        <SwitchField label={`Chain from the photo${photoLinks !== null ? ` (${photoLinks.toFixed(1)} links drawn)` : ""}`} checked={p.chain_from_photo} onChange={(c) => setParams({ chain_from_photo: c })} />
+        <NumberField label="Chain" unit="links" value={p.chain_from_photo && photoLinks !== null ? Math.max(2, Math.round(photoLinks / 2) * 2) : p.chain_links} disabled={p.chain_from_photo} step={2} min={80} max={160} onChange={(v) => setParams({ chain_links: Math.round(num(v, p.chain_links)) })} hint={p.chain_from_photo ? "The loop round the points as photographed, to the nearest even link: move the points to change it" : undefined} />
         <NumberField label="Chain mass" unit="g" value={p.chain_mass_kg * 1000} step={1} min={100} max={500} onChange={(v) => setParams({ chain_mass_kg: num(v, p.chain_mass_kg * 1000) / 1000 })} />
         <NumberField label="Upper jockey" unit="T" value={p.jockey_teeth[0]} step={1} min={8} max={20} onChange={(v) => setParams({ jockey_teeth: [Math.round(num(v, p.jockey_teeth[0])), p.jockey_teeth[1]] })} />
         <NumberField label="Lower jockey" unit="T" value={p.jockey_teeth[1]} step={1} min={8} max={20} onChange={(v) => setParams({ jockey_teeth: [p.jockey_teeth[0], Math.round(num(v, p.jockey_teeth[1]))] })} />

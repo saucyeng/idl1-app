@@ -414,7 +414,7 @@ export default function SimulatePage() {
               runFrame={rf}
               overlays={overlays}
               snapshots={kin?.snapshots ?? []}
-              cogHeightM={setup?.params.cog_height_m ?? 1.1}
+              cogHeightM={kin?.cog_height_m ?? setup?.params.cog_height_m ?? 1.1}
               placing={placing}
               selected={selected}
               onPlace={(key, at) => {
@@ -505,7 +505,7 @@ export default function SimulatePage() {
         </div>
 
         <aside className="max-h-[50vh] w-full overflow-y-auto border-t border-[var(--rule)] p-3 lg:max-h-none lg:w-[380px] lg:border-l lg:border-t-0">
-          {mode === "setup" && setup !== null && <SetupPanel setup={setup} placing={placing} onPlacing={setPlacing} onChange={edit} selected={selected} onSelect={setSelected} />}
+          {mode === "setup" && setup !== null && <SetupPanel setup={setup} placing={placing} onPlacing={setPlacing} onChange={edit} selected={selected} onSelect={setSelected} photoLinks={kin?.photo_links ?? null} />}
           {mode === "setup" && setup === null && <p className="text-sm text-[var(--fg-dim)]">{bikeId === null ? "Pick or add a bike." : "Set the photo's scale first: click both axles."}</p>}
           {mode === "kinematics" && (
             <KinematicsPanel
@@ -513,7 +513,8 @@ export default function SimulatePage() {
               gear={gear}
               travelIndex={travelIndex}
               surfaceNames={setup?.surfaces.map((s) => s.name) ?? []}
-              cogHeightM={setup?.params.cog_height_m ?? 1.1}
+              cogHeightM={kin?.cog_height_m ?? setup?.params.cog_height_m ?? 1.1}
+              cogFromPoint={setup?.points.centre_of_mass !== undefined}
               onCogHeight={(h) => setup && edit({ ...setup, params: { ...setup.params, cog_height_m: h } })}
             />
           )}

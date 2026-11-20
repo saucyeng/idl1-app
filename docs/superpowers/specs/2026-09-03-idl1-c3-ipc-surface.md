@@ -3463,8 +3463,15 @@ or WebP), replacing an earlier one.
 
 **`sim_kinematics(setup: SetupPx, gear: number, samples: number)`** (async)
 → `{ gears: GearCurves[], failed: [gear, why][], anti_squat_pct:
-(number | null)[][], snapshots: Snapshot[], drawn: Snapshot | null,
-chain_fit: [lo, hi] | null, frame }`. Every gear's growth (mm), kickback
+(number | null)[][], cog_height_m, snapshots: Snapshot[], unclosed:
+[travel_mm, why][], drawn: Snapshot | null, chain_links, photo_links:
+number | null, chain_fit: [lo, hi] | null, frame }`. With
+`params.chain_from_photo` (default on, not saved) the chain's length is the
+loop round the points as photographed (`photo_links`, fractional) to the
+nearest even link, used for the kinematics, the run and the save. A placed
+`centre_of_mass` point (saved in the linkage's points) sets `cog_height_m`
+over `params.cog_height_m`. Travels where the chosen gear's loop doesn't
+close are listed in `unclosed`, not silently left out. Every gear's growth (mm), kickback
 (° of crank), cage angle (° forward; through travel it follows one branch
 from the previous sample), loop change at a held cage (mm), top span (mm),
 clearance to each surface (mm), roller contact and squat angle (° above the
