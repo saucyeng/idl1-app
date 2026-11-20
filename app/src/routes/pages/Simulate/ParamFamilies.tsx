@@ -1,9 +1,10 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { NumberField } from "@/components/ui/number-field";
-import { TextField } from "@/components/ui/select-field";
+import { SelectField, TextField } from "@/components/ui/select-field";
 import { getBikeParameters, setBikeParameters, type BikeParametersView, type ParamFamily, type ParamSpec } from "@/ipc/bikelog";
+import { readGeometryTable, type GeometryTable } from "@/ipc/simulate";
 
 const FAMILY_TITLES: Record<ParamFamily, string> = {
   tyres: "Tyres",
@@ -11,6 +12,7 @@ const FAMILY_TITLES: Record<ParamFamily, string> = {
   fork: "Fork",
   shock: "Shock",
   frame: "Frame",
+  geometry: "Geometry",
   cockpit: "Cockpit",
   masses: "Masses",
   rider: "Rider",
@@ -27,7 +29,20 @@ function families(specs: ParamSpec[]): ParamFamily[] {
  * logged ones (pressures, clicks) become one log note with the text typed
  * here; the rest, and everything on a variant, change the bike's own values.
  */
-export function ParamFamilies({ bikeId }: { bikeId: string }) {
+/** Props for {@link ParamFamilies}. */
+export interface ParamFamiliesProps {
+  bikeId: string;
+  /** Bumped when something else changed the bike's parameters: fetch again. */
+  version?: number;
+  /** The effective parameters whenever they load or change. */
+  onEffective?: (effective: Record<string, unknown>) => void;
+  /** Sets the drawing's wheelbase (m) from an imported table. */
+  onWheelbase?: (m: number) => void;
+  /** The geometry import takes dropped images while open: it hands its handler here, then null. */
+  onDropTarget?: (fn: ((path: string) => void) | null) => void;
+}
+
+export function ParamFamilies({ bikeId, version = 0, onEffective, onWheelbase, onDropTarget }: ParamFamiliesProps) {
   const [view, setView] = useState<BikeParametersView | null>(null);
   const [pending, setPending] = useState<Record<string, unknown>>({});
   const [note, setNote] = useState("");
@@ -38,12 +53,18 @@ export function ParamFamilies({ bikeId }: { bikeId: string }) {
     setView(null);
     setPending({});
     getBikeParameters(bikeId)
-      .then((v) => live && setView(v))
+      .then((v) => {
+        if (!live) return;
+        setView(v);
+        onEffective?.(v.effective);
+      })
       .catch((e: unknown) => live && setError(String((e as { message?: unknown })?.message ?? e)));
     return () => {
       live = false;
     };
-  }, [bikeId]);
+    // refetch on a new bike or a new version only, not a new callback
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [bikeId, version]);
 
   if (view === null) return error !== null ? <p className="text-xs text-[var(--accent)]">{error}</p> : null;
   const value = (k: string) => (k in pending ? pending[k] : view.effective[k]);
@@ -56,6 +77,7 @@ export function ParamFamilies({ bikeId }: { bikeId: string }) {
       setError(null);
       const v = await setBikeParameters(bikeId, pending, note.trim());
       setView(v);
+      onEffective?.(v.effective);
       setPending({});
       setNote("");
     } catch (e) {
@@ -87,6 +109,7 @@ export function ParamFamilies({ bikeId }: { bikeId: string }) {
                   <TextField key={s.key} label={s.label} value={typeof v === "string" ? v : ""} hint={hint} onChange={(t) => setPending((p) => ({ ...p, [s.key]: t === "" ? null : t }))} />
                 );
               })}
+            {f === "geometry" && <GeometryImport onDropTarget={onDropTarget} onApply={(values) => setPending((p) => ({ ...p, ...values }))} onWheelbase={onWheelbase} />}
             {f === "masses" && (
               <div className="grid grid-cols-2 gap-x-3 gap-y-0.5 pt-1 text-xs tabular-nums">
                 <span className="text-[var(--fg-dim)]">Front wheel rolling</span>
@@ -120,6 +143,128 @@ export function ParamFamilies({ bikeId }: { bikeId: string }) {
         </div>
       )}
       {error !== null && <p className="text-xs text-[var(--accent)]">{error}</p>}
+    </div>
+  );
+}
+
+
+/**
+ * Reads a maker's geometry table from a screenshot (paste it, drop its
+ * file on the stage, or pick it) and fills the Geometry family for one size
+ * and setting. The OCR and the table's reading are the bridge's and the
+ * engine's (`read_geometry_table`); this only picks the column.
+ */
+function GeometryImport({ onDropTarget, onApply, onWheelbase }: { onDropTarget?: (fn: ((path: string) => void) | null) => void; onApply: (values: Record<string, number>) => void; onWheelbase?: (m: number) => void }) {
+  const [open, setOpen] = useState(false);
+  const [table, setTable] = useState<GeometryTable | null>(null);
+  const [size, setSize] = useState(0);
+  const [choice, setChoice] = useState(0);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const box = useRef<HTMLDivElement | null>(null);
+
+  async function read(from: { image: Uint8Array } | { path: string }): Promise<void> {
+    setBusy(true);
+    setError(null);
+    try {
+      const t = await readGeometryTable(from);
+      setTable(t);
+      setSize((s) => Math.min(s, t.sizes.length - 1));
+    } catch (e) {
+      setError(String((e as { message?: unknown })?.message ?? e));
+    } finally {
+      setBusy(false);
+    }
+  }
+  const readRef = useRef(read);
+  readRef.current = read;
+  const targetRef = useRef(onDropTarget);
+  targetRef.current = onDropTarget;
+  useEffect(() => {
+    if (!open) return;
+    const target = targetRef.current;
+    target?.((path) => void readRef.current({ path }));
+    box.current?.focus();
+    return () => target?.(null);
+  }, [open]);
+
+  if (!open) {
+    return (
+      <div>
+        <Button size="sm" onClick={() => setOpen(true)}>
+          Import from a screenshot…
+        </Button>
+      </div>
+    );
+  }
+  const most = table === null ? 0 : Math.max(1, ...table.rows.map((r) => r.values[size]?.length ?? 0));
+  const picked = table === null ? [] : table.rows.filter((r) => r.key !== null && (r.values[size]?.length ?? 0) > 0).map((r) => ({ r, v: r.values[size][Math.min(choice, r.values[size].length - 1)] }));
+  const wheelbase = picked.find((p) => p.r.key === "geometry.wheelbase_mm")?.v;
+  return (
+    <div
+      ref={box}
+      tabIndex={0}
+      className="flex flex-col gap-2 rounded-[var(--radius)] border border-dashed border-[var(--rule)] p-2 text-xs outline-none focus:border-[var(--info)]"
+      onPaste={(e) => {
+        const item = Array.from(e.clipboardData.items).find((i) => i.type.startsWith("image/"));
+        const file = item?.getAsFile();
+        if (file) {
+          e.preventDefault();
+          void file.arrayBuffer().then((b) => read({ image: new Uint8Array(b) }));
+        }
+      }}
+    >
+      <p className="text-[var(--fg-dim)]">
+        Screenshot the maker&apos;s geometry table (Win+Shift+S), click here and paste with Ctrl+V, or drop the image file on the photo. Sizes across the top, measurements down the side.
+      </p>
+      {busy && <p>Reading the table…</p>}
+      {error !== null && <p className="text-[var(--accent)]">{error}</p>}
+      {table !== null && (
+        <>
+          <div className="flex gap-2">
+            <SelectField label="Size" value={String(size)} options={table.sizes.map((s, i) => ({ value: String(i), label: s }))} onChange={(v) => setSize(Number(v ?? 0))} className="w-24" />
+            {most > 1 && (
+              <SelectField
+                label="Setting"
+                value={String(choice)}
+                options={Array.from({ length: most }, (_, i) => ({ value: String(i), label: i === 0 ? "First (short / low)" : `Value ${i + 1} (long / high)` }))}
+                onChange={(v) => setChoice(Number(v ?? 0))}
+                className="w-48"
+              />
+            )}
+          </div>
+          <div className="grid grid-cols-[1fr_auto] gap-x-3 tabular-nums">
+            {table.rows.map((r, i) => (
+              <div key={i} className="contents">
+                <span className={r.key === null ? "text-[var(--fg-faint)]" : ""}>{r.label}</span>
+                <span className={r.key === null ? "text-[var(--fg-faint)]" : ""}>{(r.values[size] ?? []).join(" / ") || "—"}</span>
+              </div>
+            ))}
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <Button size="sm" filled emphasis="good" disabled={picked.length === 0} onClick={() => onApply(Object.fromEntries(picked.map((p) => [p.r.key as string, p.v])))}>
+              {`Fill ${picked.length} values`}
+            </Button>
+            {wheelbase !== undefined && onWheelbase !== undefined && (
+              <Button size="sm" onClick={() => onWheelbase(wheelbase / 1000)} title="The photo's scale comes from the wheelbase between the axles">
+                {`Scale the photo to ${wheelbase.toFixed(0)} mm`}
+              </Button>
+            )}
+          </div>
+          <p className="text-[var(--fg-dim)]">Greyed rows weren&apos;t recognised and aren&apos;t filled. Check the values against the table, then Apply below.</p>
+        </>
+      )}
+      <div>
+        <Button
+          size="sm"
+          onClick={() => {
+            setOpen(false);
+            setTable(null);
+          }}
+        >
+          Close
+        </Button>
+      </div>
     </div>
   );
 }

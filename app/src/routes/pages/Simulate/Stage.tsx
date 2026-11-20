@@ -1,6 +1,6 @@
-import { useCallback, useEffect, useRef, useState, type PointerEvent as ReactPointerEvent, type WheelEvent as ReactWheelEvent } from "react";
+import { useCallback, useEffect, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode, type WheelEvent as ReactWheelEvent } from "react";
 
-import { toPx, type P2, type PhotoFrame, type SetupPx, type Snapshot } from "@/ipc/simulate";
+import { toM, toPx, type P2, type PhotoFrame, type SetupPx, type Snapshot } from "@/ipc/simulate";
 
 import { CAGE_LINKS, groupColour, hitPoint, hitSegment, LINKS, POINTS, polyPoints, type RunFrame } from "./model";
 
@@ -34,6 +34,8 @@ export interface StageProps {
   mode: "setup" | "kinematics" | "playback";
   /** The setup being edited (pixels). */
   setup: SetupPx | null;
+  /** The open bike's parameters: its `geometry.*` values draw stack, reach and the head angle in setup. */
+  geometry?: Record<string, unknown>;
   /** The photo's frame, to draw metres on it. */
   frame: PhotoFrame | null;
   /** The bike drawn at one travel (kinematics, and the chain under the setup). */
@@ -226,6 +228,7 @@ export function Stage(props: StageProps) {
         <rect x={0} y={0} width={size.w} height={size.h} fill="var(--surface-2)" />
       )}
 
+      {mode === "setup" && setup !== null && frame !== null && props.geometry !== undefined && <GeometryLayer setup={setup} frame={frame} params={props.geometry} m2px={m2px} stroke={stroke} />}
       {mode === "setup" && setup !== null && <SetupLayer setup={setup} snapshot={snapshot} m2px={m2px} u={u} stroke={stroke} selected={selected} labels={pxPerUser >= 0.55} placing={placing} />}
       {mode === "kinematics" && snapshot !== null && <SnapshotLayer snapshot={snapshot} m2px={m2px} stroke={stroke} />}
       {mode === "kinematics" && snapshot !== null && <OverlayLayer snapshot={snapshot} snapshots={props.snapshots} overlays={props.overlays} cogHeightM={props.cogHeightM} m2px={m2px} stroke={stroke} />}
@@ -338,6 +341,58 @@ function Pins({ pins, m2px, stroke }: { pins: P2[]; m2px: (m: P2) => P2; stroke:
  * run on to the front axle, where their heights compare: the squat line
  * through A, the load transfer line to the centre of mass's height.
  */
+/**
+ * The maker's geometry over the photo, from the bottom bracket as placed:
+ * stack up, reach forward to the head tube's top, and the steering axis at
+ * the head angle down to the axles' height. Where the photo's front axle
+ * sits off that axis, compared with the table's fork offset, says how well
+ * the photo and the table agree.
+ */
+function GeometryLayer({ setup, frame, params, m2px, stroke }: { setup: SetupPx; frame: PhotoFrame; params: Record<string, unknown>; m2px: (m: P2) => P2; stroke: (w: number) => number }) {
+  const num = (k: string) => (typeof params[k] === "number" ? (params[k] as number) : null);
+  const [stack, reach, hta, offset] = [num("geometry.stack_mm"), num("geometry.reach_mm"), num("geometry.head_angle_deg"), num("geometry.fork_offset_mm")];
+  const bbPx = setup.points.bb;
+  if (bbPx === undefined || (stack === null && reach === null && hta === null)) return null;
+  const bb = toM(frame, bbPx);
+  const top: P2 = [bb[0] + (reach ?? 0) / 1000, bb[1] + (stack ?? 0) / 1000];
+  const font = stroke(13);
+  const label = (at: P2, text: string, dx = 6, dy = -6) => {
+    const p = m2px(at);
+    return (
+      <text x={p[0] + stroke(dx)} y={p[1] + stroke(dy)} fontSize={font} fill="var(--info)" stroke="var(--bg)" strokeWidth={stroke(3)} paintOrder="stroke">
+        {text}
+      </text>
+    );
+  };
+  const line = (a: P2, b: P2, dash = true) => <polyline points={polyPoints([a, b], m2px)} fill="none" stroke="var(--info)" strokeWidth={stroke(1.75)} strokeDasharray={dash ? `${stroke(6)} ${stroke(4)}` : undefined} />;
+  let axis: ReactNode = null;
+  let offsetNote: string | null = null;
+  if (hta !== null && stack !== null && reach !== null) {
+    const a = (hta * Math.PI) / 180;
+    const d: P2 = [Math.cos(a), -Math.sin(a)];
+    const t = top[1] / Math.sin(a);
+    const above: P2 = [top[0] - 0.12 * d[0], top[1] - 0.12 * d[1]];
+    const foot: P2 = [top[0] + (t + 0.03) * d[0], top[1] + (t + 0.03) * d[1]];
+    axis = line(above, foot, false);
+    // the front axle's perpendicular distance ahead of the steering axis
+    const fa: P2 = [frame.wheelbase_m, 0];
+    const off = ((fa[0] - top[0]) * d[1] - (fa[1] - top[1]) * d[0]) * -1000;
+    offsetNote = `front axle ${off.toFixed(0)} mm ahead of the axis${offset !== null ? ` (fork offset ${offset.toFixed(0)})` : ""}`;
+  }
+  return (
+    <g pointerEvents="none">
+      {stack !== null && line(bb, [bb[0], top[1]])}
+      {reach !== null && line([bb[0], top[1]], top)}
+      {axis}
+      <circle cx={m2px(top)[0]} cy={m2px(top)[1]} r={stroke(4)} fill="var(--info)" />
+      {stack !== null && label([bb[0], (bb[1] + top[1]) / 2], `Stack ${stack.toFixed(0)}`)}
+      {reach !== null && label([(bb[0] + top[0]) / 2, top[1]], `Reach ${reach.toFixed(0)}`, -20, -8)}
+      {hta !== null && label(top, `HTA ${hta.toFixed(1)}°`, 8, -10)}
+      {offsetNote !== null && label([frame.wheelbase_m, 0], offsetNote, 8, 22)}
+    </g>
+  );
+}
+
 function OverlayLayer({ snapshot, snapshots, overlays, cogHeightM, m2px, stroke }: { snapshot: Snapshot; snapshots: Snapshot[]; overlays: Overlays; cogHeightM: number; m2px: (m: P2) => P2; stroke: (w: number) => number }) {
   const q = snapshot.squat;
   const ics = snapshots.map((s) => s.squat.ic).filter((p): p is P2 => p !== null);

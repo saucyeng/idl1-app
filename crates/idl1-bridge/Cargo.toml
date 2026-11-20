@@ -40,6 +40,9 @@ sysinfo = { version = "0.33", default-features = false, features = ["system"] }
 # the lock through Tauri, so no new crate is built.
 [target.'cfg(windows)'.dependencies]
 winreg = "0.55"
+# The geometry table import's OCR (Windows.Media.Ocr, part of the OS). The
+# same 0.61 the lock already has through Tauri.
+windows = { version = "0.61", features = ["Foundation", "Foundation_Collections", "Globalization", "Graphics_Imaging", "Media_Ocr", "Storage_Streams"] }
 
 # Android only (SPEC §14b.2): GATT payloads cross the Kotlin plugin boundary
 # as base64 strings.

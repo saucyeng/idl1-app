@@ -143,7 +143,7 @@ export async function attachBikeLog(sessionId: string, bikeId: string): Promise<
 }
 
 /** A parameter group, as screens fold them. */
-export type ParamFamily = "tyres" | "wheels" | "fork" | "shock" | "frame" | "cockpit" | "masses" | "rider";
+export type ParamFamily = "tyres" | "wheels" | "fork" | "shock" | "frame" | "geometry" | "cockpit" | "masses" | "rider";
 
 /** One parameter of the shared vocabulary (core `calibration::params`). */
 export interface ParamSpec {

@@ -21,19 +21,21 @@ import {
   type KinematicsView,
   type P2,
   type PhotoFrame,
+  type RideShape,
   type SetupPx,
   type SimSetupView,
 } from "@/ipc/simulate";
 
 import { BikeTree } from "./BikeTree";
 import { KinematicsPanel } from "./KinematicsPanel";
+import { SuspensionPanel } from "./SuspensionPanel";
 import { deleteVertex, insertVertex, isPhotoPath, movePoint, PHOTO_EXTENSIONS, playbackFrame, runFrame } from "./model";
 import { ParamFamilies } from "./ParamFamilies";
 import { PlaybackPanel, type LabelledRun } from "./PlaybackPanel";
 import { SetupPanel } from "./SetupPanel";
 import { Stage, type Overlays } from "./Stage";
 
-type Mode = "setup" | "kinematics" | "playback";
+type Mode = "setup" | "kinematics" | "suspension" | "playback";
 
 /** Pixels per metre of the blank canvas a bike without a photo is drawn on. */
 const BLANK_PPM = 1000;
@@ -82,6 +84,13 @@ export default function SimulatePage() {
   const [photo, setPhoto] = useState<{ url: string; w: number; h: number } | null>(null);
   const [blank, setBlank] = useState(false);
   const [mode, setMode] = useState<Mode>("setup");
+  // the open bike's effective parameters (geometry for the stage), and a
+  // count bumped when a panel other than the families changes them
+  const [params, setParams] = useState<Record<string, unknown>>({});
+  const [paramsVersion, setParamsVersion] = useState(0);
+  // Playback rides each bike's springs over the bumps, or prescribes the travel (null)
+  const [ride, setRide] = useState<RideShape | null>({ bump_height_m: 0.08, bump_length_m: 0.6 });
+  const geometryDropRef = useRef<((path: string) => void) | null>(null);
   const [placing, setPlacing] = useState<string | null>(null);
   const [selected, setSelected] = useState<{ kind: "roller" | "surface"; index: number } | null>(null);
   const [kin, setKin] = useState<KinematicsView | null>(null);
@@ -236,7 +245,10 @@ export default function SimulatePage() {
       .onDragDropEvent((event) => {
         if (event.payload.type !== "drop" || getActiveRoute() !== "simulate") return;
         const photo = event.payload.paths.find(isPhotoPath);
-        if (photo !== undefined) void takePhotoRef.current(photo);
+        if (photo === undefined) return;
+        // an open geometry import takes the drop; otherwise it's the bike's photo
+        if (geometryDropRef.current !== null) geometryDropRef.current(photo);
+        else void takePhotoRef.current(photo);
       })
       .then((fn) => (cancelled ? fn() : (unlisten = fn)))
       .catch(() => {
@@ -350,7 +362,7 @@ export default function SimulatePage() {
           skipped.push(nameOf(job.id));
           continue;
         }
-        const r = await runDrivetrainSim(job.setup, gear, bumps, (p) => setProgress((k + (p.total ? p.done / p.total : 0)) / total));
+        const r = await runDrivetrainSim(job.setup, gear, bumps, (p) => setProgress((k + (p.total ? p.done / p.total : 0)) / total), ride === null ? null : { ...ride, bike_id: job.id });
         made.push({ label: `${nameOf(job.id)} · ${teeth}T`, run: r, group });
       }
       setRuns((rs) => {
@@ -416,9 +428,9 @@ export default function SimulatePage() {
       <div className="flex flex-wrap items-end gap-3 border-b border-[var(--rule)] px-3 py-2">
         <span className="self-center text-sm font-medium">{bikes.find((b) => b.bike_id === bikeId)?.name ?? "No bike open"}{dirty ? " •" : ""}</span>
         <div className="flex gap-1" role="tablist" aria-label="Simulate view">
-          {(["setup", "kinematics", "playback"] as const).map((m) => (
+          {(["setup", "kinematics", "suspension", "playback"] as const).map((m) => (
             <Button key={m} size="sm" role="tab" aria-selected={mode === m} filled={mode === m} emphasis={mode === m ? "good" : "normal"} disabled={m !== "setup" && setup === null} onClick={() => setMode(m)}>
-              {m === "setup" ? "Setup" : m === "kinematics" ? "Kinematics" : "Playback"}
+              {m === "setup" ? "Setup" : m === "kinematics" ? "Kinematics" : m === "suspension" ? "Suspension" : "Playback"}
             </Button>
           ))}
         </div>
@@ -445,7 +457,8 @@ export default function SimulatePage() {
             <Stage
               size={size}
               photoUrl={photo?.url ?? null}
-              mode={mode}
+              mode={mode === "suspension" ? "kinematics" : mode}
+              geometry={params}
               setup={stageSetup}
               frame={frameOf ?? kin?.frame ?? null}
               snapshot={snapshot}
@@ -518,7 +531,7 @@ export default function SimulatePage() {
               )}
             </div>
           )}
-          {mode === "kinematics" && kin !== null && kin.snapshots.length > 1 && (
+          {(mode === "kinematics" || mode === "suspension") && kin !== null && kin.snapshots.length > 1 && (
             <div className="absolute bottom-3 left-3 right-3 flex items-center gap-3 rounded-[var(--radius)] bg-[var(--surface)]/90 px-3 py-2 text-xs">
               <span className="w-28 tabular-nums">Travel {kin.snapshots[Math.min(travelIndex, kin.snapshots.length - 1)].travel_mm.toFixed(0)} mm</span>
               <input type="range" min={0} max={kin.snapshots.length - 1} value={Math.min(travelIndex, kin.snapshots.length - 1)} onChange={(e) => setTravelIndex(Number(e.target.value))} className="flex-1 accent-[var(--good)]" aria-label="Rear travel" />
@@ -555,10 +568,15 @@ export default function SimulatePage() {
               onCogHeight={(h) => setup && edit({ ...setup, params: { ...setup.params, cog_height_m: h } })}
             />
           )}
+          {mode === "suspension" && setup !== null && bikeId !== null && (
+            <SuspensionPanel bikeId={bikeId} setup={setup} variant={bikes.find((b) => b.bike_id === bikeId)?.variant_of !== undefined} onParamsChanged={() => setParamsVersion((v) => v + 1)} />
+          )}
           {mode === "playback" && (
             <PlaybackPanel
               bumps={bumps}
               onBumps={setBumps}
+              ride={ride}
+              onRide={setRide}
               running={running}
               progress={progress}
               onRun={() => void run()}
@@ -589,7 +607,15 @@ export default function SimulatePage() {
             families={
               <>
                 {setup !== null ? <SetupPanel setup={setup} placing={placing} onPlacing={setPlacing} onChange={edit} selected={selected} onSelect={setSelected} photoLinks={kin?.photo_links ?? null} /> : <p className="text-xs text-[var(--fg-dim)]">{photo !== null || blank ? "Click both axles on the stage first." : "Add a photo, or start on a blank canvas."}</p>}
-                {bikeId !== null && <ParamFamilies bikeId={bikeId} />}
+                {bikeId !== null && (
+                  <ParamFamilies
+                    bikeId={bikeId}
+                    version={paramsVersion}
+                    onEffective={setParams}
+                    onWheelbase={(m) => setup !== null && edit({ ...setup, wheelbase_m: m })}
+                    onDropTarget={(fn) => (geometryDropRef.current = fn)}
+                  />
+                )}
               </>
             }
           />,

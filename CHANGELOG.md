@@ -6,6 +6,23 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 
 ### Added
 
+- **Springs, sag and a geometry table from a screenshot [no-docs] (2026-11-20).** A Suspension view
+  in the Simulate tab draws the leverage ratio through travel from the placed shock eyes, the rear
+  wheel's force and the fork's through their travel (slow, and over a bump), the load on each wheel
+  from the centre of mass point, and the sag the pressures give. Log a sag test (pressures and the
+  sag measured, with and without a pack) and each air spring is fitted to the tests; Use the fit
+  stores it with the bike. The Geometry family reads a maker's geometry table from a pasted or
+  dropped screenshot (Windows' own OCR): pick the size and setting and its stack, reach, head angle,
+  chainstay, wheelbase and the rest fill in, and stack, reach and the steering axis are drawn on the
+  photo with how far the front axle sits from the axis. The derailleur has a parallelogram type:
+  horizontal (SRAM Eagle, the default) or slant; the slant model put the upper jockey into the small
+  cogs, which is why kinematics started part-way into travel. Every launch opens the sidebar. In the
+  bike tree, a bike's variants and parameters fold away, and the forms explain a variant (an idea
+  for this bike) and a copy (someone else's bike). Playback can ride each ticked bike over the
+  bumps: its own shock, pressure, clicks, masses and tyre give its travel (a two-mass rear end
+  with the tyre), and the chain runs on that, with the tyre and shock forces on the chart; or
+  prescribe the same travel for every bike, as before.
+
 - **Bikes and variants side by side in the Simulate tab [no-docs] (2026-11-20).** The sidebar
   lists every bike with its variants under it; the open bike's parameters fold out beneath its
   name in families (points, scale and travel, drivetrain, derailleur, hub and wheel, rollers,

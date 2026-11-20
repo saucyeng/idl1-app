@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { revealItemInDir } from "@tauri-apps/plugin-opener";
 import { toast } from "sonner";
 
@@ -154,9 +154,16 @@ export default function AppShell() {
   // React state and mirrored to `localStorage`, rather than read from
   // storage on every render: a drag moves it sixty times a second and a
   // write per frame is a write per frame.
+  // Every launch starts with it open, at the remembered width: a sidebar
+  // collapsed last session (perhaps while a tab's sidebar was empty) hid
+  // the tree a returning user looks for first. Collapsing still holds for
+  // the session, and a later change of shape keeps what was stored.
   const [sidebar, setSidebar] = useState<SidebarState>(DEFAULT_SIDEBAR_STATE);
+  const launched = useRef(false);
   useEffect(() => {
-    setSidebar(readColumnPrefs().sidebar[aspectClass]);
+    const stored = readColumnPrefs().sidebar[aspectClass];
+    setSidebar(launched.current ? stored : { ...stored, collapsed: false });
+    launched.current = true;
   }, [aspectClass]);
 
   const persistSidebar = useCallback(
