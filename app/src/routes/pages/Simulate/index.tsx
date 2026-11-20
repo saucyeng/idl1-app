@@ -542,8 +542,8 @@ export default function SimulatePage() {
           )}
         </div>
 
-        <aside className="max-h-[50vh] w-full overflow-y-auto border-t border-[var(--rule)] p-3 lg:max-h-none lg:w-[380px] lg:border-l lg:border-t-0">
-          {mode === "setup" && <p className="text-sm text-[var(--fg-dim)]">{bikeId === null ? "Make a bike in the sidebar." : setup === null ? "Set the photo's scale first: click both axles." : "The open bike's parameters are in the sidebar, under its name."}</p>}
+        {/* setup's parameters live in the sidebar, so the photo takes this column too */}
+        <aside hidden={mode === "setup"} className="max-h-[50vh] w-full overflow-y-auto border-t border-[var(--rule)] p-3 lg:max-h-none lg:w-[380px] lg:border-l lg:border-t-0">
           {mode === "kinematics" && (
             <KinematicsPanel
               kin={kin}
