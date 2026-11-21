@@ -1,3 +1,4 @@
+import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { useEffect, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
@@ -215,8 +216,20 @@ function GeometryImport({ onDropTarget, onApply, onWheelbase }: { onDropTarget?:
       }}
     >
       <p className="text-[var(--fg-dim)]">
-        Screenshot the maker&apos;s geometry table (Win+Shift+S), click here and paste with Ctrl+V, or drop the image file on the photo. Sizes across the top, measurements down the side.
+        Screenshot the maker&apos;s geometry table (Win+Shift+S), click here and paste with Ctrl+V, choose the saved image, or drop it on the photo. Sizes across the top, measurements down the side.
       </p>
+      <div>
+        <Button
+          size="sm"
+          disabled={busy}
+          onClick={async () => {
+            const path = await openDialog({ multiple: false, filters: [{ name: "Images", extensions: ["png", "jpg", "jpeg", "bmp", "gif", "tif", "tiff", "webp"] }] });
+            if (typeof path === "string") await read({ path });
+          }}
+        >
+          Choose file…
+        </Button>
+      </div>
       {busy && <p>Reading the table…</p>}
       {error !== null && <p className="text-[var(--accent)]">{error}</p>}
       {table !== null && (
