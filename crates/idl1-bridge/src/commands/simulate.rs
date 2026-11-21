@@ -694,7 +694,8 @@ fn default_cadence() -> f64 {
 /// defaults that stood in for missing ones, in words.
 pub fn rear_end_of(p: &idl_rs::calibration::params::Params, bike: &SimBike, cog_x_m: f64, wheelbase_m: f64) -> Result<(idl_rs::sim::ride::RearEnd, Vec<String>), IpcError> {
     use idl_rs::calibration::params::{mass_table, number};
-    use idl_rs::sim::ride::{tyre_stiffness_n_m, Damper, RearEnd};
+    use idl_rs::sim::ride::{Damper, RearEnd};
+    use idl_rs::sim::tyre::{Insert, Tyre};
     use idl_rs::sim::suspension::{air_spring, shock_stroke, wheel_loads_n, End, G, PSI_PA};
     let mut assumed = Vec::new();
     let mut or = |key: &str, default: f64, what: &str| {
@@ -710,6 +711,15 @@ pub fn rear_end_of(p: &idl_rs::calibration::params::Params, bike: &SimBike, cog_
     let (_, rear_n) = wheel_loads_n(mass, cog_x_m, wheelbase_m);
     let psi = or("shock.psi", 200.0, "shock pressure (psi)");
     let tyre_psi = or("rear_tyre.psi", 25.0, "rear tyre (psi)");
+    let width_in = or("rear_tyre.width_in", 2.4, "rear tyre width (in)");
+    // a DH-type casing from the model's name; the casing and insert stiffnesses are assumed
+    let dh = p.get("rear_tyre.model").and_then(|v| v.as_str()).is_some_and(|m| ["dh", "dd", "downhill", "double down", "super gravity"].iter().any(|k| m.to_lowercase().contains(k)));
+    let insert_mm = number(p, "rear_tyre.insert_height_mm").unwrap_or(if number(p, "rear_tyre.insert_kg").unwrap_or(0.0) > 0.0 { 25.0 } else { 0.0 });
+    let mut rear_tyre = Tyre::mtb_29(width_in, tyre_psi, dh, false);
+    if insert_mm > 0.0 {
+        rear_tyre.insert = Some(Insert { height_m: insert_mm / 1000.0, stiffness_n_m: 60_000.0 });
+    }
+    assumed.push(format!("tyre: {} casing{}, its stiffness and the insert's assumed", if dh { "DH" } else { "trail" }, if insert_mm > 0.0 { format!(", a {insert_mm:.0} mm insert") } else { String::new() }));
     // clicks from closed open the damper about 8 % each from twice the
     // default when closed: a placeholder curve until the shock is identified
     let scale = |key: &str| number(p, key).map_or(1.0, |c| 2.0 * 0.92_f64.powf(c.max(0.0)) / (2.0 * 0.92_f64.powf(8.0)));
@@ -722,8 +732,7 @@ pub fn rear_end_of(p: &idl_rs::calibration::params::Params, bike: &SimBike, cog_
         spring: air_spring(p, End::Shock, st),
         gauge_pa: psi * PSI_PA,
         damper,
-        tyre_k_n_m: tyre_stiffness_n_m(tyre_psi),
-        tyre_c_ns_m: 100.0,
+        tyre: rear_tyre,
     };
     Ok((rear, assumed))
 }
@@ -789,10 +798,14 @@ pub fn run_drivetrain_sim_via(setup: &SetupPx, gear: usize, input: &BumpTrain, r
         let i = ((t * 1000.0).round() as usize).min(v.len() - 1);
         v[i] as f32
     };
-    let ride_tracks = [("Tyre force", &out.tyre_n), ("Shock force", &out.shock_n)];
-    for (name, v) in ride_tracks {
+    let deflection_mm: Vec<f64> = out.tyre_deflection_m.iter().map(|d| d * 1000.0).collect();
+    let ride_tracks = [("Tyre force", &out.tyre_n, "N"), ("Shock force", &out.shock_n, "N"), ("Tyre deflection", &deflection_mm, "mm")];
+    for (name, v, unit) in ride_tracks {
         let values = result.frame_t_s.iter().map(|&t| at(v, t as f64)).collect();
-        result.tracks.push(Track { name: name.into(), component: "drivetrain".into(), kind: TrackKind::Scalar, count: 1, unit: "N".into(), labels: None, values });
+        result.tracks.push(Track { name: name.into(), component: "drivetrain".into(), kind: TrackKind::Scalar, count: 1, unit: unit.into(), labels: None, values });
+    }
+    if let Some(d) = result.components.get_mut("drivetrain").and_then(|c| c.as_object_mut()) {
+        d.insert("rim_strikes".into(), serde_json::json!(out.rim_strikes));
     }
     Ok(encode_sim_result(&result))
 }
