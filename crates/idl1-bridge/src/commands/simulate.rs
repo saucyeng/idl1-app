@@ -678,6 +678,16 @@ pub struct RideRequest {
     pub bump_height_m: f64,
     /// Each bump's length along the trail, m.
     pub bump_length_m: f64,
+    /// Mean crank torque while riding, N·m; 0 coasts. Absent: 0.
+    #[serde(default)]
+    pub pedal_torque_nm: f64,
+    /// Cadence, rpm. Absent: 80.
+    #[serde(default = "default_cadence")]
+    pub cadence_rpm: f64,
+}
+
+fn default_cadence() -> f64 {
+    80.0
 }
 
 /// The rear end from a bike's parameters and the drawing, with the
@@ -741,7 +751,7 @@ pub fn run_drivetrain_sim_via(setup: &SetupPx, gear: usize, input: &BumpTrain, r
         return Ok(encode_run(&r, &bike, &frame, input));
     };
     // ride the rear end over the bumps; the chain runs on the travel that gives
-    use idl_rs::sim::ride::{ride as ride_over, Terrain};
+    use idl_rs::sim::ride::Terrain;
     if !(req.bump_length_m > 0.05 && req.bump_height_m.abs() <= 1.0) {
         return Err(bad("a bump needs a length over 5 cm and a height within a metre"));
     }
@@ -750,7 +760,25 @@ pub fn run_drivetrain_sim_via(setup: &SetupPx, gear: usize, input: &BumpTrain, r
     let cog_x = linkage.points_m.centre_of_mass.map_or(0.4 * linkage.wheelbase_m, |c| c[0]);
     let (rear, _) = rear_end_of(&p, &bike, cog_x, linkage.wheelbase_m)?;
     let terrain = Terrain::bumps(input.count, req.bump_height_m, req.bump_length_m, input.spacing_s * input.speed_mps, input.lead_s * input.speed_mps);
-    let out = ride_over(&bike, &rear, &terrain, input.speed_mps, input.duration_s() + 0.3, 1000.0)?;
+    // pedalling: the gear's anti-squat through travel decides how much the drive squats the rear
+    let pedal = if req.pedal_torque_nm > 0.0 {
+        let cog_h = centre_of_mass_height_m(&linkage, drivetrain.wheel_radius_m).unwrap_or(setup.params.cog_height_m);
+        let curves = gear_curves(&bike, gear, 17, &enabled)?;
+        let anti_squat = curves.travel_mm.iter().zip(&curves.squat_angle_deg).filter_map(|(t, a)| a.map(|a| (t / 1000.0, anti_squat_pct(a, cog_h, linkage.wheelbase_m)))).collect();
+        Some(idl_rs::sim::ride::Pedalling {
+            torque_nm: req.pedal_torque_nm,
+            cadence_rpm: req.cadence_rpm.clamp(10.0, 200.0),
+            chainring_teeth: drivetrain.chainring_teeth,
+            cog_teeth: drivetrain.cassette_teeth[gear],
+            wheel_radius_m: drivetrain.wheel_radius_m,
+            cog_height_m: cog_h,
+            wheelbase_m: linkage.wheelbase_m,
+            anti_squat,
+        })
+    } else {
+        None
+    };
+    let out = idl_rs::sim::ride::ride_pedalling(&bike, &rear, &terrain, input.speed_mps, input.duration_s() + 0.3, 1000.0, pedal.as_ref())?;
     let r = simulate(&bike, gear, &enabled, &out.excitation, &DynConfig::default(), &mut |f| {
         progress(f);
         true
@@ -1269,7 +1297,7 @@ mod tests {
         let values = [("shock.psi".to_string(), serde_json::json!(220)), ("mass.bike_kg".to_string(), serde_json::json!(18.1)), ("rider.mass_kg".to_string(), serde_json::json!(79.4))].into();
         bikelog::set_parameters(&root, "gt", &values, "", "pc", 1).unwrap();
         let input = BumpTrain { count: 2, lead_s: 0.1, speed_mps: 5.0, ..BumpTrain::default() };
-        let ride = RideRequest { bike_id: "gt".into(), bump_height_m: 0.08, bump_length_m: 0.6 };
+        let ride = RideRequest { bike_id: "gt".into(), bump_height_m: 0.08, bump_length_m: 0.6, pedal_torque_nm: 40.0, cadence_rpm: 80.0 };
 
         // Act
         let bytes = run_drivetrain_sim_via(&setup, 5, &input, Some((&ride, root.as_path())), &mut |_| {}).unwrap();

@@ -354,6 +354,10 @@ export interface RideShape {
   bump_height_m: number;
   /** Each bump's length along the trail, m. */
   bump_length_m: number;
+  /** Mean crank torque, N·m; 0 coasts. */
+  pedal_torque_nm?: number;
+  /** Cadence, rpm. */
+  cadence_rpm?: number;
 }
 
 /** Ride a bike's springs over the bumps instead of prescribing the travel. */
