@@ -6,6 +6,14 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 
 ### Added
 
+- **Replay a recorded ride in the Simulate tab [no-docs] (2026-11-21).** Playback's Travel has a
+  third choice, Recorded ride: pick a session and a stretch of it (up to two minutes) and every
+  ticked bike's drivetrain runs on that ride's own motion. The frame's motion is IMU0's, turned
+  into the bike's side plane by the calibration the bike had that day and low-passed (100 Hz by
+  default); the rear travel is the physics estimator's, solved over the stretch (the first replay
+  of a bike fits the estimator on the whole session, which takes a while, and the session gets its
+  physics channels); the speed is GPS's. A Speed track joins the chart.
+
 - **Springs, sag and a geometry table from a screenshot [no-docs] (2026-11-20).** A Suspension view
   in the Simulate tab draws the leverage ratio through travel from the placed shock eyes, the rear
   wheel's force and the fork's through their travel (slow, and over a bump), the load on each wheel

@@ -360,16 +360,27 @@ export interface RideShape {
   cadence_rpm?: number;
 }
 
+/** A recorded stretch that drives the run instead of bumps (C3 §3.15 `run_drivetrain_sim`'s `replay`). */
+export interface ReplayRequest {
+  session_id: string;
+  /** Start, s from the session's first sample. */
+  from_s: number;
+  /** End, s (at most 120 s after the start). */
+  to_s: number;
+  /** IMU0's low-pass cut-off, Hz; absent: 100. */
+  cutoff_hz?: number | null;
+}
+
 /** Ride a bike's springs over the bumps instead of prescribing the travel. */
 export interface RideRequest extends RideShape {
   bike_id: string;
 }
 
 /** C3 §3.15 `run_drivetrain_sim`: the chain loop through a bump train. */
-export async function runDrivetrainSim(setup: SetupPx, gear: number, input: BumpTrain, onProgress: (p: Progress) => void, ride: RideRequest | null = null): Promise<SimRun> {
+export async function runDrivetrainSim(setup: SetupPx, gear: number, input: BumpTrain, onProgress: (p: Progress) => void, ride: RideRequest | null = null, replay: ReplayRequest | null = null): Promise<SimRun> {
   const progress = new Channel<Progress>();
   progress.onmessage = onProgress;
-  const buf = await invoke<ArrayBuffer>("run_drivetrain_sim", { setup, gear, input, ride, progress });
+  const buf = await invoke<ArrayBuffer>("run_drivetrain_sim", { setup, gear, input, ride, replay, progress });
   return decodeSimRun(buf);
 }
 

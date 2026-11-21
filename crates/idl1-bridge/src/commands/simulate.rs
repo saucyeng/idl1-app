@@ -797,14 +797,80 @@ pub fn run_drivetrain_sim_via(setup: &SetupPx, gear: usize, input: &BumpTrain, r
     Ok(encode_sim_result(&result))
 }
 
-/// C3 §3.15 `run_drivetrain_sim(setup, gear, input, progress)` (async):
+/// Replaying a recorded ride instead of a bump train (sim spec §5): a
+/// stretch of a library session, its rear travel from the physics estimator.
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct ReplayRequest {
+    /// The session.
+    pub session_id: String,
+    /// Start of the stretch, s from the session's first sample.
+    pub from_s: f64,
+    /// End of the stretch, s.
+    pub to_s: f64,
+    /// IMU0's low-pass cut-off, Hz. Absent: 100.
+    #[serde(default)]
+    pub cutoff_hz: Option<f64>,
+}
+
+fn physics_error(e: idl_library::physics::PhysicsError) -> IpcError {
+    use idl_library::physics::PhysicsErrorKind as K;
+    let kind = match e.kind {
+        K::NotFound => IpcErrorKind::NotFound,
+        K::NotCalibrated | K::Unusable => IpcErrorKind::InvalidArgument,
+        K::Io => IpcErrorKind::Io,
+        K::Solve => IpcErrorKind::Internal,
+    };
+    IpcError::new(kind, e.message)
+}
+
+/// Runs the dynamics for an (unsaved) setup over a recorded stretch and
+/// encodes it, with a "Speed" track (m/s). The recorded travel is held
+/// within this bike's travel; the ground is drawn flat. `progress` hears
+/// the phase and, while simulating, the fraction done.
+pub fn run_replay_via(setup: &SetupPx, gear: usize, req: &ReplayRequest, root: &Path, progress: &mut dyn FnMut(&str, Option<f64>)) -> Result<Vec<u8>, IpcError> {
+    let (linkage, drivetrain, _) = resolve(setup, None, 0)?;
+    let frame = PhotoFrame { rear_axle_px: setup.points["rear_axle"], front_axle_px: setup.points["front_axle"], wheelbase_m: setup.wheelbase_m };
+    let bike = SimBike::new(&linkage, &drivetrain)?;
+    let enabled = |i: usize| drivetrain.rollers[i].enabled;
+    let gear = gear.min(drivetrain.cassette_teeth.len() - 1);
+    let cutoff = req.cutoff_hz.unwrap_or(idl_rs::sim::replay::DEFAULT_CUTOFF_HZ);
+    let rp = idl_library::replay::replay(root, &req.session_id, req.from_s, req.to_s, cutoff, &mut |p| progress(p, None)).map_err(physics_error)?;
+    let mut exc = rp.excitation;
+    for s in &mut exc.travel_m {
+        *s = s.min(linkage.rear_travel_m);
+    }
+    let r = simulate(&bike, gear, &enabled, &exc, &DynConfig::default(), &mut |f| {
+        progress("simulating", Some(f));
+        true
+    })?;
+    let mut sorted = exc.travel_m.clone();
+    sorted.sort_by(f64::total_cmp);
+    let sag = sorted[sorted.len() / 2];
+    let input = BumpTrain { speed_mps: rp.mean_speed_mps.max(0.1), sag_m: sag, depth_m: sag, count: 1, ..BumpTrain::default() };
+    let mut result = run_result(&r, &bike, &frame, &input, &|_| 0.0, sag);
+    let speed = result.frame_t_s.iter().map(|&t| exc.at(t as f64).speed_mps as f32).collect();
+    result.tracks.push(Track { name: "Speed".into(), component: "drivetrain".into(), kind: TrackKind::Scalar, count: 1, unit: "m/s".into(), labels: None, values: speed });
+    Ok(encode_sim_result(&result))
+}
+
+/// C3 §3.15 `run_drivetrain_sim(setup, gear, input, ride, replay, progress)` (async):
 /// the chain loop through a bump train, frame by frame, as `IDLM` v1 bytes
 /// ([`encode_run`]). With `ride`, the bike's rear end rides over bumps of
 /// that shape at the train's speed, count and spacing, and the chain runs on
-/// the travel that gives (adding the "Tyre force" and "Shock force" tracks). Progress: `phase` `"simulating"`, `done` of `total` = 1000.
+/// the travel that gives (adding the "Tyre force" and "Shock force" tracks).
+/// With `replay`, a recorded stretch drives it instead ([`run_replay_via`]);
+/// `input` and `ride` are then ignored. Progress: `phase` `"estimating
+/// travel"` and `"reading IMU0"` (no total) on a replay, then `"simulating"`,
+/// `done` of `total` = 1000.
 /// Errors: `invalid_argument` (the setup or the bumps), as `sim_kinematics`.
 #[tauri::command(async)]
-pub fn run_drivetrain_sim(setup: SetupPx, gear: usize, input: BumpTrain, ride: Option<RideRequest>, progress: tauri::ipc::Channel<Progress>, data_dir: tauri::State<'_, DataDir>) -> Result<tauri::ipc::Response, IpcError> {
+pub fn run_drivetrain_sim(setup: SetupPx, gear: usize, input: BumpTrain, ride: Option<RideRequest>, replay: Option<ReplayRequest>, progress: tauri::ipc::Channel<Progress>, data_dir: tauri::State<'_, DataDir>) -> Result<tauri::ipc::Response, IpcError> {
+    if let Some(req) = replay {
+        let bytes = run_replay_via(&setup, gear, &req, data_dir.0.as_path(), &mut |phase, f| {
+            let _ = progress.send(Progress { done: f.map_or(0, |f| (f * 1000.0) as u64), total: f.map(|_| 1000), phase: phase.into() });
+        })?;
+        return Ok(tauri::ipc::Response::new(bytes));
+    }
     let bytes = run_drivetrain_sim_via(&setup, gear, &input, ride.as_ref().map(|r| (r, data_dir.0.as_path())), &mut |f| {
         let _ = progress.send(Progress { done: (f * 1000.0) as u64, total: Some(1000), phase: "simulating".into() });
     })?;
@@ -1306,6 +1372,21 @@ mod tests {
         let header_len = u32::from_le_bytes(bytes[8..12].try_into().unwrap()) as usize;
         let header = std::str::from_utf8(&bytes[12..12 + header_len]).unwrap();
         assert!(header.contains(r#""Tyre force""#) && header.contains(r#""Shock force""#), "{header}");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn run_replay_via_a_session_not_in_the_library_is_not_found() {
+        // Arrange
+        let root = temp_root();
+        let setup = gt_setup(&root);
+        let req = ReplayRequest { session_id: "0123456789abcdef0123456789abcdef".into(), from_s: 0.0, to_s: 10.0, cutoff_hz: None };
+
+        // Act
+        let r = run_replay_via(&setup, 5, &req, &root, &mut |_, _| {});
+
+        // Assert
+        assert_eq!(r.unwrap_err().kind, IpcErrorKind::NotFound);
         let _ = std::fs::remove_dir_all(&root);
     }
 }

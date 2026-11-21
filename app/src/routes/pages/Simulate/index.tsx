@@ -21,6 +21,7 @@ import {
   type KinematicsView,
   type P2,
   type PhotoFrame,
+  type ReplayRequest,
   type RideShape,
   type SetupPx,
   type SimSetupView,
@@ -90,6 +91,9 @@ export default function SimulatePage() {
   const [paramsVersion, setParamsVersion] = useState(0);
   // Playback rides each bike's springs over the bumps, or prescribes the travel (null)
   const [ride, setRide] = useState<RideShape | null>({ bump_height_m: 0.08, bump_length_m: 0.6 });
+  // or a recorded stretch drives the run (null: the bumps above)
+  const [replay, setReplay] = useState<ReplayRequest | null>(null);
+  const [phase, setPhase] = useState<string | null>(null);
   const geometryDropRef = useRef<((path: string) => void) | null>(null);
   const [placing, setPlacing] = useState<string | null>(null);
   const [selected, setSelected] = useState<{ kind: "roller" | "surface"; index: number } | null>(null);
@@ -362,7 +366,17 @@ export default function SimulatePage() {
           skipped.push(nameOf(job.id));
           continue;
         }
-        const r = await runDrivetrainSim(job.setup, gear, bumps, (p) => setProgress((k + (p.total ? p.done / p.total : 0)) / total), ride === null ? null : { ...ride, bike_id: job.id });
+        const r = await runDrivetrainSim(
+          job.setup,
+          gear,
+          bumps,
+          (p) => {
+            setPhase(p.total ? null : p.phase.replace(/_/g, " "));
+            setProgress((k + (p.total ? p.done / p.total : 0)) / total);
+          },
+          ride === null || replay !== null ? null : { ...ride, bike_id: job.id },
+          replay,
+        );
         made.push({ label: `${nameOf(job.id)} · ${teeth}T`, run: r, group });
       }
       setRuns((rs) => {
@@ -377,6 +391,7 @@ export default function SimulatePage() {
       setRunError(message(e));
     } finally {
       setRunning(false);
+      setPhase(null);
     }
   }
 
@@ -577,8 +592,11 @@ export default function SimulatePage() {
               onBumps={setBumps}
               ride={ride}
               onRide={setRide}
+              replay={replay}
+              onReplay={setReplay}
               running={running}
               progress={progress}
+              phase={phase}
               onRun={() => void run()}
               runs={runs}
               shown={shown}
