@@ -25,7 +25,9 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
   Geometry tables are read cell by cell (each cell enlarged and read alone, dark-mode pages turned
   dark-on-light first), which small text on a maker's site needs, and Choose file… picks a saved
   screenshot; front and rear travel rows fill too, and an "actual" top tube no longer overrides the
-  horizontal one.
+  horizontal one. Riding can pedal: a mean crank torque and cadence (two power strokes a turn) push
+  the bike, the load that moves onto the rear squats the suspension except the share the bike's
+  anti-squat in the chosen gear carries, so pedal bob shows in the travel and differs between bikes.
 
 - **Bikes and variants side by side in the Simulate tab [no-docs] (2026-11-20).** The sidebar
   lists every bike with its variants under it; the open bike's parameters fold out beneath its

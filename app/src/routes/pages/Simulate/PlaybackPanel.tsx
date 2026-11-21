@@ -94,6 +94,19 @@ export function PlaybackPanel(props: PlaybackPanelProps) {
           <>
             <NumberField label="Bump height" unit="mm" value={props.ride.bump_height_m * 1000} step={5} min={-500} max={500} onChange={(v) => props.ride && props.onRide({ ...props.ride, bump_height_m: n(v, props.ride.bump_height_m * 1000) / 1000 })} hint="Negative for a step down" />
             <NumberField label="Bump length" unit="mm" value={props.ride.bump_length_m * 1000} step={50} min={60} max={5000} onChange={(v) => props.ride && props.onRide({ ...props.ride, bump_length_m: n(v, props.ride.bump_length_m * 1000) / 1000 })} />
+            <NumberField
+              label="Pedalling"
+              unit="N·m"
+              value={props.ride.pedal_torque_nm ?? 0}
+              step={5}
+              min={0}
+              max={300}
+              onChange={(v) => props.ride && props.onRide({ ...props.ride, pedal_torque_nm: n(v, props.ride.pedal_torque_nm ?? 0) })}
+              hint="Mean crank torque (0 coasts). The load it moves onto the rear squats the suspension except the share the bike's anti-squat in this gear carries: pedal bob"
+            />
+            {(props.ride.pedal_torque_nm ?? 0) > 0 && (
+              <NumberField label="Cadence" unit="rpm" value={props.ride.cadence_rpm ?? 80} step={5} min={10} max={200} onChange={(v) => props.ride && props.onRide({ ...props.ride, cadence_rpm: n(v, props.ride.cadence_rpm ?? 80) })} />
+            )}
           </>
         ) : (
           <>

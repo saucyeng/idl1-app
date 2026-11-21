@@ -3551,7 +3551,9 @@ header: { "format": "sim-result", "frames": n,
                         "count", "unit", "labels"? } ] }
 ```
 
-`ride` (added 2026-11-20): `{ bike_id, bump_height_m, bump_length_m }`.
+`ride` (added 2026-11-20): `{ bike_id, bump_height_m, bump_length_m,
+pedal_torque_nm? (0), cadence_rpm? (80) }`; with a torque the rider pedals
+(`idl_rs::sim::ride::Pedalling`, anti-squat from the gear's kinematics).
 Given, the bike's rear end (its masses, shock spring and pressure, clicks,
 rear tyre pressure; `idl_rs::sim::ride`) rides over `count` bumps of that
 shape at the train's speed, spacing and lead, and the chain runs on the
