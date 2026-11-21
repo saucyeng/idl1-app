@@ -22,6 +22,10 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
   bumps: its own shock, pressure, clicks, masses and tyre give its travel (a two-mass rear end
   with the tyre), and the chain runs on that, with the tyre and shock forces on the chart; or
   prescribe the same travel for every bike, as before.
+  Geometry tables are read cell by cell (each cell enlarged and read alone, dark-mode pages turned
+  dark-on-light first), which small text on a maker's site needs, and Choose file… picks a saved
+  screenshot; front and rear travel rows fill too, and an "actual" top tube no longer overrides the
+  horizontal one.
 
 - **Bikes and variants side by side in the Simulate tab [no-docs] (2026-11-20).** The sidebar
   lists every bike with its variants under it; the open bike's parameters fold out beneath its
