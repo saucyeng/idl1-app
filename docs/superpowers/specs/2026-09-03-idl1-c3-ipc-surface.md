@@ -3535,7 +3535,7 @@ the cell lists settings ("435 / 445"). Errors: `InvalidArgument` (no image,
 not an image, no header of size names), `Io` (file).
 
 **`run_drivetrain_sim(setup: SetupPx, gear: number, input: BumpTrain,
-ride: RideRequest | null, progress: Channel<Progress>)`** (async) → raw bytes, a **sim result**,
+ride: RideRequest | null, replay: ReplayRequest | null, progress: Channel<Progress>)`** (async) → raw bytes, a **sim result**,
 `IDLM` v1 (Isaac, 2026-11-19, whole-bike sim loop spec D1; replaces the
 `IDLS` v1 run layout, whose magic collided with `fetch_scatter`'s).
 
@@ -3562,6 +3562,22 @@ terrain track draws those bumps, and the drivetrain component gains the
 scalar tracks "Tyre force" and "Shock force" (N). Errors as below, plus
 `NotFound` (bike) and `InvalidArgument` without shock eyes or for a bump
 under 5 cm long.
+
+`replay` (added 2026-11-21, sim spec §5): `{ session_id, from_s, to_s,
+cutoff_hz? (100) }`, a stretch of a library session (s from its first
+sample, at most 120 s) drives the run instead of the train, and `input`
+and `ride` are unused. IMU0 is turned into the bike's side plane by the
+calibration the session's bike had then and low-passed at `cutoff_hz`;
+the rear travel is the physics estimator's (`idl_library::replay`, which
+runs `estimate_physics` over the stretch and so writes the session's
+physics derived file; a calibration with no current physics fit is fitted
+on the whole session first, solving all of it once); speed is GPS. The
+travel is held within this bike's travel, the ground is drawn flat, and
+the drivetrain component gains the scalar track "Speed" (m/s). Progress:
+`"estimating travel"`, `"reading IMU0"` (no total), then `"simulating"`.
+Errors: `NotFound` (session), `InvalidArgument` (no calibration, or one
+without a forward direction; a stretch out of range; no solved travel or
+GPS in it), `Internal` (the estimator's solve failed).
 
 A new component adds tracks, not a version. A drivetrain run has one
 component, `drivetrain`: `{ gear, nodes, wheels: [{ role, radius_m, teeth }],

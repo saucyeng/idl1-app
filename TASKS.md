@@ -1146,6 +1146,13 @@ work sits on idl-rs `claude/chain-derailleur-physics-4a23f3`, built on `physics-
       through the leverage drives the chain's run (`sim::ride`; Playback "Travel: ride over them") (2026-11-20)
 - [ ] Damping from clicks is a placeholder curve (8 % a click): identify it from a ride (stride 4)
 - [x] Pedalling in the ride: crank torque, load transfer, the gear's anti-squat through travel (pedal bob) (2026-11-20)
+- [x] Replay a recorded ride (spec §5): a session stretch's IMU0 in the bike plane (11/4 calibration), the
+      physics estimator's rear travel and GPS speed drive the drivetrain run (`sim::replay`,
+      `idl_library::replay`; Playback "Travel: recorded ride") (2026-11-21)
+- [ ] Replay: reuse the session's physics derived file instead of solving the stretch again for each ticked bike
+- [ ] Tyre model: pressure and casing stiffness, insert progression to the rim, enveloping (Pacejka)
+- [ ] Rider model: legs and arms between the bike and the rider's mass, pitch, front and rear
+- [ ] Identify the terrain from a recorded ride, then re-ride it with other setups
 - [ ] Frame pitch and the front end; the chain tension from the dynamics fed back (two-way coupling)
 - [ ] Linkage templates (single pivot, high pivot with idler, linkage-driven single pivot, VPP / DW-link)
 - [ ] Lower idler design: the clutch work through travel per cog, in the Simulate tab, for a roller dragged

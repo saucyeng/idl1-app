@@ -1,12 +1,13 @@
 import * as Plot from "@observablehq/plot";
 import { Pause, Play, SkipBack, SkipForward } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { FieldGroup } from "@/components/ui/field";
 import { NumberField } from "@/components/ui/number-field";
 import { SelectField } from "@/components/ui/select-field";
-import type { BumpTrain, RideShape, SimRun } from "@/ipc/simulate";
+import { listSessions, type SessionSummary } from "@/ipc/catalog";
+import type { BumpTrain, ReplayRequest, RideShape, SimRun } from "@/ipc/simulate";
 
 import { PLOT_STYLE, PlotBox } from "./PlotBox";
 
@@ -25,8 +26,13 @@ export interface PlaybackPanelProps {
   /** Ride the springs over bumps of this shape; null prescribes the travel. */
   ride: RideShape | null;
   onRide: (r: RideShape | null) => void;
+  /** A recorded stretch drives the run instead of bumps; null: bumps. */
+  replay: ReplayRequest | null;
+  onReplay: (r: ReplayRequest | null) => void;
   running: boolean;
   progress: number;
+  /** What a running replay is doing before it simulates ("estimating travel"…), else null. */
+  phase: string | null;
   onRun: () => void;
   runs: LabelledRun[];
   shown: number;
@@ -75,22 +81,59 @@ export function PlaybackPanel(props: PlaybackPanelProps) {
   // the runs made with this one (the ticked bikes over the same bumps), the first as the reference
   const groupRuns = run ? runs.filter((r) => r.group === runs[shown].group) : [];
   const [delta, setDelta] = useState(false);
+  const [sessions, setSessions] = useState<SessionSummary[] | null>(null);
+  const [sessionsError, setSessionsError] = useState<string | null>(null);
+  const replay = props.replay;
+  useEffect(() => {
+    if (replay === null || sessions !== null) return;
+    listSessions()
+      .then((s) => setSessions([...s].sort((a, b) => b.timestamp_utc_ms - a.timestamp_utc_ms)))
+      .catch((e: unknown) => setSessionsError(String((e as { message?: string })?.message ?? e)));
+  }, [replay, sessions]);
+  const sessionLabel = (s: SessionSummary) => {
+    const when = s.timestamp_utc_ms > 0 ? new Date(s.timestamp_utc_ms).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" }) : "undated";
+    const where = [s.venue_name, s.event_name, s.bike].filter((x) => x !== "").join(" · ");
+    const mins = s.duration_ms !== null ? ` (${Math.round(s.duration_ms / 60000)} min)` : "";
+    return `${when}${where ? ` · ${where}` : ""}${mins}`;
+  };
+  const travelMode = replay !== null ? "recorded" : props.ride !== null ? "ride" : "prescribed";
 
   return (
     <div className="flex flex-col gap-5 text-sm">
-      <FieldGroup title="Bumps">
+      <FieldGroup title={replay !== null ? "Recorded ride" : "Bumps"}>
         <SelectField
           label="Travel"
-          value={props.ride === null ? "prescribed" : "ride"}
+          value={travelMode}
           options={[
-            { value: "ride", label: "Ride over them (springs, damper, tyre)" },
-            { value: "prescribed", label: "Prescribed (a shape you set)" },
+            { value: "recorded", label: "Recorded ride (a stretch of a session)" },
+            { value: "ride", label: "Ride over bumps (springs, damper, tyre)" },
+            { value: "prescribed", label: "Prescribed bumps (a shape you set)" },
           ]}
-          onChange={(v) => props.onRide(v === "ride" ? (props.ride ?? { bump_height_m: 0.08, bump_length_m: 0.6 }) : null)}
-          hint="Riding: each ticked bike's own shock, pressure, clicks, masses and tyre decide its travel. Prescribed: every bike gets the same travel."
+          onChange={(v) => {
+            props.onReplay(v === "recorded" ? (replay ?? { session_id: "", from_s: 0, to_s: 20 }) : null);
+            if (v !== "recorded") props.onRide(v === "ride" ? (props.ride ?? { bump_height_m: 0.08, bump_length_m: 0.6 }) : null);
+          }}
+          hint="Recorded: IMU0, the physics estimator's rear travel and GPS speed from a ride drive every ticked bike's drivetrain. Riding: each bike's own shock, pressure, clicks, masses and tyre decide its travel. Prescribed: every bike gets the same travel."
         />
-        <NumberField label="Speed" unit="m/s" value={bumps.speed_mps} step={0.5} min={0} max={25} onChange={(v) => set({ speed_mps: n(v, bumps.speed_mps) })} />
-        {props.ride !== null ? (
+        {replay !== null ? (
+          <>
+            <SelectField
+              label="Session"
+              value={replay.session_id === "" ? undefined : replay.session_id}
+              className="w-full"
+              options={(sessions ?? []).map((s) => ({ value: s.session_id, label: sessionLabel(s) }))}
+              onChange={(v) => props.onReplay({ ...replay, session_id: v ?? "" })}
+              hint={sessions === null ? "Loading sessions…" : "Its bike's calibration turns IMU0 into the bike's plane; the first replay of a bike fits the estimator on the whole session, which takes a while"}
+            />
+            {sessionsError !== null && <p className="text-xs text-[var(--accent)]">{sessionsError}</p>}
+            <NumberField label="From" unit="s" value={replay.from_s} step={1} min={0} onChange={(v) => props.onReplay({ ...replay, from_s: Math.max(0, n(v, replay.from_s)) })} />
+            <NumberField label="To" unit="s" value={replay.to_s} step={1} min={0} onChange={(v) => props.onReplay({ ...replay, to_s: n(v, replay.to_s) })} hint="At most 120 s after From" />
+            <NumberField label="IMU0 cut-off" unit="Hz" value={replay.cutoff_hz ?? 100} step={10} min={5} max={500} onChange={(v) => props.onReplay({ ...replay, cutoff_hz: n(v, replay.cutoff_hz ?? 100) })} hint="Low-pass on the frame's motion" />
+          </>
+        ) : (
+          <NumberField label="Speed" unit="m/s" value={bumps.speed_mps} step={0.5} min={0} max={25} onChange={(v) => set({ speed_mps: n(v, bumps.speed_mps) })} />
+        )}
+        {replay !== null ? null : props.ride !== null ? (
           <>
             <NumberField label="Bump height" unit="mm" value={props.ride.bump_height_m * 1000} step={5} min={-500} max={500} onChange={(v) => props.ride && props.onRide({ ...props.ride, bump_height_m: n(v, props.ride.bump_height_m * 1000) / 1000 })} hint="Negative for a step down" />
             <NumberField label="Bump length" unit="mm" value={props.ride.bump_length_m * 1000} step={50} min={60} max={5000} onChange={(v) => props.ride && props.onRide({ ...props.ride, bump_length_m: n(v, props.ride.bump_length_m * 1000) / 1000 })} />
@@ -117,10 +160,14 @@ export function PlaybackPanel(props: PlaybackPanelProps) {
             <NumberField label="Frame jolt" unit="g" value={bumps.chassis_g} step={0.5} min={0} max={30} onChange={(v) => set({ chassis_g: n(v, bumps.chassis_g) })} hint="Front triangle's extra upward acceleration at each hit" />
           </>
         )}
-        <NumberField label="Hits" value={bumps.count} step={1} min={1} max={50} onChange={(v) => set({ count: Math.round(n(v, bumps.count)) })} />
-        <NumberField label="Spacing" unit="ms" value={bumps.spacing_s * 1000} step={10} min={20} max={5000} onChange={(v) => set({ spacing_s: n(v, bumps.spacing_s * 1000) / 1000 })} />
-        <Button filled emphasis="good" disabled={props.running} onClick={props.onRun}>
-          {props.running ? `Simulating… ${Math.round(props.progress * 100)}%` : "Run"}
+        {replay === null && (
+          <>
+            <NumberField label="Hits" value={bumps.count} step={1} min={1} max={50} onChange={(v) => set({ count: Math.round(n(v, bumps.count)) })} />
+            <NumberField label="Spacing" unit="ms" value={bumps.spacing_s * 1000} step={10} min={20} max={5000} onChange={(v) => set({ spacing_s: n(v, bumps.spacing_s * 1000) / 1000 })} />
+          </>
+        )}
+        <Button filled emphasis="good" disabled={props.running || (replay !== null && replay.session_id === "")} onClick={props.onRun}>
+          {props.running ? (props.phase !== null ? `${props.phase[0].toUpperCase()}${props.phase.slice(1)}…` : `Simulating… ${Math.round(props.progress * 100)}%`) : "Run"}
         </Button>
         {props.error !== null && <p className="text-xs text-[var(--accent)]">{props.error}</p>}
       </FieldGroup>
