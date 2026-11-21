@@ -3559,7 +3559,10 @@ rear tyre pressure; `idl_rs::sim::ride`) rides over `count` bumps of that
 shape at the train's speed, spacing and lead, and the chain runs on the
 travel that gives; the train's sag, depth, times and jolt are unused, the
 terrain track draws those bumps, and the drivetrain component gains the
-scalar tracks "Tyre force" and "Shock force" (N). Errors as below, plus
+scalar tracks "Tyre force" and "Shock force" (N) and "Tyre deflection" (mm,
+2026-11-21) and the field `rim_strikes` (times the rim pinched the tyre;
+the tyre is `idl_rs::sim::tyre`, from `rear_tyre.psi`, `.width_in`,
+`.insert_height_mm` and a DH casing read from `.model`). Errors as below, plus
 `NotFound` (bike) and `InvalidArgument` without shock eyes or for a bump
 under 5 cm long.
 

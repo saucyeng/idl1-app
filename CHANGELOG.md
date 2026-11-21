@@ -6,6 +6,12 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 
 ### Added
 
+- **A tyre model in the ride [no-docs] (2026-11-21).** Riding over bumps now uses the rear tyre's own
+  stiffness from its pressure, width and casing (DH casings read from the model name), an insert that
+  stiffens as it is crushed, and the rim pinching the tyre when the deflection runs out; the tyre
+  rolls over the ground the way a tyre envelops it (a sharp edge is felt as a ramp, a narrow slot
+  is bridged). Tyre deflection joins the chart and the run counts rim strikes. New tyre parameters:
+  width and insert height. The casing's and insert's stiffness are assumed until measured.
 - **Replay a recorded ride in the Simulate tab [no-docs] (2026-11-21).** Playback's Travel has a
   third choice, Recorded ride: pick a session and a stretch of it (up to two minutes) and every
   ticked bike's drivetrain runs on that ride's own motion. The frame's motion is IMU0's, turned

@@ -1150,7 +1150,10 @@ work sits on idl-rs `claude/chain-derailleur-physics-4a23f3`, built on `physics-
       physics estimator's rear travel and GPS speed drive the drivetrain run (`sim::replay`,
       `idl_library::replay`; Playback "Travel: recorded ride") (2026-11-21)
 - [ ] Replay: reuse the session's physics derived file instead of solving the stretch again for each ticked bike
-- [ ] Tyre model: pressure and casing stiffness, insert progression to the rim, enveloping (Pacejka)
+- [x] Tyre model: pressure and casing stiffness, insert progression, rim strike, enveloping (Pacejka's
+      two-point follower) in the ride (`sim::tyre`) (2026-11-21)
+- [ ] Tyre: measure an MTB tyre's load-deflection (casing equivalent pressure, insert crush) and fit the
+      enveloping cams; the front tyre in the ride once the front end is modelled
 - [ ] Rider model: legs and arms between the bike and the rider's mass, pitch, front and rear
 - [ ] Identify the terrain from a recorded ride, then re-ride it with other setups
 - [ ] Frame pitch and the front end; the chain tension from the dynamics fed back (two-way coupling)
