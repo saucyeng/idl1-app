@@ -863,6 +863,9 @@ pub fn run_replay_via(setup: &SetupPx, gear: usize, req: &ReplayRequest, root: &
     let mut result = run_result(&r, &bike, &frame, &input, &|_| 0.0, sag);
     let speed = result.frame_t_s.iter().map(|&t| exc.at(t as f64).speed_mps as f32).collect();
     result.tracks.push(Track { name: "Speed".into(), component: "drivetrain".into(), kind: TrackKind::Scalar, count: 1, unit: "m/s".into(), labels: None, values: speed });
+    if let Some(d) = result.components.get_mut("drivetrain").and_then(|c| c.as_object_mut()) {
+        d.insert("travel_unsolved".into(), serde_json::json!(rp.unsolved));
+    }
     Ok(encode_sim_result(&result))
 }
 

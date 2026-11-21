@@ -3576,7 +3576,10 @@ runs `estimate_physics` over the stretch and so writes the session's
 physics derived file; a calibration with no current physics fit is fitted
 on the whole session first, solving all of it once); speed is GPS. The
 travel is held within this bike's travel, the ground is drawn flat, and
-the drivetrain component gains the scalar track "Speed" (m/s). Progress:
+the drivetrain component gains the scalar track "Speed" (m/s) and the
+field `travel_unsolved` (0-1: the share of the estimator's travel that was
+unsolved or outside 0..travel, bridged; the travel is then low-passed at
+40 Hz). Progress:
 `"estimating travel"`, `"reading IMU0"` (no total), then `"simulating"`.
 Errors: `NotFound` (session), `InvalidArgument` (no calibration, or one
 without a forward direction; a stretch out of range; no solved travel or
