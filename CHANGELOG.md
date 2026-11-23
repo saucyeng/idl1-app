@@ -153,6 +153,10 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 
 ### Fixed
 
+- **Preview the overlay in the app [no-docs] (2026-11-23).** The Overlay panel has its own Play,
+  Pause and a scrubber across the selected run, and a Large view, so a layout change shows at once
+  without exporting. Traces take two channels (front and rear travel on one chart, two colours, a
+  left axis), and strips are drawn to their box's shape.
 - **Overlay readouts, second round [docs] (2026-11-23).** Spectrograms put the cursor in the middle
   so the next few seconds of terrain show ahead of it, on a log frequency axis from 2 Hz with 1-2-5
   labels (`cursor`, `scale`, `fmin`); gauges smooth over `smooth_s` seconds, so speed from 3 Hz GPS

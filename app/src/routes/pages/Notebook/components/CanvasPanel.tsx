@@ -37,6 +37,18 @@ export interface CanvasPanelProps {
   frames: ReadoutFrameStore;
   /** Writes the workbook (the `canvas` key changed). */
   onMarkdownChange: (markdown: string) => void;
+  /** Starts or pauses the notebook's playback. */
+  onTogglePlay: () => void;
+  /** Moves the cursor to `tUs` (session µs), pausing playback. */
+  onSeek: (tUs: number) => void;
+}
+
+/** `s` seconds as `m:ss.s`. */
+function clock(s: number): string {
+  const sign = s < 0 ? "-" : "";
+  const a = Math.abs(s);
+  const m = Math.floor(a / 60);
+  return `${sign}${m}:${(a - m * 60).toFixed(1).padStart(4, "0")}`;
 }
 
 /** The latest readout frame, readable and watchable without re-rendering the page. */
@@ -167,6 +179,8 @@ export function CanvasPanel(props: CanvasPanelProps) {
     return () => ro.disconnect();
   }, []);
   const frameH = frameW / aspectOf(layout.size);
+  // A bigger preview, as wide as the column and up to most of the window's height (this viewer only).
+  const [large, setLarge] = useState(false);
 
   // The video follows the cursor: seeks when paused or drifting, plays along while playing.
   const videoRef = useRef<HTMLVideoElement | null>(null);
@@ -337,7 +351,11 @@ export function CanvasPanel(props: CanvasPanelProps) {
           </>
         )}
       </div>
-      <div ref={frameRef} className="relative overflow-hidden bg-black" style={{ width: `min(100%, 720px, ${Math.round(560 * aspectOf(layout.size))}px)`, height: frameH }}>
+      <div
+        ref={frameRef}
+        className="relative overflow-hidden bg-black"
+        style={{ width: large ? `min(100%, ${Math.round(85 * aspectOf(layout.size))}vh)` : `min(100%, 720px, ${Math.round(560 * aspectOf(layout.size))}px)`, height: frameH }}
+      >
         {link !== null && videoBox !== undefined && (
           <video
             ref={videoRef}
@@ -351,6 +369,29 @@ export function CanvasPanel(props: CanvasPanelProps) {
         )}
         <div ref={layerRef} className="pointer-events-none absolute inset-0" />
       </div>
+      {props.windowUs !== null && (
+        <div className="flex items-center gap-2" style={{ width: large ? `min(100%, ${Math.round(85 * aspectOf(layout.size))}vh)` : `min(100%, 720px, ${Math.round(560 * aspectOf(layout.size))}px)` }}>
+          <button type="button" className={BUTTON} aria-label={playing ? "Pause" : "Play"} onClick={props.onTogglePlay}>
+            {playing ? "Pause" : "Play"}
+          </button>
+          <input
+            type="range"
+            aria-label="Position in the run"
+            className="min-w-0 grow"
+            min={props.windowUs.startUs}
+            max={props.windowUs.endUs}
+            step={1e6 / 30}
+            value={cursorUs ?? props.windowUs.startUs}
+            onChange={(e) => props.onSeek(Number(e.target.value))}
+          />
+          <span className="shrink-0 font-mono text-label-2 text-fg-dim" style={{ fontVariantNumeric: "tabular-nums" }}>
+            {clock(((cursorUs ?? props.windowUs.startUs) - props.windowUs.startUs) / 1e6)} / {clock((props.windowUs.endUs - props.windowUs.startUs) / 1e6)}
+          </span>
+          <button type="button" className={BUTTON} aria-pressed={large} onClick={() => setLarge((l) => !l)}>
+            {large ? "Small" : "Large"}
+          </button>
+        </div>
+      )}
       {status !== null && <p className="font-mono text-label-2 text-fg-dim">{status}</p>}
     </NoteBlock>
   );

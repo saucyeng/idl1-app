@@ -5631,6 +5631,13 @@ export default function NotebookPage() {
           playing={playback.playing}
           frames={readoutFramesRef.current}
           onMarkdownChange={handleDocumentChange}
+          onTogglePlay={handleTogglePlay}
+          onSeek={(tUs) => {
+            // Seeking pauses: the pause leaves the cursor where the clock is, so move the clock too.
+            const target = BigInt(Math.round(tUs));
+            setPlayback((prev) => (prev.playing ? { ...togglePlay(prev), tUs: target } : prev));
+            setManualCursorTUs(target);
+          }}
         /></CanvasPanelBoundary>
       )}
       {selectedWorkbookId !== null && state.handle === null && state.markdownStatus === "loading" && <p>Opening notebook...</p>}

@@ -369,7 +369,10 @@ export function drawSpectrogram(v: SpectrogramView): SVGSVGElement {
     // Frequency labels: the top, and 1-2-5 steps on a log axis (quarters on a linear one).
     const ticks: { f: number; y: number }[] = [{ f: img.fmaxHz, y: 0 }];
     if (img.scale === "log") {
-      for (const f of logFrequencyTicks(img.fminHz, img.fmaxHz)) ticks.push({ f, y: logFrequencyY(f, img.fminHz, img.fmaxHz) });
+      for (const f of logFrequencyTicks(img.fminHz, img.fmaxHz)) {
+        const y = logFrequencyY(f, img.fminHz, img.fmaxHz);
+        if (y > 0.12 && y < 0.92) ticks.push({ f, y });
+      }
       ticks.push({ f: img.fminHz, y: 1 });
     } else {
       for (const q of [0.25, 0.5, 0.75]) ticks.push({ f: img.fmaxHz * (1 - q), y: q });
