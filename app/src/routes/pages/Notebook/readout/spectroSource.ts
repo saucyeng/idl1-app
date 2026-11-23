@@ -21,7 +21,7 @@ export interface SpectroImage {
 }
 
 /** Rows of a log-frequency slice. */
-const LOG_ROWS = 96;
+const LOG_ROWS = 192;
 
 /** One raster, sliceable at any cursor time. */
 export interface SpectroSource {
@@ -54,9 +54,19 @@ export function makeSpectroSource(raster: DecodedRaster, extent: RasterExtent): 
         const rowOf = (f: number) => ((extent.fHiHz - f) / (extent.fHiHz - extent.fLoHz)) * extent.height;
         for (let y = 0; y < LOG_ROWS; y++) {
           const f = logFrequencyAt((y + 0.5) / LOG_ROWS, fmin, fTop);
-          const sy = Math.min(extent.height - 1, Math.max(0, Math.floor(rowOf(f))));
-          ctx.drawImage(full, r.sx, sy, r.sw, 1, 0, y, out.width, 1);
+          // Blend the two nearest raster rows, so a coarse FFT bin fades into the next
+          // instead of drawing as a block (2026-11-23).
+          const at = Math.min(extent.height - 1, Math.max(0, rowOf(f) - 0.5));
+          const lo = Math.floor(at);
+          const hi = Math.min(extent.height - 1, lo + 1);
+          ctx.globalAlpha = 1;
+          ctx.drawImage(full, r.sx, lo, r.sw, 1, 0, y, out.width, 1);
+          if (hi !== lo && at - lo > 0) {
+            ctx.globalAlpha = at - lo;
+            ctx.drawImage(full, r.sx, hi, r.sw, 1, 0, y, out.width, 1);
+          }
         }
+        ctx.globalAlpha = 1;
       } else {
         ctx.drawImage(full, r.sx, r.sy, r.sw, r.sh, 0, 0, out.width, out.height);
       }

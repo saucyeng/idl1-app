@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { EMPTY_READOUT_FRAME, gaugeRange, gaugeView, ggView, numberView, type ReadoutFrame, smoothedValue, traceView } from "./frame";
+import { EMPTY_READOUT_FRAME, gaugeRange, gaugeView, ggView, numberView, type ReadoutFrame, seriesName, smoothedValue, traceView } from "./frame";
 
 const FRAME: ReadoutFrame = {
   values: { speed: 50, hr: 150, ax: 0.4, ay: -0.2 },
@@ -103,5 +103,11 @@ describe("traceView — two lines", () => {
       ["Rear", 60, [60, 50]],
     ]);
     expect([v.min, v.max]).toEqual([0, 170]);
+  });
+});
+
+describe("seriesName", () => {
+  it("seriesName — travel channels and velocity maths names — Front and Rear", () => {
+    expect(["Front travel (mm)", "Rear travel (mm)", "front_vel", "rear_vel", "up_g"].map(seriesName)).toEqual(["Front", "Rear", "Front", "Rear", "Up g"]);
   });
 });

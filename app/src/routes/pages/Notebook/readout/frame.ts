@@ -154,9 +154,15 @@ export function ggView(frame: ReadoutFrame, x: string, y: string, opts: GgOption
   };
 }
 
-/** A series' legend name: its channel name without the unit, and "Front"/"Rear" for travel. */
-function seriesName(name: string): string {
-  return name.replace(/\s*\([^)]*\)\s*$/, "").replace(/ travel$/i, "");
+/** A series' legend name: its channel name without the unit or a trailing travel/velocity word,
+ *  a maths name's underscores as spaces, first letter capital ("front_vel" → "Front"). */
+export function seriesName(name: string): string {
+  const s = name
+    .replace(/\s*\([^)]*\)\s*$/, "")
+    .replace(/_/g, " ")
+    .replace(/ (travel|vel|velocity)$/i, "")
+    .trim();
+  return s.charAt(0).toUpperCase() + s.slice(1);
 }
 
 /** What a trace on `names` (one or two, sharing the first's unit and range) draws this frame: each cursor value then its tail, converted. */

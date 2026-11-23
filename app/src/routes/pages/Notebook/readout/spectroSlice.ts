@@ -82,3 +82,18 @@ export function logFrequencyTicks(fminHz: number, fmaxHz: number): number[] {
   }
   return out;
 }
+
+/**
+ * The time extent, µs, to give a spectrogram raster fetched from `t0Us`,
+ * so each pixel column sits at its FFT segment's centre (2026-11-23: the
+ * strip led the video by half a segment, because its columns were spread
+ * from the fetch's start to its end, which ignores the half segment the
+ * first and last centres sit inside). `xDomainS` is the raster meta's
+ * `x_domain`, the first and last segment centres in seconds from the first
+ * sample; `width` its pixel columns. Pure.
+ */
+export function spectroExtentUs(t0Us: number, xDomainS: readonly [number, number], width: number): [number, number] {
+  const [a, b] = [t0Us + xDomainS[0] * 1e6, t0Us + xDomainS[1] * 1e6];
+  const col = width > 1 ? (b - a) / (width - 1) : 0;
+  return [a - col / 2, b + col / 2];
+}

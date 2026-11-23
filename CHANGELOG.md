@@ -153,6 +153,12 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 
 ### Fixed
 
+- **Overlay spectrograms line up with the video [no-docs] (2026-11-23).** Each column now sits
+  at its FFT segment's centre (it was spread from the fetch's start, which put a hit about seven
+  frames early), segments are 128 samples (0.28 s) with a 17 ms step, and neighbouring frequency
+  rows blend instead of drawing as blocks. Classic stacks spectrograms at one height, close
+  together, and fits the left-hand traces above them. Trace legends read maths names
+  ("front_vel" → "Front").
 - **Solve travel automatically [docs] (2026-11-23).** Settings › Data › "Solve travel automatically":
   Never (the default; the Solve button), When I select a lap, or Every lap after a download (each
   lap with 5 s either side). A stretch already 90 % solved is skipped; solves run one at a time.

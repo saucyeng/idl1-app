@@ -109,22 +109,25 @@ export function presetLayout(preset: OverlayPreset, videoCellId: string, readout
       cells[r.id] = { x: 1 - m - qw, y: m + i * (qh + GAP), w: qw, h: qh, z: 1 };
     });
     stackColumn(cells, numbers, 1 - m - 0.2, m + ggs.length * (qh + GAP), 0.2, Math.min(0.4, numbers.length * 0.12), frameAspect);
-    // Along the bottom, upwards: spectrograms full width (the first the
-    // tallest), then traces side by side above them.
+    // Along the bottom, upwards: spectrograms full width, all one height (so
+    // their titles are one size) and stacked close (2026-11-23).
     const spectros = traces.filter((r) => r.kind === "spectrogram");
     const lines = traces.filter((r) => r.kind === "trace");
+    const sh = 0.14;
     let bottom = 1 - m;
-    spectros.forEach((r, i) => {
-      const h = i === 0 ? 0.17 : 0.12;
-      cells[r.id] = { x: m, y: bottom - h, w: 1 - 2 * m, h, z: 1 };
-      bottom -= h + GAP;
+    spectros.forEach((r) => {
+      cells[r.id] = { x: m, y: bottom - sh, w: 1 - 2 * m, h: sh, z: 1 };
+      bottom -= sh + GAP / 3;
     });
     // Traces down the left under the gauges, keeping the middle of the frame
-    // clear (2026-11-23, Isaac: "we can't have them smack in the middle").
+    // clear (2026-11-23, Isaac: "we can't have them smack in the middle"),
+    // sized to fit above the spectrograms.
     const tw = Math.max(gauges.length, 2) * (gw + GAP) - GAP;
-    const th = Math.min(0.17, (tw * frameAspect) / KIND_ASPECT.trace);
+    const top = m + gh + GAP;
+    const room = lines.length === 0 ? 0 : (bottom - GAP - top) / lines.length - GAP;
+    const th = Math.max(0.06, Math.min(0.15, (tw * frameAspect) / KIND_ASPECT.trace, room));
     lines.forEach((r, i) => {
-      cells[r.id] = { x: m, y: m + gh + GAP + i * (th + GAP), w: tw, h: th, z: 1 };
+      cells[r.id] = { x: m, y: top + i * (th + GAP), w: tw, h: th, z: 1 };
     });
   } else if (preset === "side") {
     const vw = Math.min(1, clipAspect / frameAspect);

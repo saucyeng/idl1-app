@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { logFrequencyAt, logFrequencyTicks, logFrequencyY, sliceRect, type RasterExtent } from "./spectroSlice";
+import { logFrequencyAt, logFrequencyTicks, logFrequencyY, sliceRect, spectroExtentUs, type RasterExtent } from "./spectroSlice";
 
 /** 100 s of raster, 1000 px wide (10 px a second), 0–200 Hz over 100 px. */
 const R: RasterExtent = { t0Us: 0, t1Us: 100_000_000, width: 1000, height: 100, fLoHz: 0, fHiHz: 200 };
@@ -60,5 +60,15 @@ describe("log frequency axis", () => {
 
   it("logFrequencyTicks — 2 to 80 Hz — 5, 10, 20, 50", () => {
     expect(logFrequencyTicks(2, 80)).toEqual([5, 10, 20, 50]);
+  });
+});
+
+describe("spectroExtentUs", () => {
+  it("spectroExtentUs — centres 0.25 s to 9.75 s over 20 columns — each column's middle on its segment's centre", () => {
+    const [a, b] = spectroExtentUs(1_000_000, [0.25, 9.75], 20);
+
+    const col = (b - a) / 20;
+    expect(a + 0.5 * col).toBeCloseTo(1_250_000, 3);
+    expect(a + 19.5 * col).toBeCloseTo(10_750_000, 3);
   });
 });

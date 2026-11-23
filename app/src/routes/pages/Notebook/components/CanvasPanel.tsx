@@ -5,6 +5,7 @@ import { NoteBlock } from "@/components/brand/NoteBlock";
 
 import { cancelOverlayExport, ffmpegInfo, finishOverlayExport, pushOverlayFrame, startOverlayExport, type FfmpegInfo } from "../../../../ipc/export";
 import { fetchRasterMetaV2, fetchRasterV2, type SpectrogramParams } from "../../../../ipc/rasters";
+import { spectroExtentUs } from "../readout/spectroSlice";
 import { closeReadout, openReadout, readReadout } from "../../../../ipc/readout";
 import { videoUrl, type SessionVideo } from "../../../../ipc/video";
 import { aspectOf, CANVAS_SIZES, readCanvasLayout, writeCanvasLayout, type CanvasLayout, type CanvasSize } from "../model/canvasLayout";
@@ -142,13 +143,17 @@ export function CanvasPanel(props: CanvasPanelProps) {
     const t0 = Math.max(0, Math.floor(props.windowUs.startUs - leadUs));
     const t1 = Math.ceil(props.windowUs.endUs + lagUs);
     const window = { session_id: props.sessionId, span: { kind: "range" as const, t0_us: t0, t1_us: t1 }, colour: "--chart-1" };
-    const width = Math.min(2048, Math.max(64, Math.ceil(((t1 - t0) / 1e6) * 20)));
-    const params: SpectrogramParams = { window_size: 256, hop_size: 16, window: "hann", detrend: "mean", scaling: "density" };
+    // 2026-11-23: 128-sample segments (0.28 s at the pods' 461 Hz; 256 smeared a hit half a
+    // segment, ~7 video frames, ahead of itself), a 17 ms step, and a column per step.
+    const width = Math.min(8192, Math.max(64, Math.ceil(((t1 - t0) / 1e6) * 60)));
+    const params: SpectrogramParams = { window_size: 128, hop_size: 8, window: "hann", detrend: "mean", scaling: "density" };
     const names = [...new Set(wanted.map((c) => c.name))];
     void Promise.all(
       names.map(async (name) => {
         const [raster, meta] = await Promise.all([fetchRasterV2(window, name, "spectrogram", width, 128, params), fetchRasterMetaV2(window, name, "spectrogram", width, 128, params)]);
-        const source = makeSpectroSource(raster, { t0Us: t0, t1Us: t1, width: raster.width, height: raster.height, fLoHz: meta.y_domain[0], fHiHz: meta.y_domain[1] });
+        // Each column at its segment's centre, not spread from the fetch's start to its end.
+        const [e0, e1] = spectroExtentUs(t0, meta.x_domain, raster.width);
+        const source = makeSpectroSource(raster, { t0Us: e0, t1Us: e1, width: raster.width, height: raster.height, fLoHz: meta.y_domain[0], fHiHz: meta.y_domain[1] });
         return [name, source] as const;
       })
     ).then(
