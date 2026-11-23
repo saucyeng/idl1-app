@@ -37,3 +37,14 @@ describe("parseReadoutCall — trace", () => {
     });
   });
 });
+
+describe("parseReadoutCall — a trace of two", () => {
+  it("parseReadoutCall — front and rear travel — both names", () => {
+    expect(parseReadoutCall('Readout.trace("Front travel (mm)", "Rear travel (mm)", { min: 0, max: 170 })')).toEqual({
+      kind: "trace",
+      name: "Front travel (mm)",
+      second: "Rear travel (mm)",
+      opts: { min: 0, max: 170 },
+    });
+  });
+});

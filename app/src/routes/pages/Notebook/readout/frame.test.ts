@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { EMPTY_READOUT_FRAME, gaugeRange, gaugeView, ggView, numberView, type ReadoutFrame, smoothedValue } from "./frame";
+import { EMPTY_READOUT_FRAME, gaugeRange, gaugeView, ggView, numberView, type ReadoutFrame, smoothedValue, traceView } from "./frame";
 
 const FRAME: ReadoutFrame = {
   values: { speed: 50, hr: 150, ax: 0.4, ay: -0.2 },
@@ -89,5 +89,19 @@ describe("smoothedValue", () => {
 
     expect(smoothedValue(frame, "v", 0.1)).toBeCloseTo(3);
     expect(smoothedValue(frame, "v", 0)).toBe(6);
+  });
+});
+
+describe("traceView — two lines", () => {
+  it("traceView — front and rear travel — two series named Front and Rear on the first's range", () => {
+    const frame = { values: { "Front travel (mm)": 40, "Rear travel (mm)": 60 }, tail: { "Front travel (mm)": [30], "Rear travel (mm)": [50] }, units: {}, extent: {}, display: { distance: "km" as const, temperature: "C" as const } };
+
+    const v = traceView(frame, ["Front travel (mm)", "Rear travel (mm)"], { min: 0, max: 170 });
+
+    expect(v.series.map((s) => [s.name, s.value, s.samples])).toEqual([
+      ["Front", 40, [40, 30]],
+      ["Rear", 60, [60, 50]],
+    ]);
+    expect([v.min, v.max]).toEqual([0, 170]);
   });
 });

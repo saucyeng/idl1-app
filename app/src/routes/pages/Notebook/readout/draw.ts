@@ -40,6 +40,8 @@ const FG = "var(--readout-fg, currentColor)";
 const ACCENT = "var(--readout-accent, var(--chart-1, #e4572e))";
 const TRACK = "var(--readout-track, color-mix(in srgb, currentColor 22%, transparent))";
 const OUTLINE = "var(--readout-outline, transparent)";
+/** A second series' colour: magenta, clear of the cyan accent and of dirt and leaves. */
+const ACCENT_2 = "var(--readout-accent-2, #ff5fd2)";
 const PLATE = "var(--readout-plate, transparent)";
 /** Zone `n`'s colour: cool to hot, distinct from both footage and the accent. */
 const ZONE = (n: number) => `var(--readout-zone-${n}, ${["#8fa3b8", "#3d8bfd", "#2fbf71", "#f2c230", "#ef4444"][n - 1] ?? "#8fa3b8"})`;
@@ -272,13 +274,23 @@ export function drawGg(v: GgView): SVGSVGElement {
   return svg;
 }
 
-/** What {@link drawTrace} draws. */
-export interface TraceView {
+/** One line of a trace. */
+export interface TraceSeries {
   /** `samples[k]` is the value `k` frames back, display units; `samples[0]` the cursor. */
   samples: (number | null)[];
   /** The value at the cursor, display units. */
   value: number | null;
+  /** Its name in the legend. */
+  name: string;
+}
+
+/** What {@link drawTrace} draws. */
+export interface TraceView {
+  /** One or two lines (2026-11-23: front and rear travel on one chart). */
+  series: TraceSeries[];
   unit: string | null;
+  /** The drawing's width in user units at a height of 120: the box's own shape, so a wide box is filled. Default 400. */
+  width?: number;
   /** Vertical range, display units. */
   min: number;
   max: number;
@@ -288,26 +300,48 @@ export interface TraceView {
   windowS: number;
 }
 
-/** A trace scrolling past: the last `windowS` seconds as a line, newest at the right edge, the value above it. */
+/**
+ * A trace scrolling past: the last `windowS` seconds as one or two lines,
+ * newest at the right edge, a left axis with ticks, and each line's value in
+ * the legend in its own colour.
+ */
 export function drawTrace(v: TraceView): SVGSVGElement {
-  const [W, H] = [400, 120];
-  const [px, top, plotH] = [10, 34, 76];
-  const plotW = W - 2 * px;
-  const shown = formatReadoutValue(v.value, v.digits);
-  const svg = root(W, H, `${v.label ?? "trace"}: ${shown} ${v.unit ?? ""}`);
-  // Baseline and the cursor at the right edge.
-  svg.appendChild(el("line", { x1: px, y1: top + plotH, x2: px + plotW, y2: top + plotH, stroke: TRACK, "stroke-width": 1 }));
-  svg.appendChild(el("line", { x1: px + plotW, y1: top, x2: px + plotW, y2: top + plotH, stroke: TRACK, "stroke-width": 1 }));
-  for (const run of tracePoints(v.samples, v.min, v.max, plotW, plotH)) {
-    if (run.length < 2) continue;
-    const points = run.map((p) => `${(p.x + px).toFixed(1)},${(p.y + top).toFixed(1)}`).join(" ");
-    svg.appendChild(el("polyline", { points, fill: "none", stroke: OUTLINE, "stroke-width": 5, "stroke-linejoin": "round" }));
-    svg.appendChild(el("polyline", { points, fill: "none", stroke: ACCENT, "stroke-width": 2.5, "stroke-linejoin": "round" }));
+  const [W, H] = [Math.max(200, v.width ?? 400), 120];
+  const [axisW, px, top, plotH] = [30, 8, 30, 80];
+  const x0 = px + axisW;
+  const plotW = W - x0 - px;
+  const colours = [ACCENT, ACCENT_2];
+  const summary = v.series.map((s) => `${s.name} ${formatReadoutValue(s.value, v.digits)}`).join(", ");
+  const svg = root(W, H, `${v.label ?? "trace"}: ${summary} ${v.unit ?? ""}`);
+  // Left axis: ticks and their values, a faint grid across.
+  for (const t of gaugeTicks(v.min, v.max, 4)) {
+    const y = top + plotH - ((t - v.min) / (v.max - v.min)) * plotH;
+    svg.appendChild(el("line", { x1: x0, y1: y, x2: x0 + plotW, y2: y, stroke: TRACK, "stroke-width": 0.75 }));
+    svg.appendChild(el("line", { x1: x0 - 4, y1: y, x2: x0, y2: y, stroke: FG, "stroke-width": 1.5 }));
+    svg.appendChild(text(String(t), { x: x0 - 6, y: y + 3.5, "font-size": 10, "text-anchor": "end", "stroke-width": 3 }));
   }
+  svg.appendChild(el("line", { x1: x0, y1: top, x2: x0, y2: top + plotH, stroke: FG, "stroke-width": 1.5 }));
+  // The cursor at the right edge.
+  svg.appendChild(el("line", { x1: x0 + plotW, y1: top, x2: x0 + plotW, y2: top + plotH, stroke: TRACK, "stroke-width": 1 }));
+  v.series.forEach((s, i) => {
+    for (const run of tracePoints(s.samples, v.min, v.max, plotW, plotH)) {
+      if (run.length < 2) continue;
+      const points = run.map((p) => `${(p.x + x0).toFixed(1)},${(p.y + top).toFixed(1)}`).join(" ");
+      svg.appendChild(el("polyline", { points, fill: "none", stroke: OUTLINE, "stroke-width": 5, "stroke-linejoin": "round" }));
+      svg.appendChild(el("polyline", { points, fill: "none", stroke: colours[i % 2], "stroke-width": 2.5, "stroke-linejoin": "round" }));
+    }
+  });
   const caption = [v.label, v.unit].filter((s) => s !== undefined && s !== null && s !== "").join(" · ");
-  if (caption !== "") svg.appendChild(text(caption, { x: px + 2, y: 24, "font-size": 14, "text-anchor": "start" }));
-  svg.appendChild(text(shown, { x: W - px - 2, y: 28, "font-size": 26, "font-weight": 700, "text-anchor": "end", "font-variant-numeric": "tabular-nums" }));
-  svg.appendChild(text(`${Math.round(v.windowS)} s`, { x: px + 2, y: top + plotH - 4, "font-size": 10, "text-anchor": "start", "stroke-width": 3 }));
+  if (caption !== "") svg.appendChild(text(caption, { x: x0, y: 20, "font-size": 13, "text-anchor": "start" }));
+  // Legend, right-aligned: each series' name and value in its colour.
+  let right = W - px;
+  for (let i = v.series.length - 1; i >= 0; i--) {
+    const s = v.series[i];
+    const label = `${s.name} ${formatReadoutValue(s.value, v.digits)}`;
+    svg.appendChild(text(label, { x: right, y: 21, "font-size": 15, "font-weight": 700, "text-anchor": "end", fill: colours[i % 2], "font-variant-numeric": "tabular-nums" }));
+    right -= label.length * 8.5 + 12;
+  }
+  svg.appendChild(text(`${Math.round(v.windowS)} s`, { x: x0 + 4, y: top + plotH - 4, "font-size": 10, "text-anchor": "start", "stroke-width": 3 }));
   return svg;
 }
 
@@ -319,11 +353,13 @@ export interface SpectrogramView {
   label?: string;
   /** Shown instead of the picture when `image` is `null` (the notebook, which has no raster). */
   note?: string;
+  /** The drawing's width at a height of 120, the box's own shape. Default 400. */
+  width?: number;
 }
 
 /** A spectrogram scrolling past: frequency up, the last `windowS` seconds across, the cursor at the right edge. */
 export function drawSpectrogram(v: SpectrogramView): SVGSVGElement {
-  const [W, H] = [400, 120];
+  const [W, H] = [Math.max(200, v.width ?? 400), 120];
   const [px, top, plotH] = [10, 30, 80];
   const plotW = W - 2 * px;
   const svg = root(W, H, v.label ?? "spectrogram");

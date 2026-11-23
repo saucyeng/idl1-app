@@ -11,7 +11,7 @@ import type { GaugeOptions, GgOptions, NumberOptions, SpectrogramOptions, TraceO
 export type ReadoutCall =
   | { kind: "gauge"; name: string; opts: GaugeOptions }
   | { kind: "number"; name: string; opts: NumberOptions }
-  | { kind: "trace"; name: string; opts: TraceOptions }
+  | { kind: "trace"; name: string; second?: string; opts: TraceOptions }
   | { kind: "spectrogram"; name: string; opts: SpectrogramOptions }
   | { kind: "gg"; x: string; y: string; opts: GgOptions };
 
@@ -47,7 +47,7 @@ export function parseReadoutCall(code: string): ReadoutCall | null {
     if (second === undefined) return null;
     return { kind, x: unescape(first), y: unescape(second), opts: opts as GgOptions };
   }
-  if (kind === "trace") return { kind, name: unescape(first), opts: opts as TraceOptions };
+  if (kind === "trace") return second === undefined ? { kind, name: unescape(first), opts: opts as TraceOptions } : { kind, name: unescape(first), second: unescape(second), opts: opts as TraceOptions };
   if (kind === "spectrogram") return { kind, name: unescape(first), opts: opts as SpectrogramOptions };
   return { kind, name: unescape(first), opts: opts as GaugeOptions };
 }

@@ -119,13 +119,13 @@ export function presetLayout(preset: OverlayPreset, videoCellId: string, readout
       cells[r.id] = { x: m, y: bottom - h, w: 1 - 2 * m, h, z: 1 };
       bottom -= h + GAP;
     });
-    if (lines.length > 0) {
-      const tw = (1 - 2 * m - GAP * (lines.length - 1)) / lines.length;
-      const th = Math.min(0.15, (tw * frameAspect) / KIND_ASPECT.trace);
-      lines.forEach((r, i) => {
-        cells[r.id] = { x: m + i * (tw + GAP), y: bottom - th, w: tw, h: th, z: 1 };
-      });
-    }
+    // Traces down the left under the gauges, keeping the middle of the frame
+    // clear (2026-11-23, Isaac: "we can't have them smack in the middle").
+    const tw = Math.max(gauges.length, 2) * (gw + GAP) - GAP;
+    const th = Math.min(0.17, (tw * frameAspect) / KIND_ASPECT.trace);
+    lines.forEach((r, i) => {
+      cells[r.id] = { x: m, y: m + gh + GAP + i * (th + GAP), w: tw, h: th, z: 1 };
+    });
   } else if (preset === "side") {
     const vw = Math.min(1, clipAspect / frameAspect);
     const vx = (1 - vw) / 2;

@@ -21,7 +21,7 @@ const SMOOTH_RE = /\bsmooth_s\s*:\s*(\d+(?:\.\d+)?|\.\d+)/g;
 const VERTICAL_RE = new RegExp(String.raw`\bvertical\s*:\s*(?:${STRING})`, "g");
 /** A trace's span when its call gives no `window_s`, s (`frame.ts`'s default). */
 const DEFAULT_TRACE_WINDOW_S = 8;
-const GG_RE = new RegExp(String.raw`\bReadout\s*\.\s*gg\s*\(\s*(?:${STRING})\s*,\s*(?:${STRING})`, "g");
+const GG_RE = new RegExp(String.raw`\bReadout\s*\.\s*(?:gg|trace)\s*\(\s*(?:${STRING})\s*,\s*(?:${STRING})`, "g");
 const TAIL_RE = /\btail_s\s*:\s*(\d+(?:\.\d+)?|\.\d+)/g;
 
 /** Undoes the JS escapes a name literal may carry (`\"`, `\\`). */

@@ -7,7 +7,7 @@
  * (typed, or the whole ride's exact extent). Pure: no DOM.
  */
 import { applyConversion, displayConversion, type DisplayUnits } from "./units";
-import type { GaugeView, GgView, NumberView, TraceView } from "./draw";
+import type { GaugeView, GgView, NumberView, TraceSeries, TraceView } from "./draw";
 import { heartRateZones } from "./geometry";
 
 /** The data `Readout` draws from on one frame. Every value is in the
@@ -154,14 +154,23 @@ export function ggView(frame: ReadoutFrame, x: string, y: string, opts: GgOption
   };
 }
 
-/** What a trace on `name` draws this frame: the cursor's value then the tail, converted. */
-export function traceView(frame: ReadoutFrame, name: string, opts: TraceOptions): TraceView {
+/** A series' legend name: its channel name without the unit, and "Front"/"Rear" for travel. */
+function seriesName(name: string): string {
+  return name.replace(/\s*\([^)]*\)\s*$/, "").replace(/ travel$/i, "");
+}
+
+/** What a trace on `names` (one or two, sharing the first's unit and range) draws this frame: each cursor value then its tail, converted. */
+export function traceView(frame: ReadoutFrame, names: string | readonly string[], opts: TraceOptions): TraceView {
+  const list = typeof names === "string" ? [names] : names;
+  const name = list[0];
   const c = displayConversion(frame.units[name] ?? null, frame.display);
   const [lo, hi] = gaugeRange(frame, name, { min: opts.min, max: opts.max, range: opts.range });
-  const value = applyConversion(frame.values[name] ?? null, c);
+  const series: TraceSeries[] = list.map((n) => {
+    const value = applyConversion(frame.values[n] ?? null, c);
+    return { samples: [value, ...(frame.tail[n] ?? []).map((v) => applyConversion(v, c))], value, name: seriesName(n) };
+  });
   return {
-    samples: [value, ...(frame.tail[name] ?? []).map((v) => applyConversion(v, c))],
-    value,
+    series,
     unit: c.unit,
     min: lo * c.scale + c.offset,
     max: hi * c.scale + c.offset,

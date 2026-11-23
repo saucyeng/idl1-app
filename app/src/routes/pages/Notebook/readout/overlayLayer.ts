@@ -24,11 +24,12 @@ const OVERLAY_THEME =
   "--readout-fg:#ffffff;--readout-track:rgba(255,255,255,0.28);--readout-accent:#38d6ff;--readout-outline:rgba(0,0,0,0.9);--readout-plate:rgba(8,12,16,0.62);--readout-max-w:none;--readout-max-h:none";
 
 /** One readout drawn for `frame`, or `null` when `call` names nothing drawable. */
-function drawCall(call: ReadoutCall, frame: ReadoutFrame, spectro: SpectroLookup | null): SVGSVGElement {
-  const m = readoutModule(frame, spectro);
+function drawCall(call: ReadoutCall, frame: ReadoutFrame, spectro: SpectroLookup | null, boxAspect: number): SVGSVGElement {
+  // Strips are drawn at their box's own shape (height 120), so a full-width box is filled.
+  const m = readoutModule(frame, spectro, 120 * boxAspect);
   if (call.kind === "gg") return m.gg(call.x, call.y, call.opts);
   if (call.kind === "gauge") return m.gauge(call.name, call.opts);
-  if (call.kind === "trace") return m.trace(call.name, call.opts);
+  if (call.kind === "trace") return call.second === undefined ? m.trace(call.name, call.opts) : m.trace(call.name, call.second, call.opts);
   if (call.kind === "spectrogram") return m.spectrogram(call.name, call.opts);
   return m.number(call.name, call.opts);
 }
@@ -48,7 +49,7 @@ export function composeOverlay(layout: CanvasLayout, calls: ReadonlyMap<string, 
     .filter(([id]) => calls.has(id))
     .sort((a, b) => a[1].z - b[1].z);
   for (const [id, box] of placed) {
-    const svg = drawCall(calls.get(id)!, frame, spectro);
+    const svg = drawCall(calls.get(id)!, frame, spectro, (box.w * width) / Math.max(1e-6, box.h * height));
     svg.setAttribute("x", String(box.x * width));
     svg.setAttribute("y", String(box.y * height));
     svg.setAttribute("width", String(box.w * width));

@@ -1956,7 +1956,8 @@ spectrogram_call ::= "spectrogram(" js_string "," fft_params ")"    (* the same 
 readout_cell  ::= "Readout.gauge(" js_string "," gauge_opts ")"  (* new 2026-11-15, video overlay spec §7c: the cell's whole body, no Plot.plot *)
                 | "Readout.number(" js_string "," number_opts ")"
                 | "Readout.gg(" js_string "," js_string "," gg_opts ")"   (* x = lateral, y = longitudinal, g *)
-                | "Readout.trace(" js_string "," trace_opts ")"   (* new 2026-11-23: a line scrolling past, newest at the right *)
+                | "Readout.trace(" js_string ("," js_string)? "," trace_opts ")"   (* new 2026-11-23: one or two lines scrolling past,
+                                                                      newest at the right, a left axis; the second in its own colour *)
                 | "Readout.spectrogram(" js_string "," spectro_opts ")"   (* new 2026-11-23: a session channel's spectrogram
                                                                       scrolling past; drawn by the overlay canvas and export,
                                                                       which fetch it (C3 §3.6 fetch_raster_v2); a notebook cell

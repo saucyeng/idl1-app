@@ -155,3 +155,23 @@ describe("presetLayout — side and reel with traces", () => {
     for (const b of boxes) expect(overlaps(b, video)).toBe(false);
   });
 });
+
+describe("presetLayout — classic keeps the middle clear", () => {
+  it("presetLayout — classic with traces — every trace in the left third, spectrograms full width at the bottom", () => {
+    const readouts = [
+      { id: "8e4a0020", kind: "gauge" as const },
+      { id: "8e4a0024", kind: "gauge" as const },
+      { id: "8e4a0021", kind: "gg" as const },
+      { id: "8e4a0025", kind: "trace" as const },
+      { id: "8e4a0027", kind: "spectrogram" as const },
+    ];
+
+    const layout = presetLayout("classic", "8e4a0001", readouts, 4 / 3);
+
+    const trace = layout.cells["8e4a0025"];
+    expect(trace.x + trace.w).toBeLessThan(0.4);
+    const spectro = layout.cells["8e4a0027"];
+    expect(spectro.w).toBeGreaterThan(0.95);
+    expect(spectro.y + spectro.h).toBeGreaterThan(0.95);
+  });
+});
