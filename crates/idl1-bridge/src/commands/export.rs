@@ -149,12 +149,24 @@ pub struct ExportRequest {
     pub ffmpeg: Option<String>,
 }
 
+/// `fps` as ffmpeg should read it: the exact NTSC fraction for the rates
+/// cameras record at (23.976 is 24000/1001; a decimal made the file's rate
+/// 991001/41333), else the decimal.
+pub fn fps_arg(fps: f64) -> String {
+    for base in [24_000u32, 30_000, 48_000, 60_000, 120_000, 240_000] {
+        if (fps - base as f64 / 1001.0).abs() < 1e-3 {
+            return format!("{base}/1001");
+        }
+    }
+    format!("{fps:.6}")
+}
+
 /// The ffmpeg arguments for `req` reading `clip`: the clip trimmed, fitted
 /// into its box on a black frame, the PNG frames from stdin laid on top, H.264
 /// out with the clip's audio when it has any.
 pub fn ffmpeg_args(req: &ExportRequest, clip: &Path) -> Vec<String> {
     let b = req.video_box;
-    let fps = format!("{:.6}", req.fps);
+    let fps = fps_arg(req.fps);
     let filter = format!(
         "[0:v]fps={fps},scale={bw}:{bh}:force_original_aspect_ratio=decrease,pad={bw}:{bh}:(ow-iw)/2:(oh-ih)/2,setsar=1[v];\
          color=black:s={w}x{h}:r={fps}[bg];[bg][v]overlay={bx}:{by}:shortest=1[b];[b][1:v]overlay=0:0:shortest=1,format=yuv420p[out]",
@@ -408,7 +420,7 @@ mod tests {
         // Assert
         let joined = args.join(" ");
         assert!(joined.contains("-ss 6.100 -t 89.000 -i C:/blobs/ab"));
-        assert!(joined.contains("-f image2pipe -framerate 23.976000 -c:v png -i -"));
+        assert!(joined.contains("-f image2pipe -framerate 24000/1001 -c:v png -i -"));
         assert!(joined.contains("scale=1440:1080:force_original_aspect_ratio=decrease,pad=1440:1080"));
         assert!(joined.contains("color=black:s=1920x1080"));
         assert!(joined.contains("overlay=240:0"));
@@ -426,6 +438,14 @@ mod tests {
 
         // Assert
         assert!(joined.contains("-c:v h264_nvenc -cq 18 -preset p6"));
+    }
+
+    #[test]
+    fn fps_arg_ntsc_rates_exact_fractions_others_decimal() {
+        // Arrange + Act + Assert
+        assert_eq!(fps_arg(23.976023976023974), "24000/1001");
+        assert_eq!(fps_arg(59.94005994005994), "60000/1001");
+        assert_eq!(fps_arg(25.0), "25.000000");
     }
 
     #[test]

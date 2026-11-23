@@ -36,6 +36,12 @@ fn resolve(cache: &SessionCache, data_dir: &Path, workbook_id: &str, window: &Wi
         return Ok(ReadoutSource { t_us: view.t_us.clone(), v: view.v.clone(), unit });
     }
     let dir = session_dir(data_dir, &window.session_id);
+    // The physics solver's outputs (`Front travel (mm)` …) are channels of the
+    // ride too, but live in its derived files, not `data.parquet` (C3 §3.16).
+    if let Some(m) = idl_library::estimated::estimated_channel(data_dir, &window.session_id, name) {
+        let unit = name.rsplit_once('(').and_then(|(_, u)| u.strip_suffix(')')).map(str::to_string);
+        return Ok(ReadoutSource { t_us: Arc::from(m.t_us), v: Arc::from(m.values), unit });
+    }
     let channel = cache.channel(&dir, &window.session_id, name).map_err(|e| {
         if e.kind == IpcErrorKind::NotFound {
             not_a_series(name, "is neither a definition of this workbook nor a channel of this session")

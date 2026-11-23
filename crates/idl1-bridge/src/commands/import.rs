@@ -121,6 +121,114 @@ fn import_file_via(
     data_dir: &Path,
     path: &str,
     importer_id: Option<&str>,
+    on_progress: impl FnMut(&str),
+) -> Result<ImportOutcome, IpcError> {
+    import_file_with(&ImportRunner::InProcess, data_dir, path, importer_id, on_progress)
+}
+
+/// The flag that starts the app's own executable as an import worker
+/// (2026-11-23): `<exe> --idl1-import-worker <data_dir> <ext> <path>`.
+pub const IMPORT_WORKER_FLAG: &str = "--idl1-import-worker";
+
+/// Where an import runs.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ImportRunner {
+    /// In this process (tests, and phones, which cannot start one).
+    InProcess,
+    /// In a child: this executable started with [`IMPORT_WORKER_FLAG`]. An
+    /// import that runs out of memory then ends the child, not the app
+    /// (Rust aborts a process whose allocation fails; 2026-11-22 the app was
+    /// killed twice importing a 271 MB log on a machine short of memory).
+    Worker(std::path::PathBuf),
+}
+
+/// An import's heap peak, bytes, for a log of `file_len` bytes: about 8×
+/// (measured 2026-11-22: a 271 MB `.idl1` reached 1.96 GB before the
+/// allocation failed, 7.2×).
+pub fn import_peak_estimate(file_len: u64) -> u64 {
+    file_len.saturating_mul(8)
+}
+
+/// The error for an import that cannot fit, or that died for lack of memory.
+fn out_of_memory(needed_bytes: u64, free_bytes: u64, path: &str, died: bool) -> IpcError {
+    let gb = |b: u64| b as f64 / 1e9;
+    let what = if died { "The import ran out of memory" } else { "Not enough memory to import this log" };
+    IpcError::with_detail(
+        IpcErrorKind::ResourceExhausted,
+        format!(
+            "{what}: it needs about {:.1} GB and {:.1} GB is free. Close some apps and import it again; the downloaded log is kept.",
+            gb(needed_bytes),
+            gb(free_bytes)
+        ),
+        serde_json::json!({ "needed_bytes": needed_bytes, "budget_bytes": free_bytes, "hint": format!("import '{path}'"), "died": died }),
+    )
+}
+
+/// What a worker prints, one JSON line on stdout.
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(tag = "result", rename_all = "snake_case")]
+pub enum WorkerAnswer {
+    /// Imported: the session id and the import's warnings.
+    Imported { session_id: String, warnings: Vec<String> },
+    /// Refused: the typed error, as the C3 shape.
+    Failed { error: IpcError },
+}
+
+/// The import itself: the logger entry point for `.idl0`/`.idl1`, the
+/// importer registry otherwise. Session id and warnings.
+fn import_in_process(data_dir: &Path, path: &str, ext: &str) -> Result<(String, Vec<String>), IpcError> {
+    // The path forms map the file rather than copying it onto the heap
+    // (ruling R203.3). Logger files (`.idl0`, `.idl1`) share one entry
+    // point; the parser tells them apart by their magic bytes.
+    let report = if ext == "idl0" || ext == "idl1" {
+        core_import::import_idl0_path(data_dir, Path::new(path))
+    } else {
+        core_import::import_file_path(data_dir, ext, Path::new(path))
+    }
+    .map_err(IpcError::from)?;
+    let mut warnings = report.import_warnings;
+    if let Some(truncation) = report.truncation_warning {
+        warnings.push(truncation);
+    }
+    Ok((report.session_id, warnings))
+}
+
+/// The worker's whole run, from its arguments after the flag
+/// (`<data_dir> <ext> <path>`): imports and returns the line to print.
+pub fn run_import_worker(args: &[String]) -> WorkerAnswer {
+    let [data_dir, ext, path] = args else {
+        return WorkerAnswer::Failed { error: IpcError::new(IpcErrorKind::InvalidArgument, "the import worker takes <data_dir> <ext> <path>") };
+    };
+    match import_in_process(Path::new(data_dir), path, ext) {
+        Ok((session_id, warnings)) => WorkerAnswer::Imported { session_id, warnings },
+        Err(error) => WorkerAnswer::Failed { error },
+    }
+}
+
+/// When this process was started as an import worker, runs it, prints the
+/// answer and returns the exit code; `None` otherwise. Called first thing in
+/// the app's `main`, before Tauri starts.
+pub fn maybe_run_import_worker() -> Option<i32> {
+    let args: Vec<String> = std::env::args().collect();
+    let at = args.iter().position(|a| a == IMPORT_WORKER_FLAG)?;
+    let answer = run_import_worker(&args[at + 1..]);
+    let ok = matches!(answer, WorkerAnswer::Imported { .. });
+    println!("{}", serde_json::to_string(&answer).unwrap_or_default());
+    Some(if ok { 0 } else { 1 })
+}
+
+/// Reads a worker's stdout: its answer line, or `None` when it printed none
+/// (it died, almost always for lack of memory).
+pub fn parse_worker_output(stdout: &str) -> Option<WorkerAnswer> {
+    stdout.lines().rev().find_map(|l| serde_json::from_str::<WorkerAnswer>(l.trim()).ok())
+}
+
+/// [`import_file_via`] with the import run by `runner`.
+fn import_file_with(
+    runner: &ImportRunner,
+    data_dir: &Path,
+    path: &str,
+    importer_id: Option<&str>,
     mut on_progress: impl FnMut(&str),
 ) -> Result<ImportOutcome, IpcError> {
     let ext = resolve_extension(path, importer_id)?;
@@ -139,22 +247,34 @@ fn import_file_via(
             }
         })?
         .len();
-    crate::memory::ensure_fits(file_len.saturating_mul(2), &format!("import '{path}'"))?;
+    let needed = import_peak_estimate(file_len);
+    let free = available_bytes();
+    if needed > free {
+        return Err(out_of_memory(needed, free, path, false));
+    }
 
     on_progress("decoding");
-    // The path forms map the file rather than copying it onto the heap
-    // (ruling R203.3).
-    // Logger files (`.idl0`, `.idl1`) share one entry point; the parser
-    // tells them apart by their magic bytes.
-    let report = if ext == "idl0" || ext == "idl1" {
-        core_import::import_idl0_path(data_dir, Path::new(path))
-    } else {
-        core_import::import_file_path(data_dir, &ext, Path::new(path))
-    }
-    .map_err(IpcError::from)?;
+    let (session_id, warnings) = match runner {
+        ImportRunner::InProcess => import_in_process(data_dir, path, &ext)?,
+        ImportRunner::Worker(exe) => {
+            let mut cmd = std::process::Command::new(exe);
+            cmd.arg(IMPORT_WORKER_FLAG).arg(data_dir).arg(&ext).arg(path);
+            cmd.stdin(std::process::Stdio::null()).stderr(std::process::Stdio::null());
+            #[cfg(windows)]
+            {
+                use std::os::windows::process::CommandExt;
+                cmd.creation_flags(0x0800_0000); // CREATE_NO_WINDOW
+            }
+            let out = cmd.output().map_err(|e| IpcError::new(IpcErrorKind::Io, format!("starting the import worker: {e}")))?;
+            match parse_worker_output(&String::from_utf8_lossy(&out.stdout)) {
+                Some(WorkerAnswer::Imported { session_id, warnings }) => (session_id, warnings),
+                Some(WorkerAnswer::Failed { error }) => return Err(error),
+                None => return Err(out_of_memory(needed, available_bytes(), path, true)),
+            }
+        }
+    };
 
     on_progress("materializing");
-    let session_id = report.session_id.clone();
     idl_library::catalog_read::rebuild_catalog_report(data_dir)?;
     let session = idl_library::catalog_read::list_sessions(data_dir)?
         .into_iter()
@@ -162,11 +282,6 @@ fn import_file_via(
         .ok_or_else(|| {
             IpcError::new(IpcErrorKind::Internal, format!("session {session_id} missing from the catalog immediately after import"))
         })?;
-
-    let mut warnings = report.import_warnings;
-    if let Some(truncation) = report.truncation_warning {
-        warnings.push(truncation);
-    }
 
     Ok(ImportOutcome { session: SessionSummary::from(session), warnings })
 }
@@ -180,7 +295,14 @@ pub fn import_file(
     data_dir: tauri::State<'_, DataDir>,
     cache: tauri::State<'_, crate::session_cache::SessionCache>,
 ) -> Result<ImportOutcome, IpcError> {
-    let outcome = import_file_via(&data_dir.0, &path, importer_id.as_deref(), |phase| {
+    // Desktop runs the import in a child, so running out of memory ends the
+    // child with a message rather than the app; phones cannot start one.
+    let runner = if cfg!(any(target_os = "android", target_os = "ios")) {
+        ImportRunner::InProcess
+    } else {
+        std::env::current_exe().map(ImportRunner::Worker).unwrap_or(ImportRunner::InProcess)
+    };
+    let outcome = import_file_with(&runner, &data_dir.0, &path, importer_id.as_deref(), |phase| {
         let _ = progress.send(Progress { done: 0, total: None, phase: phase.to_string() });
     })?;
     // A re-import under an existing `session_id` rewrites that session's
@@ -189,6 +311,66 @@ pub fn import_file(
     // under a session id that did not exist a moment ago.
     cache.invalidate_session(&outcome.session.session_id);
     Ok(outcome)
+}
+
+/// Memory the machine can still grant, bytes, less the headroom the app
+/// keeps (`crate::memory`): what an import may use, measured now.
+fn available_bytes() -> u64 {
+    use crate::memory::MemoryProbe;
+    let probe = crate::memory::SystemProbe;
+    let headroom = crate::memory::headroom_for(probe.physical_bytes());
+    probe.commit().available_commit_bytes.saturating_sub(headroom)
+}
+
+#[cfg(test)]
+mod worker_tests {
+    use super::*;
+
+    #[test]
+    fn parse_worker_output_an_answer_line_after_other_output_the_answer() {
+        // Arrange
+        let answer = WorkerAnswer::Imported { session_id: "s1".to_string(), warnings: vec!["FIFO overrun".to_string()] };
+        let stdout = format!("some log line\n{}\n", serde_json::to_string(&answer).unwrap());
+
+        // Act
+        let parsed = parse_worker_output(&stdout);
+
+        // Assert
+        assert_eq!(parsed, Some(answer));
+    }
+
+    #[test]
+    fn parse_worker_output_nothing_printed_none_the_worker_died() {
+        // Arrange + Act + Assert
+        assert_eq!(parse_worker_output(""), None);
+        assert_eq!(parse_worker_output("memory allocation of 36966792 bytes failed\n"), None);
+    }
+
+    #[test]
+    fn run_import_worker_wrong_arguments_a_typed_failure() {
+        // Arrange + Act
+        let answer = run_import_worker(&["only-one".to_string()]);
+
+        // Assert
+        assert!(matches!(answer, WorkerAnswer::Failed { error } if error.kind == IpcErrorKind::InvalidArgument));
+    }
+
+    #[test]
+    fn out_of_memory_died_names_both_figures_and_that_the_log_is_kept() {
+        // Arrange + Act
+        let e = out_of_memory(2_170_000_000, 500_000_000, "x.idl1", true);
+
+        // Assert
+        assert_eq!(e.kind, IpcErrorKind::ResourceExhausted);
+        assert!(e.message.contains("2.2 GB") && e.message.contains("0.5 GB") && e.message.contains("log is kept"), "{}", e.message);
+        assert_eq!(e.detail.unwrap()["died"], true);
+    }
+
+    #[test]
+    fn import_peak_estimate_the_271_mb_log_about_2_2_gb() {
+        // Arrange + Act + Assert
+        assert_eq!(import_peak_estimate(271_512_953), 2_172_103_624);
+    }
 }
 
 #[cfg(test)]

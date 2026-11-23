@@ -153,6 +153,14 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 
 ### Fixed
 
+- **An import that runs out of memory no longer closes the app [no-docs] (2026-11-23).** Imports
+  run in a separate worker: when there is not enough memory the app says how much the log needs and
+  how much is free, keeps the downloaded log, and you import it again after closing something. It
+  also checks before starting against the memory actually free (about 8 times the log's size), not
+  half the installed RAM.
+- **AGENTS.md names the current methods [no-docs] (2026-11-23).** A table of which method answers
+  which question (travel from the physics solver, not the older filter; integrity from the filled
+  gaps; video sync), so an agent working in the library reaches for the current one.
 - **Selecting a lap shows the lap [no-docs] (2026-11-23).** A lap opened as the ride's start to
   the lap's end; a zoom from the whole ride carried into the lap. The charts now open on the
   selected window, and a zoom moves between laps as an offset from the lap's start.
