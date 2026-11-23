@@ -238,6 +238,14 @@ describe("timelineCommit", () => {
 
     expect(next[1]).toBe(LAP_WINDOW);
   });
+
+  it("timelineCommit — a boundary dragged between microseconds — the range is whole µs, start down and end up", () => {
+    const windows = [SESSION_WINDOW];
+
+    const next = timelineCommit(windows, 0, { startUs: 3_693_471_683.480398, endUs: 3_782_500_000.2 });
+
+    expect(next[0].span).toEqual({ kind: "range", t0Us: 3_693_471_683, t1Us: 3_782_500_001 });
+  });
 });
 
 describe("bracketForLane", () => {

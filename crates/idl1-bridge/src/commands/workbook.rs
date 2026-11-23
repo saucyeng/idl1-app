@@ -854,6 +854,7 @@ fn evaluate_planned(
 /// the lap context come from one read (its laps and sectors reach the
 /// evaluator as the lap context), the bike calibration the session uses (it
 /// feeds the estimator builtins, [`crate::session_source::calibration_key_part`]),
+/// the physics solves the session has ([`idl_library::estimated::solves_key_part`]),
 /// and the engine version. A change in any of them is a new key, so the next
 /// call evaluates again.
 ///
@@ -868,6 +869,10 @@ fn evaluation_key(
     let (session, span) = match window {
         Some((w, _)) => (w.session_id.clone(), format!("{:?}", w.span)),
         None => (String::new(), "no session".to_string()),
+    };
+    let solves = match window {
+        Some((w, _)) => idl_library::estimated::solves_key_part(data_dir, &w.session_id),
+        None => String::new(),
     };
     let (identity, session_json, calibration) = match window {
         Some((w, json)) => {
@@ -890,6 +895,7 @@ fn evaluation_key(
         identity.as_bytes(),
         session_json,
         calibration.as_bytes(),
+        solves.as_bytes(),
         idl_rs::VERSION.as_bytes(),
     ])
 }

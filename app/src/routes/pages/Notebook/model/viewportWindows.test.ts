@@ -151,6 +151,14 @@ describe("toWireWindow", () => {
 
     expect(toWireWindow(w)).toEqual({ session_id: "s1", span: { kind: "range", t0_us: 1_000, t1_us: 2_000 }, colour: "--chart-2" });
   });
+
+  it("toWireWindow — a range with fractional µs — floored start, ceiled end, integers on the wire", () => {
+    const w: SelectionWindow = { sessionId: "s1", span: { kind: "range", t0Us: 1_000.4, t1Us: 2_000.4 }, colour: "--chart-2" };
+
+    const wire = toWireWindow(w);
+
+    expect(wire.span).toEqual({ kind: "range", t0_us: 1_000, t1_us: 2_001 });
+  });
 });
 
 describe("windowSpanFor", () => {
@@ -251,5 +259,15 @@ describe("resolvedWindowKeysFor", () => {
     const resolved = resolvedWindowKeysFor([primary, sibling], detailsByWindow, spanUsByWindow);
 
     expect(resolved.size).toBe(0);
+  });
+});
+
+describe("mapViewportToWindow — a range reaching back before the window", () => {
+  it("mapViewportToWindow — a whole-ride range over a lap — starts at the lap, not the ride", () => {
+    const lap = { startUs: 3_693_000_000, endUs: 3_782_000_000 };
+
+    const mapped = mapViewportToWindow({ startUs: 0, endUs: 10_000_000_000 }, lap.startUs, lap);
+
+    expect(mapped).toEqual(lap);
   });
 });

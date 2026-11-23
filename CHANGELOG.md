@@ -6,6 +6,29 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 
 ### Added
 
+- **Video overlay: the canvas and export [docs] (2026-11-23).** A workbook with a video cell and
+  readouts shows an Overlay panel: the frame (4:3, 16:9, 9:16, 1:1 or 4:5) with the video and
+  every readout placed on it, following the cursor and playback. Classic, Side panel and Reel 9:16
+  lay it out to start with; the layout is saved in the workbook's `canvas` key. Export draft and
+  Export full render the selected window to an MP4 in Videos\idl1 with your own ffmpeg (6.0 or
+  newer; the app says when it is missing or too old): the readouts are drawn by the app frame by
+  frame and laid over the original clip. Draft is half size and heavily compressed, for checking a
+  layout quickly.
+- **Readouts that read over footage, heart-rate zones and scrolling traces [docs] (2026-11-23).**
+  On the overlay, readouts sit on dark translucent plates in white with a cyan accent (the first
+  amber was the colour of dirt and leaves). `Readout.gauge(..., { zones: "hr" })` colours a heart
+  rate dial in zones Z1–Z5 and shows the zone. `Readout.trace(name, { window_s, min, max })`
+  draws a line scrolling past, the last few seconds with the newest at the right edge, and
+  `Readout.spectrogram(channel, { window_s, fmax })` a spectrogram scrolling the same way (drawn on
+  the overlay canvas and in export).
+- **Travel and steer from the physics solver in workbooks [docs] (2026-11-23).** Every output of
+  the physics solver is now a channel of the ride wherever it has been solved: `[Front travel (mm)]`,
+  `[Rear travel (mm)]`, `[Steer (deg)]`, fork bend, frame and rear flex, `[Airborne]`.
+  `wheel_travel` and `attitude("steer")` read them; a ride not solved says so instead of falling
+  back to the older filter, whose travel and steer are now `IEKF front travel (mm)` etc. A Solve
+  bar in the notebook runs the solver over the selected window, with progress and Cancel
+  (`idl-rs session estimate-physics` from the command line).
+
 - **A tyre model in the ride [no-docs] (2026-11-21).** Riding over bumps now uses the rear tyre's own
   stiffness from its pressure, width and casing (DH casings read from the model name), an insert that
   stiffens as it is crushed, and the rim pinching the tyre when the deflection runs out; the tyre
@@ -127,6 +150,18 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
   follows every video frame while playing, and pins and scrubs while paused; hover does not move
   it. Only cells that name `cursor` re-run as it moves, so the rest of the notebook is not
   re-drawn per frame. First piece of the video overlay (step 2).
+
+### Fixed
+
+- **Selecting a lap shows the lap [no-docs] (2026-11-23).** A lap opened as the ride's start to
+  the lap's end; a zoom from the whole ride carried into the lap. The charts now open on the
+  selected window, and a zoom moves between laps as an offset from the lap's start.
+- **Dragging the timeline's window edges works again [no-docs] (2026-11-23).** A dragged edge
+  landed between microseconds and the evaluation refused it ("expected i64").
+- **Lap rows under a ride select the lap [no-docs] (2026-11-23).** Clicking one did nothing; it now
+  selects the lap as the detail pane's lap table does.
+- **Readouts in the notebook are a sensible size [no-docs] (2026-11-23).** They filled the column;
+  they are now at most 320 × 240 px there.
 
 ### Changed
 

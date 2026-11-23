@@ -10,6 +10,10 @@
  * - `--readout-track`: the dial's unfilled arc and the g-g rings.
  * - `--readout-outline`: a halo behind text so it reads over footage
  *   (fallback transparent; the overlay theme sets it dark).
+ * - `--readout-plate`: a rounded plate behind the whole readout (fallback
+ *   transparent; the overlay theme sets it dark and translucent, 2026-11-23:
+ *   readouts were unreadable over sunlit leaves).
+ * - `--readout-zone-1` … `--readout-zone-5`: a dial's zone colours.
  *
  * Rendering, so not unit-tested (CLAUDE.md §4); the numbers it draws come
  * from `geometry.ts`, which is.
@@ -17,6 +21,7 @@
 import {
   arcPath,
   formatReadoutValue,
+  type GaugeZone,
   GAUGE_SWEEP_DEG,
   gaugeTicks,
   ggPoint,
@@ -24,6 +29,8 @@ import {
   needleAngleDeg,
   polar,
   tailOpacity,
+  tracePoints,
+  zoneAt,
 } from "./geometry";
 
 const SVG_NS = "http://www.w3.org/2000/svg";
@@ -32,6 +39,9 @@ const FG = "var(--readout-fg, currentColor)";
 const ACCENT = "var(--readout-accent, var(--chart-1, #e4572e))";
 const TRACK = "var(--readout-track, color-mix(in srgb, currentColor 22%, transparent))";
 const OUTLINE = "var(--readout-outline, transparent)";
+const PLATE = "var(--readout-plate, transparent)";
+/** Zone `n`'s colour: cool to hot, distinct from both footage and the accent. */
+const ZONE = (n: number) => `var(--readout-zone-${n}, ${["#8fa3b8", "#3d8bfd", "#2fbf71", "#f2c230", "#ef4444"][n - 1] ?? "#8fa3b8"})`;
 
 /** Creates an SVG element with attributes. */
 function el(name: string, attrs: Record<string, string | number>, ...children: SVGElement[]): SVGElement {
@@ -57,15 +67,22 @@ function text(content: string, attrs: Record<string, string | number>): SVGEleme
   return node;
 }
 
-/** The root `<svg>`: `w` × `h` user units, scaled to the cell's width. */
+/**
+ * The root `<svg>`: `w` × `h` user units, scaled to the cell's width up to
+ * `--readout-max-w` × `--readout-max-h` and centred (2026-11-23: in the
+ * notebook a full-column readout filled the screen). Tokens, not chart
+ * parameters: the overlay canvas sets both to `none` so a readout fills
+ * its box.
+ */
 function root(w: number, h: number, label: string): SVGSVGElement {
   const svg = el("svg", {
     viewBox: `0 0 ${w} ${h}`,
     width: "100%",
     role: "img",
     "aria-label": label,
-    style: "display:block;overflow:visible",
+    style: "display:block;overflow:visible;margin:0 auto;max-width:var(--readout-max-w, 320px);max-height:var(--readout-max-h, 240px)",
   }) as SVGSVGElement;
+  svg.appendChild(el("rect", { x: 0, y: 0, width: w, height: h, rx: 16, fill: PLATE }));
   return svg;
 }
 
@@ -100,6 +117,8 @@ export interface GaugeView {
   style: "speedo" | "tach";
   /** `"heart"` puts a heart beside the number. */
   icon?: "heart";
+  /** Coloured bands along the dial, display units; the sweep takes the colour of the zone the value is in. */
+  zones?: readonly GaugeZone[];
 }
 
 /** A dial: track arc, filled sweep to the value, ticks, needle (speedo), and the number. */
@@ -110,9 +129,18 @@ export function drawGauge(v: GaugeView): SVGSVGElement {
   const a1 = GAUGE_SWEEP_DEG / 2;
   const width = v.style === "tach" ? 16 : 8;
   svg.appendChild(el("path", { d: arcPath(cx, cy, r, a0, a1), fill: "none", stroke: TRACK, "stroke-width": width, "stroke-linecap": "round" }));
+  // Zones: faint bands along the track, so the dial shows where each starts.
+  for (const z of v.zones ?? []) {
+    const za = needleAngleDeg(z.from, v.min, v.max);
+    const zb = needleAngleDeg(z.to, v.min, v.max);
+    if (za === null || zb === null || !(zb > za)) continue;
+    svg.appendChild(el("path", { d: arcPath(cx, cy, r, za, zb), fill: "none", stroke: ZONE(z.n), "stroke-opacity": 0.45, "stroke-width": width }));
+  }
   const angle = needleAngleDeg(v.value, v.min, v.max);
+  const zone = zoneAt(v.value, v.zones ?? []);
+  const sweep = zone === null ? ACCENT : ZONE(zone.n);
   if (angle !== null && angle > a0) {
-    svg.appendChild(el("path", { d: arcPath(cx, cy, r, a0, angle), fill: "none", stroke: ACCENT, "stroke-width": width, "stroke-linecap": "round" }));
+    svg.appendChild(el("path", { d: arcPath(cx, cy, r, a0, angle), fill: "none", stroke: sweep, "stroke-width": width, "stroke-linecap": "round" }));
   }
   for (const t of gaugeTicks(v.min, v.max)) {
     const ta = needleAngleDeg(t, v.min, v.max);
@@ -134,6 +162,7 @@ export function drawGauge(v: GaugeView): SVGSVGElement {
   svg.appendChild(text(shown, { x: cx, y: numberY, "font-size": 34, "font-weight": 700, "font-variant-numeric": "tabular-nums" }));
   const caption = [v.label, v.unit].filter((s) => s !== undefined && s !== null && s !== "").join(" · ");
   if (caption !== "") svg.appendChild(text(caption, { x: cx, y: numberY + 20, "font-size": 12 }));
+  if (zone !== null) svg.appendChild(text(`Z${zone.n}`, { x: cx + 62, y: numberY - 4, "font-size": 14, "font-weight": 700, fill: ZONE(zone.n) }));
   // A tach has no needle hub, so its heart sits large in the dial's centre;
   // a speedo's sits beside the number, clear of the hub.
   if (v.icon === "heart") {
@@ -204,5 +233,72 @@ export function drawGg(v: GgView): SVGSVGElement {
     svg.appendChild(el("circle", { cx: dot.x, cy: dot.y, r: 7, fill: ACCENT, stroke: OUTLINE, "stroke-width": 2 }));
   }
   if (v.label !== undefined && v.label !== "") svg.appendChild(text(v.label, { x: cx, y: H - 2, "font-size": 12 }));
+  return svg;
+}
+
+/** What {@link drawTrace} draws. */
+export interface TraceView {
+  /** `samples[k]` is the value `k` frames back, display units; `samples[0]` the cursor. */
+  samples: (number | null)[];
+  /** The value at the cursor, display units. */
+  value: number | null;
+  unit: string | null;
+  /** Vertical range, display units. */
+  min: number;
+  max: number;
+  label?: string;
+  digits: number;
+  /** Seconds the trace spans, for its time label. */
+  windowS: number;
+}
+
+/** A trace scrolling past: the last `windowS` seconds as a line, newest at the right edge, the value above it. */
+export function drawTrace(v: TraceView): SVGSVGElement {
+  const [W, H] = [400, 120];
+  const [px, top, plotH] = [10, 34, 76];
+  const plotW = W - 2 * px;
+  const shown = formatReadoutValue(v.value, v.digits);
+  const svg = root(W, H, `${v.label ?? "trace"}: ${shown} ${v.unit ?? ""}`);
+  // Baseline and the cursor at the right edge.
+  svg.appendChild(el("line", { x1: px, y1: top + plotH, x2: px + plotW, y2: top + plotH, stroke: TRACK, "stroke-width": 1 }));
+  svg.appendChild(el("line", { x1: px + plotW, y1: top, x2: px + plotW, y2: top + plotH, stroke: TRACK, "stroke-width": 1 }));
+  for (const run of tracePoints(v.samples, v.min, v.max, plotW, plotH)) {
+    if (run.length < 2) continue;
+    const points = run.map((p) => `${(p.x + px).toFixed(1)},${(p.y + top).toFixed(1)}`).join(" ");
+    svg.appendChild(el("polyline", { points, fill: "none", stroke: OUTLINE, "stroke-width": 5, "stroke-linejoin": "round" }));
+    svg.appendChild(el("polyline", { points, fill: "none", stroke: ACCENT, "stroke-width": 2.5, "stroke-linejoin": "round" }));
+  }
+  const caption = [v.label, v.unit].filter((s) => s !== undefined && s !== null && s !== "").join(" · ");
+  if (caption !== "") svg.appendChild(text(caption, { x: px + 2, y: 24, "font-size": 14, "text-anchor": "start" }));
+  svg.appendChild(text(shown, { x: W - px - 2, y: 28, "font-size": 26, "font-weight": 700, "text-anchor": "end", "font-variant-numeric": "tabular-nums" }));
+  svg.appendChild(text(`${Math.round(v.windowS)} s`, { x: px + 2, y: top + plotH - 4, "font-size": 10, "text-anchor": "start", "stroke-width": 3 }));
+  return svg;
+}
+
+/** What {@link drawSpectrogram} draws. */
+export interface SpectrogramView {
+  /** The slice to show and where it sits across the strip (0..1), or `null` when there is none here. */
+  image: { href: string; destX: number; destW: number; fmaxHz: number } | null;
+  windowS: number;
+  label?: string;
+  /** Shown instead of the picture when `image` is `null` (the notebook, which has no raster). */
+  note?: string;
+}
+
+/** A spectrogram scrolling past: frequency up, the last `windowS` seconds across, the cursor at the right edge. */
+export function drawSpectrogram(v: SpectrogramView): SVGSVGElement {
+  const [W, H] = [400, 120];
+  const [px, top, plotH] = [10, 30, 80];
+  const plotW = W - 2 * px;
+  const svg = root(W, H, v.label ?? "spectrogram");
+  if (v.image !== null) {
+    svg.appendChild(el("image", { href: v.image.href, x: px + v.image.destX * plotW, y: top, width: v.image.destW * plotW, height: plotH, preserveAspectRatio: "none" }));
+    svg.appendChild(text(`${Math.round(v.image.fmaxHz)} Hz`, { x: px + 4, y: top + 12, "font-size": 10, "text-anchor": "start", "stroke-width": 3 }));
+  } else {
+    svg.appendChild(text(v.note ?? "–", { x: W / 2, y: top + plotH / 2 + 4, "font-size": 12 }));
+  }
+  svg.appendChild(el("line", { x1: px + plotW, y1: top, x2: px + plotW, y2: top + plotH, stroke: FG, "stroke-width": 1.5 }));
+  if (v.label !== undefined && v.label !== "") svg.appendChild(text(v.label, { x: px + 2, y: 21, "font-size": 14, "text-anchor": "start" }));
+  svg.appendChild(text(`${Math.round(v.windowS)} s`, { x: px + 4, y: top + plotH - 4, "font-size": 10, "text-anchor": "start", "stroke-width": 3 }));
   return svg;
 }

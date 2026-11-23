@@ -103,3 +103,59 @@ export function formatReadoutValue(value: number | null, digits: number): string
   if (value === null || !Number.isFinite(value)) return "–";
   return value.toFixed(Math.max(0, Math.min(6, Math.floor(digits))));
 }
+
+/** One coloured band on a dial: `[from, to)` in display units, zone `n` (1-based). */
+export interface GaugeZone {
+  from: number;
+  to: number;
+  n: number;
+}
+
+/**
+ * Heart-rate zones on a dial whose top is `maxBpm` (2026-11-23, Isaac: "hr
+ * should max at 200, coloured zones"): the usual five, as shares of the
+ * maximum: Z1 50–60 %, Z2 60–70 %, Z3 70–80 %, Z4 80–90 %, Z5 90–100 %.
+ * Bands below the dial's `minBpm` are cut at it; one wholly below is left out.
+ */
+export function heartRateZones(minBpm: number, maxBpm: number): GaugeZone[] {
+  const edges = [0.5, 0.6, 0.7, 0.8, 0.9, 1.0].map((f) => f * maxBpm);
+  const zones: GaugeZone[] = [];
+  for (let n = 1; n <= 5; n++) {
+    const from = Math.max(edges[n - 1], minBpm);
+    const to = edges[n];
+    if (to > from) zones.push({ from, to, n });
+  }
+  return zones;
+}
+
+/** The zone `value` falls in (the top zone includes its top edge), or `null` outside every zone. */
+export function zoneAt(value: number | null, zones: readonly GaugeZone[]): GaugeZone | null {
+  if (value === null || !Number.isFinite(value)) return null;
+  const last = zones[zones.length - 1];
+  return zones.find((z) => value >= z.from && (value < z.to || (z === last && value <= z.to))) ?? null;
+}
+
+/**
+ * A scrolling trace's polyline points (oldest first) in a `w` × `h` box:
+ * `samples[k]` is `k` frames back (`k = 0` the cursor), spread right to left
+ * across the box; values outside `[min, max]` are held at the edge; a
+ * missing sample breaks the line (a new run starts). Pure.
+ */
+export function tracePoints(samples: readonly (number | null)[], min: number, max: number, w: number, h: number): { x: number; y: number }[][] {
+  const n = samples.length;
+  if (n < 2 || !(max > min)) return [];
+  const runs: { x: number; y: number }[][] = [];
+  let run: { x: number; y: number }[] = [];
+  for (let k = n - 1; k >= 0; k--) {
+    const v = samples[k];
+    if (v === null || !Number.isFinite(v)) {
+      if (run.length > 0) runs.push(run);
+      run = [];
+      continue;
+    }
+    const t = Math.min(1, Math.max(0, (v - min) / (max - min)));
+    run.push({ x: (w * (n - 1 - k)) / (n - 1), y: h - t * h });
+  }
+  if (run.length > 0) runs.push(run);
+  return runs;
+}

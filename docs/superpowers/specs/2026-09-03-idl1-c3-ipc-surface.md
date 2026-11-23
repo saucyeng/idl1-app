@@ -3604,6 +3604,43 @@ compress_s, rebound_s, chassis_g, count, spacing_s, lead_s }`. Progress:
 `phase` `"simulating"`, `done` of `total` 1000. Runs are at most 120 s of
 simulated time.
 
+### 3.16 Physics solver (added 2026-11-23)
+
+The physics estimator over a stretch of a ride, from the app. Its outputs
+land in the ride's derived files (C1 §5, `derived_kind` `"physics"`) and
+every opener (this bridge's `load_lazy_session_handle`, the CLI's
+`workbook eval`) hands them to the session under plain names through
+`idl_library::estimated::apply_estimated_channels`: `Physics front travel (mm)`
+on disk reads as `Front travel (mm)`. Several solves of one ride merge, the
+newest winning where they overlap, with a `NaN` each side of a gap between
+solved stretches. `wheel_travel` and `attitude("steer")` read these
+channels and never the older filter (IEKF), whose own outputs are renamed
+`IEKF front travel (mm)` etc. The evaluation cache key includes the ride's
+derived file names, so a solve re-evaluates.
+
+| Command | Args | Returns | Notes |
+|---|---|---|---|
+| `solve_physics` | `session_id`, `from_us: i64`, `to_us: i64`, `progress: Channel<Progress>` | `SolveSummary { session_id, solved_s, windows, failed_windows, front_median_mm, rear_median_mm, fitted_geometry, seconds }` | Async. µs since the ride's first sample. Progress phase `"solving"`, `done` of `total` windows. One at a time: `conflict` while another runs. A first solve of a bike fits its geometry from the whole ride first. Cancelled: `internal` with `detail.cancelled: true`, nothing written. |
+| `cancel_solve_physics` | — | `bool` | Stops the running solve after the windows under way; `true` when one ran. |
+
+### 3.17 Overlay export (added 2026-11-23)
+
+Video step 3. The webview draws each frame's readout layer (the canvas's
+readout cells at their boxes) to a transparent PNG and streams it; the
+person's own ffmpeg (never bundled, Isaac 2026-11-23; at least 6.0)
+composites it over the linked clip: the clip trimmed, fitted into its box
+on a black frame, the PNGs laid on top, H.264 with the clip's audio.
+Quality `"draft"` is CRF 30 `veryfast` (the app also halves the frame, at
+most 960 px tall), `"full"` CRF 18 `medium`.
+
+| Command | Args | Returns | Notes |
+|---|---|---|---|
+| `ffmpeg_info` | `path: string \| null` | `FfmpegInfo { path, version, usable, problem }` | `null` runs `ffmpeg` on PATH. `version` `major.minor`; a git build (`N-…`) is usable with no version. |
+| `start_overlay_export` | `request: { video_sha256, clip_from_s, duration_s, width, height, fps, video_box: {x,y,w,h}, quality, out_path, ffmpeg }` | `u32` job id | Sizes even; the box inside the frame. `not_found` when the clip is not linked or ffmpeg is missing or too old (`detail.ffmpeg`, `detail.version`). |
+| `push_overlay_frame` | raw body: one PNG; header `x-export: <id>` | — | Raw bytes, never JSON. `io` with ffmpeg's last stderr line when it stopped taking frames. |
+| `finish_overlay_export` | `id` | `ExportDone { path, bytes, seconds }` | Closes the pipe and waits for the file. |
+| `cancel_overlay_export` | `id` | `bool` | Kills ffmpeg and deletes the partial file. |
+
 ## 4. Interaction budget
 
 From the principle "nothing on the interaction path waits on IPC" (design

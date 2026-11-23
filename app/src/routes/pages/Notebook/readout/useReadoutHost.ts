@@ -33,11 +33,16 @@ export interface ReadoutHostInputs {
   fps: number;
   /** Bumped when the sandbox is rebuilt. */
   primeEpoch: number;
+  /** Also told every frame bound as `Readout`, for readouts the page draws
+   *  itself (the overlay canvas, 2026-11-23). Never awaited. */
+  onFrame?: (frame: ReadoutFrame) => void;
 }
 
 /** Runs the readouts for the notebook page. */
 export function useReadoutHost(inputs: ReadoutHostInputs): void {
   const { hostRef, workbookId, sessionId, markdown, jsCodes, cursorTUs, fps, primeEpoch } = inputs;
+  const onFrameRef = useRef(inputs.onFrame);
+  onFrameRef.current = inputs.onFrame;
   const scan = useMemo(() => scanReadouts(jsCodes), [jsCodes]);
   const namesKey = scan.names.join("\u0000");
   const count = tailCount(scan.tailS, fps);
@@ -48,7 +53,10 @@ export function useReadoutHost(inputs: ReadoutHostInputs): void {
   const displayRef = useRef(display);
   displayRef.current = display;
 
-  const publish = (frame: ReadoutFrame) => hostRef.current?.setHostVar("Readout", { kind: "json", value: frame });
+  const publish = (frame: ReadoutFrame) => {
+    onFrameRef.current?.(frame);
+    hostRef.current?.setHostVar("Readout", { kind: "json", value: frame });
+  };
 
   const driverRef = useRef<ReturnType<typeof makeReadoutDriver> | null>(null);
   if (driverRef.current === null) {

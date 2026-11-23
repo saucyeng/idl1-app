@@ -7,7 +7,8 @@
  * (typed, or the whole ride's exact extent). Pure: no DOM.
  */
 import { applyConversion, displayConversion, type DisplayUnits } from "./units";
-import type { GaugeView, GgView, NumberView } from "./draw";
+import type { GaugeView, GgView, NumberView, TraceView } from "./draw";
+import { heartRateZones } from "./geometry";
 
 /** The data `Readout` draws from on one frame. Every value is in the
  *  engine's units; conversion happens in the view builders. */
@@ -44,6 +45,20 @@ export interface GaugeOptions {
   digits?: number;
   style?: "speedo" | "tach";
   icon?: "heart";
+  /** `"hr"`: heart-rate zones Z1–Z5 as shares of the dial's top (2026-11-23). */
+  zones?: "hr";
+}
+
+/** `Readout.trace`'s options (2026-11-23): a line scrolling past, newest at the right. */
+export interface TraceOptions {
+  /** Seconds shown; default 8. The host reads it, like `tail_s`, to size the tail. */
+  window_s?: number;
+  /** Vertical range, the channel's recorded unit; ignored when `range` is `"ride"`. */
+  min?: number;
+  max?: number;
+  range?: "ride";
+  label?: string;
+  digits?: number;
 }
 
 /** `Readout.number`'s options (spec §7c). */
@@ -85,6 +100,7 @@ export function gaugeView(frame: ReadoutFrame, name: string, opts: GaugeOptions)
     digits: opts.digits ?? 0,
     style: opts.style ?? "speedo",
     icon: opts.icon,
+    zones: opts.zones === "hr" ? heartRateZones(lo * c.scale + c.offset, hi * c.scale + c.offset) : undefined,
   };
 }
 
@@ -111,4 +127,30 @@ export function ggView(frame: ReadoutFrame, x: string, y: string, opts: GgOption
     rings: opts.rings ?? 0.5,
     label: opts.label,
   };
+}
+
+/** What a trace on `name` draws this frame: the cursor's value then the tail, converted. */
+export function traceView(frame: ReadoutFrame, name: string, opts: TraceOptions): TraceView {
+  const c = displayConversion(frame.units[name] ?? null, frame.display);
+  const [lo, hi] = gaugeRange(frame, name, { min: opts.min, max: opts.max, range: opts.range });
+  const value = applyConversion(frame.values[name] ?? null, c);
+  return {
+    samples: [value, ...(frame.tail[name] ?? []).map((v) => applyConversion(v, c))],
+    value,
+    unit: c.unit,
+    min: lo * c.scale + c.offset,
+    max: hi * c.scale + c.offset,
+    label: opts.label,
+    digits: opts.digits ?? 0,
+    windowS: opts.window_s ?? 8,
+  };
+}
+
+/** `Readout.spectrogram`'s options (2026-11-23): the last `window_s` seconds of a session channel's spectrogram, scrolling. */
+export interface SpectrogramOptions {
+  /** Seconds shown; default 6. */
+  window_s?: number;
+  /** Top frequency shown, Hz; default the channel's Nyquist. */
+  fmax?: number;
+  label?: string;
 }

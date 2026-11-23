@@ -49,3 +49,32 @@ export function viewportForCell(shared: SharedViewport, pixelWidth: number): Vie
 export function commitSharedViewport(viewport: Viewport): SharedViewport {
   return { startUs: viewport.startUs, endUs: viewport.endUs };
 }
+
+/**
+ * Carries the shared time range across a change of primary window
+ * (2026-11-23: a zoom settled on the whole ride stayed at `[0, …)` after
+ * lap 1 was selected, so lap 1's charts drew from the ride's start to the
+ * lap's end). The range is absolute in the *old* primary window's frame;
+ * it moves to the new one as an offset from the window's start (ruling
+ * R131 Q2's frame), so a zoom into the first corner of lap 1 shows the
+ * first corner of lap 3.
+ *
+ * `null` (each chart opens on its binding's `initialSpan`, the new window)
+ * when the offset range does not fit inside the new window: a range wider
+ * than the window, or one starting before the old window's start, means
+ * nothing about the new one. `null` too when either window is unresolved.
+ * The same window in, the same range out.
+ */
+export function rebaseSharedViewport(
+  shared: SharedViewport | null,
+  previous: { startUs: number; endUs: number } | null,
+  next: { startUs: number; endUs: number } | null
+): SharedViewport | null {
+  if (shared === null || previous === null || next === null) return null;
+  if (previous.startUs === next.startUs && previous.endUs === next.endUs) return shared;
+  const offsetStartUs = shared.startUs - previous.startUs;
+  const offsetEndUs = shared.endUs - previous.startUs;
+  const nextDurationUs = next.endUs - next.startUs;
+  if (offsetStartUs < 0 || offsetEndUs > nextDurationUs || !(offsetStartUs < offsetEndUs)) return null;
+  return { startUs: next.startUs + offsetStartUs, endUs: next.startUs + offsetEndUs };
+}

@@ -79,6 +79,8 @@ pub fn run() {
             // channel is decoded at most once while it stays resident.
             app.manage(idl1_bridge::session_cache::SessionCache::new());
             app.manage(idl1_bridge::readout::ReadoutStore::default());
+            app.manage(idl1_bridge::commands::physics::PhysicsSolves::default());
+            app.manage(idl1_bridge::commands::export::OverlayExports::default());
             // Ruling R221 item 1: every decode past ~200 ms reports itself as
             // the C3 §3.2 `decode_progress` event. Installed here, after the
             // cache is managed, because this is the only place an

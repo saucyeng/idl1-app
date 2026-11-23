@@ -134,6 +134,8 @@ pub fn load_lazy_session_handle(
     if let Some(doc) = read_session_json_once(data_dir, session_id).doc {
         idl_library::bikelog::apply_session_calibration(data_dir, &doc, &handle);
     }
+    // The physics solver's outputs, under their plain names (`Front travel (mm)`).
+    idl_library::estimated::apply_estimated_channels(data_dir, session_id, &handle);
     Ok((handle, source))
 }
 
@@ -630,6 +632,14 @@ mod tests {
         idl_rs::math::eval::evaluate(&expr, handle, &MathLapContext::empty()).unwrap().samples[0]
     }
 
+    /// How many samples of the older filter's steering are known. Since
+    /// 2026-11-23 `attitude("steer")` is the physics solver's (C3 §3.16); the
+    /// filter's own lands as `IEKF steer (deg)` once any filter output is read.
+    fn known_filter_steer(handle: &SessionHandle) -> f64 {
+        let _ = known_samples(handle, "heading");
+        idl_rs::math::eval::evaluate("sum(where([IEKF steer (deg)] > -1000, 1, 0))", handle, &MathLapContext::empty()).unwrap().samples[0]
+    }
+
     #[test]
     fn load_lazy_session_handle_session_on_a_calibrated_bike_estimates_steering() {
         // Arrange — the bike's calibration has a steering axis and a wheelbase.
@@ -642,7 +652,7 @@ mod tests {
         let (handle, _source) = load_lazy_session_handle(&root, "ride", &SessionCache::new()).unwrap();
 
         // Assert — steering is estimated only with the bike's calibration.
-        assert!(known_samples(&handle, "steer") > 0.0);
+        assert!(known_filter_steer(&handle) > 0.0);
         assert!(known_samples(&handle, "steer_needed") > 0.0);
 
         let _ = std::fs::remove_dir_all(&root);
@@ -660,7 +670,7 @@ mod tests {
 
         // Assert — the estimator ran (the heading is known) but has no steering.
         assert!(known_samples(&handle, "heading") > 0.0);
-        assert_eq!(known_samples(&handle, "steer"), 0.0);
+        assert_eq!(known_filter_steer(&handle), 0.0);
 
         let _ = std::fs::remove_dir_all(&root);
     }

@@ -44,6 +44,13 @@ mod tests {
     /// `(path relative to the idl-rs workspace root, enclosing function)`.
     /// One comment per entry says what it deletes and why that is safe.
     const ALLOWLIST: &[(&str, &str)] = &[
+        // `cancel_overlay_export` (C3 §3.17, 2026-11-23): removes the
+        // half-written `.mp4` of an export the person cancelled. The path is
+        // the one this job created for its own output (`ExportRequest.out_path`,
+        // under Videos\idl1 with a timestamp), never inside the data
+        // directory, never a blob or a source clip; the clip is read by ffmpeg
+        // and never opened for writing.
+        ("crates/idl1-bridge/src/commands/export.rs", "cancel_overlay_export"),
         // (a) tmp/ scratch — staging, never a final path.
         // `write_atomic`: drops its own `tmp/<uuid>` scratch file when a
         // rename loses a race, before returning the error.

@@ -1010,6 +1010,30 @@ Analysis gaps from `173461a2` (Python was needed for each; `agent-gaps.md`):
         readouts; found 2026-11-15), and the Maths graph pane goes blank while playing and comes
         back on pause. Both predate the readouts. Find which observer loops (`JsCellFrame`,
         `ChartCell`, the toolbar) and why the graph unmounts.
+  - [x] Step 2 canvas and step 3 export built 2026-11-23 (CHANGELOG): Overlay panel with
+        Classic / Side panel / Reel presets and the `canvas` key; readout plates, cyan accent,
+        `zones: "hr"`, `Readout.trace`; export through the person's ffmpeg (C3 §3.17). Isaac
+        picked Classic for the Sauce Factory run. Still to do:
+    - [ ] A scrolling spectrogram strip on the overlay (Isaac, 2026-11-23).
+    - [ ] Opening an overlay workbook evaluates every definition over the whole ride
+          (`open_readout` is over `span: session`, for whole-ride gauge ranges): minutes on a
+          167-minute ride and stuck behind memory admission when commit is short. Evaluate around
+          the window; get ride extents without the full series.
+    - [ ] Side panel with a 4:3 clip leaves an eighth of the width each side: crop the clip to
+          its box (spec §7a "adjustable crop later").
+    - [ ] The Properties form's readout row (`plotForm/readout.ts`) does not know `trace` or
+          `zones` yet.
+    - [ ] Charts on the canvas (only readouts are drawn on it and in export).
+  - [ ] Physics solver follow-ups (2026-11-23, C3 §3.16): a setting "Solve automatically: Never /
+        When I select a lap / After import" (Isaac: all three, Never by default until the solver is
+        about 10x faster); move roll, pitch, heading, slip, braking/cornering g and understeer onto
+        the solver and retire the IEKF (Isaac's #6); mark the IEKF builtins legacy in the catalog
+        and generate a "current methods" table into AGENTS.md (suggested edits Isaac approves).
+  - [ ] A ride whose import fails leaves a session.json with no data (the ride form saves notes
+        for a ride that never imported); the import's memory check compares against half the RAM,
+        not the memory free, so a short machine starts an import it cannot finish and the app is
+        killed (2026-11-23, two crashes on the 271 MB 11/21 log). Refuse up front with the numbers;
+        show "downloaded, not imported" with Retry; Rebuild should find the blob without data.parquet.
   - [ ] Opening the overlay readouts in the notebook makes them very large (full column width);
         the canvas view (step 2) sizes them, the notebook may want a smaller default.
   - [ ] The in-app update reports a crash: closing for the update panics in tao ("cannot move

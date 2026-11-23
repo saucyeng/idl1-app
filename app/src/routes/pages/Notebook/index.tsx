@@ -8,6 +8,9 @@ import { setActiveLayoutPreset, useActiveLayoutPreset } from "../../../shell/lay
 import { type LayoutPresetId } from "../../../shell/layoutPresets";
 import { BrandSheet } from "@/components/brand/BrandSheet";
 import { NoteBlock } from "@/components/brand/NoteBlock";
+import { SolveBar } from "./components/SolveBar";
+import { CanvasPanel, CanvasPanelBoundary, makeReadoutFrameStore } from "./components/CanvasPanel";
+import { readsSolverChannels } from "./model/physicsSolve";
 import { listSessions, listWorkbooks, getSession, type SessionDetail, type SessionSummary } from "../../../ipc/catalog";
 import type { SessionVideo } from "../../../ipc/video";
 import { startRebuildJob, whenRebuildFinishes, type RebuildRunSummary } from "../../../ipc/rebuild_job";
@@ -194,7 +197,7 @@ import { proseBlocksFor, spansToEvaluate } from "./model/proseBlocks";
 import { isSelfWrite, saveFlow, type SaveFlowState, type WorkbookEventWithHash } from "./model/saveFlow";
 import { initialSandboxPrimeState, nextSandboxPrimeState } from "./model/sandboxLifecycle";
 import { runSessionSpan, type SessionSpanAction, type SessionSpanDeps } from "./model/sessionSpanDriver";
-import { commitSharedViewport, viewportForCell, type SharedViewport } from "./model/sharedViewport";
+import { commitSharedViewport, rebaseSharedViewport, viewportForCell, type SharedViewport } from "./model/sharedViewport";
 import { DEFAULT_CACHE_BYTES, TileCache } from "./model/tileCache";
 import { declaresSessionSet, sessionTableView } from "./model/sessionTable";
 import { timelineCommit } from "./model/timelineStrip";
@@ -1018,6 +1021,18 @@ export default function NotebookPage() {
     () => (primaryWindowSpan === null ? null : { startUs: primaryWindowSpan.startUs, endUs: primaryWindowSpan.endUs }),
     [primaryWindowSpan?.startUs, primaryWindowSpan?.endUs]
   );
+
+  // A new primary window moves the shared X range with it (as an offset from
+  // the window's start) or drops it when it doesn't fit, so a range settled
+  // on the whole ride never leaks into a lap (`rebaseSharedViewport`,
+  // 2026-11-23). Local state only; no IPC.
+  const previousPrimarySpanRef = useRef(primaryWindowSpanForCell);
+  useEffect(() => {
+    const previous = previousPrimarySpanRef.current;
+    previousPrimarySpanRef.current = primaryWindowSpanForCell;
+    if (previous === primaryWindowSpanForCell) return;
+    setSharedViewport((shared) => rebaseSharedViewport(shared, previous, primaryWindowSpanForCell));
+  }, [primaryWindowSpanForCell]);
 
   // The playback clock's `requestAnimationFrame` loop: local state only
   // (`setPlayback`), never IPC or `postMessage` itself (the effects rule's
@@ -2900,7 +2915,11 @@ export default function NotebookPage() {
       // Design line 152's mobile half (ruling R184, task 6): the same
       // predicate that decides paper decides the point budget, so a phone
       // fetches half the points a desktop does at the same chart width.
-      void runChannelBind(deps, sessionRef.current.cache, bindWindows, cellId, binding, chartWidthPx, onAction, isStale, paperActive);
+      // A binding is per session (its `initialSpan` is the whole ride); the
+      // first range drawn is the primary window's own (2026-11-23: a lap
+      // opened as the ride's start to the lap's end).
+      const firstSpan = primaryWindowSpanForCell ?? binding.initialSpan;
+      void runChannelBind(deps, sessionRef.current.cache, bindWindows, cellId, { ...binding, initialSpan: firstSpan }, chartWidthPx, onAction, isStale, paperActive);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
@@ -2975,7 +2994,7 @@ export default function NotebookPage() {
       const range =
         sharedViewport !== null
           ? { startUs: sharedViewport.startUs, endUs: sharedViewport.endUs }
-          : (settled ?? { startUs: binding.initialSpan.startUs, endUs: binding.initialSpan.endUs });
+          : (settled ?? primaryWindowSpanForCell ?? { startUs: binding.initialSpan.startUs, endUs: binding.initialSpan.endUs });
 
       const seq = cellRunSequencerRef.current.start(cellId);
       const isStale = () => !cellRunSequencerRef.current.isCurrent(cellId, seq);
@@ -4024,7 +4043,21 @@ export default function NotebookPage() {
         : state.cells.filter((cell) => cell.kind === "js").map((cell) => decodeByteRange(state.markdown as string, cell.bodyRange)),
     [state.cells, state.markdown]
   );
+  // The overlay canvas's readouts: the frames bound as `Readout`, kept in a
+  // store so a new frame redraws only the canvas panel.
+  const readoutFramesRef = useRef<ReturnType<typeof makeReadoutFrameStore> | null>(null);
+  if (readoutFramesRef.current === null) readoutFramesRef.current = makeReadoutFrameStore();
+  const canvasJsCells = useMemo(
+    () =>
+      state.markdown === null
+        ? []
+        : state.cells.filter((cell) => cell.kind === "js" && cell.id !== null).map((cell) => ({ id: cell.id as string, code: decodeByteRange(state.markdown as string, cell.bodyRange) })),
+    [state.cells, state.markdown]
+  );
+  /** The overlay canvas shows for a workbook with a video cell and at least one readout cell. */
+  const showCanvas = primaryWindow !== null && masterCellId !== null && canvasJsCells.some((c) => /\bReadout\s*\./.test(c.code));
   useReadoutHost({
+    onFrame: (frame) => readoutFramesRef.current?.set(frame),
     hostRef: sandboxHostRef,
     workbookId: state.handle?.id ?? null,
     sessionId: primaryWindow?.sessionId ?? null,
@@ -5010,8 +5043,8 @@ export default function NotebookPage() {
                   sharedViewport !== null
                     ? viewportForCell(sharedViewport, chartWidthPx)
                     : (window?.viewport ?? {
-                        startUs: binding.initialSpan.startUs,
-                        endUs: binding.initialSpan.endUs,
+                        startUs: primaryWindowSpanForCell?.startUs ?? binding.initialSpan.startUs,
+                        endUs: primaryWindowSpanForCell?.endUs ?? binding.initialSpan.endUs,
                         pixelWidth: chartWidthPx,
                       })
                 }
@@ -5575,6 +5608,30 @@ export default function NotebookPage() {
         <p role="alert" className="workbook-eval-error">
           {evalError.message}
         </p>
+      )}
+      {primaryWindow !== null && readsSolverChannels(state.markdown) && (
+        <SolveBar
+          key={windowKey(primaryWindow)}
+          sessionId={primaryWindow.sessionId}
+          span={primaryWindowSpanForCell}
+          onSolved={() => setReevalNonce((n) => n + 1)}
+        />
+      )}
+      {showCanvas && primaryWindow !== null && state.handle !== null && state.markdown !== null && masterCellId !== null && (
+        <CanvasPanelBoundary><CanvasPanel
+          markdown={state.markdown}
+          workbookId={state.handle.id}
+          workbookName={state.handle.name}
+          videoCellId={masterCellId}
+          jsCells={canvasJsCells}
+          sessionId={primaryWindow.sessionId}
+          windowUs={primaryWindowSpanForCell}
+          videos={primaryVideos}
+          cursorUs={sharedCursorTUs === null ? null : Number(sharedCursorTUs)}
+          playing={playback.playing}
+          frames={readoutFramesRef.current}
+          onMarkdownChange={handleDocumentChange}
+        /></CanvasPanelBoundary>
       )}
       {selectedWorkbookId !== null && state.handle === null && state.markdownStatus === "loading" && <p>Opening notebook...</p>}
       {state.conflict && <ConflictBanner onReloadFromDisk={() => void handleReloadFromDisk()} onOverwrite={() => void handleOverwrite()} />}

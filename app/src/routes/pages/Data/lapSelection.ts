@@ -26,3 +26,16 @@ export function lapRowClicked(
   const clicked: SelectionWindow = { sessionId, span: { kind: "lap", lapNumber }, colour: assignColour(colourBase) };
   return nextWindows(current, clicked, modifier);
 }
+
+/**
+ * The lap numbers of `sessionId` that `selection` holds as `{ kind: "lap" }`
+ * windows: which lap rows to draw as selected, in the results list's inline
+ * lap sub-rows and `DetailPane`'s `LapTable` alike.
+ */
+export function selectedLapNumbersOf(selection: readonly SelectionWindow[], sessionId: string): Set<number> {
+  const out = new Set<number>();
+  for (const w of selection) {
+    if (w.sessionId === sessionId && w.span.kind === "lap") out.add(w.span.lapNumber);
+  }
+  return out;
+}

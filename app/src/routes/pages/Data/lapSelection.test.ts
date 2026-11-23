@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { SelectionWindow } from "../../../state/selection";
-import { lapRowClicked } from "./lapSelection";
+import { lapRowClicked, selectedLapNumbersOf } from "./lapSelection";
 
 describe("lapRowClicked", () => {
   it("lapRowClicked — plain click on an empty selection — selects the lap alone", () => {
@@ -38,5 +38,20 @@ describe("lapRowClicked", () => {
       { sessionId: "s1", span: { kind: "lap", lapNumber: 1 }, colour: "--chart-1" },
       { sessionId: "s1", span: { kind: "lap", lapNumber: 2 }, colour: "--chart-2" },
     ]);
+  });
+});
+
+describe("selectedLapNumbersOf", () => {
+  it("selectedLapNumbersOf — laps of two sessions and a session window — only this session's lap numbers", () => {
+    const selection: SelectionWindow[] = [
+      { sessionId: "s1", span: { kind: "lap", lapNumber: 1 }, colour: "--chart-1" },
+      { sessionId: "s2", span: { kind: "lap", lapNumber: 3 }, colour: "--chart-2" },
+      { sessionId: "s1", span: { kind: "session" }, colour: "--chart-3" },
+      { sessionId: "s1", span: { kind: "lap", lapNumber: 4 }, colour: "--chart-4" },
+    ];
+
+    const laps = selectedLapNumbersOf(selection, "s1");
+
+    expect([...laps].sort()).toEqual([1, 4]);
   });
 });

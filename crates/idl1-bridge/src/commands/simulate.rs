@@ -831,7 +831,7 @@ fn physics_error(e: idl_library::physics::PhysicsError) -> IpcError {
         K::NotFound => IpcErrorKind::NotFound,
         K::NotCalibrated | K::Unusable => IpcErrorKind::InvalidArgument,
         K::Io => IpcErrorKind::Io,
-        K::Solve => IpcErrorKind::Internal,
+        K::Solve | K::Cancelled => IpcErrorKind::Internal,
     };
     IpcError::new(kind, e.message)
 }

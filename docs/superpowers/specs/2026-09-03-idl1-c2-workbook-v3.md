@@ -1741,7 +1741,7 @@ feeds results in via `postMessage`):
 | `session` | `{ id: string, name?: string, timestampUtcMs: number }` | Active session metadata (C1). |
 | `constants` | `{ [name: string]: number }` | Flattened §3.1 constants (front matter + all `const` lines). Keys may contain spaces (`constants["rider mass"]`); no per-name identifier restriction (§3.1). |
 | `cursor` | `{ t: number \| null, playing: boolean }` | *New 2026-11-15 (video overlay spec §3, Isaac).* The shared cursor: `t` is seconds on the primary window's session clock (the same `t` a `channel(...)` row carries), `null` with no cursor. While playing it changes on every presented video frame (or animation frame with no video); paused, on a pin and on each step of a scrub. Hover never changes it. **Frame-rate:** only a cell whose source names `cursor` (whole word) takes it as an input, so other cells do not re-run per frame. |
-| `Readout` | `{ gauge(name, opts?), number(name, opts?), gg(x, y, opts?) }`, each returning an `<svg>` | *New 2026-11-15 (video overlay spec §7b–§7c).* Overlay readouts drawn from the samples at the shared cursor. The host finds the names as string literals in `Readout.*(...)` calls before any cell runs, opens them once (C3 §3.7.1 `open_readout`, over the primary window's whole session) and rebinds `Readout` with each `read_readout` answer, once per presented frame while playing. Values arrive in the engine's units and are converted for display only (km/h and m/s to mph, km to mi, °C to °F, per the person's unit setting; metres never). A name built at run time is not found and draws a dash. **Frame-rate**, like `cursor`. Options are §5.3's `readout_opts`. |
+| `Readout` | `{ gauge(name, opts?), number(name, opts?), gg(x, y, opts?), trace(name, opts?) }`, each returning an `<svg>` (`trace` added 2026-11-23) | *New 2026-11-15 (video overlay spec §7b–§7c).* Overlay readouts drawn from the samples at the shared cursor. The host finds the names as string literals in `Readout.*(...)` calls before any cell runs, opens them once (C3 §3.7.1 `open_readout`, over the primary window's whole session) and rebinds `Readout` with each `read_readout` answer, once per presented frame while playing. Values arrive in the engine's units and are converted for display only (km/h and m/s to mph, km to mi, °C to °F, per the person's unit setting; metres never). A name built at run time is not found and draws a dash. **Frame-rate**, like `cursor`. Options are §5.3's `readout_opts`. |
 | `Plot` | module namespace | `@observablehq/plot` 0.6.17 (bundled). |
 | `d3` | module namespace | `d3` 7.9.0 (bundled). |
 | `Inputs` | module namespace | `@observablehq/inputs` 0.12.0 (bundled). |
@@ -1956,11 +1956,25 @@ spectrogram_call ::= "spectrogram(" js_string "," fft_params ")"    (* the same 
 readout_cell  ::= "Readout.gauge(" js_string "," gauge_opts ")"  (* new 2026-11-15, video overlay spec §7c: the cell's whole body, no Plot.plot *)
                 | "Readout.number(" js_string "," number_opts ")"
                 | "Readout.gg(" js_string "," js_string "," gg_opts ")"   (* x = lateral, y = longitudinal, g *)
+                | "Readout.trace(" js_string "," trace_opts ")"   (* new 2026-11-23: a line scrolling past, newest at the right *)
+                | "Readout.spectrogram(" js_string "," spectro_opts ")"   (* new 2026-11-23: a session channel's spectrogram
+                                                                      scrolling past; drawn by the overlay canvas and export,
+                                                                      which fetch it (C3 §3.6 fetch_raster_v2); a notebook cell
+                                                                      shows a note *)
 gauge_opts    ::= "{" gauge_range                                 (* keys in this fixed order, each optional after the range *)
                       ("," "label" ":" js_string)?
                       ("," "digits" ":" js_int)?
                       ("," "style" ":" ("\"speedo\"" | "\"tach\""))?
-                      ("," "icon" ":" "\"heart\"")? "}"
+                      ("," "icon" ":" "\"heart\"")?
+                      ("," "zones" ":" "\"hr\"")? "}"            (* new 2026-11-23: heart-rate zones Z1–Z5 at 50/60/70/80/90 %
+                                                                      of the dial's top; the sweep takes the zone's colour *)
+trace_opts    ::= "{" ("window_s" ":" js_number)?                  (* seconds shown, default 8; read by the host like tail_s *)
+                      ("," gauge_range)?                           (* vertical range, as a gauge's *)
+                      ("," "label" ":" js_string)?
+                      ("," "digits" ":" js_int)? "}"
+spectro_opts  ::= "{" ("window_s" ":" js_number)?                  (* seconds shown, default 6 *)
+                      ("," "fmax" ":" js_number)?                  (* top frequency shown, Hz; default Nyquist *)
+                      ("," "label" ":" js_string)? "}"
 gauge_range   ::= "min" ":" js_number "," "max" ":" js_number     (* the channel's recorded unit *)
                 | "range" ":" "\"ride\""                          (* the ride's exact extent, C3 §3.7.1 *)
 number_opts   ::= "{" ("label" ":" js_string)?

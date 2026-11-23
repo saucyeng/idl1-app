@@ -214,12 +214,16 @@ export function dragCandidate(lane: StripLane, stripWidthPx: number, side: Handl
  * R134 item 3: this is the conversion, applied uniformly whether the
  * replaced span was `"session"`, `"lap"` or already `"range"`).
  * `sessionId`/`colour` are carried over unchanged -- only `span` moves.
+ * The candidate is rounded to whole µs (start down, end up): a dragged
+ * boundary lands between microseconds, and the engine's window is an
+ * integer (C3 §3.4; a fractional one was refused as "expected i64",
+ * 2026-11-23).
  * Every other entry in `windows` is returned unchanged (same array
  * reference where possible is not attempted; `AppState`'s `SET_WINDOWS`
  * replaces the whole list regardless).
  */
 export function timelineCommit(windows: readonly SelectionWindow[], laneIndex: number, candidate: AbsoluteSpan): SelectionWindow[] {
-  return windows.map((w, i) => (i === laneIndex ? { ...w, span: { kind: "range" as const, t0Us: candidate.startUs, t1Us: candidate.endUs } } : w));
+  return windows.map((w, i) => (i === laneIndex ? { ...w, span: { kind: "range" as const, t0Us: Math.floor(candidate.startUs), t1Us: Math.ceil(candidate.endUs) } } : w));
 }
 
 /** The shared viewport's own visible-range bracket within `lane`, in strip px -- where on this lane's background the currently-visible chart range sits. */

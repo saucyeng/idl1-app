@@ -73,3 +73,12 @@ describe("tailCount", () => {
     expect(n).toBe(0);
   });
 });
+
+describe("scanReadouts — traces", () => {
+  it("scanReadouts — a trace with and without window_s — its name read, the longest window as the tail", () => {
+    const scan = scanReadouts(['Readout.trace("fork_g", { window_s: 6 })', 'Readout.trace("rear_g")', 'Readout.gg("x", "y", { tail_s: 2 })']);
+
+    expect(scan.names).toEqual(["fork_g", "rear_g", "x", "y"]);
+    expect(scan.tailS).toBe(8);
+  });
+});

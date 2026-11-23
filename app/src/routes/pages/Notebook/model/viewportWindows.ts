@@ -61,7 +61,9 @@ export interface AbsoluteSpan {
 export function mapViewportToWindow(viewport: AbsoluteSpan, primaryStartUs: number, window: AbsoluteSpan): AbsoluteSpan | null {
   const aUs = viewport.startUs - primaryStartUs;
   const bUs = viewport.endUs - primaryStartUs;
-  const startUs = window.startUs + aUs;
+  // Never before the window's own start: a range reaching back past it
+  // (a whole-ride range over a lap) shows the window, not the ride before it.
+  const startUs = Math.max(window.startUs + aUs, window.startUs);
   const endUs = Math.min(window.startUs + bUs, window.endUs);
   if (!(startUs < endUs)) return null;
   return { startUs, endUs };
@@ -159,7 +161,9 @@ export function toWireWindow(w: SelectionWindow): WireWindow {
       ? { kind: "session" }
       : w.span.kind === "lap"
         ? { kind: "lap", lap_number: w.span.lapNumber }
-        : { kind: "range", t0_us: w.span.t0Us, t1_us: w.span.t1Us };
+        : // Whole µs, the engine's type (C3 §3.4): floor the start, ceil the end,
+          // so a fractional range from any source still covers what it named.
+          { kind: "range", t0_us: Math.floor(w.span.t0Us), t1_us: Math.ceil(w.span.t1Us) };
   return { session_id: w.sessionId, span, colour: w.colour };
 }
 

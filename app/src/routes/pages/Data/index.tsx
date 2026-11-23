@@ -44,6 +44,7 @@ import {
   startMaintenanceAction,
 } from "./maintenance";
 import { toDetailView } from "./sessionDetail";
+import { lapRowClicked, selectedLapNumbersOf } from "./lapSelection";
 import { dropDeletedSessionWindows, groupKeyOf, modifierFromClick, sessionRowClicked, toSessionRow, type SessionRow } from "./sessionRow";
 import { compareSessions, sortFieldsForView, type SortField } from "./sort";
 import { TrackEditor } from "./TrackEditor";
@@ -164,11 +165,11 @@ function useWindowWidth(): number {
  *  detail pane, matching idl0's single-click-does-both behaviour; the
  *  modifier keys (shift/ctrl/cmd) only change *how* the window combines
  *  with the rest of the selection (`sessionRow.ts`'s `modifierFromClick`).
- *  Lap sub-rows here are inline eye-candy only (not independently
- *  selectable — lap selection lives in `DetailPane`'s `LapTable`, this
- *  task's other clickable-row surface), sourced from the same `detailView`
- *  the `DetailPane` on the right already fetched, rather than a second
- *  per-row `listLaps` call. */
+ *  Lap sub-rows select their lap exactly as `DetailPane`'s `LapTable` does
+ *  (`lapSelection.ts`'s `lapRowClicked`; 2026-11-23: a click here used to do
+ *  nothing, which read as a broken lap pick), sourced from the same
+ *  `detailView` the `DetailPane` on the right already fetched, rather than
+ *  a second per-row `listLaps` call. */
 function SessionRowView({
   row,
   checked,
@@ -176,6 +177,8 @@ function SessionRowView({
   onSelect,
   laps,
   lapsErrorText,
+  selectedLapNumbers,
+  onLapSelect,
   pushTargets,
   pushBusy,
   onPush,
@@ -192,6 +195,10 @@ function SessionRowView({
    *  resolved with laps. */
   laps: ReturnType<typeof toDetailView>["laps"] | null;
   lapsErrorText: string | null;
+  /** Lap numbers of this session selected as `{ kind: "lap" }` windows. */
+  selectedLapNumbers: ReadonlySet<number>;
+  /** A lap sub-row was clicked, with the click's modifier keys. */
+  onLapSelect: (lapNumber: number, e: { shiftKey: boolean; ctrlKey: boolean; metaKey: boolean }) => void;
   /** Online paired devices a push can go to; empty hides the push icon. */
   pushTargets: readonly PeerStatus[];
   /** True while a push is running. */
@@ -239,7 +246,19 @@ function SessionRowView({
             <p className="px-3 py-1.5 font-mono text-xs text-fg-dim">No laps recorded for this session.</p>
           ) : (
             laps.map((lap) => (
-              <div key={lap.lapNumber} className="flex items-center gap-2 border-l-[3px] border-l-transparent px-3 py-1 font-mono text-xs text-fg-dim">
+              <div
+                key={lap.lapNumber}
+                role="row"
+                tabIndex={0}
+                aria-selected={selectedLapNumbers.has(lap.lapNumber)}
+                className={`flex cursor-pointer items-center gap-2 border-l-[3px] px-3 py-1 font-mono text-xs hover:text-fg ${selectedLapNumbers.has(lap.lapNumber) ? "border-l-good text-fg" : "border-l-transparent text-fg-dim"}`}
+                onClick={(e) => onLapSelect(lap.lapNumber, { shiftKey: e.shiftKey, ctrlKey: e.ctrlKey, metaKey: e.metaKey })}
+                onKeyDown={(e) => {
+                  if (e.key !== "Enter" && e.key !== " ") return;
+                  e.preventDefault();
+                  onLapSelect(lap.lapNumber, { shiftKey: e.shiftKey, ctrlKey: e.ctrlKey, metaKey: e.metaKey });
+                }}
+              >
                 <span className="w-10 shrink-0">Lap {lap.lapNumber}</span>
                 <span className="w-16 shrink-0">{lap.lapTimeMs === null ? "—" : formatLapTimeMs(lap.lapTimeMs)}</span>
                 {lapKindMark(lap.kind) !== null && <Badge className="shrink-0">{lapKindMark(lap.kind)}</Badge>}
@@ -794,6 +813,8 @@ export default function Data() {
                         onPush={(peerId) => sessionPush.push(peerId, [row.sessionId])}
                         laps={row.sessionId === focusedSessionId && detailView !== null ? detailView.laps : null}
                         lapsErrorText={row.sessionId === focusedSessionId ? detailState.status === "ready" ? detailState.lapsErrorText : null : null}
+                        selectedLapNumbers={selectedLapNumbersOf(selection, row.sessionId)}
+                        onLapSelect={(lapNumber, e) => appDispatch({ type: "SET_WINDOWS", windows: lapRowClicked(selection, row.sessionId, lapNumber, modifierFromClick(e)) })}
                       />
                     ))}
                   </CollapsibleContent>

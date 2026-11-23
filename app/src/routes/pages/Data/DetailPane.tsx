@@ -16,7 +16,7 @@ import { describeIpcError } from "./errors";
 import { AddVideoButton } from "./AddVideoButton";
 import { FitExportButton } from "./FitExportButton";
 import { canExportFit } from "./fitExport";
-import { lapRowClicked } from "./lapSelection";
+import { lapRowClicked, selectedLapNumbersOf } from "./lapSelection";
 import { parseStartInput, shouldPromptForStart } from "./libraryPanel";
 import { LapTable } from "./LapTable";
 import { MetadataForm } from "./MetadataForm";
@@ -146,10 +146,7 @@ export function DetailPane({ view, detail, lapsErrorText, selection, onWindowsCh
   // index *into the whole `selection` array* (`SET_WINDOW_COLOUR`'s shape),
   // not an index into this filtered subset.
   const sessionWindowIndex = selection.findIndex((w) => w.sessionId === view.sessionId && w.span.kind === "session");
-  const selectedLapNumbers = new Set<number>();
-  for (const w of selection) {
-    if (w.sessionId === view.sessionId && w.span.kind === "lap") selectedLapNumbers.add(w.span.lapNumber);
-  }
+  const selectedLapNumbers = selectedLapNumbersOf(selection, view.sessionId);
   const lapWindowIndex = (lapNumber: number) =>
     selection.findIndex((w) => w.sessionId === view.sessionId && w.span.kind === "lap" && w.span.lapNumber === lapNumber);
 
