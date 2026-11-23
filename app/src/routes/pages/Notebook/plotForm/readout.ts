@@ -29,6 +29,10 @@ export interface GaugeReadoutProps {
   /** Absent = `"speedo"`. */
   style?: "speedo" | "tach";
   icon?: "heart";
+  /** Heart-rate zones on the dial (2026-11-23). */
+  zones?: "hr";
+  /** Seconds averaged, > 0 (2026-11-23). */
+  smoothS?: number;
 }
 
 /** `Readout.number(channel, { … })`. */
@@ -52,6 +56,10 @@ export interface GgReadoutProps {
   /** Tail length, s, >= 0 (0 = no tail). */
   tailS: number;
   label?: string;
+  /** A third channel drawn as a vertical-g bar (2026-11-23). */
+  vertical?: string;
+  /** g at the bar's top, > 0. */
+  verticalLimit?: number;
 }
 
 /** One readout cell's Properties-form state. */
@@ -188,7 +196,9 @@ function buildProps(kind: string, first: string, second: string | null, opts: Ma
     const digits = takeNumber(opts, "digits", isDigits);
     const style = takeString(opts, "style", ["speedo", "tach"]);
     const icon = takeString(opts, "icon", ["heart"]);
-    if (digits === false || style === false || icon === false) return null;
+    const zones = takeString(opts, "zones", ["hr"]);
+    const smoothS = takeNumber(opts, "smooth_s", (n) => n > 0);
+    if (digits === false || style === false || icon === false || zones === false || smoothS === false) return null;
     return {
       readout: "gauge",
       channel: first,
@@ -197,6 +207,8 @@ function buildProps(kind: string, first: string, second: string | null, opts: Ma
       ...(digits !== undefined ? { digits } : {}),
       ...(style !== undefined ? { style: style as "speedo" | "tach" } : {}),
       ...(icon !== undefined ? { icon: "heart" as const } : {}),
+      ...(zones !== undefined ? { zones: "hr" as const } : {}),
+      ...(smoothS !== undefined ? { smoothS } : {}),
     };
   }
   if (kind === "number") {
@@ -217,7 +229,20 @@ function buildProps(kind: string, first: string, second: string | null, opts: Ma
     const tailS = takeNumber(opts, "tail_s", (n) => n >= 0);
     if (limit === false || rings === false || tailS === false) return null;
     if (limit === undefined || rings === undefined || tailS === undefined) return null;
-    return { readout: "gg", xChannel: first, yChannel: second, limit, rings, tailS, ...(label !== undefined ? { label } : {}) };
+    const vertical = takeString(opts, "vertical");
+    const verticalLimit = takeNumber(opts, "vertical_limit", (n) => n > 0);
+    if (vertical === false || verticalLimit === false) return null;
+    return {
+      readout: "gg",
+      xChannel: first,
+      yChannel: second,
+      limit,
+      rings,
+      tailS,
+      ...(label !== undefined ? { label } : {}),
+      ...(vertical !== undefined ? { vertical } : {}),
+      ...(verticalLimit !== undefined ? { verticalLimit } : {}),
+    };
   }
   return null;
 }
@@ -251,6 +276,8 @@ export function generateReadout(props: ReadoutProps): string {
       if (props.digits !== undefined) add("digits", n(props.digits));
       if (props.style !== undefined) add("style", lit(props.style));
       if (props.icon !== undefined) add("icon", lit(props.icon));
+      if (props.zones !== undefined) add("zones", lit(props.zones));
+      if (props.smoothS !== undefined) add("smooth_s", n(props.smoothS));
       return `Readout.gauge(${lit(props.channel)}, { ${parts.join(", ")} })`;
     }
     case "number": {
@@ -264,6 +291,8 @@ export function generateReadout(props: ReadoutProps): string {
       add("rings", n(props.rings));
       add("tail_s", n(props.tailS));
       if (props.label !== undefined) add("label", lit(props.label));
+      if (props.vertical !== undefined) add("vertical", lit(props.vertical));
+      if (props.verticalLimit !== undefined) add("vertical_limit", n(props.verticalLimit));
       return `Readout.gg(${lit(props.xChannel)}, ${lit(props.yChannel)}, { ${parts.join(", ")} })`;
     }
   }

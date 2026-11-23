@@ -79,3 +79,23 @@ describe("parseReadout", () => {
     });
   }
 });
+
+describe("readout options added 2026-11-23", () => {
+  it("parseReadout / generateReadout — a heart-rate gauge with zones and smoothing — round trips", () => {
+    const code = 'Readout.gauge("HR_BPM", { min: 60, max: 200, label: "Heart rate", style: "tach", icon: "heart", zones: "hr", smooth_s: 2 })';
+
+    const props = parseReadout(code);
+
+    expect(props).toMatchObject({ readout: "gauge", zones: "hr", smoothS: 2 });
+    expect(generateReadout(props!)).toBe(code);
+  });
+
+  it("parseReadout / generateReadout — a g-g with a vertical bar — round trips", () => {
+    const code = 'Readout.gg("corner_g", "brake_g", { limit: 1.5, rings: 0.5, tail_s: 2, label: "G-G", vertical: "up_g", vertical_limit: 4 })';
+
+    const props = parseReadout(code);
+
+    expect(props).toMatchObject({ readout: "gg", vertical: "up_g", verticalLimit: 4 });
+    expect(generateReadout(props!)).toBe(code);
+  });
+});

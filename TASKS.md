@@ -1027,7 +1027,7 @@ Analysis gaps from `173461a2` (Python was needed for each; `agent-gaps.md`):
           the window; get ride extents without the full series.
     - [ ] Side panel with a 4:3 clip leaves an eighth of the width each side: crop the clip to
           its box (spec §7a "adjustable crop later").
-    - [ ] The Properties form's readout row (`plotForm/readout.ts`) does not know `trace`,
+    - [ ] The Properties form reads and keeps `zones`, `smooth_s`, `vertical` (2026-11-23) but has no fields for them, and does not know `trace`,
           `spectrogram`, `zones`, `smooth_s` or `vertical` yet.
     - [ ] Charts on the canvas (only readouts are drawn on it and in export).
   - [ ] Physics solver follow-ups (2026-11-23, C3 §3.16): a setting "Solve automatically: Never /
