@@ -1020,7 +1020,7 @@ Analysis gaps from `173461a2` (Python was needed for each; `agent-gaps.md`):
     - [ ] The preview's scrubber covers the selected lap only; the export's 5 s pre-roll and 3 s
           post-roll are not playable in the app (playback is bounded by the primary window).
     - [ ] Vertical g in the ground frame (needs the bike's lean; bike frame only today).
-    - [ ] Export file names use UTC time; use local.
+    - [x] Export file names use local time (2026-11-23).
     - [ ] Opening an overlay workbook evaluates every definition over the whole ride
           (`open_readout` is over `span: session`, for whole-ride gauge ranges): minutes on a
           167-minute ride and stuck behind memory admission when commit is short. Evaluate around

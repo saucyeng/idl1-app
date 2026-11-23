@@ -245,7 +245,10 @@ export function CanvasPanel(props: CanvasPanelProps) {
     }
     cancelRef.current = false;
     setExportState({ kind: "running", done: 0, total: plan.frames });
-    const stamp = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
+    // Local time, as the person reads their clock (2026-11-23: a UTC stamp read five hours off).
+    const now = new Date();
+    const pad = (n: number) => String(n).padStart(2, "0");
+    const stamp = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}_${pad(now.getHours())}-${pad(now.getMinutes())}-${pad(now.getSeconds())}`;
     const safe = props.workbookName.replace(/[^A-Za-z0-9 _-]+/g, "").trim().replace(/\s+/g, "-") || "overlay";
     try {
       const outPath = await join(await videoDir(), "idl1", `${safe}-${plan.width}x${plan.height}-${stamp}.mp4`);
