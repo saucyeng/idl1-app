@@ -210,3 +210,11 @@ describe("parsePrefs", () => {
     expect(serialized.ui).toEqual(prefs.ui);
   });
 });
+
+describe("parsePrefs — auto_solve", () => {
+  it("parsePrefs — auto_solve absent, valid, junk — never, kept, never", () => {
+    expect(parsePrefs({}).ui.auto_solve).toBe("never");
+    expect(parsePrefs({ ui: { auto_solve: "lap" } }).ui.auto_solve).toBe("lap");
+    expect(parsePrefs({ ui: { auto_solve: "always" } }).ui.auto_solve).toBe("never");
+  });
+});

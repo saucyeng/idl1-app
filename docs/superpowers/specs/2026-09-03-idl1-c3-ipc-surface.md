@@ -3622,6 +3622,7 @@ derived file names, so a solve re-evaluates.
 |---|---|---|---|
 | `solve_physics` | `session_id`, `from_us: i64`, `to_us: i64`, `progress: Channel<Progress>` | `SolveSummary { session_id, solved_s, windows, failed_windows, front_median_mm, rear_median_mm, fitted_geometry, seconds }` | Async. µs since the ride's first sample. Progress phase `"solving"`, `done` of `total` windows. One at a time: `conflict` while another runs. A first solve of a bike fits its geometry from the whole ride first. Cancelled: `internal` with `detail.cancelled: true`, nothing written. |
 | `cancel_solve_physics` | — | `bool` | Stops the running solve after the windows under way; `true` when one ran. |
+| `physics_coverage` | `session_id` | `[i64, i64][]` | Async. The stretches solved, µs since the ride's first sample (the merged front travel's runs); empty when never solved. The app's "Solve automatically" setting reads it so a covered lap is not solved again. |
 
 ### 3.17 Overlay export (added 2026-11-23)
 

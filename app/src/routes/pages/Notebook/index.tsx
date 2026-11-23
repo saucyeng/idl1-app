@@ -5614,6 +5614,7 @@ export default function NotebookPage() {
           key={windowKey(primaryWindow)}
           sessionId={primaryWindow.sessionId}
           span={primaryWindowSpanForCell}
+          isLap={primaryWindow.span.kind === "lap"}
           onSolved={() => setReevalNonce((n) => n + 1)}
         />
       )}

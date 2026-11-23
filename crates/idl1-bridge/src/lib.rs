@@ -114,6 +114,7 @@ pub fn handler<R: tauri::Runtime>() -> impl Fn(tauri::ipc::Invoke<R>) -> bool + 
         commands::simulate::run_drivetrain_sim,
         commands::physics::solve_physics,
         commands::physics::cancel_solve_physics,
+        commands::physics::physics_coverage,
         commands::export::ffmpeg_info,
         commands::export::start_overlay_export,
         commands::export::push_overlay_frame,

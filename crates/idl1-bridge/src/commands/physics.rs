@@ -113,6 +113,14 @@ pub fn solve_physics(
     result
 }
 
+/// C3 §3.16 `physics_coverage(session_id)`: the stretches of a ride the
+/// solver has covered, `[start_us, end_us]` pairs since its first sample,
+/// ascending; empty when never solved. Reads the ride's derived files.
+#[tauri::command(async)]
+pub fn physics_coverage(session_id: String, data_dir: tauri::State<'_, DataDir>) -> Vec<[i64; 2]> {
+    idl_library::estimated::solved_spans(&data_dir.0, &session_id).into_iter().map(|(a, b)| [a, b]).collect()
+}
+
 /// C3 §3.16 `cancel_solve_physics()`: asks the running solve to stop after
 /// the windows already under way. `true` when one was running.
 #[tauri::command]

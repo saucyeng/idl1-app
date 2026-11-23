@@ -16,6 +16,7 @@ import { toFileViews } from "./files";
 import { dispatchRideFlow } from "../../../shell/rideFlow";
 import { dispatchLoggerLink } from "../../../shell/loggerLink";
 import { prefsStore } from "../Settings/appPrefsStore";
+import { autoSolveAfterImport } from "../Notebook/model/autoSolve";
 import { autoStep, bannerView, initialNewSessionsState, mb, newSessionsReducer, pickFiles, rideWhen } from "./newSessions";
 import type { QueuedFile } from "./newSessions";
 
@@ -162,6 +163,8 @@ export default function NewSessionsBanner({ deviceId, knownSessionIds, onImporte
         }
       }
       dispatchRideFlow({ type: "IMPORTED", name: file.name, sessionId: outcome.session.session_id });
+      // "Solve travel automatically: every lap after a download" queues its solves; never waited on.
+      void autoSolveAfterImport(outcome.session.session_id);
       dispatch({ type: "FILE_IMPORTED", warnings });
       return true;
     } catch (err) {

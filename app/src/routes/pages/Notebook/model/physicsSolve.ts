@@ -40,3 +40,34 @@ export function solvedText(s: { solved_s: number; windows: number; failed_window
   const med = (v: number) => (Number.isFinite(v) ? `${Math.round(v)} mm` : "—");
   return `Solved ${s.solved_s.toFixed(0)} s in ${s.seconds.toFixed(0)} s${fit}${failed}. Median travel front ${med(s.front_median_mm)}, rear ${med(s.rear_median_mm)}.`;
 }
+
+/** How much of `[startUs, endUs)` the solved `spans` cover, 0..1. Pure. */
+export function coveredFraction(spans: readonly (readonly [number, number])[], startUs: number, endUs: number): number {
+  const length = endUs - startUs;
+  if (!(length > 0)) return 0;
+  let covered = 0;
+  for (const [a, b] of spans) covered += Math.max(0, Math.min(b, endUs) - Math.max(a, startUs));
+  return Math.min(1, covered / length);
+}
+
+/** Whether "Solve automatically: when I select a lap" should solve a window covered `fraction`: anything under 90 %. */
+export function needsSolve(fraction: number): boolean {
+  return fraction < 0.9;
+}
+
+/** The stretches "Solve automatically: every lap after a download" solves: each lap's
+ *  `[startUs, endUs]` (µs since the ride's first sample), widened by `padS` seconds each side
+ *  for an overlay's pre-roll, overlapping ones merged. Pure. */
+export function lapSolveSpans(laps: readonly { start_time_secs: number; end_time_secs: number }[], padS = 5): [number, number][] {
+  const spans = laps
+    .map((l): [number, number] => [Math.max(0, Math.round((l.start_time_secs - padS) * 1e6)), Math.round((l.end_time_secs + padS) * 1e6)])
+    .filter(([a, b]) => b > a)
+    .sort((x, y) => x[0] - y[0]);
+  const out: [number, number][] = [];
+  for (const s of spans) {
+    const last = out[out.length - 1];
+    if (last !== undefined && s[0] <= last[1]) last[1] = Math.max(last[1], s[1]);
+    else out.push([s[0], s[1]]);
+  }
+  return out;
+}

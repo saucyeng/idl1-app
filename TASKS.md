@@ -1020,6 +1020,13 @@ Analysis gaps from `173461a2` (Python was needed for each; `agent-gaps.md`):
     - [ ] The preview's scrubber covers the selected lap only; the export's 5 s pre-roll and 3 s
           post-roll are not playable in the app (playback is bounded by the primary window).
     - [ ] Vertical g in the ground frame (needs the bike's lean; bike frame only today).
+    - [x] "Solve travel automatically" setting (Never / when I select a lap / every lap after a
+          download), 2026-11-23. Verified in the app: a solved lap is skipped, an unsolved lap solves.
+    - [ ] While a whole-ride solve ran (an early auto-solve before the lap-only guard), plain
+          (main-thread) commands like `get_settings` waited over a minute and the notebook's cell
+          runtime timed out at boot ("failed to start"; Retry did not recover). R201: find what
+          the main thread waits on during a solve; the manual Solve button over a long range hits it too.
+    - [ ] The Solve bar shows "Solving…" with no window count during an automatic solve.
     - [x] Export file names use local time (2026-11-23).
     - [ ] Opening an overlay workbook evaluates every definition over the whole ride
           (`open_readout` is over `span: session`, for whole-ride gauge ranges): minutes on a

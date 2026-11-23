@@ -210,7 +210,7 @@ describe("runPrefsMigration", () => {
     expect(outcome).toEqual({ kind: "migrated", imported: { rider_name: "Isaac", unit_system: "metric" }, skipped: [] });
     expect(deps.isMigrated()).toBe(true);
     expect(rewritten.engine).toBeUndefined();
-    expect(rewritten.ui).toEqual({ last_section: "sync", section_list_width_px: 260, theme: "dark", output_register: null, paper_theme: "app", firmware_repo: "", firmware_channel: "stable", app_channel: null, auto_download: false, graph_node_colour: false });
+    expect(rewritten.ui).toEqual({ last_section: "sync", section_list_width_px: 260, theme: "dark", output_register: null, paper_theme: "app", firmware_repo: "", firmware_channel: "stable", app_channel: null, auto_download: false, auto_solve: "never", graph_node_colour: false });
   });
 
   it("runPrefsMigration — a document written before paper_theme existed — migrates, and the key reads back as app", async () => {
@@ -251,6 +251,7 @@ describe("runPrefsMigration", () => {
         firmware_channel: "stable",
         app_channel: null,
         auto_download: true,
+        auto_solve: "never",
         graph_node_colour: false,
       },
     } as Prefs);
@@ -271,7 +272,7 @@ describe("runPrefsMigration", () => {
     expect(outcome.kind).toBe("migrated");
     expect(rewritten.engine.future_engine_field).toBe("kept-through-migration");
     expect(rewritten.engine.rider_name).toBeUndefined();
-    expect(rewritten.ui).toEqual({ last_section: "sync", section_list_width_px: 260, theme: "dark", output_register: null, paper_theme: "app", firmware_repo: "", firmware_channel: "stable", app_channel: null, auto_download: true, graph_node_colour: false });
+    expect(rewritten.ui).toEqual({ last_section: "sync", section_list_width_px: 260, theme: "dark", output_register: null, paper_theme: "app", firmware_repo: "", firmware_channel: "stable", app_channel: null, auto_download: true, auto_solve: "never", graph_node_colour: false });
   });
 
   it("runPrefsMigration — a setSettings rejection — failed, the flag is not set, local document untouched", async () => {

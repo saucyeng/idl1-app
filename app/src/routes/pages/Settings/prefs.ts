@@ -18,6 +18,9 @@ export interface EnginePrefs {
   agent_command: string;
 }
 
+/** When the physics solver runs by itself. */
+export type AutoSolve = "never" | "lap" | "import";
+
 /** The UI-only half — never leaves this machine, never reaches the engine. */
 export interface UiPrefs {
   /** Which Settings section the tab reopens on. */
@@ -59,6 +62,11 @@ export interface UiPrefs {
    *  that already stores the key keeps its value. The switch is in
    *  Settings › Data directory. */
   auto_download: boolean;
+  /** Run the physics solver by itself (2026-11-23, Isaac: all three, off by
+   *  default until the solver is faster): `"never"`, `"lap"` when a lap is
+   *  selected in the notebook and it is not solved yet, or `"import"` for
+   *  every lap of a downloaded ride. */
+  auto_solve: AutoSolve;
   /** Ruling R214 item 1's optional cue: colour-code the maths graph's node
    *  kinds with a 4 px left stripe. Default `false` — the kind is carried
    *  by each card's shape and glyph, and **nothing depends on this**; it
@@ -94,6 +102,7 @@ export const DEFAULT_PREFS: Prefs = {
     firmware_channel: "stable",
     app_channel: null,
     auto_download: false,
+    auto_solve: "never",
     graph_node_colour: false,
   },
 };
@@ -145,6 +154,7 @@ function parseUi(raw: unknown): UiPrefs {
       : DEFAULT_PREFS.ui.app_channel;
   const graphNodeColour = typeof record.graph_node_colour === "boolean" ? record.graph_node_colour : DEFAULT_PREFS.ui.graph_node_colour;
   const autoDownload = typeof record.auto_download === "boolean" ? record.auto_download : DEFAULT_PREFS.ui.auto_download;
+  const autoSolve = record.auto_solve === "lap" || record.auto_solve === "import" || record.auto_solve === "never" ? record.auto_solve : DEFAULT_PREFS.ui.auto_solve;
   return {
     ...record,
     last_section: lastSection,
@@ -156,6 +166,7 @@ function parseUi(raw: unknown): UiPrefs {
     firmware_channel: firmwareChannel,
     app_channel: appChannel,
     auto_download: autoDownload,
+    auto_solve: autoSolve,
     graph_node_colour: graphNodeColour,
   } as UiPrefs;
 }

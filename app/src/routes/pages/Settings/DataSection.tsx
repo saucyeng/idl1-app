@@ -14,6 +14,7 @@ import {
   pickLibraryFolder,
 } from "./moveLibrary";
 import type { PrefsStore } from "./prefsStore";
+import type { AutoSolve } from "./prefs";
 
 /** How long typing in the agent-command field pauses before the value is
  *  written to `store`, matching `ProfileSection`'s own field debounce so no
@@ -76,6 +77,7 @@ export default function DataSection({ store }: DataSectionProps) {
   const [agentCommand, setAgentCommand] = useState<string>("");
   const [agentWriteFailed, setAgentWriteFailed] = useState<boolean>(false);
   const [autoDownload, setAutoDownload] = useState<boolean>(false);
+  const [autoSolve, setAutoSolve] = useState<AutoSolve>("never");
   const agentTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
   useEffect(() => {
@@ -84,6 +86,7 @@ export default function DataSection({ store }: DataSectionProps) {
       if (!cancelled) {
         setAgentCommand(prefs.engine.agent_command);
         setAutoDownload(prefs.ui.auto_download);
+        setAutoSolve(prefs.ui.auto_solve);
       }
     });
     return () => {
@@ -91,6 +94,11 @@ export default function DataSection({ store }: DataSectionProps) {
       if (agentTimerRef.current !== undefined) clearTimeout(agentTimerRef.current);
     };
   }, [store]);
+
+  function handleAutoSolveChange(next: AutoSolve): void {
+    setAutoSolve(next);
+    void store.get().then((current) => store.set({ ui: { ...current.ui, auto_solve: next } }));
+  }
 
   function handleAutoDownloadChange(next: boolean): void {
     setAutoDownload(next);
@@ -207,6 +215,25 @@ export default function DataSection({ store }: DataSectionProps) {
         <p className="font-mono text-xs text-fg-faint">
           While the Logger screen is open and the logger isn&apos;t recording, new sessions download and import by themselves. Pressing
           record stops the download at once, and it picks up where it stopped next time.
+        </p>
+      </div>
+      <div className="flex flex-col gap-2 pb-2">
+        <label htmlFor="idl1-settings-auto-solve" className="font-mono text-xs uppercase tracking-[var(--tracking-label)] text-fg-dim">
+          Solve travel automatically
+        </label>
+        <select
+          id="idl1-settings-auto-solve"
+          value={autoSolve}
+          onChange={(e) => handleAutoSolveChange(e.target.value as AutoSolve)}
+          className="w-64 rounded-[var(--radius-structural)] border border-rule bg-control px-2 py-1 font-mono text-sm"
+        >
+          <option value="never">Never (Solve button)</option>
+          <option value="lap">When I select a lap</option>
+          <option value="import">Every lap after a download</option>
+        </select>
+        <p className="font-mono text-xs text-fg-faint">
+          Travel, steer and flex come from the physics solver, about 2 s of solving per second of riding. Never leaves it to the Solve
+          button in the notebook.
         </p>
       </div>
       <p className="font-mono text-sm text-fg">

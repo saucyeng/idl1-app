@@ -44,3 +44,8 @@ export function isSolveCancelled(error: unknown): boolean {
   const detail = (error as { detail?: unknown }).detail;
   return typeof detail === "object" && detail !== null && (detail as { cancelled?: unknown }).cancelled === true;
 }
+
+/** C3 §3.16 `physics_coverage`: the stretches of `sessionId` the solver has covered, `[startUs, endUs]` since its first sample. */
+export async function physicsCoverage(sessionId: string): Promise<[number, number][]> {
+  return invoke<[number, number][]>("physics_coverage", { sessionId });
+}

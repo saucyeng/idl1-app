@@ -153,6 +153,10 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 
 ### Fixed
 
+- **Solve travel automatically [docs] (2026-11-23).** Settings › Data › "Solve travel automatically":
+  Never (the default; the Solve button), When I select a lap, or Every lap after a download (each
+  lap with 5 s either side). A stretch already 90 % solved is skipped; solves run one at a time.
+  New C3 §3.16 command `physics_coverage`.
 - **Preview the overlay in the app [no-docs] (2026-11-23).** The Overlay panel has its own Play,
   Pause and a scrubber across the selected run, and a Large view, so a layout change shows at once
   without exporting. Traces take two channels (front and rear travel on one chart, two colours, a
