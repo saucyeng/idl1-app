@@ -1966,14 +1966,18 @@ gauge_opts    ::= "{" gauge_range                                 (* keys in thi
                       ("," "digits" ":" js_int)?
                       ("," "style" ":" ("\"speedo\"" | "\"tach\""))?
                       ("," "icon" ":" "\"heart\"")?
-                      ("," "zones" ":" "\"hr\"")? "}"            (* new 2026-11-23: heart-rate zones Z1–Z5 at 50/60/70/80/90 %
+                      ("," "zones" ":" "\"hr\"")?                (* new 2026-11-23: heart-rate zones Z1–Z5 at 50/60/70/80/90 %
                                                                       of the dial's top; the sweep takes the zone's colour *)
+                      ("," "smooth_s" ":" js_number)? "}"          (* new 2026-11-23: averaged over that many seconds back *)
 trace_opts    ::= "{" ("window_s" ":" js_number)?                  (* seconds shown, default 8; read by the host like tail_s *)
                       ("," gauge_range)?                           (* vertical range, as a gauge's *)
                       ("," "label" ":" js_string)?
                       ("," "digits" ":" js_int)? "}"
 spectro_opts  ::= "{" ("window_s" ":" js_number)?                  (* seconds shown, default 6 *)
                       ("," "fmax" ":" js_number)?                  (* top frequency shown, Hz; default Nyquist *)
+                      ("," "cursor" ":" ("\"centre\"" | "\"end\""))?   (* default centre: half the window ahead *)
+                      ("," "scale" ":" ("\"log\"" | "\"linear\""))?   (* frequency axis, default log *)
+                      ("," "fmin" ":" js_number)?                  (* bottom of a log axis, Hz, default 2 *)
                       ("," "label" ":" js_string)? "}"
 gauge_range   ::= "min" ":" js_number "," "max" ":" js_number     (* the channel's recorded unit *)
                 | "range" ":" "\"ride\""                          (* the ride's exact extent, C3 §3.7.1 *)
@@ -1981,7 +1985,9 @@ number_opts   ::= "{" ("label" ":" js_string)?
                       ("," "digits" ":" js_int)?
                       ("," "icon" ":" "\"heart\"")? "}"
 gg_opts       ::= "{" "limit" ":" js_number "," "rings" ":" js_number "," "tail_s" ":" js_number
-                      ("," "label" ":" js_string)? "}"              (* limit and rings in g; tail_s seconds, 0 = no tail *)
+                      ("," "label" ":" js_string)?
+                      ("," "vertical" ":" js_string)?              (* new 2026-11-23: a third name, drawn as a bar beside the circle *)
+                      ("," "vertical_limit" ":" js_number)? "}"    (* g at the bar's top, default 4 *)              (* limit and rings in g; tail_s seconds, 0 = no tail *)
                                                                    (* As for every object here, keys may appear in any order and
                                                                       the reader accepts that; the generator writes the order above,
                                                                       comma-separated, `{}` when empty. A gauge has exactly one of
