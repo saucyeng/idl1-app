@@ -101,7 +101,9 @@ export function tailOpacity(k: number, count: number): number {
 /** The value formatted with `digits` decimals, or an en dash when missing. */
 export function formatReadoutValue(value: number | null, digits: number): string {
   if (value === null || !Number.isFinite(value)) return "–";
-  return value.toFixed(Math.max(0, Math.min(6, Math.floor(digits))));
+  const text = value.toFixed(Math.max(0, Math.min(6, Math.floor(digits))));
+  // A small negative rounds to "-0"; show it as "0" (2026-11-23).
+  return /^-0(\.0*)?$/.test(text) ? text.slice(1) : text;
 }
 
 /** One coloured band on a dial: `[from, to)` in display units, zone `n` (1-based). */

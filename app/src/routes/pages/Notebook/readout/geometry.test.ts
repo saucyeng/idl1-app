@@ -149,3 +149,9 @@ describe("tailOpacity / formatReadoutValue", () => {
     expect(s).toBe("23.5");
   });
 });
+
+describe("formatReadoutValue — negative zero", () => {
+  it("formatReadoutValue — -0.2 at 0 digits, -0.04 at 1 — 0 and 0.0, never -0", () => {
+    expect([formatReadoutValue(-0.2, 0), formatReadoutValue(-0.04, 1), formatReadoutValue(-1.4, 0)]).toEqual(["0", "0.0", "-1"]);
+  });
+});
