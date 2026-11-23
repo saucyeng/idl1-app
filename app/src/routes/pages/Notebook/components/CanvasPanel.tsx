@@ -9,10 +9,10 @@ import { closeReadout, openReadout, readReadout } from "../../../../ipc/readout"
 import { videoUrl, type SessionVideo } from "../../../../ipc/video";
 import { aspectOf, CANVAS_SIZES, readCanvasLayout, writeCanvasLayout, type CanvasLayout, type CanvasSize } from "../model/canvasLayout";
 import { runOverlayExport } from "../model/exportRunner";
-import { exportPlan, presetLayout, type ExportResolution, type OverlayPreset } from "../model/overlayPlan";
+import { exportPlan, POST_ROLL_S, PRE_ROLL_S, presetLayout, type ExportResolution, type OverlayPreset } from "../model/overlayPlan";
 import { parseReadoutCall, type ReadoutCall } from "../readout/call";
 import type { ReadoutFrame } from "../readout/frame";
-import type { SpectroLookup } from "../readout/module";
+import { spectroAheadS, type SpectroLookup } from "../readout/module";
 import { composeOverlay, rasterise } from "../readout/overlayLayer";
 import { makeSpectroSource, type SpectroSource } from "../readout/spectroSource";
 import { scanReadouts } from "../readout/scan";
@@ -115,7 +115,7 @@ export function CanvasPanel(props: CanvasPanelProps) {
   const [spectra, setSpectra] = useState<ReadonlyMap<string, SpectroSource>>(new Map());
   const spectroKey = [...calls.values()]
     .filter((c) => c.kind === "spectrogram")
-    .map((c) => (c.kind === "spectrogram" ? `${c.name}:${c.opts.window_s ?? 6}` : ""))
+    .map((c) => (c.kind === "spectrogram" ? `${c.name}:${c.opts.window_s ?? 6}:${c.opts.cursor ?? "centre"}` : ""))
     .join("|");
   useEffect(() => {
     if (spectroKey === "" || props.windowUs === null) {
@@ -124,9 +124,11 @@ export function CanvasPanel(props: CanvasPanelProps) {
     }
     let live = true;
     const wanted = [...calls.values()].flatMap((c) => (c.kind === "spectrogram" ? [c] : []));
-    const leadUs = Math.max(...wanted.map((c) => (c.opts.window_s ?? 6) * 1e6));
+    // Cover the export's pre-roll and post-roll and each strip's reach either side of the cursor.
+    const leadUs = Math.max(...wanted.map((c) => (c.opts.window_s ?? 6) * 1e6)) + PRE_ROLL_S * 1e6;
+    const lagUs = Math.max(...wanted.map((c) => spectroAheadS(c.opts) * 1e6)) + POST_ROLL_S * 1e6;
     const t0 = Math.max(0, Math.floor(props.windowUs.startUs - leadUs));
-    const t1 = Math.ceil(props.windowUs.endUs);
+    const t1 = Math.ceil(props.windowUs.endUs + lagUs);
     const window = { session_id: props.sessionId, span: { kind: "range" as const, t0_us: t0, t1_us: t1 }, colour: "--chart-1" };
     const width = Math.min(2048, Math.max(64, Math.ceil(((t1 - t0) / 1e6) * 20)));
     const params: SpectrogramParams = { window_size: 256, hop_size: 16, window: "hann", detrend: "mean", scaling: "density" };
@@ -151,7 +153,7 @@ export function CanvasPanel(props: CanvasPanelProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps -- `calls` is summarised by `spectroKey`
   }, [spectroKey, props.windowUs?.startUs, props.windowUs?.endUs, props.sessionId]);
   const spectroAt = (tUs: number | null): SpectroLookup => (name, opts) =>
-    tUs === null ? null : (spectra.get(name)?.slice(tUs, opts.window_s ?? 6, opts.fmax ?? Number.POSITIVE_INFINITY) ?? null);
+    tUs === null ? null : (spectra.get(name)?.slice(tUs, opts.window_s ?? 6, opts.fmax ?? Number.POSITIVE_INFINITY, spectroAheadS(opts), opts.scale === "linear" ? null : { fminHz: opts.fmin ?? 2 }) ?? null);
 
   // The preview's size, measured.
   const frameRef = useRef<HTMLDivElement | null>(null);

@@ -17,6 +17,8 @@ export interface ReadoutScan {
 const STRING = String.raw`"((?:[^"\\]|\\.)*)"|'((?:[^'\\]|\\.)*)'`;
 const SINGLE_RE = new RegExp(String.raw`\bReadout\s*\.\s*(?:gauge|number|trace)\s*\(\s*(?:${STRING})`, "g");
 const WINDOW_RE = /\bwindow_s\s*:\s*(\d+(?:\.\d+)?|\.\d+)/g;
+const SMOOTH_RE = /\bsmooth_s\s*:\s*(\d+(?:\.\d+)?|\.\d+)/g;
+const VERTICAL_RE = new RegExp(String.raw`\bvertical\s*:\s*(?:${STRING})`, "g");
 /** A trace's span when its call gives no `window_s`, s (`frame.ts`'s default). */
 const DEFAULT_TRACE_WINDOW_S = 8;
 const GG_RE = new RegExp(String.raw`\bReadout\s*\.\s*gg\s*\(\s*(?:${STRING})\s*,\s*(?:${STRING})`, "g");
@@ -48,7 +50,10 @@ export function scanReadouts(codes: readonly string[]): ReadoutScan {
     }
     if (/\bReadout\s*\.\s*gg\b/.test(code)) {
       for (const m of code.matchAll(TAIL_RE)) tailS = Math.max(tailS, Number(m[1]));
+      for (const m of code.matchAll(VERTICAL_RE)) add(m[1] ?? m[2]);
     }
+    // A smoothed gauge averages its tail.
+    for (const m of code.matchAll(SMOOTH_RE)) tailS = Math.max(tailS, Number(m[1]));
     // A trace's line is its tail: `window_s` seconds back, 8 when not given.
     if (/\bReadout\s*\.\s*trace\b/.test(code)) {
       const windows = [...code.matchAll(WINDOW_RE)].map((m) => Number(m[1]));

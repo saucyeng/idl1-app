@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { EMPTY_READOUT_FRAME, gaugeRange, gaugeView, ggView, numberView, type ReadoutFrame } from "./frame";
+import { EMPTY_READOUT_FRAME, gaugeRange, gaugeView, ggView, numberView, type ReadoutFrame, smoothedValue } from "./frame";
 
 const FRAME: ReadoutFrame = {
   values: { speed: 50, hr: 150, ax: 0.4, ay: -0.2 },
@@ -79,6 +79,15 @@ describe("numberView / ggView", () => {
 
     const v = ggView(FRAME, "ax", "ay", opts);
 
-    expect(v).toEqual({ x: 0.4, y: -0.2, tailX: [0.3, 0.2], tailY: [-0.1, 0], limit: 1.5, rings: 0.5, label: undefined });
+    expect(v).toEqual({ x: 0.4, y: -0.2, tailX: [0.3, 0.2], tailY: [-0.1, 0], limit: 1.5, rings: 0.5, label: undefined, vertical: undefined, verticalLimit: 4 });
+  });
+});
+
+describe("smoothedValue", () => {
+  it("smoothedValue — 0.1 s at 0.05 s a sample — the cursor's value and two back averaged; none asked, the plain value", () => {
+    const frame = { values: { v: 6 }, tail: { v: [3, 0, 100] }, units: {}, extent: {}, display: { distance: "km" as const, temperature: "C" as const }, tail_step_s: 0.05 };
+
+    expect(smoothedValue(frame, "v", 0.1)).toBeCloseTo(3);
+    expect(smoothedValue(frame, "v", 0)).toBe(6);
   });
 });

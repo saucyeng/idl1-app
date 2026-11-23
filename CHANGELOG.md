@@ -153,6 +153,14 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 
 ### Fixed
 
+- **Overlay readouts, second round [docs] (2026-11-23).** Spectrograms put the cursor in the middle
+  so the next few seconds of terrain show ahead of it, on a log frequency axis from 2 Hz with 1-2-5
+  labels (`cursor`, `scale`, `fmin`); gauges smooth over `smooth_s` seconds, so speed from 3 Hz GPS
+  no longer steps; the g-g draws its tail as a fading line, labels every ring and can show vertical
+  g as a bar beside it (`vertical`, `vertical_limit`); dials and the g-g sit on round plates. The
+  Classic layout puts the gauges small at the top left, the g-g at the top right, spectrograms full
+  width along the bottom and traces above them. An export starts 5 s before the start gate and runs
+  3 s past the finish.
 - **An import that runs out of memory no longer closes the app [no-docs] (2026-11-23).** Imports
   run in a separate worker: when there is not enough memory the app says how much the log needs and
   how much is free, keeps the downloaded log, and you import it again after closing something. It

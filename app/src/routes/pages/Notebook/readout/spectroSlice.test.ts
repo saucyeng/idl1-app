@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { sliceRect, type RasterExtent } from "./spectroSlice";
+import { logFrequencyAt, logFrequencyTicks, logFrequencyY, sliceRect, type RasterExtent } from "./spectroSlice";
 
 /** 100 s of raster, 1000 px wide (10 px a second), 0–200 Hz over 100 px. */
 const R: RasterExtent = { t0Us: 0, t1Us: 100_000_000, width: 1000, height: 100, fLoHz: 0, fHiHz: 200 };
@@ -31,5 +31,34 @@ describe("sliceRect", () => {
   it("sliceRect — a cursor before the raster, or an fmax below its range — null", () => {
     expect(sliceRect(R, -1_000_000, 6, 100)).toBeNull();
     expect(sliceRect({ ...R, fLoHz: 50 }, 50_000_000, 6, 40)).toBeNull();
+  });
+});
+
+describe("sliceRect — cursor in the middle", () => {
+  it("sliceRect — 6 s with 3 s ahead at 50 s — columns 470–530, filling the strip", () => {
+    const s = sliceRect(R, 50_000_000, 6, 200, 3);
+
+    expect(s!.sx).toBeCloseTo(470);
+    expect(s!.sw).toBeCloseTo(60);
+    expect(s!.destX).toBeCloseTo(0);
+    expect(s!.destW).toBeCloseTo(1);
+  });
+
+  it("sliceRect — 1 s before the raster ends with 3 s ahead — the right third empty", () => {
+    const s = sliceRect(R, 99_000_000, 6, 200, 3);
+
+    expect(s!.destW).toBeCloseTo(4 / 6);
+  });
+});
+
+describe("log frequency axis", () => {
+  it("logFrequencyAt / logFrequencyY — 2 to 80 Hz — the ends and a round trip", () => {
+    expect(logFrequencyAt(0, 2, 80)).toBeCloseTo(80);
+    expect(logFrequencyAt(1, 2, 80)).toBeCloseTo(2);
+    expect(logFrequencyAt(logFrequencyY(10, 2, 80), 2, 80)).toBeCloseTo(10);
+  });
+
+  it("logFrequencyTicks — 2 to 80 Hz — 5, 10, 20, 50", () => {
+    expect(logFrequencyTicks(2, 80)).toEqual([5, 10, 20, 50]);
   });
 });

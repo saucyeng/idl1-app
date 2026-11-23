@@ -26,6 +26,11 @@ export interface ReadoutModule {
 /** The host's spectrogram slices: `null` where it has none for `name`. */
 export type SpectroLookup = (name: string, opts: SpectrogramOptions) => SpectroImage | null;
 
+/** Seconds of a spectrogram strip ahead of the cursor for `opts`. */
+export function spectroAheadS(opts: SpectrogramOptions): number {
+  return opts.cursor === "end" ? 0 : (opts.window_s ?? 6) / 2;
+}
+
 /** `Readout` for one frame. */
 export function readoutModule(frame: ReadoutFrame, spectro: SpectroLookup | null = null): ReadoutModule {
   return {

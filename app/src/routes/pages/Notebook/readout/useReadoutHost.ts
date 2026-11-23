@@ -64,10 +64,13 @@ export function useReadoutHost(inputs: ReadoutHostInputs): void {
       read: readReadout,
       // Nothing on the interaction path waits on IPC (CLAUDE.md §2): the
       // draw never awaits this; it rebinds `Readout` when an answer lands.
-      onValues: (v) => publish({ values: v.values, tail: v.tail ?? {}, ...metaRef.current, display: displayRef.current }),
+      onValues: (v) => publish({ values: v.values, tail: v.tail ?? {}, ...metaRef.current, display: displayRef.current, tail_step_s: 1 / fpsRef.current }),
     });
   }
   const driver = driverRef.current;
+
+  const fpsRef = useRef(fps);
+  fpsRef.current = fps;
 
   const cursorRef = useRef(cursorTUs);
   cursorRef.current = cursorTUs;

@@ -93,23 +93,39 @@ export function presetLayout(preset: OverlayPreset, videoCellId: string, readout
   const m = 0.02;
 
   if (preset === "classic") {
+    // 2026-11-23, Isaac: gauges small and side by side top left, the g-g top
+    // right, spectrograms full width along the bottom, traces above them.
     cells[videoCellId] = { x: 0, y: 0, w: 1, h: 1, z: 0 };
-    const h = 0.3;
-    const w = (h * KIND_ASPECT.gauge) / frameAspect;
-    // Bottom-left, bottom-right, top-left, then up the left side.
-    dials.forEach((r, i) => {
-      const x = i === 1 ? 1 - m - w : m;
-      const y = i === 0 || i === 1 ? 1 - m - h : i === 2 ? m : 1 - m - h - (i - 2) * (h + GAP);
-      cells[r.id] = { x, y, w, h, z: 1 };
+    const gauges = dials.filter((r) => r.kind === "gauge");
+    const ggs = dials.filter((r) => r.kind === "gg");
+    const gh = 0.2;
+    const gw = (gh * KIND_ASPECT.gauge) / frameAspect;
+    gauges.forEach((r, i) => {
+      cells[r.id] = { x: m + i * (gw + GAP), y: m, w: gw, h: gh, z: 1 };
     });
-    stackColumn(cells, numbers, 1 - m - 0.22, m, 0.22, Math.min(0.5, numbers.length * 0.13), frameAspect);
-    // Traces stack up from the bottom between the two bottom dials.
-    const tx = m + w + GAP;
-    const tw = 1 - 2 * (m + w + GAP);
-    traces.forEach((r, i) => {
-      const th = Math.min(0.16, (tw * frameAspect) / KIND_ASPECT.trace);
-      cells[r.id] = { x: tx, y: 1 - m - th - i * (th + GAP), w: tw, h: th, z: 1 };
+    const qh = 0.27;
+    const qw = (qh * 1.3) / frameAspect;
+    ggs.forEach((r, i) => {
+      cells[r.id] = { x: 1 - m - qw, y: m + i * (qh + GAP), w: qw, h: qh, z: 1 };
     });
+    stackColumn(cells, numbers, 1 - m - 0.2, m + ggs.length * (qh + GAP), 0.2, Math.min(0.4, numbers.length * 0.12), frameAspect);
+    // Along the bottom, upwards: spectrograms full width (the first the
+    // tallest), then traces side by side above them.
+    const spectros = traces.filter((r) => r.kind === "spectrogram");
+    const lines = traces.filter((r) => r.kind === "trace");
+    let bottom = 1 - m;
+    spectros.forEach((r, i) => {
+      const h = i === 0 ? 0.17 : 0.12;
+      cells[r.id] = { x: m, y: bottom - h, w: 1 - 2 * m, h, z: 1 };
+      bottom -= h + GAP;
+    });
+    if (lines.length > 0) {
+      const tw = (1 - 2 * m - GAP * (lines.length - 1)) / lines.length;
+      const th = Math.min(0.15, (tw * frameAspect) / KIND_ASPECT.trace);
+      lines.forEach((r, i) => {
+        cells[r.id] = { x: m + i * (tw + GAP), y: bottom - th, w: tw, h: th, z: 1 };
+      });
+    }
   } else if (preset === "side") {
     const vw = Math.min(1, clipAspect / frameAspect);
     const vx = (1 - vw) / 2;
@@ -146,6 +162,11 @@ export function presetLayout(preset: OverlayPreset, videoCellId: string, readout
 export function even(n: number): number {
   return Math.max(2, 2 * Math.round(n / 2));
 }
+
+/** Seconds of video an export shows before the window's start (the start gate) and after its end (2026-11-23, Isaac: at least 5 s before the gate). */
+export const PRE_ROLL_S = 5;
+/** See {@link PRE_ROLL_S}. */
+export const POST_ROLL_S = 3;
 
 /** The output frame's short side, px, or `"source"`: as sharp as the clip allows (2026-11-23, Isaac: ffmpeg's own simple options instead of draft/full). */
 export type ExportResolution = "source" | 1440 | 1080 | 720;
@@ -184,8 +205,8 @@ export function exportPlan(
 ): ExportPlan | null {
   const box = layout.cells[videoCellId];
   if (box === undefined || !(link.fps > 0) || !(link.height_px > 0) || !(link.width_px > 0)) return null;
-  const startS = Math.max(windowS.startS, link.offset_s);
-  const endS = Math.min(windowS.endS, link.offset_s + link.duration_s);
+  const startS = Math.max(windowS.startS - PRE_ROLL_S, link.offset_s);
+  const endS = Math.min(windowS.endS + POST_ROLL_S, link.offset_s + link.duration_s);
   if (!(endS > startS)) return null;
   const frames = Math.floor((endS - startS) * link.fps);
   if (frames < 1) return null;

@@ -47,15 +47,15 @@ describe("presetLayout", () => {
 });
 
 describe("exportPlan", () => {
-  it("exportPlan — lap inside the clip, source — the lap, at clip resolution", () => {
+  it("exportPlan — lap inside the clip, source — 5 s before the gate to 3 s after the finish, at clip resolution", () => {
     const layout = presetLayout("classic", "8e4a0001", READOUTS, 4 / 3);
 
     const plan = exportPlan(layout, "8e4a0001", LINK, LAP, "source");
 
     expect(plan).not.toBeNull();
-    expect(plan!.startS).toBeCloseTo(3693.332);
-    expect(plan!.clipFromS).toBeCloseTo(7.103);
-    expect(plan!.frames).toBe(Math.floor((3782.355 - 3693.332) * 23.976));
+    expect(plan!.startS).toBeCloseTo(3688.332);
+    expect(plan!.clipFromS).toBeCloseTo(2.103);
+    expect(plan!.frames).toBe(Math.floor((3785.355 - 3688.332) * 23.976));
     expect([plan!.width, plan!.height]).toEqual([2704, 2028]);
     expect(plan!.videoBox).toEqual({ x: 0, y: 0, w: 2704, h: 2028 });
   });

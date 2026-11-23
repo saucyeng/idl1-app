@@ -32,6 +32,7 @@ import {
   tracePoints,
   zoneAt,
 } from "./geometry";
+import { logFrequencyTicks, logFrequencyY } from "./spectroSlice";
 
 const SVG_NS = "http://www.w3.org/2000/svg";
 
@@ -74,7 +75,7 @@ function text(content: string, attrs: Record<string, string | number>): SVGEleme
  * parameters: the overlay canvas sets both to `none` so a readout fills
  * its box.
  */
-function root(w: number, h: number, label: string): SVGSVGElement {
+function root(w: number, h: number, label: string, plate: "rect" | "none" = "rect"): SVGSVGElement {
   const svg = el("svg", {
     viewBox: `0 0 ${w} ${h}`,
     width: "100%",
@@ -82,7 +83,7 @@ function root(w: number, h: number, label: string): SVGSVGElement {
     "aria-label": label,
     style: "display:block;overflow:visible;margin:0 auto;max-width:var(--readout-max-w, 320px);max-height:var(--readout-max-h, 240px)",
   }) as SVGSVGElement;
-  svg.appendChild(el("rect", { x: 0, y: 0, width: w, height: h, rx: 16, fill: PLATE }));
+  if (plate === "rect") svg.appendChild(el("rect", { x: 0, y: 0, width: w, height: h, rx: 16, fill: PLATE }));
   return svg;
 }
 
@@ -124,7 +125,9 @@ export interface GaugeView {
 /** A dial: track arc, filled sweep to the value, ticks, needle (speedo), and the number. */
 export function drawGauge(v: GaugeView): SVGSVGElement {
   const [W, H, cx, cy, r] = [200, 180, 100, 100, 80];
-  const svg = root(W, H, `${v.label ?? "gauge"}: ${formatReadoutValue(v.value, v.digits)} ${v.unit ?? ""}`);
+  const svg = root(W, H, `${v.label ?? "gauge"}: ${formatReadoutValue(v.value, v.digits)} ${v.unit ?? ""}`, "none");
+  // A round plate: only the dial is darkened, not the box's corners (2026-11-23).
+  svg.appendChild(el("circle", { cx, cy, r: r + 16, fill: PLATE }));
   const a0 = -GAUGE_SWEEP_DEG / 2;
   const a1 = GAUGE_SWEEP_DEG / 2;
   const width = v.style === "tach" ? 16 : 8;
@@ -202,6 +205,10 @@ export interface GgView {
   tailY: (number | null)[];
   /** g at the plot's edge. */
   limit: number;
+  /** Vertical g for the bar beside the circle, `null` missing; `undefined`: no bar. */
+  vertical?: number | null;
+  /** g at the bar's top. */
+  verticalLimit: number;
   /** Ring spacing, g. */
   rings: number;
   label?: string;
@@ -209,28 +216,57 @@ export interface GgView {
 
 /** A g-g plot: rings, cross-hairs, a fading tail and the dot at the cursor. */
 export function drawGg(v: GgView): SVGSVGElement {
-  const [W, H, cx, cy, r] = [200, 200, 100, 96, 84];
-  const svg = root(W, H, v.label ?? "g-g");
+  const withBar = v.vertical !== undefined;
+  const [W, H, cx, cy, r] = [withBar ? 260 : 200, 200, 100, 96, 84];
+  const svg = root(W, H, v.label ?? "g-g", "none");
+  // Round plate behind the plot, a rounded one behind the bar (2026-11-23).
+  svg.appendChild(el("circle", { cx, cy, r: r + 14, fill: PLATE }));
+  if (withBar) svg.appendChild(el("rect", { x: 200, y: cy - r - 22, width: 56, height: 2 * r + 46, rx: 14, fill: PLATE }));
   svg.appendChild(el("line", { x1: cx - r, y1: cy, x2: cx + r, y2: cy, stroke: TRACK, "stroke-width": 1 }));
   svg.appendChild(el("line", { x1: cx, y1: cy - r, x2: cx, y2: cy + r, stroke: TRACK, "stroke-width": 1 }));
   const rings = ggRings(v.limit, v.rings);
   for (const g of rings) {
     svg.appendChild(el("circle", { cx, cy, r: (g / v.limit) * r, fill: "none", stroke: TRACK, "stroke-width": g === rings[rings.length - 1] ? 2 : 1 }));
   }
-  if (rings.length > 0) {
-    const outer = rings[rings.length - 1];
-    svg.appendChild(text(`${outer} g`, { x: cx + r * 0.72, y: cy - r * 0.72, "font-size": 10, "stroke-width": 3 }));
-  }
+  // Every ring labelled, along the upper-right diagonal (2026-11-23: "1.0 and 0.5").
+  rings.forEach((g, i) => {
+    const rr = (g / v.limit) * r;
+    const last = i === rings.length - 1;
+    svg.appendChild(text(last ? `${g.toFixed(1)} g` : g.toFixed(1), { x: cx + rr * 0.72, y: cy - rr * 0.72 - 2, "font-size": 10, "stroke-width": 3 }));
+  });
   const count = Math.min(v.tailX.length, v.tailY.length);
-  // Oldest first, so newer points paint over older ones.
-  for (let k = count; k >= 1; k--) {
+  // The tail as a line fading with age, oldest first so newer segments paint
+  // over older ones (2026-11-23: a continuous tail instead of dots).
+  const segments: SVGElement[] = [];
+  let prev = ggPoint(v.x, v.y, v.limit, cx, cy, r);
+  for (let k = 1; k <= count; k++) {
     const p = ggPoint(v.tailX[k - 1], v.tailY[k - 1], v.limit, cx, cy, r);
-    if (p === null) continue;
-    svg.appendChild(el("circle", { cx: p.x, cy: p.y, r: 3, fill: ACCENT, "fill-opacity": tailOpacity(k, count) }));
+    if (p !== null && prev !== null) {
+      segments.push(el("line", { x1: prev.x, y1: prev.y, x2: p.x, y2: p.y, stroke: ACCENT, "stroke-width": 3, "stroke-linecap": "round", "stroke-opacity": tailOpacity(k, count) }));
+    }
+    prev = p;
   }
+  for (const s of segments.reverse()) svg.appendChild(s);
   const dot = ggPoint(v.x, v.y, v.limit, cx, cy, r);
   if (dot !== null) {
     svg.appendChild(el("circle", { cx: dot.x, cy: dot.y, r: 7, fill: ACCENT, stroke: OUTLINE, "stroke-width": 2 }));
+  }
+  if (withBar) {
+    // Vertical g as a bar: 0 at the bottom, `verticalLimit` at the top, a tick at 1 g (standing still).
+    const [bx, bw, top, bottom] = [214, 22, cy - r, cy + r];
+    const yOf = (g: number) => bottom - (Math.min(Math.max(g, 0), v.verticalLimit) / v.verticalLimit) * (bottom - top);
+    svg.appendChild(el("rect", { x: bx, y: top, width: bw, height: bottom - top, rx: 4, fill: "none", stroke: TRACK, "stroke-width": 2 }));
+    if (v.vertical !== null && v.vertical !== undefined && Number.isFinite(v.vertical)) {
+      const y = yOf(v.vertical);
+      svg.appendChild(el("rect", { x: bx + 3, y, width: bw - 6, height: bottom - y, rx: 2, fill: ACCENT }));
+    }
+    for (const g of [1, v.verticalLimit]) {
+      const y = yOf(g);
+      svg.appendChild(el("line", { x1: bx - 4, y1: y, x2: bx + bw + 4, y2: y, stroke: FG, "stroke-width": 1.5 }));
+      svg.appendChild(text(`${g}`, { x: bx + bw + 14, y: y + 4, "font-size": 10, "stroke-width": 3 }));
+    }
+    svg.appendChild(text(v.vertical === null || v.vertical === undefined ? "–" : v.vertical.toFixed(1), { x: bx + bw / 2, y: bottom + 16, "font-size": 13, "font-weight": 700 }));
+    svg.appendChild(text("vert", { x: bx + bw / 2, y: top - 6, "font-size": 10, "stroke-width": 3 }));
   }
   if (v.label !== undefined && v.label !== "") svg.appendChild(text(v.label, { x: cx, y: H - 2, "font-size": 12 }));
   return svg;
@@ -278,7 +314,7 @@ export function drawTrace(v: TraceView): SVGSVGElement {
 /** What {@link drawSpectrogram} draws. */
 export interface SpectrogramView {
   /** The slice to show and where it sits across the strip (0..1), or `null` when there is none here. */
-  image: { href: string; destX: number; destW: number; fmaxHz: number } | null;
+  image: { href: string; destX: number; destW: number; fmaxHz: number; cursorX: number; scale: "log" | "linear"; fminHz: number } | null;
   windowS: number;
   label?: string;
   /** Shown instead of the picture when `image` is `null` (the notebook, which has no raster). */
@@ -292,13 +328,29 @@ export function drawSpectrogram(v: SpectrogramView): SVGSVGElement {
   const plotW = W - 2 * px;
   const svg = root(W, H, v.label ?? "spectrogram");
   if (v.image !== null) {
-    svg.appendChild(el("image", { href: v.image.href, x: px + v.image.destX * plotW, y: top, width: v.image.destW * plotW, height: plotH, preserveAspectRatio: "none" }));
-    svg.appendChild(text(`${Math.round(v.image.fmaxHz)} Hz`, { x: px + 4, y: top + 12, "font-size": 10, "text-anchor": "start", "stroke-width": 3 }));
+    const img = v.image;
+    svg.appendChild(el("image", { href: img.href, x: px + img.destX * plotW, y: top, width: img.destW * plotW, height: plotH, preserveAspectRatio: "none" }));
+    // Frequency labels: the top, and 1-2-5 steps on a log axis (quarters on a linear one).
+    const ticks: { f: number; y: number }[] = [{ f: img.fmaxHz, y: 0 }];
+    if (img.scale === "log") {
+      for (const f of logFrequencyTicks(img.fminHz, img.fmaxHz)) ticks.push({ f, y: logFrequencyY(f, img.fminHz, img.fmaxHz) });
+      ticks.push({ f: img.fminHz, y: 1 });
+    } else {
+      for (const q of [0.25, 0.5, 0.75]) ticks.push({ f: img.fmaxHz * (1 - q), y: q });
+    }
+    for (const t of ticks) {
+      const y = top + t.y * plotH;
+      svg.appendChild(el("line", { x1: px, y1: y, x2: px + 6, y2: y, stroke: FG, "stroke-width": 1 }));
+      const label = t.y === 0 ? `${Math.round(t.f)} Hz` : `${Math.round(t.f * 10) / 10}`;
+      svg.appendChild(text(label, { x: px + 9, y: Math.min(top + plotH - 1, Math.max(top + 9, y + 3.5)), "font-size": 9, "text-anchor": "start", "stroke-width": 3 }));
+    }
   } else {
     svg.appendChild(text(v.note ?? "–", { x: W / 2, y: top + plotH / 2 + 4, "font-size": 12 }));
   }
-  svg.appendChild(el("line", { x1: px + plotW, y1: top, x2: px + plotW, y2: top + plotH, stroke: FG, "stroke-width": 1.5 }));
+  const cx = px + (v.image?.cursorX ?? 1) * plotW;
+  svg.appendChild(el("line", { x1: cx, y1: top - 4, x2: cx, y2: top + plotH, stroke: OUTLINE, "stroke-width": 4 }));
+  svg.appendChild(el("line", { x1: cx, y1: top - 4, x2: cx, y2: top + plotH, stroke: FG, "stroke-width": 2 }));
   if (v.label !== undefined && v.label !== "") svg.appendChild(text(v.label, { x: px + 2, y: 21, "font-size": 14, "text-anchor": "start" }));
-  svg.appendChild(text(`${Math.round(v.windowS)} s`, { x: px + 4, y: top + plotH - 4, "font-size": 10, "text-anchor": "start", "stroke-width": 3 }));
+  svg.appendChild(text(`${Math.round(v.windowS)} s`, { x: W - px - 4, y: top + plotH - 4, "font-size": 10, "text-anchor": "end", "stroke-width": 3 }));
   return svg;
 }

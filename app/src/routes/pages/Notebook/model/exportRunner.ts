@@ -89,6 +89,7 @@ export async function runOverlayExport(deps: ExportDeps, job: ExportJob, onProgr
         units: handle?.units ?? {},
         extent: handle?.extent ?? {},
         display: job.display,
+        tail_step_s: 1 / plan.fps,
       };
       await deps.push(id, await deps.render(frame, tUs));
       onProgress(i + 1, plan.frames);

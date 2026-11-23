@@ -23,6 +23,8 @@ export interface ReadoutFrame {
   extent: Record<string, [number, number] | null>;
   /** The person's display units. */
   display: DisplayUnits;
+  /** Seconds between tail samples (one video frame); smoothing reads it. Absent: 1/30 s. */
+  tail_step_s?: number;
 }
 
 /** A frame with nothing in it: every readout draws a dash. */
@@ -47,6 +49,8 @@ export interface GaugeOptions {
   icon?: "heart";
   /** `"hr"`: heart-rate zones Z1–Z5 as shares of the dial's top (2026-11-23). */
   zones?: "hr";
+  /** Average the value over this many seconds back, so a slow channel (GPS at 3 Hz) moves smoothly rather than in steps (2026-11-23). */
+  smooth_s?: number;
 }
 
 /** `Readout.trace`'s options (2026-11-23): a line scrolling past, newest at the right. */
@@ -77,6 +81,10 @@ export interface GgOptions {
   /** Tail length, s; the host turns it into a point count. */
   tail_s?: number;
   label?: string;
+  /** A third channel shown as a bar beside the circle: vertical g in the frame it is computed in (2026-11-23). */
+  vertical?: string;
+  /** g at the bar's top; default 4. */
+  vertical_limit?: number;
 }
 
 /** The range a gauge shows before conversion, recorded units: the ride's
@@ -92,7 +100,7 @@ export function gaugeView(frame: ReadoutFrame, name: string, opts: GaugeOptions)
   const c = displayConversion(frame.units[name] ?? null, frame.display);
   const [lo, hi] = gaugeRange(frame, name, opts);
   return {
-    value: applyConversion(frame.values[name] ?? null, c),
+    value: applyConversion(smoothedValue(frame, name, opts.smooth_s ?? 0), c),
     unit: c.unit,
     min: lo * c.scale + c.offset,
     max: hi * c.scale + c.offset,
@@ -116,9 +124,26 @@ export function numberView(frame: ReadoutFrame, name: string, opts: NumberOption
   };
 }
 
+/**
+ * `name`'s value averaged over the last `smoothS` seconds of its tail (the
+ * cursor's sample and the tail samples within that span), or the plain value
+ * with no smoothing or no tail. Missing samples are skipped. Pure.
+ */
+export function smoothedValue(frame: ReadoutFrame, name: string, smoothS: number): number | null {
+  const now = frame.values[name] ?? null;
+  if (!(smoothS > 0)) return now;
+  const step = frame.tail_step_s ?? 1 / 30;
+  const k = Math.max(0, Math.round(smoothS / step));
+  const samples = [now, ...(frame.tail[name] ?? []).slice(0, k)].filter((v): v is number => v !== null && Number.isFinite(v));
+  if (samples.length === 0) return null;
+  return samples.reduce((a, b) => a + b, 0) / samples.length;
+}
+
 /** What a g-g on `x`, `y` draws this frame. g never converts. */
 export function ggView(frame: ReadoutFrame, x: string, y: string, opts: GgOptions): GgView {
   return {
+    vertical: opts.vertical === undefined ? undefined : (frame.values[opts.vertical] ?? null),
+    verticalLimit: opts.vertical_limit ?? 4,
     x: frame.values[x] ?? null,
     y: frame.values[y] ?? null,
     tailX: frame.tail[x] ?? [],
@@ -146,10 +171,16 @@ export function traceView(frame: ReadoutFrame, name: string, opts: TraceOptions)
   };
 }
 
-/** `Readout.spectrogram`'s options (2026-11-23): the last `window_s` seconds of a session channel's spectrogram, scrolling. */
+/** `Readout.spectrogram`'s options (2026-11-23): `window_s` seconds of a session channel's spectrogram around the cursor, scrolling. */
 export interface SpectrogramOptions {
   /** Seconds shown; default 6. */
   window_s?: number;
+  /** Where the cursor sits: `"centre"` (default) shows the next half-window coming; `"end"` only what has passed. */
+  cursor?: "centre" | "end";
+  /** Frequency axis: `"log"` (default) or `"linear"`. */
+  scale?: "log" | "linear";
+  /** Bottom of a log axis, Hz; default 2. */
+  fmin?: number;
   /** Top frequency shown, Hz; default the channel's Nyquist. */
   fmax?: number;
   label?: string;
