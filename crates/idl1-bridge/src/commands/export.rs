@@ -31,6 +31,21 @@ pub struct FfmpegInfo {
     pub usable: bool,
     /// For a person: what is wrong and what to do, or `None` when usable.
     pub problem: Option<String>,
+    /// Which of [`ENCODERS`] this ffmpeg has, in that order.
+    pub encoders: Vec<String>,
+}
+
+/// The video encoders export offers, when the person's ffmpeg has them:
+/// software H.264 and H.265, and NVIDIA's hardware H.264 and H.265.
+pub const ENCODERS: [&str; 4] = ["libx264", "libx265", "h264_nvenc", "hevc_nvenc"];
+
+/// Which of [`ENCODERS`] appear in `ffmpeg -encoders` output.
+pub fn encoders_in(listing: &str) -> Vec<String> {
+    ENCODERS
+        .iter()
+        .filter(|e| listing.lines().any(|l| l.split_whitespace().nth(1) == Some(**e)))
+        .map(|e| e.to_string())
+        .collect()
 }
 
 /// `major.minor` from the first line of `ffmpeg -version`
@@ -50,20 +65,21 @@ pub fn parse_ffmpeg_version(output: &str) -> Option<(u32, u32)> {
 pub fn judge_ffmpeg(program: &str, version_output: Option<&str>) -> FfmpegInfo {
     let install = "Install a current ffmpeg (for example `winget install Gyan.FFmpeg`) and restart idl1, or set its path in Settings.";
     match version_output {
-        None => FfmpegInfo { path: program.to_string(), version: None, usable: false, problem: Some(format!("ffmpeg was not found ({program}). {install}")) },
+        None => FfmpegInfo { path: program.to_string(), version: None, usable: false, problem: Some(format!("ffmpeg was not found ({program}). {install}")), encoders: Vec::new() },
         Some(out) => match parse_ffmpeg_version(out) {
             Some((major, minor)) if (major, minor) >= MIN_FFMPEG => {
-                FfmpegInfo { path: program.to_string(), version: Some(format!("{major}.{minor}")), usable: true, problem: None }
+                FfmpegInfo { path: program.to_string(), version: Some(format!("{major}.{minor}")), usable: true, problem: None, encoders: Vec::new() }
             }
             Some((major, minor)) => FfmpegInfo {
                 path: program.to_string(),
                 version: Some(format!("{major}.{minor}")),
                 usable: false,
                 problem: Some(format!("ffmpeg {major}.{minor} is too old; export needs {}.{} or newer. {install}", MIN_FFMPEG.0, MIN_FFMPEG.1)),
+                encoders: Vec::new(),
             },
             // A git build carries no release number; it is newer than any release it lacks.
-            None if out.contains("ffmpeg version N-") => FfmpegInfo { path: program.to_string(), version: None, usable: true, problem: None },
-            None => FfmpegInfo { path: program.to_string(), version: None, usable: false, problem: Some(format!("{program} did not report an ffmpeg version. {install}")) },
+            None if out.contains("ffmpeg version N-") => FfmpegInfo { path: program.to_string(), version: None, usable: true, problem: None, encoders: Vec::new() },
+            None => FfmpegInfo { path: program.to_string(), version: None, usable: false, problem: Some(format!("{program} did not report an ffmpeg version. {install}")), encoders: Vec::new() },
         },
     }
 }
@@ -81,7 +97,12 @@ fn no_window(cmd: &mut Command) -> &mut Command {
 pub fn ffmpeg_info_for(program: &str) -> FfmpegInfo {
     let out = no_window(Command::new(program).arg("-hide_banner").arg("-version")).output().ok();
     let text = out.as_ref().filter(|o| o.status.success()).map(|o| String::from_utf8_lossy(&o.stdout).into_owned());
-    judge_ffmpeg(program, text.as_deref())
+    let mut info = judge_ffmpeg(program, text.as_deref());
+    if info.usable {
+        let listing = no_window(Command::new(program).arg("-hide_banner").arg("-encoders")).output().ok();
+        info.encoders = listing.map(|o| encoders_in(&String::from_utf8_lossy(&o.stdout))).unwrap_or_default();
+    }
+    info
 }
 
 /// C3 §3.17 `ffmpeg_info(path)`: the ffmpeg export would use (`path`, or
@@ -116,8 +137,12 @@ pub struct ExportRequest {
     pub fps: f64,
     /// The video's box on the frame, px; the picture fits inside it, centred.
     pub video_box: PxBox,
-    /// `"draft"` (fast, small, heavy compression) or `"full"`.
-    pub quality: String,
+    /// One of [`ENCODERS`] the ffmpeg has.
+    pub encoder: String,
+    /// Constant quality: ffmpeg's `-crf` (software) or `-cq` (NVIDIA), lower is better and bigger; 14 to 40.
+    pub quality: u32,
+    /// Encoder speed: `"fast"`, `"medium"` or `"slow"` (slower is smaller at the same quality).
+    pub speed: String,
     /// The `.mp4` to write; its folder is created.
     pub out_path: String,
     /// ffmpeg to run; `None` for `ffmpeg` on PATH.
@@ -140,13 +165,23 @@ pub fn ffmpeg_args(req: &ExportRequest, clip: &Path) -> Vec<String> {
         w = req.width,
         h = req.height,
     );
-    let (crf, preset) = if req.quality == "full" { ("18", "medium") } else { ("30", "veryfast") };
+    let hardware = req.encoder.ends_with("_nvenc");
+    let preset = match (hardware, req.speed.as_str()) {
+        (false, "fast") => "veryfast",
+        (false, "slow") => "slow",
+        (false, _) => "medium",
+        (true, "fast") => "p2",
+        (true, "slow") => "p6",
+        (true, _) => "p4",
+    };
+    let quality = req.quality.to_string();
+    let quality_flag = if hardware { "-cq" } else { "-crf" };
     [
         "-hide_banner", "-loglevel", "error", "-y",
         "-ss", &format!("{:.3}", req.clip_from_s), "-t", &format!("{:.3}", req.duration_s), "-i", &clip.to_string_lossy(),
         "-f", "image2pipe", "-framerate", &fps, "-c:v", "png", "-i", "-",
         "-filter_complex", &filter, "-map", "[out]", "-map", "0:a?",
-        "-c:v", "libx264", "-crf", crf, "-preset", preset, "-c:a", "aac", "-b:a", "128k",
+        "-c:v", &req.encoder, quality_flag, &quality, "-preset", preset, "-c:a", "aac", "-b:a", "128k",
         "-movflags", "+faststart", &req.out_path,
     ]
     .iter()
@@ -182,8 +217,14 @@ fn validate(req: &ExportRequest) -> Result<(), IpcError> {
     if b.w == 0 || b.h == 0 || b.w % 2 != 0 || b.h % 2 != 0 || b.x + b.w > req.width || b.y + b.h > req.height {
         return bad("the video box must be even-sized and inside the frame");
     }
-    if req.quality != "draft" && req.quality != "full" {
-        return bad("quality is \"draft\" or \"full\"");
+    if !ENCODERS.contains(&req.encoder.as_str()) {
+        return bad("the encoder is libx264, libx265, h264_nvenc or hevc_nvenc");
+    }
+    if !(14..=40).contains(&req.quality) {
+        return bad("quality is 14 to 40 (lower is better and bigger)");
+    }
+    if !["fast", "medium", "slow"].contains(&req.speed.as_str()) {
+        return bad("speed is \"fast\", \"medium\" or \"slow\"");
     }
     Ok(())
 }
@@ -320,7 +361,9 @@ mod tests {
             height: 1080,
             fps: 23.976,
             video_box: PxBox { x: 240, y: 0, w: 1440, h: 1080 },
-            quality: "draft".to_string(),
+            encoder: "libx264".to_string(),
+            quality: 30,
+            speed: "fast".to_string(),
             out_path: "C:/out/x.mp4".to_string(),
             ffmpeg: None,
         }
@@ -355,7 +398,7 @@ mod tests {
     }
 
     #[test]
-    fn ffmpeg_args_draft_trims_fits_overlays_and_compresses_hard() {
+    fn ffmpeg_args_x264_fast_q30_trims_fits_overlays_and_compresses_hard() {
         // Arrange
         let r = req();
 
@@ -374,15 +417,38 @@ mod tests {
     }
 
     #[test]
-    fn ffmpeg_args_full_quality_crf_18() {
+    fn ffmpeg_args_nvenc_slow_q18_cq_and_a_p_preset() {
         // Arrange
-        let r = ExportRequest { quality: "full".to_string(), ..req() };
+        let r = ExportRequest { encoder: "h264_nvenc".to_string(), quality: 18, speed: "slow".to_string(), ..req() };
 
         // Act
         let joined = ffmpeg_args(&r, Path::new("c")).join(" ");
 
         // Assert
-        assert!(joined.contains("-crf 18 -preset medium"));
+        assert!(joined.contains("-c:v h264_nvenc -cq 18 -preset p6"));
+    }
+
+    #[test]
+    fn encoders_in_an_encoder_listing_only_the_offered_ones_present() {
+        // Arrange
+        let listing = " V....D libx264              libx264 H.264\n V....D libx264rgb           libx264 RGB\n V....D h264_nvenc           NVIDIA NVENC H.264 encoder\n";
+
+        // Act
+        let found = encoders_in(listing);
+
+        // Assert
+        assert_eq!(found, vec!["libx264".to_string(), "h264_nvenc".to_string()]);
+    }
+
+    #[test]
+    fn validate_unknown_encoder_or_quality_out_of_range_invalid_argument() {
+        // Arrange
+        let encoder = ExportRequest { encoder: "mpeg4".to_string(), ..req() };
+        let quality = ExportRequest { quality: 51, ..req() };
+
+        // Act + Assert
+        assert_eq!(validate(&encoder).unwrap_err().kind, IpcErrorKind::InvalidArgument);
+        assert_eq!(validate(&quality).unwrap_err().kind, IpcErrorKind::InvalidArgument);
     }
 
     #[test]

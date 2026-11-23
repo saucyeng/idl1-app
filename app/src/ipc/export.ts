@@ -8,6 +8,8 @@ export interface FfmpegInfo {
   usable: boolean;
   /** What is wrong and what to do; `null` when usable. */
   problem: string | null;
+  /** Which of the offered encoders this ffmpeg has (`libx264`, `libx265`, `h264_nvenc`, `hevc_nvenc`). */
+  encoders: string[];
 }
 
 /** A box on the output frame, px. */
@@ -31,7 +33,12 @@ export interface ExportRequest {
   /** Frames per second, the clip's own. */
   fps: number;
   video_box: PxBox;
-  quality: "draft" | "full";
+  /** One of `FfmpegInfo.encoders`. */
+  encoder: string;
+  /** Constant quality (ffmpeg's CRF, or CQ on NVIDIA), 14–40: lower is better and bigger. */
+  quality: number;
+  /** Encoder speed; slower is smaller at the same quality. */
+  speed: "fast" | "medium" | "slow";
   out_path: string;
   /** ffmpeg to run; `null` for `ffmpeg` on PATH. */
   ffmpeg: string | null;

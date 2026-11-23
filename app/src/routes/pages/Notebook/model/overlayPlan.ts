@@ -147,8 +147,8 @@ export function even(n: number): number {
   return Math.max(2, 2 * Math.round(n / 2));
 }
 
-/** Export quality: draft for iterating (half size, fast, heavy compression), full for the final. */
-export type ExportQuality = "draft" | "full";
+/** The output frame's short side, px, or `"source"`: as sharp as the clip allows (2026-11-23, Isaac: ffmpeg's own simple options instead of draft/full). */
+export type ExportResolution = "source" | 1440 | 1080 | 720;
 
 /** Everything an export needs, worked out before it starts. */
 export interface ExportPlan {
@@ -171,8 +171,8 @@ export interface ExportPlan {
 /**
  * The plan for exporting `layout` over session span `windowS` from `link`:
  * the part of the window the clip covers, at the clip's frame rate. The
- * full frame is as tall as the clip (as wide, for a frame wider than the
- * clip's shape is tall), draft half that and at most 960 px tall. `null`
+ * `"source"` frame shows the clip at its own resolution (at most 2160 px on
+ * the short side); a number sets the frame's short side. `null`
  * when the clip does not cover the window or the layout has no video box.
  */
 export function exportPlan(
@@ -180,7 +180,7 @@ export function exportPlan(
   videoCellId: string,
   link: Pick<VideoLink, "offset_s" | "duration_s" | "fps" | "width_px" | "height_px">,
   windowS: { startS: number; endS: number },
-  quality: ExportQuality
+  resolution: ExportResolution
 ): ExportPlan | null {
   const box = layout.cells[videoCellId];
   if (box === undefined || !(link.fps > 0) || !(link.height_px > 0) || !(link.width_px > 0)) return null;
@@ -195,8 +195,8 @@ export function exportPlan(
   const clipAspect = link.width_px / link.height_px;
   const boxAspect = (box.w * aspect) / box.h;
   const fullH = boxAspect > clipAspect ? link.height_px / box.h : link.width_px / clipAspect / box.h;
-  let height = Math.min(fullH, 2160);
-  if (quality === "draft") height = Math.min(height / 2, 960);
+  let height = Math.min(fullH, aspect >= 1 ? 2160 : 2160 / aspect);
+  if (resolution !== "source") height = aspect >= 1 ? resolution : resolution / aspect;
   const width = even(height * aspect);
   height = even(height);
   const pos = (n: number) => 2 * Math.round(n / 2);

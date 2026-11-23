@@ -3629,14 +3629,18 @@ Video step 3. The webview draws each frame's readout layer (the canvas's
 readout cells at their boxes) to a transparent PNG and streams it; the
 person's own ffmpeg (never bundled, Isaac 2026-11-23; at least 6.0)
 composites it over the linked clip: the clip trimmed, fitted into its box
-on a black frame, the PNGs laid on top, H.264 with the clip's audio.
-Quality `"draft"` is CRF 30 `veryfast` (the app also halves the frame, at
-most 960 px tall), `"full"` CRF 18 `medium`.
+on a black frame, the PNGs laid on top, with the clip's audio. The options
+are ffmpeg's own (Isaac, 2026-11-23: no draft/full): the encoder (whichever
+of `libx264`, `libx265`, `h264_nvenc`, `hevc_nvenc` the ffmpeg has),
+constant quality 14–40 (`-crf`, or `-cq` on NVIDIA) and speed
+`fast`/`medium`/`slow` (x264/x265 presets `veryfast`/`medium`/`slow`,
+NVIDIA `p2`/`p4`/`p6`); the app picks the frame size (source, or a short
+side of 1440, 1080 or 720).
 
 | Command | Args | Returns | Notes |
 |---|---|---|---|
-| `ffmpeg_info` | `path: string \| null` | `FfmpegInfo { path, version, usable, problem }` | `null` runs `ffmpeg` on PATH. `version` `major.minor`; a git build (`N-…`) is usable with no version. |
-| `start_overlay_export` | `request: { video_sha256, clip_from_s, duration_s, width, height, fps, video_box: {x,y,w,h}, quality, out_path, ffmpeg }` | `u32` job id | Sizes even; the box inside the frame. `not_found` when the clip is not linked or ffmpeg is missing or too old (`detail.ffmpeg`, `detail.version`). |
+| `ffmpeg_info` | `path: string \| null` | `FfmpegInfo { path, version, usable, problem, encoders }` | `null` runs `ffmpeg` on PATH. `version` `major.minor`; a git build (`N-…`) is usable with no version. |
+| `start_overlay_export` | `request: { video_sha256, clip_from_s, duration_s, width, height, fps, video_box: {x,y,w,h}, encoder, quality, speed, out_path, ffmpeg }` | `u32` job id | Sizes even; the box inside the frame. `not_found` when the clip is not linked or ffmpeg is missing or too old (`detail.ffmpeg`, `detail.version`). |
 | `push_overlay_frame` | raw body: one PNG; header `x-export: <id>` | — | Raw bytes, never JSON. `io` with ffmpeg's last stderr line when it stopped taking frames. |
 | `finish_overlay_export` | `id` | `ExportDone { path, bytes, seconds }` | Closes the pipe and waits for the file. |
 | `cancel_overlay_export` | `id` | `bool` | Kills ffmpeg and deletes the partial file. |

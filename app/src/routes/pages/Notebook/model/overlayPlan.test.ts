@@ -47,10 +47,10 @@ describe("presetLayout", () => {
 });
 
 describe("exportPlan", () => {
-  it("exportPlan — lap inside the clip, full — the lap, at clip resolution", () => {
+  it("exportPlan — lap inside the clip, source — the lap, at clip resolution", () => {
     const layout = presetLayout("classic", "8e4a0001", READOUTS, 4 / 3);
 
-    const plan = exportPlan(layout, "8e4a0001", LINK, LAP, "full");
+    const plan = exportPlan(layout, "8e4a0001", LINK, LAP, "source");
 
     expect(plan).not.toBeNull();
     expect(plan!.startS).toBeCloseTo(3693.332);
@@ -60,18 +60,19 @@ describe("exportPlan", () => {
     expect(plan!.videoBox).toEqual({ x: 0, y: 0, w: 2704, h: 2028 });
   });
 
-  it("exportPlan — draft — at most 960 tall, even sizes", () => {
-    const layout = presetLayout("classic", "8e4a0001", READOUTS, 4 / 3);
+  it("exportPlan — 1080 on a 4:3 frame and on a reel — the short side is 1080", () => {
+    const classic = exportPlan(presetLayout("classic", "8e4a0001", READOUTS, 4 / 3), "8e4a0001", LINK, LAP, 1080)!;
+    const reel = exportPlan(presetLayout("reel", "8e4a0001", READOUTS, 4 / 3), "8e4a0001", LINK, LAP, 1080)!;
 
-    const plan = exportPlan(layout, "8e4a0001", LINK, LAP, "draft")!;
-
-    expect([plan.width, plan.height]).toEqual([1280, 960]);
+    expect([classic.width, classic.height]).toEqual([1440, 1080]);
+    expect(reel.width).toBe(1080);
+    expect(reel.height).toBe(1920);
   });
 
   it("exportPlan — a reel — tall frame, the clip's box at its own width", () => {
     const layout = presetLayout("reel", "8e4a0001", READOUTS, 4 / 3);
 
-    const plan = exportPlan(layout, "8e4a0001", LINK, LAP, "full")!;
+    const plan = exportPlan(layout, "8e4a0001", LINK, LAP, "source")!;
 
     expect(plan.videoBox.w).toBe(plan.width);
     expect(plan.width % 2 + plan.height % 2).toBe(0);
@@ -81,7 +82,7 @@ describe("exportPlan", () => {
   it("exportPlan — a window the clip does not cover — null", () => {
     const layout = presetLayout("classic", "8e4a0001", READOUTS, 4 / 3);
 
-    expect(exportPlan(layout, "8e4a0001", LINK, { startS: 100, endS: 200 }, "full")).toBeNull();
+    expect(exportPlan(layout, "8e4a0001", LINK, { startS: 100, endS: 200 }, "source")).toBeNull();
   });
 });
 

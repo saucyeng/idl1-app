@@ -5,7 +5,7 @@ import { runOverlayExport, type ExportDeps, type ExportJob } from "./exportRunne
 const PLAN = { startS: 10, clipFromS: 2, durationS: 3 / 24, frames: 3, fps: 24, width: 640, height: 480, videoBox: { x: 0, y: 0, w: 640, h: 480 } };
 
 function job(over: Partial<ExportJob> = {}): ExportJob {
-  return { plan: PLAN, videoSha256: "ab", quality: "draft", outPath: "C:/o.mp4", ffmpeg: null, names: ["GPS_SpeedKmh"], tailS: 0, display: { distance: "km", temperature: "C" }, ...over };
+  return { plan: PLAN, videoSha256: "ab", encoder: "libx264", quality: 30, speed: "fast", outPath: "C:/o.mp4", ffmpeg: null, names: ["GPS_SpeedKmh"], tailS: 0, display: { distance: "km", temperature: "C" }, ...over };
 }
 
 function deps(): ExportDeps & { pushed: number[]; reads: number[] } {
@@ -42,7 +42,7 @@ describe("runOverlayExport", () => {
     expect(d.pushed).toEqual([20, 20, 20]);
     expect(progress).toEqual([1, 2, 3]);
     expect(d.closeReadout).toHaveBeenCalledWith(5);
-    expect(d.start).toHaveBeenCalledWith(expect.objectContaining({ clip_from_s: 2, width: 640, quality: "draft" }));
+    expect(d.start).toHaveBeenCalledWith(expect.objectContaining({ clip_from_s: 2, width: 640, encoder: "libx264", quality: 30, speed: "fast" }));
   });
 
   it("runOverlayExport — cancelled after the first frame — ffmpeg cancelled, not finished", async () => {

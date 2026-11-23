@@ -29,7 +29,9 @@ export interface ExportJob {
   plan: ExportPlan;
   /** The request's fixed parts; the plan fills in the rest. */
   videoSha256: string;
+  encoder: ExportRequest["encoder"];
   quality: ExportRequest["quality"];
+  speed: ExportRequest["speed"];
   outPath: string;
   ffmpeg: string | null;
   /** The readout names to open. */
@@ -53,7 +55,9 @@ export function exportRequest(job: ExportJob): ExportRequest {
     height: p.height,
     fps: p.fps,
     video_box: p.videoBox,
+    encoder: job.encoder,
     quality: job.quality,
+    speed: job.speed,
     out_path: job.outPath,
     ffmpeg: job.ffmpeg,
   };

@@ -9,7 +9,7 @@ import { closeReadout, openReadout, readReadout } from "../../../../ipc/readout"
 import { videoUrl, type SessionVideo } from "../../../../ipc/video";
 import { aspectOf, CANVAS_SIZES, readCanvasLayout, writeCanvasLayout, type CanvasLayout, type CanvasSize } from "../model/canvasLayout";
 import { runOverlayExport } from "../model/exportRunner";
-import { exportPlan, presetLayout, type ExportQuality, type OverlayPreset } from "../model/overlayPlan";
+import { exportPlan, presetLayout, type ExportResolution, type OverlayPreset } from "../model/overlayPlan";
 import { parseReadoutCall, type ReadoutCall } from "../readout/call";
 import type { ReadoutFrame } from "../readout/frame";
 import type { SpectroLookup } from "../readout/module";
@@ -62,11 +62,16 @@ export function makeReadoutFrameStore(): ReadoutFrameStore & { set(frame: Readou
   };
 }
 
+const SELECT = "rounded-[var(--radius-structural)] border border-rule bg-control px-1 py-0.5 font-mono text-label-2";
+
+/** The encoders' names as a person knows them. */
+const ENCODER_NAMES: Record<string, string> = { libx264: "H.264", libx265: "H.265", h264_nvenc: "H.264 (NVIDIA)", hevc_nvenc: "H.265 (NVIDIA)" };
+
 const BUTTON = "shrink-0 rounded-[var(--radius-structural)] border border-rule px-2 py-1 font-mono text-label-2 text-fg-dim hover:text-fg disabled:opacity-50";
 
 type ExportState =
   | { kind: "idle" }
-  | { kind: "running"; quality: ExportQuality; done: number; total: number }
+  | { kind: "running"; done: number; total: number }
   | { kind: "done"; text: string }
   | { kind: "failed"; text: string };
 
@@ -193,19 +198,41 @@ export function CanvasPanel(props: CanvasPanelProps) {
 
   const [exportState, setExportState] = useState<ExportState>({ kind: "idle" });
   const cancelRef = useRef(false);
-  const exportVideo = async (quality: ExportQuality) => {
+  // ffmpeg's own simple choices; the last ones used stay for next time (this viewer only).
+  const [opts, setOpts] = useState<{ resolution: ExportResolution; encoder: string; quality: number; speed: "fast" | "medium" | "slow" }>(() => {
+    try {
+      const saved = JSON.parse(window.localStorage.getItem("idl1.overlayExport") ?? "null") as unknown;
+      if (saved !== null && typeof saved === "object") return { resolution: 1080, encoder: "libx264", quality: 20, speed: "medium", ...(saved as object) };
+    } catch {
+      // storage refused: defaults
+    }
+    return { resolution: 1080, encoder: "libx264", quality: 20, speed: "medium" };
+  });
+  const setOpt = (patch: Partial<typeof opts>) => {
+    const next = { ...opts, ...patch };
+    setOpts(next);
+    try {
+      window.localStorage.setItem("idl1.overlayExport", JSON.stringify(next));
+    } catch {
+      // storage refused: kept for this session only
+    }
+  };
+  const encoders = ffmpeg?.encoders ?? [];
+  const encoder = encoders.includes(opts.encoder) ? opts.encoder : (encoders[0] ?? "libx264");
+
+  const exportVideo = async () => {
     if (link === null || props.windowUs === null) return;
-    const plan = exportPlan(layout, videoCellId, link, { startS: props.windowUs.startUs / 1e6, endS: props.windowUs.endUs / 1e6 }, quality);
+    const plan = exportPlan(layout, videoCellId, link, { startS: props.windowUs.startUs / 1e6, endS: props.windowUs.endUs / 1e6 }, opts.resolution);
     if (plan === null) {
       setExportState({ kind: "failed", text: "The clip does not cover the selected window." });
       return;
     }
     cancelRef.current = false;
-    setExportState({ kind: "running", quality, done: 0, total: plan.frames });
+    setExportState({ kind: "running", done: 0, total: plan.frames });
     const stamp = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
     const safe = props.workbookName.replace(/[^A-Za-z0-9 _-]+/g, "").trim().replace(/\s+/g, "-") || "overlay";
     try {
-      const outPath = await join(await videoDir(), "idl1", `${safe}-${quality}-${stamp}.mp4`);
+      const outPath = await join(await videoDir(), "idl1", `${safe}-${plan.width}x${plan.height}-${stamp}.mp4`);
       const scan = scanReadouts(jsCells.map((c) => c.code));
       const outcome = await runOverlayExport(
         {
@@ -218,8 +245,8 @@ export function CanvasPanel(props: CanvasPanelProps) {
           cancel: cancelOverlayExport,
           render: (f, tUs) => rasterise(composeOverlay(layout, calls, f, plan.width, plan.height, spectroAt(tUs)), plan.width, plan.height),
         },
-        { plan, videoSha256: link.blob_sha256, quality, outPath, ffmpeg: null, names: scan.names, tailS: scan.tailS, display },
-        (done, total) => setExportState({ kind: "running", quality, done, total }),
+        { plan, videoSha256: link.blob_sha256, encoder, quality: opts.quality, speed: opts.speed, outPath, ffmpeg: null, names: scan.names, tailS: scan.tailS, display },
+        (done, total) => setExportState({ kind: "running", done, total }),
         () => cancelRef.current
       );
       setExportState(
@@ -237,7 +264,7 @@ export function CanvasPanel(props: CanvasPanelProps) {
   const running = exportState.kind === "running";
   const status =
     exportState.kind === "running"
-      ? `Exporting ${exportState.quality}: frame ${exportState.done} of ${exportState.total}`
+      ? `Exporting: frame ${exportState.done} of ${exportState.total}`
       : exportState.kind === "done" || exportState.kind === "failed"
         ? exportState.text
         : ffmpeg !== null && !ffmpeg.usable
@@ -272,11 +299,38 @@ export function CanvasPanel(props: CanvasPanelProps) {
           </button>
         ) : (
           <>
-            <button type="button" className={BUTTON} disabled={ffmpeg?.usable !== true || link === null} onClick={() => void exportVideo("draft")}>
-              Export draft
-            </button>
-            <button type="button" className={BUTTON} disabled={ffmpeg?.usable !== true || link === null} onClick={() => void exportVideo("full")}>
-              Export full
+            <select aria-label="Resolution" className={SELECT} value={String(opts.resolution)} onChange={(e) => setOpt({ resolution: e.target.value === "source" ? "source" : (Number(e.target.value) as ExportResolution) })}>
+              <option value="source">Source</option>
+              <option value="1440">1440</option>
+              <option value="1080">1080</option>
+              <option value="720">720</option>
+            </select>
+            <select aria-label="Encoder" className={SELECT} value={encoder} onChange={(e) => setOpt({ encoder: e.target.value })}>
+              {(encoders.length > 0 ? encoders : ["libx264"]).map((e) => (
+                <option key={e} value={e}>
+                  {ENCODER_NAMES[e] ?? e}
+                </option>
+              ))}
+            </select>
+            <label className="flex items-center gap-1 font-mono text-label-2 text-fg-dim">
+              Quality
+              <input
+                aria-label="Quality (CRF, lower is better)"
+                type="number"
+                min={14}
+                max={40}
+                value={opts.quality}
+                onChange={(e) => setOpt({ quality: Math.min(40, Math.max(14, Math.round(Number(e.target.value) || 20))) })}
+                className="w-12 rounded-[var(--radius-structural)] border border-rule bg-control px-1 py-0.5 font-mono text-label-2"
+              />
+            </label>
+            <select aria-label="Speed" className={SELECT} value={opts.speed} onChange={(e) => setOpt({ speed: e.target.value as "fast" | "medium" | "slow" })}>
+              <option value="fast">Fast</option>
+              <option value="medium">Medium</option>
+              <option value="slow">Slow</option>
+            </select>
+            <button type="button" className={BUTTON} disabled={ffmpeg?.usable !== true || link === null} onClick={() => void exportVideo()}>
+              Export
             </button>
           </>
         )}

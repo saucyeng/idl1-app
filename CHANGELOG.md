@@ -9,11 +9,11 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 - **Video overlay: the canvas and export [docs] (2026-11-23).** A workbook with a video cell and
   readouts shows an Overlay panel: the frame (4:3, 16:9, 9:16, 1:1 or 4:5) with the video and
   every readout placed on it, following the cursor and playback. Classic, Side panel and Reel 9:16
-  lay it out to start with; the layout is saved in the workbook's `canvas` key. Export draft and
-  Export full render the selected window to an MP4 in Videos\idl1 with your own ffmpeg (6.0 or
-  newer; the app says when it is missing or too old): the readouts are drawn by the app frame by
-  frame and laid over the original clip. Draft is half size and heavily compressed, for checking a
-  layout quickly.
+  lay it out to start with; the layout is saved in the workbook's `canvas` key. Export renders the
+  selected window to an MP4 in Videos\idl1 with your own ffmpeg (6.0 or newer; the app says when it
+  is missing or too old), with ffmpeg's own choices: resolution (source, 1440, 1080, 720), encoder
+  (H.264, H.265, and NVIDIA's where your ffmpeg has them), quality (CRF) and speed. The readouts are
+  drawn by the app frame by frame and laid over the original clip.
 - **Readouts that read over footage, heart-rate zones and scrolling traces [docs] (2026-11-23).**
   On the overlay, readouts sit on dark translucent plates in white with a cyan accent (the first
   amber was the colour of dirt and leaves). `Readout.gauge(..., { zones: "hr" })` colours a heart
