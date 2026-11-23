@@ -1014,15 +1014,21 @@ Analysis gaps from `173461a2` (Python was needed for each; `agent-gaps.md`):
         Classic / Side panel / Reel presets and the `canvas` key; readout plates, cyan accent,
         `zones: "hr"`, `Readout.trace`; export through the person's ffmpeg (C3 §3.17). Isaac
         picked Classic for the Sauce Factory run. Still to do:
-    - [ ] A scrolling spectrogram strip on the overlay (Isaac, 2026-11-23).
+    - [x] Scrolling spectrograms (cursor in the middle, log axis), smoothed gauges, g-g line tail
+          with a vertical-g bar, front+rear travel on one chart, round plates, 5 s pre-roll, and an
+          in-app preview (Play, Pause, scrubber, Large) — 2026-11-23, rendered for Sauce Factory 2.
+    - [ ] The preview's scrubber covers the selected lap only; the export's 5 s pre-roll and 3 s
+          post-roll are not playable in the app (playback is bounded by the primary window).
+    - [ ] Vertical g in the ground frame (needs the bike's lean; bike frame only today).
+    - [ ] Export file names use UTC time; use local.
     - [ ] Opening an overlay workbook evaluates every definition over the whole ride
           (`open_readout` is over `span: session`, for whole-ride gauge ranges): minutes on a
           167-minute ride and stuck behind memory admission when commit is short. Evaluate around
           the window; get ride extents without the full series.
     - [ ] Side panel with a 4:3 clip leaves an eighth of the width each side: crop the clip to
           its box (spec §7a "adjustable crop later").
-    - [ ] The Properties form's readout row (`plotForm/readout.ts`) does not know `trace` or
-          `zones` yet.
+    - [ ] The Properties form's readout row (`plotForm/readout.ts`) does not know `trace`,
+          `spectrogram`, `zones`, `smooth_s` or `vertical` yet.
     - [ ] Charts on the canvas (only readouts are drawn on it and in export).
   - [ ] Physics solver follow-ups (2026-11-23, C3 §3.16): a setting "Solve automatically: Never /
         When I select a lap / After import" (Isaac: all three, Never by default until the solver is
