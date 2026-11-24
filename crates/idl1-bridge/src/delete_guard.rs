@@ -136,6 +136,14 @@ mod tests {
         // `copy_into_blobs`: its own `tmp/video-<uuid>.part` on a failed or
         // cancelled copy, or when the blob turns out to exist already.
         ("rust/library/src/video.rs", "copy_into_blobs"),
+        // Camera IMU (2026-11-23): `write_camera_channels` removes the same
+        // video's older `derived/<hash>.parquet` files of kind `camera` (an
+        // older offset or parser) after writing the current ones;
+        // `remove_camera_channels` removes one video's camera files on
+        // unlink. Derived files only, never a blob or `data.parquet`; they
+        // are rebuilt from the linked video whenever the ride opens.
+        ("rust/library/src/camera.rs", "write_camera_channels"),
+        ("rust/library/src/camera.rs", "remove_camera_channels"),
         // `export_session_fit_via` (C3 §3.2, 2026-11-05): its own
         // `<chosen>.fit.part` beside a user-chosen export path, outside
         // `<data>`, when the rename onto the chosen name fails. Never the
