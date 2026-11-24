@@ -39,6 +39,18 @@ pub struct WorkbookHandle {
     pub path: String,
     /// u32
     pub cell_count: u32,
+    /// The ride (and lap) the workbook opens on (C2 §1 `opens_on`), only
+    /// when this library has it; `null` otherwise (2026-11-24).
+    pub opens_on: Option<OpensOnDto>,
+}
+
+/// [`WorkbookHandle::opens_on`]: a ride, and a lap of it or the whole ride.
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+pub struct OpensOnDto {
+    /// The session id.
+    pub session_id: String,
+    /// 1-based lap number; `None` is the whole ride.
+    pub lap_number: Option<u32>,
 }
 
 /// The light wire marker for a `HostChannel` (C3 §3.4, ledger R22/R45): the
@@ -368,7 +380,23 @@ fn open_workbook_via(data_dir: &Path, id_or_path: &str) -> Result<WorkbookHandle
     let markdown = std::fs::read_to_string(&path)
         .map_err(|e| IpcError::new(IpcErrorKind::Io, format!("reading {}: {e}", path.display())))?;
     let (doc, _structural) = parse_workbook(&markdown).map_err(fatal_parse_error)?;
-    Ok(WorkbookHandle { id: doc.id, name: doc.name, path: path.display().to_string(), cell_count: doc.cells.len() as u32 })
+    let opens_on = opens_on_here(data_dir, &doc.front_matter_unknown);
+    Ok(WorkbookHandle { id: doc.id, name: doc.name, path: path.display().to_string(), cell_count: doc.cells.len() as u32, opens_on })
+}
+
+/// The workbook's `opens_on` (C2 §1) when this library has that ride, and
+/// that lap if it names one; `None` otherwise, so the viewer keeps its own
+/// selection rather than selecting a ride it cannot show.
+fn opens_on_here(data_dir: &Path, unknown: &std::collections::BTreeMap<String, serde_yaml_ng::Value>) -> Option<OpensOnDto> {
+    let o = idl_rs::workbook::v3::opens_on(unknown)?;
+    let read = read_session_json_once(data_dir, &o.session_id);
+    let doc = read.doc?;
+    if let Some(lap) = o.lap {
+        if !doc.laps.iter().any(|l| l.lap_number == lap) {
+            return None;
+        }
+    }
+    Some(OpensOnDto { session_id: o.session_id, lap_number: o.lap })
 }
 
 /// C3 §3.4 `WorkbookSource` — `read_workbook`'s return. Added post-sign
@@ -1155,7 +1183,7 @@ fn create_workbook_via(data_dir: &Path, name: &str) -> Result<WorkbookHandle, Ip
     // Ruling R87 — see `save_workbook_via`'s own call for the full rationale.
     index_workbook_after_write(data_dir, &target, &id, name);
 
-    Ok(WorkbookHandle { id, name: name.to_string(), path: target.display().to_string(), cell_count: 0 })
+    Ok(WorkbookHandle { id, name: name.to_string(), path: target.display().to_string(), cell_count: 0, opens_on: None })
 }
 
 /// Cell ids affected by an edit between two parses (decided here — L3 ships
@@ -1505,6 +1533,45 @@ mod tests {
         assert_eq!(handle.id, WB_ID);
         assert_eq!(handle.name, "Fork tuning");
         assert_eq!(handle.cell_count, 2);
+
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn open_workbook_opens_on_a_ride_and_lap_this_library_has_handle_carries_them() {
+        // Arrange
+        let root = temp_root();
+        let sid = "d1f49dac92fda7485b97b242faae127f";
+        write_session_json(&root, sid, &four_lap_doc(sid), None).unwrap();
+        let md = |tail: &str| format!("---\nid: {WB_ID}\nname: T\nversion: 3\nopens_on:\n  session: {sid}\n{tail}---\n");
+
+        // Act
+        write_workbook(&root, "t.idl1wb", &md("  lap: 3\n"));
+        let lap3 = open_workbook_via(&root, WB_ID).unwrap().opens_on;
+        write_workbook(&root, "t.idl1wb", &md("  lap: 9\n"));
+        let lap9 = open_workbook_via(&root, WB_ID).unwrap().opens_on;
+        write_workbook(&root, "t.idl1wb", &md(""));
+        let whole = open_workbook_via(&root, WB_ID).unwrap().opens_on;
+
+        // Assert
+        assert_eq!(lap3, Some(OpensOnDto { session_id: sid.to_string(), lap_number: Some(3) }));
+        assert_eq!(lap9, None);
+        assert_eq!(whole, Some(OpensOnDto { session_id: sid.to_string(), lap_number: None }));
+
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn open_workbook_opens_on_a_ride_not_in_this_library_is_none() {
+        // Arrange
+        let root = temp_root();
+        write_workbook(&root, "t.idl1wb", &format!("---\nid: {WB_ID}\nname: T\nversion: 3\nopens_on:\n  session: d1f49dac92fda7485b97b242faae127f\n---\n"));
+
+        // Act
+        let handle = open_workbook_via(&root, WB_ID).unwrap();
+
+        // Assert
+        assert_eq!(handle.opens_on, None);
 
         let _ = std::fs::remove_dir_all(&root);
     }

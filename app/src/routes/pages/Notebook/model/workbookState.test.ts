@@ -260,7 +260,7 @@ describe("workbookReducer", () => {
   });
 
   it("workbookReducer — an opened handle — is stored", () => {
-    const handle = { id: "wb-1", name: "Notebook", path: "/p", cell_count: 1 };
+    const handle = { id: "wb-1", name: "Notebook", path: "/p", cell_count: 1, opens_on: null };
 
     const next = workbookReducer(initialWorkbookState, { type: "handleOpened", handle });
 

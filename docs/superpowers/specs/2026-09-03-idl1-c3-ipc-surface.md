@@ -1157,6 +1157,9 @@ interface WorkbookHandle {
   name: string;
   path: string;
   cell_count: number;   // u32
+  // C2 §1 `opens_on` (2026-11-24): only when this library has that ride
+  // (and that lap); null otherwise. lap_number null = the whole ride.
+  opens_on: { session_id: string; lap_number: number | null } | null;
 }
 ```
 Errors: `not_found`, `io`, `internal`, `workbook_missing_front_matter_id`,

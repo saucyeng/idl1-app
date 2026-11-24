@@ -27,6 +27,15 @@ export interface WorkbookHandle {
   path: string;
   /** u32 */
   cell_count: number;
+  /** The ride (and lap) the workbook opens on (C2 §1 `opens_on`), only when
+   *  this library has it; `null` otherwise. */
+  opens_on: OpensOn | null;
+}
+
+/** {@link WorkbookHandle.opens_on}. `lap_number` `null` is the whole ride. */
+export interface OpensOn {
+  session_id: string;
+  lap_number: number | null;
 }
 
 /** The light wire marker for a `HostChannel` (C3 §3.4, ledger R22/R45): the

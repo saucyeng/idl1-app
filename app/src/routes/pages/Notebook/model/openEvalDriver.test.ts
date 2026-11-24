@@ -6,7 +6,7 @@ import { runEval, runOpenAndEval, type OpenEvalDeps, type OpenEvalWindowAction }
 
 function baseDeps(overrides: Partial<OpenEvalDeps> = {}): OpenEvalDeps {
   return {
-    openWorkbook: async (idOrPath) => ({ id: idOrPath, name: "n", path: "/p", cell_count: 0 }),
+    openWorkbook: async (idOrPath) => ({ id: idOrPath, name: "n", path: "/p", cell_count: 0, opens_on: null }),
     readWorkbook: async () => ({ markdown: "# hi", hash: "h1", path: "/p", pending_migrations: [] }),
     evalWorkbookV2: async () => [
       { ok: [{ cell_id: "c1", kind: "math", value: null, defs: [], errors: [], prose_before_html: null, prose_after_html: null, prose_spans: [] }] },
@@ -33,7 +33,7 @@ describe("runOpenAndEval", () => {
     const deps = baseDeps({
       openWorkbook: async (idOrPath) => {
         seen.push(idOrPath);
-        return { id: idOrPath, name: "n", path: "/p", cell_count: 0 };
+        return { id: idOrPath, name: "n", path: "/p", cell_count: 0, opens_on: null };
       },
     });
 

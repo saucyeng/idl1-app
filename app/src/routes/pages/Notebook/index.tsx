@@ -2002,6 +2002,25 @@ export default function NotebookPage() {
   // Derived from `entry` -- `null` for the empty state, so the open/eval
   // effect below starts nothing until a workbook exists to open.
   const selectedWorkbookId = entry !== null && entry.kind !== "empty" ? entry.workbookId : null;
+  /** C2 §1 `opens_on` (2026-11-24): opening a workbook that names its ride
+   *  selects that ride and lap, once per open; a selection made afterwards
+   *  in Data or on the timeline replaces it as usual. `pending` is set when
+   *  a workbook is chosen; `staleId` is the handle on screen at that moment,
+   *  so the previous workbook's handle never applies its own ride. */
+  const opensOnRef = useRef<{ pending: boolean; staleId: string | null }>({ pending: false, staleId: null });
+  useEffect(() => {
+    opensOnRef.current = { pending: selectedWorkbookId !== null, staleId: state.handle?.id ?? null };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedWorkbookId]);
+  useEffect(() => {
+    const handle = state.handle;
+    if (handle === null || !opensOnRef.current.pending || handle.id === opensOnRef.current.staleId) return;
+    opensOnRef.current = { pending: false, staleId: null };
+    const on = handle.opens_on;
+    if (on === null) return;
+    const span = on.lap_number === null ? { kind: "session" as const } : { kind: "lap" as const, lapNumber: on.lap_number };
+    appDispatch({ type: "SET_WINDOWS", windows: [{ sessionId: on.session_id, span, colour: "--chart-1" }] });
+  }, [state.handle, appDispatch]);
 
   // Open -> read -> eval, once a workbook is chosen and again whenever the
   // selected windows or the selected workbook change (data-only

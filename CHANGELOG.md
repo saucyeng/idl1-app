@@ -6,6 +6,11 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 
 ### Added
 
+- **A workbook can open on its ride [docs] (2026-11-24).** A new optional front-matter key,
+  `opens_on: { session, lap }`, names the ride (and lap) a workbook was written for. Opening the
+  workbook selects it, and picking something else in Data still replaces it. It's ignored when this
+  library doesn't have that ride or lap. The Waterllama, Sauce Factory and helmet-cam workbooks use
+  it. C2 §1 and C3 §3.4 (`WorkbookHandle.opens_on`).
 - **Video overlay: the canvas and export [docs] (2026-11-23).** A workbook with a video cell and
   readouts shows an Overlay panel: the frame (4:3, 16:9, 9:16, 1:1 or 4:5) with the video and
   every readout placed on it, following the cursor and playback. Classic, Side panel and Reel 9:16
