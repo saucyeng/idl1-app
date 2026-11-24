@@ -10,7 +10,7 @@ import type { IpcError } from "./workbook";
 /** How a video's `offset_s` was set (C1 §6). Only `"manual"` is never
  *  overwritten automatically; `reestimateVideoOffset` is the one way to
  *  replace it. */
-export type VideoSyncMethod = "gpmf" | "creation_time" | "manual";
+export type VideoSyncMethod = "gpmf" | "creation_time" | "manual" | "imu";
 
 /** One C1 §6 `session.json` `videos` entry — one linked MP4 file (each GoPro
  *  chapter is its own entry). */

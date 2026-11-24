@@ -1027,6 +1027,12 @@ Analysis gaps from `173461a2` (Python was needed for each; `agent-gaps.md`):
           runtime timed out at boot ("failed to start"; Retry did not recover). R201: find what
           the main thread waits on during a solve; the manual Solve button over a long range hits it too.
     - [ ] The Solve bar shows "Solving…" with no window count during an automatic solve.
+    - [x] Camera IMU (2026-11-23): sync by the camera's accelerometer (`imu`), and `Cam_*` channels
+          from GPMF ACCL/GYRO/GRAV. Spec `2026-11-23-idl1-camera-imu-DRAFT.md`.
+    - [ ] Camera IMU next: head orientation (CORI) and head-relative-to-bike angles once the solver
+          gives lean; a helmet notebook template (the Python sketch is `helmet.py`'s four panels);
+          a CLI `session video` verb (link, re-estimate, list) — there is none today.
+    - [ ] `workbook data` takes no time window or definition filter: one 10 s question returned 2 GB.
     - [x] Export file names use local time (2026-11-23).
     - [ ] Opening an overlay workbook evaluates every definition over the whole ride
           (`open_readout` is over `span: session`, for whole-ride gauge ranges): minutes on a

@@ -153,6 +153,12 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 
 ### Fixed
 
+- **The camera's own motion [docs] (2026-11-23).** A linked GoPro clip now syncs by its
+  accelerometer against the logger's pods (sync method `imu`), so a camera without GPS lands within
+  a frame or two instead of the ~1 s a creation time gives. Its accelerometer, gyro and gravity
+  direction become ride channels, `Cam_AccelX/Y/Z` (g), `Cam_GyroX/Y/Z` (deg/s) and
+  `Cam_GravX/Y/Z`, over the clip's span, for workbooks, charts and overlays. Clips already linked
+  get them the next time their ride opens. Camera IMU spec `2026-11-23-idl1-camera-imu-DRAFT.md`.
 - **Overlay spectrograms line up with the video [no-docs] (2026-11-23).** Each column now sits
   at its FFT segment's centre (it was spread from the fetch's start, which put a hit about seven
   frames early), segments are 128 samples (0.28 s) with a 17 ms step, and neighbouring frequency

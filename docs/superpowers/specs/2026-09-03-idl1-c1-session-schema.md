@@ -627,7 +627,7 @@ provenance:
 
 | Key | Type | Notes |
 |---|---|---|
-| `derived_kind` | string | Name of the estimator, e.g. `iekf_suspension_attitude` |
+| `derived_kind` | string | Name of the estimator, e.g. `iekf_suspension_attitude`; `physics` (the physics solver); `camera` (a linked video's own `ACCL`/`GYRO`/`GRAV` on the ride's clock, content-addressed by the video's sha256 and offset, 2026-11-23, camera IMU spec §3.2) |
 | `inputs` | JSON array string, `[{"channel_id": "...", "column_hash": "<64-hex>"}, ...]`, in the same canonical order used to compute the file hash (below) | Lets a consumer verify/re-derive without re-hashing every input |
 | `config_json` | string — the exact canonical-JSON bytes (below) that went into the hash | |
 | `engine_version` | SemVer string | Included in the hash (below) |
@@ -807,7 +807,7 @@ under one key due to last-ulp CPU differences, and either is valid).
       "duration_s": 0.0,                 //   f64, s
       "offset_s": 0.0,                   //   f64, s: session_time_s = video_time_s + offset_s,
                                           //   session_time_s on the *_time_secs clock below (t = 0 anchored)
-      "sync_method": "gpmf",             //   "gpmf" | "creation_time" | "manual"
+      "sync_method": "gpmf",             //   "gpmf" | "creation_time" | "manual" | "imu" (camera IMU spec §2)
       "unlinked": false,                 //   bool, omitted when false: a tombstone (C4 §6), never removed
       "updated_at_ms": 0                 //   i64, UTC ms: when this entry last changed; the merge tiebreak
     }
