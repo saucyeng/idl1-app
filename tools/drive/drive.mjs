@@ -39,6 +39,9 @@ const HELP = `idl1 drive — launch and drive the installed idl1 desktop app (de
   drag <target> <from> <to> [--y <f>] [--steps <n>]  drag with the mouse across the target, between two fractions of its width
   serve [<dist dir>]                           serve a local frontend build (default app/dist) in place of the
                                                  bundled one, until this process is stopped
+  update [--wait <sha>] [--minutes <n>] [--force]  install the latest nightly (checksum-checked, silent),
+                                                 closing a running idl1 first; --wait waits until the
+                                                 nightly is that commit's build and stops if its CI failed
 
 A <target> that starts with css= text= role= xpath= # . [ or contains >> is a Playwright
 selector. Anything else is visible text: an exact button/tab/link/menuitem name first,
@@ -61,7 +64,7 @@ function parseArgs(argv) {
     if (a.startsWith("--")) {
       const key = a.slice(2);
       const next = argv[i + 1];
-      if (next !== undefined && !next.startsWith("--") && ["exe", "port", "ms", "y", "steps"].includes(key)) {
+      if (next !== undefined && !next.startsWith("--") && ["exe", "port", "ms", "y", "steps", "wait", "minutes"].includes(key)) {
         flags[key] = next;
         i++;
       } else {
@@ -474,6 +477,107 @@ async function cmdServe(dir) {
   }
 }
 
+// ---- installing the nightly ------------------------------------------------
+
+/** The GitHub repo whose `nightly` release is installed. */
+const RELEASE_REPO = "saucyeng/idl1-app";
+/** How often `update --wait` polls GitHub, in ms. */
+const UPDATE_POLL_MS = 30_000;
+
+function gh(args) {
+  return execFileSync("gh", args, { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
+}
+
+/** The nightly release's build number and commit, from its title
+ *  ("idl1 nightly (build 191, 6d1799f)"). */
+function nightlyRelease() {
+  const title = JSON.parse(gh(["release", "view", "nightly", "-R", RELEASE_REPO, "--json", "name"])).name ?? "";
+  const m = title.match(/build (\d+), ([0-9a-f]{7,40})/);
+  if (!m) throw new DriveError(`can't read the build from the nightly's title: ${JSON.stringify(title)}`);
+  return { build: Number(m[1]), sha: m[2], title };
+}
+
+/** The installed build number, from the uninstall entry's version
+ *  ("0.1.0-beta.3.nightly.191"), or null. */
+function installedBuild() {
+  const out = regQuery(["HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall", "/s", "/f", "idl1", "/d"]);
+  for (const key of out.split(/\r?\n/).filter((l) => l.startsWith("HKEY_"))) {
+    const m = regQuery([key, "/v", "DisplayVersion"]).match(/nightly\.(\d+)/);
+    if (m) return Number(m[1]);
+  }
+  return null;
+}
+
+/** Workflow runs on `sha` that ended badly, by name. */
+function failedRuns(sha) {
+  const runs = JSON.parse(gh(["run", "list", "-R", RELEASE_REPO, "--limit", "20", "--json", "name,headSha,conclusion"]));
+  return runs.filter((r) => r.headSha.startsWith(sha) && ["failure", "cancelled", "timed_out"].includes(r.conclusion)).map((r) => r.name);
+}
+
+/**
+ * Installs the latest nightly over this machine's idl1. With `--wait <sha>`, first waits
+ * (up to `--minutes`, default 60) until the nightly is the build of that commit, and stops
+ * if CI or Release failed on it. The installer is checked against its published
+ * `.sha256`; a running idl1 is closed the way its close button would (then forced after
+ * 5 s) before the silent install. Already on that build: nothing to do.
+ */
+async function cmdUpdate(flags) {
+  if (process.platform !== "win32") throw new DriveError("update installs the Windows nightly; this is not Windows.");
+  const want = typeof flags.wait === "string" ? flags.wait.toLowerCase() : null;
+  const deadline = Date.now() + Number(flags.minutes ?? 60) * 60_000;
+  let rel = nightlyRelease();
+  while (want !== null && !(rel.sha.startsWith(want.slice(0, 7)) || want.startsWith(rel.sha))) {
+    const failed = failedRuns(want.slice(0, 7));
+    if (failed.length > 0) throw new DriveError(`${failed.join(" and ")} failed on ${want.slice(0, 7)}; nothing to install.`);
+    if (Date.now() > deadline) throw new DriveError(`the nightly is still ${rel.title} after ${flags.minutes ?? 60} min.`);
+    await sleep(UPDATE_POLL_MS);
+    rel = nightlyRelease();
+  }
+  const before = installedBuild();
+  if (before === rel.build && !flags.force) return console.log(`already on build ${rel.build} (${rel.sha})`);
+
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "idl1-nightly-"));
+  try {
+    gh(["release", "download", "nightly", "-R", RELEASE_REPO, "-p", "*windows-x64-setup.exe*", "-D", dir, "--clobber"]);
+    const exe = fs.readdirSync(dir).find((f) => f.endsWith("-setup.exe"));
+    if (!exe) throw new DriveError("the nightly has no Windows installer.");
+    const expected = fs.readFileSync(path.join(dir, `${exe}.sha256`), "utf8").trim().split(/\s+/)[0].toLowerCase();
+    const { createHash } = await import("node:crypto");
+    const actual = createHash("sha256").update(fs.readFileSync(path.join(dir, exe))).digest("hex");
+    if (actual !== expected) throw new DriveError(`installer checksum mismatch (${actual} vs published ${expected}); not installing.`);
+
+    const installed = (() => {
+      try {
+        return findExe(null);
+      } catch {
+        return null;
+      }
+    })();
+    const pids = installed ? runningPids(installed) : [];
+    for (const pid of pids) {
+      try {
+        execFileSync("taskkill", ["/PID", String(pid)], { stdio: "ignore" });
+      } catch {}
+    }
+    for (let i = 0; i < 20 && pids.some(pidAlive); i++) await sleep(250);
+    for (const pid of pids.filter(pidAlive)) {
+      try {
+        execFileSync("taskkill", ["/PID", String(pid), "/T", "/F"], { stdio: "ignore" });
+      } catch {}
+    }
+    if (pids.length > 0) fs.rmSync(STATE_FILE, { force: true });
+
+    execFileSync(path.join(dir, exe), ["/S"], { stdio: "ignore" });
+    const after = installedBuild();
+    if (after !== rel.build) throw new DriveError(`the installer ran but the installed build is ${after}, not ${rel.build}.`);
+    // It was open: put it back, on the new build (plainly, without the DevTools port).
+    if (pids.length > 0) spawn(findExe(null), [], { detached: true, stdio: "ignore" }).unref();
+    console.log(`installed build ${rel.build} (${rel.sha}), was ${before ?? "none"}${pids.length > 0 ? "; idl1 was open, so it was closed and reopened" : ""}`);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+}
+
 // ---- main -----------------------------------------------------------------
 
 const { positional, flags } = parseArgs(process.argv.slice(2));
@@ -490,6 +594,7 @@ const commands = {
   close: () => cmdClose(),
   serve: () => cmdServe(rest[0]),
   drag: () => cmdDrag(rest[0], rest[1], rest[2], flags),
+  update: () => cmdUpdate(flags),
 };
 
 if (!command || command === "help" || !commands[command]) {

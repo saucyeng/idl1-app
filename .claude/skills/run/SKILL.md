@@ -14,8 +14,15 @@ cargo on this machine) with WebView2's DevTools port open, then attaches with
     cd tools/drive && npm install        # playwright-core only, ~8 MB, no browser download
 
 The nightly installs per-user to `%LOCALAPPDATA%\idl1\app.exe` (uninstall entry "idl1").
-If it's missing or stale, install it (Isaac approved installing and updating the nightly, 2026-10-18): `gh release download nightly -R saucyeng/idl1-app
--p "*windows-x64-setup.exe*"`, check the `.sha256`, run it with `/S`, then delete the installer.
+If it's missing or stale, install it (Isaac approved installing and updating the nightly, 2026-10-18):
+`node tools/drive/drive.mjs update`. It downloads the nightly, checks the `.sha256`, closes a running
+idl1 (the close button's way, forced after 5 s), installs with `/S`, checks the installed build and
+reopens idl1 if it was open.
+
+**After every push to `main`** (Isaac, 2026-11-24: "whatever's going on with that shell should just
+install the new update"): run `node tools/drive/drive.mjs update --wait <pushed app sha>` in the
+background. It waits for that commit's nightly, stops with an error if CI or Release failed on it,
+then installs. Then smoke-check the app before telling Isaac it's ready.
 
 ## Commands
 
