@@ -153,6 +153,12 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 
 ### Fixed
 
+- **Workbook reference: unit and label annotations [docs] (2026-11-24).** The example showed
+  `# label: Compression  # unit: mm/s`. The engine reads that as a label of
+  `Compression  # unit: mm/s` and no unit, so charts and readouts showed "unit unknown". The
+  reference now gives the form the engine reads: one `#`, unit first,
+  `# unit: mm/s label: Compression`. The workbooks in the library that used the old order
+  (326 lines in 9 workbooks) were rewritten.
 - **Derived channels work in every notebook chart [no-docs] (2026-11-23).** A ride's solver
   outputs (`Front travel (mm)` …) and camera channels (`Cam_*`) are now listed with its channels,
   so the notebook no longer marks them as typos and blocks the cells that use them, and spectra,

@@ -1033,6 +1033,12 @@ Analysis gaps from `173461a2` (Python was needed for each; `agent-gaps.md`):
           gives lean; a helmet notebook template (the Python sketch is `helmet.py`'s four panels);
           a CLI `session video` verb (link, re-estimate, list) — there is none today.
     - [ ] `workbook data` takes no time window or definition filter: one 10 s question returned 2 GB.
+    - [ ] A workbook written for one ride opens with no ride selected (Isaac, 2026-11-24: "it should
+          already have the correct data in it"). Proposal, waiting on Isaac because it changes C2: an
+          optional front-matter key naming the ride and lap it opens on, which a selection in Data
+          still overrides.
+    - [ ] With no ride selected, every math line shows `math_unknown_channel ... not in this
+          session` and the status still says "done". Say "pick a ride in Data" once, not per line.
     - [x] Export file names use local time (2026-11-23).
     - [ ] Opening an overlay workbook evaluates every definition over the whole ride
           (`open_readout` is over `span: session`, for whole-ride gauge ranges): minutes on a
