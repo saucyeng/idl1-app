@@ -538,7 +538,18 @@ async function cmdUpdate(flags) {
 
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "idl1-nightly-"));
   try {
-    gh(["release", "download", "nightly", "-R", RELEASE_REPO, "-p", "*windows-x64-setup.exe*", "-D", dir, "--clobber"]);
+    // Release retitles the nightly before its assets finish uploading, so a
+    // fresh build can briefly have no installer (seen 2026-11-24): retry.
+    for (;;) {
+      try {
+        gh(["release", "download", "nightly", "-R", RELEASE_REPO, "-p", "*windows-x64-setup.exe*", "-D", dir, "--clobber"]);
+        if (fs.readdirSync(dir).some((f) => f.endsWith("-setup.exe.sha256"))) break;
+      } catch (e) {
+        if (!/no assets match/.test(String(e?.stderr ?? e?.message ?? e))) throw e;
+      }
+      if (Date.now() > deadline) throw new DriveError(`build ${rel.build}'s installer never appeared on the release.`);
+      await sleep(UPDATE_POLL_MS);
+    }
     const exe = fs.readdirSync(dir).find((f) => f.endsWith("-setup.exe"));
     if (!exe) throw new DriveError("the nightly has no Windows installer.");
     const expected = fs.readFileSync(path.join(dir, `${exe}.sha256`), "utf8").trim().split(/\s+/)[0].toLowerCase();
