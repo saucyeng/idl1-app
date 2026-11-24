@@ -1032,6 +1032,10 @@ Analysis gaps from `173461a2` (Python was needed for each; `agent-gaps.md`):
     - [ ] Camera IMU next: head orientation (CORI) and head-relative-to-bike angles once the solver
           gives lean; a helmet notebook template (the Python sketch is `helmet.py`'s four panels);
           a CLI `session video` verb (link, re-estimate, list) — there is none today.
+    - [ ] One model (Isaac, 2026-11-24): attitude, velocity and GPS into the physics objective, then
+          retire the IEKF. Spec `2026-11-24-idl1-one-model-estimator-DRAFT.md`. Head-vs-bike angles follow it.
+    - [ ] Rider-model loads stage (legs/arms forces from frame-vs-head motion): parked until solver
+          travel is trustworthy as a position (Isaac, 2026-11-24: "travel is already a weak measurement").
     - [ ] `workbook data` takes no time window or definition filter: one 10 s question returned 2 GB.
     - [x] A workbook written for one ride opens on it: C2 §1 `opens_on` (Isaac, 2026-11-24).
           Next: `workbook eval` could default `--session`/`--main-lap` from it.
