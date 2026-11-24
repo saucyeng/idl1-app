@@ -224,7 +224,26 @@ fn raster_channel(
     session_id: &str,
     channel: &str,
 ) -> Result<std::sync::Arc<ChannelSamples>, IpcError> {
-    cache.channel(&session_dir(data_dir, session_id), session_id, channel)
+    match cache.channel(&session_dir(data_dir, session_id), session_id, channel) {
+        // A ride's derived channels (physics solves, a linked video's motion)
+        // live in `derived/`, not `data.parquet`; spectra, spectrograms and
+        // histograms read them too (2026-11-23: `spectrum("Cam_AccelZ")` was
+        // "not found").
+        Err(e) if e.kind == IpcErrorKind::NotFound => match idl_library::estimated::estimated_channel(data_dir, session_id, channel) {
+            Some(m) => Ok(std::sync::Arc::new(ChannelSamples {
+                channel_id: m.name,
+                t_us: std::sync::Arc::from(m.t_us),
+                t_recorded_us: None,
+                nominal_rate_hz: m.rate_hz,
+                column: idl_rs::session::column::RawColumn::F64(m.values),
+                source_kind: "derived".to_string(),
+                unit: String::new(),
+                gaps: Vec::new(),
+            })),
+            None => Err(e),
+        },
+        other => other,
+    }
 }
 
 /// One channel's samples over `span`, or all of them when there is no window.

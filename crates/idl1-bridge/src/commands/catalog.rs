@@ -534,7 +534,24 @@ fn list_sessions_via(data_dir: &Path) -> Result<Vec<SessionSummary>, IpcError> {
 
 /// Transport-agnostic core of `get_session`.
 fn get_session_via(data_dir: &Path, session_id: &str) -> Result<SessionDetail, IpcError> {
-    Ok(catalog_read::get_session(data_dir, session_id)?.into())
+    let mut detail: SessionDetail = catalog_read::get_session(data_dir, session_id)?.into();
+    // The ride's derived channels (physics solves, a linked video's motion)
+    // are channels a workbook can name too, so they are listed with the
+    // blob's (2026-11-23). The catalogue indexes only `data.parquet`.
+    for c in idl_library::estimated::derived_channel_infos(data_dir, session_id) {
+        if detail.channels.iter().any(|existing| existing.channel_id == c.name) {
+            continue;
+        }
+        detail.channels.push(ChannelSummary {
+            channel_id: c.name,
+            nominal_rate_hz: c.nominal_rate_hz,
+            unit: c.unit,
+            source_kind: c.derived_kind,
+            channel_kind: "fixed-rate".to_string(),
+            sample_count: c.sample_count,
+        });
+    }
+    Ok(detail)
 }
 
 /// Transport-agnostic core of `list_laps`.

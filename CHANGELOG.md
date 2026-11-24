@@ -153,6 +153,10 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 
 ### Fixed
 
+- **Derived channels work in every notebook chart [no-docs] (2026-11-23).** A ride's solver
+  outputs (`Front travel (mm)` …) and camera channels (`Cam_*`) are now listed with its channels,
+  so the notebook no longer marks them as typos and blocks the cells that use them, and spectra,
+  spectrograms and histograms read them too.
 - **The camera's own motion [docs] (2026-11-23).** A linked GoPro clip now syncs by its
   accelerometer against the logger's pods (sync method `imu`), so a camera without GPS lands within
   a frame or two instead of the ~1 s a creation time gives. Its accelerometer, gyro and gravity
