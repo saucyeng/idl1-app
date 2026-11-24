@@ -6,6 +6,13 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 
 ### Added
 
+- **Transfer functions and coherence [docs] (2026-11-24).** Three maths functions:
+  `transfer(x, y)` (how many units of y come out per unit of x, at each frequency),
+  `transfer_phase(x, y)` and `coherence(x, y)` (0–1: how much of y that x explains, so you know
+  where the gain is meaningful). Spectra from `welch`, `periodogram` and these three now carry
+  their frequencies, so a JS chart plots them against Hz (`{ x: "f", y: "v" }`). The helmet-cam
+  workbook uses them for axle → frame → head: true-vertical spectra per stage, gain per stage
+  where coherence is above 0.5, and coherence.
 - **A workbook can open on its ride [docs] (2026-11-24).** A new optional front-matter key,
   `opens_on: { session, lap }`, names the ride (and lap) a workbook was written for. Opening the
   workbook selects it, and picking something else in Data still replaces it. It's ignored when this
@@ -158,6 +165,11 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 
 ### Fixed
 
+- **Lap windows over camera and partial solver channels [no-docs] (2026-11-24).** A lap window
+  over a fixed-rate channel stepped by its rate from the start of the ride. A channel that starts
+  later (a linked camera's `Cam_*`, which starts where the clip does, or a solve over part of a
+  ride) got the wrong samples or none, so spectra and aggregates of them over a lap came back
+  empty. The window now uses the channel's recorded times.
 - **Workbook reference: unit and label annotations [docs] (2026-11-24).** The example showed
   `# label: Compression  # unit: mm/s`. The engine reads that as a label of
   `Compression  # unit: mm/s` and no unit, so charts and readouts showed "unit unknown". The

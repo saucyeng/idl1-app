@@ -89,6 +89,14 @@
       "units": null
     },
     {
+      "category": "Frequency",
+      "description": "How much of `y` at each frequency is explained by `x`, 0 to 1 (magnitude-squared coherence, as scipy's `coherence`). Near 1 the `transfer` gain there is trustworthy; near 0 it is not. Same arguments and clock rule as `transfer`.",
+      "name": "coherence",
+      "signature": "coherence(x, y, window=\"hann\", nperseg=n, noverlap=n, detrend=\"constant\")",
+      "status": "implemented",
+      "units": null
+    },
+    {
       "category": "Correlation",
       "description": "Convolution of a channel with a kernel. Not implemented.",
       "name": "convolve",
@@ -527,6 +535,22 @@
       "signature": "tanh(x)",
       "status": "implemented",
       "units": null
+    },
+    {
+      "category": "Frequency",
+      "description": "Gain from `x` to `y` at each frequency (the H1 estimate |Pxy| / Pxx, Welch-averaged as `welch`): how many units of y come out per unit of x put in. Read it beside `coherence`: where coherence is low, y there is not caused by x and the gain means nothing. `x` and `y` must share one sample clock; put two channels on one with `resample(y, x)`.",
+      "name": "transfer",
+      "signature": "transfer(x, y, window=\"hann\", nperseg=n, noverlap=n, detrend=\"constant\")",
+      "status": "implemented",
+      "units": null
+    },
+    {
+      "category": "Frequency",
+      "description": "Phase of `y` against `x` at each frequency, in degrees (-180 to 180), positive when y leads. The phase half of `transfer`; same arguments and clock rule.",
+      "name": "transfer_phase",
+      "signature": "transfer_phase(x, y, window=\"hann\", nperseg=n, noverlap=n, detrend=\"constant\")",
+      "status": "implemented",
+      "units": "deg"
     },
     {
       "category": "Vector",

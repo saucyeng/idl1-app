@@ -93,13 +93,13 @@ describe("tokenizeMath", () => {
 });
 
 describe("MATH_FUNCTIONS", () => {
-  it("MATH_FUNCTIONS — the catalog — contains all 77 of C2 §3.3's names (deglitch_pulses and keep 2026-11-05, was 75)", () => {
-    expect(MATH_FUNCTIONS).toHaveLength(77);
+  it("MATH_FUNCTIONS — the catalog — contains all 80 of C2 §3.3's names (transfer, transfer_phase, coherence 2026-11-24, was 77)", () => {
+    expect(MATH_FUNCTIONS).toHaveLength(80);
 
     const names = new Set(MATH_FUNCTIONS.map((f) => f.name));
-    expect(names.size).toBe(77);
+    expect(names.size).toBe(80);
 
-    for (const name of ["butter", "spectrogram", "rotate_euler", "vec", "current_lap", "where", "deglitch_pulses", "keep"]) {
+    for (const name of ["butter", "spectrogram", "rotate_euler", "vec", "current_lap", "where", "deglitch_pulses", "keep", "transfer", "transfer_phase", "coherence"]) {
       expect(names.has(name)).toBe(true);
     }
   });
