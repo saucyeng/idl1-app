@@ -1035,6 +1035,10 @@ Analysis gaps from `173461a2` (Python was needed for each; `agent-gaps.md`):
     - [ ] `workbook data` takes no time window or definition filter: one 10 s question returned 2 GB.
     - [x] A workbook written for one ride opens on it: C2 §1 `opens_on` (Isaac, 2026-11-24).
           Next: `workbook eval` could default `--session`/`--main-lap` from it.
+    - [ ] The math cell's result line calls a spectrum "513 samples (t) 463.4 Hz": it should say
+          bins on `(f)`, without the source rate (2026-11-24, build 191).
+    - [ ] Two-input transfer (frame from both wheels at once): one-input coherence above 2–3 Hz
+          undersells both wheel paths (helmet-cam workbook, 2026-11-24).
     - [ ] With no ride selected, every math line shows `math_unknown_channel ... not in this
           session` and the status still says "done". Say "pick a ride in Data" once, not per line.
     - [x] Export file names use local time (2026-11-23).
