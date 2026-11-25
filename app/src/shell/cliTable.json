@@ -634,6 +634,14 @@
         {
           "choices": [],
           "default": null,
+          "help": "Estimate the bike's attitude and velocity too (roll, pitch, heading, course, slip, speed, body accel; reads GPS). Experimental: being checked against the old estimator",
+          "kind": null,
+          "long": "nav",
+          "repeatable": false
+        },
+        {
+          "choices": [],
+          "default": null,
           "help": "Data directory root (contract C4 §1's <data>); defaults to $IDL1_DATA_DIR",
           "kind": "path",
           "long": "data-dir",

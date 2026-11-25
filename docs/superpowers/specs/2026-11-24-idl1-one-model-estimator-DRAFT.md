@@ -21,7 +21,7 @@ Goal: every estimator output comes from one objective. Then delete the IEKF.
 
 | Latent | Representation | Knot spacing | Replaces |
 |---|---|---|---|
-| Chassis attitude R(t), chassis → nav (ENU-style: X north, Y west, Z up, as `GpsSample`) | cumulative cubic B-spline on SO(3): R(t) = R_k ∏_{j=1..3} Exp(B̃_j(u) Ω_j), Ω_j = Log(R_{k+j-1}⁻¹ R_{k+j}) | 2 samples | — (built: the frame-rate spline w0 stays; a rate row ties the attitude spline's body rate to it, so the pod model and its goldens are untouched) |
+| Chassis attitude R(t), chassis → nav (ENU-style: X north, Y west, Z up, as `GpsSample`) | cumulative cubic B-spline on SO(3): R(t) = R_k ∏_{j=1..3} Exp(B̃_j(u) Ω_j), Ω_j = Log(R_{k+j-1}⁻¹ R_{k+j}) | 1 sample (2 coupled into travel, §3) | — (built: the frame-rate spline w0 stays; a rate row ties the attitude spline's body rate to it, so the pod model and its goldens are untouched) |
 | Nav velocity v(t), m/s | uniform cubic B-spline, 3 rows | 4 samples (10 ms, the steer's spacing: a wider spacing widens the normal matrix's band) | — |
 
 The attitude spline's coefficients are rotations; Gauss-Newton steps them as R_i ← R_i Exp(δ_i)
@@ -55,6 +55,19 @@ attitude and velocity priors at the window's first sample. The frame pod's flex 
 (f_meas stands for the chassis's specific force). Off unless `Spec::nav` and `Window::nav` are both set.
 Synthetic check: start 2° tilt / 9° yaw off, solved to 0.06° / 0.11°, travel moved 0.005 mm.
 Still to build: ZUPT rows, the no-GPS acceleration prior.
+
+Wired 2026-11-25: `session estimate-physics --nav` (off by default; library option `nav`). The start
+attitude prior is a nav-frame error (its z is heading). Windows of one riding stretch chain in order
+(handoff σ tilt 0.02 rad, heading 0.05 rad, v 0.3 m/s); stretches run in parallel. Outputs: `Physics
+roll / pitch / heading / course / slip (deg)`, `speed (m/s)`, `long / lat accel (g)`. The IEKF's
+channels are renamed `IEKF roll (deg)` etc. so the plain names resolve to the physics ones.
+
+Knot spacing: at 2 samples the attitude spline coupled into travel (Beacon 60 s, front p99 145 → 158
+mm). At 1 sample (one control point per IMU sample) travel matches the no-nav solve within 1 mm
+(front 0/50/151 vs 0/50/150, rear identical). Beacon lap 1 (2966–3067 s, at 2 samples): roll vs IEKF
+mean +1.24°, RMS 1.45°; pitch −0.71° / 1.03°; heading vs GPS course above 4 m/s RMS 13.5° (IEKF
+13.8°), mean 0.03° (IEKF 0.25°). Open: speed. 60 s of riding takes 11.5 min with nav vs 2.7 min
+without (sequential chains; 12 dual passes per sample for the attitude Jacobian).
 
 Heading is observable only through GPS velocity against the accelerometer (turning and speed changes).
 Straight constant-speed riding leaves it weak; the spline's smoothness carries it. No course-equals-

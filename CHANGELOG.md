@@ -6,6 +6,12 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 
 ### Added
 
+- **Orientation in the physics solve, experimental [docs] (2026-11-25).**
+  `idl-rs session estimate-physics --nav` also solves the bike's orientation and velocity with
+  travel, using the GPS: channels `Physics roll / pitch / heading / course / slip (deg)`,
+  `Physics speed (m/s)`, `Physics long / lat accel (g)`. It's off by default and slow for now
+  (about 4× the plain solve). The old estimator's channels are renamed `IEKF roll (deg)`,
+  `IEKF pitch (deg)`, `IEKF heading (deg)`, `IEKF course (deg)` and `IEKF slip (deg)`.
 - **Transfer functions and coherence [docs] (2026-11-24).** Three maths functions:
   `transfer(x, y)` (how many units of y come out per unit of x, at each frequency),
   `transfer_phase(x, y)` and `coherence(x, y)` (0–1: how much of y that x explains, so you know
