@@ -1036,6 +1036,18 @@ Analysis gaps from `173461a2` (Python was needed for each; `agent-gaps.md`):
           retire the IEKF. Spec `2026-11-24-idl1-one-model-estimator-DRAFT.md`. Head-vs-bike angles follow it.
     - [ ] Rider-model loads stage (legs/arms forces from frame-vs-head motion): parked until solver
           travel is trustworthy as a position (Isaac, 2026-11-24: "travel is already a weak measurement").
+    - [ ] **Force model in the physics solver (Isaac approved A/B/C, 2026-11-25).** Newton per body
+          (frame, front and rear unsprung, rider torso, head): springs from the bike file with a stiff
+          bump stop, a fitted damper curve, `sim::tyre`, flex as load / stiffness, rider legs / arms /
+          neck per stretch; masses from the bike file. A ground profile **per wheel** (front and rear
+          lines differ in tight turns and slides), tied by a soft rear-follows-front prior that
+          relaxes with steer, yaw rate and slip. Spec-first. Target: bottom-outs stop at the stop
+          (11/21 lap 2 is still 175 mm on a 170 mm fork), the rear's 26-sigma misfit through hits.
+    - [ ] PyTorch reference: add fork torsion (`F_TWIST`) and Huber to `ml/idlml`, regenerate the
+          goldens (torch is not installed on the new machine).
+    - [ ] Investigate "Downamics Lateral Accel Under Braking" (Isaac's Downloads): check the claim
+          against the fork pod's lateral accel in sustained braking zones, net of the frame's motion
+          carried to the pod.
     - [ ] `workbook data` takes no time window or definition filter: one 10 s question returned 2 GB.
     - [x] A workbook written for one ride opens on it: C2 §1 `opens_on` (Isaac, 2026-11-24).
           Next: `workbook eval` could default `--session`/`--main-lap` from it.

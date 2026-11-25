@@ -6,6 +6,11 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 
 ### Changed
 
+- **Fork torsional vibration in the physics model [no-docs] (2026-11-25).** The fork pod can turn
+  about the leg without the axle moving (new channel `Physics fork twist (deg)`). It explains the
+  fork gyro's largest misfit, which frame-pod flex had been absorbing, and moves travel: Beacon lap
+  1 front median / p99 48 / 151 -> 55 / 161 mm, the 11/21 lap-2 bottom-out peak 185 -> 175 mm.
+  Estimator version 4.
 - **Physics solve robust to one pod's bad moment [no-docs] (2026-11-25).** A sensor reading more
   than 3 sigmas from what the model can explain now counts linearly (Huber), so a pod the model
   cannot describe through a big hit no longer drags the other pods' travel. On the 11/21 lap-2

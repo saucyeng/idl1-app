@@ -106,6 +106,12 @@ heading prior: that would erase slip.
   Fix adopted: Huber k = 3 on the sensor rows (version 3): front 185 -> 175, rear min -47 -> +3,
   rear peak 167 (160 mm travel). Open: why the rear (and the fork accel, ~5 sigmas) are unexplained
   at 50 g; force balance (decision A) is the natural home.
+- **Adopted (Isaac, 2026-11-25: "if the fork has a torsional vibration, then we can model that"):**
+  latent `F_TWIST` (NL 14), the fork pod turning about the steer-parallel leg axis without the axle
+  moving, full-rate level, prior 0.01 rad; channel `Physics fork twist (deg)`; version 4. Beacon lap
+  1 front median / p99 55 / 161 mm, rear 47 / 132; 11/21 lap 2 front 52 / 147, bottom-out peak
+  174.7 mm. **The PyTorch reference (`ml/idlml/bike/model.py`) does not have it yet**: the golden
+  tests hold it at 0 (readings) or lock it (solve, sigma 1e-9); add it there when torch is set up.
 - Sensor ranges (11/21): unsprung high-g clips at 64 g (fork X 7-14, rear Y 41-48 samples a ride),
   unsprung gyros reach 2000 dps; Isaac is moving them to 128 g / 4000 dps and changing the
   firmware to write high-g only around low-g saturation.
