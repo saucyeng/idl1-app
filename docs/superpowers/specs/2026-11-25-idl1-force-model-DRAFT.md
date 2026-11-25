@@ -102,7 +102,7 @@ smooth functions (one-model spec §7).
 | φ_f, φ_r | tilt of the tyre force in the wheel plane (the local ground normal relative to the bike), rad | 4 | from the ground's slope (§6) |
 | T_f, T_r | tyre tangential force (braking, drive, drag), N | 4 | 0 ± 500 N |
 | S_f, S_r | tyre lateral force, N | 4 | 0 ± 500 N |
-| rider pose (6) | §3.1 | 2 | 0 ± 0.15 m / 0.3 rad |
+| rider pose (6) | §3.1 | 2 | 0 ± 0.25 m fore-aft and vertical, 0.1 m lateral; 0.3 rad |
 | rider active wrench (6) | §3.1 | 50 ms | 0 ± 300 N, 0 ± 60 N·m |
 | head (3, F2) | neck rotation, rad | 2 | 0 ± 0.3 rad |
 
@@ -199,6 +199,10 @@ Each phase is behind `Spec::forces` (off by default, like `nav`) and bumps `PHYS
 | F3 | flex as load / stiffness: fork bending from the across-axis load (φ, T, S), rear member and frame pod flex from the linkage loads; one stiffness per part | F1 |
 | F4 | drift: step 1 (slow splines), then step 2 (thermal state) | F1 |
 
+Built: **F0** (2026-11-25, `core::sim::laws`): `relu` / `step` (softplus, logistic), `stop_n`, `DamperLaw`, `friction_n`, `air_force_n` / `air_force_about_n`, `TyreLaw`, all generic over `Real` with a smoothing width (0 exact). The sim's `Damper`, `AirSpring` and `Tyre` now call them; the sim's 71 tests pass unchanged.
+
+How F1 is built: as navigation was (`physics/nav.rs`), a separate block, `physics/forces.rs`, with its own latents, rows, weights and parameters, on only when `Spec::forces` and `Window::forces` are set. The 14 core latents, their golden tests and the PyTorch fixtures stay as they are. The core latents the force rows read (travel, steer, the rear member, the frame motion) enter through the same `Sample` the pod rows use.
+
 Acceptance (simulated truth and physics checks, never the IEKF; one-model spec §8):
 
 - **Exact-model synthetic:** integrate the estimator's own force model over a known ground, rider
@@ -254,5 +258,6 @@ branches on data inside a window.
    the NPU network is trained is decided when that work starts (whole-bike spec §5.2 is superseded on
    this point).
 5. Rider: 3-D, roll and yaw first in importance; Isaac suggested a single force vector + moment on
-   the frame. §3.1 is the proposal (that wrench, with a body and a 6-axis bushing behind it), pending
-   his yes.
+   the frame. §3.1 adopted (Isaac, 2026-11-25: "i'm in got the 6dof force/moment, as that should
+   capture everything"). He shifts his weight fore and aft about as much as up and down: the pose
+   prior is as loose fore-aft as vertical.
