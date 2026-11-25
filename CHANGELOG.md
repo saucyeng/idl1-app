@@ -6,6 +6,11 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 
 ### Changed
 
+- **Physics solve robust to one pod's bad moment [no-docs] (2026-11-25).** A sensor reading more
+  than 3 sigmas from what the model can explain now counts linearly (Huber), so a pod the model
+  cannot describe through a big hit no longer drags the other pods' travel. On the 11/21 lap-2
+  bottom-out the rear's impossible -47 mm becomes +3 mm and the front peak 185 -> 175 mm. Estimator
+  version 3: earlier solves show as stale.
 - **Physics solve faster [no-docs] (2026-11-25).** Each window converges in fewer steps (a better
   damping rule: about 30 % less time per window, same answer), and the windows run on every core but
   two instead of at most four.

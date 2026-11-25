@@ -86,6 +86,30 @@ Heading is observable only through GPS velocity against the accelerometer (turni
 Straight constant-speed riding leaves it weak; the spline's smoothness carries it. No course-equals-
 heading prior: that would erase slip.
 
+### 3a. Travel trust: findings of 2026-11-25 (no navigation involved)
+
+- Exact-model test (`core/examples/physics_identifiability.rs` on branch `exp/fork-twist`): with the
+  forward model exact, travel comes back to 3 / 1 mm rms (front / rear), the same from any start.
+  Travel and flex are separable in principle; the real data's start dependence is model mismatch.
+- Real 2 s Beacon window: loss 2535 vs 294 synthetic; misfit 0.3-0.6 m/s^2 in the pod accels at
+  0.5-30 Hz. A fork-pod rotation about the leg (branch `exp/fork-twist`) halves the loss and cuts
+  the fork gyro X misfit 0.062 -> 0.004 rad/s, but on 11/21 it is high-frequency only (below 2 Hz
+  0.004 deg rms, r with deceleration 0.01-0.04): a pod rotation, not brake twist. Not adopted yet.
+- Damping rule: old and new Levenberg-Marquardt rules land 5 mm apart in front p99 on Beacon lap 1
+  (146 vs 151): two converged answers of one objective. Same cause (mismatch), not a solver bug.
+- Bottom-out, 11/21 08:20 lap 2 at 4946.9 s (Isaac felt it): front travel solved to 208 mm (170 mm
+  fork), rear to -31 mm nearby. Ruled out: clipping (the import splices high-g where low-g
+  saturates; high-g vs low-g r 0.996-0.999, scale within 1 %), gyro clip masks (fork gyro 322 dps
+  there), solver representation and pod clock skew (`physics_bottom_out.rs`: an exact-model stop
+  over 2 ms solves to 170.0 mm, with 2.5 ms skew 170.1). Found: the rear pod is 26 sigmas off
+  through the hit and leaks through the shared frame rotation (rear masked: 185 -> 176 mm).
+  Fix adopted: Huber k = 3 on the sensor rows (version 3): front 185 -> 175, rear min -47 -> +3,
+  rear peak 167 (160 mm travel). Open: why the rear (and the fork accel, ~5 sigmas) are unexplained
+  at 50 g; force balance (decision A) is the natural home.
+- Sensor ranges (11/21): unsprung high-g clips at 64 g (fork X 7-14, rear Y 41-48 samples a ride),
+  unsprung gyros reach 2000 dps; Isaac is moving them to 128 g / 4000 dps and changing the
+  firmware to write high-g only around low-g saturation.
+
 ## 4. Windows and stitching
 
 Travel is window-local; heading and velocity are not. Windows are solved in time order and each window

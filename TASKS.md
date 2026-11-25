@@ -1102,6 +1102,14 @@ Analysis gaps from `173461a2` (Python was needed for each; `agent-gaps.md`):
           names as its forward ride. Infer the bike at import (one bike in the library, or the
           logger's last bike), offer bulk assignment in Data, and let a calibration's
           `forward_ride` / sessions attach themselves.
+    - [ ] Moving the data directory (`move_data_dir`, 2026-11-25) left `bikes/` and `AGENTS.md`
+          behind in the old root: the move walks blobs, sessions, workbooks, tracks only. The rides
+          then show no bike data and `estimate-physics` cannot run. Move `bikes/` (and every other
+          top-level item) too. Its doc comment says the old root is left in place; on one volume it
+          is renamed away (only the unmoved items stay). Fix the comment or the behaviour.
+    - [ ] Sync settings between paired devices as an option (Isaac, 2026-11-25): rider name, units,
+          solve-automatically, theme; not the data directory or anything machine-specific. Until
+          then, copy `%APPDATA%\com.saucyeng.idl1\settings.json` by hand.
     - [ ] Re-importing rewrites `session.json` with the index fields; check that a re-import can
           never drop user fields (bike, notes, ignored laps, videos).
   - [ ] A ride whose import fails leaves a session.json with no data (the ride form saves notes
