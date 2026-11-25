@@ -1039,13 +1039,13 @@ Analysis gaps from `173461a2` (Python was needed for each; `agent-gaps.md`):
     - [ ] **Force model in the physics solver (Isaac approved A/B/C, 2026-11-25).** Newton per body
           (frame, front and rear unsprung, rider torso, head): springs from the bike file with a stiff
           bump stop, a fitted damper curve, `sim::tyre`, flex as load / stiffness, rider legs / arms /
-          neck per stretch; masses from the bike file. A ground profile **per wheel** (front and rear
-          lines differ in tight turns and slides), tied by a soft rear-follows-front prior that
-          relaxes with steer, yaw rate and slip. Spec `2026-11-25-idl1-force-model-DRAFT.md` (phases
-          F0-F4; four questions to Isaac in its §11). Target: bottom-outs stop at the stop
+          neck per stretch; masses from the bike file. Revised the same day: a 3-D rider (one body on a
+          6-axis spring plus an active wrench), one ground for both wheels with a Huber tie, damper /
+          spring / tyre parameters drifting with heat through a ride. Spec `2026-11-25-idl1-force-model-DRAFT.md` (phases
+          F0-F4; rulings in its §11, the rider proposal pending). Target: bottom-outs stop at the stop
           (11/21 lap 2 is still 175 mm on a 170 mm fork), the rear's 26-sigma misfit through hits.
-    - [ ] PyTorch reference: add fork torsion (`F_TWIST`) and Huber to `ml/idlml`, regenerate the
-          goldens (torch is not installed on the new machine).
+    - [x] PyTorch reference: frozen (Isaac, 2026-11-25: "whatever works"). Rust is the reference; the
+          goldens stay as fixtures with fork twist held at 0. NPU training path decided when it starts.
     - [x] "Lateral accel under braking" video (Data Driven Descents; its traces are labelled
           "illustrative data", setup undefined) claims rear-brake-on rear-axle lateral 1.0-1.7 g RMS vs
           0.4 g off. Checked 2026-11-25 on 11/21 x2 and Beacon (rear pod Z = lateral, 5-100 Hz RMS;

@@ -1,10 +1,10 @@
 # Force model: Newton per body in the physics solver (DRAFT)
 
-Status: DRAFT, 2026-11-25. Spec-first. Direction approved by Isaac 2026-11-25 ("force model sounds
-good"): A (force balance per body), B (ground as an unknown), C (rider: torso + head, vertical + pitch
-first), with his caveat that **the front and rear can take different lines** (tight turns, loss of
-traction). Builds on the whole-bike sim spec §5.2 (the estimator's dynamics layer) and replaces its
-single shared terrain profile with one per wheel. Open questions are in §11. Nothing here is built.
+Status: DRAFT, 2026-11-25, revised the same day after Isaac's answers (§11). Spec-first. Direction
+approved by Isaac 2026-11-25 ("force model sounds good"): A (force balance per body), B (ground as an
+unknown), C (rider: torso + head). Revisions: the rider is 3-D (roll and yaw matter most), one ground
+shared by both wheels with a Huber tie, parameters drift with heat through a ride, Rust only.
+Builds on the whole-bike sim spec §5.2 (the estimator's dynamics layer). Nothing here is built.
 
 ## 1. Why
 
@@ -19,114 +19,173 @@ what that costs (one-model spec §3a):
 
 Forces close that gap. A travel trajectory now has to be produced by a spring, a damper and a tyre on
 known masses. The same force laws are the simulator's, so the parameters identified on rides (damper
-curve, tyre casing, rider stiffness) are the ones the sim uses (whole-bike spec §5.3).
+curve, tyre casing, rider stiffness, their drift with heat) are the ones the sim uses (whole-bike spec
+§5.3).
 
-## 2. The key simplification: specific force, no attitude
+## 2. Specific force: gravity drops out
 
 Accelerometers measure specific force, f = a − g. Newton for a body with gravity moved to the left is
-m·f = Σ(contact forces). **Gravity drops out of every balance**, so the force model needs no attitude
-and works with navigation off, like the rest of the objective. The specific force of each body comes
-from the existing forward model (`readings.rs`: rigid-body transport from the frame's f0, w0, a0, plus
-the relative motion from hyper-dual latents). Only the ground heights (§6) need navigation.
+m·f = Σ(contact forces); the moment balance is the same with no gravity term about the centre of mass.
+**Gravity drops out of every balance**, so the balances need no attitude. The specific force and angular
+motion of each body come from the existing forward model (`readings.rs`: rigid-body transport from the
+frame's f0, w0, a0, plus the relative motion from hyper-dual latents). The shared ground (§6) needs
+heights, so it needs navigation (one-model spec), which every ride has (GPS assumed, 2026-11-25).
 
-## 3. Bodies and balances (in-plane: the bike's x-z plane, plus pitch)
+## 3. Bodies and balances (3-D)
 
-| Body | Mass (bike file, D3: never fitted) | Balance rows per sample |
+| Body | Mass, inertia (bike file, D3: never fitted) | Balance rows per sample |
 |---|---|---|
-| Front unsprung U_f (lowers, wheel, tyre, brake) | `mass_table().front_unsprung_kg` | 2: along the fork axis, across it |
+| Front unsprung U_f (lowers, wheel, tyre, brake) | `mass_table().front_unsprung_kg` | 1: along the fork axis (F3 adds across it) |
 | Rear unsprung U_r (wheel, tyre, axle share of the links) | `rear_unsprung_kg` (link masses split between pivots, reduced through the motion ratio) | 1: along the axle path |
-| Rider torso T (point mass + pitch inertia) | rider mass less head and lower legs | 3: x, z, pitch |
-| Rider head H (+ helmet, camera) | segment table (§9 gap) | 2 (phase F2): x, z, plus the helmet IMU rows |
-| Whole system (bike + rider) | every mass | 3: x, z, pitch |
+| Rider body B (torso, arms, thighs as one rigid body) | rider mass less head and lower legs; inertia from a segment table (§9 gap) | 6: force and moment |
+| Rider head H (+ helmet, camera) | segment table | 6 (phase F2), plus the helmet IMU's 6 sensor rows |
+| Whole system (bike + rider) | every mass; spinning wheels' inertia (`mass_table().front/rear`) | 6: force and moment |
 
-The **whole-system balance** replaces a frame balance. It needs no joint forces (fork bushings, pivots,
-pedals, bar): the only non-gravity forces on bike + rider are the two tyre forces (air drag and rolling
-resistance folded into the tyres' tangential forces). Σ mᵢ fᵢ = F_tyre,f + F_tyre,r, and the same for
-moments about the frame pod. The lower legs are lumped into the frame (they move with the pedals).
+The **whole-system balance** stands in for a frame balance, so it needs no joint forces (fork bushings,
+pivots, pedals, bar). The only non-gravity forces on bike + rider are the two tyre forces, with air drag
+and rolling resistance folded into their tangential parts:
 
-### 3.1 The force laws (shared with `sim`, generic over `Real`)
+- Force: Σ mᵢ fᵢ = F_tyre,f + F_tyre,r.
+- Moment, about the frame pod: the bodies' rates of change of angular momentum, including each wheel's
+  spin (I_w ω_spin, ω_spin = speed / rolling radius). The gyroscopic part is what turns the bike's roll
+  into yaw torque, so it cannot be left out in 3-D.
 
-| Element | Law | Fitted (per §5) | Fixed |
+The lower legs are lumped into the frame (they move with the pedals).
+
+### 3.1 The rider: one body on a 6-axis spring, plus a wrench he applies
+
+Isaac (2026-11-25): the rider moves in 3-D, most importantly in roll and yaw, so two 1-D springs are not
+enough; a single force vector and moment on the frame would almost do. Proposal: keep that wrench, and
+put a body behind it.
+
+- **Body B** has a pose relative to its neutral place on the frame: 3 translations (fore-aft, lateral,
+  vertical) and 3 rotations (roll, pitch, yaw), latents at 2-sample knots.
+- **Passive part:** a 6-axis spring + damper between B and the frame (a bushing), diagonal in the
+  bike's axes: k and c for x, y, z, roll, pitch, yaw. That is 12 numbers per riding stretch, plus the
+  neutral pose. The springs are the legs and arms acting together. Off-diagonal coupling (hips across
+  while rolling) is added only if the residuals ask for it.
+- **Active part:** a wrench (3 forces + 3 moments) the rider applies on purpose: pumping, unweighting,
+  leaning the bike under him, steering with the hips. Latents at 50 ms knots (under about 3 Hz), prior
+  0 with a loose σ.
+- **On the frame:** −(passive + active), applied at the neutral pose's reference point. This is exactly
+  Isaac's force vector and moment. It is an output channel (§9).
+
+Why a body and not a bare wrench: a bare wrench is a free signal at every sample, and it would explain
+anything the bike model gets wrong. The body's inertia and the bushing tie the fast part of the wrench
+to the rider's measured and modelled motion. That leaves only a slow active part free, and it gives the
+sim a rider it can run (stiffness sweeps, D7). The helmet (F2) sees B through the neck; a lower-back IMU
+(D9, "one day") would see B directly and is the single biggest upgrade to the rider.
+
+### 3.2 The force laws (shared with `sim`, generic over `Real`)
+
+| Element | Law | Fitted (§5) | Fixed |
 |---|---|---|---|
-| Fork spring | `sim::suspension::AirSpring` from `fork.*` params, the sag fit, as `sim::ride` uses it (isothermal static point, adiabatic about it) | scale s_f, prior 1 ± 0.05 | area, volumes, tokens |
-| Shock spring | the same through the leverage (`physics::fourbar`), virtual work (Cossalter §5.3, PDF 177-179) | scale s_r, prior 1 ± 0.05 | |
+| Fork spring | `sim::suspension::AirSpring` from `fork.*` params, the sag fit, as `sim::ride` uses it (isothermal static point, adiabatic about it) | pressure scale (drifts with heat) | area, volumes, tokens |
+| Shock spring | the same through the leverage (`physics::fourbar`), virtual work (Cossalter §5.3, PDF 177-179) | pressure scale (drifts) | |
 | Bump stops | stiff smooth stop at full travel (both ends, top-out too) | — | stiffness |
-| Dampers | `sim::ride::Damper` shape (LSC, HSC, LSR, HSR, knee) with a smooth knee; Dixon ch. 7 (PDF 277) | 5 per end | — |
+| Dampers | `sim::ride::Damper` shape (LSC, HSC, LSR, HSR, knee) with a smooth knee; Dixon ch. 7 (PDF 277) | 5 per end (a common scale drifts) | — |
 | Seal friction | smoothed Coulomb, F_c tanh(v / v_0) | F_c per end | v_0 |
-| Tyre radial | `sim::tyre::Tyre::force` (air + casing, CushCore crush, rim strike), lift-off as a softplus | casing_pa, damping per tyre | pressure (log), insert height |
-| Rider legs, arms | spring + damper between torso and its contact point (BB / bar), plus an active force | k, c per stretch; neutral pose per stretch | |
-| Neck (F2) | rotational spring + damper | k, c per stretch | |
+| Tyre radial | `sim::tyre::Tyre::force` (air + casing, CushCore crush, rim strike), lift-off as a softplus | casing_pa, damping per tyre (both drift) | cold pressure (log), insert height |
+| Tyre tangential, lateral | free latents (T, S), per wheel; a slip model later (D5, Magic Formula) | — | — |
+| Rider bushing | §3.1 | 12 per stretch, neutral pose | |
+| Neck (F2) | 3-axis rotational spring + damper | 6 per stretch | |
 
 Every law becomes one generic function used by both solvers. The sim calls it with smoothing width 0,
 which gives today's hard switches; the estimator uses a small width so Gauss-Newton and the NPU see
 smooth functions (one-model spec §7).
 
-## 4. New latents (per sample, uniform cubic B-splines as today)
+## 4. New latents (uniform cubic B-splines, as today)
 
 | Latent | Meaning | Knot spacing | Prior |
 |---|---|---|---|
-| δ_f, δ_r | tyre radial deflection, m | 1 | none (smoothness); force is tension-free |
-| φ_f, φ_r | direction of the tyre force in the bike plane (the local ground normal relative to the bike), rad | 4 | 0 ± 0.3 rad |
+| δ_f, δ_r | tyre radial deflection, m | 1 | tension-free; the ground tie (§6) |
+| φ_f, φ_r | tilt of the tyre force in the wheel plane (the local ground normal relative to the bike), rad | 4 | from the ground's slope (§6) |
 | T_f, T_r | tyre tangential force (braking, drive, drag), N | 4 | 0 ± 500 N |
-| torso x, z, θ | torso pose relative to its neutral pose on the frame, m, rad | 2 | 0 ± 0.15 m / 0.3 rad |
-| u_legs, u_arms | rider's active force (pumping, unweighting), N, along the leg / arm line | 50 ms (pumping < 3 Hz) | 0 ± 300 N |
-| head θ (F2) | neck angle, rad | 2 | 0 ± 0.3 rad |
+| S_f, S_r | tyre lateral force, N | 4 | 0 ± 500 N |
+| rider pose (6) | §3.1 | 2 | 0 ± 0.15 m / 0.3 rad |
+| rider active wrench (6) | §3.1 | 50 ms | 0 ± 300 N, 0 ± 60 N·m |
+| head (3, F2) | neck rotation, rad | 2 | 0 ± 0.3 rad |
 
-NL goes from 14 to about 25. Travel stays a latent: the force rows check it, they do not replace it.
+NL goes from 14 to about 28 at sample-rate levels, plus the slow wrench. Travel stays a latent: the
+force rows check it, they do not replace it.
 
-**Counting.** In F1, per sample, the new rows are 1 (fork axis) + 1 (axle path) + 3 (torso) + 3 (system)
-= 8 and the new latents are 9 (plus u at a low rate); the soft priors take up the slack. The across-axis
-fork row joins in F3, when bending becomes load / stiffness (until then the bushing load is unknown, and
-the row says nothing). The system balance gives the sum of the tyre forces; the torso balance splits the rider's share;
-each unsprung balance turns its tyre force into a suspension force; the spring + damper law turns that
-into travel. The model is closed, not a pile of free signals. Without a helmet IMU the torso is seen
-only through the system balance; the head rows tighten it (F2). Identifiability is checked on exact
-synthetic data first (as `physics_identifiability.rs` did for flex, §8).
+**Counting.** In F1, per sample, the new rows are 1 (fork axis) + 1 (axle path) + 6 (rider) + 6
+(system) + 1 (ground tie) = 15, and the new latents are 8 (tyres) + 6 (rider pose), plus the slow
+wrench. The chain: the system balance gives the sum of the tyre forces and moments; the rider balance
+splits off the rider's share; each unsprung balance turns its tyre force into a suspension force; the
+spring + damper law turns that into travel; the ground tie makes the rear's deflection agree with the
+front's ground. Identifiability is checked on exact synthetic data first (as
+`physics_identifiability.rs` did for flex, §8).
 
-## 5. Parameters: what is fitted where
+## 5. Parameters, and their drift with heat
 
-- **Per ride** (bike parts can change between rides: clicks, pressure): both damper curves, friction,
-  spring scales, tyre casing and damping. About 20 numbers.
-- **Per riding stretch** (Isaac fatigues through a day, so the rider drifts): leg, arm, neck stiffness
-  and damping, and the torso's neutral pose. Stretches are already split by stops (one-model spec §4).
-- **Never fitted:** masses (D3), pressures, geometry.
+Isaac (2026-11-25): air springs get stiffer and damping (suspension and tyres) gets weaker toward the
+bottom of a run and through the day. It is subtle but very noticeable riding, and it is something he
+wants to model. So the temperature-sensitive parameters are not constants per ride.
+
+- **Drifting (step 1, measured):** each temperature-sensitive parameter is a slow spline over ride time
+  (knots every 2 min of riding, smoothness prior, continuous across stops): fork and shock pressure
+  scale, each damper's overall scale, each tyre's casing stiffness and damping. The damper's curve
+  shape (the 5 numbers) stays constant per ride: heat thins the oil, scaling the curve more than
+  reshaping it (to check against the fits).
+- **Drifting (step 2, predicted):** a thermal state per damper and tyre, heated by the power it
+  dissipates (the model already has the damper's F·v and the tyre's damping force × rate) and cooled
+  toward ambient: dT/dt = (P − h (T − T_amb)) / C. Temperature then sets the gas pressure (ideal gas,
+  p ∝ T in kelvin) and the damping scale (viscosity against temperature). h, C and the viscosity slope
+  are fitted per bike, T_amb from the weather or a sensor. Accepted when step 2 predicts step 1's
+  trends. This is what the sim needs to say "the last minute of a run rides like this".
+- **Per riding stretch:** the rider's bushing (12), the neutral pose (6), the neck (6). Isaac fatigues
+  through a day; the trend across stretches is reported.
+- **Per ride:** damper curve shapes, friction.
+- **Never fitted:** masses (D3), cold pressures (from the log), geometry.
 - **Identification across windows** (bundle-adjustment form): solve every window with the current
   parameters (chained per stretch as today), reduce each window's normal equations onto the parameters
-  (Schur complement of its banded latents: one band solve per parameter), sum per ride / stretch, add
-  the priors, take a Levenberg-Marquardt step, repeat (3-5 outer passes). The window handoff priors
-  are ignored in the reduction (an approximation). For speed, identify on a fixed subsample of
-  windows, then solve the whole ride once with the parameters frozen.
-- Output: a fit file (parameters, σ from the reduced Hessian, the windows used) beside the solve's
-  parquet in `derived/` (C1 §5, `derived_kind` "physics"), content-addressed like the solve.
+  (Schur complement of its banded latents: one band solve per parameter the window touches; a 2-minute
+  drift knot touches only the windows near it), sum, add the priors, take a Levenberg-Marquardt step,
+  repeat (3-5 outer passes). The window handoff priors are ignored in the reduction (an
+  approximation). For speed, identify on a fixed subsample of windows, then solve the whole ride once
+  with the parameters frozen.
+- Output: a fit file (parameters and drift curves, σ from the reduced Hessian, the windows used)
+  beside the solve's parquet in `derived/` (C1 §5, `derived_kind` "physics"), content-addressed like
+  the solve.
 
-## 6. Ground per wheel (phase F4: needs navigation)
+A temperature sensor on the shock body (or an IR reading at the bottom of a run) would test step 2
+directly. Optional.
 
-Each wheel has its own ground. The latent is the tyre deflection; the ground height under wheel w is
-derived: h_w(t) = z of the contact point = axle − (r₀ − δ_w)·n̂(φ_w), with positions from integrating
-the velocity spline (window-local; the unknown constant cancels in differences).
+## 6. One ground, a Huber tie
 
-Rear-follows-front prior: h_r(t) vs h_f(t − τ(t)), where τ is the time to travel one wheelbase along
-the path (∫|v_h| dt = L). Its σ grows with how far the rear's track is from the front's:
+Isaac (2026-11-25): assume the ground is the same for both wheels, with Huber so it doesn't hurt where
+it differs. Adopted in place of the per-wheel profiles of the first draft.
 
-- e_lat(t) = off-tracking in a turn (≈ L² / 2R, R = v / ψ̇ from the nav) + slide (chassis slip × L);
-- σ_g = √(σ₀² + (k_g · e_lat)² + (σ_vz · τ)²), with σ₀ 5 mm, k_g ≈ 1 (a 5 cm offset gives a 5 cm σ:
-  effectively off), σ_vz the vertical velocity's uncertainty;
-- off below 1.5 m/s (τ long, position drift large) and while either tyre is off the ground.
-
-This is never a hard shared profile, and nothing else ties the two grounds. φ_w is then also checked
-against the ground's slope: φ_w ≈ slope of h_w − bike pitch (soft, σ 0.1 rad).
+- **The ground** is one height profile along the distance travelled, h(s). The front wheel defines it:
+  h(s_f(t)) = height of the front contact point = front axle − (r₀ − δ_f)·n̂(φ_f), positions from the
+  navigation's velocity integrated (window-local; slow drift goes into h and cancels, since both wheels
+  read the same profile within a wheelbase of each other).
+- **The tie:** for the rear, (rear contact height − h(s_f − L)) / σ_g, with Huber k = 3. L is the
+  wheelbase along the path. σ_g = 5 mm plus the vertical position's uncertainty over the delay.
+- Where the lines really differ (a tight turn, a slide), the tie's residual grows and Huber caps its
+  pull, as Isaac asked. One case Huber does not cover: many rows a little off at once (2-3σ, inside
+  Huber's square zone, a whole turn on an inside line). So σ_g also widens by the off-tracking a turn
+  forces (≈ L² / 2R, R = v / ψ̇ from the nav) and by the chassis slip × L. That costs nothing extra and
+  only applies when the geometry says the rear cannot be on the front's line.
+- Off below 1.5 m/s (the delay gets long, the position drifts) and while either tyre is off the ground.
+- φ is tied to the ground's slope: φ_f ≈ dh/ds − bike pitch (soft, σ 0.1 rad), and the rear's φ to
+  the same profile at its own distance.
+- Output: `Physics ground (mm)` against distance, for the sim to re-ride (whole-bike spec §6).
 
 ## 7. Rows, weights and robustness
 
-- Each balance row is (m·f − ΣF) / σ_F. σ_F = σ₀ + ρ·|F_model|, with ρ = 10 % (model error grows
-  with the force), σ₀ = 20 N on the unsprung rows and 50 N on the torso and system rows, capped at
-  1.5 kN. σ_F is frozen within a Gauss-Newton iteration (IRLS, like Huber).
+- Each balance row is (m·f − ΣF) / σ_F (moments the same in N·m). σ_F = σ₀ + ρ·|F_model|, with
+  ρ = 10 %: model error grows with the force. σ₀ = 20 N on the unsprung rows and 50 N (20 N·m) on the
+  rider and system rows, capped at 1.5 kN (300 N·m). σ_F is frozen within a Gauss-Newton iteration
+  (IRLS, like Huber). These are starting values, tuned on simulated truth (Isaac had no view, §11).
 - The cap matters: with no cap, the residual of a huge bump-stop force tends to 1/ρ, and the stop would
   stop stopping. The existing wall rows (15..19) stay, as the hard backstop.
-- Huber k = 3 on the force rows, as on the sensor rows (version 3): one unmodelled event (a foot off
-  a pedal, a hand off the bar, a casing pinch) must not drag the rest.
-- Starting values: δ from the static load at sag, φ = 0, T = 0, torso at neutral, damper parameters
-  from `Damper::default` scaled to the fork's and the shock's leverage.
+- Huber k = 3 on the force rows and the ground tie, as on the sensor rows (version 3): one unmodelled
+  event (a foot off a pedal, a hand off the bar, a casing pinch) must not drag the rest.
+- Starting values: δ from the static load at sag, φ from the ground slope, T = S = 0, the rider at
+  neutral, damper parameters from `Damper::default` scaled to the fork's and the shock's leverage, the
+  drift curves flat.
 
 ## 8. Phases and acceptance
 
@@ -135,51 +194,65 @@ Each phase is behind `Spec::forces` (off by default, like `nav`) and bumps `PHYS
 | Phase | Adds | Needs |
 |---|---|---|
 | F0 | the force laws generic over `Real` in `sim` (tyre, damper, air spring, smooth contact), with the sim unchanged (its tests pass) | — |
-| F1 | unsprung rows (along-axis), system rows, torso, δ / φ / T / torso / u latents, per-ride and per-stretch parameters, identification | F0 |
-| F2 | head + helmet IMU rows (`Cam_Accel*`, `Cam_Gyro*`, camera mount rotation fitted per ride) | F1, nav (gravity is in `Cam_Accel` as specific force, but the mount needs the head's rate) |
-| F3 | flex as load / stiffness: fork bending from the across-axis load (φ, T), rear member and frame pod flex from the linkage loads; one stiffness per part | F1 |
-| F4 | ground per wheel, rear-follows-front prior, terrain output for the sim | F1, nav |
+| F1 | unsprung rows, system rows (6), the rider body (6), tyre latents, the shared ground and its tie, per-ride and per-stretch parameters, identification | F0, nav |
+| F2 | head + helmet IMU rows (`Cam_Accel*`, `Cam_Gyro*`, camera mount rotation fitted per ride) | F1 |
+| F3 | flex as load / stiffness: fork bending from the across-axis load (φ, T, S), rear member and frame pod flex from the linkage loads; one stiffness per part | F1 |
+| F4 | drift: step 1 (slow splines), then step 2 (thermal state) | F1 |
 
 Acceptance (simulated truth and physics checks, never the IEKF; one-model spec §8):
 
-- **Exact-model synthetic:** integrate the estimator's own force model over a known ground and rider
-  input, run its readings through the sensor model, solve: travel back within 2 mm rms, damper
-  parameters within their σ, from any start.
+- **Exact-model synthetic:** integrate the estimator's own force model over a known ground, rider
+  input and drift, run its readings through the sensor model, solve: travel back within 2 mm rms,
+  damper parameters and drift within their σ, from any start.
 - **Independent synthetic:** the forward sim (whole-bike phase 1; `sim::ride` covers the rear today)
   over known terrain: travel, tyre force and terrain recovered.
 - **Real rides** (11/21 x2, Beacon `173461a2`):
   - bottom-outs at or below the stop (11/21 lap 2 peak ≤ 171 mm), and the rear pod's misfit through
     the 50 g hits under 5σ (26σ today);
   - at stops and slow rolling, the static balance reproduces the bike file's sag within 3 mm;
-  - the two 11/21 rides (same setup) give the same damper curves within their σ;
+  - the two 11/21 rides (same setup) give the same damper curve shapes within their σ;
+  - drift goes the way Isaac feels it: springs stiffer and damping weaker toward the bottom of each run
+    and through the day, recovering over breaks;
   - a click change: Isaac's next clicker test must move the fitted curve the right way (a prediction
     written before the ride);
   - rider stiffness per stretch through 11/21 (expected to trend with fatigue; reported, not gated).
 
 ## 9. Outputs
 
-Channels (C1 §5, `derived_kind` "physics"): `Physics front tyre force (N)`, `Physics rear tyre force (N)`,
-`Physics fork force (N)`, `Physics shock force (N)`, `Physics front tyre deflection (mm)`,
-`Physics rear tyre deflection (mm)`, `Physics rider leg force (N)`, `Physics rider arm force (N)`,
-`Physics rider pump (N)` (the active part), and in F4 `Physics front ground (mm)`, `Physics rear ground (mm)`.
-Rim strikes and insert contact show in the deflection channels against the tyre's limits.
+Channels (C1 §5, `derived_kind` "physics"): `Physics front tyre force (N)`, `Physics rear tyre force (N)`
+(normal), `Physics front / rear tyre lateral (N)`, `Physics front / rear tyre tangential (N)`,
+`Physics fork force (N)`, `Physics shock force (N)`, `Physics front / rear tyre deflection (mm)`,
+`Physics rider force x / y / z (N)` and `Physics rider moment roll / pitch / yaw (N·m)` (the wrench on
+the frame), the same for the active part (`Physics rider pump …`), `Physics ground (mm)`, and the drift
+curves as channels (`Physics fork pressure scale`, `Physics shock damping scale`, …). Rim strikes and
+insert contact show in the deflection channels against the tyre's limits.
 
-Shelf gaps (whole-bike spec §11): standing-rider segment masses and stiffnesses (a segment table, e.g.
-de Leva 1996, must be cited from the web or added to the shelf before it drives a number); MTB tyre
-casing at low pressure (Pacejka gives structure only).
+Shelf gaps (whole-bike spec §11): standing-rider segment masses, inertias and stiffnesses (a segment
+table, e.g. de Leva 1996, must be cited from the web or added to the shelf before it drives a number);
+MTB tyre casing at low pressure (Pacejka gives structure only); damper oil viscosity against
+temperature and air-shock heating (Dixon's thermal chapter to check first).
 
-## 10. Cost and NPU
+## 10. Cost, mobile and NPU
 
-About 25 latents instead of 14 and about 9 more rows per sample: a window solve 2-3x slower (the normal
-matrix's band grows with the latents' count squared at 1-sample knots, only δ is at 1). The
-identification's outer passes run over a window subsample. Every law is smooth, fixed-shape and f32-
-safe (softplus contact, tanh friction, smooth knee): no branches on data inside a window.
+About 28 latents instead of 14, and about 15 more rows per sample: a window solve roughly 3-4x slower
+(the normal matrix's band grows with the square of the latents at the finest level). The
+identification's outer passes run over a window subsample. On phones (4 threads) a whole-ride force
+solve is slow: the force model runs on the desktop first, and the phone's path is the NPU network.
+Every law is smooth, fixed-shape and f32-safe (softplus contact, tanh friction, smooth knee): no
+branches on data inside a window.
 
-## 11. Questions for Isaac (asked 2026-11-25, in chat)
+## 11. Rulings (Isaac, 2026-11-25)
 
-1. Force tolerance: 10 % of the force plus a small floor, capped, with Huber.
-2. Fitted per ride (bike parts) and per stretch (rider); masses never; pool rides with the same setup later.
-3. Ground coupling: relax by how far the rear's track is from the front's; off below 1.5 m/s.
-4. The PyTorch reference: the force model is built Rust-first and the reference catches up later
-   (torch is not installed; the reference already lags by fork twist and Huber). Whole-bike spec §5.2
-   said the reference leads.
+1. Force tolerance: no view ("i have no idea"). Use §7's starting values, tuned on simulated truth.
+2. Parameters: per ride for bike parts and per stretch for the rider, yes, but bike parts drift with
+   heat (stiffer air, less damping in suspension and tyres toward the bottom of a run and through the
+   day), so not strictly once per ride: §5's drift, measured then predicted.
+3. Ground: one ground for both wheels with Huber on the tie (§6), not two profiles.
+4. PyTorch: "whatever works", everything must work on mobile. Rust is the reference from now on; the
+   PyTorch reference (`ml/idlml`) is frozen where it is (no fork twist, no Huber) and is not extended.
+   The golden tests compare against fixtures it already produced, with the new terms held at 0. How
+   the NPU network is trained is decided when that work starts (whole-bike spec §5.2 is superseded on
+   this point).
+5. Rider: 3-D, roll and yaw first in importance; Isaac suggested a single force vector + moment on
+   the frame. §3.1 is the proposal (that wrench, with a body and a 6-axis bushing behind it), pending
+   his yes.
