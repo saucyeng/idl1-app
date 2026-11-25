@@ -93,13 +93,16 @@ saying whether it changed user-facing documentation (R222 item 5).
 - Lanes touch only their own crate/directory. Cross-lane needs are contract changes, through the lead.
 - After changing an `idl1-bridge` command signature, update `app/src/ipc/` and the C3 contract together.
 
-## 8. Compute rules (the dev machine is memory-bound — ruling R13)
+## 8. Compute rules
 
-**Cloud first (Isaac, 2026-10-15).** GitHub Actions runs every gate on each push to `main`: the Rust suites (`ci.yml`, three parallel jobs: engine, idl1-bridge, idl1-transport), `tsc`, madge and vitest; Release's builds compile the app crate, and Release publishes only after CI passes for that commit. Actions minutes are free (public repo). The local machine runs only `tsc` and targeted or full `vitest` before a push, then the lead watches CI and fixes forward. Cargo runs locally only to debug a failure CI has already shown, and then under the rules below. There is no separate test branch: nightly *is* the work-in-progress channel.
+**No local build limits (Isaac, 2026-11-25).** The dev machine is a Core Ultra 7 265 (20 threads, 64 GB). The old
+memory-bound rules (R13, R216, R245: two cargo processes, commit-free checks, a jobs cap) are retired. Build, test
+and solve real rides locally as needed; run the full suites before a push when the change warrants it.
 
-- At most **two** cargo processes on the machine at a time (R216; four or more is what crashed it), and a cargo command starts only with ≥ 3 GB of memory commit free (`Get-CimInstance Win32_OperatingSystem | % FreeVirtualMemory`; R245: measured 2026-09-20, the full tauri test build with a warm target dir peaks at 1.7 GB; a cold or release build wants ≥ 6 GB); jobs are capped machine-wide (`~/.cargo/config.toml`), never override with `-j`.
-- Task cycles run only the targeted test filter the dispatch names; each run must report a non-zero `passed` count (a filter matching nothing is a failed gate, not a pass).
-- The full suite runs once per lane at its merge gate: `cargo test -p idl-rs -p idl-library -p idl-rs-cli -- --test-threads=4`. Never `--workspace`.
+**CI is still the gate (Isaac, 2026-10-15).** GitHub Actions runs every gate on each push to `main`: the Rust suites (`ci.yml`, three parallel jobs: engine, idl1-bridge, idl1-transport), `tsc`, madge and vitest; Release's builds compile the app crate, and Release publishes only after CI passes for that commit. The lead watches CI and fixes forward. There is no separate test branch: nightly *is* the work-in-progress channel.
+
+- Every test run must report a non-zero `passed` count (a filter matching nothing is a failed gate, not a pass).
+- The full engine suite: `cargo test -p idl-rs -p idl-library -p idl-rs-cli`. Never `--workspace`.
 - No reruns to hunt flakiness unless the lead asks; a known-flaky test is rerun alone by name, once.
 - A task that changes a `pub` signature in `core` adds `cargo check -p idl-rs-cli --tests`.
 - App-side crates (`crates/*`, `app/src-tauri`) build in the root workspace; the idl-rs crates build in `rust/`. Both use the shared target dir from the machine-local `saucyeng/.cargo/config.toml` (outside every repo; the public idl-rs repo carries no machine paths).

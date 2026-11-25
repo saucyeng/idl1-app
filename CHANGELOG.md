@@ -4,6 +4,12 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 
 ## [Unreleased]
 
+### Changed
+
+- **Physics solve faster [no-docs] (2026-11-25).** Each window converges in fewer steps (a better
+  damping rule: about 30 % less time per window, same answer), and the windows run on every core but
+  two instead of at most four.
+
 ### Added
 
 - **Orientation in the physics solve, experimental [docs] (2026-11-25).**

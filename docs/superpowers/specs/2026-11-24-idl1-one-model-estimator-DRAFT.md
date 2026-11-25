@@ -54,7 +54,8 @@ cannot follow frame vibration), rate vs w0 (σ 0.02 rad/s), GPS north/west/up (0
 attitude and velocity priors at the window's first sample. The frame pod's flex is left out of these rows
 (f_meas stands for the chassis's specific force). Off unless `Spec::nav` and `Window::nav` are both set.
 Synthetic check: start 2° tilt / 9° yaw off, solved to 0.06° / 0.11°, travel moved 0.005 mm.
-Still to build: ZUPT rows, the no-GPS acceleration prior.
+Dropped (Isaac, 2026-11-25): the stationary (ZUPT/ZARU) rows and the no-GPS acceleration prior. Every
+ride is assumed to have GPS, and GPS velocity already holds a stopped bike at zero.
 
 Wired 2026-11-25: `session estimate-physics --nav` (off by default; library option `nav`). The start
 attitude prior is a nav-frame error (its z is heading). Windows of one riding stretch chain in order
@@ -80,7 +81,8 @@ gets a Gaussian prior on its first knots' attitude and velocity from the previou
 the overlap (σ from that window's Hessian block). The first window of each riding stretch: tilt from
 the stationary window (`orient.rs`), heading from the first GPS course above 3 m/s, v from GPS. The
 current parallel window solve becomes a chain; to keep threads busy, separate riding stretches (split by
-stops, where ZUPT resets velocity and pins tilt) run in parallel.
+stops) run in parallel. Thread pool: all cores but two, left for the rest of the system (Isaac,
+2026-11-25).
 
 ## 5. Outputs
 
@@ -113,10 +115,21 @@ spline uses Exp/Log with small-angle series, no f64-only tricks).
 - Unit: SO(3) spline rate and acceleration vs finite differences; constant-rotation spline gives exact
   body rate; pod readings unchanged by R (gravity explicit) against the golden fixture.
 - Synthetic: `ml/idlml/sim/synth.py`-style ride with known attitude: roll/pitch error < 0.5°.
-- Real (the IEKF README's own checks, same rides): Beacon `173461a2` and Walden `4f3f3032`: roll vs
-  GPS-implied steady-turn lean (IEKF: slope 0.89 / 0.97, r 0.93 / 0.97), heading − GPS course above
-  4 m/s (IEKF: RMS 5.8° / 13.2°). Accept when the model matches or beats both; then delete.
+- **The IEKF is not the baseline (Isaac, 2026-11-25: "we dont trust the iekf ... we need to build from
+  first principles").** Acceptance is against truth we can construct or physics the data must obey,
+  never agreement with the IEKF. Its numbers below are context only.
+- Simulated truth: rides from the Rust simulator (`core/src/sim`) and `synth.py`, run through the
+  same sensor model, with known attitude, velocity and travel. Thresholds to set from the first runs.
+- Physics on real rides (Beacon `173461a2`, Walden `4f3f3032`, and every ride with GPS):
+  - steady-turn lean: tan(roll) = v·ψ̇/g from GPS speed and course rate (slope and r);
+  - at stops (GPS speed ≈ 0, frame gyro quiet), roll and pitch equal the accelerometer's gravity
+    direction;
+  - held-out GPS: drop GPS for 10–30 s spans and predict its velocity; the error growth is the
+    model's dead-reckoning quality;
+  - GPS velocity residuals small and without structure (no lag-shaped or turn-correlated pattern).
 - Travel results on Beacon unchanged within 1 mm median (attitude must not disturb travel).
+- For context only (IEKF README, same rides): lean slope 0.89 / 0.97, r 0.93 / 0.97; heading − course
+  above 4 m/s RMS 5.8° / 13.2°.
 
 ## 9. Rulings (Isaac, 2026-11-24)
 
@@ -128,7 +141,7 @@ spline uses Exp/Log with small-angle series, no f64-only tricks).
 ## 10. Retirement order
 
 1. Attitude + velocity + GPS in the objective, behind the version bump; IEKF untouched.
-2. Acceptance (§8) side by side.
+2. Acceptance (§8): simulated truth and the physics checks, not agreement with the IEKF.
 3. Port the remaining IEKF users to the model: `bike calibrate --forward-from` (forward trim and steer
    zero from the model's slip and steer), `SessionHandle`'s estimate (`handle.rs` ~591), the builtins
    (per §9 Q1), examples (`estimator_regression`, `estimate_trace`, `compare_sag`, `diag_coupling`),
