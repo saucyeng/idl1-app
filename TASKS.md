@@ -1041,13 +1041,18 @@ Analysis gaps from `173461a2` (Python was needed for each; `agent-gaps.md`):
           bump stop, a fitted damper curve, `sim::tyre`, flex as load / stiffness, rider legs / arms /
           neck per stretch; masses from the bike file. A ground profile **per wheel** (front and rear
           lines differ in tight turns and slides), tied by a soft rear-follows-front prior that
-          relaxes with steer, yaw rate and slip. Spec-first. Target: bottom-outs stop at the stop
+          relaxes with steer, yaw rate and slip. Spec `2026-11-25-idl1-force-model-DRAFT.md` (phases
+          F0-F4; four questions to Isaac in its §11). Target: bottom-outs stop at the stop
           (11/21 lap 2 is still 175 mm on a 170 mm fork), the rear's 26-sigma misfit through hits.
     - [ ] PyTorch reference: add fork torsion (`F_TWIST`) and Huber to `ml/idlml`, regenerate the
           goldens (torch is not installed on the new machine).
-    - [ ] Investigate "Downamics Lateral Accel Under Braking" (Isaac's Downloads): check the claim
-          against the fork pod's lateral accel in sustained braking zones, net of the frame's motion
-          carried to the pod.
+    - [x] "Lateral accel under braking" video (Data Driven Descents; its traces are labelled
+          "illustrative data", setup undefined) claims rear-brake-on rear-axle lateral 1.0-1.7 g RMS vs
+          0.4 g off. Checked 2026-11-25 on 11/21 x2 and Beacon (rear pod Z = lateral, 5-100 Hz RMS;
+          braking = GPS decel > 0.25 g held 1 s above 4 m/s, 2-7 s per ride; coasting |a| < 0.05 g):
+          lateral braking / coasting 0.96 / 0.92, 0.77 / 0.87, 0.63 / 0.74 g. No increase; only the
+          lateral share of vertical rises 15-30 %, because vertical drops as the rear unloads. Not
+          supported on the GT Force.
     - [ ] `workbook data` takes no time window or definition filter: one 10 s question returned 2 GB.
     - [x] A workbook written for one ride opens on it: C2 §1 `opens_on` (Isaac, 2026-11-24).
           Next: `workbook eval` could default `--session`/`--main-lap` from it.

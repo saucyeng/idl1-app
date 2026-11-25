@@ -184,6 +184,9 @@ The chain sim (drivetrain spec) stays as it is, with two changes:
 
 ### 5.2 Inverse: the estimator's dynamics layer
 
+Detailed in `2026-11-25-idl1-force-model-DRAFT.md` (2026-11-25), which gives each wheel its own
+ground (the front and rear can take different lines) in place of the one shared profile below.
+
 The estimator's objective today: pod residuals, kinematic priors, smoothness. Proposed
 addition: an **equations-of-motion residual** (the estimated motion must satisfy the
 bike model's force balance with the current parameters, within a modelled error), and two
