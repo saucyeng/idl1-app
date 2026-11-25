@@ -70,6 +70,18 @@ mean +1.24°, RMS 1.45°; pitch −0.71° / 1.03°; heading vs GPS course above 
 13.8°), mean 0.03° (IEKF 0.25°). Open: speed. 60 s of riding takes 11.5 min with nav vs 2.7 min
 without (sequential chains; 12 dual passes per sample for the attitude Jacobian).
 
+2026-11-25, new machine, Beacon lap 1 (105 s, 11 windows), after the Nielsen damping fix: nav one
+window at a time 327 s on one thread (was 954 s). Travel with nav, front / rear p99 153 / 139 mm vs
+145 / 130 without nav: **at m_att 1 nav still raises the travel peaks by ~8 mm on this lap** (the
+60 s check agreed within 1 mm). Tried and rejected: a parallel first pass (every window alone from a
+loose start: tilt from 2 s of accel at 0.3 rad, heading from the nearest GPS course at 0.5 rad) then
+a chained second pass warm-started from it: 172 s on 18 threads, but it lands elsewhere (front /
+rear p99 157 / 146), and with the second pass converged to tol 0.01 still 156 / 143 vs 153 / 139.
+Not under-convergence: **the objective has a near-flat direction trading tilt against travel / frame
+flex, and the start decides the answer.** Fix that before speed: find which latent absorbs tilt (frame
+flex `F_ROT`/`F_TRANS` and fork bend are suspects), and check against simulated truth (§8) which
+answer is right.
+
 Heading is observable only through GPS velocity against the accelerometer (turning and speed changes).
 Straight constant-speed riding leaves it weak; the spline's smoothness carries it. No course-equals-
 heading prior: that would erase slip.

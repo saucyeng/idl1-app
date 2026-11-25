@@ -1060,6 +1060,50 @@ Analysis gaps from `173461a2` (Python was needed for each; `agent-gaps.md`):
         about 10x faster); move roll, pitch, heading, slip, braking/cornering g and understeer onto
         the solver and retire the IEKF (Isaac's #6); mark the IEKF builtins legacy in the catalog
         and generate a "current methods" table into AGENTS.md (suggested edits Isaac approves).
+  - [ ] **LAN sync resilient to drops (Isaac, 2026-11-25).** Moving a 24 GB library to a new PC
+        over Wi-Fi took six attempts. What went wrong:
+    - [ ] Closing the app mid-sync (a nightly install) stops it and nothing resumes it. Resume an
+          interrupted sync on the next launch; retry with backoff while the peer is reachable.
+    - [ ] The peer dropping off Wi-Fi mid-run is not noticed: every item times out in turn and the
+          counter keeps climbing (`sessions (81/367)` → `(92/367)`) as if it were working. Detect a
+          dead peer (a few consecutive connect failures), pause, and say so.
+    - [ ] After the peer came back, the running sync kept dialling its old address/port; re-resolve
+          the peer (mDNS) before each retry.
+    - [ ] A run cut short leaves sessions with `session.json` but no `data.parquet` (107 of 179), and
+          `library rebuild` cannot repair them: it finds the blob through `data.parquet` (see the
+          "Rebuild should find the blob" item below). Install `session.json` only after its
+          `data.parquet`, and let rebuild find the blob without it.
+    - [ ] One-way reachability: the old PC's firewall refused every inbound connection while
+          announcing itself as Online, so pairing and syncing from the new PC failed and only the
+          other direction worked. Say "reachable one way: start the sync from DESKTOP-…" instead of
+          the generic "check that both devices are on the same network".
+    - [ ] The progress line names the peer by id (`Syncing with ba8c16b3-…`), not by its name; the
+          Data page's Sync button only opens the panel.
+    - [ ] `drive.mjs update` should refuse while a sync, import or solve runs.
+    - [ ] Videos did not come across: 3 sessions link a video (the 11/21 helmet clip `GX010177.MP4`,
+          2.2 GB) and none of the video blobs arrived, with no message. Both ends are desktops, which
+          hold video (C4 §6). Find whether the `videos` phase ran, and report skipped videos.
+    - [ ] A sync that ends "cleanly" says nothing about what it could not send: here 107 sessions
+          arrived as `session.json` only, because the sending PC had no `data.parquet` for them either.
+          Report "N sessions have no data on either side".
+  - [ ] **Import pipeline gaps (Isaac, 2026-11-25: "needs some love").** Found moving the library:
+    - [ ] 107 of 179 sessions on the old PC had a `session.json` and a blob but no `data.parquet`
+          (imports that never finished: the memory-check crashes of 2026-11-23 and earlier). Nothing
+          noticed. Re-importing each blob on the new PC fixed 104 in 3.5 min (`session import` of the
+          blob copied to `<id>.idl0`; the session id is the UUID in the log header). Add a library
+          check ("sessions without data", "blobs without a session") and a one-click repair.
+    - [ ] `library rebuild` cannot repair a session with no `data.parquet`: `reimport_session` reads
+          the blob hash from the parquet's metadata. Record the blob hash in `session.json` (or find
+          the blob by the header UUID) so rebuild works from the record alone.
+    - [ ] Two sessions with 16-hex ids (`7253a4dd4c99f252`, `d7f4d504559da4e0`) have a record and
+          no blob anywhere: probably synth/test sessions. Decide: delete, or mark as test data.
+    - [ ] Bike assignment is sparse: 3 of 179 sessions name a bike (`bike_id`), so `estimate-physics`
+          refuses the rest ("names no bike"), including Beacon, which the GT Force's own calibration
+          names as its forward ride. Infer the bike at import (one bike in the library, or the
+          logger's last bike), offer bulk assignment in Data, and let a calibration's
+          `forward_ride` / sessions attach themselves.
+    - [ ] Re-importing rewrites `session.json` with the index fields; check that a re-import can
+          never drop user fields (bike, notes, ignored laps, videos).
   - [ ] A ride whose import fails leaves a session.json with no data (the ride form saves notes
         for a ride that never imported); the import's memory check compares against half the RAM,
         not the memory free, so a short machine starts an import it cannot finish and the app is

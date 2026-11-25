@@ -12,6 +12,9 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 
 ### Added
 
+- **Set a ride's bike from the CLI [docs] (2026-11-25).** `idl-rs session set-meta <ride> --bike-id
+  <bike>` links the ride to the bike and what it took from the bike's log, as the ride form does;
+  `estimate-physics` needs it.
 - **Orientation in the physics solve, experimental [docs] (2026-11-25).**
   `idl-rs session estimate-physics --nav` also solves the bike's orientation and velocity with
   travel, using the GPS: channels `Physics roll / pitch / heading / course / slip (deg)`,

@@ -252,6 +252,14 @@
         {
           "choices": [],
           "default": null,
+          "help": "The bike it was ridden on, as `bike list` prints it: sets the bike, its name and what the ride took from the bike's log (needed by `estimate-physics`)",
+          "kind": "text",
+          "long": "bike-id",
+          "repeatable": false
+        },
+        {
+          "choices": [],
+          "default": null,
           "help": "Event name",
           "kind": "text",
           "long": "event",
@@ -610,7 +618,7 @@
         {
           "choices": [],
           "default": null,
-          "help": "Worker threads; default up to 4",
+          "help": "Worker threads; default every core but two (at most 4 on a phone)",
           "kind": "integer",
           "long": "threads",
           "repeatable": false
