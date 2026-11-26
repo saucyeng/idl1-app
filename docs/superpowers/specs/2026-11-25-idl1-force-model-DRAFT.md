@@ -220,15 +220,46 @@ facts worth keeping: prescribing the frame's motion fixes the suspension forces 
 unsprung inertia undetermined (prescribe the ground instead), and a free bike under prescribed tyre
 forces rolls away (a real one is held by the ground and the rider's body English).
 
-Real rides (Beacon `173461a2`, 2966-2996 s, pressures given for the run: fork 75, shock 220, tyres
-23.5 / 28.5 psi): the setup's static check holds every balance within 12 N / 8 N m, but the solve
-does not converge. Identification takes one step and stalls (loss 9.3 M -> 1.2 M per 4 x 6 s; the
+Real rides, first try (Beacon `173461a2`, 2966-2996 s, pressures given for the run: fork 75, shock
+220, tyres 23.5 / 28.5 psi): the setup's static check holds every balance within 12 N / 8 N m, but
+the solve did not converge. Identification takes one step and stalls (loss 9.3 M -> 1.2 M per 4 x 6 s; the
 balance rows sit near 4 sigma on average, five times the pods' share), three of four 12 s windows
 fail to factor (not positive definite), and the dampers' nominal values are far too strong (the
 fork's 3000 N s/m low-speed rebound at the axle gives -8.5 kN in rebound, which no tyre load can
 balance). Next, in order: why Levenberg-Marquardt stalls on the shared parameters; the failed
 factorisations (conditioning); then nominal damping from a real curve. Each run prints its static
 check and the loss by row group with `IDL_FORCE_DEBUG=1`.
+
+Fixed the same day: the stall and the failed factorisations were one bug. The seal friction's
+`tanh(v / v0)` (v0 = 0.01 m/s) evaluated as a dual number divides cosh's infinities past about 300
+(the fork at 3.5-4 m/s), and the NaN derivative spoiled every band it touched; friction is now
+constant past |v / v0| = 20. Also: GPS fixes without a speed are skipped, force solves warm-start from
+the window's pod-only solve, the deflection prior keeps tyres in range.
+
+Real rides, second try (2026-11-25; the log now holds fork 75, shock 190, tyres 24 / 28.5 psi and
+the rider's 1.80 m, as Isaac assumed them; his centre of mass at half his height above the bottom
+bracket, standing a little upright). 30 s each, 4 identification windows of 6 s, every window
+solved:
+
+| | Beacon `173461a2` 2966-2996 s | 11/21 lap 2 `d1f49dac` 4930-4960 s (the bottom-out) |
+|---|---|---|
+| identification loss | 12.9 M -> 97 k (60 iterations, still falling slowly) | 24 M -> 343 k |
+| front travel median / p99, mm (pods only) | 57 / 139 (54 / 152) | 55 / 155 |
+| rear travel median / p99, mm (pods only) | 53 / 135 (48 / 139) | 50 / 135 |
+| tyre loads median, front / rear, N | 423 / 462 (sum 885; weight 956) | 432 / 314 |
+| fork damping LSC / HSC / LSR / HSR, factor on the nominal | 0.21 / 0.24 / 0.10 / 0.08 | 0.21 / 0.31 / 0.08 / 0.13 |
+| shock pressure factor (on 190 psi) | 0.68 | 0.65 |
+| pod rows' loss per 6 s window | about 7 k (as pods only) | about 31 k (4x pods only) |
+
+Read: the fork's damping comes out the same on two rides weeks apart, at a fifth to a tenth of the
+guessed nominal (the nominal was the problem). The shock wants two thirds of its logged pressure on
+both: a leakier shock than assumed, or the shock's spring model or leverage too stiff; to check
+against a measured sag. Not consistent between the rides: the shock's damping, the friction, the
+tyres' damping (6-11x nominal) and the rider's springs (fore-aft and lateral near 0: a standing
+rider barely sprung that way). On 11/21 the force rows still pull the pods 4x off their own fit: the
+model misses something there (the rider, most likely: his rows carry the largest share). Next:
+identification on more windows spread through whole rides, the sag check of the shock, then F2
+(the helmet) for the rider.
 
 How F1 is built: as navigation was (`physics/nav.rs`), a separate block, `physics/forces.rs`, with its own latents, rows, weights and parameters, on only when `Spec::forces` and `Window::forces` are set. The 14 core latents, their golden tests and the PyTorch fixtures stay as they are. The core latents the force rows read (travel, steer, the rear member, the frame motion) enter through the same `Sample` the pod rows use.
 

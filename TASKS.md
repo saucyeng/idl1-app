@@ -1043,8 +1043,9 @@ Analysis gaps from `173461a2` (Python was needed for each; `agent-gaps.md`):
           6-axis spring plus an active wrench), one ground for both wheels with a Huber tie, damper /
           spring / tyre parameters drifting with heat through a ride. Spec `2026-11-25-idl1-force-model-DRAFT.md` (phases
           F0-F4; rulings in its §11). F0 and F1's core built 2026-11-25 (exact on a simulated ride);
-          real rides run (`--forces`) but do not converge yet: next, the identification stall and
-          the 12 s windows' failed factorisations, then the fork damper's nominal (spec §8). Target:
+          real rides solve (`--forces`; a NaN in the friction's dual tanh was the stall): the fork's
+          damping comes out alike on Beacon and 11/21, the shock wants 2/3 of its pressure. Next:
+          identification over whole rides, the shock's sag check, then F2 (helmet) (spec §8). Target:
           bottom-outs stop at the stop
           (11/21 lap 2 is still 175 mm on a 170 mm fork), the rear's 26-sigma misfit through hits.
     - [x] PyTorch reference: frozen (Isaac, 2026-11-25: "whatever works"). Rust is the reference; the

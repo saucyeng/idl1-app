@@ -27,8 +27,11 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
   deflections, fork and shock forces, and the rider's force and moment on the bike (`Physics ...
   (N)` channels), after identifying the dampers and the rider's springs on a few windows.
   `--params key=value,...` sets bike parameters for one run without saving them. Exact on a
-  simulated ride; **on real rides it does not converge yet** (see the force-model spec), so it is
-  off by default and nothing else changes.
+  simulated ride; on real rides it now solves every window and gives plausible tyre loads, but the
+  identified numbers are not trusted yet (see the force-model spec), so it is off by default.
+- **Physics solves use more threads [no-docs] (2026-11-25).** A window's normal equations are built
+  in sample chunks across threads, its border solves run in parallel, and a short span (few
+  windows) gives each window the spare cores; same answers to rounding.
 
 - **Set a ride's bike from the CLI [docs] (2026-11-25).** `idl-rs session set-meta <ride> --bike-id
   <bike>` links the ride to the bike and what it took from the bike's log, as the ride form does;
