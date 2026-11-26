@@ -315,6 +315,35 @@ whole rides did not (1.16 / 1.40, 0.89 / 0.67); the fork's dampers come closer (
 within sigma); the shock's high-speed compression is unidentified on Beacon (x/ 2.5) and 1.0 on
 11/21; the tyre loads stay positive. Still more spread than sigma everywhere.
 
+Converged: with the cap at 200 (`IDL_FORCE_ID_ITERS`), Beacon's laps stop on their own at 65
+iterations with the same parameters; the 60 cap was not what spread them.
+
+Per lap (2026-11-26; `IDL_PHYSICS_LAPS=<n>`, 6 identification windows of 6 s inside each lap):
+
+| factor on the nominal | B1 | B2 | B3 | B4 | B5 | B6 | E1 | E2 | E3 |
+|---|---|---|---|---|---|---|---|---|---|
+| fork LSC / HSC | 0.21 / 0.17 | 0.33 / 0.11 | 0.32 / 0.04 | 0.27 / 0.12 | 0.23 / 0.04 | 0.20 / 0.22 | 0.20 / 0.23 | 0.45 / 0.30 | 0.23 / 0.23 |
+| fork LSR / HSR | 0.07 / 0.08 | 0.12 / 0.28 | 0.10 / 0.16 | 0.06 / 0.11 | 0.14 / 0.14 | 0.09 / 0.10 | 0.11 / 0.08 | 0.06 / 0.16 | 0.10 / 0.16 |
+| shock LSC / HSC | 7.73 / 0.30 | 0.82 / 0.01 | 0.95 / 0.07 | 1.63 / 0.37 | 1.78 / 0.01 | 1.46 / 0.23 | 0.89 / 0.91 | 1.27 / 0.97 | 0.73 / 0.95 |
+| shock LSR / HSR | 0.01 / 0.34 | 0.29 / 0.16 | 0.17 / 0.45 | 0.34 / 0.37 | 0.05 / 0.65 | 0.13 / 0.46 | 0.27 / 0.34 | 0.21 / 0.44 | 0.52 / 0.44 |
+| fork / shock spring | 0.74 / 0.47 | 1.18 / 0.95 | 1.06 / 1.04 | 0.97 / 0.75 | 0.95 / 1.09 | 1.14 / 0.80 | 1.28 / 0.67 | 1.24 / 0.69 | 1.34 / 0.83 |
+| fork / shock friction | 0.23 / 0.05 | 0.44 / 2.48 | 0.58 / 4.27 | 0.49 / 2.71 | 0.69 / 2.76 | 0.45 / 3.55 | 0.46 / 0.02 | 0.22 / 0.29 | 0.72 / 0.82 |
+| tyre stiffness front / rear | 1.36 / 0.83 | 1.31 / 0.72 | 1.37 / 0.83 | 1.41 / 0.79 | 1.38 / 0.81 | 1.40 / 0.95 | 1.71 / 0.96 | 1.79 / 0.94 | 1.81 / 0.81 |
+| tyre damping front / rear | 13.9 / 11.0 | 1.65 / 2.03 | 7.92 / 8.42 | 6.20 / 12.1 | 4.80 / 9.09 | 6.59 / 14.2 | 5.29 / 11.0 | 3.81 / 4.99 | 3.66 / 13.2 |
+| rider k up / k roll / k yaw | 0.78 / 1.77 / 3.41 | 0.95 / 0.98 / 1.05 | 0.92 / 0.96 / 1.12 | 0.89 / 2.05 / 3.62 | 0.93 / 0.96 / 1.15 | 1.17 / 2.27 / 3.68 | 0.97 / 0.72 / 1.82 | 0.93 / 0.97 / 1.54 | 0.71 / 0.56 / 1.57 |
+
+Read: no trend through either day (no heat drift visible); scatter. Tight within each ride: the
+front tyre's stiffness (1.31-1.41 on Beacon, 1.71-1.81 on 11/21: the same logged 24 psi, so the
+front tyre differed between the days or its pressure did), the rear tyre's (0.72-0.96), the
+fork's low-speed dampers (LSC 0.20-0.33 but for E2, LSR 0.06-0.14), the shock's HSR (0.16-0.65,
+mostly 0.34-0.46) and the rider's vertical spring (0.71-1.17). Scattered, and trading off: the
+shock's HSC (0.01-0.97), friction (0.02-4.3), the tyres' damping (1.7-14) and the rider's rotational
+springs, which sit near 1 (not moved from nominal: the data does not reach them) on B2, B3, B5 and
+leave it together on B1, B4, B6. Lap 1 of Beacon is an outlier in nearly every row (a cold first
+lap, or a stretch the model does not fit). The parameters that scatter are the ones that can
+explain the same rows: model error lands on them. Next: the spring's progression (a fitted chamber
+volume, Isaac to approve) and the static rest point moving with the fitted pressure, then F2.
+
 How F1 is built: as navigation was (`physics/nav.rs`), a separate block, `physics/forces.rs`, with its own latents, rows, weights and parameters, on only when `Spec::forces` and `Window::forces` are set. The 14 core latents, their golden tests and the PyTorch fixtures stay as they are. The core latents the force rows read (travel, steer, the rear member, the frame motion) enter through the same `Sample` the pod rows use.
 
 Acceptance (simulated truth and physics checks, never the IEKF; one-model spec §8):
