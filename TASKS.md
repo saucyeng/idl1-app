@@ -1044,8 +1044,15 @@ Analysis gaps from `173461a2` (Python was needed for each; `agent-gaps.md`):
           spring / tyre parameters drifting with heat through a ride. Spec `2026-11-25-idl1-force-model-DRAFT.md` (phases
           F0-F4; rulings in its §11). F0 and F1's core built 2026-11-25 (exact on a simulated ride);
           real rides solve (`--forces`; a NaN in the friction's dual tanh was the stall): the fork's
-          damping comes out alike on Beacon and 11/21, the shock wants 2/3 of its pressure. Next:
-          identification over whole rides, the shock's sag check, then F2 (helmet) (spec §8). Target:
+          damping comes out alike on Beacon and 11/21, the shock wants 2/3 of its pressure. Whole
+          rides (2026-11-26, 6 identification windows spread through each, every window solved): that
+          agreement does not hold; the rides differ by many sigmas (fork spring 1.16 vs 1.40 at 1 %),
+          so model error or drift, not noise, sets the parameters (spec §8). The rear tyre's normal
+          force goes negative in rebound (tyre damping 10x nominal outweighs the spring). Next: is
+          identification converged (60-iteration cap); per-window identification to tell drift from
+          misfit; the tyre's normal force kept >= 0 (needs Isaac); the sag check; then F2 (helmet).
+          The shock's "pressure" factor is the rear spring force against a guessed air geometry
+          (no sag tests in the log), not a pressure. Target:
           bottom-outs stop at the stop
           (11/21 lap 2 is still 175 mm on a 170 mm fork), the rear's 26-sigma misfit through hits.
     - [x] PyTorch reference: frozen (Isaac, 2026-11-25: "whatever works"). Rust is the reference; the

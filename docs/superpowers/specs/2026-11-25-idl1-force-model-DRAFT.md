@@ -261,6 +261,37 @@ model misses something there (the rider, most likely: his rows carry the largest
 identification on more windows spread through whole rides, the sag check of the shock, then F2
 (the helmet) for the rider.
 
+Whole rides (2026-11-26): Beacon 884 s and 11/21 `d1f49dac` 859 s of riding, 6 identification
+windows of 6 s spread through each (60 iterations, the cap, the loss still falling), then all 96 /
+95 windows solved with the parameters frozen (0 failed; 69 / 66 min on 9 threads each). Sigma from
+the reduced Hessian at the fit (`solve::globals_sigma`, printed with `IDL_FORCE_DEBUG`):
+
+| factor on the nominal (x/ sigma) | Beacon | 11/21 |
+|---|---|---|
+| fork LSC / HSC / LSR / HSR | 0.08 (1.18) / 0.03 (1.63) / 0.07 (1.08) / 0.18 (1.05) | 0.22 (1.05) / 0.27 (1.03) / 0.13 (1.04) / 0.18 (1.03) |
+| shock LSC / HSC / LSR / HSR | 0.42 (1.10) / 0.04 (2.36) / 0.18 (1.06) / 0.50 (1.04) | 0.52 (1.03) / 1.19 (1.02) / 0.23 (1.03) / 0.37 (1.05) |
+| fork / shock spring ("pressure") | 1.16 (1.01) / 0.89 (1.01) | 1.40 (1.01) / 0.67 (1.01) |
+| fork / shock friction | 1.12 / 5.92 | 0.21 / 2.00 |
+| tyre stiffness front / rear | 1.34 / 0.70 | 1.84 / 0.74 |
+| tyre damping front / rear | 2.12 / 10.09 | 2.23 / 9.96 |
+| rider k up / c up | 0.84 / 0.25 | 0.78 / 0.19 |
+| front / rear travel median / p99, mm | 51 / 132, 47 / 123 | 44 / 140, 56 / 120 |
+| tyre normal force 1 % / median / 99 %, N, front; rear | 0 / 458 / 1133; -60 / 453 / 1204 | 0 / 449 / 1838; -114 / 466 / 1537 |
+
+Read: the formal sigmas are a few percent, and the two rides (and Beacon's 30 s fit, fork LSC
+0.21) disagree by many of them: what sets the parameters is model error, or drift the frozen
+parameters cannot follow, not sensor noise; the sigmas are not to be quoted as uncertainty until
+the residuals are white. Alike on both rides: fork HSR, fork knee, shock LSR, rear tyre stiffness
+and damping, front tyre damping, the rider's vertical spring and damper. The spring factors may
+differ for a real reason (pressures are assumed, not gauged, and the shock leaks). The spring factor
+is a force scale on an air geometry that nothing measured anchors (the bike file's piston areas and
+volumes; no sag tests in the log), so "shock pressure 0.67" reads as the rear spring a third softer
+than the guessed curve, not as a pressure. The rear tyre's normal force goes negative: the law is
+spring + c x deflection rate (gated by contact), and at 10x nominal damping the rebound term
+outweighs the spring; a tyre cannot pull. Next: identification run to convergence (or its cap
+shown not to matter); identification per window to see whether the spread is drift or misfit; the
+normal force kept non-negative; the sag check; F2.
+
 How F1 is built: as navigation was (`physics/nav.rs`), a separate block, `physics/forces.rs`, with its own latents, rows, weights and parameters, on only when `Spec::forces` and `Window::forces` are set. The 14 core latents, their golden tests and the PyTorch fixtures stay as they are. The core latents the force rows read (travel, steer, the rear member, the frame motion) enter through the same `Sample` the pod rows use.
 
 Acceptance (simulated truth and physics checks, never the IEKF; one-model spec §8):

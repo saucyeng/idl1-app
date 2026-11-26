@@ -6,6 +6,9 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 
 ### Changed
 
+- **Force-model solves 1.65x faster [no-docs] (2026-11-26).** The physics solver builds its
+  equations from each row's nonzero entries only and solves for the shared parameters with half the
+  work, in parallel. A 30 s force run on Beacon 330 -> 201 s, same parameters to two decimals.
 - **Fork torsional vibration in the physics model [no-docs] (2026-11-25).** The fork pod can turn
   about the leg without the axle moving (new channel `Physics fork twist (deg)`). It explains the
   fork gyro's largest misfit, which frame-pod flex had been absorbing, and moves travel: Beacon lap
