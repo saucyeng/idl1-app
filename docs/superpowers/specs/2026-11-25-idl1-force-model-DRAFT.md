@@ -292,6 +292,29 @@ outweighs the spring; a tyre cannot pull. Next: identification run to convergenc
 shown not to matter); identification per window to see whether the spread is drift or misfit; the
 normal force kept non-negative; the sag check; F2.
 
+Laps only (2026-11-26; Isaac: the descents, not climbing, walking or the bike laid over; for
+prototyping, the whole ride stays the goal through the NPU). `IDL_PHYSICS_LAPS` solves only inside
+the session's laps (Beacon 6 laps, 531 s solved; 11/21 3 laps, 352 s), and the tyre's normal force
+is now kept >= 0 (spring and damping together through a 1 N softplus). Both changes in one run, so
+their effects are not separated. 19 / 15 min instead of 69 / 66.
+
+| factor on the nominal (x/ sigma) | Beacon laps | 11/21 laps |
+|---|---|---|
+| fork LSC / HSC / LSR / HSR | 0.19 (1.08) / 0.09 (1.28) / 0.16 (1.05) / 0.23 (1.06) | 0.27 (1.04) / 0.24 (1.04) / 0.08 (1.06) / 0.16 (1.03) |
+| shock LSC / HSC / LSR / HSR | 0.60 (1.06) / 0.03 (2.48) / 0.22 (1.05) / 0.60 (1.04) | 0.95 (1.08) / 1.05 (1.02) / 0.35 (1.08) / 0.44 (1.02) |
+| fork / shock spring | 1.29 (1.01) / 0.82 (1.01) | 1.28 (1.01) / 0.78 (1.00) |
+| fork / shock friction | 0.96 / 3.96 | 0.43 / 0.76 |
+| tyre stiffness front / rear | 1.49 / 0.70 | 1.74 / 0.97 |
+| tyre damping front / rear | 5.51 / 5.61 | 2.74 / 9.26 |
+| rider k up / c up | 0.93 / 0.43 | 0.79 / 0.21 |
+| front / rear travel median / p99, mm | 56 / 138, 46 / 139 | 58 / 149, 44 / 124 |
+| tyre normal force 1 % / median / 99 %, N, front; rear | 0 / 531 / 1253; 0 / 388 / 1205 | 1 / 496 / 1964; 0 / 349 / 1732 |
+
+Read: the spring factors now agree between the rides (fork 1.29 / 1.28, shock 0.82 / 0.78), which
+whole rides did not (1.16 / 1.40, 0.89 / 0.67); the fork's dampers come closer (within 2x, not
+within sigma); the shock's high-speed compression is unidentified on Beacon (x/ 2.5) and 1.0 on
+11/21; the tyre loads stay positive. Still more spread than sigma everywhere.
+
 How F1 is built: as navigation was (`physics/nav.rs`), a separate block, `physics/forces.rs`, with its own latents, rows, weights and parameters, on only when `Spec::forces` and `Window::forces` are set. The 14 core latents, their golden tests and the PyTorch fixtures stay as they are. The core latents the force rows read (travel, steer, the rear member, the frame motion) enter through the same `Sample` the pod rows use.
 
 Acceptance (simulated truth and physics checks, never the IEKF; one-model spec §8):

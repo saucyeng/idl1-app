@@ -6,6 +6,8 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 
 ### Changed
 
+- **Force model: tyre loads never negative [no-docs] (2026-11-26).** `session estimate-physics
+  --forces` no longer reports a tyre pulling on the ground in fast rebound.
 - **Force-model solves 1.65x faster [no-docs] (2026-11-26).** The physics solver builds its
   equations from each row's nonzero entries only and solves for the shared parameters with half the
   work, in parallel. A 30 s force run on Beacon 330 -> 201 s, same parameters to two decimals.

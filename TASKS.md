@@ -1050,7 +1050,9 @@ Analysis gaps from `173461a2` (Python was needed for each; `agent-gaps.md`):
           so model error or drift, not noise, sets the parameters (spec §8). The rear tyre's normal
           force goes negative in rebound (tyre damping 10x nominal outweighs the spring). Next: is
           identification converged (60-iteration cap); per-window identification to tell drift from
-          misfit; the tyre's normal force kept >= 0 (needs Isaac); the sag check; then F2 (helmet).
+          misfit; the sag check; then F2 (helmet). Done 2026-11-26: the tyre's normal force kept
+          >= 0; `IDL_PHYSICS_LAPS` (prototyping) solves the laps only, where the two rides' spring
+          factors agree (fork 1.29 / 1.28, shock 0.82 / 0.78) in a quarter of the time.
           The shock's "pressure" factor is the rear spring force against a guessed air geometry
           (no sag tests in the log), not a pressure. Target:
           bottom-outs stop at the stop
@@ -1064,6 +1066,8 @@ Analysis gaps from `173461a2` (Python was needed for each; `agent-gaps.md`):
           lateral braking / coasting 0.96 / 0.92, 0.77 / 0.87, 0.63 / 0.74 g. No increase; only the
           lateral share of vertical rises 15-30 %, because vertical drops as the rear unloads. Not
           supported on the GT Force.
+    - [ ] `read_geometry_table_fixture_screenshot_large_long_setting` fails locally: Windows OCR reads
+          the size "SM" as "sM" (2026-11-26; CI runs on Ubuntu and does not see it).
     - [ ] `workbook data` takes no time window or definition filter: one 10 s question returned 2 GB.
     - [x] A workbook written for one ride opens on it: C2 §1 `opens_on` (Isaac, 2026-11-24).
           Next: `workbook eval` could default `--session`/`--main-lap` from it.
