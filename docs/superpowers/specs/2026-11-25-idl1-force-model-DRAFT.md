@@ -350,6 +350,14 @@ left out. Laps of both rides: Beacon's identification loss 164 k -> 159 k; sprin
 shock 1.29 / 0.82 -> 1.26 / 0.88 (Beacon), 1.28 / 0.78 -> 1.28 / 0.82 (11/21); the rest within the
 per-lap scatter.
 
+Correlations at the fit (`solve::globals_covariance`, printed with `IDL_FORCE_DEBUG`), laps of
+both rides: within each damper friction, low-speed damping and the knee trade off (shock knee ~
+LSC -0.61 / -0.83, shock friction ~ LSC -0.53 / -0.79, ~ LSR -0.46 / -0.79; fork friction ~ LSC
+and LSR about -0.45, fork knee ~ LSC / LSR about -0.5): the low-speed end of each curve is weakly
+separated. The scattered parameters (shock HSC, the tyres' damping) correlate with nothing above
+0.3: their spread between laps is not one parameter standing in for another at the fit, it is what
+the model misses landing on them.
+
 How F1 is built: as navigation was (`physics/nav.rs`), a separate block, `physics/forces.rs`, with its own latents, rows, weights and parameters, on only when `Spec::forces` and `Window::forces` are set. The 14 core latents, their golden tests and the PyTorch fixtures stay as they are. The core latents the force rows read (travel, steer, the rear member, the frame motion) enter through the same `Sample` the pod rows use.
 
 Acceptance (simulated truth and physics checks, never the IEKF; one-model spec §8):
