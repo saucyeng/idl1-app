@@ -22,6 +22,14 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 
 ### Added
 
+- **Force model in the physics solve, experimental [docs] (2026-11-25).**
+  `idl-rs session estimate-physics --forces` adds Newton per body to the solve: tyre loads and
+  deflections, fork and shock forces, and the rider's force and moment on the bike (`Physics ...
+  (N)` channels), after identifying the dampers and the rider's springs on a few windows.
+  `--params key=value,...` sets bike parameters for one run without saving them. Exact on a
+  simulated ride; **on real rides it does not converge yet** (see the force-model spec), so it is
+  off by default and nothing else changes.
+
 - **Set a ride's bike from the CLI [docs] (2026-11-25).** `idl-rs session set-meta <ride> --bike-id
   <bike>` links the ride to the bike and what it took from the bike's log, as the ride form does;
   `estimate-physics` needs it.

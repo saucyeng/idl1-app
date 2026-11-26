@@ -194,12 +194,41 @@ Each phase is behind `Spec::forces` (off by default, like `nav`) and bumps `PHYS
 | Phase | Adds | Needs |
 |---|---|---|
 | F0 | the force laws generic over `Real` in `sim` (tyre, damper, air spring, smooth contact), with the sim unchanged (its tests pass) | — |
-| F1 | unsprung rows, system rows (6), the rider body (6), tyre latents, the shared ground and its tie, per-ride and per-stretch parameters, identification | F0, nav |
+| F1 | unsprung rows, system rows (6), the rider body (6), tyre latents, per-ride and per-stretch parameters, identification (attitude-free) | F0 |
 | F2 | head + helmet IMU rows (`Cam_Accel*`, `Cam_Gyro*`, camera mount rotation fitted per ride) | F1 |
 | F3 | flex as load / stiffness: fork bending from the across-axis load (φ, T, S), rear member and frame pod flex from the linkage loads; one stiffness per part | F1 |
-| F4 | drift: step 1 (slow splines), then step 2 (thermal state) | F1 |
+| F4 | the shared ground and its tie | F1, nav |
+| F5 | drift: step 1 (slow splines), then step 2 (thermal state) | F1 |
 
 Built: **F0** (2026-11-25, `core::sim::laws`): `relu` / `step` (softplus, logistic), `stop_n`, `DamperLaw`, `friction_n`, `air_force_n` / `air_force_about_n`, `TyreLaw`, all generic over `Real` with a smoothing width (0 exact). The sim's `Damper`, `AirSpring` and `Tyre` now call them; the sim's 71 tests pass unchanged.
+
+Built: **F1 core** (2026-11-25, `physics/forces.rs`, `force_setup.rs`): every row and latent of
+§3-7 except the shared ground (F4) and the drift (F5), with the active wrench on 4-sample knots and a
+2000x smoothness instead of coarse knots (coarse knots touch many samples and widened the solver's
+band about 15x: 53 s to 1 s per solve), a deflection prior (0.02 m about static), and the parameters
+as log-multiplier globals. The tyre force's tilt (phi) is left out: with forces alone a tilted
+normal and a tangential force cannot be told apart; it returns with the ground (F4).
+
+Exact-model results (`forces.rs` tests; the frame integrated as a free body under prescribed
+ground, brakes and cornering, and a slow attitude holder standing in for the ground and the rider):
+from a cold start, travel within 0.5 mm rms, tyre loads within 9 / 22 N rms of 950 N, the rider's
+position 1-3 mm and rotation 3-10 mrad. Identification over 3 s pulls the four damper numbers and the
+rider's vertical spring and damper back to within 30 % of a 1.3-1.6x error (1 s: 15-70 %). **Not
+identifiable from forces alone, as the counting said:** the tyre's damping (needs the shared ground,
+F4) and the rider's pitch spring (needs the helmet, F2). Generating the ride found two physical
+facts worth keeping: prescribing the frame's motion fixes the suspension forces and leaves the
+unsprung inertia undetermined (prescribe the ground instead), and a free bike under prescribed tyre
+forces rolls away (a real one is held by the ground and the rider's body English).
+
+Real rides (Beacon `173461a2`, 2966-2996 s, pressures given for the run: fork 75, shock 220, tyres
+23.5 / 28.5 psi): the setup's static check holds every balance within 12 N / 8 N m, but the solve
+does not converge. Identification takes one step and stalls (loss 9.3 M -> 1.2 M per 4 x 6 s; the
+balance rows sit near 4 sigma on average, five times the pods' share), three of four 12 s windows
+fail to factor (not positive definite), and the dampers' nominal values are far too strong (the
+fork's 3000 N s/m low-speed rebound at the axle gives -8.5 kN in rebound, which no tyre load can
+balance). Next, in order: why Levenberg-Marquardt stalls on the shared parameters; the failed
+factorisations (conditioning); then nominal damping from a real curve. Each run prints its static
+check and the loss by row group with `IDL_FORCE_DEBUG=1`.
 
 How F1 is built: as navigation was (`physics/nav.rs`), a separate block, `physics/forces.rs`, with its own latents, rows, weights and parameters, on only when `Spec::forces` and `Window::forces` are set. The 14 core latents, their golden tests and the PyTorch fixtures stay as they are. The core latents the force rows read (travel, steer, the rear member, the frame motion) enter through the same `Sample` the pod rows use.
 

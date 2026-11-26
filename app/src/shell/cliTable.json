@@ -650,6 +650,22 @@
         {
           "choices": [],
           "default": null,
+          "help": "Run the force model too: tyre loads and deflections, fork and shock forces, the rider's force and moment on the bike (`Physics ... (N)` channels); the dampers and the rider's springs are identified on a few windows first and printed. Needs the bike's linkage with shock eyes, masses and pressures. Experimental",
+          "kind": null,
+          "long": "forces",
+          "repeatable": false
+        },
+        {
+          "choices": [],
+          "default": null,
+          "help": "Bike parameters for this run only, never saved: `key=value` pairs separated by commas (e.g. `fork.psi=75,shock.psi=220`), on top of the bike's at the ride's date",
+          "kind": "text",
+          "long": "params",
+          "repeatable": false
+        },
+        {
+          "choices": [],
+          "default": null,
           "help": "Data directory root (contract C4 §1's <data>); defaults to $IDL1_DATA_DIR",
           "kind": "path",
           "long": "data-dir",

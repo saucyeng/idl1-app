@@ -1042,7 +1042,10 @@ Analysis gaps from `173461a2` (Python was needed for each; `agent-gaps.md`):
           neck per stretch; masses from the bike file. Revised the same day: a 3-D rider (one body on a
           6-axis spring plus an active wrench), one ground for both wheels with a Huber tie, damper /
           spring / tyre parameters drifting with heat through a ride. Spec `2026-11-25-idl1-force-model-DRAFT.md` (phases
-          F0-F4; rulings in its §11, the rider proposal pending). Target: bottom-outs stop at the stop
+          F0-F4; rulings in its §11). F0 and F1's core built 2026-11-25 (exact on a simulated ride);
+          real rides run (`--forces`) but do not converge yet: next, the identification stall and
+          the 12 s windows' failed factorisations, then the fork damper's nominal (spec §8). Target:
+          bottom-outs stop at the stop
           (11/21 lap 2 is still 175 mm on a 170 mm fork), the rear's 26-sigma misfit through hits.
     - [x] PyTorch reference: frozen (Isaac, 2026-11-25: "whatever works"). Rust is the reference; the
           goldens stay as fixtures with fork twist held at 0. NPU training path decided when it starts.
