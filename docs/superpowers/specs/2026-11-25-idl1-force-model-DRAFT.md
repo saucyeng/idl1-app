@@ -344,6 +344,12 @@ lap, or a stretch the model does not fit). The parameters that scatter are the o
 explain the same rows: model error lands on them. Next: the spring's progression (a fitted chamber
 volume, Isaac to approve) and the static rest point moving with the fitted pressure, then F2.
 
+The rest point follows the fitted pressure (2026-11-26, `AirChambers::rest_at`): the slow spring
+carries the same static load at a scaled pressure, by Newton inside the law, the leverage's change
+left out. Laps of both rides: Beacon's identification loss 164 k -> 159 k; spring factors fork /
+shock 1.29 / 0.82 -> 1.26 / 0.88 (Beacon), 1.28 / 0.78 -> 1.28 / 0.82 (11/21); the rest within the
+per-lap scatter.
+
 How F1 is built: as navigation was (`physics/nav.rs`), a separate block, `physics/forces.rs`, with its own latents, rows, weights and parameters, on only when `Spec::forces` and `Window::forces` are set. The 14 core latents, their golden tests and the PyTorch fixtures stay as they are. The core latents the force rows read (travel, steer, the rear member, the frame motion) enter through the same `Sample` the pod rows use.
 
 Acceptance (simulated truth and physics checks, never the IEKF; one-model spec §8):
