@@ -6,6 +6,10 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 
 ### Changed
 
+- **Force model: rear brake torque and the derailleur's clutch [no-docs] (2026-11-26).**
+  `session estimate-physics --forces` counts the rear brake's torque on the member carrying the
+  axle (the bike's anti-rise, printed with the debug output) and the derailleur cage's spring and
+  clutch taking up the chain's growth (in the 14T), from the bike file's linkage and drivetrain.
 - **Force model fits the air springs' chamber volumes [no-docs] (2026-11-26).** `session
   estimate-physics --forces` also identifies each spring's positive and negative chamber volume (how
   it ramps up and how soft it is off the top), and each spring rests where its fitted pressure

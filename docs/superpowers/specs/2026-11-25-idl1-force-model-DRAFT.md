@@ -382,6 +382,51 @@ is the brake's torque on the rear member (anti-rise), missing from the rear bala
 tangential tyre force acts at the axle path only). Waiting on where the GT Force's rear caliper
 mounts.
 
+Brake torque and the derailleur's clutch (2026-11-26; Isaac: the caliper is on the seatstay; the
+clutch always takes up the chain's growth, at any speed, since the loop's length is fixed and the
+cage is all that stores chain; descend in the 14T). Neither is fitted:
+
+- **Brake:** a braking (backward) tangential tyre force F at the rear contact patch puts a moment
+  F r on the wheel that the caliper holds against the axle's member (the GT Force's seatstay); the
+  member's angle through travel (a cubic from the sim's linkage, `ForceBike::axle_member_angle`)
+  turns it into a force on rear travel, F r dphi/ds, next to F through the axle's path. A forward
+  force is the chain's and gets no brake term. The rear's anti-rise from it
+  (`forces::anti_rise_pct`, printed with `IDL_FORCE_DEBUG`): 66 % at top-out, 60 % at 30 % travel,
+  52 % at 70 %.
+- **Clutch:** the cage's angle through travel in the 14T (a cubic from the sim's chain loop,
+  `ForceBike::cage_angle`) times its moments: the spring always (1.27 N m), the clutch while the
+  cage turns forward (1.58 N m, the bike file's). At the wheel about 1-2 N of spring and 1.4-2.4 N
+  of clutch while compressing.
+
+Laps of both rides, friction held, volumes fitted:
+
+| | Beacon laps | 11/21 laps |
+|---|---|---|
+| identification loss (before) | 136.0 k (142.5 k) | 375.2 k (378.3 k) |
+| fork LSC / HSC / LSR / HSR | 0.08 / 0.12 / 0.13 / 0.21 | 0.14 / 0.26 / 0.10 / 0.19 |
+| shock LSC / HSC / LSR / HSR | 1.20 / 0.02 / 0.59 / 0.51 | 0.99 / 1.19 / 0.24 / 0.51 |
+| fork pressure / positive / negative volume | 1.08 / 0.72 / 1.18 | 0.93 / 0.80 / 0.51 |
+| shock pressure / positive / negative volume | 0.91 / 12.3 / 0.48 | 0.50 / 0.55 / 0.58 |
+| tyre damping front / rear | 5.16 / 8.28 | 2.88 / 4.54 |
+
+The shock's isothermal curve from those factors, N at the shock against stroke:
+
+| stroke, mm | 5 | 10 | 15 | 20 | 30 | 40 | 50 | 55 |
+|---|---|---|---|---|---|---|---|---|
+| bike file | 457 | 845 | 1187 | 1496 | 2057 | 2582 | 3110 | 3383 |
+| Beacon, before | 628 | 1012 | 1271 | 1458 | 1710 | 1872 | 1986 | 2031 |
+| Beacon, brake + clutch | 618 | 1020 | 1304 | 1515 | 1811 | 2011 | 2157 | 2216 |
+| 11/21, before | 383 | 663 | 898 | 1119 | 1585 | 2193 | 3160 | 3940 |
+| 11/21, brake + clutch | 404 | 724 | 1002 | 1260 | 1778 | 2379 | 3187 | 3733 |
+
+Read: the brake and clutch help both fits (5 % and 1 %) and bring the rides together where they
+were apart: the shock's HSR alike (0.51 / 0.51), its LSC closer (1.20 / 0.99), the fork's spring
+closer (1.08 / 0.93), Beacon's shock chamber 59x -> 12x. The shock's curve now agrees mid-stroke
+(30 mm: 1811 / 1778 N) and differs at the ends: Beacon firmer off the top and nearly flat deep,
+11/21 softer off the top and ramping. A shock that leaks (Isaac: "a little leaky") can pass air
+from the positive chamber to the negative, which changes the curve's shape between days, not only
+its size; the sag check at a gauge pressure would tell.
+
 How F1 is built: as navigation was (`physics/nav.rs`), a separate block, `physics/forces.rs`, with its own latents, rows, weights and parameters, on only when `Spec::forces` and `Window::forces` are set. The 14 core latents, their golden tests and the PyTorch fixtures stay as they are. The core latents the force rows read (travel, steer, the rear member, the frame motion) enter through the same `Sample` the pod rows use.
 
 Acceptance (simulated truth and physics checks, never the IEKF; one-model spec §8):
