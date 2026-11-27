@@ -6,6 +6,9 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 
 ### Changed
 
+- **Force model: a quicker, bounded rider [no-docs] (2026-11-27).** `session estimate-physics
+  --forces` lets the rider work the bike up to about 5 Hz within 0.33 m of stroke, sit lower under
+  braking, and carries his limbs mostly with his body.
 - **Force model: rear brake torque and the derailleur's clutch [no-docs] (2026-11-26).**
   `session estimate-physics --forces` counts the rear brake's torque on the member carrying the
   axle (the bike's anti-rise, printed with the debug output) and the derailleur cage's spring and

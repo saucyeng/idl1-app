@@ -427,6 +427,32 @@ closer (1.08 / 0.93), Beacon's shock chamber 59x -> 12x. The shock's curve now a
 from the positive chamber to the negative, which changes the curve's shape between days, not only
 its size; the sag check at a gauge pressure would tell.
 
+The rider (2026-11-27). Isaac: keep the one 6-DoF rider; what matters is how far and how fast he can
+actuate ("my .33 m actuators ... assume they are working"), he works the bars through his wrists up
+to about 5 Hz, shifts back (and a little down) under braking, and his limbs sit between body and
+frame. Laps of both rides, friction held; whole-system misfit by axis first (fwd / lat / up):
+Beacon 9.1 / 6.2 / 12.1 k, 11/21 34.2 / 15.9 / 43.3 k, the rider's own balance 13.4 / 43.9 k:
+vertical (absorbing) and fore-aft (braking) both.
+
+| change (one at a time against the full set) | loss Beacon / 11/21 |
+|---|---|
+| before (3 Hz, lateral 0.1 m, no stops, limbs 11.4 % on the frame) | 136.3 / 376.4 k |
+| rest pose sliding with braking (back / down per g, fitted) | no change; back unidentified (x/ 2.2, the fore-aft spring already near 0 leaves fore-aft free), down 0.10 m/g on both |
+| 5 Hz active wrench alone | 134.4 / 370.0 k |
+| full set: 5 Hz, lateral 0.2 m, stops at +-0.165 m, limbs 25 % on the frame | 146.0 / 410.7 k |
+| ... the active prior 600 N instead of 300 | the exact-model identification fails (fork LSC 0.4 -> 0.13: the active part takes the damper); kept at 300 N |
+| ... without the stops | 146.4 / 406.3 k (the stops never bind) |
+| ... lateral 0.1 m | 148.5 / 410.7 k |
+| ... 3 Hz | 155.2 / 424.4 k |
+| ... limbs on the frame 3 / 7 / 11.4 / 18 / 25 % of the rider | Beacon 139.1 / 131.6 / 134.7 / 137.9 / 146.0 k; 11/21 349.2 / 358.0 / 370.5 / 373.0 / 410.7 k |
+
+Kept: the active wrench to 5 Hz (`ACTIVE_SMOOTH` 259), lateral 0.2 m, the stops (bounds, harmless),
+the braking rest shift (two parameters, `P_BRAKE_SHIFT`), 7 % of the rider on the frame
+(`LIMBS_ON_FRAME`). The limbs ride mostly with the body (both rides' best at 3-7 %), and the share
+moves the fitted dampers (Beacon's fork LSC 0.01 at 3 %, 0.19 at 25 %): the mass split is tangled
+with the damping, part of the dampers' scatter; it is to be a fitted parameter. The arm segment
+shares (upper arm 2.71, forearm 1.62, hand 0.61 % of body mass) are not checked against a source.
+
 How F1 is built: as navigation was (`physics/nav.rs`), a separate block, `physics/forces.rs`, with its own latents, rows, weights and parameters, on only when `Spec::forces` and `Window::forces` are set. The 14 core latents, their golden tests and the PyTorch fixtures stay as they are. The core latents the force rows read (travel, steer, the rear member, the frame motion) enter through the same `Sample` the pod rows use.
 
 Acceptance (simulated truth and physics checks, never the IEKF; one-model spec §8):
