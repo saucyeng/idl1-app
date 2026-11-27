@@ -564,6 +564,21 @@ parameters (`wheels.{front,rear}.axle_kg`, `mass.{front,rear}_{rotor,caliper}_kg
 (Isaac: "those weights look close"): unsprung 3.80 -> 4.35 kg front, 3.60 -> 4.82 kg rear, the
 sprung bike 10.7 -> 8.9 kg. The timing table above ran before this.
 
+Two checks before F4 (2026-11-27; laps, friction and limbs frozen, accelerometers delayed 2 ms):
+
+| | Beacon loss, fork LSC / LSR | 11/21 loss, fork LSC / LSR |
+|---|---|---|
+| old masses, tyre damping free | 109.1 k, 0.02 / 0.06 | 405.8 k, 0.02 / 0.02 |
+| old masses, tyre damping held at nominal | 107.3 k, 0.02 / 0.06 | 403.0 k, 0.01 / 0.01 |
+| corrected masses, tyre damping free | 152.1 k, 0.02 / 0.05 | 385.1 k, 0.02 / 0.01 |
+
+Holding the tyre's damping changes nothing (Isaac: his DH casings feel dead, so it is real and is
+to be fitted once it can be told apart): the free deflection absorbs the fork's work through the
+tyre's spring alone. The corrected masses move the loss 40 % one way on Beacon and 5 % the other
+on 11/21 with the dampers where they were: the fit lands in different places on small changes,
+as it does with a free knob. F4 (the shared ground) is next; a better tyre law (enveloping) waits
+for it, since it needs the ground's shape.
+
 How F1 is built: as navigation was (`physics/nav.rs`), a separate block, `physics/forces.rs`, with its own latents, rows, weights and parameters, on only when `Spec::forces` and `Window::forces` are set. The 14 core latents, their golden tests and the PyTorch fixtures stay as they are. The core latents the force rows read (travel, steer, the rear member, the frame motion) enter through the same `Sample` the pod rows use.
 
 Acceptance (simulated truth and physics checks, never the IEKF; one-model spec §8):
