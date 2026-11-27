@@ -453,6 +453,12 @@ moves the fitted dampers (Beacon's fork LSC 0.01 at 3 %, 0.19 at 25 %): the mass
 with the damping, part of the dampers' scatter; it is to be a fitted parameter. The arm segment
 shares (upper arm 2.71, forearm 1.62, hand 0.61 % of body mass) are not checked against a source.
 
+The limbs' share fitted (`P_LIMBS`, a factor on the 7 %; prior 1 in log): it runs to 0 on both rides
+(loss Beacon 131.6 -> 119.3 k, 11/21 358.0 -> 346.9 k) and the fork's damping goes with it (Beacon
+LSC 0.03, 11/21 LSR 0.00: no rebound damping): with no measurement of the rider, mass on his body
+and the dampers trade freely. Kept as a parameter with a 0.2 prior until F2 gives the rider an
+observation of his own.
+
 How F1 is built: as navigation was (`physics/nav.rs`), a separate block, `physics/forces.rs`, with its own latents, rows, weights and parameters, on only when `Spec::forces` and `Window::forces` are set. The 14 core latents, their golden tests and the PyTorch fixtures stay as they are. The core latents the force rows read (travel, steer, the rear member, the frame motion) enter through the same `Sample` the pod rows use.
 
 Acceptance (simulated truth and physics checks, never the IEKF; one-model spec §8):
