@@ -6,6 +6,10 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 
 ### Changed
 
+- **Force model: the rider's head and the helmet camera [no-docs] (2026-11-27).** `session
+  estimate-physics --forces` models the head on a neck and, where a ride has a linked helmet clip,
+  reads the camera's accelerometer and gyro as measurements of the rider (its mount estimated per
+  clip). Experimental.
 - **Force model: a quicker, bounded rider [no-docs] (2026-11-27).** `session estimate-physics
   --forces` lets the rider work the bike up to about 5 Hz within 0.33 m of stroke, sit lower under
   braking, and carries his limbs mostly with his body.

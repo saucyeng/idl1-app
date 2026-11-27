@@ -459,6 +459,76 @@ LSC 0.03, 11/21 LSR 0.00: no rebound damping): with no measurement of the rider,
 and the dampers trade freely. Kept as a parameter with a 0.2 prior until F2 gives the rider an
 observation of his own.
 
+### F2: the head and the helmet camera's IMU (design, 2026-11-27)
+
+Isaac: the GoPro sits on the full-face helmet, front of the top, above the eyes (11/21's five clips,
+GX010174-178); head, helmet and camera about 5.5 kg + 1.1 kg. The camera's `ACCL` / `GYRO` (camera
+IMU spec, about 200 Hz, synced to the logger by motion to about 5 ms) become the rider's first
+measurement of his own.
+
+- **Head body H** on the rider body B through a neck: a ball joint at a pivot fixed on B. Mass: the
+  head's share of the rider (de Leva head and neck 6.94 %, not checked against a source; 5.5 kg for
+  Isaac) taken from B, plus the helmet and camera (1.1 kg, `rider.helmet_kg` when the sheet has it),
+  which is added: `rider.mass_kg` is taken to be without the helmet. Inertia: a sphere of gyration
+  0.09 m about its centre of mass.
+- **Geometry** (estimates, bike axes at B's neutral pose): the neck pivot 0.20 m ahead of and 0.35 m
+  above B's centre of mass (an attack position), the head's centre of mass 0.03 m ahead of and 0.12 m
+  above the pivot, the camera 0.08 m ahead and 0.22 m above (front of the top).
+- **Latents** (NFL 18 -> 24): the head's rotation against B (3, rad, knots every 2 samples, prior
+  0 +- 0.3 rad) and an active neck torque (3, N m, the active wrench's knots and band, prior 0 +- 5
+  N m): the head looks where it is going (it leads the bike's yaw by about 150 ms on 11/21).
+- **Rows** (NFR 32 -> 47): the head's moment balance about its centre of mass (3; the neck's force
+  on the head is m_H f_H, the neck torque a spring and damper plus the active part); B's balances
+  and the whole system's take the neck's reaction and the head's mass; the camera's accelerometer
+  (3: specific force at the camera, carried from the frame pod through B and H, in the camera's axes)
+  and gyro (3: the head's angular velocity in the camera's axes plus a bias), Huber like the
+  balances, sigma 2 m/s^2 and 0.1 rad/s; the head and neck-torque priors (6). Without a camera
+  sample the camera rows are zero; without a head model (`ForceBike::head` None) all head rows are.
+- **Mount**: the camera's axes to the frame's, estimated per clip before the solve (the rotation
+  that best turns the camera's gyro into the frame pod's over the clip, low-passed, Kabsch; the
+  accelerometer's sign checked against gravity), the readings rotated by it; then a small rotation
+  fitted per ride (3 parameters, additive, rad, prior 0.1) for what the estimate misses, and a gyro
+  bias (3, additive, rad/s, prior 0.02).
+- **Parameters** (NFP 37 -> 49): the neck's spring and damper per axis (6, log multipliers on 20 N
+  m/rad and 1 N m s/rad), the mount (3) and the gyro bias (3). The additive ones print as values,
+  not factors.
+- **Time**: each camera sample at the grid sample nearest its time on the ride's clock (the grid
+  is about 460 Hz: 1 ms); the 5 ms sync left as it is until the residuals show a lag.
+
+Acceptance: on simulated truth, a still rider makes the camera read the frame's specific force
+and angular velocity; the Jacobian against finite differences with the head and a camera sample;
+on 11/21's laps inside its clips, the camera rows' misfit near their sigmas, and the rider's
+parameters and the limbs' share moving toward one answer between the clips' laps with the dampers
+staying put (the test F2 exists for).
+
+Built (2026-11-27): `forces::Head`, latents `HEAD` and `NECK_ACT`, rows 32..47, parameters
+`P_NECK_K`, `P_NECK_C`, `P_MOUNT`, `P_CAM_BIAS` (additive, printed as values), the head on by
+default in force runs (`force_setup`: 6.94 % of the rider plus 1.1 kg); `pipeline::camera_on_grid`
+(each camera sample to its nearest grid sample, never two; the mount by Kabsch on 1 s averages of
+the gyros plus gravity, since the head steadies itself against the bike's fast roll and pitch);
+`Config::camera`; prototyping switches `IDL_PHYSICS_CAMERA_ONLY`, `IDL_FORCE_NO_CAMERA`,
+`IDL_FORCE_SIGMA`. Tests: a still rider on a turning bike reads the frame's motion at the camera;
+the Jacobian with the head turned and a camera sample.
+
+First runs, 11/21:
+
+- 40 s of lap 2 (4920-4960 s): the camera's rows fit to about 3.4 m/s^2 and 0.12 rad/s; the mount
+  correction 5 deg, the gyro bias 0.01 rad/s; the fork's rebound held (LSR 0.15, HSR 0.16) and the
+  limbs' share went up (x 2.4 against its prior), not to 0.
+- All five clips (6 identification windows across them, friction held): every clip's mount about
+  90 deg from the frame pod's axes with the same correction (pitch +0.16 rad); but with or without
+  the camera, and with the limbs' prior 0.2 or 1, the limbs' share runs to 0 and the fork's damping
+  collapses (LSC 0.03, LSR 0.00-0.02). The camera does not settle the trade over the whole set.
+  A 0.2 prior in log is no hold against some 10^5 rows; only freezing holds a parameter.
+
+Read: the head steadies itself (its gyro 1.5-1.7 rad/s rms off the frame's even through 1 s
+averages), so the camera reports the head more than the body. And the parameter that keeps
+running is the frame's mass, which multiplies the frame pod's specific force carried to the
+frame's centre of mass: if that carry is wrong (the frame pod's flex, a lever arm), the fit
+lowers its misfit by taking mass off the frame and the dampers follow. Next: test that directly
+(the system rows with the frame's mass split between the pod's position and its centre of mass;
+the frame pod's misfit by axis), which points at F3 (flex) rather than more rider.
+
 How F1 is built: as navigation was (`physics/nav.rs`), a separate block, `physics/forces.rs`, with its own latents, rows, weights and parameters, on only when `Spec::forces` and `Window::forces` are set. The 14 core latents, their golden tests and the PyTorch fixtures stay as they are. The core latents the force rows read (travel, steer, the rear member, the frame motion) enter through the same `Sample` the pod rows use.
 
 Acceptance (simulated truth and physics checks, never the IEKF; one-model spec §8):
