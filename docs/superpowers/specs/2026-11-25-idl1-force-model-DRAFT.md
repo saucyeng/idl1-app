@@ -358,6 +358,30 @@ separated. The scattered parameters (shock HSC, the tyres' damping) correlate wi
 0.3: their spread between laps is not one parameter standing in for another at the fit, it is what
 the model misses landing on them.
 
+Chamber volumes fitted (2026-11-26, Isaac: yes, the negative spring too): four parameters,
+positive and negative chamber volume per spring as factors on the bike file's (prior 0.3 in log),
+`P_VOLUME` 30..34; seal friction held at nominal for analysis (`IDL_FORCE_FREEZE=friction`; Isaac:
+his seals are not that sticky). Laps of both rides:
+
+| | Beacon laps | 11/21 laps |
+|---|---|---|
+| identification loss (before: no volumes, friction free) | 142.5 k (159.4 k) | 378.3 k (384.4 k) |
+| fork pressure / positive / negative volume | 0.78 / 0.58 / 0.54 | 0.92 / 0.78 / 0.48 |
+| shock pressure / positive / negative volume | 0.82 / 58.6 (x/ 1.35) / 0.41 | 0.35 / 0.47 / 0.41 |
+| fork LSC / HSC / LSR / HSR | 0.05 / 0.05 / 0.18 / 0.19 | 0.16 / 0.23 / 0.08 / 0.17 |
+| shock LSC / HSC / LSR / HSR | 0.56 / 0.03 / 0.47 / 0.59 | 0.95 / 1.09 / 0.21 / 0.38 |
+| tyre damping front / rear | 3.04 / 4.78 | 2.35 / 9.50 |
+
+Read: alike on both rides, the negative chambers at about half the bike file's volume (0.41-0.54,
+fork and shock). The pressure and the volumes correlate +0.8 to +0.95 (one spring curve, several
+ways to draw it): read the curve, not the factors. The shock disagrees: on Beacon its positive
+chamber runs off to 59x (a spring with no ramp: the fit wants the rear's progression gone), on
+11/21 it halves (more ramp) with the pressure at a third. The rear's progression at the wheel is
+the shock's and the linkage's together, and braking reacts on the rear member: the next candidate
+is the brake's torque on the rear member (anti-rise), missing from the rear balance today (the
+tangential tyre force acts at the axle path only). Waiting on where the GT Force's rear caliper
+mounts.
+
 How F1 is built: as navigation was (`physics/nav.rs`), a separate block, `physics/forces.rs`, with its own latents, rows, weights and parameters, on only when `Spec::forces` and `Window::forces` are set. The 14 core latents, their golden tests and the PyTorch fixtures stay as they are. The core latents the force rows read (travel, steer, the rear member, the frame motion) enter through the same `Sample` the pod rows use.
 
 Acceptance (simulated truth and physics checks, never the IEKF; one-model spec §8):

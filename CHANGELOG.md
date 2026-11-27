@@ -6,6 +6,10 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 
 ### Changed
 
+- **Force model fits the air springs' chamber volumes [no-docs] (2026-11-26).** `session
+  estimate-physics --forces` also identifies each spring's positive and negative chamber volume (how
+  it ramps up and how soft it is off the top), and each spring rests where its fitted pressure
+  carries the bike, not where the logged pressure would.
 - **Force model: tyre loads never negative [no-docs] (2026-11-26).** `session estimate-physics
   --forces` no longer reports a tyre pulling on the ground in fast rebound.
 - **Force-model solves 1.65x faster [no-docs] (2026-11-26).** The physics solver builds its
