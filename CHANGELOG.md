@@ -6,6 +6,9 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 
 ### Changed
 
+- **Bike masses: brakes, axles, cassette and derailleur [docs] (2026-11-27).** A bike's parameters
+  take the rotors', calipers', axles', cassette's and derailleur's weights, counted as moving with
+  their wheel, so the unsprung masses (and the sprung mass left over) come out right.
 - **Force model: the rider's head and the helmet camera [no-docs] (2026-11-27).** `session
   estimate-physics --forces` models the head on a neck and, where a ride has a linked helmet clip,
   reads the camera's accelerometer and gyro as measurements of the rider (its mount estimated per

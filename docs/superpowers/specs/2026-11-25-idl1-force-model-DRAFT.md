@@ -529,6 +529,41 @@ lowers its misfit by taking mass off the frame and the dampers follow. Next: tes
 (the system rows with the frame's mass split between the pod's position and its centre of mass;
 the frame pod's misfit by axis), which points at F3 (flex) rather than more rider.
 
+Isaac (2026-11-27): the frame pod is rigid and near the frame's centre of mass, and the frame is
+light against the rider; take the frame's mass as given. The limbs' share frozen at 7 % from here.
+Two other causes:
+
+- **Mass runs to the unmeasured body.** Mass on the frame must move as the frame pod says; mass on
+  the rider's body comes with an acceleration the fit chooses, so moving mass there buys a free
+  absorber of any whole-system misfit. Structural, not a sensor fault: hold the share.
+- **Timing.** Damping is the force in phase with velocity, and a few ms between the pods'
+  accelerometers and gyros (the LSM6DSO32's filter chains differ; not checked against the
+  datasheet) reads as missing damping. `IDL_ACCEL_SHIFT_MS` (prototyping) advances every pod's
+  accelerometer against its gyro. Laps, friction and limbs frozen, loss by shift (ms):
+
+| shift | -2 | -1 | 0 | +1 | +2 |
+|---|---|---|---|---|---|
+| Beacon | 109.1 k | 111.4 k | 163.2 k | 144.3 k | 279.1 k |
+| 11/21 | 405.8 k | 336.5 k | 427.9 k | 357.8 k | 446.4 k |
+
+  The +-1 ms columns are a half-sample interpolation, which also smooths (both beat 0 on 11/21);
+  +-2 ms is nearly a whole sample. Both rides favour the accelerometers delayed about 2 ms
+  against the gyros. The fork's damping does not recover at -2 ms (LSC 0.02 on both; Beacon's
+  tyre damping 11 / 17 instead).
+
+Read: the tyre deflections are free latents, so the unsprung balances are always met by choosing
+the deflection (and its rate, through the tyre's damping) and nothing makes the fork's damper
+carry force. That is the constraint F4 adds: one ground for both wheels, the rear meeting the
+surface the front met, which pins the deflections. Next: F4, then a fitted delay per pod
+(starting near 2 ms).
+
+Masses (Isaac, 2026-11-27: the 18.1 kg is weighed, without a bottle; sprung 8-10 kg): the mass
+table counted no brakes, axles, cassette or derailleur, so they sat in the sprung mass. Added as
+parameters (`wheels.{front,rear}.axle_kg`, `mass.{front,rear}_{rotor,caliper}_kg`,
+`mass.cassette_kg`, `mass.derailleur_kg`), each with its wheel; the GT Force at typical weights
+(Isaac: "those weights look close"): unsprung 3.80 -> 4.35 kg front, 3.60 -> 4.82 kg rear, the
+sprung bike 10.7 -> 8.9 kg. The timing table above ran before this.
+
 How F1 is built: as navigation was (`physics/nav.rs`), a separate block, `physics/forces.rs`, with its own latents, rows, weights and parameters, on only when `Spec::forces` and `Window::forces` are set. The 14 core latents, their golden tests and the PyTorch fixtures stay as they are. The core latents the force rows read (travel, steer, the rear member, the frame motion) enter through the same `Sample` the pod rows use.
 
 Acceptance (simulated truth and physics checks, never the IEKF; one-model spec §8):
