@@ -1053,6 +1053,14 @@ Analysis gaps from `173461a2` (Python was needed for each; `agent-gaps.md`):
           misfit; the sag check; then F2 (helmet). Done 2026-11-26: the tyre's normal force kept
           >= 0; `IDL_PHYSICS_LAPS` (prototyping) solves the laps only, where the two rides' spring
           factors agree (fork 1.29 / 1.28, shock 0.82 / 0.78) in a quarter of the time.
+          2026-11-27: brake torque (anti-rise), the clutch, chamber volumes, a bounded 5 Hz
+          rider, the limbs' share (frozen at 7 %: free, it runs to the unmeasured body), F2 (head
+          and helmet camera) built; unsprung parts in the mass table; a ~2 ms accelerometer delay
+          against the gyros. The fork's low-speed damping still collapses: the tyre deflections
+          are free (holding the tyre's damping changes nothing), and low-speed damping overlaps
+          the rider's own 1-5 Hz work (Isaac: riders adapt). Next: F4 (one ground, Huber tie),
+          then a fitted per-pod delay; report low-speed as rider + damper support, high-speed on
+          its own; pitch against the ground for packing / riding high.
           The shock's "pressure" factor is the rear spring force against a guessed air geometry
           (no sag tests in the log), not a pressure. Target:
           bottom-outs stop at the stop
