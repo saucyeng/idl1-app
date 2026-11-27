@@ -579,6 +579,130 @@ on 11/21 with the dampers where they were: the fit lands in different places on 
 as it does with a free knob. F4 (the shared ground) is next; a better tyre law (enveloping) waits
 for it, since it needs the ground's shape.
 
+### F4: one ground under both tyres (design, 2026-11-27)
+
+Isaac (2026-11-27): the shared ground map (both tyres sit on it, it is redrawn from both), "just
+remember that the must is soft, say if loose rock moves" (Huber, as below); heights from a
+navigation solve first; 5 mm and a cross-slope of 0.2 as starting values; two steps, the tie
+(F4a) measured before the tyre force's tilt (F4b).
+
+What it must do: take away the freedom that lets each tyre's deflection meet its unsprung
+balance on its own. Each contact patch has a height in the world; both tyres roll over the same
+surface; so where the rear is now, the front was a wheelbase of distance earlier, and the two
+heights must agree (Huber for line changes, §6, ruling 3).
+
+- **Heights and distance come from a navigation solve run first, in the same window.** The
+  pods-only warm start (`solve::warm_start`) gets the navigation rows (attitude, velocity, GPS),
+  which every ride has. From it, per sample: the frame pod's height z(t) (the vertical velocity
+  integrated, window-local), its distance along the path s(t) (the speed integrated), and the
+  world's up in the pod's axes u(t). These are then held fixed in the force solve, which stays
+  attitude-free as now. Not solved jointly: height is an integral of velocity, so a joint row
+  touches every earlier velocity knot (or needs a position latent), and nothing in the force
+  model feeds back into navigation worth that. Cost: one navigation solve per window, which the
+  warm start already pays in pods-only form. Identification windows start navigation from gravity
+  and the GPS course (`pipeline::first_start`), as a stretch's first window does.
+- **A contact patch's height**: z(t) + u(t) . p_c, with p_c the patch in the pod's axes (the
+  axle less the loaded radius along the bike's up, as the system moment row already places it).
+  A function of travel, the bending latents and the deflection, so the tie pulls on all of them.
+  Distance: s_f = s(t) + x_f, s_r = s(t) + x_r, x the patch's offset along the bike's forward
+  axis at sag (the wheelbase between them).
+- **The ground is a profile of its own, fitted to both tyres** (proposal; ruling 3 reads "the
+  front defines it, the rear meets it"). h(s): a cubic B-spline in distance, knots every 5 cm (a
+  29er's contact patch is about 10 cm long, and it rolls over what is shorter), with a smoothness
+  prior. Both tyres are tied to it alike: (patch height - h(s_wheel)) / sigma_g, Huber k = 3,
+  2 rows per sample (NFR 47 -> 49). Why not the front as the definition: (a) the rear's row would
+  reach a quarter second back to the front's latents, and the solver's band (ordered by time)
+  would grow about thirty-fold, about a thousand times the cost; (b) if the front's height is
+  copied as the rear's target instead, the front's deflection stays free, which is the freedom
+  that takes the fork's damping. With both tied to h, the rear's misfit reaches the front through
+  h. Same physics as the ruling (one surface, Huber where the lines differ).
+- **How h is solved**: not in the band (it would join the two ends of the delay there). h is
+  fitted to both tyres' current patch heights (a small banded weighted least squares, Huber by
+  reweighting, its curvature prior counted in the loss) and lives in `Vars` beside the
+  coefficients, outside the layout. Holding it fixed through each step and refitting between
+  steps (block descent) was tried first and crawls: within the step, moving both tyres
+  together costs as if the ground could not follow (exact-model identification still 35 % off
+  after 300 iterations; 11 with the true ground held). So each step eliminates h exactly: the
+  reduced system (K - E M^-1 E^T) x = -g, K the damped band, border and globals' system, E the
+  tie rows' coupling of the locals to h, M h's own block, solved by conjugate gradients
+  preconditioned with K's own factorisation (one back-substitution per window per iteration, no
+  new factorisation); each candidate is scored with h refitted (`solve::ground_step`). The same
+  identification converges in 12-13 iterations.
+- **When the tie is off**: below 1.5 m/s, where a tyre was airborne at the last iterate (its
+  normal force under 20 N), and at the window's start where the rear is on ground the front
+  rolled over before the window (the tie there would see only one tyre, which is harmless but
+  says nothing).
+- **sigma_g** = 5 mm, widened by where the lines must differ: the lateral offset between the
+  wheels' lines d = L^2 / 2R (R = v / yaw rate, from navigation) + L |beta| (beta: the slip
+  between the bike's heading and its velocity) times a cross-slope g = 0.2 m/m (proposal: on a
+  rough trail a line a few cm over sits about a fifth of that higher or lower), and by the
+  vertical drift of navigation over the delay (sigma_v tau, sigma_v = 0.05 m/s, to be checked
+  on rides). Root-sum-square.
+- **The tyre force's tilt** (§4's phi): F4a leaves it out (the normal along the bike's up, as
+  now). F4b, a separate step measured on its own: the tilt computed from h's slope against the
+  bike's pitch (from navigation), not a latent: no new latents and no band growth, the tangential
+  latent then along the ground.
+- Output: `Physics ground (mm)` per sample (h under the front patch), and the tie's misfit per
+  wheel in the row-group diagnostic.
+
+Acceptance:
+
+- exact-model synthetic: the synthetic ride changed so the tyres ride over a ground profile (the
+  deflection from the patch's height over the ground, not prescribed; the ground holds the
+  pitch, so the attitude holder keeps only its two lateral trims); solved with the tie, travel
+  and tyre loads back as before, the ground back within 2 mm, and the tyre damping identified
+  (unidentifiable in F1);
+- the Jacobian of the tie rows against finite differences (core latents, deflections);
+- real rides (Beacon, 11/21 laps; friction and limbs held; accelerometers delayed 2 ms): the
+  fork's low-speed damping no longer collapses toward 0, and the tie's misfit sits near sigma_g.
+
+Built (F4a, 2026-11-27): `physics/ground.rs` (`GroundWeights`, `GroundWindow`, `GroundFit`,
+`fit_profile`, `ground_window`), the tie rows 47..49 (NFR 49, Huber), `Objective::refit_ground`,
+`run::ground_start` (the warm start with navigation, then the tie's inputs, then the force solve
+without navigation), `solve::ground_step`, the output `Physics ground (mm)` (window-local) and the
+row group "ground". Off by default (`IDL_FORCE_GROUND`, prototyping, turns it on), after the real
+rides below. The slip term reads the slip less the window's median (a steady offset is
+navigation's heading or the mount, not sliding).
+
+The exact-model road (`forces::synth::ride_on_road`) needed three things the prescribed ride
+never did: the synthetic bike exactly at rest (its split left the fork 48 N, the rear 231 N and
+the pitch moment 68 N m off, which prescribed deflections never feel; `exact_statics`, Newton on
+`static_misfit`), the rider over the middle (the test bike's 17 % on the front leaves the ground
+on every bump), and a straight road (the prescribed side forces roll the bike at 2 rad/s and lift
+a tyre). Tyre damping at 600 N s/m there (the rides fit 2-14x the 100 nominal; at 100 its force
+is under the rows' sigma, so no ground could show it), and a 0.5 mm tie (perfect navigation; the
+road's whole deflection swing is +-3 mm, inside the real 5 mm). Results: from the pods-only warm
+start, 1 s solved in 21 iterations, travel 1.0 / 0.6 mm rms, tyre loads 6 / 4 N, the ground 0.8
+mm; identification over 6 s brings every damper number and the rider's vertical within 30 % of a
+1.3-1.6x error and the front tyre's damping from -0.50 to -0.12 in log (over 3 s, -0.25: the
+ground is unknown too; with the true ground held, -0.13; without the tie it does not move). A cold
+start crawls (travel 4 mm off): the warm start is what every ride window uses.
+
+Real rides (2026-11-27; Beacon and 11/21 laps, friction and limbs held, accelerometers 2 ms late;
+`IDL_FORCE_DEBUG` prints, per window at the pods-only warm start, the tie's misfit, its sigma's
+terms, and the rear against a ground fitted to the front alone, shifted along the path):
+
+- Beacon identification with the tie: the fork's low-speed damping still collapses (LSC 0.01, LSR
+  0.06), the rear tyre's stiffness runs to 4x and the fork's positive chamber to 34x; one of six
+  windows carries 318 k of core priors and 62 k of tie (the others under 1 k of tie).
+- The tie's sigma averages 33-77 mm, not 5: its slip term dominates (4-14 degrees of mean "slip"
+  between the attitude's heading and the velocity, 11 degrees of it a steady offset in some
+  windows; less the window's median, still 3-11 degrees, so the heading wanders against the
+  velocity too), then the turn's offset (13-20 mm) and navigation's drift over the delay (10-16
+  mm at these speeds).
+- With the pods-only travel and static deflections, the rear's patch sits a median 20-60 mm
+  (rms 34-80 mm, one window 300 mm) off the ground the front left, the mean removed; shifting
+  the rear along the path by up to +-0.8 m barely changes it. So it is not the distance: it is
+  height (navigation's vertical speed or pitch over the quarter second) or the pods-only travel
+  itself, which this check cannot tell apart.
+
+Read: with today's navigation the tie cannot be tight, and at 30-80 mm it pins nothing. Open,
+for Isaac: whether to make navigation's heights carry it (a vertical-speed and pitch check
+against the pods, e.g. on flat smooth stretches; heading from the GPS track instead of the
+attitude), or to tie the wheels differently (front and rear patch heights compared high-passed,
+where navigation's errors are slow), before F4b, the fitted per-pod delay and pitch against the
+ground.
+
 How F1 is built: as navigation was (`physics/nav.rs`), a separate block, `physics/forces.rs`, with its own latents, rows, weights and parameters, on only when `Spec::forces` and `Window::forces` are set. The 14 core latents, their golden tests and the PyTorch fixtures stay as they are. The core latents the force rows read (travel, steer, the rear member, the frame motion) enter through the same `Sample` the pod rows use.
 
 Acceptance (simulated truth and physics checks, never the IEKF; one-model spec §8):

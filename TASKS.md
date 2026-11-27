@@ -1061,6 +1061,14 @@ Analysis gaps from `173461a2` (Python was needed for each; `agent-gaps.md`):
           the rider's own 1-5 Hz work (Isaac: riders adapt). Next: F4 (one ground, Huber tie),
           then a fitted per-pod delay; report low-speed as rider + damper support, high-speed on
           its own; pitch against the ground for packing / riding high.
+          F4a built 2026-11-27 (`physics/ground.rs`; the ground eliminated from each step by
+          preconditioned CG, since refitting it between steps crawls): exact on a simulated
+          road (travel 1.0 / 0.6 mm, ground 0.8 mm, the tyre's damping identified over 6 s).
+          Real rides: the tie's sigma comes to 30-80 mm (navigation's heading wanders against
+          the velocity: the slip term) and the patches sit 20-60 mm apart at the warm start,
+          not a distance error; the fork's damping still collapses. Off by default
+          (`IDL_FORCE_GROUND`). Next, for Isaac: make navigation's heights carry the tie, or
+          tie the wheels high-passed.
           The shock's "pressure" factor is the rear spring force against a guessed air geometry
           (no sag tests in the log), not a pressure. Target:
           bottom-outs stop at the stop

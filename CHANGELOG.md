@@ -6,6 +6,12 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 
 ### Changed
 
+- **Force model: one ground under both tyres, off by default [no-docs] (2026-11-27).** `session
+  estimate-physics --forces` can tie both tyres to one ground profile along the trail (the rear
+  rolls over what the front rolled over, softly, so a line change or a rock that moves costs
+  little), from a navigation solve run first in each window, and writes `Physics ground (mm)`.
+  Built and exact on a simulated road; on real rides navigation's heights are not yet good enough
+  for it, so it stays off unless `IDL_FORCE_GROUND` is set. Experimental.
 - **Bike masses: brakes, axles, cassette and derailleur [docs] (2026-11-27).** A bike's parameters
   take the rotors', calipers', axles', cassette's and derailleur's weights, counted as moving with
   their wheel, so the unsprung masses (and the sprung mass left over) come out right.
