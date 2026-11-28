@@ -6,6 +6,10 @@ All notable changes to idl1 are recorded here. Format: Semantic Versioning.
 
 ### Changed
 
+- **Physics solve converges more reliably [no-docs] (2026-11-27).** `session estimate-physics`
+  no longer stops a fit early when a step is rejected, and `--forces` moves the damper, spring and
+  tyre parameters at most a factor of 1.65 per step, so identification walks to its answer instead
+  of jumping into a different one.
 - **Force model: one ground under both tyres, off by default [no-docs] (2026-11-27).** `session
   estimate-physics --forces` can tie both tyres to one ground profile along the trail (the rear
   rolls over what the front rolled over, softly, so a line change or a rock that moves costs

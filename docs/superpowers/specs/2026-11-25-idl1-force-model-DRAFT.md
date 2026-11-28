@@ -703,6 +703,34 @@ attitude), or to tie the wheels differently (front and rear patch heights compar
 where navigation's errors are slow), before F4b, the fitted per-pod delay and pitch against the
 ground.
 
+Later the same day (2026-11-27; lap 1 of each ride, `IDL_PHYSICS_LAPS=1` keeps lap 1 only):
+
+- **Ruled out** as the collapse's cause: navigation's smoothing of the frame's height
+  (`IDL_GROUND_ACCEL_TAU`: heights from the frame accelerometer give the same 20-60 mm), the rear's
+  line in turns (the gap is as big going straight), a firmware accelerometer/gyro pairing offset
+  (per-pod whole-sample gyro shifts, `IDL_GYRO_SHIFT_SAMPLES`: no consistent preference; the
+  firmware pairs each accelerometer word with the latest gyro and ignores FIFO TAG_CNT, the time
+  slot counter, DSV320X datasheet p.117 per the firmware's regs-fifo.md: pairing by it is the
+  robust fix), damper lag (Dixon §7.11's acceleration term `P_DAMP_MASS`, freed: under 1 kg at the
+  fork and -1 to -3 kg at the shock's shaft, opposite signs, 1-3 % of loss, the dampers unchanged;
+  held at 0).
+- **Observability map** (`IDL_FORCE_OBSMAP`; `observability_map_of_the_force_parameters` on exact
+  rides): on the rides the fork's LSC is determined to 2-11 % with the rider and the deflections
+  free, most parameters to a few percent. The collapse is model error landing on it, not missing
+  information; and the nominal it collapses from (1500 N s/m) is a guess.
+- **Solver**: Levenberg-Marquardt's damping growth skipped the useful range and stopped
+  identification early (11/21 at 6 iterations); fixed, with a trust region on the factors. At
+  convergence the tyres' damping runs to 52-86x nominal on both rides while the fork's low-speed
+  damping stays at 0.05-0.07: the fork's damper and the tyre's sit in series, and with the ground
+  unknown the data cannot say which dissipates.
+
+Direction (Isaac: "feels like we're missing something bigger"): identify the subsystems with the
+unknowns removed before trails, a ladder: the bike alone dropped on a flat floor (no rider, the
+ground known: fork, shock and tyres), static sag and gentle bounces (the springs under the rider),
+flat smooth ground with the rider (the rider), the known-obstacle ride (the ground tie), then
+trails with all of that held. There are no travel sensors on idl1: the travel anchors are the bike
+lifted (both ends at zero) and the o-rings (the most travel reached). The session is in TASKS.md.
+
 How F1 is built: as navigation was (`physics/nav.rs`), a separate block, `physics/forces.rs`, with its own latents, rows, weights and parameters, on only when `Spec::forces` and `Window::forces` are set. The 14 core latents, their golden tests and the PyTorch fixtures stay as they are. The core latents the force rows read (travel, steer, the rear member, the frame motion) enter through the same `Sample` the pod rows use.
 
 Acceptance (simulated truth and physics checks, never the IEKF; one-model spec §8):

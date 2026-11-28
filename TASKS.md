@@ -1069,6 +1069,25 @@ Analysis gaps from `173461a2` (Python was needed for each; `agent-gaps.md`):
           not a distance error; the fork's damping still collapses. Off by default
           (`IDL_FORCE_GROUND`). Next, for Isaac: make navigation's heights carry the tie, or
           tie the wheels high-passed.
+          Later 2026-11-27, ruled out as the collapse's cause: navigation's smoothing of the
+          heights (accelerometer heights give the same 20-60 mm), the rear's line in turns (the gap
+          is as big going straight), a firmware accel/gyro pairing offset (per-pod whole-sample
+          scan: no consistent preference; the firmware still ignores FIFO TAG_CNT, worth pairing by
+          it), damper lag (Dixon §7.11 term, fitted < 1 kg, 1-3 % of loss). The observability map
+          says the data determine fork LSC to 2-11 %: the collapse is model error landing there,
+          against a nominal (1500 N s/m) that is a guess. The LM's damping growth skipped the
+          useful range and stopped identification early (fixed). Direction (Isaac: "feels like
+          we're missing something bigger"): identify subsystems with the unknowns removed before
+          trails. No travel sensors on idl1, so travel anchors come from the tests.
+    - [ ] **Calibration session (Isaac, when at the bike; ~15 min, flat hard floor).** Pressures
+          noted, logger at its riding rate, o-rings at the seals; three top-tube knocks + 5 s
+          between segments. A, bike alone: lifted 3 s (zero travel); both-wheel drops 5 / 10 / 15
+          cm x3, hands off during the bounce; front-only and rear-only drops ~10 cm x3; lifted 3 s;
+          o-rings read. B, rider in kit: standing still 10 s, seated 10 s; five slow bounces, still
+          5 s; o-rings read; weight in kit. Then: A identifies fork, shock and tyres with no rider
+          and a known ground; B the springs' rest under the rider; both check pod travel against
+          the anchors and o-rings. Pipeline work it needs: short calibration recordings (riderless,
+          flat ground), parameters held between stages.
           The shock's "pressure" factor is the rear spring force against a guessed air geometry
           (no sag tests in the log), not a pressure. Target:
           bottom-outs stop at the stop
